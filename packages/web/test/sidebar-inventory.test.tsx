@@ -6,12 +6,18 @@ import type { ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SessionNavigation } from '../src/navigation.js'
 import { bindNavigationHistory } from '../src/navigation-history.js'
-import { SessionListLabel, SessionListTools } from '../src/regions/session-tools.js'
+import {
+  SESSION_SEARCH_EVENT,
+  SessionListLabel,
+  SessionListTools,
+  SessionSearchButton,
+} from '../src/regions/session-tools.js'
 import { sessionInventory } from '../src/session-inventory.js'
 import { resetCollapsedGroups, resetExpandedGroups } from '../src/sidebar-collapse.js'
 import { sidebarGrouping } from '../src/sidebar-grouping.js'
 import { groupInventoryRows, sortSessionsByActivity } from '../src/sidebar-groups.js'
-import { orderSections, sidebarOrder } from '../src/sidebar-order.js'
+import { sidebarOrder } from '../src/sidebar-order.js'
+import { relativeTime } from '../src/sidebar-rendering.js'
 import { zhT } from './helpers/locale.js'
 
 type Row = PageSessionMeta['items'][number]
@@ -95,7 +101,7 @@ const labelled = (host: HTMLElement, name: string): HTMLButtonElement => {
 }
 
 describe('sidebar heading', () => {
-  it('keeps 工作区 and leaves only search and the view menu in the heading', () => {
+  it('names the heading 项目 and keeps only the view menu in it; search is its own field', () => {
     const host = mount(
       <div className="sidebar-section-heading">
         <p className="section-label">
@@ -104,9 +110,9 @@ describe('sidebar heading', () => {
         <SessionListTools t={zhT} />
       </div>,
     )
-    expect(host.querySelector('.section-label')?.textContent).toBe('工作区')
+    expect(host.querySelector('.section-label')?.textContent).toBe('项目')
     const controls = [...host.querySelectorAll('button')].map((button) => button.id)
-    expect(controls).toEqual(['session-search', 'session-view'])
+    expect(controls).toEqual(['session-view'])
     // 归档没有单独的快捷按钮：筛选只从视图菜单进入。
     expect(host.querySelector('#session-archive')).toBeNull()
   })
@@ -144,8 +150,20 @@ describe('sidebar heading', () => {
     )
   })
 
-  it('resets the saved section and project orders from the view menu', async () => {
-    sidebarOrder.moveSection('pinned', 'workspaces', 'after')
+  it('opens the search palette from the full-width search field', () => {
+    const host = mount(<SessionSearchButton t={zhT} />)
+    const opened = vi.fn()
+    host.addEventListener(SESSION_SEARCH_EVENT, opened)
+    const search = host.querySelector<HTMLButtonElement>('.sidebar-search #session-search')
+    expect(search?.getAttribute('aria-label')).toBe('搜索会话')
+    expect(search?.getAttribute('aria-keyshortcuts')).toBe('Meta+K Control+K')
+    expect(search?.querySelector('.sidebar-search-label')?.textContent).toBe('搜索会话')
+    expect(search?.querySelectorAll('kbd .agh-kbd-key').length).toBe(2)
+    search?.click()
+    expect(opened).toHaveBeenCalledOnce()
+  })
+
+  it('resets the saved project order from the view menu', async () => {
     sidebarOrder.moveWorkspace(['/alpha', '/beta'], '/beta', '/alpha', 'before')
     const host = mount(<SessionListTools t={zhT} />)
     host.querySelector<HTMLButtonElement>('#session-view')?.click()
@@ -155,9 +173,7 @@ describe('sidebar heading', () => {
       return found
     })
     reset.click()
-    expect(orderSections(['pinned', 'chats', 'workspaces'])).toEqual(['pinned', 'chats', 'workspaces'])
     expect(sidebarOrder.getSnapshot().workspaces).toEqual([])
-    expect(localStorage.getItem('agnes.sidebar.section-order.v1')).toBeNull()
     expect(localStorage.getItem('agnes.sidebar.workspace-order.v1')).toBeNull()
   })
 
@@ -283,12 +299,12 @@ describe('session navigation', () => {
     expect(leading.innerHTML).toBe('')
     expect(main.querySelector('[data-testid="session-inventory"]')).not.toBeNull()
     const sections = [...main.querySelectorAll<HTMLElement>('.sidebar-section')]
-    expect(sections.map((section) => section.dataset.section)).toEqual(['pinned', 'chats', 'workspaces'])
+    expect(sections.map((section) => section.dataset.section)).toEqual(['pinned', 'workspaces', 'chats'])
     expect(
       [...main.querySelectorAll('.sidebar-section > .workspace-heading-row .workspace-name')].map(
         (node) => node.textContent,
       ),
-    ).toEqual(['置顶', '临时会话', '工作区'])
+    ).toEqual(['置顶', '项目', '临时会话'])
     expect(
       [...main.querySelectorAll('.workspace-group .workspace-name')].map((node) => node.textContent),
     ).toEqual(['主工作区'])
@@ -453,5 +469,27 @@ describe('full-list ordering', () => {
       [workspace('/workspace', '主工作区')],
     )
     expect(groups.map((group) => group.kind)).toEqual(['workspace'])
+  })
+})
+
+describe('row time', () => {
+  // 2026-10-28 15:00 local time; days count calendar days, not 24-hour spans.
+  const now = new Date(2026, 9, 28, 15, 0, 0).getTime()
+  const at = (year: number, month: number, day: number, hour = 0, minute = 0, second = 0) =>
+    new Date(year, month, day, hour, minute, second).toISOString()
+  it.each([
+    [at(2026, 9, 28, 14, 59, 40), '刚刚'],
+    [at(2026, 9, 28, 14, 35), '25分钟'],
+    [at(2026, 9, 28, 0, 30), '14小时'],
+    [at(2026, 9, 27, 23, 50), '昨天'],
+    [at(2026, 9, 24, 12), '4天'],
+    [at(2026, 9, 1), '10/1'],
+    [at(2025, 11, 31), '2025/12/31'],
+  ])('reads %s as %s', (iso, expected) => {
+    expect(relativeTime(iso, zhT, 'zh-CN', now)).toBe(expected)
+  })
+  it('shows nothing when the list carries no readable time', () => {
+    expect(relativeTime(undefined, zhT, 'zh-CN', now)).toBeUndefined()
+    expect(relativeTime('', zhT, 'zh-CN', now)).toBeUndefined()
   })
 })

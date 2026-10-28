@@ -115,6 +115,8 @@ it('keeps the user-selected tab while the model changes activity or opens anothe
     await act(async () => root.render(createElement(Panel)))
     await vi.waitFor(() => expect(callbacks.has('browser.pages')).toBe(true))
     await publish([page('user', 1), page('model', 2)])
+    expect(container.querySelector('[data-viewport="fixed"][data-scale="fit"]')).not.toBeNull()
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-option="viewport"]')!.click())
     expect(container.querySelector('[data-viewport="adaptive"]')).not.toBeNull()
     await act(async () => container.querySelector<HTMLButtonElement>('[data-option="viewport"]')!.click())
     expect(container.querySelector('[data-viewport="fixed"]')).not.toBeNull()

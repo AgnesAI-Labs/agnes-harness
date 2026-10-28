@@ -11,10 +11,21 @@ import {
 import type { Translate } from '@agnes/web-conversation/presentation'
 import { Button, Icon, type IconName, icons, Menu, Tooltip } from '@agnes/web-ui'
 import { type ReactNode, useSyncExternalStore } from 'react'
+import { useWorkLaunchQuiet } from '../pages/work-launch.js'
 
-function EntryBadge({ badge, label }: { badge: HomeEntryBadge; label(count: number): string }) {
+/** A bare count, or with `spelled` the whole label (「2 项待审阅」) when it says what the count is. */
+function EntryBadge({
+  badge,
+  label,
+  spelled = false,
+}: {
+  badge: HomeEntryBadge
+  label(count: number): string
+  spelled?: boolean
+}) {
   const count = useSyncExternalStore(badge.subscribe, badge.getSnapshot)
   if (!(count > 0)) return null
+  if (spelled) return <span className="home-entry-badge">{label(count)}</span>
   return (
     <span className="home-entry-badge" title={label(count)}>
       <span aria-hidden="true">{count > 99 ? '99+' : count}</span>
@@ -41,6 +52,7 @@ export function HomeEntriesNav({
 }) {
   useSyncExternalStore(homeEntries.subscribe, homeEntries.getSnapshot)
   const requested = useSyncExternalStore(homeNavigation.subscribe, homeNavigation.getSnapshot)
+  const quiet = useWorkLaunchQuiet()
   useSyncExternalStore(applicationIdentity.subscribe, applicationIdentity.getSnapshot)
   const application = applicationIdentity.getSnapshot()
   const nav = effectiveApplication()?.presentation?.navigation
@@ -68,6 +80,7 @@ export function HomeEntriesNav({
     .map((entry, order) => ({ ...entry, order }))
   const { inline, more } = homeEntryGroups(entries)
   const isCurrent = (entry: HomeEntry) =>
+    !quiet &&
     requested?.id === entry.id &&
     (!requested.pageRef || resolveHomeEntry(requested.pageRef) === homeEntries.get(entry.id))
   const open = (entry: HomeEntry) => {
@@ -97,6 +110,7 @@ export function HomeEntriesNav({
             {entry.badge && (
               <EntryBadge
                 badge={entry.badge}
+                spelled={entry.id === 'plugins'}
                 label={(count) =>
                   entry.id === 'plugins' ? t('home.entry.plugins.pending', { count }) : String(count)
                 }

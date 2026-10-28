@@ -20,6 +20,8 @@
 
 ## 认证与重放
 
+测试结果会显示在编辑页的测试按钮旁。未编辑的默认样例会在发送时更新时间戳；编辑过的样例按输入原样发送，包括其中的时间戳。
+
 **GitHub：**设置 JSON 载荷和共享密钥。AGH 对原始 body 做 HMAC SHA-256，验证 `X-Hub-Signature-256`；`X-GitHub-Event` 提供事件类型，`X-GitHub-Delivery` 提供投递 id。GitHub **不签署时间戳请求头**，因此必须配置签名载荷里的时间字段，例如 `$.issue.updated_at`、`$.pull_request.updated_at` 或 `$.head_commit.timestamp`。没有合适时间戳的事件（包括普通 ping）会被重放窗口拒绝；可通过可信入口封装后使用 generic 提供者。旧事件的再次投递超过窗口时同样拒绝。
 
 **Generic HMAC：**发送 `X-Webhook-Id`、`X-Webhook-Event`、`X-Webhook-Timestamp`（Unix 秒）和 `X-Webhook-Signature: sha256=HEX`。签名输入是 UTF-8 前缀 `TIMESTAMP\nDELIVERY_ID\nEVENT\n` 加上原始 JSON body，时间戳、id、事件类型一起认证。重复安全请求头会被拒绝。

@@ -29,7 +29,7 @@ import {
   SIDEBAR_SLOT,
 } from './contracts.js'
 import { HomeEntriesNav } from './home-entries.js'
-import { SessionListLabel, SessionListTools } from './session-tools.js'
+import { SessionListLabel, SessionListTools, SessionSearchButton } from './session-tools.js'
 
 export const DSH_SIDEBAR_CHILDREN = Object.freeze({
   'sidebar.brand.mark': { kind: 'single', scope: 'root' },
@@ -76,8 +76,9 @@ export function SidebarDshFrame({
             {profileApprovals}
           </HomeEntriesNav>
         ),
-        // The grouped view puts 置顶 / 临时会话 / 工作区 inside the list, so the row above it is
-        // only a toolbar: a null label tells the shell not to print a heading it does not own.
+        search: <SessionSearchButton t={dependencies.translate} />,
+        // The grouped view puts 置顶 / 项目 / 临时会话 inside the list and the list tools on the 项目
+        // heading: a null label tells the shell not to print a heading row it does not own.
         sectionLabel: grouping === 'workspace' ? null : <SessionListLabel t={dependencies.translate} />,
         sessionTools: <SessionListTools t={dependencies.translate} />,
         brandMark: (

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -20,7 +20,7 @@ vi.mock('node:fs', async (importOriginal) => {
   }
 })
 
-import { createSqliteStorage } from '../../src/adapters/storage-sqlite.js'
+import { createSqliteStorage, DATA_DIR_VERSION } from '../../src/adapters/storage-sqlite.js'
 
 let dir: string
 beforeEach(() => {
@@ -31,28 +31,40 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-it('never removes a sessions.db that another process created, stamped and began using while it looked', async () => {
-  const file = join(dir, 'sessions.db')
-  const tablesDir = join(dir, 'tables')
-  // Process A: creates and stamps the directory, then (like the daemon) creates a package table.
-  hook.run = () => {
-    createSqliteStorage({ file, tablesDir }).close()
-    mkdirSync(tablesDir, { recursive: true })
-    const table = new DatabaseSync(join(tablesDir, '_40agnes_2fdaemon.db'))
-    table.exec('CREATE TABLE jobs (id TEXT)')
-    table.close()
-  }
-  const b = createSqliteStorage({ file, tablesDir })
-  try {
+it.each([1, DATA_DIR_VERSION])(
+  'never removes a concurrently created format %s data directory',
+  async (version) => {
+    const file = join(dir, 'sessions.db')
+    const tablesDir = join(dir, 'tables')
+    // Process A: creates and stamps the directory, then (like the daemon) creates a package table.
+    hook.run = () => {
+      if (version === DATA_DIR_VERSION) void createSqliteStorage({ file, tablesDir }).close()
+      else {
+        const ledger = new DatabaseSync(file)
+        ledger.exec(`CREATE TABLE events (x); PRAGMA user_version = ${version}`)
+        ledger.close()
+      }
+      mkdirSync(tablesDir, { recursive: true })
+      const table = new DatabaseSync(join(tablesDir, '_40agnes_2fdaemon.db'))
+      table.exec('CREATE TABLE jobs (id TEXT)')
+      table.close()
+    }
+    if (version === DATA_DIR_VERSION) {
+      const b = createSqliteStorage({ file, tablesDir })
+      await b.close()
+    } else {
+      expect(() => createSqliteStorage({ file, tablesDir })).toThrow(
+        expect.objectContaining({ code: 'E_DATA_DIR_STALE' }),
+      )
+    }
     expect(hook.run).toBeUndefined()
     expect(existsSync(file)).toBe(true)
-  } finally {
-    await b.close()
-  }
-  const db = new DatabaseSync(file, { readOnly: true })
-  try {
-    expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 1 })
-  } finally {
-    db.close()
-  }
-})
+    expect(readFileSync(join(tablesDir, '_40agnes_2fdaemon.db')).length).toBeGreaterThan(0)
+    const db = new DatabaseSync(file, { readOnly: true })
+    try {
+      expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: version })
+    } finally {
+      db.close()
+    }
+  },
+)

@@ -85,6 +85,233 @@ it('creates a daily reminder, lists it, and accepts a title change', () => {
   expect(renamed).toMatchObject({ title: 'Morning', prompt: 'Check mail', revision: 1 })
 })
 
+it('keeps all run receipts, snapshots and final text, with durable read state and seek pagination', () => {
+  const { db, jobs, catalog } = memory()
+  const task = catalog.create(daily())
+  const key = `schedule:${task.id}:1`
+  for (let n = 0; n < 65; n++) {
+    // A clock adjustment must not change the saved order or lose rows between pages.
+    catalog.recordDispatch(key, { at: NOW - n, reason: 'prompt', sessionKey: 'sess' })
+    catalog.observeSession('sess', {
+      seq: n * 2 + 1,
+      type: 'assistant/message',
+      data: {
+        stopReason: n === 64 ? 'refusal' : n === 63 ? 'max_tokens' : 'end_turn',
+        content: [
+          { type: 'thinking', text: 'private reasoning' },
+          { type: 'text', text: `Result ${n}` + (n === 63 ? '!'.repeat(5000) : '') },
+        ],
+      },
+    } as never)
+    if (n === 63) catalog.recordFailure(key, { at: NOW, reason: 'turn_error', detail: 'OUTPUT_LIMIT' })
+    else catalog.noteSettlement(key, { nextRunAt: NOW + 86_400_000 })
+  }
+  expect(db.prepare('SELECT count(*) AS n FROM schedule_runs').get()).toEqual({ n: 65 })
+  catalog.update({ ...daily(), id: task.id, prompt: 'New instructions' })
+  const first = catalog.history({ id: task.id, limit: 20, resultsOnly: true })
+  expect(first.runs).toHaveLength(20)
+  expect(first.runs[0]).toMatchObject({
+    summary: 'Result 64',
+    read: false,
+    snapshot: { prompt: 'Check mail' },
+  })
+  expect(first.runs[1]).toMatchObject({
+    summary: expect.stringMatching(/^Result 63/),
+    outcome: 'failed',
+    detail: 'OUTPUT_LIMIT',
+  })
+  expect(first.runs[1]?.summary).toHaveLength(4000)
+  expect(JSON.stringify(first)).not.toContain('private reasoning')
+  const cursor = first.nextCursor
+  if (!cursor) throw new Error('missing next history page')
+  const second = catalog.history({ id: task.id, limit: 100, before: cursor })
+  expect(second.runs).toHaveLength(45)
+  expect(new Set([...first.runs, ...second.runs].map((run) => run.id)).size).toBe(65)
+  const receipt = first.runs[0]!
+  expect(catalog.receipt({ id: task.id, runId: receipt.id, read: true })).toEqual({ updated: true })
+  const reopened = openScheduleCatalogAt(db, jobs, () => NOW + 200 * 86_400_000)
+  expect(reopened.history({ id: task.id, limit: 100 }).runs).toHaveLength(65)
+  expect(reopened.history({ id: task.id, unreadOnly: true, limit: 100 }).runs).toHaveLength(64)
+  reopened.archive(task.id)
+  expect(reopened.history({ id: task.id, limit: 100 }).runs).toHaveLength(65)
+  const other = reopened.create(daily('other'))
+  expect(reopened.receipt({ id: other.id, runId: receipt.id, read: true })).toEqual({ updated: false })
+  expect(reopened.history({ id: other.id, before: receipt.id })).toMatchObject({ cursorInvalid: true })
+})
+
+it('reopens saved runs and indexes task and unread lookups', () => {
+  const { db, jobs, catalog } = memory()
+  const task = catalog.create(daily())
+  catalog.recordDispatch(`schedule:${task.id}:1`, { at: NOW, sessionKey: 'sess' })
+  const saved = catalog.history({ id: task.id })
+  const reopened = openScheduleCatalogAt(db, jobs, () => NOW)
+  const result = reopened.history({ id: task.id })
+  expect(result.runs).toHaveLength(1)
+  expect(result).toEqual(saved)
+  expect(result.runs[0]).toMatchObject({ outcome: 'delivered', snapshot: { prompt: 'Check mail' } })
+  expect(result.runs[0]).not.toHaveProperty('summary')
+  const plan = db
+    .prepare(
+      'EXPLAIN QUERY PLAN SELECT rowid FROM schedule_runs WHERE schedule_id = ? AND rowid < ? ORDER BY rowid DESC LIMIT 20',
+    )
+    .all(task.id, 100)
+  expect(JSON.stringify(plan)).toContain('schedule_runs_task')
+  const unread = db
+    .prepare(
+      'EXPLAIN QUERY PLAN SELECT run_rowid FROM schedule_run_receipts WHERE is_read = 0 AND run_rowid < ? ORDER BY run_rowid DESC LIMIT 20',
+    )
+    .all(100)
+  expect(JSON.stringify(unread)).toContain('schedule_receipts_unread')
+  const queries: { sql: string; params: readonly unknown[] }[] = []
+  const sql = sqlOf(db)
+  const observed = openScheduleCatalog(
+    {
+      ...sql,
+      all(statement, params) {
+        if (
+          statement.startsWith('SELECT r.*, m.id') ||
+          statement.startsWith('SELECT at, outcome, session_key')
+        )
+          queries.push({ sql: statement, params: params ?? [] })
+        return sql.all(statement, params)
+      },
+    },
+    jobs,
+    () => NOW,
+  )
+  observed.history({ id: task.id })
+  observed.history({ unreadOnly: true, resultsOnly: true })
+  const details = queries.map((query) =>
+    JSON.stringify(db.prepare('EXPLAIN QUERY PLAN ' + query.sql).all(...(query.params as SQLInputValue[]))),
+  )
+  expect(details[0]).toContain('schedule_runs_task')
+  expect(details[1]).toContain('schedule_receipts_unread')
+  expect(details.join('\n')).not.toContain('USE TEMP B-TREE FOR ORDER BY')
+  queries.length = 0
+  observed.read(task.id)
+  const recent = queries[0]
+  if (!recent) throw new Error('missing recent-run query')
+  const recentPlan = JSON.stringify(
+    db.prepare('EXPLAIN QUERY PLAN ' + recent.sql).all(...(recent.params as SQLInputValue[])),
+  )
+  expect(recentPlan).toContain('schedule_runs_task')
+  expect(recentPlan).toContain('schedule_runs_open_job')
+  expect(recentPlan).toContain('INTEGER PRIMARY KEY')
+})
+
+it('creates the final search and receipt schema and reopens without rewriting saved data', () => {
+  const { db, jobs, catalog } = memory()
+  try {
+    expect(db.prepare('PRAGMA table_info(schedules)').all()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'search_text', notnull: 1 })]),
+    )
+    expect(db.prepare('PRAGMA table_info(schedule_run_receipts)').all()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'schedule_id', notnull: 1 })]),
+    )
+    const { id } = catalog.create({ ...daily(), title: 'RÉSUMÉ 日报', prompt: 'ÖVERVIEW' })
+    const key = `schedule:${id}:1`
+    catalog.recordDispatch(key, { at: NOW, reason: 'prompt', sessionKey: 'sess' })
+    catalog.observeSession('sess', {
+      seq: 1,
+      type: 'assistant/message',
+      data: { stopReason: 'end_turn', content: [{ type: 'text', text: 'Saved reply' }] },
+    } as never)
+    catalog.noteSettlement(key, { nextRunAt: NOW + 86_400_000 })
+    const history = catalog.history({ id })
+    const runId = history.runs[0]?.id
+    if (!runId) throw new Error('missing saved run')
+    expect(catalog.receipt({ id, runId, read: true })).toEqual({ updated: true })
+    const saved = catalog.history({ id })
+    const schema = () => db.prepare('SELECT type, name, sql FROM sqlite_master ORDER BY type, name').all()
+    const rows = () => [
+      db.prepare('SELECT * FROM schedules').all(),
+      db.prepare('SELECT rowid, * FROM schedule_runs').all(),
+      db.prepare('SELECT * FROM schedule_run_receipts').all(),
+    ]
+    const beforeSchema = schema()
+    const beforeRows = rows()
+    const reopened = openScheduleCatalogAt(db, jobs, () => NOW)
+    expect(schema()).toEqual(beforeSchema)
+    expect(rows()).toEqual(beforeRows)
+    expect(reopened.list({ search: 'résumé' }).map((row) => row.id)).toEqual([id])
+    expect(reopened.list({ search: 'öVERview' }).map((row) => row.id)).toEqual([id])
+    expect(reopened.history({ id })).toEqual(saved)
+    expect(saved.runs[0]).toMatchObject({ id: runId, summary: 'Saved reply', read: true })
+    expect(reopened.history({ id, unreadOnly: true }).runs).toEqual([])
+  } finally {
+    db.close()
+  }
+})
+
+it('searches and filters tasks before the result limit without hiding ended failures', () => {
+  const { catalog } = memory()
+  const active = catalog.create(daily())
+  const paused = catalog.create({ ...daily(), title: 'Weekly summary' })
+  catalog.control(paused.id, 'pause')
+  const failed = catalog.create({ ...daily(), title: 'Billing reconciliation' })
+  catalog.recordFailure(`schedule:${failed.id}:1`, { at: NOW, reason: 'turn_error' })
+  catalog.noteSettlement(`schedule:${failed.id}:1`, { nextRunAt: null })
+  expect(catalog.list({ search: 'BILLING', limit: 1 }).map((row) => row.id)).toEqual([])
+  expect(catalog.list({ search: 'BILLING', status: 'failed', limit: 1 }).map((row) => row.id)).toEqual([
+    failed.id,
+  ])
+  expect(catalog.list({ status: 'paused' }).map((row) => row.id)).toEqual([paused.id])
+  expect(catalog.list({ status: 'active' }).map((row) => row.id)).toEqual([active.id])
+  const here = catalog.create({
+    ...fresh(),
+    title: 'Here report',
+    target: { kind: 'new-session', cwd: '/work/report' },
+  })
+  catalog.create({ ...fresh(), origin: 'sess', target: { kind: 'new-session', cwd: '/work/elsewhere' } })
+  expect(
+    catalog
+      .list({ workspace: '/work/report', workspaceSessionKeys: ['sess'] })
+      .map((row) => row.id)
+      .sort(),
+  ).toEqual([active.id, paused.id, here.id].sort())
+  expect(catalog.list({ targetKind: 'new-session', search: 'Here', limit: 1 }).map((row) => row.id)).toEqual([
+    here.id,
+  ])
+  expect(catalog.list({ targetKind: 'session', status: 'active', limit: 1 }).map((row) => row.id)).toEqual([
+    active.id,
+  ])
+  const byName = catalog.create({ ...daily(), title: 'Report outcome' })
+  expect(catalog.list({ search: 'report', targetKind: 'session', limit: 1 }).map((row) => row.id)).toEqual([
+    byName.id,
+  ])
+  expect(catalog.list({ search: '/work/report' })).toEqual([])
+  const key = `schedule:${active.id}:1`
+  catalog.recordDispatch(key, { at: NOW, reason: 'prompt', sessionKey: 'sess' })
+  catalog.noteSettlement(key, { nextRunAt: NOW + 86_400_000, reason: 'parked' })
+  expect(catalog.list({ status: 'needs_attention' }).map((row) => row.id)).toEqual([active.id])
+  const waiting = catalog.history({ id: active.id }).runs[0]
+  if (!waiting) throw new Error('missing parked run')
+  expect(catalog.receipt({ id: active.id, runId: waiting.id, read: true })).toEqual({ updated: false })
+  const accented = catalog.create({ ...daily(), title: 'RÉSUMÉ 日报' })
+  expect(catalog.list({ search: 'RÉSUMÉ 日报' }).map((row) => row.id)).toEqual([accented.id])
+  expect(catalog.list({ search: 'résumé 日报', limit: 1 }).map((row) => row.id)).toEqual([accented.id])
+  catalog.update({ ...daily(), id: accented.id, title: 'ÉTÉ', prompt: 'ÖVERVIEW' })
+  expect(catalog.list({ search: 'résumé' })).toEqual([])
+  expect(catalog.list({ search: 'été' }).map((row) => row.id)).toEqual([accented.id])
+  expect(catalog.list({ search: 'öVERview' }).map((row) => row.id)).toEqual([accented.id])
+})
+
+it('keeps global timing hints when filters hide every task and omits them from session scope', async () => {
+  const { db, jobs } = memory()
+  const port = createSchedulesPort(sqlOf(db), jobs, () => NOW)
+  const task = port.catalog.create(daily())
+  expect(await port.list({ scope: 'all', status: 'failed' })).toEqual({
+    schedules: [],
+    activity: { nextRunAt: task.nextRunAt, hasOpenRuns: false },
+  })
+  port.catalog.recordDispatch(`schedule:${task.id}:1`, { at: NOW, reason: 'prompt', sessionKey: 'sess' })
+  expect(await port.list({ scope: 'all', search: 'missing' })).toMatchObject({
+    schedules: [],
+    activity: { hasOpenRuns: true },
+  })
+  expect(await port.list({ scope: 'session', sessionKey: 'other' })).toEqual({ schedules: [] })
+})
+
 it('rejects a past time, a short interval, and after_seconds on update', () => {
   const { catalog } = memory()
   expect(() => catalog.create({ ...daily(), selector: { at: '2020-01-01T00:00:00Z' } })).toThrow(
@@ -117,8 +344,9 @@ it('refuses a prompt change while the job is active and still updates the title'
     updated: false,
     code: 'schedule_conflict',
   })
-  const titled = catalog.update({ ...daily(), id: created.id, title: 'Later' }) as ScheduleView
-  expect(titled.title).toBe('Later')
+  const titled = catalog.update({ ...daily(), id: created.id, title: 'ÉTÉ' }) as ScheduleView
+  expect(titled.title).toBe('ÉTÉ')
+  expect(catalog.list({ search: 'été' }).map((row) => row.id)).toEqual([created.id])
   expect(titled.prompt).toBe('Check mail')
   expect(job(jobs, created.id)?.status).toBe('active')
 })
@@ -365,14 +593,18 @@ it('checks a new-session target through the port before saving it', async () => 
   })
 })
 
-it.each(['approve', 'reply', 'expire', 'refuse'] as const)(
-  'tracks a parked run through %s without reporting it ran',
-  (action) => {
+const parkedRunCases = (['approve', 'reply', 'expire', 'refuse'] as const).flatMap((action) =>
+  [false, true].map((once) => [action, once] as const),
+)
+it.each(parkedRunCases)(
+  'tracks a parked run through %s without reporting it ran (one-time: %s)',
+  (action, once) => {
     let now = NOW
     const { db, jobs } = memory()
     let catalog = openScheduleCatalogAt(db, jobs, () => now)
     const created = catalog.create({
       ...daily(),
+      ...(once ? { selector: { after_seconds: 1 } } : {}),
       target: {
         kind: 'session',
         sessionKey: 'sess',
@@ -402,13 +634,14 @@ it.each(['approve', 'reply', 'expire', 'refuse'] as const)(
     const requested = event('decision/state', pending)
     if (action !== 'reply') catalog.observeSession('sess', requested)
     expect(catalog.observeSession('sess', event('turn/end', { reason: 'parked' }))).toBe(true)
-    catalog.noteSettlement(key, { at: now, nextRunAt: now + 60_000, reason: 'parked' })
+    catalog.noteSettlement(key, { at: now, nextRunAt: once ? null : now + 60_000, reason: 'parked' })
     expect(catalog.read(created.id)?.runs[0]).toMatchObject({
       outcome: action === 'reply' ? 'needs_attention' : 'waiting_approval',
       reason: 'needs_attention',
     })
     expect(catalog.read(created.id)?.runs[0]?.endedAt).toBeUndefined()
     expect(catalog.hasWaiting(key)).toBe(true)
+    expect(catalog.list({ sessionKey: 'sess' }).some((row) => row.id === created.id)).toBe(true)
     catalog.recordFailure(key, { at: now + 1, reason: 'approval_pending_previous_run', sessionKey: 'sess' })
     expect(catalog.read(created.id)?.runs.map((run) => run.outcome)).toEqual([
       action === 'reply' ? 'needs_attention' : 'waiting_approval',
@@ -474,8 +707,11 @@ it.each(['approve', 'reply', 'expire', 'refuse'] as const)(
       })
     }
     expect(catalog.hasWaiting(key)).toBe(false)
-    expect(catalog.read(created.id)).toMatchObject({ status: 'active', nextRunAt: NOW + 60_000 })
-    if (action === 'expire') {
+    expect(catalog.read(created.id)).toMatchObject(
+      once ? { status: 'ended', nextRunAt: null } : { status: 'active', nextRunAt: NOW + 60_000 },
+    )
+    expect(catalog.list({ sessionKey: 'sess' }).some((row) => row.id === created.id)).toBe(!once)
+    if (action === 'expire' && !once) {
       catalog.recordDispatch(key, { at: ++now, reason: 'prompt', sessionKey: 'after-expiry' })
       catalog.observeSession('after-expiry', event('turn/start', { turn: 3, trigger: 'prompt' }))
       catalog.observeSession('after-expiry', event('turn/end', { reason: 'completed' }))
@@ -499,7 +735,7 @@ it.each(['approve', 'reply', 'expire', 'refuse'] as const)(
   },
 )
 
-it('finds the open run of a job through the schedule_runs_schedule index', () => {
+it('finds the open run through the pending-run index without scanning completed history', () => {
   const db = new DatabaseSync(':memory:')
   const seen: Array<{ sql: string; params: readonly unknown[] }> = []
   const base = sqlOf(db)
@@ -516,12 +752,12 @@ it('finds the open run of a job through the schedule_runs_schedule index', () =>
   )
   const created = catalog.create(daily())
   catalog.recordDispatch(`schedule:${created.id}:1`, { at: NOW, reason: 'prompt', sessionKey: 'run-1' })
-  const open = seen.find((q) => /FROM schedule_runs WHERE[\s\S]*job_key = \?/.test(q.sql))
+  const open = seen.find((q) => /FROM schedule_runs(?: INDEXED BY \w+)? WHERE[\s\S]*job_key = \?/.test(q.sql))
   if (!open) throw new Error('openRun query was not issued')
   const plan = db
     .prepare(`EXPLAIN QUERY PLAN ${open.sql}`)
     .all(...(open.params as SQLInputValue[])) as Array<{
     detail: string
   }>
-  expect(plan.map((row) => row.detail).join('\n')).toContain('USING INDEX schedule_runs_schedule')
+  expect(plan.map((row) => row.detail).join('\n')).toContain('USING INDEX schedule_runs_open_job')
 })

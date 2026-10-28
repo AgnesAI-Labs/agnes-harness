@@ -90,6 +90,8 @@ import { profileAttentionCaller } from '../regions/profile-attention-caller.js'
 import { createProfileAttention } from '../regions/profile-attention-state.js'
 import { sessionInventory } from '../session-inventory.js'
 import type { SidebarActions, SidebarState } from '../sidebar.js'
+import type { VoiceController } from '../voice/controller.js'
+import { installVoice } from '../voice/install.js'
 import { type ClientReconciler, createReconciler, type RosterSource } from './reconcile.js'
 export interface ClientModulesRuntime {
   ctx: Context
@@ -121,6 +123,8 @@ export interface ClientModulesRuntime {
   trace?: TraceRegionMount
   rightbar?: RightbarRegionMount
   settings?: SettingsRegionMount
+  /** The page's voice function, present with a composer; refresh it after an account save. */
+  voice?: VoiceController
   /** Unmount mount-point containers (the browser handles page unload; the explicit path supports tests). */
   dispose(): Promise<void>
 }
@@ -169,6 +173,8 @@ export async function startClientModules(options: {
   authorizeCommand?: CommandAuthorizer | undefined
   /** Claim resolver for timeline slot nodes; defaults to unclaimed, showing placeholders without a roster. */
   claim?: ClaimResolver | undefined
+  /** Voice for the composer and transcript; built from `agnes` when omitted, `false` turns it off. */
+  voice?: VoiceController | false | undefined
 }): Promise<ClientModulesRuntime> {
   const ctx = new Context()
   const presentation: PresentationHost = { ...options.presentation }
@@ -192,6 +198,14 @@ export async function startClientModules(options: {
   const stopAttentionPage = homeNavigation.subscribe(attention.reconcile)
   const stopAttentionSession = session.readiness.subscribe(attention.reconcile)
   const resources = new ClientResourceService(ctx, options.agnes, session)
+  const voice =
+    options.voice === false
+      ? undefined
+      : (options.voice ?? (options.composerContainer ? installVoice(options.agnes) : undefined))
+  if (voice) {
+    ctx.effect(() => voice.bindSession(session))
+    ctx.effect(() => () => voice.dispose())
+  }
   const storedLocale = readLocalePreference(safeThemeStorage())
   applyDocumentLocale(document.documentElement, storedLocale)
   const locale = new LocaleService(ctx, storedLocale)
@@ -336,6 +350,7 @@ export async function startClientModules(options: {
       transcript: {
         ...options.transcript,
         ...(options.claim ? { claim: options.claim } : {}),
+        ...(voice ? { voice } : {}),
         attach(handle) {
           const attached = { ...handle, dispose() {} }
           transcriptDelegate.current = attached
@@ -385,7 +400,7 @@ export async function startClientModules(options: {
   if (options.composerContainer)
     presentation.composer = {
       container: options.composerContainer,
-      controls: { LoopPicker, suggestions: businessAgentSuggestions },
+      controls: { LoopPicker, suggestions: businessAgentSuggestions, ...(voice ? { voice } : {}) },
       options: options.composer ?? {
         onCancel() {},
         onDraftChange() {},
@@ -533,6 +548,7 @@ export async function startClientModules(options: {
         render(nodes, turns, meta) {
           lastTranscript = { sessionId: session.sessionId, args: [nodes, turns, meta] }
           transcriptDelegate.current?.render(nodes, turns, meta)
+          voice?.observeTranscript(nodes, turns ?? [])
         },
         reset() {
           lastTranscript = undefined
@@ -575,6 +591,7 @@ export async function startClientModules(options: {
     ...(trace ? { trace } : {}),
     ...(rightbar ? { rightbar } : {}),
     ...(settingsPane ? { settings: settingsPane } : {}),
+    ...(voice ? { voice } : {}),
     dispose: async () => {
       stopAttentionPage()
       stopAttentionSession()

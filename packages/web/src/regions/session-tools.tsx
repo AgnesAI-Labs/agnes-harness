@@ -1,5 +1,5 @@
 import type { Translate } from '@agnes/web-conversation/presentation'
-import { Icon, IconButton, Menu, type MenuItem } from '@agnes/web-ui'
+import { Button, Icon, IconButton, Kbd, Menu, type MenuItem } from '@agnes/web-ui'
 import { useSyncExternalStore } from 'react'
 import { navigationHistory } from '../navigation-history.js'
 import { currentMode, type SessionListMode, supportsModes } from '../session-inventory.js'
@@ -15,12 +15,33 @@ export function SessionListLabel({ t }: { t: Translate }) {
   return <>{t(grouping === 'list' ? 'sidebar.sectionHeadingList' : 'sidebar.sectionHeading')}</>
 }
 
-/** Search and the view menu: grouping and the archived filter both live in one menu. */
+/** The sidebar's search entry: a full-width field-like button that opens the search palette. */
+export function SessionSearchButton({ t }: { t: Translate }) {
+  const search = t('home.search.title')
+  return (
+    <div className="sidebar-search">
+      <Button
+        id="session-search"
+        appearance="ghost"
+        aria-label={search}
+        aria-keyshortcuts="Meta+K Control+K"
+        onClick={(event) =>
+          event.currentTarget.dispatchEvent(new CustomEvent(SESSION_SEARCH_EVENT, { bubbles: true }))
+        }
+      >
+        <Icon name="search" />
+        <span className="sidebar-search-label">{search}</span>
+        <Kbd aria-hidden="true" keys={['mod', 'K']} />
+      </Button>
+    </div>
+  )
+}
+
+/** The view menu: grouping, the archived filter and the project order reset live in one menu. */
 export function SessionListTools({ t }: { t: Translate }) {
   const history = navigationHistory
   const view = useSyncExternalStore(history.subscribe, history.getSnapshot)
   const grouping = useSyncExternalStore(sidebarGrouping.subscribe, sidebarGrouping.getSnapshot)
-  const search = t('home.search.title')
   const mode = currentMode(view)
   const supported = supportsModes(history)
   const archived = mode === 'archived'
@@ -83,7 +104,7 @@ export function SessionListTools({ t }: { t: Translate }) {
     choice('filter-archived', filterHeading, t('sidebar.view.archivedOnly'), 'archive', archived, () =>
       applyMode('archived'),
     ),
-    // A way back from a reorder that went wrong: forget both saved orders in one action.
+    // A way back from a project reorder that went wrong: forget the saved order in one action.
     {
       id: 'order-reset',
       group: orderHeading,
@@ -95,16 +116,6 @@ export function SessionListTools({ t }: { t: Translate }) {
   ]
   return (
     <span className="sidebar-session-tools">
-      <IconButton
-        id="session-search"
-        name="search"
-        label={search}
-        shortcut={['mod', 'K']}
-        aria-keyshortcuts="Meta+K Control+K"
-        onClick={(event) =>
-          event.currentTarget.dispatchEvent(new CustomEvent(SESSION_SEARCH_EVENT, { bubbles: true }))
-        }
-      />
       <Menu
         label={t('sidebar.view.label')}
         selectedLabel={t('sidebar.view.selected')}

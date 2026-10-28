@@ -9,6 +9,8 @@ import {
 } from '@agnes/web-admin/agents'
 import {
   type ApplicationWorkRequest,
+  type ComposerLaunch,
+  composerLaunchAgent,
   homeNavigation,
   rememberApplicationWork,
   rememberSessionAgent,
@@ -33,12 +35,14 @@ type Launch = {
   consent?: 'covered' | 'changed' | 'unavailable'
   changes?: string[]
   work?: ApplicationWorkRequest
+  /** The user's first composer message: a covered launch starts and sends it, a review keeps it until confirmed. */
+  compose?: ComposerLaunch
 }
 
 /** Installed agents use the agent launch-ticket facade. Catalog-only agents use the public agent install flow,
  * which also prepares, reviews and starts through that facade after package admission.
  */
-export function useAgentLaunch(data: BusinessAgentsData) {
+export function useAgentLaunch(data: BusinessAgentsData, selectedWorkspace?: () => string | undefined) {
   const { t, locale } = useUiText(AGENTS_NAMESPACE, agentsCatalog)
   const nav = usePushStack()
   const [launch, setLaunch] = useState<Launch>()
@@ -58,7 +62,11 @@ export function useAgentLaunch(data: BusinessAgentsData) {
     features: data.features,
     onChanged: data.refreshInstalled,
   })
-  const prepare = async (card: Pick<AgentCard, 'ref' | 'name' | 'slug'>, work?: ApplicationWorkRequest) => {
+  const prepare = async (
+    card: Pick<AgentCard, 'ref' | 'name' | 'slug'>,
+    work?: ApplicationWorkRequest,
+    compose?: ComposerLaunch,
+  ) => {
     if (!data.api) return
     const pending: Launch = {
       ref: card.ref,
@@ -66,11 +74,14 @@ export function useAgentLaunch(data: BusinessAgentsData) {
       pageId: `agent-${card.slug}`,
       phase: 'preparing',
       ...(work ? { work } : {}),
+      ...(compose ? { compose } : {}),
     }
     set(pending)
     nav.open(pending.pageId)
     try {
-      const result = await data.api.prepareAgent(card.ref)
+      // An explicit composer workspace wins; otherwise the user's selected one, else the launcher's own.
+      const workspace = compose?.workspace ?? selectedWorkspace?.()
+      const result = await data.api.prepareAgent(card.ref, ...(workspace ? [workspace] : []))
       if (current.current !== pending) return
       if (result.presentation.ref !== card.ref) throw new Error(t('reason.changed'))
       const prepared: Launch = {
@@ -85,7 +96,7 @@ export function useAgentLaunch(data: BusinessAgentsData) {
         },
       }
       set(prepared)
-      if (work && result.consent === 'covered') await start(prepared)
+      if ((work || compose) && result.consent === 'covered') await start(prepared)
     } catch (error) {
       if (current.current === pending)
         set({
@@ -109,6 +120,10 @@ export function useAgentLaunch(data: BusinessAgentsData) {
       set({ ...pending, phase: 'failed', error: t('reason.changed') })
       return
     }
+    if (pending.compose && composerLaunchAgent(pending.compose) !== pending.ref) {
+      set({ ...pending, phase: 'failed', error: t('reason.changed') })
+      return
+    }
     const attempt = pending.attempt
     const running: Launch = recover ? { ...pending, checking: true } : { ...pending, phase: 'starting' }
     set(running)
@@ -123,7 +138,9 @@ export function useAgentLaunch(data: BusinessAgentsData) {
         rememberApplicationWork(result.sessionId, work.request, pending.ref, attempt.plan.launch.title)
       openStartedSession({
         sessionId: result.sessionId,
-        prompt: work?.prompt ?? result.draft?.text[locale] ?? result.draft?.text.en,
+        prompt:
+          work?.prompt ?? pending.compose?.prompt ?? result.draft?.text[locale] ?? result.draft?.text.en,
+        ...(pending.compose ? { send: pending.compose.send } : {}),
       })
     }
     const read = async () => {
@@ -177,7 +194,7 @@ export function useAgentLaunch(data: BusinessAgentsData) {
   }
   const uncertain = !!launch?.attempt && !launch.definite
   return {
-    start(card: AgentCard, work?: ApplicationWorkRequest) {
+    start(card: AgentCard, work?: ApplicationWorkRequest, compose?: ComposerLaunch) {
       const pending = current.current
       if (pending) {
         // Keep the original receipt reachable until its result is known or a new intent is explicit.
@@ -193,7 +210,7 @@ export function useAgentLaunch(data: BusinessAgentsData) {
         catalog.start({ ...card.catalogAgent, slug: card.slug })
         return
       }
-      void prepare(card, work)
+      void prepare(card, work, compose)
     },
     pageId: launch?.pageId ?? catalog.pageId,
     /** The launch waits for the user's decision, or has failed. */
@@ -216,7 +233,9 @@ export function useAgentLaunch(data: BusinessAgentsData) {
                 object={
                   launch.work ? resolveApplicationWork(launch.work, locale)?.request.object?.id : undefined
                 }
-                draft={launch.work ? resolveApplicationWork(launch.work, locale)?.prompt : undefined}
+                draft={
+                  launch.work ? resolveApplicationWork(launch.work, locale)?.prompt : launch.compose?.prompt
+                }
                 onConfirm={() => {
                   void start(launch)
                 }}
@@ -243,6 +262,7 @@ export function useAgentLaunch(data: BusinessAgentsData) {
                           slug: encodeURIComponent(launch.ref),
                         },
                         launch.work,
+                        launch.compose,
                       )
                   }}
                 >
@@ -260,6 +280,7 @@ export function useAgentLaunch(data: BusinessAgentsData) {
                           slug: encodeURIComponent(launch.ref),
                         },
                         launch.work,
+                        launch.compose,
                       )
                     }}
                   >

@@ -4,9 +4,9 @@ import { resolvedToolPolicyHash } from '../src/registry/tool-policy.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { continueParked } from '../src/step/parked.js'
 import { answerToolDecision } from './helpers/decision.js'
-import { fakeProvider, type Script, textTurn, toolTurn } from './helpers/fake-provider.js'
+import { fakeProvider, type Script, sent, textTurn, toolTurn, usage } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
-import { actor, openSession, openWorldTool, shellTool, writeTool } from './helpers/open-session.js'
+import { actor, openSession, openWorldTool, readTool, shellTool, writeTool } from './helpers/open-session.js'
 
 const approver = { ...actor, id: 'approver' }
 async function setup(
@@ -435,6 +435,80 @@ describe('single-tool parked continuation', () => {
       expect(JSON.stringify(provider.requests[0]?.messages)).toContain('ran:')
     } finally {
       await reopened.session.close()
+    }
+  })
+})
+
+describe('batch parked continuation', () => {
+  it('resumes a mixed batch: the read is not rerun, the approved call runs, the unstarted call stays closed, results follow call order', async () => {
+    const ran: string[] = []
+    const registry = new ToolRegistry()
+    registry.add(
+      readTool(async (args) => {
+        ran.push(`read:${JSON.stringify(args)}`)
+        return { content: [{ type: 'text' as const, text: 'read ok' }] }
+      }),
+      { source: 'test', trust: 'builtin' },
+    )
+    registry.add(
+      shellTool(async (args) => {
+        ran.push(`shell:${JSON.stringify(args)}`)
+        return { content: [{ type: 'text' as const, text: 'shell ok' }] }
+      }),
+      { source: 'test', trust: 'builtin' },
+    )
+    // One response, three calls: a safe read, a shell that needs approval, and a shell queued behind it.
+    const batch: Script = [
+      sent(),
+      ...[
+        { name: 'read', args: { path: 'a' } },
+        { name: 'shell', args: { command: 'one' } },
+        { name: 'shell', args: { command: 'two' } },
+      ].map(({ name, args }, ordinal) => ({
+        type: 'toolcall_end' as const,
+        call: { toolUseId: '', name, args: args as never, ordinal },
+        via: 'native' as const,
+      })),
+      usage(),
+      { type: 'done', reason: 'toolUse' },
+    ]
+    const provider = fakeProvider([batch, textTurn('finished')])
+    const h = await openSession({
+      registry,
+      provider,
+      seams: fakeSeams({
+        approval: { ask: async () => ({ ticket: 'ticket-1', expiresAt: '2099-01-01T00:00:00Z' }) },
+      }),
+    })
+    try {
+      await h.session.enqueue('next-turn', {
+        actor: { ...actor, attrs: { unattendedApproval: 'notify' } },
+        origin: 'system',
+        content: [{ type: 'text', text: 'go' }],
+      })
+      expect((await run(h)).reason).toBe('parked')
+      expect(ran).toEqual(['read:{"path":"a"}'])
+      await answerToolDecision(h.session, 1, 'allowed-once', approver)
+      expect((await run(h)).reason).toBe('completed')
+      // The read ran once, before the park; only the approved shell ran on resume.
+      expect(ran).toEqual(['read:{"path":"a"}', 'shell:{"command":"one"}'])
+      expect(provider.calls).toBe(2)
+      const messages = (provider.requests.at(-1)?.messages ?? []) as Array<{
+        role: string
+        toolUseId?: string
+        toolCalls?: Array<{ toolUseId: string }>
+        content: Array<{ text?: string }>
+      }>
+      const asked = messages.find((m) => m.toolCalls?.length)?.toolCalls?.map((c) => c.toolUseId)
+      const answered = messages.filter((m) => m.role === 'tool_result')
+      expect(asked).toHaveLength(3)
+      // Each call is answered once, attributed by id, in the order the model asked.
+      expect(answered.map((m) => m.toolUseId)).toEqual(asked)
+      expect(answered[0]?.content[0]?.text).toContain('read ok')
+      expect(answered[1]?.content[0]?.text).toContain('shell ok')
+      expect(answered[2]?.content[0]?.text).toContain('not run')
+    } finally {
+      await h.session.close()
     }
   })
 })

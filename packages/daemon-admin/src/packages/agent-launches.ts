@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { PackageError, withLock } from '@agnes/package-manager'
 import { type AgentPlan, type ApplicationState, jcs, parseAgentRef } from '@agnes/protocol'
 import { applicationLaunchChanges, applicationLaunchConsent } from './application-launch-consent.js'
@@ -11,6 +11,8 @@ type Caller = { principal: string; profile: string; workspace: string; activatio
 type Review = {
   owner: string
   activation: string
+  /** A registered workspace the caller picked at prepare; `activation` is that workspace's, not the launcher's. */
+  workspace?: string
   expires: number
   plan: AgentPlan
   consentDigest?: string
@@ -29,11 +31,11 @@ type Operation = RetainedOperation & {
 type State = { reviews: Record<string, Review>; operations: Record<string, Operation> }
 export interface AgentLaunchBackend {
   /** Host caller context, never an agent's own UI row or package-management authority. */
-  caller(): Promise<Caller>
+  caller(workspace?: string): Promise<Caller>
   resolve(ref: string): Promise<AgentPlan>
   application?(): Promise<ApplicationState>
   /** Re-enters ordinary session/workspace authorization with strict Host admission. */
-  open(plan: AgentPlan, sessionKey: string): Promise<string>
+  open(plan: AgentPlan, sessionKey: string, workspace?: string): Promise<string>
 }
 const hash = (value: unknown) => createHash('sha256').update(jcs(value)).digest('hex')
 const deny = (code = 'E_PACKAGE_PREVIEW_STALE'): never => {
@@ -69,10 +71,13 @@ export function createAgentLaunches(options: {
   }
   const save = (state: State) => saveReceiptJournal(file, state)
   const scope = ({ principal, profile, workspace }: Caller) => hash({ principal, profile, workspace })
+  // A picked workspace is re-checked as registered and available on every use; none picked is the launcher's own.
+  const target = (review: Review, caller: Caller) =>
+    review.workspace ? backend.caller(review.workspace) : Promise.resolve(caller)
   const check = async (review: Review, caller: Caller, receipt = false) => {
     if (
       review.owner !== scope(caller) ||
-      review.activation !== caller.activation ||
+      review.activation !== (await target(review, caller)).activation ||
       (!receipt && review.expires <= now())
     )
       deny()
@@ -93,7 +98,7 @@ export function createAgentLaunches(options: {
     async call(request: Record<string, unknown>): Promise<unknown> {
       const fields: Record<string, string[]> = {
         resolve: ['agent'],
-        prepare: ['agent'],
+        prepare: ['agent', 'workspace'],
         start: ['launchTicket', 'operationId'],
         read: ['operationId'],
       }
@@ -102,7 +107,12 @@ export function createAgentLaunches(options: {
       if (
         !keys ||
         Object.keys(request).some((key) => key !== 'action' && !keys.includes(key)) ||
-        keys.some((key) => typeof request[key] !== 'string')
+        keys.some((key) =>
+          request[key] === undefined
+            ? !(action === 'prepare' && key === 'workspace')
+            : typeof request[key] !== 'string',
+        ) ||
+        (typeof request.workspace === 'string' && !isAbsolute(request.workspace))
       )
         deny('INVALID_REQUEST')
       // The atomic journal remains readable while start owns the write lock across backend.open.
@@ -131,7 +141,11 @@ export function createAgentLaunches(options: {
         }
         const owner = scope(caller)
         const op = read().operations[hash([owner, token(request.operationId)])]
-        if (!op || op.review.owner !== owner || op.review.activation !== caller.activation)
+        if (
+          !op ||
+          op.review.owner !== owner ||
+          op.review.activation !== (await target(op.review, caller)).activation
+        )
           return deny('CAPABILITY_DENIED')
         return {
           state: op.state,
@@ -151,10 +165,14 @@ export function createAgentLaunches(options: {
           const plan = await backend.resolve(parseAgentRef(request.agent))
           const application = await backend.application?.()
           const consent = applicationLaunchConsent(application, plan)
+          // Fails closed: an unregistered or unavailable workspace is refused, never replaced by the launcher's.
+          const picked =
+            typeof request.workspace === 'string' ? await backend.caller(request.workspace) : undefined
           // Caller activation may change while a container is being admitted.
           const review: Review = {
             owner,
-            activation: caller.activation,
+            activation: (picked ?? caller).activation,
+            ...(picked ? { workspace: picked.workspace } : {}),
             expires: now() + 300_000,
             plan,
             ...(consent === 'covered' && application?.selection?.adoptionGeneration
@@ -205,7 +223,7 @@ export function createAgentLaunches(options: {
           // Dispatch deadline: resolution and consent reads may have crossed the ticket's expiry.
           if (review.expires <= now()) deny()
           stage = 'opening'
-          op.sessionId = await backend.open(review.plan, `agent:${key}`)
+          op.sessionId = await backend.open(review.plan, `agent:${key}`, review.workspace)
           stage = 'opened'
           await check(review, await backend.caller(), true)
           op.state = 'completed'

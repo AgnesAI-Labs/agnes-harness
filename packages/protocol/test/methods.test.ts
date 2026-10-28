@@ -298,11 +298,15 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/resources.operation.get',
         '_agnes/v1/schedules.archive',
         '_agnes/v1/schedules.control',
+        '_agnes/v1/schedules.history',
         '_agnes/v1/schedules.list',
+        '_agnes/v1/schedules.receipt',
         '_agnes/v1/schedules.upsert',
         '_agnes/v1/session.archive',
         '_agnes/v1/session.attach',
         '_agnes/v1/session.btw',
+        '_agnes/v1/session.voice.transcribe',
+        '_agnes/v1/session.voice.speak',
         '_agnes/v1/session.bookmarks.set',
         '_agnes/v1/session.budget',
         '_agnes/v1/session.deliverables',
@@ -359,6 +363,9 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/pluginRuntime.status',
         '_agnes/v1/pluginStreams.endpoint',
         '_agnes/v1/surfaces.mounts',
+        '_agnes/v1/voice.status',
+        '_agnes/v1/voice.settings.get',
+        '_agnes/v1/voice.settings.save',
         '_agnes/v1/workspace.add',
         '_agnes/v1/workspace.list',
         '_agnes/v1/workspace.reveal',
@@ -374,7 +381,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(220)
+    expect(Object.keys(METHODS)).toHaveLength(227)
     expect(METHODS['_agnes/v1/session.integrity']).toMatchObject({ kind: 'request', direction: 'c2s' })
     expect(METHODS['_agnes/v1/session.loading']).toMatchObject({ kind: 'notification', direction: 's2c' })
     expect(METHODS['_agnes/v1/session.loadingCancel']).toMatchObject({

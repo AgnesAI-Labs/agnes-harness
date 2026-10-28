@@ -41,6 +41,23 @@ describe('job schedules', () => {
     expect(nextAfterCompletion({ kind: 'every', everyMs: 1_000 }, now)).toBe(now + 1_000)
   })
 
+  it('finds sparse zoned dates within the search horizon promptly', () => {
+    const start = performance.now()
+    for (const [tz, expected] of [
+      ['Asia/Shanghai', '2027-10-01T01:00:00Z'],
+      ['Pacific/Kiritimati', '2027-09-30T19:00:00Z'],
+      ['Pacific/Pago_Pago', '2027-10-01T20:00:00Z'],
+    ] as const) {
+      expect(nextRunAt({ kind: 'cron', expr: '0 9 1 10 *', tz }, timestamp('2026-10-27T00:00:00Z'))).toBe(
+        timestamp(expected),
+      )
+    }
+    expect(
+      nextRunAt({ kind: 'cron', expr: '0 9 30 2 *', tz: 'Asia/Shanghai' }, timestamp('2026-10-27T00:00:00Z')),
+    ).toBeNull()
+    expect(performance.now() - start).toBeLessThan(2000)
+  })
+
   it('matches a restricted day-of-month or day-of-week, and either one when both are restricted', () => {
     const thirteenth = parseCron('0 0 13 * *')
     expect(cronMatches(thirteenth, new Date(timestamp('2026-09-13T00:00:00Z')))).toBe(true)

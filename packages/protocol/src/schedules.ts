@@ -136,11 +136,35 @@ export const SchedulesListParams = Type.Object(
     scope: Type.Union([Type.Literal('session'), Type.Literal('all')]),
     sessionKey: Type.Optional(sessionKey),
     includeArchived: Type.Optional(Type.Boolean()),
+    search: Type.Optional(Type.String({ maxLength: 256 })),
+    workspace: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+    targetKind: Type.Optional(Type.Union([Type.Literal('session'), Type.Literal('new-session')])),
+    status: Type.Optional(
+      Type.Union([
+        Type.Literal('active'),
+        Type.Literal('paused'),
+        Type.Literal('ended'),
+        Type.Literal('archived'),
+        Type.Literal('failed'),
+        Type.Literal('needs_attention'),
+      ]),
+    ),
   },
   { additionalProperties: false },
 )
 export const SchedulesListResult = Type.Object(
-  { schedules: Type.Array(ScheduleView, { maxItems: 500 }) },
+  {
+    schedules: Type.Array(ScheduleView, { maxItems: 500 }),
+    activity: Type.Optional(
+      Type.Object(
+        {
+          nextRunAt: Type.Union([Type.Integer(), Type.Null()]),
+          hasOpenRuns: Type.Boolean(),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+  },
   { additionalProperties: false },
 )
 export const SchedulesUpsertParams = Type.Object(
@@ -174,6 +198,55 @@ export const SchedulesControlParams = Type.Object(
 )
 export const SchedulesControlResult = Type.Union([ScheduleView, refused])
 
+/** A durable receipt. Old runs have no snapshot; clients must not substitute today's settings. */
+export const ScheduleHistoryEntry = Type.Object(
+  {
+    ...ScheduleRun.properties,
+    id: Type.String({ pattern: '^run_[0-9a-f]{32}$' }),
+    scheduleId,
+    title,
+    read: Type.Boolean(),
+    summary: Type.Optional(Type.String({ maxLength: 4000 })),
+    snapshot: Type.Optional(
+      Type.Object(
+        { title, prompt, selector: ScheduleSelector, target: ScheduleTarget },
+        { additionalProperties: false },
+      ),
+    ),
+  },
+  { additionalProperties: false },
+)
+export const SchedulesHistoryParams = Type.Object(
+  {
+    id: Type.Optional(scheduleId),
+    before: Type.Optional(Type.String({ pattern: '^run_[0-9a-f]{32}$' })),
+    limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+    resultsOnly: Type.Optional(Type.Boolean()),
+    unreadOnly: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
+)
+export const SchedulesHistoryResult = Type.Object(
+  {
+    runs: Type.Array(ScheduleHistoryEntry, { maxItems: 100 }),
+    nextCursor: Type.Optional(Type.String({ pattern: '^run_[0-9a-f]{32}$' })),
+    cursorInvalid: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
+)
+export const SchedulesReceiptParams = Type.Object(
+  {
+    id: scheduleId,
+    runId: Type.String({ pattern: '^run_[0-9a-f]{32}$' }),
+    read: Type.Boolean(),
+  },
+  { additionalProperties: false },
+)
+export const SchedulesReceiptResult = Type.Object(
+  { updated: Type.Boolean() },
+  { additionalProperties: false },
+)
+
 export type ScheduleTarget = Static<typeof ScheduleTarget>
 export type ScheduleRun = Static<typeof ScheduleRun>
 export type ScheduleRunOutcome = Static<typeof ScheduleRunOutcome>
@@ -186,3 +259,8 @@ export type SchedulesArchiveParams = Static<typeof SchedulesArchiveParams>
 export type SchedulesArchiveResult = Static<typeof SchedulesArchiveResult>
 export type SchedulesControlParams = Static<typeof SchedulesControlParams>
 export type SchedulesControlResult = Static<typeof SchedulesControlResult>
+export type ScheduleHistoryEntry = Static<typeof ScheduleHistoryEntry>
+export type SchedulesHistoryParams = Static<typeof SchedulesHistoryParams>
+export type SchedulesHistoryResult = Static<typeof SchedulesHistoryResult>
+export type SchedulesReceiptParams = Static<typeof SchedulesReceiptParams>
+export type SchedulesReceiptResult = Static<typeof SchedulesReceiptResult>

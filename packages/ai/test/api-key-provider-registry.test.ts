@@ -88,7 +88,7 @@ describe('API-key provider registry', () => {
       API_KEY_PROVIDER_REGISTRY.filter((entry) => entry.capabilities?.payloadOnly === true).map(
         (entry) => entry.id,
       ),
-    ).toEqual(['typesafe-systemone'])
+    ).toEqual(['typesafe-systemone', 'openai-audio'])
   })
 
   it('offers an OpenAI-compatible endpoint whose models the account declares, outside the pi catalogue', async () => {

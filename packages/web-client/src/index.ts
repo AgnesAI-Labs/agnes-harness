@@ -42,8 +42,11 @@ export {
   applicationWorkDraft,
   applicationWorkRequest,
   applicationWorkText,
+  type ComposerLaunch,
+  composerLaunchAgent,
   encodeApplicationWork,
   openApplicationWork,
+  openComposerLaunch,
   rememberApplicationWork,
   rememberSessionAgent,
   resolveApplicationWork,
@@ -191,3 +194,13 @@ export {
   UiExtensionRegistry,
   workbenchPanels,
 } from './ui-registries.js'
+export type {
+  ConversationPhase,
+  VoiceComposer,
+  VoiceLevel,
+  VoiceNoticeKey,
+  VoicePort,
+  VoiceSettingsApi,
+  VoiceUnavailable,
+  VoiceViewState,
+} from './voice-port.js'

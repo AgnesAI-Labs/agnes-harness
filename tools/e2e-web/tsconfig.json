@@ -8,6 +8,7 @@
   },
   "include": [
     "browser.spec.ts",
+    "browser-layout.spec.ts",
     "diagnostics.spec.ts",
     "credentials.spec.ts",
     "large-upload.spec.ts",

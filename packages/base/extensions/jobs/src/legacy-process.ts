@@ -26,9 +26,9 @@ export async function legacyProcess(
     }
   })
   const exited = new Promise<import('@agnes/extension-api').ProcessExit>((resolve) =>
-    child.once('close', (code) => {
+    child.once('close', (code, signal) => {
       ended = true
-      resolve({ code, ...(cleanupError ? { error: cleanupError } : {}) })
+      resolve({ code, ...(signal ? { signal } : {}), ...(cleanupError ? { error: cleanupError } : {}) })
     }),
   )
   await new Promise<void>((resolve, reject) => {

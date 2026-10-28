@@ -9,6 +9,7 @@ export default defineConfig({
   testDir: '.',
   testMatch: [
     'browser.spec.ts',
+    'browser-layout.spec.ts',
     'human-controls.spec.ts',
     'references.spec.ts',
     'intelligent-ui.spec.ts',

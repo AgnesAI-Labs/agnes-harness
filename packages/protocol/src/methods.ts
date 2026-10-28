@@ -37,8 +37,12 @@ import {
   SchedulesArchiveResult,
   SchedulesControlParams,
   SchedulesControlResult,
+  SchedulesHistoryParams,
+  SchedulesHistoryResult,
   SchedulesListParams,
   SchedulesListResult,
+  SchedulesReceiptParams,
+  SchedulesReceiptResult,
   SchedulesUpsertParams,
   SchedulesUpsertResult,
 } from './schedules.js'
@@ -157,6 +161,11 @@ export type MethodName =
   | '_agnes/v1/session.deliverables'
   | '_agnes/v1/session.fork'
   | '_agnes/v1/session.btw'
+  | '_agnes/v1/session.voice.transcribe'
+  | '_agnes/v1/session.voice.speak'
+  | '_agnes/v1/voice.status'
+  | '_agnes/v1/voice.settings.get'
+  | '_agnes/v1/voice.settings.save'
   | '_agnes/v1/session.rename'
   | '_agnes/v1/session.archive'
   | '_agnes/v1/session.pin'
@@ -187,6 +196,8 @@ export type MethodName =
   | '_agnes/v1/schedules.upsert'
   | '_agnes/v1/schedules.archive'
   | '_agnes/v1/schedules.control'
+  | '_agnes/v1/schedules.history'
+  | '_agnes/v1/schedules.receipt'
   | '_agnes/v1/artifact.job.status'
   | '_agnes/v1/ext.ui.response'
   | '_agnes/v1/directory.upsert'
@@ -412,6 +423,14 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     result: A.SessionIdParams,
   },
   '_agnes/v1/session.btw': clientRequest(A.SessionBtwParams, A.SessionBtwResult),
+  '_agnes/v1/session.voice.transcribe': clientRequest(
+    A.SessionVoiceTranscribeParams,
+    A.SessionVoiceTranscribeResult,
+  ),
+  '_agnes/v1/session.voice.speak': clientRequest(A.SessionVoiceSpeakParams, A.SessionVoiceSpeakResult),
+  '_agnes/v1/voice.status': clientRequest(A.ConfigEmptyParams, A.VoiceStatusResult),
+  '_agnes/v1/voice.settings.get': clientRequest(A.ConfigEmptyParams, A.VoiceSettingsSnapshot),
+  '_agnes/v1/voice.settings.save': clientRequest(A.VoiceSettingsSaveParams, A.VoiceSettingsSnapshot),
   '_agnes/v1/session.rename': clientRequest(A.SessionRenameParams, A.SessionPreferences),
   '_agnes/v1/session.archive': clientRequest(A.SessionArchiveParams, A.SessionPreferences),
   '_agnes/v1/session.pin': clientRequest(A.SessionPinParams, A.SessionPreferences),
@@ -456,6 +475,8 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   '_agnes/v1/jobs.enqueue': clientRequest(A.JobSpec, A.JobIdResult),
   '_agnes/v1/jobs.poll': clientRequest(A.JobIdParams, A.JobStatus),
   '_agnes/v1/jobs.cancel': clientRequest(A.JobIdParams, A.Empty),
+  '_agnes/v1/schedules.history': clientRequest(SchedulesHistoryParams, SchedulesHistoryResult),
+  '_agnes/v1/schedules.receipt': clientRequest(SchedulesReceiptParams, SchedulesReceiptResult),
   '_agnes/v1/schedules.list': clientRequest(SchedulesListParams, SchedulesListResult),
   '_agnes/v1/schedules.upsert': clientRequest(SchedulesUpsertParams, SchedulesUpsertResult),
   '_agnes/v1/schedules.archive': clientRequest(SchedulesArchiveParams, SchedulesArchiveResult),

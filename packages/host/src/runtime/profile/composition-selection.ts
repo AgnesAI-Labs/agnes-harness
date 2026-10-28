@@ -9,6 +9,7 @@ import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { pluginSnapshotIdentity } from '@agnes/host-providers/runtime-plugin-catalogue'
 import type { RuntimePluginSnapshot } from '@agnes/package-manager'
 import type { PluginRow } from '@agnes/plugin-runtime/host'
+import { targetRows } from '../generation/target-code.js'
 import type { Host } from '../lifecycle/host.js'
 import { capabilityEnabled, resolveSessionCapabilities } from './session-capabilities.js'
 
@@ -19,6 +20,15 @@ export type CompositionContainer = {
   /** What the last runtime target applied here makes it run; unset once anything else changed it. */
   applied?: Readonly<{ target: string; sources: readonly RuntimePluginSnapshot[] }>
 }
+
+/** Only enabled rows and live resources determine whether a projected publication changes a container. */
+export const effectiveCompositionTarget = (target: Parameters<typeof targetRows>[0]): string =>
+  JSON.stringify({
+    rows: targetRows(target)
+      .filter((row) => !row.disabled)
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+    resources: target.resource.resources,
+  })
 
 /** Compile a preset tree into a separate Host profile, without changing an existing session. */
 export function profileForComposition(profile: ResolvedProfile, tree: ResolvedComposition): ResolvedProfile {

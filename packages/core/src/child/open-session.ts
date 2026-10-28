@@ -74,6 +74,11 @@ export async function openDelegatedSession(
         }
       : {}),
     cwd,
+    // A role child opens in its own composition Host, which cannot see the parent's workspace table;
+    // it carries the parent's identity so that Host can derive the same authority for the child key.
+    ...(opts.resolvedRole && parent.d.workspaceIdentity
+      ? { workspaceIdentity: parent.d.workspaceIdentity }
+      : {}),
     writerRunId: `${parent.writerRunId}/child/${kernel.ids.ulid()}`,
     lane: parent.lane,
     ...(workspace

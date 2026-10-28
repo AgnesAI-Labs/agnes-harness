@@ -1,9 +1,9 @@
 import { resolve } from 'node:path'
-import type { ServiceContext } from '@agnes/extension-api'
+import type { HookContext, ServiceContext } from '@agnes/extension-api'
 import { validateMethod } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
-import { createJobTools } from '../src/index.js'
+import { createJobTools, jobHooks } from '../src/index.js'
 import { SHELL_IDLE_MS, ShellJobs, TERMINAL_IDLE_MS } from '../src/registry.js'
 import { createJobsServices } from '../src/services.js'
 
@@ -406,7 +406,45 @@ it('runs a model command with its input at /dev/null, so a prompt fails instead 
   const opened = fakeProcesses(tool)
   try {
     await jobs.start('npm init', tool.cwd, tool)
-    expect(opened.at(-1)?.argv).toEqual(['sh', '-c', 'exec </dev/null; npm init'])
+    const [sh, flag, script] = opened.at(-1)?.argv ?? []
+    expect([sh, flag]).toEqual(['sh', '-c'])
+    expect(script).toMatch(/^exec <\/dev\/null; trap '[^']+' EXIT\nnpm init$/)
+  } finally {
+    await jobs.dispose()
+  }
+})
+
+// query-optimize: jobs an unattended run started kept running after its answer and slowed whatever
+// ran next. Nobody tells a server the task needs from a leftover reliably, so the model is shown
+// what is still running, once, and decides; an attended turn is left alone.
+it('lists the jobs an unattended turn leaves running before it ends, once', async () => {
+  const jobs = new ShellJobs(),
+    tool = fakeToolContext({ cwd: resolve('/work/proj'), sessionKey: 'stray' })
+  fakeProcesses(tool)
+  const hooks = jobHooks(jobs)
+  const at = (unattended: boolean) =>
+    ({
+      session: tool.session,
+      signal: new AbortController().signal,
+      ...(unattended ? { unattended: true } : {}),
+    }) as unknown as HookContext
+  const stopping = { turn: 1, step: 4, proposedReason: 'completed' as const }
+  try {
+    expect(await hooks.turn_stopping(stopping, at(true))).toEqual({ action: 'stop' })
+    const server = await jobs.start('python3 -m http.server 8080', tool.cwd, tool)
+    expect(await hooks.turn_stopping(stopping, at(false))).toEqual({ action: 'stop' })
+    const listed = await hooks.turn_stopping(stopping, at(true))
+    expect(listed).toMatchObject({ action: 'continue' })
+    const note = (listed as { note: string }).note
+    expect(note).toContain(`${server.id} (python3 -m http.server 8080)`)
+    expect(note).toContain('job_kill')
+    expect(note).toContain('leave running')
+    expect(await hooks.turn_stopping(stopping, at(true))).toEqual({ action: 'stop' })
+    // A job that already ended is not listed.
+    Object.assign(tool.session, { toolUseId: 'second' })
+    const done = await jobs.start('true', tool.cwd, tool)
+    await jobs.kill(tool, done.id)
+    expect(await hooks.turn_stopping(stopping, at(true))).toEqual({ action: 'stop' })
   } finally {
     await jobs.dispose()
   }

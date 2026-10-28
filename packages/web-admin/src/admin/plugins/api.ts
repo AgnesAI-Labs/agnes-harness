@@ -151,13 +151,16 @@ export class PluginAdminApi {
   async resolveAgent(agent: string): Promise<import('@agnes/protocol').AgentPlan> {
     return this.agentLaunch({ action: 'resolve', agent })
   }
-  async prepareAgent(agent: string): Promise<{
+  async prepareAgent(
+    agent: string,
+    workspace?: string,
+  ): Promise<{
     launchTicket: string
     presentation: import('@agnes/protocol').AgentPlan
     consent?: 'covered' | 'changed' | 'unavailable'
     changes?: string[]
   }> {
-    return this.agentLaunch({ action: 'prepare', agent })
+    return this.agentLaunch({ action: 'prepare', agent, ...(workspace ? { workspace } : {}) })
   }
   async startAgent(
     launchTicket: string,

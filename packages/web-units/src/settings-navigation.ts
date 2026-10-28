@@ -34,6 +34,7 @@ const merged: Readonly<Record<string, readonly [string, string]>> = {
 /** Existing links keep their destination after sections are consolidated. */
 export function settingsRoute(id: string): { id: string; anchor?: string; terminal?: boolean } {
   if (id === 'auxiliary-models') return { id: 'model', anchor: 'auxiliary-models' }
+  if (id === 'side-models') return { id: 'model', anchor: 'side-models' }
   if (id === 'terminal' || id === 'jobs') return { id: 'jobs', terminal: true }
   const target = merged[id]
   return target ? { id: target[0], anchor: `settings-subsection-${target[1]}` } : { id }

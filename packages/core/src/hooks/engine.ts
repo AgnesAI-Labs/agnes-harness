@@ -151,6 +151,7 @@ export class HookEngine {
             log,
             signal,
             replayed,
+            ...(context.unattended ? { unattended: true } : {}),
             ...(context.workspaceHooks
               ? { workspaceHooks: freeze(structuredClone(context.workspaceHooks)) }
               : {}),

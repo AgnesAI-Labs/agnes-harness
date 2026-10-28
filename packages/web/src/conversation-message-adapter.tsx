@@ -11,6 +11,7 @@ import {
   SlotOutlet,
   type SlotRegistry,
   SlotsProvider,
+  type VoicePort,
 } from '@agnes/web-client'
 import {
   conversationToolCardKind,
@@ -33,6 +34,7 @@ import { MessageFeedback } from '@agnes/web-units/message-feedback'
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
 import { openPlugins } from './pages/plugins/route.js'
+import { ReadAloudButton } from './voice/read-button.js'
 import { ApplicationAttribution, ApplicationWorkChip } from './workbench/application-actions.js'
 import { workflowStepRecord } from './workflow-step.js'
 
@@ -228,6 +230,8 @@ type WebConversationMessagesProps = {
   turnErrorActions?: TurnErrorActions
   /** Compatibility selector; both values now use the same React-owned Markdown. */
   markdownRenderer?: 'legacy' | 'xmarkdown'
+  /** The host's voice port: the settled final reply gets a read-aloud button. */
+  voice?: VoicePort
 }
 
 export function WebConversationMessages(props: WebConversationMessagesProps) {
@@ -250,6 +254,7 @@ function ScopedConversationMessages({
   visibleNodeIds,
   onFork,
   turnErrorActions: hostTurnErrorActions,
+  voice,
   sessionScope,
 }: WebConversationMessagesProps & { sessionScope: string | undefined }) {
   const readAttachment = useCallback(
@@ -585,6 +590,9 @@ function ScopedConversationMessages({
                 leading={<TurnContribution kind="renderTurnActions" args={[turn, finalText, settled]} />}
                 extra={
                   <>
+                    {voice && settled && answer && !answer.streaming && (
+                      <ReadAloudButton voice={voice} nodeId={answer.id} text={finalText} />
+                    )}
                     {rated && (
                       <MessageFeedback
                         sessionId={sessionScope}
@@ -630,6 +638,7 @@ function ScopedConversationMessages({
     sessionScope,
     onFork,
     turnErrorActions,
+    voice,
   ])
   const messages = (
     <ConversationMessages

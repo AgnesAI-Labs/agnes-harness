@@ -269,7 +269,12 @@ describe('rendered sidebar region', () => {
       sidebar?.querySelector('[data-session="today"]'),
     )
     // The folder says which workspace a row belongs to; rows do not repeat it.
-    expect(sidebar?.querySelector('[data-session="yesterday"]')?.textContent).toBe('会话 yesterday')
+    expect(sidebar?.querySelector('[data-session="yesterday"] .session-title')?.textContent).toBe(
+      '会话 yesterday',
+    )
+    expect(sidebar?.querySelector('[data-session="yesterday"] .session-workspace-label')).toBeNull()
+    // The row end shows when the session last moved, in the list's short form.
+    expect(sidebar?.querySelector('[data-session="yesterday"] .session-time')?.textContent).toBe('Yesterday')
     const shortcuts = () => sidebar?.querySelectorAll<HTMLButtonElement>('.workspace-new-session')
     expect(shortcuts()).toHaveLength(3)
     expect(shortcuts()?.[1]?.getAttribute('aria-label')).toBe('New session in “另一个”')
@@ -280,8 +285,9 @@ describe('rendered sidebar region', () => {
     expect(shortcuts()?.[1]?.getAttribute('aria-label')).toBe('在“另一个”中新建会话')
   })
 
-  it('renders 置顶, 临时会话 and 工作区 as peer sections in that order', async () => {
+  it('renders 置顶, 项目 and 临时会话 as peer sections in that fixed order, tools on their headings', async () => {
     const chats: WorkspaceEntry = { ...workspace('/chats', 'chats'), kind: 'chats' }
+    const addWorkspace = vi.fn()
     runtime = await mountRenderedIndex({
       sidebar: {
         state: {
@@ -295,60 +301,139 @@ describe('rendered sidebar region', () => {
           sessionPending: false,
           newDisabled: false,
         },
+        actions: { addWorkspace },
       },
     })
     const sidebar = document.querySelector<HTMLElement>('aside.sidebar')
-    if (!sidebar) throw new Error('missing sidebar')
-    const heading = sidebar.querySelector<HTMLElement>('.sidebar-section-heading')
-    const nav = sidebar.querySelector<HTMLElement>('#sessions')
-    if (!heading || !nav) throw new Error('missing sidebar structure')
-    // 分组视图把三个分区放进列表，前置槽位不再另起一份完整列表。
+    const nav = sidebar?.querySelector<HTMLElement>('#sessions')
+    if (!sidebar || !nav) throw new Error('missing sidebar structure')
+    // 分组视图把三个分区放进列表，前置槽位不再另起一份完整列表，外壳也不再打印标题行。
     expect(sidebar.querySelector('.sidebar-leading')).toBeNull()
+    expect(sidebar.querySelector('.sidebar-section-heading')).toBeNull()
     const sections = [...nav.querySelectorAll<HTMLElement>('.sidebar-section')]
-    expect(sections.map((section) => section.dataset.section)).toEqual(['pinned', 'chats', 'workspaces'])
-    expect(
-      [...nav.querySelectorAll('.sidebar-section > .workspace-heading-row .workspace-name')].map(
-        (node) => node.textContent,
-      ),
-    ).toEqual(['Pinned', 'Chats', 'Workspaces'])
+    expect(sections.map((section) => section.dataset.section)).toEqual(['pinned', 'workspaces', 'chats'])
+    const headings = [
+      ...nav.querySelectorAll<HTMLElement>('.sidebar-section > .workspace-heading-row .workspace-heading'),
+    ]
+    expect(headings.map((node) => node.querySelector('.workspace-name')?.textContent)).toEqual([
+      'Pinned',
+      'Projects',
+      'Chats',
+    ])
+    // 每个分区标题都是真正的折叠按钮，标题后一个小箭头表达展开/收起。
+    for (const heading of headings) {
+      expect(heading.tagName).toBe('BUTTON')
+      expect(heading.getAttribute('aria-expanded')).toBe('true')
+      expect(heading.querySelector('.workspace-chevron')).not.toBeNull()
+    }
     expect(
       [...nav.querySelectorAll('.workspace-group .workspace-name')].map((node) => node.textContent),
     ).toEqual(['主工作区'])
-    // 三个分区标题共用同一条标题样式，项目标题只用缩进区分层级。
-    expect(nav.querySelectorAll('.sidebar-section > .workspace-heading-row .workspace-heading')).toHaveLength(
-      3,
+    // 视图选项与「打开项目文件夹」挂在「项目」标题上；顶部那排悬浮图标不复存在。
+    const projectTools = nav.querySelector<HTMLElement>('[data-section="workspaces"] .sidebar-section-tools')
+    expect([...(projectTools?.querySelectorAll('button') ?? [])].map((button) => button.id)).toEqual([
+      'session-view',
+      'workspace-add',
+    ])
+    expect(projectTools?.querySelector('#workspace-add')?.getAttribute('aria-label')).toBe(
+      'Open project folder',
     )
-    expect(nav.querySelectorAll('.workspace-group.is-nested .workspace-heading')).toHaveLength(1)
-    // 每个折叠标题都靠标题后的箭头表达展开/收起。
-    expect(nav.querySelectorAll('.sidebar-section > .workspace-heading-row .workspace-chevron')).toHaveLength(
-      3,
-    )
-    // 「工作区」标题不再是外壳那一行，工具条只剩搜索、视图与添加。
-    expect(heading.querySelector('.section-label')).toBeNull()
-    expect(heading.classList.contains('is-toolbar')).toBe(true)
+    projectTools?.querySelector<HTMLButtonElement>('#workspace-add')?.click()
+    expect(addWorkspace).toHaveBeenCalledOnce()
+    // 「临时会话」标题保留它自己的新建按钮；「置顶」标题没有工具。
+    expect(
+      nav.querySelector('[data-section="chats"] > .workspace-heading-row .workspace-new-session'),
+    ).not.toBeNull()
+    expect(nav.querySelector('[data-section="pinned"] > .workspace-heading-row button + *')).toBeNull()
+    // 搜索是新会话与首页入口下方的一整条输入式按钮，位于会话列表之前。
+    const search = sidebar.querySelector<HTMLElement>('.sidebar-search #session-search')
+    expect(search?.textContent).toContain('Search sessions')
+    expect((search?.compareDocumentPosition(nav) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // 项目行带会话数。
+    expect(nav.querySelector('.workspace-group.is-nested .workspace-count')?.textContent).toBe('1')
   })
 
-  it('renders no leading block and keeps the toolbar label out of the grouped view', async () => {
+  it('folds a section from its heading and remembers it across a reload', async () => {
+    const chats: WorkspaceEntry = { ...workspace('/chats', 'chats'), kind: 'chats' }
+    const state = {
+      sessions: [session('chat', '/chats'), session('one', '/workspace')],
+      workspaces: [workspace('/workspace', '主工作区'), chats],
+      labels: new Map<string, string>(),
+      sessionPending: false,
+      newDisabled: false,
+    }
+    runtime = await mountRenderedIndex({ sidebar: { state } })
+    const heading = () =>
+      document.querySelector<HTMLButtonElement>(
+        '[data-section="chats"] > .workspace-heading-row .workspace-heading',
+      )
+    const body = () => document.querySelector<HTMLElement>('#sidebar-section-chats')
+    flushSync(() => heading()?.click())
+    expect(heading()?.getAttribute('aria-expanded')).toBe('false')
+    expect(body()?.hidden).toBe(true)
+    // 其余分区不受影响。
+    expect(document.querySelector<HTMLElement>('#sidebar-section-workspaces')?.hidden).toBe(false)
+    await runtime.dispose()
+    resetWebDom()
+    runtime = await mountRenderedIndex({ sidebar: { state } })
+    expect(heading()?.getAttribute('aria-expanded')).toBe('false')
+    expect(body()?.hidden).toBe(true)
+    flushSync(() => heading()?.click())
+    expect(body()?.hidden).toBe(false)
+  })
+
+  it('says one thing at a row end: running, then waiting, then the last activity time', async () => {
+    const recent = new Date(Date.now() - 3 * 3_600_000).toISOString()
+    const at = (id: string, cwd = '/workspace') => ({ ...session(id, cwd), lastMessageAt: recent })
     runtime = await mountRenderedIndex({
       sidebar: {
         state: {
-          sessions: [session('one', '/workspace')],
-          workspaces: [workspace('/workspace', '主工作区')],
+          // Five rows per project show before 「显示更多」, so the quiet row lives in its own project.
+          sessions: [
+            at('current'),
+            at('running'),
+            at('approval'),
+            at('question'),
+            at('done'),
+            at('idle', '/other'),
+          ],
+          workspaces: [workspace('/workspace', '主工作区'), workspace('/other', '另一个')],
           labels: new Map(),
+          currentId: 'current',
           sessionPending: false,
           newDisabled: false,
+          locale: 'en',
         },
       },
     })
-    const sidebar = document.querySelector<HTMLElement>('aside.sidebar') as HTMLElement
-    expect(sidebar.querySelector('.sidebar-leading')).toBeNull()
-    expect(sidebar.querySelector('.sidebar-section-heading .section-label')).toBeNull()
-    expect(sidebar.querySelector('.sidebar-section-heading')?.classList.contains('is-toolbar')).toBe(true)
-    expect(
-      [...sidebar.querySelectorAll('#sessions .workspace-group .workspace-name')].map(
-        (node) => node.textContent,
-      ),
-    ).toEqual(['主工作区'])
+    flushSync(() => {
+      runtime?.sidebar?.setRunning(['running', 'current'])
+      runtime?.sidebar?.setMarks({
+        running: 'approval',
+        approval: 'approval',
+        question: 'question',
+        done: 'completed',
+      })
+    })
+    const row = (id: string) => document.querySelector<HTMLElement>(`[data-session="${id}"]`)
+    const end = (id: string) => row(id)?.dataset.status
+    // A running turn outranks a waiting mark on the same row.
+    expect(end('running')).toBe('running')
+    expect(row('running')?.querySelector('.session-running')?.getAttribute('aria-label')).toBe('Running')
+    expect(row('running')?.querySelector('.session-mark')).toBeNull()
+    expect(end('approval')).toBe('waiting')
+    expect(row('approval')?.querySelector('.session-mark')?.textContent).toBe('Needs approval')
+    expect(row('question')?.querySelector('.session-mark')?.textContent).toBe('Needs answer')
+    // A finished turn nobody has seen is a dot before the title; the row end still tells the time.
+    expect(row('done')?.querySelector('.session-unread + .session-title')).not.toBeNull()
+    expect(row('done')?.querySelector('.session-unread')?.getAttribute('aria-label')).toBe('Done')
+    expect(end('done')).toBe('time')
+    expect(row('idle')?.querySelector('.session-time')?.textContent).toBe('3h')
+    expect(row('idle')?.querySelector('.session-unread')).toBeNull()
+    // The open session is a selected row: medium-weight title, no card.
+    expect(row('current')?.closest('.session-row')?.getAttribute('data-active')).toBe('true')
+    expect(row('current')?.classList.contains('active')).toBe(true)
+    expect(end('current')).toBe('running')
   })
 
   it('keeps the leading area above the 「会话」 heading in single-list mode', async () => {
@@ -459,8 +544,10 @@ describe('rendered sidebar region', () => {
     expect(JSON.parse(localStorage.getItem('agnes.sidebar.collapsed-workspaces.v1') ?? '[]')).toEqual([])
   })
 
-  it('reorders sections and projects by pointer and keyboard, and announces the result', async () => {
+  it('keeps the sections fixed and reorders projects by pointer and keyboard, announcing the result', async () => {
     const chats: WorkspaceEntry = { ...workspace('/chats', 'chats'), kind: 'chats' }
+    // An order saved by an older build that let sections move is ignored.
+    localStorage.setItem('agnes.sidebar.section-order.v1', JSON.stringify(['chats', 'workspaces', 'pinned']))
     runtime = await mountRenderedIndex({
       sidebar: {
         state: {
@@ -499,36 +586,21 @@ describe('rendered sidebar region', () => {
       flushSync(() => {})
     }
 
-    expect(order()).toEqual(['pinned', 'chats', 'workspaces'])
-    // The heading name is the drag source; no separate handle sits before it.
-    expect(sidebar.querySelector('.sidebar-drag-handle')).toBeNull()
-    expect(sectionHeading('pinned')?.getAttribute('draggable')).toBe('true')
-    drag(sectionHeading('pinned') as HTMLElement, sectionRow('workspaces') as HTMLElement)
-    expect(order()).toEqual(['chats', 'workspaces', 'pinned'])
-    expect(JSON.parse(localStorage.getItem('agnes.sidebar.section-order.v1') ?? '[]')).toEqual([
-      'chats',
-      'workspaces',
-      'pinned',
-    ])
-    // The announcement names the row that moved, not the row it landed on.
-    expect(sidebar.querySelector('.sidebar-section-heading > [role="status"]')?.textContent).toBe(
-      'Pinned moved to position 3',
-    )
-
-    // Keyboard moves the focused section one place and reads the new position out of the toolbar.
-    fireEvent.keyDown(
-      sidebar.querySelector<HTMLElement>(
-        '[data-section="workspaces"] > .workspace-heading-row .workspace-heading',
-      ) as HTMLElement,
-      { key: 'ArrowUp', altKey: true },
-    )
+    const announced = () =>
+      sidebar.querySelector('.visually-hidden[role="status"][aria-live="polite"]')?.textContent
+    expect(order()).toEqual(['pinned', 'workspaces', 'chats'])
+    // Section headings are fold buttons only: not draggable, no Alt+Arrow move.
+    for (const id of ['pinned', 'workspaces', 'chats']) {
+      expect(sectionHeading(id)?.hasAttribute('draggable')).toBe(false)
+      expect(sectionHeading(id)?.hasAttribute('aria-keyshortcuts')).toBe(false)
+    }
+    drag(sectionHeading('pinned') as HTMLElement, sectionRow('chats') as HTMLElement)
+    fireEvent.keyDown(sectionHeading('chats') as HTMLElement, { key: 'ArrowUp', altKey: true })
     flushSync(() => {})
-    expect(order()).toEqual(['workspaces', 'chats', 'pinned'])
-    expect(sidebar.querySelector('.sidebar-section-heading > [role="status"]')?.textContent).toBe(
-      'Workspaces moved to position 1',
-    )
+    expect(order()).toEqual(['pinned', 'workspaces', 'chats'])
+    expect(announced()).toBe('')
 
-    // Projects move only inside 工作区.
+    // Projects move only inside 项目, and their headings say so.
     const groups = () =>
       [...sidebar.querySelectorAll('.workspace-group.is-nested .workspace-name')].map(
         (node) => node.textContent,
@@ -540,11 +612,17 @@ describe('rendered sidebar region', () => {
     expect(groups()).toEqual(['主工作区', '另一个'])
     const first = groupNamed('主工作区') as HTMLElement
     const second = groupNamed('另一个') as HTMLElement
+    expect(first.querySelector('.workspace-heading')?.getAttribute('draggable')).toBe('true')
+    expect(first.querySelector('.workspace-heading')?.getAttribute('aria-keyshortcuts')).toBe(
+      'Alt+ArrowUp Alt+ArrowDown',
+    )
     drag(
       first.querySelector<HTMLElement>('.workspace-heading') as HTMLElement,
       second.querySelector<HTMLElement>('.workspace-heading-row') as HTMLElement,
     )
     expect(groups()).toEqual(['另一个', '主工作区'])
+    // The announcement names the row that moved, not the row it landed on.
+    expect(announced()).toBe('主工作区 moved to position 2')
     expect(JSON.parse(localStorage.getItem('agnes.sidebar.workspace-order.v1') ?? '[]')).toEqual([
       '/other',
       '/workspace',
@@ -555,9 +633,8 @@ describe('rendered sidebar region', () => {
     )
     flushSync(() => {})
     expect(groups()).toEqual(['主工作区', '另一个'])
-    expect(sidebar.querySelector('.sidebar-section-heading > [role="status"]')?.textContent).toBe(
-      '主工作区 moved to position 1',
-    )
+    expect(announced()).toBe('主工作区 moved to position 1')
+    expect(order()).toEqual(['pinned', 'workspaces', 'chats'])
   })
 
   it('teaches the next step when there is no session yet', async () => {

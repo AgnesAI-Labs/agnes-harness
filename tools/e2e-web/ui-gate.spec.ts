@@ -106,6 +106,7 @@ for (const locale of ['en', 'zh-CN'])
       await expect(page.locator('#empty-state')).toBeVisible()
       await advanced(page)
       await closeSettings(page, locale)
+      await expect(page.locator('.workspace-heading-row.is-nested .workspace-name')).toHaveText('w')
       await quality('new-session', true)
       await expect(page.getByTestId('composer-agent')).toBeEnabled()
       await expect(page.getByTestId('composer-agent')).toHaveAttribute(
@@ -311,8 +312,11 @@ for (const locale of ['en', 'zh-CN'])
           await screen(page, info, `discover-duplicate-versions-${locale}-${theme}`)
           await versions.locator('.agh-disclosure-summary').click()
           await expect(packageRow.locator('.plugin-source')).toHaveCount(0)
-          // Edge alignment can leave the expanded card a subpixel above the pane; centre it instead.
-          await packageRow.evaluate((card) => card.scrollIntoView({ block: 'center', behavior: 'instant' }))
+          // This first-row card fits at the pane's top. Avoid a theme-dependent few-pixel
+          // scroll from centering its expanded height, which shifts every visible control.
+          await packageRow.evaluate((card) => {
+            for (let parent = card.parentElement; parent; parent = parent.parentElement) parent.scrollTop = 0
+          })
           await expect(packageRow).toBeInViewport({ ratio: 1 })
           await screen(page, info, `discover-version-picker-${locale}-${theme}`)
           const picker = packageRow.getByTestId('plugin-version-picker')

@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
 import { type ContentBlock, USER_MESSAGE_ATTACHMENT_LIMITS } from '@agnes/protocol'
 import type { Session } from '@agnes/sdk/browser'
+import { homeNavigation } from '@agnes/web-client'
 import { attachmentErrorMessage } from '@agnes/web-units'
 import { describe, expect, it, vi } from 'vitest'
 import { SessionBindingOwner } from '../src/app/session-owner.js'
@@ -84,8 +85,14 @@ describe('new session request', () => {
       { preset: 'minimal', permission: 'workspace-write' },
     ],
     ['nothing chosen', {}, { preset: 'standard', permission: 'default' }],
+    [
+      'a chosen recipe over the application agent',
+      { agent: 'devboard.coordinator', preset: 'ptc' },
+      { preset: 'ptc', permission: 'default' },
+    ],
   ] as const)('sends %s from every creation path', async (_case, choice, expected) => {
     const binding = new SessionBindingOwner()
+    const loop = { id: 'synthetic-loop', version: '1' }
     const created = vi.fn(async () => {
       throw new Error('stop after the request')
     })
@@ -99,6 +106,7 @@ describe('new session request', () => {
       draftLoopAvailable: () => true,
       loopCatalogPending: false,
       draftBundles: [],
+      draftLoop: loop,
       runtimeCatalog: runtime,
       draftSessionRequest: () =>
         newSessionRequest({
@@ -117,8 +125,85 @@ describe('new session request', () => {
     await expect(controller.prepareComposerSession()).rejects.toThrow('stop after the request')
     await expect(controller.prepareAttachmentSession()).rejects.toThrow('stop after the request')
     for (const [request] of created.mock.calls as unknown as [Record<string, unknown>][])
-      expect(request).toEqual({ cwd: '/synthetic/work', sessionKey: expect.any(String), ...expected })
+      expect(request).toEqual({
+        cwd: '/synthetic/work',
+        sessionKey: expect.any(String),
+        loop,
+        ...expected,
+      })
     expect(created).toHaveBeenCalledTimes(2)
+  })
+
+  it('hands the application default agent to the launch review and never to session.new', async () => {
+    const created = vi.fn()
+    let draft = '  hello agent  '
+    const submitted = vi.fn()
+    const context = {
+      current: undefined,
+      draftingNew: true,
+      selectedWorkspace: { path: '/synthetic/work', available: true },
+      sessionPending: false,
+      sessionBinding: new SessionBindingOwner(),
+      submissions: new SubmissionOwner(new SessionBindingOwner()),
+      renderControls() {},
+      draftLoopAvailable: () => true,
+      loopCatalogPending: false,
+      draftBundles: [],
+      runtimeCatalog: runtime,
+      draftSessionRequest: () =>
+        newSessionRequest({
+          agent: 'devboard.coordinator',
+          remembered: undefined,
+          defaults: undefined,
+          runtime,
+          explicit: undefined,
+          preset: undefined,
+        }),
+      composerRuntime: {
+        getDraft: () => draft,
+        setDraft: (value: string) => {
+          draft = value
+        },
+        getAttachmentBlocks: () => [],
+        hasPendingImages: () => false,
+        clearImageBlocks: submitted,
+      },
+      references: { getSnapshot: () => [], clear: submitted },
+      configured: true,
+      connected: true,
+      stopping: false,
+      permissionChangePending: false,
+      permissionRefreshPending: false,
+      selectedModelAvailable: () => true,
+      runtimeModels: [],
+      notice: { setText() {}, setKind() {} },
+      client: { session: { new: created } },
+      t: (key: string) => key,
+      settingsText: (key: string) => key,
+    } as unknown as Parameters<typeof createSubmissionController>[0]
+    const controller = createSubmissionController(context)
+    const launch = () => homeNavigation.getSnapshot()?.selection as { composerLaunch?: unknown } | undefined
+    controller.submitComposer()
+    expect(launch()?.composerLaunch).toEqual({
+      agent: 'devboard.coordinator',
+      prompt: 'hello agent',
+      send: true,
+      workspace: '/synthetic/work',
+    })
+    expect(draft).toBe('  hello agent  ')
+    expect(submitted).not.toHaveBeenCalled()
+    homeNavigation.close()
+    await expect(controller.prepareAttachmentSession()).rejects.toThrow('app.session.agentLaunch')
+    expect(launch()?.composerLaunch).toEqual({
+      agent: 'devboard.coordinator',
+      prompt: 'hello agent',
+      send: false,
+      workspace: '/synthetic/work',
+    })
+    homeNavigation.close()
+    await expect(controller.prepareComposerSession()).rejects.toThrow('app.session.agentLaunch')
+    expect(created).not.toHaveBeenCalled()
+    homeNavigation.close()
   })
 
   it.each(['prepareComposerSession', 'prepareAttachmentSession'] as const)(

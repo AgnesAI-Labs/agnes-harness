@@ -54,6 +54,10 @@ export const SLOT_NAMES = [
 // caller detect, between two calls, that the same route name now resolves to a different target
 // without the base URL itself ever leaving the provider. An implementation without it, or one that
 // does not know the route, returns undefined.
+//
+// `audio` is optional as well: the payload facts of the payload-only audio adapter, for a caller that
+// must check and size a voice payload before it sends one without depending on the AI package. An
+// implementation without it serves no voice calls.
 export interface Provider {
   /** retry=false disables adapter retries for this call without changing shared defaults. */
   infer(
@@ -73,4 +77,21 @@ export interface Provider {
         routeDigest: string
       }>
     | undefined
+  audio?: ProviderAudioFacts | undefined
 }
+
+/** The format of a base64 PCM WAV, read from its header; `dataBytes` is the sound after the header. */
+export type ProviderWavFacts = Readonly<{
+  sampleRate: number
+  channels: number
+  bits: number
+  byteRate: number
+  dataBytes: number
+}>
+
+export type ProviderAudioFacts = Readonly<{
+  /** Undefined when the text is not base64 or does not start with a RIFF/WAVE/PCM header. */
+  wav(base64: string): ProviderWavFacts | undefined
+  /** The units a payload is accounted in (audio seconds rounded up, or UTF-8 bytes of speech text). */
+  units(payload: unknown): number | undefined
+}>

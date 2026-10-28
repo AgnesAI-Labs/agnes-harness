@@ -9,7 +9,6 @@ import {
   SettingsGroup,
   SettingsInput,
   SettingsPickerSelect,
-  SettingsState,
   SettingsTextArea,
   StateSwitch,
   StatusMessage,
@@ -196,21 +195,24 @@ export function targetOf(draft: ScheduleDraft, choices: ScheduleChoices): Schedu
     : mode
       ? { loop: mode.loop, ...(mode.bundles.length ? { bundles: mode.bundles } : {}) }
       : {}
-  const chosenModel = keepModel
-    ? before.model
-    : model
-      ? { route: model.route, model: model.model }
-      : !keepMode
-        ? mode?.model
-        : undefined
+  const chosenPreset = mode?.businessAgent ? (keepMode ? before.preset : mode.preset) : draft.preset
+  const chosenModel = mode?.businessAgent
+    ? keepMode
+      ? before.model
+      : mode.model
+    : keepModel
+      ? before.model
+      : model
+        ? { route: model.route, model: model.model }
+        : !keepMode
+          ? mode?.model
+          : undefined
   return {
     kind: 'new-session',
     cwd: draft.cwd,
     ...(draft.unattendedApproval ? { unattendedApproval: draft.unattendedApproval } : {}),
     ...execution,
-    ...((!keepMode && mode?.preset) || draft.preset
-      ? { preset: (!keepMode && mode?.preset) || draft.preset }
-      : {}),
+    ...(chosenPreset ? { preset: chosenPreset } : {}),
     ...(chosenModel ? { model: chosenModel } : {}),
   }
 }
@@ -280,6 +282,15 @@ export function ScheduleEditor({
   const zoned = draft.frequency === 'daily' || draft.frequency === 'weekly' || draft.frequency === 'cron'
   const agents = choices.modes.filter((item) => item.businessAgent)
   const loops = choices.modes.filter((item) => !item.businessAgent)
+  const agent = draft.target === 'new-session' && agents.some((item) => item.key === draft.mode)
+  const target = agent ? targetOf(draft, choices) : undefined
+  const preset = target?.kind === 'new-session' ? (target.preset ?? '') : draft.preset
+  const model =
+    target?.kind === 'new-session'
+      ? target.model
+        ? `${target.model.route}\u0000${target.model.model}`
+        : ''
+      : draft.model
   return (
     <PushPage id={pageId} title={editing ? t('schedulesSave') : ux('newSchedule')}>
       <form
@@ -387,16 +398,19 @@ export function ScheduleEditor({
                 </SettingsPickerSelect>
               </Field>
             )}
-            {choices.presets.length > 0 && (
-              <Field label={ux('preset')}>
+            {(choices.presets.length > 0 || preset !== '') && (
+              <Field label={ux('preset')} hint={agent ? ux('agentSelection') : undefined}>
                 <SettingsPickerSelect
                   data-testid="schedules-preset"
                   label={ux('preset')}
-                  disabled={busy}
-                  value={draft.preset}
+                  disabled={busy || agent}
+                  value={preset}
                   onChange={(event) => set('preset', event.target.value)}
                 >
                   <option value="">{ux('presetDefault')}</option>
+                  {preset && !choices.presets.includes(preset) && (
+                    <option value={preset}>{presetName(preset, t)}</option>
+                  )}
                   {choices.presets.map((preset) => (
                     <option key={preset} value={preset}>
                       {presetName(preset, t)}
@@ -405,19 +419,21 @@ export function ScheduleEditor({
                 </SettingsPickerSelect>
               </Field>
             )}
-            {(choices.models.length > 0 || savedOnly(draft.model, choices.models)) && (
-              <Field label={ux('model')}>
+            {(choices.models.length > 0 || model !== '') && (
+              <Field label={ux('model')} hint={agent ? ux('agentSelection') : undefined}>
                 <SettingsPickerSelect
                   data-testid="schedules-model"
                   label={ux('model')}
-                  disabled={busy}
-                  value={draft.model}
+                  disabled={busy || agent}
+                  value={model}
                   onChange={(event) => set('model', event.target.value)}
                 >
                   <option value="">{ux('modelDefault')}</option>
-                  {savedOnly(draft.model, choices.models) ? (
-                    <option value={draft.model} data-testid="schedules-model-saved">
-                      {ux('savedUnavailable', { name: draft.model.replace('\u0000', ' · ') })}
+                  {savedOnly(model, choices.models) ? (
+                    <option value={model} data-testid="schedules-model-saved">
+                      {agent
+                        ? model.replace('\u0000', ' · ')
+                        : ux('savedUnavailable', { name: model.replace('\u0000', ' · ') })}
                     </option>
                   ) : null}
                   {choices.models.map((item) => (

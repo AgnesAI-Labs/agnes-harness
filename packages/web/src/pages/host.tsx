@@ -15,7 +15,7 @@ import {
   type UiLocaleSource,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useSyncExternalStore } from 'react'
-import { useWorkLaunchQuiet } from './work-launch.js'
+import { useWorkLaunchQuiet, workLaunch } from './work-launch.js'
 
 /**
  * What the workbench hands a built-in home page as `context.data`. Plugin pages receive it too but
@@ -28,6 +28,8 @@ export type HomePageData = Readonly<{
   sessionId(): string | undefined
   /** Open the settings dialog at one of its sections. */
   openSettings(section: string): void
+  /** The selected workspace's path when it is available; agent launches start there instead of the launcher's. */
+  selectedWorkspace?(): string | undefined
   /** Start a new session draft with this text in the composer. */
   startDraft(prompt?: string): void
   /** What this browser has loaded of each plugin, for the plugins page's run state. */
@@ -37,14 +39,25 @@ export type HomePageData = Readonly<{
   }
 }>
 
-/** The entry whose page is showing: requested and still registered. */
-export function activeHomeEntry() {
+/** The entry the user asked for and that is still registered, showing or not. */
+function requestedHomeEntry() {
   const requested = homeNavigation.getSnapshot()
   return requested?.pageRef
     ? resolveHomeEntry(requested.pageRef)
     : requested
       ? homeEntries.get(requested.id)
       : undefined
+}
+
+/** The entry whose page is showing; a quiet launch keeps its page mounted but out of sight. */
+export const activeHomeEntry = () => (workLaunch.quiet() ? undefined : requestedHomeEntry())
+
+/** Calls `listener` whenever `activeHomeEntry` can change: a navigation, or a launch surfacing or ending. */
+export function watchActiveHomeEntry(listener: () => void): () => void {
+  const stops = [homeNavigation.subscribe(listener), workLaunch.subscribe(listener)]
+  return () => {
+    for (const stop of stops) stop()
+  }
 }
 
 export function HomePageHost({
@@ -61,7 +74,7 @@ export function HomePageHost({
 }) {
   useSyncExternalStore(homeEntries.subscribe, homeEntries.getSnapshot)
   const requested = useSyncExternalStore(homeNavigation.subscribe, homeNavigation.getSnapshot)
-  const entry = activeHomeEntry()
+  const entry = requestedHomeEntry()
   // A synchronous unload/reload can be batched into one render. A new registration owns a new
   // component lifetime even when it reuses the same ID and component function.
   const mounted = useRef({ entry, version: 0 })

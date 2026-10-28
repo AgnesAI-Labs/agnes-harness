@@ -2,15 +2,8 @@
 
 import type { WorkspaceEntry } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  DEFAULT_SECTION_ORDER,
-  orderSections,
-  orderWorkspaces,
-  sidebarOrder,
-  workspaceKey,
-} from '../src/sidebar-order.js'
+import { orderWorkspaces, SIDEBAR_SECTION_ORDER, sidebarOrder, workspaceKey } from '../src/sidebar-order.js'
 
-const SECTION_KEY = 'agnes.sidebar.section-order.v1'
 const WORKSPACE_KEY = 'agnes.sidebar.workspace-order.v1'
 
 const workspace = (path: string, extra: Partial<WorkspaceEntry> = {}): WorkspaceEntry => ({
@@ -29,44 +22,9 @@ afterEach(() => {
 })
 
 describe('section order', () => {
-  it('starts from the default order and allows nothing else', () => {
-    expect(orderSections(['pinned', 'chats', 'workspaces'])).toEqual([...DEFAULT_SECTION_ORDER])
-    expect(orderSections(['workspaces', 'pinned'])).toEqual(['pinned', 'workspaces'])
-  })
-
-  it('cleans unknown values and duplicates found in storage', async () => {
-    localStorage.setItem(SECTION_KEY, JSON.stringify(['chats', 'nope', 'chats', 'workspaces']))
-    vi.resetModules()
-    const reloaded = await import('../src/sidebar-order.js')
-    expect(reloaded.orderSections(['pinned', 'chats', 'workspaces'])).toEqual([
-      'chats',
-      'workspaces',
-      'pinned',
-    ])
-  })
-
-  it('moves a section before or after its target and keeps hidden sections in place', () => {
-    sidebarOrder.moveSection('pinned', 'chats', 'after')
-    expect(orderSections(['pinned', 'chats', 'workspaces'])).toEqual(['chats', 'pinned', 'workspaces'])
-    // An empty section is not rendered, but the saved order still holds it.
-    expect(orderSections(['pinned', 'workspaces'])).toEqual(['pinned', 'workspaces'])
-    sidebarOrder.moveSection('pinned', 'workspaces', 'after')
-    expect(orderSections(['pinned', 'workspaces'])).toEqual(['workspaces', 'pinned'])
-    expect(orderSections(['pinned', 'chats', 'workspaces'])).toEqual(['chats', 'workspaces', 'pinned'])
-  })
-
-  it('ignores a move against itself or a missing target', () => {
-    sidebarOrder.moveSection('pinned', 'pinned', 'after')
-    sidebarOrder.moveSection('chats', 'workspaces', 'before')
-    expect(orderSections(['pinned', 'chats', 'workspaces'])).toEqual(['pinned', 'chats', 'workspaces'])
-  })
-
-  it('keeps working in memory when storage writes fail', () => {
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-      throw new Error('storage denied')
-    })
-    sidebarOrder.moveSection('pinned', 'workspaces', 'after')
-    expect(orderSections(['pinned', 'chats', 'workspaces'])).toEqual(['chats', 'workspaces', 'pinned'])
+  it('is fixed: 置顶 → 项目 → 临时会话, and the store offers no way to move a section', () => {
+    expect(SIDEBAR_SECTION_ORDER).toEqual(['pinned', 'workspaces', 'chats'])
+    expect(Object.keys(sidebarOrder).filter((key) => /section/i.test(key))).toEqual([])
   })
 })
 
@@ -137,13 +95,10 @@ describe('workspace order', () => {
 })
 
 describe('reset', () => {
-  it('forgets both orders and removes the stored keys', () => {
-    sidebarOrder.moveSection('pinned', 'workspaces', 'after')
+  it('forgets the project order and removes the stored key', () => {
     sidebarOrder.moveWorkspace(['/alpha', '/gamma'], '/gamma', '/alpha', 'before')
     sidebarOrder.reset()
-    expect(orderSections(['pinned', 'chats', 'workspaces'])).toEqual([...DEFAULT_SECTION_ORDER])
     expect(sidebarOrder.getSnapshot().workspaces).toEqual([])
-    expect(localStorage.getItem(SECTION_KEY)).toBeNull()
     expect(localStorage.getItem(WORKSPACE_KEY)).toBeNull()
   })
 })

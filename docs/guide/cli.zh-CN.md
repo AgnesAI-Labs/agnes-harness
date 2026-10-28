@@ -17,7 +17,7 @@ node agnes.mjs --mode json "解释当前项目"
 node agnes.mjs --mode stream-json "解释当前项目"
 ```
 
-`--mode json` 和 `--mode stream-json` 自动选择 print 模式。`--mode stream-json` 每收到一个会话事件就输出一行 `{"schema":"agnes-cli-event/v1","event":{…}}`（event 是会话事件信封），最后一行永远是 `--mode json` 同样的 `agnes-cli-result/v1` 结果行；退出码和 stderr 不变。两种格式都是 `v1`：可能新增字段，已有字段的含义不变。JSON 输出适合程序消费，stderr 仍可能含运行时警告。检查进程退出码，不能把收到部分文本当成功。一次性调用只有在配置里设置了 `limits."approval.park"` 时才会为等待审批而挂起；挂起后输出 `parked ticket=… session=…`，退出码为 3。命令行参数 `--park` 会被拒绝。不带可用审批交互的脚本不能自行批准危险操作。一次性调用无人能回答，因此其提示按无人值守发送：该轮不提供 `ask_user_question` 和界面工具，并告知模型凭自己的判断完成任务（见[无人值守的轮次](headless.zh-CN.md#无人值守的轮次)）。
+`--mode json` 和 `--mode stream-json` 自动选择 print 模式。`--mode stream-json` 每收到一个会话事件就输出一行 `{"schema":"agnes-cli-event/v1","event":{…}}`（event 是会话事件信封），最后一行永远是 `--mode json` 同样的 `agnes-cli-result/v1` 结果行；退出码和 stderr 不变。两种格式都是 `v1`：可能新增字段，已有字段的含义不变。`reason` 为 `error` 的结果行在已知错误码时带上 `error.code`，不带错误消息。JSON 输出适合程序消费，stderr 仍可能含运行时警告。检查进程退出码，不能把收到部分文本当成功。一次性调用只有在配置里设置了 `limits."approval.park"` 时才会为等待审批而挂起；挂起后输出 `parked ticket=… session=…`，退出码为 3。命令行参数 `--park` 会被拒绝。不带可用审批交互的脚本不能自行批准危险操作。一次性调用无人能回答，因此其提示按无人值守发送：该轮不提供 `ask_user_question` 和界面工具，并告知模型凭自己的判断完成任务（见[无人值守的轮次](headless.zh-CN.md#无人值守的轮次)）。
 
 `agh -p --output-schema FILE` 要求最终回复是一个符合 `FILE` 里 JSON Schema（2020-12，最大 64 KiB）的 JSON 值：CLI 在提示词后面追加一段固定说明并附上 schema，回合结束后检查最终助手文本。回复可以被一个 ```json 代码块包住，不做其他解包，也不重试。符合时，text 模式只打印紧凑的一行 JSON，`--mode json` 与 `--mode stream-json` 在结果行里加 `structured` 字段，退出码为 0。不符合（不是 JSON，或违反 schema）时，stdout 照原样保留回复，stderr 给出前五条问题，退出码为 6。回合没有正常完成时保持原有退出码，不做校验。文件不存在、超过大小、不是 JSON，或 schema 无法编译（包括指向其他文档的 `$ref`，它不会被下载）时，在启动会话前以退出码 2 结束。不校验 `format`。该选项只用于 `-p`，TUI 会拒绝它。
 

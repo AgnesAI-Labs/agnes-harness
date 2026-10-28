@@ -15,8 +15,8 @@ const baseDir = fileURLToPath(new URL('../../base', import.meta.url))
 const roots: string[] = []
 // Explicit preload now adds one durable tail note. It does not alter the disclosed tool schema:
 // discovery and read tools remain available for the loaded and generic turns alike.
-// Pin the eager model-visible schema, including interaction, delivery, plugin authoring and
-// bounded questions. Jobs, workflows, PTYs, reminders, goals and child tools now load through
+// Pin the eager model-visible schema, including interaction, delivery, UI guidance and
+// bounded questions. Plugin authoring is disclosed on demand. Jobs, workflows, PTYs, reminders, goals and child tools now load through
 // tool_describe, alongside past-session and MCP resource discovery.
 // Includes eager UI display schemas, explicit file/question/UI routing, and child completion notices.
 // Candidate source reads now advertise bounded pages with offset and expectedHash.
@@ -25,7 +25,7 @@ const roots: string[] = []
 // UI parameters use the generated bounded tool guidance and reject a top-level locale.
 // Authoring guidance now distinguishes initial templates, hash tests and install/browser verification.
 // Candidate writes now support reviewed merge/remove edits without re-emitting untouched files.
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '00bb87f6a5fac9a70bf72cd9b244cc818ba344518529e0c5876903b4cd81a565'
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '65f5367110c327ff101c278785b6b356e578e24b7f5231f49c14cdcab3b45e59'
 const expectedToolNames = [
   'ask_user_question',
   'compact',
@@ -34,12 +34,6 @@ const expectedToolNames = [
   'find',
   'grep',
   'ls',
-  'plugin_candidate_read',
-  'plugin_candidate_write',
-  'plugin_creator_guide',
-  'plugin_install_local',
-  'plugin_scaffold',
-  'plugin_test',
   'present',
   'read',
   'shell',
@@ -49,6 +43,7 @@ const expectedToolNames = [
   'tool_describe',
   'tool_search',
   'ui_close',
+  'ui_guide',
   'ui_render',
   'ui_update',
   'web_fetch',

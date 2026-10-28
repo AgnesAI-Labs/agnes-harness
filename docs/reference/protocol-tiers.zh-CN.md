@@ -25,6 +25,9 @@
 - `_agnes/v1/session.activity`
 - `_agnes/v1/session.fork`
 - `_agnes/v1/session.btw`
+- `_agnes/v1/session.voice.transcribe`
+- `_agnes/v1/session.voice.speak`
+- `_agnes/v1/voice.status`
 - `_agnes/v1/session.rename`
 - `_agnes/v1/session.archive`
 - `_agnes/v1/session.pin`
@@ -52,6 +55,11 @@
 它归档项目的所有会话并移除项目列表项，绝不删除磁盘文件。`WORKSPACE_RUNNING` 表示须先停止运行中的会话；
 `WORKSPACE_STALE` 表示须刷新版本。这些拒绝不会修改列表或归档会话。重复移除返回 `removed: false`；
 重新添加文件夹会恢复项目列表项，会话仍保持归档。已有会话绑定保留，支持从「已归档」恢复。
+
+`session.voice.transcribe` 把一段录音（base64 WAV，16 kHz 单声道，最长 20 秒）转成文字；
+`session.voice.speak` 把最多 120 个 UTF-16 码元的文本（基本多文种平面之外的字符，如表情符号，计为 2）朗读成 base64 mp3。两者都只对会话所有者开放，并使用语音设置所指定的辅助模型账号。
+`voice.status` 报告每项功能是否可用及不可用的原因（没有账号、没有对应角色的模型、凭据缺失、账号不唯一）以及已保存的设置。
+`voice.settings.get` 与 `voice.settings.save`（管理层，按版本比较并交换）读取和写入这些设置。
 
 ### 提交与回合控制
 
@@ -268,6 +276,8 @@
 - `_agnes/v1/autoReview.save`
 - `_agnes/v1/systemPrompt.get`
 - `_agnes/v1/systemPrompt.save`
+- `_agnes/v1/voice.settings.get`
+- `_agnes/v1/voice.settings.save`
 
 ### 配置
 
@@ -305,6 +315,8 @@
 - `_agnes/v1/jobs.poll`
 - `_agnes/v1/jobs.cancel`
 - `_agnes/v1/schedules.list`
+- `_agnes/v1/schedules.receipt`
 - `_agnes/v1/schedules.upsert`
 - `_agnes/v1/schedules.archive`
 - `_agnes/v1/schedules.control`
+- `_agnes/v1/schedules.history`

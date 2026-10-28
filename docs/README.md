@@ -68,6 +68,7 @@ node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"
 | [Use a local model](guide/local-model.md) | Configure local OpenAI-compatible endpoints and discovery |
 | [Use TypeSafe Jev for side model calls](guide/typesafe-jev.md) | Configure the built-in payload-only adapter that loop plugins call outside the conversation |
 | [Use the Jev agent loop](guide/jev-loop.md) | Install and configure the optional loop that lets TypeSafe Jev choose each step |
+| [Talk to the agent](guide/voice.md) | Dictate with the microphone, hold a spoken conversation and have replies read aloud, through a voice account in the side models |
 | [Security and trust](guide/security.md) | Choose a working directory and understand authorization and execution boundaries |
 | [Sandbox providers](guide/sandbox-providers.md) | Select the process sandbox at startup and read declared capabilities |
 | [Observability and diagnostics](guide/observability.md) | Enable OTLP telemetry and export a redacted issue bundle |
@@ -100,7 +101,7 @@ node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"
 
 - **Scenarios and methods:** [FDE and use cases](guide/why-agh.md).
 - **Exact interfaces:** [CLI reference](reference/cli.md) · [Configuration](reference/configuration.md) · [API and schemas](reference/api.md).
-- **Side model calls:** [TypeSafe Jev adapter](guide/typesafe-jev.md) · [Jev agent loop](guide/jev-loop.md) · [Write a loop plugin](develop/plugins.md).
+- **Side model calls:** [TypeSafe Jev adapter](guide/typesafe-jev.md) · [Jev agent loop](guide/jev-loop.md) · [Voice input and read-aloud](guide/voice.md) · [Write a loop plugin](develop/plugins.md).
 - **Support and feedback:** [Supported scope](reference/limitations.md) · [Feedback and development](develop/contributing.md) · [Security reports](../SECURITY.md).
 - **More development topics:** [Skins](develop/skins.md) · [Theme](develop/ui-theme.md) · [Build recovery](guide/build-recovery.md) · [Capability matrix](reference/capabilities.md).
 

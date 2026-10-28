@@ -75,20 +75,23 @@ export function parseCron(expression: string): CronSpec {
 
 type Parts = { year: number; minute: number; hour: number; day: number; month: number; weekday: number }
 
-function dateParts(date: Date, timeZone?: string): Parts {
-  if (!timeZone) {
-    return {
-      year: date.getUTCFullYear(),
-      minute: date.getUTCMinutes(),
-      hour: date.getUTCHours(),
-      day: date.getUTCDate(),
-      month: date.getUTCMonth() + 1,
-      weekday: date.getUTCDay(),
-    }
+function utcParts(date: Date): Parts {
+  return {
+    year: date.getUTCFullYear(),
+    minute: date.getUTCMinutes(),
+    hour: date.getUTCHours(),
+    day: date.getUTCDate(),
+    month: date.getUTCMonth() + 1,
+    weekday: date.getUTCDay(),
   }
-  let formatted: Intl.DateTimeFormatPart[]
+}
+
+/** One formatter per search, rather than one formatter per candidate minute. */
+function partsReader(timeZone?: string): (date: Date) => Parts {
+  if (!timeZone) return utcParts
+  let formatter: Intl.DateTimeFormat
   try {
-    formatted = new Intl.DateTimeFormat('en-US', {
+    formatter = new Intl.DateTimeFormat('en-US', {
       timeZone,
       year: 'numeric',
       minute: 'numeric',
@@ -97,20 +100,23 @@ function dateParts(date: Date, timeZone?: string): Parts {
       day: 'numeric',
       month: 'numeric',
       weekday: 'short',
-    }).formatToParts(date)
+    })
   } catch {
     throw cronError(`invalid time zone ${timeZone}`)
   }
-  const part = (type: Intl.DateTimeFormatPartTypes) => formatted.find((item) => item.type === type)?.value
-  const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(part('weekday') ?? '')
-  if (weekday < 0) throw cronError(`cannot resolve time zone ${timeZone}`)
-  return {
-    year: Number(part('year')),
-    minute: Number(part('minute')),
-    hour: Number(part('hour')),
-    day: Number(part('day')),
-    month: Number(part('month')),
-    weekday,
+  return (date) => {
+    const formatted = formatter.formatToParts(date)
+    const part = (type: Intl.DateTimeFormatPartTypes) => formatted.find((item) => item.type === type)?.value
+    const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(part('weekday') ?? '')
+    if (weekday < 0) throw cronError(`cannot resolve time zone ${timeZone}`)
+    return {
+      year: Number(part('year')),
+      minute: Number(part('minute')),
+      hour: Number(part('hour')),
+      day: Number(part('day')),
+      month: Number(part('month')),
+      weekday,
+    }
   }
 }
 
@@ -118,19 +124,27 @@ function localKey(parts: Parts): string {
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`
 }
 
-export function cronMatches(spec: CronSpec, date: Date, timeZone?: string): boolean {
-  const parts = dateParts(date, timeZone)
+function calendarMatches(spec: CronSpec, parts: Parts): boolean {
   const dayHit = spec.day.has(parts.day)
   const weekHit = spec.weekday.has(parts.weekday)
   const days = spec.dayStar || spec.weekdayStar ? dayHit && weekHit : dayHit || weekHit
-  if (!(spec.minute.has(parts.minute) && spec.hour.has(parts.hour) && spec.month.has(parts.month) && days))
+  return spec.month.has(parts.month) && days
+}
+
+function matches(spec: CronSpec, date: Date, read: (date: Date) => Parts, zoned: boolean): boolean {
+  const parts = read(date)
+  if (!(spec.minute.has(parts.minute) && spec.hour.has(parts.hour) && calendarMatches(spec, parts)))
     return false
-  if (!timeZone) return true
+  if (!zoned) return true
   const key = localKey(parts)
   for (let back = 60_000; back <= 3 * 60 * 60_000; back += 60_000) {
-    if (localKey(dateParts(new Date(date.getTime() - back), timeZone)) === key) return false
+    if (localKey(read(new Date(date.getTime() - back))) === key) return false
   }
   return true
+}
+
+export function cronMatches(spec: CronSpec, date: Date, timeZone?: string): boolean {
+  return matches(spec, date, partsReader(timeZone), Boolean(timeZone))
 }
 
 type NextRunOptions = { anchorMs?: number; staggerMs?: number; random?: () => number }
@@ -154,10 +168,24 @@ export function nextRunAt(schedule: JobSchedule, now: number, options: NextRunOp
         throw scheduleError('staggerMs must be a non-negative safe integer')
       const random = options.random ?? Math.random
       const spec = parseCron(schedule.expr)
+      const read = partsReader(schedule.tz)
       const firstMinute = Math.floor(now / 60_000) * 60_000 + 60_000
       const lastMinute = firstMinute + 366 * 24 * 60 * 60_000
+      const dayMs = 86_400_000
+      let checkedDay = Number.NaN
       for (let candidate = firstMinute; candidate <= lastMinute; candidate += 60_000) {
-        if (!cronMatches(spec, new Date(candidate), schedule.tz)) continue
+        const day = Math.floor(candidate / dayMs)
+        if (day !== checkedDay) {
+          checkedDay = day
+          // Every IANA offset is less than a day. These three UTC dates conservatively cover all
+          // local dates in this UTC day, including offset changes and skipped/repeated dates.
+          const dates = schedule.tz ? [day - 1, day, day + 1] : [day]
+          if (!dates.some((value) => calendarMatches(spec, utcParts(new Date(value * dayMs))))) {
+            candidate = (day + 1) * dayMs - 60_000
+            continue
+          }
+        }
+        if (!matches(spec, new Date(candidate), read, Boolean(schedule.tz))) continue
         const sample = random()
         if (!Number.isFinite(sample) || sample < 0 || sample >= 1)
           throw scheduleError('random must return a value in [0, 1)')

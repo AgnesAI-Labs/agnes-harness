@@ -15,18 +15,23 @@ import { configurationField } from './dialog.js'
 import { SideModelEditor } from './side-models/editor.js'
 import { SideModelList } from './side-models/list.js'
 import {
-  ADAPTER_PRESETS,
+  type AdapterPreset,
   accountIdFor,
-  draftProvider,
   type EditorDraft,
   endpointOk,
   failureCode,
+  isSideProvider,
   MODEL_ID,
+  presetsFor,
   readModels,
   SIDE_PROVIDERS,
   type SideModelsClient,
   type SideModelsCredentials,
-  toDraft,
+  type SideProviderId,
+  savedDraft,
+  type VoiceError,
+  voiceModels,
+  voiceRows,
 } from './side-models/model.js'
 import { SIDE_MODELS_NAMESPACE, sideModelsCatalog } from './side-models-locale.js'
 
@@ -79,9 +84,7 @@ function SideModels({
     const epoch = editorEpoch.current
     return () => request.isCurrent() && epoch === editorEpoch.current
   }
-  const accounts = (configuration?.accounts ?? []).filter((row) =>
-    (SIDE_PROVIDERS as readonly string[]).includes(row.providerId),
-  )
+  const accounts = (configuration?.accounts ?? []).filter((row) => isSideProvider(row.providerId))
   const [draft, setDraft] = useState<EditorDraft>()
   /** The settings page the editor is on, and whether it was opened onto one. */
   const [page, setPage] = useState<HTMLElement>()
@@ -114,7 +117,7 @@ function SideModels({
     setBusy(false)
     setStatus('')
   }, [client, canSave])
-  const [fieldError, setFieldError] = useState<'baseUrl' | 'credentialRef'>()
+  const [fieldError, setFieldError] = useState<'baseUrl' | 'credentialRef' | VoiceError>()
   const saved = draft && !draft.isNew ? accounts.find((row) => row.accountId === draft.accountId) : undefined
   const endpointChanged =
     !!draft && !draft.isNew && saved?.baseUrl.replace(/\/$/, '') !== draft.baseUrl.replace(/\/$/, '')
@@ -144,16 +147,22 @@ function SideModels({
     setFieldError(undefined)
     setTestState('')
   }
-  const addDraft = (): EditorDraft => {
-    const preset = ADAPTER_PRESETS[draftProvider()]
+  /** What a preset fills in: its label, endpoint and models. The credential is the user's to pick. */
+  const presetFields = (preset: AdapterPreset) => ({
+    providerId: preset.provider,
+    presetId: preset.id,
+    label: t(preset.labelKey),
+    baseUrl: preset.baseUrl,
+    models: preset.models(),
+  })
+  const addDraft = (provider: SideProviderId = SIDE_PROVIDERS[0]): EditorDraft => {
+    const preset = presetsFor(provider)[0] as AdapterPreset
     return {
       accountId: '',
       isNew: true,
-      fallbackId: `jev-${crypto.randomUUID().slice(0, 8)}`,
-      label: t(preset.labelKey),
-      baseUrl: preset.baseUrl,
+      fallbackId: `side-${crypto.randomUUID().slice(0, 8)}`,
       credentialRef: '',
-      models: preset.models(),
+      ...presetFields(preset),
     }
   }
   /** Open the editor on its settings page when the pane has one, else below the list. */
@@ -168,16 +177,10 @@ function SideModels({
     setPaged(!!row)
     if (row && row.getAttribute('aria-expanded') !== 'true') row.click()
   }
-  const openEdit = (account: ConfigAccount) =>
-    show({
-      accountId: account.accountId,
-      isNew: false,
-      fallbackId: '',
-      label: account.label,
-      baseUrl: account.baseUrl,
-      credentialRef: '',
-      models: account.models.map(toDraft),
-    })
+  const openEdit = (account: ConfigAccount) => {
+    const saved = savedDraft(account)
+    if (saved) show(saved)
+  }
   const closeEditor = () => {
     editorEpoch.current++
     setBusy(false)
@@ -215,7 +218,7 @@ function SideModels({
     resetMessages()
     setDraft((current) => (current ? { ...current, ...next } : current))
   }
-  const valid = (current: EditorDraft): ConfigModel[] | undefined => {
+  const valid = (current: EditorDraft): { models: ConfigModel[]; model?: string } | undefined => {
     if (current.label.trim() === '' || current.label.length > 128) return undefined
     if (!endpointOk(current.baseUrl)) {
       setFieldError('baseUrl')
@@ -225,24 +228,35 @@ function SideModels({
       setFieldError('credentialRef')
       return undefined
     }
-    return readModels(current.models)
+    if (current.providerId === 'openai-audio') {
+      const voice = voiceModels(current)
+      if ('error' in voice) {
+        setFieldError(voice.error)
+        return undefined
+      }
+      return voice
+    }
+    const models = readModels(current.models)
+    return models && { models }
   }
 
   const save = async () => {
     if (!draft || busy || !canSave) return
-    const models = valid(draft)
-    if (!models) {
+    const checked = valid(draft)
+    if (!checked) {
       setStatus('side.invalid')
       return
     }
+    const { models } = checked
     const selected =
-      saved && models.some((model) => model.id === saved.model) ? saved.model : (models[0]?.id ?? '')
+      checked.model ??
+      (saved && models.some((model) => model.id === saved.model) ? saved.model : (models[0]?.id ?? ''))
     const current = capture()
     setBusy(true)
     setStatus('')
     try {
       const result = await client.save({
-        providerId: draftProvider(),
+        providerId: draft.providerId,
         accountId: draft.isNew ? accountIdFor(draft.label, takenIds, draft.fallbackId) : draft.accountId,
         label: draft.label.trim(),
         baseUrl: draft.baseUrl,
@@ -283,13 +297,14 @@ function SideModels({
 
   /** The probe the daemon runs; `accountId` lets it use the saved credential. */
   const runTest = async (input: {
+    providerId: string
     accountId?: string
     baseUrl: string
     credentialRef: string
     model: string
   }) => {
     const result = await client.test({
-      providerId: draftProvider(),
+      providerId: input.providerId,
       ...(input.accountId ? { accountId: input.accountId } : {}),
       baseUrl: input.baseUrl,
       ...(input.credentialRef === '' ? {} : { credentialRef: input.credentialRef }),
@@ -302,7 +317,8 @@ function SideModels({
 
   const probe = async () => {
     if (!draft || busy) return
-    const model = draft.models.find((row) => MODEL_ID.test(row.id))?.id
+    const rows = draft.providerId === 'openai-audio' ? voiceRows(draft.models) : draft.models
+    const model = rows.find((row) => MODEL_ID.test(row.id))?.id
     if (!model) {
       setTestState('side.invalid')
       return
@@ -312,6 +328,7 @@ function SideModels({
     setTestState('')
     try {
       const result = await runTest({
+        providerId: draft.providerId,
         ...(draft.isNew ? {} : { accountId: draft.accountId }),
         baseUrl: draft.baseUrl,
         credentialRef: draft.credentialRef,
@@ -335,6 +352,7 @@ function SideModels({
     setTested(undefined)
     try {
       const key = await runTest({
+        providerId: account.providerId,
         accountId: account.accountId,
         baseUrl: account.baseUrl,
         credentialRef: '',
@@ -421,8 +439,10 @@ function SideModels({
       testState={testState}
       status={statusLine}
       onPatch={patch}
+      onPreset={(preset) => patch(presetFields(preset))}
       onModels={(update) => {
         setStatus('')
+        setFieldError((current) => (current?.startsWith('side.voice.') ? undefined : current))
         setDraft((current) => (current ? { ...current, models: update(current.models) } : current))
       }}
       onCreateCredential={createCredential}

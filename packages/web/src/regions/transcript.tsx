@@ -5,6 +5,7 @@ import {
   SlotOutlet,
   type SlotRegistry,
   SlotsProvider,
+  type VoicePort,
 } from '@agnes/web-client'
 import { createRegionRenderer } from '@agnes/web-ui'
 import type { TranscriptHandle } from '@agnes/web-units/shell'
@@ -26,6 +27,8 @@ export function mountTranscriptRegion(
     session?: SessionService
     locale?: LocaleService
     resources?: ClientResourceService
+    /** The host's voice port: a read-aloud button on each final reply. */
+    voice?: VoicePort
   } = {},
 ): TranscriptRegionMount {
   if (!registry.spec('conversation.view'))
@@ -72,6 +75,7 @@ export function mountTranscriptRegion(
           {...(options.session ? { session: options.session } : {})}
           {...(options.locale ? { locale: options.locale } : {})}
           {...(options.resources ? { resources: options.resources } : {})}
+          {...(options.voice ? { voice: options.voice } : {})}
         />
       </>
     ),

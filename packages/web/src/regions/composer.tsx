@@ -5,6 +5,7 @@ import {
   SlotOutlet,
   type SlotRegistry,
   SlotsProvider,
+  type VoiceComposer,
 } from '@agnes/web-client'
 import { RegisteredConversationCard } from '@agnes/web-conversation/conversation-registry'
 import { createRegionRenderer, useDocumentLanguage } from '@agnes/web-ui'
@@ -22,6 +23,7 @@ import { loadHeadsUp } from '../heads-up.js'
 import { HeadsUpNote } from '../heads-up-view.js'
 import { ModelPickerControl } from '../model-picker.js'
 import { loadReplySuggestion } from '../reply-suggestion.js'
+import { VoiceComposerButtons } from '../voice/composer-buttons.js'
 import { ApplicationComposerContext, ApplicationWorkActions } from '../workbench/application-actions.js'
 import { WorkspacePickerControl } from '../workspace-picker-control.js'
 import {
@@ -44,12 +46,15 @@ export function ComposerDshFrame({
   options,
   dependencies,
   controls,
+  voiceComposer,
 }: {
   registry: SlotRegistry
   setHandle: (value: ComposerHandle | null) => void
   options: ComposerRegionOptions
   dependencies: ComposerDependencies
   controls?: ComposerPresentationControls
+  /** The composer as the voice function fills it; needed only when `controls.voice` is present. */
+  voiceComposer?: VoiceComposer
 }): ReactElement {
   const agents = useSyncExternalStore(
     controls?.suggestions.subscribe ?? (() => () => {}),
@@ -110,6 +115,10 @@ export function ComposerDshFrame({
             permission: outlet('conversation.input.permission'),
             plan: outlet('conversation.input.plan'),
             right: outlet('conversation.input.right'),
+            beforeSend:
+              controls?.voice && voiceComposer ? (
+                <VoiceComposerButtons voice={controls.voice} composer={voiceComposer} />
+              ) : undefined,
           }}
         />
       </div>
@@ -186,6 +195,23 @@ export function mountComposerRegion(
       options.onDraftChange(value)
     },
   }
+  // One stable object for the whole mount: the voice function keeps it across composer remounts.
+  const voiceComposer: VoiceComposer = Object.freeze({
+    insertText(text: string) {
+      const current = handle.current
+      if (current?.insertText) return current.insertText(text)
+      // Replaced or remounting: the text joins the draft the next composer is given.
+      composerOptions.onDraftChange(draft + text)
+      current?.setDraft(draft)
+    },
+    submit: () => handle.current?.submit?.() ?? false,
+    focus: () => handle.current?.focus(),
+    async ensureSession() {
+      if (registry.sessionId) return registry.sessionId
+      if (!options.prepareUploadSession) throw new Error('no session to transcribe into')
+      return options.prepareUploadSession()
+    },
+  })
   if (!registry.spec(COMPOSER_SLOT))
     registry.declare(COMPOSER_SLOT as string, { kind: 'single', scope: 'session-maybe' }, 'web-shell')
   const removeDshBarBuiltin = registry.register(
@@ -203,6 +229,7 @@ export function mountComposerRegion(
         options={composerOptions}
         dependencies={composerDependencies}
         {...(controls ? { controls } : {})}
+        voiceComposer={voiceComposer}
       />
     ),
   )

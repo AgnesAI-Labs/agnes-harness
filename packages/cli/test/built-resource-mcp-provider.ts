@@ -1,7 +1,12 @@
 import { createServer } from 'node:http'
 import { mcpStablePrefix } from '@agnes/base'
 
-type ProviderMessage = { role: string; content?: unknown }
+type ProviderMessage = {
+  role: string
+  content?: unknown
+  tool_call_id?: string
+  tool_calls?: Array<{ id: string; function: { name: string } }>
+}
 
 // The prefix is register.ts's tool naming for the 'pager' fixture server, computed via the shared
 // function rather than hardcoded (design 2026-09-23-mcp-tool-name-collision-design.md §0.4).
@@ -45,8 +50,18 @@ export async function mcpChatProvider() {
     const result = JSON.stringify(results)
     observations.push({ marker, tools, result })
     const visible = tools.includes(PAGER_TOOL120)
-    const searched = results.some((message) => JSON.stringify(message.content).includes(PAGER_TOOL120))
-    const called = results.some((message) => !JSON.stringify(message.content).includes(PAGER_TOOL120))
+    const calls = new Map(
+      turn.flatMap(
+        (message) => message.tool_calls?.map((call) => [call.id, call.function.name] as const) ?? [],
+      ),
+    )
+    const searched = results.some(
+      (message) =>
+        calls.get(message.tool_call_id ?? '') === 'tool_search' &&
+        JSON.stringify(message.content).includes(PAGER_TOOL120),
+    )
+    // Error text may name the tool too; result identity, not its wording, proves the call finished.
+    const called = results.some((message) => calls.get(message.tool_call_id ?? '') === PAGER_TOOL120)
     const noTool = !visible && results.length > 0 && (!searched || results.length >= 2)
     const finished = called || noTool
     const text = result.includes(`MCP_RESULT_${marker}`)

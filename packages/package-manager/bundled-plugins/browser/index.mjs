@@ -31,8 +31,8 @@ export const main = {
           protectedOrigins: process.env.AGNES_WEB_ORIGIN ? [process.env.AGNES_WEB_ORIGIN] : [],
         })
         init.onShutdown(async () => {
-          launcher.cancel()
-          await runtime.close()
+          // Preparation keeps its install lock until cancellation cleanup has finished.
+          await Promise.all([launcher.cancel(), runtime.close()])
           return { state: 'settled' }
         })
         await launcher.check(runtime)
@@ -115,12 +115,13 @@ export const main = {
     ctx.profileRuntime.streams.register('browser.interaction', async (input, context) =>
       interact(await resource.get(), input, context),
     )
-    ctx.hooks.register('context', async () => {
+    ctx.hooks.register('context', async (_payload, context) => {
       let state = { enabled: false }
       try {
         state = (await resource.get()).status()
       } catch {}
-      return { additionalContext: browserInstructions(state), refreshOnRequest: true }
+      const text = browserInstructions(state, { unattended: context.unattended === true })
+      return text ? { additionalContext: text, refreshOnRequest: true } : { refreshOnRequest: true }
     })
     ctx.hooks.register('shutdown', async (_input, context) => {
       try {

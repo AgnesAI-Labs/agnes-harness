@@ -32,6 +32,8 @@ Schedules and webhook sessions use their effective permission level. Full access
 
 The same holds for the work such a turn delegates: a sub-agent or child session opened from an unattended turn (through the child-agent tools, a workflow or a role delegation) is unattended too, so it cannot ask a person either. A child opened from an attended turn keeps every tool as before.
 
+Background jobs that such a turn started outlive its answer, and nobody is there to stop them. So when the turn is about to finish with jobs it started still running (`shell` jobs and terminals), the model is shown each one, by job ID and command, once, before the turn may end: it stops with `job_kill` those the task does not need and leaves running what the task asks to stay up, such as a server. Nothing is stopped automatically, because a job does not say whether it is such a server. Plugin hooks see the same fact as `HookContext.unattended`; the built-in browser, for example, does not repeat its "failed" or "off" note into an unattended turn, since nobody can re-enable it there.
+
 A schedule or webhook trigger whose unattended policy is **Refuse** (`--unattended refuse`) declares that nobody will answer, so its turns are unattended in the same way. Under the default **Hand off and notify** the owner can answer later in the Web or a bound channel, so those turns stay attended and keep `ask_user_question` and the UI surface tools.
 
 ## Turn limits

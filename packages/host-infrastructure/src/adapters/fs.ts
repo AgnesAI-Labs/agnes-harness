@@ -154,12 +154,14 @@ export function createFs(
   async function authorize(
     p: string,
     mode: 'read' | 'write' | 'remove' = 'read',
+    resolved?: (path: { real: string; named: string }) => void,
   ): Promise<{ real: string; named: string }> {
     const { policy, caseSensitive, readOnly } = binding()
     if (readOnly && mode !== 'read') refuse(p, 'workspace is read-only')
     usable(p)
     const abs = isAbsolute(p) ? p : resolve(policy.workspaceRoot, p)
     const { real, named } = await canonicalNames(io, abs, p)
+    resolved?.({ real, named })
     const decision = decideFsPath(policy, real, { caseSensitive })
     // Full session access widens unmatched paths; matching denies remain authoritative.
     if (decision.effect !== 'allow' && !(decision.reason === 'no-match' && sessionHasFullFileAccess(fs)))
@@ -194,12 +196,23 @@ export function createFs(
   async function authorizeRead(p: string): Promise<{ real: string; named: string }> {
     if (!readRoots) return authorize(p)
     usable(p)
+    let resolved: { real: string; named: string } | undefined
     try {
-      return await authorize(p)
+      // Only final-name IO (Windows) reuses this operation's completed path walk. There is no
+      // cross-call cache; POSIX/remote IO retains its existing recheck after a refusal.
+      return await authorize(
+        p,
+        'read',
+        io.finalPath
+          ? (path) => {
+              resolved = path
+            }
+          : undefined,
+      )
     } catch (err) {
       const { policy, caseSensitive } = binding()
       const abs = isAbsolute(p) ? p : resolve(policy.workspaceRoot, p)
-      const { real, named } = await canonicalNames(io, abs, p)
+      const { real, named } = resolved ?? (await canonicalNames(io, abs, p))
       if (decideFsPath(policy, real, { caseSensitive }).reason !== 'no-match') throw err
       const inside = (outer: string, inner: string): boolean =>
         decideFsPath(overlay(outer), inner, { caseSensitive }).effect === 'allow'

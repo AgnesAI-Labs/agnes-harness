@@ -444,7 +444,9 @@ describe('bench runner', () => {
       const others = sideCalls(lane).filter((e) => e.data.route !== 'account-jev-side')
       expect(report.otherSideCalls[lane]?.count ?? 0).toBe(others.length)
     }
-    const suggestions = chat.bodies.filter((b) => b.includes('follow-up question')).length
+    const suggestions = chat.bodies.filter((b) =>
+      b.includes("Write the user's most likely next message to the assistant"),
+    ).length
     // The host does make such calls here, so the separation above is exercised, not vacuous.
     expect(suggestions).toBeGreaterThan(0)
     // Shutdown can settle an auxiliary intent before the provider receives it. Partition every

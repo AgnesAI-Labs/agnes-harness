@@ -14,7 +14,7 @@ async function start(page: Page, input: string): Promise<string> {
 
 const row = (page: Page, id: string) => page.locator(`.session-row:has([data-session="${id}"])`)
 
-test('A session left running keeps its dot, is marked done when it finishes, and the mark clears once opened', async ({
+test('A session left running keeps its spinner, is marked done when it finishes, and the mark clears once opened', async ({
   page,
   runtime,
 }) => {
@@ -24,14 +24,17 @@ test('A session left running keeps its dot, is marked done when it finishes, and
   const first = await start(page, 'call shell {"command":"sleep 8"}')
   await fresh(page)
   await expect(row(page, first).locator('.session-running')).toBeVisible()
-  await expect(row(page, first).getByTestId('session-mark')).toHaveText('Done', { timeout: 30_000 })
+  // A finished turn nobody has seen is a dot before the title.
+  await expect(row(page, first).locator('.session-unread')).toHaveAttribute('aria-label', 'Done', {
+    timeout: 30_000,
+  })
   await expect(row(page, first).locator('.session-running')).toHaveCount(0)
   await row(page, first).locator(`[data-session="${first}"]`).click()
   await expect(page).toHaveURL(new RegExp(`session=${first}`))
   // Leave again: an opened session must not get its old mark back.
   await fresh(page)
   await expect(row(page, first)).toBeVisible()
-  await expect(row(page, first).getByTestId('session-mark')).toHaveCount(0)
+  await expect(row(page, first).locator('.session-unread')).toHaveCount(0)
 })
 
 test('A session left waiting for an approval says so in the list', async ({ page, runtime }) => {
@@ -64,5 +67,7 @@ test('A turn started by another client shows in this page list as running, then 
   await page.reload()
   await expect(row(page, session.id).locator('.session-running')).toBeVisible({ timeout: 20_000 })
   await turn
-  await expect(row(page, session.id).getByTestId('session-mark')).toHaveText('Done', { timeout: 20_000 })
+  await expect(row(page, session.id).locator('.session-unread')).toHaveAttribute('aria-label', 'Done', {
+    timeout: 20_000,
+  })
 })

@@ -158,6 +158,8 @@ export interface HookContext {
   readonly projections: ProjectionReader
   readonly session: SessionRef
   readonly replayed: boolean // True when replayOnResume resends; handlers must be idempotent.
+  /** The current turn has nobody attending it (`agh -p`, scheduled runs): no one can answer or act. */
+  readonly unattended?: boolean
   readonly signal: AbortSignal
   readonly lease: LeaseView
   readonly log: Logger

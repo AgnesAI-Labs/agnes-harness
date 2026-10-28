@@ -13,6 +13,10 @@ checkpoints, including the older checkpoint's zero verification timestamp and th
 absence/presence of the corruption-seal table. `PRAGMA user_version = 1` preserves
 the data-directory stamp, which SQLite's text dump omits.
 
+Data-directory version 2 changed schedule tables, not the ledger. The test checks that
+the version 1 stamp is refused, then restamps the loaded fixture to the current version
+so it keeps testing ledger continuity.
+
 The adapter test opens both with the current implementation, verifies history,
 continues the parent and child, and verifies them again after reopening. It must
 not rewrite historical digests or discard the checkpoint to make a fixture pass.

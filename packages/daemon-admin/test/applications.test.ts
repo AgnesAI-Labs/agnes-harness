@@ -876,3 +876,28 @@ it('reads the application state from the settled inventory, but never previews o
   // get, preview, adopt (fresh), and the get adopt returns: only the display reads are settled.
   expect(f.inventoryOptions).toEqual([{ settled: true }, undefined, { fresh: true }, { settled: true }])
 })
+
+it('resolves a review one agent at a time so a queued session open never waits for the batch', async () => {
+  let inFlight = 0
+  let peak = 0
+  const refs = ['a#one', 'a#two', 'a#three', 'a#four']
+  const f = await fixture(async (_profile, ref) => {
+    inFlight++
+    peak = Math.max(peak, inFlight)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    inFlight--
+    if (ref === 'a#three') throw new Error('unresolvable')
+    return { ...launchReviewPlan(), ref, digest: `digest-${ref}` }
+  })
+  const a = f.packages()[0]!
+  a.entry.agents = refs.map((ref) => ({ ref, launch: launchReviewPlan().launch }))
+  a.entry.application = { ...a.entry.application!, agents: refs }
+  const preview = await f.applications.preview('local-dev', 'a')
+  expect(peak).toBe(1)
+  // An unresolvable agent is left out; the rest keep their declared order.
+  expect((preview.agentLaunches as AgentPlan[] | undefined)?.map((plan) => plan.ref)).toEqual([
+    'a#one',
+    'a#two',
+    'a#four',
+  ])
+})

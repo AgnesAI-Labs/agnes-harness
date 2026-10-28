@@ -446,6 +446,7 @@ export {
   promptConfigRevision,
   SystemPromptSettingsStore,
 } from '@agnes/host-infrastructure/system-prompt-settings'
+export { VoiceSettingsStore, voiceSettingsRevision } from '@agnes/host-infrastructure/voice-settings'
 export {
   resolveWorkspaceDirectory,
   type WorkspaceDirectory,
@@ -565,4 +566,14 @@ export {
 } from './runtime/sessions/session-side-question.js'
 export { loadSessionTitle } from './runtime/sessions/session-title.js'
 export { readStoredSessionView } from './runtime/sessions/session-view.js'
+export {
+  chooseVoiceAccount,
+  type VoiceAccount,
+  VoiceError,
+  type VoiceFailure,
+  voiceRpcError,
+  voiceSpeak,
+  voiceStatus,
+  voiceTranscribe,
+} from './runtime/sessions/session-voice.js'
 export { enqueueSystemInput } from './runtime/sessions/system-input.js'

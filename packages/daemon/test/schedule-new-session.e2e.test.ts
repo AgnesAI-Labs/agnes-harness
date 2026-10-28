@@ -25,9 +25,6 @@ const workerSpawnOpts = {
   workerEntry: fileURLToPath(new URL('./fake-worker-entry.ts', import.meta.url)),
   workerExecArgv: ['--import', 'tsx'],
 }
-const processIdentity = async (pid: number) =>
-  pid === process.pid ? ({ state: 'alive', startId: 'schedule-e2e' } as const) : ({ state: 'dead' } as const)
-
 function buildProfile(dataDir: string): ResolvedProfile {
   const body = {
     name: 'local-dev',
@@ -64,13 +61,14 @@ function configFor(dir: string): DaemonConfig {
   // A short tick so a task due in one second runs within the test.
   return {
     profileName: 'local-dev',
+    home: dir,
     dataDir: dir,
     ...paths,
-    limits: { ...DEFAULT_LIMITS, workerStartupMs: 20_000, jobsTickMs: 250 },
+    limits: { ...DEFAULT_LIMITS, jobsTickMs: 250 },
   }
 }
 
-type Run = { outcome: string; sessionKey?: string; reason?: string; endedAt?: number }
+type Run = { outcome: string; sessionKey?: string; reason?: string; detail?: string; endedAt?: number }
 type Task = { id: string; runs: Run[]; status: string; nextRunAt: number | null; target: { kind: string } }
 
 it.each(['due', 'run-now'] as const)(
@@ -94,7 +92,6 @@ it.each(['due', 'run-now'] as const)(
       profileFile,
       workspaceRoot: dir,
       jobTables: tables,
-      processIdentity,
       ...workerSpawnOpts,
     })
     const sdk = createClient({
@@ -145,7 +142,7 @@ it.each(['due', 'run-now'] as const)(
             includeArchived: true,
           })
           run = listed.schedules.find((task) => task.id === created.id)?.runs.at(-1)
-          expect(run).toMatchObject({ outcome: 'ran' })
+          expect(run, run?.detail ?? run?.reason).toMatchObject({ outcome: 'ran' })
         },
         { timeout: 30_000, interval: 250 },
       )
@@ -153,6 +150,59 @@ it.each(['due', 'run-now'] as const)(
       expect(sessionKey).toBeTruthy()
       expect(sessionKey).not.toBe(origin.id)
       expect(run?.endedAt).toBeGreaterThan(0)
+
+      const history = await sdk.call<import('@agnes/protocol').SchedulesHistoryResult>(
+        '_agnes/v1/schedules.history',
+        { id: created.id },
+      )
+      const receipt = history.runs[0]
+      expect(receipt).toMatchObject({
+        outcome: 'ran',
+        read: false,
+        sessionKey,
+        snapshot: { title: 'Daily report', prompt: 'go', target: { kind: 'new-session', cwd } },
+      })
+      expect(receipt?.summary).toBeTypeOf('string')
+      expect(
+        await sdk.call('_agnes/v1/schedules.receipt', {
+          id: created.id,
+          runId: receipt?.id,
+          read: true,
+        }),
+      ).toEqual({ updated: true })
+      const unread = await sdk.call<import('@agnes/protocol').SchedulesHistoryResult>(
+        '_agnes/v1/schedules.history',
+        { id: created.id, unreadOnly: true },
+      )
+      expect(unread.runs).toEqual([])
+
+      const reminder = await sdk.call<Task>('_agnes/v1/schedules.upsert', {
+        title: 'Workspace reminder',
+        prompt: 'Later',
+        selector: { every_seconds: 3600 },
+        target: { kind: 'session', sessionKey: origin.id },
+      })
+      const workspaceTasks = await sdk.call<{ schedules: Task[] }>('_agnes/v1/schedules.list', {
+        scope: 'all',
+        workspace: cwd,
+        targetKind: 'session',
+        search: 'Workspace reminder',
+      })
+      expect(workspaceTasks.schedules.map((task) => task.id)).toEqual([reminder.id])
+      const elsewhere = await sdk.call<{ schedules: Task[] }>('_agnes/v1/schedules.list', {
+        scope: 'all',
+        workspace: join(dir, 'elsewhere'),
+        targetKind: 'session',
+      })
+      expect(elsewhere.schedules).toEqual([])
+      const independent = await sdk.call<{ schedules: Task[] }>('_agnes/v1/schedules.list', {
+        scope: 'all',
+        includeArchived: true,
+        workspace: cwd,
+        targetKind: 'new-session',
+        search: 'Daily report',
+      })
+      expect(independent.schedules.map((task) => task.id)).toEqual([created.id])
 
       // The run's session is an ordinary session in that workspace, titled after the task and time.
       const sessions = await sdk.call<{ items: { sessionId: string; title?: string; cwd?: string }[] }>(
@@ -197,5 +247,5 @@ it.each(['due', 'run-now'] as const)(
       await storage.close()
     }
   },
-  90_000,
+  DEFAULT_LIMITS.workerStartupMs + 60_000,
 )

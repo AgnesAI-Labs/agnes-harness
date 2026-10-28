@@ -80,3 +80,46 @@ it('refuses to extend the workspace of a role session fork but extends an ordina
     await fixture.host.close()
   }
 }, 120_000)
+
+// A session the daemon admitted in a workspace other than the configured one delegates to a role in
+// that same workspace under the authority the parent was granted; the role child is not a new grant.
+it('opens a role child in the workspace of a parent admitted outside the configured one', async () => {
+  const fixture = await setupRoleEscalation(
+    async () => ({ verdict: 'allowed-once', answeredBy: roleHuman }),
+    {
+      calls: () => [],
+    },
+  )
+  try {
+    const elsewhere = join(fixture.workspaceRoot, '..', 'elsewhere-workspace')
+    mkdirSync(elsewhere, { recursive: true })
+    const root = realpathSync.native(elsewhere)
+    const key = 'elsewhere-parent'
+    const binding = fixture.host.acceptWorkspaceBinding(
+      {
+        version: 1,
+        sessionKey: key,
+        workspaceId: createHash('sha256').update(root).digest('hex'),
+        revision: 1,
+        canonicalRoot: root,
+      },
+      key,
+    )
+    const parent = await fixture.host.createSession({
+      key,
+      cwd: root,
+      binding,
+      agent: fixture.refs[0].replace(/#.*/, '#coordinator'),
+    })
+    const handle = await parent.d.children.createWithKind!('spawn', {
+      parent: key,
+      cwd: root,
+      role: fixture.refs[0],
+      input: 'Write requirements',
+      resident: true,
+    })
+    expect(fixture.host.kernel.get(handle.key)?.d.cwd).toBe(root)
+  } finally {
+    await fixture.host.close()
+  }
+}, 120_000)

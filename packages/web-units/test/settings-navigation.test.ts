@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 import { afterEach, expect, it, vi } from 'vitest'
-import { revealSettingsAnchor } from '../src/settings-navigation.js'
+import { revealSettingsAnchor, settingsRoute } from '../src/settings-navigation.js'
 
 afterEach(() => document.body.replaceChildren())
 
@@ -22,4 +22,8 @@ it('opens an in-place row and focuses its toggle when a deep link points at it',
   // A second reveal keeps the open row quiet instead of collapsing it again.
   revealSettingsAnchor(row.id)
   expect(toggle.getAttribute('aria-expanded')).toBe('true')
+})
+
+it('routes side-models to its block on the model page', () => {
+  expect(settingsRoute('side-models')).toEqual({ id: 'model', anchor: 'side-models' })
 })

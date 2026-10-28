@@ -33,6 +33,7 @@ export function normalizeConfigModel(value: unknown): ConfigModel | undefined {
           'maxTokens',
           'cost',
           'defaultSettings',
+          'audioRole',
         ].includes(key),
     )
   )
@@ -72,6 +73,8 @@ export function normalizeConfigModel(value: unknown): ConfigModel | undefined {
           Number.isFinite((value.cost as Record<string, unknown>)[key] as number),
       ))
   )
+    return undefined
+  if ('audioRole' in value && value.audioRole !== 'transcribe' && value.audioRole !== 'speech')
     return undefined
   if ('defaultSettings' in value && normalizeModelSettings(value.defaultSettings) === undefined)
     return undefined

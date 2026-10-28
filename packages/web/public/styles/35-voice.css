@@ -1,0 +1,83 @@
+@layer app {
+  /* Voice: the mic and wave buttons sit in the card's control row right before send. The group lays its
+     parts out in the row itself: the buttons keep their size like send and cancel, while the status line
+     and the notice shrink and cut off with an ellipsis, so a narrow row never pushes send out. */
+  .composer-voice {
+    display: contents;
+  }
+  .composer-voice-button {
+    flex: none;
+  }
+  .composer-voice-button[aria-disabled="true"] {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .composer-voice-button[aria-pressed="true"] {
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  /* The input level drives a soft ring while the microphone is open. */
+  .composer-voice-button[data-level="1"] {
+    box-shadow: 0 0 0 1px var(--agnes-focus-ring-soft);
+  }
+  .composer-voice-button[data-level="2"] {
+    box-shadow: 0 0 0 2px var(--agnes-focus-ring-soft);
+  }
+  .composer-voice-button[data-level="3"] {
+    box-shadow: 0 0 0 3px var(--agnes-focus-ring-soft);
+  }
+  .composer-voice-button[data-level="4"] {
+    box-shadow: 0 0 0 4px var(--agnes-focus-ring-soft);
+  }
+  .composer-voice-status,
+  .composer-voice-notice {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .composer-voice-status:empty,
+  .composer-voice-notice:empty {
+    display: none;
+  }
+  .composer-voice-notice {
+    color: var(--agnes-text-secondary);
+  }
+  @container (max-width: 480px) {
+    .composer-voice-status {
+      display: none;
+    }
+  }
+  /* The transcribing icon turns, except for those who asked for less motion. */
+  .composer-voice-spin {
+    animation: composer-voice-spin 1s linear infinite;
+  }
+  @keyframes composer-voice-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .composer-voice-spin {
+      animation: none;
+    }
+  }
+  .voice-reason {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+    font-size: var(--font-size-xs);
+  }
+  /* Read-aloud in a reply's actions; "click to play" needs room for its words. */
+  .voice-read[data-phase="blocked"] {
+    width: auto;
+    padding-inline: var(--s8);
+  }
+  .voice-read[data-phase="playing"],
+  .voice-read[data-phase="loading"] {
+    color: var(--agnes-brand-primary);
+  }
+}

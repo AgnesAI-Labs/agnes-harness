@@ -79,7 +79,8 @@ function compatibleModels(
       model === undefined ||
       model.reasoning !== undefined ||
       model.thinkingLevelMap !== undefined ||
-      model.thinkingEfforts !== undefined
+      model.thinkingEfforts !== undefined ||
+      model.audioRole !== undefined
     )
       throw new ConfigurationError('CONFIG_INVALID_INPUT')
     if (!chatModelAllowed(model.id)) throw new ConfigurationError('CONFIG_CHAT_MODEL_REQUIRED')

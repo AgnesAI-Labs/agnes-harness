@@ -1452,7 +1452,9 @@
   .agh-table-scroll {
     min-width: 0;
     max-width: 100%;
-    overflow: auto;
+    /* y must be hidden: a fractional table height gives 1px of y range that latches the first wheel gesture. */
+    overflow-x: auto;
+    overflow-y: hidden;
   }
   .agh-table .ant-table {
     line-height: 1.6;

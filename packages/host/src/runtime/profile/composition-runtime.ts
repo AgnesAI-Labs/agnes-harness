@@ -53,11 +53,13 @@ import {
 import { compositionPresets } from './composition-presets.js'
 import {
   type CompositionContainer as Container,
+  effectiveCompositionTarget,
   profileForComposition,
   projectCompositionRows,
 } from './composition-selection.js'
 import { mergeCompositionStatuses } from './composition-status.js'
 import { modelCatalogPublisher } from './model-catalog-publication.js'
+import { createResolutionSources } from './resolution-sources.js'
 import { lazyRoleChildren } from './role-children.js'
 import { admitSessionBundlePresets } from './session-bundle-presets.js'
 import { resolveSessionCapabilities } from './session-capabilities.js'
@@ -68,9 +70,13 @@ type Factory = (profile: ResolvedProfile, options: HostOptions) => Promise<Host>
 /** Composition selects a container; runtime generation management continues to own generations, leases and durable pins. */
 export async function createCompositionHost(
   profile: ResolvedProfile,
-  options: HostOptions,
+  hostOptions: HostOptions,
   factory: Factory,
 ): Promise<Host> {
+  const resolution = createResolutionSources(hostOptions.runtimePluginSources)
+  const options: HostOptions = resolution.read
+    ? { ...hostOptions, runtimePluginSources: resolution.read }
+    : hostOptions
   const legacyPublication =
     !profile.composition && !profile.bundlePresets && !Object.keys(profile.bundleCatalog ?? {}).length
   const store = new CompositionSessionStore(options.profileDir)
@@ -168,21 +174,10 @@ export async function createCompositionHost(
       resources: target.resource.resources,
     }).target
   }
-  /**
-   * What a projected target makes a container run: its enabled rows and its live resources. A row the
-   * projection disables loads nothing, exactly like a row the target leaves out, so neither counts.
-   */
-  const effectiveTarget = (target: ReturnType<typeof project>): string =>
-    JSON.stringify({
-      rows: targetRows(target)
-        .filter((row) => !row.disabled)
-        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
-      resources: target.resource.resources,
-    })
   const containerKey = (binding: CompositionBinding) => `${binding.tree.hash}:${binding.profile.hash}`
   const open = async (
     binding: CompositionBinding,
-    // Agent resolution and child sessions pass `open` along and always open for a session.
+    // Agent/role review also opens containers without a session key; only boot owns profile resources.
     reason: 'boot' | 'session' | 'migration' = 'session',
   ): Promise<Container> => {
     const identity = containerKey(binding)
@@ -259,7 +254,7 @@ export async function createCompositionHost(
           },
           compositionPin: binding.tree,
           ...(pinned && binding.sessionKey ? { retainedModelBootstrap: true } : {}),
-          ...(binding.sessionKey ? { profileAuthorityPublication: 'retained' as const } : {}),
+          ...(reason !== 'boot' ? { profileAuthorityPublication: 'retained' as const } : {}),
           ...(target && !pinned
             ? {
                 ordinaryPluginLayers: pluginWorkspaceLayers(
@@ -324,10 +319,13 @@ export async function createCompositionHost(
           const report = await host.applyRuntimeTarget(projected)
           assertHostPublication(report.publication)
           if (!report.ok) throw new Error('E_COMPOSITION_PUBLICATION: new container did not converge')
-          applied = {
-            target: effectiveTarget(projected),
-            sources: structuredClone(new RuntimePluginCatalogue(sources ?? []).select(projected)),
-          }
+          // Retained bootstrap sources attest the session pin, not the current target just applied.
+          // Leave its shortcut unset; the next broadcast records freshly published sources.
+          if (!pinned)
+            applied = {
+              target: effectiveCompositionTarget(projected),
+              sources: structuredClone(new RuntimePluginCatalogue(sources ?? []).select(projected)),
+            }
         }
         const selectedRows = latestRows ?? (prepared.size ? [...rows.values()] : undefined)
         if (selectedRows) {
@@ -508,13 +506,15 @@ export async function createCompositionHost(
   const admission = (
     rows = latestTarget?.tree.rows ?? initial.host.runtimeTargetSnapshot?.()?.tree.rows ?? [],
   ) => sessionAdmission(profile, modelProfile, options, activeAgentPackages(rows))
-  const prepareAgent = createAgentResolver({
-    admission,
-    host: initial.host,
-    packageDirs: options.packageDirs ?? new Map(),
-    adminLoop: () => readAdminLoopDefault(configuration),
-    open,
-  })
+  const prepareAgent = resolution.scoped(
+    createAgentResolver({
+      admission,
+      host: initial.host,
+      packageDirs: options.packageDirs ?? new Map(),
+      adminLoop: () => readAdminLoopDefault(configuration),
+      open,
+    }),
+  )
   const mergeGenerationStatuses = (statuses: readonly PluginGenerationStatus[]) =>
     mergeCompositionStatuses(statuses, containers.values(), openingFailures)
   const overrides: HostFacadeOverrides = {
@@ -693,7 +693,7 @@ export async function createCompositionHost(
         const { current: nextCatalog } = await admission(target.tree.rows)
         const publication = await broadcast('runtime-target', async (container) => {
           const projected = project(target, container.tree, container.host)
-          const effective = effectiveTarget(projected)
+          const effective = effectiveCompositionTarget(projected)
           container.draining = draining(target.tree.rows, container.tree, container.host)
           // A composition the change does not reach (say a plugin its sessions never enabled) runs the
           // same rows and resources as before; rebuilding its generation would change nothing.

@@ -307,8 +307,11 @@ describe('migrated sidebar region', () => {
       () => createElement('span', { id: 'fixture-directory-flow-content' }, '目录流程'),
     )
     await vi.waitFor(() => {
+      // The grouped list carries the list tools, this outlet included, on its 项目 heading.
       expect(
-        sidebar.querySelector('#fixture-directory-flow-content')?.closest('.sidebar-section-heading'),
+        sidebar
+          .querySelector('#fixture-directory-flow-content')
+          ?.closest('[data-section="workspaces"] .sidebar-section-tools'),
       ).toBeTruthy()
     }, committed)
     remove()

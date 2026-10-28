@@ -83,7 +83,7 @@ export const browserCatalog = {
     'browser.connecting': '正在连接画面…',
     'browser.requestingControl': '正在连接操作…',
     'browser.connectingInput': '正在连接操作…',
-    'browser.fit': '适应面板宽度',
+    'browser.fit': '适应面板',
     'browser.adaptiveViewport': '页面随面板自适应',
     'browser.fixedViewport': '固定桌面尺寸（1280 × 800）',
     'browser.actualSize': '按 100% 显示',

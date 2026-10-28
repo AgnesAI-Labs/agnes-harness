@@ -122,7 +122,7 @@ describe('session extras: budget, projectUI (real, per the 2026-09-10 revision n
           expect.objectContaining({
             isError: true,
             content: expect.arrayContaining([
-              expect.objectContaining({ text: expect.stringContaining('cannot parse this binary format') }),
+              expect.objectContaining({ text: expect.stringContaining('unsupported binary format') }),
             ]),
           }),
           expect.objectContaining({

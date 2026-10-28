@@ -872,3 +872,47 @@ it('launch-review: another profile has a different Host-private launch digest', 
     await b.host.close()
   }
 })
+
+it('reads the installed plugin sources once per agent resolution and keeps nothing between them', async () => {
+  const bundle = (title: string) => ({
+    profile: { tools: ['read'] },
+    presets: { safe: { name: 'safe', extends: 'standard' } },
+    launch: { title: { en: title }, description: { en: title }, preset: 'safe' },
+  })
+  const reads: string[] = []
+  const { host } = await createTestHost({
+    provider: (profile) =>
+      new ScriptedProvider({
+        scripts: [],
+        models: (profile.provider.routes ?? []).flatMap((route) =>
+          (route.models ?? []).map((model) => ({ ...model, input: ['text' as const] })),
+        ),
+      }),
+    script: [],
+    disableSessionTitle: true,
+    dataDir: scratch(),
+    profileInputs: {
+      bundleCatalog: parsePackageBundles('@agnes/code', { one: bundle('One'), two: bundle('Two') }),
+    },
+    packageDirs: { ...packageDirs, '@agnes/ai': fileURLToPath(new URL('../../../ai', import.meta.url)) },
+    runtimePluginSources: async () => {
+      reads.push('read')
+      return []
+    },
+  })
+  try {
+    const resolvedReads: number[] = []
+    const plans = []
+    for (const ref of ['@agnes/code#one', '@agnes/code#two', '@agnes/code#one']) {
+      reads.length = 0
+      plans.push(await host.resolveAgent!(ref))
+      resolvedReads.push(reads.length)
+    }
+    expect(resolvedReads).toEqual([1, 1, 1])
+    // A later resolution reads again, so a change between resolutions is never missed.
+    expect(plans[2]).toEqual(plans[0])
+    expect(plans[1]?.digest).not.toBe(plans[0]?.digest)
+  } finally {
+    await host.close()
+  }
+})

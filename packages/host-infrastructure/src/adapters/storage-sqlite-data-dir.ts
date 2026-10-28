@@ -1,6 +1,6 @@
-import { readdirSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import type { DatabaseSync } from 'node:sqlite'
+import { DatabaseSync } from 'node:sqlite'
 import { CoreError } from '@agnes/core'
 
 /**
@@ -14,7 +14,7 @@ import { CoreError } from '@agnes/core'
  * stamped directory already contains changes. Adding or dropping a table that only new code reads
  * or writes does not need a bump.
  */
-export const DATA_DIR_VERSION = 1
+export const DATA_DIR_VERSION = 2
 
 export type DataDirPaths = { file: string; tablesDir: string }
 
@@ -25,14 +25,40 @@ function resetInstructions({ file, tablesDir }: DataDirPaths): string {
   )
 }
 
+function orphanTables(paths: DataDirPaths, found: number): CoreError {
+  const { file, tablesDir } = paths
+  const dataDir = dirname(file)
+  return new CoreError(
+    'E_DATA_DIR_STALE',
+    `data directory ${dataDir} has package tables in ${tablesDir} but no ledger at ${file}. ${resetInstructions(paths)}`,
+    { reason: 'orphan-tables', dataDir, file, tablesDir, found, supported: DATA_DIR_VERSION },
+  )
+}
+
+/** Probe without a writable connection: closing a rejected WAL database must not checkpoint it. */
+export function checkDataDirBeforeOpen(paths: DataDirPaths): void {
+  // A package table can appear only after its ledger. Check in that order during concurrent creation.
+  const packageTables = hasPackageTables(paths.tablesDir)
+  if (!existsSync(paths.file)) {
+    if (packageTables) throw orphanTables(paths, 0)
+    return
+  }
+  const probe = new DatabaseSync(paths.file, { readOnly: true })
+  try {
+    probe.exec('PRAGMA busy_timeout = 5000')
+    assertDataDirVersion(probe, paths)
+  } finally {
+    probe.close()
+  }
+}
+
 /** Read-only. Throws E_DATA_DIR_STALE / E_DATA_DIR_NEWER; never writes. */
 export function assertDataDirVersion(db: DatabaseSync, paths: DataDirPaths): 'fresh' | 'current' {
   const { file, tablesDir } = paths
   const dataDir = dirname(file)
   // Look at the package tables BEFORE the snapshot. Package tables are only created after
   // sessions.db has committed, so a table seen here means the snapshot below is not empty. Read in
-  // the other order, a process that creates the directory in between makes a live ledger look like
-  // an orphan, and the caller would then delete the file that process just stamped.
+  // the other order, a process creating the directory in between can make a live ledger look orphaned.
   const packageTables = hasPackageTables(tablesDir)
   // One statement, so one snapshot: another process committing between two reads would show tables
   // with a version that does not yet include them.
@@ -50,27 +76,22 @@ export function assertDataDirVersion(db: DatabaseSync, paths: DataDirPaths): 'fr
   // open a directory. Seeing either in a stamped directory means such a build has written to it,
   // and what it wrote is not understood here.
   const olderBuildWrote = row.legacy > 0
-  const stale = (reason: 'older' | 'orphan-tables') => ({
-    reason,
+  const stale = {
+    reason: 'older',
     dataDir,
     file,
     tablesDir,
     found,
     supported: DATA_DIR_VERSION,
-  })
+  }
   if (found > DATA_DIR_VERSION)
     throw new CoreError(
       'E_DATA_DIR_NEWER',
       `data directory ${dataDir} was written by a newer AGH (data format ${found}; this build supports ${DATA_DIR_VERSION}); upgrade AGH. Nothing was changed.`,
       { dataDir, file, found, supported: DATA_DIR_VERSION },
     )
-  if (empty) {
-    if (packageTables)
-      throw new CoreError(
-        'E_DATA_DIR_STALE',
-        `data directory ${dataDir} has package tables in ${tablesDir} but no ledger at ${file}. ${resetInstructions(paths)}`,
-        stale('orphan-tables'),
-      )
+  if (empty && (found === 0 || found === DATA_DIR_VERSION)) {
+    if (packageTables) throw orphanTables(paths, found)
     return 'fresh'
   }
   if (found < DATA_DIR_VERSION || olderBuildWrote) {
@@ -83,7 +104,7 @@ export function assertDataDirVersion(db: DatabaseSync, paths: DataDirPaths): 'fr
     throw new CoreError(
       'E_DATA_DIR_STALE',
       `data directory ${dataDir} ${origin}. ${resetInstructions(paths)}`,
-      stale('older'),
+      stale,
     )
   }
   return 'current'

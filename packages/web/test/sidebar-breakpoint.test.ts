@@ -57,7 +57,7 @@ describe('sidebar narrow breakpoint', () => {
       return flat.slice(start + selector.length + 2, flat.indexOf('}', start))
     }
     const buttons = rule(
-      'body.sidebar-collapsed .sidebar :is(#new, .home-entry, .sidebar-footer button, .application-footer-item)',
+      'body.sidebar-collapsed .sidebar :is(#new, .home-entry, #session-search, .sidebar-footer button, .application-footer-item)',
     )
     for (const declaration of [
       'width: 2.25rem;',
@@ -69,7 +69,7 @@ describe('sidebar narrow breakpoint', () => {
       expect(buttons).toContain(declaration)
     expect(
       rule(
-        'body.sidebar-collapsed :is(.sidebar-actions, .home-entries, .sidebar-footer, .application-footer)',
+        'body.sidebar-collapsed :is(.sidebar-actions, .home-entries, .sidebar-search, .sidebar-footer, .application-footer)',
       ),
     ).toContain('width: 2.25rem;')
     expect(rule('body.sidebar-collapsed .sidebar-actions #new')).toContain('box-shadow: none;')

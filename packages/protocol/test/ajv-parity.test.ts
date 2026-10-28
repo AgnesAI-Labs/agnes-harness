@@ -94,8 +94,12 @@ import {
   SchedulesArchiveResult,
   SchedulesControlParams,
   SchedulesControlResult,
+  SchedulesHistoryParams,
+  SchedulesHistoryResult,
   SchedulesListParams,
   SchedulesListResult,
+  SchedulesReceiptParams,
+  SchedulesReceiptResult,
   SchedulesUpsertParams,
   SchedulesUpsertResult,
   ScheduleTarget,
@@ -116,6 +120,13 @@ const pkgRoot = fileURLToPath(new URL('..', import.meta.url))
 const rep = (n: number) => 'a'.repeat(n)
 /** The canonical valid Sha256 value, used wherever this document requires one. */
 const rep64 = 'a'.repeat(64)
+/** Valid voice settings (the protocol defaults, spelled out so a default change cannot hide a regression). */
+const VOICE_SETTINGS = {
+  account: '',
+  input: { enabled: true, language: '', autoSend: false, maxSeconds: 120 },
+  reading: { enabled: true, voice: '', speed: 1, autoRead: false },
+  conversation: { pauseSeconds: 1.2 },
+}
 /** Deep copy for fixture baselines whose nested fields need changing — fixture objects are shared
  * across several negative cases and must not be mutated in place. */
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T
@@ -232,6 +243,10 @@ ajv.addSchema({
     SchedulesArchiveResult,
     SchedulesControlParams,
     SchedulesControlResult,
+    SchedulesHistoryParams,
+    SchedulesHistoryResult,
+    SchedulesReceiptParams,
+    SchedulesReceiptResult,
     SchedulesListParams,
     SchedulesListResult,
     SchedulesUpsertParams,
@@ -652,6 +667,15 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SessionForkParams: AgnesGen.SessionForkParams,
   SessionBtwParams: AgnesGen.SessionBtwParams,
   SessionBtwResult: AgnesGen.SessionBtwResult,
+  VoiceSettings: AgnesGen.VoiceSettings,
+  VoiceSettingsSnapshot: AgnesGen.VoiceSettingsSnapshot,
+  VoiceSettingsSaveParams: AgnesGen.VoiceSettingsSaveParams,
+  VoiceFeatureState: AgnesGen.VoiceFeatureState,
+  VoiceStatusResult: AgnesGen.VoiceStatusResult,
+  SessionVoiceTranscribeParams: AgnesGen.SessionVoiceTranscribeParams,
+  SessionVoiceTranscribeResult: AgnesGen.SessionVoiceTranscribeResult,
+  SessionVoiceSpeakParams: AgnesGen.SessionVoiceSpeakParams,
+  SessionVoiceSpeakResult: AgnesGen.SessionVoiceSpeakResult,
   SessionPreferences: AgnesGen.SessionPreferences,
   SessionRenameParams: AgnesGen.SessionRenameParams,
   SessionArchiveParams: AgnesGen.SessionArchiveParams,
@@ -2648,9 +2672,10 @@ const AGNES_SAMPLES: Record<string, Sample> = {
   },
   ConfigModel: {
     note: 'Configuration RPC rejects malformed revisions and credential disclosure; hand-written boundary cases.',
-    valid: { id: 'm', name: 'Model' },
+    valid: { id: 'm', name: 'm', audioRole: 'speech' },
     invalid: [
       { id: '', name: 'Model' },
+      { id: 'm', name: 'm', audioRole: 'music' },
       { id: 'm', name: 'Model', secret: true },
       { id: 'm', name: 'Model', maxTokens: 0 },
       { id: 'm', name: 'Model', cost: { input: 0, output: 0, cacheRead: 0 } },
@@ -4122,6 +4147,125 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     ],
     note: 'side answer: text, the model that wrote it and the optional credits it cost',
   },
+  VoiceSettings: {
+    valid: VOICE_SETTINGS,
+    invalid: [
+      { ...VOICE_SETTINGS, account: undefined }, // missing required account
+      { ...VOICE_SETTINGS, account: rep(65) }, // boundary: one above maxLength:64
+      { ...VOICE_SETTINGS, extra: true }, // additionalProperties:false
+      { ...VOICE_SETTINGS, input: { ...VOICE_SETTINGS.input, maxSeconds: 4 } }, // boundary: one below minimum:5
+      { ...VOICE_SETTINGS, input: { ...VOICE_SETTINGS.input, maxSeconds: 121 } }, // boundary: one above maximum:120
+      { ...VOICE_SETTINGS, input: { ...VOICE_SETTINGS.input, maxSeconds: 5.5 } }, // integer only
+      { ...VOICE_SETTINGS, input: { ...VOICE_SETTINGS.input, language: 'en_US' } }, // pattern: BCP 47 tag
+      { ...VOICE_SETTINGS, input: { ...VOICE_SETTINGS.input, language: 'a'.repeat(17) } }, // boundary: maxLength:16
+      { ...VOICE_SETTINGS, input: { ...VOICE_SETTINGS.input, language: 'de-ab-cd-ef-gh' } }, // boundary: four subtags, one above {0,3}
+      { ...VOICE_SETTINGS, reading: { ...VOICE_SETTINGS.reading, speed: 0.2 } }, // boundary: below minimum:0.25
+      { ...VOICE_SETTINGS, reading: { ...VOICE_SETTINGS.reading, speed: 4.1 } }, // boundary: above maximum:4
+      { ...VOICE_SETTINGS, reading: { ...VOICE_SETTINGS.reading, voice: rep(129) } }, // boundary: maxLength:128
+      { ...VOICE_SETTINGS, conversation: { pauseSeconds: 0.4 } }, // boundary: below minimum:0.5
+      { ...VOICE_SETTINGS, conversation: { pauseSeconds: 5.1 } }, // boundary: above maximum:5
+      { ...VOICE_SETTINGS, conversation: { pauseSeconds: 1, extra: 1 } }, // nested additionalProperties:false
+    ],
+    note: 'voice settings: account route, dictation, reading and conversation options, each range-bounded',
+  },
+  VoiceSettingsSnapshot: {
+    valid: { revision: rep64, settings: VOICE_SETTINGS },
+    invalid: [
+      { settings: VOICE_SETTINGS }, // missing required revision
+      { revision: 'A'.repeat(64), settings: VOICE_SETTINGS }, // pattern: lowercase hex only
+      { revision: 'a'.repeat(63), settings: VOICE_SETTINGS }, // pattern: one short of 64
+    ],
+    note: 'voice settings snapshot: sha256-hex revision plus the settings',
+  },
+  VoiceSettingsSaveParams: {
+    valid: { expectedRevision: rep64, settings: VOICE_SETTINGS },
+    invalid: [
+      { settings: VOICE_SETTINGS }, // missing required expectedRevision
+      { expectedRevision: rep64 }, // missing required settings
+      { expectedRevision: 'g'.repeat(64), settings: VOICE_SETTINGS }, // pattern: not hex
+    ],
+    note: 'voice settings save: compare-and-swap on the revision of the snapshot the editor read',
+  },
+  VoiceFeatureState: {
+    valid: 'no-model',
+    invalid: ['off', '', 1], // outside the closed enum
+    note: 'voice feature state: one closed enum shared by dictation and reading',
+  },
+  VoiceStatusResult: {
+    valid: {
+      transcribe: 'available',
+      speech: 'no-model',
+      account: { route: 'account-a', label: 'A' },
+      settings: VOICE_SETTINGS,
+    },
+    invalid: [
+      { transcribe: 'available', speech: 'available' }, // missing required settings
+      { transcribe: 'off', speech: 'available', settings: VOICE_SETTINGS }, // enum
+      { transcribe: 'available', speech: 'available', reason: 'no-model', settings: VOICE_SETTINGS }, // reason enum
+      {
+        transcribe: 'available',
+        speech: 'available',
+        account: { route: '', label: 'A' },
+        settings: VOICE_SETTINGS,
+      }, // boundary: route minLength:1
+      {
+        transcribe: 'available',
+        speech: 'available',
+        account: { route: rep(65), label: 'A' },
+        settings: VOICE_SETTINGS,
+      }, // boundary: route maxLength:64
+      {
+        transcribe: 'available',
+        speech: 'available',
+        account: { route: 'r', label: rep(129) },
+        settings: VOICE_SETTINGS,
+      }, // boundary: label maxLength:128
+    ],
+    note: 'voice status: per-feature state, the chosen account when there is one, and the settings',
+  },
+  SessionVoiceTranscribeParams: {
+    valid: { sessionId: 's', audio: 'A'.repeat(64), language: 'de-ab-cd-ef' }, // boundary: three subtags, the {0,3} cap
+    invalid: [
+      { sessionId: 's' }, // missing required audio
+      { sessionId: 's', audio: 'A'.repeat(63) }, // boundary: one below minLength:64
+      { sessionId: 's', audio: 'A'.repeat(900001) }, // boundary: one above maxLength:900000
+      { sessionId: 's', audio: `${'A'.repeat(64)}!` }, // pattern: base64 alphabet only
+      { sessionId: 's', audio: 'A'.repeat(64), language: 'zh_CN' }, // pattern: BCP 47 tag
+      { sessionId: 's', audio: 'A'.repeat(64), language: 'de-ab-cd-ef-gh' }, // boundary: four subtags, one above {0,3}
+    ],
+    note: 'dictation params: session and a base64 WAV of at most 20 s, with an optional language',
+  },
+  SessionVoiceTranscribeResult: {
+    valid: { text: 'hello' },
+    invalid: [
+      {}, // missing required text
+      { text: 'a'.repeat(16385) }, // boundary: one above maxLength:16384
+    ],
+    note: 'dictation result: the recognised text',
+  },
+  SessionVoiceSpeakParams: {
+    valid: { sessionId: 's', text: 'hi', voice: 'alloy', speed: 1.5 },
+    invalid: [
+      { sessionId: 's' }, // missing required text
+      { sessionId: 's', text: '' }, // boundary: one below minLength:1
+      { sessionId: 's', text: rep(121) }, // boundary: one above maxLength:120
+      { sessionId: 's', text: 'hi', speed: 0.2 }, // boundary: below minimum:0.25
+      { sessionId: 's', text: 'hi', speed: 4.5 }, // boundary: above maximum:4
+      { sessionId: 's', text: 'hi', voice: rep(129) }, // boundary: one above maxLength:128
+    ],
+    note: 'read-aloud params: session and at most 120 characters, with an optional voice and speed',
+  },
+  SessionVoiceSpeakResult: {
+    valid: { audio: 'AAAA', mimeType: 'audio/mpeg' },
+    invalid: [
+      { audio: 'AAAA' }, // missing required mimeType
+      { audio: '', mimeType: 'audio/mpeg' }, // boundary: one below minLength:1
+      { audio: 'A'.repeat(1024001), mimeType: 'audio/mpeg' }, // boundary: one above maxLength:1024000
+      { audio: 'AAAA', mimeType: 'audio/wav' }, // const
+      { audio: 'AA*A', mimeType: 'audio/mpeg' }, // pattern: base64 alphabet only
+    ],
+    note: 'read-aloud result: base64 mp3 and its fixed mime type',
+  },
   WorkspaceEntry: {
     valid: {
       path: '/workspace/project',
@@ -4809,8 +4953,9 @@ const MODEL_SAMPLES: Record<string, Sample> = {
     note: 'hand-written; the four price components are all required so a partial price table cannot be half-filled',
   },
   ModelRecord: {
-    valid: modelRecordOk,
+    valid: { ...modelRecordOk, audioRole: 'speech' },
     invalid: [
+      { ...modelRecordOk, audioRole: 'music' }, // enum
       { ...modelRecordOk, contract_id: undefined }, // missing required contract_id
       { ...modelRecordOk, id: rep(257) }, // boundary: maxLength:256
       { ...modelRecordOk, name: rep(257) }, // boundary: maxLength:256
@@ -7884,6 +8029,10 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     SchedulesArchiveResult,
     SchedulesControlParams,
     SchedulesControlResult,
+    SchedulesHistoryParams,
+    SchedulesHistoryResult,
+    SchedulesReceiptParams,
+    SchedulesReceiptResult,
     SchedulesListParams,
     SchedulesListResult,
     SchedulesUpsertParams,
@@ -9012,6 +9161,27 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
   '_agnes/v1/daemon.notice': { fileId: AGNES_ID, params: 'DaemonNotice' },
   '_agnes/v1/session.fork': { fileId: AGNES_ID, params: 'SessionForkParams', result: 'SessionIdParams' },
   '_agnes/v1/session.btw': { fileId: AGNES_ID, params: 'SessionBtwParams', result: 'SessionBtwResult' },
+  '_agnes/v1/session.voice.transcribe': {
+    fileId: AGNES_ID,
+    params: 'SessionVoiceTranscribeParams',
+    result: 'SessionVoiceTranscribeResult',
+  },
+  '_agnes/v1/session.voice.speak': {
+    fileId: AGNES_ID,
+    params: 'SessionVoiceSpeakParams',
+    result: 'SessionVoiceSpeakResult',
+  },
+  '_agnes/v1/voice.status': { fileId: AGNES_ID, params: 'ConfigEmptyParams', result: 'VoiceStatusResult' },
+  '_agnes/v1/voice.settings.get': {
+    fileId: AGNES_ID,
+    params: 'ConfigEmptyParams',
+    result: 'VoiceSettingsSnapshot',
+  },
+  '_agnes/v1/voice.settings.save': {
+    fileId: AGNES_ID,
+    params: 'VoiceSettingsSaveParams',
+    result: 'VoiceSettingsSnapshot',
+  },
   '_agnes/v1/session.rename': {
     fileId: 'https://agnes.ai/schema/agnes-v1.json',
     params: 'SessionRenameParams',
@@ -9130,6 +9300,16 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
   '_agnes/v1/jobs.enqueue': { fileId: AGNES_ID, params: 'JobSpec', result: 'JobIdResult' },
   '_agnes/v1/jobs.poll': { fileId: AGNES_ID, params: 'JobIdParams', result: 'JobStatus' },
   '_agnes/v1/jobs.cancel': { fileId: AGNES_ID, params: 'JobIdParams', result: 'Empty' },
+  '_agnes/v1/schedules.history': {
+    fileId: SCHEDULES_ID,
+    params: 'SchedulesHistoryParams',
+    result: 'SchedulesHistoryResult',
+  },
+  '_agnes/v1/schedules.receipt': {
+    fileId: SCHEDULES_ID,
+    params: 'SchedulesReceiptParams',
+    result: 'SchedulesReceiptResult',
+  },
   '_agnes/v1/schedules.list': {
     fileId: SCHEDULES_ID,
     params: 'SchedulesListParams',
@@ -9890,6 +10070,11 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/daemon.notice': AGNES_SAMPLES.DaemonNotice as Sample,
   '_agnes/v1/session.fork': AGNES_SAMPLES.SessionForkParams as Sample,
   '_agnes/v1/session.btw': AGNES_SAMPLES.SessionBtwParams as Sample,
+  '_agnes/v1/session.voice.transcribe': AGNES_SAMPLES.SessionVoiceTranscribeParams as Sample,
+  '_agnes/v1/session.voice.speak': AGNES_SAMPLES.SessionVoiceSpeakParams as Sample,
+  '_agnes/v1/voice.status': AGNES_SAMPLES.ConfigEmptyParams as Sample,
+  '_agnes/v1/voice.settings.get': AGNES_SAMPLES.ConfigEmptyParams as Sample,
+  '_agnes/v1/voice.settings.save': AGNES_SAMPLES.VoiceSettingsSaveParams as Sample,
   '_agnes/v1/session.rename': {
     note: 'manual title',
     valid: { sessionId: 's', title: 'name' },
@@ -9935,9 +10120,34 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/jobs.enqueue': AGNES_SAMPLES.JobSpec as Sample,
   '_agnes/v1/jobs.poll': AGNES_SAMPLES.JobIdParams as Sample,
   '_agnes/v1/jobs.cancel': AGNES_SAMPLES.JobIdParams as Sample,
+  '_agnes/v1/schedules.history': {
+    valid: { limit: 20 },
+    invalid: [{ limit: 0 }, { limit: 101 }, { before: 'bad' }],
+    note: 'bounded seek pagination',
+  },
+  '_agnes/v1/schedules.receipt': {
+    valid: { id: 'sched_0123456789abcdef', runId: 'run_' + '1'.repeat(32), read: true },
+    invalid: [{ id: 'sched_0123456789abcdef' }, { id: 'sched_0123456789abcdef', runId: 'bad', read: true }],
+    note: 'explicit persisted receipt state',
+  },
   '_agnes/v1/schedules.list': {
-    valid: { scope: 'session', sessionKey: 's' },
-    invalid: [{ scope: 'session', extra: true }, { scope: 'nope' }, { scope: 'all', sessionKey: '' }],
+    valid: {
+      scope: 'session',
+      sessionKey: 's',
+      search: 'billing',
+      status: 'failed',
+      workspace: '/work',
+      targetKind: 'session',
+    },
+    invalid: [
+      { scope: 'session', extra: true },
+      { scope: 'nope' },
+      { scope: 'all', sessionKey: '' },
+      { scope: 'all', status: 'unknown' },
+      { scope: 'all', targetKind: 'unknown' },
+      { scope: 'all', search: 'x'.repeat(257) },
+      { scope: 'all', workspaceSessionKeys: ['forged'] },
+    ],
     note: 'session scope may name a session; global scope is authorized separately',
   },
   '_agnes/v1/schedules.upsert': {
@@ -10561,6 +10771,11 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/session.deliverables': AGNES_SAMPLES.SessionDeliverablesResult as Sample,
   '_agnes/v1/session.fork': AGNES_SAMPLES.SessionIdParams as Sample,
   '_agnes/v1/session.btw': AGNES_SAMPLES.SessionBtwResult as Sample,
+  '_agnes/v1/session.voice.transcribe': AGNES_SAMPLES.SessionVoiceTranscribeResult as Sample,
+  '_agnes/v1/session.voice.speak': AGNES_SAMPLES.SessionVoiceSpeakResult as Sample,
+  '_agnes/v1/voice.status': AGNES_SAMPLES.VoiceStatusResult as Sample,
+  '_agnes/v1/voice.settings.get': AGNES_SAMPLES.VoiceSettingsSnapshot as Sample,
+  '_agnes/v1/voice.settings.save': AGNES_SAMPLES.VoiceSettingsSnapshot as Sample,
   '_agnes/v1/session.list': AGNES_SAMPLES.PageSessionMeta as Sample,
   '_agnes/v1/workspace.list': AGNES_SAMPLES.WorkspaceListResult as Sample,
   '_agnes/v1/workspace.add': AGNES_SAMPLES.WorkspaceAddResult as Sample,
@@ -10595,8 +10810,31 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/jobs.enqueue': AGNES_SAMPLES.JobIdResult as Sample,
   '_agnes/v1/jobs.poll': AGNES_SAMPLES.JobStatus as Sample,
   '_agnes/v1/jobs.cancel': AGNES_SAMPLES.Empty as Sample,
+  '_agnes/v1/schedules.history': {
+    valid: {
+      runs: [
+        {
+          id: 'run_' + '1'.repeat(32),
+          scheduleId: 'sched_0123456789abcdef',
+          title: 'Report',
+          at: 1,
+          outcome: 'ran',
+          read: false,
+          summary: 'Done',
+        },
+      ],
+    },
+    invalid: [{ runs: [{ at: 1 }] }, { runs: [], nextCursor: 'bad' }],
+    note: 'durable history receipts',
+  },
+  '_agnes/v1/schedules.receipt': {
+    valid: { updated: true },
+    invalid: [{}, { updated: 'yes' }],
+    note: 'receipt update result',
+  },
   '_agnes/v1/schedules.list': {
     valid: {
+      activity: { nextRunAt: 123, hasOpenRuns: false },
       schedules: [
         {
           id: 'sched_0123456789abcdef',
@@ -10616,6 +10854,9 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
       ],
     },
     invalid: [
+      { schedules: [], activity: { nextRunAt: null } },
+      { schedules: [], activity: { nextRunAt: 1.5, hasOpenRuns: true } },
+      { schedules: [], activity: { nextRunAt: null, hasOpenRuns: 'yes' } },
       { schedules: [], extra: true },
       { schedules: [{ id: 'sched_0123456789abcdef' }] },
       {
@@ -11229,5 +11470,52 @@ describe('side-call protocol additions: ajv ↔ TypeBox parity', () => {
     const schema = DEFS_BY_FILE[fileId]?.[name]
     if (!schema) throw new Error(`missing generated schema ${name}`)
     assertParity({ schema, check: ajvDef(fileId, name) }, fileId, name, sample, expected)
+  })
+})
+
+describe('voice additions: ajv ↔ TypeBox parity on the language pattern and astral text', () => {
+  const lang = (language?: string) => ({
+    sessionId: 's',
+    audio: 'A'.repeat(64),
+    ...(language === undefined ? {} : { language }),
+  })
+  const settingsWith = (language: string) => ({
+    ...VOICE_SETTINGS,
+    input: { ...VOICE_SETTINGS.input, language },
+  })
+  const cases: [string, unknown, boolean][] = [
+    ['SessionVoiceTranscribeParams', lang(), true], // language absent
+    ['SessionVoiceTranscribeParams', lang(''), true], // pattern branch: empty
+    ['SessionVoiceTranscribeParams', lang('zh'), true], // pattern branch: bare language
+    ['SessionVoiceTranscribeParams', lang('zh-Hans-CN'), true], // pattern branch: subtags
+    ['SessionVoiceTranscribeParams', lang('z'), false], // one letter
+    ['SessionVoiceTranscribeParams', lang('zh_CN'), false], // underscore
+    ['SessionVoiceTranscribeParams', lang('zh-'), false], // dangling subtag separator
+    ['VoiceSettings', settingsWith('zh-CN'), true], // non-empty language in the settings
+    ['VoiceSettings', settingsWith('en'), true],
+    ['VoiceSettings', settingsWith('english-US-x'), false], // first subtag longer than 3 letters
+  ]
+  it.each(cases)('%s %j', (name, sample, expected) => {
+    const schema = DEFS_BY_FILE[AGNES_ID]?.[name]
+    if (!schema) throw new Error(`missing generated schema ${name}`)
+    assertParity({ schema, check: ajvDef(AGNES_ID, name) }, AGNES_ID, name, sample, expected)
+  })
+
+  // `maxLength` counts UTF-16 code units in the TypeBox runtime gate (the authority the daemon uses).
+  it('counts an emoji as two units in speech text', () => {
+    const name = 'SessionVoiceSpeakParams'
+    const schema = DEFS_BY_FILE[AGNES_ID]?.[name]
+    if (!schema) throw new Error(`missing generated schema ${name}`)
+    const ajv = ajvDef(AGNES_ID, name)
+    const sample = (n: number) => ({ sessionId: 's', text: '😀'.repeat(n) })
+    expect(Value.Check(schema, sample(60))).toBe(true)
+    expect(Value.Check(schema, sample(61))).toBe(false)
+    expect(validateMethod('_agnes/v1/session.voice.speak', 'params', sample(60)).ok).toBe(true)
+    expect(validateMethod('_agnes/v1/session.voice.speak', 'params', sample(61)).ok).toBe(false)
+    // Known library difference: ajv counts code points, so it still accepts 61 emoji (122 units). The
+    // daemon's gate is TypeBox, which stays the authority; this pins the difference so a change in
+    // either library shows up here instead of silently moving the limit.
+    expect(ajv(sample(60))).toBe(true)
+    expect(ajv(sample(61))).toBe(true)
   })
 })

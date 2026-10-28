@@ -1,4 +1,9 @@
-import { type ChildRolePort, intersectCapabilities, type RoleDelegation } from '@agnes/core'
+import {
+  type ChildRolePort,
+  intersectCapabilities,
+  type RoleDelegation,
+  type SessionOptions,
+} from '@agnes/core'
 import type { ChildRole } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
 import type { ConfigurationService } from '@agnes/host-infrastructure/configuration'
@@ -6,10 +11,38 @@ import type { CompositionBinding } from '@agnes/host-providers/profile/compositi
 import { applicationConsentSnapshot } from '@agnes/package-manager'
 import { parseAgentRef } from '@agnes/protocol'
 import type { Host, HostSession } from '../lifecycle/host.js'
+import type { CreateSessionOptions } from '../sessions/session.js'
 import type { createAgentResolver, sessionAdmission } from './agent-plan.js'
 import type { CompositionContainer } from './composition-selection.js'
 import { roleToolBindingIdentity } from './role-tool-bindings.js'
 import { intersectRoleTools, recordRoleToolIntersection } from './role-tool-intersection.js'
+
+/**
+ * The workspace a role child opens in: the parent's own, under the authority the parent was granted
+ * (key aside), exactly as a fork inherits it. Without a parent identity the child falls back to its cwd.
+ */
+function inheritedWorkspace(
+  host: Host,
+  key: string,
+  options: Pick<SessionOptions, 'cwd' | 'workspaceIdentity'>,
+): Pick<CreateSessionOptions, 'cwd' | 'binding'> {
+  const identity = options.workspaceIdentity
+  if (!identity) return { cwd: options.cwd }
+  return {
+    cwd: identity.canonicalRoot,
+    binding: host.acceptWorkspaceBinding(
+      {
+        version: 1,
+        sessionKey: key,
+        workspaceId: identity.workspaceId,
+        revision: identity.authorityRevision,
+        canonicalRoot: identity.canonicalRoot,
+        ...(identity.extraRoots?.length ? { extraRoots: identity.extraRoots } : {}),
+      },
+      key,
+    ),
+  }
+}
 
 export function createRoleChildren(deps: {
   host(): Host
@@ -50,7 +83,7 @@ export function createRoleChildren(deps: {
       const container = await deps.open(binding)
       const child = await container.host.createSession({
         key,
-        cwd: options.cwd,
+        ...inheritedWorkspace(container.host, key, options),
         writerRunId: options.writerRunId,
         ...(options.lane ? { lane: options.lane } : {}),
       })
@@ -208,7 +241,7 @@ export function createRoleChildren(deps: {
           const container = await deps.open(binding)
           const child = await container.host.createSession({
             key,
-            cwd: options.cwd,
+            ...inheritedWorkspace(container.host, key, options),
             preset: tree.preset,
             strict: true,
             roleDelegation: {
