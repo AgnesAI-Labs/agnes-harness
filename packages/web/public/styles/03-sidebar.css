@@ -331,7 +331,8 @@
     font-variant-numeric: tabular-nums;
   }
   /* The count gives way to the project's actions while they show. */
-  .workspace-heading-row.is-nested:is(:hover, :focus-within) .workspace-count {
+  .workspace-heading-row.is-nested:is(:hover, :focus-within) .workspace-count,
+  .workspace-heading-row.is-nested:has(.workspace-row-actions [aria-expanded="true"]) .workspace-count {
     display: none;
   }
   /* 三个分区标题没有前置图标，折叠状态由标题后的小箭头表达：收起指右，展开转 90° 指下。 */
@@ -375,6 +376,22 @@
   .sidebar-section > .workspace-heading-row > :is(.workspace-row-actions, .sidebar-section-tools) {
     margin-left: auto;
   }
+  /* A heading's tools (项目's view and open-folder, 临时会话's new chat, the single list's tools)
+     fade in with the pointer or keyboard focus, like a session row's menu. Only opacity changes, so
+     the heading keeps its size, and the buttons stay in the tab order; the fold chevron sits in the
+     heading button and always shows. */
+  .sidebar-section > .workspace-heading-row > :not(.workspace-heading),
+  .sidebar-section-heading > :not(.section-label) {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .sidebar-section > .workspace-heading-row:is(:hover, :focus-within) > :not(.workspace-heading),
+  .sidebar-section > .workspace-heading-row > :not(.workspace-heading):has([aria-expanded="true"]),
+  .sidebar-section-heading:is(:hover, :focus-within) > :not(.section-label),
+  .sidebar-section-heading > :not(.section-label):has([aria-expanded="true"]) {
+    opacity: 1;
+    pointer-events: auto;
+  }
   /* 项目里的会话不再靠深缩进：左侧一条 1px 引导线（距列表左缘 17px）把它们挂在项目下面，
      行本身与置顶、临时会话的行同一套内边距。 */
   .workspace-group.is-nested > .workspace-sessions {
@@ -383,7 +400,7 @@
     border-left: 1px solid var(--agnes-line-primary);
   }
   /* The folder's new-session action appears with the pointer or keyboard focus; touch has no
-     hover, so the narrow drawer keeps it visible. A section heading's own tools always show. */
+     hover, so the narrow drawer and no-hover devices keep it visible. */
   .workspace-heading-row .workspace-row-actions {
     display: flex;
     align-items: center;
@@ -394,21 +411,27 @@
   }
   .workspace-heading-row:hover .workspace-row-actions,
   .workspace-heading-row:focus-within .workspace-row-actions,
-  .workspace-row-actions:has([aria-expanded="true"]),
-  .sidebar-section > .workspace-heading-row .workspace-row-actions {
+  .workspace-row-actions:has([aria-expanded="true"]) {
     opacity: 1;
     pointer-events: auto;
   }
   .sidebar-section > .workspace-heading-row .workspace-row-actions {
     margin-right: 0;
   }
-  /* A project's actions overlay the row end, where its session count gives way to them, so the
-     hidden actions take no room and the count sits at the edge. */
+  /* A project's actions sit in the row after the heading, never over it: at rest they take no
+     width and the count holds the row end; while they show they take their room and the name
+     ellipsizes before them. Width 0 (not display:none) keeps them in the tab order. */
   .workspace-heading-row.is-nested .workspace-row-actions {
-    position: absolute;
-    inset-block: 0;
-    right: 0;
+    flex: none;
+    width: 0;
+    margin-right: 0;
+    overflow: hidden;
+  }
+  .workspace-heading-row.is-nested:is(:hover, :focus-within) .workspace-row-actions,
+  .workspace-heading-row.is-nested .workspace-row-actions:has([aria-expanded="true"]) {
+    width: auto;
     margin-right: var(--s4);
+    overflow: visible;
   }
   .workspace-row-actions .agh-btn {
     width: 1.5rem;
@@ -435,18 +458,28 @@
       min-height: var(--control-height-touch);
     }
   }
-  @media (max-width: 720px) {
-    .workspace-heading-row .workspace-row-actions {
+  @media (max-width: 720px), (hover: none) {
+    .workspace-heading-row .workspace-row-actions,
+    .sidebar-section > .workspace-heading-row > :not(.workspace-heading),
+    .sidebar-section-heading > :not(.section-label) {
       opacity: 1;
       pointer-events: auto;
+    }
+    .workspace-heading-row.is-nested .workspace-row-actions {
+      width: auto;
+      margin-right: var(--s4);
+      overflow: visible;
     }
     /* Touch keeps the project's actions showing, so they hold the row end instead of the count. */
     .workspace-heading-row.is-nested .workspace-count {
       display: none;
     }
   }
+  /* The name takes the room before the count; its text still starts at the left edge. */
   .workspace-heading .workspace-name {
+    flex: 1;
     min-width: 0;
+    text-align: start;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -567,7 +600,7 @@
   /* Touch has no durable hover target.  Keeping the session action hit area inert on a narrow
    sidebar made the menu unreachable by an ordinary tap; expose the already-reserved action slot
    there while retaining the compact hover treatment for pointer desktops. */
-  @media (max-width: 720px) {
+  @media (max-width: 720px), (hover: none) {
     .session-menu {
       width: 1.5rem;
       margin-right: var(--s4);

@@ -461,7 +461,8 @@ function GroupedSections({
                   view={section.group}
                   redraw={redraw}
                   collapsed={false}
-                  listId={listId}
+                  // The section body already owns `listId`; its rows take their own id.
+                  listId={`${listId}-rows`}
                   rowItem={rowItem}
                   preSorted={preSorted}
                 />
