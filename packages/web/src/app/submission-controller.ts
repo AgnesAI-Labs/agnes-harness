@@ -131,6 +131,7 @@ export function createSubmissionController(
         agent: request.agent,
         prompt: context.composerRuntime.getDraft().trim(),
         send: false,
+        ...(context.selectedWorkspace ? { workspace: context.selectedWorkspace.path } : {}),
       })
       throw new Error(context.t('app.session.agentLaunch'))
     }
@@ -278,7 +279,12 @@ export function createSubmissionController(
     const request =
       session || attachments.length || selectedReferences.length ? undefined : context.draftSessionRequest()
     if (request && 'agent' in request) {
-      openComposerLaunch({ agent: request.agent, prompt: input, send: true })
+      openComposerLaunch({
+        agent: request.agent,
+        prompt: input,
+        send: true,
+        ...(context.selectedWorkspace ? { workspace: context.selectedWorkspace.path } : {}),
+      })
       return
     }
     const text = input || referenceSelections.map(({ source, id }) => `@${source} ${id}`).join('\n')

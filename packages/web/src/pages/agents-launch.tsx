@@ -79,7 +79,7 @@ export function useAgentLaunch(data: BusinessAgentsData) {
     set(pending)
     nav.open(pending.pageId)
     try {
-      const result = await data.api.prepareAgent(card.ref)
+      const result = await data.api.prepareAgent(card.ref, ...(compose?.workspace ? [compose.workspace] : []))
       if (current.current !== pending) return
       if (result.presentation.ref !== card.ref) throw new Error(t('reason.changed'))
       const prepared: Launch = {

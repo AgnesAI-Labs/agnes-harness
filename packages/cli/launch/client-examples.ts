@@ -196,25 +196,26 @@ export function localClientExamples(
   const agents = createAgentLaunches({
     directory: join(backend.scope.daemonDir, 'agent-launches'),
     backend: {
-      async caller() {
+      async caller(picked) {
         await initialize()
+        const path = picked ?? backend.scope.workspace
         const workspace = (await client.workspace.list()).items.find(
-          (row) => row.path === backend.scope.workspace && row.available,
+          (row) => row.path === path && row.available,
         )
         if (!workspace) throw new Error('CAPABILITY_DENIED')
         return {
           principal: await client.clientId(),
           profile,
-          workspace: backend.scope.workspace,
+          workspace: path,
           activation: `${hostActivation}:${workspace.workspaceId ?? workspace.path}:${workspace.revision ?? 0}`,
         }
       },
       resolve: (ref) => client.agents.resolve(ref),
       application: () => client.call('_agnes/v1/applications.get', { profile }),
-      async open(plan, sessionKey) {
+      async open(plan, sessionKey, workspace) {
         return (
           await client.session.new({
-            cwd: backend.scope.workspace,
+            cwd: workspace ?? backend.scope.workspace,
             agent: plan.ref,
             agentDigest: plan.digest,
             sessionKey,

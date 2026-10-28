@@ -188,6 +188,7 @@ describe('new session request', () => {
       agent: 'devboard.coordinator',
       prompt: 'hello agent',
       send: true,
+      workspace: '/synthetic/work',
     })
     expect(draft).toBe('  hello agent  ')
     expect(submitted).not.toHaveBeenCalled()
@@ -197,6 +198,7 @@ describe('new session request', () => {
       agent: 'devboard.coordinator',
       prompt: 'hello agent',
       send: false,
+      workspace: '/synthetic/work',
     })
     homeNavigation.close()
     await expect(controller.prepareComposerSession()).rejects.toThrow('app.session.agentLaunch')

@@ -647,10 +647,15 @@ it.each(['en', 'zh-CN'] as const)(
       }
       applicationIdentity.set(state)
       const startAgent = vi.fn(async () => ({ sessionId: `${via}-${locale}-${consent}` }))
+      const prepareAgent = vi.fn(async (_ref: string, _workspace?: string) => ({
+        launchTicket: 'ticket',
+        presentation: plan,
+        consent,
+      }))
       mock.connect.mockResolvedValue({
         context: { permissions: [], readOnly: false },
         api: {
-          prepareAgent: vi.fn(async () => ({ launchTicket: 'ticket', presentation: plan, consent })),
+          prepareAgent,
           startAgent,
           catalog: async () => ({ items: [] }),
           loops: async () => ({ loops: [], revision: 1, defaults: {} }),
@@ -710,7 +715,13 @@ it.each(['en', 'zh-CN'] as const)(
         )
         await act(async () => navRoot.render(createElement(HomeEntriesNav, { t: (key: string) => key })))
         await act(async () => {
-          if (via === 'composer') openComposerLaunch({ agent: plan.ref, prompt: 'typed message', send: true })
+          if (via === 'composer')
+            openComposerLaunch({
+              agent: plan.ref,
+              prompt: 'typed message',
+              send: true,
+              workspace: '/synthetic/work',
+            })
           else
             homeNavigation.open('agents', {
               workAction: {
@@ -754,6 +765,8 @@ it.each(['en', 'zh-CN'] as const)(
           )
         }
         await vi.waitFor(() => expect(opened).toHaveLength(1))
+        if (via === 'composer') expect(prepareAgent).toHaveBeenCalledWith(plan.ref, '/synthetic/work')
+        else expect(prepareAgent).toHaveBeenCalledWith(plan.ref)
         if (consent === 'covered') {
           expect(shown.every((id) => id === undefined)).toBe(true)
           expect(selected.every((id) => id === undefined)).toBe(true)

@@ -327,6 +327,62 @@ it('ordinary agent review binds caller workspace and activation, refuses drift a
   expect(f.sessions.size).toBe(1)
 })
 
+it('agent prepare binds an optional registered workspace into the ticket and opens the session there', async () => {
+  const f = fixture()
+  const launcher = '/synthetic/launcher'
+  const registry = new Map([
+    [launcher, { activation: 'host:launcher:1', available: true }],
+    ['/synthetic/work', { activation: 'host:work:1', available: true }],
+    ['/synthetic/offline', { activation: 'host:offline:1', available: false }],
+  ])
+  const opened: (string | undefined)[] = []
+  let home = launcher
+  const backend = {
+    caller: async (workspace?: string) => {
+      const path = workspace ?? home
+      const row = registry.get(path)
+      if (!row?.available) throw new Error('CAPABILITY_DENIED')
+      return { principal: 'host-user', profile: 'test', workspace: path, activation: row.activation }
+    },
+    resolve: async (ref: string) => f.backend.resolveAgent(ref),
+    open: async (plan: AgentPlan, key: string, workspace?: string) => {
+      opened.push(workspace)
+      return f.backend.open(plan, key)
+    },
+  }
+  const call = (request: Record<string, unknown>) =>
+    createAgentLaunches({ directory: f.directory, backend }).call(request)
+  const prepare = (extra: Record<string, unknown>) =>
+    call({ action: 'prepare', agent: 'acme/kit#work', ...extra }) as Promise<{ launchTicket: string }>
+  const picked = await prepare({ workspace: '/synthetic/work' })
+  await call({ action: 'start', launchTicket: picked.launchTicket, operationId: 'picked' })
+  expect(opened).toEqual(['/synthetic/work'])
+  // No workspace keeps the launcher's own.
+  const plain = await prepare({})
+  await call({ action: 'start', launchTicket: plain.launchTicket, operationId: 'plain' })
+  expect(opened).toEqual(['/synthetic/work', undefined])
+  // Unknown, unavailable and relative workspaces are refused, never replaced by the launcher's.
+  await expect(prepare({ workspace: '/synthetic/unknown' })).rejects.toThrow('CAPABILITY_DENIED')
+  await expect(prepare({ workspace: '/synthetic/offline' })).rejects.toThrow('CAPABILITY_DENIED')
+  await expect(prepare({ workspace: 'work' })).rejects.toThrow('INVALID_REQUEST')
+  await expect(
+    call({ action: 'start', launchTicket: 'x', operationId: 'y', workspace: '/synthetic/work' }),
+  ).rejects.toThrow('INVALID_REQUEST')
+  // The ticket follows its workspace's activation, and another launcher workspace cannot redeem it.
+  const drift = await prepare({ workspace: '/synthetic/work' })
+  registry.get('/synthetic/work')!.activation = 'host:work:2'
+  await expect(
+    call({ action: 'start', launchTicket: drift.launchTicket, operationId: 'drift' }),
+  ).rejects.toThrow('STALE')
+  const moved = await prepare({ workspace: '/synthetic/work' })
+  home = '/synthetic/other'
+  registry.set(home, { activation: 'host:other:1', available: true })
+  await expect(
+    call({ action: 'start', launchTicket: moved.launchTicket, operationId: 'moved' }),
+  ).rejects.toThrow('STALE')
+  expect(opened).toHaveLength(2)
+})
+
 const receiptWindow = 7 * 24 * 60 * 60 * 1000
 async function retentionFixture(kind: 'agent' | 'example') {
   const f = fixture()
@@ -591,7 +647,7 @@ it('ordinary agent receipts remain readable during slow starts without leaking o
       open: async (...args) => {
         entered()
         await finish
-        return f.backend.open(...args)
+        return f.backend.open(args[0], args[1])
       },
     },
   })

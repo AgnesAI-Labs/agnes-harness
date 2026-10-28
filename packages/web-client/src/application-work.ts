@@ -37,8 +37,9 @@ export function applicationWorkRequest(
 export function openApplicationWork(actionId: string, object?: ApplicationWorkObject): void {
   homeNavigation.open('agents', { workAction: applicationWorkRequest(actionId, object) })
 }
-/** A composer message typed before the workbench's default agent has a session; the launch owns the consent review. */
-export type ComposerLaunch = Readonly<{ agent: string; prompt: string; send: boolean }>
+/** A composer message typed before the workbench's default agent has a session; the launch owns the consent review.
+ * `workspace` is the composer's picked workspace path; absent means the launcher's own workspace. */
+export type ComposerLaunch = Readonly<{ agent: string; prompt: string; send: boolean; workspace?: string }>
 export function openComposerLaunch(launch: ComposerLaunch): void {
   homeNavigation.open('agents', { composerLaunch: launch })
 }
