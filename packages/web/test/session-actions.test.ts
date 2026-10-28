@@ -318,6 +318,9 @@ it('shows the Host runtime descriptor in the session menu dialog, with pending a
   await vi.waitFor(() => expect(document.querySelector('[data-testid="session-schedules"]')).not.toBeNull())
   expect(call).toHaveBeenCalledWith('_agnes/v1/schedules.list', { scope: 'session', sessionKey: 's' })
   const text = document.querySelector('[data-session-runtime="s"]')?.textContent ?? ''
+  expect(document.querySelector('[data-testid="session-schedules"]')?.textContent).toContain(
+    '这个会话的定时任务',
+  )
   expect(text).toContain('gen-old')
   expect(text).toContain('有更新的代次 gen-new：新会话生效')
   expect(text).toContain('已配置 summary：新会话生效')
@@ -325,11 +328,15 @@ it('shows the Host runtime descriptor in the session menu dialog, with pending a
   expect(text).toContain('ext:agnes/skills rev-1')
   expect(text).toContain('你需要重启才能生效：sandbox')
   document.documentElement.lang = 'en'
+  window.dispatchEvent(new Event('agnes:locale-changed'))
   await vi.waitFor(() =>
     expect(document.getElementById('session-runtime-heading')?.textContent).toBe('Runtime info'),
   )
   expect(document.querySelector('[data-session-runtime="s"]')?.textContent).toContain(
     'Newer generation gen-new',
+  )
+  expect(document.querySelector('[data-testid="session-schedules"]')?.textContent).toContain(
+    'Scheduled tasks for this session',
   )
   const replacement = trigger.cloneNode(true) as HTMLButtonElement
   replacement.dataset.sessionActionId = 's'

@@ -5,6 +5,7 @@ import { homeNavigation } from '@agnes/web-client'
 import type { Translate } from '@agnes/web-conversation/presentation'
 import {
   Button,
+  createDocumentLocaleSource,
   createRegionHost,
   Dialog,
   ListRow,
@@ -15,6 +16,7 @@ import {
   SettingsList,
   SettingsTechnicalDetails,
   Tag,
+  UiLocaleProvider,
   unmountRegion,
   useDocumentLanguage,
 } from '@agnes/web-ui'
@@ -261,6 +263,7 @@ export function createRuntimeDialog(options: {
 }) {
   const t = options.translate
   const host = createRegionHost(document.body, 'div')
+  const locale = createDocumentLocaleSource({})
   let integrity: import('@agnes/protocol').SessionIntegrityStatus | undefined
   let auditing = false
   let integrityRead = 0
@@ -376,7 +379,13 @@ export function createRuntimeDialog(options: {
       </dialog>
     )
   }
-  const render = () => renderRegion(host, <RuntimeDialog />)
+  const render = () =>
+    renderRegion(
+      host,
+      <UiLocaleProvider source={locale.source}>
+        <RuntimeDialog />
+      </UiLocaleProvider>,
+    )
   const listSchedules = (params: { scope: 'session'; sessionKey: string }) =>
     options.client.call('_agnes/v1/schedules.list', params)
   /**
@@ -512,6 +521,7 @@ export function createRuntimeDialog(options: {
       opened = false
       version++
       unmountRegion(host)
+      locale.dispose()
       host.remove()
     },
   }
