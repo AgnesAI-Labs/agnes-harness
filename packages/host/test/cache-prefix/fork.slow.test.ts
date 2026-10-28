@@ -2,6 +2,7 @@ import { closeSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PARSER_VERSION } from '@agnes/ai'
 import { fakeModel } from '@agnes/ai/testkit'
 import { buildCompactionPlan } from '@agnes/base'
 import { fakeProvider, sent, textTurn, toolTurn, usage } from '@agnes/core/testkit'
@@ -232,9 +233,9 @@ describe('delegated child wire prefixes', () => {
         toolTurn('subagent_spawn', { task: 'child task', isolation: 'shared' }),
         textTurn('parent answer'),
       ],
-      '2',
+      PARSER_VERSION,
     )
-    const childProvider = fakeProvider([textTurn('child answer')], '2')
+    const childProvider = fakeProvider([textTurn('child answer')], PARSER_VERSION)
     const provider: Provider = {
       models: () => [model],
       async *infer(request, options) {
@@ -282,9 +283,9 @@ describe('delegated child wire prefixes', () => {
         toolTurn('subagent_fork', { question: 'child task', isolation: 'shared' }),
         textTurn('parent answer'),
       ],
-      '2',
+      PARSER_VERSION,
     )
-    const childProvider = fakeProvider([textTurn('child answer')], '2')
+    const childProvider = fakeProvider([textTurn('child answer')], PARSER_VERSION)
     const provider: Provider = {
       models: () => [model],
       infer: (request, options) =>
@@ -332,9 +333,9 @@ describe('delegated child wire prefixes', () => {
     const { dataDir } = setupDir()
     const model = fakeModel({ route: 'gw', id: 'm1', contextWindow: 100_000 })
     const summaryModel = fakeModel({ route: 'gw', id: 'summary-model', contextWindow: 100_000 })
-    const ordinary = fakeProvider([textTurn('short answer')], '2')
-    const parentSummary = fakeProvider([textTurn('PARENT SUMMARY')], '2')
-    const childSummary = fakeProvider([textTurn('CHILD SUMMARY')], '2')
+    const ordinary = fakeProvider([textTurn('short answer')], PARSER_VERSION)
+    const parentSummary = fakeProvider([textTurn('PARENT SUMMARY')], PARSER_VERSION)
+    const childSummary = fakeProvider([textTurn('CHILD SUMMARY')], PARSER_VERSION)
     const requests: RequestBody[] = []
     const plans: Array<{ reason: string; previousSummarySeq?: number }> = []
     let primaryWindow = 100_000

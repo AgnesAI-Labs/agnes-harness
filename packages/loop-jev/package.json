@@ -151,7 +151,8 @@
     "@agnes/host": "workspace:*",
     "@agnes/package-manager": "workspace:*",
     "@agnes/protocol": "workspace:*",
-    "@agnes/sdk": "workspace:*"
+    "@agnes/sdk": "workspace:*",
+    "@sinclair/typebox": "0.34.33"
   },
   "license": "Apache-2.0"
 }

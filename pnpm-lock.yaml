@@ -1361,6 +1361,9 @@ importers:
       '@agnes/sdk':
         specifier: workspace:*
         version: link:../sdk
+      '@sinclair/typebox':
+        specifier: 0.34.33
+        version: 0.34.33
 
   packages/memory-file:
     dependencies:

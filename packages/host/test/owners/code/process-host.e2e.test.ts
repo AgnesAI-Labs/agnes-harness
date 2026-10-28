@@ -1,3 +1,4 @@
+import { PARSER_VERSION } from '@agnes/ai'
 import { createExec } from '@agnes/host-infrastructure/adapters/exec'
 import { expect, it } from 'vitest'
 
@@ -27,7 +28,7 @@ it.each(['read', 'denied-shell', 'raw-io-denied'] as const)(
         }),
         textTurn('done'),
       ],
-      '2',
+      PARSER_VERSION,
     )
     const { host } = await createTestHost({
       dataDir: dir,
@@ -104,7 +105,7 @@ it('keeps nested results out of later requests', async () => {
       textTurn('done'),
       textTurn('again'),
     ],
-    '2',
+    PARSER_VERSION,
   )
   const { host } = await createTestHost({
     dataDir: dir,

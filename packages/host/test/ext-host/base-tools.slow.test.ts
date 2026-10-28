@@ -486,13 +486,14 @@ describe('a host assembled from a profile naming @agnes/base', () => {
 
   it('continues independent work after a question, keeps invalid answers pending, and receives valid late input with live context', async () => {
     const dataDir = scratch()
+    const workspaceRoot = scratch()
     vi.stubEnv('AGH_HOME', dataDir)
-    writeFileSync(join(dataDir, 'AGENTS.md'), 'LIVE_RULE_V1')
+    writeFileSync(join(workspaceRoot, 'AGENTS.md'), 'LIVE_RULE_V1')
     const provider = new ScriptedProvider({
       models: [fakeModel({ route: 'gw', id: 'm1' })],
       scripts: [
         () => {
-          writeFileSync(join(dataDir, 'AGENTS.md'), 'LIVE_RULE_V2')
+          writeFileSync(join(workspaceRoot, 'AGENTS.md'), 'LIVE_RULE_V2')
           return callTool('ask_user_question', {
             timeoutMs: 25,
             questions: [{ id: 'choice', question: 'Choose a route', options: ['A', 'B'] }],
@@ -506,13 +507,14 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     })
     const { host } = await createTestHost({
       dataDir,
+      workspaceRoot,
       packageDirs: { '@agnes/base': baseDir },
       provider,
       disableSessionTitle: true,
     })
     try {
       expect(host.extensions().find((e) => e.id === 'agnes/interaction')).toMatchObject({ loaded: true })
-      const session = await host.createSession({ cwd: dataDir })
+      const session = await host.createSession({ cwd: workspaceRoot })
       const prompt = async (text: string) => {
         await session.enqueue('next-turn', {
           content: [{ type: 'text', text }],
@@ -527,10 +529,11 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       expect(
         provider.calls[0]?.tools.map((tool) => tool.name).filter((name) => name.startsWith('ui_')),
       ).toEqual(['ui_close', 'ui_guide', 'ui_render', 'ui_update'])
-      expect(provider.calls[0]?.system).toContain('LIVE_RULE_V1')
-      expect(provider.calls[1]?.system).toContain('LIVE_RULE_V2')
+      expect(JSON.stringify(provider.calls[0]?.messages)).toContain('LIVE_RULE_V1')
+      expect(provider.calls[1]?.system).toBe(provider.calls[0]?.system)
+      expect(JSON.stringify(provider.calls[1]?.messages)).toContain('LIVE_RULE_V2')
       expect(JSON.stringify(provider.calls[0]?.messages)).toContain('Time zone:')
-      writeFileSync(join(dataDir, 'AGENTS.md'), 'LIVE_RULE_V2')
+      writeFileSync(join(workspaceRoot, 'AGENTS.md'), 'LIVE_RULE_V2')
       const rows = await session.scan({ type: 'x/agnes/interaction/requested', toSeq: session.lastSeq })
       expect(rows).toHaveLength(1)
       const row = rows[0]
@@ -563,8 +566,18 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       expect(await session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
         reason: 'completed',
       })
-      expect(provider.calls[2]?.system).toContain('LIVE_RULE_V2')
-      expect(provider.calls[2]?.system).not.toContain('LIVE_RULE_V1')
+      expect(provider.calls[2]?.system).toBe(provider.calls[0]?.system)
+      const ruleNotes = provider.calls[2]?.messages.flatMap((message) =>
+        message.content.flatMap((block) =>
+          block.type === 'text' &&
+          block.text.startsWith('[live context ') &&
+          block.text.includes('LIVE_RULE_')
+            ? [block.text]
+            : [],
+        ),
+      )
+      expect(ruleNotes?.at(-1)).toContain('LIVE_RULE_V2')
+      expect(ruleNotes?.filter((text) => text.includes('LIVE_RULE_V2'))).toHaveLength(1)
       expect(
         (await service.read({ sessionId: session.key }, new AbortController().signal)).surfaces[0]?.status,
       ).toBe('open')
@@ -1249,9 +1262,10 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     // tools-web 2, interaction 1, deliverables 1, jobs 10, compaction 1, refine 1, subagent 8,
     // mcp-search 2, computer-use 1, plugin-creator 6, exit_plan_mode, and the three stable MCP
     // resource tools, workflow and workflow_status, session-query 5, two goal tools, and the four
-    // schedule reminders.
-    expect(host.kernel.tools.size).toBe(63)
+    // schedule reminders, plus the LSP diagnostics tool.
+    expect(host.kernel.tools.size).toBe(64)
     for (const name of [
+      'lsp_diagnostics',
       'subagent_list',
       'subagent_send_message',
       'subagent_interrupt',

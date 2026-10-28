@@ -95,6 +95,7 @@ for (const locale of ['en', 'zh-CN']) {
         await expect(page.getByTestId('home-page-agents')).toBeVisible()
         await closeSettings(page, locale)
         await expect(guide).toHaveAttribute('data-step', 'ready')
+        await expect(page.locator('.workspace-heading-row.is-nested .workspace-name')).toHaveText('w')
         await quality('setup-ready')
         await page.getByTestId('first-run-next').click()
         await expect(guide).toBeHidden()

@@ -82,7 +82,12 @@ describe('bundled ripgrep', () => {
         expect(oversized).toMatchObject({
           isError: true,
           content: [
-            { type: 'text', text: 'search output exceeds the 32 MiB artifact limit; narrow the search' },
+            {
+              type: 'text',
+              text: expect.stringMatching(
+                /^search output is \d+ bytes, exceeding the 32 MiB artifact limit; narrow path\/pattern$/,
+              ),
+            },
           ],
         })
         expect(ctx.calls.artifacts).toEqual(stored)

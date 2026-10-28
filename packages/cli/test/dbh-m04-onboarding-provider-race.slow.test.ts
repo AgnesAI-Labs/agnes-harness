@@ -112,8 +112,10 @@ describe('dbh M-04: onboarding config.test result is not bound to the provider i
     await settle()
     expect(test).toHaveBeenCalledWith(expect.objectContaining({ providerId: 'provider-a', apiKey: KEY_A }))
     term.feed('\x1b') // back to provider list
-    await settle()
-    expect((await screenOf(term, 80, 24)).join('\n')).toContain('Select a provider:')
+    // A lone Esc waits for the terminal's escape-sequence disambiguation timer.
+    await vi.waitFor(async () =>
+      expect((await screenOf(term, 80, 24)).join('\n')).toContain('Select a provider:'),
+    )
     term.feed('\x1b[B')
     term.feed('\r') // Provider B
     await settle()
