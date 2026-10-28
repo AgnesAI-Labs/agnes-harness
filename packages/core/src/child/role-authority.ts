@@ -1,6 +1,7 @@
 import type { PresetView } from '@agnes/core-common/step/preset'
 import type { ToolPolicy } from '@agnes/extension-api'
 import { mcpStablePrefix } from '@agnes/extension-api/mcp-naming'
+import type { PermissionContext } from '@agnes/protocol'
 import type { RoleDelegation } from './roles.js'
 
 /** Composition absence (including its wire-level []) retains defaults. */
@@ -32,6 +33,18 @@ export function roleAuthority(snapshot: RoleDelegation): RoleAuthority {
   const authority = authorities.get(snapshot) ?? captureAuthority(snapshot)
   authorities.set(snapshot, authority)
   return authority
+}
+
+/** A role's permission is its captured one; only a declaring, writable role follows the live parent's full access. */
+export function rolePermissionContext(
+  authority: RoleAuthority,
+  context: PermissionContext,
+): PermissionContext {
+  return authority.delegatedFullAccess === true &&
+    authority.permission !== 'read-only' &&
+    context.policy === 'full-access'
+    ? context
+    : { ...context, policy: authority.permission }
 }
 
 /** Keep each ancestor's floor independent so a nearer allow cannot mask it. */

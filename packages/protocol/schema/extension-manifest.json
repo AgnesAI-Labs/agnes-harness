@@ -791,6 +791,10 @@
           "maxItems": 64,
           "items": { "$ref": "#/$defs/AgentRef" }
         },
+        "delegatedFullAccess": {
+          "const": true,
+          "description": "Opt in: while the coordinating session runs under full access, roles from delegableAgents get Core's automatic full-access answer for tool permission gates. Business signatures and plugin gates stay refused for roles; a switch away from full access revokes it. Requires non-empty delegableAgents."
+        },
         "brand": {
           "$ref": "#/$defs/ApplicationBrand"
         },

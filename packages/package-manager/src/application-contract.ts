@@ -31,6 +31,8 @@ export function parseApplicationContract(
   for (const ref of application.delegableAgents ?? [])
     if (!application.agents?.includes(ref))
       throw new TypeError('application delegableAgents must be in agents')
+  if (application.delegatedFullAccess && !application.delegableAgents?.length)
+    throw new TypeError('application delegatedFullAccess requires delegableAgents')
   const workbench = application.workbench
   for (const rows of [workbench?.tabs ?? [], workbench?.actions ?? []])
     if (new Set(rows.map((row) => row.id)).size !== rows.length)

@@ -117,7 +117,7 @@ import {
   renewChildLifecycle,
   revokeChildLifecycle,
 } from '../child/lifecycle.js'
-import { roleAuthority } from '../child/role-authority.js'
+import { roleAuthority, rolePermissionContext } from '../child/role-authority.js'
 import { type ChildRolePort, type RoleDelegation, roleToolSnapshot } from '../child/roles.js'
 import { unbindChildFactory } from '../child/sessions.js'
 import { sessionCommandFloor } from '../command-table/floor.js'
@@ -628,7 +628,9 @@ export class SessionImpl {
   compaction: CompactionPort
   preset: PresetView
   get yolo(): boolean {
-    return !this.closing && this.permissionContext.policy === 'full-access'
+    // A declaring role follows the parent's full access for tool gates only; its sandbox and process
+    // ceilings stay those of a role, so it never reads as a full-access session.
+    return !this.closing && !this.roleAuthority && this.permissionContext.policy === 'full-access'
   }
   turn: TurnMemory | null = null
   // run/step/resume calls in progress, and the resume they wait behind. `turn` and `op()` cannot say
@@ -721,9 +723,7 @@ export class SessionImpl {
   private readonly authorization: SessionPermissionAuthority
   get permissionContext(): import('@agnes/protocol').PermissionContext {
     const context = this.authorization.context(this.key, this.preset.permission ?? '')
-    return this.roleAuthority && !this.closing
-      ? { ...context, policy: this.roleAuthority.permission }
-      : context
+    return this.roleAuthority && !this.closing ? rolePermissionContext(this.roleAuthority, context) : context
   }
   onPermissionChange(listener: () => void): () => void {
     return this.authorization.subscribe(listener)
@@ -801,6 +801,9 @@ export class SessionImpl {
       },
       get refuseApprovals() {
         return session.d.roleDelegation !== undefined
+      },
+      get delegatedFullAccess() {
+        return session.d.roleDelegation?.delegatedFullAccess === true
       },
       get ttlMs() {
         return session.preset.approval.pendingTtlMs

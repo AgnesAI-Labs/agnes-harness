@@ -91,6 +91,7 @@ also in `agents`). `subagent_spawn` accepts an optional `role` ref from this bac
 The role starts fresh with its own composition; its tools and workspace authority are capped by a
 spawn-time parent snapshot recorded on the child ledger. Tool effects that need a human wait for
 approval on the owning session surface. Business signatures remain refused and return to the main assistant.
+An application that declares `delegatedFullAccess: true` additionally has its writable roles' core tool gates auto-allowed (recorded as full-access answers) while the parent is in Full access, revoked on switch.
 `role` cannot be combined with `fork` or `model`; invalid roles never fall back to ordinary children.
 A tool is eligible only when its Host-verified package, version, export, code snapshot and plugin-row
 configuration digest match the parent's binding, in addition to its safety definition. Unprovable

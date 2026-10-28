@@ -74,6 +74,10 @@ export function createRoleChildren(deps: {
       return { ref, title: launch.title, ...(launch.description ? { description: launch.description } : {}) }
     })
   }
+  // The adopted application's own declaration; the catalogue has already checked the package is current.
+  const declaresFullAccess = async (): Promise<boolean> =>
+    applicationConsentSnapshot((await deps.configuration.application?.())?.selection)?.declaration
+      .delegatedFullAccess === true
   return {
     list: () => catalogue(),
     async reopen(key, options) {
@@ -190,6 +194,9 @@ export function createRoleChildren(deps: {
         rolePermissions?.policy === 'read-only' ||
         rolePreset.permission === 'read-only' ||
         rolePreset.approval.policy === 'read-only'
+      // A nested role holds the opt-in only if the role that delegated to it does.
+      const delegatedFullAccess =
+        (await declaresFullAccess()) && (!parentAuthority || parentAuthority.delegatedFullAccess === true)
       const captured: RoleDelegation = {
         role,
         parentKey: parent.key,
@@ -202,6 +209,7 @@ export function createRoleChildren(deps: {
         approvalPolicy: 'never',
         parentTainted,
         humanApprovals,
+        ...(delegatedFullAccess ? { delegatedFullAccess: true as const } : {}),
         filesystem,
         sandboxRequired: enforced,
         parentPolicy:

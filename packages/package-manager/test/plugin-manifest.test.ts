@@ -391,6 +391,14 @@ it('validates application identity and explicit agent, page and role references'
     parseApplicationContract({ ...app, delegableAgents: app.agents }, 'acme/kit', bundles, {}).application
       ?.delegableAgents,
   ).toEqual(app.agents)
+  expect(
+    parseApplicationContract(
+      { ...app, delegableAgents: app.agents, delegatedFullAccess: true },
+      'acme/kit',
+      bundles,
+      {},
+    ).application?.delegatedFullAccess,
+  ).toBe(true)
   const many = parsePackageBundleContract(
     'acme/kit',
     Object.fromEntries(
@@ -471,6 +479,9 @@ it('validates application identity and explicit agent, page and role references'
     { ...app, agents: [] },
     { ...app, delegableAgents: ['acme/kit#missing'] },
     { ...app, agents: undefined, delegableAgents: app.agents },
+    { ...app, delegatedFullAccess: true },
+    { ...app, delegableAgents: [], delegatedFullAccess: true },
+    { ...app, delegableAgents: app.agents, delegatedFullAccess: false },
     { ...app, delegableAgents: Array(9).fill('acme/kit#work') },
     { ...app, delegableAgents: [...app.agents, ...app.agents] },
     {

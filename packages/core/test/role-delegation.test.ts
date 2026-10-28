@@ -548,6 +548,8 @@ it.each([
   { permission: undefined },
   { sandboxRequired: undefined },
   { filesystem: undefined },
+  { delegatedFullAccess: false },
+  { delegatedFullAccess: 'yes' },
 ])('i01: incomplete persisted authority refuses reopen: %j', async (patch) => {
   const storage = new MemoryStorage()
   const first = make(storage)
@@ -687,3 +689,111 @@ it.each([false, undefined])(
     }
   },
 )
+
+const toolGate = (
+  child: Awaited<ReturnType<ReturnType<typeof make>['session']>>,
+  owner = 'core/tool-permission',
+) =>
+  child.decisions.port({
+    owner,
+    sourcePackage: owner === 'core/tool-permission' ? '@agnes/core' : '@fixture/plugin',
+    packageVersion: '1',
+    operationId: 'gate',
+    permission: true,
+    alive() {},
+  })
+const gateSpec = (key: string, purpose = 'tool.permission') => ({
+  key,
+  purpose,
+  subject: { revision: 0 },
+  prompt: 'Write?',
+  options: ['allowed-once', 'rejected'],
+})
+
+it('delegated full access: a declaring writable role follows the live parent for core tool gates only', async () => {
+  const k = make()
+  try {
+    const principal = { ...actor, id: 'full-access-chooser' }
+    const parent = await k.session('parent', options)
+    await parent.setYolo(true, principal)
+    const open = async (key: string, extra: Partial<RoleDelegation>) => {
+      const child = await k.session(key, {
+        ...options,
+        roleDelegation: { ...captured(), permission: 'workspace-write', ...extra },
+      })
+      await child.inheritAutomaticPermissions(parent)
+      return child
+    }
+    const child = await open('declared', { delegatedFullAccess: true })
+    expect(child.permissionContext).toMatchObject({ policy: 'full-access', actor: principal })
+    expect(child.yolo).toBe(false)
+    const port = toolGate(child)
+    const handle = await port.request(gateSpec('write'))
+    expect((await port.get(handle)).result).toMatchObject({
+      reason: 'answered',
+      code: 'full-access',
+      answeredBy: { id: principal.id, role: 'system' },
+      authorization: { sessionId: child.permissionContext.sessionId, epoch: child.permissionContext.epoch },
+    })
+    const admission = await port.admit!(handle)
+    // Everything except Core's own tool gate is still refused for the role.
+    const sign = {
+      ...gateSpec('sign', 'business.confirm'),
+      presentation: { en: { title: 'Sign', fields: [], responseValue: 'I sign.' } },
+      responseSchema: { type: 'string', const: 'I sign.' },
+    }
+    for (const [gate, spec] of [
+      [toolGate(child, 'fixture/plugin'), gateSpec('plugin')],
+      [port, gateSpec('plan', 'plan.exit')],
+      [port, sign],
+    ] as const)
+      expect((await gate.get(await gate.request(spec))).result).toMatchObject({
+        code: 'delegated-approval-refused',
+      })
+    await parent.setYolo(false, actor)
+    expect(child.permissionContext.policy).not.toBe('full-access')
+    expect(() => admission.assertActive()).toThrow('AUTHORITY_REVOKED')
+    expect((await port.get(await port.request(gateSpec('next')))).result).toBeNull()
+
+    await parent.setYolo(true, principal)
+    // read-only never upgrades; an undeclared snapshot keeps its captured permission.
+    for (const [key, extra, policy] of [
+      ['read-only', { delegatedFullAccess: true, permission: 'read-only' }, 'read-only'],
+      ['undeclared', {}, 'workspace-write'],
+    ] as const) {
+      const other = await open(key, extra as Partial<RoleDelegation>)
+      expect(other.permissionContext.policy).toBe(policy)
+      const otherPort = toolGate(other)
+      expect((await otherPort.get(await otherPort.request(gateSpec('write')))).result).toBeNull()
+    }
+    // Unattended parents answer exactly as the main session does under full access.
+    const unattended = await open('unattended', { delegatedFullAccess: true, humanApprovals: false })
+    const quiet = toolGate(unattended)
+    expect((await quiet.get(await quiet.request(gateSpec('write')))).result).toMatchObject({
+      code: 'full-access',
+    })
+    const undeclared = await open('unattended-undeclared', { humanApprovals: false })
+    const noHuman = toolGate(undeclared)
+    expect((await noHuman.get(await noHuman.request(gateSpec('write')))).result).toMatchObject({
+      code: 'delegated-approval-refused',
+    })
+  } finally {
+    await k.close()
+  }
+})
+
+it('delegated full access: the captured flag survives reopen', async () => {
+  const storage = new MemoryStorage()
+  const first = make(storage)
+  await first.session('child', {
+    ...options,
+    roleDelegation: { ...captured(), permission: 'workspace-write', delegatedFullAccess: true },
+  })
+  await first.close()
+  const second = make(storage)
+  try {
+    expect((await second.session('child', options)).d.roleDelegation?.delegatedFullAccess).toBe(true)
+  } finally {
+    await second.close()
+  }
+})
