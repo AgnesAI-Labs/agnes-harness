@@ -42,7 +42,7 @@ type Launch = {
 /** Installed agents use the agent launch-ticket facade. Catalog-only agents use the public agent install flow,
  * which also prepares, reviews and starts through that facade after package admission.
  */
-export function useAgentLaunch(data: BusinessAgentsData) {
+export function useAgentLaunch(data: BusinessAgentsData, selectedWorkspace?: () => string | undefined) {
   const { t, locale } = useUiText(AGENTS_NAMESPACE, agentsCatalog)
   const nav = usePushStack()
   const [launch, setLaunch] = useState<Launch>()
@@ -79,7 +79,9 @@ export function useAgentLaunch(data: BusinessAgentsData) {
     set(pending)
     nav.open(pending.pageId)
     try {
-      const result = await data.api.prepareAgent(card.ref, ...(compose?.workspace ? [compose.workspace] : []))
+      // An explicit composer workspace wins; otherwise the user's selected one, else the launcher's own.
+      const workspace = compose?.workspace ?? selectedWorkspace?.()
+      const result = await data.api.prepareAgent(card.ref, ...(workspace ? [workspace] : []))
       if (current.current !== pending) return
       if (result.presentation.ref !== card.ref) throw new Error(t('reason.changed'))
       const prepared: Launch = {

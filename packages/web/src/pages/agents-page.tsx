@@ -45,6 +45,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { homeAdmin } from './admin-api.js'
 import { useAgentLaunch } from './agents-launch.js'
 import { declaredAgentCards } from './agents-model.js'
+import type { HomePageData } from './host.js'
 import { HomePageFrame } from './page-frame.js'
 import { workLaunch } from './work-launch.js'
 
@@ -53,9 +54,11 @@ const source = { connect: homeAdmin }
 function AgentList({
   data,
   selection,
+  selectedWorkspace,
 }: {
   data: BusinessAgentsData
   selection: UiExtensionContext['selection']
+  selectedWorkspace?: (() => string | undefined) | undefined
 }) {
   const { t, locale } = useUiText(AGENTS_NAMESPACE, agentsCatalog)
   const [query, setQuery] = useState('')
@@ -64,7 +67,7 @@ function AgentList({
     if (!data.api) throw new Error('Admin unavailable')
     return data.api.loops()
   })
-  const starter = useAgentLaunch(data)
+  const starter = useAgentLaunch(data, selectedWorkspace)
   useSyncExternalStore(applicationIdentity.subscribe, applicationIdentity.getSnapshot)
   const declared = declaredAgentCards(
     data.agents.map((agent) => agent.entry),
@@ -315,7 +318,11 @@ export function AgentsPage({ context }: { context: UiExtensionContext }) {
       }
     >
       <Loadable loading={data.busy} error={data.error} hasData={data.loaded} onRetry={data.reload}>
-        <AgentList data={data} selection={context.selection} />
+        <AgentList
+          data={data}
+          selection={context.selection}
+          selectedWorkspace={(context.data as HomePageData | undefined)?.selectedWorkspace}
+        />
       </Loadable>
     </HomePageFrame>
   )

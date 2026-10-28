@@ -706,7 +706,8 @@ it.each(['en', 'zh-CN'] as const)(
             createElement(HomePageHost, {
               locale: { t: (key: string) => key } as never,
               source: localized.source,
-              data: {} as never,
+              // en: a selected workspace; zh-CN: none selected (launcher default).
+              data: { selectedWorkspace: () => (locale === 'en' ? '/selected/ws' : undefined) } as never,
               onActive: (id) => {
                 shown.push(id)
               },
@@ -766,6 +767,7 @@ it.each(['en', 'zh-CN'] as const)(
         }
         await vi.waitFor(() => expect(opened).toHaveLength(1))
         if (via === 'composer') expect(prepareAgent).toHaveBeenCalledWith(plan.ref, '/synthetic/work')
+        else if (locale === 'en') expect(prepareAgent).toHaveBeenCalledWith(plan.ref, '/selected/ws')
         else expect(prepareAgent).toHaveBeenCalledWith(plan.ref)
         if (consent === 'covered') {
           expect(shown.every((id) => id === undefined)).toBe(true)

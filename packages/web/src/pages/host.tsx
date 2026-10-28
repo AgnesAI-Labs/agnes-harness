@@ -28,6 +28,8 @@ export type HomePageData = Readonly<{
   sessionId(): string | undefined
   /** Open the settings dialog at one of its sections. */
   openSettings(section: string): void
+  /** The selected workspace's path when it is available; agent launches start there instead of the launcher's. */
+  selectedWorkspace?(): string | undefined
   /** Start a new session draft with this text in the composer. */
   startDraft(prompt?: string): void
   /** What this browser has loaded of each plugin, for the plugins page's run state. */

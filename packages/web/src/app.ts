@@ -1024,6 +1024,7 @@ const homePages = mountHomePages(hosts.homePage, {
   data: {
     call: (method, params) => client.call(method, params),
     sessionId: () => sessionBinding.session?.id,
+    selectedWorkspace: () => (selectedWorkspace?.available ? selectedWorkspace.path : undefined),
     openSettings: (section) =>
       run(async () => {
         settingsRegion.open('model')
