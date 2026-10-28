@@ -119,12 +119,16 @@ describe('preset Intelligent UI catalog', () => {
           '250',
         )
         expect(host.querySelector('[data-testid="ui-table-rows"] tbody th span')?.textContent).toBe('txn-1')
-        // The source table is immediate; the plotting engine arrives through its own chunk.
+        // The source table is immediate; the plotting engine arrives through its own chunk. A cold
+        // transform of that chunk takes longer than the default second, so the wait allows for it.
         expect(host.querySelector('[data-testid="ui-chart-chart"] table')).not.toBeNull()
-        await vi.waitFor(async () => {
-          await act(async () => {})
-          expect(host.querySelector('[data-testid="ui-chart-chart"] svg')?.getAttribute('role')).toBe('img')
-        })
+        await vi.waitFor(
+          async () => {
+            await act(async () => {})
+            expect(host.querySelector('[data-testid="ui-chart-chart"] svg')?.getAttribute('role')).toBe('img')
+          },
+          { timeout: 10_000 },
+        )
         await act(async () =>
           host.querySelector<HTMLInputElement>('[data-testid="ui-select-rows-txn-1"]')!.click(),
         )
