@@ -721,6 +721,7 @@ it.each(['en', 'zh-CN'] as const)(
               agent: plan.ref,
               prompt: 'typed message',
               send: true,
+              yolo: true,
               workspace: '/synthetic/work',
             })
           else
@@ -784,6 +785,7 @@ it.each(['en', 'zh-CN'] as const)(
             sessionId: `${via}-${locale}-${consent}`,
             prompt: 'typed message',
             send: true,
+            yolo: true,
           })
         } else {
           expect(applicationWorkDraft.read(`${via}-${locale}-${consent}`)?.object?.id).toBe('B-017')

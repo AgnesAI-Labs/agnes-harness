@@ -141,6 +141,7 @@ export function useAgentLaunch(data: BusinessAgentsData, selectedWorkspace?: () 
         prompt:
           work?.prompt ?? pending.compose?.prompt ?? result.draft?.text[locale] ?? result.draft?.text.en,
         ...(pending.compose ? { send: pending.compose.send } : {}),
+        ...(pending.compose?.yolo ? { yolo: true } : {}),
       })
     }
     const read = async () => {

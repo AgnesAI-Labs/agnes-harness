@@ -38,6 +38,8 @@ export type StartedSession = {
   prompt?: string | undefined
   /** The prompt is the user's own message: send it instead of leaving it as an editable draft. */
   send?: boolean | undefined
+  /** Switch the opened session to Full access (skip approvals) before the prompt is sent. */
+  yolo?: boolean | undefined
 }
 /** The workbench listens for this on `window` and opens the session in place, without a reload. */
 export const OPEN_SESSION_EVENT = 'agnes:open-session'
