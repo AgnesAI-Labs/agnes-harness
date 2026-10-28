@@ -236,6 +236,7 @@ export function createLauncher({ cacheRoot, fetchArchive = fetch } = {}) {
     cancel() {
       retryFor = undefined
       controller?.abort()
+      return installing
     },
   }
   return launcher

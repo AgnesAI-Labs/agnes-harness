@@ -42,6 +42,8 @@ it('keeps every exported frontend catalog paired across all frontend packages', 
         if (name === 'settingsShellLocaleCatalog') {
           expect(catalog.en['settings-shell.jobs']).toBe('Jobs')
           expect(catalog['zh-CN']?.['settings-shell.jobs']).toBe('作业')
+          expect(catalog.en['settings-shell.voice']).toBe('Voice')
+          expect(catalog['zh-CN']?.['settings-shell.voice']).toBe('语音')
         }
         for (const [language, entries] of Object.entries(catalog)) {
           if (!entries || typeof entries !== 'object') continue
@@ -85,6 +87,7 @@ it('keeps every exported frontend catalog paired across all frontend packages', 
       'settingsLocaleCatalog',
       'timelineLocaleCatalog',
       'pluginAdminShellLocaleCatalog',
+      'voiceSettingsCatalog',
     ]),
   )
   expect(count).toBeGreaterThan(25)

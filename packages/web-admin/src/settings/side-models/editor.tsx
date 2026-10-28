@@ -99,7 +99,7 @@ export function SideModelEditor(props: SideModelEditorProps) {
             <Field label={t('side.preset')}>
               <SettingsSelect
                 data-testid="side-preset"
-                value={draft.presetId}
+                value={draft.presetId ?? ''}
                 disabled={busy}
                 onChange={(event) => {
                   const preset = presets.find((item) => item.id === event.target.value)

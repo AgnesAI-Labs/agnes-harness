@@ -93,3 +93,61 @@ export function childEngineConfigSchema(id: string): ConfigSchema {
   )
   return { type: 'object', additionalProperties: false, required: document.required ?? [], properties }
 }
+
+const voiceField = (key: string, id: string, hint = false) => ({
+  labelKey: `voice.field.${key}`,
+  ...(hint ? { hintKey: `voice.field.${key}Hint` } : {}),
+  id,
+  testId: id,
+})
+/** The voice settings as one flat form; the daemon's `VoiceSettings` stays the validation authority. */
+export const voiceConfigSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'inputEnabled',
+    'language',
+    'autoSend',
+    'maxSeconds',
+    'readingEnabled',
+    'voice',
+    'speed',
+    'autoRead',
+    'pauseSeconds',
+  ],
+  properties: {
+    inputEnabled: { type: 'boolean', 'x-ui': voiceField('inputEnabled', 'voice-input-enabled') },
+    language: {
+      type: 'string',
+      maxLength: 16,
+      pattern: '^$|^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,3}$',
+      'x-ui': { ...voiceField('language', 'voice-language', true), control: 'text' },
+    },
+    autoSend: { type: 'boolean', 'x-ui': voiceField('autoSend', 'voice-auto-send', true) },
+    maxSeconds: {
+      type: 'integer',
+      minimum: 5,
+      maximum: 120,
+      'x-ui': { ...voiceField('maxSeconds', 'voice-max-seconds'), control: 'text' },
+    },
+    readingEnabled: { type: 'boolean', 'x-ui': voiceField('readingEnabled', 'voice-reading-enabled') },
+    voice: {
+      type: 'string',
+      maxLength: 128,
+      'x-ui': { ...voiceField('voice', 'voice-voice', true), control: 'text' },
+    },
+    speed: {
+      type: 'number',
+      minimum: 0.25,
+      maximum: 4,
+      'x-ui': { ...voiceField('speed', 'voice-speed', true), control: 'text' },
+    },
+    autoRead: { type: 'boolean', 'x-ui': voiceField('autoRead', 'voice-auto-read', true) },
+    pauseSeconds: {
+      type: 'number',
+      minimum: 0.5,
+      maximum: 5,
+      'x-ui': { ...voiceField('pauseSeconds', 'voice-pause'), control: 'text' },
+    },
+  },
+} satisfies ConfigSchema

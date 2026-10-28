@@ -65,6 +65,13 @@ Web 创建 SDK 连接时设置 `sessionRestoreHistory: 'none'`，使保留了工
 
 `client.session.btw(sessionId, question)` 基于当前对话回答一个旁问（1 至 4000 字符），不进 transcript：账本里只多一条 `side-call` 的费用行，模型不能调用工具；回合进行中只看到该回合之前已完成的部分。同一会话同时只能有一个旁问（`SESSION_BUSY`）；单次请求或树预算不足是 `SEMANTIC_REJECTED`（`reason: 'BUDGET'`），60 秒超时是 `REQUEST_TIMEOUT`。模型一旦被调用，超时或失败也会写入 `side-call` 费用行（标记为中断）。
 
+`_agnes/v1/session.voice.transcribe`（`sessionId`、`audio`，可选 `language`）把一段录音转成文字，`_agnes/v1/session.voice.speak`（`sessionId`、`text`，可选 `voice` 和 `speed`）返回 base64 的 `audio/mpeg`。两者都只对会话所有者开放，使用语音设置所选的语音账户；`language`、`voice` 和 `speed` 缺省时取已保存的设置。`_agnes/v1/voice.status` 不需要会话，返回 `transcribe` 和 `speech` 两项功能的状态（`available`、`unconfigured`、`no-model`、`credential-missing` 或 `ambiguous`）、所选的 `account`、没有可用账户时的 `reason`，以及已保存的 `settings`；`voice.settings.get` 和 `voice.settings.save` 读写这些设置，只接受本地所有者。见[和智能体说话](../guide/voice.zh-CN.md#费用与限制)。
+
+- **输入限制**：`audio` 是 base64 的 PCM WAV，16 kHz 单声道 16 位，长度 64 至 900,000 个 base64 字符；`text` 为 1 至 120 个 UTF-16 码元（表情符号计为 2）。超出这些 schema 边界的值是普通的 `INVALID_PARAMS`，带 `code`、`key` 和 `path`，没有 `reason`。通过 schema 之后，host 会把格式不对的 WAV 拒绝为 `INVALID_PARAMS`（`reason: 'VOICE_AUDIO_FORMAT'`），把超过 20 秒（容差半秒）的录音拒绝为 `INVALID_PARAMS`（`reason: 'VOICE_TOO_LARGE'`）。
+- **错误**：没有可用账户是 `SEMANTIC_REJECTED`（`reason: 'VOICE_UNAVAILABLE'`，并带说明原因的 `state`）。服务商拒绝或失败是 `SEMANTIC_REJECTED`（`reason: 'VOICE_PROVIDER'`，附 `code`、`retryable`，已知时还有 `retryAfterMs`）。单次请求或树预算不足是 `SEMANTIC_REJECTED`（`reason: 'BUDGET'`）。30 秒期限是 `REQUEST_TIMEOUT`。
+- **频率**：每个会话同时只能有一次识别和两次朗读在进行（`SESSION_BUSY`，`reason` 为 `'voice.transcribe'` 或 `'voice.speak'`），一分钟内受理的调用超过 30 次是 `OVERLOADED`（`reason: 'VOICE_RATE'`，附 `retryAfterMs`）。
+- **费用**：到达服务商的调用会写入一条 `side-call` 费用行，标签为 `voice.transcribe`（音频秒数，向上取整）或 `voice.speak`（文字的 UTF-8 字节数）；在此之前被拒绝的调用不写任何行。会话里还没有回合时，调用不做树预算预留。
+
 准入后读取有界的 `projectUIOpening`，从该 opening 的 generation 和排他 `upto` cut 订阅；open 响应不是投影游标。权限处理器必须在打开前注册。中止 SDK 调用会发送带相同请求 ID 的 `session.loadingCancel`，只释放该连接上的本次等待，不停止运行中的 turn。省略 ID 保留旧的连接/会话级加载取消行为。历史预览和本地草稿都不能授权发送或回答审批。
 
 | 方法族 | 作用 |

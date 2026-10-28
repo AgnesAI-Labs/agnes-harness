@@ -12,6 +12,7 @@ import {
 import { mountNewSessionDialog } from '../src/new-session-dialog.js'
 import type { SettingsRegionOptions } from '../src/region-slots.js'
 import type { SidebarActions, SidebarState } from '../src/sidebar.js'
+import type { VoiceController } from '../src/voice/controller.js'
 import { mountReleasePresentations } from './release-presentations-fixture.js'
 
 export type WebPageName = 'index.html' | 'admin.html' | 'resources.html'
@@ -22,6 +23,8 @@ export type WebDomFixtureOptions = {
   sidebar?: { state?: SidebarState; actions?: Partial<SidebarActions> }
   claim?: ClaimResolver
   settings?: SettingsRegionOptions
+  /** Without one the page has no voice: the fixture's client has no daemon to ask. */
+  voice?: VoiceController
 }
 
 const packageRoot = process.cwd().endsWith('/packages/web')
@@ -84,6 +87,7 @@ export async function mountRenderedIndex(options: WebDomFixtureOptions = {}): Pr
     rightbarContainer: hosts.rightbar,
     settingsPaneContainer: hosts.settings,
     ...(options.settings ? { settings: options.settings } : {}),
+    voice: options.voice ?? false,
   })
 
   await mountReleasePresentations(runtime)

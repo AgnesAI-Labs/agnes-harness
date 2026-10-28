@@ -151,6 +151,184 @@ it('runs only the published resource, drains replacements, and refuses revival a
   }
 })
 
+it.each([
+  ['retry', 'settled', false, undefined],
+  ['reconcile', 'settled', true, undefined],
+  ['toggle', 'settled', true, undefined],
+  ['retoggle', 'settled', false, undefined],
+  ['stale-decision', 'settled', false, undefined],
+  ['unfinished-startup', 'settled', false, undefined],
+  ['retry', 'unknown', false, undefined],
+  ['retry', 'rejected', true, undefined],
+  ['retry', 'settled', false, 'incarnation'],
+  ['retry', 'settled', true, 'incarnation'],
+  ['retry', 'settled', true, 'identity'],
+] as const)(
+  'allows %s only after confirmed late %s cleanup (separate stores: %s, changed fence: %s)',
+  async (route, outcome, separate, changed) => {
+    vi.useFakeTimers()
+    const origin = storage()
+    const destination = separate ? storage() : origin
+    const owner = 'plugin/late-cleanup',
+      packageId = '@example/late-cleanup'
+    const managers: ProfileManagedResources[] = []
+    let release!: () => void
+    const cleanup = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let finishStartup!: () => void
+    const startup = new Promise<void>((resolve) => {
+      finishStartup = resolve
+    })
+    const activate = (revision: string, store: typeof origin.store) => {
+      const manager = new ProfileManagedResources(
+        'synthetic-late-cleanup',
+        () => ({
+          async enqueue() {
+            throw new Error('unused')
+          },
+          async read() {
+            throw new Error('unused')
+          },
+        }),
+        undefined,
+        async (pid) =>
+          pid === process.pid && route !== 'stale-decision'
+            ? { state: 'alive', startId: 'worker:self' }
+            : { state: 'unknown', reason: 'foreign owner' },
+      )
+      managers.push(manager)
+      const handle = manager.register({
+        owner,
+        packageId,
+        revision,
+        integrity: revision,
+        store,
+        assert() {},
+        descriptor: {
+          id: 'server',
+          scope: 'profile',
+          artifact: { kind: 'in-process' },
+          apiVersion: '1.0.0',
+          healthPath: '/health',
+          listeners: [],
+          requires: [],
+          startupTimeoutMs: 5000,
+          shutdownTimeoutMs: 5000,
+        },
+        definition: {
+          id: 'server',
+          configSchema: { type: 'object', properties: {}, additionalProperties: false },
+          defaultConfig: {},
+          async start(init) {
+            init.onShutdown(async () => {
+              if (revision === 'old') {
+                await cleanup
+                if (outcome === 'rejected') throw new Error('cleanup failed')
+                return { state: outcome }
+              }
+              return { state: 'settled' }
+            })
+            if (revision === 'old' && route === 'unfinished-startup') await startup
+            init.ready()
+            return revision
+          },
+        },
+      })
+      return { manager, handle }
+    }
+    try {
+      const old = activate('old', origin.store)
+      await old.manager.publish()
+      if (route === 'unfinished-startup') {
+        await vi.advanceTimersByTimeAsync(10001)
+        await expect(old.handle.get()).rejects.toThrow()
+      } else expect(await old.handle.get()).toBe('old')
+      let next = activate('new', destination.store)
+      const switching = next.manager.publish()
+      await vi.advanceTimersByTimeAsync(5001)
+      await switching
+      await expect(next.handle.get()).rejects.toThrow()
+      expect(next.manager.statuses(packageId)).toMatchObject([
+        { state: 'failed', code: 'shutdown-unconfirmed' },
+      ])
+      await expect(next.handle.retry()).rejects.toThrow()
+      const recovery = next.manager.reconciliation(owner, 'server.reconcile')
+      if (!recovery) throw new Error('Missing managed reconciliation service')
+      const previousDecision = route === 'stale-decision' ? await recovery.prepare() : undefined
+      destination.store.set('operation:motion', { state: 'unknown' })
+      destination.store.set('managed-shutdown:other', true)
+      if (changed === 'incarnation') destination.store.set('managed-incarnation:server', 'another-instance')
+      if (changed === 'identity')
+        destination.store.set('managed-process:server', { pid: 42, startId: 'foreign' })
+      if (route === 'toggle' || route === 'retoggle') {
+        next.handle.release()
+        await next.manager.publish('disable')
+        if (route === 'retoggle') {
+          next = activate('pending-reenable', destination.store)
+          await next.manager.publish()
+          await expect(next.handle.get()).rejects.toThrow()
+        }
+      }
+      release()
+      await vi.advanceTimersByTimeAsync(0)
+      const confirmed = outcome === 'settled' && changed === undefined && route !== 'unfinished-startup'
+      if (confirmed) {
+        expect(destination.store.get('managed-shutdown:server')).toBe(false)
+        await expect(next.handle.get()).rejects.toThrow()
+        if (route === 'retry' || route === 'retoggle') {
+          const retries = await Promise.allSettled([next.handle.retry(), next.handle.retry()])
+          expect(retries.map((result) => result.status).sort()).toEqual(['fulfilled', 'rejected'])
+          expect(await next.handle.get()).toBe(route === 'retoggle' ? 'pending-reenable' : 'new')
+        } else if (route === 'reconcile' || route === 'stale-decision') {
+          if (previousDecision) {
+            await expect(
+              next.handle.reconcile({
+                admission: { prepared: previousDecision, approval: { answer: 'allow' } },
+                signal: new AbortController().signal,
+              } as never),
+            ).rejects.toThrow()
+          }
+          const prepared = await recovery.prepare()
+          expect(prepared.presentation).toMatchObject({
+            cleanupConfirmed: true,
+            identityState: route === 'stale-decision' ? 'unknown' : 'alive',
+          })
+          await next.handle.reconcile({
+            admission: { prepared },
+            signal: new AbortController().signal,
+          } as never)
+          expect(await next.handle.get()).toBe('new')
+          await expect(
+            next.handle.reconcile({
+              admission: { prepared },
+              signal: new AbortController().signal,
+            } as never),
+          ).rejects.toThrow()
+        } else {
+          const enabled = activate('enabled', destination.store)
+          await enabled.manager.publish()
+          expect(await enabled.handle.get()).toBe('enabled')
+        }
+        // A confirmation for the old instance must not clear its successor's active marker.
+        expect(destination.store.get('managed-shutdown:server')).toBe(true)
+      } else {
+        expect(destination.store.get('managed-shutdown:server')).toBe(true)
+        await expect(next.handle.retry()).rejects.toThrow()
+      }
+      expect(destination.store.get('operation:motion')).toEqual({ state: 'unknown' })
+      expect(destination.store.get('managed-shutdown:other')).toBe(true)
+    } finally {
+      release()
+      finishStartup()
+      await vi.advanceTimersByTimeAsync(0)
+      for (const manager of managers) await manager.close().catch(() => undefined)
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
+  },
+)
+
 // Synthetic OS snapshots exercise recovery without starting daemon/worker processes.
 it.each([
   {

@@ -6,7 +6,7 @@ import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } fr
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 
 // Copy the production ESM unchanged; only the reviewed payload and engine are synthetic.
 async function fixture(packagedLock = true) {
@@ -165,6 +165,125 @@ it('installs once across two concurrent processes and lets the refused process r
     expect(await f.downloads()).toBe(1)
   } finally {
     await f.close()
+  }
+})
+
+it('waits for cancelled preparation to release its install lock before handing over to a replacement', async () => {
+  const f = await fixture()
+  const plugin = join(f.root, 'plugin')
+  const source = new URL('../bundled-plugins/browser/', import.meta.url)
+  const cache =
+    process.platform === 'win32'
+      ? join(f.root, 'Agnes', 'browser')
+      : join(f.root, 'Library', 'Caches', 'Agnes', 'browser')
+  let release!: () => void, entered!: () => void, aborted!: () => void
+  const pending = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const downloading = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  const cancelled = new Promise<void>((resolve) => {
+    aborted = resolve
+  })
+  type Shutdown = () => Promise<{ state: string }>
+  const shutdowns: Shutdown[] = []
+  try {
+    await copyFile(new URL('index.mjs', source), join(plugin, 'index.mjs'))
+    for (const name of await readdir(new URL('src/', source)))
+      if (name.endsWith('.mjs')) await copyFile(new URL('src/' + name, source), join(plugin, 'src', name))
+    vi.stubEnv('LOCALAPPDATA', f.root)
+    vi.stubEnv('HOME', f.root)
+    const payload = await readFile(join(f.root, 'payload'))
+    let interrupt = true
+    vi.stubGlobal('fetch', async (_url: unknown, { signal }: { signal: AbortSignal }) => {
+      const hold = interrupt
+      interrupt = false
+      return {
+        ok: true,
+        body: (async function* () {
+          if (hold) {
+            signal.addEventListener('abort', aborted, { once: true })
+            try {
+              entered()
+              yield payload.subarray(0, 4)
+              // Keep cleanup pending after cancellation, independently of filesystem speed.
+              await pending
+              yield payload.subarray(4)
+            } finally {
+              signal.removeEventListener('abort', aborted)
+            }
+          } else yield payload
+        })(),
+      }
+    })
+    // Load the relocated production ESM through Node, including paths containing # and %.
+    const { main } = createRequire(import.meta.url)(join(plugin, 'index.mjs'))
+    const activate = () => {
+      let definition!: {
+        start(init: {
+          assertCurrent(): void
+          ready(): void
+          onShutdown(handler: Shutdown): void
+        }): Promise<{ state: string }>
+      }
+      main.apply({
+        profileRuntime: {
+          register(value: typeof definition) {
+            definition = value
+            return {}
+          },
+          streams: { register() {} },
+        },
+        services: { register() {} },
+        hooks: { register() {} },
+        tools: { register() {} },
+      })
+      return definition.start({
+        assertCurrent() {},
+        ready() {},
+        onShutdown(handler) {
+          shutdowns.push(handler)
+        },
+      })
+    }
+    await activate()
+    await downloading
+    let settled = false
+    const shutdown = shutdowns[0]
+    if (!shutdown) throw new Error('Managed preparation did not register its shutdown handler')
+    const closing = shutdown().then((result) => {
+      settled = true
+      return result
+    })
+    await cancelled
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(settled).toBe(false)
+    expect((await readdir(cache)).some((name) => name.endsWith('.lock'))).toBe(true)
+    release()
+    await expect(closing).resolves.toEqual({ state: 'settled' })
+    expect(await readdir(cache)).toEqual([])
+    const replacement = await activate()
+    await expect.poll(() => replacement.state).toBe('ready')
+    const installed = join(cache, 'fixture-' + process.platform + '-' + process.arch)
+    expect(await readFile(join(installed, 'chromium'), 'utf8')).toBe('fixture executable')
+    expect(JSON.parse(await readFile(join(installed, 'agnes-install.json'), 'utf8')).revision).toBe('fixture')
+    expect((await readdir(cache)).some((name) => name.endsWith('.lock'))).toBe(false)
+  } finally {
+    release()
+    try {
+      await Promise.all(shutdowns.map((shutdown) => shutdown()))
+      if (existsSync(cache))
+        await expect
+          .poll(async () =>
+            (await readdir(cache)).filter((name) => name.endsWith('.lock') || name.includes('.tmp-')),
+          )
+          .toEqual([])
+    } finally {
+      vi.unstubAllGlobals()
+      vi.unstubAllEnvs()
+      await f.close()
+    }
   }
 })
 

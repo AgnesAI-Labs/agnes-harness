@@ -12,7 +12,14 @@ import type {
 import type { JsonValue, ManagedServiceDescriptor } from '@agnes/protocol'
 import { rpcError } from '@agnes/protocol'
 import { compileExtensionSchema } from '../ext-host/json-schema.js'
-import { handoverManagedMarker, type ManagedPredecessor, managedMarkerBinding } from './managed-marker.js'
+import {
+  confirmManagedShutdown,
+  handoverManagedMarker,
+  hasManagedShutdownConfirmation,
+  type ManagedPredecessor,
+  managedMarkerBinding,
+  markShutdown,
+} from './managed-marker.js'
 import {
   managedProcessGone,
   managedProcessOwner,
@@ -138,7 +145,7 @@ export class ProfileManagedResources {
         // No await between the final fence, reservation and durable marker update.
         markShutdown(input.store, r.id, false)
         r.status = { state: 'starting' }
-        const next = await this.start(input)
+        const next = await this.start(input, r)
         const profile = profiles.get(this.key)
         if (!profile || profile.manager !== this) {
           await next.stop('disable')
@@ -150,11 +157,16 @@ export class ProfileManagedResources {
       },
       retry: async () => {
         const r = resource()
-        if (r.status.state !== 'failed' || r.status.code === 'shutdown-unconfirmed')
+        if (
+          r.status.state !== 'failed' ||
+          (r.status.code === 'shutdown-unconfirmed' &&
+            input.store.get(`managed-shutdown:${r.id}`) !== false &&
+            !hasManagedShutdownConfirmation(r.shutdownConfirmation, input.store))
+        )
           throw rpcError('CAPABILITY_DENIED')
         // Reserve the failed slot before yielding so two approved retries cannot start twins.
         r.status = { state: 'starting' }
-        const next = await this.start(input)
+        const next = await this.start(input, r)
         const profile = profiles.get(this.key)
         if (!profile || profile.manager !== this) {
           await next.stop('disable')
@@ -186,19 +198,33 @@ export class ProfileManagedResources {
     input.assert()
     if (this.current && !epoch) throw rpcError('CAPABILITY_DENIED')
     const activation = typeof epoch === 'string' ? epoch : input.revision
-    handoverManagedMarker(input.store, input.definition.id, { ...input, activation }, predecessor)
+    const confirmation = handoverManagedMarker(
+      input.store,
+      input.definition.id,
+      { ...input, activation },
+      predecessor,
+    )
     const lifetime = new AbortController()
     let shutdown: Parameters<ProfileManagedInit['onShutdown']>[0] | undefined
     let ready = false
     let started = false
+    let startupComplete = false
     let ended = false
     let stopping: Promise<void> | undefined
     let shutdownResult: Promise<{ state: 'settled' | 'unknown' } | undefined> | undefined
-    const shut = (reason: Reason) =>
-      (shutdownResult ??= deadline(
-        Promise.resolve().then(() => shutdown?.(reason)),
-        input.descriptor.shutdownTimeoutMs,
-      ).catch(() => undefined))
+    const shut = (reason: Reason) => {
+      if (!shutdownResult) {
+        const ownConfirmation = startupComplete ? r.shutdownConfirmation : undefined
+        const work = Promise.resolve()
+          .then(() => shutdown?.(reason))
+          .then((result) => {
+            if (result?.state === 'settled' && ownConfirmation) confirmManagedShutdown(ownConfirmation)
+            return result
+          })
+        shutdownResult = deadline(work, input.descriptor.shutdownTimeoutMs).catch(() => undefined)
+      }
+      return shutdownResult
+    }
     const r: Resource = {
       incarnation: randomUUID(),
       owner: input.owner,
@@ -206,6 +232,7 @@ export class ProfileManagedResources {
       integrity: input.integrity,
       activation,
       store: input.store,
+      ...(confirmation ? { shutdownConfirmation: confirmation } : {}),
       revision: input.revision,
       id: input.definition.id,
       lifetime,
@@ -228,7 +255,8 @@ export class ProfileManagedResources {
             return
           }
           const result = await shut(reason)
-          const settled = result?.state === 'settled'
+          const settled =
+            result?.state === 'settled' || hasManagedShutdownConfirmation(r.shutdownConfirmation, input.store)
           r.status = settled ? { state: 'stopped' } : { state: 'failed', code: 'shutdown-unconfirmed' }
           ended = true
           markShutdown(input.store, r.id, !settled)
@@ -273,8 +301,17 @@ export class ProfileManagedResources {
       lifetime.signal.throwIfAborted()
       input.store.transaction(() => {
         input.store.set(ownerKey, owner)
+        input.store.set(`managed-incarnation:${r.id}`, r.incarnation)
         markShutdown(input.store, r.id, true)
       })
+      r.shutdownConfirmation = {
+        id: r.id,
+        incarnation: r.incarnation,
+        identity: owner,
+        confirmed: false,
+        origin: input.store,
+        current: input.store,
+      }
       started = true
       const value = await input.definition.start({
         signal: lifetime.signal,
@@ -310,6 +347,7 @@ export class ProfileManagedResources {
       lifetime.signal.throwIfAborted()
       if (!ready) throw new Error('readiness-required')
       r.status = { state: 'ready', endpoints: listeners }
+      startupComplete = true
       return value
     }
     r.value = deadline(run(), input.descriptor.startupTimeoutMs).catch(async (error) => {
@@ -433,11 +471,15 @@ export class ProfileManagedResources {
           !r ||
           r.status.state !== 'failed' ||
           r.status.code !== 'shutdown-unconfirmed' ||
-          input.store.get(`managed-shutdown:${r.id}`) !== true
+          (input.store.get(`managed-shutdown:${r.id}`) !== true &&
+            input.store.get(`managed-shutdown:${r.id}`) !== false)
         )
           throw rpcError('CAPABILITY_DENIED', { reason: 'MANAGED_RESOURCE_NOT_RECOVERABLE' })
         const identity = input.store.get(`managed-process:${r.id}`) ?? null
         const resourceRevision = managedRevision(input.store, r, input.revision, input.integrity)
+        const cleanupConfirmed =
+          input.store.get(`managed-shutdown:${r.id}`) === false ||
+          hasManagedShutdownConfirmation(r.shutdownConfirmation, input.store)
         const identityState = await managedProcessState(identity, this.processIdentity)
         input.assert()
         if (
@@ -447,7 +489,7 @@ export class ProfileManagedResources {
           resourceRevision !== managedRevision(input.store, r, input.revision, input.integrity)
         )
           throw rpcError('CAPABILITY_DENIED')
-        if (identityState === 'alive')
+        if (identityState === 'alive' && !cleanupConfirmed)
           throw rpcError('CAPABILITY_DENIED', { reason: 'MANAGED_PROCESS_ALIVE' })
         return {
           input: {},
@@ -459,8 +501,10 @@ export class ProfileManagedResources {
             lastKnownIdentity: identity,
             ...managedMarkerBinding(input.store, r.id),
             identityState,
-            confirmation:
-              'Confirm and recover / 确认并恢复: I confirm the old process is no longer running / 我确认旧进程已不再运行。 Unknown operation outcomes remain unknown; no device motion is replayed.',
+            ...(cleanupConfirmed ? { cleanupConfirmed: true } : {}),
+            confirmation: cleanupConfirmed
+              ? 'Resource cleanup confirmed / 已确认资源清理完成。 Unknown operation outcomes remain unknown; no device motion is replayed.'
+              : 'Confirm and recover / 确认并恢复: I confirm the old process is no longer running / 我确认旧进程已不再运行。 Unknown operation outcomes remain unknown; no device motion is replayed.',
           },
         }
       },
@@ -520,16 +564,14 @@ async function deadline<T>(work: Promise<T>, ms: number): Promise<T> {
   }
 }
 
-function markShutdown(store: OwnedStore, id: string, unconfirmed: boolean) {
-  store.transaction(() => {
-    store.set(`managed-shutdown:${id}`, unconfirmed)
-    if (!unconfirmed) store.delete(`managed-predecessor:${id}`)
-    store.set(`managed-marker-revision:${id}`, randomUUID())
-  })
-}
 function automaticReconciliation(prepared: PreparedServiceEffect) {
   const value = prepared.presentation
-  return !!value && typeof value === 'object' && !Array.isArray(value) && value.identityState === 'dead'
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    (value.identityState === 'dead' || value.cleanupConfirmed === true)
+  )
 }
 
 function managedRevision(
@@ -545,6 +587,7 @@ function managedRevision(
     shutdown: store.get(`managed-shutdown:${resource.id}`) ?? null,
     marker: store.get(`managed-marker-revision:${resource.id}`) ?? null,
     identity: store.get(`managed-process:${resource.id}`) ?? null,
+    instance: store.get(`managed-incarnation:${resource.id}`) ?? null,
     ...managedMarkerBinding(store, resource.id),
   })
 }

@@ -194,3 +194,13 @@ export {
   UiExtensionRegistry,
   workbenchPanels,
 } from './ui-registries.js'
+export type {
+  ConversationPhase,
+  VoiceComposer,
+  VoiceLevel,
+  VoiceNoticeKey,
+  VoicePort,
+  VoiceSettingsApi,
+  VoiceUnavailable,
+  VoiceViewState,
+} from './voice-port.js'

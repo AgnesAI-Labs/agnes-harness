@@ -48,6 +48,7 @@
     "./settings/session-choice": "./src/settings/session-choice.ts",
     "./settings/session-tools": "./src/settings/session-tools.tsx",
     "./settings/side-models": "./src/settings/side-models.tsx",
+    "./settings/voice": "./src/settings/voice.tsx",
     "./settings/status-check": "./src/settings/status-check.tsx",
     "./settings/system-prompt": "./src/settings/system-prompt.tsx",
     "./settings/system-prompt-api": "./src/settings/system-prompt-api.ts",

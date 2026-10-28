@@ -10,7 +10,6 @@ import {
   SideModelsPanel,
   sideModelsPanel,
 } from '../src/settings/side-models.js'
-
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const roots: Root[] = []
 afterEach(async () => {
@@ -916,4 +915,11 @@ it('tests a voice entry from its own rows even when the models would not save', 
   await type(host, 'side-voice-price-speech', 'abc')
   await click(host, 'side-test')
   expect(api.test).toHaveBeenLastCalledWith(expect.objectContaining({ model: 'same-model' }))
+})
+
+it('anchors the side-model block for deep links', async () => {
+  const { host } = await mount(client(), { accounts: [chatAccount, sideAccount] })
+  const block = document.getElementById('side-models')
+  expect(block).toBe(query(host, 'side-models'))
+  expect(block?.tabIndex).toBe(-1)
 })

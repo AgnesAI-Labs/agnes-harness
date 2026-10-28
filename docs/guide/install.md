@@ -163,7 +163,7 @@ For a supported home layout, SQLite checks the data format before opening storag
 - `E_DATA_DIR_STALE`: an older or unversioned format, retired tables, or package tables without their ledger. Stop AGH and back up the data directory named in the error. Delete only its `sessions.db`, `sessions.db-wal`, `sessions.db-shm` and `tables/`. Keep `profiles/`, including `<AGH_HOME>/profiles/` with model/account configuration. This reset loses sessions, schedules, workspace bindings and plugin settings; reinstall plugins you installed yourself.
 - `E_DATA_DIR_NEWER`: a newer AGH wrote the directory. Upgrade AGH to a build that supports it; do not reset or downgrade its version stamp.
 
-Both refusals leave existing data unchanged. The default ledger is `<AGH_HOME>/data/sessions.db`; a configured data-directory override changes the target, so use the exact paths in the error. Nothing is converted, and old session pins or trust metadata do not make an incompatible database reusable.
+Both refusals leave saved data unchanged. A read-only version check runs before opening a writer, preserving the database and any pending write-ahead log without converting or resetting them. SQLite may maintain its disposable shared-memory cache during this read. The default ledger is `<AGH_HOME>/data/sessions.db`; a configured data-directory override changes the target, so use the exact paths in the error. Old session pins or trust metadata do not make an incompatible database reusable.
 
 ## Rebuild or switch versions
 

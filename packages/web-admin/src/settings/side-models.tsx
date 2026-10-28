@@ -17,7 +17,6 @@ import { SideModelList } from './side-models/list.js'
 import {
   type AdapterPreset,
   accountIdFor,
-  draftModels,
   type EditorDraft,
   endpointOk,
   failureCode,
@@ -29,6 +28,7 @@ import {
   type SideModelsClient,
   type SideModelsCredentials,
   type SideProviderId,
+  savedDraft,
   type VoiceError,
   voiceModels,
   voiceRows,
@@ -178,18 +178,8 @@ function SideModels({
     if (row && row.getAttribute('aria-expanded') !== 'true') row.click()
   }
   const openEdit = (account: ConfigAccount) => {
-    if (!isSideProvider(account.providerId)) return
-    show({
-      accountId: account.accountId,
-      providerId: account.providerId,
-      presetId: (presetsFor(account.providerId)[0] as AdapterPreset).id,
-      isNew: false,
-      fallbackId: '',
-      label: account.label,
-      baseUrl: account.baseUrl,
-      credentialRef: '',
-      models: draftModels(account.providerId, account.models),
-    })
+    const saved = savedDraft(account)
+    if (saved) show(saved)
   }
   const closeEditor = () => {
     editorEpoch.current++

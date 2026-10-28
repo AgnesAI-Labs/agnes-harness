@@ -139,11 +139,17 @@ it('keeps all run receipts, snapshots and final text, with durable read state an
   expect(reopened.history({ id: other.id, before: receipt.id })).toMatchObject({ cursorInvalid: true })
 })
 
-it('indexes task and unread history lookups', () => {
+it('reopens saved runs and indexes task and unread lookups', () => {
   const { db, jobs, catalog } = memory()
   const task = catalog.create(daily())
   catalog.recordDispatch(`schedule:${task.id}:1`, { at: NOW, sessionKey: 'sess' })
-  expect(openScheduleCatalogAt(db, jobs, () => NOW).history({ id: task.id }).runs).toHaveLength(1)
+  const saved = catalog.history({ id: task.id })
+  const reopened = openScheduleCatalogAt(db, jobs, () => NOW)
+  const result = reopened.history({ id: task.id })
+  expect(result.runs).toHaveLength(1)
+  expect(result).toEqual(saved)
+  expect(result.runs[0]).toMatchObject({ outcome: 'delivered', snapshot: { prompt: 'Check mail' } })
+  expect(result.runs[0]).not.toHaveProperty('summary')
   const plan = db
     .prepare(
       'EXPLAIN QUERY PLAN SELECT rowid FROM schedule_runs WHERE schedule_id = ? AND rowid < ? ORDER BY rowid DESC LIMIT 20',
@@ -191,6 +197,50 @@ it('indexes task and unread history lookups', () => {
   expect(recentPlan).toContain('schedule_runs_task')
   expect(recentPlan).toContain('schedule_runs_open_job')
   expect(recentPlan).toContain('INTEGER PRIMARY KEY')
+})
+
+it('creates the final search and receipt schema and reopens without rewriting saved data', () => {
+  const { db, jobs, catalog } = memory()
+  try {
+    expect(db.prepare('PRAGMA table_info(schedules)').all()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'search_text', notnull: 1 })]),
+    )
+    expect(db.prepare('PRAGMA table_info(schedule_run_receipts)').all()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'schedule_id', notnull: 1 })]),
+    )
+    const { id } = catalog.create({ ...daily(), title: 'RÉSUMÉ 日报', prompt: 'ÖVERVIEW' })
+    const key = `schedule:${id}:1`
+    catalog.recordDispatch(key, { at: NOW, reason: 'prompt', sessionKey: 'sess' })
+    catalog.observeSession('sess', {
+      seq: 1,
+      type: 'assistant/message',
+      data: { stopReason: 'end_turn', content: [{ type: 'text', text: 'Saved reply' }] },
+    } as never)
+    catalog.noteSettlement(key, { nextRunAt: NOW + 86_400_000 })
+    const history = catalog.history({ id })
+    const runId = history.runs[0]?.id
+    if (!runId) throw new Error('missing saved run')
+    expect(catalog.receipt({ id, runId, read: true })).toEqual({ updated: true })
+    const saved = catalog.history({ id })
+    const schema = () => db.prepare('SELECT type, name, sql FROM sqlite_master ORDER BY type, name').all()
+    const rows = () => [
+      db.prepare('SELECT * FROM schedules').all(),
+      db.prepare('SELECT rowid, * FROM schedule_runs').all(),
+      db.prepare('SELECT * FROM schedule_run_receipts').all(),
+    ]
+    const beforeSchema = schema()
+    const beforeRows = rows()
+    const reopened = openScheduleCatalogAt(db, jobs, () => NOW)
+    expect(schema()).toEqual(beforeSchema)
+    expect(rows()).toEqual(beforeRows)
+    expect(reopened.list({ search: 'résumé' }).map((row) => row.id)).toEqual([id])
+    expect(reopened.list({ search: 'öVERview' }).map((row) => row.id)).toEqual([id])
+    expect(reopened.history({ id })).toEqual(saved)
+    expect(saved.runs[0]).toMatchObject({ id: runId, summary: 'Saved reply', read: true })
+    expect(reopened.history({ id, unreadOnly: true }).runs).toEqual([])
+  } finally {
+    db.close()
+  }
 })
 
 it('searches and filters tasks before the result limit without hiding ended failures', () => {
