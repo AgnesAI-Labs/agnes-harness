@@ -34,9 +34,13 @@ interface Job {
   done: Promise<ShellJobView>
   finish(code: number | null): void
   stop(): Promise<void>
+  /** The child's newest message as last read; a child reports one message, never a stream. */
+  childText?: string
 }
 const MAX_JOBS = 128,
   MAX_OUTPUT = 4 * 1024 * 1024
+/** One child pane keeps what a person can still read; the jobs read slices output to the same size. */
+const CHILD_OUTPUT_LIMIT = 65536
 /**
  * A persistent shell with no command running, or a terminal nobody has written to, read or heard
  * from, is closed after these. Both otherwise keep a process alive for the whole daemon lifetime and
@@ -130,6 +134,25 @@ export class ShellJobs {
     job.capturedBytes += end
     job.view[chunk.stream] += bytes.subarray(0, end).toString('utf8')
     if (end < bytes.length) job.view.truncated = true
+  }
+  /**
+   * A child agent republishes its newest message: `text` replaces the previous one instead of growing
+   * a stream. A pane that only keeps the newest message loses everything said before it, so append the
+   * message here — the tail of a message still being written, or a whole new message above it.
+   */
+  private appendChildText(job: Job, text: string) {
+    if (text === job.childText) return
+    let chunk = text
+    if (job.childText !== undefined && text.startsWith(job.childText))
+      chunk = text.slice(job.childText.length) // Same message, now longer.
+    else if (job.view.stdout) chunk = `\n\n${text}` // A new message starts on its own line.
+    job.childText = text
+    job.view.stdout += chunk
+    if (job.view.stdout.length <= CHILD_OUTPUT_LIMIT) return
+    const tail = job.view.stdout.slice(-CHILD_OUTPUT_LIMIT)
+    // Never begin the retained tail with half of a surrogate pair.
+    job.view.stdout = /^[\uDC00-\uDFFF]/.test(tail) ? tail.slice(1) : tail
+    job.view.truncated = true
   }
   private watchIdle(): void {
     if (this.sweeper) return
@@ -429,7 +452,7 @@ export class ShellJobs {
           await controls.cancel(child.id)
         })
       if (controls.cancel) job.stop = () => controls.cancel!(child.id)
-      job.view.stdout = child.text?.slice(-MAX_OUTPUT) ?? job.view.stdout
+      if (child.text !== undefined) this.appendChildText(job, child.text)
       if (['completed', 'failed', 'cancelled'].includes(child.status)) {
         if (child.status === 'cancelled') job.view.status = 'killed'
         job.finish(child.status === 'completed' ? 0 : -1)

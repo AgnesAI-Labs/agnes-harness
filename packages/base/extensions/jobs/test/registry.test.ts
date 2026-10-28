@@ -11,6 +11,7 @@ it('unifies child output/cancellation with owner isolation and completion notifi
   const jobs = new ShellJobs(),
     ctx = fakeToolContext({ sessionKey: 'parent' })
   let cancelled = false
+  let latest = 'child output'
   ctx.subagent.list = async () => [
     {
       id: 'child-1',
@@ -22,7 +23,7 @@ it('unifies child output/cancellation with owner isolation and completion notifi
   ctx.subagent.collect = async (childKey) => ({
     childKey,
     status: cancelled ? 'cancelled' : 'running',
-    text: 'child output',
+    text: latest,
   })
   ctx.subagent.cancel = async () => {
     cancelled = true
@@ -33,6 +34,16 @@ it('unifies child output/cancellation with owner isolation and completion notifi
   const running = await output!.execute({ jobId: 'child:child-1' }, ctx)
   expect(JSON.stringify(running)).toContain('child output')
   expect(running.structured).toEqual({ jobId: 'child:child-1', status: 'running' })
+  // A child republishes only its newest message: the same message still growing appends its tail, and a
+  // new message keeps the earlier one above it instead of replacing it.
+  latest = 'child output, and more'
+  expect(JSON.stringify(await output!.execute({ jobId: 'child:child-1' }, ctx))).toContain(
+    'child output, and more',
+  )
+  latest = 'second message'
+  const transcript = JSON.stringify(await output!.execute({ jobId: 'child:child-1' }, ctx))
+  expect(transcript).toContain('child output, and more')
+  expect(transcript).toContain('second message')
   expect(
     (await output!.execute({ jobId: 'child:child-1' }, fakeToolContext({ sessionKey: 'foreign' }))).isError,
   ).toBe(true)

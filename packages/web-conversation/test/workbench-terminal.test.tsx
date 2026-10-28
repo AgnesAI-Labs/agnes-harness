@@ -139,6 +139,23 @@ it('opens no terminal until asked, lists Agent jobs read-only, retains completed
   await vi.waitFor(() => expect(host.querySelectorAll('[data-testid=terminal-tab]')).toHaveLength(3))
 })
 
+it('names a built-in child agent as a subagent and keeps a provider name that means something', async () => {
+  const builtIn = job({
+    id: 'child:agent:c453a576192f05',
+    kind: 'child',
+    command: 'in-process',
+  })
+  const external = job({ id: 'child:external:7f21', kind: 'child', command: 'acp' })
+  const { host } = mount([builtIn, external])
+  await vi.waitFor(() => expect(host.querySelectorAll('[data-testid=terminal-tab]')).toHaveLength(2))
+  const tabs = [...host.querySelectorAll('[data-testid=terminal-tab]')].map((tab) => tab.textContent)
+  expect(tabs[0]).toContain('子智能体')
+  // The child id still tells two subagents apart.
+  expect(tabs[0]).toContain('192f05')
+  expect(tabs[0]).not.toContain('in-process')
+  expect(tabs[1]).toContain('acp')
+})
+
 it('opens no terminal on mount or remount, and starts one from the minimal new button', async () => {
   const { host, jobsControl, session } = mount([])
   await vi.waitFor(() => expect(host.querySelector('[data-testid=terminal-empty]')).not.toBeNull())

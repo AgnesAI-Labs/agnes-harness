@@ -291,8 +291,15 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
   }, [active, sessionId])
   if (!session) return <SettingsState tone="empty">{t('workbench.session')}</SettingsState>
 
+  // A child agent's `command` is its provider id. The built-in provider has no name a person can use,
+  // so the tab names the subagent and the job id keeps two children apart.
   const name = (row: SessionJob) =>
-    names[row.id] ?? (row.owner === 'human' ? (row.shell ?? row.command) : row.command)
+    names[row.id] ??
+    (row.owner === 'human'
+      ? (row.shell ?? row.command)
+      : row.kind === 'child' && row.command === 'in-process'
+        ? `${t('workbench.terminal.childAgent')} · ${row.id.slice(-6)}`
+        : row.command)
   const create = (choice: TerminalShell) => {
     setShell(choice)
     rememberTerminalShell(choice)
