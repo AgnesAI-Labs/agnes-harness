@@ -389,7 +389,9 @@ describe('rendered sidebar region', () => {
       toFake: ['Date'],
       now: new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12),
     })
-    onTestFinished(() => vi.useRealTimers())
+    onTestFinished(() => {
+      vi.useRealTimers()
+    })
     const recent = new Date(Date.now() - 3 * 3_600_000).toISOString()
     const at = (id: string, cwd = '/workspace') => ({ ...session(id, cwd), lastMessageAt: recent })
     runtime = await mountRenderedIndex({
