@@ -12,7 +12,7 @@ export const RUN_CODE_FLAVORS: Readonly<Record<'python' | 'typescript', RunCodeF
   typescript: Object.freeze({
     language: 'typescript',
     description:
-      'Run a TypeScript program in the code runtime. Call harness tools via `await tools.<name>(...)`. ' +
+      'Run a program in the code runtime: TypeScript, or an experimental CPython cell when the preset selects Python; the SDK section shows the active syntax. Call harness tools via `await tools.<name>(...)`. ' +
       'Assign large results to variables and log summaries.',
   }),
 })
