@@ -163,8 +163,16 @@ describe('fresh data directory schema', () => {
         'session_bookmarks',
       ])
         expect(daemon.tables).not.toContain(retired)
-      expect(daemon.columns.schedules).toEqual(expect.arrayContaining(['target', 'origin']))
+      expect(daemon.columns.schedules).toEqual(expect.arrayContaining(['target', 'origin', 'search_text']))
       expect(daemon.columns.schedule_runs).toEqual(expect.arrayContaining(['progress']))
+      expect(daemon.columns.schedule_run_receipts).toEqual([
+        'run_rowid',
+        'id',
+        'snapshot',
+        'summary',
+        'is_read',
+        'schedule_id',
+      ])
       expect(daemon.columns.session_preferences).toEqual(expect.arrayContaining(['pinned_at', 'bookmarks']))
       expect(daemon.columns.workspace_registry).toEqual(expect.arrayContaining(['listed']))
       expect(daemon.columns.session_workspaces).toEqual(
