@@ -115,12 +115,13 @@ export const main = {
     ctx.profileRuntime.streams.register('browser.interaction', async (input, context) =>
       interact(await resource.get(), input, context),
     )
-    ctx.hooks.register('context', async () => {
+    ctx.hooks.register('context', async (_payload, context) => {
       let state = { enabled: false }
       try {
         state = (await resource.get()).status()
       } catch {}
-      return { additionalContext: browserInstructions(state), refreshOnRequest: true }
+      const text = browserInstructions(state, { unattended: context.unattended === true })
+      return text ? { additionalContext: text, refreshOnRequest: true } : { refreshOnRequest: true }
     })
     ctx.hooks.register('shutdown', async (_input, context) => {
       try {

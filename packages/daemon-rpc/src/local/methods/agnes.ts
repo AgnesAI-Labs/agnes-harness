@@ -467,6 +467,12 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
     when: (cx) => cx.configuration === true && cx.authKind === 'local' && cx.credentialKind === 'local',
   },
   {
+    name: 'config',
+    methods: ['_agnes/v1/voice.settings.get', '_agnes/v1/voice.settings.save'],
+    guidance: 'Local profile voice settings; save with the revision you read.',
+    when: (cx) => cx.authKind === 'local' && cx.credentialKind === 'local',
+  },
+  {
     name: 'session',
     methods: [
       'session.attach',
@@ -499,6 +505,9 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.bookmarks.set',
       'session.fork',
       'session.btw',
+      'session.voice.transcribe',
+      'session.voice.speak',
+      'voice.status',
       'session.setPreset',
       'session.setModel',
       'session.setToolFilter',

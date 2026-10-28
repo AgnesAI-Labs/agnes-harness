@@ -139,20 +139,11 @@ it('keeps all run receipts, snapshots and final text, with durable read state an
   expect(reopened.history({ id: other.id, before: receipt.id })).toMatchObject({ cursorInvalid: true })
 })
 
-it('preserves legacy runs without inventing snapshots and indexes task and unread lookups', () => {
+it('indexes task and unread history lookups', () => {
   const { db, jobs, catalog } = memory()
   const task = catalog.create(daily())
-  db.prepare('INSERT INTO schedule_runs (schedule_id, job_key, at, outcome) VALUES (?, ?, ?, ?)').run(
-    task.id,
-    `schedule:${task.id}:1`,
-    NOW,
-    'delivered',
-  )
-  const reopened = openScheduleCatalogAt(db, jobs, () => NOW)
-  const result = reopened.history({ id: task.id })
-  expect(result.runs).toHaveLength(1)
-  expect(result.runs[0]).not.toHaveProperty('snapshot')
-  expect(result.runs[0]).not.toHaveProperty('summary')
+  catalog.recordDispatch(`schedule:${task.id}:1`, { at: NOW, sessionKey: 'sess' })
+  expect(openScheduleCatalogAt(db, jobs, () => NOW).history({ id: task.id }).runs).toHaveLength(1)
   const plan = db
     .prepare(
       'EXPLAIN QUERY PLAN SELECT rowid FROM schedule_runs WHERE schedule_id = ? AND rowid < ? ORDER BY rowid DESC LIMIT 20',
@@ -200,58 +191,6 @@ it('preserves legacy runs without inventing snapshots and indexes task and unrea
   expect(recentPlan).toContain('schedule_runs_task')
   expect(recentPlan).toContain('schedule_runs_open_job')
   expect(recentPlan).toContain('INTEGER PRIMARY KEY')
-})
-
-it('atomically upgrades old search and receipt fields without replacing saved history or read state', () => {
-  const db = new DatabaseSync(':memory:')
-  const jobs = memoryScheduleJobs()
-  try {
-    db.exec(`CREATE TABLE schedules (
-      id TEXT PRIMARY KEY, session_key TEXT NOT NULL, title TEXT NOT NULL, prompt TEXT NOT NULL,
-      selector TEXT NOT NULL, status TEXT NOT NULL, job_key TEXT, revision INTEGER NOT NULL,
-      next_run_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, target TEXT, origin TEXT
-    ); CREATE TABLE schedule_runs (
-      schedule_id TEXT NOT NULL, job_key TEXT NOT NULL, at INTEGER NOT NULL, outcome TEXT NOT NULL,
-      session_key TEXT, ended_at INTEGER, seq INTEGER, reason TEXT, detail TEXT, progress TEXT
-    ); CREATE TABLE schedule_run_receipts (
-      run_rowid INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, snapshot TEXT, summary TEXT, is_read INTEGER NOT NULL DEFAULT 0
-    )`)
-    const id = 'sched_0123456789abcdef'
-    const runId = 'run_' + '1'.repeat(32)
-    db.prepare(
-      'INSERT INTO schedules (id, session_key, title, prompt, selector, status, revision, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    ).run(id, 'old', 'RÉSUMÉ 日报', 'ÖVERVIEW', '{"every_seconds":3600}', 'active', 1, NOW, NOW)
-    const insert = db.prepare(
-      'INSERT INTO schedule_runs (schedule_id, job_key, at, outcome, session_key, ended_at) VALUES (?, ?, ?, ?, ?, ?)',
-    )
-    insert.run(id, `schedule:${id}:1`, NOW, 'ran', 'old', NOW)
-    insert.run(id, `schedule:${id}:1`, NOW + 1, 'ran', 'old', NOW + 1)
-    db.prepare('INSERT INTO schedule_run_receipts (run_rowid, id, summary, is_read) VALUES (?, ?, ?, ?)').run(
-      1,
-      runId,
-      'Saved reply',
-      1,
-    )
-    db.exec(
-      "CREATE TRIGGER reject_migration BEFORE UPDATE ON schedule_run_receipts BEGIN SELECT RAISE(ABORT, 'synthetic write failure'); END",
-    )
-    expect(() => openScheduleCatalogAt(db, jobs, () => NOW)).toThrow('synthetic write failure')
-    expect(() => db.prepare('SELECT search_text FROM schedules')).toThrow()
-    expect(() => db.prepare('SELECT schedule_id FROM schedule_run_receipts')).toThrow()
-    db.exec('DROP TRIGGER reject_migration')
-    const catalog = openScheduleCatalogAt(db, jobs, () => NOW)
-    expect(catalog.list({ search: 'résumé' }).map((row) => row.id)).toEqual([id])
-    expect(catalog.list({ search: 'öVERview' }).map((row) => row.id)).toEqual([id])
-    const history = catalog.history({ id })
-    expect(history.runs).toHaveLength(2)
-    expect(history.runs[1]).toMatchObject({ id: runId, summary: 'Saved reply', read: true })
-    expect(history.runs.every((run) => !run.snapshot)).toBe(true)
-    expect(catalog.history({ id, unreadOnly: true }).runs.map((run) => run.id)).toEqual([history.runs[0]?.id])
-    expect(openScheduleCatalogAt(db, jobs, () => NOW).history({ id })).toEqual(history)
-    expect(db.prepare('SELECT count(*) AS n FROM schedule_runs').get()).toEqual({ n: 2 })
-  } finally {
-    db.close()
-  }
 })
 
 it('searches and filters tasks before the result limit without hiding ended failures', () => {

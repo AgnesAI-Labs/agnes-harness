@@ -274,7 +274,11 @@
         },
         "thinkingReplay": { "enum": ["native", "drop", "text"] },
         "contract_id": { "type": ["string", "null"], "maxLength": 128 },
-        "slot": { "$ref": "#/$defs/SlotName" }
+        "slot": { "$ref": "#/$defs/SlotName" },
+        "audioRole": {
+          "enum": ["transcribe", "speech"],
+          "description": "Voice side models only: the voice operation this model serves."
+        }
       }
     },
     "ContractStamp": {

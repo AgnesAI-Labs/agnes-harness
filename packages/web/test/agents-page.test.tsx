@@ -1,12 +1,13 @@
 /** @vitest-environment happy-dom */
 import type { AgentPlan, ApplicationState } from '@agnes/protocol'
-import { applicationIdentity, homeEntries, homeNavigation } from '@agnes/web-client'
+import { applicationIdentity, homeEntries, homeNavigation, openComposerLaunch } from '@agnes/web-client'
 import { clearResources, createDocumentLocaleSource, UiLocaleProvider } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { AgentsPage } from '../src/pages/agents-page.js'
-import { HomePageHost } from '../src/pages/host.js'
+import { activeHomeEntry, HomePageHost, watchActiveHomeEntry } from '../src/pages/host.js'
+import { HomeEntriesNav } from '../src/regions/home-entries.js'
 
 const mock = vi.hoisted(() => ({ connect: vi.fn() }))
 vi.mock('../src/pages/admin-api.js', () => ({ homeAdmin: mock.connect }))
@@ -590,7 +591,9 @@ it.each(['en', 'zh-CN'] as const)(
   'starts covered application actions directly and summarizes changed launches (%s)',
   async (locale) => {
     document.documentElement.lang = locale
-    for (const consent of ['covered', 'changed', 'unavailable'] as const) {
+    for (const [via, consent] of (['work', 'composer'] as const).flatMap((via) =>
+      (['covered', 'changed', 'unavailable'] as const).map((consent) => [via, consent] as const),
+    )) {
       clearResources()
       history.replaceState(null, '', '/')
       const plan: AgentPlan = {
@@ -643,7 +646,7 @@ it.each(['en', 'zh-CN'] as const)(
         },
       }
       applicationIdentity.set(state)
-      const startAgent = vi.fn(async () => ({ sessionId: `work-${locale}-${consent}` }))
+      const startAgent = vi.fn(async () => ({ sessionId: `${via}-${locale}-${consent}` }))
       mock.connect.mockResolvedValue({
         context: { permissions: [], readOnly: false },
         api: {
@@ -672,28 +675,26 @@ it.each(['en', 'zh-CN'] as const)(
       })
       const host = document.body.appendChild(document.createElement('div'))
       const root = createRoot(host)
+      const navHost = document.body.appendChild(document.createElement('div'))
+      const navRoot = createRoot(navHost)
       const localized = createDocumentLocaleSource({})
       const assign = vi.spyOn(location, 'assign').mockImplementation(() => {})
       const opened: unknown[] = []
       const onOpen = (event: Event) => opened.push((event as CustomEvent).detail)
       window.addEventListener('agnes:open-session', onOpen)
       let unregister: (() => void) | undefined
+      let stopWatching = () => {}
       try {
         const shown: (string | undefined)[] = []
+        // What the sidebar selects: a quiet launch must not present the agents page as current either.
+        const selected: (string | undefined)[] = []
+        stopWatching = watchActiveHomeEntry(() => selected.push(activeHomeEntry()?.id))
         unregister = homeEntries.register({
           id: 'agents',
           icon: 'bot',
           titleKey: 'agents',
           order: 1,
           component: AgentsPage,
-        })
-        homeNavigation.open('agents', {
-          workAction: {
-            applicationId: 'acme',
-            packageId: 'acme/kit',
-            actionId: 'review',
-            object: { type: 'batch', id: 'B-017' },
-          },
         })
         await act(async () =>
           root.render(
@@ -707,8 +708,23 @@ it.each(['en', 'zh-CN'] as const)(
             }),
           ),
         )
+        await act(async () => navRoot.render(createElement(HomeEntriesNav, { t: (key: string) => key })))
+        await act(async () => {
+          if (via === 'composer') openComposerLaunch({ agent: plan.ref, prompt: 'typed message', send: true })
+          else
+            homeNavigation.open('agents', {
+              workAction: {
+                applicationId: 'acme',
+                packageId: 'acme/kit',
+                actionId: 'review',
+                object: { type: 'batch', id: 'B-017' },
+              },
+            })
+        })
         if (consent === 'covered') expect(shown.every((id) => id === undefined)).toBe(true)
         else await vi.waitFor(() => expect(shown.at(-1)).toBe('agents'))
+        if (consent === 'covered') expect(selected.every((id) => id === undefined)).toBe(true)
+        else await vi.waitFor(() => expect(selected.at(-1)).toBe('agents'))
         if (consent !== 'covered') {
           const confirm = host.querySelector('[data-testid="agent-launch-confirm"]')
           const cancel = host.querySelector('[data-testid="agent-launch-close"]')
@@ -720,7 +736,7 @@ it.each(['en', 'zh-CN'] as const)(
           )
           expect(startAgent).not.toHaveBeenCalled()
           expect(host.textContent).toContain(locale === 'en' ? 'Quality reviewer' : '质量审核员')
-          expect(host.textContent).toContain('B-017')
+          if (via === 'work') expect(host.textContent).toContain('B-017')
           expect(
             host.querySelector('[data-testid="launch-technical"] button')?.getAttribute('aria-expanded'),
           ).toBe('false')
@@ -738,16 +754,34 @@ it.each(['en', 'zh-CN'] as const)(
           )
         }
         await vi.waitFor(() => expect(opened).toHaveLength(1))
+        if (consent === 'covered') {
+          expect(shown.every((id) => id === undefined)).toBe(true)
+          expect(selected.every((id) => id === undefined)).toBe(true)
+          expect(navHost.querySelector('[aria-current="page"]')).toBeNull()
+        }
         expect(assign).not.toHaveBeenCalled()
         expect(startAgent).toHaveBeenCalledWith('ticket', expect.any(String))
         expect(host.querySelector('[data-testid="agent-launch-review"]')).toBeNull()
         const { applicationWorkDraft } = await import('@agnes/web-client')
-        expect(applicationWorkDraft.read(`work-${locale}-${consent}`)?.object?.id).toBe('B-017')
-        expect(opened[0]).toEqual({
-          sessionId: `work-${locale}-${consent}`,
-          prompt: locale === 'en' ? 'Review this batch.' : '请复核此批次。',
-        })
+        if (via === 'composer') {
+          expect(applicationWorkDraft.read(`${via}-${locale}-${consent}`)).toBeUndefined()
+          expect(opened[0]).toEqual({
+            sessionId: `${via}-${locale}-${consent}`,
+            prompt: 'typed message',
+            send: true,
+          })
+        } else {
+          expect(applicationWorkDraft.read(`${via}-${locale}-${consent}`)?.object?.id).toBe('B-017')
+          expect(opened[0]).toEqual({
+            sessionId: `${via}-${locale}-${consent}`,
+            prompt: locale === 'en' ? 'Review this batch.' : '请复核此批次。',
+          })
+        }
+        expect(startAgent).toHaveBeenCalledTimes(1)
       } finally {
+        stopWatching()
+        await act(async () => navRoot.unmount())
+        navHost.remove()
         await act(async () => root.unmount())
         unregister?.()
         homeNavigation.close()

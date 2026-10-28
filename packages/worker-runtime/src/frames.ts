@@ -38,6 +38,8 @@ export type SessionMethod =
   | 'readDeliverables'
   | 'feedback.draft'
   | 'btw'
+  | 'voice.transcribe'
+  | 'voice.speak'
   | 'ui.action'
   | 'ui.read'
   | 'ui.refresh'

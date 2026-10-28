@@ -88,6 +88,53 @@ describe.skipIf(process.platform === 'win32')('session shell jobs', () => {
       await jobs.dispose()
     }
   })
+  // compile-compcert and install-windows-3.11: `nohup make &` in a foreground command was reaped
+  // the moment its shell ended. Children the command backgrounds are now the job: the call returns
+  // when the command's own shell is done, and they keep running under job_kill and session close.
+  it('keeps what a command starts with & or nohup running as its job, and returns when the command ends', async () => {
+    const jobs = new ShellJobs()
+    const ctx = context('detached')
+    ctx.sandbox.openProcess = async ({ argv, cwd }) => legacyProcess(ctx, [...argv], cwd ?? ctx.cwd)
+    const shell = createShellTool(jobs)
+    try {
+      const started = Date.now()
+      const r = await shell.execute({ command: 'nohup sleep 30 >/dev/null 2>&1 & echo started; exit 3' }, ctx)
+      expect(Date.now() - started).toBeLessThan(900)
+      const text = (r.content[0] as { text: string }).text
+      expect(text).toContain('started')
+      expect(text).toContain('[exit 3]')
+      expect(text).toContain('keep running as background job')
+      expect(text).not.toContain('AGH_FG')
+      const [job] = jobs.list(ctx)
+      expect(job).toMatchObject({ status: 'running', code: null })
+      expect((await jobs.kill(ctx, job!.id)).status).toBe('killed')
+
+      // An ordinary command is unchanged: its code, its output and nothing of the wrapper.
+      Object.assign(ctx.session, { toolUseId: 'plain' })
+      const plain = await shell.execute({ command: 'echo out; echo err >&2; false' }, ctx)
+      expect((plain.content[0] as { text: string }).text).toMatch(/^out\n\n\[stderr\]\nerr\n/)
+      expect(JSON.stringify(plain)).not.toContain('AGH_FG')
+      expect(plain.details).toMatchObject({ status: 'failed', code: 1 })
+    } finally {
+      await jobs.dispose()
+    }
+  })
+  it('says when a command ended its own shell with a signal', async () => {
+    const jobs = new ShellJobs()
+    const ctx = context('self-kill')
+    ctx.sandbox.openProcess = async ({ argv, cwd }) => legacyProcess(ctx, [...argv], cwd ?? ctx.cwd)
+    try {
+      const r = await createShellTool(jobs).execute(
+        { command: 'echo before; kill -TERM $$; echo after' },
+        ctx,
+      )
+      const text = (r.content[0] as { text: string }).text
+      expect(text).toContain("[the command's shell was ended by SIGTERM, which AGH did not send.")
+      expect(text).not.toContain('after')
+    } finally {
+      await jobs.dispose()
+    }
+  })
   it('refuses before spawning if confinement is unavailable', async () => {
     const jobs = new ShellJobs()
     const ctx = context('deny')

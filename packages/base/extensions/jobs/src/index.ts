@@ -1,3 +1,4 @@
+import type { HookContext, HookPayloadMap, HookReturnMap } from '@agnes/extension-api'
 import { type Context, defineAgnesPlugin, defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import { guardedResult } from '../../tools-core/src/guards/output.js'
@@ -79,6 +80,68 @@ export function createJobTools(jobs: ShellJobs) {
     }),
   ]
 }
+const ownerOf = (ctx: Pick<HookContext, 'session'>) => ({
+  session: { ...ctx.session, toolUseId: '', depth: 0, generationDepth: 0 },
+})
+
+/**
+ * The session's job hooks. `turn_stopping` covers an unattended turn (`agh -p`, scheduled runs): jobs
+ * it leaves running outlive the answer with nobody to stop them, and may disturb whatever runs next.
+ * Whether one is a server the task asked to keep up cannot be told from the job, so the model is
+ * shown each still-running job once and decides; nothing is stopped behind its back.
+ */
+export function jobHooks(jobs: ShellJobs) {
+  const notified = new Map<string, Set<string>>()
+  const listed = new Map<string, Set<string>>()
+  const keyOf = (ctx: Pick<HookContext, 'session'>) => ctx.session.key + '\0' + ctx.session.lane
+  return {
+    async context(_payload: HookPayloadMap['context'], ctx: HookContext): Promise<HookReturnMap['context']> {
+      const key = keyOf(ctx)
+      const seen = notified.get(key) ?? new Set<string>()
+      const completed = jobs.completions(ownerOf(ctx)).filter((job) => !seen.has(job.id))
+      for (const job of completed) seen.add(job.id)
+      notified.set(key, seen)
+      return completed.length
+        ? {
+            additionalContext:
+              'Jobs completed: ' +
+              completed.map((job) => job.id + ': ' + job.status + ' (exit ' + job.code + ')').join(', '),
+          }
+        : {}
+    },
+    async turn_stopping(
+      _payload: HookPayloadMap['turn_stopping'],
+      ctx: HookContext,
+    ): Promise<HookReturnMap['turn_stopping']> {
+      if (ctx.unattended !== true) return { action: 'stop' }
+      const key = keyOf(ctx)
+      const seen = listed.get(key) ?? new Set<string>()
+      const running = jobs
+        .list(ownerOf(ctx))
+        .filter(
+          (job) =>
+            job.status === 'running' &&
+            job.owner === 'agent' &&
+            (job.kind === 'shell' || job.kind === 'pty') &&
+            !seen.has(job.id),
+        )
+      if (!running.length) return { action: 'stop' }
+      for (const job of running) seen.add(job.id)
+      listed.set(key, seen)
+      const items = running.map((job) => `${job.id} (${job.command.slice(0, 120)})`).join(', ')
+      return {
+        action: 'continue',
+        note: `Before you finish: ${running.length === 1 ? 'this background job is' : 'these background jobs are'} still running, and nobody will stop ${running.length === 1 ? 'it' : 'them'} after your answer: ${items}. Stop with job_kill each one the task does not need; leave running only what the task asks to stay up, such as a server it serves from. Then give your final answer.`,
+      }
+    },
+    async shutdown(_payload: HookPayloadMap['shutdown'], ctx: HookContext): Promise<void> {
+      await jobs.closeSession(ctx.session.key, ctx.session.lane)
+      notified.delete(keyOf(ctx))
+      listed.delete(keyOf(ctx))
+    },
+  }
+}
+
 export function createJobsExtension(jobs: ShellJobs) {
   return defineAgnesPlugin({
     inject: ['tools', 'hooks'],
@@ -86,31 +149,10 @@ export function createJobsExtension(jobs: ShellJobs) {
       const disposers = [...createJobTools(jobs), ...createPtyTools(jobs)].map((tool) =>
         plugin.tools.register(tool),
       )
-      const notified = new Map<string, Set<string>>()
-      disposers.push(
-        plugin.hooks.register('context', async (_payload, ctx) => {
-          const key = ctx.session.key + '\0' + ctx.session.lane
-          const seen = notified.get(key) ?? new Set<string>()
-          const completed = jobs
-            .completions({ session: { ...ctx.session, toolUseId: '', depth: 0, generationDepth: 0 } })
-            .filter((job) => !seen.has(job.id))
-          for (const job of completed) seen.add(job.id)
-          notified.set(key, seen)
-          return completed.length
-            ? {
-                additionalContext:
-                  'Jobs completed: ' +
-                  completed.map((job) => job.id + ': ' + job.status + ' (exit ' + job.code + ')').join(', '),
-              }
-            : {}
-        }),
-      )
-      disposers.push(
-        plugin.hooks.register('shutdown', async (_payload, ctx) => {
-          await jobs.closeSession(ctx.session.key, ctx.session.lane)
-          notified.delete(ctx.session.key + '\0' + ctx.session.lane)
-        }),
-      )
+      const hooks = jobHooks(jobs)
+      disposers.push(plugin.hooks.register('context', hooks.context))
+      disposers.push(plugin.hooks.register('turn_stopping', hooks.turn_stopping))
+      disposers.push(plugin.hooks.register('shutdown', hooks.shutdown))
       return async () => {
         for (const dispose of disposers) dispose()
         await jobs.dispose()

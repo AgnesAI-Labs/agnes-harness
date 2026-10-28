@@ -14,7 +14,7 @@ import { CoreError } from '@agnes/core'
  * stamped directory already contains changes. Adding or dropping a table that only new code reads
  * or writes does not need a bump.
  */
-export const DATA_DIR_VERSION = 1
+export const DATA_DIR_VERSION = 2
 
 export type DataDirPaths = { file: string; tablesDir: string }
 

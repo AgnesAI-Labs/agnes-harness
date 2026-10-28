@@ -394,7 +394,7 @@ exports[`fresh data directory schema > creates every database at its final schem
         "type": "table",
       },
     ],
-    "version": 1,
+    "version": 2,
   },
   "tables/_40agnes_2fdaemon.db": {
     "objects": [

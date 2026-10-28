@@ -20,7 +20,7 @@ vi.mock('node:fs', async (importOriginal) => {
   }
 })
 
-import { createSqliteStorage } from '../../src/adapters/storage-sqlite.js'
+import { createSqliteStorage, DATA_DIR_VERSION } from '../../src/adapters/storage-sqlite.js'
 
 let dir: string
 beforeEach(() => {
@@ -51,7 +51,7 @@ it('never removes a sessions.db that another process created, stamped and began 
   }
   const db = new DatabaseSync(file, { readOnly: true })
   try {
-    expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 1 })
+    expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: DATA_DIR_VERSION })
   } finally {
     db.close()
   }

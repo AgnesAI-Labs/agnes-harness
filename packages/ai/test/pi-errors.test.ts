@@ -70,6 +70,16 @@ describe('classifyPiError', () => {
     expect(
       networkFailure({ code: 'UNTRUSTED', cause: { code: 'CERT_HAS_EXPIRED' } }, 'body')?.retryable,
     ).toBe(false)
+    // A name that does not resolve while connecting is usually a resolver blip, and it ended whole
+    // unattended turns. It is retried like EAI_AGAIN; the adapter's bounded retries still end a host
+    // that never resolves with the same error. A body or stream does not resolve names.
+    const dns = Object.assign(new Error('getaddrinfo'), { code: 'ENOTFOUND' })
+    expect(networkFailure(new Error('fetch failed', { cause: dns }), 'connect')).toEqual({
+      phase: 'connect',
+      code: 'ENOTFOUND',
+      retryable: true,
+    })
+    expect(networkFailure(dns, 'body')?.retryable).toBe(false)
     expect(networkFailure(new Error('private unclassified'), 'stream')).toBeUndefined()
     expect(networkFailure(new AggregateError([{ code: 'ETIMEDOUT' }]), 'connect')).toMatchObject({
       code: 'ETIMEDOUT',

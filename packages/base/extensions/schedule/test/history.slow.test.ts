@@ -56,10 +56,16 @@ it('seeks through 100,000 persisted runs across tasks without sorting or scannin
     const insert = db.prepare(
       'INSERT INTO schedule_runs (schedule_id, job_key, at, outcome, session_key, ended_at) VALUES (?, ?, ?, ?, ?, ?)',
     )
+    const receipt = db.prepare(
+      "INSERT INTO schedule_run_receipts (run_rowid, id, schedule_id) VALUES (last_insert_rowid(), 'run_' || lower(hex(randomblob(16))), ?)",
+    )
     sql.transaction(() => {
-      for (let n = 1; n <= 50_000; n++) insert.run(task.id, key, now - n, 'ran', 'past-' + n, now)
+      for (let n = 1; n <= 50_000; n++) {
+        insert.run(task.id, key, now - n, 'ran', 'past-' + n, now)
+        receipt.run(task.id)
+      }
     })
-    // Upgrade and reopen the same full history, then mark almost all old results handled.
+    // Reopen the same full history, then mark almost all old results handled.
     catalog = openScheduleCatalog(sql, jobs, () => now)
     db.exec('UPDATE schedule_run_receipts SET is_read = 1 WHERE run_rowid NOT IN (2, 100, 50001)')
     observe = true
@@ -90,8 +96,10 @@ it('seeks through 100,000 persisted runs across tasks without sorting or scannin
       selector: { every_seconds: 60 },
     })
     sql.transaction(() => {
-      for (let n = 1; n <= 50_000; n++)
+      for (let n = 1; n <= 50_000; n++) {
         insert.run(other.id, `schedule:${other.id}:1`, now + n, 'ran', 'other', now + n)
+        receipt.run(other.id)
+      }
     })
     catalog = openScheduleCatalog(sql, jobs, () => now)
     db.exec('ANALYZE')

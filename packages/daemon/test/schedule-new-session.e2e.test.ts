@@ -85,41 +85,6 @@ it.each(['due', 'run-now'] as const)(
       tablesDir: join(dir, 'tables'),
     })
     const tables = adaptHostTables(storage.tables('@agnes/daemon'))
-    const legacyId = 'sched_1111111111111111'
-    const legacyRunId = 'run_' + '1'.repeat(32)
-    if (mode === 'due') {
-      // The real owner connection must upgrade an existing database, with no PRAGMA bypass.
-      const legacy = tables.table('schedules')
-      legacy.exec(`CREATE TABLE schedules (
-        id TEXT PRIMARY KEY, session_key TEXT NOT NULL, title TEXT NOT NULL, prompt TEXT NOT NULL,
-        selector TEXT NOT NULL, status TEXT NOT NULL, job_key TEXT, revision INTEGER NOT NULL,
-        next_run_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, target TEXT, origin TEXT
-      ); CREATE TABLE schedule_runs (
-        schedule_id TEXT NOT NULL, job_key TEXT NOT NULL, at INTEGER NOT NULL, outcome TEXT NOT NULL,
-        session_key TEXT, ended_at INTEGER, seq INTEGER, reason TEXT, detail TEXT, progress TEXT
-      ); CREATE TABLE schedule_run_receipts (
-        run_rowid INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, snapshot TEXT, summary TEXT, is_read INTEGER NOT NULL DEFAULT 0
-      )`)
-      legacy.exec(
-        `INSERT INTO schedules (id, session_key, title, prompt, selector, status, revision, created_at, updated_at, target)
-        VALUES (?, '', ?, ?, ?, 'ended', 1, 1, 1, ?)`,
-        [
-          legacyId,
-          'RÉSUMÉ legacy',
-          'ÖVERVIEW',
-          '{"every_seconds":3600}',
-          JSON.stringify({ kind: 'new-session', cwd: dir }),
-        ],
-      )
-      legacy.exec(
-        "INSERT INTO schedule_runs (schedule_id, job_key, at, outcome, ended_at) VALUES (?, ?, 1, 'ran', 2)",
-        [legacyId, `schedule:${legacyId}:1`],
-      )
-      legacy.exec('INSERT INTO schedule_run_receipts (run_rowid, id, summary, is_read) VALUES (1, ?, ?, 1)', [
-        legacyRunId,
-        'Legacy output',
-      ])
-    }
     const sup = await startSupervisor({
       config: configFor(dir),
       profile,
@@ -139,28 +104,6 @@ it.each(['due', 'run-now'] as const)(
       const workspaces = await sdk.call<{ items: { path: string }[] }>('_agnes/v1/workspace.list', {})
       const cwd = workspaces.items[0]?.path
       if (!cwd) throw new Error('no workspace registered')
-
-      if (mode === 'due') {
-        const prior = await sdk.call<import('@agnes/protocol').SchedulesHistoryResult>(
-          '_agnes/v1/schedules.history',
-          { id: legacyId },
-        )
-        expect(prior.runs[0]).toMatchObject({ id: legacyRunId, summary: 'Legacy output', read: true })
-        expect(prior.runs[0]).not.toHaveProperty('snapshot')
-        await sdk.call('_agnes/v1/schedules.receipt', { id: legacyId, runId: legacyRunId, read: false })
-        const unread = await sdk.call<import('@agnes/protocol').SchedulesHistoryResult>(
-          '_agnes/v1/schedules.history',
-          { id: legacyId, unreadOnly: true },
-        )
-        expect(unread.runs.map((run) => run.id)).toEqual([legacyRunId])
-        const found = await sdk.call<{ schedules: Task[] }>('_agnes/v1/schedules.list', {
-          scope: 'all',
-          includeArchived: true,
-          search: 'résumé legacy',
-        })
-        expect(found.schedules.map((task) => task.id)).toEqual([legacyId])
-        await sdk.call('_agnes/v1/schedules.receipt', { id: legacyId, runId: legacyRunId, read: true })
-      }
 
       // A workspace that is not registered is refused before anything is saved.
       await expect(

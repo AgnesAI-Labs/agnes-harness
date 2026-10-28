@@ -7,11 +7,13 @@ import type {
   ConfigTestResult,
 } from '@agnes/protocol'
 
-/** The one payload-only provider the account store serves today; the dropdown is a slot, not a list. */
-export const SIDE_PROVIDERS = ['typesafe-systemone'] as const
+/** The payload-only adapters the account store serves; the first is the default for a new entry. */
+export const SIDE_PROVIDERS = ['typesafe-systemone', 'openai-audio'] as const
 export type SideProviderId = (typeof SIDE_PROVIDERS)[number]
-export const draftProvider = (): SideProviderId => SIDE_PROVIDERS[0]
+export type AudioRole = NonNullable<ConfigModel['audioRole']>
 const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1'
+/** Voice models have no context window or output cap of their own; these fixed values stand in. */
+const VOICE_LIMITS = { contextWindow: 65536, maxTokens: 4096 } as const
 
 export type SideModelsClient = {
   get(): Promise<ConfigSnapshot>
@@ -27,6 +29,8 @@ export type SideModelsCredentials = {
 
 export type ModelDraft = {
   key: string
+  /** Voice side models only: the operation this row serves. */
+  audioRole?: AudioRole
   id: string
   name: string
   contextWindow: string
@@ -41,6 +45,8 @@ export type ModelDraft = {
 
 export type EditorDraft = {
   accountId: string
+  providerId: SideProviderId
+  presetId: AdapterPreset['id']
   isNew: boolean
   /** The generated id a new entry falls back to when its label yields no slug. */
   fallbackId: string
@@ -104,6 +110,7 @@ export function blankModel(): ModelDraft {
 export function toDraft(model: ConfigModel): ModelDraft {
   return {
     key: crypto.randomUUID(),
+    ...(model.audioRole ? { audioRole: model.audioRole } : {}),
     id: model.id,
     name: model.name,
     contextWindow: String(model.contextWindow ?? ''),
@@ -116,8 +123,14 @@ export function toDraft(model: ConfigModel): ModelDraft {
   }
 }
 
-/** The five editable fields become a stored model row; capability fields stay with the template. */
-export function readModels(rows: readonly ModelDraft[]): ConfigModel[] | undefined {
+/**
+ * The editable fields become a stored model row; capability fields stay with the template. With
+ * `fixed` limits (voice models) the context window and output cap are not read from the rows.
+ */
+export function readModels(
+  rows: readonly ModelDraft[],
+  fixed?: AdapterPreset['fixedLimits'],
+): ConfigModel[] | undefined {
   if (rows.length === 0) return undefined
   const models: ConfigModel[] = []
   for (const row of rows) {
@@ -127,16 +140,16 @@ export function readModels(rows: readonly ModelDraft[]): ConfigModel[] | undefin
       !MODEL_ID.test(row.id) ||
       row.name.trim() === '' ||
       row.name.length > 256 ||
-      !POSITIVE.test(row.contextWindow) ||
-      !POSITIVE.test(row.maxTokens) ||
+      (!fixed && (!POSITIVE.test(row.contextWindow) || !POSITIVE.test(row.maxTokens))) ||
       (priced && !costs.every((value) => PRICE.test(value)))
     )
       return undefined
     models.push({
       id: row.id,
       name: row.name,
-      contextWindow: Number(row.contextWindow),
-      maxTokens: Number(row.maxTokens),
+      contextWindow: fixed ? fixed.contextWindow : Number(row.contextWindow),
+      maxTokens: fixed ? fixed.maxTokens : Number(row.maxTokens),
+      ...(row.audioRole ? { audioRole: row.audioRole } : {}),
       ...(priced
         ? {
             cost: {
@@ -152,17 +165,83 @@ export function readModels(rows: readonly ModelDraft[]): ConfigModel[] | undefin
   return new Set(models.map((model) => model.id)).size === models.length ? models : undefined
 }
 
+export type VoiceError =
+  | 'side.voice.modelsRequired'
+  | 'side.voice.modelsDistinct'
+  | 'side.voice.fieldsInvalid'
+
+export const VOICE_ROLES: readonly AudioRole[] = ['transcribe', 'speech']
+
+/** A voice draft always carries one row per role, so the two fields have something to edit. */
+export function voiceRows(models: readonly ModelDraft[]): ModelDraft[] {
+  return VOICE_ROLES.map(
+    (audioRole) => models.find((row) => row.audioRole === audioRole) ?? { ...blankModel(), audioRole },
+  )
+}
+
 /**
- * What a new entry pre-fills per adapter, so the form asks only for a credential. Every value is a
- * draft: the user can edit all of it before saving. Keyed by adapter id so the next payload-only
- * adapter gets its own entry instead of a branch.
+ * What a voice entry saves: one model per filled field (name = id, fixed limits, the input price
+ * when set). Output and cache prices are zero because voice usage is billed in one unit per call.
  */
-export const ADAPTER_PRESETS: Record<
-  SideProviderId,
-  { labelKey: string; baseUrl: string; models: () => ModelDraft[] }
-> = {
-  'typesafe-systemone': {
-    labelKey: 'side.prefillLabel.typesafe-systemone',
+export function voiceModels(
+  draft: EditorDraft,
+): { models: ConfigModel[]; model: string } | { error: VoiceError } {
+  const rows = voiceRows(draft.models)
+    .filter((row) => row.id.trim() !== '')
+    .map((row) => ({
+      ...row,
+      name: row.id,
+      showCost: row.costInput.trim() !== '',
+      costOutput: '0',
+      costCacheRead: '0',
+      costCacheWrite: '0',
+    }))
+  if (rows.length === 0) return { error: 'side.voice.modelsRequired' }
+  if (new Set(rows.map((row) => row.id)).size !== rows.length) return { error: 'side.voice.modelsDistinct' }
+  const models = readModels(rows, VOICE_LIMITS)
+  const model = models?.[0]
+  return models && model ? { models, model: model.id } : { error: 'side.voice.fieldsInvalid' }
+}
+
+/**
+ * What an adapter pre-fills for a new entry, so the form asks only for a credential. Every value is
+ * a draft: the user can edit all of it before saving. Each adapter lists its presets, the first one
+ * being its default; the voice presets differ in label, so their routes never collide.
+ */
+export type AdapterPreset = Readonly<{
+  id: 'jev' | 'siliconflow' | 'openai' | 'stepfun'
+  provider: SideProviderId
+  nameKey: string
+  labelKey: string
+  baseUrl: string
+  models(): ModelDraft[]
+  fixedLimits?: Readonly<{ contextWindow: number; maxTokens: number }>
+}>
+
+const voicePreset = (
+  id: 'siliconflow' | 'openai' | 'stepfun',
+  baseUrl: string,
+  transcribe: string,
+  speech: string,
+): AdapterPreset => ({
+  id,
+  provider: 'openai-audio',
+  nameKey: `side.preset.${id}`,
+  labelKey: `side.prefillLabel.${id}`,
+  baseUrl,
+  fixedLimits: VOICE_LIMITS,
+  models: () => [
+    { ...blankModel(), audioRole: 'transcribe', id: transcribe, name: transcribe },
+    { ...blankModel(), audioRole: 'speech', id: speech, name: speech },
+  ],
+})
+
+export const ADAPTER_PRESETS: readonly AdapterPreset[] = [
+  {
+    id: 'jev',
+    provider: 'typesafe-systemone',
+    nameKey: 'side.preset.jev',
+    labelKey: 'side.prefillLabel.jev',
     baseUrl: DEFAULT_BASE_URL,
     models: () => [
       {
@@ -174,7 +253,26 @@ export const ADAPTER_PRESETS: Record<
       },
     ],
   },
-}
+  voicePreset(
+    'siliconflow',
+    'https://api.siliconflow.cn/v1',
+    'FunAudioLLM/SenseVoiceSmall',
+    'FunAudioLLM/CosyVoice2-0.5B',
+  ),
+  voicePreset('openai', 'https://api.openai.com/v1', 'gpt-4o-mini-transcribe', 'gpt-4o-mini-tts'),
+  voicePreset('stepfun', 'https://api.stepfun.com/v1', 'stepaudio-3-asr-max', 'stepaudio-3-tts'),
+]
+
+export const isSideProvider = (value: string): value is SideProviderId =>
+  (SIDE_PROVIDERS as readonly string[]).includes(value)
+
+/** The model rows of a saved entry; a voice entry always gets one row per role. */
+export const draftModels = (provider: SideProviderId, models: readonly ConfigModel[]): ModelDraft[] =>
+  provider === 'openai-audio' ? voiceRows(models.map(toDraft)) : models.map(toDraft)
+
+/** The presets of one adapter; the first is the default. */
+export const presetsFor = (provider: SideProviderId): readonly AdapterPreset[] =>
+  ADAPTER_PRESETS.filter((preset) => preset.provider === provider)
 
 /**
  * The account id a new entry gets, derived from its label: lowercase kebab, within the account-id

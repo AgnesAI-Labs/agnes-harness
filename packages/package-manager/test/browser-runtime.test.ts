@@ -1153,6 +1153,14 @@ it('rejects unsafe schemes, credentials and protected endpoints without blocking
   )
   expect(browserInstructions({ enabled: true, state: 'ready' })).not.toContain('Prefer browser')
   expect(browserInstructions({ enabled: true, state: 'failed' })).toContain('Do not silently replay')
+  // Nobody attends a `-p` run to re-enable the browser, so neither the failure nor the "off" note is
+  // repeated into every request there; a usable browser and an unconfirmed cleanup still are.
+  expect(browserInstructions({ enabled: true, state: 'failed' }, { unattended: true })).toBe('')
+  expect(browserInstructions({ enabled: false }, { unattended: true })).toBe('')
+  expect(browserInstructions({ enabled: true, state: 'ready' }, { unattended: true })).toContain(
+    'optional background tool',
+  )
+  expect(browserInstructions({ cleanupRequired: true }, { unattended: true })).toContain('cleanup')
   expect(browserUrl('http://localhost:5173/')).toBe('http://localhost:5173/')
   const protectedOrigins = new Set(['http://localhost:3000'])
   for (const host of ['localhost', 'localhost.', '127.0.0.2', '[::1]', '[::ffff:127.0.0.1]']) {

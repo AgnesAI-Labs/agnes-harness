@@ -23,7 +23,7 @@ export function shellGuidance(ctx: ToolContext, command: string, stopped = 0): s
     notes.push('[the session already runs PowerShell; omit the extra powershell/pwsh -Command wrapper]')
   if (stopped > 0)
     notes.push(
-      `[stopped ${stopped} descendant process(es) still running when the command ended (for example started with & or nohup); processes do not outlive a foreground command. Start long-running work such as a server with background: true and check it with job_output]`,
+      `[stopped ${stopped} descendant process(es) still running when the command ended; processes the command did not start itself with & or nohup (for example from a subshell, or a program that forked into the background) do not outlive it. Start long-running work such as a server with background: true]`,
     )
   return notes
 }
@@ -91,3 +91,39 @@ export function deadlineYield(ctx: ToolContext, waitMs: number, requestedMs: num
 
 export const DEADLINE_ADVICE =
   'Use the time left for short steps: leave the work in its best checked state and end with a short summary.'
+
+/**
+ * The longest one call waits in the foreground for a process that may continue in the background.
+ * Two minutes is the default command timeout, so a call that asks for nothing is unchanged, and
+ * most installs and builds finish inside it; a longer request no longer parks a whole turn (a 600 s
+ * apt-get held ten minutes of a 40-minute one), while each extra poll costs the model a request.
+ */
+export const FOREGROUND_WAIT_MAX_MS = 120_000
+
+const JOB_TOOLS = ['job_output', 'job_list', 'job_kill'] as const
+
+/**
+ * How to reach a job, naming only the job tools this request offers in full: a deferred tool named
+ * here would be called without its schema. A runtime that cannot say keeps naming all three.
+ */
+export function jobToolsHint(ctx: Pick<ToolContext, 'tools'>, jobId: string): string {
+  const availability = ctx.tools?.availability
+  if (!availability) return 'use job_output, job_list or job_kill'
+  const offered = JOB_TOOLS.filter((name) => availability(name).status === 'offered')
+  if (offered.length)
+    return `use ${offered.length > 1 ? `${offered.slice(0, -1).join(', ')} or ${offered.at(-1)}` : offered[0]} with jobId ${jobId}`
+  return availability('tool_describe').status === 'offered'
+    ? 'to check on it, load job_output with tool_describe'
+    : 'the job tools are not offered in this request'
+}
+
+/**
+ * A shell that ended on a signal AGH did not send. `pkill -f` and `killall` match their own shell's
+ * command line, which holds the pattern, so a command that uses them most likely ended itself.
+ */
+export function signalNote(command: string, signal: string): string {
+  const self = /\b(pkill|killall)\b/.test(command)
+    ? " pkill -f and killall match the command line of the shell running them, which contains the pattern, so this command probably ended its own shell. Match a narrower pattern (for example pkill -f '[s]erver.py') or use a PID."
+    : ''
+  return `[the command's shell was ended by ${signal}, which AGH did not send.${self}]`
+}

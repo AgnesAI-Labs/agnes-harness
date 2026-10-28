@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto'
 import type { PreviewSnapshotEntry } from '@agnes/daemon-foundation/registry'
 import type { WorkspaceBindingEnvelope } from '@agnes/daemon-foundation/storage/workspaces'
 import { FEEDBACK_PROVIDER_ID } from '@agnes/host'
-import type { Actor, EventEnvelope, SessionToolFilter } from '@agnes/protocol'
+import {
+  type Actor,
+  type EventEnvelope,
+  type SessionToolFilter,
+  VOICE_LINK_TIMEOUT_MS,
+} from '@agnes/protocol'
 import type {
   DeliverablesRead,
   DeliverablesReadResult,
@@ -166,6 +171,27 @@ export class RemoteSession {
         { question, runId },
         { timeoutMs: 65_000 },
       )) as import('@agnes/protocol').SessionBtwResult
+    } finally {
+      signal.removeEventListener('abort', abort)
+      release()
+    }
+  }
+
+  /** One voice call on the worker that holds the real session; the daemon's abort reaches it by run id. */
+  async voice(
+    method: 'voice.transcribe' | 'voice.speak',
+    input: Readonly<Record<string, unknown>> & { route: string },
+    signal: AbortSignal,
+  ): Promise<unknown> {
+    signal.throwIfAborted()
+    const runId = `voice:${randomUUID()}`
+    const release = this.beginActivity()
+    const abort = () => {
+      void this.link.command('abort', { runId }).catch(() => undefined)
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    try {
+      return await this.link.command(method, { ...input, runId }, { timeoutMs: VOICE_LINK_TIMEOUT_MS })
     } finally {
       signal.removeEventListener('abort', abort)
       release()

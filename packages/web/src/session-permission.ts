@@ -63,6 +63,8 @@ export type DraftPermissionInput = {
   preset: string | undefined
   defaults: SessionDefaults | undefined
   runtime: RuntimeAdminSnapshot | undefined
+  /** The agent an application workbench starts by default; a draft with no explicit choice runs it. */
+  agent?: string | undefined
 }
 
 /** A remembered level the deployment no longer allows is not a choice: the default applies. */
@@ -79,7 +81,7 @@ export function draftPermissionMode(input: DraftPermissionInput): PermissionMode
   return chosenMode(input) ?? MODE[defaultPermissionLevel(input.defaults, input.runtime)]
 }
 
-export type NewSessionRequest = { preset?: string; permission?: string }
+export type NewSessionRequest = { agent: string } | { preset?: string; permission?: string }
 
 /**
  * What `session.new` carries for the draft, or `undefined` when the selection cannot be requested
@@ -87,6 +89,8 @@ export type NewSessionRequest = { preset?: string; permission?: string }
  * deployment's default level (`default`).
  */
 export function newSessionRequest(input: DraftPermissionInput): NewSessionRequest | undefined {
+  // An agent carries its own recipe and level, so `session.new` refuses it beside either.
+  if (input.agent && !input.preset && !input.explicit) return { agent: input.agent }
   const preset = input.preset ?? defaultRecipe(input.defaults, input.runtime)
   const mode = chosenMode(input)
   if (mode && !allowedPermissionLevels(input.runtime).includes(LEVEL[mode])) return undefined

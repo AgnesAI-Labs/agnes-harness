@@ -30,6 +30,7 @@ describe('author hook contracts', () => {
       | 'projections'
       | 'platform'
       | 'workspaceHooks'
+      | 'unattended'
     >()
     // Hooks run on every kernel event: facts only, no capability probe (spec P2/P4).
     expectTypeOf<HookContext['platform']>().toEqualTypeOf<PlatformFacts>()

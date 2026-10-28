@@ -32,7 +32,8 @@
           },
           "hooks": [
             "shutdown",
-            "context"
+            "context",
+            "turn_stopping"
           ],
           "artifacts": true
         },

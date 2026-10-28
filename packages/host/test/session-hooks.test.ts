@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { HookEngine, type SessionImpl, type WorkspaceInvocationPort } from '@agnes/core'
+import { attend, HookEngine, type SessionImpl, type WorkspaceInvocationPort } from '@agnes/core'
 import type { HookContext, HookInvocationSnapshot } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -103,6 +103,46 @@ describe('session hook privacy context', () => {
       { value: 'ANON', frozen: true },
       { value: 'ANON', frozen: true },
     ])
+  })
+
+  // A hook that speaks to a person (a browser to re-enable, jobs to keep) needs to know whether the
+  // current turn has one: `agh -p` and scheduled runs do not.
+  it('tells a handler whether the current turn is unattended, read at dispatch', async () => {
+    const seen: Array<boolean | undefined> = []
+    const engine = new HookEngine({
+      leaseFor: () => lease,
+      onFailure: () => undefined,
+      diag: () => undefined,
+      platform: { shell: 'posix', fs: { caseSensitive: true, pathSep: '/' }, terminal: { color: false } },
+    })
+    engine.on('session_start', (_payload, context) => void seen.push(context.unattended), {
+      source: 'agnes/jobs',
+      trust: 'builtin',
+    })
+    const session = {
+      key: 's',
+      lane: 'main',
+      ac: new AbortController(),
+      turn: null,
+      d: {
+        actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+        cwd: '/work',
+        runtime: {},
+        logger: { debug() {}, info() {}, warn() {}, error() {} },
+      },
+      preset: { budget: { perRequestCap: null }, verifier: { defaultTier: 0 } },
+      state: { creditsUsed: 0 },
+      surface: () => [],
+      diag: () => undefined,
+    } as unknown as SessionImpl
+    const port = createSessionHookPort(session, engine, () => [])
+    const turn = { snapshot: { defs: [], byName: new Map() } } as unknown as NonNullable<SessionImpl['turn']>
+    await port.sessionStart({ reason: 'new', preset: 'standard', cwd: '/work' })
+    session.turn = attend(turn, { attrs: {} })
+    await port.sessionStart({ reason: 'resume', preset: 'standard', cwd: '/work' })
+    session.turn = attend(turn, { attrs: { interaction: 'unattended' } })
+    await port.sessionStart({ reason: 'resume', preset: 'standard', cwd: '/work' })
+    expect(seen).toEqual([undefined, undefined, true])
   })
 
   it('acquires the workspace lease before context creation and holds it through handler settle', async () => {

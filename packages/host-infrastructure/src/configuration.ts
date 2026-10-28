@@ -913,7 +913,7 @@ export function createConfigurationService(
     await requireEndpointCredential(baseUrl, row, parsed, readCredential)
     if (isPayloadOnlyEntry(parsed.entry))
       return testPayloadOnlyAccount(
-        { baseUrl, model: parsed.model, credentialRef: parsed.credentialRef, row },
+        { api: parsed.entry.api, baseUrl, model: parsed.model, credentialRef: parsed.credentialRef, row },
         { request, signal: callerSignal ?? new AbortController().signal, readCredential },
       )
     const list = (api: string, url: string, credential: string | undefined) =>

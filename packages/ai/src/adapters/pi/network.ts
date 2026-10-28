@@ -24,6 +24,15 @@ const PERMANENT = new Set([
   'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
 ])
 
+/**
+ * A name that does not resolve while connecting is retried like EAI_AGAIN: resolvers drop answers for
+ * a moment, and one blip used to end a whole unattended turn. The adapter's retries are bounded, so a
+ * host that never resolves still ends with this same error once they are spent.
+ */
+function retryable(code: string, phase: Failure['phase']): boolean {
+  return TRANSIENT.has(code) || (code === 'ENOTFOUND' && phase === 'connect')
+}
+
 /** Keep only known transport facts. Neither exception bodies nor URLs enter stored events. */
 export function networkFailure(error: unknown, phase: Failure['phase']): Failure | undefined {
   const seen = new Set<unknown>()
@@ -34,7 +43,7 @@ export function networkFailure(error: unknown, phase: Failure['phase']): Failure
     seen.add(next)
     const value = next as { code?: unknown; cause?: unknown; errors?: unknown }
     if (typeof value.code === 'string' && (TRANSIENT.has(value.code) || PERMANENT.has(value.code)))
-      return { phase, code: value.code, retryable: TRANSIENT.has(value.code) }
+      return { phase, code: value.code, retryable: retryable(value.code, phase) }
     pending.push(value.cause)
     if (Array.isArray(value.errors)) pending.push(...value.errors.slice(0, 8))
   }

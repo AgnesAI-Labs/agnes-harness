@@ -483,18 +483,64 @@ describe('shell near the turn deadline', () => {
   })
 
   it('never lets one foreground wait take the rest of a timed turn', async () => {
-    // query-optimize: 900 s asked for with 585 s of an 840 s turn left (margin 42 s).
+    // 900 s asked for with 125 s of an 840 s turn left (margin 42 s): half the usable time.
     vi.spyOn(Date, 'now').mockImplementation(() => NOW)
     const { tool, waits } = jobsFor('running')
     const ctx = fakeToolContext({
       timeoutMs: 1_800_000,
-      turnTimeLimit: { timeLimitMs: 840_000, deadlineAt: NOW + 585_000 },
+      turnTimeLimit: { timeLimitMs: 840_000, deadlineAt: NOW + 125_000 },
     })
     await tool.execute({ command: 'sqlite3 db < slow.sql', timeoutMs: 900_000 }, ctx)
-    expect(waits).toEqual([271_500])
+    expect(waits).toEqual([41_500])
     // A wait that fits in half the usable time is left alone.
-    await tool.execute({ command: 'make', timeoutMs: 200_000 }, ctx)
-    expect(waits).toEqual([271_500, 200_000])
+    await tool.execute({ command: 'make', timeoutMs: 30_000 }, ctx)
+    expect(waits).toEqual([41_500, 30_000])
+  })
+
+  // compile-compcert: a 600 s apt-get held the turn for ten minutes because half of a 40-minute turn
+  // was still more than it asked for. A wait whose process continues now ends at a fixed bound,
+  // with or without a turn limit, and the command goes on as the job the result names.
+  it.each([
+    ['without a time limit', undefined],
+    ['with most of a long turn left', { timeLimitMs: 2_400_000, deadlineAt: NOW + 2_320_000 }],
+  ] as const)(
+    'ends a foreground wait at %s after two minutes and lets the job continue',
+    async (_n, turnTimeLimit) => {
+      vi.spyOn(Date, 'now').mockImplementation(() => NOW)
+      const { tool, waits, kill } = jobsFor('running')
+      const ctx = fakeToolContext({ timeoutMs: 1_800_000, ...(turnTimeLimit ? { turnTimeLimit } : {}) })
+      const r = await tool.execute({ command: 'apt-get install -y coq', timeoutMs: 600_000 }, ctx)
+      expect(waits).toEqual([120_000])
+      expect(kill).not.toHaveBeenCalled()
+      expect(r.details).toMatchObject({ jobId: 'job-1', status: 'running' })
+      expect(textOf(r)).toBe(
+        'background job job-1 started (foreground wait stopped at 120000ms, the most one call waits (requested 600000ms); the same process continues); use job_output, job_list or job_kill',
+      )
+      // A command that must not outlive its timeout keeps the time it asked for.
+      await tool.execute({ command: 'make check', timeoutMs: 600_000, timeoutToBackground: false }, ctx)
+      expect(waits).toEqual([120_000, 600_000])
+    },
+  )
+
+  it('names only the job tools this request offers in full', async () => {
+    vi.spyOn(Date, 'now').mockImplementation(() => NOW)
+    const { tool } = jobsFor('running')
+    const ctx = fakeToolContext({ timeoutMs: 1_800_000 })
+    const offer = (offered: string[]) =>
+      Object.assign(ctx.tools, {
+        availability: (name: string) => ({
+          status: offered.includes(name) ? ('offered' as const) : ('deferred' as const),
+          message: '',
+        }),
+      })
+    offer(['job_output'])
+    const one = textOf(await tool.execute({ command: 'make', timeoutMs: 600_000 }, ctx))
+    expect(one).toMatch(/; use job_output with jobId job-1$/)
+    expect(one).not.toMatch(/job_list|job_kill/)
+    offer(['tool_describe'])
+    const none = textOf(await tool.execute({ command: 'make', timeoutMs: 600_000 }, ctx))
+    expect(none).toMatch(/; to check on it, load job_output with tool_describe$/)
+    expect(none).not.toMatch(/job_list|job_kill/)
   })
 
   it('kills a session job at the cap when it may not continue in the background', async () => {
@@ -534,6 +580,45 @@ describe('shell near the turn deadline', () => {
     await output?.execute({ jobId: 'job-1', waitMs: 60_000 }, fakeToolContext())
     // 40 s left less the 30 s margin; without a time limit the asked wait stands.
     expect(seen).toEqual([10_000, 60_000])
+  })
+})
+
+// `pkill -f` matches the command line of the shell that runs it, which holds the pattern, so the
+// command killed itself and came back as a bare `exit -1` (three tasks in one benchmark run).
+describe('shell ended by a signal', () => {
+  const ended = (command: string, signal: string | undefined, status: 'failed' | 'killed' = 'failed') => {
+    const jobs = new ShellJobs()
+    const view = {
+      id: 'job-1',
+      status,
+      stdout: 'before\n',
+      stderr: '',
+      code: -1,
+      ...(signal ? { signal } : {}),
+    }
+    vi.spyOn(jobs, 'start').mockResolvedValue({ ...view, status: 'running', code: null } as never)
+    vi.spyOn(jobs, 'wait').mockResolvedValue(view as never)
+    return createShellTool(jobs).execute({ command }, fakeToolContext())
+  }
+
+  it('says the shell was ended by a signal the command probably sent itself', async () => {
+    const r = await ended('pkill -f "http.server 8080"; python3 -m http.server 8080 &', 'SIGTERM')
+    expect(r.isError).toBe(true)
+    expect(textOf(r)).toContain(
+      "[the command's shell was ended by SIGTERM, which AGH did not send. pkill -f and killall match the command line of the shell running them, which contains the pattern, so this command probably ended its own shell. Match a narrower pattern (for example pkill -f '[s]erver.py') or use a PID.]",
+    )
+    expect(textOf(r)).toMatch(/\[exit -1\]$/)
+  })
+
+  it('names the signal without guessing a cause when the command sent none', async () => {
+    const text = textOf(await ended('make -j8', 'SIGKILL'))
+    expect(text).toContain("[the command's shell was ended by SIGKILL, which AGH did not send.]")
+    expect(text).not.toContain('pkill')
+  })
+
+  it('adds nothing when the shell exited on its own or the job was stopped on request', async () => {
+    expect(textOf(await ended('pkill -f x', undefined))).not.toContain('ended by')
+    expect(textOf(await ended('pkill -f x', 'SIGKILL', 'killed'))).not.toContain('ended by')
   })
 })
 
