@@ -132,6 +132,7 @@
         "packages/host-computer-use",
         "packages/host-extensions",
         "packages/host-providers",
+        "packages/loop-jev",
         "packages/model-adapters",
         "packages/plugin-runtime",
         "packages/protocol",
