@@ -31,7 +31,7 @@ import {
   upsertTrial,
 } from './domain.mjs'
 import { fastForward, GATES } from './fastforward.mjs'
-import { HANDOFF_TYPES, handoff } from './handoff.mjs'
+import { HANDOFF_TYPES, handoff, humanNext } from './handoff.mjs'
 import { ORGS } from './profiles.mjs'
 
 const strict = { additionalProperties: false }
@@ -92,6 +92,12 @@ function tool(name, description, parameters, run, meta = write) {
           mutate(store, work) {
             const { revision, result } = update(store, work, Date.now(), { tool: name, actor: by, input })
             return { revision, data: result }
+          },
+          // A turn that waits on a person ends with exact steps the board computes (read after the write, so it sees the new state).
+          mutateWaiting(store, work, ref) {
+            const out = a.mutate(store, work)
+            const next = humanNext(read(store), ref(out.data))
+            return next ? { ...out, data: { ...out.data, humanNext: next } } : out
           },
         }
         const output = json(await run(input, ctx, a))
@@ -292,15 +298,18 @@ export const tools = [
       strict,
     ),
     (input, ctx, a) =>
-      a.mutate(ctx.store, (s) =>
-        create(s, {
-          kind: 'intervention',
-          type: input.type,
-          entity: { kind: input.entityKind, id: input.entityId },
-          ask: input.ask,
-          dueInHours: input.dueInHours,
-          by: a.by,
-        }),
+      a.mutateWaiting(
+        ctx.store,
+        (s) =>
+          create(s, {
+            kind: 'intervention',
+            type: input.type,
+            entity: { kind: input.entityKind, id: input.entityId },
+            ask: input.ask,
+            dueInHours: input.dueInHours,
+            by: a.by,
+          }),
+        (item) => ({ type: 'intervention', id: item.id }),
       ),
   ),
   tool(
@@ -400,7 +409,7 @@ export const tools = [
   ),
   tool(
     'devboard_gate_submit',
-    'Submit a stage for review (IN_PROGRESS → IN_REVIEW, new PENDING gate for the next gate of the project profile, e.g. TR1 or DL2; every earlier stage must have PASSED), or add/close findings on its pending gate. After submitting a human gate, end the turn and ask the user to approve it on the board (the gate names the roles that must sign). The gate marked auto (TR4) passes once all findings are closed. 提交评审。',
+    'Submit a stage for review (IN_PROGRESS → IN_REVIEW, new PENDING gate for the next gate of the project profile, e.g. TR1 or DL2; every earlier stage must have PASSED), or add/close findings on its pending gate. After submitting a human gate, end the turn with data.humanNext.text verbatim: it tells the user where to go, which demo role to switch to and what to click. The gate marked auto (TR4) passes once all findings are closed. 提交评审。',
     Type.Object(
       {
         projectId: id,
@@ -414,8 +423,10 @@ export const tools = [
       strict,
     ),
     (input, ctx, a) =>
-      a.mutate(ctx.store, (s) =>
-        submitGate(s, { ...input, stageId: `${input.projectId}/${input.stage}`, by: a.by }),
+      a.mutateWaiting(
+        ctx.store,
+        (s) => submitGate(s, { ...input, stageId: `${input.projectId}/${input.stage}`, by: a.by }),
+        (r) => ({ type: 'gate', id: r.gate.id }),
       ),
   ),
   tool(
@@ -616,9 +627,14 @@ export const tools = [
   ),
   tool(
     'devboard_approval_submit',
-    `Start the approval flow of an object you drafted yourself (template DOC_RELEASE for a deliverable, ECR for a change in CCB_REVIEW, ECN_RELEASE for an approved change, PROBLEM_CLOSE for a problem in VERIFYING, TRIAL_REPORT for a reported trial; subjectId is the object id). Starting is all you can do: people agree, reject, send back or transfer on the board page 「我的待办」, so tell the user which flow and node is waiting. One running flow per object. 发起审批（只能发起自己起草的对象，处理由人在「我的待办」完成）。`,
+    `Start the approval flow of an object you drafted yourself (template DOC_RELEASE for a deliverable, ECR for a change in CCB_REVIEW, ECN_RELEASE for an approved change, PROBLEM_CLOSE for a problem in VERIFYING, TRIAL_REPORT for a reported trial; subjectId is the object id). Starting is all you can do: people agree, reject, send back or transfer on the board page 「我的待办」, so end the reply with data.humanNext.text verbatim (which page, demo role and button). One running flow per object. 发起审批（只能发起自己起草的对象，处理由人在「我的待办」完成）。`,
     Type.Object({ template: keys(LABELS.approvalTemplate), subjectId: id }, strict),
-    (input, ctx, a) => a.mutate(ctx.store, (s) => submitApproval(s, { ...input, by: a.by, agent: true })),
+    (input, ctx, a) =>
+      a.mutateWaiting(
+        ctx.store,
+        (s) => submitApproval(s, { ...input, by: a.by, agent: true }),
+        (flow) => ({ type: 'approval', id: flow.id }),
+      ),
   ),
   tool(
     'devboard_app_register',

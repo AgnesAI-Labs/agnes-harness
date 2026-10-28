@@ -16,6 +16,10 @@ Start your local server with a model already downloaded, then use its OpenAI-com
 
 These addresses are examples; use the address configured on your server. The adapter adds `/v1` when absent. It does not download models or contact an external inference service. Once the runtime, server and model files are installed, this configuration works offline. Server/model setup and quality depend on that installation; the adapters do not infer a model's capabilities from its name.
 
+## Configure through Web
+
+For a local server that supports OpenAI `/chat/completions`, you can also use **Settings → Models → Add account → OpenAI-compatible endpoint** without installing the optional adapter above. Enter the server URL, list or type its model IDs, test and save, then choose the model in a new conversation. Leave the API key empty only when the server accepts keyless requests: inference sends the placeholder bearer `no-key`; model listing sends no credential. These account models declare text input and native tool calls only. Set a context budget appropriate for your loaded model; a discovered ID alone does not prove its capacity. Use the profile route below when you need explicit capability metadata or the local adapter’s discovery/recording controls.
+
 ## Profile route
 
 Add a route to the existing profile's provider configuration. Preserve its provider package and other routes as needed. The plugin package must also be present in the profile's package tree.

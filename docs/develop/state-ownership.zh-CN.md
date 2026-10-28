@@ -162,7 +162,7 @@ pin 锁。`<pin>.json.lock` 是发布时已带所有者（`pid`、启动标识�
 | 1 builtin | 随发布提供的模板，可继承一个父模板（`packages/host-common/src/profile/resolve.ts:406-413`） | AGH 发布 | 所有键的默认值 |
 | 2 user | `profiles/<name>/profile.yaml` 与 `configuration.json` 的键合并（`packages/host/src/runtime/profile/inputs.ts:66-86`） | 用户；配置服务 | schema 允许的一切。重叠的键以配置服务的值为准（浅层展开），`adapters` 与扩展隔离例外，它们按字段合并 |
 | 3 workspace overlay | 受信工作区经验证的 deploy 清单，通过锁投影（`packages/package-manager/src/lock-state.ts:70-133`） | 工作区所有者，且须先获得工作区信任 | 固定的片段：包、能力上限（只能收紧）、审批模式（只能收紧）、Computer Use（只能收紧）、扩展隔离（`packages/host-common/src/profile/types.ts:153-160`）。不能设置传输或包配置（`resolve.ts:416-426`），也不能设置持久化（`resolve.ts:284-293`） |
-| 4 local、flags | `.agnes/profile.local.yaml`、CLI 标志 | 运维人员 | 只有 `extensionIsolation`；其他任何键以 `E_DEP_MISSING` 拒绝而不是忽略（`resolve.ts:433-436`；`packages/host-common/src/profile/isolation.ts:49-77`） |
+| 4 local、flags | `.agh/profile.local.yaml`、CLI 标志 | 运维人员 | 只有 `extensionIsolation`；其他任何键以 `E_DEP_MISSING` 拒绝而不是忽略（`resolve.ts:433-436`；`packages/host-common/src/profile/isolation.ts:49-77`） |
 | 5 managed | 受管策略 | 管理员 | 只有 `version`、空的 `policy` 与 `extensionIsolation`；通用的 managed 层尚未实现，其他内容一律拒绝（`isolation.ts:61-77`） |
 
 已解析 Profile 的各种投影及其不一致规则：
@@ -199,7 +199,7 @@ pin 锁。`<pin>.json.lock` 是发布时已带所有者（`pid`、启动标识�
 | 输入框草稿与记忆 | 浏览器 `sessionStorage` 与 `localStorage`（`packages/web/src/composer-memory.ts:16`；`packages/web/src/app.ts:691`） | 每个查看者自己的便利状态 | 丢失无妨 | 容忍存储不可用 |
 | 管理面操作记录 | `sessionStorage`（`packages/web-admin/src/admin/plugins/admin/operation-storage.ts:16`） | 仅作提示；操作日志（B5）才是权威 | 服务端操作状态说了算 | 重新拉取 |
 | 客户端模块 roster | daemon 的包状态（B1、C1） | 页面自行对账 roster、导入、样式与 fiber（`packages/web/src/client-modules/reconcile.ts:23`） | daemon 的 roster 决定哪些模块应当运行；页面已加载的集合是观测 | 重新加载，再次对账 |
-| 会话列表、控件 | daemon | 经 `createRefreshCoordinator` 的轮询与失效（`packages/web/src/refresh-coordinator.ts:4`） | 任何变更边界之后重新读取 | 定时刷新 |
+| 会话列表、控件 | daemon | 经 `createRefreshCoordinator` 的事件失效（`packages/web/src/refresh-coordinator.ts`）；合并并发请求，隐藏视图延后读取 | 变更边界之后，在视图可刷新时重新读取 | 失效事件或可见性／重连触发刷新 |
 | 连接状态 | daemon 存活性 | `createReconnectController` 探测，并在发现是另一个 daemon 时只重载一次（`packages/web/src/reconnect.ts:35`） | 重载到了另一个 daemon，就采用它的 bootstrap | 带上限的退避 |
 
 浏览器插件只能通过与行绑定的中继读写宿主状态，见[插件边界](plugins.zh-CN.md)。

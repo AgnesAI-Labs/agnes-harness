@@ -4,6 +4,8 @@
 
 [文档导航](../README.zh-CN.md) · [构建与安装](install.zh-CN.md) · [第一个任务](quickstart.zh-CN.md)
 
+旧版用户请先按[旧版升级指南](upgrade-from-previous.zh-CN.md)备份并清理环境；本页的新环境步骤不迁移旧数据。
+
 ## 启动独立实例
 
 先完成源码构建，然后从仓库根目录执行：
@@ -60,6 +62,6 @@ agh doctor --probe --json
 
 默认诊断不会连接模型服务。`--probe` 明确测试已启用账户，共享 45 秒超时并支持取消，可能产生费用。原有 `doctor provider --probe` 最小推理和具名诊断仍可用。Linux 的 bubblewrap / Landlock 细节见 `doctor platform`，安装二进制不等于隔离可用。MCP 准备状态不证明某个服务的信任、配置档或连接成功。
 
-Web 将失败项显示为可关闭七天的提示，详情在**设置 → 高级 → 运行时与诊断**。“重新检查”读取本地状态；“测试模型账户”才连接提供方。诊断失败不阻止跳过引导。遇到 socket、端口、目录或凭据问题，继续看[排错](troubleshooting.zh-CN.md)。
+Web 将失败项显示为可关闭七天的提示，详情在**设置 → 高级 → 运行诊断**。“重新检查”读取本地状态；“测试模型账户”才连接提供方。诊断失败不阻止跳过引导。遇到 socket、端口、目录或凭据问题，继续看[排错](troubleshooting.zh-CN.md)。
 
 合同：[App Server](../reference/app-server.zh-CN.md)；实现：[目录布局](../../packages/host-common/src/home-layout.ts)、[运行诊断](../../packages/host-infrastructure/src/doctor.ts)。

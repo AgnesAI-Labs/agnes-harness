@@ -12,7 +12,7 @@ Enabling a package that publishes bundles makes its providers available for sele
 
 The compiled ownership scope is pinned with the composition and code generation. Live resources retain their existing filters. Older saved bindings keep their prior scope; create a new session to apply isolation. The resolved profile adds the optional Host-generated `compositionToolScope` field; this is not a user manifest setting.
 
-In Web Settings → Advanced → Run configuration → Technical details → Additional combinations for all conversations → Technical details, session information lists actual tool groups and why they are active. Demo fixture readers identify their packaged sources. For workspace questions, use the workspace file reader.
+In Web Settings → Models → Run configuration → Technical details → Additional combinations for all conversations → Technical details, session information lists actual tool groups and why they are active. Demo fixture readers identify their packaged sources. For workspace questions, use the workspace file reader.
 
 ## Publish a bundle
 

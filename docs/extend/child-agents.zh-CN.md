@@ -181,7 +181,7 @@ acpChildAgentsPlugin({
 
 Honest flags live on the provider objects:Codex、Claude Code 和 SDK 模式都是单轮（`continuable: false`，`interrupt: true`，其余子代理标志为 false）。SDK 协议选 `acp` 时注册现有的可继续 `acp` 提供者，并保留该提供者的标志。各扩展清单声明的 hooks、slots、events、resources、network 都是空的。包本身不加包级 `agnes.capabilities`。测试里仍可用 `childEnginePlugins(settings)` 做显式进程内挂载。
 
-设置里的「子代理引擎」通过宿主配置服务读写配置档的 `configuration.json`。守护进程方法是 `_agnes/v1/config.childEngines.get` 和 `_agnes/v1/config.childEngines.save`。网页调用 `GET` 与 `PUT /admin/api/child-engines`。保存的文档包含 `enabled`、`command`、`args`、`allow`，SDK 行另有 `protocol`。文档不保存 `env`。已启用的命令必须非空，并且与允许名单中的某一项完全一致。加载时如果 `childEngines` 字段损坏，会丢掉该字段，账号和会话默认值仍然可以打开。
+插件 → 内置中的「子代理」通过宿主配置服务读写配置档的 `configuration.json`。守护进程方法是 `_agnes/v1/config.childEngines.get` 和 `_agnes/v1/config.childEngines.save`。网页调用 `GET` 与 `PUT /admin/api/child-engines`。保存的文档包含 `enabled`、`command`、`args`、`allow`，SDK 行另有 `protocol`。文档不保存 `env`。已启用的命令必须非空，并且与允许名单中的某一项完全一致。加载时如果 `childEngines` 字段损坏，会丢掉该字段，账号和会话默认值仍然可以打开。
 
 保存时，如果当前期望运行时制品、pin coordinator、运行时探针和 `@agnes/base` 的包完整性都存在，就把这三行内置插件替换进该制品。返回效果是 `new-sessions`：新会话使用头部这一代，已经打开的会话留在它们启动时的那一代。打开会话的子代理继承该会话的代。无法发布，或当前没有期望制品时，文件仍然保存，效果是 `restart-required`。进程启动会把同一份文件读进普通插件层，因此即使期望制品没有收到覆盖，重启后也会与文件一致。启用一行会改变运行时代码修订。
 

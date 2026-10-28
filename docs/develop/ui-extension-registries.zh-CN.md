@@ -14,7 +14,7 @@ const dispose = ctx.settingsSections.register({
 })
 ```
 
-设置弹窗固定列出三页（通用、模型与账户、权限与安全）；「显示高级设置」打开时多出「高级」分组。这个开关默认打开：只有读者在本机浏览器里明确关闭才隐藏，未保存或读不到存储都算打开。`group` 决定设置区出现的位置：`general`、`accounts`、`security` 作为对应页面的一个页签；`advanced` 列在「高级」分组里，只在开关打开时可见；其他取值按设置区自己的标题列在「扩展」下，始终可见。外壳拥有导航、页签键盘操作、布局和 `?settings=<id>` 深链接。内置账户页和通用页通过原生面板生命周期桥接字段 nativePane、navigationId 保留已有 DOM、控制器和皮肤钩子，其余设置区通过同一注册表在弹窗自己的页面宿主里渲染。插件、技能、MCP、自动化、会话搜索和归档不再是设置页；旧的 `?settings=<id>` 链接会打开取代它们的整页或侧栏视图。页面内的高级选项用 `@agnes/web-ui` 的 `SettingsAdvanced`，它跟随同一个开关（`useAdvancedSettings`）。宿主的运行上下文不透明；扩展读取和操作自己的数据应使用已声明的客户端服务。
+设置弹窗固定列出四组（通用、模型、权限、应用）；「显示高级设置」打开时多出「高级」分组。这个开关默认打开：只有读者在本机浏览器里明确关闭才隐藏，未保存或读不到存储都算打开。`group` 决定设置区出现的位置：`general`、`accounts`、`security`、`application` 作为对应分组的一个页签；`advanced` 列在「高级」分组里，只在开关打开时可见；其他取值按设置区自己的标题列在「扩展」下，始终可见。外壳拥有导航、页签键盘操作、布局和 `?settings=<id>` 深链接。内置账户页和通用页通过原生面板生命周期桥接字段 nativePane、navigationId 保留已有 DOM、控制器和皮肤钩子，其余设置区通过同一注册表在弹窗自己的页面宿主里渲染。插件、技能、MCP、自动化、会话搜索和归档不再是设置页；旧的 `?settings=<id>` 链接会打开取代它们的整页或侧栏视图。页面内的高级选项用 `@agnes/web-ui` 的 `SettingsAdvanced`，它跟随同一个开关（`useAdvancedSettings`）。宿主的运行上下文不透明；扩展读取和操作自己的数据应使用已声明的客户端服务。
 
 导航 test id 为 settings-navigation；导航项为 settings-nav-ID（带页签的内置页用其首个设置区的 ID）；页签为 settings-nav-ID-tab，保留 role=tab、aria-selected 和游走焦点。内置控制器 ID 保留，运行页面使用 settings-page-ID。SettingsPage、SettingsCard、Field、共享表单控件和 SettingsState 负责视觉模式。
 

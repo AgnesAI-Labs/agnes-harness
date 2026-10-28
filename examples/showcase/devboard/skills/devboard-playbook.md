@@ -30,11 +30,15 @@
 - 自动门（`TR4`，门上 `auto`）没有人工审批：派代码评审子智能体评审后，把意见作为 findings 提交（`devboard_gate_submit` 的 `findings`）；开发修复并由代码评审角色复核后用 `closeFindings`（每条附说明）关闭，全部关闭时自动 PASSED。
 - 系统会自动加评审意见：需求阶段的门在 CUS→SWR 覆盖率不到 100% 时；`TYPE` 门对每个尚未批准的型式试验（「型式试验 X 未关闭」）；`FAI` 门对每个尚未批准的首件试验。这些意见由人决定如何关闭。
 
-**门已提交，本轮就结束。** 提交评审后告诉用户：「已提交评审（GATE-…），请到看板『评审待办』审批」，然后停止，不要等待，也不要替人审批。人在看板审批后，总览和「我的待办」顶部会出现「待交回研发协调员」卡片，点它会打开你，草稿里带着门的编号（也可以点门页的「继续推进」）；你先调用 `devboard_handoff` 读决议、意见和下一步（要复核可再调 `devboard_gate_status`）：批准就进入下一阶段；驳回就按意见返工，再次提交。人答复了人工介入请求、审批流走完时同样会出现交回卡片，其对象是人工介入请求或项目，照 `devboard_handoff` 的内容接着做。你写了该项目的看板记录后，卡片自动消失。
+**门已提交，本轮就结束。** 提交评审后，最后一段原样输出 `devboard_gate_submit` 返回的 `humanNext.text`（去哪一页、切成哪个演示角色、处理哪个对象、点哪个按钮、批准后再点什么），然后停止，不要等待，也不要替人审批。人在看板审批后，总览和「我的待办」顶部会出现「待交回研发协调员」卡片，点它会打开你，草稿里带着门的编号（也可以点门页的「继续推进」）；你先调用 `devboard_handoff` 读决议、意见和下一步（要复核可再调 `devboard_gate_status`）：批准就进入下一阶段；驳回就按意见返工，再次提交。人答复了人工介入请求、审批流走完时同样会出现交回卡片，其对象是人工介入请求或项目，照 `devboard_handoff` 的内容接着做。你写了该项目的看板记录后，卡片自动消失。
 
-## 现场项目：车门健康监测看板
+**停下等人，结尾必须给出人工下一步。** 任何要等人处理的一轮（提交评审门、发起审批流、发起人工介入请求，或交接显示还有待决议的门或运行中的审批）：最后一段原样输出工具返回的 `humanNext.text`，不改写、不省略角色，不要自己编看板步骤；多个角色要签时，每个角色一行都要保留。工具没有返回 `humanNext` 时（例如自动门 TR4），写明「本轮无需人工操作」和你接下来做什么。
 
-建议规模：5–8 个源文件、15–25 个测试用例；无依赖的 Node 网页应用（不允许 `npm install`，不访问外网）。`node server.js --port <端口>` 提供页面和公开 JSON 接口：在 AGH 中接管 Host 预先绑定的 loopback listener；在没有 socket activation 的普通部署中才绑定 `127.0.0.1` 与指定端口；数据是生成的模拟 PHM 信号（滑道、阻力、缓冲头、开关门时间、电机电流峰值），信号口径与在役项目一致；按线路、车辆、车门三级展示健康评分与预警排行；测试用 `node --test`。AGH 实际端口由 Host 分配并输出 URL；普通部署另选空闲 fallback 端口，演示禁止使用 4177/4178。
+## 现场软件项目
+
+项目名称、目标和范围以用户在对话里提的需求和 `docs/PROJECT-PLAN.md` 为准，不要套用别的样例；用户没有给需求、或是由示例按钮和快进创建的项目，才用下面的车门健康监测看板作示例。新建项目时把用户的需求写进 `devboard_project_create` 的 `description`。
+
+建议规模：5–8 个源文件、15–25 个测试用例；无依赖的 Node 网页应用（不允许 `npm install`，不访问外网）。`node server.js --port <端口>` 提供页面和公开 JSON 接口：在 AGH 中接管 Host 预先绑定的 loopback listener；在没有 socket activation 的普通部署中才绑定 `127.0.0.1` 与指定端口；测试用 `node --test`。示例（车门健康监测看板）：数据是生成的模拟 PHM 信号（滑道、阻力、缓冲头、开关门时间、电机电流峰值），信号口径与在役项目一致，按线路、车辆、车门三级展示健康评分与预警排行。AGH 实际端口由 Host 分配并输出 URL；普通部署另选空闲 fallback 端口，演示禁止使用 4177/4178。
 
 项目目录是 `devboard_project_create` 返回的 `workspaceDir`（`devboard-projects/<项目编号>/`），所有文件都写在这里面：
 
@@ -56,12 +60,12 @@ src/…  test/…  server.js  README.md
 
 每一步先用 `devboard_stage_update` 开始该阶段（上一门通过后下一阶段仍是 NOT_STARTED，返工的阶段是 REWORK），阶段在进行中才能提交评审。
 
-1. 立项（CDCP）：`devboard_project_create` 建项目（默认 SOFTWARE 档案与裁剪）→ 写 `docs/PROJECT-PLAN.md`（目标、范围、里程碑、角色、风险）→ `devboard_artifact_record(kind=PLAN, stage=INITIATION)` → `devboard_gate_submit` → 结束本轮。
+1. 立项（CDCP）：`devboard_project_create` 建项目（`description` 写用户的需求；默认 SOFTWARE 档案与裁剪）→ 写 `docs/PROJECT-PLAN.md`（目标、范围、里程碑、角色、风险）→ `devboard_artifact_record(kind=PLAN, stage=INITIATION)` → `devboard_gate_submit` → 结束本轮。
 2. 需求（TR1）：派 `requirements`（系统设计师）写 `docs/SRS.md`（CUS/SYS/SWR 编号条款）与 `docs/RTM.md`；你用 `devboard_req_upsert` 登记 CUS、SYS（parent=CUS）、SWR（parent=SYS）；登记 SRS、RTM 交付物 → 提交评审 → 结束本轮。
 3. 设计（TR3，TR2 与 PDCP 已裁剪）：TR1 批准后先按下面的「任务与缺陷入板」建需求和任务；派 `architect` 写 `docs/SAD.md`（模块、接口、数据流、非功能约束）；登记 DES（parent=SWR）与 SAD → 提交评审 → 结束本轮。
 4. 开发（TR4，自动门）：派开发前把对应的 DEVELOPMENT 任务置为 IN_PROGRESS，交付后置为 COMPLETED；派开发写 `src/`、`server.js` 和单元测试；再派代码评审子智能体评审（检查代码与测试是否覆盖 SWR）；登记源码与测试：`devboard_artifact_record` 的 kind `CODE`（如 `src/app.js`）和 `TEST`（如 `test/app.test.js`），每个文件传一个 `suffix`（如 `APP`、`HEALTH`）才不会互相覆盖，写完文件再登记，`actingRole` 填 developer 或 tester；这些文件在看板上按纯文本预览，二进制文件会被拒绝；把评审意见作为 findings 提交；修复并由代码评审角色复核后关闭意见，自动通过。
 5. 验证（TR5）：派测试子智能体独立编写测试规范与用例（只读 SRS 与公开接口合同，不看实现自证），你登记 TC（parent=SWR）；由你运行 `node --test`（shell 会请人确认），把真实结果用 `devboard_test_record` 登记：**以后都传 `results: [{tc, status: pass|fail|skip}]`**，列出这次真正运行了的每个 TC（编号必须是已登记的 TC）；总数、通过、失败、跳过由系统按 `results` 计算，你另报的数字对不上就整条被拒绝，不要硬凑；全部通过的 TC 会变成 VERIFIED，一个 SWR 的所有 TC 都通过后它也变成 VERIFIED，失败的 TC 会让原来 VERIFIED 的退回。再附命令、cwd 和日志摘要，回传结果给测试角色完成 `docs/TEST-REPORT.md`；不传 `results` 的旧写法（只报总数）仍可用，但看板不会因此验证任何用例；`node --test` 记录单元测试结果，公开 HTTP/页面验收由真实浏览器执行测试角色的断言或逐条 TC 步骤，分别记录实际计数；TESTING 任务同样随测试开始、完成置为 IN_PROGRESS、COMPLETED；每个失败用例按「任务与缺陷入板」登记缺陷。验收必须启动真实 TCP listener，由沙箱外真实浏览器通过 HTTP 请求公开接口，覆盖页面、正常输入和拒绝/错误路径；不得调用 createHandler 等内部函数替代，监听失败不得回退为进程内「通过」。保持缺口意见未关闭；修复后由测试角色复核真实回归，再登记报告 → 提交评审 → 结束本轮。
-6. 发布（ADCP，TR6 已裁剪）：写 `docs/RELEASE-NOTE.md`（版本、基线清单、命令、cwd、已验证 URL、停止服务方式）并登记；用 shell 后台模式启动 `node server.js --port <空闲端口>`，读取实际输出的 `AGH_LOOPBACK_URL`，请演示者从真实浏览器通过公开 HTTP 接口检查就绪；请人在真实浏览器打开页面并操作线路、车辆、车门与故障排行，记录浏览器检查证据。确认 HTTP 与浏览器通过后才用 `devboard_app_register` 登记实际 `AGH_LOOPBACK_URL`（`http://127.0.0.1:<实际端口>/`） → 提交评审 → 结束本轮。监听/浏览器失败或尚未检查时保留发布阻断意见，不登记虚构 URL、不宣称已发布。
+6. 发布（ADCP，TR6 已裁剪）：写 `docs/RELEASE-NOTE.md`（版本、基线清单、命令、cwd、已验证 URL、停止服务方式）并登记；用 shell 后台模式启动 `node server.js --port <空闲端口>`，读取实际输出的 `AGH_LOOPBACK_URL`，请演示者从真实浏览器通过公开 HTTP 接口检查就绪；请人在真实浏览器打开页面，按 SRS 的页面与接口逐项检查，记录浏览器检查证据。确认 HTTP 与浏览器通过后才用 `devboard_app_register` 登记实际 `AGH_LOOPBACK_URL`（`http://127.0.0.1:<实际端口>/`） → 提交评审 → 结束本轮。监听/浏览器失败或尚未检查时保留发布阻断意见，不登记虚构 URL、不宣称已发布。
 
 ### 任务与缺陷入板
 

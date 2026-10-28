@@ -6,7 +6,7 @@
 
 完整提供器可以替代整个 Host 的 SQLite。通过 `@agnes/extension-api` 的 `definePersistenceProvider` 定义并导出 `persistenceProvider`，声明 `state: { effect: 'restart-required' }` 和能力 `{ ledger: true, metadata: true, childControl: true, reclaim: true, integrity: true }`，并提供相应方法和端口。缺失能力时拒绝启动并关闭候选存储。专门依赖 SQL 的扩展可使用可选的 `sqlite: { dialect: 'sqlite', tables(owner) }`。
 
-[JSONL 示例](../../examples/persistence/) 用 Node 内置模块和现有 `@agnes/system-node` 同步接口实现完整端口，兼顾 Windows、macOS 和 Linux。独立打包时需包含其原生依赖。先安装、启用该包，再在用户配置选择 `providers.persistence: { provider: jsonl }`。省略时仍使用 SQLite。设置 → 提供器展示当前后端和能力；切换重启后生效，原会话和文件仍归原提供器。
+[JSONL 示例](../../examples/persistence/) 用 Node 内置模块和现有 `@agnes/system-node` 同步接口实现完整端口，兼顾 Windows、macOS 和 Linux。独立打包时需包含其原生依赖。先安装、启用该包，再在用户配置选择 `providers.persistence: { provider: jsonl }`。省略时仍使用 SQLite。设置 → 高级 → 运行诊断 → 技术详情 → 插件类型展示当前后端和能力；切换重启后生效，原会话和文件仍归原提供器。
 
 提供器可以返回可选 `open().recovery: { diagnosticId, quarantineFile, validThroughSeq }`，但必须先持久隔离损坏字节并保留有效前缀。在同一恢复事务内持久保存禁止重放的取消/失败围栏：即使 Host 处理报告前崩溃，在途副作用也不得重新执行。Host 关闭在途操作并记录本地化恢复诊断。不得丢弃校验有效的后续事件，也不得将此入口用于格式迁移。
 

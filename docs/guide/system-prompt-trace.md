@@ -6,7 +6,7 @@ English | [简体中文](system-prompt-trace.zh-CN.md)
 
 The default persona follows the user's language throughout replies, progress updates and narration around tool calls. English tool descriptions and results do not change that language; an explicit user language request takes precedence.
 
-Open **Settings → Agent → System prompt**. Add opening instructions, closing instructions, or a reply style, then select **Save for new sessions**. Defaults belong to the current profile. A bundle can supply `preset.model.system_prompt`; profile fields override matching bundle fields. Reset restores bundle defaults.
+Open **Settings → Models → Run configuration → System prompt**. Add opening instructions, closing instructions, or a reply style, then select **Save for new sessions**. Defaults belong to the current profile. A bundle can supply `preset.model.system_prompt`; profile fields override matching bundle fields. Reset restores bundle defaults.
 
 Each custom field accepts 8,192 characters. Advanced full replacement accepts 65,536 characters and requires confirmation. It replaces plugin and repository instruction sections, while Core memory facts and runtime context remain live. It conflicts with opening, closing and reply-style fields: clear them before saving. Duplicate section identifiers returned by a composer are refused. Core retains its untrusted-input boundary; authorization, tool schemas and the ledger remain authoritative. Removing workflow instructions can reduce reliability.
 

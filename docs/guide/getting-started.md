@@ -4,6 +4,8 @@ English | [简体中文](getting-started.zh-CN.md)
 
 [Documentation](../README.md) · [Build and install](install.md) · [Run your first task](quickstart.md)
 
+Previous-version users: follow the [upgrade guide](upgrade-from-previous.md) to back up and clean up first. The fresh-environment steps below do not migrate old data.
+
 ## Start an isolated instance
 
 Complete the source build first. From the repository root:
@@ -60,6 +62,6 @@ The default command checks Node, native helpers, layout, permissions, credential
 
 Model services are never contacted by the default check. `--probe` explicitly tests enabled accounts, with a shared 45-second bound and cancellation; it may incur charges. The pre-existing `doctor provider --probe` minimal inference and named diagnostics remain available. `doctor platform` gives the detailed Linux bubblewrap/Landlock probe; binary presence alone does not establish isolation. MCP readiness does not certify a particular server's trust, profile or connectivity.
 
-Web displays failed checks with the number of problems and offers **Settings → Advanced → Runtime diagnostics → Self-check**. Dismissing the notice hides it for seven days in this browser for the current home. **Check again** reads local state; **Test model accounts** explicitly contacts providers. Diagnostic failures do not prevent skipping setup. For socket, port, home or credential failures, follow [troubleshooting](troubleshooting.md).
+Web displays failed checks with the number of problems and offers **Settings → Advanced → Run diagnostics → Self-check**. Dismissing the notice hides it for seven days in this browser for the current home. **Check again** reads local state; **Test model accounts** explicitly contacts providers. Diagnostic failures do not prevent skipping setup. For socket, port, home or credential failures, follow [troubleshooting](troubleshooting.md).
 
 Contract: [App Server](../reference/app-server.md); implementation: [home layout](../../packages/host-common/src/home-layout.ts), [doctor](../../packages/host-infrastructure/src/doctor.ts).

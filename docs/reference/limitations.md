@@ -13,7 +13,7 @@ Use this page to decide whether AGH fits your trial or integration. It distingui
 | Release | Pre-alpha; project-authored code uses [Apache-2.0](../../LICENSE), with third-party exceptions in [NOTICE](../../NOTICE). No public npm release, consumer installer, or automatic-update commitment |
 | Platforms | macOS and Linux have maintained native, process and Chromium gates with platform baselines. Windows end-to-end acceptance is unverified; clean-machine installers, signing and upgrade delivery remain separate release gates |
 | Windows Web assets | Mainline uses posix URL-path normalization to fix vendor asset routing. Passing related tests on macOS does not establish a real Windows browser pass |
-| Windows security | Some file/symlink, restricted-token, and network-sandbox boundaries remain incomplete; parity with macOS/Linux is not established |
+| Windows security | No verified L1 command sandbox; restricted-token and network isolation remain unavailable. Private credential ACLs do not establish command confinement or macOS/Linux parity |
 | Web | A local loopback workbench, without a verified public-service remote-login/reverse-proxy deployment. Validate browser capabilities separately |
 | Ordinary plugins | Trusted in-process code. `ctx.hooks` supports all 16 hook categories; Service/Projection/Slot/Resource contributions go through their own facets and are checked per row |
 | Full-stack integration | Requires an `agnes.plugins` backend row, matching-rowId `agnes.clientDescriptors`, service definitions/policy, and the current session allow-list. Arbitrary Cordis services do not automatically become remote |
@@ -26,6 +26,7 @@ Use this page to decide whether AGH fits your trial or integration. It distingui
 | Hooks / extension migration | 16 hook categories through ctx.hooks; ordinary filesystem backend entries require agnes.plugins with apiRange. Legacy third-party agnes.extensions entries are refused |
 | Models | Provider catalogs and contracts determine capabilities. Automated documentation demos use local model fixtures; external-model quality and tool selection need separate verification |
 | Programmatic tools | Local macOS/Linux PTC is supported; Windows and remote execution are unavailable. Stateless CPython is experimental; see [code workflows](../guide/code-workflows.md) |
+| Computer Use | Linux admission is disabled in the pinned driver lock; installing a desktop does not enable it. Windows driver admission is separate from full Windows product and command-sandbox acceptance |
 | Desktop / system integration | No desktop client, system-login startup registration, or automatic updates |
 | Domain / enterprise | Business APIs, identity, data, and deployment policies need scenario-specific integration and acceptance; see [FDE](../guide/why-agh.md) |
 | Performance / evaluation | No leadership or improvement figures without fixed models, budgets, tasks, and reproducible measurement |

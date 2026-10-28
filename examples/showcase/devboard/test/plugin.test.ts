@@ -19,7 +19,7 @@ import {
 import { ENTRIES, handbackWork, workOf } from '../client/entries.js'
 import { create, read, seed, update, upsertReqs } from '../domain.mjs'
 import { FILES, GATES } from '../fastforward.mjs'
-import { HANDOFF_TYPES } from '../handoff.mjs'
+import { HANDOFF_TYPES, humanNext } from '../handoff.mjs'
 import { main } from '../index.mjs'
 import { buildSeed } from '../seed-data.mjs'
 
@@ -370,6 +370,20 @@ describe('DevBoard plugin contract', () => {
     const started = await submit.execute({ template: 'ECR', subjectId: drafted.id }, ctx)
     expect(started.isError).toBeUndefined()
     expect(started.structured.data).toMatchObject({ state: 'RUNNING', initiator: { by: '研发协调员' } })
+    const next = started.structured.data.humanNext
+    expect(next.steps.map((st: Any) => st.role)).toEqual([
+      '机械设计师',
+      '电气设计师',
+      '软件设计师',
+      '工艺工程师',
+      '质量工程师',
+    ])
+    expect(next.text).toContain('我的待办')
+    expect(next.text.split('\n').filter((l: string) => l.includes('以「'))).toHaveLength(5)
+    expect(
+      (await tool('devboard_handoff').execute({ type: 'change', id: drafted.id }, ctx)).structured.data
+        .humanNext.text,
+    ).toBe(next.text)
     const direct = await tool('devboard_change_upsert').execute({ id: drafted.id, to: 'APPROVED' }, ctx)
     expect(direct.isError).toBe(true)
   })
@@ -534,6 +548,17 @@ describe('DevBoard plugin contract', () => {
     expect(out.structured.data).toMatchObject({ type: 'gate', id: gate.id })
     const viaService = await service('devboard.handoff').handler({ type: 'gate', id: gate.id }, { store })
     expect(viaService.summary).toBe(out.structured.data.summary)
+    const auto = {
+      gates: [{ id: 'G-1', code: 'TR4', name: '代码与集成评审', decision: 'PENDING', auto: true }],
+    }
+    expect(humanNext(auto, { type: 'gate', id: 'G-1' })).toMatchObject({
+      page: null,
+      text: expect.stringContaining('无需人工操作'),
+    })
+    expect(humanNext(auto, { type: 'gate', id: 'G-404' })).toBeUndefined()
+    expect(readFileSync(new URL('../skills/devboard-playbook.md', import.meta.url), 'utf8')).not.toContain(
+      '现场项目：车门健康监测看板',
+    )
     for (const input of [
       { type: 'task', id: 'TASK-001' },
       { type: 'gate', id: 'GATE-404' },
@@ -799,7 +824,10 @@ describe('DevBoard plugin contract', () => {
     const page = () => service('devboard.snapshot').handler({}, { store })
 
     // turn 1 (the new-project action): create, write and record the plan, submit CDCP, stop
-    const project = await turn('devboard_project_create', { name: '车门健康监测看板' })
+    const project = await turn('devboard_project_create', {
+      name: '社区图书借阅登记台',
+      description: '社区图书馆的借还登记网页，面向管理员',
+    })
     files.set(`${project.workspaceDir}/docs/PROJECT-PLAN.md`, '# 项目计划')
     await turn('devboard_artifact_record', {
       projectId: project.id,
@@ -810,6 +838,16 @@ describe('DevBoard plugin contract', () => {
     })
     const submitted = await turn('devboard_gate_submit', { projectId: project.id, stage: 'INITIATION' })
     expect((await page()).handbacks).toEqual([])
+    // the turn ends with the steps a person takes on the board, computed from the gate
+    expect(submitted.humanNext).toMatchObject({
+      page: '我的待办',
+      steps: [{ role: 'IPMT' }],
+      object: { type: 'gate', id: submitted.gate.id },
+    })
+    expect(submitted.humanNext.text).toContain('「演示角色」切换为「IPMT」')
+    expect(submitted.humanNext.text).toContain('我的待办')
+    expect(submitted.humanNext.text).toContain('继续推进')
+    expect(submitted.humanNext.text).not.toContain('车门')
 
     // the person approves CDCP on the board
     const gateId = submitted.gate.id
@@ -834,6 +872,8 @@ describe('DevBoard plugin contract', () => {
       readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
     ).agnes.application.workbench.actions.find((a: Any) => a.id === card.action)
     expect(action.prompt['zh-CN']).toContain('devboard_handoff')
+    expect(action.prompt['zh-CN']).toContain('humanNext.text')
+    expect(action.prompt['zh-CN']).not.toContain('DEVELOPMENT')
 
     // turn 2: the coordinator reads the hand-off first
     const handoff = await turn('devboard_handoff', card.object)
@@ -848,6 +888,11 @@ describe('DevBoard plugin contract', () => {
       nextGate: { code: 'TR1' },
     })
     expect(handoff.nextStep.deliverables.join(' ')).toContain('docs/SRS.md')
+    expect(handoff.project.description).toBe('社区图书馆的借还登记网页，面向管理员')
+    expect(handoff.nextStep.deliverables[0]).toContain('docs/PROJECT-PLAN.md')
+    expect((await turn('devboard_handoff', { type: 'project', id: project.id })).project.description).toBe(
+      '社区图书馆的借还登记网页，面向管理员',
+    )
     // the summary the page shows before sending is the same one
     expect((await service('devboard.handoff').handler(card.object, { store })).summary).toBe(handoff.summary)
 

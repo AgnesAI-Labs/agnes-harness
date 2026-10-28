@@ -4,7 +4,7 @@ English | [简体中文](webhooks.zh-CN.md)
 
 [Documentation](../README.md) · [Web settings](web.md) · [Deployment](deployment.md)
 
-Business events can start business agents. Open **Settings → Automation → Triggers** to create a rule, choose an existing workspace, agent preset and bundles, and select a `secret://namespace/name` reference. This form accepts references only. Provision the secret through the configured secret adapter; file secrets require owner-only permissions. Environment references can be entered manually (for example `secret://webhooks/github` resolves to `AGNES_SECRET_WEBHOOKS_GITHUB` with the environment adapter).
+Business events can start business agents. Open **Automation → Triggers** to create a rule, choose an existing workspace, agent preset and bundles, and select a `secret://namespace/name` reference. This form accepts references only. Provision the secret through the configured secret adapter; file secrets require owner-only permissions. Environment references can be entered manually (for example `secret://webhooks/github` resolves to `AGNES_SECRET_WEBHOOKS_GITHUB` with the environment adapter).
 
 The endpoint is **off by default**. Save an explicit path such as `/hooks/events`, a payload byte ceiling (default 256 KiB, maximum 1 MiB), and enable the endpoint. The HTTP listener belongs to `serve` and forwards to the shared daemon. Keep both running. Rules and receipts persist in the daemon data directory.
 

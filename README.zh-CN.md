@@ -2,6 +2,8 @@
 
 [English](README.md) | 简体中文
 
+**从旧版升级？请先阅读[旧版升级指南](docs/guide/upgrade-from-previous.zh-CN.md)：本次按新产品发布，不迁移旧数据，须先备份并清理旧环境。**
+
 **AGH 把业务能力交付为可安装的插件、可启动的智能体和可采纳的应用。**
 
 - **插件**是安装、分发与信任单位，可以提供工具、运行方式（Loop）、模型、界面、技能、连接或服务。
@@ -61,11 +63,9 @@ node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"
 
 ## 新产品与旧环境
 
-本版本基于插件架构作为新产品交付，不迁移或沿用旧产品运行数据与信任摘要。旧版或未标记的 home 布局以 `E_HOME_VERSION` 拒绝：保留原目录，并将 `AGH_HOME` 指向新的私有空目录（默认 home 为 `~/.agh`），在其中重新配置账号和插件。启动不会删除或转换旧 home。
+旧产品的会话、插件、设置和账户不继承。请按[旧版升级指南](docs/guide/upgrade-from-previous.zh-CN.md)停止旧后台、备份并移走旧 home 及适用的外部目录，再配置新环境；指南包含 macOS、Linux、Windows 的路径、操作和准确拒绝文案。启动不会自动删除或转换旧环境。
 
-如需保留旧会话，请先复制该文件夹。
-
-已有受支持 home 遇到 `E_DATA_DIR_STALE` 时，只需按错误重置指定 SQLite 账本与 `tables/`，保留 `profiles/`；`E_DATA_DIR_NEWER` 则须升级 AGH。不迁移任何数据。精确路径和数据损失见[数据格式恢复](docs/guide/install.zh-CN.md#数据格式与升级)。
+`E_HOME_VERSION` 是 home 布局拒绝；受支持 home 内的 `E_DATA_DIR_STALE`／`E_DATA_DIR_NEWER` 则使用独立的[数据格式恢复](docs/guide/install.zh-CN.md#数据格式与升级)流程。
 
 ## 从源码开始
 

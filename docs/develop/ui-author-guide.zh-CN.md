@@ -36,7 +36,7 @@ const dispose = ctx.workbenchPanels.register({
 
 ## 设置分组
 
-通过 `settingsSections` 注册 `SettingsSection`，提供稳定 `id`、`titleKey`、`groupTitleKey`、`group`、`icon`、有限数值 `order` 和 `component`。日常设置复用 `accounts`、`plugins`、`skills`、`tools`、`automation`、`security`、`history` 或 `general`。`agent` 和 `diagnostics` 位于高级，技术实现选项放在那里。插件可使用自己的分组，但须提供本地化标题。不要设置内置桥专用的 `nativePane` 或 `navigationId`。面板自行管理加载和失败时设 `runtimeCatalog: false`。
+通过 `settingsSections` 注册 `SettingsSection`，提供稳定 `id`、`titleKey`、`groupTitleKey`、`group`、`icon`、有限数值 `order` 和 `component`。使用 `general`、`accounts`、`security` 或 `application` 为对应日常分组添加页签；技术控件使用 `advanced`，仅在“显示高级设置”开启时可见。其他 group ID 以各自名称列在“扩展”下，须提供本地化标题。插件、技能、MCP 和自动化已有独立产品页面，不再是设置分组。不要设置内置桥专用的 `nativePane` 或 `navigationId`。面板自行管理加载和失败时设 `runtimeCatalog: false`。
 
 ## Intelligent UI 摘要
 
@@ -50,4 +50,4 @@ const dispose = ctx.workbenchPanels.register({
 
 ## 提供标准界面角色
 
-profile client 在 descriptor 中声明 `presentationRoles: ["deliverables"]`（也可选择 `navigation`、`conversation`、`composer`、`goal`、`interaction`），使用稳定的 `client.id`，再通过 scoped client facade 注册对应角色。管理员在 **设置 → 应用 → 界面实现** 中预览并选择。安装或注册不会自动选中，无需声明应用；可以只替换单个角色并保留当前应用的品牌和其他默认值。详见[应用指南](../extend/applications.zh-CN.md)。
+profile client 在 descriptor 中声明 `presentationRoles: ["deliverables"]`（也可选择 `navigation`、`conversation`、`composer`、`goal`、`interaction`），使用稳定的 `client.id`，再通过 scoped client facade 注册对应角色。管理员在 **设置 → 应用 → 高级界面选择** 中预览并选择。安装或注册不会自动选中，无需声明应用；可以只替换单个角色并保留当前应用的品牌和其他默认值。详见[应用指南](../extend/applications.zh-CN.md)。

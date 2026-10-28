@@ -18,7 +18,7 @@ The default-enabled `@agnes/plugin-helper` can turn a request into an AGH tool, 
 
 > Create an AGH plugin that counts words in text, and install it in the current AGH instance.
 
-The helper reads version-matched templates, saves a private candidate, runs explicitly approved author tests and submits the tested tree for human review. Inspect files, test results and permissions under Settings → Plugins → Candidates. Approval publishes that exact reviewed tree through normal package governance. New sessions gain plugin code; existing sessions keep their code version. Approved Skills refresh as live resources. See [candidate review](../extend/agent-built-plugins.md) for tools, hashes, update conflicts and refusal paths.
+The helper reads version-matched templates, saves a private candidate, runs explicitly approved author tests and submits the tested tree for human review. Inspect files, test results and permissions under Plugins → To review → Drafts. Approval publishes that exact reviewed tree through normal package governance. New sessions gain plugin code; existing sessions keep their code version. Approved Skills refresh as live resources. See [candidate review](../extend/agent-built-plugins.md) for tools, hashes, update conflicts and refusal paths.
 
 Creating a candidate does not install, trust or enable it. Author tests execute trusted JavaScript, not isolated hostile code. The helper supports bounded self-contained text ESM tool/Skill packages and CSS/token skins; dependencies and richer interfaces follow the author workflow below. Disabling the helper does not remove published packages.
 
