@@ -5,7 +5,7 @@ import { homeEntries, homeNavigation } from '@agnes/web-client'
 import { fireEvent, getByRole } from '@testing-library/dom'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { resetCollapsedGroups } from '../src/navigation.js'
 import { BUILTIN_HOME_ENTRIES } from '../src/pages/entries.js'
 import { SIDEBAR_SLOT } from '../src/region-slots.js'
@@ -383,6 +383,13 @@ describe('rendered sidebar region', () => {
   })
 
   it('says one thing at a row end: running, then waiting, then the last activity time', async () => {
+    // Pin local noon: three hours earlier must stay today, or the row end says "Yesterday".
+    const today = new Date()
+    vi.useFakeTimers({
+      toFake: ['Date'],
+      now: new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12),
+    })
+    onTestFinished(() => vi.useRealTimers())
     const recent = new Date(Date.now() - 3 * 3_600_000).toISOString()
     const at = (id: string, cwd = '/workspace') => ({ ...session(id, cwd), lastMessageAt: recent })
     runtime = await mountRenderedIndex({
