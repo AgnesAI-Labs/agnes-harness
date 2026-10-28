@@ -722,9 +722,8 @@ const rosterSource: RosterSource = {
       client.clientModules.list(profileName, moduleSessionId),
       client.request('_agnes/v1/applications.get', { profile: profileName }).catch(() => undefined),
     ])
-    // `rows` is the authoritative browser lifecycle surface.  The legacy
-    // `modules` compatibility projection deliberately cannot carry every
-    // immutable declaration, including the per-module service allow-list.
+    // `rows` is the authoritative browser lifecycle surface. The legacy `modules` projection
+    // cannot carry every immutable declaration, including the per-module service allow-list.
     const modules = readyRosterModules(roster.rows ?? [])
     return {
       ...(application ? { application } : {}),
