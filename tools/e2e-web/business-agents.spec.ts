@@ -309,8 +309,11 @@ test('application permission switch governs a package-fixed role launched by a q
     }).observe(document.body, { childList: true, subtree: true })
   })
   const composer = page.getByRole('textbox', { name: '任务内容', exact: true })
+  const beforeAutomatic = await page.getByTestId('conversation-turn').count()
   await composer.fill('call acme_status synthetic')
+  await expect(page.locator('#send')).toBeEnabled()
   await composer.press('Enter')
+  await expect(page.getByTestId('conversation-turn')).toHaveCount(beforeAutomatic + 1)
   await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-status', 'completed', {
     timeout: 15_000,
   })
@@ -343,8 +346,11 @@ test('application permission switch governs a package-fixed role launched by a q
   })
   await page.locator('#composer-permission').click()
   await page.locator('#permission-picker-popover [data-permission="workspace"]').click()
+  const beforeManual = await page.getByTestId('conversation-turn').count()
   await composer.fill('call acme_status synthetic')
+  await expect(page.locator('#send')).toBeEnabled()
   await composer.press('Enter')
+  await expect(page.getByTestId('conversation-turn')).toHaveCount(beforeManual + 1)
   const approval = page.getByTestId('approval-card')
   await expect(approval).toContainText('Synthetic signature')
   await expect(approval.getByRole('button', { name: '仅允许这次', exact: true })).toBeEnabled()
