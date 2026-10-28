@@ -193,6 +193,10 @@ export interface ComposerHandle {
   setDraft(value: string): void
   /** Name a file or folder at the caret: a chip in the text, sent as its `file://` link. */
   mention(mention: FileMention): void
+  /** Insert text at the caret, as a paste does. */
+  insertText?(text: string): void
+  /** Send the draft as the send button would; false when the composer refuses (empty, busy, read-only). */
+  submit?(): boolean
 }
 
 export interface ComposerRegionOptions {
@@ -234,6 +238,8 @@ export interface ComposerSlots {
   permission?: ReactNode
   plan?: ReactNode
   right?: ReactNode
+  /** Rendered in the card's control row immediately before send, hidden when read-only. */
+  beforeSend?: ReactNode
 }
 
 /** Session settings exist only for known models; otherwise the panel degrades to a plain model list. */

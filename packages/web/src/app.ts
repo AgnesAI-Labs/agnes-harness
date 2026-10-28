@@ -2089,6 +2089,7 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
   }
 }
 async function savedConfiguration(saved: ConfigSnapshot): Promise<void> {
+  clientModules.voice?.refresh()
   firstRun.updated(saved)
   notice.setKind('')
   accountProvider = saved.provider

@@ -1,9 +1,10 @@
 /** @vitest-environment happy-dom */
 
-import type { UINode } from '@agnes/protocol'
+import type { UINode, UITurn } from '@agnes/protocol'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TRANSCRIPT_SLOT } from '../src/region-slots.js'
+import { fakeVoice } from './helpers/fake-voice.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
 // A slot card or shadow commits in a few milliseconds, but a loaded runner has taken longer than the
@@ -101,5 +102,42 @@ describe('rendered transcript region', () => {
     } finally {
       remove()
     }
+  })
+
+  it('passes the transcript voice port to the timeline and lets it watch every update', async () => {
+    const { voice } = fakeVoice()
+    runtime = await mountRenderedIndex({ voice })
+    expect(voice.bindSession).toHaveBeenCalledWith(runtime.session)
+    const reply: UINode = { kind: 'assistant', id: 'reply-1', seq: 2, text: '可以朗读的回答' }
+    const completed: UITurn = {
+      id: 'turn:1',
+      turn: 1,
+      startSeq: 1,
+      startedAt: '2026-10-27T00:00:00.000Z',
+      endedAt: '2026-10-27T00:00:01.000Z',
+      status: 'completed',
+      nodeIds: ['reply-1'],
+      finalAssistantId: 'reply-1',
+      inherited: false,
+      forkable: true,
+      usage: {
+        totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+        reasoningComplete: true,
+        billingComplete: true,
+        calls: [],
+      },
+    }
+    runtime.transcript?.render([reply], [completed])
+    expect(voice.observeTranscript).toHaveBeenCalledWith([reply], [completed])
+    runtime.transcript?.render([reply])
+    expect(voice.observeTranscript).toHaveBeenLastCalledWith([reply], [])
+    runtime.transcript?.render([reply], [completed])
+    const read = await vi.waitFor(() => {
+      const button = document.querySelector<HTMLButtonElement>('[data-testid="voice-read"]')
+      if (!button) throw new Error('no read button yet')
+      return button
+    }, committed)
+    read.click()
+    expect(voice.toggleReading).toHaveBeenCalledWith('reply-1', '可以朗读的回答')
   })
 })

@@ -1,5 +1,11 @@
 import type { UINode, UITurn } from '@agnes/protocol'
-import type { ClientResourceService, LocaleService, SessionService, SlotRegistry } from '@agnes/web-client'
+import type {
+  ClientResourceService,
+  LocaleService,
+  SessionService,
+  SlotRegistry,
+  VoicePort,
+} from '@agnes/web-client'
 import { isConversationNode } from '@agnes/web-conversation/conversation-visibility'
 import {
   createConversationProjectionStore,
@@ -25,6 +31,7 @@ export interface TimelineNodeHostProps {
   onFork?: (turn: UITurn) => Promise<void>
   turnErrorActions?: import('@agnes/web-ui/conversation').TurnErrorActions
   markdownRenderer?: 'legacy' | 'xmarkdown'
+  voice?: VoicePort
 }
 
 /** The transcript root is the sole owner of every node article and history control. */
@@ -39,6 +46,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
     onFork,
     turnErrorActions,
     markdownRenderer,
+    voice,
   },
   ref,
 ) {
@@ -219,6 +227,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
           {...(session ? { session } : {})}
           {...(locale ? { locale } : {})}
           {...(resources ? { resources } : {})}
+          {...(voice ? { voice } : {})}
         />
       </div>
       <TurnNav

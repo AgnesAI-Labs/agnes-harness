@@ -32,6 +32,7 @@ export const settingsShellLocaleCatalog: LocaleCatalog = {
     'accounts.saved': 'Account saved.',
     'settings-shell.advanced': 'Advanced',
     'settings-shell.jobs': 'Jobs',
+    'settings-shell.voice': 'Voice',
     'settings-shell.showAdvanced': 'Show advanced settings',
     'settings-shell.showAdvancedHelp':
       'Run configuration, diagnostics and the advanced options on each page.',
@@ -163,6 +164,7 @@ export const settingsShellLocaleCatalog: LocaleCatalog = {
     'accounts.saved': '账户已保存。',
     'settings-shell.advanced': '高级',
     'settings-shell.jobs': '作业',
+    'settings-shell.voice': '语音',
     'settings-shell.showAdvanced': '显示高级设置',
     'settings-shell.showAdvancedHelp': '运行配置、诊断和各页里的高级选项。',
     'settings-shell.extensions': '扩展',

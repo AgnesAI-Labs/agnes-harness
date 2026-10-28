@@ -1,4 +1,5 @@
 import type {
+  ConfigAccount,
   ConfigAccountInput,
   ConfigModel,
   ConfigSaveInput,
@@ -46,7 +47,8 @@ export type ModelDraft = {
 export type EditorDraft = {
   accountId: string
   providerId: SideProviderId
-  presetId: AdapterPreset['id']
+  /** Set only on a draft that starts from a preset; a saved entry has none, so no preset can refill it. */
+  presetId?: AdapterPreset['id']
   isNew: boolean
   /** The generated id a new entry falls back to when its label yields no slug. */
   fallbackId: string
@@ -269,6 +271,24 @@ export const isSideProvider = (value: string): value is SideProviderId =>
 /** The model rows of a saved entry; a voice entry always gets one row per role. */
 export const draftModels = (provider: SideProviderId, models: readonly ConfigModel[]): ModelDraft[] =>
   provider === 'openai-audio' ? voiceRows(models.map(toDraft)) : models.map(toDraft)
+
+/**
+ * The editor draft of a saved entry. It carries no preset: the preset select exists only for a new
+ * entry, and a preset applied to a saved one would overwrite its endpoint and models.
+ */
+export function savedDraft(account: ConfigAccount): EditorDraft | undefined {
+  if (!isSideProvider(account.providerId)) return undefined
+  return {
+    accountId: account.accountId,
+    providerId: account.providerId,
+    isNew: false,
+    fallbackId: '',
+    label: account.label,
+    baseUrl: account.baseUrl,
+    credentialRef: '',
+    models: draftModels(account.providerId, account.models),
+  }
+}
 
 /** The presets of one adapter; the first is the default. */
 export const presetsFor = (provider: SideProviderId): readonly AdapterPreset[] =>

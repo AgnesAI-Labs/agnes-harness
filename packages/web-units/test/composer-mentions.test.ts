@@ -259,3 +259,50 @@ describe('@ picker', () => {
     }
   })
 })
+
+describe('voice handle', () => {
+  it('inserts text at the caret like a paste and reports the draft', async () => {
+    const { handle, prompt, props } = mount()
+    type(prompt, 'abcd')
+    await vi.waitFor(() => expect(prompt.value).toBe('abcd'))
+    act(() => {
+      prompt.setSelectionRange(2, 2)
+      handle.insertText?.('你好')
+    })
+    await vi.waitFor(() => expect(handle.getDraft()).toBe('ab你好cd'))
+    expect(props.onDraftChange).toHaveBeenLastCalledWith('ab你好cd')
+  })
+
+  it('submits once like the send button even right after an insert, and not when send is disabled', async () => {
+    const { handle, props } = mount()
+    let sent: boolean | undefined
+    act(() => {
+      handle.insertText?.('hi')
+      sent = handle.submit?.()
+    })
+    expect(sent).toBe(true)
+    await vi.waitFor(() => expect(props.onSubmit).toHaveBeenCalledTimes(1))
+    // The host's submit reads the draft the insert produced, not the previous one.
+    expect(handle.getDraft()).toBe('hi')
+    act(() => handle.render({ ...view, send: { ...view.send, disabled: true } }))
+    act(() => {
+      sent = handle.submit?.()
+    })
+    expect(sent).toBe(false)
+    act(() => handle.render(view))
+    act(() => {
+      handle.setDraft('  ')
+      sent = handle.submit?.()
+    })
+    expect(sent).toBe(false)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(props.onSubmit).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders beforeSend immediately before send and hides it when read-only', () => {
+    const { host, handle } = mount({ slots: { beforeSend: createElement('span', { id: 'voice-slot' }) } })
+    expect(host.querySelector('#send')?.previousElementSibling?.id).toBe('voice-slot')
+    act(() => handle.render({ ...view, readOnly: true }))
+    expect(host.querySelector('#voice-slot')).toBeNull()
+  })
+})
