@@ -350,17 +350,23 @@ it('keeps the pages a user had open when a created session rereads the first pag
   })
 })
 
-it('rereads the first page when a revision change lands on a group showing more than one page', async () => {
+it('keeps the pages a user had open when a message rereads the group', async () => {
   const s = setup()
   await s.ui.refresh()
   await s.ui.action('a', 'more')
-  expect(s.ui.rows()).toHaveLength(10)
+  await s.ui.action('a', 'more')
+  expect(s.ui.rows()).toHaveLength(15)
+  // 发消息会让该组失效：列表刷新重读首页后，用户展开的页数要补回来，不能折回收起状态。
+  s.ui.invalidateSession('a0')
   s.revision('v2')
-  // 不弹「重新加载」：分组自己重读首页，多页列表收回到「首页 + 展开显示」。
   await s.ui.refresh()
-  expect(s.ui.rows()).toHaveLength(5)
-  expect(s.ui.snapshot().groups[0]).toMatchObject({ stale: false, revision: 'v2', next: '5' })
-  expect(s.list).toHaveBeenCalledTimes(3)
+  expect(s.ui.rows()).toHaveLength(15)
+  expect(s.ui.snapshot().groups[0]).toMatchObject({
+    opened: true,
+    stale: false,
+    revision: 'v2',
+    next: '15',
+  })
 })
 
 it('recovers from a stale cursor by rereading the first page instead of asking for a reload', async () => {
