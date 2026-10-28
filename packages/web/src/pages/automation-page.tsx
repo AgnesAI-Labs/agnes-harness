@@ -15,6 +15,13 @@ const tabOf = (selection: unknown): AutomationTab =>
   (selection as { tab?: unknown } | undefined)?.tab === 'triggers' ? 'triggers' : 'schedules'
 
 /**
+ * Triggers have no entry while they are being reworked: the tab, its panel and a `?tab=triggers` link
+ * are all left out, and the page opens on the schedule list. Flip this back to true to restore them —
+ * the panel and its routes stay in place, so nothing else has to change.
+ */
+const TRIGGERS_TAB = false
+
+/**
  * Automation: what happens by itself. Scheduled tasks run at a set time, in a new session or an existing
  * one; triggers start a session when another system sends an event. The tab is part of the address.
  */
@@ -76,26 +83,33 @@ export function AutomationPage({ context }: { context: UiExtensionContext }) {
     }),
     [data],
   )
-  const tab = tabOf(context.selection)
+  const tab = TRIGGERS_TAB ? tabOf(context.selection) : 'schedules'
+  const tabs = [
+    { key: 'schedules', label: ux('tabSchedules') },
+    ...(TRIGGERS_TAB ? [{ key: 'triggers', label: ux('tabTriggers') }] : []),
+  ]
   return (
     <HomePageFrame
       id="automation"
       title={context.t('home.entry.automation')}
       // New and edit open as pages inside this one: Automation › New scheduled task.
       pushTitle={context.t('home.entry.automation')}
-      description={ux('pageDescription')}
+      // The sentence names only what the page offers: with the triggers tab hidden, no event entry.
+      description={ux(TRIGGERS_TAB ? 'pageDescription' : 'schedulesDescription')}
       actions={<div className="home-page-action-slot" ref={setActionsHost} />}
-      tabs={
-        <Tabs
-          activeKey={tab}
-          aria-label={ux('tabs')}
-          onChange={(key) => homeNavigation.open('automation', { tab: key })}
-          items={[
-            { key: 'schedules', label: ux('tabSchedules') },
-            { key: 'triggers', label: ux('tabTriggers') },
-          ]}
-        />
-      }
+      // A bar of one tab is noise; it comes back with the second tab.
+      {...(tabs.length > 1
+        ? {
+            tabs: (
+              <Tabs
+                activeKey={tab}
+                aria-label={ux('tabs')}
+                onChange={(key) => homeNavigation.open('automation', { tab: key })}
+                items={tabs}
+              />
+            ),
+          }
+        : {})}
     >
       {tab === 'schedules' ? (
         <SchedulesPage api={schedules} t={t} actionsHost={actionsHost} />

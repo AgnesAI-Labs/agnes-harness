@@ -254,72 +254,81 @@ export function DiagnosticsPanel({
           </SettingsItem>
         </SettingsBlock>
       )}
-      {maintenance}
-      <SettingsDrill
-        id="errors"
-        data-testid="diagnostics-errors-row"
-        label={t('recent')}
-        value={entry}
-        actions={
-          <span className="agnes-diagnostics-lookup">
-            <Field label={t('findById')} error={notice === 'invalid' ? t('invalid') : undefined}>
-              <SettingsInput
-                id="diagnostics-query"
-                surface="surface"
-                data-testid="diagnostics-query"
-                className="agnes-settings-search"
-                aria-label={t('findById')}
-                placeholder={t('findById')}
-                value={query}
-                maxLength={36}
+      {/* One titled group for the rows that are about a problem rather than a status, so the page
+          reads 状态检查 / 问题排查 / 集成 instead of two rows floating between the cards. */}
+      <SettingsBlock label={t('troubleshoot')} data-testid="diagnostics-troubleshoot">
+        {maintenance}
+        <SettingsDrill
+          id="errors"
+          data-testid="diagnostics-errors-row"
+          label={t('recent')}
+          value={entry}
+          actions={
+            <span className="agnes-diagnostics-lookup">
+              <Field label={t('findById')} error={notice === 'invalid' ? t('invalid') : undefined}>
+                <SettingsInput
+                  id="diagnostics-query"
+                  surface="surface"
+                  data-testid="diagnostics-query"
+                  className="agnes-settings-search"
+                  aria-label={t('findById')}
+                  placeholder={t('findById')}
+                  value={query}
+                  maxLength={36}
+                  disabled={busy}
+                  onChange={(event) => {
+                    setQuery(event.target.value)
+                    if (notice === 'invalid') setNotice('')
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
+                    event.preventDefault()
+                    event.stopPropagation()
+                    void search()
+                  }}
+                />
+              </Field>
+              {(query || lookup) && (
+                <IconButton
+                  name="x"
+                  label={t('clearLookup')}
+                  data-testid="diagnostics-clear"
+                  onClick={clear}
+                />
+              )}
+              <IconButton
+                name="refresh-cw"
+                label={t('refresh')}
+                data-testid="diagnostics-refresh"
                 disabled={busy}
-                onChange={(event) => {
-                  setQuery(event.target.value)
-                  if (notice === 'invalid') setNotice('')
-                }}
-                onKeyDown={(event) => {
-                  if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
-                  event.preventDefault()
-                  event.stopPropagation()
-                  void search()
-                }}
+                onClick={() => setReads((value) => value + 1)}
               />
-            </Field>
-            {(query || lookup) && (
-              <IconButton name="x" label={t('clearLookup')} data-testid="diagnostics-clear" onClick={clear} />
-            )}
-            <IconButton
-              name="refresh-cw"
-              label={t('refresh')}
-              data-testid="diagnostics-refresh"
-              disabled={busy}
-              onClick={() => setReads((value) => value + 1)}
-            />
-          </span>
-        }
-      >
-        <SettingsBlock
-          bare
-          data-testid="diagnostics-errors"
-          className="agnes-diagnostics-errors"
-          aria-busy={busy}
-          state={error ? undefined : busy && !bundle ? 'loading' : undefined}
+            </span>
+          }
         >
-          {(error || bundle) && (
-            <RecentErrors
-              records={bundle?.errors ?? []}
-              lookup={lookup}
-              limit={bundle?.limits.errors ?? 0}
-              failure={error ? (appServerErrorMessage(failure, locale) ?? t('readFailedHelp')) : undefined}
-              notice={notice}
-              onRetryCopy={() => copyRetry.current()}
-              onRetry={() => setReads((value) => value + 1)}
-              onClear={clear}
-              copy={copy}
-            />
-          )}
-        </SettingsBlock>
-      </SettingsDrill>
+          <SettingsBlock
+            bare
+            data-testid="diagnostics-errors"
+            className="agnes-diagnostics-errors"
+            aria-busy={busy}
+            state={error ? undefined : busy && !bundle ? 'loading' : undefined}
+          >
+            {(error || bundle) && (
+              <RecentErrors
+                records={bundle?.errors ?? []}
+                lookup={lookup}
+                limit={bundle?.limits.errors ?? 0}
+                failure={error ? (appServerErrorMessage(failure, locale) ?? t('readFailedHelp')) : undefined}
+                notice={notice}
+                onRetryCopy={() => copyRetry.current()}
+                onRetry={() => setReads((value) => value + 1)}
+                onClear={clear}
+                copy={copy}
+              />
+            )}
+          </SettingsBlock>
+        </SettingsDrill>
+      </SettingsBlock>
       <SettingsBlock label={t('integrations')} data-testid="diagnostics-runtime">
         <ObservabilityPanel />
         {integrations}

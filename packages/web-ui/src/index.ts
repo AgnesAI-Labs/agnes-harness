@@ -260,6 +260,7 @@ export {
   SettingsDrill,
   SettingsExpand,
   SettingsInfo,
+  SettingsSubpage,
   SettingsSubpageFrame,
   SUBPAGE_CLOSE_EVENT,
   useSettingsSubpages,

@@ -409,7 +409,7 @@ export function SchedulesPage({
           {t('schedulesUnavailable')}
         </SettingsState>
       )}
-      <div className="agnes-settings-filters">
+      <div className="automation-toolbar" data-testid="schedules-toolbar">
         <Segmented<Filter>
           label={ux('filterLabel')}
           testId="schedules-scope"
@@ -421,7 +421,10 @@ export function SchedulesPage({
             { value: 'session', label: ux('filterSession'), testId: 'schedules-scope-session' },
           ]}
         />
-        <label className="agnes-settings-checkbox" htmlFor="schedules-include-archived">
+        <label
+          className="agnes-settings-checkbox automation-toolbar-switch"
+          htmlFor="schedules-include-archived"
+        >
           <StateSwitch
             id="schedules-include-archived"
             testId="schedules-include-archived"
@@ -430,7 +433,7 @@ export function SchedulesPage({
             checked={includeArchived}
             onToggle={setIncludeArchived}
           />
-          {t('schedulesIncludeArchived')}
+          <span>{t('schedulesIncludeArchived')}</span>
         </label>
       </div>
       {runRequested && (
@@ -486,6 +489,17 @@ export function SchedulesPage({
               icon={<Icon name="clock" size={48} />}
               title={t('schedulesEmpty')}
               description={t('schedulesHelp')}
+              actions={
+                <Button
+                  appearance="primary"
+                  icon={<Icon name="plus" size={16} />}
+                  data-testid="schedules-empty-create"
+                  disabled={!api || busy}
+                  onClick={openNew}
+                >
+                  {ux('newSchedule')}
+                </Button>
+              }
             />
           )}
           {visible.length > 0 && (
@@ -604,7 +618,8 @@ export function SchedulesPage({
           )}
         </Loadable>
       )}
-      <p className="automation-note">{ux('missedNote')}</p>
+      {/* The empty state already says how a missed run is made up; the note is for a list that has rows. */}
+      {visible.length > 0 && <p className="automation-note">{ux('missedNote')}</p>}
       <ConfirmDialog
         open={!!pending}
         title={t('schedulesConfirm')}

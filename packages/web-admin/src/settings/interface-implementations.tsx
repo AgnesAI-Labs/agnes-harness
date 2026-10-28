@@ -1,13 +1,23 @@
 import type { ApplicationPreview, ApplicationState, PresentationRole } from '@agnes/protocol'
 import { presentationRoles, STANDARD_PRESENTATION_ROLES, selectPresentationRoles } from '@agnes/web-client'
-import { Button, reportSuccess, SettingsBlock, StatusMessage, useDocumentLanguage } from '@agnes/web-ui'
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import {
+  Button,
+  reportSuccess,
+  SettingsBlock,
+  SettingsSubpage,
+  StatusMessage,
+  useDocumentLanguage,
+  useSettingsSubpages,
+} from '@agnes/web-ui'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { ApplicationPreviewSummary, PRESENTATION_ROLE_LABELS as labels } from './application-preview.js'
 import { captureRequest, useRequestScope } from './async-request.js'
 
 const recoveryPath = '/?admin'
 const clearCommand = 'agh app clear'
+/** The review is a page of its own: a button opens it, `close` returns to the interface list. */
+const REVIEW_PAGE = 'interface-preview'
 const reasons: Record<string, [string, string]> = {
   'inventory-unavailable': ['Plugin inventory unavailable', '插件清单不可用'],
   removed: ['Package removed', '插件已移除'],
@@ -41,14 +51,20 @@ export function InterfaceImplementations({
     clientId: string
     preview: ApplicationPreview
   }>()
-  const reviewRef = useRef<HTMLElement>(null)
-  // The review opens after the role rows; bring it into view the way the dialog it replaced did.
-  useEffect(() => {
-    if (review) reviewRef.current?.scrollIntoView?.({ block: 'nearest' })
-  }, [review])
   const lifetime = useRequestScope(api, `${canSave}:${state.revision}`)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const subpages = useSettingsSubpages()
+  const reviewOpen = subpages.stack.at(-1) === REVIEW_PAGE
+  /** The review is a page of its own: a saved choice closes it, Cancel goes back through history. */
+  const closeReview = () => {
+    setReview(undefined)
+    if (reviewOpen) subpages.close()
+  }
+  const cancelReview = () => {
+    setReview(undefined)
+    if (reviewOpen) subpages.back()
+  }
   // biome-ignore lint/correctness/useExhaustiveDependencies: scope changes retire pending callbacks and reset their UI state.
   useEffect(() => {
     setBusy(false)
@@ -56,6 +72,10 @@ export function InterfaceImplementations({
   }, [api, canSave, state.revision])
   // biome-ignore lint/correctness/useExhaustiveDependencies: connection and permission changes reset diagnostics.
   useEffect(() => setError(''), [api, canSave])
+  // A reload or a shared link can open the review page with nothing to review: close it again.
+  useEffect(() => {
+    if (!review && subpages.stack.includes(REVIEW_PAGE)) subpages.close()
+  }, [review, subpages])
   useSyncExternalStore(presentationRoles.subscribe, presentationRoles.getSnapshot)
   const run = async (action: (current: () => boolean) => Promise<void>) => {
     if (!api || busy) return
@@ -66,7 +86,7 @@ export function InterfaceImplementations({
       await action(isCurrent)
     } catch {
       if (!isCurrent()) return
-      setReview(undefined)
+      closeReview()
       setError(
         tr(
           'The choice changed or is unavailable. Reload, preview and confirm again.',
@@ -86,7 +106,7 @@ export function InterfaceImplementations({
   const saved = (next: ApplicationState) => {
     selectPresentationRoles(next)
     onChange(next)
-    setReview(undefined)
+    closeReview()
     if (
       next.roles?.some(
         (item) =>
@@ -188,6 +208,7 @@ export function InterfaceImplementations({
                         const preview = await api.previewRole(role, candidate.packageId, candidate.clientId)
                         if (!current()) return
                         setReview({ role, clientId: candidate.clientId, preview })
+                        subpages.open(REVIEW_PAGE)
                       })
                     }
                   >
@@ -211,46 +232,48 @@ export function InterfaceImplementations({
           )
         })}
         {review && (
-          <section ref={reviewRef} aria-label={tr('Interface consent preview', '界面实现同意预览')}>
-            <h4>
-              {tr('Review replacement', '审阅替换')} · {tr(...labels[review.role])}
-            </h4>
-            <ApplicationPreviewSummary preview={review.preview} />
-            <p>
-              {tr(
-                'Presentation only. No execution change. Trusted JavaScript is not a sandbox.',
-                '仅影响展示，不改变执行。受信 JavaScript 并非沙箱。',
-              )}
-            </p>
-            <p>
-              {tr('Recovery', '恢复方法')}: <a href={recoveryPath}>{recoveryPath}</a> ·{' '}
-              <code>{clearCommand}</code>
-            </p>
-            <div className="home-push-actions">
-              <Button disabled={busy} onClick={() => setReview(undefined)}>
-                {tr('Cancel', '取消')}
-              </Button>
-              <Button
-                appearance="primary"
-                disabled={!canSave || busy || !api}
-                onClick={() =>
-                  void run(async (current) => {
-                    if (!api) return
-                    const next = await api.selectRole(
-                      review.role,
-                      review.preview.packageId,
-                      review.clientId,
-                      state.revision,
-                      review.preview.consentDigest,
-                    )
-                    if (current()) saved(next)
-                  })
-                }
-              >
-                {tr('Use this implementation', '使用此实现')}
-              </Button>
+          <SettingsSubpage
+            id={REVIEW_PAGE}
+            title={`${tr('Review replacement', '审阅替换')} · ${tr(...labels[review.role])}`}
+          >
+            <div className="agnes-settings-stack" data-testid="interface-preview-page">
+              <ApplicationPreviewSummary preview={review.preview} />
+              <p>
+                {tr(
+                  'Presentation only. No execution change. Trusted JavaScript is not a sandbox.',
+                  '仅影响展示，不改变执行。受信 JavaScript 并非沙箱。',
+                )}
+              </p>
+              <p>
+                {tr('Recovery', '恢复方法')}: <a href={recoveryPath}>{recoveryPath}</a> ·{' '}
+                <code>{clearCommand}</code>
+              </p>
+              <div className="home-push-actions">
+                <Button disabled={busy} onClick={cancelReview}>
+                  {tr('Cancel', '取消')}
+                </Button>
+                <Button
+                  appearance="primary"
+                  disabled={!canSave || busy || !api}
+                  onClick={() =>
+                    void run(async (current) => {
+                      if (!api) return
+                      const next = await api.selectRole(
+                        review.role,
+                        review.preview.packageId,
+                        review.clientId,
+                        state.revision,
+                        review.preview.consentDigest,
+                      )
+                      if (current()) saved(next)
+                    })
+                  }
+                >
+                  {tr('Use this implementation', '使用此实现')}
+                </Button>
+              </div>
             </div>
-          </section>
+          </SettingsSubpage>
         )}
       </div>
     </SettingsBlock>

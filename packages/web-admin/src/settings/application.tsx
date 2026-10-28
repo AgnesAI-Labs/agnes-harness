@@ -6,13 +6,15 @@ import {
   SettingsGroup,
   SettingsPageDescription,
   SettingsSection,
+  SettingsSubpage,
   SettingsTechnicalDetails,
   scopedResourceKey,
   setResource,
   useDocumentLanguage,
   useResource,
+  useSettingsSubpages,
 } from '@agnes/web-ui'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { ApplicationChoice } from './application-choice.js'
 import { ApplicationPreviewSummary } from './application-preview.js'
@@ -21,6 +23,8 @@ import { captureRequest, useRequestScope } from './async-request.js'
 import { InterfaceImplementations } from './interface-implementations.js'
 
 const clearCommand = 'agh app clear'
+/** The consent review is a page of its own: a button opens it, Cancel goes back. */
+const PREVIEW_PAGE = 'application-preview'
 
 /** Minimal application settings. Backend owns preview validation and compare-and-swap. */
 export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | undefined; canSave: boolean }) {
@@ -37,13 +41,18 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
     if (resourceKey) setResource(resourceKey, next)
   }
   const [preview, setPreview] = useState<ApplicationPreview>()
-  const previewRef = useRef<HTMLElement>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  // The review opens below the candidate list; bring it into view the way the dialog it replaced did.
-  useEffect(() => {
-    if (preview) previewRef.current?.scrollIntoView?.({ block: 'nearest' })
-  }, [preview])
+  const subpages = useSettingsSubpages()
+  const previewOpen = subpages.stack.at(-1) === PREVIEW_PAGE
+  const closePreview = () => {
+    setPreview(undefined)
+    if (previewOpen) subpages.close()
+  }
+  const cancelPreview = () => {
+    setPreview(undefined)
+    if (previewOpen) subpages.back()
+  }
   const refresh = resource.reload
   // biome-ignore lint/correctness/useExhaustiveDependencies: scope changes retire pending callbacks and reset their UI state.
   useEffect(() => {
@@ -52,6 +61,10 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
   }, [api, canSave, state?.revision])
   // biome-ignore lint/correctness/useExhaustiveDependencies: connection and permission changes reset diagnostics.
   useEffect(() => setError(''), [api, canSave])
+  // A reload or a shared link can open the review page with nothing to review: close it again.
+  useEffect(() => {
+    if (!preview && subpages.stack.includes(PREVIEW_PAGE)) subpages.close()
+  }, [preview, subpages])
   useEffect(() => {
     if (!api) return
     // Host daemon notices and completed plugin-admin operations already publish these hints.
@@ -81,7 +94,7 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
         ),
       )
       refresh()
-      setPreview(undefined)
+      closePreview()
     } finally {
       if (isCurrent()) setBusy(false)
     }
@@ -152,7 +165,9 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
                     void run(async (current) => {
                       if (!api) return
                       const preview = await api.previewApplication(candidate.packageId)
-                      if (current()) setPreview(preview)
+                      if (!current()) return
+                      setPreview(preview)
+                      subpages.open(PREVIEW_PAGE)
                     })
                   }
                 />
@@ -170,36 +185,41 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
           )}
         </SettingsSection>
         {preview && (
-          <section ref={previewRef} aria-label={tr('Application consent preview', '应用采纳预览')}>
-            <h3>{tr('Review application', '审阅应用')}</h3>
-            <ApplicationPreviewSummary preview={preview} application />
-            <p className="agnes-settings-note">
-              {tr(
-                'You can switch applications again from the sidebar.',
-                '可随时通过侧栏的“切换应用”回到此页。',
-              )}
-            </p>
-            <div className="home-push-actions">
-              <Button disabled={busy} onClick={() => setPreview(undefined)}>
-                {tr('Cancel', '取消')}
-              </Button>
-              <Button
-                appearance="primary"
-                disabled={busy || resource.loading || !canSave || !state}
-                onClick={() =>
-                  void run(async (current) => {
-                    if (!api || !state) return
-                    await api.adoptApplication(preview.packageId, state.revision, preview.consentDigest)
-                    if (!current()) return
-                    setPreview(undefined)
-                    location.reload()
-                  })
-                }
-              >
-                {tr('Adopt', '采用')}
-              </Button>
+          <SettingsSubpage
+            id={PREVIEW_PAGE}
+            title={tr('Review application', '审阅应用')}
+            description={tr('Application consent preview', '应用采纳预览')}
+          >
+            <div className="agnes-settings-stack" data-testid="application-preview-page">
+              <ApplicationPreviewSummary preview={preview} application />
+              <p className="agnes-settings-note">
+                {tr(
+                  'You can switch applications again from the sidebar.',
+                  '可随时通过侧栏的“切换应用”回到此页。',
+                )}
+              </p>
+              <div className="home-push-actions">
+                <Button disabled={busy} onClick={cancelPreview}>
+                  {tr('Cancel', '取消')}
+                </Button>
+                <Button
+                  appearance="primary"
+                  disabled={busy || resource.loading || !canSave || !state}
+                  onClick={() =>
+                    void run(async (current) => {
+                      if (!api || !state) return
+                      await api.adoptApplication(preview.packageId, state.revision, preview.consentDigest)
+                      if (!current()) return
+                      setPreview(undefined)
+                      location.reload()
+                    })
+                  }
+                >
+                  {tr('Adopt', '采用')}
+                </Button>
+              </div>
             </div>
-          </section>
+          </SettingsSubpage>
         )}
         <SettingsTechnicalDetails title={tr('Recovery tools', '恢复工具')}>
           <p>

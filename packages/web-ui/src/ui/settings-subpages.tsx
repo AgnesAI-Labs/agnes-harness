@@ -24,6 +24,8 @@ type SubpageFrame = {
   open(id: string): void
   back(): void
   backTo(depth: number): void
+  /** Close the top page at once, for a page that finished (no back step to land on). */
+  finish(): void
   /** The page's own title: the breadcrumb's first level. */
   rootTitle: ReactNode
   title(id: string): ReactNode
@@ -111,13 +113,14 @@ export function SettingsSubpageFrame({
       open: nav.open,
       back: nav.back,
       backTo: nav.backTo,
+      finish: nav.finish,
       rootTitle,
       title: (id) => titles[id] ?? id,
       setTitle,
       header: headerHost,
       host: (id) => hosts[id] ?? null,
     }),
-    [stack, nav.open, nav.back, nav.backTo, rootTitle, titles, setTitle, headerHost, hosts],
+    [stack, nav.open, nav.back, nav.backTo, nav.finish, rootTitle, titles, setTitle, headerHost, hosts],
   )
   const top = stack.at(-1)
   return (
@@ -154,13 +157,57 @@ export function useSettingsSubpages(): {
   stack: readonly string[]
   open(id: string): void
   back(): void
+  /** Close the open subpage at once, because what it was for is finished. */
+  close(): void
   /** Whether a settings page with subpages encloses this component. */
   available: boolean
 } {
   const frame = useContext(SubpageContext)
   return frame
-    ? { stack: frame.stack, open: frame.open, back: frame.back, available: true }
-    : { stack: [], open: () => {}, back: () => {}, available: false }
+    ? {
+        stack: frame.stack,
+        open: frame.open,
+        back: frame.back,
+        close: frame.finish,
+        available: true,
+      }
+    : { stack: [], open: () => {}, back: () => {}, close: () => {}, available: false }
+}
+
+/**
+ * A settings subpage that something other than a row opens: a preview button, a finished lookup.
+ * The caller pushes `id` with `open` and closes it with `close`; the page renders here, under the
+ * frame's breadcrumb, and nothing renders while it is closed or outside a frame.
+ */
+export function SettingsSubpage({
+  id,
+  title,
+  description,
+  children,
+}: {
+  id: string
+  /** The breadcrumb's last level, named the way an opening row would name it. */
+  title: ReactNode
+  /** One line under the breadcrumb, for assistive tech only. */
+  description?: ReactNode
+  children?: ReactNode
+}) {
+  const frame = useContext(SubpageContext)
+  const setTitle = frame?.setTitle
+  const isTop = frame?.stack.at(-1) === id
+  useEffect(() => setTitle?.(id, title), [setTitle, id, title])
+  const body = frame?.host(id)
+  return (
+    <>
+      {/* Same header every drilled page gets: the breadcrumb is the way back. */}
+      {isTop &&
+        frame?.header &&
+        createPortal(<SettingsSubpageHeader id={id} title={title} description={description} />, frame.header)}
+      {body && children !== undefined && children !== null && children !== false
+        ? createPortal(children, body)
+        : null}
+    </>
+  )
 }
 
 /** The inside of a row: optional icon tile, name with an optional hint and ⓘ, then value and control. */

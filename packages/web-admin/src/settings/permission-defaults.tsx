@@ -285,7 +285,7 @@ export function PermissionDefaults({
         </Banner>
       )}
       {more.length > 0 && (
-        <SettingsBlock>
+        <SettingsBlock className="agnes-settings-default-recipe">
           <SettingsItem
             label={t('defaultRecipe')}
             info={t('defaultRecipeHelp')}

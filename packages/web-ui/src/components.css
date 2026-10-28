@@ -2407,6 +2407,10 @@
     gap: var(--s4);
     margin-inline-start: auto;
   }
+  /* A second group under the cards of the same block is its own choice, not a footnote to them. */
+  .agnes-settings-default-recipe {
+    margin-block-start: var(--s16);
+  }
   .agnes-settings-save-failed {
     color: var(--agnes-status-danger-text);
     font-size: var(--font-size-xs);

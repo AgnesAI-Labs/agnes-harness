@@ -521,111 +521,115 @@ export function TriggersPanel({
             }
           }}
         >
-          <div className="automation-fields">
-            {input('id', 'id')}
-            <Field htmlFor="trigger-provider" label={t('provider')}>
-              <SettingsSelect
-                id="trigger-provider"
-                data-testid="trigger-provider"
-                value={rule.provider}
-                disabled={!canSave || busy}
-                onChange={(event) => {
-                  set('provider', event.target.value as WebhookRule['provider'])
-                  set('auth', 'hmac')
-                }}
-              >
-                <option value="github">{t('github')}</option>
-                <option value="generic">{t('generic')}</option>
-              </SettingsSelect>
-            </Field>
-            <Field htmlFor="trigger-auth" label={t('auth')}>
-              <SettingsSelect
-                id="trigger-auth"
-                data-testid="trigger-auth"
-                value={rule.auth}
-                disabled={!canSave || busy || rule.provider === 'github'}
-                onChange={(event) => set('auth', event.target.value as WebhookRule['auth'])}
-              >
-                <option value="hmac">{t('hmac')}</option>
-                <option value="bearer">{t('bearer')}</option>
-              </SettingsSelect>
-            </Field>
-            <Field htmlFor="trigger-secret-picker" label={t('secretLabel')} hint={t('secretHelp')}>
-              <SettingsSelect
-                id="trigger-secret-picker"
-                data-testid="trigger-secret-picker"
-                value={rule.secretRef}
-                disabled={!canSave || busy}
-                onChange={(event) => set('secretRef', event.target.value)}
-              >
-                <option value="">{t('choose')}</option>
-                {[
-                  ...new Set([
-                    ...credentials.map((item) => item.value),
-                    ...(snapshot?.secretRefs ?? []),
-                    ...(rule.secretRef ? [rule.secretRef] : []),
-                  ]),
-                ].map((ref) => (
-                  <option key={ref} value={ref}>
-                    {credentials.find((item) => item.value === ref)?.label ??
-                      ref.replace(/^secret:\/\//, '').replace(/\//g, ' · ')}
-                  </option>
-                ))}
-              </SettingsSelect>
-            </Field>
-            <Field htmlFor="trigger-workspace" label={t('workspace')}>
-              <SettingsSelect
-                id="trigger-workspace"
-                data-testid="trigger-workspace"
+          {/* The form's own fields share one frame; the folds below stay separate cards. */}
+          <div className="automation-form-card">
+            <div className="automation-fields">
+              {input('id', 'id')}
+              <Field htmlFor="trigger-provider" label={t('provider')}>
+                <SettingsSelect
+                  id="trigger-provider"
+                  data-testid="trigger-provider"
+                  value={rule.provider}
+                  disabled={!canSave || busy}
+                  onChange={(event) => {
+                    set('provider', event.target.value as WebhookRule['provider'])
+                    set('auth', 'hmac')
+                  }}
+                >
+                  <option value="github">{t('github')}</option>
+                  <option value="generic">{t('generic')}</option>
+                </SettingsSelect>
+              </Field>
+              <Field htmlFor="trigger-auth" label={t('auth')}>
+                <SettingsSelect
+                  id="trigger-auth"
+                  data-testid="trigger-auth"
+                  value={rule.auth}
+                  disabled={!canSave || busy || rule.provider === 'github'}
+                  onChange={(event) => set('auth', event.target.value as WebhookRule['auth'])}
+                >
+                  <option value="hmac">{t('hmac')}</option>
+                  <option value="bearer">{t('bearer')}</option>
+                </SettingsSelect>
+              </Field>
+              <Field htmlFor="trigger-secret-picker" label={t('secretLabel')} hint={t('secretHelp')}>
+                <SettingsSelect
+                  id="trigger-secret-picker"
+                  data-testid="trigger-secret-picker"
+                  value={rule.secretRef}
+                  disabled={!canSave || busy}
+                  onChange={(event) => set('secretRef', event.target.value)}
+                >
+                  <option value="">{t('choose')}</option>
+                  {[
+                    ...new Set([
+                      ...credentials.map((item) => item.value),
+                      ...(snapshot?.secretRefs ?? []),
+                      ...(rule.secretRef ? [rule.secretRef] : []),
+                    ]),
+                  ].map((ref) => (
+                    <option key={ref} value={ref}>
+                      {credentials.find((item) => item.value === ref)?.label ??
+                        ref.replace(/^secret:\/\//, '').replace(/\//g, ' · ')}
+                    </option>
+                  ))}
+                </SettingsSelect>
+              </Field>
+              <Field htmlFor="trigger-workspace" label={t('workspace')}>
+                <SettingsSelect
+                  id="trigger-workspace"
+                  data-testid="trigger-workspace"
+                  required
+                  value={rule.workspace}
+                  disabled={!canSave || busy}
+                  onChange={(event) => set('workspace', event.target.value)}
+                >
+                  {workspaces.map((path) => (
+                    <option key={path} value={path}>
+                      {path}
+                    </option>
+                  ))}
+                </SettingsSelect>
+              </Field>
+              {input('event', 'event')}
+              <Field label={t('approvalBehavior')}>
+                <SettingsSelect
+                  data-testid="trigger-approval-behavior"
+                  disabled={busy}
+                  value={rule.unattendedApproval ?? 'notify'}
+                  onChange={(event) =>
+                    setRule({ ...rule, unattendedApproval: event.target.value as 'notify' | 'refuse' })
+                  }
+                >
+                  <option value="notify">{t('approvalNotify')}</option>
+                  <option value="refuse">{t('approvalRefuse')}</option>
+                </SettingsSelect>
+              </Field>
+            </div>
+            <Field htmlFor="trigger-template" label={t('template')} hint={t('templateHelp')}>
+              <SettingsTextArea
+                id="trigger-template"
+                data-testid="trigger-template"
+                rows={4}
                 required
-                value={rule.workspace}
+                value={rule.template}
                 disabled={!canSave || busy}
-                onChange={(event) => set('workspace', event.target.value)}
-              >
-                {workspaces.map((path) => (
-                  <option key={path} value={path}>
-                    {path}
-                  </option>
-                ))}
-              </SettingsSelect>
+                onChange={(event) => set('template', event.target.value)}
+              />
             </Field>
-            <Field label={t('approvalBehavior')}>
-              <SettingsSelect
-                data-testid="trigger-approval-behavior"
-                disabled={busy}
-                value={rule.unattendedApproval ?? 'notify'}
-                onChange={(event) =>
-                  setRule({ ...rule, unattendedApproval: event.target.value as 'notify' | 'refuse' })
-                }
-              >
-                <option value="notify">{t('approvalNotify')}</option>
-                <option value="refuse">{t('approvalRefuse')}</option>
-              </SettingsSelect>
-            </Field>
-            {input('event', 'event')}
+            {/* The one switch a saved trigger needs: named on the left, flipped on the right. */}
+            <div className="automation-form-switch">
+              <label htmlFor="trigger-active">{t('active')}</label>
+              <StateSwitch
+                id="trigger-active"
+                testId="trigger-active"
+                label={t('active')}
+                checked={rule.enabled}
+                disabled={!canSave || busy}
+                onToggle={(enabled) => set('enabled', enabled)}
+              />
+            </div>
           </div>
-          <Field htmlFor="trigger-template" label={t('template')} hint={t('templateHelp')}>
-            <SettingsTextArea
-              id="trigger-template"
-              data-testid="trigger-template"
-              rows={3}
-              required
-              value={rule.template}
-              disabled={!canSave || busy}
-              onChange={(event) => set('template', event.target.value)}
-            />
-          </Field>
-          <label className="agnes-settings-checkbox" htmlFor="trigger-active">
-            <StateSwitch
-              id="trigger-active"
-              testId="trigger-active"
-              label={t('active')}
-              checked={rule.enabled}
-              disabled={!canSave || busy}
-              onToggle={(enabled) => set('enabled', enabled)}
-            />
-            {t('active')}
-          </label>
           <SettingsDetails
             card
             title={t('advanced')}

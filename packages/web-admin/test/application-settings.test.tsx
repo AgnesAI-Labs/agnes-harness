@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { ApplicationPreview, ApplicationState } from '@agnes/protocol'
-import { clearResources, createRegionRenderer } from '@agnes/web-ui'
+import { clearResources, createRegionRenderer, SettingsSubpageFrame } from '@agnes/web-ui'
 import { fireEvent, getByRole, waitFor } from '@testing-library/dom'
 import { act } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -83,10 +83,29 @@ it.each(['known', 'unknown'])(
     }
     const root = createRegionRenderer(document.body)
     stop = () => root.unmount()
-    await act(async () => root.render(<ApplicationPanel api={api as unknown as PluginAdminApi} canSave />))
+    await act(async () =>
+      root.render(
+        <SettingsSubpageFrame header={null}>
+          <ApplicationPanel api={api as unknown as PluginAdminApi} canSave />
+        </SettingsSubpageFrame>,
+      ),
+    )
     await waitFor(() =>
       expect(getByRole(document.body, 'button', { name: 'Preview' }).hasAttribute('disabled')).toBe(false),
     )
+    const css = readFileSync(
+      resolve(import.meta.dirname, '../../web/public/styles/31-plugins-page.css'),
+      'utf8',
+    )
+    const rule = css.match(/\.application-settings p a[^{}]*\{[^}]*\}/)?.[0]
+    expect(rule).toBeDefined()
+    const style = document.createElement('style')
+    style.id = 'inline-link-test-style'
+    style.textContent = rule!
+    document.head.append(style)
+    await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: 'Recovery tools' })))
+    const recovery = getByRole(document.body, 'link', { name: 'Host recovery' })
+    expect(getComputedStyle(recovery).textDecorationLine).toBe('underline')
     await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: 'Preview' })))
     expect(document.body.textContent).toContain('Acme')
     expect(document.body.textContent).toContain('Trusted JavaScript')
@@ -117,19 +136,6 @@ it.each(['known', 'unknown'])(
     expect(summary?.textContent).not.toContain('private-entry.js')
     expect(summary?.textContent).not.toContain('acme/kit#')
     expect(summary?.querySelector('pre')).toBeNull()
-    const css = readFileSync(
-      resolve(import.meta.dirname, '../../web/public/styles/31-plugins-page.css'),
-      'utf8',
-    )
-    const rule = css.match(/\.application-settings p a[^{}]*\{[^}]*\}/)?.[0]
-    expect(rule).toBeDefined()
-    const style = document.createElement('style')
-    style.id = 'inline-link-test-style'
-    style.textContent = rule!
-    document.head.append(style)
-    await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: 'Recovery tools' })))
-    const recovery = getByRole(document.body, 'link', { name: 'Host recovery' })
-    expect(getComputedStyle(recovery).textDecorationLine).toBe('underline')
     const technical = document.querySelector<HTMLElement>('[data-testid="consent-technical"]')
     if (!technical) throw new Error('technical details missing')
     const toggle = getByRole(technical, 'button', { name: 'Technical details' })
@@ -143,7 +149,9 @@ it.each(['known', 'unknown'])(
     expect(technical.textContent).toContain('private-tool-4')
     expect(technical.textContent).toContain(diffStatus === 'known' ? 'acme/old' : 'Changes are unknown')
 
+    expect(document.querySelector('[data-testid="settings-subpage-application-preview"]')).not.toBeNull()
     await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: 'Cancel' })))
+    expect(document.querySelector('[data-testid="settings-subpage-application-preview"]')).toBeNull()
     expect(document.querySelector('[data-testid="consent-summary"]')).toBeNull()
     expect(api.adoptApplication).not.toHaveBeenCalled()
     await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: 'Preview' })))
@@ -155,7 +163,9 @@ it.each(['known', 'unknown'])(
         finish = resolve
       }),
     )
-    await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: 'Refresh' })))
+    await act(async () => {
+      window.dispatchEvent(new Event('agnes:plugins-invalidated'))
+    })
     expect(getByRole(document.body, 'button', { name: 'Adopt' }).hasAttribute('disabled')).toBe(true)
     await act(async () => finish?.(state))
     await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: 'Adopt' })))
@@ -223,11 +233,26 @@ it('previews a declared role without adopting an application and resets stale co
   }
   const root = createRegionRenderer(document.body)
   stop = () => root.unmount()
-  await act(async () => root.render(<ApplicationPanel api={api as unknown as PluginAdminApi} canSave />))
+  await act(async () =>
+    root.render(
+      <SettingsSubpageFrame header={null}>
+        <ApplicationPanel api={api as unknown as PluginAdminApi} canSave />
+      </SettingsSubpageFrame>,
+    ),
+  )
   await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: '高级界面选择' })))
   await waitFor(() =>
     expect(getByRole(document.body, 'button', { name: '预览' }).hasAttribute('disabled')).toBe(false),
   )
+  await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: '预览' })))
+  // The review is a page of its own, not a block appended after the interface rows.
+  expect(document.querySelector('[data-testid="settings-subpage-interface-preview"]')?.textContent).toContain(
+    '仅影响展示，不改变执行',
+  )
+  expect(document.querySelector('[data-testid="consent-summary"]')).not.toBeNull()
+  await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: '取消' })))
+  expect(document.querySelector('[data-testid="settings-subpage-interface-preview"]')).toBeNull()
+  expect(document.querySelector('[data-testid="consent-summary"]')).toBeNull()
   await act(async () => fireEvent.click(getByRole(document.body, 'button', { name: '预览' })))
   expect(document.body.textContent).toContain('仅影响展示，不改变执行')
   const summary = document.querySelector('[data-testid="consent-summary"]')

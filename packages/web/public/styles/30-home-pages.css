@@ -346,6 +346,36 @@
     grid-template-columns: minmax(0, 1fr);
     gap: var(--s16);
   }
+  /* The list's own filters sit in a card, so they read as one control rather than as loose page copy. */
+  .automation-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--s8) var(--s16);
+    min-width: 0;
+    padding: var(--s8) var(--s12);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-surface);
+  }
+  .automation-toolbar-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+  }
+  /* This page is not a settings page, so the placeholder draws the card its list would fill. */
+  .automation-panel .agh-empty-state {
+    box-sizing: border-box;
+    max-width: none;
+    padding: var(--s32) var(--s24);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-group);
+  }
   /* A row's run history grows inside its copy column, so centering the row would drag the icon and
    actions down with every added run; pin them to the row start instead. Scoped to this page only. */
   .automation-panel .agh-list-row.automation-row {
@@ -425,17 +455,41 @@
   .schedule-form [data-testid="schedules-preview"]:empty {
     display: none;
   }
-  /* Short fields sit two to a row; one to a row where the dialog is narrow. */
+  /* Two fields to a row on a page, one where the space runs out; never four cramped ones. */
   .automation-fields {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
     gap: var(--s12) var(--s16);
     align-items: start;
   }
   .automation-form {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: var(--s12);
+    gap: var(--s16);
+  }
+  /* A form's own fields read as one card: fields, the prompt, then the switch that turns it on. */
+  .automation-form-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s16);
+    padding: var(--s20);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-surface);
+  }
+  /* The prompt is the body of this form, not a short field beside others: it takes the card's width. */
+  .automation-form-card > .agh-field {
+    max-width: none;
+  }
+  .automation-form-switch {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s16);
+    padding-top: var(--s16);
+    border-top: 1px solid var(--agnes-line-primary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
   }
   .automation-weekdays {
     display: flex;
