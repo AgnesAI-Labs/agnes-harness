@@ -64,6 +64,11 @@ export interface SidebarNavigationOptions {
   workspaceAction?(action: 'reveal' | 'remove', workspace: WorkspaceEntry): Promise<void>
   newSession(workspace: WorkspaceEntry): void
   open(id: string): void
+  /**
+   * The list tools (view options, add workspace, the workspaces slots) when the host owns the
+   * section headings (`sectionLabel: null`): the navigation places them on its own project heading.
+   */
+  headingTools?: ReactNode
 }
 
 export interface SidebarShell {
@@ -129,6 +134,8 @@ export interface SidebarSlots {
   sectionLabel?: ReactNode
   /** Host controls for the session list, before the add-workspace action. */
   sessionTools?: ReactNode
+  /** A full-width search entry between the home entries and the session list. */
+  search?: ReactNode
   brandMark?: ReactNode
   brandName?: ReactNode
   panellist?: ReactNode
@@ -288,6 +295,23 @@ const SidebarBuiltin = forwardRef<
       shell.current = undefined
     }
   }, [dependencies])
+  // A provided `null` means the host owns the heading (the grouped list renders its own section
+  // titles); an absent slot keeps the built-in heading. `??` would turn that null back.
+  const sectionLabel =
+    slots?.sectionLabel === null ? null : (slots?.sectionLabel ?? t('sidebar.sectionHeading'))
+  // One set of list tools: in the shell's heading row, or handed to the host's own heading.
+  const listTools = (
+    <>
+      {slots?.sessionTools}
+      <IconButton
+        id="workspace-add"
+        name="folder-plus"
+        label={t('sidebar.addWorkspace')}
+        onClick={actions.addWorkspace}
+      />
+      {slots?.workspaces}
+    </>
+  )
   // One options object feeds both render slots: the area above the heading and the list below it.
   const navigation: SidebarNavigationOptions = {
     sessions: current.sessions,
@@ -308,11 +332,8 @@ const SidebarBuiltin = forwardRef<
     ...(actions.workspaceAction ? { workspaceAction: actions.workspaceAction } : {}),
     newSession: actions.newSession,
     open: actions.openSession,
+    ...(sectionLabel === null ? { headingTools: listTools } : {}),
   }
-  // A provided `null` means the host owns the heading (the grouped list renders its own section
-  // titles); an absent slot keeps the built-in heading. `??` would turn that null back.
-  const sectionLabel =
-    slots?.sectionLabel === null ? null : (slots?.sectionLabel ?? t('sidebar.sectionHeading'))
   return (
     <div style={{ display: 'contents' }} data-agnes-region-owner="builtin" data-agnes-region-unit="sidebar">
       <div className="sidebar-head">
@@ -345,23 +366,17 @@ const SidebarBuiltin = forwardRef<
         </Tooltip>
       </div>
       {slots?.entries}
+      {slots?.search}
       {dependencies?.renderLeadingNavigation?.(navigation)}
-      <div
-        className={sectionLabel === null ? 'sidebar-section-heading is-toolbar' : 'sidebar-section-heading'}
-      >
-        {sectionLabel !== null && <p className="section-label">{sectionLabel}</p>}
-        {slots?.sessionTools}
-        <IconButton
-          id="workspace-add"
-          name="folder-plus"
-          label={t('sidebar.addWorkspace')}
-          onClick={actions.addWorkspace}
-        />
-        {slots?.workspaces}
-        <span className="visually-hidden" role="status" aria-live="polite">
-          {announcement}
-        </span>
-      </div>
+      {sectionLabel !== null && (
+        <div className="sidebar-section-heading">
+          <p className="section-label">{sectionLabel}</p>
+          {listTools}
+        </div>
+      )}
+      <span className="visually-hidden" role="status" aria-live="polite">
+        {announcement}
+      </span>
       <nav id="sessions" aria-label={t('sidebar.sessionsNav')}>
         {dependencies?.renderNavigation(navigation)}
       </nav>

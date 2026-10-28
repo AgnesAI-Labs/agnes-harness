@@ -1,27 +1,23 @@
 import type { WorkspaceEntry } from '@agnes/protocol'
 
 /**
- * The user's own order for the sidebar: which section comes first, and which project comes first
- * inside the workspace section. Both live in local storage like the grouping and collapse records,
- * so they survive reloads but stay on this computer. Saved entries that no longer exist are kept
- * in storage but ignored when rendering; a move rewrites the effective order.
+ * The user's own order of the projects inside the 项目 section. It lives in local storage like the
+ * grouping and collapse records, so it survives reloads but stays on this computer. Saved entries
+ * that no longer exist are kept in storage but ignored when rendering; a move rewrites the
+ * effective order. The three sections themselves have one fixed order and cannot be moved.
  */
 export type SidebarSectionId = 'pinned' | 'chats' | 'workspaces'
 
 export type DropPosition = 'before' | 'after'
 
-export const DEFAULT_SECTION_ORDER: readonly SidebarSectionId[] = ['pinned', 'chats', 'workspaces']
+/** 置顶 → 项目 → 临时会话, always. */
+export const SIDEBAR_SECTION_ORDER: readonly SidebarSectionId[] = ['pinned', 'workspaces', 'chats']
 
-const SECTION_KEY = 'agnes.sidebar.section-order.v1'
 const WORKSPACE_KEY = 'agnes.sidebar.workspace-order.v1'
 
 export type SidebarOrderSnapshot = {
-  sections: readonly SidebarSectionId[]
   workspaces: readonly string[]
 }
-
-const isSectionId = (value: unknown): value is SidebarSectionId =>
-  value === 'pinned' || value === 'chats' || value === 'workspaces'
 
 function readStored(key: string): string[] {
   try {
@@ -40,27 +36,11 @@ function writeStored(key: string, values: readonly string[]): void {
   }
 }
 
-/**
- * A stored section order always comes back as a full permutation of the three known sections:
- * unknown values and duplicates are dropped, and anything missing is appended in its default
- * position. Sections that are empty stay in the array, so showing or hiding one later does not
- * disturb the order the user chose.
- */
-function cleanSections(saved: readonly string[]): SidebarSectionId[] {
-  const seen = new Set<SidebarSectionId>()
-  for (const value of saved) if (isSectionId(value) && !seen.has(value)) seen.add(value)
-  for (const value of DEFAULT_SECTION_ORDER) if (!seen.has(value)) seen.add(value)
-  return [...seen]
-}
-
 function unique(values: readonly string[]): string[] {
   return [...new Set(values)]
 }
 
-let order: SidebarOrderSnapshot = {
-  sections: cleanSections(readStored(SECTION_KEY)),
-  workspaces: unique(readStored(WORKSPACE_KEY)),
-}
+let order: SidebarOrderSnapshot = { workspaces: unique(readStored(WORKSPACE_KEY)) }
 const listeners = new Set<() => void>()
 
 function publish(next: SidebarOrderSnapshot): void {
@@ -68,7 +48,7 @@ function publish(next: SidebarOrderSnapshot): void {
   for (const listener of listeners) listener()
 }
 
-/** Delete-then-insert, the one move both sections and projects use. */
+/** Delete-then-insert. */
 function moved(
   list: readonly string[],
   source: string,
@@ -86,15 +66,6 @@ function moved(
 /** The key a workspace is stored under: its stable id when the host has one, else its path. */
 export function workspaceKey(workspace: Pick<WorkspaceEntry, 'workspaceId' | 'path'>): string {
   return workspace.workspaceId ?? workspace.path
-}
-
-/** The saved section order, restricted to the sections that currently exist. */
-export function orderSections(
-  present: readonly SidebarSectionId[],
-  saved: readonly SidebarSectionId[] = order.sections,
-): SidebarSectionId[] {
-  const existing = new Set(present)
-  return saved.filter((id) => existing.has(id))
 }
 
 /**
@@ -133,12 +104,6 @@ export const sidebarOrder = {
       listeners.delete(listener)
     }
   },
-  moveSection(id: SidebarSectionId, targetId: SidebarSectionId, position: DropPosition): void {
-    const next = moved(order.sections, id, targetId, position) as SidebarSectionId[] | undefined
-    if (!next) return
-    writeStored(SECTION_KEY, next)
-    publish({ ...order, sections: next })
-  },
   /**
    * `keys` is the effective project order currently on screen. Moving against it also materialises
    * it in storage, which is how a project that was never saved joins the record.
@@ -147,31 +112,14 @@ export const sidebarOrder = {
     const next = moved(keys, source, target, position)
     if (!next) return
     writeStored(WORKSPACE_KEY, next)
-    publish({ ...order, workspaces: next })
-  },
-  resetSections(): void {
-    try {
-      localStorage.removeItem(SECTION_KEY)
-    } catch {
-      /* nothing stored to remove */
-    }
-    publish({ ...order, sections: [...DEFAULT_SECTION_ORDER] })
-  },
-  resetWorkspaces(): void {
-    try {
-      localStorage.removeItem(WORKSPACE_KEY)
-    } catch {
-      /* nothing stored to remove */
-    }
-    publish({ ...order, workspaces: [] })
+    publish({ workspaces: next })
   },
   reset(): void {
     try {
-      localStorage.removeItem(SECTION_KEY)
       localStorage.removeItem(WORKSPACE_KEY)
     } catch {
       /* nothing stored to remove */
     }
-    publish({ sections: [...DEFAULT_SECTION_ORDER], workspaces: [] })
+    publish({ workspaces: [] })
   },
 }

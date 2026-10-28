@@ -6,20 +6,22 @@
     overflow-y: auto;
     display: grid;
     gap: var(--s2);
-    margin: var(--s8) 0 var(--s4);
+    margin: var(--s2) 0 0;
   }
+  /* 32px rows with a 16px icon, the same 10px inset as the new-session button above them. */
   .home-entry {
     width: 100%;
     min-width: 0;
+    height: 2rem;
     min-height: 2rem;
     justify-content: flex-start;
-    gap: var(--s8);
-    padding: 0 var(--s8);
+    gap: 0.625rem;
+    padding: 0 0.625rem;
     border-color: transparent;
-    border-radius: var(--radius-control);
+    border-radius: 0.375rem;
     color: var(--agnes-text-secondary);
     background: transparent;
-    font-size: var(--font-size-sm);
+    font-size: 0.84375rem;
     font-weight: 400;
     line-height: 1.25rem;
     transition: none;
@@ -57,18 +59,19 @@
   .home-entry[aria-current="page"] .home-entry-sub {
     color: var(--agnes-text-primary);
   }
+  /* A count that asks for attention (「2 项待审阅」): a small accent pill at the row end. */
   .home-entry-badge {
     flex: 0 0 auto;
     min-width: 1.125rem;
     height: 1.125rem;
     display: inline-grid;
     place-items: center;
-    padding: 0 0.3125rem;
+    padding: 0 0.375rem;
     border-radius: var(--radius-pill);
-    color: var(--agnes-text-inverse);
-    background: var(--agnes-brand-primary);
-    font-size: 0.6875rem;
-    font-weight: var(--font-weight-semibold);
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+    font-size: 0.71875rem;
+    font-weight: var(--font-weight-medium);
     line-height: 1;
     font-variant-numeric: tabular-nums;
   }
@@ -340,7 +343,7 @@
   }
   /* Marks the full-list views add to the shared row: the workspace name, pin and archived state. */
   .session-workspace-label {
-    max-width: 45%;
+    max-width: 38%;
     margin-left: auto;
     overflow: hidden;
     color: var(--agnes-text-tertiary);

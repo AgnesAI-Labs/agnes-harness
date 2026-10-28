@@ -33,14 +33,7 @@ import {
   sortSessionsByActivity,
 } from './sidebar-groups.js'
 import { FolderIcon } from './sidebar-label.js'
-import {
-  type DropPosition,
-  orderSections,
-  orderWorkspaces,
-  type SidebarSectionId,
-  sidebarOrder,
-  workspaceKey,
-} from './sidebar-order.js'
+import { type DropPosition, orderWorkspaces, sidebarOrder, workspaceKey } from './sidebar-order.js'
 import {
   type HeadingDrag,
   SessionRowLabel,
@@ -51,6 +44,13 @@ import {
   workspaceNames,
 } from './sidebar-rendering.js'
 import { WorkspaceMenu } from './workspace-menu.js'
+
+/**
+ * Paged groups whose section fold has been applied, per sidebar (keyed by its group action). The
+ * paged 置顶 / 临时会话 groups keep their open state in memory only; the section fold lives in the
+ * collapse store, so the first time a group shows, its open state is set to match that fold.
+ */
+const foldApplied = new WeakMap<object, Set<string>>()
 
 /** The toolbar-level live region lives in the shell; the navigation only announces the result. */
 const announce = (message: string): void => {
@@ -214,6 +214,7 @@ function SessionGroupSection({
             <FolderIcon open className="icon icon-folder icon-folder-open" />
           </>
         }
+        count={page ? page.total : rows.length}
         collapsed={collapsed}
         listId={listId}
         nested
@@ -260,7 +261,6 @@ function SessionGroupSection({
 }
 
 type DragState = {
-  kind: 'section' | 'workspace'
   id: string
   /** The dragged row's display name, so the announcement names the item that moved. */
   name: string
@@ -269,9 +269,10 @@ type DragState = {
 }
 
 /**
- * The grouped sidebar: three peer sections, each folding its own body, and reorderable by pointer
- * or keyboard. Both the paged projection and the full-list views render through here, so the
- * structure and the saved order stay identical across every filter.
+ * The grouped sidebar: three peer sections in a fixed order (置顶 → 项目 → 临时会话), each folding
+ * its own body. Projects inside 项目 reorder by pointer or keyboard; the sections never move. Both
+ * the paged projection and the full-list views render through here, so the structure and the
+ * saved project order stay identical across every filter.
  */
 function GroupedSections({
   options,
@@ -290,35 +291,27 @@ function GroupedSections({
   rowItem?: ((row: Row) => ConversationItemType) | undefined
   preSorted?: boolean
 }) {
-  const snapshot = useSyncExternalStore(sidebarOrder.subscribe, sidebarOrder.getSnapshot)
   const [drag, setDrag] = useState<DragState>()
 
   const sections = sectionViews(views, workspaces, t)
-  const present = sections.map((section) => section.id)
-  const ordered = orderSections(present, snapshot.sections)
-  const sectionOf = new Map(sections.map((section) => [section.id, section]))
   // The chats workspace stays in `workspaces` for the chats section but never joins the saved order.
   const projects = workspaces.filter((workspace) => workspace.kind !== 'chats')
   const projectKeys = projects.map(workspaceKey)
 
-  const movedTo = (kind: DragState['kind'], id: string): number =>
-    kind === 'section'
-      ? orderSections(present, sidebarOrder.getSnapshot().sections).indexOf(id as SidebarSectionId) + 1
-      : orderWorkspaces(workspaces, sidebarOrder.getSnapshot().workspaces).map(workspaceKey).indexOf(id) + 1
-
-  const announceMove = (kind: DragState['kind'], id: string, name: string): void => {
-    announce(t('sidebar.order.moved', { name, position: movedTo(kind, id) }))
+  const announceMove = (id: string, name: string): void => {
+    const position =
+      orderWorkspaces(workspaces, sidebarOrder.getSnapshot().workspaces).map(workspaceKey).indexOf(id) + 1
+    announce(t('sidebar.order.moved', { name, position }))
   }
 
-  const dragStart =
-    (kind: DragState['kind'], id: string, name: string) => (event: ReactDragEvent<HTMLElement>) => {
-      event.dataTransfer?.setData('text/plain', id)
-      if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
-      setDrag({ kind, id, name, position: 'after' })
-    }
+  const dragStart = (id: string, name: string) => (event: ReactDragEvent<HTMLElement>) => {
+    event.dataTransfer?.setData('text/plain', id)
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+    setDrag({ id, name, position: 'after' })
+  }
   const dragEnd = () => setDrag(undefined)
-  const dragOver = (kind: DragState['kind'], id: string) => (event: ReactDragEvent<HTMLElement>) => {
-    if (!drag || drag.kind !== kind || drag.id === id) return
+  const dragOver = (id: string) => (event: ReactDragEvent<HTMLElement>) => {
+    if (!drag || drag.id === id) return
     event.preventDefault()
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
     const bounds = event.currentTarget.getBoundingClientRect()
@@ -329,20 +322,16 @@ function GroupedSections({
         : current,
     )
   }
-  const dragLeave = (kind: DragState['kind'], id: string) => (event: ReactDragEvent<HTMLElement>) => {
+  const dragLeave = (id: string) => (event: ReactDragEvent<HTMLElement>) => {
     const next = event.relatedTarget
     if (next instanceof Node && event.currentTarget.contains(next)) return
-    setDrag((current) =>
-      current && current.kind === kind && current.targetId === id
-        ? { ...current, targetId: undefined }
-        : current,
-    )
+    setDrag((current) => (current && current.targetId === id ? { ...current, targetId: undefined } : current))
   }
-  const drop = (kind: DragState['kind'], id: string) => (event: ReactDragEvent<HTMLElement>) => {
+  const drop = (id: string) => (event: ReactDragEvent<HTMLElement>) => {
     event.preventDefault()
     const current = drag
     setDrag(undefined)
-    if (!current || current.kind !== kind || current.id === id) return
+    if (!current || current.id === id) return
     const bounds = event.currentTarget.getBoundingClientRect()
     const position: DropPosition =
       current.targetId === id
@@ -350,28 +339,22 @@ function GroupedSections({
         : event.clientY < bounds.top + bounds.height / 2
           ? 'before'
           : 'after'
-    if (kind === 'section')
-      sidebarOrder.moveSection(current.id as SidebarSectionId, id as SidebarSectionId, position)
-    else sidebarOrder.moveWorkspace(projectKeys, current.id, id, position)
-    announceMove(kind, current.id, current.name)
+    sidebarOrder.moveWorkspace(projectKeys, current.id, id, position)
+    announceMove(current.id, current.name)
   }
 
-  /** Alt+Arrow moves the focused heading one place; the live region reads the new position. */
-  const keyMove =
-    (kind: DragState['kind'], id: string, list: readonly string[], name: string) =>
-    (event: ReactKeyboardEvent<HTMLElement>) => {
-      if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return
-      event.preventDefault()
-      const index = list.indexOf(id)
-      const target = index < 0 ? undefined : list[index + (event.key === 'ArrowUp' ? -1 : 1)]
-      if (!target) return
-      const position: DropPosition = event.key === 'ArrowUp' ? 'before' : 'after'
-      if (kind === 'section')
-        sidebarOrder.moveSection(id as SidebarSectionId, target as SidebarSectionId, position)
-      else sidebarOrder.moveWorkspace(projectKeys, id, target, position)
-      announceMove(kind, id, name)
-    }
+  /** Alt+Arrow moves the focused project one place; the live region reads the new position. */
+  const keyMove = (id: string, name: string) => (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return
+    event.preventDefault()
+    const index = projectKeys.indexOf(id)
+    const target = index < 0 ? undefined : projectKeys[index + (event.key === 'ArrowUp' ? -1 : 1)]
+    if (!target) return
+    sidebarOrder.moveWorkspace(projectKeys, id, target, event.key === 'ArrowUp' ? 'before' : 'after')
+    announceMove(id, name)
+  }
 
+  // A paged section group folds through the pager; the effect below records the result.
   const toggleSection = (section: SidebarSectionView): void => {
     if (section.group?.page) {
       options.groupAction?.(section.group.id, 'toggle')
@@ -381,6 +364,25 @@ function GroupedSections({
     setCollapsed(key, !isCollapsed(key))
     redraw()
   }
+
+  // Every section fold is remembered in this browser, the paged 置顶 / 临时会话 groups included:
+  // on first sight a group is opened or closed to match the remembered fold, then the store
+  // follows the group, whatever opened it (a click, or a new chat started in it).
+  const groupAction = options.groupAction
+  useEffect(() => {
+    if (!groupAction) return
+    const applied = foldApplied.get(groupAction) ?? new Set<string>()
+    foldApplied.set(groupAction, applied)
+    for (const section of sections) {
+      const page = section.group?.page
+      if (!section.group || !page) continue
+      const key = sectionCollapseKey(section.id)
+      if (!applied.has(section.group.id)) {
+        applied.add(section.group.id)
+        if (page.opened === isCollapsed(key)) groupAction(section.group.id, 'toggle')
+      } else if (page.opened === isCollapsed(key)) setCollapsed(key, !page.opened)
+    }
+  })
 
   const renderProject = (view: SessionGroupView) => {
     const key = view.workspace ? workspaceKey(view.workspace) : undefined
@@ -398,15 +400,15 @@ function GroupedSections({
         {...(draggable && key
           ? {
               drag: {
-                dragging: drag?.kind === 'workspace' && drag.id === key,
-                onDragStart: dragStart('workspace', key, name),
+                dragging: drag?.id === key,
+                onDragStart: dragStart(key, name),
                 onDragEnd: dragEnd,
-                onDragOver: dragOver('workspace', key),
-                onDragLeave: dragLeave('workspace', key),
-                onDrop: drop('workspace', key),
+                onDragOver: dragOver(key),
+                onDragLeave: dragLeave(key),
+                onDrop: drop(key),
               },
-              ...(drag?.kind === 'workspace' && drag.targetId === key ? { dropPosition: drag.position } : {}),
-              onKeyDown: keyMove('workspace', key, projectKeys, name),
+              ...(drag?.targetId === key ? { dropPosition: drag.position } : {}),
+              onKeyDown: keyMove(key, name),
             }
           : {})}
       />
@@ -415,21 +417,14 @@ function GroupedSections({
 
   return (
     <>
-      {ordered.map((id) => {
-        const section = sectionOf.get(id)
-        if (!section) return null
+      {sections.map((section) => {
         const collapsed = section.group?.page
           ? !section.group.page.opened
           : isCollapsed(sectionCollapseKey(section.id))
         const listId = `sidebar-section-${section.id}`
         const chatsWorkspace = section.id === 'chats' ? section.group?.workspace : undefined
         return (
-          <section
-            key={section.id}
-            className="sidebar-section"
-            data-section={section.id}
-            data-dragging={drag?.kind === 'section' && drag.id === section.id ? 'true' : undefined}
-          >
+          <section key={section.id} className="sidebar-section" data-section={section.id}>
             <SidebarSectionHeading
               name={section.title}
               title={section.title}
@@ -452,20 +447,10 @@ function GroupedSections({
                     action={options.workspaceAction}
                     managed
                   />
+                ) : section.id === 'workspaces' && options.headingTools ? (
+                  <span className="sidebar-section-tools">{options.headingTools}</span>
                 ) : undefined
               }
-              drag={{
-                dragging: drag?.kind === 'section' && drag.id === section.id,
-                onDragStart: dragStart('section', section.id, section.title),
-                onDragEnd: dragEnd,
-                onDragOver: dragOver('section', section.id),
-                onDragLeave: dragLeave('section', section.id),
-                onDrop: drop('section', section.id),
-              }}
-              {...(drag?.kind === 'section' && drag.targetId === section.id
-                ? { dropPosition: drag.position }
-                : {})}
-              onKeyDown={keyMove('section', section.id, ordered, section.title)}
               onToggle={() => toggleSection(section)}
             />
             <div id={listId} className="sidebar-section-body" hidden={collapsed}>

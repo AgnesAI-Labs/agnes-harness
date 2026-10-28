@@ -67,12 +67,13 @@
 
   .session {
     width: 100%;
-    min-height: 2rem;
+    height: 1.875rem;
+    min-height: 1.875rem;
     justify-content: flex-start;
-    gap: 0.375rem;
+    gap: var(--s8);
     overflow: hidden;
-    /* 单列表视图没有分区标题可对齐，行按行内 30px 起排；分组列表在侧栏样式里再进一档。 */
-    padding: 0 var(--s8) 0 1.875rem;
+    /* 每一行（置顶、项目内、临时会话、单列表）同一套 10px 内边距；层级由引导线表达，不靠缩进。 */
+    padding: 0 0.625rem;
     border-color: transparent;
     border-radius: var(--radius-control);
     color: var(--agnes-text-primary);
@@ -80,7 +81,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     background: transparent;
-    font-size: var(--font-size-sm);
+    font-size: 0.84375rem;
     font-weight: 400;
     line-height: 1.25rem;
   }
@@ -98,9 +99,15 @@
   .sidebar-footer {
     /* 底部操作行不参与压缩：侧栏是 flex column，空间紧张时若不显式 flex:none，
      这一行会被 `#sessions` 挤扁。配合 `.sidebar` 的 overflow:hidden，
-     「设置」始终完整留在侧栏底部。 */
+     「设置」始终完整留在侧栏底部。52px 高，顶部一条通栏细线，延伸到侧栏两侧内边距之外。 */
     flex: none;
-    margin-top: var(--s8);
+    min-height: 3.25rem;
+    display: flex;
+    align-items: center;
+    gap: var(--s4);
+    margin: var(--s8) -0.75rem 0;
+    padding: 0 0.75rem;
+    border-top: 1px solid var(--agnes-line-primary);
   }
   /* Settings and the host-owned application actions share one icon column and type scale. */
   :is(.sidebar-footer button, .application-footer-item) {

@@ -11,7 +11,12 @@ import { navigationHistory } from './navigation-history.js'
 import { SessionMenu } from './session-menu.js'
 import { isLeadingKind, type Row, type SessionGroupView } from './sidebar-groups.js'
 import { workspaceLabel } from './sidebar-label.js'
-import { type DropPosition, type SidebarSectionId, workspaceKey } from './sidebar-order.js'
+import {
+  type DropPosition,
+  SIDEBAR_SECTION_ORDER,
+  type SidebarSectionId,
+  workspaceKey,
+} from './sidebar-order.js'
 
 /** The workspace a row belongs to, and the name it goes by in a flat list or a search. */
 export function workspaceNames(options: SidebarNavigationOptions, t: Translate) {
@@ -24,10 +29,6 @@ export function workspaceNames(options: SidebarNavigationOptions, t: Translate) 
   return { nameOf }
 }
 
-/**
- * One session row, shared by the paged list and the full-list views: title, running dot, the
- * workspace name and pin mark the flat list adds, the archived treatment, and the action menu.
- */
 const MARK_LABELS: Record<SessionListMark, string> = {
   approval: 'nav.waitingApproval',
   question: 'nav.waitingAnswer',
@@ -35,6 +36,41 @@ const MARK_LABELS: Record<SessionListMark, string> = {
   ended: 'nav.ended',
 }
 
+const DAY_MS = 86_400_000
+
+/**
+ * A row's last activity in the list's short form: 「刚刚」, 「5分钟」, 「3小时」, 「昨天」, 「4天」, then
+ * the date. Days count calendar days, so a session from late last night already reads 「昨天」.
+ */
+export function relativeTime(iso: string | undefined, t: Translate, language: string, now = Date.now()) {
+  const at = iso ? Date.parse(iso) : Number.NaN
+  if (!Number.isFinite(at)) return undefined
+  const elapsed = Math.max(0, now - at)
+  const midnight = (time: number) => {
+    const date = new Date(time)
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+  }
+  const days = Math.round((midnight(now) - midnight(at)) / DAY_MS)
+  if (days <= 0) {
+    if (elapsed < 60_000) return t('nav.time.now')
+    if (elapsed < 3_600_000) return t('nav.time.minutes', { count: Math.floor(elapsed / 60_000) })
+    return t('nav.time.hours', { count: Math.floor(elapsed / 3_600_000) })
+  }
+  if (days === 1) return t('nav.time.yesterday')
+  if (days < 7) return t('nav.time.days', { count: days })
+  const sameYear = new Date(at).getFullYear() === new Date(now).getFullYear()
+  return new Intl.DateTimeFormat(language, {
+    ...(sameYear ? {} : { year: 'numeric' }),
+    month: 'numeric',
+    day: 'numeric',
+  }).format(at)
+}
+
+/**
+ * One session row, shared by the paged list and the full-list views: an unread dot, the title, the
+ * workspace name and pin mark the flat list adds, the archived treatment, and the action menu. The
+ * row end says one thing, in this order: running, waiting for its owner, or when it last moved.
+ */
 export function SessionRowLabel({
   options,
   t,
@@ -67,6 +103,11 @@ export function SessionRowLabel({
   restoring: boolean
   chats: boolean
 }) {
+  const waiting = !active && (mark === 'approval' || mark === 'question')
+  const unread = !active && !running && (mark === 'completed' || mark === 'ended')
+  const activity = row.lastMessageAt ?? row.createdAt
+  const time =
+    running || waiting ? undefined : relativeTime(activity, t, document.documentElement.lang || 'en')
   return (
     <>
       <Button
@@ -74,17 +115,29 @@ export function SessionRowLabel({
         className={active ? 'session active' : 'session'}
         disabled={options.disabled ?? false}
         data-session={row.sessionId}
+        data-status={running ? 'running' : waiting ? 'waiting' : time ? 'time' : undefined}
         aria-current={active ? 'page' : undefined}
         title={title}
         onClick={() => options.open(row.sessionId)}
       >
-        {running && <span className="session-running" role="img" aria-label={t('nav.running')} />}
+        {unread && mark && (
+          <span className="session-unread" data-mark={mark} role="img" aria-label={t(MARK_LABELS[mark])} />
+        )}
         <span className="session-title">{title}</span>
         {workspaceName && <span className="session-workspace-label">{workspaceName}</span>}
-        {mark && !active && (mark === 'approval' || mark === 'question' || !running) && (
+        {running ? (
+          <span className="session-running" role="img" aria-label={t('nav.running')} />
+        ) : waiting && mark ? (
           <span className="session-mark" data-mark={mark} data-testid="session-mark">
             {t(MARK_LABELS[mark])}
           </span>
+        ) : (
+          time &&
+          activity && (
+            <time className="session-time" dateTime={activity}>
+              {time}
+            </time>
+          )
         )}
         {pinnedMark && <Icon name="pin" className="session-pin-mark" />}
         {archived && (
@@ -138,14 +191,15 @@ export type HeadingDrag = {
 /**
  * One heading row for a section or a project: name, fold control, and the right-side actions.
  * Sections and projects share the row and title classes so they read as one family; a project
- * adds `is-nested` for its extra indent and keeps its folder icon, whose open/closed shape is
- * the fold state. The three section headings show no icon, so a chevron after the name carries
- * their fold state instead.
+ * adds `is-nested`, its folder icon and its session count. The three section headings show no
+ * icon, so a small chevron after the name carries their fold state instead. Only a project row
+ * can be dragged or moved with Alt+Arrow; the sections keep their fixed order.
  */
 export function SidebarSectionHeading({
   name,
   title,
   icon,
+  count,
   collapsed,
   listId,
   onToggle,
@@ -159,6 +213,8 @@ export function SidebarSectionHeading({
   title: string
   /** A project's folder glyph; section headings have none and use the chevron instead. */
   icon?: ReactNode
+  /** A project's session count, shown at the row end while the pointer is elsewhere. */
+  count?: number | undefined
   collapsed: boolean
   listId: string
   onToggle(): void
@@ -182,16 +238,23 @@ export function SidebarSectionHeading({
         className="workspace-heading"
         aria-expanded={!collapsed}
         aria-controls={listId}
-        aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
         title={title}
         // The name is the drag source: no separate handle sits in front of the heading.
-        {...(drag ? { draggable: true, onDragStart: drag.onDragStart, onDragEnd: drag.onDragEnd } : {})}
+        {...(drag
+          ? {
+              draggable: true,
+              'aria-keyshortcuts': 'Alt+ArrowUp Alt+ArrowDown',
+              onDragStart: drag.onDragStart,
+              onDragEnd: drag.onDragEnd,
+            }
+          : {})}
         onClick={onToggle}
         onKeyDown={onKeyDown}
       >
         {icon}
         <span className="workspace-name">{name}</span>
         {!icon && <Icon name="chevron-right" className="workspace-chevron" />}
+        {count !== undefined && <span className="workspace-count">{count}</span>}
       </Button>
       {actions}
     </div>
@@ -203,7 +266,7 @@ export const untitled = (options: SidebarNavigationOptions, t: Translate, row: R
   options.labels.get(row.sessionId) ||
   untitledSessionLabel(t(key), row.createdAt, document.documentElement.lang || 'en')
 
-/** One of the three peer sections: 置顶 / 临时会话 / 工作区. */
+/** One of the three peer sections: 置顶 / 项目 / 临时会话. */
 export type SidebarSectionView = {
   id: SidebarSectionId
   title: string
@@ -219,9 +282,9 @@ const workspaceRank = (view: SessionGroupView, rank: ReadonlyMap<string, number>
 }
 
 /**
- * The three sections in a fixed membership: pinned and chats hold one group each, workspaces holds
- * every project. Empty sections are left out. The order of the sections themselves comes from the
- * order store at render time, not from this list.
+ * The three sections in a fixed membership and a fixed order, 置顶 → 项目 → 临时会话: pinned and
+ * chats hold one group each and are left out while empty; 项目 holds every project and always
+ * shows, because its heading carries the list tools and the way to open a project folder.
  */
 export function sectionViews(
   views: readonly SessionGroupView[],
@@ -238,26 +301,14 @@ export function sectionViews(
     .filter((view) => !isLeadingKind(view.kind))
     .filter((view) => view.kind !== 'unassigned' || hasRows(view))
     .sort((left, right) => workspaceRank(left, rank) - workspaceRank(right, rank))
-  const sections: SidebarSectionView[] = []
-  if (pinned && hasRows(pinned))
-    sections.push({
-      id: 'pinned',
-      title: t('nav.pinned'),
-      group: pinned,
-      groups: [],
-    })
-  if (chats && hasRows(chats))
-    sections.push({
-      id: 'chats',
-      title: t('nav.chats'),
-      group: chats,
-      groups: [],
-    })
-  if (projects.length)
-    sections.push({
-      id: 'workspaces',
-      title: t('sidebar.sectionHeading'),
-      groups: projects,
-    })
-  return sections
+  const byId: Record<SidebarSectionId, SidebarSectionView | undefined> = {
+    pinned:
+      pinned && hasRows(pinned)
+        ? { id: 'pinned', title: t('nav.pinned'), group: pinned, groups: [] }
+        : undefined,
+    workspaces: { id: 'workspaces', title: t('sidebar.sectionHeading'), groups: projects },
+    chats:
+      chats && hasRows(chats) ? { id: 'chats', title: t('nav.chats'), group: chats, groups: [] } : undefined,
+  }
+  return SIDEBAR_SECTION_ORDER.flatMap((id) => byId[id] ?? [])
 }

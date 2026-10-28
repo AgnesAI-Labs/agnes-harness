@@ -5,9 +5,9 @@ export const sidebarLocaleCatalog: LocaleCatalog = {
   en: {
     'sidebar.closeNav': 'Close navigation',
     'sidebar.newSession': 'New conversation',
-    'sidebar.sectionHeading': 'Workspaces',
+    'sidebar.sectionHeading': 'Projects',
     'sidebar.sectionHeadingList': 'Sessions',
-    'sidebar.addWorkspace': 'Add workspace',
+    'sidebar.addWorkspace': 'Open project folder',
     'sidebar.sessionsNav': 'Task list',
     'sidebar.settings': 'Settings',
     'sidebar.openNav': 'Open navigation',
@@ -28,9 +28,9 @@ export const sidebarLocaleCatalog: LocaleCatalog = {
   'zh-CN': {
     'sidebar.closeNav': '关闭导航',
     'sidebar.newSession': '新对话',
-    'sidebar.sectionHeading': '工作区',
+    'sidebar.sectionHeading': '项目',
     'sidebar.sectionHeadingList': '会话',
-    'sidebar.addWorkspace': '添加工作区',
+    'sidebar.addWorkspace': '打开项目文件夹',
     'sidebar.sessionsNav': '任务列表',
     'sidebar.settings': '设置',
     'sidebar.openNav': '打开导航',

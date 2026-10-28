@@ -226,7 +226,7 @@ describe('recent sessions per workspace', () => {
       expect(nav.querySelector('[data-session="s7"]')).toBeNull()
       const more = nav.querySelector<HTMLButtonElement>('[data-testid="workspace-sessions-toggle"]')
       if (!more) throw new Error('missing pagination button')
-      expect(more.textContent).toBe('展开显示（还有 12 条）')
+      expect(more.textContent).toBe('显示更多 · 12')
       flushSync(() => more.click())
       expect(action).toHaveBeenLastCalledWith('a', 'more')
       group.error = 'Failed'
@@ -275,12 +275,82 @@ describe('recent sessions per workspace', () => {
       expect(action).toHaveBeenLastCalledWith('a', 'toggle')
     },
   )
-  it('shows the five most recent, then 「展开显示（还有 N 条）」, and all of them once expanded', async () => {
+  it('remembers the fold of the paged 临时会话 and 置顶 sections across page loads', () => {
+    const chats: WorkspaceEntry = {
+      ...workspace,
+      path: '/data/chats',
+      name: 'chats',
+      kind: 'chats',
+      workspaceId: 'c',
+    }
+    const paged = (groupId: string, workspaceId: string | undefined, opened: boolean): SidebarGroupState => ({
+      groupId,
+      ...(workspaceId ? { workspaceId } : {}),
+      total: 1,
+      revision: 'v1',
+      lastMessageAt: null,
+      ready: true,
+      opened,
+      loaded: opened,
+      loading: false,
+      items: opened ? [{ ...session(groupId === 'pinned' ? 1 : 2), cwd: chats.path }] : [],
+    })
+    const mount = (groups: SidebarGroupState[], action: (id: string, act: string) => void) => {
+      const nav = document.createElement('nav')
+      document.body.append(nav)
+      const draw = (next: SidebarGroupState[]) =>
+        flushSync(() =>
+          renderSessionNavigation(
+            {
+              nav,
+              sessions: [],
+              workspaces: [chats],
+              labels: new Map(),
+              newSession: vi.fn(),
+              open: vi.fn(),
+              groupAction: action,
+              paging: { groups: next, ready: true, loading: false },
+            },
+            zhT,
+          ),
+        )
+      draw(groups)
+      return { nav, draw }
+    }
+    // First page load: the pager starts 临时会话 closed; nothing folded it, so the section opens it.
+    const first = vi.fn()
+    const page = mount([paged('pinned', undefined, true), paged('c', 'c', false)], first)
+    expect(first.mock.calls).toEqual([['c', 'toggle']])
+    page.draw([paged('pinned', undefined, true), paged('c', 'c', true)])
+    // The user folds both sections; the store follows the pager.
+    page.nav
+      .querySelector<HTMLButtonElement>('[data-section="chats"] > .workspace-heading-row .workspace-heading')
+      ?.click()
+    page.nav
+      .querySelector<HTMLButtonElement>('[data-section="pinned"] > .workspace-heading-row .workspace-heading')
+      ?.click()
+    expect(first.mock.calls.slice(1)).toEqual([
+      ['c', 'toggle'],
+      ['pinned', 'toggle'],
+    ])
+    page.draw([paged('pinned', undefined, false), paged('c', 'c', false)])
+    expect(JSON.parse(localStorage.getItem('agnes.sidebar.collapsed-workspaces.v1') ?? '[]').sort()).toEqual([
+      '__section__:chats',
+      '__section__:pinned',
+    ])
+    // Next page load: the pager opens 置顶 by default; the remembered fold closes it again.
+    document.body.replaceChildren()
+    const second = vi.fn()
+    mount([paged('pinned', undefined, true), paged('c', 'c', false)], second)
+    expect(second.mock.calls).toEqual([['pinned', 'toggle']])
+  })
+
+  it('shows the five most recent, then 「显示更多 · N」, and all of them once expanded', async () => {
     expect(RECENT_SESSIONS).toBe(5)
     const nav = render()
     expect(titles(nav)).toEqual(['会话 0', '会话 1', '会话 2', '会话 3', '会话 4'])
     const toggle = nav.querySelector<HTMLButtonElement>('[data-testid="workspace-sessions-toggle"]')
-    expect(toggle?.textContent).toBe('展开显示（还有 3 条）')
+    expect(toggle?.textContent).toBe('显示更多 · 3')
     expect(toggle?.getAttribute('aria-expanded')).toBe('false')
     flushSync(() => toggle?.click())
     await vi.waitFor(() => expect(titles(nav)).toHaveLength(8))
@@ -296,9 +366,7 @@ describe('recent sessions per workspace', () => {
   it('keeps the open session in its place even when it is older than the five shown', () => {
     const nav = render('s7')
     expect(titles(nav)).toEqual(['会话 0', '会话 1', '会话 2', '会话 3', '会话 4', '会话 7'])
-    expect(nav.querySelector('[data-testid="workspace-sessions-toggle"]')?.textContent).toBe(
-      '展开显示（还有 2 条）',
-    )
+    expect(nav.querySelector('[data-testid="workspace-sessions-toggle"]')?.textContent).toBe('显示更多 · 2')
   })
 
   it('offers nothing to expand for five or fewer sessions', () => {
@@ -446,12 +514,12 @@ describe('recent sessions per workspace', () => {
 
   it('draws the heading tools small and quiet: 24px buttons, 14px icons, darker when pointed at', () => {
     const css = readWebStyleSource(resolve(__dirname, '../public/style.css'))
-    expect(css).toMatch(
-      /\.sidebar-section-heading \.agh-btn--icon \{[^}]*width: 1\.5rem;[^}]*height: 1\.5rem;/,
-    )
-    expect(css).toMatch(/\.sidebar-section-heading \.agh-btn--icon svg \{[^}]*width: 0\.875rem;/)
-    expect(css).toMatch(
-      /\.sidebar-section-heading \.agh-btn--icon \{[^}]*color: var\(--agnes-text-tertiary\);/,
-    )
+    // One rule covers the single-list heading row and the 项目 / 临时会话 headings of the grouped list.
+    const tools =
+      /:is\(\.sidebar-section-heading, \.sidebar-section-tools, \.sidebar-section > \.workspace-heading-row\)\s+\.agh-btn--icon,[^{]*\{([^}]*)\}/
+    const body = css.match(tools)?.[1] ?? ''
+    expect(body).toMatch(/width: 1\.5rem;[\s\S]*height: 1\.5rem;/)
+    expect(body).toContain('color: var(--agnes-text-tertiary);')
+    expect(css).toMatch(/\.workspace-heading-row\)\s+\.agh-btn\s+svg \{[^}]*width: 0\.875rem;/)
   })
 })

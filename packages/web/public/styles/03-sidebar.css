@@ -3,7 +3,7 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
-    padding: 0 0.625rem 0.375rem;
+    padding: 0 0.75rem;
     /* 侧栏自己**不滚动**：滚动职责只归 `#sessions`。此前这里是 `auto`，
      一旦内容总高超出视口（窗口拉矮，或 `sidebar.panellist` 插槽有内容），
      整个侧栏变成滚动容器，底部的「设置」行会随列表一起滚出视野。
@@ -30,13 +30,14 @@
     display: flex;
     align-items: center;
   }
-  /* Same 44px as the top bar, so both headers share one baseline across the app. */
+  /* The 52px brand row: mark and name on the left, the collapse control on the right. */
   .sidebar-head {
     justify-content: space-between;
     gap: 0.5rem;
-    padding: 0 0 0 0.375rem;
-    margin: 0 0 0.5rem;
-    min-height: 2.75rem;
+    padding: 0 0 0 0.25rem;
+    margin: 0;
+    min-height: 3.25rem;
+    flex: none;
   }
   .brand-lockup {
     min-width: 0;
@@ -100,47 +101,102 @@
   }
   .sidebar-actions {
     display: grid;
+    flex: none;
+    padding-top: var(--s4);
   }
-  /* New session is a soft surface button in the composer's radius family: label on the left, its
-   shortcut chip on the right. */
+  /* New session is the one prominent action: a 36px surface button with a hairline, its label on
+   the left and its shortcut chip on the right. */
   .sidebar-actions :where(#new) {
     width: 100%;
+    height: 2.25rem;
+    min-height: 2.25rem;
+    gap: 0.625rem;
+    padding: 0 0.625rem;
     justify-content: flex-start;
     background: var(--agnes-bg-surface);
+    font-size: 0.84375rem;
+    font-weight: var(--font-weight-medium);
   }
   body:not(.sidebar-collapsed) .sidebar-actions #new:not(:disabled) {
     border-color: var(--agnes-line-primary);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-sm);
     box-shadow: var(--shadow-hairline);
   }
   body:not(.sidebar-collapsed) .sidebar-actions #new:hover:not(:disabled) {
     border-color: var(--agnes-line-emphasis);
   }
   body:not(.sidebar-collapsed) .sidebar-actions #new:disabled {
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-sm);
   }
   .sidebar-actions :where(#new) > kbd {
     margin-left: auto;
     border-radius: var(--radius-control);
+    font-weight: 400;
   }
-  /* A running session breathes; the motion is slow and stops under reduced motion. */
+  /* Search reads as a field, not a toolbar icon: full width, a quiet fill, its shortcut at the end. */
+  .sidebar-search {
+    flex: none;
+    display: grid;
+    padding: 0.875rem 0 0.375rem;
+  }
+  .sidebar-search :where(#session-search) {
+    width: 100%;
+    height: 2rem;
+    min-height: 2rem;
+    gap: var(--s8);
+    padding: 0 0.625rem;
+    justify-content: flex-start;
+    border-color: transparent;
+    border-radius: var(--radius-sm);
+    color: var(--agnes-text-tertiary);
+    background: var(--agnes-bg-hover);
+    font-size: 0.84375rem;
+    font-weight: 400;
+  }
+  .sidebar-search #session-search:hover:not(:disabled) {
+    border-color: transparent;
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-selected);
+  }
+  .sidebar-search-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-align: start;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sidebar-search :where(#session-search) > kbd {
+    margin-left: auto;
+  }
+  /* The two sidebar shortcuts read as quiet text (⇧⌘O, ⌘K), not as raised keycaps. */
+  :is(.sidebar-actions #new, .sidebar-search #session-search) .agh-kbd {
+    gap: 1px;
+  }
+  :is(.sidebar-actions #new, .sidebar-search #session-search) .agh-kbd-key {
+    min-width: 0;
+    height: auto;
+    padding: 0;
+    color: var(--agnes-text-tertiary);
+    background: transparent;
+    font-size: 0.71875rem;
+    font-weight: 400;
+  }
+  /* The row end says one thing: a running spinner, a waiting pill, or the last activity time.
+     The spinner stops under reduced motion and stays a ring with a gap. */
   .session-running {
     flex: 0 0 auto;
-    width: 6px;
-    height: 6px;
-    /* Sits in the folder indent, so a title does not shift when its session starts running. */
-    margin-left: calc(-6px - 0.375rem);
+    width: 0.75rem;
+    height: 0.75rem;
+    margin-left: auto;
+    border: 2px solid var(--agnes-brand-primary);
+    border-right-color: transparent;
     border-radius: var(--radius-full);
-    background: var(--agnes-brand-primary);
-    animation: session-breathe 2.4s ease-in-out infinite;
+    animation: session-spin 0.9s linear infinite;
   }
-  @keyframes session-breathe {
-    0%,
-    100% {
-      opacity: 0.35;
-    }
-    50% {
-      opacity: 1;
+  @keyframes session-spin {
+    to {
+      rotate: 360deg;
     }
   }
   @media (prefers-reduced-motion: reduce) {
@@ -148,28 +204,48 @@
       animation: none;
     }
   }
-  /* A row's run mark at its end: waiting for the owner, or a turn that ended while unseen. */
+  /* Waiting for the owner: a small pill, warning for an approval and info for a question. */
   .session-mark {
     flex: 0 0 auto;
+    height: 1.125rem;
+    display: inline-flex;
+    align-items: center;
     margin-left: auto;
-    padding: 0 var(--s4);
+    padding: 0 0.375rem;
     border-radius: var(--radius-full);
-    color: var(--agnes-brand-primary);
-    background: var(--agnes-bg-subtle);
-    font-size: var(--font-size-xs);
-    line-height: 1.125rem;
-    white-space: nowrap;
-  }
-  /* A workspace label already takes the free space; the mark sits right after it. */
-  .session-workspace-label + .session-mark {
-    margin-left: var(--s4);
-  }
-  .session-mark[data-mark="ended"] {
-    color: var(--agnes-text-tertiary);
-  }
-  .session-mark:is([data-mark="approval"], [data-mark="question"]) {
     color: var(--agnes-status-warning-text);
     background: var(--agnes-status-warning-bg);
+    font-size: 0.6875rem;
+    font-weight: var(--font-weight-medium);
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .session-mark[data-mark="question"] {
+    color: var(--agnes-status-info-text);
+    background: var(--agnes-status-info-bg);
+  }
+  .session-time {
+    flex: 0 0 auto;
+    margin-left: auto;
+    color: var(--agnes-text-tertiary);
+    font-size: 0.71875rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  /* A workspace label already takes the free space; the row end sits right after it. */
+  .session-workspace-label + :is(.session-mark, .session-time, .session-running) {
+    margin-left: var(--s4);
+  }
+  /* A turn that ended while another session was on screen: a dot before the title until opened. */
+  .session-unread {
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-full);
+    background: var(--agnes-brand-primary);
+  }
+  .session-unread[data-mark="ended"] {
+    background: var(--agnes-text-tertiary);
   }
   .section-label {
     margin: 0;
@@ -179,9 +255,10 @@
     flex: 1;
     display: grid;
     align-content: start;
-    /* 三个分区（置顶 / 临时会话 / 工作区）是列表的实际子项，这一段就是分组间距：
-       16px 和「标题到首行」的空隙太接近，分区读起来还是一整片；28px 比尺度上的 24px 再松一档。 */
-    gap: 1.75rem;
+    /* 三个分区（置顶 / 项目 / 临时会话）是列表的实际子项：标题本身已经是一条 30px 的安静分隔，
+       分区之间只再留 10px。 */
+    gap: 0.625rem;
+    padding-top: 0.375rem;
     /* flex:1 + min-height:0 会把列表压进剩余空间；不裁 overflow 时多出来的行
      直接画到下面的「设置」行上。列表自己滚动，footer 才能钉在底部。 */
     overflow-y: auto;
@@ -193,6 +270,8 @@
     min-height: 0;
     max-height: 40%;
     display: grid;
+    /* A long title ellipsizes inside the row instead of widening the column past the sidebar. */
+    grid-template-columns: minmax(0, 1fr);
     align-content: start;
     gap: var(--s4);
     overflow-y: auto;
@@ -208,41 +287,60 @@
     gap: var(--s2);
   }
   .workspace-heading-row {
+    position: relative;
     min-width: 0;
+    min-height: 1.875rem;
     display: flex;
     align-items: center;
     gap: var(--s2);
-    border-radius: var(--radius-control);
+    border-radius: 0.375rem;
   }
-  .workspace-heading-row:hover {
+  .workspace-heading-row.is-nested:hover {
     background: var(--agnes-bg-hover);
   }
+  /* 项目行与会话行同一套 30px 行高、10px 内边距：文件夹图标、中等字重的项目名、行尾会话数。 */
   .workspace-heading {
     flex: 1;
     min-width: 0;
-    min-height: 2rem;
-    gap: 0.375rem;
+    height: 1.875rem;
+    min-height: 1.875rem;
+    gap: var(--s8);
     justify-content: flex-start;
-    /* 所有标题都从行内内边距起排：分区标题放文字，项目标题把文件夹图标放进这一列，
-       文字因此自然缩进一档。 */
-    padding: 0 var(--s8);
+    padding: 0 0.625rem;
     border-color: transparent;
-    border-radius: var(--radius-control);
+    border-radius: 0.375rem;
     color: var(--agnes-text-secondary);
     background: transparent;
-    font-size: var(--font-size-sm);
-    font-weight: 400;
+    font-size: 0.84375rem;
+    font-weight: var(--font-weight-medium);
     line-height: 1.25rem;
     transition: none;
   }
-  /* 三个分区标题没有前置图标，折叠状态由标题后的深灰箭头表达：收起指右，展开转 90° 指下。
-     项目标题仍用文件夹的开/合字形表意。 */
+  .workspace-heading .icon-folder {
+    width: 0.9375rem;
+    height: 0.9375rem;
+    flex: none;
+    fill: currentColor;
+  }
+  .workspace-count {
+    flex: none;
+    margin-left: auto;
+    color: var(--agnes-text-tertiary);
+    font-size: 0.71875rem;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+  }
+  /* The count gives way to the project's actions while they show. */
+  .workspace-heading-row.is-nested:is(:hover, :focus-within) .workspace-count {
+    display: none;
+  }
+  /* 三个分区标题没有前置图标，折叠状态由标题后的小箭头表达：收起指右，展开转 90° 指下。 */
   .workspace-chevron {
-    width: 1rem;
-    height: 1rem;
+    width: 0.75rem;
+    height: 0.75rem;
     flex: 0 0 auto;
-    color: var(--agnes-text-secondary);
-    stroke-width: 2;
+    color: var(--agnes-text-tertiary);
+    stroke-width: 2.2;
   }
   .workspace-heading[aria-expanded="true"] .workspace-chevron {
     rotate: 90deg;
@@ -252,37 +350,40 @@
     scale: none;
     filter: none;
   }
-  /* 三个分区标题是列表里的分组标签：颜色压到三级灰，和下面的会话标题区分开；
-     字号比项目标题和行标题大一档，让「先读分组、再读行」的层次成立。 */
-  .sidebar-section > .workspace-heading-row .workspace-heading {
-    color: var(--agnes-text-tertiary);
-    font-size: var(--font-size-body);
-  }
   /* 底色由整行承担：通用 button:hover 会给标题按钮补一圈描边和一块比行短的底色。 */
   .workspace-heading:hover:not(:disabled) {
     border-color: transparent;
     background: transparent;
   }
-  /* 分组列表里会话行单独一档（文字 51px）：分区标题文字 19px，项目标题的图标也起在 19px、
-     文字落到 43px。层级靠缩进，不靠图标。 */
-  .sidebar-section-body .session {
-    padding-left: 2.5rem;
+  /* 三个分区标题是列表里的分组标签：12px、中等字重、三级灰，只占文字本身的宽度；
+     行尾留给本分区的工具。 */
+  .sidebar-section > .workspace-heading-row {
+    padding: 0 var(--s4) 0 0.625rem;
   }
-  /* 置顶与临时会话没有文件夹图标可对位，行标题直接落在分区标题的文字列上（同为 19px）；
-     工作区里的项目标题带图标，行仍按上面那档缩进。文字列一致后，两类的行不再多缩进一档。 */
-  .sidebar-section[data-section="pinned"] .sidebar-section-body .session,
-  .sidebar-section[data-section="chats"] .sidebar-section-body .session {
-    padding-left: var(--s8);
+  .sidebar-section > .workspace-heading-row .workspace-heading {
+    flex: 0 1 auto;
+    height: 1.5rem;
+    min-height: 1.5rem;
+    gap: var(--s4);
+    padding: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
   }
-  /* 这两类的行没有缩进列可放运行圆点：基准规则的 -12px 负边距会把圆点推到行左边缘外，
-     被 .session 的 overflow:hidden 裁掉。这里让圆点跟在文字列前面作项目符号，
-     运行中的行标题因此右移 12px；不运行时标题仍与分区标题对齐。 */
-  .sidebar-section[data-section="pinned"] .sidebar-section-body .session-running,
-  .sidebar-section[data-section="chats"] .sidebar-section-body .session-running {
-    margin-left: 0;
+  .sidebar-section > .workspace-heading-row .workspace-heading:hover:not(:disabled) {
+    color: var(--agnes-text-secondary);
+  }
+  .sidebar-section > .workspace-heading-row > :is(.workspace-row-actions, .sidebar-section-tools) {
+    margin-left: auto;
+  }
+  /* 项目里的会话不再靠深缩进：左侧一条 1px 引导线（距列表左缘 17px）把它们挂在项目下面，
+     行本身与置顶、临时会话的行同一套内边距。 */
+  .workspace-group.is-nested > .workspace-sessions {
+    margin-left: 1.0625rem;
+    padding-left: 0.625rem;
+    border-left: 1px solid var(--agnes-line-primary);
   }
   /* The folder's new-session action appears with the pointer or keyboard focus; touch has no
-     hover, so the narrow drawer keeps it visible. */
+     hover, so the narrow drawer keeps it visible. A section heading's own tools always show. */
   .workspace-heading-row .workspace-row-actions {
     display: flex;
     align-items: center;
@@ -293,9 +394,21 @@
   }
   .workspace-heading-row:hover .workspace-row-actions,
   .workspace-heading-row:focus-within .workspace-row-actions,
-  .workspace-row-actions:has([aria-expanded="true"]) {
+  .workspace-row-actions:has([aria-expanded="true"]),
+  .sidebar-section > .workspace-heading-row .workspace-row-actions {
     opacity: 1;
     pointer-events: auto;
+  }
+  .sidebar-section > .workspace-heading-row .workspace-row-actions {
+    margin-right: 0;
+  }
+  /* A project's actions overlay the row end, where its session count gives way to them, so the
+     hidden actions take no room and the count sits at the edge. */
+  .workspace-heading-row.is-nested .workspace-row-actions {
+    position: absolute;
+    inset-block: 0;
+    right: 0;
+    margin-right: var(--s4);
   }
   .workspace-row-actions .agh-btn {
     width: 1.5rem;
@@ -326,6 +439,10 @@
     .workspace-heading-row .workspace-row-actions {
       opacity: 1;
       pointer-events: auto;
+    }
+    /* Touch keeps the project's actions showing, so they hold the row end instead of the count. */
+    .workspace-heading-row.is-nested .workspace-count {
+      display: none;
     }
   }
   .workspace-heading .workspace-name {
@@ -362,29 +479,29 @@
   /* A folder can hold no session yet: say so on the same indent as a row title, small and muted,
      so it reads as a note about the folder instead of a session written in body text. */
   .session-group-empty {
-    margin: var(--s2) 0 var(--s4) 2rem;
-    padding: 0 var(--s8);
+    margin: 0;
+    padding: var(--s4) 0.625rem;
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
     line-height: 1.25rem;
   }
   .session-conversations {
-    gap: var(--s2);
+    gap: 0;
     padding: 0;
     overflow: visible;
   }
   .session-conversations .ant-conversations-list {
-    gap: var(--s2);
+    gap: 0;
   }
   /* Switching sessions is a high-frequency action: row states change without a transition. */
   .session-conversations .session-row {
     position: relative;
     min-width: 0;
     height: auto;
-    min-height: 2rem;
+    min-height: 1.875rem;
     gap: 0;
     padding: 0;
-    border-radius: var(--radius-control);
+    border-radius: 0.375rem;
     cursor: default;
     transition: none;
   }
@@ -405,10 +522,10 @@
   .session-conversations .session-row[data-menu-open="true"] {
     background: var(--agnes-bg-hover);
   }
-  /* The current session reads as a raised surface with a hairline, not as an accent fill. */
+  /* The current session is a quiet selected fill and a medium-weight title: no card, no border. */
   .session-conversations .session-row[data-active="true"] {
-    background: var(--agnes-bg-surface);
-    box-shadow: inset 0 0 0 1px var(--agnes-line-primary);
+    background: var(--agnes-bg-selected);
+    box-shadow: none;
   }
   .session .session-title {
     min-width: 0;
@@ -416,32 +533,44 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .session-row[data-active="true"] .session-title {
+    font-weight: var(--font-weight-medium);
+  }
   /* An empty list teaches the next step in the space the list will fill. */
   .session-list-empty {
     padding: var(--s24) var(--s8);
     text-align: center;
   }
+  /* The row's menu takes no room until the row is pointed at or focused; the time steps aside for
+     it. Width 0 (not display:none) keeps its trigger in the tab order. */
   .session-menu {
     flex: none;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 1.5rem;
-    margin-right: var(--s8);
+    width: 0;
+    overflow: hidden;
     opacity: 0;
     pointer-events: none;
   }
   .session-row:hover .session-menu,
   .session-row:focus-within .session-menu,
   .session-row[data-menu-open="true"] .session-menu {
+    width: 1.5rem;
+    margin-right: var(--s4);
     opacity: 1;
     pointer-events: auto;
+  }
+  .session-row:is(:hover, :focus-within, [data-menu-open="true"]) .session-time {
+    display: none;
   }
   /* Touch has no durable hover target.  Keeping the session action hit area inert on a narrow
    sidebar made the menu unreachable by an ordinary tap; expose the already-reserved action slot
    there while retaining the compact hover treatment for pointer desktops. */
   @media (max-width: 720px) {
     .session-menu {
+      width: 1.5rem;
+      margin-right: var(--s4);
       opacity: 1;
       pointer-events: auto;
     }
@@ -474,6 +603,8 @@
 
   .sidebar-footer > .agh-tooltip-anchor {
     display: flex;
+    flex: 1;
+    min-width: 0;
   }
   .sidebar-footer #settings {
     width: 100%;
@@ -498,48 +629,60 @@
     font-weight: 600;
     letter-spacing: 0;
   }
+  /* The single-list heading row, styled like the grouped list's section headings. */
   .sidebar-section-heading {
+    flex: none;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.25rem;
-    min-height: 1.75rem;
-    padding-left: var(--s8);
-    margin: var(--s12) 0 var(--s2);
+    min-height: 1.875rem;
+    padding: 0 var(--s4) 0 0.625rem;
+    margin: 0.625rem 0 0;
   }
   /* The heading's tools sit together at the end of the row instead of spreading out. */
-  .sidebar-section-heading .sidebar-session-tools {
+  .sidebar-section-tools,
+  :is(.sidebar-section-heading, .sidebar-section-tools) .sidebar-session-tools {
     display: flex;
     align-items: center;
     gap: 0.125rem;
   }
   /* The heading's tools are small and quiet: 24px buttons, 14px icons, muted until pointed at. */
-  .sidebar-section-heading .agh-btn--icon {
+  :is(.sidebar-section-heading, .sidebar-section-tools, .sidebar-section > .workspace-heading-row)
+  .agh-btn--icon,
+  .sidebar-section > .workspace-heading-row .workspace-row-actions .agh-btn {
     width: 1.5rem;
     min-width: 1.5rem;
     height: 1.5rem;
     min-height: 1.5rem;
     padding: 0;
+    border-radius: 0.3125rem;
     color: var(--agnes-text-tertiary);
   }
-  .sidebar-section-heading .agh-btn--icon svg {
+  :is(.sidebar-section-heading, .sidebar-section-tools, .sidebar-section > .workspace-heading-row)
+    .agh-btn
+    svg {
     width: 0.875rem;
     height: 0.875rem;
   }
-  .sidebar-section-heading .agh-btn--icon:is(:hover, :focus-visible):not(:disabled) {
+  :is(.sidebar-section-heading, .sidebar-section-tools, .sidebar-section > .workspace-heading-row)
+    .agh-btn:is(:hover, :focus-visible):not(:disabled) {
     color: var(--agnes-text-primary);
     background: var(--agnes-bg-hover);
   }
-  /* 「展开显示（还有 N 条）」 under a workspace's recent sessions: small, grey, a light fill on hover. */
+  /* 「显示更多 · N」 under a group's recent sessions: a quiet 28px row on the rows' text column. */
   .session-list-toggle.agh-btn {
-    height: 1.625rem;
-    min-height: 1.625rem;
-    margin: var(--s2) 0 var(--s4) 2rem;
-    padding: 0 var(--s8);
-    border-radius: var(--radius-control);
+    width: 100%;
+    height: 1.75rem;
+    min-height: 1.75rem;
+    justify-content: flex-start;
+    margin: 0;
+    padding: 0 0.625rem;
+    border-color: transparent;
+    border-radius: 0.375rem;
     color: var(--agnes-text-tertiary);
     background: transparent;
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-caption);
     font-weight: 400;
   }
   .session-list-toggle.agh-btn:hover:not(:disabled) {
@@ -551,29 +694,24 @@
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
   }
-  /* With no label of its own, the heading row is only a toolbar: search, view, add workspace. */
-  .sidebar-section-heading.is-toolbar {
-    justify-content: flex-end;
-    padding-left: 0;
-  }
-  /* The grouped list: three peer sections (置顶 / 临时会话 / 工作区), each folding its own body. */
+  /* The grouped list: three peer sections (置顶 / 项目 / 临时会话), each folding its own body. */
   .sidebar-section {
     min-width: 0;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: var(--s2);
+    gap: 0;
   }
   /* 归档等视图把分区放进 .sidebar-inventory 里再渲染，默认分页视图则直接放在 #sessions 下。
      容器不同，分区间距要与 #sessions 保持一致；只在真的装了分区时才拉大，
      免得分组之外（搜索框、加载提示）也一起变松。 */
   .sidebar-inventory:has(> .sidebar-section) {
-    gap: 1.75rem;
+    gap: 0.625rem;
   }
   .sidebar-section-body {
     min-width: 0;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: var(--s4);
+    gap: var(--s2);
   }
 
   /* The heading name is the drag source, but a plain hover still reads as a button:
@@ -585,9 +723,6 @@
     cursor: grabbing;
   }
   /* The insertion line sits on the heading the pointer is over, before or after its midpoint. */
-  .workspace-heading-row {
-    position: relative;
-  }
   .workspace-heading-row[data-drop]::after {
     content: "";
     position: absolute;
@@ -603,8 +738,7 @@
   .workspace-heading-row[data-drop="after"]::after {
     bottom: -1px;
   }
-  /* The row being dragged dims so the insertion line reads as the destination. */
-  .sidebar-section[data-dragging="true"] > .workspace-heading-row,
+  /* The project being dragged dims so the insertion line reads as the destination. */
   .workspace-group[data-dragging="true"] > .workspace-heading-row {
     opacity: 0.5;
   }
