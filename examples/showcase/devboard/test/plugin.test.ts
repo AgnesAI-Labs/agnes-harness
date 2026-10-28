@@ -593,6 +593,11 @@ describe('DevBoard plugin contract', () => {
     expect(readFileSync(new URL('../skills/devboard-playbook.md', import.meta.url), 'utf8')).not.toContain(
       '现场项目：车门健康监测看板',
     )
+    // A new requirement typed in chat must create a project, not resume a pending one on the board.
+    const playbook = readFileSync(new URL('../skills/devboard-playbook.md', import.meta.url), 'utf8')
+    expect(playbook).toMatch(
+      /对话里提出新项目需求，就新建项目[\s\S]*devboard_project_create[\s\S]*不得改去推进看板上已有的项目/,
+    )
     for (const input of [
       { type: 'task', id: 'TASK-001' },
       { type: 'gate', id: 'GATE-404' },
@@ -1295,6 +1300,9 @@ describe('DevBoard plugin contract', () => {
       const role = bundles[ref.split('#')[1]]
       expect(role.presets.devboard.model.system_prompt.personaPrefix).toContain('全过程')
     }
+    expect(bundles.coordinator.presets.devboard.model.system_prompt.personaPrefix).toMatch(
+      /新项目需求时先用 devboard_project_create 新建项目，不要去推进看板上已有的项目/,
+    )
     for (const ref of application.agents.filter((r: string) => !r.endsWith('#coordinator'))) {
       expect(application.agents).toContain(ref)
       const role = bundles[ref.split('#')[1]]
