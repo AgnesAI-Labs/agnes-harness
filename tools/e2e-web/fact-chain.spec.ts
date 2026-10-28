@@ -34,7 +34,7 @@ for (const locale of ['en', 'zh-CN'])
       await page.getByTestId('conversation-turn').last().getByTestId('turn-process-toggle').click()
       await page.getByTestId('tool-detail-toggle').click()
       await expect(page.getByTestId('tool-detail-text')).toContainText('Synthetic delivery')
-      await screen(page, info, `tool-row-${locale}-${theme}`)
+      // ui-gate's main-screens case owns tool-row pixels; its sidebar inventory differs from this flow.
       await expect(page.getByTestId('tool-detail-toggle')).toHaveAttribute('aria-expanded', 'true')
       const entry = page.getByTestId('tool-fact-chain').last()
       await entry.click()
