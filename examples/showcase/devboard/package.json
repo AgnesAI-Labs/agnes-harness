@@ -1,6 +1,6 @@
 {
   "name": "@agnes-showcase/devboard",
-  "version": "3.7.14",
+  "version": "3.7.15",
   "type": "module",
   "license": "Apache-2.0",
   "engines": {
@@ -950,7 +950,8 @@
         "@agnes-showcase/devboard#rams",
         "@agnes-showcase/devboard#quality",
         "@agnes-showcase/devboard#config"
-      ]
+      ],
+      "delegatedFullAccess": true
     },
     "metadata": {
       "displayName": "DevBoard R&D lifecycle workbench",

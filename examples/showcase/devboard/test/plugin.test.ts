@@ -1295,6 +1295,8 @@ describe('DevBoard plugin contract', () => {
       ['coordinator', ...Object.keys(titles)].map((role) => `${pkg.name}#${role}`),
     )
     expect(application.delegableAgents).toEqual(Object.keys(titles).map((role) => `${pkg.name}#${role}`))
+    // Opt-in: roles' core tool gates follow the coordinator's Full access; business signing stays refused.
+    expect(application.delegatedFullAccess).toBe(true)
     for (const ref of application.agents) {
       expect(contracts[ref]?.document.launch?.preset).toBe('devboard')
       const role = bundles[ref.split('#')[1]]
