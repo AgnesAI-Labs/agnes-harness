@@ -76,7 +76,9 @@ await client.extensions.wakes.enqueue({
 
 已安装且受信任的插件可注入 `profileRuntime`，声明 profile 范围的 `managedServices`、`artifact: { kind: 'in-process' }`、经审查的回环监听地址和有界启停期限。`ctx.profileRuntime.register({ id, configSchema, defaultConfig, start, check? })` 只注册 factory；staged 与 pinned 树不启动资源，只有当前 profile 发布后才在共享 Host worker 中启动。会话 composition 容器只注册 factory，不接管 profile 所有权。启动时先完成发行默认包刷新和固定目标发布，再首次注册资源。替换先完成旧资源停机，`handle.get()` 拒绝过时或未就绪的资源。此路径属于受信任的进程内执行；Node/OCI artifact 仍使用独立进程 supervisor。
 
-`start(init)` 接收 owner 隔离存储、绑定通知、选定监听端口、已校验配置及生命周期 signal。绑定监听前须安装 `init.onShutdown`，恢复与绑定完成后才调用 `init.ready()`。Host 会先排空受管停机，再撤销插件注册与流，并持久化已确认的收敛结果。未确认停机仅在记录的 worker PID 与启动身份能证明旧进程内资源的 owner 已消失（包括 PID 被复用）时自动恢复；owner 仍存活时拒绝重新启动；身份缺失或核验失败时须通过下述审核恢复操作。这只核实资源存活状态：结果未知的操作保持 unknown，绝不自动重放。通用 `listenerPorts` 配置仅能为 `auto` 监听选择端口，不能改变 host 或覆盖已审查的固定端口。
+`start(init)` 接收 owner 隔离存储、绑定通知、选定监听端口、已校验配置及生命周期 signal。绑定监听前须安装 `init.onShutdown`，恢复与绑定完成后才调用 `init.ready()`。Host 会先排空受管停机，再撤销插件注册与流，并持久化已确认的收敛结果。没有可核验的迟到清理确认时，未确认停机仅在记录的 worker PID 与启动身份能证明旧进程内资源的 owner 已消失（包括 PID 被复用）时自动恢复；owner 仍存活时拒绝重新启动；身份缺失或核验失败时须通过下述审核恢复操作。这只核实资源存活状态：结果未知的操作保持 unknown，绝不自动重放。通用 `listenerPorts` 配置仅能为 `auto` 监听选择端口，不能改变 host 或覆盖已审查的固定端口。
+
+已就绪资源的关闭回调若在超时后才返回 `settled`，Host 只在资源实例编号和记录的 worker 身份仍匹配时接受这份迟到确认。确认会跟随被阻止启动的替代资源，只清除对应实例的关闭标记；清理期间禁用插件也不会丢失确认。之后可通过已有重试、核对恢复或重新启用启动当前 factory，无需重启 worker；回调本身不自动启动资源。清理结果未知或拒绝、实例或 worker 身份变化，以及没有这份确认的旧记录，继续遵循保守恢复规则。操作结果保持不变，标记版本变化会使此前的恢复决策失效。
 
 Host 将 `<id>.status`、`<id>.configuration`、`<id>.check`、`<id>.retry`、`<id>.reconcile`、`<id>.configure` 注册为普通 profile 服务，客户端须逐项列入 allowlist。状态只暴露公开监听地址；配置和重试保留原生批准。插件提供的 check 通过同一接口报告领域健康。
 
@@ -93,7 +95,7 @@ Profile 数据 producer 可在 events 或 media 通道的 inbound profile stream
 
 当前配置资源处于 `failed / shutdown-unconfirmed` 时，以 `{}` 和新的操作 ID 请求 Host 提供的 `<id>.reconcile` effect。客户端 allowlist 和审核能力声明必须包含该精确服务名（可用 `managedServiceCapabilities` 声明此门面）。已认证来源需要精确服务授权，主体也必须获准执行该资源管理操作；agent 不能请求配置级 effect。
 
-Host 先检查保存的进程身份。确认旧进程已退出（包括 PID 已被不同启动身份复用）时，可自动恢复，无需人工确认存活状态。缺少身份或探测不可用时，发起原生 AR1 决策，列出资源、所属包、代际和最后已知身份。同一包和服务更新其 owner 时，未确认关闭标记交接给替代资源，并记录前任 owner、activation 身份和 integrity；审批绑定也包含该前任身份。旧的纯布尔标记仍需一次审批。**允许一次**表示操作者确认旧进程已不再运行。身份匹配且仍存活时，即使已经批准也拒绝恢复。拒绝、代际或资源实例变化、前任身份变化、关闭标记版本变化均保留锁定；审核新状态后使用新的操作 ID。清除标记并启动替代资源前再次检查身份及版本。恢复不会向记录的 PID 发信号，也不会重置或重放操作日志、回执或设备运动；未知操作结果仍保持未知。
+Host 接受同一实例的可核验迟到清理确认，或检查保存的进程身份。确认旧进程已退出（包括 PID 已被不同启动身份复用）时，可自动恢复，无需人工确认存活状态。缺少身份或探测不可用时，发起原生 AR1 决策，列出资源、所属包、代际和最后已知身份。同一包和服务更新其 owner 时，未确认关闭标记交接给替代资源，并记录前任 owner、activation 身份和 integrity；审批绑定也包含该前任身份。旧的纯布尔标记仍需一次审批。**允许一次**表示操作者确认旧进程已不再运行。没有上述清理确认且身份匹配、仍存活时，即使已经批准也拒绝恢复。拒绝、代际或资源实例变化、前任身份变化、关闭标记版本变化均保留锁定；审核新状态后使用新的操作 ID。清除标记并启动替代资源前再次检查身份及版本。恢复不会向记录的 PID 发信号，也不会重置或重放操作日志、回执或设备运动；未知操作结果仍保持未知。
 
 本地操作者可不打开会话，使用同一审批流程：
 
