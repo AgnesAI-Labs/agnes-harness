@@ -177,7 +177,7 @@ export async function createCompositionHost(
   const containerKey = (binding: CompositionBinding) => `${binding.tree.hash}:${binding.profile.hash}`
   const open = async (
     binding: CompositionBinding,
-    // Agent resolution and child sessions pass `open` along and always open for a session.
+    // Agent/role review also opens containers without a session key; only boot owns profile resources.
     reason: 'boot' | 'session' | 'migration' = 'session',
   ): Promise<Container> => {
     const identity = containerKey(binding)
@@ -254,7 +254,7 @@ export async function createCompositionHost(
           },
           compositionPin: binding.tree,
           ...(pinned && binding.sessionKey ? { retainedModelBootstrap: true } : {}),
-          ...(binding.sessionKey ? { profileAuthorityPublication: 'retained' as const } : {}),
+          ...(reason !== 'boot' ? { profileAuthorityPublication: 'retained' as const } : {}),
           ...(target && !pinned
             ? {
                 ordinaryPluginLayers: pluginWorkspaceLayers(

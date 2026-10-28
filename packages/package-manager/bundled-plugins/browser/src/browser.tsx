@@ -26,7 +26,7 @@ export function apply(ctx: ClientContext) {
     const [copiedRecovery, setCopiedRecovery] = useState(false)
     const [showEvents, setShowEvents] = useState(false)
     const [actualSize, setActualSize] = useState(false)
-    const [fixedSize, setFixedSize] = useState(false)
+    const [fixedSize, setFixedSize] = useState(true)
     // biome-ignore lint/correctness/useExhaustiveDependencies: never reuse a channel across conversations.
     const interaction = useMemo(() => new BrowserInteraction(ctx), [state.sessionId])
     useEffect(() => {

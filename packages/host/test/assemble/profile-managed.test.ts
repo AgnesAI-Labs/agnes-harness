@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { ScriptedProvider } from '@agnes/ai/testkit'
 import { createLoader } from '@agnes/host-extensions/ext-host/loader'
 import { pluginRowSource } from '@agnes/host-extensions/ext-host/row-extension-host'
 import * as processIdentity from '@agnes/host-infrastructure/adapters/process-identity-default'
@@ -37,14 +38,45 @@ it('binds the actual browser package to one current resource across plugin activ
   writeFileSync(
     join(directory, 'src/launcher.mjs'),
     [
+      "import { EventEmitter } from 'node:events'",
       'export function createLauncher() { return {',
       'async check() {}, cancel() {},',
       "prepare(runtime) { runtime.state = 'ready'; runtime.notify() },",
-      "async launch() { throw new Error('The contract fixture never launches processes') }",
+      `async launch() {
+        const browser = new EventEmitter(), contexts = []
+        browser.newContext = async () => {
+          const context = new EventEmitter(), pages = []
+          context.route = context.routeWebSocket = async () => {}
+          context.newPage = async () => {
+            const page = new EventEmitter(), frame = {}
+            let url = 'about:blank', closed = false
+            page.url = () => url
+            page.mainFrame = () => frame
+            page.isClosed = () => closed
+            page.goto = async (next) => { url = next; page.emit('framenavigated', frame) }
+            page.close = async () => { if (!closed) { closed = true; page.emit('close') } }
+            pages.push(page)
+            context.emit('page', page)
+            return page
+          }
+          context.close = () => Promise.all(pages.map(page => page.close()))
+          contexts.push(context)
+          return context
+        }
+        browser.close = () => Promise.all(contexts.map(context => context.close()))
+        return browser
+      }`,
       '} }',
     ].join('\n'),
   )
   const manifest = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'))
+  manifest.agnes.bundles = {
+    review: {
+      presets: { review: { name: 'review', extends: 'standard' } },
+      launch: { title: { en: 'Review' }, description: { en: 'Review' }, preset: 'review' },
+    },
+  }
+  writeFileSync(join(directory, 'package.json'), JSON.stringify(manifest))
   const declaration = manifest.agnes.plugins[0]
   const packageId = manifest.name,
     snapshotId = 'sha256-' + 'b'.repeat(64)
@@ -85,6 +117,12 @@ it('binds the actual browser package to one current resource across plugin activ
   const dataDir = scratch()
   const { host } = await createTestHost({
     dataDir,
+    limits: { 'worker.generation_idle_close_ms': 0 },
+    provider: (profile) =>
+      new ScriptedProvider({
+        scripts: [],
+        models: profile.provider.routes?.flatMap((route) => route.models ?? []) ?? [],
+      }),
     runtimePluginCatalogue: [source],
     extensionLoader: createLoader({
       cacheDir: join(dataDir, 'cache'),
@@ -125,6 +163,22 @@ it('binds the actual browser package to one current resource across plugin activ
     ).rejects.toBeDefined()
     const pages = { sessionId: session.key, extension: owner, service: 'browser.pages', input: {} }
     await expect(host.callService(pages, { kind: 'local' })).resolves.toMatchObject({ output: { pages: [] } })
+    const opened = await host.callService(
+      { ...pages, service: 'browser.open', input: { url: 'https://fixture.test/' }, commandId: 'open-page' },
+      { kind: 'local' },
+      undefined,
+      { commandId: 'open-page' },
+    )
+    const expectedPages = {
+      output: { pages: [expect.objectContaining({ pageId: (opened.output as { pageId: string }).pageId })] },
+    }
+    await expect(host.resolveAgent!(`${packageId}#review`)).resolves.toMatchObject({
+      ref: `${packageId}#review`,
+    })
+    await expect(host.callService(pages, { kind: 'local' })).resolves.toMatchObject(expectedPages)
+    // The query container is disposable; its collection must not close the shared browser.
+    await host.collectPluginGenerations!()
+    await expect(host.callService(pages, { kind: 'local' })).resolves.toMatchObject(expectedPages)
     await expect(
       host.callService(
         {
@@ -168,6 +222,7 @@ it('binds the actual browser package to one current resource across plugin activ
     await expect(host.profileServices!.call(status, { kind: 'local' })).resolves.toMatchObject({
       output: { enabled: true, state: 'ready' },
     })
+    await expect(host.callService(pages, { kind: 'local' })).resolves.toMatchObject({ output: { pages: [] } })
   } finally {
     await host.close()
   }
