@@ -830,6 +830,38 @@ describe('deriveRequest', () => {
     expect(textAt(out, 4)).toBe('note')
   })
 
+  it('emits the results of a batch in call order when they finished out of order', () => {
+    seq = 0
+    const assistant = ev('assistant/message', { content: [], stopReason: 'tool_use' })
+    const result = (toolUseId: string, text: string) =>
+      ev('tool/result', {
+        toolUseId,
+        content: [{ type: 'text', text }],
+        isError: false,
+        enforcement: { level: 'full', scope: [] },
+        authz: { decisionId: 'n/a' },
+      })
+    // A concurrent batch writes results as calls finish: the second call came back first.
+    const second = result('t1', 'b')
+    const first = result('t0', 'a')
+    const out = deriveRequest({
+      ...base(),
+      surface: computeSurface([assistant, second, first], {}),
+      ...NO_RC,
+      toolCalls: [
+        { assistantSeq: assistant.seq, toolUseId: 't0', name: 'read', args: {}, ordinal: 0 },
+        { assistantSeq: assistant.seq, toolUseId: 't1', name: 'read', args: {}, ordinal: 1 },
+      ],
+    })
+    expect(out.request.messages.map((m) => m.role)).toEqual(['assistant', 'tool', 'tool'])
+    expect(
+      out.request.messages
+        .slice(1)
+        .map((m) => (m.content[0] as { toolUseId?: string } | undefined)?.toolUseId),
+    ).toEqual(['t0', 't1'])
+    expect(out.request.messages.slice(1).map((m) => m.seq)).toEqual([first.seq, second.seq])
+  })
+
   it('puts the harness sections in with the contributed ones, ordered', () => {
     seq = 0
     const input: DeriveInput = {

@@ -824,8 +824,11 @@ function noteEvent(text: string): EventInput {
 }
 
 /**
- * Mint surface nodes as provider messages, with one reorder: an assistant that asked for tools
- * keeps its results immediately after it.
+ * Mint surface nodes as provider messages, with two reorders: an assistant that asked for tools
+ * keeps its results immediately after it, and those results follow the order of its calls.
+ *
+ * A concurrent batch writes each result when its call finishes, so the ledger holds them in
+ * completion order. The model reads them back against the calls it made, in the order it made them.
  *
  * A steer or a runtime note is a real surface row and may land between the call and its results.
  * Pairing already treats that row as inside the pair. OpenAI-style providers do not: a user
@@ -838,8 +841,12 @@ function closeToolResultMessages(
   render: (node: SurfaceNode) => RequestMessage,
   toolCalls: DeriveInput['toolCalls'],
 ): RequestMessage[] {
-  const owners = new Set<Seq>()
-  for (const call of toolCalls ?? []) owners.add(call.assistantSeq)
+  const owners = new Map<Seq, Map<string, number>>()
+  for (const call of toolCalls ?? []) {
+    const calls = owners.get(call.assistantSeq) ?? new Map<string, number>()
+    calls.set(call.toolUseId, call.ordinal)
+    owners.set(call.assistantSeq, calls)
+  }
   const messages: RequestMessage[] = []
   for (let k = 0; k < surface.length; k++) {
     const node = surface[k]
@@ -867,8 +874,14 @@ function closeToolResultMessages(
       end++
     }
     messages.push(render(node))
-    if (results.length === 0 || between.length === 0) continue
-    for (const result of results) messages.push(render(result))
+    if (results.length === 0) continue
+    const calls = owners.get(node.seq)
+    const ordinal = (n: SurfaceNode) =>
+      calls?.get(String((n.event.data as { toolUseId?: unknown } | null)?.toolUseId)) ??
+      Number.MAX_SAFE_INTEGER
+    const ordered = results.toSorted((a, b) => ordinal(a) - ordinal(b))
+    if (between.length === 0 && ordered.every((result, i) => result === results[i])) continue
+    for (const result of ordered) messages.push(render(result))
     for (const note of between) messages.push(render(note))
     k = end - 1
   }

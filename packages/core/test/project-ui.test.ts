@@ -711,6 +711,33 @@ it('tool cards follow planned, running and result states at the requested sequen
   expect(kind((await session.projectUI(planned)).nodes, 'tool')[0]?.status).toBe('planned')
 })
 
+it('shows every call of one response as its own card, in call order, even when they finish out of order', async () => {
+  const registry = new ToolRegistry()
+  registry.add(
+    readTool(async (args) => {
+      // The first call finishes last, so the ledger holds the results in reverse order.
+      if ((args as { path: string }).path === 'a') await new Promise((resolve) => setTimeout(resolve, 10))
+      return { content: [{ type: 'text', text: `file ${(args as { path: string }).path}` }] }
+    }),
+    { source: 'test', trust: 'builtin' },
+  )
+  const batch = toolTurn('read', { path: 'a' })
+  batch.splice(batch.length - 2, 0, {
+    type: 'toolcall_end',
+    call: { toolUseId: '', name: 'read', args: { path: 'b' }, ordinal: 1 },
+    via: 'native',
+  })
+  const { session } = await open({ provider: fakeProvider([batch, textTurn('done')]), registry })
+  await input(session)
+  await run(session)
+  const cards = kind((await session.projectUI()).nodes, 'tool')
+  expect(cards.map((card) => [card.argsPreview, card.status, card.resultPreview])).toEqual([
+    ['{"path":"a"}', 'completed', 'file a'],
+    ['{"path":"b"}', 'completed', 'file b'],
+  ])
+  expect(new Set(cards.map((card) => card.toolUseId)).size).toBe(2)
+})
+
 it('cancelled planned tools remain cancelled after close, reopen and resume', async () => {
   const registry = new ToolRegistry()
   registry.add(readTool(), { source: 'test', trust: 'builtin' })

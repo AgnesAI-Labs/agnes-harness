@@ -183,8 +183,11 @@ const PROMPT_TEXT: Record<string, string> = {
     '',
     'Before delivering, reconcile internal contradictions (including dates, times and totals) against the source and correct your output. Do not infer unstated facts from related information. When the source makes the answer clear, complete the correction yourself; ask the user only for a genuinely unresolved decision.',
   ].join('\n'),
-  'tools-available':
+  'tools-available': [
     'Use only tools offered in this request. When a capability is missing, use tool_search if offered, then tool_describe to load a matching deferred tool for subsequent requests. For plugin or Skill authoring, search for the version-matched authoring guide first, then describe the tools it recommends. Discovery grants no execution permission. If discovery finds nothing, explain the missing capability. Filesystem, command and network access require the corresponding tools.',
+    '',
+    'One response can carry several tool calls. Put independent calls, such as reads, searches and status checks, in the same response: read-only calls run together, and the rest run in the order given. Join dependent shell steps that need no inspection in between into one command (`&&` or a short script). Use a separate response only when the next step depends on reading a result.',
+  ].join('\n'),
   'tools-none': [
     'You have no tools on this request. The harness registered none, so you cannot read or write files, run commands, or reach the network. Answer from this conversation alone, and say plainly when a question needs a capability you do not have.',
   ].join('\n'),
@@ -297,6 +300,9 @@ describe('prompt rendering', () => {
     expect(text).toContain('tool_search if offered, then tool_describe')
     expect(text).toContain('Discovery grants no execution permission.')
     expect(text).toContain('Filesystem, command and network access require the corresponding tools.')
+    expect(text).toContain(
+      'Put independent calls, such as reads, searches and status checks, in the same response',
+    )
     expect(text.split('\n\n').at(-1)).toBe(PROMPT_TEXT['tools-available']?.split('\n\n').at(-1))
     expect(text).not.toContain('- read')
     expect(text).not.toContain('{{')
