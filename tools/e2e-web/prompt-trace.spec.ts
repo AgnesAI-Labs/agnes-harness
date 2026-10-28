@@ -27,7 +27,9 @@ for (const locale of ['en', 'zh-CN'])
       async function request() {
         await expect(page.locator('#prompt')).toBeEditable()
         const trace = page.locator('#view-trace')
-        if ((await trace.getAttribute('aria-selected')) !== 'true') await trace.click()
+        // Reload may briefly expose the previous view before session state is restored.
+        // Always make an explicit selection so this request does not trust that transient state.
+        await trace.click()
         await expect(trace).toHaveAttribute('aria-selected', 'true')
         const chip = page.locator('.trace-chip[data-kind=assistant]')
         if ((await chip.getAttribute('aria-pressed')) !== 'true') await chip.click()
