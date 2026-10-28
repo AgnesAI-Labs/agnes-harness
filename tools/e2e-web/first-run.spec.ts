@@ -282,6 +282,7 @@ test('first run Demo reaches a conversation without storing an account', async (
     .toBeLessThanOrEqual(restingHeight + 1)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
   await composer.fill('Hello from Demo')
+  await expect(page.locator('#send')).toBeEnabled()
   await composer.press('Enter')
   await expect(page.getByTestId('conversation-turn')).toHaveAttribute('data-status', 'completed')
   const client = await runtime.connect()

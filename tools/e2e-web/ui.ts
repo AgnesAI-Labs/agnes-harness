@@ -160,11 +160,9 @@ export async function homePage(page: Page, id: string, tab?: string) {
         .getByRole('tab')
         .filter({ has: page.getByTestId(`plugins-tab-${tab}`) })
         .click()
-    else
-      await page
-        .getByRole('tab')
-        .filter({ hasText: tab === 'triggers' ? /Triggers|触发器/ : /Scheduled tasks|定时任务/ })
-        .click()
+    else if (id === 'automation' && tab === 'schedules')
+      await expect(page.getByTestId('schedules-page')).toBeVisible()
+    else throw new Error(`Unsupported home tab: ${id}/${tab}`)
   }
 }
 
