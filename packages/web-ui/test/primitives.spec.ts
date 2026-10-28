@@ -426,7 +426,7 @@ test('narrow icon hit area, focus tooltip and draggable bottom sheet', async ({ 
 })
 
 for (const theme of ['light', 'dark'])
-  for (const width of [1280, 390])
+  for (const width of [1280, 768, 390])
     test(`sidebar navigation hierarchy and containment ${theme}/${width}`, async ({ page }) => {
       const result = await build({
         stdin: {
@@ -475,6 +475,12 @@ for (const theme of ['light', 'dark'])
         await page.locator('.session-row').evaluate((node) => getComputedStyle(node).backgroundColor),
       ).not.toBe('rgba(0, 0, 0, 0)')
       const sidebar = (await page.locator('.sidebar').boundingBox())!
+      if (width <= 900) {
+        for (const target of await page.locator('.workspace-heading, .workspace-new-session').all()) {
+          const bounds = (await target.boundingBox())!
+          expect(bounds.height).toBeGreaterThanOrEqual(width <= 767 ? 44 : 32)
+        }
+      }
       for (const selector of [
         '.sidebar-section > .workspace-heading-row',
         '.workspace-group .workspace-heading-row',
