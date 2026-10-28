@@ -53,7 +53,7 @@ it.each(
       await fixture.parent.run({ until: 'turn-end', signal: AbortSignal.timeout(15000) })
       await stopping
       expect(reached).toBe(true)
-      expect(existsSync(join(fixture.dataDir, 'requirements-1.md'))).toBe(false)
+      expect(existsSync(join(fixture.workspaceRoot, 'requirements-1.md'))).toBe(false)
       const rows = await fixture.parent.d.log.storage.scan(childKey, { type: 'decision/state', limit: 100 })
       expect(rows.length).toBeGreaterThan(0)
       if (boundary === 'effect')
@@ -125,7 +125,7 @@ it.each(['abort', 'close'] as const)(
       await stopped
       expect(delivery.aborted).toBe(true)
       await running
-      expect(existsSync(join(fixture.dataDir, 'grandchild.md'))).toBe(false)
+      expect(existsSync(join(fixture.workspaceRoot, 'grandchild.md'))).toBe(false)
     } finally {
       await running
       await fixture.host.close()
@@ -158,7 +158,7 @@ it('a new root run cannot renew a previously admitted role handle', async () => 
     const open = (input: string) =>
       fixture.parent.d.children.createWithKind!('spawn', {
         parent: 'parent',
-        cwd: fixture.dataDir,
+        cwd: fixture.workspaceRoot,
         role: fixture.refs[0],
         input,
         resident: true,
@@ -169,7 +169,7 @@ it('a new root run cannot renew a previously admitted role handle', async () => 
     await fixture.parent.run({ until: 'idle', signal: AbortSignal.timeout(15000) })
     await expect(old.run('Write')).rejects.toMatchObject({ code: 'E_CLOSED' })
     expect(questions).toHaveLength(0)
-    expect(existsSync(join(fixture.dataDir, 'fresh.md'))).toBe(false)
+    expect(existsSync(join(fixture.workspaceRoot, 'fresh.md'))).toBe(false)
     await fixture.parent.enqueue('next-turn', {
       actor: fixture.parent.d.actor,
       trust: 'untrusted',
@@ -180,7 +180,7 @@ it('a new root run cannot renew a previously admitted role handle', async () => 
     expect(fresh.key).not.toBe(old.key)
     await fresh.run('Fresh write')
     expect(questions).toHaveLength(1)
-    expect(existsSync(join(fixture.dataDir, 'fresh.md'))).toBe(true)
+    expect(existsSync(join(fixture.workspaceRoot, 'fresh.md'))).toBe(true)
   } finally {
     await fixture.host.close()
   }
@@ -228,7 +228,7 @@ it.each(
       await stopping
       await running
       expect(delivery.aborted).toBe(true)
-      expect(existsSync(join(fixture.dataDir, 'requirements-1.md'))).toBe(false)
+      expect(existsSync(join(fixture.workspaceRoot, 'requirements-1.md'))).toBe(false)
       const rows = await fixture.parent.d.log.storage.scan(request.decision!.handle.sessionId!, {
         type: 'decision/state',
         order: 'desc',
@@ -295,7 +295,7 @@ it.each(['close', 'abort'] as const)(
       })
       expect(intents.some((row) => (row.data as { kind: string }).kind === 'tool')).toBe(true)
       expect(child.ac.signal.aborted).toBe(true)
-      expect(existsSync(join(fixture.dataDir, 'requirements-1.md'))).toBe(false)
+      expect(existsSync(join(fixture.workspaceRoot, 'requirements-1.md'))).toBe(false)
     } finally {
       vi.restoreAllMocks()
       await stopping
@@ -341,7 +341,7 @@ it.each(['pending', 'admitted'] as const)(
       await fixture.parent.acceptInput()
       const old = await fixture.parent.d.children.createWithKind!('spawn', {
         parent: fixture.parent.key,
-        cwd: fixture.dataDir,
+        cwd: fixture.workspaceRoot,
         role: fixture.refs[0],
         input: 'Write',
         resident: true,
@@ -359,6 +359,7 @@ it.each(['pending', 'admitted'] as const)(
       restarted = (
         await createTestHost({
           dataDir: fixture.dataDir,
+          workspaceRoot: fixture.workspaceRoot,
           packageDirs,
           runtimePluginCatalogue: [fixture.source],
           extensionLoader: { import: async (file) => import(pathToFileURL(file).href) },
@@ -397,7 +398,7 @@ it.each(['pending', 'admitted'] as const)(
         })
       ).host
       await restarted.applyRuntimeTarget(fixture.target)
-      const root = await restarted.createSession({ key: 'parent', cwd: fixture.dataDir })
+      const root = await restarted.createSession({ key: 'parent', cwd: fixture.workspaceRoot })
       expect(root).not.toBe(fixture.parent)
       const resumed = await root.d.children.resume!(old.key).catch(() => undefined)
       if (resumed)
@@ -410,7 +411,7 @@ it.each(['pending', 'admitted'] as const)(
         )
       expect({
         cards: restoredQuestions.length,
-        wrote: existsSync(join(fixture.dataDir, 'closed-epoch.md')),
+        wrote: existsSync(join(fixture.workspaceRoot, 'closed-epoch.md')),
       }).toEqual({ cards: 0, wrote: false })
       await expect(old.run('Write')).rejects.toMatchObject({ code: 'E_CLOSED' })
     } finally {
@@ -445,7 +446,7 @@ it('review-f1: a grandchild admitted before middle close cannot start beneath th
     await fixture.parent.acceptInput()
     const first = await fixture.parent.d.children.createWithKind!('spawn', {
       parent: fixture.parent.key,
-      cwd: fixture.dataDir,
+      cwd: fixture.workspaceRoot,
       role: fixture.refs[0],
       input: 'Middle',
       resident: true,
@@ -453,7 +454,7 @@ it('review-f1: a grandchild admitted before middle close cannot start beneath th
     const middle = fixture.host.kernel.get(first.key)!
     const second = await middle.d.children.createWithKind!('spawn', {
       parent: middle.key,
-      cwd: fixture.dataDir,
+      cwd: fixture.workspaceRoot,
       role: fixture.refs[1]!,
       input: 'Grandchild',
       resident: true,
@@ -462,7 +463,7 @@ it('review-f1: a grandchild admitted before middle close cannot start beneath th
     expect(fixture.parent.closingOrClosed).toBe(false)
     await expect(second.run('Grandchild')).rejects.toMatchObject({ code: 'E_CLOSED' })
     expect(questions).toEqual([])
-    expect(existsSync(join(fixture.dataDir, 'closed-middle.md'))).toBe(false)
+    expect(existsSync(join(fixture.workspaceRoot, 'closed-middle.md'))).toBe(false)
   } finally {
     await fixture.host.close()
   }

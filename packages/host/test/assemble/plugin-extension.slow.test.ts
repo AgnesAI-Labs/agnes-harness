@@ -1,3 +1,4 @@
+import { PARSER_VERSION } from '@agnes/ai'
 import { fakeProvider, textTurn, toolTurn } from '@agnes/core/testkit'
 import { pluginRowSource } from '@agnes/host-extensions/ext-host/row-extension-host'
 import { describe, expect, it } from 'vitest'
@@ -201,7 +202,7 @@ describe('a third-party tool whose package comes back to a state the Host has al
     return {
       provider,
       script: (name: string) => {
-        next = fakeProvider([toolTurn(name, {}), textTurn('done')], '2')
+        next = fakeProvider([toolTurn(name, {}), textTurn('done')], PARSER_VERSION)
       },
     }
   }
@@ -319,7 +320,7 @@ describe('a third-party tool whose package comes back to a state the Host has al
 describe('installing a third-party tool row', () => {
   // The system string is cached across turns, so it must not depend on which tools happen to be disclosed.
   const turnWith = async (source: ReturnType<typeof pluginSource> | undefined) => {
-    const provider = fakeProvider([textTurn('done')], '2')
+    const provider = fakeProvider([textTurn('done')], PARSER_VERSION)
     const h = await pluginHost(source ? [source] : [], { provider })
     try {
       if (source) {
@@ -355,7 +356,7 @@ describe('installing a third-party tool row', () => {
 
 describe('a third-party tool whose description is too long for the wire', () => {
   it('fails that row with the tool name and the problem, and the next turn still reaches the model', async () => {
-    const provider = fakeProvider([textTurn('done')], '2')
+    const provider = fakeProvider([textTurn('done')], PARSER_VERSION)
     const h = await pluginHost(
       pluginSource(`  ctx.tools.register({ ...tool('plugin_verbose'), description: 'v'.repeat(9000) })`),
       { provider },

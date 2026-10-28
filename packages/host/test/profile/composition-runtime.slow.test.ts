@@ -933,119 +933,120 @@ it('retains a legacy session deployment when bundles are configured after its fi
   }
 }, 90_000)
 
-it('opens a new composition from the published code after retiring a boot snapshot', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'agnes-composition-update-'))
-  let host: Awaited<ReturnType<typeof createTestHost>>['host'] | undefined
-  const id = 'acme/composition-code'
-  const source = (version: string): RuntimePluginSnapshot => {
-    const directory = join(root, version)
-    mkdirSync(directory)
-    writeFileSync(join(directory, 'index.mjs'), version)
-    writeFileSync(
-      join(directory, 'package.json'),
-      JSON.stringify({
-        name: id,
-        version,
-        exports: './index.mjs',
-        agnes: {
-          plugins: [{ apiRange: '^5.0.0', export: 'main', id: 'ext:composition-code', inject: ['tools'] }],
+it.each([false, true])(
+  'restores retired pins (enabled=%s)',
+  async (enabled) => {
+    const root = mkdtempSync(join(tmpdir(), 'agnes-composition-update-'))
+    let host: Awaited<ReturnType<typeof createTestHost>>['host'] | undefined
+    const id = 'acme/composition-code'
+    const source = (version: string): RuntimePluginSnapshot => {
+      const directory = join(root, version)
+      mkdirSync(directory)
+      writeFileSync(join(directory, 'index.mjs'), version)
+      writeFileSync(
+        join(directory, 'package.json'),
+        JSON.stringify({
+          name: id,
+          version,
+          exports: './index.mjs',
+          agnes: {
+            plugins: [{ apiRange: '^5.0.0', export: 'main', id: 'ext:composition-code', inject: ['tools'] }],
+          },
+        }),
+      )
+      const integrity = hashDirectory(directory, { exclude: [] })
+      return {
+        snapshot: {
+          profile: 'local-dev',
+          packageId: id,
+          version,
+          snapshotId: integrity,
+          integrity,
+          treeIntegrity: integrity,
+          capabilityHash: capabilityHash({ dependencies: {} }),
+          directory,
+          contributions: [],
         },
-      }),
-    )
-    const integrity = hashDirectory(directory, { exclude: [] })
-    return {
-      snapshot: {
-        profile: 'local-dev',
-        packageId: id,
-        version,
-        snapshotId: integrity,
-        integrity,
-        treeIntegrity: integrity,
-        capabilityHash: capabilityHash({ dependencies: {} }),
-        directory,
-        contributions: [],
-      },
-      generation: 1,
-      trusted: true,
+        generation: 1,
+        trusted: true,
+      }
     }
-  }
-  const one = source('1.0.0'),
-    two = source('2.0.0')
-  let available = [one, two]
-  try {
-    const options: Parameters<typeof createTestHost>[0] = {
-      dataDir: root,
-      script: [],
-      allowed: ['standard', 'observer'],
-      presets: {
-        observer: { name: 'observer', extends: 'standard', composition: { tools: ['code_version'] } },
-      },
-      profileInputs: {
-        user: { name: 'local-dev', composition: {}, packages: [{ id, source: 'fixture' }] },
-      },
-      lock: {
-        packages: Object.fromEntries([
-          ...['@agnes/ai', '@agnes/base', '@agnes/code'].map((id) => [
-            id,
-            {
-              version: '0.1.0',
-              source: { type: 'builtin', ref: 'builtin' },
-              integrity: 'builtin:0.1.0',
-              trust: 'builtin',
-              enabled: true,
-            },
-          ]),
-          [
-            id,
-            {
-              version: one.snapshot.version,
-              integrity: one.snapshot.integrity,
-              trust: 'trusted',
-              enabled: true,
-            },
-          ],
-        ]),
-      },
-      packageDirs: { [id]: one.snapshot.directory },
-      runtimePluginSnapshots: [one],
-      runtimePluginSources: async () => available,
-      extensionLoader: {
-        async import(file) {
-          const version = readFileSync(file, 'utf8')
-          return {
-            main: {
-              inject: ['tools'],
-              apply(ctx: import('@agnes/cordis').Context) {
-                ctx.tools.register({
-                  name: 'code_version',
-                  description: version,
-                  parameters: Type.Object({}),
-                  meta: {
-                    isReadOnly: true,
-                    isDestructive: false,
-                    isConcurrencySafe: true,
-                    isOpenWorld: false,
-                    replay: 'safe',
-                    costHint: {},
-                    deferLoading: false,
-                    requiresApproval: 'never',
-                  },
-                  async execute() {
-                    return { content: [{ type: 'text', text: version }] }
-                  },
-                })
+    const one = source('1.0.0'),
+      two = source('2.0.0')
+    let available = [one, two]
+    try {
+      const options: Parameters<typeof createTestHost>[0] = {
+        dataDir: root,
+        script: [],
+        allowed: ['standard', 'observer'],
+        presets: {
+          observer: { name: 'observer', extends: 'standard', composition: { tools: ['code_version'] } },
+        },
+        profileInputs: {
+          user: { name: 'local-dev', composition: {}, packages: [{ id, source: 'fixture' }] },
+        },
+        lock: {
+          packages: Object.fromEntries([
+            ...['@agnes/ai', '@agnes/base', '@agnes/code'].map((id) => [
+              id,
+              {
+                version: '0.1.0',
+                source: { type: 'builtin', ref: 'builtin' },
+                integrity: 'builtin:0.1.0',
+                trust: 'builtin',
+                enabled: true,
               },
-            },
-          }
+            ]),
+            [
+              id,
+              {
+                version: one.snapshot.version,
+                integrity: one.snapshot.integrity,
+                trust: 'trusted',
+                enabled: true,
+              },
+            ],
+          ]),
         },
-      },
-    }
-    host = (await createTestHost(options)).host
-    const old = await host.createSession({ key: 'old-code', cwd: root })
-    const base = host.runtimeTargetSnapshot?.()
-    if (!base) throw new Error('missing published target')
-    await host.applyRuntimeTarget(
-      buildCompleteRuntimeTarget({
+        packageDirs: { [id]: one.snapshot.directory },
+        runtimePluginSnapshots: [one],
+        runtimePluginSources: async () => available,
+        extensionLoader: {
+          async import(file) {
+            const version = readFileSync(file, 'utf8')
+            return {
+              main: {
+                inject: ['tools'],
+                apply(ctx: import('@agnes/cordis').Context) {
+                  ctx.tools.register({
+                    name: 'code_version',
+                    description: version,
+                    parameters: Type.Object({}),
+                    meta: {
+                      isReadOnly: true,
+                      isDestructive: false,
+                      isConcurrencySafe: true,
+                      isOpenWorld: false,
+                      replay: 'safe',
+                      costHint: {},
+                      deferLoading: false,
+                      requiresApproval: 'never',
+                    },
+                    async execute() {
+                      return { content: [{ type: 'text', text: version }] }
+                    },
+                  })
+                },
+              },
+            }
+          },
+        },
+      }
+      host = (await createTestHost(options)).host
+      const old = await host.createSession({ key: 'old-code', cwd: root })
+      const base = host.runtimeTargetSnapshot?.()
+      if (!base) throw new Error('missing published target')
+      const nextTarget = buildCompleteRuntimeTarget({
         rows: [
           createPluginRow({
             id: 'ext:composition-code',
@@ -1059,75 +1060,100 @@ it('opens a new composition from the published code after retiring a boot snapsh
           }),
         ],
         resources: base.resource.resources,
-      }).target,
-    )
-    available = [two]
-    rmSync(one.snapshot.directory, { recursive: true, force: true })
-    const current = await host.createSession({ key: 'new-composition', preset: 'observer', cwd: root })
-    expect(current.currentTools().resolve('code_version')?.description).toBe('2.0.0')
-    expect(old.currentTools().resolve('code_version')?.description).toBe('1.0.0')
-    // Installation trust is independent of source retention and desired enablement.
-    const profileDir = join(root, 'profiles/local-dev')
-    writeLock(profileDir, {
-      ...emptyLock('local-dev', '0.1.0'),
-      resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
-      seams: Object.fromEntries(
-        ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((name) => [
-          name,
-          { provider: 'local' },
-        ]),
-      ),
-      packages: {
-        [id]: {
-          version: two.snapshot.version,
-          integrity: two.snapshot.integrity,
-          source: { type: 'file', ref: 'file:fixture' },
-          trust: 'trusted',
-          license: 'MIT',
-          dependencies: {},
-          previous: null,
-          state: { installed: new Date(0).toISOString(), trusted: new Date(0).toISOString(), enabled: false },
-          trustDecision: {
+      }).target
+      await host.applyRuntimeTarget(nextTarget)
+      available = [two]
+      rmSync(one.snapshot.directory, { recursive: true, force: true })
+      const current = await host.createSession({ key: 'new-composition', preset: 'observer', cwd: root })
+      expect(current.currentTools().resolve('code_version')?.description).toBe('2.0.0')
+      expect(old.currentTools().resolve('code_version')?.description).toBe('1.0.0')
+      // Installation trust is independent of source retention and desired enablement.
+      const profileDir = join(root, 'profiles/local-dev')
+      writeLock(profileDir, {
+        ...emptyLock('local-dev', '0.1.0'),
+        resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
+        seams: Object.fromEntries(
+          ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map(
+            (name) => [name, { provider: 'local' }],
+          ),
+        ),
+        packages: {
+          [id]: {
+            version: two.snapshot.version,
             integrity: two.snapshot.integrity,
-            capabilityHash: two.snapshot.capabilityHash,
-            decidedAt: new Date(0).toISOString(),
-          },
-        },
-      },
-    })
-    const pin = old.pluginGenerationId
-    await old.close()
-    await current.close()
-    await host.close()
-    host = (
-      await createTestHost({
-        ...options,
-        profileInputs: {
-          user: { name: 'local-dev', composition: {}, packages: [{ id, source: 'fixture', enabled: false }] },
-        },
-        lock: {
-          packages: {
-            ...options.lock?.packages,
-            [id]: {
-              version: two.snapshot.version,
+            treeIntegrity: two.snapshot.treeIntegrity,
+            source: { type: 'file', ref: 'file:fixture' },
+            trust: 'trusted',
+            license: 'MIT',
+            dependencies: {},
+            previous: null,
+            state: { installed: new Date(0).toISOString(), trusted: new Date(0).toISOString(), enabled },
+            trustDecision: {
               integrity: two.snapshot.integrity,
-              trust: 'trusted',
-              enabled: false,
+              capabilityHash: two.snapshot.capabilityHash,
+              decidedAt: new Date(0).toISOString(),
             },
           },
         },
-        packageDirs: {},
-        runtimePluginSnapshots: [],
       })
-    ).host
-    const reopened = await host.createSession({ key: old.key, cwd: root })
-    expect(reopened.pluginGenerationId).toBe(pin)
-    expect(reopened.currentTools().resolve('code_version')?.description).toBe('1.0.0')
-  } finally {
-    await host?.close()
-    rmSync(root, { recursive: true, force: true })
-  }
-}, 90_000)
+      const pin = old.pluginGenerationId
+      await old.close()
+      await current.close()
+      await host.close()
+      host = (
+        await createTestHost({
+          ...options,
+          profileInputs: {
+            user: { name: 'local-dev', composition: {}, packages: [{ id, source: 'fixture', enabled }] },
+          },
+          lock: {
+            packages: {
+              ...options.lock?.packages,
+              [id]: {
+                version: two.snapshot.version,
+                integrity: two.snapshot.integrity,
+                trust: 'trusted',
+                enabled,
+              },
+            },
+          },
+          packageDirs: enabled ? { [id]: two.snapshot.directory } : {},
+          runtimePluginSnapshots: enabled ? [two] : [],
+        })
+      ).host
+      const reopened = await host.createSession({ key: old.key, cwd: root })
+      expect(reopened.pluginGenerationId).toBe(pin)
+      expect(reopened.currentTools().resolve('code_version')?.description).toBe('1.0.0')
+      if (enabled) {
+        const fresh = await host.createSession({ key: 'after-restart', preset: 'observer', cwd: root })
+        expect(fresh.pluginGenerationId).not.toBe(pin)
+        expect(fresh.currentTools().resolve('code_version')?.description).toBe('2.0.0')
+        const unavailable = buildCompleteRuntimeTarget({
+          rows: nextTarget.tree.rows.map((row) =>
+            createPluginRow({
+              ...row,
+              plugin: `${id}@sha256-${'f'.repeat(64)}/main`,
+              snapshotDigest: two.snapshot.integrity,
+              exportName: 'main',
+            }),
+          ),
+          resources: nextTarget.resource.resources,
+        }).target
+        const refused = await host.applyRuntimeTarget(unavailable)
+        expect(refused.ok).toBe(false)
+        expect(JSON.stringify(refused.publication)).toContain('unavailable snapshot')
+        expect(reopened.pluginGenerationId).toBe(pin)
+        expect(reopened.currentTools().resolve('code_version')?.description).toBe('1.0.0')
+        expect(fresh.currentTools().resolve('code_version')?.description).toBe('2.0.0')
+        expect((await host.applyRuntimeTarget(nextTarget)).ok).toBe(true)
+      }
+    } finally {
+      await host?.close()
+      rmSync(root, { recursive: true, force: true })
+    }
+  },
+  90_000,
+)
 
 it('uses one MCP server decision for discovery and shared resource invocation', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-capability-mcp-'))

@@ -34,7 +34,7 @@ it.each(
     const create = () =>
       parent.d.children.createWithKind!('spawn', {
         parent: parent.key,
-        cwd: fixture.dataDir,
+        cwd: fixture.workspaceRoot,
         role: fixture.refs[0],
         input: 'Write fresh requirements',
         resident: true,
@@ -48,7 +48,7 @@ it.each(
         const middle = fixture.host.kernel.get(old.key)!
         const grandchild = await middle.d.children.createWithKind!('spawn', {
           parent: middle.key,
-          cwd: fixture.dataDir,
+          cwd: fixture.workspaceRoot,
           role: fixture.refs[1]!,
           input: 'Grandchild task',
           resident: true,
@@ -62,7 +62,7 @@ it.each(
         await expect(parent.d.children.resume!(key)).rejects.toBeDefined()
       }
       expect(questions).toEqual([])
-      expect(existsSync(join(fixture.dataDir, 'fresh.md'))).toBe(false)
+      expect(existsSync(join(fixture.workspaceRoot, 'fresh.md'))).toBe(false)
       if (action === 'abort') {
         await parent.run({ until: 'turn-end', signal: AbortSignal.timeout(15000) })
         await accept()
@@ -70,7 +70,7 @@ it.each(
         expect(fresh.key).not.toBe(old.key)
         await fresh.run('Write fresh requirements')
         expect(questions).toEqual([fresh.key])
-        expect(readFileSync(join(fixture.dataDir, 'fresh.md'), 'utf8')).toBe('Fresh admission')
+        expect(readFileSync(join(fixture.workspaceRoot, 'fresh.md'), 'utf8')).toBe('Fresh admission')
       }
     } finally {
       await fixture.host.close()

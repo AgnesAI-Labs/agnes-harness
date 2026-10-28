@@ -53,6 +53,7 @@ import {
 import { compositionPresets } from './composition-presets.js'
 import {
   type CompositionContainer as Container,
+  effectiveCompositionTarget,
   profileForComposition,
   projectCompositionRows,
 } from './composition-selection.js'
@@ -173,17 +174,6 @@ export async function createCompositionHost(
       resources: target.resource.resources,
     }).target
   }
-  /**
-   * What a projected target makes a container run: its enabled rows and its live resources. A row the
-   * projection disables loads nothing, exactly like a row the target leaves out, so neither counts.
-   */
-  const effectiveTarget = (target: ReturnType<typeof project>): string =>
-    JSON.stringify({
-      rows: targetRows(target)
-        .filter((row) => !row.disabled)
-        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
-      resources: target.resource.resources,
-    })
   const containerKey = (binding: CompositionBinding) => `${binding.tree.hash}:${binding.profile.hash}`
   const open = async (
     binding: CompositionBinding,
@@ -329,10 +319,13 @@ export async function createCompositionHost(
           const report = await host.applyRuntimeTarget(projected)
           assertHostPublication(report.publication)
           if (!report.ok) throw new Error('E_COMPOSITION_PUBLICATION: new container did not converge')
-          applied = {
-            target: effectiveTarget(projected),
-            sources: structuredClone(new RuntimePluginCatalogue(sources ?? []).select(projected)),
-          }
+          // Retained bootstrap sources attest the session pin, not the current target just applied.
+          // Leave its shortcut unset; the next broadcast records freshly published sources.
+          if (!pinned)
+            applied = {
+              target: effectiveCompositionTarget(projected),
+              sources: structuredClone(new RuntimePluginCatalogue(sources ?? []).select(projected)),
+            }
         }
         const selectedRows = latestRows ?? (prepared.size ? [...rows.values()] : undefined)
         if (selectedRows) {
@@ -700,7 +693,7 @@ export async function createCompositionHost(
         const { current: nextCatalog } = await admission(target.tree.rows)
         const publication = await broadcast('runtime-target', async (container) => {
           const projected = project(target, container.tree, container.host)
-          const effective = effectiveTarget(projected)
+          const effective = effectiveCompositionTarget(projected)
           container.draining = draining(target.tree.rows, container.tree, container.host)
           // A composition the change does not reach (say a plugin its sessions never enabled) runs the
           // same rows and resources as before; rebuilding its generation would change nothing.
