@@ -160,11 +160,16 @@ describe('default skin contrast table (pure CSS calculation)', () => {
       }
     })
     it.each(pairs)(`${theme}: %s on %s ≥ %s:1`, (fg, bg, floor) => {
-      const background = over(color(bg, tokens), color('--agnes-bg-page', tokens))
-      const a = luminance(over(color(fg, tokens), background)),
-        b = luminance(background)
-      const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
-      expect(ratio, `${theme}: ${fg} / ${bg} = ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(floor)
+      // Translucent hover/selection fills also appear over the darker navigation surface.
+      for (const base of ['--agnes-bg-page', '--agnes-bg-app-sidebar']) {
+        const background = over(color(bg, tokens), color(base, tokens))
+        const a = luminance(over(color(fg, tokens), background)),
+          b = luminance(background)
+        const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+        expect(ratio, `${theme}: ${fg} / ${bg} over ${base} = ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
+          floor,
+        )
+      }
     })
   }
 })
