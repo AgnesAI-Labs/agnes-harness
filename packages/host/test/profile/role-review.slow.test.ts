@@ -366,27 +366,27 @@ ${
 it('review-role: cleared, cross-profile and tampered application inputs cannot mint a role child', async () => {
   const f = await setup()
   try {
-    await expect(f.create()).rejects.toThrow('not delegable')
+    await expect(f.create()).rejects.toMatchObject({ code: 'E_PRESET_UNSUPPORTED' })
     const other = createConfigurationService({
       home: f.fixture.dataDir,
       profile: 'other',
       profileDir: join(f.fixture.dataDir, 'profiles/other'),
     })
     await other.saveApplication!({ revision: 0, selection: f.selection })
-    await expect(f.create()).rejects.toThrow('not delegable')
+    await expect(f.create()).rejects.toMatchObject({ code: 'E_PRESET_UNSUPPORTED' })
     await f.save()
-    await expect(f.create(ref('assistant'))).rejects.toThrow('not delegable')
+    await expect(f.create(ref('assistant'))).rejects.toMatchObject({ code: 'E_PRESET_UNSUPPORTED' })
     await expect(f.create(ref('unknown'))).rejects.toThrow()
     await f.save({ ...f.selection, applicationId: 'other-app' })
-    await expect(f.create()).rejects.toThrow('not delegable')
+    await expect(f.create()).rejects.toMatchObject({ code: 'E_PRESET_UNSUPPORTED' })
     const altered = structuredClone(f.selection)
     altered.consentSnapshot.declaration.brand = { name: { en: 'forged' } }
     const { consentDigest: _digest, ...body } = altered.consentSnapshot
     altered.consentDigest = altered.consentSnapshot.consentDigest = digest(body)
     await f.save(altered)
-    await expect(f.create()).rejects.toThrow('not delegable')
+    await expect(f.create()).rejects.toMatchObject({ code: 'E_PRESET_UNSUPPORTED' })
     await f.save({ ...f.selection, consentDigest: '0'.repeat(64) })
-    await expect(f.create()).rejects.toThrow('not delegable')
+    await expect(f.create()).rejects.toMatchObject({ code: 'E_PRESET_UNSUPPORTED' })
     await f.save({
       ...f.selection,
       consentSnapshot: {
@@ -394,9 +394,9 @@ it('review-role: cleared, cross-profile and tampered application inputs cannot m
         declaration: { ...f.selection.consentSnapshot.declaration, delegableAgents: [ref('assistant')] },
       },
     })
-    await expect(f.create()).rejects.toThrow('not delegable')
+    await expect(f.create()).rejects.toMatchObject({ code: 'E_PRESET_UNSUPPORTED' })
     await f.save(null)
-    await expect(f.create()).rejects.toThrow('not delegable')
+    await expect(f.create()).rejects.toMatchObject({ code: 'E_PRESET_UNSUPPORTED' })
     await f.save()
     const bytes = readFileSync(f.entry)
     writeFileSync(f.entry, `${bytes}\n// changed after adoption\n`)

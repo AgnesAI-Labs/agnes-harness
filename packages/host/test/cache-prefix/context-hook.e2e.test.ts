@@ -2,6 +2,7 @@ import { closeSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PARSER_VERSION } from '@agnes/ai'
 import { fakeModel } from '@agnes/ai/testkit'
 import { ecosystem as baseEcosystem } from '@agnes/base'
 import { operations as codeOperations } from '@agnes/code'
@@ -45,7 +46,7 @@ describe('context hook wire prefix', () => {
           },
         },
       }
-      const firstProvider = fakeProvider([textTurn('old one'), textTurn('old two')], '2')
+      const firstProvider = fakeProvider([textTurn('old one'), textTurn('old two')], PARSER_VERSION)
       try {
         const first = await createTestHost({ ...options, provider: firstProvider })
         try {
@@ -63,7 +64,7 @@ describe('context hook wire prefix', () => {
           await first.host.close()
         }
         expect(exec).toHaveBeenCalledTimes(2)
-        const coldProvider = fakeProvider([textTurn('must not be sent')], '2')
+        const coldProvider = fakeProvider([textTurn('must not be sent')], PARSER_VERSION)
         const second = await createTestHost({ ...options, provider: coldProvider })
         try {
           const reopened = await second.host.createSession({ cwd: dataDir, key: 'cold-hook-block' })

@@ -2,6 +2,7 @@ import { closeSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PARSER_VERSION } from '@agnes/ai'
 import { fakeModel } from '@agnes/ai/testkit'
 import { operations as codeOperations } from '@agnes/code'
 import { fakeProvider, textTurn } from '@agnes/core/testkit'
@@ -124,7 +125,7 @@ it.each(['anthropic-messages', 'openai-completions'] as const)(
 
 it('keeps a historical untrusted envelope after a Host restart and session reopen', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'agnes-envelope-restart-'))
-  const firstProvider = fakeProvider([textTurn('first turn'), textTurn('second turn')], '2')
+  const firstProvider = fakeProvider([textTurn('first turn'), textTurn('second turn')], PARSER_VERSION)
   const hostOptions = {
     dataDir,
     packageDirs: { '@agnes/base': baseDir },
@@ -142,7 +143,7 @@ it('keeps a historical untrusted envelope after a Host restart and session reope
       if (!before) throw new Error('missing pre-restart request')
       expect(JSON.stringify(before.messages)).toContain('untrusted fixture body')
       expect(JSON.stringify(before.messages)).toContain('<untrusted id=')
-      const secondProvider = fakeProvider([textTurn('third turn')], '2')
+      const secondProvider = fakeProvider([textTurn('third turn')], PARSER_VERSION)
       await first.host.close()
       const second = await createTestHost({ ...hostOptions, provider: secondProvider })
       try {
@@ -164,7 +165,7 @@ it('keeps a historical untrusted envelope after a Host restart and session reope
 
 it('keeps the same envelope when a session is evicted and reopened in one Host', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'agnes-envelope-reopen-'))
-  const provider = fakeProvider([textTurn('first'), textTurn('second'), textTurn('third')], '2')
+  const provider = fakeProvider([textTurn('first'), textTurn('second'), textTurn('third')], PARSER_VERSION)
   const { host } = await createTestHost({
     dataDir,
     packageDirs: { '@agnes/base': baseDir },

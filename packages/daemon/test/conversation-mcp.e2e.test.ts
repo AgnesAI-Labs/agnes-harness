@@ -168,6 +168,7 @@ it('a conversation approves registration and calls the real stdio server on its 
       return result
     },
     script: [
+      call('tool_describe', { name: 'mcp_manage' }),
       call('mcp_manage', { action: 'prepare', definition }),
       () => call('mcp_manage', { action: 'commit', proposalId }),
       say,

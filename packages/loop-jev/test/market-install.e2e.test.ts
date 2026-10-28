@@ -194,7 +194,7 @@ describe('the Jev loop installed from the Market into a real daemon', () => {
     const entry = page.items.find((item) => item.id === PACKAGE)
     expect(entry, JSON.stringify(page.items.map((item) => item.id))).toMatchObject({
       id: PACKAGE,
-      version: '0.1.0',
+      version: '0.1.2',
       source: { type: 'file', ref: 'file:./bundled-plugins/jev-loop' },
       sourceId: 'builtin-plugins',
       // Optional: the UI offers uninstall for it, unlike the default-enabled helpers.

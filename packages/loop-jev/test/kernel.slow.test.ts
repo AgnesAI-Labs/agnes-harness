@@ -21,6 +21,7 @@ import {
   toolTurn,
 } from '@agnes/core/testkit'
 import type { LoopSideCallPort } from '@agnes/extension-api'
+import { Type } from '@sinclair/typebox'
 import { describe, expect, it, vi } from 'vitest'
 import { createJevLoopFactory } from '../src/index.js'
 import { type FakeJev, fakeJev, PICK_READ, PICK_RESPOND, PICK_WRITE, withJev } from './helpers/fake-jev.js'
@@ -41,12 +42,7 @@ type JevKernelOptions = {
 const writeTool = () => ({
   name: 'write',
   description: 'write',
-  parameters: {
-    type: 'object',
-    properties: { path: { type: 'string' }, content: { type: 'string' } },
-    required: ['path', 'content'],
-    additionalProperties: false,
-  },
+  parameters: Type.Object({ path: Type.String(), content: Type.String() }, { additionalProperties: false }),
   meta: {
     isReadOnly: false,
     isDestructive: false,
@@ -179,9 +175,6 @@ async function cutAt(
   return MemoryStorage.fromEvents(key, snapshot, { opCells })
 }
 
-const userTexts = (rows: Awaited<ReturnType<ReturnType<typeof jevKernel>['rows']>>) =>
-  rows.filter((r) => r.type === 'user/message').map((r) => JSON.stringify(r.data))
-
 describe('agnes.jev on a real Core session', () => {
   it.each<{ name: string; disclosure: 'hybrid' | 'code'; withRuntime: boolean }>([
     { name: 'hybrid', disclosure: 'hybrid', withRuntime: true },
@@ -256,10 +249,10 @@ describe('agnes.jev on a real Core session', () => {
     }
   })
 
-  it('stops its own work when the stop gate parks', async () => {
+  it('repairs once then stops when the verifier still rejects completion', async () => {
     const jev = fakeJev(() => ({ pick: PICK_RESPOND }))
     const kit = jevKernel({
-      scripts: [textTurn('answer')],
+      scripts: [textTurn('answer'), textTurn('revised answer')],
       jev,
       seams: {
         verifier: {
@@ -274,18 +267,24 @@ describe('agnes.jev on a real Core session', () => {
         },
       } as never,
     })
-    const session = await kit.open('gate-park')
+    const session = await kit.open('gate-blocked')
     try {
-      expect((await kit.run(session)).reason).toBe('parked')
-      const checkpoints = (await kit.rows(session)).filter((r) => r.type === 'x/core/loop-checkpoint')
+      expect((await kit.run(session)).reason).toBe('blocked')
+      expect(await session.decisions.list()).toEqual([])
+      const rows = await kit.rows(session)
+      expect(rows.filter((r) => r.type === 'x/core/verifier-recovery').map((r) => r.data)).toMatchObject([
+        { proposed: 'park', handling: 'repair' },
+        { proposed: 'park', handling: 'blocked' },
+      ])
+      const checkpoints = rows.filter((r) => r.type === 'x/core/loop-checkpoint')
       const saved = checkpoints.at(-1)?.data as {
         checkpoint: { state: { stage: string; endReason?: string } }
       }
       expect(saved.checkpoint.state.stage).toBe('finish')
-      // The loop asked to complete; the stop gate turned that into the park.
+      // The loop asked to complete; the stop gate blocked it after one automatic repair.
       expect(saved.checkpoint.state.endReason).toBe('completed')
-      expect(kit.provider.calls).toBe(1)
-      expect(jev.invoked).toHaveLength(1)
+      expect(kit.provider.calls).toBe(2)
+      expect(jev.invoked).toHaveLength(2)
     } finally {
       await kit.kernel.close()
     }
@@ -301,16 +300,25 @@ describe('agnes.jev on a real Core session', () => {
       expect((await kit.run(session)).reason).toBe('completed')
       const rows = await kit.rows(session)
       expect(rows.filter((r) => r.type === 'tool/call')).toHaveLength(0)
-      // Core's own refusal reason, quoted as data.
-      const note =
-        '[runtime observation] write was not applied: REFUSED_BY_CORE (dispatch); reason (data): "tool arguments do not match the registered schema"'
-      expect(userTexts(rows).some((t) => t.includes(JSON.stringify(note).slice(1, -1)))).toBe(true)
+      // Core's schema hints survive the loop's quoted observation and reach the next request.
+      const notes = rows
+        .filter((r) => r.type === 'user/message')
+        .flatMap((r) => {
+          const content = (r.data as { content: Array<{ type: string; text?: string }> }).content
+          return content.filter((b) => b.type === 'text').map((b) => b.text ?? '')
+        })
+      const note = notes.find((text) => text.startsWith('[runtime observation] write was not applied:'))
+      expect(note).toContain(
+        'REFUSED_BY_CORE (dispatch); reason (data): "tool arguments do not match the registered schema',
+      )
+      expect(note).toContain('/content: missing required parameter')
+      expect(note).toContain('/path: incorrect parameter type; expected string')
       // The note went out with the request that followed the refusal.
       expect(kit.provider.requests).toHaveLength(2)
       const sent = kit.provider.requests[1]?.messages.flatMap((m) =>
         Array.isArray(m.content) ? m.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])) : [],
       )
-      expect(sent?.some((text) => text.startsWith(`${note}\n`))).toBe(true)
+      expect(sent?.some((text) => text.startsWith(note ?? 'missing observation'))).toBe(true)
     } finally {
       await kit.kernel.close()
     }

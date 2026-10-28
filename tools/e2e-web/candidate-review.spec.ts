@@ -303,6 +303,8 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     permission: 'full-access',
   })
   await freshSession.attach()
+  // Keep the sidebar title stable across review screenshots instead of its creation-time fallback.
+  await client.session.rename(freshSession.id, 'Published plugin check')
   expect((await freshSession.tools()).tools.some((tool) => tool.name === 'skill_read')).toBe(true)
   expect((await freshSession.tools()).tools.some((t) => t.name === 'my_text_stats')).toBe(true)
   await prompt(freshSession, 'call my_text_stats {"text":"hello world"}')
