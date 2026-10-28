@@ -2,6 +2,8 @@
 
 English | [简体中文](README.zh-CN.md)
 
+**Upgrading from the previous version? Read the [upgrade guide](docs/guide/upgrade-from-previous.md) first: this is a new product release with no data migration; back up and clean up the old environment.**
+
 **AGH delivers business capabilities as installable plugins, launchable agents and adoptable applications.**
 
 - A **plugin** is the installation, distribution and trust unit. It can provide tools, Loops, models, UI, skills, connections or services.
@@ -61,11 +63,9 @@ The screenshots illustrate trust and version behavior using synthetic browser fi
 
 ## New product and old environments
 
-This version ships as a new product built on the plugin architecture. It does not migrate or reuse the old product’s runtime data or trust digests. An old or unversioned home layout is refused with `E_HOME_VERSION`: preserve it and select a new, empty private `AGH_HOME` (`~/.agh` is the default). Configure accounts and plugins again there. Startup never deletes or converts the old home.
+Sessions, plugins, settings and accounts from the previous product do not carry over. Follow the [upgrade guide](docs/guide/upgrade-from-previous.md) to stop the old daemon, back up and move the old home and any applicable external directories, then configure a fresh environment. It includes macOS, Linux and Windows paths, steps and exact refusal messages. Startup never deletes or converts the old environment.
 
-Copy the folder first if you want to keep old sessions.
-
-For an existing supported home, `E_DATA_DIR_STALE` instead requires resetting only the named SQLite ledger and `tables/`, keeping `profiles/`; `E_DATA_DIR_NEWER` requires upgrading AGH. Nothing is migrated. See [data-format recovery](docs/guide/install.md#data-format-and-upgrade) for exact paths and data loss.
+`E_HOME_VERSION` is a home-layout refusal; `E_DATA_DIR_STALE` / `E_DATA_DIR_NEWER` within a supported home use the separate [data-format recovery](docs/guide/install.md#data-format-and-upgrade) procedure.
 
 ## Start from source
 

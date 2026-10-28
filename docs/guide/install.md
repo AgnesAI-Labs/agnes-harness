@@ -6,6 +6,8 @@ English | [简体中文](install.zh-CN.md)
 
 [Documentation](../README.md) · Next: [Model configuration and first run](quickstart.md)
 
+Previous-version users: follow the [upgrade guide](upgrade-from-previous.md) to back up and clean up first. The fresh-environment steps below do not migrate old data.
+
 A source build produces a local runtime directory containing the CLI, background services, and Web workbench. Prepare your environment, build the runtime, then follow the [quickstart](quickstart.md). For a preview of the expected results, see the [demo guide](demo.md).
 
 Source builds remain the way to install from this repository. A release-candidate npm package is described below. It is not published to the registry yet.

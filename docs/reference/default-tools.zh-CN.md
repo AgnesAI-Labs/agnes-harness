@@ -6,6 +6,8 @@
 
 标准预设直接提供 `ui_render`、`ui_update`、`ui_close` 和 `ui_guide`。构造界面前调用 `ui_guide` 获取完整组件 schema、数据契约和示例；render/update 的模型参数采用精简结构，服务仍在发布前执行完整协议、动作和数据校验。插件/Skill 创作、Skill 管理、MCP 连接管理、文档读取与 Computer Use 通过 `tool_search` 与 `tool_describe` 按意图加载。创作指引由版本匹配的指南工具返回，不再注入普通会话。`ui_submit` 是内部界面动作目标，不进入模型工具 schema 或发现目录。历史会话工具（`session_search`、`session_trace`、`session_event_search`、`session_event_read`、`session_event_trace`）与 MCP 资源工具（`list_mcp_resources`、`list_mcp_resource_templates`、`read_mcp_resource`）按需加载，每类在列表中占一行。MCP 服务器的工具遵循该服务器的工具加载方式（见 [MCP](../guide/mcp.zh-CN.md#mcp-工具如何提供给模型)）。延迟工具在每次请求的 `available_deferred_tools` 提示段中按名称排序，每项一句话，或每个 `discoveryGroup` 一行并附工具数量；描述最多 250 个字符，目录最多 8 KiB，省略项通过 `tool_search` 查找。通过 `tool_describe` 加载匹配工具后，schema 会进入后续模型请求；加载状态跨压缩和会话重开保留，工具调用仍受会话目录、模型能力、参数验证和授权约束。`ask_user_question` 和四个界面工具声明了 `requiresUser`，无人值守的轮次（`agh -p`、`agh run`）不提供它们（见[无人值守的轮次](../guide/headless.zh-CN.md#无人值守的轮次)）。业务 Loop 可通过 `prepareRequest({ tools: [...] })` 选择模型工具，或通过受控工具端口执行。
 
+把独立的读取、搜索和状态查询放在同一模型回复中；只读调用并发执行，其他调用保持给定顺序。依赖前一步结果的工作须先检查结果。见[程序化批处理](../guide/code-workflows.zh-CN.md#批量调用独立工具)。
+
 | 工具 | 输入与行为 |
 | --- | --- |
 | `read` | 读取受工作区权限约束的文本、会话附件及原图。对支持视觉的模型，本地单帧 PNG/JPEG 通过 artifact 成为模型图片输入；输入上限为 20 MiB、6400 万像素与 256 MiB 解码采样内存；渐进或隔行输入限制为 1600 万像素与 64 MiB 解码采样内存。进程最多同时解码两张图片，整个准备流程共享 30 秒时限；可选的原生 codec 只在读取图片时加载。按当前模型/运行时的字节、尺寸及像素限制等比例缩小，并去掉元数据。Web 沿用工具图片卡片；非视觉模型收到明确未检查像素的文字说明。`max_edge`（8–1456）可进一步降低输出尺寸。对单个 session-file/session-image 原件使用 `save_to`，可在正常写授权下通过独占、不跟随符号链接的创建能力复制到新的工作区相对路径，禁止覆盖。每份最多 100 MiB，每会话同时一份、每进程两份；更大的原件需客户端按字节窗口下载。其他格式需相应工具。 |
@@ -62,7 +64,7 @@ const searchProvider: SearchProvider = {
 // 在已有 createHost(profile, dependencies) 参数中加入 searchProvider。
 ```
 
-提供方负责凭据、传输和厂商选择。工具不接收密钥，也不选择厂商。设置中的网页搜索可配置 Brave、Tavily、Exa、Perplexity 或自建 SearXNG。端点、结果上限、超时和速率限制保存在配置档数据目录。保存启用的连接或新密钥前，会先用候选配置进行一次最小搜索；验证失败会保留原配置和密钥。停用或移除密钥不需要联网。验证、工具调用和设置页测试共用同一速率窗口，也可能消耗服务商额度。API 密钥只写入 `secret://search/<provider>`，位于主目录的 secrets（`<home>/secrets`）。配置档未指定其他路径时，文件适配器也读取该目录。原先落在 `<dataDir>/secrets` 的存储会迁移过去。没有就绪的默认提供方时，工具返回 `WEB_SEARCH_UNAVAILABLE`。部署方传入的 `SearchProvider` 会替换该注册表。规范化摘要包含 Citations 列表。页面区分“已配置，尚未验证”和本次页面中“测试通过”的状态。失败按认证、权限、付费、限流、超时和连接问题显示固定提示，不在日志中泄露凭据。官方结果行通过可选的 `SearchResult.provider` 字段声明实际使用的服务；全部结果都标明同一服务时，工具会在 `Search service` 标题和 `details.provider` 中明确返回。空结果、混合服务结果或未声明身份的自定义提供方不推断服务名称。
+提供方负责凭据、传输和厂商选择。工具不接收密钥，也不选择厂商。「插件 → 内置 → 网页搜索」可配置 Brave、Tavily、Exa、Perplexity 或自建 SearXNG。端点、结果上限、超时和速率限制保存在配置档数据目录。保存启用的连接或新密钥前，会先用候选配置进行一次最小搜索；验证失败会保留原配置和密钥。停用或移除密钥不需要联网。验证、工具调用和设置页测试共用同一速率窗口，也可能消耗服务商额度。API 密钥只写入 `secret://search/<provider>`，位于主目录的 secrets（`<home>/secrets`）。配置档未指定其他路径时，文件适配器也读取该目录。原先落在 `<dataDir>/secrets` 的存储会迁移过去。没有就绪的默认提供方时，工具返回 `WEB_SEARCH_UNAVAILABLE`。部署方传入的 `SearchProvider` 会替换该注册表。规范化摘要包含 Citations 列表。页面区分“已配置，尚未验证”和本次页面中“测试通过”的状态。失败按认证、权限、付费、限流、超时和连接问题显示固定提示，不在日志中泄露凭据。官方结果行通过可选的 `SearchResult.provider` 字段声明实际使用的服务；全部结果都标明同一服务时，工具会在 `Search service` 标题和 `details.provider` 中明确返回。空结果、混合服务结果或未声明身份的自定义提供方不推断服务名称。
 
 持久 shell：为 `shell` 设置 `persistent:true`，可选择 `shell:"bash"|"zsh"|"pwsh"`。返回命令的 `jobId` 与解释器的 `sessionId`，后续调用保留 cwd、环境变量和解释器变量。可传 `sessionId` 选择现有解释器；忙碌时拒绝另一条命令，终止命令会关闭解释器。交互式 stdin 请使用 PTY。
 

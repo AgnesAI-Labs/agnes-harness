@@ -53,7 +53,7 @@ See [troubleshooting](troubleshooting.md), [CLI reference](../reference/cli.md) 
 
 ## Web diagnostics
 
-Open **Settings → Diagnostics** to view recent safe error records, copy a diagnostic ID, or find an older record by its exact ID. **Export diagnostic bundle** downloads the redacted JSON bundle; after a search, it selects that error. The page also shows worker health, generation counts and bound session counts. Technical details start collapsed.
+Open **Settings → Advanced → Run diagnostics** to view recent safe error records, copy a diagnostic ID, or find an older record by its exact ID. **Export diagnostic bundle** downloads the redacted JSON bundle; after a search, it selects that error. The page also shows worker health, generation counts and bound session counts. Technical details start collapsed.
 
 **Status check** groups the runtime, data and security, isolation, and connection checks into compact cards. The service strip shows versions and the age of the last check. Unavailable workers use a hollow dot and are excluded from group totals. Checks that need attention show repair guidance and a direct link when available. **Check again** refreshes local checks; **Test model accounts** also tests model connections and shows the result on the account line.
 

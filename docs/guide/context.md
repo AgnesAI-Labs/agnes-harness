@@ -4,7 +4,7 @@ English | [简体中文](context.zh-CN.md)
 
 [Documentation](../README.md) · [Skills](skills.md) · [Default tools](../reference/default-tools.md)
 
-Open **Settings → Context** to inspect repository rules for a registered workspace, configure the clock, or add trusted Skill directories. Code stays pinned to the session generation; these files are live resources.
+Open **Settings → Models → Run configuration → Context** to inspect repository rules for a registered workspace, configure the clock, or add trusted Skill directories. Code stays pinned to the session generation; these files are live resources.
 
 The `agnes/context-rules` extension loads `$AGH_HOME/AGENTS.md`, then the nearest `.git` project root through the session working directory. In each directory it reads `AGENTS.md`, `CLAUDE.md`, `AGENTS.local.md`, and `CLAUDE.local.md` in that order. Trimmed identical siblings collapse to the first candidate. More specific directories and local overlays take precedence within their scope. Descendant rules load when tools reference files in that directory; touched scopes persist across resume. Rules refresh before every model request, including edits and deletions. The Context preview shows the selected workspace baseline.
 

@@ -34,7 +34,7 @@ AGH 面向 Forward Deployed Engineering（FDE）：工程师深入业务现场�
 | 持续工作 | 共享后台、会话历史与恢复入口 | 在 CLI、Web 和 SDK 中找到并继续任务 |
 | 执行控制 | 包信任、工具审批、执行约束 | 明确加载什么代码、允许什么操作、如何检查结果 |
 
-先了解[产品演示](demos.zh-CN.md)：制药 GMP 与航空质量 showcase 应用将在同一版本提供。开发者可从[五个教学示例](../../examples/fde/README.zh-CN.md)学习工具、面板、审批、报告和定时自动化。
+先了解[产品演示](demos.zh-CN.md)：DevBoard、制药 GMP 与航空质量展示应用已随仓库提供。开发者可从[五个教学示例](../../examples/fde/README.zh-CN.md)学习工具、面板、审批、报告和定时自动化。
 
 每一部分都有独立的入口与示例。你可以先接入一个查询工具，再补充 Skill 和业务面板，逐步形成适合现场的应用。
 

@@ -2,6 +2,8 @@
 
 [English](README.md) | 简体中文
 
+从旧版 `main` 升级请先看[旧版升级指南](guide/upgrade-from-previous.zh-CN.md)：备份、清理旧环境，再重新配置。
+
 **AGH 把业务能力交付为可安装的插件、可启动的智能体和可采纳的应用。**
 
 - **插件**是安装、分发与信任单位，可以提供工具、运行方式（Loop）、模型、界面、技能、连接或服务。
@@ -57,6 +59,7 @@ node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"
 | [会话与恢复](guide/sessions.zh-CN.md) | 继续任务、导出记录、处理中断 |
 | [插件生命周期](guide/packages.zh-CN.md) | 安装、信任、启用、更新与移除插件 |
 | [通用凭据](guide/credentials.zh-CN.md) | 保存只写 API key 并管理配置引用 |
+| [自动化](guide/web.zh-CN.md#定时任务) | 创建定时任务、查看运行历史并收取结果 |
 | [Webhook 触发器](guide/webhooks.zh-CN.md) | 通过认证的业务事件创建普通业务 Agent 会话 |
 | [无界面运行与回放](guide/headless.zh-CN.md) | JSONL 事件、固定模型回复比较和批量输入 |
 | [使用本地模型](guide/local-model.zh-CN.md) | 本地 OpenAI-compatible endpoint 和模型发现 |

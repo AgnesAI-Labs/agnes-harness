@@ -2,7 +2,7 @@
 
 English | [简体中文](memory.zh-CN.md)
 
-Memory keeps a small set of learned preferences and conventions across sessions in the same workspace. Settings → Agent → Memory offers **off**, **ask before writing**, and **automatic**. The official file provider is installed by default; agent access starts **off**. Off blocks both reads and writes through the memory API and mediated file tools on the next request. Shell protection depends on the platform as explained below. It cannot recall content already sent to a model.
+Memory keeps a small set of learned preferences and conventions across sessions in the same workspace. Settings → General → Personalization → Memory offers **off**, **ask before writing**, and **automatic**. The official file provider is installed by default; agent access starts **off**. Off blocks both reads and writes through the memory API and mediated file tools on the next request. Shell protection depends on the platform as explained below. It cannot recall content already sent to a model.
 
 Use **Open memory files** to inspect or edit Markdown with the existing text editor. Human editing remains available when agent access is off. The editor saves against the hash it opened: a conflicting human or session edit is preserved; reload, merge and save again. A note shows the last recorded writer's session and turn. Direct edits outside this editor do not update that note. Workspace file memory is outside the project checkpoint: rewinding code does not roll back learned preferences.
 

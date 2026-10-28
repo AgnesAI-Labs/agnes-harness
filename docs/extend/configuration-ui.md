@@ -81,7 +81,7 @@ The runtime provider catalog intentionally contains descriptions and identities,
 
 ## Configure any installed plugin
 
-Open **Settings → Plugins**, select an installed package, then open **Configuration**. Choose the plugin entry when a package declares several exports. Installation and trust remain separate from saving configuration; saving an inactive entry stores its values without enabling its code.
+Open **Plugins**, select an installed package, then open **Configuration**. Choose the plugin entry when a package declares several exports. Installation and trust remain separate from saving configuration; saving an inactive entry stores its values without enabling its code.
 
 Each `agnes.plugins` manifest entry can declare the public `PluginConfigContract` from `@agnes/extension-api`:
 

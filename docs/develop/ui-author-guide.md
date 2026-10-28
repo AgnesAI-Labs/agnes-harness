@@ -36,7 +36,7 @@ Register en and zh-CN translations before rendering, and bind the returned dispo
 
 ## Settings groups
 
-Register `SettingsSection` through `settingsSections`, with a stable `id`, `titleKey`, `groupTitleKey`, `group`, `icon`, finite `order` and `component`. Reuse `accounts`, `plugins`, `skills`, `tools`, `automation`, `security`, `history` or `general` for everyday settings. `agent` and `diagnostics` appear under Advanced. Technical implementation controls belong there. Plugin groups are supported; supply a localized group title. Do not set the built-in `nativePane` or `navigationId` fields for a plugin panel. Set `runtimeCatalog: false` when the panel owns its loading and failure states.
+Register `SettingsSection` through `settingsSections`, with a stable `id`, `titleKey`, `groupTitleKey`, `group`, `icon`, finite `order` and `component`. Use `general`, `accounts`, `security` or `application` to add a tab to the corresponding everyday group. Use `advanced` for technical controls visible while Show advanced settings is on. Other group IDs appear as individually named sections under Extensions; supply localized titles. Plugins, Skills, MCP and Automation have their own product pages, rather than settings groups. Do not set the built-in `nativePane` or `navigationId` fields for a plugin panel. Set `runtimeCatalog: false` when the panel owns its loading and failure states.
 
 ## Intelligent UI summaries
 
@@ -53,6 +53,6 @@ Before shipping, check both languages and themes at desktop and 390px. Keep Tab 
 A profile client can declare `presentationRoles: ["deliverables"]` (or `navigation`, `conversation`,
 `composer`, `goal`, `interaction`) in its descriptor and register that role through the scoped client
 facade. Use a stable `client.id`. An administrator chooses the implementation in **Settings →
-Application → Interface implementations**, after a consent preview. Installing or registering a
+Application → Advanced interface choices**, after a consent preview. Installing or registering a
 provider does not select it. No application declaration is required; choices can override one role
 while preserving the adopted application's brand and other defaults. See [applications](../extend/applications.md).

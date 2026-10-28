@@ -2,6 +2,8 @@
 
 English | [简体中文](README.zh-CN.md)
 
+Coming from the previous `main` release? Start with [Upgrading from the previous version](guide/upgrade-from-previous.md) to back up, clean up and configure a fresh environment.
+
 <a id="agnes-harness-文档"></a>
 
 **AGH delivers business capabilities as installable plugins, launchable agents and adoptable applications.**
@@ -63,6 +65,7 @@ node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"
 | [Sessions and recovery](guide/sessions.md) | Continue tasks, export records, and handle interruptions |
 | [Plugin lifecycle](guide/packages.md) | Install, trust, enable, update, and remove plugins |
 | [Generic credentials](guide/credentials.md) | Save write-only API keys and manage their references |
+| [Automation](guide/web.md#scheduled-tasks) | Schedule tasks, inspect run history and collect results |
 | [Webhook triggers](guide/webhooks.md) | Start normal business-agent sessions from authenticated business events |
 | [Headless runs and replay](guide/headless.md) | Stream JSONL events, compare fixed model replies and run batches |
 | [Use a local model](guide/local-model.md) | Configure local OpenAI-compatible endpoints and discovery |

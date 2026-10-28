@@ -48,10 +48,12 @@ mise exec -- node tools/toolchain/run.mjs gen:check
 
 ## 架构图维护
 
-README 与架构说明共用[英文](../assets/architecture.svg)和[中文](../assets/architecture.zh-CN.svg) SVG。[生成脚本](../../tools/public-docs/render-architecture.mjs)维护一套布局与两份语言文案。修改脚本后运行 `node tools/public-docs/render-architecture.mjs`；`node tools/public-docs/render-architecture.mjs --check` 检查两张 SVG 是否与图源一致。需要查看两种语言的实际渲染，确认文字不越界，并在 README 宽度下保持可读。插图只用 CSS 与 SMIL 做动画，因此在 GitHub 的图片视图中也能播放，读者设置减少动态效果时保持静止；需要在浏览器中分别检查静止后的布局和动画过程。
+[生成脚本](../../tools/public-docs/render-architecture.mjs)维护[英文](../assets/architecture.svg)和[中文](../assets/architecture.zh-CN.svg) SVG 的共享布局与双语文案。修改图源后通过工具链入口运行；`--check` 校验两份输出是否一致。检查两种语言的实际渲染、文字适配和可读性，包括减少动态效果的情况。这些保留插图目前未嵌入 README 或架构指南，不能把文件存在当成当前产品行为的依据。
 
-角色比喻与实现声明应分别表达：插图展示目标架构，README 角色表写明各角色的当前范围。当前范围以 main 的实际代码与指南为准，并保持 README、架构说明和设备接入页一致。
+实现声明以当前[架构指南](../develop/architecture.zh-CN.md)和源码为准，图示、说明与链接应和所描述 revision 一致。
 
 ## README 演示素材
 
-[`docs/assets/readme/`](../assets/readme/) 中的横幅、动图与截图从本地实例录制，录制时使用隔离的 `AGH_HOME`、合成的示例工作区和已配置的模型；任何一帧都不得出现凭据、个人路径或客户数据。采用某次录制前，先核对画面中每个回答是否正确，字幕不超出指南与[已知限制](../reference/limitations.zh-CN.md)的表述。两个版本各有一套素材：英文 README 使用英文界面和英文提问录制的 `banner.png`、`hero.gif`、`plugins.gif`、`terminal.gif`、`trajectory.png`，中文 README 使用中文界面录制的 `*.zh-CN.*` 文件。界面或所演示的流程变化后，需要重新录制。
+当前 README 使用 [`docs/assets/readme/`](../assets/readme/) 中三组双语截图：`plugin-kinds-<locale>-light.png`、`plugin-old-version-<locale>-light.png`、`candidate-review-<locale>-light.png`，语言值为 `en` 和 `zh-CN`。截图通过合成浏览器 fixture 展示信任与版本行为，README 已说明菜单可能不同于当前界面。历史横幅和 GIF 不是当前 README 的素材契约。
+
+更新素材时使用隔离的 `AGH_HOME`、合成工作区与现有截图工具。任何一帧都不得包含凭据、个人路径或客户数据，核对画面中的回答，并同步两种语言。Fixture 截图只说明展示效果，不代表真实模型或外部服务验收；说明文字不得超出[已知限制](../reference/limitations.zh-CN.md)。

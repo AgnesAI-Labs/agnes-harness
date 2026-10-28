@@ -213,7 +213,7 @@ Provider 密钥经配置服务存入凭据后端；公开配置只保留 `secret
 
 官方目录预留维护者管理的 Ed25519 公钥槽：`officialKeys` 将密钥 ID 映射到 PEM 公钥；`officialCatalog` 保存 `{ "statement": { "keyId", "issuedAt", "entries" }, "signature" }`。每个签名条目绑定 `id`、`version`、解析后的 `source`、`treeIntegrity` 和 `publisher`。签名是 statement 按键排序的规范 JSON 的 UTF-8 字节上的 Ed25519 签名，以 base64 保存。可选签名字段 `mcpDefinitions` 保存完整 MCP 定义经 JCS 序列化后的 `sha256-<hex>` 摘要，只有精确匹配的已验证定义才能取得官方 stdio 默认配置。管理员配置公钥，不接受下载包自带的公钥。测试动态生成开发密钥；生产官方签名密钥及目录由维护者配置。
 
-仓库 `.agh/plugins` 初次发现时禁用且未信任。设置 → 运行详情 → 本地插件 提供含数量的确认，绑定当前插件快照与 `.agh/hooks.json` 摘要。信任记录存于用户 profile，不在仓库。执行输入编辑后须再次审核。Skill 是指令文本，附带代码、仓库 package 脚本与 MCP 配置不会仅因启动会话而执行。命令 hooks 除沙箱检查外，还要求精确内容信任。
+仓库 `.agh/plugins` 初次发现时禁用且未信任。设置 → 高级 → 运行诊断 → 技术详情 → 本地插件 提供含数量的确认，绑定当前插件快照与 `.agh/hooks.json` 摘要。信任记录存于用户 profile，不在仓库。执行输入编辑后须再次审核。Skill 是指令文本，附带代码、仓库 package 脚本与 MCP 配置不会仅因启动会话而执行。命令 hooks 除沙箱检查外，还要求精确内容信任。
 
 Windows 使用 PowerShell 时，没有进程隔离的命令 Hook 还须取得 `commandHooks.trustedUnconfined` 授权，精确匹配配置来源、内容摘要和规范化工作区。Hook 使用当前工作区绑定的 Host 执行接口，由 Host 判断能否执行，包括 `allow-if-unimplemented`、显式拒绝和 `required: true`；授权按每次调用的规范化工作区核对，覆盖其他工作区中的会话。Hook 信任不能覆盖这项判断。未受信任的工作区 Hook 不会进入本次调用；受信任但执行被拒的 Hook 仍按对应事件原有的失败规则处理。macOS/Linux 的隔离要求、工具审批，以及前述 Windows 记忆保护限制均不改变。
 

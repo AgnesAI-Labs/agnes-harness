@@ -162,7 +162,7 @@ There is no authority for "the profile". It is a pure function of layered inputs
 | 1 builtin | Shipped template, optionally extending a parent (`packages/host-common/src/profile/resolve.ts:406-413`) | AGH release | Defaults for every key |
 | 2 user | `profiles/<name>/profile.yaml` merged with `configuration.json` keys (`packages/host/src/runtime/profile/inputs.ts:66-86`) | User; configuration service | Everything the schema allows. For overlapping keys the configuration service value wins (shallow spread) except `adapters` and extension isolation, which are merged |
 | 3 workspace overlay | The verified deploy manifest of a trusted workspace, projected through the lock (`packages/package-manager/src/lock-state.ts:70-133`) | Workspace owner, only after workspace trust | A fixed fragment: packages, capability ceiling (tighten only), approval mode (tighten only), Computer Use (tighten only), extension isolation (`packages/host-common/src/profile/types.ts:153-160`). Cannot set transports or package config (`resolve.ts:416-426`) or persistence (`resolve.ts:284-293`) |
-| 4 local, flags | `.agnes/profile.local.yaml`, CLI flags | Operator | `extensionIsolation` only; any other key is refused with `E_DEP_MISSING` rather than ignored (`resolve.ts:433-436`; `packages/host-common/src/profile/isolation.ts:49-77`) |
+| 4 local, flags | `.agh/profile.local.yaml`, CLI flags | Operator | `extensionIsolation` only; any other key is refused with `E_DEP_MISSING` rather than ignored (`resolve.ts:433-436`; `packages/host-common/src/profile/isolation.ts:49-77`) |
 | 5 managed | Managed policy | Administrator | `version`, an empty `policy` and `extensionIsolation` only; the general managed layer is not implemented and anything else is refused (`isolation.ts:61-77`) |
 
 Projections of the resolved profile, and their disagreement rule:
@@ -199,7 +199,7 @@ Clients hold no session fact. They hold a cursor into the ledger, pending comman
 | Composer draft and memory | Browser `sessionStorage` and `localStorage` (`packages/web/src/composer-memory.ts:16`; `packages/web/src/app.ts:691`) | Per-viewer convenience | Safe to lose | Absent storage is tolerated |
 | Admin operation records | `sessionStorage` (`packages/web-admin/src/admin/plugins/admin/operation-storage.ts:16`) | Hint only; the operation journal (B5) is authoritative | Server operation state wins | Re-fetched |
 | Client module roster | Daemon package state (B1, C1) | The page reconciles its own roster, imports, styles and fibers (`packages/web/src/client-modules/reconcile.ts:23`) | Daemon roster decides which modules should run; the page's loaded set is an observation | Reload; reconcile again |
-| Session lists, controls | Daemon | Polling and invalidation through `createRefreshCoordinator` (`packages/web/src/refresh-coordinator.ts:4`) | Re-read after any change boundary | Interval refresh |
+| Session lists, controls | Daemon | Event-driven invalidation through `createRefreshCoordinator` (`packages/web/src/refresh-coordinator.ts`); concurrent requests are coalesced and hidden views defer reads | Re-read after a change boundary when the view can refresh | Invalidation or visibility/reconnect refresh |
 | Connectivity | Daemon liveness | `createReconnectController` probes and reloads once for a different daemon (`packages/web/src/reconnect.ts:35`) | A reload reaching a different daemon picks up its bootstrap | Capped backoff |
 
 Browser plugins cannot read or write host state except through row-bound relays; see [plugin boundaries](plugins.md).

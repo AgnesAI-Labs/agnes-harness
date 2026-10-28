@@ -33,11 +33,11 @@ An account added while a conversation is open is picked up by that conversation;
 
 ### Several voice accounts
 
-With exactly one enabled voice account, it is used automatically. With more than one, open Settings → Voice and choose one under **Voice account**. The list shows the names of the voice accounts in the side models page. Until you choose, the buttons stay greyed out with the reason "There are several voice accounts; choose one in settings". A disabled account does not count.
+With exactly one enabled voice account, it is used automatically. With more than one, open Settings → General → Voice and choose one under **Voice account**. The list shows the names of the voice accounts in the side models page. Until you choose, the buttons stay greyed out with the reason "There are several voice accounts; choose one in settings". A disabled account does not count.
 
 ## Settings
 
-Settings → Voice (in the General group) holds these settings. A change saves itself and takes effect immediately, in open conversations too.
+Settings → General → Voice holds these settings. A change saves itself and takes effect immediately, in open conversations too.
 
 | Group | Setting | Default | Notes |
 | --- | --- | --- | --- |
@@ -112,7 +112,7 @@ A greyed-out button explains itself: hover it or click it for the reason. For th
 | --- | --- |
 | No voice account yet | Add a voice account as above. |
 | The voice account has no key | The credential is missing or was deleted; choose one on the account. |
-| There are several voice accounts; choose one in settings | Choose one in Settings → Voice → Voice account. |
+| There are several voice accounts; choose one in settings | Choose one in Settings → General → Voice → Voice account. |
 | The voice account has no recognition (reading) model | The account has no model for this button. The microphone needs a transcription model, reading needs a speech model, and the wave button needs both. Fill in the empty field. |
 | The microphone works only on localhost or https pages | See the limits above. |
 | Another tab is in a voice conversation | Leave the conversation there first. |
@@ -120,7 +120,7 @@ A greyed-out button explains itself: hover it or click it for the reason. For th
 
 Other cases:
 
-- **No voice buttons.** Voice input or read aloud is off in Settings → Voice, or the backend is older than the voice feature. The wave button needs both functions on; the microphone needs voice input; the read buttons need read aloud.
+- **No voice buttons.** Voice input or read aloud is off in Settings → General → Voice, or the backend is older than the voice feature. The wave button needs both functions on; the microphone needs voice input; the read buttons need read aloud.
 - **"Microphone access was denied".** Allow the microphone for this page in the browser's site settings.
 - **A reply is not read aloud automatically.** Automatic reading needs the setting on, a working speech model, and a turn that finishes while you are looking at that session. It does not read while a voice conversation runs in another tab or while you are recording.
 - **"Click to play".** The browser blocked playback that did not start from a click. Click the button.

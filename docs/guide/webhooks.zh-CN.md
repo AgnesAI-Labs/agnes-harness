@@ -4,7 +4,7 @@
 
 [文档](../README.zh-CN.md) · [Web 设置](web.zh-CN.md) · [部署](deployment.zh-CN.md)
 
-业务事件可以驱动业务 Agent。打开 **设置 → 自动化 → 触发器**，创建规则，选择已登记的工作区、Agent 预设、Bundle 和 `secret://namespace/name` 密钥引用。表单只接收引用，不接收密钥值。通过已配置的密钥适配器预置密钥；文件密钥必须仅所有者可读。环境引用可以手动输入，例如环境适配器将 `secret://webhooks/github` 解析为 `AGNES_SECRET_WEBHOOKS_GITHUB`。
+业务事件可以驱动业务 Agent。打开 **自动化 → 触发器**，创建规则，选择已登记的工作区、Agent 预设、Bundle 和 `secret://namespace/name` 密钥引用。表单只接收引用，不接收密钥值。通过已配置的密钥适配器预置密钥；文件密钥必须仅所有者可读。环境引用可以手动输入，例如环境适配器将 `secret://webhooks/github` 解析为 `AGNES_SECRET_WEBHOOKS_GITHUB`。
 
 端点**默认关闭**。保存显式路径（如 `/hooks/events`）、载荷字节上限（默认 256 KiB，最高 1 MiB），再启用端点。`serve` 管理 HTTP 监听器并向共享 daemon 转发，请保持两者运行。规则与投递回执持久保存在 daemon 数据目录。
 

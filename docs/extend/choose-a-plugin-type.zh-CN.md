@@ -8,10 +8,10 @@
 
 | 你是 | 声明 | 你要写的 | 用户在哪里看到 |
 | --- | --- | --- | --- |
-| 工具作者 | `tool` | Agent 可以调用的操作，带输入和结果的 schema | 插件 → 已安装、市场（类型「工具」）；Agent 调用时出现在对话里 |
+| 工具作者 | `tool` | Agent 可以调用的操作，带输入和结果的 schema | 插件 → 插件、市场（类型「工具」）；Agent 调用时出现在对话里 |
 | 技能作者 | `skills`，或者不打包 | `SKILL.md` 说明，随包发布，或直接放进技能文件夹 | 插件 → 技能，每行标「来自 <插件名>」或「我添加的」 |
-| 集成作者 | `mcp` | 通过 MCP 连接外部系统 | 插件 → MCP，每行标来源 |
-| Agent 架构研究者 | `loop`、`model-adapter`，或某个服务商 | 一轮对话如何调度、如何调用模型，或者压缩、记忆这类运行时服务 | 设置 → 高级 → 运行配置，作为对应槽位的一个选项 |
+| 集成作者 | `mcp` | 通过 MCP 连接外部系统 | 插件 → 连接（MCP），每行标来源 |
+| Agent 架构研究者 | `loop`、`model-adapter`，或某个服务商 | 一轮对话如何调度、如何调用模型，或者压缩、记忆这类运行时服务 | 受支持的 Loop／模型在设置 → 模型 → 运行配置中选择；其他 provider 使用 profile 或 preset 契约 |
 | 智能体作者 | `bundle` | 带显式 launch 的 Bundle：选好运行方式、工具、技能和预设 | 智能体页；插件页显示能力与状态 |
 | 界面作者 | `ui` | 面板、皮肤或浏览器端控件 | 面板声明的工作台槽位；皮肤在设置 → 通用；市场（类型「界面与皮肤」） |
 | 应用构建者 | 既有能力标签与 `agnes.application` | 品牌、展示默认值、页面与默认／可见智能体；按需提供 provider | 管理员在设置 → 应用中预览并采纳 |
@@ -24,7 +24,7 @@
 
 **MCP。** 能力已经在别的系统或进程里时用 MCP。包可以带上连接定义，用户也可以手动添加服务。两种方式都不会自动启动或信任外部服务，见 [MCP 管理](../guide/mcp.zh-CN.md)。
 
-**Loop、模型适配器和服务商。** 这几类是替换运行时的一部分，不是往上加东西。Loop 负责一轮对话的调度和状态（[业务工作流](workflow-loops.zh-CN.md)、[循环事件](loop-events.zh-CN.md)）。模型适配器翻译一种线上协议（[model-adapter 模板](../../templates/model-adapter/)）。其他服务商各占一个槽位：[压缩](compaction-engines.zh-CN.md)、[持久化](persistence.zh-CN.md)、[记忆](memory.zh-CN.md)、[子 Agent](child-agents.zh-CN.md)，以及沙箱、工具运行时和工具策略。安装后，它们在运行配置里与内置实现并列，成为一个选项；安装本身不会切换正在运行的会话。
+**Loop、模型适配器和服务商。** 这几类是替换运行时的一部分，不是往上加东西。Loop 负责一轮对话的调度和状态（[业务工作流](workflow-loops.zh-CN.md)、[循环事件](loop-events.zh-CN.md)）。模型适配器翻译一种线上协议（[model-adapter 模板](../../templates/model-adapter/)）。其他服务商各占一个槽位：[压缩](compaction-engines.zh-CN.md)、[持久化](persistence.zh-CN.md)、[记忆](memory.zh-CN.md)、[子 Agent](child-agents.zh-CN.md)，以及沙箱、工具运行时和工具策略。安装只登记候选，不会切换运行中的会话。运行配置提供受支持的 Loop／模型选择；其他 provider 按各自的 profile 或 preset 契约选择，可在设置 → 高级 → 运行诊断 → 技术详情查看已登记类型。
 
 **Bundle。** Bundle 是可复用配置；声明自身完整的 `launch` 块并显式选择 preset，才成为智能体。仅提供 Loop 的插件不必声明 Bundle。参见[Bundle 与 Profile](bundles-and-profiles.zh-CN.md)和[插件元数据](plugin-metadata.zh-CN.md)。
 

@@ -8,12 +8,12 @@ A plugin is one package. It is the only unit a person installs, upgrades, trusts
 
 | You are | Declare | You write | Where people meet it |
 | --- | --- | --- | --- |
-| A tool author | `tool` | Operations the agent can call, with input and result schemas | Plugins → Installed and Marketplace (type “Tools”); the tool appears in the conversation when the agent calls it |
+| A tool author | `tool` | Operations the agent can call, with input and result schemas | Plugins → Plugins and Marketplace (type “Tools”); the tool appears in the conversation when the agent calls it |
 | A skill author | `skills`, or no package at all | `SKILL.md` instructions, shipped in a package or dropped into a skills folder | Plugins → Skills, each row labelled “From <plugin>” or “Added by me” |
-| An integration author | `mcp` | A connection to an external system through MCP | Plugins → MCP, each row labelled with its source |
-| An agent architecture researcher | `loop`, `model-adapter`, or a provider | How a turn is scheduled, how a model is called, or one runtime service such as compaction or memory | Settings → Advanced → Run configuration, as an option in the matching slot |
+| An integration author | `mcp` | A connection to an external system through MCP | Plugins → Connections (MCP), each row labelled with its source |
+| An agent architecture researcher | `loop`, `model-adapter`, or a provider | How a turn is scheduled, how a model is called, or one runtime service such as compaction or memory | Settings → Models → Run configuration for supported Loop/model choices; profile or preset contracts for other providers |
 | An agent author | `bundle` | A Bundle with its own launch: Loop, tools, skills and an explicit preset | Agents page; Plugins shows capabilities and status |
-| An interface author | `ui` | Panels, skins or browser-side controls | The workbench slot the panel declares, Settings → General for skins, and Plugins → Marketplace (type “Interface and skins”) |
+| An interface author | `ui` | Panels, skins or browser-side controls | The workbench slot the panel declares, Settings → General for skins, and Plugins → Marketplace (type “UI and skins”) |
 | An application builder | Existing capability labels plus `agnes.application` | Brand, presentation defaults, pages and default/visible agents; providers only where needed | Administrator previews and adopts it in Settings → Application |
 
 ## What each choice means
@@ -24,7 +24,7 @@ A plugin is one package. It is the only unit a person installs, upgrades, trusts
 
 **MCP.** Use MCP when the capability already lives in another system or process. A package can carry the connection definition; a person can also add a server by hand. Neither starts or trusts an external server automatically; see [MCP management](../guide/mcp.md).
 
-**Loop, model adapter and providers.** These replace part of the runtime rather than add to it. A loop owns scheduling and state for a turn ([Business workflows](workflow-loops.md), [Loop events](loop-events.md)). A model adapter translates one wire protocol ([model-adapter template](../../templates/model-adapter/)). Other providers fill one slot each: [compaction](compaction-engines.md), [persistence](persistence.md), [memory](memory.md), [child agents](child-agents.md), the sandbox, the tool runtime and the tool policy. After installation each one is a choice in Run configuration, next to the built-in implementation; installing it does not switch a running session.
+**Loop, model adapter and providers.** These replace part of the runtime rather than add to it. A loop owns scheduling and state for a turn ([Business workflows](workflow-loops.md), [Loop events](loop-events.md)). A model adapter translates one wire protocol ([model-adapter template](../../templates/model-adapter/)). Other providers fill one slot each: [compaction](compaction-engines.md), [persistence](persistence.md), [memory](memory.md), [child agents](child-agents.md), the sandbox, the tool runtime and the tool policy. Installation registers a candidate; it does not switch a running session. Run configuration exposes supported Loop/model choices. Other provider selections use their profile or preset contracts; inspect registered kinds under Settings → Advanced → Run diagnostics → Technical details.
 
 **Bundle.** A Bundle is a reusable configuration. Add its own complete `launch` block with an explicit preset to offer an agent; a Loop-only plugin needs no Bundle. See [Bundles and profiles](bundles-and-profiles.md) and [plugin metadata](plugin-metadata.md).
 

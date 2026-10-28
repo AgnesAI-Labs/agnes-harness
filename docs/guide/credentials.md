@@ -4,7 +4,7 @@ English | [简体中文](credentials.zh-CN.md)
 
 [Documentation](../README.md) · [MCP](mcp.md) · [Security](security.md)
 
-Generic credentials let a local administrator save an API key or token once and use its reference in MCP, plugin configuration, or webhook rules. The backend and SDK support this workflow; the Web credential editor is a separate UI increment.
+Generic credentials let a local administrator save an API key or token once and use its reference in MCP, plugin configuration, or webhook rules. The backend, SDK and Web credential editor support this workflow.
 
 ## Create and use a credential
 
@@ -26,7 +26,7 @@ The daemon generates an immutable `secret://generic/<UUID>` id. MCP uses this in
 
 ## Manage credentials in the Web UI
 
-Open **Settings → Tools and connections → Credentials**. The list shows each name, API-key type, creation date, and the configurations using it. Choose **New credential**, enter a name and secret value, then save. The value starts masked, can be shown while entering it, and is cleared after saving; saved values cannot be retrieved.
+Open **Settings → Permissions → Credentials**. The list shows each name, API-key type, creation date, and the configurations using it. Choose **New credential**, enter a name and secret value, then save. The value starts masked, can be shown while entering it, and is cleared after saving; saved values cannot be retrieved.
 
 The row menu offers rename, replace value, and delete. Renaming keeps the reference unchanged. Replacement may require reconnecting MCP services. Deletion shows the using configurations and is refused while referenced. Remove those references first, or explicitly acknowledge that the configurations will stop working and choose **Delete anyway**.
 

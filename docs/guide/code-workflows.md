@@ -14,6 +14,14 @@ Top-level `await` and `return` are supported; variables do not survive cells.
 Cells use Node type stripping: type annotations are supported; runtime TypeScript
 features such as enums and parameter properties should use ordinary JavaScript equivalents.
 
+## Batch independent tool calls
+
+One model response can contain several tool calls. Batch independent reads, searches and status checks in that response: read-only calls can run together; other calls execute in the given order. Wait for a result before choosing dependent inputs. Dependent shell steps that need no inspection between them can use one command with `&&` or a short script.
+
+Inside `run_code`, await every call and inspect every result, for example with `Promise.allSettled` for independent reads. The bridge allows at most four concurrent calls; do not parallelize edits to the same file or steps that need an approval/result first. A response that hands off a background job does not prove completion: inspect its actual state with `job_output` on the returned ID instead of starting it again. See [shell wait limits and job controls](../reference/default-tools.md).
+
+## Run a workflow
+
 ```ts
 return await tools.workflow({
   name: 'review',

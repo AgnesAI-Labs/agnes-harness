@@ -11,7 +11,7 @@
 | 发布 | pre-alpha；项目自有代码采用 [Apache-2.0](../../LICENSE)，第三方例外见 [NOTICE](../../NOTICE)；没有公共 npm 发布、消费者安装器或自动更新承诺 |
 | 平台 | macOS 与 Linux 已有持续维护的原生、进程及 Chromium 检查和平台基线。Windows 完整端到端验收未验证；全新机器安装、签名与升级交付仍需独立发行检查 |
 | Windows Web 静态资源 | 主线已将 URL 路径规范化改为 posix 路径，修复 vendor 资源路由；相关测试在 macOS 通过不等于真实 Windows 浏览器通过 |
-| Windows 安全 | 部分文件/符号链接、受限 token 与网络沙箱边界未完整关闭；不能宣称与 macOS/Linux 等价 |
+| Windows 安全 | 没有已验证的 L1 命令沙箱，受限 token 与网络隔离仍不可用。私有凭据 ACL 不代表命令已隔离或达到 macOS/Linux 等价支持 |
 | Web | 本机回环工作台，不是带远程登录/反向代理支持的公共服务；每个浏览器能力须单独验证 |
 | 普通插件 | 受信进程内代码；`ctx.hooks` 可注册全部 16 类 hook；Service/Projection/Slot/Resource 走各自的 facet，并按行校验 |
 | 联动 | 需 `agnes.plugins` 后端行 + 同 rowId 的 `agnes.clientDescriptors` + 服务定义/策略与当前会话 allow-list；不能把任意 Cordis service 自动远程化 |
@@ -24,6 +24,7 @@
 | Hooks / 扩展迁移 | `ctx.hooks` 已开放 16 类事件；旧第三方 `agnes.extensions` 后端入口已收敛到 `agnes.plugins`。内置兼容路径不等于第三方可继续使用旧格式 |
 | 模型 | 提供方目录与合同决定能力；文档自动演示使用本地模型夹具，外部模型效果和工具选择能力需另行验证 |
 | 程序化工具 | 本地 macOS/Linux 支持 PTC，Windows 和远程执行不支持。独立 CPython 为实验功能，见[代码工作流](../guide/code-workflows.zh-CN.md) |
+| Computer Use | 固定驱动锁中的 Linux 准入关闭，安装桌面不能启用。Windows 驱动准入不代表 Windows 产品全链路或命令沙箱已验收 |
 | Desktop/系统集成 | 不包含桌面客户端、系统登录启动注册、自动更新 |
 | 行业/企业 | 业务接口、身份、数据与部署政策需要按[FDE 场景](../guide/why-agh.zh-CN.md)分别集成和验收 |
 | 性能/Eval | 不提供未经固定模型、预算、任务与测量验证的领先/提升数字 |

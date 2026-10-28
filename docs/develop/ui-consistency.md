@@ -127,7 +127,7 @@ migrate. Do not add new allowances for page styling.
 
 ## Navigation, loading and keyboard
 
-The [UI author guide](ui-author-guide.md) describes public registrations and classes. Settings has eight everyday groups plus Advanced. The workbench keeps Files, Goal, Changes and Activity record, with business views and terminals shown contextually. Dual-placement Intelligent UI uses a conversation summary. Use shared SettingsState/Skeleton for loading. F6/Shift+F6 cycles visible sidebar, conversation or trace, workbench, plugin panels and composer; modals retain their focus. Closing drawers/dialogs returns focus. Narrow tests retain 375/768px and add 390px; phone targets must reach 44px, including clickable pseudo-elements, and icon controls need accessible names.
+The [UI author guide](ui-author-guide.md) describes public registrations and classes. Settings has General, Models, Permissions and Application groups, optional plugin sections under Extensions, and Advanced. The workbench keeps Files, Goal, Changes and Activity record, with business views and terminals shown contextually. Dual-placement Intelligent UI uses a conversation summary. Use shared SettingsState/Skeleton for loading. F6/Shift+F6 cycles visible sidebar, conversation or trace, workbench, plugin panels and composer; modals retain their focus. Closing drawers/dialogs returns focus. Narrow tests retain 375/768px and add 390px; phone targets must reach 44px, including clickable pseudo-elements, and icon controls need accessible names.
 
 ## Async state ownership
 

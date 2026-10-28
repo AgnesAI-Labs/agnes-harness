@@ -77,7 +77,7 @@ pnpm exec vitest run tools/public-docs/examples.test.ts packages/web/test/client
 
 ## 一致的界面
 
-遵循[UI 作者短指南](ui-author-guide.zh-CN.md)：使用共享组件与 `.agh-btn*` 契约，按需工作台标签、设置分组和 Intelligent UI 摘要。设置分为八类日常设置与高级；技术控件进入 Agent 行为或诊断。公共注册表只管理呈现，后台事实与授权仍走原服务。
+遵循[UI 作者短指南](ui-author-guide.zh-CN.md)：使用共享组件与 `.agh-btn*` 契约，按需工作台标签、设置分组和 Intelligent UI 摘要。设置分为通用、模型、权限、应用四类日常设置，以及可选的扩展和高级。运行配置位于模型；作业和运行诊断位于高级。公共注册表只管理呈现，后台事实与授权仍走原服务。
 
 
 客户端样式表通过原生 CSS 导入加载进 `app` 级联层。直接编写普通 CSS；相对导入和资产 URL 继续以包内样式表为基准。共享 `@agnes/web-ui` CSS 使用 `@agnes/web-ui/layers.css` 中的统一层序。层级与皮肤优先级见[皮肤指南](skins.zh-CN.md)。

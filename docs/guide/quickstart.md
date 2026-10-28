@@ -6,6 +6,8 @@ English | [简体中文](quickstart.zh-CN.md)
 
 [Documentation](../README.md) · Prerequisite: [Build AGH](install.md)
 
+Previous-version users: follow the [upgrade guide](upgrade-from-previous.md) to back up and clean up first. The fresh-environment steps below do not migrate old data.
+
 Configure a model, run a small task, and find the Web session from the CLI. Complete the [source build](install.md) first; use its isolated home setup for your first trial. Without a model account, start with the [local simulated-model demo](demo.md#run-locally-without-a-model-account).
 
 <a id="第一次打开-web"></a>

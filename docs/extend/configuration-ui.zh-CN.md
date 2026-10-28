@@ -81,7 +81,7 @@ const unregister = ctx.settingsSections.register({
 
 ## 配置任意已安装插件
 
-打开**设置 → 插件**，选择已安装包，再进入**配置**页签。一个包声明多个 export 时可切换插件条目。安装、信任与配置保存仍是独立操作；保存尚未启用的条目只存储配置，不启用其代码。
+打开**插件**，选择已安装包，再进入**配置**页签。一个包声明多个 export 时可切换插件条目。安装、信任与配置保存仍是独立操作；保存尚未启用的条目只存储配置，不启用其代码。
 
 `agnes.plugins` 中的每个 manifest 条目可以声明 `@agnes/extension-api` 的公开 `PluginConfigContract`：
 
