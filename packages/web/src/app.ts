@@ -1006,16 +1006,19 @@ const statusCheck = mountStatusCheck({
 })
 const settingsRegion = clientModules.settings as NonNullable<typeof clientModules.settings>
 if (!settingsRegion) throw new Error('missing settings region')
-// The sidebar's application switch asks for the settings page in place; its href stays the fallback.
-const stopSurfaceSettings = onSurfaceEvent('agnes:open-settings', (event) => {
-  const section = (event as CustomEvent<{ section?: string }>).detail?.section
-  if (!section) return
-  event.preventDefault()
+const openSettingsSection = (section: string) => {
   settingsRegion.open('model')
   run(async () => {
     await settings.open()
     settingsRegion.route(section)
   })
+}
+// The sidebar's application switch asks for the settings page in place; its href stays the fallback.
+const stopSurfaceSettings = onSurfaceEvent('agnes:open-settings', (event) => {
+  const section = (event as CustomEvent<{ section?: string }>).detail?.section
+  if (!section) return
+  event.preventDefault()
+  openSettingsSection(section)
 })
 // Home entries open full pages in the main area; the built-in three register like any plugin's.
 const homePages = mountHomePages(hosts.homePage, {
@@ -1024,12 +1027,7 @@ const homePages = mountHomePages(hosts.homePage, {
     call: (method, params) => client.call(method, params),
     sessionId: () => sessionBinding.session?.id,
     selectedWorkspace: () => (selectedWorkspace?.available ? selectedWorkspace.path : undefined),
-    openSettings: (section) =>
-      run(async () => {
-        settingsRegion.open('model')
-        await settings.open()
-        settingsRegion.route(section)
-      }),
+    openSettings: openSettingsSection,
     startDraft: (prompt) =>
       run(async () => {
         requestNewSession()
