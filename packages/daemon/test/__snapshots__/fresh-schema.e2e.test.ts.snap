@@ -146,13 +146,18 @@ exports[`fresh data directory schema > creates every database at its final schem
       title TEXT NOT NULL,
       created_at TEXT NOT NULL,
       parent_id TEXT,
-      principal TEXT
+      principal TEXT,
+      indexed_seq INTEGER NOT NULL DEFAULT 0,
+      indexed_id TEXT,
+      first_ts TEXT,
+      generated_title TEXT,
+      prompt TEXT
     )",
         "tbl_name": "sessions",
         "type": "table",
       },
     ],
-    "version": 3,
+    "version": 4,
   },
   "sessions.db": {
     "objects": [
@@ -389,7 +394,7 @@ exports[`fresh data directory schema > creates every database at its final schem
         "type": "table",
       },
     ],
-    "version": 1,
+    "version": 2,
   },
   "tables/_40agnes_2fdaemon.db": {
     "objects": [
@@ -418,6 +423,36 @@ exports[`fresh data directory schema > creates every database at its final schem
         "type": "index",
       },
       {
+        "name": "schedule_receipts_task_unread",
+        "sql": "CREATE INDEX schedule_receipts_task_unread ON schedule_run_receipts (schedule_id, is_read, run_rowid DESC)",
+        "tbl_name": "schedule_run_receipts",
+        "type": "index",
+      },
+      {
+        "name": "schedule_receipts_unread",
+        "sql": "CREATE INDEX schedule_receipts_unread ON schedule_run_receipts (is_read, run_rowid DESC)",
+        "tbl_name": "schedule_run_receipts",
+        "type": "index",
+      },
+      {
+        "name": "schedule_runs_open_job",
+        "sql": "CREATE INDEX schedule_runs_open_job ON schedule_runs (schedule_id) WHERE outcome IN ('running', 'waiting_approval', 'needs_attention')",
+        "tbl_name": "schedule_runs",
+        "type": "index",
+      },
+      {
+        "name": "schedule_runs_open_progress",
+        "sql": "CREATE INDEX schedule_runs_open_progress ON schedule_runs (session_key) WHERE progress IS NOT NULL AND ended_at IS NULL",
+        "tbl_name": "schedule_runs",
+        "type": "index",
+      },
+      {
+        "name": "schedule_runs_previous",
+        "sql": "CREATE INDEX schedule_runs_previous ON schedule_runs (schedule_id, at) WHERE session_key IS NOT NULL AND (reason IS NULL OR reason != 'approval_pending_previous_run')",
+        "tbl_name": "schedule_runs",
+        "type": "index",
+      },
+      {
         "name": "schedule_runs_schedule",
         "sql": "CREATE INDEX schedule_runs_schedule ON schedule_runs (schedule_id, at)",
         "tbl_name": "schedule_runs",
@@ -427,6 +462,18 @@ exports[`fresh data directory schema > creates every database at its final schem
         "name": "schedule_runs_session",
         "sql": "CREATE INDEX schedule_runs_session ON schedule_runs (session_key, at)",
         "tbl_name": "schedule_runs",
+        "type": "index",
+      },
+      {
+        "name": "schedule_runs_task",
+        "sql": "CREATE INDEX schedule_runs_task ON schedule_runs (schedule_id)",
+        "tbl_name": "schedule_runs",
+        "type": "index",
+      },
+      {
+        "name": "schedules_next_run",
+        "sql": "CREATE INDEX schedules_next_run ON schedules (next_run_at) WHERE status = 'active' AND next_run_at IS NOT NULL",
+        "tbl_name": "schedules",
         "type": "index",
       },
       {
@@ -517,6 +564,12 @@ exports[`fresh data directory schema > creates every database at its final schem
         "name": "sqlite_autoindex_plugin_config_values_1",
         "sql": null,
         "tbl_name": "plugin_config_values",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_schedule_run_receipts_1",
+        "sql": null,
+        "tbl_name": "schedule_run_receipts",
         "type": "index",
       },
       {
@@ -716,6 +769,12 @@ exports[`fresh data directory schema > creates every database at its final schem
         "type": "table",
       },
       {
+        "name": "schedule_run_receipts",
+        "sql": "CREATE TABLE schedule_run_receipts (run_rowid INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, snapshot TEXT, summary TEXT, is_read INTEGER NOT NULL DEFAULT 0, schedule_id TEXT NOT NULL)",
+        "tbl_name": "schedule_run_receipts",
+        "type": "table",
+      },
+      {
         "name": "schedule_runs",
         "sql": "CREATE TABLE schedule_runs (
     schedule_id TEXT NOT NULL,
@@ -739,6 +798,7 @@ exports[`fresh data directory schema > creates every database at its final schem
     session_key TEXT NOT NULL,
     title TEXT NOT NULL,
     prompt TEXT NOT NULL,
+    search_text TEXT NOT NULL DEFAULT '',
     selector TEXT NOT NULL,
     status TEXT NOT NULL,
     job_key TEXT,

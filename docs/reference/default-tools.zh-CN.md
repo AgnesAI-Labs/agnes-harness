@@ -12,7 +12,7 @@
 | `web_search` | `{"queries":["主题"]}`；一至四条非空查询。宿主提供搜索标题、链接和摘要。没有配置搜索提供方或密钥时返回 `WEB_SEARCH_UNAVAILABLE`，可改用已知 URL 调用 `web_fetch`。 |
 | `ask_user_question` | `{"questions":[{"id":"route","question":"请选择路线","options":["A","B"]}]}`。省略 options 使用自由文本；`multiple:true` 允许多选，`allowFreeText:true` 允许补充答案。一至四个问题，id 必须唯一。`timeoutMs` 默认为 0（立即继续），1–60000 可选择等待至持久化截止时间。同批其他工具仍可执行；晚答作为新输入送达。 |
 | `present` | `{"files":[{"path":"report.pdf","name":"Report.pdf","description":"供审阅"}]}`。注册已存在、可读取的普通文件，将内容复制为会话产物。最多十六个文件，每个文件和总量都不超过 32 MiB。surface 列出名称、说明及产物身份；工具结果保留需授权读取的 artifact 引用。 |
-| `shell` | `{"command":"npm run build","background":true}` 启动会话任务。`timeoutMs` 设置前台等待时间；超时后同一个进程继续在后台运行。`timeoutToBackground:false` 则终止进程。在有时间上限的回合（`agh -p --timeout`）中，前台等待还会在回合截止前结束，预留 15 秒与上限 5% 中的较大者；此时结果会说明回合时间即将用完以及还剩多少。后台任务不受此限制。 |
+| `shell` | `{"command":"npm run build","background":true}` 启动会话任务。`timeoutMs` 设置前台等待时间；超时或等满 2 分钟（取较早者）后，同一个进程作为后台任务继续运行，结果会给出任务 ID。`timeoutToBackground:false` 则在 `timeoutMs` 时终止进程，不受 2 分钟上限约束。结果只提及该次请求中完整提供的任务工具。在有时间上限的回合（`agh -p --timeout`）中，前台等待还会在回合截止前结束，预留 15 秒与上限 5% 中的较大者；此时结果会说明回合时间即将用完以及还剩多少。后台任务不受此限制。 |
 | `job_list` | `{}` 列出当前会话与分支的运行中和已完成任务。 |
 | `job_output` | `{"jobId":"返回的任务ID","waitMs":1000}` 读取输出和状态，可选等待最多 60 秒，并受工具期限限制；在有时间上限的回合中，等待也像前台 `shell` 一样在回合截止前结束。长输出存为可读取产物。 |
 | `job_kill` | `{"jobId":"返回的任务ID"}` 终止当前会话拥有的任务及进程组。 |
@@ -35,7 +35,7 @@
 
 Web 问答使用同一个预设 surface 表单，提供单选、多选与自由文本控件。TUI 读取同一批 surface：单个问题可输入标签或编号，多选使用逗号分隔标签或编号，多个问题使用以问题 id 为键的 JSON 对象。两者均通过 `ui.action` 进入普通 deferred `ui_submit` 收集工具。无效、陈旧回答及普通工具策略拒绝保留表单；成功回答关闭表单，经 SC1 保留认证 actor 与 untrusted 内容送达 Agent。回答不授予工具权限。`timeoutMs` 只限制等待，晚答仍有效。重新加载从账本恢复表单与动作回执。渠道显示编号选项，通过需认证的 Web 链接回答；`outbound.webUrl` 应配置为可访问的 Web 基址。
 
-Shell 命令默认获得 `PYTHONUNBUFFERED=1` 和 `PYTHONUTF8=1`。PowerShell 使用 Host 选定的解释器；5.1 以命令文本启动，避免序列化 CLIXML。非 UTF-8 输出按行回退到受支持的实测控制台代码页。超时结果说明空输出和重复超时次数，不猜测原因；前台命令结束时，它在自身进程组中留下仍在运行的进程（例如 `server &` 或 `nohup server &`）会被停止，结果会说明停止了几个并提示改用 `background: true`。Linux 上从 `/proc` 计数，因此没有 `ps` 的镜像同样会报告。离开进程组的进程（`setsid`、自行守护化的程序）不会被停止。
+Shell 命令默认获得 `PYTHONUNBUFFERED=1` 和 `PYTHONUTF8=1`。PowerShell 使用 Host 选定的解释器；5.1 以命令文本启动，避免序列化 CLIXML。非 UTF-8 输出按行回退到受支持的实测控制台代码页。超时结果说明空输出和重复超时次数，不猜测原因；命令自己放到后台的进程（`server &`、`nohup server &`、`setsid server &`）作为该命令的任务继续运行：命令本身结束时调用即返回，带上它的退出码，并说明任务仍在运行。任务的 shell 退出时，进程组中其余仍在运行的进程（例如子 shell 启动的）会被停止，结果会说明停止了几个并提示改用 `background: true`。Linux 上从 `/proc` 计数，因此没有 `ps` 的镜像同样会报告。离开进程组的进程（自行守护化的程序）不会被停止。命令的 shell 被并非 AGH 发出的信号终止时，结果会说明；命令里用了 `pkill -f` 或 `killall` 时，还会说明它们会匹配到自己所在 shell 的命令行。
 
 后台任务跨轮次保留，但不跨宿主重启。会话关闭时终止并清理全部所属任务。活跃进程句柄会阻止会话因空闲而休眠。清理失败保持可见，并保留句柄供后续重试关闭。每个任务最多捕获 4 MiB 输出，达到上限时会提示。每个会话与分支最多保留 128 个任务，优先淘汰已完成项。进程由选定沙箱提供方负责；缺失交互进程入口时明确拒绝，不回退本地执行。前台调用取消会终止任务；成功返回后台任务的工具调用结束不会终止任务。
 

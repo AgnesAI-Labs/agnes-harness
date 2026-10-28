@@ -26,6 +26,11 @@ export function isUnattended(turn: TurnMemory): boolean {
   return unattendedTurns.has(turn)
 }
 
+/** Whether the session's open turn has nobody attending it; no open turn is attended. */
+export function sessionUnattended(s: Pick<SessionImpl, 'turn'>): boolean {
+  return s.turn !== null && isUnattended(s.turn)
+}
+
 /**
  * A turn that gets progress checks: they are on (preset `loop.progress_check_steps`, off unless set),
  * and nobody attends the turn or its prompt set a limit of its own (time, steps or credits). An

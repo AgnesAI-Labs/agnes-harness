@@ -18,6 +18,10 @@ export interface ShellJobView {
   stderr: string
   truncated: boolean
   stoppedProcesses?: number
+  /** The signal that ended the job's own shell when it did not exit by itself. */
+  signal?: string
+  /** A shell command's own exit code, known before the processes it backgrounded have ended. */
+  foregroundCode?: number
   shell?: PersistentShellName
   sessionId?: string
 }
@@ -32,7 +36,10 @@ interface Job {
   capturedBytes: number
   cleanupPending?: boolean
   done: Promise<ShellJobView>
+  /** Settles when the command itself has ended, even while processes it backgrounded still run. */
+  foreground: Promise<void>
   finish(code: number | null): void
+  endForeground(code: number): void
   stop(): Promise<void>
 }
 const MAX_JOBS = 128,
@@ -45,6 +52,8 @@ const MAX_JOBS = 128,
 export const SHELL_IDLE_MS = 30 * 60_000
 export const TERMINAL_IDLE_MS = 2 * 60 * 60_000
 const IDLE_SWEEP_MS = 60_000
+/** How long a command's shell may take to exit after reporting its own code. */
+const FOREGROUND_SETTLE_MS = 100
 const owner = (ctx: JobOwner) => `${ctx.session.key}\0${ctx.session.lane}`
 const copy = (job: Job) => ({ ...job.view })
 
@@ -81,6 +90,7 @@ export class ShellJobs {
       for (const [call, id] of this.calls) if (id === old[0]) this.calls.delete(call)
     }
     let resolve!: (view: ShellJobView) => void
+    let foreground!: () => void
     const job: Job = {
       view,
       stop,
@@ -89,6 +99,13 @@ export class ShellJobs {
       done: new Promise((r) => {
         resolve = r
       }),
+      foreground: new Promise((r) => {
+        foreground = r
+      }),
+      endForeground: (code) => {
+        if (view.foregroundCode === undefined && view.code === null) view.foregroundCode = code
+        foreground()
+      },
       finish: (code) => {
         if (view.status !== 'running' && view.status !== 'killed') return
         if (view.code !== null) return
@@ -100,6 +117,7 @@ export class ShellJobs {
           this.notifications.set(owner(ctx), queue.slice(-128))
         }
         resolve(copy(job))
+        foreground()
       },
     }
     jobs.set(view.id, job)
@@ -225,10 +243,18 @@ export class ShellJobs {
     if (prior) return copy(this.get(ctx, prior))
     // Nothing ever writes to a command's input, so a prompt for input would wait forever. Reading
     // from /dev/null makes it fail at once instead of leaving a process nobody can answer.
+    // The process group is stopped when the shell exits, so the shell's exit trap reports the
+    // command's own code on stderr and then waits for what the command started with & or nohup:
+    // those stay this job, under job_kill and session close, instead of being reaped at once.
+    const mark = `AGH_FG_${randomUUID().slice(0, 8)}:`
     const argv =
       ctx.platform.shell === 'powershell'
         ? [SHELL_SENTINEL, command]
-        : ['sh', '-c', `exec </dev/null; ${command}`]
+        : [
+            'sh',
+            '-c',
+            `exec </dev/null; trap '__agh_rc=$?; printf "\\n${mark}%s\\n" "$__agh_rc" >&2; wait; exit "$__agh_rc"' EXIT\n${command}`,
+          ]
     const handle = await this.open(ctx, argv, cwd)
     let job: Job
     try {
@@ -238,10 +264,17 @@ export class ShellJobs {
       throw error
     }
     this.calls.set(call, job.view.id)
-    const off = handle.onOutput((chunk) => this.append(job, chunk))
-    void handle.exited.then(({ code, error, stoppedProcesses }) => {
+    const ended = new RegExp(`\\n?${mark}(-?\\d+)\\n?`)
+    const off = handle.onOutput((chunk) => {
+      const found = chunk.stream === 'stderr' ? ended.exec(chunk.text) : null
+      if (!found) return this.append(job, chunk)
+      this.append(job, { stream: 'stderr', text: chunk.text.replace(found[0], '') })
+      job.endForeground(Number(found[1]))
+    })
+    void handle.exited.then(({ code, error, stoppedProcesses, signal }) => {
       off()
       if (stoppedProcesses !== undefined) job.view.stoppedProcesses = stoppedProcesses
+      if (code === null && signal && !error) job.view.signal = signal
       job.cleanupPending = error !== undefined
       if (error) this.append(job, { stream: 'stderr', text: String(error) })
       job.finish(error ? null : code)
@@ -440,6 +473,8 @@ export class ShellJobs {
     ctx: JobOwner & Pick<ToolContext, 'signal'> & Partial<Pick<ToolContext, 'cwd' | 'subagent'>>,
     id: string,
     ms: number,
+    /** Return once the command itself has ended, though processes it backgrounded still run. */
+    opts: { foreground?: boolean } = {},
   ): Promise<ShellJobView> {
     ctx.signal.throwIfAborted()
     const job = this.get(ctx, id)
@@ -474,7 +509,15 @@ export class ShellJobs {
       const timer = setTimeout(finish, ms)
       ctx.signal.addEventListener('abort', abort, { once: true })
       if (ctx.signal.aborted) abort()
-      void job.done.then(finish)
+      // bash also runs the exit trap when a signal ends the shell, then dies of that signal; the
+      // brief settle lets that exit, or a plain one with nothing in the background, win the report.
+      void (
+        opts.foreground
+          ? job.foreground.then(() =>
+              Promise.race([job.done, new Promise((r) => setTimeout(r, FOREGROUND_SETTLE_MS))]),
+            )
+          : job.done
+      ).then(finish)
     })
   }
   async kill(ctx: JobOwner, id: string): Promise<ShellJobView> {

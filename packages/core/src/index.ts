@@ -355,3 +355,4 @@ export {
 } from './step/tool-filter.js'
 export type { ExecOpts, PlannedCall } from './step/tools.js'
 export { approveAndExecute, runToolsPhase } from './step/tools.js'
+export { attend, sessionUnattended } from './step/turn-restore.js'

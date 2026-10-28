@@ -55,8 +55,8 @@ describe('data directory version', () => {
   it('stamps a new data directory with the current version', async () => {
     const s = open()
     await s.close()
-    expect(DATA_DIR_VERSION).toBe(1)
-    expect(userVersion(file)).toBe(1)
+    expect(DATA_DIR_VERSION).toBe(2)
+    expect(userVersion(file)).toBe(DATA_DIR_VERSION)
   })
 
   it('treats an empty sessions.db as new', async () => {
@@ -64,7 +64,7 @@ describe('data directory version', () => {
     writeFileSync(file, '')
     const s = open()
     await s.close()
-    expect(userVersion(file)).toBe(1)
+    expect(userVersion(file)).toBe(DATA_DIR_VERSION)
   })
 
   it('reopens a data directory of the current version', async () => {
@@ -87,6 +87,9 @@ describe('data directory version', () => {
         file,
         readFileSync(new URL(`../fixtures/ledger-upgrade/${build}.sql`, import.meta.url), 'utf8'),
       )
+      // Version 1 directories are refused since schedule tables changed; the ledger layout did not.
+      expect(refusal(open)).toMatchObject({ code: 'E_DATA_DIR_STALE', detail: { reason: 'older', found: 1 } })
+      rawCreate(file, `PRAGMA user_version = ${DATA_DIR_VERSION}`)
       const storage = open()
       const options = (key: string) => ({
         storage,
@@ -144,10 +147,10 @@ describe('data directory version', () => {
     const error = refusal(open)
     expect(error).toMatchObject({
       code: 'E_DATA_DIR_STALE',
-      detail: { reason: 'older', dataDir: dir, file, tablesDir, found: 0, supported: 1 },
+      detail: { reason: 'older', dataDir: dir, file, tablesDir, found: 0, supported: DATA_DIR_VERSION },
     })
     expect(error.message).toBe(
-      `E_DATA_DIR_STALE: data directory ${dir} was created by an older AGH (data format 0; this build supports 1). ${reset()}`,
+      `E_DATA_DIR_STALE: data directory ${dir} was created by an older AGH (data format 0; this build supports ${DATA_DIR_VERSION}). ${reset()}`,
     )
     expect(closes).toHaveBeenCalledOnce()
     closes.mockRestore()
@@ -172,7 +175,14 @@ describe('data directory version', () => {
     const error = refusal(open)
     expect(error).toMatchObject({
       code: 'E_DATA_DIR_STALE',
-      detail: { reason: 'orphan-tables', dataDir: dir, file, tablesDir, found: 0, supported: 1 },
+      detail: {
+        reason: 'orphan-tables',
+        dataDir: dir,
+        file,
+        tablesDir,
+        found: 0,
+        supported: DATA_DIR_VERSION,
+      },
     })
     expect(error.message).toBe(
       `E_DATA_DIR_STALE: data directory ${dir} has package tables in ${tablesDir} but no ledger at ${file}. ${reset()}`,
@@ -181,17 +191,18 @@ describe('data directory version', () => {
   })
 
   it('refuses a data directory written by a newer build', () => {
-    rawCreate(file, 'CREATE TABLE events (x)', 'PRAGMA user_version = 2')
+    const newer = DATA_DIR_VERSION + 1
+    rawCreate(file, 'CREATE TABLE events (x)', `PRAGMA user_version = ${newer}`)
     const before = snapshot()
     const error = refusal(open)
     expect(error).toMatchObject({
       code: 'E_DATA_DIR_NEWER',
-      detail: { dataDir: dir, file, found: 2, supported: 1 },
+      detail: { dataDir: dir, file, found: newer, supported: DATA_DIR_VERSION },
     })
     expect(error.message).toBe(
-      `E_DATA_DIR_NEWER: data directory ${dir} was written by a newer AGH (data format 2; this build supports 1); upgrade AGH. Nothing was changed.`,
+      `E_DATA_DIR_NEWER: data directory ${dir} was written by a newer AGH (data format ${newer}; this build supports ${DATA_DIR_VERSION}); upgrade AGH. Nothing was changed.`,
     )
-    expect(userVersion(file)).toBe(2)
+    expect(userVersion(file)).toBe(newer)
     expect(snapshot()).toEqual(before)
   })
 
@@ -205,14 +216,23 @@ describe('data directory version', () => {
       const error = refusal(open)
       expect(error).toMatchObject({
         code: 'E_DATA_DIR_STALE',
-        detail: { reason: 'older', dataDir: dir, file, tablesDir, found: 1, supported: 1 },
+        detail: {
+          reason: 'older',
+          dataDir: dir,
+          file,
+          tablesDir,
+          found: DATA_DIR_VERSION,
+          supported: DATA_DIR_VERSION,
+        },
       })
       expect(error.message).toContain('was created by an older AGH')
-      expect(error.message).toContain('(data format 1; an older AGH wrote into it after it was stamped)')
+      expect(error.message).toContain(
+        `(data format ${DATA_DIR_VERSION}; an older AGH wrote into it after it was stamped)`,
+      )
       expect(error.message).not.toContain('this build supports')
       expect(error.message).toContain(reset())
       expect(snapshot()).toEqual(before)
-      expect(userVersion(file)).toBe(1)
+      expect(userVersion(file)).toBe(DATA_DIR_VERSION)
     },
   )
 

@@ -4,14 +4,6 @@ import type { ScheduleDb } from './catalog.js'
 export const scheduleSearchText = (title: string, prompt: string): string =>
   `${title}\n${prompt}`.toLowerCase()
 
-// Owner connections refuse PRAGMA. Their own sqlite_master is the supported schema source.
-function hasColumn(db: ScheduleDb, table: string, column: string): boolean {
-  const sql =
-    db.get<{ sql: string }>("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", [table])
-      ?.sql ?? ''
-  return new RegExp(`\\b${column}\\b`, 'i').test(sql)
-}
-
 export function ensureScheduleSchema(db: ScheduleDb): void {
   db.transaction(() => {
     db.exec(`CREATE TABLE IF NOT EXISTS schedules (
@@ -48,18 +40,6 @@ export function ensureScheduleSchema(db: ScheduleDb): void {
   )`)
     db.exec('CREATE INDEX IF NOT EXISTS schedule_runs_schedule ON schedule_runs (schedule_id, at)')
     db.exec('CREATE INDEX IF NOT EXISTS schedule_runs_session ON schedule_runs (session_key, at)')
-
-    if (!hasColumn(db, 'schedules', 'search_text')) {
-      db.exec("ALTER TABLE schedules ADD COLUMN search_text TEXT NOT NULL DEFAULT ''")
-      for (const row of db.all<{ id: string; title: string; prompt: string }>(
-        'SELECT id, title, prompt FROM schedules',
-      )) {
-        db.exec('UPDATE schedules SET search_text = ? WHERE id = ?', [
-          scheduleSearchText(row.title, row.prompt),
-          row.id,
-        ])
-      }
-    }
     db.exec(
       'CREATE TABLE IF NOT EXISTS schedule_run_receipts (' +
         'run_rowid INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, snapshot TEXT, summary TEXT, is_read INTEGER NOT NULL DEFAULT 0, schedule_id TEXT NOT NULL)',
@@ -78,19 +58,8 @@ export function ensureScheduleSchema(db: ScheduleDb): void {
     db.exec(
       'CREATE INDEX IF NOT EXISTS schedule_receipts_unread ON schedule_run_receipts (is_read, run_rowid DESC)',
     )
-    if (!hasColumn(db, 'schedule_run_receipts', 'schedule_id')) {
-      db.exec('ALTER TABLE schedule_run_receipts ADD COLUMN schedule_id TEXT')
-      db.exec(
-        'UPDATE schedule_run_receipts SET schedule_id = (SELECT r.schedule_id FROM schedule_runs r WHERE r.rowid = run_rowid)',
-      )
-    }
     db.exec(
       'CREATE INDEX IF NOT EXISTS schedule_receipts_task_unread ON schedule_run_receipts (schedule_id, is_read, run_rowid DESC)',
-    )
-    // Historical rows get identities, but never a made-up instruction or settings snapshot.
-    db.exec(
-      "INSERT INTO schedule_run_receipts (run_rowid, id, schedule_id) SELECT rowid, 'run_' || lower(hex(randomblob(16))), r.schedule_id FROM schedule_runs r " +
-        'WHERE r.rowid > COALESCE((SELECT max(run_rowid) FROM schedule_run_receipts), 0)',
     )
   })
 }

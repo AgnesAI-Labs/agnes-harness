@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { expect, it } from 'vitest'
+import { DATA_DIR_VERSION } from '../../src/adapters/storage-sqlite.js'
 
 // Real processes: the first open of a data directory must serialise, not fail one of two daemons
 // (or a daemon and a worker) that start at the same moment.
@@ -42,7 +43,7 @@ await s.close()
     })
     const db = new DatabaseSync(file, { readOnly: true })
     try {
-      expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 1 })
+      expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: DATA_DIR_VERSION })
     } finally {
       db.close()
     }
