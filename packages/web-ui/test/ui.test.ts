@@ -46,6 +46,7 @@ describe('web-ui public component layer', () => {
   it('passes the document CSP nonce to Ant Design runtime styles', async () => {
     const ui = (await import('../src/index.js')) as unknown as UiModule
     const host = document.createElement('div')
+    for (const style of document.head.querySelectorAll('style')) style.remove()
     const meta = document.createElement('meta')
     meta.name = 'agnes-csp-nonce'
     meta.content = 'test-document-nonce'
@@ -57,9 +58,8 @@ describe('web-ui public component layer', () => {
     const styles = [...document.head.querySelectorAll<HTMLStyleElement>('style[data-css-hash]')]
     expect(styles.length).toBeGreaterThan(0)
     expect(styles.every((style) => style.nonce === meta.content)).toBe(true)
-    await expect
-      .poll(() => styles.every((style) => style.textContent?.trimStart().startsWith('@layer vendor')))
-      .toBe(true)
+    // Layered at insertion: antd's layout reads must never resolve the unlayered defaults.
+    expect(styles.every((style) => style.textContent?.trimStart().startsWith('@layer vendor'))).toBe(true)
     // Component regions share the skin bridge instead of injecting default light style rules.
     expect(host.querySelector('button')?.classList.contains('agnes-theme')).toBe(true)
     expect(styles.some((style) => style.textContent?.includes('.ant-btn:hover'))).toBe(false)
