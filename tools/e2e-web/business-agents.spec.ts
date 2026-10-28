@@ -258,6 +258,36 @@ test('application permission switch governs a package-fixed role launched by a q
     consentDigest: preview.consentDigest,
   })
   await page.reload()
+  // A permission chosen before the first send must preserve the application's default agent.
+  for (const mode of ['workspace', 'full'] as const) {
+    await page.getByRole('button', { name: '新对话', exact: true }).click()
+    await page.locator('#composer-permission').click()
+    await page.locator(`#permission-picker-popover [data-permission="${mode}"]`).click()
+    const draft = page.getByRole('textbox', { name: '任务内容', exact: true })
+    await draft.fill('call acme_status synthetic')
+    await expect(page.locator('#send')).toBeEnabled()
+    await draft.press('Enter')
+    await expect(page).toHaveURL(/session=/)
+    const startedId = new URL(page.url()).searchParams.get('session')
+    if (!startedId) throw new Error('The first workbench send did not open a session')
+    expect((await client.session.runtime(startedId)).preset?.bundles).toEqual([
+      '@fixture/confirmation-app#desk',
+    ])
+    if (mode === 'workspace') {
+      await page.getByTestId('approval-card').getByRole('button', { name: '仅允许这次', exact: true }).click()
+    }
+    await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-status', 'completed')
+    const started = await client.session.load(startedId, { cwd: runtime.workspace })
+    await started.attach()
+    expect((await toolResult(started, 'acme_status'))?.structured).toMatchObject({
+      confirmationMode: mode === 'full' ? 'auto-confirmed under full access' : 'manual',
+    })
+    await page.screenshot({
+      path: info.outputPath(`app-first-send-${mode}.png`),
+      fullPage: true,
+      animations: 'disabled',
+    })
+  }
   await page.getByRole('button', { name: '新对话', exact: true }).click()
   await page.getByRole('button', { name: '签署模拟记录', exact: true }).click()
   // Adoption already covers this unchanged role and launch configuration.
