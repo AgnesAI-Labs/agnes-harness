@@ -134,6 +134,40 @@ describe('DevBoard plugin contract', () => {
     expect(await service('devboard.reset').handler({}, ctx)).toMatchObject({ ok: true })
   })
 
+  it("puts a rejected gate's comment and open findings in the continue draft", async () => {
+    const store = memoryStore()
+    const ctx = { store, signal }
+    const gate = read(store).gates.find(
+      (g: Any) => g.decision === 'PENDING' && g.findings.some((f: Any) => !f.closed),
+    )
+    const finding = gate.findings.find((f: Any) => !f.closed)
+    const rejected = await service('devboard.gate').handler(
+      { gateId: gate.id, decision: 'REJECTED', by: `${gate.approverRoles[0]} 周明远`, comment: '需求不完整' },
+      ctx,
+    )
+    expect(rejected, JSON.stringify(rejected)).toMatchObject({ ok: true })
+    const out = await service('devboard.handoff').handler({ type: 'gate', id: gate.id }, { store })
+    expect(out.draft).toContain(`${gate.code}（${gate.name}）已驳回`)
+    expect(out.draft).toContain('意见：需求不完整')
+    expect(out.draft).toContain(`未关闭意见 ${finding.id}：${finding.text.slice(0, 120)}`)
+    expect(out.draft).toContain(`devboard_handoff({type:"gate", id:"${gate.id}"})`)
+    // every hand-off type has a draft inside the cap
+    for (const [type, list] of [
+      ['project', 'projects'],
+      ['change', 'changes'],
+      ['trial', 'trials'],
+      ['fault', 'faults'],
+      ['problem', 'problems'],
+      ['intervention', 'interventions'],
+    ] as const) {
+      const item = read(store)[list][0]
+      if (!item) continue
+      const { draft } = await service('devboard.handoff').handler({ type, id: item.id }, { store })
+      expect(draft, type).toContain(`devboard_handoff({type:"${type}", id:"${item.id}"})`)
+      expect(draft.length, type).toBeLessThanOrEqual(2500)
+    }
+  })
+
   it('creates a record-only order project and a live software project through devboard.create', async () => {
     const store = memoryStore()
     const ctx = { store, signal }
@@ -893,6 +927,18 @@ describe('DevBoard plugin contract', () => {
     expect((await turn('devboard_handoff', { type: 'project', id: project.id })).project.description).toBe(
       '社区图书馆的借还登记网页，面向管理员',
     )
+    // the continue draft carries this project's real hand-off, not a static prompt
+    expect(handoff.draft).toContain('继续推进「社区图书借阅登记台」')
+    expect(handoff.draft).toContain('项目需求：社区图书馆的借还登记网页，面向管理员')
+    expect(handoff.draft).toContain('CDCP')
+    expect(handoff.draft).toContain('同意立项')
+    expect(handoff.draft).toContain(handoff.nextStep.action)
+    expect(handoff.draft).toContain('docs/SRS.md')
+    expect(handoff.draft).toContain('完成后提交 TR1')
+    expect(handoff.draft).toContain('审批角色：')
+    expect(handoff.draft).toContain(`devboard_handoff({type:"gate", id:"${gateId}"})`)
+    expect(handoff.draft).toContain('humanNext.text')
+    expect(handoff.draft.length).toBeLessThanOrEqual(2500)
     // the summary the page shows before sending is the same one
     expect((await service('devboard.handoff').handler(card.object, { store })).summary).toBe(handoff.summary)
 
