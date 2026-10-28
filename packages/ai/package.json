@@ -14,7 +14,7 @@
   "dependencies": {
     "@agnes/protocol": "workspace:*",
     "@agnes/extension-api": "workspace:*",
-    "@earendil-works/pi-ai": "1.3.0",
+    "@earendil-works/pi-ai": "1.4.0",
     "@agnes/system-node": "workspace:*"
   },
   "devDependencies": {

@@ -20,5 +20,5 @@ packages:
   - examples/sandbox/docker
   - tools/*
 patchedDependencies:
-  '@earendil-works/pi-ai@1.3.0': patches/@earendil-works__pi-ai@1.3.0.patch
+  '@earendil-works/pi-ai@1.4.0': patches/@earendil-works__pi-ai@1.4.0.patch
   jiti@2.7.0: patches/jiti@2.7.0.patch
