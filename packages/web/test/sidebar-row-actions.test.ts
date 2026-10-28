@@ -117,10 +117,10 @@ describe('sidebar row actions', () => {
     // At rest the project's actions take no width; hover or focus gives them their room and
     // takes the count away.
     expect(bodies(PROJECT_ACTIONS)).toMatch(/flex: none;[\s\S]*width: 0;/)
-    expect(
-      bodies('.workspace-heading-row.is-nested:is(:hover, :focus-within) .workspace-row-actions'),
-    ).toMatch(/width: auto;/)
-    expect(bodies('.workspace-heading-row.is-nested:is(:hover, :focus-within) .workspace-count')).toMatch(
+    expect(bodies('.workspace-heading-row.is-nested:has(:focus-visible) .workspace-row-actions')).toMatch(
+      /width: auto;/,
+    )
+    expect(bodies('.workspace-heading-row.is-nested:has(:focus-visible) .workspace-count')).toMatch(
       /display: none;/,
     )
     // Session rows follow the same pattern: the menu has no width at rest, the time gives way.
@@ -138,17 +138,26 @@ describe('sidebar row actions', () => {
       expect(rest?.body).not.toMatch(/display: none|visibility: hidden|width: 0/)
     }
     const shown = rules().find((rule) =>
-      rule.selectors.includes(
-        '.sidebar-section > .workspace-heading-row:is(:hover, :focus-within) > :not(.workspace-heading)',
-      ),
+      rule.selectors.includes('.sidebar-section > .workspace-heading-row:hover > :not(.workspace-heading)'),
     )
     expect(shown?.body).toMatch(/opacity: 1;/)
     expect(shown?.selectors).toEqual(
       expect.arrayContaining([
-        '.sidebar-section-heading:is(:hover, :focus-within) > :not(.section-label)',
+        '.sidebar-section > .workspace-heading-row:has(:focus-visible) > :not(.workspace-heading)',
+        '.sidebar-section-heading:hover > :not(.section-label)',
+        '.sidebar-section-heading:has(:focus-visible) > :not(.section-label)',
         '.sidebar-section > .workspace-heading-row > :not(.workspace-heading):has([aria-expanded="true"])',
       ]),
     )
+    // Keyboard focus only: a mouse click leaves focus on the row, and must not keep them showing.
+    const focusWithin = rules().flatMap((rule) =>
+      rule.selectors.filter(
+        (selector) =>
+          /workspace-heading-row|sidebar-section-heading/.test(selector) &&
+          selector.includes(':focus-within'),
+      ),
+    )
+    expect(focusWithin).toEqual([])
     // The fold chevron belongs to the heading button, which none of these rules touch.
     expect(bodies('.workspace-chevron')).not.toMatch(/opacity/)
   })

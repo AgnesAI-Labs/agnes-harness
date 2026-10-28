@@ -331,7 +331,8 @@
     font-variant-numeric: tabular-nums;
   }
   /* The count gives way to the project's actions while they show. */
-  .workspace-heading-row.is-nested:is(:hover, :focus-within) .workspace-count,
+  .workspace-heading-row.is-nested:hover .workspace-count,
+  .workspace-heading-row.is-nested:has(:focus-visible) .workspace-count,
   .workspace-heading-row.is-nested:has(.workspace-row-actions [aria-expanded="true"]) .workspace-count {
     display: none;
   }
@@ -377,7 +378,8 @@
     margin-left: auto;
   }
   /* A heading's tools (项目's view and open-folder, 临时会话's new chat, the single list's tools)
-     fade in with the pointer or keyboard focus, like a session row's menu. Only opacity changes, so
+     fade in with the pointer or keyboard focus (:focus-visible, so a mouse click on the heading
+     does not leave them showing). Only opacity changes, so
      the heading keeps its size, and the buttons stay in the tab order; the fold chevron sits in the
      heading button and always shows. */
   .sidebar-section > .workspace-heading-row > :not(.workspace-heading),
@@ -385,9 +387,11 @@
     opacity: 0;
     pointer-events: none;
   }
-  .sidebar-section > .workspace-heading-row:is(:hover, :focus-within) > :not(.workspace-heading),
+  .sidebar-section > .workspace-heading-row:hover > :not(.workspace-heading),
+  .sidebar-section > .workspace-heading-row:has(:focus-visible) > :not(.workspace-heading),
   .sidebar-section > .workspace-heading-row > :not(.workspace-heading):has([aria-expanded="true"]),
-  .sidebar-section-heading:is(:hover, :focus-within) > :not(.section-label),
+  .sidebar-section-heading:hover > :not(.section-label),
+  .sidebar-section-heading:has(:focus-visible) > :not(.section-label),
   .sidebar-section-heading > :not(.section-label):has([aria-expanded="true"]) {
     opacity: 1;
     pointer-events: auto;
@@ -410,7 +414,7 @@
     pointer-events: none;
   }
   .workspace-heading-row:hover .workspace-row-actions,
-  .workspace-heading-row:focus-within .workspace-row-actions,
+  .workspace-heading-row:has(:focus-visible) .workspace-row-actions,
   .workspace-row-actions:has([aria-expanded="true"]) {
     opacity: 1;
     pointer-events: auto;
@@ -427,7 +431,8 @@
     margin-right: 0;
     overflow: hidden;
   }
-  .workspace-heading-row.is-nested:is(:hover, :focus-within) .workspace-row-actions,
+  .workspace-heading-row.is-nested:hover .workspace-row-actions,
+  .workspace-heading-row.is-nested:has(:focus-visible) .workspace-row-actions,
   .workspace-heading-row.is-nested .workspace-row-actions:has([aria-expanded="true"]) {
     width: auto;
     margin-right: var(--s4);

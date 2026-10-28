@@ -418,7 +418,7 @@ it('keeps sidebar action menus neutral on hover/focus and reveals project action
   )
   expect(activeReset?.selector).toContain('.agh-menu-popup:not(.agh-menu-popup--neutral)')
   expect(css).toMatch(
-    /\.workspace-heading-row:hover \.workspace-row-actions,[^}]+\.workspace-heading-row:focus-within \.workspace-row-actions[^}]+opacity: 1/,
+    /\.workspace-heading-row:hover \.workspace-row-actions,[^}]+\.workspace-heading-row:has\(:focus-visible\) \.workspace-row-actions[^}]+opacity: 1/,
   )
 })
 
