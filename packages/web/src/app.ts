@@ -669,6 +669,7 @@ const readOnlyController = createReadOnlyController(appSessionContext, {
 const composerDrafts = new ComposerDrafts(sessionStorage, location.origin)
 // Keep image submissions below the daemon's WebSocket frame cap, including their JSON-RPC envelope.
 const savedComposerDraft = composerDrafts.read()
+const savedComposerReferences = composerDrafts.readReferences()
 const notice = appNotice
 const conversation = hosts.conversation
 const goalHost = hosts.goal
@@ -901,6 +902,7 @@ const clientModules = await startClientModules({
   composer: {
     references, skills,
     initialDraft: savedComposerDraft ?? '',
+    initialDraftReferences: savedComposerReferences,
     onAttachmentsChange: renderControls,
     prepareUploadSession: prepareAttachmentSession,
     onCancel: handleComposerCancel,
@@ -1845,12 +1847,19 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   if (cleanupError) throw cleanupError
 }
 function selectComposerDraft(id?: string, options: { preserve?: boolean; carry?: boolean } = {}): void {
+  const currentReferences = composerRuntime.getDraftReferences()
+  composerDrafts.setReferences(currentReferences)
   const draft = composerDrafts.select(profileName, id, composerRuntime.getDraft(), options)
+  if (options.carry) composerDrafts.setReferences(currentReferences)
   // A lone `@` only opens the reference picker; it is not meaningful draft content to carry into
   // a later new session when the picker was dismissed before any reference was selected.
-  if (draft === '@') composerDrafts.clear()
+  if (draft === '@') {
+    composerDrafts.clear()
+    composerDrafts.setReferences({ files: [], skills: [] })
+  }
   composerRuntime.setDraft(draft === '@' ? '' : draft)
   if (!options.preserve) composerRuntime.clearImageBlocks()
+  composerRuntime.restoreDraftReferences(composerDrafts.readReferences())
 }
 let modelReadGeneration = 0
 let modelAppliedGeneration = 0
@@ -2165,6 +2174,7 @@ function handleEditQueued(itemId: string, text: string): Promise<void> {
 }
 
 function handleComposerDraftChange(value: string): void {
+  composerDrafts.setReferences(composerRuntime.getDraftReferences())
   composerController.handleComposerDraftChange(value)
 }
 function prepareComposerSession(): Promise<Session> {

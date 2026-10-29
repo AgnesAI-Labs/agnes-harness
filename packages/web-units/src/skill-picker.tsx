@@ -9,7 +9,13 @@ import {
 } from 'react'
 import type { Translate } from './locales/index.js'
 
-export type ComposerSkill = Readonly<{ name: string; description?: string }>
+export type ComposerSkill = Readonly<{
+  name: string
+  description?: string
+  /** Provenance already admitted by the daemon; the composer never reads Skill files itself. */
+  source?: Readonly<{ scope: string; rootKey: string }>
+  priority?: number
+}>
 
 /** A host-owned catalogue: this surface only renders names the host has already admitted. */
 export interface ComposerSkills {
@@ -33,6 +39,15 @@ function matches(skill: ComposerSkill, query: string): boolean {
     skill.name.toLocaleLowerCase('en-US').includes(needle) ||
     skill.description?.toLocaleLowerCase('en-US').includes(needle) === true
   )
+}
+
+/** Keep an inline skill distinct from adjacent prose while preserving its literal `$name` invocation. */
+function skillText(input: HTMLTextAreaElement, token: SkillToken, name: string): string {
+  const before = input.value.slice(0, token.start)
+  const after = input.value.slice(token.end)
+  const leading = before ? ' '.repeat(Math.max(0, 2 - (/[ \t]*$/u.exec(before)?.[0].length ?? 0))) : ''
+  const trailing = ' '.repeat(Math.max(0, 2 - (/^[ \t]*/u.exec(after)?.[0].length ?? 0)))
+  return `${leading}$${name}${trailing}`
 }
 
 /** `$` is a picker only: choosing a row writes an explicit skill mention into the draft. */
@@ -113,8 +128,8 @@ export function SkillPicker({
     const choose = (skill: ComposerSkill) => {
       const token = tokenAt(input)
       if (!token || disabledRef.current) return
-      editRef.current(token.start, token.end, `$${skill.name} `)
       onChooseRef.current?.(skill)
+      editRef.current(token.start, token.end, skillText(input, token, skill.name))
       close()
     }
     const keydown = (event: KeyboardEvent) => {
@@ -212,14 +227,20 @@ export function SkillPicker({
                     const input = textarea.current
                     const token = input && tokenAt(input)
                     if (token) {
-                      edit(token.start, token.end, `$${skill.name} `)
                       onChoose?.(skill)
+                      edit(token.start, token.end, skillText(input, token, skill.name))
                     }
                     setOpened(false)
                   }}
                 >
-                  <span className="skill-option-name">{skill.name}</span>
-                  {skill.description && <small>{skill.description}</small>}
+                  <span className="skill-option-icon" aria-hidden="true">
+                    <Icon name="sparkles" size={16} />
+                  </span>
+                  <span className="skill-option-copy">
+                    <span className="skill-option-name">{skill.name}</span>
+                    {skill.description && <small>{skill.description}</small>}
+                  </span>
+                  {active === index && <kbd className="skill-option-key">Enter</kbd>}
                 </Button>
               </li>
             ))}

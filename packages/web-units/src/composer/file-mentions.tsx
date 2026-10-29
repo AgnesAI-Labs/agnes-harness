@@ -43,6 +43,18 @@ function labelFor(mention: FileMention, others: readonly DraftMention[]): string
   return mention.path
 }
 
+/** Keep inline reference blocks visually distinct without shifting their overlay away from the textarea caret. */
+function spacingBefore(text: string): string {
+  if (!text) return ''
+  const existing = /[ \t]*$/u.exec(text)?.[0].length ?? 0
+  return ' '.repeat(Math.max(0, 2 - existing))
+}
+
+function spacingAfter(text: string): string {
+  const existing = /^[ \t]*/u.exec(text)?.[0].length ?? 0
+  return ' '.repeat(Math.max(0, 2 - existing))
+}
+
 /**
  * The files and folders the draft names. A mention lives in the text as `@label` and is sent as a
  * `resource_link` beside it; deleting its text drops it, and Backspace or Delete takes it whole.
@@ -51,12 +63,18 @@ export function useFileMentions({
   prompt,
   draftRef,
   editDraft,
+  initial = [],
 }: {
   prompt: RefObject<HTMLTextAreaElement | null>
   draftRef: RefObject<string>
   editDraft(start: number, end: number, text: string): void
+  initial?: readonly FileMention[]
 }) {
-  const [mentions, setMentions] = useState<readonly DraftMention[]>([])
+  const [mentions, setMentions] = useState<readonly DraftMention[]>(() => {
+    const rebuilt: DraftMention[] = []
+    for (const mention of initial) rebuilt.push({ ...mention, label: labelFor(mention, rebuilt) })
+    return rebuilt
+  })
   const mentionsRef = useRef(mentions)
   mentionsRef.current = mentions
   const publish = useCallback((next: readonly DraftMention[]) => {
@@ -76,7 +94,7 @@ export function useFileMentions({
       const end = range?.end ?? (input ? input.selectionEnd : draft.length)
       const before = draft.slice(0, start)
       const after = draft.slice(end)
-      const text = `${before && !/\s$/u.test(before) ? ' ' : ''}@${entry.label}${/^\s/u.test(after) ? '' : ' '}`
+      const text = `${spacingBefore(before)}@${entry.label}${spacingAfter(after)}`
       editDraft(start, end, text)
     },
     [draftRef, editDraft, prompt, publish],
@@ -115,20 +133,48 @@ export function useFileMentions({
   const clear = useCallback(() => {
     if (mentionsRef.current.length > 0) publish([])
   }, [publish])
+  const replace = useCallback(
+    (next: readonly FileMention[]) => {
+      const current = mentionsRef.current
+      if (
+        current.length === next.length &&
+        current.every(
+          (mention, index) =>
+            mention.path === next[index]?.path &&
+            mention.name === next[index]?.name &&
+            mention.directory === next[index]?.directory,
+        )
+      )
+        return
+      const rebuilt: DraftMention[] = []
+      for (const mention of next) rebuilt.push({ ...mention, label: labelFor(mention, rebuilt) })
+      publish(rebuilt)
+    },
+    [publish],
+  )
 
-  /** Backspace and Delete take a token whole; the caret never rests inside one. */
+  /** Reference tokens are atomic: delete and left/right navigation never leave the caret inside one. */
   const keydown = useCallback(
     (event: { key: string; preventDefault(): void; isComposing?: boolean }) => {
       const input = prompt.current
       if (!input || event.isComposing || input.selectionStart !== input.selectionEnd) return
-      if (event.key !== 'Backspace' && event.key !== 'Delete') return
       const caret = input.selectionStart
-      const token = mentionTokens(draftRef.current ?? '', mentionsRef.current).find((item) =>
-        event.key === 'Backspace'
+      const tokens = mentionTokens(draftRef.current ?? '', mentionsRef.current)
+      const token = tokens.find((item) =>
+        event.key === 'ArrowLeft' || event.key === 'Backspace'
           ? caret > item.start && caret <= item.end
-          : caret >= item.start && caret < item.end,
+          : event.key === 'ArrowRight' || event.key === 'Delete'
+            ? caret >= item.start && caret < item.end
+            : false,
       )
       if (!token) return
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.preventDefault()
+        const position = event.key === 'ArrowLeft' ? token.start : token.end
+        input.setSelectionRange(position, position)
+        return
+      }
+      if (event.key !== 'Backspace' && event.key !== 'Delete') return
       event.preventDefault()
       editDraft(token.start, token.end, '')
     },
@@ -142,7 +188,10 @@ export function useFileMentions({
     [editDraft],
   )
 
-  return { mentions, insert, blocks, restore, clear, keydown, remove }
+  /** Immediate snapshot for host persistence during the same event that inserts a mention. */
+  const snapshot = useCallback(() => mentionsRef.current, [])
+
+  return { mentions, snapshot, insert, blocks, restore, clear, replace, keydown, remove }
 }
 
 /** Text styles the overlay copies so its glyphs land exactly on the textarea's. */
@@ -254,9 +303,8 @@ export function FileMentionLayer({
                 relayout((value) => value + 1)
               }}
             >
-              {/* The `@` keeps its width in the text; the file's type icon takes its place. */}
+              {/* The fixed-width prefix replaces the literal `@` without shifting the textarea caret. */}
               <span className="composer-mention-at">
-                @
                 <Icon
                   name={fileMentionIcon(piece.mention.name, piece.mention.directory)}
                   size={16}

@@ -1,4 +1,45 @@
-/** Only plain local text. A draft never carries session readiness, permissions or attachments. */
+export type ComposerDraftReferences = Readonly<{
+  files: readonly Readonly<{ path: string; name: string; directory: boolean }>[]
+  skills: readonly Readonly<{
+    name: string
+    description?: string
+    source?: Readonly<{ scope: string; rootKey: string }>
+    priority?: number
+  }>[]
+}>
+
+const EMPTY_REFERENCES: ComposerDraftReferences = { files: [], skills: [] }
+
+function referencesKey(key: string): string {
+  return `${key}:references`
+}
+
+function readReferences(value: string | null): ComposerDraftReferences {
+  if (!value) return EMPTY_REFERENCES
+  try {
+    const parsed = JSON.parse(value) as Partial<ComposerDraftReferences>
+    const files = Array.isArray(parsed.files)
+      ? parsed.files.filter(
+          (file): file is ComposerDraftReferences['files'][number] =>
+            Boolean(file) &&
+            typeof file.path === 'string' &&
+            typeof file.name === 'string' &&
+            typeof file.directory === 'boolean',
+        )
+      : []
+    const skills = Array.isArray(parsed.skills)
+      ? parsed.skills.filter(
+          (skill): skill is ComposerDraftReferences['skills'][number] =>
+            Boolean(skill) && typeof skill.name === 'string',
+        )
+      : []
+    return { files, skills }
+  } catch {
+    return EMPTY_REFERENCES
+  }
+}
+
+/** Local draft text plus the minimal locators needed to restore its inline references. */
 export class ComposerDrafts {
   private selected: string
   private readonly memory = new Map<string, string>()
@@ -21,6 +62,20 @@ export class ComposerDrafts {
     } catch {
       return ''
     }
+  }
+  /** Reads only local file paths and skill metadata; never file content or authorization state. */
+  readReferences(): ComposerDraftReferences {
+    const key = referencesKey(this.selected)
+    if (this.memory.has(key)) return readReferences(this.memory.get(key) ?? null)
+    try {
+      return readReferences(this.storage.getItem(key))
+    } catch {
+      return EMPTY_REFERENCES
+    }
+  }
+  /** Stores reference locators separately so ordinary drafts remain plain text. */
+  setReferences(references: ComposerDraftReferences): void {
+    this.persist(referencesKey(this.selected), JSON.stringify(references))
   }
   /**
    * `preserve` keeps the typed text after a send creates its session. `carry` moves the same text

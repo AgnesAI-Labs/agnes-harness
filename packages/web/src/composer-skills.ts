@@ -24,7 +24,12 @@ export function composerSkills(workspaceId: () => string | undefined): ComposerS
                 skill.resolution.winner === true &&
                 !skill.stale,
             )
-            .map((skill) => ({ name: skill.name, ...(skill.description ? { description: skill.description } : {}) })),
+            .map((skill) => ({
+              name: skill.name,
+              ...(skill.description ? { description: skill.description } : {}),
+              source: { scope: skill.sourceIdentity.scope, rootKey: skill.sourceIdentity.rootKey },
+              priority: skill.priority,
+            })),
         )
         if (!page.nextCursor) break
         page = await api.skills(page.nextCursor)

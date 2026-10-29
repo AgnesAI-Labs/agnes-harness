@@ -73,15 +73,14 @@
     display: inline-flex;
     align-items: center;
     gap: var(--s4);
-    padding: 0.125rem var(--s8);
-    border-radius: var(--radius-sm);
     color: var(--agnes-brand-primary);
-    background: color-mix(in srgb, var(--agnes-brand-primary) 8%, var(--agnes-bg-surface));
-    font-weight: var(--font-weight-medium);
+    font-weight: var(--font-weight-semibold);
     vertical-align: text-bottom;
   }
   [data-agnes-conversation-messages] .agh-skill-mention > svg {
     flex: none;
+    width: 0.875rem;
+    height: 0.875rem;
   }
 
   [data-agnes-conversation-messages] .tool-detail-body[hidden] {

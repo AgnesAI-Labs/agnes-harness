@@ -1,5 +1,7 @@
-import { Icon } from '@agnes/web-ui'
-import { type RefObject, useLayoutEffect, useRef } from 'react'
+import { Drawer, Icon } from '@agnes/web-ui'
+import { type RefObject, useLayoutEffect, useRef, useState } from 'react'
+import type { Translate } from '../locales/index.js'
+import type { ComposerSkill } from '../skill-picker.js'
 
 export type SkillMentionToken = Readonly<{ start: number; end: number; name: string }>
 
@@ -53,13 +55,18 @@ export function SkillMentionLayer({
   prompt,
   draft,
   tokens,
+  skills,
+  t,
 }: {
   prompt: RefObject<HTMLTextAreaElement | null>
   draft: string
   tokens: readonly SkillMentionToken[]
+  skills: readonly ComposerSkill[]
+  t: Translate
 }) {
   const layer = useRef<HTMLDivElement>(null)
   const text = useRef<HTMLDivElement>(null)
+  const [detail, setDetail] = useState<ComposerSkill>()
   useLayoutEffect(() => {
     const input = prompt.current
     const box = layer.current
@@ -109,9 +116,16 @@ export function SkillMentionLayer({
               key={`skill:${piece.start}`}
               className="composer-skill-mention"
               data-testid="composer-skill-mention"
+              title={t('composer.skill.details.open')}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                const skill = skills.find((candidate) => candidate.name === piece.name)
+                if (skill) setDetail(skill)
+              }}
             >
               <span className="composer-skill-mention-prefix">
-                $
                 <Icon name="sparkles" size={16} className="composer-skill-mention-icon" />
               </span>
               {piece.name}
@@ -120,6 +134,39 @@ export function SkillMentionLayer({
         )}
         {draft.endsWith('\n') ? ' ' : null}
       </div>
+      <Drawer
+        open={detail !== undefined}
+        title={t('composer.skill.details.title')}
+        description={detail?.name}
+        onClose={() => setDetail(undefined)}
+      >
+        {detail && (
+          <section className="composer-skill-detail" data-testid="composer-skill-detail">
+            <div className="composer-skill-detail-mark" aria-hidden="true">
+              <Icon name="sparkles" size={20} />
+            </div>
+            <h3>{detail.name}</h3>
+            <dl>
+              <div>
+                <dt>{t('composer.skill.details.description')}</dt>
+                <dd>{detail.description || t('composer.skill.details.emptyDescription')}</dd>
+              </div>
+              {detail.source && (
+                <div>
+                  <dt>{t('composer.skill.details.source')}</dt>
+                  <dd>{detail.source.scope} · {detail.source.rootKey}</dd>
+                </div>
+              )}
+              {detail.priority !== undefined && (
+                <div>
+                  <dt>{t('composer.skill.details.priority')}</dt>
+                  <dd>{detail.priority}</dd>
+                </div>
+              )}
+            </dl>
+          </section>
+        )}
+      </Drawer>
     </div>
   )
 }

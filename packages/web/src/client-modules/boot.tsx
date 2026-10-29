@@ -387,6 +387,7 @@ export async function startClientModules(options: {
   let composerDraft = options.composer?.initialDraft ?? ''
   let composerImages: ReturnType<ComposerRegionMount['getImageBlocks']> = []
   let composerAttachments: ReturnType<ComposerRegionMount['getAttachmentBlocks']> = []
+  let composerReferences: ReturnType<ComposerRegionMount['getDraftReferences']> = { files: [], skills: [] }
   let composerSessionId = session.getSnapshot()
   ctx.effect(() =>
     session.subscribe(() => {
@@ -416,12 +417,14 @@ export async function startClientModules(options: {
         handle.setDraft(composerDraft)
         handle.restoreImageBlocks(composerImages)
         handle.restoreAttachmentBlocks(composerAttachments)
+        handle.restoreDraftReferences(composerReferences)
         if (composerState) handle.render(composerState)
         return () => {
           if (composerView !== attached) return
           composerDraft = handle.getDraft()
           composerImages = handle.getImageBlocks()
           composerAttachments = handle.getAttachmentBlocks()
+          composerReferences = handle.getDraftReferences()
           composerView = undefined
         }
       },
@@ -430,6 +433,7 @@ export async function startClientModules(options: {
     ? {
         focus: () => composerView?.focus(),
         getDraft: () => composerView?.getDraft() ?? composerDraft,
+        getDraftReferences: () => composerView?.getDraftReferences() ?? composerReferences,
         getImageBlocks: () => composerView?.getImageBlocks() ?? composerImages,
         getAttachmentBlocks: () => composerView?.getAttachmentBlocks() ?? composerAttachments,
         hasPendingImages: () => composerView?.hasPendingImages() ?? false,
@@ -453,6 +457,10 @@ export async function startClientModules(options: {
         restoreAttachmentBlocks(value) {
           composerAttachments = value
           composerView?.restoreAttachmentBlocks(value)
+        },
+        restoreDraftReferences(value) {
+          composerReferences = value
+          composerView?.restoreDraftReferences(value)
         },
         mention: (value) => composerView?.mention(value),
         dispose() {},

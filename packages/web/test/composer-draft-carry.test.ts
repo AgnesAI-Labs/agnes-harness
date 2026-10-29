@@ -126,6 +126,27 @@ it('can clear the currently selected saved draft', () => {
   expect(new ComposerDrafts(persistent, 'http://synthetic').select('profile', undefined, '')).toBe('')
 })
 
+it('restores saved file and skill references with their draft', () => {
+  const storage = new Map<string, string>()
+  const persistent = {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value),
+  }
+  const drafts = new ComposerDrafts(persistent, 'http://synthetic')
+  drafts.select('profile', 'session', '')
+  drafts.setReferences({
+    files: [{ path: '/synthetic/brief.md', name: 'brief.md', directory: false }],
+    skills: [{ name: 'review-brief', description: 'Review a product brief.', priority: 3 }],
+  })
+
+  const restored = new ComposerDrafts(persistent, 'http://synthetic')
+  restored.select('profile', 'session', '')
+  expect(restored.readReferences()).toEqual({
+    files: [{ path: '/synthetic/brief.md', name: 'brief.md', directory: false }],
+    skills: [{ name: 'review-brief', description: 'Review a product brief.', priority: 3 }],
+  })
+})
+
 it('keeps typed text when an upload opens the session and persists it under the new key', async () => {
   const handle = createRef<ComposerHandle>()
   const storage = new Map<string, string>()

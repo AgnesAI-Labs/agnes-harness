@@ -14,6 +14,7 @@ import { composerLocaleCatalog } from '../locales/composer.js'
 import type { Translate } from '../locales/index.js'
 import type { ComposerReferences } from '../reference-picker.js'
 import type { ComposerSkills } from '../skill-picker.js'
+import type { ComposerSkill } from '../skill-picker.js'
 
 export type ModelPickerOption = {
   id: string
@@ -187,10 +188,12 @@ export interface ComposerHandle {
   clearImageBlocks(): void
   focus(): void
   getDraft(): string
+  getDraftReferences(): ComposerDraftReferences
   getImageBlocks(): readonly ComposerImageBlock[]
   hasPendingImages(): boolean
   render(view: ComposerView): void
   restoreImageBlocks(images: readonly ComposerImageBlock[]): void
+  restoreDraftReferences(references: ComposerDraftReferences): void
   setDraft(value: string): void
   /** Name a file or folder at the caret: a chip in the text, sent as its `file://` link. */
   mention(mention: FileMention): void
@@ -200,10 +203,16 @@ export interface ComposerHandle {
   submit?(): boolean
 }
 
+export type ComposerDraftReferences = Readonly<{
+  files: readonly FileMention[]
+  skills: readonly ComposerSkill[]
+}>
+
 export interface ComposerRegionOptions {
   references?: ComposerReferences
   skills?: ComposerSkills
   initialDraft?: string
+  initialDraftReferences?: ComposerDraftReferences
   /** Localized catalog sample tasks, offered decoratively only in a new-session composer. */
   examplePrompts?: readonly string[]
   onCancel(): void
