@@ -37,7 +37,7 @@ Developer preview (pre-alpha) · [Source build](#run-from-source) · [Apache-2.0
 Taking AI into a real deployment is rarely about the model alone. It is about the customer's systems, the people who approve the work, and the details that differ at every site. Agnes Harness (AGH) connects models, tools, task state and business interfaces: **put the differences into plugins, let the harness run and record the work, and carry what you validated into the next deployment.**
 
 <p align="center">
-  <img src="docs/assets/readme/hero.gif" alt="AGH working in a real project: the agent reads the refund rules and order data, asks for approval before running a command, verifies the result, returns a checkable table, and records every step in the Trace view" width="100%" />
+  <img src="docs/assets/readme/hero.webp" alt="AGH working in a real project: the agent reads the refund rules and order data, asks for approval before running a command, verifies the result, returns a checkable table, and records every step in the Trace view" width="100%" />
 </p>
 
 <p align="center"><sub>Read the code, ask before running a command, verify, answer, and record every step.</sub></p>
@@ -98,7 +98,7 @@ The agent needs your order lookup, your knowledge base, your internal API. Writi
 In AGH, package a business loop, tools, model adapters, persona and Skills into one installable plugin, or connect an existing service through [MCP](docs/guide/mcp.md). Each session gets the capabilities it selected; a support agent's tools do not appear in an unrelated session. Installing a plugin shows its version, source, integrity digest, capabilities and license before anything runs. Business events can start work too: opt-in [GitHub and generic webhook triggers](docs/guide/webhooks.md) open ordinary sessions under the normal policy.
 
 <p align="center">
-  <img src="docs/assets/readme/plugins.gif" alt="Installing a plugin in the Web workbench: inspect the source, review integrity, capabilities and license, confirm enabling, then the agent calls the new demo_text_stats tool and its inputs and structured output are recorded" width="100%" />
+  <img src="docs/assets/readme/plugins.webp" alt="Installing a plugin in the Web workbench: inspect the source, review integrity, capabilities and license, confirm enabling, then the agent calls the new demo_text_stats tool and its inputs and structured output are recorded" width="100%" />
 </p>
 
 [Plugin mechanism script](examples/demos/business-agent/README.md) · [Developer teaching examples](examples/fde/README.md) · [Acme application](examples/acme/README.md)
@@ -107,7 +107,9 @@ In AGH, package a business loop, tools, model adapters, persona and Skills into 
 
 New sessions use the reviewed new plugin code; saved sessions keep their backend code (tools, hooks, loops and seams) across restarts. Uncertain external effects require reconciliation before another dispatch.
 
-![An installed plugin disabled for new sessions while an older version remains in use](docs/assets/readme/plugin-old-version-en-light.png)
+<p align="center">
+  <img src="docs/assets/readme/hot-upgrade.webp" alt="Updating the text-statistics plugin to 2.0.0 from a new source: a new session gets the v2 sentence count, the session that was already open still runs v1, and the plugin's Versions tab shows one ongoing session keeping its pinned tools" width="100%" />
+</p>
 
 [Run the hot-upgrade demo](examples/demos/hot-upgrade/README.md) · [Sessions and recovery](docs/guide/sessions.md) · [Plugin lifecycle](docs/guide/packages.md)
 
@@ -116,7 +118,7 @@ New sessions use the reviewed new plugin code; saved sessions keep their backend
 CLI, Web and SDK share the same backend sessions. Resume a Web session in the terminal with `/resume <id>` and the history, tool records and results are already there; whatever you add in the terminal shows up in the Web thread.
 
 <p align="center">
-  <img src="docs/assets/readme/terminal.gif" alt="The terminal UI resumes a session started on the Web, shows its history, tool records and result table, answers a follow-up, and the same thread is up to date back on the Web" width="100%" />
+  <img src="docs/assets/readme/terminal.webp" alt="The terminal UI resumes a session started on the Web, shows its history, tool records and result table, answers a follow-up, and the same thread is up to date back on the Web" width="100%" />
 </p>
 
 ### 4. "What did the AI change, and who approved it?"
@@ -124,20 +126,26 @@ CLI, Web and SDK share the same backend sessions. Resume a Web session in the te
 Running a command waits for your approval by default: allow once, allow for the session, or deny. The Trace view keeps a timeline of model calls, tools and approvals. Package trust, tool approvals, execution constraints and session records give the integration explicit points of control. See [security and trust](docs/guide/security.md).
 
 <p align="center">
-  <img src="docs/assets/readme/trajectory.png" alt="The Trace view: a timeline of input, model and tool activity, followed by step records that include the user request, file reads, the shell command and its approval record, and the final answer" width="100%" />
+  <img src="docs/assets/readme/trajectory.webp" alt="The Trace view of the refund check: a timeline of model and tool activity, filters for tools and approvals, and the shell command record opened to show the Python the agent ran" width="100%" />
 </p>
 
 ### 5. The next deployment starts from the last one
 
 Ask the agent to draft a Skill or plugin, test it, then review its files and permissions before publication. Provenance keeps the drafting session and the human review. Learned file memory can retain workspace preferences, with agent access off by default.
 
-![Human review of an agent-authored plugin candidate](docs/assets/readme/candidate-review-en-light.png)
+<p align="center">
+  <img src="docs/assets/readme/candidate-review.webp" alt="The agent drafts a refund_window plugin, runs its six tests and submits it; under Plugins, To review, a person reads its files and permissions, then approves and publishes it" width="100%" />
+</p>
 
 [Run the growing-skills demo](examples/demos/growing-skills/README.md) · [Candidate review](docs/extend/agent-built-plugins.md) · [Skills](docs/guide/skills.md) · [Memory](docs/guide/memory.md)
 
 ### 6. Each role needs its own screen
 
 A support lead and a warehouse operator do not want the same interface. Add [frontend panels](docs/develop/frontend.md) to the Web workbench and connect them to backend services with [full-stack plugins](docs/develop/fullstack.md). The conversation dialog also takes [voice](docs/guide/voice.md): dictation, read-aloud and a hands-free voice conversation.
+
+<p align="center">
+  <img src="docs/assets/readme/voice.webp" alt="A hands-free voice conversation: the agent listens, transcribes the spoken question about enterprise refunds, sends it after a pause, reads the answer aloud and listens again" width="100%" />
+</p>
 
 ### 7. The site also has devices
 
@@ -159,6 +167,10 @@ node "$AGH_SOURCE/templates/create-agh-plugin.mjs" tool hello-tool .agh/plugins/
 node "$AGH_SOURCE/agnes.mjs" dev .agh/plugins/hello-tool
 node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"}'
 ```
+
+<p align="center">
+  <img src="docs/assets/readme/write-plugin.gif" alt="In a terminal: create hello-tool from the template, load it for new sessions with agnes dev, and call plugin_hello_tool in a fresh session with the local demo model" width="100%" />
+</p>
 
 The same template also starts a tool with a panel, an agent loop, a model adapter, or an MCP-and-Skills plugin. Each tutorial below includes source code, steps and expected results.
 

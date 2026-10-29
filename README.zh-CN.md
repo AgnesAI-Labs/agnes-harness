@@ -37,7 +37,7 @@
 把 AI 带进真实现场，难点往往不在模型本身，而在客户的业务系统、负责审批的人，以及每个现场都不一样的细节。Agnes Harness（AGH）把模型、工具、任务状态和业务界面连接在一起：**把现场差异写进插件，让 Harness 负责执行并留下记录，把验证过的能力带到下一个项目。**
 
 <p align="center">
-  <img src="docs/assets/readme/hero.zh-CN.gif" alt="AGH 在真实项目中工作：Agent 读取退款规则与订单数据，运行命令前请求审批，实际验证结果，给出可核对的表格，并在轨迹视图中记录每一步" width="100%" />
+  <img src="docs/assets/readme/hero.zh-CN.webp" alt="AGH 在真实项目中工作：Agent 读取退款规则与订单数据，运行命令前请求审批，实际验证结果，给出可核对的表格，并在轨迹视图中记录每一步" width="100%" />
 </p>
 
 <p align="center"><sub>读代码、运行命令前先审批、验证、作答，每一步都留痕。</sub></p>
@@ -98,7 +98,7 @@ Agent 需要调用你的订单查询、知识库、内部接口。如果把这�
 在 AGH 里，把业务运行方式、工具、模型适配器、角色与 Skills 打包成一个可安装的插件，或通过 [MCP](docs/guide/mcp.zh-CN.md) 连接已有服务。每个会话只获得所选能力，客服 Agent 的工具不会出现在无关会话中。安装前会先展示版本、来源、完整性摘要、能力与许可证。业务事件也能驱动 Agent：显式启用 [GitHub 与通用 Webhook 触发器](docs/guide/webhooks.zh-CN.md)，在正常策略下启动普通会话。
 
 <p align="center">
-  <img src="docs/assets/readme/plugins.zh-CN.gif" alt="在 Web 工作台安装插件：检查来源，核对完整性、能力与许可，确认启用，随后 Agent 调用新工具 demo_text_stats，其输入与结构化输出都被记录" width="100%" />
+  <img src="docs/assets/readme/plugins.zh-CN.webp" alt="在 Web 工作台安装插件：检查来源，核对完整性、能力与许可，确认启用，随后 Agent 调用新工具 demo_text_stats，其输入与结构化输出都被记录" width="100%" />
 </p>
 
 [插件机制脚本](examples/demos/business-agent/README.zh-CN.md) · [开发者教学示例](examples/fde/README.zh-CN.md) · [Acme 应用](examples/acme/README.zh-CN.md)
@@ -107,7 +107,9 @@ Agent 需要调用你的订单查询、知识库、内部接口。如果把这�
 
 新会话使用审阅后的新插件代码，已有会话在重启后仍保留原后端代码（工具、hook、运行方式与 seam）。外部操作结果不确定时，必须先核对，再决定是否重新派发。
 
-![插件已停止向新会话提供能力，旧版本仍由已有会话使用](docs/assets/readme/plugin-old-version-zh-CN-light.png)
+<p align="center">
+  <img src="docs/assets/readme/hot-upgrade.zh-CN.webp" alt="从新来源把文本统计插件更新到 2.0.0：新会话得到 v2 新增的句子数，已打开的会话仍运行 v1，插件的版本页显示 1 个进行中的会话保留固定版本的工具" width="100%" />
+</p>
 
 [运行热升级演示](examples/demos/hot-upgrade/README.zh-CN.md) · [会话与恢复](docs/guide/sessions.zh-CN.md) · [插件生命周期](docs/guide/packages.zh-CN.md)
 
@@ -116,7 +118,7 @@ Agent 需要调用你的订单查询、知识库、内部接口。如果把这�
 CLI、Web 与 SDK 共享同一套后台会话。在终端用 `/resume <id>` 恢复 Web 上的会话，历史、工具记录和结论都在；在终端里追加的内容，回到 Web 同样能看到。
 
 <p align="center">
-  <img src="docs/assets/readme/terminal.zh-CN.gif" alt="终端界面恢复在 Web 上开始的会话，显示历史、工具记录与结论表，回答追问；回到 Web，同一条对话已经更新" width="100%" />
+  <img src="docs/assets/readme/terminal.zh-CN.webp" alt="终端界面恢复在 Web 上开始的会话，显示历史、工具记录与结论表，回答追问；回到 Web，同一条对话已经更新" width="100%" />
 </p>
 
 ### 4. "AI 改了什么？谁批准的？"
@@ -124,7 +126,7 @@ CLI、Web 与 SDK 共享同一套后台会话。在终端用 `/resume <id>` 恢�
 默认情况下，运行命令要先经你批准：仅允许这次、本会话允许或拒绝。轨迹视图按时间轴记录模型调用、工具与审批。包信任、工具审批、执行约束与会话记录，让集成有明确的控制点。详见[安全与信任](docs/guide/security.zh-CN.md)。
 
 <p align="center">
-  <img src="docs/assets/readme/trajectory.zh-CN.png" alt="轨迹视图：输入、模型与工具的时间轴，以及逐步记录，包括用户请求、文件读取、shell 命令及其审批记录和最终回答" width="100%" />
+  <img src="docs/assets/readme/trajectory.zh-CN.webp" alt="退款核对的轨迹视图：模型与工具的时间轴，按工具和审批筛选，打开 shell 命令记录查看 Agent 运行的 Python" width="100%" />
 </p>
 
 ### 5. 下一个项目从上一个项目的终点出发
@@ -138,6 +140,10 @@ CLI、Web 与 SDK 共享同一套后台会话。在终端用 `/resume <id>` 恢�
 ### 6. 不同岗位需要不同的界面
 
 客服主管和仓库操作员要的不是同一个界面。在 Web 工作台中加入[前端面板](docs/develop/frontend.zh-CN.md)，再通过[前后端联动插件](docs/develop/fullstack.zh-CN.md)连接后端服务。对话框也支持[语音](docs/guide/voice.zh-CN.md)：听写、朗读和免手动的语音对话。
+
+<p align="center">
+  <img src="docs/assets/readme/voice.zh-CN.webp" alt="免手动的语音对话：Agent 在听，识别关于企业订单退款的提问，停顿后自动发送，朗读回答后继续听" width="100%" />
+</p>
 
 ### 7. 现场还有设备
 
@@ -159,6 +165,10 @@ node "$AGH_SOURCE/templates/create-agh-plugin.mjs" tool hello-tool .agh/plugins/
 node "$AGH_SOURCE/agnes.mjs" dev .agh/plugins/hello-tool
 node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"}'
 ```
+
+<p align="center">
+  <img src="docs/assets/readme/write-plugin.zh-CN.gif" alt="在终端里：用模板创建 hello-tool，用 agnes dev 加载到新会话，再用本地演示模型在新会话里调用 plugin_hello_tool" width="100%" />
+</p>
 
 同一个模板还能生成带面板的工具、运行方式、模型适配器，以及 MCP 与 Skills 插件。下面每个教程都包含源码入口、操作步骤和预期结果。
 
