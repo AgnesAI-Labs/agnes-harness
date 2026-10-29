@@ -188,10 +188,11 @@ export function PermissionDefaults({
   }
   const saved = snapshot && snapshot.defaults
   // Only what is stored is shown as chosen; a choice in flight shows on its own card until it lands.
-  const stored =
-    saved?.permission ??
-    effective ??
-    permissions?.find((level) => level.isDefault && isPermissionLevel(level.id))?.id
+  const stored = snapshot
+    ? (saved?.permission ??
+      effective ??
+      permissions?.find((level) => level.isDefault && isPermissionLevel(level.id))?.id)
+    : undefined
   const chosen = saving ?? stored
   const chosenPreset = saved?.preset ?? ''
   const text = (key: string, fallback: string) => {

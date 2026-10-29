@@ -97,6 +97,43 @@ const permissions = ['read-only', 'workspace-write', 'full-access'].map((id) => 
   id,
   isDefault: id === 'workspace-write',
 }))
+
+it.each(['read-only', 'full-access'])(
+  'does not select a catalog or composition fallback while saved permission %s is loading',
+  async (permission) => {
+    let respond: (response: Response) => void = () => undefined
+    const defaults = new Promise<Response>((resolve) => {
+      respond = resolve
+    })
+    const fetcher = async (url: string) => {
+      if (url === '/admin/api/defaults') return defaults
+      if (url === '/admin/api/composition') return Response.json({ permission: 'workspace-write' })
+      return Response.json({
+        profile: 'local-dev',
+        clientId: 'admin',
+        permissions: ['packages.activate'],
+        readOnly: false,
+      })
+    }
+    const host = await mount(
+      createElement(PermissionDefaults, {
+        presets,
+        permissions,
+        fetcher: fetcher as typeof fetch,
+      }),
+    )
+    expect(host.querySelectorAll('input[type="radio"]:checked')).toHaveLength(0)
+    expect(host.querySelectorAll('input[type="radio"]:enabled')).toHaveLength(0)
+    await act(async () => {
+      respond(Response.json({ revision: 3, defaults: { permission } }))
+    })
+    expect(
+      host.querySelector<HTMLInputElement>(`[data-testid="security-${permission}"] input`)?.checked,
+    ).toBe(true)
+    expect(host.querySelectorAll('input[type="radio"]:checked')).toHaveLength(1)
+  },
+)
+
 it('picks the default permission from three cards, confirms full access, and offers plugin presets in one row', async () => {
   const saves: unknown[] = []
   let defaults: Record<string, unknown> = { permission: 'workspace-write' }
