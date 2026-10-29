@@ -113,7 +113,7 @@ describe('rendered sidebar region', () => {
       expect(document.body.classList.contains('sidebar-collapsed')).toBe(collapsed)
       // happy-dom does not suppress clicks on inert trees, so assert the browser gate explicitly.
       expect((sidebar as HTMLElement).inert).toBe(false)
-      for (const name of ['New conversation', 'Settings']) {
+      for (const name of ['New conversation', 'Search sessions', 'Settings']) {
         const button = getByRole(sidebar as HTMLElement, 'button', { name })
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
         flushSync(() => button.focus())

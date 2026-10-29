@@ -1,5 +1,5 @@
 import type { Translate } from '@agnes/web-conversation/presentation'
-import { Button, Icon, IconButton, Kbd, Menu, type MenuItem } from '@agnes/web-ui'
+import { Button, Icon, IconButton, Kbd, Menu, type MenuItem, Tooltip } from '@agnes/web-ui'
 import { useSyncExternalStore } from 'react'
 import { navigationHistory } from '../navigation-history.js'
 import { currentMode, type SessionListMode, supportsModes } from '../session-inventory.js'
@@ -20,19 +20,21 @@ export function SessionSearchButton({ t }: { t: Translate }) {
   const search = t('home.search.title')
   return (
     <div className="sidebar-search">
-      <Button
-        id="session-search"
-        appearance="ghost"
-        aria-label={search}
-        aria-keyshortcuts="Meta+K Control+K"
-        onClick={(event) =>
-          event.currentTarget.dispatchEvent(new CustomEvent(SESSION_SEARCH_EVENT, { bubbles: true }))
-        }
-      >
-        <Icon name="search" />
-        <span className="sidebar-search-label">{search}</span>
-        <Kbd aria-hidden="true" keys={['mod', 'K']} />
-      </Button>
+      <Tooltip title={search}>
+        <Button
+          id="session-search"
+          appearance="ghost"
+          aria-label={search}
+          aria-keyshortcuts="Meta+K Control+K"
+          onClick={(event) =>
+            event.currentTarget.dispatchEvent(new CustomEvent(SESSION_SEARCH_EVENT, { bubbles: true }))
+          }
+        >
+          <Icon name="search" />
+          <span className="sidebar-search-label">{search}</span>
+          <Kbd aria-hidden="true" keys={['mod', 'K']} />
+        </Button>
+      </Tooltip>
     </div>
   )
 }
