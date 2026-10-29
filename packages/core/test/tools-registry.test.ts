@@ -4,6 +4,7 @@ import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistryView } from '../src/registry/tool-allow.js'
 import { ToolRegistry } from '../src/registry/tools.js'
+import { modelToolSchema } from '../src/request/tool-schema.js'
 
 const meta = {
   isReadOnly: true,
@@ -295,6 +296,24 @@ describe('ToolRegistry', () => {
     expect(Object.isFrozen((registered.parameters as unknown as { properties: object }).properties)).toBe(
       true,
     )
+  })
+
+  it('projects Type.Module parameters to providers without $id or non-local refs', () => {
+    const M = Type.Module({
+      Key: Type.String({ minLength: 1 }),
+      Node: Type.Object({ key: Type.Ref('Key'), next: Type.Optional(Type.Ref('Node')) }),
+      Params: Type.Object({ target: Type.Ref('Key'), tree: Type.Ref('Node') }),
+    })
+    const parameters = M.Import('Params')
+    const wire = JSON.stringify(
+      modelToolSchema({ ...def('mod'), parameters } as unknown as ToolDef).parameters,
+    )
+    expect(wire).not.toContain('"$id"')
+    const refs = [...wire.matchAll(/"\$ref":"([^"]*)"/g)].map((m) => m[1])
+    expect(refs.length).toBeGreaterThan(0)
+    for (const ref of refs) expect(ref).toMatch(/^#\//)
+    expect(JSON.parse(wire).$defs).toHaveProperty('Key')
+    expect(JSON.parse(wire).$defs).toHaveProperty('Node')
   })
 
   it('rejects accessor-backed parameter schemas instead of freezing a live getter', () => {

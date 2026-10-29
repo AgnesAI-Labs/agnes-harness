@@ -16,11 +16,34 @@ function freeze<T>(value: T): T {
   return value
 }
 
+/**
+ * TypeBox `Type.Module` emits a bare `$id` on every definition and refs that name it (`{$ref: 'Key'}`).
+ * Strict providers (Volcengine Ark) reject that as an invalid JSON Schema. Rewrite local refs to the
+ * standard `#/$defs/<name>` form and drop string `$id`s, keeping `$defs` so cycles stay finite.
+ */
+function standardizeRefs(root: unknown): unknown {
+  const defs = (root as { $defs?: Record<string, unknown> } | null)?.$defs
+  const walk = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(walk)
+    if (!v || typeof v !== 'object') return v
+    const out: Record<string, unknown> = {}
+    for (const [k, val] of Object.entries(v)) {
+      if (k === '$id' && typeof val === 'string') continue
+      out[k] =
+        k === '$ref' && typeof val === 'string' && defs && Object.hasOwn(defs, val)
+          ? `#/$defs/${val}`
+          : walk(val)
+    }
+    return out
+  }
+  return defs ? walk(root) : root
+}
+
 function scrub(tool: Pick<ToolDef, 'name' | 'description' | 'parameters' | 'modelParameters'>): ToolSchema {
   return {
     name: sanitize(tool.name),
     description: sanitize(tool.description),
-    parameters: sanitizeJson(tool.modelParameters ?? tool.parameters),
+    parameters: standardizeRefs(sanitizeJson(tool.modelParameters ?? tool.parameters)),
   }
 }
 
