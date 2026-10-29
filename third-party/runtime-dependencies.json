@@ -9,7 +9,6 @@
       "purpose": "Bundle shareable plugins, SDK browser checks, Web clients, isolated hooks runners and reviewed authoring tests.",
       "rationale": "Reuse the repository bundler so the receiving machine needs no plugin dependency installation.",
       "consumers": [
-        "examples/showcase/aerospace-quality",
         "packages/base",
         "packages/cli",
         "packages/daemon-admin",
@@ -55,8 +54,6 @@
       "rationale": "Pinned to 18.3.1 per the web client modules design (WC5); a single split build keeps exactly one React copy on the page.",
       "consumers": [
         "examples/community/deliverables-gallery",
-        "examples/showcase/aerospace-quality",
-        "examples/showcase/pharma-gmp",
         "examples/ui/interaction-renderer",
         "examples/ui/tool-result-card",
         "packages/package-manager/bundled-plugins/browser",
@@ -119,8 +116,6 @@
       "purpose": "Runtime JSON-schema construction and static TypeScript schema inference.",
       "rationale": "Keeps runtime validation schemas and compile-time protocol types derived from one definition.",
       "consumers": [
-        "examples/showcase/aerospace-quality",
-        "examples/showcase/pharma-gmp",
         "examples/ui/component-library",
         "packages/ai",
         "packages/base",
@@ -307,7 +302,6 @@
       "purpose": "DOM renderer for the web workbench and client module mount points; bundled into /vendor/* shared-singleton chunks.",
       "rationale": "Same pin line as react (WC5).",
       "consumers": [
-        "examples/showcase/pharma-gmp",
         "packages/web",
         "packages/web-admin",
         "packages/web-client",

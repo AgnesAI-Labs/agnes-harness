@@ -20,7 +20,7 @@ afterEach(() => {
 
 it.each(
   ['en', 'zh-CN'].flatMap((locale) =>
-    ['plugin-helper', 'aerospace-quality', 'pharma-gmp'].map((name) => ({ locale, name })),
+    ['plugin-helper', 'data-report', 'support-triage'].map((name) => ({ locale, name })),
   ),
 )('offers the $name update from 1.0.0 to 1.1.0 in $locale', async ({ locale, name }) => {
   document.documentElement.lang = locale
@@ -30,7 +30,7 @@ it.each(
     document.body.append(dialog)
   }
   const installed: PackageInstalledDescriptor = {
-    id: name === 'plugin-helper' ? '@agnes/plugin-helper' : `@agnes-showcase/${name}`,
+    id: name === 'plugin-helper' ? '@agnes/plugin-helper' : `@agnes-fde/${name}`,
     version: '1.0.0',
     integrity: `sha256-${'a'.repeat(64)}`,
     source: {
@@ -38,7 +38,7 @@ it.each(
       ref:
         name === 'plugin-helper'
           ? 'file:./bundled-plugins/plugin-helper'
-          : `file:./bundled-examples/showcase/${name}`,
+          : `file:./bundled-examples/fde/${name}`,
     },
     trusted: true,
     desired: 'enabled',

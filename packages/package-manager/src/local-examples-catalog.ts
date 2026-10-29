@@ -172,7 +172,7 @@ export async function createLocalExamplesCatalog(
       ...FAMILIES.flatMap((family) =>
         family.releases.map((release) => `examples/packages/${family.family}/${release}`),
       ),
-      ...BUNDLED_EXAMPLES.filter((example) => ['fde', 'showcase'].includes(example.family))
+      ...BUNDLED_EXAMPLES.filter((example) => example.family === 'fde')
         .filter((example) => existsSync(join(workspace, 'examples', example.family, example.name)))
         .map((example) => `examples/${example.family}/${example.name}`),
       ...FLAT_PLUGIN_EXAMPLES.map((name) => `examples/packages/${name}`),

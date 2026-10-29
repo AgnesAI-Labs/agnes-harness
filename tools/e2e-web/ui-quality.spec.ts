@@ -211,11 +211,10 @@ for (const locale of ['zh-CN', 'en'])
             await expect(cards.first()).toBeVisible()
             expect(await cards.count()).toBeGreaterThan(0)
             await section(page, 'discover')
-            // Before installation the marketplace advertises only the showcase applications.
-            for (const id of ['aerospace-quality', 'devboard', 'pharma-gmp'])
-              await expect(
-                page.locator(`[data-testid="market-card"][data-plugin-id="@agnes-showcase/${id}"]`),
-              ).toBeVisible()
+            // Before installation the marketplace does not advertise the teaching examples.
+            await expect(
+              page.locator('[data-testid="market-card"][data-plugin-id^="@agnes-fde/"]'),
+            ).toHaveCount(0)
           }
         }
         await section(page, 'archived')

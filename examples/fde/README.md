@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-Five independently installable teaching plugins cover one mechanism each, using synthetic data. Product demos are the showcase applications: [Pharma GMP](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/examples/showcase/pharma-gmp/README.md) and [Aerospace quality](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/examples/showcase/aerospace-quality/README.md), coming in the same release. Until their packages arrive, the gallery shows no placeholder cards.
+Five independently installable teaching plugins cover one mechanism each, using synthetic data. They are not industry products, and the gallery shows no placeholder cards for applications a build does not ship.
 
 | Example | Mechanism | Why retained |
 | --- | --- | --- |

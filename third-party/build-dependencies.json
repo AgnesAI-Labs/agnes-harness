@@ -81,9 +81,7 @@
       "purpose": "Type declarations for React 18 used by the web workbench and the web-client module author API.",
       "rationale": "Type-only companion of the pinned react dependency; same version line.",
       "consumers": [
-        "examples/showcase/aerospace-quality",
         "packages/package-manager/bundled-plugins/browser",
-        "examples/showcase/pharma-gmp",
         "packages/package-manager/bundled-plugins/goal-ui",
         "packages/resource-control-web",
         "packages/web",
@@ -103,7 +101,6 @@
       "purpose": "Type declarations for react-dom 18 used by the web workbench and web-client.",
       "rationale": "Type-only companion of the pinned react-dom dependency; same version line.",
       "consumers": [
-        "examples/showcase/pharma-gmp",
         "packages/web",
         "packages/web-admin",
         "packages/web-client",
@@ -156,7 +153,7 @@
       "source": "https://github.com/microsoft/TypeScript",
       "purpose": "Workspace compiler and project-reference type checker.",
       "rationale": "Defines the language and type-checking implementation used by all packages.",
-      "consumers": [".", "examples/showcase/aerospace-quality"]
+      "consumers": ["."]
     },
     {
       "name": "vitest",

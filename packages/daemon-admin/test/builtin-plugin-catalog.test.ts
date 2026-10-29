@@ -63,7 +63,7 @@ it.each([
     if (broken) mkdirSync(join(root, 'examples', 'packages'), { recursive: true })
     const catalog = await discoverLocalExamples(root)
     const result = await catalog.read({ offline: true })
-    expect(result.entries).toHaveLength(optional ? 24 : 23)
+    expect(result.entries).toHaveLength(optional ? 21 : 20)
     if (!optional) expect(OPTIONAL_BUNDLED_PACKAGES).toEqual([])
     expect(
       result.entries
@@ -81,9 +81,6 @@ it.each([
         '@agnes-fde/knowledge-qa',
         '@agnes-fde/ops-runbook',
         '@agnes-fde/support-triage',
-        '@agnes-showcase/pharma-gmp',
-        '@agnes-showcase/aerospace-quality',
-        '@agnes-showcase/devboard',
         '@community/tool-panel',
         '@community/mcp-skills',
         '@community/dag-loop-adapter',

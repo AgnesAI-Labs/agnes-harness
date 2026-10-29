@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-这里保留五个独立可安装的教学插件，每个示例重点讲一种机制；它们使用合成数据，不是行业产品。产品演示改为 showcase 应用：[制药 GMP](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/examples/showcase/pharma-gmp/README.zh-CN.md)和[航空质量](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/examples/showcase/aerospace-quality/README.zh-CN.md)，将在同一版本提供。包尚未就绪时，智能体页不显示占位卡片。
+这里保留五个独立可安装的教学插件，每个示例重点讲一种机制；它们使用合成数据，不是行业产品。构建未提供的应用，智能体页不显示占位卡片。
 
 | 示例 | 教学重点 | 保留原因 |
 | --- | --- | --- |

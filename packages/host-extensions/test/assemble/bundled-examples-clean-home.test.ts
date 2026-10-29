@@ -66,7 +66,7 @@ afterAll(() => {
 
 it('lists the curated business agents independently of local TypeScript build outputs', () => {
   expect(
-    BUNDLED_EXAMPLES.filter((example) => ['fde', 'showcase'].includes(example.family))
+    BUNDLED_EXAMPLES.filter((example) => example.family === 'fde')
       .map((example) => `${example.family}/${example.name}`)
       .sort(),
   ).toEqual([
@@ -75,9 +75,6 @@ it('lists the curated business agents independently of local TypeScript build ou
     'fde/knowledge-qa',
     'fde/ops-runbook',
     'fde/support-triage',
-    'showcase/aerospace-quality',
-    'showcase/devboard',
-    'showcase/pharma-gmp',
   ])
 })
 

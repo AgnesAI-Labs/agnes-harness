@@ -238,11 +238,8 @@ describe('local example catalog', () => {
     const result = await catalog.read({ offline: true })
 
     expect(result.sources).toEqual([{ sourceId: 'local-examples', status: 'cached' }])
-    const teachingEntries = result.entries.filter(
-      (entry) => !entry.source.ref.startsWith('file:./examples/showcase/'),
-    )
-    expect(teachingEntries).toHaveLength(29)
-    expect(teachingEntries.map(({ id, version }) => `${id}@${version}`).sort()).toEqual([
+    expect(result.entries).toHaveLength(29)
+    expect(result.entries.map(({ id, version }) => `${id}@${version}`).sort()).toEqual([
       '@agnes-examples/client-multi-panel@1.0.0',
       '@agnes-examples/client-multi-panel@2.0.0',
       '@agnes-examples/client-panel@1.0.0',
@@ -277,7 +274,7 @@ describe('local example catalog', () => {
     expect(fde).toHaveLength(5)
     expect(fde.every((entry) => entry.provides?.includes('bundle'))).toBe(true)
     // The gallery finds business agents by category and offers each one's own prompt in both languages.
-    expect(teachingEntries.filter((entry) => (entry.agents?.length ?? 0) > 0)).toEqual(fde)
+    expect(result.entries.filter((entry) => (entry.agents?.length ?? 0) > 0)).toEqual(fde)
     for (const entry of fde) {
       const prompt = entry.metadata?.samplePrompt
       expect(prompt?.en).toBeTruthy()

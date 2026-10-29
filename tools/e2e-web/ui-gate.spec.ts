@@ -331,14 +331,9 @@ for (const locale of ['en', 'zh-CN'])
           await versions.locator('summary, .agh-disclosure-summary').click()
           await page
             .getByRole('searchbox', { name: locale === 'en' ? 'Search plugins' : '搜索插件', exact: true })
-            .fill('@agnes-showcase/pharma-gmp')
-          // Before installation the catalog advertises the showcase applications, not the teaching Loops.
-          const results = page.getByTestId('market-card')
-          await expect(results).toHaveCount(1)
-          await expect(results).toHaveAttribute('data-plugin-id', '@agnes-showcase/pharma-gmp')
-          await expect(results.getByRole('heading')).toHaveText(
-            locale === 'en' ? 'Sableleaf GMP Quality Hub' : '沙叶 GMP 质量中枢',
-          )
+            .fill('@agnes-fde/knowledge-qa')
+          // Before installation the catalog does not advertise the teaching examples.
+          await expect(page.getByTestId('market-card')).toHaveCount(0)
         }
         await quality(`settings-${id}`, id === 'general' || ['plugins', 'discover', 'skills'].includes(id))
       }

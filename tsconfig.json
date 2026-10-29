@@ -326,18 +326,6 @@
       "path": "packages/package-manager/bundled-plugins/interaction-ui/tsconfig.sources.json"
     },
     {
-      "path": "examples/showcase/aerospace-quality"
-    },
-    {
-      "path": "examples/showcase/aerospace-quality/tsconfig.test.json"
-    },
-    {
-      "path": "examples/showcase/pharma-gmp"
-    },
-    {
-      "path": "examples/showcase/pharma-gmp/tsconfig.test.json"
-    },
-    {
       "path": "packages/package-manager/bundled-plugins/browser/tsconfig.sources.json"
     },
     {

@@ -115,23 +115,6 @@ describe('menu material keeps text contrast over any backdrop', () => {
   })
 })
 describe('default skin contrast table (pure CSS calculation)', () => {
-  it.each(['aerospace-quality', 'pharma-gmp'])('%s shares the two light surfaces', (application) => {
-    const descriptor = JSON.parse(
-      readFileSync(
-        new URL(`../../../examples/showcase/${application}/client/agnes.client.json`, import.meta.url),
-        'utf8',
-      ),
-    ) as { skins: { tokens: Record<string, { light: string }> }[] }
-    const skin = descriptor.skins[0]
-    expect(skin, application).toBeDefined()
-    const overrides = Object.fromEntries(
-      Object.entries(skin?.tokens ?? {}).map(([name, modes]) => [name, modes.light]),
-    )
-    const tokens = { ...light, ...overrides }
-    for (const role of ['page', 'app-content', 'surface', 'group', 'popover'])
-      expect(color(`--agnes-bg-${role}`, tokens), role).toEqual([255, 255, 255, 1])
-    expect(color('--agnes-bg-app-sidebar', tokens)).toEqual([243, 243, 241, 1])
-  })
   for (const [theme, tokens] of Object.entries({ light, dark })) {
     it(`${theme}: navigation and content follow the shared surface hierarchy`, () => {
       const navigation = luminance(color('--agnes-bg-app-sidebar', tokens))

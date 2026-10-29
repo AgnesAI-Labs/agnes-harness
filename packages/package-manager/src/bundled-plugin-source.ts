@@ -145,10 +145,7 @@ export const BUNDLED_EXAMPLES = Object.freeze(
       family: 'fde',
       name,
     })),
-    { family: 'showcase', name: 'pharma-gmp' },
     ...['tool-panel', 'mcp-skills', 'dag-loop-adapter'].map((name) => ({ family: 'community', name })),
-    { family: 'showcase', name: 'aerospace-quality' },
-    { family: 'showcase', name: 'devboard' },
   ].map((example) => ({ ...example, ref: `file:./bundled-examples/${example.family}/${example.name}` })),
 )
 

@@ -53,8 +53,8 @@ it('requires a version change when a previously bundled package changes shipped 
           .map((entry) => `examples/${family.name}/${entry.name}`),
       ),
   ]
-  expect(directories).toContain('examples/showcase/aerospace-quality')
-  expect(directories).toContain('examples/showcase/pharma-gmp')
+  expect(directories).toContain('examples/fde/data-report')
+  expect(directories).toContain('examples/fde/support-triage')
   const violations: string[] = []
   for (const directory of directories) {
     const file = `${directory}/package.json`
