@@ -54,6 +54,6 @@ mise exec -- node tools/toolchain/run.mjs gen:check
 
 ## README 演示素材
 
-当前 README 使用 [`docs/assets/readme/`](../assets/readme/) 中三组双语截图：`plugin-kinds-<locale>-light.png`、`plugin-old-version-<locale>-light.png`、`candidate-review-<locale>-light.png`，语言值为 `en` 和 `zh-CN`。截图通过合成浏览器 fixture 展示信任与版本行为，README 已说明菜单可能不同于当前界面。历史横幅和 GIF 不是当前 README 的素材契约。
+README 素材位于 [`docs/assets/readme/`](../assets/readme/)，中文 README 使用对应的 `.zh-CN` 版本：`banner` 横幅与 `trailer` 动画；当前界面的 WebP 录屏（`hero`、`plugins`、`hot-upgrade`、`terminal`、`trajectory`、`candidate-review`、`voice`）；`write-plugin` 终端 GIF；`mars-rescue` 视频预览；以及中英共用的 `ale-leaderboard` 成绩图。中文 README 仍使用早先的 `candidate-review-zh-CN-light.png` 截图，待中文录屏替换。演示录屏使用 Agnes AI `agnes-3.0-flash`，与 README 说明一致。
 
 更新素材时使用隔离的 `AGH_HOME`、合成工作区与现有截图工具。任何一帧都不得包含凭据、个人路径或客户数据，核对画面中的回答，并同步两种语言。Fixture 截图只说明展示效果，不代表真实模型或外部服务验收；说明文字不得超出[已知限制](../reference/limitations.zh-CN.md)。
