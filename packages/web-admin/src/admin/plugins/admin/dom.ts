@@ -53,6 +53,7 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
   RUNTIME_IDENTITY_UNKNOWN: 'error.runtime-unconfirmed',
   E_PACKAGE_TRUST: 'error.capability-unconfirmed',
   E_PACKAGE_STATE: 'error.state-changed',
+  E_PACKAGE_BLOCKED: 'error.blocked',
   E_PACKAGE_SOURCE: 'error.source-rejected',
 }
 /** The locale key that explains an admin failure code. */
@@ -65,7 +66,9 @@ export const adminErrorKey = (
     ? `error.source.${sourceFailure}`
     : code === 'E_PACKAGE_STATE' && operation === 'remove'
       ? 'error.remove-state'
-      : (ERROR_KEYS[code] ?? 'error.operation-failed')
+      : code === 'E_PACKAGE_BLOCKED' && operation === 'remove'
+        ? 'error.remove-blocked'
+        : (ERROR_KEYS[code] ?? 'error.operation-failed')
 
 /** The embedded settings shell marks the runtime page its navigation is on. */
 export function markSettingsPage(page: string, listHost: HTMLElement): void {
