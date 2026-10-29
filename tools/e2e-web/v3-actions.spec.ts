@@ -480,3 +480,36 @@ for (const locale of ['en', 'zh-CN']) {
     ).toBeVisible()
   })
 }
+
+test('automation keeps a task under the same switch coordinates after toggling', async ({
+  page,
+  runtime,
+}) => {
+  const client = await runtime.connect()
+  const tasks: { id: string }[] = []
+  for (let i = 0; i < 3; i++) {
+    tasks.push(
+      (await client.call('_agnes/v1/schedules.upsert', {
+        title: 'Same task name',
+        prompt: 'Synthetic future task',
+        selector: { every_seconds: 86400 + i * 600 },
+        target: { kind: 'new-session', cwd: runtime.workspace },
+      })) as { id: string },
+    )
+  }
+  await preferences(page)
+  await page.goto(`${runtime.url}/?page=automation`)
+  await expect(page.getByTestId('schedules-row')).toHaveCount(3)
+  const box = await page.getByTestId('schedules-enabled').first().boundingBox()
+  if (!box) throw new Error('Missing task switch')
+  for (const state of ['paused', 'active', 'paused']) {
+    await expect(page.getByTestId('schedules-enabled').first()).toBeEnabled()
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+    await expect(page.getByTestId('schedules-row').first()).toHaveAttribute('data-status', state)
+  }
+  const result = (await client.call('_agnes/v1/schedules.list', { scope: 'all' })) as {
+    schedules: { id: string; status: string }[]
+  }
+  for (const [i, task] of tasks.entries())
+    expect(result.schedules.find((row) => row.id === task.id)?.status).toBe(i === 0 ? 'paused' : 'active')
+})

@@ -553,6 +553,52 @@ it.each(['active', 'ended'] as const)(
   },
 )
 
+it.each([false, true])(
+  'keeps the same task under a repeated switch click (same titles: %s)',
+  async (sameTitles) => {
+    const values: ScheduleRow[] = [standup, report, { ...standup, id: 'sched_1111111111111111' }].map(
+      (row, i) => ({
+        ...row,
+        title: sameTitles ? 'ddd' : `Task ${i}`,
+        status: 'active',
+        nextRunAt: Date.now() + (i + 1) * 86_400_000,
+      }),
+    )
+    const controls: { id: string; action: string }[] = []
+    const daemon = api([], {
+      list: async () => ({
+        schedules: [...values].sort(
+          (a, b) => (a.nextRunAt ?? Infinity) - (b.nextRunAt ?? Infinity) || a.id.localeCompare(b.id),
+        ),
+      }),
+      control: async ({ id, action }) => {
+        controls.push({ id, action })
+        const row = values.find((value) => value.id === id)
+        if (!row) throw new Error('Unknown task')
+        row.status = action === 'pause' ? 'paused' : 'active'
+        row.nextRunAt = action === 'pause' ? null : Date.now() + 86_400_000
+        return row
+      },
+    })
+    const host = await mount(createElement(SchedulesPage, { api: daemon, t }))
+    await vi.waitFor(() => expect(host.querySelectorAll('[data-testid="schedules-enabled"]')).toHaveLength(3))
+    for (const checked of ['false', 'true', 'false']) {
+      await act(async () => host.querySelector<HTMLElement>('[data-testid="schedules-enabled"]')?.click())
+      await vi.waitFor(() =>
+        expect(host.querySelector('[data-testid="schedules-enabled"]')?.getAttribute('aria-checked')).toBe(
+          checked,
+        ),
+      )
+    }
+    expect(controls).toEqual([
+      { id: standup.id, action: 'pause' },
+      { id: standup.id, action: 'resume' },
+      { id: standup.id, action: 'pause' },
+    ])
+    expect(values.map((row) => row.status)).toEqual(['paused', 'active', 'active'])
+  },
+)
+
 it('pauses, resumes and runs a task now through the daemon', async () => {
   const daemon = api([standup, { ...report, status: 'paused', nextRunAt: null }])
   const host = await mount(createElement(SchedulesPage, { api: daemon, t }))
