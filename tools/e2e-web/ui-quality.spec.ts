@@ -206,10 +206,10 @@ for (const locale of ['zh-CN', 'en'])
             await screen('session-tool-info')
           }
           if (id === 'examples') {
-            // One feed: the catalog's applications and standalone agents beside the general assistant.
+            // A fresh home offers the general assistant; teaching agents require deliberate installation.
             const cards = page.getByTestId('agents-gallery').locator('[data-application], [data-agent-ref]')
-            await expect(cards.first()).toBeVisible()
-            expect(await cards.count()).toBeGreaterThan(0)
+            await expect(page.getByTestId('general-agent')).toBeVisible()
+            await expect(cards).toHaveCount(0)
             await section(page, 'discover')
             // Before installation the marketplace does not advertise the teaching examples.
             await expect(
