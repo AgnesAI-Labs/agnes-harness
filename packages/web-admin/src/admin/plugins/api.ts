@@ -232,7 +232,7 @@ export class PluginAdminApi {
   static async overview(fetcher: FetchLike = fetch): Promise<AdminOverview> {
     let pending = pendingOverviews.get(fetcher)
     if (!pending) {
-      pending = (async () => {
+      const request: Promise<AdminOverview> = (async () => {
         const response = await fetcher(`${ADMIN_API_ROOT}/overview`, {
           method: 'GET',
           credentials: 'same-origin',
@@ -257,10 +257,18 @@ export class PluginAdminApi {
             message: 'The backend returned data that cannot be verified.',
           })
         return value
-      })().finally(() => pendingOverviews.delete(fetcher))
-      pendingOverviews.set(fetcher, pending)
+      })().finally(() => {
+        if (pendingOverviews.get(fetcher) === request) pendingOverviews.delete(fetcher)
+      })
+      pendingOverviews.set(fetcher, request)
+      pending = request
     }
     return structuredClone(await pending)
+  }
+
+  /** A read asked for after a change must not join one sent before it; the next read is sent anew. */
+  static forgetPendingOverview(fetcher: FetchLike = fetch): void {
+    pendingOverviews.delete(fetcher)
   }
 
   application(): Promise<import('@agnes/protocol').ApplicationState> {

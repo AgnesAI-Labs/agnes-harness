@@ -8,6 +8,8 @@ export function visibleRefresh(
   let lastRead = Number.NEGATIVE_INFINITY
   let stopped = false
   let dirty = false
+  /** A caller learned of a change after the read in flight began: that read cannot show it. */
+  let again = false
   let pending: Promise<void> | undefined
   const visible = () => document.visibilityState !== 'hidden'
   const request = (): Promise<void> => {
@@ -20,11 +22,12 @@ export function visibleRefresh(
       try {
         do {
           dirty = false
+          again = false
           if (stopped || !visible()) break
           lastRead = Number.NEGATIVE_INFINITY
           const succeeded = await read()
           lastRead = succeeded === false ? Number.NEGATIVE_INFINITY : Date.now()
-        } while (dirty && !stopped && visible() && !deferInvalidation())
+        } while (!stopped && visible() && (again || (dirty && !deferInvalidation())))
       } finally {
         pending = undefined
       }
@@ -47,6 +50,11 @@ export function visibleRefresh(
   document.addEventListener('visibilitychange', wake)
   return {
     request,
+    /** Like `request`, but a read already in flight is followed by one that starts after this call. */
+    reread(): Promise<void> {
+      if (pending) again = true
+      return request()
+    },
     flush: () => (dirty && !deferInvalidation() ? request() : Promise.resolve()),
     dispose() {
       stopped = true
