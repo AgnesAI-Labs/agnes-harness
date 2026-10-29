@@ -27,7 +27,7 @@ const job = (patch: Partial<SessionJob> = {}): SessionJob => ({
   ...patch,
 })
 const hosts: HTMLElement[] = []
-function mount(jobs = [job()]) {
+function mount(jobs = [job()], selection?: unknown) {
   const jobsControl = vi.fn(
     async (input: { operation: string; shell?: 'zsh' | 'bash' | 'pwsh'; jobId?: string }) => {
       if (input.operation === 'open') {
@@ -61,16 +61,19 @@ function mount(jobs = [job()]) {
   const host = document.createElement('div')
   document.body.append(host)
   hosts.push(host)
-  renderRegion(
-    host,
-    <TerminalPanel
-      context={{
-        t: createCatalogTranslator(workbenchLocaleCatalog, 'zh-CN'),
-        data: { session, disabled: false },
-      }}
-    />,
-  )
-  return { host, jobsControl, session }
+  const render = (next: unknown) =>
+    renderRegion(
+      host,
+      <TerminalPanel
+        context={{
+          t: createCatalogTranslator(workbenchLocaleCatalog, 'zh-CN'),
+          data: { session, disabled: false },
+          selection: next,
+        }}
+      />,
+    )
+  render(selection)
+  return { host, jobsControl, session, render }
 }
 afterEach(() => {
   for (const host of hosts.splice(0)) {
@@ -465,4 +468,22 @@ it('pauses terminal reads while hidden and catches up output once on return', as
     reads.mockRestore()
     vi.useRealTimers()
   }
+})
+
+it('opens the child job tab the composer asks for and follows a later request', async () => {
+  const first = job({ id: 'child:parent/c1', kind: 'child', command: 'in-process', stdout: '第一份报告' })
+  const second = job({ id: 'child:parent/c2', kind: 'child', command: 'in-process', stdout: '第二份报告' })
+  const { host, render } = mount([first, second], { childId: 'parent/c1' })
+  await vi.waitFor(() =>
+    expect(host.querySelector('.workbench-child-report')?.textContent).toContain('第一份报告'),
+  )
+  // A second click names another child's job; the panel follows it without a remount.
+  render({ childId: 'parent/c2' })
+  await vi.waitFor(() =>
+    expect(host.querySelector('.workbench-child-report')?.textContent).toContain('第二份报告'),
+  )
+  expect(host.querySelector('.workbench-terminal-pill[data-active="true"]')?.textContent).toContain(
+    '子智能体',
+  )
+  expect(host.querySelectorAll('[data-testid=terminal-tab]')).toHaveLength(2)
 })

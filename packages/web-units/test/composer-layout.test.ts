@@ -699,3 +699,35 @@ it.each(['running', 'idle', 'interrupted', 'completed', 'failed', 'cancelled'] a
     }
   },
 )
+
+it('asks the terminal panel for the child job when its name is clicked', () => {
+  const view: ComposerView = {
+    ...idle,
+    children: [
+      {
+        id: 'parent/c1',
+        parentId: 'parent',
+        providerId: 'in-process',
+        status: 'running',
+        controls: { stop: true, continue: true },
+        totalTokens: 0,
+        durationMs: 0,
+      },
+    ],
+  }
+  const { host } = mount({ onChildControl: async () => {} }, view)
+  const seen: unknown[] = []
+  const listener = (event: Event) => seen.push((event as CustomEvent).detail)
+  document.addEventListener('agnes:open-terminal-job', listener)
+  try {
+    const name = host.querySelector<HTMLButtonElement>('[data-testid="child-open"]')
+    // The child is a job of this session; a session URL would name a session that cannot exist.
+    expect(name?.className).toBe('composer-child-name')
+    expect(name?.tagName).toBe('BUTTON')
+    expect(name?.hasAttribute('href')).toBe(false)
+    name?.click()
+    expect(seen).toEqual([{ childId: 'parent/c1' }])
+  } finally {
+    document.removeEventListener('agnes:open-terminal-job', listener)
+  }
+})

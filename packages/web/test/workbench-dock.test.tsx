@@ -532,3 +532,31 @@ it('shows an approval dock without application tabs and focuses the sole convers
   }
   expect(workbenchPanels.get('approvals')).toBeUndefined()
 })
+
+it('opens a panel at the selection a link carries', () => {
+  localStorage.clear()
+  document.body.innerHTML =
+    '<div class="workbench-split"><div id="controls"></div><aside id="workbench-right" hidden><div id="workbench-right-content"></div></aside><aside id="workbench-bottom" hidden><div id="workbench-bottom-content"></div></aside></div>'
+  const host = document.getElementById('controls') as HTMLElement
+  const dock = document.getElementById('workbench-right') as HTMLElement
+  const remove = workbenchPanels.register({
+    id: 'test.terminal-job',
+    order: -100,
+    edge: 'right',
+    titleKey: 'Terminal job',
+    component: ({ context }) => <p>Job {(context.selection as { childId?: string } | undefined)?.childId}</p>,
+  })
+  try {
+    renderWorkbench(host, { t: (key) => key, data: { session: { id: 'first' } } })
+    flushSync(() => {
+      expect(workbenchNavigation.open('test.terminal-job', { childId: 'c1' })).toBe(true)
+    })
+    expect(dock.hidden).toBe(false)
+    expect(dock.textContent).toContain('Job c1')
+  } finally {
+    unmountWorkbench(host)
+    remove()
+    localStorage.clear()
+    document.body.replaceChildren()
+  }
+})

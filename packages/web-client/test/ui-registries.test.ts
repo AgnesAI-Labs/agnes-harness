@@ -43,6 +43,20 @@ it('keeps presentation links unavailable without a host and disposes only the re
   expect(links.open('files')).toBe(false)
 })
 
+it('hands the selection an opener asked for to the registered destination', () => {
+  const links = new RegistrableLink<string>()
+  const opener = vi.fn(
+    (target: string, selection?: unknown) => target === 'terminal' && selection !== undefined,
+  )
+  const remove = links.register(opener)
+  expect(links.open('terminal', { childId: 'c1' })).toBe(true)
+  expect(opener).toHaveBeenCalledWith('terminal', { childId: 'c1' })
+  // A link that carries no selection reaches the opener without one.
+  expect(links.open('terminal')).toBe(false)
+  remove()
+  expect(links.open('terminal', { childId: 'c1' })).toBe(false)
+})
+
 it('notifies every subscriber even when an earlier one throws', () => {
   const report = vi.spyOn(console, 'error').mockImplementation(() => undefined)
   const registry = new UiExtensionRegistry<{ id: string; order: number }>()
