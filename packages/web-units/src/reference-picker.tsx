@@ -1,4 +1,8 @@
-import type { ReferenceCandidate, ReferenceSearchResult } from '@agnes/protocol'
+import {
+  parentFileReferenceBrowse,
+  type ReferenceCandidate,
+  type ReferenceSearchResult,
+} from '@agnes/protocol'
 import { Button, fileMentionIcon, Icon } from '@agnes/web-ui'
 import {
   type RefObject,
@@ -13,6 +17,7 @@ import type { Translate } from './locales/index.js'
 
 export interface ComposerReferences {
   search(query: string): Promise<ReferenceSearchResult>
+  cancelSearch(): void
   getSnapshot(): readonly ReferenceCandidate[]
   subscribe(listener: () => void): () => void
   select(candidate: ReferenceCandidate): boolean
@@ -23,13 +28,13 @@ export interface ComposerReferences {
 
 /** Locators only: the backend owns content, authorization and version receipts. */
 export function createComposerReferences(
-  search: ComposerReferences['search'],
+  search: (query: string, signal: AbortSignal) => Promise<ReferenceSearchResult>,
   changed?: () => void,
 ): ComposerReferences {
   let selected: readonly ReferenceCandidate[] = []
   let scope = 0
   let request = 0
-  let searching: Promise<unknown> = Promise.resolve()
+  let active: AbortController | undefined
   const listeners = new Set<() => void>()
   const publish = (next: readonly ReferenceCandidate[]) => {
     selected = next
@@ -40,16 +45,25 @@ export function createComposerReferences(
     search(query) {
       const epoch = scope
       const sequence = ++request
-      const next = searching
-        .catch(() => {})
+      active?.abort()
+      const controller = new AbortController()
+      active = controller
+      return Promise.resolve()
         .then(async () => {
-          if (scope !== epoch || sequence !== request) throw new Error('Reference scope changed.')
-          const result = await search(query)
-          if (scope !== epoch || sequence !== request) throw new Error('Reference scope changed.')
+          controller.signal.throwIfAborted()
+          const result = await search(query, controller.signal)
+          if (scope !== epoch || sequence !== request || controller.signal.aborted)
+            throw new Error('Reference scope changed.')
           return result
         })
-      searching = next
-      return next
+        .finally(() => {
+          if (active === controller) active = undefined
+        })
+    },
+    cancelSearch() {
+      request++
+      active?.abort()
+      active = undefined
     },
     getSnapshot: () => selected,
     subscribe(listener) {
@@ -69,9 +83,14 @@ export function createComposerReferences(
     },
     clear() {
       scope++
+      active?.abort()
+      active = undefined
       publish([])
     },
     restore(candidates) {
+      scope++
+      active?.abort()
+      active = undefined
       const unique = new Map(candidates.map((item) => [`${item.source}\0${item.id}`, item]))
       publish([...unique.values()].slice(0, 8))
     },
@@ -83,10 +102,20 @@ const noSubscribe = () => () => {}
 const emptySnapshot = () => empty
 const tokenAt = (input: HTMLTextAreaElement) => {
   const before = input.value.slice(0, input.selectionStart)
-  const match = /(?:^|\s)@([^\n@]*)$/u.exec(before)
-  if (!match) return undefined
-  const query = match[1] ?? ''
-  return { start: before.length - query.length - 1, end: input.selectionStart, query }
+  let start = -1
+  let quoted = false
+  for (let index = 0; index < before.length; index++) {
+    const char = before[index]
+    if (char === '\n') {
+      start = -1
+      quoted = false
+    } else if (char === '@' && (index === 0 || /\s/u.test(before[index - 1] ?? '')) && !quoted) {
+      start = index
+      quoted = false
+    } else if (char === '"' && start >= 0) quoted = !quoted
+  }
+  if (start < 0) return undefined
+  return { start, end: input.selectionStart, query: before.slice(start + 1) }
 }
 
 /**
@@ -155,7 +184,7 @@ export function ReferencePicker({
   const [status, setStatus] = useState<'loading' | 'ready' | 'failed' | 'limit'>('ready')
   const state = useRef({ page, opened, active })
   state.current = { page, opened, active }
-  const choose = useRef<(candidate: ReferenceCandidate) => void>(() => {})
+  const choose = useRef<(candidate: ReferenceCandidate, selectDirectory?: boolean) => void>(() => {})
 
   useLayoutEffect(() => {
     void selected
@@ -172,6 +201,7 @@ export function ReferencePicker({
     let disposed = false
     const close = () => {
       epoch++
+      adapter.cancelSearch()
       // Native key handlers may run again before React commits the closed popup.
       state.current = { ...state.current, opened: false }
       setOpened(false)
@@ -205,9 +235,14 @@ export function ReferencePicker({
         )
       }, 120)
     }
-    choose.current = (candidate) => {
+    choose.current = (candidate, selectDirectory = false) => {
       const token = tokenAt(input)
       if (!token || disabledRef.current) return
+      if (candidate.source === 'folder' && (!selectDirectory || !chooseFileRef.current)) {
+        editRef.current(token.start, token.end, `@${/[\s@]/u.test(candidate.id) ? '"' : ''}${candidate.id}/`)
+        timer = setTimeout(query, 0)
+        return
+      }
       if (
         FILE_SOURCES.has(candidate.source) &&
         chooseFileRef.current?.(candidate.id, candidate.source === 'folder', token)
@@ -224,6 +259,17 @@ export function ReferencePicker({
     }
     const keydown = (event: globalThis.KeyboardEvent) => {
       if (disabledRef.current || !state.current.opened || event.isComposing) return
+      if (event.key === 'Backspace' && input.selectionStart === input.selectionEnd) {
+        const token = tokenAt(input)
+        const parent = token && parentFileReferenceBrowse(token.query)
+        if (token && parent !== undefined) {
+          event.preventDefault()
+          event.stopPropagation()
+          editRef.current(token.start, token.end, `@${parent}`)
+          timer = setTimeout(query, 0)
+          return
+        }
+      }
       const { page: current, active: index } = state.current
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -248,7 +294,7 @@ export function ReferencePicker({
         event.preventDefault()
         event.stopPropagation()
         const item = current.items[index]
-        if (item) choose.current(item)
+        if (item) choose.current(item, event.key === 'Tab' && item.source === 'folder')
       }
     }
     const caret = (event: globalThis.KeyboardEvent) => {
@@ -268,6 +314,7 @@ export function ReferencePicker({
     return () => {
       disposed = true
       epoch++
+      adapter.cancelSearch()
       if (timer) clearTimeout(timer)
       for (const attr of [
         'role',

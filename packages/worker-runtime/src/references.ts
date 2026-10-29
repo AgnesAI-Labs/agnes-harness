@@ -1,5 +1,5 @@
 import type { HostSession } from '@agnes/host'
-import { type ReferenceSelection, rpcError } from '@agnes/protocol'
+import { fileReferenceBrowse, type ReferenceSelection, rpcError } from '@agnes/protocol'
 import { listWorkspace, readWorkspaceReference } from './workspace-files.js'
 
 /** Bound and rank traversal work so typing cannot enqueue an unbounded workspace walk. */
@@ -9,6 +9,25 @@ export async function searchReferenceFiles(
   query: string,
   signal: AbortSignal,
 ) {
+  const browse = fileReferenceBrowse(query)
+  if (browse) {
+    signal.throwIfAborted()
+    const page = await listWorkspace(cwd, browse.path, authority, false, true)
+    signal.throwIfAborted()
+    const files = page.entries.filter(
+      (entry) => entry.kind === 'file' && entry.name.toLowerCase().includes(browse.filter.toLowerCase()),
+    )
+    return {
+      items: files.slice(0, 20).map((entry) => {
+        const id = browse.path ? `${browse.path}/${entry.name}` : entry.name
+        return { source: 'file', id, label: id }
+      }),
+      truncated: page.truncated || files.length > 20,
+    }
+  }
+  // A path rejected by the browser grammar must never trigger the legacy whole-tree walk.
+  if (query.includes('/') || query.includes('\\') || /[\p{Cc}\p{Zl}\p{Zp}]/u.test(query))
+    return { items: [], truncated: false }
   const pending = ['']
   const matches: Array<{ source: string; id: string; label: string; rank: number }> = []
   let walked = 0
@@ -64,6 +83,27 @@ export function fuzzyRank(path: string, query: string): number | undefined {
   }
   if (name.includes(wanted)) score -= 1000
   return score
+}
+
+/** Worker command cancellation is scoped to this request id, never to the session run. */
+export async function commandReferences(
+  session: HostSession,
+  operation: unknown,
+  input: unknown,
+  runId: unknown,
+  aborts: Map<string, AbortController>,
+) {
+  if (operation !== 'search' && operation !== 'resolve') throw new Error('Invalid reference operation')
+  if (runId === undefined) return sessionReferences(session, operation, input as never)
+  const id = String(runId)
+  if (!id.startsWith('reference:') || aborts.has(id)) throw new Error('Invalid reference id')
+  const controller = new AbortController()
+  aborts.set(id, controller)
+  try {
+    return await sessionReferences(session, operation, input as never, controller.signal)
+  } finally {
+    if (aborts.get(id) === controller) aborts.delete(id)
+  }
 }
 
 export async function sessionReferences(

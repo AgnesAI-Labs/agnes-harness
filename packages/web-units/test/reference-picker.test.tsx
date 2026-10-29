@@ -126,3 +126,81 @@ it('bounds and deduplicates draft references and refuses stale search results af
   ])
   expect(adapter.getSnapshot()).toHaveLength(1)
 })
+
+it('starts the latest search without waiting for an older request to settle', async () => {
+  let releaseFirst!: (value: { items: []; truncated: false }) => void
+  const signals: AbortSignal[] = []
+  const queries: string[] = []
+  const adapter = createComposerReferences((query, signal) => {
+    queries.push(query)
+    signals.push(signal)
+    return query === 'old'
+      ? new Promise((resolve) => {
+          releaseFirst = resolve
+        })
+      : Promise.resolve({ items: [], truncated: false })
+  })
+  const old = adapter.search('old')
+  const oldRejected = expect(old).rejects.toThrow('scope changed')
+  await vi.waitFor(() => expect(queries).toEqual(['old']))
+  await expect(adapter.search('new')).resolves.toEqual({ items: [], truncated: false })
+  expect(queries).toEqual(['old', 'new'])
+  expect(signals[0]?.aborted).toBe(true)
+  releaseFirst({ items: [], truncated: false })
+  await oldRejected
+})
+
+it('enters a folder, returns to its parent, and selects its location with Tab', async () => {
+  const search = vi.fn(async (query: string) => ({
+    items:
+      query === ''
+        ? [{ source: 'folder', id: 'src', label: 'src' }]
+        : query === 'packages/'
+          ? [{ source: 'folder', id: 'packages/@scope', label: 'packages/@scope' }]
+          : [{ source: 'file', id: 'src/main.ts', label: 'src/main.ts' }],
+    truncated: false,
+  }))
+  const adapter = createComposerReferences(search)
+  const textarea = createRef<HTMLTextAreaElement>()
+  const chooseFile = vi.fn(() => true)
+  const edit = (start: number, end: number, value: string) =>
+    textarea.current?.setRangeText(value, start, end, 'end')
+  const t = (key: string) => composerLocaleCatalog.en[key] ?? key
+  await act(async () =>
+    root.render(
+      createElement(
+        'div',
+        null,
+        createElement(ReferencePicker, { textarea, edit, adapter, chooseFile, t, disabled: false }),
+        createElement(SettingsTextArea, { ref: textarea }),
+      ),
+    ),
+  )
+  const input = textarea.current
+  if (!input) throw new Error('Missing textarea')
+  const type = async (value: string) => {
+    await act(async () => {
+      input.value = value
+      input.setSelectionRange(value.length, value.length)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      await vi.advanceTimersByTimeAsync(120)
+    })
+  }
+  const key = async (name: string) => {
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }))
+      await vi.advanceTimersByTimeAsync(120)
+    })
+  }
+  await type('@')
+  await key('Enter')
+  expect(input.value).toBe('@src/')
+  await key('Backspace')
+  expect(input.value).toBe('@')
+  await key('Tab')
+  expect(chooseFile).toHaveBeenCalledWith('src', true, { start: 0, end: 1, query: '' })
+  await type('@packages/')
+  await key('Enter')
+  expect(input.value).toBe('@"packages/@scope/')
+  expect(search).toHaveBeenCalledWith('"packages/@scope/', expect.any(AbortSignal))
+})

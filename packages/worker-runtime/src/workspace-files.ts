@@ -436,14 +436,19 @@ export async function readWorkspace(
 }
 
 /** Use the same revocable workspace capability as tools; the cwd alone grants no access. */
-export async function sessionWorkspaceFiles(session: HostSession, operation: 'list' | 'read', path: string) {
+export async function sessionWorkspaceFiles(
+  session: HostSession,
+  operation: 'list' | 'read',
+  path: string,
+  browse = false,
+) {
   const port = session.d.workspaceInvocation
   if (!port) throw denied()
   const invoke = async (view: Parameters<Parameters<typeof port.run>[0]>[0]) => {
     const authority = view.fs()
     try {
       return operation === 'list'
-        ? await listWorkspace(view.root, path, authority)
+        ? await listWorkspace(view.root, path, authority, !browse, browse)
         : await readWorkspace(view.root, path, authority)
     } catch (error) {
       if (isRpc(error)) throw error

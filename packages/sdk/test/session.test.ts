@@ -9,6 +9,67 @@ import { fakeEndpoint, flush, type Handler } from './helpers/fake-endpoint.js'
 const providers = { local: () => localAuth() }
 const init: Handler = fakeEndpoint({}).initialize
 
+it('sends one scoped reference cancellation and a browse-only workspace listing', async () => {
+  let completeSearch: ((value: unknown) => void) | undefined
+  const f = fakeEndpoint({
+    initialize: init,
+    'session/new': () => ({ sessionId: 'refs' }),
+    '_agnes/v1/session.references.search': () => ({ items: [], truncated: false }),
+    '_agnes/v1/session.references.searchCancelable': () =>
+      new Promise((resolve) => {
+        completeSearch = resolve
+      }),
+    '_agnes/v1/session.references.cancel': () => ({}),
+    '_agnes/v1/session.workspace.browse': () => ({
+      path: '',
+      observedAt: new Date().toISOString(),
+      revision: 'test',
+      gitStatus: 'unavailable',
+      truncated: false,
+      entries: [],
+    }),
+  })
+  const client = createClient({
+    transport: { kind: 'inproc', endpoint: f.endpoint },
+    journal: memoryJournal(),
+    authProviders: providers,
+  })
+  try {
+    const session = await client.session.new({ cwd: '/w' })
+    await session.workspaceBrowse('')
+    expect(f.calls.find((call) => call.method === '_agnes/v1/session.workspace.browse')?.params).toEqual({
+      sessionId: 'refs',
+    })
+    await session.searchReferences('legacy')
+    expect(f.calls.find((call) => call.method === '_agnes/v1/session.references.search')?.params).toEqual({
+      sessionId: 'refs',
+      query: 'legacy',
+    })
+    const controller = new AbortController()
+    const pending = session.searchReferences('src/', { signal: controller.signal })
+    const rejected = expect(pending).rejects.toThrow()
+    await vi.waitFor(() =>
+      expect(f.calls.some((call) => call.method === '_agnes/v1/session.references.searchCancelable')).toBe(
+        true,
+      ),
+    )
+    controller.abort()
+    await rejected
+    await vi.waitFor(() =>
+      expect(f.calls.some((call) => call.method === '_agnes/v1/session.references.cancel')).toBe(true),
+    )
+    const search = f.calls.find((call) => call.method === '_agnes/v1/session.references.searchCancelable')
+      ?.params as {
+      requestId: string
+    }
+    const cancel = f.calls.find((call) => call.method === '_agnes/v1/session.references.cancel')?.params
+    expect(cancel).toEqual({ sessionId: 'refs', requestId: search.requestId })
+    completeSearch?.({ items: [], truncated: false })
+  } finally {
+    await client.close()
+  }
+})
+
 it.each([true, false])(
   'negotiates admission-only opening (supported=%s) and remembers it for restoration',
   async (supported) => {

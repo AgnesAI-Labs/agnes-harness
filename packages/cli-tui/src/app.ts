@@ -322,7 +322,7 @@ export class TuiApp {
     })
     // Asks whichever session is current; applySwitch resets the cached answers.
     this.mentions = createMentionSource({
-      session: { searchReferences: (query) => this.session.searchReferences(query) },
+      session: () => this.session,
       cwd: this.cwd,
       remote: o.remote ?? false,
       locale,

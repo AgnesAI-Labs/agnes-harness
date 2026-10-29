@@ -7,7 +7,9 @@ import { pathToFileURL } from 'node:url'
 import {
   AGH_DIR,
   type ContentBlock,
+  fileReferenceBrowse,
   type ReferenceSearchResult,
+  type SessionWorkspaceListResult,
   WORKSPACE_SECRET_DIRS,
 } from '@agnes/protocol'
 import { gitCommand } from './git-command.js'
@@ -25,18 +27,18 @@ export type MentionState = {
 
 // `@` opens a mention only at the start of a word, so `a@b.com` is not one. A quoted form carries
 // paths with spaces; the quote stays open while the path is still being chosen.
-const TOKEN = /(?:^|\s)@("[^"\n]*|[^\s@"]*)$/u
+const TOKEN = /(?:^|\s)@((?:file\s+)?(?:"[^"\n]*|[^\s"]*))$/u
 
 /** The mention being typed just before the cursor: where its `@` stands and what follows it. */
 export function mentionToken(before: string): { start: number; query: string } | undefined {
   const raw = TOKEN.exec(before)?.[1]
   if (raw === undefined) return undefined
-  return { start: before.length - raw.length - 1, query: raw.startsWith('"') ? raw.slice(1) : raw }
+  return { start: before.length - raw.length - 1, query: raw }
 }
 
 /** What accepting an item writes: a file closes the mention, a folder stays open to choose inside it. */
 export function mentionText(item: MentionItem): string {
-  // The bare form stops at whitespace and at a second `@`; only the quoted form carries them.
+  // The bare form stops at whitespace; a quoted form carries spaces.
   // ponytail: a `"` in a name has no quoted form, so such a file stays unmentionable.
   const quote = /[\s@]/u.test(item.id) ? '"' : ''
   return item.directory ? `@${quote}${item.id}/` : `@${quote}${item.id}${quote} `
@@ -288,40 +290,49 @@ const unavailable = (error: unknown): boolean => {
 /**
  * Completes `@` through the daemon's `session.references.search`, so the files offered belong to the
  * session's workspace wherever the daemon runs. Answers synchronously from the cache. The daemon
- * walks the workspace for every query, so one request runs at a time and only the latest query
- * typed meanwhile is asked next. `fallback` (local embedded daemon only) answers at once from the
- * local index while the daemon has not, and takes over for good when the daemon lacks the method;
+ * cancels the preceding request when the query changes. `fallback` (local embedded daemon only)
+ * takes over when the daemon lacks the method;
  * with none (a remote connection) this never reads the local disk, and the failure is the answer.
  */
 export class ReferenceMentionSource {
   private readonly cache = new Map<string, { at: number; state: MentionState }>()
-  private busy = false
+  private active: AbortController | undefined
   private wanted: string | undefined
   // Bumped by reset: an answer from the previous session is dropped, not cached.
   private generation = 0
   private disposed = false
 
   constructor(
-    private readonly search: (query: string) => Promise<ReferenceSearchResult>,
+    private readonly search: (query: string, signal: AbortSignal) => Promise<ReferenceSearchResult>,
     private readonly changed: () => void,
     private readonly describe: (error: unknown) => string,
     private readonly fallback?: { get(query: string): MentionState; dispose(): void },
     private readonly now: () => number = Date.now,
+    private readonly browse?: (path: string, signal: AbortSignal) => Promise<SessionWorkspaceListResult>,
   ) {}
 
   get(query: string): MentionState {
     if (this.fallback && this.latched) return this.fallback.get(query)
+    if (this.wanted !== query) {
+      this.wanted = query
+      this.active?.abort()
+      this.active = undefined
+    }
     const hit = this.cache.get(query)
     if (hit && this.now() - hit.at <= STALE_MS) return hit.state
-    this.wanted = query
-    if (!this.busy) this.fetch(query)
+    if (!this.active) this.fetch(query)
     if (hit) return hit.state
-    const local = this.fallback?.get(query)
-    return local?.status === 'ready' ? local : { status: 'loading', items: [] }
+    return { status: 'loading', items: [] }
+  }
+
+  cancel(): void {
+    this.active?.abort()
+    this.active = undefined
   }
 
   dispose(): void {
     this.disposed = true
+    this.cancel()
     this.fallback?.dispose()
   }
 
@@ -330,38 +341,62 @@ export class ReferenceMentionSource {
     this.cache.clear()
     this.latched = false
     this.generation++
+    this.cancel()
   }
 
   private latched = false
 
   private fetch(query: string): void {
-    this.busy = true
+    const controller = new AbortController()
+    this.active = controller
     const generation = this.generation
     Promise.resolve()
-      .then(() => this.search(query))
+      .then(async () => {
+        controller.signal.throwIfAborted()
+        const fileQuery = fileReferenceBrowse(query)
+        const [found, listed] = await Promise.all([
+          this.search(query, controller.signal),
+          fileQuery && this.browse
+            ? this.browse(fileQuery.path, controller.signal)
+            : Promise.resolve(undefined),
+        ])
+        return { found, listed, fileQuery }
+      })
       .then(
-        (result) => {
-          if (generation !== this.generation) return
+        ({ found, listed, fileQuery }) => {
+          if (generation !== this.generation || controller.signal.aborted || this.disposed) return
           // Only workspace files are completed here; other sources have no `@path` form.
-          const items = result.items
+          const items = found.items
             .filter(
               (item) => item.source === 'file' && item.id && noControls(item.id) && relativeInside(item.id),
             )
             .map((item) => ({ id: item.id, directory: false }))
+          if (listed && fileQuery)
+            items.unshift(
+              ...listed.entries
+                .filter(
+                  (entry) =>
+                    entry.kind === 'directory' &&
+                    entry.name.toLowerCase().includes(fileQuery.filter.toLowerCase()),
+                )
+                .map((entry) => ({
+                  id: fileQuery.path ? `${fileQuery.path}/${entry.name}` : entry.name,
+                  directory: true,
+                }))
+                .filter((item) => noControls(item.id) && relativeInside(item.id)),
+            )
           this.store(query, { status: 'ready', items })
         },
         (error: unknown) => {
-          if (generation !== this.generation) return
+          if (generation !== this.generation || controller.signal.aborted || this.disposed) return
           if (this.fallback && unavailable(error)) this.latched = true
           else this.store(query, { status: 'failed', items: [], reason: oneLine(this.describe(error)) })
         },
       )
       .finally(() => {
-        this.busy = false
+        if (this.active !== controller) return
+        this.active = undefined
         if (this.disposed) return
-        const next = this.wanted
-        const hit = next === undefined ? undefined : this.cache.get(next)
-        if (next !== undefined && !this.latched && !(hit && this.now() - hit.at <= STALE_MS)) this.fetch(next)
         this.changed()
       })
   }
@@ -376,23 +411,38 @@ export class ReferenceMentionSource {
  * The `@` source for a session. `remote` is true for `--connect`: the daemon's workspace is not this
  * machine's, so the local disk is never consulted. An embedded daemon shares the disk and may fall back.
  */
+type MentionSession = {
+  searchReferences(query: string, options?: { signal?: AbortSignal }): Promise<ReferenceSearchResult>
+  workspaceBrowse?(path: string, options?: { signal?: AbortSignal }): Promise<SessionWorkspaceListResult>
+}
+
 export function createMentionSource(o: {
-  session: { searchReferences(query: string): Promise<ReferenceSearchResult> }
+  session: MentionSession | (() => MentionSession)
   cwd: string
   remote: boolean
   locale: Locale
   changed: () => void
 }): ReferenceMentionSource {
+  const current = () => (typeof o.session === 'function' ? o.session() : o.session)
+  const workspaceBrowse = current().workspaceBrowse
   const describe = (error: unknown): string => {
     if (unavailable(error)) return tt('composer.mentionUnavailable', o.locale)
     const message = error instanceof Error ? error.message : String(error)
     return tt('composer.mentionFailedReason', o.locale, { reason: oneLine(message) })
   }
   return new ReferenceMentionSource(
-    (query) => o.session.searchReferences(query),
+    (query, signal) => current().searchReferences(query, { signal }),
     o.changed,
     describe,
     o.remote ? undefined : new FileMentionSource(() => listWorkspaceFiles(o.cwd), o.changed),
+    Date.now,
+    workspaceBrowse
+      ? (path, signal) => {
+          const session = current()
+          if (!session.workspaceBrowse) throw new Error('Workspace browsing unavailable')
+          return session.workspaceBrowse(path, { signal })
+        }
+      : undefined,
   )
 }
 

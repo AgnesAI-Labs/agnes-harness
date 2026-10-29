@@ -9220,6 +9220,36 @@
         }
       }
     },
+    "SessionReferenceSearchCancelableParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "query", "requestId"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "query": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "SessionReferenceCancelParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "requestId"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
     "SessionReferenceSearchResult": {
       "type": "object",
       "additionalProperties": false,
