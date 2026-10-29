@@ -81,7 +81,8 @@ export function draftPermissionMode(input: DraftPermissionInput): PermissionMode
   return chosenMode(input) ?? MODE[defaultPermissionLevel(input.defaults, input.runtime)]
 }
 
-export type NewSessionRequest = { agent: string } | { preset?: string; permission?: string }
+/** `yolo`: the user picked Full access, applied to the opened session since `session.new` takes no permission beside an agent. */
+export type NewSessionRequest = { agent: string; yolo?: true } | { preset?: string; permission?: string }
 
 /**
  * What `session.new` carries for the draft, or `undefined` when the selection cannot be requested
@@ -89,8 +90,17 @@ export type NewSessionRequest = { agent: string } | { preset?: string; permissio
  * deployment's default level (`default`).
  */
 export function newSessionRequest(input: DraftPermissionInput): NewSessionRequest | undefined {
-  // An agent carries its own recipe and level, so `session.new` refuses it beside either.
-  if (input.agent && !input.preset && !input.explicit) return { agent: input.agent }
+  // An agent carries its own recipe and level, so `session.new` refuses it beside either. A chosen
+  // edit or full level keeps the agent (full is applied after it opens); read-only cannot be applied
+  // to an agent session, so it stays on the general path rather than silently widening.
+  const explicit = input.explicit
+  if (
+    input.agent &&
+    !input.preset &&
+    explicit !== 'view' &&
+    (!explicit || allowedPermissionLevels(input.runtime).includes(LEVEL[explicit]))
+  )
+    return { agent: input.agent, ...(explicit === 'full' ? { yolo: true as const } : {}) }
   const preset = input.preset ?? defaultRecipe(input.defaults, input.runtime)
   const mode = chosenMode(input)
   if (mode && !allowedPermissionLevels(input.runtime).includes(LEVEL[mode])) return undefined

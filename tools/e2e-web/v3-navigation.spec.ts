@@ -34,15 +34,12 @@ test('v3 home entries, deep links and browser back/forward retain the selected p
   await expect(page.getByTestId('home-page-plugins')).toBeVisible()
   await page.goto(`${runtime.url}/?page=automation&tab=triggers`)
   await expect(page.getByTestId('home-page-automation')).toBeVisible()
-  await expect(page.getByRole('tab', { name: 'Triggers', exact: true })).toHaveAttribute(
-    'aria-selected',
-    'true',
-  )
+  // The automation page intentionally exposes schedules only, including legacy trigger links.
+  await expect(page.getByRole('tab', { name: 'Triggers', exact: true })).toHaveCount(0)
+  await expect(page.getByTestId('schedules-new')).toBeVisible()
   await page.reload()
-  await expect(page.getByRole('tab', { name: 'Triggers', exact: true })).toHaveAttribute(
-    'aria-selected',
-    'true',
-  )
+  await expect(page.getByRole('tab', { name: 'Triggers', exact: true })).toHaveCount(0)
+  await expect(page.getByTestId('schedules-new')).toBeVisible()
 })
 
 test('v3 command-K searches durable session text and opens the matching session', async ({

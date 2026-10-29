@@ -134,6 +134,64 @@ describe('new session request', () => {
     expect(created).toHaveBeenCalledTimes(2)
   })
 
+  it('carries an explicit Full access pick into the launch of the application agent', () => {
+    const levels = {
+      ...runtime,
+      permissions: [...(runtime?.permissions ?? []), { id: 'full-access', isDefault: false }],
+    } as never
+    const context = {
+      current: undefined,
+      draftingNew: true,
+      sessionPending: false,
+      sessionBinding: new SessionBindingOwner(),
+      submissions: new SubmissionOwner(new SessionBindingOwner()),
+      renderControls() {},
+      selectedWorkspace: { path: '/synthetic/work', available: true },
+      draftLoopAvailable: () => true,
+      loopCatalogPending: false,
+      draftBundles: [],
+      runtimeCatalog: levels,
+      client: { session: { new: vi.fn() } },
+      draftSessionRequest: () =>
+        newSessionRequest({
+          agent: 'devboard.coordinator',
+          remembered: undefined,
+          defaults: undefined,
+          runtime: levels,
+          explicit: 'full',
+          preset: undefined,
+        }),
+      composerRuntime: {
+        getDraft: () => 'hello',
+        getAttachmentBlocks: () => [],
+        hasPendingImages: () => false,
+        clearImageBlocks() {},
+      },
+      references: { getSnapshot: () => [], clear() {} },
+      configured: true,
+      connected: true,
+      stopping: false,
+      permissionChangePending: false,
+      permissionRefreshPending: false,
+      selectedModelAvailable: () => true,
+      runtimeModels: [],
+      notice: { setText() {}, setKind() {} },
+      t: (key: string) => key,
+      settingsText: (key: string) => key,
+    } as unknown as Parameters<typeof createSubmissionController>[0]
+    createSubmissionController(context).submitComposer()
+    expect(
+      (homeNavigation.getSnapshot()?.selection as { composerLaunch?: unknown } | undefined)?.composerLaunch,
+    ).toEqual({
+      agent: 'devboard.coordinator',
+      prompt: 'hello',
+      send: true,
+      yolo: true,
+      workspace: '/synthetic/work',
+    })
+    homeNavigation.close()
+  })
+
   it('hands the application default agent to the launch review and never to session.new', async () => {
     const created = vi.fn()
     let draft = '  hello agent  '

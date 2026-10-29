@@ -10,7 +10,7 @@ import {
   HistoryTable,
   h,
   NoteField,
-  openWork,
+  openWorkWithDraft,
   signedRoles,
   signProgress,
   stageName,
@@ -632,7 +632,11 @@ export function MyTodo({ data, board, role, setRole }) {
                 Button,
                 {
                   onClick: () =>
-                    openWork(board, workOf('continueGate', g).action, workOf('continueGate', g).object),
+                    openWorkWithDraft(
+                      board,
+                      workOf('continueGate', g).action,
+                      workOf('continueGate', g).object,
+                    ),
                 },
                 workOf('continueGate', g).label,
               ),

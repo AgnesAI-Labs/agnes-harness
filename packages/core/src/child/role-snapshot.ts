@@ -46,6 +46,7 @@ function snapshot(value: unknown): RoleDelegation {
     !['read-only', 'workspace-write'].includes(String(value.permission)) ||
     value.approvalPolicy !== 'never' ||
     typeof value.parentPolicy !== 'string' ||
+    (value.delegatedFullAccess !== undefined && value.delegatedFullAccess !== true) ||
     (value.parentTainted !== undefined && typeof value.parentTainted !== 'boolean') ||
     (value.humanApprovals !== undefined && typeof value.humanApprovals !== 'boolean') ||
     typeof value.sandboxRequired !== 'boolean' ||

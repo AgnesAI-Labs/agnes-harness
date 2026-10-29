@@ -30,7 +30,7 @@ for (const locale of ['en', 'zh-CN'])
       await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
       const memorySection = page.getByTestId('personalization-memory')
       const memoryDialog = page.getByRole('dialog').filter({ has: memorySection })
-      await expect(memoryDialog.getByRole('heading', { level: 2 })).toContainText(
+      await expect(memoryDialog.locator('#settings-group-title')).toContainText(
         locale === 'en' ? 'General' : '通用',
       )
       await expect(memorySection.getByTestId('settings-refresh')).toHaveCount(0)

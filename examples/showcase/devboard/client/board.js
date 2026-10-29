@@ -1,4 +1,4 @@
-import { homeNavigation, openApplicationWork } from '@agnes/web-client'
+import { homeNavigation, openApplicationWork, openComposerLaunch } from '@agnes/web-client'
 import {
   Badge,
   Banner,
@@ -212,13 +212,30 @@ export function ProjectSelect({ data, value, onChange, allowAll = false }) {
   })
 }
 
-/** Opens the coordinator with an application action and a draft; never sent automatically. */
-export function openWork(board, actionId, object) {
+/** The application's default agent; the host accepts a composer launch only for it. */
+const COORDINATOR = '@agnes-showcase/devboard#coordinator'
+
+const guarded = (board, open) => {
   try {
-    openApplicationWork(actionId, object)
+    open()
   } catch (e) {
     board.setError(`无法打开研发协调员：${message(e)}。请先在智能体页采纳 DevBoard。`)
   }
+}
+
+/** Opens the coordinator with an application action and a draft; never sent automatically. */
+export const openWork = (board, actionId, object) =>
+  guarded(board, () => openApplicationWork(actionId, object))
+
+/** Opens the coordinator composer with this text as an unsent draft (it still goes through the launch review). */
+export const openDraft = (board, prompt) =>
+  guarded(board, () => openComposerLaunch({ agent: COORDINATOR, prompt, send: false }))
+
+/** A list row has no hand-off loaded: read it on click, and fall back to the action when it cannot be read. */
+export async function openWorkWithDraft(board, actionId, object) {
+  const out = await Promise.resolve(board.query('devboard.handoff', object)).catch(() => undefined)
+  if (typeof out?.draft === 'string' && out.draft) openDraft(board, out.draft)
+  else openWork(board, actionId, object)
 }
 
 const VERBS = {

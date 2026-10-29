@@ -24,8 +24,8 @@ const roots: string[] = []
 // plugin_test/install now describe automatic full-access admission and retained OS isolation.
 // UI parameters use the generated bounded tool guidance and reject a top-level locale.
 // Authoring guidance now distinguishes initial templates, hash tests and install/browser verification.
-// Candidate writes now support reviewed merge/remove edits without re-emitting untouched files.
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '65f5367110c327ff101c278785b6b356e578e24b7f5231f49c14cdcab3b45e59'
+// Includes candidate merge/remove edits and bounded shell waits with retained background children.
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '33795bde1188215374fe2618c35d247ce6f2ecae3544f5140c1eb8c3f8c29e75'
 const expectedToolNames = [
   'ask_user_question',
   'compact',

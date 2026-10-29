@@ -99,6 +99,7 @@ const SUPPLIED: Record<string, string[]> = {
     'tool:pty_list',
     'tool:pty_close',
     'hook:context',
+    'hook:turn_stopping',
     'hook:shutdown',
   ],
   // Service registrations belong to the Host service registry, outside Kernel.registrations.

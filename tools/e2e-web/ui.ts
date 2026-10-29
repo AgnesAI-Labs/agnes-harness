@@ -127,7 +127,9 @@ export async function sidebar(page: Page) {
 /** The view menu owns both the grouping and the archived filter; its items carry stable test ids. */
 export async function chooseView(page: Page, filter: 'active' | 'all' | 'archived') {
   await sidebar(page)
-  await page.locator('#session-view').click()
+  const view = page.locator('#session-view')
+  await page.locator('.workspace-heading-row, .sidebar-section-heading').filter({ has: view }).hover()
+  await view.click()
   await page.getByTestId(`session-view-filter-${filter}`).click()
   await expect(page.locator('#session-view')).toHaveAttribute('aria-expanded', 'false')
 }
@@ -158,11 +160,9 @@ export async function homePage(page: Page, id: string, tab?: string) {
         .getByRole('tab')
         .filter({ has: page.getByTestId(`plugins-tab-${tab}`) })
         .click()
-    else
-      await page
-        .getByRole('tab')
-        .filter({ hasText: tab === 'triggers' ? /Triggers|触发器/ : /Scheduled tasks|定时任务/ })
-        .click()
+    else if (id === 'automation' && tab === 'schedules')
+      await expect(page.getByTestId('schedules-page')).toBeVisible()
+    else throw new Error(`Unsupported home tab: ${id}/${tab}`)
   }
 }
 

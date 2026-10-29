@@ -1,5 +1,6 @@
 import { defaultLoop, defaultModelAdapter } from '@agnes/protocol'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
+import type { StartedSession } from '@agnes/web-admin/agents'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
 import { factChainLinks, workbenchNavigation } from '@agnes/web-client'
 import {
@@ -2276,16 +2277,17 @@ const stopSessionConfiguration = onBroadcast(
 )
 // A started agent or quick action hands its session over here instead of reloading the page.
 const stopOpenSession = onBroadcast('agnes:open-session', (event) => {
-  const target =
-    event instanceof CustomEvent ? (event.detail as { sessionId?: unknown; prompt?: unknown }) : {}
-  if (typeof target.sessionId !== 'string') return
-  const { sessionId, prompt, send } = target as { sessionId: string; prompt?: string; send?: boolean }
+  const detail = (event instanceof CustomEvent ? event.detail : {}) as Partial<StartedSession>
+  const { sessionId, prompt, send, yolo } = detail
+  if (typeof sessionId !== 'string') return
   run(async () => {
     // The page behind stays up until the conversation is ready, so no empty frame shows between.
     try {
       await open(sessionId)
+      // Fail closed: selectPermission reports its own error; without Full access the draft is kept unsent.
+      const unsafe = yolo && !(await selectPermission('full'))
       if (prompt) composerRuntime.setDraft(prompt)
-      if (prompt && send) submitComposer()
+      if (prompt && send && !unsafe) submitComposer()
     } finally {
       homeNavigation.close()
     }

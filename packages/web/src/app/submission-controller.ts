@@ -131,6 +131,7 @@ export function createSubmissionController(
         agent: request.agent,
         prompt: context.composerRuntime.getDraft().trim(),
         send: false,
+        ...(request.yolo ? { yolo: true } : {}),
         ...(context.selectedWorkspace ? { workspace: context.selectedWorkspace.path } : {}),
       })
       throw new Error(context.t('app.session.agentLaunch'))
@@ -283,6 +284,7 @@ export function createSubmissionController(
         agent: request.agent,
         prompt: input,
         send: true,
+        ...(request.yolo ? { yolo: true } : {}),
         ...(context.selectedWorkspace ? { workspace: context.selectedWorkspace.path } : {}),
       })
       return

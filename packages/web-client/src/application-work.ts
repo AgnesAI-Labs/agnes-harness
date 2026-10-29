@@ -39,7 +39,14 @@ export function openApplicationWork(actionId: string, object?: ApplicationWorkOb
 }
 /** A composer message typed before the workbench's default agent has a session; the launch owns the consent review.
  * `workspace` is the composer's picked workspace path; absent means the launcher's own workspace. */
-export type ComposerLaunch = Readonly<{ agent: string; prompt: string; send: boolean; workspace?: string }>
+export type ComposerLaunch = Readonly<{
+  agent: string
+  prompt: string
+  send: boolean
+  workspace?: string
+  /** Full access was picked before the first send: apply it to the opened session before sending. */
+  yolo?: boolean
+}>
 export function openComposerLaunch(launch: ComposerLaunch): void {
   homeNavigation.open('agents', { composerLaunch: launch })
 }

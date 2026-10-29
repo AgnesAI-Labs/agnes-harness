@@ -6495,9 +6495,11 @@ const EXTENSION_SAMPLES: Record<string, Sample> = {
       brand: { name: { en: 'Acme' } },
       agents: Array.from({ length: 64 }, (_, index) => `acme/kit#role${index}`),
       delegableAgents: Array.from({ length: 64 }, (_, index) => `acme/kit#role${index}`),
+      delegatedFullAccess: true,
     },
     invalid: [
       {},
+      { id: 'acme', delegatedFullAccess: false },
       { id: 'acme', brand: { unknown: true } },
       { id: 'acme', delegableAgents: Array.from({ length: 65 }, (_, index) => `acme/kit#role${index}`) },
     ],

@@ -257,6 +257,15 @@
 @layer app {
   /* Narrow screens keep actions reachable while content owns its scrolling. */
   @media (max-width: 900px) {
+    /* Compact desktop headings must retain usable targets in the sidebar drawer. */
+    .sidebar .workspace-heading-row .workspace-heading,
+    :is(.sidebar-section-heading, .sidebar-section-tools, .sidebar-section > .workspace-heading-row)
+      .agh-btn--icon,
+    .sidebar-section > .workspace-heading-row .workspace-row-actions .agh-btn {
+      min-width: var(--control-height-sm);
+      min-height: var(--control-height-sm);
+      height: auto;
+    }
     :is(#composer-workspace, #composer-permission, #model, #config-close) {
       min-width: 32px;
       min-height: 32px;
@@ -374,6 +383,15 @@
     .trace-inspector-title {
       min-width: 0;
       overflow-wrap: anywhere;
+    }
+  }
+  @media (max-width: 767px) {
+    .sidebar .workspace-heading-row .workspace-heading,
+    :is(.sidebar-section-heading, .sidebar-section-tools, .sidebar-section > .workspace-heading-row)
+      .agh-btn--icon,
+    .sidebar-section > .workspace-heading-row .workspace-row-actions .agh-btn {
+      min-width: var(--control-height-touch);
+      min-height: var(--control-height-touch);
     }
   }
 }

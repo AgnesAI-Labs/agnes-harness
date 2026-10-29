@@ -1214,6 +1214,19 @@ it('keeps the draft preset and permission level independent and requests them as
     preset: 'standard',
     permission: 'read-only',
   })
+  // An application agent survives a chosen edit/full level (full is applied once it opens); view and an
+  // explicit recipe keep the old request.
+  const agent = 'devboard.coordinator'
+  expect(newSessionRequest(draft({ agent, explicit: 'workspace' }))).toEqual({ agent })
+  expect(newSessionRequest(draft({ agent, explicit: 'full' }))).toEqual({ agent, yolo: true })
+  expect(newSessionRequest(draft({ agent, explicit: 'view' }))).toEqual({
+    preset: 'standard',
+    permission: 'read-only',
+  })
+  expect(newSessionRequest(draft({ agent, explicit: 'full', preset: 'ptc' }))).toEqual({
+    preset: 'ptc',
+    permission: 'full-access',
+  })
   expect(draftPermissionMode(draft({ explicit: 'view', preset: 'ptc' }))).toBe('view')
   expect(draftPermissionMode(draft({ explicit: 'view', preset: 'minimal' }))).toBe('view')
   expect(draftPermissionMode(draft({}))).toBe('workspace')

@@ -25,6 +25,8 @@ export type RoleDelegation = {
   permission: 'read-only' | 'workspace-write'
   approvalPolicy: 'never'
   parentPolicy: string
+  /** The application declared `delegatedFullAccess`: core tool gates follow the live parent's full access. */
+  delegatedFullAccess?: true
   /** Captured before admission awaits; absent legacy evidence is conservatively tainted. */
   parentTainted?: boolean
   /** Scheduled/unattended ancestors cannot acquire an interactive human surface. */

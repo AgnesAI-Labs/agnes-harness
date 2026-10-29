@@ -13,6 +13,7 @@ export async function sourceHash() {
       '--exclude-standard',
       '-z',
       'packages',
+      'examples',
       'tools/build-local.ts',
       'tools/third-party-notices.mjs',
       'tools/web-style-source.mjs',

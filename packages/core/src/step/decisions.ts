@@ -13,7 +13,6 @@ import type {
 } from '@agnes/extension-api'
 import {
   type Actor,
-  automaticPermissionDecision,
   compilePluginConfig,
   type DecisionCommandReceipt,
   type DecisionResponse,
@@ -28,11 +27,13 @@ import {
   DecisionSpec as SpecSchema,
 } from '@agnes/protocol/gen/session-v1'
 import { ROLE_APPROVAL_REFUSAL } from '../child/roles.js'
-import { delegatedDecisionRefused, humanDecisionActorAllowed } from './decision-authority.js'
+import { automaticAnswer, delegatedDecisionRefused, humanDecisionActorAllowed } from './decision-authority.js'
 
 /** Minimal authority needed by the decision commands; the session supplies the writer gate. */
 export interface DecisionAuthority {
   readonly refuseApprovals?: boolean
+  /** The role's application declared that core tool gates follow the live parent's full access. */
+  readonly delegatedFullAccess?: boolean
   readonly delegatedToolApprovals?: boolean
   readonly key: string
   /** A profile journal uses decision commands without creating a session or granting session access. */
@@ -154,16 +155,6 @@ export class DecisionCommands {
     await this.s.beforeAttestation?.()
     return this.s.transact(work)
   }
-  private automaticAnswer(spec: DecisionSpec, permission: boolean) {
-    if (this.s.refuseApprovals) return undefined
-    return automaticPermissionDecision(
-      this.s.permissionContext,
-      spec.purpose,
-      spec.options,
-      permission ? 'permission' : 'question',
-      spec.presentation,
-    )
-  }
   private async write(
     value: DecisionSnapshot,
     recheck: () => void | Promise<void> = () => undefined,
@@ -215,7 +206,12 @@ export class DecisionCommands {
     if (this.s.historyVerified?.() === false) return value
     if (value.result || value.invalidation || value.consumption || this.s.cancelled || this.due(value))
       return value
-    const answer = this.automaticAnswer(value.request.spec, value.request.category === 'permission')
+    const answer = automaticAnswer(
+      this.s,
+      value.request.spec,
+      value.request.category === 'permission',
+      value.request,
+    )
     if (!answer) {
       await this.recordAutomaticSkip(value, 'ambiguous-business-confirmation', source)
       return value
@@ -383,8 +379,7 @@ export class DecisionCommands {
       if (!inspectJsonData(spec.responseSchema, 32768).ok) fail('SCHEMA_SIZE')
       compilePluginConfig(spec.responseSchema)
     }
-    if (!this.s.refuseApprovals && this.automaticAnswer(spec, source.permission === true))
-      await this.s.beforeAttestation?.()
+    if (automaticAnswer(this.s, spec, source.permission === true, source)) await this.s.beforeAttestation?.()
     return this.s.transact(async () => {
       this.live(source)
       this.execution()
@@ -433,7 +428,10 @@ export class DecisionCommands {
         consumption: null,
         invalidation: null,
       }
-      const refused = delegatedDecisionRefused(this.s, source, spec)
+      // A gate the declaring role may answer under full access is never refused, even when unattended,
+      // exactly as the main session answers it.
+      const automatic = automaticAnswer(this.s, spec, source.permission === true, source)
+      const refused = !automatic && delegatedDecisionRefused(this.s, source, spec)
       // Persist request and refusal in one commit, following the existing decision transition contract.
       const initial = refused ? detached(value) : undefined
       if (refused) {
@@ -444,9 +442,6 @@ export class DecisionCommands {
           at: new Date(now).toISOString(),
         }
       }
-      const automatic = this.s.refuseApprovals
-        ? undefined
-        : this.automaticAnswer(spec, source.permission === true)
       if (
         automatic &&
         spec.purpose !== 'business.confirm' &&
@@ -602,7 +597,12 @@ export class DecisionCommands {
       !pending.consumption &&
       (pending.result?.reason === 'answered' ||
         (!pending.result &&
-          this.automaticAnswer(pending.request.spec, pending.request.category === 'permission')))
+          automaticAnswer(
+            this.s,
+            pending.request.spec,
+            pending.request.category === 'permission',
+            pending.request,
+          )))
     )
       await this.s.beforeAttestation?.()
     return this.s.transact(async () => {

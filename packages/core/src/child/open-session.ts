@@ -97,5 +97,10 @@ export async function openDelegatedSession(
       generationDepth: record.generationDepth,
     },
   })
+  // A role opens in its own Host/Kernel, so only here can it bind to the live parent. Bind a declaring
+  // role alone: its core tool gates then follow the parent's current full-access choice; the parent's
+  // switch, stop or close bumps this child's epoch and so revokes any unconsumed automatic answer.
+  if (opts.resolvedRole && child.d.roleDelegation?.delegatedFullAccess === true)
+    await child.inheritAutomaticPermissions(parent)
   return child
 }

@@ -426,7 +426,7 @@ test('narrow icon hit area, focus tooltip and draggable bottom sheet', async ({ 
 })
 
 for (const theme of ['light', 'dark'])
-  for (const width of [1280, 390])
+  for (const width of [1280, 768, 390])
     test(`sidebar navigation hierarchy and containment ${theme}/${width}`, async ({ page }) => {
       const result = await build({
         stdin: {
@@ -452,29 +452,35 @@ for (const theme of ['light', 'dark'])
       if (!script || !styles) throw new Error('Sidebar fixture must bundle its script and vendor styles')
       await page.addStyleTag({ content: inCssLayer(styles.text, 'vendor') })
       await page.addScriptTag({ content: script.text })
-      // The Workspaces section heading sits above the project; the project heading owns the row checks.
+      // The Projects section sits above the medium-weight project heading and regular session row.
       const heading = page.locator('.workspace-group .workspace-heading'),
         session = page.locator('.session')
       await expect(session).toHaveAttribute('aria-current', 'page')
-      for (const locator of [heading, session]) {
+      for (const [locator, weight] of [
+        [heading, '500'],
+        [session, '400'],
+      ] as const) {
         expect(
           await locator.evaluate((node) => {
             const style = getComputedStyle(node)
             return { justify: style.justifyContent, weight: style.fontWeight, border: style.borderColor }
           }),
-        ).toEqual({ justify: 'flex-start', weight: '400', border: 'rgba(0, 0, 0, 0)' })
+        ).toEqual({ justify: 'flex-start', weight, border: 'rgba(0, 0, 0, 0)' })
         await locator.focus()
         expect(await locator.evaluate((node) => getComputedStyle(node).outlineStyle)).toBe('solid')
       }
-      expect(
-        await session.evaluate((node) => Number.parseFloat(getComputedStyle(node).paddingLeft)),
-      ).toBeGreaterThan(
-        await heading.evaluate((node) => Number.parseFloat(getComputedStyle(node).paddingLeft)),
-      )
+      // The guide line and its parent indent now establish hierarchy; row padding is shared.
+      expect((await session.boundingBox())!.x).toBeGreaterThan((await heading.boundingBox())!.x)
       expect(
         await page.locator('.session-row').evaluate((node) => getComputedStyle(node).backgroundColor),
       ).not.toBe('rgba(0, 0, 0, 0)')
       const sidebar = (await page.locator('.sidebar').boundingBox())!
+      if (width <= 900) {
+        for (const target of await page.locator('.workspace-heading, .workspace-new-session').all()) {
+          const bounds = (await target.boundingBox())!
+          expect(bounds.height).toBeGreaterThanOrEqual(width <= 767 ? 44 : 32)
+        }
+      }
       for (const selector of [
         '.sidebar-section > .workspace-heading-row',
         '.workspace-group .workspace-heading-row',
@@ -482,9 +488,18 @@ for (const theme of ['light', 'dark'])
         '.workspace-new-session',
         '.session-menu-trigger',
       ]) {
+        // Desktop actions have a zero-width clipped container until their owning row is hovered.
+        if (selector === '.workspace-new-session')
+          await page.locator('.workspace-group .workspace-heading-row').hover()
+        if (selector === '.session-menu-trigger') await page.locator('.session-row').hover()
         const box = (await page.locator(selector).boundingBox())!
-        expect(box.x).toBeGreaterThanOrEqual(sidebar.x)
-        expect(box.x + box.width).toBeLessThanOrEqual(sidebar.x + sidebar.width)
+        expect(box.x, selector).toBeGreaterThanOrEqual(sidebar.x)
+        expect(box.x + box.width, selector).toBeLessThanOrEqual(sidebar.x + sidebar.width)
+        if (selector === '.workspace-new-session') {
+          const name = (await page.locator('.workspace-group .workspace-name').boundingBox())!
+          const actions = (await page.locator('.workspace-row-actions').boundingBox())!
+          expect(name.x + name.width).toBeLessThanOrEqual(actions.x)
+        }
       }
       for (const selector of ['.workspace-group .workspace-name', '.session-title']) {
         expect(

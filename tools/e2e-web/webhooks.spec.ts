@@ -1,10 +1,11 @@
 import { createHmac } from 'node:crypto'
 import { mkdir, realpath, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import type { WebhookRequest, WebhookResult } from '@agnes/protocol/gen/app-server'
 import { expect, test } from './fixtures.js'
 import { readSessionEvents } from './ledger.js'
 import { accessible, translated } from './quality.js'
-import { advanced, chooseWorkspace, preferences, section, settings } from './ui.js'
+import { chooseWorkspace, homePage, preferences } from './ui.js'
 
 test('signed business event creates a policy-bound root session', async ({
   page,
@@ -21,10 +22,21 @@ test('signed business event creates a policy-bound root session', async ({
   await preferences(page, 'zh-CN', 'light')
   await page.goto(runtime.url)
   await chooseWorkspace(page, runtime, 'zh-CN')
-  await settings(page, 'zh-CN')
-  await advanced(page)
-  await section(page, 'triggers')
-  await expect(page.getByTestId('triggers-panel')).toHaveAttribute('aria-busy', 'false')
+  await homePage(page, 'automation')
+  await expect(page.getByTestId('schedules-page')).toBeVisible()
+  await expect(page.getByTestId('triggers-panel')).toHaveCount(0)
+  // Trigger configuration is intentionally absent from the UI. Its existing same-origin BFF
+  // still owns webhook administration; retain delivery and session acceptance through that API.
+  const administer = (input: WebhookRequest): Promise<WebhookResult> =>
+    page.evaluate(async (body) => {
+      const response = await fetch('/api/triggers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      })
+      if (!response.ok) throw new Error(`Trigger administration failed: ${response.status}`)
+      return response.json()
+    }, JSON.stringify(input))
   const body = JSON.stringify({
     action: 'opened',
     issue: { title: 'Synthetic signed issue', updated_at: new Date().toISOString() },
@@ -36,18 +48,30 @@ test('signed business event creates a policy-bound root session', async ({
     'x-hub-signature-256': `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`,
   }
   expect((await request.post(`${runtime.url}/hooks/events`, { headers, data: body })).status()).toBe(404)
-  await page.getByTestId('trigger-new').click()
-  await page.getByTestId('trigger-id').fill('business-issues')
-  await page.getByTestId('trigger-secret-picker').selectOption('secret://webhooks/sample')
-  await page.getByTestId('trigger-workspace').selectOption(cwd)
-  await page.getByTestId('trigger-advanced').locator('summary, .agh-disclosure-summary').click()
-  await page.getByTestId('trigger-agent').fill('standard')
-  await page.getByTestId('trigger-save').click()
-  await expect(page.getByTestId('trigger-row')).toContainText('business-issues')
-  await page.getByTestId('triggers-config-details').locator('summary, .agh-disclosure-summary').click()
-  await page.getByTestId('triggers-enabled').click()
-  await page.getByTestId('triggers-configure').click()
-  await expect(page.getByTestId('triggers-panel')).toHaveAttribute('aria-busy', 'false')
+  const saved = await administer({
+    action: 'upsert',
+    rule: {
+      id: 'business-issues',
+      enabled: true,
+      provider: 'github',
+      auth: 'hmac',
+      secretRef: 'secret://webhooks/sample',
+      event: 'issues',
+      filters: { '$.action': 'opened' },
+      workspace: cwd,
+      agent: 'standard',
+      bundles: [],
+      template: 'Review this issue: {{$.issue.title}}',
+      timestampPath: '$.issue.updated_at',
+      windowSeconds: 300,
+      ratePerMinute: 10,
+    },
+  })
+  expect(saved.snapshot?.rules).toEqual(
+    expect.arrayContaining([expect.objectContaining({ id: 'business-issues' })]),
+  )
+  if (!saved.snapshot) throw new Error('Missing trigger configuration snapshot')
+  await administer({ action: 'configure', config: { ...saved.snapshot.config, enabled: true } })
   expect(
     (
       await request.post(`${runtime.url}/hooks/events`, {
@@ -61,11 +85,9 @@ test('signed business event creates a policy-bound root session', async ({
   const result = await accepted.json()
   expect(result.delivery.sessionId).toMatch(/^agnes:webhook:business-issues:/)
   expect((await request.post(`${runtime.url}/hooks/events`, { headers, data: body })).status()).toBe(409)
-  await expect(page.getByTestId('trigger-recent')).toBeVisible()
-  await page.getByTestId('triggers-refresh').click()
-  await expect(page.getByTestId('trigger-delivery')).toHaveCount(4)
+  expect((await administer({ action: 'list' })).snapshot?.deliveries).toHaveLength(4)
   await translated(page)
-  await accessible(page, info, 'triggers-settings')
+  await accessible(page, info, 'automation')
   const session = await client.session.load(result.delivery.sessionId)
   await expect
     .poll(
@@ -87,7 +109,7 @@ test('signed business event creates a policy-bound root session', async ({
       attrs: { provider: 'github', ruleId: 'business-issues', deliveryId: 'synthetic-delivery' },
     },
   })
-  await page.getByTestId('trigger-session').first().click()
+  await page.goto(`${runtime.url}/?session=${encodeURIComponent(result.delivery.sessionId)}`)
   await expect(page).toHaveURL(new RegExp(`session=${encodeURIComponent(result.delivery.sessionId)}`))
   await expect(page.getByTestId('conversation-turn')).toHaveCount(1)
   await expect(page.getByTestId('conversation-turn')).toHaveAttribute('data-status', 'completed', {
