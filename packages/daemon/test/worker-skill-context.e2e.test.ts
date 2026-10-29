@@ -25,7 +25,8 @@ const roots: string[] = []
 // UI parameters use the generated bounded tool guidance and reject a top-level locale.
 // Authoring guidance now distinguishes initial templates, hash tests and install/browser verification.
 // Includes candidate merge/remove edits and bounded shell waits with retained background children.
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '33795bde1188215374fe2618c35d247ce6f2ecae3544f5140c1eb8c3f8c29e75'
+// Tool schemas now carry standard #/$defs refs and no $id (8db85dc27).
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '5458f89d98091d6fe33c9a8db7ffc35ad3efb228b2d0df6f754c4aeaaeadbe9c'
 const expectedToolNames = [
   'ask_user_question',
   'compact',
