@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { jcs, type ResourceControlMethodName, rpcError } from '@agnes/protocol'
+import { jcs, type ResourceControlMethodName, rpcError, type SkillScanReport } from '@agnes/protocol'
 import { windowsWritePrivateFile } from '@agnes/system-node'
 import type { McpLifecycleAdapter, SkillCatalogAdapter } from './adapters.js'
 import type { ResourceStateStore } from './handler.js'
@@ -105,7 +105,11 @@ export class ResourceControlStore implements ResourceStateStore {
         } while (cursor)
         return items
       }
-      const skillAll = async (): Promise<{ items: unknown[]; skillRoots?: unknown }> => {
+      const skillAll = async (): Promise<{
+        items: unknown[]
+        skillRoots?: unknown
+        skillScanReport?: SkillScanReport
+      }> => {
         return this.skills.view(params)
       }
       const [skills, mcp] = await Promise.all([
@@ -147,6 +151,7 @@ export class ResourceControlStore implements ResourceStateStore {
         items,
         ...(all.length > items.length && last ? { nextCursor: prefix + last.resourceId } : {}),
         ...(kind === 'mcp' || skills.skillRoots === undefined ? {} : { skillRoots: skills.skillRoots }),
+        ...(kind === 'mcp' || !skills.skillScanReport ? {} : { skillScanReport: skills.skillScanReport }),
       }
     }
     if (method === '_agnes/v1/resources.get')

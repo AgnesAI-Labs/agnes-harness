@@ -310,6 +310,10 @@ export type ResourceControlDataName =
   | 'SourceScope'
   | 'SkillRootKey'
   | 'SkillRootStatus'
+  | 'SkillScanIssue'
+  | 'SkillDirectoryScan'
+  | 'SkillScanObservation'
+  | 'SkillScanReport'
   | 'WorkspaceId'
   | 'SkillSourceIdentity'
   | 'SkillResolution'
@@ -366,6 +370,10 @@ const DATA_SCHEMAS: Record<ResourceControlDataName, TSchema> = {
   SourceScope: R.SourceScope,
   SkillRootKey: R.SkillRootKey,
   SkillRootStatus: R.SkillRootStatus,
+  SkillScanIssue: R.SkillScanIssue,
+  SkillDirectoryScan: R.SkillDirectoryScan,
+  SkillScanObservation: R.SkillScanObservation,
+  SkillScanReport: R.SkillScanReport,
   WorkspaceId: R.WorkspaceId,
   SkillSourceIdentity: R.SkillSourceIdentity,
   SkillResolution: R.SkillResolution,

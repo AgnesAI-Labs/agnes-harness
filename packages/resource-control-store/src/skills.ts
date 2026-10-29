@@ -4,6 +4,7 @@ import {
   type ResourceOperation,
   rpcError,
   type SkillDescriptor,
+  type SkillScanObservation,
   type TrustState,
   validateResourceControlData,
 } from '@agnes/protocol'
@@ -11,6 +12,8 @@ import type { SkillCatalogAdapter } from './adapters.js'
 import type { ResourceAuthority, ResourceEffectAdmission } from './permissions.js'
 import type { ResourceProfileScope } from './profile-scope.js'
 import { type ResourceOperationRecord, SkillJournalStore, type SkillTrustDecision } from './skill-journal.js'
+import { readSkillView, skillListPage } from './skill-list.js'
+import { checkedSkillScanObservation, SkillScanReports, type SkillScanToken } from './skill-scan-reports.js'
 import {
   changed,
   clone,
@@ -22,7 +25,6 @@ import {
   mergeRoots,
   observeSkills,
   projected,
-  projectRoots,
   prune,
   receipt,
   reconcileSkillObservations,
@@ -56,6 +58,8 @@ export class SkillResourceStore {
   private readonly active = new Map<string, AbortController>()
   private deferDrive = false
   private readonly admissions = new Map<string, ResourceEffectAdmission>()
+  private readonly scanReports = new SkillScanReports()
+  private readonly scanTokens = new Map<string, SkillScanToken>()
   constructor(
     private readonly journal: SkillJournalStore,
     private adapter?: SkillCatalogAdapter,
@@ -132,41 +136,12 @@ export class SkillResourceStore {
   /** One complete read for the unified list; its outer pagination must not reread changing runtime IDs. */
   async view(params: Record<string, unknown>) {
     const workspaceId = await this.bindWorkspace(params.workspaceId as string | undefined)
-    const saved = await this.journal.read(params.profile as string, (journal) => ({
-      items: projected(journal)
-        .filter((item) => !params.kind || item.kind === params.kind)
-        .filter((item) => {
-          if (!workspaceId || item.sourceIdentity.scope !== 'workspace') return true
-          return item.workspaceId === workspaceId
-        }),
-      skillRoots: projectRoots(journal, workspaceId),
-    }))
-    if (params.kind !== 'mcp' && this.adapter?.view) {
-      saved.items = [
-        ...(await this.adapter.view({
-          profile: params.profile as string,
-          skills: saved.items,
-          signal: AbortSignal.timeout(31_000),
-        })),
-      ]
-      saved.skillRoots.push({
-        rootKey: 'runtime',
-        scope: 'runtime',
-        state: saved.items.some((item) => item.sourceIdentity.scope === 'runtime') ? 'ready' : 'empty',
-      })
-    }
-    return { ...saved, items: saved.items.sort((a, b) => a.resourceId.localeCompare(b.resourceId)) }
+    const skillScanReport =
+      params.kind === 'mcp' ? undefined : this.scanReports.read(params.profile as string, workspaceId)
+    return readSkillView(this.journal, this.adapter, params, workspaceId, skillScanReport)
   }
   private async list(params: Record<string, unknown>) {
-    const view = await this.view(params)
-    const all = view.items.filter((item) => !params.cursor || item.resourceId > String(params.cursor))
-    const items = all.slice(0, 100)
-    const last = items.at(-1)
-    return {
-      items,
-      ...(all.length > items.length && last ? { nextCursor: last.resourceId } : {}),
-      ...(params.kind === 'mcp' ? {} : { skillRoots: view.skillRoots }),
-    }
+    return skillListPage(await this.view(params), params)
   }
   private async get(params: Record<string, unknown>) {
     const saved = await this.journal.read(params.profile as string, (journal) => ({
@@ -424,6 +399,15 @@ export class SkillResourceStore {
     )
     if (authority.admission && method !== '_agnes/v1/resources.operation.cancel')
       this.admissions.set(result.receipt.operationId, authority.admission)
+    if (
+      !result.replay &&
+      method === '_agnes/v1/skills.refresh' &&
+      (!params.rootKey || params.rootKey === 'user-agnes')
+    )
+      this.scanTokens.set(
+        result.receipt.operationId,
+        this.scanReports.begin(profile, workspaceId, result.receipt.operationId),
+      )
     if (!this.deferDrive && !result.replay && method !== '_agnes/v1/resources.operation.cancel')
       void this.drive(profile, result.receipt.operationId).catch(() => undefined)
     return result.receipt
@@ -454,6 +438,13 @@ export class SkillResourceStore {
         admission,
       )
       if (!record) return
+      const reportsScan =
+        record.operation.kind === '_agnes/v1/skills.refresh' &&
+        ['all', 'user-agnes'].includes(record.operation.target.split('/')[2] ?? '')
+      const scanToken = reportsScan
+        ? (this.scanTokens.get(id) ?? this.scanReports.begin(profile, record.workspaceId, id))
+        : undefined
+      let scanObservation: SkillScanObservation | undefined
       try {
         if (admission) {
           await admission.verify()
@@ -466,7 +457,11 @@ export class SkillResourceStore {
           // The scan observed actual state under the old decisions. When the refresh changed them,
           // publish the worker snapshot the observer reads, then reconcile. The committed catalog
           // stands even if that observation fails; the next one catches up.
-          if (await this.refresh(profile, record, controller.signal, admission)) {
+          if (
+            await this.refresh(profile, record, controller.signal, admission, (observation) => {
+              scanObservation = observation
+            })
+          ) {
             await beforeTerminal?.()
             await this.reconcile(profile, controller.signal, admission).catch(() => undefined)
           }
@@ -517,16 +512,21 @@ export class SkillResourceStore {
               : undefined,
           )
         await beforeTerminal?.()
-        await this.journal.transact(
+        const completion = await this.journal.transact(
           profile,
-          (journal) => ({
-            next: replaceOperation(journal, id, (operation) =>
+          (journal) => {
+            const next = replaceOperation(journal, id, (operation) =>
               terminal.has(operation.state) ? operation : setState(operation, 'succeeded'),
-            ),
-            result: undefined,
-          }),
+            )
+            return {
+              next,
+              result: next.operations.find((row) => row.operation.operationId === id)?.operation.state,
+            }
+          },
           admission,
         )
+        if (completion === 'succeeded' && !controller.signal.aborted && scanToken && scanObservation)
+          this.scanReports.publish(scanToken, scanObservation)
         // The snapshot has been durably published and this operation is terminal. Consumers may now
         // safely replace an idle session generation; active turns keep their immutable snapshot.
         // Session replacement is downstream bookkeeping. It must not retroactively turn a committed
@@ -571,6 +571,7 @@ export class SkillResourceStore {
     } finally {
       this.active.delete(id)
       this.admissions.delete(id)
+      this.scanTokens.delete(id)
     }
   }
   private async refresh(
@@ -578,6 +579,7 @@ export class SkillResourceStore {
     record: ResourceOperationRecord,
     signal: AbortSignal,
     admission?: ResourceEffectAdmission,
+    onObservation?: (observation: SkillScanObservation) => void,
   ): Promise<boolean> {
     if (admission) {
       await admission.verify()
@@ -592,6 +594,8 @@ export class SkillResourceStore {
       signal,
     })
     const observed = 'candidates' in refresh ? refresh.candidates : refresh
+    if ('candidates' in refresh && refresh.skillScanObservation !== undefined)
+      onObservation?.(checkedSkillScanObservation(refresh.skillScanObservation))
     const failedRoots = 'candidates' in refresh ? refresh.failedRoots : []
     // A skipped entry keeps its record and decisions, marked stale, just like a failed root's items.
     const skipped = new Set('candidates' in refresh ? (refresh.skippedResourceIds ?? []) : [])

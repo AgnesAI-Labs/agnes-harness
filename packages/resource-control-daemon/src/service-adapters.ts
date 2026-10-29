@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import type { McpStatus, McpToolCatalogPage, SkillDescriptor, SkillRootStatus } from '@agnes/protocol'
+import type {
+  McpStatus,
+  McpToolCatalogPage,
+  SkillDescriptor,
+  SkillRootStatus,
+  SkillScanObservation,
+} from '@agnes/protocol'
 import { validateResourceControlData } from '@agnes/protocol'
 import type { ResourceControlStore } from '@agnes/resource-control-store'
 
@@ -133,6 +139,7 @@ export function installResourceServiceAdapters(input: ResourceAdapterOptions): {
     failedRoots: Array<SkillDescriptor['sourceIdentity']['rootKey']>
     skippedResourceIds: string[]
     roots: SkillRootStatus[]
+    skillScanObservation?: SkillScanObservation
   } => {
     const fail = (): never => {
       throw new Error('invalid private skill scan reply')
@@ -152,6 +159,12 @@ export function installResourceServiceAdapters(input: ResourceAdapterOptions): {
     const failedRoots = (raw as { failedRoots: unknown[] }).failedRoots
     const reportedRoots = (raw as { roots?: unknown }).roots
     const reportedSkipped = (raw as { skippedResourceIds?: unknown }).skippedResourceIds ?? []
+    const skillScanObservation = (raw as { skillScanObservation?: unknown }).skillScanObservation
+    if (
+      skillScanObservation !== undefined &&
+      !validateResourceControlData('SkillScanObservation', skillScanObservation).ok
+    )
+      return fail()
     if (
       !Array.isArray(reportedSkipped) ||
       !reportedSkipped.every(
@@ -191,6 +204,9 @@ export function installResourceServiceAdapters(input: ResourceAdapterOptions): {
       failedRoots: failedRoots as Array<SkillDescriptor['sourceIdentity']['rootKey']>,
       skippedResourceIds: reportedSkipped as string[],
       roots: roots as SkillRootStatus[],
+      ...(skillScanObservation === undefined
+        ? {}
+        : { skillScanObservation: skillScanObservation as SkillScanObservation }),
     }
   }
   localResourceStore.setAdapters({
@@ -254,6 +270,9 @@ export function installResourceServiceAdapters(input: ResourceAdapterOptions): {
           failedRoots: parsed.failedRoots,
           ...(parsed.skippedResourceIds.length ? { skippedResourceIds: parsed.skippedResourceIds } : {}),
           ...(parsed.roots.length ? { roots: parsed.roots } : {}),
+          ...((!rootKey || rootKey === 'user-agnes') && parsed.skillScanObservation
+            ? { skillScanObservation: parsed.skillScanObservation }
+            : {}),
         }
       },
       reconcile: async ({ profile, resources, signal }) => {

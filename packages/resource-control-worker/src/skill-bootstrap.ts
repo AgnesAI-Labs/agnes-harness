@@ -14,9 +14,10 @@ import {
   skillResourceIdAt,
   workspaceSkillKey,
 } from '@agnes/base'
-import { AGH_DIR, validateResourceControlData } from '@agnes/protocol'
+import { AGH_DIR, type SkillScanObservation, validateResourceControlData } from '@agnes/protocol'
 import { MAX_DESCRIPTION_LENGTH, MAX_NAME_LENGTH } from '@agnes/resource-control-runtime'
 import { readSkillCache, writeSkillCache } from './skill-lkg-storage.js'
+import { createSkillScanObservation } from './skill-scan-observation.js'
 
 export { discoverSkillRoot, skillRoots } from '@agnes/base'
 
@@ -229,6 +230,7 @@ export async function scanSkills(
     realpath,
   }
   const workspaceKey = cwd ? workspaceSkillKey(cwd) : undefined
+  const customRoots = readContextConfig(agnesHomeDir).customSkillRoots
   // A shared worker has no workspace of its own. Supplying no cwd deliberately omits the
   // workspace root instead of scanning whichever directory launched the worker process.
   const roots = baseSkillRoots({
@@ -236,7 +238,7 @@ export async function scanSkills(
     osHomeDir,
     agnesHomeDir,
     importUserSkills,
-    customRoots: readContextConfig(agnesHomeDir).customSkillRoots,
+    customRoots,
   }).filter((root) => cwd !== undefined || root.rootKey !== 'workspace-agnes')
   const selected = resourceIds && new Set(resourceIds)
   const scans = await Promise.all(
@@ -244,6 +246,14 @@ export async function scanSkills(
       .filter((root) => !selected || resourceIds?.some((id) => id.split('/')[2] === root.rootKey))
       .map((root) => discoverSkillRoot(fs, root, selected)),
   )
+  const observation: { skillScanObservation?: SkillScanObservation } = selected
+    ? {}
+    : {
+        skillScanObservation: createSkillScanObservation(
+          customRoots,
+          scans.flatMap((scan) => scan.directoryScans ?? []),
+        ),
+      }
   const filesystem: Array<{ rootKey: FilesystemSkillRoot; candidates: SkillCandidate[] }> = []
   const rootStatuses: Array<{
     rootKey: FilesystemSkillRoot | 'package'
@@ -264,7 +274,7 @@ export async function scanSkills(
       filesystem.push({ rootKey: scan.root, candidates })
       for (const entry of scan.skipped ?? []) {
         skippedResourceIds.push(entry.resourceId)
-        console.warn(`agnes: Skill ${scan.root}:${entry.location} skipped (${entry.code})`)
+        console.warn(`agnes: Skill ${entry.resourceId} skipped (${entry.code})`)
       }
       rootStatuses.push({
         rootKey: scan.root,
@@ -295,6 +305,7 @@ export async function scanSkills(
     !existsSync(packageSnapshot)
   )
     return {
+      ...observation,
       roots: filesystem,
       failedRoots,
       skippedResourceIds,
@@ -401,6 +412,7 @@ export async function scanSkills(
     }
   })
   return {
+    ...observation,
     roots: packageCandidates.length
       ? [...filesystem, { rootKey: 'package' as const, candidates: packageCandidates }]
       : filesystem,

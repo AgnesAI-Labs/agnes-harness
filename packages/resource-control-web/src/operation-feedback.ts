@@ -26,12 +26,20 @@ export class ResourcePageFeedback {
   readonly #scopes = new Set<string>()
   capture() {
     const revision = this.#revision
-    return (operation: ResourceOperation, t: Translate, completion?: ResourceCompletion): boolean => {
+    return (
+      operation: ResourceOperation,
+      t: Translate,
+      completion?: ResourceCompletion,
+      deferSuccess = false,
+    ): boolean => {
       if (revision !== this.#revision) return false
       if (operation.state === 'succeeded') this.#scopes.add(`resource:${operation.target}`)
-      reportResourceCompleted(operation, t, completion)
+      if (!deferSuccess) reportResourceCompleted(operation, t, completion)
       return true
     }
+  }
+  completed(operation: ResourceOperation | undefined, t: Translate, message: string): void {
+    if (operation) this.capture()(operation, t, { message })
   }
   clear(): void {
     this.#revision++

@@ -4,10 +4,13 @@ import {
   AGH_DIR,
   type SkillRootKey as ProtocolSkillRootKey,
   type SkillSourceIdentity as ProtocolSkillSourceIdentity,
+  type SkillDirectoryScan,
   type SkillResolution,
+  type SkillScanIssue,
 } from '@agnes/protocol'
 import { collectSkillFiles, type SkillFile, type SkillFileKind, skillRevision } from './assets.js'
 import { normalizeSkillName, parseSkillDocument, type SkillInvocation, skillSha256 } from './frontmatter.js'
+import { SkillScanDiagnostics, skillScanError } from './scan-diagnostics.js'
 
 export type { SkillFile, SkillFileKind, SkillInvocation }
 
@@ -141,8 +144,14 @@ export type SkillRootScan =
       root: SkillRootKey
       candidates: readonly SkillCandidate[]
       skipped?: readonly SkippedSkillEntry[]
+      directoryScans?: readonly SkillDirectoryScan[]
     }>
-  | Readonly<{ ok: false; root: SkillRootKey; diagnostic: { code: SkillRootFailure } }>
+  | Readonly<{
+      ok: false
+      root: SkillRootKey
+      diagnostic: { code: SkillRootFailure }
+      directoryScans?: readonly SkillDirectoryScan[]
+    }>
 export type PackageSkillContribution = Readonly<{
   packageId: string
   contributionId: string
@@ -230,7 +239,14 @@ function candidateFromDocument(input: {
 
 type EntryRead =
   | Readonly<{ kind: 'ignore' }>
-  | Readonly<{ kind: 'skip'; code: SkillRootFailure }>
+  | Readonly<{
+      kind: 'skip'
+      code: SkillRootFailure
+      issue?: SkillScanIssue
+      incomplete?: boolean
+      unidentified?: boolean
+      reportOnly?: boolean
+    }>
   | Readonly<{ kind: 'read'; source: string; size: number; skillDir?: string; skillReal?: string }>
 
 const validEntryName = (name: string): boolean =>
@@ -256,8 +272,15 @@ async function readRootEntry(
     let resolved: FsStat
     try {
       resolved = await fs.stat(path)
-    } catch {
-      return { kind: 'ignore' }
+    } catch (error) {
+      if ((error as { code?: unknown }).code === 'ENOENT') return { kind: 'ignore' }
+      return {
+        kind: 'skip',
+        code: 'skill-file-unreadable',
+        issue: skillScanError(error, 'stat', 'skill-file-unreadable'),
+        incomplete: true,
+        unidentified: true,
+      }
     }
     if (resolved.kind === 'dir') kind = 'dir'
     else if (resolved.kind === 'file' && entry.name.endsWith('.md')) kind = 'file'
@@ -271,13 +294,25 @@ async function readRootEntry(
   let stat: FsStat
   try {
     stat = await fs.stat(documentPath)
-  } catch {
-    // A directory without SKILL.md, or a file that cannot be read, is not a known Skill.
-    return { kind: 'ignore' }
+  } catch (error) {
+    if ((error as { code?: unknown }).code === 'ENOENT') return { kind: 'ignore' }
+    return {
+      kind: 'skip',
+      code: 'skill-file-unreadable',
+      issue: skillScanError(error, 'stat', 'skill-file-unreadable'),
+      incomplete: true,
+      unidentified: skillDir !== undefined,
+    }
   }
   if (stat.kind !== 'file') return { kind: 'ignore' }
-  // A single-file Skill is only recognised by its front matter, which an oversized file cannot show.
-  if (!skillDir && stat.size > MAX_SKILL_FILE_BYTES) return { kind: 'ignore' }
+  // Keep the catalog's oversized-flat-file exclusion while reporting the observed size rejection.
+  if (!skillDir && stat.size > MAX_SKILL_FILE_BYTES)
+    return {
+      kind: 'skip',
+      code: 'skill-file-unreadable',
+      reportOnly: true,
+      issue: { code: 'skill-file-unreadable', stage: 'stat' },
+    }
   let skillReal: string | undefined
   if (fs.realpath && dirReal) {
     try {
@@ -289,19 +324,34 @@ async function readRootEntry(
         if (!boundToRoot(skillReal, fileReal)) return { kind: 'skip', code: 'entry-outside-root' }
       } else if (!followsLinks && fileReal !== join(dirReal, entry.name))
         return { kind: 'skip', code: 'entry-outside-root' }
-    } catch {
-      return { kind: 'skip', code: 'entry-outside-root' }
+    } catch (error) {
+      return {
+        kind: 'skip',
+        code: 'entry-outside-root',
+        issue: skillScanError(error, 'realpath', 'entry-outside-root'),
+        incomplete: true,
+      }
     }
   }
   if (!Number.isSafeInteger(stat.size) || stat.size < 0 || stat.size > MAX_SKILL_FILE_BYTES)
-    return { kind: 'skip', code: 'skill-file-unreadable' }
+    return {
+      kind: 'skip',
+      code: 'skill-file-unreadable',
+      issue: { code: 'skill-file-unreadable', stage: 'stat' },
+    }
   let source: string
   try {
     source = decoder.decode(await fs.read(documentPath))
-  } catch {
-    return { kind: 'skip', code: 'skill-file-unreadable' }
+  } catch (error) {
+    return {
+      kind: 'skip',
+      code: 'skill-file-unreadable',
+      issue: skillScanError(error, 'read', 'skill-file-unreadable'),
+      incomplete: true,
+    }
   }
-  if (Buffer.byteLength(source, 'utf8') !== stat.size) return { kind: 'skip', code: 'skill-file-unreadable' }
+  if (Buffer.byteLength(source, 'utf8') !== stat.size)
+    return { kind: 'skip', code: 'skill-file-unreadable', incomplete: true }
   return {
     kind: 'read',
     source,
@@ -323,6 +373,9 @@ export async function discoverSkillRoot(
   resourceIds?: ReadonlySet<string>,
 ): Promise<SkillRootScan> {
   if (root.scope === 'workspace' && !root.workspaceKey) return failed(root.rootKey, 'workspace-key-missing')
+  const diagnostics = new SkillScanDiagnostics(root, resourceIds !== undefined)
+  const fail = (code: SkillRootFailure): SkillRootScan =>
+    Object.freeze({ ...failed(root.rootKey, code), ...diagnostics.fields() })
   const candidates: SkillCandidate[] = []
   const skipped: SkippedSkillEntry[] = []
   const admitted = new Map<string, { dir: number; single: boolean }>()
@@ -334,6 +387,7 @@ export async function discoverSkillRoot(
     // A folder the user added is theirs to get wrong: another account's directory, one without
     // permission, a path that is a file. It is skipped and reported, and the rest of the root stays.
     const added = dir.prefix.startsWith(ADDED_FOLDER_PREFIX)
+    const progress = diagnostics.directory(dir)
     const skipFolder = (code: SkillRootFailure) => {
       const location = dir.prefix.replace(/\/$/, '')
       skipped.push(Object.freeze({ resourceId: skillResourceIdAt(root, location), code, location }))
@@ -342,26 +396,29 @@ export async function discoverSkillRoot(
     try {
       entries = await fs.list(dir.path)
     } catch (error) {
-      if ((error as { code?: unknown }).code === 'ENOENT') continue
+      if ((error as { code?: unknown }).code === 'ENOENT' && !added) continue
       if (added) {
+        progress?.unavailable(skillScanError(error, 'list', 'root-unreadable', true))
         skipFolder('root-unreadable')
         continue
       }
-      return failed(root.rootKey, 'root-unreadable')
+      return fail('root-unreadable')
     }
     let dirReal: string | undefined
     if (fs.realpath) {
       try {
         dirReal = await fs.realpath(dir.path)
-      } catch {
+      } catch (error) {
         if (added) {
+          progress?.unavailable(skillScanError(error, 'realpath', 'root-unresolvable', true))
           skipFolder('root-unresolvable')
           continue
         }
-        return failed(root.rootKey, 'root-unresolvable')
+        return fail('root-unresolvable')
       }
     }
     if (dirReal?.split(/[\\/]/).includes('.authoring-candidates')) continue
+    progress?.begin()
     // Directories come first so a Skill directory wins over a same-name single file.
     const ordered = [...entries]
       .filter((entry) => validEntryName(entry.name))
@@ -374,17 +431,25 @@ export async function discoverSkillRoot(
       const read = await readRootEntry(fs, root, dir.path, dirReal, entry)
       if (read.kind === 'ignore') continue
       if (read.kind === 'skip') {
-        skip(read.code)
+        if (!read.reportOnly) skip(read.code)
+        const issue: SkillScanIssue = read.issue ?? {
+          code: read.code === 'workspace-key-missing' ? 'skill-file-unreadable' : read.code,
+          stage: read.code === 'entry-outside-root' ? 'realpath' : 'read',
+        }
+        if (read.unidentified) progress?.unidentified(issue)
+        else progress?.reject(issue, !read.incomplete)
         continue
       }
       seen += 1
       if (seen > MAX_SKILL_ENTRIES_PER_ROOT) {
         skip('entry-limit')
+        progress?.reject({ code: 'entry-limit', stage: 'budget' }, false)
         continue
       }
       totalBytes += read.size
       if (totalBytes > MAX_SKILL_ROOT_BYTES) {
         skip('root-bytes-limit')
+        progress?.reject({ code: 'root-bytes-limit', stage: 'budget' }, false)
         continue
       }
       const outcome = candidateFromDocument({
@@ -398,8 +463,13 @@ export async function discoverSkillRoot(
       })
       if (!outcome.ok) {
         skip(outcome.code)
+        progress?.reject({
+          code: outcome.code === 'workspace-key-missing' ? 'skill-file-unreadable' : outcome.code,
+          stage: 'parse',
+        })
         continue
       }
+      progress?.found()
       const single = read.skillDir === undefined
       const earlier = admitted.get(outcome.candidate.normalizedName)
       // An earlier directory, or a directory over a single file, shadows a same-name Skill.
@@ -423,6 +493,7 @@ export async function discoverSkillRoot(
     root: root.rootKey,
     candidates: Object.freeze(candidates),
     ...(skipped.length ? { skipped: Object.freeze(skipped) } : {}),
+    ...diagnostics.fields(),
   })
 }
 
