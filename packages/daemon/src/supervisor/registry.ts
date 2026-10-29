@@ -603,6 +603,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     childKey?: string
     binding?: WorkspaceBindingEnvelope
     credential?: unknown
+    beforeHistoryReplay?: (childKey: string) => void | Promise<void>
   }): Promise<RemoteEntry> {
     const parent = this.require(o.parent)
     const parentStatus = await parent.session.status()
@@ -625,6 +626,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     assertWorkspaceBindingEnvelope(o.binding)
     await parent.session.fork(o.at, childKey, o.credential, o.binding)
     try {
+      await o.beforeHistoryReplay?.(childKey)
       return await this.open({
         key: childKey,
         cwd: parent.session.cwd,

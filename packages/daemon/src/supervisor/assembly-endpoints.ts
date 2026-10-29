@@ -223,6 +223,10 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
           at,
           childKey: ownedChildKey,
           binding: childBinding,
+          // The durable fork exists before activation; history replay requires its active owner.
+          beforeHistoryReplay: (key) => {
+            if (!sessionOwnership.activateFork(sessionId, key, ownerPrincipal, at)) denyFork()
+          },
           ...(credential === undefined ? {} : { credential }),
         })
         const entry = await activateForkOwnership(supervisorRegistry, created, () =>

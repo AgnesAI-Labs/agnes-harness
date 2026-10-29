@@ -770,6 +770,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
   })
 
   it('forks through the parent worker, reopens the child independently, and keeps retry identity', async () => {
+    let ownerActive = false
     const parentCommand = vi.fn(async (method: string) => {
       if (method === 'ping') return { lastSeq: 12, preset: 'coding', permission: 'full-access', parent: null }
       if (method === 'projectUI') return { opState: null }
@@ -801,9 +802,10 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
       command,
     })
     const pool = {
-      acquire: vi.fn(async (key: string) =>
-        key === 'parent' ? link(key, parentCommand) : link(key, childCommand),
-      ),
+      acquire: vi.fn(async (key: string) => {
+        if (key !== 'parent' && !ownerActive) throw new Error('artifact owner is still pending')
+        return key === 'parent' ? link(key, parentCommand) : link(key, childCommand)
+      }),
     } as unknown as WorkerPool
     const registry = new WorkerRegistry(pool)
     await open(registry, { key: 'parent', cwd: '/workspace', preset: 'coding', permission: 'full-access' })
@@ -813,15 +815,28 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     )
 
     const childBinding = await workspaceBinding('child')
-    const first = await registry.fork({ parent: 'parent', at: 9, childKey: 'child', binding: childBinding })
+    const beforeHistoryReplay = vi.fn((key: string) => {
+      expect(key).toBe('child')
+      expect(parentCommand).toHaveBeenCalledWith('fork', expect.objectContaining({ childKey: 'child' }))
+      ownerActive = true
+    })
+    const first = await registry.fork({
+      parent: 'parent',
+      at: 9,
+      childKey: 'child',
+      binding: childBinding,
+      beforeHistoryReplay,
+    })
     const retried = await registry.fork({
       parent: 'parent',
       at: 9,
       childKey: 'child',
       binding: childBinding,
+      beforeHistoryReplay,
     })
 
     expect(retried).toBe(first)
+    expect(beforeHistoryReplay).toHaveBeenCalledTimes(1)
     expect(parentCommand).toHaveBeenCalledWith('fork', {
       at: 9,
       childKey: 'child',
@@ -838,53 +853,76 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     })
   })
 
-  it('closes a worker-adopted child when its daemon-side open is not acknowledged', async () => {
-    const parentCommand = vi.fn(async (method: string) => {
-      if (method === 'ping') return { lastSeq: 12, preset: 'coding', parent: null }
-      if (method === 'projectUI') return { opState: null }
-      if (method === 'scan') return [{ type: 'turn/end', data: { reason: 'completed' } }]
-      if (method === 'fork') return { sessionId: 'orphan', parent: { key: 'parent', boundarySeq: 9 } }
-      throw new Error(`unexpected parent command ${method}`)
-    })
-    const parentLink = {
-      alive: true,
-      hello: Promise.resolve({
-        kind: 'hello' as const,
-        token: 'parent-token',
-        sessionKey: 'parent',
-        writerRunId: 'parent-run',
-        generation: 1,
-        profileHash: 'sha256-profile',
-        lastSeq: 0,
-      }),
-      onExit: vi.fn(),
-      command: parentCommand,
-    }
-    const closeHostedSession = vi.fn(async () => undefined)
-    const pool = {
-      acquire: vi.fn(async (key: string) => {
-        if (key === 'parent') return parentLink
-        throw new Error('child open ACK lost')
-      }),
-      closeHostedSession,
-    } as unknown as WorkerPool
-    const registry = new WorkerRegistry(pool)
-    await open(registry, { key: 'parent', cwd: '/workspace', preset: 'coding' })
-    const binding = await workspaceBinding('orphan')
+  it.each(['parent', 'activation', 'open'] as const)(
+    'compensates a fork failure at %s without opening an unauthorized child',
+    async (stage) => {
+      const parentCommand = vi.fn(async (method: string) => {
+        if (method === 'ping') return { lastSeq: 12, preset: 'coding', parent: null }
+        if (method === 'projectUI') return { opState: null }
+        if (method === 'scan') return [{ type: 'turn/end', data: { reason: 'completed' } }]
+        if (method === 'fork') {
+          if (stage === 'parent') throw new Error('parent fork failed')
+          return { sessionId: 'orphan', parent: { key: 'parent', boundarySeq: 9 } }
+        }
+        throw new Error(`unexpected parent command ${method}`)
+      })
+      const parentLink = {
+        alive: true,
+        hello: Promise.resolve({
+          kind: 'hello' as const,
+          token: 'parent-token',
+          sessionKey: 'parent',
+          writerRunId: 'parent-run',
+          generation: 1,
+          profileHash: 'sha256-profile',
+          lastSeq: 0,
+        }),
+        onExit: vi.fn(),
+        command: parentCommand,
+      }
+      const closeHostedSession = vi.fn(async () => undefined)
+      const pool = {
+        acquire: vi.fn(async (key: string) => {
+          if (key === 'parent') return parentLink
+          throw new Error('child open ACK lost')
+        }),
+        closeHostedSession,
+      } as unknown as WorkerPool
+      const registry = new WorkerRegistry(pool)
+      await open(registry, { key: 'parent', cwd: '/workspace', preset: 'coding' })
+      const binding = await workspaceBinding('orphan')
 
-    await expect(registry.fork({ parent: 'parent', at: 9, childKey: 'orphan', binding })).rejects.toThrow(
-      'child open ACK lost',
-    )
+      const beforeHistoryReplay = vi.fn(() => {
+        if (stage === 'activation') throw rpcError('CAPABILITY_DENIED', { reason: 'owner CAS rejected' })
+      })
+      const failed = registry.fork({
+        parent: 'parent',
+        at: 9,
+        childKey: 'orphan',
+        binding,
+        beforeHistoryReplay,
+      })
+      if (stage === 'activation')
+        await expect(failed).rejects.toMatchObject({ data: { reason: 'owner CAS rejected' } })
+      else
+        await expect(failed).rejects.toThrow(
+          stage === 'parent' ? 'parent fork failed' : 'child open ACK lost',
+        )
 
-    expect(parentCommand).toHaveBeenCalledWith('fork', {
-      at: 9,
-      childKey: 'orphan',
-      credential: undefined,
-      binding,
-    })
-    expect(closeHostedSession).toHaveBeenCalledWith('orphan', 'fork adoption failed')
-    expect(registry.get('orphan')).toBeUndefined()
-  })
+      expect(parentCommand).toHaveBeenCalledWith('fork', {
+        at: 9,
+        childKey: 'orphan',
+        credential: undefined,
+        binding,
+      })
+      if (stage === 'parent') {
+        expect(beforeHistoryReplay).not.toHaveBeenCalled()
+        expect(closeHostedSession).not.toHaveBeenCalled()
+      } else expect(closeHostedSession).toHaveBeenCalledWith('orphan', 'fork adoption failed')
+      if (stage !== 'open') expect(pool.acquire).toHaveBeenCalledTimes(1)
+      expect(registry.get('orphan')).toBeUndefined()
+    },
+  )
 
   it('does not publish a link that died before its exit observer was registered', async () => {
     const link = {

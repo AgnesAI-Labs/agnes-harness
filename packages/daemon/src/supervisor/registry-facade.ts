@@ -186,6 +186,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
     childKey?: string
     binding?: WorkspaceBindingEnvelope
     credential?: unknown
+    beforeHistoryReplay?: (childKey: string) => void | Promise<void>
   }): Promise<SessionEntry> {
     const entry = await this.inner.fork(o)
     try {
