@@ -1,3 +1,5 @@
+import { parseAgnesPluginEntries } from '@agnes/package-manager'
+
 /** Text-only authoring input. Paths never select existing files on the daemon. */
 export function checkedPluginFiles(value: unknown): { path: string; content: string }[] {
   const invalid = (): never => {
@@ -35,7 +37,7 @@ export function checkedPluginFiles(value: unknown): { path: string; content: str
     paths.add(key)
     const size = Buffer.byteLength(f.content)
     total += size
-    if (size > 256 * 1024 || total > 1024 * 1024 || f.content.includes('\0')) return invalid()
+    if (size > 128 * 1024 || total > 256 * 1024 || f.content.includes('\0')) return invalid()
     return { path: f.path, content: f.content }
   })
   const manifest = files.find((f) => f.path === 'package.json')
@@ -119,13 +121,21 @@ export function checkedPluginFiles(value: unknown): { path: string; content: str
     if (
       !row ||
       typeof row !== 'object' ||
-      Object.keys(row).some((k) => !['id', 'export', 'inject'].includes(k)) ||
+      Object.keys(row).some((k) => !['apiRange', 'id', 'export', 'inject'].includes(k)) ||
       (!(skinRows.has(row.id) && row.inject === undefined) &&
         (!Array.isArray(row.inject) ||
           !row.inject.length ||
-          row.inject.some((s: unknown) => s !== 'extension' && s !== 'skills')))
+          row.inject.some(
+            (s: unknown) =>
+              typeof s !== 'string' || !['tools', 'skills', 'hooks', 'eventLog', 'self'].includes(s),
+          )))
     )
       return invalid()
+  }
+  try {
+    parseAgnesPluginEntries(pkg.name, plugins)
+  } catch {
+    return invalid()
   }
   if ([...skinRows].some((id) => !plugins.some((row) => row.id === id))) return invalid()
   return files

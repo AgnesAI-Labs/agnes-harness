@@ -1,0 +1,37 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../base"
+    },
+    {
+      "path": "../extension-api"
+    },
+    {
+      "path": "../host-extensions"
+    },
+    {
+      "path": "../host-infrastructure"
+    },
+    {
+      "path": "../package-manager"
+    },
+    {
+      "path": "../plugin-runtime"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../worker-runtime"
+    }
+  ]
+}

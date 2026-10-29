@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import { buildRuntimeTarget, createPluginRow } from '@agnes/plugin-runtime/host'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach } from 'vitest'
 import { createTestHost, type TestHostOptions } from '../../testkit/index.js'
 
@@ -20,7 +21,9 @@ afterEach(() => {
 export const scratch = (): string => {
   const d = mkdtempSync(join(tmpdir(), 'agnes-plugin-extension-'))
   dirs.push(d)
-  return d
+  const directory = join(d, 'private')
+  createPrivateDirectorySync(directory)
+  return directory
 }
 export const settle = () => new Promise((resolve) => setTimeout(resolve, 50))
 
@@ -60,7 +63,12 @@ export function pluginSourceWith(
       type: 'module',
       exports: './index.js',
       agnes: {
-        plugins: exports.map((e) => ({ export: e.exportName, id: e.rowId, inject: ['extension'] })),
+        plugins: exports.map((e) => ({
+          apiRange: '^5.0.0',
+          export: e.exportName,
+          id: e.rowId,
+          inject: ['hooks', 'eventLog', 'self', 'tools'],
+        })),
       },
     })}\n`,
   )
@@ -69,7 +77,7 @@ export function pluginSourceWith(
     `${TOOL_HELPER}\n${exports
       .map(
         (e) =>
-          `export const ${e.exportName} = { inject: ['extension'], async apply(ctx, config) {\n${e.facade === false ? '' : '  const agnes = ctx.extension()\n'}${e.body}\n} }\n`,
+          `export const ${e.exportName} = { inject: ['hooks', 'eventLog', 'self', 'tools'], async apply(ctx, config) {\n${e.facade === false ? '' : '  const agnes = { on: (e, h) => ctx.hooks.register(e, h), registerHook: (e, h) => ctx.hooks.register(e, h), events: ctx.eventLog, ctx: ctx.self }\n'}${e.body}\n} }\n`,
       )
       .join('')}`,
   )
@@ -113,7 +121,7 @@ export const pluginRow = (
     entryRevision: identity.snapshotId ?? SNAPSHOT_ID,
     extrasRevision: 'none',
     mountRevision: 'host-ordinary-row:v1',
-    inject: ['extension'],
+    inject: ['hooks', 'eventLog', 'self', 'tools'],
     ...(disabled ? { disabled } : {}),
   })
 

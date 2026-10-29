@@ -1,9 +1,10 @@
 import type {
-  McpServerDefinitionInput,
   McpServerDescriptor,
   ResourceOperation,
+  ResourceOperationReceipt,
   SkillDescriptor,
   SkillRootStatus,
+  SkillScanReport,
 } from '@agnes/protocol'
 import {
   type ConfirmController,
@@ -11,6 +12,7 @@ import {
   createDocumentLocaleSource,
   createSelectPicker,
   createUiTranslator,
+  isPageDialog,
   type LocaleTranslator,
   McpDetailContent,
   RESOURCE_DETAIL_LOCALE_NAMESPACE,
@@ -18,30 +20,46 @@ import {
   type ResourceDetailAction,
   ResourceListContent,
   type ResourceProgress,
+  ResourceRoots,
   renderRegion,
   resourceDesiredEnabled,
   resourceDetailLocaleCatalog,
+  resourceFailureKey,
+  resourceFailureLabel,
   resourceListLocaleCatalog,
   type SelectPicker,
   SkillDetailContent,
+  showDialogHost,
   UiLocaleProvider,
   type UiLocaleSource,
   unmountRegion,
 } from '@agnes/web-ui'
-import { ResourceAdminApi, ResourceAdminApiError } from './api.js'
+import { $, type ResourceNotice, renderNotice } from './admin-dom.js'
+import { resourceAdminError as errorOf, ResourceAdminApi, ResourceAdminApiError } from './api.js'
 import { RESOURCE_ADMIN_LOCALE_NAMESPACE, resourceAdminLocaleCatalog } from './locales/admin.js'
-import { type McpFormFieldId, type McpFormFieldSnapshot, mcpFormIssues } from './mcp-form-validation.js'
-import { watchMcpPanel } from './mcp-refresh.js'
-import { SKILL_LOCATION_HINTS } from './skill-copy.js'
-import type { ResourceAdminContext, ResourceAdminError } from './types.js'
+import { writeMcpDefinition } from './mcp-definition-fields.js'
+import {
+  createMcpForm,
+  keepToolDisclosure,
+  McpFormValidationError,
+  sandboxProfileOf,
+  saveToolDisclosure,
+} from './mcp-form.js'
+import { mountMcpPresets } from './mcp-presets.js'
+import { pollResourceOperation, watchMcpPanel } from './mcp-refresh.js'
+import { mountMcpWizard } from './mcp-wizard.js'
+import { type ResourceCompletion, ResourcePageFeedback } from './operation-feedback.js'
+import { resourceActionMenu, skillDetailActions } from './skill-actions.js'
+import { isSkillScanScopeError, normalizeWorkspaceId, SkillScanController } from './skill-scan.js'
+import { SkillsPage } from './skills-page.js'
 
-const $ = <K extends keyof HTMLElementTagNameMap>(id: string, tag: K): HTMLElementTagNameMap[K] => {
-  const item = document.getElementById(id)
-  if (!item || item.tagName.toLowerCase() !== tag) throw new Error(`missing ${tag}#${id}`)
-  return item as HTMLElementTagNameMap[K]
-}
-// Resolved by mountResourceAdmin(). Declared here so the module can be imported without touching the
-// DOM; a host that never mounts never triggers a lookup.
+export { registerSkillPagePanels, type SkillPagePanels } from './skills-page.js'
+
+import { type ResourceAdminSurface, renderSettingsChrome } from './settings-chrome.js'
+import type { ResourceAdminContext } from './types.js'
+
+export type { ResourceAdminSurface } from './settings-chrome.js'
+
 let list!: HTMLElement
 let detail!: HTMLDialogElement
 let notice!: HTMLElement
@@ -49,9 +67,16 @@ let dialog!: HTMLDialogElement
 let form!: HTMLFormElement
 let mcpTransport!: HTMLSelectElement
 let mcpSecretKind!: HTMLSelectElement
+let mcpForm!: ReturnType<typeof createMcpForm>
 let mcpPickers: SelectPicker[] = []
+let mcpWizard: ReturnType<typeof mountMcpWizard> | undefined
+let mcpPresets: ReturnType<typeof mountMcpPresets> | undefined
+let surface: ResourceAdminSurface | undefined
+let refreshButton!: HTMLButtonElement
+let createButton!: HTMLButtonElement
+// The dialogs and form are single: the latest mount owns them and an earlier page stops drawing.
+let activePage: ResourceAdminPage | undefined
 let stopMcpRefresh: (() => void) | undefined
-const terminal = new Set<ResourceOperation['state']>(['succeeded', 'failed', 'cancelled'])
 
 type Tab = 'skills' | 'mcp'
 type Item = SkillDescriptor | McpServerDescriptor
@@ -59,22 +84,12 @@ type ResourceLoadState = 'idle' | 'loading' | 'ready' | 'empty' | 'error'
 export type ResourceAdminOptions = {
   workspaceId?: string
   tab?: Tab
-  embedded?: boolean
   locale?: UiLocaleSource
+  surface?: ResourceAdminSurface
+  onSkillScanReport?(report: SkillScanReport | undefined): void
 }
 export type ResourceScope = Readonly<{ tab: Tab; workspaceId?: string }>
 
-function normalizeWorkspaceId(workspaceId?: string): string | undefined {
-  return workspaceId && /^[a-f0-9]{64}$/.test(workspaceId) ? workspaceId : undefined
-}
-const errorOf = (error: unknown): ResourceAdminError =>
-  error instanceof ResourceAdminApiError
-    ? error.details
-    : {
-        code: 'RESOURCE_ADMIN_UNAVAILABLE',
-        message: 'The resource admin service is temporarily unavailable. Try again later.',
-      }
-class McpFormValidationError extends Error {}
 const resourceAdminCatalogs = {
   [RESOURCE_ADMIN_LOCALE_NAMESPACE]: resourceAdminLocaleCatalog,
   [RESOURCE_LIST_LOCALE_NAMESPACE]: resourceListLocaleCatalog,
@@ -95,41 +110,44 @@ async function confirmEffect(summary: string, t: LocaleTranslator = activeResour
   })
 }
 
-/** 详情三段式：头部固定 / 中段滚动 / 动作固定。操作按钮因此永远留在可视区内。 */
+/** Three-part detail layout: fixed header / scrolling body / fixed actions, keeping action buttons visible. */
 class ResourceAdminPage {
+  readonly lifetime = new AbortController()
   readonly #locale: UiLocaleSource
   readonly #localeStop: () => void
   readonly #localeCleanup?: () => void
   readonly #t: LocaleTranslator
   readonly #detailT: LocaleTranslator
+  readonly #scan: SkillScanController
   #api: ResourceAdminApi | undefined
   #context: ResourceAdminContext | undefined
   #tab: Tab = 'skills'
   #items: Item[] = []
+  #skillQuery = ''
   #skillRoots: SkillRootStatus[] = []
   #selected: string | undefined
   #detailTrigger: HTMLElement | undefined
   #generation = 0
+  readonly #feedback = new ResourcePageFeedback()
   #operations = new Map<string, ResourceOperation>()
   #activeOperation: string | undefined
+  #activeSkillId: string | undefined
   #nextCursor: string | undefined
+  #cursorStale = false
   #workspaceId: string | undefined
   #loadState: ResourceLoadState = 'idle'
   #reloadPromise: Promise<void> | undefined
   #loadMorePromise: Promise<void> | undefined
   #loadedTab: Tab | undefined
   #loadedWorkspace: string | undefined
-  #notice: {
-    key?: string
-    vars?: Readonly<Record<string, string | number>>
-    raw?: string
-    kind: string
-  } = { raw: '', kind: '' }
+  #notice: ResourceNotice = { raw: '', kind: '' }
 
-  constructor(workspaceId?: string, tab: Tab = 'skills', locale?: UiLocaleSource) {
-    this.#workspaceId = normalizeWorkspaceId(workspaceId)
-    this.#tab = tab
-    if (locale) this.#locale = locale
+  constructor(options: ResourceAdminOptions) {
+    this.#scan = new SkillScanController(options.onSkillScanReport)
+    this.#workspaceId = normalizeWorkspaceId(options.workspaceId)
+    this.#tab = options.tab ?? 'skills'
+    this.#skillQuery = new URLSearchParams(location.search).get('skill')?.slice(0, 128) ?? ''
+    if (options.locale) this.#locale = options.locale
     else {
       const documentLocale = createDocumentLocaleSource(resourceAdminCatalogs)
       this.#locale = documentLocale.source
@@ -146,6 +164,8 @@ class ResourceAdminPage {
       activeResourceText = this.#t
       syncResourcePickers(this.#t)
       syncTransport(this.#t)
+      mcpPresets?.localize()
+      mcpWizard?.localize()
       if (dialog?.open)
         $('mcp-dialog-title', 'h2').textContent = editing
           ? this.#t('form.title.edit', { name: editing.displayName })
@@ -154,8 +174,14 @@ class ResourceAdminPage {
     })
   }
 
-  confirm(summary: string): Promise<boolean> {
-    return confirmEffect(summary, this.#t)
+  locale(): 'en' | 'zh-CN' {
+    return this.#locale.getSnapshot()
+  }
+
+  async confirm(summary: string): Promise<boolean> {
+    if (this.lifetime.signal.aborted) return false
+    const confirmed = await confirmEffect(summary, this.#t)
+    return confirmed && !this.lifetime.signal.aborted
   }
 
   showError(error: unknown): void {
@@ -165,7 +191,7 @@ class ResourceAdminPage {
       value.code !== 'ADMIN_UNAVAILABLE' &&
       value.code !== 'RESOURCE_ADMIN_UNAVAILABLE'
     ) {
-      this.setRawNotice(value.message, 'error')
+      this.setNotice(resourceFailureKey(value.code), 'error')
       return
     }
     this.setNotice('error.unavailable', 'error')
@@ -182,6 +208,7 @@ class ResourceAdminPage {
   }
   /** Re-scopes to the workbench's current workspace (or clears the scope) and reloads. */
   async setWorkspace(workspaceId?: string): Promise<void> {
+    if (this.#workspaceId !== normalizeWorkspaceId(workspaceId)) this.#clearScope()
     this.#workspaceId = normalizeWorkspaceId(workspaceId)
     await this.#ensureLoaded()
   }
@@ -189,6 +216,7 @@ class ResourceAdminPage {
     const nextWorkspace = normalizeWorkspaceId(scope.workspaceId)
     const tabChanged = this.#tab !== scope.tab
     const workspaceChanged = this.#workspaceId !== nextWorkspace
+    if (tabChanged || workspaceChanged) this.#clearScope()
     this.#tab = scope.tab
     this.#workspaceId = nextWorkspace
     this.#selected = undefined
@@ -218,6 +246,7 @@ class ResourceAdminPage {
     await this.#ensureLoaded()
   }
   async #ensureLoaded(): Promise<void> {
+    if (this.lifetime.signal.aborted) return
     if (this.#loadedTab !== this.#tab || this.#loadedWorkspace !== this.#workspaceId) {
       this.#loadedTab = undefined
       this.#loadedWorkspace = undefined
@@ -231,6 +260,7 @@ class ResourceAdminPage {
     if (this.#loadedTab !== this.#tab || this.#loadedWorkspace !== this.#workspaceId) await this.reload()
   }
   async reload(preserveNotice = false): Promise<void> {
+    if (this.lifetime.signal.aborted) return
     if (this.#reloadPromise) return this.#reloadPromise
     this.#reloadPromise = this.#reload(preserveNotice).finally(() => {
       this.#reloadPromise = undefined
@@ -244,11 +274,11 @@ class ResourceAdminPage {
     const requestWorkspace = this.#workspaceId
     this.#loadState = 'loading'
     this.render()
-    if (!preserveNotice) {
-      this.setNotice('notice.loading')
-    }
+    // The list shows its own placeholder while it reads; the notice line stays for outcomes.
+    if (!preserveNotice) this.setNotice(undefined)
     try {
       const context = this.#context ?? (await ResourceAdminApi.context())
+      if (this.lifetime.signal.aborted) return
       this.#context = context
       this.#api = new ResourceAdminApi(context, fetch, requestWorkspace)
       const result = requestTab === 'skills' ? await this.#api.skills() : await this.#api.mcp()
@@ -256,12 +286,15 @@ class ResourceAdminPage {
       if (requestTab !== this.#tab || requestWorkspace !== this.#workspaceId) return
       this.#items = result.items
       this.#skillRoots = requestTab === 'skills' && 'skillRoots' in result ? (result.skillRoots ?? []) : []
+      if (requestTab === 'skills')
+        this.#scan.observe('skillScanReport' in result ? result.skillScanReport : undefined)
       this.#nextCursor = result.nextCursor
+      this.#cursorStale = false
       this.#loadedTab = this.#tab
       this.#loadedWorkspace = this.#workspaceId
       this.#loadState = this.#items.length ? 'ready' : 'empty'
-      // 详情是模态框，选中即等于弹出。所以这里只能"选中的资源消失了就清掉"，
-      // 不能再像双列抽屉时代那样替用户选中第一项——那会让一进 Tab 就弹出一个详情。
+      // Details are modal, so selecting opens them. Only clear selection when the selected resource disappears;
+      // do not auto-select the first item as the old two-column drawer did, or merely entering a tab would open details.
       if (this.#selected !== undefined && !this.#items.some((item) => item.resourceId === this.#selected))
         this.#selected = undefined
       if (!preserveNotice) {
@@ -277,7 +310,7 @@ class ResourceAdminPage {
     }
   }
   api(): ResourceAdminApi {
-    if (!this.#api) throw new Error(this.#t('error.not-connected'))
+    if (!this.#api || this.lifetime.signal.aborted) throw new Error(this.#t('error.not-connected'))
     return this.#api
   }
   writable(): boolean {
@@ -288,15 +321,12 @@ class ResourceAdminPage {
     this.#detailTrigger = trigger
     this.render()
   }
-  /** 详情是模态框：打开一次即可，重复 render 不能反复 showModal（会抛 InvalidStateError）。 */
+  /** Open details once: repeated renders must not reopen them (showModal would throw InvalidStateError). */
   openDetail(label: string): void {
     detail.setAttribute('aria-label', label)
-    if (detail.open) return
-    try {
-      detail.showModal()
-    } catch {
-      detail.setAttribute('open', '')
-    }
+    // The page holding the detail names it in its address by this id.
+    detail.dataset.resourceId = this.#selected ?? ''
+    showDialogHost(detail)
   }
   #closeDetailDialog(): void {
     if (!detail.open) return
@@ -306,13 +336,7 @@ class ResourceAdminPage {
       detail.removeAttribute('open')
     }
   }
-  /**
-   * 关闭详情并把焦点还给当初打开它的那一行。
-   *
-   * 不能用当初点击的那个行元素：`render()` 会 `replaceChildren()` 重建整个列表，那个引用
-   * 在调用点已经脱离文档（`isConnected === false`），焦点只会落回 body。与插件页一致，
-   * 按 `data-resource-id` 在**新**列表里找回对应的行。
-   */
+  /** Return focus by resource ID: rendering may have replaced the original trigger row. */
   closeDetail(): void {
     const targetId = this.#detailTrigger?.dataset.resourceId
     this.#closeDetailDialog()
@@ -322,18 +346,21 @@ class ResourceAdminPage {
     if (!targetId) return
     for (const row of list.querySelectorAll<HTMLElement>('.resource-row')) {
       if (row.dataset.resourceId !== targetId) continue
-      row.focus({ preventScroll: true })
+      row
+        .querySelector<HTMLButtonElement>('.agh-list-row-title, .plugin-details-button')
+        ?.focus({ preventScroll: true })
       return
     }
   }
   setTab(tab: Tab): void {
     if (this.#tab === tab) return
+    this.#clearScope()
     this.#tab = tab
     this.#selected = undefined
     void this.#ensureLoaded()
   }
   async loadMore(): Promise<void> {
-    if (!this.#nextCursor || this.#loadMorePromise || this.#reloadPromise) return
+    if (!this.#nextCursor || this.#loadMorePromise || this.#reloadPromise || this.#activeOperation) return
     const cursor = this.#nextCursor
     const requestTab = this.#tab
     const requestWorkspace = this.#workspaceId
@@ -341,7 +368,11 @@ class ResourceAdminPage {
     this.#loadMorePromise = (async () => {
       try {
         const result =
-          requestTab === 'skills' ? await this.api().skills(cursor) : await this.api().mcp(cursor)
+          requestTab === 'skills'
+            ? this.#cursorStale
+              ? await this.api().skillsThrough(this.#items.length)
+              : await this.api().skills(cursor)
+            : await this.api().mcp(cursor)
         if (
           requestGeneration !== this.#generation ||
           requestTab !== this.#tab ||
@@ -349,10 +380,20 @@ class ResourceAdminPage {
         )
           return
         const known = new Set(this.#items.map((item) => item.resourceId))
-        this.#items = [...this.#items, ...result.items.filter((item) => !known.has(item.resourceId))]
+        this.#items =
+          this.#cursorStale && requestTab === 'skills'
+            ? result.items
+            : [...this.#items, ...result.items.filter((item) => !known.has(item.resourceId))]
+        this.#cursorStale = false
         this.#nextCursor = result.nextCursor
         this.#loadState = this.#items.length ? 'ready' : 'empty'
       } catch (error) {
+        if (
+          requestGeneration !== this.#generation ||
+          requestTab !== this.#tab ||
+          requestWorkspace !== this.#workspaceId
+        )
+          return
         this.setNotice('notice.load-more-failed', 'error')
         this.showError(error)
       } finally {
@@ -362,73 +403,134 @@ class ResourceAdminPage {
     })()
     await this.#loadMorePromise
   }
-  async track(receipt: { operationId: string }): Promise<boolean> {
+  async track(
+    receipt: { operationId: string },
+    completion?: ResourceCompletion,
+    skillId?: string,
+    deferSuccess = false,
+  ): Promise<boolean> {
     const api = this.api()
+    const generation = this.#generation
+    const workspace = this.#workspaceId
+    const publish = this.#feedback.capture()
+    this.#activeSkillId = skillId
     this.#activeOperation = receipt.operationId
     this.setNotice('notice.submitted')
-    for (let attempt = 0; attempt < 120; attempt += 1) {
-      const op = await api.operation(receipt.operationId)
-      this.#operations.set(op.operationId, op)
-      this.render()
-      if (terminal.has(op.state)) {
-        this.#activeOperation = undefined
-        if (op.state === 'succeeded') this.setNotice('notice.succeeded', 'success')
-        else if (op.lastSafeError?.message) this.setRawNotice(op.lastSafeError.message, 'error')
-        else this.setNotice('notice.failed', 'error')
-        await this.reload(true)
-        if (this.#loadState === 'error') return false
-        return op.state === 'succeeded'
+    try {
+      const op = await pollResourceOperation(
+        () => api.operation(receipt.operationId),
+        this.lifetime.signal,
+        (op) => {
+          this.#operations.set(op.operationId, op)
+          this.render(false)
+        },
+      )
+      if (!op) {
+        if (!this.lifetime.signal.aborted && generation === this.#generation)
+          this.setNotice('notice.running', 'warning')
+        return false
       }
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      this.#operations.set(op.operationId, op)
+      if (skillId) {
+        const item = await api.skill(skillId)
+        if (
+          this.lifetime.signal.aborted ||
+          generation !== this.#generation ||
+          workspace !== this.#workspaceId ||
+          this.#tab !== 'skills'
+        )
+          return false
+        const index = this.#items.findIndex((item) => item.resourceId === skillId)
+        if (index >= 0) this.#items[index] = item
+        this.#cursorStale = !!this.#nextCursor
+      }
+      if (!publish(op, activeResourceText, completion, deferSuccess)) return false
+      if (op.state === 'succeeded') {
+        this.setNotice(undefined)
+      } else if (op.lastSafeError?.message) this.setNotice(resourceFailureKey(op.lastSafeError.code), 'error')
+      else this.setNotice('notice.failed', 'error')
+      if (!skillId) await this.reload(true)
+      return this.#loadState !== 'error' && op.state === 'succeeded'
+    } finally {
+      if (this.#activeOperation === receipt.operationId) {
+        this.#activeOperation = undefined
+        this.#activeSkillId = undefined
+      }
+      this.render()
     }
-    this.#activeOperation = undefined
-    this.setNotice('notice.running', 'warning')
-    return false
   }
 
-  render(): void {
-    notice.textContent = this.#notice.key
-      ? this.#t(this.#notice.key, this.#notice.vars)
-      : (this.#notice.raw ?? '')
-    notice.dataset.kind = this.#notice.kind
-    const skillTab = $('skills-tab', 'button')
-    const mcpTab = $('mcp-tab', 'button')
-    skillTab.setAttribute('aria-selected', String(this.#tab === 'skills'))
-    mcpTab.setAttribute('aria-selected', String(this.#tab === 'mcp'))
-    skillTab.tabIndex = this.#tab === 'skills' ? 0 : -1
-    mcpTab.tabIndex = this.#tab === 'mcp' ? 0 : -1
-    $('skill-refresh', 'button').hidden = this.#tab !== 'skills'
+  #clearScope(): void {
+    this.#generation++
+    this.#feedback.clear()
+    this.#scan.clear()
+    this.#activeOperation = undefined
+    this.#activeSkillId = undefined
+  }
+  scanSkills(): Promise<SkillScanReport | undefined> {
+    return this.#scan.run({
+      allowed:
+        this.#tab === 'skills' &&
+        this.writable() &&
+        this.#loadedTab === 'skills' &&
+        this.#loadedWorkspace === this.#workspaceId &&
+        ['ready', 'empty'].includes(this.#loadState) &&
+        !this.#reloadPromise &&
+        !this.#loadMorePromise &&
+        !this.#activeOperation,
+      refresh: () => this.api().refresh(),
+      cancelled: (id) => this.#operations.get(id)?.state === 'cancelled',
+      track: (receipt) => this.track(receipt, undefined, undefined, true),
+      completed: (id) =>
+        this.#feedback.completed(this.#operations.get(id), this.#t, this.#t('notice.scan-finished')),
+    })
+  }
+  tab(): Tab {
+    return this.#tab
+  }
+
+  render(renderList = true): void {
+    if (activePage !== this) return
+    if (!surface) renderSettingsChrome(this.#tab, this.#t)
+    const failure = renderNotice(notice, this.#notice, this.#t, !!surface)
+    refreshButton.hidden = true
     const busy = this.#reloadPromise !== undefined || this.#loadMorePromise !== undefined
-    $('skill-refresh', 'button').disabled = !this.writable() || busy
-    $('mcp-create', 'button').hidden = true
-    $('mcp-create', 'button').disabled = !this.writable() || busy
+    refreshButton.disabled = !this.writable() || busy
+    createButton.hidden = this.#tab !== 'mcp'
+    createButton.disabled = !this.writable() || busy || this.#activeOperation !== undefined
+    if (mcpPresets) {
+      mcpPresets.setAvailability({
+        hidden: this.#tab !== 'mcp',
+        disabled: !this.writable() || busy || this.#activeOperation !== undefined,
+      })
+    }
     list.dataset.state = this.#loadState
     list.setAttribute('aria-busy', String(this.#loadState === 'loading'))
-    renderRegion(
-      list,
-      <UiLocaleProvider source={this.#locale}>
-        <ResourceListContent
-          tab={this.#tab}
-          loadState={this.#loadState}
-          items={this.#items}
-          skillRoots={this.#skillRoots}
-          selectedId={this.#selected}
-          nextCursor={this.#nextCursor}
-          loadingMore={this.#loadMorePromise !== undefined}
-          emptyTitle={this.#t(this.#tab === 'skills' ? 'empty.skills.title' : 'empty.mcp.title')}
-          emptyDescription={
-            this.#tab === 'skills' ? this.#t('empty.skills.description') : this.#t('empty.mcp.description')
-          }
-          emptyHints={this.#tab === 'skills' ? SKILL_LOCATION_HINTS : undefined}
-          switchDisabled={!this.writable() || this.#activeOperation !== undefined}
-          itemNameOf={(item) => this.#itemName(item)}
-          onOpen={(item) => this.select(item.resourceId, this.#rowOf(item.resourceId))}
-          onToggleDesired={(item, next) => void this.toggleDesired(item, next)}
-          onLoadMore={() => void this.loadMore()}
-          onRetry={() => void this.reload()}
-        />
-      </UiLocaleProvider>,
-    )
+    if (renderList) {
+      renderRegion(
+        list,
+        <UiLocaleProvider source={this.#locale}>
+          {this.#tab === 'skills' ? (
+            <SkillsPage
+              embedded={!!surface}
+              query={this.#skillQuery}
+              onQuery={(query) => {
+                this.#skillQuery = query
+                this.render()
+              }}
+              onRefresh={() => refreshButton.click()}
+              busy={busy || this.#activeOperation !== undefined}
+              writable={this.writable()}
+              locations={<ResourceRoots roots={this.#skillRoots} />}
+            >
+              {(onImport) => this.#resourceList(onImport)}
+            </SkillsPage>
+          ) : (
+            this.#resourceList()
+          )}
+        </UiLocaleProvider>,
+      )
+    }
     const selected = this.#items.find((item) => item.resourceId === this.#selected)
     if (!selected) {
       this.#closeDetailDialog()
@@ -454,6 +556,7 @@ class ResourceAdminPage {
           })().catch((error) => this.showError(error)),
       }
     }
+    detail.classList.toggle('agh-drawer', selected.kind === 'skill')
     if (selected.kind === 'skill') {
       renderRegion(
         detail,
@@ -463,6 +566,7 @@ class ResourceAdminPage {
             disabled={!this.writable() || this.#activeOperation !== undefined}
             actions={this.#detailActions(selected)}
             progress={progress}
+            failure={failure}
             onAction={(action) => void this.#runAction(action)}
             onPrioritySave={(next) => void this.#savePriority(selected, next)}
             onClose={() => this.closeDetail()}
@@ -478,11 +582,20 @@ class ResourceAdminPage {
             disabled={!this.writable()}
             actions={this.#detailActions(selected)}
             progress={progress}
+            failure={failure}
             onAction={(action) => void this.#runAction(action)}
             onStatus={async () => {
               const value = await this.api().mcpStatus(selected.serverId)
               const panel: (readonly [string, string])[] = [
                 [this.#t('fact.connection'), value.connectionState],
+                ...(selected.transportKind === 'stdio'
+                  ? [
+                      [
+                        this.#t('sandbox.title'),
+                        this.#t(`sandbox.${sandboxProfileOf(selected.definition)}`),
+                      ] as const,
+                    ]
+                  : []),
                 [this.#t('fact.tools'), String(value.toolCount)],
                 [this.#t('fact.observed-revision'), value.observedRevision ?? this.#t('fact.none')],
                 [this.#t('fact.catalog-revision'), value.catalogRevision ?? this.#t('fact.none')],
@@ -496,7 +609,7 @@ class ResourceAdminPage {
                   this.#t('fact.safe-error'),
                   this.#detailT('safe-error', {
                     code: value.lastSafeError.code,
-                    message: value.lastSafeError.message,
+                    message: resourceFailureLabel(value.lastSafeError.code, this.#t),
                   }),
                 ])
               return panel
@@ -504,14 +617,13 @@ class ResourceAdminPage {
             onTools={async (cursor) => {
               const result = await this.api().mcpTools(selected.serverId, cursor)
               return {
-                names: result.items.map((tool) =>
-                  tool.description ? `${tool.name} — ${tool.description}` : tool.name,
-                ),
+                items: result.items,
                 nextCursor: result.nextCursor,
               }
             }}
             onEdit={() => openMcpDialog(selected)}
             onClose={() => this.closeDetail()}
+            onToolDisclosure={(mode) => void saveToolDisclosure(this, selected, mode)}
           />
         </UiLocaleProvider>,
       )
@@ -519,7 +631,7 @@ class ResourceAdminPage {
     this.openDetail(this.#itemName(selected))
   }
 
-  /** 在**新**列表里找回资源行（React 键控行复用 DOM，焦点可精确归还）。 */
+  /** Find the resource row in the **new** list; React keyed rows reuse DOM for precise focus restoration. */
   #rowOf(resourceId: string): HTMLElement | undefined {
     return (
       list.querySelector<HTMLElement>(`.resource-row[data-resource-id="${CSS.escape(resourceId)}"]`) ??
@@ -527,11 +639,69 @@ class ResourceAdminPage {
     )
   }
 
-  #itemName(item: Item): string {
-    return item.kind === 'skill' ? item.name : item.displayName
+  #resourceList(onImport?: () => void) {
+    return (
+      <ResourceListContent
+        tab={this.#tab}
+        loadState={this.#loadState}
+        items={
+          this.#tab === 'skills' && this.#skillQuery
+            ? this.#items.filter((item) =>
+                `${this.#itemName(item)} ${item.kind === 'skill' ? (item.description ?? '') : ''}`
+                  .toLocaleLowerCase(this.locale())
+                  .includes(this.#skillQuery.toLocaleLowerCase(this.locale())),
+              )
+            : this.#items
+        }
+        skillRoots={this.#skillRoots}
+        busy={this.#activeOperation !== undefined}
+        busyResourceId={this.#activeSkillId}
+        selectedId={this.#selected}
+        nextCursor={this.#nextCursor}
+        loadingMore={this.#loadMorePromise !== undefined}
+        emptyTitle={this.#t(this.#tab === 'skills' ? 'empty.skills.title' : 'empty.mcp.title')}
+        emptyDescription={
+          this.#tab === 'skills' ? this.#t('empty.skills.description') : this.#t('empty.mcp.description')
+        }
+        switchDisabled={!this.writable() || (this.#activeOperation !== undefined && !this.#activeSkillId)}
+        itemNameOf={(item) => this.#itemName(item)}
+        onOpen={this.#openItem}
+        onToggleDesired={this.#toggleItem}
+        onLoadMore={() => void this.loadMore()}
+        onRetry={() => void this.reload()}
+        mcpActions={(item) => ({
+          edit: () => {
+            this.closeDetail()
+            openMcpDialog(item, this.#t)
+          },
+          test: () => {
+            const action = this.#detailActions(item).find(
+              (action) => action.label === this.#t('action.test-mcp'),
+            )
+            if (action) void this.#runAction(action)
+          },
+          remove: () => {
+            const action = this.#detailActions(item).find(
+              (action) => action.label === this.#t('action.remove-mcp'),
+            )
+            if (action) void this.#runAction(action)
+          },
+        })}
+        onImport={onImport ?? (() => undefined)}
+        filtered={!!this.#skillQuery}
+        menuOf={this.#menuOf}
+      />
+    )
   }
+  #openItem = (item: Item): void => this.select(item.resourceId, this.#rowOf(item.resourceId))
+  #toggleItem = (item: Item, next: boolean): void => void this.toggleDesired(item, next)
+  #menuOf = (item: Item) =>
+    resourceActionMenu(this.#detailActions(item), (action) => void this.#runAction(action))
+  #itemName = (item: Item): string => (item.kind === 'skill' ? item.name : item.displayName)
 
   async toggleDesired(item: Item, next: boolean): Promise<void> {
+    if (this.#activeOperation || this.#reloadPromise || this.#loadMorePromise || !this.writable()) return
+    if (item.kind === 'skill' && item.sourceIdentity.scope === 'runtime') return
     const kind = item.kind === 'skill' ? 'Skill' : 'MCP'
     const summary = this.#t('action.request', {
       action: this.#t(next ? 'action.enable' : 'action.disable'),
@@ -539,12 +709,17 @@ class ResourceAdminPage {
       name: this.#itemName(item),
       revision: `${item.revision.slice(0, 12)}…`,
     })
-    if (!(await this.confirm(summary))) return
+    const sandbox =
+      item.kind === 'mcp' && item.definition.transport.kind === 'stdio'
+        ? this.#t(`sandbox.${sandboxProfileOf(item.definition)}`)
+        : ''
+    if (!(await this.confirm(sandbox ? `${summary}\n${sandbox}` : summary))) return
     try {
       await this.#setDesired(item, next)
     } catch (error) {
+      this.#activeOperation = undefined
+      this.#activeSkillId = undefined
       this.showError(error)
-      this.render()
     }
   }
 
@@ -554,6 +729,8 @@ class ResourceAdminPage {
         item.kind === 'skill'
           ? await this.api().skillTrust(item.resourceId, item.revision, 'trusted')
           : await this.api().mcpTrust(item.serverId, item.revision, 'trusted'),
+        undefined,
+        item.kind === 'skill' ? item.resourceId : undefined,
       )
       if (!trusted) return
       const current = this.#items.find((candidate) => candidate.resourceId === item.resourceId)
@@ -569,53 +746,24 @@ class ResourceAdminPage {
         : next
           ? await this.api().mcpEnable(item.serverId, item.revision)
           : await this.api().mcpDisable(item.serverId, item.revision),
+      undefined,
+      item.kind === 'skill' ? item.resourceId : undefined,
     )
   }
 
-  /** 动作规格统一走壳的确认链：确认框 → 提交 → track 轮询。 */
+  /** Route action specs through the shell confirmation flow: confirm → submit → track polling. */
   #detailActions(item: Item): readonly ResourceDetailAction[] {
     const disabled = !this.writable() || this.#activeOperation !== undefined
     const specs: ResourceDetailAction[] = []
-    if (item.kind === 'skill') {
-      const skill = item
-      const removing = skill.lastSafeError?.code === 'SKILL_REMOVAL_PENDING'
-      const add = (
-        label: string,
-        summary: string,
-        run: () => Promise<{ operationId: string } | undefined>,
-        extra?: Partial<ResourceDetailAction>,
-      ): void => {
-        specs.push({
-          label,
-          summary,
-          run,
-          disabled: disabled || (removing && label !== this.#t('action.remove-skill.label')),
-          ...extra,
-        })
-      }
-      add(
-        this.#t(resourceDesiredEnabled(skill) ? 'action.disable' : 'action.enable'),
-        this.#t('action.request', {
-          action: this.#t(resourceDesiredEnabled(skill) ? 'action.disable' : 'action.enable'),
-          kind: 'Skill',
-          name: skill.name,
-          revision: `${skill.revision.slice(0, 12)}…`,
-        }),
-        async () => {
-          await this.#setDesired(skill, !resourceDesiredEnabled(skill))
-          return undefined
-        },
+    if (item.kind === 'skill')
+      return skillDetailActions(
+        item,
+        disabled,
+        this.#t,
+        (next) => this.#setDesired(item, next),
+        () => this.api().skillRemove(item.resourceId, item.revision),
+        { className: 'agh-btn--danger' },
       )
-      if (skill.sourceIdentity.scope === 'workspace' || skill.sourceIdentity.scope === 'user') {
-        add(
-          this.#t('action.remove-skill.label'),
-          this.#t('action.remove-skill.summary', { name: skill.name }),
-          () => this.api().skillRemove(skill.resourceId, skill.revision),
-          { className: 'danger-button compact' },
-        )
-      }
-      return specs
-    }
     const server = item
     const revision = `${server.revision.slice(0, 12)}…`
     const add = (
@@ -631,6 +779,8 @@ class ResourceAdminPage {
       this.#t('action.test-mcp-summary', { name: server.displayName, revision }),
       () => this.api().mcpTest(server.serverId, server.revision),
     )
+    const sandboxSummary =
+      server.transportKind === 'stdio' ? `\n${this.#t(`sandbox.${sandboxProfileOf(server.definition)}`)}` : ''
     add(
       this.#t(resourceDesiredEnabled(server) ? 'action.disable' : 'action.enable'),
       this.#t('action.request', {
@@ -638,7 +788,7 @@ class ResourceAdminPage {
         kind: 'MCP',
         name: server.displayName,
         revision,
-      }),
+      }) + sandboxSummary,
       async () => {
         await this.#setDesired(server, !resourceDesiredEnabled(server))
         return undefined
@@ -653,19 +803,20 @@ class ResourceAdminPage {
       this.#t('action.remove-mcp'),
       this.#t('action.remove-mcp-summary', { name: server.displayName, revision }),
       () => this.api().mcpRemove(server.serverId, server.revision),
-      { className: 'danger-button compact' },
+      { className: 'agh-btn--danger' },
     )
     return specs
   }
 
   async #runAction(action: ResourceDetailAction): Promise<void> {
+    if (this.#activeOperation || !this.writable()) return
     try {
       if (await this.confirm(action.summary)) {
         const receipt = await action.run()
         if (receipt) await this.track(receipt)
       }
     } catch (error) {
-      // 旧 button() helper 的错误路径：动作失败必须落到页面通知，不能静默。
+      // Error path of the old button() helper: action failures must reach the page notice, never stay silent.
       this.showError(error)
       this.render()
     }
@@ -685,64 +836,50 @@ class ResourceAdminPage {
   }
 
   dispose(): void {
+    this.lifetime.abort()
+    this.#clearScope()
+    this.#generation += 1
     this.#localeStop()
     this.#localeCleanup?.()
+    // A later mount already took the shared form, dialogs and hosts over.
+    if (activePage !== this) return
+    activePage = undefined
     stopMcpRefresh?.()
     stopMcpRefresh = undefined
     for (const picker of mcpPickers) picker.destroy()
     mcpPickers = []
+    mcpWizard?.dispose()
+    mcpWizard = undefined
+    mcpPresets?.dispose()
+    mcpPresets = undefined
     unmountRegion(list)
     unmountRegion(detail)
   }
 }
 
 let editing: McpServerDescriptor | undefined
-function writeDefinition(definition: McpServerDefinitionInput): void {
-  $('mcp-id', 'input').value = definition.serverId
-  $('mcp-name', 'input').value = definition.displayName
-  mcpTransport.value = definition.transport.kind
-  $('mcp-executable', 'input').value =
-    definition.transport.kind === 'stdio' ? definition.transport.executable : ''
-  $('mcp-args', 'textarea').value =
-    definition.transport.kind === 'stdio' ? definition.transport.args.join('\n') : ''
-  $('mcp-url', 'input').value =
-    definition.transport.kind === 'http' || definition.transport.kind === 'sse'
-      ? definition.transport.url
-      : ''
-  mcpSecretKind.value = definition.secretBinding.kind
-  // 'oauth' has no credentialRef (it carries an optional staticClientId instead); the OAuth admin
-  // flow itself is a separate task (see the dedicated MCP OAuth Web UI plan) — this just keeps the
-  // existing kind-by-kind rendering exhaustive now that the union has a fourth branch.
-  $('mcp-secret', 'textarea').value =
-    definition.secretBinding.kind === 'stdio-env'
-      ? Object.entries(definition.secretBinding.env)
-          .map(([name, reference]) => `${name}=${reference}`)
-          .join('\n')
-      : definition.secretBinding.kind === 'none'
-        ? ''
-        : definition.secretBinding.kind === 'oauth'
-          ? (definition.secretBinding.staticClientId ?? '')
-          : definition.secretBinding.credentialRef
-  if (definition.secretBinding.kind === 'http-header')
-    $('mcp-header-name', 'select').value = definition.secretBinding.headerName
-  $('mcp-tools', 'textarea').value = definition.toolPolicy?.allow?.join('\n') ?? ''
-}
 function openMcpDialog(server?: McpServerDescriptor, t: LocaleTranslator = activeResourceText): void {
   editing = server
   form.reset()
-  if (server) writeDefinition(server.definition)
+  mcpPresets?.reset()
+  if (server) writeMcpDefinition(server.definition)
+  mcpWizard?.reset(!!server)
   syncTransport(t)
   $('mcp-dialog-title', 'h2').textContent = server
     ? t('form.title.edit', { name: server.displayName })
     : t('form.title.create')
   $('mcp-id', 'input').disabled = !!server
   $('mcp-error', 'p').textContent = ''
-  dialog.showModal()
-  $('mcp-name', 'input').focus()
+  showDialogHost(dialog)
+  const focus = server
+    ? $('mcp-name', 'input')
+    : (document.getElementById('mcp-method-local') ?? $('mcp-name', 'input'))
+  focus.focus()
 }
 function syncResourcePickers(t: LocaleTranslator = activeResourceText): void {
   for (const picker of mcpPickers) picker.destroy()
   mcpPickers = [
+    createSelectPicker($('mcp-sandbox', 'select'), { label: t('sandbox.title') }),
     createSelectPicker(mcpTransport, { label: t('select.transport') }),
     createSelectPicker(mcpSecretKind, { label: t('select.secret') }),
     createSelectPicker($('mcp-header-name', 'select'), { label: t('select.header') }),
@@ -751,13 +888,15 @@ function syncResourcePickers(t: LocaleTranslator = activeResourceText): void {
 
 function syncTransport(t: LocaleTranslator = activeResourceText): void {
   const stdio = mcpTransport.value === 'stdio'
+  $('mcp-workspace-row', 'label').hidden = !stdio
+  $('mcp-sandbox-row', 'label').hidden = !stdio
   $('mcp-executable-row', 'label').hidden = !stdio
   $('mcp-args-row', 'label').hidden = !stdio
   $('mcp-url-row', 'label').hidden = stdio
-  const allowed = stdio ? ['none', 'stdio-env'] : ['none', 'http-bearer', 'http-header']
+  const allowed = stdio ? ['none', 'stdio-env'] : ['none', 'http-bearer', 'http-header', 'oauth']
   for (const option of mcpSecretKind.options) option.hidden = !allowed.includes(option.value)
   if (!allowed.includes(mcpSecretKind.value)) mcpSecretKind.value = 'none'
-  $('mcp-secret-row', 'label').hidden = mcpSecretKind.value === 'none'
+  $('mcp-secret-row', 'label').hidden = ['none', 'oauth'].includes(mcpSecretKind.value)
   $('mcp-header-row', 'label').hidden = mcpSecretKind.value !== 'http-header'
   $('mcp-secret', 'textarea').placeholder =
     mcpSecretKind.value === 'stdio-env' ? t('placeholder.env') : 'secret://namespace/name'
@@ -765,134 +904,17 @@ function syncTransport(t: LocaleTranslator = activeResourceText): void {
   syncMcpFieldFeedback()
 }
 
-const MCP_FIELD_CONTROLS: ReadonlyArray<readonly [McpFormFieldId, 'input' | 'textarea']> = [
-  ['mcp-id', 'input'],
-  ['mcp-executable', 'input'],
-  ['mcp-args', 'textarea'],
-  ['mcp-url', 'input'],
-  ['mcp-secret', 'textarea'],
-  ['mcp-tools', 'textarea'],
-]
-function mcpFormSnapshot(): McpFormFieldSnapshot {
-  return {
-    transport: mcpTransport.value,
-    secretKind: mcpSecretKind.value,
-    serverId: $('mcp-id', 'input').value.trim(),
-    executable: $('mcp-executable', 'input').value.trim(),
-    argsText: $('mcp-args', 'textarea').value,
-    url: $('mcp-url', 'input').value.trim(),
-    secretText: $('mcp-secret', 'textarea').value.trim(),
-    toolsText: $('mcp-tools', 'textarea').value,
-  }
-}
-/**
- * 即时字段校验：正则与上限直接来自后台 schema（mcp-form-validation.ts），在输入阶段就把
- * 「工具名不合法」这类问题按字段标红提示，而不是等提交后收到笼统的 400「资源管理参数无效」。
- * 输入过程（requireFilled=false）只看非空值，不在用户还没填到时催促；提交前（true）把
- * 「必填但为空」也标出来。
- */
-function syncMcpFieldFeedback(
-  requireFilled = false,
-  t: LocaleTranslator = activeResourceText,
-): ReturnType<typeof mcpFormIssues> {
-  const issues = mcpFormIssues(mcpFormSnapshot(), { requireFilled }, t)
-  for (const [id, tag] of MCP_FIELD_CONTROLS) $(id, tag).removeAttribute('aria-invalid')
-  for (const issue of issues) {
-    const control = MCP_FIELD_CONTROLS.find(([fieldId]) => fieldId === issue.field)
-    if (control) $(control[0], control[1]).setAttribute('aria-invalid', 'true')
-  }
-  $('mcp-error', 'p').textContent = issues[0]?.message ?? ''
-  return issues
-}
-function definitionFromForm(t: LocaleTranslator = activeResourceText): McpServerDefinitionInput {
-  const serverId = $('mcp-id', 'input').value.trim()
-  const displayName = $('mcp-name', 'input').value.trim()
-  const args = $('mcp-args', 'textarea')
-    .value.split('\n')
-    .map((value) => value.trim())
-    .filter(Boolean)
-  const allow = $('mcp-tools', 'textarea')
-    .value.split('\n')
-    .map((value) => value.trim())
-    .filter(Boolean)
-  const secretKind = mcpSecretKind.value
-  const secret = $('mcp-secret', 'textarea').value.trim()
-  if (!serverId || !displayName) throw new McpFormValidationError(t('error.form.identity'))
-  if (mcpTransport.value === 'stdio') {
-    const executable = $('mcp-executable', 'input').value.trim()
-    if (!executable) throw new McpFormValidationError(t('error.form.executable'))
-    const secretBinding =
-      secretKind === 'none'
-        ? { kind: 'none' as const }
-        : (() => {
-            const env: Record<string, string> = {}
-            for (const line of secret
-              .split('\n')
-              .map((value) => value.trim())
-              .filter(Boolean)) {
-              const at = line.indexOf('=')
-              const name = line.slice(0, at)
-              const reference = line.slice(at + 1)
-              if (at < 1 || !reference || Object.hasOwn(env, name))
-                throw new McpFormValidationError(t('error.form.env-format'))
-              env[name] = reference
-            }
-            if (!Object.keys(env).length) throw new McpFormValidationError(t('error.form.env-empty'))
-            return { kind: 'stdio-env' as const, env }
-          })()
-    return {
-      serverId,
-      displayName,
-      transport: { kind: 'stdio', executable, args },
-      secretBinding,
-      ...(allow.length ? { toolPolicy: { allow } } : {}),
-    }
-  }
-  const url = $('mcp-url', 'input').value.trim()
-  if (!url) throw new McpFormValidationError(t('error.form.url'))
-  if (secretKind !== 'none' && !secret) throw new McpFormValidationError(t('error.form.secret'))
-  const secretBinding =
-    secretKind === 'none'
-      ? { kind: 'none' as const }
-      : secretKind === 'http-bearer'
-        ? { kind: 'http-bearer' as const, credentialRef: secret }
-        : {
-            kind: 'http-header' as const,
-            headerName: $('mcp-header-name', 'select').value as 'x-api-key' | 'x-api-token',
-            credentialRef: secret,
-          }
-  if (mcpTransport.value === 'http') {
-    return {
-      serverId,
-      displayName,
-      transport: { kind: 'http', url },
-      secretBinding,
-      ...(allow.length ? { toolPolicy: { allow } } : {}),
-    }
-  }
-  if (mcpTransport.value === 'sse') {
-    return {
-      serverId,
-      displayName,
-      transport: { kind: 'sse', url },
-      secretBinding,
-      ...(allow.length ? { toolPolicy: { allow } } : {}),
-    }
-  }
-  // The <select id="mcp-transport"> option set lives in packages/web/public/resources.html, a
-  // different package than this dispatch -- nothing guarantees they stay in sync. Fail loudly on an
-  // unrecognized value instead of silently falling through to an SSE-shaped definition.
-  throw new Error(t('error.invalid-transport', { value: mcpTransport.value }))
-}
-
 export type ResourceAdminMount = Readonly<{
   ready: Promise<void>
   reload(): Promise<void>
+  scanSkills(): Promise<SkillScanReport | undefined>
   dispose(): void
   /** Re-scopes to the workbench's current workspace, or clears the scope when none is selected. */
   setWorkspace(workspaceId?: string): Promise<void>
-  /** 设置页把「技能」和「MCP」做成两条独立 Tab，由宿主决定打开哪一类。 */
+  /** Settings exposes Skills and MCP as separate tabs; the host chooses which category to open. */
   setTab(tab: Tab): void
+  /** Open one resource's detail, as a click on its row does. */
+  select(resourceId: string): void
   sync(scope: ResourceScope, options?: { refresh?: boolean }): Promise<void>
 }>
 
@@ -901,73 +923,104 @@ export type ResourceAdminMount = Readonly<{
  * Importing this module never touches the DOM; the host decides when to mount.
  */
 export function mountResourceAdmin(options: ResourceAdminOptions = {}): ResourceAdminMount {
-  list = $('resource-list', 'section')
+  let mcpSubmitting = false
+  activePage?.dispose()
+  surface = options.surface
+  list = surface?.list ?? $('resource-list', 'section')
   detail = $('resource-detail', 'dialog')
-  notice = $('resource-notice', 'p')
+  notice = surface?.notice ?? $('resource-notice', 'p')
+  refreshButton = surface?.refresh ?? $('skill-refresh', 'button')
+  createButton = surface?.create ?? $('mcp-create', 'button')
   dialog = $('mcp-dialog', 'dialog')
   form = $('mcp-form', 'form')
   mcpTransport = $('mcp-transport', 'select')
   mcpSecretKind = $('mcp-secret-kind', 'select')
-  const page = new ResourceAdminPage(options.workspaceId, options.tab, options.locale)
+  mcpForm = createMcpForm({
+    transport: mcpTransport,
+    secretKind: mcpSecretKind,
+    text: () => activeResourceText,
+  })
+  const page = new ResourceAdminPage(options)
+  activePage = page
+  mcpWizard?.dispose()
+  mcpWizard = mountMcpWizard(
+    () => activeResourceText,
+    () => syncTransport(),
+  )
+  mcpWizard.localize()
   syncResourcePickers(activeResourceText)
+  mcpPresets?.dispose()
+  mcpPresets = mountMcpPresets({
+    form,
+    toolbar: createButton.parentElement as HTMLElement,
+    open: () => openMcpDialog(),
+    fill: (definition) => {
+      writeMcpDefinition(definition)
+      mcpWizard?.filled()
+      syncTransport()
+    },
+    locale: () => page.locale(),
+    text: () => activeResourceText,
+  })
+  mcpPresets.localize()
 
-  // 详情是模态框：点遮罩、按 Escape、点「关闭详情」都要走同一条收尾路径（含焦点归还）。
-  detail.addEventListener('cancel', (event) => {
-    event.preventDefault()
-    page.closeDetail()
-  })
-  detail.addEventListener('click', (event) => {
-    if (event.target === detail) page.closeDetail()
-  })
-  // 添加 / 编辑 MCP 的弹窗同样点遮罩关闭。
-  dialog.addEventListener('click', (event) => {
-    if (event.target === dialog) dialog.close()
-  })
+  // Modal details use the same cleanup path, including focus restoration, for backdrop clicks, Escape and Close details.
+  // The dialogs and the form are shared between mounts: every listener leaves with its mount.
+  const stop = page.lifetime
+  const bound = { signal: stop.signal }
+  detail.addEventListener(
+    'cancel',
+    (event) => {
+      event.preventDefault()
+      page.closeDetail()
+    },
+    bound,
+  )
+  detail.addEventListener(
+    'click',
+    (event) => {
+      if (event.target === detail) page.closeDetail()
+    },
+    bound,
+  )
+  // Add/edit MCP dialogs also close on backdrop clicks.
+  dialog.addEventListener(
+    'click',
+    (event) => {
+      if (event.target === dialog) dialog.close()
+    },
+    bound,
+  )
 
-  if (!options.embedded) {
-    $('skills-tab', 'button').addEventListener('click', () => page.setTab('skills'))
-    $('mcp-tab', 'button').addEventListener('click', () => page.setTab('mcp'))
-    for (const [tab, id] of [
-      ['skills', 'skills-tab'],
-      ['mcp', 'mcp-tab'],
-    ] as const) {
-      $(id, 'button').addEventListener('keydown', (event) => {
-        let next: Tab | undefined
-        if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = tab === 'skills' ? 'mcp' : 'skills'
-        if (event.key === 'ArrowRight' || event.key === 'ArrowDown')
-          next = tab === 'skills' ? 'mcp' : 'skills'
-        if (event.key === 'Home') next = 'skills'
-        if (event.key === 'End') next = 'mcp'
-        if (!next) return
-        event.preventDefault()
-        page.setTab(next)
-        $(next === 'skills' ? 'skills-tab' : 'mcp-tab', 'button').focus()
-      })
-    }
-  }
-  $('skill-refresh', 'button').addEventListener(
+  refreshButton.addEventListener(
     'click',
     () =>
       void (async () => {
-        if (await page.confirm(activeResourceText('action.refresh-skills')))
-          await page.track(await page.api().refresh())
-      })().catch((error) => page.showError(error)),
+        if (await page.confirm(activeResourceText('action.refresh-skills'))) {
+          await page.scanSkills()
+        }
+      })().catch((error) => {
+        if (!isSkillScanScopeError(error)) page.showError(error)
+      }),
+    bound,
   )
-  $('mcp-create', 'button').addEventListener('click', () => openMcpDialog(undefined, activeResourceText))
-  $('mcp-cancel', 'button').addEventListener('click', () => dialog.close())
-  mcpTransport.addEventListener('change', () => syncTransport(activeResourceText))
-  mcpSecretKind.addEventListener('change', () => syncTransport(activeResourceText))
-  // input/change 都在 form 上冒泡：文本框逐字触发 input，select 触发 change。
-  // 必须包一层箭头函数——addEventListener 会把 Event 对象当第一个参数传进去。
-  form.addEventListener('input', () => syncMcpFieldFeedback())
-  form.addEventListener('change', () => syncMcpFieldFeedback())
-  form.addEventListener('submit', (event) => {
+  createButton.addEventListener('click', () => openMcpDialog(undefined, activeResourceText), bound)
+  $('mcp-cancel', 'button').addEventListener('click', () => dialog.close(), bound)
+  mcpTransport.addEventListener('change', () => syncTransport(activeResourceText), bound)
+  mcpSecretKind.addEventListener('change', () => syncTransport(activeResourceText), bound)
+  // input/change bubble to form: text fields emit input for each character; selects emit change.
+  // Wrap in an arrow function: addEventListener passes the Event object as the first argument.
+  form.addEventListener('input', () => syncMcpFieldFeedback(), bound)
+  form.addEventListener('change', () => syncMcpFieldFeedback(), bound)
+  const submit = (event: SubmitEvent) => {
     event.preventDefault()
+    if (mcpSubmitting) return
+    mcpSubmitting = true
     const error = $('mcp-error', 'p')
     error.textContent = ''
     void (async () => {
       if (syncMcpFieldFeedback(true, activeResourceText).length) return
-      const definition = definitionFromForm(activeResourceText)
+      const definition = keepToolDisclosure(definitionFromForm(activeResourceText), editing)
       const creating = !editing
       const summary = editing
         ? activeResourceText('action.update-mcp-summary', {
@@ -975,44 +1028,85 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
             revision: `${editing.revision.slice(0, 12)}…`,
           })
         : activeResourceText('action.create-mcp-summary', { name: definition.displayName })
-      if (!(await page.confirm(summary))) return
-      const receipt = editing
-        ? await page.api().mcpUpdate(editing.serverId, editing.revision, definition)
-        : await page.api().mcpCreate(definition)
-      dialog.close()
+      const sandboxSummary =
+        'sandboxProfile' in definition
+          ? `\n${activeResourceText(`sandbox.${definition.sandboxProfile}`)}`
+          : ''
+      // A modal form closes before its confirmation; the draft remains in the mounted form. A form
+      // shown as a page stays where it is, under the confirmation.
+      if (!isPageDialog(dialog)) dialog.close()
+      let confirmed = false
+      try {
+        confirmed = await page.confirm(summary + sandboxSummary)
+      } finally {
+        if (!confirmed && !stop.signal.aborted) showDialogHost(dialog)
+      }
+      if (!confirmed) return
+      let receipt: ResourceOperationReceipt
+      try {
+        receipt = editing
+          ? await page.api().mcpUpdate(editing.serverId, editing.revision, definition)
+          : await page.api().mcpCreate(definition)
+      } catch (cause) {
+        if (!stop.signal.aborted) showDialogHost(dialog)
+        throw cause
+      }
+      if (stop.signal.aborted) return
       editing = undefined
-      await page.track(receipt)
-      // track() already reported success generically; a new server still needs an explicit enable.
-      if (creating && notice.dataset.kind === 'success')
-        page.setNotice('notice.created', 'success', { name: definition.displayName })
-    })().catch((cause) => {
-      if (dialog.open)
-        error.textContent =
-          cause instanceof McpFormValidationError
-            ? cause.message
-            : cause instanceof ResourceAdminApiError &&
-                ['ADMIN_UNAVAILABLE', 'RESOURCE_ADMIN_UNAVAILABLE'].includes(cause.details.code)
-              ? activeResourceText('error.unavailable')
-              : errorOf(cause).message
-      else page.showError(cause)
-    })
-  })
+      if (dialog.open) dialog.close()
+      await page.track(receipt, {
+        message: activeResourceText(creating ? 'notice.created' : 'notice.updated', {
+          name: definition.displayName,
+        }),
+      })
+    })()
+      .catch((cause) => {
+        if (stop.signal.aborted) return
+        if (dialog.open)
+          error.textContent =
+            cause instanceof McpFormValidationError
+              ? cause.message
+              : cause instanceof ResourceAdminApiError &&
+                  ['ADMIN_UNAVAILABLE', 'RESOURCE_ADMIN_UNAVAILABLE'].includes(cause.details.code)
+                ? activeResourceText('error.unavailable')
+                : resourceFailureLabel(errorOf(cause).code, activeResourceText)
+        else page.showError(cause)
+      })
+      .finally(() => {
+        mcpSubmitting = false
+      })
+  }
+  form.addEventListener('submit', submit, bound)
   syncTransport(activeResourceText)
   stopMcpRefresh?.()
   stopMcpRefresh = watchMcpPanel({
     root: list,
     visible: () =>
       !list.closest('[hidden]') &&
-      document.getElementById('mcp-tab')?.getAttribute('aria-selected') === 'true',
+      (surface
+        ? page.tab() === 'mcp'
+        : document.getElementById('mcp-tab')?.getAttribute('aria-selected') === 'true' ||
+          document.getElementById('mcp-tab')?.getAttribute('aria-current') === 'page'),
     refresh: () => page.refreshMcpIfChanged(),
   })
   const ready = page.start()
   return {
     ready,
     reload: () => page.reload(),
-    dispose: () => page.dispose(),
+    scanSkills: () => page.scanSkills(),
+    dispose: () => {
+      stop.abort()
+      page.dispose()
+    },
     setWorkspace: (id) => page.setWorkspace(id),
     setTab: (tab) => page.setTab(tab),
+    select: (resourceId) => page.select(resourceId),
     sync: (scope, options) => page.sync(scope, options),
   }
+}
+function syncMcpFieldFeedback(requireFilled = false, t: LocaleTranslator = activeResourceText) {
+  return mcpForm.syncMcpFieldFeedback(requireFilled, t)
+}
+function definitionFromForm(t: LocaleTranslator = activeResourceText) {
+  return mcpForm.definitionFromForm(t)
 }

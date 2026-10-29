@@ -1,8 +1,11 @@
-import { mcpLocalToolPrefix } from '@agnes/base'
-import { MemTable } from '@agnes/base/testkit'
+import { isMcpServerRowId, mcpPublicToolName, mcpStablePrefix } from '@agnes/base'
+import { MemNamespace, MemTable } from '@agnes/base/testkit'
 import type { McpServerDefinitionInput } from '@agnes/protocol'
+import * as workerResources from '@agnes/resource-control-worker'
 import { describe, expect, it, vi } from 'vitest'
+import { leaseMcpConnection } from '../src/mcp-connection-pool.js'
 import { type McpServerSnapshotEntry, mcpServerRowsFromDefinitions } from '../src/mcp-server-rows.js'
+import { generationExtensionRestorer } from '../src/runtime-generation-restore.js'
 
 function stdioEntry(
   serverId: string,
@@ -51,19 +54,26 @@ describe('mcpServerRowsFromDefinitions', () => {
       expect(row.manifest.id).toBe(row.spec.id)
       expect(row.spec.package).toBe('@agnes/base')
     }
+    for (const row of rows) expect(isMcpServerRowId(`ext:${row.spec.id}`)).toBe(true)
+    for (const id of ['ext:agnes/mcp-search', 'ext:agnes/mcp-gh-xyz', 'agnes/mcp-gh-12345678'])
+      expect(isMcpServerRowId(id)).toBe(false)
     // Distinct servers get distinct ids.
     expect(rows[0]?.spec.id).not.toBe(rows[1]?.spec.id)
   })
 
   it('declares exactly what its one server uses: its own tool prefix, the mcp resource kind, and the artifact store for spilled output', () => {
     const { rows } = mcpServerRowsFromDefinitions([stdioEntry('gh'), stdioEntry('my.server-2')], fakeOpener)
-    // The prefix is register.ts's tool naming for that server id -- both call the same
-    // mcpLocalToolPrefix() (design 2026-09-23-mcp-tool-name-collision-design.md §0.4), so the ext
-    // host lets this row register its own server's tools and nothing else.
+    // Distinct server prefixes prevent one row from registering another server's tools.
     expect(rows.map((row) => row.manifest.capabilities)).toEqual([
-      { tools: { prefix: mcpLocalToolPrefix('gh') }, resources: ['mcp'], artifacts: true },
-      { tools: { prefix: mcpLocalToolPrefix('my.server-2') }, resources: ['mcp'], artifacts: true },
+      { tools: { prefix: mcpStablePrefix('gh') }, resources: ['mcp'], artifacts: true },
+      { tools: { prefix: mcpStablePrefix('my.server-2') }, resources: ['mcp'], artifacts: true },
     ])
+    for (const [index, id] of ['gh', 'my.server-2'].entries()) {
+      const prefix = rows[index]!.manifest.capabilities.tools!.prefix
+      expect(mcpPublicToolName(id, 'ping').startsWith(prefix)).toBe(true)
+      const other = index === 0 ? 'my.server-2' : 'gh'
+      expect(mcpPublicToolName(other, 'ping').startsWith(prefix)).toBe(false)
+    }
   })
 
   it('is idempotent: the same snapshot (by value) always derives the same ids and specs', () => {
@@ -136,9 +146,10 @@ describe('mcpServerRowsFromDefinitions', () => {
       ctx: { log: { debug() {}, info() {}, warn() {}, error() {} } },
     }
     const table = new MemTable('tool_index')
+    const ns = new MemNamespace()
     const fakeCtx = {
       signal: new AbortController().signal,
-      adapters: { storage: { table: () => table } },
+      adapters: { storage: { table: () => table, namespace: () => ns } },
       secrets: () => '',
       profile: {},
       log: { debug() {}, info() {}, warn() {}, error() {} },
@@ -155,4 +166,137 @@ describe('mcpServerRowsFromDefinitions', () => {
     const connected = opener.connect.mock.calls.map(([definition]) => definition.serverId).sort()
     expect(connected).toEqual(['gh', 'linear'])
   })
+})
+
+it('reconstructs a cold generation MCP factory from SecretRefs and refuses unknown factory kinds', async () => {
+  const entry = stdioEntry('pinned', 'original-revision')
+  const row = mcpServerRowsFromDefinitions([entry], fakeOpener).rows[0]
+  if (!row?.generation) throw new Error('missing MCP resource factory metadata')
+  const restore = generationExtensionRestorer({
+    env: {},
+    profile: { name: 'local-dev', dataDir: '/synthetic-resource-data' },
+    createSecrets: () => {
+      throw new Error('SecretRefs must be resolved only when connecting')
+    },
+  } as unknown as Parameters<typeof generationExtensionRestorer>[0])
+  const rebuilt = await restore(structuredClone(row.generation))
+  expect(rebuilt.spec).toEqual(row.spec)
+  expect(rebuilt.generation).toEqual(row.generation)
+  expect(JSON.stringify(rebuilt.generation)).toContain('secret://mcp/pinned-token')
+  expect(() => restore({ kind: 'unknown', data: {} })).toThrow('E_GENERATION_FACTORY_KIND')
+  expect(() => restore({ kind: 'mcp-server', data: {} })).toThrow('E_GENERATION_MCP_DEFINITION')
+  let release!: () => void
+  const catalog = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let listing = false,
+    closed = false
+  const tools = new Set<string>()
+  const connection = {
+    id: 'pinned',
+    async listTools() {
+      listing = true
+      await catalog
+      return [{ name: 'ping', description: 'Ping', inputSchema: { type: 'object' } }]
+    },
+    async callTool() {
+      return { content: [] }
+    },
+    async close() {
+      closed = true
+    },
+    onClose: () => () => undefined,
+    onToolsChanged: () => () => undefined,
+  }
+  const opener = vi
+    .spyOn(workerResources, 'createMcpServerOpener')
+    .mockReturnValue({ connect: async () => connection })
+  let finish: (() => Promise<void>) | undefined
+  try {
+    const cold = await restore(structuredClone(row.generation))
+    const log = { debug() {}, info() {}, warn() {}, error() {} }
+    const table = new MemTable('tool_index')
+    const ns = new MemNamespace()
+    const factory = await cold.factory({
+      signal: new AbortController().signal,
+      adapters: { storage: { table: () => table, namespace: () => ns } },
+      profile: {},
+      log,
+    } as never)
+    if (!factory) throw new Error('missing cold factory')
+    let activated = false
+    const activation = Promise.resolve(
+      factory({
+        ctx: { log },
+        registerTool: (tool: { name: string }) => {
+          tools.add(tool.name)
+          return () => tools.delete(tool.name)
+        },
+        registerResource: () => () => undefined,
+      } as never),
+    ).then((dispose) => {
+      activated = true
+      return dispose
+    })
+    finish = async () => {
+      const dispose = await activation
+      await dispose?.()
+    }
+    await vi.waitFor(() => expect(listing).toBe(true))
+    expect(activated).toBe(false)
+    release()
+    const dispose = await activation
+    expect([...tools]).toEqual([mcpPublicToolName('pinned', 'ping')])
+    await dispose?.()
+    expect(tools.size).toBe(0)
+    expect(closed).toBe(true)
+  } finally {
+    release()
+    await finish?.()
+    opener.mockRestore()
+  }
+})
+
+it('shares effective MCP boundaries across generations and releases independent leases after rotation', async () => {
+  let credential = 'first'
+  const closed: string[] = []
+  const opened: string[] = []
+  const opener = {
+    connect: async () => {
+      throw new Error('prepared connect required')
+    },
+    prepare: async () => {
+      const value = credential
+      return {
+        key: value,
+        connect: async () => {
+          opened.push(value)
+          return {
+            id: 'pooled',
+            listTools: async () => [],
+            callTool: async () => ({ content: [{ type: 'text' as const, text: value }] }),
+            close: async () => {
+              closed.push(value)
+            },
+          }
+        },
+      }
+    },
+  }
+  const definition = stdioEntry('pooled').definition
+  const signal = new AbortController().signal
+  const one = await leaseMcpConnection(opener, 'revision', definition, signal)
+  const two = await leaseMcpConnection(opener, 'revision', definition, signal)
+  credential = 'rotated'
+  const three = await leaseMcpConnection(opener, 'revision', definition, signal)
+  expect(opened).toEqual(['first', 'rotated'])
+  await one.close()
+  expect(closed).toEqual([])
+  expect(await two.callTool('ping', {}, { signal })).toMatchObject({ content: [{ text: 'first' }] })
+  expect(await three.callTool('ping', {}, { signal })).toMatchObject({ content: [{ text: 'rotated' }] })
+  await two.close()
+  expect(closed).toEqual(['first'])
+  await three.close()
+  await three.close()
+  expect(closed).toEqual(['first', 'rotated'])
 })

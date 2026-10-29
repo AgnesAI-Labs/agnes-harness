@@ -1,5 +1,8 @@
 import { fileURLToPath } from 'node:url'
 import { defaultExclude, defineConfig } from 'vitest/config'
+import { checkToolchain } from './tools/toolchain/check.mjs'
+
+checkToolchain()
 
 const zeroTestReporter = fileURLToPath(new URL('./tools/guards/src/zero-test-reporter.mjs', import.meta.url))
 
@@ -16,6 +19,10 @@ const held = (process.env.AGNES_TEST_EXCLUDE ?? '')
   .map((glob) => glob.trim())
   .filter(Boolean)
 if (held.length > 0) process.stderr.write(`AGNES_TEST_EXCLUDE holds out: ${held.join(', ')}\n`)
+// The optional Jev payload's index.mjs is generated from packages/loop-jev and not committed.
+const ensureJevPayload = fileURLToPath(
+  new URL('./packages/package-manager/tools/ensure-jev-payload.mjs', import.meta.url),
+)
 const exclude = [...defaultExclude, '**/dist/**', ...held]
 
 // Test tiers are chosen by file name. `*.e2e.test.*` starts real daemons, workers or CLI processes
@@ -30,12 +37,20 @@ const heavy = ['**/*.e2e.test.{ts,tsx,jsx}', '**/*.slow.test.{ts,tsx,jsx}']
 export default defineConfig({
   test: {
     exclude,
+    globalSetup: [
+      fileURLToPath(new URL('./tools/native-test-setup.mjs', import.meta.url)),
+      ensureJevPayload,
+      fileURLToPath(new URL('./tools/presentation-test-setup.mjs', import.meta.url)),
+    ],
     reporters: ['default', zeroTestReporter],
     // Windows suites start real PowerShell, daemon and worker processes; macOS hosted runners
     // also hit the default 5s deadline in unrelated suites when the full gate runs concurrently.
     // Keep functional checks finite without changing product-level deadlines.
     // Explicit per-test timeouts and CLI maxWorkers overrides still take precedence.
     ...(['win32', 'darwin'].includes(process.platform) ? { maxWorkers: 2, testTimeout: 15_000 } : {}), // guards-allow-platform: hosted OS test-runner limits.
+    // Hosted runners also run the Vite coordinator and dependency transforms. Keep one isolated
+    // fork per runner; shard across runners rather than sharing all CPUs with test workers.
+    ...(process.env.CI ? { maxWorkers: 1, pool: 'forks' as const } : {}),
     projects: [
       // `extends: true` concatenates the root exclude, so fast only adds the heavy globs.
       { extends: true, test: { name: 'fast', include: ['**/*.test.{ts,tsx,jsx}'], exclude: heavy } },

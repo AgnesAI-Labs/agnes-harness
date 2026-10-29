@@ -1,9 +1,9 @@
-import type { ToolContext, ToolDef } from '@agnes/extension-api'
+import { createWorkspaceInvocationPort, type FsOps, type WorkspaceInvocationSource } from '@agnes/core'
+import { withPhase } from '@agnes/core-common/step/op-state'
+import { defaultToolPolicy, type ToolContext, type ToolDef, type ToolPolicyInput } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it, vi } from 'vitest'
-import { createWorkspaceInvocationPort, type FsOps, type WorkspaceInvocationSource } from '../src/index.js'
 import { ToolRegistry } from '../src/registry/tools.js'
-import { withPhase } from '../src/step/op-state.js'
 import { fakeProvider, type Script, sent, toolTurn, usage } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession, openWorldTool, readTool, shellTool, writeTool } from './helpers/open-session.js'
@@ -29,6 +29,26 @@ const subagentCollectTool = (): ToolDef =>
       requiresApproval: 'never' as const,
     },
     execute: async () => ({ content: [{ type: 'text' as const, text: 'collected' }] }),
+  }) as never
+
+/** A write that only publishes display state. The name is not what the policy consults. */
+const uiSurfaceTool = (name: string): ToolDef =>
+  ({
+    name,
+    description: name,
+    parameters: Type.Object({}),
+    meta: {
+      isReadOnly: false,
+      isDestructive: false,
+      isPresentational: true,
+      isConcurrencySafe: false,
+      isOpenWorld: false,
+      replay: 'idempotent' as const,
+      costHint: undefined,
+      deferLoading: undefined,
+      requiresApproval: 'never' as const,
+    },
+    execute: async () => ({ content: [{ type: 'text' as const, text: 'surface' }] }),
   }) as never
 
 async function atTools(scripts: Script[], registry: ToolRegistry, seams = fakeSeams()) {
@@ -59,7 +79,7 @@ const withTool = (t: unknown) => {
 }
 
 describe('tools phase', () => {
-  it('holds one workspace invocation around context creation and every real tool capability', async () => {
+  it('holds one live workspace invocation after admission around every real tool capability', async () => {
     const events: string[] = []
     let finishHeldRead!: () => void
     let heldReadStarted!: () => void
@@ -118,12 +138,13 @@ describe('tools phase', () => {
         list: async () => [],
       },
     }
-    const release = vi.fn(() => {
+    let liveInvocations = 0
+    const release = () => {
+      liveInvocations--
       events.push('release')
-    })
-    let acquisitions = 0
+    }
     const workspaceInvocation = createWorkspaceInvocationPort(() => {
-      acquisitions++
+      liveInvocations++
       events.push('acquire')
       return { source, release }
     })
@@ -141,6 +162,7 @@ describe('tools phase', () => {
         throw new Error('raw fs stat bypass')
       }),
     }
+    let delayedFiles: ToolContext['sessionFiles']
     const tool = {
       name: 'workspace_probe',
       description: 'workspace probe',
@@ -156,6 +178,7 @@ describe('tools phase', () => {
         requiresApproval: undefined,
       },
       execute: async (_args: unknown, ctx: ToolContext) => {
+        delayedFiles = ctx.sessionFiles
         events.push('tool.context')
         await Promise.all([
           ctx.fs.read('read'),
@@ -188,8 +211,8 @@ describe('tools phase', () => {
     })
     await heldStarted
     await Promise.resolve()
-    expect(acquisitions).toBe(1)
-    expect(events.indexOf('acquire')).toBeLessThan(events.indexOf('tool.context'))
+    expect(liveInvocations).toBe(1)
+    expect(events.lastIndexOf('acquire')).toBeLessThan(events.indexOf('tool.context'))
     expect(events).toEqual(
       expect.arrayContaining([
         'fs.read:read',
@@ -204,43 +227,48 @@ describe('tools phase', () => {
       ]),
     )
     expect(settled).toBe(false)
-    expect(release).not.toHaveBeenCalled()
     for (const operation of Object.values(fallbackFs)) expect(operation).not.toHaveBeenCalled()
 
     finishHeldRead()
     await expect(running).resolves.toEqual({ phase: 'checkpoint' })
-    expect(release).toHaveBeenCalledOnce()
+    expect(liveInvocations).toBe(0)
     expect(events.at(-1)).toBe('release')
+    await expect(delayedFiles!.read('read', { limit: 8 })).resolves.toEqual(new Uint8Array([1]))
+    expect(liveInvocations).toBe(0)
   })
 
   it('leases and revokes cached workspace capabilities for a host-computer-use tool', async () => {
     const seams = fakeSeams()
-    let releases = 0
-    const workspaceInvocation = createWorkspaceInvocationPort(() => ({
-      source: {
-        root: '/w',
-        fs: {
-          read: async () => new Uint8Array(),
-          write: async () => undefined,
-          list: async () => [],
-          stat: async () => ({ kind: 'file' as const, size: 0, mtimeMs: 0 }),
+    let liveInvocations = 0
+    const workspaceInvocation = createWorkspaceInvocationPort(() => {
+      liveInvocations++
+      return {
+        source: {
+          root: '/w',
+          fs: {
+            read: async () => new Uint8Array(),
+            write: async () => undefined,
+            list: async () => [],
+            stat: async () => ({ kind: 'file' as const, size: 0, mtimeMs: 0 }),
+          },
+          ready: async () => ({ confine: async (argv) => argv }),
+          hookSnapshot: async () => ({ workspaceDigest: 'digest', policyRevision: 'policy', hooks: [] }),
+          hookSandbox: seams.sandbox,
+          approval: seams.approval,
+          checkpoint: seams.checkpoint,
         },
-        ready: async () => ({ confine: async (argv) => argv }),
-        hookSnapshot: async () => ({ workspaceDigest: 'digest', policyRevision: 'policy', hooks: [] }),
-        hookSandbox: seams.sandbox,
-        approval: seams.approval,
-        checkpoint: seams.checkpoint,
-      },
-      release: () => {
-        releases++
-      },
-    }))
+        release: () => {
+          liveInvocations--
+        },
+      }
+    })
     let cached!: ToolContext
     const tool = {
       name: 'computer_use',
       description: 'computer',
       parameters: Type.Object({}),
       meta: {
+        requiresImageInput: true,
         isReadOnly: false,
         isDestructive: false,
         isConcurrencySafe: false,
@@ -295,7 +323,7 @@ describe('tools phase', () => {
     await opened.session.acceptInput()
     await opened.session.runInference()
     await expect(opened.session.runToolsPhase()).resolves.toEqual({ phase: 'checkpoint' })
-    expect(releases).toBe(1)
+    expect(liveInvocations).toBe(0)
     await expect(cached.fs.stat('.')).rejects.toThrow('E_WORKSPACE_CLOSED')
     await expect(cached.exec(['echo'])).rejects.toThrow('E_WORKSPACE_CLOSED')
     await expect(cached.sandbox.confine(['echo'])).rejects.toThrow('E_WORKSPACE_CLOSED')
@@ -340,19 +368,18 @@ describe('tools phase', () => {
   it('asks approval for a destructive tool; a rejection yields an error result and no effect', async () => {
     const ok = await atTools([toolTurn('shell', { command: 'rm' })], withTool(shellTool()))
     await ok.session.runToolsPhase()
-    const asked = await ok.log.scan({ type: 'approval/asked', limit: 5 })
+    const asked = await ok.session.decisions.list()
     expect(asked).toHaveLength(1)
-    expect(asked[0]?.data).toMatchObject({ kind: 'tool', risk: 'destructive' })
-    // The line the approver reads is built by summarizeCall: command in front, nothing cut silently.
-    expect(asked[0]?.data).toMatchObject({ summary: 'shell rm' })
-    expect((await ok.log.scan({ type: 'approval/decided', limit: 5 }))[0]?.data).toMatchObject({
-      verdict: 'allowed-once',
-      via: 'sync',
-    })
+    expect(asked[0]?.request.spec.purpose).toBe('tool.permission')
+    // The human header is separate from the complete authorization subject.
+    expect(asked[0]?.request.spec.prompt).toBe('Run command — The tool declares an action requiring approval')
+    expect(asked[0]?.result).toMatchObject({ reason: 'answered', response: { option: 'allowed-once' } })
     const no = await atTools(
       [toolTurn('shell', { command: 'rm' })],
       withTool(shellTool()),
-      fakeSeams({ approval: { ask: async () => 'rejected', resume: async () => null } }),
+      fakeSeams({
+        approval: { ask: async () => ({ verdict: 'rejected', answeredBy: actor }) },
+      }),
     )
     await no.session.runToolsPhase()
     // Only the inference's intent: a refused call never becomes an effect, so there is nothing to settle.
@@ -363,107 +390,48 @@ describe('tools phase', () => {
     })
   })
 
-  // The reason table: each way an approval can end is its own fact on the ledger and its own words
-  // for the model. A bare verdict from a seam that gives no reason keeps the line it always had.
-  it.each([
-    {
-      answer: { verdict: 'rejected', reason: 'user_rejected' },
-      decided: { verdict: 'rejected', reason: 'user_rejected' },
-      code: 'APPROVAL_REJECTED',
-      text: /^the user rejected this action; do not retry the same call without asking$/,
+  it.each(['deadline', 'no-approver', 'stopped', 'policy_denied', 'invalid-answer'] as const)(
+    'keeps an undelivered %s request pending without fabricating a human refusal',
+    async (reason) => {
+      const t = await atTools(
+        [toolTurn('shell', { command: 'rm' })],
+        withTool(shellTool()),
+        fakeSeams({ approval: { ask: async () => ({ verdict: 'unavailable', reason }) } }),
+      )
+      expect(await t.session.runToolsPhase()).toMatchObject({ reason: 'parked' })
+      expect((await t.session.decisions.list())[0]?.result).toBeNull()
+      expect(await t.log.scan({ type: 'tool/result', limit: 5 })).toEqual([])
+      expect(await t.log.scan({ type: 'effect/intent', limit: 10 })).toHaveLength(1)
     },
-    {
-      answer: { verdict: 'rejected', reason: 'timeout' },
-      decided: { verdict: 'rejected', reason: 'timeout' },
-      code: 'APPROVAL_REJECTED',
-      text: /^no one answered the approval within 60s, so the action was not run; ask the user before trying again$/,
-    },
-    {
-      answer: 'unavailable',
-      decided: { verdict: 'unavailable', reason: 'no_approver' },
-      code: 'APPROVAL_UNAVAILABLE',
-      text: /^no client was connected to approve this action, so it was not run; tell the user it needs their approval$/,
-    },
-    {
-      answer: { verdict: 'cancelled', reason: 'stopped' },
-      decided: { verdict: 'cancelled', reason: 'stopped' },
-      code: 'CANCELLED',
-      text: /^cancelled while waiting for approval$/,
-    },
-    {
-      answer: { verdict: 'rejected', reason: 'policy_denied' },
-      decided: { verdict: 'rejected', reason: 'policy_denied' },
-      code: 'APPROVAL_REJECTED',
-      text: /^blocked by the command policy$/,
-    },
-    // The refusal a reconnecting client used to produce: nobody saw the question, so the model must
-    // not read it as the user's answer and retry the same call over and over.
-    {
-      answer: { verdict: 'rejected', reason: 'approver_failed' },
-      decided: { verdict: 'rejected', reason: 'approver_failed' },
-      code: 'APPROVAL_REJECTED',
-      text: /^the approval request failed before anyone answered it .*the user did not reject it/,
-    },
-    {
-      answer: { verdict: 'cancelled', reason: 'client_cancelled' },
-      decided: { verdict: 'cancelled', reason: 'client_cancelled' },
-      code: 'CANCELLED',
-      text: /^the user's client withdrew the approval request before it was answered/,
-    },
-    {
-      answer: 'rejected',
-      decided: { verdict: 'rejected' },
-      code: 'APPROVAL_REJECTED',
-      text: /^approval rejected$/,
-    },
-  ] as const)('records $decided and tells the model why when approval ends as $answer', async (row) => {
-    const t = await atTools(
-      [toolTurn('shell', { command: 'rm' })],
-      withTool(shellTool()),
-      fakeSeams({ approval: { ask: async () => row.answer as never, resume: async () => null } }),
-    )
-    await t.session.runToolsPhase()
-    const decided = (await t.log.scan({ type: 'approval/decided', limit: 5 }))[0]?.data as Record<
-      string,
-      unknown
-    >
-    expect(decided).toMatchObject({ ...row.decided, via: 'sync' })
-    if (!('reason' in row.decided)) expect(decided).not.toHaveProperty('reason')
-    const result = (await t.log.scan({ type: 'tool/result', limit: 5 }))[0]?.data as {
-      code: string
-      content: Array<{ text: string }>
-    }
-    expect(result.code).toBe(row.code)
-    expect(result.content[0]?.text).toMatch(row.text)
-    expect(await t.log.scan({ type: 'effect/intent', limit: 10 })).toHaveLength(1)
-  })
+  )
 
-  it('an abort while the approval is open is cancelled for the stop, not rejected', async () => {
-    let abort!: () => void
-    const t = await atTools(
-      [toolTurn('shell', { command: 'rm' })],
-      withTool(shellTool()),
-      fakeSeams({
-        approval: {
-          ask: () => {
-            queueMicrotask(abort)
-            return new Promise(() => undefined)
+  it.each([false, true])(
+    'an abort while the approval is open is cancelled for the stop, not rejected (late answer=%s)',
+    async (lateAnswer) => {
+      let abort!: () => void
+      const t = await atTools(
+        [toolTurn('shell', { command: 'rm' })],
+        withTool(shellTool()),
+        fakeSeams({
+          approval: {
+            ask: () => {
+              queueMicrotask(abort)
+              if (lateAnswer) return Promise.resolve({ verdict: 'allowed-once' as const, answeredBy: actor })
+              return new Promise(() => undefined)
+            },
           },
-          resume: async () => null,
-        },
-      }),
-    )
-    abort = () => void t.session.abort(actor)
-    await t.session.runToolsPhase()
-    expect((await t.log.scan({ type: 'approval/decided', limit: 5 }))[0]?.data).toMatchObject({
-      verdict: 'cancelled',
-      via: 'sync',
-      reason: 'stopped',
-    })
-    expect((await t.log.scan({ type: 'tool/result', limit: 5 }))[0]?.data).toMatchObject({
-      code: 'CANCELLED',
-    })
-  })
+        }),
+      )
+      abort = () => void t.session.abort(actor)
+      await expect(t.session.runToolsPhase()).rejects.toBe('stopped')
+      await t.session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect((await t.session.decisions.list())[0]?.result).toMatchObject({ reason: 'stopped' })
+      expect((await t.log.scan({ type: 'tool/result', limit: 5 }))[0]?.data).toMatchObject({
+        code: 'CANCELLED',
+      })
+      expect(await t.log.scan({ type: 'effect/dispatched', limit: 5 })).toEqual([])
+    },
+  )
 
   it('an approvalRequest hook can raise the risk/summary an approver is shown', async () => {
     let seenRequest: unknown
@@ -471,9 +439,8 @@ describe('tools phase', () => {
       approval: {
         ask: async (req) => {
           seenRequest = req
-          return 'allowed-once'
+          return { verdict: 'allowed-once', answeredBy: actor }
         },
-        resume: async () => null,
       },
     })
     const s = await atTools([toolTurn('shell', { command: 'rm' })], withTool(shellTool()), seams)
@@ -485,15 +452,57 @@ describe('tools phase', () => {
           argv: { command: 'rm' },
           risk: 'destructive',
           actor: expect.objectContaining({ id: 'u' }),
-          summary: expect.stringContaining('shell'),
+          summary: 'Run command — The tool declares an action requiring approval',
         })
-        return { request: { risk: 'always', summary: 'operator flagged this' } }
+        return {
+          request: { risk: 'always', summary: 'operator flagged this' },
+          rewrittenBy: ['agnes/reviewer'],
+        }
       },
     }
     await s.session.runToolsPhase()
     expect(seenRequest).toMatchObject({ risk: 'always', summary: 'operator flagged this' })
-    const asked = await s.log.scan({ type: 'approval/asked', limit: 5 })
-    expect(asked[0]?.data).toMatchObject({ risk: 'always', summary: 'operator flagged this' })
+    const spec = (await s.session.decisions.list())[0]?.request.spec
+    expect(spec?.prompt).toBe('operator flagged this')
+    // The platform's own summary stays on the question beside the rewrite, with who rewrote it.
+    expect(spec?.subject).toMatchObject({
+      risk: 'always',
+      rewrite: {
+        by: ['agnes/reviewer'],
+        summary: 'Run command — The tool declares an action requiring approval',
+      },
+    })
+    // The approval card is built from the same record, so the person is shown both.
+    expect((await s.session.projectUI()).nodes.find((node) => node.kind === 'approval')).toMatchObject({
+      summary: 'operator flagged this',
+      risk: 'always',
+      rewrite: {
+        by: ['agnes/reviewer'],
+        summary: 'Run command — The tool declares an action requiring approval',
+      },
+    })
+  })
+
+  it('an approvalRequest hook cannot lower the risk an approver is shown', async () => {
+    let seenRequest: unknown
+    const seams = fakeSeams({
+      approval: {
+        ask: async (req) => {
+          seenRequest = req
+          return { verdict: 'allowed-once', answeredBy: actor }
+        },
+      },
+    })
+    const s = await atTools([toolTurn('shell', { command: 'rm' })], withTool(shellTool()), seams)
+    s.session.hooks = {
+      ...s.session.hooks,
+      approvalRequest: async () => ({ request: { risk: 'budget' } }),
+    }
+    await s.session.runToolsPhase()
+    expect(seenRequest).toMatchObject({ risk: 'destructive' })
+    const subject = (await s.session.decisions.list())[0]?.request.spec.subject
+    expect(subject).toMatchObject({ risk: 'destructive' })
+    expect(subject).not.toHaveProperty('rewrite')
   })
 
   it('allowed-session covers later argv for the same owner/session/tool/scope', async () => {
@@ -502,9 +511,8 @@ describe('tools phase', () => {
       approval: {
         ask: async () => {
           asks++
-          return 'allowed-session'
+          return { verdict: 'allowed-session', answeredBy: actor }
         },
-        resume: async () => null,
       },
     })
     const s = await atTools(
@@ -533,9 +541,8 @@ describe('tools phase', () => {
       approval: {
         ask: async () => {
           asks++
-          return 'allowed-once'
+          return { verdict: 'allowed-once', answeredBy: actor }
         },
-        resume: async () => null,
       },
     })
     const s = await atTools([toolTurn('shell', { command: 'rm' })], withTool(shellTool()), seams)
@@ -573,9 +580,8 @@ describe('tools phase', () => {
         approval: {
           ask: async () => {
             asks++
-            return 'allowed-once'
+            return { verdict: 'allowed-once', answeredBy: actor }
           },
-          resume: async () => null,
         },
       }),
     )
@@ -606,17 +612,14 @@ describe('tools phase', () => {
       fakeSeams({
         approval: {
           ask: async () => ({ ticket: 'T1', expiresAt: '2026-09-08T00:00:00Z' }),
-          resume: async () => null,
         },
       }),
     )
     expect(await s.session.runToolsPhase()).toEqual({ phase: 'terminal', reason: 'parked' })
     const tail = (await s.log.scan({ fromSeq: s.log.lastSeq - 2, limit: 3 })).map((e) => e.type)
-    expect(tail).toEqual(['approval/asked', 'step/end', 'turn/end'])
+    expect(tail).toEqual(['x/core/decision-delivery', 'step/end', 'turn/end'])
     expect(s.session.op()).toBeNull()
-    expect((await s.log.scan({ type: 'approval/asked', limit: 5 }))[0]?.data).toMatchObject({
-      pending: { ticket: 'T1' },
-    })
+    expect((await s.session.decisions.list())[0]?.result).toBeNull()
     expect((await s.log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'parked' })
   })
 
@@ -731,6 +734,30 @@ describe('tools phase', () => {
     // The code and the settlement keep a possibly-applied mutation from ever being replayed.
     expect(res).toMatchObject({ isError: true, code: 'TOOL_OUTCOME_UNKNOWN' })
     expect(res.content[0]?.text).toMatch(/5 ms limit.*aborted.*partial.*in the background/s)
+    expect((await s.log.scan({ type: 'effect/settled', limit: 10 })).at(-1)?.data).toMatchObject({
+      outcome: 'unknown',
+    })
+  })
+
+  // What an MCP tool that changes things does when its server stops answering after the request left:
+  // it throws. The call settles unknown and is not dispatched again, so the side effect cannot repeat.
+  it('a mutating tool that fails after sending stays unknown and runs once', async () => {
+    let runs = 0
+    const s = await atTools(
+      [toolTurn('shell', { command: 'deploy' })],
+      withTool(
+        shellTool(async () => {
+          runs++
+          throw new Error('mcp server gh did not answer the call: Request timed out')
+        }),
+      ),
+    )
+    await s.session.runToolsPhase()
+    expect(runs).toBe(1)
+    expect((await s.log.scan({ type: 'tool/result', limit: 5 }))[0]?.data).toMatchObject({
+      isError: true,
+      code: 'TOOL_OUTCOME_UNKNOWN',
+    })
     expect((await s.log.scan({ type: 'effect/settled', limit: 10 })).at(-1)?.data).toMatchObject({
       outcome: 'unknown',
     })
@@ -854,6 +881,14 @@ describe('tools phase', () => {
       expect(result).toMatchObject({ isError: true, code: 'TOOL_OUTCOME_UNKNOWN' })
       expect(result.content[0]?.text).toMatch(/5 ms limit.*aborted/s)
       expect(settled).toMatchObject({ outcome: 'unknown' })
+      expect(
+        (await s.session.decisions.list()).filter(
+          (value) => value.request.spec.purpose === 'unknown-outcome',
+        ),
+      ).toEqual([])
+      expect((await s.log.scan({ type: 'x/core/unknown-outcome', limit: 5 }))[0]?.data).toMatchObject({
+        waitEndedBy: 'stopped',
+      })
     })
 
     it('is still recorded as cancelled, at once, for a read-only call', async () => {
@@ -1055,9 +1090,8 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
       approval: {
         ask: async (req) => {
           asks.push({ ...(req.tool ? { name: req.tool.name } : {}), taint: req.taint })
-          return 'allowed-once'
+          return { verdict: 'allowed-once', answeredBy: actor }
         },
-        resume: async () => null,
       },
     })
 
@@ -1083,10 +1117,77 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
     await s.session.step() // the second inference, which plans the write
     expect(await s.session.runToolsPhase()).toEqual({ phase: 'checkpoint' })
     expect(asks).toEqual([{ name: 'write_note', taint: true }])
-    expect((await s.log.scan({ type: 'approval/asked', limit: 10 }))[0]?.data).toMatchObject({
-      risk: 'destructive',
-      kind: 'tool',
+    expect((await s.session.decisions.list())[0]?.request.spec.purpose).toBe('tool.permission')
+  })
+
+  /**
+   * After a deferred business tool is allowed, SC1 queues the receipt as system input. That taints
+   * the continuation. ui_update declares isPresentational, so publishing the next revision is not a
+   * second permission. The flag has to be on the policy the tools phase reads; the tool name is not.
+   */
+  it('a tainted turn does not escalate a presentational ui_update after a deferred business result', async () => {
+    const registry = new ToolRegistry()
+    registry.add(openWorldTool(), { source: 's', trust: 'builtin' })
+    registry.add(uiSurfaceTool('ui_update'), { source: 's', trust: 'builtin' })
+    const asks: Array<{ name?: string; taint: boolean }> = []
+    const seams = fakeSeams({
+      approval: {
+        ask: async (req) => {
+          asks.push({ ...(req.tool ? { name: req.tool.name } : {}), taint: req.taint })
+          return { verdict: 'allowed-once', answeredBy: actor }
+        },
+      },
     })
+
+    const s = await atTools([toolTurn('fetch_page', {}), toolTurn('ui_update', {})], registry, seams)
+    await s.session.runToolsPhase()
+    expect(s.tracker.state.taint.get('main')).toBe(true)
+    await s.session.step()
+    await s.session.step()
+    expect(await s.session.runToolsPhase()).toEqual({ phase: 'checkpoint' })
+    expect(asks).toEqual([])
+    expect(await s.log.scan({ type: 'approval/asked', limit: 10 })).toHaveLength(0)
+    const results = await s.log.scan({ type: 'tool/result', limit: 10 })
+    expect(results.map((row) => (row.data as { isError?: boolean }).isError)).toEqual([false, false])
+  })
+
+  it('a tainted turn allows a presentational tool and still asks when approval is always required', async () => {
+    const signal = new AbortController().signal
+    const decide = (name: string, policy: Partial<ToolPolicyInput['policy']> = {}, tainted = true) =>
+      defaultToolPolicy.decide(
+        {
+          sessionKey: 'k',
+          workspaceRoot: '/w',
+          cwd: '/w',
+          actor,
+          call: { id: 'c', name, args: {} },
+          policy: {
+            isReadOnly: false,
+            isDestructive: false,
+            replay: 'idempotent',
+            requiresApproval: 'never',
+            approvalScopes: [],
+            ...policy,
+          },
+          tainted,
+          fullAccess: false,
+          approvalMode: 'manual',
+        },
+        signal,
+      )
+    expect(await decide('publish_surface', { isPresentational: true })).toMatchObject({ effect: 'allow' })
+    expect(await decide('ui_update')).toMatchObject({ effect: 'ask' })
+    expect(
+      await decide('publish_surface', { isPresentational: true, requiresApproval: 'always' }),
+    ).toMatchObject({ effect: 'ask' })
+    expect(await decide('write_note')).toMatchObject({ effect: 'ask' })
+    expect(await decide('fde_finance_approve', { requiresApproval: 'always' })).toMatchObject({
+      effect: 'ask',
+    })
+    expect(
+      await decide('write_note', { isDestructive: true, requiresApproval: 'destructive' }),
+    ).toMatchObject({ effect: 'ask' })
+    expect(await decide('write_note', {}, false)).toMatchObject({ effect: 'allow' })
   })
 
   /**
@@ -1105,9 +1206,8 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
       approval: {
         ask: async (req) => {
           asks.push({ ...(req.tool ? { name: req.tool.name } : {}), taint: req.taint })
-          return 'allowed-once'
+          return { verdict: 'allowed-once', answeredBy: actor }
         },
-        resume: async () => null,
       },
     })
 
@@ -1124,72 +1224,6 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
     })
   })
 
-  /**
-   * The todo tool writes the session's own plan and declares requiresApproval:'never'. A tainted turn
-   * used to ask about it anyway - with risk 'destructive', because every band but 'always' was
-   * written as that - and the call was refused. A declared 'never' is the author's word that no call
-   * of the tool needs a person; taint escalates only a tool that left the band to the kernel.
-   */
-  it('a tainted turn never routes a tool that declares requiresApproval never to approval', async () => {
-    const planTool = {
-      name: 'plan_note',
-      description: 'plan',
-      parameters: Type.Object({}),
-      meta: {
-        isReadOnly: false,
-        isDestructive: false,
-        isConcurrencySafe: false,
-        isOpenWorld: false,
-        replay: 'idempotent' as const,
-        costHint: undefined,
-        deferLoading: undefined,
-        requiresApproval: 'never' as const,
-      },
-      execute: async () => ({ content: [{ type: 'text' as const, text: 'planned' }] }),
-    } as never
-    const registry = new ToolRegistry()
-    registry.add(openWorldTool(), { source: 's', trust: 'builtin' })
-    registry.add(planTool, { source: 's', trust: 'builtin' })
-    registry.add(writeTool(), { source: 's', trust: 'builtin' })
-    const asks: string[] = []
-    const seams = fakeSeams({
-      approval: {
-        ask: async (req) => {
-          asks.push(req.tool?.name ?? req.kind)
-          return 'allowed-once'
-        },
-        resume: async () => null,
-      },
-    })
-    const s = await atTools(
-      [toolTurn('fetch_page', {}), toolTurn('plan_note', {}), toolTurn('write_note', { text: 'a' })],
-      registry,
-      seams,
-    )
-    await s.session.runToolsPhase()
-    expect(s.tracker.state.taint.get('main')).toBe(true)
-    await s.session.step() // checkpoint -> inference
-    await s.session.step() // the second inference, which plans plan_note
-    expect(await s.session.runToolsPhase()).toEqual({ phase: 'checkpoint' })
-    expect(asks).toEqual([])
-    expect((await s.log.scan({ type: 'tool/result', limit: 10 })).at(-1)?.data).toMatchObject({
-      isError: false,
-    })
-    // A tool that declared nothing still asks once the turn is tainted: its band is the kernel's.
-    await s.session.step()
-    await s.session.step()
-    expect(await s.session.runToolsPhase()).toEqual({ phase: 'checkpoint' })
-    expect(asks).toEqual(['write_note'])
-    const calls = await s.log.scan({ type: 'tool/call', limit: 10 })
-    const band = (name: string) =>
-      (
-        calls.find((e) => (e.data as { name: string }).name === name)?.data as
-          | { resolvedPolicy: { requiresApproval: string } }
-          | undefined
-      )?.resolvedPolicy.requiresApproval
-    expect([band('plan_note'), band('write_note')]).toEqual(['never', 'destructive'])
-  })
-
   /** Yolo overrides an ordinary destructive ask too, not just the subagent/taint exemptions above. */
   it('yolo skips the ask for an ordinary destructive tool', async () => {
     const asks: string[] = []
@@ -1197,13 +1231,12 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
       approval: {
         ask: async (req) => {
           asks.push(req.tool?.name ?? '')
-          return 'allowed-once'
+          return { verdict: 'allowed-once', answeredBy: actor }
         },
-        resume: async () => null,
       },
     })
     const s = await atTools([toolTurn('shell', { command: 'rm' })], withTool(shellTool()), seams)
-    s.session.yolo = true
+    await s.session.setYolo(true, actor)
     await s.session.runToolsPhase()
     expect(asks).toEqual([])
     expect(await s.log.scan({ type: 'approval/asked', limit: 10 })).toHaveLength(0)
@@ -1245,14 +1278,13 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
       fakeSeams({
         approval: {
           ask: async () => ({ ticket: 'T1', expiresAt: '2026-09-08T00:00:00Z' }),
-          resume: async () => null,
         },
       }),
     )
     expect(await s.session.runToolsPhase()).toEqual({ phase: 'terminal', reason: 'parked' })
     expect(s.session.op()).toBeNull()
     const tail = (await s.log.scan({ fromSeq: s.log.lastSeq - 3, limit: 4 })).map((e) => e.type)
-    expect(tail).toEqual(['approval/asked', 'approval/asked', 'step/end', 'turn/end'])
+    expect(tail).toEqual(['x/core/decision-delivery', 'x/core/decision-delivery', 'step/end', 'turn/end'])
     expect((await s.log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'parked' })
     // Exactly one step/end and one turn/end: the batch is closed once, not once per member.
     expect(await s.log.scan({ type: 'step/end', limit: 10 })).toHaveLength(1)
@@ -1289,7 +1321,6 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
       seams: fakeSeams({
         approval: {
           ask: async () => ({ ticket: 'T1', expiresAt: '2026-09-08T00:00:00Z' }),
-          resume: async () => null,
         },
       }),
     })
@@ -1342,7 +1373,6 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
       fakeSeams({
         approval: {
           ask: async () => ({ ticket: 'T1', expiresAt: '2026-09-08T00:00:00Z' }),
-          resume: async () => null,
         },
       }),
     )

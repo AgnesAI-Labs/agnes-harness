@@ -1,7 +1,11 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
+  httpRpcError,
+  normalizeRpcError,
   RESOURCE_CONTROL_METHODS,
   type ResourceControlMethodName,
+  type RpcError,
+  rpcError,
   validateResourceControlCall,
 } from '@agnes/protocol'
 import { RESOURCE_ALL_PERMISSIONS } from './permissions.js'
@@ -43,12 +47,14 @@ const ACTIONS = {
 export type ResourceAdminSurfaceAction = keyof typeof ACTIONS
 export type ResourceAdminSurfaceOptions = Readonly<{
   origin: string
-  /** @deprecated Ignored legacy input; local admin access is exact-origin/Host bound. */
+  /** @deprecated Ignored legacy input; local admin access is exact-origin/Host bound (browser-only threat). */
   token?: string
   profile: string
   clientId: string
   /** Private Node SDK dispatch supplied by the trusted local launcher. */
   invoke(action: ResourceAdminSurfaceAction, params: unknown): Promise<unknown>
+  /** Resolves false while the backend is unreachable; the request then reports `unavailable`, never `internal`. */
+  available?(): Promise<boolean>
   /** @deprecated Retained only for source compatibility with legacy test callers. */
   clock?: () => number
 }>
@@ -78,8 +84,8 @@ function reply(response: ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' })
   response.end(JSON.stringify(body))
 }
-function error(response: ServerResponse, status: number, code: string, message: string): void {
-  reply(response, status, { error: { code, message } })
+function error(response: ServerResponse, status: number, code: string, _message: string): void {
+  reply(response, status, { error: httpRpcError(status, code) })
 }
 function unavailable(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false
@@ -162,6 +168,12 @@ export function createResourceAdminSurface(options: ResourceAdminSurfaceOptions)
         error(response, 403, 'E_RESOURCE_ADMIN_ORIGIN', 'The resource admin request origin is not valid.')
         return true
       }
+      if (options.available && !(await options.available())) {
+        reply(response, 503, {
+          error: normalizeRpcError(rpcError('SEMANTIC_REJECTED', { code: 'E_HOST_CLOSED' })),
+        })
+        return true
+      }
       const action = url.pathname.slice(PREFIX.length)
       if (action === 'context' && request.method === 'GET') {
         try {
@@ -215,6 +227,13 @@ export function createResourceAdminSurface(options: ResourceAdminSurfaceOptions)
         }
         reply(response, 200, result)
       } catch (cause) {
+        const rpc = (cause as { rpc?: RpcError })?.rpc
+        if (rpc) {
+          reply(response, rpc.code === -32006 ? 403 : rpc.code === -32011 ? 409 : 502, {
+            error: normalizeRpcError(rpc),
+          })
+          return true
+        }
         if (cause instanceof ResourceAdminRequestError) {
           if (cause.reason === 'body-too-large')
             error(

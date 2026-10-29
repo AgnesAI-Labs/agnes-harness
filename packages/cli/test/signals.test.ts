@@ -129,6 +129,43 @@ describe('signal ladder', () => {
     expect(exits).toEqual([130])
   })
 
+  it('a SIGINT the terminal also delivers to a foreground editor is ignored, other signals are not', async () => {
+    const proc = new EventEmitter()
+    const seen: string[] = []
+    const exits: number[] = []
+    let editing = true
+    installSignalLadder(
+      {
+        cancel: async () => {
+          seen.push('cancel')
+        },
+        close: async () => undefined,
+      },
+      { graceMs: 1000, exit: (c) => exits.push(c), proc, ignoreInterrupt: () => editing },
+    )
+    proc.emit('SIGINT')
+    await tick(10)
+    expect(seen).toEqual([])
+    expect(exits).toEqual([])
+    editing = false
+    proc.emit('SIGINT')
+    await tick(10)
+    expect(seen).toEqual(['cancel'])
+    expect(exits).toEqual([130])
+  })
+
+  it('SIGTERM still shuts down while the interrupt is being ignored', async () => {
+    const proc = new EventEmitter()
+    const exits: number[] = []
+    installSignalLadder(
+      { cancel: async () => undefined, close: async () => undefined },
+      { graceMs: 1000, exit: (c) => exits.push(c), proc, ignoreInterrupt: () => true },
+    )
+    proc.emit('SIGTERM')
+    await tick(10)
+    expect(exits).toEqual([143])
+  })
+
   it('the uninstaller takes every handler back off, so a later signal reaches nothing', async () => {
     const proc = new EventEmitter()
     const exits: number[] = []

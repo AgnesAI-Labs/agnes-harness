@@ -77,11 +77,25 @@ it('fans daemon rebuild hints to the same-origin plugin SSE stream', async () =>
     if (!reader) throw new Error('SSE response has no body')
     const first = new TextDecoder().decode((await reader.read()).value)
     expect(first).toContain('event: graph')
+    const initial = await (await fetch(`${server.url}/plugins/changes`)).json()
+    expect(initial).toMatchObject({ cursor: 0, reset: false, events: [] })
     emit?.({ packageId: 'example/clock', revision: 'sha256-next' })
     const second = new TextDecoder().decode((await reader.read()).value)
     expect(second).toContain('event: rebuilt')
     expect(second).toContain('"id":"example/clock"')
     expect(second).toContain('"rev":"sha256-next"')
+    const nextUrl = `${server.url}/plugins/changes?epoch=${initial.epoch}&cursor=0`
+    const pages = await Promise.all(Array.from({ length: 8 }, () => fetch(nextUrl).then((r) => r.json())))
+    expect(pages.every((page) => page.cursor === 1 && page.events[0]?.id === 'example/clock')).toBe(true)
+    expect(
+      await (await fetch(`${server.url}/plugins/changes?epoch=${initial.epoch}&cursor=1`)).json(),
+    ).toMatchObject({ reset: false, events: [] })
+    expect(await (await fetch(`${server.url}/plugins/changes?epoch=old&cursor=1`)).json()).toMatchObject({
+      reset: true,
+    })
+    expect((await fetch(`${server.url}/plugins/changes?cursor=NaN`)).status).toBe(400)
+    for (let i = 0; i < 257; i++) emit?.({ packageId: 'example/clock', revision: String(i) })
+    expect(await (await fetch(nextUrl)).json()).toMatchObject({ reset: true, cursor: 258 })
   } finally {
     controller.abort()
     await server.close()
@@ -219,9 +233,9 @@ it('issues a fresh CSP style nonce for each served HTML document', async () => {
       } else {
         expect(directives['img-src']).toBeUndefined()
         expect(directives['frame-src']).toBeUndefined()
-        expect(policy).not.toContain('blob:')
       }
       expect(directives['default-src']).toEqual(["'self'"])
+      expect(directives['media-src']).toEqual(["'self'", 'blob:'])
       expect(directives['script-src']).toEqual(["'self'"])
       expect(directives['style-src']).toEqual(["'self'", `'nonce-${nonce}'`])
 
@@ -235,42 +249,41 @@ it('issues a fresh CSP style nonce for each served HTML document', async () => {
   }
 })
 
-it('lets only the workbench document reach the Agnes MHS hub', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'agnes-web-hub-'))
+it('hands each page load the current daemon address and keeps the last one when a refresh fails', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agnes-web-ws-refresh-'))
   const port = await availablePort()
-  await expect(
-    createWebServer({ root, wsUrl: 'ws://127.0.0.1:4321', port, hubOrigin: 'http://hub/path' }),
-  ).rejects.toThrow('AGNES_HUB_ORIGIN')
+  let next: string | Error = 'ws://127.0.0.1:4331'
   const server = await createWebServer({
     root,
-    wsUrl: 'ws://127.0.0.1:4321',
+    wsUrl: 'ws://127.0.0.1:4330',
+    refreshWsUrl: async () => {
+      if (next instanceof Error) throw next
+      return next
+    },
     port,
     origin: `http://127.0.0.1:${port}`,
-    hubOrigin: 'http://192.168.1.20:4180/',
   })
   try {
-    const nonceMarker = '<meta name="agnes-csp-nonce" content="__AGNES_CSP_NONCE__">'
-    await writeFile(join(root, 'index.html'), `${nonceMarker}<meta data-ws="__AGNES_WS_URL__">`)
-    await writeFile(join(root, 'admin.html'), nonceMarker)
-    const directives = (policy: string | null) =>
-      Object.fromEntries(
-        (policy ?? '').split(';').map((part) => {
-          const [name, ...values] = part.trim().split(/\s+/)
-          return [name, values]
-        }),
-      )
-    const page = await fetch(`${server.url}/`)
-    expect(page.status).toBe(200)
-    const workbench = directives(page.headers.get('content-security-policy'))
-    expect(workbench['connect-src']).toEqual([
-      "'self'",
-      'http://192.168.1.20:4180',
-      'ws://192.168.1.20:4180',
-      'ws://127.0.0.1:4321',
-    ])
-    expect(workbench['media-src']).toEqual(["'self'", 'blob:', 'http://192.168.1.20:4180'])
-    const admin = (await fetch(`${server.url}/admin/plugins`)).headers.get('content-security-policy')
-    expect(admin).not.toContain('192.168.1.20')
+    await writeFile(
+      join(root, 'index.html'),
+      '<meta name="agnes-csp-nonce" content="__AGNES_CSP_NONCE__"><meta data-ws="__AGNES_WS_URL__">',
+    )
+    const load = async () => {
+      const page = await fetch(`${server.url}/`)
+      return {
+        ws: (await page.text()).match(/data-ws="([^"]+)"/)?.[1],
+        csp: page.headers.get('content-security-policy') ?? '',
+      }
+    }
+    const first = await load()
+    expect(first.ws).toBe('ws://127.0.0.1:4331/')
+    expect(first.csp).toContain('ws://127.0.0.1:4331')
+    expect(first.csp).not.toContain('ws://127.0.0.1:4330')
+    next = new Error('daemon is gone')
+    expect((await load()).ws).toBe('ws://127.0.0.1:4331/')
+    // A non-loopback address is refused rather than advertised to the browser.
+    next = 'ws://example.com:4331'
+    expect((await load()).ws).toBe('ws://127.0.0.1:4331/')
   } finally {
     await server.close()
     await rm(root, { recursive: true, force: true })
@@ -329,7 +342,7 @@ it('serves the fixed resource management page and fails its BFF closed without a
   }
 })
 
-it('serves esbuild shared chunks and still rejects arbitrary files', async () => {
+it('serves esbuild shared and lazy entry chunks and still rejects arbitrary files', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agnes-web-chunk-'))
   const port = await availablePort()
   const server = await createWebServer({
@@ -347,9 +360,30 @@ it('serves esbuild shared chunks and still rejects arbitrary files', async () =>
     // 侧栏品牌位与过程行头像用的位图：它必须被放行并以 image/png 提供，
     // 否则 /brand-mark.png 会静默 404，mask 拿不到图，logo 与头像就是空的。
     await writeFile(join(root, 'brand-mark.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+    await writeFile(join(root, 'favicon.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
     await writeFile(join(root, 'secret.png'), 'not an allowlisted asset\n')
     // Code splitting emits hashed chunks that every lazy pane imports at runtime; a 404 here would
     // break the admin panels only once the user opened them, so pin the route.
+    for (const name of [
+      'terminal-L5S4GH6L.js',
+      'future-panel-A1B2C3D4.js',
+      'future-panel-A1B2C3D4.css',
+      'terminal-L5S4GH6L.js.map',
+    ]) {
+      await writeFile(join(root, name), name.endsWith('.map') ? '{}' : '/* lazy asset */')
+      const response = await fetch(`${server.url}/${name}`)
+      expect(response.status, name).toBe(200)
+      expect(await response.text()).toBeTruthy()
+      expect(response.headers.get('content-security-policy')).toContain("script-src 'self'")
+    }
+    for (const name of [
+      'terminal.js',
+      'terminal-short.js',
+      'terminal-L5S4GH6L.txt',
+      'private/terminal-L5S4GH6L.js',
+    ]) {
+      expect((await fetch(`${server.url}/${name}`)).status, name).toBe(404)
+    }
     const chunk = await fetch(`${server.url}/chunk-ABCDEF12.js`)
     expect(chunk.status).toBe(200)
     expect(await chunk.text()).toContain('shared')
@@ -363,6 +397,14 @@ it('serves esbuild shared chunks and still rejects arbitrary files', async () =>
     const mark = await fetch(`${server.url}/brand-mark.png`)
     expect(mark.status).toBe(200)
     expect(mark.headers.get('content-type')).toBe('image/png; charset=utf-8')
+    // The tab icon is its own allowlisted file; the white mask cannot double as one.
+    const legacyFavicon = await fetch(`${server.url}/favicon.ico`)
+    expect(legacyFavicon.status).toBe(200)
+    expect(legacyFavicon.headers.get('content-type')).toBe('image/png; charset=utf-8')
+    expect(Buffer.from(await legacyFavicon.arrayBuffer())).toEqual(await readFile(join(root, 'favicon.png')))
+    const favicon = await fetch(`${server.url}/favicon.png`)
+    expect(favicon.status).toBe(200)
+    expect(favicon.headers.get('content-type')).toBe('image/png; charset=utf-8')
     // 白名单仍逐文件生效：同样后缀但未登记的文件不放行。
     expect((await fetch(`${server.url}/secret.png`)).status).toBe(404)
     // URL separators must stay portable even when disk paths use Windows backslashes.
@@ -373,7 +415,9 @@ it('serves esbuild shared chunks and still rejects arbitrary files', async () =>
       'react-dom',
       'react-dom-client',
       'antd',
-      'assistant-ui',
+      'recharts',
+      'conversation',
+      'x',
       'cordis',
       'web-client',
       'chunk-ABCDEF12',
@@ -753,6 +797,13 @@ it('serves client module assets through the injected resolver and 404s everythin
     )
     expect((await fetch(`http://127.0.0.1:${port}/plugins/demo/panel.css`)).headers.get('content-type')).toBe(
       'text/css',
+    )
+    const layered = await fetch(`http://127.0.0.1:${port}/plugins/demo/panel.css?agnes_css_layer=app`)
+    expect(layered.status).toBe(200)
+    expect(layered.headers.get('content-type')).toBe('text/css')
+    expect(await layered.text()).toBe('@import url("/plugins/demo/panel.css") layer(app);\n')
+    expect(await (await fetch(`http://127.0.0.1:${port}/plugins/demo/panel.css`)).text()).toBe(
+      '.panel { color: #000; }\n',
     )
     expect(
       (await fetch(`http://127.0.0.1:${port}/plugins/demo/panel.js.map`)).headers.get('content-type'),

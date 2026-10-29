@@ -1,8 +1,12 @@
+import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer } from 'node:http'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { LocalBackend } from './backend.js'
 
 const mocks = vi.hoisted(() => {
+  const request = vi.fn(async () => ({ schemaVersion: 1 }))
   const catalogList = vi.fn(async () => ({ items: [], nextCursor: null }))
   const close = vi.fn(async () => undefined)
   const surfaceClose = vi.fn()
@@ -14,8 +18,22 @@ const mocks = vi.hoisted(() => {
   const pinsInspect = vi.fn(async () => ({ orphans: [] }))
   const pinsRelease = vi.fn(async () => ({ results: [] }))
   const trustWorkspace = vi.fn(async () => ({ hash: `sha256-${'f'.repeat(64)}` }))
+  const publicationStatus = vi.fn(async () => ({ publication: null }))
+  const migrateSession = vi.fn(async () => ({ changed: true }))
   const treeGet = vi.fn(async () => ({ desired: null }))
   const treeList = vi.fn(async () => ({ desired: null }))
+  const clientModuleList = vi.fn(async () => ({
+    rows: [
+      {
+        rowId: 'web:acme/panel',
+        moduleName: 'plugin/0123456789abcdef',
+        enabled: true,
+        phase: 'ready',
+        services: ['panel.report'],
+        extIds: ['plugin/0123456789abcdef'],
+      },
+    ],
+  }))
   const clientModuleCallService = vi.fn(async () => ({ output: { ok: true } }))
   const clientModuleCallEffect = vi.fn(async () => ({ output: { changed: true } }))
   const surfaceMounts = vi.fn(async () => ({
@@ -29,7 +47,17 @@ const mocks = vi.hoisted(() => {
       },
     ],
   }))
+  const sessionSelection = {
+    loops: vi.fn(async () => [
+      { id: 'default', version: '1.0.0', sourcePackage: '@agnes/core', capabilities: [] },
+    ]),
+    modelAdapters: vi.fn(async () => []),
+    getDefaults: vi.fn(async () => ({ revision: 0, defaults: {} })),
+    saveDefaults: vi.fn(async (input: unknown) => input),
+  }
   return {
+    sessionSelection,
+    request,
     catalogList,
     close,
     surfaceClose,
@@ -38,7 +66,10 @@ const mocks = vi.hoisted(() => {
     pinsRelease,
     trustWorkspace,
     treeGet,
+    publicationStatus,
+    migrateSession,
     treeList,
+    clientModuleList,
     clientModuleCallService,
     clientModuleCallEffect,
     surfaceMounts,
@@ -48,6 +79,8 @@ const mocks = vi.hoisted(() => {
 vi.mock('@agnes/sdk', () => ({
   memoryJournal: vi.fn(() => ({})),
   createClient: vi.fn(() => ({
+    request: mocks.request,
+    call: mocks.request,
     initialize: vi.fn(async () => ({})),
     close: mocks.close,
     packages: {
@@ -64,25 +97,37 @@ vi.mock('@agnes/sdk', () => ({
       operation: { get: vi.fn(), cancel: vi.fn() },
       pins: { inspect: mocks.pinsInspect, release: mocks.pinsRelease },
       trustWorkspace: mocks.trustWorkspace,
+      publicationStatus: mocks.publicationStatus,
+      migrateSession: mocks.migrateSession,
       tree: { get: mocks.treeGet, list: mocks.treeList, apply: vi.fn(), rollback: vi.fn() },
     },
+    sessionSelection: mocks.sessionSelection,
     surfaces: { mounts: mocks.surfaceMounts },
     clientModules: {
+      list: mocks.clientModuleList,
       callService: mocks.clientModuleCallService,
       callEffect: mocks.clientModuleCallEffect,
     },
   })),
 }))
 
-vi.mock('@agnes/daemon/packages', () => ({ createAdminSurface: mocks.createAdminSurface }))
+vi.mock('@agnes/daemon/packages', async (original) => ({
+  ...(await original<typeof import('@agnes/daemon/packages')>()),
+  createAdminSurface: mocks.createAdminSurface,
+}))
 
 import { localPackageAdmin } from './package-admin.js'
 
-beforeEach(() => vi.clearAllMocks())
+let daemonDir: string
+beforeEach(() => {
+  vi.clearAllMocks()
+  daemonDir = mkdtempSync(join(tmpdir(), 'agh-launch-admin-'))
+})
+afterEach(() => rmSync(daemonDir, { recursive: true, force: true }))
 
 it('advertises exactly the frozen hot-update features and forwards catalog reads to the daemon SDK', async () => {
   const backend = {
-    scope: { profile: 'local-dev', scopeID: 'scope-1' },
+    scope: { daemonDir, home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'scope-1' },
     socketPath: '/tmp/agnes-test.sock',
     web: {
       url: 'ws://127.0.0.1:5000',
@@ -94,6 +139,7 @@ it('advertises exactly the frozen hot-update features and forwards catalog reads
   const admin = localPackageAdmin(backend, backend.web?.origin ?? '')
   const options = mocks.createAdminSurface.mock.calls[0]?.[0] as
     | {
+        diagnostics: { export(input: unknown): Promise<unknown>; doctor?: () => Promise<unknown> }
         features: string[]
         invoke(action: string, params: unknown): Promise<unknown>
         surfaceLinks(): Promise<unknown>
@@ -106,12 +152,30 @@ it('advertises exactly the frozen hot-update features and forwards catalog reads
     'packages.operation-control.v1',
   ])
 
+  await options?.diagnostics.export({ diagnosticId: '11111111-1111-4111-8111-111111111111' })
+  expect(mocks.request).toHaveBeenCalledWith('_agnes/v1/diagnostics.export', {
+    diagnosticId: '11111111-1111-4111-8111-111111111111',
+  })
+  await expect(options?.diagnostics.doctor?.()).resolves.toEqual({ schemaVersion: 1 })
+  expect(mocks.request).toHaveBeenCalledWith('_agnes/v1/doctor.run', {})
   await options?.invoke('catalog/list', { profile: 'local-dev', limit: 50 })
   expect(mocks.catalogList).toHaveBeenCalledWith({ profile: 'local-dev', limit: 50 })
   await options?.invoke('tree/list', { profile: 'local-dev' })
   expect(mocks.treeList).toHaveBeenCalledWith({ profile: 'local-dev' })
   await options?.invoke('tree/get', { profile: 'local-dev' })
   expect(mocks.treeGet).toHaveBeenCalledWith({ profile: 'local-dev' })
+  await expect(options?.invoke('publication-status', { profile: 'local-dev' })).resolves.toEqual({
+    publication: null,
+  })
+  const migration = {
+    profile: 'local-dev',
+    clientId: 'admin-web',
+    commandId: 'migration',
+    sessionId: 'closed',
+  }
+  await options?.invoke('sessions/migrate', migration)
+  expect(mocks.migrateSession).toHaveBeenCalledWith(migration)
+
   await expect(options?.surfaceLinks()).resolves.toEqual([
     { packageId: 'agnes/demo-surface', surfaceId: 'demo', mount: '/demo' },
   ])
@@ -123,7 +187,7 @@ it('advertises exactly the frozen hot-update features and forwards catalog reads
 
 it('forwards pins/inspect and pins/release through invoke to the SDK client', async () => {
   const backend = {
-    scope: { profile: 'local-dev', scopeID: 'scope-1' },
+    scope: { daemonDir, home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'scope-1' },
     socketPath: '/tmp/agnes-test.sock',
     web: {
       url: 'ws://127.0.0.1:5000',
@@ -156,7 +220,7 @@ it('forwards pins/inspect and pins/release through invoke to the SDK client', as
 
 it('forwards trust-workspace through invoke to the SDK client', async () => {
   const backend = {
-    scope: { profile: 'local-dev', scopeID: 'scope-1' },
+    scope: { daemonDir, home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'scope-1' },
     socketPath: '/tmp/agnes-test.sock',
     web: {
       url: 'ws://127.0.0.1:5000',
@@ -191,7 +255,7 @@ it('relays only a same-origin typed browser service request and strips page-supp
     if (!address || typeof address === 'string') throw new Error('missing test listener address')
     const origin = `http://127.0.0.1:${address.port}`
     const backend = {
-      scope: { profile: 'local-dev', scopeID: 'scope-1' },
+      scope: { daemonDir, home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'scope-1' },
       socketPath: '/tmp/agnes-test.sock',
       web: { url: 'ws://127.0.0.1:5000', origin, token: 'legacy-ignored' },
     } as LocalBackend
@@ -222,6 +286,62 @@ it('relays only a same-origin typed browser service request and strips page-supp
       service: 'panel.search',
       input: { text: 'hello', nested: { keep: 1 } },
     })
+    const profileCall = { rowId: 'web:acme/panel', service: 'panel.report', input: {} }
+    const profile = await fetch(`${origin}/api/client-modules/profile`, {
+      method: 'POST',
+      headers: { Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify(profileCall),
+    })
+    expect(profile.status).toBe(200)
+    expect(mocks.clientModuleList).toHaveBeenCalledWith('local-dev')
+    expect(mocks.request).toHaveBeenCalledWith('_agnes/v1/extension.callScoped', {
+      extension: 'plugin/0123456789abcdef',
+      service: 'panel.report',
+      input: {},
+    })
+    const scoped = await fetch(`${origin}/api/client-modules/profile`, {
+      method: 'POST',
+      headers: { Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...profileCall,
+        input: { sessionId: 'owned-session' },
+        sessionReads: ['owned-session'],
+      }),
+    })
+    expect(scoped.status).toBe(200)
+    expect(mocks.request).toHaveBeenCalledWith('_agnes/v1/extension.callScoped', {
+      extension: 'plugin/0123456789abcdef',
+      service: 'panel.report',
+      input: { sessionId: 'owned-session' },
+      sessionReads: ['owned-session'],
+    })
+    for (const body of [
+      { ...profileCall, sessionReads: ['duplicate', 'duplicate'] },
+      { ...profileCall, sessionReads: [''] },
+      { ...profileCall, read: true, operationId: 'one', sessionReads: ['owned-session'] },
+      { ...profileCall, sessionId: 'forged' },
+      { ...profileCall, actor: {} },
+    ]) {
+      const rejected = await fetch(`${origin}/api/client-modules/profile`, {
+        method: 'POST',
+        headers: { Origin: origin, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      expect(rejected.status).toBe(400)
+    }
+    const crossOrigin = await fetch(`${origin}/api/client-modules/profile`, {
+      method: 'POST',
+      headers: { Origin: 'https://untrusted.invalid', 'Content-Type': 'application/json' },
+      body: JSON.stringify(profileCall),
+    })
+    expect(crossOrigin.status).toBe(403)
+    mocks.clientModuleList.mockResolvedValueOnce({ rows: [] })
+    const removed = await fetch(`${origin}/api/client-modules/profile`, {
+      method: 'POST',
+      headers: { Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify(profileCall),
+    })
+    expect(removed.status).toBe(503)
     const forbidden = await fetch(`${origin}/api/client-modules/service`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Origin: origin },
@@ -243,7 +363,7 @@ it('relays effect commands only through the separate same-origin route', async (
     if (!address || typeof address === 'string') throw new Error('missing test listener address')
     const origin = `http://127.0.0.1:${address.port}`
     const backend = {
-      scope: { profile: 'local-dev', scopeID: 'scope-1' },
+      scope: { daemonDir, home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'scope-1' },
       socketPath: '/tmp/agnes-test.sock',
       web: { url: 'ws://127.0.0.1:5000', origin, token: webToken },
     } as LocalBackend
@@ -276,5 +396,44 @@ it('relays effect commands only through the separate same-origin route', async (
     await admin.close()
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
+  }
+})
+
+it('fits production catalog/defaults relays without an injected provider', async () => {
+  const backend = {
+    scope: { daemonDir, home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'scope-1' },
+    socketPath: '/tmp/test.sock',
+    web: { origin: 'http://127.0.0.1:4180' },
+  } as LocalBackend
+  const admin = localPackageAdmin(backend, backend.web?.origin ?? '')
+  const provider = mocks.createAdminSurface.mock.calls[0]?.[0]
+    ?.sessionSelection as import('@agnes/protocol').AdminSessionSelection
+  try {
+    expect(await provider.loops()).toEqual(await mocks.sessionSelection.loops())
+    expect(await provider.modelAdapters()).toEqual([])
+    expect(await provider.getDefaults()).toEqual({ revision: 0, defaults: {} })
+    const update = {
+      revision: 0,
+      defaults: { providers: { loop: { provider: 'default', version: '1.0.0' } } },
+    }
+    expect(await provider.saveDefaults(update)).toEqual(update)
+    expect(mocks.sessionSelection.saveDefaults).toHaveBeenCalledWith(update)
+    const failure = {
+      rpc: {
+        code: -32011,
+        message: 'SEMANTIC_REJECTED',
+        data: {
+          code: 'SEMANTIC_REJECTED',
+          reason: 'CONFIG_REVISION_CONFLICT',
+          messageKey: 'appServer.errors.conflict',
+          cause: { code: 'CONFIG_REVISION_CONFLICT' },
+          diagnosticId: '00000000-0000-0000-0000-000000000001',
+        },
+      },
+    }
+    mocks.sessionSelection.saveDefaults.mockRejectedValueOnce(failure)
+    await expect(provider.saveDefaults(update)).rejects.toBe(failure)
+  } finally {
+    await admin.close()
   }
 })

@@ -1,6 +1,6 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
-import { presetDefaults } from '../src/step/preset.js'
 import type { OpContext, Operation } from '../src/step/session.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { actor, openSession, readTool, shellTool } from './helpers/open-session.js'

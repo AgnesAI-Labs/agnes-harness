@@ -43,7 +43,7 @@ static napi_value failure(napi_env env, const char* operation, DWORD error) {
     case ERROR_FILE_TOO_LARGE: code = "EFBIG"; break;
   }
   napi_value message, result, name, number;
-  const std::string text = std::string(operation) + " failed";
+  const std::string text = std::string(code) + ": " + operation + " failed";
   napi_create_string_utf8(env, text.c_str(), NAPI_AUTO_LENGTH, &message);
   napi_create_string_utf8(env, code, NAPI_AUTO_LENGTH, &name);
   napi_create_error(env, name, message, &result);
@@ -867,12 +867,62 @@ static napi_value environmentNamesEqual(napi_env env, napi_callback_info info) {
   return result;
 }
 
+#include "canonical-fs-windows.h"
+
+// Hold every directory without FILE_SHARE_DELETE while resolving children. Reparse points are refused.
+static bool canonicalDirectories(napi_env env, const std::wstring& path, bool leafDirectory,
+                                 std::vector<std::unique_ptr<Handle>>& held) {
+  DWORD error = canonicalHold(path, leafDirectory, false, held);
+  if (error) { failure(env, "open canonical directory", error); return false; }
+  return true;
+}
+static napi_value openCanonicalFile(napi_env env, napi_callback_info info) {
+  napi_value args[1]; std::wstring path;
+  if (!arguments(env, info, 1, args) || !stringArgument(env, args[0], path)) return nullptr;
+  std::vector<std::unique_ptr<Handle>> held;
+  if (!canonicalDirectories(env, path, false, held)) return nullptr;
+  Handle file(CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+    OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+  BY_HANDLE_FILE_INFORMATION information{};
+  if (file.value == INVALID_HANDLE_VALUE || !GetFileInformationByHandle(file.value, &information))
+    return failure(env, "open canonical file", GetLastError());
+  if (information.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT))
+    return failure(env, "real regular file required", ERROR_ACCESS_DENIED);
+  return adoptFile(env, file);
+}
+static napi_value listCanonicalDirectory(napi_env env, napi_callback_info info) {
+  napi_value args[1], result; std::wstring path;
+  if (!arguments(env, info, 1, args) || !stringArgument(env, args[0], path)) return nullptr;
+  std::vector<std::unique_ptr<Handle>> held;
+  if (!canonicalDirectories(env, path, true, held)) return nullptr;
+  WIN32_FIND_DATAW entry{};
+  HANDLE search = FindFirstFileW((path + L"\\*").c_str(), &entry);
+  if (search == INVALID_HANDLE_VALUE) return failure(env, "list canonical directory", GetLastError());
+  napi_create_array(env, &result);
+  uint32_t index = 0;
+  do {
+    if (wcscmp(entry.cFileName, L".") == 0 || wcscmp(entry.cFileName, L"..") == 0) continue;
+    napi_value name;
+    napi_create_string_utf16(env, reinterpret_cast<const char16_t*>(entry.cFileName), NAPI_AUTO_LENGTH, &name);
+    napi_set_element(env, result, index++, name);
+  } while (index < 5001 && FindNextFileW(search, &entry));
+  DWORD error = GetLastError(); FindClose(search);
+  if (index < 5001 && error != ERROR_NO_MORE_FILES)
+    return failure(env, "read canonical directory", error);
+  return result;
+}
+
 static napi_value initialize(napi_env env, napi_value exports) {
   if (uv_version() != UV_VERSION_HEX) {
     napi_throw_error(env, "E_SYSTEM_NATIVE_UNAVAILABLE", "Rebuild Windows native artifact for the current Node.js/libuv runtime");
     return nullptr;
   }
   napi_property_descriptor functions[] = {
+    {"openCanonicalWritableFile", nullptr, guarded<openCanonicalWritableFile>, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"openCanonicalExclusiveFile", nullptr, guarded<openCanonicalExclusiveFile>, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"canonicalFs", nullptr, guarded<canonicalFs>, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"openCanonicalFile", nullptr, guarded<openCanonicalFile>, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"listCanonicalDirectory", nullptr, guarded<listCanonicalDirectory>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"spawnDetached", nullptr, guarded<spawnDetached>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"connectVerifiedPipe", nullptr, guarded<connectVerifiedPipe>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"reservePipeName", nullptr, guarded<reservePipeName>, nullptr, nullptr, nullptr, napi_default, nullptr},

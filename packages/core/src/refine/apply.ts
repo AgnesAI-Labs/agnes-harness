@@ -1,9 +1,9 @@
-import type { RefineProposal } from '../effects/seams.js'
-import { scanPages } from '../log/scan-pages.js'
-import { isRegisterTombstone } from '../log/storage.js'
-import type { HarnessEdit, HarnessEntry, HarnessRefine } from '../reduce/shapes.js'
+import type { Event, EventInput, Seq } from '@agnes/core-common/types'
+import type { RefineProposal } from '@agnes/core-effects/effects/seams'
+import { scanPages } from '@agnes/core-ledger/log/scan-pages'
+import { isRegisterTombstone } from '@agnes/core-ledger/log/storage'
+import type { HarnessEdit, HarnessEntry, HarnessRefine } from '@agnes/core-ledger/reduce/shapes'
 import type { SessionImpl } from '../step/session.js'
-import type { Event, EventInput, Seq } from '../types.js'
 
 /**
  * Per-kind entry caps, the shared per-entry char cap, and the contract-prefix denylist a Refine

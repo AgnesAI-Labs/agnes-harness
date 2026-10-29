@@ -8,21 +8,29 @@
 
 配置文件与模型凭据分离。优先使用 CLI `config` 或 Web 设置修改 Provider；不要手写含密钥的 YAML 或自行编辑配置服务的 revision。
 
+## 部署网络
+
+官方模型适配器、MCP HTTP/SSE、URL/npm/git 包下载和 OTLP HTTP 导出遵循 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY`，小写名称优先。未配置 HTTPS 代理时使用 HTTP 代理；`NO_PROXY` 匹配的主机直连。显式为空的小写值覆盖大写值。修改进程环境后重启 daemon。`agnes doctor network` 仅报告有效代理的主机/端口及是否配置绕过规则，不显示用户名、密码或查询参数。工作区 `web_fetch` 保留独立的公网访问策略。
+
+在 **设置 → 模型 → 账户详情** 中继续用 Base URL 覆盖账户端点。由共享 schema 表单渲染的网络字段配置可选 `networkTimeouts.requestMs`、`connectMs`、`streamIdleMs`，均为 1–3600000 的整数毫秒。配置保存、OAuth 提交输入及 `provider.routes[]` 也支持这些字段。留空使用默认值：请求 300000、连接 10000、流空闲 60000 毫秒；现有更严格的模型/回合期限仍然生效。`{}` 重置已保存覆盖。变更作用于新装配会话，不会重定向在途请求。流空闲限制首个输出到达之后的模型输出间隔；等待首个输出由首字期限约束（Bedrock 的 SDK 将流空闲作为全程的套接字超时）。Agnes 网关在工具调用完整生成后才下发，因此 Agnes 路由上这两段等待都改由请求期限约束。取消会清理定时器并中止在途操作。Codex 使用 SSE 传输，以应用相同的代理和超时设置。社区自定义适配器自行负责其传输行为。
+
 ## 位置与层级
 
 | 位置/变量 | 含义 |
 | --- | --- |
 | `AGH_HOME` | 绝对 home 根，缺省 `~/.agh`；相对路径拒绝 |
-| `AGNES_HOME` | 旧兼容变量，有弃用警告；AGH_HOME 优先，无自动迁移 |
+| `AGNES_HOME` | 已移除，设置后会拒绝启动；取消该变量并用 `AGH_HOME` 指向新的空私有目录 |
 | `AGNES_PROFILE` / `--profile` | Profile 选择，通常为 `local-dev` |
 | `AGH_HOME/profiles/NAME/profile.yaml` | 用户 profile 层 |
-| `AGH_HOME/profiles/NAME/configuration.json` | Host 配置服务管理的账号、默认模型与引用，不能当成手工配置模板 |
-| `PROJECT/.agh/profile.local.yaml` | 工作区覆盖，按信任/权限规则使用 |
+| `AGH_HOME/profiles/NAME/configuration.json` | Host 配置服务管理的账号、默认模型、辅助模型档位默认值与引用，不能当成手工配置模板 |
+| `PROJECT/.agh/profile.local.yaml` | 工作区本地层；本版本只接受 `extensionIsolation`，其他任何键以 `E_DEP_MISSING` 拒绝 |
 | `PROJECT/.agh/skills` / `PROJECT/.agh/hooks.json` | 工作区 Skill 与命令 hook 资源 |
 | `AGH_HOME/data`、`cache`、`secrets`、`auth` | 数据、缓存、凭据与身份状态 |
 | `AGNES_WEB_ORIGIN` | 精确 Web Origin，如 `http://127.0.0.1:4180`，与 serve 端口配对 |
 
 builtin 模板是基础，用户 profile 与 Host configuration overlay 合并，再按工作区信任处理 local 层；部署与锁文件也影响最终解析。配置服务负责的键在用户层具有自己的覆盖规则，不是任意 YAML 深合并。只改变 cwd 不选择另一个 daemon。
+
+修改已有账户的端点后，保存或测试时必须显式提供凭据：重新输入 API key，或为旁路模型重新选择凭据引用。否则返回 `CONFIG_CREDENTIAL_REQUIRED`，已保存的修订保持不变。保存和测试均按实际适配器的规则校验有效 Base URL，并将非法 URL 错误定位到 `baseUrl`；已有的非法 URL 会在下次保存或测试时被拒绝。
 
 ## Profile 可配置面
 
@@ -30,34 +38,33 @@ builtin 模板是基础，用户 profile 与 Host configuration overlay 合并�
 | --- | --- |
 | `name`、`schemaVersion`、`extends` | 配置身份/版本/继承；现有模板 schemaVersion 为 1 |
 | `packages` | 包来源、启用与配置；实际安装/信任仍由 PackageManager 管理 |
-| `seams` | 必要接缝实现归属；不是普通插件自由注册的接口 |
-| `provider` | package/adapters/routes/catalog/contract；route 名 `default` 是保留 sentinel |
+| `packages[].config` | 包自己的配置，不承担任何选择 |
+| `providers` | 唯一的选择表：每个 provider 种类一个 `<kind>: { provider, version? }`。七个 seam 种类必填，见 [Seam](../extend/seams.zh-CN.md)。`persistence`（默认 `sqlite`）只能由用户配置档设置，它和 `sandbox`（默认 `local`）更改后需要重启，见[沙箱提供者](../guide/sandbox-providers.zh-CN.md) |
+| `provider` | package/routes/catalog/contract；route 名 `default` 是保留 sentinel |
 | `adapters` | storage/fs/exec/platform/secrets 选择 |
 | `transports` | stdio/unix/ws-tls，远程配置另需证书与认证 |
-| `dataDir`、`cacheDir` | 数据/缓存位置；改变它们可能改变共享实例身份 |
-| `presets` | default 与 allowed；默认必须在允许集合中 |
-| `approvals.mode` | manual/smart/off |
+| `dataDir`, `cacheDir` | 数据/缓存位置；规范化 home 的运行中 daemon 拒绝不兼容的配置档或数据目录配置 |
+| `presets` | 默认与允许的配方；默认必须在允许集合中。旧的权限配方名（`read-only`、`workspace-write`、`full-access`）已拒绝；使用 `standard` 等配方并独立选择权限 |
+| `permissions` | 默认与允许的权限级别（`read-only`、`workspace-write`、`full-access`）；默认必须在允许集合中。缺少此项时只允许 `workspace-write`；配方与权限白名单互相独立，见[权限与预设](../guide/security.zh-CN.md#permissions-and-presets) |
+| `approvals.mode` | manual/off/auto-review |
 | `reconcile` | immediate/turn/step；maxWaitMs 仅适用 turn/step |
-| `policy.capabilityCeiling` | 能力上限；默认不含 services |
+| `policy.capabilityCeiling` | 能力上限；当前 local-dev 与 enterprise 模板包含 services |
 | `policy.workspacePackages` | deny 或 require-project-trust |
 | `computerUse` | 启用、应用访问范围、捕获与保留限制 |
-| `attachments.storeByReference` | 缺省 `true`：新消息附件只写一次到数据目录下的附件存储，会话里保留一个很小的引用。设为 `false` 时新附件重新写进会话；已经写成引用的会话照常可读。只能在用户 profile 设置。`artifacts` 接缝由 `@agnes/base` 以外的包提供时，附件仍写进会话。不支持降级到早于附件引用的版本：降级前先导出会话 |
 | `extensionIsolation` | 隔离请求与不可用处置，不能凭声明证明真实保护 |
 | `limits` | daemon/worker/jobs/shutdown 等受支持的点分键 |
+| `sandbox.options` | 所选沙箱提供者的字符串选项 |
 
-附件存储读取五个 `limits` 键；缺省或取值无效时用缺省值：
 
-| 键 | 缺省 | 含义 |
-| --- | --- | --- |
-| `attachments.max_upload_bytes` | 2 GiB | 单个附件上限 |
-| `attachments.session_quota_bytes` | 8 GiB | 一个会话可引用的附件字节数 |
-| `attachments.global_quota_bytes` | 64 GiB | 附件存储的总字节数 |
-| `attachments.min_free_bytes` | 2 GiB | 写入后必须剩余的磁盘空间 |
-| `attachments.orphan_grace_ms` | 3 天 | 没有任何会话引用的附件保留多久 |
+配置档在一张表里选择所有 provider：`providers.<kind>: { provider, version? }`，覆盖七个 seam 种类以及 `loop`、`compaction`、`model-adapter`、`persistence`、`sandbox`、`tool-runtime`、`tool-policy`、`child-agent`、`memory`。配置档里没有别的选择位置：`seams`、顶层 `persistence` / `sandbox.provider` / `memory` / `child-agent`、配置档的 `composition.<kind>` 和包的 `config.<kind>` 都会被拒绝，报错会指向这张表。`model-adapter.provider` 可选单个注册/来源包或唯一列表。Preset、bundle patch 以及 admin、session 层使用同一张 `providers.<kind>` 表，Loop 要求精确版本；preset 的表还接受 `tool-runtime` 和 `tool-policy`。`model.system_prompt.provider` 是唯一例外，因为它位于与用户设置共用的提示词配置对象中。
 
-完整字段以[Profile Schema](../../packages/protocol/schema/profile.json)、[实际类型](../../packages/host/src/profile/types.ts)、[local-dev 模板](../../packages/host/templates/local-dev.yaml)及[enterprise 模板](../../packages/host/templates/enterprise.yaml)核对。Schema 合法只是第一步，策略与装配可能进一步拒绝。
+完整字段以[Profile Schema](../../packages/protocol/schema/profile.json)、[实际类型](../../packages/host-common/src/profile/types.ts)、[local-dev 模板](../../packages/package-manager/templates/local-dev.yaml)及[enterprise 模板](../../packages/package-manager/templates/enterprise.yaml)核对。Schema 合法只是第一步，策略与装配可能进一步拒绝。
+
+`limits` 中的 `worker.generation_idle_close_ms` 控制没有打开会话的旧插件容器在内存中保留多久（默认 60,000 毫秒）。它接受非负整数，0 表示立即回收，不会使持久 pin 或磁盘快照过期。
 
 ## 模型与密钥
+
+启用账号的凭据丢失或无法读取时，启动会排除该账号的路由，同时保留设置入口。账号仍出现在列表中，返回 `credentialConfigured: false`，以及原因码 `credentialIssue: CONFIG_CREDENTIAL_REQUIRED`（缺失或不可用）或 `CONFIG_CREDENTIAL_UNREADABLE`（存储读取失败）。设置 → 模型显示**需要重新填写 API key**和重新填写操作；模型选择器不提供不可用账号，doctor 报告警告。有效默认账号改为下一个可用且已配置的对话账号，已保存的默认偏好及已有会话的 pin 不变。全部账号不可用时不会替换为其他外部 Provider 或 Demo：产品仍可启动，打开模型会话或执行推理时明确拒绝并提示配置模型账号。全新、未配置的 local-dev 显式 Demo 回退保持原状。在账号详情重新填写并保存 key，配置刷新或重启后的新会话即可使用恢复的账号。新 key 可以替换无法读取的旧凭据，但不安全的存储权限仍须修复。
 
 现行配置服务支持账号列表、每账号 route 和默认账号，账号路由可能为 `account-...`。选择界面返回的 route/model，不假设所有 DeepSeek 账号共享同一路由。Provider/模型能力来自目录和合同，保存时还校验所选项；修改默认值不追溯改写旧会话。
 
@@ -69,11 +76,11 @@ API 客户端可通过 `_agnes/v1/session.setModel` 传入可选的 `thinking`�
 
 凭据形式为 `secret://namespace/name`；文件/env/vault adapter 是不同部署面。不要将演示配置里的假 token 复制到真实服务，也不要在 browser `publicConfig`、工具输出或环境 dump 中暴露真实值。
 
-包导出的 [preset 定义](../../packages/protocol/schema/preset.json) 可用正安全整数配置 `model.max_tokens`，例如 `model: { max_tokens: 32768 }`。它设置主模型单次请求的输出额度，与模型目录容量分开；省略时沿用 Provider 默认值。请求 hook 可覆盖它，任务树预算仍可压低额度，应使用所选 Provider 支持的值。该字段属于 preset 定义，不属于 profile 的 `presets` 选择字段或 profile 顶层 `model` 字段。现有会话保留创建时解析的 preset。
+包导出的 [preset 定义](../../packages/protocol/schema/preset.json) 可用正安全整数配置 `model.max_tokens`，例如 `model: { max_tokens: 32768 }`。它设置主模型单次请求的输出额度，与模型目录容量分开。省略时，DeepSeek 直连使用受目录容量约束的 32768，Agnes 路由使用目录额度，其他路由沿用 Provider 默认值。请求 hook 可覆盖它，任务树预算仍可压低额度，应使用所选 Provider 支持的值。该字段属于 preset 定义，不属于 profile 的 `presets` 选择字段或 profile 顶层 `model` 字段。现有会话保留创建时解析的 preset。
 
 预设的 `tools.output_max_bytes`（整数，4096 到 1048576，默认 32768）决定模型最多能看到一条工具结果的多少，超过就由输出守卫截断：保留预算的前一半和最后八分之一，完整内容另存，被截断的结果会给出 `read` 与 `grep` 都认的 `artifact://…` 路径，用来读回其余部分；`read` 的分页也按同一上限。值越大，模型每条结果看到的越多，上下文和会话账本里留到压缩前的内容也越多，调大要慎重；调小最低到 4096。已经打开的会话沿用开始时解析的值。
 
-预设的 `tools.timeout_ms`（整数，至少 1000，默认 120000）是一次工具调用在被内核强制截止之前最多能跑多久，`tools.timeouts`（工具名到毫秒数的映射，每项至少 1000）为指名的工具覆盖这个值。随包的 `base` 预设设有 `timeouts.shell: 600000`。`shell` 工具在模型不传 `timeoutMs` 时按 `tools.timeout_ms` 运行；模型可以申请更长，直到 `shell` 的上限，超出的部分按上限截断，所以前台命令最长 600000，而 `tools.timeout_ms` 仍是默认值。内核会在自己的强制截止之前一小段宽限（2000 毫秒与上限十分之一中的较小者）就把上限告知工具，因此超时的命令由执行器杀死，模型拿到的是已捕获的输出和一行 `[timed out after Nms: ...]`，而不是"结果未知"。需要一直运行的命令（服务、文件监听等）应作为后台作业运行：`shell` 带 `background: true` 启动后立即返回，用 `job` 工具读取输出或停止，会话关闭时会停止它的作业，所以不受这个上限约束。前台命令启动的进程会在命令返回时被停止，结果里会说明停止了几个（macOS 和 Linux 上，用 `setsid` 脱离命令进程组的进程不在此列）。更长的上限会让这一轮及其写者租约占用同样长的时间，调大要慎重。已经打开的会话沿用开始时解析的值。
+预设的 `tools.timeout_ms`（整数，至少 1000，默认 120000）约束普通工具调用，`tools.timeouts` 按工具名覆盖；随包 base 预设允许 `shell` 最长 600000 毫秒。Shell 的 `timeoutMs` 在已准入期限内选择前台等待时长，省略 `timeoutToBackground` 或设为 true 时，前台等待最长 2 分钟，超时后转为后台作业；设为 false 时使用已准入的超时，不受这个固定上限限制；`background: true` 立即后台运行，`timeoutToBackground: false` 则请求终止。通过 `job_output` 核对返回的作业身份与实际状态；工具返回不证明后台进程已结束。取消与会话关闭会终止所属进程。已有会话保留解析后的预设，见[默认工具](default-tools.zh-CN.md)。
 
 使用 Agnes 中国官方网关时，若请求未覆盖额度，adapter 会明确将内置模型的目录额度 65536 作为 `max_tokens` 发送。[3.0 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-30-flash)、[2.5 Pro](https://agnes-ai.com/zh-Hans/docs/agnes-25-pro)和 [Pro Alpha](https://agnes-ai.com/zh-Hans/docs/agnes-25-pro-alpha) 的官方规格为 65536；[Pro Beta](https://agnes-ai.com/en/docs/agnes-25-pro-beta) 按 Pro 同系额度配置为 65536，尚未单独验证网关容量；[2.5 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-25-flash) 和 [2.0 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-20-flash) 的官方说明使用约数 65.5K，此处按 65536 配置。已废弃模型保留注册以兼容现有配置，其可用性取决于网关。请求中明确设置的额度仍优先。仅修改目录元数据不会设置底层 OpenAI 兼容流请求的额度。大文件仍应通过多次小型 write/edit 调用分段构建；默认额度不能保证任意大的单次调用都能完成。
 
@@ -85,6 +92,8 @@ API 客户端可通过 `_agnes/v1/session.setModel` 传入可选的 `thinking`�
 
 已打开的会话继续使用内存中解析好的 preset；重启服务后重新打开会话，或新建会话，会按更新后的默认值重新解析。自定义 preset 若明确配置数字上限，仍保留该限制。替换 Budget 段的扩展需要将 `maxSteps: null` 视为没有步数上限。内部执行循环仅限制程序计数器连续没有提交变化的状态转移，不按整个任务的累计步数计算，因此正常推进的长任务不会消耗这项保护额度。
 
+进度检查（见[无界面运行](../guide/headless.zh-CN.md#进度检查)）默认关闭。`loop: { progress_check_steps: 20 }` 为无人值守或带提示词上限的回合打开它，两次检查之间相隔这么多个模型步；省略或为 `0` 时关闭。它对普通交互回合没有影响。
+
 ## Skills 同名优先级覆盖
 
 默认来源优先级为 workspace 500、runtime 450、AGH user 400、agents 300、claude 200、codex 100、package 50。用户可对非 runtime 候选设置 50–500 的整数覆盖，或传 `null` 恢复来源默认；该数据按 profile/resourceId 保存在资源控制 journal，并随 worker control 快照应用。它不是新 profile YAML 字段，不应手改 journal。
@@ -95,4 +104,4 @@ API 客户端可通过 `_agnes/v1/session.setModel` 传入可选的 `thinking`�
 
 普通插件默认配置来自 `agnes.plugins[].config`，由导出的 `Config` 校验。部署/用户/工作区普通行覆盖由装配接口处理；不要猜一个未被当前解析器接受的顶层 `plugins:` 就会生效。包入口、配置与 inject/provide 的精确形状见[插件教程](../develop/plugins.zh-CN.md)。
 
-源码依据：[输入合并](../../packages/host/src/profile/inputs.ts)、[解析](../../packages/host/src/profile/resolve.ts)、[配置存储](../../packages/host/src/configuration.ts)、[后台身份](../../packages/daemon/src/supervisor/scope.ts)、[daemon limits](../../packages/daemon/src/config.ts)。
+源码依据：[输入合并](../../packages/host/src/runtime/profile/inputs.ts)、[解析](../../packages/host-common/src/profile/resolve.ts)、[配置存储](../../packages/host-infrastructure/src/configuration.ts)、[后台身份](../../packages/daemon/src/supervisor/scope.ts)、[daemon limits](../../packages/daemon/src/supervisor/config.ts)。

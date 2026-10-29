@@ -14,7 +14,8 @@ import { basename, dirname, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import postject from 'postject'
-import { IMAGE_RUNTIME_ROOTS } from '../tools/image-runtime-roots.mjs'
+import { presentationEntries, verifyPresentation } from '../../../tools/presentation-build.mjs'
+import { bundledManifests } from '../tools/bundled-manifests.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const out = join(root, 'dist', 'sea')
@@ -47,7 +48,7 @@ const textMap = (dir, extension) =>
       .sort()
       .map((file) => [basename(file, `.${extension}`), readFileSync(join(dir, file), 'utf8')]),
   )
-const profileTemplates = textMap(join(workspace, 'host', 'templates'), 'yaml')
+const profileTemplates = textMap(join(workspace, 'package-manager', 'templates'), 'yaml')
 const codePresets = textMap(join(workspace, 'code', 'presets'), 'yaml')
 const codePrompts = textMap(join(workspace, 'code', 'prompts'), 'md')
 const conformanceFixtures = textMap(join(workspace, 'ai', 'fixtures', 'conformance'), 'jsonl')
@@ -55,12 +56,7 @@ const hookMap = readFileSync(
   join(workspace, 'base', 'extensions', 'hooks-runner', 'generated', 'cc-hook-map.json'),
   'utf8',
 )
-const extensionManifests = (packageDirectory) => {
-  const pkg = JSON.parse(readFileSync(join(packageDirectory, 'package.json'), 'utf8'))
-  return (pkg.agnes?.extensions ?? []).map((relative) =>
-    JSON.parse(readFileSync(join(packageDirectory, relative, 'agnes.extension.json'), 'utf8')),
-  )
-}
+const extensionManifests = bundledManifests
 const baseExtensionManifests = extensionManifests(join(workspace, 'base'))
 const codeExtensionManifests = extensionManifests(join(workspace, 'code'))
 
@@ -89,6 +85,8 @@ const bundleJitiTransform = {
 }
 
 rmSync(out, { recursive: true, force: true })
+// This directory also contains CLI declaration outputs. Recheck them after resetting it.
+rmSync(join(root, 'dist', 'tsconfig.tsbuildinfo'), { force: true })
 mkdirSync(out, { recursive: true })
 
 async function buildSea(name, entry, destination) {
@@ -104,6 +102,9 @@ async function buildSea(name, entry, destination) {
     plugins: [bundleJitiTransform],
     define: {
       AGNES_VERSION: JSON.stringify(String(version)),
+      AGNES_BUNDLED_RIPGREP_PATH: JSON.stringify(
+        `./ripgrep/${process.platform === 'win32' ? 'rg.exe' : 'rg'}`,
+      ),
       AGNES_PACKAGED_BUILTINS: 'true',
       AGNES_COMPOSED_WORKER: 'true',
       AGNES_BASE_PRESET_TEXT: JSON.stringify(
@@ -172,15 +173,31 @@ execFileSync(
   },
 )
 const local = join(root, 'dist', 'local')
-for (const name of ['daemon.mjs', 'worker.mjs', 'web', 'THIRD-PARTY-NOTICES', 'bundled-plugins'])
+for (const name of [
+  'daemon.mjs',
+  'daemon-main.mjs',
+  'worker.mjs',
+  'worker-main.mjs',
+  'web',
+  'THIRD-PARTY-NOTICES',
+  'bundled-plugins',
+  'bundled-examples',
+  'ripgrep',
+])
   cpSync(join(local, name), join(out, name), { recursive: true })
+for (const name of Object.keys(presentationEntries))
+  await verifyPresentation(join(out, 'bundled-plugins', name))
 if (existsSync(join(local, 'native'))) cpSync(join(local, 'native'), join(out, 'native'), { recursive: true })
 cpSync(
   join(local, 'node_modules', '@agnes', 'system-node'),
   join(out, 'node_modules', '@agnes', 'system-node'),
   { recursive: true },
 )
-for (const name of IMAGE_RUNTIME_ROOTS)
+for (const name of ['esbuild', '@esbuild'])
+  cpSync(join(local, 'node_modules', name), join(out, 'node_modules', name), { recursive: true })
+for (const name of readdirSync(join(local, 'node_modules')).filter(
+  (name) => name !== '@agnes' && name !== 'esbuild' && name !== '@esbuild',
+))
   cpSync(join(local, 'node_modules', name), join(out, 'node_modules', name), { recursive: true })
 const runtime = join(out, 'runtime')
 mkdirSync(runtime, { recursive: true })

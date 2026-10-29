@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ManualRoute } from '../src/adapters/pi/index.js'
 import type { WireEvent } from '../src/index.js'
-import { AiSetupError, PiAdapter } from '../src/index.js'
+import { AiSetupError, PiAdapter, validateModelBaseUrl } from '../src/index.js'
 import { fakeModel, fakeRequest } from '../testkit/index.js'
 
 /**
@@ -10,7 +10,7 @@ import { fakeModel, fakeRequest } from '../testkit/index.js'
  * replaced by a recorder that captures the request and throws, so an attempt to reach the network
  * is observable and no packet can leave the process.
  */
-type WireCall = { url: string; authorization: string | null }
+type WireCall = { url: string; authorization: string | null; body: unknown }
 
 let calls: WireCall[]
 let originalFetch: typeof globalThis.fetch
@@ -25,7 +25,11 @@ beforeEach(() => {
   process.env.OPENAI_API_KEY = AMBIENT
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const req = new Request(input, init)
-    calls.push({ url: req.url, authorization: req.headers.get('authorization') })
+    calls.push({
+      url: req.url,
+      authorization: req.headers.get('authorization'),
+      body: JSON.parse(await req.text()),
+    })
     throw new Error('the test blocked this request')
   }) as typeof globalThis.fetch
 })
@@ -53,7 +57,11 @@ const routeDecl = (over: Partial<ManualRoute> & { route: string }): ManualRoute 
 
 // Retries are switched off and the wait is a no-op: these cases are about what reaches the wire,
 // and a real backoff would only make them slow.
-const run = async (decl: ManualRoute, credential?: string) => {
+const run = async (
+  decl: ManualRoute,
+  credential?: string,
+  reportRequest?: (body: unknown) => Promise<void>,
+) => {
   const a = new PiAdapter({ manualRoutes: [decl], maxRetries: 0, sleep: async () => {} })
   if (credential !== undefined) a.bindCredential(decl.route, credential)
   const out: WireEvent[] = []
@@ -61,6 +69,7 @@ const run = async (decl: ManualRoute, credential?: string) => {
     signal: new AbortController().signal,
     toolNames: [],
     sessionKey: 'agnes:t:a:cli:dm:x',
+    ...(reportRequest ? { reportRequest } : {}),
     timeoutMs: { firstToken: 1000, total: 5000 },
   })) {
     out.push(e)
@@ -145,7 +154,16 @@ describe('the default wire path never borrows a credential from the environment'
   // What a route with a bound credential actually puts on the wire: its own key, at its own
   // endpoint, with the ambient one exported the whole time and never consulted.
   it('authenticates with the bound credential and no other', async () => {
-    await run(routeDecl({ route: 'openai', credentialRef: 'secret://agnes/openai' }), 'sk-BOUND')
+    const captured: unknown[] = []
+    await run(
+      routeDecl({ route: 'openai', credentialRef: 'secret://agnes/openai' }),
+      'sk-BOUND',
+      async (body) => {
+        captured.push(body)
+      },
+    )
+    expect(captured).toEqual(calls.map((call) => call.body))
+    expect(JSON.stringify(captured)).not.toContain('sk-BOUND')
     expect(calls.length).toBeGreaterThan(0)
     expect(calls[0]?.url).toBe('https://gw.invalid/v1/chat/completions')
     for (const c of calls) expect(c.authorization).toBe('Bearer sk-BOUND')
@@ -163,6 +181,7 @@ describe('a route has to declare where it points', () => {
 
   for (const bad of ['', '   ', '/v1', 'api.openai.com/v1', 'ftp://gw.invalid/v1', 'file:///etc']) {
     it(`refuses ${JSON.stringify(bad)} at construction`, () => {
+      expect(() => validateModelBaseUrl(withBaseUrl(bad))).toThrowError(AiSetupError)
       expect(() => new PiAdapter({ manualRoutes: [withBaseUrl(bad)] })).toThrowError(AiSetupError)
       expect(() => new PiAdapter({ manualRoutes: [withBaseUrl(bad)] })).toThrowError(/INVALID_BASE_URL/)
     })
@@ -270,6 +289,10 @@ describe('a route has to declare where it points', () => {
   it('accepts an ordinary http and https endpoint', () => {
     expect(() => new PiAdapter({ manualRoutes: [withBaseUrl('https://gw.invalid/v1')] })).not.toThrow()
     expect(() => new PiAdapter({ manualRoutes: [withBaseUrl('http://127.0.0.1:8080')] })).not.toThrow()
+    expect(() => validateModelBaseUrl(withBaseUrl('http://vendor.example.invalid/v1'))).not.toThrow()
+    expect(
+      () => new PiAdapter({ manualRoutes: [withBaseUrl('http://vendor.example.invalid/v1')] }),
+    ).not.toThrow()
   })
 })
 

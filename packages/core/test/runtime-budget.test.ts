@@ -1,3 +1,6 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import type { Seq } from '@agnes/core-common/types'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -13,9 +16,7 @@ import {
   treePermitOf,
 } from '../src/child/runtime-budget.js'
 import { Kernel } from '../src/kernel.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import { presetDefaults } from '../src/step/preset.js'
-import type { Seq } from '../src/types.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, testFsOps } from './helpers/open-session.js'
@@ -40,6 +41,7 @@ function setup(storage = new MemoryStorage(), treeBudgetCredits: number | null =
   const provider = fakeProvider([])
   Object.assign(provider, { models: () => [model()] })
   const kernel = Kernel.create({
+    loops: defaultLoops(),
     storage,
     seams: fakeSeams(),
     provider,
@@ -475,4 +477,39 @@ describe('explicit tree budget reservation handles', () => {
     await releaseTreeReservationHandle(recoveredSession, recoveredSibling.handle)
     await recoveredKernel.close()
   })
+})
+
+describe('hard ordinary turn budget', () => {
+  it.each(['settled', 'unknown', 'unpriced'] as const)(
+    'retains a durable total ceiling after %s usage',
+    async (usage) => {
+      const { kernel, storage } = setup(new MemoryStorage(), null)
+      try {
+        const session = await kernel.session('ordinary-hard', sessionOpts)
+        await session.enqueue('next-turn', {
+          actor,
+          content: [{ type: 'text', text: 'bounded' }],
+          budget: 0.3,
+          hardBudget: true,
+        })
+        await session.acceptInput()
+        if (usage === 'unpriced') {
+          expect(await reserveTreeBudget(session, 0, { route: 'missing', model: 'unpriced' })).toEqual({
+            reason: 'budget',
+          })
+        } else {
+          expect(await reserveTreeBudget(session, 0.25, target)).toBe('ok')
+          const permit = treePermitOf(session)
+          expect(permit).toBeDefined()
+          await settleTreeSpend(session, usage === 'unknown' ? undefined : 0.2, 10 as Seq)
+          expect(await storage.peekReservation?.(permit!.permitId)).toMatchObject({ status: usage })
+          expect(await reserveTreeBudget(session, 0.25, target)).toEqual({ reason: 'budget' })
+        }
+        const ends = await session.scan({ type: 'turn/end', limit: 10 })
+        expect(ends.at(-1)?.data).toMatchObject({ reason: 'budget' })
+      } finally {
+        await kernel.close()
+      }
+    },
+  )
 })

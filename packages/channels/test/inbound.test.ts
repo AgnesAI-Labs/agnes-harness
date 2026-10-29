@@ -1,3 +1,4 @@
+import { rpcError } from '@agnes/protocol'
 import { JsonRpcError } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
 import type { ChannelCredential, MessageEvent } from '../src/adapter.js'
@@ -618,19 +619,34 @@ describe('Inbound', () => {
       preset: 'channel',
     }).get(key)
     session.followUp = vi.fn().mockRejectedValueOnce(new Error('first failed')).mockResolvedValueOnce(1)
+    const refusingAdapter = new FakeChannel()
+    const warn = vi.fn()
     const isolated = new Inbound({
-      adapter: new FakeChannel(),
+      adapter: refusingAdapter,
       claim: client.claim,
       cache: {
         get: async () => ({ session, created: false }),
+        current: () => session,
         busy: () => false,
         markParticipant: () => false,
         unmarkParticipant: () => undefined,
       },
       config,
-      log: { info() {}, warn() {}, error() {} },
+      log: { info() {}, warn, error() {} },
     })
     await expect(isolated.handle(message('4'))).rejects.toThrow('first failed')
     await expect(isolated.handle(message('5'))).resolves.toBeUndefined()
+
+    // A closed history refusal seals the lane even if delivering its one notice fails.
+    session.followUp = vi
+      .fn()
+      .mockRejectedValue(new JsonRpcError(rpcError('SEMANTIC_REJECTED', { code: 'E_SESSION_CORRUPT' })))
+    refusingAdapter.send = vi.fn().mockRejectedValue(new Error('synthetic-private-send-detail'))
+    await expect(isolated.handle(message('6'))).resolves.toBeUndefined()
+    await expect(isolated.handle(message('7'))).resolves.toBeUndefined()
+    expect(session.followUp).toHaveBeenCalledOnce()
+    expect(refusingAdapter.send).toHaveBeenCalledOnce()
+    expect(warn).toHaveBeenCalledWith('channel history refusal notice delivery failed', undefined)
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('synthetic-private-send-detail')
   })
 })

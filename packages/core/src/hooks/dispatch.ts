@@ -1,18 +1,20 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import { withTimeout } from '@agnes/core-effects/effects/wrap'
+import type { Timers } from '@agnes/core-ledger/log/session-log'
 import { HOOK_TABLE, type HookEvent } from '@agnes/protocol'
-import { withTimeout } from '../effects/wrap.js'
-import type { Timers } from '../log/session-log.js'
-import { presetDefaults } from '../step/preset.js'
 import { HookBlockedError } from './block.js'
 
-export type DispatchFailure = { event: HookEvent; source: string; message: string }
+type HookFailure = 'timeout' | 'cancelled' | 'execution' | 'result'
+export type DispatchFailure = { event: HookEvent; source: string; message: string; failure: HookFailure }
 export type DispatchEntry<T> = {
   source: string
+  contextBlocking?: boolean
   /** Invocation must not commit shared state; commit runs only after successful bounded completion. */
   invoke: (context: { signal: AbortSignal; replayed: boolean }) => T | Promise<T>
 }
 export type DispatchOutcome<T> =
   | { kind: 'ok'; results: Array<{ source: string; value: T }> }
-  | { kind: 'rejected'; source: string; reason: string; blocked?: HookBlockedError }
+  | { kind: 'rejected'; source: string; reason: string; failure: HookFailure; blocked?: HookBlockedError }
 
 type Options = {
   eventsPerTurn?: number
@@ -20,8 +22,13 @@ type Options = {
   onFailure: (failure: DispatchFailure) => unknown
   diag: (
     name: 'hook-failed' | 'hook-quota',
-    data: { event: HookEvent; source?: string; message?: string },
+    data: { event: HookEvent; source?: string; message?: string; failure?: HookFailure },
   ) => unknown
+}
+
+const systemTimers: Timers = {
+  setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
+  clearTimeout: (handle) => globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>),
 }
 
 /** Per-session scheduling only. The engine owns author/wire validation and event-specific commits. */
@@ -40,9 +47,15 @@ export class HookDispatch {
     this.quotaReported = false
   }
 
-  private report(name: 'hook-failed' | 'hook-quota', event: HookEvent, source?: string): void {
+  private report(
+    name: 'hook-failed' | 'hook-quota',
+    event: HookEvent,
+    source?: string,
+    failure: HookFailure = 'execution',
+  ): void {
     // Never await diagnostic sinks: a failed or stuck sink cannot disable a safety decision.
-    const data = source === undefined ? { event } : { event, source, message: 'hook execution failed' }
+    const data =
+      source === undefined ? { event } : { event, source, message: 'hook execution failed', failure }
     try {
       void Promise.resolve(this.options.diag(name, data)).catch(() => undefined)
     } catch {
@@ -51,7 +64,7 @@ export class HookDispatch {
     if (source !== undefined) {
       try {
         void Promise.resolve(
-          this.options.onFailure({ event, source, message: 'hook execution failed' }),
+          this.options.onFailure({ event, source, message: 'hook execution failed', failure }),
         ).catch(() => undefined)
       } catch {
         /* contained */
@@ -64,9 +77,14 @@ export class HookDispatch {
     entry: DispatchEntry<T>,
     signal: AbortSignal,
     replayed: boolean,
-  ): Promise<{ ok: true; value: T } | { ok: false; blocked?: HookBlockedError }> {
+  ): Promise<{ ok: true; value: T } | { ok: false; failure: HookFailure; blocked?: HookBlockedError }> {
     const controller = new AbortController()
-    const abort = () => controller.abort()
+    let boundaryFailure: 'timeout' | 'cancelled' | undefined
+    const abort = () => {
+      boundaryFailure ??= 'cancelled'
+      controller.abort()
+    }
+    const timers = this.options.timers ?? systemTimers
     signal.addEventListener('abort', abort, { once: true })
     if (signal.aborted) abort()
     try {
@@ -77,22 +95,24 @@ export class HookDispatch {
       })
       return {
         ok: true,
-        value: await withTimeout(
-          pending,
-          HOOK_TABLE[event].timeoutMs,
-          event,
-          controller.signal,
-          this.options.timers,
-        ),
+        value: await withTimeout(pending, HOOK_TABLE[event].timeoutMs, event, controller.signal, {
+          setTimeout: (fn, ms) =>
+            timers.setTimeout(() => {
+              boundaryFailure ??= 'timeout'
+              fn()
+            }, ms),
+          clearTimeout: (handle) => timers.clearTimeout(handle),
+        }),
       }
     } catch (error) {
+      const failure = boundaryFailure ?? 'execution'
       // Only the bundled prompt adapter may turn a context-first denial into a normal blocked turn.
       // Timeouts, other extensions, and every other context exception retain the fail-closed path.
-      if (event === 'context' && entry.source === 'agnes/hooks-runner' && error instanceof HookBlockedError)
-        return { ok: false, blocked: error }
+      if (event === 'context' && entry.contextBlocking && error instanceof HookBlockedError)
+        return { ok: false, failure, blocked: error }
       // Error text can contain extension credentials or input; record only trusted attribution.
-      this.report('hook-failed', event, entry.source)
-      return { ok: false }
+      this.report('hook-failed', event, entry.source, failure)
+      return { ok: false, failure }
     } finally {
       signal.removeEventListener('abort', abort)
       controller.abort()
@@ -146,6 +166,7 @@ export class HookDispatch {
             kind: 'rejected',
             source: entry.source,
             reason: 'hook execution failed',
+            failure: outcome.failure,
             ...(outcome.blocked ? { blocked: outcome.blocked } : {}),
           }
         continue
@@ -157,9 +178,14 @@ export class HookDispatch {
         results.push({ source: entry.source, value: outcome.value })
         if (terminal) break
       } catch {
-        this.report('hook-failed', event, entry.source)
+        this.report('hook-failed', event, entry.source, 'result')
         if (spec.failPolicy === 'closed')
-          return { kind: 'rejected', source: entry.source, reason: 'hook execution failed' }
+          return {
+            kind: 'rejected',
+            source: entry.source,
+            reason: 'hook execution failed',
+            failure: 'result',
+          }
       }
     }
     return { kind: 'ok', results }

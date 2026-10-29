@@ -1,4 +1,4 @@
-{"id": "tool-card-inline-ok", "kind": "valid", "target": "slot", "name": "tool.card.inline", "payload": {"title": "monthly sales", "table": {"columns": ["region", "amount"], "rows": [["east", "1,200"]]}, "actions": [{"id": "export", "label": "Export"}]}}
+{"id": "tool-card-inline-ok", "kind": "valid", "target": "slot", "name": "tool.card.inline", "payload": {"title": "monthly sales", "actions": [{"id": "export", "label": "Export"}], "chart": {"kind": "bar", "series": [{"name": "amount", "points": [{"x": "east", "y": 1200}]}]}}}
 {"id": "tool-card-inline-pie-chart", "kind": "invalid", "target": "slot", "name": "tool.card.inline", "payload": {"title": "monthly sales", "chart": {"kind": "pie", "series": []}}, "expect": {"dataCode": "ENUM", "key": "kind"}}
 {"id": "sidebar-action-ok", "kind": "valid", "target": "slot", "name": "sidebar.action", "payload": {"id": "rerun", "label": "Re-run", "icon": "arrow", "disabled": false}}
 {"id": "sidebar-action-id-with-space", "kind": "invalid", "target": "slot", "name": "sidebar.action", "payload": {"id": "Re Run", "label": "Re-run"}, "expect": {"dataCode": "PATTERN", "key": "id"}}

@@ -1,5 +1,5 @@
 import type { Host, Prompter, WorkspaceBinding } from '@agnes/host'
-import type { SlotName } from '@agnes/protocol'
+import type { LoopSelection, SlotName } from '@agnes/protocol'
 import type { JsonRpcMessage, NodeClient } from '@agnes/sdk'
 
 export type ModelSel = { slot: SlotName; route: string; model: string }
@@ -10,16 +10,34 @@ export type SessionAdmissionPort = {
   activate(sessionKey: string, reservedNew: boolean): void
 }
 export type Command =
+  | 'app'
+  | 'app-server'
+  | 'run'
+  | 'batch'
+  | 'runtime'
+  | 'tools'
   | 'resume'
   | 'sessions'
   | 'export'
   | 'import'
+  | 'home'
   | 'doctor'
+  | 'diagnostics'
+  | 'approvals'
+  | 'schedules'
+  | 'triggers'
+  | 'settings'
+  | 'credentials'
+  | 'agents'
+  | 'queue'
+  | 'api'
   | 'computer-use'
-  | 'batch'
   | 'profile'
+  | 'plugin'
+  | 'plugins'
   | 'package'
   | 'packages'
+  | 'dev'
   | 'install'
   | 'resources'
   | 'skills'
@@ -31,7 +49,10 @@ export type Command =
   | 'ext'
   | 'mcp'
   | 'serve'
+  | 'web'
+  | 'start'
   | 'acp'
+  | 'completion'
 
 export type ParsedArgs = {
   command?: Command
@@ -39,20 +60,37 @@ export type ParsedArgs = {
   /** Everything after a forwarded command, untouched: that command owns its own grammar. */
   rest: string[]
   print: boolean
-  mode?: 'text' | 'json' | 'acp'
+  mode?: 'text' | 'json' | 'stream-json' | 'acp'
   help: boolean
+  yes?: boolean
   version: boolean
   profile?: string
   preset?: string
+  /** A permission level, or `default` for the deployment default; travels with `preset` on session/new. */
+  permission?: 'read-only' | 'workspace-write' | 'full-access' | 'default'
+  agent?: string
+  /** `--append-system-prompt`: text added to a NEW session's system prompt. */
+  appendSystemPrompt?: string
+  /** `--append-system-prompt-file`: the same text, read from a local regular file. */
+  appendSystemPromptFile?: string
+  loop?: LoopSelection
+  /** `--tools` / `--disallowed-tools`: narrows the session's tools; applied before anything is sent. */
+  toolFilter?: { allow?: string[]; deny?: string[] }
   cwd?: string
   /** Explicit Computer Use rescue store; bypasses profile/package resolution. */
   dataDir?: string
+  candidateHash?: string
+  reviewHash?: string
+  newSession?: boolean
+  /** `--worktree[=name]`: run the new session in its own git worktree; `''` asks for a time-based name. */
+  worktree?: string
+  /** `--add-dir <dir>` (repeatable): extra directories for the new session's file fence; absolute once resolved. */
+  addDir?: string[]
   continue: boolean
   resume?: string
   connect?: string
   model?: ModelSel
   park: boolean
-  meta: boolean
   ephemeral: boolean
   /** Keep the historical embedded Host/daemon form for an intentional one-shot run. */
   standalone?: boolean
@@ -66,6 +104,58 @@ export type ParsedArgs = {
   from?: 'claude-code' | 'codex' | 'pi' | 'auto'
   key?: string
   resolved: boolean
+  /** `sessions list --archived`: only archived sessions. */
+  archived: boolean
+  /** `sessions deliverables --save`: the deliverable to download, by number or id. */
+  save?: string
+  /** `sessions undo --turn`: the turn whose file changes to undo; the latest one when absent. */
+  turn?: string
+  /** `sessions deliverables --save`: replace an existing target file. */
+  force: boolean
+  /** `schedules`: list every schedule rather than one session's. */
+  all?: boolean
+  /** `-p --output-schema`: a JSON Schema file the final reply must satisfy. */
+  outputSchema?: string
+  /** `--max-budget` raw value; `-p` only, range-checked by `parseTurnCaps`. */
+  maxBudget?: string
+  /** `--max-turns` raw value; `-p` only, range-checked by `parseTurnCaps`. */
+  maxTurns?: string
+  /** `--timeout` raw seconds; `-p` only, range-checked by `parseTimeoutMs`. */
+  timeout?: string
+  /** `-p --output-file`: also write the final text to this file. Long option only: `-o` is `--out` of export. */
+  outputFile?: string
+  /** `sessions list --last`: only the most recently active session. */
+  last?: boolean
+  /** Private host only: also skip hooks, non-built-in plugins and MCP servers (see parseArgs for what is honoured). */
+  safeMode?: boolean
+  /** Private host only: do not load personal and project custom slash commands, nor instruction files. */
+  ignoreRules?: boolean
+  /** Interactive mode: keep the shell screen and write finished turns into its scrollback. */
+  noAltScreen?: boolean
+  /** `queue`: steer the turn in flight instead of queueing a follow-up. */
+  steer?: boolean
+  /** `schedules add|edit` task text, title and exactly one of the selector flags. */
+  prompt?: string
+  title?: string
+  every?: string
+  cron?: string
+  at?: string
+  daily?: string
+  weekly?: string
+  tz?: string
+  unattended?: 'notify' | 'refuse'
+  /** `triggers`: a JSON file (or `-` for stdin) holding the rule, the configuration or the test payload. */
+  file?: string
+  /** `settings`: the system prompt replacement, or the search test query. */
+  text?: string
+  /** `api`: the JSON params object (or `-` for stdin). */
+  params?: string
+  payload?: string
+  /** `approvals suggest`: how far back to look, the smallest count worth suggesting, and how many to show. */
+  days?: string
+  minCount?: string
+  /** `--limit` raw value, range-checked by the command that reads it (`approvals suggest`, `sessions list`). */
+  limit?: string
   /** Explicitly permit provider doctor to issue its bounded minimal-inference probe. */
   probe: boolean
   /** Repeated Computer Use doctor check selectors. Owned by that command's grammar. */

@@ -1,6 +1,6 @@
 {
   "name": "@agnes/mcp-helper",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Connect MCP servers to Agnes Harness through approved host requests",
   "type": "module",
   "license": "Apache-2.0",
@@ -18,11 +18,39 @@
     "plugins": [
       {
         "export": "mcpHelper",
+        "apiRange": "^5.0.0",
         "id": "ext:mcp-helper/main",
         "inject": [
-          "extension"
-        ]
+          "tools"
+        ],
+        "metadata": {
+          "displayName": "MCP connection helper",
+          "summary": "Helps connect MCP servers through reviewed requests.",
+          "description": "Helps connect MCP servers through reviewed requests.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "MCP 连接助手",
+              "summary": "通过审核后的请求帮助连接 MCP 服务。",
+              "description": "通过审核后的请求帮助连接 MCP 服务。"
+            }
+          }
+        }
       }
+    ],
+    "metadata": {
+      "displayName": "MCP connection helper",
+      "summary": "Helps connect MCP servers through reviewed requests.",
+      "description": "Helps connect MCP servers through reviewed requests.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "MCP 连接助手",
+          "summary": "通过审核后的请求帮助连接 MCP 服务。",
+          "description": "通过审核后的请求帮助连接 MCP 服务。"
+        }
+      }
+    },
+    "provides": [
+      "tool"
     ]
   }
 }

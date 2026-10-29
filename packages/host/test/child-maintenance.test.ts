@@ -1,9 +1,13 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createSqliteStorage } from '../src/adapters/storage-sqlite.js'
-import { listChildCandidates, repairChildCandidates, sessionsDbPath } from '../src/child-maintenance.js'
+import {
+  listChildCandidates,
+  repairChildCandidates,
+  sessionsDbPath,
+} from '../src/runtime/children/child-maintenance.js'
 
 describe('child maintenance', () => {
   let dir: string

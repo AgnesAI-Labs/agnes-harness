@@ -1,10 +1,10 @@
 import { DatabaseSync } from 'node:sqlite'
-import { extractArtifactRefs } from '../../src/artifact-ledger-refs.js'
+import { extractArtifactRefs } from '@agnes/host-artifacts/artifact-ledger-refs'
 
 export type OracleRef = Readonly<{
   sha256: string
   session_key: string
-  source: 'ledger' | 'request-media'
+  source: 'ledger' | 'request-media' | 'attachment'
   last_seq: number
   last_ts_ms: number
   last_tool_image_seq: number | null
@@ -32,6 +32,7 @@ export function fullScanRefIndex(file: string): {
   cursors: OracleCursor[]
   ledger: Set<string>
   requestMedia: Set<string>
+  attachments?: Set<string>
 } {
   const database = new DatabaseSync(file, { readOnly: true })
   try {
@@ -75,6 +76,7 @@ export function fullScanRefIndex(file: string): {
       }
       for (const sha256 of extracted.ledger) put(sha256, 'ledger', extracted.toolImage.has(sha256))
       for (const sha256 of extracted.requestMedia) put(sha256, 'request-media', false)
+      for (const sha256 of extracted.attachments) put(sha256, 'attachment', false)
       cursors.set(row.session_key, {
         session_key: row.session_key,
         last_seq: row.seq,
@@ -89,6 +91,13 @@ export function fullScanRefIndex(file: string): {
     )
     return {
       refs: sortedRefs,
+      ...(sortedRefs.some((ref) => ref.source === 'attachment')
+        ? {
+            attachments: new Set(
+              sortedRefs.filter((ref) => ref.source === 'attachment').map((ref) => ref.sha256),
+            ),
+          }
+        : {}),
       cursors: [...cursors.values()].sort((a, b) => a.session_key.localeCompare(b.session_key)),
       ledger: new Set(sortedRefs.filter((ref) => ref.source === 'ledger').map((ref) => ref.sha256)),
       requestMedia: new Set(

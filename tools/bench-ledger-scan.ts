@@ -9,10 +9,10 @@ import {
   type ScanQuery,
   type Seq,
   scanAll,
-} from '../packages/core/src/index.js'
+} from '@agnes/core'
+import { createSqliteStorage, type SqliteStorage } from '@agnes/host'
 import { surfaceToolCalls } from '../packages/core/src/step/inference.js'
 import { actor, fakeProvider, openSession } from '../packages/core/testkit/index.js'
-import { createSqliteStorage, type SqliteStorage } from '../packages/host/src/index.js'
 
 // Ledger scan costs after the paging fix, on SQLite. Not a CI gate and no timing assertion: the
 // numbers go into the execution record, including any that miss their target.

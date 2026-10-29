@@ -15,7 +15,13 @@ export function openLoginBrowser(url: string, signal: AbortSignal): void {
       'auth.x.ai',
       'accounts.x.ai',
     ])
-    if (parsed.protocol !== 'https:' || parsed.username || parsed.password || !allowed.has(parsed.hostname))
+    if (
+      parsed.protocol !== 'https:' ||
+      parsed.username ||
+      parsed.password ||
+      parsed.hash ||
+      !allowed.has(parsed.hostname)
+    )
       return
   } catch {
     return

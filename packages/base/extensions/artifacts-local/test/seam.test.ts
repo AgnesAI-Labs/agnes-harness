@@ -236,3 +236,178 @@ describe('artifacts-local put/get', () => {
     await expect(seam.cancel('j1')).rejects.toThrow(/artifact jobs are not implemented/)
   })
 })
+
+it('keeps independent, durable scoped upload receipts and fails closed on damaged roots', async () => {
+  const { createAttachmentStore } = await import('../src/attachments.js')
+  const values = new Map<string, unknown>()
+  const metadata: import('@agnes/extension-api').PersistenceMetadataNamespace = {
+    get: (key) => structuredClone(values.get(key)),
+    set: (key, value) => {
+      values.set(key, structuredClone(value))
+    },
+    delete: (key) => {
+      values.delete(key)
+    },
+    entries: () => [...values].map(([key, value]) => ({ key, value: structuredClone(value) })),
+    transaction: (fn) => fn(),
+  }
+  const init = fakeSeamInit()
+  init.adapters.storage.namespace = () => metadata
+  const seam = await artifactsLocal(init)
+  expect(seam.attachments).toBeDefined()
+  const store = seam.attachments ?? createAttachmentStore(metadata, seam)
+  const scope = { sessionKey: 'session', lane: 'main' }
+  const signal = new AbortController().signal
+  const bytes = new TextEncoder().encode('receipt original')
+  const first = await store.store(scope, bytes, 'text/plain', signal)
+  const second = await store.store(scope, bytes, 'text/plain', signal)
+  expect(first.artifact).toEqual(second.artifact)
+  expect(first.id).not.toBe(second.id)
+  const cold = createAttachmentStore(metadata, seam)
+  expect(await cold.authorize(scope, first, signal)).toBe(true)
+  for (const other of [
+    { sessionKey: 'foreign', lane: 'main' },
+    { sessionKey: 'session', lane: 'other' },
+  ]) {
+    expect(await cold.authorize(other, first, signal)).toBe(false)
+    await expect(cold.discard(other, first.id)).rejects.toMatchObject({ code: 'ATTACHMENT_NOT_AUTHORIZED' })
+  }
+  expect(
+    await cold.authorize(
+      scope,
+      { ...first, artifact: { ...first.artifact, size: bytes.length - 1 } },
+      signal,
+    ),
+  ).toBe(false)
+  expect(
+    await cold.authorize(
+      scope,
+      { ...first, artifact: { ...first.artifact, mime: 'application/pdf' } },
+      signal,
+    ),
+  ).toBe(false)
+  await cold.discard(scope, first.id)
+  expect(await cold.authorize(scope, first, signal)).toBe(false)
+  expect(await cold.authorize(scope, second, signal)).toBe(true)
+  expect(await cold.pendingRoots()).toEqual({ complete: true, roots: [second.artifact] })
+  await cold.confirm(scope, second.id)
+  await cold.confirm(scope, second.id)
+  expect(await cold.pendingRoots()).toEqual({ complete: true, roots: [] })
+  values.set('damaged', { artifact: { sha256: 'fake' } })
+  expect(await cold.pendingRoots()).toEqual({ complete: false, roots: [] })
+  await expect(cold.store(scope, bytes, 'text/plain', signal)).rejects.toMatchObject({
+    code: 'ATTACHMENT_UNAVAILABLE',
+  })
+})
+
+it('discards cancelled publication without consuming another receipt or retaining a failed quota reservation', async () => {
+  const { createAttachmentStore } = await import('../src/attachments.js')
+  const values = new Map<string, unknown>()
+  const metadata: import('@agnes/extension-api').PersistenceMetadataNamespace = {
+    get: (key) => structuredClone(values.get(key)),
+    set: (key, value) => {
+      values.set(key, structuredClone(value))
+    },
+    delete: (key) => {
+      values.delete(key)
+    },
+    entries: () => [...values].map(([key, value]) => ({ key, value })),
+    transaction: (fn) => fn(),
+  }
+  const seam = await artifactsLocal(fakeSeamInit())
+  const abort = new AbortController()
+  const store = createAttachmentStore(metadata, {
+    put: async (...args) => {
+      const ref = await seam.put(...args)
+      abort.abort()
+      return ref
+    },
+  })
+  await expect(
+    store.store({ sessionKey: 's', lane: 'main' }, new Uint8Array([1]), 'text/plain', abort.signal),
+  ).rejects.toMatchObject({ code: 'ATTACHMENT_CANCELLED' })
+  expect(await store.pendingRoots()).toEqual({ complete: true, roots: [] })
+  const { createHash } = await import('node:crypto')
+  const data = new Uint8Array([1, 2, 3])
+  const artifact = { sha256: createHash('sha256').update(data).digest('hex'), size: 3, mime: 'text/plain' }
+  const streamed = createAttachmentStore(metadata, seam, async (ref, source, signal) => {
+    expect((await streamed.pendingRoots()).roots).toContainEqual(ref)
+    for await (const chunk of source) {
+      expect(chunk).toEqual(data)
+      signal.throwIfAborted()
+    }
+  })
+  async function* source() {
+    yield data
+  }
+  const storeStream = streamed.storeStream
+  if (!storeStream) throw new Error('Missing streaming capability')
+  const scope = { sessionKey: 's', lane: 'main' }
+  const signal = new AbortController().signal
+  const receipt = await storeStream(scope, source(), artifact, signal)
+  expect(await streamed.authorize(scope, receipt, signal)).toBe(true)
+  const cancel = new AbortController()
+  async function* cancelled() {
+    yield data
+    cancel.abort()
+  }
+  await expect(storeStream(scope, cancelled(), artifact, cancel.signal)).rejects.toMatchObject({
+    code: 'ATTACHMENT_CANCELLED',
+  })
+  expect(await streamed.pendingRoots()).toEqual({ complete: true, roots: [artifact] })
+  await streamed.discard(scope, receipt.id)
+  expect(await streamed.pendingRoots()).toEqual({ complete: true, roots: [] })
+})
+
+it('caches model-specific renditions and thumbnails under independent receipt roots without modifying originals', async () => {
+  const { createRequire } = await import('node:module')
+  const { decodeSafeImageBytes, USER_MESSAGE_IMAGE_LIMITS } = await import('@agnes/protocol-validation')
+  const sharp = createRequire(import.meta.url)('sharp') as typeof import('sharp')
+  const namespaces = new Map<string, Map<string, unknown>>()
+  const init = fakeSeamInit()
+  init.adapters.storage.namespace = (name) => {
+    let values = namespaces.get(name)
+    if (!values) {
+      values = new Map()
+      namespaces.set(name, values)
+    }
+    const rows = values
+    return {
+      get: (key) => structuredClone(rows.get(key)),
+      set: (key, value) => {
+        rows.set(key, structuredClone(value))
+      },
+      delete: (key) => {
+        rows.delete(key)
+      },
+      entries: () => [...rows].map(([key, value]) => ({ key, value: structuredClone(value) })),
+      transaction: (fn) => fn(),
+    }
+  }
+  const seam = await artifactsLocal(init)
+  const store = seam.attachments!
+  const source = await sharp({ create: { width: 128, height: 64, channels: 3, background: 'white' } })
+    .png()
+    .toBuffer()
+  const original = await seam.put(source, { mime: 'image/png' })
+  const scope = { sessionKey: 's', lane: 'main' },
+    signal = new AbortController().signal
+  const policy = { maxWidth: 32, maxHeight: 32, maxBytes: 4096, jpegQuality: 85 }
+  const first = await store.imageVersion!(scope, original, policy, signal)
+  expect(await store.imageVersion!(scope, original, policy, signal)).toEqual(first)
+  expect(
+    decodeSafeImageBytes(
+      { bytes: await seam.get(first.artifact), mimeType: 'image/png' },
+      USER_MESSAGE_IMAGE_LIMITS,
+    ),
+  ).toMatchObject({ width: 32, height: 16 })
+  const other = await store.imageVersion!(scope, original, { ...policy, maxWidth: 16, maxHeight: 16 }, signal)
+  expect(other.artifact.sha256).not.toBe(first.artifact.sha256)
+  expect([...(await seam.get(original))]).toEqual([...source])
+  expect((await store.pendingRoots()).roots).toEqual(expect.arrayContaining([first.artifact, other.artifact]))
+  expect(await store.authorize({ sessionKey: 's', lane: 'foreign' }, first, signal)).toBe(false)
+  await store.discard(scope, first.id)
+  const refreshed = await store.imageVersion!(scope, original, policy, signal)
+  expect(refreshed.id).not.toBe(first.id)
+  expect(refreshed.artifact).toEqual(first.artifact)
+})

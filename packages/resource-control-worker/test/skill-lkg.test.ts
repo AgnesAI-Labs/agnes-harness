@@ -134,9 +134,9 @@ describe('scanSkills threads a separately resolved Agnes home to the one Agnes-o
     const scanned = await scanSkills(workspace, undefined, undefined, osHomeDir, agnesHomeDir)
     const userAgnesRoot = scanned.roots.find((entry) => entry.rootKey === 'user-agnes')
     expect(userAgnesRoot?.candidates).toMatchObject([{ name: 'greet' }])
-    // osHomeDir/.agh/skills -- the OS-home default -- must not also be scanned for this root.
+    // External OS-home roots are absent unless user import is explicitly enabled.
     const userAgentsRoot = scanned.roots.find((entry) => entry.rootKey === 'user-agents')
-    expect(userAgentsRoot?.candidates).toEqual([])
+    expect(userAgentsRoot).toBeUndefined()
   })
 })
 

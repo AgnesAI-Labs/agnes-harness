@@ -1,6 +1,6 @@
+import type { HarnessEntry } from '@agnes/core-ledger/reduce/shapes'
 import type { ToolDef } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
-import type { HarnessEntry } from '../src/reduce/shapes.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { harnessSections, mergeContributions } from '../src/request/contribute.js'
 

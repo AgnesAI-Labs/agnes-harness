@@ -10,14 +10,7 @@ type ImageModel = {
     }
   }
 }
-type ImageBlock = {
-  type: string
-  data?: string
-  mimeType?: string
-  attachment?: unknown
-  width?: unknown
-  height?: unknown
-}
+type ImageBlock = { type: string; data?: string; mimeType?: string }
 
 /** Product limits remain independent of the provider's optional catalogue limits. */
 export function userImagePolicy(model: ImageModel | undefined) {
@@ -51,25 +44,6 @@ export function modelImageInputError(
   const resize = limits?.resize
   for (const images of groups) {
     for (const image of images) {
-      // A stored image counts as one image and is checked by its declared size and by the Base64
-      // length its bytes would have, without reading them.
-      if (image.attachment !== undefined && image.data === undefined) {
-        if (!Number.isSafeInteger(image.width) || !Number.isSafeInteger(image.height))
-          return 'Invalid image input.'
-        const stored = (image.attachment as { bytes?: unknown } | null)?.bytes
-        if (
-          resize?.maxBytes !== undefined &&
-          typeof stored === 'number' &&
-          Math.ceil(stored / 3) * 4 > resize.maxBytes
-        )
-          return `An image exceeds the model's ${resize.maxBytes}-byte Base64 limit.`
-        if (
-          (image.width as number) > (resize?.maxWidth ?? Infinity) ||
-          (image.height as number) > (resize?.maxHeight ?? Infinity)
-        )
-          return 'An image exceeds the model image dimensions. Resize it before sending.'
-        continue
-      }
       if (typeof image.data !== 'string' || typeof image.mimeType !== 'string') return 'Invalid image input.'
       if (resize?.maxBytes !== undefined && image.data.length > resize.maxBytes)
         return `An image exceeds the model's ${resize.maxBytes}-byte Base64 limit.`

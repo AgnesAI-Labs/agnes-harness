@@ -2,12 +2,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { HookEngine, HookRegistry, ResourceRegistry, SlotRegistry } from '@agnes/core'
-import { API_VERSION, type ExtensionAPI, type ExtensionManifest } from '@agnes/extension-api'
+import { API_VERSION, bundledPackageJson, type ExtensionManifest } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
+import { bindExtensionInvocations } from '@agnes/host-extensions/assemble/extension-ports'
+import { createLoader } from '@agnes/host-extensions/ext-host/loader'
+import { createManagedExtHost, type ExtensionSpec } from '@agnes/host-extensions/ext-host/managed-host'
+import { ServiceRegistry } from '@agnes/host-extensions/ext-host/services'
 import { afterEach, expect, it, vi } from 'vitest'
-import { bindExtensionInvocations } from '../../src/assemble/extension-ports.js'
-import { createLoader } from '../../src/ext-host/loader.js'
-import { createManagedExtHost, type ExtensionSpec } from '../../src/ext-host/managed-host.js'
-import { ServiceRegistry } from '../../src/ext-host/services.js'
 import { createTestHost, type TestHost } from '../../testkit/index.js'
 import { fixtureTool } from '../fixtures/tool.js'
 
@@ -41,20 +42,42 @@ tool.execute = async () => { await api.events.append('note', { kind: 'tool' }); 
 api.registerTool(tool); api.registerHook('before_step', () => ({}));
 api.registerSlot('status.line', () => ({ text: 'loaded', level: 'info' }));
 api.registerResource({ id: 's', kind: 'skill', name: 's', description: 'loaded' });`
+const PLUGIN_SHIM = `export default {
+  inject: ['tools', 'hooks', 'projections', 'services', 'slots', 'resources', 'eventLog', 'providers', 'self'],
+  apply(ctx) {
+    return factory({
+      registerTool: (def) => ctx.tools.register(def),
+      registerHook: (event, handler) => ctx.hooks.register(event, handler),
+      registerSlot: (slot, fill) => ctx.slots.register(slot, fill),
+      registerResource: (entry) => ctx.resources.register(entry),
+      registerService: (def) => ctx.services.register(def),
+      registerProjection: (def) => ctx.projections.register(def),
+      events: ctx.eventLog,
+      providers: ctx.providers,
+      get ctx() { return ctx.self },
+    })
+  },
+}`
 function extension(root: string, name: string, source: string, capabilities = caps): ExtensionSpec {
   const dir = join(root, name)
   mkdirSync(dir)
   writeFileSync(
-    join(dir, 'agnes.extension.json'),
-    JSON.stringify({
-      id: `fixture/${name}`,
-      version: '1.0.0',
-      apiRange: `^${API_VERSION}`,
-      entry: './index.ts',
-      capabilities,
-    }),
+    join(dir, 'package.json'),
+    JSON.stringify(
+      bundledPackageJson({
+        id: `fixture/${name}`,
+        version: '1.0.0',
+        apiRange: `^${API_VERSION}`,
+        entry: './index.ts',
+        capabilities,
+      }),
+    ),
   )
-  writeFileSync(join(dir, 'index.ts'), `import { Type } from '@sinclair/typebox';\n${source}`)
+  // The fixtures below are written against the backend API; the module still has to be a plugin.
+  const module = source.includes('export default')
+    ? `${source.replace('export default ', 'const factory = ')}\n${PLUGIN_SHIM}`
+    : source
+  writeFileSync(join(dir, 'index.ts'), `import { Type } from '@sinclair/typebox';\n${module}`)
   return {
     id: `fixture/${name}`,
     package: '@fixture/package',
@@ -337,11 +360,11 @@ it.each(['identity', 'api', 'json', 'trust', 'version'] as const)(
     else if (kind === 'version') spec.packageVersion = ''
     else if (kind === 'identity') spec.id = 'fixture/wrong'
     else if (kind === 'api') {
-      const file = join(spec.dir, 'agnes.extension.json')
+      const file = join(spec.dir, 'package.json')
       const manifest = JSON.parse(readFileSync(file, 'utf8'))
-      manifest.apiRange = '^999.0.0'
+      manifest.agnes.plugins[0].apiRange = '^999.0.0'
       writeFileSync(file, JSON.stringify(manifest))
-    } else writeFileSync(join(spec.dir, 'agnes.extension.json'), '{invalid')
+    } else writeFileSync(join(spec.dir, 'package.json'), '{invalid')
     const result = await h.managed.load(spec)
     expect(() => readFileSync(marker)).toThrow(/ENOENT/)
     expect(result).toMatchObject({

@@ -30,19 +30,22 @@ describe('slots', () => {
     // cap once serialised. Valid here, and someone else's job to refuse.
     const overCap = {
       title: 'wide report',
-      table: {
-        columns: ['a'],
-        rows: Array.from({ length: 200 }, () => ['x'.repeat(1024)]),
+      chart: {
+        kind: 'bar',
+        series: Array.from({ length: 8 }, () => ({
+          name: 'series',
+          points: Array.from({ length: 1000 }, () => ({ x: 'x'.repeat(64), y: 1 })),
+        })),
       },
     }
     expect(JSON.stringify(overCap).length).toBeGreaterThan(UI_SLOT_MAX_BYTES)
     const r = validateSlotPayload('tool.card.inline', overCap)
     expect(r.ok, r.ok ? '' : JSON.stringify(r.errors)).toBe(true)
   })
-  it('validates tool.card.inline with a table and actions', () => {
+  it('validates tool.card.inline with a chart and actions', () => {
     const ok = validateSlotPayload('tool.card.inline', {
       title: 'monthly sales',
-      table: { columns: ['region', 'amount'], rows: [['east', '1,200']] },
+      chart: { kind: 'bar', series: [{ name: 'amount', points: [{ x: 'east', y: 1200 }] }] },
       actions: [{ id: 'export', label: 'Export' }],
     })
     expect(ok.ok, ok.ok ? '' : JSON.stringify(ok.errors)).toBe(true)

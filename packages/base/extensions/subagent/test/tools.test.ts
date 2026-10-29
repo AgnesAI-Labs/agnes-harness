@@ -1,13 +1,20 @@
+import { CoreError, resetChildAgentAllowlists, setChildAgentAllowlist, trackExternalChild } from '@agnes/core'
 import { checkToolDef, type ToolContext, type ToolDef } from '@agnes/extension-api'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { createSubagentExtension } from '../src/index.js'
 import type { SubagentDeps } from '../src/tools.js'
 import {
   createSubagentRuntime,
+  listSubagentModelsTool,
   subagentCancelTool,
   subagentCollectTool,
   subagentForkTool,
+  subagentForkToolWithDeps,
+  subagentInterruptTool,
+  subagentListTool,
+  subagentSendMessageTool,
   subagentSpawnTool,
 } from '../src/tools.js'
 import type { WorktreeCreateResult, WorktreeFinishResult, WorktreeManager } from '../src/worktree.js'
@@ -20,6 +27,7 @@ type SubagentCalls = {
       (
         | {
             model?: string
+            role?: string
             isolation?: 'worktree' | 'shared'
             budget?: number
             cwd?: string
@@ -84,6 +92,7 @@ function worktrees(
         ? handlers.create(ctx)
         : {
             id: '1234abcd',
+            root: '/work/proj',
             path: '/work/proj/.worktrees/agnes-1234abcd',
             branch: 'agnes/subagent-1234abcd',
           }
@@ -119,47 +128,102 @@ function deps(
 }
 
 describe('subagent tool definitions', () => {
-  it('publishes three complete definitions with the intended replay metadata', () => {
+  it('publishes complete definitions with the intended replay metadata', () => {
     const d = deps()
-    const tools = [subagentForkTool, subagentSpawnTool(d), subagentCollectTool(d), subagentCancelTool(d)]
+    const tools = [
+      subagentForkToolWithDeps(d),
+      subagentSpawnTool(d),
+      subagentCollectTool(d),
+      subagentCancelTool(d),
+      subagentListTool,
+      subagentSendMessageTool,
+      subagentInterruptTool,
+      listSubagentModelsTool,
+    ]
 
-    for (const tool of tools) expect(checkToolDef(tool, { prefix: 'subagent_' })).toEqual({ ok: true })
+    for (const tool of tools) expect(checkToolDef(tool)).toEqual({ ok: true })
     expect(tools.map((tool) => [tool.name, tool.meta.replay, tool.meta.isConcurrencySafe])).toEqual([
       ['subagent_fork', 'never', true],
       ['subagent_spawn', 'never', true],
       ['subagent_collect', 'safe', true],
       ['subagent_cancel', 'never', true],
+      ['subagent_list', 'safe', true],
+      ['subagent_send_message', 'never', true],
+      ['subagent_interrupt', 'never', true],
+      ['list_subagent_models', 'safe', true],
     ])
+    expect(tools[1]?.description).toContain('Only use role for a declared role')
+    expect(tools[1]?.description).toContain('non-git')
+    expect(tools[0]?.description).toContain('non-git')
     expect(tools[0]?.meta).toMatchObject({ isReadOnly: false, isOpenWorld: true, replay: 'never' })
     expect(tools[2]?.meta).toMatchObject({ isReadOnly: false, isDestructive: true })
   })
 
-  it('the explicit extension factory registers and disposes all three tools', () => {
+  it('the explicit extension factory registers and disposes all child tools', () => {
     const names: string[] = []
     const disposed: string[] = []
     const factory = createSubagentExtension(deps())
-    const dispose = factory({
+    const dispose = extensionFactoryOf(factory)({
       registerTool(tool: ToolDef) {
         names.push(tool.name)
         return () => disposed.push(tool.name)
       },
     } as never)
 
-    expect(names).toEqual(['subagent_fork', 'subagent_spawn', 'subagent_collect', 'subagent_cancel'])
+    expect(names).toEqual([
+      'subagent_fork',
+      'subagent_spawn',
+      'subagent_collect',
+      'subagent_cancel',
+      'subagent_list',
+      'subagent_send_message',
+      'subagent_interrupt',
+      'list_subagent_models',
+    ])
     expect(dispose).toBeTypeOf('function')
     ;(dispose as () => void)()
-    expect(disposed).toEqual(['subagent_cancel', 'subagent_collect', 'subagent_spawn', 'subagent_fork'])
+    expect(disposed).toEqual([
+      'list_subagent_models',
+      'subagent_interrupt',
+      'subagent_send_message',
+      'subagent_list',
+      'subagent_cancel',
+      'subagent_collect',
+      'subagent_spawn',
+      'subagent_fork',
+    ])
   })
 })
 
 describe('subagent_fork', () => {
-  it('returns the answer and preserves an optional model choice', async () => {
+  it('starts an inherited background child with the same limits and options as spawn', async () => {
     const { calls, ctx } = context()
-
-    await expect(subagentForkTool.execute({ question: 'review this', model: 'fast' }, ctx)).resolves.toEqual({
-      content: [{ type: 'text', text: 'answer:review this' }],
-    })
-    expect(calls.fork).toEqual([['review this', { model: 'fast' }]])
+    const result = await subagentForkToolWithDeps(deps({ isolation: 'shared' })).execute(
+      {
+        question: 'review this',
+        model: 'fast',
+        budget: 2,
+        toolFilter: { deny: ['shell'] },
+      },
+      ctx,
+    )
+    expect(result.details).toEqual({ childKey: 'child-1', isolation: 'shared' })
+    expect(calls.spawn).toEqual([
+      [
+        'review this',
+        {
+          model: 'fast',
+          budget: 2,
+          isolation: 'shared',
+          resident: true,
+          fork: true,
+          toolFilter: {
+            deny: ['schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update', 'shell'],
+          },
+        },
+      ],
+    ])
+    expect(calls.fork).toEqual([])
   })
 })
 
@@ -181,6 +245,8 @@ describe('subagent_spawn', () => {
           model: 'm',
           budget: 7,
           isolation: 'worktree',
+          resident: true,
+          toolFilter: { deny: ['schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update'] },
           start: false,
         },
       ],
@@ -194,20 +260,104 @@ describe('subagent_spawn', () => {
     })
   })
 
-  it('honours explicit shared isolation and a fail-closed worktree fallback', async () => {
-    const wt = worktrees({ create: async () => ({ skipped: 'not-git' }) })
-    const d = deps({ worktrees: wt.manager })
-    const first = context({ spawn: async () => ({ childKey: 'shared-child' }) })
+  it.each(['spawn', 'fork'] as const)(
+    'uses shared cwd for an implicit non-git %s, but refuses explicit isolation and other errors',
+    async (kind) => {
+      for (const skipped of ['not-git', 'git-error', 'remote-sandbox'] as const) {
+        for (const isolation of [undefined, 'worktree', 'shared'] as const) {
+          const wt = worktrees({ create: async () => ({ skipped }) })
+          const d = deps({ worktrees: wt.manager })
+          const { ctx, calls } = context()
+          const result =
+            kind === 'fork'
+              ? await subagentForkToolWithDeps(d).execute(
+                  { question: 'build bread', ...(isolation === undefined ? {} : { isolation }) },
+                  ctx,
+                )
+              : await subagentSpawnTool(d).execute(
+                  { task: 'build drinks', ...(isolation === undefined ? {} : { isolation }) },
+                  ctx,
+                )
+          const shared = isolation === 'shared' || (isolation === undefined && skipped === 'not-git')
+          expect(result.isError).toBe(shared ? undefined : true)
+          if (shared) {
+            expect(result.details).toMatchObject({ isolation: 'shared' })
+            expect(calls.spawn[0]?.[1]).toMatchObject({ isolation: 'shared' })
+            if (isolation === undefined)
+              expect(JSON.stringify(result.content)).toContain(
+                'ran in the shared folder because it is not a git repository',
+              )
+          } else {
+            expect(JSON.stringify(result.content)).toContain(`worktree creation failed: ${skipped}`)
+            expect(calls.spawn).toEqual([])
+          }
+        }
+      }
+    },
+  )
 
-    await subagentSpawnTool(d).execute({ task: 'shared', isolation: 'shared' }, first.ctx)
-    expect(wt.calls.create).toEqual([])
-    expect(first.calls.spawn).toEqual([['shared', { isolation: 'shared' }]])
-
-    const second = context({ spawn: async () => ({ childKey: 'fallback-child' }) })
-    const result = await subagentSpawnTool(d).execute({ task: 'fallback' }, second.ctx)
-    expect(second.calls.spawn).toEqual([['fallback', { isolation: 'worktree', start: false }]])
-    expect(result.content[0]).toMatchObject({ text: expect.stringContaining('worktree skipped: not-git') })
-    expect(result.details).toMatchObject({ isolation: 'shared', worktreeSkipped: 'not-git' })
+  it('passes an explicit role and backend attribution, rejecting incompatible and refused roles without fallback', async () => {
+    const d = deps()
+    const role = { ref: '@fixture/roles#reader', title: { en: 'Reader', 'zh-CN': '读者' } }
+    const { ctx, calls } = context({
+      spawn: async (_task, options) => {
+        if (options?.role !== role.ref) throw new Error('Role is not delegable')
+        return { childKey: 'role-child', role }
+      },
+    })
+    ctx.tools.availability = (name) => ({
+      status: name === 'subagent_list' ? 'offered' : 'unavailable',
+      message: 'Request tool selection.',
+    })
+    const tool = subagentSpawnTool(d)
+    const result = await tool.execute({ task: 'Read', role: role.ref }, ctx)
+    expect(result.structured).toMatchObject({ childKey: 'role-child', role, task: 'Read', status: 'running' })
+    expect(JSON.stringify(result.content)).not.toContain('role-child')
+    expect(JSON.stringify(result.content)).not.toContain('subagent_send_message')
+    expect(JSON.stringify(result.content)).toContain(
+      'Use subagent_list for the handle if follow-up is needed',
+    )
+    for (const availability of ['deferred', 'unavailable', undefined] as const) {
+      const restricted = context({ spawn: async () => ({ childKey: 'restricted-child', role }) })
+      restricted.ctx.tools.list = () => [subagentListTool]
+      if (availability)
+        restricted.ctx.tools.availability = () => ({ status: availability, message: availability })
+      const receipt = await subagentSpawnTool(deps()).execute(
+        { task: 'Read', role: role.ref },
+        restricted.ctx,
+      )
+      expect(JSON.stringify(receipt.content)).not.toContain('subagent_list')
+      expect(JSON.stringify(receipt.content)).not.toContain('subagent_send_message')
+      expect(JSON.stringify(receipt.content)).not.toContain('restricted-child')
+      expect(receipt.structured).toMatchObject({ childKey: 'restricted-child', status: 'running' })
+    }
+    const waitedContext = context({ spawn: async () => ({ childKey: 'waited-role', role }) })
+    const waited = await tool.execute({ task: 'Read', role: role.ref, wait: true }, waitedContext.ctx)
+    expect(waited.structured).toMatchObject({ childKey: 'waited-role', status: 'completed' })
+    expect(waited.content).toEqual([{ type: 'text', text: 'Delegated task completed.\ndone' }])
+    expect(waitedContext.calls.collect).toContainEqual(['waited-role', { wait: true }])
+    for (const status of ['idle', 'failed', 'running'] as const) {
+      const waiting = context({
+        spawn: async () => ({ childKey: `role-${status}`, role }),
+        collect: async (childKey) => ({ childKey, status, text: 'specialist findings' }),
+      })
+      const outcome = await subagentSpawnTool(deps()).execute(
+        { task: 'Read', role: role.ref, wait: true },
+        waiting.ctx,
+      )
+      expect(outcome.structured).toMatchObject({ status: status === 'idle' ? 'completed' : status })
+      expect(outcome.content).toEqual([
+        { type: 'text', text: `Delegated task ${status}.\nspecialist findings` },
+      ])
+    }
+    expect(calls.spawn[0]?.[1]).toMatchObject({ role: role.ref, isolation: 'shared' })
+    expect((await tool.execute({ task: 'Read', role: '@other/app#reader' }, ctx)).isError).toBe(true)
+    const attempted = calls.spawn.length
+    expect((await tool.execute({ task: 'Read', role: role.ref, model: 'other' }, ctx)).isError).toBe(true)
+    expect((await subagentSpawnTool(d, true).execute({ task: 'Read', role: role.ref }, ctx)).isError).toBe(
+      true,
+    )
+    expect(calls.spawn).toHaveLength(attempted)
   })
 
   it('enforces depth before worktree or child creation', async () => {
@@ -265,21 +415,55 @@ describe('subagent_spawn', () => {
     await first
   })
 
-  it('persists identity before preparing a worktree, so a failed create never leaves a tree', async () => {
-    const wt = worktrees()
-    const d = deps({ worktrees: wt.manager })
-    const c = context({
-      spawn: async () => {
-        throw new Error('child backend unavailable')
-      },
-    })
+  it.each([
+    { name: 'backend failure', error: new Error('child backend unavailable'), born: false, refused: false },
+    {
+      name: 'Core admission refusal',
+      error: new CoreError('E_CHILD_LIMIT', 'generation limit'),
+      born: false,
+      refused: true,
+    },
+    {
+      name: 'lookalike error code',
+      error: Object.assign(new Error('limit'), { code: 'E_CHILD_LIMIT' }),
+      born: false,
+      refused: false,
+    },
+    {
+      name: 'budget recovery failure',
+      error: new CoreError('E_BUDGET', 'uncertain reservation'),
+      born: false,
+      refused: false,
+    },
+    {
+      name: 'failure after child identity',
+      error: new CoreError('E_CHILD_LIMIT', 'resume failed'),
+      born: true,
+      refused: false,
+    },
+  ])(
+    'settles only a Core admission refusal and preserves cleanup: $name',
+    async ({ error, born, refused }) => {
+      const wt = worktrees()
+      const d = deps({ worktrees: wt.manager })
+      const c = context({
+        spawn: async () => {
+          if (!born) throw error
+          return { childKey: 'created-child' }
+        },
+        resume: async () => {
+          throw error
+        },
+      })
 
-    await expect(subagentSpawnTool(d).execute({ task: 'one' }, c.ctx)).rejects.toThrow(
-      'child backend unavailable',
-    )
-    expect(wt.calls.create).toEqual([])
-    expect(wt.calls.finish).toEqual([])
-  })
+      const execution = subagentSpawnTool(d).execute({ task: 'one' }, c.ctx)
+      if (refused)
+        expect(await execution).toMatchObject({ isError: true, details: { code: 'E_CHILD_LIMIT' } })
+      else await expect(execution).rejects.toBe(error)
+      expect(wt.calls.create).toEqual([c.ctx])
+      expect(wt.calls.finish).toEqual([['spawn-failed', '/work/proj/.worktrees/agnes-1234abcd']])
+    },
+  )
 
   it('rejects invalid direct-call budgets before reserving capacity', async () => {
     const d = deps({ isolation: 'shared' })
@@ -338,5 +522,114 @@ describe('subagent_collect', () => {
     await subagentCollectTool(d).execute({ childKey: 'c1' }, c.ctx)
     expect(wt.calls.finish).toEqual([])
     expect((await subagentSpawnTool(d).execute({ task: 'two' }, c.ctx)).isError).toBeUndefined()
+  })
+})
+
+describe('child allowlist and continuable controls', () => {
+  const sessionKey = 'agnes:t:a:cli:dm:x'
+
+  it('lists only child models allowed for this parent', async () => {
+    const { ctx } = context()
+    ctx.subagent.models = async () => [
+      { id: 'fast', route: 'default', selector: 'default/fast' },
+      { id: 'slow', route: 'default', selector: 'default/slow' },
+    ]
+    setChildAgentAllowlist(sessionKey, { models: ['default/fast'], providers: ['in-process'] })
+    try {
+      expect((await listSubagentModelsTool.execute({}, ctx)).details).toEqual({
+        models: [{ id: 'fast', route: 'default', selector: 'default/fast' }],
+      })
+      setChildAgentAllowlist(sessionKey, { providers: [] })
+      expect((await listSubagentModelsTool.execute({}, ctx)).details).toEqual({ models: [] })
+    } finally {
+      resetChildAgentAllowlists()
+    }
+  })
+
+  it('refuses a fork the session model allowlist does not name', async () => {
+    setChildAgentAllowlist(sessionKey, { models: ['other'] })
+    try {
+      const { calls, ctx } = context()
+      const result = await subagentForkTool.execute({ question: 'review' }, ctx)
+      expect(result.isError).toBe(true)
+      expect(result.content[0]).toMatchObject({ text: expect.stringContaining('E_MODEL_UNKNOWN') })
+      expect(calls.fork).toEqual([])
+    } finally {
+      resetChildAgentAllowlists()
+    }
+  })
+
+  it('checks the provider allowlist before the depth limit', async () => {
+    setChildAgentAllowlist(sessionKey, { providers: [] })
+    try {
+      const { calls, ctx } = context()
+      const result = await subagentSpawnTool(deps({ maxDepth: 0 })).execute({ task: 'go' }, ctx)
+      expect(result.isError).toBe(true)
+      expect(result.content[0]).toMatchObject({ text: expect.stringContaining('E_UNSUPPORTED') })
+      expect(result.content[0]).toMatchObject({
+        text: expect.stringContaining('child provider in-process is not allowed for this session'),
+      })
+      expect(calls.spawn).toEqual([])
+    } finally {
+      resetChildAgentAllowlists()
+    }
+  })
+
+  it('lists in-process children and external children once', async () => {
+    const { ctx } = context()
+    ctx.subagent.list = async () => [
+      { id: 'local', providerId: 'in-process', status: 'idle', continuable: true },
+    ]
+    const untrack = trackExternalChild(sessionKey, {
+      listing: { id: 'local', providerId: 'acp', status: 'running', continuable: true },
+    })
+    const extra = trackExternalChild(sessionKey, {
+      listing: { id: 'ext', providerId: 'acp', status: 'idle', continuable: true, text: 'hi' },
+    })
+    try {
+      const result = await subagentListTool.execute({}, ctx)
+      expect(result.details).toMatchObject({
+        children: [
+          { id: 'local', providerId: 'in-process', continuable: true },
+          { id: 'ext', providerId: 'acp', text: 'hi' },
+        ],
+      })
+    } finally {
+      untrack()
+      extra()
+    }
+  })
+
+  it('sends and interrupts through the external directory when the session factory misses', async () => {
+    const { ctx } = context()
+    ctx.subagent.sendMessage = async () => {
+      throw new CoreError('E_CHILD_NOT_FOUND', 'missing')
+    }
+    ctx.subagent.interrupt = async () => {
+      throw new CoreError('E_UNSUPPORTED', 'not continuable')
+    }
+    let sent = ''
+    let interrupted = false
+    const untrack = trackExternalChild(sessionKey, {
+      listing: { id: 'ext', providerId: 'acp', status: 'running', continuable: true },
+      sendMessage: async (text) => {
+        sent = text
+        return { messageId: 'm1' }
+      },
+      interrupt: async () => {
+        interrupted = true
+        return { accepted: true }
+      },
+    })
+    try {
+      const message = await subagentSendMessageTool.execute({ childKey: 'ext', text: 'next' }, ctx)
+      const stop = await subagentInterruptTool.execute({ childKey: 'ext' }, ctx)
+      expect(sent).toBe('next')
+      expect(interrupted).toBe(true)
+      expect(message.details).toEqual({ childKey: 'ext', messageId: 'm1' })
+      expect(stop.details).toEqual({ childKey: 'ext', accepted: true })
+    } finally {
+      untrack()
+    }
   })
 })

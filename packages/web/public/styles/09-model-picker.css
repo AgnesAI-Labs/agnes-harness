@@ -1,0 +1,345 @@
+@layer app {
+  .model-field {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    flex: 0 1 auto;
+    margin-inline-start: auto;
+  }
+  /* The trigger reads as text until hovered: model name, then the reasoning level in a quieter tone. */
+  #model {
+    min-width: 0;
+    max-width: min(20rem, 45cqw);
+    height: 2rem;
+    min-height: 2rem;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+    padding: 0 var(--s8);
+    overflow: hidden;
+    border: 0;
+    border-radius: var(--radius-pill);
+    color: var(--agnes-text-primary);
+    background: transparent;
+    box-shadow: none;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-regular);
+  }
+  #model:hover:not(:disabled),
+  #model[aria-expanded="true"] {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-hover);
+  }
+  #model [data-model-label] {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #model [data-model-level] {
+    flex: none;
+    color: var(--agnes-text-tertiary);
+    font-weight: var(--font-weight-regular);
+  }
+  .model-chevron {
+    flex: none;
+    color: var(--agnes-text-tertiary);
+    transition: transform var(--transition-fast);
+  }
+  :is(#model, .composer-permission, .composer-workspace, .composer-agent)[aria-expanded="true"]
+    .model-chevron {
+    transform: rotate(180deg);
+  }
+  #model:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
+  }
+
+  /* The popover hugs its content; long catalogs scroll inside the list instead. */
+  .model-picker {
+    display: flex;
+    flex-direction: column;
+    width: min(23.25rem, calc(100vw - 48px));
+    /* The component writes the room above the trigger to --model-picker-room; the viewport cap only
+       guards the first paint and a no-script document. A viewport-wide budget alone left the top off-screen. */
+    max-height: min(calc(100dvh - 24px), var(--model-picker-room, 100dvh));
+    /* Clip, not hidden: `hidden` makes this a scroll container, and focusing an option then scrolls
+       the panel itself, moving the search row back out of view. */
+    overflow: clip;
+    color: var(--agnes-text-primary);
+  }
+  .model-picker [hidden] {
+    display: none;
+  }
+  /* The one shrinkable column: without min-height it cannot give way to the list below it. */
+  .model-picker-body {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  /* Rows that keep their height while the list takes what is left. */
+  .model-picker-search,
+  .model-picker-help,
+  .model-picker-session {
+    flex: none;
+  }
+  .model-picker-search {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    padding: var(--s4) var(--s8);
+  }
+  .model-picker-search input {
+    min-width: 0;
+    width: 100%;
+  }
+  .model-picker-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    outline: 0;
+  }
+  .model-picker-list:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: -2px;
+  }
+  .model-picker-group-title {
+    margin: 0;
+    padding: var(--s8) var(--s12) var(--s4);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+  }
+  .model-picker-section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s8);
+    padding-inline-end: var(--s12);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  /* Model rows: name | capacity | check, the same columns on every row. */
+  .model-picker-option {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 2.75rem 1.25rem;
+    align-items: center;
+    gap: var(--s8);
+    min-height: 2.5rem;
+    padding: 0 var(--s10) 0 var(--s12);
+    border-radius: var(--radius-menu-item);
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+  }
+  .model-picker-option[data-active="true"] {
+    background: var(--agnes-bg-hover);
+  }
+  .model-picker-option[aria-selected="true"],
+  .model-picker-choice[aria-checked="true"] {
+    background: var(--agnes-bg-selected);
+  }
+  .model-picker-option[aria-disabled="true"] {
+    cursor: progress;
+    opacity: 0.6;
+  }
+  .model-picker-model {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .model-picker-capacity,
+  .model-picker-amount {
+    color: var(--agnes-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+  }
+  .model-picker-check {
+    display: inline-flex;
+    justify-content: center;
+    color: var(--agnes-text-emphasis);
+  }
+  .model-picker-separator {
+    height: 1px;
+    margin: var(--s4) var(--s8);
+    border: 0;
+    background: var(--agnes-line-primary);
+  }
+  .model-picker-session {
+    border-top: 1px solid var(--agnes-line-primary);
+    margin-top: var(--s4);
+  }
+  .model-picker-nav,
+  .model-picker-choice,
+  .model-picker-back {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    width: 100%;
+    min-height: 2.5rem;
+    height: auto;
+    padding: var(--s4) var(--s10) var(--s4) var(--s12);
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-sm);
+    text-align: start;
+    justify-content: flex-start;
+  }
+  /* Session rows: label | value | chevron; every value starts in the same column. */
+  .model-picker-nav {
+    display: grid;
+    grid-template-columns: 5.25rem minmax(0, 1fr) 1rem;
+  }
+  :lang(en) .model-picker-nav {
+    grid-template-columns: 8.5rem minmax(0, 1fr) 1rem;
+  }
+  .model-picker-nav > span:first-child,
+  .model-picker-choice > span:first-child {
+    min-width: 0;
+  }
+  .model-picker-option[aria-selected="true"] .model-picker-model,
+  .model-picker-choice[aria-checked="true"] > span:first-child {
+    font-weight: 600;
+  }
+  .model-picker-value {
+    text-align: start;
+    color: var(--agnes-text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .model-picker-nav .icon {
+    color: var(--agnes-text-tertiary);
+  }
+  /* A row the model does not support reads as plain text, not as a greyed button. */
+  .model-picker-nav:disabled {
+    background: transparent;
+  }
+  .model-picker-choice {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto 1.25rem;
+  }
+  .model-picker-head {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    margin-bottom: var(--s4);
+  }
+  .model-picker-back {
+    width: auto;
+    min-height: 2rem;
+    padding-inline: var(--s4) var(--s8);
+    font-weight: 600;
+  }
+  .model-picker-head-note {
+    min-width: 0;
+    margin-inline-start: auto;
+    padding-inline-end: var(--s8);
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .model-picker-choice small,
+  .model-picker-aux-head small {
+    display: block;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: 400;
+  }
+  #model-settings-popover {
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .model-picker-custom {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    padding: var(--s4) var(--s10) var(--s4) var(--s12);
+  }
+  /* The K-tokens unit sits inside the field, after the number. */
+  .model-picker-budget-field {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--s4);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .model-picker-budget {
+    min-width: 0;
+    width: 100%;
+    font-variant-numeric: tabular-nums;
+  }
+  .model-picker-budget[aria-invalid="true"] {
+    border-color: var(--agnes-status-danger-text);
+  }
+  .model-picker-budget-field > span {
+    flex: none;
+  }
+  .model-picker-hint,
+  .model-picker-notice,
+  .model-picker-error,
+  .model-picker-help,
+  .model-picker-empty,
+  .model-picker-intro {
+    margin: 0;
+    padding: var(--s4) var(--s12);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+    color: var(--agnes-text-tertiary);
+  }
+  .model-picker-error {
+    color: var(--agnes-status-danger-text);
+  }
+  .model-picker-error:empty {
+    display: none;
+  }
+  .model-picker-notice {
+    color: var(--agnes-status-warning-text);
+  }
+  /* Background slots: its name and purpose on one line, the full-width choice below. */
+  .model-picker-aux-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s4);
+    padding: var(--s8) var(--s12) var(--s10);
+    font-size: var(--font-size-sm);
+  }
+  .model-picker-aux-row + .model-picker-aux-row,
+  .model-picker-aux-footer {
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  .model-picker-aux-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s4) var(--s8);
+  }
+  .model-picker-aux-head label {
+    font-weight: 600;
+  }
+  .model-picker-aux-row .agnes-ui-select {
+    min-width: 0;
+    width: 100%;
+  }
+  .model-picker-aux-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s4) var(--s8);
+    padding: var(--s8) var(--s12) var(--s4);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .model-picker-defaults-link {
+    color: var(--agnes-text-emphasis);
+  }
+}

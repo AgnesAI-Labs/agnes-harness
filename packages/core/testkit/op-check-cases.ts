@@ -3,12 +3,12 @@
 // repaired from the fold; the lease is handed back, so the next writer is refused for the same
 // reason and not for a lease the failed open kept.
 import assert from 'node:assert/strict'
+import { defaultIds } from '@agnes/core-common/ids'
+import type { CoreError, Seq } from '@agnes/core-common/types'
+import type { StorageAdapter } from '@agnes/core-ledger/log/storage'
+import { openTracked } from '@agnes/core-ledger/reduce/tracker'
 import type { InferenceEvent, Provider } from '@agnes/protocol'
-import { defaultIds } from '../src/ids.js'
-import type { StorageAdapter } from '../src/log/storage.js'
-import { openTracked } from '../src/reduce/tracker.js'
 import { ToolRegistry } from '../src/registry/tools.js'
-import type { CoreError, Seq } from '../src/types.js'
 import { fakeProvider, sentFor, textTurn, toolTurn } from '../test/helpers/fake-provider.js'
 import { actor, openSession, shellTool } from '../test/helpers/open-session.js'
 

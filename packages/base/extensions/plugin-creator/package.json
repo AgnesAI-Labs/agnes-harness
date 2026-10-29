@@ -1,0 +1,53 @@
+{
+  "name": "@agnes/plugin-creator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/plugin-creator",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "tools"
+        ],
+        "capabilities": {
+          "tools": {
+            "prefix": "plugin_",
+            "names": [
+              "plugin_creator_guide",
+              "plugin_scaffold",
+              "plugin_test",
+              "plugin_install_local",
+              "plugin_candidate_write",
+              "plugin_candidate_read"
+            ]
+          },
+          "hooks": [],
+          "slots": [],
+          "events": false,
+          "artifacts": true,
+          "resources": [],
+          "network": []
+        },
+        "metadata": {
+          "displayName": "Plugin drafting",
+          "summary": "Helps the agent draft and test plugins, then submit them for review and installation.",
+          "description": "Helps the agent draft and test plugins, then submit them for review and installation.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "插件编写",
+              "summary": "帮助 Agent 编写、测试插件，并提交审核与安装。",
+              "description": "帮助 Agent 编写、测试插件，并提交审核与安装。"
+            }
+          }
+        }
+      }
+    ],
+    "provides": [
+      "tool"
+    ]
+  }
+}

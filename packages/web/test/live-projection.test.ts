@@ -7,13 +7,13 @@ import type {
 } from '@agnes/protocol'
 import { UI_PROJECTION_MAX_BYTES } from '@agnes/protocol'
 import type { LedgerEvent } from '@agnes/sdk/browser'
-import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   APPROVAL_SEARCH_PAGES,
   approvalOutsideWindow,
   createLiveProjection,
   findApproval,
-} from '../src/live-projection.js'
+} from '@agnes/web-conversation/live-projection'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { receiptFromTurns } from '../src/view.js'
 
 afterEach(() => vi.useRealTimers())
@@ -202,7 +202,7 @@ describe('Web live projection', () => {
     expect(d.projectUIOpening).toHaveBeenCalledTimes(1)
     expect(d.projectUIOpening).toHaveBeenCalledWith({
       surface: 'web',
-      maxNodes: 500,
+      maxNodes: 50,
       maxBytes: UI_PROJECTION_MAX_BYTES,
     })
     expect(d.events).toHaveBeenCalledWith({ preview: true, cursor: { fromSeq: 40, generation: 1 } })
@@ -367,10 +367,20 @@ describe('a pending approval before the loaded window', () => {
         turn: 1,
         step: 1,
         phase: 'tools',
-        parked: { ticket: 't', expiresAt: '2026-09-25T00:00:00Z' },
+        parked: { decisionRef: { sessionId: 's', id: 't', revision: 1 }, expiresAt: '2026-09-25T00:00:00Z' },
       },
       nodes: withNode
-        ? [{ kind: 'approval', id: 'ap', seq: 3, state: 'pending', ticket: 't', summary: 's', options: [] }]
+        ? [
+            {
+              kind: 'approval',
+              id: 'ap',
+              seq: 3,
+              state: 'pending',
+              decisionRef: { sessionId: 's', id: 't', revision: 1 },
+              summary: 's',
+              options: [],
+            },
+          ]
         : [],
       turns: [],
     }) as unknown as UITimeline
@@ -378,6 +388,13 @@ describe('a pending approval before the loaded window', () => {
   it('is recognised only when the session is parked and no pending approval node is loaded', () => {
     expect(approvalOutsideWindow(parked(false))).toBe(true)
     expect(approvalOutsideWindow(parked(true))).toBe(false)
+    const other = parked(true)
+    const node = other.nodes[0]
+    if (node?.kind !== 'approval') throw new Error('fixture approval missing')
+    node.decisionRef = { sessionId: 's', id: 'different', revision: 1 }
+    expect(approvalOutsideWindow(other)).toBe(true)
+    node.decisionRef = { sessionId: 's', id: 't', revision: 2 }
+    expect(approvalOutsideWindow(other)).toBe(true)
     expect(approvalOutsideWindow({ ...parked(false), opState: null })).toBe(false)
   })
 

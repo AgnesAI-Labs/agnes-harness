@@ -64,7 +64,7 @@ function check(events: InferenceEvent[], route: string, model: string, credits: 
   expect(events).toHaveLength(3)
   expect(events[0]).toMatchObject({ type: 'sent', stamp: { model: { route, id: model } } })
   expect(events[1]).toMatchObject({ type: 'usage', credits, creditSource: 'estimated' })
-  expect(events[2]).toEqual({ type: 'done', reason: 'stop' })
+  expect(events[2]).toMatchObject({ type: 'done', reason: 'stop' })
 }
 
 it('keeps the default resolved request, adapter, stamp, count and default USD pricing aligned', async () => {

@@ -1,0 +1,23 @@
+# A small read-only recipe. It keeps the product model slots and shows the model only read, grep,
+# find and ls: `tools.allow` is a literal allowlist over every tool name, extension and MCP tools
+# included. It is visibility, not authorization; the session's permission still decides what a
+# visible tool may do. Shell and edit stay on the frozen training baseline, not on this preset.
+name: minimal
+extends: base
+surfaces: [cli, sdk, acp, daemon]
+model:
+  contract_id: agnes-model-contract@v1
+  route:
+    primary: { route: default, model: default }
+    escalation: { route: default, model: default }
+    fast: { route: default, model: default }
+    verifier: { route: default, model: default }
+  # Leave compaction unselected so it follows the session's primary model.
+  prompt_sections: [persona, environment, tools-available]
+disclosure: standard
+tools: { core: [read, grep, find, ls], allow: [read, grep, find, ls] }
+mcp: { defer: true }
+budget: { per_request_cap: 4000, max_steps: null }
+subagent: { max_depth: 1, max_fan_out: 1 }
+ext_ui: { input: prompt, unattended: decline }
+hooks: [session_start, tool_call, tool_result]

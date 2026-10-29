@@ -1,9 +1,10 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ModelRecord } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { Kernel } from '../src/kernel.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
 import { CompactionRunner } from '../src/step/compaction.js'
-import { presetDefaults } from '../src/step/preset.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, readTool, testFsOps } from './helpers/open-session.js'
@@ -43,10 +44,32 @@ it('compacts a fork child over the tool results it inherited from its parent', a
     toolTurn('read', { path: 'c.txt' }),
     textTurn('child done'),
     textTurn('S'),
+    textTurn('continued'),
   ])
   Object.assign(provider, { models: () => [model()] })
   const storage = new MemoryStorage()
   const k = Kernel.create({
+    operations: [
+      {
+        name: 'live-fixture',
+        slot: 'before-inference',
+        replay: 'safe',
+        applicable: async () => 'applied',
+        run: async () => ({}),
+        contribute: () => ({
+          promptSections: [
+            {
+              id: 'fixture-live',
+              order: 120,
+              source: 'fixture',
+              text: 'Current repository rules',
+              delivery: 'live-note',
+            },
+          ],
+        }),
+      },
+    ],
+    loops: defaultLoops(),
     storage,
     seams: fakeSeams(),
     provider,
@@ -77,6 +100,14 @@ it('compacts a fork child over the tool results it inherited from its parent', a
   expect(child.surface().some((node) => node.seq === inheritedResult)).toBe(true)
   await child.enqueue('next-turn', { content: [{ type: 'text', text: 'and one more' }], actor })
   expect((await child.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+  const liveNotes = () =>
+    child
+      .surface()
+      .filter(
+        (node) =>
+          node.event.type === 'user/message' && JSON.stringify(node.event.data).includes('fixture-live'),
+      )
+  expect(liveNotes()).toHaveLength(1)
 
   child.compaction = new CompactionRunner({
     plan: async (payload) => {
@@ -104,5 +135,9 @@ it('compacts a fork child over the tool results it inherited from its parent', a
   expect(replace?.surfaceOp).toMatchObject({ op: 'replace', end: inheritedResult })
   expect(child.surface()[0]?.kind).toBe('summary')
   expect(child.surface().some((node) => node.seq === inheritedResult)).toBe(false)
+  expect(liveNotes()).toHaveLength(0)
+  await child.enqueue('next-turn', { content: [{ type: 'text', text: 'continue after compaction' }], actor })
+  expect((await child.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+  expect(liveNotes()).toHaveLength(1)
   await k.close()
 })

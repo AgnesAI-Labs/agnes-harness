@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import type { McpStatus, McpToolCatalogPage, SkillDescriptor, SkillRootStatus } from '@agnes/protocol'
+import type {
+  McpStatus,
+  McpToolCatalogPage,
+  SkillDescriptor,
+  SkillRootStatus,
+  SkillScanObservation,
+} from '@agnes/protocol'
 import { validateResourceControlData } from '@agnes/protocol'
 import type { ResourceControlStore } from '@agnes/resource-control-store'
 
@@ -133,6 +139,7 @@ export function installResourceServiceAdapters(input: ResourceAdapterOptions): {
     failedRoots: Array<SkillDescriptor['sourceIdentity']['rootKey']>
     skippedResourceIds: string[]
     roots: SkillRootStatus[]
+    skillScanObservation?: SkillScanObservation
   } => {
     const fail = (): never => {
       throw new Error('invalid private skill scan reply')
@@ -152,6 +159,12 @@ export function installResourceServiceAdapters(input: ResourceAdapterOptions): {
     const failedRoots = (raw as { failedRoots: unknown[] }).failedRoots
     const reportedRoots = (raw as { roots?: unknown }).roots
     const reportedSkipped = (raw as { skippedResourceIds?: unknown }).skippedResourceIds ?? []
+    const skillScanObservation = (raw as { skillScanObservation?: unknown }).skillScanObservation
+    if (
+      skillScanObservation !== undefined &&
+      !validateResourceControlData('SkillScanObservation', skillScanObservation).ok
+    )
+      return fail()
     if (
       !Array.isArray(reportedSkipped) ||
       !reportedSkipped.every(
@@ -191,10 +204,48 @@ export function installResourceServiceAdapters(input: ResourceAdapterOptions): {
       failedRoots: failedRoots as Array<SkillDescriptor['sourceIdentity']['rootKey']>,
       skippedResourceIds: reportedSkipped as string[],
       roots: roots as SkillRootStatus[],
+      ...(skillScanObservation === undefined
+        ? {}
+        : { skillScanObservation: skillScanObservation as SkillScanObservation }),
     }
   }
   localResourceStore.setAdapters({
     skills: {
+      view: async ({ profile, skills, signal }) => {
+        if (profile !== o.profile.name) throw new Error('resource profile mismatch')
+        const snapshotRevision = await currentSnapshotRevision()
+        const link = await sharedWorker(signal)
+        const raw = await link.command(
+          'resourceSkillView',
+          { skills, snapshotRevision },
+          { timeoutMs: 31_000 },
+        )
+        if (
+          link.alive === false ||
+          (await pool.acquireSharedWorker()) !== link ||
+          (await currentSnapshotRevision()) !== snapshotRevision
+        )
+          throw new Error('runtime Skill view changed during read')
+        if (
+          !raw ||
+          typeof raw !== 'object' ||
+          (raw as { snapshotRevision?: unknown }).snapshotRevision !== snapshotRevision ||
+          !Array.isArray((raw as { skills?: unknown }).skills) ||
+          !(raw as { skills: unknown[] }).skills.every(
+            (skill) => validateResourceControlData('SkillDescriptor', skill).ok,
+          )
+        )
+          throw new Error('invalid private Skill view reply')
+        const result = (raw as { skills: SkillDescriptor[] }).skills
+        const known = new Set(skills.map((skill) => skill.resourceId))
+        if (
+          new Set(result.map((skill) => skill.resourceId)).size !== result.length ||
+          result.some((skill) => skill.sourceIdentity.scope !== 'runtime' && !known.has(skill.resourceId)) ||
+          skills.some((skill) => !result.some((item) => item.resourceId === skill.resourceId))
+        )
+          throw new Error('incomplete private Skill view reply')
+        return result
+      },
       validateRemove: ({ profile, descriptor }) =>
         removeSkill(profile, descriptor, new AbortController().signal, true),
       remove: ({ profile, descriptor, signal }) => removeSkill(profile, descriptor, signal, false),
@@ -204,8 +255,10 @@ export function installResourceServiceAdapters(input: ResourceAdapterOptions): {
         // package-root refresh; this is never a free-form package directory scan.
         if (rootKey === 'package') await refreshPackageSkills()
         const bound = await boundWorkspace(workspaceId)
-        const snapshotRevision = await currentSnapshotRevision()
         const link = await sharedWorker(signal)
+        // Boot may overlap another resource admission. Bind the scan to the durable decisions
+        // after worker acquisition; the worker still rejects any later snapshot mismatch.
+        const snapshotRevision = await currentSnapshotRevision()
         const raw = await link.command(
           'resourceSkillScan',
           { workspaceRoot: bound.path, ...(rootKey ? { rootKey } : {}), snapshotRevision },
@@ -217,6 +270,9 @@ export function installResourceServiceAdapters(input: ResourceAdapterOptions): {
           failedRoots: parsed.failedRoots,
           ...(parsed.skippedResourceIds.length ? { skippedResourceIds: parsed.skippedResourceIds } : {}),
           ...(parsed.roots.length ? { roots: parsed.roots } : {}),
+          ...((!rootKey || rootKey === 'user-agnes') && parsed.skillScanObservation
+            ? { skillScanObservation: parsed.skillScanObservation }
+            : {}),
         }
       },
       reconcile: async ({ profile, resources, signal }) => {
@@ -240,7 +296,11 @@ export function installResourceServiceAdapters(input: ResourceAdapterOptions): {
           const link = await sharedWorker(signal)
           const raw = await link.command(
             'resourceSkillScan',
-            { workspaceRoot: bound.path, snapshotRevision },
+            {
+              workspaceRoot: bound.path,
+              snapshotRevision,
+              resourceIds: resources.map((resource) => resource.resourceId),
+            },
             { timeoutMs: 31_000 },
           )
           const parsed = parseSkillScanReply(raw)
@@ -249,6 +309,8 @@ export function installResourceServiceAdapters(input: ResourceAdapterOptions): {
         return resources.map((resource) => {
           const observed = byId.get(resource.resourceId)
           if (!observed) throw new Error('resource worker did not observe every requested skill')
+          if (resource.revision && observed.revision !== resource.revision)
+            throw new Error('Skill revision changed during observation')
           return {
             resourceId: observed.resourceId,
             actual: observed.actual,

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { lstatSync, readdirSync, realpathSync, unlinkSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { locateSkillEntry, skillRoots } from '@agnes/base'
+import { locateSkillEntry, readContextConfig, skillRoots } from '@agnes/base'
 import { AGH_DIR, type SkillDescriptor } from '@agnes/protocol'
 import { deleteSkillEntrySync, skillDeletionPath, syncDirectorySync } from '@agnes/system-node'
 import { scanSkills } from './skill-bootstrap.js'
@@ -19,13 +19,18 @@ export async function removeFilesystemSkill(input: {
   osHomeDir: string
   agnesHomeDir?: string | undefined
   stateDirectory?: string
+  importUserSkills?: boolean
   validateOnly?: boolean
 }): Promise<void> {
   const { descriptor, cwd, osHomeDir } = input
   const agnesHomeDir = input.agnesHomeDir ?? join(osHomeDir, AGH_DIR)
-  const root = skillRoots({ workspaceRoot: cwd ?? agnesHomeDir, osHomeDir, agnesHomeDir }).find(
-    (item) => item.rootKey === descriptor.sourceIdentity.rootKey,
-  )
+  const root = skillRoots({
+    workspaceRoot: cwd ?? agnesHomeDir,
+    osHomeDir,
+    agnesHomeDir,
+    customRoots: readContextConfig(agnesHomeDir).customSkillRoots,
+    importUserSkills: input.importUserSkills ?? process.env.AGNES_SKILLS_IMPORT_USER === '1',
+  }).find((item) => item.rootKey === descriptor.sourceIdentity.rootKey)
   if (!root || (root.scope === 'workspace' && (!cwd || root.workspaceKey !== descriptor.workspaceId))) fail()
   if (!root) return
   const checkChain = (target: string) => {
@@ -92,7 +97,7 @@ export async function removeFilesystemSkill(input: {
     if (nodes[0]?.path !== target || !nodes[0].directory) fail()
   } else {
     if (descriptor.stale) fail()
-    const scan = await scanSkills(cwd, undefined, undefined, osHomeDir, agnesHomeDir)
+    const scan = await scanSkills(cwd, undefined, undefined, osHomeDir, agnesHomeDir, input.importUserSkills)
     const found = scan.roots
       .flatMap((item) => item.candidates)
       .find((item) => item.resourceId === descriptor.resourceId)

@@ -3,10 +3,10 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { PersistentArtifactReadAuthorityIndex } from '../src/local/artifact-read-authority.js'
 import { SessionPrincipalOwnershipIndex } from '../src/storage/session-ownership.js'
 import { composeDefaultProductionProjectedArtifactRead } from '../src/supervisor/artifact-read.js'
-import { sqliteTables } from './sqlite-tables.js'
 
 const roots: string[] = []
 

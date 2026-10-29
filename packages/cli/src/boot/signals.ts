@@ -12,6 +12,12 @@ export type SignalOptions = {
    * the signal from here rather than assume the Ctrl-C one.
    */
   onSignal?: (signal: SignalName) => void
+  /**
+   * True while a child owns the terminal in cooked mode (an external editor): Ctrl-C then reaches
+   * this process and the child alike, and only the child is being interrupted. SIGINT only; SIGTERM
+   * and SIGHUP still shut down.
+   */
+  ignoreInterrupt?: () => boolean
 }
 
 /**
@@ -33,6 +39,7 @@ export function installSignalLadder(ctl: SignalCtl, o: SignalOptions): () => voi
   for (const sig of Object.keys(SIGNAL_EXIT_CODES) as SignalName[]) {
     const code = SIGNAL_EXIT_CODES[sig]
     const h = (): void => {
+      if (sig === 'SIGINT' && o.ignoreInterrupt?.()) return
       if (armed) {
         o.log?.(`second signal ${sig}: exiting now`)
         o.exit(code)

@@ -1,12 +1,13 @@
+import { defaultIds } from '@agnes/core-common/ids'
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import type { Event, EventInput } from '@agnes/core-common/types'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import { SessionLogImpl, type Timers } from '@agnes/core-ledger/log/session-log'
+import { openTracked } from '@agnes/core-ledger/reduce/tracker'
 import type { InferenceEvent, Provider } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { defaultIds } from '../src/ids.js'
 import { Kernel } from '../src/kernel.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import { SessionLogImpl, type Timers } from '../src/log/session-log.js'
-import { openTracked } from '../src/reduce/tracker.js'
-import { presetDefaults } from '../src/step/preset.js'
-import type { Event, EventInput } from '../src/types.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, sentFor, textTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, openSession, testFsOps } from './helpers/open-session.js'
@@ -94,8 +95,8 @@ describe('an open that fails after taking the lease', () => {
     const memory = new MemoryStorage()
     const first = await openSession({ provider: hanging(), storage: memory })
     await first.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
-    expect(await first.session.step()).toEqual({ phase: 'checkpoint' })
-    expect(await first.session.step()).toEqual({ phase: 'inference' })
+    expect(await first.session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
+    expect(await first.session.step()).toEqual({ outcome: 'running', phase: 'inference' })
     // Enough rows for a second verification page.
     await first.log.append(Array.from({ length: 600 }, (_, n) => user(`pad ${n}`)))
     await first.log.close()
@@ -152,6 +153,7 @@ describe('an open that fails after taking the lease', () => {
   it('gives a forked writer back when its open fails after replay', async () => {
     const memory = new MemoryStorage()
     const k = Kernel.create({
+      loops: defaultLoops(),
       storage: memory,
       seams: fakeSeams(),
       provider: fakeProvider([textTurn('hi')]),
@@ -190,6 +192,7 @@ describe('an open that fails after taking the lease', () => {
     const memory = new MemoryStorage()
     const { storage, broken } = breakable(memory)
     const k = Kernel.create({
+      loops: defaultLoops(),
       storage,
       seams: fakeSeams(),
       provider: fakeProvider([textTurn('hi')]),

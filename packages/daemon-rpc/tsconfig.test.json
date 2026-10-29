@@ -1,0 +1,37 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/test",
+    "tsBuildInfoFile": "dist/tsconfig.test.tsbuildinfo"
+  },
+  "include": ["test/**/*.ts"],
+  "references": [
+    {
+      "path": "."
+    },
+    {
+      "path": "../host/tsconfig.testkit.json"
+    },
+    {
+      "path": "../base/tsconfig.testkit.json"
+    },
+    {
+      "path": "../ai"
+    },
+    {
+      "path": "../code"
+    },
+    {
+      "path": "../package-manager"
+    },
+    {
+      "path": "../sdk"
+    },
+    {
+      "path": "../system-node"
+    },
+    {
+      "path": "../daemon-foundation/tsconfig.test.json"
+    }
+  ]
+}

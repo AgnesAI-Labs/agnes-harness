@@ -75,15 +75,18 @@ function isExempt(file: string): boolean {
 // correct fix was to relax the guard, not to keep working around it.)
 //
 // `additionalProperties === true` — a genuinely open object — is let through only when registered on
-// this exemption list. The one entry is `ErrorData` in `agnes-v1.json`: the extra fields on
+// this exemption list. The entries are `ErrorData` and its canonical App Server envelope: the extra fields on
 // `error.data` vary with the error code and cannot be enumerated as `properties`.
 // Key format is `${relative file path}${RFC 6901 JSON pointer}`, e.g.
 // `packages/protocol/schema/agnes-v1.json#/$defs/ErrorData`. `walk()` retains path segments until
 // `schemaNodeKey()` escapes them, so a property containing `.` or `/` cannot collide with a nested
 // definition. `session-v1.json` has zero exemptions across the whole file, and nothing
-// beyond `ErrorData` may be added.
+// beyond those code-specific error data objects is accepted.
 const ADDITIONAL_PROPERTIES_TRUE_EXEMPT = new Set<string>([
   'packages/protocol/schema/agnes-v1.json#/$defs/ErrorData',
+  // The canonical envelope preserves the existing error-specific fields from ErrorData.
+  // cause remains closed and allowlisted; messageKey and diagnosticId are required.
+  'packages/protocol/schema/app-server.json#/$defs/AppServerError/properties/data',
 ])
 
 // MCP servers own their tool input schemas, so this one catalog DTO intentionally combines a small

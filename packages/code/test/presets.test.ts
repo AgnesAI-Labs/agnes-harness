@@ -38,6 +38,7 @@ const KNOWN_PRESET_KEYS = [
   'hooks',
   'locale',
   'code_runtime',
+  'providers',
 ]
 
 // The keys `standard` declares, exactly. A variant recipe declares a subset of the same vocabulary
@@ -51,8 +52,6 @@ const STANDARD_KEYS = [
   'tools',
   'mcp',
   'budget',
-  'approval',
-  'sandbox',
   'subagent',
   'ext_ui',
   'hooks',
@@ -75,8 +74,12 @@ function expectPresetShape(name: string): Record<string, unknown> {
 
 describe('standard.yaml', () => {
   const doc = loadPreset('standard')
-  const policy = (doc.approval as { command_policy: Array<{ tool: string; argv: string; action: string }> })
-    .command_policy
+  // The edit/write table is part of the workspace-write permission, merged after every recipe.
+  const policy = (
+    loadPreset('permission-workspace-write').approval as {
+      command_policy: Array<{ tool: string; argv: string; action: string }>
+    }
+  ).command_policy
 
   // The rule ships as a string and whoever compiles it chooses the flags, so the flags are part of
   // the rule and are pinned here rather than left to whatever the call site happens to pass. No
@@ -202,15 +205,41 @@ describe('standard.yaml', () => {
     expect(doc.surfaces).toEqual(['cli', 'sdk', 'acp', 'daemon'])
     expect(doc.disclosure).toBe('standard')
     expect(doc.tools).toEqual({
-      core: ['read', 'write', 'edit', 'shell', 'job', 'grep', 'find', 'ls', 'todo', 'web_fetch'],
+      core: [
+        'read',
+        'write',
+        'edit',
+        'shell',
+        'grep',
+        'find',
+        'ls',
+        'todo',
+        'web_fetch',
+        'web_search',
+        'ask_user_question',
+        'ui_guide',
+        'ui_render',
+        'ui_update',
+        'ui_close',
+        'ui_submit',
+        'present',
+        'job_output',
+        'job_list',
+        'job_kill',
+        'schedule_create',
+        'schedule_list',
+        'schedule_update',
+        'schedule_delete',
+      ],
     })
     expect(doc.mcp).toEqual({ defer: true })
-    expect(doc.sandbox).toEqual({ level: 'L0', required: false, on_unavailable: 'allow' })
+    // The permission is not the recipe's: sandbox, approval table and subagent isolation come from the
+    // overlay (checked below), so the recipe states none of them.
+    expect(doc.sandbox).toBeUndefined()
+    expect(doc.approval).toBeUndefined()
     // Spend ceiling for one request. Widening it costs money silently; nothing else asserts it.
     expect(doc.budget).toEqual({ per_request_cap: 4000, max_steps: null })
-    // `isolation: worktree` is what keeps a subagent's writes off the operator's checkout. `none`
-    // parses just as well and is a containment change, so the value is pinned, not just the key.
-    expect(doc.subagent).toEqual({ max_depth: 1, max_fan_out: 4, isolation: 'worktree' })
+    expect(doc.subagent).toEqual({ max_depth: 1, max_fan_out: 4 })
     expect(doc.ext_ui).toEqual({ input: 'prompt', unattended: 'decline' })
     expect(doc.hooks).toEqual(['session_start', 'tool_call', 'tool_result', 'format_deviation'])
   })
@@ -218,6 +247,36 @@ describe('standard.yaml', () => {
   // The seam between this file and the prompt order table: a typo in `prompt_sections` names a
   // section nobody registered, and assembly would silently drop it. Neither task owns this check,
   // so it lives here, next to the list it validates.
+  it('ships permission overlays with paired sandbox and approval policies', () => {
+    // `isolation: worktree` is what keeps a subagent's writes off the operator's checkout. `none`
+    // parses just as well and is a containment change, so the value is pinned, not just the key.
+    expect(loadPreset('permission-workspace-write')).toMatchObject({
+      providers: { 'tool-policy': { provider: 'default' } },
+      sandbox: { level: 'L1', on_unavailable: 'allow-if-unimplemented' },
+      subagent: { isolation: 'worktree' },
+    })
+    expect(loadPreset('permission-read-only')).toMatchObject({
+      providers: { 'tool-policy': { provider: 'read-only' } },
+      approval: { command_policy: [] },
+      sandbox: { level: 'L1', on_unavailable: 'allow-if-unimplemented' },
+      subagent: { isolation: 'shared' },
+    })
+    expect(loadPreset('permission-full-access')).toMatchObject({
+      providers: { 'tool-policy': { provider: 'full-access' } },
+      approval: { command_policy: [] },
+      sandbox: { level: 'L0', on_unavailable: 'allow' },
+      subagent: { isolation: 'worktree' },
+    })
+    // An overlay never carries what belongs to the recipe: required isolation and approval delivery.
+    for (const name of ['permission-read-only', 'permission-workspace-write', 'permission-full-access'])
+      expect(JSON.stringify(loadPreset(name))).not.toMatch(/required|on_unavailable":"park|"park"/)
+  })
+
+  it('does not ship retired permission-level recipe aliases', () => {
+    for (const name of ['read-only', 'workspace-write', 'full-access'])
+      expect(() => loadPreset(name)).toThrow(/Retired.*clean home/)
+  })
+
   it('names only registered prompt sections, each supplied by a package that exists', () => {
     const registered = new Set(PROMPT_SECTIONS.map((s) => s.id))
     // Every recipe that names sections, not only this one: a typo names a section nobody registered
@@ -240,6 +299,7 @@ describe('standard.yaml', () => {
     expect((doc.model as { prompt_sections: string[] }).prompt_sections).toEqual([
       'persona',
       'environment',
+      'tools-available',
       'coding-doctrine',
     ])
     expect((doc.model as { contract_id: string }).contract_id).toBe('agnes-model-contract@v1')
@@ -250,14 +310,17 @@ describe('standard.yaml', () => {
   // host resolves against the deployment's own adapter list — a product recipe never names a
   // concrete provider or model.
   it('routes name ai routes, never concrete models', () => {
-    const route = (doc.model as { route: Record<string, unknown> }).route
-    expect(Object.keys(route).sort()).toEqual(['compaction', 'escalation', 'fast', 'primary', 'verifier'])
-    for (const [slot, target] of Object.entries(route))
-      expect(target, slot).toEqual({ route: 'default', model: 'default' })
+    for (const name of ['standard', 'minimal']) {
+      const route = (loadPreset(name).model as { route: Record<string, unknown> }).route
+      expect(Object.keys(route).sort(), name).toEqual(['escalation', 'fast', 'primary', 'verifier'])
+      for (const [slot, target] of Object.entries(route))
+        expect(target, `${name}: ${slot}`).toEqual({ route: 'default', model: 'default' })
+    }
   })
 
   it('carries the workspace edit/write allow rule and nothing wider', () => {
-    expect(policy).toHaveLength(1)
+    expect(policy).toHaveLength(3)
+    for (const rule of policy) expect(rule).toMatchObject({ tool: 'edit|write', action: 'allow' })
     expect(policy[0]).toMatchObject({ tool: 'edit|write', action: 'allow' })
     // shell is never pre-approved, under any rule in the table.
     expect(policy.some((p) => p.tool.includes('shell'))).toBe(false)
@@ -308,7 +371,18 @@ describe('standard.yaml', () => {
   })
 
   it('is reachable through the named export the host reads', () => {
-    expect(PRESET_NAMES).toEqual(['standard', 'claw', 'channel', 'minimal-rl', 'standard-windows'])
+    expect(PRESET_NAMES).toEqual([
+      'standard',
+      'claw',
+      'channel',
+      'minimal-rl',
+      'standard-windows',
+      'minimal',
+      'ptc',
+      'permission-read-only',
+      'permission-workspace-write',
+      'permission-full-access',
+    ])
     expect(presets.standard).toEqual(doc)
     expect(Object.keys(presets)).toEqual([...PRESET_NAMES])
   })
@@ -348,7 +422,7 @@ describe('claw', () => {
   // platform without L1 is asserted where a host exists to refuse it, in
   // packages/host/test/shipped-presets.test.ts.
   it('declares the L1 sandbox requirement', () => {
-    expect(doc.sandbox).toEqual({ level: 'L1', required: true })
+    expect(doc.sandbox).toEqual({ required: true })
   })
 
   // What is asserted here is only that the file does not restate the rule. That the inherited rule
@@ -380,6 +454,7 @@ describe('channel', () => {
     expect((doc.model as { prompt_sections: string[] }).prompt_sections).toEqual([
       'persona',
       'environment',
+      'tools-available',
       'coding-doctrine',
       'channel-style',
     ])

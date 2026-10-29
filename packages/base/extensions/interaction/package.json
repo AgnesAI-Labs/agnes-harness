@@ -1,0 +1,67 @@
+{
+  "name": "@agnes/interaction",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/interaction",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "tools",
+          "projections",
+          "eventLog"
+        ],
+        "capabilities": {
+          "tools": {
+            "prefix": "",
+            "names": [
+              "ask_user_question"
+            ]
+          },
+          "hooks": [],
+          "events": true,
+          "projections": [
+            {
+              "name": "questions",
+              "inputEventTypes": [
+                "x/agnes/interaction/requested",
+                "x/agnes/intelligent-ui/action.received",
+                "x/agnes/intelligent-ui/action.succeeded",
+                "x/agnes/intelligent-ui/surface.opened"
+              ],
+              "maxStateBytes": 262144
+            }
+          ],
+          "tools.invoke": true
+        },
+        "metadata": {
+          "displayName": "User questions",
+          "summary": "Lets the agent ask focused questions and continue with the user's answers.",
+          "description": "Lets the agent ask focused questions and continue with the user's answers.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "向用户提问",
+              "summary": "让 Agent 提出明确的问题，并根据用户回答继续工作。",
+              "description": "让 Agent 提出明确的问题，并根据用户回答继续工作。"
+            }
+          }
+        }
+      }
+    ],
+    "provides": [
+      "tool"
+    ]
+  },
+  "peerDependencies": {
+    "@agnes/intelligent-ui": "^0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@agnes/intelligent-ui": {
+      "optional": true
+    }
+  }
+}

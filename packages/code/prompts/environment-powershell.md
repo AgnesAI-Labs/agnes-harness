@@ -1,6 +1,1 @@
-Shell commands already run inside PowerShell, so for them:
-
-- Write commands and `$` variables directly. Never wrap a command in `powershell -Command` or `pwsh -Command`: the outer shell expands `$` and quotes in that string before the inner one runs.
-- `curl` and `wget` may be aliases of Invoke-WebRequest. Call `curl.exe`, or Invoke-WebRequest with its own parameters.
-- No bash syntax: no heredoc, `export`, or, in Windows PowerShell 5.1, `&&` and `||`. Pipe a here-string into the program instead (`@'` ends its line and `'@` starts one; for example into `python -`), set `$env:NAME = 'value'`, and separate commands with `;`.
-- Pass `-Encoding utf8` every time you read or write a file with Get-Content, Set-Content, Add-Content or Out-File.
+Run shell commands directly in the Host-selected PowerShell interpreter. Do not wrap them in another powershell/pwsh -Command. Use curl.exe when you need native curl, and PowerShell here-strings for multiline text. Use -Encoding utf8 for text file reads and writes. Follow the measured interpreter version: Windows PowerShell 5.1 does not support && or ||. Python commands receive UTF-8 and unbuffered output defaults. A timeout alone does not identify its cause; inspect captured output and current state before retrying. Never print a secret's value; check only whether it is set.

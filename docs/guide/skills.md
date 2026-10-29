@@ -10,6 +10,14 @@ Capture project conventions, checks, and common methods as a Skill for agents to
 
 A Skill provides instructions and resources; it does not grant execution permission. AGH discovers candidates, reviews revisions, resolves same-name candidates, and exposes usable content to a session. A file's existence does not prove that the model has read it.
 
+## Ask the agent to create a Skill
+
+For example: “Create a simple skill called 数学老师skill.” The agent uses an ASCII directory identifier such as `math-teacher`; `SKILL.md` frontmatter can keep the Chinese display name and must provide `name` and `description`.
+
+Instruction-only drafts (`SKILL.md` plus optional `.md`, `.txt`, `.json`, `.yaml`, `.yml` or `.csv` resources outside `scripts/`) use static validation. AGH checks frontmatter and invocation flags, names and collisions, file counts and sizes, relative paths and resource integrity. It does not generate a JavaScript plugin or run Node author tests. Review the name, description, file list, target and SHA256 digest in the install confirmation. Full access automatically allows installation, trust and enablement of the frozen revision, including the source-read decision for an import. Other permission levels retain the single confirmation. The default scope is the workspace; user scope and install-only are also supported. Wait for `ready` before using it on the next turn (`installed` means install-only).
+
+Scripts, package manifests and other file types keep the plugin candidate → author tests → human publication path. Installation does not execute those scripts or grant them execution permission. Existing local-source imports retain their separate source-read approval. An invalid or conflicting draft is refused without overwriting files; denial, cancellation, expired ownership or a changed lease cannot authorize installation. The private receipt retains the authoring session, plugin snapshot, content digest and resource revision. Update an already installed Skill Helper to receive this flow; installed helper packages are not automatically upgraded.
+
 <a id="创建一个工作区-skill"></a>
 
 ## Create a workspace Skill
@@ -25,17 +33,16 @@ Read the README and related documentation, then list conflicting statements and 
 Suggest changes only. Do not write files or install dependencies.
 ```
 
-Create a Web session for the project. In Skills management, refresh that workspace and check the source and content revision, then choose Enable. Web performs the version approval before enabling and does not show a separate trust action. The switch follows your enable request: it stays on once you have asked for it, even when the Skill fails to load, and the reason appears in the same row. Turning it off withdraws the request. You can also inspect and manage the underlying states from the CLI:
+The daemon watches Skill roots, including folders created after startup. New disk Skills in the registered workspace or `$AGH_HOME/skills` are automatically trusted and enabled. Put only instructions you trust there. Edits retain the recorded trust/rejection and enable/disable decision, bound to the new revision; a rejected or disabled Skill stays rejected or disabled. Skills never grant execution permissions. Changes become visible to idle sessions on the next request; an in-flight turn keeps its snapshot.
+
+From the target project, use the CLI to register the current directory and print its workspaceId. Refresh is an optional immediate rescan, with confirmation; no manual workspace ID is needed:
 
 ```sh
-node packages/cli/dist/local/agnes.mjs resources list --kind skill
-node packages/cli/dist/local/agnes.mjs skills refresh --root-key workspace-agnes --workspace-id WORKSPACE_ID
-node packages/cli/dist/local/agnes.mjs resources get SKILL_RESOURCE_ID
-node packages/cli/dist/local/agnes.mjs skills trust SKILL_RESOURCE_ID REVISION trusted
-node packages/cli/dist/local/agnes.mjs resources enable SKILL_RESOURCE_ID --expected-revision REVISION
+node /path/to/agnes-harness/agnes.mjs skills refresh --yes
+node /path/to/agnes-harness/agnes.mjs skills list
 ```
 
-`WORKSPACE_ID` is the registered workspace's 64-character hexadecimal identifier, available in workspace/resource data. Do not use a path or another session's ID. Use `--root-key user-agnes` for a Skill under your AGH home; there is no need to move a project Skill there. Read current resource data before writing.
+Use your actual built CLI path above, or `agh` when it is on PATH. To scope another registered workspace, pass `--workspace-id WORKSPACE_ID`. `skills list` prints resource IDs, revisions, trust, desired and actual state. Explicit trust changes remain available as `agh skills trust SKILL_RESOURCE_ID REVISION trusted --yes`; enable/disable uses `agh resources enable|disable SKILL_RESOURCE_ID --expected-revision REVISION --yes`. Without a TTY, mutations require `--yes`; it confirms the reviewed change without bypassing revision checks.
 
 Confirm `trust=trusted`, `desired=enabled`, `actual=ready`, and `winner`, then explicitly ask the workspace session to use `review-notes`. Host can preload an explicitly named, uniquely matched, available Skill. A vague description is not a deterministic activation syntax.
 
@@ -43,7 +50,7 @@ Confirm `trust=trusted`, `desired=enabled`, `actual=ready`, and `winner`, then e
 
 ## Sources and conflicts
 
-Disk sources include workspace `.agh/skills`, `AGH_HOME/skills`, and `.agents/skills`, `.claude/skills`, and `.codex/skills` under the operating-system user's home. Packages can also contribute Skills. `AGH_HOME` does not relocate other tools' user directories. Each session reads its own workspace rather than substituting the worker's startup directory.
+Default disk sources are workspace `.agh/skills` (also workspace `.agents/skills` and `.claude/skills`) and `$AGH_HOME/skills`; packages can also contribute Skills. Importing the OS user's `~/.agents/skills`, `~/.claude/skills`, and `~/.codex/skills` requires explicit deployment configuration `AGNES_SKILLS_IMPORT_USER=1` when starting the daemon. It is off by default, including for a fresh or isolated AGH_HOME. Imported user Skills use the same automatic trust policy; opt in only for trusted folders. `AGH_HOME` does not relocate those other tools' user directories. Each session reads its own workspace rather than substituting the worker's startup directory.
 
 Default priorities, with higher values taking precedence:
 
@@ -59,14 +66,32 @@ Default priorities, with higher values taking precedence:
 
 Names are grouped after trimming whitespace and ignoring case. Candidates not marked for deletion are ordered by effective priority descending, then by `sourceId` for ties. The resolved `winner` must still pass its own trust/desired checks to become ready. A higher-priority candidate that is untrusted, rejected, or disabled does not automatically yield to a lower-priority candidate merely because it is unavailable.
 
-A failed refresh may leave stale or last-known content. Stale data is not evidence of a successful scan. Disk changes require revision and trust review again.
+A failed refresh may leave stale or last-known content. Stale data is not evidence of a successful scan. Edits retain existing decisions and update the bound revision.
+
+A flat disk file needs no YAML frontmatter. For example, `$AGH_HOME/skills/review-notes.md` containing `# Review project notes` is named `review-notes`, with its description taken from the first nonempty heading or line (up to 1024 characters). Its entire Markdown remains the body. Empty files and malformed explicit frontmatter are rejected. Directory `SKILL.md` and packaged Skill contributions still require `name` and `description` frontmatter.
+
+A skill root may contain a directory `<name>/SKILL.md` or a flat `<name>.md`. The directory wins when both exist. Installation-owned `context.json` supports `customSkillRoots` (absolute directories). Configure these through **Settings → Models → Run configuration → Context**; they follow `AGH_HOME/skills` at priority 400. See [default context](context.md). `SKILL.md` may set `disable-model-invocation`, `user-invocable`, and `disable`; omitted flags permit both model and user use. The daemon watches directories and relative resource files; `skills refresh --yes` requests an immediate rescan. Details and the unsupported cases are in [MCP and Skills support](mcp-skills-support.md).
+
+## Manage skills in Web
+
+Candidate tests retain the [Host isolation and exact-hash rules](security.md). Full access automatically allows tests on every platform, including unisolated Windows; the `workspace-write` permission still requires one confirmation. Testing alone never publishes a package. Submitting a passing candidate under full access automatically installs, trusts and enables it through the existing publication transaction; other permission levels retain human review.
+
+Full-access tool requests also automatically allow Skill import/install, capability changes, MCP registration/start, ask-mode memory writes and credential administration confirmations. Each permission decision records its actor and reason `full-access`. Protected paths retain their hard refusals. Human-maintained local plugin and trusted disk-Skill discovery retain their documented trust paths.
+
+Open **Plugins → Skills** for the skill list; **Plugins → To review** contains **Drafts** and **Feedback**. New skill opens a menu to ask the agent to draft a skill or learn how to import existing folders. Plugin candidate proposals appear in To review → Drafts; instruction-only Helper drafts use the install confirmation above. Open a candidate review to inspect content changes and test evidence before approving publication or rejecting it. The pending count appears only when a review needs attention.
+
+Search My skills by name or description. The row switch and menu keep the existing enable, trust and removal confirmation flows. Where are skill folders? lists the sources reported by the daemon. Import help links to deployment instructions for other agents; it does not change the daemon's startup import setting. Refresh skills keeps its confirmation.
+
+Expand **Skill folders**, add absolute paths, and choose **Save and scan**. Saving starts a scan automatically; newly discovered skills are enabled under the existing discovery rules. Each added folder shows its result and any access, location or metadata problem. Valid files are counted before same-name selection; the count does not mean new or enabled skills. Unreadable folders have unknown file counts, and incomplete scans show observed lower bounds.
+
+After correcting a folder or file, choose **Rescan**. **Copy diagnostics** copies identifiers, counts, time and safe error codes without folder paths, filenames or skill contents. Reports are temporary and clear when the daemon restarts. For access errors, check directory access for the application that starts the AGH background process, or use another readable folder; the error alone does not prove a macOS privacy restriction. A host that does not return scan details shows no invented counts.
 
 <a id="调整同名候选优先级"></a>
 
 ## Change same-name candidate priority
 
-1. Open Settings → Skills, choose the workspace, and inspect the Skill's source, current winner, shadowed candidates, and effective priority.
-2. Enter an **integer from 50 to 500** in the priority field, save, and confirm. This only changes the persistent override for that resourceId in the current profile. It does not edit files or enable the Skill.
+1. Open Plugins → Skills, choose the workspace, and open the Skill's details and expand Technical details to inspect its source, current winner, shadowed candidates, and effective priority.
+2. Expand Advanced options, enter an **integer from 50 to 500** in the priority field, then choose **Save priority** and confirm. This only changes the persistent override for that resourceId in the current profile. It does not edit files or enable the Skill.
 3. Wait for completion and check the winner and actual state again. Review and enable a new winner if necessary; saving a priority is not enough.
 4. The current Web page does not expose reset-to-default. Use the Node client with `priority: null` when that administrative action is required. Concurrent priority edits can happen without a content revision change, so saving also checks `expectedPriority`. Refresh on conflict rather than retrying blindly.
 
@@ -96,7 +121,7 @@ These management actions are available through Web and the Node SDK. Current she
 - Both require server-granted admin authority and `resources.skills.write`. JSON arguments cannot grant permission. The browser management page uses a constrained same-origin BFF without giving plugins the management SDK.
 - Use identity, revision, and priority returned by the current instance, and retain commandId and operation receipts. Reuse a commandId to query/replay the same accepted request. A fresh retry after failed deletion is a new explicit operation. Query results with `client.resources.operation.get({ profile, operationId })` or shell `resources operation OPERATION_ID`.
 
-Contracts: [resource schema](../../packages/protocol/schema/resource-control.json), [methods and permissions](../../packages/resource-control-contracts/src/resource-control.ts), [Node client](../../packages/resource-control-client-node/src/resource-control.ts), [persistent control and deletion markers](../../packages/resource-control-store/src/skills.ts), [Web actions](../../packages/resource-control-web/src/admin.tsx), [worker wiring](../../packages/resource-control-worker/src/runtime-bootstrap.ts). The [worker deletion implementation](../../packages/resource-control-worker/src/skill-remove.ts) calls system-node for native deletion. Source links match this document's revision; check the matching contract when running an older build.
+Contracts: [resource schema](../../packages/protocol/schema/resource-control.json), [methods and permissions](../../packages/resource-control-contracts/src/resource-control.ts), [Node client](../../packages/sdk/src/resource-control.node.ts), [persistent control and deletion markers](../../packages/resource-control-store/src/skills.ts), [state projection](../../packages/resource-control-store/src/skill-state.ts), [journal admission](../../packages/resource-control-store/src/skill-journal.ts), [Web actions](../../packages/resource-control-web/src/admin.tsx), [worker wiring](../../packages/resource-control-worker/src/runtime-bootstrap.ts). The [worker deletion implementation](../../packages/resource-control-worker/src/skill-remove.ts) calls system-node for native deletion. Source links match this document's revision; check the matching contract when running an older build.
 
 <a id="cordis-运行时贡献"></a>
 
@@ -118,4 +143,8 @@ Runtime contributions do not enter the disk trust/desired workflow; their trust 
 
 The bundled Skill Helper has its own installation request flow. A tool may request installation, but cannot bypass user confirmation, source review, or write boundaries. Subagents cannot request Skill installation through it.
 
-Implementation: [discovery roots](../../packages/base/extensions/skills/src/discover.ts), [candidate registry](../../packages/resource-control-runtime/src/skills.ts), [Cordis service](../../packages/resource-control-runtime/src/skills-cordis.ts), [session preloading](../../packages/host/src/resources/skill-preload.ts), [Skill Helper](../../packages/package-manager/bundled-plugins/skill-helper/README.md).
+Implementation: [discovery roots](../../packages/base/extensions/skills/src/discover.ts), [candidate registry](../../packages/resource-control-runtime/src/skills.ts), [Cordis service](../../packages/resource-control-runtime/src/skills-cordis.ts), [session preloading](../../packages/host-extensions/src/resources/skill-preload.ts), [Skill Helper](../../packages/package-manager/bundled-plugins/skill-helper/README.md).
+
+Invoke a user-invocable Skill in Web or TUI with `/skill invoke NAME ARGUMENTS`. The Context page also offers an invocation form. The Host loads only a unique trusted, enabled winner; unknown, disabled or user-hidden Skills are refused. Arguments remain in the user message.
+
+Packaged Skill attachments are copied into the approved runtime snapshot. Unsupported file types are omitted by the existing attachment rules. The authoring test runner checks supported attachments against the loader's limits before review. If an installed Skill has an invalid document, unreadable attachments or exceeds the attachment budget, only that Skill becomes unavailable: Plugins → Skills shows the reason, no partial content is exposed, and healthy Skills continue loading during service startup. Repair and update the package through the existing review flow, then reload it. Package integrity checks and snapshot publication failures still fail closed. Runtime-registered Skills on Plugins → Skills are scoped to the current plugin composition and registration owner, then undergo name arbitration. They are managed through their plugin, so the Skill page cannot edit or toggle them independently. Old sessions keep their pinned plugin versions.

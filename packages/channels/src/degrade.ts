@@ -1,5 +1,6 @@
 import type { ChannelCapabilities } from '@agnes/protocol'
 import type { ApprovalBlock, Block, CardBlock, ChannelMessage, TableBlock } from './adapter.js'
+import { decisionRef } from './decision.js'
 
 export type DegradedCap = 'edit' | 'card' | 'attachment' | 'thread'
 export type MarkdownFeature = 'bold' | 'code' | 'list' | 'link'
@@ -21,6 +22,11 @@ export function escapeText(value: string): string {
     .replace(/>/g, '&gt;')
 }
 
+/** Review content must remain readable even when it contains markup to discuss. */
+export function escapeReviewText(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
 /** Reduces markdown to the portable subset declared by an adapter. */
 export function markdownSubset(value: string, allowed: ReadonlySet<MarkdownFeature>): string {
   let result = value.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
@@ -34,7 +40,7 @@ export function markdownSubset(value: string, allowed: ReadonlySet<MarkdownFeatu
 }
 
 function approvalKey(block: ApprovalBlock): string | undefined {
-  if (block.ticket) return block.ticket.slice(0, 6)
+  if (block.decisionKey) return decisionRef(block.decisionKey)?.id.slice(0, 6)
   if (block.requestSeq !== undefined) return `#${block.requestSeq}`
   return undefined
 }

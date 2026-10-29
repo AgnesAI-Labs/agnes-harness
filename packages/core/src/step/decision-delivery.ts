@@ -1,0 +1,164 @@
+import { CoreError, type EventInput } from '@agnes/core-common/types'
+import { isPending, normalizeApproval } from '@agnes/core-effects/effects/approval-answer'
+import type { ApprovalAnswer, ApprovalRequest, Pending } from '@agnes/core-effects/effects/seams'
+import type { DecisionSnapshot } from '@agnes/extension-api'
+import { delegatedApprovalRequest } from '../child/approval.js'
+import { childLifecycle } from '../child/lifecycle.js'
+import type { DecisionSource } from './decisions.js'
+import { runCoreReplacement } from './reentry.js'
+import type { SessionImpl } from './session.js'
+
+export async function askApprovalAnswer(
+  s: SessionImpl,
+  request: ApprovalRequest,
+  signal: AbortSignal,
+): Promise<ApprovalAnswer | Pending> {
+  signal = AbortSignal.any([signal, s.ac.signal])
+  const offered = structuredClone(request)
+  const raw = s.d.segments?.Approval
+    ? await runCoreReplacement(s, 'Approval', s.operationContext(), { request, signal }, () =>
+        s.d.runtime.approvalAsk(request, signal),
+      )
+    : await s.d.runtime.approvalAsk(request, signal)
+  // A replacement that answers outside the set is refused like a seam that does.
+  if (signal.aborted) return { verdict: 'cancelled', reason: 'stopped' }
+  return normalizeApproval(raw, offered) ?? { verdict: 'unavailable', reason: 'invalid-answer' }
+}
+
+/** Delivery can end without an answer; the persisted request remains the only pending authority. */
+export async function deliverDecision(
+  s: SessionImpl,
+  snapshot: DecisionSnapshot,
+  offered: ApprovalRequest,
+  signal: AbortSignal,
+  authorize: () => void = () => {
+    const call = snapshot.request.spec.subject as { call?: { name?: string; definitionFingerprint?: string } }
+    if (
+      !call.call?.name ||
+      s.currentTools().resolve(call.call.name)?.definitionFingerprint !== call.call.definitionFingerprint
+    )
+      throw new CoreError('E_RELATION', 'DECISION_SOURCE_CHANGED')
+  },
+): Promise<{ snapshot: DecisionSnapshot; park?: EventInput; pending?: boolean }> {
+  signal = AbortSignal.any([signal, s.ac.signal])
+  if (!snapshot.result && !snapshot.invalidation) {
+    const lifecycle = childLifecycle(s)
+    lifecycle.assertActive()
+    const source: DecisionSource = {
+      owner: snapshot.request.owner,
+      operationId: snapshot.request.operationId,
+      sourcePackage: snapshot.request.sourcePackage,
+      packageVersion: snapshot.request.packageVersion,
+      alive() {},
+    }
+    const request = await delegatedApprovalRequest(s, snapshot, offered)
+    if (!request) return { snapshot: await s.decisions.withdraw(snapshot.handle, source, 'no-approver') }
+    offered = request
+    const local = new AbortController()
+    // Own stops publish cancellation before pulling the execution signal; ancestor revocation
+    // pulls descendant execution signals synchronously. Keep epoch checks at answer/commit gates.
+    const deliverySignal = AbortSignal.any([signal, local.signal])
+    lifecycle.assertActive()
+    const delivery = s
+      .askApprovalAnswer(
+        {
+          ...offered,
+          requestId: snapshot.handle.id,
+          deadline: snapshot.request.expiresAt ?? offered.deadline,
+          decision: { handle: snapshot.handle, revision: snapshot.revision },
+        },
+        deliverySignal,
+      )
+      .then((answer) => ({ kind: 'delivery' as const, answer }))
+    const waiting = s.decisions
+      .port(source)
+      .wait(snapshot.handle, { signal: deliverySignal })
+      .then((result) => ({ kind: 'state' as const, result }))
+    let winner: Awaited<typeof delivery> | Awaited<typeof waiting>
+    try {
+      winner = await Promise.race([delivery, waiting])
+    } finally {
+      local.abort('detached')
+      await Promise.allSettled([delivery, waiting])
+    }
+    signal.throwIfAborted()
+    lifecycle.assertActive()
+    if (winner.kind === 'state') return { snapshot: await s.decisions.get(snapshot.handle) }
+    const answer = winner.answer
+    if (
+      !isPending(answer) &&
+      answer.answeredBy &&
+      answer.answeredBy.role !== 'agent' &&
+      (!s.roleAuthority || answer.answeredBy.role !== 'system') &&
+      ['allowed-once', 'allowed-session', 'allowed-permanent', 'rejected'].includes(answer.verdict)
+    ) {
+      try {
+        await s.decisions.answer(
+          {
+            handle: snapshot.handle,
+            revision: snapshot.revision,
+            commandId: `delivery:${snapshot.handle.id}`,
+            response: { option: answer.verdict, value: null },
+          },
+          {
+            actor: answer.answeredBy,
+            category: 'human',
+            authorize() {
+              signal.throwIfAborted()
+              lifecycle.assertActive()
+              authorize()
+            },
+          },
+        )
+      } catch (error) {
+        // Another authenticated client may have won the same writer race. Read its canonical result.
+        const current = await s.decisions.get(snapshot.handle)
+        if (!current.result && !current.invalidation) throw error
+      }
+    } else {
+      const current = await s.decisions.get(snapshot.handle)
+      if (!current.result && !current.invalidation) {
+        if (s.roleAuthority)
+          return {
+            snapshot: await s.decisions.withdraw(
+              current.handle,
+              source,
+              isPending(answer) ? 'detached' : (answer.reason ?? 'invalid-answer'),
+            ),
+          }
+        const op = s.op()
+        const [input] = op
+          ? await s.d.log.scan({
+              type: 'user/message',
+              lane: s.lane,
+              toSeq: op.meta.triggerSeq,
+              order: 'desc',
+              limit: 1,
+            })
+          : []
+        if (input?.origin === 'system' && input.actor.attrs.unattendedApproval === 'refuse') {
+          const refused = await s.decisions.withdraw(current.handle, source, 'unattended-refused')
+          await s.d.log.append([
+            s.ev('x/core/unattended-refused', { handle: current.handle }, { ignorable: true }),
+          ])
+          return { snapshot: refused }
+        }
+        return {
+          snapshot: current,
+          pending: isPending(answer),
+          park: s.ev(
+            'x/core/decision-delivery',
+            {
+              handle: current.handle,
+              waitEndedBy: isPending(answer)
+                ? 'detached'
+                : (answer.reason ?? (answer.verdict === 'unavailable' ? 'no-approver' : 'invalid-answer')),
+            },
+            { ignorable: true },
+          ),
+        }
+      }
+    }
+  }
+  return { snapshot: await s.decisions.get(snapshot.handle) }
+}

@@ -1,6 +1,7 @@
 import type { UsageView } from '@agnes/protocol'
-import type { Ansi } from './ansi.js'
+import { type ExtendedKey, tt } from './locale-extended.js'
 import { displayWidth } from './terminal.js'
+import type { ThemedAnsi } from './theme.js'
 
 const SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 // Labels have already passed protocol validation, but the renderer remains a trust boundary. This
@@ -17,8 +18,16 @@ function nonNegativeInteger(value: number, label: string): void {
 export function formatTokenCount(tokens: number): string {
   nonNegativeInteger(tokens, 'token count')
   if (tokens < 1_000) return String(tokens)
-  if (tokens < 1_000_000) return `${(tokens / 1_000).toFixed(1)}k`
-  return `${(tokens / 1_000_000).toFixed(1)}M`
+  // Round first, then pick the unit, so 999_999 carries to `1.0M` rather than reading `1000.0k`.
+  const rounded = (size: number) => Number((tokens / size).toFixed(1))
+  if (rounded(1e3) < 1_000) return `${(tokens / 1e3).toFixed(1)}k`
+  if (rounded(1e6) < 1_000) return `${(tokens / 1e6).toFixed(1)}M`
+  return `${(tokens / 1e9).toFixed(1)}G`
+}
+
+/** `formatTokenCount` without the trailing `.0` (`1.0M` -> `1M`), as the composer rail draws it. */
+export function formatTokenCountShort(tokens: number): string {
+  return formatTokenCount(tokens).replace(/\.0(?=[kMG]$)/, '')
 }
 
 /** Renders the exact integer-micro value, trimming only zeroes beyond the required three decimals. */
@@ -31,7 +40,21 @@ export function formatUsdMicros(micros: number): string {
 }
 
 /**
- * RP3: the local wall clock from prompt to yield, tool calls included -- the span an operator
+ * A rounded estimate for the status line: two significant digits below $1, whole cents from there
+ * on. Rounds first and compares after, so 999_999 and 1_000_000 both read `$1.00`. The `/usage`
+ * panel keeps the exact `formatUsdMicros` value.
+ */
+export function formatUsdApprox(micros: number): string {
+  nonNegativeInteger(micros, 'USD micros')
+  if (micros === 0) return '$0'
+  const rounded = Number((micros / 1_000_000).toPrecision(2))
+  if (micros < 1_000_000 && rounded < 1) return `$${rounded}`
+  const cents = Math.round(micros / 10_000)
+  return `$${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`
+}
+
+/**
+ * The local wall clock from prompt to yield, tool calls included -- the span an operator
  * actually waited. The provider's own TTFT/duration pair (rendered by `formatCallUsage` in
  * usage-details.ts) does not add up to this by itself: neither field counts tool execution,
  * approval waits, or retry backoff.
@@ -79,11 +102,12 @@ export function contextPressure(context: ContextUsage): ContextPressure {
   return 'normal'
 }
 
-function sanitizeLabel(label: string): string {
+export function sanitizeLabel(label: string): string {
   return label.replace(UNSAFE_LABEL, '')
 }
 
-function clipLabel(label: string, width: number): string {
+/** Clips by display width, ending in `…` when anything was cut. */
+export function clipLabel(label: string, width: number): string {
   if (width <= 0) return ''
   if (displayWidth(label) <= width) return label
   if (width === 1) return '…'
@@ -106,38 +130,58 @@ function alignGroups(left: string, right: string, width: number): string {
   return `${left}${' '.repeat(gap)}${clippedRight}`
 }
 
-function styledContext(usage: UsageView, ansi: Ansi): string {
-  const context = `≈${formatContextUsage(usage.context)}`
+function styledContext(usage: UsageView, ansi: ThemedAnsi, locale: string): string {
+  checkContext(usage.context)
+  const { tokens, window } = usage.context
+  const value = `${tt('usage.line.approx', locale)}${((tokens / window) * 100).toFixed(1)}%/${formatTokenCountShort(window)}`
   const pressure = contextPressure(usage.context)
-  if (pressure === 'error') return ansi.fg(196, context)
-  if (pressure === 'warning') return ansi.fg(214, context)
-  return ansi.dim(context)
+  const tone = pressure === 'error' ? 'danger' : pressure === 'warning' ? 'warning' : 'fg'
+  return `${ansi.fg('muted', tt('usage.line.context', locale))} ${ansi.fg(tone, value)}`
 }
 
 /**
  * Produces one terminal-width line. Width tiers are intentionally structural rather than dependent
- * on label length, so a model switch cannot make cost/input fields flicker in and out.
+ * on label length, so a model switch cannot make cost/input fields flicker in and out. The words
+ * and the `~` / `+` / `(partial)` marks carry the meaning; colour only emphasises it.
  */
 export function formatUsageLine(
   usage: UsageView,
   requestedWidth: number,
-  ansi: Ansi,
+  ansi: ThemedAnsi,
   showModel = true,
+  /** False where the composer rail already draws the context gauge. */
+  showContext = true,
+  locale = 'en',
 ): string {
   if (!Number.isFinite(requestedWidth)) throw new Error('usage footer width must be finite')
   const width = Math.max(1, Math.trunc(requestedWidth))
-  const context = styledContext(usage, ansi)
+  const context = showContext ? styledContext(usage, ansi, locale) : ''
   const model = sanitizeLabel(usage.model.id)
+  // Only the left group is styled: the right group may be clipped, and clipping counts characters.
+  const word = (key: ExtendedKey) => ansi.fg('muted', tt(key, locale))
+  const count = (key: ExtendedKey, n: number, gap: string) =>
+    `${word(key)}${gap}${ansi.fg('fg', formatTokenCountShort(n))}`
+  const dot = ansi.fg('faint', ' · ')
+  // Estimates carry the approx mark; a gateway record is exact and carries none.
+  const cost = (approx: ExtendedKey, partial: string, label: boolean) => {
+    if (usage.cost === undefined) return ''
+    const estimated = usage.cost.source === 'estimated'
+    const amount = estimated ? formatUsdApprox(usage.cost.usdMicros) : formatUsdMicros(usage.cost.usdMicros)
+    const text = `${label ? `${word('usage.line.cost')} ` : ''}${ansi.fg('fg', `${estimated ? tt(approx, locale) : ''}${amount}`)}`
+    return usage.billingComplete === false ? `${text}${ansi.fg('warning', partial)}` : text
+  }
 
   if (width >= 100) {
     const left = [
-      `Σ ↑${formatTokenCount(usage.totals.input)}`,
-      `↓${formatTokenCount(usage.totals.output)}`,
-      usage.cost === undefined
-        ? ''
-        : `${usage.cost.source === 'estimated' ? '≈' : ''}${formatUsdMicros(usage.cost.usdMicros)}${usage.billingComplete === false ? '*' : ''}`,
+      `${word('usage.line.sessionTotal')}  ${[
+        count('usage.line.input', usage.totals.input, ' '),
+        count('usage.line.output', usage.totals.output, ' '),
+        cost('usage.line.approx', tt('usage.line.partial', locale), true),
+      ]
+        .filter(Boolean)
+        .join(dot)}`,
       context,
-      usage.context.autoCompact ? '(auto)' : '',
+      showContext && usage.context.autoCompact ? ansi.fg('faint', '(auto)') : '',
     ]
       .filter(Boolean)
       .join(' ')
@@ -146,9 +190,28 @@ export function formatUsageLine(
   }
 
   if (width >= 60) {
-    const left = `Σ ↑${formatTokenCount(usage.totals.input)} ↓${formatTokenCount(usage.totals.output)} ${context}`
-    return alignGroups(left, showModel ? model : '', width)
+    const tokens = `${word('usage.line.session')}  ${[
+      count('usage.line.input', usage.totals.input, ' '),
+      count('usage.line.output', usage.totals.output, ' '),
+      cost('usage.line.approx', '+', false),
+    ]
+      .filter(Boolean)
+      .join(dot)}`
+    return alignGroups([tokens, context].filter(Boolean).join(' '), showModel ? model : '', width)
   }
+
+  if (width >= 40)
+    return alignGroups(
+      [
+        count('usage.line.inputShort', usage.totals.input, ' '),
+        count('usage.line.outputShort', usage.totals.output, ' '),
+        cost('usage.line.approxTight', '+', false),
+      ]
+        .filter(Boolean)
+        .join('  '),
+      showModel ? model : '',
+      width,
+    )
 
   if (width >= 30 || !showModel) return alignGroups(context, showModel ? model : '', width)
   return alignGroups('', model, width)

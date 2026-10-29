@@ -1,6 +1,30 @@
 {
   "name": "test/hello",
   "version": "0.0.1",
+  "license": "MIT",
   "type": "module",
-  "exports": "./index.ts"
+  "exports": "./index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:test/hello",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "tools"
+        ],
+        "capabilities": {
+          "tools": {
+            "prefix": "hello_",
+            "names": [
+              "hello_ping"
+            ]
+          }
+        }
+      }
+    ],
+    "provides": [
+      "tool"
+    ]
+  }
 }

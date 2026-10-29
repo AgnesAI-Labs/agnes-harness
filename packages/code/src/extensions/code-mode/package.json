@@ -1,0 +1,44 @@
+{
+  "name": "@agnes/code-mode",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/code-mode",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "tools",
+          "hooks",
+          "eventLog"
+        ],
+        "capabilities": {
+          "tools": {
+            "prefix": "",
+            "names": [
+              "run_code"
+            ]
+          },
+          "hooks": [
+            "session_start",
+            "before_compact",
+            "shutdown"
+          ],
+          "slots": [],
+          "events": true,
+          "resources": [],
+          "network": [],
+          "tools.invoke": true,
+          "artifacts": true,
+          "subagent": true
+        }
+      }
+    ],
+    "provides": [
+      "tool"
+    ]
+  }
+}

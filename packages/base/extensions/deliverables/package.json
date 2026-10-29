@@ -1,0 +1,65 @@
+{
+  "name": "@agnes/deliverables",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/deliverables",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "tools",
+          "projections",
+          "eventLog"
+        ],
+        "capabilities": {
+          "tools": {
+            "prefix": "",
+            "names": [
+              "present"
+            ]
+          },
+          "events": true,
+          "artifacts": true,
+          "slots": [],
+          "projections": [
+            {
+              "name": "presented",
+              "inputEventTypes": [
+                "x/agnes/deliverables/presented"
+              ],
+              "maxStateBytes": 262144
+            }
+          ],
+          "tools.invoke": true
+        },
+        "metadata": {
+          "displayName": "Deliverables",
+          "summary": "Makes the agent's output files available to open or download from the conversation.",
+          "description": "Makes the agent's output files available to open or download from the conversation.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "交付成果",
+              "summary": "把 Agent 生成的文件呈现在对话中，方便打开或下载。",
+              "description": "把 Agent 生成的文件呈现在对话中，方便打开或下载。"
+            }
+          }
+        }
+      }
+    ],
+    "provides": [
+      "tool"
+    ]
+  },
+  "peerDependencies": {
+    "@agnes/intelligent-ui": "^0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@agnes/intelligent-ui": {
+      "optional": true
+    }
+  }
+}

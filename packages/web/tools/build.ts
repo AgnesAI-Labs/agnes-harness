@@ -1,10 +1,23 @@
-import { appendFile, cp, mkdir, readFile, rm } from 'node:fs/promises'
+import { appendFile, cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type BuildResult, build } from 'esbuild'
+import { buildPresentations } from '../../../tools/presentation-build.mjs'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
-import { buildConversationCss } from '../../web-ui/tools/build-conversation-css.js'
+import { productionWebOptions } from '../../../tools/web-build-options.mjs'
+import { clientPlatformExternals } from '../../../tools/web-client-externals.mjs'
+import { scrollbarCsp } from '../../../tools/web-scrollbar-csp.mjs'
+import {
+  inCssLayer,
+  readMarkdownThemeCss,
+  readUiCss,
+  readWebStyleSource,
+  readWebUiStyleSource,
+} from '../../../tools/web-style-source.mjs'
+import { tabsAria } from '../../../tools/web-tabs-aria.mjs'
+import { consumeVendorCss } from '../../../tools/web-vendor-css.mjs'
+import { xSurface } from '../../../tools/web-x-surface.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(import.meta.url)
@@ -20,29 +33,23 @@ const markdownDarkCss = require.resolve('@ant-design/x-markdown/themes/dark.css'
 })
 const out = join(root, 'dist', 'web')
 
-export async function buildWeb(options: { clean?: boolean } = {}): Promise<BuildResult[]> {
+export async function buildWeb(
+  options: { clean?: boolean; development?: boolean } = {},
+): Promise<BuildResult[]> {
+  await buildPresentations()
   if (options.clean !== false) await rm(out, { recursive: true, force: true })
   await mkdir(out, { recursive: true })
-  const generatedConversationCss = join(out, 'conversation-tailwind.css')
-  // WC5：平台共享单例说明符。宿主 app 与（未来的）插件模块都经 import map 解析到 /vendor/* 的
-  // 同一份实例；app.js 打包时保持这些说明符为外部导入。
-  const platformExternals = [
-    'react',
-    'react/jsx-runtime',
-    'react-dom',
-    'react-dom/client',
-    '@agnes/cordis',
-    '@agnes/web-client',
-    '@agnes/web-ui/assistant-ui',
-    'antd',
-  ]
+  // Shared platform singleton specifiers: the host app and future plugin modules resolve through
+  // the import map to the same /vendor/* instances; keep these imports external in app.js.
   const metafiles: BuildResult[] = []
   metafiles.push(
     await build({
+      ...(options.development ? {} : productionWebOptions),
       absWorkingDir: root,
+      define: { ...(options.development ? {} : productionWebOptions.define), __AGNES_WEB_BUNDLE__: 'true' },
       entryPoints: {
-        app: join(root, 'src', 'app.ts'),
-        admin: join(root, 'src', 'admin', 'plugins', 'admin.tsx'),
+        app: join(root, 'src', 'bootstrap.ts'),
+        admin: '@agnes/web-admin/admin/plugins/admin',
         resources: '@agnes/resource-control-web/admin',
         // 独立页宿主入口：设置弹窗里嵌的是 admin / resources（模块，由 app.ts 动态 import 后手动挂载）；
         // /admin/plugins 与 /admin/resources 两个整页加载这两个入口，由它们自己完成凭据交换与挂载。
@@ -58,14 +65,20 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
       platform: 'browser',
       target: ['es2023'],
       sourcemap: true,
-      external: platformExternals,
+      // Bundle the offline diagnostics renderer while preserving the shared React imports.
+      alias: { 'react-dom/server': require.resolve('react-dom/server.browser', { paths: [root] }) },
+      banner: {
+        js: "import __agnesSharedReact from 'react'; var require = (id) => { if (id === 'react') return __agnesSharedReact; throw Error('Unexpected external require: ' + id) };",
+      },
+      plugins: [clientPlatformExternals, scrollbarCsp],
       metafile: true,
     }),
   )
-  // WC5：平台共享单例 /vendor/*。React 入口与外部化 React 的 UI vendor 分开构建；React 的代码只
-  // 存在于共享入口/chunk 一份，antd、assistant-ui、web-client 经 import map 引用同一套 React 说明符。产物落在
-  // /vendor/ 命名空间，web-server 按固定文件名 + chunk 哈希模式放行。
+  // Shared /vendor/* singletons: build React entries separately from UI vendors that externalize React.
+  // React code exists once in shared entries/chunks; antd, conversation and web-client reference the same React
+  // specifiers through the import map. web-server allows fixed filenames and hashed chunks under /vendor/.
   const vendorOptions = {
+    ...(options.development ? {} : productionWebOptions),
     outdir: join(out, 'vendor'),
     outbase: join(root, 'tools', 'vendor'),
     bundle: true,
@@ -77,6 +90,7 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
     metafile: true,
     entryNames: '[name]',
     chunkNames: 'chunk-[hash]',
+    define: { ...(options.development ? {} : productionWebOptions.define), __AGNES_WEB_BUNDLE__: 'true' },
   }
   metafiles.push(
     await build({
@@ -95,11 +109,23 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
       absWorkingDir: root,
       entryPoints: {
         antd: join(root, 'tools', 'vendor', 'antd-entry.js'),
-        'assistant-ui': join(root, 'tools', 'vendor', 'assistant-ui-entry.js'),
+        'antd-en-us': join(root, '..', 'web-ui', 'tools', 'antd-en-us.ts'),
+        'antd-zh-cn': join(root, '..', 'web-ui', 'tools', 'antd-zh-cn.ts'),
+        conversation: join(root, 'tools', 'vendor', 'conversation-entry.js'),
+        x: join(root, 'tools', 'vendor', 'x-entry.js'),
         cordis: join(root, 'tools', 'vendor', 'cordis-entry.js'),
         'web-client': join(root, 'tools', 'vendor', 'web-client-entry.js'),
+        'web-ui': join(root, 'tools', 'vendor', 'web-ui-entry.js'),
+        protocol: join(root, 'tools', 'vendor', 'protocol-entry.js'),
+        'sdk-browser': join(root, 'tools', 'vendor', 'sdk-browser-entry.js'),
+        'web-units-shell': join(root, 'tools', 'vendor', 'web-units-shell-entry.js'),
+        'web-locale-catalog': join(root, 'tools', 'vendor', 'web-locale-catalog-entry.js'),
+        'goal-renderers': join(root, 'tools', 'vendor', 'goal-renderers-entry.js'),
+        'interaction-renderer': join(root, 'tools', 'vendor', 'interaction-renderer-entry.js'),
+        'presentation-renderers': join(root, 'tools', 'vendor', 'presentation-renderers-entry.js'),
       },
       ...vendorOptions,
+      plugins: [scrollbarCsp, tabsAria, xSurface],
       external: ['react', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom', 'react-dom/client'],
       // html-react-parser's ESM wrapper enters CJS and calls require('react'). Bind exactly that
       // call to the import-map singleton in every generated vendor chunk; reject other requires.
@@ -108,11 +134,36 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
       },
     }),
   )
+  // Optional chart assets import only the already-loaded React platform vendors.
+  metafiles.push(
+    await build({
+      absWorkingDir: root,
+      ...vendorOptions,
+      entryPoints: {
+        recharts: join(root, 'tools', 'vendor', 'recharts-entry.js'),
+        'chunk-diagnostics': join(root, 'src', 'diagnostics-bundle.ts'),
+      },
+      splitting: false,
+      alias: { 'react-dom/server': require.resolve('react-dom/server.browser', { paths: [root] }) },
+      external: [
+        'react',
+        'react/jsx-runtime',
+        'react/jsx-dev-runtime',
+        'react-dom',
+        'react-dom/client',
+        '@agnes/web-ui',
+      ],
+      banner: {
+        js: "import __agnesSharedReact from 'react'; var require = (id) => { if (id === 'react') return __agnesSharedReact; throw Error('Unexpected external require: ' + id) };",
+      },
+    }),
+  )
   // 首帧主题必须用阻塞式 <script> 在 <head> 里跑完，早于第一次绘制。
   // ESM 一律 defer，会闪一帧浅色，所以这一份单独打成 IIFE。
   // CSP 是 script-src 'self' 无 unsafe-inline，内联脚本这条路走不通。
   metafiles.push(
     await build({
+      ...(options.development ? {} : productionWebOptions),
       absWorkingDir: root,
       entryPoints: { theme: join(root, 'src', 'theme-boot.ts') },
       outdir: out,
@@ -125,31 +176,33 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
     }),
   )
   await Promise.all(
-    ['index.html', 'admin.html', 'resources.html', 'style.css', 'brand-mark.png']
+    ['index.html', 'admin.html', 'resources.html', 'brand-mark.png', 'favicon.png']
       .map((file) => cp(join(root, 'public', file), join(out, file)))
-      .concat([cp(antdCss, join(out, 'antd.css')), cp(tokensCss, join(out, 'tokens.css'))]),
+      .concat([
+        writeFile(join(out, 'antd.css'), inCssLayer(await readFile(antdCss, 'utf8'), 'vendor')),
+        writeFile(join(out, 'tokens.css'), readWebUiStyleSource(tokensCss)),
+      ]),
   )
+  await writeFile(join(out, 'style.css'), readWebStyleSource(join(root, 'public', 'style.css')))
   // Conversation rules share the existing style.css URL on all three pages. The local CLI build
   // must apply the same composition when copying Web assets into its own static root.
-  await appendFile(join(out, 'style.css'), `\n${await readFile(conversationCss, 'utf8')}`)
-  buildConversationCss(generatedConversationCss)
-  await appendFile(join(out, 'style.css'), `\n${await readFile(generatedConversationCss, 'utf8')}`)
-  await rm(generatedConversationCss)
+  await appendFile(join(out, 'style.css'), `\n${readUiCss(conversationCss)}`)
+  await appendFile(
+    join(out, 'style.css'),
+    `\n${readUiCss(join(root, '..', 'web-ui', 'src', 'intelligent-ui', 'styles.css'))}`,
+  )
   // esbuild emits this CSS companion because XMarkdown imports its core stylesheet. All pages
   // already load /style.css, so merge core + published themes + Agnes overrides there.
-  const generatedMarkdownCss = join(out, 'vendor', 'assistant-ui.css')
-  const [core, light, dark, overrides] = await Promise.all([
-    readFile(generatedMarkdownCss, 'utf8'),
-    readFile(markdownLightCss, 'utf8'),
-    readFile(markdownDarkCss, 'utf8'),
-    readFile(markdownOverridesCss, 'utf8'),
+  const core = await consumeVendorCss(join(out, 'vendor'))
+  const [light, dark, overrides] = await Promise.all([
+    Promise.resolve(readMarkdownThemeCss(markdownLightCss)),
+    Promise.resolve(readMarkdownThemeCss(markdownDarkCss)),
+    Promise.resolve(readUiCss(markdownOverridesCss)),
   ])
   await appendFile(
     join(out, 'style.css'),
-    `\n${core.replace(/\/\*# sourceMappingURL=.*?\*\//g, '')}\n${light}\n${dark}\n${overrides}`,
+    `\n${inCssLayer(`${core}\n${light}\n${dark}`, 'vendor')}\n${overrides}`,
   )
-  await rm(generatedMarkdownCss)
-  await rm(`${generatedMarkdownCss}.map`, { force: true })
   await collectThirdPartyNotices(root, out, metafiles)
   return metafiles
 }

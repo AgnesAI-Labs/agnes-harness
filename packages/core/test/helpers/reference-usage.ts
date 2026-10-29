@@ -1,10 +1,11 @@
-// The usage bookkeeping the UI cell kept before it stopped copying per row, kept verbatim as the
-// reference the equivalence tests compare against: cache-health's seen-effect set copied on every
+// The usage bookkeeping the UI cell kept before it stopped copying per row, updated for fresh
+// spawned conversations: cache-health's seen-effect set copied on every
 // inference cost row, and the surface rebuilt as a new array for every node.
-import type { CostLedger, RequestHeader } from '@agnes/protocol'
-import type { CacheHealthState, CacheInvalidationRecord } from '../../src/project/cache-health.js'
-import type { SurfaceNode } from '../../src/project/surface.js'
-import type { Event, Seq } from '../../src/types.js'
+
+import type { Event, Seq } from '@agnes/core-common/types'
+import type { CacheHealthState, CacheInvalidationRecord } from '@agnes/core-ledger/project/cache-health'
+import type { SurfaceNode } from '@agnes/core-ledger/project/surface'
+import type { CostLedger, RequestHeader, SessionStart } from '@agnes/protocol'
 
 export type ReferenceCacheHealthState = Omit<CacheHealthState, 'seenEffectIds'> & {
   seenEffectIds: ReadonlySet<string>
@@ -112,9 +113,17 @@ export function referenceApplyEvent(
   nodes: SurfaceNode[],
   e: Event,
   pins: Set<Seq>,
+  nested: Set<string> = new Set(),
 ): { nodes: SurfaceNode[]; replaced: boolean } {
+  const start = e.type === 'session/start' ? (e.data as unknown as SessionStart) : undefined
+  if (start?.parent && start.delegation?.kind === 'spawn') return { nodes: [], replaced: nodes.length > 0 }
+  const data = e.data as { toolUseId?: unknown; depth?: unknown } | null
+  // A nested call and its result stay out of the conversation.
+  if (e.type === 'tool/call' && typeof data?.depth === 'number' && data.depth > 0)
+    nested.add(String(data.toolUseId))
   const kind = KIND[e.type]
   if (!kind) return { nodes, replaced: false }
+  if (e.type === 'tool/result' && nested.has(String(data?.toolUseId))) return { nodes, replaced: false }
   if (typeof e.surfaceOp === 'object' && e.surfaceOp.op === 'replace') {
     const { start, end } = e.surfaceOp
     const i = nodes.findIndex((n) => n.seq === start)
@@ -143,10 +152,11 @@ export function referenceComputeSurface(
   const lane = opts.lane ?? 'main'
   const pins = opts.pins ?? new Set<Seq>()
   let nodes: SurfaceNode[] = []
+  const nested = new Set<string>()
   for (const e of events) {
     if (opts.upto !== undefined && e.seq > opts.upto) break
     if ((e.lane ?? 'main') !== lane) continue
-    nodes = referenceApplyEvent(nodes, e, pins).nodes
+    nodes = referenceApplyEvent(nodes, e, pins, nested).nodes
   }
   return nodes
 }

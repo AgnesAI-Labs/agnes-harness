@@ -36,6 +36,8 @@ export function tokenize(text: string): Token[] {
   let depth = 0
   let prev: Token | undefined
   const push = (kind: number): void => {
+    if (prev?.start === scanner.getTokenStart())
+      throw new Error(`Scanner did not advance at ${prev.start}: ${prev.text}`)
     prev = { kind, text: scanner.getTokenText(), start: scanner.getTokenStart() }
     out.push(prev)
   }

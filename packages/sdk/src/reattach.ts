@@ -101,10 +101,18 @@ export class Reconnector {
         // Order matters: every attached session's own recover() resends its pending
         // commands before touching attach, so a write from before the drop cannot land
         // after the event stream has already moved past where it would have shown up.
+        let recoveryFailure: unknown
         for (const session of this.client.sessions.values()) {
           if (signal.aborted) return
-          if (session.attached) await session.recover()
+          if (session.attached) {
+            try {
+              await session.recover()
+            } catch (error) {
+              recoveryFailure ??= error
+            }
+          }
         }
+        if (recoveryFailure) throw recoveryFailure
         this.client.emit('reconnected', { attempts })
         return
       } catch (e) {

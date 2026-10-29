@@ -21,14 +21,13 @@
 - sha256: caf62ff962ada396878372ced11efb2c6764e59d90919a38583c319948931a42
 - definitions used by this repo: InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse, PromptRequest, PromptResponse, CancelNotification, SessionNotification, RequestPermissionRequest, RequestPermissionResponse, AuthenticateRequest, AuthenticateResponse, LoadSessionRequest, LoadSessionResponse, SetSessionModeRequest, SetSessionModeResponse
   （已用 `jq '.definitions // .$defs | keys' schema.json` 核对：这 16 个名字在上游 `$defs`
-  里逐一存在，与 brief 猜测的名字完全一致，无需改名对照表。后六个是 Task 6b 把 `authenticate` /
-  `session/load` / `session/set_mode` 从 I3 提前到 I1 时用上的——vendored `schema.json` 本身没动，
-  只是这一行从 10 个名字变成 16 个。schema 顶层键是 `$defs`
+  里逐一存在，无需改名对照表。这些定义支持认证、创建与加载会话、提示、取消、通知、权限请求和模式切换。
+  schema 顶层键是 `$defs`
   （2020-12 dialect，`$schema` = `https://json-schema.org/draft/2020-12/schema`），不是
   `definitions`。）
 - upgrade rule: 先复核 DEVIATIONS.md 再换本文件（protocol 稿 §5.4）。升级时同时重新核对
   「definitions used by this repo」这行——上游改名/删除任一 definition 会直接影响
-  Task 6 的方法表，必须先更新本文件与 `methods.ts` 再切版本号。
+  本包的方法表，必须先更新本文件与 `methods.ts` 再切版本号。
 
 ## 生成器未支持节点（UNSUPPORTED_NODES，本仓库范围内的限制，非上游缺陷）
 
@@ -43,7 +42,7 @@
 
 | 节点（文件 + JSON 指针） | 为什么不支持 | 影响哪些方法的校验强度 |
 |---|---|---|
-| `packages/protocol/schema/acp/schema.json#/$defs/CreateElicitationRequest` | 第三个 `anyOf` 分支用 `not:{anyOf:[...]}` **+ `unevaluatedProperties:true`** 排除 form/url 两种已知 mode，表达"自定义/未来 mode"；两个关键字 `emit()` 都未实现 | 无——`elicitation/create` 不在本包 v0.1 收录的 ACP 方法表内（Task 6 / 6b 使用上表 16 个 definition），此 def 本身在生成物里就是不带结构校验的 `Type.Unknown()` |
+| `packages/protocol/schema/acp/schema.json#/$defs/CreateElicitationRequest` | 第三个 `anyOf` 分支用 `not:{anyOf:[...]}` **+ `unevaluatedProperties:true`** 排除 form/url 两种已知 mode，表达"自定义/未来 mode"；两个关键字 `emit()` 都未实现 | 无——`elicitation/create` 不在本包 v0.1 收录的 ACP 方法表内（该方法表使用上表 16 个 definition），此 def 本身在生成物里就是不带结构校验的 `Type.Unknown()` |
 | `packages/protocol/schema/acp/schema.json#/$defs/CreateElicitationResponse` | `anyOf` 分支之一用 `not` 排除已知 outcome 变体（旁边的 `additionalProperties:true` 不是障碍，`emit()` 能处理）；未实现的只是 `not` | 同上 |
 | `packages/protocol/schema/acp/schema.json#/$defs/ElicitationPropertySchema` | `anyOf` 分支之一用 `not` 排除其余属性 schema 类型（旁边的 `additionalProperties:true` 不是障碍）；未实现的只是 `not` | 同上 |
 | `packages/protocol/schema/acp/schema.json#/$defs/MultiSelectItems` | `anyOf` 分支之一用 `not` 排除另一分支（旁边的 `additionalProperties:true` 不是障碍）；未实现的只是 `not` | 同上 |

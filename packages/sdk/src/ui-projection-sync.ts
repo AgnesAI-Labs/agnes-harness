@@ -119,6 +119,7 @@ export function applyUITimelinePatch(current: UITimeline, patch: UITimelinePatch
     ...((patch.pendingInputs ?? current.pendingInputs) === undefined
       ? {}
       : { pendingInputs: patch.pendingInputs ?? current.pendingInputs }),
+    ...((patch.slots ?? current.slots) === undefined ? {} : { slots: patch.slots ?? current.slots }),
     ...((patch.yolo ?? current.yolo) === undefined ? {} : { yolo: patch.yolo ?? current.yolo }),
     ...(patch.budget === undefined ? {} : { budget: patch.budget }),
     ...(patch.usage === undefined ? {} : { usage: patch.usage }),
@@ -217,6 +218,7 @@ export function applyWindowedUITimelinePatch(
       ...((patch.pendingInputs ?? current.pendingInputs) === undefined
         ? {}
         : { pendingInputs: patch.pendingInputs ?? current.pendingInputs }),
+      ...((patch.slots ?? current.slots) === undefined ? {} : { slots: patch.slots ?? current.slots }),
       ...((patch.yolo ?? current.yolo) === undefined ? {} : { yolo: patch.yolo ?? current.yolo }),
       ...(patch.budget === undefined
         ? current.budget === undefined
@@ -272,10 +274,9 @@ export class UIProjectionSync {
   private openingRetry: ReturnType<typeof setTimeout> | undefined
   private pendingUpto: number | undefined
   private forced = false
+  private urgent = false
   // Patch, history and opening requests run one at a time, in order; this counts queued and running ones.
   private jobs = 0
-  // Set while an opening or patch request is out; a prompt only skips the debounce when it is not.
-  private projecting = false
   private tail: Promise<unknown> = Promise.resolve()
   private lastProjectAt = 0
   private appliedUpto = 0
@@ -449,10 +450,12 @@ export class UIProjectionSync {
     }
     if (event.seq <= this.appliedUpto) return
     this.pendingUpto = Math.max(this.pendingUpto ?? 0, event.seq)
-    if (event.type === 'user/message' && !this.projecting && !this.gated) {
-      this.fireNow()
-      return
-    }
+    // The first preview needs its streaming node, and a terminal turn must not wait behind
+    // the ordinary update cadence. In-flight projection/history work still runs in order.
+    this.urgent ||=
+      event.type === 'user/message' ||
+      event.type === 'turn/end' ||
+      (event.type === 'assistant/output' && (event.data as { state?: unknown }).state === 'started')
     this.schedule()
   }
 
@@ -465,17 +468,10 @@ export class UIProjectionSync {
     this.patchRetry = undefined
   }
 
-  private fireNow(): void {
-    if (this.timer) {
-      clearTimeout(this.timer)
-      this.timer = undefined
-    }
-    this.firePatch()
-  }
-
   private firePatch(): void {
     this.pendingUpto = undefined
     this.forced = false
+    this.urgent = false
     void this.exclusive(() => this.project())
   }
 
@@ -492,14 +488,19 @@ export class UIProjectionSync {
   }
 
   private schedule(): void {
-    if (this.stopped || this.gated || this.jobs > 0 || this.timer) return
+    if (this.stopped || this.gated || this.jobs > 0) return
+    if (this.timer) {
+      if (!this.urgent) return
+      clearTimeout(this.timer)
+      this.timer = undefined
+    }
     if (this.pendingUpto === undefined && !this.forced) return
     if (!this.baselineValid) {
       this.scheduleOpeningRetry()
       return
     }
     const remaining = REPROJECT_DEBOUNCE_MS - (Date.now() - this.lastProjectAt)
-    if (remaining <= 0) {
+    if (this.urgent || remaining <= 0) {
       this.firePatch()
       return
     }
@@ -512,7 +513,10 @@ export class UIProjectionSync {
   private install(timeline: UITimeline, reason: UIProjectionWindow['reason']): void {
     this.current = this.options.isolate === 'share' ? timeline : structuredClone(timeline)
     this.appliedUpto = timeline.upto
-    if (this.pendingUpto !== undefined && this.pendingUpto <= timeline.upto) this.pendingUpto = undefined
+    if (this.pendingUpto !== undefined && this.pendingUpto <= timeline.upto) {
+      this.pendingUpto = undefined
+      this.urgent = false
+    }
     const window = this.window
     if (!window) throw new Error('UI_PROJECTION_WINDOW_MISSING')
     this.sink.timeline(timeline, {
@@ -555,7 +559,6 @@ export class UIProjectionSync {
     this.lastProjectAt = Date.now()
     this.forced = false
     const bounds = this.options.opening ?? {}
-    this.projecting = true
     try {
       const result = await this.session.projectUIOpening({
         surface: this.surface,
@@ -568,8 +571,6 @@ export class UIProjectionSync {
     } catch (error) {
       if (this.stopped || epoch !== this.connectionEpoch) return { ok: false }
       return { ok: false, error }
-    } finally {
-      this.projecting = false
     }
   }
 
@@ -595,7 +596,6 @@ export class UIProjectionSync {
     }
     const epoch = this.connectionEpoch
     this.lastProjectAt = Date.now()
-    this.projecting = true
     try {
       // Event notifications are only a dirty signal. Pinning `upto` to an early notification while
       // a turn has already committed a later head asks Core for a historical cut and necessarily
@@ -642,8 +642,6 @@ export class UIProjectionSync {
             this.refresh()
           }, OPENING_RETRY_MS)
       }
-    } finally {
-      this.projecting = false
     }
   }
 

@@ -14,6 +14,7 @@ import {
   ADMIN_CONFIRMATION_LOCALE_NAMESPACE,
   adminConfirmationLocaleCatalog,
 } from './locales/admin-confirmation.js'
+import { Disclosure } from './ui/disclosure.js'
 import { type LocaleTranslator, useUiText } from './ui-locale.js'
 
 type Fact = readonly [label: string, value: string]
@@ -39,10 +40,9 @@ function Fragmented({ label, value }: { label: string; value: string }): JSX.Ele
 
 function ReviewSection({ title, children }: { title: string; children: ReactNode }): JSX.Element {
   return (
-    <details className="confirm-review-section">
-      <summary>{title}</summary>
+    <Disclosure variant="plain" className="confirm-review-section" summary={title}>
       <div className="confirm-review-content">{children}</div>
-    </details>
+    </Disclosure>
   )
 }
 
@@ -85,9 +85,9 @@ function capabilityLines(capabilities: Capabilities, t: LocaleTranslator): strin
     lines.push(`${t('capability.resources')}: ${capabilities.resources.join(t('list.separator'))}`)
   if (capabilities.network !== undefined) {
     lines.push(
-      Array.isArray(capabilities.network)
+      capabilities.network.length === 0
         ? t('capability.network-denied')
-        : t('capability.network-hosts', { hosts: capabilities.network.hosts.join(t('list.separator')) }),
+        : t('capability.network-hosts', { hosts: capabilities.network.join(t('list.separator')) }),
     )
   }
   if (capabilities.artifacts !== undefined)
@@ -241,16 +241,64 @@ function Blockers({
   )
 }
 
+const capabilityLabels: Record<string, [string, string]> = {
+  network: ['Network access', '网络访问'],
+  exec: ['Run commands', '运行命令'],
+  secrets: ['Read secrets', '读取密钥'],
+  credentials: ['Use credentials', '使用凭据'],
+  'filesystem.read': ['Read files', '读取文件'],
+  'filesystem.write': ['Write files', '写入文件'],
+  model: ['Call models', '调用模型'],
+  childAgents: ['Start child agents', '启动子智能体'],
+  ui: ['Display interface', '显示界面'],
+  store: ['Store data', '存储数据'],
+  device: ['Use devices', '使用设备'],
+  wake: ['Run in background', '后台运行'],
+}
+function capabilityLabel(value: string, language: string): string {
+  const at = value.indexOf(':')
+  const key = at < 0 ? value : value.slice(0, at)
+  const label = capabilityLabels[key]?.[language === 'zh-CN' ? 1 : 0]
+  return label ? label + (at < 0 ? '' : ': ' + value.slice(at + 1)) : value
+}
+
 function CapabilityDiff({ preview, t }: { preview: PackagePreview; t: LocaleTranslator }): JSX.Element {
+  const { locale } = useUiText(ADMIN_CONFIRMATION_LOCALE_NAMESPACE, adminConfirmationLocaleCatalog)
   const diff = preview.capabilityDiff
   const changes = [
-    ...diff.added.map((item) => t('diff.added', { item })),
-    ...diff.removed.map((item) => t('diff.removed', { item })),
+    ...diff.added.map((item) => t('diff.added', { item: capabilityLabel(item, locale) })),
+    ...diff.removed.map((item) => t('diff.removed', { item: capabilityLabel(item, locale) })),
     ...diff.runtimeSupportRemoved.map((item) => t('diff.runtime-removed', { item })),
     ...diff.dependenciesAdded.map((item) => t('diff.dependency-added', { item })),
     ...diff.serviceGrantsAdded.map((item) => t('diff.service-added', { value: serviceGrant(item) })),
   ]
   return <TextList items={changes} empty={t('empty.capability-diff')} />
+}
+
+/** What an update changes against the installed version: the version step, then each difference. */
+export function UpdateDiff({
+  preview,
+  fromVersion,
+  current,
+}: {
+  preview: PackagePreview
+  fromVersion: string
+  current?: PackageInstalledDescriptor | undefined
+}): JSX.Element {
+  const { t } = useUiText(ADMIN_CONFIRMATION_LOCALE_NAMESPACE, adminConfirmationLocaleCatalog)
+  return (
+    <section aria-label={t('section.update-changes')} data-testid="plugin-update-diff">
+      <h3>{t('section.update-changes')}</h3>
+      <p className="confirm-version-step" translate="no">
+        {fromVersion} → {preview.version}
+      </p>
+      <CapabilityDiff preview={preview} t={t} />
+      {(!preview.declaredCapabilities || !current?.declaredCapabilities) && (
+        <p>{t('diff.permissions-unavailable')}</p>
+      )}
+      <p>{t('diff.files-unavailable')}</p>
+    </section>
+  )
 }
 
 function Dependencies({

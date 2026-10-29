@@ -1,11 +1,12 @@
 import type { ConnectionStatusEvent, McpServerOpener } from '@agnes/base'
-import type { Host } from '@agnes/host'
+import { assertHostPublication, type Host } from '@agnes/host'
 import {
   type McpStatus,
   type McpTool,
   type McpToolCatalogPage,
   validateResourceControlData,
 } from '@agnes/protocol'
+import { mcpConnectionFailure } from '@agnes/resource-control-runtime'
 import {
   type McpServerRowsResult,
   type McpServerSnapshotEntry,
@@ -46,12 +47,13 @@ function toMcpStatus(serverId: string, revision: string, event: ConnectionStatus
         : {}),
     }
   if (event.state === 'unavailable') {
+    const failure = mcpConnectionFailure(event.error)
     const code =
       event.reason === 'exhausted'
         ? 'MCP_RECONNECT_EXHAUSTED'
         : event.reason === 'lost'
           ? 'MCP_CONNECTION_LOST'
-          : 'MCP_CONNECT_FAILED'
+          : failure.code
     return {
       serverId,
       connectionState: 'unavailable',
@@ -61,8 +63,7 @@ function toMcpStatus(serverId: string, revision: string, event: ConnectionStatus
       observedAt: observedAt(),
       lastSafeError: {
         code,
-        // SafeError.message is 1..256 chars; an arbitrary error's own message can be longer or empty.
-        message: String(event.error).slice(0, 256) || 'MCP connection failed',
+        message: failure.message,
       },
     }
   }
@@ -76,9 +77,11 @@ function toMcpStatus(serverId: string, revision: string, event: ConnectionStatus
   }
 }
 
-/** A skipped entry never becomes a row, so no connection status event will ever describe it: this is
- *  its only status, synthesized once per `apply()` straight from `mcpServerRowsFromDefinitions`'s
- *  reason (design §3.3 - "按快照不挂行 → 立即...返回 disabled 或 unavailable"). */
+/**
+ * A skipped entry never becomes a row, so no connection status event will ever describe it: this is
+ * its only status, synthesized once per `apply()` straight from `mcpServerRowsFromDefinitions`'s
+ * reason, immediately returning disabled or unavailable for entries omitted by the snapshot.
+ */
 function statusForSkip(serverId: string, reason: string): McpStatus {
   const base = {
     serverId,
@@ -112,7 +115,7 @@ export type McpRowApplyResult = Readonly<{
   rowIds: readonly string[]
   skipped: McpServerRowsResult['skipped']
   /** Every server this apply() was given, with its settled status: the observed outcome for a
-   *  (re)started row once its first attempt's result landed or the cap elapsed (§3.8, D120), an
+   *  (re)started row once its first attempt's result landed or the cap elapsed, an
    *  unchanged row's carried-over status, or a skipped entry's synthesized one. This is what
    *  `resourceMcpApply` returns to the daemon synchronously - no wait for an async status frame. */
   statuses: ReadonlyMap<string, McpStatus>
@@ -124,6 +127,10 @@ export type McpRowRuntime = Readonly<{
   /** This server's last-known status, or `undefined` if it has never been part of any applied
    *  snapshot. Read after an out-of-band status frame, or by a caller that only has a serverId. */
   status(serverId: string): McpStatus | undefined
+  /** Join first attempts started by cold composition mounts, within their original deadline. */
+  prepareTurn?(signal?: AbortSignal): Promise<void>
+  /** Wait for the current row's ready/failure observation, including a generation remount. */
+  waitForStatus(serverId: string, timeoutMs?: number, signal?: AbortSignal): Promise<McpStatus | undefined>
   /** A page of this server's live tool catalog, or `undefined` if it has no row, no successful sync
    *  yet, or `expectedRevision` no longer matches its current one (the daemon's own guard against
    *  serving a page from a revision the journal has already moved past). */
@@ -134,10 +141,13 @@ export type McpRowRuntime = Readonly<{
    *  past its first attempt, and gives up for good after `maxAttempts`). A no-op until the next
    *  apply(); has no effect on a server apply() has never seen. */
   reconnect(serverId: string): void
+  /** Servers of the last applied snapshot whose first connection is still in progress: their tools
+   *  are not registered yet, so a turn starting now runs without them. */
+  connecting?(): readonly Readonly<{ serverId: string; displayName: string }>[]
 }>
 
 /**
- * The shared session worker's MCP supply (stage 2b step 3, D107'): one Host `ext:` row per server,
+ * The shared session worker's MCP supply: one Host `ext:` row per server,
  * derived from the resource snapshot the worker already reads. Boot and every `resource.stale`
  * reload call the same `apply`, with the snapshot's full entry list.
  *
@@ -150,7 +160,7 @@ export type McpRowRuntime = Readonly<{
  * `apply` resolves once the rows it (re)mounted finished their first connection attempt, or after
  * `firstAttemptTimeoutMs`: the caller runs it at a turn boundary, so a server enabled or edited before
  * a turn is usable in that turn, as it was when the resource manager connected everything up front
- * (design §3.8, D120). Host's own apply never waits on a connection (D118).
+ *. Host's own apply never waits on a connection.
  *
  * Which rows are "ours" is tracked here rather than matched by id prefix: `agnes/mcp-*` also names
  * other builtin extensions. Only a successful apply replaces that set; a rejected apply leaves Host on
@@ -164,7 +174,7 @@ export function createMcpRowRuntime(
     opener: McpServerOpener
     /** Update the Windows worker's private executable policy before any newly enabled row starts. */
     beforeApply?(entries: readonly McpServerSnapshotEntry[]): Promise<void>
-    /** Upper bound on waiting for started rows' first connection attempts (design §3.8, D120). */
+    /** Upper bound on waiting for started rows' first connection attempts. */
     firstAttemptTimeoutMs?: number
     /** Every server's live `McpStatus` as it changes, including a skip's synthesized one (design
      *  §3.2) - the daemon's only source of MCP status once management-plane connections are gone.
@@ -186,7 +196,10 @@ export function createMcpRowRuntime(
   // fresh event, so its status here is exactly the one still-accurate answer for it.
   const statuses = new Map<string, McpStatus>()
   const catalogs = new Map<string, Catalog>()
+  const statusChanged = new Set<() => void>()
+  const displayNames = new Map<string, string>()
   const cap = deps.firstAttemptTimeoutMs ?? FIRST_ATTEMPT_TIMEOUT_MS
+  const attempts = new Map<Promise<unknown>, number>()
   return Object.freeze({
     async apply(entries: readonly McpServerSnapshotEntry[]): Promise<McpRowApplyResult> {
       await deps.beforeApply?.(entries)
@@ -197,8 +210,13 @@ export function createMcpRowRuntime(
           statuses.delete(serverId)
           catalogs.delete(serverId)
           epochs.delete(serverId)
+          for (const notify of statusChanged) notify()
         }
-      for (const entry of entries) revisions.set(entry.definition.serverId, entry.revision)
+      displayNames.clear()
+      for (const entry of entries) {
+        revisions.set(entry.definition.serverId, entry.revision)
+        displayNames.set(entry.definition.serverId, entry.definition.displayName)
+      }
       // A row's extension starts while Host applies it, so by the time Host's apply resolves this
       // holds exactly the rows Host (re)mounted in this call -- never an unchanged row.
       const started: Promise<unknown>[] = []
@@ -207,7 +225,12 @@ export function createMcpRowRuntime(
         return epoch === undefined ? entry : { ...entry, revision: `${entry.revision}#${epoch}` }
       })
       const { rows, skipped } = mcpServerRowsFromDefinitions(mounting, deps.opener, {
-        onFirstAttempt: (_serverId, ready) => started.push(ready),
+        onFirstAttempt: (_serverId, ready) => {
+          started.push(ready)
+          attempts.set(ready, Date.now() + cap)
+          const settled = () => attempts.delete(ready)
+          void ready.then(settled, settled)
+        },
         onStatus: (serverId, event) => {
           const revision = revisions.get(serverId)
           if (revision === undefined) return
@@ -216,13 +239,22 @@ export function createMcpRowRuntime(
           if (event.state === 'ready')
             catalogs.set(serverId, { revision, catalogRevision: event.catalogRevision, tools: event.tools })
           deps.onStatus?.(serverId, status)
+          for (const notify of statusChanged) notify()
         },
       })
       const others = deps.host.extensionRows.current().filter((row) => !owned.has(row.id))
       const prepared = rows.map((dynamic) =>
         deps.host.extensionRows.prepare({ extensionId: dynamic.spec.id, dynamic }),
       )
-      await deps.host.extensionRows.apply([...others, ...prepared])
+      // A composition may apply only part of this desired set. Retain ownership of attempted ids
+      // too, so retry/replacement cannot mistake partially published MCP rows for unrelated code.
+      // A fresh empty MCP set owns nothing to publish. Keep policy/status synchronization, but
+      // do not re-verify and republish the entire ordinary Host tree just to add zero rows.
+      if (owned.size || prepared.length) {
+        owned = new Set([...owned, ...prepared.map((row) => row.id)])
+        const report = await deps.host.extensionRows.apply([...others, ...prepared])
+        assertHostPublication(report.publication)
+      }
       const rowIds = Object.freeze(prepared.map((row) => row.id))
       owned = new Set(rowIds)
       await settledWithin(started, cap)
@@ -231,6 +263,7 @@ export function createMcpRowRuntime(
         statuses.set(serverId, status)
         catalogs.delete(serverId)
         deps.onStatus?.(serverId, status)
+        for (const notify of statusChanged) notify()
       }
       const settled = new Map<string, McpStatus>()
       for (const serverId of present) {
@@ -239,7 +272,51 @@ export function createMcpRowRuntime(
       }
       return Object.freeze({ rowIds, skipped, statuses: settled })
     },
+    async prepareTurn(signal) {
+      // A composition can mount these factories after apply() has returned. Its first model
+      // request must join those attempts too, without restarting an expired connection budget.
+      await Promise.all(
+        [...attempts].map(([ready, deadline]) =>
+          settledWithin([ready], Math.max(0, deadline - Date.now()), signal),
+        ),
+      )
+    },
     status: (serverId) => statuses.get(serverId),
+    waitForStatus(serverId, timeoutMs = cap, signal) {
+      if (signal?.aborted) return Promise.reject(new DOMException('aborted', 'AbortError'))
+      const observed = statuses.get(serverId)
+      if (observed?.connectionState !== 'connecting') return Promise.resolve(observed)
+      return new Promise((resolve, reject) => {
+        const finish = (status: McpStatus | undefined, aborted = false) => {
+          clearTimeout(timer)
+          statusChanged.delete(changed)
+          signal?.removeEventListener('abort', abort)
+          if (aborted) reject(new DOMException('aborted', 'AbortError'))
+          else resolve(status)
+        }
+        const changed = () => {
+          const status = statuses.get(serverId)
+          if (status?.connectionState !== 'connecting') finish(status)
+        }
+        const abort = () => finish(undefined, true)
+        const timer = setTimeout(
+          () =>
+            finish({
+              ...observed,
+              connectionState: 'unavailable',
+              observedAt: observedAt(),
+              lastSafeError: {
+                code: 'MCP_CONNECT_TIMEOUT',
+                message: 'MCP connection did not become ready before the deadline',
+              },
+            }),
+          Math.max(0, timeoutMs),
+        )
+        statusChanged.add(changed)
+        signal?.addEventListener('abort', abort, { once: true })
+        changed()
+      })
+    },
     tools(serverId, expectedRevision, cursor) {
       const catalog = catalogs.get(serverId)
       if (!catalog || catalog.revision !== expectedRevision) return undefined
@@ -248,25 +325,49 @@ export function createMcpRowRuntime(
     reconnect(serverId) {
       epochs.set(serverId, (epochs.get(serverId) ?? 0) + 1)
     },
+    connecting() {
+      return [...displayNames]
+        .filter(([serverId]) => statuses.get(serverId)?.connectionState === 'connecting')
+        .map(([serverId, displayName]) => Object.freeze({ serverId, displayName }))
+    },
   })
 }
 
-/** The old resource manager's worst case before a turn could start: 10s connect + 10s catalog. */
-const FIRST_ATTEMPT_TIMEOUT_MS = 20_000
+/** How long a turn waits for a newly enabled server's first connection. A server still connecting
+ * after this starts the turn without its tools, and the session shows a quiet notice instead; its
+ * tools join the next turn once connected. */
+export const FIRST_ATTEMPT_TIMEOUT_MS = 10_000
 /** Matches the protocol schema's `McpToolCatalogPage.items` cap. */
 const PAGE_SIZE = 100
 
 /** Waits until every attempt settled or `ms` elapsed, whichever comes first. Never rejects. */
-async function settledWithin(attempts: readonly Promise<unknown>[], ms: number): Promise<void> {
-  if (!attempts.length) return
+export async function settledWithin(
+  attempts: readonly Promise<unknown>[],
+  ms: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (!attempts.length || signal?.aborted) return
   let timer: ReturnType<typeof setTimeout> | undefined
-  await Promise.race([
-    Promise.allSettled(attempts),
-    new Promise<void>((resolve) => {
-      timer = setTimeout(resolve, ms)
-    }),
-  ])
-  clearTimeout(timer)
+  let aborted: (() => void) | undefined
+  try {
+    await Promise.race([
+      Promise.allSettled(attempts),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, ms)
+      }),
+      ...(signal
+        ? [
+            new Promise<void>((resolve) => {
+              aborted = resolve
+              signal.addEventListener('abort', aborted, { once: true })
+            }),
+          ]
+        : []),
+    ])
+  } finally {
+    clearTimeout(timer)
+    if (aborted) signal?.removeEventListener('abort', aborted)
+  }
 }
 
 /** A decimal-offset cursor over an already-sorted tool list; same semantics as the retired

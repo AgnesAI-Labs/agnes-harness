@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto'
-import type { ExtensionAPI, HookContext } from '@agnes/extension-api'
+import type { HookContext } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
+import type { Context } from '@agnes/plugin-runtime'
 import { describe, expect, it } from 'vitest'
 import {
   allowsContent,
@@ -18,15 +20,15 @@ import {
   sessionEgressAuthority,
 } from '../src/index.js'
 
-function eventApi(events: unknown[]): ExtensionAPI {
+function eventApi(events: unknown[]): Pick<Context, 'eventLog'> {
   return {
-    events: {
+    eventLog: {
       append: async (name: string, data: unknown) => {
         events.push([name, data])
         return 1
       },
     },
-  } as unknown as ExtensionAPI
+  } as unknown as Pick<Context, 'eventLog'>
 }
 
 async function activeApi(
@@ -36,6 +38,9 @@ async function activeApi(
 ) {
   const handlers = new Map<string, (payload: unknown, context: HookContext) => unknown>()
   const api = {
+    get eventLog() {
+      return (this as unknown as { events: unknown }).events
+    },
     events: {
       append:
         append ??
@@ -44,12 +49,15 @@ async function activeApi(
           return events.length
         }),
     },
+    get hooks() {
+      return { register: (this as unknown as { registerHook: unknown }).registerHook }
+    },
     registerHook: (event: string, handler: (payload: unknown, context: HookContext) => unknown) => {
       handlers.set(event, handler)
       return () => undefined
     },
-  } as unknown as ExtensionAPI
-  const dispose = privacyExtension(api)
+  } as unknown as ExtensionAPI & Pick<Context, 'eventLog'>
+  const dispose = privacyExtension.apply(api as never)
   const session = Object.freeze({
     key: `s-${consent}-${Math.random()}`,
     lane: 'main',
@@ -271,17 +279,23 @@ describe('privacy extension lifecycle', () => {
     const handlers = new Map<string, (payload: unknown, context: HookContext) => unknown>()
     const previous = 'a'.repeat(64)
     const api = {
+      get eventLog() {
+        return (this as unknown as { events: unknown }).events
+      },
       events: {
         append: async (name: string, data: unknown) => {
           events.push([name, data])
           return events.length
         },
       },
+      get hooks() {
+        return { register: (this as unknown as { registerHook: unknown }).registerHook }
+      },
       registerHook: (event: string, handler: (payload: unknown, context: HookContext) => unknown) => {
         handlers.set(event, handler)
         return () => undefined
       },
-    } as unknown as ExtensionAPI
+    } as unknown as ExtensionAPI & Pick<Context, 'eventLog'>
     createPrivacyExtension({
       trajectory: {
         previous: async () => previous,
@@ -289,7 +303,7 @@ describe('privacy extension lifecycle', () => {
           await gate.send('continued', async () => undefined)
         },
       },
-    })(api)
+    }).apply(api as never)
     const session = Object.freeze({
       key: 'resumed',
       lane: 'main',
@@ -307,18 +321,24 @@ describe('privacy extension lifecycle', () => {
     const events: unknown[] = []
     const handlers = new Map<string, (payload: unknown, context: HookContext) => unknown>()
     const api = {
+      get eventLog() {
+        return (this as unknown as { events: unknown }).events
+      },
       events: {
         append: async (name: string, data: unknown) => {
           events.push([name, data])
           return events.length
         },
       },
+      get hooks() {
+        return { register: (this as unknown as { registerHook: unknown }).registerHook }
+      },
       registerHook: (event: string, handler: (payload: unknown, context: HookContext) => unknown) => {
         handlers.set(event, handler)
         return () => undefined
       },
-    } as unknown as ExtensionAPI
-    const dispose = privacyExtension(api)
+    } as unknown as ExtensionAPI & Pick<Context, 'eventLog'>
+    const dispose = privacyExtension.apply(api as never)
     const session = Object.freeze({
       key: 's',
       lane: 'main',
@@ -357,13 +377,19 @@ describe('privacy extension lifecycle', () => {
   it('fails closed when the initial consent audit cannot be committed', async () => {
     const handlers = new Map<string, (payload: unknown, context: HookContext) => unknown>()
     const api = {
+      get eventLog() {
+        return (this as unknown as { events: unknown }).events
+      },
       events: { append: async () => Promise.reject(new Error('ledger unavailable')) },
+      get hooks() {
+        return { register: (this as unknown as { registerHook: unknown }).registerHook }
+      },
       registerHook: (event: string, handler: (payload: unknown, context: HookContext) => unknown) => {
         handlers.set(event, handler)
         return () => undefined
       },
-    } as unknown as ExtensionAPI
-    privacyExtension(api)
+    } as unknown as ExtensionAPI & Pick<Context, 'eventLog'>
+    privacyExtension.apply(api as never)
     const session = Object.freeze({
       key: 'audit-failure',
       lane: 'main',

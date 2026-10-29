@@ -1,12 +1,13 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import { ecosystem as baseEcosystem } from '@agnes/base'
+import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
 import type { InferenceEvent, RequestBody } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { SkillRuntimeInput } from '../../src/resources/skills.js'
 import { createTestHost } from '../../testkit/index.js'
 
 const baseDir = fileURLToPath(new URL('../../../base', import.meta.url))
@@ -52,6 +53,75 @@ function readyRuntime(
     readFile: () => ({ ok: false, code: 'NOT_FOUND' as const }),
   }
 }
+
+it('captures readable Skill IDs only inside the owning session workspace', async () => {
+  const dataDir = scratch()
+  const roots = [realpathSync(scratch()), realpathSync(scratch())]
+  const calls = new AsyncLocalStorage<{ root: string; key: string }>()
+  const views = new Map(
+    roots.map((root, i) => [
+      root,
+      readyRuntime({
+        resourceId: `skill/workspace/workspace-agnes/${String(i).repeat(64)}`,
+        sourceIdentity: { scope: 'workspace', rootKey: 'workspace-agnes', sourceId: String(i).repeat(64) },
+      }),
+    ]),
+  )
+  const current = () => views.get(calls.getStore()?.root ?? '')
+  const skills: SkillRuntimeInput = {
+    list: () => current()?.list() ?? [],
+    read: (id, session) =>
+      calls.getStore()?.key === session.sessionKey
+        ? (current()?.read(id, session) ?? { ok: false, code: 'NOT_FOUND' })
+        : { ok: false, code: 'UNAUTHORIZED' },
+    readFile: () => ({ ok: false, code: 'NOT_FOUND' }),
+    scopeWorkspace: (root, key, invoke) => calls.run({ root, key }, invoke),
+  }
+  const { host } = await createTestHost({ dataDir, skillResources: skills })
+  try {
+    const sessions = await Promise.all(
+      roots.map((cwd, i) => {
+        const key = `scope-${i}`
+        return host.createSession({
+          key,
+          cwd,
+          binding: host.acceptWorkspaceBinding(
+            {
+              version: 1,
+              sessionKey: key,
+              workspaceId: String(i).repeat(64),
+              revision: 1,
+              canonicalRoot: cwd,
+            },
+            key,
+          ),
+        })
+      }),
+    )
+    const captured = await Promise.all(
+      sessions.map((session) => {
+        if (!session.d.workspaceInvocation) throw new Error('missing workspace')
+        return host.captureSessionCapabilities!(session.key, session.d.workspaceInvocation)
+      }),
+    )
+    captured.forEach((caps, i) => {
+      expect(caps.skills.filter((skill) => skill.enabled).map((skill) => skill.id)).toEqual([
+        views.get(roots[i]!)!.list()[0]!.resourceId,
+      ])
+    })
+    expect(skills.list()).toEqual([])
+    expect(skills.read(resourceId, { sessionKey: sessions[0]!.key })).toEqual({
+      ok: false,
+      code: 'UNAUTHORIZED',
+    })
+    await sessions[0]!.close()
+    await expect(
+      host.captureSessionCapabilities!(sessions[0]!.key, sessions[0]!.d.workspaceInvocation!),
+    ).rejects.toThrow()
+  } finally {
+    await host.close()
+  }
+})
 
 function manyReadyRuntime(): SkillRuntimeInput {
   return {
@@ -221,6 +291,10 @@ describe('skill context hook assembly', () => {
           expect(JSON.stringify(request.messages)).toContain(OTHER_EXT_SENTINEL)
           expect(JSON.stringify(request.messages)).toContain(resourceId)
           expect(JSON.stringify(request.messages)).toContain(SKILL_BODY)
+          expect(JSON.stringify(request).split(SKILL_BODY)).toHaveLength(2)
+          expect(request.system).toContain(
+            'unless its body is already present as <active_skill>, in which case use it directly.',
+          )
           expect(JSON.stringify(request.messages)).toContain('Host has already loaded it')
           expect(request.tools.find((tool) => tool.name === 'skill_read')).toBeDefined()
           expect(request.tools.find((tool) => tool.name === 'tool_search')).toBeDefined()
@@ -234,12 +308,14 @@ describe('skill context hook assembly', () => {
           expect(request.tools).toEqual(firstRequest?.tools)
           expect(request.messages.slice(0, firstRequest?.messages.length)).toEqual(firstRequest?.messages)
           expect(JSON.stringify(request.messages).split('[skill loaded]')).toHaveLength(2)
+          expect(JSON.stringify(request).split(SKILL_BODY)).toHaveLength(2)
           return say('discovered')
         },
         (request) => {
           expect(request.system).toBe(firstRequest?.system)
           expect(request.tools).toEqual(firstRequest?.tools)
           expect(JSON.stringify(request.messages).split('[skill loaded]')).toHaveLength(2)
+          expect(JSON.stringify(request).split(SKILL_BODY)).toHaveLength(2)
           return say('reused')
         },
       ],

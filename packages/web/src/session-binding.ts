@@ -5,6 +5,7 @@ type LoadSession = (
   id: string,
   options: {
     cwd?: string
+    signal?: AbortSignal
     onPermissionRequest?: PermissionHandler
     onPermissionRequestRegistered?: (off: () => void) => void
   },
@@ -24,12 +25,18 @@ export async function loadWebSession(
   load: LoadSession,
   id: string,
   permission: PermissionHandler,
+  options: {
+    signal?: AbortSignal
+    onPermissionRequestRegistered?: (off: () => void) => void
+  } = {},
 ): Promise<WebSessionBinding> {
   let offPermission: (() => void) | undefined
   const session = await load(id, {
+    ...(options.signal ? { signal: options.signal } : {}),
     onPermissionRequest: permission,
     onPermissionRequestRegistered: (off) => {
       offPermission = off
+      options.onPermissionRequestRegistered?.(off)
     },
   })
   return offPermission ? { session, offPermission } : { session }

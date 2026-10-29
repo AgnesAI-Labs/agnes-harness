@@ -135,6 +135,12 @@
         "system": { "type": "string", "maxLength": 1048576 },
         "messages": { "type": "array", "items": { "$ref": "#/$defs/RequestMessage" } },
         "tools": { "type": "array", "items": { "$ref": "#/$defs/ToolSchema" } },
+        "requestOnlyMessages": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "How many of the last messages belong to this request only: they are not part of the history later requests repeat. An adapter that marks a prompt-cache breakpoint on the last message puts it on the last message before these instead."
+        },
+        "payload": { "$ref": "#/$defs/JsonValue" },
         "sampling": {
           "type": "object",
           "additionalProperties": false,
@@ -149,8 +155,44 @@
           "additionalProperties": false,
           "required": ["firstToken", "total"],
           "properties": {
-            "firstToken": { "type": "integer", "minimum": 1000 },
-            "total": { "type": "integer", "minimum": 1000 }
+            "firstToken": { "type": "integer", "minimum": 100 },
+            "total": { "type": "integer", "minimum": 100 }
+          }
+        },
+        "sections": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "agnes-v1.json#/$defs/SystemPromptSection"
+          }
+        },
+        "traceContext": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {
+            "memoryRevision": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "compactionBoundary": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
           }
         }
       }
@@ -232,7 +274,11 @@
         },
         "thinkingReplay": { "enum": ["native", "drop", "text"] },
         "contract_id": { "type": ["string", "null"], "maxLength": 128 },
-        "slot": { "$ref": "#/$defs/SlotName" }
+        "slot": { "$ref": "#/$defs/SlotName" },
+        "audioRole": {
+          "enum": ["transcribe", "speech"],
+          "description": "Voice side models only: the voice operation this model serves."
+        }
       }
     },
     "ContractStamp": {
@@ -276,6 +322,10 @@
               "ext": { "type": "string", "maxLength": 128 }
             }
           }
+        },
+        "requestTraceId": {
+          "type": "string",
+          "pattern": "^[a-f0-9-]{36}$"
         }
       }
     },
@@ -297,6 +347,41 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "providerCallMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Provider invocation wall time through adapter and capture cleanup; not the enclosing turn or provider service time."
+        },
+        "prepareMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Provider-local preparation before capture begins; excludes upstream context preparation."
+        },
+        "captureMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Union of blocking trace-capture intervals, including cleanup. Overlaps the other intervals; do not add again."
+        },
+        "dispatchMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Offset from provider entry to the first observed transport dispatch, after request capture. Absent without a transport observation."
+        },
+        "firstOutputMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Offset from provider entry to first decoded caller-visible text, thinking, tool or media output."
+        },
+        "outputMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Wall time from first visible output to observing the terminal outcome, including intervening local work."
+        },
+        "finalizeMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Wall time from terminal observation to adapter and trace cleanup completion."
+        },
         "ttftMs": { "type": "integer", "minimum": 0 },
         "durationMs": { "type": "integer", "minimum": 0 }
       }
@@ -379,6 +464,7 @@
           "required": ["type", "reason"],
           "properties": {
             "type": { "const": "done" },
+            "timing": { "$ref": "#/$defs/Timing" },
             "reason": { "enum": ["stop", "length", "toolUse"] }
           }
         },
@@ -388,6 +474,7 @@
           "required": ["type", "reason", "code", "message", "retryable"],
           "properties": {
             "type": { "const": "error" },
+            "timing": { "$ref": "#/$defs/Timing" },
             "reason": { "enum": ["aborted", "error"] },
             "code": { "$ref": "#/$defs/AiErrorCode" },
             "message": { "type": "string", "maxLength": 4096 },
@@ -429,10 +516,35 @@
       "additionalProperties": false,
       "required": ["route", "api", "baseUrl"],
       "properties": {
+        "networkTimeouts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600000
+            },
+            "connectMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600000
+            },
+            "streamIdleMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600000
+            }
+          }
+        },
         "route": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
         "api": { "type": "string", "maxLength": 64 },
         "baseUrl": { "type": "string", "maxLength": 2048 },
         "credentialRef": { "type": "string", "pattern": "^secret://[A-Za-z0-9_./-]+$" },
+        "keyless": {
+          "type": "boolean",
+          "description": "Explicit opt-in to inference without a bound credential."
+        },
         "compat": { "$ref": "#/$defs/JsonValue" },
         "displayName": { "type": "string", "maxLength": 128 },
         "models": { "type": "array", "items": { "$ref": "#/$defs/ModelRecord" } }

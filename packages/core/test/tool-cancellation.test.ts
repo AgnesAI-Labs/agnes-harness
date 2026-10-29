@@ -41,6 +41,69 @@ async function ready(def: ToolDef, seams = fakeSeams()) {
 }
 
 describe('tool cancellation lifetime', () => {
+  it.each(['approval', 'tool'] as const)(
+    'drains a stop during %s and accepts another turn',
+    async (stage) => {
+      let entered!: () => void
+      const started = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      let toolSignal: AbortSignal | undefined
+      let releaseTool = () => {}
+      let waiting = true
+      const def = tool(async (_args, ctx) => {
+        toolSignal = ctx.signal
+        if (stage === 'tool' && waiting) {
+          entered()
+          await new Promise<void>((resolve) => {
+            releaseTool = resolve
+          })
+        }
+        return { content: [{ type: 'text', text: 'finished' }] }
+      })
+      // A computer-use-style side effect cannot be replayed or reported as never having happened.
+      def.meta.isReadOnly = false
+      def.meta.replay = 'never'
+      def.meta.requiresApproval = 'always'
+      const seams = fakeSeams({
+        approval: {
+          ask: async () => {
+            if (stage === 'approval' && waiting) {
+              entered()
+              return new Promise(() => {})
+            }
+            return { verdict: 'allowed-once', answeredBy: actor }
+          },
+        },
+      })
+      const { session, log } = await ready(def, seams)
+      try {
+        const running = session.run({ until: 'turn-end', signal: new AbortController().signal })
+        await started
+        await session.controls.apply('cancel', actor, 'stop')
+        expect((await running).reason).toBe('aborted')
+        expect(session.op()).toBeNull()
+        if (stage === 'tool') expect(toolSignal?.aborted).toBe(true)
+        expect(
+          [...session.state.registers.decisionStates.values()].every(
+            ({ value }) => value.consumption || value.invalidation || value.result,
+          ),
+        ).toBe(true)
+        expect((await log.scan({ type: 'turn/end', order: 'desc', limit: 1 }))[0]?.data).toMatchObject({
+          reason: 'aborted',
+        })
+        waiting = false
+        await session.enqueue('next-turn', { content: [{ type: 'text', text: 'continue' }], actor })
+        expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+          'completed',
+        )
+      } finally {
+        releaseTool()
+        await session.close()
+      }
+    },
+  )
+
   it('does not start execute when authorization finishes after cancellation', async () => {
     let cancel = () => {}
     let executions = 0

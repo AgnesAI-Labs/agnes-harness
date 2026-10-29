@@ -4,7 +4,7 @@ import { readLock } from './lockfile.js'
 
 type IsolationInventoryProfile = Readonly<{
   name: string
-  seams: Record<string, string>
+  seams: Record<string, string | { provider: string }>
   provider: Readonly<{ package: string; adapters: readonly string[] }>
   adapters: Record<string, unknown>
   extensionIsolation?: Readonly<{ extensions?: Record<string, string> }>

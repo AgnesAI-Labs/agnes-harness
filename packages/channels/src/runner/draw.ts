@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto'
-import type { AcpPermissionKind, ChannelCapabilities, UINode } from '@agnes/protocol'
+import type { AcpPermissionKind, ChannelCapabilities, UINode, UiSurfaceRecord } from '@agnes/protocol'
+import { surfaceText } from '@agnes/protocol/intelligent-ui'
 import type { Block, CardBlock, ChannelMessage } from '../adapter.js'
+import { decisionKey } from '../decision.js'
+import { escapeReviewText } from '../degrade.js'
 
 // UINode's approval options are Agnes' own vocabulary (it has a 'allow_permanent' entry for the
 // durable-grant flow, core/src/project/ui.ts:1018-1023); the channel card only understands ACP's
@@ -30,7 +33,6 @@ type SlotPayload = {
   body?: string
   link?: string
   text?: string
-  table?: { columns: string[]; rows: string[][] }
   chart?: unknown
   actions?: CardBlock['actions']
 }
@@ -43,14 +45,6 @@ function slotBlocks(slot: string, value: unknown, requestSeq?: number): Block[] 
   const payload = asSlotPayload(value)
   if (slot === 'tool.card.inline') {
     const blocks: Block[] = []
-    if (payload.table !== undefined) {
-      blocks.push({
-        kind: 'table',
-        ...(payload.title === undefined ? {} : { title: payload.title }),
-        columns: payload.table.columns,
-        rows: payload.table.rows,
-      })
-    }
     if (payload.chart !== undefined || (payload.actions?.length ?? 0) > 0) {
       blocks.push({
         kind: 'card',
@@ -108,17 +102,27 @@ export function whatToDraw(
         return { blocks: [{ kind: 'text', markdown: `已${verdict}${by}` }] }
       }
       if (node.state === 'expired') {
-        return { blocks: [{ kind: 'text', markdown: '审批已超时' }] }
+        return {
+          blocks: [
+            {
+              kind: 'text',
+              markdown: node.decision?.reason === 'stopped' ? '任务已停止，审批已撤销' : '审批已超时',
+            },
+          ],
+        }
       }
       return {
         blocks: [
+          ...(node.subjectText
+            ? [{ kind: 'text' as const, markdown: escapeReviewText(node.subjectText) }]
+            : []),
           {
             kind: 'approval',
             title: '需要审批',
             summary: node.summary,
             risk: node.risk,
             options: toAcpOptions(node.options),
-            ...(node.ticket === undefined ? {} : { ticket: node.ticket }),
+            ...(node.decisionRef ? { decisionKey: decisionKey(node.decisionRef) } : {}),
             ...(node.requestSeq === undefined ? {} : { requestSeq: node.requestSeq }),
             ...(node.expiresAt === undefined ? {} : { expiresAt: node.expiresAt }),
           },
@@ -145,6 +149,42 @@ export function whatToDraw(
       const blocks = slotBlocks(node.fill.slot, node.fill.payload, node.fill.requestSeq)
       return blocks.length === 0 ? null : { blocks }
     }
+    case 'tool-source-pending':
+      return {
+        blocks: [{ kind: 'text', markdown: `${node.sources.join('、')} 还在连接，本轮先不使用它` }],
+      }
+    case 'memory-external-change':
+      return {
+        blocks: [
+          {
+            kind: 'text',
+            markdown: `记忆 ${node.paths.join('、')} 在记忆提供方之外被修改，已按现状载入`,
+          },
+        ],
+      }
+    case 'workspace-undo':
+      return {
+        blocks: [
+          {
+            kind: 'text',
+            markdown:
+              node.conflicts > 0
+                ? `第 ${node.turn} 轮的撤销被拒绝：${node.conflicts} 个文件在该轮之后又被改动`
+                : node.failed > 0
+                  ? `第 ${node.turn} 轮的撤销中途停止：已恢复 ${node.restored} 个，未恢复 ${node.failed} 个`
+                  : `已撤销第 ${node.turn} 轮对文件的改动：恢复了 ${node.restored} 个文件`,
+          },
+        ],
+      }
+    case 'ledger-recovery':
+      return {
+        blocks: [
+          {
+            kind: 'text',
+            markdown: `已恢复至有效日志事件 ${node.validThroughSeq}；损坏尾部已隔离。诊断编号：${node.diagnosticId}`,
+          },
+        ],
+      }
     case 'context-sections':
     case 'contribute-conflict':
     case 'context':
@@ -153,6 +193,27 @@ export function whatToDraw(
       // surface's human audience, so this gets the same treatment as 'user'/'compaction' above: no
       // channel message for this node.
       return null
+  }
+}
+
+/** Channels have no authenticated surface-action callback; human replies use the same Web action. */
+export function drawSurfaceMessage(
+  record: UiSurfaceRecord,
+  sessionId: string,
+  webUrl?: string,
+): ChannelMessage {
+  const path = `/?session=${encodeURIComponent(sessionId)}&surface=${encodeURIComponent(record.surface.id)}`
+  const link = webUrl ? new URL(path, webUrl).href : path
+  const escapeMarkdown = (text: string) => text.replace(/[\\`*_{}[\]()<>#!|]/g, '\\$&')
+  return {
+    blocks: [
+      {
+        kind: 'text',
+        markdown:
+          escapeMarkdown(surfaceText(record.surface)) +
+          `\n${record.status === 'closed' ? 'Closed / 已关闭' : 'Submit in authenticated Web / 在认证 Web 中提交'}: [Open / 打开](${link})\nAnswers do not grant tool permission / 回答不授予工具权限。`,
+      },
+    ],
   }
 }
 

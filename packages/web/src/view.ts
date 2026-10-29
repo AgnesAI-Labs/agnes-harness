@@ -1,13 +1,14 @@
 import type { EventEnvelope, TurnEnd, UINode, UITimeline, UITurn } from '@agnes/protocol'
 import type { LocaleVars } from '@agnes/web-client'
-import type { Translate } from './presentation.js'
+import type { Translate } from '@agnes/web-conversation/presentation'
+import { turnVerificationStatus } from '@agnes/web-ui'
 
 type ApprovalNode = Extract<UINode, { kind: 'approval' }>
 type ApprovalOption = ApprovalNode['options'][number]
 export type DurableApprovalAction = {
-  option: ApprovalOption
+  option: ApprovalOption | 'allow_prefix_session'
   label: string
-  verdict: 'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'rejected'
+  verdict: 'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'allow_prefix_session' | 'rejected'
 }
 
 const DURABLE_APPROVAL_KEYS: Record<ApprovalOption, string> = {
@@ -19,11 +20,38 @@ const DURABLE_APPROVAL_KEYS: Record<ApprovalOption, string> = {
 
 /** The UI may act only on options the durable approval event actually offered. */
 export function durableApprovalActions(node: ApprovalNode, t: Translate): DurableApprovalAction[] {
-  return node.options.map((option) => ({
-    option,
-    label: t(DURABLE_APPROVAL_KEYS[option]),
-    verdict: DURABLE_APPROVAL_VERDICTS[option],
-  }))
+  // A reconciliation asks a question of fact: the first allowed option means «it ran», reject «it did not».
+  if (node.reconcile) {
+    const ran = node.options.find((option) => option !== 'reject_once')
+    return [
+      ...(ran
+        ? [{ option: ran, label: t('app.reconcile.ran'), verdict: DURABLE_APPROVAL_VERDICTS[ran] }]
+        : []),
+      ...(node.options.includes('reject_once')
+        ? [{ option: 'reject_once' as const, label: t('app.reconcile.notRan'), verdict: 'rejected' as const }]
+        : []),
+    ]
+  }
+  // Core's own offer, rendered as given; only an option kind this view knows is offered at all.
+  const prefix = node.state === 'pending' ? node.prefixGrant : undefined
+  return node.options.flatMap((option): DurableApprovalAction[] => {
+    if (!Object.hasOwn(DURABLE_APPROVAL_KEYS, option)) return []
+    const own = {
+      option,
+      label: t(DURABLE_APPROVAL_KEYS[option]),
+      verdict: DURABLE_APPROVAL_VERDICTS[option],
+    }
+    return option === 'allow_once' && prefix
+      ? [
+          own,
+          {
+            option: 'allow_prefix_session' as const,
+            label: t('timeline.decision.allowPrefix', { prefix: `\`${prefix.tokens.join(' ')}\`` }),
+            verdict: 'allow_prefix_session' as const,
+          },
+        ]
+      : [own]
+  })
 }
 
 const DURABLE_APPROVAL_VERDICTS: Record<ApprovalOption, DurableApprovalAction['verdict']> = {
@@ -82,6 +110,8 @@ export type WebView = {
   approval?: ApprovalNode
   nodes: UINode[]
   status: string
+  statusLabel: string
+  statusState?: 'not-verified'
 }
 
 export function webView(
@@ -89,25 +119,43 @@ export function webView(
   receipt?: RunReceipt,
   t: (key: string, vars?: LocaleVars) => string = (key) => key,
 ): WebView {
+  const parked = timeline.opState?.parked?.decisionRef
   const approval = timeline.nodes.find(
     (node): node is ApprovalNode =>
-      node.kind === 'approval' && node.state === 'pending' && typeof node.ticket === 'string',
+      node.kind === 'approval' &&
+      node.state === 'pending' &&
+      node.decisionRef !== undefined &&
+      (!parked ||
+        (node.decisionRef.sessionId === parked.sessionId &&
+          node.decisionRef.id === parked.id &&
+          node.decisionRef.revision === parked.revision)),
   )
   const phase = timeline.opState?.phase
   const phaseKey = phase === undefined ? undefined : PHASE_KEYS[phase]
+  const phaseLabel = phaseKey ? t(phaseKey) : t('timeline.status.running')
+  const last = timeline.turns.at(-1)
+  const verification =
+    !phase &&
+    last?.startSeq === receipt?.startSeq &&
+    last?.endSeq === receipt?.endSeq &&
+    last?.reason === receipt?.reason
+      ? turnVerificationStatus(last)
+      : undefined
   return {
     busy: timeline.opState !== null,
+    statusLabel: phaseKey ? t('timeline.status.runningPhase', { phase: phaseLabel }) : phaseLabel,
     ...(approval ? { approval } : {}),
-    // WC9：slot 节点不再被丢弃；时间线为它保留稳定容器，认领未命中时显示占位。
+    // Keep a stable timeline container for slot nodes; show a placeholder when no claim matches.
     nodes: timeline.nodes,
+    ...(verification ? { statusState: 'not-verified' as const } : {}),
     status: approval
       ? t('timeline.status.awaitingApproval')
       : phase
         ? phaseKey
-          ? t('timeline.status.runningPhase', { phase: t(phaseKey) })
+          ? phaseLabel
           : t('timeline.status.running')
         : receipt?.reason && receipt.endSeq >= receipt.startSeq
-          ? t(TERMINAL_KEYS[receipt.reason])
+          ? t(verification?.labelKey ?? TERMINAL_KEYS[receipt.reason])
           : t('timeline.status.ready'),
   }
 }

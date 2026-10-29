@@ -1,72 +1,47 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import { extname, isAbsolute, join, posix } from 'node:path'
-import { VENDOR_ENTRY_NAMES } from './vendor-assets.js'
+import { createServer, type ServerResponse } from 'node:http'
+import { extname, isAbsolute, join } from 'node:path'
+import { FILE_UPLOAD_PATH } from '@agnes/protocol'
+import { DELIVERABLE_PREVIEW_PATH, deliverablePreviewFrame } from './deliverable-preview-frame.js'
+import { HISTORY_SEARCH_PATH, handleHistorySearch } from './history-route.js'
+import type { PluginRebuiltEvent, WebServer, WebServerOptions } from './server-types.js'
+import { UI_COMPONENT_MODULE_BYTES, uiComponentFrame } from './ui-component-frame.js'
+import { fileUploadRoute } from './upload-route.js'
+import { webhookRoute } from './webhook-route.js'
+import { createWorkspacePickerRoute, handlePlanMode } from './workspace-routes.js'
 
-export const DEFAULT_WEB_PORT = 4177
-export const WORKSPACE_PICKER_PATH = '/api/workspace-picker'
-const HOST = '127.0.0.1'
-const FILES = new Set([
-  'index.html',
-  'admin.html',
-  'resources.html',
-  'theme.js',
-  'theme.js.map',
-  'app.js',
-  'app.js.map',
-  'admin.js',
-  'admin.js.map',
-  'admin-standalone.js',
-  'admin-standalone.js.map',
-  'resources.js',
-  'resources.js.map',
-  'resources-standalone.js',
-  'resources-standalone.js.map',
-  'style.css',
-  'antd.css',
-  'tokens.css',
-  // 侧栏品牌位与过程行头像共用的客户端 AgnesMark 位图。白名单仍然逐文件放行
-  // （不放宽成任意 .png），它由 packages/web/public 随 style.css 一起拷进发行目录。
-  'brand-mark.png',
-])
-const MIME: Record<string, string> = {
-  '.html': 'text/html',
-  '.js': 'text/javascript',
-  '.map': 'application/json',
-  '.css': 'text/css',
-  '.png': 'image/png',
-}
-// Skin assets are a separate namespace from the build artifacts above: their extension allowlist is
-// the same one the installer enforces, so an unknown extension is refused here rather than sniffed.
-const SKIN_MIME: Record<string, string> = {
-  '.css': 'text/css',
-  '.webp': 'image/webp',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.avif': 'image/avif',
-  '.woff2': 'font/woff2',
-  '.woff': 'font/woff',
-}
-// Client module assets (`/plugins/*`) are executable code and styles served to the page, so their
-// extension allowlist is narrower than the skins one: exactly the module entry, its stylesheet and
-// source maps. An unknown extension is refused here rather than sniffed.
-const CLIENT_MODULE_MIME: Record<string, string> = {
-  '.js': 'text/javascript',
-  '.mjs': 'text/javascript',
-  '.css': 'text/css',
-  '.map': 'application/json',
-}
+export { DEFAULT_WEB_PORT, PLAN_MODE_PATH, WORKSPACE_PICKER_PATH } from './server-assets.js'
+export type {
+  ClientModuleAssetResolution,
+  PluginRebuiltEvent,
+  SkinAssetResolution,
+  WebServer,
+  WebServerOptions,
+  WorkspacePicker,
+  WorkspacePickerResult,
+} from './server-types.js'
 
-/** What a skin resolver answers with: a file to read, the bytes, or nothing. */
-export type SkinAssetResolution = string | Uint8Array | null
-
-/** What a client module resolver answers with: a file to read, the bytes, or nothing. */
-export type ClientModuleAssetResolution = string | Uint8Array | null
-
-/** A reload hint for one immutable client-module snapshot. */
-export type PluginRebuiltEvent = Readonly<{ packageId: string; revision: string }>
+import {
+  CLIENT_MODULE_MIME,
+  DEFAULT_WEB_PORT,
+  fileName,
+  HOST,
+  importMapScriptHash,
+  MIME,
+  PLAN_MODE_PATH,
+  SKIN_MIME,
+  WORKSPACE_PICKER_PATH,
+} from './server-assets.js'
+import { json, listen } from './server-http.js'
+import {
+  acceptsWebRequest,
+  crossSiteWrite,
+  loopbackHost,
+  loopbackOrigin,
+  loopbackWs,
+  port,
+} from './server-security.js'
 
 type WatchedPluginBuild = {
   packageId: string
@@ -75,251 +50,28 @@ type WatchedPluginBuild = {
   size: number
   digest: string
 }
-
-export type WebServerOptions = {
-  /** Directory containing the built index.html, app.js and style.css files. */
-  root: string
-  /** Credential-free loopback WebSocket endpoint advertised to the browser. */
-  wsUrl: string
-  /** @deprecated Ignored legacy input; local Web access no longer uses a browser token. */
-  token?: string
-  /** Fixed local HTTP port. The default is kept stable for the daemon origin contract. */
-  port?: number
-  /** Exact page origin selected by the daemon. Defaults to http://127.0.0.1:<port>. */
-  origin?: string
-  /** Add the source-development reload client and event stream. Disabled for ordinary serve runs. */
-  developmentReload?: boolean
-  /**
-   * Optional fixed admin-surface BFF. It receives matching requests before static routing and
-   * returns true only when it wrote the response itself.
-   */
-  handleAdmin?: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>
-  /**
-   * Optional same-origin skin asset resolver. Receives the request pathname and answers with either
-   * an absolute file path, the bytes themselves, or null. Path authority lives in the resolver (the
-   * package manager owns it), so this server never learns where packages are installed; it owns only
-   * method, MIME and headers.
-   *
-   * Bytes exist because the production launcher is not the process that owns the files: it asks the
-   * daemon over RPC (design §22). Returning bytes keeps that a single round trip with no temporary
-   * file to clean up, and it may be async for the same reason.
-   */
-  skinAsset?: (pathname: string) => SkinAssetResolution | Promise<SkinAssetResolution>
-  /**
-   * Optional same-origin client module asset resolver for `/plugins/*` (design WC3). Same contract
-   * as `skinAsset`: it receives the request pathname and answers with either an absolute file path,
-   * the bytes themselves, or null. Path authority lives in the resolver (the daemon answers only
-   * from its immutable snapshots), so this server never learns where packages are installed; it owns
-   * only method, the three-MIME allowlist and headers. A miss and a refusal are the same null, which
-   * this route turns into the same 404 the skin route uses.
-   */
-  clientModuleAsset?: (pathname: string) => ClientModuleAssetResolution | Promise<ClientModuleAssetResolution>
-  /**
-   * Optional launcher-owned subscription to daemon roster rebuilds.  The static server only fans
-   * these safe `{ packageId, revision }` hints out over same-origin SSE; it neither watches package
-   * directories nor learns package-store paths.  A missing subscription deliberately leaves the
-   * endpoint alive but inert (release builds have no development watcher).
-   */
-  subscribePluginEvents?: (
-    listener: (event: PluginRebuiltEvent) => void,
-  ) => (() => void) | Promise<() => void>
-  /**
-   * Poll file-backed plugin build artifacts after they are served.  `mtimeMs` is only a cheap
-   * sentinel: a rebuilt event is emitted only after the bytes are hashed and the digest differs.
-   * This is intentionally stat polling rather than fs.watch because the resolver may point at a
-   * network mount.  The default is 500 ms, a proven cadence for network-backed file systems.
-   */
-  pluginBuildPollMs?: number
-  /** Optional launcher-owned native directory picker. Paths are still validated by workspace.add. */
-  workspacePicker?: WorkspacePicker
-  /**
-   * Origin of the Agnes MHS hub (AgnesHub), which the workbench's device panel reads live data, video
-   * and audio from; defaults to AGNES_HUB_ORIGIN. It is added to the workbench document's
-   * connect-src (http and ws forms) and media-src; nothing else is opened.
-   */
-  hubOrigin?: string
-  /**
-   * Optional mounted-Surface reverse proxy (`@agnes/daemon`'s `createMountProxy`). A GET/HEAD consults
-   * it just before the static asset whitelist (`fileName`) so a mount like `/demo` is not rejected as
-   * an unknown asset, and only there: every branch above it (the workspace picker, `handleAdmin`, the
-   * fixed admin API 503s under `/admin`, the `/skins` and `/plugins` resolvers) already returns before
-   * this point for any request it handles, so this can never shadow them. Any other method consults it
-   * from inside the method gate, only when `Origin` is this server's origin and `Sec-Fetch-Site` is
-   * absent or `same-origin`; otherwise that request stays a 405. It answers
-   * synchronously with whether it claimed the request (the forwarded response itself is written
-   * asynchronously); when it returns false or is not provided, behavior is byte-for-byte the same as
-   * before this option existed.
-   */
-  mountProxy?: (request: IncomingMessage, response: ServerResponse) => boolean
-}
-
-export type WorkspacePickerResult =
-  | { status: 'selected'; path: string }
-  | { status: 'cancelled' }
-  | { status: 'unavailable' }
-
-export type WorkspacePicker = {
-  available(): Promise<boolean>
-  pick(signal: AbortSignal): Promise<WorkspacePickerResult>
-}
-
-export type WebServer = {
-  url: string
-  reloadDevelopmentClients?(): void
-  close(): Promise<void>
-}
-
-function loopbackOrigin(value: string): URL {
-  let origin: URL
-  try {
-    origin = new URL(value)
-  } catch {
-    throw new Error('Web origin must be an exact loopback HTTP origin')
-  }
-  if (
-    origin.protocol !== 'http:' ||
-    !['127.0.0.1', 'localhost', '[::1]'].includes(origin.hostname) ||
-    origin.username ||
-    origin.password ||
-    origin.pathname !== '/' ||
-    origin.search ||
-    origin.hash
-  )
-    throw new Error('Web origin must be an exact loopback HTTP origin')
-  return origin
-}
-
-function loopbackWs(value: string): URL {
-  let url: URL
-  try {
-    url = new URL(value)
-  } catch {
-    throw new Error('WebSocket endpoint must be a credential-free loopback URL')
-  }
-  if (
-    !['ws:', 'wss:'].includes(url.protocol) ||
-    !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash
-  )
-    throw new Error('WebSocket endpoint must be a credential-free loopback URL')
-  return url
-}
-
-function port(value: number): number {
-  if (!Number.isInteger(value) || value < 0 || value > 65_535) throw new Error('invalid Web port')
-  return value
-}
-
-/** WC5：index.html 内联 import map 脚本体（<script type="importmap"> 与 </script> 之间的精确字节）
- *  的 SHA-256，供 CSP script-src 以哈希放行。文件缺失或无 import map 时返回 undefined（fail-closed）。 */
-async function importMapScriptHash(root: string): Promise<string | undefined> {
-  let html: string
-  try {
-    html = await readFile(join(root, 'index.html'), 'utf8')
-  } catch {
-    return undefined
-  }
-  const match = html.match(/<script type="importmap">([\s\S]*?)<\/script>/)
-  if (!match) return undefined
-  const body = match?.[1]
-  if (!body) return undefined
-  return createHash('sha256').update(body, 'utf8').digest('base64')
-}
-
-function fileName(requestUrl: string): string {
-  let pathname: string
-  try {
-    pathname = new URL(requestUrl, 'http://127.0.0.1').pathname
-  } catch {
-    throw new Error('invalid Web request path')
-  }
-  const file =
-    pathname === '/'
-      ? 'index.html'
-      : pathname === '/admin/plugins' || pathname === '/admin/plugins/'
-        ? 'admin.html'
-        : pathname === '/admin/resources' || pathname === '/admin/resources/'
-          ? 'resources.html'
-          : // URL paths use forward slashes on every OS; disk paths are joined only when reading.
-            posix.normalize(pathname).replace(/^[/\\]+/, '')
-  // esbuild 的 splitting 会为动态 import() 产出带哈希的共享 chunk。它们与入口同为同源静态资源，
-  // 所以用固定模式放行，而不是把路径校验放宽成任意文件。
-  const isChunk = /^chunk-[A-Za-z0-9_-]+\.(?:js|css)(\.map)?$/.test(file)
-  // WC5：/vendor/* 平台共享单例命名空间——入口文件名固定（import map 的映射目标），共享 chunk
-  // 走 chunk- 哈希模式；命名空间内不允许任意文件，不放宽成目录列举。
-  const vendorEntry = /^vendor\/([a-z0-9-]+)\.js(?:\.map)?$/.exec(file)?.[1]
-  const isVendor =
-    (vendorEntry !== undefined && VENDOR_ENTRY_NAMES.has(vendorEntry)) ||
-    /^vendor\/chunk-[A-Za-z0-9_-]+\.js(\.map)?$/.test(file)
-  if (!(FILES.has(file) || isChunk || isVendor) || file.includes('..')) throw new Error('Web asset not found')
-  return file
-}
-
-function json(response: ServerResponse, status: number, body: unknown): void {
-  response.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'no-store',
-    'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
-    'Referrer-Policy': 'no-referrer',
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'DENY',
-    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
-  })
-  response.end(JSON.stringify(body))
-}
-
-function listen(server: Server, requestedPort: number): Promise<{ port: number; host: string }> {
-  return new Promise((resolve, reject) => {
-    const failed = (error: Error) => reject(error)
-    server.once('error', failed)
-    server.listen(requestedPort, HOST, () => {
-      server.removeListener('error', failed)
-      const address = server.address()
-      if (!address || typeof address === 'string') {
-        reject(new Error('Web listener did not bind'))
-        return
-      }
-      resolve({ port: address.port, host: address.address })
-    })
-  })
-}
-
-/** The exact http(s) origin of the MHS hub, or an error: a path, credentials or a query are refused. */
-function hubOrigin(value: string): string {
-  let url: URL
-  try {
-    url = new URL(value)
-  } catch {
-    throw new Error('AGNES_HUB_ORIGIN must be an http or https origin')
-  }
-  if (
-    (url.protocol !== 'http:' && url.protocol !== 'https:') ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash ||
-    url.pathname !== '/'
-  )
-    throw new Error('AGNES_HUB_ORIGIN must be an http or https origin')
-  return url.origin
-}
-
 /** Start the static Web client. The daemon is intentionally outside this module's lifecycle. */
 export async function createWebServer(options: WebServerOptions): Promise<WebServer> {
   if (!isAbsolute(options.root)) throw new Error('Web asset root must be absolute')
-  const wsUrl = loopbackWs(options.wsUrl)
-  // WC5：对 index.html 内联 import map 的脚本体计算 SHA-256，追加进 CSP script-src（严格哈希，
-  // 不放宽策略）。哈希输入是 <script type="importmap"> 与 </script> 之间的精确字节（浏览器语义）。
-  // 缺失或解析失败时不追加哈希：内联 import map 会被浏览器拒绝，页面退回无插件模块的现状（fail-closed）。
+  let wsUrl = loopbackWs(options.wsUrl)
+  const surfaceNotReady = (requestUrl: string, response: ServerResponse): boolean => {
+    const pathname = new URL(requestUrl, 'http://127.0.0.1').pathname
+    if (options.surfaceMountsReady?.(pathname) !== false) return false
+    response
+      .writeHead(503, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'Retry-After': '1',
+      })
+      .end('Surface mount table is not ready yet; retry shortly.')
+    return true
+  }
+  // Hash the inline index.html import map body with SHA-256 and add it to CSP script-src, using a strict hash
+  // without weakening the policy. Hash the exact bytes between <script type="importmap"> and </script>, as the browser does.
+  // If missing or unparseable, add no hash: the browser refuses the inline map and the page loads without plugin modules (fail-closed).
   const importMapHash = await importMapScriptHash(options.root)
   // Static assets share the base policy. Each HTML response adds its own nonce for Ant Design's
   // CSS-in-JS styles; it is also inserted into that document for ConfigProvider to consume.
-  const contentSecurityPolicy = `default-src 'self'; connect-src 'self' ${wsUrl.origin.replace(/^http/, 'ws')}; style-src 'self'; script-src 'self'${importMapHash ? ` 'sha256-${importMapHash}'` : ''}`
-  const hubSetting = options.hubOrigin ?? process.env.AGNES_HUB_ORIGIN
-  const hub = hubSetting ? hubOrigin(hubSetting) : undefined
   const requestedPort = port(options.port ?? DEFAULT_WEB_PORT)
   const expectedOrigin = loopbackOrigin(options.origin ?? `http://${HOST}:${requestedPort}`)
   if (expectedOrigin.hostname !== HOST && expectedOrigin.hostname !== 'localhost')
@@ -328,18 +80,34 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
     throw new Error('Web origin port does not match Web listener port')
   if (requestedPort === 0 && !expectedOrigin.port)
     throw new Error('Web origin must include the selected Web listener port')
+  const policyFor = (ws: URL): string =>
+    `default-src 'self'; media-src 'self' blob:; connect-src 'self' ${expectedOrigin.origin.replace(/^http/, 'ws')} ${ws.origin.replace(/^http/, 'ws')}; style-src 'self'; script-src 'self'${importMapHash ? ` 'sha256-${importMapHash}'` : ''}`
+  let contentSecurityPolicy = policyFor(wsUrl)
 
-  let pickerPending = false
-  let activePicker: AbortController | undefined
+  const handleWorkspacePicker = createWorkspacePickerRoute(expectedOrigin.origin, options)
+  const changeEpoch = randomBytes(16).toString('hex')
+  let changeCursor = 0
+  let developmentRevision = 0
+  const changes: { cursor: number; id: string; rev: string }[] = []
   const pluginEventClients = new Set<ServerResponse>()
   const developmentReloadClients = new Set<ServerResponse>()
   const watchedPluginBuilds = new Map<string, WatchedPluginBuild>()
   let pluginBuildPoller: ReturnType<typeof setInterval> | undefined
   let pluginBuildPollInFlight = false
+  // Older pages must release their HTTP/1.1 connection too; current clients use finite polls.
+  const boundReloadStream = (response: ServerResponse): void => {
+    const timer = setTimeout(() => response.end(), 500)
+    response.once('close', () => clearTimeout(timer))
+  }
   const writeSseEvent = (response: ServerResponse, event: string, data: unknown): void => {
-    if (!response.writableEnded) response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+    if (!response.writableEnded)
+      response.write(
+        `${event === 'graph' ? 'retry: 1000\n\n' : ''}event: ${event}\ndata: ${JSON.stringify(data)}\n\n`,
+      )
   }
   const emitPluginRebuilt = (event: PluginRebuiltEvent): void => {
+    changes.push({ cursor: ++changeCursor, id: event.packageId, rev: event.revision })
+    if (changes.length > 256) changes.shift()
     for (const response of pluginEventClients)
       writeSseEvent(response, 'rebuilt', { type: 'rebuilt', id: event.packageId, rev: event.revision })
   }
@@ -413,86 +181,67 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
       // prevent the ordinary page (and its normal roster invalidation channel) from starting.
     }
   }
+  const handleFileUpload = fileUploadRoute(expectedOrigin.origin, options.fileUpload)
+  const handleWebhook = options.triggers ? webhookRoute(expectedOrigin.origin, options.triggers) : undefined
   const server = createServer(async (request, response) => {
     try {
       const address = server.address()
       if (!address || typeof address === 'string') throw new Error('Web listener is not bound')
-      const expectedHost = `${HOST}:${address.port}`
-      if (request.headers.host !== expectedHost) {
+      const host = loopbackHost(request.headers.host, `${HOST}:${address.port}`, address.port)
+      // Another loopback name (a `localhost` bookmark) is sent to the one page origin every
+      // route checks against; any other Host is a rebinding domain and gets nothing.
+      if (host === 'alias' && (request.method === 'GET' || request.method === 'HEAD')) {
+        const target = new URL(request.url ?? '/', expectedOrigin)
+        response
+          .writeHead(307, { Location: `${expectedOrigin.origin}${target.pathname}${target.search}` })
+          .end()
+        return
+      }
+      if (host !== 'canonical') {
         response.writeHead(403).end()
         return
       }
+      if (await options.pluginStreams?.handleHttp(request, response)) return
+      if (await handleWebhook?.(request, response)) return
       const requestUrl = new URL(request.url ?? '/', expectedOrigin)
+      if (requestUrl.pathname === DELIVERABLE_PREVIEW_PATH) {
+        if (request.method !== 'GET' && request.method !== 'HEAD') {
+          response.writeHead(405).end()
+          return
+        }
+        const frame = deliverablePreviewFrame()
+        response.writeHead(200, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store',
+          'Content-Security-Policy': frame.csp,
+          'Referrer-Policy': 'no-referrer',
+          'X-Content-Type-Options': 'nosniff',
+        })
+        response.end(request.method === 'HEAD' ? undefined : frame.body)
+        return
+      }
+      if (requestUrl.pathname === FILE_UPLOAD_PATH) {
+        await handleFileUpload(request, response)
+        return
+      }
+      if (requestUrl.pathname === HISTORY_SEARCH_PATH) {
+        const result = await handleHistorySearch({
+          method: request.method,
+          search: requestUrl.search,
+          origin: typeof request.headers.origin === 'string' ? request.headers.origin : undefined,
+          site: request.headers['sec-fetch-site'],
+          expectedOrigin: expectedOrigin.origin,
+          ...(options.historySearch ? { searchHistory: options.historySearch } : {}),
+        })
+        json(response, result.status, result.body)
+        return
+      }
       if (requestUrl.pathname === WORKSPACE_PICKER_PATH) {
-        const site = request.headers['sec-fetch-site']
-        if (
-          requestUrl.origin !== expectedOrigin.origin ||
-          request.url !== WORKSPACE_PICKER_PATH ||
-          requestUrl.search !== '' ||
-          (site !== undefined && site !== 'same-origin' && site !== 'none') ||
-          (request.headers.origin !== undefined && request.headers.origin !== expectedOrigin.origin)
-        ) {
-          json(response, 403, { error: { code: 'ORIGIN_REJECTED' } })
-          return
-        }
-        if (request.method !== 'GET' && request.method !== 'POST') {
-          response.writeHead(405, { Allow: 'GET, POST' }).end()
-          return
-        }
-        if (request.method === 'GET') {
-          const available = (await options.workspacePicker?.available().catch(() => false)) ?? false
-          json(response, 200, { available })
-          return
-        }
-        if (request.headers.origin !== expectedOrigin.origin) {
-          json(response, 403, { error: { code: 'ORIGIN_REJECTED' } })
-          return
-        }
-        if (
-          request.headers['transfer-encoding'] !== undefined ||
-          Number(request.headers['content-length'] ?? '0') !== 0
-        ) {
-          json(response, 400, { error: { code: 'INVALID_REQUEST' } })
-          return
-        }
-        if (pickerPending) {
-          json(response, 409, { error: { code: 'PICKER_BUSY' } })
-          return
-        }
-        pickerPending = true
-        const controller = new AbortController()
-        activePicker = controller
-        const abort = (): void => controller.abort()
-        request.once('aborted', abort)
-        response.once('close', abort)
-        try {
-          const available = (await options.workspacePicker?.available().catch(() => false)) ?? false
-          if (controller.signal.aborted && !response.writableEnded) return
-          if (!available || !options.workspacePicker) {
-            json(response, 503, { status: 'unavailable' })
-            return
-          }
-          const result = await options.workspacePicker
-            .pick(controller.signal)
-            .catch(() => ({ status: 'unavailable' }) as const)
-          if (controller.signal.aborted && !response.writableEnded) return
-          if (
-            result.status === 'selected' &&
-            (result.path.length === 0 ||
-              result.path.length > 4096 ||
-              result.path.includes('\0') ||
-              !isAbsolute(result.path))
-          ) {
-            json(response, 503, { status: 'unavailable' })
-            return
-          }
-          json(response, result.status === 'unavailable' ? 503 : 200, result)
-        } finally {
-          request.removeListener('aborted', abort)
-          response.removeListener('close', abort)
-          if (activePicker === controller) activePicker = undefined
-          pickerPending = false
-        }
+        await handleWorkspacePicker.handle(request, response)
+        return
+      }
+      if (requestUrl.pathname === PLAN_MODE_PATH) {
+        await handlePlanMode(request, response, expectedOrigin.origin, options)
         return
       }
       if (request.url === '/__agnes/dev/reload.js') {
@@ -514,8 +263,63 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
         response.end(
           request.method === 'HEAD'
             ? undefined
-            : `const events = new EventSource('/__agnes/dev/events');\nevents.addEventListener('reload', () => location.reload());\n`,
+            : `let revision; let stopped = false; let controller; let timer;
+async function poll() {
+  controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch('/__agnes/dev/revision', { cache: 'no-store', signal: controller.signal });
+    if (!response.ok) throw new Error('reload poll failed');
+    const next = await response.text();
+    if (revision !== undefined && revision !== next) location.reload();
+    revision = next;
+  } catch {} finally {
+    clearTimeout(timeout);
+    if (!stopped) timer = setTimeout(poll, 1000);
+  }
+}
+addEventListener('pagehide', () => { stopped = true; clearTimeout(timer); controller?.abort(); });
+addEventListener('pageshow', () => { if (stopped) { stopped = false; void poll(); } });
+void poll();\n`,
         )
+        return
+      }
+      if (request.url === '/__agnes/dev/revision') {
+        if (!options.developmentReload) {
+          response.writeHead(404).end()
+          return
+        }
+        if (request.method !== 'GET') {
+          response.writeHead(405, { Allow: 'GET' }).end()
+          return
+        }
+        response.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' })
+        response.end(`${changeEpoch}:${developmentRevision}`)
+        return
+      }
+      if (request.url?.split('?')[0] === '/plugins/changes') {
+        if (request.method !== 'GET') {
+          response.writeHead(405, { Allow: 'GET' }).end()
+          return
+        }
+        const query = new URL(request.url, expectedOrigin).searchParams
+        const rawCursor = query.get('cursor')
+        const cursor = rawCursor === null ? 0 : Number(rawCursor)
+        if (!Number.isSafeInteger(cursor) || cursor < 0) {
+          response.writeHead(400).end()
+          return
+        }
+        const epoch = query.get('epoch')
+        const reset =
+          (epoch !== null && epoch !== changeEpoch) ||
+          cursor > changeCursor ||
+          (rawCursor !== null && cursor < (changes[0]?.cursor ?? 1) - 1)
+        json(response, 200, {
+          epoch: changeEpoch,
+          cursor: changeCursor,
+          reset,
+          events: changes.filter((event) => event.cursor > cursor),
+        })
         return
       }
       if (request.url === '/__agnes/dev/events') {
@@ -536,12 +340,20 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
           'X-Content-Type-Options': 'nosniff',
         })
         response.flushHeaders()
+        boundReloadStream(response)
         developmentReloadClients.add(response)
         const close = (): void => {
           developmentReloadClients.delete(response)
         }
         request.once('aborted', close)
         response.once('close', close)
+        return
+      }
+      // Every route above checks its own origin. From here on (admin BFF, client-module services,
+      // mounted Surface APIs) no write is accepted from a page on another site.
+      if (crossSiteWrite(expectedOrigin.origin, request)) {
+        request.resume()
+        json(response, 403, { error: { code: 'ORIGIN_REJECTED' } })
         return
       }
       if (options.handleAdmin && (await options.handleAdmin(request, response))) return
@@ -559,6 +371,7 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
           'X-Content-Type-Options': 'nosniff',
         })
         response.flushHeaders()
+        boundReloadStream(response)
         pluginEventClients.add(response)
         // A graph marker establishes the stream boundary without exposing an installed-package list.
         writeSseEvent(response, 'graph', { type: 'graph' })
@@ -570,7 +383,11 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
         return
       }
       const adminPath = request.url ?? ''
-      if (adminPath.startsWith('/admin/plugins/api/') || adminPath.startsWith('/admin/resources/api/')) {
+      if (
+        adminPath.startsWith('/admin/api/') ||
+        adminPath.startsWith('/admin/plugins/api/') ||
+        adminPath.startsWith('/admin/resources/api/')
+      ) {
         response.writeHead(503, {
           'Content-Type': 'application/json; charset=utf-8',
           'Cache-Control': 'no-store',
@@ -591,13 +408,15 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
         // A mounted Surface's business API writes, so a non-read request may reach mountProxy - but
         // only from this exact page origin: the Host check above cannot stop a cross-site form POST.
         // Every other non-read request keeps the plain 405 it always had.
-        const site = request.headers['sec-fetch-site']
-        if (
-          request.headers.origin === expectedOrigin.origin &&
-          (site === undefined || site === 'same-origin') &&
-          options.mountProxy?.(request, response)
-        )
-          return
+        if (acceptsWebRequest('mount-write', expectedOrigin.origin, request)) {
+          if (options.mountProxy?.(request, response)) return
+          // A built-in asset keeps its method refusal even while the mount query is pending.
+          try {
+            fileName(request.url ?? '/')
+          } catch {
+            if (surfaceNotReady(request.url ?? '/', response)) return
+          }
+        }
         response.writeHead(405, { Allow: 'GET, HEAD' }).end()
         return
       }
@@ -628,7 +447,7 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
         else response.end(typeof resolved === 'string' ? await readFile(resolved) : resolved)
         return
       }
-      // Client module assets (design WC3) follow the skin branch's exact shape: the resolver owns
+      // Client module assets follow the skin branch's exact shape: the resolver owns
       // path authority, this route owns method, MIME and headers, and a miss, an unknown suffix and
       // a refusal are the one same 404. It must sit before mountProxy so a mounted Surface can never
       // claim the reserved `/plugins` prefix.
@@ -645,6 +464,25 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
           return
         }
         const bytes = typeof resolved === 'string' ? await readFile(resolved) : Buffer.from(resolved)
+        if (new URL(request.url ?? '/', expectedOrigin).searchParams.get('agnes_ui_frame') === '1') {
+          if (
+            !['.js', '.mjs'].includes(extname(named).toLowerCase()) ||
+            bytes.length > UI_COMPONENT_MODULE_BYTES
+          ) {
+            response.writeHead(404).end()
+            return
+          }
+          const frame = uiComponentFrame(bytes.toString('utf8'))
+          response.writeHead(200, {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-store',
+            'Content-Security-Policy': frame.csp,
+            'Referrer-Policy': 'no-referrer',
+            'X-Content-Type-Options': 'nosniff',
+          })
+          response.end(request.method === 'HEAD' ? undefined : frame.body)
+          return
+        }
         if (typeof resolved === 'string') await rememberPluginBuild(assetPath, resolved, bytes)
         response.writeHead(200, {
           'Content-Type': contentType,
@@ -654,7 +492,13 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
           'X-Content-Type-Options': 'nosniff',
         })
         if (request.method === 'HEAD') response.end()
-        else response.end(bytes)
+        else if (
+          contentType === 'text/css' &&
+          new URL(request.url ?? '/', expectedOrigin).searchParams.get('agnes_css_layer') === 'app'
+        ) {
+          // A layered import preserves the stylesheet's own relative imports and asset URLs.
+          response.end(`@import url(${JSON.stringify(assetPath)}) layer(app);\n`)
+        } else response.end(bytes)
         return
       }
       // A mounted Surface owns its whole prefix (e.g. `/demo`), so it must be consulted before the
@@ -667,6 +511,18 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
       // prefixes (see packages/cli/launch/surface-mounts.ts).
       if (options.mountProxy?.(request, response)) return
       const file = fileName(request.url ?? '/')
+      if (file.endsWith('.html') && options.refreshWsUrl) {
+        // A daemon that was restarted advertises a new loopback address; hand the page the current one.
+        try {
+          const next = loopbackWs(await options.refreshWsUrl())
+          if (next.href !== wsUrl.href) {
+            wsUrl = next
+            contentSecurityPolicy = policyFor(next)
+          }
+        } catch {
+          // Keep the last known address: a failed refresh must not take the page itself down.
+        }
+      }
       let body = await readFile(join(options.root, file))
       const documentNonce = file.endsWith('.html') ? randomBytes(16).toString('base64') : undefined
       if (file === 'index.html') {
@@ -692,12 +548,9 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
         )
       }
       // Only the workbench consumes local image/PDF resource URLs; other pages keep the base policy.
-      const workbenchCsp = hub
-        ? `${contentSecurityPolicy.replace("connect-src 'self'", `connect-src 'self' ${hub} ${hub.replace(/^http/, 'ws')}`)}; media-src 'self' blob: ${hub}`
-        : contentSecurityPolicy
       const documentCsp =
         file === 'index.html'
-          ? `${workbenchCsp}; img-src 'self' blob:; frame-src 'self' blob:`
+          ? `${contentSecurityPolicy}; img-src 'self' blob:; frame-src 'self' blob:`
           : contentSecurityPolicy
       const responseCsp = documentNonce
         ? documentCsp.replace("style-src 'self'", `style-src 'self' 'nonce-${documentNonce}'`)
@@ -714,8 +567,16 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
       else response.end(body)
     } catch (error) {
       const missing = error instanceof Error && error.message === 'Web asset not found'
+      if (missing && surfaceNotReady(request.url ?? '/', response)) return
       response.writeHead(missing ? 404 : 500).end(missing ? '' : 'web assets unavailable')
     }
+  })
+  server.on('upgrade', (request, socket, head) => {
+    void Promise.resolve(options.pluginStreams?.handleUpgrade(request, socket, head))
+      .then((claimed) => {
+        if (!claimed) socket.destroy()
+      })
+      .catch(() => socket.destroy())
   })
   const sockets = new Set<import('node:net').Socket>()
   server.on('connection', (socket) => {
@@ -735,11 +596,13 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
   return {
     url: actualOrigin,
     reloadDevelopmentClients: () => {
+      developmentRevision++
       for (const response of developmentReloadClients) writeSseEvent(response, 'reload', {})
     },
     close: () =>
       (closing ??= new Promise<void>((resolve, reject) => {
-        activePicker?.abort()
+        options.pluginStreams?.close()
+        handleWorkspacePicker.close()
         stopPluginEvents?.()
         if (pluginBuildPoller !== undefined) clearInterval(pluginBuildPoller)
         for (const response of pluginEventClients) response.end()

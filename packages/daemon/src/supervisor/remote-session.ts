@@ -1,8 +1,27 @@
-import { type Actor, type EventEnvelope, rpcError } from '@agnes/protocol'
-import type { ToolDetailRead, ToolDetailReadResult } from '@agnes/worker-runtime'
-import type { PreviewSnapshotEntry } from '../registry.js'
-import type { WorkspaceBindingEnvelope } from '../storage/workspaces.js'
+import { randomUUID } from 'node:crypto'
+import type { PreviewSnapshotEntry } from '@agnes/daemon-foundation/registry'
+import type { WorkspaceBindingEnvelope } from '@agnes/daemon-foundation/storage/workspaces'
+import { FEEDBACK_PROVIDER_ID } from '@agnes/host'
+import {
+  type Actor,
+  type EventEnvelope,
+  type SessionToolFilter,
+  VOICE_LINK_TIMEOUT_MS,
+} from '@agnes/protocol'
+import type {
+  DeliverablesRead,
+  DeliverablesReadResult,
+  ToolDetailRead,
+  ToolDetailReadResult,
+} from '@agnes/worker-runtime'
 import type { WorkerSessionChannel } from './worker-link.js'
+
+/**
+ * The event types whose register a daemon reader takes from `latest()`: `budget.state` is read by
+ * `session.budget`. `op.state` is read too, but no ledger row carries it (the log materializes it
+ * itself), so no frame ever filled it and there is nothing to prime.
+ */
+export const REGISTER_CACHE_EVENT_TYPES: readonly string[] = ['budget.state']
 
 /** How long a viewer's live previews may wait on a worker's snapshot. */
 export const PREVIEW_SNAPSHOT_TIMEOUT_MS = 2_000
@@ -17,8 +36,6 @@ export const PREVIEW_SNAPSHOT_TIMEOUT_MS = 2_000
  */
 export class RemoteSession {
   lastSeq = 0
-  /** How many times a scan page was too large for one worker frame and was resumed in another reply. */
-  scanResumes = 0
   private runSeq = 0
   private activeRuns = 0
   /** A manual compaction persists a turn before its following `run()` command starts. */
@@ -65,10 +82,188 @@ export class RemoteSession {
     if (e.seq > this.lastSeq) this.lastSeq = e.seq
   }
 
+  /**
+   * Fills the register cache from the ledger rather than from frames: a session that opens is not
+   * replayed its history, so the newest row of each type that feeds a cached register is read once.
+   */
+  async primeRegisters(head: number): Promise<void> {
+    if (head < 1) return
+    for (const type of REGISTER_CACHE_EVENT_TYPES) {
+      const rows = await this.scan({ toSeq: head, type, order: 'desc', limit: 1 })
+      const newest = rows[0]
+      if (newest) this.observeRegister(newest)
+    }
+  }
+
   observeRegister(e: EventEnvelope): void {
     if (!e.register) return
     const dataKey = (e.data as { key?: string } | null)?.key ?? ''
     this.latestCache.set(`${e.register}/${dataKey}`, e.data)
+  }
+
+  readonly intelligentUi = {
+    actionFromCredential: async (
+      input: import('@agnes/protocol').UiActionParams,
+      credential: unknown,
+      signal: AbortSignal,
+    ) => {
+      signal.throwIfAborted()
+      const result = await this.link.command('ui.action', { input, credential })
+      signal.throwIfAborted()
+      return result as import('@agnes/protocol').UiActionReceipt
+    },
+    read: async (input: import('@agnes/protocol').UiReadParams, signal: AbortSignal) => {
+      signal.throwIfAborted()
+      const result = await this.link.command('ui.read', { input })
+      signal.throwIfAborted()
+      return result as import('@agnes/protocol').UiReadResult
+    },
+    refresh: async (input: import('@agnes/protocol').UiRefreshParams, signal: AbortSignal) => {
+      signal.throwIfAborted()
+      const result = await this.link.command('ui.refresh', { input })
+      signal.throwIfAborted()
+      return result as import('@agnes/protocol').UiSurfaceRecord
+    },
+  }
+
+  async draftFeedback(
+    feedback: import('@agnes/protocol/gen/app-server').FeedbackItem,
+    evidence: readonly EventEnvelope[],
+    signal: AbortSignal,
+  ): Promise<readonly { path: string; content: string }[]> {
+    signal.throwIfAborted()
+    const runId = `feedback:${randomUUID()}`
+    const release = this.beginActivity()
+    const abort = () => {
+      void this.link.command('abort', { runId }).catch(() => undefined)
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    try {
+      const files = await this.link.command(
+        'feedback.draft',
+        { feedback, evidence, runId, providerId: FEEDBACK_PROVIDER_ID },
+        { timeoutMs: 35_000 },
+      )
+      signal.throwIfAborted()
+      return files as readonly { path: string; content: string }[]
+    } finally {
+      signal.removeEventListener('abort', abort)
+      abort()
+      release()
+    }
+  }
+
+  /** `session.btw` on the worker that holds the real session; the daemon's abort reaches it by run id. */
+  async sideQuestion(
+    question: string,
+    signal: AbortSignal,
+  ): Promise<import('@agnes/protocol').SessionBtwResult> {
+    signal.throwIfAborted()
+    const runId = `btw:${randomUUID()}`
+    const release = this.beginActivity()
+    const abort = () => {
+      void this.link.command('abort', { runId }).catch(() => undefined)
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    try {
+      return (await this.link.command(
+        'btw',
+        { question, runId },
+        { timeoutMs: 65_000 },
+      )) as import('@agnes/protocol').SessionBtwResult
+    } finally {
+      signal.removeEventListener('abort', abort)
+      release()
+    }
+  }
+
+  /** One voice call on the worker that holds the real session; the daemon's abort reaches it by run id. */
+  async voice(
+    method: 'voice.transcribe' | 'voice.speak',
+    input: Readonly<Record<string, unknown>> & { route: string },
+    signal: AbortSignal,
+  ): Promise<unknown> {
+    signal.throwIfAborted()
+    const runId = `voice:${randomUUID()}`
+    const release = this.beginActivity()
+    const abort = () => {
+      void this.link.command('abort', { runId }).catch(() => undefined)
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    try {
+      return await this.link.command(method, { ...input, runId }, { timeoutMs: VOICE_LINK_TIMEOUT_MS })
+    } finally {
+      signal.removeEventListener('abort', abort)
+      release()
+    }
+  }
+
+  workspaceChanges(input: {
+    scope?: 'session' | 'turn'
+    path?: string
+    expectedRevision?: string
+  }): Promise<unknown> {
+    return this.link.command('workspaceChanges', input)
+  }
+
+  undoPreview(input: { turn?: number }): Promise<unknown> {
+    return this.link.command('undoPreview', input)
+  }
+
+  undo(input: { turn: number; commandId: string; admissionId: string; actor: Actor }): Promise<unknown> {
+    return this.link.command('undo', input)
+  }
+
+  references(operation: 'search' | 'resolve', input: unknown): Promise<unknown> {
+    return this.link.command('references', { operation, input })
+  }
+
+  workspaceFiles(operation: 'list' | 'read', path: string): Promise<unknown> {
+    return this.link.command('workspaceFiles', { operation, path })
+  }
+
+  readonly controls = {
+    state: (afterSeq?: number) =>
+      this.link.command('controlState', afterSeq === undefined ? {} : { afterSeq }) as Promise<
+        import('@agnes/protocol/gen/agnes-v1').SessionControlStateResult
+      >,
+    apply: (
+      action: 'pause' | 'resume' | 'cancel' | 'interrupt' | 'promote' | 'child-stop' | 'child-continue',
+      actor: Actor,
+      admissionId: string,
+      itemId?: string,
+      child?: { id: string; text?: string },
+    ) => {
+      const release = this.beginActivity()
+      return (
+        this.link.command('control', {
+          action,
+          actor,
+          admissionId,
+          ...(itemId ? { itemId } : {}),
+          ...(child ? { childId: child.id, ...(child.text !== undefined ? { text: child.text } : {}) } : {}),
+        }) as Promise<number>
+      )
+        .then((seq) => {
+          if (action === 'resume' || action === 'interrupt') this.queuedInputReservation = this.runSeq + 1
+          return seq
+        })
+        .finally(release)
+    },
+    edit: (
+      itemId: string,
+      content: import('@agnes/protocol').ContentBlock[],
+      actor: Actor,
+      admissionId: string,
+    ) => this.link.command('editQueuedInput', { itemId, content, actor, admissionId }) as Promise<number>,
+  }
+
+  fileUpload(input: import('@agnes/protocol').FileUploadRequest): Promise<unknown> {
+    return this.link.command('fileUpload', input)
+  }
+
+  deliverSystemInput(params: Record<string, unknown>): Promise<number> {
+    return this.link.command('deliverSystemInput', params) as Promise<number>
   }
 
   enqueue(target: 'next-turn' | 'next-step', msg: unknown): Promise<number> {
@@ -126,7 +321,9 @@ export class RemoteSession {
       try {
         if ((await this.link.command('latest', { register: 'op.state', key: 'main' })) == null)
           completed = true
-      } catch {}
+      } catch {
+        // A lost reply leaves the lease for startup recovery.
+      }
       throw error
     } finally {
       o.signal.removeEventListener('abort', onAbort)
@@ -140,11 +337,13 @@ export class RemoteSession {
   async status(): Promise<{
     lastSeq: number
     preset: string | null
+    permission?: string
     parent?: { key: string; boundarySeq: number }
   }> {
     const state = (await this.link.command('ping', {})) as {
       lastSeq?: number
       preset?: string | null
+      permission?: unknown
       parent?: { key?: unknown; boundarySeq?: unknown }
     }
     if (typeof state.lastSeq === 'number' && state.lastSeq > this.lastSeq) this.lastSeq = state.lastSeq
@@ -155,6 +354,7 @@ export class RemoteSession {
     return {
       lastSeq: this.lastSeq,
       preset: typeof state.preset === 'string' ? state.preset : null,
+      ...(typeof state.permission === 'string' ? { permission: state.permission } : {}),
       ...(parent ? { parent } : {}),
     }
   }
@@ -163,61 +363,112 @@ export class RemoteSession {
     return (await this.status()).preset
   }
 
-  async scan(q: unknown): Promise<unknown[]> {
-    const query = q as Record<string, unknown>
-    const rows: unknown[] = []
-    let next: Record<string, unknown> | undefined = query
-    // A page too large for one worker frame comes back in parts, each row exactly once.
-    while (next) {
-      const part = (await this.link.command('scan', next)) as {
-        rows: unknown[]
-        resume?: Record<string, unknown>
-      }
-      // A resume that made no progress would never end.
-      if (part.resume && part.rows.length === 0)
-        throw rpcError('INTERNAL_ERROR', { code: 'SCAN_RESUME_WITHOUT_ROWS', resume: part.resume })
-      rows.push(...part.rows)
-      if (part.resume) this.scanResumes++
-      next = part.resume ? { ...query, ...part.resume } : undefined
+  async systemPromptPreview(): Promise<import('@agnes/protocol').SystemPromptSnapshot> {
+    return (await this.link.command(
+      'systemPrompt.preview',
+      {},
+    )) as import('@agnes/protocol').SystemPromptSnapshot
+  }
+
+  verifyHistory(
+    options: {
+      signal?: AbortSignal
+      onProgress?: (progress: { verifiedSeq: number; lastSeq: number }) => void
+    } = {},
+  ): Promise<number> {
+    return this.link.command(
+      'verifyHistory',
+      {},
+      {
+        ...(options.signal ? { historySignal: options.signal } : {}),
+        ...(options.onProgress ? { onHistoryProgress: options.onProgress } : {}),
+      },
+    ) as Promise<number>
+  }
+
+  integrityStatus(): Promise<import('@agnes/protocol').SessionIntegrityStatus> {
+    return this.link.command('integrityStatus', {}) as Promise<
+      import('@agnes/protocol').SessionIntegrityStatus
+    >
+  }
+
+  async auditHistory(signal?: AbortSignal): Promise<import('@agnes/protocol').SessionIntegrityStatus> {
+    signal?.throwIfAborted()
+    const work = this.link.command('auditHistory', {}, { timeoutMs: 600_000 })
+    let abort: (() => void) | undefined
+    const stopped = new Promise<never>((_, reject) => {
+      abort = () => reject(signal?.reason ?? new Error('audit wait cancelled'))
+      signal?.addEventListener('abort', abort, { once: true })
+      if (signal?.aborted) abort()
+    })
+    try {
+      return (await Promise.race([work, stopped])) as import('@agnes/protocol').SessionIntegrityStatus
+    } finally {
+      if (abort) signal?.removeEventListener('abort', abort)
     }
-    return rows
   }
 
-  exportRaw(input: {
-    seq: number
-    offset: number
-  }): Promise<{ seq: number; base64: string; nextOffset: number | null }> {
-    return this.link.command('exportRaw', input) as Promise<{
-      seq: number
-      base64: string
-      nextOffset: number | null
-    }>
+  async requireVerifiedHistory(): Promise<void> {
+    await this.link.command('requireVerifiedHistory', {}, { timeoutMs: 600_000 })
   }
 
-  /** One window of a user attachment, read in the worker that hosts the session. */
-  attachmentRead(input: {
-    seq: number
-    kind: 'image' | 'file'
-    index: number
-    offset: number
-    length: number
-    thumbnail?: boolean
-  }): Promise<{ mimeType: string; totalBytes: number; base64: string; sha256?: string }> {
-    return this.link.command('attachmentRead', input) as Promise<{
-      mimeType: string
-      totalBytes: number
-      base64: string
-      sha256?: string
-    }>
+  async scan(q: unknown): Promise<EventEnvelope[]> {
+    const query = q as Record<string, unknown>
+    try {
+      return (await this.link.command('scan', query)) as EventEnvelope[]
+    } catch (error) {
+      if ((error as { data?: { code?: string } } | null)?.data?.code !== 'SCAN_PAGE_TOO_LARGE') throw error
+      const { fromSeq, toSeq } = query
+      if (
+        typeof fromSeq !== 'number' ||
+        typeof toSeq !== 'number' ||
+        !Number.isSafeInteger(fromSeq) ||
+        !Number.isSafeInteger(toSeq) ||
+        fromSeq >= toSeq
+      )
+        throw error
+      // Keep the caller's complete page and order; only the private worker reads are split.
+      const mid = fromSeq + Math.floor((toSeq - fromSeq) / 2)
+      const ranges = [
+        { fromSeq, toSeq: mid },
+        { fromSeq: mid + 1, toSeq },
+      ]
+      if (query.order === 'desc') ranges.reverse()
+      const firstQuery = { ...query, ...ranges[0] }
+      const first = await this.scan(firstQuery)
+      const limit = typeof query.limit === 'number' ? query.limit : Infinity
+      if (first.length >= limit) return first.slice(0, limit)
+      const restQuery = {
+        ...query,
+        ...ranges[1],
+        ...(Number.isFinite(limit) ? { limit: limit - first.length } : {}),
+      }
+      const rest = await this.scan(restQuery)
+      return [...first, ...rest]
+    }
   }
 
-  /** Settles once the worker has verified every stored row of the session. */
-  verifyHistory(): Promise<unknown> {
-    return this.link.command('verifyHistory', {})
+  approvalGrants(): Promise<import('@agnes/protocol').ApprovalGrantSessionResult> {
+    return this.link.command('approvalGrants', {}) as Promise<
+      import('@agnes/protocol').ApprovalGrantSessionResult
+    >
   }
-
+  revokeApprovalGrant(
+    grantId: string,
+    revokedAt: string,
+  ): Promise<import('@agnes/protocol').SessionApprovalGrant | null> {
+    return this.link.command('revokeApprovalGrant', { grantId, revokedAt }) as Promise<
+      import('@agnes/protocol').SessionApprovalGrant | null
+    >
+  }
+  toolCatalog(): Promise<import('@agnes/protocol').SessionToolsResult> {
+    return this.link.command('toolCatalog', {}) as Promise<import('@agnes/protocol').SessionToolsResult>
+  }
   readToolDetailPage(input: ToolDetailRead): Promise<ToolDetailReadResult> {
     return this.link.command('readToolDetail', input) as Promise<ToolDetailReadResult>
+  }
+  readDeliverablesPage(input: DeliverablesRead): Promise<DeliverablesReadResult> {
+    return this.link.command('readDeliverables', input) as Promise<DeliverablesReadResult>
   }
 
   /**
@@ -263,6 +514,16 @@ export class RemoteSession {
     return result.effectiveFromSeq
   }
 
+  /** The worker holds the session and its ledger; a refused request comes back as the public rejection. */
+  async setToolFilter(filter: unknown): Promise<{ seq: number; filter: SessionToolFilter }> {
+    const result = (await this.link.command('setToolFilter', { filter })) as {
+      effectiveFromSeq: number
+      filter: SessionToolFilter
+    }
+    this.lastSeq = Math.max(this.lastSeq, result.effectiveFromSeq)
+    return { seq: result.effectiveFromSeq, filter: result.filter }
+  }
+
   async setModel(sel: unknown): Promise<number> {
     const result = (await this.link.command('setModel', { sel })) as { effectiveFromSeq: number }
     this.lastSeq = Math.max(this.lastSeq, result.effectiveFromSeq)
@@ -293,7 +554,9 @@ export class RemoteSession {
         if ((await this.link.command('latest', { register: 'op.state', key: 'main' })) == null) {
           released = true
         }
-      } catch {}
+      } catch {
+        // A lost reply leaves the lease for startup recovery.
+      }
       if (released) {
         this.manualTurnReserved = false
         this.onTurnBoundary?.()
@@ -302,11 +565,14 @@ export class RemoteSession {
     }
   }
 
-  /** Named to match core `HostSession.resumeApproval`'s job, not its name: the worker-side command
-   *  handler (worker/commands.ts) is the piece that actually calls `resumeApproval` - this method is
-   *  the daemon-internal `RemoteSession`'s own name for reaching it over the wire. */
-  decideApproval(p: unknown): Promise<{ seq: number }> {
-    return this.link.command('decideApproval', p as Record<string, unknown>) as Promise<{ seq: number }>
+  decideApproval(p: unknown): Promise<import('@agnes/protocol').DecisionCommandReceipt> {
+    return this.link.command('decideApproval', p as Record<string, unknown>) as Promise<
+      import('@agnes/protocol').DecisionCommandReceipt
+    >
+  }
+
+  listDecisions(): Promise<import('@agnes/protocol').DecisionSnapshot[]> {
+    return this.link.command('listDecisions', {}) as Promise<import('@agnes/protocol').DecisionSnapshot[]>
   }
 
   /** Identity resolution belongs to the worker's assembled Host, not the kernel-less supervisor. */

@@ -1,0 +1,125 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { canonicalJson } from '@agnes/core-common/request/hash'
+import type { Event } from '@agnes/core-common/types'
+import { checkRelations } from '@agnes/core-ledger/log/relations'
+import { ChunkedMap } from '@agnes/core-ledger/reduce/chunked-map'
+import { foldEvents, initialState, reduce } from '@agnes/core-ledger/reduce/reducer'
+import type { LedgerState } from '@agnes/core-ledger/reduce/state'
+import { StateTracker } from '@agnes/core-ledger/reduce/tracker'
+import { encodeLedgerState } from '@agnes/core-ledger/testkit/encode-ledger-state'
+import { describe, expect, it } from 'vitest'
+import { TRANSITION_SCENARIOS } from '../testkit/record-transitions.js'
+import { goldenLedger, toolHeavyLedger } from '../testkit/tool-heavy-ledger.js'
+
+const encode = (state: LedgerState) => canonicalJson(encodeLedgerState(state))
+
+/** Every table of a state by name, registers included. */
+const tables = (s: LedgerState): Map<string, unknown> =>
+  new Map<string, unknown>([
+    ...Object.entries(s.registers).map(([k, v]) => [`registers.${k}`, v] as [string, unknown]),
+    ...Object.entries(s).filter(
+      ([k]) =>
+        k !== 'registers' &&
+        k !== 'session' &&
+        typeof s[k as keyof LedgerState] === 'object' &&
+        s[k as keyof LedgerState] !== null,
+    ),
+  ])
+
+const crashDir = fileURLToPath(new URL('../fixtures/crash/', import.meta.url))
+const ledgers: [string, () => Iterable<Event>][] = [
+  ...TRANSITION_SCENARIOS.map(
+    (name) => [`golden ${name}`, () => goldenLedger(name)] as [string, () => Iterable<Event>],
+  ),
+  ...readdirSync(crashDir)
+    .filter((name) => name.endsWith('.jsonl'))
+    .map(
+      (name) =>
+        [
+          `crash ${name}`,
+          () =>
+            readFileSync(`${crashDir}${name}`, 'utf8')
+              .trim()
+              .split('\n')
+              .map((line) => JSON.parse(line) as Event),
+        ] as [string, () => Iterable<Event>],
+    ),
+  ['300 tool calls', () => toolHeavyLedger({ calls: 300 })],
+]
+
+describe('a fold step never changes the state it was given', () => {
+  it.each(ledgers)(
+    '%s',
+    (_name, rows) => {
+      let prev = initialState()
+      for (const row of rows()) {
+        const before = encode(prev)
+        const was = tables(prev)
+        const next = reduce(prev, row)
+        expect(encode(prev), `row ${row.seq} (${row.type})`).toBe(before)
+        // A table is either shared untouched or replaced by a copy; which one, the encoding above
+        // already proves safe. The tool-call table stays chunked whatever the row.
+        for (const [name, table] of tables(prev))
+          expect(table, `${name} at row ${row.seq}`).toBe(was.get(name))
+        expect(next.toolCalls).toBeInstanceOf(ChunkedMap)
+        prev = next
+      }
+    },
+    60_000,
+  )
+
+  it('starts and forks with empty decision registers and chunked tool-call tables', () => {
+    expect(initialState().toolCalls).toBeInstanceOf(ChunkedMap)
+    expect(initialState().registers.decisionStates.size).toBe(0)
+    const state = foldEvents(toolHeavyLedger({ calls: 30 }))
+    const before = encode(state)
+    const [first] = toolHeavyLedger({ calls: 1 })
+    const forked = reduce(state, {
+      ...(first as Event),
+      seq: state.lastSeq + 1,
+      data: {
+        key: 'child',
+        parent: { key: 'k', boundarySeq: state.lastSeq },
+        resolvedProfileHash: null,
+        preset: 'standard',
+        agnesVersion: '0.0.1',
+      },
+    } as Event)
+    expect(forked.toolCalls).toBeInstanceOf(ChunkedMap)
+    expect(forked.toolCalls.size).toBe(0)
+    expect(forked.registers.decisionStates.size).toBe(0)
+    expect(state.registers.decisionStates.size).toBeGreaterThan(0)
+    expect(state.toolCalls.size).toBe(30)
+    expect(encode(state)).toBe(before)
+  })
+})
+
+describe('the relation check simulates a batch without touching the live state', () => {
+  it('leaves the tracker state as it was, whether the batch passes or is refused', () => {
+    const tracker = new StateTracker()
+    const all = [...toolHeavyLedger({ calls: 1001 })]
+    const boundary = all.findIndex((row, index) => index > all.length / 2 && row.type === 'turn/start')
+    expect(boundary).toBeGreaterThan(0)
+    const head = all.slice(0, boundary)
+    const rest = all.slice(boundary)
+    tracker.apply(head)
+    const state = tracker.state
+    const before = encode(state)
+    // The next rows as the append path would check them: a turn boundary, a step with its call, its
+    // result and its settled effects.
+    checkRelations(rest.slice(0, 60), state)
+    expect(tracker.state).toBe(state)
+    expect(encode(state)).toBe(before)
+    const orphan = {
+      ...(rest.find((row) => row.type === 'tool/result') as Event),
+      seq: undefined,
+      data: { toolUseId: 'never-called', content: [], isError: false },
+      sourceEventSeqs: undefined,
+    }
+    expect(() => checkRelations([...rest.slice(0, 20), orphan as never], state)).toThrow(
+      /E_RELATION|tool\/result/,
+    )
+    expect(encode(state)).toBe(before)
+  })
+})

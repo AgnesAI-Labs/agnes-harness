@@ -1,0 +1,53 @@
+@layer app {
+  .application-work-actions {
+    display: flex;
+    flex-wrap: wrap;
+    overflow-x: auto;
+    gap: 6px;
+    padding: 4px 0 8px;
+    box-sizing: border-box;
+  }
+  .application-panel {
+    padding: 16px;
+  }
+  .application-panel article {
+    border-bottom: 1px solid var(--agnes-line-primary);
+    padding: 12px 0;
+  }
+  .application-panel pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 240px;
+    overflow: auto;
+  }
+  .process-identity:has(.application-attribution) {
+    flex-wrap: wrap;
+  }
+  .application-attribution {
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-surface);
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 999px;
+    font-weight: normal;
+  }
+  .application-work-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 8px;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-surface);
+  }
+  .application-composer-context {
+    padding: 8px 12px 0;
+  }
+}

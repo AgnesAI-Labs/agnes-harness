@@ -1,6 +1,6 @@
 {
   "name": "@agnes/skill-helper",
-  "version": "0.1.1",
+  "version": "0.3.2",
   "description": "Controlled Skill import and creation for Agnes Harness",
   "type": "module",
   "license": "MIT",
@@ -18,11 +18,39 @@
     "plugins": [
       {
         "export": "skillHelper",
+        "apiRange": "^5.0.0",
         "id": "ext:skill-helper/main",
         "inject": [
-          "extension"
-        ]
+          "tools"
+        ],
+        "metadata": {
+          "displayName": "Skills helper",
+          "summary": "Helps create and import reusable Skills through reviewed requests.",
+          "description": "Helps create and import reusable Skills through reviewed requests.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "技能助手",
+              "summary": "通过审核后的请求帮助创建和导入可复用技能。",
+              "description": "通过审核后的请求帮助创建和导入可复用技能。"
+            }
+          }
+        }
       }
+    ],
+    "metadata": {
+      "displayName": "Skills helper",
+      "summary": "Helps create and import reusable Skills through reviewed requests.",
+      "description": "Helps create and import reusable Skills through reviewed requests.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "技能助手",
+          "summary": "通过审核后的请求帮助创建和导入可复用技能。",
+          "description": "通过审核后的请求帮助创建和导入可复用技能。"
+        }
+      }
+    },
+    "provides": [
+      "tool"
     ]
   }
 }

@@ -1,5 +1,19 @@
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import {
+  agnesHome,
+  type CompositionPatch,
+  compositionPreset,
+  compositionSurfaceAllowed,
+  HostError,
+  initializeHome,
+  resolveComposition,
+} from '@agnes/host'
 import { createWebServer, DEFAULT_WEB_PORT, type WebServer } from '@agnes/web/server'
+import { parseArgs } from '../src/args.js'
+import { resolveDoctorProfile } from '../src/commands/doctor-profile.js'
+import { firstRunText, startupFailure } from '../src/commands/first-run-locales.js'
 import { ensureLocalBackend, type LocalBackend } from './backend.js'
+import { createDaemonLink, type DaemonLink } from './daemon-link.js'
 import { localOAuthAdmin } from './oauth-admin.js'
 import { localPackageAdmin } from './package-admin.js'
 import { localResourceAdmin } from './resource-admin.js'
@@ -17,6 +31,8 @@ export type WebCommandIO = {
   createServer?: typeof createWebServer
   ensureBackend?: typeof ensureLocalBackend
   signals?: NodeJS.EventEmitter
+  /** Embedding/test seam; production resolves the same profile as daemon boot. */
+  composition?: CompositionPatch
 }
 
 export type WebCommandOptions = {
@@ -87,6 +103,31 @@ function exactOrigin(port: number): string {
   return `http://127.0.0.1:${port}`
 }
 
+/** Loopback readiness for `agh web` / `agh start`. The listener exists only after the daemon is up. */
+export function handleLaunchHealth(request: IncomingMessage, response: ServerResponse): boolean {
+  let pathname = ''
+  try {
+    pathname = new URL(request.url ?? '/', 'http://127.0.0.1').pathname
+  } catch {
+    return false
+  }
+  if (pathname !== '/healthz') return false
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    response.writeHead(405, { Allow: 'GET, HEAD', 'Cache-Control': 'no-store' })
+    response.end()
+    return true
+  }
+  const body = JSON.stringify({ status: 'ok' })
+  response.writeHead(200, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': String(Buffer.byteLength(body)),
+    'Cache-Control': 'no-store',
+  })
+  if (request.method === 'HEAD') response.end()
+  else response.end(body)
+  return true
+}
+
 function waitForSignal(signals: NodeJS.EventEmitter): Promise<NodeJS.Signals> {
   return new Promise((resolve) => {
     const onSignal = (signal: NodeJS.Signals): void => {
@@ -119,7 +160,43 @@ export async function runWebCommand(
   const resources = io.resources ?? resolveLaunchResources()
   const ensure = io.ensureBackend ?? ensureLocalBackend
   const makeServer = io.createServer ?? createWebServer
+  const env = io.env ?? process.env
+  const home = parsed.home ?? agnesHome(env)
+  try {
+    if (!io.ensureBackend) initializeHome(home, parsed.profile ?? 'local-dev')
+  } catch (error) {
+    const message = startupFailure(error, env)
+    if (message)
+      throw Object.assign(new Error(message, { cause: error }), { code: (error as { code?: string }).code })
+    throw error
+  }
+  const composition =
+    io.composition ??
+    (!io.ensureBackend
+      ? await (async () => {
+          const deps = {
+            env,
+            home: parsed.home ?? agnesHome(env),
+            cwd,
+            agnesVersion: '0.0.0',
+            log: () => undefined,
+          }
+          const args = parseArgs(['config', 'dump', ...(parsed.profile ? ['--profile', parsed.profile] : [])])
+          let profile: Awaited<ReturnType<typeof resolveDoctorProfile>>
+          try {
+            profile = await resolveDoctorProfile(deps, args)
+          } catch (error) {
+            // Match the launcher's existing package-lock recovery path; malformed profiles still refuse.
+            if (!(error instanceof HostError && error.code === 'E_LOCK_MISMATCH')) throw error
+            profile = await resolveDoctorProfile({ ...deps, lock: { packages: {} } }, args)
+          }
+          return resolveComposition(profile, { preset: compositionPreset(profile, profile.presets.default) })
+            .selection
+        })()
+      : undefined)
+  const exposeWeb = compositionSurfaceAllowed(composition, 'web')
   let backend: LocalBackend | undefined
+  let link: DaemonLink | undefined
   let web: WebServer | undefined
   let admin: ReturnType<typeof localPackageAdmin> | undefined
   let resourceAdmin: ReturnType<typeof localResourceAdmin> | undefined
@@ -136,26 +213,65 @@ export async function runWebCommand(
       webOrigin: origin,
       webPort: port,
       resources,
+      ...(exposeWeb ? {} : { exposeWeb: false }),
     })
+    if (!exposeWeb) {
+      ;(io.write ?? ((text: string) => process.stdout.write(text)))(
+        'Daemon ready; Web UI disabled by composition.\n',
+      )
+      await waitForSignal(io.signals ?? process)
+      return
+    }
     if (!backend.web)
       throw new Error('local daemon Web credential is unavailable; stop/restart the local daemon')
-    const adminHandler = localPackageAdmin(backend, origin)
-    const resourceAdminHandler = localResourceAdmin(backend, origin)
+    // The daemon may be restarted or replaced while this launcher keeps serving. The link re-attaches
+    // to the same scope and exact Web origin and replaces the private clients below; it never starts
+    // a daemon and refuses any other one.
+    const attached = backend
+    const daemonLink = createDaemonLink(attached, (signal, readinessTimeoutMs) =>
+      ensure({
+        ...(io.env ? { env: io.env } : {}),
+        cwd,
+        ...(parsed.home ? { home: parsed.home } : {}),
+        ...(parsed.profile ? { profile: parsed.profile } : {}),
+        ...(parsed.dataDir ? { dataDir: parsed.dataDir } : {}),
+        workspace: cwd,
+        webOrigin: origin,
+        webPort: port,
+        resources,
+        attach: { scope: attached.scope },
+        signal,
+        readinessTimeoutMs,
+      }),
+    )
+    link = daemonLink
+    const linked: LocalBackend = { ...attached, link: daemonLink }
+    const adminHandler = localPackageAdmin(linked, origin)
+    const resourceAdminHandler = localResourceAdmin(linked, origin)
     // The OAuth callback endpoints need the launcher's OWN externally-reachable origin (they build
     // an absolute `redirect_uri` a real, external authorization server redirects a browser back to,
     // not a same-process relative URL), which is exactly `origin` - the same value already handed
     // to createWebServer below.
-    const oauthAdminHandler = localOAuthAdmin(backend, new URL(origin))
+    const oauthAdminHandler = localOAuthAdmin(linked, new URL(origin))
     admin = adminHandler
     resourceAdmin = resourceAdminHandler
     oauthAdmin = oauthAdminHandler
-    // Reads the Surface mount table over the same private daemon connection package-admin and
-    // resource-admin use: once now, and again only when a proxied Surface cannot be reached -- see
-    // packages/cli/launch/surface-mounts.ts.
-    mounts = await fetchSurfaceMountProxy(backend)
+    // A persistent private daemon connection receives lifecycle invalidations and re-reads the
+    // authoritative mount table; healthy idle launchers do not poll.
+    // This creates the feed immediately; the first mount RPC runs in the background.
+    mounts = await fetchSurfaceMountProxy(linked)
     web = await makeServer({
       root: resources.webRoot,
+      pluginStreams: adminHandler.pluginStreams,
+      historySearch: adminHandler.historySearch,
+      triggers: adminHandler.triggers,
+      fileUpload: adminHandler.fileUpload,
+      planCommand: adminHandler.planCommand,
       wsUrl: backend.web.url,
+      refreshWsUrl: async () => {
+        await daemonLink.refresh()
+        return daemonLink.backend().web?.url ?? attached.web?.url ?? ''
+      },
       port,
       origin,
       ...(io.developmentReload === undefined ? {} : { developmentReload: io.developmentReload }),
@@ -163,7 +279,7 @@ export async function runWebCommand(
       // `/skins/*` bytes come from the daemon over the launcher's private connection: this process
       // does not own the package store, so it never resolves a skin path itself (design §22).
       skinAsset: (pathname: string) => adminHandler.readSkin(pathname),
-      // `/plugins/*` client module bytes follow the same rule (design WC3): the daemon resolves
+      // `/plugins/*` client module bytes follow the same rule: the daemon resolves
       // from its immutable snapshots over the same private connection; the launcher never touches
       // the package store itself.
       clientModuleAsset: (pathname: string) => adminHandler.readClientModule(pathname),
@@ -173,22 +289,33 @@ export async function runWebCommand(
       // `handleAdmin` is already a fallback chain (package admin, then resource admin); the OAuth
       // callback endpoints join the same chain as a third link rather than server.ts gaining a
       // dedicated `oauthHandler` field, since server.ts's own contract only ever calls one
-      // `handleAdmin` hook and nothing about that contract is OAuth-specific here - see the Task 4
-      // report for why this reads cleaner than threading a second, parallel hook through server.ts.
+      // `handleAdmin` hook and nothing about that contract is OAuth-specific here.
       handleAdmin: async (request, response) =>
         // The generic admin router claims unknown `/api/*` requests. Check the fixed browser
         // service BFF first so its POST endpoint cannot be turned into an admin 405.
+        handleLaunchHealth(request, response) ||
         (await adminHandler.handleClientService(request, response)) ||
+        (await adminHandler.handleClientExamples(request, response)) ||
         (await adminHandler.handleClientEffect(request, response)) ||
         (await adminHandler.handle(request, response)) ||
         (await resourceAdminHandler.handle(request, response)) ||
         oauthAdminHandler.handle(request, response),
       mountProxy: mounts.proxy,
+      surfaceMountsReady: mounts.ready,
     })
     io.onWebServerReady?.(web)
-    ;(io.write ?? ((text: string) => process.stdout.write(text)))(`${web.url}/\n`)
+    const report = io.ensureBackend ? { status: 'ok' as const } : await adminHandler.doctor()
+    ;(io.write ?? ((text: string) => process.stdout.write(text)))(
+      `${web.url}/\n${firstRunText(env, 'home')}: ${backend.scope.home}\n${firstRunText(env, 'profile')}: ${backend.scope.profile}\n${firstRunText(env, 'doctor')}: ${firstRunText(env, report.status)} — agh doctor\n`,
+    )
     await waitForSignal(io.signals ?? process)
+  } catch (error) {
+    const message = startupFailure(error, env)
+    if (message) throw Object.assign(new Error(message), { code: (error as { code: string }).code })
+    throw error
   } finally {
+    // First, so a reconnect in flight is cancelled and cannot hold shutdown open.
+    await link?.close().catch(() => undefined)
     await web?.close().catch(() => undefined)
     await admin?.close().catch(() => undefined)
     await resourceAdmin?.close().catch(() => undefined)

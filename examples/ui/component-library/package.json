@@ -1,0 +1,45 @@
+{
+  "name": "@example/ui-components",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:example/component-library",
+        "export": "main",
+        "apiRange": "^5.0.0",
+        "runtime": "in-process",
+        "capabilities": {
+          "ui": true
+        },
+        "inject": [
+          "tools",
+          "providers"
+        ]
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:example/component-library",
+        "path": "./src/agnes.client.json"
+      }
+    ],
+    "provides": [
+      "ui",
+      "loop",
+      "tool"
+    ]
+  },
+  "peerDependencies": {
+    "@agnes/extension-api": "*",
+    "@agnes/plugin-runtime": "*",
+    "@sinclair/typebox": "0.34.33"
+  },
+  "devDependencies": {
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/plugin-runtime": "workspace:*",
+    "@sinclair/typebox": "0.34.33"
+  }
+}

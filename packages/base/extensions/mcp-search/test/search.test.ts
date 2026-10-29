@@ -1,11 +1,17 @@
-import { DatabaseSync } from 'node:sqlite'
-import { checkToolDef } from '@agnes/extension-api'
+import { presetDefaults, ToolRegistry } from '@agnes/core'
+import { actor, fakeProvider, openSession, readTool, textTurn, toolTurn } from '@agnes/core/testkit'
+import { checkToolDef, type ToolDef } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
-import { SqliteToolIndex, type ToolIndex } from '../../../src/mcp/index-table.js'
+import { MetadataToolIndex, type ToolIndex } from '../../../src/mcp/index-table.js'
 import { MemFts } from '../../../testkit/mem-fts.js'
-import { MemTable } from '../../../testkit/mem-table.js'
+import { MemNamespace } from '../../../testkit/seam-init.js'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
+import { pluginCreatorTools } from '../../plugin-creator/src/index.js'
+import { createWebSearchTool } from '../../tools-web/src/search.js'
 import { toolDescribeTool, toolSearchTool } from '../src/search-tools.js'
+
+const unknownAvailability =
+  '\nAvailability unknown (request snapshot unavailable); use the schemas supplied in the current model request and refresh discovery after the next model request.'
 
 const rows = [
   {
@@ -31,6 +37,13 @@ describe('MemFts', () => {
       { name: 'a_tool', description: 'same', schema: '{}' },
     ])
     expect(index.search('same', 2).map((hit) => hit.name)).toEqual(['a_tool', 'z_tool'])
+    index.upsert([
+      { name: 'ui_render', description: 'Render a bounded surface', schema: '{}' },
+      { name: 'render_card', description: 'ui_render render detail card UI', schema: '{}' },
+    ])
+    expect(index.search('UI_RENDER render detail card UI', 1).map((hit) => hit.name)).toEqual(['ui_render'])
+    expect(index.search('render detail card', 2).map((hit) => hit.name)).toEqual(['render_card', 'ui_render'])
+    expect(index.search('ui_render extra terms', 0)).toEqual([])
   })
 
   it('replaces rows by exact name and does not match an empty query', () => {
@@ -42,52 +55,33 @@ describe('MemFts', () => {
   })
 })
 
-describe('SqliteToolIndex', () => {
-  it('uses FTS5 trigram and the planned bm25 weights when the table adapter permits it', () => {
-    const calls: Array<{ kind: string; sql: string; params?: readonly unknown[] }> = []
-    const table = {
-      name: 'tool_index',
-      exec: (sql: string) => calls.push({ kind: 'exec', sql }),
-      run: (sql: string, params?: readonly unknown[]) => {
-        calls.push({ kind: 'run', sql, ...(params ? { params } : {}) })
-        return { changes: 1 }
-      },
-      all: <T>(sql: string, params?: readonly unknown[]) => {
-        calls.push({ kind: 'all', sql, ...(params ? { params } : {}) })
-        return [{ name: 'mcp_gh_list_prs', score: -1 }] as T[]
-      },
-      get: <T>() => undefined as T | undefined,
-      transaction: <T>(fn: () => T) => fn(),
-    }
-    const index = new SqliteToolIndex(table)
-    expect(index.mode).toBe('fts5')
-    expect(calls[0]?.sql).toContain("USING fts5(name, description, schema, tokenize='trigram')")
-    expect(index.search('pull "open"', 4)).toEqual([{ name: 'mcp_gh_list_prs', score: -1 }])
-    expect(calls.at(-1)).toMatchObject({
-      kind: 'all',
-      sql: expect.stringContaining('bm25(tool_index, 3.0, 1.0, 0.5)'),
-      params: ['"pull ""open"""', 4],
-    })
-  })
-
-  it('falls back to a persistent ordinary table when virtual tables are denied', () => {
-    const table = new MemTable('tool_index')
-    const one = new SqliteToolIndex(table)
-    expect(one.mode).toBe('portable')
-    one.upsert(rows)
-    one.upsert([{ name: 'mcp_gh_merge', description: 'updated', schema: '{"n":1}' }])
-    expect(one.search('pull', 5).map((hit) => hit.name)).toEqual(['mcp_gh_list_prs'])
-    expect(one.get('mcp_gh_merge')).toEqual({
+describe('MetadataToolIndex', () => {
+  it('replaces a row on upsert and ranks with the portable scorer', () => {
+    const index = new MetadataToolIndex(new MemNamespace())
+    index.upsert(rows)
+    index.upsert([{ name: 'mcp_gh_merge', description: 'updated', schema: '{"n":1}' }])
+    expect(index.search('pull', 5).map((hit) => hit.name)).toEqual(['mcp_gh_list_prs'])
+    expect(index.search('销售', 5)).toEqual([{ name: 'mcp_db_query', score: 1 }])
+    expect(index.get('mcp_gh_merge')).toEqual({
       name: 'mcp_gh_merge',
       description: 'updated',
       schema: '{"n":1}',
     })
-    expect(new SqliteToolIndex(table).get('mcp_gh_list_prs')).toEqual(rows[0])
+  })
+
+  it('ranks an exact tool-name match above a row that only repeats the terms in its description', () => {
+    const index = new MetadataToolIndex(new MemNamespace())
+    index.upsert([
+      { name: 'ui_render', description: 'Render a bounded surface', schema: '{}' },
+      { name: 'render_card', description: 'ui_render render detail card UI', schema: '{}' },
+    ])
+    expect(index.search('UI_RENDER render detail card UI', 1).map((hit) => hit.name)).toEqual(['ui_render'])
+    // Without an exact name term the description-heavy row wins on plain substring score.
+    expect(index.search('render detail card', 2).map((hit) => hit.name)).toEqual(['render_card', 'ui_render'])
   })
 
   it('delete removes exactly the named rows and leaves the rest untouched', () => {
-    const table = new MemTable('tool_index')
-    const index = new SqliteToolIndex(table)
+    const index = new MetadataToolIndex(new MemNamespace())
     index.upsert(rows)
     index.delete(['mcp_gh_list_prs'])
     expect(index.get('mcp_gh_list_prs')).toBeUndefined()
@@ -95,45 +89,6 @@ describe('SqliteToolIndex', () => {
     // A name the index never held is a no-op, not an error.
     index.delete(['never-existed'])
     expect(index.get('mcp_gh_merge')).toEqual(rows[1])
-  })
-
-  it('executes real FTS5 trigram/BM25 queries and preserves two-character Chinese search', () => {
-    const db = new DatabaseSync(':memory:')
-    const table = {
-      name: 'tool_index',
-      exec: (sql: string) => db.exec(sql),
-      run: (sql: string, params: readonly unknown[] = []) => ({
-        changes: Number(db.prepare(sql).run(...(params as never[])).changes),
-      }),
-      all: <T>(sql: string, params: readonly unknown[] = []) =>
-        db.prepare(sql).all(...(params as never[])) as T[],
-      get: <T>(sql: string, params: readonly unknown[] = []) =>
-        db.prepare(sql).get(...(params as never[])) as T | undefined,
-      transaction: <T>(fn: () => T) => {
-        db.exec('BEGIN')
-        try {
-          const value = fn()
-          db.exec('COMMIT')
-          return value
-        } catch (error) {
-          db.exec('ROLLBACK')
-          throw error
-        }
-      },
-    }
-    try {
-      const index = new SqliteToolIndex(table)
-      expect(index.mode).toBe('fts5')
-      index.upsert([...rows, { name: 'mcp_pull_exact', description: 'miscellaneous action', schema: '{}' }])
-      expect(index.search('pull', 5).map((hit) => hit.name)).toEqual([
-        'mcp_pull_exact',
-        'mcp_gh_merge',
-        'mcp_gh_list_prs',
-      ])
-      expect(index.search('销售', 5)).toEqual([{ name: 'mcp_db_query', score: 1 }])
-    } finally {
-      db.close()
-    }
   })
 })
 
@@ -153,7 +108,9 @@ describe('tool_search / tool_describe', () => {
     expect(describe.meta).toMatchObject({ deferLoading: false, replay: 'safe', isReadOnly: true })
 
     const result = await search.execute({ query: 'pull', limit: 1 }, fakeToolContext())
-    expect(result.content).toEqual([{ type: 'text', text: 'mcp_gh_list_prs — list pull requests 拉取请求' }])
+    expect(result.content).toEqual([
+      { type: 'text', text: 'mcp_gh_list_prs — list pull requests 拉取请求' + unknownAvailability },
+    ])
     expect((await search.execute({ query: 'absent' }, fakeToolContext())).content).toEqual([
       { type: 'text', text: 'no matching tools' },
     ])
@@ -188,6 +145,25 @@ describe('tool_search / tool_describe', () => {
     expect((result.content[0] as { text: string }).text).toContain('Call skill_read with this exact name')
     expect((result.content[0] as { text: string }).text).not.toContain('disabled-skill')
     expect(index.get('skill/user/teacher')).toBeUndefined()
+  })
+
+  it('omits a user-only skill from tool_search', async () => {
+    const search = toolSearchTool(populated(), {
+      runInWorkspace,
+      list: () => [
+        {
+          resourceId: 'skill/user/people',
+          name: 'people-only',
+          description: 'Teach Chinese.',
+          revision: 'c'.repeat(64),
+          sourceIdentity: { scope: 'user', rootKey: 'user-agnes', sourceId: 'people' },
+          actual: 'ready',
+        },
+      ],
+      invocation: () => ({ modelInvocable: false, userInvocable: true, disabled: false }),
+    })
+    const result = await search.execute({ query: 'my skills' }, fakeToolContext())
+    expect((result.content[0] as { text: string }).text).not.toContain('people-only')
   })
 
   it('fails closed before Skill discovery when the workspace invocation is missing', async () => {
@@ -324,14 +300,16 @@ describe('tool_search / tool_describe', () => {
       expect(list).toHaveBeenCalledTimes(1)
     }
     const noSkill = await search.execute({ query: 'weather skill', limit: 1 }, fakeToolContext())
-    expect(noSkill.content).toEqual([{ type: 'text', text: 'mcp_weather — weather skill' }])
+    expect(noSkill.content).toEqual([
+      { type: 'text', text: 'mcp_weather — weather skill' + unknownAvailability },
+    ])
     const ctx = fakeToolContext()
     ctx.tools.list = () => [{ ...toolSearchTool(index), name: 'web-access' }]
     const collision = await search.execute({ query: 'web-access', limit: 1 }, ctx)
     expect(collision.content[0]).toMatchObject({ text: expect.stringMatching(/^Skill web-access —/u) })
     const both = await search.execute({ query: 'web-access', limit: 2 }, ctx)
     const text = (both.content[0] as { text: string }).text
-    expect(text).toContain('Already provided in this session')
+    expect(text).toContain('Availability unknown')
     expect(text.match(/^Skill /gmu)).toHaveLength(1)
     expect(text).toContain('Skill web-access —')
   })
@@ -377,11 +355,128 @@ describe('tool_search / tool_describe', () => {
       content: [{ text: expect.stringContaining('parameters:') }],
     })
     expect(await toolSearchTool(index).execute({ query: eager.name }, ctx)).toMatchObject({
-      content: [{ text: expect.stringContaining('Already provided in this session') }],
+      content: [{ text: expect.stringContaining('Availability unknown') }],
     })
+    const web = createWebSearchTool()
+    const deferred = {
+      ...eager,
+      name: 'search_panel',
+      description: 'A search tool panel',
+      meta: { ...eager.meta, deferLoading: true },
+    }
+    ctx.tools.list = () => [web, deferred]
+    // Indexed duplicates must not consume slots or override the visible catalog's description/rank.
+    index.upsert(
+      [web, deferred].map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        schema: JSON.stringify(tool.parameters),
+      })),
+    )
+    for (const query of ['public web', 'search tool', 'queries']) {
+      const result = await toolSearchTool(index).execute({ query, limit: 2 }, ctx)
+      const text = (result.content[0] as { text: string }).text
+      expect(text).toMatch(query === 'search tool' ? /^search_panel —/ : /^web_search —/)
+      expect(text.match(/web_search —/g)).toHaveLength(1)
+      expect(text).toContain('Availability unknown')
+      expect(await toolSearchTool(new MemFts()).execute({ query, limit: 2 }, ctx)).toEqual(result)
+      if (query === 'search tool') expect(text).toContain('search_panel —')
+    }
+    // Matching metadata in a stale indexed duplicate must not revive a hidden description.
+    index.upsert([{ name: web.name, description: 'retired-provider-marker', schema: '{}' }])
+    expect(await toolSearchTool(index).execute({ query: 'retired-provider-marker' }, ctx)).toMatchObject({
+      content: [{ text: 'no matching tools' }],
+    })
+    index.upsert([{ name: 'z_docs', description: 'retired-provider-marker', schema: '{}' }])
+    expect(
+      await toolSearchTool(index).execute({ query: 'retired-provider-marker', limit: 1 }, ctx),
+    ).toMatchObject({ content: [{ text: 'z_docs — retired-provider-marker' + unknownAvailability }] })
     ctx.tools.list = () => []
     expect(await toolDescribeTool(index).execute({ name: eager.name }, ctx)).toMatchObject({ isError: true })
   })
+
+  it.each([
+    ['read', {}, 'offered', undefined],
+    ['later', { deferLoading: true }, 'deferred', undefined],
+    ['run_code', {}, 'unavailable', 'mode'],
+    ['compact', {}, 'unavailable', 'policy'],
+    ['internal', { modelVisible: false }, 'unavailable', 'policy'],
+    ['camera', { requiresImageInput: true }, 'unavailable', 'model_capability'],
+  ] as const)(
+    'reports request availability for %s and agrees with Core refusal',
+    async (name, meta, status, reason) => {
+      const index = new MemFts()
+      const target = { ...(readTool() as ToolDef), name, meta: { ...(readTool() as ToolDef).meta, ...meta } }
+      index.upsert([{ name, description: target.description, schema: '{}' }])
+      const registry = new ToolRegistry()
+      const states: unknown[] = []
+      const search = toolSearchTool(index)
+      registry.add(
+        {
+          ...search,
+          async execute(
+            args: Parameters<typeof search.execute>[0],
+            ctx: Parameters<typeof search.execute>[1],
+          ) {
+            states.push(ctx.tools.availability?.(name))
+            return search.execute(args, ctx)
+          },
+        },
+        { source: 'test', trust: 'builtin' },
+      )
+      registry.add(toolDescribeTool(index), { source: 'test', trust: 'builtin' })
+      registry.add(target, { source: 'test', trust: 'builtin' })
+      const provider = fakeProvider([
+        toolTurn('tool_search', { query: name }),
+        toolTurn(name, {}),
+        ...(status === 'deferred'
+          ? [
+              toolTurn('tool_describe', { name }),
+              toolTurn('tool_search', { query: name }),
+              toolTurn(name, {}),
+            ]
+          : []),
+        textTurn('done'),
+      ])
+      const preset = presetDefaults()
+      preset.compaction.agentCallable = false
+      const { session } = await openSession({ provider, registry, preset })
+      try {
+        await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'discover' }] })
+        await session.run({ until: 'turn-end', signal: new AbortController().signal })
+        expect(states[0]).toMatchObject({ status, ...(reason ? { reason } : {}) })
+        const results = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
+        const message = (states[0] as { message: string }).message
+        expect(results[0]?.data).toMatchObject({
+          content: [{ type: 'text', text: expect.stringContaining(message) }],
+        })
+        expect(provider.requests[0]?.tools.some((tool) => tool.name === name)).toBe(status === 'offered')
+        if (status === 'deferred') {
+          expect(states[1]).toMatchObject({ status: 'offered' })
+          expect(provider.requests[3]?.tools.some((tool) => tool.name === name)).toBe(true)
+          expect(results[3]?.data).toMatchObject({
+            content: [{ text: expect.stringContaining('Offered in this request; call it directly') }],
+          })
+          expect(results[4]?.data).not.toMatchObject({ isError: true })
+        }
+        if (status === 'offered') expect(results[1]?.data).not.toMatchObject({ isError: true })
+        else
+          expect(results[1]?.data).toMatchObject({
+            code: 'TOOL_NOT_DISCLOSED',
+            // A deferred tool the model calls directly is loaded by that refusal, as describe would.
+            content: [
+              {
+                text: expect.stringContaining(
+                  status === 'deferred' ? 'now loaded for the next request' : message,
+                ),
+              },
+            ],
+          })
+      } finally {
+        await session.close()
+      }
+    },
+  )
 
   it('describes an exact tool, caps schema bytes, and errors on unknown names', async () => {
     const index = populated()
@@ -397,5 +492,145 @@ describe('tool_search / tool_describe', () => {
       content: [{ text: 'unknown tool: nope' }],
       isError: true,
     })
+  })
+
+  it('finds deferred plugin tools outside the MCP index and loads only the described available tool', async () => {
+    const ctx = fakeToolContext()
+    const template = toolSearchTool(populated())
+    const tool = {
+      ...template,
+      name: 'ui_render',
+      description: 'Render a review surface',
+      meta: { ...template.meta, deferLoading: true },
+    }
+    const disclosed: string[] = []
+    ctx.tools.list = () => [tool]
+    ctx.tools.disclose = async (name) => {
+      disclosed.push(name)
+    }
+    const index = new MemFts()
+    expect(await toolSearchTool(index).execute({ query: 'review' }, ctx)).toMatchObject({
+      content: [{ text: expect.stringContaining('ui_render — Render a review surface') }],
+    })
+    ctx.tools.list = () => [tool, { ...tool, name: 'render_card', description: 'render detail card UI' }]
+    const search = toolSearchTool(index, {
+      runInWorkspace,
+      list: () => [
+        {
+          resourceId: 'skill/user/ui-review',
+          name: 'ui-review',
+          description: 'ui_render render detail card UI',
+          revision: 'a'.repeat(64),
+          sourceIdentity: { scope: 'user', rootKey: 'user-agnes', sourceId: 'ui-review' },
+          actual: 'ready',
+        },
+      ],
+    })
+    const query = 'ui_render render detail card UI'
+    expect(await search.execute({ query, limit: 1 }, ctx)).toMatchObject({
+      content: [{ text: expect.stringMatching(/^ui_render —/) }],
+    })
+    expect(await search.execute({ query: query + ' Skill', limit: 2 }, ctx)).toMatchObject({
+      content: [{ text: expect.stringMatching(/^ui_render —[\s\S]*Skill ui-review/) }],
+    })
+    expect(disclosed).toEqual([])
+    expect(await toolDescribeTool(index).execute({ name: 'ui_render' }, ctx)).toMatchObject({
+      content: [{ text: expect.stringContaining('parameters:') }],
+    })
+    expect(disclosed).toEqual(['ui_render'])
+    ctx.tools.list = () => []
+    expect(await toolSearchTool(index).execute({ query: 'review' }, ctx)).toMatchObject({
+      content: [{ text: 'no matching tools' }],
+    })
+    expect(await toolDescribeTool(index).execute({ name: 'ui_render' }, ctx)).toMatchObject({ isError: true })
+    expect(disclosed).toEqual(['ui_render'])
+  })
+
+  it('keeps plugin and Skill authoring absent from ordinary requests, then offers described tools', async () => {
+    const registry = new ToolRegistry()
+    const index = new MemFts()
+    const add = (tool: ToolDef) =>
+      registry.add(tool, {
+        source: 'test',
+        trust: 'builtin',
+        packageIdentity: 'test-authoring',
+        packageVersion: '1.0.0',
+      })
+    add(toolSearchTool(index))
+    add(toolDescribeTool(index))
+    for (const tool of pluginCreatorTools) add(tool)
+    const helper = await import(
+      new URL('../../../../package-manager/bundled-plugins/plugin-helper/index.mjs', import.meta.url).href
+    )
+    const skills = await import(
+      new URL('../../../../package-manager/bundled-plugins/skill-helper/index.mjs', import.meta.url).href
+    )
+    helper.pluginHelper.apply({ tools: { register: add } })
+    skills.skillHelper.apply({ tools: { register: add } })
+    const authoring = registry
+      .snapshot(0)
+      .defs.filter((tool) => tool.name.startsWith('plugin_') || tool.name.startsWith('skill_helper_'))
+    const provider = fakeProvider([
+      toolTurn('tool_search', { query: 'plugin_creator_guide' }),
+      ...authoring.map((tool) => toolTurn('tool_describe', { name: tool.name })),
+      textTurn('ready'),
+    ])
+    const preset = presetDefaults()
+    preset.compaction.agentCallable = false
+    const { session } = await openSession({ provider, registry, preset })
+    try {
+      await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'build a plugin' }] })
+      await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      const first = provider.requests[0]!
+      expect(first.tools.map((tool) => tool.name)).toEqual(
+        expect.arrayContaining(['tool_search', 'tool_describe']),
+      )
+      for (const tool of authoring) {
+        expect(first.tools.map((t) => t.name)).not.toContain(tool.name)
+        expect(provider.requests.at(-1)!.tools.map((t) => t.name)).toContain(tool.name)
+      }
+      expect(authoring.length).toBeGreaterThanOrEqual(14)
+      const results = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
+      expect(results[0]?.data).toMatchObject({
+        content: [{ text: expect.stringContaining('plugin_creator_guide') }],
+      })
+      expect(results.every((row) => !(row.data as { isError?: boolean }).isError)).toBe(true)
+    } finally {
+      await session.close()
+    }
+  })
+
+  it('finds deferred MCP tools by name, description and server name', async () => {
+    const ctx = fakeToolContext()
+    const template = toolSearchTool(populated())
+    const remote = (name: string, description: string, group: string) => ({
+      ...template,
+      name,
+      description,
+      meta: { ...template.meta, deferLoading: true, discoveryGroup: group },
+    })
+    ctx.tools.list = () => [
+      remote('mcp__tracker__create_issue', 'Create an issue', 'MCP server Acme Tracker'),
+      remote('mcp__tracker__close_issue', 'Close an issue', 'MCP server Acme Tracker'),
+      remote('mcp__wiki__edit_page', 'Edit a page', 'MCP server Team Wiki'),
+    ]
+    const names = async (query: string) =>
+      (
+        (await toolSearchTool(new MemFts()).execute({ query, limit: 5 }, ctx)).content[0] as { text: string }
+      ).text
+        .split('\n')
+        .filter((line) => line.includes(' — '))
+        .map((line) => line.split(' — ')[0])
+    expect(await names('create_issue')).toEqual(['mcp__tracker__create_issue'])
+    expect(await names('edit page')).toEqual(['mcp__wiki__edit_page'])
+    expect(await names('Acme Tracker')).toEqual(['mcp__tracker__close_issue', 'mcp__tracker__create_issue'])
+    // The label only helps ranking; the model still sees the tool's own description.
+    expect(
+      (
+        (await toolSearchTool(new MemFts()).execute({ query: 'Team Wiki' }, ctx)).content[0] as {
+          text: string
+        }
+      ).text,
+    ).toBe('mcp__wiki__edit_page — Edit a page' + unknownAvailability)
   })
 })

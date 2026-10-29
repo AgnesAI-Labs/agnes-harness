@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { CHANNEL_ERRORS, ChannelError, isChannelError } from '../src/index.js'
 
 describe('ChannelError', () => {
-  it('has the seven-code closed set', () => {
+  it('has the eight-code closed set', () => {
     expect(CHANNEL_ERRORS).toEqual([
       'E_MANIFEST_INVALID',
       'E_CONFIG_INVALID',
@@ -11,6 +11,7 @@ describe('ChannelError', () => {
       'E_DAEMON_UNAVAILABLE',
       'E_CAPABILITY_MISSING',
       'E_NOT_IMPLEMENTED',
+      'E_STATE_STALE',
     ])
   })
 

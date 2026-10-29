@@ -1,41 +1,9 @@
 import type { ContentBlock } from '../gen/ts/session-v1.js'
-import { attachmentForm } from './attachment-blocks.js'
 import { META_KEY } from './constants.js'
+import { storedAttachment } from './stored-attachments.js'
+import { validateStoredAttachment } from './validate.js'
 
 const PREFIX = 'agnes-attachment:'
-const LINK = 'artifact://'
-
-/**
- * ACP has no attachment reference, so one travels as a link to the stored object that carries the
- * block itself in its `_meta`; the receiving end checks it like any reference a client sends.
- */
-function referenceLink(block: ContentBlock): unknown {
-  const ref = block as {
-    type: 'image' | 'file'
-    mimeType: string
-    name?: string
-    attachment: { sha256: string; bytes: number }
-  }
-  return {
-    type: 'resource_link',
-    uri: `${LINK}${ref.attachment.sha256}`,
-    name: ref.name ?? 'image',
-    mimeType: ref.mimeType,
-    size: ref.attachment.bytes,
-    _meta: { [META_KEY]: { attachment: block } },
-  }
-}
-
-/** The reference block a link from `referenceLink` carries, when it is one and names its own link. */
-function linkedReference(block: { type?: string; uri?: unknown; _meta?: unknown }): ContentBlock | undefined {
-  if (block.type !== 'resource_link') return undefined
-  const carried = (block._meta as Record<string, { attachment?: unknown } | undefined> | null | undefined)?.[
-    META_KEY
-  ]?.attachment
-  if (attachmentForm(carried) !== 'reference') return undefined
-  const ref = carried as { attachment: { sha256: string } }
-  return block.uri === `${LINK}${ref.attachment.sha256}` ? (carried as ContentBlock) : undefined
-}
 
 function textData(text: string): string {
   const bytes = new TextEncoder().encode(text)
@@ -48,10 +16,15 @@ function textData(text: string): string {
 /** File originals use ACP's existing embedded blob resource, never a private ACP schema fork. */
 export function toAcpPrompt(content: readonly ContentBlock[]): unknown[] {
   return content.map((block) =>
-    attachmentForm(block) === 'reference'
-      ? referenceLink(block)
-      : // A lean file (bytes left in storage) has nothing to embed and passes through as metadata.
-        block.type === 'file' && 'data' in block
+    storedAttachment(block)
+      ? {
+          type: 'resource_link',
+          uri: block.uri,
+          name: block.name,
+          mimeType: block.mimeType,
+          _meta: { [META_KEY]: { attachment: block } },
+        }
+      : block.type === 'file'
         ? {
             type: 'resource',
             resource: {
@@ -69,12 +42,16 @@ export function fromAcpPrompt(content: readonly unknown[]): ContentBlock[] {
   return content.map((value) => {
     const block = value as {
       type?: string
-      uri?: unknown
-      _meta?: unknown
+      uri?: string
+      _meta?: Record<string, { attachment?: unknown }>
       resource?: { uri?: string; mimeType?: string | null; blob?: string; text?: string }
     }
-    const reference = linkedReference(block)
-    if (reference) return reference
+    const reference = block.type === 'resource_link' ? block._meta?.[META_KEY]?.attachment : undefined
+    if (reference !== undefined) {
+      validateStoredAttachment(reference)
+      if (reference.uri !== block.uri) throw new Error('Invalid attachment resource.')
+      return reference
+    }
     if (block.type !== 'resource') return value as ContentBlock
     const { uri, blob, mimeType, text } = block.resource ?? {}
     if (typeof uri !== 'string' || (typeof blob !== 'string' && typeof text !== 'string'))

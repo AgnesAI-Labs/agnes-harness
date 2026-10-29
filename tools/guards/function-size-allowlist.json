@@ -1,0 +1,17 @@
+{
+  "packages/core/src/execution/turn/compaction.ts#<module>/FunctionDeclaration:runCompaction": 375,
+  "packages/core/src/execution/turn/inference.ts#<module>/FunctionDeclaration:runInference": 520,
+  "packages/core/src/execution/turn/parked.ts#<module>/FunctionDeclaration:continueParked": 240,
+  "packages/core/src/execution/turn/policy-review.ts#<module>/FunctionDeclaration:decideToolPolicy": 220,
+  "packages/core/src/execution/turn/resume.ts#<module>/FunctionDeclaration:resumeSession": 270,
+  "packages/core/src/execution/turn/tools.ts#<module>/FunctionDeclaration:approveAndExecute": 1260,
+  "packages/core/src/execution/turn/tools.ts#<module>/FunctionDeclaration:runToolsPhase": 229,
+  "packages/host/src/runtime/generation/host.ts#<module>/FunctionDeclaration:createRuntimeGenerationHost": 1149,
+  "packages/host/src/runtime/generation/migration-state.ts#<module>/FunctionDeclaration:assertMigrationSettled": 237,
+  "packages/daemon/src/supervisor/mcp-manage-requests.ts#<module>/FunctionDeclaration:createMcpManageRequests": 379,
+  "packages/daemon/src/supervisor/mcp-manage-requests.ts#<module>/FunctionDeclaration:createMcpManageRequests/Block:0/ReturnStatement:0/ArrowFunction:0": 356,
+  "packages/daemon/src/supervisor/plugin-manage-requests.ts#<module>/FunctionDeclaration:createPluginManageRequests": 325,
+  "packages/daemon/src/supervisor/plugin-manage-requests.ts#<module>/FunctionDeclaration:createPluginManageRequests/Block:0/ReturnStatement:0/ArrowFunction:0": 313,
+  "packages/daemon/src/supervisor/worker-pool.ts#<module>/ClassDeclaration:WorkerPool/MethodDeclaration:startWorker": 293,
+  "packages/daemon/src/supervisor/worker-pool.ts#<module>/ClassDeclaration:WorkerPool/MethodDeclaration:startWorker/Block:0/ExpressionStatement:4/BinaryExpression:0/CallExpression:0/PropertyAccessExpression:finally/NewExpression:0/ArrowFunction:0": 226
+}

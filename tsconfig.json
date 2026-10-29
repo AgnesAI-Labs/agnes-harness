@@ -35,15 +35,6 @@
       "path": "packages/protocol-validation"
     },
     {
-      "path": "packages/mhs"
-    },
-    {
-      "path": "examples/mars-world"
-    },
-    {
-      "path": "packages/package-admin-client-node"
-    },
-    {
       "path": "packages/error-sanitization"
     },
     {
@@ -51,9 +42,6 @@
     },
     {
       "path": "packages/web-server"
-    },
-    {
-      "path": "packages/web-admin-frame"
     },
     {
       "path": "packages/resource-control-contracts"
@@ -68,16 +56,10 @@
       "path": "packages/resource-control-web"
     },
     {
-      "path": "packages/resource-control-client-node"
-    },
-    {
       "path": "packages/resource-control-cli"
     },
     {
       "path": "packages/cli-tui"
-    },
-    {
-      "path": "packages/cli-launch"
     },
     {
       "path": "packages/resource-control-worker"
@@ -119,9 +101,6 @@
       "path": "packages/bridges"
     },
     {
-      "path": "packages/mcp-transport-health"
-    },
-    {
       "path": "packages/base"
     },
     {
@@ -141,6 +120,216 @@
     },
     {
       "path": "packages/sandbox-remote"
+    },
+    {
+      "path": "packages/model-adapters"
+    },
+    {
+      "path": "packages/loop-default"
+    },
+    {
+      "path": "packages/loop-jev"
+    },
+    {
+      "path": "packages/history-index"
+    },
+    {
+      "path": "packages/core/tsconfig.test.json"
+    },
+    {
+      "path": "packages/core/tsconfig.testkit.json"
+    },
+    {
+      "path": "packages/host/tsconfig.test.json"
+    },
+    {
+      "path": "packages/host/tsconfig.testkit.json"
+    },
+    {
+      "path": "packages/daemon/tsconfig.test.json"
+    },
+    {
+      "path": "packages/web/tsconfig.test.json"
+    },
+    {
+      "path": "packages/base/tsconfig.test.json"
+    },
+    {
+      "path": "packages/base/tsconfig.testkit.json"
+    },
+    {
+      "path": "packages/cli/tsconfig.test.json"
+    },
+    {
+      "path": "packages/code/tsconfig.test.json"
+    },
+    {
+      "path": "packages/plugin-runtime/tsconfig.test.json"
+    },
+    {
+      "path": "packages/plugin-runtime/tsconfig.testkit.json"
+    },
+    {
+      "path": "packages/worker-runtime/tsconfig.test.json"
+    },
+    {
+      "path": "packages/core-common"
+    },
+    {
+      "path": "packages/core-common/tsconfig.test.json"
+    },
+    {
+      "path": "packages/core-child-control"
+    },
+    {
+      "path": "packages/core-child-control/tsconfig.test.json"
+    },
+    {
+      "path": "packages/core-ledger"
+    },
+    {
+      "path": "packages/core-ledger/tsconfig.test.json"
+    },
+    {
+      "path": "packages/core-effects"
+    },
+    {
+      "path": "packages/core-effects/tsconfig.test.json"
+    },
+    {
+      "path": "packages/host-common"
+    },
+    {
+      "path": "packages/host-common/tsconfig.test.json"
+    },
+    {
+      "path": "packages/host-infrastructure"
+    },
+    {
+      "path": "packages/host-infrastructure/tsconfig.test.json"
+    },
+    {
+      "path": "packages/host-computer-use"
+    },
+    {
+      "path": "packages/host-computer-use/tsconfig.test.json"
+    },
+    {
+      "path": "packages/host-artifacts"
+    },
+    {
+      "path": "packages/host-artifacts/tsconfig.test.json"
+    },
+    {
+      "path": "packages/host-extensions"
+    },
+    {
+      "path": "packages/host-extensions/tsconfig.test.json"
+    },
+    {
+      "path": "packages/host-providers"
+    },
+    {
+      "path": "packages/host-providers/tsconfig.test.json"
+    },
+    {
+      "path": "packages/daemon-foundation"
+    },
+    {
+      "path": "packages/daemon-foundation/tsconfig.test.json"
+    },
+    {
+      "path": "packages/daemon-surfaces"
+    },
+    {
+      "path": "packages/daemon-surfaces/tsconfig.test.json"
+    },
+    {
+      "path": "packages/daemon-admin"
+    },
+    {
+      "path": "packages/daemon-admin/tsconfig.test.json"
+    },
+    {
+      "path": "packages/daemon-rpc"
+    },
+    {
+      "path": "packages/daemon-rpc/tsconfig.test.json"
+    },
+    {
+      "path": "packages/web-foundation"
+    },
+    {
+      "path": "packages/web-foundation/tsconfig.test.json"
+    },
+    {
+      "path": "packages/web-foundation/tsconfig.testkit.json"
+    },
+    {
+      "path": "packages/web-admin"
+    },
+    {
+      "path": "packages/web-admin/tsconfig.test.json"
+    },
+    {
+      "path": "packages/web-conversation"
+    },
+    {
+      "path": "packages/web-conversation/tsconfig.test.json"
+    },
+    {
+      "path": "packages/observability"
+    },
+    {
+      "path": "packages/observability/tsconfig.test.json"
+    },
+    {
+      "path": "packages/memory-file"
+    },
+    {
+      "path": "packages/memory-file/tsconfig.test.json"
+    },
+    {
+      "path": "packages/intelligent-ui-contract"
+    },
+    {
+      "path": "packages/intelligent-ui-contract/tsconfig.test.json"
+    },
+    {
+      "path": "packages/git-worktree-contract"
+    },
+    {
+      "path": "packages/core-ledger/tsconfig.testkit.json"
+    },
+    {
+      "path": "packages/plugin-streams"
+    },
+    {
+      "path": "packages/batch"
+    },
+    {
+      "path": "packages/batch/tsconfig.test.json"
+    },
+    {
+      "path": "packages/loop-jev/tsconfig.test.json"
+    },
+    {
+      "path": "packages/package-manager/bundled-plugins/conversation-ui/tsconfig.sources.json"
+    },
+    {
+      "path": "packages/package-manager/bundled-plugins/navigation-ui/tsconfig.sources.json"
+    },
+    {
+      "path": "packages/package-manager/bundled-plugins/goal-ui/tsconfig.sources.json"
+    },
+    {
+      "path": "packages/package-manager/bundled-plugins/interaction-ui/tsconfig.sources.json"
+    },
+    {
+      "path": "packages/package-manager/bundled-plugins/browser/tsconfig.sources.json"
+    },
+    {
+      "path": "packages/distribution"
     }
   ]
 }

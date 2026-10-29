@@ -1,0 +1,572 @@
+@layer app {
+  /* Conversation stream on Ant Design X. The components bring structure and state glyphs; these
+   rules place them in the AGH layout and map their surfaces to the theme tokens. */
+
+  /* The transcript region owns scrolling and the reading column; the list only stacks rows. */
+  [data-agnes-conversation-messages] .ant-bubble-list,
+  [data-agnes-conversation-messages] .ant-bubble-list-scroll-box {
+    max-height: none;
+    overflow: visible;
+  }
+  [data-agnes-conversation-messages] .ant-bubble-list-scroll-content {
+    padding-inline: 0;
+  }
+  /* The list's bottom sentinel only serves its own auto-scroll, which is off here. */
+  [data-agnes-conversation-messages] .ant-bubble-list-scroll-box > :not(.ant-bubble-list-scroll-content) {
+    display: none;
+  }
+  [data-agnes-conversation-messages] .ant-bubble.agh-bubble {
+    padding: 0;
+  }
+  /* A turn row, a loose node row and the assistant side carry no bubble: full width, no chrome. */
+  .agh-bubble-row > .ant-bubble-body,
+  .agh-bubble-assistant > .ant-bubble-body {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .agh-bubble-row > .ant-bubble-body > .ant-bubble-content,
+  .agh-bubble-assistant > .ant-bubble-body > .ant-bubble-content {
+    width: 100%;
+    color: inherit;
+    font-size: inherit;
+    line-height: inherit;
+  }
+
+  /* What the reader said: one soft bubble on the right. The article inside is plain content. */
+  .ant-bubble.agh-bubble-user {
+    max-width: min(calc(var(--chat-content-width) * 0.702), 82%);
+    margin: 0 0 0 auto;
+  }
+  .agh-bubble-user > .ant-bubble-body > .ant-bubble-content {
+    min-height: 0;
+    padding: 0.625rem var(--s16);
+    border-radius: var(--radius-md);
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-user-bubble, var(--agnes-bg-card));
+    font-size: var(--font-size-body);
+    line-height: 1.6;
+  }
+  .agh-bubble-user .timeline-node.user {
+    width: auto;
+    max-width: none;
+    margin: 0;
+  }
+  .agh-bubble-user .user .node-body,
+  .agh-bubble-user .node-body {
+    margin-top: 0;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    line-height: inherit;
+  }
+  .agh-bubble-user .user-message-images:last-child,
+  .agh-bubble-user .user-message-files:last-child {
+    margin-bottom: 0;
+  }
+
+  /* The assistant answers without a bubble. Identity sits in the header, actions in the footer. */
+  .agh-bubble-assistant > .ant-bubble-body > .ant-bubble-header {
+    margin: 0;
+  }
+  .agh-bubble-assistant > .ant-bubble-body > .ant-bubble-footer {
+    margin: 0;
+  }
+  .turn-final .assistant .node-body {
+    line-height: 1.6;
+  }
+
+  /* The turn's process is a quiet timeline: prose the model wrote and one-line activity rows.
+   Nothing in it is boxed; only a card that needs the reader (approval, deliverable) is a card. */
+  .turn-process > .agh-disclosure-summary {
+    gap: var(--s4);
+    min-height: 1.75rem;
+    margin-inline-start: -0.375rem;
+    padding: 0 0.375rem;
+    border-radius: var(--radius-xs);
+    color: var(--agnes-text-tertiary);
+  }
+  .turn-process > .agh-disclosure-content[hidden] {
+    display: none;
+  }
+  .process-chevron {
+    flex: 0 0 auto;
+    width: 0.875rem;
+    height: 0.875rem;
+    color: currentColor;
+    transform: rotate(-90deg);
+  }
+  .turn-process[data-open="true"] .process-chevron {
+    transform: rotate(0deg);
+  }
+  .turn-status {
+    color: var(--agnes-text-tertiary);
+  }
+  .conversation-turn[data-verification] :is(.turn-status, .process-label) {
+    color: var(--agnes-status-warning-text);
+  }
+  .turn-node-flow {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .turn-node-flow > [hidden] {
+    display: none;
+  }
+  .turn-narration {
+    margin-block: var(--s4) var(--s8);
+  }
+  .turn-narration .assistant .node-body,
+  .turn-final .assistant .node-body {
+    margin-top: 0;
+    line-height: 1.6;
+  }
+  .turn-block {
+    margin-block: var(--s4);
+  }
+  .turn-activity + .turn-narration,
+  .turn-step + .turn-narration {
+    margin-top: var(--s8);
+  }
+  .turn-activity + .turn-final,
+  .turn-step + .turn-final,
+  .turn-narration + .turn-final,
+  .turn-block + .turn-final {
+    margin-top: var(--s8);
+  }
+  /* Steps of an opened group hang from one thin rail under the row that summarises them. */
+  .turn-step[data-grouped="true"] {
+    margin-inline-start: 0.4375rem;
+    padding-inline-start: var(--s12);
+    border-inline-start: 1px solid var(--agnes-line-primary);
+  }
+
+  /* One activity row: glyph · verb · target. The whole line is the button. */
+  .agh-btn.activity-row {
+    width: fit-content;
+    max-width: 100%;
+    min-width: 0;
+    height: auto;
+    min-height: 1.75rem;
+    display: block;
+    margin-inline-start: -0.375rem;
+    padding: 0.125rem 0.375rem;
+    border: 0;
+    border-radius: var(--radius-xs);
+    color: var(--agnes-text-secondary);
+    background: transparent;
+    box-shadow: none;
+    font-size: var(--font-size-sm);
+    font-weight: 400;
+    line-height: 1.5rem;
+    text-align: start;
+  }
+  .agh-btn.activity-row:hover:not(:disabled) {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-hover);
+  }
+  /* A quiet line gets no click ripple. */
+  .activity-row .ant-wave {
+    display: none;
+  }
+  .activity-row .activity-line {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+  .activity-row .activity-glyph {
+    flex: 0 0 auto;
+    width: 1rem;
+    height: 1rem;
+    display: grid;
+    place-items: center;
+    color: var(--agnes-text-tertiary);
+  }
+  .activity-row .activity-glyph .icon {
+    width: 0.875rem;
+    height: 0.875rem;
+    color: inherit;
+  }
+  .activity-row .activity-dot,
+  .activity-row .activity-note,
+  .activity-row .activity-chevron {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+  }
+  /* The verb gives way only after the target has: a long summary still ends in an ellipsis. */
+  .activity-row .activity-verb {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .activity-row .activity-verb .tool-name,
+  .activity-row .activity-verb .tool-status {
+    color: inherit;
+    font: inherit;
+  }
+  .activity-row .activity-dot {
+    color: var(--agnes-text-tertiary);
+  }
+  .activity-row .activity-target {
+    flex: 0 100 auto;
+    min-width: 0;
+    display: block;
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agh-btn.activity-row:hover:not(:disabled) .activity-target {
+    color: var(--agnes-text-secondary);
+  }
+  .activity-row .activity-target[data-mono="true"] {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: var(--font-size-xs);
+  }
+  .activity-row .approval-summary {
+    margin: 0;
+    color: inherit;
+    font-size: inherit;
+    white-space: nowrap;
+  }
+  /* A group's glyph is its arrow: it points right while closed and down once its steps show. */
+  .turn-activity-toggle .activity-glyph .icon {
+    transition: transform var(--transition-fast);
+  }
+  .turn-activity-toggle[aria-expanded="true"] .activity-glyph .icon {
+    transform: rotate(90deg);
+  }
+  /* Success is silent. A failure carries a small red mark and a few words; waiting is amber. */
+  .activity-row .activity-note {
+    gap: 0.375rem;
+    margin-inline-start: var(--s4);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+  .activity-row .activity-note::before {
+    content: "";
+    width: 0.375rem;
+    height: 0.375rem;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .activity-row[data-state="failed"] .activity-note {
+    color: var(--agnes-status-danger-text);
+  }
+  .activity-row[data-state="attention"] .activity-note,
+  .activity-row[data-state="attention"] .activity-glyph {
+    color: var(--agnes-status-warning-text);
+  }
+  /* Work in progress: a soft light passes over the words. Still, when motion is reduced. */
+  @keyframes activity-shimmer {
+    from {
+      background-position: 100% 0;
+    }
+    to {
+      background-position: -100% 0;
+    }
+  }
+  .activity-row[data-state="running"] :is(.activity-verb, .activity-target),
+  .turn-process[data-active="true"] .process-label,
+  .turn-status[data-active="true"] {
+    color: transparent;
+    background:
+      linear-gradient(
+        90deg,
+        var(--agnes-text-tertiary) 35%,
+        var(--agnes-text-primary) 50%,
+        var(--agnes-text-tertiary) 65%
+      )
+      0 0 / 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    animation: activity-shimmer 2.2s linear infinite;
+  }
+  .turn-status[data-active="true"] {
+    width: fit-content;
+  }
+
+  /* A step's detail opens in place: what it was given and what came back, scrollable. */
+  .turn-step .tool-detail-text,
+  .turn-attention .tool-detail-text {
+    margin: var(--s4) 0 var(--s8) 1.375rem;
+    border: 0;
+    border-radius: var(--radius-md);
+  }
+  .timeline-node.tool :is([data-testid="tool-fact-chain"], [data-testid="tool-review-decision"]) {
+    margin: 0 0 var(--s8) 1.375rem;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .timeline-node.tool:not([data-expanded="true"])
+    :is([data-testid="tool-fact-chain"], [data-testid="tool-review-decision"]) {
+    display: none;
+  }
+  .timeline-node.tool [data-testid="tool-fact-chain"]:is(:hover, :focus-visible) {
+    color: var(--agnes-text-primary);
+  }
+  .timeline-node.tool .agh-btn[data-testid="tool-fact-chain"] {
+    height: auto;
+    padding: 0;
+  }
+  .timeline-node.approval {
+    margin: 0;
+  }
+  .turn-node-flow > .turn-attention {
+    margin: 0;
+  }
+  .turn-attention:has(.conversation-native-card, [data-slot-node]) {
+    margin-block: var(--s8);
+  }
+  .approval-detail[hidden] {
+    display: none;
+  }
+
+  /* Pages a web search found: site, linked title, two lines of the page. */
+  .web-sources {
+    display: grid;
+    gap: var(--s12);
+    max-height: 20rem;
+    margin: var(--s4) 0 var(--s8) 1.375rem;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+  }
+  .web-source {
+    display: grid;
+    gap: 0.125rem;
+    min-width: 0;
+    max-width: 44rem;
+  }
+  .web-source-site {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+  }
+  .web-source-title {
+    width: fit-content;
+    max-width: 100%;
+    overflow: hidden;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    line-height: 1.5;
+    text-decoration: underline dotted var(--agnes-line-emphasis);
+    text-underline-offset: 0.2em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .web-source-title:hover {
+    text-decoration-style: solid;
+  }
+  .web-source-snippet {
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+
+  /* What the reader wrote can be copied back; the action waits for the pointer or the keyboard. */
+  .agh-bubble-user > .ant-bubble-body > .ant-bubble-footer {
+    margin: var(--s4) 0 0;
+  }
+  .user-message-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .user-message-actions .turn-action {
+    width: 1.75rem;
+    min-width: 1.75rem;
+    height: 1.75rem;
+    min-height: 1.75rem;
+  }
+  @media (hover: hover) and (min-width: 768px) {
+    .user-message-actions {
+      opacity: 0;
+      transition: opacity var(--transition-fast);
+    }
+    .turn-user:hover .user-message-actions,
+    .user-message-actions:focus-within {
+      opacity: 1;
+    }
+  }
+
+  /* Reasoning is a step like any other; its text opens under the row, muted. */
+  .thinking {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .thinking-content {
+    margin: var(--s4) 0 var(--s8) 1.375rem;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+    word-break: break-word;
+  }
+  .thinking-content[hidden] {
+    display: none;
+  }
+
+  /* One action bar under the answer: actions, rating, plugin actions, then the turn's facts. */
+  .turn-footer .ant-actions.turn-actions,
+  .turn-footer .turn-actions .ant-actions-list,
+  .turn-footer .agnes-message-feedback,
+  .turn-footer .agnes-message-feedback > fieldset,
+  .turn-footer .turn-action-slot {
+    display: contents;
+  }
+  .turn-footer .turn-action-slot:empty {
+    display: none;
+  }
+  .turn-footer .feedback-actions > .agh-btn {
+    width: var(--s32);
+    min-width: var(--s32);
+    height: var(--s32);
+    padding: 0.375rem;
+    border-radius: 28px;
+    color: var(--agnes-text-tertiary);
+  }
+  .turn-footer .feedback-actions > .agh-btn .icon {
+    width: 0.9375rem;
+    height: 0.9375rem;
+  }
+  .turn-footer .feedback-actions > .agh-btn[aria-pressed="true"] {
+    color: var(--agnes-text-emphasis);
+    background: var(--agnes-bg-hover);
+  }
+  /* The facts take the rest of the bar and shorten with an ellipsis; they never wrap to a line of their own. */
+  .turn-footer .turn-usage {
+    order: 1;
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .turn-footer .turn-feedback {
+    order: 2;
+  }
+  /* A rating's draft progress, result or failure sits at the right of the bar, after the facts. */
+  .turn-footer .agnes-message-feedback > .feedback-status {
+    order: 2;
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* The copy action already separates what was asked from the reply. */
+  .turn-user:not(:empty) + .turn-response .process-identity {
+    margin-top: var(--s4);
+  }
+  .turn-meta-text {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    white-space: pre;
+  }
+  .turn-meta-facts {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .turn-action[data-copied="true"] {
+    color: var(--agnes-status-success-text);
+  }
+  /* New-session hero: the brand lockup and its one-line promise. */
+  #empty-state .ant-welcome.empty-state-welcome {
+    flex-direction: column;
+    align-items: center;
+    gap: var(--s16);
+    padding: 0;
+    background: transparent;
+  }
+  #empty-state .empty-state-welcome .ant-welcome-content-wrapper {
+    align-items: center;
+    gap: var(--s12);
+  }
+  #empty-state .empty-state-welcome .ant-welcome-title {
+    margin: 0;
+  }
+  #empty-state .empty-state-welcome .ant-welcome-description {
+    color: var(--agnes-text-secondary);
+  }
+  /* The hero is a horizontal lockup: mark and wordmark on one line, centred as a unit, both in the
+   brand blue. The mark is sized to the wordmark's line so the two read as one logo. */
+  .empty-state-lockup {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--s12);
+    max-width: 100%;
+  }
+  .empty-state-lockup .empty-brand-mark {
+    flex: none;
+    width: 1.875rem;
+    height: 1.875rem;
+    margin: 0;
+  }
+  .empty-state-heading {
+    display: block;
+    min-width: 0;
+    color: var(--agnes-brand-mark);
+    font-size: var(--font-size-title);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-title);
+    white-space: nowrap;
+  }
+  /* Approval: a bordered card, no shadow. The risk line carries the level in colour and words. */
+  [data-agnes-region="approval"] {
+    border-radius: var(--radius-md);
+    box-shadow: none;
+  }
+  #approval [data-risk] .approval-impact {
+    font-weight: 500;
+  }
+  #approval [data-risk="destructive"] .approval-impact {
+    color: var(--agnes-status-danger-text);
+  }
+  #approval [data-risk="always"] .approval-impact,
+  #approval [data-risk="budget"] .approval-impact {
+    color: var(--agnes-status-warning-text);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .activity-row[data-state="running"] :is(.activity-verb, .activity-target),
+    .turn-process[data-active="true"] .process-label,
+    .turn-status[data-active="true"] {
+      color: var(--agnes-text-secondary);
+      background: none;
+      animation: none;
+    }
+  }
+  @media (min-width: 768px) and (max-width: 900px) {
+    body[data-agnes-region="app"] :is(.agh-disclosure-summary, .agh-btn--link) {
+      min-height: var(--control-height);
+    }
+  }
+
+  /* 从提问导航跳过来时，那次提问的气泡短暂高亮。 */
+  .agh-bubble-user > .ant-bubble-body > .ant-bubble-content {
+    transition:
+      background-color 300ms var(--motion-ease-out),
+      box-shadow 300ms var(--motion-ease-out);
+  }
+  .conversation-turn[data-turn-nav-flash] .agh-bubble-user > .ant-bubble-body > .ant-bubble-content,
+  .agh-bubble-user:has(> .ant-bubble-body .timeline-node[data-turn-nav-flash])
+    > .ant-bubble-body
+    > .ant-bubble-content {
+    background: var(--agnes-brand-emphasis-soft);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--agnes-brand-primary) 30%, transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agh-bubble-user > .ant-bubble-body > .ant-bubble-content {
+      transition: none;
+    }
+  }
+}

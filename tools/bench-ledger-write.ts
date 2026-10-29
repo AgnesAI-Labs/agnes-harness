@@ -15,13 +15,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { DatabaseSync } from 'node:sqlite'
+import { defaultIds, openTracked, type StorageAdapter } from '@agnes/core'
+import type { EventInput } from '@agnes/core-common/types'
+import type { HostToolDispatchPort } from '@agnes/core-effects/effects/tool-dispatch'
+import { scanAll } from '@agnes/core-ledger/log/scan-pages'
+import type { CommitTx } from '@agnes/core-ledger/log/storage'
+import { createSqliteStorage } from '@agnes/host'
 import type { ModelRecord } from '@agnes/protocol'
-import type { HostToolDispatchPort } from '../packages/core/src/effects/tool-dispatch.js'
-import { defaultIds, openTracked, type StorageAdapter } from '../packages/core/src/index.js'
-import { scanAll } from '../packages/core/src/log/scan-pages.js'
-import type { CommitTx } from '../packages/core/src/log/storage.js'
 import { ToolRegistry } from '../packages/core/src/registry/tools.js'
-import type { EventInput } from '../packages/core/src/types.js'
 import {
   actor,
   fakeProvider,
@@ -35,7 +36,6 @@ import {
   toolTurn,
   usage,
 } from '../packages/core/testkit/index.js'
-import { createSqliteStorage } from '../packages/host/src/index.js'
 
 const quick = process.argv.includes('--quick')
 const only = process.argv.flatMap((arg, index) =>

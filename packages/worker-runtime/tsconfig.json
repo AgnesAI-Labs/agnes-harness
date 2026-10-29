@@ -5,12 +5,24 @@
     "outDir": "dist"
   },
   "include": ["**/*.ts"],
-  "exclude": ["dist", "node_modules"],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "test",
+    "testkit",
+    "tools",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/test/**",
+    "**/tests/**",
+    "vitest.config.ts"
+  ],
   "references": [
-    { "path": "../error-sanitization" },
-    { "path": "../system-node" },
     {
-      "path": "../../tsconfig.config.json"
+      "path": "../error-sanitization"
+    },
+    {
+      "path": "../system-node"
     },
     {
       "path": "../host"
@@ -29,6 +41,12 @@
     },
     {
       "path": "../package-manager"
+    },
+    {
+      "path": "../observability"
+    },
+    {
+      "path": "../plugin-streams"
     }
   ]
 }

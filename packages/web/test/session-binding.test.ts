@@ -1,6 +1,9 @@
 import type { JsonRpcMessage, JsonRpcRequest, RpcEndpoint } from '@agnes/sdk'
 import { createClient, localAuth, memoryJournal } from '@agnes/sdk'
-import { describe, expect, it } from 'vitest'
+import type { Session } from '@agnes/sdk/browser'
+import { describe, expect, it, vi } from 'vitest'
+import { SessionBindingOwner } from '../src/app/session-owner.js'
+import { ComposerDrafts } from '../src/composer-drafts.js'
 import { bindWebSession, loadWebSession } from '../src/session-binding.js'
 
 type Handler = (request: JsonRpcRequest, push: (message: JsonRpcMessage) => void) => unknown
@@ -71,18 +74,23 @@ const request = {
 
 const initialize = () => ({
   protocolVersion: 1,
-  agentCapabilities: {},
+  agentCapabilities: { _meta: { 'ai.agnes.harness': { sessionOpen: true } } },
   _meta: { agnes: { agnesVersion: '0.0.0-test' } },
 })
 
 describe('Web session permission binding', () => {
-  it('keeps a pre-load pending request alive through the load handoff', async () => {
+  it.each(['load', 'open'] as const)('keeps a pending request alive through the %s handoff', async (mode) => {
     let loadReturned = false
     let resolvePermission: ((outcome: { optionId: string }) => void) | undefined
     const f = endpointFor({
       initialize,
       'session/new': () => ({ sessionId: 'created' }),
-      'session/load': (_request, push) => {
+      [mode === 'load' ? 'session/load' : '_agnes/v1/session.open']: (_request, push) => {
+        push({
+          jsonrpc: '2.0',
+          method: '_agnes/v1/session.loading',
+          params: { sessionId: request.sessionId, phase: 'verifying', verifiedSeq: 1, lastSeq: 2 },
+        })
         push({ jsonrpc: '2.0', id: 'permission-1', method: 'session/request_permission', params: request })
         return {}
       },
@@ -97,7 +105,7 @@ describe('Web session permission binding', () => {
     try {
       await client.initialize()
       const bindingPromise = loadWebSession(
-        client.session.load,
+        client.session[mode],
         request.sessionId,
         async (_incoming, context) => {
           expect(loadReturned).toBe(false)
@@ -219,7 +227,12 @@ describe('Web session permission binding', () => {
       })
       for (let i = 0; i < 20; i++) await Promise.resolve()
       const sent = f.calls.find((message) => !('method' in message) && message.id === 'after-dispose')
-      expect(sent).toMatchObject({ result: { outcome: { outcome: 'selected', optionId: 'reject' } } })
+      expect(sent).toMatchObject({
+        result: {
+          outcome: { outcome: 'cancelled' },
+          _meta: { 'ai.agnes.harness': { reason: 'no-handler' } },
+        },
+      })
     } finally {
       await client.close()
     }
@@ -251,9 +264,119 @@ describe('Web session permission binding', () => {
       })
       for (let i = 0; i < 20; i++) await Promise.resolve()
       const sent = f.calls.find((message) => !('method' in message) && message.id === 'after-failed-load')
-      expect(sent).toMatchObject({ result: { outcome: { outcome: 'selected', optionId: 'reject' } } })
+      expect(sent).toMatchObject({
+        result: {
+          outcome: { outcome: 'cancelled' },
+          _meta: { 'ai.agnes.harness': { reason: 'no-handler' } },
+        },
+      })
     } finally {
       await client.close()
     }
+  })
+})
+
+describe('selected session owner', () => {
+  it('cancels stale opening waits and handlers, keeping the new selection independent', () => {
+    const owner = new SessionBindingOwner()
+    const a = owner.begin('a').binding
+    const signal = owner.loadingSignal(a)
+    const off = vi.fn()
+    owner.loadingPermission(a, off)
+    owner.begin('b')
+    expect(signal.aborted).toBe(true)
+    expect(off).toHaveBeenCalledOnce()
+    expect(owner.targetId).toBe('b')
+    expect(owner.loadingSignal(owner.capture()).aborted).toBe(false)
+    const staleOff = vi.fn()
+    owner.loadingPermission(a, staleOff)
+    expect(staleOff).toHaveBeenCalledOnce()
+  })
+
+  it('keeps A→B→A drafts independent across sessions and profiles, even without browser storage', () => {
+    const drafts = new ComposerDrafts(
+      {
+        getItem: () => {
+          throw new Error('private mode')
+        },
+        setItem: () => {
+          throw new Error('private mode')
+        },
+      },
+      'http://synthetic',
+    )
+    expect(drafts.select('profile', 'a', '')).toBe('')
+    expect(drafts.select('profile', 'b', 'draft A')).toBe('')
+    expect(drafts.select('profile', 'a', 'draft B')).toBe('draft A')
+    expect(drafts.select('other-profile', 'a', 'edited A')).toBe('')
+    expect(drafts.select('profile', 'b', 'other profile draft')).toBe('draft B')
+    expect(drafts.select('profile', 'a', 'edited B')).toBe('edited A')
+  })
+  it('carries a new draft into the session an attachment opens', () => {
+    const storage = new Map<string, string>()
+    const persistent = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        storage.set(key, value)
+      },
+    }
+    const drafts = new ComposerDrafts(persistent, 'http://synthetic')
+    expect(drafts.select('profile', undefined, 'typed before upload')).toBe('')
+    expect(drafts.select('profile', 'uploaded', 'typed before upload', { carry: true })).toBe(
+      'typed before upload',
+    )
+    // A reload builds a new instance: the carried text must be under the opened session's key.
+    expect(new ComposerDrafts(persistent, 'http://synthetic').select('profile', 'uploaded', '')).toBe(
+      'typed before upload',
+    )
+    // 会话间隔离不变：上传前的草稿 key 仍保留它自己的文字。
+    expect(new ComposerDrafts(persistent, 'http://synthetic').select('profile', undefined, '')).toBe(
+      'typed before upload',
+    )
+  })
+  it('keeps the send-time preserve mode from writing the new session key', () => {
+    const drafts = new ComposerDrafts(
+      {
+        getItem: () => null,
+        setItem: () => undefined,
+      },
+      'http://synthetic',
+    )
+    drafts.select('profile', 'sent', 'text being sent')
+    expect(drafts.select('profile', 'opened for send', 'text being sent', { preserve: true })).toBe(
+      'text being sent',
+    )
+    // Preserve keeps the composer text, but the opened session starts from its own empty draft.
+    expect(drafts.read()).toBe('')
+  })
+  it.each(['other-session', 'same-session'])('rejects late load and result after %s switch', async (id) => {
+    const owner = new SessionBindingOwner()
+    const first = owner.capture()
+    const session = { id: 'same-session' } as Session
+    const off = vi.fn()
+    owner.attach(first, { session, offPermission: off })
+    let finish!: (value: string) => void
+    const result = new Promise<string>((resolve) => {
+      finish = resolve
+    })
+    const apply = vi.fn()
+    const work = result.then((value) => {
+      if (owner.isCurrent(first, session)) apply(value)
+    })
+    const next = owner.begin()
+    expect(next.previous.session).toBe(session)
+    expect(off).toHaveBeenCalledOnce()
+    const selected = { id } as Session
+    owner.attach(next.binding, { session: selected })
+    finish('obsolete result')
+    await work
+    expect(apply).not.toHaveBeenCalled()
+    const staleOff = vi.fn()
+    expect(owner.attach(first, { session, offPermission: staleOff })).toBe(false)
+    expect(staleOff).toHaveBeenCalledOnce()
+    expect(owner.session).toBe(selected)
+    // An old cleanup cannot release the replacement binding.
+    expect(owner.release(first)).toEqual({})
+    expect(owner.session).toBe(selected)
   })
 })

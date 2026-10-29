@@ -6,6 +6,7 @@ import type {
   HarnessMeta,
   SessionBudgetResult,
   UITimeline,
+  UiReadResult,
 } from '@agnes/protocol'
 import { type Client, JsonRpcError, type Session } from '@agnes/sdk'
 
@@ -49,6 +50,7 @@ export type FakeSession = Pick<
   | 'budget'
   | 'events'
   | 'projectUI'
+  | 'uiRead'
   | 'cursor'
   | 'detach'
 > & {
@@ -63,9 +65,8 @@ export type FakeClient = Pick<Client, 'initialize' | 'apis' | 'on' | 'close'> & 
     new: (options: SessionNewOptions) => Promise<FakeSession>
     attach(id: string, options?: SessionAttachOptions): Promise<FakeSession>
   }
-  approval: {
-    decide(ticket: string, verdict: ApprovalVerdict, credential: Credential): Promise<{ seq: number }>
-  }
+  approval: Pick<Client['approval'], 'decide'>
+
   claim: {
     once(kind: string, value: string): Promise<boolean>
     withinRateLimit(kind: string, value: string, limit: number, windowMs: number): Promise<boolean>
@@ -86,6 +87,7 @@ export type FakeClient = Pick<Client, 'initialize' | 'apis' | 'on' | 'close'> & 
   calls: FakeCall[]
   claimResults: Map<string, boolean>
   pushEvent(sessionId: string, event: LedgerEvent): void
+  setSurfaces(sessionId: string, page: UiReadResult): void
   setTimeline(sessionId: string, timeline: UITimeline): void
   emitNotice(notice: DaemonNotice): void
   emit(event: string, payload: unknown): void
@@ -96,6 +98,7 @@ export function createFakeClient(script: FakeScript = {}): FakeClient {
   const calls: FakeCall[] = []
   const queues = new Map<string, Queue<LedgerEvent>>()
   const timelines = new Map<string, UITimeline>()
+  const surfaces = new Map<string, UiReadResult>()
   const notFound = new Set<string>()
   const handlers = new Map<string, Handler[]>()
   const sessions = new Map<string, FakeSession>()
@@ -161,6 +164,10 @@ export function createFakeClient(script: FakeScript = {}): FakeClient {
           }
         )
       },
+      async uiRead(input) {
+        record('uiRead', input)
+        return surfaces.get(id) ?? { sessionId: id, lastSeq: 0, surfaces: [], actions: [] }
+      },
       cursor() {
         return { fromSeq: 0, generation: 1 }
       },
@@ -215,8 +222,8 @@ export function createFakeClient(script: FakeScript = {}): FakeClient {
       },
     },
     approval: {
-      async decide(ticket, verdict, credential) {
-        record('approval.decide', ticket, verdict, credential)
+      async decide(command, bridge) {
+        record('approval.decide', command, bridge)
         if (script.decideError !== undefined) {
           throw new JsonRpcError({
             code: script.decideError,
@@ -224,7 +231,12 @@ export function createFakeClient(script: FakeScript = {}): FakeClient {
             data: { code: 'APPROVAL_REJECTED', reason: 'self' },
           })
         }
-        return { seq: ++sequence }
+        return {
+          seq: ++sequence,
+          revision: command.revision + 1,
+          commandId: command.commandId,
+          digest: '0'.repeat(64),
+        }
       },
     },
     claim: {
@@ -273,6 +285,9 @@ export function createFakeClient(script: FakeScript = {}): FakeClient {
     },
     pushEvent(id, event) {
       queueFor(id).push(event)
+    },
+    setSurfaces(sessionId, page) {
+      surfaces.set(sessionId, page)
     },
     setTimeline(id, timeline) {
       timelines.set(id, timeline)

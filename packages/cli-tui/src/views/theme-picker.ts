@@ -1,37 +1,69 @@
-import type { Ansi } from '../ansi.js'
 import type { Component } from '../component.js'
-import { Box } from '../components/box.js'
-import { Select } from '../components/select.js'
+import { type Box, dialogBox } from '../components/box.js'
+import { FilterSelect } from '../components/filter-select.js'
 import { tt } from '../locale-extended.js'
-import type { TuiThemeName } from '../theme.js'
+import type { ThemedAnsi } from '../theme.js'
+import type { ThemePreference } from '../theme-preference.js'
 
 export class ThemePicker implements Component {
   private box: Box | undefined
   constructor(
-    private readonly ansi: Ansi,
+    private readonly ansi: ThemedAnsi,
     private readonly locale: string,
-    private readonly choose: (name: TuiThemeName) => void,
+    private readonly choose: (name: ThemePreference) => void,
   ) {}
-  show(current: TuiThemeName): void {
+  /** The built-in themes, then `custom` (the names of the user's theme files). */
+  show(current: ThemePreference, custom: readonly string[] = []): void {
     const locale = this.locale
-    const names: TuiThemeName[] = ['light', 'dark', 'mono']
-    const labels = [tt('theme.light', locale), tt('theme.dark', locale), tt('theme.mono', locale)]
-    const select = new Select({
-      options: names.map((id, i) => ({
-        id,
-        label: `${labels[i]}${id === current ? tt('theme.current', locale) : ''}`,
-      })),
+    const names: ThemePreference[] = [
+      'auto',
+      'light',
+      'dark',
+      'dark-daltonized',
+      'light-daltonized',
+      'mono',
+      ...custom.map((n) => `custom:${n}` as const),
+    ]
+    const labels = [
+      tt('theme.auto', locale),
+      tt('theme.light', locale),
+      tt('theme.dark', locale),
+      tt('theme.darkDaltonized', locale),
+      tt('theme.lightDaltonized', locale),
+      tt('theme.mono', locale),
+      ...custom.map((name) => tt('theme.custom', locale, { name })),
+    ]
+    const select = new FilterSelect({
+      // A built-in name is `Name · what it looks like`: the second half goes in the description column.
+      // A custom one is `Custom · <file>`, whose file name is the name itself and stays whole.
+      options: names.map((id, i) => {
+        const text = labels[i] ?? id
+        const [label = id, description] = id.startsWith('custom:') ? [text] : text.split(' · ')
+        return {
+          id,
+          label,
+          ...(description ? { description } : {}),
+          ...(id === current ? { current: true } : {}),
+          search: id,
+        }
+      }),
+      locale,
+      ansi: this.ansi,
       onChoose: (id) => {
         this.close()
-        this.choose(id as TuiThemeName)
+        this.choose(id as ThemePreference)
       },
       onCancel: () => this.close(),
     })
     for (let i = 0; i < names.indexOf(current); i++) select.handleInput('\x1b[B')
-    this.box = new Box(select, {
+    this.box = dialogBox(select, {
       title: tt('theme.pickerTitle', locale),
-      rounded: true,
-      border: this.ansi.dim,
+      ansi: this.ansi,
+      hints: [
+        { key: '↑↓', label: tt('dialog.select', locale) },
+        { key: '⏎', label: tt('dialog.confirm', locale) },
+        { key: 'esc', label: tt('dialog.close', locale) },
+      ],
     })
   }
   close(): void {

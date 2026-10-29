@@ -1,0 +1,145 @@
+{
+  "name": "@agnes-fde/ops-runbook",
+  "version": "1.1.1",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": "./index.mjs",
+  "files": [
+    "*.mjs",
+    "fixtures",
+    "skills",
+    "client",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE",
+    "real-model.bundle.json"
+  ],
+  "scripts": {
+    "build": "node --check index.mjs",
+    "test": "vitest run test/workflow.test.mjs --maxWorkers=1"
+  },
+  "dependencies": {
+    "@agnes/extension-api": "^5.0.0",
+    "@agnes/plugin-runtime": "0.0.0",
+    "@sinclair/typebox": "0.34.33",
+    "@agnes/protocol": "0.0.0"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "export": "main",
+        "apiRange": "^5.0.0",
+        "id": "ext:@agnes-fde/ops-runbook/main",
+        "inject": [
+          "tools",
+          "providers",
+          "skills"
+        ],
+        "metadata": {
+          "displayName": "Operations runbook example",
+          "summary": "Reviews sample incidents, runs bounded diagnostics and requests approval before a simulated remediation.",
+          "description": "Reviews sample incidents, runs bounded diagnostics and requests approval before a simulated remediation.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "运维手册示例",
+              "summary": "检查样例事件、执行受限诊断，并在模拟修复前请求批准。",
+              "description": "检查样例事件、执行受限诊断，并在模拟修复前请求批准。"
+            }
+          }
+        },
+        "capabilities": {
+          "model": true,
+          "filesystem": {
+            "read": [
+              "fixtures/*",
+              "skills/playbook/SKILL.md",
+              "fde-output/ops-runbook/**"
+            ],
+            "write": [
+              "fde-output/ops-runbook/**"
+            ]
+          },
+          "exec": [
+            "node"
+          ]
+        }
+      }
+    ],
+    "bundles": {
+      "ops-runbook": {
+        "profile": {
+          "skills": [
+            "ops-runbook"
+          ],
+          "providers": {
+            "loop": {
+              "version": "5.0.0",
+              "provider": "fde.ops-runbook"
+            },
+            "sandbox": {
+              "provider": "local"
+            }
+          }
+        },
+        "presets": {
+          "ops-runbook": {
+            "name": "ops-runbook",
+            "extends": "standard",
+            "providers": {
+              "tool-policy": {
+                "provider": "fde.ops-runbook"
+              }
+            }
+          }
+        },
+        "launch": {
+          "title": {
+            "en": "Operations runbook example",
+            "zh-CN": "运维手册示例"
+          },
+          "description": {
+            "en": "Reviews sample incidents, runs bounded diagnostics and requests approval before a simulated remediation."
+          },
+          "preset": "ops-runbook",
+          "prompt": {
+            "text": {
+              "en": "Follow the sample runbook: run the diagnostic in the background, show me its output, and ask me before the restart step. Then verify the restart receipt.",
+              "zh-CN": "按示例运维手册执行：在后台运行诊断并给我看输出，重启这一步先问我，之后核对重启回执。"
+            },
+            "mode": "draft"
+          }
+        }
+      }
+    },
+    "metadata": {
+      "displayName": "Operations runbook example",
+      "summary": "Reviews sample incidents, runs bounded diagnostics and requests approval before a simulated remediation.",
+      "description": "Reviews sample incidents, runs bounded diagnostics and requests approval before a simulated remediation.",
+      "samplePrompt": {
+        "en": "Follow the sample runbook: run the diagnostic in the background, show me its output, and ask me before the restart step. Then verify the restart receipt.",
+        "zh-CN": "按示例运维手册执行：在后台运行诊断并给我看输出，重启这一步先问我，之后核对重启回执。"
+      },
+      "locales": {
+        "zh-CN": {
+          "displayName": "运维手册示例",
+          "summary": "检查样例事件、执行受限诊断，并在模拟修复前请求批准。",
+          "description": "检查样例事件、执行受限诊断，并在模拟修复前请求批准。"
+        }
+      }
+    },
+    "provides": [
+      "bundle",
+      "loop",
+      "tool",
+      "skills"
+    ]
+  },
+  "devDependencies": {
+    "@agnes/host": "0.0.0",
+    "@agnes/resource-control-runtime": "0.0.0",
+    "vitest": "5.0.0"
+  }
+}

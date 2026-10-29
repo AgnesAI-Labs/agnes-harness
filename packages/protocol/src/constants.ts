@@ -1,3 +1,5 @@
+import { ExtensionEventType } from '../gen/ts/session-v1.js'
+
 export const EVENT_TYPES = [
   // Lifecycle
   'session/start',
@@ -27,9 +29,7 @@ export const EVENT_TYPES = [
   'repair/decision',
   'format/deviation',
   'cost/ledger',
-  'approval/asked',
-  'approval/decided',
-  'approval/guardian-decided',
+  'decision/state',
   'feedback/rating',
   'feedback/implicit',
   'participant',
@@ -38,9 +38,8 @@ export const EVENT_TYPES = [
 ] as const
 export type EventType = (typeof EVENT_TYPES)[number]
 
-export const EXT_EVENT_PATTERN =
-  /^x\/(?:(?:core|agnes)\/[a-z0-9-]+|host\/session-title|[a-z0-9-]+\/[a-z0-9-]+\/[a-z0-9-]+)$/
-export const EXT_EVENT_PATTERN_SOURCE = EXT_EVENT_PATTERN.source // the same string written into the schema
+export const EXT_EVENT_PATTERN_SOURCE = ExtensionEventType.$defs.ExtensionEventType.pattern!
+export const EXT_EVENT_PATTERN = new RegExp(EXT_EVENT_PATTERN_SOURCE)
 
 export function isEventType(s: string): boolean {
   return (EVENT_TYPES as readonly string[]).includes(s) || EXT_EVENT_PATTERN.test(s)
@@ -52,10 +51,9 @@ export function isEventType(s: string): boolean {
  */
 export const AGH_DIR = '.agh'
 /**
- * Workspace-relative directories every file tool and sandbox hard-denies. `.agnes/secrets` is where
- * this directory lived before the rename; it stays denied so a workspace still holding one is not exposed.
+ * AGH-owned workspace-relative directories every file tool and sandbox hard-denies.
  */
-export const WORKSPACE_SECRET_DIRS = ['.agh/secrets', '.agnes/secrets'] as const
+export const WORKSPACE_SECRET_DIRS = ['.agh/secrets'] as const
 
 export const META_KEY = 'ai.agnes.harness' as const
 export const AGNES_NS = '_agnes/v1' as const
@@ -69,42 +67,7 @@ export const MAX_FRAME_BYTES = 144 * 1024 * 1024
 export const MAX_RUNTIME_TARGET_ARTIFACT_BASE64_LENGTH = 16_776_788
 /** Raw-byte ceiling for one JSON-RPC artifact range response. Larger artifacts are read in ranges. */
 export const ARTIFACT_READ_RPC_MAX_BYTES = 1024 * 1024
-/** Raw bytes in one `_agnes/v1/attachment.upload` chunk; Base64 makes it at most 1,398,104 characters. */
-export const ATTACHMENT_UPLOAD_CHUNK_BYTES = 1024 * 1024
-/**
- * The thumbnail a client makes for an uploaded image and uploads as a second object: the longest edge
- * at most `maxEdge` pixels, JPEG at `jpegQuality`, and at most `maxBytes`.
- */
-export const USER_ATTACHMENT_THUMBNAIL = Object.freeze({ maxEdge: 320, jpegQuality: 0.8, maxBytes: 262_144 })
-/**
- * The codes (`data.code` of a SEMANTIC_REJECTED error) for a refused attachment: an upload step, or a
- * prompt, steer or follow-up whose attachment was refused before anything was queued.
- */
-export const ATTACHMENT_REFUSAL_CODES = Object.freeze([
-  'UPLOAD_INVALID',
-  'UPLOAD_SIZE_LIMIT',
-  'UPLOAD_OFFSET',
-  'UPLOAD_HASH_MISMATCH',
-  'UPLOAD_INCOMPLETE',
-  'UPLOAD_CANCELLED',
-  'UPLOAD_BUSY',
-  'UPLOAD_EXPIRED',
-  'UPLOAD_QUOTA',
-  'UPLOAD_UNAVAILABLE',
-  'UPLOAD_NOT_IMAGE',
-  'ATTACHMENT_NOT_AUTHORIZED',
-  'ATTACHMENT_MISSING',
-  'ATTACHMENT_DATA',
-  'ATTACHMENT_BYTES',
-  'ATTACHMENT_IMAGE_TOO_LARGE',
-  'ATTACHMENT_CORRUPT',
-  'ATTACHMENT_HASH_MISMATCH',
-  'ATTACHMENT_TOO_LARGE',
-  'ATTACHMENT_TIMEOUT',
-  'ATTACHMENT_UNAVAILABLE',
-] as const)
-export type AttachmentRefusalCode = (typeof ATTACHMENT_REFUSAL_CODES)[number]
-/** Default and hard request ceilings for bounded UI projection reads (IP10). */
+/** Default and hard request ceilings for bounded UI projection reads. */
 export const UI_OPENING_DEFAULT_MAX_NODES = 200
 export const UI_OPENING_MAX_NODES = 500
 export const UI_HISTORY_DEFAULT_LIMIT = 100

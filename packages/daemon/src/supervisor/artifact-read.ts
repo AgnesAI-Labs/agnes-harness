@@ -1,14 +1,17 @@
 import { types as utilTypes } from 'node:util'
-import { createLocalArtifactReadStore } from '@agnes/host'
+import { SessionPrincipalOwnershipIndex } from '@agnes/daemon-foundation/storage/session-ownership'
 import {
   type ArtifactReadAuthorityPort,
   createAuthenticatedArtifactReadHandler,
   createTrustedSessionArtifactReadHandler,
   type TrustedSessionArtifactRead,
-} from '../local/artifact-read.js'
-import { PersistentArtifactReadAuthorityIndex } from '../local/artifact-read-authority.js'
-import type { ArtifactReadRpcOptions, ArtifactReadScopeAuthority } from '../local/methods/artifacts.js'
-import { SessionPrincipalOwnershipIndex } from '../storage/session-ownership.js'
+} from '@agnes/daemon-rpc/local/artifact-read'
+import { PersistentArtifactReadAuthorityIndex } from '@agnes/daemon-rpc/local/artifact-read-authority'
+import type {
+  ArtifactReadRpcOptions,
+  ArtifactReadScopeAuthority,
+} from '@agnes/daemon-rpc/local/methods/artifacts'
+import { createLocalArtifactReadStore } from '@agnes/host'
 import {
   type ArtifactAuthorityProjectionWriter,
   createArtifactAuthorityProjection,
@@ -115,9 +118,9 @@ export function composeDefaultProductionProjectedArtifactRead(
     const revoke = PersistentArtifactReadAuthorityIndex.prototype.revoke
     const resolveArtifact = PersistentArtifactReadAuthorityIndex.prototype.resolve
     const authority: ArtifactReadAuthorityPort = Object.freeze({
-      async resolve(sessionId: string, laneId: string, sha256: string, signal: AbortSignal) {
+      async resolve(sessionId: string, laneId: string, sha256: string, signal: AbortSignal, mime?: string) {
         if (signal.aborted) throw new Error('artifact read authority lookup unavailable')
-        const binding = Reflect.apply(resolveArtifact, artifactAuthority, [sessionId, laneId, sha256])
+        const binding = Reflect.apply(resolveArtifact, artifactAuthority, [sessionId, laneId, sha256, mime])
         if (signal.aborted) throw new Error('artifact read authority lookup unavailable')
         if (!binding) return undefined
         return Object.freeze({
@@ -222,7 +225,7 @@ export function composeProductionProjectedArtifactRead(
     })
     const workerRead = createTrustedSessionArtifactReadHandler({
       authority: legacy.authority,
-      artifacts: Object.freeze({ get: artifacts.get }),
+      artifacts: Object.freeze({ get: artifacts.get, readRange: artifacts.readRange }),
       limits,
       operationTimeoutMs: legacy.operationTimeoutMs,
     })
@@ -329,7 +332,7 @@ function composeProductionArtifactReadWithStore(
       artifactStore ?? createLocalArtifactReadStore({ dataDir, maxArtifactBytes: limits.maxArtifactBytes })
     const read = createAuthenticatedArtifactReadHandler({
       authority,
-      artifacts: Object.freeze({ get: artifacts.get }),
+      artifacts: Object.freeze({ get: artifacts.get, readRange: artifacts.readRange }),
       limits,
       operationTimeoutMs,
     })

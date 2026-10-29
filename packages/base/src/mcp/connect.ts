@@ -1,4 +1,5 @@
-import { type CloseObservableTransport, observeTransportDisconnect } from '@agnes/mcp-transport-health'
+import type { Stream } from 'node:stream'
+import { deploymentFetch } from '@agnes/system-node/deployment-network'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 // SSEClientTransport is the legacy pre-2025-03-26 MCP SSE transport. The SDK marks it @deprecated in
 // favor of Streamable HTTP, but it is deliberately kept here as a backward-compat path for remote
@@ -11,28 +12,71 @@ import {
 } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
-import { ElicitRequestSchema, ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js'
+import {
+  ElicitRequestSchema,
+  ErrorCode,
+  ListToolsResultSchema,
+  McpError,
+  PaginatedResultSchema,
+  ResourceListChangedNotificationSchema,
+  ToolListChangedNotificationSchema,
+} from '@modelcontextprotocol/sdk/types.js'
+import { normalizeRemoteInputSchema } from '../mcp-json-schema.js'
+import { McpCallError } from './call-error.js'
 import type { McpServerConfig } from './config.js'
-import type { McpConnection } from './register.js'
+import type { McpConnection, McpResourceCallOptions } from './register.js'
+import {
+  MAX_MCP_RESOURCE_CONTENTS,
+  MAX_MCP_RESOURCE_PAGE,
+  readRemoteResource,
+  readRemoteResourceContent,
+  readRemoteResourceTemplate,
+} from './resources.js'
+import { observeStdioStartup } from './stdio-diagnostics.js'
+import { type CloseObservableTransport, observeTransportDisconnect } from './transport-health.js'
 
 type SdkTool = {
   name: string
   description?: string | undefined
   inputSchema: Record<string, unknown>
-  annotations?: { readOnlyHint?: boolean | undefined } | undefined
+  annotations?:
+    | {
+        readOnlyHint?: boolean | undefined
+        destructiveHint?: boolean | undefined
+        idempotentHint?: boolean | undefined
+      }
+    | undefined
 }
-type SdkTransport = CloseObservableTransport
+type SdkTransport = CloseObservableTransport & { readonly stderr?: Pick<Stream, 'on'> | null }
+type SdkResource = { uri: string; name: string; description?: string; mimeType?: string }
+type SdkResourceTemplate = { uriTemplate: string; name: string; description?: string; mimeType?: string }
+type SdkResourceContent = { uri: string; mimeType?: string; text?: string; blob?: string }
+type SdkRequestOptions = { signal?: AbortSignal }
 type SdkClient = {
   setElicitationHandler(handler: () => { action: 'decline' }): void
   /** Fires on the server's `notifications/tools/list_changed`. Set once; a client that reconnects
    * gets a fresh SdkClient (and so a fresh handler registration) rather than resubscribing. */
   setToolListChangedHandler(handler: () => void): void
+  setResourceListChangedHandler(handler: () => void): void
+  getServerCapabilities(): { resources?: object | undefined } | undefined
   connect(transport: SdkTransport): Promise<void>
   listTools(params?: { cursor?: string }): Promise<{ tools: SdkTool[]; nextCursor?: string | undefined }>
+  listResources(
+    params?: { cursor?: string },
+    options?: SdkRequestOptions,
+  ): Promise<{ resources: SdkResource[]; nextCursor?: string | undefined }>
+  listResourceTemplates(
+    params?: { cursor?: string },
+    options?: SdkRequestOptions,
+  ): Promise<{ resourceTemplates: SdkResourceTemplate[]; nextCursor?: string | undefined }>
+  readResource(
+    params: { uri: string },
+    options?: SdkRequestOptions,
+  ): Promise<{ contents: SdkResourceContent[] }>
   callTool(
     params: { name: string; arguments: Record<string, unknown> },
     schema: undefined,
-    options: { signal: AbortSignal },
+    options: { signal: AbortSignal; timeout?: number },
   ): Promise<{ content: unknown[]; isError?: boolean | undefined }>
   close(): Promise<void>
 }
@@ -126,7 +170,7 @@ function policedHttpFetch(
       const hopInit: RequestInit = crossOrigin
         ? { ...requestInit, headers: withoutHeaders(requestInit?.headers, strippedOnCrossOrigin) }
         : { ...requestInit }
-      const response = await fetch(url, { ...hopInit, redirect: 'manual' })
+      const response = await deploymentFetch(url, { ...hopInit, redirect: 'manual' })
       const location = response.headers.get('location')
       const isRedirect = REDIRECT_STATUSES.has(response.status) && location !== null
       if (!isRedirect) return response
@@ -184,7 +228,12 @@ async function bounded<T>(
   options: { signal?: AbortSignal; timeoutMs?: number },
 ): Promise<T> {
   const timeoutMs = options.timeoutMs
-  if (options.signal?.aborted) throw aborted()
+  // The SDK schedules an abort listener even when the signal is already aborted. Drop that
+  // rejection here so it cannot escape after this function has already failed.
+  if (options.signal?.aborted) {
+    operation.catch(() => undefined)
+    throw aborted()
+  }
   let timer: ReturnType<typeof setTimeout> | undefined
   let onAbort: (() => void) | undefined
   try {
@@ -192,7 +241,10 @@ async function bounded<T>(
       onAbort = () => reject(aborted())
       options.signal?.addEventListener('abort', onAbort, { once: true })
       if (timeoutMs !== undefined)
-        timer = setTimeout(() => reject(new Error('MCP operation timed out')), timeoutMs)
+        timer = setTimeout(
+          () => reject(Object.assign(new Error('MCP operation timed out'), { code: 'MCP_CONNECT_TIMEOUT' })),
+          timeoutMs,
+        )
       operation.then(resolve, reject)
     })
   } finally {
@@ -204,23 +256,92 @@ async function bounded<T>(
 const realSdk: McpSdkDeps = {
   createClient: () => {
     const client = new Client({ name: 'agnes', version: '0.0.0' }, { capabilities: { elicitation: {} } })
+    const refusedRoots = new WeakMap<object, SdkTool[]>()
+    const request = client.request.bind(client)
+    client.request = ((...args: Parameters<Client['request']>) => {
+      const [input, schema, options] = args
+      if (schema !== ListToolsResultSchema) return request(input, schema, options)
+      const refused: SdkTool[] = []
+      // Normalize or refuse each root before the unchanged SDK page validator runs.
+      // Refused roots return to the Host's catalog admission for visible skip reasons.
+      const admitted = PaginatedResultSchema.transform((page) => {
+        if (!Array.isArray(page.tools)) return page
+        return {
+          ...page,
+          tools: page.tools.flatMap((tool: SdkTool) => {
+            if (!tool || typeof tool !== 'object') return [tool]
+            try {
+              return [{ ...tool, inputSchema: normalizeRemoteInputSchema(tool.inputSchema) }]
+            } catch {
+              refused.push(tool)
+              return []
+            }
+          }),
+        }
+      }).pipe(ListToolsResultSchema)
+      return request(input, admitted, options).then((page) => {
+        refusedRoots.set(page, refused)
+        return page
+      })
+    }) as Client['request']
+    // Keep listTools itself: the SDK still caches output validators and task metadata.
     return {
       setElicitationHandler: (handler) => client.setRequestHandler(ElicitRequestSchema, handler),
       setToolListChangedHandler: (handler) =>
         client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
           handler()
         }),
+      setResourceListChangedHandler: (handler) =>
+        client.setNotificationHandler(ResourceListChangedNotificationSchema, () => {
+          handler()
+        }),
+      getServerCapabilities: () => client.getServerCapabilities(),
       connect: (transport) => client.connect(transport as Parameters<typeof client.connect>[0]),
       async listTools(params) {
         const page = await client.listTools(params)
         return {
-          tools: page.tools.map((tool) => ({
+          tools: [...page.tools, ...(refusedRoots.get(page) ?? [])].map((tool) => ({
             name: tool.name,
             ...(tool.description === undefined ? {} : { description: tool.description }),
             inputSchema: tool.inputSchema,
             ...(tool.annotations === undefined ? {} : { annotations: tool.annotations }),
           })),
           ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
+        }
+      },
+      async listResources(params, options) {
+        const page = await client.listResources(params, options)
+        return {
+          resources: page.resources.map((resource) => ({
+            uri: resource.uri,
+            name: resource.name,
+            ...(resource.description === undefined ? {} : { description: resource.description }),
+            ...(resource.mimeType === undefined ? {} : { mimeType: resource.mimeType }),
+          })),
+          ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
+        }
+      },
+      async listResourceTemplates(params, options) {
+        const page = await client.listResourceTemplates(params, options)
+        return {
+          resourceTemplates: page.resourceTemplates.map((template) => ({
+            uriTemplate: template.uriTemplate,
+            name: template.name,
+            ...(template.description === undefined ? {} : { description: template.description }),
+            ...(template.mimeType === undefined ? {} : { mimeType: template.mimeType }),
+          })),
+          ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
+        }
+      },
+      async readResource(params, options) {
+        const page = await client.readResource(params, options)
+        return {
+          contents: page.contents.map((item) => ({
+            uri: item.uri,
+            ...(item.mimeType === undefined ? {} : { mimeType: item.mimeType }),
+            ...('text' in item && item.text !== undefined ? { text: item.text } : {}),
+            ...('blob' in item && item.blob !== undefined ? { blob: item.blob } : {}),
+          })),
         }
       },
       async callTool(params, schema, options) {
@@ -261,6 +382,8 @@ function stdioTransport(cfg: McpServerConfig, deps: McpSdkDeps): SdkTransport {
   return deps.createStdioTransport({
     command,
     args,
+    stderr: 'pipe',
+    ...(cfg.cwd ? { cwd: cfg.cwd } : {}),
     env: { ...(cfg.baseEnv ?? deps.defaultEnvironment()), ...(cfg.env ?? {}) },
   })
 }
@@ -378,6 +501,7 @@ export async function connectMcp(
     }
   }
   const client = deps.createClient()
+  const startup = cfg.transport === 'stdio' ? observeStdioStartup(transport.stderr) : undefined
   client.setElicitationHandler(() => ({ action: 'decline' }))
   try {
     await bounded(client.connect(transport), {
@@ -386,8 +510,11 @@ export async function connectMcp(
     })
   } catch (error) {
     await client.close().catch(() => undefined)
-    throw error
+    const failure = options.signal?.aborted ? error : (startup?.failure(error) ?? error)
+    startup?.settled()
+    throw failure
   }
+  startup?.settled()
 
   let closed = false
   const closeListeners = new Set<() => void>()
@@ -403,9 +530,19 @@ export async function connectMcp(
     errorIsDisconnect: cfg.transport !== 'stdio',
   })
   const toolsChangedListeners = new Set<() => void>()
+  const resourcesChangedListeners = new Set<() => void>()
   client.setToolListChangedHandler(() => {
     if (closed) return
     for (const listener of [...toolsChangedListeners]) listener()
+  })
+  client.setResourceListChangedHandler(() => {
+    if (closed) return
+    for (const listener of [...resourcesChangedListeners]) listener()
+  })
+  const supportsResources = client.getServerCapabilities()?.resources !== undefined
+  const resourceCall = (options: McpResourceCallOptions | undefined) => ({
+    timeoutMs: options?.timeoutMs ?? DEFAULT_MCP_CATALOG_TIMEOUT_MS,
+    ...(options?.signal === undefined ? {} : { signal: options.signal }),
   })
   return {
     id: cfg.id,
@@ -423,9 +560,21 @@ export async function connectMcp(
             name: tool.name,
             description: tool.description ?? '',
             inputSchema: tool.inputSchema,
-            ...(typeof tool.annotations?.readOnlyHint === 'boolean'
-              ? { annotations: { readOnlyHint: tool.annotations.readOnlyHint } }
-              : {}),
+            ...(tool.annotations === undefined
+              ? {}
+              : {
+                  annotations: {
+                    ...(typeof tool.annotations.readOnlyHint === 'boolean'
+                      ? { readOnlyHint: tool.annotations.readOnlyHint }
+                      : {}),
+                    ...(typeof tool.annotations.destructiveHint === 'boolean'
+                      ? { destructiveHint: tool.annotations.destructiveHint }
+                      : {}),
+                    ...(typeof tool.annotations.idempotentHint === 'boolean'
+                      ? { idempotentHint: tool.annotations.idempotentHint }
+                      : {}),
+                  },
+                }),
           })
         if (tools.length > MAX_MCP_CATALOG_TOOLS) throw new Error('MCP tool catalog exceeds Host limit')
         if (page.nextCursor === undefined) return tools
@@ -435,10 +584,81 @@ export async function connectMcp(
         cursor = page.nextCursor
       }
     },
+    supportsResources,
+    async listResources(listOptions = {}) {
+      const page = await bounded(
+        client.listResources(
+          listOptions.cursor === undefined ? undefined : { cursor: listOptions.cursor },
+          listOptions.signal === undefined ? undefined : { signal: listOptions.signal },
+        ),
+        resourceCall(listOptions),
+      )
+      if (page.resources.length > MAX_MCP_RESOURCE_PAGE)
+        throw new Error('MCP resource page exceeds Host limit')
+      return {
+        resources: page.resources.map((resource) => readRemoteResource(resource)),
+        ...(typeof page.nextCursor === 'string' ? { nextCursor: page.nextCursor } : {}),
+      }
+    },
+    async listResourceTemplates(listOptions = {}) {
+      const page = await bounded(
+        client.listResourceTemplates(
+          listOptions.cursor === undefined ? undefined : { cursor: listOptions.cursor },
+          listOptions.signal === undefined ? undefined : { signal: listOptions.signal },
+        ),
+        resourceCall(listOptions),
+      )
+      if (page.resourceTemplates.length > MAX_MCP_RESOURCE_PAGE)
+        throw new Error('MCP resource template page exceeds Host limit')
+      return {
+        resourceTemplates: page.resourceTemplates.map((template) => readRemoteResourceTemplate(template)),
+        ...(typeof page.nextCursor === 'string' ? { nextCursor: page.nextCursor } : {}),
+      }
+    },
+    async readResource(uri, readOptions = {}) {
+      const page = await bounded(
+        client.readResource(
+          { uri },
+          readOptions.signal === undefined ? undefined : { signal: readOptions.signal },
+        ),
+        {
+          ...(readOptions.timeoutMs === undefined ? {} : { timeoutMs: readOptions.timeoutMs }),
+          ...(readOptions.signal === undefined ? {} : { signal: readOptions.signal }),
+        },
+      )
+      if (page.contents.length > MAX_MCP_RESOURCE_CONTENTS)
+        throw new Error('MCP resource content count exceeds Host limit')
+      return { contents: page.contents.map((item) => readRemoteResourceContent(item)) }
+    },
     async callTool(name, args, opts) {
-      const result = await client.callTool({ name, arguments: callArguments(args) }, undefined, {
-        signal: opts.signal,
-      })
+      if (closed) throw new McpCallError('not_sent', 'MCP connection is closed')
+      let params: { name: string; arguments: Record<string, unknown> }
+      try {
+        params = { name, arguments: callArguments(args) }
+      } catch (error) {
+        throw new McpCallError('not_sent', error instanceof Error ? error.message : 'invalid arguments')
+      }
+      if (opts.signal.aborted) throw new McpCallError('not_sent', 'cancelled before the request was sent')
+      let result: Awaited<ReturnType<SdkClient['callTool']>>
+      try {
+        result = await client.callTool(params, undefined, {
+          signal: opts.signal,
+          ...(opts.timeoutMs === undefined ? {} : { timeout: opts.timeoutMs }),
+        })
+      } catch (error) {
+        // The SDK refuses with this before it writes the request: the transport is already gone.
+        if (error instanceof Error && error.message === 'Not connected')
+          throw new McpCallError('not_sent', error.message)
+        // A JSON-RPC error reply. Timeout and connection-closed share the class but are raised
+        // locally, after the request may have reached the server.
+        if (
+          error instanceof McpError &&
+          error.code !== ErrorCode.RequestTimeout &&
+          error.code !== ErrorCode.ConnectionClosed
+        )
+          throw new McpCallError('answered', error.message)
+        throw error
+      }
       const content = result.content.map(callContent)
       return result.isError === true ? { content, isError: true } : { content }
     },
@@ -448,6 +668,7 @@ export async function connectMcp(
       stopTransportHealth()
       closeListeners.clear()
       toolsChangedListeners.clear()
+      resourcesChangedListeners.clear()
       await client.close()
     },
     onClose(listener) {
@@ -462,6 +683,11 @@ export async function connectMcp(
       if (closed) return () => undefined
       toolsChangedListeners.add(listener)
       return () => toolsChangedListeners.delete(listener)
+    },
+    onResourcesChanged(listener) {
+      if (closed) return () => undefined
+      resourcesChangedListeners.add(listener)
+      return () => resourcesChangedListeners.delete(listener)
     },
   }
 }

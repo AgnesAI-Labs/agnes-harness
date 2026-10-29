@@ -30,9 +30,11 @@ function InputControls() {
 }
 
 export function apply(ctx) {
-  ctx.slots.register(
-    { name: 'conversation.input.right', id: 'dsh-input-controls', priority: 0 },
-    InputControls,
+  ctx.slots.inject('conversation.input.right', () =>
+    ctx.slots.register(
+      { name: 'conversation.input.right', id: 'dsh-input-controls', priority: 0 },
+      InputControls,
+    ),
   )
   throw new Error('DSH input controls apply failure')
 }

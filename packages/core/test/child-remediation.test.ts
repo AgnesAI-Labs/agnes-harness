@@ -2,14 +2,15 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { recoverCreatingChildAttempts, requireChildControl } from '@agnes/core-child-control/child/store'
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ModelRecord, RequestBody } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it, vi } from 'vitest'
-import { requireChildControl } from '../src/child/store.js'
 import { Kernel } from '../src/kernel.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import { presetDefaults } from '../src/step/preset.js'
 import type { SessionDeps } from '../src/step/session.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, sent, sentFor, textTurn, toolTurn, usage } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, testFsOps, testWorkspaceInvocation } from './helpers/open-session.js'
@@ -50,6 +51,7 @@ function kernel(
   provider = Object.assign(fakeProvider([textTurn('ok')]), { models: () => [catalogue()] }),
 ) {
   return Kernel.create({
+    loops: defaultLoops(),
     storage: new MemoryStorage(),
     seams: fakeSeams(),
     provider,
@@ -334,7 +336,7 @@ describe('independent-review V1–V7', () => {
     await k.close()
   })
 
-  it('V2/v1: instance exit marks failed and resume from a new kernel is refused', async () => {
+  it('V2/v1: explicit instance close persists cancellation and a new kernel refuses resume', async () => {
     const provider = Object.assign(fakeProvider([textTurn('recovered')]), { models: () => [catalogue()] })
     const storage = new MemoryStorage()
     const k = kernel({ storage, provider }, provider)
@@ -348,11 +350,11 @@ describe('independent-review V1–V7', () => {
       'spawn child',
     )
     await k.close()
-    expect((await requireChildControl(storage).lookupByKey(child.key))?.state).toBe('failed')
+    expect((await requireChildControl(storage).lookupByKey(child.key))?.state).toBe('cancelled')
     const k2 = kernel({ storage, provider }, provider)
     const parent2 = await k2.session('parent', sessionOpts)
     await expect(parent2.d.children.resume?.(child.key)).rejects.toMatchObject({ code: 'E_UNSUPPORTED' })
-    expect((await requireChildControl(storage).lookupByKey(child.key))?.state).toBe('failed')
+    expect((await requireChildControl(storage).lookupByKey(child.key))?.state).toBe('cancelled')
     await k2.close()
   })
 
@@ -392,8 +394,10 @@ describe('independent-review V1–V7', () => {
     const grand = await childSession.d.children.create({ parent: child.key, cwd: '/w', input: 'grand' })
     void grand.run('grand').catch(() => undefined)
     await expect.poll(() => entered, { timeout: 5_000 }).toBe(true)
+    const grandSignal = required(k.get(grand.key), 'grandchild session').ac.signal
     await parent.d.children.cancel?.(child.key)
-    expect(k.get(grand.key)?.ac.signal.aborted).toBe(true)
+    expect(grandSignal.aborted).toBe(true)
+    expect(k.get(grand.key)).toBeUndefined()
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect((await requireChildControl(storage).lookupByKey(grand.key))?.state).toBe('cancelled')
     await k.close()
@@ -426,7 +430,7 @@ describe('independent-review V1–V7', () => {
       {
         provider,
         seams: fakeSeams({
-          ledger: { projected: async () => ({ credits: 0.00001, creditSource: 'estimated' }) },
+          billing: { projected: async () => ({ credits: 0.00001, creditSource: 'estimated' }) },
         }),
         preset: {
           ...presetDefaults(),
@@ -558,7 +562,9 @@ describe('independent-review V1–V7', () => {
       }),
       'spawn child',
     )
-    await parentA.close()
+    // Hand off only the parent writer: an explicit parent close would durably cancel the child,
+    // so it would no longer exercise another kernel trying to resume a live admission.
+    await parentA.d.log.close()
     const kB = kernel({ storage })
     const parentB = await kB.session('parent', { ...sessionOpts, writerRunId: 'rB' })
     await expect(parentB.d.children.resume?.(child.key)).rejects.toMatchObject({ code: 'E_UNSUPPORTED' })
@@ -591,7 +597,7 @@ describe('independent-review V1–V7', () => {
       {
         provider,
         seams: fakeSeams({
-          ledger: { projected: async () => ({ credits: 0.00001, creditSource: 'estimated' }) },
+          billing: { projected: async () => ({ credits: 0.00001, creditSource: 'estimated' }) },
         }),
         preset: {
           ...presetDefaults(),
@@ -855,7 +861,7 @@ describe('independent-review V1–V7', () => {
         provider,
         preset: selected,
         seams: fakeSeams({
-          ledger: {
+          billing: {
             projected: async ({ tokensEstimate }) => ({
               credits: tokensEstimate,
               creditSource: 'estimated',
@@ -1133,6 +1139,44 @@ describe('independent-review V1–V7', () => {
     expect(record).toMatchObject({ creationPhase: 'cancelled' })
     expect(record && k.get(record.childKey)).toBeUndefined()
     expect(closes).toBe(1)
+    await k.close()
+  })
+
+  it('keeps a creating attempt alive across a sibling container recovery sweep', async () => {
+    const storage = new MemoryStorage()
+    let release: () => void = () => undefined
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let reached: () => void = () => undefined
+    const atBarrier = new Promise<void>((resolve) => {
+      reached = resolve
+    })
+    const childWorkspaceRuntime = {
+      reserve: async () => {
+        reached()
+        await barrier
+        return { runtime: { fs: testFsOps() }, commit: () => true, close: async () => undefined }
+      },
+    }
+    const k = kernel({ storage })
+    const parent = await k.session('parent', { ...sessionOpts, childWorkspaceRuntime })
+    const creating = parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'sibling' })
+    await atBarrier
+    // What assembling or closing another container over the same storage does.
+    const cancelled = await recoverCreatingChildAttempts(storage, {
+      staleBefore: Number.MAX_SAFE_INTEGER,
+      now: Date.now(),
+    })
+    expect(cancelled).toEqual([])
+    release()
+    const child = await creating
+    const [record] = await storage.listByParent(parent.key)
+    expect(record).toMatchObject({ childKey: child.key, creationPhase: 'committed' })
+    // Once settled, the attempt is no longer protected, and a later orphan is still recovered.
+    expect(
+      await recoverCreatingChildAttempts(storage, { staleBefore: Number.MAX_SAFE_INTEGER, now: Date.now() }),
+    ).toEqual([])
     await k.close()
   })
 })

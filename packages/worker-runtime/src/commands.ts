@@ -1,14 +1,27 @@
-import type { Host, HostSession, ResolvedProfile } from '@agnes/host'
+import { isDeepStrictEqual } from 'node:util'
+import {
+  assertHostPublication,
+  conversationModelAdapters,
+  draftFeedbackSkill,
+  FEEDBACK_PROVIDER_ID,
+  type Host,
+  HostError,
+  type HostSession,
+  manageMemory,
+  type ResolvedProfile,
+  sessionPermissionCatalog,
+  ToolFilterError,
+  toolFilterRejection,
+} from '@agnes/host'
+import { exporterHealth } from '@agnes/observability'
+import { withPackageVerification } from '@agnes/package-manager'
 import type { LocalGate } from '@agnes/plugin-runtime/host'
 import {
   type Actor,
-  type ApprovalVerdict,
-  type ExtensionCallParams,
   MAX_FRAME_BYTES,
   type McpStatus,
   rpcError,
   type SkillDescriptor,
-  type SkillRootStatus,
   type WorkerGeneration,
 } from '@agnes/protocol'
 import {
@@ -16,13 +29,22 @@ import {
   type WorkerResourceBootstrapInput,
   type WorkerResourceState,
 } from '@agnes/resource-control-worker'
-
-import { attachmentReadPage } from './attachment-read.js'
-import { batchItemConfinementLive } from './batch-confinement.js'
-import { exportRawChunk } from './export-raw.js'
+import { readDeliverablesPage } from './deliverables.js'
+import { sessionFileUpload } from './file-upload.js'
 import type { SessionCommandFrame, WorkerCommandFrame } from './frames.js'
+import { GRANT_COMMANDS, grantCommand } from './grant-commands.js'
 import type { McpRowRuntime } from './mcp-row-runtime.js'
+import { noticeConnectingMcp } from './mcp-turn-notice.js'
+import { deliverBoundSystemInput, isProfileCommand, profileServiceCommand } from './profile-commands.js'
+import { sessionReferences } from './references.js'
+import { sessionServiceCommand } from './service-commands.js'
+import { auditSessionHistory } from './session-integrity.js'
+import { SIDE_CALL_COMMANDS, workerSideCall } from './side-question.js'
+import { refreshSkills } from './skills-refresh.js'
 import { readToolDetailPage } from './tool-detail.js'
+import { sessionWorkspaceChanges } from './workspace-changes.js'
+import { sessionWorkspaceFiles } from './workspace-files.js'
+import { sessionUndo, sessionUndoPreview } from './workspace-undo.js'
 
 /** Direct unit-level invocation shape. Wire frames are the stricter SessionCommandFrame union. */
 type SessionCommandInvocation = Omit<SessionCommandFrame, 'sessionKey' | 'method'> & {
@@ -62,6 +84,8 @@ export type WorkerResourceSlot = {
   /** The session worker's MCP supply: one Host row per server in the snapshot (stage 2b step 3).
    *  Set once by `runWorker` after Host assembly; absent in workers that host no sessions. */
   mcpRows?: McpRowRuntime
+  /** One-shot hint for a control-only update; unknown notices and failed reloads use a full scan. */
+  skillControlRevision?: string | undefined
   /** Count of `resource.stale` notices received so far. Only `case 'resource.stale':` writes it. */
   staleMarks: number
   /** The `staleMarks` value the last successful reload consumed; `staleMarks > reloadedMarks` is the
@@ -70,8 +94,15 @@ export type WorkerResourceSlot = {
   /** Set for the duration of one `reloadWorkerResources` attempt. `observed` is fixed when that
    *  attempt starts; newer marks are never declared consumed by an older snapshot read. */
   reloadInFlight?: { observed: number; promise: Promise<boolean> } | undefined
-  /** A failed rollback left Host rows inconsistent with the retained resource generation. */
+  /** A failed rollback left Host rows inconsistent with the retained resource generation. The next
+   *  fully successful reload clears it. */
   recoveryRequired?: boolean
+  /** Called when a reload made while recovery was already required fails again. The worker cannot
+   *  bring its rows back in line on its own, so its owner restarts it rather than refusing every
+   *  turn without telling anyone. */
+  onRecoveryFailed?: (error: unknown) => void
+  /** How long a reload waits for earlier turns to finish before it is deferred. */
+  reloadBarrierTimeoutMs?: number
   /** Shared admission state for session runs. A pending reload holds the admission queue until all
    *  previously admitted runs have left, so replacing Host-wide extensions cannot cut across a turn
    *  in another session. Kept on the shared slot for the same reason as the generation counters. */
@@ -80,6 +111,9 @@ export type WorkerResourceSlot = {
     waiters: Array<() => void>
     active: number
     idleWaiters: Set<() => void>
+    /** Until this time, a run admitted while other turns are still active skips the owed reload: the
+     *  last barrier timed out waiting for them. */
+    deferredUntil?: number
     reloadBarrier?: {
       promise: Promise<boolean>
       finish(attempted: boolean): void
@@ -88,6 +122,9 @@ export type WorkerResourceSlot = {
 }
 
 type CommandOptions = Parameters<typeof handleCommand>[2]
+
+/** A turn can wait minutes for an approval; other sessions' turns must not queue behind it that long. */
+const RELOAD_BARRIER_TIMEOUT_MS = 30_000
 
 /**
  * Admits one worker command through the process-local reconcile gate. The read covers only the
@@ -123,7 +160,9 @@ async function reloadIfStale(
 /** Admit one session turn through the worker-wide resource boundary. Ordinary turns only hold the
  *  queue while incrementing `active`; a stale turn keeps it held until older turns drain and the
  *  reload completes. Consequently later turns cannot enter with either the revoked or half-published
- *  generation. */
+ *  generation. Older turns that do not drain within `reloadBarrierTimeoutMs` (one waiting on an
+ *  approval, say) defer the reload instead: the waiting turns enter on the current generation, and
+ *  the reload stays owed until a later admission finds the worker idle or the deferral has passed. */
 async function admitResourceRun(
   o: Pick<CommandOptions, 'host' | 'resources' | 'workerResourcesInput'>,
   signal: AbortSignal,
@@ -154,7 +193,11 @@ async function admitResourceRun(
     if (joinedBarrier && (await joinedBarrier.promise)) {
       // The owning run completed the one reload attempt for this batch. Its observed mark, rather
       // than this joiner's later view, decides what remains stale.
-    } else if (slot.staleMarks > slot.reloadedMarks && !signal.aborted) {
+    } else if (
+      slot.staleMarks > slot.reloadedMarks &&
+      !signal.aborted &&
+      !(admissions.active > 0 && (admissions.deferredUntil ?? 0) > Date.now())
+    ) {
       let finishBarrier!: (attempted: boolean) => void
       const promise = new Promise<boolean>((resolve) => {
         finishBarrier = resolve
@@ -162,20 +205,29 @@ async function admitResourceRun(
       ownedBarrier = { promise, finish: finishBarrier }
       admissions.reloadBarrier = ownedBarrier
     }
+    let drained = true
     if (ownedBarrier && admissions.active > 0 && !signal.aborted) {
-      await new Promise<void>((resolve) => {
-        const finish = (): void => {
+      const timeoutMs = slot.reloadBarrierTimeoutMs ?? RELOAD_BARRIER_TIMEOUT_MS
+      drained = await new Promise<boolean>((resolve) => {
+        const settle = (idle: boolean): void => {
           admissions.idleWaiters.delete(finish)
           signal.removeEventListener('abort', finish)
-          resolve()
+          clearTimeout(timer)
+          resolve(idle)
         }
+        const finish = (): void => settle(true)
+        const timer = setTimeout(() => settle(false), timeoutMs)
         admissions.idleWaiters.add(finish)
         signal.addEventListener('abort', finish, { once: true })
         if (admissions.active === 0 || signal.aborted) finish()
       })
+      if (!drained) {
+        admissions.deferredUntil = Date.now() + timeoutMs
+        console.error('agnes worker: resource reload deferred while earlier turns are still running')
+      }
     }
     if (signal.aborted) return undefined
-    if (ownedBarrier) {
+    if (ownedBarrier && drained) {
       await reloadIfStale(o, slot)
       attemptedReload = true
     }
@@ -233,11 +285,10 @@ export async function prepareIdleResources(
  *
  * `setPreset`/`setModel` go through `o.host.validatePresetSwitch`/`validateModelSwitch` first, not
  * a `HostSession` method the caller invokes unchecked — `Host` is the only place that can weigh a
- * switch against the actual assembly (`packages/host/src/host.ts`), and `HostSession` has no method
+ * switch against the actual assembly (`packages/host/src/runtime/lifecycle/host.ts`), and `HostSession` has no method
  * that does this check on its own.
  *
- * `decideApproval` resolves a pending ticket through `HostSession.resumeApproval` — core's session
- * has no method literally named `decideApproval`; that name is this command's, not core's.
+ * `decideApproval` forwards an authenticated connection context to Core's session writer command.
  *
  * `resource.stale`/`run`'s reload check implement next-turn reload: a `resource.stale` notification from the daemon only bumps
  * `o.resources.staleMarks` and returns immediately — it does no reload work of its own, on purpose, so
@@ -276,22 +327,119 @@ export async function handleCommand(
       credential: unknown
       binding: unknown
     }) => Promise<unknown>
-    /** Tests only: the byte ceiling of one `scan` reply, below the real frame limit. */
-    maxScanFrameBytes?: number
   },
 ): Promise<unknown> {
   const p = cmd.params
+  if (cmd.method in GRANT_COMMANDS) return grantCommand(o.host, session, cmd)
+  if (Object.hasOwn(SIDE_CALL_COMMANDS, cmd.method)) return workerSideCall(session, cmd, o.aborts)
   switch (cmd.method) {
+    case 'ui.action': {
+      if (!session.intelligentUi || !p.credential || Object.hasOwn(p, 'actor'))
+        throw rpcError('CAPABILITY_DENIED')
+      const actor = await o.host.resolveActor(p.credential, 'session')
+      return session.intelligentUi.action(
+        p.input as import('@agnes/protocol').UiActionParams,
+        actor,
+        session.ac.signal,
+      )
+    }
+    case 'ui.read':
+      if (!session.intelligentUi) throw rpcError('CAPABILITY_DENIED')
+      return session.intelligentUi.read(p.input as import('@agnes/protocol').UiReadParams, session.ac.signal)
+    case 'ui.refresh':
+      if (!session.intelligentUi) throw rpcError('CAPABILITY_DENIED')
+      return session.intelligentUi.refresh(
+        p.input as import('@agnes/protocol').UiRefreshParams,
+        session.ac.signal,
+      )
+    case 'feedback.draft': {
+      const runId = String(p.runId)
+      if (p.providerId !== FEEDBACK_PROVIDER_ID)
+        throw rpcError('CAPABILITY_DENIED', { reason: 'FEEDBACK_PROVIDER_MISMATCH' })
+      if (!runId.startsWith('feedback:') || o.aborts.has(runId)) throw new Error('Invalid feedback draft id')
+      const abort = new AbortController()
+      o.aborts.set(runId, abort)
+      try {
+        return await draftFeedbackSkill(
+          session,
+          p.feedback as import('@agnes/protocol/gen/app-server').FeedbackItem,
+          p.evidence as import('@agnes/protocol').EventEnvelope[],
+          AbortSignal.any([abort.signal, AbortSignal.timeout(30_000)]),
+        )
+      } finally {
+        if (o.aborts.get(runId) === abort) o.aborts.delete(runId)
+      }
+    }
+    case 'fileUpload':
+      return sessionFileUpload(session, p as import('@agnes/protocol').FileUploadRequest)
+    case 'references':
+      if (p.operation !== 'search' && p.operation !== 'resolve')
+        throw new Error('Invalid reference operation')
+      return sessionReferences(session, p.operation, p.input as never)
+    case 'workspaceChanges':
+      return sessionWorkspaceChanges(session, p as Parameters<typeof sessionWorkspaceChanges>[1])
+    case 'undoPreview':
+      return sessionUndoPreview(session, p as Parameters<typeof sessionUndoPreview>[1])
+    case 'undo':
+      return sessionUndo(session, p as Parameters<typeof sessionUndo>[1])
+    case 'workspaceFiles':
+      if (p.operation !== 'list' && p.operation !== 'read') throw new Error('Invalid workspace operation')
+      return sessionWorkspaceFiles(session, p.operation, String(p.path ?? ''))
+    case 'permissionContext':
+      return session.permissionContext
     case 'ping':
       return {
         ok: true,
         lastSeq: session.lastSeq,
         preset: session.preset.name,
+        ...(session.preset.permission ? { permission: session.preset.permission } : {}),
         parent: session.d.log.parent ?? null,
       }
     case 'resource.stale':
+      if (o.resources) o.resources.skillControlRevision = undefined
       if (o.resources) o.resources.staleMarks++
       return { ok: true }
+    case 'systemPrompt.preview':
+      return session.systemPromptPreview()
+    case 'controlState':
+      return session.controls.state(typeof p.afterSeq === 'number' ? p.afterSeq : undefined)
+    case 'control':
+      if (
+        !['pause', 'resume', 'cancel', 'interrupt', 'promote', 'child-stop', 'child-continue'].includes(
+          String(p.action),
+        )
+      )
+        throw new TypeError('invalid session control')
+      return session.controls
+        .apply(
+          p.action as import('@agnes/protocol/gen/agnes-v1').SessionControlParams['action'],
+          p.actor as Actor,
+          String(p.admissionId),
+          typeof p.itemId === 'string' ? p.itemId : undefined,
+          typeof p.childId === 'string'
+            ? { id: p.childId, ...(typeof p.text === 'string' ? { text: p.text } : {}) }
+            : undefined,
+        )
+        .catch((error: unknown) => {
+          const failure = error as { code?: string; detail?: { control?: unknown; reason?: unknown } }
+          if (failure.detail?.reason === 'CONTROL_NOT_RUNNING')
+            throw rpcError('SEMANTIC_REJECTED', { code: 'CONTROL_NOT_RUNNING' })
+          if (failure.code === 'E_UNSUPPORTED')
+            throw rpcError('SEMANTIC_REJECTED', {
+              code: 'LOOP_CONTROL_UNSUPPORTED',
+              control: failure.detail?.control,
+            })
+          throw error
+        })
+    case 'editQueuedInput':
+      return session.controls.edit(
+        String(p.itemId),
+        p.content as import('@agnes/protocol').ContentBlock[],
+        p.actor as Actor,
+        String(p.admissionId),
+      )
+    case 'deliverSystemInput':
+      return deliverBoundSystemInput(session, o.host, p)
     case 'enqueue':
       return session.enqueue(p.target as 'next-turn' | 'next-step', p.msg as never)
     case 'sendQueuedNow':
@@ -312,10 +460,18 @@ export async function handleCommand(
       let releaseResources: (() => void) | undefined
       try {
         releaseResources = await admitResourceRun(o, ac.signal)
+        await o.resources?.mcpRows?.prepareTurn?.(ac.signal)
+        await noticeConnectingMcp(session, o.resources?.mcpRows)
         // A run cancelled while it waited for admission still reaches the core, with its signal
         // already aborted: the prompt it was sent for is queued, and the core ends that turn as
         // aborted without doing work. Answering here instead would leave it to run under the next one.
-        return await session.run({ until: (p.until as 'turn-end' | 'idle') ?? 'turn-end', signal: ac.signal })
+        const outcome = await session.run({
+          until: (p.until as 'turn-end' | 'idle') ?? 'turn-end',
+          signal: ac.signal,
+        })
+        return outcome.error?.code === 'AUTH'
+          ? { ...outcome, error: { ...outcome.error, modelRoute: session.preset.model.route.primary } }
+          : outcome
       } finally {
         releaseResources?.()
         if (o.aborts.get(runId) === ac) o.aborts.delete(runId)
@@ -324,46 +480,25 @@ export async function handleCommand(
     case 'abort':
       o.aborts.get(String(p.runId))?.abort()
       return {}
-    case 'verifyHistory':
-      // Rejects with the integrity failure once the background verification has found one.
-      await session.d.log.fullVerified()
+    case 'integrityStatus':
+      return session.integrityStatus()
+    case 'auditHistory':
+      return auditSessionHistory(session)
+    case 'requireVerifiedHistory':
+      await session.requireVerifiedHistory()
       return {}
+    case 'verifyHistory':
+      return session.verifyHistory()
     case 'scan': {
-      // Lean rows only: large inline attachment bytes stay in this process. A page that still would not
-      // fit one frame ends early and says where the supervisor resumes, so no row is read twice.
-      const query = p as { fromSeq?: number; toSeq?: number; limit?: number; order?: 'asc' | 'desc' }
-      const rows = (await session.scanLean(query as never)) as Array<{ seq: number }>
-      const cap = o.maxScanFrameBytes ?? MAX_FRAME_BYTES - 4096
-      let bytes = 2
-      let kept = 0
-      for (const row of rows) {
-        const size = Buffer.byteLength(JSON.stringify(row), 'utf8') + 1
-        if (bytes + size > cap) break
-        bytes += size
-        kept++
-      }
-      if (kept === rows.length) return { rows }
-      if (kept === 0) throw rpcError('INTERNAL_ERROR', { code: 'SCAN_ROW_TOO_LARGE', seq: rows[0]?.seq })
-      const page = rows.slice(0, kept)
-      const last = (page.at(-1) as { seq: number }).seq
-      // The resumed read continues the same query. One theoretical edge: a `limit` above SCAN_PAGE_MAX
-      // asks for every row (and fails with E_SCAN_TRUNCATED past the page maximum); once `limit - kept`
-      // falls to SCAN_PAGE_MAX or below, the resumed read becomes an ordinary page. That only differs
-      // when `toSeq` is open and rows are appended between the two replies: they would be read as a
-      // page up to that limit rather than refused. The first reply already proved the range fits.
-      const limit = typeof query.limit === 'number' ? query.limit - kept : undefined
-      return {
-        rows: page,
-        resume: {
-          ...(query.order === 'desc' ? { toSeq: last - 1 } : { fromSeq: last + 1 }),
-          ...(limit === undefined ? {} : { limit }),
-        },
-      }
+      const rows = await session.scan(p as never)
+      if (Buffer.byteLength(JSON.stringify(rows), 'utf8') > MAX_FRAME_BYTES - 4096)
+        throw rpcError('INTERNAL_ERROR', { code: 'SCAN_PAGE_TOO_LARGE' })
+      return rows
     }
-    case 'exportRaw':
-      return exportRawChunk(session, Number(p.seq), Number(p.offset))
-    case 'attachmentRead':
-      return attachmentReadPage(session, p)
+    case 'toolCatalog': {
+      const capabilities = o.host?.sessionCapabilities?.(session.key)
+      return { ...session.toolCatalog(), ...(capabilities ? { capabilities } : {}) }
+    }
     case 'readToolDetail':
       return readToolDetailPage(session, {
         callSeq: Number(p.callSeq),
@@ -371,6 +506,8 @@ export async function handleCommand(
         offset: Number(p.offset),
         maxBytes: Number(p.maxBytes),
       })
+    case 'readDeliverables':
+      return readDeliverablesPage(session, { afterSeq: Number(p.afterSeq), limit: Number(p.limit) })
     case 'previewSnapshot':
       return session.previewSnapshot()
     case 'latest':
@@ -403,9 +540,22 @@ export async function handleCommand(
     case 'setPreset': {
       return { effectiveFromSeq: await o.host.setSessionPreset(session.key, String(p.preset)) }
     }
+    case 'setToolFilter': {
+      try {
+        const { seq, filter } = await session.setToolFilter(p.filter)
+        return { effectiveFromSeq: seq, filter }
+      } catch (error) {
+        // A refused request crosses the worker boundary as the public rejection, not an internal error.
+        if (error instanceof ToolFilterError) {
+          const { name, data } = toolFilterRejection(error)
+          throw rpcError(name, data)
+        }
+        throw error
+      }
+    }
     case 'setModel': {
       const sel = p.sel as { slot: string; route: string; model: string }
-      o.host.validateModelSwitch(sel)
+      o.host.validateModelSwitch(sel, session.key)
       return { effectiveFromSeq: await session.setModel(sel) }
     }
     case 'setYolo': {
@@ -435,9 +585,27 @@ export async function handleCommand(
         throw new AggregateError(failures, 'Computer Use session YOLO mode switch failed')
       }
     }
+    case 'listDecisions':
+      return session.decisions.list()
     case 'decideApproval': {
-      const args = p as { ticket: string; verdict: ApprovalVerdict; decidedBy: Actor }
-      return session.resumeApproval(args.ticket, args.verdict, args.decidedBy)
+      const args = p as {
+        command: Parameters<typeof session.decisions.answer>[0]
+        context: { actor: Actor; category: 'human'; credential: unknown; sourceVerified: boolean }
+      }
+      return session.decideApproval({
+        command: args.command,
+        context: {
+          actor: args.context.actor,
+          category: args.context.category,
+          async authorize() {
+            const current = await o.host.resolveActor(args.context.credential, 'approval')
+            if (!args.context.sourceVerified && !isDeepStrictEqual(current, args.context.actor))
+              throw Object.assign(new Error('DECISION_AUTHORITY_CHANGED'), { code: 'E_RELATION' })
+            if (session.closingOrClosed)
+              throw Object.assign(new Error('DECISION_SESSION_CLOSED'), { code: 'E_RELATION' })
+          },
+        },
+      })
     }
     case 'resolveActor': {
       const args = p as { credential: unknown; surface: 'session' | 'approval' }
@@ -477,9 +645,9 @@ export async function handleCommand(
  * (the caller's own shared slot, not a return value — see `handleCommand`'s doc comment). Failure at
  * any step is logged and left for the next `run` to retry: the caller advances `reloadedMarks` only
  * when this returns `true`, and a failed reload must never throw out of `run` — the turn proceeds on
- * whatever resource set it already had.
+ * the safely applied resource set; an uncertain MCP apply or failed compensation refuses admission.
  *
- * MCP (stage 2b step 3): the snapshot's servers are applied as Host rows, one per server
+ * MCP: the snapshot's servers are applied as Host rows, one per server
  * (`o.resources.mcpRows`). Host swaps only a row whose definition changed and unmounts only a removed
  * server's row; every other server keeps its connection. The rows own their connections, so this
  * generation holds none, and applying rows is idempotent against the snapshot: a retry after a later
@@ -487,9 +655,9 @@ export async function handleCommand(
  *
  * Skills: `agnes/skills` is reloaded with the new generation, and its `loaded` flag is checked
  * explicitly — `reloadEcosystemExtension`'s own `managed.load()` resolves with `{ loaded: false,
- * error }` rather than throwing (packages/host/src/ext-host/managed-host.ts), so a silent failure
+ * error }` rather than throwing (packages/host-extensions/src/ext-host/managed-host.ts), so a silent failure
  * would otherwise be missed. `tool_search`'s Skill listing (agnes/mcp-search) reads whatever
- * generation agnes/skills serves, so nothing else needs reloading (design §3.9, D123).
+ * generation agnes/skills serves, so nothing else needs reloading.
  *
  * On failure the new generation is closed, never adopted. Closing it only closes its (empty) MCP
  * manager: MCP rows are independent of it. Staleness stays set so every later turn retries — so
@@ -503,31 +671,37 @@ async function reloadWorkerResources(o: {
   const slot = o.resources
   if (!slot || !o.workerResourcesInput) return false
   const previous = slot.generation
+  const recovering = slot.recoveryRequired === true
+  const skillControlRevision = slot.skillControlRevision
+  slot.skillControlRevision = undefined
   let next: WorkerResourceState | undefined
-  let mcpAttempted = false
+  let mcpPending = false
   try {
-    next = await bootstrapWorkerResources(o.workerResourcesInput)
+    next = await bootstrapWorkerResources({
+      ...o.workerResourcesInput,
+      ...(skillControlRevision ? { reuseSkillsAt: skillControlRevision } : {}),
+    })
     if (previous && next) next.runtime.skills.shareRuntimeFrom(previous.runtime.skills)
-    mcpAttempted = !!slot.mcpRows
+    mcpPending = !!slot.mcpRows
     await slot.mcpRows?.apply(next?.mcpEntries ?? [])
+    mcpPending = false
     await refreshSkills(o.host, next?.skillResources)
   } catch (error) {
-    // Host refreshSkillRow compensates its own Skills row before rejecting. Only a failed Host
-    // compensation or failed reverse MCP apply requires intervention before another turn runs.
-    if (error instanceof AggregateError && error.message === 'Skills row refresh recovery required')
+    // MCP and Skills are independent. A successful MCP apply must survive Skills failure,
+    // especially a revocation. A failed MCP apply may have left revoked rows mounted: refuse
+    // admission rather than restoring a previous set that contains them.
+    if (
+      mcpPending ||
+      (error instanceof AggregateError && error.message === 'Skills row refresh recovery required')
+    )
       slot.recoveryRequired = true
-    if (mcpAttempted) {
-      try {
-        await slot.mcpRows?.apply(previous?.mcpEntries ?? [])
-      } catch (restoreError) {
-        slot.recoveryRequired = true
-        console.error('agnes worker: resource generation recovery required:', restoreError)
-      }
-    }
     console.error('agnes worker: resource reload failed, will retry on the next run:', error)
     if (next && next !== previous) closeDisownedGeneration(next)
+    if (recovering && slot.recoveryRequired) slot.onRecoveryFailed?.(error)
     return false
   }
+  // Every row now matches the snapshot again, so nothing is left to recover.
+  slot.recoveryRequired = false
   // An empty reload result (no snapshot found — e.g. it was deleted out from under this worker) is a
   // real outcome, not a no-op: the slot's `generation` is a required key holding `undefined` for
   // exactly this case, so it can be assigned either way without the `exactOptionalPropertyTypes`
@@ -537,18 +711,6 @@ async function reloadWorkerResources(o: {
   // points at it, so this swap is also the one place responsible for retiring it.
   if (previous) closeDisownedGeneration(previous)
   return true
-}
-
-async function refreshSkills(
-  host: Host,
-  input: WorkerResourceState['skillResources'] | undefined,
-): Promise<void> {
-  // Existing test hosts still implement the older worker facade; production Host supplies the row
-  // method. Both currently route to the same single Skills row, never to managed.loadEmbedded.
-  if (typeof host.refreshSkillRow === 'function') return host.refreshSkillRow(input)
-  const status = await host.reloadEcosystemExtension('agnes/skills', input ? { skillResources: input } : {})
-  if (!status.loaded)
-    throw new Error(`agnes/skills reload failed: ${status.error?.message ?? 'unknown error'}`)
 }
 
 /** Retire a generation nobody holds any more. Never awaited: closing it must not delay the turn the
@@ -578,6 +740,7 @@ export async function applyMcpRowChange(
   serverId: string,
   reconnect: boolean,
 ): Promise<McpStatus | undefined> {
+  const deadline = Date.now() + 20_000
   const slot = o.resources
   if (reconnect) slot?.mcpRows?.reconnect(serverId)
   const mark = slot ? ++slot.staleMarks : 0
@@ -598,76 +761,10 @@ export async function applyMcpRowChange(
     release?.()
     if (!slot || slot.reloadedMarks >= mark) break
   }
-  return slot?.mcpRows?.status(serverId)
+  return slot?.mcpRows?.waitForStatus(serverId, Math.max(0, deadline - Date.now()), ac.signal)
 }
 
-/**
- * A skill scan/removal scoped to one daemon-resolved workspace root, run inside whatever worker
- * already holds this process (design §3.5) instead of a dedicated skill-scan worker. Builds one
- * throwaway resource generation via `bootstrapWorkerResources({..., cwd, mcpRows: true})`: `mcpRows`
- * forces `managedMcp` empty, so this generation stages and connects no MCP server, and its own
- * fresh `createSkillCandidateRegistry` + `ExtensionActivationBarrier` never touch the worker's real
- * `resourceSlot.generation` or its mounted Host rows - the daemon-visible resident view is
- * untouched, exactly as the design's "不碰会话视图" requires. The revision returned is the sha256 of
- * whatever `AGNES_RESOURCE_SNAPSHOT` bytes this call actually read, which is what makes the
- * mismatch check below meaningful: a concurrent write between the daemon computing its own expected
- * revision and this call landing is a real race, not a bug, and must fail rather than silently
- * answer from a snapshot the daemon no longer recognizes.
- */
-async function buildWorkspaceSkillScan(
-  workerResourcesInput: WorkerResourceBootstrapInput,
-  workspaceRoot: string,
-): Promise<WorkerResourceState> {
-  const temp = await bootstrapWorkerResources({ ...workerResourcesInput, cwd: workspaceRoot, mcpRows: true })
-  if (!temp) throw new Error('resource worker did not observe a snapshot for this workspace scan')
-  return temp
-}
-
-export async function scanWorkspaceSkills(
-  workerResourcesInput: WorkerResourceBootstrapInput,
-  params: { workspaceRoot: string; rootKey?: string; snapshotRevision: string },
-): Promise<{
-  /** The resolved descriptors (actual/trust/desired/resolution), for reconcile's re-observation of
-   *  Skills the daemon already tracks. Never filtered by `rootKey` (reconcile never passes one). */
-  skills: readonly SkillDescriptor[]
-  /** Raw candidates + capability hash, for refresh's discovery of new/changed Skills. */
-  candidates: readonly Readonly<{ descriptor: SkillDescriptor; capabilityHash: string }>[]
-  failedRoots: readonly string[]
-  skippedResourceIds: readonly string[]
-  roots: readonly SkillRootStatus[]
-}> {
-  const temp = await buildWorkspaceSkillScan(workerResourcesInput, params.workspaceRoot)
-  try {
-    if (temp.revision !== params.snapshotRevision)
-      throw new Error('resource snapshot changed before this Skill scan completed')
-    const rootKey = params.rootKey
-    return {
-      skills: temp.skills,
-      candidates: rootKey
-        ? temp.discovery.candidates.filter((row) => row.descriptor.sourceIdentity.rootKey === rootKey)
-        : temp.discovery.candidates,
-      failedRoots: temp.discovery.failedRoots,
-      skippedResourceIds: rootKey
-        ? temp.discovery.skippedResourceIds.filter((id) => id.split('/')[2] === rootKey)
-        : temp.discovery.skippedResourceIds,
-      roots: temp.discovery.roots,
-    }
-  } finally {
-    await temp.runtime.mcp.close().catch(() => undefined)
-  }
-}
-
-export async function removeWorkspaceSkill(
-  workerResourcesInput: WorkerResourceBootstrapInput,
-  params: { workspaceRoot: string; descriptor: SkillDescriptor; validateOnly: boolean },
-): Promise<void> {
-  const temp = await buildWorkspaceSkillScan(workerResourcesInput, params.workspaceRoot)
-  try {
-    await temp.removeSkill(params.descriptor, params.validateOnly)
-  } finally {
-    await temp.runtime.mcp.close().catch(() => undefined)
-  }
-}
+export { removeWorkspaceSkill, scanWorkspaceSkills } from './skill-scan.js'
 
 /** Service workers deliberately have no HostSession. Their command surface is correspondingly tiny
  * and cannot reach session storage or a writer lease. */
@@ -689,6 +786,7 @@ export async function handleServiceCommand(
       }
     | WorkerGeneration,
   _workerGeneration?: WorkerGeneration,
+  resourceRecoveryRequired?: () => boolean,
 ): Promise<unknown> {
   // The numeric fourth argument remains a generation slot for existing generic service callers.
   // Resource-only workers supply their narrow runtime port first and generation fifth so neither
@@ -697,16 +795,137 @@ export async function handleServiceCommand(
   if (cmd.method === 'configuration.apply') {
     if (!host || !cmd.params.profile || typeof cmd.params.profile !== 'object')
       throw new TypeError('invalid model configuration')
-    await host.applyModelProfile(cmd.params.profile as ResolvedProfile)
-    return { profileHash: host.profile.hash }
+    assertHostPublication(await host.applyModelProfile(cmd.params.profile as ResolvedProfile))
+    // Composition Hosts project a different hash per container. A successful publication
+    // acknowledges the deployment input, rather than that container's derived profile hash.
+    return { profileHash: (cmd.params.profile as ResolvedProfile).hash }
   }
   const p = cmd.params
+  if (isProfileCommand(cmd.method)) return profileServiceCommand(host, cmd, aborts)
   switch (cmd.method) {
     case 'ping':
       return { ok: true }
-    // The batch engine asks before it writes item jobs; a Host-free worker runs no item sessions.
-    case 'batch.confinement':
-      return { ready: host ? batchItemConfinementLive(host) : false }
+    case 'memory.manage': {
+      if (!host) throw new Error('memory requires an assembled Host')
+      const input = p as import('@agnes/protocol/gen/app-server').AdminMemoryParams
+      return manageMemory(host.memory(input.cwd, 'human-editor'), input)
+    }
+    case 'systemPrompt.defaults':
+      if (!host) throw new Error('system prompt requires an assembled Host')
+      return host.systemPromptPreview(p.config as import('@agnes/protocol').SystemPromptConfig)
+    case 'session.catalog': {
+      if (!host) throw new Error('session catalog requires an assembled Host')
+      if (p.modelsOnly === true)
+        return {
+          modelAdapters: conversationModelAdapters(
+            host.modelAdapterCatalog(),
+            host.provider.models(),
+            host.profile.provider.routes ?? [],
+          ),
+          sources: (host.runtimeTargetSnapshot?.()?.tree.rows ?? [])
+            .filter((row) => !row.disabled)
+            .map(({ plugin, entryRevision }) => ({ plugin, entryRevision })),
+        }
+      const selection = {
+        presets: host.profile.presets.allowed.map((id) => ({
+          id,
+          isDefault: id === host.profile.presets.default,
+        })),
+        permissions: sessionPermissionCatalog(host.profile),
+        loops: host.kernel.loops.catalog(),
+        modelAdapters: conversationModelAdapters(
+          host.modelAdapterCatalog(),
+          host.provider.models(),
+          host.profile.provider.routes ?? [],
+        ),
+      }
+      // Loop/default pickers need descriptions, not bundle admission or deployment security scans.
+      if (p.selectionOnly === true) return selection
+      const publication = host.compositionPublicationStatus?.()
+      return {
+        ...(publication
+          ? {
+              publication: {
+                operation: publication.operation,
+                ok: publication.ok,
+                recovery: publication.recovery,
+                containers: publication.containers.map(({ compositionHash, status }) => ({
+                  compositionHash,
+                  status,
+                })),
+              },
+            }
+          : {}),
+        ...(host.securityStatus ? { security: host.securityStatus() } : {}),
+        providers: host.providers.catalog(),
+        bundles: Object.values((await host.sessionBundleCatalog?.()) ?? host.profile.bundleCatalog ?? {}).map(
+          ({ id, sourcePackage }) => ({
+            id,
+            sourcePackage,
+          }),
+        ),
+        ...selection,
+      }
+    }
+    case 'agents.resolve': {
+      if (!host?.resolveAgent || typeof p.ref !== 'string') throw new Error('agent resolution unavailable')
+      return host.resolveAgent(p.ref)
+    }
+    case 'session.runtime': {
+      if (!host?.sessionRuntime) throw new Error('Session runtime requires an assembled Host')
+      if (typeof p.sessionId !== 'string') throw new TypeError('invalid session key')
+      if (!host.kernel.get(p.sessionId) && host.sessionGeneration?.(p.sessionId) === undefined)
+        throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
+      return host.sessionRuntime(p.sessionId)
+    }
+    case 'session.view': {
+      if (!host) throw new Error('Session view requires an assembled Host')
+      if (typeof p.sessionId !== 'string') throw new TypeError('invalid session key')
+      try {
+        return await host.readSessionView(p.sessionId, {
+          ...(typeof p.maxNodes === 'number' ? { maxNodes: p.maxNodes } : {}),
+        })
+      } catch (error) {
+        if ((error as { code?: unknown } | null)?.code === 'E_SESSION_NOT_FOUND')
+          throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
+        throw error
+      }
+    }
+    case 'pluginGenerations.publicationStatus':
+      if (!host) throw new Error('Publication status requires an assembled Host')
+      return { publication: host.compositionPublicationStatus?.() ?? null }
+    case 'pluginGenerations.migrate':
+      if (!host?.migrateSessionGeneration) throw new Error('Session generation migration is unavailable')
+      if (typeof p.sessionId !== 'string' || !p.sessionId || p.sessionId.length > 512)
+        throw new TypeError('invalid session key')
+      if (resourceRecoveryRequired?.())
+        throw new HostError(
+          'E_GENERATION_EXECUTION_UNSETTLED',
+          'generation migration refused: recovery-required',
+          {
+            detail: { reasons: [{ kind: 'recovery-required', id: p.sessionId, sessionKey: p.sessionId }] },
+          },
+        )
+      return host.migrateSessionGeneration(p.sessionId, {
+        ...(resourceRecoveryRequired === undefined ? {} : { recoveryRequired: resourceRecoveryRequired }),
+        ...(Array.isArray(p.repin) && p.repin.every((kind) => typeof kind === 'string')
+          ? { repin: p.repin as string[] }
+          : {}),
+        ...(typeof p.operator === 'string' ? { operator: p.operator } : {}),
+      })
+    case 'pluginGenerations.collect':
+      if (!host?.collectPluginGenerations) throw new Error('Plugin generation collection is unavailable')
+      await host.collectPluginGenerations()
+      return {}
+    case 'observability.health':
+      return exporterHealth()
+    case 'pluginGenerations.status': {
+      if (host?.pluginGenerationStatusAsync)
+        return withPackageVerification(async () => host.pluginGenerationStatusAsync!())
+      if (host?.pluginGenerationStatus)
+        return withPackageVerification(async () => host.pluginGenerationStatus!())
+      throw new Error('Plugin generation status is unavailable')
+    }
     case 'abortService':
       aborts.get(String(p.callId))?.abort()
       return {}
@@ -734,52 +953,10 @@ export async function handleServiceCommand(
       if (!host?.computerUse || typeof p.operationId !== 'string')
         throw new TypeError('invalid Computer Use operation cancellation')
       return host.computerUse.operationCancel(p.operationId)
-    case 'inspectService': {
-      if (!host) throw new Error('generic services are unavailable in a resource lifecycle worker')
-      const params = p.call as ExtensionCallParams | undefined
-      if (
-        typeof p.sessionKey !== 'string' ||
-        p.sessionKey.length === 0 ||
-        !params ||
-        params.sessionId !== p.sessionKey
-      )
-        throw rpcError('CAPABILITY_DENIED')
-      const callId = String(p.callId)
-      if (!callId || aborts.has(callId)) throw new Error('duplicate service call id')
-      const ac = new AbortController()
-      aborts.set(callId, ac)
-      try {
-        return await host.inspectService(params, p.credential, ac.signal)
-      } finally {
-        aborts.delete(callId)
-      }
-    }
-    case 'callService': {
-      if (!host) throw new Error('generic services are unavailable in a resource lifecycle worker')
-      const params = p.call as ExtensionCallParams | undefined
-      if (
-        typeof p.sessionKey !== 'string' ||
-        p.sessionKey.length === 0 ||
-        !params ||
-        params.sessionId !== p.sessionKey
-      )
-        throw rpcError('CAPABILITY_DENIED')
-      const callId = String(p.callId)
-      if (!callId || aborts.has(callId)) throw new Error('duplicate service call id')
-      const ac = new AbortController()
-      aborts.set(callId, ac)
-      try {
-        const admission = p.effectCommandId
-        return await host.callService(
-          params,
-          p.credential,
-          ac.signal,
-          typeof admission === 'string' ? { commandId: admission } : undefined,
-        )
-      } finally {
-        aborts.delete(callId)
-      }
-    }
+    case 'resolveService':
+    case 'inspectService':
+    case 'callService':
+      return sessionServiceCommand(host, cmd, aborts)
     case 'resourceMcpTools':
       if (!resources) throw new Error('resource runtime is unavailable')
       return resources.mcp.tools(String(p.serverId), typeof p.cursor === 'string' ? p.cursor : undefined)

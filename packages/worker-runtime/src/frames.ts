@@ -1,6 +1,7 @@
-import { createHash } from 'node:crypto'
 import type {
+  DaemonNotice,
   EventEnvelope,
+  LoopSelection,
   McpStatus,
   RpcError,
   RuntimeStaleFrame,
@@ -10,37 +11,86 @@ import type {
 import { workerGeneration } from '@agnes/protocol'
 
 export type SessionMethod =
+  | 'permissionContext'
+  | 'deliverSystemInput'
   | 'enqueue'
+  | 'control'
+  | 'controlState'
+  | 'editQueuedInput'
   | 'sendQueuedNow'
   | 'removeQueuedInput'
   | 'run'
   | 'abort'
-  | 'scan'
   | 'verifyHistory'
+  | 'integrityStatus'
+  | 'auditHistory'
+  | 'requireVerifiedHistory'
+  | 'scan'
   | 'latest'
   | 'projectUI'
   | 'projectUIPatch'
   | 'projectUIOpening'
   | 'projectUIHistory'
+  | 'toolCatalog'
+  | 'approvalGrants'
+  | 'revokeApprovalGrant'
   | 'readToolDetail'
-  | 'exportRaw'
-  | 'attachmentRead'
+  | 'readDeliverables'
+  | 'feedback.draft'
+  | 'btw'
+  | 'voice.transcribe'
+  | 'voice.speak'
+  | 'ui.action'
+  | 'ui.read'
+  | 'ui.refresh'
+  | 'references'
+  | 'workspaceFiles'
+  | 'fileUpload'
+  | 'workspaceChanges'
+  | 'undoPreview'
+  | 'undo'
   | 'append'
   | 'setPreset'
+  | 'setToolFilter'
   | 'setModel'
   | 'setYolo'
   | 'manualCompact'
   | 'decideApproval'
+  | 'listDecisions'
   | 'resolveActor'
   | 'fork'
   | 'resume'
   | 'ping'
   | 'previewSnapshot'
+  | 'systemPrompt.preview'
 
-/** Process-wide methods available before C2 runtime-target delivery exists. */
+/** Process-wide methods available before runtime-target delivery exists. */
 export type WorkerMethod =
   | 'ping'
+  | 'pluginGenerations.status'
+  | 'pluginGenerations.publicationStatus'
+  | 'pluginGenerations.migrate'
+  | 'pluginGenerations.collect'
   | 'configuration.apply'
+  | 'session.catalog'
+  | 'agents.resolve'
+  | 'session.runtime'
+  | 'session.view'
+  | 'systemPrompt.defaults'
+  | 'memory.manage'
+  | 'observability.health'
+  | 'boundWake.resolve'
+  | 'boundWake.read'
+  | 'boundWake.require'
+  | 'profileManaged.status'
+  | 'profileStreams.endpoint'
+  | 'profileService.identity'
+  | 'profileService.authorizeControl'
+  | 'profileService.call'
+  | 'profileService.readOperation'
+  | 'profileService.listDecisions'
+  | 'profileService.answerDecision'
+  | 'resolveService'
   | 'inspectService'
   | 'callService'
   | 'abortService'
@@ -52,13 +102,13 @@ export type WorkerMethod =
   | 'computerUse.operationStatus'
   | 'computerUse.operationCancel'
   | 'resourceSkillScan'
+  | 'resourceSkillView'
   | 'resourceSkillRemove'
   | 'resourceMcpTest'
   | 'resourceMcpTools'
   | 'resourceMcpApply'
   | 'resourceMcpReconnect'
   | 'resource.stale'
-  | 'batch.confinement'
 
 export type WorkerHello = {
   kind: 'hello'
@@ -102,6 +152,8 @@ export type WorkspaceBindingFrame = Readonly<{
   workspaceId: string
   revision: number
   canonicalRoot: string
+  /** Extra directories admitted at creation; absent for bindings that have none. */
+  extraRoots?: readonly string[]
 }>
 
 export function parseWorkspaceBinding(value: unknown, sessionKey: string): WorkspaceBindingFrame {
@@ -115,7 +167,9 @@ export function parseWorkspaceBinding(value: unknown, sessionKey: string): Works
     !Number.isSafeInteger(binding.revision) ||
     (binding.revision as number) < 1 ||
     typeof binding.canonicalRoot !== 'string' ||
-    binding.canonicalRoot.length === 0
+    binding.canonicalRoot.length === 0 ||
+    (binding.extraRoots !== undefined &&
+      (!Array.isArray(binding.extraRoots) || binding.extraRoots.some((root) => typeof root !== 'string')))
   )
     throw new Error('invalid workspace binding')
   return binding as WorkspaceBindingFrame
@@ -136,48 +190,43 @@ export type SessionInterruptedFrame = {
   kind: 'session.interrupted'
   sessionKey: string
   reason: string
-  /** The error code, when the cause had one; E_LEDGER_INTEGRITY means the session cannot be reopened. */
-  code?: string
 }
 export type LogFrame = {
+  traceId?: string
+  spanId?: string
   kind: 'log'
   sessionKey: string
   level: 'debug' | 'info' | 'warn' | 'error'
   message: string
 }
-/** The session name used in runtime-log records: stable, short, and not the key itself. */
-export function sessionHash(sessionKey: string): string {
-  return createHash('sha256').update(sessionKey).digest('hex').slice(0, 16)
-}
-
-/** A diagnostic the supervisor writes to the runtime log: sizes, timings and outcomes, never content. */
-export type RecordFrame = {
-  kind: 'record'
-  sessionKey: string
-  record: { kind: 'session.open' | 'session.verify_full'; detail: Record<string, unknown> }
-}
-/** How far opening a session has got, by seq; throttled by the worker, relayed to the loading client. */
-export type ProgressFrame = {
-  kind: 'progress'
-  sessionKey: string
-  phase: 'verify' | 'fold'
-  done: number
-  total: number
-}
 export type ResourceStatusFrame = { kind: 'resourceStatus'; serverId: string; status: McpStatus }
 export type WorkerReplyFrame = {
   kind: 'reply'
+  permissionEvidence?: import('@agnes/protocol').JsonValue[]
   requestId: string
   result?: unknown
-  error?: RpcError | { code: string; message: string; reason?: string }
+  error?:
+    | RpcError
+    | {
+        code: string
+        message: string
+        reason?: string
+        diagnostics?: import('@agnes/protocol').PackageAdminError['diagnostics']
+      }
 }
 export type SessionReplyFrame = WorkerReplyFrame & { sessionKey: string }
 export type RequestFrame = {
   kind: 'request'
+  /** Host-stamped effective session policy, outside model-accessible params. */
+  permissionContext?: import('@agnes/protocol').PermissionContext
   sessionKey: string
   requestId: string
   method:
+    | 'scheduling'
+    | 'bound-wake'
     | 'permission'
+    | 'permission-abort'
+    | 'permission-revoke'
     | 'notice'
     | 'artifact-media-read'
     | 'skill-install'
@@ -186,7 +235,6 @@ export type RequestFrame = {
     | 'plugin-manage-abort'
     | 'mcp-manage'
     | 'mcp-manage-abort'
-    | 'batch'
   params: unknown
 }
 export type WorkerCommandFrame = {
@@ -202,6 +250,12 @@ export type SessionOpenFrame = {
   params: {
     binding: WorkspaceBindingFrame
     preset?: string
+    permission?: string
+    agent?: string
+    agentDigest?: string
+    bundles?: readonly string[]
+    systemPromptAppend?: string
+    loop?: LoopSelection
     resume?: boolean
     parent?: { key: string; boundarySeq: number }
   }
@@ -231,18 +285,19 @@ export type CommandFrame = WorkerCommandFrame | SessionCommandFrame
 export type ReplyFrame = WorkerReplyFrame | SessionReplyFrame
 export type CloseFrame = { kind: 'close'; reason: string }
 export type WorkerToSupervisor =
+  | { kind: 'session.loading'; requestId: string; sessionKey: string; verifiedSeq: number; lastSeq: number }
   | WorkerHello
   | EventFrame
   | PreviewFrame
   | SessionInterruptedFrame
   | LogFrame
-  | RecordFrame
-  | ProgressFrame
+  | { kind: 'decisionsChanged'; detail: Extract<DaemonNotice, { kind: 'decisions_changed' }>['detail'] }
   | ResourceStatusFrame
   | WorkerReplyFrame
   | SessionReplyFrame
   | RequestFrame
 export type SupervisorToWorker =
+  | { kind: 'session.open.cancel'; requestId: string; sessionKey: string }
   | RuntimeStaleFrame
   | WorkerCommandFrame
   | SessionOpenFrame

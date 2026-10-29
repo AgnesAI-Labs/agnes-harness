@@ -14,6 +14,13 @@ import {
 } from '../src/row-mount.js'
 import type { RowOrigin, RowOriginLookup } from '../src/row-origin.js'
 
+export { scriptedDecisions } from './decisions.js'
+export { driveLoop, type LoopTestOptions } from './loop.js'
+export { type ModelReply, scriptedModel } from './model.js'
+export { type ModelAdapterTestOptions, runModelAdapter } from './model-adapter.js'
+export { createPluginTestHost, type PluginTestOptions } from './plugin.js'
+export type { PluginTestRegistration } from './registration.js'
+
 export interface VerifiedTestSnapshotRef {
   readonly packageId: string
   readonly snapshotId: string
@@ -191,3 +198,15 @@ export function createVerifiedTestRoot(options: VerifiedTestRootOptions = {}): V
     },
   })
 }
+
+export {
+  childAgentConformance,
+  compactionConformance,
+  loopConformance,
+  modelAdapterConformance,
+  persistenceConformance,
+  runProviderConformance,
+  sandboxConformance,
+  toolPolicyConformance,
+  toolRuntimeConformance,
+} from '@agnes/extension-api/testkit'

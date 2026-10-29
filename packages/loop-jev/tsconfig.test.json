@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist/test",
+    "tsBuildInfoFile": "dist/tsconfig.test.tsbuildinfo"
+  },
+  "include": ["test/**/*.ts"],
+  "references": [
+    { "path": "." },
+    { "path": "../extension-api" },
+    { "path": "../protocol" },
+    { "path": "../plugin-runtime" },
+    { "path": "../plugin-runtime/tsconfig.testkit.json" },
+    { "path": "../core" },
+    { "path": "../core/tsconfig.testkit.json" },
+    { "path": "../ai" },
+    { "path": "../base" },
+    { "path": "../base/tsconfig.testkit.json" },
+    { "path": "../host" },
+    { "path": "../host/tsconfig.testkit.json" },
+    { "path": "../package-manager" },
+    { "path": "../sdk" }
+  ]
+}

@@ -1,0 +1,75 @@
+{
+  "name": "@agnes/conversation-ui",
+  "version": "0.1.1",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "src",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "client-build.json"
+  ],
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:conversation-ui/main",
+        "export": "main",
+        "apiRange": "^5.0.0",
+        "runtime": "in-process",
+        "capabilities": {
+          "ui": true
+        },
+        "metadata": {
+          "displayName": "Conversation presentation",
+          "summary": "Default conversation frame, transcript and independently selected composer.",
+          "description": "Default conversation frame, transcript and independently selected composer.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "\u5bf9\u8bdd\u5448\u73b0",
+              "summary": "\u9ed8\u8ba4\u5bf9\u8bdd\u6846\u67b6\u3001\u8f6c\u5f55\u4e0e\u53ef\u72ec\u7acb\u9009\u62e9\u7684\u8f93\u5165\u6846\u3002",
+              "description": "\u9ed8\u8ba4\u5bf9\u8bdd\u6846\u67b6\u3001\u8f6c\u5f55\u4e0e\u53ef\u72ec\u7acb\u9009\u62e9\u7684\u8f93\u5165\u6846\u3002"
+            }
+          }
+        }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:conversation-ui/main",
+        "path": "./src/agnes.client.json"
+      }
+    ],
+    "metadata": {
+      "displayName": "Conversation presentation",
+      "summary": "Default conversation frame, transcript and independently selected composer.",
+      "description": "Default conversation frame, transcript and independently selected composer.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "\u5bf9\u8bdd\u5448\u73b0",
+          "summary": "\u9ed8\u8ba4\u5bf9\u8bdd\u6846\u67b6\u3001\u8f6c\u5f55\u4e0e\u53ef\u72ec\u7acb\u9009\u62e9\u7684\u8f93\u5165\u6846\u3002",
+          "description": "\u9ed8\u8ba4\u5bf9\u8bdd\u6846\u67b6\u3001\u8f6c\u5f55\u4e0e\u53ef\u72ec\u7acb\u9009\u62e9\u7684\u8f93\u5165\u6846\u3002"
+        }
+      }
+    },
+    "provides": [
+      "ui"
+    ]
+  },
+  "peerDependencies": {
+    "@agnes/web-client": "0.0.0",
+    "@agnes/web-ui": "0.0.0",
+    "react": "18.3.1",
+    "@agnes/web": "0.0.0",
+    "@agnes/web-units": "0.0.0"
+  },
+  "devDependencies": {
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "react": "18.3.1",
+    "@agnes/web": "workspace:*",
+    "@agnes/web-units": "workspace:*"
+  }
+}

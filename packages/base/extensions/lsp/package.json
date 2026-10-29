@@ -1,0 +1,51 @@
+{
+  "name": "@agnes/lsp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/lsp",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "tools",
+          "hooks"
+        ],
+        "capabilities": {
+          "tools": {
+            "prefix": "",
+            "names": [
+              "lsp_diagnostics"
+            ]
+          },
+          "hooks": [
+            "shutdown"
+          ],
+          "slots": [],
+          "events": false,
+          "resources": [],
+          "network": [],
+          "artifacts": true
+        },
+        "metadata": {
+          "displayName": "Code diagnostics",
+          "summary": "Shows the agent compile and type errors from language servers after it edits code.",
+          "description": "Runs language servers (TypeScript, Python, Go, Rust) in the session sandbox and reports their errors for edited files.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "代码诊断",
+              "summary": "让 Agent 改完代码后立刻看到语言服务器报告的编译和类型错误。",
+              "description": "在会话沙箱里运行语言服务器（TypeScript、Python、Go、Rust），并报告被修改文件的错误。"
+            }
+          }
+        }
+      }
+    ],
+    "provides": [
+      "tool"
+    ]
+  }
+}

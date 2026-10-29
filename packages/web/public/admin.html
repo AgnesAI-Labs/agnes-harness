@@ -2,11 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="theme-color" content="" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="agnes-csp-nonce" content="__AGNES_CSP_NONCE__" />
-    <link rel="icon" href="/brand-mark.png" type="image/png" />
-    <title data-i18n="shell.document-title">Plugin management · Agnes</title>
-    <!-- 与 index.html 同理：本页也会被嵌进设置对话框，必须同源跟随主题且不闪。 -->
+    <link rel="icon" href="/favicon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
+    <title>Agnes Harness</title>
+    <!-- This address is an alias of the workbench settings: the entry script forwards to it, and
+         the theme script keeps the forwarding frame on the reader's theme. -->
     <script src="/theme.js"></script>
     <link rel="stylesheet" href="/style.css" />
     <link rel="stylesheet" href="/antd.css" />
@@ -19,123 +22,26 @@
     "react-dom": "/vendor/react-dom.js",
     "react-dom/client": "/vendor/react-dom-client.js",
     "antd": "/vendor/antd.js",
-    "@agnes/web-ui/assistant-ui": "/vendor/assistant-ui.js",
+    "recharts": "/vendor/recharts.js",
+    "antd/locale/en_US.js": "/vendor/antd-en-us.js",
+    "antd/locale/zh_CN.js": "/vendor/antd-zh-cn.js",
+    "@agnes/web-ui": "/vendor/web-ui.js",
+    "@agnes/web-ui/conversation": "/vendor/conversation.js",
+    "@agnes/web-ui/x": "/vendor/x.js",
     "@agnes/cordis": "/vendor/cordis.js",
-    "@agnes/web-client": "/vendor/web-client.js"
+    "@agnes/web-client": "/vendor/web-client.js",
+    "@agnes/protocol": "/vendor/protocol.js",
+    "@agnes/sdk/browser": "/vendor/sdk-browser.js",
+    "@agnes/sdk": "/vendor/sdk-browser.js",
+    "@agnes/web-units/shell": "/vendor/web-units-shell.js",
+    "@agnes/web-foundation/locale-catalog": "/vendor/web-locale-catalog.js",
+    "@agnes/web-conversation/goal-renderers": "/vendor/goal-renderers.js",
+    "@agnes/web-conversation/interaction-renderer": "/vendor/interaction-renderer.js",
+    "@agnes/web/presentation-renderers": "/vendor/presentation-renderers.js"
   }
 }
     </script>
     <script type="module" src="/admin-standalone.js"></script>
   </head>
-  <body data-agnes-region="app" id="plugin-admin-page" class="admin-page">
-    <a class="skip-link" href="#plugin-content" data-i18n="shell.skip">Skip to plugin list</a>
-    <header data-agnes-region="topbar" class="admin-header">
-      <button id="return-workbench" class="secondary-button compact" type="button" data-i18n="shell.return">Return to workbench</button>
-      <div class="admin-heading">
-        <p class="eyebrow" data-i18n="shell.eyebrow">Settings</p>
-        <h1 data-i18n="shell.heading">Plugin management</h1>
-      </div>
-      <button id="install-source" class="primary-button" type="button" data-i18n="shell.install">Install from source</button>
-    </header>
-
-    <main id="plugin-content" class="admin-main" tabindex="-1">
-      <section id="recovery-notice" class="recovery-notice" hidden data-i18n-aria="shell.recovery.aria" aria-label="Recovery mode">
-        <strong data-i18n="shell.recovery.title">Read-only recovery mode</strong>
-        <p data-i18n="shell.recovery.description">The admin page can show security status. Checks and changes are disabled until recovery is complete.</p>
-      </section>
-      <section id="orphan-pins" class="orphan-pins" hidden data-i18n-aria="shell.orphan.aria" aria-label="Orphan runtime pins">
-        <div class="orphan-pins-heading">
-          <strong data-i18n="shell.orphan.title">Orphan runtime pins need to be released</strong>
-          <button id="orphan-pins-release-all" class="secondary-button compact" type="button" data-i18n="shell.orphan.release-all">Release all</button>
-        </div>
-        <p id="orphan-pins-status" class="orphan-pins-status" hidden></p>
-        <ul id="orphan-pins-list" class="orphan-pins-list"></ul>
-      </section>
-      <p id="admin-notice" class="admin-notice" role="status" aria-live="polite"></p>
-      <p id="plugin-tree-status" class="plugin-tree-status" role="status" aria-live="polite"></p>
-
-      <div class="plugin-toolbar">
-        <div class="plugin-tabs" role="tablist" data-i18n-aria="shell.tabs.aria" aria-label="Plugin views">
-          <button id="installed-tab" type="button" role="tab" aria-selected="true" aria-controls="plugin-list" data-i18n="shell.tab.installed">Installed</button>
-          <button id="discover-tab" type="button" role="tab" aria-selected="false" aria-controls="plugin-list" data-i18n="shell.tab.discover">Discover</button>
-        </div>
-        <label class="plugin-search-field" for="plugin-search">
-          <span class="visually-hidden" data-i18n="shell.search.aria">Search plugins</span>
-          <input id="plugin-search" type="search" autocomplete="off" data-i18n-placeholder="search.installed" placeholder="Filter installed plugins" />
-        </label>
-      </div>
-
-      <div id="plugin-layout" class="plugin-layout">
-        <section id="plugin-list" class="plugin-list" role="tabpanel" aria-live="polite"></section>
-      </div>
-    </main>
-
-    <!-- 详情从右侧固定抽屉改为独立模态框：抽屉在窄屏下没有自己的滚动，操作按钮会被长内容顶出可视区。 -->
-    <dialog data-agnes-region="dialog" id="plugin-detail" class="plugin-detail" data-i18n-aria="shell.detail.aria" aria-label="Plugin details"></dialog>
-
-    <dialog data-agnes-region="dialog" id="source-dialog" aria-labelledby="source-dialog-title">
-      <form id="source-form" class="plugin-dialog-form">
-        <div class="dialog-heading">
-          <div>
-            <p class="eyebrow" data-i18n="shell.source.kicker">Pre-install check</p>
-            <h2 id="source-dialog-title" data-i18n="shell.source.heading">Check a plugin source</h2>
-          </div>
-        </div>
-        <p class="dialog-intro" data-i18n="shell.source.intro">Checking does not install or enable a plugin. Review the integrity summary before continuing.</p>
-        <label class="form-field" for="source-type"><span data-i18n="shell.source.type">Source type</span>
-          <select id="source-type">
-            <option value="npm">npm</option>
-            <option value="file" data-i18n="shell.source.file">Local path</option>
-            <option value="workspace" data-i18n="shell.source.workspace">Workspace extension</option>
-            <option value="git" data-i18n="shell.source.git">Pinned Git commit</option>
-          </select>
-        </label>
-        <label class="form-field" for="source-ref"><span data-i18n="shell.source.reference">Source reference</span>
-          <input id="source-ref" required autocomplete="off" spellcheck="false" placeholder="npm:scope/package@1.2.3" />
-        </label>
-        <p class="field-hint" data-i18n="shell.source.hint">The host strictly validates source formats. Do not paste credentials here.</p>
-        <p id="source-error" class="plugin-form-error" role="alert"></p>
-        <div class="dialog-actions">
-          <button id="source-cancel" class="secondary-button" type="button" data-i18n="shell.cancel">Cancel</button>
-          <button class="primary-button" type="submit" data-i18n="shell.source.submit">Check source</button>
-        </div>
-      </form>
-    </dialog>
-
-    <dialog data-agnes-region="dialog" id="plugin-confirm" aria-labelledby="plugin-confirm-title">
-      <div class="plugin-dialog-form">
-        <div class="dialog-heading">
-          <div>
-            <p class="eyebrow" data-i18n="shell.confirm.kicker">Confirmation required</p>
-            <h2 id="plugin-confirm-title" data-i18n="shell.confirm.heading">Confirm action</h2>
-          </div>
-        </div>
-        <p id="plugin-confirm-description" class="dialog-intro"></p>
-        <div id="plugin-confirm-preview" class="confirm-facts" hidden></div>
-        <div class="dialog-actions">
-          <button id="plugin-confirm-cancel" class="secondary-button" type="button" data-i18n="shell.cancel">Cancel</button>
-          <button id="plugin-confirm-action" class="primary-button" type="button" data-i18n="shell.confirm.action">Confirm</button>
-        </div>
-      </div>
-    </dialog>
-
-    <!-- 共享确认弹窗（@agnes/web-admin-frame 的 createConfirmController）；同一份标记也存在于
-         resources.html 与 index.html。 -->
-    <dialog data-agnes-region="dialog" id="admin-confirm" aria-labelledby="admin-confirm-title">
-      <div class="plugin-dialog-form">
-        <div class="dialog-heading">
-          <div>
-            <p class="eyebrow" data-i18n="shell.confirm.kicker">Confirmation required</p>
-            <h2 id="admin-confirm-title" data-i18n="shell.confirm.heading">Confirm action</h2>
-          </div>
-        </div>
-        <p id="admin-confirm-description" class="dialog-intro"></p>
-        <div id="admin-confirm-preview" class="confirm-facts" hidden></div>
-        <div class="dialog-actions">
-          <button id="admin-confirm-cancel" class="secondary-button" type="button" data-i18n="shell.cancel">Cancel</button>
-          <button id="admin-confirm-action" class="primary-button" type="button" data-i18n="shell.confirm.action">Confirm</button>
-        </div>
-      </div>
-    </dialog>
-  </body>
+  <body data-agnes-region="app"></body>
 </html>

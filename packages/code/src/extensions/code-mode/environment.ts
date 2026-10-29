@@ -8,22 +8,11 @@ import { applyVars, loadPrompt } from '../../prompts/sections.js'
 export type EnvironmentFacts = {
   agnesVersion: string
   platform: string
-  /** What the shell tool runs, as the host describes it. */
   shell: string
-  /** The language that shell speaks; it decides whether the PowerShell rules follow the facts. */
-  dialect: 'posix' | 'powershell'
 }
 
-/**
- * Models write bash out of habit, and in PowerShell that fails: they wrapped commands in
- * `powershell -Command "..."`, whose `$` the outer shell expanded first, called `curl` (an alias of
- * Invoke-WebRequest in 5.1) with curl's flags, and fed heredocs to the parser. The rules that prevent
- * this are stated only where the shell is PowerShell, so a POSIX session's prompt does not carry them.
- */
 export function renderEnvironment(facts: EnvironmentFacts): string {
-  const { dialect, ...vars } = facts
-  const text = applyVars(loadPrompt('environment'), vars)
-  return dialect === 'powershell' ? `${text}\n\n${loadPrompt('environment-powershell')}` : text
+  return applyVars(loadPrompt('environment'), facts)
 }
 
 /**
@@ -45,19 +34,11 @@ export type RuntimeSnapshotFacts = {
   disclosure: string
   enforcement: string
   cwd: string
+  /** Sorted canonical extra directories the session may use; absent when it has none. */
+  extraDirectories?: string[]
 }
 
-/**
- * The one fact worth stating about the tool list that the wire tools field cannot state for
- * itself: that it is complete. Tool names used to be enumerated here too, which made this text
- * change every time disclosure changed and put that change ahead of persona and doctrine in
- * system; the wire already carries the names on every request, so repeating them bought nothing
- * and cost a cache-busting section. What is left is a choice between two fixed sentences.
- *
- * The parameter still takes the full list, not a boolean, to preserve this function's existing
- * exported signature — but only `names.length` is read below. A future reader should not assume
- * the actual names still matter here; they don't.
- */
+/** Tool-use instructions are ordinary prompt text; the wire tools field supplies the names. */
 export function renderTools(names: readonly string[]): string {
   return loadPrompt(names.length === 0 ? 'tools-none' : 'tools-available')
 }

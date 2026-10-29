@@ -2,7 +2,7 @@ import type { RefineProposal } from '@agnes/core'
 import { describe, expect, it } from 'vitest'
 import { fakeSeamInit } from '../../../testkit/seam-init.js'
 import { RefineQueue } from '../src/queue.js'
-import { refineHarness } from '../src/seam.js'
+import { createRefineHarness } from '../src/seam.js'
 
 const p = (id: string, kind = 'memory'): RefineProposal =>
   ({
@@ -19,15 +19,21 @@ const p = (id: string, kind = 'memory'): RefineProposal =>
     evidenceSeqs: [3],
   }) as RefineProposal
 
+const harnessFor = (init: ReturnType<typeof fakeSeamInit>) =>
+  createRefineHarness(
+    new RefineQueue(init.adapters.storage.namespace('refine_queue')),
+    (init.profile.preset.harness as { queue_max: number }).queue_max,
+  )
+
 describe('refine harness', () => {
   it('queues valid proposals and rejects bad kinds or a full queue', async () => {
     const init = fakeSeamInit({ preset: { harness: { queue_max: 2 } } })
-    const h = await refineHarness(init)
+    const h = harnessFor(init)
     expect(await h.propose(p('a'))).toBe('queued')
     expect(await h.propose(p('b', 'bogus'))).toBe('rejected')
     expect(await h.propose(p('c'))).toBe('queued')
     expect(await h.propose(p('d'))).toBe('rejected')
-    const q = new RefineQueue(init.adapters.storage.table('refine_queue'))
+    const q = new RefineQueue(init.adapters.storage.namespace('refine_queue'))
     expect(q.next()?.proposalId).toBe('a')
     q.mark('a', 'applied')
     expect(q.next()?.proposalId).toBe('c')
@@ -39,7 +45,7 @@ describe('refine harness', () => {
   // narrow `trigger` to the plan's stale three-value description in a way that rejects this.
   it('accepts a rollback-triggered proposal (core-constructed, not narrowed to three trigger values)', async () => {
     const init = fakeSeamInit({ preset: { harness: { queue_max: 5 } } })
-    const h = await refineHarness(init)
+    const h = harnessFor(init)
     const rollback: RefineProposal = {
       proposalId: 'rb-1',
       trigger: 'rollback',
@@ -57,7 +63,7 @@ describe('refine harness', () => {
 
   it('rejects a delete edit naming a kind outside the four real HarnessEntry kinds', async () => {
     const init = fakeSeamInit({ preset: { harness: { queue_max: 5 } } })
-    const h = await refineHarness(init)
+    const h = harnessFor(init)
     const bad: RefineProposal = {
       proposalId: 'd-bad',
       trigger: 'manual',

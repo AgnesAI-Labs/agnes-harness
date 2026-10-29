@@ -2,30 +2,38 @@
   "scope": "External dependencies directly used by product runtime or optional integration paths.",
   "packages": [
     {
+      "name": "esbuild",
+      "version": "0.28.2",
+      "license": "MIT",
+      "source": "https://github.com/evanw/esbuild",
+      "purpose": "Bundle shareable plugins, SDK browser checks, Web clients, isolated hooks runners and reviewed authoring tests.",
+      "rationale": "Reuse the repository bundler so the receiving machine needs no plugin dependency installation.",
+      "consumers": [
+        "packages/base",
+        "packages/cli",
+        "packages/daemon-admin",
+        "packages/package-manager",
+        "packages/sdk",
+        "packages/web",
+        "packages/web-ui"
+      ]
+    },
+    {
+      "name": "@ant-design/x",
+      "version": "2.9.0",
+      "license": "MIT",
+      "source": "https://github.com/ant-design/x/tree/main/packages/x",
+      "purpose": "Conversation components (bubbles, sender, conversation list, thought chain, actions, welcome and prompts) rendered from Agnes stores through the shared Web UI layer.",
+      "rationale": "Same Ant Design 6 family as the pinned antd and x-markdown; only the presentational components are exposed, without the x-sdk chat runtime.",
+      "consumers": ["packages/web-ui"]
+    },
+    {
       "name": "@ant-design/x-markdown",
       "version": "2.9.0",
       "license": "MIT",
       "source": "https://github.com/ant-design/x/tree/main/packages/x-markdown",
       "purpose": "Static React rendering of assistant body and thinking Markdown in the shared Web UI layer.",
       "rationale": "Pins the React 18 compatible implementation verified in the W5a-0 fixture while keeping Agnes URL, HTML, image and copy rules in an auditable adapter.",
-      "consumers": ["packages/web-ui"]
-    },
-    {
-      "name": "@assistant-ui/react",
-      "version": "0.11.27",
-      "license": "MIT",
-      "source": "https://github.com/assistant-ui/assistant-ui/tree/main/packages/react",
-      "purpose": "Headless conversation runtime exposed through the shared Web UI package and vendor entry.",
-      "rationale": "Pins the B-0 verified React 18 compatible runtime while keeping external UI imports inside @agnes/web-ui.",
-      "consumers": ["packages/web-ui"]
-    },
-    {
-      "name": "@assistant-ui/tap",
-      "version": "0.1.2",
-      "license": "MIT",
-      "source": "https://github.com/assistant-ui/assistant-ui",
-      "purpose": "Reactive state dependency used by the pinned assistant-ui conversation runtime.",
-      "rationale": "Pins the transitive version that passed B-0 because the newer compatible-range release failed the fixture's initial state read.",
       "consumers": ["packages/web-ui"]
     },
     {
@@ -45,21 +53,32 @@
       "purpose": "UI runtime for the web workbench, resource administration and in-page client module host; bundled into /vendor/* shared-singleton chunks.",
       "rationale": "Pinned to 18.3.1 per the web client modules design (WC5); a single split build keeps exactly one React copy on the page.",
       "consumers": [
-        "packages/mhs",
+        "examples/community/deliverables-gallery",
+        "examples/ui/interaction-renderer",
+        "examples/ui/tool-result-card",
+        "packages/package-manager/bundled-plugins/browser",
+        "packages/package-manager/bundled-plugins/conversation-ui",
+        "packages/package-manager/bundled-plugins/deliverables-ui",
+        "packages/package-manager/bundled-plugins/goal-ui",
+        "packages/package-manager/bundled-plugins/interaction-ui",
+        "packages/package-manager/bundled-plugins/navigation-ui",
         "packages/resource-control-web",
         "packages/web",
+        "packages/web-admin",
         "packages/web-client",
+        "packages/web-conversation",
+        "packages/web-foundation",
         "packages/web-ui",
         "packages/web-units"
       ]
     },
     {
       "name": "@earendil-works/pi-ai",
-      "version": "0.87.1",
+      "version": "1.4.0",
       "license": "MIT",
       "source": "https://github.com/earendil-works/pi/tree/main/packages/ai",
       "purpose": "Provider adapters, model catalog and streaming AI protocol support.",
-      "rationale": "Uses the project's selected public AI abstraction instead of maintaining parallel provider implementations.",
+      "rationale": "Uses the project's selected public AI abstraction instead of maintaining parallel provider implementations. A retained pnpm patch wires Bedrock connection/request/socket deadlines into its existing Smithy proxy transport; no upstream copyright notice is removed.",
       "consumers": ["packages/ai"]
     },
     {
@@ -97,6 +116,7 @@
       "purpose": "Runtime JSON-schema construction and static TypeScript schema inference.",
       "rationale": "Keeps runtime validation schemas and compile-time protocol types derived from one definition.",
       "consumers": [
+        "examples/ui/component-library",
         "packages/ai",
         "packages/base",
         "packages/cli",
@@ -104,7 +124,11 @@
         "packages/core",
         "packages/extension-api",
         "packages/host",
-        "packages/mhs",
+        "packages/host-computer-use",
+        "packages/host-extensions",
+        "packages/host-providers",
+        "packages/loop-jev",
+        "packages/model-adapters",
         "packages/plugin-runtime",
         "packages/protocol",
         "packages/protocol-validation",
@@ -118,14 +142,14 @@
       "source": "https://github.com/guybedford/es-module-lexer",
       "purpose": "Parses the static and literal dynamic ESM dependency graph of browser client-module snapshots.",
       "rationale": "Avoids treating comments or ordinary strings as imports while enumerating the immutable browser resource closure.",
-      "consumers": ["packages/daemon"]
+      "consumers": ["packages/daemon", "packages/daemon-admin"]
     },
     {
       "name": "ajv-formats",
       "version": "3.0.1",
       "license": "MIT",
       "source": "https://github.com/ajv-validator/ajv-formats",
-      "purpose": "Standard format validation for MCP tool input schemas and protocol parity tests.",
+      "purpose": "Standard format validation for plugin configuration, MCP tool input schemas and protocol parity tests.",
       "rationale": "Provides RFC 3986 URI validation for external MCP schemas without maintaining a separate validator.",
       "consumers": ["packages/base", "packages/protocol"]
     },
@@ -148,6 +172,15 @@
       "consumers": ["packages/cli", "packages/cli-tui"]
     },
     {
+      "name": "grok-mermaid",
+      "version": "0.2.3",
+      "license": "Apache-2.0",
+      "source": "https://github.com/xl0/grok-mermaid",
+      "purpose": "Terminal Mermaid box-drawing renderer for the CLI.",
+      "rationale": "Dependency-free layout engine that draws Mermaid as Unicode text without a browser or SVG; pinned to an exact version and audited: no install scripts and no filesystem, network or process APIs.",
+      "consumers": ["packages/cli", "packages/cli-tui"]
+    },
+    {
       "name": "isomorphic-git",
       "version": "1.41.9",
       "license": "MIT",
@@ -163,7 +196,7 @@
       "source": "https://github.com/whitequark/ipaddr.js",
       "purpose": "Parses and classifies resolved IPv4 and IPv6 addresses for bounded public retrieval.",
       "rationale": "Provides well-tested address parsing for the public-network deny rules, including IPv4-mapped IPv6 forms.",
-      "consumers": ["packages/host"]
+      "consumers": ["packages/host-infrastructure"]
     },
     {
       "name": "jiti",
@@ -172,7 +205,7 @@
       "source": "https://github.com/unjs/jiti",
       "purpose": "Loads TypeScript and modern JavaScript extension modules in Host and the confined Base runner.",
       "rationale": "Supports the extension authoring formats accepted by the Host loader without a separate compile step.",
-      "consumers": ["packages/base", "packages/host"]
+      "consumers": ["packages/base", "packages/host-extensions"]
     },
     {
       "name": "marked",
@@ -181,7 +214,7 @@
       "source": "https://github.com/markedjs/marked",
       "purpose": "Parses assistant Markdown for terminal and Web rendering.",
       "rationale": "Uses one maintained Markdown lexer; the Web client renders tokens through a DOM allowlist rather than inserting parser HTML.",
-      "consumers": ["packages/cli", "packages/cli-tui", "packages/web"]
+      "consumers": ["packages/cli", "packages/cli-tui"]
     },
     {
       "name": "turndown",
@@ -194,12 +227,12 @@
     },
     {
       "name": "undici",
-      "version": "8.10.2",
+      "version": "7.29.0,8.10.2",
       "license": "MIT",
       "source": "https://github.com/nodejs/undici",
       "purpose": "Provides the explicit HTTP dispatcher used by bounded public retrieval.",
-      "rationale": "Allows connection policy and redirect handling to stay under Host control instead of relying on ambient global fetch state.",
-      "consumers": ["packages/host"]
+      "rationale": "Allows connection policy and redirect handling to stay under Host control instead of relying on ambient global fetch state. Undici 7 dispatchers are compatible with Node 24 built-in fetch; public-fetch retains its independent Undici 8 policy transport.",
+      "consumers": ["packages/host-computer-use", "packages/host-infrastructure", "packages/system-node"]
     },
     {
       "name": "ws",
@@ -208,7 +241,7 @@
       "source": "https://github.com/websockets/ws",
       "purpose": "WebSocket client transport and authenticated daemon listener.",
       "rationale": "Supplies the Node WebSocket implementation needed where the browser-native API is unavailable.",
-      "consumers": ["packages/daemon", "packages/mhs", "packages/sdk"]
+      "consumers": ["packages/daemon", "packages/daemon-rpc", "packages/sdk", "packages/plugin-streams"]
     },
     {
       "name": "yaml",
@@ -223,6 +256,7 @@
         "packages/cli",
         "packages/code",
         "packages/host",
+        "packages/host-common",
         "packages/package-manager"
       ]
     },
@@ -231,27 +265,95 @@
       "version": "8.20.0",
       "license": "MIT",
       "source": "https://github.com/ajv-validator/ajv",
-      "purpose": "Compile Extension and MCP tool schemas at runtime and independently verify protocol conformance.",
+      "purpose": "Compile plugin configuration, Extension and MCP tool schemas at runtime and independently verify protocol conformance.",
       "rationale": "Reuse the established schema implementation; reject invalid or external references before callbacks run.",
-      "consumers": ["packages/base", "packages/daemon", "packages/host", "packages/mhs", "packages/protocol"]
+      "consumers": [
+        "packages/base",
+        "packages/cli",
+        "packages/host",
+        "packages/host-computer-use",
+        "packages/host-extensions",
+        "packages/protocol"
+      ]
     },
     {
-      "name": "three",
-      "version": "0.186.1",
+      "name": "@vscode/ripgrep",
+      "version": "1.18.0",
       "license": "MIT",
-      "source": "https://github.com/mrdoob/three.js",
-      "purpose": "Render the 3D demo world of Agnes MHS in the browser.",
-      "rationale": "The standard WebGL scene graph, with the loaders and post-processing the demo needs.",
-      "consumers": ["examples/mars-world"]
+      "source": "https://github.com/microsoft/vscode-ripgrep",
+      "purpose": "Bundled ripgrep executable for official file search tools. Platform packages include ripgrep and its third-party licenses.",
+      "rationale": "Use a pinned search engine without requiring a system rg installation.",
+      "consumers": ["packages/base"]
+    },
+    {
+      "name": "sigstore",
+      "version": "4.1.1",
+      "license": "Apache-2.0",
+      "source": "https://github.com/sigstore/sigstore-js",
+      "purpose": "Verify npm publisher provenance, Fulcio certificate chains and transparency evidence.",
+      "rationale": "Use the maintained Sigstore verifier rather than implementing trust roots, certificate validation or transparency log proofs in Agnes.",
+      "consumers": ["packages/package-manager"]
+    },
+    {
+      "name": "react-dom",
+      "version": "18.3.1",
+      "license": "MIT",
+      "source": "https://github.com/facebook/react/tree/main/packages/react-dom",
+      "purpose": "DOM renderer for the web workbench and client module mount points; bundled into /vendor/* shared-singleton chunks.",
+      "rationale": "Same pin line as react (WC5).",
+      "consumers": [
+        "packages/web",
+        "packages/web-admin",
+        "packages/web-client",
+        "packages/web-conversation",
+        "packages/web-ui",
+        "packages/web-units"
+      ]
     },
     {
       "name": "sharp",
       "version": "0.34.5",
       "license": "Apache-2.0",
       "source": "https://github.com/lovell/sharp",
-      "purpose": "Bounded PNG/JPEG decoding and aspect-preserving downsampling for local model image input.",
-      "rationale": "The shared safe-image validator does not decode raster pixels or resize images. sharp loads the prebuilt codec for the host: on macOS and Linux @img/sharp-<platform> (Apache-2.0) with a separate @img/sharp-libvips-<platform> (LGPL-3.0-or-later); on Windows one @img/sharp-win32-<arch> (Apache-2.0 AND LGPL-3.0-or-later) that carries the libvips DLLs. sharp's install script is neither needed nor run; the codec and its license files and licensing tables ship with the runtime.",
-      "consumers": ["packages/base"]
+      "purpose": "Bounded raster decoding for application brands and aspect-preserving downsampling for local model image input.",
+      "rationale": "The shared safe-image validator does not decode raster pixels or resize images; native codec and transitive license notices ship with the runtime.",
+      "consumers": ["packages/base", "packages/package-manager"]
+    },
+    {
+      "name": "recharts",
+      "version": "3.10.1",
+      "license": "MIT",
+      "source": "https://github.com/recharts/recharts",
+      "purpose": "Token-themed bar, line, area and pie rendering in the shared Chart primitive.",
+      "rationale": "Uses the approved React-native chart library with a preserved accessible source table and shared React vendor instance.",
+      "consumers": ["packages/web-ui"]
+    },
+    {
+      "name": "react-is",
+      "version": "18.3.1",
+      "license": "MIT",
+      "source": "https://github.com/facebook/react/tree/v18.3.1/packages/react-is",
+      "purpose": "React element identification for the Recharts peer dependency.",
+      "rationale": "Matches the pinned React 18 runtime so chart children and fragments are recognized correctly.",
+      "consumers": ["packages/web-ui"]
+    },
+    {
+      "name": "@xterm/xterm",
+      "version": "6.0.0",
+      "license": "MIT",
+      "source": "https://github.com/xtermjs/xterm.js",
+      "purpose": "Emulate the workbench PTY screen, ANSI/OSC colors and accessible terminal input.",
+      "rationale": "Shared, lazy-loaded terminal renderer behind the Web UI boundary; uses the existing session jobs transport. The build adapter corrects the CoreBrowserService documentOverride ternary precedence and passes the scoped document to DomRendererRowFactory so generated viewport styles use the existing nonce and cell colors use CSSOM.",
+      "consumers": ["packages/web-ui"]
+    },
+    {
+      "name": "@xterm/addon-fit",
+      "version": "0.11.0",
+      "license": "MIT",
+      "source": "https://github.com/xtermjs/xterm.js",
+      "purpose": "Measure terminal cells and fit the workbench PTY to its panel.",
+      "rationale": "Shared, lazy-loaded terminal renderer behind the Web UI boundary; uses the existing session jobs transport.",
+      "consumers": ["packages/web-ui"]
     }
   ]
 }

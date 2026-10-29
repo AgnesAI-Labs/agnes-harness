@@ -6,22 +6,36 @@ English | [简体中文](backend.zh-CN.md)
 
 [Documentation](../README.md) · Prerequisite: [Cordis boundaries](plugins.md)
 
+Plugins are fully trusted code running with the user's rights. Capability declarations are reviewed at admission; they do not restrict arbitrary JavaScript or enforce a hook allowlist. `ctx.hooks.register` accepts the supported observe, transform and intercept hooks regardless of the declared `hooks` list. Use only code you intend to authorize.
+
 Build an installable text-statistics tool and check its inputs and results in the tool record. This is a small starting point for connecting a business function to AGH.
 
 Reuse the installable [hot-tool-plugin](../../examples/packages/hot-tool-plugin/package.json). It does not access networks, files, or paid models. `demo_text_stats` accepts text and returns character and whitespace-separated word counts. Character counting uses JavaScript `text.length`, not Unicode grapheme clusters.
 
 <a id="入口与工具"></a>
 
+## Workspace identity and execution directory
+
+`cwd` is the execution directory snapshot at the start of a call. It may differ from
+`workspaceRoot` in a future version. Session defaults currently satisfy `cwd === workspaceRoot`;
+an explicit process directory only affects that operation. Locate workspace-owned state,
+policy and config (for example `.agh/plan-mode.json`) using the trusted identity:
+`ToolContext.session.workspaceRoot`, `ToolPolicyInput.workspaceRoot`, or
+`LoopContext.session.workspaceRoot`. A session-bound `ServiceContext` exposes
+`session.workspaceRoot`; when `session` is absent, refuse operations that require workspace
+identity. Host/Core derive identity from the authoritative workspace binding, never tool
+arguments or service input. A root string grants no filesystem authority; use the granted ports.
+There is no session directory-change feature in this contract change.
+
 ## Entry point and tool
 
-The package points `agnes.plugins` at `textStatsTool`. Both manifest and exported object declare `inject: ['extension']`. The core registration is:
+The package points `agnes.plugins` at `textStatsTool`. Both manifest and exported object declare `inject: ['tools', 'hooks', 'self']`. The core registration is:
 
 ```js
 export const textStatsTool = {
-  inject: ['extension'],
+  inject: ['tools', 'hooks', 'self'],
   apply(ctx) {
-    const agnes = ctx.extension()
-    agnes.registerTool({
+    ctx.tools.register({
       name: 'demo_text_stats',
       description: 'Count characters and words in text.',
       parameters,
@@ -42,9 +56,9 @@ This excerpt focuses on registration. The complete runnable file and `parameters
 
 Parameters use a schema with TypeBox kind markers. The example writes `Symbol.for('TypeBox.Kind')` directly to avoid an external import. A plain JSON Schema object is not automatically a valid TypeBox value for every tool-definition API. With an installed TypeBox dependency, use `Type.Object` and bundle the dependency before distribution.
 
-Metadata declares read-only, nondestructive, concurrency-safe, closed-world behavior, `replay: 'safe'`, and no approval requirement. If you change the tool to write files or call an external system, redefine effects, approvals, and replay semantics instead of retaining these declarations.
+`structured` reaches loops, exports and the trace inspector, never the model. Give it a `schema` field of your own when other code may read it: the built-in `ls`, `find` and `grep` mark theirs `agh.path-references/1`, and a reader tells payloads apart by that field. A `run_code` script gets the text of a result whose `structured` has that schema, whichever tool returns it, and any other `structured` as it is.
 
-A tool whose results carry pictures for the model, such as a camera reader, also sets `returnsImages: true` in `meta`. It stores the bytes with `ctx.artifacts.put(bytes, { mime })` and returns `{ type: 'image', ref, mime }` in `content`, as PNG or JPEG. The call records the flag in its resolved policy, and request media sends the pictures to the model only when the tool is also closed-world (`isOpenWorld: false`). Without the flag, a tool's images never reach the model and the next request fails; only the built-in `read`, `computer_use` and `document_read` need no flag. The flag adds no separate permission check: a plugin's tools run only after the user has installed, trusted, and enabled its package.
+Metadata declares read-only, nondestructive, concurrency-safe, closed-world behavior, `replay: 'safe'`, and no approval requirement. If you change the tool to write files or call an external system, redefine effects, approvals, and replay semantics instead of retaining these declarations.
 
 <a id="安装和运行"></a>
 
@@ -62,7 +76,7 @@ The expected structure is `{"characters":11,"words":2}`. Whether a real model se
 
 ```sh
 node tools/public-docs/verify.mjs
-pnpm exec vitest run tools/public-docs/examples.test.ts packages/host/test/ext-host/row-extension-host.test.ts --maxWorkers=1
+pnpm exec vitest run tools/public-docs/examples.test.ts packages/host-extensions/test/ext-host/row-extension-host.test.ts --maxWorkers=1
 ```
 
 Example tests load the actual backend module, capture its registered definition, and check schema, arguments, and results. Frontend examples use a real Cordis Context to test mounting and unloading. The additional Host tests cover row APIs, expired leases, reserved tool names, and restricted APIs. These checks do not establish OS isolation of malicious in-process code or correct tool selection by a real model.
@@ -74,3 +88,12 @@ Example tests load the actual backend module, capture its registered definition,
 Keep package structure and registration first, then replace the business logic. Update input validation, permissions, approvals, and replay declarations for actual side effects. Add connections and listeners to the Cordis lifecycle so disabling the plugin cleans them up. To show results in an interface, continue with [frontend panels](frontend.md) and [full-stack integration](fullstack.md).
 
 See [cordis-greeting](../../examples/packages/cordis-greeting/greeting.test.ts) for configured services, and the [hot-service](../../examples/packages/hot-service/README.md) family for updates, failed candidates, and fallback. Avoid copying a backend entry solely from the old `hot-tool` `agnes.extensions` format.
+
+### Scheduled tasks from tools
+
+Tools can bind the fixed daemon scheduling service through `ctx.providers.bindOwn(schedulingKind)`
+inside an admitted callback. Declare the exact six `schedulingServiceCapabilities` in the package
+manifest's `capabilities.services` and obtain their service lease grants. Official and third-party
+tools use the same checks, session ownership and workspace restrictions. The interface provides
+list/get/upsert/control/archive/runs; it does not replace the scheduling engine. See the
+[scheduling service contract](../../packages/base/extensions/schedule/README.md#scheduling-service).

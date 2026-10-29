@@ -1,0 +1,139 @@
+{
+  "name": "@agnes-fde/data-report",
+  "version": "1.1.1",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": "./index.mjs",
+  "files": [
+    "*.mjs",
+    "fixtures",
+    "skills",
+    "client",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE",
+    "real-model.bundle.json"
+  ],
+  "scripts": {
+    "build": "node --check index.mjs",
+    "test": "vitest run test/workflow.test.mjs --maxWorkers=1"
+  },
+  "dependencies": {
+    "@agnes/extension-api": "^5.0.0",
+    "@agnes/plugin-runtime": "0.0.0",
+    "@sinclair/typebox": "0.34.33",
+    "@agnes/protocol": "0.0.0"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "export": "main",
+        "apiRange": "^5.0.0",
+        "id": "ext:@agnes-fde/data-report/main",
+        "inject": [
+          "tools",
+          "providers",
+          "skills"
+        ],
+        "metadata": {
+          "displayName": "Data report example",
+          "summary": "Turns a sample CSV into calculated figures, charts and shareable reports.",
+          "description": "Turns a sample CSV into calculated figures, charts and shareable reports.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "数据报告示例",
+              "summary": "把样例 CSV 转成计算结果、图表和可分享的报告。",
+              "description": "把样例 CSV 转成计算结果、图表和可分享的报告。"
+            }
+          }
+        },
+        "capabilities": {
+          "model": true,
+          "filesystem": {
+            "read": [
+              "fixtures/*",
+              "skills/playbook/SKILL.md",
+              "fde-output/data-report/**"
+            ],
+            "write": [
+              "fde-output/data-report/**"
+            ]
+          }
+        }
+      }
+    ],
+    "bundles": {
+      "data-report": {
+        "profile": {
+          "skills": [
+            "data-report"
+          ],
+          "providers": {
+            "loop": {
+              "version": "5.0.0",
+              "provider": "fde.data-report"
+            }
+          }
+        },
+        "presets": {
+          "data-report": {
+            "name": "data-report",
+            "extends": "standard",
+            "providers": {
+              "tool-policy": {
+                "provider": "fde.data-report"
+              }
+            }
+          }
+        },
+        "launch": {
+          "title": {
+            "en": "Data report example",
+            "zh-CN": "数据报告示例"
+          },
+          "description": {
+            "en": "Turns a sample CSV into calculated figures, charts and shareable reports."
+          },
+          "preset": "data-report",
+          "prompt": {
+            "text": {
+              "en": "Read the sample sales CSV, compute revenue, cost and margin totals, and produce a report with charts that I can open and download.",
+              "zh-CN": "读取示例销售 CSV，计算收入、成本和毛利合计，生成一份带图表、可打开和下载的报告。"
+            },
+            "mode": "draft"
+          }
+        }
+      }
+    },
+    "metadata": {
+      "displayName": "Data report example",
+      "summary": "Turns a sample CSV into calculated figures, charts and shareable reports.",
+      "description": "Turns a sample CSV into calculated figures, charts and shareable reports.",
+      "samplePrompt": {
+        "en": "Read the sample sales CSV, compute revenue, cost and margin totals, and produce a report with charts that I can open and download.",
+        "zh-CN": "读取示例销售 CSV，计算收入、成本和毛利合计，生成一份带图表、可打开和下载的报告。"
+      },
+      "locales": {
+        "zh-CN": {
+          "displayName": "数据报告示例",
+          "summary": "把样例 CSV 转成计算结果、图表和可分享的报告。",
+          "description": "把样例 CSV 转成计算结果、图表和可分享的报告。"
+        }
+      }
+    },
+    "provides": [
+      "bundle",
+      "loop",
+      "tool",
+      "skills"
+    ]
+  },
+  "devDependencies": {
+    "@agnes/host": "0.0.0",
+    "@agnes/resource-control-runtime": "0.0.0",
+    "vitest": "5.0.0"
+  }
+}

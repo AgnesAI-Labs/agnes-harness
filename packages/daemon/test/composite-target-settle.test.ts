@@ -1,8 +1,8 @@
 import { buildRuntimeTarget, createPluginRow, encodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { describe, expect, it } from 'vitest'
-import { idle, settle } from '../src/composite-target-settle.js'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
-import { sqliteTables } from './sqlite-tables.js'
+import { idle, settle } from '../src/supervisor/publication/composite-target-settle.js'
 
 const revision = 'f'.repeat(64)
 
@@ -51,6 +51,16 @@ describe('settle', () => {
     s.publishDesired(a)
     confirm(s, a)
     expect(await settle(s, a.digest, options)).toBe('converged')
+  })
+
+  it('wakes on the confirmation instead of waiting for the next poll', async () => {
+    const s = store()
+    const a = artifact('ext:a')
+    s.publishDesired(a)
+    setTimeout(() => confirm(s, a), 20)
+    const started = Date.now()
+    expect(await settle(s, a.digest, { timeoutMs: 5_000, intervalMs: 2_000 })).toBe('converged')
+    expect(Date.now() - started).toBeLessThan(1_000)
   })
 
   it('waits for the confirmation', async () => {
@@ -162,6 +172,17 @@ describe('idle', () => {
     setTimeout(() => s.qualifyConverged(2, a, { hash: a.identity.treeHash, ok: true, rows: [] }), 20)
     await idle(s, { ...options, workerGeneration: () => 2 })
     expect(s.acknowledged()?.generation).toBe(2)
+  })
+
+  it('wakes on the confirmation instead of waiting for the next poll', async () => {
+    const s = store()
+    const a = artifact('ext:a')
+    s.publishDesired(a)
+    setTimeout(() => confirm(s, a), 20)
+    const started = Date.now()
+    await idle(s, { timeoutMs: 5_000, intervalMs: 2_000 })
+    expect(s.pending()).toBe(false)
+    expect(Date.now() - started).toBeLessThan(1_000)
   })
 
   it('returns at once when nothing is waiting to be confirmed', async () => {

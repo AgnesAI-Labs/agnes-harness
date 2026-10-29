@@ -1,6 +1,19 @@
 import type { TSchema } from '@sinclair/typebox'
 import * as Acp from '../gen/ts/acp.js'
 import * as A from '../gen/ts/agnes-v1.js'
+import * as ProfileServices from '../gen/ts/extension-service.js'
+import {
+  UiActionParams,
+  UiActionReceipt,
+  UiReadParams,
+  UiReadResult,
+  UiRefreshParams,
+  UiSurfaceRecord,
+} from '../gen/ts/intelligent-ui.js'
+import { AgentPlan, AgentResolveParams } from './agents.js'
+import { ADMIN_METHODS, type AdminMethodName } from './app-server.js'
+import { AutoReviewConfig } from './auto-review.js'
+import { ModelSlotsSnapshot } from './model-slots.js'
 import {
   PACKAGE_ADMIN_METHODS,
   type PackageAdminAccessPolicy,
@@ -13,7 +26,30 @@ import {
   type ResourceControlMethodName,
   validateResourceControlCall,
 } from './resource-control.js'
+import {
+  ChildEnginesSaveParams,
+  ChildEnginesState,
+  RuntimeAdminEmpty,
+  RuntimeAdminSnapshot,
+} from './runtime-admin.js'
+import {
+  SchedulesArchiveParams,
+  SchedulesArchiveResult,
+  SchedulesControlParams,
+  SchedulesControlResult,
+  SchedulesHistoryParams,
+  SchedulesHistoryResult,
+  SchedulesListParams,
+  SchedulesListResult,
+  SchedulesReceiptParams,
+  SchedulesReceiptResult,
+  SchedulesUpsertParams,
+  SchedulesUpsertResult,
+} from './schedules.js'
 import { validateExtensionCall } from './services.js'
+import { SessionIntegrityParams, SessionIntegrityStatus } from './session-integrity.js'
+import { SessionRuntimeDescriptor, SessionRuntimeParams } from './session-runtime.js'
+import { SessionToolsParams, SessionToolsResult } from './session-tools.js'
 import { type ValidationResult, validateAgainst } from './validate.js'
 
 export type MethodSpec = {
@@ -42,20 +78,43 @@ const clientRequest = (params: TSchema, result: TSchema): MethodSpec => ({
 // excess property on the object literal. The runtime key list in test/methods.test.ts pins the same
 // set a third way.
 export type MethodName =
+  | '_agnes/v1/ui.action'
+  | '_agnes/v1/ui.read'
+  | '_agnes/v1/ui.refresh'
+  | AdminMethodName
   | PackageAdminMethodName
   | ResourceControlMethodName
   | '_agnes/v1/extension.ack'
   | '_agnes/v1/extension.call'
+  | '_agnes/v1/extension.wakes.enqueue'
+  | '_agnes/v1/extension.wakes.read'
+  | '_agnes/v1/extension.callScoped'
+  | '_agnes/v1/extension.readOperation'
+  | '_agnes/v1/profile.decisions.list'
+  | '_agnes/v1/profile.decisions.answer'
+  | '_agnes/v1/sessionSelection.loops'
+  | '_agnes/v1/sessionSelection.runtime'
+  | '_agnes/v1/sessionSelection.reloadLocal'
+  | '_agnes/v1/sessionSelection.modelAdapters'
+  | '_agnes/v1/sessionSelection.defaults.get'
+  | '_agnes/v1/sessionSelection.defaults.save'
+  | '_agnes/v1/config.childEngines.get'
+  | '_agnes/v1/config.childEngines.save'
+  | '_agnes/v1/config.modelSlots.get'
+  | '_agnes/v1/config.modelSlots.save'
+  | '_agnes/v1/autoReview.get'
+  | '_agnes/v1/autoReview.save'
+  | '_agnes/v1/systemPrompt.get'
+  | '_agnes/v1/systemPrompt.save'
+  | '_agnes/v1/session.factChain'
+  | '_agnes/v1/trace.request'
+  | '_agnes/v1/trace.clear'
   | '_agnes/v1/config.get'
   | '_agnes/v1/config.oauth'
   | '_agnes/v1/config.providers'
   | '_agnes/v1/config.test'
   | '_agnes/v1/config.save'
   | '_agnes/v1/config.account'
-  | '_agnes/v1/batch.start'
-  | '_agnes/v1/batch.status'
-  | '_agnes/v1/batch.cancel'
-  | '_agnes/v1/batch.list'
   | '_agnes/v1/computerUse.status'
   | '_agnes/v1/computerUse.permissions.status'
   | '_agnes/v1/computerUse.permissions.grant'
@@ -65,6 +124,8 @@ export type MethodName =
   | '_agnes/v1/computerUse.operation.cancel'
   | '_agnes/v1/approvalGrants.list'
   | '_agnes/v1/approvalGrants.revoke'
+  | '_agnes/v1/approvalGrants.forSession'
+  | '_agnes/v1/approvalGrants.revokeForSession'
   | '_agnes/v1/artifact.read'
   | 'initialize'
   | 'session/new'
@@ -72,70 +133,148 @@ export type MethodName =
   | 'session/cancel'
   | 'session/update'
   | 'session/request_permission'
+  | '_agnes/v1/approval.withdraw'
   | '_agnes/v1/session.attach'
-  | '_agnes/v1/session.steer'
+  | '_agnes/v1/session.control'
+  | '_agnes/v1/session.controls'
   | '_agnes/v1/session.budget'
-  | '_agnes/v1/session.verifyHistory'
   | '_agnes/v1/session.projectUI'
   | '_agnes/v1/session.projectUIPatch'
+  | '_agnes/v1/session.view'
   | '_agnes/v1/session.projectUIOpening'
   | '_agnes/v1/session.projectUIHistory'
-  | '_agnes/v1/session.storedOpening'
+  | '_agnes/v1/session.revealWorkspace'
+  | '_agnes/v1/session.runtime'
+  | '_agnes/v1/agents.resolve'
+  | '_agnes/v1/session.integrity'
+  | '_agnes/v1/session.tools'
+  | '_agnes/v1/session.jobs.read'
+  | '_agnes/v1/session.jobs.control'
+  | '_agnes/v1/session.workspace.list'
+  | '_agnes/v1/session.fileUpload'
+  | '_agnes/v1/session.references.search'
+  | '_agnes/v1/session.workspace.read'
+  | '_agnes/v1/session.workspace.changes'
+  | '_agnes/v1/session.undo.preview'
+  | '_agnes/v1/session.undo'
   | '_agnes/v1/session.readToolDetail'
-  | '_agnes/v1/session.exportRaw'
-  | '_agnes/v1/session.attachmentRead'
-  | '_agnes/v1/attachment.upload'
-  | '_agnes/v1/session.followUp'
+  | '_agnes/v1/session.deliverables'
   | '_agnes/v1/session.fork'
+  | '_agnes/v1/session.btw'
+  | '_agnes/v1/session.voice.transcribe'
+  | '_agnes/v1/session.voice.speak'
+  | '_agnes/v1/voice.status'
+  | '_agnes/v1/voice.settings.get'
+  | '_agnes/v1/voice.settings.save'
   | '_agnes/v1/session.rename'
   | '_agnes/v1/session.archive'
+  | '_agnes/v1/session.pin'
+  | '_agnes/v1/session.bookmarks.set'
+  | '_agnes/v1/diagnostics.export'
   | '_agnes/v1/diagnostics.collect'
   | '_agnes/v1/diagnostics.events'
   | '_agnes/v1/session.list'
+  | '_agnes/v1/session.activity'
+  | '_agnes/v1/session.groups'
   | '_agnes/v1/workspace.list'
   | '_agnes/v1/workspace.add'
+  | '_agnes/v1/workspace.reveal'
+  | '_agnes/v1/workspace.remove'
   | '_agnes/v1/session.setPreset'
   | '_agnes/v1/session.setModel'
   | '_agnes/v1/session.setYolo'
+  | '_agnes/v1/session.setToolFilter'
   | '_agnes/v1/approval.decide'
+  | '_agnes/v1/decision.list'
   | '_agnes/v1/participant.join'
   | '_agnes/v1/participant.leave'
   | '_agnes/v1/participant.list'
   | '_agnes/v1/jobs.enqueue'
   | '_agnes/v1/jobs.poll'
   | '_agnes/v1/jobs.cancel'
+  | '_agnes/v1/schedules.list'
+  | '_agnes/v1/schedules.upsert'
+  | '_agnes/v1/schedules.archive'
+  | '_agnes/v1/schedules.control'
+  | '_agnes/v1/schedules.history'
+  | '_agnes/v1/schedules.receipt'
   | '_agnes/v1/artifact.job.status'
   | '_agnes/v1/ext.ui.response'
   | '_agnes/v1/directory.upsert'
   | '_agnes/v1/apis.list'
   | '_agnes/v1/submit'
   | '_agnes/v1/submit.ack'
+  | '_agnes/v1/pluginRuntime.status'
+  | '_agnes/v1/pluginStreams.endpoint'
   | '_agnes/v1/surfaces.mounts'
   | 'authenticate'
   | 'session/load'
+  | '_agnes/v1/session.open'
   | 'session/set_mode'
   | '_agnes/v1/session.detach'
   | '_agnes/v1/auth.claim'
   | '_agnes/v1/session.event'
-  | '_agnes/v1/session.preview'
+  | '_agnes/v1/session.loadingCancel'
   | '_agnes/v1/session.loading'
+  | '_agnes/v1/session.preview'
   | '_agnes/v1/daemon.notice'
 
 export const METHODS: Record<MethodName, MethodSpec> = {
+  ...ADMIN_METHODS,
   ...PACKAGE_ADMIN_METHODS,
   ...RESOURCE_CONTROL_METHODS,
   '_agnes/v1/extension.ack': clientRequest(A.ExtensionAckParams, A.Empty),
+  '_agnes/v1/extension.wakes.enqueue': clientRequest(
+    ProfileServices.BoundWakeEnqueueParams,
+    ProfileServices.BoundWakeReceipt,
+  ),
+  '_agnes/v1/extension.wakes.read': clientRequest(
+    ProfileServices.BoundWakeReadParams,
+    ProfileServices.BoundWakeReceipt,
+  ),
+  '_agnes/v1/extension.callScoped': clientRequest(
+    ProfileServices.ProfileServiceCallParams,
+    ProfileServices.ProfileServiceCallResult,
+  ),
+  '_agnes/v1/extension.readOperation': clientRequest(
+    ProfileServices.ProfileServiceOperationParams,
+    ProfileServices.ProfileServiceReceipt,
+  ),
+  '_agnes/v1/profile.decisions.list': clientRequest(
+    ProfileServices.ProfileDecisionsListParams,
+    ProfileServices.ProfileDecisionsListResult,
+  ),
+  '_agnes/v1/profile.decisions.answer': clientRequest(
+    ProfileServices.ProfileDecisionAnswerParams,
+    ProfileServices.ProfileDecisionAnswerResult,
+  ),
   '_agnes/v1/extension.call': clientRequest(A.ExtensionCallParams, A.ExtensionCallResult),
+  '_agnes/v1/sessionSelection.loops': clientRequest(A.ConfigEmptyParams, A.SessionLoopCatalogResult),
+  '_agnes/v1/sessionSelection.runtime': clientRequest(RuntimeAdminEmpty, RuntimeAdminSnapshot),
+  '_agnes/v1/sessionSelection.reloadLocal': clientRequest(RuntimeAdminEmpty, RuntimeAdminEmpty),
+  '_agnes/v1/sessionSelection.modelAdapters': clientRequest(
+    A.ConfigEmptyParams,
+    A.SessionAdapterCatalogResult,
+  ),
+  '_agnes/v1/sessionSelection.defaults.get': clientRequest(A.ConfigEmptyParams, A.SessionDefaultsState),
+  '_agnes/v1/sessionSelection.defaults.save': clientRequest(A.SessionDefaultsState, A.SessionDefaultsState),
+  '_agnes/v1/autoReview.get': clientRequest(A.ConfigEmptyParams, AutoReviewConfig),
+  '_agnes/v1/autoReview.save': clientRequest(AutoReviewConfig, AutoReviewConfig),
+  '_agnes/v1/systemPrompt.get': clientRequest(A.SystemPromptGetParams, A.SystemPromptSnapshot),
+  '_agnes/v1/systemPrompt.save': clientRequest(A.SystemPromptSaveParams, A.SystemPromptSnapshot),
+  '_agnes/v1/trace.clear': clientRequest(A.ModelRequestClearParams, A.ModelRequestClearResult),
+  '_agnes/v1/session.factChain': clientRequest(A.FactChainParams, A.FactChainResult),
+  '_agnes/v1/trace.request': clientRequest(A.ModelRequestParams, A.ModelRequestResult),
   '_agnes/v1/config.get': clientRequest(A.ConfigEmptyParams, A.ConfigSnapshot),
   '_agnes/v1/config.oauth': clientRequest(A.ConfigOAuthInput, A.ConfigOAuthResult),
   '_agnes/v1/config.providers': clientRequest(A.ConfigEmptyParams, A.ConfigProvidersResult),
   '_agnes/v1/config.test': clientRequest(A.ConfigTestInput, A.ConfigTestResult),
   '_agnes/v1/config.save': clientRequest(A.ConfigSaveInput, A.ConfigSnapshot),
   '_agnes/v1/config.account': clientRequest(A.ConfigAccountInput, A.ConfigSnapshot),
-  '_agnes/v1/batch.start': clientRequest(A.BatchStartParams, A.BatchStatus),
-  '_agnes/v1/batch.status': clientRequest(A.BatchIdParams, A.BatchStatus),
-  '_agnes/v1/batch.cancel': clientRequest(A.BatchIdParams, A.BatchStatus),
-  '_agnes/v1/batch.list': clientRequest(A.Empty, A.BatchList),
+  '_agnes/v1/config.childEngines.get': clientRequest(RuntimeAdminEmpty, ChildEnginesState),
+  '_agnes/v1/config.childEngines.save': clientRequest(ChildEnginesSaveParams, ChildEnginesState),
+  '_agnes/v1/config.modelSlots.get': clientRequest(RuntimeAdminEmpty, ModelSlotsSnapshot),
+  '_agnes/v1/config.modelSlots.save': clientRequest(ModelSlotsSnapshot, ModelSlotsSnapshot),
   '_agnes/v1/computerUse.status': clientRequest(A.Empty, A.ComputerUseStatusResult),
   '_agnes/v1/computerUse.permissions.status': clientRequest(A.Empty, A.ComputerUsePermissionsStatusResult),
   '_agnes/v1/computerUse.permissions.grant': clientRequest(A.Empty, A.ComputerUsePermissionsStatusResult),
@@ -154,6 +293,14 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   ),
   '_agnes/v1/approvalGrants.list': clientRequest(A.ApprovalGrantListParams, A.ApprovalGrantListResult),
   '_agnes/v1/approvalGrants.revoke': clientRequest(A.ApprovalGrantRevokeParams, A.ApprovalGrantRecord),
+  '_agnes/v1/approvalGrants.forSession': clientRequest(
+    A.ApprovalGrantSessionParams,
+    A.ApprovalGrantSessionResult,
+  ),
+  '_agnes/v1/approvalGrants.revokeForSession': clientRequest(
+    A.ApprovalGrantSessionRevokeParams,
+    A.SessionApprovalGrant,
+  ),
   '_agnes/v1/artifact.read': clientRequest(A.ArtifactReadParams, A.ArtifactReadResult),
   initialize: {
     kind: 'request',
@@ -175,6 +322,11 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   },
   'session/cancel': { kind: 'notification', direction: 'c2s', params: Acp.CancelNotification },
   'session/update': { kind: 'notification', direction: 's2c', params: Acp.SessionNotification },
+  '_agnes/v1/approval.withdraw': {
+    kind: 'notification',
+    direction: 's2c',
+    params: A.PermissionWithdrawParams,
+  },
   'session/request_permission': {
     kind: 'request',
     direction: 's2c',
@@ -187,11 +339,17 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     params: A.SessionAttachParams,
     result: A.SessionAttachResult,
   },
-  '_agnes/v1/session.steer': {
+  '_agnes/v1/session.control': {
     kind: 'request',
     direction: 'c2s',
-    params: A.SessionSteerParams,
+    params: A.SessionControlParams,
     result: A.SessionSteerResult,
+  },
+  '_agnes/v1/session.controls': {
+    kind: 'request',
+    direction: 'c2s',
+    params: A.SessionControlsParams,
+    result: A.SessionControlStateResult,
   },
   '_agnes/v1/session.budget': {
     kind: 'request',
@@ -199,8 +357,6 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     params: A.SessionIdParams,
     result: A.SessionBudgetResult,
   },
-  // Settles once every stored row of the session has been verified; refuses with E_LEDGER_INTEGRITY.
-  '_agnes/v1/session.verifyHistory': clientRequest(A.SessionIdParams, A.Empty),
   '_agnes/v1/session.projectUI': {
     kind: 'request',
     direction: 'c2s',
@@ -213,6 +369,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     params: A.SessionProjectUIPatchParams,
     result: A.UIProjectionUpdate,
   },
+  '_agnes/v1/session.view': clientRequest(A.SessionViewParams, A.SessionViewResult),
   '_agnes/v1/session.projectUIOpening': {
     kind: 'request',
     direction: 'c2s',
@@ -225,34 +382,60 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     params: A.SessionProjectUIHistoryParams,
     result: A.UIHistoryPage,
   },
-  '_agnes/v1/session.storedOpening': clientRequest(
-    A.SessionStoredOpeningParams,
-    A.SessionStoredOpeningResult,
+  '_agnes/v1/session.revealWorkspace': clientRequest(
+    A.SessionRevealWorkspaceParams,
+    A.SessionRevealWorkspaceResult,
   ),
+  '_agnes/v1/agents.resolve': clientRequest(AgentResolveParams, AgentPlan),
+  '_agnes/v1/session.runtime': clientRequest(SessionRuntimeParams, SessionRuntimeDescriptor),
+  '_agnes/v1/session.integrity': clientRequest(SessionIntegrityParams, SessionIntegrityStatus),
+  '_agnes/v1/session.tools': clientRequest(SessionToolsParams, SessionToolsResult),
+  '_agnes/v1/session.jobs.read': clientRequest(A.SessionJobsReadParams, A.SessionJobsReadResult),
+  '_agnes/v1/session.jobs.control': clientRequest(A.SessionJobsControlParams, A.SessionJobsControlResult),
+  '_agnes/v1/session.workspace.list': clientRequest(
+    A.SessionWorkspaceListParams,
+    A.SessionWorkspaceListResult,
+  ),
+  '_agnes/v1/session.fileUpload': clientRequest(A.FileUploadParams, A.FileUploadResultSchema),
+  '_agnes/v1/session.references.search': clientRequest(
+    A.SessionReferenceSearchParams,
+    A.SessionReferenceSearchResult,
+  ),
+  '_agnes/v1/session.workspace.read': clientRequest(
+    A.SessionWorkspaceReadParams,
+    A.SessionWorkspaceReadResult,
+  ),
+  '_agnes/v1/session.workspace.changes': clientRequest(
+    A.SessionWorkspaceChangesParams,
+    A.SessionWorkspaceChangesResult,
+  ),
+  '_agnes/v1/session.undo.preview': clientRequest(A.SessionUndoPreviewParams, A.SessionUndoPreviewResult),
+  '_agnes/v1/session.undo': clientRequest(A.SessionUndoParams, A.SessionUndoResult),
   '_agnes/v1/session.readToolDetail': clientRequest(
     A.SessionReadToolDetailParams,
     A.SessionReadToolDetailResult,
   ),
-  '_agnes/v1/session.exportRaw': clientRequest(A.SessionExportRawParams, A.SessionExportRawResult),
-  '_agnes/v1/session.attachmentRead': clientRequest(
-    A.SessionAttachmentReadParams,
-    A.SessionAttachmentReadResult,
-  ),
-  '_agnes/v1/attachment.upload': clientRequest(A.AttachmentUploadParams, A.AttachmentUploadResult),
-  '_agnes/v1/session.followUp': {
-    kind: 'request',
-    direction: 'c2s',
-    params: A.SessionSteerParams,
-    result: A.SessionSteerResult,
-  },
+  '_agnes/v1/session.deliverables': clientRequest(A.SessionDeliverablesParams, A.SessionDeliverablesResult),
   '_agnes/v1/session.fork': {
     kind: 'request',
     direction: 'c2s',
     params: A.SessionForkParams,
     result: A.SessionIdParams,
   },
+  '_agnes/v1/session.btw': clientRequest(A.SessionBtwParams, A.SessionBtwResult),
+  '_agnes/v1/session.voice.transcribe': clientRequest(
+    A.SessionVoiceTranscribeParams,
+    A.SessionVoiceTranscribeResult,
+  ),
+  '_agnes/v1/session.voice.speak': clientRequest(A.SessionVoiceSpeakParams, A.SessionVoiceSpeakResult),
+  '_agnes/v1/voice.status': clientRequest(A.ConfigEmptyParams, A.VoiceStatusResult),
+  '_agnes/v1/voice.settings.get': clientRequest(A.ConfigEmptyParams, A.VoiceSettingsSnapshot),
+  '_agnes/v1/voice.settings.save': clientRequest(A.VoiceSettingsSaveParams, A.VoiceSettingsSnapshot),
   '_agnes/v1/session.rename': clientRequest(A.SessionRenameParams, A.SessionPreferences),
   '_agnes/v1/session.archive': clientRequest(A.SessionArchiveParams, A.SessionPreferences),
+  '_agnes/v1/session.pin': clientRequest(A.SessionPinParams, A.SessionPreferences),
+  '_agnes/v1/session.bookmarks.set': clientRequest(A.SessionBookmarksSetParams, A.SessionPreferences),
+  '_agnes/v1/diagnostics.export': clientRequest(A.DiagnosticsExportParams, A.DiagnosticsExportResult),
   '_agnes/v1/diagnostics.collect': clientRequest(A.DiagnosticsCollectParams, A.DiagnosticsCollectResult),
   '_agnes/v1/diagnostics.events': clientRequest(A.DiagnosticsEventsParams, A.DiagnosticsEventsResult),
   '_agnes/v1/session.list': {
@@ -261,8 +444,12 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     params: A.SessionListParams,
     result: A.PageSessionMeta,
   },
+  '_agnes/v1/session.activity': clientRequest(A.SessionActivityParams, A.SessionActivityResult),
+  '_agnes/v1/session.groups': clientRequest(A.SessionGroupsParams, A.SessionGroupsResult),
   '_agnes/v1/workspace.list': clientRequest(A.WorkspaceListParams, A.WorkspaceListResult),
   '_agnes/v1/workspace.add': clientRequest(A.WorkspaceAddParams, A.WorkspaceAddResult),
+  '_agnes/v1/workspace.reveal': clientRequest(A.WorkspaceRevealParams, A.WorkspaceRevealResult),
+  '_agnes/v1/workspace.remove': clientRequest(A.WorkspaceRemoveParams, A.WorkspaceRemoveResult),
   '_agnes/v1/session.setPreset': {
     kind: 'request',
     direction: 'c2s',
@@ -276,13 +463,24 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     result: A.EffectiveFromResult,
   },
   '_agnes/v1/session.setYolo': clientRequest(A.SessionSetYoloParams, A.EffectiveFromResult),
-  '_agnes/v1/approval.decide': clientRequest(A.ApprovalDecideParams, A.SeqResult),
+  '_agnes/v1/session.setToolFilter': clientRequest(
+    A.SessionSetToolFilterParams,
+    A.SessionSetToolFilterResult,
+  ),
+  '_agnes/v1/approval.decide': clientRequest(A.ApprovalDecideParams, A.DecisionCommandReceipt),
+  '_agnes/v1/decision.list': clientRequest(A.SessionIdParams, A.DecisionListResult),
   '_agnes/v1/participant.join': clientRequest(A.ParticipantParams, A.SeqResult),
   '_agnes/v1/participant.leave': clientRequest(A.ParticipantParams, A.SeqResult),
   '_agnes/v1/participant.list': clientRequest(A.SessionIdParams, A.ParticipantListResult),
   '_agnes/v1/jobs.enqueue': clientRequest(A.JobSpec, A.JobIdResult),
   '_agnes/v1/jobs.poll': clientRequest(A.JobIdParams, A.JobStatus),
   '_agnes/v1/jobs.cancel': clientRequest(A.JobIdParams, A.Empty),
+  '_agnes/v1/schedules.history': clientRequest(SchedulesHistoryParams, SchedulesHistoryResult),
+  '_agnes/v1/schedules.receipt': clientRequest(SchedulesReceiptParams, SchedulesReceiptResult),
+  '_agnes/v1/schedules.list': clientRequest(SchedulesListParams, SchedulesListResult),
+  '_agnes/v1/schedules.upsert': clientRequest(SchedulesUpsertParams, SchedulesUpsertResult),
+  '_agnes/v1/schedules.archive': clientRequest(SchedulesArchiveParams, SchedulesArchiveResult),
+  '_agnes/v1/schedules.control': clientRequest(SchedulesControlParams, SchedulesControlResult),
   '_agnes/v1/artifact.job.status': clientRequest(A.JobIdParams, A.ArtifactJob),
   '_agnes/v1/ext.ui.response': clientRequest(A.ExtUiResponseParams, A.SeqResult),
   '_agnes/v1/directory.upsert': clientRequest(A.DirectoryUpsertParams, A.DirectoryUpsertResult),
@@ -303,8 +501,13 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   // bridge createMountProxy's lookup() across the process boundary to `agnesd` (see
   // packages/daemon/src/local/methods/surfaces.ts and packages/cli/launch/web-command.ts). No
   // authKind restriction beyond LocalEndpoint's own initialize gate, same as workspace.list/add.
+  '_agnes/v1/pluginRuntime.status': clientRequest(A.PluginRuntimeStatusParams, A.PluginRuntimeStatusResult),
+  '_agnes/v1/pluginStreams.endpoint': clientRequest(
+    A.PluginStreamsEndpointParams,
+    A.PluginStreamsEndpointResult,
+  ),
   '_agnes/v1/surfaces.mounts': clientRequest(A.SurfacesMountsParams, A.SurfacesMountsResult),
-  // Pulled forward from I3. daemon's dispatcher answers -32601 from this table before it reaches any
+  // The daemon's dispatcher answers -32601 from this table before it reaches any
   // handler, so a method daemon registers and this table omits is unreachable rather than merely
   // unvalidated.
   authenticate: {
@@ -319,6 +522,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     params: Acp.LoadSessionRequest,
     result: Acp.LoadSessionResponse,
   },
+  '_agnes/v1/session.open': clientRequest(A.SessionOpenParams, A.Empty),
   'session/set_mode': {
     kind: 'request',
     direction: 'c2s',
@@ -337,12 +541,20 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     params: A.AuthClaimParams,
     result: A.AuthClaimResult,
   },
+  '_agnes/v1/ui.action': clientRequest(UiActionParams, UiActionReceipt),
+  '_agnes/v1/ui.read': clientRequest(UiReadParams, UiReadResult),
+  '_agnes/v1/ui.refresh': clientRequest(UiRefreshParams, UiSurfaceRecord),
   // Outbound only. Their params are consulted on both sides: a client validating what it receives
   // reads them, so does the conformance runner, and so does the server before it puts the frame on
   // the wire - daemon's LocalEndpoint refuses an s2c frame this table's schema rejects.
   '_agnes/v1/session.event': { kind: 'notification', direction: 's2c', params: A.SessionEventParams },
-  '_agnes/v1/session.preview': { kind: 'notification', direction: 's2c', params: A.SessionPreviewParams },
+  '_agnes/v1/session.loadingCancel': {
+    kind: 'notification',
+    direction: 'c2s',
+    params: A.SessionLoadingCancelParams,
+  },
   '_agnes/v1/session.loading': { kind: 'notification', direction: 's2c', params: A.SessionLoadingParams },
+  '_agnes/v1/session.preview': { kind: 'notification', direction: 's2c', params: A.SessionPreviewParams },
   '_agnes/v1/daemon.notice': { kind: 'notification', direction: 's2c', params: A.DaemonNotice },
 }
 

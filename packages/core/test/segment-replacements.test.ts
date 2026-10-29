@@ -1,10 +1,10 @@
+import type { CoreError } from '@agnes/core-common/types'
 import type { ToolResult } from '@agnes/extension-api'
 import type { InferenceEvent } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { replacementFor, validateReplacements } from '../src/step/reentry.js'
 import type { Operation, ReplacementOperation, SessionDeps } from '../src/step/session.js'
-import type { CoreError } from '../src/types.js'
 import { fakeProvider, sentFor, textTurn, toolTurn, usage } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession, shellTool } from './helpers/open-session.js'
@@ -34,24 +34,32 @@ describe('typed core segment replacements', () => {
       replay: 'never',
       applicable,
       run: compatibilityRun,
-      replace: async () => verdict as never,
+      replace: async () => ({ verdict, answeredBy: actor }) as never,
     }
     const operations: Operation[] = [approval]
     const registry = new ToolRegistry()
     registry.add(shellTool(), { source: 'test', trust: 'builtin' })
+    const grants: import('@agnes/protocol').ApprovalGrant[] = []
     const opened = await openSession({
+      approvalGrants: {
+        list: async () => grants,
+        put: async (grant) => {
+          grants.push(grant)
+        },
+      },
       provider: fakeProvider([toolTurn('shell', { command: 'x' }), textTurn('done')]),
       registry,
       operations,
       segments: segments(operations),
       resolvedProfileHash: `sha256-${'a'.repeat(64)}`,
+      policyDigest: `sha256-${'b'.repeat(64)}`,
     })
     await opened.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
     const outcome = await opened.session.run({ until: 'turn-end', signal: new AbortController().signal })
     expect(outcome.reason).toBe(reason)
     if (verdict === 'allowed-permanent') {
-      expect((await opened.log.scan({ type: 'approval/decided', limit: 5 }))[0]?.data).toMatchObject({
-        verdict: 'allowed-permanent',
+      expect((await opened.session.decisions.list())[0]?.result).toMatchObject({
+        response: { option: 'allowed-permanent' },
       })
     } else {
       expect(await opened.log.scan({ type: 'x/core/operation-failed', limit: 5 })).toHaveLength(1)
@@ -124,7 +132,7 @@ describe('typed core segment replacements', () => {
       run: compatibilityRun,
       replace: async ({ input }) => {
         seen.push(`Approval:${input.request.kind}`)
-        return 'allowed-once'
+        return { verdict: 'allowed-once', answeredBy: actor }
       },
     }
     const toolExecution: ReplacementOperation<'ToolExecution'> = {
@@ -175,7 +183,7 @@ describe('typed core segment replacements', () => {
       registry,
       operations,
       segments: segments(operations),
-      seams: fakeSeams({ approval: { ask: async () => 'rejected', resume: async () => null } }),
+      seams: fakeSeams({ approval: { ask: async () => 'rejected' } }),
     })
     await opened.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'start' }] })
     await opened.session.acceptInput()

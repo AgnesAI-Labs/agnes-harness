@@ -1,17 +1,35 @@
-import { realpathSync, statSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { statSync } from 'node:fs'
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ExtensionManifest } from '@agnes/extension-api'
 import type { ClientContribution } from '@agnes/protocol'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { containedEntry } from './entry-path.js'
 import { PackageError } from './errors.js'
 
 /**
- * 安装期 client 资源上限。它们是成本与体积不变量，不是部署可调项，所以按常量固定，
- * 不向插件配置开放（与 skin-assets.ts 的上限同一理由）。
+ * Installation-time client asset limits. These are fixed cost and size invariants, not deployment
+ * settings, so plugins cannot configure them (the same rationale as the limits in skin-assets.ts).
  */
 export const CLIENT_MAX_FILE_BYTES = 4194304
 export const CLIENT_MAX_TOTAL_BYTES = 16777216
-export const CLIENT_ASSET_EXTENSIONS: readonly string[] = Object.freeze(['js', 'mjs', 'css', 'map'])
+export const CLIENT_ASSET_EXTENSIONS: readonly string[] = Object.freeze([
+  'js',
+  'mjs',
+  'css',
+  'map',
+  'gltf',
+  'glb',
+  'bin',
+  'png',
+  'jpg',
+  'jpeg',
+  'webp',
+  'ktx2',
+  'wasm',
+])
+export const CLIENT_RESOURCE_MAX_FILE_BYTES = 32 * 1024 * 1024
+export const CLIENT_RESOURCE_MAX_TOTAL_BYTES = 128 * 1024 * 1024
 const CLIENT_ENTRY_EXTENSIONS: readonly string[] = Object.freeze(['js', 'mjs'])
 const CLIENT_STYLE_EXTENSIONS: readonly string[] = Object.freeze(['css'])
 const PRIVATE_CONFIG_KEY = /(?:credential|secret|token|api[-_]?key|password|authorization)/i
@@ -21,8 +39,9 @@ function fail(file: string, why: string, reason: string): never {
 }
 
 /**
- * 包内相对路径的词法检查：拒绝绝对路径、以 `/` 开头、反斜杠/盘符、NUL，以及空段、`.`、`..` 段。
- * 允许可选的 `./` 前缀，其余写法必须是朴素的包内相对路径。
+ * Lexically check package-relative paths: reject absolute paths, a leading `/`, backslashes/drive
+ * letters, NUL, and empty, `.` or `..` segments. An optional `./` prefix is allowed; everything
+ * else must be a plain package-relative path.
  */
 function portableClientPath(value: string): boolean {
   if (value === '' || isAbsolute(value) || /[\\:]/.test(value) || value.includes('\0')) return false
@@ -31,7 +50,7 @@ function portableClientPath(value: string): boolean {
   return !body.split('/').some((segment) => segment === '' || segment === '.' || segment === '..')
 }
 
-/** 路径统一为包内相对形态：去掉可选的 `./` 前缀，其余保持原样（词法合法性由校验阶段保证）。 */
+/** Normalize to a package-relative path: strip an optional `./` prefix and leave the rest unchanged; validation guarantees syntax. */
 function normalizeClientPath(value: string): string {
   return value.startsWith('./') ? value.slice(2) : value
 }
@@ -93,16 +112,24 @@ function decodeUrlPathSegments(segments: readonly string[]): string[] | null {
 }
 
 /**
- * 能力快照用的规范化 `client` 字段：styles 保序；slots/services/projections 去重排序；
- * 缺省数组归一为 `[]`；路径统一为包内相对。inspect 与 inventory 复核共用这一个函数，
- * 同一份清单在任何一条路径上得到的摘要字节都相同。
+ * Canonical `client` field for capability snapshots: preserve styles order; deduplicate and sort
+ * slots/services/projections; normalize missing arrays to `[]` and paths to package-relative form.
+ * Inspect and inventory verification share this function, yielding identical digest bytes.
  */
 export type NormalizedClientContribution = {
+  requiresBackendRows?: ClientContribution['requiresBackendRows']
+  lifetime?: ClientContribution['lifetime']
+  homeEntries?: ClientContribution['homeEntries']
+  examplePages?: ClientContribution['examplePages']
+  assets?: ClientContribution['assets']
+  streams?: ClientContribution['streams']
+  intelligentComponents?: ClientContribution['intelligentComponents']
   id?: string
   entry: string
   styles: string[]
   slots: string[]
   slotCatalogVersion?: string
+  presentationRoles?: ClientContribution['presentationRoles']
   services: string[]
   projections: string[]
   legacyRowIds?: string[]
@@ -114,8 +141,18 @@ export function normalizeClientContribution(client: ClientContribution): Normali
   if (client.publicConfig !== undefined) validatePublicClientConfig(client.publicConfig)
   const set = (values: readonly string[] | undefined): string[] => [...new Set(values ?? [])].sort()
   return {
+    ...(client.requiresBackendRows === undefined
+      ? {}
+      : { requiresBackendRows: set(client.requiresBackendRows) }),
+    ...(client.lifetime === undefined ? {} : { lifetime: client.lifetime }),
+    ...(client.homeEntries === undefined ? {} : { homeEntries: client.homeEntries }),
+    ...(client.examplePages === undefined ? {} : { examplePages: set(client.examplePages) }),
+    ...(client.assets === undefined ? {} : { assets: set(client.assets.map(normalizeClientPath)) }),
+    ...(client.streams === undefined ? {} : { streams: set(client.streams) }),
+    ...(client.presentationRoles ? { presentationRoles: [...client.presentationRoles].sort() } : {}),
     ...(client.id === undefined ? {} : { id: client.id }),
     entry: normalizeClientPath(client.entry),
+    ...(client.intelligentComponents ? { intelligentComponents: client.intelligentComponents } : {}),
     styles: (client.styles ?? []).map(normalizeClientPath),
     slots: set(client.slots),
     ...(client.slotCatalogVersion === undefined ? {} : { slotCatalogVersion: client.slotCatalogVersion }),
@@ -126,24 +163,25 @@ export function normalizeClientContribution(client: ClientContribution): Normali
   }
 }
 
-/** 一份声明过 client 的清单，其 entry/styles 在校验后的真实文件位置（已过 realpath）。 */
+/** Validated real file locations (after realpath) for a manifest declaring client entry/styles. */
 export type ResolvedClientAssets = {
-  /** client 入口文件的绝对路径，符号链接已解析。 */
+  /** Absolute client entry path with symlinks resolved. */
   entryPath: string
-  /** 样式表文件的绝对路径，按声明顺序，符号链接已解析。 */
+  /** Absolute stylesheet paths in declaration order with symlinks resolved. */
   stylePaths: string[]
 }
 
 /**
- * 对照包目录核验清单声明的 client 资源：词法路径、扩展名白名单、单文件与总量上限，
- * 以及文件必须真实落在安装树内（`containedEntry` 同时拒绝越界符号链接）。
+ * Verify declared client assets against the package directory: lexical paths, allowed extensions,
+ * per-file and total limits, and containment in the install tree (`containedEntry` also refuses
+ * escaping symlinks).
  *
- * 注意：这是**格式校验，不是安全边界**——本函数不做 import 闭包分析，也不扫描代码内容；
- * 浏览器侧能否加载由快照下发通道与信任决策另行保证。
+ * This is **format validation, not a security boundary**: it neither analyzes the import closure
+ * nor scans source contents. Snapshot delivery and trust decisions separately control browser loading.
  *
- * @param dir - 包根目录。
- * @param manifest - 已通过 `checkManifest` 的清单。
- * @returns 声明了 client 时返回解析结果，未声明时返回 `undefined`。
+ * @param dir - Package root directory.
+ * @param manifest - Manifest accepted by `checkManifest`.
+ * @returns Resolved assets when client is declared, otherwise `undefined`.
  */
 export function resolveClientAssets(
   dir: string,
@@ -152,9 +190,14 @@ export function resolveClientAssets(
   const client = manifest.contributes?.client
   if (client === undefined) return undefined
   if (client.publicConfig !== undefined) validatePublicClientConfig(client.publicConfig)
-  const file = join(dir, 'agnes.extension.json')
+  const file = join(dir, 'package.json')
   const assets = [
     { path: client.entry, extensions: CLIENT_ENTRY_EXTENSIONS, reason: 'client-entry-extension' },
+    ...(client.assets ?? []).map((path) => ({
+      path,
+      extensions: CLIENT_ASSET_EXTENSIONS,
+      reason: 'client-asset-extension',
+    })),
     ...(client.styles ?? []).map((path) => ({
       path,
       extensions: CLIENT_STYLE_EXTENSIONS,
@@ -170,19 +213,25 @@ export function resolveClientAssets(
     const extension = extname(path).slice(1).toLowerCase()
     if (!asset.extensions.includes(extension))
       fail(path, `client asset extension .${extension} is not valid for this field`, asset.reason)
-    // containedEntry 负责文件真实存在、类型正确且 realpath 后仍在包内。
+    // containedEntry checks existence, file type and containment after realpath.
     const target = containedEntry(dir, path, 'file', file)
     const bytes = statSync(target).size
-    if (bytes > CLIENT_MAX_FILE_BYTES)
-      fail(
-        path,
-        `client asset is ${bytes} bytes, over the ${CLIENT_MAX_FILE_BYTES}-byte cap`,
-        'client-asset-too-large',
-      )
+    const resource =
+      (client.assets ?? []).includes(path) &&
+      !CLIENT_ENTRY_EXTENSIONS.includes(extension) &&
+      extension !== 'css' &&
+      extension !== 'map'
+    const limit = client.intelligentComponents
+      ? 262144
+      : resource
+        ? CLIENT_RESOURCE_MAX_FILE_BYTES
+        : CLIENT_MAX_FILE_BYTES
+    if (bytes > limit)
+      fail(path, `client asset is ${bytes} bytes, over the ${limit}-byte cap`, 'client-asset-too-large')
     total += bytes
     resolved.push(target)
   }
-  if (total > CLIENT_MAX_TOTAL_BYTES)
+  if (total > (client.assets?.length ? CLIENT_RESOURCE_MAX_TOTAL_BYTES : CLIENT_MAX_TOTAL_BYTES))
     fail(
       client.entry,
       `client assets total ${total} bytes, over the ${CLIENT_MAX_TOTAL_BYTES}-byte cap`,
@@ -190,29 +239,29 @@ export function resolveClientAssets(
     )
   const entryPath = resolved[0]
   if (entryPath === undefined) fail(client.entry, 'client entry did not resolve', 'client-path')
-  return { entryPath, stylePaths: resolved.slice(1) }
+  return { entryPath, stylePaths: resolved.slice(1 + (client.assets?.length ?? 0)) }
 }
 
-/** web 下发通道只允许这四类扩展名（对应 text/javascript / text/css / application/json 三种 MIME）；与安装期白名单一致。 */
+/** Reviewed client code and scene resource formats; the immutable snapshot is the file allow-list. */
 export const CLIENT_MODULE_SERVABLE_EXTENSIONS: readonly string[] = CLIENT_ASSET_EXTENSIONS
 
-/** 包 id 的词法形态（与锁文件 schema 中的 id 模式一致）：一段，或 `scope/name` 两段。 */
+/** Package id syntax (matching the lockfile schema): one segment, or two as `scope/name`. */
 const PACKAGE_ID_PATTERN =
   /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)?)$/
 
 /**
- * 把 `/plugins/<packageId>/<revision>/<包内相对路径>` 裁决成快照内的一个真实文件，或 `null`。
- * 这是 web 下发通道的唯一裁决函数：revision 段不得以 `_` 开头（`/plugins/<id>/_api/` 前缀
- * 保留给未来的插件 HTTP 路由）；目标经 realpath 解析后还要再做一次 containment 检查，
- * 快照目录里埋的符号链接不能借此逃出该版本目录。裁决根目录是调用方给的快照根，
- * 不是安装树——本函数对安装树零感知。miss 与拒绝同答 `null`。
+ * Resolve `/plugins/<packageId>/<revision>/<package-relative-path>` to a snapshot file or `null`.
+ * This is the sole resolver for web delivery. Revision segments must not start with `_`:
+ * `/plugins/<id>/_api/` is reserved for future plugin HTTP routes. Check containment again after
+ * realpath so symlinks inside a snapshot cannot escape its revision directory. The caller supplies
+ * the snapshot root; this function knows nothing about the install tree. Misses and refusals return `null`.
  *
- * packageId 可以占一段（`acme/pkg`）或两段（`@scope/pkg`），两种切分都按
- * 「快照目录真实存在」消歧，先试两段再试一段。
+ * packageId may occupy one segment (`acme/pkg`) or two (`@scope/pkg`); disambiguate by the
+ * existence of the snapshot directory, trying two segments before one.
  *
- * @param snapshotRoot - daemon 管理的快照根目录，按 `<packageId>/<revision>/` 组织。
- * @param pathname - 请求路径，已由 HTTP 层剥掉 query 与 fragment。
- * @returns 普通文件的绝对规范路径，或 `null`。
+ * @param snapshotRoot - Daemon-managed snapshot root, organized as `<packageId>/<revision>/`.
+ * @param pathname - Request path with query and fragment already removed by the HTTP layer.
+ * @returns Absolute canonical path of a regular file, or `null`.
  */
 export function resolveClientModuleAsset(snapshotRoot: string, pathname: string): string | null {
   const prefix = '/plugins/'
@@ -221,21 +270,21 @@ export function resolveClientModuleAsset(snapshotRoot: string, pathname: string)
   if (rest === '' || rest.includes('\0')) return null
   const segments = rest.split('/')
   for (const idSegments of [2, 1]) {
-    // 需要 id 各段 + revision 段 + 至少一段包内路径。
+    // Require the id segments, a revision segment and at least one package-relative path segment.
     if (segments.length < idSegments + 2) continue
     const id = segments.slice(0, idSegments).join('/')
     if (!PACKAGE_ID_PATTERN.test(id)) continue
     const revision = segments[idSegments] as string
-    // `_` 开头的 revision 段（含保留的 `_api`）与 `.`/`..`/空段一律硬性拒绝：切分再换一种也
-    // 不允许放行，否则 `/plugins/<id>/_api/…` 会被曲解成「一段 id + 正常 revision」而漏过。
+    // Reject revisions starting with `_` (including reserved `_api`), `.`, `..` and empty segments
+    // under either split, so `/plugins/<id>/_api/…` cannot pass as a one-segment id and normal revision.
     if (revision === '' || revision === '.' || revision === '..' || revision.startsWith('_')) return null
     let base: string
     try {
-      base = realpathSync(join(snapshotRoot, id, revision))
+      base = nativeRealpathSync(join(snapshotRoot, id, revision))
       if (!statSync(base).isDirectory()) continue
-      // revision 目录本身若是被埋进快照根的符号链接，realpath 后的 base 会指到快照根之外——
-      // 以 base 为 containment 根会放行外部文件，所以 base 必须先证明自己仍在快照根内。
-      const canonicalRoot = realpathSync(snapshotRoot)
+      // A revision directory may itself be a symlink escaping the snapshot root after realpath.
+      // Prove base is inside the snapshot root before using it as the containment root.
+      const canonicalRoot = nativeRealpathSync(snapshotRoot)
       const baseRel = relative(canonicalRoot, base)
       if (baseRel === '' || baseRel === '..' || baseRel.startsWith(`..${sep}`) || isAbsolute(baseRel))
         continue
@@ -252,11 +301,11 @@ export function resolveClientModuleAsset(snapshotRoot: string, pathname: string)
   return null
 }
 
-/** 规范化目标路径，确认它是普通文件，且在 realpath 之后仍位于 `root` 之内。 */
+/** Canonicalize the target path and check that it is a regular file inside `root` after realpath. */
 function canonicalFile(target: string, root: string): string | null {
   let canonical: string
   try {
-    canonical = realpathSync(target)
+    canonical = nativeRealpathSync(target)
     if (!statSync(canonical).isFile()) return null
   } catch {
     return null
@@ -264,4 +313,21 @@ function canonicalFile(target: string, root: string): string | null {
   const rel = relative(root, canonical)
   if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null
   return canonical
+}
+
+/** Resolve row identity without using entry/style paths or declaration order. */
+export function clientModuleRowIdForContribution(
+  packageId: string,
+  _extensionId: string,
+  clientCount: number,
+  contributionId: string,
+): string {
+  if (clientCount === 1) return `web:${packageId}`
+  const readable = `web:${packageId}:${contributionId}`
+  // The browser protocol bounds a row id to 256 bytes while package/extension
+  // identifiers have independent maxima. Keep the readable form where it is
+  // valid, and use a deterministic full digest rather than truncating either
+  // identity (truncation could silently collide and join two lifecycle lanes).
+  if (readable.length <= 256) return readable
+  return `web:${createHash('sha256').update(`${packageId}\0${contributionId}`).digest('hex')}`
 }

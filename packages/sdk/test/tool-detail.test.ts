@@ -117,3 +117,56 @@ describe('Session.readToolDetail', () => {
     await client.close()
   })
 })
+describe('Session.deliverables', () => {
+  const item = (callSeq: number, resultSeq: number) => ({
+    callSeq,
+    resultSeq,
+    toolUseId: `t${callSeq}`,
+    turnId: 'turn:1',
+    structured: { deliverables: [] },
+  })
+  function deliverables(read: Handler) {
+    const f = fakeEndpoint({
+      initialize: init,
+      '_agnes/v1/session.attach': () => ({ generation: 1, lastSeq: 12, resolvedProfileHash: null }),
+      '_agnes/v1/session.deliverables': read,
+    })
+    const client = createClient({
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      journal: memoryJournal(),
+      authProviders: providers,
+    })
+    return { f, client }
+  }
+
+  it('reads one page after the given seq without moving the attach cursor', async () => {
+    const page = { sessionId: 's', upto: 9, items: [item(3, 5), item(4, 9)], nextAfterSeq: 9 }
+    const { f, client } = deliverables(() => page)
+    const session = await client.session.attach('s')
+    const before = session.cursor()
+    await expect(session.deliverables({ afterSeq: 2, limit: 2 })).resolves.toEqual(page)
+    expect(session.cursor()).toEqual(before)
+    expect(f.calls.filter((call) => call.method === '_agnes/v1/session.deliverables')).toEqual([
+      expect.objectContaining({ params: { sessionId: 's', afterSeq: 2, limit: 2 } }),
+    ])
+    await client.close()
+  })
+
+  it.each([
+    ['another session', { sessionId: 'other', upto: 9, items: [] }],
+    ['an item at the cut', { sessionId: 's', upto: 9, items: [item(1, 2)] }],
+    ['items out of result order', { sessionId: 's', upto: 9, items: [item(3, 8), item(4, 6)] }],
+    ['a result past upto', { sessionId: 's', upto: 7, items: [item(3, 8)] }],
+    ['a result before its call', { sessionId: 's', upto: 9, items: [item(8, 8)] }],
+    ['more items than asked', { sessionId: 's', upto: 9, items: [item(3, 4), item(5, 6), item(7, 8)] }],
+    ['a continuation off the last item', { sessionId: 's', upto: 9, items: [item(3, 4)], nextAfterSeq: 9 }],
+    ['a continuation of an empty page', { sessionId: 's', upto: 2, items: [], nextAfterSeq: 2 }],
+    ['a continuation away from upto', { sessionId: 's', upto: 9, items: [item(3, 4)], nextAfterSeq: 4 }],
+    ['upto before the cut', { sessionId: 's', upto: 1, items: [] }],
+  ])('refuses %s', async (_name, page) => {
+    const { client } = deliverables(() => page)
+    const session = await client.session.attach('s')
+    await expect(session.deliverables({ afterSeq: 2, limit: 2 })).rejects.toBeInstanceOf(ProtocolViolation)
+    await client.close()
+  })
+})

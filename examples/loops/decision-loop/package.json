@@ -1,0 +1,51 @@
+{
+  "name": "@agnes-example/decision-loop",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "types": "./index.d.mts",
+  "peerDependencies": {
+    "@agnes/extension-api": "*"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:example-decision",
+        "export": "plugin",
+        "apiRange": "^5.0.0",
+        "default": true,
+        "inject": [
+          "providers"
+        ],
+        "metadata": {
+          "displayName": "Decision Loop",
+          "summary": "Resumes a human confirmation through the session decision port.",
+          "description": "Resumes a human confirmation through the session decision port.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "决策 Loop",
+              "summary": "通过会话决策端口恢复真人确认。",
+              "description": "通过会话决策端口恢复真人确认。"
+            }
+          }
+        }
+      }
+    ],
+    "metadata": {
+      "displayName": "Decision Loop",
+      "summary": "Resumes a human confirmation through the session decision port.",
+      "description": "Resumes a human confirmation through the session decision port.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "决策 Loop",
+          "summary": "通过会话决策端口恢复真人确认。",
+          "description": "通过会话决策端口恢复真人确认。"
+        }
+      }
+    },
+    "provides": [
+      "loop"
+    ]
+  }
+}

@@ -8,7 +8,7 @@
       "order": 100,
       "surfaces": ["tui", "web", "channel"],
       "failPolicy": "open",
-      "trigger": ["tool_result"],
+      "trigger": ["tool_result", "tool_call"],
       "payload": "ToolCardInlinePayload"
     },
     "sidebar.action": {
@@ -41,25 +41,56 @@
     "UiSlotName": {
       "enum": ["tool.card.inline", "sidebar.action", "status.line", "notification"]
     },
+    "GoalSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "objective", "phase", "rounds", "maxRounds", "creditsUsed"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "objective": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "phase": {
+          "enum": ["active", "paused", "blocked", "complete"]
+        },
+        "rounds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxRounds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "creditsUsed": {
+          "type": "number",
+          "minimum": 0
+        },
+        "budgetCredits": {
+          "type": "number",
+          "minimum": 0
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 2048
+        }
+      }
+    },
     "ToolCardInlinePayload": {
       "type": "object",
       "additionalProperties": false,
       "required": ["title"],
       "properties": {
         "title": { "type": "string", "maxLength": 256 },
-        "table": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["columns", "rows"],
-          "properties": {
-            "columns": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 128 } },
-            "rows": {
-              "type": "array",
-              "maxItems": 500,
-              "items": { "type": "array", "items": { "type": "string", "maxLength": 1024 } }
-            }
-          }
-        },
         "chart": {
           "type": "object",
           "additionalProperties": false,
@@ -124,6 +155,7 @@
       "additionalProperties": false,
       "required": ["text", "level"],
       "properties": {
+        "goal": { "$ref": "#/$defs/GoalSnapshot" },
         "text": { "type": "string", "maxLength": 512 },
         "level": { "enum": ["info", "warn", "error"] }
       }

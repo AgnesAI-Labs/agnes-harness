@@ -1,0 +1,14 @@
+[
+  {
+    "id": "T-100",
+    "account": "Synthetic Northwind",
+    "text": "Checkout is unavailable after this morning’s update.",
+    "channel": "email"
+  },
+  {
+    "id": "T-101",
+    "account": "Synthetic Contoso",
+    "text": "Please explain the duplicate invoice.",
+    "channel": "portal"
+  }
+]

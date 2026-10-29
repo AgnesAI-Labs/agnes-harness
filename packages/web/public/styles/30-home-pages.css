@@ -1,0 +1,603 @@
+@layer app {
+  /* ── Session runtime info ───────────────────────────────────────────────────
+   Plain facts, what the session may do and its tools are separate parts of one column. */
+  .session-runtime {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s20);
+  }
+  .session-runtime > p {
+    margin: 0;
+  }
+  /* The full tool list of one source: names wrap as chips of text, never a table. */
+  /* A session can carry dozens of tool sources; the list scrolls so the dialog stays readable.
+     A flex column keeps every group row at its own height; a grid list was squeezing the rows. */
+  .session-runtime-tool-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    max-height: 17.5rem;
+    overflow-y: auto;
+  }
+  .session-runtime-tool-groups > * {
+    flex: 0 0 auto;
+  }
+  .session-runtime-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s4) var(--s12);
+    margin: 0;
+    padding: var(--s8) 0 0;
+    list-style: none;
+    font-size: var(--font-size-sm);
+  }
+  .session-runtime-tools > li {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--s4);
+    min-width: 0;
+  }
+
+  /* ── Home pages: shared details ─────────────────────────────────────────────
+   A quiet qualifier after a page title, such as "FDE". */
+  .home-page-title-note {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-medium);
+    letter-spacing: 0;
+  }
+
+  /* ── Business agents ────────────────────────────────────────────────────────
+   Search and filter, then cards that fill the column. */
+  .agent-gallery-page {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s16);
+  }
+  .agent-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 16.875rem), 1fr));
+    align-items: start;
+    align-content: start;
+    gap: var(--s12);
+  }
+  .agent-card {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s12);
+    padding: var(--s16);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-surface);
+  }
+  /* The card another surface pointed at. */
+  .agent-card[data-focused] {
+    border-color: var(--agnes-brand-primary);
+    box-shadow: 0 0 0 3px var(--agnes-brand-focus-ring);
+  }
+  .agent-card > header {
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+    min-width: 0;
+    min-height: 2.125rem;
+  }
+  .agent-card-heading {
+    min-width: 0;
+    display: grid;
+    gap: 1px;
+  }
+  .agent-card-heading > h3 {
+    margin: 0;
+    overflow: hidden;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.25rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-card-summary,
+  .agent-card-sample > span {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    line-height: 1.6;
+  }
+  .agent-card-summary {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+  /* A card's quiet fact line: where the agent comes from, or that it is not installed. */
+  .agent-card-meta {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+  /* The clamp sits on the inner span: a clamped box with padding shows the cut line in it. */
+  .agent-card-sample {
+    margin: 0;
+    padding: var(--s8) var(--s10);
+    border-radius: var(--radius-sm);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-fill);
+    font-size: var(--font-size-xs);
+  }
+  .agent-card-sample > span {
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+  .agent-card > footer {
+    margin-top: auto;
+    padding-top: var(--s4);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8);
+    min-width: 0;
+    min-height: var(--control-height);
+  }
+  .agent-card-state {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+    min-width: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+  }
+  /* The home gallery is a feed, not a grid: every card keeps its own height and packs into
+     columns, so a short card leaves no empty row under it. Column order follows the DOM. */
+  .agent-feed {
+    display: block;
+    columns: 16.875rem;
+    column-gap: var(--s12);
+  }
+  .agent-feed > .agent-card {
+    break-inside: avoid;
+    margin: 0 0 var(--s12);
+  }
+
+  /* The letter tile: one fixed tint per agent, the same in both themes, white text at AA. */
+  .agent-tile {
+    flex: 0 0 auto;
+    width: 2.125rem;
+    height: 2.125rem;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius-md);
+    color: oklch(0.99 0 0);
+    background: oklch(0.5 0.13 262);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1;
+  }
+  .agent-tile[data-tint="1"] {
+    background: oklch(0.5 0.13 215);
+  }
+  .agent-tile[data-tint="2"] {
+    background: oklch(0.5 0.13 300);
+  }
+  .agent-tile[data-tint="3"] {
+    background: oklch(0.5 0.13 180);
+  }
+  .agent-tile[data-tint="4"] {
+    background: oklch(0.5 0.13 60);
+  }
+  .agent-tile[data-tint="5"] {
+    background: oklch(0.5 0.13 350);
+  }
+  .agent-tile[data-tint="6"] {
+    background: oklch(0.5 0.13 150);
+  }
+  .agent-tile[data-tint="7"] {
+    background: oklch(0.5 0.13 30);
+  }
+
+  /* ── One-click start dialog ─────────────────────────────────────────────── */
+  /* The start page is the PushPage body: one column whose parts sit 20px apart, closed by an
+     action row 16px under the content, as a dialog footer does. */
+  .agent-start-page {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .agent-start-page > * + * {
+    margin-block-start: var(--s20);
+  }
+  .agent-start-page > .agent-start-actions {
+    margin-block-start: var(--s16);
+    padding-top: 0;
+  }
+  .agent-start-title {
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+    min-width: 0;
+    margin: 0;
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: 1.4;
+  }
+  .agent-start-body h3 {
+    margin: 0 0 var(--s8);
+    padding-inline-start: var(--s4);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+  }
+  /* Rows here carry no control: on a narrow screen the copy stays beside its icon. */
+  :is(.agent-start-body, .session-runtime) .agnes-settings-item {
+    flex-wrap: nowrap;
+  }
+  :is(.agent-start-body, .session-runtime) .agnes-settings-item-description {
+    overflow-wrap: anywhere;
+  }
+  .agent-start-identity,
+  .agent-start-technical {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: var(--font-size-xs);
+    overflow-wrap: anywhere;
+  }
+  .agent-start-help {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .agent-start-spacer {
+    flex: 1;
+  }
+  .agent-start-body .agh-banner-copy {
+    display: grid;
+    gap: var(--s2);
+  }
+  /* Four steps in a row; the mark carries the state, the words repeat it. */
+  .agent-start-steps {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--s8);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .agent-start-steps > li {
+    min-width: 0;
+    display: grid;
+    justify-items: start;
+    gap: var(--s4);
+    padding: var(--s12);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-surface);
+  }
+  .agent-start-step-mark {
+    width: 1.375rem;
+    height: 1.375rem;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius-full);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-fill);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+  }
+  .agent-start-step-name {
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+  }
+  .agent-start-step-state {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .agent-start-steps > li:is([data-state="done"], [data-state="skipped"]) > .agent-start-step-mark {
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
+  }
+  .agent-start-steps > li[data-state="running"] {
+    border-color: var(--agnes-brand-primary);
+  }
+  .agent-start-steps > li[data-state="running"] > .agent-start-step-mark {
+    color: var(--agnes-text-inverse);
+    background: var(--agnes-brand-primary);
+  }
+  .agent-start-steps > li[data-state="running"] > .agent-start-step-state {
+    color: var(--agnes-text-secondary);
+  }
+  .agent-start-steps > li[data-state="failed"] {
+    border-color: var(--agnes-status-danger-border);
+  }
+  .agent-start-steps > li[data-state="failed"] > .agent-start-step-mark {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+  }
+  .agent-start-steps > li[data-state="failed"] > .agent-start-step-state {
+    color: var(--agnes-status-danger-text);
+  }
+  @media (max-width: 480px) {
+    .agent-start-steps {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  /* ── Automation ─────────────────────────────────────────────────────────────
+   One column of parts under the page tabs: filters, a grouped list, a quiet note. */
+  .home-page-action-slot {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .home-page-action-slot:empty {
+    display: none;
+  }
+  .automation-panel {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s16);
+  }
+  /* The list's own filters sit in a card, so they read as one control rather than as loose page copy. */
+  .automation-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--s8) var(--s16);
+    min-width: 0;
+    padding: var(--s8) var(--s12);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-surface);
+  }
+  .automation-toolbar-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+  }
+  /* This page is not a settings page, so the placeholder draws the card its list would fill. */
+  .automation-panel .agh-empty-state {
+    box-sizing: border-box;
+    max-width: none;
+    padding: var(--s32) var(--s24);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-group);
+  }
+  /* A row's run history grows inside its copy column, so centering the row would drag the icon and
+   actions down with every added run; pin them to the row start instead. Scoped to this page only. */
+  .automation-panel .agh-list-row.automation-row {
+    align-items: flex-start;
+  }
+  .automation-panel .agh-list-row.automation-row > .agh-list-row-actions {
+    align-self: flex-start;
+  }
+  .automation-panel .agh-list-row.automation-row > .agh-list-row-icon {
+    margin-block-start: var(--s4);
+  }
+  .automation-panel .agh-list-row-copy > p a {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .automation-status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+  }
+  .automation-note,
+  .automation-dialog-lead {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+  }
+  .automation-dialog-lead {
+    margin-bottom: var(--s12);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .automation-history {
+    display: grid;
+    gap: var(--s4);
+    margin: 0;
+    padding: var(--s8) 0 0;
+    list-style: none;
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+  }
+  .automation-history > li {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  .automation-history > li > svg {
+    flex: 0 0 auto;
+    color: var(--agnes-status-success-text);
+  }
+  .automation-history > li[data-failed] > svg {
+    color: var(--agnes-status-danger-text);
+  }
+  .automation-history > li {
+    flex-wrap: wrap;
+    row-gap: var(--s2);
+  }
+  .automation-history > li > a {
+    margin-inline-start: auto;
+    font-size: var(--font-size-xs);
+  }
+  /* The task dialog: one column of fields; the interval number and its unit share a row. */
+  .schedule-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s12);
+  }
+  .schedule-form-inline {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 8rem);
+    gap: var(--s8);
+  }
+  .schedule-form [data-testid="schedules-preview"]:empty {
+    display: none;
+  }
+  /* Two fields to a row on a page, one where the space runs out; never four cramped ones. */
+  .automation-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+    gap: var(--s12) var(--s16);
+    align-items: start;
+  }
+  .automation-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s16);
+  }
+  /* A form's own fields read as one card: fields, the prompt, then the switch that turns it on. */
+  .automation-form-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s16);
+    padding: var(--s20);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-surface);
+  }
+  /* The prompt is the body of this form, not a short field beside others: it takes the card's width. */
+  .automation-form-card > .agh-field {
+    max-width: none;
+  }
+  .automation-form-switch {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s16);
+    padding-top: var(--s16);
+    border-top: 1px solid var(--agnes-line-primary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+  }
+  .automation-weekdays {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s8) var(--s16);
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .automation-weekdays > legend {
+    padding: 0;
+    margin-bottom: var(--s4);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .automation-weekdays > label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+    font-size: var(--font-size-sm);
+  }
+  /* A delivery's outcome mark: colour repeats what the row's text already says. */
+  .automation-mark {
+    display: inline-grid;
+    place-items: center;
+    color: var(--agnes-text-tertiary);
+  }
+  .automation-mark[data-tone="ok"] {
+    color: var(--agnes-status-success-text);
+  }
+  .automation-mark[data-tone="bad"] {
+    color: var(--agnes-status-danger-text);
+  }
+}
+
+@layer app {
+  /* Applications are package-level products; their roles stay within the product card. */
+  .application-card header {
+    align-items: center;
+  }
+  .application-card header img,
+  .application-card header .agnes-mark {
+    width: 2.125rem;
+    height: 2.125rem;
+    flex: 0 0 auto;
+    border-radius: var(--radius-md);
+    object-fit: contain;
+  }
+  .application-card .application-eyebrow {
+    color: var(--agnes-text-secondary);
+    font-size: 12px;
+    margin: 0 0 6px;
+  }
+  /* Catalogue copy is bounded so one long entry cannot dwarf the rest of the feed. */
+  .application-card .agent-card-summary {
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+  .application-preview {
+    display: grid;
+    gap: var(--s8);
+    padding: var(--s12);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-subtle);
+    border: 1px solid var(--agnes-line-primary);
+  }
+  .application-card .application-preview p {
+    display: -webkit-box;
+    margin: 0;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    font-size: var(--font-size-sm);
+    line-height: 1.55;
+  }
+  .application-preview span {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .application-scenarios {
+    display: grid;
+    gap: var(--s4);
+    margin: 0;
+    padding-inline-start: 1.2em;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.55;
+  }
+  .application-includes {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.55;
+  }
+  .application-card .application-roles .agh-disclosure-summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .application-card .application-roles ul {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    padding: 16px 20px;
+  }
+  .application-card .application-roles p {
+    color: var(--agnes-text-secondary);
+    font-size: 13px;
+  }
+}

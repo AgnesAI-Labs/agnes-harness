@@ -21,6 +21,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { LocalBootDeps } from '../src/boot/local.js'
 import { say, TEST_LOCK } from './boot-host.js'
 
+const INSTALL_PROMPT = `install example@1.0.0 (sha256-${'a'.repeat(64)})? [y/N] `
+
 let confirmed: boolean | undefined
 let prompted: (() => void) | undefined
 
@@ -56,7 +58,10 @@ function harness(ttyStdin = true) {
     out += String(b)
   })
   const stderr = Object.assign(new PassThrough(), { isTTY: false })
-  stderr.resume()
+  let err = ''
+  stderr.on('data', (b: Buffer) => {
+    err += String(b)
+  })
   const stdin = Object.assign(new PassThrough(), { isTTY: ttyStdin, setRawMode() {} })
   const io = {
     env: { AGH_HOME: dir, NO_COLOR: '1' },
@@ -72,7 +77,7 @@ function harness(ttyStdin = true) {
     lock: TEST_LOCK,
     createHostImpl: async () => (await createTestHost({ dataDir: dir, script: [say('hi')] })).host,
   }
-  return { io, boot, stdin, out: () => out }
+  return { io, boot, stdin, out: () => out, err: () => err }
 }
 
 /** Runs `agnes install`, waits until the real prompt is on screen, then sends `keys`. */
@@ -83,7 +88,7 @@ async function install(keys: string) {
   })
   const run = main(['install', 'npm:example@1.0.0'], h.io, h.boot) as Promise<number>
   await Promise.race([reached, new Promise((r) => setTimeout(r, 20_000))])
-  for (const deadline = performance.now() + 5_000; !h.out().includes('Install example'); ) {
+  for (const deadline = performance.now() + 5_000; !h.out().includes(INSTALL_PROMPT); ) {
     if (performance.now() > deadline) throw new Error(`prompt never rendered; stdout=${h.out()}`)
     await new Promise((r) => setTimeout(r, 5))
   }
@@ -93,17 +98,17 @@ async function install(keys: string) {
     run,
     new Promise<typeof HUNG>((r) => setTimeout(() => r(HUNG), 10_000)),
   ])
-  return { outcome, confirmed, stdout: h.out() }
+  return { outcome, confirmed, stdout: h.out(), stderr: h.err() }
 }
 
-/** INV-33: without a TTY the command previews and declines. It must never prompt, never guess. */
+/** INV-33: without a TTY the command refuses consent with actionable feedback. It must never prompt, never guess. */
 async function installNonTty() {
   const h = harness(false)
   const outcome = await Promise.race([
     main(['install', 'npm:example@1.0.0'], h.io, h.boot) as Promise<number>,
     new Promise<typeof HUNG>((r) => setTimeout(() => r(HUNG), 10_000)),
   ])
-  return { outcome, confirmed, stdout: h.out() }
+  return { outcome, confirmed, stdout: h.out(), stderr: h.err() }
 }
 
 describe('DBH M-B: the install prompt must settle when the user declines to answer', () => {
@@ -122,13 +127,14 @@ describe('DBH M-B: the install prompt must settle when the user declines to answ
     })
   }, 60_000)
 
-  it('[preserve] a non-TTY stdin declines without ever rendering a prompt (INV-33)', async () => {
+  it('[preserve] a non-TTY stdin refuses without ever rendering a prompt (INV-33)', async () => {
     const r = await installNonTty()
     expect({
       outcome: r.outcome === HUNG ? 'hung' : r.outcome,
       confirmed: r.confirmed,
-      prompted: r.stdout.includes('Install example'),
-    }).toEqual({ outcome: 0, confirmed: false, prompted: false })
+      prompted: r.stdout.includes(INSTALL_PROMPT),
+    }).toEqual({ outcome: 2, confirmed: undefined, prompted: false })
+    expect(r.stderr).toContain('confirmation requires a TTY; review the preview and rerun with --yes')
   }, 60_000)
 
   it('stdin EOF settles the prompt as "no" instead of hanging the CLI', async () => {

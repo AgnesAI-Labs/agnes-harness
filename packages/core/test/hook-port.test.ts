@@ -1,7 +1,7 @@
+import { platformFacts } from '@agnes/core-effects/effects/platform-facts'
 import type { HookContext, HookHandler } from '@agnes/extension-api'
 import { unavailableProjections } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
-import { platformFacts } from '../src/effects/platform-facts.js'
 import { HOOK_UNHANDLED, HookEngine } from '../src/hooks/engine.js'
 import { type SessionHookInputs, SessionHookPort } from '../src/hooks/port.js'
 import { deriveRequest } from '../src/request/derive.js'
@@ -91,9 +91,17 @@ describe('SessionHookPort', () => {
     await expect(port.turnStopping({ turn: 1, step: 1, proposedReason: 'completed' })).resolves.toEqual({
       action: 'stop',
     })
-    await expect(port.context([])).resolves.toEqual({ sections: [], additionalContext: '' })
+    await expect(port.context([])).resolves.toEqual({
+      sections: [],
+      additionalContext: '',
+      untrustedContext: '',
+    })
     const existing = [{ id: 'additional-context', order: 199, text: 'existing', source: 'caller' }]
-    await expect(port.context(existing)).resolves.toEqual({ sections: [], additionalContext: '' })
+    await expect(port.context(existing)).resolves.toEqual({
+      sections: [],
+      additionalContext: '',
+      untrustedContext: '',
+    })
     expect(await port.beforeRequest(request, 'primary', 0)).toBe(request)
   })
 
@@ -174,16 +182,29 @@ describe('SessionHookPort', () => {
 
   it('gets live budget from the assembled session and obeys a before_step block', async () => {
     let remaining = 17
+    let park = false
     const { engine, port } = setup({ budget: () => ({ remaining, cap: 20 }) })
     engine.on(
       'before_step',
-      (payload) => ({ block: payload.budget.remaining === 0, reason: String(payload.budget.remaining) }),
+      (payload) => ({
+        block: payload.budget.remaining === 0,
+        park,
+        reason: String(payload.budget.remaining),
+      }),
       meta,
     )
     await expect(port.beforeStep({ turn: 1, step: 1, depth: 0 })).resolves.toEqual({})
+    park = true
+    await expect(port.beforeStep({ turn: 1, step: 2, depth: 0 })).resolves.toEqual({
+      block: false,
+      park: true,
+      reason: '17',
+    })
+    park = false
     remaining = 0
     await expect(port.beforeStep({ turn: 1, step: 2, depth: 0 })).resolves.toEqual({
       block: true,
+      park: false,
       reason: '0',
     })
   })
@@ -296,6 +317,44 @@ describe('SessionHookPort', () => {
     expect(result.additionalContext).toBe('界'.repeat(2730))
     expect(overflow).toEqual([{ ext: 'agnes/test', bytes: 9000 }])
   })
+
+  it.each(['agnes/test', 'agnes/live'])(
+    'refreshes opted-in context from %s while retaining frozen contributors and refusing a failed live refresh',
+    async (source) => {
+      const { engine, port } = setup()
+      let frozen = 'frozen first',
+        live = 'live first',
+        fail = false
+      engine.on('context', () => ({ additionalContext: frozen }), meta)
+      engine.on(
+        'context',
+        () => {
+          if (fail) throw new Error('unreadable live resource: synthetic-secret')
+          return {
+            refreshOnRequest: true,
+            sections: [{ id: 'rules', order: 120, content: live }],
+            additionalContext: live,
+          }
+        },
+        { ...meta, source },
+      )
+      engine.on('context', () => ({ additionalContext: `tail ${frozen}` }), meta)
+      expect(await port.context([])).toMatchObject({
+        additionalContext: 'frozen first\nlive first\ntail frozen first',
+      })
+      frozen = 'frozen changed'
+      live = 'live changed'
+      expect(await port.refreshContext([])).toMatchObject({
+        additionalContext: 'frozen first\nlive changed\ntail frozen first',
+        sections: [{ id: 'rules', text: 'live changed' }],
+      })
+      fail = true
+      await expect(port.refreshContext([])).rejects.toMatchObject({
+        code: 'E_ENVELOPE',
+        message: `E_ENVELOPE: hook rejected transformation (context, ${source}, execution)`,
+      })
+    },
+  )
 
   it('fails closed for context validation instead of silently dropping a bad return', async () => {
     const { engine, port } = setup()
@@ -502,6 +561,32 @@ describe('SessionHookPort.approvalRequest', () => {
     )
     await expect(port.approvalRequest({ request })).resolves.toEqual({
       request: { summary: 'run rm -rf /', risk: 'always' },
+      rewrittenBy: [meta.source],
+    })
+  })
+
+  it('never lowers the risk an approver sees', async () => {
+    const { engine, port } = setup()
+    engine.on('approval_request', () => ({ request: { risk: 'budget' as const } }), meta)
+    await expect(port.approvalRequest({ request })).resolves.toEqual({
+      request: { risk: 'destructive' },
+      rewrittenBy: [],
+    })
+  })
+
+  it('keeps an earlier raise when a later handler asks for less, and names who rewrote the text', async () => {
+    const { engine, port } = setup()
+    engine.on('approval_request', () => ({ request: { risk: 'always' as const } }), {
+      ...meta,
+      source: 'agnes/raises',
+    })
+    engine.on('approval_request', () => ({ request: { risk: 'destructive' as const, context: 'safe' } }), {
+      ...meta,
+      source: 'agnes/lowers',
+    })
+    await expect(port.approvalRequest({ request })).resolves.toEqual({
+      request: { risk: 'always', context: 'safe' },
+      rewrittenBy: ['agnes/lowers'],
     })
   })
 
@@ -531,6 +616,7 @@ describe('SessionHookPort.approvalRequest', () => {
     )
     await expect(port.approvalRequest({ request })).resolves.toEqual({
       request: { risk: 'always', summary: 'run rm -rf /' },
+      rewrittenBy: ['agnes/other'],
     })
     expect(seenBySecond).toEqual(['always'])
   })

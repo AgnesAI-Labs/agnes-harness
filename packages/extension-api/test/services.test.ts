@@ -1,19 +1,28 @@
 import { describe, expect, it } from 'vitest'
-import { checkManifest, checkServiceDef } from '../src/index.js'
+import {
+  checkManifest,
+  checkServiceDef,
+  schedulingKind,
+  schedulingServiceCapabilities,
+} from '../src/index.js'
 import { serviceFixture } from '../testkit/index.js'
 
 describe('S2 author service definition', () => {
   it('uses the same six data fields as manifest capabilities', () => {
     const def = serviceFixture()
     expect(checkServiceDef(def)).toEqual({ ok: true })
+    expect(schedulingKind.authority).toBe('host')
+    expect(schedulingKind.operations).toEqual({ register: false, bind: true })
+    for (const cap of schedulingServiceCapabilities)
+      expect(checkServiceDef({ ...cap, handler: async () => null })).toEqual({ ok: true })
     const { handler: _handler, ...capability } = def
     expect(
       checkManifest({
         id: 'acme/service',
         version: '1.0.0',
-        apiRange: '^1.0.0',
+        apiRange: '^5.0.0',
         entry: './index.js',
-        capabilities: { services: [capability] },
+        capabilities: { services: [capability, ...schedulingServiceCapabilities] },
       }).ok,
     ).toBe(true)
   })

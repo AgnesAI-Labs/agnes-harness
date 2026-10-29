@@ -1,15 +1,36 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { listPackages, repoRoot } from './repo.js'
+import {
+  DEFAULT_EXCLUDE_DIRS,
+  isTestFile,
+  listPackages,
+  listSourceFiles,
+  presentationSourceFiles,
+  repoRoot,
+} from './repo.js'
 
 const root = repoRoot()
+// Bundled payloads are independent packages even though their sources live beneath package-manager.
+const bundledRoot = join(root, 'packages/package-manager/bundled-plugins')
+const packages = [
+  ...listPackages(root),
+  // Skip leftovers such as an ignored node_modules from a removed payload.
+  ...readdirSync(bundledRoot)
+    .filter((name) => existsSync(join(bundledRoot, name, 'package.json')))
+    .map((name) => {
+      const dir = join(bundledRoot, name)
+      const json = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as Record<string, unknown>
+      return { name: String(json.name), dir, json }
+    }),
+].sort((a, b) => b.dir.length - a.dir.length)
+const ownerOf = (file: string) => packages.find((pkg) => file.startsWith(`${pkg.dir}${sep}`))
 const allow = JSON.parse(
   readFileSync(join(root, 'tools/guards/dependency-allowlist.json'), 'utf8'),
 ) as Record<string, string[]>
 
 describe('dependency allowlist (dependencies point one way, downward)', () => {
-  for (const pkg of listPackages(root)) {
+  for (const pkg of packages) {
     it(`${pkg.name} only depends on allowed @agnes packages`, () => {
       const deps = {
         ...(pkg.json.dependencies as Record<string, string> | undefined),
@@ -21,6 +42,10 @@ describe('dependency allowlist (dependencies point one way, downward)', () => {
         // the fix is to scan the import statements in source, not to start checking devDependencies
         // here.
       }
+      if (pkg.name === '@agnes/plugin-runtime') {
+        for (const key of ['dependencies', 'devDependencies', 'peerDependencies'])
+          expect(pkg.json[key] ?? {}).not.toHaveProperty('@agnes/host')
+      }
       const agnesDeps = Object.keys(deps).filter((d) => d.startsWith('@agnes/'))
       const allowed = allow[pkg.name]
       expect(allowed, `${pkg.name} missing from dependency-allowlist.json`).toBeDefined()
@@ -28,7 +53,7 @@ describe('dependency allowlist (dependencies point one way, downward)', () => {
     })
   }
   it('every allowlist entry is a real package', () => {
-    const names = new Set(listPackages(root).map((p) => p.name))
+    const names = new Set(packages.map((p) => p.name))
     for (const n of Object.keys(allow)) expect(names.has(n), n).toBe(true)
   })
 })
@@ -50,14 +75,20 @@ describe('dependency allowlist (dependencies point one way, downward)', () => {
 // therefore 9 here, with channels/bridges still together on 8, which lets every existing and
 // previously approved dependency in the code pass.
 const LAYER: Record<string, number> = {
+  '@agnes/browser': 5, // Official browser composes only the public frontend author APIs.
+  '@agnes/authoring-eval': 11, // Explicit paid acceptance composes public SDK and inference APIs.
+  '@agnes/batch': 4, // Application plugin composes public SDK sessions and author contracts.
+  '@agnes/memory-file': 2, // File provider implements the pure extension API; Base composes it.
+  '@agnes/e2e-web': 11, // Private acceptance client consumes only the public SDK and protocol.
   // Vendored Cordis core and utilities: third-party code, no @agnes layer (web-client-modules WC4).
   '@agnes/cosmokit': -2, // zero-dependency leaf, below the vendor core (system-node precedent)
   '@agnes/cordis': -1,
   '@agnes/cordis-loader': 0,
   '@agnes/plugin-runtime': 1,
+  '@agnes/plugin-streams': 2, // Pure authenticated transport shared by worker and daemon.
   '@agnes/web-slots': -1,
   // UI component layer (web-ui component system, spec 2026-09-24): the only package allowed to
-  // import antd/@assistant-ui (enforced by ui-layer.test.ts). Sits just above protocol so it can
+  // import antd/@ant-design (enforced by ui-layer.test.ts). Sits just above protocol so it can
   // consume UINode types; external UI libraries are npm deps, not @agnes layers.
   '@agnes/web-ui': 1,
   // Raised from 1 to 2 when web-ui landed: web-units consumes web-ui components, and the
@@ -66,19 +97,12 @@ const LAYER: Record<string, number> = {
   // Author-facing browser API above sdk (web-client-modules WC6); react is a pinned peer, not a layer.
   '@agnes/web-client': 4,
   '@agnes/resource-control-contracts': -1,
-  '@agnes/mcp-transport-health': -1,
   '@agnes/protocol-validation': -1,
-  // Agnes MHS: the device protocol, its hub (AgnesHub) and the AgnesHub plugin, which reads protocol constants.
-  '@agnes/mhs': 1,
   '@agnes/error-sanitization': -1,
   '@agnes/package-isolation': -1,
   '@agnes/system-node': -2, // OS primitives sit below infrastructure leaves and have no package dependencies.
-  '@agnes/web-server': -1,
-  '@agnes/web-admin-frame': -1,
+  '@agnes/web-server': 1,
   '@agnes/protocol': 0,
-  '@agnes/resource-control-client-node': 2,
-  '@agnes/package-admin-client-node': 2,
-  '@agnes/cli-launch': 1,
   '@agnes/cli-tui': 4,
   '@agnes/resource-control-runtime': 6,
   '@agnes/resource-control-store': 6,
@@ -87,23 +111,59 @@ const LAYER: Record<string, number> = {
   '@agnes/resource-control-daemon': 7,
   '@agnes/worker-runtime': 8,
   '@agnes/resource-control-cli': 10,
+  '@agnes/history-index': 0,
   '@agnes/extension-api': 1,
+  '@agnes/git-worktree-contract': 1.5, // Pure Git worktree token so Host does not import Base.
+  '@agnes/observability': 2, // Official telemetry consumes only public author contracts and OS primitives.
+  '@agnes/intelligent-ui-contract': 2, // Pure Intelligent UI token so Host does not import Base.
+  '@agnes/core-common': 1.1,
+  '@agnes/core-child-control': 1.2,
+  '@agnes/core-ledger': 1.3,
+  '@agnes/core-effects': 1.4,
   '@agnes/core': 2,
+  '@agnes/loop-default': 2, // First-party loop plugin consumes the author API.
+  '@agnes/loop-jev': 2, // First-party Jev loop plugin consumes the author API.
+
   '@agnes/ai': 3,
-  // A seam-only package (RA16): implements SandboxSeam against a transport handed to it by the
-  // host adapter layer, without depending on host or base. Same layer as ai/sdk - one above core,
-  // the only thing it depends on.
+  '@agnes/model-adapters': 4,
+  // The remote sandbox provider and workspace pool (RA16): runs against a transport the host
+  // adapter layer opens, without depending on host or base. Same layer as ai/sdk - one above core.
   '@agnes/sandbox-remote': 3,
   '@agnes/base': 4,
   '@agnes/code': 5,
   '@agnes/runtime-python': 6,
   '@agnes/package-manager': 2,
+  '@agnes/distribution': 5.5, // Release composition is above implementations and below Host owners.
+  '@agnes/host-common': 6.01,
+  '@agnes/host-infrastructure': 6.02,
+  '@agnes/host-computer-use': 6.03,
+  '@agnes/host-artifacts': 6.04,
+  '@agnes/host-extensions': 6.05,
+  '@agnes/host-providers': 6.06,
   '@agnes/host': 7,
   '@agnes/sdk': 3,
+  '@agnes/daemon-foundation': 8.1,
+  '@agnes/daemon-surfaces': 8.1,
+  '@agnes/daemon-admin': 8.3,
+  '@agnes/daemon-rpc': 8.4,
   '@agnes/daemon': 9,
   // Channel's outer client launcher consumes the daemon's public discovery reader, like other clients.
   '@agnes/channels': 10,
   '@agnes/bridges': 9,
+  '@agnes/web-foundation': 9.1,
+  '@agnes/web-admin': 9.2,
+  '@agnes/web-conversation': 9.2,
+  // Independently installed bundled plugins consume public Host/UI contracts.
+  '@agnes/deliverables-ui': 10,
+  '@agnes/document-reader': 10,
+  '@agnes/jev-loop': 10,
+  '@agnes/goal-ui': 10,
+  '@agnes/interaction-ui': 10,
+  '@agnes/navigation-ui': 10.1,
+  '@agnes/conversation-ui': 10.1,
+  '@agnes/mcp-helper': 10,
+  '@agnes/plugin-helper': 10,
+  '@agnes/skill-helper': 10,
   '@agnes/web': 10,
   // CLI's serve command composes the public Node static server; Web still depends only on SDK/protocol.
   '@agnes/cli': 11,
@@ -115,11 +175,9 @@ const LAYER: Record<string, number> = {
 // are asserted separately rather than going through it.
 const EXACT_ONLY: Record<string, string[]> = {
   '@agnes/cordis-loader': ['@agnes/cordis'],
-  '@agnes/plugin-runtime': ['@agnes/cordis', '@agnes/cordis-loader'],
+  '@agnes/plugin-runtime': ['@agnes/cordis', '@agnes/cordis-loader', '@agnes/extension-api'],
   '@agnes/sdk': [
     '@agnes/protocol',
-    '@agnes/resource-control-client-node',
-    '@agnes/package-admin-client-node',
     '@agnes/system-node', // Node-only private file journal; browser entry stays free of native imports.
   ],
   '@agnes/extension-api': ['@agnes/protocol'],
@@ -146,6 +204,177 @@ describe('dependency allowlist matches layer order', () => {
           `${pkg}(layer ${layer}) → ${dep}(layer ${depLayer}) is not strictly lower-layer`,
         ).toBeLessThan(layer as number)
       }
+    })
+  }
+})
+
+// Test fixtures can depend on higher layers. Production imports, including type queries and
+// literal dynamic imports, must use declared downward dependencies rather than devDependencies.
+function importedModules(source: string): string[] {
+  const literals = new Map<number, string>()
+  const interpolated: string[] = []
+  const text = source.replace(
+    /('(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`)|\/\/[^\n]*|\/\*[\s\S]*?\*\//g,
+    (match, literal: string | undefined, offset: number) => {
+      if (literal?.startsWith('`') && literal.includes('${'))
+        interpolated.push(...importedModules(literal.slice(1, -1)))
+      else if (literal) literals.set(offset, literal.slice(1, -1))
+      return literal ? '#'.repeat(match.length) : ' '.repeat(match.length)
+    },
+  )
+  // A starter's quoted source is data, rather than a production dependency of its generator.
+  // Match import prefixes outside literals, then recover only the adjacent module string.
+  return [...text.matchAll(/\b(?:from\s*|import\s*(?:\(\s*)?)(?=#)/g)]
+    .flatMap((match) => {
+      const spec = literals.get(match.index + match[0].length)
+      return spec ? [spec] : []
+    })
+    .concat(interpolated)
+}
+
+function dependencyCycles(graph: Map<string, Set<string>>): string[] {
+  const done = new Set<string>()
+  const stack: string[] = []
+  const cycles: string[] = []
+  const visit = (name: string) => {
+    if (stack.includes(name)) {
+      cycles.push([...stack.slice(stack.indexOf(name)), name].join(' → '))
+      return
+    }
+    if (done.has(name)) return
+    stack.push(name)
+    for (const dep of graph.get(name) ?? []) visit(dep)
+    stack.pop()
+    done.add(name)
+  }
+  for (const name of graph.keys()) visit(name)
+  return cycles
+}
+
+it('production source and manifests form declared, acyclic package graphs', () => {
+  const byName = new Map(packages.map((pkg) => [pkg.name, pkg]))
+  const sourceGraph = new Map<string, Set<string>>()
+  const manifestGraph = new Map<string, Set<string>>()
+  const errors: string[] = []
+  // Schema-owned compatibility modules predate the workspace split. Keep these exact existing
+  // imports visible; new private cross-package paths are rejected, including in split packages.
+  const legacyPaths = new Set([
+    'packages/protocol/src/json-data.ts:../../protocol-validation/src/json-data.js',
+    'packages/protocol/src/request-media.ts:../../protocol-validation/src/validate.js',
+    'packages/protocol/src/resource-control.ts:../../resource-control-contracts/src/resource-control.js',
+    'packages/protocol/src/validate.ts:../../protocol-validation/src/validate.js',
+    'packages/protocol/src/validate.ts:../../protocol-validation/src/attachments.js',
+    'packages/protocol/src/validate.ts:../../protocol-validation/src/model-images.js',
+    'packages/protocol/src/validate.ts:../../protocol-validation/src/safe-image.js',
+  ])
+  for (const pkg of packages) {
+    const declared = {
+      ...(pkg.json.dependencies as Record<string, string> | undefined),
+      ...(pkg.json.peerDependencies as Record<string, string> | undefined),
+    }
+    // Optional Host peer supports testkit activation only, never production plugin code.
+    if (pkg.name === '@agnes/plugin-runtime') delete declared['@agnes/host']
+    const edges = new Set<string>()
+    sourceGraph.set(pkg.name, edges)
+    manifestGraph.set(pkg.name, new Set(Object.keys(declared).filter((name) => byName.has(name))))
+    const sourceFiles = listSourceFiles(pkg.dir, {
+      excludeDirs: [...DEFAULT_EXCLUDE_DIRS, 'test', 'tests', 'testkit', 'fixtures', 'tools', 'scripts'],
+    })
+    if (pkg.dir.startsWith(`${bundledRoot}${sep}`))
+      sourceFiles.push(...presentationSourceFiles(root).filter((file) => ownerOf(file) === pkg))
+    for (const file of new Set(sourceFiles)) {
+      if (ownerOf(file) !== pkg || isTestFile(file) || file.endsWith('vitest.config.ts')) continue
+      for (const spec of importedModules(readFileSync(file, 'utf8'))) {
+        if (spec.startsWith('.')) {
+          const target = resolve(dirname(file), spec)
+          const owner = ownerOf(target)
+          if (owner && owner !== pkg) {
+            edges.add(owner.name)
+            if (!legacyPaths.has(`${relative(root, file).split(sep).join('/')}:${spec}`)) {
+              errors.push(`${relative(root, file).split(sep).join('/')} imports private path ${spec}`)
+            }
+          }
+          continue
+        }
+        const name = spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0]
+        if (!name || !byName.has(name) || name === pkg.name) continue
+        edges.add(name)
+        if (!(name in declared))
+          errors.push(`${relative(root, file).split(sep).join('/')} imports undeclared ${spec}`)
+      }
+    }
+  }
+  expect(errors).toEqual([])
+  expect(dependencyCycles(manifestGraph), 'production manifest cycles').toEqual([])
+  expect(dependencyCycles(sourceGraph), 'production source cycles').toEqual([])
+})
+
+it('detects fixture back-edges, type queries and literal dynamic imports', () => {
+  // Nested plugin sources must be checked against their own manifest, not their container package.
+  for (const pkg of packages.filter((pkg) => pkg.dir.startsWith(`${bundledRoot}${sep}`)))
+    expect(ownerOf(join(pkg.dir, 'src', 'client.tsx'))?.name).toBe(pkg.name)
+  expect(ownerOf(join(root, 'packages/package-manager/src/manager.ts'))?.name).toBe('@agnes/package-manager')
+  expect(
+    importedModules(`
+    // import('@agnes/ignored')
+    const starter = \`import { fixture } from '@agnes/quoted-fixture'\`
+    import type { X } from '@agnes/a'
+    export { Y } from '@agnes/b/subpath'
+    type Z = import('@agnes/c').Z
+    const load = () => import('@agnes/d')
+    import '@agnes/e'
+    const interpolated = \`\${import('@agnes/interpolated')}\`
+  `),
+  ).toEqual(['@agnes/a', '@agnes/b/subpath', '@agnes/c', '@agnes/d', '@agnes/e', '@agnes/interpolated'])
+  expect(
+    dependencyCycles(
+      new Map([
+        ['leaf', new Set(['root'])],
+        ['root', new Set(['leaf'])],
+      ]),
+    ),
+  ).toEqual(['leaf → root → leaf'])
+})
+
+it('keeps args.ts under 300 code lines', () => {
+  const lines = readFileSync(join(root, 'packages/cli/src/args.ts'), 'utf8')
+    .split('\n')
+    .filter((line) => line.trim() && !line.trim().startsWith('//'))
+  expect(lines.length).toBeLessThanOrEqual(300)
+})
+
+it('keeps every command module outside core and extension-api', () => {
+  const dir = join(root, 'packages/cli/src/commands')
+  const files = readdirSync(dir).filter((name) => name.endsWith('.ts'))
+  expect(files.length).toBeGreaterThan(0)
+  for (const file of files) {
+    const source = readFileSync(join(dir, file), 'utf8')
+    expect(source, file).not.toMatch(/['"]@agnes\/(?:core|extension-api)(?:\/[^'"]*)?['"]/)
+  }
+})
+
+// Browser packages ship to the client; backend capability packages (@agnes/base and below the web
+// layer) must not enter their dependency graph. Pure shared modules live in protocol or
+// error-sanitization.
+describe('browser packages do not depend on backend capability packages', () => {
+  const BROWSER_PACKAGES = new Set([
+    '@agnes/web-client',
+    '@agnes/web-ui',
+    '@agnes/web-units',
+    '@agnes/web-slots',
+    '@agnes/web-foundation',
+    '@agnes/web-admin',
+    '@agnes/web-conversation',
+    '@agnes/resource-control-web',
+  ])
+  const BACKEND = new Set(['@agnes/base', '@agnes/core', '@agnes/host', '@agnes/daemon', '@agnes/code'])
+  for (const pkg of packages.filter((p) => BROWSER_PACKAGES.has(p.name))) {
+    it(`${pkg.name} has no backend @agnes dependency`, () => {
+      const deps = {
+        ...(pkg.json.dependencies as Record<string, string> | undefined),
+        ...(pkg.json.peerDependencies as Record<string, string> | undefined),
+      }
+      expect(Object.keys(deps).filter((d) => BACKEND.has(d))).toEqual([])
     })
   }
 })

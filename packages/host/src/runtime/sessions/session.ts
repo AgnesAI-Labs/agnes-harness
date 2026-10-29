@@ -1,0 +1,666 @@
+import { createHash, randomUUID } from 'node:crypto'
+import {
+  type ChildWorkspaceRuntimePort,
+  CoreError,
+  type SessionWorkspaceRuntime as CoreSessionWorkspaceRuntime,
+  roleAuthority,
+  type SandboxSeam,
+  type SeamImplementations,
+  type Seq,
+  type SessionWorkspaceLifecycle,
+  type WorkspaceInvocationPort,
+} from '@agnes/core'
+import { PINNED_SEAM_KINDS } from '@agnes/extension-api/seams'
+import { type CommandRule, checkCommandRule } from '@agnes/host-common/command-policy'
+import { HostError } from '@agnes/host-common/errors'
+import { selectionAllowed } from '@agnes/host-common/presets/admission'
+import {
+  assertRecipeName,
+  DEFAULT_PERMISSION,
+  FOLLOW_DEFAULT_PERMISSION,
+  isPermission,
+  type Permission,
+} from '@agnes/host-common/presets/permission'
+import { type ResolvedPreset, resolvePreset } from '@agnes/host-common/presets/resolve'
+import { loopPatch } from '@agnes/host-common/profile/composition'
+import { policyDigest } from '@agnes/host-common/profile/policy-digest'
+import type { ResolvedProfile } from '@agnes/host-common/profile/types'
+import { assertWorkspaceBinding, type WorkspaceBinding } from '@agnes/host-common/workspace-authority'
+import type { FencedFs } from '@agnes/host-infrastructure/adapters/fs'
+import type { AuditSink } from '@agnes/host-infrastructure/audit'
+import type {
+  SessionWorkspaceRuntime,
+  SessionWorkspaceRuntimeTable,
+} from '@agnes/host-infrastructure/session-workspace-runtime'
+import { SystemPromptSettingsStore } from '@agnes/host-infrastructure/system-prompt-settings'
+import { referenceHistory } from '@agnes/host-providers/assemble/reference-history'
+import { referenceLimits } from '@agnes/host-providers/assemble/reference-text'
+import { materializeRoutes, pinPresetRoutes } from '@agnes/host-providers/assemble/routes'
+import type { Actor, LoopSelection, SessionStart } from '@agnes/protocol'
+import { bestEffort } from '../../best-effort.js'
+import type { Assembled } from '../assemble/assemble.js'
+import { retainedModelView } from '../assemble/retained-model.js'
+import type { HostSession } from '../lifecycle/host.js'
+import { resolveSessionCapabilities } from '../profile/session-capabilities.js'
+import { bindDeferredInvocations } from './deferred-invocations.js'
+import { attachIntelligentUiTrace } from './intelligent-ui-trace.js'
+import { replaySwitchesOnOpen, validateModelSwitch } from './session-switch.js'
+
+/**
+ * What opening a session reported putting right. Taken from the method rather than pinned by name,
+ * for the same reason `HostSession` is: core publishes the session, not the shape this returns.
+ */
+export type SessionRecovery = Awaited<ReturnType<HostSession['resume']>>
+
+type PinnedSeamKind = (typeof PINNED_SEAM_KINDS)[number]
+
+export type CreateSessionOptions = {
+  /** Backend-only role admission; never part of session.new JSON. */
+  roleDelegation?: import('@agnes/core').RoleDelegation
+  delegation?: import('@agnes/core').SessionOptions['delegation']
+  agent?: string
+  agentDigest?: string
+  strict?: boolean
+  loop?: LoopSelection
+  key?: string
+  preset?: string
+  /**
+   * A permission level, or `default` to follow the deployment default. Absent means a legacy request:
+   * a permission-level preset name keeps its level and every other recipe runs under workspace-write.
+   */
+  permission?: string
+  /** Set by the Host from the administrator's defaults; not part of what a caller asks for. */
+  defaultPermission?: Permission
+  bundles?: readonly string[]
+  /** Owner text appended to this NEW session's system prompt; see core's SessionOptions. */
+  systemPromptAppend?: string
+  /** Transitional local entry. Authenticated worker opens supply `binding` and cannot override it. */
+  cwd?: string
+  binding?: WorkspaceBinding
+  credential?: unknown
+  writerRunId?: string
+  historySignal?: AbortSignal
+  onHistoryProgress?: (progress: { verifiedSeq: number; lastSeq: number }) => void
+  lane?: string
+  /** Pinned seams are chosen by registered provider and repin only; a session cannot bring its own object. */
+  seams?: Partial<Omit<SeamImplementations, PinnedSeamKind>>
+  /** Creates a durable immutable-prefix child through Core's existing fork primitive. */
+  parent?: { key: string; boundarySeq: Seq }
+  /** See core's SessionOptions: a new session opens without `session_start`. In-process only (import). */
+  requireNew?: boolean
+  skipSessionStartHooks?: boolean
+  /**
+   * Starts none of the Host's own writers on this session (title generation, approval expiry), which
+   * react to committed rows by appending rows of their own. An importer fills the ledger in several
+   * appends and every imported row must land on its exported sequence, so nothing else may write
+   * between them. In-process only (import); a later open of the same session starts them as usual.
+   */
+  skipBackgroundWriters?: boolean
+  /** See core's SessionOptions: where an imported ledger came from. In-process only (import). */
+  imported?: SessionStart['imported']
+  /**
+   * Called when opening this session had to close out work a dead process left in flight, and only
+   * then. Opening a session that ended cleanly does not call it and writes nothing to the ledger, so
+   * a caller that is never called opened a ledger that was already sound.
+   */
+  onRecovered?: (recovery: SessionRecovery) => void
+}
+
+export function sessionKey(profile: ResolvedProfile, actor: Actor, workspaceRoot: string): string {
+  const scope = createHash('sha256').update(workspaceRoot).digest('hex').slice(0, 16)
+  return `agnes:${actor.org || 'local'}:${profile.name}:cli:workspace:${scope}`
+}
+
+type HardRequirements = {
+  sandbox?: { required?: boolean }
+  code_runtime?: { language?: string }
+  approval?: { command_policy?: CommandRule[] }
+}
+
+/**
+ * A session open or runtime switch through `validatePresetSwitch` checks the preset against
+ * the actual assembly: is it in `presets.allowed`, can
+ * this deployment provide the sandbox/runtime it hard-requires, does its routing resolve against the
+ * routes this host actually built. The checks throw `E_PRESET_UNSUPPORTED`/`E_PRESET_UNRESOLVED`.
+ *
+ * Takes the whole `ResolvedPreset`, not just its `.view`: the hard-requirement checks below read
+ * `resolved.doc` (the raw `PresetDoc`) and the routing check reads `resolved.view` (the `PresetView`
+ * core runs on) - two different projections of the one resolved preset, and a caller holding only
+ * one of them cannot run both halves of this check.
+ */
+export function checkPresetHardRequirements(
+  profile: ResolvedProfile,
+  a: Assembled,
+  resolved: ResolvedPreset,
+  name: string,
+): void {
+  const unsupported = (why: string, detail: Record<string, unknown>): never => {
+    throw new HostError('E_PRESET_UNSUPPORTED', `preset ${name} ${why}`, {
+      detail: { source: name, ...detail },
+    })
+  }
+  if (!selectionAllowed(profile, name, resolved.permission))
+    unsupported('is not in presets.allowed', { capability: 'preset' })
+
+  // hard requirements, checked against what this deployment can actually provide
+  const doc = resolved.doc as HardRequirements
+  const l1 = a.adapters.platform.capability('sandbox.l1')
+  if (doc.sandbox?.required === true && l1.level !== 'full')
+    unsupported('requires sandbox L1, which this platform cannot provide', {
+      capability: 'sandbox.l1',
+      reason: l1.reason,
+    })
+  // A code preset wants a persistent runtime plus a two-way bridge back into the harness; the remote
+  // transport (`adapters.transport`, present exactly when this deployment is remote) carries
+  // one-shot exec and file copies and nothing else, and the runtime contract also routes its startup
+  // argv through confine(), which the remote sandbox seam unconditionally refuses. Say so plainly
+  // rather than letting it fail later as "no runtime package provides it" - a package does provide
+  // it, this deployment just cannot host it. Checked against the direct `transport` flag
+  // on `AdapterBundle`, not by pattern-matching the `sandbox.l1` capability's human-readable `reason`
+  // string: a diagnostic string must never become a program-control-flow dependency.
+  if (doc.code_runtime?.language !== undefined && a.adapters.transport !== undefined)
+    unsupported('needs a code runtime, which a remote sandbox deployment cannot host', {
+      capability: `code_runtime.${doc.code_runtime.language}`,
+    })
+  const lang = doc.code_runtime?.language
+  if (lang !== undefined && !(lang in a.runtimes))
+    unsupported(`needs code_runtime.${lang}, which no runtime package provides`, {
+      capability: `code_runtime.${lang}`,
+    })
+  // Every rule is checked when the session opens, not when the first approval arrives: a rule that
+  // cannot decide anything must not sit in a live preset looking like a policy.
+  for (const rule of doc.approval?.command_policy ?? []) checkCommandRule(rule)
+
+  // The sentinel again, for a preset that is not the one the host was assembled with. assemble()
+  // pinned only the default view, so this one still reads `default`, and core would record a request
+  // against a route of that name. It is resolved the same way - and then held to the table the
+  // provider was actually built with, because ai resolves a slot from that table and not from the
+  // session's preset: a session asking for a route the provider was not given cannot be served, and
+  // says so at open rather than in the middle of the first turn.
+  const wanted = materializeRoutes(resolved.view, profile, a.modelAdapterCatalog())
+  for (const [slot, t] of Object.entries(wanted)) {
+    const built = (a.routes as Record<string, { route: string; model: string } | undefined>)[slot]
+    if (!built || built.route !== t.route || built.model !== t.model)
+      throw new HostError(
+        'E_PRESET_UNRESOLVED',
+        `preset ${name} slot ${slot} wants a route this host did not assemble`,
+        {
+          detail: { reason: 'route-not-assembled', slot, want: `${t.route}/${t.model}`, preset: name },
+        },
+      )
+  }
+}
+
+function workspaceFence(runtime: SessionWorkspaceRuntime): FencedFs {
+  if (runtime.fencedFs) return runtime.fencedFs
+  throw new HostError('E_WORKSPACE_UNTRUSTED', 'workspace runtime has no fenced filesystem', {
+    detail: { reason: 'workspace-fence-missing' },
+  })
+}
+
+/**
+ * The fs adapter enforces the policy the assembly bound after the seams came up: the sandbox seam's
+ * own full rule set, pinned by digest. What host owes at every session open - and on every
+ * fsPolicy() call, because core re-reads it on every tool path - is that the seam answering right
+ * now is still answering that same policy. A per-session sandbox override is checked by the same
+ * rule: a digest that differs from the bound one is a different policy, and racing a different
+ * policy onto the shared FsOps is refused rather than attempted.
+ *
+ * Root agreement against the live filesystem is settled once at open; the root string and the digest
+ * are re-checked on every call. Delegate every method explicitly so class-backed seams keep their
+ * receiver and frozen object seams do not trip Proxy invariants when fsPolicy is guarded.
+ */
+async function fenceSandbox(
+  sandbox: SandboxSeam,
+  sessionFs: Pick<FencedFs, 'resolveInside' | 'canonicalize'>,
+  boundDigest: () => string,
+): Promise<SandboxSeam> {
+  const fenced = await sessionFs.resolveInside('.')
+  // Captured as its own string, not the live policy object: the seam's fsPolicy() may return the
+  // same mutable object on every call, and the per-call check below must compare against the root
+  // this session opened with, not whatever that object holds by the time it is asked again.
+  const openWorkspaceRoot = sandbox.fsPolicy().workspaceRoot
+  // Root agreement is settled once, at open, against the live filesystem. The seam's digest hashes
+  // every rule including the workspace allow rule (policy.ts policyDigest), so a root change is a
+  // digest change; the string comparison below is the belt to that brace, on every call.
+  const claimed = await sessionFs.canonicalize(openWorkspaceRoot).catch(() => openWorkspaceRoot)
+  const rootMismatch = (): never => {
+    throw new HostError(
+      'E_WORKSPACE_UNTRUSTED',
+      'the sandbox seam and the fs adapter disagree about the workspace root',
+      { detail: { seam: 'sandbox', reason: 'workspace-root-mismatch' } },
+    )
+  }
+  if (claimed !== fenced) rootMismatch()
+  const agreedFsPolicy = (): ReturnType<SeamImplementations['sandbox']['fsPolicy']> => {
+    const policy = sandbox.fsPolicy()
+    if (policy.workspaceRoot !== openWorkspaceRoot) rootMismatch()
+    if (policy.digest !== boundDigest())
+      throw new HostError(
+        'E_WORKSPACE_UNTRUSTED',
+        'the sandbox seam answers a policy other than the one the host bound',
+        { detail: { seam: 'sandbox', reason: 'sandbox-policy-digest-mismatch' } },
+      )
+    return policy
+  }
+  agreedFsPolicy()
+  return Object.freeze<SandboxSeam>({
+    forWorkspace: (next) => sandbox.forWorkspace(next),
+    exec: (command, options) => sandbox.exec(command, options),
+    confine: (argv) => sandbox.confine(argv),
+    fsPolicy: agreedFsPolicy,
+    enforcement: () => sandbox.enforcement(),
+  })
+}
+
+/**
+ * A delegated child is opened by Core, not through createSession, so its reservation carries the
+ * sandbox a root session would get for the same runtime: the seam fitted to the reserved workspace,
+ * held to that runtime's fence and bound policy. Without it the child would fall back to the
+ * Kernel-level seam, which is bound to no workspace.
+ */
+function childSandboxes(
+  a: Assembled,
+  port: Pick<SessionWorkspaceRuntimeTable, 'reserve'>,
+): ChildWorkspaceRuntimePort {
+  return Object.freeze({
+    async reserve(parentKey: string, childKey: string) {
+      const child = await port.reserve(parentKey, childKey)
+      try {
+        const { runtime } = child
+        await runtime.verifySession?.(childKey)
+        const sandbox = await fenceSandbox(
+          runtime.seam ?? a.seams.sandbox,
+          workspaceFence(runtime),
+          () => runtime.policy.digest,
+        )
+        return Object.freeze({ ...child, sandbox })
+      } catch (error) {
+        await child.close().catch(bestEffort(a.kernel.o.logger, 'unpublished-child-close'))
+        throw error
+      }
+    },
+  })
+}
+
+/** Whether this Host serves the model; any other refusal is not this question's to answer. */
+function modelSwitchAllowed(...input: Parameters<typeof validateModelSwitch>): boolean {
+  try {
+    validateModelSwitch(...input)
+    return true
+  } catch (error) {
+    if (!(error instanceof HostError) || error.code !== 'E_MODEL_UNSUPPORTED') throw error
+    return false
+  }
+}
+
+/** A child inherits its selection; other requests use the deployment defaults for omitted axes. */
+export function sessionSelection(
+  profile: ResolvedProfile,
+  input: {
+    parent?: { name: string; permission?: Permission }
+    preset?: string
+    permission?: string
+    /** An administrator's chosen default; the profile's own default applies when this is absent. */
+    defaultPermission?: Permission
+  },
+): { name: string; permission?: Permission; fallback?: Permission } {
+  const { parent, preset, permission } = input
+  const defaultPermission = input.defaultPermission ?? profile.permissions?.default ?? DEFAULT_PERMISSION
+  if (parent) return { name: parent.name, ...(parent.permission ? { permission: parent.permission } : {}) }
+  const name = preset ?? profile.presets.default
+  assertRecipeName(name)
+  if (permission === undefined || permission === FOLLOW_DEFAULT_PERMISSION)
+    return { name, fallback: defaultPermission }
+  if (!isPermission(permission))
+    throw new HostError('E_PRESET_UNSUPPORTED', 'unknown permission', {
+      detail: { capability: 'permission', source: name },
+    })
+  return { name, permission }
+}
+
+/** Cold recovery may fit a bootstrap model view, only after finding this session's start record. */
+export async function sessionPresetForOpen(
+  profile: ResolvedProfile,
+  a: Assembled,
+  name: string,
+  key?: string,
+  choice: { permission?: Permission; fallback?: Permission } = {},
+): Promise<ResolvedPreset> {
+  const preset = resolvePreset(name, a.presets, {
+    ...a.sessionPresetLimits(),
+    ...(choice.permission ? { permission: choice.permission } : {}),
+    ...(choice.fallback ? { carry: choice.fallback } : {}),
+  })
+  if (
+    a.retainedModelBootstrap &&
+    key &&
+    (await a.adapters.storage.scan(key, { type: 'session/start', limit: 1 })).length
+  )
+    preset.view = retainedModelView(preset.view, profile, a.modelAdapterCatalog())
+  return preset
+}
+
+export async function createSession(
+  profile: ResolvedProfile,
+  a: Assembled,
+  opts: CreateSessionOptions,
+  audit?: AuditSink,
+  workspace?: Readonly<{
+    runtime: CoreSessionWorkspaceRuntime & SessionWorkspaceRuntime
+    lifecycle: SessionWorkspaceLifecycle
+    children: Pick<SessionWorkspaceRuntimeTable, 'reserve'>
+    invocation: WorkspaceInvocationPort
+  }>,
+): Promise<HostSession> {
+  // 1 preset. The allowed-list check runs before resolvePreset, not folded into
+  // checkPresetHardRequirements's own copy of it: resolvePreset raises its own E_PRESET_UNSUPPORTED
+  // (capability `preset:${name}`, for a name that is in neither `allowed` nor `a.presets`) when a
+  // name cannot be found at all, and that error must not pre-empt the plainer "is not in
+  // presets.allowed" refusal a name outside the allow-list gets regardless of whether it resolves.
+  const parentSession = opts.parent ? a.kernel.get(opts.parent.key) : undefined
+  if (opts.parent && !parentSession)
+    throw new HostError('E_DEP_MISSING', 'fork parent session is not open', {
+      detail: { reason: 'fork-parent-not-open' },
+    })
+  if (opts.binding) {
+    assertWorkspaceBinding(opts.binding)
+    if (opts.key !== undefined && opts.binding.sessionKey !== opts.key)
+      throw new HostError('E_WORKSPACE_UNTRUSTED', 'workspace binding belongs to another session', {
+        detail: { reason: 'binding-session-mismatch' },
+      })
+    if (opts.cwd !== undefined && opts.cwd !== opts.binding.canonicalRoot)
+      throw new HostError('E_WORKSPACE_UNTRUSTED', 'cwd cannot override the authoritative workspace', {
+        detail: { reason: 'binding-cwd-override' },
+      })
+  }
+  const cwd = workspace?.runtime.root ?? opts.binding?.canonicalRoot ?? opts.cwd ?? parentSession?.d.cwd
+  if (!cwd)
+    throw new HostError('E_WORKSPACE_REQUIRED', 'session has no authoritative workspace', {
+      detail: { reason: 'workspace-binding-required' },
+    })
+  const selection = sessionSelection(profile, {
+    ...(parentSession ? { parent: parentSession.preset } : {}),
+    ...(opts.preset !== undefined ? { preset: opts.preset } : {}),
+    ...(opts.permission !== undefined ? { permission: opts.permission } : {}),
+    ...(opts.defaultPermission !== undefined ? { defaultPermission: opts.defaultPermission } : {}),
+  })
+  const name = selection.name
+  if (!selectionAllowed(profile, name, selection.permission ?? selection.fallback))
+    throw new HostError('E_PRESET_UNSUPPORTED', `preset ${name} is not in presets.allowed`, {
+      detail: { source: name, capability: 'preset' },
+    })
+  const preset = await sessionPresetForOpen(profile, a, name, opts.key ?? opts.binding?.sessionKey, selection)
+
+  // 2 hard requirements, checked against what this deployment can actually provide.
+  // checkPresetHardRequirements repeats the allowed-list check above - harmless here since `name`
+  // already passed it - because validatePresetSwitch (session-switch.ts) calls it with no such
+  // pre-check of its own.
+  checkPresetHardRequirements(profile, a, preset, name)
+
+  // The fs adapter is fenced at the workspace root this host was assembled with, so a session opened
+  // somewhere else would read and write through a fence that is not its own. v0.1 refuses; one host
+  // serves one workspace.
+  //
+  // The fence is asked, not re-implemented. A second comparison here would be a second answer to the
+  // same question, and it was already wrong once: it compared `resolve(cwd)` against the adapter's
+  // realpathed root, so on any machine whose temp or home directory is a symlink - macOS, and every
+  // container that bind-mounts one - a cwd inside the workspace was refused as outside it. The path
+  // is not put in the message: it is the caller's and has no business in an error string.
+  const sessionFs = workspace ? workspaceFence(workspace.runtime) : a.adapters.fs
+  try {
+    await sessionFs.resolveInside(cwd)
+  } catch {
+    // The code is the code, not a word in the message: a filter matching on codes would never have
+    // seen the E_FS_DENIED this used to spell out inside an E_SEAM_INIT, and a reader would have
+    // believed it did. A cwd outside the workspace is a workspace refusal, not a seam that failed
+    // to initialise.
+    throw new HostError('E_WORKSPACE_UNTRUSTED', 'cwd is not inside the workspace this host serves', {
+      detail: { seam: 'sandbox', reason: 'cwd-outside-workspace' },
+    })
+  }
+
+  // Recomputed rather than threaded out of `checkPresetHardRequirements`: that call above already
+  // refused if this preset's routing does not resolve against what this host assembled, so by this
+  // point `materializeRoutes` is known to succeed and this is just fetching its answer back to pin
+  // into the view core runs on.
+  const wanted = resolveSessionCapabilities({
+    profile,
+    presetView: preset.view,
+    adapterCatalog: a.modelAdapterCatalog(),
+  }).modelRoutes.value!
+  const authority = opts.roleDelegation ? roleAuthority(opts.roleDelegation) : undefined
+  let view = parentSession?.preset ?? pinPresetRoutes(preset.view, wanted)
+  if (authority) view = authority.preset(view)
+  // Defaults are captured by session/start; resumed ledgers restore their own model selections.
+  if (!parentSession && !opts.strict && a.sessionModelSlots) {
+    const { slots, auto } = await a.sessionModelSlots()
+    const model = {
+      ...view.model,
+      route: { ...view.model.route },
+      id: { ...view.model.id },
+      thinking: { ...view.model.thinking },
+      contextWindow: { ...view.model.contextWindow },
+    }
+    for (const slot of ['fast', 'verifier'] as const) {
+      // An unset fast slot follows the default account's model. Where this Host does not serve
+      // that model the preset keeps its own fast slot, as it did before there was a default.
+      const followed = slot === 'fast' && slots.fast === undefined ? auto?.fast : undefined
+      if (followed && !modelSwitchAllowed(profile, a, { slot, ...followed })) continue
+      const target = followed ? { route: followed.route, model: followed.model } : slots[slot]
+      if (target === undefined) continue
+      delete model.route[slot]
+      delete model.id[slot]
+      delete model.thinking[slot]
+      delete model.contextWindow[slot]
+      // A removed route must leave review unavailable, never select a different paid model.
+      if (target && modelSwitchAllowed(profile, a, { slot, ...target })) {
+        model.route[slot] = target.route
+        model.id[slot] = target.model
+      }
+    }
+    view = { ...view, model }
+  }
+
+  if (workspace && opts.seams?.sandbox)
+    throw new HostError('E_SEAM_IMMUTABLE', 'the sandbox seam cannot override a workspace runtime', {
+      detail: { seam: 'sandbox' },
+    })
+  const sandbox = workspace?.runtime.seam ?? opts.seams?.sandbox ?? a.seams.sandbox
+  if (!sandbox)
+    throw new HostError('E_SANDBOX_WORKSPACE', 'workspace runtime has no fitted sandbox seam', {
+      detail: { reason: 'workspace-sandbox-missing' },
+    })
+  const guardedSandbox = await fenceSandbox(
+    sandbox,
+    sessionFs,
+    () => workspace?.runtime.policy.digest ?? a.adapters.fs.fence().digest,
+  )
+
+  // 3 the opener's Actor - host is the only caller of principals.resolve
+  const actor = authority
+    ? structuredClone(authority.actor)
+    : await a.seams.principals.resolve(opts.credential ?? { kind: 'local' }, 'session')
+  if (parentSession) {
+    const sameActor =
+      parentSession.d.actor.id === actor.id &&
+      parentSession.d.actor.role === actor.role &&
+      parentSession.d.actor.org === actor.org
+    if (!sameActor)
+      throw new HostError('E_WORKSPACE_UNTRUSTED', 'fork parent belongs to another actor', {
+        detail: { reason: 'fork-parent-actor-mismatch' },
+      })
+    if (parentSession.d.cwd !== cwd)
+      throw new HostError('E_WORKSPACE_UNTRUSTED', 'fork child must use its parent workspace', {
+        detail: { reason: 'fork-parent-workspace-mismatch' },
+      })
+    if (parentSession.op())
+      throw new CoreError('E_LANE_BUSY', 'fork requires an idle parent', {
+        parent: parentSession.key,
+      })
+  }
+
+  // 4 key and per-session overrides
+  const pinned = PINNED_SEAM_KINDS.find((kind) => opts.seams && kind in opts.seams)
+  if (pinned)
+    throw new HostError('E_SEAM_IMMUTABLE', `the ${pinned} seam cannot be overridden per session`, {
+      detail: { seam: pinned },
+    })
+  const key = opts.key ?? sessionKey(profile, actor, cwd)
+  if (opts.binding && opts.binding.sessionKey !== key)
+    throw new HostError(
+      'E_WORKSPACE_UNTRUSTED',
+      'workspace binding does not match the resolved session key',
+      {
+        detail: { reason: 'binding-session-mismatch' },
+      },
+    )
+
+  await workspace?.runtime.verifySession?.(key)
+
+  // 5 open: core takes the writer lease and writes session/start. `writerRunId` is required and
+  // nothing upstream mints it, so it is minted here when the caller did not bring one.
+  const session = await a.kernel.session(key, {
+    ...(opts.roleDelegation
+      ? {
+          roleDelegation: { ...opts.roleDelegation, filesystem: structuredClone(sandbox.fsPolicy()) },
+          toolFilter: { allow: roleAuthority(opts.roleDelegation).tools.ids },
+        }
+      : {}),
+    ...(opts.delegation ? { delegation: opts.delegation } : {}),
+    ...(a.systemPromptProvider
+      ? {
+          systemPrompt: {
+            config: async () => ({
+              ...view.model.systemPrompt,
+              ...(!opts.roleDelegation
+                ? await new SystemPromptSettingsStore(profile.dataDir, profile.name).read()
+                : {}),
+            }),
+            resolve: (selection?: { id: string; version: string }) => a.systemPromptProvider!(selection),
+          },
+        }
+      : {}),
+    ...(opts.systemPromptAppend !== undefined ? { systemPromptAppend: opts.systemPromptAppend } : {}),
+    ...(opts.loop ? { loop: opts.loop } : {}),
+    defaultLoop: async () => {
+      const loop = await a.sessionLoopDefault?.()
+      return resolveSessionCapabilities({
+        ...(profile.loop ? { selection: loopPatch(profile.loop) } : {}),
+        ...(loop ? { admin: { composition: loopPatch(loop) } } : {}),
+        presetView: view,
+      }).loop.value
+    },
+    actor,
+    preset: view,
+    resolvedProfileHash: profile.hash,
+    resolvedPresetHash: preset.hash,
+    policyDigest: policyDigest(profile),
+    cwd,
+    writerRunId: opts.writerRunId ?? randomUUID(),
+    ...(opts.historySignal ? { historySignal: opts.historySignal } : {}),
+    ...(opts.onHistoryProgress ? { onHistoryProgress: opts.onHistoryProgress } : {}),
+    ...(opts.parent ? { parent: opts.parent } : {}),
+    ...(opts.lane ? { lane: opts.lane } : {}),
+    ...(opts.requireNew ? { requireNew: true } : {}),
+    ...(opts.skipSessionStartHooks ? { skipSessionStartHooks: true } : {}),
+    ...(opts.imported ? { imported: opts.imported } : {}),
+    ...(workspace
+      ? {
+          workspaceRuntime: workspace.runtime,
+          workspaceIdentity: workspace.runtime.binding,
+          workspaceInvocation: workspace.invocation,
+          workspaceLease: workspace.lifecycle,
+          childWorkspaceRuntime: childSandboxes(a, workspace.children),
+        }
+      : {}),
+    seams: { ...opts.seams, sandbox: guardedSandbox },
+  })
+  const releaseDeferred = bindDeferredInvocations(a, session)
+  attachIntelligentUiTrace(session, a.intelligentUi.enabled)
+  Object.defineProperty(session, 'intelligentUi', {
+    get: () => a.intelligentUi.view(session),
+  })
+  const closeDeferredSession = session.close.bind(session)
+  session.close = async () => {
+    try {
+      await closeDeferredSession()
+    } finally {
+      releaseDeferred()
+    }
+  }
+  // 6 what comes back is the zero-privilege session, and a sound one.
+  //
+  // A process that died mid-answer leaves a step nothing closed, and the next turn on that ledger is
+  // refused for it. The kernel can put that right and nothing was asking it to, so opening the
+  // session is what asks: every entry - the TUI, `-p`, `--mode acp`, a chat adapter - opens one, and
+  // an entry that has to remember a separate call is an entry that will forget.
+  //
+  // The cost is that opening a session is no longer purely a read. It is bounded to the case that
+  // needs it: `resume()` on a ledger whose turn ended reads one in-memory register, returns idle and
+  // writes nothing, so an ordinary open is indistinguishable from what it was. Two processes cannot
+  // both do this to one ledger - the writer lease is taken inside `kernel.session` above, and the
+  // second opener is refused there with E_WRITER_LEASE before it reaches this line - so recovery
+  // inherits the serialisation the lease already provides rather than adding a second one.
+  //
+  // Inside one process the same guarantee comes from one line up rather than from a check here. The
+  // seams passed above always carry the fenced sandbox, and the kernel refuses to refit seams onto a
+  // session it already holds - so a second open of a live session is E_LANE_BUSY and never reaches
+  // this line. That matters: resuming underneath a turn already running on that session would be two
+  // writers to one program counter, which no lease is watching for.
+  const tailRecovery = session.d.log.recovery
+  const recovery = await session.resume(tailRecovery ? { mode: 'close' } : {})
+  // `resumed` alone is not news - it says a turn was open, which a parked session is too. What the
+  // caller is told about is work that was actually settled, which is what makes the report honest on
+  // a second open that found nothing left to do.
+  if (tailRecovery || recovery.actions.length > 0) {
+    audit?.write({
+      kind: 'session.recovered',
+      detail: {
+        sessionKey: key,
+        ...(tailRecovery ? { ...tailRecovery, reason: 'damaged-tail' } : {}),
+        ...(recovery.phase ? { phase: recovery.phase } : {}),
+        actions: recovery.actions.map((x) => x.action),
+      },
+    })
+    if (recovery.actions.length > 0) opts.onRecovered?.(recovery)
+  }
+  // A graceful endpoint close records cancel_requested before the log is torn down. Resume settles
+  // the interrupted inference but leaves the turn in failure_drain; the next prompt would then
+  // observe that abort as its own outcome. Drain the cancelled turn here so the session is idle and
+  // the caller's next turn is a new one.
+  const leftover = session.op()
+  if (
+    leftover &&
+    (leftover.control.status === 'cancel_requested' || leftover.phase.kind === 'failure_drain')
+  ) {
+    await session.step()
+  }
+  // core's setPreset/setModel take effect in memory and record an audit row. Every fresh open
+  // recovers the latest preset baseline and then its later model switches before handing the
+  // session to the caller; see session-switch.ts. A session that never switched keeps its
+  // session/start snapshot.
+  await replaySwitchesOnOpen(session, profile, a)
+  if (session.preset.permission === 'full-access') {
+    const explicit = await session.scan({ type: 'x/core/yolo-switch', order: 'desc', limit: 1 })
+    if (explicit.length === 0) await session.setYolo(true, actor)
+  }
+  Object.assign(session, {
+    commandSandboxPolicy: () => ({
+      policy: structuredClone(guardedSandbox.fsPolicy()),
+      network: session.preset.approval.policy === 'full-access' ? 'allow' : 'deny',
+      local: !a.adapters.transport && (profile.sandbox?.provider ?? 'local') === 'local',
+      allowsUnconfined: workspace?.runtime.allowsUnconfined === true,
+    }),
+    hasActiveProcesses: () => workspace?.runtime.hasActiveProcesses?.() ?? false,
+    referenceResolvers: a.pluginTree.root.referenceResolvers,
+    referenceSessions: referenceHistory(
+      profile.dataDir,
+      key,
+      session.workspaceRoot,
+      referenceLimits(a.referenceLimits),
+    ),
+    referenceLimits: referenceLimits(a.referenceLimits),
+  })
+  return session
+}

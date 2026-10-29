@@ -1,10 +1,15 @@
 import { expect, it } from 'vitest'
 import { createAnsi } from '../src/tui/ansi.js'
 import { displayWidth } from '../src/tui/terminal.js'
+import { TuiTheme } from '../src/tui/theme.js'
 import { UsagePanel } from '../src/tui/views/usage-panel.js'
 
 it('shows long reports within terminal bounds, scrolls, and restores editor input after Escape', () => {
-  const panel = new UsagePanel({ ansi: createAnsi('none'), maxRows: () => 8, changed() {} })
+  const panel = new UsagePanel({
+    ansi: new TuiTheme().ansi(createAnsi('none')),
+    maxRows: () => 8,
+    changed() {},
+  })
   panel.show(Array.from({ length: 20 }, (_, i) => `row ${i} 模型用量`).join('\n'))
   for (const width of [20, 40, 80]) {
     const lines = panel.render(width)

@@ -28,17 +28,17 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["ticket", "verdict", "approverCredential"],
+          "required": ["decisionKey", "verdict", "approverCredential"],
           "properties": {
-            "ticket": {
-              "type": "string",
-              "maxLength": 128
-            },
             "verdict": {
               "enum": ["allowed-once", "allowed-session", "allowed-permanent", "rejected"]
             },
             "approverCredential": {
               "$ref": "#/$defs/Credential"
+            },
+            "decisionKey": {
+              "type": "string",
+              "maxLength": 512
             }
           }
         },
@@ -62,12 +62,8 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["ticket", "requestSeq", "verdict", "approverCredential"],
+          "required": ["decisionKey", "requestSeq", "verdict", "approverCredential"],
           "properties": {
-            "ticket": {
-              "type": "string",
-              "maxLength": 128
-            },
             "requestSeq": {
               "type": "integer",
               "minimum": 1
@@ -77,6 +73,10 @@
             },
             "approverCredential": {
               "$ref": "#/$defs/Credential"
+            },
+            "decisionKey": {
+              "type": "string",
+              "maxLength": 512
             }
           }
         }

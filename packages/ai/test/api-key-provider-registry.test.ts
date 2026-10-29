@@ -1,3 +1,4 @@
+import type { ModelAdapter } from '@agnes/extension-api'
 import { validateModelRecord } from '@agnes/protocol'
 import type {
   Api,
@@ -13,10 +14,12 @@ import {
   API_KEY_CREDENTIAL_REFS,
   API_KEY_PROVIDER_REGISTRY,
   createApiKeyProviderAdapters,
+  createApiKeyProviderConfigs,
   createProvider,
   getApiKeyProvider,
   NullContractStore,
 } from '../src/index.js'
+import { modelAdaptersPlugin } from '../src/model-adapters.js'
 import { fakeRequest } from '../testkit/index.js'
 
 const expected = [
@@ -32,6 +35,13 @@ const expected = [
   ['minimax', 'MiniMax'],
   ['xai', 'xAI'],
   ['agnes-ai', 'Agnes AI'],
+  ['groq', 'Groq'],
+  ['together', 'Together AI'],
+  ['cerebras', 'Cerebras'],
+  ['nvidia', 'NVIDIA'],
+  ['huggingface', 'Hugging Face'],
+  ['moonshotai-cn', 'Moonshot / Kimi (moonshot.cn)'],
+  ['zai-coding-cn', 'GLM Coding (bigmodel.cn)'],
 ] as const
 
 function assistant(): AssistantMessage {
@@ -68,13 +78,111 @@ const streamOptions = () => ({
 })
 
 describe('API-key provider registry', () => {
-  it('publishes exactly the twelve first-screen providers with stable friendly names', () => {
-    expect(API_KEY_PROVIDER_REGISTRY.map(({ id, displayName }) => [id, displayName])).toEqual(expected)
-    expect(new Set(API_KEY_PROVIDER_REGISTRY.map((entry) => entry.id)).size).toBe(12)
-    expect(API_KEY_PROVIDER_REGISTRY.every((entry) => entry.availability === 'available')).toBe(true)
+  it('publishes exactly the nineteen catalogue providers with stable friendly names', () => {
+    const chat = API_KEY_PROVIDER_REGISTRY.filter((entry) => !entry.capabilities)
+    expect(chat.map(({ id, displayName }) => [id, displayName])).toEqual(expected)
+    expect(new Set(chat.map((entry) => entry.id)).size).toBe(19)
+    expect(chat.every((entry) => entry.availability === 'available')).toBe(true)
+    // Payload-only entries are registered for account storage lookups, not for chat onboarding.
+    expect(
+      API_KEY_PROVIDER_REGISTRY.filter((entry) => entry.capabilities?.payloadOnly === true).map(
+        (entry) => entry.id,
+      ),
+    ).toEqual(['typesafe-systemone', 'openai-audio'])
   })
 
-  it('pre-registers all twelve providers without keys, then fails closed with AUTH only on selection', async () => {
+  it('offers an OpenAI-compatible endpoint whose models the account declares, outside the pi catalogue', async () => {
+    const declared = API_KEY_PROVIDER_REGISTRY.filter((entry) => entry.capabilities?.declaredModels === true)
+    expect(declared.map(({ id, api }) => [id, api])).toEqual([['openai-compatible', 'openai-completions']])
+    const entry = getApiKeyProvider('openai-compatible')
+    // No default address: the form has to ask for one.
+    expect(entry?.baseUrl).toMatch(/\.invalid\//)
+    await expect(entry?.createAdapter()).rejects.toMatchObject({ code: 'PROVIDER_CONTRACT' })
+    expect([...API_KEY_CREDENTIAL_REFS]).not.toContain('secret://openai-compatible/default')
+    expect((await createApiKeyProviderConfigs()).map((config) => config.id)).not.toContain(
+      'openai-compatible',
+    )
+    expect((await createApiKeyProviderAdapters()).map((adapter) => adapter.id)).not.toContain(
+      'openai-compatible',
+    )
+  })
+
+  it.each([
+    ['api-key', 'deepseek-v4-pro'],
+    ['oauth', 'deepseek-v4-pro'],
+    ['api-key', 'deepseek-flash'],
+    ['oauth', 'deepseek-flash'],
+  ] as const)(
+    'constructs official %s adapters for %s through the public factory and credential path',
+    async (mode, model) => {
+      const definitions: ModelAdapter[] = []
+      modelAdaptersPlugin.apply({
+        providers: {
+          register: (_kind: unknown, adapter: ModelAdapter) => definitions.push(adapter),
+        },
+      } as unknown as import('@agnes/extension-api').ProviderPluginContext)
+      const configs = await createApiKeyProviderConfigs()
+      const legacy = await createApiKeyProviderAdapters()
+      expect(configs.map((config) => ({ id: config.id, routes: config.routes }))).toEqual(
+        legacy.map((adapter) => ({
+          id: adapter.id,
+          routes: adapter.routes().map((route) => ({ ...route, models: adapter.models(route.route) })),
+        })),
+      )
+      const config = configs.find((entry) => entry.id === 'deepseek')!
+      const definition = definitions.find((entry) => entry.id === config.routes[0]?.api)!
+      let resolveCalls = 0
+      const credentials =
+        mode === 'oauth'
+          ? {
+              async resolve(_route: string, signal: AbortSignal) {
+                signal.throwIfAborted()
+                resolveCalls++
+                return { apiKey: 'synthetic-live-auth' }
+              },
+            }
+          : undefined
+      const adapter = await definition.create({ ...config, ...(credentials ? { credentials } : {}) })
+      expect(adapter.id).toBe('deepseek')
+      if (mode === 'api-key') adapter.bindCredential?.('deepseek', 'synthetic-live-auth')
+      const auth: (string | null)[] = []
+      const bodies: Record<string, unknown>[] = []
+      const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+        const request = new Request(input, init)
+        auth.push(request.headers.get('authorization'))
+        bodies.push((await request.json()) as Record<string, unknown>)
+        return new Response(
+          'data: {"choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+          { headers: { 'content-type': 'text/event-stream' } },
+        )
+      })
+      try {
+        for (let request = 0; request < 2; request++) {
+          const events = await collect(
+            adapter.stream(
+              'deepseek',
+              fakeRequest({
+                route: 'deepseek',
+                model,
+                ...(request === 1 ? { sampling: { maxTokens: 32768 } } : {}),
+              }),
+              streamOptions(),
+            ),
+          )
+          expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'stop' })
+        }
+        expect(auth).toEqual(['Bearer synthetic-live-auth', 'Bearer synthetic-live-auth'])
+        expect(bodies[0]?.max_tokens).toBe(32768)
+        if (model === 'deepseek-flash') expect(bodies[0]?.thinking).toEqual({ type: 'disabled' })
+        expect(bodies[1]?.max_tokens).toBe(32768)
+        expect(resolveCalls).toBe(mode === 'oauth' ? 2 : 0)
+      } finally {
+        fetch.mockRestore()
+        await adapter.dispose?.()
+      }
+    },
+  )
+  it('pre-registers every catalogue provider without keys, then fails closed with AUTH only on selection', async () => {
     const adapters = await createApiKeyProviderAdapters({
       adapters: {
         deepseek: { modelIds: ['deepseek-v4-pro'] },
@@ -96,7 +204,7 @@ describe('API-key provider registry', () => {
       clock: () => 0,
     })
 
-    // All eleven lookups were attempted, but none prevented route-table assembly.
+    // Every lookup was attempted, but none prevented route-table assembly.
     expect(requested).toEqual(expected.map(([id]) => `secret://${id}/default`))
     expect(provider.models().map((model) => model.route)).toContain('deepseek')
     const events = await collect(
@@ -134,6 +242,10 @@ describe('API-key provider registry', () => {
       expect(models.length).toBeGreaterThan(0)
       expect(models.every((model) => model.route === id && model.baseUrl === entry?.baseUrl)).toBe(true)
       expect(models.every((model) => validateModelRecord(model).ok)).toBe(true)
+      // Catalogue sampling params are merged verbatim into the request body: only wire values belong here.
+      for (const model of models)
+        for (const value of Object.values(model.samplingParams ?? {}))
+          expect(['string', 'number', 'boolean']).toContain(typeof value)
       const first = models[0]
       if (!adapter || !first) throw new Error(`missing ${id} adapter catalogue`)
       adapter.bindCredential(id, `${id}-explicit-key`)
@@ -271,12 +383,34 @@ describe('API-key provider registry', () => {
     const models = adapter?.models('deepseek') ?? []
     const byId = new Map(models.map((model) => [model.id, model]))
     expect(byId.get('deepseek-v4-pro')?.thinkingLevelMap).toEqual({ low: 'low', high: 'high', max: 'max' })
+    expect(byId.get('deepseek-v4-pro')?.maxTokens).toBe(384000)
     // V4.1 Flash uses the new upstream id and capabilities, not the retired V4 correction.
     expect(byId.get('deepseek-flash')).toMatchObject({
       name: 'DeepSeek V4.1 Flash',
+      maxTokens: 384000,
       reasoning: true,
       input: ['text', 'image'],
       thinkingLevelMap: { off: 'off', low: 'low', high: 'high', max: 'max' },
+    })
+  })
+
+  // Calls are read out of prose only for a family shown to write them there despite native tool
+  // calling (replay case 0011, a Qwen answer). Terminal-Bench's deepseek-flash stays native-only.
+  it('opts only the Qwen family into reading calls from prose', async () => {
+    const adapters = await createApiKeyProviderAdapters()
+    const records = adapters.flatMap((adapter) => adapter.models(adapter.id))
+    const qwen = records.filter((model) => /qwen/i.test(model.id))
+    expect(qwen.length).toBeGreaterThan(0)
+    expect(qwen.some((model) => model.route === 'qwen')).toBe(true)
+    for (const model of records)
+      expect(model.toolCallFormats, `${model.route}/${model.id}`).toEqual(
+        /qwen/i.test(model.id) ? ['native', 'qwen3_coder'] : ['native'],
+      )
+    expect(
+      records.find((model) => model.route === 'deepseek' && model.id === 'deepseek-flash'),
+    ).toMatchObject({
+      api: 'openai-completions',
+      toolCallFormats: ['native'],
     })
   })
 
@@ -324,6 +458,8 @@ describe('API-key provider registry', () => {
           expect(bodies.at(-1)?.model).toBe(model)
           expect(bodies.at(-1)?.max_tokens).toBe(maxTokens ?? 65536)
           expect(bodies.at(-1)?.max_completion_tokens).toBeUndefined()
+          expect(bodies.at(-1)?.temperature).toBeUndefined()
+          expect(bodies.at(-1)?.top_p).toBeUndefined()
         }
       }
     } finally {
@@ -387,6 +523,14 @@ it('retains pi image input limits in the public model catalogue', () => {
   } as Model<Api>
   const record = modelRecord({ id: 'gw', api: source.api, baseUrl: source.baseUrl }, source)
   expect(record.inputLimits).toEqual(inputLimits)
+  expect(record.maxTokens).toBe(1000)
+  expect(
+    modelRecord({ id: 'gw', api: source.api, baseUrl: source.baseUrl }, { ...source, id: 'deepseek-flash' })
+      .maxTokens,
+  ).toBe(1000)
+  expect(modelRecord({ id: 'deepseek', api: source.api, baseUrl: source.baseUrl }, source).maxTokens).toBe(
+    1000,
+  )
   expect(validateModelRecord(record).ok).toBe(true)
   inputLimits.images.maxPerMessage = 9
   expect(record.inputLimits?.images?.maxPerMessage).toBe(2)

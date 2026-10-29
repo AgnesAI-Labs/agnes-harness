@@ -165,7 +165,7 @@ export class SlotRegistry extends Service {
     this.boundSessionStop?.()
     this.boundSessionStop = undefined
     this.boundSessionSource = undefined
-    this.setSession(undefined)
+    // Releasing a renderer subscription does not change the host session identity.
   }
 
   subscribeSession(listener: () => void): () => void {

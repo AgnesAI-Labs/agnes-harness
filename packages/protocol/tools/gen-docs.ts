@@ -56,7 +56,8 @@ export function renderToolsMetaDoc(): string {
   const meta = (t.$defs as Record<string, unknown>).ToolMeta as Record<string, unknown>
   const props = meta.properties as Record<string, Record<string, unknown>>
   let md =
-    '# ToolDef meta, eight required keys and one optional\n\nGenerated from schema/tooldef.json by tools/gen-docs.ts. Do not edit by hand.\n\n'
+    '# ToolDef meta\n\nGenerated from schema/tooldef.json by tools/gen-docs.ts. Do not edit by hand.\n\n' +
+    'Five keys are required: `isReadOnly`, `isDestructive`, `isConcurrencySafe`, `isOpenWorld` and `replay`. Other fields are optional; omitted costHint, deferLoading and requiresApproval mean no estimate, initial discovery and approval inferred from isDestructive.\n\n'
   md += '| key | shape | meaning and consumer |\n|---|---|---|\n'
   for (const k of Object.keys(props)) {
     const { description, ...shape } = props[k] as Record<string, unknown>
@@ -75,8 +76,8 @@ export function renderProjectionsDoc(): string {
   )
 }
 
-/** Writes the three pages, or counts how many are stale when `check` is set. */
-export function writeDocs(check: boolean): number {
+/** Writes this package's protocol references. */
+export async function writeDocs(check: boolean): Promise<number> {
   const outDir = join(pkg, 'docs')
   const files: Array<[string, string]> = [
     ['hooks.md', renderHooksDoc()],

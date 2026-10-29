@@ -15,8 +15,10 @@ import {
   type MessageRef,
   whitelistCredential,
 } from '../adapter.js'
-import { escapeText } from '../degrade.js'
+import { decisionRef, decisionKey as encodeDecisionKey } from '../decision.js'
+import { escapeReviewText, escapeText } from '../degrade.js'
 import type { RunnerConfig } from './config.js'
+import { chunkText } from './throttle.js'
 
 type Log = {
   warn(message: string, meta?: Record<string, unknown>): void
@@ -67,10 +69,13 @@ type Dependencies = {
   ) => Promise<string | false>
 }
 
-const REJECTED: PermissionOutcome = { verdict: 'rejected' }
+const detached: PermissionOutcome = { unanswered: 'detached' }
+const aborted = (signal: AbortSignal): PermissionOutcome => ({
+  unanswered: signal.reason === 'stopped' || signal.reason === 'deadline' ? signal.reason : 'detached',
+})
 const APPROVAL_TEXT = /^(同意|拒绝)\s+(\S{6,128})$/
 const MAX_CALLBACK_CHARS = 512
-const MAX_ACTION_CHARS = 128
+const MAX_ACTION_CHARS = 512
 const ACTION_TTL_MS = 5 * 60_000
 const MAX_RECENT_ACTIONS = 4_096
 
@@ -115,7 +120,7 @@ export class Approval {
     return () => {
       unsubscribe()
       for (const [requestSeq, pending] of this.pending) {
-        if (pending.sessionKey === sessionKey) this.finish(requestSeq, pending, REJECTED)
+        if (pending.sessionKey === sessionKey) this.finish(requestSeq, pending, detached)
       }
     }
   }
@@ -128,8 +133,8 @@ export class Approval {
     const action = this.dependencies.adapter.onApprovalAction(event)
     if (!action) return false
     const actionChat = chatOf(event)
-    if ('ticket' in action) {
-      if (action.ticket.length === 0 || action.ticket.length > MAX_ACTION_CHARS) {
+    if ('decisionKey' in action) {
+      if (action.decisionKey.length === 0 || action.decisionKey.length > MAX_ACTION_CHARS) {
         await this.notice(actionChat, '审批无效')
         return true
       }
@@ -137,7 +142,7 @@ export class Approval {
         await this.notice(actionChat, '无权审批')
         return true
       }
-      return this.decideParked(action.ticket, action.verdict, event, actionChat)
+      return this.decideParked(action.decisionKey, action.verdict, event, actionChat)
     }
     const requestSeq = action.requestSeq
     const pending = this.pending.get(requestSeq)
@@ -167,16 +172,16 @@ export class Approval {
 
     const credential = this.credentialOf(event)
     const approver = credential.kind === 'channel' ? credential.userId : ''
-    const denied = this.denied(approver, pending.requesterUserId)
+    const denied = this.denied(approver)
     const offered = isKnownVerdict(action.verdict) && pending.offered.has(action.verdict)
     if (!sameChat(pending.chat, actionChat) || denied !== null || !offered) {
       await this.notice(actionChat, denied ?? '无权审批')
       return true
     }
 
-    this.finish(requestSeq, pending, { verdict: action.verdict })
+    this.finish(requestSeq, pending, { verdict: action.verdict, sourceCredential: credential })
     const label = escapeText((credential.displayName ?? approver).slice(0, 128))
-    const status = action.verdict === 'rejected' ? '已拒绝' : '已批准'
+    const status = action.verdict === 'rejected' ? '已提交拒绝' : '已提交批准'
     await pending.ref
       .then((ref) =>
         this.dependencies.adapter.update(ref, {
@@ -196,22 +201,22 @@ export class Approval {
     if (!match) return false
     const prefix = match[2] as string
     const timeline = await session.projectUI(undefined, { surface: 'channel' })
-    const tickets = new Set<string>()
+    const decisionKeys = new Set<string>()
     for (const node of timeline.nodes) {
-      if (node.kind === 'approval' && node.state === 'pending' && node.ticket?.startsWith(prefix)) {
-        tickets.add(node.ticket)
+      if (node.kind === 'approval' && node.state === 'pending' && node.decisionRef?.id.startsWith(prefix)) {
+        decisionKeys.add(encodeDecisionKey(node.decisionRef!))
       }
     }
-    if (tickets.size === 0) return false
+    if (decisionKeys.size === 0) return false
     const chat = chatOf(event)
-    const exact = tickets.has(prefix) ? prefix : undefined
-    if (tickets.size > 1 && exact === undefined) {
-      await this.notice(chat, '匹配到多条审批，请提供完整 ticket')
+    const exact = [...decisionKeys].find((key) => decisionRef(key)?.id === prefix)
+    if (decisionKeys.size > 1 && exact === undefined) {
+      await this.notice(chat, '匹配到多条审批，请提供完整请求 ID')
       return true
     }
-    const ticket = exact ?? (tickets.values().next().value as string)
+    const decisionKey = exact ?? (decisionKeys.values().next().value as string)
     const verdict: Verdict = match[1] === '同意' ? 'allowed-once' : 'rejected'
-    return this.decideParked(ticket, verdict, event, chat)
+    return this.decideParked(decisionKey, verdict, event, chat)
   }
 
   async handleSlotAction(sessionKey: string, event: ChannelEvent): Promise<boolean> {
@@ -221,13 +226,13 @@ export class Approval {
     }
     const action = this.dependencies.adapter.onSlotAction?.(event)
     if (!action) return false
-    if (action.actionId.length === 0 || action.actionId.length > MAX_ACTION_CHARS) {
+    if (action.actionId.length === 0 || action.actionId.length > 128) {
       await this.notice(chatOf(event), '无效操作')
       return true
     }
     const credential = this.credentialOf(event)
     const approver = credential.kind === 'channel' ? credential.userId : ''
-    const denied = this.denied(approver, undefined)
+    const denied = this.denied(approver)
     if (denied !== null) {
       await this.notice(chatOf(event), denied)
       return true
@@ -287,14 +292,18 @@ export class Approval {
   }
 
   private async decideParked(
-    ticket: string,
+    decisionKey: string,
     verdict: Verdict,
     event: ChannelEvent,
     chat: ChatTarget,
   ): Promise<boolean> {
+    if (!decisionRef(decisionKey)) {
+      await this.notice(chat, '审批无效')
+      return true
+    }
     const credential = this.credentialOf(event)
     const approver = credential.kind === 'channel' ? credential.userId : ''
-    const denied = this.denied(approver, undefined)
+    const denied = this.denied(approver)
     if (denied !== null) {
       await this.notice(chat, denied)
       return true
@@ -307,7 +316,7 @@ export class Approval {
         : event.kind === 'message' || event.kind === 'reaction'
           ? event.messageId
           : event.eventId
-    const identity = `${this.dependencies.adapter.manifest.id}\0${event.accountId}\0${sourceId}\0${ticket}\0${verdict}\0${approver}`
+    const identity = `${this.dependencies.adapter.manifest.id}\0${event.accountId}\0${sourceId}\0${decisionKey}\0${verdict}\0${approver}`
     const key = createHash('sha256').update(identity).digest('hex')
     const existing = this.recentParkedActions.get(key)
     if (existing !== undefined && (existing.pending || now - existing.at < ACTION_TTL_MS)) {
@@ -319,7 +328,7 @@ export class Approval {
       await this.notice(chat, '审批繁忙，请稍后重试')
       return true
     }
-    const work = this.submitParked(key, ticket, verdict, credential, chat)
+    const work = this.submitParked(key, decisionKey, verdict, credential, chat)
     const tracked: RecentAction = { at: now, pending: true, work }
     this.recentParkedActions.set(key, tracked)
     try {
@@ -335,14 +344,17 @@ export class Approval {
 
   private async submitParked(
     claimKey: string,
-    ticket: string,
+    decisionKey: string,
     verdict: Verdict,
     credential: ReturnType<Approval['credentialOf']>,
     chat: ChatTarget,
   ): Promise<void> {
     try {
       await this.bounded(
-        this.dependencies.client.approval.decide(ticket, verdict, credential),
+        this.dependencies.client.approval.decide(
+          { ...decisionRef(decisionKey)!, commandId: claimKey, response: { option: verdict, value: null } },
+          { sourceCredential: credential },
+        ),
         this.dependencies.slotActionTimeoutMs ?? 10_000,
       )
       await this.dependencies.client.claim
@@ -368,7 +380,7 @@ export class Approval {
     requesterUserId: string | undefined,
     signal: AbortSignal,
   ): Promise<PermissionOutcome> {
-    if (signal.aborted) return Promise.resolve(REJECTED)
+    if (signal.aborted) return Promise.resolve(aborted(signal))
     const requestSeq = this.nextSequence()
     const deadline = request.deadlineMs
     const expiresAt =
@@ -376,8 +388,18 @@ export class Approval {
         ? new Date(Math.max(0, deadline)).toISOString()
         : undefined
     return new Promise<PermissionOutcome>((resolve) => {
-      const ref = Promise.resolve().then(() =>
-        this.dependencies.adapter.send(
+      const ref = (async () => {
+        const input = (request.toolCall.rawInput ?? request.toolCall.args) as { plan?: unknown } | undefined
+        if (typeof input?.plan === 'string') {
+          const limits = this.dependencies.adapter.manifest.limits
+          const chars = Math.max(1, Math.min(limits.textChars, Math.floor((limits.cardBytes - 1024) / 12)))
+          for (const markdown of chunkText(escapeReviewText(input.plan), chars)) {
+            signal.throwIfAborted()
+            await this.dependencies.adapter.send(chat, { blocks: [{ kind: 'text', markdown }] })
+          }
+        }
+        signal.throwIfAborted()
+        return this.dependencies.adapter.send(
           chat,
           this.dependencies.adapter.renderApproval({
             requestSeq,
@@ -387,11 +409,11 @@ export class Approval {
             ...(expiresAt === undefined ? {} : { expiresAt }),
             ...(requesterUserId === undefined ? {} : { requesterUserId }),
           }),
-        ),
-      )
+        )
+      })()
       const abort = () => {
         const pending = this.pending.get(requestSeq)
-        if (pending) this.finish(requestSeq, pending, REJECTED)
+        if (pending) this.finish(requestSeq, pending, aborted(signal))
       }
       const pending: Pending = {
         sessionKey,
@@ -410,7 +432,8 @@ export class Approval {
         })
         .catch(() => undefined)
       void ref.catch(() => {
-        if (this.pending.get(requestSeq) === pending) this.finish(requestSeq, pending, REJECTED)
+        if (this.pending.get(requestSeq) === pending)
+          this.finish(requestSeq, pending, { unanswered: 'transport' })
         this.safeWarn('channel approval card send failed', { requestSeq })
       })
       signal.addEventListener('abort', abort, { once: true })
@@ -425,14 +448,7 @@ export class Approval {
 
   private expire(requestSeq: number, pending: Pending): void {
     if (this.pending.get(requestSeq) !== pending) return
-    this.finish(requestSeq, pending, REJECTED)
-    void pending.ref
-      .then((ref) =>
-        this.dependencies.adapter.update(ref, {
-          blocks: [{ kind: 'text', markdown: '审批已超时' }],
-        }),
-      )
-      .catch(() => this.safeWarn('channel approval timeout update failed', { requestSeq }))
+    this.finish(requestSeq, pending, { unanswered: 'deadline' })
   }
 
   private finish(requestSeq: number, pending: Pending, outcome: PermissionOutcome): void {
@@ -440,14 +456,24 @@ export class Approval {
     this.pending.delete(requestSeq)
     if (pending.timer) clearTimeout(pending.timer)
     pending.signal.removeEventListener('abort', pending.abort)
+    if ('unanswered' in outcome) {
+      const text =
+        outcome.unanswered === 'deadline'
+          ? '审批已超时'
+          : outcome.unanswered === 'stopped'
+            ? '任务已停止，审批已撤销'
+            : '审批提示已撤销，尚未回答'
+      void pending.ref
+        .then((ref) => this.dependencies.adapter.update(ref, { blocks: [{ kind: 'text', markdown: text }] }))
+        .catch(() => this.safeWarn('channel approval withdrawal update failed', { requestSeq }))
+    }
     pending.resolve(outcome)
   }
 
-  private denied(approver: string, requester: string | undefined): string | null {
+  private denied(approver: string): string | null {
     if (!approver) return '无权审批'
     if (this.dependencies.cfg.allowFrom.length > 0 && !this.dependencies.cfg.allowFrom.includes(approver))
       return '无权审批'
-    if (requester !== undefined && requester === approver) return '不能审批自己的请求'
     return null
   }
 

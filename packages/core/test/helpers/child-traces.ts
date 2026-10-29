@@ -1,12 +1,13 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import type { Event, EventInput, Seq } from '@agnes/core-common/types'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import { attachChildTraces } from '@agnes/core-ledger/project/trace'
+import { projectUI } from '@agnes/core-ledger/project/ui'
 import type { InferenceEvent, ModelRecord, Provider, UISpan, UITurn } from '@agnes/protocol'
 import { vi } from 'vitest'
 import type { Kernel } from '../../src/kernel.js'
-import { MemoryStorage } from '../../src/log/memory-storage.js'
-import { attachChildTraces } from '../../src/project/trace.js'
-import { projectUI } from '../../src/project/ui.js'
-import { presetDefaults } from '../../src/step/preset.js'
 import type { SessionImpl } from '../../src/step/session.js'
-import type { Event, EventInput, Seq } from '../../src/types.js'
+import { defaultLoops } from '../../testkit/loops.js'
 import { sentFor, textTurn } from './fake-provider.js'
 import { fakeSeams } from './fake-seams.js'
 import { actor, noTimers, testFsOps } from './open-session.js'
@@ -89,6 +90,7 @@ type KernelOptions = Parameters<typeof Kernel.create>[0]
 export async function setupWith(provider: Provider, create: (options: KernelOptions) => Kernel) {
   const storage = new MemoryStorage()
   const k = create({
+    loops: defaultLoops(),
     storage,
     seams: fakeSeams(),
     provider,
@@ -207,9 +209,11 @@ export async function uncachedProjection(
   surface?: 'tui' | 'web' | 'channel',
 ) {
   const current = await parent.projectUI(undefined, surface ? { surface } : {})
+  const fills = parent.d.slotFills?.()
   const base = await parent.d.ui.view({
     ...(surface ? { surface } : {}),
     ...(current.usage ? { usage: current.usage } : {}),
+    ...(fills ? { inlineFills: fills, liveFills: fills } : {}),
   })
   const load = async (childKey: string) => {
     try {

@@ -5,8 +5,6 @@ import { resolve } from 'node:path'
 import type { UINode } from '@agnes/protocol'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createTimelineRenderer } from '../src/timeline.js'
-import { zhLocaleService } from './helpers/locale.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
 describe('DSH component support matrix', () => {
@@ -59,17 +57,9 @@ describe('DSH component support matrix', () => {
     )
 
     runtime.session.setSession('dsh-session')
-    const dshTranscript = document.createElement('div')
-    const newContentButton = document.createElement('button')
-    document.body.append(dshTranscript, newContentButton)
-    const timeline = createTimelineRenderer({
-      locale: zhLocaleService(),
-      transcript: dshTranscript,
-      newContentButton,
-      registry: runtime.registry,
-      session: runtime.session,
-    })
-    timeline.render([
+    const dshTranscript = document.querySelector<HTMLElement>('section#transcript')
+    if (!dshTranscript) throw new Error('missing transcript region')
+    runtime.transcript?.render([
       { kind: 'assistant', id: 'assistant-dsh', seq: 1, text: 'assistant' },
       {
         kind: 'tool',
@@ -93,7 +83,6 @@ describe('DSH component support matrix', () => {
       expect(dshTranscript.querySelector('#dsh-support-tool-content')?.textContent).toBe('call-dsh')
     })
 
-    timeline.dispose?.()
     removeTool()
     removeChat()
     removeComposer()

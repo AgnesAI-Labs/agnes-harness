@@ -1,4 +1,4 @@
-import type { Seq } from '../types.js'
+import type { Seq } from '@agnes/core-common/types'
 import type { PromptSection } from './contribute.js'
 
 // The assembled shape core derives and hands to the model layer. It is deliberately not protocol's
@@ -34,6 +34,8 @@ export type RequestBody = {
   tools: ToolSchema[]
   model: { slot: string; route: string; model: string }
   nonce: string
+  /** How many of the last `messages` belong to this request only and are never written to history. */
+  requestOnlyMessages?: number
   samplingParams?: Record<string, unknown>
   maxTokens?: number
   metadata?: Record<string, unknown>

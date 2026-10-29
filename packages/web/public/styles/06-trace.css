@@ -1,0 +1,1221 @@
+@layer app {
+  [data-agnes-region="trace"] {
+    display: grid;
+    /* Control records, toolbar, timeline, list. Each part names its row, so a part that is absent
+     leaves an empty track instead of shifting the list out of the one row that takes the rest. */
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--agnes-bg-app-content);
+    color: var(--agnes-text-secondary);
+  }
+  /* 轨迹区渲染在内置插槽包装里：区域 → [data-slot] → [data-slot-entry] → #trace-content。
+   两层包装默认是普通 block，区域网格只看到一个按内容高度铺开的子项，三条轨道被第一行
+   全吃掉，`.trace-body` 拿到的不是剩余高度而是内容高度，`.trace-list` 的 overflow:auto
+   永不触发——列表被区域的 overflow:hidden 裁掉又滚不动。包装透明后 toolbar / 甘特图 /
+   trace-body 才真正落到各自轨道上。 */
+  [data-agnes-region="trace"] > [data-slot],
+  [data-agnes-region="trace"] > [data-slot] > [data-slot-entry] {
+    display: contents;
+  }
+  /* The trace is read-only inspection: nothing is typed there, so the composer and the row under
+   it step aside and the list takes the full height. The composer stays mounted, so the draft is
+   still there when the conversation view comes back. */
+  main:has(#view-trace[aria-selected="true"]) #composer-mount {
+    display: none;
+  }
+  [data-agnes-region="rightbar"] {
+    position: fixed;
+    z-index: 5;
+    inset: 4.75rem 1rem 1rem auto;
+    width: min(26rem, calc(100vw - 2rem));
+    overflow: auto;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 1rem;
+    background: var(--agnes-bg-page);
+    box-shadow: var(--shadow-elevation-prominent);
+  }
+  [data-agnes-region="rightbar"] > [data-slot="rightbar"] {
+    min-height: 100%;
+  }
+  #rightbar-content,
+  #rightbar-session {
+    min-height: 100%;
+  }
+  #rightbar-session {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s12);
+    padding: var(--s16);
+  }
+  .rightbar-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--s8);
+  }
+  .rightbar-tab-content {
+    min-width: 0;
+  }
+  .rightbar-document-preview {
+    min-width: 0;
+    overflow: auto;
+  }
+  .rightbar-document-preview > img,
+  .rightbar-document-preview > [data-document-preview] > img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+  }
+  .rightbar-document-preview > iframe,
+  .rightbar-document-preview > [data-document-preview] > iframe {
+    display: block;
+    width: 100%;
+    min-height: 24rem;
+    border: 0;
+  }
+  .rightbar-document-preview > pre,
+  .rightbar-document-preview > [data-document-preview] > pre {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .rightbar-document-preview .document-preview-unavailable {
+    color: var(--agnes-text-secondary);
+  }
+  /* The trace keeps the look it was approved with. The refinement layer retunes shared controls
+   everywhere (24px small buttons, 8px squircle corners, popup-button selects); here they are
+   set back, at zero specificity so each trace rule below still decides for itself. */
+  :where([data-agnes-region="trace"]) :where(.agh-btn--sm:not(.agh-btn--icon)) {
+    height: var(--control-height-sm);
+    min-height: var(--control-height-sm);
+  }
+  :where([data-agnes-region="trace"]) :where(.agh-btn:not(.agh-btn--link), .agnes-settings-input) {
+    border-radius: var(--radius-md);
+  }
+  :where([data-agnes-region="trace"]) :where(.agnes-settings-input) {
+    line-height: inherit;
+  }
+  :where([data-agnes-region="trace"]) :where(select.agnes-settings-input) {
+    padding-inline: var(--s12) var(--s32);
+    border-color: var(--agnes-input-border);
+    box-shadow: none;
+  }
+  :where([data-agnes-region="trace"])
+    :where(select.agnes-settings-input:hover:not(:disabled):not(:focus-visible)) {
+    border-color: var(--agnes-input-border-emphasis);
+  }
+  :where([data-agnes-region="trace"]) :where(select.agnes-settings-input:focus-visible) {
+    border-color: var(--agnes-input-border-focus);
+    box-shadow: 0 0 0 3px var(--agnes-focus-ring-soft);
+  }
+  @supports (corner-shape: squircle) {
+    :where([data-agnes-region="trace"]) :where(.agh-btn, .agnes-settings-input) {
+      corner-shape: round;
+    }
+  }
+  /* Two toolbar rows: Loop and stats, search with its count and stepping, fold-all and the ⋯ menu;
+   then the type chips on a row of their own. The first row wraps only when the panel is too narrow. */
+  .trace-toolbar {
+    grid-row: 2;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8) var(--s12);
+    min-height: 44px;
+    padding: 0.375rem var(--s16);
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .trace-toolbar[hidden] {
+    display: none;
+  }
+  .trace-toolbar-lead {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--s4) var(--s12);
+    min-width: 0;
+    margin-right: auto;
+  }
+  .trace-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s12);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+  }
+  .trace-stat b {
+    color: var(--agnes-text-secondary);
+    font-weight: 500;
+  }
+  .trace-toolbar-lead > .trace-loop {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .trace-chips-row {
+    display: flex;
+    flex: 1 0 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s4) var(--s8);
+  }
+  .trace-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s4);
+  }
+  .trace-chips-toggle.agnes-ui-button {
+    height: 26px;
+    min-height: 26px;
+    padding: 0 var(--s4);
+    font-size: var(--font-size-xs);
+  }
+  .trace-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    height: 26px;
+    min-height: 26px;
+    padding: 0 0.6rem;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-full);
+    background: var(--agnes-bg-surface);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: 400;
+  }
+  .trace-chip small {
+    color: var(--agnes-text-tertiary);
+    font-size: 0.6875rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .trace-chip[aria-pressed="true"] {
+    border-color: var(--agnes-brand-primary);
+    background: var(--agnes-trace-row-current);
+    color: var(--agnes-text-emphasis);
+  }
+  .trace-chip-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .trace-chip-dot.kind-user {
+    background: var(--agnes-trace-badge-user-text);
+  }
+  .trace-chip-dot.kind-context {
+    background: var(--agnes-trace-badge-context-text);
+  }
+  .trace-chip-dot.kind-assistant {
+    background: var(--agnes-trace-badge-assistant-text);
+  }
+  .trace-chip-dot.kind-tool {
+    background: var(--agnes-trace-badge-tool-text);
+  }
+  .trace-chip-dot.kind-approval {
+    background: var(--agnes-trace-badge-approval-text);
+  }
+  .trace-chip-dot.kind-compaction {
+    background: var(--agnes-trace-badge-compaction-text);
+  }
+  .trace-chip-dot.kind-ui {
+    background: var(--agnes-status-info-text);
+  }
+  .trace-chip-dot.kind-control {
+    background: color-mix(in srgb, var(--agnes-status-info-text) 55%, var(--agnes-status-danger-text));
+  }
+  .trace-search-box {
+    display: flex;
+    align-items: center;
+    gap: var(--s4);
+    width: min(16rem, 100%);
+    height: 28px;
+    padding: 0 var(--s4) 0 0;
+    border: 1px solid var(--agnes-input-border);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-app-content);
+  }
+  .trace-search-box:focus-within {
+    border-color: var(--agnes-input-border-focus);
+    box-shadow: 0 0 0 3px var(--agnes-focus-ring-soft);
+  }
+  .trace-search-box .trace-search {
+    flex: 1;
+    min-width: 0;
+    height: 26px;
+    min-height: 26px;
+    padding: 0 var(--s8);
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-sm);
+    font-weight: 400;
+  }
+  .trace-search-box .trace-search:focus-visible {
+    outline: none;
+    box-shadow: none;
+  }
+  .trace-search-count {
+    color: var(--agnes-text-tertiary);
+    font-size: 0.6875rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .trace-search-step.agh-btn--icon,
+  .trace-fold-all.agh-btn--icon,
+  .trace-toolbar-more.agh-btn--icon {
+    width: 28px;
+    min-width: 28px;
+    height: 28px;
+    min-height: 28px;
+  }
+  .trace-search-step.agh-btn--icon {
+    width: 22px;
+    min-width: 22px;
+    height: 22px;
+    min-height: 22px;
+  }
+  .trace-gantt {
+    grid-row: 3;
+    display: flex;
+    flex-direction: column;
+    gap: 0.28rem;
+    padding: 0.55rem var(--s16) 0.7rem;
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .trace-gantt-note {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+  }
+  .trace-gantt-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 0.15rem;
+    font-size: var(--font-size-xs);
+  }
+  .trace-gantt-controls select,
+  .trace-gantt-clear {
+    width: auto;
+    min-height: var(--control-height-sm);
+    padding: 0 var(--s8);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-app-content);
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-xs);
+  }
+  .trace-gantt-clear {
+    margin-left: auto;
+  }
+  .trace-gantt-row {
+    display: grid;
+    grid-template-columns: 2.25rem minmax(0, 1fr);
+    gap: 0.45rem;
+    align-items: center;
+  }
+  .trace-gantt-label {
+    font-size: var(--font-size-xs);
+    color: var(--agnes-text-tertiary);
+  }
+  .trace-gantt-track {
+    position: relative;
+    height: 0.625rem;
+    overflow: hidden;
+    background: var(--agnes-trace-track);
+    border-radius: var(--radius-full);
+    touch-action: none;
+    cursor: crosshair;
+  }
+  .trace-gantt-track:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
+  }
+  .trace-gantt-selection {
+    position: absolute;
+    z-index: 2;
+    top: 0;
+    height: 100%;
+    min-width: 2px;
+    border-inline: 1px solid var(--agnes-text-emphasis);
+    background: var(--agnes-trace-row-current);
+    pointer-events: none;
+  }
+  .trace-gantt-bar {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    min-width: 6px;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-full);
+  }
+  button.trace-gantt-bar:hover:not(:disabled) {
+    filter: brightness(1.15);
+  }
+  button.trace-gantt-bar:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: -3px;
+    box-shadow: var(--focus-line-inset);
+  }
+  .trace-gantt-bar[aria-pressed="true"] {
+    box-shadow: inset 0 0 0 2px var(--agnes-text-primary);
+  }
+  .trace-gantt-bar[data-in-range="false"] {
+    opacity: 0.45;
+  }
+  .trace-gantt-bar.cluster {
+    box-shadow: inset 0 0 0 1px var(--agnes-line-primary);
+  }
+  .trace-gantt-bar.marker.tone-user {
+    height: 50%;
+  }
+  .trace-gantt-bar.marker.tone-context {
+    top: 50%;
+    height: 50%;
+  }
+  .trace-gantt-bar.lane-input {
+    background: var(--agnes-trace-lane-input);
+  }
+  .trace-gantt-bar.lane-input.tone-user {
+    background: var(--agnes-trace-lane-user);
+  }
+  .trace-gantt-bar.lane-input.tone-context {
+    background: var(--agnes-trace-lane-context);
+  }
+  .trace-gantt-bar.lane-model {
+    background: var(--agnes-trace-lane-model);
+  }
+  .trace-gantt-bar.lane-tool {
+    background: var(--agnes-trace-lane-tool);
+  }
+  .trace-body {
+    grid-row: 4;
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(20rem, 27.5rem);
+    min-height: 0;
+  }
+  /* The inspector column exists only while a record is open; otherwise the list, and with it the
+   sticky turn headers, spans the whole panel instead of stopping at an empty reserved column. */
+  .trace-body:not(:has(.trace-inspector:not([hidden]))) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .trace-list {
+    min-width: 0;
+    overflow: auto;
+  }
+  .trace-list-spacer {
+    width: 100%;
+    pointer-events: none;
+  }
+  .trace-no-results {
+    margin: var(--s16);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .trace-load-earlier {
+    display: block;
+    width: 100%;
+    height: 33px;
+    padding: 0 var(--s16);
+    border: 0;
+    border-bottom: 1px solid var(--agnes-line-primary);
+    border-radius: 0;
+    background: var(--agnes-trace-track);
+    color: var(--agnes-text-emphasis);
+    text-align: left;
+    font-size: var(--font-size-xs);
+  }
+  .trace-turn-header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    height: 33px;
+    display: flex;
+    align-items: center;
+    padding: 0 var(--s12);
+    /* A turn starts with a hairline and a quiet label, not a band. The ground stays opaque so
+     rows scrolling under the sticky header do not show through. */
+    border-top: 1px solid var(--agnes-line-primary);
+    background: var(--agnes-bg-app-content);
+  }
+  .trace-turn-header:first-child {
+    border-top: 0;
+  }
+  .trace-turn-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 1.5rem;
+    padding: 0 0.3rem;
+    border: 0;
+    color: var(--agnes-text-tertiary);
+    background: transparent;
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .trace-turn-toggle:hover:not(:disabled) {
+    color: var(--agnes-text-primary);
+  }
+  .trace-turn-toggle b {
+    color: var(--agnes-text-secondary);
+    font-weight: var(--font-weight-semibold);
+  }
+  .trace-turn-prompt {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--agnes-text-secondary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .trace-turn-meta {
+    flex: 0 0 auto;
+    color: var(--agnes-text-tertiary);
+  }
+  .trace-row {
+    display: grid;
+    /* The kind column fits the longest label in either language, so a chip never runs into the text. */
+    grid-template-columns: 3.4rem 4.75rem minmax(0, 1fr) auto;
+    align-items: center;
+    justify-content: start;
+    gap: 0.55rem;
+    width: 100%;
+    height: 32px;
+    padding: 0 var(--s16);
+    border: 0;
+    border-radius: 0;
+    color: var(--agnes-text-primary);
+    background: transparent;
+    text-align: start;
+    font-size: var(--font-size-sm);
+    font-weight: 400;
+  }
+  .trace-row-entry,
+  .trace-tool-entry {
+    position: relative;
+    height: 32px;
+  }
+  .trace-tool-toggle {
+    position: absolute;
+    z-index: 1;
+    top: 2px;
+    width: 20px;
+    min-width: 20px;
+    height: 28px;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .trace-tool-toggle:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: -3px;
+    box-shadow: var(--focus-line-inset);
+  }
+  .trace-row[aria-current="true"] {
+    background: var(--agnes-trace-row-current);
+  }
+  .trace-row:hover {
+    background: var(--agnes-trace-row-hover);
+  }
+  .trace-step-mark {
+    min-width: 0;
+    color: var(--agnes-text-tertiary);
+    font-variant-numeric: tabular-nums;
+    font-size: var(--font-size-xs);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Role chips are small tinted pills: the hue says the kind, the weight stays out of the way. */
+  .trace-badge {
+    justify-self: start;
+    padding: 0 0.5rem;
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-xs);
+    font-weight: 400;
+    line-height: 1.25rem;
+    white-space: nowrap;
+  }
+  .trace-badge.kind-user {
+    color: var(--agnes-trace-badge-user-text);
+    background: var(--agnes-trace-badge-user-bg);
+  }
+  .trace-badge.kind-context {
+    color: var(--agnes-trace-badge-context-text);
+    background: var(--agnes-trace-badge-context-bg);
+  }
+  .trace-badge.kind-assistant {
+    color: var(--agnes-trace-badge-assistant-text);
+    background: var(--agnes-trace-badge-assistant-bg);
+  }
+  .trace-badge.kind-tool {
+    color: var(--agnes-trace-badge-tool-text);
+    background: var(--agnes-trace-badge-tool-bg);
+  }
+  .trace-badge.kind-approval {
+    color: var(--agnes-trace-badge-approval-text);
+    background: var(--agnes-trace-badge-approval-bg);
+  }
+  .trace-badge.kind-compaction {
+    color: var(--agnes-trace-badge-compaction-text);
+    background: var(--agnes-trace-badge-compaction-bg);
+  }
+  .trace-row-preview {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--agnes-text-primary);
+    font-weight: 400;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* A tool row reads name, arguments, result; a context row reads label, payload. Raw payloads
+   recede in monospace; the full record opens in the inspector. */
+  .trace-preview-name {
+    color: var(--agnes-text-primary);
+    font-weight: 500;
+  }
+  .trace-preview-raw {
+    color: var(--agnes-text-tertiary);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: var(--font-size-xs);
+  }
+  .trace-preview-result {
+    color: var(--agnes-text-secondary);
+  }
+  .trace-preview-status {
+    color: var(--agnes-text-tertiary);
+  }
+  .trace-preview-status:is([data-status="failed"], [data-status="completed"]) {
+    color: var(--agnes-status-danger-text);
+  }
+  .trace-preview-status[data-status="running"] {
+    color: var(--agnes-text-emphasis);
+  }
+  /* The inspector is a fixed header over one scrolling column of grouped cards. */
+  .trace-inspector {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border-left: 1px solid var(--agnes-line-primary);
+    background: var(--agnes-bg-app-content);
+  }
+  .trace-inspector[hidden] {
+    display: none;
+  }
+  .trace-inspector-head {
+    flex: 0 0 auto;
+    padding: var(--s12) var(--s12) var(--s8) var(--s16);
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .trace-inspector-titlebar {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  .trace-inspector-titlebar > .trace-badge {
+    flex: 0 0 auto;
+  }
+  .trace-inspector-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-sm);
+  }
+  .trace-inspector-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s4) var(--s8);
+    margin: var(--s4) 0 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+  .trace-inspector-meta:empty {
+    display: none;
+  }
+  .trace-status-tag {
+    padding: 0 0.4rem;
+    border-radius: var(--radius-md);
+    background: var(--agnes-status-success-bg);
+    color: var(--agnes-status-success-text);
+    font-size: 0.6875rem;
+  }
+  .trace-status-tag[data-status="failed"] {
+    background: var(--agnes-status-danger-bg);
+    color: var(--agnes-status-danger-text);
+  }
+  .trace-status-tag:is([data-status="running"], [data-status="waiting"], [data-status="awaiting_approval"]) {
+    background: var(--agnes-status-warning-bg);
+    color: var(--agnes-status-warning-text);
+  }
+  .trace-status-tag:is([data-status="cancelled"], [data-status="planned"]) {
+    background: var(--agnes-trace-badge-user-bg);
+    color: var(--agnes-text-secondary);
+  }
+  /* Four key facts in two columns, between the header and the tabs. */
+  .trace-facts {
+    display: grid;
+    flex: 0 0 auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s8) var(--s16);
+    margin: 0;
+    padding: var(--s8) var(--s16) var(--s12);
+    border-bottom: 1px solid var(--agnes-line-primary);
+    font-size: var(--font-size-xs);
+  }
+  .trace-fact {
+    min-width: 0;
+  }
+  .trace-fact dt {
+    color: var(--agnes-text-tertiary);
+    font-size: 0.6875rem;
+  }
+  .trace-fact dd {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+  .trace-inspector-more.agh-btn--icon,
+  .trace-inspector-close {
+    display: inline-flex;
+    flex: 0 0 auto;
+    width: 1.75rem;
+    min-width: 1.75rem;
+    min-height: 0;
+    height: 1.75rem;
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+    font-weight: 400;
+  }
+  .trace-inspector-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--s12);
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding: var(--s12) var(--s16) var(--s20);
+  }
+  .trace-inspector-body > * {
+    flex: 0 0 auto;
+  }
+  .trace-inspector-pane:not([hidden]) {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s12);
+  }
+  .trace-tab {
+    min-height: 0;
+    justify-content: flex-start;
+    font-weight: 400;
+  }
+  .trace-inspector-tabs-root {
+    display: contents;
+  }
+  /* Only the tab strip is shown; the component's own (empty) panel holder would otherwise grow
+   to fill the column and push the panes down. */
+  .trace-inspector-tabs-root > :not(.trace-inspector-tabs) {
+    display: none;
+  }
+  .trace-inspector-tabs {
+    display: flex;
+    flex: 0 0 auto;
+    gap: var(--s16);
+    padding: 0 var(--s16);
+    border-bottom: 1px solid var(--agnes-line-primary);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .trace-tab {
+    flex: 0 0 auto;
+    padding: 0.4rem 0;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    color: var(--agnes-text-secondary);
+    background: transparent;
+    font-size: var(--font-size-sm);
+  }
+  .trace-tab-debug {
+    display: inline-flex;
+    align-items: center;
+    margin-left: auto;
+    border-bottom-color: var(--agnes-line-emphasis);
+    color: var(--agnes-text-tertiary);
+  }
+  .trace-tab[aria-pressed="true"] {
+    border-bottom-color: var(--agnes-brand-primary);
+    color: var(--agnes-text-primary);
+    font-weight: var(--font-weight-medium);
+  }
+  .trace-card {
+    min-width: 0;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-surface);
+    padding: var(--s12) var(--s12) var(--s8);
+  }
+  .trace-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8);
+    min-height: 1.5rem;
+    margin-bottom: var(--s4);
+  }
+  .trace-card-title {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+  }
+  .trace-card-line {
+    margin: var(--s4) 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+  }
+  .trace-card > .trace-code {
+    margin-block: var(--s8) var(--s4);
+  }
+  .trace-fields {
+    margin: 0;
+  }
+  .trace-field {
+    display: grid;
+    grid-template-columns: minmax(4.5rem, 34%) minmax(0, 1fr);
+    gap: var(--s12);
+    padding: 0.375rem 0;
+    font-size: var(--font-size-sm);
+    line-height: var(--line-sm);
+  }
+  .trace-field + .trace-field {
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  .trace-field-label {
+    color: var(--agnes-text-secondary);
+    overflow-wrap: anywhere;
+  }
+  .trace-field-value {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+  /* Recorded text is shown as source: one framed monospace block with its label and copy action. */
+  .trace-code {
+    position: relative;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-surface);
+  }
+  .trace-code-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8);
+    min-height: 2rem;
+    padding: 0 var(--s4) 0 var(--s12);
+    border-bottom: 1px solid var(--agnes-line-primary);
+    background: var(--agnes-bg-code);
+  }
+  .trace-code-label {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .trace-code-copy {
+    flex: 0 0 auto;
+    color: var(--agnes-text-secondary);
+  }
+  .trace-pre {
+    margin: 0;
+    padding: var(--s8) var(--s12) var(--s12);
+    color: var(--agnes-text-primary);
+    font: var(--font-size-xs) / 1.65 var(--font-mono);
+    tab-size: 2;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .trace-code[data-folded="true"] > .trace-pre {
+    max-height: 13.5rem;
+    overflow: hidden;
+    mask-image: linear-gradient(to bottom, black calc(100% - 3rem), transparent);
+  }
+  .trace-code-fold {
+    display: flex;
+    width: 100%;
+    min-height: 2rem;
+    justify-content: center;
+    border: 0;
+    border-top: 1px solid var(--agnes-line-primary);
+    border-radius: 0;
+    color: var(--agnes-text-secondary);
+    background: transparent;
+    font-size: var(--font-size-xs);
+  }
+  .trace-code-fold:hover:not(:disabled) {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-hover);
+  }
+  .trace-raw-note {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+  }
+  .trace-detail-status,
+  .trace-detail-resource {
+    margin: 0;
+    padding: var(--s12);
+    border: 1px dashed var(--agnes-line-emphasis);
+    border-radius: var(--radius-card);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+  }
+  .trace-detail-copy {
+    min-height: 1.75rem;
+    padding: 0 var(--s8);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-xs);
+  }
+  .trace-detail-media,
+  .trace-thumbs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s8);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .trace-thumbs {
+    padding-block: var(--s4);
+  }
+  .trace-image-thumb {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    background: transparent;
+  }
+  .trace-image-thumb img {
+    display: block;
+    max-width: min(100%, 14rem);
+    max-height: 10rem;
+    object-fit: contain;
+  }
+  .trace-lightbox {
+    position: fixed;
+    z-index: 1000;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: var(--s32);
+    background: var(--agnes-bg-lightbox);
+  }
+  .trace-lightbox img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+  .trace-lightbox-close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    min-width: 2rem;
+    min-height: 2rem;
+  }
+  /* A trace with nothing recorded says so in the middle of its pane, not in a corner. */
+  .trace-empty {
+    grid-row: 4;
+    align-self: center;
+    justify-self: center;
+    margin: var(--s24) var(--s20);
+    text-align: center;
+  }
+  .trace-badge.kind-ui {
+    color: var(--agnes-status-info-text);
+    background: var(--agnes-status-info-bg);
+  }
+  .trace-badge.kind-control {
+    color: color-mix(in srgb, var(--agnes-status-info-text) 55%, var(--agnes-status-danger-text));
+    background: color-mix(
+      in srgb,
+      var(--agnes-status-info-text) 7%,
+      color-mix(in srgb, var(--agnes-status-danger-text) 6%, transparent)
+    );
+  }
+  .trace-row-text {
+    color: var(--agnes-text-primary);
+  }
+  .trace-row-text + .trace-preview-raw {
+    margin-left: 0.5rem;
+  }
+  .trace-row-preview mark {
+    border-radius: 2px;
+    background: var(--agnes-trace-mark-bg);
+    color: var(--agnes-trace-mark-text);
+  }
+  /* A match can sit in text the row does not show, so the row itself carries the current mark. */
+  .trace-row[data-match="current"] {
+    box-shadow:
+      inset 2px 0 0 var(--agnes-status-warning-text),
+      var(--focus-line-inset);
+    background: color-mix(in srgb, var(--agnes-status-warning-bg) 45%, transparent);
+  }
+  /* Every other hit gets a weaker row tint: the count and what the list shows then agree. */
+  .trace-row[data-match="hit"] {
+    background: var(--agnes-trace-row-hit);
+  }
+  .trace-row[data-match="current"] mark {
+    box-shadow: 0 0 0 1px var(--agnes-status-warning-text);
+  }
+  .trace-row-end {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .trace-row-status {
+    display: inline-flex;
+    color: var(--agnes-status-success-text);
+  }
+  .trace-row-status[data-status="failed"] {
+    color: var(--agnes-status-danger-text);
+  }
+  .trace-row-status:is([data-status="running"], [data-status="waiting"]) {
+    color: var(--agnes-text-emphasis);
+  }
+  .trace-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  /* The divider between list and inspector: a hairline that turns brand-coloured with a grip on hover
+   or while dragged. */
+  .trace-splitter {
+    position: relative;
+    width: 9px;
+    margin-inline: -4px;
+    z-index: 3;
+    cursor: col-resize;
+    touch-action: none;
+  }
+  .trace-splitter::before {
+    content: "";
+    position: absolute;
+    inset: 0 4px;
+    background: var(--agnes-line-primary);
+    transition: background 0.12s;
+  }
+  .trace-splitter::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 2.5px;
+    width: 4px;
+    height: 36px;
+    margin-top: -18px;
+    border-radius: 2px;
+    background: var(--agnes-line-emphasis);
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .trace-splitter:is(:hover, :focus-visible, [data-dragging])::before {
+    background: var(--agnes-brand-primary);
+  }
+  .trace-splitter:is(:hover, :focus-visible, [data-dragging])::after {
+    opacity: 1;
+  }
+  .trace-splitter:focus-visible {
+    outline: none;
+  }
+  /* Steps of a business-UI action or of your own control, each with its time. */
+  .trace-steps {
+    margin: 0;
+    padding: var(--s4) 0;
+    list-style: none;
+    font-size: var(--font-size-sm);
+  }
+  .trace-step {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    padding: 0.3rem 0;
+    color: var(--agnes-status-success-text);
+  }
+  .trace-step > span {
+    color: var(--agnes-text-primary);
+  }
+  .trace-step[data-status="failed"] {
+    color: var(--agnes-status-danger-text);
+  }
+  .trace-step:is([data-status="running"], [data-status="waiting"]) {
+    color: var(--agnes-text-emphasis);
+  }
+  .trace-step time {
+    margin-left: auto;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+  /* The request's provenance as a short vertical chain. */
+  .trace-chain {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .trace-chain-link {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(5rem, 34%) minmax(0, 1fr);
+    gap: var(--s4) var(--s12);
+    padding: 0.35rem 0 0.35rem 1.1rem;
+    font-size: var(--font-size-sm);
+  }
+  .trace-chain-link::before {
+    content: "";
+    position: absolute;
+    top: 0.75rem;
+    left: 0.15rem;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--agnes-brand-primary);
+  }
+  .trace-chain-link + .trace-chain-link::after {
+    content: "";
+    position: absolute;
+    top: -0.35rem;
+    left: calc(0.15rem + 3px);
+    width: 1px;
+    height: 1.1rem;
+    background: var(--agnes-line-emphasis);
+  }
+  .trace-chain-label {
+    color: var(--agnes-text-secondary);
+  }
+  .trace-chain-value {
+    color: var(--agnes-text-primary);
+    overflow-wrap: anywhere;
+  }
+  .trace-chain-detail {
+    grid-column: 2;
+    margin: 0;
+    padding-left: 1rem;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+  }
+  /* The request content tab: a view switch, the call picker and copy above folded sections. */
+  .request-trace {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  .request-trace-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .request-trace-bar .request-trace-copy {
+    margin-left: auto;
+  }
+  .request-trace-note {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+  }
+  .request-trace-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s4) var(--s12);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+  [data-testid="request-trace-content"] {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  /* Narrow panels: the inspector lies over the list instead of squeezing it. */
+  @media (max-width: 900px) {
+    .trace-body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .trace-inspector:not([hidden]) {
+      position: absolute;
+      z-index: 4;
+      inset: 0;
+      border-left: 0;
+      box-shadow: var(--shadow-elevation-prominent);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .trace-gantt-bar,
+    .trace-splitter::before,
+    .trace-splitter::after {
+      transition: none;
+    }
+  }
+  :is(.trace-gantt-label, .trace-stats) {
+    font-variant-numeric: tabular-nums;
+  }
+  .trace-gantt-note {
+    line-height: 1.6;
+  }
+}

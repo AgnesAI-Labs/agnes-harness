@@ -1,0 +1,55 @@
+{
+  "name": "@agnes/loop-default",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "export": "defaultLoopPlugin",
+        "id": "loop:agnes.default",
+        "inject": [
+          "providers"
+        ],
+        "runtime": "in-process",
+        "default": true,
+        "apiRange": "^5.0.0",
+        "metadata": {
+          "displayName": "Default Agent Loop",
+          "summary": "Runs the default agent workflow through model calls, tools, approvals and continuation.",
+          "description": "Runs the default agent workflow through model calls, tools, approvals and continuation.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "默认 Agent Loop",
+              "summary": "通过模型调用、工具、审批与续接执行默认 Agent 工作流。",
+              "description": "通过模型调用、工具、审批与续接执行默认 Agent 工作流。"
+            }
+          }
+        }
+      }
+    ],
+    "metadata": {
+      "displayName": "Default Agent Loop",
+      "summary": "Runs the default agent workflow through model calls, tools, approvals and continuation.",
+      "description": "Runs the default agent workflow through model calls, tools, approvals and continuation.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "默认 Agent Loop",
+          "summary": "通过模型调用、工具、审批与续接执行默认 Agent 工作流。",
+          "description": "通过模型调用、工具、审批与续接执行默认 Agent 工作流。"
+        }
+      }
+    },
+    "provides": [
+      "loop"
+    ]
+  },
+  "dependencies": {
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/plugin-runtime": "workspace:*"
+  },
+  "license": "Apache-2.0"
+}

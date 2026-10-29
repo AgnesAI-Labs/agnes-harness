@@ -1,8 +1,4 @@
-import {
-  AttachmentValidationError,
-  USER_MESSAGE_ATTACHMENT_LIMITS,
-  validateUserAttachments,
-} from '@agnes/protocol-validation'
+import { USER_MESSAGE_ATTACHMENT_LIMITS, validateUserAttachments } from '@agnes/protocol-validation'
 import { expect, it } from 'vitest'
 import { MAX_FRAME_BYTES } from '../src/index.js'
 
@@ -28,8 +24,7 @@ it('accepts exactly 100 MiB of attachments, fits the transport, and rejects an e
       }),
     ),
   ).toBeLessThan(MAX_FRAME_BYTES - 4096)
-  let overLimit: unknown
-  try {
+  expect(() =>
     validateUserAttachments([
       ...content,
       {
@@ -38,11 +33,6 @@ it('accepts exactly 100 MiB of attachments, fits the transport, and rejects an e
         mimeType: 'text/plain',
         data: 'eA==',
       },
-    ])
-  } catch (error) {
-    overLimit = error
-  }
-  expect(overLimit).toBeInstanceOf(AttachmentValidationError)
-  expect((overLimit as AttachmentValidationError).code).toBe('ATTACHMENT_BYTES')
-  expect((overLimit as Error).message).toMatch(/100 MiB/)
+    ]),
+  ).toThrow(/100 MiB/)
 }, 30000)

@@ -2,12 +2,12 @@ import { createServer as createHttpServer, request as httpRequest, type Server }
 import { join } from 'node:path'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { afterEach, expect, it } from 'vitest'
+import { openTestHost } from '../../daemon-rpc/test/host.js'
 import { registerSurfaces, type SurfaceMountsSource } from '../src/local/methods/surfaces.js'
 import { bindConnection } from '../src/supervisor/connection.js'
 import { listenUnix } from '../src/supervisor/socket.js'
 import { createMountProxy, matchMount } from '../src/surfaces/mount-proxy.js'
 import type { SurfaceControllerSnapshot } from '../src/surfaces/types.js'
-import { openTestHost } from './host.js'
 import { localSdkTransport, localSocketPath } from './local-socket-path.js'
 
 /**

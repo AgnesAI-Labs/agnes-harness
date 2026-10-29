@@ -1,12 +1,13 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import { describe, expect, it, vi } from 'vitest'
 import { Kernel } from '../src/kernel.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
 import { createAuxiliaryVisionEffectPort } from '../src/orchestrator/auxiliary-vision-effect-port.js'
 import type {
   AuxiliaryVisionEffectBinding,
   AuxiliaryVisionEffectTerminal,
 } from '../src/orchestrator/auxiliary-vision-executor.js'
-import { presetDefaults } from '../src/step/preset.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, testFsOps } from './helpers/open-session.js'
@@ -17,6 +18,7 @@ const sessionOpts = { actor, resolvedProfileHash: 'h1', cwd: '/w', writerRunId: 
 async function setup(key: string) {
   const storage = new MemoryStorage()
   const kernel = Kernel.create({
+    loops: defaultLoops(),
     storage,
     seams: fakeSeams(),
     provider: fakeProvider([]),

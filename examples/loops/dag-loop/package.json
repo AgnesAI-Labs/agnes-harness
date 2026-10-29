@@ -1,0 +1,51 @@
+{
+  "name": "@agnes-example/dag-loop",
+  "version": "1.0.1",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "types": "./index.d.mts",
+  "peerDependencies": {
+    "@agnes/extension-api": "*"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:example-dag",
+        "export": "plugin",
+        "apiRange": "^5.0.0",
+        "default": true,
+        "inject": [
+          "providers"
+        ],
+        "metadata": {
+          "displayName": "Task graph Loop",
+          "summary": "Runs a validated task graph, allowing independent tools to execute in parallel.",
+          "description": "Runs a validated task graph, allowing independent tools to execute in parallel.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "任务图 Loop",
+              "summary": "按经过校验的任务图执行，允许独立工具并行运行。",
+              "description": "按经过校验的任务图执行，允许独立工具并行运行。"
+            }
+          }
+        }
+      }
+    ],
+    "metadata": {
+      "displayName": "Task graph Loop",
+      "summary": "Runs a validated task graph, allowing independent tools to execute in parallel.",
+      "description": "Runs a validated task graph, allowing independent tools to execute in parallel.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "任务图 Loop",
+          "summary": "按经过校验的任务图执行，允许独立工具并行运行。",
+          "description": "按经过校验的任务图执行，允许独立工具并行运行。"
+        }
+      }
+    },
+    "provides": [
+      "loop"
+    ]
+  }
+}

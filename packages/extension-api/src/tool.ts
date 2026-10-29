@@ -1,5 +1,6 @@
 import type { Action, Actor, Decision, JobSpec, JobStatus, JsonValue, Target } from '@agnes/protocol'
 import type { Static, TSchema } from '@sinclair/typebox'
+import type { ChildAgentListing, ChildAgentModel, ChildAgentToolFilter } from './child-agent.js'
 import type {
   ArtifactRef,
   Bytes,
@@ -10,6 +11,7 @@ import type {
   Seq,
   SessionRef,
 } from './common.js'
+import type { DecisionPort } from './decisions.js'
 import type { ProjectionReader } from './projections.js'
 
 export type ReplayPolicy = 'safe' | 'never' | 'idempotent'
@@ -23,6 +25,12 @@ export type RiskClass = 'never' | 'destructive' | 'always'
 export interface ResolvedToolCallPolicy {
   readonly isReadOnly: boolean
   readonly isDestructive: boolean
+  /**
+   * The effect only publishes display state to the user and has no external side effect.
+   * Omitted means not presentational. Classifiers may omit it; resolution copies a boolean
+   * the same way it copies `isReadOnly`.
+   */
+  readonly isPresentational?: boolean
   readonly replay: ReplayPolicy
   readonly requiresApproval: RiskClass
   readonly approvalScopes: readonly string[]
@@ -38,6 +46,7 @@ export const RESOLVED_TOOL_CALL_POLICY_KEYS = [
   'approvalScopes',
 ] as const
 export const MAX_APPROVAL_SCOPES = 16
+const DISCOVERY_GROUP = /^[^\r\n\t]{1,120}$/u
 
 // The most text of one tool result that reaches the model before the output guard cuts it. The preset
 // key `tools.output_max_bytes` sets it per deployment; the bounds keep a page and the notes the
@@ -46,23 +55,71 @@ export const DEFAULT_OUTPUT_MAX_BYTES = 32768
 export const MIN_OUTPUT_MAX_BYTES = 4096
 export const MAX_OUTPUT_MAX_BYTES = 1048576
 
-// All eight keys must be written out on every tool, including the ones a tool has nothing to
-// say about: "no cost hint" is spelled `costHint: undefined`, not an omitted key. That is why
-// the last three are required keys typed `T | undefined` rather than optional `?:` members —
-// with exactOptionalPropertyTypes on, that is what forces the author to type the word. The
-// runtime check in checkToolMeta enforces the same rule for tools that arrive as plain data.
-// `returnsImages` is the one optional key: leaving it out keeps every tool written before it as it was.
+/** One top-level string argument checked against the live workspace fence before policy decisions.
+ * Missing arguments use `default` when declared, otherwise no path is checked. Non-workspace URI
+ * schemes are delegated to the tool's own resource service; they never widen filesystem access. */
+export interface WorkspacePathArgument {
+  arg: string
+  access: 'read' | 'write'
+  default?: string
+  nonWorkspaceSchemes?: readonly string[]
+}
 export interface ToolMeta {
+  /** Evidence exports/reports must wait for the session history hash check before dispatch. */
+  attestsHistory?: boolean
+
+  /** Display text only; never changes authorization or substitutes for the raw arguments. */
+  presentation?: import('@agnes/protocol').ToolPresentation
+
   isReadOnly: boolean
   isDestructive: boolean
   isConcurrencySafe: boolean
   isOpenWorld: boolean
   replay: ReplayPolicy
-  costHint: { credits?: number; wallMs?: number } | undefined
-  deferLoading: boolean | undefined
-  requiresApproval: RiskClass | undefined
-  /** The results carry pictures for the model; they reach it only from a closed-world tool. */
-  returnsImages?: boolean
+  /** Omitted means no cost estimate. */
+  costHint?: { credits?: number; wallMs?: number } | undefined
+  /**
+   * Omitted/false means available in initial model discovery; true keeps the schema out of model
+   * requests until `tool_describe` loads it. `'auto'` lets core decide per turn: auto tools stay
+   * visible while the turn catalog holds at most 15 of them and their schemas stay under about 4000
+   * tokens. Past either limit they defer together only if model-visible, eager tool_search and
+   * tool_describe are available without an image-input requirement. Otherwise auto remains eager.
+   */
+  deferLoading?: boolean | 'auto' | undefined
+  /**
+   * One-line label that groups deferred tools in the model's discovery listing, for example an MCP
+   * server's name. Deferred tools sharing a label are listed as one line with their count instead of
+   * one line each. Visible tools ignore it.
+   */
+  discoveryGroup?: string
+  /** Omitted means destructive for destructive tools, otherwise never. */
+  requiresApproval?: RiskClass | undefined
+  /** Omitted/true means discoverable by the model; false keeps internal invocation available. */
+  modelVisible?: boolean
+  /** Only models with native image input may discover or execute this tool. Default false. */
+  requiresImageInput?: boolean
+  /**
+   * The tool asks a person who is present, or shows them something to act on now (a question, a
+   * form, a live UI surface). Turns whose input declares nobody attending, such as `agh -p`, do not
+   * offer it to the model. Default false.
+   */
+  requiresUser?: boolean
+  paths?: readonly WorkspacePathArgument[]
+  /**
+   * The top-level string argument that carries the command text this tool runs: a shell line, text
+   * typed into a terminal, a program. The command table matches its rules against that text, with
+   * whitespace runs folded to one space, instead of the canonical JSON of every argument. Omitted
+   * means the tool runs no command of its own.
+   */
+  commandArg?: string
+  /**
+   * The effect only publishes display state to the user and has no external side effect.
+   * Optional, like `paths`: omitting it means the tool is not presentational. It cannot be
+   * combined with `isDestructive` or `isOpenWorld`.
+   */
+  isPresentational?: boolean
+  /** Consecutive invalid argument limit per turn. Default 2; integer 1–5. */
+  invalidArgumentLimit?: number
 }
 export const TOOL_META_KEYS = [
   'isReadOnly',
@@ -70,9 +127,6 @@ export const TOOL_META_KEYS = [
   'isConcurrencySafe',
   'isOpenWorld',
   'replay',
-  'costHint',
-  'deferLoading',
-  'requiresApproval',
 ] as const
 export const TOOL_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
 
@@ -100,32 +154,19 @@ export type ExecResult = {
    * was killed and the output is what it had printed so far. Absent means the executor did not say.
    */
   timedOut?: boolean
-  /**
-   * How many processes the command started (a server sent to the background, a detached child) were
-   * still running when it returned and were stopped with it. Set, and positive, only by an executor
-   * that owns every process a command starts; absent means it stopped none, or the executor did not say.
-   */
+  /** Descendants stopped when the foreground process exited; absent when not measured. */
   stoppedProcesses?: number
 }
-/** A background job: a command started to keep running after the call that started it returned. */
-export type JobInfo = {
-  id: string
-  command: string
-  cwd: string
-  /** `exited` on its own (with `code`), or `stopped` by a `stop` or by its session closing. */
-  status: 'running' | 'exited' | 'stopped'
-  code?: number
-  startedAt: string
-}
-/** Output read from a job: `text` from `since` on, `next` to continue from, `dropped` no longer kept. */
-export type JobOutput = JobInfo & { text: string; next: number; dropped: number }
 export type FsEntry = { name: string; kind: 'file' | 'dir' | 'symlink' | 'other' }
 export type FsStat = { kind: FsEntry['kind']; size: number; mtimeMs: number }
 export type FetchInit = {
   method?: string
   headers?: Record<string, string>
   body?: string | Bytes
+  /** Narrows the call deadline; cannot extend the call or its writer lease. */
   timeoutMs?: number
+  /** Additional cancellation. Providers must bind both connection and body to this signal. */
+  signal?: AbortSignal
 }
 /** Bounded anonymous retrieval; response resources remain owned by the host. */
 export interface PublicFetchResult {
@@ -149,10 +190,20 @@ export type PlanItem = {
 }
 export type ChildStatus = {
   childKey: string
-  status: 'running' | 'completed' | 'failed' | 'cancelled'
+  status: 'running' | 'idle' | 'interrupted' | 'completed' | 'failed' | 'cancelled'
   text?: string
   credits?: number
   waitTimedOut?: boolean
+  /** Backend ledger facts; child prose is not evidence of tool execution or workspace integration. */
+  receipt?: {
+    workspace: {
+      /** Child execution directory snapshot at call start. May differ from workspaceRoot in a future version; use workspaceRoot for workspace-owned state, policy and config. */
+      cwd: string
+      isolation: 'shared' | 'worktree'
+    }
+    tools: Array<{ seq: number; name: string; isError: boolean }>
+    truncated: boolean
+  }
 }
 
 // The programmable-runtime interface a tool can be handed. It lives here, rather than in the
@@ -164,8 +215,16 @@ export interface CodeRuntime {
   readonly isolation: 'process' | 'worker-thread' | 'container'
   probe(): Promise<{ ok: true; version: string } | { ok: false; reason: string; installHint?: string }>
   start(opts: {
+    /** Execution directory snapshot at the start of this call (or the explicitly requested operation).
+     * May differ from workspaceRoot in a future version; use workspaceRoot for workspace-owned state, policy and config.
+     * Session defaults currently equal workspaceRoot; explicit process/child overrides do not change workspace identity.
+     */
     cwd: string
     env: Record<string, string>
+    /** Managed provider-bound executor; required by process PTC backends. */
+    exec?: ToolContext['exec']
+    toolNames?: readonly string[]
+    rawIo?: boolean
     confine: (argv: string[]) => Promise<string[]>
     signal?: AbortSignal
   }): Promise<void>
@@ -191,7 +250,20 @@ export interface CodeRuntime {
   kill(): Promise<void>
 }
 
+/** Read-only facts about the model request that led to this tool invocation, not permission. */
+export type ToolRequestAvailability = Readonly<{
+  status: 'offered' | 'deferred' | 'unavailable'
+  reason?: 'mode' | 'policy' | 'model_capability' | 'request_selection' | 'catalog' | 'unknown'
+  /** Safe explanation and next step; never includes private policy details. */
+  message: string
+}>
+
 export interface ToolContext {
+  /** Read-only session resource access. Each operation acquires a fresh workspace invocation;
+   * unlike fs, this may serve delayed browser resources after this call settles. Session close
+   * and current filesystem policy revoke access. Never retain the ordinary invocation fs. */
+  readonly sessionFiles?: Pick<ToolContext['fs'], 'read' | 'stat'>
+  readonly decisions: DecisionPort
   /** Active main-conversation request only; Host owns validation and native approval. */
   readonly mcpManage?: Readonly<{ request(input: unknown): Promise<unknown> }>
   readonly pluginManage?: Readonly<{ request(input: unknown): Promise<unknown> }>
@@ -204,7 +276,7 @@ export interface ToolContext {
     readonly generationDepth: number
     /** Current session image originals and a paged index; unavailable in older runtimes. */
     readImages?(input: { path: string; offset?: number; limit?: number }): Promise<ToolResult>
-    /** Image limits of the active model and runtime for tool-supplied pixels; absent in older runtimes. */
+    /** Limits for tool-supplied images on the active model and runtime. */
     imageInputPolicy?(): Promise<{
       supported: boolean
       maxWidth: number
@@ -212,7 +284,7 @@ export interface ToolContext {
       maxBytes: number
       maxPixels: number
     }>
-    /** Checks prepared PNG/JPEG bytes and returns an artifact-backed image result for the model. */
+    /** Validates prepared bytes and emits an artifact-backed model image through request-media. */
     imageInput?(input: {
       bytes: Bytes
       mimeType: 'image/png' | 'image/jpeg'
@@ -228,45 +300,91 @@ export interface ToolContext {
       | undefined
     >
   }
+  /** Backend-injected proof of the exact human approval consumed for this invocation. */
+  readonly store?: import('./profile-services.js').OwnedStore
+  readonly wake?: import('./profile-services.js').SessionWakePort
+  readonly approval?: Readonly<{ requestId: string; subjectRevision: string; answeredBy: Actor }>
   readonly actor: Actor // recorded on the call; never the basis for an authorization decision
+  /** Execution directory snapshot at the start of this call (or the explicitly requested operation).
+   * May differ from workspaceRoot in a future version; use workspaceRoot for workspace-owned state, policy and config.
+   * Session defaults currently equal workspaceRoot; explicit process/child overrides do not change workspace identity.
+   */
   readonly cwd: string
   exec(
     cmd: string[],
-    opts?: { cwd?: string; env?: Record<string, string>; stdin?: string; timeoutMs?: number },
+    opts?: {
+      /** Execution directory snapshot at the start of this call (or the explicitly requested operation).
+       * May differ from workspaceRoot in a future version; use workspaceRoot for workspace-owned state, policy and config.
+       * Session defaults currently equal workspaceRoot; explicit process/child overrides do not change workspace identity.
+       */
+      cwd?: string
+      env?: Record<string, string>
+      stdin?: string
+      timeoutMs?: number
+      signal?: AbortSignal
+      maxOutputBytes?: number
+      bridge?: (frame: unknown) => Promise<unknown>
+    },
   ): Promise<ExecResult>
-  /**
-   * The session's background jobs: `start` runs `cmd` as `exec` would (same shell, sandbox and
-   * policy) but returns once it is running. The session owns them and stops them when it closes.
-   * Absent where the kernel keeps none; `start` rejects where the workspace cannot run one.
-   */
-  readonly jobs?: {
-    start(cmd: string[], opts?: { cwd?: string; env?: Record<string, string> }): Promise<JobInfo>
-    /** Output after `since` (default: where the last read ended), waiting up to `waitMs` for some. */
-    output(id: string, opts?: { since?: number; waitMs?: number }): Promise<JobOutput>
-    stop(id: string): Promise<JobInfo>
-    list(): Promise<JobInfo[]>
-  }
   readonly fs: {
+    /** Zero-based byte offset; limit bounds bytes read from storage. */
     read(path: string, opts?: { offset?: number; limit?: number }): Promise<Bytes>
     write(path: string, data: Bytes | string): Promise<void>
+    /** Exclusive, no-follow creation. Refuse an existing entry or changed parent. No overwrite fallback. */
+    create?(path: string, data: Bytes): Promise<{ size: number; sha256: string }>
     list(path: string): Promise<FsEntry[]>
     stat(path: string): Promise<FsStat>
+    /** Revision of a snapshot-backed read, when the filesystem supplies one. */
+    revision?(path: string): Promise<string | undefined>
+    /** Id of the checkpoint taken before this call's latest write to `path`, when the host keeps one. */
+    checkpointOf?(path: string): string | undefined
   }
   readonly net: {
     fetch(url: string, init?: FetchInit): Promise<Response>
     fetchPublic?(url: string, options?: { responseType: 'zip' }): Promise<PublicFetchResult>
   }
   // A tool that spawns its own process passes the launch argv through here first and spawns
-  // what comes back. confine is the only sandbox opening a tool may act through; enforcement is a
-  // read-only answer to "am I confined right now" (spec 2026-09-15 D4). The host wires both to
-  // whichever sandbox implementation the deployment assembled. fsPolicy stays host-internal.
-  readonly sandbox: { confine(argv: string[]): Promise<string[]>; enforcement(): SandboxEnforcement }
+  // what comes back. confine returns wrapped argv; openProcess returns session-owned handles.
+  // enforcement is a read-only answer to "am I confined right now". The Host binds these ports
+  // to the selected sandbox implementation. fsPolicy stays Host-internal.
+  readonly sandbox: {
+    confine(argv: string[]): Promise<string[]>
+    enforcement(): SandboxEnforcement
+    /** Host supplies policy and confinement; callers cannot choose them. */
+    openProcess?: (
+      request: Readonly<{
+        argv: readonly string[]
+        /** Cancellation while opening; returning a handle detaches its lifetime from this call. */
+        signal?: AbortSignal
+        /** Execution directory snapshot at the start of this call (or the explicitly requested operation).
+         * May differ from workspaceRoot in a future version; use workspaceRoot for workspace-owned state, policy and config.
+         * Session defaults currently equal workspaceRoot; explicit process/child overrides do not change workspace identity.
+         */
+        cwd?: string
+        env?: Readonly<Record<string, string>>
+        pty?: Readonly<{ columns: number; rows: number }>
+      }>,
+    ) => Promise<import('./process.js').SandboxProcess>
+  }
   // Read-only platform facts plus the capability probe. No manifest gate: facts, not effects.
   readonly platform: PlatformView
   authorize(action: Action, target: Target): Promise<Decision>
   readonly tools: {
     invoke(name: string, args: JsonValue, opts?: { signal?: AbortSignal }): Promise<ToolResult>
     list(): ToolDef[]
+    /** Exact request disclosure when known. Absence must not be inferred from catalog metadata. */
+    availability?(name: string): ToolRequestAvailability
+    /** Include an available tool's schema in later model requests. Grants no execution permission. */
+    disclose?(name: string): Promise<void>
+  }
+  readonly codeRuntime?: {
+    state: 'persistent' | 'stateless'
+    language: 'python' | 'typescript'
+    isolation: 'process' | 'worker-thread' | 'container'
+    rawIo: boolean
+    wallMs: number
+    maxOutputChars: number
+    maxParallelSubCalls: number
   }
   readonly runtime?: CodeRuntime
   readonly artifacts: {
@@ -279,20 +397,35 @@ export interface ToolContext {
     cancel(id: string): Promise<void>
   }
   readonly subagent: {
+    roles?(): Promise<readonly import('./child-agent.js').ChildRole[]>
     fork(question: string, opts?: { model?: string }): Promise<string>
     spawn(
       task: string,
       opts?: {
+        role?: import('@agnes/protocol').AgentRef
         model?: string
         isolation?: 'worktree' | 'shared'
         budget?: number
+        /** Execution directory snapshot at the start of this call (or the explicitly requested operation).
+         * May differ from workspaceRoot in a future version; use workspaceRoot for workspace-owned state, policy and config.
+         * Session defaults currently equal workspaceRoot; explicit process/child overrides do not change workspace identity.
+         */
         cwd?: string
         start?: boolean
+        /** Background child inherits parent context when true. */
+        fork?: boolean
+        /** Keep the child after its turn for follow-ups. */
+        resident?: boolean
+        toolFilter?: ChildAgentToolFilter
       },
-    ): Promise<{ childKey: string; worktree?: string }>
+    ): Promise<{ childKey: string; worktree?: string; role?: import('./child-agent.js').ChildRole }>
     collect(childKey: string, opts?: { wait?: boolean }): Promise<ChildStatus>
     cancel(childKey: string): Promise<ChildStatus>
     resume(childKey: string): Promise<{ childKey: string }>
+    list?(): Promise<readonly ChildAgentListing[]>
+    models?(): Promise<readonly ChildAgentModel[]>
+    sendMessage?(childKey: string, text: string, signal?: AbortSignal): Promise<{ messageId: string }>
+    interrupt?(childKey: string): Promise<{ accepted: boolean }>
   }
   readonly plan: { set(items: PlanItem[]): Promise<Seq> }
   requestCompaction(instructions?: string): void
@@ -304,14 +437,31 @@ export interface ToolContext {
   readonly defaultTimeoutMs?: number
   /** Bytes of one result's text the model sees before the output guard cuts it (preset `tools.output_max_bytes`). */
   readonly outputMaxBytes: number
+  /**
+   * The wall-clock limit of the turn this call runs in, present only when the turn's prompt set one
+   * (`agh -p --timeout`, SDK `prompt({ timeLimitMs })`): the limit's length and its deadline in epoch
+   * milliseconds. A tool that waits on something long (a foreground command) can keep the wait inside
+   * the time the turn has left and say so when it stops there.
+   */
+  readonly turnTimeLimit?: { readonly timeLimitMs: number; readonly deadlineAt: number }
   readonly lease: LeaseView
   readonly log: Logger
+}
+
+/** Registration cleanup belongs to the calling plugin lifecycle. */
+export interface ToolRegistrationPort {
+  register(def: ToolDef): import('./common.js').Disposer
 }
 
 export interface ToolDef<P extends TSchema = TSchema> {
   name: string
   description: string
   parameters: P
+  /**
+   * Optional model-facing schema for tools that disclose a larger contract on demand. This is
+   * presentation only: parameters remains the execution, classification and authorization schema.
+   */
+  modelParameters?: TSchema
   meta: ToolMeta
   /**
    * Stable author-supplied classifier version used in the tool-definition fingerprint. Required
@@ -326,12 +476,9 @@ export interface ToolDef<P extends TSchema = TSchema> {
   execute(args: Static<P>, ctx: ToolContext): Promise<ToolResult>
 }
 
-export function defineTool<P extends TSchema>(def: ToolDef<P>): ToolDef<P> {
-  return def
-}
-
 const REPLAY = new Set<string>(['safe', 'never', 'idempotent'])
 const RISK = new Set<string>(['never', 'destructive', 'always'])
+const COMMAND_ARG = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
 
 type CheckResult = { ok: true } | { ok: false; problems: string[] }
 
@@ -349,6 +496,26 @@ export function checkToolMeta(meta: unknown): CheckResult {
   for (const k of ['isReadOnly', 'isDestructive', 'isConcurrencySafe', 'isOpenWorld'] as const)
     if (typeof m[k] !== 'boolean') problems.push(`${k}: expected boolean`)
   if (!REPLAY.has(String(m.replay))) problems.push('replay: expected safe | never | idempotent')
+  if (m.presentation !== undefined) {
+    const view = m.presentation
+    if (!view || typeof view !== 'object' || Array.isArray(view))
+      problems.push('presentation: expected title and description')
+    else {
+      const fields = view as Record<string, unknown>
+      for (const [key, max] of [
+        ['title', 256],
+        ['description', 4096],
+        ['summary', 1024],
+      ] as const) {
+        const text = fields[key]
+        if (key === 'summary' && text === undefined) continue
+        if (typeof text !== 'string' || !text.trim() || text.length > max)
+          problems.push(`presentation.${key}: expected nonempty text up to ${max} characters`)
+      }
+      if (Object.keys(fields).some((key) => !['title', 'description', 'summary'].includes(key)))
+        problems.push('presentation: unknown key')
+    }
+  }
   // costHint feeds the budget estimate directly, and this function is the only runtime gate it
   // passes through, so the check is per-key rather than a bare typeof: `[]` and
   // `{ credits: 'lots' }` are both objects. Both keys are optional finite numbers and no other
@@ -367,12 +534,74 @@ export function checkToolMeta(meta: unknown): CheckResult {
       if (extra.length) problems.push(`costHint: unknown key ${extra.join(', ')}`)
     }
   }
-  if (m.deferLoading !== undefined && typeof m.deferLoading !== 'boolean')
-    problems.push('deferLoading: expected boolean | undefined')
+  if (m.deferLoading !== undefined && typeof m.deferLoading !== 'boolean' && m.deferLoading !== 'auto')
+    problems.push("deferLoading: expected boolean | 'auto' | undefined")
+  if (
+    m.discoveryGroup !== undefined &&
+    (typeof m.discoveryGroup !== 'string' || !DISCOVERY_GROUP.test(m.discoveryGroup))
+  )
+    problems.push('discoveryGroup: expected one line of 1-120 characters | undefined')
   if (m.requiresApproval !== undefined && !RISK.has(String(m.requiresApproval)))
     problems.push('requiresApproval: expected never | destructive | always | undefined')
-  if (m.returnsImages !== undefined && typeof m.returnsImages !== 'boolean')
-    problems.push('returnsImages: expected boolean | undefined')
+  for (const key of ['modelVisible', 'requiresImageInput', 'requiresUser'] as const)
+    if (m[key] !== undefined && typeof m[key] !== 'boolean')
+      problems.push(`${key}: expected boolean | undefined`)
+  if (m.commandArg !== undefined && (typeof m.commandArg !== 'string' || !COMMAND_ARG.test(m.commandArg)))
+    problems.push('commandArg: expected a top-level argument name | undefined')
+  if (
+    m.invalidArgumentLimit !== undefined &&
+    (!Number.isInteger(m.invalidArgumentLimit) ||
+      Number(m.invalidArgumentLimit) < 1 ||
+      Number(m.invalidArgumentLimit) > 5)
+  )
+    problems.push('invalidArgumentLimit: expected integer 1–5 | undefined')
+  if (m.attestsHistory !== undefined && typeof m.attestsHistory !== 'boolean')
+    problems.push('attestsHistory: expected boolean | undefined')
+  if (m.isPresentational !== undefined && typeof m.isPresentational !== 'boolean')
+    problems.push('isPresentational: expected boolean | undefined')
+  if (m.isPresentational === true && m.isDestructive === true)
+    problems.push('isPresentational/isDestructive: cannot both be true')
+  if (m.isPresentational === true && m.isOpenWorld === true)
+    problems.push('isPresentational/isOpenWorld: cannot both be true')
+  if (m.paths !== undefined) {
+    if (!Array.isArray(m.paths) || m.paths.length > 32)
+      problems.push('paths: expected at most 32 declarations')
+    else {
+      const seen = new Set<string>()
+      for (const path of m.paths) {
+        if (!path || typeof path !== 'object' || Array.isArray(path)) {
+          problems.push('paths: expected objects')
+          continue
+        }
+        const p = path as Record<string, unknown>
+        if (
+          typeof p.arg !== 'string' ||
+          !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(p.arg) ||
+          ['__proto__', 'constructor', 'prototype'].includes(p.arg) ||
+          seen.has(p.arg)
+        )
+          problems.push('paths.arg: expected unique top-level argument name')
+        else seen.add(p.arg)
+        if (p.access !== 'read' && p.access !== 'write') problems.push('paths.access: expected read | write')
+        if (
+          p.default !== undefined &&
+          (typeof p.default !== 'string' || !p.default || p.default.length > 4096 || p.default.includes('\0'))
+        )
+          problems.push('paths.default: expected usable path')
+        if (
+          p.nonWorkspaceSchemes !== undefined &&
+          (!Array.isArray(p.nonWorkspaceSchemes) ||
+            p.nonWorkspaceSchemes.length > 16 ||
+            p.nonWorkspaceSchemes.some(
+              (scheme: unknown) => typeof scheme !== 'string' || !/^[a-z][a-z0-9+.-]{0,63}$/.test(scheme),
+            ))
+        )
+          problems.push('paths.nonWorkspaceSchemes: expected URI scheme names')
+        if (Object.keys(p).some((key) => !['arg', 'access', 'default', 'nonWorkspaceSchemes'].includes(key)))
+          problems.push('paths: unknown key')
+      }
+    }
+  }
   return problems.length ? { ok: false, problems } : { ok: true }
 }
 
@@ -387,6 +616,10 @@ export function checkResolvedToolCallPolicy(policy: unknown): CheckResult {
   if (typeof p.isReadOnly !== 'boolean') problems.push('isReadOnly: expected boolean')
   if (typeof p.isDestructive !== 'boolean') problems.push('isDestructive: expected boolean')
   contradictorySafetyFlags(p, problems)
+  if (Object.hasOwn(p, 'isPresentational') && typeof p.isPresentational !== 'boolean')
+    problems.push('isPresentational: expected boolean')
+  if (p.isPresentational === true && p.isDestructive === true)
+    problems.push('isPresentational/isDestructive: cannot both be true')
   if (!REPLAY.has(String(p.replay))) problems.push('replay: expected safe | never | idempotent')
   if (!RISK.has(String(p.requiresApproval)))
     problems.push('requiresApproval: expected never | destructive | always')
@@ -402,7 +635,7 @@ export function checkResolvedToolCallPolicy(policy: unknown): CheckResult {
       else seen.add(scope)
     }
   }
-  const known = new Set<string>(RESOLVED_TOOL_CALL_POLICY_KEYS)
+  const known = new Set<string>([...RESOLVED_TOOL_CALL_POLICY_KEYS, 'isPresentational'])
   const extra = Object.keys(p).filter((key) => !known.has(key))
   if (extra.length) problems.push(`unknown key: ${extra.join(', ')}`)
   return problems.length ? { ok: false, problems } : { ok: true }
@@ -425,43 +658,50 @@ function isDeclaredAsyncFunction(value: (...args: never[]) => unknown): boolean 
   }
 }
 
+function refusePresentationalConflict(policy: ResolvedToolCallPolicy, isOpenWorld: boolean): void {
+  if (policy.isPresentational === true && (policy.isDestructive || isOpenWorld))
+    throw new TypeError('isPresentational cannot combine with isDestructive or isOpenWorld')
+}
+
 /**
  * Resolve one already-schema-validated call. Static tools retain their exact historical safety
  * meaning and receive no additional approval scopes. Invalid or asynchronous classifier output is
  * rejected instead of falling back to permissive metadata.
- *
- * A tool that declares no band leaves it to the kernel. One that may write resolves to
- * 'destructive' - asked when the call is destructive or the turn is tainted, which is what it was
- * always asked under - and only a read-only one to 'never'. 'never' is kept for the author's own
- * statement that no call needs a person, which a tainted turn does not override, so a writer that
- * said nothing cannot share it.
  */
 export function resolveToolCallPolicy<P extends TSchema>(
   def: ToolDef<P>,
   args: Readonly<Static<P>>,
 ): ResolvedToolCallPolicy {
-  if (!def.classify)
-    return Object.freeze({
+  if (!def.classify) {
+    const policy = Object.freeze({
       isReadOnly: def.meta.isReadOnly,
       isDestructive: def.meta.isDestructive,
+      isPresentational: def.meta.isPresentational === true,
       replay: def.meta.replay,
-      requiresApproval:
-        def.meta.requiresApproval ??
-        (def.meta.isDestructive || !def.meta.isReadOnly ? 'destructive' : 'never'),
+      requiresApproval: def.meta.requiresApproval ?? (def.meta.isDestructive ? 'destructive' : 'never'),
       approvalScopes: Object.freeze([]),
     })
+    refusePresentationalConflict(policy, def.meta.isOpenWorld)
+    return policy
+  }
   const value: unknown = def.classify(args)
   if (isPromiseLike(value)) throw new TypeError('classify: expected synchronous function, received Promise')
   const checked = checkResolvedToolCallPolicy(value)
   if (!checked.ok) throw new TypeError(`classify: invalid resolved policy: ${checked.problems.join('; ')}`)
   const policy = value as ResolvedToolCallPolicy
-  return Object.freeze({
+  // The classifier cannot mint presentational on its own, and never against a destructive or open tool.
+  if (policy.isPresentational === true && (def.meta.isDestructive || def.meta.isOpenWorld))
+    throw new TypeError('isPresentational cannot combine with isDestructive or isOpenWorld')
+  const resolved = Object.freeze({
     isReadOnly: policy.isReadOnly,
     isDestructive: policy.isDestructive,
+    isPresentational: def.meta.isPresentational === true && policy.isPresentational === true,
     replay: policy.replay,
     requiresApproval: policy.requiresApproval,
     approvalScopes: Object.freeze([...policy.approvalScopes]),
   })
+  refusePresentationalConflict(resolved, def.meta.isOpenWorld)
+  return resolved
 }
 
 /** Longest tool description a model is shown, in UTF-16 code units; Core also holds it after sanitizing. */
@@ -501,6 +741,30 @@ function parametersProblem(root: object): string | undefined {
     const bytes = new TextEncoder().encode(JSON.stringify(root)).byteLength
     if (bytes > TOOL_PARAMETERS_MAX_BYTES)
       return `parameters: serialized size must be at most ${TOOL_PARAMETERS_MAX_BYTES} bytes`
+    // Tool arguments are named fields. Module imports are valid when their local root
+    // resolves to an object; the model adapter inlines that root for provider compatibility.
+    const definitions = (root as Record<string, unknown>).$defs
+    let schema: unknown = root
+    const visited = new Set<unknown>()
+    while (schema && typeof schema === 'object' && !Array.isArray(schema)) {
+      const row = schema as Record<string, unknown>
+      if (row.$ref === undefined && row.type === 'object') return
+      if (visited.has(schema)) break
+      visited.add(schema)
+      if (typeof row.$ref !== 'string') break
+      const key = row.$ref.startsWith('#/$defs/')
+        ? row.$ref.slice('#/$defs/'.length).replace(/~1/g, '/').replace(/~0/g, '~')
+        : row.$ref
+      if (
+        !definitions ||
+        typeof definitions !== 'object' ||
+        Array.isArray(definitions) ||
+        !Object.hasOwn(definitions, key)
+      )
+        break
+      schema = (definitions as Record<string, unknown>)[key]
+    }
+    return 'parameters: root must be type "object" or a local $defs reference resolving to an object'
   } catch {
     // A Proxy or exotic object can throw from any reflective read; the check itself stays total.
     return notJson
@@ -529,6 +793,14 @@ export function checkToolDef(
   else {
     const problem = parametersProblem(d.parameters)
     if (problem) problems.push(problem)
+  }
+  if (d.modelParameters !== undefined) {
+    if (typeof d.modelParameters !== 'object' || d.modelParameters === null)
+      problems.push('modelParameters: expected schema object')
+    else {
+      const problem = parametersProblem(d.modelParameters)
+      if (problem) problems.push(problem.replace(/^parameters:/, 'modelParameters:'))
+    }
   }
   if (typeof d.execute !== 'function') problems.push('execute: expected function')
   const hasClassifier = typeof d.classify === 'function'

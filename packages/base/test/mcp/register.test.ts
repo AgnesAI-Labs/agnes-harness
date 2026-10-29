@@ -1,13 +1,17 @@
 import { randomUUID } from 'node:crypto'
 import { createServer, type Server as HttpServer } from 'node:http'
 import { createRequire } from 'node:module'
+import { PassThrough } from 'node:stream'
 import { deflateSync } from 'node:zlib'
-import { checkToolDef, type ExtensionAPI, type ResourceEntry, type ToolDef } from '@agnes/extension-api'
+import { checkToolDef, type ResourceEntry, type ToolDef } from '@agnes/extension-api'
+import type { Context } from '@agnes/plugin-runtime'
+import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MAX_READ_BYTES, readTool } from '../../extensions/tools-core/src/tools/read.js'
 import { grepTool } from '../../extensions/tools-search/src/tools/grep.js'
+import { McpCallError } from '../../src/mcp/call-error.js'
 import { connectMcp, MAX_MCP_REDIRECTS, type McpSdkDeps } from '../../src/mcp/connect.js'
-import { mcpLocalToolPrefix } from '../../src/mcp/naming.js'
+import { mcpPublicToolName } from '../../src/mcp/naming.js'
 import {
   inspectRemoteCatalog,
   MAX_MCP_REMOTE_CONTENT_BLOCKS,
@@ -33,7 +37,7 @@ const require = createRequire(import.meta.url)
 const { Server: McpServer } = require('@modelcontextprotocol/sdk/server/index.js')
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js')
 const { SSEServerTransport } = require('@modelcontextprotocol/sdk/server/sse.js')
-const { ListToolsRequestSchema } = require('@modelcontextprotocol/sdk/types.js')
+const { ListToolsRequestSchema, CallToolRequestSchema } = require('@modelcontextprotocol/sdk/types.js')
 const modelVisibleTextBytes = (content: readonly { type: string; text?: string }[]) =>
   content.reduce(
     (total, block) => total + (block.type === 'text' ? Buffer.byteLength(block.text ?? '', 'utf8') : 0),
@@ -103,16 +107,20 @@ function fakeApi() {
   const warn = vi.fn()
   return {
     api: {
-      registerTool: (tool: ToolDef) => {
-        tools.push(tool)
-        return () => disposed.push(`tool:${tool.name}`)
+      tools: {
+        register: (tool: ToolDef) => {
+          tools.push(tool)
+          return () => disposed.push(`tool:${tool.name}`)
+        },
       },
-      registerResource: (resource: ResourceEntry) => {
-        resources.push(resource)
-        return () => disposed.push(`resource:${resource.id}`)
+      resources: {
+        register: (resource: ResourceEntry) => {
+          resources.push(resource)
+          return () => disposed.push(`resource:${resource.id}`)
+        },
       },
-      ctx: { log: { debug() {}, info() {}, warn, error() {} } },
-    } as unknown as ExtensionAPI,
+      self: { log: { debug() {}, info() {}, warn, error() {} } },
+    } as unknown as Pick<Context, 'tools' | 'resources' | 'self'>,
     disposed,
     resources,
     tools,
@@ -137,12 +145,132 @@ function hostileMessageError() {
 }
 
 const stdio = { id: 'gh', transport: 'stdio' as const, cmd: ['gh-mcp'], defer: true }
-// The prefix is `mcp_gh_<hash8('gh')>_`, not the old plain `mcp_gh_` -- computed via the shared
-// function rather than hardcoded, so this file does not itself become a second place a collision
-// fix could silently miss (design 2026-09-23-mcp-tool-name-collision-design.md §0.4).
-const GH_PREFIX = mcpLocalToolPrefix('gh')
+
+/** The one registered name per remote tool, in catalog order. */
+function admittedNames(serverId: string, remoteNames: readonly string[]): string[] {
+  const reserved = new Set<string>()
+  return remoteNames.map((remote) => {
+    const name = mcpPublicToolName(serverId, remote, reserved)
+    reserved.add(name)
+    return name
+  })
+}
 
 describe('registerRemoteToolsStrict', () => {
+  it('isolates non-object roots through the real HTTP SDK while retaining other server tools', async () => {
+    const mcp = new McpServer({ name: 'mixed-roots', version: '1' }, { capabilities: { tools: {} } })
+    mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
+      tools: [
+        { name: 'bad', description: 'invalid root', inputSchema: { type: 'string' } },
+        { name: 'empty', description: 'empty root', inputSchema: {} },
+        {
+          name: 'properties',
+          description: 'object-like root',
+          inputSchema: { properties: { text: { type: 'string' } } },
+        },
+        { name: 'valid', description: 'object root', inputSchema: { type: 'object' } },
+        {
+          name: 'bad_output',
+          description: 'checked output',
+          inputSchema: { type: 'object' },
+          outputSchema: { type: 'object', properties: { value: { type: 'integer' } }, required: ['value'] },
+        },
+      ],
+    }))
+    mcp.setRequestHandler(CallToolRequestSchema, async ({ params }: { params: { name: string } }) => ({
+      content: [{ type: 'text', text: `ok ${params.name}` }],
+      ...(params.name === 'bad_output' ? { structuredContent: { value: 'invalid' } } : {}),
+    }))
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    })
+    await mcp.connect(transport)
+    const http = createServer((req, res) => {
+      void transport.handleRequest(req, res)
+    })
+    await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve))
+    const address = http.address()
+    if (!address || typeof address === 'string') throw new Error('missing fixture listener')
+    let connection: McpConnection | undefined
+    let dispose: (() => void) | undefined
+    try {
+      const cfg = {
+        id: 'real-roots',
+        transport: 'http' as const,
+        url: `http://127.0.0.1:${address.port}/mcp`,
+        defer: false,
+      }
+      connection = await connectMcp(cfg)
+      const f = fakeApi()
+      const reported = vi.fn()
+      dispose = await registerRemoteToolsStrict(f.api, connection, cfg, { onRemoteCatalog: reported })
+      expect(reported.mock.calls[0]?.[1]).toEqual([{ code: 'invalid-schema', name: 'bad' }])
+      expect(f.tools.map((tool) => tool.name)).toEqual(
+        admittedNames(cfg.id, ['empty', 'properties', 'valid', 'bad_output']),
+      )
+      for (const name of ['empty', 'properties', 'valid']) {
+        const tool = f.tools.find((tool) => tool.name === mcpPublicToolName(cfg.id, name))
+        if (!tool) throw new Error(`missing admitted tool ${name}`)
+        expect(await tool.execute({}, ctxOf())).toMatchObject({
+          content: [{ type: 'text', text: `ok ${name}` }],
+        })
+      }
+      const checkedOutput = f.tools.find((tool) => tool.name === mcpPublicToolName(cfg.id, 'bad_output'))
+      if (!checkedOutput) throw new Error('missing output-validated tool')
+      expect(await checkedOutput.execute({}, ctxOf())).toMatchObject({
+        isError: true,
+        content: [{ type: 'text', text: expect.stringContaining("does not match the tool's output schema") }],
+      })
+    } finally {
+      dispose?.()
+      await connection?.close()
+      await mcp.close()
+      http.closeAllConnections()
+      await new Promise<void>((resolve, reject) => http.close((error) => (error ? reject(error) : resolve())))
+    }
+  })
+
+  it('reports one non-object tool refusal while the rest of its server remains callable', async () => {
+    const f = fakeApi()
+    const reported = vi.fn()
+    const conn: McpConnection = {
+      id: 'mixed',
+      listTools: async () => [
+        { name: 'bad', description: 'invalid root', inputSchema: { type: 'string' } },
+        { name: 'empty', description: 'empty arguments', inputSchema: {} },
+        { name: 'valid', description: 'valid arguments', inputSchema: { type: 'object' } },
+      ],
+      callTool: async (name) => ({ content: [{ type: 'text', text: `ok ${name}` }] }),
+      close: vi.fn(async () => {}),
+    }
+    const dispose = await registerRemoteToolsStrict(
+      f.api,
+      conn,
+      { ...stdio, id: 'mixed' },
+      {
+        onRemoteCatalog: reported,
+      },
+    )
+    try {
+      expect(reported.mock.calls[0]?.[1]).toEqual([{ code: 'invalid-schema', name: 'bad' }])
+      expect(reported.mock.calls[0]?.[0].map((tool: { inputSchema: unknown }) => tool.inputSchema)).toEqual([
+        { type: 'object' },
+        { type: 'object' },
+      ])
+      expect(f.tools.map((tool) => tool.name)).toEqual(admittedNames('mixed', ['empty', 'valid']))
+      for (const name of ['empty', 'valid']) {
+        const tool = f.tools.find((tool) => tool.name === mcpPublicToolName('mixed', name))!
+        expect(await tool.execute({}, ctxOf())).toMatchObject({
+          content: [{ type: 'text', text: `ok ${name}` }],
+        })
+      }
+      expect(conn.close).not.toHaveBeenCalled()
+    } finally {
+      dispose()
+    }
+  })
+
   const connection = (): McpConnection => ({
     id: 'gh',
     async listTools() {
@@ -185,30 +313,31 @@ describe('registerRemoteToolsStrict', () => {
     await registerRemoteToolsStrict(dotServer.api, oneToolConn('a.b'), { ...stdio, id: 'a.b' })
     await registerRemoteToolsStrict(underscoreServer.api, oneToolConn('a_b'), { ...stdio, id: 'a_b' })
 
-    expect(dotServer.tools).toHaveLength(1)
-    expect(underscoreServer.tools).toHaveLength(1)
+    expect(dotServer.tools.map((tool) => tool.name)).toEqual(admittedNames('a.b', ['read']))
+    expect(underscoreServer.tools.map((tool) => tool.name)).toEqual(admittedNames('a_b', ['read']))
     expect(dotServer.tools[0]?.name).not.toBe(underscoreServer.tools[0]?.name)
+    const shared = dotServer.tools
+      .map((tool) => tool.name)
+      .filter((name) => underscoreServer.tools.some((tool) => tool.name === name))
+    expect(shared).toEqual([])
   })
 
   it('does not reject a long server id that used to leave no room for any remote tool name', async () => {
     // The old sanitizer had no length cap of its own (unlike slugOf's 40-character cap, reused here
-    // via mcpLocalToolPrefix): a long enough serverId made `prefix.length >= 64` true for every one of
+    // via mcpStablePrefix): a long enough serverId made `prefix.length >= 64` true for every one of
     // that server's tools, so the whole server would fail to register no matter what its remote tools
     // were named.
     const longId = `server-${'x'.repeat(80)}`
     const { api, tools } = fakeApi()
     await registerRemoteToolsStrict(api, { ...connection(), id: longId }, { ...stdio, id: longId })
-    expect(tools.map((tool) => tool.name)).toEqual([
-      `${mcpLocalToolPrefix(longId)}list_prs`,
-      `${mcpLocalToolPrefix(longId)}merge`,
-    ])
+    expect(tools.map((tool) => tool.name)).toEqual(admittedNames(longId, ['list_prs', 'merge']))
   })
 
   it('registers prefixed tools, hint-derived metadata, and one server resource', async () => {
     const { api, resources, tools } = fakeApi()
     await registerRemoteToolsStrict(api, connection(), stdio)
 
-    expect(tools.map((tool) => tool.name)).toEqual([`${GH_PREFIX}list_prs`, `${GH_PREFIX}merge`])
+    expect(tools.map((tool) => tool.name)).toEqual(admittedNames('gh', ['list_prs', 'merge']))
     expect(tools.every((tool) => checkToolDef(tool, { prefix: 'mcp_' }).ok)).toBe(true)
     expect(tools[0]?.meta).toMatchObject({
       deferLoading: true,
@@ -221,9 +350,31 @@ describe('registerRemoteToolsStrict', () => {
       isDestructive: true,
       isReadOnly: false,
       replay: 'never',
-      requiresApproval: undefined,
+      requiresApproval: 'always',
     })
     expect(resources).toEqual([{ id: 'gh', kind: 'mcp', name: 'gh', description: 'MCP server gh (2 tools)' }])
+    for (const [annotations, expected] of [
+      [
+        { readOnlyHint: true, destructiveHint: true, idempotentHint: true },
+        { isReadOnly: false, isDestructive: true, replay: 'idempotent', requiresApproval: 'always' },
+      ],
+      [
+        { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+        { isReadOnly: false, isDestructive: false, replay: 'never', requiresApproval: 'always' },
+      ],
+      [
+        { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+        { isReadOnly: false, isDestructive: false, replay: 'idempotent', requiresApproval: undefined },
+      ],
+    ] as const) {
+      const fixture = fakeApi()
+      await registerRemoteToolsStrict(fixture.api, connection(), stdio, {
+        catalog: [
+          { name: 'annotated', description: 'Device action', inputSchema: { type: 'object' }, annotations },
+        ],
+      })
+      expect(fixture.tools[0]?.meta).toMatchObject(expected)
+    }
   })
 
   it('forwards calls and converts images into artifact-backed author content', async () => {
@@ -583,13 +734,67 @@ describe('registerRemoteToolsStrict', () => {
     })
   })
 
-  it('turns a call-time outage into an error result without leaking an exception', async () => {
+  // A failure that may have reached the server says nothing about what a tool that changes things
+  // did, so it throws and Core records an unknown outcome rather than the model retrying. A call
+  // refused before sending, one the server answered with an error, and any read stay plain errors.
+  it.each([
+    { tool: 'merge', error: new Error('Request timed out'), expected: 'throws' },
+    {
+      tool: 'merge',
+      error: new McpCallError('not_sent', 'MCP connection is closed'),
+      expected: 'unavailable',
+    },
+    {
+      tool: 'merge',
+      error: new McpCallError('answered', 'MCP error -32602: bad'),
+      expected: 'returned an error',
+    },
+    { tool: 'list_prs', error: new Error('Request timed out'), expected: 'unavailable' },
+  ])(
+    'reports a $tool call that failed with "$error.message" as $expected',
+    async ({ tool, error, expected }) => {
+      const conn = connection()
+      conn.callTool = async () => Promise.reject(error)
+      const { api, tools } = fakeApi()
+      await registerRemoteToolsStrict(api, conn, stdio)
+      const execute = (tools[tool === 'list_prs' ? 0 : 1] as ToolDef).execute({}, ctxOf())
+      if (expected === 'throws') {
+        await expect(execute).rejects.toThrow(`mcp server gh did not answer the call: ${error.message}`)
+        return
+      }
+      await expect(execute).resolves.toEqual({
+        content: [{ type: 'text', text: `mcp server gh ${expected}: ${error.message}` }],
+        isError: true,
+      })
+    },
+  )
+
+  it('gives the remote call the tool deadline instead of the SDK default', async () => {
+    const conn = connection()
+    const seen: Array<number | undefined> = []
+    conn.callTool = async (_name, _args, opts) => {
+      seen.push(opts.timeoutMs)
+      return { content: [{ type: 'text', text: 'ok' }] }
+    }
     const { api, tools } = fakeApi()
-    await registerRemoteToolsStrict(api, connection(), stdio)
+    await registerRemoteToolsStrict(api, conn, stdio)
+    await (tools[1] as ToolDef).execute({}, ctxOf({ timeoutMs: 300_000 }))
+    expect(seen).toEqual([300_000])
+  })
+
+  // The server answered, so the call ran: a tool that changes things is reported as the server
+  // reported it, with the content it could not show left out.
+  it('does not turn unshowable content from a completed write into a failure', async () => {
+    const conn = connection()
+    conn.callTool = async () => ({ content: [imageBlock(SMALL_PNG)] })
+    const { api, tools } = fakeApi()
+    await registerRemoteToolsStrict(api, conn, stdio)
     const result = await (tools[1] as ToolDef).execute({}, ctxOf())
-    expect(result).toEqual({
-      content: [{ type: 'text', text: 'mcp server gh unavailable: boom' }],
-      isError: true,
+    expect(result.isError).toBeUndefined()
+    expect(result.content[0]).toMatchObject({
+      text: expect.stringContaining(
+        'mcp server gh completed the call but returned content that cannot be shown',
+      ),
     })
   })
 
@@ -737,11 +942,25 @@ describe('registerRemoteToolsStrict', () => {
     expect(result).toMatchObject({ content: [{ text: expect.stringContaining('[REDACTED]') }] })
   })
 
-  it('rejects a malformed or colliding remote catalog before partial registration', async () => {
+  it('hashes a rewritten remote name so a-b and a_b are both admitted', async () => {
     const { api, resources, tools } = fakeApi()
     const conn = connection()
     conn.listTools = async () => [
       { name: 'a-b', description: '', inputSchema: { type: 'object' } },
+      { name: 'a_b', description: '', inputSchema: { type: 'object' } },
+    ]
+    await registerRemoteToolsStrict(api, conn, stdio)
+    const names = tools.map((tool) => tool.name)
+    expect(names).toEqual(admittedNames('gh', ['a-b', 'a_b']))
+    expect(new Set(names).size).toBe(names.length)
+    expect(resources).toHaveLength(1)
+  })
+
+  it('rejects an identical raw name before partial registration', async () => {
+    const { api, resources, tools } = fakeApi()
+    const conn = connection()
+    conn.listTools = async () => [
+      { name: 'a_b', description: '', inputSchema: { type: 'object' } },
       { name: 'a_b', description: '', inputSchema: { type: 'object' } },
     ]
     await expect(registerRemoteToolsStrict(api, conn, stdio)).rejects.toThrow('collision')
@@ -753,7 +972,10 @@ describe('registerRemoteToolsStrict', () => {
     const { api } = fakeApi()
     const close = vi.fn(async () => undefined)
     const conn = { ...connection(), close }
-    const claimedNames = new Set([`${GH_PREFIX}list_prs`])
+    const stable = mcpPublicToolName('gh', 'list_prs')
+    const hashed = mcpPublicToolName('gh', 'list_prs', new Set([stable]))
+    const alt = mcpPublicToolName('gh', 'list_prs', new Set([stable, hashed]))
+    const claimedNames = new Set([stable, hashed, alt])
     await expect(
       registerRemoteToolsStrict(api, conn, stdio, { claimedNames, ownsConnection: false }),
     ).rejects.toThrow('duplicate MCP tool name')
@@ -847,7 +1069,13 @@ describe('registerRemoteToolsStrict', () => {
     dispose()
     dispose()
     await Promise.resolve()
-    expect(disposed).toEqual([`tool:${GH_PREFIX}merge`, `tool:${GH_PREFIX}list_prs`, 'resource:gh'])
+    const names = admittedNames('gh', ['list_prs', 'merge'])
+    expect(disposed).toEqual(
+      [...names]
+        .reverse()
+        .map((name) => `tool:${name}`)
+        .concat('resource:gh'),
+    )
     expect(close).toHaveBeenCalledTimes(1)
   })
   it('enforces an allow policy before registration and strict catalog health checks', async () => {
@@ -856,7 +1084,7 @@ describe('registerRemoteToolsStrict', () => {
     expect((await inspectRemoteCatalog(conn, cfg)).tools).toHaveLength(1)
     const state = fakeApi()
     await registerRemoteToolsStrict(state.api, conn, cfg)
-    expect(state.tools.map((tool) => tool.name)).toEqual([`${GH_PREFIX}list_prs`])
+    expect(state.tools.map((tool) => tool.name)).toEqual(admittedNames('gh', ['list_prs']))
   })
 })
 
@@ -873,7 +1101,7 @@ describe('connectMcp', () => {
       createClient: () => sdkClient,
       createStdioTransport: (params) => {
         stdioParams.push(params)
-        const transport = { kind: 'stdio' }
+        const transport = { kind: 'stdio', stderr: new PassThrough() }
         transports.push(transport)
         return transport as never
       },
@@ -900,14 +1128,19 @@ describe('connectMcp', () => {
     return {
       setElicitationHandler: vi.fn(),
       setToolListChangedHandler: vi.fn(),
-      connect: vi.fn(async () => undefined),
+      setResourceListChangedHandler: vi.fn(),
+      getServerCapabilities: vi.fn(() => ({})),
+      listResources: vi.fn(async () => ({ resources: [] })),
+      listResourceTemplates: vi.fn(async () => ({ resourceTemplates: [] })),
+      readResource: vi.fn(async () => ({ contents: [] })),
+      connect: vi.fn(async (_transport?: unknown) => undefined),
       listTools: vi.fn(async (_params?: { cursor?: string }) => ({
         tools: [
           {
             name: 'echo',
             description: 'echo text',
             inputSchema: { type: 'object' as const },
-            annotations: { readOnlyHint: true },
+            annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
           },
         ],
       })),
@@ -923,6 +1156,7 @@ describe('connectMcp', () => {
       {
         command: 'gh-mcp',
         args: ['--stdio'],
+        stderr: 'pipe',
         env: { HOME: '/safe/home', PATH: '/safe/bin', TOKEN: 'resolved' },
       },
     ])
@@ -930,6 +1164,12 @@ describe('connectMcp', () => {
     expect(sdkClient.setElicitationHandler).toHaveBeenCalledOnce()
     expect(sdkClient.setElicitationHandler.mock.calls[0]?.[0]()).toEqual({ action: 'decline' })
     expect(conn.id).toBe('gh')
+    expect((await conn.listTools())[0]?.annotations).toEqual({
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+    })
+    await conn.close()
   })
 
   it('forwards the SDK tools/list_changed notification to onToolsChanged listeners, and stops after close', async () => {
@@ -1009,12 +1249,47 @@ describe('connectMcp', () => {
     expect(sdkClient.listTools).toHaveBeenNthCalledWith(2, { cursor: 'next' })
 
     const signal = new AbortController().signal
-    expect(await conn.callTool('first', { x: 1 }, { signal })).toEqual({
+    expect(await conn.callTool('first', { x: 1 }, { signal, timeoutMs: 300_000 })).toEqual({
       content: [{ type: 'text', text: 'ok' }],
     })
     expect(sdkClient.callTool).toHaveBeenCalledWith({ name: 'first', arguments: { x: 1 } }, undefined, {
       signal,
+      timeout: 300_000,
     })
+  })
+
+  // Only a failure known not to have run the tool is marked as such; a local timeout or a dropped
+  // connection after the request was written is passed on unmarked.
+  it.each([
+    { thrown: new Error('Not connected'), stage: 'not_sent' },
+    { thrown: new McpError(ErrorCode.InvalidParams, 'bad arguments'), stage: 'answered' },
+    { thrown: new McpError(ErrorCode.RequestTimeout, 'Request timed out'), stage: undefined },
+    { thrown: new McpError(ErrorCode.ConnectionClosed, 'Connection closed'), stage: undefined },
+  ])('classifies an SDK "$thrown.message" as $stage', async ({ thrown, stage }) => {
+    const sdkClient = client()
+    sdkClient.callTool = vi.fn(async () => Promise.reject(thrown)) as never
+    const { deps } = fakeSdk(sdkClient)
+    const conn = await connectMcp(stdio, deps)
+    const failure = await conn.callTool('echo', {}, { signal: new AbortController().signal }).catch((e) => e)
+    expect(failure instanceof McpCallError ? failure.stage : undefined).toBe(stage)
+    expect(failure.message).toBe(thrown.message)
+  })
+
+  it('refuses before sending on a closed connection, invalid arguments or a cancelled call', async () => {
+    const { deps, sdkClient } = fakeSdk()
+    const conn = await connectMcp(stdio, deps)
+    const aborted = new AbortController()
+    aborted.abort()
+    for (const [args, signal] of [
+      [[], new AbortController().signal],
+      [{}, aborted.signal],
+    ] as const)
+      await expect(conn.callTool('echo', args, { signal })).rejects.toMatchObject({ stage: 'not_sent' })
+    await conn.close()
+    await expect(conn.callTool('echo', {}, { signal: new AbortController().signal })).rejects.toMatchObject({
+      stage: 'not_sent',
+    })
+    expect(sdkClient.callTool).not.toHaveBeenCalled()
   })
 
   it('passes resolved HTTP credentials only to the transport request init', async () => {
@@ -1052,7 +1327,7 @@ describe('connectMcp', () => {
 
   it('closes a partially connected client and rejects missing transport operands', async () => {
     const { deps, sdkClient } = fakeSdk({ connect: vi.fn(async () => Promise.reject(new Error('no'))) })
-    await expect(connectMcp(stdio, deps)).rejects.toThrow('no')
+    await expect(connectMcp(stdio, deps)).rejects.toMatchObject({ code: 'MCP_STDIO_CLOSED' })
     expect(sdkClient.close).toHaveBeenCalledTimes(1)
 
     const untouched = fakeSdk()
@@ -1061,6 +1336,27 @@ describe('connectMcp', () => {
     ).rejects.toThrow(/cmd/)
     expect(untouched.deps.createClient).toBeTypeOf('function')
     expect(untouched.sdkClient.connect).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['OPENCLAW_ELECTRON_PATH is not set', 'MCP_STDIO_ENV_MISSING'],
+    ['npm error code EACCES', 'MCP_STDIO_ACCESS_DENIED'],
+    ['npm error code ENOTFOUND', 'MCP_STDIO_NETWORK_FAILED'],
+    ['Error: Cannot find module /private/runtime.js', 'MCP_STDIO_RUNTIME_UNAVAILABLE'],
+    ['unexpected private server output', 'MCP_STDIO_CLOSED'],
+  ])('reports a safe startup category for %s', async (stderr, code) => {
+    const { deps } = fakeSdk({
+      connect: vi.fn(async (transport?: unknown) => {
+        const stream = (transport as { stderr: PassThrough }).stderr
+        stream.write('private-secret-value\n' + stderr.slice(0, 8))
+        stream.write(stderr.slice(8))
+        throw new Error('private-secret-value in arbitrary failure')
+      }),
+    })
+    const error = await connectMcp(stdio, deps).catch((error: unknown) => error)
+    expect(error).toMatchObject({ code })
+    expect(String(error)).not.toContain('private-secret-value')
+    expect(String(error)).not.toContain('/private/runtime.js')
   })
 
   it('rejects an unrecognized transport kind instead of silently connecting over Streamable HTTP', async () => {
@@ -1328,6 +1624,11 @@ describe('connectMcp HTTP redirect handling', () => {
       createClient: () => ({
         setElicitationHandler: () => undefined,
         setToolListChangedHandler: () => undefined,
+        setResourceListChangedHandler: () => undefined,
+        getServerCapabilities: () => ({}),
+        listResources: async () => ({ resources: [] }),
+        listResourceTemplates: async () => ({ resourceTemplates: [] }),
+        readResource: async () => ({ contents: [] }),
         connect: async () => undefined,
         listTools: async () => ({ tools: [] }),
         callTool: async () => ({ content: [] }),

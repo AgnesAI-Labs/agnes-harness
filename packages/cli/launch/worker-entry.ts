@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 import { fileURLToPath } from 'node:url'
-import { runRuntimeTargetProbeExecutable, runWorkerExecutable } from '@agnes/daemon/worker'
+import {
+  reportWorkerBootFailure,
+  runRuntimeTargetProbeExecutable,
+  runWorkerExecutable,
+} from '@agnes/daemon/worker'
 import { agnesHome } from '@agnes/host'
 import { createPackagedHost } from './packaged-host.js'
 import { workerFailureCode } from './worker-failure.js'
@@ -18,7 +22,8 @@ const worker =
           }),
       })
 
-void worker.catch((error: unknown) => {
+void worker.catch(async (error: unknown) => {
+  await reportWorkerBootFailure(error)
   // The supervisor receives the nonzero exit; package/provider secrets do not become process logs.
   process.stderr.write(`packaged worker failed to assemble or connect (${workerFailureCode(error)})\n`)
   process.exit(1)

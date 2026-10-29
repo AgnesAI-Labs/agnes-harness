@@ -1,5 +1,5 @@
+import type { EventInput } from '@agnes/core-common/types'
 import type { Actor } from '@agnes/protocol'
-import type { EventInput } from '../types.js'
 
 /**
  * A row the harness itself writes, on a session's lane. Every segment writes rows of this shape and

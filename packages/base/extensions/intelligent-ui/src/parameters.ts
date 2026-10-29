@@ -1,0 +1,46 @@
+import { X_AGNES_UI_TOOL_GUIDANCE } from '@agnes/protocol/gen/intelligent-ui'
+import type { TSchema } from '@sinclair/typebox'
+
+/** Type.Module.Import carries every module definition. Keep the transitive closure of this root. */
+export function reachableParameters<T extends TSchema>(schema: T): T {
+  const guidance: Record<string, string> = X_AGNES_UI_TOOL_GUIDANCE
+  const original = schema.$defs as Record<string, TSchema> | undefined
+  const definitions =
+    original &&
+    Object.fromEntries(
+      Object.entries(original).map(([name, def]) => [
+        name,
+        guidance[name] ? { ...def, description: guidance[name] } : def,
+      ]),
+    )
+  if (!definitions) return schema
+  // Preserve the definition's TypeBox kind (Object rather than Import) for Value.Check.
+  const rootKey =
+    typeof schema.$ref === 'string'
+      ? schema.$ref.startsWith('#/$defs/')
+        ? schema.$ref.slice('#/$defs/'.length)
+        : schema.$ref
+      : undefined
+  const root = rootKey && Object.hasOwn(definitions, rootKey) ? (definitions[rootKey] as TSchema) : undefined
+  const normalized = root ? { ...schema, ...root } : { ...schema }
+  if (root) delete normalized.$ref
+  const reachable: Record<string, unknown> = {}
+  const visit = (value: unknown): void => {
+    if (!value || typeof value !== 'object') return
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item)
+      return
+    }
+    const row = value as Record<string, unknown>
+    if (typeof row.$ref === 'string') {
+      const key = row.$ref.startsWith('#/$defs/') ? row.$ref.slice('#/$defs/'.length) : row.$ref
+      if (Object.hasOwn(definitions, key) && !Object.hasOwn(reachable, key)) {
+        reachable[key] = definitions[key]
+        visit(definitions[key])
+      }
+    }
+    for (const [key, item] of Object.entries(row)) if (key !== '$defs') visit(item)
+  }
+  visit(normalized)
+  return { ...normalized, $defs: reachable }
+}

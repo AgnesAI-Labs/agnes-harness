@@ -102,6 +102,7 @@ it('the real remote worker fork keeps the parent owner directory and child bindi
     profileInputs: {
       user: {
         name: 'local-dev',
+        providers: { sandbox: { provider: 'fork-remote' } },
         packages: [
           {
             id: '@agnes/base',
@@ -116,7 +117,15 @@ it('the real remote worker fork keeps the parent owner directory and child bindi
     },
     packages: {
       '@agnes/base': {
-        openTransport: async () => transport,
+        sandboxProvider: {
+          id: 'fork-remote',
+          version: '1.0.0',
+          capabilities: { network: true, fsWrite: [], platform: [], available: true },
+          create: () => {
+            throw new Error('a remote provider carries commands through the Host channel')
+          },
+          openTransport: async () => transport,
+        },
       },
     },
   })
@@ -247,6 +256,7 @@ it('the real remote worker fork keeps the parent owner directory and child bindi
       workspaceId: 'a'.repeat(64),
       authorityRevision: 7,
       canonicalRoot: root,
+      extraRoots: [],
     })
     expect(parent.d).not.toHaveProperty('workspaceRuntime')
     expect(hosted.keys()).toEqual([sessionKey, 'worker-child'])

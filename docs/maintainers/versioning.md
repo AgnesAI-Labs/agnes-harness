@@ -16,6 +16,8 @@ Independently distributed packages use Semantic Versioning, managed according to
 
 Extension API has its own version and [changelog](../../packages/extension-api/docs/CHANGELOG.md). A package version does not establish overall product stability or acceptance across platforms.
 
+A workspace deploy manifest states the harness it supports in `harnessRange`. That range is checked against the harness contract version, `HARNESS_VERSION` exported by `@agnes/protocol` and equal to that package's version. It is not checked against a build's own version, so an unpublished `0.0.0` build accepts the manifests written for the contract it implements.
+
 The first npm distribution requires a selected package set, release versions, compatibility notes, and dependency resolution. Remove `private` only from selected packages. Breaking published interfaces requires a major increment, compatible features a minor increment, and compatible fixes a patch increment. Release tags use `<package-name>@v<version>`. Publishing resolves `workspace:*` dependencies to compatible versions, while the repository lockfile continues to pin development and CI dependencies.
 
-Read change notes and preserve required data before upgrading. Follow the appropriate procedures for user-configuration migration, runtime-directory replacement, and Git source changes; changing a version number does not perform those operations.
+Read change notes and preserve required data before upgrading. Runtime data is not migrated. Unsupported home layouts require a new home; incompatible SQLite directories require the [data-format recovery](../guide/install.md#data-format-and-upgrade) procedure, preserving profiles. Replace runtime builds and switch Git revisions separately; a version-number edit performs none of these operations.

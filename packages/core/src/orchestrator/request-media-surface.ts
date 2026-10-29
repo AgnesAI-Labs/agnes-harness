@@ -1,9 +1,9 @@
 import { types as utilTypes } from 'node:util'
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
+import type { Event } from '@agnes/core-common/types'
+import type { SurfaceNode } from '@agnes/core-ledger/project/surface'
 import { type RequestMediaHeader, validateRequestMedia } from '@agnes/protocol'
 import { decodeSafeImageBytes, SafeImageError } from '@agnes/protocol-validation'
-import type { SurfaceNode } from '../project/surface.js'
-import { canonicalJson, sha256Hex } from '../request/hash.js'
-import type { Event } from '../types.js'
 import {
   forgetVerifiedRequestMediaImage,
   isPreparedRequestMedia,

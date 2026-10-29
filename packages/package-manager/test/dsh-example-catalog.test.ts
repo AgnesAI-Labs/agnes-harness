@@ -13,7 +13,10 @@ const dshFamilies = [
 describe('DSH local example catalog', () => {
   it('publishes v1 and v2 for every DSH family, but no broken candidate by default', async () => {
     const catalog = await createLocalExamplesCatalog({ workspace, now: () => 0 })
-    const entries = (await catalog.read({ offline: true })).entries.filter((entry) =>
+    const all = (await catalog.read({ offline: true })).entries
+    for (const application of all.filter((entry) => entry.application?.brand?.mark))
+      expect(application.applicationAssets?.mark).toMatch(/^data:image\/png;base64,/)
+    const entries = all.filter((entry) =>
       dshFamilies.some((family) => entry.id === `@agnes-examples/${family}`),
     )
 

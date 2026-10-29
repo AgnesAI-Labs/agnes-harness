@@ -1,0 +1,87 @@
+# 程序化工具调用与工作流
+
+[English](code-workflows.md) | 简体中文
+
+创建本地会话时选择 **ptc** preset，例如 `agh --preset ptc`。它向模型展示 `run_code`，
+并提供工具参数的 TypeScript 类型声明。preset 不决定权限：未另选时会话使用
+`workspace-write`，也可组合其他级别，例如 `agh --preset ptc --permission read-only`，
+见[权限与预设](security.zh-CN.md#permissions-and-presets)。
+每个 cell 运行在所选 sandbox provider 管理的独立 Node 进程中，
+支持顶层 await 和 return；变量不会跨 cell 保留。
+cell 使用 Node 类型擦除，支持类型注解；enum、构造器参数属性等需要运行时转换的
+TypeScript 语法请改用普通 JavaScript 写法。
+
+## 批量调用独立工具
+
+模型的一次回复可包含多个工具调用。将互不依赖的读取、搜索和状态查询放在同一回复中：只读调用可以并发执行，其他调用按给定顺序执行。后续参数依赖前一步结果时，先读取结果再决定。无需中间检查的连续 shell 步骤可以用 `&&` 或短脚本合并成一条命令。
+
+在 `run_code` 中须等待每个调用并检查每项结果，例如用 `Promise.allSettled` 收取独立读取。桥接最多允许四个并发调用；不要并行修改同一文件，也不要并行执行依赖批准或前一步结果的步骤。转入后台作业的返回不代表完成：用返回 ID 调用 `job_output` 检查实际状态，不要重复启动。详见[shell 等待上限与作业控制](../reference/default-tools.zh-CN.md)。
+
+## 运行工作流
+
+```ts
+return await tools.workflow({
+  name: 'review',
+  stages: [
+    { name: '检查', members: [
+      { name: '测试', task: '检查测试覆盖，不修改文件。' },
+      { name: '设计', task: '检查模块边界，不修改文件。' },
+    ] },
+    { name: '汇总', members: [
+      { name: '报告', task: '汇总上一阶段的检查结果。' },
+    ] },
+  ],
+})
+```
+
+普通审批策略要求批准 cell；嵌套工具仍经过后端的参数校验、审批、
+预算和深度检查。每个 cell 最多接受 256 次桥调用，同时最多运行 4 次，
+并受执行时间和输出限制。取消会终止进程并取消未完成的桥调用。
+代码中的直接进程操作也受会话权限的隔离限制。
+
+cell 内调用的工具不会进入模型上下文：只有 cell 打印或返回的内容会回到模型，
+嵌套调用及其结果仍保留在会话记录中。`run_code` 的结果末尾带一行
+`nested calls:`，逐个列出非只读调用的结果（ok、error，或等待批准的 pending），
+并统计只读调用的数量。
+桥错误码 1006（`APPROVAL_PENDING`）表示某个嵌套调用正在等待用户批准，
+此时 cell 应当结束。如果有多个调用收到 1006，只有其中一个在等待批准，
+其余调用已被撤回且没有执行；若仍需要，应在批准处理完毕后重新调用。
+cell 结束后才获批的调用已经执行完毕，
+任何没有被代码消费的嵌套结果都会通过 `[nested result]` 备注告知模型。
+
+官方 preset 设置 `raw_io: false`，Node 权限模式禁止直接文件访问和创建子进程；
+这些操作需要使用受审批的工具。自定义 preset 可显式设置
+`code_runtime.raw_io: true`，此时按整个 cell 审批，结果标记为
+`ioEnforcement: cell-approval`，进程仍遵守会话的 OS 沙箱。
+
+工作流按顺序执行阶段，每阶段最多并行运行 4 个成员。
+子任务使用官方 subagent_spawn 工具，继承深度、扇出、预算和 worktree 策略。
+后续阶段收到上一阶段的有界结果；成员失败后停止工作流。
+
+默认子 Agent 和工作流通过 `@agnes/git-worktree-contract` 的工作区作用域 `gitWorktreeKind` 使用 Git worktree。Host 注册唯一提供者，内置子 Agent 在工具调用期间用 `providers.bindOwn` 绑定它。请先在仓库忽略规则中加入 `.worktrees/`。服务生成分支，仅列出自己登记的 worktree，并在不强制删除的前提下清理干净的工作树；脏工作树和未合并分支保留供审查，所有权及清理阶段在重启后继续有效。创建、列举、删除和清理拒绝以 `worktree-*` 事实呈现在 trace 中。Agent 工具仍不能读取或修改 `.git`。非 Git 仓库、缺少 Git 和远程沙箱分别报告 `not-git`、`git-error`、`remote-sandbox`；省略隔离方式时，仅 `not-git` 会自动改用共享目录，工具结果会说明原因；显式 `isolation: "worktree"` 及其他 worktree 创建失败仍明确拒绝。如确实需要共享工作目录，请显式选择 `isolation: "shared"`。
+
+`ctx.subagent.collect()` 可返回可选的 `receipt`：工作区隔离信息、最多 32 条近期工具结果（名称、账本序号和错误状态），以及 `truncated` 标记。旧版本或外部子代理 provider 可省略该字段；缺失的证据不能视为执行成功回执。
+
+Workflow 回执区分后端工具结果和子代理自行撰写的报告。父代理及后续阶段通过上下文 section 收到当前执行事实，包含工作区隔离方式，以及工具证据是否不完整或不可用。worktree 产物仍留在子工作区，Workflow 不会将子分支合并到主工作区，Web 卡片会明确标注。另行验证集成操作后才能声称文件已进入主工作区；子代理说“已经合并”不构成集成回执。
+
+保留返回的 runId，通过 `workflow_status({ runId })` 查看持久状态，
+或 `workflow({ runId })` 恢复中断的运行。会话 ledger 保存子会话身份，
+恢复时复用已创建的 children 和已完成成员。如果中断发生在创建 child
+与保存身份之间，系统拒绝再次自动派发；先核对不确定的 child，再创建新运行。
+取消会取消已接受的 children；失败或取消的运行不可恢复。
+
+进程内 spawn 子代理从独立任务对话开始。账本保留父会话 ancestry 供审计，但模型不会收到父代理正在执行的工具调用或此前对话。fork 子代理继承在委派工具调用前捕获的上下文前缀；新任务会明确其子代理身份。两者继续遵守已选代码 generation、工具过滤、工作区隔离和权限限制。工作流将上一阶段带成员名的结果明确写入下一子代理任务，不依赖对话继承传递结果。
+
+Web 运行卡按阶段分组。展开阶段可查看成员状态和子会话链接。
+进程内子会话尚未接入 daemon 会话登记和 ownership 注册，因此通过 daemon
+打开这些链接仍待完成该层集成。
+卡片展示记录下来的状态，可调用 workflow_status 刷新。
+有界 projection 可淘汰较早的终态运行，ledger 中的事件仍保留。
+
+本地 provider 在 macOS 和 Linux 支持桥；其他 provider 必须声明
+`capabilities.programmatic: true` 并实现 JSON 请求／响应管道。
+不支持的 provider 会拒绝执行。Windows 和远程 sandbox 当前不支持 PTC。
+自定义 preset 可设置 `code_runtime.language: python` 使用实验性的独立
+CPython cell，需要安装 Python 3 并设置 `raw_io: true`；Python 的
+`raw_io: false` 在 I/O 桥完成前会明确拒绝。它支持顶层 await/return 和相同的工具桥，
+不提供持久 kernel、snapshot 或 restore。

@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { CURSOR_MARKER, createAnsi } from '../../src/tui/ansi.js'
+import { Renderer } from '../../src/tui/renderer.js'
 import {
   detectCapabilities,
   displayWidth,
@@ -143,6 +144,24 @@ describe('ansi tokens', () => {
     expect(createAnsi('truecolor').bg(244, 'x')).toBe('\x1b[48;5;244mx\x1b[49m')
   })
 
+  it('renders #rrggbb exactly in truecolor and as the nearest index on the narrower tiers', () => {
+    expect(createAnsi('truecolor').fg('#5E57FE', 'x')).toBe('\x1b[38;2;94;87;254mx\x1b[39m')
+    expect(createAnsi('truecolor').bg('#5E57FE', 'x')).toBe('\x1b[48;2;94;87;254mx\x1b[49m')
+    expect(createAnsi('256').fg('#5E57FE', 'x')).toBe('\x1b[38;5;63mx\x1b[39m')
+    expect(createAnsi('16').fg('#5E57FE', 'x')).toBe('\x1b[94mx\x1b[39m')
+    expect(createAnsi('none').fg('#5E57FE', 'x')).toBe('x')
+    // Mid gray sits exactly on ramp step 244; the nearest cube colour (102) is 147 away. Among the
+    // 16 basic colours it is one step from bright black (127) and far from white (229).
+    expect(createAnsi('256').bg('#808080', 'x')).toBe('\x1b[48;5;244mx\x1b[49m')
+    expect(createAnsi('16').bg('#808080', 'x')).toBe('\x1b[100mx\x1b[49m')
+  })
+
+  it('italic and underline close with their own reset and vanish without colour', () => {
+    expect(createAnsi('256').italic('x')).toBe('\x1b[3mx\x1b[23m')
+    expect(createAnsi('256').underline('x')).toBe('\x1b[4mx\x1b[24m')
+    expect(createAnsi('none').italic(createAnsi('none').underline('x'))).toBe('x')
+  })
+
   it('the none tier emits no escape byte at all', () => {
     const a = createAnsi('none')
     const out = [a.bold('a'), a.dim('b'), a.fg(200, 'c'), a.bg(200, 'd'), a.reset].join('')
@@ -216,6 +235,54 @@ const fakeStreams = (): {
 }
 
 describe('NodeTerminal', () => {
+  it.each([
+    ['whole', ['hello\x1b[12;34Rworld']],
+    ['fragmented', ['hello\x1b', '[12', ';34Rworld']],
+    ['one byte at a time', Array.from('hello\x1b[12;34Rworld')],
+  ])('removes a requested cursor report from %s input without losing typed text', async (_name, chunks) => {
+    const { stdin, stdout } = fakeStreams()
+    stdout.isTTY = true
+    const terminal = new NodeTerminal(stdin, stdout, {})
+    const seen: string[] = []
+    const off = terminal.onInput((data) => seen.push(data))
+    try {
+      const answer = terminal.queryCursor()
+      await Promise.resolve()
+      for (const chunk of chunks) stdin.emit(chunk)
+      await expect(answer).resolves.toEqual({ row: 12, col: 34 })
+      expect(seen.join('')).toBe('helloworld')
+      stdin.emit('\x1b[1;2R')
+      expect(seen.join('')).toBe('helloworld\x1b[1;2R')
+    } finally {
+      off()
+    }
+  })
+
+  it('releases an unfinished cursor prefix on timeout and preserves other CSI keys', async () => {
+    vi.useFakeTimers()
+    const { stdin, stdout } = fakeStreams()
+    stdout.isTTY = true
+    const terminal = new NodeTerminal(stdin, stdout, {})
+    const seen: string[] = []
+    const off = terminal.onInput((data) => seen.push(data))
+    try {
+      const answer = terminal.queryCursor()
+      await Promise.resolve()
+      stdin.emit('\x1b')
+      stdin.emit('[A')
+      expect(seen.join('')).toBe('\x1b[A')
+      stdin.emit('\x1b[')
+      await vi.runAllTimersAsync()
+      await expect(answer).resolves.toBeUndefined()
+      expect(seen.join('')).toBe('\x1b[A\x1b[')
+      stdin.emit('typed')
+      expect(seen.join('')).toBe('\x1b[A\x1b[typed')
+    } finally {
+      off()
+      vi.useRealTimers()
+    }
+  })
+
   it('asks for the kitty keyboard protocol only where it is understood', () => {
     const kitty = fakeStreams()
     const plain = fakeStreams()
@@ -224,6 +291,34 @@ describe('NodeTerminal', () => {
     expect(kitty.stdout.out).toEqual(['\x1b[>1u'])
     expect(plain.stdout.out).toEqual([])
     expect(plain.stdin.raw).toBe(true)
+  })
+
+  it('pushes and pops the keyboard mode on the alternate screen across start, suspend, resume and stop', () => {
+    const { stdin, stdout } = fakeStreams()
+    const term = new NodeTerminal(stdin, stdout, { TERM_PROGRAM: 'kitty' })
+    const renderer = new Renderer(term, { render: () => ['x'], invalidate() {} })
+    const marks = ['\x1b[>1u', '\x1b[<u', '\x1b[?1049h', '\x1b[?1049l']
+    const seq = () =>
+      stdout.out
+        .join('')
+        .split('\x1b')
+        .map((part) => marks.find((m) => `\x1b${part}`.startsWith(m)))
+        .filter(Boolean)
+    renderer.start()
+    const resume = renderer.suspend()
+    resume()
+    renderer.stop()
+    // The kitty flag stack is per screen: every push follows 1049h and every pop precedes 1049l.
+    expect(seq()).toEqual([
+      '\x1b[?1049h',
+      '\x1b[>1u',
+      '\x1b[<u',
+      '\x1b[?1049l',
+      '\x1b[?1049h',
+      '\x1b[>1u',
+      '\x1b[<u',
+      '\x1b[?1049l',
+    ])
   })
 
   it('pops the keyboard mode it pushed, and only that', () => {

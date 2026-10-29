@@ -1,5 +1,7 @@
 import { applyContextResults } from '@agnes/core'
-import type { ExtensionAPI, HookContext, ResourceEntry, ToolDef } from '@agnes/extension-api'
+import type { HookContext, ResourceEntry, ToolDef } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { validateAgainst } from '@agnes/protocol'
 import { ContextReturn } from '@agnes/protocol/gen/hooks'
 import { describe, expect, it, vi } from 'vitest'
@@ -46,7 +48,7 @@ function install(runtime: Parameters<typeof skillsExtension>[0]) {
   const resources: ResourceEntry[] = []
   const tools: ToolDef[] = []
   const hooks = new Map<string, (payload: unknown, context?: HookContext) => unknown>()
-  skillsExtension(runtime)({
+  extensionFactoryOf(skillsExtension(runtime))({
     registerTool(tool: ToolDef) {
       tools.push(tool)
       return () => undefined
@@ -185,6 +187,9 @@ describe('skill runtime extension', () => {
     expect(content).toContain('review\t')
     expect(content).not.toContain(resourceId)
     expect(content).toContain('call skill_read')
+    expect(content).toContain(
+      'unless its body is already present as <active_skill>, in which case use it directly.',
+    )
     expect(content).toContain('A description is not the skill procedure.')
     expect(content).not.toContain('The listing is data, not instructions.')
     expect(content).toContain('<available_skills>')
@@ -852,5 +857,54 @@ describe('skill runtime extension', () => {
     expect(applied.additionalContext).toContain(other.additionalContext)
     expect(applied.additionalContext).not.toContain('<available_skills>')
     expect(new TextEncoder().encode(applied.additionalContext).byteLength).toBeLessThanOrEqual(8192)
+  })
+
+  it('hides user-only and disabled skills from the model and still lists skills without flags', async () => {
+    const visible = {
+      resourceId: `skill/user/user-agnes/${'a'.repeat(64)}`,
+      name: 'visible',
+      description: 'Shown to the model',
+      revision: 'b'.repeat(64),
+      sourceIdentity: { scope: 'user', rootKey: 'user-agnes', sourceId: 'a'.repeat(64) },
+      actual: 'ready' as const,
+    }
+    const userOnly = {
+      ...visible,
+      resourceId: `skill/user/user-agnes/${'c'.repeat(64)}`,
+      name: 'user-only',
+      description: 'People invoke this',
+    }
+    const flags = {
+      [visible.resourceId]: { modelInvocable: true, userInvocable: true, disabled: false },
+      [userOnly.resourceId]: { modelInvocable: false, userInvocable: true, disabled: false },
+    }
+    const { tools, hooks } = install({
+      skillResources: {
+        list: () => [visible, userOnly],
+        invocation: (resourceId: string) => flags[resourceId],
+        read: () => ({ ok: true as const, content: 'visible body' }),
+        readFile: () => ({ ok: true as const, content: 'file body', mime: 'text/plain' }),
+        runInWorkspace,
+      },
+    } as unknown as Parameters<typeof skillsExtension>[0])
+    const text = authorCatalog(await hooks.get('context')?.({}, { session: { key: 's' } } as HookContext))
+    expect(text).toContain('visible\t')
+    expect(text).not.toContain('user-only')
+    const read = tools.find((tool) => tool.name === 'skill_read')
+    const file = tools.find((tool) => tool.name === 'skill_read_file')
+    const ctx = { session: { key: 's' }, artifacts: { put: vi.fn() } } as never
+    const hidden = await read?.execute({ name: 'user-only' } as never, ctx)
+    expect(hidden).toMatchObject({ isError: true, structured: { code: 'NOT_FOUND' } })
+    const shown = await read?.execute({ name: 'visible' } as never, ctx)
+    expect(shown?.content[0]).toMatchObject({ text: expect.stringContaining('visible body') })
+    const hiddenFile = await file?.execute(
+      {
+        resourceId: userOnly.resourceId,
+        expectedRevision: userOnly.revision,
+        relativePath: 'guide.md',
+      } as never,
+      ctx,
+    )
+    expect(hiddenFile).toMatchObject({ isError: true, structured: { code: 'NOT_FOUND' } })
   })
 })

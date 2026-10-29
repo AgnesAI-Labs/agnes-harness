@@ -1,10 +1,11 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { HookPayloadMap } from '@agnes/extension-api'
 import type { ModelRecord, RequestBody } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { Kernel } from '../src/kernel.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
 import { CompactionRunner } from '../src/step/compaction.js'
-import { presetDefaults } from '../src/step/preset.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, testFsOps } from './helpers/open-session.js'
@@ -40,6 +41,16 @@ const envelopeId = (messages: RequestBody['messages'], marker: string) => {
   const message = messages.find((item) => JSON.stringify(item).includes(marker))
   return /<untrusted id=\\?"([^"]+)/u.exec(JSON.stringify(message))?.[1]
 }
+
+const receiptNotes = (request: RequestBody | undefined) =>
+  request?.messages.filter(
+    (message) =>
+      message.role === 'user' &&
+      message.content.some(
+        (part) =>
+          part.type === 'text' && /^\[live context [a-f0-9]{64}\]\ncore:child-receipts\n/.test(part.text),
+      ),
+  ) ?? []
 
 async function plan(payload: HookPayloadMap['before_compact']) {
   const nodes = payload.getSurface()
@@ -88,6 +99,7 @@ it('updates a summary inherited from the parent and preserves historical envelop
   preset.compaction.keepRecentTokens = 0
   preset.model.id.compaction = 'summary-model'
   const kernel = Kernel.create({
+    loops: defaultLoops(),
     storage: new MemoryStorage(),
     seams: fakeSeams(),
     provider,
@@ -180,6 +192,7 @@ it('routes an unconfigured child compaction slot to the child model target', asy
   expect(preset.model.route.compaction).toBeUndefined()
   expect(preset.model.id.compaction).toBeUndefined()
   const kernel = Kernel.create({
+    loops: defaultLoops(),
     storage: new MemoryStorage(),
     seams: fakeSeams(),
     provider,
@@ -226,6 +239,82 @@ it('routes an unconfigured child compaction slot to the child model target', asy
     } finally {
       await handle.close()
     }
+  } finally {
+    await kernel.close()
+  }
+})
+
+it('counts only committed child creations after three proposals, compaction and ledger recovery', async () => {
+  const storage = new MemoryStorage()
+  const provider = fakeProvider([
+    textTurn('I propose three children.'),
+    textTurn('Earlier prose incorrectly claimed three were spawned.'),
+    textTurn('An unreliable summary says three children were spawned.'),
+    textTurn('Recovered answer'),
+  ])
+  provider.models = () => [model]
+  const create = () =>
+    Kernel.create({
+      loops: defaultLoops(),
+      storage,
+      seams: fakeSeams(),
+      provider,
+      contract: { contract_id: null, parser_version: '1' },
+      preset: { ...presetDefaults(), maxFanOut: 1, treeBudgetCredits: 100 },
+      fsOps: testFsOps(),
+      netFetch: async () => new Response(''),
+      logger,
+      timers: noTimers,
+      clock: () => 1_757_203_200_000,
+    })
+  let kernel = create()
+  try {
+    let parent = await kernel.session('receipt-parent', {
+      actor,
+      resolvedProfileHash: 'h1',
+      cwd: '/w',
+      writerRunId: 'before',
+    })
+    await prompt(parent, 'propose three children')
+    const created = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'first proposal' })
+    for (const input of ['second proposal', 'third proposal'])
+      await expect(parent.d.children.create({ parent: parent.key, cwd: '/w', input })).rejects.toMatchObject({
+        code: 'E_CHILD_LIMIT',
+      })
+    const receipts = await storage.listByParent(parent.key)
+    expect(receipts.filter((row) => row.creationPhase === 'committed').map((row) => row.childKey)).toEqual([
+      created.key,
+    ])
+    await prompt(parent, 'report the actual spawn count')
+    expect(receiptNotes(provider.requests.at(-1))).toHaveLength(1)
+    expect(JSON.stringify(receiptNotes(provider.requests.at(-1)))).toContain(
+      'Successfully created children: 1.',
+    )
+    expect(provider.requests.at(-1)?.system).not.toContain('Authoritative child creation receipts')
+    parent.compaction = new CompactionRunner({ plan, onCompact: async () => undefined })
+    await parent.requestCompaction({ actor, admissionId: 'receipts-summary' })
+    expect((await parent.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+    const summary = provider.requests.findLast((request) => request.kind === 'summary')
+    expect(JSON.stringify(summary)).toContain('Successfully created children: 1.')
+    expect(parent.surface()[0]?.kind).toBe('summary')
+    // The prior note was summarized away; recovery must reissue current durable receipts.
+    expect(JSON.stringify(parent.surface())).not.toContain('Successfully created children: 1.')
+    await kernel.close()
+    kernel = create()
+    parent = await kernel.session('receipt-parent', {
+      actor,
+      resolvedProfileHash: 'h1',
+      cwd: '/w',
+      writerRunId: 'recovered',
+    })
+    await prompt(parent, 'resume after compaction')
+    const recovered = provider.requests.at(-1)
+    expect(JSON.stringify(recovered?.messages)).toContain('unreliable summary')
+    expect(receiptNotes(recovered)).toHaveLength(1)
+    expect(JSON.stringify(receiptNotes(recovered))).toContain('Successfully created children: 1.')
+    expect(JSON.stringify(receiptNotes(recovered))).toContain('override prose and summaries')
+    expect(JSON.stringify(receiptNotes(recovered))).not.toContain('Successfully created children: 3.')
+    expect(recovered?.system).not.toContain('Authoritative child creation receipts')
   } finally {
     await kernel.close()
   }

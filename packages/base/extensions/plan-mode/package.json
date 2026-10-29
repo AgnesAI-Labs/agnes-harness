@@ -1,0 +1,53 @@
+{
+  "name": "@agnes/plan-mode",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/plan-mode",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "tools",
+          "hooks",
+          "providers",
+          "self"
+        ],
+        "capabilities": {
+          "tools": {
+            "prefix": "",
+            "names": [
+              "exit_plan_mode"
+            ]
+          },
+          "hooks": [
+            "context",
+            "approval_request"
+          ],
+          "slots": [],
+          "events": false,
+          "resources": [],
+          "network": []
+        },
+        "metadata": {
+          "displayName": "Plan approval",
+          "summary": "Lets the agent prepare a plan and request approval before leaving plan mode.",
+          "description": "Lets the agent prepare a plan and request approval before leaving plan mode.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "计划审批",
+              "summary": "让 Agent 先制定计划，并在退出计划模式前请求批准。",
+              "description": "让 Agent 先制定计划，并在退出计划模式前请求批准。"
+            }
+          }
+        }
+      }
+    ],
+    "provides": [
+      "tool"
+    ]
+  }
+}

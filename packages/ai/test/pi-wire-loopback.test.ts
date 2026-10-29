@@ -146,7 +146,7 @@ const runAdapter = async (decl: ManualRoute, credential?: string): Promise<WireE
 }
 
 /** The wire path with the adapter's gate stepped around, to show what the gate is holding back. */
-const runLibraryDirectly = async (api: string): Promise<void> => {
+const runLibraryDirectly = async (api: string, apiKey?: string): Promise<void> => {
   const decl = { route: 'gw', api, baseUrl: baseUrl() }
   const model = toPiModel(decl, fakeModel({ id: 'm1', route: 'gw', api, baseUrl: baseUrl() }))
   const { context } = toContext(fakeRequest({ route: 'gw', model: 'm1' }))
@@ -154,6 +154,7 @@ const runLibraryDirectly = async (api: string): Promise<void> => {
     for await (const _event of streamOverApi(model, context, {
       signal: new AbortController().signal,
       maxRetries: 0,
+      ...(apiKey === undefined ? {} : { apiKey }),
     })) {
       // drained; the recorder answers 500 and the events are not what is under test
     }
@@ -229,19 +230,24 @@ describe('a bound credential still reaches the wire on both apis', () => {
     expect(allHeaders()).not.toContain(MARKER)
   })
 
-  // The positive control for the `upgrade` listener, and the only api that exercises it. A key that
-  // is not a JWT throws before any transport opens, so this one is shaped like a token and carries
-  // nothing: the point is only to get the WebSocket attempt made, and then recorded.
-  it('records the WebSocket handshake codex tries before falling back', async () => {
-    const claims = Buffer.from(
-      JSON.stringify({ 'https://api.openai.com/auth': { chatgpt_account_id: 'acct-for-the-test' } }),
-    ).toString('base64url')
-    const key = `notaheader.${claims}.notasignature`
-    await runAdapter(route('openai-codex-responses', { credentialRef: 'secret://agnes/codex' }), key)
-    expect(hits.map((h) => h.url)).toEqual(['upgrade:/codex/responses', '/codex/responses'])
-    for (const hit of hits) expect(hit.headers.authorization).toBe(`Bearer ${key}`)
-    expect(allHeaders()).not.toContain(MARKER)
-  })
+  // Direct SDK auto transport proves the upgrade recorder sees the handshake; the adapter must
+  // use HTTP/SSE instead so its deployment proxy and account connection deadlines cover Codex.
+  it.each(['sdk-auto', 'adapter-sse'] as const)(
+    'records Codex %s transport without ambient credentials',
+    async (transport) => {
+      const claims = Buffer.from(
+        JSON.stringify({ 'https://api.openai.com/auth': { chatgpt_account_id: 'acct-for-the-test' } }),
+      ).toString('base64url')
+      const key = `notaheader.${claims}.notasignature`
+      if (transport === 'sdk-auto') await runLibraryDirectly('openai-codex-responses', key)
+      else await runAdapter(route('openai-codex-responses', { credentialRef: 'secret://agnes/codex' }), key)
+      expect(hits.map((h) => h.url)).toEqual(
+        transport === 'sdk-auto' ? ['upgrade:/codex/responses', '/codex/responses'] : ['/codex/responses'],
+      )
+      for (const hit of hits) expect(hit.headers.authorization).toBe(`Bearer ${key}`)
+      expect(allHeaders()).not.toContain(MARKER)
+    },
+  )
 
   // F10, pinned rather than fixed. `maxRetries: 0` is passed on every request, and the bedrock
   // implementation never reads it into the AWS client's config — there is no option on the library's

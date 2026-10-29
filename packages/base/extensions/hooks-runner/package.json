@@ -1,0 +1,57 @@
+{
+  "name": "@agnes/hooks-runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/hooks-runner",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "hooks",
+          "eventLog",
+          "self"
+        ],
+        "runtimeSupports": [
+          "in-process",
+          "isolated"
+        ],
+        "capabilities": {
+          "hooks": [
+            "session_start",
+            "shutdown",
+            "before_step",
+            "context",
+            "tool_call",
+            "tool_result",
+            "turn_stopping",
+            "subagent_start",
+            "subagent_end",
+            "before_compact",
+            "compact",
+            "approval_request"
+          ],
+          "slots": [],
+          "events": true,
+          "resources": [],
+          "network": []
+        },
+        "metadata": {
+          "displayName": "Workflow hooks",
+          "summary": "Runs configured commands or HTTP hooks at selected stages of an agent task.",
+          "description": "Runs configured commands or HTTP hooks at selected stages of an agent task.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "工作流钩子",
+              "summary": "在任务的指定阶段执行已配置的命令或 HTTP 钩子。",
+              "description": "在任务的指定阶段执行已配置的命令或 HTTP 钩子。"
+            }
+          }
+        }
+      }
+    ]
+  }
+}

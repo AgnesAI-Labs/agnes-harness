@@ -2,7 +2,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { checkManifest, type ExtensionManifest } from '@agnes/extension-api'
+import {
+  bundledExtensionManifest,
+  bundledPackageJson,
+  checkManifest,
+  type ExtensionManifest,
+} from '@agnes/extension-api'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   collectSkinRoster,
@@ -30,7 +35,7 @@ function manifestWith(skins: unknown[], ui: unknown = ['skin']): ExtensionManife
   return {
     id: 'agnes/example',
     version: '1.0.0',
-    apiRange: '^1.1',
+    apiRange: '^5.0.0',
     entry: './index.mjs',
     capabilities: { ui },
     contributes: { skins },
@@ -159,15 +164,17 @@ describe('skin roster assembly', () => {
   function packageWithSkin(skinId: string, name = skinId): string {
     const dir = makePackage()
     writeFileSync(
-      join(dir, 'agnes.extension.json'),
-      JSON.stringify({
-        id: 'agnes/example',
-        version: '1.0.0',
-        apiRange: '^1.1',
-        entry: './index.mjs',
-        capabilities: { ui: ['skin'] },
-        contributes: { skins: [{ id: skinId, name, css: `./skins/${skinId}/skin.css` }] },
-      }),
+      join(dir, 'package.json'),
+      JSON.stringify(
+        bundledPackageJson({
+          id: 'agnes/example',
+          version: '1.0.0',
+          apiRange: '^5.0.0',
+          entry: './index.mjs',
+          capabilities: { ui: true },
+          contributes: { skins: [{ id: skinId, name, css: `./skins/${skinId}/skin.css` }] },
+        }),
+      ),
     )
     writeFileSync(join(dir, 'index.mjs'), 'export {}\n')
     writeSkin(dir, skinId)
@@ -225,15 +232,17 @@ describe('skin asset request resolution', () => {
   function rosterWith(id: string, assets?: Record<string, number>, nested = false) {
     const dir = makePackage()
     writeFileSync(
-      join(dir, 'agnes.extension.json'),
-      JSON.stringify({
-        id: 'agnes/example',
-        version: '1.0.0',
-        apiRange: '^1.1',
-        entry: './index.mjs',
-        capabilities: { ui: ['skin'] },
-        contributes: { skins: [{ id, name: id, css: `./skins/${id}/skin.css` }] },
-      }),
+      join(dir, 'package.json'),
+      JSON.stringify(
+        bundledPackageJson({
+          id: 'agnes/example',
+          version: '1.0.0',
+          apiRange: '^5.0.0',
+          entry: './index.mjs',
+          capabilities: { ui: true },
+          contributes: { skins: [{ id, name: id, css: `./skins/${id}/skin.css` }] },
+        }),
+      ),
     )
     writeFileSync(join(dir, 'index.mjs'), 'export {}\n')
     writeSkin(dir, id, assets ? { assets } : {})
@@ -336,13 +345,13 @@ describe('checked-in skin example', () => {
     )
   const manifestIn = (variant: string): unknown =>
     variant === 'broken'
-      ? JSON.parse(readFileSync(join(exampleMain(variant), 'agnes.extension.json'), 'utf8'))
+      ? bundledExtensionManifest(JSON.parse(readFileSync(join(exampleMain(variant), 'package.json'), 'utf8')))
       : {
           id: 'examples/skin-example',
           version: '1.0.0',
-          apiRange: '^1.0',
+          apiRange: '^5.0.0',
           entry: './index.mjs',
-          capabilities: { ui: ['skin'] },
+          capabilities: { ui: true },
           contributes: JSON.parse(readFileSync(join(exampleMain(variant), 'agnes.client.json'), 'utf8')),
         }
   const clientRoster = (root: string, id: string) => {
@@ -426,9 +435,9 @@ describe('checked-in skin example', () => {
     const checked = checkManifest({
       id: 'examples/skins-builtin',
       version: '1.0.0',
-      apiRange: '^1.0',
+      apiRange: '^5.0.0',
       entry: './index.mjs',
-      capabilities: { ui: ['skin'] },
+      capabilities: { ui: true },
       contributes: JSON.parse(readFileSync(join(presetMain, 'agnes.client.json'), 'utf8')),
     })
     expect(checked.ok, checked.ok ? '' : checked.problems.join('; ')).toBe(true)
@@ -628,7 +637,7 @@ describe('checked-in skin example', () => {
     const checked = checkManifest(manifestIn('broken'))
     expect(checked.ok).toBe(false)
     if (checked.ok) return
-    expect(checked.problems.join(' ')).toContain("capabilities.ui to include 'skin'")
+    expect(checked.problems.join(' ')).toContain('requires capabilities.ui')
   })
 })
 
@@ -694,10 +703,10 @@ describe('skin stylesheet url rewriting', () => {
     const manifest = {
       id: 'x',
       version: '1.0.0',
-      apiRange: '^1.0',
+      apiRange: '^5.0.0',
       entry: './index.mjs',
       runtime: { supports: ['in-process'] },
-      capabilities: { ui: ['skin'] },
+      capabilities: { ui: true },
       contributes: {
         skins: [{ id: 'aurora', name: '流光', css: './skins/aurora/skin.css' }],
       },

@@ -4,6 +4,7 @@ export const ADMIN_DETAIL_LOCALE_NAMESPACE = '@agnes/web-ui/admin-detail'
 
 export const adminDetailLocaleCatalog: LocaleCatalog = {
   en: {
+    actions: 'Actions',
     'close.aria': 'Close {heading} details',
     'close.label': 'Close details',
     'operations.recent': 'Recently completed operations',
@@ -12,6 +13,7 @@ export const adminDetailLocaleCatalog: LocaleCatalog = {
     'operations.cancel': 'Request cancellation',
   },
   'zh-CN': {
+    actions: '操作',
     'close.aria': '关闭 {heading} 的详情',
     'close.label': '关闭详情',
     'operations.recent': '最近完成的操作',

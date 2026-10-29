@@ -1,0 +1,723 @@
+@layer app {
+  /* Session dock chrome and registered panel surfaces share the conversation theme. */
+  .workbench-split {
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .workbench-split.workbench-right-open {
+    grid-template-columns: minmax(0, 1fr) var(--workbench-width, 320px);
+  }
+  .workbench-split > .conversation-shell,
+  .workbench-split > #trace-panel {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .workbench-controls {
+    flex: 0 0 auto;
+    display: flex;
+    gap: var(--s4);
+  }
+  #workbench-right {
+    grid-column: 2;
+    grid-row: 1 / 3;
+  }
+  #workbench-bottom {
+    grid-column: 1;
+    grid-row: 2;
+    height: var(--workbench-height, 220px);
+  }
+  #workbench-right,
+  #workbench-bottom {
+    position: relative;
+    min-height: 0;
+    min-width: 0;
+  }
+  #workbench-right-content,
+  #workbench-bottom-content {
+    height: 100%;
+    min-height: 0;
+  }
+  .workbench-dock-body {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+  .workbench-dock-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--agnes-line-primary);
+    padding: 0.4rem 0.6rem;
+  }
+  .workbench-dock-tabs {
+    display: contents;
+  }
+  /* The tab strip is the only part of the tabs component the heading shows; its (empty) panel
+   holder must not take a share of the row from the tabs. */
+  .workbench-dock-tabs > :is(.ant-tabs-content-holder, .ant-tabs-body-holder) {
+    display: none;
+  }
+  .workbench-panel-tabs {
+    display: flex;
+    position: relative;
+    min-width: 0;
+    gap: var(--s4);
+    overflow: hidden;
+    padding-inline: var(--s8);
+  }
+  .workbench-panel-tabs > .agnes-ui-button {
+    flex: 0 0 auto;
+  }
+  /* A tab that does not fit is listed in the strip's "more" menu. It stays in the strip, out of
+   flow and invisible, so its width can still be measured when the dock is resized. */
+  .workbench-panel-tabs > .agnes-ui-button[data-overflow="true"] {
+    position: absolute;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .workbench-panel-content {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scroll-padding-block: var(--s8);
+  }
+  /* The dock edge is an 8px grab strip that shows a thin brand line when it can be moved. */
+  .workbench-resize {
+    border: 0;
+    margin: 0;
+    position: absolute;
+    z-index: 2;
+    background: transparent;
+    touch-action: none;
+  }
+  #workbench-right .workbench-resize {
+    left: -4px;
+    top: 0;
+    bottom: 0;
+    width: 8px;
+    cursor: col-resize;
+  }
+  #workbench-bottom .workbench-resize {
+    top: -4px;
+    left: 0;
+    right: 0;
+    height: 8px;
+    cursor: row-resize;
+  }
+  .workbench-resize::after {
+    content: "";
+    position: absolute;
+    background: var(--agnes-brand-primary);
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+  }
+  #workbench-right .workbench-resize::after {
+    inset: 0 3px;
+  }
+  #workbench-bottom .workbench-resize::after {
+    inset: 3px 0;
+  }
+  .workbench-resize:is(:hover, :focus-visible, [data-dragging])::after {
+    opacity: 0.7;
+  }
+  .workbench-resize[data-dragging]::after {
+    opacity: 1;
+  }
+  .workbench-resize:focus-visible {
+    outline: 0;
+  }
+  /* Touch targets follow the base grab strip so its 8px width cannot override them. */
+  @media (max-width: 900px) {
+    #workbench-right .workbench-resize {
+      width: 32px;
+      left: -16px;
+    }
+    #workbench-bottom .workbench-resize {
+      height: 32px;
+      top: -16px;
+    }
+    #workbench-right .workbench-resize::after {
+      inset: 0 15px;
+    }
+    #workbench-bottom .workbench-resize::after {
+      inset: 15px 0;
+    }
+  }
+  .workbench-panel-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8);
+    padding: 0.6rem;
+    flex-wrap: wrap;
+  }
+  .workbench-header-actions {
+    display: flex;
+    margin-left: auto;
+  }
+  /* Wide windows: the side dock is a full-height column of the main area, from the top bar to the
+   window's bottom edge. Everything else (notices, conversation, approval, composer) keeps to the
+   left of it, so no strip is left empty beside the composer. A home page hides the dock, so it
+   reserves no column for it: the page stays centred in the whole main area. */
+  @media (min-width: 1280px) {
+    main:not([data-home-page]):has(.workbench-right-open) {
+      position: relative;
+      padding-right: var(--workbench-width, 320px);
+    }
+    main:not([data-home-page]):has(.workbench-right-open) > .topbar-row {
+      margin-right: calc(-1 * var(--workbench-width, 320px));
+    }
+    body:has(#empty-state:not([hidden])) main:not([data-home-page]):has(.workbench-right-open) > .topbar-row {
+      margin-right: 0;
+    }
+    .workbench-split.workbench-right-open {
+      position: static;
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .workbench-right-open > #workbench-right {
+      position: absolute;
+      top: 2.75rem;
+      right: 0;
+      bottom: 0;
+      width: var(--workbench-width, 320px);
+    }
+  }
+  .workbench-code-keyword {
+    color: var(--agnes-text-emphasis);
+    font-weight: 600;
+  }
+  .workbench-code-string {
+    color: var(--agnes-status-success-text);
+  }
+  .workbench-code-number {
+    color: var(--agnes-status-warning-text);
+  }
+  .workbench-code-comment {
+    color: var(--agnes-text-tertiary);
+  }
+  @media (max-width: 1279px) {
+    .workbench-split.workbench-right-open {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    #workbench-right {
+      position: absolute;
+      z-index: 15;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      width: min(var(--workbench-width, 320px), calc(100vw - 16px));
+    }
+    [data-agnes-region="workbench-right"] {
+      box-shadow: var(--shadow-elevation-prominent);
+    }
+    #workbench-bottom {
+      max-height: 40vh;
+    }
+  }
+  @media (max-width: 767px) {
+    #workbench-right,
+    #workbench-bottom {
+      position: fixed;
+      z-index: 30;
+      inset: 0;
+      width: 100%;
+      height: 100dvh;
+      max-height: none;
+    }
+    .workbench-resize {
+      display: none;
+    }
+  }
+
+  /* The dock header is a 40px tab strip: tabs sit on its hairline like the view switch above. */
+  .workbench-dock-heading {
+    gap: var(--s4);
+    min-height: 2.5rem;
+    padding: 0 var(--s8);
+  }
+  .workbench-header-actions {
+    flex-shrink: 0;
+  }
+  .workbench-panel-tabs {
+    flex: 1;
+    align-self: stretch;
+    gap: var(--s12);
+    padding-inline: var(--s4);
+  }
+  .workbench-panel-tabs > .agnes-ui-button {
+    min-height: 2.5rem;
+    padding-inline: var(--s2);
+    border-block: 2px solid transparent;
+    border-radius: 0;
+    color: var(--agnes-text-secondary);
+    background: transparent;
+  }
+  .workbench-panel-tabs [aria-selected="true"] {
+    color: var(--agnes-text-primary);
+    background: transparent;
+    border-bottom: 2px solid var(--agnes-brand-primary);
+    border-radius: 0;
+    font-weight: var(--font-weight-medium);
+  }
+  @media (max-width: 900px) {
+    #workbench-right .workbench-dock-heading button,
+    #workbench-bottom .workbench-dock-heading button {
+      min-width: var(--s32);
+      min-height: var(--s32);
+    }
+  }
+
+  /* Workbench panels: an idle panel explains itself quietly instead of showing a grey slab. */
+  .workbench-panel-content .agnes-settings-state[data-tone="empty"] {
+    margin: var(--s12);
+    padding: var(--s24) var(--s16);
+    border: 1px dashed var(--agnes-line-emphasis);
+    color: var(--agnes-text-secondary);
+    background: transparent;
+    text-align: center;
+  }
+  .workbench-panel-tabs > .agnes-ui-button {
+    transition:
+      color var(--transition-fast),
+      background-color var(--transition-fast),
+      border-color var(--transition-fast);
+  }
+  .workbench-header-actions {
+    gap: var(--s2);
+  }
+  /* Files tab: tree beside the preview from 640px of panel width, stacked above it below that. */
+  .workbench-files {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+  .workbench-files-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .workbench-files[data-layout="split"] .workbench-files-body {
+    flex-direction: row;
+  }
+  .workbench-files-tree {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--agnes-bg-app-content);
+  }
+  .workbench-files[data-layout="split"] .workbench-files-tree {
+    flex: 0 0 var(--workbench-tree-width, 250px);
+    min-width: 0;
+  }
+  .workbench-files[data-layout="stacked"] .workbench-files-tree {
+    flex: 1 1 auto;
+  }
+  /* Once a file is open in the stacked layout, the tree yields to it and keeps a short list. */
+  .workbench-files-previewing[data-layout="stacked"] .workbench-files-tree {
+    flex: 0 0 auto;
+    max-height: 200px;
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .workbench-files-filter.agh-search-bar {
+    margin: var(--s8) var(--s8) var(--s4);
+  }
+  .workbench-files-filter .agh-search-bar-field > input {
+    height: 28px;
+    min-height: 28px;
+    background: var(--agnes-bg-app-content);
+  }
+  .workbench-tree-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 0 var(--s4) var(--s8);
+  }
+  .workbench-file-tree {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .workbench-file-tree .workbench-file-tree {
+    margin-left: 0.7rem;
+    padding-left: var(--s4);
+    border-left: 1px solid var(--agnes-line-primary);
+  }
+  .workbench-file-entry.agnes-ui-button {
+    width: 100%;
+    height: 26px;
+    min-height: 26px;
+    text-align: left;
+    display: flex;
+    gap: 0.35rem;
+    justify-content: flex-start;
+    padding-inline: 0.3rem;
+    border-radius: var(--radius-xs);
+    color: var(--agnes-text-primary);
+  }
+  .workbench-file-entry.agnes-ui-button[aria-pressed="true"] {
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .workbench-file-chevron {
+    display: inline-flex;
+    width: 12px;
+    flex: 0 0 12px;
+    color: var(--agnes-text-tertiary);
+  }
+  .workbench-file-chevron > svg {
+    width: 12px;
+    height: 12px;
+    transition: transform var(--transition-fast);
+  }
+  .workbench-file-chevron[data-open] > svg {
+    transform: rotate(90deg);
+  }
+  .workbench-file-icon {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+    color: var(--agnes-text-tertiary);
+  }
+  .workbench-file-type {
+    flex: 0 0 auto;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 2px;
+    border-radius: var(--radius-xs);
+    display: inline-grid;
+    place-items: center;
+    font: 700 7.5px / 1 var(--font-mono);
+    letter-spacing: 0.02em;
+    color: var(--agnes-file-type-text);
+    background: var(--agnes-file-type-other);
+  }
+  .workbench-file-type[data-tone="html"] {
+    background: var(--agnes-file-type-html);
+  }
+  .workbench-file-type[data-tone="css"] {
+    background: var(--agnes-file-type-css);
+  }
+  .workbench-file-type[data-tone="js"] {
+    background: var(--agnes-file-type-js);
+  }
+  .workbench-file-type[data-tone="ts"] {
+    background: var(--agnes-file-type-ts);
+  }
+  .workbench-file-type[data-tone="json"] {
+    background: var(--agnes-file-type-json);
+  }
+  .workbench-file-type[data-tone="md"] {
+    background: var(--agnes-file-type-md);
+  }
+  .workbench-file-type[data-tone="svg"] {
+    background: var(--agnes-file-type-svg);
+  }
+  .workbench-file-type[data-tone="image"] {
+    background: var(--agnes-file-type-image);
+  }
+  .workbench-file-type[data-tone="code"] {
+    background: var(--agnes-file-type-code);
+  }
+  .workbench-file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    white-space: nowrap;
+    flex: 1;
+  }
+  .workbench-file-change {
+    flex: 0 0 auto;
+    padding: 0 4px;
+    border-radius: var(--radius-xs);
+    font: 10.5px / 16px var(--font-mono);
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+  }
+  .workbench-file-change[data-kind="added"] {
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
+  }
+  .workbench-git-mark {
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--agnes-text-tertiary);
+  }
+  .workbench-files-footer {
+    flex: 0 0 auto;
+    padding: 6px var(--s12);
+    border-top: 1px solid var(--agnes-line-primary);
+    font-size: var(--font-size-xs);
+    color: var(--agnes-text-secondary);
+    line-height: 1.6;
+  }
+  .workbench-files-footer p {
+    margin: 0;
+  }
+  .workbench-files-summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .workbench-files-summary > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .workbench-files-rules {
+    padding-top: var(--s4);
+    overflow-wrap: anywhere;
+  }
+  .workbench-files-note {
+    margin: var(--s8);
+    font-size: var(--font-size-xs);
+    color: var(--agnes-text-secondary);
+  }
+  .workbench-files-divider {
+    flex: 0 0 5px;
+    margin-inline: -2px;
+    position: relative;
+    z-index: 1;
+    cursor: col-resize;
+    touch-action: none;
+  }
+  .workbench-files-divider::after {
+    content: "";
+    position: absolute;
+    inset: 0 2px;
+    background: var(--agnes-line-primary);
+    transition: background-color var(--transition-fast);
+  }
+  .workbench-files-divider:is(:hover, :focus-visible, [data-dragging])::after {
+    background: var(--agnes-brand-primary);
+  }
+  .workbench-files-divider:focus-visible {
+    outline: none;
+  }
+  /* Files tab: the tab strip sits at the top of the preview column and the preview fills the rest. */
+  .workbench-file-pane {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .workbench-file-tabs {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: stretch;
+    gap: var(--s2);
+    min-height: 32px;
+    padding: 3px var(--s4);
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-bottom: 1px solid var(--agnes-line-primary);
+    background: var(--agnes-bg-app-content);
+  }
+  .workbench-file-tab {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    min-width: 4.5rem;
+    max-width: 180px;
+    border-radius: var(--radius-md);
+    color: var(--agnes-text-secondary);
+  }
+  .workbench-file-tab[data-active="true"] {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-fill);
+  }
+  .workbench-file-tab-select.agnes-ui-button {
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: flex-start;
+    gap: var(--s4);
+    padding-inline: var(--s8) var(--s2);
+    color: inherit;
+  }
+  .workbench-file-tab-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-xs);
+  }
+  .workbench-file-tab > .agh-btn--icon {
+    flex: none;
+    opacity: 0;
+  }
+  .workbench-file-tab:is(:hover, :focus-within, [data-active="true"]) > .agh-btn--icon {
+    opacity: 1;
+  }
+  .workbench-file-preview {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .workbench-file-header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-width: 0;
+    padding: var(--s8) var(--s12);
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .workbench-file-crumb {
+    display: flex;
+    align-items: baseline;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: var(--font-size-xs);
+    color: var(--agnes-text-tertiary);
+  }
+  .workbench-file-crumb-part > span {
+    padding-inline: 0.3em;
+  }
+  .workbench-file-crumb-part {
+    flex: 0 1 auto;
+    min-width: 1.5em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .workbench-file-crumb > .workbench-file-name {
+    flex: 0 1 auto;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--agnes-text-primary);
+  }
+  .workbench-file-meta {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-size: var(--font-size-xs);
+    color: var(--agnes-text-tertiary);
+  }
+  .workbench-file-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    flex: 0 0 auto;
+  }
+  .workbench-file-mention.agnes-ui-button {
+    gap: var(--s4);
+  }
+  .workbench-files[data-layout="stacked"] :is(.workbench-file-mention-label, .workbench-file-meta) {
+    display: none;
+  }
+  .workbench-file-changed {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    margin: var(--s8) var(--s12) 0;
+    padding: 6px var(--s10);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-xs);
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+  }
+  .workbench-file-review {
+    margin-left: auto;
+    flex: 0 0 auto;
+  }
+  .workbench-file-review .agnes-ui-button {
+    height: auto;
+    padding: 0;
+    font-size: inherit;
+    gap: var(--s2);
+  }
+  .workbench-file-review .agh-icon {
+    width: 12px;
+    height: 12px;
+  }
+  .workbench-file-preview > .agnes-settings-state {
+    margin: var(--s12);
+  }
+  /* Source: numbered lines; long lines scroll sideways unless wrapping is on. */
+  .workbench-file-preview > pre {
+    flex: 1;
+    min-height: 0;
+    margin: 0;
+    padding: var(--s8) 0 var(--s16);
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    line-height: 1.7;
+    tab-size: 2;
+    counter-reset: workbench-line;
+    background: var(--agnes-bg-app-content);
+  }
+  .workbench-file-preview > pre > code {
+    display: block;
+    min-width: max-content;
+  }
+  .workbench-file-preview > pre[data-wrap] > code {
+    min-width: 0;
+  }
+  .workbench-code-line {
+    display: flex;
+  }
+  .workbench-code-line::before {
+    counter-increment: workbench-line;
+    content: counter(workbench-line);
+    position: sticky;
+    left: 0;
+    flex: 0 0 auto;
+    width: calc(var(--workbench-gutter, 3ch) + 1.75rem);
+    padding-right: 0.9rem;
+    text-align: right;
+    color: var(--agnes-text-tertiary);
+    background: var(--agnes-bg-app-content);
+    user-select: none;
+  }
+  .workbench-code-text {
+    white-space: pre;
+    padding-right: var(--s16);
+  }
+  .workbench-file-preview > pre[data-wrap] .workbench-code-text {
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .workbench-file-rendered {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+  .workbench-file-rendered > [data-document-preview] {
+    padding: var(--s12) var(--s16);
+  }
+  .workbench-file-rendered > [data-document-preview="html"] {
+    height: 100%;
+    padding: 0;
+  }
+  .workbench-file-rendered > [data-document-preview="html"] > iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: var(--agnes-document-page-bg);
+  }
+  .workbench-file-rendered > [data-document-preview="image"] {
+    display: grid;
+    place-items: center;
+  }
+  .workbench-file-rendered img {
+    max-width: 100%;
+    height: auto;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .workbench-file-chevron > svg,
+    .workbench-files-divider::after {
+      transition: none;
+    }
+  }
+}

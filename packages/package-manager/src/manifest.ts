@@ -1,32 +1,42 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { checkManifest, type ExtensionManifest } from '@agnes/extension-api'
+import { bundledExtensionManifest, checkManifest, type ExtensionManifest } from '@agnes/extension-api'
 import { resolveClientAssets } from './client-assets.js'
 import { resolveEntry } from './entry-path.js'
 import { PackageError } from './errors.js'
+import { parseAgnesPluginEntries } from './plugin-manifest.js'
 import { resolveSkins } from './skin-assets.js'
 
 const MAX_JSON_BYTES = 1048576
 
-/** Full author manifest, checked without executing its entry. */
-export function readManifestIn(dir: string): ExtensionManifest | undefined {
-  const file = join(dir, 'agnes.extension.json')
+/** Parsed `package.json` of one bundled plugin directory, bounded and checked as plain data. */
+export function readBundledPackageJson(dir: string): Record<string, unknown> | undefined {
+  const file = join(dir, 'package.json')
   if (!existsSync(file)) return undefined
-  let raw: unknown
   try {
     if (statSync(file).size > MAX_JSON_BYTES) throw new Error('too large')
     const text = readFileSync(file, 'utf8')
     if (Buffer.byteLength(text) > MAX_JSON_BYTES) throw new Error('too large')
-    raw = JSON.parse(text)
+    return JSON.parse(text) as Record<string, unknown>
   } catch {
-    throw new PackageError('E_EXT_LOAD', 'agnes.extension.json is not valid JSON', {
+    throw new PackageError('E_EXT_LOAD', 'package.json is not valid JSON', {
       source: { file },
       detail: { reason: 'invalid-manifest' },
     })
   }
+}
+
+/** Full manifest of a bundled plugin directory, checked without executing its entry. */
+export function readBundledManifest(dir: string): ExtensionManifest | undefined {
+  const file = join(dir, 'package.json')
+  const pkg = readBundledPackageJson(dir)
+  if (pkg === undefined) return undefined
+  const raw = bundledExtensionManifest(pkg)
+  if (raw === undefined) return undefined
+  parseAgnesPluginEntries(String(pkg.name), (pkg.agnes as { plugins?: unknown }).plugins, { bundled: true })
   const checked = checkManifest(raw)
   if (!checked.ok)
-    throw new PackageError('E_EXT_LOAD', 'agnes.extension.json does not validate', {
+    throw new PackageError('E_EXT_LOAD', 'the bundled plugin manifest does not validate', {
       source: { file },
       detail: { reason: 'invalid-manifest', problems: checked.problems },
     })

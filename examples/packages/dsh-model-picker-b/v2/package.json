@@ -8,8 +8,21 @@
     "plugins": [
       {
         "export": "main",
+        "apiRange": "^5.0.0",
         "id": "ext:examples/dsh-model-picker-b/main",
-        "runtime": "in-process"
+        "runtime": "in-process",
+        "metadata": {
+          "displayName": "Fallback model entry example",
+          "summary": "Demonstrates a model-entry panel that appears when the preferred contribution yields or is disabled.",
+          "description": "Demonstrates a model-entry panel that appears when the preferred contribution yields or is disabled.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "备用模型入口示例",
+              "summary": "演示在首选贡献让出位置或停用后显示的备用模型入口面板。",
+              "description": "演示在首选贡献让出位置或停用后显示的备用模型入口面板。"
+            }
+          }
+        }
       }
     ],
     "clientDescriptors": [
@@ -17,6 +30,21 @@
         "rowId": "ext:examples/dsh-model-picker-b/main",
         "path": "./extensions/main/agnes.client.json"
       }
+    ],
+    "metadata": {
+      "displayName": "Fallback model entry example",
+      "summary": "Demonstrates a model-entry panel that appears when the preferred contribution yields or is disabled.",
+      "description": "Demonstrates a model-entry panel that appears when the preferred contribution yields or is disabled.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "备用模型入口示例",
+          "summary": "演示在首选贡献让出位置或停用后显示的备用模型入口面板。",
+          "description": "演示在首选贡献让出位置或停用后显示的备用模型入口面板。"
+        }
+      }
+    },
+    "provides": [
+      "ui"
     ]
   },
   "exports": "./index.mjs"

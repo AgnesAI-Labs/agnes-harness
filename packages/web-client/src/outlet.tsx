@@ -6,9 +6,11 @@ import {
   createElement,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useSyncExternalStore,
 } from 'react'
+import { slotLocaleCatalog } from './locales.js'
 import type { SlotRegistry } from './registry.js'
 import type { ClientResourceService, LocaleService, SessionService } from './services.js'
 import type { ChainRenderOpts, SlotEntry, SlotName, SlotProps } from './slots.js'
@@ -45,7 +47,12 @@ export function SlotsProvider({
     if (!session) return
     return registry.bindSession(session)
   }, [registry, session])
-  const runtimeValue: SlotRuntime = { session, locale, resources }
+  // Each outlet subscribes to session/locale changes itself. A new wrapper object would
+  // otherwise invalidate every historical outlet on each streamed transcript update.
+  const runtimeValue = useMemo<SlotRuntime>(
+    () => ({ session, locale, resources }),
+    [session, locale, resources],
+  )
   return createElement(
     SlotsContext.Provider,
     { value: registry },
@@ -127,7 +134,10 @@ export function SlotOutlet<N extends SlotName>(outletProps: SlotOutletProps<N>):
     createElement(
       'div',
       { 'data-slot-placeholder': '1' },
-      runtime.locale?.t('slot.notReady') ?? 'Plugin for this slot is not ready',
+      runtime.locale?.t('slot.notReady') ??
+        slotLocaleCatalog[
+          typeof document !== 'undefined' && document.documentElement.lang === 'zh-CN' ? 'zh-CN' : 'en'
+        ]['slot.notReady'],
     )
 
   if (spec?.kind === 'chain') {

@@ -38,11 +38,11 @@ const deps = (rt: CodeRuntime, done = vi.fn()) => ({
 })
 
 describe('run_code tool definition', () => {
-  it('has the schema and all eight explicit metadata keys', () => {
+  it('has the schema and explicit command policy metadata', () => {
     const tool = createRunCodeTool(deps(runtime()))
     expect(checkToolDef(tool)).toEqual({ ok: true })
     expect(tool.name).toBe('run_code')
-    expect(tool.description).toContain('persistent kernel')
+    expect(tool.description).toContain('fresh managed process')
     expect(Object.keys((tool.parameters as { properties: object }).properties)).toEqual([
       'code',
       'description',
@@ -54,9 +54,10 @@ describe('run_code tool definition', () => {
       isConcurrencySafe: false,
       isOpenWorld: true,
       replay: 'never',
+      commandArg: 'code',
       costHint: undefined,
       deferLoading: false,
-      requiresApproval: undefined,
+      requiresApproval: 'always',
     })
   })
 
@@ -71,7 +72,7 @@ describe('run_code tool definition', () => {
     const request = vi.mocked(rt.run).mock.calls[0]?.[0]
     expect(request).toMatchObject({
       program: 'print(1)',
-      signal: ctx.signal,
+      signal: expect.any(AbortSignal),
       limits: { wallMs: 600000, maxOutputChars: 65536 },
     })
     await expect(request?.bindings({ marker: 1 })).resolves.toEqual({ marker: 1 })
@@ -113,5 +114,37 @@ describe('run_code tool definition', () => {
       mime: 'text/plain',
       name: 'cell-output.txt',
     })
+  })
+
+  it('appends the nested call line', async () => {
+    const calls: Array<{ name: string; status: 'ok' | 'error' | 'pending'; readOnly: boolean }> = [
+      { name: 'write', status: 'ok', readOnly: false },
+      { name: 'read', status: 'ok', readOnly: true },
+      { name: 'read', status: 'ok', readOnly: true },
+      { name: 'shell', status: 'error', readOnly: false },
+    ]
+    const withCalls = (list: typeof calls) => ({
+      ...deps(runtime()),
+      bridge: () => Object.assign(async (frame: unknown) => frame, { calls: () => list }),
+    })
+    const text = async (list: typeof calls) =>
+      (
+        (await createRunCodeTool(withCalls(list)).execute({ code: 'x' }, context())).content[0] as {
+          text: string
+        }
+      ).text
+    expect(await text(calls)).toBe('hello\nnested calls: write ok, shell error; read-only: 2')
+    expect(await text(calls.slice(1, 3))).toBe('hello\nnested calls: read-only: 2')
+    expect(await text([calls[0] as (typeof calls)[number]])).toBe(
+      'hello\nnested calls: write ok; read-only: 0',
+    )
+    expect(await text([])).toBe('hello')
+    expect(await text([{ name: 'shell', status: 'pending', readOnly: false }])).toBe(
+      'hello\nnested calls: shell pending; read-only: 0',
+    )
+    // A read-only call waiting for approval is still only counted.
+    expect(await text([{ name: 'read', status: 'pending', readOnly: true }])).toBe(
+      'hello\nnested calls: read-only: 1',
+    )
   })
 })

@@ -1,0 +1,169 @@
+@layer app {
+  #app-root {
+    display: contents;
+  }
+  /*
+   6. 组件层 —— 一代化：每个选择器只声明一次，零具体色值
+   原 181 个硬编码色值已按规则映射到语义 token；重复块已合并（后声明者胜）。
+   ═══════════════════════════════════════════════════════════════════════ */
+  * {
+    box-sizing: border-box;
+    /* 隐藏滚动条外观，保留各容器原有的滚动行为。 */
+    scrollbar-width: none;
+  }
+  *::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+  /* Long reading and browsing regions show where you are: a thin thumb on a transparent track.
+   Everything else keeps the hidden scrollbar above. */
+  :is(
+    #transcript,
+    .settings-content,
+    .workbench-panel-content,
+    .workbench-tree-scroll,
+    .workbench-file-tabs,
+    .workbench-file-preview > pre,
+    .workbench-file-rendered,
+    .tool-detail-text,
+    .code-block pre,
+    .table-scroll,
+    #approval pre,
+    .ant-modal-body,
+    .agh-drawer-content,
+    .agh-table-scroll,
+    .agh-table-scroll .ant-table-content,
+    .agh-table-scroll .ant-table-body,
+    .candidate-review-body,
+    .candidate-file pre,
+    .candidate-technical pre,
+    .request-trace-json,
+    .system-prompt-section,
+    .reference-popup ul,
+    .model-picker,
+    .permission-picker,
+    .toolset-picker
+  ) {
+    scrollbar-width: thin;
+    scrollbar-color: var(--agnes-scrollbar-thumb) transparent;
+  }
+  :is(
+    .ant-modal-body,
+    .agh-drawer-content,
+    .agh-table-scroll,
+    .ant-table-content,
+    .ant-table-body,
+    .candidate-review-body,
+    .candidate-file pre,
+    .reference-popup ul,
+    .model-picker,
+    .permission-picker,
+    .toolset-picker
+  )::-webkit-scrollbar {
+    display: block;
+    width: 6px;
+    height: 6px;
+  }
+  :is(
+    .ant-modal-body,
+    .agh-drawer-content,
+    .agh-table-scroll,
+    .ant-table-content,
+    .ant-table-body,
+    .candidate-review-body,
+    .candidate-file pre,
+    .reference-popup ul,
+    .model-picker,
+    .permission-picker,
+    .toolset-picker
+  )::-webkit-scrollbar-thumb {
+    border-radius: var(--radius-pill);
+    background: var(--agnes-scrollbar-thumb);
+  }
+  :where([hidden]) {
+    display: none !important;
+  }
+  html,
+  body {
+    min-width: 0;
+    min-height: 100%;
+  }
+  body {
+    height: 100dvh;
+    margin: 0;
+    display: grid;
+    grid-template-columns: 288px minmax(0, 1fr);
+    /* The rail keeps its width change visible instead of snapping. Reduced motion zeroes the token. */
+    transition: grid-template-columns var(--transition);
+    overflow: hidden;
+  }
+  /* Public region hooks retain skin-facing surface properties; the skin layer owns their overrides. */
+  [data-agnes-region="app"] {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-app-content);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
+  }
+  /* Selection carries a tint of the accent so it reads as the user's own mark on any surface. */
+  ::selection {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-focus-ring-soft);
+  }
+  /* ── 客户端（agnes-code）图标的绘制约定 ──────────────────────────────────────
+   这些字形直接取自客户端 `ui/desktop/src/components/icons/*` 与
+   `images/projectIcon_*.svg`。客户端各图标的 fill/stroke 口径不同（自定义图标基本是
+   纯 fill；Settings 是 16 网格上的 stroke 1.2；projectIcon 是"填充 + 0.144 极细描边"），
+   而 SVG 上的 stroke-width 属性会被上面 .icon 的 CSS 覆盖，故按图标再声明一次。 */
+  .icon-fill {
+    fill: currentColor;
+    stroke: none;
+  }
+  .icon-settings {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.2;
+  }
+  .icon-folder {
+    fill: currentColor;
+    stroke: currentColor;
+    stroke-width: 0.144;
+  }
+  .icon-folder-open {
+    stroke-width: 0.1953;
+    display: none;
+  }
+  /* 工作区分组标题的展开/收起两态，对应客户端 AgnesProjectFolderIcon 的 expanded 属性。 */
+  .workspace-heading[aria-expanded="true"] .icon-folder-open {
+    display: block;
+  }
+  .workspace-heading[aria-expanded="true"] .icon-folder-closed {
+    display: none;
+  }
+  .skip-link {
+    position: fixed;
+    z-index: 100;
+    top: 0.75rem;
+    left: 0.75rem;
+    padding: 0.625rem 0.75rem;
+    border-radius: var(--radius-lg);
+    color: var(--agnes-text-inverse);
+    background: var(--agnes-button-primary-bg);
+    transform: translateY(-180%);
+    transition: transform var(--transition-fast);
+  }
+  .skip-link:focus {
+    transform: translateY(0);
+  }
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    clip-path: inset(50%);
+  }
+  /* Button variants are shared with React in web-ui/components.css. */
+}

@@ -14,9 +14,11 @@
  * 不引入 CSS 解析依赖：这里只需要"规则 → 声明"这一层结构，自写的最小解析器够用，
  * 且下面是显式断言而不是静默跳过——解析退化（规则数异常）本身就会红。
  */
-import { readFile } from 'node:fs/promises'
+
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
+import { readUiCss, readWebStyleSource } from '../../../tools/web-style-source.mjs'
 
 const packageDirectory = process.cwd().endsWith('/packages/web')
   ? process.cwd()
@@ -45,7 +47,8 @@ function parseRules(source: string): Rule[] {
     while (i < end) {
       const open = source.indexOf('{', i)
       if (open === -1 || open >= end) break
-      const selector = source.slice(i, open).trim()
+      const prelude = source.slice(i, open)
+      const selector = prelude.slice(prelude.lastIndexOf(';') + 1).trim()
       let depth = 0
       let close = open
       for (; close < end; close += 1) {
@@ -55,7 +58,8 @@ function parseRules(source: string): Rule[] {
           if (depth === 0) break
         }
       }
-      if (selector.startsWith('@')) walk(open + 1, close, selector)
+      if (selector.startsWith('@'))
+        walk(open + 1, close, selector.startsWith('@layer ') ? atContext : selector)
       else found.push({ selector, body: source.slice(open + 1, close), atContext, line: lineAt(source, i) })
       i = close + 1
     }
@@ -160,12 +164,21 @@ const channel = (c: number): number => {
 const luminance = (rgb: [number, number, number]): number =>
   0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2])
 
-function contrast(fgName: string, bgName: string, theme: Theme): number | null {
+function contrast(
+  fgName: string,
+  bgName: string,
+  theme: Theme,
+  opacity = 1,
+  surfaceName = '--agnes-bg-popover',
+): number | null {
   const fg = resolveColor(fgName, theme)
   const bg = resolveColor(bgName, theme)
   if (!fg || !bg) return null
-  const a = luminance(compositeOver(fg, bg))
-  const b = luminance(bg.rgb)
+  const surface = resolveColor(surfaceName, theme)
+  if (!surface) return null
+  const background = compositeOver(bg, surface)
+  const a = luminance(compositeOver({ ...fg, alpha: fg.alpha * opacity }, { rgb: background, alpha: 1 }))
+  const b = luminance(background)
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
 }
 
@@ -176,6 +189,9 @@ const TEXT_PAIRS: Array<[string, string]> = [
   ['--agnes-text-primary', '--agnes-bg-page'],
   ['--agnes-text-secondary', '--agnes-bg-page'],
   ['--agnes-text-tertiary', '--agnes-bg-page'],
+  ['--agnes-text-tertiary', '--agnes-brand-emphasis-soft'],
+  ['--agnes-text-tertiary', '--agnes-bg-hover'],
+  ['--agnes-text-tertiary', '--agnes-bg-card'],
   ['--agnes-text-emphasis', '--agnes-bg-page'],
   ['--agnes-text-primary', '--agnes-bg-app-content'],
   ['--agnes-text-secondary', '--agnes-bg-app-content'],
@@ -209,8 +225,10 @@ const TEXT_DISABLED_SELECTORS = [
 /**
  * 本产品没有消费点、且已在设计 §6.2 显式删除的语义 token 的"保留名单"。
  * 保持为空是目标：任何名字被加回来都会让 adoption 门禁提醒重新登记。
+ * 玻璃面两档是公开主题 token（extension-api theme-tokens），皮肤仍可设置；
+ * 账户表单的密钥帮助改用信息色后它们暂无本产品消费点。
  */
-const RESERVED_TOKENS = new Set<string>()
+const RESERVED_TOKENS = new Set<string>(['--agnes-surface-glass-soft', '--agnes-surface-glass-hover'])
 
 /** mask 的不透明停靠点不是主题色，按设计 §5.1 豁免。 */
 const MASK_PROPERTIES = new Set(['mask', '-webkit-mask'])
@@ -220,11 +238,28 @@ const MASK_PROPERTIES = new Set(['mask', '-webkit-mask'])
  * 新增使用点必须同步改这里——这份摩擦是刻意的。
  */
 const DYNAMIC_CUSTOM_PROPERTIES = new Set([
-  '--usage-pct', // packages/web/src/usage.ts 的用量环，var() 自带 0% 回退
+  '--agh-segment-thumb-left', // web-ui/ui/segmented.tsx measures selection; .agh-segmented supplies initial geometry.
+  '--agh-segment-thumb-width', // web-ui/ui/segmented.tsx updates the measured selection width.
+  '--session-view-thumb-left', // session-views.tsx measures the selected tab; .session-tabs defines the initial geometry.
+  '--session-view-thumb-width', // session-views.tsx updates the thumb when selection or label width changes.
+  '--usage-pct', // packages/web-conversation/src/usage.ts 的用量环，var() 自带 0% 回退
+  '--workbench-width', // packages/web/src/workbench/dock.tsx 写入，var() 自带 320px 回退
+  '--workbench-height', // packages/web/src/workbench/dock.tsx 写入，var() 自带 220px 回退
+  '--workbench-tree-width', // packages/web-conversation/src/workbench/files-panel.tsx 写入拖动后的宽度，var() 自带 250px 回退
+  '--workbench-gutter', // packages/web-conversation/src/workbench/files-preview.tsx 按行数位数写入，var() 自带 3ch 回退
+  '--model-picker-room', // packages/web/src/model-picker.tsx 写入触发器上方的可用高度，var() 自带 100dvh 回退
 ])
 
 beforeAll(async () => {
-  rules = parseRules(stripComments(await readFile(stylePath, 'utf8')))
+  rules = parseRules(
+    stripComments(
+      readWebStyleSource(stylePath) +
+        readUiCss(resolve(packageDirectory, '../web-ui/src/components.css')) +
+        readUiCss(resolve(packageDirectory, '../web-ui/src/native.css')) +
+        readUiCss(resolve(packageDirectory, '../web-ui/src/doctor-groups.css')) +
+        readUiCss(resolve(packageDirectory, '../web-ui/src/refinement.css')),
+    ),
+  )
   collectTokens()
 })
 
@@ -238,11 +273,16 @@ describe('style.css token 门禁', () => {
     )
     expect(declarationsOf(buttonFocus as Rule)).toContainEqual({
       property: 'outline',
-      value: '2px solid var(--agnes-input-border-focus)',
+      value: 'var(--focus-outline)',
+    })
+    // The solid line at the element's edge is what keeps the ring at 3:1.
+    expect(declarationsOf(buttonFocus as Rule)).toContainEqual({
+      property: 'box-shadow',
+      value: 'var(--focus-line)',
     })
     expect(declarationsOf(inputFocus as Rule)).toContainEqual({
       property: 'box-shadow',
-      value: '0 0 0 3px var(--agnes-brand-focus-ring)',
+      value: '0 0 0 3px var(--agnes-focus-ring-soft)',
     })
   })
 
@@ -263,6 +303,25 @@ describe('style.css token 门禁', () => {
         }
         if (ratio < 4.5) failures.push(`${theme}: ${fg} on ${bg} = ${ratio.toFixed(2)}:1`)
       }
+    }
+    const timeRule = rules.find((rule) => rule.selector === '.run-status-time')
+    expect(timeRule).toBeDefined()
+    const opacity = Number(declarationsOf(timeRule as Rule).find((d) => d.property === 'opacity')?.value ?? 1)
+    for (const theme of ['light', 'dark'] as const) {
+      const ratio = contrast('--agnes-status-warning-text', '--agnes-status-warning-bg', theme, opacity)
+      expect(ratio, `${theme} approval elapsed time`).toBeGreaterThanOrEqual(4.5)
+    }
+    const terminalRule = rules.find((rule) => rule.selector === '.workbench-terminal-runtime')
+    expect(terminalRule).toBeDefined()
+    const terminalColor = declarationsOf(terminalRule as Rule)
+      .find((d) => d.property === 'color')
+      ?.value.match(/var\((--[^)]+)\)/)?.[1]
+    expect(terminalColor).toBeDefined()
+    for (const theme of ['light', 'dark'] as const) {
+      expect(
+        contrast(terminalColor!, '--agnes-bg-fill', theme, 1, '--agnes-bg-subtle'),
+        `${theme} terminal runtime`,
+      ).toBeGreaterThanOrEqual(4.5)
     }
     expect(failures.join('\n')).toBe('')
   })
@@ -343,4 +402,56 @@ describe('style.css token 门禁', () => {
       .map((rule) => `${rule.selector} @${rule.line}`)
     expect(violations.join('\n')).toBe('')
   })
+})
+
+it('keeps sidebar action menus neutral on hover/focus and reveals project actions on keyboard focus', () => {
+  const css = readWebStyleSource(stylePath)
+  const shared = readUiCss(resolve(packageDirectory, '../web-ui/src/refinement.css'))
+  expect(shared).toMatch(
+    /\.agh-menu-popup--neutral \.agh-menu-item:hover[^}]+background: var\(--agnes-bg-hover\)/,
+  )
+  expect(shared).toMatch(
+    /\.agh-menu-popup--neutral \.agh-menu-item:focus-visible[^{]*\{[^}]+outline: 2px solid var\(--agnes-brand-focus-ring\)/,
+  )
+  const activeReset = parseRules(shared).find(
+    (rule) => rule.selector.includes('ant-dropdown-menu-item-active') && /outline:\s*none/.test(rule.body),
+  )
+  expect(activeReset?.selector).toContain('.agh-menu-popup:not(.agh-menu-popup--neutral)')
+  expect(css).toMatch(
+    /\.workspace-heading-row:hover \.workspace-row-actions,[^}]+\.workspace-heading-row:has\(:focus-visible\) \.workspace-row-actions[^}]+opacity: 1/,
+  )
+})
+
+it('puts every sidebar row on one inset and hangs project sessions on a guide line', () => {
+  const declarationsFor = (selector: string) => {
+    const rule = rules.find((candidate) =>
+      candidate.selector.split(',').some((part) => part.trim() === selector),
+    )
+    if (!rule) throw new Error(`missing rule for ${selector}`)
+    return declarationsOf(rule).map(({ property, value }) => `${property}: ${value}`)
+  }
+  // 置顶、项目内、临时会话与单列表的行同一套 30px 行高和 10px 内边距。
+  expect(declarationsFor('.session')).toEqual(
+    expect.arrayContaining(['height: 1.875rem', 'padding: 0 0.625rem']),
+  )
+  // 项目里的会话靠一条 1px 引导线挂在项目下面，而不是深缩进。
+  expect(declarationsFor('.workspace-group.is-nested > .workspace-sessions')).toEqual(
+    expect.arrayContaining(['margin-left: 1.0625rem', 'border-left: 1px solid var(--agnes-line-primary)']),
+  )
+  // 当前会话：选中底色，没有白卡片、描边或阴影。
+  expect(declarationsFor('.session-conversations .session-row[data-active="true"]')).toEqual([
+    'background: var(--agnes-bg-selected)',
+    'box-shadow: none',
+  ])
+  // 三个分区标题：12px、中等字重、三级灰。
+  expect(declarationsFor('.sidebar-section > .workspace-heading-row .workspace-heading')).toEqual(
+    expect.arrayContaining(['font-size: var(--font-size-xs)', 'color: var(--agnes-text-tertiary)']),
+  )
+})
+
+it('keeps the three sidebar sections apart in both list containers', () => {
+  const css = readWebStyleSource(stylePath)
+  // 标题本身就是一条 30px 的安静分隔，分区之间只再留 10px；两种列表容器保持一致。
+  expect(css).toMatch(/#sessions \{[^}]*gap: 0\.625rem;/)
+  expect(css).toMatch(/\.sidebar-inventory:has\(> \.sidebar-section\) \{\s*gap: 0\.625rem;/)
 })

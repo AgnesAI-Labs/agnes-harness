@@ -1,8 +1,13 @@
-import { tr } from './locale-bridge.js'
+import { applicationWorkText } from '@agnes/web-client'
+import { tr } from '@agnes/web-foundation/locale-bridge'
 
 /** Use persisted metadata before a provisional label, consistently across header and navigation. */
 export function sessionTitle(saved: string | undefined, prompt?: string): string {
-  return saved || (prompt ? Array.from(prompt).slice(0, 56).join('') : tr('sessionTitle.fallback'))
+  const work = prompt ? applicationWorkText(prompt) : undefined
+  const provisional = prompt ? Array.from(prompt).slice(0, 56).join('') : undefined
+  // A restored history label may still be the raw provisional prefix. Preserve real saved titles.
+  if (saved && (!work?.request || saved !== provisional)) return saved
+  return work?.text ? Array.from(work.text).slice(0, 56).join('') : tr('sessionTitle.fallback')
 }
 
 /** A bounded refresh for a submitted session after its transcript subscription has been detached. */

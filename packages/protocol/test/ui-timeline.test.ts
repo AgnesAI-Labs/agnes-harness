@@ -19,6 +19,7 @@ const nodes = [
   },
   {
     kind: 'approval',
+    purpose: 'plan.exit',
     id: 'p',
     seq: 4,
     state: 'pending',
@@ -70,11 +71,28 @@ describe('UI projection leaf contract', () => {
       }),
     ).toBe(true)
   })
+  it('carries a bound automatic permission decision on tool cards', () => {
+    const permissionDecision = {
+      reason: 'full-access',
+      decisionId: 'decision',
+      actor: {
+        id: 'owner',
+        org: 'local',
+        role: 'system',
+        deptPath: [],
+        attrs: { permissionPolicy: 'full-access' },
+      },
+    }
+    expect(Value.Check(UINode, { ...nodes[2], permissionDecision })).toBe(true)
+    expect(
+      Value.Check(UINode, { ...nodes[2], permissionDecision: { ...permissionDecision, reason: 'human' } }),
+    ).toBe(false)
+  })
   it('carries the reason behind an approval decision, optionally and as text only', () => {
     const decided = {
       ...nodes[3],
       state: 'decided',
-      decision: { verdict: 'unavailable', via: 'sync', reason: 'no_approver' },
+      decision: { verdict: 'unavailable', via: 'sync', reason: 'no-approver' },
     }
     expect(Value.Check(UINode, decided)).toBe(true)
     expect(Value.Check(UINode, { ...decided, decision: { verdict: 'rejected', via: 'sync' } })).toBe(true)
@@ -106,7 +124,12 @@ describe('UI projection leaf contract', () => {
         sessionId: 's',
         upto: 7,
         generation: 1,
-        opState: { turn: 1, step: 2, phase: 'parked', parked: { ticket: 't', expiresAt: 'date' } },
+        opState: {
+          turn: 1,
+          step: 2,
+          phase: 'parked',
+          parked: { decisionRef: { sessionId: 's', id: 't', revision: 1 }, expiresAt: 'date' },
+        },
         nodes,
         turns: [],
         budget: { slot: 'primary', escalate: false, creditsUsed: 2, creditsCap: null },

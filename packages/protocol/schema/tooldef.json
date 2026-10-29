@@ -1,23 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agnes.ai/schema/tooldef.json",
-  "title": "ToolDef (the three model-visible fields plus the meta keys)",
+  "title": "ToolDef (model-visible fields and execution metadata)",
   "$ref": "#/$defs/ToolDef",
   "$defs": {
-    "JsonValue": { "$ref": "session-v1.json#/$defs/JsonValue" },
+    "JsonValue": {
+      "$ref": "session-v1.json#/$defs/JsonValue"
+    },
     "ToolMeta": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "isReadOnly",
-        "isDestructive",
-        "isConcurrencySafe",
-        "isOpenWorld",
-        "replay",
-        "costHint",
-        "deferLoading",
-        "requiresApproval"
-      ],
+      "required": ["isReadOnly", "isDestructive", "isConcurrencySafe", "isOpenWorld", "replay"],
       "properties": {
         "isReadOnly": {
           "type": "boolean",
@@ -41,29 +34,119 @@
         },
         "costHint": {
           "oneOf": [
-            { "type": "null" },
+            {
+              "type": "null"
+            },
             {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "credits": { "type": "number", "minimum": 0 },
-                "wallMs": { "type": "integer", "minimum": 0 }
+                "credits": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "wallMs": {
+                  "type": "integer",
+                  "minimum": 0
+                }
               }
             }
           ],
-          "description": "An estimate for the budget preflight; null means the author declared no hint. Consumed by the budget stage."
+          "description": "Optional estimate for budget preflight. Omission or null means no estimate."
         },
         "deferLoading": {
-          "type": ["boolean", "null"],
-          "description": "true keeps the tool out of the default disclosure until a search loads it. null defers to the package default, which the MCP importer reads as true; until that importer lands, null behaves as false. Consumed by disclosure."
+          "oneOf": [
+            {
+              "type": ["boolean", "null"]
+            },
+            {
+              "const": "auto"
+            }
+          ],
+          "description": "Optional. true defers model discovery until loaded by search; omission, false or null means initial discovery; auto lets the runtime defer the turn's auto tools together once there are more than 15 of them or their schemas exceed about 4000 tokens."
+        },
+        "discoveryGroup": {
+          "type": "string",
+          "pattern": "^[^\\r\\n\\t]{1,120}$",
+          "description": "Optional one-line label, such as an MCP server name. Deferred tools sharing a label are listed to the model as one line with their count."
         },
         "requiresApproval": {
-          "oneOf": [{ "enum": ["never", "destructive", "always"] }, { "type": "null" }],
-          "description": "The approval band. always asks about every call; destructive asks when the call is destructive or the turn is tainted; never asks about no call, a tainted turn included. null resolves to destructive for a tool that may write and to never for a read-only one, and the command policy table may still decide. Consumed by the approval stage."
+          "oneOf": [
+            {
+              "enum": ["never", "destructive", "always"]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional approval band. Omission or null means destructive for destructive tools, otherwise never; command policy still applies."
         },
-        "returnsImages": {
+        "invalidArgumentLimit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "description": "Consecutive invalid argument failures before disabling this tool for the rest of the turn. Default 2. Valid arguments reset the count before exhaustion; exhausted tools cannot be re-enabled within the turn."
+        },
+        "attestsHistory": {
           "type": "boolean",
-          "description": "Optional; true declares that the tool's results carry pictures for the model. The call records it in its resolved policy, and request media sends a result's images only when the result is closed-world (trusted) and its call declared this. Absent means false: other tools' images, apart from read, computer_use and document_read, stay out of model requests."
+          "description": "Optional. Evidence exports and reports wait for full session history verification before dispatch. Omission means ordinary execution; it does not attest ledger integrity."
+        },
+        "isPresentational": {
+          "type": "boolean",
+          "description": "Optional. The effect only publishes display state to the user and has no external side effect. It cannot be combined with isDestructive or isOpenWorld. Tainted-call policy does not escalate this flag; requiresApproval always and a destructive band still ask."
+        },
+        "paths": {
+          "type": "array",
+          "maxItems": 32,
+          "description": "Optional declarations of top-level workspace path arguments. The runtime preflights access before every approval mode; URI schemes delegated to resource services never widen the filesystem fence.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["arg", "access"],
+            "properties": {
+              "arg": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+              },
+              "access": {
+                "enum": ["read", "write"]
+              },
+              "default": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "nonWorkspaceSchemes": {
+                "type": "array",
+                "maxItems": 16,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9+.-]{0,63}$"
+                }
+              }
+            }
+          }
+        },
+        "modelVisible": {
+          "type": "boolean",
+          "description": "Optional, defaults to true. false hides the tool from model schemas and discovery; internal invocation and authorization remain available."
+        },
+        "requiresImageInput": {
+          "type": "boolean",
+          "description": "Optional, defaults to false. Only a model with native image input can discover or execute this tool."
+        },
+        "requiresUser": {
+          "type": "boolean",
+          "description": "Optional, defaults to false. The tool asks a person who is present, or shows them something to look at or act on now (a question, a form, a live UI surface). A turn whose input declares that nobody is attending (agh -p, agh run, runHeadless) does not offer it to the model or execute a model call to it."
+        },
+        "presentation": {
+          "$ref": "session-v1.json#/$defs/ToolPresentation",
+          "description": "Optional human-readable action and purpose for cards and approvals. Display only; exact arguments and authorization remain unchanged."
+        },
+        "commandArg": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+          "description": "Optional. Names the top-level string argument that carries the command text this tool runs. The command table matches its rules against that text, whitespace-folded, instead of the canonical JSON of all arguments."
         }
       }
     },
@@ -72,11 +155,28 @@
       "additionalProperties": false,
       "required": ["type", "properties", "additionalProperties"],
       "properties": {
-        "type": { "const": "object" },
-        "properties": { "type": "object", "additionalProperties": { "$ref": "#/$defs/JsonValue" } },
-        "required": { "type": "array", "items": { "type": "string" } },
-        "additionalProperties": { "const": false },
-        "description": { "type": "string", "maxLength": 2048 }
+        "type": {
+          "const": "object"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        "required": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": {
+          "const": false
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 2048
+        }
       }
     },
     "ToolDef": {
@@ -84,10 +184,21 @@
       "additionalProperties": false,
       "required": ["name", "description", "parameters", "meta"],
       "properties": {
-        "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
-        "description": { "type": "string", "minLength": 1, "maxLength": 4096 },
-        "parameters": { "$ref": "#/$defs/ParametersSchema" },
-        "meta": { "$ref": "#/$defs/ToolMeta" }
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "parameters": {
+          "$ref": "#/$defs/ParametersSchema"
+        },
+        "meta": {
+          "$ref": "#/$defs/ToolMeta"
+        }
       }
     }
   }

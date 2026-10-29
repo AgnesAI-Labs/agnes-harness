@@ -1,11 +1,17 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createTestHost } from '@agnes/host/testkit'
+import { RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
 import {
   buildRuntimeTarget,
+  decodeRuntimeTargetArtifact,
   encodeRuntimeTargetArtifact,
   type RuntimeTarget,
   type RuntimeTargetArtifact,
 } from '@agnes/plugin-runtime/host'
 import { describe, expect, it, vi } from 'vitest'
-import { createRuntimeTargetSlot } from '../src/runtime-target-slot.js'
+import { createRuntimeTargetSlot, runtimeTargetFailureMessage } from '../src/runtime-target-slot.js'
 
 function artifact(revision: string): RuntimeTargetArtifact {
   return encodeRuntimeTargetArtifact(
@@ -33,6 +39,64 @@ function deferred<T = void>() {
 }
 
 describe('runtime target latest-wins slot', () => {
+  it.each([false, true])(
+    'starts without prior generations and keeps captured Host ports live (deferred=%s)',
+    async (deferInitialGeneration) => {
+      const root = mkdtempSync(join(tmpdir(), 'agnes-cold-generation-'))
+      const { host } = await createTestHost({
+        dataDir: root,
+        script: [],
+        disableSessionTitle: true,
+        deferInitialGeneration,
+      })
+      try {
+        expect(host.pluginGenerationStatus?.().generations).toEqual(
+          deferInitialGeneration ? [] : [expect.objectContaining({ state: 'active', boundSessions: 0 })],
+        )
+        // main.ts captures these ports once, before any session binds the bootstrap generation.
+        const readTarget = host.runtimeTargetSnapshot!.bind(host)
+        const convergence = host.ordinaryConvergence.bind(host)
+        const slot = createRuntimeTargetSlot({
+          applyRuntimeTarget: host.applyRuntimeTarget.bind(host),
+          runtimeTargetSnapshot: readTarget,
+        })
+        const boot = readTarget()
+        const desired = encodeRuntimeTargetArtifact(
+          buildRuntimeTarget({
+            rows: boot.tree.rows,
+            resources: boot.resource.resources,
+            resourceRevision: 'e'.repeat(64),
+            compositeRevision: 'e'.repeat(64),
+          }),
+        )
+        if (deferInitialGeneration) {
+          const archive = vi
+            .spyOn(RuntimeGenerationSnapshotStore.prototype, 'createAsync')
+            .mockRejectedValueOnce(new Error('fixture archive unavailable'))
+          try {
+            await expect(slot.offer(frame(desired))).resolves.toMatchObject({ status: 'failed' })
+            expect(host.pluginGenerationStatus?.().generations).toEqual([])
+          } finally {
+            archive.mockRestore()
+          }
+        }
+        await expect(slot.offer(frame(desired))).resolves.toMatchObject({ status: 'applied', changed: true })
+        expect(host.pluginGenerationStatus?.().generations).toEqual([
+          expect.objectContaining({ state: 'active', boundSessions: 0 }),
+        ])
+        expect(encodeRuntimeTargetArtifact(readTarget()).digest).toBe(desired.digest)
+        expect(convergence()).toEqual(host.ordinaryConvergence())
+        await expect(slot.offer(frame(desired))).resolves.toMatchObject({ status: 'applied', changed: false })
+        const session = await host.createSession({ key: 'first-session', cwd: root })
+        expect(session.pluginGenerationId).toBe(host.pluginGenerationStatus?.().currentGenerationId)
+        await session.close()
+      } finally {
+        await host.close()
+        rmSync(root, { recursive: true, force: true })
+      }
+    },
+  )
+
   it('serializes Host apply and retains only the latest complete target while one is in flight', async () => {
     const first = deferred<string>()
     const calls: RuntimeTarget[] = []
@@ -81,9 +145,13 @@ describe('runtime target latest-wins slot', () => {
 
   it('coalesces an in-flight digest and treats an already-applied digest as idempotent', async () => {
     const gate = deferred<void>()
-    const applyRuntimeTarget = vi.fn(async () => gate.promise)
-    const slot = createRuntimeTargetSlot({ applyRuntimeTarget })
     const a = artifact('a')
+    let current = decodeRuntimeTargetArtifact(a)
+    const applyRuntimeTarget = vi.fn(async (target: RuntimeTarget) => {
+      await gate.promise
+      current = target
+    })
+    const slot = createRuntimeTargetSlot({ applyRuntimeTarget, runtimeTargetSnapshot: () => current })
 
     const first = slot.offer(frame(a))
     const duplicate = slot.offer(frame(a))
@@ -94,6 +162,11 @@ describe('runtime target latest-wins slot', () => {
     await expect(duplicate).resolves.toMatchObject({ status: 'applied', changed: true })
     await expect(slot.offer(frame(a))).resolves.toMatchObject({ status: 'applied', changed: false })
     expect(applyRuntimeTarget).toHaveBeenCalledOnce()
+    // A separate resource/extension publication can advance the Host's head while old sessions
+    // retain A. A cached delivery result is no longer proof that A is the current target.
+    current = decodeRuntimeTargetArtifact(artifact('b'))
+    await expect(slot.offer(frame(a))).resolves.toMatchObject({ status: 'applied', changed: true })
+    expect(encodeRuntimeTargetArtifact(current).digest).toBe(a.digest)
   })
 
   it('lets a repeat of the active digest supersede a different queued target', async () => {
@@ -148,7 +221,7 @@ describe('runtime target latest-wins slot', () => {
 
   it('continues with the latest queued target after an apply failure', async () => {
     const first = deferred<void>()
-    const failure = new Error('candidate failed')
+    const failure = new Error('candidate failed', { cause: new Error('plugin refused new value') })
     const a = artifact('a')
     const b = artifact('b')
     const calls: string[] = []
@@ -165,6 +238,7 @@ describe('runtime target latest-wins slot', () => {
     first.reject(failure)
 
     await expect(failedA).resolves.toMatchObject({ status: 'failed', error: failure })
+    expect(runtimeTargetFailureMessage(failure)).toBe('plugin refused new value')
     await expect(appliedB).resolves.toMatchObject({
       status: 'applied',
       changed: true,

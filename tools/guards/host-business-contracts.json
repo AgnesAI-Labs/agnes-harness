@@ -1,0 +1,282 @@
+[
+  {
+    "path": "packages/host/src/runtime/assemble/kernel-hooks.ts",
+    "symbol": "<module>/FunctionDeclaration:startKernelHooks/Block:0/IfStatement:1/Block:0/VariableDeclaration:stopPolicy",
+    "literal": "agnes/composition",
+    "role": "literal",
+    "max": 1,
+    "reason": "Host composition control-plane source"
+  },
+  {
+    "path": "packages/host/src/runtime/assemble/kernel-stage.ts",
+    "symbol": "<module>/FunctionDeclaration:createKernel/Block:0/VariableDeclaration:compositionLease",
+    "literal": "agnes/composition",
+    "role": "literal",
+    "max": 1,
+    "reason": "Host composition control-plane source; no business capability grant"
+  },
+  {
+    "path": "packages/host/src/runtime/assemble/kernel-stage.ts",
+    "symbol": "<module>/FunctionDeclaration:createKernel/Block:0/VariableDeclaration:kernel/CallExpression:0/ObjectLiteralExpression:0/PropertyAssignment:hookLeaseFor/ArrowFunction:0",
+    "literal": "agnes/composition",
+    "role": "comparison",
+    "max": 1,
+    "reason": "Host composition control-plane source; no business capability grant"
+  },
+  {
+    "path": "packages/host/src/runtime/feedback/contract.ts",
+    "symbol": "<module>/VariableDeclaration:FEEDBACK_OWNER",
+    "literal": "agnes/feedback",
+    "role": "literal",
+    "max": 1,
+    "reason": "Host feedback control-plane identity; does not grant package capabilities"
+  },
+  {
+    "path": "packages/host/src/runtime/generation/migration-state.ts",
+    "symbol": "<module>/FunctionDeclaration:assertMigrationSettled/Block:0/FunctionDeclaration:inspect",
+    "literal": "ext:agnes/interaction",
+    "role": "comparison",
+    "max": 1,
+    "reason": "Historical extension origin wire identity; pending-state refusal must be preserved"
+  },
+  {
+    "path": "packages/host/src/runtime/generation/migration-state.ts",
+    "symbol": "<module>/FunctionDeclaration:assertMigrationSettled/Block:0/FunctionDeclaration:inspect",
+    "literal": "ext:agnes/intelligent-ui",
+    "role": "comparison",
+    "max": 2,
+    "reason": "Historical extension origin wire identity; pending-state refusal must be preserved"
+  },
+  {
+    "path": "packages/host/src/runtime/generation/migration-state.ts",
+    "symbol": "<module>/FunctionDeclaration:assertMigrationSettled/Block:0/FunctionDeclaration:inspect",
+    "literal": "ext:agnes/subagent",
+    "role": "comparison",
+    "max": 1,
+    "reason": "Historical extension origin wire identity; pending-state refusal must be preserved"
+  },
+  {
+    "path": "packages/host/src/runtime/services/scheduling.ts",
+    "symbol": "<module>/FunctionDeclaration:installSchedulingService",
+    "literal": "agnes/scheduling",
+    "role": "literal",
+    "max": 2,
+    "reason": "Host scheduling control-plane source"
+  },
+  {
+    "path": "packages/host/src/runtime/sessions/deferred-invocations.ts",
+    "symbol": "<module>/FunctionDeclaration:bindDeferredInvocations/Block:0/VariableDeclaration:ports/ObjectLiteralExpression:0/MethodDeclaration:wake",
+    "literal": "agnes/deferred-invocations",
+    "role": "literal",
+    "max": 1,
+    "reason": "Host deferred invocation control-plane source"
+  },
+  {
+    "path": "packages/host/src/runtime/sessions/intelligent-ui-trace.ts",
+    "symbol": "<module>/FunctionDeclaration:appendUiTrace/Block:0/ReturnStatement:0/CallExpression:0/ArrowFunction:0/Block:0/VariableDeclaration:spans/CallExpression:0/PropertyAccessExpression:map/CallExpression:0/ArrowFunction:0",
+    "literal": "ext:agnes/intelligent-ui",
+    "role": "comparison",
+    "max": 1,
+    "reason": "Historical UI origin wire identity for trace receipt validation"
+  },
+  {
+    "path": "packages/host-infrastructure/src/adapters/codex-credentials.ts",
+    "symbol": "<module>/FunctionDeclaration:subscriptionCredentials/Block:0/ReturnStatement:0/ObjectLiteralExpression:0/PropertyAssignment:modify/ArrowFunction:0/Block:0/ReturnStatement:0/CallExpression:0/ArrowFunction:0",
+    "literal": "openai-codex",
+    "role": "comparison",
+    "max": 1,
+    "reason": "Versioned credential wire identity and account validation"
+  },
+  {
+    "path": "packages/host-infrastructure/src/adapters/codex-credentials.ts",
+    "symbol": "<module>/VariableDeclaration:codexCredentials/ArrowFunction:0",
+    "literal": "openai-codex",
+    "role": "literal",
+    "max": 1,
+    "reason": "Versioned credential wire identity and account validation"
+  },
+  {
+    "path": "packages/host-infrastructure/src/adapters/credential-store.ts",
+    "symbol": "<module>/TypeAliasDeclaration:SubscriptionCredentialV2",
+    "literal": "anthropic",
+    "role": "literal",
+    "max": 1,
+    "reason": "Versioned persisted credential codec; retain exact provider wire format validation"
+  },
+  {
+    "path": "packages/host-infrastructure/src/adapters/credential-store.ts",
+    "symbol": "<module>/TypeAliasDeclaration:SubscriptionCredentialV2",
+    "literal": "github-copilot",
+    "role": "literal",
+    "max": 1,
+    "reason": "Versioned persisted credential codec; retain exact provider wire format validation"
+  },
+  {
+    "path": "packages/host-infrastructure/src/adapters/credential-store.ts",
+    "symbol": "<module>/TypeAliasDeclaration:SubscriptionCredentialV2",
+    "literal": "kimi-coding",
+    "role": "literal",
+    "max": 1,
+    "reason": "Versioned persisted credential codec; retain exact provider wire format validation"
+  },
+  {
+    "path": "packages/host-infrastructure/src/adapters/credential-store.ts",
+    "symbol": "<module>/TypeAliasDeclaration:SubscriptionCredentialV2",
+    "literal": "openai-codex",
+    "role": "literal",
+    "max": 1,
+    "reason": "Versioned persisted credential codec; retain exact provider wire format validation"
+  },
+  {
+    "path": "packages/host-infrastructure/src/adapters/credential-store.ts",
+    "symbol": "<module>/TypeAliasDeclaration:SubscriptionCredentialV2",
+    "literal": "xai",
+    "role": "literal",
+    "max": 1,
+    "reason": "Versioned persisted credential codec; retain exact provider wire format validation"
+  },
+  {
+    "path": "packages/host-infrastructure/src/adapters/credential-store.ts",
+    "symbol": "<module>/TypeAliasDeclaration:CodexCredentialV2",
+    "literal": "openai-codex",
+    "role": "literal",
+    "max": 1,
+    "reason": "Versioned persisted credential codec; retain exact provider wire format validation"
+  },
+  {
+    "path": "packages/host-infrastructure/src/adapters/credential-store.ts",
+    "symbol": "<module>/FunctionDeclaration:isCodexCredential",
+    "literal": "openai-codex",
+    "role": "literal",
+    "max": 1,
+    "reason": "Versioned persisted credential codec; retain exact provider wire format validation"
+  },
+  {
+    "path": "packages/host-infrastructure/src/adapters/credential-store.ts",
+    "symbol": "<module>/FunctionDeclaration:isSubscriptionCredential/Block:0/VariableDeclaration:providers",
+    "literal": "anthropic",
+    "role": "literal",
+    "max": 1,
+    "reason": "Versioned persisted credential codec; retain exact provider wire format validation"
+  },
+  {
+    "path": "packages/host-infrastructure/src/adapters/credential-store.ts",
+    "symbol": "<module>/FunctionDeclaration:isSubscriptionCredential/Block:0/VariableDeclaration:providers",
+    "literal": "github-copilot",
+    "role": "literal",
+    "max": 1,
+    "reason": "Versioned persisted credential codec; retain exact provider wire format validation"
+  },
+  {
+    "path": "packages/host-infrastructure/src/adapters/credential-store.ts",
+    "symbol": "<module>/FunctionDeclaration:isSubscriptionCredential/Block:0/VariableDeclaration:providers",
+    "literal": "kimi-coding",
+    "role": "literal",
+    "max": 1,
+    "reason": "Versioned persisted credential codec; retain exact provider wire format validation"
+  },
+  {
+    "path": "packages/host-infrastructure/src/adapters/credential-store.ts",
+    "symbol": "<module>/FunctionDeclaration:isSubscriptionCredential/Block:0/VariableDeclaration:providers",
+    "literal": "openai-codex",
+    "role": "literal",
+    "max": 1,
+    "reason": "Versioned persisted credential codec; retain exact provider wire format validation"
+  },
+  {
+    "path": "packages/host-infrastructure/src/adapters/credential-store.ts",
+    "symbol": "<module>/FunctionDeclaration:isSubscriptionCredential/Block:0/VariableDeclaration:providers",
+    "literal": "xai",
+    "role": "literal",
+    "max": 1,
+    "reason": "Versioned persisted credential codec; retain exact provider wire format validation"
+  },
+  {
+    "path": "packages/host-infrastructure/src/adapters/credential-store.ts",
+    "symbol": "<module>/FunctionDeclaration:isSubscriptionCredential",
+    "literal": "openai-codex",
+    "role": "comparison",
+    "max": 1,
+    "reason": "Versioned persisted credential codec; retain exact provider wire format validation"
+  },
+  {
+    "path": "packages/host-infrastructure/src/adapters/credential-store.ts",
+    "symbol": "<module>/FunctionDeclaration:isSubscriptionCredential",
+    "literal": "github-copilot",
+    "role": "comparison",
+    "max": 1,
+    "reason": "Versioned persisted credential codec; retain exact provider wire format validation"
+  },
+  {
+    "path": "packages/host-infrastructure/src/codex-login.ts",
+    "symbol": "<module>/FunctionDeclaration:createCodexLogin/Block:0/ReturnStatement:0/ArrowFunction:0",
+    "literal": "openai-codex",
+    "role": "comparison",
+    "max": 1,
+    "reason": "Existing provider callback and account wire validation; preserve exact refusal"
+  },
+  {
+    "path": "packages/host-infrastructure/src/codex-login.ts",
+    "symbol": "<module>/FunctionDeclaration:createCodexLogin/Block:0/ReturnStatement:0/ArrowFunction:0/Block:0/IfStatement:1/Block:0/VariableDeclaration:store/ObjectLiteralExpression:0/PropertyAssignment:modify/ArrowFunction:0",
+    "literal": "openai-codex",
+    "role": "comparison",
+    "max": 1,
+    "reason": "Existing provider callback and account wire validation; preserve exact refusal"
+  },
+  {
+    "path": "packages/host-infrastructure/src/codex-login.ts",
+    "symbol": "<module>/FunctionDeclaration:createCodexLogin/Block:0/ReturnStatement:0/ArrowFunction:0/Block:0/IfStatement:1/Block:0/VariableDeclaration:interaction/ObjectLiteralExpression:0/PropertyAssignment:prompt/ArrowFunction:0/Block:0/ReturnStatement:0/NewExpression:0/ArrowFunction:0/Block:0/ExpressionStatement:1/BinaryExpression:0/ArrowFunction:0",
+    "literal": "github-copilot",
+    "role": "comparison",
+    "max": 1,
+    "reason": "Existing provider callback and account wire validation; preserve exact refusal"
+  },
+  {
+    "path": "packages/host-infrastructure/src/configuration.ts",
+    "symbol": "<module>/VariableDeclaration:COMPATIBLE_APIS",
+    "literal": "openai-completions",
+    "role": "literal",
+    "max": 1,
+    "reason": "Versioned provider wire protocol compatibility format"
+  },
+  {
+    "path": "packages/host-infrastructure/src/configuration.ts",
+    "symbol": "<module>/VariableDeclaration:COMPATIBLE_APIS",
+    "literal": "openai-responses",
+    "role": "literal",
+    "max": 1,
+    "reason": "Versioned provider wire protocol compatibility format"
+  },
+  {
+    "path": "packages/host-infrastructure/src/git-worktrees.ts",
+    "symbol": "<module>/FunctionDeclaration:createGitWorktreeService/Block:0/VariableDeclaration:valid/ArrowFunction:0/Block:0/VariableDeclaration:id",
+    "literal": "agnes/subagent-",
+    "role": "literal",
+    "max": 1,
+    "reason": "Historical managed worktree branch wire format and ownership validation"
+  },
+  {
+    "path": "packages/host-infrastructure/src/git-worktrees.ts",
+    "symbol": "<module>/FunctionDeclaration:createGitWorktreeService/Block:0/VariableDeclaration:valid/ArrowFunction:0",
+    "literal": "agnes/subagent-",
+    "role": "comparison",
+    "max": 1,
+    "reason": "Historical managed worktree branch wire format and ownership validation"
+  },
+  {
+    "path": "packages/host-infrastructure/src/git-worktrees.ts",
+    "symbol": "<module>/FunctionDeclaration:createGitWorktreeService/Block:0/ReturnStatement:0/ObjectLiteralExpression:0/MethodDeclaration:create/Block:0/ReturnStatement:0/CallExpression:0/ArrowFunction:0/Block:0/TryStatement:0/Block:0/VariableDeclaration:branch",
+    "literal": "agnes/subagent-",
+    "role": "literal",
+    "max": 1,
+    "reason": "Historical managed worktree branch wire format and ownership validation"
+  },
+  {
+    "path": "packages/host-providers/src/adapters/sandbox-providers.ts",
+    "symbol": "<module>",
+    "literal": "LOCAL_SANDBOX_PROVIDER_ID",
+    "role": "default-export",
+    "max": 1,
+    "reason": "Public local sandbox infrastructure token re-export; backend execution-domain enforcement remains Host-owned"
+  }
+]

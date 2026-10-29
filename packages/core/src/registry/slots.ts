@@ -1,3 +1,7 @@
+import { CoreError, type Disposer } from '@agnes/core-common/types'
+import type { Timers } from '@agnes/core-ledger/log/session-log'
+import type { SlotFillRunner } from '@agnes/core-ledger/project/ui'
+import { OwnedRegistryTable } from '@agnes/core-ledger/registry/owner-batch'
 import {
   extEventType,
   type SessionRef,
@@ -12,10 +16,6 @@ import {
   UI_SLOT_TABLE,
   validateSlotPayload,
 } from '@agnes/protocol'
-import type { Timers } from '../log/session-log.js'
-import type { SlotFillRunner } from '../project/ui.js'
-import { CoreError, type Disposer } from '../types.js'
-import { OwnedRegistryTable } from './owner-batch.js'
 import { invokeSlot } from './slot-invocation.js'
 import type { ToolSource } from './tools.js'
 

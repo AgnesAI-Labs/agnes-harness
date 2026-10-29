@@ -46,6 +46,7 @@ import type { Ajv2020 as Ajv2020Class } from 'ajv/dist/2020.js'
 import { describe, expect, it } from 'vitest'
 import * as AcpGen from '../gen/ts/acp.js'
 import * as AgnesGen from '../gen/ts/agnes-v1.js'
+import * as AppGen from '../gen/ts/app-server.js'
 import * as AuthzGen from '../gen/ts/authz.js'
 import * as BridgeGen from '../gen/ts/bridge.js'
 import * as ChannelGen from '../gen/ts/channel.js'
@@ -53,10 +54,13 @@ import * as DeployManifestGen from '../gen/ts/deploy-manifest.js'
 import * as ExtensionManifestGen from '../gen/ts/extension-manifest.js'
 import * as ServiceGen from '../gen/ts/extension-service.js'
 import * as HooksGen from '../gen/ts/hooks.js'
+import * as IntelligentUiGen from '../gen/ts/intelligent-ui.js'
 import * as JobsGen from '../gen/ts/jobs.js'
 import * as LockfileGen from '../gen/ts/lockfile.js'
+import * as ManagedServiceGen from '../gen/ts/managed-service.js'
 import * as ModelGen from '../gen/ts/model.js'
 import * as PackageAdminGen from '../gen/ts/package-admin.js'
+import * as PluginStreamGen from '../gen/ts/plugin-stream.js'
 import * as PresetGen from '../gen/ts/preset.js'
 import * as ProfileGen from '../gen/ts/profile.js'
 import * as ProjectionGen from '../gen/ts/projection.js'
@@ -66,6 +70,7 @@ import * as SlotsGen from '../gen/ts/slots.js'
 import * as SurfaceGen from '../gen/ts/surface.js'
 import * as ToolDefGen from '../gen/ts/tooldef.js'
 import * as WorkerGen from '../gen/ts/worker.js'
+import { AgentPlan, AgentResolveParams } from '../src/agents.js'
 import {
   METHODS,
   type MethodName,
@@ -75,6 +80,35 @@ import {
   validateMethod,
   validateRequestMedia,
 } from '../src/index.js'
+import { ModelSlotsSnapshot } from '../src/model-slots.js'
+import {
+  ChildEnginesSaveParams,
+  ChildEnginesState,
+  RuntimeAdminEmpty,
+  RuntimeAdminSnapshot,
+} from '../src/runtime-admin.js'
+import {
+  ScheduleRun,
+  ScheduleSelector,
+  SchedulesArchiveParams,
+  SchedulesArchiveResult,
+  SchedulesControlParams,
+  SchedulesControlResult,
+  SchedulesHistoryParams,
+  SchedulesHistoryResult,
+  SchedulesListParams,
+  SchedulesListResult,
+  SchedulesReceiptParams,
+  SchedulesReceiptResult,
+  SchedulesUpsertParams,
+  SchedulesUpsertResult,
+  ScheduleTarget,
+  ScheduleView,
+} from '../src/schedules.js'
+import { SessionIntegrityParams, SessionIntegrityStatus } from '../src/session-integrity.js'
+import { SessionRuntimeDescriptor, SessionRuntimeParams } from '../src/session-runtime.js'
+import { SessionToolsParams, SessionToolsResult } from '../src/session-tools.js'
+import { intelligentUiSamples } from './parity-intelligent-ui-samples.js'
 
 type Json = Record<string, unknown>
 type FixtureRow = { id: string; payload: unknown }
@@ -86,6 +120,13 @@ const pkgRoot = fileURLToPath(new URL('..', import.meta.url))
 const rep = (n: number) => 'a'.repeat(n)
 /** The canonical valid Sha256 value, used wherever this document requires one. */
 const rep64 = 'a'.repeat(64)
+/** Valid voice settings (the protocol defaults, spelled out so a default change cannot hide a regression). */
+const VOICE_SETTINGS = {
+  account: '',
+  input: { enabled: true, language: '', autoSend: false, maxSeconds: 120 },
+  reading: { enabled: true, voice: '', speed: 1, autoRead: false },
+  conversation: { pauseSeconds: 1.2 },
+}
 /** Deep copy for fixture baselines whose nested fields need changing — fixture objects are shared
  * across several negative cases and must not be mutated in place. */
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T
@@ -130,6 +171,7 @@ function requestMediaDataOf(id: string): unknown {
 // along with x-* extension keys and `discriminator` (on the ACP side). None of these are shapes ajv's
 // strict mode recognises, yet all are either legal 2020-12 keywords or pure annotation keys — without
 // relaxing these two options, compilation throws outright.
+const AppDoc = JSON.parse(readFileSync(`${pkgRoot}schema/app-server.json`, 'utf8')) as Json
 const sessionSchemaDoc = JSON.parse(readFileSync(`${pkgRoot}schema/session-v1.json`, 'utf8')) as Json
 const agnesSchemaDoc = JSON.parse(readFileSync(`${pkgRoot}schema/agnes-v1.json`, 'utf8')) as Json
 const modelSchemaDoc = JSON.parse(readFileSync(`${pkgRoot}schema/model.json`, 'utf8')) as Json
@@ -157,14 +199,76 @@ const addFormats = nodeRequire('ajv-formats') as (ajv: InstanceType<typeof Ajv20
 
 const ajv = new AjvCtor({ strict: false, allowUnionTypes: true })
 addFormats(ajv)
+// Public metadata documentation links require credential-free HTTPS and no whitespace/control bytes.
+ajv.addFormat('agnes-plugin-docs-url', (value: string) => {
+  try {
+    const url = new URL(value)
+    return (
+      value.startsWith('https://') &&
+      [...value].every((char) => {
+        const code = char.charCodeAt(0)
+        return code > 32 && (code < 127 || code > 159)
+      }) &&
+      url.username === '' &&
+      url.password === ''
+    )
+  } catch {
+    return false
+  }
+})
+const SESSION_INTEGRITY_ID = 'https://agnes.dev/session-integrity'
+const SESSION_TOOLS_ID = 'https://agnes.dev/session-tools'
+const AGENTS_ID = 'https://agnes.dev/agents/schema.json'
+const SESSION_RUNTIME_ID = 'https://agnes.dev/session-runtime'
+const RUNTIME_ADMIN_ID = 'https://agnes.dev/runtime-admin'
+const SCHEDULES_ID = 'https://agnes.dev/schedules'
+ajv.addSchema({
+  $id: RUNTIME_ADMIN_ID,
+  $defs: {
+    ChildEnginesSaveParams,
+    ChildEnginesState,
+    ModelSlotsSnapshot,
+    RuntimeAdminEmpty,
+    RuntimeAdminSnapshot,
+  },
+})
+ajv.addSchema({
+  $id: SCHEDULES_ID,
+  $defs: {
+    ScheduleRun,
+    ScheduleSelector,
+    ScheduleTarget,
+    ScheduleView,
+    SchedulesArchiveParams,
+    SchedulesArchiveResult,
+    SchedulesControlParams,
+    SchedulesControlResult,
+    SchedulesHistoryParams,
+    SchedulesHistoryResult,
+    SchedulesReceiptParams,
+    SchedulesReceiptResult,
+    SchedulesListParams,
+    SchedulesListResult,
+    SchedulesUpsertParams,
+    SchedulesUpsertResult,
+  },
+})
+ajv.addSchema({ $id: SESSION_INTEGRITY_ID, $defs: { SessionIntegrityParams, SessionIntegrityStatus } })
+ajv.addSchema({ $id: SESSION_TOOLS_ID, $defs: { SessionToolsParams, SessionToolsResult } })
+ajv.addSchema({ $id: AGENTS_ID, $defs: { AgentResolveParams, AgentPlan } })
+ajv.addSchema({ $id: SESSION_RUNTIME_ID, $defs: { SessionRuntimeParams, SessionRuntimeDescriptor } })
 // Reference validator uses URL parsing as required by the owned custom format's contract.
 ajv.addFormat('agnes-git-source', (ref: string) => {
   if (!ref.startsWith('git:')) return false
-  const split = ref.lastIndexOf('#')
-  if (split < 4 || !/^[a-f0-9]{40}$/.test(ref.slice(split + 1))) return false
   try {
-    const url = new URL(ref.slice(4, split))
-    return url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash
+    const url = new URL(ref.slice(4))
+    return (
+      url.protocol === 'https:' &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      (!url.hash || /^#[A-Za-z0-9._/-]+$/.test(url.hash))
+    )
   } catch {
     return false
   }
@@ -179,6 +283,9 @@ const ServiceDoc = JSON.parse(readFileSync(`${pkgRoot}schema/extension-service.j
 ajv.addSchema(ServiceDoc)
 const ProjectionDoc = JSON.parse(readFileSync(`${pkgRoot}schema/projection.json`, 'utf8')) as Json
 ajv.addSchema(ProjectionDoc)
+const IntelligentUiDoc = JSON.parse(readFileSync(`${pkgRoot}schema/intelligent-ui.json`, 'utf8')) as Json
+ajv.addSchema(IntelligentUiDoc)
+ajv.addSchema(AppDoc)
 ajv.addSchema(sessionSchemaDoc)
 ajv.addSchema(agnesSchemaDoc)
 ajv.addSchema(modelSchemaDoc)
@@ -188,6 +295,10 @@ ajv.addSchema(slotsSchemaDoc)
 ajv.addSchema(presetSchemaDoc)
 ajv.addSchema(ProfileDoc)
 ajv.addSchema(LockfileDoc)
+const PluginStreamDoc = JSON.parse(readFileSync(`${pkgRoot}schema/plugin-stream.json`, 'utf8')) as Json
+const ManagedServiceDoc = JSON.parse(readFileSync(`${pkgRoot}schema/managed-service.json`, 'utf8')) as Json
+ajv.addSchema(PluginStreamDoc)
+ajv.addSchema(ManagedServiceDoc)
 ajv.addSchema(ExtensionManifestDoc)
 ajv.addSchema(DeployManifestDoc)
 ajv.addSchema(JobsDoc)
@@ -223,14 +334,22 @@ function ajvDef(fileId: string, name: string): (x: unknown) => boolean {
 // to a schema without registering it here (or the reverse) goes red.
 
 const SESSION_DEFS: Record<string, TSchema> = {
+  DecisionPresentation: SessionGen.DecisionPresentation,
+  DecisionSpec: SessionGen.DecisionSpec,
+  DecisionHandle: SessionGen.DecisionHandle,
+  DecisionResponse: SessionGen.DecisionResponse,
+  DecisionRequest: SessionGen.DecisionRequest,
+  DecisionResult: SessionGen.DecisionResult,
+  DecisionConsumption: SessionGen.DecisionConsumption,
+  DecisionCommandReceipt: SessionGen.DecisionCommandReceipt,
+  DecisionSnapshot: SessionGen.DecisionSnapshot,
+
   JsonValue: SessionGen.JsonValue,
   Actor: SessionGen.Actor,
   ContentBlock: SessionGen.ContentBlock,
-  OmittedData: SessionGen.OmittedData,
-  AttachmentRef: SessionGen.AttachmentRef,
-  AttachmentThumbnail: SessionGen.AttachmentThumbnail,
   SurfaceOp: SessionGen.SurfaceOp,
   EventEnvelope: SessionGen.EventEnvelope,
+  ExtensionEventType: SessionGen.ExtensionEventType,
   SessionStart: SessionGen.SessionStart,
   SessionModelSelection: SessionGen.SessionModelSelection,
   SubagentCost: SessionGen.SubagentCost,
@@ -238,11 +357,14 @@ const SESSION_DEFS: Record<string, TSchema> = {
   TurnEnd: SessionGen.TurnEnd,
   StepStart: SessionGen.StepStart,
   StepEnd: SessionGen.StepEnd,
+  SystemInputPresentation: SessionGen.SystemInputPresentation,
+  SystemInput: SessionGen.SystemInput,
   UserMessage: SessionGen.UserMessage,
   AssistantMessage: SessionGen.AssistantMessage,
   ResolvedToolCallPolicy: SessionGen.ResolvedToolCallPolicy,
   ExecutionDomain: SessionGen.ExecutionDomain,
   DispatchPhase: SessionGen.DispatchPhase,
+  ToolPresentation: SessionGen.ToolPresentation,
   ToolCall: SessionGen.ToolCall,
   ToolResult: SessionGen.ToolResult,
   RequestMediaManifestEntry: SessionGen.RequestMediaManifestEntry,
@@ -270,10 +392,7 @@ const SESSION_DEFS: Record<string, TSchema> = {
   Billing: SessionGen.Billing,
   ResponseMeta: SessionGen.ResponseMeta,
   CostLedger: SessionGen.CostLedger,
-  ApprovalAsked: SessionGen.ApprovalAsked,
-  ApprovalDecided: SessionGen.ApprovalDecided,
   ApprovalGrant: SessionGen.ApprovalGrant,
-  ApprovalGuardianDecision: SessionGen.ApprovalGuardianDecision,
   FeedbackRating: SessionGen.FeedbackRating,
   FeedbackImplicit: SessionGen.FeedbackImplicit,
   Participant: SessionGen.Participant,
@@ -281,6 +400,57 @@ const SESSION_DEFS: Record<string, TSchema> = {
 }
 
 const AGNES_DEFS: Record<string, TSchema> = {
+  SessionControlsParams: AgnesGen.SessionControlsParams,
+  SessionControlledChild: AgnesGen.SessionControlledChild,
+  SessionControlFact: AgnesGen.SessionControlFact,
+  SessionControlParams: AgnesGen.SessionControlParams,
+  SessionEditQueuedParams: AgnesGen.SessionEditQueuedParams,
+  SessionQueuedControlInput: AgnesGen.SessionQueuedControlInput,
+  SessionControlStateResult: AgnesGen.SessionControlStateResult,
+
+  FileUploadParams: AgnesGen.FileUploadParams,
+  FileUploadResultSchema: AgnesGen.FileUploadResultSchema,
+  SessionReferenceSearchParams: AgnesGen.SessionReferenceSearchParams,
+  SessionReferenceSearchResult: AgnesGen.SessionReferenceSearchResult,
+  AutoReviewConfig: AgnesGen.AutoReviewConfig,
+  ToolReviewFact: AgnesGen.ToolReviewFact,
+  FactChainAnchor: AgnesGen.FactChainAnchor,
+  FactChainParams: AgnesGen.FactChainParams,
+  FactChainPackage: AgnesGen.FactChainPackage,
+  FactChainNode: AgnesGen.FactChainNode,
+  FactChainEdge: AgnesGen.FactChainEdge,
+  FactChainGap: AgnesGen.FactChainGap,
+  FactChainResult: AgnesGen.FactChainResult,
+
+  AuthoringFile: AgnesGen.AuthoringFile,
+  AuthoringOrigin: AgnesGen.AuthoringOrigin,
+  AuthoringTests: AgnesGen.AuthoringTests,
+  AuthoringCandidate: AgnesGen.AuthoringCandidate,
+  AuthoringCandidateList: AgnesGen.AuthoringCandidateList,
+  AuthoringCandidateSummary: AgnesGen.AuthoringCandidateSummary,
+  AuthoringCreateParams: AgnesGen.AuthoringCreateParams,
+  AuthoringWriteParams: AgnesGen.AuthoringWriteParams,
+  AuthoringTestParams: AgnesGen.AuthoringTestParams,
+  AuthoringSubmitParams: AgnesGen.AuthoringSubmitParams,
+  AuthoringApproveParams: AgnesGen.AuthoringApproveParams,
+  AuthoringRejectParams: AgnesGen.AuthoringRejectParams,
+  AuthoringShowParams: AgnesGen.AuthoringShowParams,
+  AuthoringProvenance: AgnesGen.AuthoringProvenance,
+  SystemPromptConfig: AgnesGen.SystemPromptConfig,
+  SystemPromptSection: AgnesGen.SystemPromptSection,
+  SystemPromptGetParams: AgnesGen.SystemPromptGetParams,
+  SystemPromptSaveParams: AgnesGen.SystemPromptSaveParams,
+  SystemPromptSnapshot: AgnesGen.SystemPromptSnapshot,
+  ModelRequestAttempt: AgnesGen.ModelRequestAttempt,
+  ModelRequestClearParams: AgnesGen.ModelRequestClearParams,
+  ModelRequestClearResult: AgnesGen.ModelRequestClearResult,
+  ModelRequestSnapshot: AgnesGen.ModelRequestSnapshot,
+  ModelRequestParams: AgnesGen.ModelRequestParams,
+  ModelRequestResult: AgnesGen.ModelRequestResult,
+
+  SessionLoopCatalogResult: AgnesGen.SessionLoopCatalogResult,
+  SessionAdapterCatalogResult: AgnesGen.SessionAdapterCatalogResult,
+  SessionDefaultsState: AgnesGen.SessionDefaultsState,
   PackageActivationTrust: AgnesGen.PackageActivationTrust,
   PackageActivationRequest: AgnesGen.PackageActivationRequest,
   PackageRollbackTarget: AgnesGen.PackageRollbackTarget,
@@ -296,6 +466,12 @@ const AGNES_DEFS: Record<string, TSchema> = {
   PackageListParams: AgnesGen.PackageListParams,
   SkinReadParams: AgnesGen.SkinReadParams,
   ClientModuleReadParams: AgnesGen.ClientModuleReadParams,
+  PluginGenerationStatus: AgnesGen.PluginGenerationStatus,
+  PluginPublicationReport: AgnesGen.PluginPublicationReport,
+  PluginPublicationStatusResult: AgnesGen.PluginPublicationStatusResult,
+  SessionGenerationMigrationParams: AgnesGen.SessionGenerationMigrationParams,
+  SessionGenerationMigrationResult: AgnesGen.SessionGenerationMigrationResult,
+
   PackageListResult: AgnesGen.PackageListResult,
   PackageOperation: AgnesGen.PackageOperation,
   PackageOperationCancelParams: AgnesGen.PackageOperationCancelParams,
@@ -344,6 +520,7 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SurfaceAuthCredential: AgnesGen.SurfaceAuthCredential,
 
   BudgetState: AgnesGen.BudgetState,
+  SystemInput: AgnesGen.SystemInput,
   ArtifactRef: AgnesGen.ArtifactRef,
   ArtifactJob: AgnesGen.ArtifactJob,
   ArtifactReadParams: AgnesGen.ArtifactReadParams,
@@ -356,16 +533,16 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SessionProjectUIParams: AgnesGen.SessionProjectUIParams,
   SessionProjectUIPatchParams: AgnesGen.SessionProjectUIPatchParams,
   SessionProjectUIOpeningParams: AgnesGen.SessionProjectUIOpeningParams,
+  SessionViewParams: AgnesGen.SessionViewParams,
+  SessionViewNotice: AgnesGen.SessionViewNotice,
+  SessionViewResult: AgnesGen.SessionViewResult,
   UIHistoryCursor: AgnesGen.UIHistoryCursor,
   SessionProjectUIHistoryParams: AgnesGen.SessionProjectUIHistoryParams,
   SessionReadToolDetailParams: AgnesGen.SessionReadToolDetailParams,
   SessionReadToolDetailResult: AgnesGen.SessionReadToolDetailResult,
-  SessionAttachmentReadParams: AgnesGen.SessionAttachmentReadParams,
-  AttachmentUploadParams: AgnesGen.AttachmentUploadParams,
-  AttachmentUploadResult: AgnesGen.AttachmentUploadResult,
-  SessionAttachmentReadResult: AgnesGen.SessionAttachmentReadResult,
-  SessionExportRawParams: AgnesGen.SessionExportRawParams,
-  SessionExportRawResult: AgnesGen.SessionExportRawResult,
+  SessionDeliverablesParams: AgnesGen.SessionDeliverablesParams,
+  SessionDeliverableSource: AgnesGen.SessionDeliverableSource,
+  SessionDeliverablesResult: AgnesGen.SessionDeliverablesResult,
   SlotFillView: AgnesGen.SlotFillView,
   UINode: AgnesGen.UINode,
   UIPendingInput: AgnesGen.UIPendingInput,
@@ -386,8 +563,16 @@ const AGNES_DEFS: Record<string, TSchema> = {
   WorkspaceEntry: AgnesGen.WorkspaceEntry,
   WorkspaceListParams: AgnesGen.WorkspaceListParams,
   WorkspaceListResult: AgnesGen.WorkspaceListResult,
+  WorkspaceRevealParams: AgnesGen.WorkspaceRevealParams,
+  WorkspaceRevealResult: AgnesGen.WorkspaceRevealResult,
+  WorkspaceRemoveParams: AgnesGen.WorkspaceRemoveParams,
+  WorkspaceRemoveResult: AgnesGen.WorkspaceRemoveResult,
   WorkspaceAddParams: AgnesGen.WorkspaceAddParams,
   WorkspaceAddResult: AgnesGen.WorkspaceAddResult,
+  PluginRuntimeStatusParams: AgnesGen.PluginRuntimeStatusParams,
+  PluginRuntimeStatusResult: AgnesGen.PluginRuntimeStatusResult,
+  PluginStreamsEndpointParams: AgnesGen.PluginStreamsEndpointParams,
+  PluginStreamsEndpointResult: AgnesGen.PluginStreamsEndpointResult,
   SurfacesMountsParams: AgnesGen.SurfacesMountsParams,
   SurfacesMountsResult: AgnesGen.SurfacesMountsResult,
   JsonValue: AgnesGen.JsonValue,
@@ -404,6 +589,7 @@ const AGNES_DEFS: Record<string, TSchema> = {
   Actor: AgnesGen.Actor,
   SurfaceOp: AgnesGen.SurfaceOp,
   EventEnvelope: AgnesGen.EventEnvelope,
+  ExtensionEventType: AgnesGen.ExtensionEventType,
   HarnessMeta: AgnesGen.HarnessMeta,
   Auth: AgnesGen.Auth,
   InitializeMeta: AgnesGen.InitializeMeta,
@@ -425,10 +611,39 @@ const AGNES_DEFS: Record<string, TSchema> = {
   CompactOutcome: AgnesGen.CompactOutcome,
   ErrorData: AgnesGen.ErrorData,
   SessionIdParams: AgnesGen.SessionIdParams,
+  SessionOpenParams: AgnesGen.SessionOpenParams,
+  SessionLoadingCancelParams: AgnesGen.SessionLoadingCancelParams,
+  SessionRevealWorkspaceParams: AgnesGen.SessionRevealWorkspaceParams,
+  SessionRevealWorkspaceResult: AgnesGen.SessionRevealWorkspaceResult,
+  SessionJob: AgnesGen.SessionJob,
+  SessionJobsReadParams: AgnesGen.SessionJobsReadParams,
+  SessionJobsReadResult: AgnesGen.SessionJobsReadResult,
+  SessionJobsControlParams: AgnesGen.SessionJobsControlParams,
+  SessionJobsControlResult: AgnesGen.SessionJobsControlResult,
+  SessionWorkspaceListParams: AgnesGen.SessionWorkspaceListParams,
+  SessionUndoPreviewParams: AgnesGen.SessionUndoPreviewParams,
+  SessionUndoPreviewResult: AgnesGen.SessionUndoPreviewResult,
+  SessionUndoFile: AgnesGen.SessionUndoFile,
+  SessionUndoParams: AgnesGen.SessionUndoParams,
+  SessionUndoResult: AgnesGen.SessionUndoResult,
+  SessionUndoPathReason: AgnesGen.SessionUndoPathReason,
+  SessionWorkspaceChangesParams: AgnesGen.SessionWorkspaceChangesParams,
+  SessionWorkspaceChangesResult: AgnesGen.SessionWorkspaceChangesResult,
+  SessionWorkspaceChange: AgnesGen.SessionWorkspaceChange,
+  SessionWorkspaceChangeEvidence: AgnesGen.SessionWorkspaceChangeEvidence,
+  SessionWorkspaceChangesSelected: AgnesGen.SessionWorkspaceChangesSelected,
+  SessionWorkspaceEntry: AgnesGen.SessionWorkspaceEntry,
+  SessionWorkspaceListResult: AgnesGen.SessionWorkspaceListResult,
+  SessionWorkspaceReadParams: AgnesGen.SessionWorkspaceReadParams,
+  SessionWorkspaceReadResult: AgnesGen.SessionWorkspaceReadResult,
   ApprovalGrantListParams: AgnesGen.ApprovalGrantListParams,
   ApprovalGrantRecord: AgnesGen.ApprovalGrantRecord,
   ApprovalGrantRevokeParams: AgnesGen.ApprovalGrantRevokeParams,
   ApprovalGrantListResult: AgnesGen.ApprovalGrantListResult,
+  SessionApprovalGrant: AgnesGen.SessionApprovalGrant,
+  ApprovalGrantSessionParams: AgnesGen.ApprovalGrantSessionParams,
+  ApprovalGrantSessionResult: AgnesGen.ApprovalGrantSessionResult,
+  ApprovalGrantSessionRevokeParams: AgnesGen.ApprovalGrantSessionRevokeParams,
   Empty: AgnesGen.Empty,
   ComputerUseLockedPackageMutationStatus: AgnesGen.ComputerUseLockedPackageMutationStatus,
   ComputerUseStatusResult: AgnesGen.ComputerUseStatusResult,
@@ -439,41 +654,68 @@ const AGNES_DEFS: Record<string, TSchema> = {
   ComputerUseOperationStatusParams: AgnesGen.ComputerUseOperationStatusParams,
   ComputerUseOperationIdParams: AgnesGen.ComputerUseOperationIdParams,
   ComputerUseOperationResult: AgnesGen.ComputerUseOperationResult,
-  BatchSpec: AgnesGen.BatchSpec,
-  BatchStartParams: AgnesGen.BatchStartParams,
-  BatchIdParams: AgnesGen.BatchIdParams,
-  BatchCounts: AgnesGen.BatchCounts,
-  BatchStatus: AgnesGen.BatchStatus,
-  BatchList: AgnesGen.BatchList,
   AuthClaimParams: AgnesGen.AuthClaimParams,
   AuthClaimResult: AgnesGen.AuthClaimResult,
   SessionEventParams: AgnesGen.SessionEventParams,
-  SessionPreviewParams: AgnesGen.SessionPreviewParams,
   SessionLoadingParams: AgnesGen.SessionLoadingParams,
-  SessionStoredOpeningParams: AgnesGen.SessionStoredOpeningParams,
-  SessionStoredOpeningResult: AgnesGen.SessionStoredOpeningResult,
+  SessionPreviewParams: AgnesGen.SessionPreviewParams,
   DaemonNotice: AgnesGen.DaemonNotice,
   // SlotName is a cross-file alias of model.json's closed seven-value enum, on the same footing as
   // the JsonValue/ContentBlock/Actor/SurfaceOp/EventEnvelope aliases above: spelled in agnes-v1.json
   // as an honest $ref, so the coverage guard demands it registered here too.
   SlotName: AgnesGen.SlotName,
   SessionForkParams: AgnesGen.SessionForkParams,
+  SessionBtwParams: AgnesGen.SessionBtwParams,
+  SessionBtwResult: AgnesGen.SessionBtwResult,
+  VoiceSettings: AgnesGen.VoiceSettings,
+  VoiceSettingsSnapshot: AgnesGen.VoiceSettingsSnapshot,
+  VoiceSettingsSaveParams: AgnesGen.VoiceSettingsSaveParams,
+  VoiceFeatureState: AgnesGen.VoiceFeatureState,
+  VoiceStatusResult: AgnesGen.VoiceStatusResult,
+  SessionVoiceTranscribeParams: AgnesGen.SessionVoiceTranscribeParams,
+  SessionVoiceTranscribeResult: AgnesGen.SessionVoiceTranscribeResult,
+  SessionVoiceSpeakParams: AgnesGen.SessionVoiceSpeakParams,
+  SessionVoiceSpeakResult: AgnesGen.SessionVoiceSpeakResult,
   SessionPreferences: AgnesGen.SessionPreferences,
   SessionRenameParams: AgnesGen.SessionRenameParams,
   SessionArchiveParams: AgnesGen.SessionArchiveParams,
+  SessionPinParams: AgnesGen.SessionPinParams,
+  SessionBookmarksSetParams: AgnesGen.SessionBookmarksSetParams,
+  DiagnosticsExportParams: AgnesGen.DiagnosticsExportParams,
+  DiagnosticsExportResult: AgnesGen.DiagnosticsExportResult,
+  DiagnosticRecord: AgnesGen.DiagnosticRecord,
   DiagnosticsCollectParams: AgnesGen.DiagnosticsCollectParams,
   DiagnosticsCollectResult: AgnesGen.DiagnosticsCollectResult,
   DiagnosticsEventsParams: AgnesGen.DiagnosticsEventsParams,
   DiagnosticsEventsResult: AgnesGen.DiagnosticsEventsResult,
   SessionMeta: AgnesGen.SessionMeta,
   SessionListParams: AgnesGen.SessionListParams,
+  SessionActivityParams: AgnesGen.SessionActivityParams,
+  SessionActivity: AgnesGen.SessionActivity,
+  SessionActivityResult: AgnesGen.SessionActivityResult,
+  SessionGroupsParams: AgnesGen.SessionGroupsParams,
+  SessionGroupsResult: AgnesGen.SessionGroupsResult,
+  SessionGroup: AgnesGen.SessionGroup,
+  SessionSidebarListParams: AgnesGen.SessionSidebarListParams,
+  SessionLegacyListParams: AgnesGen.SessionLegacyListParams,
   PageSessionMeta: AgnesGen.PageSessionMeta,
   SessionSetPresetParams: AgnesGen.SessionSetPresetParams,
   SessionSetModelParams: AgnesGen.SessionSetModelParams,
   SessionSetYoloParams: AgnesGen.SessionSetYoloParams,
+  SessionToolFilterName: AgnesGen.SessionToolFilterName,
+  SessionToolFilterNames: AgnesGen.SessionToolFilterNames,
+  SessionToolFilterRequest: AgnesGen.SessionToolFilterRequest,
+  SessionToolFilter: AgnesGen.SessionToolFilter,
+  SessionSetToolFilterParams: AgnesGen.SessionSetToolFilterParams,
+  SessionSetToolFilterResult: AgnesGen.SessionSetToolFilterResult,
   EffectiveFromResult: AgnesGen.EffectiveFromResult,
   SeqResult: AgnesGen.SeqResult,
+  PermissionWithdrawParams: AgnesGen.PermissionWithdrawParams,
   ApprovalDecideParams: AgnesGen.ApprovalDecideParams,
+  DecisionListResult: AgnesGen.DecisionListResult,
+  DecisionCommandReceipt: AgnesGen.DecisionCommandReceipt,
+  DecisionResponse: AgnesGen.DecisionResponse,
+  DecisionSnapshot: AgnesGen.DecisionSnapshot,
   ParticipantParams: AgnesGen.ParticipantParams,
   ParticipantListResult: AgnesGen.ParticipantListResult,
   DirectoryUpsertParams: AgnesGen.DirectoryUpsertParams,
@@ -579,6 +821,7 @@ const HOOKS_DEFS: Record<string, TSchema> = {
 
 // slots.json, the sixth self-owned document. It borrows nothing, so it has no cross-file aliases.
 const SLOTS_DEFS: Record<string, TSchema> = {
+  GoalSnapshot: SlotsGen.GoalSnapshot,
   UiSlotName: SlotsGen.UiSlotName,
   ToolCardInlinePayload: SlotsGen.ToolCardInlinePayload,
   SidebarActionPayload: SlotsGen.SidebarActionPayload,
@@ -863,7 +1106,154 @@ const harnessRefineOk: Json = {
   baseline: [{ key: 'skill/x', version: 2 }],
   outcome: 'applied',
 }
+const decisionSpec = {
+  key: 'review',
+  purpose: 'business.confirm',
+  subject: { text: 'Complete review' },
+  prompt: 'Continue?',
+  options: ['yes', 'no'],
+}
+const decisionHandle = { id: 'decision-1', sessionId: 'session' }
+const decisionRequest = {
+  spec: decisionSpec,
+  subjectDigest: 'a'.repeat(64),
+  owner: 'sample/reviewer',
+  operationId: 'call-1',
+  sourcePackage: '@sample/reviewer',
+  packageVersion: '1.0.0',
+  requestedBy: actorOk,
+  lane: 'main',
+  createdAt: '2026-10-11T00:00:00Z',
+  expiresAt: '2026-10-12T00:00:00Z',
+}
+const decisionResponse = { option: 'yes', value: null }
+const decisionResult = {
+  reason: 'answered',
+  at: '2026-10-11T00:01:00Z',
+  response: decisionResponse,
+  answeredBy: actorOk,
+}
+const decisionConsumption = { at: '2026-10-11T00:02:00Z', operationId: 'call-1', effectId: null }
+const decisionReceipt = { commandId: 'answer-1', digest: 'b'.repeat(64), revision: 2, seq: 4 }
+const decisionSnapshot = {
+  handle: decisionHandle,
+  revision: 1,
+  request: decisionRequest,
+  result: null,
+  answerCommand: null,
+  consumption: null,
+  invalidation: null,
+}
+
 const SESSION_SAMPLES: Record<string, Sample> = {
+  DecisionPresentation: {
+    valid: {
+      en: {
+        title: 'Review',
+        fields: [{ label: 'Meaning', value: 'I approve', href: '/?session=s' }],
+        responseValue: 'I approve',
+      },
+    },
+    invalid: [
+      { en: { title: '', fields: [] } },
+      { en: { title: 'x'.repeat(1025), fields: [] } },
+      { en: { title: 'Review', fields: [{ label: 'x'.repeat(257), value: 'v' }] } },
+      { en: { title: 'Review', fields: [{ label: 'Meaning', value: 'x'.repeat(8193) }] } },
+      { en: { title: 'Review', fields: [], responseValue: 'x'.repeat(8193) } },
+      { en: { title: 'Review', fields: [], responseValue: null } },
+      { en: { title: 'Review', fields: [], unreviewed: true } },
+      { en: { title: 'Review', fields: [{ label: 'Evidence', value: 'Open', href: '//external.test' }] } },
+      { en: { title: 'Review', fields: [{ label: 'Evidence', value: 'Open', href: '/\\external.test' }] } },
+      {
+        en: { title: 'Review', fields: [{ label: 'Evidence', value: 'Open', href: 'javascript:alert(1)' }] },
+      },
+      { en: { title: 'Review', fields: Array.from({ length: 17 }, () => ({ label: 'L', value: 'V' })) } },
+      { en: { title: 'Review', fields: [{ label: 'Evidence', value: 'Open', href: '/\n/external.test' }] } },
+      { invalid_locale: { title: 'Review', fields: [] } },
+      Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`en-${i}`, { title: 'Review', fields: [] }])),
+    ],
+    note: 'bounded localized plain fields, same-origin evidence and immutable answer value',
+  },
+  DecisionSpec: {
+    valid: decisionSpec,
+    invalid: [
+      { ...decisionSpec, owner: 'spoofed' },
+      { ...decisionSpec, key: '' },
+      { ...decisionSpec, key: 'nul\0key' },
+      { ...decisionSpec, options: ['yes', 'yes'] },
+      { ...decisionSpec, options: [] },
+      { ...decisionSpec, prompt: 'x'.repeat(65537) },
+    ],
+    note: 'bounded closed author content, without authority fields',
+  },
+  DecisionHandle: {
+    valid: decisionHandle,
+    invalid: [
+      { id: 'decision-1' },
+      { ...decisionHandle, sessionId: '' },
+      { ...decisionHandle, owner: 'spoofed' },
+    ],
+    note: 'stable session-bound identity',
+  },
+  DecisionResponse: {
+    valid: decisionResponse,
+    invalid: [
+      { option: 'yes' },
+      { ...decisionResponse, actor: actorOk },
+      { ...decisionResponse, option: '' },
+    ],
+    note: 'typed response without self-reported provenance',
+  },
+  DecisionRequest: {
+    valid: decisionRequest,
+    invalid: [
+      { ...decisionRequest, subjectDigest: 'invalid' },
+      { ...decisionRequest, createdAt: 'not-a-date' },
+      { ...decisionRequest, owner: '' },
+    ],
+    note: 'backend-stamped immutable request and original deadline',
+  },
+  DecisionResult: {
+    valid: decisionResult,
+    invalid: [
+      { ...decisionResult, answeredBy: undefined },
+      { reason: 'detached', at: decisionResult.at, code: 'transport' },
+      { reason: 'expired', at: decisionResult.at },
+    ],
+    note: 'delivery failure is not a terminal human answer',
+  },
+  DecisionConsumption: {
+    valid: decisionConsumption,
+    invalid: [
+      { ...decisionConsumption, effectId: false },
+      { ...decisionConsumption, operationId: '' },
+      { ...decisionConsumption, at: 'not-a-date' },
+    ],
+    note: 'existing effect identity or pure checkpoint consumption',
+  },
+  DecisionCommandReceipt: {
+    valid: decisionReceipt,
+    invalid: [
+      { ...decisionReceipt, revision: 0 },
+      { ...decisionReceipt, seq: 0 },
+      { ...decisionReceipt, digest: 'not-a-hash' },
+    ],
+    note: 'exact command receipt rather than a spent ticket',
+  },
+  DecisionSnapshot: {
+    valid: decisionSnapshot,
+    invalid: [
+      { ...decisionSnapshot, revision: 0 },
+      { ...decisionSnapshot, result: false },
+      { ...decisionSnapshot, actor: actorOk },
+    ],
+    note: 'one complete register snapshot',
+  },
+  ExtensionEventType: {
+    valid: 'x/acme/budget',
+    invalid: [1, '', 'x/acme', 'x/acme/', 'x/invalid plugin/budget', 'x/acme/budget state', EXT_TYPE_129],
+    note: 'canonical Loop extension names and the bounded replay contract',
+  },
   EventEnvelope: {
     valid: envOk,
     invalid: [
@@ -985,9 +1375,10 @@ const SESSION_SAMPLES: Record<string, Sample> = {
     note: 'valid and the enum negative reuse fixtures/events/i2-types.jsonl; the rest cover every bounded scalar in the settlement row',
   },
   TurnStart: {
-    valid: turnStartOk,
+    valid: { ...turnStartOk, inputTainted: true },
     invalid: [
       dataOf('i1-turn-start-bad-trigger'),
+      { ...turnStartOk, inputTainted: 'true' },
       { ...turnStartOk, turn: 0 }, // boundary: minimum:1
       { ...turnStartOk, continues: { turn: 1, step: 1, toolUseId: rep(129) } }, // boundary: maxLength:128
       // continues.requestId also carries maxLength:128
@@ -1022,6 +1413,36 @@ const SESSION_SAMPLES: Record<string, Sample> = {
       { turn: 1, step: 0 }, // boundary: minimum:1
     ],
     note: 'valid and the first invalid reuse the .data of fixtures/events/i1-types.jsonl; the rest are boundary negatives',
+  },
+  SystemInputPresentation: {
+    valid: {
+      kind: 'ui-action',
+      operation: 'submit',
+      status: 'succeeded',
+      label: 'Submit',
+      fields: ['name', 'email'],
+    },
+    invalid: [
+      { kind: 'ui-action' },
+      { kind: 'ui-action', operation: 'submit', status: 'executing', label: 'Submit', fields: [] },
+    ],
+    note: 'Backend UI action presentation is additive, bounded, and terminal only.',
+  },
+  SystemInput: {
+    valid: {
+      source: 'agnes/intelligent-ui',
+      type: 'action-result',
+      summary: 'Submitted',
+      data: { answers: { name: 'Fixture' } },
+    },
+    invalid: [
+      { source: 'agnes/intelligent-ui', type: 'action-result', data: {} },
+      { source: '', type: 'action-result', summary: 'Submitted', data: {} },
+      { source: 'owner', type: '', summary: 'Submitted', data: {} },
+      { source: 'owner', type: 'result', summary: rep(2049), data: {} },
+      { source: 'owner', type: 'result', summary: 'Done', data: {}, actor: {} },
+    ],
+    note: 'One bounded platform notification owns machine data and presentation.',
   },
   UserMessage: {
     valid: userMessageOk,
@@ -1066,6 +1487,21 @@ const SESSION_SAMPLES: Record<string, Sample> = {
     valid: 'not_sent',
     invalid: ['dispatch_pending', 'sent', 'unknown', 1],
     note: 'transport outcome uses the three-value phase vocabulary and never infers sent state from errors',
+  },
+  ToolPresentation: {
+    valid: { title: rep(256), description: rep(4096), summary: rep(1024) },
+    invalid: [
+      { title: 'Read' },
+      { description: 'Read a file' },
+      { title: '', description: 'Read a file' },
+      { title: 'Read', description: '' },
+      { title: rep(257), description: 'Read a file' },
+      { title: 'Read', description: rep(4097) },
+      { title: 'Read', description: 'Read a file', summary: '' },
+      { title: 'Read', description: 'Read a file', summary: rep(1025) },
+      { title: 'Read', description: 'Read a file', extra: true },
+    ],
+    note: 'tool presentation requires bounded title and description, bounds the optional summary, and rejects undeclared fields',
   },
   ToolCall: {
     valid: toolCallOk,
@@ -1204,80 +1640,18 @@ const SESSION_SAMPLES: Record<string, Sample> = {
   ContentBlock: {
     valid: userMessageContent0[0],
     invalid: [
+      {
+        type: 'text',
+        text: 'data',
+        reference: { source: 'file', id: 'a', label: 'a', hash: 'invalid', truncated: false },
+      },
       { type: 'bogus' }, // matches none of the three discriminated-union branches
       { type: 'text', text: rep(1048577) }, // boundary: maxLength:1048576
       { type: 'image', data: 'x', mimeType: rep(129) }, // boundary: maxLength:128
       { type: 'resource_link', uri: rep(4097) }, // boundary: maxLength:4096
       { type: 'resource_link', uri: 'u', name: rep(257) }, // boundary: maxLength:256
-      { type: 'image', mimeType: 'image/png', dataOmitted: { bytes: -1 } }, // boundary: OmittedData.bytes minimum:0
-      { type: 'image', mimeType: 'image/png', name: '', dataOmitted: { bytes: 1 } }, // boundary: lean image name minLength:1
-      { type: 'image', mimeType: 'image/png', data: 'x', dataOmitted: { bytes: 1 } }, // inline and lean at once
-      { type: 'file', mimeType: 'application/zip', dataOmitted: { bytes: 1 } }, // a lean file keeps its name
-      { type: 'file', mimeType: '', name: 'a.zip', dataOmitted: { bytes: 1 } }, // boundary: lean file mimeType minLength:1
-      { type: 'text', text: 't', dataOmitted: { bytes: 1 } }, // only image and file have a lean form
-      { type: 'image', mimeType: 'image/png', attachment: { sha256: rep64, bytes: 1 }, width: 1 }, // a reference image needs both dimensions
-      { type: 'image', mimeType: 'image/gif', attachment: { sha256: rep64, bytes: 1 }, width: 1, height: 1 }, // reference images are PNG or JPEG only
-      {
-        type: 'image',
-        mimeType: 'image/png',
-        attachment: { sha256: rep64, bytes: 1 },
-        width: 65536,
-        height: 1,
-      }, // boundary: width maximum:65535
-      {
-        type: 'image',
-        mimeType: 'image/png',
-        data: 'x',
-        attachment: { sha256: rep64, bytes: 1 },
-        width: 1,
-        height: 1,
-      }, // inline and reference at once
-      { type: 'file', mimeType: 'application/zip', attachment: { sha256: rep64, bytes: 1 } }, // a referenced file keeps its name
-      {
-        type: 'file',
-        mimeType: 'application/zip',
-        name: 'a.zip',
-        attachment: { sha256: rep64, bytes: 1 },
-        dataOmitted: { bytes: 1 },
-      }, // reference and lean at once
     ],
     note: 'valid reuses .data.content[0] from the user/message fixture; invalid are hand-written (no separate illegal-ContentBlock fixture)',
-  },
-  OmittedData: {
-    valid: { bytes: 9007199254740991 },
-    invalid: [
-      { bytes: -1 }, // boundary: minimum:0
-      { bytes: 9007199254740992 }, // boundary: maximum:9007199254740991
-      { bytes: 1.5 }, // integer
-      {}, // required
-      { bytes: 1, extra: true }, // additionalProperties:false
-    ],
-    note: 'the lean read view of an inline attachment; no fixture writes it (append refuses it), so every sample is hand-written',
-  },
-  AttachmentRef: {
-    valid: { sha256: rep64, bytes: 9007199254740991 },
-    invalid: [
-      { sha256: 'A'.repeat(64), bytes: 1 }, // pattern: lowercase hex only
-      { sha256: `${rep64}0`, bytes: 1 }, // pattern: exactly 64 digits
-      { sha256: rep64, bytes: -1 }, // boundary: minimum:0
-      { sha256: rep64, bytes: 9007199254740992 }, // boundary: maximum:9007199254740991
-      { sha256: rep64, bytes: 1.5 }, // integer
-      { sha256: rep64 }, // required
-      { sha256: rep64, bytes: 1, extra: true }, // additionalProperties:false
-    ],
-    note: 'a stored attachment named by digest; hand-written, as no fixture predates reference blocks',
-  },
-  AttachmentThumbnail: {
-    valid: { sha256: rep64, bytes: 262144, width: 320, height: 1 },
-    invalid: [
-      { sha256: rep64, bytes: 0, width: 1, height: 1 }, // boundary: bytes minimum:1
-      { sha256: rep64, bytes: 262145, width: 1, height: 1 }, // boundary: bytes maximum:262144
-      { sha256: rep64, bytes: 1, width: 321, height: 1 }, // boundary: width maximum:320
-      { sha256: rep64, bytes: 1, width: 1, height: 0 }, // boundary: height minimum:1
-      { sha256: rep64, bytes: 1, width: 1 }, // required
-      { sha256: 'x', bytes: 1, width: 1, height: 1 }, // pattern
-    ],
-    note: 'the browser-made preview of a reference image; hand-written, as no fixture predates reference blocks',
   },
   ToolCallState: {
     valid: toolCallStateOk,
@@ -1427,6 +1801,7 @@ const SESSION_SAMPLES: Record<string, Sample> = {
         content: [{ type: 'text', text: 'hi' }],
         actor: parityActor,
         enqueuedAt: 'x',
+        origin: 'external',
         trust: 'maybe',
       }, // enum
     ],
@@ -1493,6 +1868,8 @@ const SESSION_SAMPLES: Record<string, Sample> = {
       { effectId: 'e1', kind: 'tool', replay: 'maybe' }, // enum
       { effectId: 'e1', kind: 'artifact', replay: 'safe' }, // enum: the pre-I2 kind vocabulary
       { effectId: 'e1', kind: 'media', replay: 'safe' }, // media is a never-replay auxiliary effect
+      { effectId: 'e1', kind: 'side-call', replay: 'safe' }, // a side call is never replayed either
+      { effectId: 'e1', kind: 'side-call', replay: 'idempotent' }, // the constraint covers both replayable modes
       { effectId: 'e1', kind: 'tool', replay: 'safe', tool: 'read' }, // tool is the object pair, not a bare name
       { effectId: 'e1', kind: 'tool', replay: 'safe', argsSeq: 0 }, // boundary: one below minimum:1
     ],
@@ -1574,53 +1951,37 @@ const SESSION_SAMPLES: Record<string, Sample> = {
       { ...costLedgerOk, tokens: { input: 1, output: 1, cacheRead: 0 } }, // missing cacheWrite
       { ...costLedgerOk, timing: { ttftMs: 1, wallMs: 2 } }, // additionalProperties:false on the closed timing keys
       { ...costLedgerOk, response: { status: '200' } }, // the response status is an integer
+      { ...costLedgerOk, route: rep(129) }, // boundary: one over maxLength:128
+      { ...costLedgerOk, endpointHost: rep(254) }, // boundary: one over maxLength:253
+      { ...costLedgerOk, endpointHost: 7 }, // the host is a string
+      { ...costLedgerOk, adapter: {} }, // missing required id
+      { ...costLedgerOk, adapter: { id: rep(129) } }, // boundary: one over maxLength:128
+      { ...costLedgerOk, adapter: { id: 'x', version: rep(65) } }, // boundary: one over maxLength:64
+      { ...costLedgerOk, adapter: { id: 'x', digest: 'd' } }, // additionalProperties:false
+      { ...costLedgerOk, slot: 'primary' }, // the row records no slot
     ],
     note: 'valid is the row core/src/step/inference.ts writes; credits is optional because only a gateway supplies one',
-  },
-  ApprovalAsked: {
-    valid: { requestId: 'r1', kind: 'budget', summary: 's', risk: 'budget', bindingHash: '' },
-    invalid: [
-      { requestId: 'r1', kind: 'budget', summary: 's', risk: 'budget' }, // missing required bindingHash
-      { requestId: 'r1', kind: 'budget', summary: 's', risk: 'budget', bindingHash: rep(63) }, // pattern: empty or exactly 64 hex
-      { requestId: 'r1', kind: 'spend', summary: 's', risk: 'budget', bindingHash: '' }, // enum
-      {
-        requestId: 'r1',
-        kind: 'tool',
-        summary: 's',
-        risk: 'destructive',
-        bindingHash: rep64,
-        pending: { ticket: 't' },
-      }, // pending needs expiresAt
-    ],
-    note:
-      'bindingHash is the empty string on the budget and unknown-outcome paths - neither ask is bound ' +
-      'to a tool argv - so the pattern admits the empty string as well as 64 hex digits',
-  },
-  ApprovalDecided: {
-    valid: { requestId: 'r1', verdict: 'rejected', via: 'sync' },
-    invalid: [
-      { requestId: 'r1', verdict: 'rejected', via: 'magic' }, // enum
-      { requestId: 'r1', verdict: 'yes', via: 'sync' }, // enum
-      { requestId: 'r1', verdict: 'rejected', via: 'sync', askedSeq: 4 }, // additionalProperties:false - asked and decided are written in one transaction, so asked has no seq yet
-    ],
-    note: 'valid is the row both approval call sites in core write; via is separately re-checked by core because a wrong value is unrecoverable',
   },
   ApprovalGrant: {
     valid: {
       grantId: 'g1',
-      profileHash: `sha256-${rep64}`,
+      policyDigest: `sha256-${rep64}`,
       actorId: 'u',
       actorOrg: 'o',
       toolId: 'computer_use',
       scope: 'cua:click:background',
       policyVersion: 'cua-v1',
+      sourceDecisionId: 'decision-fixture',
+      issuer: { id: 'reviewer', org: 'local', role: 'user', deptPath: [], attrs: {} },
+      definitionFingerprint: 'd'.repeat(64),
+      policyBinding: 'e'.repeat(64),
       createdAt: '2026-09-17T00:00:00.000Z',
     },
     invalid: [
       { grantId: 'g1' },
       {
         grantId: 'g1',
-        profileHash: rep64,
+        policyDigest: rep64,
         actorId: 'u',
         actorOrg: 'o',
         toolId: 'computer_use',
@@ -1630,42 +1991,6 @@ const SESSION_SAMPLES: Record<string, Sample> = {
       },
     ],
     note: 'durable grants bind profile, actor, tool, scope, and policy version',
-  },
-  ApprovalGuardianDecision: {
-    valid: {
-      requestId: 'r1',
-      effectId: 'e1',
-      toolUseId: 't1',
-      scope: 'cua:click:background',
-      bindingHash: rep64,
-      policyHash: rep64,
-      decision: 'escalate',
-      ruleVersion: 'guardian-v1',
-      reasons: ['human review'],
-      budget: {
-        tokensReserved: 1024,
-        credits: 1,
-        creditSource: 'estimated',
-        cap: 5,
-        approved: true,
-      },
-    },
-    invalid: [
-      { requestId: 'r1', decision: 'allow', ruleVersion: 'guardian-v1', reasons: [] },
-      {
-        requestId: 'r1',
-        effectId: 'e1',
-        toolUseId: 't1',
-        scope: 'cua:click:background',
-        bindingHash: rep64,
-        policyHash: rep64,
-        decision: 'escalate',
-        ruleVersion: '',
-        reasons: [],
-        budget: { tokensReserved: 1, credits: 1, creditSource: 'estimated', cap: null, approved: true },
-      },
-    ],
-    note: 'the guardian result is an auditable internal decision, not a human approval verdict',
   },
   FeedbackRating: {
     valid: { targetSeq: 3, rating: 'up' },
@@ -1709,9 +2034,9 @@ const SESSION_SAMPLES: Record<string, Sample> = {
 const attachOk = byId(methodFixtures, 'attach-ok') as Json
 const attachSeams = byId(methodFixtures, 'attach-seams') as Json
 const attachResultOk = byId(methodFixtures, 'attach-result-ok') as Json
-const steerOk = byId(methodFixtures, 'steer-ok') as Json
-const steerActor = byId(methodFixtures, 'steer-actor') as Json
-const steerResultOk = byId(methodFixtures, 'steer-result-ok') as Json
+const steerOk: Json = { sessionId: 's', content: [{ type: 'text', text: 'x' }], commandId: 'c1' }
+const steerActor: Json = { ...steerOk, actor: { id: 'me' } }
+const steerResultOk: Json = { seq: 3 }
 const apisListParamsOk = byId(methodFixtures, 'apis-list-params-ok') as Json
 const apisListParamsExtra = byId(methodFixtures, 'apis-list-params-extra-key') as Json
 const apisListResultOk = byId(methodFixtures, 'apis-list-result') as Json
@@ -1719,7 +2044,6 @@ const submitParamsOk = byId(methodFixtures, 'submit-params-ok') as Json
 const submitParamsBadKind = byId(methodFixtures, 'submit-params-bad-kind') as Json
 const submitAckOk = byId(methodFixtures, 'submit-ack-uncertain') as Json
 const submitAckBad = byId(methodFixtures, 'submit-ack-bad-status') as Json
-const followupOk = byId(methodFixtures, 'followup-ok') as Json
 const detachParamsOk = byId(methodFixtures, 'session-detach-params-ok') as Json
 const detachParamsExtra = byId(methodFixtures, 'session-detach-params-extra-key') as Json
 const detachResultNotEmpty = byId(methodFixtures, 'session-detach-result-not-empty') as Json
@@ -1747,7 +2071,485 @@ const harnessMetaOk: Json = {
   phase: 'event',
 }
 
+const REVIEW_REVISION = 'a'.repeat(64)
+const REVIEW_EVIDENCE = {
+  callSeq: 1,
+  resultSeq: 3,
+  receiptSeq: 2,
+  toolUseId: 'u',
+  tool: 'write',
+  turn: 1,
+  observedAt: '2026-10-09T00:00:00Z',
+  decisionId: 'decision',
+  enforcement: 'full',
+}
+const REVIEW_CHANGE = {
+  path: 'src/a.ts',
+  kind: 'added',
+  basis: 'session',
+  added: 1,
+  removed: 0,
+  diffStatus: 'available',
+  freshness: 'current',
+  afterRevision: REVIEW_REVISION,
+  currentRevision: REVIEW_REVISION,
+  effects: [REVIEW_EVIDENCE],
+}
+const REVIEW_SELECTED = {
+  ...REVIEW_CHANGE,
+  beforeRevision: REVIEW_REVISION,
+  diff: '--- a\n+++ b\n+one\n',
+  viewerChanged: false,
+}
+const REVIEW_RESULT = {
+  scope: 'session',
+  revision: REVIEW_REVISION,
+  observedAt: '2026-10-09T00:00:00Z',
+  fromSeq: 1,
+  toSeq: 3,
+  turn: 1,
+  truncated: false,
+  unrecorded: false,
+  files: [REVIEW_CHANGE],
+  selected: REVIEW_SELECTED,
+}
+
 const AGNES_SAMPLES: Record<string, Sample> = {
+  SessionOpenParams: {
+    valid: { sessionId: 's', cwd: '/synthetic', requestId: 'open-1' },
+    invalid: [
+      { sessionId: 's' },
+      { sessionId: 's', requestId: '' },
+      { sessionId: 's', requestId: 'r', history: 'none' },
+    ],
+    note: 'Admission requires a request-scoped cancellation identity',
+  },
+  SessionLoadingCancelParams: {
+    valid: { sessionId: 's', requestId: 'open-1' },
+    invalid: [{}, { sessionId: 's', requestId: '' }, { sessionId: 's', requestId: 1 }],
+    note: 'Request-specific cancellation and legacy session-only cancellation are supported',
+  },
+  SessionRevealWorkspaceParams: {
+    valid: { sessionId: 's' },
+    invalid: [{}, { sessionId: '' }, { sessionId: 's', path: '/untrusted' }],
+    note: 'only a session identity, never a client path',
+  },
+  SessionRevealWorkspaceResult: {
+    valid: { opened: true },
+    invalid: [{}, { opened: false }, { opened: true, path: '/private' }],
+    note: 'native opener launch receipt contains no private path',
+  },
+  SessionControlsParams: {
+    note: 'bounded control fact cursor',
+    valid: { sessionId: 's1', afterSeq: 0 },
+    invalid: [
+      { sessionId: 's1', afterSeq: -1 },
+      { sessionId: 's1', afterSeq: '0' },
+    ],
+  },
+  SessionControlledChild: {
+    note: 'owned child controls and observed metrics',
+    valid: {
+      id: 'child1',
+      parentId: 's1',
+      providerId: 'native',
+      status: 'interrupted',
+      controls: { stop: false, continue: true },
+      durationMs: 100,
+      totalTokens: null,
+    },
+    invalid: [
+      { id: 'child1' },
+      {
+        id: 'child1',
+        parentId: 's1',
+        providerId: 'native',
+        status: 'running',
+        controls: { stop: true, continue: true },
+        durationMs: -1,
+        totalTokens: null,
+      },
+    ],
+  },
+  SessionControlFact: {
+    valid: {
+      seq: 1,
+      ts: '2026-10-09T00:00:00.000Z',
+      actor: { id: 'human', org: '', role: 'user', deptPath: [], attrs: {} },
+      action: 'pause',
+      outcome: 'requested',
+      details: {},
+    },
+    invalid: [
+      {
+        seq: 0,
+        ts: '',
+        actor: { kind: 'principal', id: 'human' },
+        action: 'pause',
+        outcome: 'requested',
+        details: {},
+      },
+    ],
+    note: 'human control ledger fact',
+  },
+  SessionControlParams: {
+    valid: { sessionId: 's', action: 'pause', commandId: 'c' },
+    invalid: [{ sessionId: 's', action: 'stop', commandId: 'c' }],
+    note: 'explicit human control action',
+  },
+  SessionEditQueuedParams: {
+    valid: { sessionId: 's', itemId: 'i', commandId: 'c', content: [{ type: 'text', text: 'edited' }] },
+    invalid: [{ sessionId: 's', itemId: 'i', commandId: 'c', content: [] }],
+    note: 'undelivered input edit',
+  },
+  SessionQueuedControlInput: {
+    valid: { itemId: 'i', target: 'next-step', kind: 'steer', content: [{ type: 'text', text: 'steer' }] },
+    invalid: [{ itemId: 'i', target: 'now', kind: 'steer', content: [] }],
+    note: 'authoritative pending item',
+  },
+  SessionControlStateResult: {
+    valid: {
+      controls: { steer: true, interrupt: false, pause: true, cancel: true },
+      paused: true,
+      pending: [],
+    },
+    invalid: [{ controls: {}, paused: 'yes', pending: [] }],
+    note: 'durable pause with pinned controls',
+  },
+  FileUploadParams: {
+    note: 'closed upload operation and session identity',
+    valid: { operation: 'limits', sessionId: 'owned' },
+    invalid: [
+      { operation: 'start', sessionId: 'owned' },
+      { operation: 'unknown', sessionId: 'owned' },
+      { operation: 'limits', sessionId: '' },
+    ],
+  },
+  FileUploadResultSchema: {
+    note: 'bounded byte progress and closed result',
+    valid: { offset: 0 },
+    invalid: [{ offset: -1 }, { offset: '0' }, { unknown: true }],
+  },
+  SessionReferenceSearchParams: {
+    valid: { sessionId: 'owned', query: 'file a' },
+    invalid: [{ sessionId: 'owned' }, { sessionId: '', query: '' }, { sessionId: 'owned', query: rep(257) }],
+    note: 'Owned-session reference search is bounded',
+  },
+  SessionReferenceSearchResult: {
+    valid: { items: [{ source: 'file', id: 'a', label: 'a' }], truncated: false },
+    invalid: [
+      { items: [], truncated: 'no' },
+      { items: Array(41).fill({ source: 'file', id: 'a', label: 'a' }), truncated: false },
+    ],
+    note: 'Bounded source locators do not grant content access',
+  },
+  AutoReviewConfig: {
+    note: 'Optional bounded automatic review settings',
+    valid: { enabled: true, modelSlot: 'fast' },
+    invalid: [{ maxReviews: -1 }, { maxRisk: 'high' }],
+  },
+  ToolReviewFact: {
+    note: 'Review facts require complete decision provenance and bounded costs',
+    valid: {
+      model: 'scripted',
+      promptHash: 'a'.repeat(64),
+      argsHash: 'b'.repeat(64),
+      scopeHash: 'c'.repeat(64),
+      costSource: 'estimated',
+      decision: 'allow',
+      risk: 'low',
+      reason: 'Bounded work',
+      latencyMs: 1,
+      cost: 0,
+      source: 'model',
+    },
+    invalid: [{ decision: 'allow' }, { model: 'x', promptHash: 'bad' }],
+  },
+  FactChainAnchor: {
+    valid: { kind: 'tool', toolUseId: 'tool-1' },
+    invalid: [
+      { kind: 'tool', toolUseId: 'x'.repeat(129) },
+      { kind: 'authoring', candidateId: '../escape' },
+    ],
+    note: 'exact source identities, bounded public anchors',
+  },
+  FactChainParams: {
+    valid: { sessionId: 'owned', laneId: 'main', anchor: { kind: 'request', callId: 'call-1' } },
+    invalid: [
+      { sessionId: '', laneId: 'main', anchor: { kind: 'tool', toolUseId: 't' } },
+      { sessionId: 'owned', laneId: '', anchor: { kind: 'tool', toolUseId: 't' } },
+    ],
+    note: 'required session and lane',
+  },
+  FactChainPackage: {
+    valid: { packageId: 'plugin', version: '1.0.0', snapshotId: 's', integrity: 'i', treeIntegrity: 't' },
+    invalid: [
+      { packageId: 'x'.repeat(513), version: '1', snapshotId: 's', integrity: 'i', treeIntegrity: 't' },
+    ],
+    note: 'retained generation metadata only',
+  },
+  FactChainNode: {
+    valid: {
+      id: 'receipt:1',
+      kind: 'receipt',
+      toolUseId: 't',
+      resultSeq: null,
+      settledSeq: null,
+      isError: null,
+      code: null,
+      outcome: 'unknown',
+      resultKind: 'unavailable',
+      partial: false,
+      externalOutcome: 'unknown',
+    },
+    invalid: [
+      {
+        id: 'a',
+        kind: 'artifact',
+        seq: 0,
+        ref: { sha256: 'a'.repeat(64), size: 1, mime: 'text/plain' },
+        relation: 'produced',
+      },
+      {
+        id: 'r',
+        kind: 'receipt',
+        toolUseId: 't',
+        resultSeq: 1,
+        settledSeq: null,
+        isError: false,
+        code: null,
+        outcome: 'ok',
+        resultKind: 'actual',
+        partial: false,
+        externalOutcome: 'exactly-once',
+      },
+    ],
+    note: 'no external exactly-once, explicit nullable receipts',
+  },
+  FactChainEdge: {
+    valid: { from: 'tool:t', to: 'receipt:1', relation: 'status', evidence: [1], basis: 'ledger' },
+    invalid: [
+      { from: 't', to: 'r', relation: 'settled', evidence: Array(9).fill(1), basis: 'ledger' },
+      { from: 't', to: 'r', relation: 'settled', evidence: [0], basis: 'ledger' },
+    ],
+    note: 'bounded real source event sequences',
+  },
+  FactChainGap: {
+    valid: { at: null, reason: 'not-retained' },
+    invalid: [{ at: null, reason: 'success' }],
+    note: 'explicit evidence gaps',
+  },
+  FactChainResult: {
+    valid: { sessionId: 'owned', laneId: 'main', atSeq: 0, nodes: [], edges: [], gaps: [] },
+    invalid: [
+      { sessionId: 'owned', laneId: 'main', atSeq: -1, nodes: [], edges: [], gaps: [] },
+      {
+        sessionId: 'owned',
+        laneId: 'main',
+        atSeq: 0,
+        nodes: [],
+        edges: [],
+        gaps: Array(257).fill({ at: null, reason: 'truncated' }),
+      },
+    ],
+    note: 'bounded immutable read watermark',
+  },
+
+  SystemPromptConfig: {
+    note: 'prompt and local request snapshot boundary',
+    valid: { personaPrefix: 'hello' },
+    invalid: [{ personaPrefix: 'a'.repeat(8193) }, { fullOverride: 'a'.repeat(65537) }, { unknown: true }],
+  },
+  SystemPromptSection: {
+    note: 'prompt and local request snapshot boundary',
+    valid: { id: 'persona', order: 1, source: 'plugin:file', text: 'hello' },
+    invalid: [{ id: 'x', order: 1, text: 'missing source' }],
+  },
+  SystemPromptGetParams: {
+    note: 'prompt and local request snapshot boundary',
+    valid: {},
+    invalid: [{ sessionId: '' }],
+  },
+  SystemPromptSaveParams: {
+    note: 'prompt and local request snapshot boundary',
+    valid: { config: {} },
+    invalid: [{ config: { personaSuffix: 1 } }],
+  },
+  SystemPromptSnapshot: {
+    note: 'prompt and local request snapshot boundary',
+    valid: {
+      config: {},
+      effect: 'new-sessions',
+      sections: [],
+      hash: 'a'.repeat(64),
+      preview: 'default-sections',
+    },
+    invalid: [
+      {
+        config: {},
+        effect: 'current-session',
+        sections: [],
+        hash: 'a'.repeat(64),
+        preview: 'default-sections',
+      },
+    ],
+  },
+  ModelRequestClearParams: {
+    valid: { sessionId: 'owned', callId: '00000000-0000-4000-8000-000000000000' },
+    invalid: [{ sessionId: 'owned' }],
+    note: 'owner-scoped explicit clear',
+  },
+  ModelRequestClearResult: {
+    valid: { cleared: true },
+    invalid: [{ cleared: 'true' }],
+    note: 'owner-scoped explicit clear',
+  },
+  ModelRequestAttempt: {
+    valid: {
+      attemptId: '00000000-0000-4000-8000-000000000000',
+      parentCallId: '00000000-0000-4000-8000-000000000000',
+      index: 0,
+      adapter: { id: 'test', version: null, api: 'test', endpoint: null },
+      status: 'not-sent',
+      wire: null,
+      wireUnavailable: 'adapter-no-tap',
+      promptHash: null,
+      toolSchemaHash: null,
+      providerActualTokens: null,
+      estimatedTokens: null,
+      response: {},
+    },
+    invalid: [{ status: 'success' }],
+    note: 'actual attempt boundary',
+  },
+  ModelRequestSnapshot: {
+    note: 'prompt and local request snapshot boundary',
+    valid: {
+      id: '00000000-0000-4000-8000-000000000000',
+      createdAt: '2026-10-08T00:00:00.000Z',
+      derivedHash: 'a'.repeat(64),
+      systemHash: 'a'.repeat(64),
+      toolsHash: 'b'.repeat(64),
+      sectionsHash: 'c'.repeat(64),
+      system: 'sys',
+      sections: [],
+      tools: [],
+      messages: [],
+      params: {},
+      response: {},
+      wire: null,
+      capture: 'logical-request',
+      messagesHash: 'a'.repeat(64),
+      sourceHashes: [],
+      generationId: null,
+      promptHash: 'a'.repeat(64),
+      toolSchemaHash: 'b'.repeat(64),
+      memoryRevision: null,
+      memoryHash: null,
+      compactionBoundary: null,
+      hashBasis: 'redacted-json',
+      incomplete: false,
+      wireUnavailable: 'adapter-no-tap',
+      tokens: { providerActual: null, estimated: null },
+      attempts: [],
+      redacted: false,
+    },
+    invalid: [{ id: 'invalid' }],
+  },
+  ModelRequestParams: {
+    note: 'prompt and local request snapshot boundary',
+    valid: { sessionId: 'session', callId: '00000000-0000-4000-8000-000000000000' },
+    invalid: [
+      { sessionId: 'session', callId: '../other' },
+      { callId: '00000000-0000-4000-8000-000000000000' },
+    ],
+  },
+  ModelRequestResult: {
+    note: 'prompt and local request snapshot boundary',
+    valid: { snapshot: null, previous: null, unavailable: 'not-retained' },
+    invalid: [{ snapshot: null }],
+  },
+  SessionLoopCatalogResult: {
+    note: 'Only public loop descriptions cross the wire',
+    valid: { loops: [] },
+    invalid: [{ loops: [{ id: 'x' }] }, { loops: [], factory: 'private' }],
+  },
+  SessionAdapterCatalogResult: {
+    note: 'Only public adapter descriptions cross the wire',
+    valid: {
+      modelAdapters: [
+        {
+          id: 'adapter',
+          version: '1.0.0',
+          wireApi: 'wire',
+          sourcePackage: '@acme/adapter',
+          capabilities: { imageInput: false, tools: true, streaming: true },
+          models: [],
+        },
+      ],
+    },
+    invalid: [
+      { modelAdapters: [{ id: 'x' }] },
+      { modelAdapters: [], secret: 'private' },
+      {
+        modelAdapters: [
+          {
+            id: 'adapter',
+            version: '1.0.0',
+            wireApi: 'wire',
+            sourcePackage: '@acme/adapter',
+            capabilities: { imageInput: false, tools: true, streaming: true, payload: 'yes' },
+            models: [],
+          },
+        ],
+      },
+      {
+        modelAdapters: [
+          {
+            id: 'adapter',
+            version: '1.0.0',
+            wireApi: 'wire',
+            sourcePackage: '@acme/adapter',
+            capabilities: { imageInput: false, tools: true, streaming: true, payloadOnly: 1 },
+            models: [],
+          },
+        ],
+      },
+      {
+        modelAdapters: [
+          {
+            id: 'adapter',
+            version: '1.0.0',
+            wireApi: 'wire',
+            sourcePackage: '@acme/adapter',
+            capabilities: { imageInput: false, tools: true, streaming: true, batch: true },
+            models: [],
+          },
+        ],
+      },
+      {
+        modelAdapters: [
+          {
+            id: 'adapter',
+            version: '1.0.0',
+            wireApi: 'wire',
+            api: 'wire',
+            sourcePackage: '@acme/adapter',
+            capabilities: { imageInput: false, tools: true, streaming: true },
+            models: [],
+          },
+        ],
+      },
+    ],
+  },
+  SessionDefaultsState: {
+    note: 'Defaults use closed identities and revision CAS',
+    valid: { revision: 0, defaults: {} },
+    invalid: [
+      { revision: -1, defaults: {} },
+      { revision: 0, defaults: { loop: { id: 'x' } } },
+    ],
+  },
   ConfigOAuthInput: {
     note: 'OAuth input',
     valid: { action: 'poll', operationId: 'a' },
@@ -1870,10 +2672,13 @@ const AGNES_SAMPLES: Record<string, Sample> = {
   },
   ConfigModel: {
     note: 'Configuration RPC rejects malformed revisions and credential disclosure; hand-written boundary cases.',
-    valid: { id: 'm', name: 'Model' },
+    valid: { id: 'm', name: 'm', audioRole: 'speech' },
     invalid: [
       { id: '', name: 'Model' },
+      { id: 'm', name: 'm', audioRole: 'music' },
       { id: 'm', name: 'Model', secret: true },
+      { id: 'm', name: 'Model', maxTokens: 0 },
+      { id: 'm', name: 'Model', cost: { input: 0, output: 0, cacheRead: 0 } },
     ],
   },
   ConfigSnapshot: {
@@ -1897,6 +2702,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { providerId: '' },
       { providerId: 'p', apiKey: rep(65537) },
       { providerId: 'p', baseUrl: rep(2049) },
+      { providerId: 'p', credentialRef: 'not-a-secret-ref' },
     ],
   },
   ConfigTestResult: {
@@ -1914,6 +2720,8 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { providerId: 'openai', model: 'm', expectedRevision: -1 },
       { providerId: 'openai', model: 'm', expectedRevision: 1.1 },
       { providerId: 'openai' },
+      { providerId: 'openai', model: 'm', credentialRef: 'not-a-secret-ref' },
+      { providerId: 'openai', model: 'm', models: [{ id: 'm', name: 'M', maxTokens: 0 }] },
     ],
   },
   ConfigProvidersResult: {
@@ -1928,6 +2736,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
   },
 
   BudgetState: SESSION_SAMPLES.BudgetState as Sample,
+  SystemInput: SESSION_SAMPLES.SystemInput as Sample,
   ArtifactRef: SESSION_SAMPLES.ArtifactRef as Sample,
   ArtifactJob: SESSION_SAMPLES.ArtifactJob as Sample,
   Credential: {
@@ -2008,6 +2817,50 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     ],
     note: 'exclusive applied cursor and optional target cut use the same seq and surface boundaries',
   },
+  SessionViewParams: {
+    valid: { sessionId: 's', maxNodes: 200 },
+    invalid: [{ sessionId: 's', maxNodes: 0 }, { sessionId: 's', maxNodes: 5001 }, { maxNodes: 1 }],
+    note: 'a read-only view has a bounded node window and no surface or byte budget',
+  },
+  SessionViewNotice: {
+    valid: {
+      code: 'E_SESSION_VERSION_OLDER',
+      issue: 'older',
+      actions: ['new-session'],
+      localized: { en: 'Older.', 'zh-CN': '你的会话较旧。' },
+    },
+    invalid: [
+      { code: 'E_FORMAT_CORRUPT', issue: 'corrupt', actions: [], localized: { en: '', 'zh-CN': '' } },
+      {
+        code: 'E_SESSION_CORRUPT',
+        issue: 'corrupt',
+        actions: ['delete'],
+        localized: { en: '', 'zh-CN': '' },
+      },
+      { code: 'E_SESSION_CORRUPT', issue: 'corrupt', actions: [], localized: { en: '' } },
+    ],
+    note: 'the same three codes and follow-up actions as the open refusal',
+  },
+  SessionViewResult: {
+    valid: {
+      sessionId: 's',
+      readOnly: true,
+      lastSeq: 0,
+      timeline: { sessionId: 's', upto: 0, generation: 1, opState: null, nodes: [], turns: [] },
+      history: { hasEarlier: false, startIndex: 0, totalNodes: 0 },
+    },
+    invalid: [
+      {
+        sessionId: 's',
+        readOnly: false,
+        lastSeq: 0,
+        timeline: { sessionId: 's', upto: 0, generation: 1, opState: null, nodes: [], turns: [] },
+        history: { hasEarlier: false, startIndex: 0, totalNodes: 0 },
+      },
+      { sessionId: 's', readOnly: true, lastSeq: 0 },
+    ],
+    note: 'a read result is always flagged read-only and carries one timeline plus window coordinates',
+  },
   SessionProjectUIOpeningParams: {
     valid: { sessionId: 's', surface: 'tui', maxNodes: 200, maxBytes: 262_144 },
     invalid: [
@@ -2061,93 +2914,44 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     ],
     note: 'base64 chunks carry bounded encoded bytes and a nullable next offset',
   },
-  SessionAttachmentReadParams: {
-    valid: { sessionId: 's', seq: 5, kind: 'file', index: 1, offset: 0, length: 1048576, thumbnail: false },
+  SessionDeliverablesParams: {
+    valid: { sessionId: 's', afterSeq: 12, limit: 200 },
     invalid: [
-      { sessionId: 's', seq: 5, kind: 'file', index: 1, offset: 0, length: 1048577 },
-      { sessionId: 's', seq: 5, kind: 'file', index: 1, offset: 0, length: 0 },
-      { sessionId: 's', seq: 5, kind: 'file', index: 0, offset: 0, length: 1 },
-      { sessionId: 's', seq: 5, kind: 'audio', index: 1, offset: 0, length: 1 },
-      { sessionId: 's', seq: 5, kind: 'file', index: 1, offset: -1, length: 1 },
-      { sessionId: 's', seq: 5, kind: 'file', index: 1, offset: 0 },
-      { sessionId: 's', seq: 5, kind: 'file', index: 1, offset: 0, length: 1, extra: 1 },
+      { sessionId: 's', afterSeq: -1 },
+      { sessionId: 's', limit: 0 },
+      { sessionId: 's', limit: 201 },
+      { sessionId: 's', cursor: 'c' },
     ],
-    note: 'attachment windows name the attachment by message seq, kind and place, and carry at most 1 MiB',
+    note: 'deliverable source pages start after an exclusive seq and hold at most 200 items',
   },
-  SessionAttachmentReadResult: {
-    valid: { mimeType: 'application/zip', totalBytes: 3, base64: 'QUJD', sha256: 'a'.repeat(64) },
-    invalid: [
-      { mimeType: 'a/b', totalBytes: 3, base64: 'QUJD', sha256: 'A'.repeat(64) },
-      { mimeType: '', totalBytes: 3, base64: 'QUJD' },
-      { mimeType: 'a/b', totalBytes: -1, base64: 'QUJD' },
-      { mimeType: 'a/b', totalBytes: 3, base64: rep(1_398_105) },
-      { mimeType: 'a/b', totalBytes: 3 },
-    ],
-    note: 'attachment windows carry at most 1 MiB of bytes as base64 and the whole size',
-  },
-  AttachmentUploadParams: {
+  SessionDeliverableSource: {
     valid: {
-      operation: 'chunk',
+      callSeq: 3,
+      resultSeq: 5,
+      toolUseId: 'call-1',
+      turnId: 'turn:1',
+      structured: { deliverables: [], surfaceId: 'card-1', laneId: 'main', owner: 'agnes/deliverables' },
+    },
+    invalid: [
+      { callSeq: 0, resultSeq: 5, toolUseId: 'call-1' },
+      { callSeq: 3, toolUseId: 'call-1' },
+      { callSeq: 3, resultSeq: 5, toolUseId: 'call-1', name: 'present' },
+    ],
+    note: 'one present call, its paired result seq and the structured data recorded with it',
+  },
+  SessionDeliverablesResult: {
+    valid: {
       sessionId: 's',
-      uploadId: '0f0e0d0c-0b0a-4908-8706-050403020100',
-      offset: 0,
-      data: 'QUJD',
-      sha256: 'a'.repeat(64),
+      upto: 9,
+      items: [{ callSeq: 3, resultSeq: 5, toolUseId: 'call-1' }],
+      nextAfterSeq: 9,
     },
     invalid: [
-      { operation: 'limits', sessionId: '' },
-      { operation: 'start', sessionId: 's', uploadId: 'x', name: 'a', mimeType: 'a/b', size: 1 },
-      {
-        operation: 'chunk',
-        sessionId: 's',
-        uploadId: '0f0e0d0c-0b0a-4908-8706-050403020100',
-        offset: 0,
-        data: rep(1_398_105),
-        sha256: 'a'.repeat(64),
-      },
-      { operation: 'finish', sessionId: 's', uploadId: '0f0e0d0c-0b0a-4908-8706-050403020100', extra: 1 },
-      { operation: 'resume', sessionId: 's', uploadId: '0f0e0d0c-0b0a-4908-8706-050403020100' },
+      { sessionId: 's', items: [] },
+      { sessionId: 's', upto: 9, items: [], nextAfterSeq: -1 },
+      { sessionId: 's', upto: 9, items: [{ callSeq: 3, resultSeq: 5 }] },
     ],
-    note: 'upload steps are closed per operation and a chunk carries at most 1 MiB as base64',
-  },
-  AttachmentUploadResult: {
-    valid: {
-      offset: 3,
-      attachment: {
-        type: 'file',
-        mimeType: 'a/b',
-        name: 'a',
-        attachment: { sha256: 'a'.repeat(64), bytes: 3 },
-      },
-    },
-    invalid: [
-      { offset: -1 },
-      { limits: { maxBytes: 1, chunkBytes: 0, maxConcurrent: 4 } },
-      { offset: 3, attachment: { sha256: 'a'.repeat(64), bytes: 0, width: 1, height: 1 } },
-      { extra: true },
-    ],
-    note: 'an upload answers limits, an offset, or the stored reference block or thumbnail',
-  },
-  SessionExportRawParams: {
-    valid: { sessionId: 's', seq: 1, offset: 0 },
-    invalid: [
-      { sessionId: 's', seq: 0, offset: 0 },
-      { sessionId: 's', seq: 1, offset: -1 },
-      { sessionId: '', seq: 1, offset: 0 },
-      { sessionId: 's', seq: 1 },
-      { sessionId: 's', seq: 1, offset: 0, extra: 1 },
-    ],
-    note: 'raw row export addresses one positive ledger seq and a non-negative byte offset',
-  },
-  SessionExportRawResult: {
-    valid: { seq: 1, base64: 'e30=', nextOffset: null },
-    invalid: [
-      { seq: 0, base64: 'e30=', nextOffset: null },
-      { seq: 1, base64: 'e30=', nextOffset: -1 },
-      { seq: 1, base64: rep(11_184_813), nextOffset: null },
-      { seq: 1, base64: 'e30=' },
-    ],
-    note: 'raw row pieces carry at most 8 MiB of bytes as base64 and a nullable next offset',
+    note: 'a page names the seq it covers and continues only through nextAfterSeq',
   },
   SlotFillView: {
     valid: { slot: 'status.line', extId: 'test/e', payload: { text: 'ok' } },
@@ -2447,6 +3251,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
   Actor: SESSION_SAMPLES.Actor as Sample,
   SurfaceOp: SESSION_SAMPLES.SurfaceOp as Sample,
   EventEnvelope: SESSION_SAMPLES.EventEnvelope as Sample,
+  ExtensionEventType: SESSION_SAMPLES.ExtensionEventType as Sample,
   Cursor: {
     valid: attachOk.cursor,
     invalid: [
@@ -2500,7 +3305,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { ...steerOk, content: [] }, // boundary: one below minItems:1
       { ...steerOk, generation: 0 }, // boundary: one below minimum:1
     ],
-    note: 'valid and the first invalid reuse fixtures/methods/i1.jsonl (steer-ok / steer-actor)',
+    note: 'Shared steer DTO remains closed; submit carries command metadata outside the payload',
   },
   SessionSendNowParams: {
     valid: { sessionId: 's', itemId: 'queued-1', commandId: 'send-now-1' },
@@ -2531,7 +3336,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
   SessionSteerResult: {
     valid: steerResultOk,
     invalid: [{ seq: 0 }], // boundary: minimum:1
-    note: 'valid reuses the steer-result-ok fixture; invalid is hand-written (seq below minimum:1)',
+    note: 'Shared seq result DTO retains its integer boundary',
   },
   ApisListParams: {
     valid: apisListParamsOk,
@@ -2625,10 +3430,11 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: 'same as Auth: appears only on the `_meta` side channel, so every sample is hand-written',
   },
   NewSessionMeta: {
-    valid: {},
+    valid: { preset: 'standard', permission: 'default' },
     invalid: [
       { preset: 123 }, // wrong type
       { preset: rep(129) }, // boundary: maxLength:128
+      { permission: rep(17) }, // boundary: maxLength:16
       { sessionKey: rep(513) }, // boundary: maxLength:512
     ],
     note: 'same as Auth: appears only on the `_meta` side channel, so every sample is hand-written',
@@ -2658,6 +3464,296 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     ],
     note: 'valid and the first invalid reuse fixtures/methods/i1.jsonl (session-detach-params-ok / session-detach-params-extra-key)',
   },
+  SessionJob: {
+    valid: {
+      id: 'j',
+      owner: 'human',
+      ownerSessionId: 's',
+      kind: 'pty',
+      command: 'bash',
+      cwd: '/workspace',
+      status: 'running',
+      code: null,
+      truncated: false,
+    },
+    invalid: [
+      {
+        ...{
+          id: 'j',
+          owner: 'human',
+          ownerSessionId: 's',
+          kind: 'pty',
+          command: 'bash',
+          cwd: '/workspace',
+          status: 'running',
+          code: null,
+          truncated: false,
+        },
+        owner: 'unknown',
+      },
+      {
+        ...{
+          id: 'j',
+          owner: 'human',
+          ownerSessionId: 's',
+          kind: 'pty',
+          command: 'bash',
+          cwd: '/workspace',
+          status: 'running',
+          code: null,
+          truncated: false,
+        },
+        stdout: rep(65537),
+      },
+      {
+        ...{
+          id: 'j',
+          owner: 'human',
+          ownerSessionId: 's',
+          kind: 'pty',
+          command: 'bash',
+          cwd: '/workspace',
+          status: 'running',
+          code: null,
+          truncated: false,
+        },
+        ownerSessionId: '',
+      },
+    ],
+    note: 'backend job identity, status and bounded retained output',
+  },
+  SessionJobsReadParams: {
+    valid: { sessionId: 's' },
+    invalid: [{}, { sessionId: 's', jobId: '' }, { sessionId: 's', cwd: '../foreign' }],
+    note: 'owner-scoped job query',
+  },
+  SessionJobsReadResult: {
+    valid: {
+      jobs: [
+        {
+          id: 'j',
+          owner: 'human',
+          ownerSessionId: 's',
+          kind: 'pty',
+          command: 'bash',
+          cwd: '/workspace',
+          status: 'running',
+          code: null,
+          truncated: false,
+        },
+      ],
+      completions: [],
+    },
+    invalid: [
+      { jobs: [], completions: [], extra: true },
+      {
+        jobs: Array(129).fill({
+          id: 'j',
+          owner: 'human',
+          ownerSessionId: 's',
+          kind: 'pty',
+          command: 'bash',
+          cwd: '/workspace',
+          status: 'running',
+          code: null,
+          truncated: false,
+        }),
+        completions: [],
+      },
+    ],
+    note: 'bounded job snapshots',
+  },
+  SessionJobsControlParams: {
+    valid: { sessionId: 's', commandId: 'c', operation: 'send', jobId: 'j', text: 'hello' },
+    invalid: [
+      { sessionId: 's', commandId: 'c', operation: 'send', jobId: 'j' },
+      { sessionId: 's', commandId: 'c', operation: 'resize', jobId: 'j', columns: 0, rows: 30 },
+      { sessionId: 's', commandId: 'c', operation: 'open', cwd: '../foreign' },
+    ],
+    note: 'durable terminal actions with operation-specific requirements',
+  },
+  SessionJobsControlResult: {
+    valid: { output: { ok: true } },
+    invalid: [{ output: { ok: false } }, { output: {} }],
+    note: 'process or acknowledged terminal operation',
+  },
+  SessionUndoPreviewParams: {
+    valid: { sessionId: 's', turn: 2 },
+    invalid: [{}, { sessionId: 's', turn: 0 }, { sessionId: 's', extra: true }],
+    note: 'optional turn; default is the latest file-changing turn',
+  },
+  SessionUndoFile: {
+    valid: { path: 'a.ts', action: 'restore', undoable: false, reason: 'changed-since' },
+    invalid: [
+      { path: '', action: 'restore', undoable: true },
+      { path: 'a', action: 'force', undoable: true },
+    ],
+    note: 'one file of an undo preview',
+  },
+  SessionUndoPreviewResult: {
+    valid: {
+      sessionId: 's',
+      turn: 2,
+      busy: false,
+      undoable: true,
+      blockedBy: 'none',
+      laterTurns: [],
+      shellChanges: false,
+      files: [{ path: 'a.ts', action: 'restore', undoable: true }],
+    },
+    invalid: [
+      { sessionId: 's' },
+      {
+        sessionId: 's',
+        turn: 2,
+        busy: false,
+        undoable: true,
+        blockedBy: 'force',
+        laterTurns: [],
+        shellChanges: false,
+        files: [],
+      },
+    ],
+    note: 'read-only preview',
+  },
+  SessionUndoParams: {
+    valid: { sessionId: 's', turn: 2, commandId: 'c1' },
+    invalid: [
+      { sessionId: 's', turn: 2 },
+      { sessionId: 's', turn: 2, commandId: 'c1', force: true },
+    ],
+    note: 'submit-class; no force',
+  },
+  SessionUndoPathReason: {
+    valid: { path: 'a.ts', reason: 'changed-since' },
+    invalid: [{ path: '', reason: 'x' }, { path: 'a.ts' }],
+    note: 'path with a short reason',
+  },
+  SessionUndoResult: {
+    valid: { sessionId: 's', turn: 2, seq: 9, restored: ['a.ts'], failed: [], conflicts: [] },
+    invalid: [
+      { sessionId: 's', turn: 2, restored: [], failed: [], conflicts: [] },
+      { sessionId: 's', turn: 2, seq: 0, restored: [], failed: [], conflicts: [] },
+    ],
+    note: 'honest restored and failed lists',
+  },
+  SessionWorkspaceChangesParams: {
+    valid: { sessionId: 's', path: 'src/a.ts', scope: 'session', expectedRevision: REVIEW_REVISION },
+    invalid: [
+      {},
+      { sessionId: 's', cwd: '../outside' },
+      { sessionId: 's', scope: 'all' },
+      { sessionId: 's', path: '' },
+      { sessionId: 's', expectedRevision: 'x'.repeat(129) },
+    ],
+    note: 'session-bound review parameters',
+  },
+  SessionWorkspaceChangeEvidence: {
+    valid: REVIEW_EVIDENCE,
+    invalid: [
+      { ...REVIEW_EVIDENCE, callSeq: -1 },
+      { ...REVIEW_EVIDENCE, tool: 'shell' },
+      { ...REVIEW_EVIDENCE, enforcement: 'guessed' },
+    ],
+    note: 'actual confirmed tool coordinates',
+  },
+  SessionWorkspaceChange: {
+    valid: REVIEW_CHANGE,
+    invalid: [
+      { ...REVIEW_CHANGE, added: -1 },
+      { ...REVIEW_CHANGE, basis: 'git-guessed' },
+      { ...REVIEW_CHANGE, effects: Array(101).fill(REVIEW_EVIDENCE) },
+    ],
+    note: 'bounded file attribution',
+  },
+  SessionWorkspaceChangesSelected: {
+    valid: REVIEW_SELECTED,
+    invalid: [
+      { ...REVIEW_SELECTED, diff: 'x'.repeat(65537) },
+      { ...REVIEW_SELECTED, beforeRevision: 'wrong' },
+    ],
+    note: 'bounded read-only diff',
+  },
+  SessionWorkspaceChangesResult: {
+    valid: REVIEW_RESULT,
+    invalid: [
+      { ...REVIEW_RESULT, files: Array(51).fill(REVIEW_CHANGE) },
+      { ...REVIEW_RESULT, turn: -1 },
+      { ...REVIEW_RESULT, unrecorded: 'false' },
+    ],
+    note: 'bounded review projection and coverage',
+  },
+  SessionWorkspaceListParams: {
+    valid: { sessionId: 's', path: 'src' },
+    invalid: [
+      {},
+      { sessionId: '' },
+      { sessionId: 's', path: rep(4097) },
+      { sessionId: 's', path: 'src', extra: true },
+    ],
+    note: 'relative workspace listing; path is optional and bounded',
+  },
+  SessionWorkspaceEntry: {
+    valid: { name: 'a.ts', kind: 'file', git: 'modified' },
+    invalid: [
+      { kind: 'file' },
+      { name: '', kind: 'file' },
+      { name: rep(256), kind: 'file' },
+      { name: 'a.ts', kind: 'link' },
+      { name: 'a.ts', kind: 'file', git: 'copied' },
+      { name: 'a.ts', kind: 'file', target: '../secret' },
+    ],
+    note: 'one directory entry; git is optional and closed',
+  },
+  SessionWorkspaceListResult: {
+    valid: {
+      revision: 'synthetic-revision',
+      observedAt: '2026-10-08T00:00:00Z',
+      gitStatus: 'available',
+      path: '',
+      truncated: false,
+      entries: [{ name: 'a.ts', kind: 'file' }],
+    },
+    invalid: [
+      { path: '', truncated: false },
+      { path: rep(4097), truncated: false, entries: [] },
+      { path: '', truncated: 'no', entries: [] },
+      {
+        path: '',
+        truncated: false,
+        entries: Array.from({ length: 501 }, (_, index) => ({ name: `f${index}.txt`, kind: 'file' })),
+      },
+    ].map((invalid) => ({
+      revision: 'synthetic-revision',
+      observedAt: '2026-10-08T00:00:00Z',
+      gitStatus: 'available',
+      ...invalid,
+    })),
+    note: 'listing is capped at 500 entries',
+  },
+  SessionWorkspaceReadParams: {
+    valid: { sessionId: 's', path: 'a.ts' },
+    invalid: [{ sessionId: 's' }, { sessionId: 's', path: '' }, { sessionId: 's', path: rep(4097) }],
+    note: 'read requires one relative path',
+  },
+  SessionWorkspaceReadResult: {
+    valid: {
+      revision: 'synthetic-revision',
+      observedAt: '2026-10-08T00:00:00Z',
+      path: 'a.ts',
+      size: 1,
+      binary: false,
+      truncated: false,
+      text: 'a',
+    },
+    invalid: [
+      { path: 'a.ts', size: 0, binary: false },
+      { path: 'a.ts', size: -1, binary: false, truncated: false },
+      { path: 'a.ts', size: 1, binary: false, truncated: false, text: rep(1_048_577) },
+      { path: 'a.ts', size: 1, binary: false, truncated: false, outside: true },
+    ].map((invalid) => ({ revision: 'synthetic-revision', observedAt: '2026-10-08T00:00:00Z', ...invalid })),
+    note: 'text is omitted for binary or oversized files and is capped at 1 MiB',
+  },
   ApprovalGrantListParams: {
     valid: { sessionId: 's', toolId: 'computer_use', scope: 'cua:click:background', policyVersion: 'v1' },
     invalid: [
@@ -2675,33 +3771,45 @@ const AGNES_SAMPLES: Record<string, Sample> = {
   ApprovalGrantRecord: {
     valid: {
       grantId: 'grant-1',
-      profileHash: `sha256-${rep64}`,
+      policyDigest: `sha256-${rep64}`,
       actorId: 'local',
       actorOrg: 'local',
       toolId: 'computer_use',
       scope: 'cua:click:background',
       policyVersion: 'v1',
+      sourceDecisionId: 'decision-fixture',
+      issuer: { id: 'reviewer', org: 'local', role: 'user', deptPath: [], attrs: {} },
+      definitionFingerprint: 'd'.repeat(64),
+      policyBinding: 'e'.repeat(64),
       createdAt: '2026-09-19T00:00:00Z',
     },
     invalid: [
       {
         grantId: 'grant-1',
-        profileHash: rep64,
+        policyDigest: rep64,
         actorId: 'local',
         actorOrg: 'local',
         toolId: 'computer_use',
         scope: 'cua:click:background',
         policyVersion: 'v1',
+        sourceDecisionId: 'decision-fixture',
+        issuer: { id: 'reviewer', org: 'local', role: 'user', deptPath: [], attrs: {} },
+        definitionFingerprint: 'd'.repeat(64),
+        policyBinding: 'e'.repeat(64),
         createdAt: '2026-09-19T00:00:00Z',
       },
       {
         grantId: 'grant-1',
-        profileHash: `sha256-${rep64}`,
+        policyDigest: `sha256-${rep64}`,
         actorId: 'local',
         actorOrg: 'local',
         toolId: 'computer_use',
         scope: 'cua:click:background',
         policyVersion: 'v1',
+        sourceDecisionId: 'decision-fixture',
+        issuer: { id: 'reviewer', org: 'local', role: 'user', deptPath: [], attrs: {} },
+        definitionFingerprint: 'd'.repeat(64),
+        policyBinding: 'e'.repeat(64),
         createdAt: '2026-02-30T00:00:00Z',
       },
     ],
@@ -2731,6 +3839,53 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     valid: { grants: [] },
     invalid: [{}, { grants: [{}] }],
     note: 'grant listing is a closed array of fully bound durable records',
+  },
+  SessionApprovalGrant: {
+    valid: {
+      grantId: 'grant-1',
+      lifetime: 'always',
+      toolId: 'shell',
+      scope: 'tool:shell:execute',
+      policyVersion: 'v1',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    },
+    invalid: [
+      {
+        grantId: 'grant-1',
+        lifetime: 'forever',
+        toolId: 'shell',
+        scope: 's',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+      { grantId: 'grant-1', lifetime: 'session', toolId: 'shell', createdAt: '2026-01-01T00:00:00.000Z' },
+      { grantId: 'grant-1', lifetime: 'session', toolId: 'shell', scope: 's', createdAt: 'yesterday' },
+    ],
+    note: 'a grant in force for a session names its lifetime, tool and scope',
+  },
+  ApprovalGrantSessionParams: {
+    valid: { sessionId: 's' },
+    invalid: [{}, { sessionId: '' }, { sessionId: 's', toolId: 'shell' }],
+    note: 'the session alone selects its grants; no tool is named',
+  },
+  ApprovalGrantSessionResult: {
+    valid: {
+      grants: [
+        {
+          grantId: 'decision-1',
+          lifetime: 'session',
+          toolId: 'shell',
+          scope: 'tool:shell:execute',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    },
+    invalid: [{}, { grants: [{}] }],
+    note: 'session and always grants share one closed listing',
+  },
+  ApprovalGrantSessionRevokeParams: {
+    valid: { sessionId: 's', grantId: 'grant-1' },
+    invalid: [{ sessionId: 's' }, { grantId: 'grant-1' }, { sessionId: 's', grantId: '' }],
+    note: 'revoking needs only the session and the listed grant id',
   },
   Empty: {
     valid: {},
@@ -2855,46 +4010,6 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     ],
     note: 'P0-blocked doctor reports checks not-run rather than fixture or platform evidence',
   },
-  BatchSpec: {
-    valid: { dir: 'images', prompt: 'Describe {{name}}', maxEdge: 1024 },
-    invalid: [{ dir: 'images' }, { dir: 'images', prompt: 'x', concurrency: 0 }],
-    note: 'a batch needs a folder and a prompt; options are bounded',
-  },
-  BatchStartParams: {
-    valid: { cwd: '/w', spec: { dir: 'images', prompt: 'x' } },
-    invalid: [{ spec: { dir: 'images', prompt: 'x' } }],
-    note: 'start names the working directory the folder is relative to',
-  },
-  BatchIdParams: {
-    valid: { batchId: 'b0123456789ab', export: true },
-    invalid: [{ batchId: 'b123' }, { batchId: 'b0123456789ab', extra: 1 }],
-    note: 'batch ids are b followed by twelve hex digits',
-  },
-  BatchCounts: {
-    valid: { total: 1, pending: 0, running: 0, done: 1, invalid: 0, failed: 0, skipped: 0, cancelled: 0 },
-    invalid: [{ total: 1 }],
-    note: 'every item state is counted',
-  },
-  BatchStatus: {
-    valid: {
-      batchId: 'b0123456789ab',
-      status: 'completed',
-      dir: 'images',
-      outDir: 'agh-batch/b0123456789ab',
-      createdAt: '1970-01-01T00:00:00.000Z',
-      updatedAt: '1970-01-01T00:00:00.000Z',
-      counts: { total: 1, pending: 0, running: 0, done: 1, invalid: 0, failed: 0, skipped: 0, cancelled: 0 },
-      spentCredits: 0.1,
-      files: ['agh-batch/b0123456789ab/results.jsonl'],
-    },
-    invalid: [{ batchId: 'b0123456789ab', status: 'paused' }],
-    note: 'status values are closed',
-  },
-  BatchList: {
-    valid: { items: [] },
-    invalid: [{}],
-    note: 'a list always carries items',
-  },
   ComputerUseOperationStartParams: {
     valid: { kind: 'update' },
     invalid: [{ kind: 'repair' }, { kind: 'install', force: true }],
@@ -2961,6 +4076,14 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     ],
     note: 'valid and the first invalid reuse fixtures/methods/i1.jsonl (session-event-params-ok / session-event-params-row-missing-actor)',
   },
+  SessionLoadingParams: {
+    note: 'bounded verification and replay progress',
+    valid: { sessionId: 's', phase: 'verifying', verifiedSeq: 5, lastSeq: 10 },
+    invalid: [
+      { sessionId: 's', phase: 'ready', verifiedSeq: 5, lastSeq: 10 },
+      { sessionId: 's', phase: 'verifying', verifiedSeq: -1, lastSeq: 10 },
+    ],
+  },
   SessionPreviewParams: {
     valid: { sessionId: 's1', lane: 'main', effectId: 'e1', stream: 'text', offset: 0, delta: 'hi' },
     invalid: [
@@ -2971,52 +4094,6 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { sessionId: 's1', lane: 'main', effectId: 'e1', stream: 'text', offset: 0, delta: 'hi', seq: 1 }, // additionalProperties:false
     ],
     note: 'hand-written; a preview carries no seq because it is never a ledger row',
-  },
-  SessionLoadingParams: {
-    valid: { sessionId: 's1', phase: 'fold', done: 3, total: 9 },
-    invalid: [
-      { sessionId: 's1', phase: 'read', done: 3, total: 9 }, // enum
-      { sessionId: 's1', phase: 'fold', done: -1, total: 9 }, // boundary: minimum:0
-      { sessionId: 's1', phase: 'fold', done: 3, total: -1 }, // boundary: minimum:0
-      { sessionId: rep(513), phase: 'open', done: 0, total: 0 }, // boundary: maxLength:512
-      { sessionId: 's1', phase: 'fold', done: 3 }, // missing required total
-      { sessionId: 's1', phase: 'fold', done: 3, total: 9, seq: 1 }, // additionalProperties:false
-    ],
-    note: 'hand-written; progress of a session/load in flight, never a ledger row',
-  },
-  SessionStoredOpeningParams: {
-    valid: { sessionId: 's1', maxNodes: 200 },
-    invalid: [
-      { sessionId: 's1', maxNodes: 0 }, // boundary: minimum:1
-      { sessionId: 's1', maxNodes: 501 }, // boundary: maximum:500
-      { maxNodes: 200 }, // missing required sessionId
-      { sessionId: 's1', maxBytes: 16_384 }, // additionalProperties:false
-    ],
-    note: 'hand-written; the read-only stored history asked for while a full open is slow or failed',
-  },
-  SessionStoredOpeningResult: {
-    valid: {
-      timeline: { sessionId: 's1', upto: 9, generation: 1, opState: null, nodes: [], turns: [] },
-      hasEarlier: true,
-      verified: false,
-      lastSeq: 9,
-    },
-    invalid: [
-      {
-        timeline: { sessionId: 's1', upto: 9, generation: 1, opState: null, nodes: [], turns: [] },
-        hasEarlier: true,
-        verified: true,
-        lastSeq: 9,
-      }, // const:false
-      { timeline: { sessionId: 's1' }, hasEarlier: true, verified: false, lastSeq: 9 }, // UITimeline $ref
-      {
-        timeline: { sessionId: 's1', upto: 9, generation: 1, opState: null, nodes: [], turns: [] },
-        hasEarlier: true,
-        verified: false,
-        lastSeq: -1,
-      }, // boundary: minimum:0
-    ],
-    note: 'hand-written; stored history is never verified, and says so',
   },
   DaemonNotice: {
     valid: daemonNoticeOk,
@@ -3037,13 +4114,157 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: "model.json's closed seven-value SlotName enum, reused rather than retyped a second time",
   },
   SessionForkParams: {
-    valid: { sessionId: 's', at: 12 },
+    valid: { sessionId: 's', at: 12, additionalDirectories: ['/a'] },
     invalid: [
       { sessionId: 's' }, // missing required at
       { sessionId: 's', at: 0 }, // boundary: one below minimum:1
       { sessionId: 's', at: 12, childKey: rep(513) }, // boundary: maxLength:512
+      {
+        sessionId: 's',
+        at: 12,
+        additionalDirectories: rep(9)
+          .split('')
+          .map(() => '/a'),
+      }, // boundary: maxItems:8
+      { sessionId: 's', at: 12, additionalDirectories: [''] }, // boundary: item minLength:1
     ],
-    note: 'fork params: sessionId + the seq to fork from, with an optional childKey',
+    note: 'fork params: sessionId + the seq to fork from, with an optional childKey and extra directories',
+  },
+  SessionBtwParams: {
+    valid: { sessionId: 's', question: 'what did we decide?' },
+    invalid: [
+      { sessionId: 's' }, // missing required question
+      { sessionId: 's', question: '' }, // boundary: one below minLength:1
+      { sessionId: 's', question: rep(4001) }, // boundary: one above maxLength:4000
+    ],
+    note: 'side question params: sessionId + a bounded question',
+  },
+  SessionBtwResult: {
+    valid: { text: 'a', model: 'm', credits: 0.1 },
+    invalid: [
+      { text: 'a' }, // missing required model
+      { text: 'a', model: 'm', credits: -1 }, // boundary: one below minimum:0
+    ],
+    note: 'side answer: text, the model that wrote it and the optional credits it cost',
+  },
+  VoiceSettings: {
+    valid: VOICE_SETTINGS,
+    invalid: [
+      { ...VOICE_SETTINGS, account: undefined }, // missing required account
+      { ...VOICE_SETTINGS, account: rep(65) }, // boundary: one above maxLength:64
+      { ...VOICE_SETTINGS, extra: true }, // additionalProperties:false
+      { ...VOICE_SETTINGS, input: { ...VOICE_SETTINGS.input, maxSeconds: 4 } }, // boundary: one below minimum:5
+      { ...VOICE_SETTINGS, input: { ...VOICE_SETTINGS.input, maxSeconds: 121 } }, // boundary: one above maximum:120
+      { ...VOICE_SETTINGS, input: { ...VOICE_SETTINGS.input, maxSeconds: 5.5 } }, // integer only
+      { ...VOICE_SETTINGS, input: { ...VOICE_SETTINGS.input, language: 'en_US' } }, // pattern: BCP 47 tag
+      { ...VOICE_SETTINGS, input: { ...VOICE_SETTINGS.input, language: 'a'.repeat(17) } }, // boundary: maxLength:16
+      { ...VOICE_SETTINGS, input: { ...VOICE_SETTINGS.input, language: 'de-ab-cd-ef-gh' } }, // boundary: four subtags, one above {0,3}
+      { ...VOICE_SETTINGS, reading: { ...VOICE_SETTINGS.reading, speed: 0.2 } }, // boundary: below minimum:0.25
+      { ...VOICE_SETTINGS, reading: { ...VOICE_SETTINGS.reading, speed: 4.1 } }, // boundary: above maximum:4
+      { ...VOICE_SETTINGS, reading: { ...VOICE_SETTINGS.reading, voice: rep(129) } }, // boundary: maxLength:128
+      { ...VOICE_SETTINGS, conversation: { pauseSeconds: 0.4 } }, // boundary: below minimum:0.5
+      { ...VOICE_SETTINGS, conversation: { pauseSeconds: 5.1 } }, // boundary: above maximum:5
+      { ...VOICE_SETTINGS, conversation: { pauseSeconds: 1, extra: 1 } }, // nested additionalProperties:false
+    ],
+    note: 'voice settings: account route, dictation, reading and conversation options, each range-bounded',
+  },
+  VoiceSettingsSnapshot: {
+    valid: { revision: rep64, settings: VOICE_SETTINGS },
+    invalid: [
+      { settings: VOICE_SETTINGS }, // missing required revision
+      { revision: 'A'.repeat(64), settings: VOICE_SETTINGS }, // pattern: lowercase hex only
+      { revision: 'a'.repeat(63), settings: VOICE_SETTINGS }, // pattern: one short of 64
+    ],
+    note: 'voice settings snapshot: sha256-hex revision plus the settings',
+  },
+  VoiceSettingsSaveParams: {
+    valid: { expectedRevision: rep64, settings: VOICE_SETTINGS },
+    invalid: [
+      { settings: VOICE_SETTINGS }, // missing required expectedRevision
+      { expectedRevision: rep64 }, // missing required settings
+      { expectedRevision: 'g'.repeat(64), settings: VOICE_SETTINGS }, // pattern: not hex
+    ],
+    note: 'voice settings save: compare-and-swap on the revision of the snapshot the editor read',
+  },
+  VoiceFeatureState: {
+    valid: 'no-model',
+    invalid: ['off', '', 1], // outside the closed enum
+    note: 'voice feature state: one closed enum shared by dictation and reading',
+  },
+  VoiceStatusResult: {
+    valid: {
+      transcribe: 'available',
+      speech: 'no-model',
+      account: { route: 'account-a', label: 'A' },
+      settings: VOICE_SETTINGS,
+    },
+    invalid: [
+      { transcribe: 'available', speech: 'available' }, // missing required settings
+      { transcribe: 'off', speech: 'available', settings: VOICE_SETTINGS }, // enum
+      { transcribe: 'available', speech: 'available', reason: 'no-model', settings: VOICE_SETTINGS }, // reason enum
+      {
+        transcribe: 'available',
+        speech: 'available',
+        account: { route: '', label: 'A' },
+        settings: VOICE_SETTINGS,
+      }, // boundary: route minLength:1
+      {
+        transcribe: 'available',
+        speech: 'available',
+        account: { route: rep(65), label: 'A' },
+        settings: VOICE_SETTINGS,
+      }, // boundary: route maxLength:64
+      {
+        transcribe: 'available',
+        speech: 'available',
+        account: { route: 'r', label: rep(129) },
+        settings: VOICE_SETTINGS,
+      }, // boundary: label maxLength:128
+    ],
+    note: 'voice status: per-feature state, the chosen account when there is one, and the settings',
+  },
+  SessionVoiceTranscribeParams: {
+    valid: { sessionId: 's', audio: 'A'.repeat(64), language: 'de-ab-cd-ef' }, // boundary: three subtags, the {0,3} cap
+    invalid: [
+      { sessionId: 's' }, // missing required audio
+      { sessionId: 's', audio: 'A'.repeat(63) }, // boundary: one below minLength:64
+      { sessionId: 's', audio: 'A'.repeat(900001) }, // boundary: one above maxLength:900000
+      { sessionId: 's', audio: `${'A'.repeat(64)}!` }, // pattern: base64 alphabet only
+      { sessionId: 's', audio: 'A'.repeat(64), language: 'zh_CN' }, // pattern: BCP 47 tag
+      { sessionId: 's', audio: 'A'.repeat(64), language: 'de-ab-cd-ef-gh' }, // boundary: four subtags, one above {0,3}
+    ],
+    note: 'dictation params: session and a base64 WAV of at most 20 s, with an optional language',
+  },
+  SessionVoiceTranscribeResult: {
+    valid: { text: 'hello' },
+    invalid: [
+      {}, // missing required text
+      { text: 'a'.repeat(16385) }, // boundary: one above maxLength:16384
+    ],
+    note: 'dictation result: the recognised text',
+  },
+  SessionVoiceSpeakParams: {
+    valid: { sessionId: 's', text: 'hi', voice: 'alloy', speed: 1.5 },
+    invalid: [
+      { sessionId: 's' }, // missing required text
+      { sessionId: 's', text: '' }, // boundary: one below minLength:1
+      { sessionId: 's', text: rep(121) }, // boundary: one above maxLength:120
+      { sessionId: 's', text: 'hi', speed: 0.2 }, // boundary: below minimum:0.25
+      { sessionId: 's', text: 'hi', speed: 4.5 }, // boundary: above maximum:4
+      { sessionId: 's', text: 'hi', voice: rep(129) }, // boundary: one above maxLength:128
+    ],
+    note: 'read-aloud params: session and at most 120 characters, with an optional voice and speed',
+  },
+  SessionVoiceSpeakResult: {
+    valid: { audio: 'AAAA', mimeType: 'audio/mpeg' },
+    invalid: [
+      { audio: 'AAAA' }, // missing required mimeType
+      { audio: '', mimeType: 'audio/mpeg' }, // boundary: one below minLength:1
+      { audio: 'A'.repeat(1024001), mimeType: 'audio/mpeg' }, // boundary: one above maxLength:1024000
+      { audio: 'AAAA', mimeType: 'audio/wav' }, // const
+      { audio: 'AA*A', mimeType: 'audio/mpeg' }, // pattern: base64 alphabet only
+    ],
+    note: 'read-aloud result: base64 mp3 and its fixed mime type',
   },
   WorkspaceEntry: {
     valid: {
@@ -3052,9 +4273,18 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       lastUsedAt: '2026-09-13T00:00:00.000Z',
       sessionCount: 2,
       available: true,
+      kind: 'chats',
     },
     invalid: [
       { path: '', name: 'project', lastUsedAt: null, sessionCount: 0, available: true },
+      {
+        path: '/workspace/project',
+        name: 'project',
+        lastUsedAt: null,
+        sessionCount: 0,
+        available: true,
+        kind: 'repo',
+      },
       {
         path: '/workspace/project',
         name: 'project',
@@ -3076,10 +4306,50 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     invalid: [{}],
     note: 'workspace list always returns an item array',
   },
+  WorkspaceRevealParams: {
+    valid: { path: '/workspace/project' },
+    invalid: [{}, { path: '' }, { workspaceId: 'invalid' }, { path: '/a', workspaceId: 'a'.repeat(64) }],
+    note: 'workspace reveal accepts exactly one bounded path or registry id',
+  },
+  WorkspaceRevealResult: {
+    valid: { opened: true },
+    invalid: [{ opened: false }],
+    note: 'workspace reveal reports a successful opener',
+  },
+  WorkspaceRemoveParams: {
+    valid: { workspaceId: 'a'.repeat(64), expectedRevision: 1 },
+    invalid: [{}, { workspaceId: 'invalid' }, { workspaceId: 'a'.repeat(64), expectedRevision: 0 }],
+    note: 'workspace removal uses a registry id and optional positive revision',
+  },
+  WorkspaceRemoveResult: {
+    valid: { removed: false, archivedSessionCount: 0 },
+    invalid: [{ removed: true }, { removed: true, archivedSessionCount: -1 }],
+    note: 'workspace removal reports listing and archive outcomes',
+  },
   WorkspaceAddParams: {
     valid: { path: '/workspace/project' },
     invalid: [{ path: '' }],
     note: 'workspace add requires one non-empty path for host validation',
+  },
+  PluginRuntimeStatusParams: {
+    valid: { packageId: '@example/runtime' },
+    invalid: [{}, { packageId: '' }],
+    note: 'private runtime status selects an installed package',
+  },
+  PluginRuntimeStatusResult: {
+    valid: { resources: [{ id: 'server', state: 'ready' }] },
+    invalid: [{ resources: [{ id: 'server', state: 'invented' }] }],
+    note: 'runtime status is a safe lifecycle projection',
+  },
+  PluginStreamsEndpointParams: {
+    valid: { origin: 'http://127.0.0.1:49999' },
+    invalid: [{}, { origin: '' }],
+    note: 'launcher supplies its exact public origin',
+  },
+  PluginStreamsEndpointResult: {
+    valid: { host: '127.0.0.1', port: 12345, proof: 'a'.repeat(64) },
+    invalid: [{ host: 'public.example', port: 12345, proof: 'a'.repeat(64) }],
+    note: 'private stream capability remains on loopback',
   },
   SurfacesMountsParams: {
     valid: {},
@@ -3143,8 +4413,19 @@ const AGNES_SAMPLES: Record<string, Sample> = {
   },
   SessionPreferences: {
     note: 'presentation preference',
-    valid: { archived: false, title: '我的名称' },
-    invalid: [{ archived: 'false' }, { archived: false, title: '' }],
+    valid: {
+      archived: false,
+      title: '我的名称',
+      pinnedAt: '2026-10-20T08:00:00.000Z',
+      bookmarks: ['01JABCDEFGHJKMNPQRSTVWXYZ0'],
+    },
+    invalid: [
+      { archived: 'false' },
+      { archived: false, pinnedAt: 'yesterday' },
+      { archived: false, title: '' },
+      { archived: false, bookmarks: ['a', 'a'] },
+      { archived: false, bookmarks: [''] },
+    ],
   },
   SessionRenameParams: {
     note: 'manual title input',
@@ -3154,18 +4435,60 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { sessionId: 's', title: '' },
     ],
   },
+  SessionBookmarksSetParams: {
+    note: 'whole-list replacement; the daemon removes repeats',
+    valid: { sessionId: 's', bookmarks: ['a', 'a'] },
+    invalid: [
+      { sessionId: 's' },
+      { sessionId: 's', bookmarks: ['x'.repeat(129)] },
+      { sessionId: 's', bookmarks: Array.from({ length: 201 }, (_, i) => String(i)) },
+      { sessionId: 's', bookmarks: ['a\nb'] },
+    ],
+  },
   SessionArchiveParams: {
     note: 'archive input',
     valid: { sessionId: 's', archived: true },
     invalid: [{ sessionId: 's' }, { sessionId: 's', archived: 'yes' }],
   },
-  DiagnosticsCollectParams: {
-    note: 'the runtime log is opt-in, so a caller that does not ask still gets the old two-log result',
-    valid: { runtimeLog: true },
-    invalid: [{ extra: 1 }, { runtimeLog: 'yes' }],
+  SessionPinParams: {
+    note: 'pin to the top of the sidebar',
+    valid: { sessionId: 's', pinned: true },
+    invalid: [{ sessionId: 's' }, { sessionId: '', pinned: true }, { sessionId: 's', pinned: 'yes' }],
   },
+  DiagnosticsExportParams: {
+    note: 'bounded redacted bundle',
+    valid: {},
+    invalid: [{ limit: 501 }, { diagnosticId: 'invalid' }],
+  },
+  DiagnosticRecord: {
+    note: 'safe diagnostic identity',
+    valid: {
+      diagnosticId: '00000000-0000-0000-0000-000000000001',
+      at: '2026-01-01T00:00:00Z',
+      code: -32603,
+      name: 'INTERNAL_ERROR',
+    },
+    invalid: [{}],
+  },
+  DiagnosticsExportResult: {
+    note: 'metadata only',
+    valid: {
+      schemaVersion: 1,
+      collectedAt: '2026-01-01T00:00:00Z',
+      agh: { version: 'dev' },
+      runtime: { platform: 'test', arch: 'test', osRelease: 'test', node: '24', pid: 1, uptimeMs: 0 },
+      profile: { hash: 'a'.repeat(64) },
+      generations: { available: false, current: null, items: [] },
+      doctor: [],
+      errors: [],
+      audit: [],
+      limits: { audit: 100, errors: 4096 },
+    },
+    invalid: [{}],
+  },
+  DiagnosticsCollectParams: { note: 'collect takes no input', valid: {}, invalid: [{ extra: 1 }] },
   DiagnosticsCollectResult: {
-    note: 'runtime info plus bounded log tails: the two audits, and the runtime log when asked for',
+    note: 'runtime info plus bounded audit tails',
     valid: {
       collectedAt: '2026-09-24T00:00:00.000Z',
       agh: { version: 'dev' },
@@ -3177,28 +4500,9 @@ const AGNES_SAMPLES: Record<string, Sample> = {
         pid: 1,
         uptimeMs: 0,
       },
-      logs: [
-        { name: 'daemon.jsonl', size: 0, text: '', truncated: false, missing: true },
-        { name: 'host.jsonl', size: 0, text: '', truncated: false, missing: true },
-        { name: 'runtime.jsonl', size: 2, text: '{}', truncated: false, missing: false },
-      ],
+      logs: [{ name: 'daemon.jsonl', size: 0, text: '', truncated: false, missing: true }],
     },
-    invalid: [
-      { collectedAt: 'x', agh: {}, runtime: {}, logs: [] },
-      {
-        collectedAt: '2026-09-24T00:00:00.000Z',
-        agh: { version: 'dev' },
-        runtime: {
-          platform: 'darwin',
-          arch: 'arm64',
-          osRelease: '25.0.0',
-          node: '24.10.0',
-          pid: 1,
-          uptimeMs: 0,
-        },
-        logs: [{ name: 'other.jsonl', size: 0, text: '', truncated: false, missing: true }],
-      },
-    ],
+    invalid: [{ collectedAt: 'x', agh: {}, runtime: {}, logs: [] }],
   },
   DiagnosticsEventsParams: {
     note: 'one bounded ledger page',
@@ -3214,9 +4518,28 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     invalid: [{ events: [], lastSeq: 0 }],
   },
   SessionMeta: {
-    valid: { sessionId: 's', createdAt: '2026-09-10T00:00:00Z', lastSeq: 3, generation: 1, preset: 'code' },
+    valid: {
+      sessionId: 's',
+      createdAt: '2026-09-10T00:00:00Z',
+      lastSeq: 3,
+      generation: 1,
+      preset: 'code',
+      permission: 'full-access',
+      pinnedAt: '2026-10-20T08:00:00.000Z',
+      parent: 'p',
+      forkAt: 1,
+    },
     invalid: [
       { createdAt: '2026-09-10T00:00:00Z', lastSeq: 3, generation: 1, preset: 'code' }, // missing sessionId
+      {
+        sessionId: 's',
+        createdAt: '2026-09-10T00:00:00Z',
+        lastSeq: 3,
+        generation: 1,
+        preset: 'code',
+        forkAt: 0,
+      }, // boundary: one below minimum:1
+      { sessionId: 's', createdAt: '', lastSeq: 3, generation: 1, preset: 'code', pinnedAt: 'never' },
       {
         sessionId: 's',
         createdAt: '2026-09-10T00:00:00Z',
@@ -3228,8 +4551,16 @@ const AGNES_SAMPLES: Record<string, Sample> = {
         sessionId: 's',
         createdAt: '2026-09-10T00:00:00Z',
         lastSeq: 3,
-        generation: 0, // boundary: one below minimum:1
+        generation: -1, // unopened sessions may have generation zero
         preset: 'code',
+      },
+      {
+        sessionId: 's',
+        createdAt: '2026-09-10T00:00:00Z',
+        lastSeq: 3,
+        generation: 1,
+        preset: 'code',
+        permission: rep(17), // boundary: maxLength:16
       },
     ],
     note: 'one page row of session.list; lastSeq/generation boundaries and the five required fields',
@@ -3240,6 +4571,8 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { limit: 0 }, // boundary: one below minimum:1
       { limit: 501 }, // boundary: one above maximum:500
       { cursor: rep(513) }, // boundary: maxLength:512
+      { sidebar: { groupId: 'unassigned' }, q: {} },
+      { sidebar: { groupId: 'unassigned' }, limit: 6 },
     ],
     note: 'every field is optional; the three boundaries are limit range and cursor length',
   },
@@ -3253,7 +4586,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     invalid: [
       {}, // missing required items
       { items: [{ sessionId: 's' }] }, // a row failing SessionMeta's own required fields
-      { items: [], next: rep(513) }, // boundary: maxLength:512
+      { items: [], next: rep(4097) }, // sidebar cursors include scope and revision
     ],
     note: 'the $ref to SessionMeta propagates its required fields into each row',
   },
@@ -3282,6 +4615,47 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     ],
     note: 'setYolo params: sessionId + the bypass flag to switch to',
   },
+  SessionToolFilterName: {
+    valid: 'read_file',
+    invalid: ['', '1bad', 'rm*', 'a b', 'x'.repeat(65), 7],
+    note: 'an exact tool name: the extension tool-name pattern, no wildcards',
+  },
+  SessionToolFilterNames: {
+    valid: ['read_file', 'bash'],
+    invalid: [[], ['bash*'], Array.from({ length: 129 }, (_, n) => `tool_${n}`)],
+    note: 'a request list: 1..128 exact names',
+  },
+  SessionToolFilterRequest: {
+    valid: { deny: ['bash'] },
+    invalid: [{ allow: [] }, { deny: ['bash'], extra: 1 }, { allow: 'bash' }],
+    note: 'one narrowing request; a list that is present must name at least one tool',
+  },
+  SessionToolFilter: {
+    valid: { allow: [], deny: ['bash'] },
+    invalid: [{ allow: ['bad name'] }, { deny: 'bash' }, { allow: [], widen: true }],
+    note: 'the merged filter; an empty allow list means nothing is allowed',
+  },
+  SessionSetToolFilterParams: {
+    valid: { sessionId: 's', commandId: 'c1', allow: ['read_file', 'grep'], deny: ['bash'] },
+    invalid: [
+      { sessionId: 's', allow: ['read_file'] }, // missing required commandId
+      { sessionId: 's', commandId: 'c1', allow: [] }, // an empty list names nothing
+      { sessionId: 's', commandId: 'c1', deny: ['bash*'] }, // no wildcards: exact tool names only
+      { sessionId: 's', commandId: 'c1', deny: ['bash '] }, // not a tool name
+      { sessionId: 's', commandId: 'c1', deny: Array.from({ length: 129 }, (_, n) => `tool_${n}`) }, // one past the 128 cap
+      { sessionId: 's', commandId: 'c1', deny: ['bash'], widen: true }, // closed object
+    ],
+    note: 'setToolFilter params: a narrowing request; at least one list is enforced by core, each list by the schema',
+  },
+  SessionSetToolFilterResult: {
+    valid: { effectiveFromSeq: 9, filter: { allow: ['read_file'], deny: ['bash'] } },
+    invalid: [
+      { effectiveFromSeq: 9 }, // missing the merged filter
+      { effectiveFromSeq: 0, filter: {} }, // boundary: one below minimum:1
+      { effectiveFromSeq: 9, filter: { deny: ['rm *'] } }, // not a tool name
+    ],
+    note: 'setToolFilter result: the merged filter, whose allow list may be empty (nothing allowed)',
+  },
   EffectiveFromResult: {
     valid: { effectiveFromSeq: 9 },
     invalid: [
@@ -3295,18 +4669,50 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     invalid: [{}, { seq: 0 }],
     note: 'common append result; seq is required and starts at one',
   },
-  ApprovalDecideParams: {
-    valid: { ticket: 'ticket-1', verdict: 'allowed-once', approverCredential: { kind: 'local' } },
+  PermissionWithdrawParams: {
+    valid: { sessionId: 's', requestId: 'r', reason: 'stopped' },
     invalid: [
-      { ticket: 'ticket-1', verdict: 'cancelled', approverCredential: { kind: 'local' } },
+      { sessionId: 's', reason: 'stopped' },
+      { sessionId: 's', requestId: 'r', reason: 'user-rejected' },
+    ],
+    note: 'backend withdraws an offer without fabricating a human answer',
+  },
+  DecisionListResult: {
+    valid: { decisions: [] },
+    invalid: [{ decisions: [{}] }],
+    note: 'session durable pending authority',
+  },
+  DecisionCommandReceipt: SESSION_SAMPLES.DecisionCommandReceipt!,
+  DecisionResponse: SESSION_SAMPLES.DecisionResponse!,
+  DecisionSnapshot: SESSION_SAMPLES.DecisionSnapshot!,
+  ApprovalDecideParams: {
+    valid: {
+      sessionId: 's',
+      id: 'd',
+      revision: 1,
+      commandId: 'c',
+      response: { option: 'allowed-once', value: null },
+    },
+    invalid: [
+      { ticket: 'old', verdict: 'allowed-once' },
       {
-        ticket: 'ticket-1',
-        verdict: 'allowed-once',
-        approverCredential: { kind: 'local' },
+        sessionId: 's',
+        id: 'd',
+        revision: 1,
+        commandId: 'c',
+        response: { option: 'allowed-once', value: null },
         actor: parityActor,
       },
+      {
+        sessionId: 's',
+        id: 'd',
+        revision: 1,
+        commandId: 'c',
+        response: { option: 'allowed-once', value: null },
+        sourceCredential: { kind: 'local' },
+      },
     ],
-    note: 'credential-derived approval identity; actor is deliberately not accepted from the caller',
+    note: 'connection-derived human identity, canonical command only',
   },
   ParticipantParams: {
     valid: { sessionId: 's', credential: { kind: 'local' } },
@@ -3513,7 +4919,8 @@ const MODEL_SAMPLES: Record<string, Sample> = {
       { ...modelRequestBody, sampling: { temperature: 2.5 } }, // boundary: maximum:2
       { ...modelRequestBody, sampling: { maxTokens: 0 } }, // boundary: minimum:1
       { ...modelRequestBody, sampling: { thinking: 'extreme' } }, // enum
-      { ...modelRequestBody, timeoutMs: { firstToken: 999, total: 60000 } }, // boundary: minimum:1000
+      { ...modelRequestBody, timeoutMs: { firstToken: 99, total: 60000 } }, // boundary: minimum:100
+      { ...modelRequestBody, timeoutMs: { firstToken: 30000, total: 99 } }, // boundary: minimum:100 on total
       { ...modelRequestBody, timeoutMs: { firstToken: 30000 } }, // missing required total
     ],
     note: 'hand-written; sampling and timeoutMs are optional closed objects, so both are exercised through the optional path',
@@ -3546,8 +4953,9 @@ const MODEL_SAMPLES: Record<string, Sample> = {
     note: 'hand-written; the four price components are all required so a partial price table cannot be half-filled',
   },
   ModelRecord: {
-    valid: modelRecordOk,
+    valid: { ...modelRecordOk, audioRole: 'speech' },
     invalid: [
+      { ...modelRecordOk, audioRole: 'music' }, // enum
       { ...modelRecordOk, contract_id: undefined }, // missing required contract_id
       { ...modelRecordOk, id: rep(257) }, // boundary: maxLength:256
       { ...modelRecordOk, name: rep(257) }, // boundary: maxLength:256
@@ -3659,8 +5067,14 @@ const MODEL_SAMPLES: Record<string, Sample> = {
     note: 'hand-written; the seven branches are discriminated by type, and every branch is closed',
   },
   RouteDecl: {
-    valid: { route: 'agnes-gateway', api: 'openai-completions', baseUrl: 'https://gw.invalid' },
+    valid: {
+      route: 'agnes-gateway',
+      api: 'openai-completions',
+      baseUrl: 'https://gw.invalid',
+      keyless: true,
+    },
     invalid: [
+      { route: 'r', api: 'a', baseUrl: 'b', keyless: 'true' },
       { route: 'agnes-gateway', api: 'openai-completions' }, // missing required baseUrl
       { route: 'Agnes-Gateway', api: 'a', baseUrl: 'b' }, // pattern: lowercase slug only
       { route: '-leading', api: 'a', baseUrl: 'b' }, // pattern: must start alphanumeric
@@ -3862,16 +5276,24 @@ const toolDefOk: Json = {
 const TOOLDEF_SAMPLES: Record<string, Sample> = {
   JsonValue: SESSION_SAMPLES.JsonValue as Sample,
   ToolMeta: {
-    valid: toolMetaOk,
+    valid: {
+      isReadOnly: true,
+      isDestructive: false,
+      isConcurrencySafe: true,
+      isOpenWorld: false,
+      replay: 'safe',
+      paths: [{ arg: 'path', access: 'read', default: '.', nonWorkspaceSchemes: ['artifact'] }],
+    },
     invalid: [
-      { ...toolMetaOk, deferLoading: undefined }, // the in-process spelling of "no declaration"; on the wire it is null
+      { ...toolMetaOk, isReadOnly: undefined }, // required safety declarations cannot be omitted
       { ...toolMetaOk, replay: 'retry' }, // enum
       { ...toolMetaOk, requiresApproval: 'sometimes' }, // enum
       { ...toolMetaOk, costHint: { credits: -1 } }, // boundary: one below minimum:0
+      { ...toolMetaOk, paths: [{ arg: 'path', access: 'execute' }] },
+      { ...toolMetaOk, paths: [{ arg: 'path', access: 'read', extra: true }] },
       { ...toolMetaOk, extra: 1 }, // additionalProperties:false
-      { ...toolMetaOk, returnsImages: 'yes' }, // optional, but a boolean when present
     ],
-    note: 'all eight keys are required, so an author cannot leave one to a default nobody wrote down',
+    note: 'safety booleans and replay are required; estimate, discovery and approval fields use defaults',
   },
   ParametersSchema: {
     valid: parametersOk,
@@ -4270,11 +5692,34 @@ const HOOKS_SAMPLES: Record<string, Sample> = {
 
 const toolCardOk: Json = {
   title: 'monthly sales',
-  table: { columns: ['region', 'amount'], rows: [['east', '1,200']] },
   actions: [{ id: 'export', label: 'Export' }],
 }
 
+const goalOk = {
+  id: 'goal-1',
+  revision: 1,
+  objective: 'Deliver a patch',
+  phase: 'active',
+  rounds: 0,
+  maxRounds: 2,
+  creditsUsed: 0,
+  budgetCredits: 10,
+}
 const SLOTS_SAMPLES: Record<string, Sample> = {
+  GoalSnapshot: {
+    valid: goalOk,
+    invalid: [
+      { ...goalOk, phase: 'done' },
+      { ...goalOk, maxRounds: 0 },
+      { ...goalOk, maxRounds: 101 },
+      { ...goalOk, budgetCredits: -1 },
+      { ...goalOk, creditsUsed: -1 },
+      { ...goalOk, revision: 0 },
+      { ...goalOk, rounds: -1 },
+      { ...goalOk, objective: '' },
+    ],
+    note: 'persistent goals have closed lifecycle states and bounded continuation limits',
+  },
   UiSlotName: {
     valid: 'status.line',
     invalid: ['statusline', 'primary', 1],
@@ -4285,7 +5730,6 @@ const SLOTS_SAMPLES: Record<string, Sample> = {
     invalid: [
       { ...toolCardOk, chart: { kind: 'pie', series: [] } }, // enum: bar and line only
       { ...toolCardOk, actions: [{ id: 'Bad Id', label: 'y' }] }, // pattern: lower-case, no spaces
-      { ...toolCardOk, table: { columns: ['a'] } }, // the nested table is missing rows
       { title: rep(257) }, // boundary: one over maxLength:256
       { ...toolCardOk, actions: Array.from({ length: 9 }, () => ({ id: 'a', label: 'b' })) }, // boundary: one over maxItems:8
     ],
@@ -4301,12 +5745,13 @@ const SLOTS_SAMPLES: Record<string, Sample> = {
     note: 'hand-written; the id pattern is the same one the card actions use, so both are addressable the same way',
   },
   StatusLinePayload: {
-    valid: { text: '3 tools running', level: 'info' },
+    valid: { text: 'Goal active', level: 'info', goal: goalOk },
     invalid: [
       { text: 'x', level: 'debug' }, // enum
       { text: 'x' }, // missing required level
       { text: rep(513), level: 'info' }, // boundary: one over maxLength:512
       { text: 'x', level: 'info', onClick: 'fn' }, // additionalProperties:false - a slot carries data, never behaviour
+      { text: 'x', level: 'info', goal: { ...goalOk, phase: 'done' } },
     ],
     note: 'the closed-object negative matters here: a slot payload crosses a process boundary, so a function-shaped key must be refused rather than dropped',
   },
@@ -4368,59 +5813,6 @@ function assertParity(target: ParityTarget, scope: string, name: string, x: unkn
   }
   expect(actual).toEqual({ ajv: expected, typebox: expected })
 }
-
-describe('attachment reference blocks ajv ↔ TypeBox parity', () => {
-  // ContentBlock registers one valid sample, so the two reference forms are pinned here as accepted.
-  it.each([
-    {
-      type: 'image',
-      mimeType: 'image/png',
-      attachment: { sha256: rep64, bytes: 1234 },
-      width: 640,
-      height: 480,
-    },
-    {
-      type: 'image',
-      mimeType: 'image/jpeg',
-      name: 'shot.jpg',
-      attachment: { sha256: rep64, bytes: 0 },
-      width: 65535,
-      height: 1,
-      thumbnail: { sha256: rep64, bytes: 1, width: 320, height: 240 },
-    },
-    {
-      type: 'file',
-      mimeType: 'application/zip',
-      name: 'a.zip',
-      attachment: { sha256: rep64, bytes: 9007199254740991 },
-    },
-  ])('ContentBlock accepts the reference form %j', (block) => {
-    assertParity(
-      { check: ajvDef(SESSION_ID, 'ContentBlock'), schema: SessionGen.ContentBlock },
-      SESSION_ID,
-      'ContentBlock',
-      block,
-      true,
-    )
-  })
-})
-
-describe('lean attachment blocks ajv ↔ TypeBox parity', () => {
-  // ContentBlock registers one valid sample, so the two lean forms are pinned here as accepted.
-  it.each([
-    { type: 'image', mimeType: 'image/jpeg', dataOmitted: { bytes: 0 } },
-    { type: 'image', mimeType: 'image/jpeg', name: 'shot.jpg', dataOmitted: { bytes: 196611 } },
-    { type: 'file', mimeType: 'application/zip', name: 'a.zip', dataOmitted: { bytes: 9007199254740991 } },
-  ])('ContentBlock accepts the lean form %j', (block) => {
-    assertParity(
-      { check: ajvDef(SESSION_ID, 'ContentBlock'), schema: SessionGen.ContentBlock },
-      SESSION_ID,
-      'ContentBlock',
-      block,
-      true,
-    )
-  })
-})
 
 describe('persisted tool policy envelope ajv ↔ TypeBox parity', () => {
   const keys = ['resolvedPolicy', 'executionDomain', 'definitionFingerprint', 'policyHash'] as const
@@ -4722,12 +6114,27 @@ describe('preset consumer spellings: positive fixture parity', () => {
   })
 })
 const PRESET_DEFS: Record<string, TSchema> = {
+  CompositionPatch: PresetGen.CompositionPatch,
   PresetDoc: PresetGen.PresetDoc,
   RouteTable: PresetGen.RouteTable,
   RouteTarget: PresetGen.RouteTarget,
   HookEvent: PresetGen.HookEvent,
 }
 const PRESET_SAMPLES: Record<string, Sample> = {
+  CompositionPatch: {
+    valid: {
+      providers: { loop: { provider: 'default', version: '1.0.0' } },
+      tools: ['read'],
+      toolPolicy: { readOnly: true },
+    },
+    invalid: [
+      { unknown: true },
+      { loop: { provider: 'default', version: '1.0.0' } },
+      { providers: { loop: { provider: 'default' } } },
+      { tools: ['read', 'read'] },
+    ],
+    note: 'Preset composition selects closed plugin identities and unique tool names',
+  },
   PresetDoc: {
     valid: byId(presetFixtures, 'preset-full'),
     invalid: presetFixtures.filter((r) => r.kind === 'invalid').map((r) => r.payload),
@@ -4741,6 +6148,77 @@ const PRESET_SAMPLES: Record<string, Sample> = {
 const task20Fixtures = loadJsonl(`${pkgRoot}fixtures/configs/task20.jsonl`) as Array<
   FixtureRow & { kind: string; name: string }
 >
+// Extend the existing diagnostics parity contract: legacy bundles remain valid,
+// while collector URLs or credential fields never become part of the public DTO.
+AGNES_SAMPLES.SessionLegacyListParams = AGNES_SAMPLES.SessionListParams!
+AGNES_SAMPLES.SessionSidebarListParams = {
+  valid: { sidebar: { groupId: 'unassigned' }, cursor: rep(4096), limit: 5 },
+  invalid: [
+    { sidebar: { groupId: 'unknown' } },
+    { sidebar: { groupId: 'unassigned' }, cursor: rep(4097) },
+    { sidebar: { groupId: 'unassigned' }, q: {} },
+  ],
+  note: 'sidebars use scoped cursors and cannot mix legacy filters',
+}
+AGNES_SAMPLES.SessionActivityParams = {
+  valid: {},
+  invalid: [{ principalId: 'another' }],
+  note: 'principal comes only from authenticated context',
+}
+AGNES_SAMPLES.SessionActivity = {
+  valid: { sessionId: 'session-1', state: 'waiting', waiting: 'approval', reason: 'parked' },
+  invalid: [
+    { sessionId: 'session-1', state: 'done' },
+    { sessionId: '', state: 'idle' },
+    { sessionId: 'session-1', state: 'idle', reason: 'finished' },
+  ],
+  note: 'waiting names what the owner must do; reason is how the last turn ended',
+}
+AGNES_SAMPLES.SessionActivityResult = {
+  valid: { items: [AGNES_SAMPLES.SessionActivity.valid, { sessionId: 'session-2', state: 'running' }] },
+  invalid: [{}, { items: [{ state: 'running' }] }],
+  note: 'idle sessions are not listed',
+}
+AGNES_SAMPLES.SessionGroupsParams = {
+  valid: {},
+  invalid: [{ principalId: 'another' }],
+  note: 'principal comes only from authenticated context',
+}
+AGNES_SAMPLES.SessionGroup = {
+  valid: { groupId: 'pinned', total: 0, revision: 'instance:1', ready: true, lastMessageAt: null },
+  invalid: [{ groupId: 'unassigned' }],
+  note: 'summary contains no session bodies',
+}
+AGNES_SAMPLES.SessionGroupsResult = {
+  valid: { items: [AGNES_SAMPLES.SessionGroup.valid], ready: true },
+  invalid: [{ items: [] }, { items: [], ready: 'yes' }],
+  note: 'global readiness controls initial selection',
+}
+
+AGNES_SAMPLES.DiagnosticsExportResult!.invalid.push(
+  ...[
+    {
+      enabled: false,
+      includeContent: false,
+      endpointHosts: ['https://collector.example/private?token=fixture'],
+    },
+    {
+      enabled: false,
+      includeContent: false,
+      endpointHosts: ['collector.example'],
+      headers: { authorization: 'fixture' },
+    },
+  ].map((telemetry) => ({ ...(AGNES_SAMPLES.DiagnosticsExportResult!.valid as object), telemetry })),
+)
+AGNES_SAMPLES.DiagnosticsExportResult!.valid = {
+  ...(AGNES_SAMPLES.DiagnosticsExportResult!.valid as object),
+  telemetry: {
+    enabled: false,
+    includeContent: false,
+    endpointHosts: ['collector.example:4318', '[::1]:4318'],
+  },
+}
+
 const task20Helpers = JSON.parse(readFileSync(`${pkgRoot}test/task20-samples.json`, 'utf8')) as Record<
   string,
   unknown
@@ -4760,25 +6238,21 @@ function helperSample(name: string, invalid: unknown[]): Sample {
   }
 }
 const PROFILE_SAMPLES: Record<string, Sample> = {
+  CompositionPatch: PRESET_SAMPLES.CompositionPatch as Sample,
+  CompositionSource: {
+    valid: { layer: 'profile', name: 'local-dev' },
+    invalid: [{ layer: 'unknown', name: 'local-dev' }, { layer: 'profile' }],
+    note: 'Composition provenance is a closed source identity',
+  },
   ApprovalMode: {
     valid: 'manual',
     invalid: ['automatic', '', null],
-    note: 'approval mode is the closed manual/smart/off policy vocabulary',
+    note: 'approval mode is the closed manual/off/auto-review policy vocabulary',
   },
   ApprovalProfile: {
-    valid: { mode: 'smart' },
+    valid: { mode: 'auto-review' },
     invalid: [{}, { mode: 'automatic' }, { mode: 'manual', extra: true }],
     note: 'the resolved approval policy is explicit and closed',
-  },
-  AttachmentsProfile: {
-    valid: { storeByReference: false },
-    invalid: [{ storeByReference: 'no' }, { storeByReference: true, extra: true }, null],
-    note: 'the attachment storage switch is one optional boolean',
-  },
-  ResolvedAttachmentsProfile: {
-    valid: { storeByReference: true },
-    invalid: [{}, { storeByReference: 1 }, { storeByReference: true, extra: true }],
-    note: 'resolved profiles always say how attachments are stored',
   },
   ComputerUseAppIdentity: {
     valid: {
@@ -4903,6 +6377,12 @@ const PROFILE_SAMPLES: Record<string, Sample> = {
   },
   Capability: helperSample('Capability', ['', 'A', 'a'.repeat(65), 'tools/invoke']),
   SeamName: helperSample('SeamName', ['provider', 'unknown']),
+  SeamSelection: helperSample('SeamSelection', [{}, { provider: 'Bad Id' }, { provider: 'a', extra: 1 }]),
+  ProviderSelection: helperSample('ProviderSelection', [
+    {},
+    { provider: 'bad id' },
+    { provider: 'a', extra: 1 },
+  ]),
   PackageRef: helperSample('PackageRef', [
     { id: '@agnes/base' },
     { id: 'x', source: 'builtin', tombstone: 'true' },
@@ -4948,13 +6428,221 @@ const PROFILE_SAMPLES: Record<string, Sample> = {
   JsonValue: SESSION_SAMPLES.JsonValue as Sample,
 }
 const EXTENSION_SAMPLES: Record<string, Sample> = {
+  UiComponentDeclaration: {
+    valid: {
+      kind: 'finance/diff@1',
+      propsSchema: true,
+      maxPropsBytes: 1024,
+      fallback: 'Preset table',
+      accessibility: { label: 'Differences', keyboard: true },
+    },
+    invalid: [
+      {
+        kind: 'finance/diff@1',
+        propsSchema: true,
+        maxPropsBytes: 0,
+        fallback: 'Preset table',
+        accessibility: { label: 'Differences', keyboard: true },
+      },
+      {
+        kind: 'finance/diff@1',
+        propsSchema: true,
+        maxPropsBytes: 16385,
+        fallback: 'Preset table',
+        accessibility: { label: 'Differences', keyboard: true },
+      },
+      {
+        kind: 'finance/diff@1',
+        propsSchema: true,
+        maxPropsBytes: 1024,
+        fallback: 'Preset table',
+        accessibility: { label: 'Differences', keyboard: false },
+      },
+    ],
+    note: 'Reviewed custom UI declarations bound props bytes and require keyboard accessibility',
+  },
+  PluginProvide: {
+    valid: 'tool',
+    invalid: ['unknown', '', 1],
+    note: 'Declared capabilities are labels, not authority',
+  },
+  PluginLocalizedText: {
+    valid: { en: 'Hello' },
+    invalid: [{}, { en: '' }, { en: 'Hello', fr: 'Salut' }],
+    note: 'English fallback text',
+  },
+  AgentRef: {
+    valid: '@acme/agent#work',
+    invalid: ['work', '#work', '@acme/agent#'],
+    note: 'Full Bundle reference',
+  },
+  BundleLaunch: {
+    valid: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+    invalid: [{}, { title: { en: 'Work' }, description: { en: 'Work' } }],
+    note: 'Complete explicit launch block',
+  },
+  DeclaredAgent: {
+    valid: {
+      ref: 'acme/kit#work',
+      launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+    },
+    invalid: [{}, { ref: 'work', launch: {} }],
+    note: 'Static Bundle launch projection',
+  },
+  ApplicationTemplate: {
+    valid: {
+      id: 'acme',
+      brand: { name: { en: 'Acme' } },
+      agents: Array.from({ length: 64 }, (_, index) => `acme/kit#role${index}`),
+      delegableAgents: Array.from({ length: 64 }, (_, index) => `acme/kit#role${index}`),
+      delegatedFullAccess: true,
+    },
+    invalid: [
+      {},
+      { id: 'acme', delegatedFullAccess: false },
+      { id: 'acme', brand: { unknown: true } },
+      { id: 'acme', delegableAgents: Array.from({ length: 65 }, (_, index) => `acme/kit#role${index}`) },
+    ],
+    note: 'Application identity and presentation contract',
+  },
+  ApplicationWorkbench: {
+    valid: { includes: ['pages', 'tools'], scenarios: [{ en: 'Investigate and sign' }] },
+    invalid: [{ unknown: true }, { includes: ['unknown'] }, { tabs: Array(9).fill({}) }],
+    note: 'Bounded application workbench contributions',
+  },
+  ApplicationWorkbenchText: {
+    valid: { en: 'Review', 'zh-CN': '审阅' },
+    invalid: [{ 'zh-CN': '审阅' }, { en: 'x'.repeat(2049) }],
+    note: 'Localized workbench text requires bounded English fallback',
+  },
+  ApplicationPanelTab: {
+    valid: {
+      id: 'object',
+      title: { en: 'Object' },
+      order: -30,
+      slot: 'workbench.panel',
+      view: 'page',
+      page: 'acme/kit#dossier',
+    },
+    invalid: [{}, { id: 'object', title: { en: 'Object' }, order: 0, slot: 'unknown', view: 'signatures' }],
+    note: 'Only the declared workbench panel slot is admitted',
+  },
+  ApplicationWorkAction: {
+    valid: {
+      id: 'review',
+      title: { en: 'Review' },
+      prompt: { en: 'Review evidence' },
+      agent: 'acme/kit#work',
+      focusTab: 'object',
+    },
+    invalid: [{}, { id: 'review', title: { en: 'Review' }, prompt: { en: 'Review' }, agent: 'bare-agent' }],
+    note: 'Work actions request an existing agent and editable prompt',
+  },
+  ApplicationWorkObject: {
+    valid: { type: 'ncr', id: 'NCR-018' },
+    invalid: [{}, { type: 'ncr', id: 'x'.repeat(129) }, { type: '../path', id: 'x' }],
+    note: 'Object request context carries bounded type and identifier',
+  },
+  ApplicationAsset: {
+    valid: {
+      path: 'assets/mark.png',
+      size: 8,
+      mime: 'image/png',
+      sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    },
+    invalid: [{ unknown: true }],
+    note: 'Application static presentation contract',
+  },
+  ApplicationBrand: {
+    valid: { name: { en: 'Acme' } },
+    invalid: [{ unknown: true }],
+    note: 'Application static presentation contract',
+  },
+  ApplicationPageRef: {
+    valid: 'acme/kit#overview.details',
+    invalid: ['home', 'acme/kit#'],
+    note: 'Package-qualified presentation page',
+  },
+  ApplicationPresentation: {
+    valid: { roles: { navigation: { packageId: 'acme/kit', clientId: 'ui' } } },
+    invalid: [{ unknown: true }],
+    note: 'Application static presentation contract',
+  },
+  ApplicationRoleTarget: {
+    valid: { packageId: 'acme/kit', clientId: 'ui' },
+    invalid: [{ unknown: true }],
+    note: 'Application static presentation contract',
+  },
+  PresentationRole: {
+    valid: 'navigation',
+    invalid: ['unknown'],
+    note: 'Application static presentation contract',
+  },
+  PluginMetadata: {
+    valid: {
+      displayName: 'Reports',
+      summary: 'Find reports.',
+      description: 'Search project reports.',
+      docsUrl: 'https://example.org/docs',
+      samplePrompt: { en: 'Find the March report.', 'zh-CN': '找出三月的报告。' },
+      experimental: true,
+    },
+    invalid: [
+      {
+        displayName: 'Reports',
+        summary: 'Find reports.',
+        description: 'Search project reports.',
+        samplePrompt: { 'zh-CN': '找出三月的报告。' },
+      },
+      {
+        displayName: 'Reports',
+        summary: 'Find reports.',
+        description: 'Search project reports.',
+        experimental: 'yes',
+      },
+      {
+        displayName: '',
+        summary: 'Find reports.',
+        description: 'Search project reports.',
+      },
+      {
+        displayName: 'Reports',
+        summary: 'Find reports.',
+        description: 'Search project reports.',
+        category: 'unknown',
+      },
+      {
+        displayName: 'Reports',
+        summary: 'Find reports.',
+        description: 'Search project reports.',
+        docsUrl: 'http://example.org/docs',
+      },
+      {
+        displayName: 'Reports',
+        summary: 'Find reports.',
+        description: 'Search project reports.',
+        docsUrl: 'https://user:password@example.org/docs',
+      },
+    ],
+    note: 'Author metadata remains bounded display data with credential-free documentation links',
+  },
+  PluginMetadataLocale: {
+    valid: { summary: 'Find reports.', docsUrl: 'https://example.org/docs' },
+    invalid: [
+      { summary: '' },
+      { summary: ' trailing ' },
+      { docsUrl: 'http://example.org/docs' },
+      { category: 'tools' },
+    ],
+    note: 'Locale overrides allow only public presentation fields',
+  },
   Capabilities: helperSample('Capabilities', [
     { events: ['x'] },
     { tools: { prefix: 'BAD' } },
     { hooks: ['invalid'] },
     { slots: ['invalid'] },
     { resources: ['exec'] },
-    { network: { hosts: ['https://x'] } },
+    { network: ['https://x'] },
     { artifacts: 'yes' },
     { subagent: 'yes' },
     { extra: true },
@@ -4980,14 +6668,27 @@ const EXTENSION_SAMPLES: Record<string, Sample> = {
     note: 'Skin contribution: reserved id, closed object, both palette modes, and value charset',
   },
   ClientContribution: {
-    valid: { entry: 'dist/client/index.js', styles: ['dist/client/index.css'], slots: ['workbench.panel'] },
+    valid: {
+      entry: 'dist/client/index.js',
+      styles: ['dist/client/index.css'],
+      slots: ['workbench.panel'],
+      requiresBackendRows: ['ext:community/feature'],
+    },
     invalid: [
       {},
       { entry: '' },
+      { entry: 'client.js', requiresBackendRows: ['ext:feature', 'ext:feature'] },
+      { entry: 'client.js', requiresBackendRows: ['bad\0row'] },
+      { entry: 'client.js', requiresBackendRows: Array.from({ length: 33 }, (_, i) => `row-${i}`) },
       { entry: 'dist/client/index.js', extra: true },
       { entry: 'dist/client/index.js', styles: ['x'], services: 'not-an-array' },
     ],
     note: 'Client contribution: entry required, closed object, reserved fields stay arrays (P1a)',
+  },
+  HomeContributionDeclaration: {
+    valid: { id: 'reports', placement: 'primary' },
+    invalid: [{ id: 'reports', placement: 'unknown' }, { placement: 'primary' }],
+    note: 'Navigation contribution has an explicit bounded identity and placement',
   },
   ExtensionManifest: configSample('ExtensionManifest'),
   HookEvent: HOOKS_SAMPLES.HookEvent as Sample,
@@ -5005,6 +6706,7 @@ const LOCK_SAMPLES: Record<string, Sample> = {
   HookEvent: HOOKS_SAMPLES.HookEvent as Sample,
   UiSlotName: SLOTS_SAMPLES.UiSlotName as Sample,
   SeamName: PROFILE_SAMPLES.SeamName as Sample,
+  SeamSelection: PROFILE_SAMPLES.SeamSelection as Sample,
   Capability: PROFILE_SAMPLES.Capability as Sample,
 }
 const DEPLOY_SAMPLES: Record<string, Sample> = { DeployManifest: configSample('DeployManifest') }
@@ -5022,10 +6724,10 @@ const JOBS_SAMPLES: Record<string, Sample> = {
   JobStatus: configSample('JobStatus'),
 }
 const ProfileDefs: Record<string, TSchema> = {
+  CompositionPatch: ProfileGen.CompositionPatch,
+  CompositionSource: ProfileGen.CompositionSource,
   ApprovalMode: ProfileGen.ApprovalMode,
   ApprovalProfile: ProfileGen.ApprovalProfile,
-  AttachmentsProfile: ProfileGen.AttachmentsProfile,
-  ResolvedAttachmentsProfile: ProfileGen.ResolvedAttachmentsProfile,
   CommandHookGrant: ProfileGen.CommandHookGrant,
   CommandHooksPolicy: ProfileGen.CommandHooksPolicy,
   ComputerUseAppIdentity: ProfileGen.ComputerUseAppIdentity,
@@ -5038,6 +6740,8 @@ const ProfileDefs: Record<string, TSchema> = {
   ExtensionIsolationRequest: ProfileGen.ExtensionIsolationRequest,
   Capability: ProfileGen.Capability,
   SeamName: ProfileGen.SeamName,
+  SeamSelection: ProfileGen.SeamSelection,
+  ProviderSelection: ProfileGen.ProviderSelection,
   PackageRef: ProfileGen.PackageRef,
   SecretRef: ProfileGen.SecretRef,
   Transport: ProfileGen.Transport,
@@ -5062,9 +6766,32 @@ const LockfileDefs: Record<string, TSchema> = {
   HookEvent: LockfileGen.HookEvent,
   UiSlotName: LockfileGen.UiSlotName,
   SeamName: LockfileGen.SeamName,
+  SeamSelection: LockfileGen.SeamSelection,
   Capability: LockfileGen.Capability,
 }
 const ExtensionManifestDefs: Record<string, TSchema> = {
+  HomeContributionDeclaration: ExtensionManifestGen.HomeContributionDeclaration,
+  UiComponentDeclaration: ExtensionManifestGen.UiComponentDeclaration,
+  PluginProvide: ExtensionManifestGen.PluginProvide,
+  PluginLocalizedText: ExtensionManifestGen.PluginLocalizedText,
+  AgentRef: ExtensionManifestGen.AgentRef,
+  BundleLaunch: ExtensionManifestGen.BundleLaunch,
+  DeclaredAgent: ExtensionManifestGen.DeclaredAgent,
+  ApplicationTemplate: ExtensionManifestGen.ApplicationTemplate,
+  ApplicationWorkbench: ExtensionManifestGen.ApplicationWorkbench,
+  ApplicationWorkbenchText: ExtensionManifestGen.ApplicationWorkbenchText,
+  ApplicationPanelTab: ExtensionManifestGen.ApplicationPanelTab,
+  ApplicationWorkAction: ExtensionManifestGen.ApplicationWorkAction,
+  ApplicationWorkObject: ExtensionManifestGen.ApplicationWorkObject,
+  ApplicationAsset: ExtensionManifestGen.ApplicationAsset,
+  ApplicationBrand: ExtensionManifestGen.ApplicationBrand,
+  ApplicationPresentation: ExtensionManifestGen.ApplicationPresentation,
+  ApplicationPageRef: ExtensionManifestGen.ApplicationPageRef,
+  ApplicationRoleTarget: ExtensionManifestGen.ApplicationRoleTarget,
+  PresentationRole: ExtensionManifestGen.PresentationRole,
+
+  PluginMetadata: ExtensionManifestGen.PluginMetadata,
+  PluginMetadataLocale: ExtensionManifestGen.PluginMetadataLocale,
   Capabilities: ExtensionManifestGen.Capabilities,
   ClientContribution: ExtensionManifestGen.ClientContribution,
   SkinContribution: ExtensionManifestGen.SkinContribution,
@@ -5334,6 +7061,77 @@ const ServiceSamples: Record<string, Sample> = Object.fromEntries(
     },
   ]),
 )
+Object.assign(ServiceSamples, {
+  ProfileDecisionAnswerResult: SESSION_SAMPLES.DecisionCommandReceipt,
+  BoundWakeEnqueueParams: {
+    valid: {
+      target: { bindingId: 'binding' },
+      idempotencyKey: 'one',
+      event: { name: 'report.done', summary: 'Done' },
+    },
+    invalid: [{ sessionId: 'forged' }],
+    note: 'Bound target',
+  },
+  BoundWakeReadParams: { valid: { wakeId: 'wake' }, invalid: [{}], note: 'Owned wake receipt' },
+  BoundWakeReceipt: { valid: { wakeId: 'wake', state: 'queued' }, invalid: [{}], note: 'Durable wake' },
+  ServiceEffectPolicy: {
+    valid: {
+      isDestructive: true,
+      isOpenWorld: true,
+      replay: 'never',
+      requiresApproval: 'always',
+      approvalScopes: [],
+    },
+    invalid: [{}],
+    note: 'Reviewed policy',
+  },
+  ProfileServiceCallParams: {
+    valid: {
+      extension: 'acme/dashboard',
+      service: 'report.query',
+      input: {},
+      sessionReads: ['owned-session'],
+    },
+    invalid: [
+      { actor: 'forged' },
+      ...[
+        [''],
+        ['x'.repeat(513)],
+        ['duplicate', 'duplicate'],
+        Array.from({ length: 17 }, (_, n) => String(n)),
+      ].map((sessionReads) => ({
+        extension: 'acme/dashboard',
+        service: 'report.query',
+        input: {},
+        sessionReads,
+      })),
+    ],
+    note: 'Profile query requests bounded session read access; the authenticated ingress grants it',
+  },
+  ProfileServiceOperationParams: {
+    valid: { extension: 'acme/dashboard', service: 'report.query', operationId: 'one' },
+    invalid: [{}],
+    note: 'Owned receipt',
+  },
+  ProfileServiceReceipt: {
+    valid: { operationId: 'one', state: 'unknown' },
+    invalid: [{}],
+    note: 'Effect receipt',
+  },
+  ProfileServiceCallResult: { valid: { output: {} }, invalid: [{}], note: 'Profile query or effect result' },
+  ProfileDecisionsListParams: { valid: {}, invalid: [{ actor: 'forged' }], note: 'Profile decisions' },
+  ProfileDecisionsListResult: { valid: { decisions: [] }, invalid: [{}], note: 'Profile decisions' },
+  ProfileDecisionAnswerParams: {
+    valid: {
+      handle: { id: 'one', sessionId: null, profileId: 'default' },
+      revision: 1,
+      commandId: 'answer',
+      response: { option: 'allowed-once', value: null },
+    },
+    invalid: [{}],
+    note: 'Authenticated answer',
+  },
+})
 for (const name of ['ExtensionCallParams', 'ExtensionCallResult', 'ExtensionAckParams', 'ExtensionCallError'])
   AGNES_SAMPLES[name] = ServiceSamples[name] as Sample
 
@@ -5374,6 +7172,41 @@ const PackageAdminSamples: Record<string, Sample> = Object.fromEntries(
     },
   ]),
 )
+PackageAdminSamples.ContributionBinding = {
+  valid: {
+    lifetime: 'profile',
+    owner: 'plugin/0123456789abcdef',
+    packageId: '@acme/reports',
+    integrity: 'reviewed',
+    profileId: 'default',
+    activationId: 'current',
+    availability: 'active',
+  },
+  invalid: [{ lifetime: 'profile', availability: 'active' }],
+  note: 'Current roster authority binding',
+}
+AGNES_SAMPLES.AuthoringFile = PackageAdminSamples.AuthoringFile as Sample
+AGNES_SAMPLES.AuthoringOrigin = PackageAdminSamples.AuthoringOrigin as Sample
+AGNES_SAMPLES.AuthoringTests = PackageAdminSamples.AuthoringTests as Sample
+AGNES_SAMPLES.AuthoringCandidate = PackageAdminSamples.AuthoringCandidate as Sample
+AGNES_SAMPLES.AuthoringCandidateList = PackageAdminSamples.AuthoringCandidateList as Sample
+AGNES_SAMPLES.AuthoringCandidateSummary = PackageAdminSamples.AuthoringCandidateSummary as Sample
+AGNES_SAMPLES.AuthoringCreateParams = PackageAdminSamples.AuthoringCreateParams as Sample
+AGNES_SAMPLES.AuthoringWriteParams = PackageAdminSamples.AuthoringWriteParams as Sample
+AGNES_SAMPLES.AuthoringTestParams = PackageAdminSamples.AuthoringTestParams as Sample
+AGNES_SAMPLES.AuthoringSubmitParams = PackageAdminSamples.AuthoringSubmitParams as Sample
+AGNES_SAMPLES.AuthoringApproveParams = PackageAdminSamples.AuthoringApproveParams as Sample
+AGNES_SAMPLES.AuthoringRejectParams = PackageAdminSamples.AuthoringRejectParams as Sample
+AGNES_SAMPLES.AuthoringShowParams = PackageAdminSamples.AuthoringShowParams as Sample
+AGNES_SAMPLES.AuthoringProvenance = PackageAdminSamples.AuthoringProvenance as Sample
+AGNES_SAMPLES.PluginGenerationStatus = PackageAdminSamples.PluginGenerationStatus as Sample
+AGNES_SAMPLES.PluginPublicationReport = PackageAdminSamples.PluginPublicationReport as Sample
+AGNES_SAMPLES.PluginPublicationStatusResult = PackageAdminSamples.PluginPublicationStatusResult as Sample
+AGNES_SAMPLES.SessionGenerationMigrationParams =
+  PackageAdminSamples.SessionGenerationMigrationParams as Sample
+AGNES_SAMPLES.SessionGenerationMigrationResult =
+  PackageAdminSamples.SessionGenerationMigrationResult as Sample
+
 AGNES_SAMPLES.PackageActivationTrust = PackageAdminSamples.PackageActivationTrust as Sample
 AGNES_SAMPLES.PackageActivationRequest = PackageAdminSamples.PackageActivationRequest as Sample
 AGNES_SAMPLES.PackageRollbackTarget = PackageAdminSamples.PackageRollbackTarget as Sample
@@ -5543,6 +7376,41 @@ function resourceControlSamples(): Record<ResourceControlSampleName, Sample> {
     SkillRootStatus: ok({ rootKey: 'workspace-agnes', scope: 'workspace', state: 'empty' }, [
       { rootKey: 'workspace-agnes', scope: 'workspace', state: 'missing' },
     ]),
+    SkillScanIssue: ok({ code: 'permission-denied', stage: 'list', osCode: 'EPERM' }, [
+      { code: 'permission-denied', stage: 'list', message: 'private' },
+    ]),
+    SkillDirectoryScan: ok({
+      directoryId: rev,
+      rootKey: 'user-agnes',
+      state: 'empty',
+      complete: true,
+      foundCount: 0,
+      skippedCount: 0,
+      unreadable: false,
+      truncated: false,
+      issues: [],
+    }),
+    SkillScanObservation: ok({
+      configurationRevision: rev,
+      complete: true,
+      foundCount: 0,
+      skippedCount: 0,
+      unreadableDirectoryCount: 0,
+      truncated: false,
+      directories: [],
+    }),
+    SkillScanReport: ok({
+      operationId: 'op-1',
+      generation: 1,
+      observedAt: '2026-10-29T00:00:00Z',
+      configurationRevision: rev,
+      complete: true,
+      foundCount: 0,
+      skippedCount: 0,
+      unreadableDirectoryCount: 0,
+      truncated: false,
+      directories: [],
+    }),
     SkillRootDiagnostic: ok({ code: 'invalid-frontmatter' }, [
       { code: 'ROOT_SCAN_FAILED' },
       { code: 'invalid-frontmatter', detail: 'extra' },
@@ -5574,6 +7442,7 @@ function resourceControlSamples(): Record<ResourceControlSampleName, Sample> {
       { kind: 'oauth', staticClientId: 'test-oauth-client', extraField: 'nope' },
     ]),
     McpToolPolicy: ok({ allow: ['search'] }),
+    McpToolDisclosure: ok('on-demand', ['lazy']),
     McpServerDefinitionInput: ok(definitionSseValid, [
       { ...definition, secretBinding: httpBinding },
       definitionSseInvalid,
@@ -5666,13 +7535,472 @@ function resourceControlSamples(): Record<ResourceControlSampleName, Sample> {
 }
 
 const ResourceControlSamples = resourceControlSamples()
+const webhookRuleSample = {
+  id: 'issues',
+  enabled: true,
+  provider: 'github',
+  auth: 'hmac',
+  secretRef: 'secret://webhooks/sample',
+  event: 'issues',
+  filters: {},
+  workspace: '/synthetic',
+  agent: 'default',
+  bundles: [],
+  template: '{{$.issue.title}}',
+  timestampPath: '$.issue.updated_at',
+  windowSeconds: 300,
+  ratePerMinute: 10,
+}
+const webhookConfigSample = { enabled: false, path: '/hooks/events', maxPayloadBytes: 262144 }
+const AppSamples: Record<string, Sample> = {
+  AdminCredentialDelete: {
+    valid: { id: 'secret://generic/11111111-1111-4111-8111-111111111111', force: true, confirm: true },
+    invalid: [{ id: 'secret://generic/11111111-1111-4111-8111-111111111111', actor: 'forged' }],
+    note: 'Closed write-only credential contract',
+  },
+  AdminCredentialRename: {
+    valid: { id: 'secret://generic/11111111-1111-4111-8111-111111111111', label: 'New label' },
+    invalid: [{ id: 'secret://generic/11111111-1111-4111-8111-111111111111', label: '' }],
+    note: 'Closed write-only credential contract',
+  },
+  AdminCredentialSet: {
+    valid: { id: 'secret://generic/11111111-1111-4111-8111-111111111111', value: 'canary' },
+    invalid: [
+      { id: 'secret://generic/11111111-1111-4111-8111-111111111111' },
+      { id: 'secret://other/default', value: 'canary' },
+    ],
+    note: 'Closed write-only credential contract',
+  },
+  AdminCredentialCreate: {
+    valid: { label: 'Work key', value: 'canary' },
+    invalid: [{ label: 'Work key' }, { label: 'Work key', value: 'x\ncanary' }],
+    note: 'Closed write-only credential contract',
+  },
+  AdminCredentialsList: {
+    valid: {
+      items: [
+        {
+          id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+          label: 'Work key',
+          kind: 'api-key',
+          createdAt: '2026-10-11T00:00:00.000Z',
+          references: [],
+        },
+      ],
+    },
+    invalid: [
+      {
+        items: [
+          {
+            id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+            label: 'Work key',
+            kind: 'api-key',
+            createdAt: '2026-10-11T00:00:00.000Z',
+            references: [],
+            value: 'canary',
+          },
+        ],
+      },
+    ],
+    note: 'Closed write-only credential contract',
+  },
+  AdminCredentialMetadata: {
+    valid: {
+      id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+      label: 'Work key',
+      kind: 'api-key',
+      createdAt: '2026-10-11T00:00:00.000Z',
+      references: [],
+    },
+    invalid: [
+      {
+        id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+        label: 'Work key',
+        kind: 'api-key',
+        createdAt: '2026-10-11T00:00:00.000Z',
+        references: [],
+        value: 'canary',
+      },
+      {
+        id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+        label: 'Work key',
+        kind: 'api-key',
+        createdAt: 'not-a-date',
+        references: [],
+      },
+      {
+        id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+        label:
+          'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+        kind: 'api-key',
+        createdAt: '2026-10-11T00:00:00.000Z',
+        references: [],
+      },
+    ],
+    note: 'Closed write-only credential contract',
+  },
+  AdminCredentialReference: {
+    valid: { kind: 'mcp', profile: 'local-dev', configId: 'example' },
+    invalid: [{ kind: 'mcp', profile: 'local-dev', configId: 'example', value: 'canary' }],
+    note: 'Closed write-only credential contract',
+  },
+  FeedbackTarget: {
+    valid: { messageSeq: 1, turn: 1 },
+    invalid: [{ messageSeq: 0, turn: 1 }],
+    note: 'Feedback event locator',
+  },
+  FeedbackItem: {
+    valid: {
+      id: 'f',
+      sessionId: 's',
+      target: { messageSeq: 1, turn: 1 },
+      rating: 'up',
+      category: '',
+      note: '',
+      actor: 'human',
+      createdAt: 'now',
+      updatedAt: 'now',
+      revision: 1,
+      withdrawn: false,
+      candidateId: null,
+      candidateHash: null,
+    },
+    invalid: [{ id: 'f' }],
+    note: 'Bounded feedback receipt',
+  },
+  FeedbackGrowth: {
+    valid: {
+      feedbackId: 'f',
+      feedbackRevision: 1,
+      messageSeq: 1,
+      candidateId: 'c',
+      candidateHash: 'hash',
+      reviewHash: null,
+      state: 'draft',
+      reviewer: null,
+      packageId: '@author/skill',
+      version: null,
+    },
+    invalid: [{ feedbackId: 'f', feedbackRevision: 0 }],
+    note: 'Feedback candidate lineage',
+  },
+  AdminFeedbackParams: {
+    valid: { action: 'list' },
+    invalid: [{ action: 'other' }],
+    note: 'Closed feedback administration',
+  },
+  AdminFeedbackResult: {
+    valid: {
+      items: [],
+      growth: [],
+      counts: { up: 0, down: 0, withdrawn: 0, withCandidate: 0 },
+      truncated: false,
+    },
+    invalid: [
+      {
+        items: [],
+        growth: [],
+        counts: { up: -1, down: 0, withdrawn: 0, withCandidate: 0 },
+        truncated: false,
+      },
+    ],
+    note: 'Bounded feedback results',
+  },
+  WebhookRule: {
+    valid: webhookRuleSample,
+    invalid: [{ ...webhookRuleSample, secretRef: 'plaintext' }],
+    note: 'Secrets are references only',
+  },
+  WebhookConfig: {
+    valid: webhookConfigSample,
+    invalid: [{ ...webhookConfigSample, path: '/api/admin' }],
+    note: 'Explicit isolated opt-in path',
+  },
+  WebhookDelivery: {
+    valid: { id: 'delivery', at: 1, status: 'accepted' },
+    invalid: [{ id: 'delivery', at: 1, status: 'ok', payload: {} }],
+    note: 'Metadata only',
+  },
+  WebhookSnapshot: {
+    valid: { config: webhookConfigSample, rules: [], deliveries: [], secretRefs: [] },
+    invalid: [{ config: webhookConfigSample, rules: [], deliveries: [], secretRefs: ['plaintext'] }],
+    note: 'No secret values',
+  },
+  WebhookRequest: { valid: { action: 'list' }, invalid: [{ action: 'other' }], note: 'Closed action table' },
+  WebhookResult: { valid: {}, invalid: [{ secret: 'plaintext' }], note: 'Closed result' },
+  DoctorParams: {
+    valid: {},
+    invalid: [{ probeAccounts: 'yes' }, { home: '/untrusted' }],
+    note: 'model probing is explicit',
+  },
+  DoctorCheck: {
+    valid: { id: 'accounts', status: 'warn', fixHintKey: 'doctor.fix.accounts', count: 0, probed: false },
+    invalid: [
+      { id: 'secret', status: 'ok', fixHintKey: 'raw.key' },
+      { id: 'node', status: 'ready', fixHintKey: 'doctor.fix.node' },
+    ],
+    note: 'closed non-sensitive check shape',
+  },
+  DoctorResult: {
+    valid: { checks: [], status: 'ok' },
+    invalid: [
+      { checks: [], status: 'ready' },
+      { checks: [], status: 'ok', secret: 'forbidden' },
+    ],
+    note: 'safe aggregate with no paths or secrets',
+  },
+  AdminMcpOAuthSave: {
+    valid: {
+      serverId: 'github',
+      credential: {
+        provider: 'fixture',
+        accessToken: 'fixture-token',
+        refreshToken: 'synthetic-refresh',
+        expiresAt: 0,
+        scope: [],
+        grantId: 'fixture-grant',
+      },
+    },
+    invalid: [
+      {
+        serverId: '../other',
+        credential: {
+          provider: 'fixture',
+          accessToken: 'fixture-token',
+          refreshToken: 'synthetic-refresh',
+          expiresAt: 0,
+          scope: [],
+          grantId: 'fixture-grant',
+        },
+      },
+    ],
+    note: 'daemon-only OAuth credential persistence',
+  },
+  JsonValue: { valid: { nested: [null, false, 3] }, invalid: [undefined], note: 'App Server boundary shape' },
+  AppServerErrorCause: {
+    valid: { code: 'CONFIG_CREDENTIAL_REQUIRED' },
+    invalid: [
+      { code: 'SECRET', message: 'unsafe' },
+      { code: 'CONFIG_CREDENTIAL_REQUIRED', message: 'secret' },
+    ],
+    note: 'App Server boundary shape',
+  },
+  AppServerError: {
+    valid: {
+      code: -32011,
+      message: 'SEMANTIC_REJECTED',
+      data: {
+        code: 'SEMANTIC_REJECTED',
+        messageKey: 'appServer.errors.credentialRequired',
+        diagnosticId: '00000000-0000-0000-0000-000000000001',
+        cause: { code: 'CONFIG_CREDENTIAL_REQUIRED' },
+      },
+    },
+    invalid: [
+      {
+        code: -32011,
+        message: 'SEMANTIC_REJECTED',
+        data: { code: 'SEMANTIC_REJECTED', messageKey: 'raw.secret', diagnosticId: 'bad' },
+      },
+    ],
+    note: 'App Server boundary shape',
+  },
+  AdminEmpty: { valid: {}, invalid: [{ extra: 1 }], note: 'App Server boundary shape' },
+  AdminBundlesSave: {
+    valid: { revision: 0, bundles: [] },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  AdminBundlesResult: {
+    valid: { revision: 0, bundles: [], effect: 'restart-required' },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  AdminCompositionParams: { valid: {}, invalid: [{ preset: 'INVALID' }], note: 'App Server boundary shape' },
+  AdminCompositionResult: {
+    valid: { status: 'live', validation: 'static', selection: {}, rows: [], sessions: [] },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  AdminSearchSave: { valid: { provider: { id: 'p' } }, invalid: [null], note: 'App Server boundary shape' },
+  AdminSearchTest: {
+    valid: { provider: 'p', query: 'q' },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  AdminSearchResult: { valid: {}, invalid: [null], note: 'App Server boundary shape' },
+  MemorySettings: {
+    valid: {
+      mode: 'off',
+      indexMaxBytes: 16384,
+      indexMaxLines: 200,
+      topicMaxBytes: 32768,
+      totalMaxBytes: 262144,
+      tokenBudget: 2048,
+      userTokenBudget: 512,
+      userEnabled: false,
+    },
+    invalid: [null],
+    note: 'File memory boundary shape',
+  },
+  MemorySettingsPatch: { valid: { mode: 'ask' }, invalid: [null], note: 'File memory boundary shape' },
+  MemorySource: {
+    valid: { sessionKey: 'synthetic-session', turn: 1 },
+    invalid: [null],
+    note: 'File memory boundary shape',
+  },
+  MemoryFileInfo: {
+    valid: { path: 'MEMORY.md', hash: 'a'.repeat(64), bytes: 0, lines: 0 },
+    invalid: [null],
+    note: 'File memory boundary shape',
+  },
+  MemoryFile: {
+    valid: { ...{ path: 'MEMORY.md', hash: 'a'.repeat(64), bytes: 0, lines: 0 }, content: '' },
+    invalid: [null],
+    note: 'File memory boundary shape',
+  },
+  MemoryInspection: {
+    valid: {
+      root: '/tmp/memory',
+      settings: {
+        mode: 'off',
+        indexMaxBytes: 16384,
+        indexMaxLines: 200,
+        topicMaxBytes: 32768,
+        totalMaxBytes: 262144,
+        tokenBudget: 2048,
+        userTokenBudget: 512,
+        userEnabled: false,
+      },
+      files: [],
+      bytes: 0,
+    },
+    invalid: [null],
+    note: 'File memory boundary shape',
+  },
+  ObservabilitySettings: {
+    valid: { enabled: false, headers: { authorization: { secretRef: 'env:OTLP_AUTH' } } },
+    invalid: [null, { enabled: true, headers: { authorization: 'plaintext' } }],
+    note: 'Secret refs only',
+  },
+  ObservabilityHealth: {
+    valid: { status: 'disabled', queued: 0, dropped: 0, failures: 0 },
+    invalid: [null, { status: 'ok', queued: -1, dropped: 0, failures: 0 }],
+    note: 'Bounded exporter health',
+  },
+  AdminObservabilityParams: {
+    valid: {},
+    invalid: [null, { settings: { enabled: true, redaction: 'raw' } }],
+    note: 'Exporter administration',
+  },
+  AdminObservabilityResult: {
+    valid: {
+      settings: { enabled: false },
+      health: { status: 'disabled', queued: 0, dropped: 0, failures: 0 },
+    },
+    invalid: [null],
+    note: 'Exporter settings and health',
+  },
+  AdminMemoryParams: { valid: { cwd: '/tmp' }, invalid: [null], note: 'File memory boundary shape' },
+  AdminMemoryResult: {
+    valid: {
+      workspaces: [],
+      inspection: {
+        root: '/tmp/memory',
+        settings: {
+          mode: 'off',
+          indexMaxBytes: 16384,
+          indexMaxLines: 200,
+          topicMaxBytes: 32768,
+          totalMaxBytes: 262144,
+          tokenBudget: 2048,
+          userTokenBudget: 512,
+          userEnabled: false,
+        },
+        files: [],
+        bytes: 0,
+      },
+    },
+    invalid: [null],
+    note: 'File memory boundary shape',
+  },
+  AdminContextConfig: {
+    valid: {
+      rulesEnabled: true,
+      instructionFiles: [],
+      localInstructionFiles: [],
+      maxBytes: 0,
+      maxSourceBytes: 0,
+      timeEnabled: true,
+      timeZone: 'UTC',
+      refreshIntervalMs: 0,
+      customSkillRoots: [],
+    },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  AdminContextParams: {
+    valid: {},
+    invalid: [{ config: { maxBytes: 60001 } }],
+    note: 'App Server boundary shape',
+  },
+  AdminContextResult: {
+    valid: {
+      config: {
+        rulesEnabled: true,
+        instructionFiles: [],
+        localInstructionFiles: [],
+        maxBytes: 0,
+        maxSourceBytes: 0,
+        timeEnabled: true,
+        timeZone: 'UTC',
+        refreshIntervalMs: 0,
+        customSkillRoots: [],
+      },
+      workspaces: [],
+    },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  AdminHistoryParams: {
+    valid: { query: '', title: '', workspace: '' },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  AdminHistoryResult: {
+    valid: { items: [], truncated: false },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  AdminPlanParams: {
+    valid: { cwd: '/tmp', line: '/plan on' },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  AdminPlanResult: {
+    valid: { active: true, text: 'Plan mode is on' },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+}
+const TransportSamples = JSON.parse(readFileSync(`${pkgRoot}test/transport-samples.json`, 'utf8')) as {
+  pluginStream: Record<string, Sample>
+  managedService: Record<string, Sample>
+}
 const SELF_OWNED_DOCS: Array<[string, Json, string, Record<string, Sample>]> = [
+  [
+    'intelligent-ui.json',
+    IntelligentUiDoc,
+    'https://agnes.ai/schema/intelligent-ui.json',
+    intelligentUiSamples,
+  ],
   [
     'resource-control.json',
     ResourceControlDoc,
     'https://agnes.ai/schema/resource-control.json',
     ResourceControlSamples,
   ],
+  ['app-server.json', AppDoc, 'https://agnes.ai/schema/app-server-v1', AppSamples],
   ['package-admin.json', PackageAdminDoc, 'https://agnes.ai/schema/package-admin.json', PackageAdminSamples],
   ['surface.json', SurfaceDoc, 'https://agnes.ai/schema/surface.json', surfaceSamples()],
   ['extension-service.json', ServiceDoc, 'https://agnes.ai/schema/extension-service.json', ServiceSamples],
@@ -5694,6 +8022,18 @@ const SELF_OWNED_DOCS: Array<[string, Json, string, Record<string, Sample>]> = [
   ],
   ['deploy-manifest.json', DeployManifestDoc, 'https://agnes.ai/schema/deploy-manifest.json', DEPLOY_SAMPLES],
   ['jobs.json', JobsDoc, 'https://agnes.ai/schema/jobs.json', JOBS_SAMPLES],
+  [
+    'plugin-stream.json',
+    PluginStreamDoc,
+    'https://agnes.ai/schema/plugin-stream.json',
+    TransportSamples.pluginStream,
+  ],
+  [
+    'managed-service.json',
+    ManagedServiceDoc,
+    'https://agnes.ai/schema/managed-service.json',
+    TransportSamples.managedService,
+  ],
   ['authz.json', AuthzDoc, 'https://agnes.ai/schema/authz.json', TASK21_SAMPLES.authz],
   ['channel.json', ChannelDoc, 'https://agnes.ai/schema/channel.json', TASK21_SAMPLES.channel],
   ['bridge.json', BridgeDoc, 'https://agnes.ai/schema/bridge.json', TASK21_SAMPLES.bridge],
@@ -5701,6 +8041,44 @@ const SELF_OWNED_DOCS: Array<[string, Json, string, Record<string, Sample>]> = [
 ]
 
 const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
+  'https://agnes.ai/schema/intelligent-ui.json': Object.fromEntries(
+    Object.keys(intelligentUiSamples).map((key) => [
+      key,
+      (IntelligentUiGen as unknown as Record<string, TSchema>)[key]!,
+    ]),
+  ),
+  'https://agnes.ai/schema/app-server-v1': Object.fromEntries(
+    Object.keys(AppSamples).map((key) => [key, (AppGen as unknown as Record<string, TSchema>)[key]!]),
+  ),
+  [RUNTIME_ADMIN_ID]: {
+    ChildEnginesSaveParams,
+    ChildEnginesState,
+    ModelSlotsSnapshot,
+    RuntimeAdminEmpty,
+    RuntimeAdminSnapshot,
+  },
+  [SCHEDULES_ID]: {
+    ScheduleRun,
+    ScheduleSelector,
+    ScheduleTarget,
+    ScheduleView,
+    SchedulesArchiveParams,
+    SchedulesArchiveResult,
+    SchedulesControlParams,
+    SchedulesControlResult,
+    SchedulesHistoryParams,
+    SchedulesHistoryResult,
+    SchedulesReceiptParams,
+    SchedulesReceiptResult,
+    SchedulesListParams,
+    SchedulesListResult,
+    SchedulesUpsertParams,
+    SchedulesUpsertResult,
+  },
+  [SESSION_INTEGRITY_ID]: { SessionIntegrityParams, SessionIntegrityStatus },
+  [SESSION_TOOLS_ID]: { SessionToolsParams, SessionToolsResult },
+  [AGENTS_ID]: { AgentResolveParams, AgentPlan },
+  [SESSION_RUNTIME_ID]: { SessionRuntimeParams, SessionRuntimeDescriptor },
   'https://agnes.ai/schema/worker.json': WorkerDefs,
   'https://agnes.ai/schema/resource-control.json': {
     ActualState: ResourceControlGen.ActualState,
@@ -5732,6 +8110,7 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     McpTool: ResourceControlGen.McpTool,
     McpToolCatalogPage: ResourceControlGen.McpToolCatalogPage,
     McpToolPolicy: ResourceControlGen.McpToolPolicy,
+    McpToolDisclosure: ResourceControlGen.McpToolDisclosure,
     McpToolsListParams: ResourceControlGen.McpToolsListParams,
     McpTrustSetParams: ResourceControlGen.McpTrustSetParams,
     McpOAuthStatusSetParams: ResourceControlGen.McpOAuthStatusSetParams,
@@ -5757,6 +8136,10 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     SkillRootDiagnostic: ResourceControlGen.SkillRootDiagnostic,
     SkillRootKey: ResourceControlGen.SkillRootKey,
     SkillRootStatus: ResourceControlGen.SkillRootStatus,
+    SkillScanIssue: ResourceControlGen.SkillScanIssue,
+    SkillDirectoryScan: ResourceControlGen.SkillDirectoryScan,
+    SkillScanObservation: ResourceControlGen.SkillScanObservation,
+    SkillScanReport: ResourceControlGen.SkillScanReport,
     SkillSourceIdentity: ResourceControlGen.SkillSourceIdentity,
     SkillTrustSetParams: ResourceControlGen.SkillTrustSetParams,
     SkillRemoveParams: ResourceControlGen.SkillRemoveParams,
@@ -5766,11 +8149,47 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     WorkspaceId: ResourceControlGen.WorkspaceId,
   },
   'https://agnes.ai/schema/package-admin.json': {
+    ApplicationSelection: PackageAdminGen.ApplicationSelection,
+    ApplicationConfigSnapshot: PackageAdminGen.ApplicationConfigSnapshot,
+    ApplicationPreviewParams: PackageAdminGen.ApplicationPreviewParams,
+    ApplicationPreview: PackageAdminGen.ApplicationPreview,
+    ApplicationState: PackageAdminGen.ApplicationState,
+    ApplicationAdoptParams: PackageAdminGen.ApplicationAdoptParams,
+    ApplicationClearParams: PackageAdminGen.ApplicationClearParams,
+    PresentationRoleSelection: PackageAdminGen.PresentationRoleSelection,
+    PresentationRoleSelections: PackageAdminGen.PresentationRoleSelections,
+    PresentationRoleState: PackageAdminGen.PresentationRoleState,
+
+    PackagePresentation: PackageAdminGen.PackagePresentation,
+    PluginConfigAudit: PackageAdminGen.PluginConfigAudit,
+    PluginConfigEntry: PackageAdminGen.PluginConfigEntry,
+    PluginConfigGetParams: PackageAdminGen.PluginConfigGetParams,
+    PluginConfigSaveParams: PackageAdminGen.PluginConfigSaveParams,
+    PluginConfigSaveResult: PackageAdminGen.PluginConfigSaveResult,
+    PluginConfigSnapshot: PackageAdminGen.PluginConfigSnapshot,
+    PluginConfigValidateParams: PackageAdminGen.PluginConfigValidateParams,
+    PluginConfigValidation: PackageAdminGen.PluginConfigValidation,
+    AuthoringFile: PackageAdminGen.AuthoringFile,
+    AuthoringOrigin: PackageAdminGen.AuthoringOrigin,
+    AuthoringTests: PackageAdminGen.AuthoringTests,
+    AuthoringCandidate: PackageAdminGen.AuthoringCandidate,
+    AuthoringCandidateList: PackageAdminGen.AuthoringCandidateList,
+    AuthoringCandidateSummary: PackageAdminGen.AuthoringCandidateSummary,
+    AuthoringCreateParams: PackageAdminGen.AuthoringCreateParams,
+    AuthoringWriteParams: PackageAdminGen.AuthoringWriteParams,
+    AuthoringTestParams: PackageAdminGen.AuthoringTestParams,
+    AuthoringSubmitParams: PackageAdminGen.AuthoringSubmitParams,
+    AuthoringApproveParams: PackageAdminGen.AuthoringApproveParams,
+    AuthoringRejectParams: PackageAdminGen.AuthoringRejectParams,
+    AuthoringShowParams: PackageAdminGen.AuthoringShowParams,
+    AuthoringProvenance: PackageAdminGen.AuthoringProvenance,
+
     SkinListResult: PackageAdminGen.SkinListResult,
     SkinReadParams: PackageAdminGen.SkinReadParams,
     SkinReadResult: PackageAdminGen.SkinReadResult,
     ClientModuleListResult: PackageAdminGen.ClientModuleListResult,
     ClientModuleRosterRow: PackageAdminGen.ClientModuleRosterRow,
+    ContributionBinding: PackageAdminGen.ContributionBinding,
     ClientModuleReadParams: PackageAdminGen.ClientModuleReadParams,
     ClientModuleReadResult: PackageAdminGen.ClientModuleReadResult,
     ClientModuleServiceCallParams: PackageAdminGen.ClientModuleServiceCallParams,
@@ -5783,11 +8202,15 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     PackageRollbackTarget: PackageAdminGen.PackageRollbackTarget,
     PackageAdminContext: PackageAdminGen.PackageAdminContext,
     PackageSource: PackageAdminGen.PackageSource,
+    PluginCapabilities: PackageAdminGen.PluginCapabilities,
+    ClientModuleListParams: PackageAdminGen.ClientModuleListParams,
     PackageContributionSummary: PackageAdminGen.PackageContributionSummary,
     PackageCapabilityDiff: PackageAdminGen.PackageCapabilityDiff,
     PackageBlocker: PackageAdminGen.PackageBlocker,
     PackageWarning: PackageAdminGen.PackageWarning,
     PackageProvenance: PackageAdminGen.PackageProvenance,
+    PackageProvenanceParams: PackageAdminGen.PackageProvenanceParams,
+    PackageSourcePolicy: PackageAdminGen.PackageSourcePolicy,
     PackagePreview: PackageAdminGen.PackagePreview,
     PackageTrustDecision: PackageAdminGen.PackageTrustDecision,
     PackageInstalledDescriptor: PackageAdminGen.PackageInstalledDescriptor,
@@ -5796,7 +8219,13 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     PackageOperationReceipt: PackageAdminGen.PackageOperationReceipt,
     PackageOperation: PackageAdminGen.PackageOperation,
     PackageCatalogPage: PackageAdminGen.PackageCatalogPage,
+    PluginGenerationStatus: PackageAdminGen.PluginGenerationStatus,
     PackageListResult: PackageAdminGen.PackageListResult,
+    PluginPublicationReport: PackageAdminGen.PluginPublicationReport,
+    PluginPublicationStatusResult: PackageAdminGen.PluginPublicationStatusResult,
+    SessionGenerationMigrationParams: PackageAdminGen.SessionGenerationMigrationParams,
+    SessionGenerationMigrationResult: PackageAdminGen.SessionGenerationMigrationResult,
+
     PackageCatalogListParams: PackageAdminGen.PackageCatalogListParams,
     PackageCatalogGetParams: PackageAdminGen.PackageCatalogGetParams,
     PackageListParams: PackageAdminGen.PackageListParams,
@@ -5842,6 +8271,18 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     ExtensionCallResult: ServiceGen.ExtensionCallResult,
     ExtensionAckParams: ServiceGen.ExtensionAckParams,
     ExtensionCallError: ServiceGen.ExtensionCallError,
+    ServiceEffectPolicy: ServiceGen.ServiceEffectPolicy,
+    ProfileServiceCallParams: ServiceGen.ProfileServiceCallParams,
+    ProfileServiceOperationParams: ServiceGen.ProfileServiceOperationParams,
+    ProfileServiceReceipt: ServiceGen.ProfileServiceReceipt,
+    ProfileServiceCallResult: ServiceGen.ProfileServiceCallResult,
+    ProfileDecisionsListParams: ServiceGen.ProfileDecisionsListParams,
+    ProfileDecisionsListResult: ServiceGen.ProfileDecisionsListResult,
+    ProfileDecisionAnswerParams: ServiceGen.ProfileDecisionAnswerParams,
+    ProfileDecisionAnswerResult: ServiceGen.ProfileDecisionAnswerResult,
+    BoundWakeEnqueueParams: ServiceGen.BoundWakeEnqueueParams,
+    BoundWakeReadParams: ServiceGen.BoundWakeReadParams,
+    BoundWakeReceipt: ServiceGen.BoundWakeReceipt,
   },
   'https://agnes.ai/schema/projection.json': {
     ProjectionCapability: ProjectionGen.ProjectionCapability,
@@ -5859,6 +8300,20 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
   'https://agnes.ai/schema/extension-manifest.json': ExtensionManifestDefs,
   'https://agnes.ai/schema/deploy-manifest.json': DeployManifestDefs,
   'https://agnes.ai/schema/jobs.json': JobsDefs,
+  'https://agnes.ai/schema/plugin-stream.json': {
+    StreamScope: PluginStreamGen.StreamScope,
+    StreamDeclaration: PluginStreamGen.StreamDeclaration,
+    PluginStreamOpen: PluginStreamGen.PluginStreamOpen,
+    PluginStreamGrant: PluginStreamGen.PluginStreamGrant,
+    PluginStreamClose: PluginStreamGen.PluginStreamClose,
+    PluginStreamHello: PluginStreamGen.PluginStreamHello,
+    PluginStreamJsonFrame: PluginStreamGen.PluginStreamJsonFrame,
+  },
+  'https://agnes.ai/schema/managed-service.json': {
+    ManagedServiceDescriptor: ManagedServiceGen.ManagedServiceDescriptor,
+    ManagedServiceReady: ManagedServiceGen.ManagedServiceReady,
+    ManagedServiceStatus: ManagedServiceGen.ManagedServiceStatus,
+  },
 
   'https://agnes.ai/schema/authz.json': AuthzDefs,
   'https://agnes.ai/schema/channel.json': ChannelDefs,
@@ -5955,14 +8410,355 @@ describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorizatio
 // ---------------------------------------------------------------------------
 // Every method in the METHODS table, exercised through the public validateMethod rather than by
 // reaching for the TSchema directly, with ajv's verdict confirmed to agree separately.
-// followUp and steer share one SessionSteerParams/Result schema, but each method name has its own
-// fixture rows (followup-ok / followup-missing-commandid / followup-result-ok) and does not reuse
-// steer's sample objects: feeding both method names to validateMethod separately means passing the
-// wrong method name cannot be masked by the fact that they share a schema.
 
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/agents.resolve': { fileId: AGENTS_ID, params: 'AgentResolveParams', result: 'AgentPlan' },
+  '_agnes/v1/applications.get': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'PackageListParams',
+    result: 'ApplicationState',
+  },
+  '_agnes/v1/applications.preview': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'ApplicationPreviewParams',
+    result: 'ApplicationPreview',
+  },
+  '_agnes/v1/applications.adopt': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'ApplicationAdoptParams',
+    result: 'ApplicationState',
+  },
+  '_agnes/v1/applications.clear': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'ApplicationClearParams',
+    result: 'ApplicationState',
+  },
+
+  '_agnes/v1/extension.wakes.enqueue': {
+    fileId: 'https://agnes.ai/schema/extension-service.json',
+    params: 'BoundWakeEnqueueParams',
+    result: 'BoundWakeReceipt',
+  },
+  '_agnes/v1/extension.wakes.read': {
+    fileId: 'https://agnes.ai/schema/extension-service.json',
+    params: 'BoundWakeReadParams',
+    result: 'BoundWakeReceipt',
+  },
+  '_agnes/v1/extension.callScoped': {
+    fileId: 'https://agnes.ai/schema/extension-service.json',
+    params: 'ProfileServiceCallParams',
+    result: 'ProfileServiceCallResult',
+  },
+  '_agnes/v1/extension.readOperation': {
+    fileId: 'https://agnes.ai/schema/extension-service.json',
+    params: 'ProfileServiceOperationParams',
+    result: 'ProfileServiceReceipt',
+  },
+  '_agnes/v1/profile.decisions.list': {
+    fileId: 'https://agnes.ai/schema/extension-service.json',
+    params: 'ProfileDecisionsListParams',
+    result: 'ProfileDecisionsListResult',
+  },
+  '_agnes/v1/profile.decisions.answer': {
+    fileId: 'https://agnes.ai/schema/extension-service.json',
+    params: 'ProfileDecisionAnswerParams',
+    result: 'ProfileDecisionAnswerResult',
+  },
+
+  '_agnes/v1/session.revealWorkspace': {
+    fileId: AGNES_ID,
+    params: 'SessionRevealWorkspaceParams',
+    result: 'SessionRevealWorkspaceResult',
+  },
+  '_agnes/v1/admin.credentials.delete': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminCredentialDelete',
+    result: 'AdminEmpty',
+  },
+  '_agnes/v1/admin.credentials.rename': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminCredentialRename',
+    result: 'AdminCredentialMetadata',
+  },
+  '_agnes/v1/admin.credentials.set': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminCredentialSet',
+    result: 'AdminCredentialMetadata',
+  },
+  '_agnes/v1/admin.credentials.create': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminCredentialCreate',
+    result: 'AdminCredentialMetadata',
+  },
+  '_agnes/v1/admin.credentials.list': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminEmpty',
+    result: 'AdminCredentialsList',
+  },
+  '_agnes/v1/ui.action': {
+    fileId: 'https://agnes.ai/schema/intelligent-ui.json',
+    params: 'UiActionParams',
+    result: 'UiActionReceipt',
+  },
+  '_agnes/v1/ui.read': {
+    fileId: 'https://agnes.ai/schema/intelligent-ui.json',
+    params: 'UiReadParams',
+    result: 'UiReadResult',
+  },
+  '_agnes/v1/ui.refresh': {
+    fileId: 'https://agnes.ai/schema/intelligent-ui.json',
+    params: 'UiRefreshParams',
+    result: 'UiSurfaceRecord',
+  },
+  '_agnes/v1/admin.feedback': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminFeedbackParams',
+    result: 'AdminFeedbackResult',
+  },
+  '_agnes/v1/session.control': {
+    fileId: 'https://agnes.ai/schema/agnes-v1.json',
+    params: 'SessionControlParams',
+    result: 'SessionSteerResult',
+  },
+  '_agnes/v1/session.controls': {
+    fileId: 'https://agnes.ai/schema/agnes-v1.json',
+    params: 'SessionControlsParams',
+    result: 'SessionControlStateResult',
+  },
+  '_agnes/v1/admin.triggers': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'WebhookRequest',
+    result: 'WebhookResult',
+  },
+  '_agnes/v1/session.fileUpload': {
+    fileId: 'https://agnes.ai/schema/agnes-v1.json',
+    params: 'FileUploadParams',
+    result: 'FileUploadResultSchema',
+  },
+  '_agnes/v1/session.references.search': {
+    fileId: 'https://agnes.ai/schema/agnes-v1.json',
+    params: 'SessionReferenceSearchParams',
+    result: 'SessionReferenceSearchResult',
+  },
+  '_agnes/v1/plugins.config.get': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'PluginConfigGetParams',
+    result: 'PluginConfigSnapshot',
+  },
+  '_agnes/v1/plugins.config.validate': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'PluginConfigValidateParams',
+    result: 'PluginConfigValidation',
+  },
+  '_agnes/v1/plugins.config.save': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'PluginConfigSaveParams',
+    result: 'PluginConfigSaveResult',
+  },
+
+  '_agnes/v1/session.factChain': {
+    fileId: 'https://agnes.ai/schema/agnes-v1.json',
+    params: 'FactChainParams',
+    result: 'FactChainResult',
+  },
+  '_agnes/v1/doctor.run': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'DoctorParams',
+    result: 'DoctorResult',
+  },
+  '_agnes/v1/plugins.candidates.list': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'PackageListParams',
+    result: 'AuthoringCandidateList',
+  },
+  '_agnes/v1/plugins.candidates.show': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'AuthoringShowParams',
+    result: 'AuthoringCandidate',
+  },
+  '_agnes/v1/plugins.candidates.create': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'AuthoringCreateParams',
+    result: 'AuthoringCandidate',
+  },
+  '_agnes/v1/plugins.candidates.write': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'AuthoringWriteParams',
+    result: 'AuthoringCandidate',
+  },
+  '_agnes/v1/plugins.candidates.test': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'AuthoringTestParams',
+    result: 'AuthoringCandidate',
+  },
+  '_agnes/v1/plugins.candidates.submit': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'AuthoringSubmitParams',
+    result: 'AuthoringCandidate',
+  },
+  '_agnes/v1/plugins.candidates.approve': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'AuthoringApproveParams',
+    result: 'AuthoringCandidate',
+  },
+  '_agnes/v1/plugins.candidates.reject': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'AuthoringRejectParams',
+    result: 'AuthoringCandidate',
+  },
+
+  '_agnes/v1/packages.provenance': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'PackageProvenanceParams',
+    result: 'PackageProvenance',
+  },
+  '_agnes/v1/packages.sourcePolicy': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'PackageListParams',
+    result: 'PackageSourcePolicy',
+  },
+  '_agnes/v1/admin.mcp.oauth.save': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminMcpOAuthSave',
+    result: 'AdminEmpty',
+  },
+  '_agnes/v1/admin.bundles.get': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminEmpty',
+    result: 'AdminBundlesResult',
+  },
+  '_agnes/v1/admin.bundles.save': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminBundlesSave',
+    result: 'AdminBundlesResult',
+  },
+  '_agnes/v1/admin.composition.get': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminCompositionParams',
+    result: 'AdminCompositionResult',
+  },
+  '_agnes/v1/admin.search.get': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminEmpty',
+    result: 'AdminSearchResult',
+  },
+  '_agnes/v1/admin.search.save': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminSearchSave',
+    result: 'AdminSearchResult',
+  },
+  '_agnes/v1/admin.search.test': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminSearchTest',
+    result: 'AdminSearchResult',
+  },
+  '_agnes/v1/admin.observability': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminObservabilityParams',
+    result: 'AdminObservabilityResult',
+  },
+  '_agnes/v1/admin.memory': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminMemoryParams',
+    result: 'AdminMemoryResult',
+  },
+  '_agnes/v1/admin.context': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminContextParams',
+    result: 'AdminContextResult',
+  },
+  '_agnes/v1/admin.history.search': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminHistoryParams',
+    result: 'AdminHistoryResult',
+  },
+  '_agnes/v1/admin.plan': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminPlanParams',
+    result: 'AdminPlanResult',
+  },
+  '_agnes/v1/sessionSelection.runtime': {
+    fileId: RUNTIME_ADMIN_ID,
+    params: 'RuntimeAdminEmpty',
+    result: 'RuntimeAdminSnapshot',
+  },
+  '_agnes/v1/sessionSelection.reloadLocal': {
+    fileId: RUNTIME_ADMIN_ID,
+    params: 'RuntimeAdminEmpty',
+    result: 'RuntimeAdminEmpty',
+  },
+  '_agnes/v1/session.runtime': {
+    fileId: SESSION_RUNTIME_ID,
+    params: 'SessionRuntimeParams',
+    result: 'SessionRuntimeDescriptor',
+  },
+  '_agnes/v1/session.integrity': {
+    fileId: SESSION_INTEGRITY_ID,
+    params: 'SessionIntegrityParams',
+    result: 'SessionIntegrityStatus',
+  },
+  '_agnes/v1/session.tools': {
+    fileId: SESSION_TOOLS_ID,
+    params: 'SessionToolsParams',
+    result: 'SessionToolsResult',
+  },
+  '_agnes/v1/session.jobs.read': {
+    fileId: AGNES_ID,
+    params: 'SessionJobsReadParams',
+    result: 'SessionJobsReadResult',
+  },
+  '_agnes/v1/session.jobs.control': {
+    fileId: AGNES_ID,
+    params: 'SessionJobsControlParams',
+    result: 'SessionJobsControlResult',
+  },
+  '_agnes/v1/session.undo.preview': {
+    fileId: AGNES_ID,
+    params: 'SessionUndoPreviewParams',
+    result: 'SessionUndoPreviewResult',
+  },
+  '_agnes/v1/session.undo': {
+    fileId: AGNES_ID,
+    params: 'SessionUndoParams',
+    result: 'SessionUndoResult',
+  },
+  '_agnes/v1/session.workspace.changes': {
+    fileId: AGNES_ID,
+    params: 'SessionWorkspaceChangesParams',
+    result: 'SessionWorkspaceChangesResult',
+  },
+  '_agnes/v1/session.workspace.list': {
+    fileId: AGNES_ID,
+    params: 'SessionWorkspaceListParams',
+    result: 'SessionWorkspaceListResult',
+  },
+  '_agnes/v1/session.workspace.read': {
+    fileId: AGNES_ID,
+    params: 'SessionWorkspaceReadParams',
+    result: 'SessionWorkspaceReadResult',
+  },
+  '_agnes/v1/sessionSelection.loops': {
+    fileId: AGNES_ID,
+    params: 'ConfigEmptyParams',
+    result: 'SessionLoopCatalogResult',
+  },
+  '_agnes/v1/sessionSelection.modelAdapters': {
+    fileId: AGNES_ID,
+    params: 'ConfigEmptyParams',
+    result: 'SessionAdapterCatalogResult',
+  },
+  '_agnes/v1/sessionSelection.defaults.get': {
+    fileId: AGNES_ID,
+    params: 'ConfigEmptyParams',
+    result: 'SessionDefaultsState',
+  },
+  '_agnes/v1/sessionSelection.defaults.save': {
+    fileId: AGNES_ID,
+    params: 'SessionDefaultsState',
+    result: 'SessionDefaultsState',
+  },
   '_agnes/v1/resources.list': {
     fileId: 'https://agnes.ai/schema/resource-control.json',
     params: 'ResourceListParams',
@@ -6088,6 +8884,21 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'PackageCatalogGetParams',
     result: 'PackageCatalogDescriptor',
   },
+  '_agnes/v1/plugins.publicationStatus': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'PackageListParams',
+    result: 'PluginPublicationStatusResult',
+  },
+  '_agnes/v1/sessions.migrate': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'SessionGenerationMigrationParams',
+    result: 'SessionGenerationMigrationResult',
+  },
+  '_agnes/v1/plugins.generations': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'PackageListParams',
+    result: 'PluginGenerationStatus',
+  },
   '_agnes/v1/packages.list': {
     fileId: 'https://agnes.ai/schema/package-admin.json',
     params: 'PackageListParams',
@@ -6105,7 +8916,7 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
   },
   '_agnes/v1/clientModules.list': {
     fileId: 'https://agnes.ai/schema/package-admin.json',
-    params: 'PackageListParams',
+    params: 'ClientModuleListParams',
     result: 'ClientModuleListResult',
   },
   '_agnes/v1/clientModules.read': {
@@ -6224,6 +9035,24 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'ExtensionCallParams',
     result: 'ExtensionCallResult',
   },
+  '_agnes/v1/autoReview.get': { fileId: AGNES_ID, params: 'ConfigEmptyParams', result: 'AutoReviewConfig' },
+  '_agnes/v1/autoReview.save': { fileId: AGNES_ID, params: 'AutoReviewConfig', result: 'AutoReviewConfig' },
+  '_agnes/v1/systemPrompt.get': {
+    fileId: AGNES_ID,
+    params: 'SystemPromptGetParams',
+    result: 'SystemPromptSnapshot',
+  },
+  '_agnes/v1/systemPrompt.save': {
+    fileId: AGNES_ID,
+    params: 'SystemPromptSaveParams',
+    result: 'SystemPromptSnapshot',
+  },
+  '_agnes/v1/trace.clear': {
+    fileId: AGNES_ID,
+    params: 'ModelRequestClearParams',
+    result: 'ModelRequestClearResult',
+  },
+  '_agnes/v1/trace.request': { fileId: AGNES_ID, params: 'ModelRequestParams', result: 'ModelRequestResult' },
   '_agnes/v1/config.get': { fileId: AGNES_ID, params: 'ConfigEmptyParams', result: 'ConfigSnapshot' },
   '_agnes/v1/config.oauth': { fileId: AGNES_ID, params: 'ConfigOAuthInput', result: 'ConfigOAuthResult' },
   '_agnes/v1/config.providers': {
@@ -6233,11 +9062,27 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
   },
   '_agnes/v1/config.test': { fileId: AGNES_ID, params: 'ConfigTestInput', result: 'ConfigTestResult' },
   '_agnes/v1/config.account': { fileId: AGNES_ID, params: 'ConfigAccountInput', result: 'ConfigSnapshot' },
+  '_agnes/v1/config.childEngines.get': {
+    fileId: RUNTIME_ADMIN_ID,
+    params: 'RuntimeAdminEmpty',
+    result: 'ChildEnginesState',
+  },
+  '_agnes/v1/config.childEngines.save': {
+    fileId: RUNTIME_ADMIN_ID,
+    params: 'ChildEnginesSaveParams',
+    result: 'ChildEnginesState',
+  },
+  '_agnes/v1/config.modelSlots.get': {
+    fileId: RUNTIME_ADMIN_ID,
+    params: 'RuntimeAdminEmpty',
+    result: 'ModelSlotsSnapshot',
+  },
+  '_agnes/v1/config.modelSlots.save': {
+    fileId: RUNTIME_ADMIN_ID,
+    params: 'ModelSlotsSnapshot',
+    result: 'ModelSlotsSnapshot',
+  },
   '_agnes/v1/config.save': { fileId: AGNES_ID, params: 'ConfigSaveInput', result: 'ConfigSnapshot' },
-  '_agnes/v1/batch.start': { fileId: AGNES_ID, params: 'BatchStartParams', result: 'BatchStatus' },
-  '_agnes/v1/batch.status': { fileId: AGNES_ID, params: 'BatchIdParams', result: 'BatchStatus' },
-  '_agnes/v1/batch.cancel': { fileId: AGNES_ID, params: 'BatchIdParams', result: 'BatchStatus' },
-  '_agnes/v1/batch.list': { fileId: AGNES_ID, params: 'Empty', result: 'BatchList' },
   '_agnes/v1/computerUse.status': {
     fileId: AGNES_ID,
     params: 'Empty',
@@ -6283,6 +9128,16 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'ApprovalGrantRevokeParams',
     result: 'ApprovalGrantRecord',
   },
+  '_agnes/v1/approvalGrants.forSession': {
+    fileId: AGNES_ID,
+    params: 'ApprovalGrantSessionParams',
+    result: 'ApprovalGrantSessionResult',
+  },
+  '_agnes/v1/approvalGrants.revokeForSession': {
+    fileId: AGNES_ID,
+    params: 'ApprovalGrantSessionRevokeParams',
+    result: 'SessionApprovalGrant',
+  },
 
   '_agnes/v1/session.budget': { fileId: AGNES_ID, params: 'SessionIdParams', result: 'SessionBudgetResult' },
   '_agnes/v1/session.projectUI': { fileId: AGNES_ID, params: 'SessionProjectUIParams', result: 'UITimeline' },
@@ -6290,6 +9145,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     fileId: AGNES_ID,
     params: 'SessionProjectUIPatchParams',
     result: 'UIProjectionUpdate',
+  },
+  '_agnes/v1/session.view': {
+    fileId: AGNES_ID,
+    params: 'SessionViewParams',
+    result: 'SessionViewResult',
   },
   '_agnes/v1/session.projectUIOpening': {
     fileId: AGNES_ID,
@@ -6306,20 +9166,10 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'SessionReadToolDetailParams',
     result: 'SessionReadToolDetailResult',
   },
-  '_agnes/v1/session.exportRaw': {
+  '_agnes/v1/session.deliverables': {
     fileId: AGNES_ID,
-    params: 'SessionExportRawParams',
-    result: 'SessionExportRawResult',
-  },
-  '_agnes/v1/session.attachmentRead': {
-    fileId: AGNES_ID,
-    params: 'SessionAttachmentReadParams',
-    result: 'SessionAttachmentReadResult',
-  },
-  '_agnes/v1/attachment.upload': {
-    fileId: AGNES_ID,
-    params: 'AttachmentUploadParams',
-    result: 'AttachmentUploadResult',
+    params: 'SessionDeliverablesParams',
+    result: 'SessionDeliverablesResult',
   },
   initialize: { fileId: ACP_ID, params: 'InitializeRequest', result: 'InitializeResponse' },
   'session/new': { fileId: ACP_ID, params: 'NewSessionRequest', result: 'NewSessionResponse' },
@@ -6336,31 +9186,43 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'SessionAttachParams',
     result: 'SessionAttachResult',
   },
-  '_agnes/v1/session.steer': { fileId: AGNES_ID, params: 'SessionSteerParams', result: 'SessionSteerResult' },
-  '_agnes/v1/session.followUp': {
-    fileId: AGNES_ID,
-    params: 'SessionSteerParams',
-    result: 'SessionSteerResult',
-  },
   '_agnes/v1/apis.list': { fileId: AGNES_ID, params: 'ApisListParams', result: 'ApisListResult' },
   '_agnes/v1/submit': { fileId: AGNES_ID, params: 'SubmitParams', result: 'Ack' },
   '_agnes/v1/submit.ack': { fileId: AGNES_ID, params: 'CommandAckParams', result: 'Empty' },
   authenticate: { fileId: ACP_ID, params: 'AuthenticateRequest', result: 'AuthenticateResponse' },
   'session/load': { fileId: ACP_ID, params: 'LoadSessionRequest', result: 'LoadSessionResponse' },
+  '_agnes/v1/session.open': { fileId: AGNES_ID, params: 'SessionOpenParams', result: 'Empty' },
   'session/set_mode': { fileId: ACP_ID, params: 'SetSessionModeRequest', result: 'SetSessionModeResponse' },
   '_agnes/v1/session.detach': { fileId: AGNES_ID, params: 'SessionIdParams', result: 'Empty' },
-  '_agnes/v1/session.verifyHistory': { fileId: AGNES_ID, params: 'SessionIdParams', result: 'Empty' },
   '_agnes/v1/auth.claim': { fileId: AGNES_ID, params: 'AuthClaimParams', result: 'AuthClaimResult' },
   '_agnes/v1/session.event': { fileId: AGNES_ID, params: 'SessionEventParams' },
-  '_agnes/v1/session.preview': { fileId: AGNES_ID, params: 'SessionPreviewParams' },
   '_agnes/v1/session.loading': { fileId: AGNES_ID, params: 'SessionLoadingParams' },
-  '_agnes/v1/session.storedOpening': {
-    fileId: AGNES_ID,
-    params: 'SessionStoredOpeningParams',
-    result: 'SessionStoredOpeningResult',
-  },
+  '_agnes/v1/session.loadingCancel': { fileId: AGNES_ID, params: 'SessionLoadingCancelParams' },
+  '_agnes/v1/session.preview': { fileId: AGNES_ID, params: 'SessionPreviewParams' },
   '_agnes/v1/daemon.notice': { fileId: AGNES_ID, params: 'DaemonNotice' },
   '_agnes/v1/session.fork': { fileId: AGNES_ID, params: 'SessionForkParams', result: 'SessionIdParams' },
+  '_agnes/v1/session.btw': { fileId: AGNES_ID, params: 'SessionBtwParams', result: 'SessionBtwResult' },
+  '_agnes/v1/session.voice.transcribe': {
+    fileId: AGNES_ID,
+    params: 'SessionVoiceTranscribeParams',
+    result: 'SessionVoiceTranscribeResult',
+  },
+  '_agnes/v1/session.voice.speak': {
+    fileId: AGNES_ID,
+    params: 'SessionVoiceSpeakParams',
+    result: 'SessionVoiceSpeakResult',
+  },
+  '_agnes/v1/voice.status': { fileId: AGNES_ID, params: 'ConfigEmptyParams', result: 'VoiceStatusResult' },
+  '_agnes/v1/voice.settings.get': {
+    fileId: AGNES_ID,
+    params: 'ConfigEmptyParams',
+    result: 'VoiceSettingsSnapshot',
+  },
+  '_agnes/v1/voice.settings.save': {
+    fileId: AGNES_ID,
+    params: 'VoiceSettingsSaveParams',
+    result: 'VoiceSettingsSnapshot',
+  },
   '_agnes/v1/session.rename': {
     fileId: 'https://agnes.ai/schema/agnes-v1.json',
     params: 'SessionRenameParams',
@@ -6370,6 +9232,21 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     fileId: 'https://agnes.ai/schema/agnes-v1.json',
     params: 'SessionArchiveParams',
     result: 'SessionPreferences',
+  },
+  '_agnes/v1/session.pin': {
+    fileId: AGNES_ID,
+    params: 'SessionPinParams',
+    result: 'SessionPreferences',
+  },
+  '_agnes/v1/session.bookmarks.set': {
+    fileId: AGNES_ID,
+    params: 'SessionBookmarksSetParams',
+    result: 'SessionPreferences',
+  },
+  '_agnes/v1/diagnostics.export': {
+    fileId: AGNES_ID,
+    params: 'DiagnosticsExportParams',
+    result: 'DiagnosticsExportResult',
   },
   '_agnes/v1/diagnostics.collect': {
     fileId: AGNES_ID,
@@ -6382,15 +9259,45 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     result: 'DiagnosticsEventsResult',
   },
   '_agnes/v1/session.list': { fileId: AGNES_ID, params: 'SessionListParams', result: 'PageSessionMeta' },
+  '_agnes/v1/session.activity': {
+    fileId: AGNES_ID,
+    params: 'SessionActivityParams',
+    result: 'SessionActivityResult',
+  },
+  '_agnes/v1/session.groups': {
+    fileId: AGNES_ID,
+    params: 'SessionGroupsParams',
+    result: 'SessionGroupsResult',
+  },
   '_agnes/v1/workspace.list': {
     fileId: AGNES_ID,
     params: 'WorkspaceListParams',
     result: 'WorkspaceListResult',
   },
+  '_agnes/v1/workspace.reveal': {
+    fileId: AGNES_ID,
+    params: 'WorkspaceRevealParams',
+    result: 'WorkspaceRevealResult',
+  },
+  '_agnes/v1/workspace.remove': {
+    fileId: AGNES_ID,
+    params: 'WorkspaceRemoveParams',
+    result: 'WorkspaceRemoveResult',
+  },
   '_agnes/v1/workspace.add': {
     fileId: AGNES_ID,
     params: 'WorkspaceAddParams',
     result: 'WorkspaceAddResult',
+  },
+  '_agnes/v1/pluginRuntime.status': {
+    fileId: AGNES_ID,
+    params: 'PluginRuntimeStatusParams',
+    result: 'PluginRuntimeStatusResult',
+  },
+  '_agnes/v1/pluginStreams.endpoint': {
+    fileId: AGNES_ID,
+    params: 'PluginStreamsEndpointParams',
+    result: 'PluginStreamsEndpointResult',
   },
   '_agnes/v1/surfaces.mounts': {
     fileId: AGNES_ID,
@@ -6412,7 +9319,18 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'SessionSetYoloParams',
     result: 'EffectiveFromResult',
   },
-  '_agnes/v1/approval.decide': { fileId: AGNES_ID, params: 'ApprovalDecideParams', result: 'SeqResult' },
+  '_agnes/v1/session.setToolFilter': {
+    fileId: AGNES_ID,
+    params: 'SessionSetToolFilterParams',
+    result: 'SessionSetToolFilterResult',
+  },
+  '_agnes/v1/approval.withdraw': { fileId: AGNES_ID, params: 'PermissionWithdrawParams' },
+  '_agnes/v1/approval.decide': {
+    fileId: AGNES_ID,
+    params: 'ApprovalDecideParams',
+    result: 'DecisionCommandReceipt',
+  },
+  '_agnes/v1/decision.list': { fileId: AGNES_ID, params: 'SessionIdParams', result: 'DecisionListResult' },
   '_agnes/v1/participant.join': { fileId: AGNES_ID, params: 'ParticipantParams', result: 'SeqResult' },
   '_agnes/v1/participant.leave': { fileId: AGNES_ID, params: 'ParticipantParams', result: 'SeqResult' },
   '_agnes/v1/participant.list': {
@@ -6423,6 +9341,36 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
   '_agnes/v1/jobs.enqueue': { fileId: AGNES_ID, params: 'JobSpec', result: 'JobIdResult' },
   '_agnes/v1/jobs.poll': { fileId: AGNES_ID, params: 'JobIdParams', result: 'JobStatus' },
   '_agnes/v1/jobs.cancel': { fileId: AGNES_ID, params: 'JobIdParams', result: 'Empty' },
+  '_agnes/v1/schedules.history': {
+    fileId: SCHEDULES_ID,
+    params: 'SchedulesHistoryParams',
+    result: 'SchedulesHistoryResult',
+  },
+  '_agnes/v1/schedules.receipt': {
+    fileId: SCHEDULES_ID,
+    params: 'SchedulesReceiptParams',
+    result: 'SchedulesReceiptResult',
+  },
+  '_agnes/v1/schedules.list': {
+    fileId: SCHEDULES_ID,
+    params: 'SchedulesListParams',
+    result: 'SchedulesListResult',
+  },
+  '_agnes/v1/schedules.upsert': {
+    fileId: SCHEDULES_ID,
+    params: 'SchedulesUpsertParams',
+    result: 'SchedulesUpsertResult',
+  },
+  '_agnes/v1/schedules.archive': {
+    fileId: SCHEDULES_ID,
+    params: 'SchedulesArchiveParams',
+    result: 'SchedulesArchiveResult',
+  },
+  '_agnes/v1/schedules.control': {
+    fileId: SCHEDULES_ID,
+    params: 'SchedulesControlParams',
+    result: 'SchedulesControlResult',
+  },
   '_agnes/v1/artifact.job.status': { fileId: AGNES_ID, params: 'JobIdParams', result: 'ArtifactJob' },
   '_agnes/v1/artifact.read': {
     fileId: AGNES_ID,
@@ -6438,6 +9386,514 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/agents.resolve': {
+    valid: { ref: 'acme/kit#work' },
+    invalid: [{}, { ref: 1 }, { ref: 'x', actor: 'forged' }],
+    note: 'Host resolves explicit refs',
+  },
+  '_agnes/v1/applications.get': {
+    valid: { profile: 'local-dev' },
+    invalid: [{}, { profile: 'local-dev', actor: 'forged' }],
+    note: 'Application presentation configuration',
+  },
+  '_agnes/v1/applications.preview': {
+    valid: { profile: 'local-dev', packageId: 'acme' },
+    invalid: [{}, { profile: 'local-dev', actor: 'forged' }],
+    note: 'Application presentation configuration',
+  },
+  '_agnes/v1/applications.adopt': {
+    valid: {
+      profile: 'local-dev',
+      packageId: 'acme',
+      expectedRevision: 0,
+      consentDigest: 'a'.repeat(64),
+      clientId: 'test',
+      commandId: 'adopt',
+    },
+    invalid: [{}, { profile: 'local-dev', actor: 'forged' }],
+    note: 'Application presentation configuration',
+  },
+  '_agnes/v1/applications.clear': {
+    valid: { profile: 'local-dev', expectedRevision: 0, clientId: 'test', commandId: 'clear' },
+    invalid: [{}, { profile: 'local-dev', actor: 'forged' }],
+    note: 'Application presentation configuration',
+  },
+
+  '_agnes/v1/extension.wakes.enqueue': ServiceSamples.BoundWakeEnqueueParams as Sample,
+  '_agnes/v1/extension.wakes.read': ServiceSamples.BoundWakeReadParams as Sample,
+  '_agnes/v1/extension.callScoped': {
+    valid: { extension: 'acme/dashboard', service: 'report.query', input: {} },
+    invalid: [{ actor: 'forged' }],
+    note: 'Profile authority boundary',
+  },
+  '_agnes/v1/extension.readOperation': {
+    valid: { extension: 'acme/dashboard', service: 'report.query', operationId: 'one' },
+    invalid: [{ actor: 'forged' }],
+    note: 'Profile authority boundary',
+  },
+  '_agnes/v1/profile.decisions.list': {
+    valid: {},
+    invalid: [{ actor: 'forged' }],
+    note: 'Profile authority boundary',
+  },
+  '_agnes/v1/profile.decisions.answer': {
+    valid: {
+      handle: { id: 'one', sessionId: null, profileId: 'default' },
+      revision: 1,
+      commandId: 'answer',
+      response: { option: 'allowed-once', value: null },
+    },
+    invalid: [{ actor: 'forged' }],
+    note: 'Profile authority boundary',
+  },
+
+  '_agnes/v1/admin.credentials.delete': {
+    note: 'Write-only generic credential contract',
+    valid: { id: 'secret://generic/11111111-1111-4111-8111-111111111111', force: true, confirm: true },
+    invalid: [{ id: 'secret://generic/11111111-1111-4111-8111-111111111111', actor: 'forged' }],
+  },
+  '_agnes/v1/admin.credentials.rename': {
+    note: 'Write-only generic credential contract',
+    valid: { id: 'secret://generic/11111111-1111-4111-8111-111111111111', label: 'New label' },
+    invalid: [{ id: 'secret://generic/11111111-1111-4111-8111-111111111111', label: '' }],
+  },
+  '_agnes/v1/admin.credentials.set': {
+    note: 'Write-only generic credential contract',
+    valid: { id: 'secret://generic/11111111-1111-4111-8111-111111111111', value: 'replacement' },
+    invalid: [
+      { id: 'secret://generic/11111111-1111-4111-8111-111111111111' },
+      { id: '../../bad', value: 'replacement' },
+    ],
+  },
+  '_agnes/v1/admin.credentials.create': {
+    note: 'Write-only generic credential contract',
+    valid: { label: 'Work key', value: 'canary-value' },
+    invalid: [{ label: 'Work key' }, { label: 'Work key', value: 'canary-value', actor: 'forged' }],
+  },
+  '_agnes/v1/admin.credentials.list': {
+    note: 'Write-only generic credential contract',
+    valid: {},
+    invalid: [{ actor: 'forged' }],
+  },
+  '_agnes/v1/ui.action': {
+    note: 'Durable UI command with bounded input and unique selection',
+    valid: {
+      sessionId: 's',
+      surfaceId: 'view',
+      revision: 1,
+      actionId: 'submit',
+      commandId: 'c',
+      input: {},
+      selection: {},
+      sources: { rows: 'a'.repeat(64) },
+    },
+    invalid: [
+      {
+        sessionId: 's',
+        surfaceId: 'view',
+        revision: 0,
+        actionId: 'submit',
+        commandId: 'c',
+        input: {},
+        selection: {},
+      },
+      {
+        sessionId: 's',
+        surfaceId: 'view',
+        revision: 1,
+        actionId: 'submit',
+        commandId: 'c',
+        input: {},
+        selection: { rows: ['a', 'a'] },
+      },
+      { sessionId: 's', surfaceId: 'view', revision: 1, actionId: 'submit', commandId: 'c', input: {} },
+      {
+        sessionId: 's',
+        surfaceId: 'view',
+        revision: 1,
+        actionId: 'submit',
+        commandId: 'c',
+        input: {},
+        selection: {},
+        sources: { rows: 'zz' },
+      },
+    ],
+  },
+  '_agnes/v1/ui.read': {
+    note: 'Filtered bounded snapshot page',
+    valid: { sessionId: 's', limit: 16 },
+    invalid: [
+      { sessionId: 's', limit: 17 },
+      { sessionId: 's', cursor: '' },
+      { sessionId: 's', extra: true },
+    ],
+  },
+  '_agnes/v1/ui.refresh': {
+    note: 'Authenticated refresh of one open surface',
+    valid: { sessionId: 's', surfaceId: 'view' },
+    invalid: [
+      { sessionId: 's' },
+      { sessionId: 's', surfaceId: '' },
+      { sessionId: 's', surfaceId: 'view', extra: true },
+    ],
+  },
+  '_agnes/v1/admin.feedback': {
+    valid: { action: 'list' },
+    invalid: [{ action: 'send' }, { action: 'put', rating: 'bad' }],
+    note: 'Feedback administration uses explicit supported actions',
+  },
+  '_agnes/v1/session.control': {
+    valid: { sessionId: 'owned', action: 'pause', commandId: 'c' },
+    invalid: [
+      { sessionId: 'owned', action: 'stop', commandId: 'c' },
+      { sessionId: 'owned', action: 'pause' },
+    ],
+    note: 'explicit durable human control',
+  },
+  '_agnes/v1/session.controls': {
+    valid: { sessionId: 'owned', afterSeq: 0 },
+    invalid: [{ sessionId: 1 }, { sessionId: 'owned', afterSeq: -1 }],
+    note: 'pinned session capability and pause state',
+  },
+  '_agnes/v1/admin.triggers': {
+    note: 'Private webhook administration validates action and secret references.',
+    valid: { action: 'list' },
+    invalid: [{ action: 'unknown' }, { action: 'upsert', rule: { secretRef: 'plain-text-secret' } }],
+  },
+  '_agnes/v1/session.fileUpload': AGNES_SAMPLES.FileUploadParams as Sample,
+  '_agnes/v1/session.references.search': {
+    note: 'Reference locators and bounded search results',
+    valid: { sessionId: 'owned', query: 'file a' },
+    invalid: [{ sessionId: 'owned' }, { sessionId: 'owned', query: 'x'.repeat(257) }],
+  },
+  '_agnes/v1/plugins.config.get': {
+    note: 'Plugin config read contract',
+    valid: { profile: 'default', id: '@acme/plugin' },
+    invalid: [{}, { profile: 'default' }],
+  },
+  '_agnes/v1/plugins.config.validate': {
+    note: 'Plugin config validation contract',
+    valid: { profile: 'default', id: '@acme/plugin', rowId: 'ext:acme/plugin', value: {} },
+    invalid: [{}, { profile: 'default' }],
+  },
+  '_agnes/v1/plugins.config.save': {
+    note: 'Plugin config CAS contract',
+    valid: {
+      profile: 'default',
+      id: '@acme/plugin',
+      rowId: 'ext:acme/plugin',
+      value: {},
+      expectedRevision: 'sha256-revision',
+      clientId: 'web',
+      commandId: 'save-1',
+    },
+    invalid: [{}, { profile: 'default' }],
+  },
+
+  '_agnes/v1/session.factChain': {
+    valid: { sessionId: 'owned', laneId: 'main', anchor: { kind: 'tool', toolUseId: 'tool-1' } },
+    invalid: [
+      { sessionId: 'owned', anchor: { kind: 'tool', toolUseId: 'tool-1' } },
+      {
+        sessionId: 'owned',
+        laneId: 'main',
+        anchor: { kind: 'artifact', seq: 0, ref: { sha256: 'a'.repeat(64), size: 0, mime: 'text/plain' } },
+      },
+      {
+        sessionId: 'owned',
+        laneId: 'main',
+        anchor: { kind: 'tool', toolUseId: 'tool-1' },
+        compareSessionId: 'foreign',
+      },
+    ],
+    note: 'owner-checked exact ledger anchor, no arbitrary cross-session walk',
+  },
+  '_agnes/v1/doctor.run': {
+    valid: {},
+    invalid: [{ probeAccounts: 'yes' }, { home: '/untrusted' }],
+    note: 'explicit probe only; caller cannot choose home',
+  },
+  '_agnes/v1/plugins.candidates.list': {
+    valid: { profile: 'local-dev' },
+    invalid: [{ profile: '../escape' }, { ...{ profile: 'local-dev' }, unknown: true }],
+    note: 'candidate hash and authenticated effect contract',
+  },
+  '_agnes/v1/plugins.candidates.show': {
+    valid: { profile: 'local-dev', candidateId: 'candidate-11111111111111111111111111111111' },
+    invalid: [
+      { profile: '../escape' },
+      {
+        ...{ profile: 'local-dev', candidateId: 'candidate-11111111111111111111111111111111' },
+        unknown: true,
+      },
+    ],
+    note: 'candidate hash and authenticated effect contract',
+  },
+  '_agnes/v1/plugins.candidates.create': {
+    valid: {
+      profile: 'local-dev',
+      clientId: 'client',
+      commandId: 'command',
+      files: [{ path: 'package.json', content: '{}' }],
+    },
+    invalid: [
+      { profile: '../escape' },
+      {
+        ...{
+          profile: 'local-dev',
+          candidateId: 'candidate-11111111111111111111111111111111',
+          clientId: 'client',
+          commandId: 'command',
+          files: [{ path: 'package.json', content: '{}' }],
+        },
+        unknown: true,
+      },
+    ],
+    note: 'candidate hash and authenticated effect contract',
+  },
+  '_agnes/v1/plugins.candidates.write': {
+    valid: {
+      profile: 'local-dev',
+      candidateId: 'candidate-11111111111111111111111111111111',
+      clientId: 'client',
+      commandId: 'command',
+      files: [{ path: 'package.json', content: '{}' }],
+      expectedHash: 'sha256-1111111111111111111111111111111111111111111111111111111111111111',
+    },
+    invalid: [
+      { profile: '../escape' },
+      {
+        ...{
+          profile: 'local-dev',
+          candidateId: 'candidate-11111111111111111111111111111111',
+          clientId: 'client',
+          commandId: 'command',
+          files: [{ path: 'package.json', content: '{}' }],
+          expectedHash: 'sha256-1111111111111111111111111111111111111111111111111111111111111111',
+        },
+        unknown: true,
+      },
+    ],
+    note: 'candidate hash and authenticated effect contract',
+  },
+  '_agnes/v1/plugins.candidates.test': {
+    valid: {
+      profile: 'local-dev',
+      candidateId: 'candidate-11111111111111111111111111111111',
+      clientId: 'client',
+      commandId: 'command',
+      expectedHash: 'sha256-1111111111111111111111111111111111111111111111111111111111111111',
+    },
+    invalid: [
+      { profile: '../escape' },
+      {
+        ...{
+          profile: 'local-dev',
+          candidateId: 'candidate-11111111111111111111111111111111',
+          clientId: 'client',
+          commandId: 'command',
+          expectedHash: 'sha256-1111111111111111111111111111111111111111111111111111111111111111',
+        },
+        unknown: true,
+      },
+    ],
+    note: 'candidate hash and authenticated effect contract',
+  },
+  '_agnes/v1/plugins.candidates.submit': {
+    valid: {
+      profile: 'local-dev',
+      candidateId: 'candidate-11111111111111111111111111111111',
+      clientId: 'client',
+      commandId: 'command',
+      expectedHash: 'sha256-1111111111111111111111111111111111111111111111111111111111111111',
+    },
+    invalid: [
+      { profile: '../escape' },
+      {
+        ...{
+          profile: 'local-dev',
+          candidateId: 'candidate-11111111111111111111111111111111',
+          clientId: 'client',
+          commandId: 'command',
+          expectedHash: 'sha256-1111111111111111111111111111111111111111111111111111111111111111',
+        },
+        unknown: true,
+      },
+    ],
+    note: 'candidate hash and authenticated effect contract',
+  },
+  '_agnes/v1/plugins.candidates.approve': {
+    valid: {
+      profile: 'local-dev',
+      candidateId: 'candidate-11111111111111111111111111111111',
+      clientId: 'client',
+      commandId: 'command',
+      expectedHash: 'sha256-1111111111111111111111111111111111111111111111111111111111111111',
+      reviewHash: 'sha256-2222222222222222222222222222222222222222222222222222222222222222',
+    },
+    invalid: [
+      { profile: '../escape' },
+      {
+        ...{
+          profile: 'local-dev',
+          candidateId: 'candidate-11111111111111111111111111111111',
+          clientId: 'client',
+          commandId: 'command',
+          expectedHash: 'sha256-1111111111111111111111111111111111111111111111111111111111111111',
+          reviewHash: 'sha256-2222222222222222222222222222222222222222222222222222222222222222',
+        },
+        unknown: true,
+      },
+    ],
+    note: 'candidate hash and authenticated effect contract',
+  },
+  '_agnes/v1/plugins.candidates.reject': {
+    valid: {
+      profile: 'local-dev',
+      candidateId: 'candidate-11111111111111111111111111111111',
+      clientId: 'client',
+      commandId: 'command',
+      expectedHash: 'sha256-1111111111111111111111111111111111111111111111111111111111111111',
+      reviewHash: 'sha256-2222222222222222222222222222222222222222222222222222222222222222',
+    },
+    invalid: [
+      { profile: '../escape' },
+      {
+        ...{
+          profile: 'local-dev',
+          candidateId: 'candidate-11111111111111111111111111111111',
+          clientId: 'client',
+          commandId: 'command',
+          expectedHash: 'sha256-1111111111111111111111111111111111111111111111111111111111111111',
+          reviewHash: 'sha256-2222222222222222222222222222222222222222222222222222222222222222',
+        },
+        unknown: true,
+      },
+    ],
+    note: 'candidate hash and authenticated effect contract',
+  },
+
+  '_agnes/v1/packages.provenance': {
+    valid: { profile: 'local-dev', id: 'fixture' },
+    invalid: [{ profile: 'local-dev' }],
+    note: 'package identity required',
+  },
+  '_agnes/v1/packages.sourcePolicy': {
+    valid: { profile: 'local-dev' },
+    invalid: [{ profile: '../escape' }],
+    note: 'profile boundary',
+  },
+  '_agnes/v1/admin.mcp.oauth.save': {
+    valid: {
+      serverId: 'github',
+      credential: {
+        provider: 'fixture',
+        accessToken: 'fixture-token',
+        refreshToken: 'synthetic-refresh',
+        expiresAt: 0,
+        scope: [],
+        grantId: 'fixture-grant',
+      },
+    },
+    invalid: [
+      {
+        serverId: '../other',
+        credential: {
+          provider: 'fixture',
+          accessToken: 'fixture-token',
+          refreshToken: 'synthetic-refresh',
+          expiresAt: 0,
+          scope: [],
+          grantId: 'fixture-grant',
+        },
+      },
+    ],
+    note: 'daemon-only OAuth credential persistence',
+  },
+  '_agnes/v1/admin.bundles.get': { valid: {}, invalid: [{ extra: 1 }], note: 'App Server boundary shape' },
+  '_agnes/v1/admin.bundles.save': {
+    valid: { revision: 0, bundles: [] },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/admin.composition.get': {
+    valid: {},
+    invalid: [{ preset: 'INVALID' }],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/admin.search.get': { valid: {}, invalid: [{ extra: 1 }], note: 'App Server boundary shape' },
+  '_agnes/v1/admin.search.save': {
+    valid: { provider: { id: 'p' } },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/admin.search.test': {
+    valid: { provider: 'p', query: 'q' },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/admin.observability': {
+    valid: {},
+    invalid: [null, { settings: { enabled: false, headers: { authorization: 'plaintext' } } }],
+    note: 'Exporter admin params',
+  },
+  '_agnes/v1/admin.memory': {
+    valid: { cwd: '/tmp' },
+    invalid: [null, { cwd: '/tmp', settings: { mode: 'invalid' } }],
+    note: 'File memory parameters',
+  },
+  '_agnes/v1/admin.context': {
+    valid: {},
+    invalid: [{ config: { maxBytes: 60001 } }],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/admin.history.search': {
+    valid: { query: '', title: '', workspace: '' },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/admin.plan': {
+    valid: { cwd: '/tmp', line: '/plan on' },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/sessionSelection.runtime': {
+    valid: {},
+    invalid: [{ profile: 'other' }],
+    note: 'runtime catalog has no caller scope',
+  },
+  '_agnes/v1/sessionSelection.reloadLocal': {
+    valid: {},
+    invalid: [{ path: '/other' }],
+    note: 'rescan uses configured roots',
+  },
+  '_agnes/v1/session.revealWorkspace': AGNES_SAMPLES.SessionRevealWorkspaceParams as Sample,
+  '_agnes/v1/session.runtime': {
+    valid: { sessionId: 's' },
+    invalid: [{}, { sessionId: '' }, { sessionId: 's', extra: true }],
+    note: 'runtime descriptor parameters',
+  },
+  '_agnes/v1/session.integrity': {
+    valid: { sessionId: 's', verify: true },
+    invalid: [{}, { sessionId: '' }, { sessionId: 's', verify: 'yes' }, { sessionId: 's', extra: true }],
+    note: 'owner audit and status parameters',
+  },
+  '_agnes/v1/session.tools': {
+    valid: { sessionId: 's' },
+    invalid: [{}, { sessionId: '' }, { sessionId: 's', extra: true }],
+    note: 'session catalog parameters',
+  },
+  '_agnes/v1/session.jobs.read': AGNES_SAMPLES.SessionJobsReadParams as Sample,
+  '_agnes/v1/session.jobs.control': AGNES_SAMPLES.SessionJobsControlParams as Sample,
+  '_agnes/v1/session.undo.preview': AGNES_SAMPLES.SessionUndoPreviewParams as Sample,
+  '_agnes/v1/session.undo': AGNES_SAMPLES.SessionUndoParams as Sample,
+  '_agnes/v1/session.workspace.changes': AGNES_SAMPLES.SessionWorkspaceChangesParams as Sample,
+  '_agnes/v1/session.workspace.list': AGNES_SAMPLES.SessionWorkspaceListParams as Sample,
+  '_agnes/v1/session.workspace.read': AGNES_SAMPLES.SessionWorkspaceReadParams as Sample,
+  '_agnes/v1/sessionSelection.loops': AGNES_SAMPLES.ConfigEmptyParams as Sample,
+  '_agnes/v1/sessionSelection.modelAdapters': AGNES_SAMPLES.ConfigEmptyParams as Sample,
+  '_agnes/v1/sessionSelection.defaults.get': AGNES_SAMPLES.ConfigEmptyParams as Sample,
+  '_agnes/v1/sessionSelection.defaults.save': AGNES_SAMPLES.SessionDefaultsState as Sample,
   '_agnes/v1/resources.list': ResourceControlSamples.ResourceListParams,
   '_agnes/v1/resources.get': ResourceControlSamples.ResourceGetParams,
   '_agnes/v1/resources.desired.set': ResourceControlSamples.ResourceDesiredSetParams,
@@ -6463,10 +9919,13 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/mcp.servers.oauth.status.set': ResourceControlSamples.McpOAuthStatusSetParams,
   '_agnes/v1/packages.catalog.list': PackageAdminSamples.PackageCatalogListParams as Sample,
   '_agnes/v1/packages.catalog.get': PackageAdminSamples.PackageCatalogGetParams as Sample,
+  '_agnes/v1/plugins.publicationStatus': PackageAdminSamples.PackageListParams as Sample,
+  '_agnes/v1/sessions.migrate': PackageAdminSamples.SessionGenerationMigrationParams as Sample,
+  '_agnes/v1/plugins.generations': PackageAdminSamples.PackageListParams as Sample,
   '_agnes/v1/packages.list': PackageAdminSamples.PackageListParams as Sample,
   '_agnes/v1/skins.list': PackageAdminSamples.PackageListParams as Sample,
   '_agnes/v1/skins.read': PackageAdminSamples.SkinReadParams as Sample,
-  '_agnes/v1/clientModules.list': PackageAdminSamples.PackageListParams as Sample,
+  '_agnes/v1/clientModules.list': PackageAdminSamples.ClientModuleListParams as Sample,
   '_agnes/v1/clientModules.read': PackageAdminSamples.ClientModuleReadParams as Sample,
   '_agnes/v1/clientModules.callService': PackageAdminSamples.ClientModuleServiceCallParams as Sample,
   '_agnes/v1/clientModules.callEffect': PackageAdminSamples.ClientModuleEffectCallParams as Sample,
@@ -6491,6 +9950,36 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 
   '_agnes/v1/extension.ack': ServiceSamples.ExtensionAckParams as Sample,
   '_agnes/v1/extension.call': ServiceSamples.ExtensionCallParams as Sample,
+  '_agnes/v1/autoReview.get': {
+    note: 'Reading automatic review settings accepts an empty request',
+    valid: {},
+    invalid: [{ enabled: true }],
+  },
+  '_agnes/v1/autoReview.save': {
+    note: 'Saving automatic review settings enforces bounded risk and review limits',
+    valid: { enabled: true, modelSlot: 'fast' },
+    invalid: [{ maxReviews: -1 }, { maxRisk: 'high' }],
+  },
+  '_agnes/v1/systemPrompt.get': {
+    valid: {},
+    invalid: [{ sessionId: 1 }],
+    note: 'optional owned session preview',
+  },
+  '_agnes/v1/systemPrompt.save': {
+    valid: { config: { personaPrefix: 'Hello' } },
+    invalid: [{ config: { unknown: true } }, { config: { personaPrefix: 'x'.repeat(8193) } }],
+    note: 'bounded prompt configuration',
+  },
+  '_agnes/v1/trace.clear': {
+    valid: { sessionId: 'session', callId: '11111111-1111-4111-8111-111111111111' },
+    invalid: [{ sessionId: 'session' }, { sessionId: 'session', callId: '../secret' }],
+    note: 'explicit owned capture deletion',
+  },
+  '_agnes/v1/trace.request': {
+    valid: { sessionId: 'session', callId: '11111111-1111-4111-8111-111111111111' },
+    invalid: [{ sessionId: 'session', callId: '../secret' }],
+    note: 'owned request identifier',
+  },
   '_agnes/v1/config.get': AGNES_SAMPLES.ConfigEmptyParams as Sample,
   '_agnes/v1/config.oauth': {
     note: 'OAuth operation',
@@ -6504,11 +9993,71 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     valid: { accountId: 'work', action: 'enable', expectedRevision: 1 },
     invalid: [{ accountId: '../bad', action: 'enable', expectedRevision: 1 }],
   },
+  '_agnes/v1/config.childEngines.get': {
+    note: 'child engine reads have no caller scope',
+    valid: {},
+    invalid: [{ profile: 'other' }],
+  },
+  '_agnes/v1/config.childEngines.save': {
+    note: 'child engine saves reject secrets, bad protocols, and publication fields',
+    valid: {
+      revision: 0,
+      engines: {
+        codex: { enabled: false, command: 'codex', args: ['exec'], allow: [] },
+        claudeCode: { enabled: false, command: 'claude', args: [], allow: [] },
+        sdk: { enabled: false, protocol: 'sdk', command: '', args: [], allow: [] },
+      },
+    },
+    invalid: [
+      {
+        revision: 0,
+        engines: { codex: { enabled: false, command: 'codex', args: [], allow: [], env: { SECRET: 'x' } } },
+      },
+      {
+        revision: 0,
+        engines: {
+          codex: { enabled: false, command: 'codex', args: [], allow: [] },
+          claudeCode: { enabled: false, command: 'claude', args: [], allow: [] },
+          sdk: { enabled: false, protocol: 'hot', command: '', args: [], allow: [] },
+        },
+      },
+      { revision: -1, engines: {} },
+      { revision: 0 },
+      {
+        revision: 0,
+        effect: 'hot',
+        engines: {
+          codex: { enabled: false, command: 'codex', args: [], allow: [] },
+          claudeCode: { enabled: false, command: 'claude', args: [], allow: [] },
+          sdk: { enabled: false, protocol: 'sdk', command: '', args: [], allow: [] },
+        },
+      },
+      {
+        revision: 0,
+        engines: {
+          codex: { enabled: false, command: 'codex\n', args: [], allow: [] },
+          claudeCode: { enabled: false, command: 'claude', args: [], allow: [] },
+          sdk: { enabled: false, protocol: 'sdk', command: '', args: [], allow: [] },
+        },
+      },
+    ],
+  },
+  '_agnes/v1/config.modelSlots.get': {
+    note: 'model slot reads have no caller scope',
+    valid: {},
+    invalid: [{ profile: 'other' }],
+  },
+  '_agnes/v1/config.modelSlots.save': {
+    note: 'a save names a revision and only the fast and verifier slots',
+    valid: { revision: 1, slots: { fast: { route: 'local', model: 'small' }, verifier: null } },
+    invalid: [
+      { revision: 1 },
+      { revision: -1, slots: {} },
+      { revision: 1, slots: { fast: { route: 'local' } } },
+      { revision: 1, slots: { other: null } },
+    ],
+  },
   '_agnes/v1/config.save': AGNES_SAMPLES.ConfigSaveInput as Sample,
-  '_agnes/v1/batch.start': AGNES_SAMPLES.BatchStartParams as Sample,
-  '_agnes/v1/batch.status': AGNES_SAMPLES.BatchIdParams as Sample,
-  '_agnes/v1/batch.cancel': AGNES_SAMPLES.BatchIdParams as Sample,
-  '_agnes/v1/batch.list': AGNES_SAMPLES.Empty as Sample,
   '_agnes/v1/computerUse.status': AGNES_SAMPLES.Empty as Sample,
   '_agnes/v1/computerUse.permissions.status': AGNES_SAMPLES.Empty as Sample,
   '_agnes/v1/computerUse.permissions.grant': AGNES_SAMPLES.Empty as Sample,
@@ -6518,16 +10067,17 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/computerUse.operation.cancel': AGNES_SAMPLES.ComputerUseOperationIdParams as Sample,
   '_agnes/v1/approvalGrants.list': AGNES_SAMPLES.ApprovalGrantListParams as Sample,
   '_agnes/v1/approvalGrants.revoke': AGNES_SAMPLES.ApprovalGrantRevokeParams as Sample,
+  '_agnes/v1/approvalGrants.forSession': AGNES_SAMPLES.ApprovalGrantSessionParams as Sample,
+  '_agnes/v1/approvalGrants.revokeForSession': AGNES_SAMPLES.ApprovalGrantSessionRevokeParams as Sample,
 
   '_agnes/v1/session.budget': AGNES_SAMPLES.SessionIdParams as Sample,
   '_agnes/v1/session.projectUI': AGNES_SAMPLES.SessionProjectUIParams as Sample,
   '_agnes/v1/session.projectUIPatch': AGNES_SAMPLES.SessionProjectUIPatchParams as Sample,
+  '_agnes/v1/session.view': AGNES_SAMPLES.SessionViewParams as Sample,
   '_agnes/v1/session.projectUIOpening': AGNES_SAMPLES.SessionProjectUIOpeningParams as Sample,
   '_agnes/v1/session.projectUIHistory': AGNES_SAMPLES.SessionProjectUIHistoryParams as Sample,
   '_agnes/v1/session.readToolDetail': AGNES_SAMPLES.SessionReadToolDetailParams as Sample,
-  '_agnes/v1/session.exportRaw': AGNES_SAMPLES.SessionExportRawParams as Sample,
-  '_agnes/v1/session.attachmentRead': AGNES_SAMPLES.SessionAttachmentReadParams as Sample,
-  '_agnes/v1/attachment.upload': AGNES_SAMPLES.AttachmentUploadParams as Sample,
+  '_agnes/v1/session.deliverables': AGNES_SAMPLES.SessionDeliverablesParams as Sample,
   initialize: ACP_SAMPLES.InitializeRequest as Sample,
   'session/new': ACP_SAMPLES.NewSessionRequest as Sample,
   'session/prompt': ACP_SAMPLES.PromptRequest as Sample,
@@ -6535,23 +10085,14 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   'session/update': ACP_SAMPLES.SessionNotification as Sample,
   'session/request_permission': ACP_SAMPLES.RequestPermissionRequest as Sample,
   '_agnes/v1/session.attach': AGNES_SAMPLES.SessionAttachParams as Sample,
-  '_agnes/v1/session.steer': AGNES_SAMPLES.SessionSteerParams as Sample,
-  '_agnes/v1/session.followUp': {
-    valid: followupOk,
-    invalid: [
-      byId(methodFixtures, 'followup-missing-commandid'),
-      { ...followupOk, commandId: rep(129) }, // boundary: maxLength:128
-    ],
-    note: 'valid and the first invalid reuse fixtures/methods/i1.jsonl (followup-ok / followup-missing-commandid)',
-  },
   '_agnes/v1/apis.list': AGNES_SAMPLES.ApisListParams as Sample,
   '_agnes/v1/submit': AGNES_SAMPLES.SubmitParams as Sample,
   '_agnes/v1/submit.ack': AGNES_SAMPLES.CommandAckParams as Sample,
   authenticate: ACP_SAMPLES.AuthenticateRequest as Sample,
   'session/load': ACP_SAMPLES.LoadSessionRequest as Sample,
+  '_agnes/v1/session.open': AGNES_SAMPLES.SessionOpenParams as Sample,
   'session/set_mode': ACP_SAMPLES.SetSessionModeRequest as Sample,
   '_agnes/v1/session.detach': AGNES_SAMPLES.SessionIdParams as Sample,
-  '_agnes/v1/session.verifyHistory': AGNES_SAMPLES.SessionIdParams as Sample,
   // The windowed branch of the oneOf, so that between this entry and AGNES_SAMPLES.AuthClaimParams
   // (which takes the once-only branch) both shapes are accepted by a valid sample somewhere, not just
   // rejected by negatives.
@@ -6564,11 +10105,17 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     note: 'valid and the first invalid reuse fixtures/methods/i1.jsonl (auth-claim-params-windowed / auth-claim-params-mixed-shapes)',
   },
   '_agnes/v1/session.event': AGNES_SAMPLES.SessionEventParams as Sample,
-  '_agnes/v1/session.preview': AGNES_SAMPLES.SessionPreviewParams as Sample,
   '_agnes/v1/session.loading': AGNES_SAMPLES.SessionLoadingParams as Sample,
-  '_agnes/v1/session.storedOpening': AGNES_SAMPLES.SessionStoredOpeningParams as Sample,
+  '_agnes/v1/session.loadingCancel': AGNES_SAMPLES.SessionLoadingCancelParams as Sample,
+  '_agnes/v1/session.preview': AGNES_SAMPLES.SessionPreviewParams as Sample,
   '_agnes/v1/daemon.notice': AGNES_SAMPLES.DaemonNotice as Sample,
   '_agnes/v1/session.fork': AGNES_SAMPLES.SessionForkParams as Sample,
+  '_agnes/v1/session.btw': AGNES_SAMPLES.SessionBtwParams as Sample,
+  '_agnes/v1/session.voice.transcribe': AGNES_SAMPLES.SessionVoiceTranscribeParams as Sample,
+  '_agnes/v1/session.voice.speak': AGNES_SAMPLES.SessionVoiceSpeakParams as Sample,
+  '_agnes/v1/voice.status': AGNES_SAMPLES.ConfigEmptyParams as Sample,
+  '_agnes/v1/voice.settings.get': AGNES_SAMPLES.ConfigEmptyParams as Sample,
+  '_agnes/v1/voice.settings.save': AGNES_SAMPLES.VoiceSettingsSaveParams as Sample,
   '_agnes/v1/session.rename': {
     note: 'manual title',
     valid: { sessionId: 's', title: 'name' },
@@ -6579,22 +10126,111 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     valid: { sessionId: 's', archived: true },
     invalid: [{ sessionId: 's', archived: 'true' }],
   },
+  '_agnes/v1/session.pin': AGNES_SAMPLES.SessionPinParams as Sample,
+  '_agnes/v1/session.bookmarks.set': AGNES_SAMPLES.SessionBookmarksSetParams as Sample,
+  '_agnes/v1/diagnostics.export': AGNES_SAMPLES.DiagnosticsExportParams as Sample,
   '_agnes/v1/diagnostics.collect': AGNES_SAMPLES.DiagnosticsCollectParams as Sample,
   '_agnes/v1/diagnostics.events': AGNES_SAMPLES.DiagnosticsEventsParams as Sample,
   '_agnes/v1/session.list': AGNES_SAMPLES.SessionListParams as Sample,
+  '_agnes/v1/session.activity': AGNES_SAMPLES.SessionActivityParams as Sample,
+  '_agnes/v1/session.groups': AGNES_SAMPLES.SessionGroupsParams as Sample,
   '_agnes/v1/workspace.list': AGNES_SAMPLES.WorkspaceListParams as Sample,
   '_agnes/v1/workspace.add': AGNES_SAMPLES.WorkspaceAddParams as Sample,
+  '_agnes/v1/workspace.reveal': AGNES_SAMPLES.WorkspaceRevealParams as Sample,
+  '_agnes/v1/workspace.remove': AGNES_SAMPLES.WorkspaceRemoveParams as Sample,
+  '_agnes/v1/pluginRuntime.status': AGNES_SAMPLES.PluginRuntimeStatusParams as Sample,
+  '_agnes/v1/pluginStreams.endpoint': AGNES_SAMPLES.PluginStreamsEndpointParams as Sample,
   '_agnes/v1/surfaces.mounts': AGNES_SAMPLES.SurfacesMountsParams as Sample,
   '_agnes/v1/session.setPreset': AGNES_SAMPLES.SessionSetPresetParams as Sample,
   '_agnes/v1/session.setModel': AGNES_SAMPLES.SessionSetModelParams as Sample,
   '_agnes/v1/session.setYolo': AGNES_SAMPLES.SessionSetYoloParams as Sample,
+  '_agnes/v1/session.setToolFilter': AGNES_SAMPLES.SessionSetToolFilterParams as Sample,
+  '_agnes/v1/approval.withdraw': {
+    valid: { sessionId: 's', requestId: 'r', reason: 'stopped' },
+    invalid: [
+      { sessionId: 's', requestId: 'r', reason: 'user-rejected' },
+      { sessionId: 's', reason: 'stopped' },
+    ],
+    note: 'withdraws an offer without fabricating an answer',
+  },
   '_agnes/v1/approval.decide': AGNES_SAMPLES.ApprovalDecideParams as Sample,
+  '_agnes/v1/decision.list': AGNES_SAMPLES.SessionIdParams as Sample,
   '_agnes/v1/participant.join': AGNES_SAMPLES.ParticipantParams as Sample,
   '_agnes/v1/participant.leave': AGNES_SAMPLES.ParticipantParams as Sample,
   '_agnes/v1/participant.list': AGNES_SAMPLES.SessionIdParams as Sample,
   '_agnes/v1/jobs.enqueue': AGNES_SAMPLES.JobSpec as Sample,
   '_agnes/v1/jobs.poll': AGNES_SAMPLES.JobIdParams as Sample,
   '_agnes/v1/jobs.cancel': AGNES_SAMPLES.JobIdParams as Sample,
+  '_agnes/v1/schedules.history': {
+    valid: { limit: 20 },
+    invalid: [{ limit: 0 }, { limit: 101 }, { before: 'bad' }],
+    note: 'bounded seek pagination',
+  },
+  '_agnes/v1/schedules.receipt': {
+    valid: { id: 'sched_0123456789abcdef', runId: 'run_' + '1'.repeat(32), read: true },
+    invalid: [{ id: 'sched_0123456789abcdef' }, { id: 'sched_0123456789abcdef', runId: 'bad', read: true }],
+    note: 'explicit persisted receipt state',
+  },
+  '_agnes/v1/schedules.list': {
+    valid: {
+      scope: 'session',
+      sessionKey: 's',
+      search: 'billing',
+      status: 'failed',
+      workspace: '/work',
+      targetKind: 'session',
+    },
+    invalid: [
+      { scope: 'session', extra: true },
+      { scope: 'nope' },
+      { scope: 'all', sessionKey: '' },
+      { scope: 'all', status: 'unknown' },
+      { scope: 'all', targetKind: 'unknown' },
+      { scope: 'all', search: 'x'.repeat(257) },
+      { scope: 'all', workspaceSessionKeys: ['forged'] },
+    ],
+    note: 'session scope may name a session; global scope is authorized separately',
+  },
+  '_agnes/v1/schedules.upsert': {
+    valid: {
+      title: 'Standup',
+      prompt: 'Summarize',
+      selector: { every_seconds: 60 },
+      target: { kind: 'session', sessionKey: 's' },
+    },
+    invalid: [
+      { title: 'Standup', prompt: 'Summarize', selector: { every_seconds: 60 } },
+      {
+        title: 'Standup',
+        prompt: 'Summarize',
+        selector: { every_seconds: 59 },
+        target: { kind: 'session', sessionKey: 's' },
+      },
+      {
+        title: 'x'.repeat(121),
+        prompt: 'Summarize',
+        selector: { every_seconds: 60 },
+        target: { kind: 'new-session', cwd: '/w' },
+      },
+      {
+        title: 'Standup',
+        prompt: 'Summarize',
+        selector: { every_seconds: 60 },
+        target: { kind: 'new-session', cwd: '/w', sessionKey: 's' },
+      },
+    ],
+    note: 'one selector; every_seconds is at least 60; a target is a session or a new session',
+  },
+  '_agnes/v1/schedules.archive': {
+    valid: { id: 'sched_0123456789abcdef' },
+    invalid: [{ id: 'sched_0123456789abcde' }, { id: 'sched_0123456789abcdef', extra: true }],
+    note: 'schedule ids are sched_ plus 16 hex characters',
+  },
+  '_agnes/v1/schedules.control': {
+    valid: { id: 'sched_0123456789abcdef', action: 'run' },
+    invalid: [{ id: 'sched_0123456789abcdef' }, { id: 'sched_0123456789abcdef', action: 'delete' }],
+    note: 'run now, pause or resume',
+  },
   '_agnes/v1/artifact.job.status': AGNES_SAMPLES.JobIdParams as Sample,
   '_agnes/v1/artifact.read': AGNES_SAMPLES.ArtifactReadParams as Sample,
   '_agnes/v1/ext.ui.response': AGNES_SAMPLES.ExtUiResponseParams as Sample,
@@ -6602,8 +10238,432 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/session.integrity': {
+    valid: { state: 'failed', verifiedThroughSeq: 0, lastSeq: 50, legacyThroughSeq: 0, failureSeq: 7 },
+    invalid: [
+      {},
+      { state: 'unknown', verifiedThroughSeq: 0, lastSeq: 50, legacyThroughSeq: 0 },
+      { state: 'failed', verifiedThroughSeq: 0, lastSeq: 50, legacyThroughSeq: 0, failureSeq: 0 },
+      { state: 'verified', verifiedThroughSeq: 50, lastSeq: 50, legacyThroughSeq: 0, extra: true },
+    ],
+    note: 'point-in-time status with the failing sequence',
+  },
+  '_agnes/v1/applications.get': PackageAdminSamples.ApplicationState as Sample,
+  '_agnes/v1/applications.preview': PackageAdminSamples.ApplicationPreview as Sample,
+  '_agnes/v1/applications.adopt': PackageAdminSamples.ApplicationState as Sample,
+  '_agnes/v1/applications.clear': PackageAdminSamples.ApplicationState as Sample,
+
+  '_agnes/v1/extension.wakes.enqueue': ServiceSamples.BoundWakeReceipt as Sample,
+  '_agnes/v1/extension.wakes.read': ServiceSamples.BoundWakeReceipt as Sample,
+  '_agnes/v1/extension.callScoped': ServiceSamples.ProfileServiceCallResult as Sample,
+  '_agnes/v1/extension.readOperation': ServiceSamples.ProfileServiceReceipt as Sample,
+  '_agnes/v1/profile.decisions.list': ServiceSamples.ProfileDecisionsListResult as Sample,
+  '_agnes/v1/profile.decisions.answer': SESSION_SAMPLES.DecisionCommandReceipt as Sample,
+  '_agnes/v1/session.activity': AGNES_SAMPLES.SessionActivityResult!,
+  '_agnes/v1/session.groups': AGNES_SAMPLES.SessionGroupsResult!,
+  '_agnes/v1/admin.credentials.delete': {
+    note: 'Metadata-only response',
+    valid: {},
+    invalid: [{ value: 'must-not-return' }],
+  },
+  '_agnes/v1/admin.credentials.rename': {
+    note: 'Metadata-only response',
+    valid: {
+      id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+      label: 'Work key',
+      kind: 'api-key',
+      createdAt: '2026-10-11T00:00:00.000Z',
+      references: [],
+    },
+    invalid: [
+      {
+        id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+        label: 'Work key',
+        kind: 'api-key',
+        createdAt: '2026-10-11T00:00:00.000Z',
+        references: [],
+        value: 'must-not-return',
+      },
+    ],
+  },
+  '_agnes/v1/admin.credentials.set': {
+    note: 'Metadata-only response',
+    valid: {
+      id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+      label: 'Work key',
+      kind: 'api-key',
+      createdAt: '2026-10-11T00:00:00.000Z',
+      references: [],
+    },
+    invalid: [
+      {
+        id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+        label: 'Work key',
+        kind: 'api-key',
+        createdAt: '2026-10-11T00:00:00.000Z',
+        references: [],
+        value: 'must-not-return',
+      },
+    ],
+  },
+  '_agnes/v1/admin.credentials.create': {
+    note: 'Metadata-only response',
+    valid: {
+      id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+      label: 'Work key',
+      kind: 'api-key',
+      createdAt: '2026-10-11T00:00:00.000Z',
+      references: [],
+    },
+    invalid: [
+      {
+        id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+        label: 'Work key',
+        kind: 'api-key',
+        createdAt: '2026-10-11T00:00:00.000Z',
+        references: [],
+        value: 'must-not-return',
+      },
+    ],
+  },
+  '_agnes/v1/admin.credentials.list': {
+    note: 'Metadata-only response',
+    valid: {
+      items: [
+        {
+          id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+          label: 'Work key',
+          kind: 'api-key',
+          createdAt: '2026-10-11T00:00:00.000Z',
+          references: [],
+        },
+      ],
+    },
+    invalid: [
+      {
+        items: [
+          {
+            id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+            label: 'Work key',
+            kind: 'api-key',
+            createdAt: '2026-10-11T00:00:00.000Z',
+            references: [],
+          },
+        ],
+        value: 'must-not-return',
+      },
+    ],
+  },
+  '_agnes/v1/admin.feedback': AppSamples.AdminFeedbackResult!,
+  '_agnes/v1/admin.triggers': AppSamples.WebhookResult!,
+  '_agnes/v1/plugins.config.get': PackageAdminSamples.PluginConfigSnapshot!,
+  '_agnes/v1/plugins.config.validate': PackageAdminSamples.PluginConfigValidation!,
+  '_agnes/v1/plugins.config.save': PackageAdminSamples.PluginConfigSaveResult!,
+  '_agnes/v1/autoReview.get': AGNES_SAMPLES.AutoReviewConfig!,
+  '_agnes/v1/autoReview.save': AGNES_SAMPLES.AutoReviewConfig!,
+  '_agnes/v1/ui.action': {
+    note: 'Persisted action receipt',
+    valid: {
+      sessionId: 's',
+      surfaceId: 'view',
+      revision: 1,
+      actionId: 'submit',
+      commandId: 'c',
+      status: 'received',
+      seq: 1,
+      duplicate: false,
+    },
+    invalid: [
+      {
+        sessionId: 's',
+        surfaceId: 'view',
+        revision: 1,
+        actionId: 'submit',
+        commandId: 'c',
+        status: 'unknown',
+        seq: 1,
+        duplicate: false,
+      },
+      {
+        sessionId: 's',
+        surfaceId: 'view',
+        revision: 1,
+        actionId: 'submit',
+        commandId: 'c',
+        status: 'received',
+        seq: 0,
+        duplicate: false,
+      },
+    ],
+  },
+  '_agnes/v1/ui.refresh': {
+    note: 'One surface view. Resolved rows stay out of the stored document; sources is optional.',
+    valid: {
+      surface: {
+        id: 'view',
+        revision: 1,
+        title: 'View',
+        placement: { inline: true, workbench: true },
+        components: [{ id: 'note', kind: 'text', dataKey: 'note' }],
+        data: { note: 'ok' },
+        actions: [],
+      },
+      status: 'open',
+      createdSeq: 1,
+      updatedSeq: 1,
+      owner: 'agnes/intelligent-ui',
+      lane: 'main',
+      taskId: 'task',
+    },
+    invalid: [
+      {
+        surface: {
+          id: 'view',
+          revision: 1,
+          title: 'View',
+          placement: { inline: true, workbench: true },
+          components: [{ id: 'note', kind: 'text', dataKey: 'note' }],
+          data: { note: 'ok' },
+          actions: [],
+        },
+        status: 'open',
+        createdSeq: 1,
+        updatedSeq: 1,
+        owner: 'agnes/intelligent-ui',
+        lane: 'main',
+      },
+      {
+        surface: {
+          id: 'view',
+          revision: 1,
+          title: 'View',
+          placement: { inline: true, workbench: true },
+          components: [{ id: 'note', kind: 'text', dataKey: 'note' }],
+          data: { note: 'ok' },
+          actions: [],
+        },
+        status: 'gone',
+        createdSeq: 1,
+        updatedSeq: 1,
+        owner: 'agnes/intelligent-ui',
+        lane: 'main',
+        taskId: 'task',
+      },
+    ],
+  },
+  '_agnes/v1/ui.read': {
+    note: 'Snapshot watermark and bounded surface/receipt page',
+    valid: { sessionId: 's', lastSeq: 0, surfaces: [], actions: [] },
+    invalid: [
+      { sessionId: 's', lastSeq: -1, surfaces: [], actions: [] },
+      { sessionId: 's', lastSeq: 0, surfaces: [] },
+      { sessionId: 's', lastSeq: 0, surfaces: [], actions: [], nextCursor: '' },
+    ],
+  },
+  '_agnes/v1/session.control': AGNES_SAMPLES.SessionSteerResult as Sample,
+  '_agnes/v1/session.controls': AGNES_SAMPLES.SessionControlStateResult as Sample,
+  '_agnes/v1/session.fileUpload': AGNES_SAMPLES.FileUploadResultSchema as Sample,
+  '_agnes/v1/session.factChain': AGNES_SAMPLES.FactChainResult!,
+  '_agnes/v1/doctor.run': AppSamples.DoctorResult!,
+  '_agnes/v1/plugins.candidates.reject': PackageAdminSamples.AuthoringCandidate as Sample,
+  '_agnes/v1/plugins.candidates.approve': PackageAdminSamples.AuthoringCandidate as Sample,
+  '_agnes/v1/plugins.candidates.submit': PackageAdminSamples.AuthoringCandidate as Sample,
+  '_agnes/v1/plugins.candidates.test': PackageAdminSamples.AuthoringCandidate as Sample,
+  '_agnes/v1/plugins.candidates.write': PackageAdminSamples.AuthoringCandidate as Sample,
+  '_agnes/v1/plugins.candidates.create': PackageAdminSamples.AuthoringCandidate as Sample,
+  '_agnes/v1/plugins.candidates.show': PackageAdminSamples.AuthoringCandidate as Sample,
+  '_agnes/v1/plugins.candidates.list': PackageAdminSamples.AuthoringCandidateList as Sample,
+  '_agnes/v1/packages.provenance': PackageAdminSamples.PackageProvenance as Sample,
+  '_agnes/v1/packages.sourcePolicy': PackageAdminSamples.PackageSourcePolicy as Sample,
+  '_agnes/v1/admin.mcp.oauth.save': {
+    valid: {},
+    invalid: [{ extra: 1 }],
+    note: 'write acknowledges without returning a credential',
+  },
+  '_agnes/v1/admin.bundles.get': {
+    valid: { revision: 0, bundles: [], effect: 'restart-required' },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/admin.bundles.save': {
+    valid: { revision: 0, bundles: [], effect: 'restart-required' },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/admin.composition.get': {
+    valid: { status: 'live', validation: 'static', selection: {}, rows: [], sessions: [] },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/admin.search.get': { valid: {}, invalid: [null], note: 'App Server boundary shape' },
+  '_agnes/v1/admin.search.save': { valid: {}, invalid: [null], note: 'App Server boundary shape' },
+  '_agnes/v1/admin.search.test': { valid: {}, invalid: [null], note: 'App Server boundary shape' },
+  '_agnes/v1/admin.observability': {
+    valid: {
+      settings: { enabled: false },
+      health: { status: 'disabled', queued: 0, dropped: 0, failures: 0 },
+    },
+    invalid: [null],
+    note: 'Exporter admin result',
+  },
+  '_agnes/v1/admin.memory': {
+    valid: {
+      workspaces: [],
+      inspection: {
+        root: '/tmp/memory',
+        settings: {
+          mode: 'off',
+          indexMaxBytes: 16384,
+          indexMaxLines: 200,
+          topicMaxBytes: 32768,
+          totalMaxBytes: 262144,
+          tokenBudget: 2048,
+          userTokenBudget: 512,
+          userEnabled: false,
+        },
+        files: [],
+        bytes: 0,
+      },
+    },
+    invalid: [null],
+    note: 'File memory result',
+  },
+  '_agnes/v1/admin.context': {
+    valid: {
+      config: {
+        rulesEnabled: true,
+        instructionFiles: [],
+        localInstructionFiles: [],
+        maxBytes: 0,
+        maxSourceBytes: 0,
+        timeEnabled: true,
+        timeZone: 'UTC',
+        refreshIntervalMs: 0,
+        customSkillRoots: [],
+      },
+      workspaces: [],
+    },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/admin.history.search': {
+    valid: { items: [], truncated: false },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/admin.plan': {
+    valid: { active: true, text: 'Plan mode is on' },
+    invalid: [null],
+    note: 'App Server boundary shape',
+  },
+  '_agnes/v1/sessionSelection.runtime': {
+    valid: {
+      providers: [],
+      presets: [],
+      localPluginFolders: { home: '/synthetic/plugins', workspace: '/synthetic/.agh/plugins' },
+    },
+    invalid: [
+      { providers: [] },
+      { providers: [], presets: [], localPluginFolders: { home: '/x', workspace: '/x', secret: 'private' } },
+    ],
+    note: 'description-only runtime status',
+  },
+  '_agnes/v1/sessionSelection.reloadLocal': {
+    valid: {},
+    invalid: [{ error: 'private' }],
+    note: 'rescan receipt contains no secrets',
+  },
+  '_agnes/v1/sessionSelection.loops': AGNES_SAMPLES.SessionLoopCatalogResult as Sample,
+  '_agnes/v1/sessionSelection.modelAdapters': AGNES_SAMPLES.SessionAdapterCatalogResult as Sample,
+  '_agnes/v1/sessionSelection.defaults.get': AGNES_SAMPLES.SessionDefaultsState as Sample,
+  '_agnes/v1/sessionSelection.defaults.save': AGNES_SAMPLES.SessionDefaultsState as Sample,
+  '_agnes/v1/session.revealWorkspace': AGNES_SAMPLES.SessionRevealWorkspaceResult as Sample,
+  '_agnes/v1/agents.resolve': {
+    valid: {
+      ref: 'acme/kit#work',
+      launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+      loop: { id: 'loop', version: '1.0.0' },
+      bundles: ['acme/kit#work'],
+      preset: 'safe',
+      pages: [],
+      digest: 'hash',
+      compositionHash: 'tree',
+      presetHash: 'preset',
+      effectivePresetHash: 'effective',
+      model: { route: 'demo', model: 'demo' },
+      models: { primary: { route: 'demo', model: 'demo' } },
+      permission: { readOnly: true, tools: [], allow: [], deny: [] },
+      sources: [],
+    },
+    invalid: [{}, { ref: 'acme/kit#work' }],
+    note: 'Resolved plans are complete and carry no credentials',
+  },
+  '_agnes/v1/session.runtime': {
+    valid: {
+      sessionKey: 's',
+      loaded: true,
+      generation: {
+        id: 'g1',
+        current: false,
+        state: 'draining',
+        newer: { id: 'g2', effect: 'new-sessions' },
+      },
+      preset: { name: 'default', bundles: [] },
+      loop: { id: 'default', version: '1.0.0' },
+      providers: [
+        {
+          kind: 'sandbox',
+          id: 'local',
+          binding: 'process',
+          pending: { id: 'remote', effect: 'restart-required' },
+        },
+      ],
+      seams: [{ kind: 'approval', provider: 'builtin', pinned: false }],
+      resources: { profileHash: 'h', items: [{ id: 'ext:skills', resources: ['skills'], revision: 'r' }] },
+      policy: {
+        toolPolicy: 'default',
+        toolRuntime: 'default',
+        readOnly: false,
+        sandbox: { provider: 'local', onUnavailable: 'deny' },
+      },
+      restartRequired: ['sandbox'],
+    },
+    invalid: [
+      { sessionKey: 's' },
+      {
+        sessionKey: 's',
+        loaded: true,
+        generation: { current: true, state: 'unknown' },
+      },
+    ],
+    note: 'runtime descriptor result',
+  },
+  '_agnes/v1/session.tools': {
+    valid: { sessionId: 's', tools: [], resources: [] },
+    invalid: [
+      { sessionId: 's', tools: [] },
+      { sessionId: 's', tools: [{ name: 'x' }], resources: [] },
+    ],
+    note: 'session catalog result',
+  },
+  '_agnes/v1/session.jobs.read': AGNES_SAMPLES.SessionJobsReadResult as Sample,
+  '_agnes/v1/session.jobs.control': AGNES_SAMPLES.SessionJobsControlResult as Sample,
+  '_agnes/v1/session.undo.preview': AGNES_SAMPLES.SessionUndoPreviewResult as Sample,
+  '_agnes/v1/session.undo': AGNES_SAMPLES.SessionUndoResult as Sample,
+  '_agnes/v1/session.workspace.changes': AGNES_SAMPLES.SessionWorkspaceChangesResult as Sample,
+  '_agnes/v1/session.workspace.list': AGNES_SAMPLES.SessionWorkspaceListResult as Sample,
+  '_agnes/v1/session.references.search': {
+    note: 'Reference locators and bounded search results',
+    valid: { items: [{ source: 'file', id: 'a', label: 'a' }], truncated: false },
+    invalid: [{ items: [], truncated: 'no' }],
+  },
+  '_agnes/v1/session.workspace.read': AGNES_SAMPLES.SessionWorkspaceReadResult as Sample,
+
   '_agnes/v1/session.rename': AGNES_SAMPLES.SessionPreferences as Sample,
   '_agnes/v1/session.archive': AGNES_SAMPLES.SessionPreferences as Sample,
+  '_agnes/v1/session.pin': AGNES_SAMPLES.SessionPreferences as Sample,
+  '_agnes/v1/session.bookmarks.set': AGNES_SAMPLES.SessionPreferences as Sample,
+  '_agnes/v1/diagnostics.export': AGNES_SAMPLES.DiagnosticsExportResult as Sample,
   '_agnes/v1/diagnostics.collect': AGNES_SAMPLES.DiagnosticsCollectResult as Sample,
   '_agnes/v1/diagnostics.events': {
     note: 'empty last page',
@@ -6635,6 +10695,13 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/mcp.servers.oauth.status.set': ResourceControlSamples.McpOAuthStatusResult,
   '_agnes/v1/packages.catalog.list': PackageAdminSamples.PackageCatalogPage as Sample,
   '_agnes/v1/packages.catalog.get': PackageAdminSamples.PackageCatalogDescriptor as Sample,
+  '_agnes/v1/plugins.publicationStatus': PackageAdminSamples.PluginPublicationStatusResult as Sample,
+  '_agnes/v1/sessions.migrate': PackageAdminSamples.SessionGenerationMigrationResult as Sample,
+  '_agnes/v1/plugins.generations': {
+    valid: { generations: [], plugins: [] },
+    invalid: [{ generations: [], plugins: [], unknown: true }],
+    note: 'Generation status rejects extra fields',
+  },
   '_agnes/v1/packages.list': PackageAdminSamples.PackageListResult as Sample,
   '_agnes/v1/skins.list': PackageAdminSamples.SkinListResult as Sample,
   '_agnes/v1/skins.read': PackageAdminSamples.SkinReadResult as Sample,
@@ -6663,6 +10730,10 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
 
   '_agnes/v1/extension.ack': AGNES_SAMPLES.Empty as Sample,
   '_agnes/v1/extension.call': ServiceSamples.ExtensionCallResult as Sample,
+  '_agnes/v1/systemPrompt.get': AGNES_SAMPLES.SystemPromptSnapshot as Sample,
+  '_agnes/v1/systemPrompt.save': AGNES_SAMPLES.SystemPromptSnapshot as Sample,
+  '_agnes/v1/trace.clear': AGNES_SAMPLES.ModelRequestClearResult as Sample,
+  '_agnes/v1/trace.request': AGNES_SAMPLES.ModelRequestResult as Sample,
   '_agnes/v1/config.get': AGNES_SAMPLES.ConfigSnapshot as Sample,
   '_agnes/v1/config.oauth': {
     note: 'OAuth result has no tokens',
@@ -6672,11 +10743,53 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/config.providers': AGNES_SAMPLES.ConfigProvidersResult as Sample,
   '_agnes/v1/config.test': AGNES_SAMPLES.ConfigTestResult as Sample,
   '_agnes/v1/config.account': AGNES_SAMPLES.ConfigSnapshot as Sample,
+  '_agnes/v1/config.childEngines.get': {
+    note: 'a read may omit the publication effect',
+    valid: {
+      revision: 0,
+      engines: {
+        codex: { enabled: false, command: 'codex', args: ['exec'], allow: [] },
+        claudeCode: { enabled: false, command: 'claude', args: [], allow: [] },
+        sdk: { enabled: false, protocol: 'sdk', command: '', args: [], allow: [] },
+      },
+    },
+    invalid: [
+      { revision: 0 },
+      {
+        revision: 0,
+        effect: 'hot',
+        engines: {
+          codex: { enabled: false, command: 'codex', args: [], allow: [] },
+          claudeCode: { enabled: false, command: 'claude', args: [], allow: [] },
+          sdk: { enabled: false, protocol: 'sdk', command: '', args: [], allow: [] },
+        },
+      },
+    ],
+  },
+  '_agnes/v1/config.modelSlots.get': {
+    note: 'the saved auxiliary slots, with no publication effect',
+    valid: { revision: 0, slots: {} },
+    invalid: [{ revision: 0 }, { revision: 0, slots: {}, extra: true }],
+  },
+  '_agnes/v1/config.modelSlots.save': {
+    note: 'a save returns the same snapshot shape',
+    valid: { revision: 2, slots: { verifier: { route: 'local', model: 'check' } } },
+    invalid: [{ revision: 2, slots: { fast: { route: 'has space', model: 'small' } } }],
+  },
+  '_agnes/v1/config.childEngines.save': {
+    note: 'a save reports whether new sessions can see the rows',
+    valid: {
+      revision: 1,
+      effect: 'new-sessions',
+      engines: {
+        codex: { enabled: true, command: 'codex', args: ['exec'], allow: ['codex'] },
+        claudeCode: { enabled: false, command: 'claude', args: [], allow: [] },
+        sdk: { enabled: false, protocol: 'acp', command: '', args: [], allow: [] },
+      },
+    },
+    invalid: [{ revision: 1, effect: 'hot', engines: {} }],
+  },
   '_agnes/v1/config.save': AGNES_SAMPLES.ConfigSnapshot as Sample,
-  '_agnes/v1/batch.start': AGNES_SAMPLES.BatchStatus as Sample,
-  '_agnes/v1/batch.status': AGNES_SAMPLES.BatchStatus as Sample,
-  '_agnes/v1/batch.cancel': AGNES_SAMPLES.BatchStatus as Sample,
-  '_agnes/v1/batch.list': AGNES_SAMPLES.BatchList as Sample,
   '_agnes/v1/computerUse.status': AGNES_SAMPLES.ComputerUseStatusResult as Sample,
   '_agnes/v1/computerUse.permissions.status': AGNES_SAMPLES.ComputerUsePermissionsStatusResult as Sample,
   '_agnes/v1/computerUse.permissions.grant': AGNES_SAMPLES.ComputerUsePermissionsStatusResult as Sample,
@@ -6686,52 +10799,140 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/computerUse.operation.cancel': AGNES_SAMPLES.ComputerUseOperationResult as Sample,
   '_agnes/v1/approvalGrants.list': AGNES_SAMPLES.ApprovalGrantListResult as Sample,
   '_agnes/v1/approvalGrants.revoke': AGNES_SAMPLES.ApprovalGrantRecord as Sample,
+  '_agnes/v1/approvalGrants.forSession': AGNES_SAMPLES.ApprovalGrantSessionResult as Sample,
+  '_agnes/v1/approvalGrants.revokeForSession': AGNES_SAMPLES.SessionApprovalGrant as Sample,
 
   '_agnes/v1/session.budget': AGNES_SAMPLES.SessionBudgetResult as Sample,
   '_agnes/v1/session.projectUI': AGNES_SAMPLES.UITimeline as Sample,
   '_agnes/v1/session.projectUIPatch': AGNES_SAMPLES.UIProjectionUpdate as Sample,
+  '_agnes/v1/session.view': AGNES_SAMPLES.SessionViewResult as Sample,
   '_agnes/v1/session.projectUIOpening': AGNES_SAMPLES.UIOpeningResult as Sample,
   '_agnes/v1/session.projectUIHistory': AGNES_SAMPLES.UIHistoryPage as Sample,
   '_agnes/v1/session.readToolDetail': AGNES_SAMPLES.SessionReadToolDetailResult as Sample,
-  '_agnes/v1/session.exportRaw': AGNES_SAMPLES.SessionExportRawResult as Sample,
-  '_agnes/v1/session.attachmentRead': AGNES_SAMPLES.SessionAttachmentReadResult as Sample,
-  '_agnes/v1/attachment.upload': AGNES_SAMPLES.AttachmentUploadResult as Sample,
-  '_agnes/v1/session.storedOpening': AGNES_SAMPLES.SessionStoredOpeningResult as Sample,
+  '_agnes/v1/session.deliverables': AGNES_SAMPLES.SessionDeliverablesResult as Sample,
   '_agnes/v1/session.fork': AGNES_SAMPLES.SessionIdParams as Sample,
+  '_agnes/v1/session.btw': AGNES_SAMPLES.SessionBtwResult as Sample,
+  '_agnes/v1/session.voice.transcribe': AGNES_SAMPLES.SessionVoiceTranscribeResult as Sample,
+  '_agnes/v1/session.voice.speak': AGNES_SAMPLES.SessionVoiceSpeakResult as Sample,
+  '_agnes/v1/voice.status': AGNES_SAMPLES.VoiceStatusResult as Sample,
+  '_agnes/v1/voice.settings.get': AGNES_SAMPLES.VoiceSettingsSnapshot as Sample,
+  '_agnes/v1/voice.settings.save': AGNES_SAMPLES.VoiceSettingsSnapshot as Sample,
   '_agnes/v1/session.list': AGNES_SAMPLES.PageSessionMeta as Sample,
   '_agnes/v1/workspace.list': AGNES_SAMPLES.WorkspaceListResult as Sample,
   '_agnes/v1/workspace.add': AGNES_SAMPLES.WorkspaceAddResult as Sample,
+  '_agnes/v1/workspace.reveal': AGNES_SAMPLES.WorkspaceRevealResult as Sample,
+  '_agnes/v1/workspace.remove': AGNES_SAMPLES.WorkspaceRemoveResult as Sample,
+  '_agnes/v1/pluginRuntime.status': AGNES_SAMPLES.PluginRuntimeStatusResult as Sample,
+  '_agnes/v1/pluginStreams.endpoint': AGNES_SAMPLES.PluginStreamsEndpointResult as Sample,
   '_agnes/v1/surfaces.mounts': AGNES_SAMPLES.SurfacesMountsResult as Sample,
   '_agnes/v1/session.setPreset': AGNES_SAMPLES.EffectiveFromResult as Sample,
   '_agnes/v1/session.setModel': AGNES_SAMPLES.EffectiveFromResult as Sample,
   '_agnes/v1/session.setYolo': AGNES_SAMPLES.EffectiveFromResult as Sample,
+  '_agnes/v1/session.setToolFilter': AGNES_SAMPLES.SessionSetToolFilterResult as Sample,
   initialize: ACP_SAMPLES.InitializeResponse as Sample,
   'session/new': ACP_SAMPLES.NewSessionResponse as Sample,
   'session/prompt': ACP_SAMPLES.PromptResponse as Sample,
   'session/request_permission': ACP_SAMPLES.RequestPermissionResponse as Sample,
   '_agnes/v1/session.attach': AGNES_SAMPLES.SessionAttachResult as Sample,
-  '_agnes/v1/session.steer': AGNES_SAMPLES.SessionSteerResult as Sample,
-  '_agnes/v1/session.followUp': {
-    valid: byId(methodFixtures, 'followup-result-ok'),
-    invalid: [{ seq: 0 }], // boundary: minimum:1
-    note: 'valid reuses followup-result-ok from fixtures/methods/i1.jsonl; invalid is hand-written',
-  },
   '_agnes/v1/apis.list': AGNES_SAMPLES.ApisListResult as Sample,
   '_agnes/v1/submit': AGNES_SAMPLES.Ack as Sample,
   '_agnes/v1/submit.ack': AGNES_SAMPLES.Empty as Sample,
   authenticate: ACP_SAMPLES.AuthenticateResponse as Sample,
   'session/load': ACP_SAMPLES.LoadSessionResponse as Sample,
+  '_agnes/v1/session.open': AGNES_SAMPLES.Empty as Sample,
   'session/set_mode': ACP_SAMPLES.SetSessionModeResponse as Sample,
   '_agnes/v1/session.detach': AGNES_SAMPLES.Empty as Sample,
-  '_agnes/v1/session.verifyHistory': AGNES_SAMPLES.Empty as Sample,
   '_agnes/v1/auth.claim': AGNES_SAMPLES.AuthClaimResult as Sample,
-  '_agnes/v1/approval.decide': AGNES_SAMPLES.SeqResult as Sample,
+  '_agnes/v1/approval.decide': AGNES_SAMPLES.DecisionCommandReceipt as Sample,
+  '_agnes/v1/decision.list': AGNES_SAMPLES.DecisionListResult as Sample,
   '_agnes/v1/participant.join': AGNES_SAMPLES.SeqResult as Sample,
   '_agnes/v1/participant.leave': AGNES_SAMPLES.SeqResult as Sample,
   '_agnes/v1/participant.list': AGNES_SAMPLES.ParticipantListResult as Sample,
   '_agnes/v1/jobs.enqueue': AGNES_SAMPLES.JobIdResult as Sample,
   '_agnes/v1/jobs.poll': AGNES_SAMPLES.JobStatus as Sample,
   '_agnes/v1/jobs.cancel': AGNES_SAMPLES.Empty as Sample,
+  '_agnes/v1/schedules.history': {
+    valid: {
+      runs: [
+        {
+          id: 'run_' + '1'.repeat(32),
+          scheduleId: 'sched_0123456789abcdef',
+          title: 'Report',
+          at: 1,
+          outcome: 'ran',
+          read: false,
+          summary: 'Done',
+        },
+      ],
+    },
+    invalid: [{ runs: [{ at: 1 }] }, { runs: [], nextCursor: 'bad' }],
+    note: 'durable history receipts',
+  },
+  '_agnes/v1/schedules.receipt': {
+    valid: { updated: true },
+    invalid: [{}, { updated: 'yes' }],
+    note: 'receipt update result',
+  },
+  '_agnes/v1/schedules.list': {
+    valid: {
+      activity: { nextRunAt: 123, hasOpenRuns: false },
+      schedules: [
+        {
+          id: 'sched_0123456789abcdef',
+          title: 'Standup',
+          prompt: 'Summarize',
+          selector: { daily: { time: '09:00', timeZone: 'UTC' } },
+          target: { kind: 'new-session', cwd: '/w', preset: 'default' },
+          origin: 's',
+          status: 'paused',
+          nextRunAt: null,
+          revision: 1,
+          runs: [
+            { at: 1, outcome: 'ran', sessionKey: 'r1', endedAt: 2 },
+            { at: 3, outcome: 'failed', reason: 'workspace_missing' },
+          ],
+        },
+      ],
+    },
+    invalid: [
+      { schedules: [], activity: { nextRunAt: null } },
+      { schedules: [], activity: { nextRunAt: 1.5, hasOpenRuns: true } },
+      { schedules: [], activity: { nextRunAt: null, hasOpenRuns: 'yes' } },
+      { schedules: [], extra: true },
+      { schedules: [{ id: 'sched_0123456789abcdef' }] },
+      {
+        schedules: [
+          {
+            id: 'sched_0123456789abcdef',
+            title: 'Standup',
+            prompt: 'Summarize',
+            selector: { daily: { time: '09:00', timeZone: 'UTC' } },
+            target: { kind: 'session', sessionKey: 's' },
+            status: 'active',
+            nextRunAt: 1,
+            revision: 1,
+            runs: [{ at: 1, outcome: 'delivered-maybe' }],
+          },
+        ],
+      },
+    ],
+    note: 'list returns task views with a target and run history',
+  },
+  '_agnes/v1/schedules.upsert': {
+    valid: { updated: false, code: 'schedule_not_found' },
+    invalid: [{ updated: false }, { updated: false, code: 'schedule_not_found', extra: true }],
+    note: 'a refused update names a code; success is a reminder view',
+  },
+  '_agnes/v1/schedules.archive': {
+    valid: { deleted: false },
+    invalid: [{}, { deleted: false, extra: true }],
+    note: 'unknown and already archived ids report deleted false',
+  },
+  '_agnes/v1/schedules.control': {
+    valid: { updated: false, code: 'schedule_running' },
+    invalid: [{ updated: true, code: 'x' }],
+    note: 'a refused action names a code; success is the task view',
+  },
   '_agnes/v1/artifact.job.status': AGNES_SAMPLES.ArtifactJob as Sample,
   '_agnes/v1/artifact.read': AGNES_SAMPLES.ArtifactReadResult as Sample,
   '_agnes/v1/ext.ui.response': AGNES_SAMPLES.SeqResult as Sample,
@@ -7131,5 +11332,231 @@ describe('UITurn.trace is optional', () => {
 
   it('rejects an unknown span kind', () => {
     expect(validateAgainst(AgnesGen.UISpan, { ...trace, kind: 'span' }).ok).toBe(false)
+  })
+})
+
+describe('side-call protocol additions: ajv ↔ TypeBox parity', () => {
+  const catalogEntry = (capabilities: Json) => ({
+    modelAdapters: [
+      {
+        id: 'adapter',
+        version: '1.0.0',
+        wireApi: 'wire',
+        sourcePackage: '@acme/adapter',
+        capabilities,
+        models: [],
+      },
+    ],
+  })
+  const baseCapabilities = { imageInput: false, tools: false, streaming: false }
+  const uiSpanOk = {
+    id: 'span:side-call:e1',
+    kind: 'generation',
+    name: 'side call',
+    status: 'completed',
+    startSeq: 1,
+    startedAt: '2026-09-17T00:00:00.000Z',
+    children: [],
+  }
+  const uiTurnCallOk = { id: 'e1', seq: 1, purpose: 'inference', model: 'm', creditSource: 'estimated' }
+
+  // [file, def, label, sample, expected verdict]
+  const cases: Array<[string, string, string, unknown, boolean]> = [
+    [MODEL_ID, 'RequestBody', 'payload object', { ...modelRequestBody, payload: { a: 1 } }, true],
+    [
+      MODEL_ID,
+      'RequestBody',
+      'payload nested array',
+      { ...modelRequestBody, payload: [1, 'a', null, { b: [] }] },
+      true,
+    ],
+    [MODEL_ID, 'RequestBody', 'payload scalar', { ...modelRequestBody, payload: 'text' }, true],
+    [MODEL_ID, 'RequestBody', 'payload undefined', { ...modelRequestBody, payload: undefined }, true],
+    [
+      MODEL_ID,
+      'RequestBody',
+      'timeoutMs at the lowered floor',
+      { ...modelRequestBody, timeoutMs: { firstToken: 100, total: 100 } },
+      true,
+    ],
+    [
+      MODEL_ID,
+      'RequestBody',
+      'timeoutMs one below the floor',
+      { ...modelRequestBody, timeoutMs: { firstToken: 99, total: 100 } },
+      false,
+    ],
+    [
+      SESSION_ID,
+      'EffectIntent',
+      'side-call never',
+      { effectId: 'e1', kind: 'side-call', replay: 'never' },
+      true,
+    ],
+    [
+      SESSION_ID,
+      'EffectIntent',
+      'side-call safe',
+      { effectId: 'e1', kind: 'side-call', replay: 'safe' },
+      false,
+    ],
+    [
+      SESSION_ID,
+      'EffectIntent',
+      'side-call idempotent',
+      { effectId: 'e1', kind: 'side-call', replay: 'idempotent' },
+      false,
+    ],
+    [SESSION_ID, 'EffectIntent', 'media never', { effectId: 'e1', kind: 'media', replay: 'never' }, true],
+    [SESSION_ID, 'EffectIntent', 'media safe', { effectId: 'e1', kind: 'media', replay: 'safe' }, false],
+    [
+      SESSION_ID,
+      'EffectIntent',
+      'tool safe is unaffected',
+      { effectId: 'e1', kind: 'tool', replay: 'safe' },
+      true,
+    ],
+    [
+      SESSION_ID,
+      'CostLedger',
+      'side-call row with route, adapter and host',
+      {
+        ...costLedgerOk,
+        purpose: 'side-call',
+        route: 'jev',
+        adapter: { id: 'x' },
+        endpointHost: 'h',
+      },
+      true,
+    ],
+    [
+      SESSION_ID,
+      'CostLedger',
+      'adapter with version',
+      { ...costLedgerOk, purpose: 'side-call', adapter: { id: 'x', version: '1' } },
+      true,
+    ],
+    [SESSION_ID, 'CostLedger', 'inference row without the new fields', costLedgerOk, true],
+    [SESSION_ID, 'CostLedger', 'route at maxLength', { ...costLedgerOk, route: rep(128) }, true],
+    [
+      SESSION_ID,
+      'CostLedger',
+      'endpointHost at maxLength',
+      { ...costLedgerOk, endpointHost: rep(253) },
+      true,
+    ],
+    [
+      SESSION_ID,
+      'CostLedger',
+      'endpointHost over maxLength',
+      { ...costLedgerOk, endpointHost: rep(254) },
+      false,
+    ],
+    [
+      SESSION_ID,
+      'CostLedger',
+      'adapter id and version at maxLength',
+      { ...costLedgerOk, adapter: { id: rep(128), version: rep(64) } },
+      true,
+    ],
+    [AGNES_ID, 'UITurnCall', 'side-call purpose', { ...uiTurnCallOk, purpose: 'side-call' }, true],
+    [AGNES_ID, 'UITurnCall', 'unknown purpose', { ...uiTurnCallOk, purpose: 'side' }, false],
+    [AGNES_ID, 'UISpan', 'side-call purpose', { ...uiSpanOk, purpose: 'side-call' }, true],
+    [AGNES_ID, 'UISpan', 'unknown purpose', { ...uiSpanOk, purpose: 'side' }, false],
+    [
+      AGNES_ID,
+      'SessionAdapterCatalogResult',
+      'payload capabilities',
+      catalogEntry({ ...baseCapabilities, payload: true, payloadOnly: true }),
+      true,
+    ],
+    [
+      AGNES_ID,
+      'SessionAdapterCatalogResult',
+      'payload alone',
+      catalogEntry({ ...baseCapabilities, payload: true }),
+      true,
+    ],
+    [
+      AGNES_ID,
+      'SessionAdapterCatalogResult',
+      'capabilities without payload',
+      catalogEntry(baseCapabilities),
+      true,
+    ],
+    [
+      AGNES_ID,
+      'SessionAdapterCatalogResult',
+      'payload not boolean',
+      catalogEntry({ ...baseCapabilities, payload: 'yes' }),
+      false,
+    ],
+    [
+      AGNES_ID,
+      'SessionAdapterCatalogResult',
+      'payloadOnly not boolean',
+      catalogEntry({ ...baseCapabilities, payloadOnly: 'yes' }),
+      false,
+    ],
+    [
+      AGNES_ID,
+      'SessionAdapterCatalogResult',
+      'unknown capability key',
+      catalogEntry({ ...baseCapabilities, batch: true }),
+      false,
+    ],
+  ]
+
+  it.each(cases)('%s %s: %s', (fileId, name, _label, sample, expected) => {
+    const schema = DEFS_BY_FILE[fileId]?.[name]
+    if (!schema) throw new Error(`missing generated schema ${name}`)
+    assertParity({ schema, check: ajvDef(fileId, name) }, fileId, name, sample, expected)
+  })
+})
+
+describe('voice additions: ajv ↔ TypeBox parity on the language pattern and astral text', () => {
+  const lang = (language?: string) => ({
+    sessionId: 's',
+    audio: 'A'.repeat(64),
+    ...(language === undefined ? {} : { language }),
+  })
+  const settingsWith = (language: string) => ({
+    ...VOICE_SETTINGS,
+    input: { ...VOICE_SETTINGS.input, language },
+  })
+  const cases: [string, unknown, boolean][] = [
+    ['SessionVoiceTranscribeParams', lang(), true], // language absent
+    ['SessionVoiceTranscribeParams', lang(''), true], // pattern branch: empty
+    ['SessionVoiceTranscribeParams', lang('zh'), true], // pattern branch: bare language
+    ['SessionVoiceTranscribeParams', lang('zh-Hans-CN'), true], // pattern branch: subtags
+    ['SessionVoiceTranscribeParams', lang('z'), false], // one letter
+    ['SessionVoiceTranscribeParams', lang('zh_CN'), false], // underscore
+    ['SessionVoiceTranscribeParams', lang('zh-'), false], // dangling subtag separator
+    ['VoiceSettings', settingsWith('zh-CN'), true], // non-empty language in the settings
+    ['VoiceSettings', settingsWith('en'), true],
+    ['VoiceSettings', settingsWith('english-US-x'), false], // first subtag longer than 3 letters
+  ]
+  it.each(cases)('%s %j', (name, sample, expected) => {
+    const schema = DEFS_BY_FILE[AGNES_ID]?.[name]
+    if (!schema) throw new Error(`missing generated schema ${name}`)
+    assertParity({ schema, check: ajvDef(AGNES_ID, name) }, AGNES_ID, name, sample, expected)
+  })
+
+  // `maxLength` counts UTF-16 code units in the TypeBox runtime gate (the authority the daemon uses).
+  it('counts an emoji as two units in speech text', () => {
+    const name = 'SessionVoiceSpeakParams'
+    const schema = DEFS_BY_FILE[AGNES_ID]?.[name]
+    if (!schema) throw new Error(`missing generated schema ${name}`)
+    const ajv = ajvDef(AGNES_ID, name)
+    const sample = (n: number) => ({ sessionId: 's', text: '😀'.repeat(n) })
+    expect(Value.Check(schema, sample(60))).toBe(true)
+    expect(Value.Check(schema, sample(61))).toBe(false)
+    expect(validateMethod('_agnes/v1/session.voice.speak', 'params', sample(60)).ok).toBe(true)
+    expect(validateMethod('_agnes/v1/session.voice.speak', 'params', sample(61)).ok).toBe(false)
+    // Known library difference: ajv counts code points, so it still accepts 61 emoji (122 units). The
+    // daemon's gate is TypeBox, which stays the authority; this pins the difference so a change in
+    // either library shows up here instead of silently moving the limit.
+    expect(ajv(sample(60))).toBe(true)
+    expect(ajv(sample(61))).toBe(true)
   })
 })

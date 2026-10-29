@@ -1,26 +1,22 @@
 import type { UINode, UITurn } from '@agnes/protocol'
-import type { ClientResourceService, LocaleService, SessionService, SlotRegistry } from '@agnes/web-client'
+import type {
+  ClientResourceService,
+  LocaleService,
+  SessionService,
+  SlotRegistry,
+  VoicePort,
+} from '@agnes/web-client'
+import { isConversationNode } from '@agnes/web-conversation/conversation-visibility'
 import {
-  AssistantRuntimeProvider,
-  type AttachmentWindowReader,
   createConversationProjectionStore,
-  useConversationRuntime,
-} from '@agnes/web-ui/assistant-ui'
-import type { TranscriptHandle } from '@agnes/web-units'
-import {
-  forwardRef,
-  useCallback,
-  useImperativeHandle,
-  useLayoutEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from 'react'
+  TurnNav,
+  useConversationProjection,
+} from '@agnes/web-ui/conversation'
+import type { TranscriptHandle, TranscriptMeta } from '@agnes/web-units/shell'
+import { forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import type { ClaimResolver } from './client-modules/boot.js'
 import { WebConversationMessages } from './conversation-message-adapter.js'
-import { isConversationNode } from './conversation-visibility.js'
-import type { TimelineMeta } from './timeline.js'
 
 const nearBottom = (element: HTMLElement) =>
   element.scrollHeight - element.scrollTop - element.clientHeight <= 80
@@ -33,19 +29,30 @@ export interface TimelineNodeHostProps {
   locale?: LocaleService
   resources?: ClientResourceService
   onFork?: (turn: UITurn) => Promise<void>
-  /** Reads attachment bytes of the open session, for images sent by reference. */
-  readAttachment?: AttachmentWindowReader
+  turnErrorActions?: import('@agnes/web-ui/conversation').TurnErrorActions
   markdownRenderer?: 'legacy' | 'xmarkdown'
+  voice?: VoicePort
 }
 
-/** The opt-in transcript root is the sole owner of every node article and history control. */
+/** The transcript root is the sole owner of every node article and history control. */
 export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostProps>(function TimelineNodeHost(
-  { registry, claim, newContentButton, session, locale, resources, onFork, readAttachment, markdownRenderer },
+  {
+    registry,
+    claim,
+    newContentButton,
+    session,
+    locale,
+    resources,
+    onFork,
+    turnErrorActions,
+    markdownRenderer,
+    voice,
+  },
   ref,
 ) {
   const content = useRef<HTMLDivElement>(null)
   const earlier = useRef<HTMLDivElement>(null)
-  const metaRef = useRef<TimelineMeta | undefined>(undefined)
+  const metaRef = useRef<TranscriptMeta | undefined>(undefined)
   const scroll = useRef({
     follow: true,
     expectedTop: 0,
@@ -54,25 +61,36 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
     awaitingRender: false,
     loadEpoch: 0,
   })
+  const translate = useCallback(
+    (key: string, vars?: Readonly<Record<string, string | number>>) => locale?.t(key, vars) ?? key,
+    [locale],
+  )
   const [store] = useState(() =>
     createConversationProjectionStore({ sessionId: registry.sessionId ?? '', nodes: [] }),
   )
-  const runtime = useConversationRuntime(store, locale?.t.bind(locale))
-  const projection = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
+  const projection = useConversationProjection(store)
+  // The prompt navigator draws beside the scrolling transcript, so it needs the element itself.
+  const [viewportElement, setViewportElement] = useState<HTMLElement | null>(null)
   const viewport = useCallback(
     () => content.current?.closest<HTMLElement>('#transcript') ?? content.current,
     [],
   )
+  // A skin may enable smooth reader scrolling. Programmatic positioning must not animate: a
+  // streaming frame would never catch up with the bottom, and anchoring after a prepend would
+  // visibly slide the whole transcript.
+  const jumpTo = useCallback((element: HTMLElement, top: number) => {
+    const previousBehavior = element.style.scrollBehavior
+    element.style.scrollBehavior = 'auto'
+    element.scrollTop = top
+    element.style.scrollBehavior = previousBehavior
+    scroll.current.expectedTop = element.scrollTop
+  }, [])
   const scrollToBottom = useCallback(() => {
     const element = viewport()
     if (!element) return
-    const previousBehavior = element.style.scrollBehavior
-    element.style.scrollBehavior = 'auto'
-    element.scrollTop = element.scrollHeight
-    element.style.scrollBehavior = previousBehavior
-    scroll.current.expectedTop = element.scrollTop
+    jumpTo(element, element.scrollHeight)
     if (newContentButton) newContentButton.hidden = true
-  }, [viewport, newContentButton])
+  }, [viewport, jumpTo, newContentButton])
   const loadEarlier = useCallback(() => {
     const state = scroll.current
     const meta = metaRef.current
@@ -97,6 +115,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
   useLayoutEffect(() => {
     const element = viewport()
     if (!element) return
+    setViewportElement(element)
     scroll.current.expectedTop = element.scrollTop
     const onScroll = () => {
       const state = scroll.current
@@ -112,6 +131,13 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
     }
     element.addEventListener('scroll', onScroll)
     newContentButton?.addEventListener('click', onNewContent)
+    const contentResize =
+      typeof ResizeObserver === 'function'
+        ? new ResizeObserver(() => {
+            if (scroll.current.follow) scrollToBottom()
+          })
+        : undefined
+    if (content.current) contentResize?.observe(content.current)
     const sentinel =
       typeof IntersectionObserver === 'function'
         ? new IntersectionObserver((seen) => {
@@ -122,6 +148,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
     return () => {
       element.removeEventListener('scroll', onScroll)
       newContentButton?.removeEventListener('click', onNewContent)
+      contentResize?.disconnect()
       sentinel?.disconnect()
       scroll.current.loadEpoch++
       scroll.current.loadingEarlier = false
@@ -132,7 +159,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
   useImperativeHandle(
     ref,
     () => ({
-      render(nodes: readonly UINode[], turns?: readonly UITurn[], meta?: TimelineMeta) {
+      render(nodes: readonly UINode[], turns?: readonly UITurn[], meta?: TranscriptMeta) {
         const element = viewport()
         const state = scroll.current
         if (state.awaitingRender) {
@@ -156,10 +183,8 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
           }),
         )
         if (element && state.follow) scrollToBottom()
-        else if (element && prepended) {
-          element.scrollTop = element.scrollHeight - fromBottom
-          state.expectedTop = element.scrollTop
-        } else if (element && newContentButton) newContentButton.hidden = nearBottom(element)
+        else if (element && prepended) jumpTo(element, element.scrollHeight - fromBottom)
+        else if (element && newContentButton) newContentButton.hidden = nearBottom(element)
       },
       reset() {
         metaRef.current = undefined
@@ -177,11 +202,11 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
         scrollToBottom()
       },
     }),
-    [registry, store, newContentButton, viewport, scrollToBottom],
+    [registry, store, newContentButton, viewport, jumpTo, scrollToBottom],
   )
   return (
     <div
-      style={{ display: 'contents' }}
+      className="transcript-node-host"
       data-agnes-region-owner="builtin"
       data-agnes-region-unit="transcript"
     >
@@ -191,21 +216,30 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
         </button>
       </div>
       <div id="transcript-content" ref={content}>
-        <AssistantRuntimeProvider runtime={runtime}>
-          <WebConversationMessages
-            registry={registry}
-            {...(markdownRenderer ? { markdownRenderer } : {})}
-            {...(projection.turns ? { turns: projection.turns } : {})}
-            visibleNodeIds={projection.nodes.map((node) => node.id)}
-            {...(onFork ? { onFork } : {})}
-            {...(readAttachment ? { readAttachment } : {})}
-            {...(claim ? { claim } : {})}
-            {...(session ? { session } : {})}
-            {...(locale ? { locale } : {})}
-            {...(resources ? { resources } : {})}
-          />
-        </AssistantRuntimeProvider>
+        <WebConversationMessages
+          nodes={projection.nodes}
+          registry={registry}
+          {...(markdownRenderer ? { markdownRenderer } : {})}
+          {...(projection.turns ? { turns: projection.turns } : {})}
+          {...(onFork ? { onFork } : {})}
+          {...(turnErrorActions ? { turnErrorActions } : {})}
+          {...(claim ? { claim } : {})}
+          {...(session ? { session } : {})}
+          {...(locale ? { locale } : {})}
+          {...(resources ? { resources } : {})}
+          {...(voice ? { voice } : {})}
+        />
       </div>
+      <TurnNav
+        t={translate}
+        nodes={projection.nodes}
+        turns={projection.turns}
+        viewport={viewportElement}
+        hasEarlier={projection.meta?.hasEarlier}
+        loadEarlier={loadEarlier}
+        bookmarks={projection.meta?.setBookmarks ? projection.meta.bookmarks : undefined}
+        onBookmarksChange={projection.meta?.setBookmarks}
+      />
     </div>
   )
 })

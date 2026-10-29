@@ -1,5 +1,8 @@
-import type { ModelRecord, RequestBody, ResponseMeta, RouteDecl } from '@agnes/protocol'
+import { randomUUID } from 'node:crypto'
+import type { ModelAdapterAttemptObservation } from '@agnes/extension-api'
+import type { InferenceEvent, ModelRecord, RequestBody, ResponseMeta, RouteDecl } from '@agnes/protocol'
 import { modelImageInputError } from '@agnes/protocol'
+import { createDeploymentFetch, ensureDeploymentProxy } from '@agnes/system-node/deployment-network'
 import type {
   Api,
   AssistantMessageEvent,
@@ -9,13 +12,23 @@ import type {
   ProviderStreamOptions,
 } from '@earendil-works/pi-ai'
 import { type AdapterStreamOptions, WireAdapter, type WireEvent } from '../../adapter.js'
+import { isChatModelId } from '../../chat-model.js'
 import { AiSetupError } from '../../errors.js'
 import { sha256Hex } from '../../hash.js'
+import {
+  fileRetryLedger,
+  memoryRetryLedger,
+  nextRetryDelay,
+  type RetryAttemptLedger,
+  retryAttemptFresh,
+} from '../../retry.js'
+import { keepCacheBreakpointOnHistory } from './cache-breakpoint.js'
 import { providerPayloadImageError } from './input-limits.js'
-import { type NetFailure, networkFailure, watchBody } from './network.js'
+import { networkEvent, networkFailure, watchResponse } from './network.js'
 import { probeInference } from './probe.js'
 import { probeModelsEndpoint } from './probe-models.js'
-import { AGNES_AI_BASE_URL } from './providers/agnes-ai.js'
+import { buffersToolCalls } from './providers/agnes-ai.js'
+import { deepSeekDefaultOutput } from './request-output.js'
 import { toContext } from './to-context.js'
 import { responseMeta, translateEvent, withResponse } from './translate.js'
 import { AMBIENT_CREDENTIAL_APIS, streamOverApi } from './wire.js'
@@ -104,7 +117,7 @@ export type ManualRoute = RouteDecl & {
  * function cannot answer: whether a route may state that its endpoint is final. This check stays
  * either way, because a route is also built programmatically and never meets the schema.
  */
-function requireAbsoluteHttpUrl(decl: RouteDecl): void {
+export function requireAbsoluteHttpUrl(decl: Pick<RouteDecl, 'route' | 'baseUrl'>): void {
   let url: URL
   try {
     url = new URL(decl.baseUrl)
@@ -149,7 +162,7 @@ export type PiStream = (
   options?: ProviderStreamOptions,
 ) => AsyncIterable<AssistantMessageEvent>
 
-const RETRY_BASE_MS = 500
+const DEFAULT_MAX_RETRIES = 5
 
 /** The declared record, in the shape the wire library reads it. */
 export function toPiModel(
@@ -202,10 +215,10 @@ export function toPiModel(
  *
  * Retrying stops at the first event. Once a delta has been forwarded the caller has seen part of an
  * answer, and a second attempt would append a second answer to it — so a failure after that point
- * is reported, not retried. A failure that was retried says so: the one error that leaves names how
- * many requests it took.
+ * is reported, not retried.
  */
 export class PiAdapter extends WireAdapter {
+  override readonly version = '0.0.0'
   readonly id: string
   private readonly streamImpl: PiStream
   private readonly providerId: string | undefined
@@ -218,6 +231,17 @@ export class PiAdapter extends WireAdapter {
   private readonly manual: Map<string, ManualRoute>
   private readonly maxRetries: number
   private readonly sleep: (ms: number, signal: AbortSignal) => Promise<void>
+  private readonly ledger: RetryAttemptLedger
+
+  /**
+   * Whether this adapter has already asked again as often as it will. The far end was tried `maxRetries`
+   * more times after the first; a caller that asks once more gets the same answer after the same wait, so
+   * the failure it is handed is final. A call that opted out of retries, or an adapter configured not to
+   * retry, has spent nothing and leaves that decision to its caller.
+   */
+  private retriesSpent(attempt: number, retry: false | undefined): boolean {
+    return retry !== false && this.maxRetries > 0 && attempt >= this.maxRetries
+  }
 
   constructor(cfg: {
     id?: string
@@ -232,8 +256,12 @@ export class PiAdapter extends WireAdapter {
      * auth again and retries once.
      */
     recoverRejectedAuth?: (route: string, rejected: ModelAuth, signal: AbortSignal) => Promise<boolean>
+    /** Retries after the first request. Classified transient failures default to 5. */
     maxRetries?: number
     sleep?: (ms: number, signal: AbortSignal) => Promise<void>
+    ledger?: RetryAttemptLedger
+    /** Durable attempt counts. The caller supplies this under its home; this package does not read the environment. */
+    retryDirectory?: string
   }) {
     super()
     this.id = cfg.id ?? 'pi'
@@ -243,7 +271,10 @@ export class PiAdapter extends WireAdapter {
     this.recoverRejectedAuth = cfg.recoverRejectedAuth
     for (const r of cfg.manualRoutes) requireAbsoluteHttpUrl(r)
     this.manual = new Map(cfg.manualRoutes.map((r) => [r.route, r]))
-    this.maxRetries = cfg.maxRetries ?? 2
+    this.maxRetries = cfg.maxRetries ?? DEFAULT_MAX_RETRIES
+    this.ledger =
+      cfg.ledger ??
+      (cfg.retryDirectory !== undefined ? fileRetryLedger(cfg.retryDirectory) : memoryRetryLedger())
     this.sleep =
       cfg.sleep ??
       ((ms, signal) =>
@@ -265,7 +296,7 @@ export class PiAdapter extends WireAdapter {
   }
 
   models(route: string): ModelRecord[] {
-    return this.manual.get(route)?.models ?? []
+    return (this.manual.get(route)?.models ?? []).filter((model) => isChatModelId(model.id))
   }
 
   override async probe(route: string, signal: AbortSignal) {
@@ -345,7 +376,7 @@ export class PiAdapter extends WireAdapter {
   async *stream(route: string, req: RequestBody, opts: AdapterStreamOptions): AsyncIterable<WireEvent> {
     const decl = this.manual.get(route)
     const record = decl?.models.find((m) => m.id === req.model)
-    if (!decl || !record) {
+    if (!decl || !record || !isChatModelId(req.model)) {
       yield {
         type: 'error',
         reason: 'error',
@@ -409,9 +440,23 @@ export class PiAdapter extends WireAdapter {
         throw new Error(payloadError)
       }
     }
+    ensureDeploymentProxy()
+    const networkTimeouts = decl.networkTimeouts
     const requestHeaders = this.requestHeaders(route, req)
     const dropThinking = record.thinkingReplay === 'drop'
-    const { context } = toContext(req, { dropThinking })
+    let context: Context
+    try {
+      context = toContext(req, { dropThinking }).context
+    } catch (error) {
+      yield {
+        type: 'error',
+        reason: 'error',
+        code: 'FORMAT',
+        message: error instanceof Error ? error.message : 'Invalid tool parameters',
+        retryable: false,
+      }
+      return
+    }
     const transforms: Array<{ event: string; ext: string }> = []
     if (
       dropThinking &&
@@ -421,7 +466,8 @@ export class PiAdapter extends WireAdapter {
     if (record.compat && Object.keys(record.compat).length > 0)
       transforms.push({ event: 'compat', ext: 'pi' })
     // These APIs accept fetch and serialize their final request before calling it. Google rejects
-    // custom fetch; Bedrock uses Smithy and Codex can use WebSockets. Those remain unreported.
+    // custom fetch and Bedrock uses Smithy; those remain unreported. Codex uses SSE so
+    // its requests honor the same deployment proxy and account deadlines.
     const observable = new Set([
       'openai-completions',
       'openai-responses',
@@ -431,74 +477,163 @@ export class PiAdapter extends WireAdapter {
       'mistral-conversations',
       'pi-messages',
     ])
-    // `wire` and `net` belong to one attempt: an abandoned attempt's late response must not overwrite
-    // what was learned about the attempt that replaced it.
+    // `wire` belongs to one attempt: an abandoned attempt's late response must not overwrite the
+    // metadata of the attempt that replaced it.
+    const failures = new WeakMap<ResponseMeta, NonNullable<ReturnType<typeof networkFailure>>>()
     const fetchBody =
-      (wire: ResponseMeta, net: { failure?: NetFailure | undefined }): typeof globalThis.fetch =>
+      (wire: ResponseMeta, observed: ModelAdapterAttemptObservation): typeof globalThis.fetch =>
       async (input, init) => {
         const request = new Request(input, init)
         const bytes = new Uint8Array(await request.clone().arrayBuffer())
         checkPayloadBytes(bytes.byteLength)
         opts.reportSent?.({ sentHash: sha256Hex(bytes), transforms })
-        // The client library reports either failure below as "Connection error." or "terminated" and
-        // keeps no code, so this is the last place that holds the error saying what happened.
-        let response: Response
+        if (opts.reportRequest) {
+          try {
+            await opts.reportRequest(JSON.parse(new TextDecoder().decode(bytes)), observed.attemptId)
+          } catch {
+            /* JSON capture is passive and never includes transport headers. */
+          }
+        }
+        observed.adapter.endpoint = `${new URL(request.url).origin}${new URL(request.url).pathname}`
+        observed.status = 'sent'
+        opts.reportDispatch?.()
         try {
-          response = await globalThis.fetch(request)
+          failures.delete(wire)
+          const response = await network.fetch(request)
+          Object.assign(wire, responseMeta(response))
+          return watchResponse(response, (error) => {
+            const failure = networkFailure(error, 'body')
+            if (failure) failures.set(wire, failure)
+          })
         } catch (error) {
-          net.failure = networkFailure(error, 'first-byte')
+          const failure = networkFailure(error, 'connect')
+          if (failure) failures.set(wire, failure)
           throw error
         }
-        Object.assign(wire, responseMeta(response))
-        return watchBody(response, (error) => {
-          net.failure = networkFailure(error, 'stream')
-        })
       }
     // Two deadlines, both enforced here rather than by the wire library, and both merged with the
     // caller's own signal into one controller so the request below sees a single cancellation.
     //
     // The first-token deadline is spent once anything arrives: after that a stream is answering,
     // and the question stops being "did this route respond" and becomes "will this answer end".
-    // The total deadline is what answers the second one. A route that hangs with neither is a turn
-    // that never finishes, and a session that can never be closed.
+    // The total deadline is what answers the second one, and the idle timer, armed from the first
+    // content on, catches a stream that stalls midway. Silence before the first content belongs to
+    // the first-token deadline alone. A route that hangs with neither is a turn that never finishes,
+    // and a session that can never be closed.
+    //
+    // A gateway that buffers tool calls is silent while the model writes one, before the first
+    // content or between two parts of an answer. There only the total deadline can tell a long tool
+    // call from a hung route, so it bounds both waits.
+    const buffered = buffersToolCalls(decl.baseUrl, this.providerId)
+    const totalMs = Math.min(opts.timeoutMs.total, networkTimeouts?.requestMs ?? 300_000)
+    const firstTokenMs = buffered ? undefined : opts.timeoutMs.firstToken
+    const idleMs = buffered ? totalMs : (networkTimeouts?.streamIdleMs ?? 60_000)
+    const network = createDeploymentFetch({
+      ...networkTimeouts,
+      streamIdleMs: idleMs,
+      firstByteMs: Math.min(firstTokenMs ?? totalMs, totalMs),
+    })
     const inner = new AbortController()
     const onAbort = () => inner.abort()
     if (opts.signal.aborted) inner.abort()
     else opts.signal.addEventListener('abort', onAbort, { once: true })
-    // Which deadline fired is recorded rather than inferred from whether anything arrived: a total
-    // deadline can also run out before the first token, after retries have spent it.
-    let fired: 'first-token' | 'total' | undefined
-    const deadline = (which: 'first-token' | 'total') => () => {
-      fired ??= which
-      inner.abort()
+    const deadline = Date.now() + totalMs
+    const total = setTimeout(() => inner.abort(), totalMs)
+    const armFirst = () =>
+      firstTokenMs === undefined ? undefined : setTimeout(() => inner.abort(), firstTokenMs)
+    let first: ReturnType<typeof setTimeout> | undefined = armFirst()
+    let idleExpired = false
+    let idle: ReturnType<typeof setTimeout> | undefined
+    const resetIdle = () => {
+      clearTimeout(idle)
+      idle = setTimeout(() => {
+        idleExpired = true
+        inner.abort()
+      }, idleMs)
     }
-    const total = setTimeout(deadline('total'), opts.timeoutMs.total)
-    let first: ReturnType<typeof setTimeout> | undefined = setTimeout(
-      deadline('first-token'),
-      opts.timeoutMs.firstToken,
-    )
     let firstSeen = false
     // One listener for the whole run. Racing a freshly built promise per event would register a
     // listener per event, which on a long answer is a leak that grows with the answer.
     const stopped = abortPromise(inner.signal)
+    const ledgerKey = `${opts.sessionKey}\0${route}\0${req.model}`
+    const pending = this.ledger.read(ledgerKey)
+    const pendingFresh = pending !== undefined && retryAttemptFresh(pending, Date.now())
+    if (pending && !pendingFresh) this.forgetAttempt(ledgerKey)
+    let preservePending = pendingFresh && (pending?.resumeAt ?? 0) > Date.now()
     try {
-      let attempt = 0
+      let attempt = pending !== undefined && pendingFresh ? pending.count : 0
+      if (preservePending) {
+        // A restored server wait consumes the total budget, but is not provider response time.
+        clearTimeout(first)
+        first = undefined
+        const remaining = (pending?.resumeAt ?? 0) - Date.now()
+        const budgetExceeded = remaining > deadline - Date.now()
+        if (!budgetExceeded && !inner.signal.aborted)
+          await Promise.race([this.sleep(remaining, inner.signal), stopped])
+        if (budgetExceeded || inner.signal.aborted) {
+          const aborted = opts.signal.aborted
+          yield {
+            type: 'error',
+            reason: aborted ? 'aborted' : 'error',
+            code: aborted ? 'ABORTED' : 'TIMEOUT',
+            message: aborted ? 'aborted' : 'persisted retry wait exceeds total deadline',
+            retryable: !aborted,
+            ...(!aborted ? { retryAfterMs: Math.max(0, (pending?.resumeAt ?? 0) - Date.now()) } : {}),
+          }
+          return
+        }
+        preservePending = false
+        first = armFirst()
+      }
       let authRecoveryAttempted = false
-      const tried = (message: string) => (attempt > 0 ? `${message}, after ${attempt + 1} attempts` : message)
       for (;;) {
+        if (inner.signal.aborted) {
+          const aborted = opts.signal.aborted
+          yield {
+            type: 'error',
+            reason: aborted ? 'aborted' : 'error',
+            code: aborted ? 'ABORTED' : 'TIMEOUT',
+            message: aborted ? 'aborted' : 'network deadline',
+            retryable: !aborted,
+          }
+          return
+        }
         // Per attempt, not shared: two streams in flight in one process must not draw tool-call
         // ordinals from one counter.
         let ordinal = 0
         const nextOrdinal = () => ordinal++
         let emitted = false
         const wire: ResponseMeta = {}
-        const net: { failure?: NetFailure | undefined } = {}
+        let endpoint: string | null = null
+        try {
+          const url = new URL(decl.baseUrl)
+          endpoint = `${url.origin}${url.pathname}`
+        } catch {
+          /* Non-HTTP identifier. */
+        }
+        const observed: ModelAdapterAttemptObservation = {
+          attemptId: randomUUID(),
+          index: attempt,
+          adapter: { id: this.id, version: this.version, api: decl.api, endpoint },
+          status: 'not-sent',
+        }
+        const reportAttempt = async () => {
+          try {
+            await opts.reportAttempt?.(observed)
+          } catch {
+            /* Passive capture. */
+          }
+        }
+        if (opts.reportAttempt) await reportAttempt()
         let retryAfter: number | undefined
+        let retryError: Extract<WireEvent, { type: 'error' }> | undefined
         let requestAuth: ModelAuth | undefined
         if (this.resolveCredential) {
           try {
             const result = await Promise.race([this.resolveCredential(route, inner.signal), stopped])
             if (result === ABORTED || inner.signal.aborted) {
+              observed.status = opts.signal.aborted ? 'cancelled' : 'failed'
+              if (opts.reportAttempt) await reportAttempt()
               yield {
                 type: 'error',
                 reason: opts.signal.aborted ? 'aborted' : 'error',
@@ -515,6 +650,8 @@ export class PiAdapter extends WireAdapter {
             )
               throw new Error('empty')
           } catch {
+            observed.status = opts.signal.aborted ? 'cancelled' : 'failed'
+            if (opts.reportAttempt) await reportAttempt()
             yield {
               type: 'error',
               reason: opts.signal.aborted ? 'aborted' : 'error',
@@ -535,40 +672,46 @@ export class PiAdapter extends WireAdapter {
           ),
         )
         if (this.providerId) requestModel.provider = this.providerId
-        const it = this.streamImpl(requestModel, context, {
-          ...this.streamOptions(route, req, { ...opts, signal: inner.signal }),
-          onPayload: (payload) => {
-            payloadError = providerPayloadImageError(payload, record.inputLimits)
-            if (payloadError) throw new Error(payloadError)
-            // SDK-backed transports expose their provider payload here. Binary fields (Bedrock)
-            // serialize as Base64, not JSON objects with numeric keys.
-            checkPayloadBytes(
-              Buffer.byteLength(
-                JSON.stringify(payload, (_key, value) =>
-                  value instanceof Uint8Array ? Buffer.from(value).toString('base64') : value,
+        const defaultOutput = buffered
+          ? record.maxTokens
+          : deepSeekDefaultOutput(decl.baseUrl, record.maxTokens)
+        const it = network.run(() =>
+          this.streamImpl(requestModel, context, {
+            ...this.streamOptions(route, req, { ...opts, signal: inner.signal }),
+            onPayload: (payload) => {
+              keepCacheBreakpointOnHistory(decl.api, payload, req)
+              payloadError = providerPayloadImageError(payload, record.inputLimits)
+              if (payloadError) throw new Error(payloadError)
+              // SDK-backed transports expose their provider payload here. Binary fields (Bedrock)
+              // serialize as Base64, not JSON objects with numeric keys.
+              checkPayloadBytes(
+                Buffer.byteLength(
+                  JSON.stringify(payload, (_key, value) =>
+                    value instanceof Uint8Array ? Buffer.from(value).toString('base64') : value,
+                  ),
+                  'utf8',
                 ),
-                'utf8',
-              ),
-            )
-          },
-          // Raw pi streaming does not apply catalog limits; Agnes otherwise defaults to 4096 upstream.
-          ...(decl.baseUrl.replace(/\/$/, '') === AGNES_AI_BASE_URL
-            ? { maxTokens: req.sampling?.maxTokens ?? record.maxTokens }
-            : {}),
-          ...(requestAuth?.apiKey === undefined ? {} : { apiKey: requestAuth.apiKey }),
-          // pi-ai checks header-owned authentication in stream options before it
-          // constructs a client. Model headers alone cannot authenticate Kimi OAuth.
-          ...(requestAuth?.headers === undefined ? {} : { headers: requestAuth.headers }),
-          ...(decl.api === 'openai-codex-responses' && this.resolveCredential
-            ? { transport: 'sse' as const }
-            : {}),
-          ...(observable.has(decl.api) ? { fetch: fetchBody(wire, net) } : {}),
-        })[Symbol.asyncIterator]()
+              )
+            },
+            // Raw pi streaming omits output caps. Known defaults must not raise catalog capacity.
+            ...(defaultOutput !== undefined ? { maxTokens: req.sampling?.maxTokens ?? defaultOutput } : {}),
+            ...(requestAuth?.apiKey === undefined ? {} : { apiKey: requestAuth.apiKey }),
+            // pi-ai checks header-owned authentication in stream options before it
+            // constructs a client. Model headers alone cannot authenticate Kimi OAuth.
+            ...(requestAuth?.headers === undefined ? {} : { headers: requestAuth.headers }),
+            ...(decl.api === 'openai-codex-responses' ? { transport: 'sse' as const } : {}),
+            ...(observable.has(decl.api) ? { fetch: fetchBody(wire, observed) } : {}),
+            timeoutMs: networkTimeouts?.requestMs ?? 300_000,
+            connectTimeoutMs: networkTimeouts?.connectMs ?? 10_000,
+            streamIdleTimeoutMs: idleMs,
+          })[Symbol.asyncIterator](),
+        )
         try {
           for (;;) {
             // Racing rather than `for await`, because a hung stream never produces the next value
             // and a loop waiting on it could not notice its own deadline passing.
-            const next = await Promise.race([it.next(), stopped])
+            if (firstSeen) resetIdle()
+            const next = await Promise.race([network.run(() => it.next()), stopped])
             if (payloadError) {
               yield {
                 type: 'error',
@@ -580,16 +723,30 @@ export class PiAdapter extends WireAdapter {
               return
             }
             if (next === ABORTED || next.done) break
-            for (const w of translateEvent(next.value, requestModel, nextOrdinal, wire, net.failure)) {
+            for (const translated of translateEvent(next.value, requestModel, nextOrdinal, wire)) {
+              const failure = failures.get(wire)
+              const w =
+                translated.type === 'error' && translated.reason !== 'aborted' && failure
+                  ? { ...translated, ...networkEvent(failure) }
+                  : translated
+              if (
+                w.type === 'usage' &&
+                Object.values(w.tokens).some((value) => typeof value === 'number' && value > 0)
+              )
+                observed.providerActualTokens = w.tokens
+              if (w.type === 'done') observed.status = 'completed'
+              if (w.type === 'error') observed.status = w.reason === 'aborted' ? 'cancelled' : 'failed'
               // HTTP headers and pi's start markers contain no model output.
               if (!firstSeen && w.type !== 'error' && (!('delta' in w) || w.delta.length > 0)) {
                 firstSeen = true
                 clearTimeout(first)
                 first = undefined
+                resetIdle()
               }
               if (
                 w.type === 'error' &&
                 w.code === 'AUTH' &&
+                opts.retry !== false &&
                 !emitted &&
                 !authRecoveryAttempted &&
                 requestAuth &&
@@ -621,23 +778,66 @@ export class PiAdapter extends WireAdapter {
                 attempt < this.maxRetries &&
                 !inner.signal.aborted
               ) {
-                retryAfter = w.retryAfterMs ?? RETRY_BASE_MS * 2 ** attempt
+                retryAfter = w.retryAfterMs ?? nextRetryDelay(attempt + 1)
+                retryError = w
                 break
               }
               emitted = true
-              yield w.type === 'error' ? { ...w, message: tried(w.message) } : w
+              yield w.type === 'error' && w.retryable && this.retriesSpent(attempt, opts.retry)
+                ? { ...w, retryable: false }
+                : w
               if (w.type === 'done' || w.type === 'error') return
             }
             if (retryAfter !== undefined) break
           }
         } catch (error) {
-          if (!payloadError) throw error
-          yield { type: 'error', reason: 'error', code: 'FORMAT', message: payloadError, retryable: false }
-          return
+          if (payloadError) {
+            yield { type: 'error', reason: 'error', code: 'FORMAT', message: payloadError, retryable: false }
+            return
+          }
+          const failure = failures.get(wire) ?? networkFailure(error, 'stream')
+          const event: Extract<InferenceEvent, { type: 'error' }> = inner.signal.aborted
+            ? {
+                type: 'error',
+                reason: opts.signal.aborted ? 'aborted' : 'error',
+                code: opts.signal.aborted ? 'ABORTED' : 'TIMEOUT',
+                message: opts.signal.aborted ? 'aborted' : 'network timeout',
+                retryable: !opts.signal.aborted,
+              }
+            : failure
+              ? networkEvent(failure)
+              : {
+                  type: 'error',
+                  reason: 'error',
+                  code: 'TRANSPORT',
+                  message: 'unclassified transport failure',
+                  retryable: false,
+                }
+          if (
+            !emitted &&
+            event.retryable &&
+            opts.retry !== false &&
+            attempt < this.maxRetries &&
+            !inner.signal.aborted
+          ) {
+            retryAfter = nextRetryDelay(attempt + 1)
+            retryError = event
+          } else {
+            yield {
+              ...event,
+              ...(event.retryable && this.retriesSpent(attempt, opts.retry) ? { retryable: false } : {}),
+              ...withResponse(wire),
+            }
+            return
+          }
         } finally {
           // Abandoning an iterator without closing it leaves the previous attempt's request running
           // beside the retry. The result is not awaited: a hung generator's `return` settles only
           // when the thing it is hung on does, which is the case this exists for.
+          if (inner.signal.aborted) observed.status = opts.signal.aborted ? 'cancelled' : 'failed'
+          else if (observed.status === 'sent') observed.status = 'failed'
+          observed.response = { ...wire }
+          if (opts.reportAttempt) await reportAttempt()
           void it.return?.(undefined)?.then(undefined, () => {})
         }
         if (inner.signal.aborted) {
@@ -645,12 +845,17 @@ export class PiAdapter extends WireAdapter {
           // outcome: an abort is the caller's own decision and is never retried, a deadline is the
           // route's failure and may be.
           const aborted = opts.signal.aborted
-          const status = observable.has(decl.api) ? wire.status : null
           yield {
             type: 'error',
             reason: aborted ? 'aborted' : 'error',
             code: aborted ? 'ABORTED' : 'TIMEOUT',
-            message: aborted ? 'aborted' : tried(deadlineMessage(fired, opts.timeoutMs, firstSeen, status)),
+            message: aborted
+              ? 'aborted'
+              : idleExpired
+                ? 'stream idle timeout'
+                : firstSeen || firstTokenMs === undefined
+                  ? 'total timeout'
+                  : 'first token timeout',
             retryable: !aborted,
             ...withResponse(wire),
           }
@@ -664,13 +869,33 @@ export class PiAdapter extends WireAdapter {
               type: 'error',
               reason: 'error',
               code: 'TRANSPORT',
-              message: tried('empty stream'),
+              message: 'empty stream',
               retryable: true,
               ...withResponse(wire),
             }
           return
         }
+        // A server wait that outlasts the total deadline would either sleep past the caller's
+        // budget or, if capped, retry before the server allows it. Stop and keep the wait.
+        if (retryError?.retryAfterMs !== undefined && retryAfter > deadline - Date.now()) {
+          yield retryError
+          return
+        }
         attempt++
+        // Server-classified failures must commit even when Retry-After is zero.
+        // Local authentication recovery has no retryError and does not consume this ledger.
+        if (retryError) {
+          try {
+            this.ledger.commit(ledgerKey, attempt, Date.now() + retryAfter)
+          } catch (error) {
+            const diagnostic = error instanceof Error ? error.message : 'commit failed'
+            yield {
+              ...retryError,
+              message: `${retryError.message} (retry ledger commit failed: ${diagnostic})`,
+            }
+            return
+          }
+        }
         await this.sleep(retryAfter, inner.signal)
         if (!inner.signal.aborted) {
           // The event that caused a retry is suppressed, so it is not a first response from the
@@ -678,41 +903,33 @@ export class PiAdapter extends WireAdapter {
           // the original total deadline continues to bound the complete operation.
           firstSeen = false
           if (first) clearTimeout(first)
-          first = setTimeout(deadline('first-token'), opts.timeoutMs.firstToken)
+          first = armFirst()
         }
       }
     } finally {
+      clearTimeout(idle)
+      void network.close().catch(() => undefined)
       clearTimeout(total)
       if (first) clearTimeout(first)
       opts.signal.removeEventListener('abort', onAbort)
+      if (!preservePending) this.forgetAttempt(ledgerKey)
+    }
+  }
+
+  /** A clear failure must not replace a result the caller already has. */
+  private forgetAttempt(key: string): void {
+    try {
+      this.ledger.clear(key)
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'clear failed'
+      process.emitWarning(`model retry ledger clear failed: ${reason}`, {
+        code: 'AGH_RETRY_LEDGER_CLEAR',
+      })
     }
   }
 }
 
 const ABORTED = Symbol('aborted')
-
-/**
- * What one of this adapter's own deadlines says: which timer fired and how long it was, and how far
- * the answer had got - nothing yet, response headers and no output, or output that stopped. `status`
- * is `null` on an api whose HTTP response this adapter cannot see, where the middle case cannot be
- * told from the first.
- */
-function deadlineMessage(
-  fired: 'first-token' | 'total' | undefined,
-  timeoutMs: AdapterStreamOptions['timeoutMs'],
-  firstSeen: boolean,
-  status: number | undefined | null,
-): string {
-  const ms = fired === 'total' ? timeoutMs.total : timeoutMs.firstToken
-  const what = firstSeen
-    ? 'the model provider did not finish its answer mid-stream'
-    : status === null
-      ? 'no output from the model provider'
-      : status === undefined
-        ? 'no answer from the model provider while waiting for the first byte'
-        : `the model provider answered status=${status} but sent no output`
-  return `${what} (${fired ?? 'first-token'} timeout, ${ms % 1000 === 0 ? `${ms / 1000}s` : `${ms}ms`})`
-}
 
 /** Resolves when the run is cancelled, whoever cancelled it, and never rejects. */
 function abortPromise(signal: AbortSignal): Promise<typeof ABORTED> {

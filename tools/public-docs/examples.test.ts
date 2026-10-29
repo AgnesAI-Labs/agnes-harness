@@ -34,14 +34,14 @@ async function browserHarness(sessionId?: string, call?: (name: string) => Promi
     return call(name)
   })
   new CommandService(ctx, async () => false)
-  new SessionService(ctx, sessionId)
+  const session = new SessionService(ctx, sessionId)
+  if (sessionId) session.setReadiness('ready', sessionId)
   new ThemeService(ctx, 'light')
   new LocaleService(ctx, 'zh-CN')
   const slots = ctx.get('slots') as SlotRegistry
   // In the product this declaration belongs to the mounted shell, not to the plugin.
-  slots.declare('ui:sidebar', { kind: 'single', scope: 'root' }, 'docs-shell-fixture')
   const text = () =>
-    slots.entriesOfSlot('ui:sidebar').map((entry) => {
+    slots.entriesOfSlot('workbench.panel').map((entry) => {
       if (typeof entry.component !== 'function') throw new Error('expected example function component')
       return (entry.component as () => string)()
     })
@@ -51,7 +51,7 @@ async function browserHarness(sessionId?: string, call?: (name: string) => Promi
 const identity = (packageId: string, services: string[] = []): ModuleIdentity => ({
   packageId,
   revision: 'docs-fixture',
-  allowedSlots: ['ui:sidebar'],
+  allowedSlots: ['workbench.panel'],
   services,
 })
 
@@ -59,20 +59,23 @@ describe('public documentation examples (no provider, no daemon)', () => {
   it('loads the actual backend export, validates its schema and executes its documented result', async () => {
     const pkg = JSON.parse(await readFile(exampleUrl('hot-tool-plugin/package.json'), 'utf8'))
     const [declaration] = parseAgnesPluginEntries(pkg.name, pkg.agnes.plugins)
-    expect(declaration?.inject).toEqual(['extension'])
+    expect(declaration?.inject).toEqual(['tools', 'hooks', 'self'])
     const mod = await moduleAt('hot-tool-plugin/index.mjs')
     let tool: ToolDef | undefined
     const hooks: string[] = []
     // Registration capture is a fixture, not a claim of Host authorization or OS isolation.
     mod.textStatsTool.apply({
-      extension: () => ({
-        registerTool(def: ToolDef) {
+      tools: {
+        register(def: ToolDef) {
           tool = def
         },
-        on(event: string) {
+      },
+      hooks: {
+        register(event: string) {
           hooks.push(event)
         },
-      }),
+      },
+      self: { log: { info() {} } },
     })
     if (!tool) throw new Error('example did not register its tool')
     expect(checkToolDef(tool, { prefix: '' })).toMatchObject({ ok: true })
@@ -98,7 +101,7 @@ describe('public documentation examples (no provider, no daemon)', () => {
         await fiber.await()
         expect(h.text()).toContain(`Agnes client module demo · ${v}`)
         await fiber.dispose()
-        expect(h.slots.entriesOfSlot('ui:sidebar')).toHaveLength(0)
+        expect(h.slots.entriesOfSlot('workbench.panel')).toHaveLength(0)
       } finally {
         await h.ctx.fiber.dispose()
       }
@@ -147,7 +150,8 @@ describe('public documentation examples (no provider, no daemon)', () => {
         identity('@agnes-examples/client-service-panel', failure === 'no-allowlist' ? [] : ['panel.version']),
       )
       await fiber.await()
-      await expect.poll(() => h.text()).toContain('Agnes client service demo · v1 · unavailable')
+      if (failure === 'no-session') expect(h.text()).toEqual([])
+      else await expect.poll(() => h.text()).toContain('Agnes client service demo · v1 · unavailable')
       expect(calls).toBe(0)
     } finally {
       await h.ctx.fiber.dispose()

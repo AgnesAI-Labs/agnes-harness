@@ -1,16 +1,39 @@
 import { createHash } from 'node:crypto'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { jcs } from '@agnes/protocol'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createSkillResourceStore,
   RESOURCE_ALL_PERMISSIONS,
   type ResourceAuthority,
+  type ResourceEffectAdmission,
   SkillJournalStore,
 } from '../src/index.js'
 import type { ResourceOperationRecord } from '../src/skill-journal.js'
+
+const persistence = vi.hoisted(() => ({ afterFlush: undefined as (() => void) | undefined }))
+vi.mock('node:fs/promises', async (original) => {
+  const fs = await original<typeof import('node:fs/promises')>()
+  return {
+    ...fs,
+    open: async (...args: Parameters<typeof fs.open>) => {
+      const handle = await fs.open(...args)
+      return new Proxy(handle, {
+        get(target, key) {
+          if (key === 'sync')
+            return async () => {
+              await target.sync()
+              persistence.afterFlush?.()
+            }
+          const value: unknown = Reflect.get(target, key)
+          return typeof value === 'function' ? value.bind(target) : value
+        },
+      })
+    },
+  }
+})
 
 // prune() used to concatenate the kept non-terminal ("received")
 // operations BEFORE the capped terminal ("finished") tail and then slice(-900) the combined array.
@@ -74,6 +97,8 @@ let directory = ''
 afterEach(async () => {
   if (directory) await rm(directory, { recursive: true, force: true })
   directory = ''
+  persistence.afterFlush = undefined
+  vi.restoreAllMocks()
 })
 
 describe('resource operation journal prune()', () => {
@@ -215,3 +240,138 @@ describe('resource operation journal prune()', () => {
     expect(finalCount).toBe(501)
   })
 })
+
+it.each([
+  ['queued', 'epoch'],
+  ['queued', 'deadline'],
+  ['temp-written', 'epoch'],
+  ['temp-written', 'deadline'],
+])(
+  'Skill journal refuses %s writes after losing %s and preserves durable state',
+  async (boundary, failure) => {
+    directory = await mkdtemp(join(tmpdir(), 'agnes-skill-lease-boundary-'))
+    const store = new SkillJournalStore(directory, scope)
+    await store.transact(profile, (journal) => ({
+      next: { ...journal, priorities: { 'skill/seed': 100 } },
+      result: undefined,
+    }))
+    const file = join(directory, `${profile}.skills.json`)
+    const before = await readFile(file, 'utf8')
+    const now = Date.now()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now)
+    let epoch = 0
+    const admission: ResourceEffectAdmission = {
+      verify: async () => {
+        if (epoch !== 0) throw new Error('epoch revoked')
+      },
+      assertActive: () => {
+        if (Date.now() >= now + 1_000) throw new Error('deadline expired')
+      },
+    }
+    const revoke = () => {
+      if (failure === 'epoch') epoch++
+      else clock.mockReturnValue(now + 1_000)
+    }
+    let release = () => {}
+    let queued: Promise<void> | undefined
+    if (boundary === 'queued') {
+      let enter!: () => void
+      const entered = new Promise<void>((resolve) => {
+        enter = resolve
+      })
+      const held = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      queued = store.transact(profile, async (journal) => {
+        enter()
+        await held
+        return { next: journal, result: undefined }
+      })
+      await entered
+    } else persistence.afterFlush = revoke
+    const pending = store.transact(
+      profile,
+      (journal) => ({ next: { ...journal, priorities: { 'skill/seed': 200 } }, result: undefined }),
+      admission,
+    )
+    const refused = expect(pending).rejects.toThrow(failure)
+    try {
+      if (boundary === 'queued') revoke()
+      release()
+      await queued
+      await refused
+      expect(await readFile(file, 'utf8')).toBe(before)
+      expect((await store.read(profile, (journal) => journal.priorities))['skill/seed']).toBe(100)
+      expect(await readdir(directory)).toEqual([`${profile}.skills.json`])
+      // This independent human administration remains valid and never inherits a failed lease.
+      persistence.afterFlush = undefined
+      await store.transact(profile, (journal) => ({
+        next: { ...journal, priorities: { 'skill/seed': 200 } },
+        result: undefined,
+      }))
+      expect((await store.read(profile, (journal) => journal.priorities))['skill/seed']).toBe(200)
+    } finally {
+      release()
+      clock.mockRestore()
+    }
+  },
+)
+
+it.each(['revocation', 'abort', 'expiry', 'epoch', 'stale-proof'])(
+  'shared proof: refuses Skill journal %s at final publication',
+  async (loss) => {
+    const { permissionEffectAdmission } = await import('@agnes/protocol')
+    let active = true,
+      now = 0,
+      epoch = 0,
+      version = 1
+    const controller = new AbortController()
+    const proof = permissionEffectAdmission({
+      signals: [controller.signal],
+      expiresAt: 10,
+      clock: () => now,
+      unavailable: () => Error('permission unavailable'),
+      assertBound: () => {
+        if (!active || epoch !== 0 || version !== 1) throw Error('permission unavailable')
+      },
+    })
+    const lose = () => {
+      if (loss === 'revocation') active = false
+      if (loss === 'abort') controller.abort()
+      if (loss === 'expiry') now = 10
+      if (loss === 'epoch') epoch++
+      if (loss === 'stale-proof') version++
+    }
+    directory = await mkdtemp(join(tmpdir(), 'agh-skill-proof-'))
+    const store = new SkillJournalStore(directory, scope)
+    await seedJournal(directory, [])
+    const file = join(directory, `${profile}.skills.json`)
+    const before = await readFile(file, 'utf8')
+    // Inject loss only after the durability boundary, after the final async verifier returns.
+    let flushed = false
+    persistence.afterFlush = () => {
+      flushed = true
+    }
+    const finalAdmission = {
+      ...proof,
+      verify: async () => {
+        await proof.verify()
+        if (flushed) lose()
+      },
+    }
+    await expect(
+      store.transact(
+        profile,
+        (journal) => ({
+          next: { ...journal, removed: ['skill/reviewed'] },
+          result: undefined,
+        }),
+        finalAdmission,
+      ),
+    ).rejects.toThrow('permission unavailable')
+    expect(await readFile(file, 'utf8')).toBe(before)
+    expect((await readdir(directory)).filter((name) => name.endsWith('.tmp'))).toEqual([])
+    // Refusal leaves durable operation rows unchanged.
+    expect(await store.read(profile, (journal) => journal.operations)).toEqual([])
+  },
+)

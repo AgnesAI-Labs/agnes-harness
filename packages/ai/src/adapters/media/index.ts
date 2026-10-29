@@ -1,5 +1,5 @@
 import type { ContentBlock, ModelRecord, RequestBody, RouteDecl } from '@agnes/protocol'
-import { createImagesModels, type ImageContent } from '@earendil-works/pi-ai'
+import { createModels, type ImageContent } from '@earendil-works/pi-ai'
 import { type AdapterStreamOptions, WireAdapter, type WireEvent } from '../../adapter.js'
 import { canonicalJson, sha256Hex } from '../../hash.js'
 import { pollUntilDone, type VideoClient, type VideoStatus } from './video-job.js'
@@ -234,11 +234,11 @@ async function piImages(
   input: string,
   opts: { apiKey?: string; signal: AbortSignal },
 ): Promise<{ images: Array<{ data: string; mimeType: string }> }> {
-  const models = createImagesModels()
+  const models = createModels()
   // `model.route` is this package's own route id, kept equal to the declaring RouteDecl's `route`
   // by convention (mirrors how `toPiModel` uses `decl.route` as pi-ai's `provider` field) — so it
-  // doubles as the provider id `getModel` expects.
-  const piModel = models.getModel(model.route, model.id)
+  // doubles as the provider id `getModelOfType` expects.
+  const piModel = models.getModelOfType('image', model.route, model.id)
   if (!piModel) throw new Error(`no pi-ai images model registered for route=${model.route} id=${model.id}`)
   const result = await models.generateImages(
     piModel,

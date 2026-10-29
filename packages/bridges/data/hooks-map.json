@@ -114,7 +114,7 @@
     },
     "PermissionDenied": {
       "to": null,
-      "reason": "already an approval/decided event"
+      "reason": "already a decision/state event"
     },
     "Setup": {
       "to": null,

@@ -1,0 +1,78 @@
+import { type Component, escapeControl, Text, VStack, wrapText } from '../component.js'
+import type { ThemedAnsi } from '../theme.js'
+import { applyMarks, fileHeaderLines, unifiedMarks } from './word-diff.js'
+
+/** `/diff` output: the unified diff's own marks pick the tone, wrapped rows included. */
+function diffRows(text: string, ansi: ThemedAnsi): Component {
+  const lines = text.split('\n')
+  const headers = fileHeaderLines(lines)
+  const tone = (line: string, i: number) =>
+    headers[i] || line.startsWith('@@')
+      ? 'faint'
+      : line.startsWith('+')
+        ? 'success'
+        : line.startsWith('-')
+          ? 'danger'
+          : undefined
+  const marks = unifiedMarks(lines)
+  return {
+    render: (width) =>
+      lines.flatMap((line, i) => {
+        const t = tone(line, i)
+        const rows = wrapText(line, width)
+        const changed = marks.get(i)
+        // Wrapped rows are slices of the line (a space may drop at a break), so each is marked where it sits.
+        let from = 0
+        return rows.map((row) => {
+          const at = line.indexOf(row, from)
+          if (at >= 0) from = at + row.length
+          const shown =
+            changed && at >= 0 ? applyMarks(row, changed, (w) => ansi.bold(ansi.underline(w)), at) : row
+          return t ? ansi.fg(t, shown) : ansi.dim(shown)
+        })
+      }),
+    invalidate() {},
+  }
+}
+
+/** A connection-local transcript entry: the command echoed, then its output (dim when `quiet`). */
+export function localCommandView(
+  ansi: ThemedAnsi,
+): (command: string, output: string, quiet?: boolean) => Component {
+  return (command, output, quiet = true) => {
+    const echo = new Text(`${ansi.bold(ansi.fg('accent', '›'))} ${ansi.bold(escapeControl(command.trim()))}`)
+    const text = escapeControl(output)
+    const diff = /^\/diff(\s|$)/.test(command.trim())
+    // `/permissions`: the one line that starts with the warning sign is the isolation warning.
+    const warn = /^\/permissions(\s|$)/.test(command.trim())
+    const body = diff
+      ? diffRows(text, ansi)
+      : warn
+        ? new VStack(
+            text.split('\n').map(
+              (line) =>
+                new Text(line, {
+                  style: (s) => (line.trimStart().startsWith('⚠') ? ansi.fg('warning', s) : ansi.dim(s)),
+                }),
+            ),
+          )
+        : quiet
+          ? new Text(text, { style: (s) => ansi.dim(s) })
+          : new Text(text)
+    const styled = new VStack([echo, body])
+    const plain = new VStack([echo, new Text(text)])
+    // Laid out like a tool card: one column in, the command as the head, the output on a faint rail.
+    const rail = ` ${ansi.fg('faint', '│')} `
+    return {
+      render: (w) =>
+        ansi.raw
+          ? styled.render(w)
+          : [
+              ...echo.render(Math.max(1, w - 1)).map((row) => ` ${row}`),
+              ...body.render(Math.max(1, w - 3)).map((row) => `${rail}${row}`),
+            ],
+      transcript: (w) => plain.render(w),
+      invalidate() {},
+    }
+  }
+}

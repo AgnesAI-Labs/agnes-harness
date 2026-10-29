@@ -1,11 +1,15 @@
+import { type ToolCallState, withPhase } from '@agnes/core-common/step/op-state'
+import type { PresetView } from '@agnes/core-common/step/preset'
+import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
+import { isPending, normalizeApproval } from '@agnes/core-effects/effects/approval-answer'
+import { type NestedToolLease, NestedToolSchedulingError } from '@agnes/core-effects/effects/scheduler'
 import type { ToolResult } from '@agnes/extension-api'
 import { type JsonValue, minimumContextBudget, type ThinkingLevel } from '@agnes/protocol'
-import { type NestedToolLease, NestedToolSchedulingError } from '../effects/scheduler.js'
-import { resolveValidatedToolCallPolicy } from '../registry/tool-policy.js'
+import { modelCapabilityUnavailable } from '../execution/turn/tool-availability.js'
+import { type ResolvedToolPolicyEnvelope, resolveValidatedToolCallPolicy } from '../registry/tool-policy.js'
 import { assertThinking } from '../request/derive.js'
-import { CoreError, type EventInput, type Seq } from '../types.js'
-import { withPhase } from './op-state.js'
-import type { PresetView } from './preset.js'
+import { modelAllowsTool } from './model-tools.js'
+import { operationDecisionPort } from './operation-decisions.js'
 import type {
   CoreReplacementInputMap,
   CoreReplacementOutputMap,
@@ -17,7 +21,10 @@ import type {
   SlotOperation,
 } from './session.js'
 import { toolArgumentError } from './tool-args.js'
-import { approveAndExecute, refuse } from './tools.js'
+import { recordToolArgumentCheck, restoreToolArgumentRecovery } from './tool-argument-recovery.js'
+import { toolCallPayload } from './tool-call.js'
+import { toolFilterRule } from './tool-filter.js'
+import { approveAndExecute, type PlannedCall, refuse } from './tools.js'
 
 /** The six names a `{ replace: name }` Operation may stand in for. Closed, not a bare string. */
 export const CORE_OPS = ['Inbox', 'Budget', 'Inference', 'Approval', 'ToolExecution', 'StopGate'] as const
@@ -37,14 +44,7 @@ export async function invokeTool(
   s: SessionImpl,
   name: string,
   args: unknown,
-  o: {
-    signal?: AbortSignal
-    depth: number
-    parentEffectId?: string
-    nestedLease?: NestedToolLease
-    onPark?: (event: EventInput) => void
-    onAttachmentRead?: () => void
-  },
+  o: InvokeOptions,
 ): Promise<ToolResult> {
   if (o.depth > s.preset.depthLimit)
     throw new CoreError('E_DEPTH_EXCEEDED', `depth ${o.depth} exceeds ${s.preset.depthLimit}`)
@@ -55,85 +55,148 @@ export async function invokeTool(
   const cap = s.turnBudgetCap()
   if (cap !== null && s.state.creditsUsed > cap)
     throw Object.assign(new Error('BUDGET_EXCEEDED'), { code: 'BUDGET_EXCEEDED' })
-  if (name === 'computer_use' && !s.computerUseAllowed())
-    throw Object.assign(new Error('tool was not disclosed for the current primary model'), {
-      code: 'TOOL_NOT_DISCLOSED',
-    })
+  const def = callableTool(s, t, name)
   const ordinal = t.ordinal++
   const toolUseId = s.d.ids.toolUseId(ordinal)
+  const policy = await validatedCallPolicy(s, def, args)
+  const call = { toolUseId, name, args, ordinal, policy }
+  const seqs = await s.transition(toolCallRows(s, call, o), (cur, argsSeq) => {
+    if (cur?.phase.kind !== 'tools')
+      throw new CoreError('E_RELATION', 'nested tool call lost its tools phase')
+    return withPhase(cur, {
+      ...cur.phase,
+      batch: { ...cur.phase.batch, calls: [...cur.phase.batch.calls, plannedCallState(call, argsSeq, o)] },
+    })
+  })
+  const argsSeq = seqs[0]
+  if (argsSeq === undefined) throw new CoreError('E_RELATION', 'nested tool call commit returned no sequence')
+  return runPlannedTool(s, { toolUseId, name, args, ordinal, argsSeq, ...policy }, o)
+}
+
+type InvokeOptions = {
+  signal?: AbortSignal
+  depth: number
+  parentEffectId?: string
+  invocationId?: string
+  nestedLease?: NestedToolLease
+  onPark?: (event: EventInput, toolUseId: string) => void
+  onAttachmentRead?: () => void
+}
+type CallPlan = {
+  toolUseId: string
+  name: string
+  args: unknown
+  ordinal: number
+  policy: ResolvedToolPolicyEnvelope
+}
+type Turn = NonNullable<SessionImpl['turn']>
+
+/** The tool a call names, refused when the turn does not have it or the primary model may not use it. */
+export function callableTool(s: SessionImpl, t: Turn, name: string) {
   const def = t.snapshot.byName.get(name)
   if (!def) throw Object.assign(new Error(`unknown tool ${name}`), { code: 'TOOL_NOT_FOUND' })
-  const argumentError = toolArgumentError(def.parameters, args)
+  // The turn's snapshot predates a filter set mid-turn; the live filter is what binds the next call.
+  if (toolFilterRule(s.toolFilter, name))
+    throw Object.assign(new Error(`tool ${name} is turned off for this session`), { code: 'TOOL_NOT_FOUND' })
+  if (!modelAllowsTool(def, s.computerUseAllowed()))
+    throw Object.assign(new Error(modelCapabilityUnavailable.message), {
+      code: 'TOOL_NOT_DISCLOSED',
+    })
+  return def
+}
+
+/** The policy of a call whose arguments match the tool's parameters. */
+export async function validatedCallPolicy(
+  s: SessionImpl,
+  def: ReturnType<typeof callableTool>,
+  args: unknown,
+): Promise<ResolvedToolPolicyEnvelope> {
+  await restoreToolArgumentRecovery(s)
+  const check = recordToolArgumentCheck(s, def, toolArgumentError(def.parameters, args))
+  if (check.events.length) await s.d.log.append(check.events)
+  const argumentError = check.error
   if (argumentError)
     throw Object.assign(new Error(argumentError), {
       code: 'TOOL_ARGS_INVALID',
     })
-  const policy = resolveValidatedToolCallPolicy(def, args as JsonValue)
-  const seqs = await s.transition(
-    [
-      s.ev(
-        'tool/call',
-        {
-          toolUseId,
-          name,
-          args,
-          ordinal,
-          depth: o.depth,
-          ...(o.parentEffectId ? { parentEffectId: o.parentEffectId } : {}),
-          ...policy,
-        },
-        { origin: 'model' },
-      ),
-    ],
-    (cur, argsSeq) => {
-      if (cur?.phase.kind !== 'tools')
-        throw new CoreError('E_RELATION', 'nested tool call lost its tools phase')
-      return withPhase(cur, {
-        ...cur.phase,
-        batch: {
-          ...cur.phase.batch,
-          calls: [
-            ...cur.phase.batch.calls,
-            {
-              toolUseId,
-              name,
-              ordinal,
-              argsSeq,
-              status: 'planned',
-              replay: policy.resolvedPolicy.replay,
-              depth: o.depth,
-              ...(o.parentEffectId ? { parentEffectId: o.parentEffectId } : {}),
-              ...policy,
-            },
-          ],
-        },
-      })
-    },
-  )
-  const argsSeq = seqs[0]
-  if (argsSeq === undefined) throw new CoreError('E_RELATION', 'nested tool call commit returned no sequence')
+  return resolveValidatedToolCallPolicy(def, args as JsonValue)
+}
+
+/** The rows that record a call Core runs for a loop or a tool: the call, then its invocation link. */
+export function toolCallRows(
+  s: SessionImpl,
+  call: CallPlan,
+  o: { depth: number; parentEffectId?: string; invocationId?: string },
+): EventInput[] {
+  const { toolUseId, name, args, ordinal, policy } = call
+  const presentation = s.turn?.snapshot.byName.get(name)?.meta.presentation
+  return [
+    s.ev(
+      'tool/call',
+      {
+        ...toolCallPayload({ toolUseId, name, args, ordinal }, presentation, policy),
+        depth: o.depth,
+        ...(o.parentEffectId ? { parentEffectId: o.parentEffectId } : {}),
+      },
+      { origin: 'model' },
+    ),
+    ...(o.invocationId
+      ? [s.ev('x/core/loop-effect', { invocationId: o.invocationId, toolUseId }, { ignorable: true })]
+      : []),
+  ]
+}
+
+/** The batch entry of a call whose row was committed at `argsSeq`. */
+export function plannedCallState(
+  call: CallPlan,
+  argsSeq: Seq,
+  o: { depth: number; parentEffectId?: string },
+): ToolCallState {
+  const { toolUseId, name, ordinal, policy } = call
+  return {
+    toolUseId,
+    name,
+    ordinal,
+    argsSeq,
+    status: 'planned',
+    replay: policy.resolvedPolicy.replay,
+    depth: o.depth,
+    ...(o.parentEffectId ? { parentEffectId: o.parentEffectId } : {}),
+    ...policy,
+  }
+}
+
+/**
+ * Runs a call that is already planned in the batch through approval and execution. A pending
+ * approval marks the call as awaiting it, reports the park and throws `PARKED`.
+ */
+export async function runPlannedTool(
+  s: SessionImpl,
+  call: PlannedCall,
+  o: InvokeOptions,
+): Promise<ToolResult> {
+  const { toolUseId } = call
   let result: ToolResult
   let park: EventInput | undefined
+  // The call the park's question belongs to: this one, or a nested call of its own that parked.
+  let parked = toolUseId
   try {
     const outcome = await s.runNestedTool(
-      policy.resolvedPolicy.isConcurrencySafe,
+      call.resolvedPolicy.isConcurrencySafe === true,
       (nestedLease) =>
-        approveAndExecute(
-          s,
-          { toolUseId, name, args, ordinal, argsSeq, ...policy },
-          {
-            depth: o.depth,
-            nestedLease,
-            ...(o.parentEffectId ? { parentEffectId: o.parentEffectId } : {}),
-            ...(o.signal ? { signal: o.signal } : {}),
-            ...(o.onAttachmentRead ? { onAttachmentRead: o.onAttachmentRead } : {}),
-          },
-        ),
+        approveAndExecute(s, call, {
+          depth: o.depth,
+          nestedLease,
+          ...(o.parentEffectId ? { parentEffectId: o.parentEffectId } : {}),
+          ...(o.signal ? { signal: o.signal } : {}),
+          ...(o.onAttachmentRead ? { onAttachmentRead: o.onAttachmentRead } : {}),
+        }),
       o.nestedLease,
       o.signal ?? s.ac.signal,
     )
     result = outcome.result
     park = outcome.park
+    parked = outcome.parkedToolUseId ?? toolUseId
   } catch (error) {
     if (!(error instanceof NestedToolSchedulingError)) throw error
     const cancelled = error.reason === 'aborted'
@@ -146,7 +209,10 @@ export async function invokeTool(
   }
   if (park) {
     await s.transition([], (cur) => {
-      if (cur?.phase.kind !== 'tools') return cur
+      // An uncertain call is already completed; reconciliation must never make it dispatchable. A
+      // call whose nested call parked has its own result, and the nested call is the one awaiting.
+      if (cur?.phase.kind !== 'tools' || park?.type === 'x/core/unknown-outcome' || parked !== toolUseId)
+        return cur
       return withPhase(cur, {
         ...cur.phase,
         batch: {
@@ -157,7 +223,7 @@ export async function invokeTool(
         },
       })
     })
-    o.onPark?.(park)
+    o.onPark?.(park, parked)
     throw Object.assign(new Error('PARKED'), { code: 'PARKED' })
   }
   return result
@@ -188,8 +254,9 @@ export async function runSlot(
 ): Promise<void> {
   for (const o of sortedOps(s.d.operations, slot)) {
     try {
-      if ((await o.applicable(ctx)) !== 'applied') continue
-      const out = await o.run(ctx)
+      const admitted = { ...ctx, decisions: operationDecisionPort(s, o.name) }
+      if ((await o.applicable(admitted)) !== 'applied') continue
+      const out = await o.run(admitted)
       if (out.effects?.length)
         await s.d.log.append(out.effects.map((e) => ({ ...e, lane: s.lane })) as EventInput[])
     } catch (err) {
@@ -293,8 +360,9 @@ function validReplacementOutput<K extends CoreOpName>(
       value === 'unavailable'
     )
       return true
-    const pending = value as { ticket?: unknown; expiresAt?: unknown } | null
-    return typeof pending?.ticket === 'string' && typeof pending.expiresAt === 'string'
+    if (!value || typeof value !== 'object') return false
+    if (isPending(value)) return typeof value.expiresAt === 'string'
+    return normalizeApproval(value as never) !== null
   }
   if (segment === 'ToolExecution') {
     const result = value as { content?: unknown } | null
@@ -369,7 +437,7 @@ export function replacementEffects(s: SessionImpl, name: string, effects: EventI
  * Replaces the session's active preset view in memory and records the switch as an ignorable audit
  * row — not a new register, and not folded into `op.state`: the switch takes effect immediately for
  * whatever calls `deriveRequest` next, and a process that restarts has to replay this row itself
- * (host's job, not core's — see Task 32a's note on why cross-process recovery is out of scope here).
+ * (host's job; cross-process recovery is outside core's scope).
  *
  * Serialized through `s.locked()`, the same lock `enqueue`/`transition`/`appendExtensionEvent` already
  * share: without it, two concurrent switches (or a switch racing `setModel`) would each read the old
@@ -377,15 +445,33 @@ export function replacementEffects(s: SessionImpl, name: string, effects: EventI
  * last would win regardless of which one actually committed first on the ledger.
  */
 export async function setPreset(s: SessionImpl, view: PresetView): Promise<Seq> {
-  return s.locked(async () => {
+  const seq = await s.locked(async () => {
+    await s.preparePermissionRevocation()
     if (s.d.sessionOverlay) await s.d.sessionOverlay.apply(s.key, { preset: view.name })
     const r = await s.d.log.append([
-      s.ev('x/core/preset-switch', { from: s.preset.name, to: view.name }, { ignorable: true }),
+      s.ev(
+        'x/core/preset-switch',
+        {
+          from: s.preset.name,
+          to: view.name,
+          ...(s.preset.permission === 'full-access' || view.permission === 'full-access'
+            ? { fromPermission: s.preset.permission ?? null, toPermission: view.permission ?? null }
+            : {}),
+        },
+        { ignorable: true },
+      ),
     ])
-    s.preset = view
-    s.d.runtime.preset = view
+    const revocation = s.revokeAutomaticPermissions()
+    s.preset = structuredClone(view)
+    s.d.runtime.preset = structuredClone(view)
+    await revocation
+    const invalidations = s.decisions.revokedAutomaticEvents()
+    if (invalidations.length) await s.d.log.append(invalidations)
     return r.firstSeq
   })
+  // Reconcile already-pending permission decisions and wake their existing delivery waiters.
+  await s.decisions.list()
+  return seq
 }
 
 /**

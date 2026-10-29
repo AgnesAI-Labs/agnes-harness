@@ -1,5 +1,15 @@
-import type { DaemonNotice } from '@agnes/protocol'
+import { AGNES_ERRORS, type DaemonNotice, SESSION_VERSION_CODES } from '@agnes/protocol'
+import { JsonRpcError } from '@agnes/sdk'
 import type { RunnerConfig } from './config.js'
+
+/** Session-open maps ledger integrity failures to this closed wire code. Ignore all prose. */
+export function historyRefusalText(error: unknown): string | null {
+  return error instanceof JsonRpcError &&
+    error.code === AGNES_ERRORS.SEMANTIC_REJECTED &&
+    error.data.code === SESSION_VERSION_CODES.corrupt
+    ? '会话历史校验失败，已停止；请联系管理员'
+    : null
+}
 
 export function noticeText(notice: DaemonNotice): string | null {
   const detail =
@@ -8,6 +18,8 @@ export function noticeText(notice: DaemonNotice): string | null {
       : {}
 
   switch (notice.kind) {
+    case 'automation_attention':
+      return '自动化需要人工处理，请查看运行记录和审批收件箱。 / Automation needs attention. Check the run and the approval inbox.'
     case 'resumed':
       return `上次停在第 ${typeof detail.lastStep === 'number' ? detail.lastStep : '?'} 步，已续跑`
     case 'worker_crashed':
@@ -16,15 +28,16 @@ export function noticeText(notice: DaemonNotice): string | null {
       return '执行反复失败，已暂停；请联系管理员'
     case 'shutting_down':
       return '服务维护中，稍后自动恢复'
-    case 'integrity_failed':
-      return '会话历史校验失败，已停止；请联系管理员'
     case 'overloaded':
       return '消息太多，正在追赶'
     case 'job_dispatched':
     case 'job_dead':
-    // packages_changed / tree_changed 是页面插件名册通知，与渠道机器人无关。
+    // Profile invalidations and the session list's run states belong to the Web workbench, not
+    // channel conversations.
+    case 'session_activity':
     case 'packages_changed':
     case 'tree_changed':
+    case 'decisions_changed':
       return null
   }
 }

@@ -1,0 +1,1 @@
+Read the sample sales CSV, compute revenue, cost and margin totals, and produce a report with charts that I can open and download.

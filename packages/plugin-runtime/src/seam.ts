@@ -26,7 +26,7 @@ export class SeamRuntime<T extends object> {
     this.facade = Object.freeze(
       new Proxy(target, {
         get: (_target, key) => {
-          if (this.dispatch && key !== 'onGrantRevoked' && this.#callable.has(key)) {
+          if (this.dispatch && this.#callable.has(key)) {
             return this.#forwarder(key)
           }
           const current = this.#current
@@ -85,7 +85,7 @@ export class SeamRuntime<T extends object> {
       }
       // Listener registration returns a synchronous disposer and does not dispatch business work.
       // Every operational seam member is asynchronous and goes through publication.
-      return this.dispatch && key !== 'onGrantRevoked' ? this.dispatch.ordinary(resolve) : resolve()()
+      return this.dispatch ? this.dispatch.ordinary(resolve) : resolve()()
     }
     this.#forwarders.set(key, forward)
     return forward

@@ -33,11 +33,42 @@ async function turn(session: Session, prompt: string, trust?: 'untrusted') {
   ).resolves.toMatchObject({ reason: 'completed' })
 }
 
+async function expectNarrowSummaryRecovery(
+  session: Session,
+  requests: Awaited<ReturnType<typeof startWireCapture>>['requests'],
+) {
+  expect(requests).toHaveLength(4)
+  const narrow = requests[3]
+  if (!narrow) throw new Error('missing narrow fallback request')
+  expect(renderedParts(narrow).find((part) => part.key === 'tools')).toBeUndefined()
+  expect(await session.d.log.scan({ type: 'tool/call', limit: 10 })).toEqual([])
+  const begins = await session.d.log.scan({ type: 'x/core/compaction-begin', limit: 10 })
+  expect(begins).toHaveLength(1)
+  expect(begins[0]?.data).toMatchObject({ effectId: expect.any(String) })
+  expect(begins[0]?.data).not.toHaveProperty('mode')
+  const replacements = (await session.d.log.scan({ type: 'assistant/message', limit: 10 })).filter(
+    (row) => row.surfaceOp,
+  )
+  expect(replacements).toHaveLength(1)
+  expect(replacements[0]).toMatchObject({
+    origin: 'model',
+    data: { content: [{ type: 'text', text: 'fixture reply' }] },
+  })
+  const costs = (await session.d.log.scan({ type: 'cost/ledger', limit: 10 })).filter(
+    (row) => (row.data as { purpose?: string }).purpose === 'compaction',
+  )
+  expect(costs).toHaveLength(2)
+  expect(new Set(costs.map((row) => (row.data as { effectId: string }).effectId)).size).toBe(2)
+}
+
 function compactPlan(payload: HookPayloadMap['before_compact'], split: boolean) {
   const nodes = payload.getSurface()
   const first = nodes[0]
   const triggerIndex = split
-    ? nodes.findLastIndex((node, index) => node.type === 'user/message' && index < nodes.length - 1)
+    ? nodes.findLastIndex(
+        (node, index) =>
+          node.type === 'user/message' && node.messageKind !== 'runtime_context' && index < nodes.length - 1,
+      )
     : -1
   const end = nodes[split ? triggerIndex - 1 : nodes.length - 2]
   const kept = nodes.at(-1)
@@ -105,7 +136,6 @@ async function fixture(
           name: 'wire-compaction',
           provider: {
             package: '@agnes/ai',
-            adapters: ['@agnes/ai'],
             routes: [{ route: 'wire', api, baseUrl, credentialRef: 'secret://test/wire', models: [model] }],
           },
           adapters: { secrets: { kind: 'file', path: credentials } },
@@ -243,7 +273,10 @@ describe('real provider wire compaction prefix', () => {
           plan: async (payload) => {
             const nodes = payload.getSurface()
             const first = nodes.findLastIndex(
-              (node, index) => node.type === 'user/message' && index < nodes.length - 1,
+              (node, index) =>
+                node.type === 'user/message' &&
+                node.messageKind !== 'runtime_context' &&
+                index < nodes.length - 1,
             )
             const start = nodes[first]
             const end = nodes.at(-2)
@@ -275,7 +308,7 @@ describe('real provider wire compaction prefix', () => {
   })
 
   it.each(['anthropic-messages', 'openai-completions'] as const)(
-    '%s offers native tools to a wide summary, then asks again without them after a tool call',
+    '%s retries a rejected wide summary tool call without exposing narrow tools',
     async (api) => {
       await fixture(
         api,
@@ -295,32 +328,21 @@ describe('real provider wire compaction prefix', () => {
           await session.requestCompaction({ actor: session.d.actor, admissionId: 'wire-no-tools' })
           await session.run({ until: 'turn-end', signal: new AbortController().signal })
           const summary = requests[2]
-          const retry = requests[3]
-          if (!summary || !retry) throw new Error('missing summary requests')
+          if (!summary) throw new Error('missing summary request')
           expectExtends(primary, summary)
           expect(JSON.stringify(summary.body)).toContain('read')
           expect(JSON.stringify(summary.body)).not.toContain('tool_choice')
-          const parts = renderedParts(retry)
-          expect(parts.find((part) => part.key === 'tools')).toBeUndefined()
-          expect(parts.at(-1)?.bytes).toContain('Do not call any tool')
-          expect(requests).toHaveLength(4)
-          const retries = await session.d.log.scan({ type: 'x/core/compaction-retry', limit: 10 })
-          expect(retries.map((row) => row.data)).toEqual([
-            expect.objectContaining({ cause: 'summary called a tool', form: 'without-tools' }),
-          ])
-          const begins = await session.d.log.scan({ type: 'x/core/compaction-begin', limit: 10 })
-          expect(begins).toHaveLength(1)
-          expect(begins[0]?.data).not.toHaveProperty('mode')
+          await expectNarrowSummaryRecovery(session, requests)
         },
       )
     },
   )
 
-  it('decodes a textual summary tool call, asked again without tools too, and mechanically elides on the OpenAI wire', async () => {
+  it('decodes a textual summary tool call and recovers through a narrow OpenAI request', async () => {
     await fixture(
       'openai-completions',
       (index) =>
-        index === 2 || index === 3
+        index === 2
           ? { text: '<function=read><parameter=path>probe.txt</parameter></function>' }
           : { text: 'fixture reply' },
       async (session, requests) => {
@@ -335,19 +357,9 @@ describe('real provider wire compaction prefix', () => {
         await session.requestCompaction({ actor: session.d.actor, admissionId: 'wire-text-call' })
         await session.run({ until: 'turn-end', signal: new AbortController().signal })
         const summary = requests[2]
-        const retry = requests[3]
-        if (!summary || !retry) throw new Error('missing summary requests')
+        if (!summary) throw new Error('missing summary request')
         expectExtends(primary, summary)
-        // The retry offers no tool, but a call written out as text is still read as one.
-        expect(renderedParts(retry).find((part) => part.key === 'tools')).toBeUndefined()
-        expect(requests).toHaveLength(4)
-        const begins = await session.d.log.scan({ type: 'x/core/compaction-begin', limit: 10 })
-        expect(begins).toEqual([
-          expect.objectContaining({
-            data: expect.objectContaining({ mode: 'elided', cause: 'summary called a tool' }),
-          }),
-        ])
-        expect(await session.d.log.scan({ type: 'x/core/compaction-retry', limit: 10 })).toHaveLength(1)
+        await expectNarrowSummaryRecovery(session, requests)
       },
     )
   })

@@ -15,7 +15,6 @@ Root [README.md](../../README.md) is the default English project overview; [READ
 - Lead with what AGH helps people do, with clear paths to try, build, and give feedback. Connect claims to tutorials, implementation, or reproducible evidence.
 - Keep both README editions and every documentation pair aligned on positioning, supported scope, commands, and collaboration policy.
 - Describe concrete scenarios without unsupported performance figures, customer claims, or compatibility promises.
-- Keep MHS goals and availability in the [MHS guide](../guide/mhs.md); the README and other pages follow it.
 - Retain third-party licensing and attribution in LICENSE, NOTICE, and [licensing](provenance.md). Research narratives, internal tasks, and writing references do not belong in user guides.
 
 <a id="随代码更新"></a>
@@ -46,9 +45,9 @@ Root [README.md](../../README.md) is the default English project overview; [READ
 ## Documentation checks
 
 ```sh
-node tools/public-docs/verify.mjs
-pnpm exec vitest run tools/public-docs/examples.test.ts --maxWorkers=1
-pnpm gen:check
+mise exec -- node tools/toolchain/run.mjs exec node tools/public-docs/verify.mjs
+mise exec -- node tools/toolchain/run.mjs exec vitest run tools/public-docs/examples.test.ts --maxWorkers=1
+mise exec -- node tools/toolchain/run.mjs gen:check
 ```
 
 The checker verifies root entry points, translation pairs, language switches, links and anchors, common sensitive-data patterns, and the [source-check manifest](../../tools/public-docs/source-checks.json). It does not fetch external URLs or replace tutorial execution, browser acceptance, or distribution review. Modify generators before regenerating package documentation.
@@ -57,10 +56,12 @@ Check the actual source when changing steps or failure semantics. Report tests, 
 
 ## Architecture illustrations
 
-The README and architecture guide share [English](../assets/architecture.svg) and [Chinese](../assets/architecture.zh-CN.svg) SVG illustrations. [The renderer](../../tools/public-docs/render-architecture.mjs) owns one layout and both language dictionaries. Edit that source, then run `node tools/public-docs/render-architecture.mjs`; `node tools/public-docs/render-architecture.mjs --check` checks that both SVGs match the source. Inspect both rendered languages for text fit and readability at README width. The illustrations animate with CSS and SMIL only, so they play inside GitHub's image view and hold still when the reader prefers reduced motion; open them in a browser to check both the settled layout and the animation.
+[The renderer](../../tools/public-docs/render-architecture.mjs) owns the shared layout and both language dictionaries for [English](../assets/architecture.svg) and [Chinese](../assets/architecture.zh-CN.svg) SVG illustrations. Run it through the toolchain entry after changing its source; `--check` verifies that both outputs match. Inspect both rendered languages for text fit and readability, including reduced motion. The README embeds them as the product vision; its role table states what each role ships today, so keep the two consistent.
 
-Keep role metaphors separate from implementation claims: the illustration shows the target architecture, and the README role table states each role's current scope. Update that scope against main's actual code and guides, then keep the README, architecture guide, and device guide aligned.
+Use the current [architecture guide](../develop/architecture.md) and source to verify implementation claims. Keep diagrams, captions and links aligned with the revision being documented.
 
 ## README demo media
 
-Record the banner, animations, and screenshots in [`docs/assets/readme/`](../assets/readme/) from a local instance using an isolated `AGH_HOME`, a synthetic workspace, and a configured model; keep credentials, personal paths, and customer data out of every frame. Check each answer shown on screen for correctness before using a take, and keep captions within what the guides and [known limitations](../reference/limitations.md) state. Each edition has its own set: the English README uses the English interface and English prompts (`banner.png`, `hero.gif`, `plugins.gif`, `terminal.gif`, `trajectory.png`), and the Chinese README uses the `*.zh-CN.*` files recorded in the Chinese interface. Refresh the media when the interface or a demonstrated flow changes. The animated introduction is a rendered motion graphic rather than a recording, with all-English text in `trailer.webp` for the English README and the Chinese edition in `trailer.zh-CN.webp`: when a role, its availability, or the FDE and MHS wording changes, update both editions together with the architecture illustration so they tell the same story.
+The README media live in [`docs/assets/readme/`](../assets/readme/), with a `.zh-CN` variant for the Chinese README: the `banner` image and animated `trailer`; WebP recordings of the current interface (`hero`, `plugins`, `hot-upgrade`, `terminal`, `trajectory`, `candidate-review`, `voice`); the `write-plugin` terminal GIF; the `mars-rescue` video preview; and the shared `ale-leaderboard` result. The Chinese README still shows the earlier `candidate-review-zh-CN-light.png` screenshot until a Chinese recording replaces it. The demo recordings use Agnes AI `agnes-3.0-flash`, as the README states.
+
+When refreshing media, use an isolated `AGH_HOME`, a synthetic workspace and the existing screenshot harness. Keep credentials, personal paths and customer data out of every frame, verify every shown answer, and update both languages. A fixture screenshot demonstrates presentation, not real-model or external-service acceptance; captions must respect the [known limitations](../reference/limitations.md).

@@ -110,6 +110,28 @@ describe('dbh M-15: `resume <id> --preset` refusal', () => {
   })
 })
 
+describe('runTui --append-system-prompt', () => {
+  it('opens a fresh session with the text, and stops when an older daemon did not apply it', async () => {
+    const ep = scriptedEndpoint().on('_agnes/v1/systemPrompt.get', () => ({
+      sections: [{ id: 'core', text: 'base' }],
+    }))
+    const outcome = await runTui(
+      await booted(ep),
+      parseArgs(['--append-system-prompt', 'Be brief.']),
+      tuiIO(),
+    ).then(
+      (code) => ({ code }),
+      (x: unknown) => ({ error: x }),
+    )
+    const created = ep.calls.find((c) => c.method === 'session/new')?.params as {
+      _meta: { 'ai.agnes.harness': { systemPromptAppend?: string } }
+    }
+    expect(created._meta['ai.agnes.harness'].systemPromptAppend).toBe('Be brief.')
+    expect(outcome).toMatchObject({ error: { name: 'CommandError' } })
+    expect(ep.calls.map((c) => c.method)).not.toContain('_agnes/v1/session.attach')
+  })
+})
+
 describe('dbh M-15 preserved: `resume <id>` without --preset', () => {
   it('runPrint loads that session and sends the rest as the prompt', async () => {
     const ep = scriptedEndpoint()

@@ -160,6 +160,7 @@ export class ReflectService {
             const impl = fiber.store?.[prop]
             if (impl) return getTraceable(ctx, impl.value)
             if (prop in fiber.inject) {
+              if (fiber.inject[prop]?.required === false) return undefined
               error.message = `cannot get required service "${prop}" in inactive context`
               throw error
             }

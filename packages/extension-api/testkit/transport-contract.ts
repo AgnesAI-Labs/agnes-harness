@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import type { RemoteTransport } from '@agnes/core'
+import type { RemoteTransport } from '../src/remote-transport.js'
 
 /** Commands are supplied by the fixture so the suite requires no particular remote interpreter. */
 export type TransportFixture = {

@@ -1,12 +1,14 @@
+import { installFeedbackSink, type OperationFeedback } from '@agnes/web-ui'
+import { afterEach as feedbackAfterEach, beforeEach as feedbackBeforeEach } from 'vitest'
 // @vitest-environment happy-dom
 
 import type { ConfigSnapshot, ConfigTestResult } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
+import { createSettingsController } from '@agnes/web-admin/settings'
+import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { unmountRegion } from '@agnes/web-ui'
 import { Window } from 'happy-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { setLocaleTranslator } from '../src/locale-bridge.js'
-import { createSettingsController } from '../src/settings.js'
 import { renderSettingsMarkup } from '../src/settings-region.js'
 import { zhT } from './helpers/locale.js'
 
@@ -15,7 +17,7 @@ setLocaleTranslator(zhT)
 
 // Picker interaction is covered by settings-accounts/settings-oauth; these cases exercise the
 // controller against real DOM nodes because the account and select subtrees are React-owned.
-vi.mock('../src/provider-picker.js', () => ({
+vi.mock('@agnes/web-admin/provider-picker', () => ({
   createAccountPickers: () => ({ sync: vi.fn(), close: vi.fn() }),
 }))
 
@@ -26,6 +28,7 @@ function installDom(): void {
   fixtureWindow = new Window()
   vi.stubGlobal('window', fixtureWindow)
   vi.stubGlobal('document', fixtureWindow.document)
+  fixtureWindow.document.documentElement.lang = 'zh-CN'
   vi.stubGlobal('getComputedStyle', fixtureWindow.getComputedStyle.bind(fixtureWindow))
   fixtureWindow.document.body.innerHTML = '<dialog id="config"></dialog>'
   disposeMarkup = renderSettingsMarkup(
@@ -115,27 +118,14 @@ function client(
 }
 
 describe('settings controller', () => {
-  it('keeps locale markers on account form labels and hints in the static settings markup', () => {
+  it('renders translated account labels and hints without static locale markers', () => {
     installDom()
-    expect(
-      fixtureWindow.document.querySelector('#config-account-name')?.getAttribute('data-i18n-placeholder'),
-    ).toBe('settings-shell.accountNamePlaceholder')
-    expect(
-      fixtureWindow.document
-        .querySelector('#config-provider')
-        ?.previousElementSibling?.getAttribute('data-i18n'),
-    ).toBe('settings-shell.providerLabel')
-    expect(
-      fixtureWindow.document
-        .querySelector('#config-thinking')
-        ?.previousElementSibling?.getAttribute('data-i18n'),
-    ).toBe('settings-shell.defaultThinkingLabel')
-    expect(
-      fixtureWindow.document.querySelector('#config-context-window')?.getAttribute('data-i18n-placeholder'),
-    ).toBe('settings-shell.contextBudgetPlaceholder')
-    expect(
-      fixtureWindow.document.getElementById('config-model-settings-hint')?.getAttribute('data-i18n'),
-    ).toBe('settings-shell.modelSettingsHint')
+    expect(node('config-account-name').getAttribute('placeholder')).toBe('例如：工作账户、本地模型')
+    expect(node('config-provider').previousElementSibling?.textContent).toBe('Provider')
+    expect(node('config-thinking').previousElementSibling?.textContent).toBe('思考强度')
+    expect(node('config-context-window').getAttribute('placeholder')).toBe('自动')
+    expect(node('config-model-settings-hint').textContent).toContain('留空即自动')
+    expect(fixtureWindow.document.querySelector('[data-i18n]')).toBeNull()
   })
 
   it('shows loading instead of the empty account copy while configuration is pending', async () => {
@@ -151,7 +141,7 @@ describe('settings controller', () => {
     const opening = settings.open()
 
     expect(node('config-state').textContent).toBe('正在读取配置…')
-    expect(node('config-add-account').disabled).toBe(true)
+    expect(fixtureWindow.document.getElementById('config-add-account')).toBeNull()
     expect(node('config-retry').hidden).toBe(true)
 
     snapshotRequest.resolve({ ...snapshot, accounts: [] })
@@ -204,7 +194,7 @@ describe('settings controller', () => {
     await settings.open()
     expect(node('config-state').textContent).toBe('配置读取失败，请重试。')
     expect(node('config-retry').hidden).toBe(false)
-    expect(node('config-add-account').disabled).toBe(true)
+    expect(fixtureWindow.document.getElementById('config-add-account')).toBeNull()
 
     settings.setConnected(true)
     await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(1))
@@ -244,23 +234,93 @@ describe('settings controller', () => {
 
   it('separates the saved default model from the current session model throughout configuration', async () => {
     installDom()
+    const probe = vi.fn(async (): Promise<ConfigTestResult> => testResult)
     const settings = createSettingsController({
-      client: client(),
+      client: client({ test: probe }),
       onSaved: vi.fn(async () => undefined),
       onError: vi.fn(),
     })
 
     await settings.open()
-    expect(node('config-state').textContent).toBe(
-      '已加载保存的 Provider 与默认模型。测试连接后可更新默认模型；当前会话模型不会在此更改。',
-    )
-    expect(node('config-model').children[0]?.textContent).toBe('先测试 Provider，再选择默认模型')
+    // Nothing has happened yet, so the status line says nothing.
+    expect(node('config-state').textContent).toBe('')
+    expect(node('config-model').children[0]?.textContent).toBe('填入密钥后列出模型')
 
     node('config-test').dispatch('click')
     await vi.waitFor(() => expect(node('config-model').children).toHaveLength(3))
-    expect(node('config-state').textContent).toBe(
-      '第 3 步：连接成功，发现 2 个模型。确认或选择默认模型后保存；当前会话模型不会改变。',
+    expect(node('config-state').textContent).toBe('连接成功，找到 2 个模型')
+    expect(node('config-state').dataset.tone).toBe('ok')
+    node('config-api-key').value = 'fixture-key'
+    for (const [reason, message] of [
+      ['network', '连不上这个地址。'],
+      ['timeout', '连接超时。'],
+      ['invalid', '模型列表格式无法识别。'],
+    ] as const) {
+      probe.mockResolvedValueOnce({ models: [], verified: false, catalogueError: { reason } })
+      node('config-test').dispatch('click')
+      await vi.waitFor(() => expect(node('config-error').textContent).toBe(message))
+      expect(node('config-error').textContent).not.toContain('被拒')
+    }
+    probe.mockResolvedValueOnce({ models: [], verified: false })
+    node('config-test').dispatch('click')
+    await vi.waitFor(() =>
+      expect(node('config-error').textContent).toBe('无法确认凭据是否有效。服务未返回可用的对话模型列表。'),
     )
+  })
+
+  it('tests a key once typing settles, at once after a paste, and never a superseded one', async () => {
+    installDom()
+    const test = vi.fn(async (_input: { apiKey?: string }) => testResult)
+    const onError = vi.fn()
+    const settings = createSettingsController({
+      client: client({ test }),
+      onSaved: vi.fn(async () => undefined),
+      onError,
+    })
+    await settings.open()
+    vi.useFakeTimers()
+    try {
+      const key = node('config-api-key')
+      key.value = 'half'
+      key.dispatch('input')
+      await vi.advanceTimersByTimeAsync(600)
+      // Still typing: the earlier wait starts over, so a half-entered key is never sent.
+      key.value = 'half-then-whole'
+      key.dispatch('input')
+      await vi.advanceTimersByTimeAsync(600)
+      expect(test).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(400)
+      expect(test).toHaveBeenCalledOnce()
+      expect(test.mock.calls[0]?.[0]).toMatchObject({ apiKey: 'half-then-whole' })
+      expect(node('config-state').textContent).toBe('连接成功，找到 2 个模型')
+      // A changed key after a passed test says the earlier result no longer holds, then tests again.
+      key.value = 'pasted-value'
+      key.dispatch('paste')
+      key.dispatch('input')
+      expect(node('config-state').textContent).toBe('连接信息已变更，正在重新测试；此前的模型列表已失效。')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(test).toHaveBeenCalledTimes(2)
+      expect(test.mock.calls[1]?.[0]).toMatchObject({ apiKey: 'pasted-value' })
+      // An emptied field has nothing to test.
+      key.value = ''
+      key.dispatch('input')
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(test).toHaveBeenCalledTimes(2)
+      // A failed automatic test reports on its own line, not as an app-level notice.
+      test.mockRejectedValueOnce(new Error('The provider refused this key.'))
+      key.value = 'refused-value'
+      key.dispatch('input')
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(node('config-error').textContent).toBe('The provider refused this key.')
+      expect(onError).not.toHaveBeenCalled()
+      node('config-test').dispatch('click')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(test).toHaveBeenCalledTimes(4)
+      expect(node('config-error').textContent).toBe('')
+    } finally {
+      vi.useRealTimers()
+      settings.close()
+    }
   })
 
   it('loads current revision, tests the selected provider, saves the model id, and clears the key', async () => {
@@ -287,9 +347,8 @@ describe('settings controller', () => {
     node('config-api-key').dispatch('input')
     node('config-test').dispatch('click')
     await Promise.resolve()
-    expect(node('config-state').textContent).toBe(
-      '第 3 步：连接成功，发现 2 个模型。确认或选择默认模型后保存；当前会话模型不会改变。',
-    )
+    expect(node('config-state').textContent).toBe('连接成功，找到 2 个模型')
+    expect(node('config-state').dataset.tone).toBe('ok')
     expect(node('config-api-key').value).toBe('secret-value')
     expect(Array.from(node('config-model').children, (entry) => (entry as HTMLOptionElement).value)).toEqual([
       '',
@@ -308,9 +367,12 @@ describe('settings controller', () => {
       expectedRevision: 3,
     })
     await vi.waitFor(() => expect(onSaved).toHaveBeenCalledOnce())
-    expect(node('config-state').textContent).toBe(
-      '默认配置已保存；仅新建任务会使用新的默认模型，当前会话模型不会改变。',
-    )
+    expect(node('config-state').textContent).toBe('')
+    expect(feedbackResults.at(-1)).toMatchObject({
+      scope: 'model-accounts',
+      outcome: 'success',
+      effect: { kind: 'new-sessions' },
+    })
     expect(node('config-api-key').value).toBe('')
     // 2026-09-17：账户详情改为独立弹窗后，保存只收起账户弹窗、留在设置里。
     expect(node('config').open).toBe(true)
@@ -341,7 +403,7 @@ describe('settings controller', () => {
     expect(Array.from(node('config-model').children, (entry) => (entry as HTMLOptionElement).value)).toEqual([
       '',
     ])
-    expect(node('config-save').disabled).toBe(true)
+    expect(node('config-save').disabled).toBe(false)
   })
 
   it('redacts an entered key before reporting provider errors to the app', async () => {
@@ -369,111 +431,46 @@ describe('settings controller', () => {
   })
 
   it.each([
+    ['CONFIG_CREDENTIAL_PERMISSIONS', '无法保存凭据。 请检查存储权限。'],
     [
       'CONFIG_CREDENTIAL_PERMISSIONS',
-      '凭据存储权限不符合要求。请确认 AGH_HOME 及 secrets/auth 目录属于当前用户，目录权限为 0700、文件权限为 0600；具体路径见 data/audit/configuration.jsonl。',
+      '无法保存凭据。 请检查存储权限。',
+      { part: 'locks', check: 'mode', mode: '0644', expectedMode: '0600', path: '/private/do-not-render' },
     ],
-    ['CONFIG_CREDENTIAL_READ_ONLY', '凭据存储位于只读文件系统。请将 AGH_HOME 移至可写的本地目录并重启。'],
-    [
-      'CONFIG_CREDENTIAL_INVALID',
-      '凭据存储存在不安全路径或无效数据。请检查 data/audit/configuration.jsonl，恢复私有的普通目录和文件。',
-    ],
-    ['CONFIG_CREDENTIAL_NO_SPACE', '凭据存储所在磁盘空间不足。请释放 AGH_HOME 所在磁盘的空间后重试。'],
-    ['CONFIG_REVISION_CONFLICT', '配置已被其他客户端修改，请重新打开设置后再试。'],
-  ])('translates %s into an actionable settings error', async (reason, message) => {
-    installDom()
-    const onError = vi.fn()
-    const settings = createSettingsController({
-      client: client({
-        test: async () => {
-          throw {
-            code: -32011,
-            data: { code: 'SEMANTIC_REJECTED', reason },
-          }
-        },
-      }),
-      onSaved: vi.fn(async () => undefined),
-      onError,
-    })
-    await settings.open()
-    node('config-test').dispatch('click')
-    await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce())
+    ['CONFIG_CREDENTIAL_READ_ONLY', '无法保存凭据。 请检查存储权限。'],
+    ['CONFIG_CREDENTIAL_INVALID', '无法保存凭据。 请检查存储权限。'],
+    ['CONFIG_CREDENTIAL_NO_SPACE', '无法保存凭据。 请检查存储权限。'],
+    ['CONFIG_REVISION_CONFLICT', '资源已变更。 请重新载入最新状态后重试。'],
+    ['CONFIG_CREDENTIAL_REJECTED', '凭据被拒绝。 请检查后重试。'],
+    ['CONFIG_CREDENTIAL_REQUIRED', '缺少提供方凭据。 请为此提供方添加凭据。'],
+  ])(
+    'translates %s into an actionable settings error',
+    async (reason, message, metadata: Record<string, unknown> = {}) => {
+      installDom()
+      const onError = vi.fn()
+      const settings = createSettingsController({
+        client: client({
+          test: async () => {
+            throw {
+              code: -32011,
+              data: { code: 'SEMANTIC_REJECTED', reason, ...metadata },
+            }
+          },
+        }),
+        onSaved: vi.fn(async () => undefined),
+        onError,
+      })
+      await settings.open()
+      node('config-test').dispatch('click')
+      await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce())
 
-    expect(node('config-error').textContent).toBe(message)
-    const reported = onError.mock.calls[0]?.[0]
-    expect(reported).toBeInstanceOf(Error)
-    expect((reported as Error).message).toBe(message)
-  })
-
-  const permissionText =
-    '凭据存储权限不符合要求。请确认 AGH_HOME 及 secrets/auth 目录属于当前用户，目录权限为 0700、文件权限为 0600；具体路径见 data/audit/configuration.jsonl。'
-  it.each([
-    [
-      { target: 'secrets', actualMode: '0755', expectedMode: '0700' },
-      'AGH_HOME/secrets 当前权限为 0755，需要为 0700。 ',
-    ],
-    [
-      { target: 'home', actualMode: '0750', expectedMode: '0700' },
-      'AGH_HOME 当前权限为 0750，需要为 0700。 ',
-    ],
-    [
-      { target: 'file', actualMode: '0644', expectedMode: '0600' },
-      'AGH_HOME 下的凭据文件 当前权限为 0644，需要为 0600。 ',
-    ],
-    // Anything off the expected shape is ignored: no free text from the daemon reaches the page.
-    [{ target: '../PRIVATE-PATH-MARKER', actualMode: '0755', expectedMode: '0700' }, ''],
-    [{ target: 'secrets', actualMode: '0755; rm -rf', expectedMode: '0700' }, ''],
-    [{ target: 'secrets', actualMode: '0755' }, ''],
-    ['0755', ''],
-  ])('shows the actual permission bits from %j', async (detail, prefix) => {
-    installDom()
-    const onError = vi.fn()
-    const settings = createSettingsController({
-      client: client({
-        test: async () => {
-          throw {
-            code: -32011,
-            data: { code: 'SEMANTIC_REJECTED', reason: 'CONFIG_CREDENTIAL_PERMISSIONS', detail },
-          }
-        },
-      }),
-      onSaved: vi.fn(async () => undefined),
-      onError,
-    })
-    await settings.open()
-    node('config-test').dispatch('click')
-    await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce())
-
-    expect(node('config-error').textContent).toBe(`${prefix}${permissionText}`)
-  })
-
-  it('does not attach permission detail to other failures', async () => {
-    installDom()
-    const onError = vi.fn()
-    const settings = createSettingsController({
-      client: client({
-        test: async () => {
-          throw {
-            code: -32011,
-            data: {
-              code: 'SEMANTIC_REJECTED',
-              reason: 'CONFIG_CREDENTIAL_READ_ONLY',
-              detail: { target: 'secrets', actualMode: '0755', expectedMode: '0700' },
-            },
-          }
-        },
-      }),
-      onSaved: vi.fn(async () => undefined),
-      onError,
-    })
-    await settings.open()
-    node('config-test').dispatch('click')
-    await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce())
-
-    expect(node('config-error').textContent).toBe(
-      '凭据存储位于只读文件系统。请将 AGH_HOME 移至可写的本地目录并重启。',
-    )
-  })
+      expect(node('config-error').textContent).toBe(message)
+      const reported = onError.mock.calls[0]?.[0]
+      expect(reported).toBeInstanceOf(Error)
+      expect((reported as Error).message).toBe(message)
+      expect(node('config-error').textContent).not.toContain('/private/do-not-render')
+    },
+  )
 
   it('submits the provider default explicitly when replacing a saved custom endpoint', async () => {
     installDom()
@@ -589,3 +586,11 @@ describe('settings controller', () => {
     expect(node('config-api-key').value).toBe('')
   })
 })
+
+const feedbackResults: OperationFeedback[] = []
+let releaseFeedback: (() => void) | undefined
+feedbackBeforeEach(() => {
+  feedbackResults.length = 0
+  releaseFeedback = installFeedbackSink({ publish: (value) => feedbackResults.push(value), resolve() {} })
+})
+feedbackAfterEach(() => releaseFeedback?.())

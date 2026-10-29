@@ -3,6 +3,356 @@
   "$id": "https://agnes.ai/schema/package-admin.json",
   "title": "Package Admin contracts",
   "$defs": {
+    "PluginConfigGetParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "id"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "PluginConfigValidateParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "id", "rowId", "value"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "rowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "value": {
+          "$ref": "session-v1.json#/$defs/JsonValue"
+        }
+      }
+    },
+    "PluginConfigSaveParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "id", "rowId", "value", "expectedRevision", "clientId", "commandId"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "rowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "value": {
+          "$ref": "session-v1.json#/$defs/JsonValue"
+        },
+        "expectedRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "PluginConfigEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rowId", "schema", "value", "reload"],
+      "properties": {
+        "rowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "schema": {
+          "$ref": "session-v1.json#/$defs/JsonValue"
+        },
+        "value": {
+          "$ref": "session-v1.json#/$defs/JsonValue"
+        },
+        "reload": {
+          "enum": ["live", "next-session"]
+        }
+      }
+    },
+    "PluginConfigAudit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["who", "when", "rowId", "revision", "before", "after"],
+      "properties": {
+        "who": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "when": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "rowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "before": {
+          "$ref": "session-v1.json#/$defs/JsonValue"
+        },
+        "after": {
+          "$ref": "session-v1.json#/$defs/JsonValue"
+        }
+      }
+    },
+    "PluginConfigSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "entries", "audit"],
+      "properties": {
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PluginConfigEntry"
+          }
+        },
+        "audit": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PluginConfigAudit"
+          }
+        }
+      }
+    },
+    "PluginConfigValidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issues"],
+      "properties": {
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "code"],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
+            }
+          }
+        }
+      }
+    },
+    "PluginConfigSaveResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "revision", "reason", "issues", "reload"],
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "reason": {
+          "enum": ["saved", "invalid", "conflict", "refused", "pending"]
+        },
+        "refusalReason": {
+          "description": "Sanitized plugin apply refusal; never contains configuration values or secret references.",
+          "type": "string",
+          "maxLength": 512
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "code"],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
+            }
+          }
+        },
+        "reload": {
+          "enum": ["live", "next-session"]
+        }
+      }
+    },
+    "PluginPublicationReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "ok", "recovery", "containers"],
+      "properties": {
+        "operation": {
+          "enum": ["runtime-target", "skills", "models", "extension-rows"]
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "recovery": {
+          "const": "retry-same-input"
+        },
+        "containers": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["compositionHash", "status"],
+            "properties": {
+              "compositionHash": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "status": {
+                "enum": ["applied", "failed"]
+              },
+              "error": {
+                "type": "string",
+                "maxLength": 512
+              }
+            }
+          }
+        }
+      }
+    },
+    "PluginPublicationStatusResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["publication"],
+      "properties": {
+        "publication": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PluginPublicationReport"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "SessionGenerationMigrationParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "clientId", "commandId", "sessionId"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "repin": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+          }
+        }
+      }
+    },
+    "SessionGenerationMigrationResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["previousGenerationId", "generationId", "changed"],
+      "properties": {
+        "previousGenerationId": {
+          "type": "string",
+          "pattern": "^[a-f0-9-]{36}$"
+        },
+        "generationId": {
+          "type": "string",
+          "pattern": "^[a-f0-9-]{36}$"
+        },
+        "changed": {
+          "type": "boolean"
+        },
+        "repinned": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+          }
+        }
+      }
+    },
     "SkinListResult": {
       "description": "Selectable skins derived from the enabled, trusted package inventory.",
       "type": "object",
@@ -95,11 +445,29 @@
         "packages.activate",
         "packages.remove",
         "catalog.configure",
-        "extensions.execute"
+        "extensions.execute",
+        "credentials.read",
+        "credentials.write"
       ]
     },
     "PackageSource": {
       "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "local"
+            },
+            "ref": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^local:(home|workspace)/[a-z0-9][a-z0-9._-]*$"
+            }
+          },
+          "required": ["type", "ref"]
+        },
         {
           "type": "object",
           "additionalProperties": false,
@@ -127,7 +495,7 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 1024,
-              "pattern": "^file:\\./(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+(?:/(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+)*$"
+              "pattern": "^file:[^\\x00\\\\]+$"
             }
           },
           "required": ["type", "ref"]
@@ -159,11 +527,43 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 1024,
-              "pattern": "^git:",
+              "pattern": "^git:https://[^\\s#]+(?:#[A-Za-z0-9._/-]+)?$",
               "format": "agnes-git-source"
             }
           },
           "required": ["type", "ref"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "ref"],
+          "properties": {
+            "type": {
+              "const": "path"
+            },
+            "ref": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^path:"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "ref"],
+          "properties": {
+            "type": {
+              "const": "url"
+            },
+            "ref": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^url:"
+            }
+          }
         }
       ]
     },
@@ -173,21 +573,34 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "kind": { "const": "client" },
-            "id": { "type": "string", "pattern": "^plugin/[0-9a-f]{16}$" },
-            "rowId": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "kind": {
+              "const": "client"
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^plugin/[0-9a-f]{16}$"
+            },
+            "rowId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
             "path": {
               "type": "string",
               "minLength": 1,
               "maxLength": 512,
               "pattern": "^\\./(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+(?:/(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+)*$"
             },
-            "client": { "$ref": "extension-manifest.json#/$defs/ClientContribution" },
+            "client": {
+              "$ref": "extension-manifest.json#/$defs/ClientContribution"
+            },
             "skins": {
               "type": "array",
               "minItems": 1,
               "maxItems": 16,
-              "items": { "$ref": "extension-manifest.json#/$defs/SkinContribution" }
+              "items": {
+                "$ref": "extension-manifest.json#/$defs/SkinContribution"
+              }
             }
           },
           "required": ["kind", "id", "rowId", "path", "client"]
@@ -196,9 +609,18 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "kind": { "const": "client" },
-            "id": { "type": "string", "pattern": "^plugin/[0-9a-f]{16}$" },
-            "rowId": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "kind": {
+              "const": "client"
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^plugin/[0-9a-f]{16}$"
+            },
+            "rowId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
             "path": {
               "type": "string",
               "minLength": 1,
@@ -209,7 +631,9 @@
               "type": "array",
               "minItems": 1,
               "maxItems": 16,
-              "items": { "$ref": "extension-manifest.json#/$defs/SkinContribution" }
+              "items": {
+                "$ref": "extension-manifest.json#/$defs/SkinContribution"
+              }
             }
           },
           "required": ["kind", "id", "rowId", "path", "skins"]
@@ -530,6 +954,41 @@
         },
         "signatureVerified": {
           "type": "boolean"
+        },
+        "sourceKind": {
+          "enum": ["official-catalog", "npm", "git", "local-folder", "tarball"]
+        },
+        "resolvedLocation": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "treeIntegrity": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "publisher": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "verification": {
+          "enum": ["unverified", "official-ed25519", "npm-sigstore"]
+        },
+        "installedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "installer": {
+          "enum": ["user", "agent"]
+        },
+        "trustDecision": {
+          "enum": ["pending", "confirmed", "revoked"]
+        },
+        "authoring": {
+          "$ref": "#/$defs/AuthoringProvenance"
         }
       },
       "required": ["source", "integrity", "signatureVerified"]
@@ -608,6 +1067,54 @@
           "pattern": "^[a-f0-9]{64}$",
           "minLength": 64,
           "maxLength": 64
+        },
+        "declaredCapabilities": {
+          "$ref": "#/$defs/PluginCapabilities"
+        },
+        "metadata": {
+          "$ref": "extension-manifest.json#/$defs/PluginMetadata"
+        },
+        "presentation": {
+          "$ref": "#/$defs/PackagePresentation"
+        },
+        "provides": {
+          "type": "array",
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/PluginProvide"
+          },
+          "uniqueItems": true,
+          "maxItems": 8
+        },
+        "application": {
+          "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
+        },
+        "agents": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/DeclaredAgent"
+          }
+        },
+        "preflight": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["level", "reasons", "next"],
+          "properties": {
+            "level": {
+              "enum": ["structural", "static-references", "deployment-dependent", "refused"]
+            },
+            "reasons": {
+              "type": "array",
+              "maxItems": 128,
+              "items": {
+                "type": "string",
+                "maxLength": 2048
+              }
+            },
+            "next": {
+              "enum": ["resolve-static-references", "validate-deployment", "review-trust", "fix-declaration"]
+            }
+          }
         }
       },
       "required": [
@@ -741,7 +1248,7 @@
           "items": {
             "$ref": "#/$defs/PackageAdminPermission"
           },
-          "maxItems": 7,
+          "maxItems": 9,
           "uniqueItems": true
         },
         "readOnly": {
@@ -771,6 +1278,74 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "primaryStatus": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Read-only primary plugin status. Underlying desired, trust, actual and generation facts keep their existing meanings; readiness never means a tool is executing.",
+          "properties": {
+            "state": {
+              "enum": ["ready", "blocked", "restart-required", "historical-only", "disabled", "untrusted"]
+            },
+            "reasonCode": {
+              "enum": [
+                "ready",
+                "ready-with-history",
+                "trust-required",
+                "disabled",
+                "historical-only",
+                "restart-required",
+                "dependency-missing",
+                "credential-required",
+                "repin-required",
+                "activation-failed",
+                "starting",
+                "not-running",
+                "observation-unavailable",
+                "policy-blocked"
+              ]
+            },
+            "reason": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "en": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "zh-CN": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": ["en", "zh-CN"]
+            },
+            "nextAction": {
+              "enum": [
+                "trust",
+                "enable",
+                "configure-credential",
+                "install-dependency",
+                "restart",
+                "repin",
+                "none"
+              ]
+            }
+          },
+          "required": ["state", "reasonCode", "reason", "nextAction"]
+        },
+        "draining": {
+          "type": "boolean"
+        },
+        "boundSessions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "drainingSessions": {
+          "type": "integer",
+          "minimum": 0
+        },
         "id": {
           "type": "string",
           "minLength": 1,
@@ -850,6 +1425,44 @@
               "type": "null"
             }
           ]
+        },
+        "declaredCapabilities": {
+          "$ref": "#/$defs/PluginCapabilities"
+        },
+        "failureHint": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "failureDocs": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "provenance": {
+          "$ref": "#/$defs/PackageProvenance"
+        },
+        "metadata": {
+          "$ref": "extension-manifest.json#/$defs/PluginMetadata"
+        },
+        "presentation": {
+          "$ref": "#/$defs/PackagePresentation"
+        },
+        "provides": {
+          "type": "array",
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/PluginProvide"
+          },
+          "uniqueItems": true,
+          "maxItems": 8
+        },
+        "application": {
+          "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
+        },
+        "agents": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/DeclaredAgent"
+          }
         }
       },
       "required": [
@@ -913,6 +1526,42 @@
         "retrievedAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "metadata": {
+          "$ref": "extension-manifest.json#/$defs/PluginMetadata"
+        },
+        "presentation": {
+          "$ref": "#/$defs/PackagePresentation"
+        },
+        "provides": {
+          "type": "array",
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/PluginProvide"
+          },
+          "uniqueItems": true,
+          "maxItems": 8
+        },
+        "application": {
+          "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
+        },
+        "applicationAssets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mark": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 174800,
+              "pattern": "^data:image/(png|jpeg|webp|gif|x-icon);base64,[A-Za-z0-9+/=]+$"
+            }
+          }
+        },
+        "agents": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/DeclaredAgent"
+          }
         }
       },
       "required": [
@@ -931,6 +1580,47 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "sourceFailure": {
+          "description": "Closed source refusal reason; never raw filesystem or Git diagnostics.",
+          "enum": ["manifest-missing", "manifest-invalid", "not-plugin", "git-ref", "git-fetch"]
+        },
+        "diagnostics": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "enum": [
+                  "unknown-theme-token",
+                  "invalid-field",
+                  "missing-required-file",
+                  "no-progress",
+                  "conflicting-write-path",
+                  "missing-remove-path"
+                ]
+              },
+              "path": {
+                "type": "string",
+                "maxLength": 240
+              },
+              "field": {
+                "type": "string",
+                "maxLength": 160
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 240
+              },
+              "hint": {
+                "type": "string",
+                "maxLength": 256
+              }
+            },
+            "required": ["code", "path", "field", "name", "hint"]
+          }
+        },
         "code": {
           "enum": [
             "E_PACKAGE_SOURCE",
@@ -939,7 +1629,10 @@
             "E_PACKAGE_STATE",
             "E_PACKAGE_BLOCKED",
             "E_PACKAGE_PREVIEW_STALE",
-            "E_PACKAGE_CANCELLED"
+            "E_PACKAGE_CANCELLED",
+            "E_PACKAGE_PROVENANCE",
+            "E_PACKAGE_SOURCE_POLICY",
+            "E_PACKAGE_BUSY"
           ]
         },
         "safeMessage": {
@@ -953,6 +1646,14 @@
             "$ref": "#/$defs/PackageBlocker"
           },
           "maxItems": 128
+        },
+        "fixHint": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "docsUrl": {
+          "type": "string",
+          "maxLength": 1024
         }
       },
       "required": ["code", "safeMessage", "blockers"]
@@ -1083,10 +1784,165 @@
       },
       "required": ["items", "nextCursor"]
     },
+    "PluginGenerationStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "currentGenerationId": {
+          "type": "string",
+          "pattern": "^[a-f0-9-]{36}$"
+        },
+        "generations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "current": {
+                "type": "boolean",
+                "description": "Whether this generation is a current head of a non-retired session composition; independent of activation success."
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-f0-9-]{36}$"
+              },
+              "state": {
+                "enum": ["active", "draining", "historical", "failed"]
+              },
+              "boundSessions": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "openSessions": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "live": {
+                "type": "boolean"
+              },
+              "packages": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  },
+                  "required": ["id", "version"]
+                }
+              },
+              "sessions": {
+                "type": "array",
+                "maxItems": 256,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1024
+                    },
+                    "open": {
+                      "type": "boolean"
+                    },
+                    "title": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512,
+                      "description": "The session's title, when it has one."
+                    },
+                    "run": {
+                      "enum": ["idle", "running"],
+                      "description": "Whether a turn is in progress. A session that is not open is idle."
+                    }
+                  },
+                  "required": ["key", "open"]
+                }
+              },
+              "error": {
+                "type": "string",
+                "maxLength": 512
+              }
+            },
+            "required": ["id", "state", "boundSessions", "openSessions", "live", "packages"]
+          }
+        },
+        "plugins": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "state": {
+                "enum": ["active", "draining", "historical", "restart-required", "failed"]
+              },
+              "boundSessions": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "drainingSessions": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "historicalSessions": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "error": {
+                "type": "string",
+                "maxLength": 512
+              }
+            },
+            "required": ["id", "state", "boundSessions", "drainingSessions", "historicalSessions"]
+          }
+        },
+        "blocked": {
+          "type": "array",
+          "maxItems": 256,
+          "description": "Durable pin or head records that cannot be read. Generation collection removes nothing while any is listed.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "file": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "description": "Path of the damaged record relative to the profile directory."
+              },
+              "reason": {
+                "type": "string",
+                "maxLength": 512
+              }
+            },
+            "required": ["file", "reason"]
+          }
+        }
+      },
+      "required": ["generations", "plugins"]
+    },
     "PackageListResult": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "generations": {
+          "$ref": "#/$defs/PluginGenerationStatus"
+        },
         "packages": {
           "type": "array",
           "items": {
@@ -1502,6 +2358,36 @@
         },
         "activation": {
           "$ref": "#/$defs/PackageActivationRequest"
+        },
+        "dependents": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+              },
+              "source": {
+                "$ref": "#/$defs/PackageSource"
+              },
+              "expectedIntegrity": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 95,
+                "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$"
+              },
+              "activation": {
+                "$ref": "#/$defs/PackageActivationRequest"
+              }
+            },
+            "required": ["id", "source", "expectedIntegrity", "activation"]
+          }
         }
       },
       "required": ["profile", "clientId", "commandId", "id", "source", "expectedIntegrity"]
@@ -1712,6 +2598,11 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4096
+        },
+        "expectedHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$",
+          "description": "Required for repository local-plugin trust; binds confirmation to the offered package and hooks snapshot."
         }
       },
       "required": ["profile", "clientId", "commandId", "deployDir"]
@@ -1894,7 +2785,17 @@
               "publicConfig": {
                 "description": "Explicitly public package-authored browser metadata. It is immutable manifest data, never runtime row config, credentials, secret references or artifact data.",
                 "type": "object",
-                "additionalProperties": { "$ref": "session-v1.json#/$defs/JsonValue" }
+                "additionalProperties": {
+                  "$ref": "session-v1.json#/$defs/JsonValue"
+                }
+              },
+              "intelligentComponents": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 16,
+                "items": {
+                  "$ref": "extension-manifest.json#/$defs/UiComponentDeclaration"
+                }
               }
             }
           }
@@ -2047,6 +2948,17 @@
             "maxLength": 128
           }
         },
+        "streams": {
+          "description": "Immutable same-owner stream allowlist; current activation and exact snapshot are also required.",
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$"
+          }
+        },
         "services": {
           "description": "Immutable manifest-declared same-extension query service names. This projection is a browser UX/API allow-list, never a credential or arbitrary RPC route.",
           "type": "array",
@@ -2061,9 +2973,111 @@
         "publicConfig": {
           "description": "Explicitly public package-authored client configuration. It is a narrow manifest projection, never runtime row config, credentials, secret references or artifact data.",
           "type": "object",
-          "additionalProperties": { "$ref": "session-v1.json#/$defs/JsonValue" }
+          "additionalProperties": {
+            "$ref": "session-v1.json#/$defs/JsonValue"
+          }
+        },
+        "intelligentComponents": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/UiComponentDeclaration"
+          }
+        },
+        "binding": {
+          "$ref": "#/$defs/ContributionBinding"
+        },
+        "homeEntries": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/HomeContributionDeclaration"
+          }
+        },
+        "examplePages": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9.-]*$",
+            "maxLength": 128
+          }
+        },
+        "exampleOf": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "pageEntry": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "presentationRoleBindings": {
+          "description": "Host-verified per-role consent binding for this exact client declaration, package identity and dependency closure; never supplied by plugin code.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "navigation": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "conversation": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "composer": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "goal": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "interaction": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "deliverables": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        },
+        "presentationRoles": {
+          "type": "array",
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/PresentationRole"
+          }
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
         }
       }
+    },
+    "ClientModuleListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      },
+      "required": ["profile"]
     },
     "ClientModuleReadParams": {
       "description": "One same-origin client-module route path to read bytes for. The path is a URL path, never a filesystem path.",
@@ -2108,10 +3122,10 @@
               "const": true
             },
             "base64": {
-              "description": "Standard base64 of the file, bounded by the install-time cap for the file class (4 MiB raw).",
+              "description": "Standard base64 of the file, bounded by the resource install-time cap (32 MiB raw). Code files retain their separate 4 MiB install-time cap.",
               "type": "string",
               "minLength": 1,
-              "maxLength": 6000000
+              "maxLength": 44739244
             }
           }
         }
@@ -2148,7 +3162,9 @@
         },
         "input": {
           "type": "object",
-          "additionalProperties": { "$ref": "session-v1.json#/$defs/JsonValue" }
+          "additionalProperties": {
+            "$ref": "session-v1.json#/$defs/JsonValue"
+          }
         }
       }
     },
@@ -2174,7 +3190,11 @@
           "maxLength": 256,
           "pattern": "^web:[^\\x00]{1,251}$"
         },
-        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
         "service": {
           "type": "string",
           "minLength": 1,
@@ -2189,7 +3209,9 @@
         },
         "input": {
           "type": "object",
-          "additionalProperties": { "$ref": "session-v1.json#/$defs/JsonValue" }
+          "additionalProperties": {
+            "$ref": "session-v1.json#/$defs/JsonValue"
+          }
         }
       }
     },
@@ -2203,22 +3225,36 @@
       "additionalProperties": false,
       "required": ["encoding", "canonicalBase64", "digest", "identity"],
       "properties": {
-        "encoding": { "const": "base64" },
+        "encoding": {
+          "const": "base64"
+        },
         "canonicalBase64": {
           "type": "string",
           "minLength": 4,
           "maxLength": 16776788,
           "pattern": "^[A-Za-z0-9+/]+={0,2}$"
         },
-        "digest": { "type": "string", "pattern": "^sha256-[0-9a-f]{64}$" },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256-[0-9a-f]{64}$"
+        },
         "identity": {
           "type": "object",
           "additionalProperties": false,
           "required": ["treeHash", "resourceRevision", "compositeRevision"],
           "properties": {
-            "treeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-            "resourceRevision": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-            "compositeRevision": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            "treeHash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "resourceRevision": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "compositeRevision": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
           }
         }
       }
@@ -2252,7 +3288,9 @@
           "maxLength": 128,
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
         },
-        "artifact": { "$ref": "#/$defs/PluginTreeArtifact" }
+        "artifact": {
+          "$ref": "#/$defs/PluginTreeArtifact"
+        }
       }
     },
     "PluginTreeRollbackParams": {
@@ -2285,23 +3323,51 @@
       "additionalProperties": false,
       "required": ["actual", "pending"],
       "properties": {
-        "actual": { "type": "boolean" },
-        "pending": { "type": "boolean" },
-        "desiredDigest": { "type": "string", "pattern": "^sha256-[0-9a-f]{64}$" },
-        "reportOk": { "type": "boolean" },
-        "failurePhase": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "workerGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "actual": {
+          "type": "boolean"
+        },
+        "pending": {
+          "type": "boolean"
+        },
+        "desiredDigest": {
+          "type": "string",
+          "pattern": "^sha256-[0-9a-f]{64}$"
+        },
+        "reportOk": {
+          "type": "boolean"
+        },
+        "failurePhase": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "workerGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
         "identity": {
           "type": "object",
           "additionalProperties": false,
           "required": ["treeHash", "resourceRevision", "compositeRevision"],
           "properties": {
-            "treeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-            "resourceRevision": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-            "compositeRevision": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            "treeHash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "resourceRevision": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "compositeRevision": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
           }
         },
-        "desired": { "$ref": "#/$defs/PluginTreeArtifact" }
+        "desired": {
+          "$ref": "#/$defs/PluginTreeArtifact"
+        }
       }
     },
     "PluginTreeApplyResult": {
@@ -2309,8 +3375,13 @@
       "additionalProperties": false,
       "required": ["desiredDigest", "pending"],
       "properties": {
-        "desiredDigest": { "type": "string", "pattern": "^sha256-[0-9a-f]{64}$" },
-        "pending": { "type": "boolean" }
+        "desiredDigest": {
+          "type": "string",
+          "pattern": "^sha256-[0-9a-f]{64}$"
+        },
+        "pending": {
+          "type": "boolean"
+        }
       }
     },
     "PluginTreeRollbackResult": {
@@ -2318,9 +3389,1421 @@
       "additionalProperties": false,
       "required": ["rolledBack"],
       "properties": {
-        "rolledBack": { "type": "boolean" },
-        "desiredDigest": { "type": "string", "pattern": "^sha256-[0-9a-f]{64}$" }
+        "rolledBack": {
+          "type": "boolean"
+        },
+        "desiredDigest": {
+          "type": "string",
+          "pattern": "^sha256-[0-9a-f]{64}$"
+        }
       }
+    },
+    "PluginCapabilities": {
+      "$ref": "extension-manifest.json#/$defs/Capabilities"
+    },
+    "PackageProvenanceParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "id"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "PackageSourcePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowedSources"],
+      "properties": {
+        "allowedSources": {
+          "enum": ["official-only", "official+npm-with-provenance", "any-with-confirmation"]
+        }
+      }
+    },
+    "AuthoringFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 131072
+        }
+      },
+      "required": ["path", "content"]
+    },
+    "AuthoringOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sessionKey": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "toolUseId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "packageId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "snapshotId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "rowId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "feedbackId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "feedbackRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "messageSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "turn": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": ["sessionKey", "toolUseId", "packageId", "snapshotId", "rowId", "turn"]
+    },
+    "AuthoringTests": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "state": {
+          "enum": ["passed", "failed"]
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "runner": {
+          "const": "node-test"
+        },
+        "output": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "completedAt": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": ["hash", "state", "count", "runner", "output", "completedAt"]
+    },
+    "AuthoringCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "diagnostics": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "enum": [
+                  "unknown-theme-token",
+                  "invalid-field",
+                  "missing-required-file",
+                  "no-progress",
+                  "conflicting-write-path",
+                  "missing-remove-path"
+                ]
+              },
+              "path": {
+                "type": "string",
+                "maxLength": 240
+              },
+              "field": {
+                "type": "string",
+                "maxLength": 160
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 240
+              },
+              "hint": {
+                "type": "string",
+                "maxLength": 256
+              }
+            },
+            "required": ["code", "path", "field", "name", "hint"]
+          }
+        },
+        "writeSummary": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "added": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "maxLength": 240
+              }
+            },
+            "removed": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "maxLength": 240
+              }
+            },
+            "changed": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "maxLength": 240
+              }
+            },
+            "entries": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "maxLength": 240
+              }
+            },
+            "missing": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "maxLength": 240
+              }
+            },
+            "unchanged": {
+              "type": "boolean"
+            }
+          },
+          "required": ["added", "removed", "changed", "entries", "missing", "unchanged"]
+        },
+        "candidateId": {
+          "type": "string",
+          "pattern": "^candidate-[a-f0-9]{32}$"
+        },
+        "packageId": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "candidateHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "baseHash": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256-[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reviewHash": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256-[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "draft",
+            "tested",
+            "review",
+            "publishing",
+            "published",
+            "rejected",
+            "failed",
+            "interrupted"
+          ]
+        },
+        "files": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string",
+                "maxLength": 240
+              },
+              "before": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 131072
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "after": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 131072
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": ["path", "before", "after"]
+          }
+        },
+        "preview": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PackagePreview"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tests": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AuthoringTests"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origin": {
+          "$ref": "#/$defs/AuthoringOrigin"
+        },
+        "installer": {
+          "const": "agent"
+        },
+        "reviewer": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 512
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "sourceFiles": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/AuthoringFile"
+          }
+        }
+      },
+      "required": [
+        "candidateId",
+        "packageId",
+        "candidateHash",
+        "baseHash",
+        "reviewHash",
+        "state",
+        "files",
+        "preview",
+        "tests",
+        "origin",
+        "installer",
+        "reviewer",
+        "message",
+        "sourceFiles"
+      ]
+    },
+    "AuthoringCandidateList": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "candidates": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/AuthoringCandidateSummary"
+          }
+        }
+      },
+      "required": ["candidates"]
+    },
+    "AuthoringCreateParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 240
+              },
+              "content": {
+                "type": "string",
+                "maxLength": 131072
+              }
+            },
+            "required": ["path", "content"]
+          }
+        }
+      },
+      "required": ["profile", "clientId", "commandId", "files"]
+    },
+    "AuthoringWriteParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "candidateId": {
+          "type": "string",
+          "pattern": "^candidate-[a-f0-9]{32}$"
+        },
+        "expectedHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "files": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 240
+              },
+              "content": {
+                "type": "string",
+                "maxLength": 131072
+              }
+            },
+            "required": ["path", "content"]
+          }
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["replace", "merge"],
+          "description": "Defaults to replace. Merge retains untouched files and applies explicit removals."
+        },
+        "remove": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "description": "Existing paths to delete; valid only with mode merge."
+        }
+      },
+      "required": ["profile", "clientId", "commandId", "candidateId", "expectedHash", "files"]
+    },
+    "AuthoringTestParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "candidateId": {
+          "type": "string",
+          "pattern": "^candidate-[a-f0-9]{32}$"
+        },
+        "expectedHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        }
+      },
+      "required": ["profile", "clientId", "commandId", "candidateId", "expectedHash"]
+    },
+    "AuthoringSubmitParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "candidateId": {
+          "type": "string",
+          "pattern": "^candidate-[a-f0-9]{32}$"
+        },
+        "expectedHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        }
+      },
+      "required": ["profile", "clientId", "commandId", "candidateId", "expectedHash"]
+    },
+    "AuthoringApproveParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "candidateId": {
+          "type": "string",
+          "pattern": "^candidate-[a-f0-9]{32}$"
+        },
+        "expectedHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "reviewHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        }
+      },
+      "required": ["profile", "clientId", "commandId", "candidateId", "expectedHash", "reviewHash"]
+    },
+    "AuthoringRejectParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "candidateId": {
+          "type": "string",
+          "pattern": "^candidate-[a-f0-9]{32}$"
+        },
+        "expectedHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "reviewHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        }
+      },
+      "required": ["profile", "clientId", "commandId", "candidateId", "expectedHash", "reviewHash"]
+    },
+    "AuthoringShowParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "candidateId": {
+          "type": "string",
+          "pattern": "^candidate-[a-f0-9]{32}$"
+        }
+      },
+      "required": ["profile", "candidateId"]
+    },
+    "AuthoringProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "candidateId": {
+          "type": "string",
+          "pattern": "^candidate-[a-f0-9]{32}$"
+        },
+        "candidateHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "reviewHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "baseHash": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256-[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origin": {
+          "$ref": "#/$defs/AuthoringOrigin"
+        },
+        "reviewer": {
+          "type": "string",
+          "maxLength": 512
+        }
+      },
+      "required": ["candidateId", "candidateHash", "reviewHash", "baseHash", "origin", "reviewer"]
+    },
+    "AuthoringCandidateSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "candidateId": {
+          "type": "string",
+          "pattern": "^candidate-[a-f0-9]{32}$"
+        },
+        "packageId": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "candidateHash": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "state": {
+          "enum": [
+            "draft",
+            "tested",
+            "review",
+            "publishing",
+            "published",
+            "rejected",
+            "failed",
+            "interrupted"
+          ]
+        }
+      },
+      "required": ["candidateId", "packageId", "candidateHash", "state"]
+    },
+    "PackagePresentation": {
+      "description": "Read-only display data derived from the installed public author contract; it grants no capabilities.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rows"],
+      "properties": {
+        "origin": {
+          "enum": ["official", "example", "local", "local-source", "third-party"]
+        },
+        "optional": {
+          "description": "True for a shipped package the user chose to install: it is not part of the product and can be uninstalled.",
+          "type": "boolean"
+        },
+        "includes": {
+          "description": "Static package facts without executing plugin code. provides combines author labels with explicit contribution evidence, independently of runtime registrations. A count is present only when the package data states it; an absent count means the number is decided in code, not zero.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provides", "counts"],
+          "properties": {
+            "counts": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "tools": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 4096
+                },
+                "skills": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 4096
+                },
+                "mcp": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 4096
+                },
+                "bundles": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 4096
+                },
+                "ui": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 4096
+                }
+              }
+            },
+            "provides": {
+              "type": "array",
+              "items": {
+                "$ref": "extension-manifest.json#/$defs/PluginProvide"
+              },
+              "uniqueItems": true,
+              "maxItems": 8
+            }
+          }
+        },
+        "presets": {
+          "description": "What each bundle preset's policy guarantees, derived from package data without running plugin code. Unknown means the answer is decided in code.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["bundle", "id", "toolPolicy", "readOnly", "confirmBeforeActions", "network"],
+            "properties": {
+              "bundle": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "toolPolicy": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "readOnly": {
+                "enum": ["yes", "no", "unknown"]
+              },
+              "confirmBeforeActions": {
+                "enum": ["yes", "no", "unknown"]
+              },
+              "network": {
+                "enum": ["none", "allowed", "unknown"]
+              }
+            }
+          }
+        },
+        "rows": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "settings"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "source": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "metadata": {
+                "$ref": "extension-manifest.json#/$defs/PluginMetadata"
+              },
+              "settings": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "ContributionBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lifetime",
+        "owner",
+        "packageId",
+        "integrity",
+        "profileId",
+        "activationId",
+        "availability"
+      ],
+      "properties": {
+        "lifetime": {
+          "enum": ["profile", "session"]
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "integrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "profileId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "activationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "availability": {
+          "enum": ["active", "draining", "history-only", "disabled", "failed"]
+        }
+      }
+    },
+    "ApplicationSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "applicationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "integrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "declarationDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "consentDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "bindingDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "adoptionGeneration": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "consentSnapshot": {
+          "$ref": "#/$defs/ApplicationPreview"
+        }
+      },
+      "required": [
+        "packageId",
+        "applicationId",
+        "integrity",
+        "declarationDigest",
+        "consentDigest",
+        "bindingDigest"
+      ]
+    },
+    "ApplicationConfigSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApplicationSelection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "roleSelections": {
+          "$ref": "#/$defs/PresentationRoleSelections"
+        }
+      },
+      "required": ["revision", "selection"]
+    },
+    "ApplicationPreviewParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "role": {
+          "$ref": "extension-manifest.json#/$defs/PresentationRole"
+        },
+        "targetClientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": ["profile", "packageId"]
+    },
+    "ApplicationPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "integrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "source": {
+          "$ref": "#/$defs/PackageSource"
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "declaration": {
+          "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
+        },
+        "declarationDigest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "consentDigest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "pageNames": {
+          "type": "array",
+          "items": { "$ref": "session-v1.json#/$defs/JsonValue" },
+          "maxItems": 256
+        },
+        "agentLaunches": {
+          "type": "array",
+          "items": { "$ref": "session-v1.json#/$defs/JsonValue" },
+          "maxItems": 64
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "session-v1.json#/$defs/JsonValue"
+          },
+          "maxItems": 256
+        },
+        "replacedRoles": {
+          "type": "array",
+          "items": {
+            "$ref": "session-v1.json#/$defs/JsonValue"
+          },
+          "maxItems": 6
+        },
+        "dependencyDiff": {
+          "$ref": "session-v1.json#/$defs/JsonValue"
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "recovery": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "warning": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "assets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mark": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1500000
+            },
+            "favicon": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1500000
+            }
+          },
+          "required": []
+        }
+      },
+      "required": [
+        "packageId",
+        "version",
+        "integrity",
+        "source",
+        "signature",
+        "declaration",
+        "declarationDigest",
+        "consentDigest",
+        "dependencies",
+        "replacedRoles",
+        "dependencyDiff",
+        "scope",
+        "recovery",
+        "warning",
+        "assets"
+      ]
+    },
+    "ApplicationState": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApplicationSelection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": ["host", "active", "unresolved"]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "effective": {
+          "anyOf": [
+            {
+              "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mark": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1500000
+            },
+            "favicon": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1500000
+            }
+          },
+          "required": []
+        },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "packageId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "applicationId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "available": {
+                "type": "boolean"
+              }
+            },
+            "required": ["packageId", "applicationId", "version", "available"]
+          }
+        },
+        "roleSelections": {
+          "$ref": "#/$defs/PresentationRoleSelections"
+        },
+        "roles": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/PresentationRoleState"
+          }
+        }
+      },
+      "required": ["revision", "selection", "status", "effective", "assets", "candidates"]
+    },
+    "ApplicationAdoptParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "consentDigest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "role": {
+          "$ref": "extension-manifest.json#/$defs/PresentationRole"
+        },
+        "targetClientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": ["profile", "packageId", "expectedRevision", "consentDigest", "clientId", "commandId"]
+    },
+    "ApplicationClearParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "role": {
+          "$ref": "extension-manifest.json#/$defs/PresentationRole"
+        }
+      },
+      "required": ["profile", "expectedRevision", "clientId", "commandId"]
+    },
+    "PresentationRoleSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "integrity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "declarationDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "consentDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "bindingDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "consentSnapshot": {
+          "$ref": "#/$defs/ApplicationPreview"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "packageId",
+        "integrity",
+        "declarationDigest",
+        "consentDigest",
+        "bindingDigest",
+        "clientId"
+      ]
+    },
+    "PresentationRoleSelections": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "navigation": {
+          "$ref": "#/$defs/PresentationRoleSelection"
+        },
+        "conversation": {
+          "$ref": "#/$defs/PresentationRoleSelection"
+        },
+        "composer": {
+          "$ref": "#/$defs/PresentationRoleSelection"
+        },
+        "goal": {
+          "$ref": "#/$defs/PresentationRoleSelection"
+        },
+        "interaction": {
+          "$ref": "#/$defs/PresentationRoleSelection"
+        },
+        "deliverables": {
+          "$ref": "#/$defs/PresentationRoleSelection"
+        }
+      }
+    },
+    "PresentationRoleState": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "$ref": "extension-manifest.json#/$defs/PresentationRole"
+        },
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PresentationRoleSelection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": ["resolved", "unresolved"]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "source": {
+          "enum": ["default", "application", "choice"]
+        },
+        "effective": {
+          "anyOf": [
+            {
+              "$ref": "extension-manifest.json#/$defs/ApplicationRoleTarget"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "candidates": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "packageId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "clientId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
+            },
+            "required": ["packageId", "clientId", "version"]
+          }
+        }
+      },
+      "required": ["role", "selection", "status", "source", "effective", "candidates"]
     }
   }
 }

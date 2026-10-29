@@ -1,7 +1,7 @@
-import type { ModelRecord, Provider } from '@agnes/protocol'
+import { withPhase } from '@agnes/core-common/step/op-state'
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import type { Provider } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import { withPhase } from '../src/step/op-state.js'
-import { presetDefaults } from '../src/step/preset.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession } from './helpers/open-session.js'
@@ -22,27 +22,55 @@ const withCount = (tokens: number | 'unsupported' | 'throw'): Counting => {
   }
   return p
 }
-// Session input refuses an image unless the selected model declares image input.
-const imagePrimary: ModelRecord = {
-  id: 'primary',
-  name: 'primary',
-  api: 'openai-completions',
-  route: 'default',
-  baseUrl: 'https://example.invalid/v1',
-  reasoning: false,
-  input: ['text', 'image'],
-  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-  contextWindow: 8192,
-  maxTokens: 128,
-  toolCallFormats: ['native'],
-  thinkingReplay: 'native',
-  contract_id: null,
-  slot: 'primary',
-}
 const preset = (cap: number | null, onExceed: 'quote' | 'deny' = 'deny') => ({
   ...presetDefaults(),
   budget: { preflight: 'count' as const, perRequestCap: cap, onExceed, maxSteps: 50 },
 })
+
+it.each(['full-access', 'workspace-write', 'read-only', 'custom'])(
+  'round2: budget quotation preserves the effective %s permission boundary',
+  async (policy) => {
+    let asks = 0
+    const selected = {
+      ...preset(4000, 'quote'),
+      name: 'standard',
+      ...(policy === 'custom'
+        ? {}
+        : { permission: policy as 'full-access' | 'workspace-write' | 'read-only' }),
+    }
+    const f = await openSession({
+      provider: withCount(9000),
+      preset: selected,
+      seams: fakeSeams({
+        billing: {
+          projected: async ({ tokensEstimate }) => ({ credits: tokensEstimate, creditSource: 'estimated' }),
+        },
+        approval: {
+          ask: async () => {
+            asks++
+            return { verdict: 'allowed-once', answeredBy: actor }
+          },
+        },
+      }),
+    })
+    try {
+      await f.session.enqueue('next-turn', { content: [{ type: 'text', text: 'budget review' }], actor })
+      await f.session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(asks).toBe(policy === 'full-access' ? 0 : 1)
+      const decisions = await f.session.decisions.list()
+      expect(decisions).toHaveLength(1)
+      expect(decisions[0]?.request).toMatchObject({ category: 'permission', spec: { purpose: 'budget' } })
+      expect((await f.session.projectUI()).nodes.find((node) => node.kind === 'approval')).toMatchObject({
+        category: 'permission',
+        purpose: 'budget',
+      })
+      if (policy === 'full-access') expect(decisions[0]?.result).toMatchObject({ code: 'full-access' })
+      else expect(decisions[0]?.result).not.toHaveProperty('code', 'full-access')
+    } finally {
+      await f.session.close()
+    }
+  },
+)
 
 describe('count calibration', () => {
   it('writes budget.state.lastPreflight from provider.count in the same transaction as step/start', async () => {
@@ -88,35 +116,55 @@ describe('count calibration', () => {
     expect(session.latest('budget.state')).toMatchObject({ lastPreflight: { source: 'estimate' } })
   })
 
-  it('a counted request over the cap is not sent: deny ends the turn with budget, quote asks', async () => {
-    const seams = fakeSeams({
-      ledger: {
-        projected: async ({ tokensEstimate }) => ({ credits: tokensEstimate, creditSource: 'estimated' }),
-      },
-    })
-    const d = await openSession({ provider: withCount(9000), preset: preset(4000), seams })
-    await d.session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
-    expect((await d.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
-      'budget',
-    )
-    expect(await d.log.scan({ type: 'effect/intent', limit: 5 })).toHaveLength(0)
-    // The count that refused the request is on the ledger beside the refusal, not lost with it.
-    expect(
-      (await d.log.scan({ type: 'budget.state', limit: 10 })).map(
-        (e) => (e.data as { lastPreflight?: { source: string } }).lastPreflight?.source,
-      ),
-    ).toEqual(['estimate', 'count'])
-    const quotedProvider = withCount(9000)
-    const q = await openSession({ provider: quotedProvider, preset: preset(4000, 'quote'), seams })
-    await q.session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
-    expect((await q.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
-      'completed',
-    )
-    expect(quotedProvider.calls).toBe(1)
-    expect(
-      (await q.log.scan({ type: 'approval/asked', limit: 5 })).map((e) => (e.data as { kind: string }).kind),
-    ).toEqual(['budget'])
-  })
+  it.each(['workspace-write', 'full-access'])(
+    'a counted request over the cap is not sent with %s: deny ends the turn with budget, quote asks',
+    async (policy) => {
+      const seams = fakeSeams({
+        billing: {
+          projected: async ({ tokensEstimate }) => ({ credits: tokensEstimate, creditSource: 'estimated' }),
+        },
+      })
+      const d = await openSession({
+        provider: withCount(9000),
+        preset: {
+          ...preset(4000),
+          name: 'standard',
+          permission: policy as 'full-access' | 'workspace-write',
+        },
+        seams,
+      })
+      await d.session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
+      expect((await d.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'budget',
+      )
+      expect(await d.log.scan({ type: 'effect/intent', limit: 5 })).toHaveLength(0)
+      expect(await d.session.decisions.list()).toEqual([])
+      // The count that refused the request is on the ledger beside the refusal, not lost with it.
+      expect(
+        (await d.log.scan({ type: 'budget.state', limit: 10 })).map(
+          (e) => (e.data as { lastPreflight?: { source: string } }).lastPreflight?.source,
+        ),
+      ).toEqual(['estimate', 'count'])
+      const quotedProvider = withCount(9000)
+      const q = await openSession({
+        provider: quotedProvider,
+        preset: {
+          ...preset(4000, 'quote'),
+          name: 'standard',
+          permission: policy as 'full-access' | 'workspace-write',
+        },
+        seams,
+      })
+      await q.session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
+      expect((await q.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'completed',
+      )
+      expect(quotedProvider.calls).toBe(1)
+      expect((await q.session.decisions.list()).map((value) => value.request.spec.purpose)).toEqual([
+        'budget',
+      ])
+    },
+  )
 
   it.each([
     { tokens: 9000, credits: 2, reason: 'completed' },
@@ -128,7 +176,7 @@ describe('count calibration', () => {
       const provider = withCount(tokens)
       const seen: Array<{ tokensEstimate: number; model: string }> = []
       const seams = fakeSeams({
-        ledger: {
+        billing: {
           projected: async (input) => {
             seen.push(input)
             return { credits: seen.length === 1 ? 1 : credits, creditSource: 'estimated' }
@@ -154,7 +202,7 @@ describe('count calibration', () => {
     let projections = 0
     const provider = withCount(2)
     const seams = fakeSeams({
-      ledger: {
+      billing: {
         projected: async () => {
           if (++projections > 1) throw new Error('pricing unavailable')
           return { credits: 1, creditSource: 'estimated' }
@@ -191,12 +239,28 @@ describe('count calibration', () => {
 
   it('uses an explicit image fallback bound for count preflight and enforces the cap', async () => {
     const seams = fakeSeams({
-      ledger: {
+      billing: {
         projected: async ({ tokensEstimate }) => ({ credits: tokensEstimate, creditSource: 'estimated' }),
       },
     })
     const provider = withCount('unsupported')
-    Object.assign(provider, { models: () => [imagePrimary] })
+    provider.models = () => [
+      {
+        id: 'm',
+        route: 'default',
+        name: 'fake',
+        api: 'openai-completions',
+        baseUrl: 'https://test.invalid',
+        input: ['text', 'image'],
+        reasoning: false,
+        contextWindow: 10000,
+        maxTokens: 1000,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        toolCallFormats: ['native'],
+        thinkingReplay: 'native',
+        contract_id: null,
+      },
+    ]
     const { session } = await openSession({ provider, preset: preset(4000), seams })
     session.d.imageInputTokenFallback = async ({ imageCount }) => ({ tokens: 9000, imageCount })
     await session.enqueue('next-turn', {
@@ -226,7 +290,7 @@ describe('count calibration', () => {
   // is what would catch a copy-paste of the wrong risk mapping from gate.ts or resume.ts.
   it('fires approval_request from quoteBudget with risk "budget", and an override reaches the ledger', async () => {
     const seams = fakeSeams({
-      ledger: {
+      billing: {
         projected: async ({ tokensEstimate }) => ({ credits: tokensEstimate, creditSource: 'estimated' }),
       },
     })
@@ -253,18 +317,17 @@ describe('count calibration', () => {
       risk: 'budget',
       actor: expect.objectContaining({ id: 'u' }),
     })
-    expect((await log.scan({ type: 'approval/asked', limit: 5 })).at(-1)?.data).toMatchObject({
-      kind: 'budget',
-      summary: 'escalated by extension',
+    expect((await log.scan({ type: 'decision/state', limit: 5 })).at(-1)?.data).toMatchObject({
+      request: { spec: { purpose: 'budget', prompt: 'escalated by extension' } },
     })
   })
 
   it('records why a budget quote was refused, and ends the turn on budget', async () => {
     const seams = fakeSeams({
-      ledger: {
+      billing: {
         projected: async ({ tokensEstimate }) => ({ credits: tokensEstimate, creditSource: 'estimated' }),
       },
-      approval: { ask: async () => ({ verdict: 'rejected', reason: 'user_rejected' }) },
+      approval: { ask: async () => ({ verdict: 'rejected', reason: 'user-rejected', answeredBy: actor }) },
     })
     const { session, log } = await openSession({
       provider: withCount(9000),
@@ -275,10 +338,9 @@ describe('count calibration', () => {
     expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
       'budget',
     )
-    expect((await log.scan({ type: 'approval/decided', limit: 5 })).at(-1)?.data).toMatchObject({
-      verdict: 'rejected',
-      via: 'sync',
-      reason: 'user_rejected',
+    expect((await session.decisions.list()).at(-1)?.result).toMatchObject({
+      reason: 'answered',
+      response: { option: 'rejected' },
     })
   })
 
@@ -289,7 +351,7 @@ describe('count calibration', () => {
   it('a recount that finds no budget register says so and leaves the estimate alone', async () => {
     const { session, log } = await openSession({ provider: withCount(1234), preset: preset(null) })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
-    expect(await session.step()).toEqual({ phase: 'checkpoint' })
+    expect(await session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
     const op = session.op()
     if (!op) throw new Error('the accepted turn left no program counter')
     await session.transition([], withPhase(op, { kind: 'inference', gen: { status: 'ready', attempt: 0 } }))

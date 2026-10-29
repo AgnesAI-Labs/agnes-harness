@@ -1,8 +1,12 @@
 # Windows companion to standard. Containment and unambiguous identity are checked by
-# approval-policy before matching; the Host filesystem separately enforces actual access.
+# the Host command floor before matching; the Host filesystem separately enforces actual access.
 # Shell, tainted requests and tools requiring approval always keep their existing gates.
 name: standard-windows
 extends: standard
+# Windows keeps its own command table, so this recipe states the rest of its permission itself
+# instead of taking an overlay: the same sandbox and isolation `standard` ran under before the split.
+sandbox: { level: L1, on_unavailable: allow-if-unimplemented }
+subagent: { isolation: worktree }
 approval:
   command_policy:
     - tool: 'edit|write'

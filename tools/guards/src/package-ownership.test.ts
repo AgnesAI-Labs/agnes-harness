@@ -5,7 +5,15 @@ import { isTestFile, listSourceFiles, repoRoot } from './repo.js'
 
 const root = repoRoot()
 const writer = join(root, 'packages/package-manager/src')
-const host = join(root, 'packages/host/src')
+const hosts = [
+  'host',
+  'host-common',
+  'host-infrastructure',
+  'host-computer-use',
+  'host-artifacts',
+  'host-extensions',
+  'host-providers',
+].map((name) => join(root, 'packages', name, 'src'))
 
 /** Compatibility files may delegate, but may never regain filesystem or source ownership. */
 function compatibilityViolation(source: string): boolean {
@@ -27,10 +35,18 @@ function storageViolation(source: string): boolean {
       source,
     )
   const mutation =
-    /\b(?:writeFile(?:Sync)?|appendFile(?:Sync)?|rename(?:Sync)?|rm(?:Sync)?|unlink(?:Sync)?|mkdir(?:Sync)?|cp(?:Sync)?|copyFile(?:Sync)?|createWriteStream|open(?:Sync)?)\b/.test(
+    /\b(?:writeFile(?:Sync)?|appendFile(?:Sync)?|rename(?:Sync)?|rm(?:Sync)?|unlink(?:Sync)?|mkdir(?:Sync)?|cp(?:Sync)?|copyFile(?:Sync)?|createWriteStream)\b/.test(
       source,
     )
-  return packagePath && mutation
+  // `open` is also a service method or a collection name. Only filesystem imports can make
+  // it a native mutation; named aliases, namespace imports and require/import calls still count.
+  const nativeOpen =
+    /\bopen(?:Sync)?\b/.test(source) &&
+    (/\bimport\s*(?:\{[^}]*\b(?:open(?:Sync)?|promises)\b[^}]*\}|(?:\*\s*as\s+)?\w+)\s*from\s*['"](?:node:)?fs(?:\/promises)?['"]/.test(
+      source,
+    ) ||
+      /\b(?:require|import)\s*\(\s*['"](?:node:)?fs(?:\/promises)?['"]/.test(source))
+  return packagePath && (mutation || nativeOpen)
 }
 
 describe('Package lifecycle ownership', () => {
@@ -42,7 +58,7 @@ describe('Package lifecycle ownership', () => {
     }
   })
   it('Host package compatibility files only delegate to the unique owner', () => {
-    for (const file of listSourceFiles(join(host, 'packages'))) {
+    for (const file of hosts.flatMap((host) => listSourceFiles(join(host, 'packages')))) {
       if (basename(file) === 'compat.ts') continue
       expect(compatibilityViolation(readFileSync(file, 'utf8')), relative(root, file)).toBe(false)
     }
@@ -61,13 +77,25 @@ describe('Package lifecycle ownership', () => {
     expect(
       storageViolation("import { rm } from 'node:fs/promises'; await rm(packageDir(root, profile, id))"),
     ).toBe(true)
+    for (const source of [
+      "import { open as acquire } from 'node:fs/promises'; acquire('agnes-lock.json', 'w')",
+      "import * as fs from 'node:fs'; fs.openSync('agnes-lock.json', 'w')",
+      "import { promises as files } from 'node:fs'; files.open('agnes-lock.json', 'w')",
+      "const fs = require('node:fs'); fs.openSync('agnes-lock.json', 'w')",
+    ])
+      expect(storageViolation(source)).toBe(true)
+    expect(
+      storageViolation(
+        "import { existsSync } from 'node:fs'; import { lockPath } from '@agnes/package-manager'; const open = new Set(); open.add('surface'); deps.open(source)",
+      ),
+    ).toBe(false)
     expect(storageViolation("import { readFileSync } from 'node:fs'; readFileSync('agnes-lock.json')")).toBe(
       false,
     )
   })
   it('Host runtime code has no direct lock writer or package fetch call', () => {
-    for (const file of listSourceFiles(host)) {
-      if (relative(host, file).startsWith(`packages${sep}`)) continue
+    for (const file of hosts.flatMap((host) => listSourceFiles(host))) {
+      if (hosts.some((host) => relative(host, file).startsWith(`packages${sep}`))) continue
       expect(readFileSync(file, 'utf8'), relative(root, file)).not.toMatch(
         /\b(?:writeLock|snapshotPolicy|createPackageManager|fetchSource)\s*\(/,
       )

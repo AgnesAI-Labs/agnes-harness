@@ -43,7 +43,7 @@ describe('contextTokens', () => {
     await session.enqueue('next-turn', { content: [{ type: 'text', text: '12345678' }], actor })
     // One step: acceptInput claims the queued prompt and writes it to the surface, before any new
     // inference (and therefore any new ledger row) runs.
-    expect(await session.step()).toEqual({ phase: 'checkpoint' })
+    expect(await session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
     // The new message lands after the first turn's ledger row, so it is estimated at chars/4
     // (8 chars -> 2) and added on top of the ledger's 15 instead of recounting the whole surface.
     expect(contextTokens(session)).toBe(17)
@@ -116,7 +116,7 @@ describe('checkpointRoutine compaction threshold', () => {
           expect.objectContaining({ content: [{ type: 'text', text: 'ok' }] }),
           expect.objectContaining({ content: [{ type: 'text', text: 'ok' }] }),
         ])
-        expect(await log.scan({ type: 'approval/asked', limit: 10 })).toEqual([])
+        expect(await log.scan({ type: 'decision/state', limit: 10 })).toEqual([])
         expect((await session.projectUI()).usage?.context.window).toBe(window)
       }
     },
@@ -169,12 +169,18 @@ describe('checkpointRoutine compaction threshold', () => {
     session.compaction = new CompactionRunner({ plan: async () => null, onCompact: async () => undefined })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'next' }], actor })
     expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('budget')
-    const asked = await log.scan({ type: 'approval/asked', limit: 10 })
-    expect(asked).toHaveLength(1)
+    const asked = await log.scan({ type: 'decision/state', limit: 10 })
+    expect(
+      (await session.decisions.list()).filter((value) => value.request.spec.purpose === 'budget'),
+    ).toHaveLength(1)
     expect(asked[0]?.data).toMatchObject({
-      summary: expect.stringContaining(
-        'context 9838 tokens reached the 7500-token compaction threshold (9999-token session budget, 2499 reserved)',
-      ),
+      request: {
+        spec: {
+          prompt: expect.stringContaining(
+            'context 9838 tokens reached the 7500-token compaction threshold (9999-token session budget, 2499 reserved)',
+          ),
+        },
+      },
     })
     expect(provider.requests).toHaveLength(1)
   })

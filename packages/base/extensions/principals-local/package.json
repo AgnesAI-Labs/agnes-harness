@@ -1,0 +1,35 @@
+{
+  "name": "@agnes/principals-local",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/principals-local",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "capabilities": {
+          "hooks": [],
+          "slots": [],
+          "events": false,
+          "resources": [],
+          "network": []
+        },
+        "metadata": {
+          "displayName": "Local machine owner",
+          "summary": "Treats callers as one local machine owner for single-user deployments.",
+          "description": "Treats callers as one local machine owner for single-user deployments.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "本机所有者",
+              "summary": "在单用户部署中，将调用方统一视为本机所有者。",
+              "description": "在单用户部署中，将调用方统一视为本机所有者。"
+            }
+          }
+        }
+      }
+    ]
+  }
+}

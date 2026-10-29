@@ -51,7 +51,20 @@ export function defineFixture(fixture: ExtensionFixture): ExtensionFixture {
 }
 export { projectionFixture } from './fixtures/projections.js'
 export { serviceFixture } from './fixtures/services.js'
-
+export {
+  childAgentConformance,
+  compactionConformance,
+  loopConformance,
+  modelAdapterConformance,
+  type ProviderConformanceOperation,
+  type ProviderConformanceOptions,
+  type ProviderConformanceProbe,
+  persistenceConformance,
+  runProviderConformance,
+  sandboxConformance,
+  toolPolicyConformance,
+  toolRuntimeConformance,
+} from './provider-conformance.js'
 export {
   TRANSPORT_CONTRACT_CASES,
   type TransportContractCase,

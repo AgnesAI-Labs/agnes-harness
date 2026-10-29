@@ -21,7 +21,7 @@ import type {
  * A4 cards use create, deliver and PUT-update endpoints plus the documented open-space models.
  * A5 message-file download returns an HTTPS URL which can be fetched without authentication.
  * A6 legacy department/user endpoints accept an access token in the query string.
- * Task 24 must verify every assumption against a real enterprise before this list is marked verified.
+ * Verify every assumption against a real enterprise before this list is marked verified.
  */
 
 const API = 'https://api.dingtalk.com'
@@ -215,10 +215,20 @@ export function createRealGateway(options: RealGatewayOptions = {}): RealDingtal
       // fake-gateway tests and other channel deployments do not load it.
       const packageName = 'dingtalk-stream'
       const module = (await import(packageName)) as unknown as {
-        DWClient?: new (options: { clientId: string; clientSecret: string }) => StreamClientLike
+        DWClient?: new (options: {
+          clientId: string
+          clientSecret: string
+          keepAlive: boolean
+        }) => StreamClientLike
       }
       if (module.DWClient === undefined) throw new Error('DWClient export missing')
-      return new module.DWClient({ clientId: current.clientId, clientSecret: current.clientSecret })
+      // keepAlive pings every 8 s and drops a socket whose pong stops; the SDK then reconnects. Off by
+      // default, a socket left half-open by sleep or a network change never closes and never reconnects.
+      return new module.DWClient({
+        clientId: current.clientId,
+        clientSecret: current.clientSecret,
+        keepAlive: true,
+      })
     } catch {
       throw new ChannelError('E_CONNECT_FAILED', 'DingTalk Stream SDK is unavailable')
     }

@@ -1,12 +1,14 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+import { satisfiesApiRange } from '@agnes/extension-api'
 import { type PackageBlocker, validatePackageAdminData } from '@agnes/protocol'
 import { parse as parseYaml } from 'yaml'
 import { surfaceReferences } from './deployment-refs.js'
 import { PackageError } from './errors.js'
+import { own } from './integrity.js'
 import { capabilityHash, type InstalledPackage, readInventory } from './inventory.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
-import { readManifestIn } from './manifest.js'
+import { readBundledManifest } from './manifest.js'
 import type { PackageStore } from './store.js'
 import { runTrustGate } from './trust-gate.js'
 import { verifyWorkspace } from './workspace.js'
@@ -83,11 +85,12 @@ export function trustPackageEntry(
   for (const c of entry.contributions ?? [])
     if (c.kind === 'extension') {
       if (!directory) throw new PackageError('E_EXT_LOAD', 'package directory missing')
-      const manifest = readManifestIn(dirname(resolve(directory, c.path)))
+      const manifest = readBundledManifest(dirname(resolve(directory, c.path)))
       if (!manifest) throw new PackageError('E_EXT_LOAD', 'extension manifest missing')
       runTrustGate({ id, entry, manifest, ceiling, now: trusted, minimumReleaseAgeMin })
     }
   entry.trustDecision = { ...decision, decidedAt: trusted }
+  if (entry.provenance) entry.provenance.trustDecision = 'confirmed'
   entry.state.trusted = trusted
   return entry
 }
@@ -104,17 +107,22 @@ export async function assertNoReferences(
   id: string,
   operation: 'disable' | 'update' | 'rollback' | 'remove',
   authority?: PackageReferences,
+  candidate?: LockEntry,
+  candidates: Readonly<Record<string, LockEntry>> = {},
 ): Promise<void> {
   const blockers: PackageBlocker[] = []
-  const dependents = Object.entries(lock.packages)
-    .filter(([other, e]) => other !== id && Object.hasOwn(e.dependencies, id))
+  const dependents = Object.entries({ ...lock.packages, ...candidates })
+    .filter(
+      ([other, e]) =>
+        other !== id &&
+        Object.hasOwn(e.dependencies, id) &&
+        !(operation === 'disable' && e.metadata?.exampleOf === id) &&
+        !(operation === 'update' && candidate && satisfiesApiRange(e.dependencies[id]!, candidate.version)),
+    )
     .map(([other]) => other)
     .sort()
   if (dependents.length) blockers.push({ code: 'dependency', references: dependents })
   const profileRefs = [
-    ...Object.entries(lock.seams)
-      .filter(([, pkg]) => pkg === id)
-      .map(([name]) => `seam:${name}`),
     ...(lock.provider.package === id ? ['provider'] : []),
     ...(lock.provider.adapters.includes(id) ? ['provider.adapter'] : []),
   ]
@@ -131,7 +139,7 @@ export async function assertNoReferences(
     if (named(document, id)) profileRefs.push('profile.yaml')
   }
   if (profileRefs.length) blockers.push({ code: 'profile', references: profileRefs })
-  const extensions = (lock.packages[id]?.contributions ?? []).flatMap((c) =>
+  const extensions = (own(lock.packages, id)?.contributions ?? []).flatMap((c) =>
     c.kind === 'extension' ? [c.id] : [],
   )
   if (lock.workspace) {

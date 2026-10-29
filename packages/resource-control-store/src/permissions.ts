@@ -1,5 +1,6 @@
 import {
   canAccessResourceControl,
+  type PermissionEffectAdmission,
   type ResourceControlMethodName,
   type ResourcePermission,
   rpcError,
@@ -14,11 +15,14 @@ export type ResourceCallContext = Readonly<{
 }>
 
 /** Server-authenticated authority; request JSON never grants resource administration. */
+export type ResourceEffectAdmission = PermissionEffectAdmission
 export type ResourceAuthority = Readonly<{
   audience: 'admin'
   principalId: string
   clientId: string
   permissions: readonly ResourcePermission[]
+  /** Private backend lease, never accepted from resource RPC parameters. */
+  admission?: ResourceEffectAdmission
 }>
 export type ResourceAuthorityResolver = (context: ResourceCallContext) => ResourceAuthority | undefined
 

@@ -31,7 +31,7 @@ function callback(overrides: Partial<RawCardCallback> = {}): RawCardCallback {
     outTrackId: 'card-1',
     userId: 'staff-2',
     cardPrivateData: {
-      actionIds: ['appr:ticket-1:allow_once'],
+      actionIds: ['appr:s/decisionKey-1/1:allow_once'],
       params: { untrustedSecret: 'must-not-become-a-credential' },
     },
     conversationId: 'chat-1',
@@ -87,7 +87,7 @@ describe('dingtalk card callbacks', () => {
             summary: 'Export',
             risk: 'always',
             options: ['allow_once', 'reject_once'],
-            ticket: 'ticket-1',
+            decisionKey: 's/decisionKey-1/1',
           },
         ],
       },
@@ -104,12 +104,12 @@ describe('dingtalk card callbacks', () => {
       kind: 'cardAction',
       accountId: 'robot-9',
       cardBizId: ref.cardBizId,
-      value: 'appr:ticket-1:allow_once',
+      value: 'appr:s/decisionKey-1/1:allow_once',
       sender: { userId: 'staff-2' },
       chat: { id: 'chat-1', type: 'group' },
     })
     expect(adapter.onApprovalAction(approvalEvent)).toMatchObject({
-      ticket: 'ticket-1',
+      decisionKey: 's/decisionKey-1/1',
       verdict: 'allowed-once',
       approverCredential: {
         kind: 'channel',
@@ -276,7 +276,10 @@ describe('dingtalk card callbacks', () => {
           cardPrivateData: { actionIds: ['appr:#1:allow_once'], params: {} },
         }),
       )
-      await expect(outcome).resolves.toEqual({ verdict: 'allowed-once' })
+      await expect(outcome).resolves.toMatchObject({
+        verdict: 'allowed-once',
+        sourceCredential: { kind: 'channel', accountId: 'robot-9', userId: 'reviewer', chatId: 'chat-1' },
+      })
 
       const parkedRef = await adapter.send(
         { chatId: 'chat-1' },
@@ -288,7 +291,7 @@ describe('dingtalk card callbacks', () => {
               summary: 'Export',
               risk: 'always',
               options: ['allow_once'],
-              ticket: 'parked-ticket-1',
+              decisionKey: 's/parked-decisionKey-1/1',
             },
           ],
         },
@@ -298,7 +301,7 @@ describe('dingtalk card callbacks', () => {
         outTrackId: parkedRef.cardBizId,
         userId: 'reviewer',
         cardPrivateData: {
-          actionIds: ['appr:parked-ticket-1:allow_once'],
+          actionIds: ['appr:s/parked-decisionKey-1/1:allow_once'],
           params: { secret: 'drop-me' },
         },
       })
@@ -306,16 +309,22 @@ describe('dingtalk card callbacks', () => {
       gateway.emitCard(parked)
       await vi.waitFor(() => expect(decide).toHaveBeenCalledTimes(1))
       expect(decide).toHaveBeenCalledWith(
-        'parked-ticket-1',
-        'allowed-once',
         expect.objectContaining({
-          kind: 'channel',
-          accountId: 'robot-9',
-          userId: 'reviewer',
-          chatId: 'chat-1',
+          sessionId: 's',
+          id: 'parked-decisionKey-1',
+          revision: 1,
+          response: { option: 'allowed-once', value: null },
         }),
+        {
+          sourceCredential: expect.objectContaining({
+            kind: 'channel',
+            accountId: 'robot-9',
+            userId: 'reviewer',
+            chatId: 'chat-1',
+          }),
+        },
       )
-      expect(JSON.stringify(decide.mock.calls[0]?.[2])).not.toContain('drop-me')
+      expect(JSON.stringify(decide.mock.calls[0]?.[1]?.sourceCredential)).not.toContain('drop-me')
 
       client.setTimeline(sessionKey, {
         sessionId: sessionKey,
@@ -362,7 +371,7 @@ describe('dingtalk card callbacks', () => {
         callback({
           outTrackId: parkedRef.cardBizId,
           userId: 'reviewer',
-          cardPrivateData: { actionIds: ['appr:parked-ticket-2:allow_once'], params: {} },
+          cardPrivateData: { actionIds: ['appr:s/parked-decisionKey-2/1:allow_once'], params: {} },
         }),
       )
       await new Promise((resolve) => setTimeout(resolve, 10))

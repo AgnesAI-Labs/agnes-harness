@@ -1,0 +1,24 @@
+{
+  "name": "@community/fake-model-adapter",
+  "version": "1.2.3",
+  "type": "module",
+  "exports": "./index.ts",
+  "peerDependencies": {
+    "@agnes/extension-api": "*"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "id": "model-adapter:community-fake",
+        "export": "plugin",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "providers"
+        ]
+      }
+    ],
+    "hostProvidedExternals": {
+      "@agnes/extension-api": "^5.0.0"
+    }
+  }
+}

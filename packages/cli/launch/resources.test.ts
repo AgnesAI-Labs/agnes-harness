@@ -32,9 +32,19 @@ async function writeWebFixture(directory: string): Promise<void> {
       'vendor/react-dom.js',
       'vendor/react-dom-client.js',
       'vendor/antd.js',
-      'vendor/assistant-ui.js',
+      'vendor/recharts.js',
+      'vendor/conversation.js',
+      'vendor/x.js',
       'vendor/cordis.js',
       'vendor/web-client.js',
+      'vendor/web-ui.js',
+      'vendor/protocol.js',
+      'vendor/sdk-browser.js',
+      'vendor/web-units-shell.js',
+      'vendor/web-locale-catalog.js',
+      'vendor/goal-renderers.js',
+      'vendor/interaction-renderer.js',
+      'vendor/presentation-renderers.js',
       'brand-mark.png',
     ].map((asset) => writeFile(join(directory, asset), '')),
   )
@@ -65,7 +75,7 @@ describe('local launch resources', () => {
       writeFile(join(cli, 'launch', 'daemon-entry.ts'), ''),
       writeFile(join(cli, 'launch', 'worker-entry.ts'), ''),
     ])
-    const entry = pathToFileURL(join(cli, 'tools', 'web-local.ts')).href
+    const entry = pathToFileURL(join(cli, 'launch', 'resources.ts')).href
     expect(() => resolveLaunchResources(entry, { allowSource: true })).toThrow(/build:local/)
     await mkdir(backend, { recursive: true })
     await writeFile(join(backend, 'daemon.mjs'), '')

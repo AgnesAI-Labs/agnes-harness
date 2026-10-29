@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { RuntimeAdmission } from '../src/runtime-admission.js'
+import { RuntimeAdmission } from '../src/supervisor/publication/runtime-admission.js'
 
 const identity = Object.freeze({
   treeHash: 'a'.repeat(64),

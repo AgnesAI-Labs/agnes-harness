@@ -2,19 +2,25 @@ import { type FSWatcher, realpathSync, watch as watchDirectory } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { BuildResult } from 'esbuild'
+import { presentationEntries } from '../../../tools/presentation-build.mjs'
+import { webStyleInputs } from '../../../tools/web-style-source.mjs'
 import { buildWeb } from './build.js'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const packagesRoot = resolve(root, '..')
 const copiedInputs = [
+  ...Object.values(presentationEntries).map((entry) => resolve(packagesRoot, '..', entry)),
   join(root, 'public', 'index.html'),
   join(root, 'public', 'admin.html'),
   join(root, 'public', 'resources.html'),
-  join(root, 'public', 'style.css'),
+  ...webStyleInputs(join(root, 'public', 'style.css')),
   join(root, 'public', 'brand-mark.png'),
+  join(root, 'public', 'favicon.png'),
   join(root, '..', 'web-ui', 'src', 'tokens.css'),
+  join(root, '..', 'web-ui', 'src', 'components.css'),
+  join(root, '..', 'web-ui', 'src', 'native.css'),
+  join(root, '..', 'web-ui', 'src', 'refinement.css'),
   join(root, '..', 'web-ui', 'src', 'conversation', 'messages.css'),
-  join(root, '..', 'web-ui', 'src', 'conversation', 'tailwind.css'),
   join(root, '..', 'web-ui', 'src', 'conversation', 'markdown.css'),
 ]
 
@@ -100,7 +106,7 @@ export async function startWebDevBuild(options: { onRebuilt?: () => void } = {})
       do {
         pending = false
         try {
-          const results = await buildWeb({ clean: false })
+          const results = await buildWeb({ clean: false, development: true })
           updateWatchers(results)
           onRebuilt?.()
           console.log('[web-dev] frontend rebuilt')
@@ -124,7 +130,7 @@ export async function startWebDevBuild(options: { onRebuilt?: () => void } = {})
     }, 120)
   }
 
-  const initialResults = await buildWeb()
+  const initialResults = await buildWeb({ development: true })
   updateWatchers(initialResults)
 
   return {

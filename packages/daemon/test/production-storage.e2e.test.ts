@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -24,11 +25,12 @@ import {
   resolveProfile,
   sha256hex,
 } from '@agnes/host'
-import { createTestHost } from '@agnes/host/testkit'
+import { telemetrySnapshot } from '@agnes/observability'
 import { hasPrivateDaclSync } from '@agnes/system-node'
 import { describe, expect, it } from 'vitest'
-import { buildConfig, type DaemonConfig, DEFAULT_LIMITS } from '../src/config.js'
+import { pendingDecision } from '../../core-ledger/testkit/decision.js'
 import { MemoryTickets } from '../src/storage/lister.js'
+import { buildConfig, type DaemonConfig, DEFAULT_LIMITS } from '../src/supervisor/config.js'
 import { encodeFrame, JsonlDecoder } from '../src/supervisor/framing.js'
 import {
   deliverWorkerEvent,
@@ -37,16 +39,17 @@ import {
 } from '../src/supervisor/supervisor.js'
 
 // These workers assemble the production package graph from TypeScript source before they say
-// hello. That cold transpile takes a few seconds alone but about 30 s on a loaded hosted runner, so
-// the startup window, every wait that has to cover a worker start, and the tests that start one
-// (150 s) allow well beyond it.
-const SOURCE_WORKER_STARTUP_MS = 90_000
+// hello. Cold assembly exceeded 90 s in the Windows regression run; a 180 s diagnostic window
+// completed the same startup and Skill assertions. Keep this source-only test budget separate
+// from the production startup limit, and leave room for assertions and cleanup below.
+const SOURCE_WORKER_STARTUP_MS = 180_000
 
 function profile(dataDir: string): ResolvedProfile {
   const body = {
     name: 'local-dev',
     dataDir,
     transports: [],
+    approvals: { mode: 'manual' },
     computerUse: DEFAULT_COMPUTER_USE,
     presets: { default: 'standard', allowed: ['standard'] },
   } as unknown as Omit<ResolvedProfile, 'hash'>
@@ -65,7 +68,7 @@ function config(dataDir: string): DaemonConfig {
   }
 }
 
-function options(dataDir: string): Omit<StartSupervisorOptions, 'tables' | 'jobTables'> {
+function options(dataDir: string): Omit<StartSupervisorOptions, 'jobTables'> {
   return {
     config: config(dataDir),
     profile: profile(dataDir),
@@ -132,9 +135,11 @@ describe('production supervisor storage', () => {
       },
     }
     deliverWorkerEvent(registry as never, tickets, () => Date.parse('2026-09-11T00:00:00Z'), 'session-one', {
-      type: 'approval/asked',
+      type: 'decision/state',
+      register: 'decision/state',
       data: {
-        pending: { ticket: 'ticket-one', expiresAt: '2026-09-11T00:01:00Z' },
+        ...pendingDecision('ticket-one', { sessionId: 'session-one' }),
+        request: { ...pendingDecision('ticket-one').request, expiresAt: '2026-09-11T00:01:00Z' },
       },
     } as never)
     expect(tickets.get('ticket-one')).toBe('session-one')
@@ -167,7 +172,29 @@ describe('production supervisor storage', () => {
        VALUES (?, ?, 'new', 'active', NULL, NULL)`,
       [productionSession, 'local'],
     )
+    // A durable, closed ledger must be readable without opening a session in a worker.
+    await seeded.open(productionSession, { writerRunId: 'fact-fixture', ttlMs: 10_000 })
+    await seeded.commit(productionSession, {
+      expectedWriterRunId: 'fact-fixture',
+      events: [
+        {
+          id: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+          ts: '2026-01-01T00:00:00Z',
+          type: 'tool/call',
+          v: 1,
+          lane: 'main',
+          origin: 'system',
+          trust: 'trusted',
+          actor: { id: 'local', org: '', role: '', deptPath: [], attrs: {} },
+          data: { toolUseId: 'closed-call', name: 'read', args: {} },
+        },
+      ],
+    })
+    await seeded.release(productionSession, 'fact-fixture')
     await seeded.close()
+    // Every start keeps exactly one private managed workspace for chats under the data directory.
+    const chats = join(realpathSync(dir), 'chats')
+    const chatsOnly = { items: [{ path: chats, kind: 'chats', revision: 1 }] }
     const supervisor = await startProductionSupervisor(o)
     const rpc = await client(supervisor.socketPath)
     try {
@@ -188,6 +215,9 @@ describe('production supervisor storage', () => {
       await expect(
         rpc.call(3, '_agnes/v1/auth.claim', { kind: 'production-restart', value: 'same-event' }),
       ).resolves.toEqual({ granted: true })
+      if (createPlatform().snapshot().os === 'win32') expect(hasPrivateDaclSync(chats)).toBe(true)
+      else expect(statSync(chats).mode & 0o777).toBe(0o700)
+      await expect(rpc.call(4, '_agnes/v1/workspace.list', {})).resolves.toMatchObject(chatsOnly)
     } finally {
       rpc.close()
       await supervisor.close()
@@ -203,6 +233,20 @@ describe('production supervisor storage', () => {
       await expect(
         retry.call(2, '_agnes/v1/auth.claim', { kind: 'production-restart', value: 'same-event' }),
       ).resolves.toEqual({ granted: false })
+      await expect(retry.call(4, '_agnes/v1/workspace.list', {})).resolves.toMatchObject(chatsOnly)
+      await expect(
+        retry.call(3, '_agnes/v1/session.factChain', {
+          sessionId: productionSession,
+          laneId: 'main',
+          anchor: { kind: 'tool', toolUseId: 'closed-call' },
+        }),
+      ).resolves.toMatchObject({
+        atSeq: 1,
+        nodes: expect.arrayContaining([
+          expect.objectContaining({ kind: 'invocation', toolUseId: 'closed-call', callSeq: 1 }),
+          expect.objectContaining({ kind: 'receipt', outcome: 'unknown', resultKind: 'unavailable' }),
+        ]),
+      })
     } finally {
       retry.close()
       await restarted.close()
@@ -221,59 +265,6 @@ describe('production supervisor storage', () => {
       ).toEqual({ status: 'waiting' })
     } finally {
       await storage.close()
-      rmSync(dir, { recursive: true, force: true })
-    }
-  }, 150_000)
-
-  it('serves a session read straight from sessions.db, marked unverified, without opening it', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'agnes-stored-opening-'))
-    const o = options(dir)
-    writeFileSync(o.profileFile, JSON.stringify(o.profile))
-    const stored = 'agnes:local:default:daemon:dm:stored-opening'
-    const { host } = await createTestHost({ dataDir: dir })
-    const session = await host.createSession({ key: stored, cwd: dir })
-    const lastSeq = session.lastSeq
-    await session.close()
-    await host.close()
-    const seeded = createSqliteStorage({ file: join(dir, 'sessions.db'), tablesDir: join(dir, 'tables') })
-    const ownership = seeded.tables('@agnes/daemon').table('session_principal_ownership')
-    ownership.exec(`CREATE TABLE IF NOT EXISTS session_principal_ownership (
-      session_id TEXT PRIMARY KEY,
-      principal_id TEXT NOT NULL,
-      reservation_kind TEXT NOT NULL,
-      reservation_state TEXT NOT NULL,
-      parent_session_id TEXT,
-      boundary_seq INTEGER
-    )`)
-    for (const id of [stored, `${stored}:empty`])
-      ownership.run(
-        `INSERT INTO session_principal_ownership
-         (session_id, principal_id, reservation_kind, reservation_state, parent_session_id, boundary_seq)
-         VALUES (?, ?, 'new', 'active', NULL, NULL)`,
-        [id, 'local'],
-      )
-    await seeded.close()
-    const supervisor = await startProductionSupervisor(o)
-    const rpc = await client(supervisor.socketPath)
-    try {
-      await rpc.call(1, 'initialize', {
-        protocolVersion: 1,
-        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
-      })
-      expect(lastSeq).toBeGreaterThan(0)
-      await expect(
-        rpc.call(2, '_agnes/v1/session.storedOpening', { sessionId: stored }),
-      ).resolves.toMatchObject({
-        timeline: { sessionId: stored, generation: 1, upto: lastSeq },
-        verified: false,
-        lastSeq,
-      })
-      await expect(
-        rpc.call(3, '_agnes/v1/session.storedOpening', { sessionId: `${stored}:empty` }),
-      ).rejects.toMatchObject({ data: { reason: 'stored-opening-unavailable' } })
-    } finally {
-      rpc.close()
-      await supervisor.close()
       rmSync(dir, { recursive: true, force: true })
     }
   }, 150_000)
@@ -305,6 +296,7 @@ describe('production supervisor storage', () => {
     const workspace = join(dir, 'workspace')
     const home = join(dir, 'home')
     const priorHome = process.env.HOME
+    const priorImportUser = process.env.AGNES_SKILLS_IMPORT_USER
     // The worker inherits process.env: an exported AGH_HOME/AGNES_HOME would move the user-agnes
     // root away from <HOME>/.agh, so clear both for the test and restore them afterwards.
     const priorHomeVars = { AGH_HOME: process.env.AGH_HOME, AGNES_HOME: process.env.AGNES_HOME }
@@ -329,6 +321,8 @@ describe('production supervisor storage', () => {
         )
       }
       process.env.HOME = home
+      // External user roots are opt-in; this case deliberately covers all five roots.
+      process.env.AGNES_SKILLS_IMPORT_USER = '1'
       const resourceProfile = await resolveProfile(
         {
           builtin: 'local-dev',
@@ -395,9 +389,15 @@ describe('production supervisor storage', () => {
       const first = await refresh('skill-refresh-first')
       expect(await wait(first.operationId)).toMatchObject({ state: 'succeeded' })
       const initial = (await call('_agnes/v1/resources.list', { profile: 'local-dev', kind: 'skill' })) as {
-        items: Array<{ resourceId: string; revision: string; sourceIdentity: { rootKey: string } }>
+        items: Array<{
+          resourceId: string
+          revision: string
+          sourceIdentity: { rootKey: string; scope: string }
+        }>
       }
-      expect(initial.items.map((item) => item.sourceIdentity.rootKey).sort()).toEqual([
+      // The management list also includes runtime contributions; this case owns the five disk roots.
+      const diskSkills = initial.items.filter((item) => item.sourceIdentity.scope !== 'runtime')
+      expect(diskSkills.map((item) => item.sourceIdentity.rootKey).sort()).toEqual([
         'user-agents',
         'user-agnes',
         'user-claude',
@@ -461,13 +461,15 @@ describe('production supervisor storage', () => {
     } finally {
       rpc?.close()
       await supervisor?.close()
+      if (priorImportUser === undefined) delete process.env.AGNES_SKILLS_IMPORT_USER
+      else process.env.AGNES_SKILLS_IMPORT_USER = priorImportUser
       if (priorHome === undefined) delete process.env.HOME
       else process.env.HOME = priorHome
       for (const [name, value] of Object.entries(priorHomeVars))
         if (value !== undefined) process.env[name] = value
       rmSync(dir, { recursive: true, force: true })
     }
-  }, 150_000)
+  }, 240_000)
 
   it('projects a killed stdio MCP generation without degrading an unrelated active server', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-mcp-health-'))
@@ -556,6 +558,8 @@ describe('production supervisor storage', () => {
         const definition = {
           serverId,
           displayName: serverId,
+          sandboxProfile: windows ? 'off-with-warning' : 'workspace-write',
+          workspacePath: dir,
           transport: { kind: 'stdio', executable, args: [server, pidFile] },
           secretBinding: { kind: 'none' },
           toolPolicy: { allow: ['status'] },
@@ -643,386 +647,497 @@ describe('production supervisor storage', () => {
       else process.env.PATH = previousPath
       rmSync(dir, { recursive: true, force: true })
     }
-  }, 150_000)
+  }, 240_000)
 
-  it('resolves SecretRef only inside the resource worker and preserves the active MCP on a missing ref', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'agnes-resource-secret-'))
-    const server = join(dir, 'mcp-secret-server.mjs')
-    const observation = join(dir, 'mcp-observation.json')
-    const sentinel = ['resource', 'credential', 'audit', 'marker'].join('-')
-    const expectedHash = createHash('sha256').update(sentinel, 'utf8').digest('hex')
-    const previousAllowlist = process.env.AGNES_MCP_STDIO_ALLOWLIST
-    const previousToken = process.env.AGNES_SECRET_AUDIT_TOKEN
-    let supervisor: Awaited<ReturnType<typeof startProductionSupervisor>> | undefined
-    let rpc: Awaited<ReturnType<typeof client>> | undefined
-    process.env.AGNES_MCP_STDIO_ALLOWLIST = process.execPath
-    process.env.AGNES_SECRET_AUDIT_TOKEN = sentinel
-    try {
-      writeFileSync(
-        server,
-        [
-          "import { createHash } from 'node:crypto'",
-          "import { writeFileSync } from 'node:fs'",
-          "import readline from 'node:readline'",
-          'const [expectedHash, observation] = process.argv.slice(2)',
-          "const token = process.env.TOKEN ?? ''",
-          "const tokenHash = createHash('sha256').update(token, 'utf8').digest('hex')",
-          'writeFileSync(observation, JSON.stringify({ matches: tokenHash === expectedHash, tokenHash }))',
-          "const tool = { name: 'status', description: 'status', inputSchema: { type: 'object', properties: {}, additionalProperties: false } }",
-          "const reply = (id, result) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\\n')",
-          "readline.createInterface({ input: process.stdin }).on('line', (line) => { const request = JSON.parse(line); if (request.method === 'initialize') reply(request.id, { protocolVersion: '2025-03-26', capabilities: { tools: {} }, serverInfo: { name: 'secret-audit-fixture', version: '1' } }); else if (request.method === 'tools/list') reply(request.id, { tools: [tool], nextCursor: undefined }); else if (request.id !== undefined) reply(request.id, {}); })",
-        ].join(';'),
-      )
-      const resourceProfile = await resolveProfile(
-        {
-          builtin: 'local-dev',
-          user: { name: 'local-dev', dataDir: dir, cacheDir: join(dir, 'cache') },
-        },
-        { platform: createPlatform().snapshot(), agnesVersion: '0.0.0', now: new Date().toISOString() },
-      )
-      // The resource worker manages MCP servers before default local-dev has any provider route.
-      expect(resourceProfile.provider.routes).toBeUndefined()
-      const startOptions = {
-        config: {
-          ...config(dir),
-          limits: { ...DEFAULT_LIMITS, workerStartupMs: SOURCE_WORKER_STARTUP_MS, jobsTickMs: 60_000 },
-        },
-        profile: resourceProfile,
-        profileDir: join(dir, 'profiles', 'local-dev'),
-        profileFile: join(dir, 'profile.json'),
-        processIdentity: async (pid: number) =>
-          pid === process.pid
-            ? { state: 'alive' as const, startId: 'resource-secret-test' }
-            : { state: 'dead' as const },
-        workerExecPath: process.execPath,
-        workerExecArgv: ['--import', 'tsx'],
-        workerEntry: fileURLToPath(new URL('../src/worker/main.ts', import.meta.url)),
-      }
-      supervisor = await startProductionSupervisor(startOptions)
-      const connection = await client(supervisor.socketPath)
-      rpc = connection
-      let id = 1
-      const call = (method: string, params: unknown): Promise<unknown> =>
-        connection.call(id++, method, params)
-      const wait = async (operationId: string): Promise<Record<string, unknown>> => {
-        // Match the real worker startup budget instead of assuming a two-second cold start.
-        const deadline = performance.now() + SOURCE_WORKER_STARTUP_MS + 10_000
-        let lastState: unknown
-        while (performance.now() < deadline) {
-          const operation = (await call('_agnes/v1/resources.operation.get', {
+  it(
+    'resolves SecretRef only inside the resource worker and preserves the active MCP on a missing ref',
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'agnes-resource-secret-'))
+      const server = join(dir, 'mcp-secret-server.mjs')
+      const observation = join(dir, 'mcp-observation.json')
+      const sentinel = ['resource', 'credential', 'audit', 'marker'].join('-')
+      const expectedHash = createHash('sha256').update(sentinel, 'utf8').digest('hex')
+      const previousAllowlist = process.env.AGNES_MCP_STDIO_ALLOWLIST
+      const previousToken = process.env.AGNES_SECRET_AUDIT_TOKEN
+      let supervisor: Awaited<ReturnType<typeof startProductionSupervisor>> | undefined
+      let rpc: Awaited<ReturnType<typeof client>> | undefined
+      process.env.AGNES_MCP_STDIO_ALLOWLIST = process.execPath
+      process.env.AGNES_SECRET_AUDIT_TOKEN = sentinel
+      try {
+        writeFileSync(
+          server,
+          [
+            "import { createHash } from 'node:crypto'",
+            "import { writeFileSync } from 'node:fs'",
+            "import readline from 'node:readline'",
+            'const [expectedHash, observation] = process.argv.slice(2)',
+            "const token = process.env.TOKEN ?? ''",
+            "const tokenHash = createHash('sha256').update(token, 'utf8').digest('hex')",
+            'writeFileSync(observation, JSON.stringify({ matches: tokenHash === expectedHash, tokenHash }))',
+            "const tool = { name: 'status', description: 'status', inputSchema: { type: 'object', properties: {}, additionalProperties: false } }",
+            "const reply = (id, result) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\\n')",
+            "readline.createInterface({ input: process.stdin }).on('line', (line) => { const request = JSON.parse(line); if (request.method === 'initialize') reply(request.id, { protocolVersion: '2025-03-26', capabilities: { tools: {} }, serverInfo: { name: 'secret-audit-fixture', version: '1' } }); else if (request.method === 'tools/list') reply(request.id, { tools: [tool], nextCursor: undefined }); else if (request.id !== undefined) reply(request.id, {}); })",
+          ].join(';'),
+        )
+        const resourceProfile = await resolveProfile(
+          {
+            builtin: 'local-dev',
+            user: { name: 'local-dev', dataDir: dir, cacheDir: join(dir, 'cache') },
+          },
+          { platform: createPlatform().snapshot(), agnesVersion: '0.0.0', now: new Date().toISOString() },
+        )
+        // The resource worker manages MCP servers before default local-dev has any provider route.
+        expect(resourceProfile.provider.routes).toBeUndefined()
+        const startOptions = {
+          config: {
+            ...config(dir),
+            limits: { ...DEFAULT_LIMITS, workerStartupMs: SOURCE_WORKER_STARTUP_MS, jobsTickMs: 60_000 },
+          },
+          profile: resourceProfile,
+          profileDir: join(dir, 'profiles', 'local-dev'),
+          profileFile: join(dir, 'profile.json'),
+          processIdentity: async (pid: number) =>
+            pid === process.pid
+              ? { state: 'alive' as const, startId: 'resource-secret-test' }
+              : { state: 'dead' as const },
+          workerExecPath: process.execPath,
+          workerExecArgv: ['--import', 'tsx'],
+          workerEntry: fileURLToPath(new URL('../src/worker/main.ts', import.meta.url)),
+        }
+        supervisor = await startProductionSupervisor(startOptions)
+        const connection = await client(supervisor.socketPath)
+        rpc = connection
+        let id = 1
+        const call = (method: string, params: unknown): Promise<unknown> =>
+          connection.call(id++, method, params)
+        const wait = async (operationId: string): Promise<Record<string, unknown>> => {
+          // Match the real worker startup budget instead of assuming a two-second cold start.
+          const deadline = performance.now() + SOURCE_WORKER_STARTUP_MS + 10_000
+          let lastState: unknown
+          while (performance.now() < deadline) {
+            const operation = (await call('_agnes/v1/resources.operation.get', {
+              profile: 'local-dev',
+              operationId,
+            })) as Record<string, unknown>
+            lastState = operation.state
+            if (operation.state === 'succeeded') return operation
+            if (operation.state === 'failed' || operation.state === 'cancelled') return operation
+            await new Promise<void>((resolve) => setTimeout(resolve, 20))
+          }
+          throw new Error(`resource operation did not settle (last state: ${String(lastState)})`)
+        }
+        await call('initialize', {
+          protocolVersion: 1,
+          clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+          _meta: { 'ai.agnes.harness': { clientId: 'resource-secret-test' } },
+        })
+        const definition = {
+          serverId: 'secret-audit',
+          displayName: 'Secret audit',
+          sandboxProfile: process.platform === 'win32' ? 'off-with-warning' : 'workspace-write',
+          workspacePath: dir,
+          transport: {
+            kind: 'stdio',
+            executable: process.execPath,
+            args: [server, expectedHash, observation],
+          },
+          secretBinding: { kind: 'stdio-env', env: { TOKEN: 'secret://audit/token' } },
+          toolPolicy: { allow: ['status'] },
+        }
+        const created = (await call('_agnes/v1/mcp.servers.create', {
+          profile: 'local-dev',
+          definition,
+          clientId: 'resource-secret-test',
+          commandId: 'resource-secret-create',
+        })) as { operationId: string }
+        expect((await wait(created.operationId)).state).toBe('succeeded')
+        const descriptor = (await call('_agnes/v1/mcp.servers.get', {
+          profile: 'local-dev',
+          serverId: 'secret-audit',
+        })) as { revision: string }
+        const trusted = (await call('_agnes/v1/mcp.servers.trust.set', {
+          profile: 'local-dev',
+          serverId: 'secret-audit',
+          expectedRevision: descriptor.revision,
+          trust: 'trusted',
+          clientId: 'resource-secret-test',
+          commandId: 'resource-secret-trust',
+        })) as { operationId: string }
+        expect((await wait(trusted.operationId)).state).toBe('succeeded')
+        const tested = (await call('_agnes/v1/mcp.servers.test', {
+          profile: 'local-dev',
+          serverId: 'secret-audit',
+          expectedRevision: descriptor.revision,
+          clientId: 'resource-secret-test',
+          commandId: 'resource-secret-test',
+        })) as { operationId: string }
+        await expect(wait(tested.operationId)).resolves.toMatchObject({
+          state: 'succeeded',
+          result: { toolCount: 1 },
+        })
+        const enabled = (await call('_agnes/v1/mcp.servers.enable', {
+          profile: 'local-dev',
+          serverId: 'secret-audit',
+          expectedRevision: descriptor.revision,
+          clientId: 'resource-secret-test',
+          commandId: 'resource-secret-enable',
+        })) as { operationId: string }
+        expect((await wait(enabled.operationId)).state).toBe('succeeded')
+        const readyDescriptor = await call('_agnes/v1/mcp.servers.get', {
+          profile: 'local-dev',
+          serverId: 'secret-audit',
+        })
+        expect(readyDescriptor).toMatchObject({ trust: 'trusted', desired: 'enabled', actual: 'ready' })
+        expect(JSON.stringify(readyDescriptor)).not.toContain(sentinel)
+        expect(JSON.parse(readFileSync(observation, 'utf8'))).toEqual({
+          matches: true,
+          tokenHash: expectedHash,
+        })
+
+        // single-resident-worker design: every MCP server's connection now lives in the one shared
+        // session worker, kept alive from daemon start rather than re-spawned per reconcile/reconnect
+        // call. That worker process's own environment was captured once at its own spawn, with the
+        // token still set - deleting it here in the daemon's process cannot reach an already-running
+        // child process's environment, so this reconnect resolves the SecretRef exactly as before and
+        // succeeds. (The OLD per-request candidate worker inherited the daemon's *current* environment
+        // on every fresh spawn, so the equivalent reconnect used to fail here - see the restart-scoped
+        // steps below for how a missing secret is still surfaced: once the shared worker itself is
+        // gone, its replacement's environment reflects whatever is current at that spawn instead.)
+        delete process.env.AGNES_SECRET_AUDIT_TOKEN
+        const reconnect = (await call('_agnes/v1/mcp.servers.reconnect', {
+          profile: 'local-dev',
+          serverId: 'secret-audit',
+          expectedRevision: descriptor.revision,
+          clientId: 'resource-secret-test',
+          commandId: 'resource-secret-missing-reconnect',
+        })) as { operationId: string }
+        const reconnectedWithStaleEnv = await wait(reconnect.operationId)
+        expect(reconnectedWithStaleEnv).toMatchObject({ state: 'succeeded' })
+        expect(JSON.stringify(reconnectedWithStaleEnv)).not.toContain(sentinel)
+        await expect(
+          call('_agnes/v1/mcp.servers.tools.list', { profile: 'local-dev', serverId: 'secret-audit' }),
+        ).resolves.toMatchObject({ items: [expect.objectContaining({ name: 'status' })] })
+
+        // This reconnect shares the existing daemon and retains its old active worker. A restart has
+        // no such generation: restore with the deployment secret must establish a new current one.
+        process.env.AGNES_SECRET_AUDIT_TOKEN = sentinel
+        rpc.close()
+        rpc = undefined
+        await supervisor.close()
+        supervisor = await startProductionSupervisor(startOptions)
+        const restored = await client(supervisor.socketPath)
+        rpc = restored
+        await restored.call(1, 'initialize', {
+          protocolVersion: 1,
+          clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+          _meta: { 'ai.agnes.harness': { clientId: 'resource-secret-restart' } },
+        })
+        await expect(
+          restored.call(2, '_agnes/v1/mcp.servers.get', { profile: 'local-dev', serverId: 'secret-audit' }),
+        ).resolves.toMatchObject({ actual: 'ready' })
+        await expect(
+          restored.call(3, '_agnes/v1/mcp.servers.tools.list', {
             profile: 'local-dev',
-            operationId,
-          })) as Record<string, unknown>
-          lastState = operation.state
-          if (operation.state === 'succeeded') return operation
-          if (operation.state === 'failed' || operation.state === 'cancelled') return operation
+            serverId: 'secret-audit',
+          }),
+        ).resolves.toMatchObject({ items: [expect.objectContaining({ name: 'status' })] })
+
+        // No current Host connection survives this shutdown. Without the SecretRef, recovery must
+        // expose unavailable and catalog reads must reject deterministically without delegating stale state.
+        restored.close()
+        rpc = undefined
+        await supervisor.close()
+        delete process.env.AGNES_SECRET_AUDIT_TOKEN
+        supervisor = await startProductionSupervisor(startOptions)
+        const missing = await client(supervisor.socketPath)
+        rpc = missing
+        await missing.call(1, 'initialize', {
+          protocolVersion: 1,
+          clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+          _meta: { 'ai.agnes.harness': { clientId: 'resource-secret-missing-restart' } },
+        })
+        await expect(
+          missing.call(2, '_agnes/v1/mcp.servers.get', { profile: 'local-dev', serverId: 'secret-audit' }),
+        ).resolves.toMatchObject({ actual: 'unavailable', lastSafeError: { code: 'MCP_CONNECT_FAILED' } })
+        await expect(
+          missing.call(3, '_agnes/v1/mcp.servers.tools.list', {
+            profile: 'local-dev',
+            serverId: 'secret-audit',
+          }),
+        ).rejects.toMatchObject({ data: { code: 'MCP_CATALOG_UNAVAILABLE' } })
+
+        const restartReconnect = (await missing.call(4, '_agnes/v1/mcp.servers.reconnect', {
+          profile: 'local-dev',
+          serverId: 'secret-audit',
+          expectedRevision: descriptor.revision,
+          clientId: 'resource-secret-missing-restart',
+          commandId: 'resource-secret-missing-restart-reconnect',
+        })) as { operationId: string }
+        let restartFailure: unknown
+        // Reconnect creates a real candidate worker before it can report a missing credential.
+        const restartDeadline = performance.now() + startOptions.config.limits.workerStartupMs
+        let restartCallId = 5
+        while (performance.now() < restartDeadline) {
+          const operation = await missing.call(restartCallId++, '_agnes/v1/resources.operation.get', {
+            profile: 'local-dev',
+            operationId: restartReconnect.operationId,
+          })
+          restartFailure = operation
+          if (['failed', 'succeeded', 'cancelled'].includes((operation as { state: string }).state)) break
           await new Promise<void>((resolve) => setTimeout(resolve, 20))
         }
-        throw new Error(`resource operation did not settle (last state: ${String(lastState)})`)
-      }
-      await call('initialize', {
-        protocolVersion: 1,
-        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
-        _meta: { 'ai.agnes.harness': { clientId: 'resource-secret-test' } },
-      })
-      const definition = {
-        serverId: 'secret-audit',
-        displayName: 'Secret audit',
-        transport: { kind: 'stdio', executable: process.execPath, args: [server, expectedHash, observation] },
-        secretBinding: { kind: 'stdio-env', env: { TOKEN: 'secret://audit/token' } },
-        toolPolicy: { allow: ['status'] },
-      }
-      const created = (await call('_agnes/v1/mcp.servers.create', {
-        profile: 'local-dev',
-        definition,
-        clientId: 'resource-secret-test',
-        commandId: 'resource-secret-create',
-      })) as { operationId: string }
-      expect((await wait(created.operationId)).state).toBe('succeeded')
-      const descriptor = (await call('_agnes/v1/mcp.servers.get', {
-        profile: 'local-dev',
-        serverId: 'secret-audit',
-      })) as { revision: string }
-      const trusted = (await call('_agnes/v1/mcp.servers.trust.set', {
-        profile: 'local-dev',
-        serverId: 'secret-audit',
-        expectedRevision: descriptor.revision,
-        trust: 'trusted',
-        clientId: 'resource-secret-test',
-        commandId: 'resource-secret-trust',
-      })) as { operationId: string }
-      expect((await wait(trusted.operationId)).state).toBe('succeeded')
-      const tested = (await call('_agnes/v1/mcp.servers.test', {
-        profile: 'local-dev',
-        serverId: 'secret-audit',
-        expectedRevision: descriptor.revision,
-        clientId: 'resource-secret-test',
-        commandId: 'resource-secret-test',
-      })) as { operationId: string }
-      await expect(wait(tested.operationId)).resolves.toMatchObject({
-        state: 'succeeded',
-        result: { toolCount: 1 },
-      })
-      const enabled = (await call('_agnes/v1/mcp.servers.enable', {
-        profile: 'local-dev',
-        serverId: 'secret-audit',
-        expectedRevision: descriptor.revision,
-        clientId: 'resource-secret-test',
-        commandId: 'resource-secret-enable',
-      })) as { operationId: string }
-      expect((await wait(enabled.operationId)).state).toBe('succeeded')
-      const readyDescriptor = await call('_agnes/v1/mcp.servers.get', {
-        profile: 'local-dev',
-        serverId: 'secret-audit',
-      })
-      expect(readyDescriptor).toMatchObject({ trust: 'trusted', desired: 'enabled', actual: 'ready' })
-      expect(JSON.stringify(readyDescriptor)).not.toContain(sentinel)
-      expect(JSON.parse(readFileSync(observation, 'utf8'))).toEqual({
-        matches: true,
-        tokenHash: expectedHash,
-      })
-
-      // single-resident-worker design: every MCP server's connection now lives in the one shared
-      // session worker, kept alive from daemon start rather than re-spawned per reconcile/reconnect
-      // call. That worker process's own environment was captured once at its own spawn, with the
-      // token still set - deleting it here in the daemon's process cannot reach an already-running
-      // child process's environment, so this reconnect resolves the SecretRef exactly as before and
-      // succeeds. (The OLD per-request candidate worker inherited the daemon's *current* environment
-      // on every fresh spawn, so the equivalent reconnect used to fail here - see the restart-scoped
-      // steps below for how a missing secret is still surfaced: once the shared worker itself is
-      // gone, its replacement's environment reflects whatever is current at that spawn instead.)
-      delete process.env.AGNES_SECRET_AUDIT_TOKEN
-      const reconnect = (await call('_agnes/v1/mcp.servers.reconnect', {
-        profile: 'local-dev',
-        serverId: 'secret-audit',
-        expectedRevision: descriptor.revision,
-        clientId: 'resource-secret-test',
-        commandId: 'resource-secret-missing-reconnect',
-      })) as { operationId: string }
-      const reconnectedWithStaleEnv = await wait(reconnect.operationId)
-      expect(reconnectedWithStaleEnv).toMatchObject({ state: 'succeeded' })
-      expect(JSON.stringify(reconnectedWithStaleEnv)).not.toContain(sentinel)
-      await expect(
-        call('_agnes/v1/mcp.servers.tools.list', { profile: 'local-dev', serverId: 'secret-audit' }),
-      ).resolves.toMatchObject({ items: [expect.objectContaining({ name: 'status' })] })
-
-      // This reconnect shares the existing daemon and retains its old active worker. A restart has
-      // no such generation: restore with the deployment secret must establish a new current one.
-      process.env.AGNES_SECRET_AUDIT_TOKEN = sentinel
-      rpc.close()
-      rpc = undefined
-      await supervisor.close()
-      supervisor = await startProductionSupervisor(startOptions)
-      const restored = await client(supervisor.socketPath)
-      rpc = restored
-      await restored.call(1, 'initialize', {
-        protocolVersion: 1,
-        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
-        _meta: { 'ai.agnes.harness': { clientId: 'resource-secret-restart' } },
-      })
-      await expect(
-        restored.call(2, '_agnes/v1/mcp.servers.get', { profile: 'local-dev', serverId: 'secret-audit' }),
-      ).resolves.toMatchObject({ actual: 'ready' })
-      await expect(
-        restored.call(3, '_agnes/v1/mcp.servers.tools.list', {
-          profile: 'local-dev',
-          serverId: 'secret-audit',
-        }),
-      ).resolves.toMatchObject({ items: [expect.objectContaining({ name: 'status' })] })
-
-      // No current Host connection survives this shutdown. Without the SecretRef, recovery must
-      // expose unavailable and catalog reads must reject deterministically without delegating stale state.
-      restored.close()
-      rpc = undefined
-      await supervisor.close()
-      delete process.env.AGNES_SECRET_AUDIT_TOKEN
-      supervisor = await startProductionSupervisor(startOptions)
-      const missing = await client(supervisor.socketPath)
-      rpc = missing
-      await missing.call(1, 'initialize', {
-        protocolVersion: 1,
-        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
-        _meta: { 'ai.agnes.harness': { clientId: 'resource-secret-missing-restart' } },
-      })
-      await expect(
-        missing.call(2, '_agnes/v1/mcp.servers.get', { profile: 'local-dev', serverId: 'secret-audit' }),
-      ).resolves.toMatchObject({ actual: 'unavailable', lastSafeError: { code: 'MCP_CONNECT_FAILED' } })
-      await expect(
-        missing.call(3, '_agnes/v1/mcp.servers.tools.list', {
-          profile: 'local-dev',
-          serverId: 'secret-audit',
-        }),
-      ).rejects.toMatchObject({ data: { code: 'MCP_CATALOG_UNAVAILABLE' } })
-
-      const restartReconnect = (await missing.call(4, '_agnes/v1/mcp.servers.reconnect', {
-        profile: 'local-dev',
-        serverId: 'secret-audit',
-        expectedRevision: descriptor.revision,
-        clientId: 'resource-secret-missing-restart',
-        commandId: 'resource-secret-missing-restart-reconnect',
-      })) as { operationId: string }
-      let restartFailure: unknown
-      // Reconnect creates a real candidate worker before it can report a missing credential.
-      const restartDeadline = performance.now() + startOptions.config.limits.workerStartupMs
-      let restartCallId = 5
-      while (performance.now() < restartDeadline) {
-        const operation = await missing.call(restartCallId++, '_agnes/v1/resources.operation.get', {
-          profile: 'local-dev',
-          operationId: restartReconnect.operationId,
+        expect(restartFailure).toMatchObject({
+          state: 'failed',
+          lastSafeError: { code: 'MCP_CONNECT_FAILED' },
         })
-        restartFailure = operation
-        if (['failed', 'succeeded', 'cancelled'].includes((operation as { state: string }).state)) break
-        await new Promise<void>((resolve) => setTimeout(resolve, 20))
-      }
-      expect(restartFailure).toMatchObject({
-        state: 'failed',
-        lastSafeError: { code: 'MCP_RECONCILE_FAILED' },
-      })
-      await expect(
-        missing.call(restartCallId++, '_agnes/v1/mcp.servers.get', {
-          profile: 'local-dev',
-          serverId: 'secret-audit',
-        }),
-      ).resolves.toMatchObject({ actual: 'unavailable' })
+        await expect(
+          missing.call(restartCallId++, '_agnes/v1/mcp.servers.get', {
+            profile: 'local-dev',
+            serverId: 'secret-audit',
+          }),
+        ).resolves.toMatchObject({ actual: 'unavailable' })
 
-      const resourceFiles = (directory: string): string[] =>
-        readdirSync(directory).flatMap((entry) => {
-          const file = join(directory, entry)
-          return statSync(file).isDirectory() ? resourceFiles(file) : [readFileSync(file, 'utf8')]
-        })
-      const durable = resourceFiles(join(dir, 'resource-control')).join('')
-      expect(durable).not.toContain(sentinel)
-    } finally {
-      rpc?.close()
-      await supervisor?.close()
-      if (previousAllowlist === undefined) delete process.env.AGNES_MCP_STDIO_ALLOWLIST
-      else process.env.AGNES_MCP_STDIO_ALLOWLIST = previousAllowlist
-      if (previousToken === undefined) delete process.env.AGNES_SECRET_AUDIT_TOKEN
-      else process.env.AGNES_SECRET_AUDIT_TOKEN = previousToken
-      rmSync(dir, { recursive: true, force: true })
-    }
-  }, 150_000)
+        const resourceFiles = (directory: string): string[] =>
+          readdirSync(directory).flatMap((entry) => {
+            const file = join(directory, entry)
+            return statSync(file).isDirectory() ? resourceFiles(file) : [readFileSync(file, 'utf8')]
+          })
+        const durable = resourceFiles(join(dir, 'resource-control')).join('')
+        expect(durable).not.toContain(sentinel)
+      } finally {
+        rpc?.close()
+        await supervisor?.close()
+        if (previousAllowlist === undefined) delete process.env.AGNES_MCP_STDIO_ALLOWLIST
+        else process.env.AGNES_MCP_STDIO_ALLOWLIST = previousAllowlist
+        if (previousToken === undefined) delete process.env.AGNES_SECRET_AUDIT_TOKEN
+        else process.env.AGNES_SECRET_AUDIT_TOKEN = previousToken
+        rmSync(dir, { recursive: true, force: true })
+      }
+    },
+    3 * SOURCE_WORKER_STARTUP_MS + 60_000,
+  ) // Initial worker plus two full supervisor restarts.
 
   it('closes the supervisor before storage exactly once on normal or signal-driven shutdown', async () => {
-    const events: string[] = []
-    const store = { table: () => ({}) }
-    const owners: string[] = []
-    let storageOptions: unknown
-    let received: StartSupervisorOptions | undefined
-    const directory = { upsert: async () => ({ upserted: 0, deleted: 0 }) }
-    const supervisor = await startProductionSupervisor(
-      { ...options('/state'), ports: { directory } },
-      {
-        createStorage: ((o: unknown) => {
-          storageOptions = o
-          return {
-            crashReclaim: reclaim,
-            tables(id: string) {
-              owners.push(id)
-              return store
-            },
-            async close() {
-              events.push('storage.close')
-            },
-          }
-        }) as never,
-        start: (async (o: StartSupervisorOptions) => {
-          received = o
-          return {
-            socketPath: '/state/daemon/agnesd.sock',
-            async close() {
-              events.push('supervisor.close')
-            },
-          }
-        }) as never,
-      },
-    )
-
-    expect(storageOptions).toEqual({
-      file: join('/state', 'sessions.db'),
-      tablesDir: join('/state', 'tables'),
-    })
-    expect(owners).toEqual(['@agnes/daemon', '@agnes/daemon/artifact-read-authority'])
-    expect(received?.jobTables).toBeDefined()
-    expect(received?.artifactAuthorityTable).toBeDefined()
-    expect(received?.reclaim).toBeDefined()
-    expect(received?.tables).toBeUndefined()
-    expect(received?.ports?.directory).toBe(directory)
-    await Promise.all([supervisor.close(), supervisor.close()])
-    expect(events).toEqual(['supervisor.close', 'storage.close'])
-  })
-
-  it('serves uploads exactly where attachments are stored by reference', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'agh-production-upload-'))
+    const dir = mkdtempSync(join(tmpdir(), 'agh-storage-lifecycle-'))
     try {
-      const startedWith = async (attachments: unknown, artifacts: string) => {
-        let received: StartSupervisorOptions | undefined
-        const base = options(dir)
-        const supervisor = await startProductionSupervisor(
-          {
-            ...base,
-            profile: { ...base.profile, attachments, seams: { artifacts } } as unknown as ResolvedProfile,
-          },
-          {
-            createStorage: (() => ({
+      const events: string[] = []
+      writeFileSync(
+        join(dir, 'observability.json'),
+        JSON.stringify({
+          enabled: false,
+          redaction: 'content',
+          endpoint: 'https://collector.example:4318/private/synthetic-secret',
+          headers: { Authorization: { secretRef: 'env:SYNTHETIC_SECRET' } },
+        }),
+      )
+      const store = { table: () => ({}) }
+      const owners: string[] = []
+      let storageOptions: unknown
+      let received: StartSupervisorOptions | undefined
+      const directory = { upsert: async () => ({ upserted: 0, deleted: 0 }) }
+      const supervisor = await startProductionSupervisor(
+        { ...options(dir), ports: { directory } },
+        {
+          createStorage: ((o: unknown) => {
+            storageOptions = o
+            return {
               crashReclaim: reclaim,
-              tables: () => ({ table: () => ({}) }),
-              async close() {},
-            })) as never,
-            start: (async (o: StartSupervisorOptions) => {
-              received = o
-              return { socketPath: join(dir, 'agnesd.sock'), async close() {} }
-            }) as never,
-          },
-        )
-        await supervisor.close()
-        return received?.attachmentUpload
-      }
-      expect(await startedWith({ storeByReference: true }, '@agnes/base')).toBeDefined()
-      expect(await startedWith({ storeByReference: false }, '@agnes/base')).toBeUndefined()
-      expect(await startedWith({ storeByReference: true }, '@acme/artifacts')).toBeUndefined()
+              tables(id: string) {
+                owners.push(id)
+                return store
+              },
+              async close() {
+                events.push('storage.close')
+              },
+            }
+          }) as never,
+          start: (async (o: StartSupervisorOptions) => {
+            received = o
+            return {
+              socketPath: join(dir, 'daemon', 'agnesd.sock'),
+              async close() {
+                events.push('supervisor.close')
+              },
+            }
+          }) as never,
+        },
+      )
+
+      expect(storageOptions).toEqual({
+        file: join(dir, 'sessions.db'),
+        tablesDir: join(dir, 'tables'),
+      })
+      expect(owners).toEqual(['@agnes/daemon', '@agnes/daemon/artifact-read-authority'])
+      if (!received) throw new Error('Supervisor options were not supplied')
+      const telemetry = telemetrySnapshot(received.config.home ?? received.config.dataDir)
+      expect(telemetry).toEqual({
+        enabled: false,
+        includeContent: true,
+        endpointHosts: ['collector.example:4318'],
+      })
+      expect(JSON.stringify(telemetry)).not.toContain('synthetic-secret')
+      expect(received?.jobTables).toBeDefined()
+      expect(received?.artifactAuthorityTable).toBeDefined()
+      expect(received?.reclaim).toBeDefined()
+      expect(received?.ports?.directory).toBe(directory)
+      await Promise.all([supervisor.close(), supervisor.close()])
+      expect(events).toEqual(['supervisor.close', 'storage.close'])
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
   })
 
   it('closes storage after startup failure and after a supervisor shutdown failure', async () => {
-    const startup = new Error('startup failed')
-    let startupCloses = 0
-    await expect(
-      startProductionSupervisor(options('/startup-failure'), {
+    const dir = mkdtempSync(join(tmpdir(), 'agh-storage-failure-'))
+    try {
+      const startup = new Error('startup failed')
+      let startupCloses = 0
+      await expect(
+        startProductionSupervisor(options(join(dir, 'startup')), {
+          createStorage: (() => ({
+            crashReclaim: reclaim,
+            tables: () => ({ table: () => ({}) }),
+            close: async () => {
+              startupCloses++
+            },
+          })) as never,
+          start: (async () => {
+            throw startup
+          }) as never,
+        }),
+      ).rejects.toBe(startup)
+      expect(startupCloses).toBe(1)
+
+      const shutdown = new Error('shutdown failed')
+      let shutdownCloses = 0
+      const supervisor = await startProductionSupervisor(options(join(dir, 'shutdown')), {
         createStorage: (() => ({
           crashReclaim: reclaim,
           tables: () => ({ table: () => ({}) }),
           close: async () => {
-            startupCloses++
+            shutdownCloses++
           },
         })) as never,
-        start: (async () => {
-          throw startup
-        }) as never,
-      }),
-    ).rejects.toBe(startup)
-    expect(startupCloses).toBe(1)
-
-    const shutdown = new Error('shutdown failed')
-    let shutdownCloses = 0
-    const supervisor = await startProductionSupervisor(options('/shutdown-failure'), {
-      createStorage: (() => ({
-        crashReclaim: reclaim,
-        tables: () => ({ table: () => ({}) }),
-        close: async () => {
-          shutdownCloses++
-        },
-      })) as never,
-      start: (async () => ({
-        socketPath: '/shutdown-failure/daemon/agnesd.sock',
-        close: async () => {
-          throw shutdown
-        },
-      })) as never,
-    })
-    await expect(supervisor.close()).rejects.toBe(shutdown)
-    expect(shutdownCloses).toBe(1)
+        start: (async () => ({
+          socketPath: join(dir, 'shutdown', 'daemon', 'agnesd.sock'),
+          close: async () => {
+            throw shutdown
+          },
+        })) as never,
+      })
+      await expect(supervisor.close()).rejects.toBe(shutdown)
+      expect(shutdownCloses).toBe(1)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
+
+  it.each([
+    ['SQLite Host persistence', undefined, true],
+    ['another Host persistence provider', { provider: 'jsonl' }, false],
+  ])('reads recorded session views from its own ledger only for %s', async (_name, persistence, direct) => {
+    const dir = mkdtempSync(join(tmpdir(), 'agh-stored-view-'))
+    try {
+      let received: StartSupervisorOptions | undefined
+      const base = options(dir)
+      const supervisor = await startProductionSupervisor(
+        { ...base, profile: { ...base.profile, ...(persistence ? { persistence } : {}) } },
+        {
+          createStorage: (() => ({
+            crashReclaim: reclaim,
+            tables: () => ({ table: () => ({}) }),
+            scan: async () => {
+              throw new Error('a stored view reads lean pages')
+            },
+            scanLean: async () => [],
+            close: async () => undefined,
+          })) as never,
+          start: (async (o: StartSupervisorOptions) => {
+            received = o
+            return { socketPath: join(dir, 'daemon', 'agnesd.sock'), close: async () => undefined }
+          }) as never,
+        },
+      )
+      await supervisor.close()
+      if (!direct) expect(received?.sessionViewRead).toBeUndefined()
+      else
+        await expect(received?.sessionViewRead?.('empty', {})).resolves.toMatchObject({
+          sessionId: 'empty',
+          readOnly: true,
+          lastSeq: 0,
+        })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('answers a recorded session view before any worker can start', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agh-view-no-worker-'))
+    const sessionId = 'agnes:local:default:daemon:dm:recorded'
+    const started = join(dir, 'worker-started')
+    // A worker entry that only leaves a mark: a view that needs a worker cannot be answered.
+    const workerEntry = join(dir, 'worker.mjs')
+    writeFileSync(
+      workerEntry,
+      `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(started)}, 'started')\nprocess.exit(1)\n`,
+    )
+    const o = { ...options(dir), workerEntry }
+    writeFileSync(o.profileFile, JSON.stringify(o.profile))
+    const seeded = createSqliteStorage({ file: join(dir, 'sessions.db'), tablesDir: join(dir, 'tables') })
+    const ownership = seeded.tables('@agnes/daemon').table('session_principal_ownership')
+    ownership.exec(`CREATE TABLE IF NOT EXISTS session_principal_ownership (
+      session_id TEXT PRIMARY KEY,
+      principal_id TEXT NOT NULL,
+      reservation_kind TEXT NOT NULL,
+      reservation_state TEXT NOT NULL,
+      parent_session_id TEXT,
+      boundary_seq INTEGER
+    )`)
+    ownership.run(
+      `INSERT INTO session_principal_ownership
+       (session_id, principal_id, reservation_kind, reservation_state, parent_session_id, boundary_seq)
+       VALUES (?, ?, 'new', 'active', NULL, NULL)`,
+      [sessionId, 'local'],
+    )
+    await seeded.open(sessionId, { writerRunId: 'view-fixture', ttlMs: 10_000 })
+    await seeded.commit(sessionId, {
+      expectedWriterRunId: 'view-fixture',
+      events: [
+        {
+          id: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+          ts: '2026-01-01T00:00:00Z',
+          type: 'user/message',
+          v: 1,
+          lane: 'main',
+          origin: 'principal',
+          trust: 'trusted',
+          actor: { id: 'local', org: '', role: '', deptPath: [], attrs: {} },
+          data: { content: [{ type: 'text', text: 'recorded question' }] },
+        },
+      ],
+    })
+    await seeded.release(sessionId, 'view-fixture')
+    await seeded.close()
+    const supervisor = await startProductionSupervisor(o)
+    const rpc = await client(supervisor.socketPath)
+    try {
+      await rpc.call(1, 'initialize', {
+        protocolVersion: 1,
+        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+      })
+      const view = (await rpc.call(2, '_agnes/v1/session.view', { sessionId, maxNodes: 20 })) as {
+        timeline: { nodes: Array<{ kind: string }> }
+      }
+      expect(view).toMatchObject({ sessionId, readOnly: true, lastSeq: 1 })
+      expect(view.timeline.nodes.map((node) => node.kind)).toEqual(['user'])
+      await expect(
+        rpc.call(3, '_agnes/v1/session.view', { sessionId: 'unknown-session' }),
+      ).rejects.toMatchObject({ data: { code: 'SESSION_NOT_FOUND' } })
+      expect(existsSync(started)).toBe(false)
+    } finally {
+      rpc.close()
+      await supervisor.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
 })

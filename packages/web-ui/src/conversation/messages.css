@@ -1,65 +1,302 @@
-[data-agnes-conversation-messages] .node-body,
-[data-agnes-conversation-messages] .thinking-content,
-[data-agnes-conversation-messages] .tool-detail-text {
-  white-space: pre-wrap;
-}
+@import "../layers.css";
 
-[data-agnes-conversation-messages]
-  [data-agnes-assistant-ui-target][data-agnes-assistant-ui-ready="true"]
-  + [data-agnes-assistant-ui-fallback] {
-  display: none;
-}
+@layer ui {
+  [data-agnes-conversation-messages] .delegation-card,
+  [data-agnes-conversation-messages] .delegation-notice {
+    padding: var(--s12);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-card);
+    font-size: var(--font-size-sm);
+  }
+  [data-agnes-conversation-messages] .delegation-card-heading {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    flex-wrap: wrap;
+  }
+  :where([data-agnes-conversation-messages] .delegation-card) p {
+    margin: var(--s8) 0;
+    overflow-wrap: anywhere;
+  }
+  [data-agnes-conversation-messages] .delegation-card pre,
+  .delegation-subtask pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 20rem;
+    overflow: auto;
+  }
 
-[data-agnes-conversation-messages] .tool-detail-body[hidden] {
-  display: none;
-}
+  [data-agnes-conversation-messages] .approval-pending-link {
+    min-width: 0;
+    max-width: 100%;
+  }
+  [data-agnes-conversation-messages] .approval-pending-link > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  [data-agnes-conversation-messages] .tool-output {
+    display: grid;
+    gap: var(--s8);
+    margin: var(--s8) 0 var(--s8) var(--s24);
+    padding: var(--s12);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-secondary);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  [data-agnes-conversation-messages] .tool-output p {
+    margin: 0;
+  }
+  [data-agnes-conversation-messages] .tool-output > .agh-tag {
+    justify-self: start;
+  }
+  [data-agnes-conversation-messages] .tool-output pre {
+    margin: var(--s4) 0;
+    max-height: 16rem;
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
 
-/* 图片自成一块排在正文之上，横排换行，和输入框里的待发图片同一种排法。 */
-[data-agnes-conversation-messages] .user-message-images {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-block: 4px 8px;
-}
+  [data-agnes-conversation-messages] .node-body,
+  [data-agnes-conversation-messages] .thinking-content,
+  [data-agnes-conversation-messages] .tool-detail-text {
+    white-space: pre-wrap;
+  }
 
-/* 宽高由 antd Image 的行内尺寸给定（72×56），这里只管裁切与描边；
-   object-fit 必须显式写：antd 只声明了 width/height，默认的 fill 会把图压变形。 */
-[data-agnes-conversation-messages] .user-message-image {
-  display: block;
-  border: 1px solid var(--color-border-secondary, #e5e5e5);
-  border-radius: 8px;
-  object-fit: cover;
-  cursor: zoom-in;
-}
+  [data-agnes-conversation-messages] .tool-detail-body[hidden] {
+    display: none;
+  }
 
-[data-agnes-conversation-messages] .user-message-image-unavailable {
-  display: inline-block;
-  color: var(--color-text-tertiary, #777);
-  font-size: 12px;
-}
+  /* Images form a wrapping row above the body, matching the pending-image layout in the composer. */
+  [data-agnes-conversation-messages] .user-message-images {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8);
+    margin-block: var(--s4) var(--s8);
+  }
 
-[data-agnes-conversation-messages] .user-message-files {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 0;
-  margin-block: 4px 8px;
-  list-style: none;
-}
+  /* antd Image sets 72×56 dimensions inline; this only handles cropping and borders.
+     Set object-fit explicitly: antd sets only width/height, and the default fill would distort the image. */
+  [data-agnes-conversation-messages] .user-message-image {
+    display: block;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    object-fit: cover;
+    cursor: zoom-in;
+  }
 
-[data-agnes-conversation-messages] .user-message-files li {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-  max-width: 100%;
-  padding: 8px;
-  border: 1px solid var(--color-border-secondary, #e5e5e5);
-  border-radius: 8px;
-  overflow-wrap: anywhere;
-}
+  [data-agnes-conversation-messages] .user-message-image-unavailable {
+    display: inline-block;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+    font-variant-numeric: tabular-nums;
+  }
 
-[data-agnes-conversation-messages] .user-message-files small {
-  color: var(--color-text-tertiary, #777);
-  font-size: 12px;
+  [data-agnes-conversation-messages] .user-message-files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s8);
+    padding: 0;
+    margin-block: var(--s4) var(--s8);
+    list-style: none;
+  }
+
+  [data-agnes-conversation-messages] .user-message-files li {
+    display: grid;
+    gap: var(--s4);
+    min-width: 0;
+    max-width: 100%;
+    padding: var(--s8);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    overflow-wrap: anywhere;
+  }
+
+  [data-agnes-conversation-messages] .user-message-attachment {
+    display: grid;
+    gap: var(--s4);
+    min-width: 0;
+    justify-items: start;
+  }
+
+  [data-agnes-conversation-messages] .user-message-files small {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+    font-variant-numeric: tabular-nums;
+  }
+
+  [data-agnes-conversation-messages] .system-input {
+    align-self: stretch;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+  [data-agnes-conversation-messages] .system-input-status {
+    padding-block: var(--s4);
+  }
+  [data-agnes-conversation-messages] .system-input-trace pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  /* Question navigation: thin horizontal lines along the conversation's left edge, one per question; hover enlarges them and opens a preview card. */
+  .turn-nav-rail {
+    opacity: 0;
+    transition: opacity 140ms var(--motion-ease-out);
+    position: absolute;
+    left: 18px;
+    top: 50%;
+    z-index: 4;
+    max-height: 60%;
+    padding: var(--s8) var(--s16) var(--s8) var(--s4);
+    overflow-y: auto;
+    scrollbar-width: none;
+    transform: translateY(-50%);
+  }
+  .turn-nav-rail:is(:hover, :focus-within) {
+    opacity: 1;
+  }
+  .turn-nav-rail::-webkit-scrollbar {
+    display: none;
+  }
+  .turn-nav-list {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .turn-nav-item {
+    display: flex;
+    align-items: center;
+  }
+  .turn-nav-tick {
+    position: relative;
+    display: block;
+    height: 2px;
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--agnes-text-primary) 22%, transparent);
+    cursor: pointer;
+    transition:
+      width 140ms var(--motion-ease-out),
+      background-color 140ms var(--motion-ease-out);
+  }
+  /* Hit areas are much wider than the 2px lines; vertically adjacent hit areas meet without gaps. */
+  .turn-nav-tick::after {
+    content: "";
+    position: absolute;
+    inset: -4px -10px -4px -4px;
+  }
+  .turn-nav-tick:is([data-current="true"], [data-hot="true"]) {
+    background: var(--agnes-text-primary);
+  }
+  /* Bookmarks use a 3px brand-colored line and a 6px dot in the column's right padding, beyond the
+     scroll clipping area. Current-turn and hovered lines stay brand-colored, distinguished by length. */
+  .turn-nav-tick[data-bookmarked="true"] {
+    height: 3px;
+    background: var(--agnes-brand-primary);
+  }
+  .turn-nav-tick[data-bookmarked="true"]::before {
+    content: "";
+    position: absolute;
+    left: calc(100% + 4px);
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--agnes-brand-primary);
+    transform: translateY(-50%);
+  }
+  .turn-nav-tick:focus-visible {
+    outline: 2px solid var(--agnes-brand-focus-ring);
+    outline-offset: 3px;
+  }
+  .turn-nav-card {
+    position: absolute;
+    left: 64px;
+    z-index: 5;
+    width: min(340px, calc(100% - 80px));
+    padding: var(--s10) var(--s12) var(--s10) var(--s16);
+    border-radius: var(--radius-popover);
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-popover);
+    box-shadow: var(--shadow-popover);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+    cursor: pointer;
+    transform-origin: left center;
+    transition:
+      opacity var(--motion-fast) var(--motion-ease-out),
+      transform 160ms var(--motion-ease-out);
+  }
+  @starting-style {
+    .turn-nav-card[data-open="true"] {
+      opacity: 0;
+      transform: translateX(-6px) scale(0.98);
+    }
+  }
+  .turn-nav-card[hidden] {
+    display: none;
+  }
+  :where(.turn-nav-card) p {
+    margin: 0;
+  }
+  .turn-nav-card-meta {
+    display: flex;
+    gap: var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+  .turn-nav-card-prompt {
+    padding-right: var(--s24);
+    overflow: hidden;
+    font-weight: 600;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .turn-nav-card-reply {
+    display: -webkit-box;
+    margin-top: var(--s4);
+    overflow: hidden;
+    color: var(--agnes-text-secondary);
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .turn-nav-card-more {
+    margin-top: var(--s4);
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .turn-nav-card-error {
+    margin-top: var(--s4);
+    color: var(--agnes-status-danger-text);
+    font-size: var(--font-size-xs);
+  }
+  .turn-nav-card .turn-nav-bookmark {
+    position: absolute;
+    top: var(--s8);
+    right: var(--s8);
+    color: var(--agnes-text-tertiary);
+  }
+  .turn-nav-card .turn-nav-bookmark[aria-pressed="true"] {
+    color: var(--agnes-brand-primary);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .turn-nav-rail,
+    .turn-nav-tick,
+    .turn-nav-card {
+      transition: none;
+    }
+  }
 }

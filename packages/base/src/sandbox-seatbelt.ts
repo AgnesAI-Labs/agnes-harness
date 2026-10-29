@@ -1,10 +1,25 @@
+import { LOOPBACK_GATE_PATH_PREFIX } from '@agnes/system-node'
+
 /** Closed-network Seatbelt compiler. Selection, path resolution and enforcement reporting belong
  * to the assembling seam; this leaf does not claim a backend is available. */
 export function seatbeltDenyNetworkArgv(
   argv: string[],
-  policy: { allowPaths: string[]; denyPaths: string[] },
+  policy: {
+    allowPaths: string[]
+    denyPaths: string[]
+    readPaths?: string[]
+    network?: 'deny' | 'allow'
+    loopbackServe?: boolean
+    /** Grant foreground-group changes on the controlling terminal. Default on; older macOS cannot parse it. */
+    jobControl?: boolean
+  },
 ): string[] {
   const invalid = () => new Error('invalid sandbox policy')
+  if (
+    (policy.loopbackServe !== undefined && typeof policy.loopbackServe !== 'boolean') ||
+    (policy.loopbackServe && policy.network === 'allow')
+  )
+    throw invalid()
   const quote = (value: string): string => {
     if (
       typeof value !== 'string' ||
@@ -23,15 +38,68 @@ export function seatbeltDenyNetworkArgv(
   )
     throw invalid()
   if (!Array.isArray(policy.allowPaths) || !Array.isArray(policy.denyPaths)) throw invalid()
+  const parents = new Set(
+    (policy.readPaths ?? []).flatMap((path) => {
+      quote(path)
+      const parts = path.split('/')
+      return parts.slice(1).map((_, index) => parts.slice(0, index + 1).join('/') || '/')
+    }),
+  )
   const profile = [
     '(version 1)',
     '(deny default)',
     '(allow process*)',
     '(allow sysctl-read)',
-    '(allow file-read*)',
+    // Common tools open the null sink read/write; entropy and zero sources need only reads.
+    // Exact literals grant no other devices. The explicit denies below still take precedence.
+    '(allow file-read* file-write* (literal "/dev/null"))',
+    ...['/dev/zero', '/dev/random', '/dev/urandom'].map(
+      (path) => `(allow file-read* (literal ${quote(path)}))`,
+    ),
+    // Job control changes only the foreground group of the caller's controlling terminal
+    // (the kernel enforces session ownership). No other ioctls are granted. macOS 12 does not
+    // define TIOCSPGRP for this filter and refuses the whole profile, so a caller that finds that
+    // out omits the rule with `jobControl: false`.
+    ...(policy.jobControl === false
+      ? []
+      : ['(allow file-ioctl (require-all (regex #"^/dev/tty(s[0-9]+)?$") (ioctl-command TIOCSPGRP)))']),
+    ...(policy.readPaths
+      ? [
+          ...[...parents].map((path) => `(allow file-read-metadata (literal ${quote(path)}))`),
+          '(allow file-read* (literal "/"))',
+        ]
+      : []),
+    ...(policy.readPaths
+      ? policy.readPaths.map((path) => `(allow file-read* (subpath ${quote(path)}))`)
+      : ['(allow file-read*)']),
     ...policy.allowPaths.map((path) => `(allow file-write* (subpath ${quote(path)}))`),
     ...policy.denyPaths.map((path) => `(deny file-read* file-write* (subpath ${quote(path)}))`),
-    '(deny network*)',
+    // A protected subtree must not become readable by renaming one of its writable ancestors.
+    ...[
+      ...new Set(
+        policy.denyPaths.flatMap((path) => {
+          quote(path)
+          const parts = path.split('/')
+          return parts.slice(1).map((_, index) => parts.slice(0, index + 1).join('/') || '/')
+        }),
+      ),
+    ].map((path) => `(deny file-write-unlink (literal ${quote(path)}))`),
+    // Every confined command must preserve other sessions' Host-owned transports,
+    // regardless of its own network grant or broad temporary-directory write access.
+    `(deny file-write* (regex #"^${LOOPBACK_GATE_PATH_PREFIX}[^/]*(/|$)"))`,
+    '(deny file-write-unlink (literal "/") (literal "/private") (literal "/private/tmp"))',
+    ...(policy.network === 'allow'
+      ? ['(allow network*)']
+      : policy.loopbackServe
+        ? [
+            // Default deny still blocks outbound (including Unix peers), UDP and all binds.
+            // Host supplies an already-bound private listener behind its TCP gate. Never grant bind: Seatbelt's
+            // localhost inbound filter also matches wildcard/LAN addresses on this host.
+            '(allow network-inbound (local tcp "localhost:*"))',
+            '(allow network-inbound (local unix-socket))',
+            '(deny network-bind)',
+          ]
+        : ['(deny network*)']),
   ].join('\n')
   return ['/usr/bin/sandbox-exec', '-p', profile, ...argv]
 }

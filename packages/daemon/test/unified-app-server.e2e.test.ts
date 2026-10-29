@@ -7,7 +7,7 @@ import { createConfigurationService, createPlatform, resolveProfile } from '@agn
 import { createClient, memoryJournal, wsTransport } from '@agnes/sdk'
 import { createPrivateDirectorySync, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'
-import { buildConfig } from '../src/config.js'
+import { buildConfig } from '../src/supervisor/config.js'
 import { startProductionSupervisor } from '../src/supervisor/supervisor.js'
 import { localSdkTransport } from './local-socket-path.js'
 
@@ -109,12 +109,43 @@ it(
     const baseUrl = `http://127.0.0.1:${address.port}/v1`
     const configuration = createConfigurationService({ home, profile: 'local-dev' })
     const userBase = { name: 'local-dev', dataDir: data, cacheDir: join(home, 'cache') }
+    // The built-in payload-only adapter's route, declared before the saved accounts' routes.
+    const jevRoute = {
+      route: 'jev',
+      api: 'typesafe-systemone',
+      baseUrl: 'http://127.0.0.1:1/v1',
+      models: [
+        {
+          id: 'jev-fixture',
+          name: 'Jev fixture',
+          api: 'typesafe-systemone',
+          route: 'jev',
+          baseUrl: 'http://127.0.0.1:1/v1',
+          reasoning: false,
+          input: ['text' as const],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 65_536,
+          maxTokens: 1_024,
+          toolCallFormats: [],
+          thinkingReplay: 'drop' as const,
+          contract_id: null,
+        },
+      ],
+    }
     const start = async () => {
-      const reloadProfile = async () =>
-        resolveProfile(
-          { builtin: 'local-dev', user: { ...userBase, ...(await configuration.profileInput()) } },
+      const reloadProfile = async () => {
+        const saved = await configuration.profileInput()
+        const input = saved.provider
+          ? {
+              ...saved,
+              provider: { ...saved.provider, routes: [jevRoute, ...(saved.provider.routes ?? [])] },
+            }
+          : saved
+        return resolveProfile(
+          { builtin: 'local-dev', user: { ...userBase, ...input } },
           { platform: createPlatform().snapshot(), agnesVersion: '0.0.0', now: new Date().toISOString() },
         )
+      }
       const profile = await reloadProfile()
       const windows = createPlatform().snapshot().os === 'win32'
       const config = buildConfig({
@@ -166,8 +197,11 @@ it(
       })
       clients.push(web, cli)
       expect(await web.config.get()).toMatchObject({ configured: false, revision: 0 })
-      expect(await web.config.test({ providerId: 'deepseek', baseUrl, apiKey: 'wrong-key' })).toMatchObject({
-        verified: false,
+      await expect(
+        web.config.test({ providerId: 'deepseek', baseUrl, apiKey: 'wrong-key' }),
+      ).rejects.toMatchObject({
+        code: -32011,
+        data: { code: 'SEMANTIC_REJECTED', reason: 'CONFIG_CREDENTIAL_REJECTED' },
       })
       expect(await cli.config.get()).toMatchObject({ configured: false, revision: 0 })
       expect(await web.config.test({ providerId: 'deepseek', baseUrl, apiKey: 'fixture-key' })).toMatchObject(
@@ -193,10 +227,11 @@ it(
         authorization: 'Bearer fixture-key',
         path: '/v1/chat/completions',
       })
-      // The Web session list shows the platform's default preset for a session the CLI created.
-      expect((await web.session.list({})).items.find((item) => item.sessionId === session.id)?.preset).toBe(
-        createPlatform().snapshot().os === 'win32' ? 'standard-windows' : 'standard',
-      )
+      // The Web session list shows the platform's default recipe and permission for a session the CLI created.
+      expect((await web.session.list({})).items.find((item) => item.sessionId === session.id)).toMatchObject({
+        preset: 'standard',
+        permission: 'workspace-write',
+      })
       const same = await web.session.load(session.id, { cwd: work })
       expect(JSON.stringify(await same.projectUI(undefined, { surface: 'web' }))).toContain(
         'Shared daemon works.',
@@ -243,9 +278,13 @@ it(
         expectedRevision: replacement.revision,
       })
       expect(added.effect).toBe('new-sessions')
-      expect((await cli.apis()).profile.models).toContainEqual(
+      const listedModels = (await cli.apis()).profile.models
+      expect(listedModels).toContainEqual(
         expect.objectContaining({ route: 'account-hot-added', id: 'deepseek-v4-pro' }),
       )
+      // The profile declares the built-in payload-only route first; no model list offers it, and the
+      // slots a preset leaves at `default` still land on the saved account (the prompts above ran).
+      expect(listedModels?.some((model) => model.route === 'jev')).toBe(false)
       await same.setModel({ slot: 'primary', route: 'account-hot-added', model: 'deepseek-v4-pro' })
       expect((await same.prompt('Use the hot-added model.')).reason).toBe('completed')
       expect(requests.at(-1)).toMatchObject({

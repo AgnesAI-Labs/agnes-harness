@@ -1,4 +1,4 @@
-// WC5 vendor 入口垫片：/vendor/react-dom.js（react-dom@18.3.1 公开导出面）。
+// Shared vendor entry shim: /vendor/react-dom.js (react-dom@18.3.1 public exports).
 import ReactDOM from 'react-dom'
 
 const {

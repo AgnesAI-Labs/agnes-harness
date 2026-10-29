@@ -1,0 +1,435 @@
+import { createHash } from 'node:crypto'
+import { posix, win32 } from 'node:path'
+import type { FsPolicy, FsRule } from '@agnes/core'
+import { decideFsPath, validateFsPolicy } from '@agnes/core'
+import { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
+import { presetProvider } from './presets/provider.js'
+
+export type WorkspacePathSemantics = Readonly<{
+  flavor: 'posix' | 'win32'
+  caseSensitive: boolean
+}>
+
+export type SandboxStaticConfig = Readonly<{
+  level: 'L0' | 'L1'
+  access?: 'read-only' | 'workspace-write' | 'full-access'
+  required: boolean
+  onUnavailable: 'deny' | 'allow' | 'allow-if-unimplemented'
+  extraPaths: readonly string[]
+  denyPaths: readonly string[]
+  networkAllow: readonly string[]
+  loopbackServe?: boolean
+}>
+
+export type WorkspacePolicyPlan = Readonly<{
+  policy: FsPolicy
+  staticConfig: SandboxStaticConfig
+  staticConfigHash: string
+  semantics: WorkspacePathSemantics
+  backendOptions: Readonly<{
+    cwd: string
+    allowPaths: readonly string[]
+    denyPaths: readonly string[]
+    networkAllow: readonly string[]
+    network?: 'deny' | 'allow'
+    loopbackServe?: boolean
+    fullAccess?: boolean
+  }>
+}>
+
+const fault = (reason: string): Error & { code: 'E_SANDBOX_WORKSPACE' } =>
+  Object.assign(new Error(`E_SANDBOX_WORKSPACE: ${reason}`), { code: 'E_SANDBOX_WORKSPACE' as const })
+
+const CONFIG_KEYS = new Set([
+  'level',
+  'required',
+  'on_unavailable',
+  'extra_paths',
+  'deny_paths',
+  'network_allow',
+  'loopback_serve',
+])
+
+function stringList(value: unknown, field: string): readonly string[] {
+  if (value === undefined) return Object.freeze([])
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || item.includes('\0')))
+    throw fault(`sandbox.${field} is not a string list`)
+  return Object.freeze([...value])
+}
+
+/** The single normalized static sandbox plan consumed by policy compilation and readiness identity. */
+export function normalizeSandboxStaticConfig(preset: Readonly<Record<string, unknown>>): SandboxStaticConfig {
+  const policy = presetProvider(preset, 'tool-policy')
+  const access =
+    policy === 'read-only' ? 'read-only' : policy === 'full-access' ? 'full-access' : 'workspace-write'
+  const raw = preset.sandbox
+  if (raw === undefined)
+    return Object.freeze({
+      level: 'L0',
+      access,
+      required: false,
+      onUnavailable: 'deny',
+      extraPaths: Object.freeze([]),
+      denyPaths: Object.freeze([]),
+      networkAllow: Object.freeze([]),
+    })
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw))
+    throw fault('sandbox config is not a mapping')
+  const input = raw as Record<string, unknown>
+  for (const field of Object.keys(input))
+    if (!CONFIG_KEYS.has(field)) throw fault(`sandbox config carries unknown key ${field}`)
+  const level = input.level ?? 'L0'
+  if (level !== 'L0' && level !== 'L1') throw fault('sandbox.level is not L0 or L1')
+  const required = input.required ?? false
+  if (typeof required !== 'boolean') throw fault('sandbox.required is not boolean')
+  const onUnavailable = input.on_unavailable ?? 'deny'
+  if (onUnavailable !== 'deny' && onUnavailable !== 'allow' && onUnavailable !== 'allow-if-unimplemented')
+    throw fault('sandbox.on_unavailable is invalid')
+  if (level !== 'L1' && onUnavailable === 'allow-if-unimplemented')
+    throw fault('allow-if-unimplemented requires an L1 request')
+  const loopbackServe = input.loopback_serve === undefined ? false : input.loopback_serve
+  if (typeof loopbackServe !== 'boolean') throw fault('sandbox.loopback_serve is not boolean')
+  if (
+    loopbackServe &&
+    (level !== 'L1' ||
+      onUnavailable === 'allow' ||
+      access === 'full-access' ||
+      stringList(input.network_allow, 'network_allow').length)
+  )
+    throw fault(
+      'loopback_serve requires L1, deny or allow-if-unimplemented, restricted access and no network_allow',
+    )
+  return Object.freeze({
+    level,
+    access,
+    ...(loopbackServe ? { loopbackServe: true } : {}),
+    required,
+    onUnavailable,
+    extraPaths: stringList(input.extra_paths, 'extra_paths'),
+    denyPaths: stringList(input.deny_paths, 'deny_paths'),
+    networkAllow: stringList(input.network_allow, 'network_allow'),
+  })
+}
+
+/**
+ * How a registered memory provider's private tree constrains command execution:
+ * - `none`: no constraint (no provider, or a trusted local backend without OS isolation that the
+ *   preset explicitly permits to run unconfined).
+ * - `preferred`: request the OS boundary and deny the memory tree where it can be enforced, but run
+ *   unconfined when it cannot. Only the explicit full-access permission selects this: like other
+ *   agent harnesses' full-access modes, it trusts the user and their environment, so memory stays
+ *   enabled and is an ordinary file to an unconfined shell.
+ * - `required`: refuse unconfined execution. `required: true` always lands here.
+ * Only the trusted local caller supplies an unimplemented fact.
+ */
+export type MemoryFileIsolation = 'none' | 'preferred' | 'required'
+
+export function memoryFileIsolation(
+  registered: boolean,
+  implementation: 'implemented' | 'unimplemented' | 'unknown',
+  config: SandboxStaticConfig,
+): MemoryFileIsolation {
+  if (!registered) return 'none'
+  const permitted =
+    !config.required &&
+    ((config.level === 'L1' && config.onUnavailable === 'allow-if-unimplemented') ||
+      (config.level === 'L0' && config.onUnavailable === 'allow'))
+  if (implementation === 'unimplemented' && permitted) return 'none'
+  return config.access === 'full-access' && !config.required ? 'preferred' : 'required'
+}
+
+export function sandboxStaticConfigHash(config: SandboxStaticConfig): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify([
+        'agnes.sandbox-static-config',
+        1,
+        config.level,
+        config.access ?? 'workspace-write',
+        config.required,
+        config.onUnavailable,
+        [...config.extraPaths],
+        [...config.denyPaths],
+        [...config.networkAllow],
+        ...(config.loopbackServe ? [true] : []),
+      ]),
+    )
+    .digest('hex')
+}
+
+function pathApi(semantics: WorkspacePathSemantics): typeof posix | typeof win32 {
+  if (
+    (semantics.flavor !== 'posix' && semantics.flavor !== 'win32') ||
+    typeof semantics.caseSensitive !== 'boolean'
+  )
+    throw fault('invalid workspace path semantics')
+  return semantics.flavor === 'posix' ? posix : win32
+}
+
+function pathIdentity(path: string, semantics: WorkspacePathSemantics): string {
+  return semantics.caseSensitive ? path : path.toLocaleLowerCase('en-US')
+}
+
+function samePath(left: string, right: string, semantics: WorkspacePathSemantics): boolean {
+  return pathIdentity(left, semantics) === pathIdentity(right, semantics)
+}
+
+/** Whether `inner` is `outer` or lies below it. */
+function contains(
+  api: typeof posix | typeof win32,
+  outer: string,
+  inner: string,
+  semantics: WorkspacePathSemantics,
+): boolean {
+  const rel = api.relative(pathIdentity(outer, semantics), pathIdentity(inner, semantics))
+  return rel === '' || (!rel.startsWith('..') && !api.isAbsolute(rel))
+}
+
+function policyDigest(
+  semantics: WorkspacePathSemantics,
+  workspaceRoot: string,
+  rules: readonly FsRule[],
+  networkAllow: readonly string[],
+  loopbackServe = false,
+): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify([
+        'agnes.host-workspace-policy',
+        1,
+        [semantics.flavor, semantics.caseSensitive],
+        pathIdentity(workspaceRoot, semantics),
+        rules.map((rule) => [pathIdentity(rule.path, semantics), rule.effect, rule.hard, rule.source]),
+        networkAllow,
+        ...(loopbackServe ? [true] : []),
+      ]),
+    )
+    .digest('hex')
+}
+
+/**
+ * Compiles and freezes the one policy bound to a session fence. Base receives this policy but no
+ * root/config selection input and cannot replace it with a second compiler result.
+ */
+export async function compileWorkspacePolicy(
+  input: Readonly<{
+    canonicalRoot: string
+    dataDir: string
+    homeDir: string
+    /** Host-owned roots that only explicit mediated capabilities may access. */
+    protectedPaths?: readonly string[]
+    /** Extra directories the session binding admitted: data only, with the same integrity denies. */
+    extraRoots?: readonly string[]
+    semantics: WorkspacePathSemantics
+    staticConfig: SandboxStaticConfig
+    canonicalize(path: string, options?: { base?: string }): Promise<string>
+  }>,
+): Promise<WorkspacePolicyPlan> {
+  const api = pathApi(input.semantics)
+  const canonical = async (path: string, field: string, options?: { base?: string }): Promise<string> => {
+    if (typeof path !== 'string' || path.length === 0 || path.includes('\0')) throw fault(`invalid ${field}`)
+    let resolved: string
+    try {
+      resolved = await input.canonicalize(path, options)
+    } catch {
+      throw fault(`${field} cannot be canonicalized`)
+    }
+    if (!api.isAbsolute(resolved) || api.normalize(resolved) !== resolved)
+      throw fault(`${field} is not canonical`)
+    return resolved
+  }
+  const workspaceRoot = await canonical(input.canonicalRoot, 'workspace root')
+  if (!samePath(workspaceRoot, input.canonicalRoot, input.semantics))
+    throw fault('workspace root identity changed during policy compilation')
+  const dataDir = await canonical(input.dataDir, 'data directory')
+  const homeDir = await canonical(input.homeDir, 'home directory')
+  const below = (base: string, leaf: string, field: string): Promise<string> =>
+    canonical(api.join(base, leaf), field)
+  const sessionExtra = await Promise.all(
+    (input.extraRoots ?? []).map(async (path) => {
+      const root = await canonical(path, 'extra directory')
+      if (!samePath(root, path, input.semantics)) throw fault('extra directory identity changed')
+      return root
+    }),
+  )
+  const ssh = await below(homeDir, '.ssh', 'home ssh directory')
+  for (const root of sessionExtra)
+    for (const guarded of [dataDir, ssh])
+      if (contains(api, root, guarded, input.semantics) || contains(api, guarded, root, input.semantics))
+        throw fault('extra directory overlaps protected state')
+  // The extras join the static config, so its hash, the policy digest and every readiness cache key
+  // that is derived from them change with the session's directory list.
+  const staticConfig: SandboxStaticConfig = sessionExtra.length
+    ? Object.freeze({
+        ...input.staticConfig,
+        extraPaths: Object.freeze([...input.staticConfig.extraPaths, ...sessionExtra]),
+      })
+    : input.staticConfig
+  const extraAllow = await Promise.all(
+    staticConfig.extraPaths.map((path) => canonical(path, 'sandbox extra path', { base: workspaceRoot })),
+  )
+  const configuredDeny = await Promise.all(
+    staticConfig.denyPaths.map((path) => canonical(path, 'sandbox deny path', { base: workspaceRoot })),
+  )
+  const workspaceIsDataDir = samePath(workspaceRoot, dataDir, input.semantics)
+  const rules: FsRule[] = [
+    { effect: 'allow', path: workspaceRoot, source: 'workspace', hard: false },
+    ...(workspaceIsDataDir
+      ? []
+      : [
+          { effect: 'deny' as const, path: dataDir, source: 'data' as const, hard: false },
+          {
+            effect: 'allow' as const,
+            path: await below(dataDir, 'tmp', 'data tmp directory'),
+            source: 'data-tmp' as const,
+            hard: false,
+          },
+        ]),
+    {
+      effect: 'deny',
+      path: await below(homeDir, '.ssh', 'home ssh directory'),
+      source: 'home-ssh',
+      hard: true,
+    },
+    {
+      effect: 'deny',
+      path: await below(dataDir, 'secrets', 'data secrets directory'),
+      source: 'data-secrets',
+      hard: true,
+    },
+    {
+      effect: 'deny',
+      path: await below(workspaceRoot, '.git', 'host integrity path'),
+      source: 'host-integrity',
+      hard: true,
+    },
+    ...(await Promise.all(
+      WORKSPACE_SECRET_DIRS.map(
+        async (dir): Promise<FsRule> => ({
+          effect: 'deny',
+          path: await below(workspaceRoot, dir, 'host integrity path'),
+          source: 'host-integrity',
+          hard: true,
+        }),
+      ),
+    )),
+    ...(await Promise.all(
+      sessionExtra.flatMap((root) =>
+        ['.git', ...WORKSPACE_SECRET_DIRS].map(
+          async (leaf): Promise<FsRule> => ({
+            effect: 'deny',
+            path: await below(root, leaf, 'host integrity path'),
+            source: 'host-integrity',
+            hard: true,
+          }),
+        ),
+      ),
+    )),
+    ...(await Promise.all(
+      (input.protectedPaths ?? []).map(
+        async (path): Promise<FsRule> => ({
+          effect: 'deny',
+          path: await canonical(path, 'protected state path'),
+          source: 'host-integrity',
+          hard: true,
+        }),
+      ),
+    )),
+    ...extraAllow.map((path): FsRule => ({ effect: 'allow', path, source: 'extra', hard: false })),
+    ...configuredDeny.map((path): FsRule => ({ effect: 'deny', path, source: 'preset', hard: false })),
+  ]
+  const networkAllow = Object.freeze([...staticConfig.networkAllow])
+  const policy: FsPolicy = Object.freeze({
+    workspaceRoot,
+    rules: Object.freeze(rules.map((rule) => Object.freeze(rule))),
+    networkAllow,
+    ...(staticConfig.loopbackServe ? { loopbackServe: true } : {}),
+    digest: policyDigest(input.semantics, workspaceRoot, rules, networkAllow, staticConfig.loopbackServe),
+  })
+  validateFsPolicy(policy)
+  return Object.freeze({
+    policy,
+    staticConfig,
+    staticConfigHash: sandboxStaticConfigHash(staticConfig),
+    semantics: Object.freeze({ ...input.semantics }),
+    backendOptions: Object.freeze({
+      cwd: workspaceRoot,
+      allowPaths: Object.freeze(
+        staticConfig.access === 'read-only'
+          ? []
+          : staticConfig.access === 'full-access'
+            ? ['/']
+            : rules.filter((rule) => rule.effect === 'allow').map((rule) => rule.path),
+      ),
+      denyPaths: Object.freeze(
+        rules
+          .filter((rule) => rule.effect === 'deny' && (staticConfig.access !== 'full-access' || rule.hard))
+          .map((rule) => rule.path),
+      ),
+      networkAllow,
+      ...(staticConfig.loopbackServe ? { loopbackServe: true } : {}),
+      ...(staticConfig.access === 'full-access' ? { network: 'allow' as const, fullAccess: true } : {}),
+    }),
+  })
+}
+
+/** Materialize the conjunction at every rule boundary; no parent runtime capability is retained. */
+export function intersectWorkspacePlan(plan: WorkspacePolicyPlan, parent: FsPolicy): WorkspacePolicyPlan {
+  if (parent.workspaceRoot !== plan.policy.workspaceRoot) throw fault('delegated workspace root differs')
+  const policies = [plan.policy, parent]
+  const boundaries = [...new Set(policies.flatMap((p) => p.rules.map((r) => r.path)))]
+  const rules: FsRule[] = boundaries.map((path) => {
+    const hard = policies
+      .flatMap((p) => p.rules)
+      .find((rule) => rule.path === path && rule.hard && rule.effect === 'deny')
+    return {
+      path,
+      effect: policies.every(
+        (p) => decideFsPath(p, path, { caseSensitive: plan.semantics.caseSensitive }).effect === 'allow',
+      )
+        ? 'allow'
+        : 'deny',
+      source: hard?.source ?? 'preset',
+      hard: hard !== undefined,
+    }
+  })
+  const networkAllow = plan.policy.networkAllow.filter(
+    (host) => parent.networkAllow.includes('*') || parent.networkAllow.includes(host),
+  )
+  const loopbackServe =
+    plan.policy.loopbackServe === true && (parent.loopbackServe === true || parent.networkAllow.includes('*'))
+  const policy: FsPolicy = {
+    ...(loopbackServe ? { loopbackServe: true } : {}),
+    workspaceRoot: parent.workspaceRoot,
+    rules,
+    networkAllow,
+    digest: policyDigest(plan.semantics, parent.workspaceRoot, rules, networkAllow, loopbackServe),
+  }
+  validateFsPolicy(policy)
+  const staticConfig: SandboxStaticConfig = {
+    ...plan.staticConfig,
+    loopbackServe,
+    access: plan.staticConfig.access === 'read-only' ? 'read-only' : 'workspace-write',
+    extraPaths: rules.filter((r) => r.effect === 'allow').map((r) => r.path),
+    denyPaths: rules.filter((r) => r.effect === 'deny').map((r) => r.path),
+    networkAllow,
+  }
+  const { fullAccess: _fullAccess, ...backend } = plan.backendOptions
+  return {
+    ...plan,
+    policy,
+    staticConfig,
+    staticConfigHash: sandboxStaticConfigHash(staticConfig),
+    backendOptions: {
+      ...backend,
+      network: 'deny',
+      loopbackServe,
+      networkAllow,
+      allowPaths:
+        plan.staticConfig.access === 'read-only'
+          ? []
+          : rules.filter((r) => r.effect === 'allow').map((r) => r.path),
+      denyPaths: rules.filter((r) => r.effect === 'deny').map((r) => r.path),
+    },
+  }
+}

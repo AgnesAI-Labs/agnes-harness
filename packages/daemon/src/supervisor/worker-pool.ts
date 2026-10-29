@@ -1,8 +1,13 @@
 import { type ChildProcess, spawn as nodeSpawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import type { Duplex, Writable } from 'node:stream'
-import { fileURLToPath } from 'node:url'
+import type { PreviewUpdate } from '@agnes/daemon-foundation/registry'
+import {
+  assertWorkspaceBindingEnvelope,
+  type WorkspaceBindingEnvelope,
+} from '@agnes/daemon-foundation/storage/workspaces'
 import type { ResolvedProfile } from '@agnes/host'
+import type { LoopSelection } from '@agnes/protocol'
 import {
   type DaemonNotice,
   type EventEnvelope,
@@ -19,18 +24,21 @@ import {
   resourceWorkerObservation,
 } from '@agnes/resource-control-daemon'
 import { windowsProcessStartTimeSync } from '@agnes/system-node'
-import type { CompositeRuntimeDelivery, RuntimeBootDelivery } from '../composite-runtime-delivery.js'
-import type { DaemonConfig } from '../config.js'
-import type { OpenProgressUpdate, PreviewUpdate } from '../registry.js'
-import { assertWorkspaceBindingEnvelope, type WorkspaceBindingEnvelope } from '../storage/workspaces.js'
+import { bestEffort } from './best-effort.js'
+import type { DaemonConfig } from './config.js'
 import type { RequestFrame } from './frames.js'
+import type {
+  CompositeRuntimeDelivery,
+  RuntimeBootDelivery,
+} from './publication/composite-runtime-delivery.js'
+import { workerStderrEvidence } from './runtime-log.js'
+import { WorkerBootFailures } from './worker-boot-failures.js'
 import { WorkerLink, type WorkerSessionChannel } from './worker-link.js'
+import { waitForWorkerExit } from './worker-process-exit.js'
 
 /**
  * The narrow shape this pool needs from daemon's notice sink. The real `NoticeSink` is
- * `local/notice.ts`, daemon Task 12 ([I6]) - not built yet at the time this file was written.
- * Once it lands it satisfies this structurally (it is at minimum an `emit(kind, info)` method), so
- * nothing here needs to change; this is a standalone local type, not an import of a missing module.
+ * `local/notice.ts` and satisfies this structurally through its `emit(kind, info)` method.
  */
 export type NoticeEmitter = {
   // The protocol's closed kind set, not `string`: a kind outside it is refused at the wire by
@@ -38,59 +46,21 @@ export type NoticeEmitter = {
   emit(kind: DaemonNotice['kind'], info?: { sessionId?: string; detail?: unknown }): void
 }
 
-/** What the daemon runtime log keeps about a worker process that failed to start or went away. */
-export type WorkerLifecycleRecord =
-  | {
-      kind: 'worker.exited'
-      detail: {
-        worker: string
-        generation: number
-        pid: number | null
-        code: number | null
-        signal: string | null
-        /** `startup`: it never became a live worker. */
-        phase: 'startup' | 'running'
-        /** Retired on purpose (idle, shutdown, reload), so not counted as a crash. */
-        expected: boolean
-        /** Why the daemon closed the link first, if it did. */
-        link: string
-        sessions: string[]
-        uptimeMs: number
-        /** The last lines it wrote to stderr, which nothing else keeps. */
-        stderr: string[]
-      }
-    }
-  | { kind: 'worker.start_failed'; detail: { worker: string; generation: number; reason: string } }
-
-const STDERR_TAIL_BYTES = 16 * 1024
-
-/** The newest bytes a worker wrote to stderr, cut back to whole lines when asked. */
-class StderrTail {
-  private buffer = Buffer.alloc(0)
-  private cut = false
-
-  push(chunk: Buffer): void {
-    this.buffer = Buffer.concat([this.buffer, chunk])
-    if (this.buffer.byteLength <= STDERR_TAIL_BYTES) return
-    this.buffer = this.buffer.subarray(this.buffer.byteLength - STDERR_TAIL_BYTES)
-    this.cut = true
-  }
-
-  lines(): string[] {
-    const lines = this.buffer.toString('utf8').split(/\r?\n/)
-    // A tail that was cut starts mid-line.
-    if (this.cut) lines.shift()
-    return lines.filter((line) => line.trim().length > 0).slice(-40)
-  }
-}
-
 /** Immutable worker inputs selected when a session is first acquired. */
 export type WorkerProfile = Readonly<{ profile: ResolvedProfile; profileFile: string }>
 type SessionWorkerAcquireOptions = Readonly<{
+  historySignal?: AbortSignal
+  onHistoryProgress?: (progress: { verifiedSeq: number; lastSeq: number }) => void
   resume?: boolean
   cwd?: string
   binding?: WorkspaceBindingEnvelope
   preset?: string
+  permission?: string
+  agent?: string
+  agentDigest?: string
+  bundles?: readonly string[]
+  systemPromptAppend?: string
+  loop?: LoopSelection
   parent?: { key: string; boundarySeq: number }
 }>
 
@@ -145,6 +115,12 @@ export class WorkerPool {
   private readonly crashes = new Map<string, number[]>()
   private readonly quarantined = new Set<string>()
   private readonly backoffUntil = new Map<string, number>()
+  private readonly acquisitions = new Map<
+    string,
+    { resourceControl: boolean; promise: Promise<WorkerLink> }
+  >()
+  private readonly bootFailures = new WorkerBootFailures()
+  private runtimeTargetDigest: string | undefined
   private stopping = false
   private nextGeneration = 1
   private activationOperation: string | undefined
@@ -165,24 +141,28 @@ export class WorkerPool {
       spawn?: typeof nodeSpawn
       execPath?: string
       execArgv?: string[]
-      workerEntry?: string
+      workerEntry: string
       clock: () => number
       onEvent: (sessionKey: string, e: EventEnvelope) => void | Promise<void>
       /** Live streamed text, only from the worker that currently hosts the session. */
       onPreview?: (sessionKey: string, update: PreviewUpdate) => void
+      /** Advisory profile invalidation from the authenticated shared business worker. */
+      onDecisionsChanged?: (
+        detail: Extract<import('@agnes/protocol').DaemonNotice, { kind: 'decisions_changed' }>['detail'],
+      ) => void
       /** Safe live resource observations are fenced by the resource adapter's active worker key. */
       onResourceStatus?: (input: { sessionKey: string; serverId: string; status: McpStatus }) => void
-      onRequest: (sessionKey: string, f: RequestFrame) => Promise<unknown>
+      onRequest: (sessionKey: string, f: RequestFrame, signal: AbortSignal) => Promise<unknown>
       onLog?: (input: {
         sessionKey: string
         level: 'debug' | 'info' | 'warn' | 'error'
         message: string
+        traceId?: string
+        spanId?: string
       }) => void
-      onRecord?: (sessionKey: string, record: { kind: string; detail: Record<string, unknown> }) => void
-      /** How far a session's open has got, as its worker reports it while opening. */
-      onProgress?: (sessionKey: string, progress: OpenProgressUpdate) => void
+      onRuntimeLog?: (record: unknown) => void
+      onLifecycle?: (phase: 'start' | 'stop' | 'restart', id: string) => void
       onSessionFailure?: (sessionKey: string, error: unknown) => void
-      onLifecycle?: (record: WorkerLifecycleRecord) => void
       runtimeDelivery?: CompositeRuntimeDelivery
       notices: NoticeEmitter
       /** Called synchronously before a worker is accepted. A rejected observer rejects the candidate. */
@@ -202,30 +182,24 @@ export class WorkerPool {
   adopt(socket: Duplex): void {
     let workerKey = ''
     let generation = 0
+    let claimed = false
     const link = new WorkerLink(socket, {
       onEvent: (k, e) => this.o.onEvent(k, e),
       onPreview: (k, update) => {
         if (this.hosts(link, k)) this.o.onPreview?.(k, update)
       },
+      onDecisionsChanged: (detail) => {
+        if (claimed && link.alive && workerKey === '@shared') this.o.onDecisionsChanged?.(detail)
+      },
       onResourceStatus: (serverId, status) =>
         this.o.onResourceStatus?.({ sessionKey: workerKey, serverId, status }),
-      // A batch request acts for its session's owner, so it must come from the worker hosting it.
-      onRequest: (f) =>
-        f.method === 'batch' && !this.hosts(link, f.sessionKey)
-          ? Promise.reject(new Error('A batch request must come from the session that makes it.'))
-          : this.o.onRequest(f.sessionKey, f),
-      onLog: (sessionKey, level, message) => this.o.onLog?.({ sessionKey, level, message }),
-      onRecord: (sessionKey, record) => this.o.onRecord?.(sessionKey, record),
-      // Same fence as previews: the session's channel is registered before its open frame is sent,
-      // so the worker opening it hosts it for the whole open, and no other link may speak for it.
-      onProgress: (sessionKey, progress) => {
-        if (this.hosts(link, sessionKey)) this.o.onProgress?.(sessionKey, progress)
-      },
+      onRequest: (f, signal) => this.o.onRequest(f.sessionKey, f, signal),
+      onLog: (sessionKey, level, message, correlation) =>
+        this.o.onLog?.({ sessionKey, level, message, ...correlation }),
       onActivity: (sessionKey) => this.touch(sessionKey),
       onSessionFailure: (sessionKey, error) => {
-        // No notice here: the registry decides what the failure means. It reopens a watched session on
-        // its own, so attached clients see a reconnect; an integrity failure is final, and the
-        // registry tells attached clients `integrity_failed` instead.
+        // No notice here: the protocol has no kind for a session-scoped interruption, and the
+        // registry reopens a watched session on its own, so attached clients see a reconnect.
         this.retire([sessionKey], 'session-projection-failed')
         this.o.onSessionFailure?.(sessionKey, error)
       },
@@ -258,6 +232,7 @@ export class WorkerPool {
           return
         }
       }
+      claimed = true
       claim(link)
     })
   }
@@ -284,12 +259,17 @@ export class WorkerPool {
     if (!slot) throw new Error('shared worker slot disappeared')
     const existing = slot.channels.get(sessionKey)
     if (existing?.alive) return existing
-    let channel: WorkerSessionChannel
-    channel = link.session(
+    const channel: WorkerSessionChannel = link.session(
       sessionKey,
       {
         binding: opts.binding,
         ...(opts.preset ? { preset: opts.preset } : {}),
+        ...(opts.permission ? { permission: opts.permission } : {}),
+        ...(opts.agent !== undefined ? { agent: opts.agent } : {}),
+        ...(opts.agentDigest !== undefined ? { agentDigest: opts.agentDigest } : {}),
+        ...(opts.bundles !== undefined ? { bundles: opts.bundles } : {}),
+        ...(opts.systemPromptAppend !== undefined ? { systemPromptAppend: opts.systemPromptAppend } : {}),
+        ...(opts.loop ? { loop: opts.loop } : {}),
         ...(opts.resume ? { resume: true } : {}),
         ...(opts.parent ? { parent: opts.parent } : {}),
       },
@@ -298,6 +278,8 @@ export class WorkerPool {
         slot.channels.delete(sessionKey)
         slot.sessions.delete(sessionKey)
       },
+      opts.onHistoryProgress,
+      opts.historySignal,
     )
     slot.channels.set(sessionKey, channel)
     try {
@@ -310,7 +292,24 @@ export class WorkerPool {
     }
   }
 
-  private async acquireWorker(workerKey: string, opts: WorkerAcquireOptions): Promise<WorkerLink> {
+  private acquireWorker(workerKey: string, opts: WorkerAcquireOptions): Promise<WorkerLink> {
+    const existing = this.acquisitions.get(workerKey)
+    if (existing) {
+      if (existing.resourceControl !== (opts.resourceControl === true))
+        return Promise.reject(new Error(`worker ${workerKey} already exists with a different worker kind`))
+      return existing.promise
+    }
+    // Own the complete admission/backoff/exit wait, not just the hello handshake.
+    const promise = Promise.resolve()
+      .then(() => this.startWorker(workerKey, opts))
+      .finally(() => {
+        if (this.acquisitions.get(workerKey)?.promise === promise) this.acquisitions.delete(workerKey)
+      })
+    this.acquisitions.set(workerKey, { resourceControl: opts.resourceControl === true, promise })
+    return promise
+  }
+
+  private async startWorker(workerKey: string, opts: WorkerAcquireOptions): Promise<WorkerLink> {
     const assertAdmission = (): void => {
       if (this.stopping) throw new Error('worker pool is shutting down')
       if (this.activationOperation)
@@ -319,6 +318,8 @@ export class WorkerPool {
           reason: 'activation-in-progress',
           operationId: this.activationOperation,
         })
+      const blocked = this.bootFailures.blocked(workerKey)
+      if (blocked) throw blocked
       if (this.quarantined.has(workerKey)) throw new Error(`worker ${workerKey} is quarantined`)
     }
     assertAdmission()
@@ -334,12 +335,12 @@ export class WorkerPool {
     if (cur?.child?.exitCode === null && cur.child.signalCode === null) {
       await new Promise<void>((resolve) => cur.child?.once('exit', () => resolve()))
       await cur.exitRecovery
-      return this.acquireWorker(workerKey, opts)
+      return this.startWorker(workerKey, opts)
     }
     if (cur?.exitRecovery) {
       await cur.exitRecovery
       if (this.slots.get(workerKey) === cur) this.slots.delete(workerKey)
-      return this.acquireWorker(workerKey, opts)
+      return this.startWorker(workerKey, opts)
     }
     const until = this.backoffUntil.get(workerKey) ?? 0
     if (until > this.o.clock()) await new Promise((r) => setTimeout(r, until - this.o.clock()))
@@ -349,7 +350,7 @@ export class WorkerPool {
     // process and silently overwriting it (a slot left behind by a startup failure that never
     // reached `link`/`starting` is still fair game to retry over, same as the checks above).
     const raced = this.slots.get(workerKey)
-    if (raced?.link?.alive || raced?.starting) return this.acquireWorker(workerKey, opts)
+    if (raced?.link?.alive || raced?.starting) return this.startWorker(workerKey, opts)
     const selected = { profile: this.o.profile, profileFile: this.o.profileFile }
     // Activation may have frozen membership while admission was in progress; re-check before
     // inserting the slot so waitForStarting cannot miss a late old-revision worker.
@@ -357,6 +358,13 @@ export class WorkerPool {
     const live = [...this.slots.values()].filter((s) => s.link?.alive).length
     if (live >= this.o.config.limits.maxWorkers) throw rpcError('OVERLOADED', { retryAfterMs: 1000 })
 
+    if (this.crashes.has(workerKey)) {
+      try {
+        this.o.onLifecycle?.('restart', workerKey)
+      } catch {
+        /* passive observer */
+      }
+    }
     const token = randomBytes(32).toString('hex')
     const generation = workerGeneration(this.nextGeneration)
     this.nextGeneration = generation + 1
@@ -372,22 +380,23 @@ export class WorkerPool {
     slot.starting = new Promise<WorkerLink>((resolve, reject) => {
       let child: ChildProcess | undefined
       let startupFinished = false
-      let ready = false
-      let adopted: WorkerLink | undefined
-      const stderr = new StderrTail()
-      const spawnedAt = this.o.clock()
+      let helloReceived = false
+      const bootFailure = this.bootFailures.start(workerKey)
       // Set from the moment a runtime target is offered until the worker proves it can run it.
       let bootOffer: RuntimeBootDelivery | undefined
       const failStarting = (error: Error): void => {
         if (startupFinished) return
         startupFinished = true
-        this.lifecycle({
-          kind: 'worker.start_failed',
-          detail: { worker: workerKey, generation, reason: error.message },
-        })
+        this.o.onRuntimeLog?.({ kind: 'worker.start_failed', detail: { code: bootFailure.code } })
+        if (!helloReceived && !this.stopping) bootFailure.record()
         // A start that dies on the very target it was given says something about that target, not
         // about the worker; only then is the exit expected rather than a crash to count.
-        if (bootOffer && this.o.runtimeDelivery?.recordBootFailure(slot.generation, bootOffer, error))
+        // Operator shutdown cancels admission; it says nothing about whether the target can boot.
+        if (
+          !this.stopping &&
+          bootOffer &&
+          this.o.runtimeDelivery?.recordBootFailure(slot.generation, bootOffer, error)
+        )
           slot.intentionalExit = true
         bootOffer = undefined
         this.pendingByToken.delete(token)
@@ -396,7 +405,7 @@ export class WorkerPool {
         if (slot.startupTimer !== undefined) clearTimeout(slot.startupTimer)
         slot.startupTimer = undefined
         if (child?.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
-        reject(error)
+        reject(bootFailure.failure(error))
       }
       slot.failStarting = failStarting
       const timer = setTimeout(() => {
@@ -410,10 +419,10 @@ export class WorkerPool {
           link.close('startup already failed')
           return
         }
+        helloReceived = true
         clearTimeout(timer)
         slot.startupTimer = undefined
         slot.initializingLink = link
-        adopted = link
         void link.hello.then(async (h) => {
           if (startupFinished) {
             link.close('startup already failed')
@@ -439,6 +448,8 @@ export class WorkerPool {
             failStarting(new Error('worker kind mismatch'))
             return
           }
+          // A verified hello ends the pre-hello failure streak, even if admission later fails.
+          this.bootFailures.succeeded(workerKey)
           try {
             await this.initializeLink?.({ sessionKey: workerKey, generation: slot.generation, link })
           } catch (error) {
@@ -478,7 +489,7 @@ export class WorkerPool {
               return
             }
             bootOffer = undefined
-            const desired = this.o.runtimeDelivery.desired()
+            const desired = this.o.runtimeDelivery.desiredAfterBoot(boot)
             if (desired) link.offerRuntimeTarget(desired)
           }
           // `.end()` right after the write, not left open: worker/main.ts's gate is an
@@ -494,13 +505,18 @@ export class WorkerPool {
           gate?.on('error', () => undefined).end('start\n')
           slot.link = link
           link.onExit(() => {
+            this.o.runtimeDelivery?.workerExited(slot.generation)
             if (slot.link === link) slot.link = undefined
             if (!startupFinished) failStarting(new Error(`worker ${workerKey} link closed during startup`))
           })
           if (!link.alive) return
           slot.initializingLink = undefined
           startupFinished = true
-          ready = true
+          try {
+            this.o.onLifecycle?.('start', `${workerKey}:${generation}`)
+          } catch {
+            /* passive observer */
+          }
           resolve(link)
         })
       })
@@ -511,10 +527,7 @@ export class WorkerPool {
         if (supervisorStartId === null) throw new Error('Supervisor process identity unavailable')
         child = (this.o.spawn ?? nodeSpawn)(
           this.o.execPath ?? process.execPath,
-          [
-            ...(this.o.execArgv ?? []),
-            this.o.workerEntry ?? fileURLToPath(new URL('../worker/main.js', import.meta.url)),
-          ],
+          [...(this.o.execArgv ?? []), this.o.workerEntry],
           {
             env: {
               ...process.env,
@@ -540,8 +553,7 @@ export class WorkerPool {
               AGNES_WORKER_ROOT: opts.kind === 'service' && opts.cwd ? opts.cwd : undefined,
             },
             windowsHide: true,
-            // stderr is piped, not inherited: a detached daemon has none, so it would be lost.
-            stdio: ['ignore', 'inherit', 'pipe', 'pipe'],
+            stdio: ['ignore', 'inherit', 'pipe', 'pipe', 'ipc'],
           },
         )
       } catch (error) {
@@ -557,12 +569,12 @@ export class WorkerPool {
         return
       }
       const spawnedChild = child
+      const stderr = workerStderrEvidence()
+      spawnedChild.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk))
       slot.child = spawnedChild
-      spawnedChild.stderr?.on('error', () => undefined)
-      spawnedChild.stderr?.on('data', (chunk: Buffer) => {
-        stderr.push(chunk)
-        // Still passed through, for a daemon run in the foreground.
-        process.stderr.write(chunk)
+      spawnedChild.on('message', (message: unknown) => {
+        if (startupFinished || slot.initializingLink || !message || typeof message !== 'object') return
+        bootFailure.observe(message)
       })
       spawnedChild.once('error', (error) => {
         if (!slot.link)
@@ -576,32 +588,18 @@ export class WorkerPool {
       // Reject immediately so callers do not wait for the full startup deadline and remove the
       // token before a late socket connection can claim a failed generation.
       spawnedChild.once('exit', (code, signal) => {
-        const exited = {
-          worker: workerKey,
-          generation,
-          pid: spawnedChild.pid ?? null,
-          code,
-          signal,
-          phase: ready ? ('running' as const) : ('startup' as const),
-          expected: slot.intentionalExit === true,
-          link: adopted ? (adopted.closeReason ?? 'closed by the worker side') : 'never connected',
-          sessions: [...slot.sessions],
-          uptimeMs: this.o.clock() - spawnedAt,
+        this.o.onRuntimeLog?.({
+          kind: 'worker.exited',
+          detail: { pid: spawnedChild.pid, exitCode: code, signal },
+        })
+        const stderrFacts = stderr.snapshot()
+        if (stderrFacts.bytes) this.o.onRuntimeLog?.({ kind: 'worker.stderr', detail: stderrFacts })
+        try {
+          this.o.onLifecycle?.('stop', `${workerKey}:${generation}`)
+        } catch {
+          /* passive observer */
         }
-        // The last chunk can still be in the pipe at exit; wait briefly for it, never for long.
-        let recorded = false
-        const record = (): void => {
-          if (recorded) return
-          recorded = true
-          this.lifecycle({ kind: 'worker.exited', detail: { ...exited, stderr: stderr.lines() } })
-        }
-        const pipe = spawnedChild.stderr
-        if (!pipe || pipe.destroyed || pipe.readableEnded) record()
-        else {
-          pipe.once('close', record)
-          setTimeout(record, 250).unref()
-        }
-        if (startupFinished) {
+        if (startupFinished && helloReceived) {
           slot.link = undefined
           if (!slot.intentionalExit) this.crashed(workerKey)
           slot.exitRecovery = Promise.resolve()
@@ -619,7 +617,7 @@ export class WorkerPool {
         }
         failStarting(
           new Error(
-            `worker ${workerKey} exited before hello (${code === null ? 'signal' : `code ${code}`}${signal ? `, ${signal}` : ''})`,
+            `worker ${workerKey} exited before hello${bootFailure.code ? `: ${bootFailure.code}` : ''} (${code === null ? 'signal' : `code ${code}`}${signal ? `, ${signal}` : ''})`,
           ),
         )
       })
@@ -632,17 +630,23 @@ export class WorkerPool {
     return slot.starting
   }
 
-  /** Diagnostics must not change the outcome of what they describe. */
-  private lifecycle(record: WorkerLifecycleRecord): void {
-    try {
-      this.o.onLifecycle?.(record)
-    } catch {
-      // The runtime log is best effort.
-    }
-  }
-
   acquireSharedWorker(): Promise<WorkerLink> {
     return this.acquireWorker('@shared', { kind: 'session' })
+  }
+
+  /** Explicit retry, also used after configuration or package inputs change. */
+  retryWorkerBoot(): void {
+    this.bootFailures.reset()
+  }
+
+  onBootRetry(listener: () => void): () => void {
+    return this.bootFailures.onReset(listener)
+  }
+
+  noteRuntimeTarget(digest: string): void {
+    if (digest === this.runtimeTargetDigest) return
+    this.runtimeTargetDigest = digest
+    this.retryWorkerBoot()
   }
 
   /** Whether `link` is the live worker that currently carries `sessionKey`'s channel. */
@@ -666,6 +670,7 @@ export class WorkerPool {
 
   /** Apply a new default for workers acquired after this point. Live links retain their snapshot. */
   reloadProfile(selected: WorkerProfile): void {
+    if (selected.profile.hash !== this.o.profile.hash) this.retryWorkerBoot()
     this.o.profile = selected.profile
     this.o.profileFile = selected.profileFile
   }
@@ -744,14 +749,23 @@ export class WorkerPool {
   }
 
   /** Resource-control helpers must not block provider setup; only Host-bearing workers do. */
-  hasHostActivity(): boolean {
-    return [...this.slots.values()].some(
-      (slot) => !slot.resourceControl && (slot.link?.alive || slot.starting !== undefined),
+  hasHostActivity(workerKey?: string): boolean {
+    const slots = workerKey === undefined ? [...this.slots.values()] : [this.slots.get(workerKey)]
+    return slots.some(
+      (slot) => slot && !slot.resourceControl && (slot.link?.alive || slot.starting !== undefined),
     )
   }
 
   isQuarantined(workerKey: string): boolean {
     return this.quarantined.has(workerKey)
+  }
+
+  resetSessionRequests(sessionKey: string): void {
+    for (const slot of this.slots.values()) slot.link?.resetSessionRequests(sessionKey)
+  }
+
+  revokeSessionRequests(sessionKey: string): void {
+    for (const slot of this.slots.values()) slot.link?.revokeSessionRequests(sessionKey)
   }
 
   /** Test-only equivalent of an idle eviction, for the one worker key idle eviction never touches:
@@ -842,23 +856,7 @@ export class WorkerPool {
   ): Promise<boolean> {
     const slot = this.slots.get(sessionKey)
     if (!slot || slot.generation !== generation) return true
-    const child = slot.child
-    if (!child || child.exitCode !== null || child.signalCode !== null) return true
-    return new Promise<boolean>((resolve) => {
-      let settled = false
-      let timer: ReturnType<typeof setTimeout> | undefined
-      const onExit = (): void => finish(true)
-      const finish = (exited: boolean): void => {
-        if (settled) return
-        settled = true
-        if (timer !== undefined) clearTimeout(timer)
-        if (!exited) child.off('exit', onExit)
-        resolve(exited)
-      }
-      child.once('exit', onExit)
-      timer = setTimeout(() => finish(false), timeoutMs)
-      timer.unref()
-    })
+    return waitForWorkerExit(slot.child, timeoutMs)
   }
 
   /**
@@ -880,7 +878,7 @@ export class WorkerPool {
       if (!slot || !channel) continue
       slot.channels.delete(key)
       slot.sessions.delete(key)
-      void channel.closeSession(reason).catch(() => undefined)
+      void channel.closeSession(reason).catch(bestEffort(this.o.onRuntimeLog, 'worker-session-retire'))
     }
   }
 
@@ -903,9 +901,7 @@ export class WorkerPool {
   async waitForExitRecovery(): Promise<void> {
     await Promise.all(
       [...this.slots.values()].map(async (slot) => {
-        const child = slot.child
-        if (child?.exitCode === null && child.signalCode === null)
-          await new Promise<void>((resolve) => child.once('exit', () => resolve()))
+        await waitForWorkerExit(slot.child)
         // The pool's exit listener is registered before this waiter, so it has assigned
         // exitRecovery by the time the promise above resolves.
         await slot.exitRecovery
@@ -940,6 +936,7 @@ export class WorkerPool {
   private cancelStarting(): void {
     for (const slot of this.slots.values()) {
       if (!slot.starting) continue
+      slot.intentionalExit = true
       slot.failStarting?.(new Error('worker pool shut down during startup'))
     }
   }

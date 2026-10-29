@@ -255,6 +255,34 @@ describe('RpcConnection', () => {
     await expect(c.notify('x', {})).rejects.toBeInstanceOf(TransportClosed)
   })
 
+  it('carries the server error that preceded a drop on the TransportClosed it causes', async () => {
+    const reasons: unknown[] = []
+    const ft = fakeTransport(() => {})
+    const c = new RpcConnection(ft.factory, {
+      requestTimeoutMs: 1000,
+      onClose: (info) => reasons.push(info.error),
+    })
+    await c.connect()
+    const p = c.request('x', {})
+    ft.handlers.onMessage({
+      jsonrpc: '2.0',
+      id: null as unknown as JsonRpcId,
+      error: { code: -32001, message: 'OVERLOADED', data: { code: 'OVERLOADED' } },
+    })
+    ft.handlers.onClose({ reason: 'eof' })
+    const error = await p.catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(TransportClosed)
+    const cause = (error as TransportClosed).info.error
+    expect(cause).toBeInstanceOf(JsonRpcError)
+    expect(cause).toMatchObject({ code: -32001, data: { code: 'OVERLOADED' } })
+    expect(reasons).toEqual([cause])
+    // The reason belongs to that connection: a reconnect starts without it.
+    await c.connect()
+    const next = c.request('x', {})
+    ft.handlers.onClose({ reason: 'eof' })
+    expect(((await next.catch((e: unknown) => e)) as TransportClosed).info.error).toBeUndefined()
+  })
+
   // The tests below exist to pin the correlate-by-id invariant itself: replacing the per-request
   // id with a constant has to turn them red. That only works while two or more requests are in
   // flight at the same time — with at most one outstanding request, an id is never actually used.

@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { isAdminModelAdapter } from '../src/index.js'
 
 const indexSrc = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8')
 const schemaDefNames = (file: string): string[] =>
@@ -12,17 +13,18 @@ const schemaDefNames = (file: string): string[] =>
       }
     ).$defs,
   )
-// Pull the names out of the two `export type { … } from '../gen/ts/<doc>.js'` blocks in index.ts.
-// Types are erased at runtime and never appear on the module object, so the source file is the only
-// place to read them — which is exactly the side this guard exists to watch.
+// A schema can have several export blocks; value schemas also export their same-named type.
 const reexportedTypesFrom = (genModule: string): string[] => {
-  const re = new RegExp(String.raw`export type \{([^}]*)\} from '\.\./gen/ts/${genModule}\.js'`)
-  const m = re.exec(indexSrc)
-  if (!m) throw new Error(`no type re-export block from ../gen/ts/${genModule}.js found in index.ts`)
-  return (m[1] as string)
-    .split(',')
-    .map((x) => x.trim())
-    .filter(Boolean)
+  const re = new RegExp(String.raw`export(?: type)? \{([^}]*)\} from '\.\./gen/ts/${genModule}\.js'`, 'g')
+  const blocks = [...indexSrc.matchAll(re)]
+  if (!blocks.length) throw new Error(`no re-export block from ../gen/ts/${genModule}.js found in index.ts`)
+  return blocks
+    .flatMap((match) =>
+      match[1]!
+        .split(',')
+        .map((name) => name.trim())
+        .filter(Boolean),
+    )
     .sort()
 }
 
@@ -59,33 +61,132 @@ describe('protocol src boundary', () => {
     expect(Object.keys(mod).sort()).toEqual(
       [
         'AGNES_ERRORS',
-        // The two refusal classes travel with the validators they are thrown by: a caller that
-        // reaches validateUserAttachments through this package has to be able to tell the refusal
-        // apart by type, and `instanceof` only matches the class the thrower actually used.
-        'AttachmentValidationError',
+        'PROFILE_DECISION_JOURNAL_PREFIX',
+        'isProfileDecisionJournal',
+        'profileDecisionJournalKey',
+        'PLUGIN_STREAM_PATH',
+        'PLUGIN_STREAM_OPEN_PATH',
+        'PLUGIN_STREAM_SOURCE_PATH',
+        'PLUGIN_STREAM_SOURCE_OPEN_PATH',
+        'PLUGIN_STREAM_HEADER_BYTES',
+        'PLUGIN_STREAM_MAX_BYTES',
+        'validateStreamDeclaration',
+        'transportCapabilityProblems',
+        'validatePluginStreamOpen',
+        'validatePluginStreamGrant',
+        'validatePluginStreamHello',
+        'validatePluginStreamJsonFrame',
+        'validateManagedServiceReady',
+        'validateManagedServiceDescriptor',
+        'encodePluginStreamBinary',
+        'decodePluginStreamBinary',
+
+        'APPROVAL_REASONS',
+        'AutoReviewConfig',
+        'ToolReviewFact',
+        'WorkbenchEvidenceItem',
+        'automaticPermissionDecision',
+        'permissionEffectAdmission',
+        'isPermissionPurpose',
+        'samePermissionContext',
+        'publicErrorCode',
+        'publicErrorContract',
+        'publicErrorCopy',
+        'publicErrorHelp',
+        'publicErrorMessageKey',
+        'publicErrorReason',
+        'publicRejectionRpc',
+        'readWorkbenchEvidence',
+        'compilePluginConfig',
+        'redactPluginConfig',
+        'resolvePluginMetadata',
+        'validatePluginMetadata',
+        'PLUGIN_SECRET_REF_PATTERN',
+        'validateReferenceSelections',
+        'ADMIN_METHODS',
+        'APP_SERVER_VERSION',
+        'APP_SERVER_SCHEMA',
+        'AppServerError',
+        'AppServerErrorCause',
+        'safeDiagnosticRecord',
+        'diagnosticRecords',
+        'describeValidationErrors',
+        'observeDiagnostics',
+        'normalizeRpcError',
+        'errorMessageKey',
+        'SESSION_VERSION_CODES',
+        'sessionVersionNotice',
+        'httpRpcError',
+        'CHILD_ENGINE_ROW_IDS',
+        'CHILD_ENGINE_CAPABILITIES',
+        'CLIENT_PLATFORM_IMPORTS',
+        'parseChildEngineSettings',
+        'METHOD_TIERS',
+        'ChildEnginesSaveParams',
+        'ChildEnginesState',
+        'DISABLED_CHILD_ENGINES',
+        'RuntimeAdminEmpty',
+        'RuntimeAdminSnapshot',
+        'AuxiliaryModelTarget',
+        'AutomaticModelTarget',
+        'AuxiliaryModelSlots',
+        'ModelSlotsSnapshot',
+        'RuntimePublicationReport',
+        'RuntimeSecurityStatus',
+        'parseSessionBundles',
+        'parseSystemPromptAppend',
+        'SYSTEM_PROMPT_APPEND_MAX',
+        'parseAgentRef',
+        'AgentPlan',
+        'AgentResolveParams',
+        'ApplicationAdoptParams',
+        'ApplicationClearParams',
+        'ApplicationConfigSnapshot',
+        'ApplicationPreview',
+        'ApplicationPreviewParams',
+        'ApplicationSelection',
+        'ApplicationState',
+        'PresentationRoleSelection',
+        'PresentationRoleSelections',
+        'PresentationRoleState',
+        'isAdminLoop',
+        'isAdminModelAdapter',
+        'isSessionDefaults',
+        'isSessionDefaultsSnapshot',
+        'parseLoopSelection',
+        'parseLoopSpecifier',
+        'pluginFailureHelp',
         'decodeAttachmentData',
-        'SafeImageError',
         'USER_MESSAGE_ATTACHMENT_LIMITS',
         'validateUserAttachments',
         'fromAcpPrompt',
         'toAcpPrompt',
-        'attachmentForm',
-        'containsAttachmentRef',
-        'downgradeBlock',
-        'downgradeEvent',
-        'downgradeTimeline',
-        'isInlineAttachment',
-        'isReferenceBlock',
         'SESSION_TITLE_EVENT',
         'SessionTitleRecord',
+        'SessionRuntimeDescriptor',
+        'SessionRuntimeParams',
+        'SessionIntegrityParams',
+        'SessionIntegrityStatus',
+        'SessionToolsParams',
+        'SessionToolsResult',
+        'CapabilitySource',
+        'CapabilityReason',
+        'SessionCapability',
+        'SessionCapabilitySet',
+        'SessionCapabilityInfo',
+        'CompositionCapabilitySnapshot',
+        'readChildEngineSettings',
+        'readEngineDocument',
+        'readSdkEngineDocument',
         'readSessionTitle',
         'minimumContextBudget',
         'modelImageInputError',
+        'decodeSafeImageBytes',
         'decodeSafeImages',
         'USER_MESSAGE_IMAGE_LIMITS',
+        'USER_IMAGE_ORIGINAL_LIMITS',
         'userImagePolicy',
         'BRIDGE_ERRORS',
-        'BATCH_ITEM_SESSION_PATTERN',
         'validateServiceCapability',
         'validateSurfaceArtifact',
         'validateSurfaceConfigValue',
@@ -118,6 +219,13 @@ describe('protocol src boundary', () => {
         'validateProjectionCapability',
         'validateProjectionReadResult',
         'validateRequestMedia',
+        'boundedUiJson',
+        'componentDataValid',
+        'uiDataBinding',
+        'uiObject',
+        'validIntelligentSurface',
+        'validIntelligentSurfaceProjection',
+        'validUiComponentDeclaration',
         'validateActor',
         'validateAction',
         'validateTarget',
@@ -134,19 +242,33 @@ describe('protocol src boundary', () => {
         'AGNES_NS',
         'AI_ERROR_CODES',
         'ARTIFACT_READ_RPC_MAX_BYTES',
-        'ATTACHMENT_REFUSAL_CODES',
-        'ATTACHMENT_UPLOAD_CHUNK_BYTES',
-        'USER_ATTACHMENT_THUMBNAIL',
+        'ARTIFACT_REGISTERED_EVENT',
+        'ATTACHMENT_ERROR_CODES',
+        'AttachmentError',
+        'attachmentLink',
+        'attachmentErrorCode',
+        'storedAttachment',
+        'SESSION_ARTIFACT_ROOT_EVENT_TYPES',
+        'sessionArtifactRoots',
         'CURRENT_V',
         'DEFAULT_JSON_DATA_MAX_BYTES',
+        'DEFAULT_VOICE_SETTINGS',
         'DSH_WEB_CLIENT_SLOT_CATALOG_VERSION',
         'inspectJsonData',
         'isWorkerGeneration',
         'jcs',
+        'jcsChunks',
         'jcsWrite',
+        'JcsByteLimitError',
+        'sha256Hex',
+        'IncrementalSha256',
+        'FILE_UPLOAD_PATH',
+        'FILE_UPLOAD_CHUNK_BYTES',
+        'uploadedAttachment',
         'EVENT_TYPES',
         'EXT_EVENT_PATTERN',
         'EXT_EVENT_PATTERN_SOURCE',
+        'HARNESS_VERSION',
         'HOOK_EVENTS',
         'HOOK_TABLE',
         'JSONRPC_ERRORS',
@@ -158,6 +280,24 @@ describe('protocol src boundary', () => {
         'SESSION_FORMAT',
         'SLOT_NAMES',
         'STOP_REASON_TABLE',
+        'ScheduleHistoryEntry',
+        'ScheduleRun',
+        'ScheduleRunOutcome',
+        'ScheduleSelector',
+        'ScheduleTarget',
+        'ScheduleView',
+        'SchedulesArchiveParams',
+        'SchedulesArchiveResult',
+        'SchedulesControlParams',
+        'SchedulesControlResult',
+        'SchedulesHistoryParams',
+        'SchedulesHistoryResult',
+        'SchedulesReceiptParams',
+        'SchedulesReceiptResult',
+        'SchedulesListParams',
+        'SchedulesListResult',
+        'SchedulesUpsertParams',
+        'SchedulesUpsertResult',
         'UI_HISTORY_DEFAULT_LIMIT',
         'UI_HISTORY_MAX_LIMIT',
         'UI_OPENING_DEFAULT_MAX_NODES',
@@ -170,9 +310,21 @@ describe('protocol src boundary', () => {
         'UI_SLOT_NAMES',
         'UI_SLOT_TABLE',
         'ULID_PATTERN',
+        'VOICE_AUDIO_MAX_BASE64',
+        'VOICE_CALL_TIMEOUT_MS',
+        'VOICE_LINK_TIMEOUT_MS',
+        'VOICE_SEGMENT_MAX_SECONDS',
+        'VOICE_SEGMENT_SLACK_SECONDS',
+        'VOICE_SPEAK_MAX_CHARS',
+        'VOICE_SPEECH_MAX_BASE64',
+        'VOICE_TRANSCRIPT_MAX_CHARS',
         'WEB_CLIENT_MODULE_SLOT_NAMES',
         'checkSequence',
-        'describeValidationErrors',
+        'childEngineRowConfig',
+        'childEngineSettingsError',
+        'commandAllowed',
+        'defaultLoop',
+        'defaultModelAdapter',
         'fromAcpOptionKind',
         'getHarnessMeta',
         'isDateTime',
@@ -239,11 +391,16 @@ describe('protocol src boundary', () => {
   // checks that each really is a $ref rather than a second independent definition.
   const ALIASES_OF_SESSION: Record<string, string[]> = {
     'agnes-v1': [
+      'DecisionResponse',
+      'DecisionCommandReceipt',
+      'DecisionSnapshot',
       'JsonValue',
       'ContentBlock',
+      'SystemInput',
       'Actor',
       'SurfaceOp',
       'EventEnvelope',
+      'ExtensionEventType',
       'BudgetState',
       'ArtifactRef',
       'ArtifactJob',
@@ -265,6 +422,20 @@ describe('protocol src boundary', () => {
             !(
               doc === 'agnes-v1' &&
               [
+                'AuthoringFile',
+                'AuthoringOrigin',
+                'AuthoringTests',
+                'AuthoringCandidate',
+                'AuthoringCandidateList',
+                'AuthoringCreateParams',
+                'AuthoringWriteParams',
+                'AuthoringTestParams',
+                'AuthoringSubmitParams',
+                'AuthoringApproveParams',
+                'AuthoringRejectParams',
+                'AuthoringShowParams',
+                'AuthoringProvenance',
+                'AuthoringCandidateSummary',
                 'PackageActivationTrust',
                 'PackageActivationRequest',
                 'PackageRollbackTarget',
@@ -278,6 +449,11 @@ describe('protocol src boundary', () => {
                 'PackageInspectParams',
                 'PackageInstallParams',
                 'PackageListParams',
+                'PluginGenerationStatus',
+                'PluginPublicationReport',
+                'PluginPublicationStatusResult',
+                'SessionGenerationMigrationParams',
+                'SessionGenerationMigrationResult',
                 'PackageListResult',
                 'SkinReadParams',
                 'ClientModuleReadParams',
@@ -315,6 +491,21 @@ describe('protocol src boundary', () => {
                 // SessionSetModelParams.slot $refs model.json's SlotName rather than retyping its
                 // seven-value enum a second time; SlotName is already on the surface via model.ts.
                 'SlotName',
+                // These generated schemas/types are exposed by the dedicated auto-review module.
+                'AutoReviewConfig',
+                'ToolReviewFact',
+                'WorkbenchEvidenceItem',
+                'automaticPermissionDecision',
+                'isPermissionPurpose',
+                'samePermissionContext',
+                'publicErrorCode',
+                'publicErrorContract',
+                'publicErrorCopy',
+                'publicErrorHelp',
+                'publicErrorMessageKey',
+                'publicErrorReason',
+                'publicRejectionRpc',
+                'readWorkbenchEvidence',
               ].includes(n)
             ),
         )
@@ -361,6 +552,7 @@ describe('Task20 generated type exports', () => {
     'deploy-manifest',
     'jobs',
     'surface',
+    'intelligent-ui',
     'package-admin',
     'resource-control',
   ])('%s owns every non-alias type on the root surface', (file) => {
@@ -403,5 +595,49 @@ describe('Task21 schema ownership', () => {
     expect(readFileSync(new URL('../schema/channel.json', import.meta.url), 'utf8')).not.toContain(
       'agnes-v1.json',
     )
+  })
+})
+
+describe('admin model adapter catalog guard', () => {
+  const adapter = {
+    id: 'adapter',
+    version: '1.0.0',
+    wireApi: 'wire',
+    sourcePackage: '@acme/adapter',
+    capabilities: { imageInput: false, tools: true, streaming: true },
+    models: [{ id: 'm', label: 'M', route: 'r' }],
+  }
+  const withCapabilities = (extra: Record<string, unknown>) => ({
+    ...adapter,
+    capabilities: { ...adapter.capabilities, ...extra },
+  })
+
+  it('accepts the three required capabilities alone', () => {
+    expect(isAdminModelAdapter(adapter)).toBe(true)
+  })
+
+  it('accepts the optional payload and payloadOnly capabilities', () => {
+    expect(isAdminModelAdapter(withCapabilities({ payload: true, payloadOnly: true }))).toBe(true)
+    expect(isAdminModelAdapter(withCapabilities({ payload: false }))).toBe(true)
+    expect(isAdminModelAdapter(withCapabilities({ payloadOnly: false }))).toBe(true)
+  })
+
+  it('rejects a non-boolean payload or payloadOnly', () => {
+    expect(isAdminModelAdapter(withCapabilities({ payload: 'yes' }))).toBe(false)
+    expect(isAdminModelAdapter(withCapabilities({ payloadOnly: 'yes' }))).toBe(false)
+    expect(isAdminModelAdapter(withCapabilities({ payload: 1 }))).toBe(false)
+    expect(isAdminModelAdapter(withCapabilities({ payloadOnly: null }))).toBe(false)
+  })
+
+  it('rejects any other capability key', () => {
+    expect(isAdminModelAdapter(withCapabilities({ batch: true }))).toBe(false)
+    expect(isAdminModelAdapter(withCapabilities({ payload: true, batch: true }))).toBe(false)
+  })
+
+  it('still requires the three original capabilities', () => {
+    for (const key of ['imageInput', 'tools', 'streaming']) {
+      const { [key]: _omitted, ...rest } = adapter.capabilities as Record<string, boolean>
+      expect(isAdminModelAdapter({ ...adapter, capabilities: { ...rest, payload: true } }), key).toBe(false)
+    }
   })
 })

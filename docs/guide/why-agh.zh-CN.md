@@ -8,6 +8,20 @@
 
 做一个业务 Agent，需要连接模型与系统，也需要把任务记录、授权交互和使用界面组织起来。AGH 将这些共同能力放进一套可扩展的运行基础，让开发者围绕业务问题构建工具、知识和界面。
 
+## 比较设计取舍
+
+下表比较源码中的架构选择，不做性能排名。dsh 与 pi 的链接固定了阅读版本；本次对比没有运行竞品或付费模型基准，项目仍会演进。
+
+| 路径 | 适合的起点 | AGH 的选择与成本 |
+| --- | --- | --- |
+| [dsh](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/boot/hmr/src/index.ts) | Cordis 模块/配置重载支持开发迭代，[系统提示组合器](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/core/system-prompt/src/index.ts)组织分节与角色覆盖。 | AGH 把持久的会话代码快照设为明确合同，与模块重载分开。新旧版本并存，需要保留存储与生命周期协调，动态资源仍刷新；这不宣称 dsh 无法实现其他版本设计。 |
+| [pi 编码 Agent](https://github.com/earendil-works/pi/blob/ce950d78f424dcaf9f5d6a03ce80ab141130eb1d/packages/coding-agent/src/core/session-manager.ts) | JSONL 会话管理器提供分支与对话历史，可作为编码客户端基础。 | AGH 加入共享认证 App Server、可安装业务组合、候选审阅与界面证据，也增加控制面和包管理复杂度；不需要这些界面时，可以选择更小的客户端。 |
+| [LangGraph 持久化](https://docs.langchain.com/oss/python/langgraph/persistence) | Thread、checkpoint 与 pending writes 支持有状态的图应用。 | AGH 在插件 Agent Loop 与账本效果之上提供业务 Agent 产品界面；图库把更多应用策略与 UI 组合留给集成者。Checkpoint 或 AGH 账本都不与任意外部系统组成原子事务。 |
+
+需要独立安装的业务 Agent、持续任务的版本保留、人工审阅后的成长和用户可检查的证据时，可以选择 AGH。偏好某个编码交互模型，或准备自行组合这些产品职责时，可选择专注的编码 Harness 或图库。模型、工具、延迟与隔离需自行验证，不能从表格推断。
+
+AGH 的现行合同见[固定代码与动态资源](../develop/architecture-plugins.zh-CN.md#pinned-code-live-resources)、[候选发布](../extend/agent-built-plugins.zh-CN.md)、[App Server](../reference/app-server.zh-CN.md)及[执行证据](fact-chain.zh-CN.md)。[三个演示](demos.zh-CN.md)使用合成数据验证流程。普通插件仍是进程内受信代码，崩溃后的外部效果可能仍不确定。
+
 ## 一套基础，组合你的应用
 
 AGH 面向 Forward Deployed Engineering（FDE）：工程师深入业务现场，通过系统集成、验证和迭代完成交付。每个现场都有自己的数据、流程和岗位，AGH 提供将这些差异组织为扩展的方式。
@@ -19,6 +33,8 @@ AGH 面向 Forward Deployed Engineering（FDE）：工程师深入业务现场�
 | 岗位界面 | Web 前端槽位、受限服务调用 | 展示业务状态，连接用户交互与服务结果 |
 | 持续工作 | 共享后台、会话历史与恢复入口 | 在 CLI、Web 和 SDK 中找到并继续任务 |
 | 执行控制 | 包信任、工具审批、执行约束 | 明确加载什么代码、允许什么操作、如何检查结果 |
+
+先看[演示脚本](demos.zh-CN.md)：业务 Agent 即插件、热升级保留进行中的工作，以及 Agent 构建可复用能力。开发者可从[五个教学示例](../../examples/fde/README.zh-CN.md)学习工具、面板、审批、报告和定时自动化。
 
 每一部分都有独立的入口与示例。你可以先接入一个查询工具，再补充 Skill 和业务面板，逐步形成适合现场的应用。
 
@@ -54,12 +70,6 @@ flowchart LR
 让人能够检查与控制执行，是 AGH 的工程重点。包信任绑定具体内容与能力声明，工具操作通过审批与执行策略约束，会话记录保留任务过程，便于核对结果和处理中断。
 
 普通第三方插件运行在受信进程中；选择插件时需要审核其代码与来源。各机制的职责和平台适用范围见[安全与信任](security.zh-CN.md)。
-
-## 从数字业务走向设备现场
-
-设备通过 MHS（Model Hardware Standard）接入，这是 AGH 自己的设备协议，独立于 MCP。设备向 AgnesHub 登记状态、工具和数据源，大脑读取设备状态、调用设备工具，让设备状态、人工确认和结果进入巡检、仪器协作和现场运维的任务流程。
-
-[不接硬件先试用设备 →](mhs.zh-CN.md)
 
 ## 带着你的问题开始
 

@@ -1,0 +1,47 @@
+{
+  "name": "@agnes/time-context",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/time-context",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "hooks",
+          "projections"
+        ],
+        "capabilities": {
+          "hooks": [
+            "context"
+          ],
+          "projections": [
+            {
+              "name": "clock",
+              "inputEventTypes": [
+                "turn/start",
+                "turn/end"
+              ],
+              "maxStateBytes": 65536
+            }
+          ]
+        },
+        "metadata": {
+          "displayName": "Current time context",
+          "summary": "Includes the current time and timezone so the agent can interpret time-sensitive requests.",
+          "description": "Includes the current time and timezone so the agent can interpret time-sensitive requests.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "当前时间上下文",
+              "summary": "带入当前时间与时区，帮助 Agent 理解与时间相关的请求。",
+              "description": "带入当前时间与时区，帮助 Agent 理解与时间相关的请求。"
+            }
+          }
+        }
+      }
+    ]
+  }
+}

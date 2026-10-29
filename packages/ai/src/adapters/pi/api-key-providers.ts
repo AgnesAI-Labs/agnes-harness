@@ -6,6 +6,10 @@ import {
   type Provider as PiProvider,
 } from '@earendil-works/pi-ai'
 import { isUsableCredential } from '../../credentials.js'
+import { nativeToolCallFormats } from '../../decode/prose-calls.js'
+import { JEV_WIRE_API } from '../jev/index.js'
+import { OPENAI_AUDIO_WIRE_API } from '../openai-audio/wire.js'
+import type { ManualRoute } from './index.js'
 import { PiAdapter, type PiStream } from './index.js'
 import { KNOWN_THINKING_CORRECTIONS } from './known-thinking-corrections.js'
 
@@ -22,6 +26,16 @@ export type ApiKeyProviderId =
   | 'minimax'
   | 'xai'
   | 'agnes-ai'
+  | 'groq'
+  | 'together'
+  | 'cerebras'
+  | 'nvidia'
+  | 'huggingface'
+  | 'moonshotai-cn'
+  | 'zai-coding-cn'
+  | 'typesafe-systemone'
+  | 'openai-audio'
+  | 'openai-compatible'
 
 export type ApiKeyProviderErrorCode =
   | 'UNKNOWN_PROVIDER'
@@ -81,8 +95,17 @@ export type ApiKeyProviderRegistryEntry = Readonly<{
   route: ApiKeyProviderId
   api: string
   baseUrl: string
+  /** Former default addresses, exactly as saved: a saved account at one reads at `baseUrl`. */
+  retiredBaseUrls?: readonly string[]
   credentialRef: `secret://${ApiKeyProviderId}/default`
   sourceProviderId: string
+  /**
+   * Config-time marker mirrored from the model-adapter registration. A payload-only entry serves no
+   * conversation catalogue: it stays out of chat projections, and runtime exclusion keeps reading
+   * the adapter registration's own capabilities. A declared-models entry chats, but has no
+   * catalogue either: each account names its own models.
+   */
+  capabilities?: Readonly<{ payloadOnly?: boolean; declaredModels?: boolean }>
   modelsUrl?: string
   createAdapter(options?: ApiKeyAdapterOptions): Promise<PiAdapter>
   /** Present only where the provider publishes a compatible, pinned model-list endpoint. */
@@ -94,6 +117,7 @@ type ProviderSpec = Readonly<{
   displayName: string
   api: string
   baseUrl: string
+  retiredBaseUrls?: readonly string[]
   sourceProviderId: string
   modelsUrl?: string
   load: () => Promise<PiProvider>
@@ -163,8 +187,9 @@ const specs: readonly ProviderSpec[] = [
   {
     id: 'kimi-coding',
     displayName: 'Kimi Coding Plan',
-    api: 'anthropic-messages',
-    baseUrl: 'https://api.kimi.com/coding',
+    api: 'openai-completions',
+    baseUrl: 'https://api.kimi.com/coding/v1',
+    retiredBaseUrls: ['https://api.kimi.com/coding', 'https://api.kimi.com/coding/'],
     sourceProviderId: 'kimi-coding',
     load: () => load(import('@earendil-works/pi-ai/providers/kimi-coding'), 'kimiCodingProvider'),
   },
@@ -207,6 +232,62 @@ const specs: readonly ProviderSpec[] = [
     baseUrl: 'https://api.agnes-ai.cn/v1',
     sourceProviderId: 'agnes-ai',
     load: () => load(import('./providers/agnes-ai.js'), 'agnesAiProvider'),
+  },
+  {
+    id: 'groq',
+    displayName: 'Groq',
+    api: 'openai-completions',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    sourceProviderId: 'groq',
+    load: () => load(import('@earendil-works/pi-ai/providers/groq'), 'groqProvider'),
+  },
+  {
+    id: 'together',
+    displayName: 'Together AI',
+    api: 'openai-completions',
+    baseUrl: 'https://api.together.ai/v1',
+    sourceProviderId: 'together',
+    load: () => load(import('@earendil-works/pi-ai/providers/together'), 'togetherProvider'),
+  },
+  {
+    id: 'cerebras',
+    displayName: 'Cerebras',
+    api: 'openai-completions',
+    baseUrl: 'https://api.cerebras.ai/v1',
+    sourceProviderId: 'cerebras',
+    load: () => load(import('@earendil-works/pi-ai/providers/cerebras'), 'cerebrasProvider'),
+  },
+  {
+    id: 'nvidia',
+    displayName: 'NVIDIA',
+    api: 'openai-completions',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    sourceProviderId: 'nvidia',
+    load: () => load(import('@earendil-works/pi-ai/providers/nvidia'), 'nvidiaProvider'),
+  },
+  {
+    id: 'huggingface',
+    displayName: 'Hugging Face',
+    api: 'openai-completions',
+    baseUrl: 'https://router.huggingface.co/v1',
+    sourceProviderId: 'huggingface',
+    load: () => load(import('@earendil-works/pi-ai/providers/huggingface'), 'huggingfaceProvider'),
+  },
+  {
+    id: 'moonshotai-cn',
+    displayName: 'Moonshot / Kimi (moonshot.cn)',
+    api: 'openai-completions',
+    baseUrl: 'https://api.moonshot.cn/v1',
+    sourceProviderId: 'moonshotai-cn',
+    load: () => load(import('@earendil-works/pi-ai/providers/moonshotai-cn'), 'moonshotaiCnProvider'),
+  },
+  {
+    id: 'zai-coding-cn',
+    displayName: 'GLM Coding (bigmodel.cn)',
+    api: 'openai-completions',
+    baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+    sourceProviderId: 'zai-coding-cn',
+    load: () => load(import('@earendil-works/pi-ai/providers/zai-coding-cn'), 'zaiCodingCnProvider'),
   },
 ] as const
 
@@ -269,7 +350,7 @@ export function modelRecord(
           compat: structuredClone(model.compat) as Exclude<ModelRecord['compat'], undefined>,
         }
       : {}),
-    toolCallFormats: ['native'],
+    toolCallFormats: nativeToolCallFormats(model.id),
     thinkingReplay: 'native',
     contract_id: null,
   }
@@ -286,11 +367,11 @@ function checkedModelIds(ids: readonly string[] | undefined): ReadonlySet<string
   return selected
 }
 
-async function createAdapter(spec: ProviderSpec, options: ApiKeyAdapterOptions = {}): Promise<PiAdapter> {
+async function providerRoutes(spec: ProviderSpec, modelIds?: readonly string[]): Promise<ManualRoute[]> {
   const provider = await spec.load()
   if (provider.id !== spec.sourceProviderId || provider.baseUrl !== spec.baseUrl)
     throw new ApiKeyProviderError('PROVIDER_CONTRACT')
-  const selected = checkedModelIds(options.modelIds)
+  const selected = checkedModelIds(modelIds)
   const models = provider
     .getModels()
     .filter(
@@ -302,25 +383,85 @@ async function createAdapter(spec: ProviderSpec, options: ApiKeyAdapterOptions =
     )
     .map((model) => modelRecord(spec, model))
   if (models.length === 0) throw new ApiKeyProviderError('NO_MODELS')
+  return [
+    {
+      route: spec.id,
+      api: spec.api,
+      baseUrl: spec.baseUrl,
+      credentialRef: `secret://${spec.id}/default`,
+      models,
+    },
+  ]
+}
+
+async function createAdapter(spec: ProviderSpec, options: ApiKeyAdapterOptions = {}): Promise<PiAdapter> {
   return new PiAdapter({
     id: spec.id,
-    manualRoutes: [
-      {
-        route: spec.id,
-        api: spec.api,
-        baseUrl: spec.baseUrl,
-        credentialRef: `secret://${spec.id}/default`,
-        models,
-      },
-    ],
+    manualRoutes: await providerRoutes(spec, options.modelIds),
     ...(options.streamImpl ? { streamImpl: options.streamImpl } : {}),
     ...(options.maxRetries === undefined ? {} : { maxRetries: options.maxRetries }),
     ...(options.sleep ? { sleep: options.sleep } : {}),
   })
 }
 
-export const API_KEY_PROVIDER_REGISTRY: readonly ApiKeyProviderRegistryEntry[] = Object.freeze(
-  specs.map((spec) =>
+/**
+ * TypeSafe System One answers a payload instead of chat messages, so it has no pi catalogue to pin
+ * against: asking this entry for a chat adapter is a wiring mistake, refused with PROVIDER_CONTRACT.
+ */
+const JEV_PROVIDER: ApiKeyProviderRegistryEntry = Object.freeze({
+  id: 'typesafe-systemone',
+  displayName: 'TypeSafe System One',
+  availability: 'available',
+  route: 'typesafe-systemone',
+  api: JEV_WIRE_API,
+  baseUrl: 'https://openrouter.ai/api/v1',
+  credentialRef: 'secret://typesafe-systemone/default',
+  sourceProviderId: 'typesafe-systemone',
+  capabilities: { payloadOnly: true },
+  createAdapter: () => Promise.reject(new ApiKeyProviderError('PROVIDER_CONTRACT')),
+})
+
+/**
+ * Speech to text and text to speech answer a payload, so this entry has no pi catalogue either. The
+ * default address is SiliconFlow's; an account may point it at any OpenAI-style audio API.
+ */
+const OPENAI_AUDIO_PROVIDER: ApiKeyProviderRegistryEntry = Object.freeze({
+  id: 'openai-audio',
+  displayName: 'Voice',
+  availability: 'available',
+  route: 'openai-audio',
+  api: OPENAI_AUDIO_WIRE_API,
+  baseUrl: 'https://api.siliconflow.cn/v1',
+  credentialRef: 'secret://openai-audio/default',
+  sourceProviderId: 'openai-audio',
+  capabilities: { payloadOnly: true },
+  createAdapter: () => Promise.reject(new ApiKeyProviderError('PROVIDER_CONTRACT')),
+})
+
+/**
+ * Any server that speaks OpenAI chat completions at an address the person gives: relays,
+ * aggregators, self-hosted gateways. Nothing is pinned, so there is no default address (the
+ * reserved `.invalid` name stands in for one) and no adapter to build here; each account declares
+ * its models and Host renders their routes.
+ */
+const OPENAI_COMPATIBLE_PROVIDER: ApiKeyProviderRegistryEntry = Object.freeze({
+  id: 'openai-compatible',
+  displayName: 'OpenAI-compatible endpoint',
+  availability: 'available',
+  route: 'openai-compatible',
+  api: 'openai-completions',
+  baseUrl: 'https://endpoint.invalid/v1',
+  credentialRef: 'secret://openai-compatible/default',
+  sourceProviderId: 'openai-compatible',
+  capabilities: { declaredModels: true },
+  createAdapter: () => Promise.reject(new ApiKeyProviderError('PROVIDER_CONTRACT')),
+})
+
+/** The entries backed by a pinned pi catalogue: the ones built into the startup route table. */
+const chatProvider = (entry: ApiKeyProviderRegistryEntry): boolean => !entry.capabilities
+
+export const API_KEY_PROVIDER_REGISTRY: readonly ApiKeyProviderRegistryEntry[] = Object.freeze([
+  ...specs.map((spec) =>
     Object.freeze({
       id: spec.id,
       displayName: spec.displayName,
@@ -328,6 +469,7 @@ export const API_KEY_PROVIDER_REGISTRY: readonly ApiKeyProviderRegistryEntry[] =
       route: spec.id,
       api: spec.api,
       baseUrl: spec.baseUrl,
+      ...(spec.retiredBaseUrls ? { retiredBaseUrls: spec.retiredBaseUrls } : {}),
       credentialRef: `secret://${spec.id}/default` as const,
       sourceProviderId: spec.sourceProviderId,
       ...(spec.modelsUrl ? { modelsUrl: spec.modelsUrl } : {}),
@@ -335,29 +477,41 @@ export const API_KEY_PROVIDER_REGISTRY: readonly ApiKeyProviderRegistryEntry[] =
       ...(spec.fetchModels ? { fetchModels: spec.fetchModels } : {}),
     }),
   ),
-)
+  JEV_PROVIDER,
+  OPENAI_AUDIO_PROVIDER,
+  OPENAI_COMPATIBLE_PROVIDER,
+])
 
 /**
  * The only credential references that an API-key client may leave unbound at startup.  Supplying
  * this set to `createProvider` preserves fail-fast assembly for every other route while letting a
- * first-run UI register all eleven choices before the user has entered any keys.
+ * first-run UI register the chat choices before the user has entered any keys.
  */
 export const API_KEY_CREDENTIAL_REFS: ReadonlySet<string> = new Set(
-  API_KEY_PROVIDER_REGISTRY.map((entry) => entry.credentialRef),
+  API_KEY_PROVIDER_REGISTRY.filter(chatProvider).map((entry) => entry.credentialRef),
 )
 
 /**
- * Creates the complete, fixed API-key route table once at startup.  This never reads a credential
- * and therefore cannot block a first launch; an unconfigured route returns AUTH from PiAdapter
- * before network I/O when the user actually selects it.
+ * Creates the complete, fixed API-key chat route table once at startup.  This never reads a
+ * credential and therefore cannot block a first launch; an unconfigured route returns AUTH from
+ * PiAdapter before network I/O when the user actually selects it.
  */
 export async function createApiKeyProviderAdapters(
   options: ApiKeyAdaptersOptions = {},
 ): Promise<readonly PiAdapter[]> {
   const adapters = await Promise.all(
-    API_KEY_PROVIDER_REGISTRY.map((entry) => entry.createAdapter(options.adapters?.[entry.id])),
+    API_KEY_PROVIDER_REGISTRY.filter(chatProvider).map((entry) =>
+      entry.createAdapter(options.adapters?.[entry.id]),
+    ),
   )
   return Object.freeze(adapters)
+}
+
+/** Catalogue-only input for the public model-adapter factory; no adapter or credentials are created. */
+export async function createApiKeyProviderConfigs(): Promise<
+  readonly { id: string; routes: ManualRoute[] }[]
+> {
+  return Promise.all(specs.map(async (spec) => ({ id: spec.id, routes: await providerRoutes(spec) })))
 }
 
 const byId = new Map(API_KEY_PROVIDER_REGISTRY.map((entry) => [entry.id, entry]))

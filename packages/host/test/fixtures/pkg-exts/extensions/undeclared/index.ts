@@ -1,9 +1,12 @@
-import { defineExtension } from '@agnes/extension-api'
+import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { fixtureTool } from '../../../tool.js'
 
 // Registers a declared name first, then one the manifest does not carry. The first registration is
 // what makes this a rollback case and not only a refusal case.
-export default defineExtension((agnes) => {
-  agnes.registerTool(fixtureTool('fx_declared'))
-  agnes.registerTool(fixtureTool('fx_rogue'))
+export default defineAgnesPlugin({
+  inject: ['tools'],
+  apply(ctx: Context) {
+    ctx.tools.register(fixtureTool('fx_declared'))
+    ctx.tools.register(fixtureTool('fx_rogue'))
+  },
 })

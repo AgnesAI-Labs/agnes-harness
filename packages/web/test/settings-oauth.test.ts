@@ -1,14 +1,12 @@
 // @vitest-environment happy-dom
 
-import { readFileSync } from 'node:fs'
-import { URL as NodeURL } from 'node:url'
 import type { ConfigOAuthInput, ConfigOAuthPrompt, ConfigProvider, ConfigSnapshot } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
+import { createSettingsController, type SettingsController } from '@agnes/web-admin/settings'
+import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { unmountRegion } from '@agnes/web-ui'
-import { type HTMLButtonElement as HappyButton, type HTMLLabelElement as HappyLabel, Window } from 'happy-dom'
+import { type HTMLButtonElement as HappyButton, Window } from 'happy-dom'
 import { afterEach, expect, it, vi } from 'vitest'
-import { setLocaleTranslator } from '../src/locale-bridge.js'
-import { createSettingsController, type SettingsController } from '../src/settings.js'
 import { renderSettingsMarkup } from '../src/settings-region.js'
 import { zhT } from './helpers/locale.js'
 
@@ -45,12 +43,7 @@ async function setup(
   } = {},
 ) {
   window = new Window()
-  window.document.write(
-    readFileSync(new NodeURL('../public/index.html', import.meta.url), 'utf8').replace(
-      /<link rel="stylesheet" href="\/(?:style|antd|tokens)\.css" \/>/g,
-      '',
-    ),
-  )
+  window.document.write('<!doctype html><html><head></head><body><dialog id="config"></dialog></body></html>')
   vi.stubGlobal('document', window.document)
   vi.stubGlobal('window', window)
   vi.stubGlobal('getComputedStyle', window.getComputedStyle.bind(window))
@@ -114,13 +107,15 @@ async function setup(
   activeController = controller
   await controller.open()
   const doc = window.document
-  if (options.snapshot)
-    must([...doc.querySelectorAll('button')].find((b) => b.textContent === '编辑')).click()
-  else must(doc.querySelector<HappyButton>('#config-add-account')).click()
+  if (options.snapshot) must(doc.querySelector<HappyButton>('.config-account-select')).click()
+  else {
+    must(doc.querySelector<HappyButton>('.config-accounts-welcome [data-provider=more]')).click()
+    must(doc.querySelector<HappyButton>('#config-save')).click()
+  }
   expect((doc.getElementById('config-provider') as unknown as HTMLSelectElement).value).not.toBe('')
   ;(doc.getElementById('config-account-name') as unknown as HTMLInputElement).value = 'Work account'
   const panel = must(doc.querySelector('section[aria-label="订阅登录"]'))
-  expect(panel.closest('#account-dialog')).not.toBeNull()
+  expect(panel.closest('.account-page-host, #account-dialog')).not.toBeNull()
   const button = (label: string) =>
     must([...panel.querySelectorAll('button')].find((b) => b.textContent === label))
   return {
@@ -229,8 +224,11 @@ it('allows replacing an unavailable saved OAuth model and revalidates each selec
 
 it('offers subscription controls, keeps polling during manual input and commits the selected model', async () => {
   const h = await setup()
-  const keyLabel = must(h.doc.getElementById('config-api-key')).closest('label') as HappyLabel | null
-  expect(keyLabel?.hidden).toBe(true)
+  // Subscription sign-in needs no key: the whole key field, its label and note, is hidden.
+  const keyField = must(h.doc.getElementById('config-api-key')).closest('.account-key-field') as {
+    hidden: boolean
+  } | null
+  expect(keyField?.hidden).toBe(true)
   expect((h.doc.getElementById('config-base-url') as unknown as HTMLInputElement).disabled).toBe(true)
   h.button('浏览器登录').click()
   await vi.waitFor(() => expect(h.panel.querySelector('a')?.getAttribute('rel')).toBe('noopener noreferrer'))
@@ -249,6 +247,7 @@ it('offers subscription controls, keeps polling during manual input and commits 
     operationId: 'op',
     model: 'gpt-codex',
     defaultSettings: {},
+    networkTimeouts: {},
   })
   expect(h.save).not.toHaveBeenCalled()
   h.controller.close()
@@ -300,6 +299,8 @@ it('closing the account dialog cancels login and stale replies cannot enable sav
   h.button('设备码登录').click()
   await vi.waitFor(() => expect(h.oauth).toHaveBeenCalled())
   must(h.doc.querySelector<HappyButton>('#account-dialog-close')).click()
+  expect(h.doc.getElementById('config-account-discard')?.hasAttribute('hidden')).toBe(false)
+  must(h.doc.querySelector<HappyButton>('#config-account-discard-confirm')).click()
   await vi.waitFor(() => expect(h.oauth).toHaveBeenCalledWith({ action: 'cancel', operationId: 'op' }))
   h.ready()
   await new Promise((resolve) => setTimeout(resolve, 300))
@@ -315,8 +316,8 @@ it('keeps dual-auth controls in the modal and exposes only the provider-supporte
       label: 'Kimi Code',
       authMethods: ['api-key', 'oauth'],
       loginMethods: ['device_code'],
-      api: 'anthropic-messages',
-      baseUrl: 'https://api.kimi.com/coding',
+      api: 'openai-completions',
+      baseUrl: 'https://api.kimi.com/coding/v1',
     },
   })
   expect((h.panel as unknown as HTMLElement).hidden).toBe(true)
@@ -367,7 +368,7 @@ it('submits a blank Copilot enterprise prompt and keeps focus inside the account
       answer: '',
     }),
   )
-  expect(input.closest('#account-dialog')).not.toBeNull()
+  expect(input.closest('.account-page-host, #account-dialog')).not.toBeNull()
   h.controller.close()
 })
 

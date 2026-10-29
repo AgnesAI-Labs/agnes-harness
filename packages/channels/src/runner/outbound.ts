@@ -4,7 +4,8 @@ import type { ChannelAdapter, ChannelMessage, ChatTarget, MessageRef } from '../
 import { type DegradedCap, degrade } from '../degrade.js'
 import { backoffDelays } from './backoff.js'
 import type { RunnerConfig } from './config.js'
-import { contentHash, whatToDraw } from './draw.js'
+import { contentHash, drawSurfaceMessage, whatToDraw } from './draw.js'
+import { historyRefusalText } from './notices.js'
 import type { DeliveryRefRow, RefPart, RefStore } from './ref-store.js'
 import type { SessionCache } from './session-cache.js'
 import { chunkText, TokenBucket } from './throttle.js'
@@ -15,7 +16,7 @@ type Log = {
   error(message: string, meta?: Record<string, unknown>): void
 }
 
-type OutboundSession = Pick<Session, 'id' | 'events' | 'projectUI'>
+type OutboundSession = Pick<Session, 'id' | 'events' | 'projectUI'> & Partial<Pick<Session, 'uiRead'>>
 
 type OutboundDeps = {
   adapter: ChannelAdapter
@@ -32,6 +33,7 @@ type OutboundDeps = {
   noticeRetry?: { attempts?: number; baseMs?: number; maxMs?: number; jitter?: () => number }
   stopSettleMs?: number
   maxDetachedWork?: number
+  onHistoryRefused?: (key: string, error: unknown) => Promise<boolean>
 }
 
 type Watermark = Pick<UITimeline, 'generation' | 'upto'>
@@ -117,7 +119,16 @@ export class Outbound {
   ): Promise<void> {
     const lane = this.lanes.get(sessionKey)
     if (lane === undefined) return Promise.resolve()
-    lane.flushing = lane.flushing.catch(() => undefined).then(() => this.render(sessionKey, lane))
+    lane.flushing = lane.flushing
+      .catch(() => undefined)
+      .then(() => this.render(sessionKey, lane))
+      .catch(async (error: unknown) => {
+        if (!this.isCurrent(sessionKey, lane)) {
+          if (historyRefusalText(error) !== null) return
+          throw error
+        }
+        if (!(await this.dependencies.onHistoryRefused?.(sessionKey, error))) throw error
+      })
     return lane.flushing
   }
 
@@ -181,6 +192,7 @@ export class Outbound {
         }
       } catch (error) {
         if (!this.isCurrent(sessionKey, lane)) return
+        if (await this.dependencies.onHistoryRefused?.(sessionKey, error)) return
         failures++
         this.safeError('channel outbound event pump failed; rebuilding iterator', {
           sessionKey,
@@ -207,6 +219,7 @@ export class Outbound {
     lane.watermark = { generation: timeline.generation, upto: timeline.upto }
 
     const known = this.dependencies.refs.forSession(sessionKey, lane.session.id)
+    const messages: Array<{ id: string; message: ChannelMessage }> = []
     for (const node of timeline.nodes) {
       if (!this.isCurrent(sessionKey, lane)) return
       const message = whatToDraw(node, {
@@ -216,7 +229,30 @@ export class Outbound {
           ? {}
           : { artifactsUrl: this.dependencies.artifactsUrl }),
       })
-      if (message === null) continue
+      if (message !== null) messages.push({ id: node.id, message })
+    }
+    if (lane.session.uiRead) {
+      try {
+        const page = await lane.session.uiRead()
+        let cursor = page.nextCursor
+        while (cursor) {
+          const next = await lane.session.uiRead({ cursor })
+          page.surfaces.push(...next.surfaces)
+          cursor = next.nextCursor
+        }
+        for (const record of page.surfaces)
+          messages.push({
+            id: `surface:${record.surface.id}`,
+            message: drawSurfaceMessage(record, lane.session.id, this.dependencies.cfg.outbound.webUrl),
+          })
+      } catch (error) {
+        const code = (error as { data?: { code?: string } } | undefined)?.data?.code
+        if (code !== 'CAPABILITY_DENIED' && code !== 'METHOD_NOT_FOUND') throw error
+      }
+    }
+    for (const node of messages) {
+      if (!this.isCurrent(sessionKey, lane)) return
+      const message = node.message
       const hash = contentHash(message)
       const previous = known.get(node.id)
       if (previous?.contentHash === hash && previous.complete) continue
@@ -305,10 +341,23 @@ export class Outbound {
       messages.push({ ...message, blocks })
       blocks = []
     }
-    const limit = this.dependencies.limits.textChars
+    const review = message.blocks.some((block) => block.kind === 'approval')
+    const limit = review
+      ? Math.max(
+          1,
+          Math.min(
+            this.dependencies.limits.textChars,
+            Math.floor((this.dependencies.limits.cardBytes - 1024) / 12),
+          ),
+        )
+      : this.dependencies.limits.textChars
     let textChars = 0
     for (const block of message.blocks) {
       if (block.kind !== 'text') {
+        if (review && block.kind === 'approval') {
+          flush()
+          textChars = 0
+        }
         blocks.push(block)
         continue
       }

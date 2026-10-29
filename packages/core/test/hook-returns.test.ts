@@ -15,7 +15,9 @@ const valid: { [E in HookEvent]: HookReturnMap[E] } = {
   },
   before_step: { block: false },
   context: {
-    sections: [{ id: 'a', order: 5, content: 'author text', source: 'untrusted source' }],
+    sections: [
+      { id: 'a', order: 5, content: 'author text', source: 'untrusted source', delivery: 'live-note' },
+    ],
     additionalContext: 'note',
   },
   before_request: { patch: { maxTokens: 10, samplingParams: { temperature: 0 }, metadata: { test: true } } },
@@ -79,14 +81,22 @@ describe('author hook return boundary', () => {
     },
   )
 
-  it.each(['tool', 'argv', 'argvHash', 'actor', 'decisionId'])(
-    'refuses an approval patch changing bound field %s',
-    (key) => {
-      expect(() => authorHookReturn('approval_request', { request: { [key]: 'forged' } })).toThrow(
-        'invalid author hook return',
-      )
-    },
-  )
+  it.each([
+    'tool',
+    'argv',
+    'argvHash',
+    'actor',
+    'decisionId',
+    'verdict',
+    'answeredBy',
+    'sessionKey',
+    'delegation',
+    'options',
+  ])('refuses an approval patch changing bound field %s', (key) => {
+    expect(() => authorHookReturn('approval_request', { request: { [key]: 'forged' } })).toThrow(
+      'invalid author hook return',
+    )
+  })
 
   it('retains approval summary without coercing it into context or the binding', () => {
     expect(authorHookReturn('approval_request', { request: { summary: 'review', context: 'why' } })).toEqual({
@@ -99,7 +109,7 @@ describe('author hook return boundary', () => {
   it('maps context content to wire text and lets core18 stamp registered provenance', () => {
     const wire = contextReturnToWire(valid.context)
     expect(wire).toEqual({
-      sections: [{ id: 'a', order: 5, text: 'author text' }],
+      sections: [{ id: 'a', order: 5, text: 'author text', delivery: 'live-note' }],
       additionalContext: 'note',
     })
     const transformed = applyContextResults([], [{ ext: 'agnes/registered', result: wire }])
@@ -108,8 +118,16 @@ describe('author hook return boundary', () => {
       order: 5,
       text: 'author text',
       source: 'agnes/registered',
+      delivery: 'live-note',
     })
     expect(JSON.stringify(transformed)).not.toContain('untrusted source')
+  })
+
+  it('accepts untrustedContext on a context return and still rejects unknown keys', () => {
+    expect(authorHookReturn('context', { untrustedContext: 'data' })).toEqual({ untrustedContext: 'data' })
+    expect(() => authorHookReturn('context', { untrustedContext: 'data', trustedContext: 'x' })).toThrow(
+      'invalid author hook return',
+    )
   })
 
   it.each([
@@ -247,5 +265,28 @@ describe('dispatch to author validation to core18 context composition', () => {
     )
     expect(result).toMatchObject({ kind: 'rejected', source: 'agnes/bad' })
     expect(downstream).toBe(false)
+  })
+})
+
+describe('tool_result return budget', () => {
+  it('cuts an oversized text return to the session budget before it is validated', () => {
+    const returned = authorHookReturn(
+      'tool_result',
+      { result: { content: [{ type: 'text', text: '中'.repeat(100_000) }] } },
+      1024,
+    )
+    const text = returned?.result?.content.map((b) => (b.type === 'text' ? b.text : '')).join('') ?? ''
+    expect(Buffer.byteLength(text)).toBeLessThan(1024 + 256)
+    expect(text).toContain('[output truncated')
+  })
+
+  it('refuses a return over the hard copy ceiling', () => {
+    expect(() =>
+      authorHookReturn(
+        'tool_result',
+        { result: { content: [{ type: 'text', text: 'x'.repeat(20_000_000) }] } },
+        1024,
+      ),
+    ).toThrow(/invalid author hook return/)
   })
 })

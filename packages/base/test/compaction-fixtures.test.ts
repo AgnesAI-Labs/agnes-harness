@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import type { SurfaceNode } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { type Cut, chooseCut } from '../extensions/compaction/src/cut.js'
+import { createDefaultCompactionEngine } from '../extensions/compaction/src/engine.js'
 import { buildPrompts, IN_PROGRESS_NOTE } from '../extensions/compaction/src/prompts.js'
 
 type Case = {
@@ -59,4 +60,48 @@ describe('prime-agent compaction fixture parity', () => {
       }
     })
   }
+})
+
+it('preserves default threshold hysteresis, planner output and cancellation on the public engine', async () => {
+  const plan: import('@agnes/extension-api').CompactionPlan = {
+    keepFromSeq: 3,
+    summarizeRange: [1, 2],
+    prompts: { system: 'summary', history: 'summarize' },
+    maxTokens: 10,
+    details: { readFiles: [], modifiedFiles: [] },
+  }
+  const engine = await createDefaultCompactionEngine(() => plan).create()
+  const budget = {
+    contextTokens: 85,
+    contextWindow: 100,
+    reserveTokens: 20,
+    keepRecentTokens: 10,
+    cache: { cacheRead: 8, input: 2 },
+  }
+  expect(engine.shouldCompact(budget)).toBe(false)
+  expect(engine.shouldCompact(budget)).toBe(true)
+  expect(engine.shouldCompact({ ...budget, contextTokens: 70 })).toBe(false)
+  expect(engine.shouldCompact(budget)).toBe(false)
+  expect(() => engine.shouldCompact({ ...budget, reserveTokens: -1 })).toThrow(
+    expect.objectContaining({ code: 'E_ENVELOPE' }),
+  )
+  const input = {
+    conversation: [],
+    system: '',
+    budget,
+    beforeCompact: { reason: 'requested' },
+  } as unknown as import('@agnes/extension-api').CompactionInput
+  const model = {
+    summarize: async () => {
+      throw new Error('Must not call model')
+    },
+  }
+  // Empty input bypasses quality preparation and preserves the planner's return value.
+  expect(await engine.compact(input, { signal: new AbortController().signal, model })).toEqual({
+    kind: 'plan',
+    plan,
+  })
+  const ac = new AbortController()
+  ac.abort(new Error('Stopped'))
+  await expect(engine.compact(input, { signal: ac.signal, model })).rejects.toThrow('Stopped')
 })

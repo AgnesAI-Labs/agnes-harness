@@ -5,9 +5,9 @@ import {
   type RuntimeTargetArtifact,
 } from '@agnes/plugin-runtime/host'
 import { describe, expect, it } from 'vitest'
-import { createCompositeTargetActivation } from '../src/composite-target-activation.js'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
-import { sqliteTables } from './sqlite-tables.js'
+import { createCompositeTargetActivation } from '../src/supervisor/publication/composite-target-activation.js'
 
 const revision = 'b'.repeat(64)
 const snap1 = `sha256-${'1'.repeat(64)}`
@@ -155,3 +155,101 @@ describe('composite-target-activation: dropUnpinnedLastGood plugin-id parsing', 
     expect(store.lastGood()).toBeUndefined()
   })
 })
+
+it('probes and publishes one reviewed target for a parent and its dependent', async () => {
+  const store = new CompositeTargetStore(sqliteTables().table('joint-update'), 'default')
+  const before = target([
+    pluginRow('ext:parent/main', `parent@${snap1}/main`, snap1),
+    pluginRow('ext:example/main', `example@${snap1}/main`, snap1),
+  ])
+  const next = target([
+    pluginRow('ext:parent/main', `parent@${snap2}/main`, snap2),
+    pluginRow('ext:example/main', `example@${snap2}/main`, snap2),
+  ])
+  store.publishDesired(before)
+  let delivered: RuntimeTargetArtifact | undefined
+  const activation = createCompositeTargetActivation({
+    store,
+    desiredFor: async (input) => {
+      expect(input).toMatchObject({ packageId: 'parent', packageIds: ['example'], operation: 'update' })
+      return next
+    },
+    probe: async (artifact) => {
+      expect(artifact.digest).toBe(next.digest)
+    },
+    deliver: async (artifact) => {
+      delivered = artifact
+    },
+  })
+  await activation.reconcile({
+    profile: 'default',
+    packageId: 'parent',
+    packageIds: ['example'],
+    operation: 'update',
+    operationId: 'reviewed-joint-update',
+    signal: new AbortController().signal,
+  })
+  expect(store.desired()?.digest).toBe(next.digest)
+  expect(delivered?.digest).toBe(next.digest)
+})
+
+it.each(['extension-only', 'mixed', 'surface-only', 'client-only', 'static-skills'] as const)(
+  'observes dormant backend runtime without suppressing independent %s readiness',
+  async (kind) => {
+    const backend = kind === 'extension-only' || kind === 'mixed'
+    let generation: number | undefined
+    let eligible = true
+    const artifact = target(backend ? [pluginRow('ext:pkg/main', `pkg@${snap1}/main`, snap1)] : [])
+    const store = new CompositeTargetStore(sqliteTables().table('dormant'), 'default')
+    store.publishDesired(artifact)
+    const activation = createCompositeTargetActivation({
+      store,
+      workerGeneration: () => generation,
+      workerStarting: () => false,
+      contributions: () =>
+        kind === 'static-skills'
+          ? [{ kind: 'skill' }]
+          : kind === 'client-only'
+            ? [{ kind: 'extension', client: {}, capabilities: { ui: true } }]
+            : kind === 'extension-only'
+              ? []
+              : [{ kind: 'surface' }],
+      surfaceRunningRevision: () => 'surface',
+      desiredSurfaceRevision: () => 'surface',
+      clientRosterMatch: () => true,
+      lifecycleEligible: () => eligible,
+      packageIdentity: () => ({ integrity: snap1 }),
+      probe: async () => {},
+      deliver: async () => {},
+    })
+    expect(await activation.actual?.('default', 'pkg')).toMatchObject({
+      actual: backend || kind === 'static-skills' ? 'not-running' : 'running',
+    })
+    if (kind === 'static-skills') {
+      generation = 1
+      store.qualifyConverged(1, artifact, { hash: artifact.identity.treeHash, ok: true, rows: [] })
+      expect(await activation.actual?.('default', 'pkg')).toMatchObject({
+        actual: 'running',
+        actualIntegrity: snap1,
+      })
+      eligible = false
+      expect(await activation.actual?.('default', 'pkg')).toMatchObject({ actual: 'not-running' })
+      eligible = true
+      store.publishDesired(target([pluginRow('other', 'builtin:host/other', 'builtin:host:v1')]))
+      expect(await activation.actual?.('default', 'pkg')).not.toMatchObject({ actual: 'running' })
+    }
+    if (backend) {
+      // A non-settling write keeps its existing pending result after delivery; only reads
+      // distinguish a dormant worker. Settling/reconcile ownership remains unchanged.
+      expect(
+        await activation.reconcile({
+          profile: 'default',
+          packageId: 'pkg',
+          operation: 'enable',
+          operationId: 'op',
+          signal: new AbortController().signal,
+        }),
+      ).toMatchObject({ actual: 'starting' })
+    }
+  },
+)

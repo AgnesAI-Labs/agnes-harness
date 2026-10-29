@@ -1,0 +1,42 @@
+import { expect, test } from '@playwright/test'
+
+const fixtureUrl = process.env.AGH_CONVERSATION_FIXTURE_URL
+// The fixture mounts current production components with synthetic session/resource ports.
+for (const locale of ['en', 'zh-CN'])
+  for (const width of [1280, 375]) {
+    test(`conversation cards (${locale}, ${width}px)`, async ({ page }) => {
+      test.skip(!fixtureUrl, 'Start serve-conversation-fixture.mjs and set AGH_CONVERSATION_FIXTURE_URL.')
+      if (!fixtureUrl) return
+      const errors: string[] = []
+      page.on('pageerror', (error) => errors.push(error.message))
+      await page.setViewportSize({ width, height: 900 })
+      await page.goto(`${fixtureUrl}/?locale=${locale}`)
+      for (const id of ['background-job-card', 'child-agent-card', 'plan-approval-card'])
+        await expect(page.getByTestId(id)).toBeVisible()
+      await expect(page.locator('.turn-process')).toHaveAttribute('data-open', 'false')
+      await page.getByTestId('turn-process-toggle').click()
+      await page.getByTestId('turn-process-toggle').click()
+      for (const id of ['background-job-card', 'child-agent-card']) {
+        const card = page.getByTestId(id)
+        await card.getByTestId('tool-detail-toggle').click()
+        await expect(card.getByTestId('tool-detail-text')).toContainText(
+          id === 'background-job-card' ? 'job-fixture' : 'child-fixture',
+        )
+      }
+      await page
+        .getByTestId('plan-approval-card')
+        .getByTestId('approval-action')
+        .filter({ hasText: locale === 'en' ? 'Allow once' : '仅允许这次' })
+        .click()
+      await expect(page.getByTestId('fixture-plan-decision')).toHaveText('allow_once')
+      await expect(page.getByTestId('plan-approval-card')).toBeHidden()
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
+      await page.reload()
+      await page
+        .getByTestId('plan-approval-card')
+        .locator('[data-approval-action="live:reject_once"]')
+        .click()
+      await expect(page.getByTestId('fixture-plan-decision')).toHaveText('reject_once')
+      expect(errors).toEqual([])
+    })
+  }

@@ -1,214 +1,107 @@
-import { type AttachmentForm, attachmentForm } from '@agnes/protocol'
-import { base64DecodedBytes } from '../log/lean.js'
-import type { Event } from '../types.js'
+import { scanPages } from '@agnes/core-ledger/log/scan-pages'
+import { type ArtifactRef, type ContentBlock, storedAttachment, uploadedAttachment } from '@agnes/protocol'
+import { validateStoredAttachment } from '@agnes/protocol-validation'
+import type { SessionImpl } from '../step/session.js'
 
-export type AttachmentKind = 'image' | 'file'
-
-/** One user attachment, located by the row it is in and its 1-based place among that row's blocks of its kind. */
-export type AttachmentEntry = Readonly<{
-  seq: number
-  /** The id of the row it is in, which a cache entry is bound to (a seq can be reused by an import). */
-  rowId: string
-  lane: string
-  kind: AttachmentKind
-  index: number
-  form: AttachmentForm
-  sha256?: string
-  bytes: number
-  mimeType: string
-  name?: string
-  width?: number
-  height?: number
-  thumbnail?: Readonly<{ sha256: string; bytes: number }>
+export const attachmentIdentity = (ref: ArtifactRef) => JSON.stringify([ref.sha256, ref.size, ref.mime])
+type FileEntry = Readonly<{ seq: number; index: number; name: string; mimeType: string }>
+type Snapshot = Readonly<{
+  through: number
+  omittedThrough: number
+  refs: ReadonlyMap<string, ArtifactRef>
+  files: readonly FileEntry[]
+  images: readonly Readonly<{ seq: number; index: number }>[]
 }>
+const indexes = new WeakMap<SessionImpl, { snapshot?: Snapshot; tail: Promise<unknown> }>()
 
-type Lane = { image: AttachmentEntry[]; file: AttachmentEntry[] }
-
-const NONE: readonly AttachmentEntry[] = Object.freeze([])
-
-/** The first position in `entries` (ascending by seq) whose seq is at least `seq`. */
-function lowerBound(entries: readonly AttachmentEntry[], seq: number): number {
-  let lo = 0
-  let hi = entries.length
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1
-    if ((entries[mid] as AttachmentEntry).seq < seq) lo = mid + 1
-    else hi = mid
-  }
-  return lo
-}
-
-function entryOf(
-  event: Event,
-  kind: AttachmentKind,
-  index: number,
-  block: Record<string, unknown>,
-): AttachmentEntry | undefined {
-  const form = attachmentForm(block)
-  if (!form) return undefined
-  const ref = form === 'reference' ? (block.attachment as { sha256?: unknown; bytes?: unknown }) : undefined
-  const bytes =
-    form === 'reference'
-      ? ref?.bytes
-      : form === 'inline'
-        ? base64DecodedBytes(block.data as string)
-        : (block.dataOmitted as { bytes?: unknown }).bytes
-  if (typeof bytes !== 'number' || !Number.isSafeInteger(bytes) || bytes < 0) return undefined
-  if (ref && typeof ref.sha256 !== 'string') return undefined
-  const thumb = block.thumbnail as { sha256?: unknown; bytes?: unknown } | undefined
-  return Object.freeze({
-    seq: event.seq,
-    rowId: event.id,
-    lane: event.lane ?? 'main',
-    kind,
-    index,
-    form,
-    ...(ref ? { sha256: ref.sha256 as string } : {}),
-    bytes,
-    mimeType: String(block.mimeType),
-    ...(typeof block.name === 'string' ? { name: block.name } : {}),
-    ...(typeof block.width === 'number' && typeof block.height === 'number'
-      ? { width: block.width, height: block.height }
-      : {}),
-    ...(thumb && typeof thumb.sha256 === 'string' && typeof thumb.bytes === 'number'
-      ? { thumbnail: Object.freeze({ sha256: thumb.sha256, bytes: thumb.bytes }) }
-      : {}),
-  })
-}
-
-/**
- * Every user attachment of a session by (seq, kind, index), folded from `user/message` rows as they are
- * replayed or appended, so listing and locating one never rescans the ledger. An entry holds the
- * block's metadata only (a few hundred bytes), never its data; rows without attachments add nothing.
- * Rows arrive in ascending seq order, which keeps each lane's lists sorted for lookup by seq; a row at
- * or below the last one folded is ignored, so feeding the same row twice cannot number it twice.
- *
- * The numbering is the one the `session-image://` and `session-file://` paths use: the n-th block of
- * that type in the message, counted from 1. A block that no form describes keeps its number but has
- * no entry.
- *
- * References queued in `inbox` rows are kept apart (`queued`), numbered the same way across the row's
- * items in order: a queued item that was removed, or is still waiting, names stored bytes no message
- * names, and a client downloading the session's attachments must still reach them. They are in no
- * list and change no message numbering.
+/** Rebuildable projection of the verified owning log. Never persisted or accepted from a client.
+ * Session identity includes the immutable fork prefix and lane; only appended ranges are scanned.
+ * Publication swaps a complete snapshot, so aborted/corrupt scans cannot advance its watermark.
  */
-export class AttachmentIndex {
-  readonly #lanes = new Map<string, Lane>()
-  readonly #refs = new Set<string>()
-  readonly #queued = new Map<string, AttachmentEntry>()
-  #refBytes = 0
-  #lastSeq = 0
-  #size = 0
-
-  /** Entries held, across lanes and kinds. */
-  get size(): number {
-    return this.#size
+export async function attachmentIndex(session: SessionImpl): Promise<Snapshot> {
+  let state = indexes.get(session)
+  if (!state) {
+    state = { tail: Promise.resolve() }
+    indexes.set(session, state)
   }
-
-  apply(events: readonly Event[]): void {
-    for (const event of events) {
-      if (event.seq <= this.#lastSeq) continue
-      this.#lastSeq = event.seq
-      if (event.type === 'inbox') {
-        this.#applyQueued(event)
-        continue
+  const current = state
+  const end = session.lastSeq
+  const work = current.tail
+    .catch(() => undefined)
+    .then(async () => {
+      const previous = current.snapshot
+      if (previous?.through === end) return previous
+      const base = previous && previous.through < end ? previous : undefined
+      let omittedThrough = base?.omittedThrough ?? 0
+      const refs = new Map(base?.refs)
+      const files = [...(base?.files ?? [])]
+      const images = [...(base?.images ?? [])]
+      for await (const page of scanPages(
+        (query) => session.d.log.scan(query),
+        {
+          lane: session.lane,
+          fromSeq: (base?.through ?? 0) + 1,
+          toSeq: end,
+        },
+        100,
+      )) {
+        for (const row of page) {
+          if (row.type === 'request/header') {
+            const cut = (row.data as { attachmentImagesOmittedThrough?: number })
+              .attachmentImagesOmittedThrough
+            if (cut !== undefined) {
+              if (!Number.isSafeInteger(cut) || cut < 0 || cut >= row.seq) throw new Error('ATTACHMENT_DATA')
+              omittedThrough = Math.max(omittedThrough, cut)
+            }
+          }
+          if (row.type !== 'user/message') continue
+          const blocks = (row.data as { content?: ContentBlock[] }).content ?? []
+          let index = 0,
+            imageIndex = 0
+          for (const block of blocks) {
+            if (block.type === 'image' || (storedAttachment(block) && block.attachment.image))
+              images.push(Object.freeze({ seq: row.seq, index: ++imageIndex }))
+            if (storedAttachment(block)) {
+              validateStoredAttachment(block)
+              for (const ref of [block.attachment.artifact, block.attachment.thumbnail])
+                if (ref) refs.set(attachmentIdentity(ref), Object.freeze({ ...ref }))
+            }
+            if (
+              block.type === 'file' ||
+              (storedAttachment(block) && !block.attachment.image) ||
+              (block.type === 'resource_link' &&
+                uploadedAttachment(block.uri) &&
+                block.name &&
+                block.mimeType)
+            ) {
+              index++
+              files.push(
+                Object.freeze({
+                  seq: row.seq,
+                  index,
+                  name: block.name ?? 'attachment',
+                  mimeType: block.mimeType ?? 'application/octet-stream',
+                }),
+              )
+            }
+          }
+        }
       }
-      if (event.type !== 'user/message') continue
-      const content = (event.data as { content?: unknown } | null)?.content
-      if (!Array.isArray(content)) continue
-      const counters = { image: 0, file: 0 }
-      for (const block of content) {
-        if (!block || typeof block !== 'object') continue
-        const kind = (block as { type?: unknown }).type
-        if (kind !== 'image' && kind !== 'file') continue
-        const entry = entryOf(event, kind, ++counters[kind], block as Record<string, unknown>)
-        if (entry) this.#add(entry)
+      // Bounded metadata, no original bytes or message text. Refuse rather than silently authorize
+      // from an incomplete cache; normal per-session original quotas bound much larger byte sets.
+      if (refs.size > 100_000 || files.length > 100_000 || images.length > 100_000)
+        throw new Error('ATTACHMENT_QUOTA')
+      const snapshot: Snapshot = {
+        through: end,
+        omittedThrough,
+        refs,
+        files: Object.freeze(files),
+        images: Object.freeze(images),
       }
-    }
-  }
-
-  /**
-   * Starts this (empty) index as a fork of `parent` at `throughSeq`: the parent's entries up to that
-   * seq are shared, not copied. Rows after it are folded by `apply` as the fork reads them.
-   */
-  inherit(parent: AttachmentIndex, throughSeq: number): void {
-    if (this.#lastSeq !== 0 || this.#size !== 0)
-      throw new Error('an attachment index inherits only while empty')
-    for (const [lane, lists] of parent.#lanes)
-      for (const kind of ['image', 'file'] as const) {
-        const list = lists[kind]
-        for (const entry of list.slice(0, lowerBound(list, throughSeq + 1))) this.#add(entry, lane)
-      }
-    for (const [key, entry] of parent.#queued) if (entry.seq <= throughSeq) this.#queued.set(key, entry)
-    this.#lastSeq = throughSeq
-  }
-
-  /** A reference queued in the inbox row at `seq`: the n-th block of that kind across its items. */
-  queued(seq: number, kind: AttachmentKind, index: number): AttachmentEntry | undefined {
-    return this.#queued.get(`${seq}/${kind}/${index}`)
-  }
-
-  #applyQueued(event: Event): void {
-    const items = (event.data as { items?: unknown } | null)?.items
-    if (!Array.isArray(items)) return
-    const counters = { image: 0, file: 0 }
-    for (const item of items) {
-      const content = (item as { content?: unknown } | null)?.content
-      if (!Array.isArray(content)) continue
-      for (const block of content) {
-        if (!block || typeof block !== 'object') continue
-        const kind = (block as { type?: unknown }).type
-        if (kind !== 'image' && kind !== 'file') continue
-        const entry = entryOf(event, kind, ++counters[kind], block as Record<string, unknown>)
-        if (entry?.form === 'reference') this.#queued.set(`${event.seq}/${kind}/${entry.index}`, entry)
-      }
-    }
-  }
-
-  /** The lane's attachments of one kind in ledger order. The array is live and must not be changed. */
-  list(kind: AttachmentKind, lane: string): readonly AttachmentEntry[] {
-    return this.#lanes.get(lane)?.[kind] ?? NONE
-  }
-
-  get(seq: number, kind: AttachmentKind, index: number): AttachmentEntry | undefined {
-    for (const lists of this.#lanes.values()) {
-      const list = lists[kind]
-      for (let at = lowerBound(list, seq); at < list.length; at++) {
-        const entry = list[at] as AttachmentEntry
-        if (entry.seq !== seq) break
-        if (entry.index === index) return entry
-      }
-    }
-    return undefined
-  }
-
-  /** Whether a row of this session already references the object, as an attachment or as a thumbnail. */
-  referenced(sha256: string): boolean {
-    return this.#refs.has(sha256)
-  }
-
-  /** Bytes of the distinct objects this session references (attachments and thumbnails), each counted once. */
-  referencedBytes(): number {
-    return this.#refBytes
-  }
-
-  #add(entry: AttachmentEntry, lane = entry.lane): void {
-    let lists = this.#lanes.get(lane)
-    if (!lists) {
-      lists = { image: [], file: [] }
-      this.#lanes.set(lane, lists)
-    }
-    lists[entry.kind].push(entry)
-    this.#size++
-    if (entry.sha256 !== undefined) this.#reference(entry.sha256, entry.bytes)
-    // A thumbnail is a stored object of its own that the row names, so it is authorized (and
-    // occupies the session's storage) the same way the attachment is.
-    if (entry.thumbnail) this.#reference(entry.thumbnail.sha256, entry.thumbnail.bytes)
-  }
-
-  #reference(sha256: string, bytes: number): void {
-    if (this.#refs.has(sha256)) return
-    this.#refs.add(sha256)
-    this.#refBytes += bytes
-  }
+      current.snapshot = snapshot
+      return snapshot
+    })
+  current.tail = work
+  const snapshot = await work
+  return { ...snapshot, refs: new Map(snapshot.refs) }
 }

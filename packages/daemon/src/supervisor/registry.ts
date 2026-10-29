@@ -1,12 +1,26 @@
 import { randomUUID } from 'node:crypto'
-import { type EventEnvelope, rpcError } from '@agnes/protocol'
-import type { Disposer } from '../local/tail.js'
-import type { OpenProgressUpdate, PreviewSnapshotEntry, PreviewUpdate, Registry } from '../registry.js'
-import { assertWorkspaceBindingEnvelope, type WorkspaceBindingEnvelope } from '../storage/workspaces.js'
-import { sessionHash } from './frames.js'
+import type { Disposer } from '@agnes/daemon-foundation/local/tail'
+import type { PreviewSnapshotEntry, PreviewUpdate, Registry } from '@agnes/daemon-foundation/registry'
+import type { SessionWorkspacePort } from '@agnes/daemon-foundation/storage/lister'
+import type { SessionPrincipalOwnership } from '@agnes/daemon-foundation/storage/session-ownership'
+import {
+  assertWorkspaceBindingEnvelope,
+  type WorkspaceBindingEnvelope,
+} from '@agnes/daemon-foundation/storage/workspaces'
+import type { LoopSelection } from '@agnes/protocol'
+import { type EventEnvelope, rpcError, SESSION_ARTIFACT_ROOT_EVENT_TYPES } from '@agnes/protocol'
+import { type HistoryConsumer, historyIndex, readRange } from './open-history.js'
 import { RemoteSession } from './remote-session.js'
-import type { WorkerSessionChannel } from './worker-link.js'
 import type { WorkerPool } from './worker-pool.js'
+
+type ReplayFrame = { event: EventEnvelope; beforePublish?: () => void; onWire?: () => void }
+
+export type RegistryOptions = Readonly<{
+  /** Caught up on a session's sidebar row when it opens; the row may lag its ledger. */
+  workspaces?: Pick<SessionWorkspacePort, 'refresh'>
+  /** Consumers of ledger rows; an open feeds each the history rows of the types it lists. */
+  history?: readonly HistoryConsumer[]
+}>
 
 export type ArtifactAuthorityLifecycle = Readonly<{
   observe(sessionId: string, event: unknown, signal: AbortSignal): Promise<void>
@@ -17,27 +31,23 @@ type RemoteOpen = Readonly<{
   cwd: string
   binding: WorkspaceBindingEnvelope
   preset?: string
+  permission?: string
+  agent?: string
+  agentDigest?: string
+  bundles?: readonly string[]
+  systemPromptAppend?: string
+  loop?: LoopSelection
   credential?: unknown
   parent?: string
   forkAt?: number
   resume?: boolean
+  historySignal?: AbortSignal
+  onHistoryProgress?: (progress: { verifiedSeq: number; lastSeq: number }) => void
 }>
 
-/**
- * What a cold open cost so far. It lives on the entry it measured and is consumed by the
- * `session/load` that opened that entry; any later `open` that finds the entry already live drops
- * it, so a trace is never read for a different request, and it goes away with the entry.
- */
-type OpenTrace = {
-  link: WorkerSessionChannel
-  receivedAtStart: number
-  openMs: number
-  authorityReplayMs: number
-}
-
-/** A session whose ledger failed its integrity check: reopening it fails the same way. */
-function isIntegrityFailure(error: unknown): boolean {
-  return (error as { code?: unknown } | null)?.code === 'E_LEDGER_INTEGRITY'
+function withoutOpeningObservers(open: RemoteOpen): RemoteOpen {
+  const { onHistoryProgress: _progress, historySignal: _signal, ...rest } = open
+  return rest
 }
 
 export type RemoteEntry = {
@@ -50,7 +60,6 @@ export type RemoteEntry = {
   ac: AbortController
   recover: boolean
   reopen: RemoteOpen
-  loadTrace?: OpenTrace
 }
 
 type PreviewSubscriber = { preview: (p: PreviewUpdate) => void; gap: (() => void) | undefined }
@@ -100,117 +109,79 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
   >()
   /**
    * A worker starts its ledger tail as soon as the start gate opens, so live frames can arrive while
-   * `openFresh()` is still waiting for its explicit authority replay scan. Awaiting such a frame on
-   * `artifactQueues` would put the scan reply behind a promise which itself waits for that reply.
-   * Hold the frames as plain data until the scan completes, then project and publish them in wire
-   * order before exposing the opened session.
+   * `openFresh()` is still reading the session's history. Awaiting such a frame on `artifactQueues`
+   * would put the scan reply behind a promise which itself waits for that reply. Hold the frames as
+   * plain data until the history has been handled, then project and publish them in wire order
+   * before exposing the opened session.
    */
-  private readonly artifactReplayBuffers = new Map<
-    string,
-    Array<{ event: EventEnvelope; beforePublish?: () => void }>
-  >()
+  private readonly artifactReplayBuffers = new Map<string, ReplayFrame[]>()
+  /** The highest seq offered to a session's listeners; they outlive the entries that fed them. */
+  private readonly publishedThrough = new Map<string, number>()
+  private readonly history: ReturnType<typeof historyIndex>
+  private readonly authorityTypes: ReadonlySet<string>
   /** Fences a worker that began opening against a snapshot that has since been superseded. */
   private resourceEpoch = 0
-  /** Who is waiting on each session's open, told how far it has got. */
-  private readonly progressListeners = new Map<string, Set<(p: OpenProgressUpdate) => void>>()
+  private readonly generationMigrations = new Set<string>()
+
+  /** Refuse live/opening sessions and fence all admissions for this key until pin migration settles. */
+  async migrateGeneration<T>(
+    key: string,
+    principalId: string,
+    ownership: Pick<SessionPrincipalOwnership, 'resolve'>,
+    migrate: () => Promise<T>,
+  ): Promise<T> {
+    let owner: ReturnType<SessionPrincipalOwnership['resolve']>
+    try {
+      owner = ownership.resolve(key)
+    } catch {
+      /* fail closed below */
+    }
+    if (owner?.principalId !== principalId)
+      throw rpcError('CAPABILITY_DENIED', { reason: 'session owner unavailable' })
+    if (
+      this.closingAll ||
+      this.entries.has(key) ||
+      this.opening.has(key) ||
+      this.generationMigrations.has(key)
+    )
+      throw new Error('E_GENERATION_SESSION_OPEN: close the session before migration')
+    this.generationMigrations.add(key)
+    try {
+      return await migrate()
+    } finally {
+      this.generationMigrations.delete(key)
+    }
+  }
 
   constructor(
     private readonly pool: WorkerPool,
     private readonly artifactAuthority?: ArtifactAuthorityLifecycle,
-    private readonly audit?: (record: unknown) => void,
-    /** Called once a session is known to have failed its ledger integrity check: it is not reopened. */
-    private readonly onIntegrityFailure?: (key: string) => void,
-  ) {}
-
-  /**
-   * Writes the `session.load` record for a `session/load` that had to open the session: how long
-   * opening and the authority replay took, how long the caller's own replay took, and how many bytes
-   * crossed from the worker. A load that finds the session already open writes nothing.
-   */
-  recordLoad(key: string, timing: { acpReplayMs: number }): void {
-    const entry = this.entries.get(key)
-    const trace = entry?.loadTrace
-    if (!entry || !trace) return
-    delete entry.loadTrace
-    this.writeAudit({
-      kind: 'session.load',
-      detail: {
-        session: sessionHash(key),
-        ms: {
-          open: trace.openMs,
-          authorityReplay: trace.authorityReplayMs,
-          acpReplay: timing.acpReplayMs,
-          total: trace.openMs + trace.authorityReplayMs + timing.acpReplayMs,
-        },
-        transferBytes: (trace.link.receivedBytes?.() ?? 0) - trace.receivedAtStart,
-        resumes: entry.session.scanResumes,
-        outcome: 'ok',
-      },
-    })
-  }
-
-  onOpenProgress(key: string, fn: (p: OpenProgressUpdate) => void): () => void {
-    const set = this.progressListeners.get(key) ?? new Set()
-    set.add(fn)
-    this.progressListeners.set(key, set)
-    return () => {
-      set.delete(fn)
-      if (set.size === 0 && this.progressListeners.get(key) === set) this.progressListeners.delete(key)
-    }
-  }
-
-  /** Called by the pool for every progress frame; a listener that throws does not reach the link. */
-  openProgress(key: string, p: OpenProgressUpdate): void {
-    for (const fn of [...(this.progressListeners.get(key) ?? [])]) {
-      try {
-        fn(p)
-      } catch {
-        /* progress is advisory */
-      }
-    }
-  }
-
-  /** Writes the `session.load` record for a `session/load` whose open failed: the error code only. */
-  recordLoadFailed(key: string, failure: { elapsedMs: number; error: unknown }): void {
-    const code = (failure.error as { code?: unknown } | null)?.code
-    this.writeAudit({
-      kind: 'session.load',
-      detail: {
-        session: sessionHash(key),
-        ms: { open: failure.elapsedMs, authorityReplay: 0, acpReplay: 0, total: failure.elapsedMs },
-        transferBytes: 0,
-        outcome: 'failed',
-        ...(typeof code === 'string' ? { code } : {}),
-      },
-    })
-  }
-
-  private integrityFailed(key: string): void {
-    try {
-      this.onIntegrityFailure?.(key)
-    } catch {
-      /* a notice must not change the outcome */
-    }
-  }
-
-  /** Diagnostics must not change the outcome of what they describe. */
-  private writeAudit(record: unknown): void {
-    try {
-      this.audit?.(record)
-    } catch {
-      /* ignored */
-    }
+    private readonly options: RegistryOptions = {},
+  ) {
+    this.authorityTypes = new Set(artifactAuthority ? SESSION_ARTIFACT_ROOT_EVENT_TYPES : [])
+    this.history = historyIndex(options.history ?? [], [...this.authorityTypes])
   }
 
   /** Wired to `WorkerPool`'s `onEvent` option: one worker event, routed to its session's listeners
    *  and folded into that session's `lastSeq` / register cache. */
-  deliver(sessionKey: string, e: EventEnvelope, beforePublish?: () => void): void | Promise<void> {
+  deliver(
+    sessionKey: string,
+    e: EventEnvelope,
+    beforePublish?: () => void,
+    onWire?: () => void,
+  ): void | Promise<void> {
+    const replayBuffer = this.artifactReplayBuffers.get(sessionKey)
+    if (replayBuffer) {
+      // `onWire` waits with its row: its consumers have just been fed the history in ledger order.
+      replayBuffer.push({
+        event: e,
+        ...(beforePublish ? { beforePublish } : {}),
+        ...(onWire ? { onWire } : {}),
+      })
+      return
+    }
+    onWire?.()
     if (this.artifactAuthority) {
-      const replayBuffer = this.artifactReplayBuffers.get(sessionKey)
-      if (replayBuffer) {
-        replayBuffer.push({ event: e, ...(beforePublish ? { beforePublish } : {}) })
-        return
-      }
       const queued = (this.artifactQueues.get(sessionKey) ?? Promise.resolve()).then(async () => {
         const entry = this.entries.get(sessionKey)
         if (!entry || entry.ac.signal.aborted) throw new Error('artifact authority session is unavailable')
@@ -333,6 +304,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     if (!en) return
     en.session.observe(e)
     en.session.observeRegister(e)
+    this.publishedThrough.set(sessionKey, Math.max(this.publishedThrough.get(sessionKey) ?? 0, e.seq))
     for (const l of en.listeners) l(e)
   }
 
@@ -341,23 +313,52 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     cwd: string
     binding?: WorkspaceBindingEnvelope
     preset?: string
+    permission?: string
+    agent?: string
+    agentDigest?: string
+    bundles?: readonly string[]
+    systemPromptAppend?: string
+    loop?: LoopSelection
     credential?: unknown
+    historySignal?: AbortSignal
+    onHistoryProgress?: (progress: { verifiedSeq: number; lastSeq: number }) => void
     parent?: string
     forkAt?: number
     resume?: boolean
   }): Promise<RemoteEntry> {
+    if (o.agent === undefined) o = { ...o, permission: o.permission ?? 'default' }
     if (this.closingAll) throw new Error('worker registry is shutting down')
+    if (o.key && this.generationMigrations.has(o.key))
+      throw new Error('E_GENERATION_SESSION_OPEN: session migration is in progress')
     assertWorkspaceBindingEnvelope(o.binding)
     const authorized: RemoteOpen = { ...o, binding: o.binding }
     const key = o.key ?? `agnes:local:default:daemon:dm:${Math.random().toString(36).slice(2)}`
     const epoch = this.sessionEpochs.get(key) ?? 0
     const existing = this.entries.get(key)
     if (existing) {
-      delete existing.loadTrace
+      if (
+        o.agent !== undefined &&
+        (o.agent !== existing.reopen.agent || o.agentDigest !== existing.reopen.agentDigest)
+      )
+        throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: key })
+      if (o.bundles !== undefined && JSON.stringify(o.bundles) !== JSON.stringify(existing.reopen.bundles))
+        throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: key })
+      if (o.systemPromptAppend !== undefined && o.systemPromptAppend !== existing.reopen.systemPromptAppend)
+        throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: key })
       return existing
     }
     const pending = this.opening.get(key)
-    if (pending?.epoch === epoch) return pending.promise
+    if (pending?.epoch === epoch) {
+      const entry = await pending.promise
+      if (
+        o.agent !== undefined &&
+        (o.agent !== entry.reopen.agent || o.agentDigest !== entry.reopen.agentDigest)
+      )
+        throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: key })
+      if (o.systemPromptAppend !== undefined && o.systemPromptAppend !== entry.reopen.systemPromptAppend)
+        throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: key })
+      return entry
+    }
     const opening = this.openFresh(key, authorized, epoch)
     const record = { epoch, promise: opening }
     this.opening.set(key, record)
@@ -365,6 +366,71 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
       return await opening
     } finally {
       if (this.opening.get(key) === record) this.opening.delete(key)
+    }
+  }
+
+  /**
+   * Brings the daemon's view of a session that has just opened up to its ledger head. The worker only
+   * pushes rows after `head`; the history before it is read once, by the types its consumers react
+   * to, so the cost follows those rows rather than the length of the ledger. Rows that arrived on the
+   * wire meanwhile wait in `replayBuffer` and are handled afterwards, in wire order.
+   */
+  private async catchUpHistory(o: {
+    key: string
+    entry: RemoteEntry
+    session: RemoteSession
+    head: number
+    generation: number
+    replayBuffer: ReplayFrame[]
+  }): Promise<void> {
+    const { key, entry, session, head, replayBuffer } = o
+    const current = (): void => {
+      if (this.entries.get(key) !== entry || entry.ac.signal.aborted)
+        throw new Error('artifact authority session is unavailable')
+    }
+    const scan = (q: Record<string, unknown>) => session.scan(q)
+    const project = (seq: number): void => {
+      this.artifactProjectedThrough.set(key, Math.max(this.artifactProjectedThrough.get(key) ?? 0, seq))
+      this.resolveArtifactProjectionWaiters(key)
+    }
+    if (this.history.types.length > 0)
+      await readRange(scan, { fromSeq: 1, toSeq: head, types: this.history.types }, async (event) => {
+        current()
+        if (this.artifactAuthority && this.authorityTypes.has(event.type)) {
+          await this.artifactAuthority.observe(key, event, entry.ac.signal)
+          project(event.seq)
+        }
+        for (const consumer of this.history.byType.get(event.type) ?? [])
+          consumer.observe(key, event, o.generation)
+      })
+    // Only rows that can create authority were read, and every one up to `head` has been handled.
+    if (this.artifactAuthority) project(head)
+    // Listeners outlive the worker generation that fed them: offer them the rows they have not seen.
+    const published = this.publishedThrough.get(key)
+    if (published !== undefined && published < head && entry.listeners.size > 0)
+      await readRange(scan, { fromSeq: published + 1, toSeq: head }, (event) => {
+        current()
+        this.publish(key, event)
+      })
+    this.publishedThrough.set(key, Math.max(published ?? 0, head))
+    await session.primeRegisters(head)
+    // The sidebar row may lag the ledger (history written while it was not being indexed).
+    await this.options.workspaces?.refresh(key, session, o.generation).catch(() => undefined)
+    // Draining may yield while projecting. Any frame that arrives during that await is appended to
+    // the same array and is picked up by this loop before the replay buffer is removed. Walk it by
+    // index: shifting a long buffer re-copies the array once per frame.
+    for (let index = 0; index < replayBuffer.length; index++) {
+      const buffered = replayBuffer[index] as ReplayFrame
+      current()
+      buffered.onWire?.()
+      // A frame the worker repeats from before `head` was projected by the read above.
+      if (this.artifactAuthority && buffered.event.seq > head) {
+        await this.artifactAuthority.observe(key, buffered.event, entry.ac.signal)
+        project(buffered.event.seq)
+      }
+      current()
+      buffered.beforePublish?.()
+      this.publish(key, buffered.event)
     }
   }
 
@@ -379,28 +445,41 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     this.artifactAuthority?.resetSession(key)
     this.rejectArtifactProjectionWaiters(key)
     this.artifactProjectedThrough.delete(key)
-    const openStartedAt = performance.now()
     const link = await this.pool.acquire(key, {
       resume: o.resume ?? false,
+      ...(o.historySignal ? { historySignal: o.historySignal } : {}),
+      ...(o.onHistoryProgress ? { onHistoryProgress: o.onHistoryProgress } : {}),
       cwd: o.cwd,
       binding: o.binding,
       ...(o.preset ? { preset: o.preset } : {}),
+      ...(o.permission ? { permission: o.permission } : {}),
+      ...(o.agent !== undefined ? { agent: o.agent } : {}),
+      ...(o.agentDigest !== undefined ? { agentDigest: o.agentDigest } : {}),
+      ...(o.bundles !== undefined ? { bundles: o.bundles } : {}),
+      ...(o.systemPromptAppend !== undefined ? { systemPromptAppend: o.systemPromptAppend } : {}),
+      ...(o.loop ? { loop: o.loop } : {}),
       ...(o.parent && o.forkAt !== undefined ? { parent: { key: o.parent, boundarySeq: o.forkAt } } : {}),
     })
     if (!isCurrent()) {
       await link.closeSession('session closed while opening').catch(() => undefined)
       throw new Error(`session ${key} was closed while opening`)
     }
-    const receivedAtStart = link.receivedBytes?.() ?? 0
     const hello = await link.hello
     if (!isCurrent()) {
       await link.closeSession('session closed while opening').catch(() => undefined)
       throw new Error(`session ${key} was closed while opening`)
     }
+    // The history up to the head is read by type once the session is open; the worker pushes what follows.
+    const head = hello.lastSeq
+    if (!Number.isSafeInteger(head) || head < 0) {
+      await link.closeSession('worker reported no ledger head').catch(() => undefined)
+      throw new Error(`worker reported no ledger head for session ${key}`)
+    }
     let entry: RemoteEntry | undefined
     const session = new RemoteSession(key, hello.writerRunId, hello.generation, link, o.cwd, () => {
       if (entry) this.retireAtTurnBoundary(key, entry)
     })
+    session.lastSeq = head
     const registry = this
     let inflight: RemoteEntry['inflight'] = null
     const listeners = this.listenerSets.get(key) ?? new Set<(e: EventEnvelope) => void>()
@@ -420,18 +499,25 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
       tail: () => undefined,
       ac: new AbortController(),
       recover: true,
-      reopen: o,
+      reopen: withoutOpeningObservers(o),
     }
     this.entries.set(key, entry)
-    link.onExit(() => this.interruptEntry(key, entry as RemoteEntry, o, new Error('worker link closed')))
+    link.onExit(() =>
+      this.interruptEntry(
+        key,
+        entry as RemoteEntry,
+        withoutOpeningObservers(o),
+        new Error('worker link closed'),
+      ),
+    )
     // The shared worker may emit events while tail() is still acknowledging its subscription.
-    if (this.artifactAuthority) this.artifactReplayBuffers.set(key, [])
+    this.artifactReplayBuffers.set(key, [])
     try {
       if (!link.alive) throw new Error(`worker link closed while opening session ${key}`)
       const tail = (link as unknown as { tail?: (fromSeq: number) => Promise<void> }).tail
-      if (tail) await tail.call(link, 1)
+      // The history up to `head` is read by type below; the worker pushes what comes after it.
+      if (tail) await tail.call(link, head + 1)
       if (!isCurrent()) throw new Error(`session ${key} was closed while opening`)
-      const openMs = performance.now() - openStartedAt
       // This worker read its resources before hello. If a control operation committed while it was
       // opening, never publish that old-snapshot generation to a caller; let WorkerPool wait for its
       // close and acquire a replacement from the new durable snapshot.
@@ -455,83 +541,26 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         this.artifactReplayBuffers.delete(key)
         return this.openFresh(key, o, sessionEpoch)
       }
-      const authorityStartedAt = performance.now()
-      if (this.artifactAuthority) {
-        const replayBuffer = this.artifactReplayBuffers.get(key)
-        if (!replayBuffer) throw new Error('artifact authority session is unavailable')
+      const replayBuffer = this.artifactReplayBuffers.get(key)
+      if (!replayBuffer) throw new Error('session history replay is unavailable')
+      try {
+        await this.catchUpHistory({ key, entry, session, head, generation: hello.generation, replayBuffer })
+        this.artifactReplayBuffers.delete(key)
+      } catch (error) {
+        this.artifactReplayBuffers.delete(key)
+        if (this.entries.get(key) === entry) this.entries.delete(key)
+        entry.ac.abort(error)
         try {
-          let fromSeq = 1
-          let replayedThrough = 0
-          for (;;) {
-            // Explicit bounds keep each replay page aligned to the ledger cut.
-            const page = (await session.scan({
-              fromSeq,
-              toSeq: fromSeq + 499,
-              order: 'asc',
-              limit: 500,
-            })) as EventEnvelope[]
-            if (page.length === 0) break
-            for (const event of page) {
-              await this.artifactAuthority.observe(key, event, entry.ac.signal)
-              this.artifactProjectedThrough.set(
-                key,
-                Math.max(this.artifactProjectedThrough.get(key) ?? 0, event.seq),
-              )
-              this.resolveArtifactProjectionWaiters(key)
-            }
-            const last = page.at(-1)?.seq
-            if (!Number.isSafeInteger(last) || (last as number) < fromSeq)
-              throw new Error('artifact authority replay returned an invalid page')
-            replayedThrough = last as number
-            fromSeq = replayedThrough + 1
-            if (page.length < 500) break
-          }
-          // Draining may yield while projecting. Any frame that arrives during that await is appended
-          // to the same array and is picked up by this loop before the replay buffer is removed.
-          while (replayBuffer.length > 0) {
-            const buffered = replayBuffer.shift()
-            if (!buffered) break
-            const current = this.entries.get(key)
-            if (current !== entry || entry.ac.signal.aborted)
-              throw new Error('artifact authority session is unavailable')
-            // The tail begins at seq 1, so it commonly repeats rows already covered by the scan.
-            // Publish each wire frame once, but do not project the same durable row twice.
-            if (buffered.event.seq > replayedThrough) {
-              await this.artifactAuthority.observe(key, buffered.event, entry.ac.signal)
-              this.artifactProjectedThrough.set(
-                key,
-                Math.max(this.artifactProjectedThrough.get(key) ?? 0, buffered.event.seq),
-              )
-              this.resolveArtifactProjectionWaiters(key)
-            }
-            if (this.entries.get(key) !== entry || entry.ac.signal.aborted)
-              throw new Error('artifact authority session is unavailable')
-            buffered.beforePublish?.()
-            this.publish(key, buffered.event)
-          }
-          this.artifactReplayBuffers.delete(key)
-        } catch (error) {
-          this.artifactReplayBuffers.delete(key)
-          if (this.entries.get(key) === entry) this.entries.delete(key)
-          entry.ac.abort(error)
-          try {
-            this.artifactAuthority.resetSession(key)
-          } catch {
-            // The original replay failure is the public startup result; scope is already detached.
-          }
-          this.pool.retire([key], 'artifact-authority-replay-failed')
-          this.rejectArtifactProjectionWaiters(key)
-          this.artifactProjectedThrough.delete(key)
-          throw error
+          this.artifactAuthority?.resetSession(key)
+        } catch {
+          // The original replay failure is the public startup result; scope is already detached.
         }
+        this.pool.retire([key], 'artifact-authority-replay-failed')
+        this.rejectArtifactProjectionWaiters(key)
+        this.artifactProjectedThrough.delete(key)
+        throw error
       }
       if (!isCurrent()) throw new Error(`session ${key} was closed while opening`)
-      entry.loadTrace = {
-        link,
-        receivedAtStart,
-        openMs,
-        authorityReplayMs: performance.now() - authorityStartedAt,
-      }
       // Previews were dropped while the replay held events back, and a preview from a generation
       // not yet hosting the session is refused by the pool: viewers that outlived the previous
       // generation catch up now.
@@ -564,10 +593,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         }
         await entry.session.close().catch(() => undefined)
       }
-      // An integrity failure that interrupted this open is why it failed, whichever step then noticed
-      // the session was gone: the caller gets the typed refusal, not "unavailable".
-      const interruptedBy: unknown = entry.ac.signal.aborted ? entry.ac.signal.reason : undefined
-      throw isIntegrityFailure(interruptedBy) ? interruptedBy : error
+      throw error
     }
   }
 
@@ -577,6 +603,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     childKey?: string
     binding?: WorkspaceBindingEnvelope
     credential?: unknown
+    beforeHistoryReplay?: (childKey: string) => void | Promise<void>
   }): Promise<RemoteEntry> {
     const parent = this.require(o.parent)
     const parentStatus = await parent.session.status()
@@ -599,11 +626,13 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     assertWorkspaceBindingEnvelope(o.binding)
     await parent.session.fork(o.at, childKey, o.credential, o.binding)
     try {
+      await o.beforeHistoryReplay?.(childKey)
       return await this.open({
         key: childKey,
         cwd: parent.session.cwd,
         binding: o.binding,
         ...(parentStatus.preset ? { preset: parentStatus.preset } : {}),
+        ...(parentStatus.permission ? { permission: parentStatus.permission } : {}),
         parent: o.parent,
         forkAt: o.at,
         resume: true,
@@ -623,9 +652,9 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
    * forgotten synchronously so a same-history `session/load` creates a worker from the durable
    * replacement snapshot. Busy sessions are marked and retire only at their terminal turn boundary.
    *
-   * A general capability, unchanged by resource-live-reload Task 7: it still retires *every* live
-   * session, unconditionally. Task 7 only narrowed its caller (supervisor.ts's
-   * `wireResourceSnapshotNotifications`), which now prefers the lightweight in-place
+   * A general capability: it still retires *every* live
+   * session, unconditionally. Its caller, supervisor.ts's
+   * `wireResourceSnapshotNotifications`, prefers the lightweight in-place
    * `resource.stale` notice (@agnes/resource-control-runtime's `notifyLiveSessionWorkers`) and calls
    * this method's narrower sibling, `retireSessions()`, only for sessions whose notice failed to
    * deliver -- see that method's doc comment.
@@ -637,7 +666,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
   /**
    * Narrower sibling of `retireForResourceSnapshot()`: retires only the sessions named in `keys`,
    * leaving every other live session on its current (already-delivered) resource snapshot untouched.
-   * Added for resource-live-reload Task 7 as the fallback path for sessions whose lightweight
+   * Fallback path for sessions whose lightweight
    * `resource.stale` notice (@agnes/resource-control-runtime's `notifyLiveSessionWorkers`) failed to
    * deliver -- a session that *did* receive the notice needs no process kill/respawn at all.
    *
@@ -746,6 +775,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     this.sessionEpochs.set(key, (this.sessionEpochs.get(key) ?? 0) + 1)
     this.listenerSets.delete(key)
     this.previewSets.delete(key)
+    this.publishedThrough.delete(key)
     let firstError: unknown
     try {
       this.artifactAuthority?.resetSession(key)
@@ -811,13 +841,6 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
       this.artifactReplayBuffers.delete(key)
     }
     if (this.resourceRetirements.get(key)?.entry === entry) this.resourceRetirements.delete(key)
-    // A ledger that failed its integrity check fails every reopen the same way: recovering would only
-    // verify it again and again. The session stays closed and its subscribers are told why.
-    if (isIntegrityFailure(reason)) {
-      entry.recover = false
-      this.integrityFailed(key)
-      return
-    }
     // Only a session somebody is still subscribed to is worth reopening eagerly.
     const watched = (): boolean => (this.listenerSets.get(key)?.size ?? 0) > 0
     // An entry that no longer holds the key leaves recovery to the one that does. Starting a
@@ -829,11 +852,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         try {
           await this.open({ key, ...open, resume: true })
           return
-        } catch (error) {
-          if (isIntegrityFailure(error)) {
-            this.integrityFailed(key)
-            return
-          }
+        } catch {
           await new Promise<void>((resolve) => {
             const timer = setTimeout(resolve, delayMs)
             timer.unref()

@@ -136,8 +136,8 @@ function emitPluginDisposed(context: Context, fiber: Fiber) {
   }
   for (const callback of callbacks) {
     try {
-      const returned = callback(...args)
-      void Promise.resolve(returned).catch(error => context.logger.error(error))
+      // The dispatcher owns async rejection diagnostics with listener attribution.
+      callback(...args)
     } catch (error) {
       context.logger.error(error)
     }
@@ -178,6 +178,7 @@ export namespace CordisError {
 
   export const Code = {
     INACTIVE_EFFECT: 'cannot create effect on inactive context',
+    DEPENDENCY_UNAVAILABLE: 'plugin dependencies are unavailable',
   } as const
 }
 
@@ -286,9 +287,11 @@ export class Fiber {
               releaseRuntime = true
               options.releaseRuntime()
             }
-          } else if (this.ctx.registry.has(runtime.callback)) {
+          } else {
             removeRuntime()
-            if (!runtime.fibers.length) {
+            // A disposal observer can already have registered a replacement
+            // runtime for this callback. Cleanup owns this runtime only.
+            if (!runtime.fibers.length && this.ctx.registry.get(runtime.callback) === runtime) {
               this.ctx.registry.delete(runtime.callback)
             }
           }
@@ -325,7 +328,9 @@ export class Fiber {
           return disposeDirect
         }, 'ctx.plugin()')
         disposeOwned = dispose
-        return asAwaitableFiber(this)
+        // Structural publication waits for transitions; dependency admission
+        // is audited after the Host has attached the complete row set.
+        return asAwaitableFiber(this, false)
       }
 
       const activate = () => {
@@ -659,6 +664,10 @@ export class Fiber {
     for (const name of Object.keys(this.inject)) {
       const impl = this._store[name]
       if (!impl) {
+        if (this.inject[name]?.required === false) {
+          epoch += ':optional'
+          continue
+        }
         epoch = INACTIVE
         break
       }
@@ -743,7 +752,8 @@ export class Fiber {
   /**
    * Wait for current lifecycle work and rethrow startup errors.
    *
-   * @returns this fiber, once it has settled into a stable state.
+   * @returns this fiber once stable, including PENDING when dependencies are
+   * unavailable. Use the awaitable returned by `ctx.plugin()` to require loading.
    * @throws the config-validation or plugin-startup error, if any.
    */
   async await() {

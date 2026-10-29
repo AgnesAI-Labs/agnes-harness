@@ -31,27 +31,88 @@ export function defang(line: string): string {
   return line.replace(DEFANG, (_m, sgr: string | undefined) => sgr ?? '')
 }
 
+/** An xterm-256 index, or `#rrggbb` that each tier renders as closely as it can. */
+export type Colour = number | `#${string}`
+
 export type Ansi = {
   bold(s: string): string
   dim(s: string): string
-  fg(n: number, s: string): string
-  bg(n: number, s: string): string
+  italic(s: string): string
+  underline(s: string): string
+  fg(c: Colour, s: string): string
+  bg(c: Colour, s: string): string
   reset: string
 }
 
-/** Maps a CSS-style RGB brand accent to its nearest xterm-256 cube colour. */
-export function xterm256(hex: string): number {
-  const match = /^#([0-9a-f]{6})$/i.exec(hex)
-  if (!match?.[1]) return 7
-  const rgb = [0, 2, 4].map((offset) => Number.parseInt(match[1]?.slice(offset, offset + 2) ?? '0', 16))
-  const levels = [0, 95, 135, 175, 215, 255]
-  const nearest = (value: number): number => {
-    let best = 0
-    for (let i = 1; i < levels.length; i++)
-      if (Math.abs(value - (levels[i] ?? 0)) < Math.abs(value - (levels[best] ?? 0))) best = i
-    return best
+/** Admits configuration text as a colour only when it really is `#rrggbb`. */
+export function hexColour(s: string): `#${string}` | undefined {
+  return /^#[0-9a-f]{6}$/i.test(s) ? (s as `#${string}`) : undefined
+}
+
+const channels = (hex: `#${string}`): number[] =>
+  [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16))
+const CUBE = [0, 95, 135, 175, 215, 255]
+const rgb256 = (n: number): number[] =>
+  n >= 232
+    ? Array(3).fill(8 + 10 * (n - 232))
+    : [CUBE[Math.floor((n - 16) / 36)] ?? 0, CUBE[Math.floor((n - 16) / 6) % 6] ?? 0, CUBE[(n - 16) % 6] ?? 0]
+const distance = (a: number[], b: number[]): number =>
+  a.reduce((sum, v, i) => sum + (v - (b[i] ?? 0)) ** 2, 0)
+
+/** The colour-cube or gray-ramp index (16-255) nearest to `hex` by squared RGB distance. */
+function nearest256(hex: `#${string}`): number {
+  const want = channels(hex)
+  let best = 16
+  let bestDistance = Number.POSITIVE_INFINITY
+  for (let n = 16; n < 256; n++) {
+    const d = distance(rgb256(n), want)
+    if (d < bestDistance) [best, bestDistance] = [n, d]
   }
-  return 16 + 36 * nearest(rgb[0] ?? 0) + 6 * nearest(rgb[1] ?? 0) + nearest(rgb[2] ?? 0)
+  return best
+}
+
+// xterm's default RGB for the 16 basic colours, in SGR order.
+const BASIC_RGB = [
+  [0, 0, 0],
+  [205, 0, 0],
+  [0, 205, 0],
+  [205, 205, 0],
+  [0, 0, 238],
+  [205, 0, 205],
+  [0, 205, 205],
+  [229, 229, 229],
+  [127, 127, 127],
+  [255, 0, 0],
+  [0, 255, 0],
+  [255, 255, 0],
+  [92, 92, 255],
+  [255, 0, 255],
+  [0, 255, 255],
+  [255, 255, 255],
+]
+// Basic colour for each hue sector, red through magenta in 60° steps.
+const HUE_BASIC = [1, 3, 2, 6, 4, 5]
+
+const nearestOf = (want: number[], candidates: number[]): number =>
+  candidates.reduce((best, n) =>
+    distance(BASIC_RGB[n] ?? [], want) < distance(BASIC_RGB[best] ?? [], want) ? n : best,
+  )
+
+/**
+ * The basic colour for `hex`. Plain RGB distance would send saturated mid-tones to grey (a dark
+ * green is nearer bright black than green), so a tinted colour first keeps its hue sector and only
+ * then picks the normal or bright variant; near-greys pick among the four greys.
+ */
+function nearest16(hex: `#${string}`): number {
+  const want = channels(hex)
+  const [r = 0, g = 0, b = 0] = want
+  const max = Math.max(r, g, b)
+  const chroma = max - Math.min(r, g, b)
+  // The palette's neutral tones are tinted by at most ~32 per channel; its hues by far more.
+  if (chroma < 40) return nearestOf(want, [0, 8, 7, 15])
+  const hue = max === r ? ((g - b) / chroma + 6) % 6 : max === g ? (b - r) / chroma + 2 : (r - g) / chroma + 4
+  const base = HUE_BASIC[Math.round(hue) % 6] ?? 7
+  return nearestOf(want, [base, base + 8])
 }
 
 // Reduce a 256-colour index to one of the 16 basic colours. A terminal that only understands the
@@ -69,19 +130,34 @@ export function basic16(n: number): number {
 }
 
 export function createAnsi(tier: ColorTier): Ansi {
-  if (tier === 'none') return { bold: (s) => s, dim: (s) => s, fg: (_n, s) => s, bg: (_n, s) => s, reset: '' }
-  const colour = (n: number, base: number, bright: number, s: string, off: number): string => {
+  if (tier === 'none') {
+    const same = (s: string) => s
+    return {
+      bold: same,
+      dim: same,
+      italic: same,
+      underline: same,
+      fg: (_c, s) => s,
+      bg: (_c, s) => s,
+      reset: '',
+    }
+  }
+  const colour = (c: Colour, base: number, bright: number, s: string, off: number): string => {
+    if (tier === 'truecolor' && typeof c === 'string')
+      return `\x1b[${off - 1};2;${channels(c).join(';')}m${s}\x1b[${off}m`
     if (tier === '16') {
-      const i = basic16(n)
+      const i = typeof c === 'number' ? basic16(c) : nearest16(c)
       return `\x1b[${i < 8 ? base + i : bright + i - 8}m${s}\x1b[${off}m`
     }
-    return `\x1b[${off - 1};5;${n}m${s}\x1b[${off}m`
+    return `\x1b[${off - 1};5;${typeof c === 'number' ? c : nearest256(c)}m${s}\x1b[${off}m`
   }
   return {
     bold: (s) => `\x1b[1m${s}\x1b[22m`,
     dim: (s) => `\x1b[2m${s}\x1b[22m`,
-    fg: (n, s) => colour(n, 30, 90, s, 39),
-    bg: (n, s) => colour(n, 40, 100, s, 49),
+    italic: (s) => `\x1b[3m${s}\x1b[23m`,
+    underline: (s) => `\x1b[4m${s}\x1b[24m`,
+    fg: (c, s) => colour(c, 30, 90, s, 39),
+    bg: (c, s) => colour(c, 40, 100, s, 49),
     reset: '\x1b[0m',
   }
 }

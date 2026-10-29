@@ -1,6 +1,6 @@
 import type { LocaleCatalog } from './index.js'
 
-/** 工具卡状态标签（W4）。经 `ConversationToolCardOptions.translate` 注入。 */
+/** Tool-card status labels, injected through `ConversationToolCardOptions.translate`. */
 export const toolLocaleCatalog: LocaleCatalog = {
   en: {
     'tool.status.planned': 'Planned',

@@ -1,0 +1,84 @@
+import type { EntryRow } from '@agnes/plugin-runtime/host'
+import type { SkillRuntimeInput } from '@agnes/resource-control-runtime'
+import { describe, expect, it } from 'vitest'
+import { skillRowRevision, withSkillRows } from '../../src/assemble/skill-row.js'
+
+function entryRow(
+  input: Pick<EntryRow, 'id' | 'plugin' | 'entryRevision'> & Partial<Pick<EntryRow, 'liveResources'>>,
+): EntryRow {
+  return {
+    id: input.id,
+    plugin: input.plugin,
+    entryRevision: input.entryRevision,
+    inject: [],
+    disabled: false,
+    isolate: {},
+    provides: [],
+    runtime: 'in-process',
+    mountIdentity: 'fixture-mount' as EntryRow['mountIdentity'],
+    mountRevision: 'fixture-mount',
+    extrasRevision: 'fixture-extras',
+    ...(input.liveResources === undefined ? {} : { liveResources: input.liveResources }),
+  }
+}
+
+const skill = (revision: string, workspaceId?: string) =>
+  ({
+    list: () => [
+      {
+        kind: 'skill',
+        resourceId: 'skill:one',
+        name: 'one',
+        revision,
+        sourceIdentity: { rootKey: 'workspace-agnes', scope: 'workspace' },
+        priority: 500,
+        resolution: 'active',
+        trust: 'trusted',
+        desired: 'enabled',
+        actual: 'ready',
+        stale: false,
+        ...(workspaceId ? { workspaceId } : {}),
+      },
+    ],
+  }) as unknown as SkillRuntimeInput
+
+describe('Skills row target', () => {
+  it('changes only with the effective Skills revision or workspace visibility', () => {
+    expect(skillRowRevision(skill('one'))).toBe(skillRowRevision(skill('one')))
+    expect(skillRowRevision(skill('one'))).not.toBe(skillRowRevision(skill('two')))
+    expect(skillRowRevision(skill('one', 'workspace-a'))).not.toBe(
+      skillRowRevision(skill('one', 'workspace-b')),
+    )
+    const disk = skill('one')
+    const runtime = (id: string) => ({
+      ...disk.list()[0]!,
+      resourceId: `skill/runtime/runtime/${id}`,
+      sourceIdentity: { scope: 'runtime', rootKey: 'runtime', sourceId: id },
+    })
+    const withRuntime = (id: string) =>
+      ({ ...disk, list: () => [...disk.list(), runtime(id)] }) as SkillRuntimeInput
+    expect(skillRowRevision(withRuntime('shared-worker'))).toBe(
+      skillRowRevision(withRuntime('session-worker')),
+    )
+    expect(skillRowRevision(withRuntime('session-worker'))).toBe(skillRowRevision(disk))
+    expect(skillRowRevision(undefined)).toBe(skillRowRevision(undefined))
+    expect(skillRowRevision(undefined)).not.toBe(
+      skillRowRevision({ list: () => [] } as unknown as SkillRuntimeInput),
+    )
+  })
+
+  it('replaces only the Skills row and keeps MCP object identities', () => {
+    const mcp = entryRow({ id: 'ext:agnes/mcp-server', plugin: 'builtin:mcp', entryRevision: 'mcp' })
+    const old = entryRow({
+      id: 'ext:agnes/skills',
+      plugin: 'builtin:skills',
+      liveResources: ['skills'],
+      entryRevision: 'old',
+    })
+    const next = { ...old, entryRevision: 'next' }
+    const target = withSkillRows([mcp, old], [next])
+    expect(target).toEqual([mcp, next])
+    expect(target[0]).toBe(mcp)
+    expect(() => withSkillRows([mcp], [mcp])).toThrow(/undeclared Skills consumer/)
+  })
+})

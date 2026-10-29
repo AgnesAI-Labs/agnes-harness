@@ -78,7 +78,7 @@ it('runs five real TUI sessions with double Ctrl-C in the same terminal, includi
         await writes
         expect(raw).toBe(true)
         expect(xterm.buffer.active.type).toBe('alternate')
-        expect(lines('alternate').join('\n')).toContain('Agnes AI')
+        expect(lines('alternate').join('\n')).toContain('local agent workbench')
       })
       expect(lines('normal')).toEqual(before)
       expect(lines('alternate').join('\n')).not.toContain('reply-')
@@ -107,6 +107,10 @@ it('runs five real TUI sessions with double Ctrl-C in the same terminal, includi
         expect(lines('normal').join('\n')).not.toContain(`reply-${index}`)
         expect(lines('alternate').filter((line) => line === `reply-${index}`)).toHaveLength(1)
       }
+      // A hung-up terminal makes both streams error; nothing is left to show it on, so it must not crash the run.
+      const hangup = Object.assign(new Error('write EIO'), { code: 'EIO' })
+      expect(() => stdout.emit('error', hangup)).not.toThrow()
+      expect(() => stdin.emit('error', hangup)).not.toThrow()
       stdin.write('\x03')
       stdin.write('\x03')
       await expect(running).resolves.toBe(0)
@@ -115,12 +119,13 @@ it('runs five real TUI sessions with double Ctrl-C in the same terminal, includi
       expect(raw).toBe(false)
       expect(stdin.listenerCount('data')).toBe(0)
       expect(stdout.listenerCount('resize')).toBe(0)
+      expect(stdin.listenerCount('error') + stdout.listenerCount('error')).toBe(0)
       expect(xterm.buffer.active.type).toBe('normal')
       const history = lines('normal')
       expect(history).toContain('SHELL HISTORY')
       // Exit gives the shell page back exactly as it was: no copy of the chat is written onto it.
       expect(history.filter(Boolean)).toEqual(before.filter(Boolean))
-      expect(history.join('\n')).not.toMatch(/reply-|question-|Agnes AI|Ctrl\+C|Enter send|↑0|❯/)
+      expect(history.join('\n')).not.toMatch(/reply-|question-|local agent workbench|Ctrl\+C|Enter send|↑0|❯/)
       stdout.write('$ agnes\r\n')
       await writes
     }
@@ -188,7 +193,7 @@ it('claims the alternate screen before a slow session open can expose the prior 
     )
     await vi.waitFor(() => expect(output).toBe('\x1b[?1049h\x1b[H\x1b[2J'))
     releaseOpen()
-    await vi.waitFor(() => expect(output).toContain('Agnes AI'))
+    await vi.waitFor(() => expect(output).toContain('local agent workbench'))
     stdin.write('\x03')
     stdin.write('\x03')
     await expect(running).resolves.toBe(0)

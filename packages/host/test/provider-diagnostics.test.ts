@@ -30,9 +30,10 @@ it('keeps managed account routes revoked across hot updates and cold Host rebuil
     await host.applyModelProfile(initial)
     expect(host.provider.models().some((model) => model.route === 'deepseek')).toBe(false)
     await host.close()
+    const { adapters: _adapters, ...provider } = initial.provider
     ;({ host } = await createTestHost({
       dataDir,
-      profileInputs: { user: { name: initial.name, provider: initial.provider } },
+      profileInputs: { user: { name: initial.name, provider } },
     }))
     expect(host.provider.models().some((model) => model.route === 'deepseek')).toBe(false)
     expect(() =>
@@ -117,7 +118,7 @@ it('pre-registers API-key providers without replacing the production route or ce
     const registry = host.provider.registry
     if (!registry) throw new Error('production provider did not expose registry')
     expect(registry.models().some((model) => model.route === 'gw' && model.id === 'm1')).toBe(true)
-    for (const entry of API_KEY_PROVIDER_REGISTRY)
+    for (const entry of API_KEY_PROVIDER_REGISTRY.filter((entry) => !entry.capabilities))
       expect(registry.routes().some((route) => route.route === entry.route)).toBe(true)
     const result = await runDoctor(registry, { signal: new AbortController().signal })
     expect(result.ok).toBe(false)
@@ -143,7 +144,6 @@ it('leaves a profile-owned route in place when it shares a built-in API-key rout
         name: 'profile-owned-deepseek',
         provider: {
           package: '@agnes/ai',
-          adapters: ['@agnes/ai'],
           routes: [
             {
               route: 'deepseek',
@@ -165,11 +165,9 @@ it('leaves a profile-owned route in place when it shares a built-in API-key rout
         .filter((candidate) => candidate.route === 'deepseek')
         .map((candidate) => candidate.id),
     ).toEqual(['deployment-deepseek'])
-    // The other eleven bundled options remain independently selectable (Kimi Coding Plan raised
-    // this from nine to ten, and the Agnes AI gateway route from ten to eleven -- see the
-    // "feat(ai): add Kimi Coding Plan" and "fix(ai): point Agnes AI provider at the China
-    // gateway" commits on main).
-    expect(registry.routes().filter((route) => route.route !== 'deepseek')).toHaveLength(11)
+    // The other eighteen bundled options remain independently selectable (seven pi-ai catalogue
+    // providers raised this from eleven -- see "feat(ai): expose more built-in providers").
+    expect(registry.routes().filter((route) => route.route !== 'deepseek')).toHaveLength(18)
   } finally {
     await host.close()
     rmSync(dataDir, { recursive: true, force: true })

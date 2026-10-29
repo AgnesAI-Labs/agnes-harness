@@ -1,4 +1,4 @@
-import { defineExtension, type ExtensionFactory } from '@agnes/extension-api'
+import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { catalogInfoOf } from '../../../src/mcp/catalog-info.js'
 import type { McpServerConfig } from '../../../src/mcp/config.js'
 import { connectMcp } from '../../../src/mcp/connect.js'
@@ -48,7 +48,7 @@ function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
  * One extension row per configured MCP server (D118, dsh 的 `apply` + 连接监督器参照实现，落在
  * `@agnes/base`)。工厂函数本身是同步的：连接与首次目录同步在 `superviseConnection` 内部后台进行,
  * 行立刻返回,慢服务器不会拖长整次应用(否则 dsh 是等的,这里刻意不照做)。断线按 dsh 式退避重连;
- * `tools/list_changed` 触发重新同步;卸载时关闭连接、注销工具,并释放这个服务器在 `McpCatalogHub`
+ * `tools/list_changed` 与 `resources/list_changed` 都触发重新同步;卸载时关闭连接、注销工具,并释放这个服务器在 `McpCatalogHub`
  * 里的搜索索引声明。
  *
  * 与设计稿(`2026-09-21-resource-rows-design.md` 第 33 行)字面文本的一处偏差:稿子写的是
@@ -70,48 +70,51 @@ function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
  * `usedCapabilities()` 只按文本扫描各扩展自己的 `src/`,因此扫到这里确实是零——manifest 如实反映了这一点;
  * 每一行真正声明的能力在行自己的 manifest 里(`mcpServerRowsFromDefinitions`)。
  */
-export function mcpServerExtension(cfg: McpServerConfig, deps: McpServerExtensionDeps): ExtensionFactory {
-  return defineExtension((agnes) => {
-    // This row instance's identity in the catalog hub: an update replaces the row under the same
-    // server id, and only the instance that made the current claim may release it.
-    const claimant = {}
-    const connect =
-      deps.connect ??
-      ((config: McpServerConfig, signal: AbortSignal) => connectMcp(config, undefined, { signal }))
-    const handle = superviseConnection(
-      {
-        connect: (signal) => connect(cfg, signal),
-        sync: (connection, reportCatalog) =>
-          registerRemoteToolsStrict(agnes, connection, cfg, {
-            onCatalog: (rows) => deps.catalogHub.upsert(cfg.id, rows, claimant),
-            ...(reportCatalog
-              ? { onRemoteCatalog: (remote, skipped) => reportCatalog(catalogInfoOf(remote, skipped)) }
-              : {}),
-            ownsConnection: false,
-          }),
-        sleep: abortableSleep,
-        ...(deps.onStatus ? { onStatus: deps.onStatus } : {}),
-        log: agnes.ctx.log,
-      },
-      deps.policy ?? RECONNECT_DEFAULTS,
-    )
-    // Not awaited: the row must return immediately (see the "不阻塞应用" note above). A rejection
-    // here would otherwise surface only as an unhandled promise rejection -- superviseConnection
-    // already reports failures through `deps.log`, so this exists purely to keep it quiet.
-    void handle.ready.catch(() => undefined)
-    deps.onFirstAttempt?.(handle.ready)
+export function mcpServerExtension(cfg: McpServerConfig, deps: McpServerExtensionDeps) {
+  return defineAgnesPlugin({
+    inject: ['tools', 'resources', 'self'],
+    apply(plugin: Context) {
+      // This row instance's identity in the catalog hub: an update replaces the row under the same
+      // server id, and only the instance that made the current claim may release it.
+      const claimant = {}
+      const connect =
+        deps.connect ??
+        ((config: McpServerConfig, signal: AbortSignal) => connectMcp(config, undefined, { signal }))
+      const handle = superviseConnection(
+        {
+          connect: (signal) => connect(cfg, signal),
+          sync: (connection, reportCatalog) =>
+            registerRemoteToolsStrict(plugin, connection, cfg, {
+              onCatalog: (rows) => deps.catalogHub.upsert(cfg.id, rows, claimant),
+              ...(reportCatalog
+                ? { onRemoteCatalog: (remote, skipped) => reportCatalog(catalogInfoOf(remote, skipped)) }
+                : {}),
+              ownsConnection: false,
+            }),
+          sleep: abortableSleep,
+          ...(deps.onStatus ? { onStatus: deps.onStatus } : {}),
+          log: plugin.self.log,
+        },
+        deps.policy ?? RECONNECT_DEFAULTS,
+      )
+      // Not awaited: the row must return immediately (see the "不阻塞应用" note above). A rejection
+      // here would otherwise surface only as an unhandled promise rejection -- superviseConnection
+      // already reports failures through `deps.log`, so this exists purely to keep it quiet.
+      void handle.ready.catch(() => undefined)
+      deps.onFirstAttempt?.(handle.ready)
 
-    let disposed = false
-    let disposal: Promise<void> | undefined
-    return () => {
-      if (disposed) return disposal
-      disposed = true
-      // `catalogHub.remove` must wait for `handle.dispose()` to fully drain the sync chain first --
-      // an in-flight `sync` triggered by a last-second `tools/list_changed` could otherwise call
-      // `onCatalog` (re-adding this server's rows) after an eager `remove()` already ran, leaving a
-      // ghost entry nothing ever cleans up. `dispose()` guarantees no further `sync` calls follow it.
-      disposal = handle.dispose().finally(() => deps.catalogHub.remove(cfg.id, claimant))
-      return disposal
-    }
+      let disposed = false
+      let disposal: Promise<void> | undefined
+      return () => {
+        if (disposed) return disposal
+        disposed = true
+        // `catalogHub.remove` must wait for `handle.dispose()` to fully drain the sync chain first --
+        // an in-flight `sync` triggered by a last-second `tools/list_changed` could otherwise call
+        // `onCatalog` (re-adding this server's rows) after an eager `remove()` already ran, leaving a
+        // ghost entry nothing ever cleans up. `dispose()` guarantees no further `sync` calls follow it.
+        disposal = handle.dispose().finally(() => deps.catalogHub.remove(cfg.id, claimant))
+        return disposal
+      }
+    },
   })
 }

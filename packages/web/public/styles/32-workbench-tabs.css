@@ -1,0 +1,518 @@
+@layer app {
+  /* Workbench tabs (更改 / 执行记录 / 终端 / 交付物): a count beside the title, one toolbar line, one-row
+     list items with a status tag, details under the selection and one quiet footer line. */
+  .workbench-tab-count {
+    margin-inline-start: var(--s4);
+    padding: 0 var(--s4);
+    border-radius: var(--radius-xs);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-fill);
+    font-family: var(--font-mono);
+    font-size: 0.65625rem;
+    font-weight: var(--font-weight-regular);
+    line-height: 1.5;
+  }
+  .workbench-tab-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8);
+    padding: var(--s8) var(--s12);
+    border-block-end: 1px solid var(--agnes-line-hairline);
+    flex-shrink: 0;
+  }
+  .workbench-tab-summary {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+  }
+  .workbench-tab-toolbar .workbench-tab-summary:last-child {
+    margin-inline-start: auto;
+  }
+  .workbench-tab-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s4) var(--s8);
+    padding: var(--s8) var(--s12);
+    border-block-start: 1px solid var(--agnes-line-hairline);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    flex-shrink: 0;
+  }
+  .workbench-tab-footer > p {
+    margin: 0;
+  }
+  .workbench-tab-footer .agh-disclosure {
+    flex-basis: 100%;
+  }
+  .workbench-tag {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    padding: 0 var(--s4);
+    border-radius: var(--radius-xs);
+    font-size: 0.6875rem;
+    line-height: 1.6;
+    white-space: nowrap;
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-fill);
+  }
+  .workbench-tag[data-tone="ok"] {
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
+  }
+  .workbench-tag[data-tone="warn"] {
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+  }
+  .workbench-tag[data-tone="err"] {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+  }
+  .workbench-tag[data-tone="brand"] {
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .workbench-strip {
+    margin: var(--s8) var(--s12) 0;
+    padding: var(--s4) var(--s8);
+    border-radius: var(--radius-sm);
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+    font-size: var(--font-size-xs);
+  }
+
+  /* Terminal chrome stays quiet; the emulator uses the app's panel tokens. */
+  .workbench-terminal {
+    container-type: inline-size;
+  }
+  .workbench-terminal-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+  }
+  .workbench-terminal-bar {
+    width: 168px;
+    flex: none;
+    overflow: auto;
+    background: var(--agnes-bg-subtle);
+    border-inline-end: 1px solid var(--agnes-line-hairline);
+    padding: var(--s4);
+  }
+  .workbench-terminal-group {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--s4) var(--s8);
+    font-size: var(--font-size-xs);
+    color: var(--agnes-text-secondary);
+  }
+  .workbench-terminal-bar .workbench-terminal-tabs {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    gap: var(--s2);
+    overflow: visible;
+  }
+  .workbench-terminal-pill {
+    display: flex;
+    align-items: center;
+    position: relative;
+    border-radius: var(--radius-md);
+    min-width: 0;
+  }
+  .workbench-terminal-pill[data-active="true"] {
+    background: var(--agnes-bg-fill);
+  }
+  .workbench-terminal-pill > .agh-btn--icon {
+    opacity: 0;
+    flex: none;
+  }
+  .workbench-terminal-pill:is(:hover, :focus-within, [data-active="true"]) > .agh-btn--icon {
+    opacity: 1;
+  }
+  .workbench-terminal-pill > span:first-child {
+    flex: 1;
+    min-width: 0;
+  }
+  .workbench-terminal-pill .agh-menu-anchor {
+    display: block;
+  }
+  .workbench-terminal-pill .workbench-terminal-select {
+    width: 100%;
+    display: flex;
+    gap: var(--s4);
+    padding-inline: var(--s4);
+    color: var(--agnes-text-secondary);
+  }
+  .workbench-terminal-tabs .workbench-terminal-pill [aria-pressed="true"] {
+    color: var(--agnes-text-primary);
+    background: transparent;
+  }
+  .workbench-terminal-prompt:empty {
+    display: none;
+  }
+  .workbench-terminal-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+  }
+  .workbench-terminal-runtime {
+    font: 10px var(--font-mono);
+    color: var(--agnes-text-secondary);
+    white-space: nowrap;
+  }
+  .workbench-terminal-pill:where([data-editing="true"]) .workbench-terminal-name {
+    visibility: hidden;
+  }
+  .workbench-terminal-rename {
+    position: absolute;
+    inset-inline-start: 20px;
+    width: 7rem;
+    z-index: 1;
+  }
+  @container (max-width: 560px) {
+    .workbench-terminal-body {
+      flex-direction: column;
+    }
+    .workbench-terminal-bar {
+      display: flex;
+      width: auto;
+      max-width: 100%;
+      overflow-x: auto;
+      border-inline-end: 0;
+      border-block-end: 1px solid var(--agnes-line-hairline);
+    }
+    .workbench-terminal-bar .workbench-terminal-tabs {
+      flex-direction: row;
+    }
+    .workbench-terminal-tabs > div {
+      flex: none;
+    }
+    .workbench-terminal-tabs .workbench-terminal-group {
+      display: none;
+    }
+    .workbench-terminal-pill {
+      min-width: 120px;
+    }
+  }
+  .agh-terminal-screen {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    padding: 10px;
+    overflow: hidden;
+    color: var(--agnes-terminal-text);
+    background: var(--agnes-terminal-bg);
+    font: var(--font-size-sm) / 1.5 var(--font-mono);
+  }
+  .agh-terminal-screen .xterm {
+    height: 100%;
+  }
+  /* A child agent's pane carries the messages it wrote, not a command's output: the same snapshot
+   reads as prose at a bounded measure, and its grammar (headings, lists, code) is preserved. */
+  .workbench-child-report {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding: var(--s16) var(--s16) var(--s24);
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-app-content);
+    scrollbar-width: thin;
+  }
+  .workbench-child-report-body {
+    width: 100%;
+    max-width: 46rem;
+    margin: 0 auto;
+    padding-inline: var(--s4);
+  }
+  .workbench-child-report-waiting {
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: var(--s4);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+  }
+  /* The end state closes the report in words, so a stopped or failed child is not left to a dot. */
+  .workbench-child-report-foot {
+    max-width: 46rem;
+    margin: var(--s12) auto 0;
+    padding: var(--s4) var(--s4) 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .workbench-child-report-foot[data-tone="danger"] {
+    color: var(--agnes-status-danger-text);
+  }
+  .workbench-terminal-note,
+  .workbench-terminal-readonly {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--s4) var(--s12);
+    color: var(--agnes-terminal-muted);
+    background: var(--agnes-terminal-bar);
+    font-size: var(--font-size-xs);
+    flex-shrink: 0;
+    border-block-end: 1px solid var(--agnes-terminal-line);
+  }
+  .workbench-terminal-readonly {
+    margin: 0 var(--s8) var(--s8);
+    border-radius: var(--radius-md);
+  }
+  .workbench-terminal-details {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--s4) var(--s12);
+    max-width: 22rem;
+    margin: 0;
+    font-size: var(--font-size-xs);
+    overflow-wrap: anywhere;
+  }
+  .workbench-terminal-details dt {
+    color: var(--agnes-text-secondary);
+  }
+  .workbench-terminal-details dd {
+    margin: 0;
+    font-family: var(--font-mono);
+  }
+  .workbench-terminal-empty {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--s24);
+    flex: 1;
+    overflow: auto;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agh-terminal-screen .xterm-cursor {
+      animation: none;
+    }
+  }
+
+  /* Deliverables: the answer's cards under version headings; the opened card carries its preview. */
+  .workbench-deliverables {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+  .workbench-deliverables-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--s4) var(--s12) var(--s12);
+  }
+  .workbench-deliverables-group > h4 {
+    margin: var(--s8) var(--s2) var(--s4);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+  }
+  :is(.workbench-deliverables-group, .workbench-deliverables-earlier) ul {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s8);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .workbench-deliverables .deliverable-file {
+    overflow: hidden;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-lg);
+    background: var(--agnes-bg-surface);
+  }
+  .workbench-deliverables li[data-chosen="true"] .deliverable-file[data-open="true"] {
+    border-color: var(--agnes-brand-primary);
+    box-shadow: 0 0 0 3px var(--agnes-brand-emphasis-soft);
+  }
+  .workbench-deliverables-earlier {
+    margin-block-start: var(--s12);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+  }
+  .workbench-deliverables-earlier ul {
+    margin-block-start: var(--s8);
+  }
+
+  /* Changes: one row per file, the chosen file's numbered diff under the list. */
+  .workbench-tab-spacer {
+    flex: 1;
+  }
+  .workbench-changes-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+  }
+  .workbench-changes-list {
+    flex: none;
+    margin: 0;
+    padding: var(--s4) var(--s8);
+    list-style: none;
+  }
+  .workbench-changes-file.agnes-ui-button {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    width: 100%;
+    height: auto;
+    min-height: 1.875rem;
+    padding: var(--s2) var(--s8);
+    border-radius: var(--radius-sm);
+    color: var(--agnes-text-primary);
+    font-weight: var(--font-weight-regular);
+    text-align: start;
+  }
+  .workbench-changes-file.agnes-ui-button[aria-pressed="true"] {
+    background: var(--agnes-bg-selected);
+  }
+  .workbench-changes-path {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .workbench-changes-path > strong {
+    font-weight: var(--font-weight-medium);
+  }
+  .workbench-changes-dir {
+    color: var(--agnes-text-secondary);
+  }
+  .workbench-diff-count {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+  }
+  .workbench-diff-added {
+    color: var(--agnes-status-success-text);
+  }
+  .workbench-diff-removed {
+    color: var(--agnes-status-danger-text);
+  }
+  .workbench-change-preview {
+    flex: 1 0 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 12rem;
+  }
+  .workbench-change-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s4) var(--s8);
+    padding: var(--s8) var(--s12);
+    border-block: 1px solid var(--agnes-line-hairline);
+    background: var(--agnes-bg-subtle);
+  }
+  .workbench-change-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: var(--font-weight-semibold);
+  }
+  .workbench-change-head .agnes-ui-button[data-testid="changes-provenance"] {
+    gap: var(--s2);
+    padding-inline: var(--s4);
+  }
+  .workbench-change-preview > .workbench-strip {
+    margin-block-end: var(--s4);
+  }
+  .workbench-change-preview > .agnes-settings-state {
+    margin: var(--s12);
+  }
+  .workbench-diff-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+  .workbench-diff {
+    margin: 0;
+    padding-block: var(--s4);
+    font: var(--font-size-xs) / 1.65 var(--font-mono);
+  }
+  .workbench-diff-line {
+    display: grid;
+    grid-template-columns: 2.75rem 2.75rem 1rem max-content;
+    min-width: max-content;
+    white-space: pre;
+  }
+  .workbench-diff-number {
+    padding-inline-end: var(--s8);
+    color: var(--agnes-text-secondary);
+    text-align: end;
+    user-select: none;
+  }
+  .workbench-diff-sign {
+    user-select: none;
+  }
+  .workbench-diff-line[data-kind="add"] {
+    background: var(--agnes-status-success-bg);
+  }
+  .workbench-diff-line[data-kind="add"] > .workbench-diff-sign {
+    color: var(--agnes-status-success-text);
+  }
+  .workbench-diff-line[data-kind="del"] {
+    background: var(--agnes-status-danger-bg);
+  }
+  .workbench-diff-line[data-kind="del"] > .workbench-diff-sign {
+    color: var(--agnes-status-danger-text);
+  }
+  .workbench-diff-line[data-kind="hunk"] {
+    display: block;
+    padding-inline-start: 6.5rem;
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .workbench-diff-fold.agnes-ui-button {
+    display: flex;
+    width: 100%;
+    height: auto;
+    min-height: 1.5rem;
+    padding-inline-start: 6.5rem;
+    border-radius: 0;
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+    font: inherit;
+    justify-content: flex-start;
+  }
+  .workbench-change-evidence {
+    padding: var(--s8) var(--s12);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    overflow-wrap: anywhere;
+  }
+  :is(.workbench-change-evidence, .workbench-changes-footer) dl {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--s4) var(--s8);
+    margin: var(--s4) 0;
+  }
+  :is(.workbench-change-evidence, .workbench-changes-footer) dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .workbench-changes-footer {
+    max-height: 40%;
+    overflow: auto;
+  }
+  .workbench-changes-footer > .agh-disclosure {
+    flex-basis: auto;
+  }
+  .workbench-changes-footer > .agh-disclosure[data-open="true"] {
+    flex-basis: 100%;
+  }
+}

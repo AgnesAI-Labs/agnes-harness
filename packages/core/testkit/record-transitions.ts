@@ -1,20 +1,20 @@
 // Records, commit by commit, what a set of scripted sessions writes: the batch of rows, the
 // program-counter value each batch carries, every register cell after the commit and the UI
 // summary of the running operation. The checked-in recordings under `fixtures/op-state-golden/`
-// were made by the build that still wrote the program counter as a ledger row; they are frozen, and
-// `expectedFromGolden` says what the current format must commit in their place.
+// record the current ledger rows and operation cells without format adapters.
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import type { OpStateObj } from '@agnes/core-common/step/op-state'
+import type { Event, IdMinter } from '@agnes/core-common/types'
+import { scanAll } from '@agnes/core-ledger/log/scan-pages'
+import type { SessionLogImpl } from '@agnes/core-ledger/log/session-log'
+import type { CommitTx, OpWrite, StorageAdapter } from '@agnes/core-ledger/log/storage'
+import type { UIProjectionCell } from '@agnes/core-ledger/project/ui'
 import type { InferenceEvent, Provider } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
-import { scanAll } from '../src/log/scan-pages.js'
-import type { SessionLogImpl } from '../src/log/session-log.js'
-import type { CommitTx, OpWrite, StorageAdapter } from '../src/log/storage.js'
-import type { UIProjectionCell } from '../src/project/ui.js'
 import { ToolRegistry } from '../src/registry/tools.js'
-import { type OpStateObj, opMarkData } from '../src/step/op-state.js'
 import type { CompactionPort } from '../src/step/session.js'
-import type { Event, IdMinter } from '../src/types.js'
+import { answerToolDecision } from '../test/helpers/decision.js'
 import {
   fakeProvider,
   type Script,
@@ -42,16 +42,8 @@ export type RecordedCommit = {
   uiOpState: unknown
 }
 
-/**
- * One commit of the checked-in reference, recorded by the build that still wrote the program
- * counter as an `op.state` row after the commit's other rows. `events` leaves that row out.
- */
-export type GoldenCommit = {
-  events: unknown[]
-  op: Array<{ lane: string; data: unknown }>
-  registers: Cell[]
-  uiOpState: unknown
-}
+/** Current-format commits recorded from the reference implementation. */
+export type GoldenCommit = RecordedCommit
 
 const goldenDir = new URL('../fixtures/op-state-golden/', import.meta.url)
 
@@ -123,7 +115,7 @@ const deferredTool = () =>
   }) as never
 
 /** A tool that stays in flight until released, so a stop request lands while it runs. */
-function heldRead() {
+function heldRead(expected: number) {
   let release!: () => void
   const held = new Promise<void>((resolve) => {
     release = resolve
@@ -132,8 +124,9 @@ function heldRead() {
   const running = new Promise<void>((resolve) => {
     started = resolve
   })
+  let entered = 0
   const tool = readTool(async () => {
-    started()
+    if (++entered === expected) started()
     await held
     return { content: [{ type: 'text' as const, text: 'late' }] }
   })
@@ -250,7 +243,6 @@ const SCENARIOS: Record<string, (open: Open, record: Record_) => Promise<void>> 
           receipts.set('golden-ticket', { requestId: req.requestId, bindingHash: req.bindingHash, expiresAt })
           return { ticket: 'golden-ticket', expiresAt }
         },
-        resume: async (ticket) => receipts.get(ticket) ?? null,
       },
     })
     const h = await open({
@@ -260,11 +252,11 @@ const SCENARIOS: Record<string, (open: Open, record: Record_) => Promise<void>> 
     })
     await h.session.enqueue('next-turn', say('parks for approval'))
     await h.session.run(turnEnd())
-    await h.session.resumeApproval('golden-ticket', 'allowed-once', { ...actor, id: 'approver' })
+    await answerToolDecision(h.session, 1, 'allowed-once', { ...actor, id: 'approver' })
     await h.session.run(turnEnd())
   },
   async 'abort-with-pending'(open) {
-    const held = heldRead()
+    const held = heldRead(2)
     const h = await open({
       provider: fakeProvider([batchTurn(2), textTurn('never')]),
       registry: registryOf(held.tool),
@@ -437,7 +429,7 @@ export async function recordTransitions(name: string, storage: StorageAdapter): 
   return commits
 }
 
-/** The checked-in recording of one scenario, as the build before the format switch wrote it. */
+/** The checked-in current-format recording of one scenario. */
 export function readGolden(name: string): GoldenCommit[] {
   return readFileSync(fileURLToPath(new URL(`${name}.jsonl`, goldenDir)), 'utf8')
     .trimEnd()
@@ -532,210 +524,9 @@ export function renumberSeqs(value: unknown, to: (seq: number, key: string) => n
   return move(value)
 }
 
-/** A seq map as a `renumberSeqs` target that refuses a seq the map does not have. */
-const lookup =
-  (map: ReadonlyMap<number, number>, what: string) =>
-  (seq: number, key: string): number => {
-    const to = map.get(seq)
-    if (to === undefined) throw new Error(`${what} names seq ${seq} under ${key}, which no row has`)
-    return to
-  }
-
-/**
- * What the current format commits for a checked-in reference: the same rows without the
- * program-counter row, an `x/core/op-mark` row for each commit that had no other row, the program
- * counter as a cell at the seq of the commit's last row, and every seq a value names moved to where
- * that row now lands. Throws when a value names a seq no row of the recording has.
- */
-export function expectedFromGolden(golden: GoldenCommit[]): RecordedCommit[] {
-  // Old seq to new seq, built over the whole recording before any value is moved.
-  const moved = new Map<number, number>()
-  // Rows written before the recording started (the session's own start) keep their seqs.
-  const start = ((golden[0]?.events[0] as Row | undefined)?.seq ?? 1) - 1
-  for (let seq = 1; seq <= start; seq++) moved.set(seq, seq)
-  let oldHead = start
-  let newHead = start
-  const heads: Array<{ first: number; last: number; marked: boolean }> = []
-  for (const commit of golden) {
-    const rows = commit.events as Row[]
-    const first = newHead + 1
-    // The old program-counter row sat at the end of its batch, except in a fork's first batch.
-    let opSeq: number | undefined
-    for (const row of rows) {
-      if (row.seq === oldHead + 2 && commit.op.length > 0 && opSeq === undefined) opSeq = ++oldHead
-      if (row.seq !== oldHead + 1) throw new Error(`reference seq ${row.seq} does not follow ${oldHead}`)
-      oldHead = row.seq
-      moved.set(row.seq, ++newHead)
-    }
-    const marked = rows.length === 0
-    if (marked) newHead++
-    if (commit.op.length > 0) moved.set(opSeq ?? ++oldHead, newHead)
-    heads.push({ first, last: newHead, marked })
-  }
-  const move = (value: unknown): unknown => renumberSeqs(value, lookup(moved, 'reference'))
-  const out: RecordedCommit[] = []
-  let cells = new Map<string, { seq: number; data: unknown }>()
-  golden.forEach((commit, index) => {
-    const rows = (commit.events as Row[]).map((row) => move(row) as Row)
-    const head = heads[index] as { first: number; last: number; marked: boolean }
-    // A delegated or forked child starts with no program counter of its own.
-    if (rows.some((row) => row.type === 'session/start' && (row.data as { parent?: unknown }).parent))
-      cells = new Map()
-    // The old first batch of a fork tombstoned a cell the child never had; there is nothing to write.
-    const writes = commit.op
-      .filter((write) => write.data !== null || cells.has(write.lane))
-      .map((write) => ({ lane: write.lane, data: move(write.data) }))
-    if (head.marked) {
-      const write = writes[0]
-      if (!write) throw new Error(`reference commit ${index} has neither rows nor a program counter`)
-      const actor = (golden.flatMap((c) => c.events as Row[])[0] as Row).actor
-      rows.push({
-        lane: write.lane,
-        v: 1,
-        type: 'x/core/op-mark',
-        origin: 'system',
-        trust: 'trusted',
-        actor,
-        ignorable: true,
-        data: stable(
-          opMarkData(
-            (cells.get(write.lane)?.data ?? null) as OpStateObj | null,
-            write.data as OpStateObj | null,
-          ),
-        ),
-        seq: head.last,
-      })
-    }
-    for (const write of writes)
-      if (write.data === null) cells.delete(write.lane)
-      else cells.set(write.lane, { seq: head.last, data: write.data })
-    out.push({
-      events: rows,
-      op: writes,
-      opCells: [...cells]
-        .map(([key, cell]) => ({ key, seq: cell.seq, data: cell.data }))
-        .sort((a, b) => a.key.localeCompare(b.key)),
-      registers: move(commit.registers) as Cell[],
-      uiOpState: move(commit.uiOpState),
-    })
-  })
-  return out
-}
-
 type Call = { toolUseId: string; status: string; dispatchPhase?: string; dispatchAttempt?: number }
 type OpValue = { taint?: boolean; phase: { kind: string; batch?: { calls: Call[] } } } | null
-type MarkData = { calls?: Call[] }
-
-const onlyMark = (commit: RecordedCommit | undefined): MarkData | undefined => {
-  const [row, ...rest] = (commit?.events ?? []) as Array<{ type: string; data: MarkData }>
-  return row?.type === 'x/core/op-mark' && rest.length === 0 ? row.data : undefined
-}
-
-/** The one call an op-mark row names, when it names exactly one and gives it `status`. */
-const markedCall = (commit: RecordedCommit | undefined, status: string): Call | undefined => {
-  const calls = onlyMark(commit)?.calls
-  return calls?.length === 1 && calls[0]?.status === status ? calls[0] : undefined
-}
-
-const opCall = (commit: RecordedCommit | undefined, toolUseId: string): Call | undefined =>
-  (commit?.op[0]?.data as OpValue)?.phase.batch?.calls.find((call) => call.toolUseId === toolUseId)
-
-const hasRow = (commit: RecordedCommit | undefined, test: (row: Row) => boolean): boolean =>
-  ((commit?.events ?? []) as Row[]).some(test)
-
 const data = (row: Row): Record<string, unknown> => (row.data ?? {}) as Record<string, unknown>
-
-/** How many commits, starting at `index`, form one of the runs a tool call now commits as one. */
-function mergedRun(commits: RecordedCommit[], index: number): number {
-  const approved = markedCall(commits[index], 'approved')
-  if (approved) {
-    const id = approved.toolUseId
-    // Approved, then the tool's effect/intent with the call dispatch_pending, then — for a workspace
-    // call — the attempt-one `dispatched` mark.
-    const intent = commits[index + 1]
-    if (
-      !hasRow(intent, (row) => row.type === 'effect/intent' && (data(row).tool as Call)?.toolUseId === id) ||
-      opCall(intent, id)?.status !== 'dispatch_pending'
-    )
-      return 1
-    const dispatched = markedCall(commits[index + 2], 'dispatched')
-    return dispatched?.toolUseId === id && dispatched.dispatchAttempt === 1 ? 3 : 2
-  }
-  // The result with the call responded, then its settlement with the call completed.
-  const result = ((commits[index]?.events ?? []) as Row[]).find((row) => row.type === 'tool/result')
-  const id = result ? String(data(result).toolUseId) : undefined
-  if (
-    id !== undefined &&
-    opCall(commits[index], id)?.status === 'responded' &&
-    hasRow(commits[index + 1], (row) => row.type === 'effect/settled') &&
-    opCall(commits[index + 1], id)?.status === 'completed'
-  )
-    return 2
-  return 1
-}
-
-/**
- * What a recording made before a tool call's adjacent transitions were committed together becomes
- * once they are: each run `mergedRun` finds is one commit whose rows are the run's rows without its
- * op-marks and whose program counter, cells and UI summary are the run's last — except the counter's
- * `taint`, which is the run's first, since nothing is folded between the steps of one commit. A
- * second pass moves every seq to where its row now lands and throws on a value that names a dropped
- * op-mark. Only adjacent runs are merged; a concurrent batch interleaves its calls and is compared
- * with `statusProjectionProblems` and `callEventProblems` instead.
- */
-export function mergeLedgerWriteCommits(commits: RecordedCommit[]): RecordedCommit[] {
-  const dropped = new Set<number>()
-  // A cell's seq is its commit's last row; where that row was a dropped op-mark, the cell now sits
-  // at the merged commit's last row. Only a cell's own seq may point there.
-  const headOf = new Map<number, number>()
-  const merged: RecordedCommit[] = []
-  for (let index = 0; index < commits.length; ) {
-    const run = commits.slice(index, index + mergedRun(commits, index))
-    index += run.length
-    const last = run.at(-1) as RecordedCommit
-    if (run.length === 1) {
-      merged.push(last)
-      continue
-    }
-    const rows = run.flatMap((commit) => commit.events as Row[])
-    const kept = rows.filter((row) => row.type !== 'x/core/op-mark')
-    for (const row of rows)
-      if (row.type === 'x/core/op-mark') {
-        dropped.add(row.seq)
-        headOf.set(row.seq, (kept.at(-1) as Row).seq)
-      }
-    const taint = (run[0]?.op[0]?.data as OpValue)?.taint
-    const withTaint = (value: unknown) =>
-      value && typeof value === 'object' ? { ...(value as object), taint } : value
-    merged.push({
-      events: kept,
-      op: last.op.map((write) => ({ lane: write.lane, data: withTaint(write.data) })),
-      opCells: last.opCells.map((cell) =>
-        cell.key === last.op[0]?.lane ? { ...cell, data: withTaint(cell.data) } : cell,
-      ),
-      registers: last.registers,
-      uiOpState: last.uiOpState,
-    })
-  }
-  const head = Math.max(0, ...commits.flatMap((commit) => (commit.events as Row[]).map((row) => row.seq)))
-  const moved = new Map<number, number>()
-  let gone = 0
-  for (let seq = 1; seq <= head; seq++)
-    if (dropped.has(seq)) gone++
-    else moved.set(seq, seq - gone)
-  const to = lookup(moved, 'merged recording')
-  return merged.map((commit) => ({
-    events: renumberSeqs(commit.events, to) as unknown[],
-    op: renumberSeqs(commit.op, to) as RecordedCommit['op'],
-    opCells: commit.opCells.map(({ key, seq, data }) => ({
-      key,
-      seq: to(headOf.get(seq) ?? seq, 'seq'),
-      data: renumberSeqs(data, to),
-    })),
-    registers: renumberSeqs(commit.registers, to) as Cell[],
-    uiOpState: renumberSeqs(commit.uiOpState, to),
-  }))
-}
 
 /** Each call's status in every program-counter write of a recording, repeats in a row folded. */
 function statusRuns(commits: RecordedCommit[]): Map<string, string[]> {

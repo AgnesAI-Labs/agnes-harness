@@ -16,7 +16,7 @@
           "kind": "extension",
           "id": "acme/widget",
           "path": "./extension",
-          "apiRange": "^1.0",
+          "apiRange": "^5.0.0",
           "capabilities": {},
           "runtimeSupports": ["in-process"]
         }

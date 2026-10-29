@@ -1,15 +1,8 @@
 import { readFileSync } from 'node:fs'
+import { loopKind } from '@agnes/extension-api'
 import { parse } from 'yaml'
-import { approvalPolicy } from '../extensions/approval-policy/src/seam.js'
-import { artifactsLocal } from '../extensions/artifacts-local/src/seam.js'
-import { budgetLedger } from '../extensions/budget/src/seam.js'
-import { fsCheckpoint } from '../extensions/fs-checkpoint/src/seam.js'
-import { repairPolicy, verifierT0 } from '../extensions/loop-hygiene/src/seam.js'
-import { principalsLocal } from '../extensions/principals-local/src/seam.js'
 import { refineOperation } from '../extensions/refine/src/operation.js'
 import { RefineQueue } from '../extensions/refine/src/queue.js'
-import { refineHarness } from '../extensions/refine/src/seam.js'
-import { sandboxSeam } from '../extensions/sandbox/src/seam.js'
 import type { SeamInitContext } from './seam-init.js'
 
 /** Replaced with the reviewed package asset by the CLI SEA build. */
@@ -55,6 +48,7 @@ export {
   type RetainedArtifactCandidate,
   type StoredArtifactCandidate,
 } from '@agnes/core/artifacts'
+export { toolPolicy, toolPolicyPlugin } from '../extensions/approval-policy/src/tool-policy.js'
 export { prepareArtifactGcExecutionPrerequisite } from '../extensions/artifacts-local/src/gc-execution-prerequisite.js'
 export {
   type ArtifactGcExecutionLease,
@@ -100,13 +94,13 @@ export {
   sessionEgressAuthority,
   transitionConsent,
 } from '../extensions/privacy/src/index.js'
+export { createRefineHarness } from '../extensions/refine/src/seam.js'
+export { sandboxImplementation } from '../extensions/sandbox/src/backend-runtime.js'
 export {
   type ProbedSandboxWorkspace,
   type SandboxWorkspaceProbeInput,
   sandboxWorkspaceProbe,
 } from '../extensions/sandbox/src/workspace-probe.js'
-// Skill discovery is a pure, bounded parser used by the worker resource bridge. Keeping this
-// public Base seam prevents daemon composition from reimplementing file limits/frontmatter rules.
 export {
   discoverPackageSkill,
   discoverSkillRoot,
@@ -115,6 +109,7 @@ export {
   type SkillFile,
   type SkillFileKind,
   type SkillFs,
+  type SkillInvocation,
   type SkillRoot,
   type SkillRootDir,
   type SkillRootFailure,
@@ -123,6 +118,13 @@ export {
   skillRoots,
   workspaceSkillKey,
 } from '../extensions/skills/src/discover.js'
+// Skill discovery is a pure, bounded parser used by the worker resource bridge. Keeping this
+// public Base seam prevents daemon composition from reimplementing file limits/frontmatter rules.
+export {
+  collectPackageSkillFiles,
+  decodePackageSkillFiles,
+  packageSkillLoadError,
+} from '../extensions/skills/src/package-assets.js'
 // The tools each bundled extension defines, for anything that needs the definitions themselves
 // rather than the registry the extension host fills from them - the schema snapshot generator, a
 // preset test that checks this package's full tool surface against what it actually ships, and the
@@ -130,8 +132,10 @@ export {
 // extensions this package ships is declared once, in the `agnes.extensions` field of its
 // package.json, which is what the host reads off disk; it is deliberately not restated here.
 export {
+  listSubagentModelsTool,
   subagentCollectTool,
   subagentForkTool,
+  subagentForkToolWithDeps,
   subagentSpawnTool,
 } from '../extensions/subagent/src/index.js'
 export { SHELL_SENTINEL, TOOLS_CORE } from '../extensions/tools-core/src/index.js'
@@ -163,16 +167,7 @@ export {
   validateLockedPackageArchive,
 } from './computer-use/locked-package-archive.js'
 export {
-  approvalPlugin,
-  artifactsPlugin,
-  checkpointPlugin,
-  harnessPlugin,
-  ledgerPlugin,
-  principalsPlugin,
-  repairPlugin,
-  verifierPlugin,
-} from './cordis-seams.js'
-export {
+  childControlWorktreePersist,
   createEcosystemExtensions,
   ecosystem,
   type HooksRunnerEcosystemDeps,
@@ -182,23 +177,41 @@ export { isolatedEcosystem } from './hooks-isolation.js'
 export { catalogInfoOf, type McpCatalogInfo } from './mcp/catalog-info.js'
 export type { McpServerConfig } from './mcp/config.js'
 export { connectMcp, type McpSdkDeps } from './mcp/connect.js'
-export {
-  SqliteToolIndex,
-  type ToolIndex,
-  type ToolIndexHit,
-  type ToolIndexReader,
-  type ToolIndexRow,
+export type {
+  ToolIndex,
+  ToolIndexHit,
+  ToolIndexReader,
+  ToolIndexRow,
 } from './mcp/index-table.js'
-export { mcpLocalToolPrefix } from './mcp/naming.js'
+export {
+  isMcpServerRowId,
+  mcpPublicToolName,
+  mcpServerExtensionId,
+  mcpStablePrefix,
+} from './mcp/naming.js'
 export {
   inspectRemoteCatalog,
   type McpConnection,
+  type McpRemoteResource,
+  type McpRemoteResourceTemplate,
   type McpRemoteTool,
+  type McpResourceContent,
   registerRemoteToolsStrict,
   validateRemoteCatalog,
 } from './mcp/register.js'
-
+export {
+  bindMcpResourceServer,
+  LIST_MCP_RESOURCE_TEMPLATES,
+  LIST_MCP_RESOURCES,
+  MCP_RESOURCE_LIST_SUFFIX,
+  MCP_RESOURCE_READ_SUFFIX,
+  MCP_RESOURCE_TEMPLATES_SUFFIX,
+  type McpResourceToolSuffix,
+  mcpResourceToolName,
+  READ_MCP_RESOURCE,
+} from './mcp/resources.js'
 export type {
+  ChildWorktreePort,
   HostExec,
   HostExecResult,
   HostFs,
@@ -206,37 +219,20 @@ export type {
   SandboxBackendReport,
   SandboxExecBinding,
   SandboxGateState,
-  SandboxHostServices,
   SeamAdaptersView,
   SeamFactory,
   SeamInitContext,
   SeamProfileView,
   TableHandle,
 } from './seam-init.js'
-
-/**
- * The seam implementations this package delivers, by seam name. The host reads this named export at
- * assembly and fits each one; a name absent here is a name the profile cannot point at this package
- * for, which is a startup refusal rather than a seam that turns out to be missing later. The
- * remaining seven arrive with the pieces that implement them.
- */
-export const seams = {
-  approval: approvalPolicy,
-  principals: principalsLocal,
-  artifacts: artifactsLocal,
-  checkpoint: fsCheckpoint,
-  ledger: budgetLedger,
-  verifier: verifierT0,
-  repair: repairPolicy,
-  harness: refineHarness,
-  sandbox: sandboxSeam,
-} as const
+export { BASE_SEAM_PROVIDERS, seamProvidersPlugin } from './seam-providers.js'
+export { RefineQueue }
 
 /** Host operation factories consume the same durable queue as the fitted harness and tool. */
 export const operations = {
   refine: (deps: Pick<SeamInitContext, 'adapters' | 'profile'>) =>
     refineOperation({
-      queue: new RefineQueue(deps.adapters.storage.table('refine_queue')),
+      queue: new RefineQueue(deps.adapters.storage.namespace('refine_queue')),
       preset: deps.profile.preset,
     }),
 } as const
@@ -258,3 +254,72 @@ export const presets: Record<string, PresetDoc> = {
     'base',
   ),
 }
+
+export type { CompactionQualityConfig } from '../extensions/compaction/src/engine.js'
+export {
+  createDefaultCompactionEngine,
+  resolveCompactionQualityConfig,
+} from '../extensions/compaction/src/engine.js'
+export { sandboxToolPolicies } from '../extensions/sandbox/src/tool-policies.js'
+export {
+  ACP_CHILD_CAPABILITIES,
+  ACP_CHILD_PROVIDER_ID,
+  type AcpChildAgentOptions,
+  acpChildAgentProvider,
+  acpChildAgentsPlugin,
+} from '../extensions/subagent-acp/src/index.js'
+export {
+  CLAUDE_CODE_CHILD_CAPABILITIES,
+  CLAUDE_CODE_CHILD_PROVIDER_ID,
+  type ClaudeCodeChildEngineConfig,
+  claudeCodeChildAgentProvider,
+  claudeCodeChildAgentsPlugin,
+  DEFAULT_CLAUDE_CODE_CHILD_ENGINE,
+} from '../extensions/subagent-claude-code/src/index.js'
+export {
+  CODEX_CHILD_CAPABILITIES,
+  CODEX_CHILD_PROVIDER_ID,
+  type CodexChildEngineConfig,
+  codexChildAgentProvider,
+  codexChildAgentsPlugin,
+  DEFAULT_CODEX_CHILD_ENGINE,
+} from '../extensions/subagent-codex/src/index.js'
+export {
+  type ChildEngineSettings,
+  childEnginePlugins,
+  childEngineSettingsError,
+  DEFAULT_SDK_CHILD_ENGINE,
+  DISABLED_CHILD_ENGINES,
+  parseChildEngineSettings,
+  readChildEngineSettings,
+  SDK_CHILD_CAPABILITIES,
+  SDK_CHILD_PROVIDER_ID,
+  type SdkChildEngineConfig,
+  sdkChildAgentProvider,
+  sdkChildAgentsPlugin,
+} from '../extensions/subagent-sdk/src/index.js'
+
+import type { ProviderPluginContext } from '@agnes/extension-api'
+import { defaultLoopFactory } from '@agnes/loop-default'
+/** The distribution bundle owns this ordinary row; the implementation lives in loop-default. */
+export const defaultLoopPlugin = {
+  inject: ['providers'],
+  apply(ctx: ProviderPluginContext) {
+    ctx.providers.register(loopKind, defaultLoopFactory)
+  },
+}
+
+export { fileMemoryRoots, memoryPlugin } from '@agnes/memory-file'
+export { observabilityPlugin } from '@agnes/observability'
+export {
+  type ContextConfig,
+  contextHome,
+  loadContextRules,
+  parseContextConfig,
+  type RulesSnapshot,
+  readContextConfig,
+  writeContextConfig,
+} from '../extensions/context-rules/src/index.js'
+export { planModePlugin } from '../extensions/plan-mode/src/index.js'
+export { referenceResolversPlugin } from '../extensions/references/src/index.js'
+export { rememberingPlugin } from './memory/index.js'

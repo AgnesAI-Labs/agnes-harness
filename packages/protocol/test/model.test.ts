@@ -77,7 +77,10 @@ describe('model.json', () => {
       $defs: { ContractStamp: { properties: Record<string, unknown> } }
     }
     const header = new Set(Object.keys(sess.$defs.RequestHeader.properties))
-    for (const k of Object.keys(m.$defs.ContractStamp.properties)) expect(header.has(k), k).toBe(true)
+    // The passive local capture ID is excluded from the contract-derived request header.
+    expect(m.$defs.ContractStamp.properties).toHaveProperty('requestTraceId')
+    for (const k of Object.keys(m.$defs.ContractStamp.properties).filter((k) => k !== 'requestTraceId'))
+      expect(header.has(k), k).toBe(true)
   })
   it('validates the new ContractManifest', () => {
     const r = validateContractManifest(manifest)

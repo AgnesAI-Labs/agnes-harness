@@ -1,11 +1,15 @@
 {
   "name": "@agnes/extension-api",
-  "version": "1.4.0",
+  "version": "5.0.0",
   "private": true,
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./testkit": "./testkit/index.ts"
+    "./host": "./src/host.ts",
+    "./mcp-naming": "./src/mcp-naming.ts",
+    "./seams": "./src/seams.ts",
+    "./testkit": "./testkit/index.ts",
+    "./testkit/persistence-contract": "./testkit/persistence-contract.ts"
   },
   "scripts": {
     "test": "vitest run",
@@ -21,8 +25,7 @@
     "@sinclair/typebox": ">=0.34"
   },
   "devDependencies": {
-    "@sinclair/typebox": "0.34.33",
-    "@agnes/core": "workspace:*"
+    "@sinclair/typebox": "0.34.33"
   },
   "license": "Apache-2.0"
 }

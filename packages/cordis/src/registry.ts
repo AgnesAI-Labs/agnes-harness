@@ -3,6 +3,7 @@ import type { Dict } from '@agnes/cosmokit'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { Context } from './context.js'
 import { Fiber } from './fiber.js'
+import { asAwaitableFiber } from './mounting.js'
 import { buildOuterStack, DisposableList, symbols, withProps } from './utils.js'
 
 function isApplicable(object: Plugin) {
@@ -180,7 +181,7 @@ declare module './context.ts' {
      * @param plugin — a function, class, or `{ apply }` object plugin.
      * @param args — the plugin config, validated against its `Config` schema.
      * @returns the fiber; awaiting it settles once loading finished
-     * (rejecting on config or startup errors).
+     * (rejecting on config/startup errors or unavailable dependencies).
      */
     plugin<P extends Plugin>(plugin: P, ...args: Spread<GetPluginConfig<P>>): Fiber & PromiseLike<Fiber>
   }
@@ -328,10 +329,6 @@ export class RegistryService {
     }
 
     const fiber = new Fiber(this.ctx, config, Inject.resolve(plugin.inject), runtime, getOuterStack)
-    const wrapped = Object.create(fiber) as Fiber & PromiseLike<Fiber>
-    wrapped.then = (onFulfilled, onRejected) => {
-      return fiber.await().then(onFulfilled, onRejected)
-    }
-    return wrapped
+    return asAwaitableFiber(fiber)
   }
 }

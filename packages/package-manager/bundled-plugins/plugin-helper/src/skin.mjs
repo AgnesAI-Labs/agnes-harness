@@ -11,7 +11,7 @@ export function skinFiles() {
           license: 'Apache-2.0',
           exports: './index.mjs',
           agnes: {
-            plugins: [{ id: 'ext:my-mint-skin/main', export: 'main' }],
+            plugins: [{ apiRange: '^5.0.0', id: 'ext:my-mint-skin/main', export: 'main' }],
             clientDescriptors: [
               { rowId: 'ext:my-mint-skin/main', path: './extensions/main/agnes.client.json' },
             ],
@@ -51,4 +51,4 @@ export function skinFiles() {
   ]
 }
 export const skinGuidance =
-  'This is a pure CSS/tokens skin, not a tool. Use the supplied files directly; do not search the user workspace for AGH source/examples. Rename the package, row and skin id consistently. clientDescriptors.rowId must match agnes.plugins.id. Descriptor and CSS paths are relative to their containing file. Keep the empty exported main plugin; no inject, runtime, dependencies or browser JavaScript is needed. Preserve layouts and interactions. Use semantic tokens and data-agnes-region selectors; .dark provides dark-mode overrides. After install status reports ready, select the skin in Settings → General → Appearance. Verify both light/dark appearance in the browser. Disable the package to restore default appearance; ?skin=none is the recovery override. Backend running alone does not prove the browser applied the skin.'
+  'This is a pure CSS/tokens skin, not a tool. Use the supplied files directly; do not search the user workspace for AGH source/examples. Rename the package, row and skin id consistently. clientDescriptors.rowId must match agnes.plugins.id. Descriptor and CSS paths are relative to their containing file. Keep the empty exported main plugin; no inject, runtime, dependencies or browser JavaScript is needed. Preserve layouts and interactions. Use semantic tokens and data-agnes-region selectors; .dark provides dark-mode overrides. Report draft generated, structure validated, candidate test passed, install verified, browser/appearance verified and published separately. The supplied Node test checks structure only; strings never prove installation or appearance. If browser checks cannot run here, explicitly report browser/appearance not verified and give the human the light/dark and disable/restore checklist. After actual install status reports ready, select the skin in Settings → General → Appearance. Verify both light/dark appearance in the browser. Disable the package to restore default appearance; ?skin=none is the recovery override. Backend running alone does not prove the browser applied the skin.'

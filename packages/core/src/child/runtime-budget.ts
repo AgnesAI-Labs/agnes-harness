@@ -1,8 +1,13 @@
-import { canonicalJson, sha256Hex } from '../request/hash.js'
+import {
+  capToMicrocredits,
+  chargeToMicrocredits,
+  conservativeModelCredits,
+} from '@agnes/core-child-control/child/credits'
+import { hasChildControl, hasDurableReservations } from '@agnes/core-child-control/child/store'
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
+import { CoreError, type Seq } from '@agnes/core-common/types'
+import { sessionIdentity } from '../loop/scope.js'
 import type { SessionImpl, TurnEndReason } from '../step/session.js'
-import { CoreError, type Seq } from '../types.js'
-import { capToMicrocredits, chargeToMicrocredits, conservativeModelCredits } from './credits.js'
-import { hasChildControl, hasDurableReservations } from './store.js'
 
 export type TreePermit = {
   permitId: string
@@ -56,19 +61,21 @@ type ExplicitReservationIdentity = {
   result: Promise<TreeReservationResult>
 }
 
-const lastTreePermit = new WeakMap<SessionImpl, TreePermit>()
+const lastTreePermit = new WeakMap<object, TreePermit>()
 const explicitTreeReservations = new WeakMap<TreeReservationHandle, ExplicitReservationState>()
-const explicitReservationIdentities = new WeakMap<SessionImpl, Map<string, ExplicitReservationIdentity>>()
+const explicitReservationIdentities = new WeakMap<object, Map<string, ExplicitReservationIdentity>>()
 
 export function setTreePermit(s: SessionImpl, permit: TreePermit): void {
-  lastTreePermit.set(s, permit)
+  lastTreePermit.set(s.loopScope, permit)
 }
 
 /** Child records inherit the tree even when the live preset no longer names a cap. */
 export async function treeBudgetApplies(s: SessionImpl): Promise<boolean> {
   const storage = s.d.log.storage
   return (
-    hasChildControl(storage) && (!!(await storage.lookupByKey(s.key)) || s.preset.treeBudgetCredits !== null)
+    s.turn?.hardBudgetCap !== undefined ||
+    (hasChildControl(storage) &&
+      (!!(await storage.lookupByKey(s.key)) || s.preset.treeBudgetCredits !== null))
   )
 }
 
@@ -91,9 +98,22 @@ async function reserveTreeBudgetPermit(
     }
 > {
   const storage = s.d.log.storage
-  if (!(await treeBudgetApplies(s)) || !hasChildControl(storage)) return 'unreserved'
+  if (!(await treeBudgetApplies(s))) return 'unreserved'
+  if (!hasChildControl(storage)) {
+    if (endTurnOnBlocked) await s.endTurn('budget')
+    return { reason: 'budget' }
+  }
   const rec = await storage.lookupByKey(s.key)
-  const treeCredits = s.preset.treeBudgetCredits
+  const hardCap = s.turn?.hardBudgetCap
+  const treeCredits =
+    hardCap === undefined
+      ? s.preset.treeBudgetCredits
+      : Math.min(hardCap, s.preset.treeBudgetCredits ?? hardCap)
+  // A bounded ordinary turn owns its root. Never silently drop an inherited tree constraint.
+  if (hardCap !== undefined && (rec || hardCap < 0.000001)) {
+    if (endTurnOnBlocked) await s.endTurn('budget')
+    return { reason: 'budget' }
+  }
   if (!Number.isFinite(projectedCredits) || projectedCredits < 0) {
     if (endTurnOnBlocked) await s.endTurn('budget')
     return { reason: 'budget' }
@@ -127,6 +147,17 @@ async function reserveTreeBudgetPermit(
     recModel.maxTokens > 0 &&
     Number.isFinite(recModel.cost.input) &&
     Number.isFinite(recModel.cost.output)
+  if (
+    hardCap !== undefined &&
+    (!recModel ||
+      !complete ||
+      !Number.isFinite(recModel?.cost.cacheWrite) ||
+      !Number.isFinite(recModel?.cost.cacheRead) ||
+      Object.values(recModel.cost).some((price) => price < 0))
+  ) {
+    if (endTurnOnBlocked) await s.endTurn('budget')
+    return { reason: 'budget' }
+  }
   const upper =
     complete && recModel ? conservativeModelCredits(inputTokens, recModel.maxTokens, recModel.cost) : 0
   const hold = Math.max(projectedCredits, upper)
@@ -238,10 +269,10 @@ export async function reserveTreeBudgetHandle(
         : null,
     }),
   )
-  let identities = explicitReservationIdentities.get(s)
+  let identities = explicitReservationIdentities.get(sessionIdentity(s))
   if (!identities) {
     identities = new Map()
-    explicitReservationIdentities.set(s, identities)
+    explicitReservationIdentities.set(sessionIdentity(s), identities)
   }
   const prior = identities.get(identity.effectId)
   if (prior) {
@@ -312,12 +343,12 @@ export async function reserveTreeBudgetHandle(
 }
 
 function invalidateReservationIdentity(s: SessionImpl, effectId: string): void {
-  explicitReservationIdentities.get(s)?.delete(effectId)
+  explicitReservationIdentities.get(sessionIdentity(s))?.delete(effectId)
 }
 
 function explicitReservationState(s: SessionImpl, handle: TreeReservationHandle): ExplicitReservationState {
   const state = explicitTreeReservations.get(handle)
-  if (!state || state.session !== s)
+  if (!state || sessionIdentity(state.session) !== sessionIdentity(s))
     throw new CoreError('E_BUDGET', 'tree reservation handle does not belong to this session', {
       permitId: handle.permitId,
     })
@@ -488,7 +519,7 @@ export async function takeoverTreeReservationWriter(
   // The generation is a root-wide epoch. Invalidate every cached handle from the old writer, not
   // only the permit used to authorize takeover; each sibling identity must be recovered at the new
   // generation before it can dispatch again.
-  const identities = explicitReservationIdentities.get(s)
+  const identities = explicitReservationIdentities.get(sessionIdentity(s))
   const identity = identities?.get(handle.effectId)
   if (identities) {
     for (const [effectId, cachedIdentity] of [...identities]) {
@@ -520,16 +551,16 @@ export async function takeoverTreeReservationWriter(
 }
 
 export function treePermitOf(s: SessionImpl): TreePermit | undefined {
-  return lastTreePermit.get(s)
+  return lastTreePermit.get(s.loopScope)
 }
 
 export function clearTreePermit(s: SessionImpl): void {
-  lastTreePermit.delete(s)
+  lastTreePermit.delete(s.loopScope)
 }
 
 /** Release a reservation when the request is refused before any provider effect can start. */
 export async function releaseTreeReservation(s: SessionImpl): Promise<void> {
-  const permit = lastTreePermit.get(s)
+  const permit = lastTreePermit.get(s.loopScope)
   if (!permit) return
   try {
     const storage = s.d.log.storage
@@ -540,7 +571,7 @@ export async function releaseTreeReservation(s: SessionImpl): Promise<void> {
           : { permitId: permit.permitId, writerGeneration: permit.writerGeneration },
       )
   } finally {
-    lastTreePermit.delete(s)
+    lastTreePermit.delete(s.loopScope)
   }
 }
 
@@ -551,7 +582,7 @@ export async function settleTreeSpend(
 ): Promise<void> {
   const storage = s.d.log.storage
   if (!hasChildControl(storage)) return
-  const permit = lastTreePermit.get(s)
+  const permit = lastTreePermit.get(s.loopScope)
   if (!permit) return
   try {
     await storage.settleOrigin({
@@ -564,6 +595,6 @@ export async function settleTreeSpend(
       creditSource: credits === undefined ? 'unknown' : 'estimated',
     })
   } finally {
-    lastTreePermit.delete(s)
+    lastTreePermit.delete(s.loopScope)
   }
 }

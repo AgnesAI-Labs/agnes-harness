@@ -14,7 +14,7 @@ AGH 项目自有代码采用 **Apache License 2.0**，完整条款见根目录 [
 
 - [Cordis LICENSE](../../packages/cordis/LICENSE) 与 [Cosmokit LICENSE](../../packages/cosmokit/LICENSE)。
 - [tools-web 第三方许可](../../packages/base/extensions/tools-web/DEEPSEEK-LICENSE.txt)。
-- [public-fetch 第三方许可](../../packages/host/src/adapters/public-fetch/DEEPSEEK-LICENSE.txt)。
+- [public-fetch 第三方许可](../../packages/host-infrastructure/src/adapters/public-fetch/DEEPSEEK-LICENSE.txt)。
 - [Computer Use NOTICE](../../packages/base/extensions/computer-use/NOTICE)。
 - [Skill Helper LICENSE](../../packages/package-manager/bundled-plugins/skill-helper/LICENSE)。
 - [ACP Schema 来源与许可](../../packages/protocol/schema/acp/UPSTREAM.md)。

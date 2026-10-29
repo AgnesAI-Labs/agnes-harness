@@ -1,0 +1,82 @@
+# Observability and issue diagnostics
+
+English | [简体中文](observability.zh-CN.md)
+
+AGH includes an official `observability:otel` plugin in `@agnes/base`, implemented by `@agnes/observability` as a process-scoped service kind. Export is **off by default**. Setting a collector endpoint alone does not enable it. Core has no exporter dependency.
+
+## Enable OTLP export
+
+Create private `AGH_HOME/observability.json` (normally `~/.agh/observability.json`):
+
+```json
+{
+  "enabled": true,
+  "endpoint": "http://127.0.0.1:4318",
+  "redaction": "metadata",
+  "headers": { "authorization": { "secretRef": "env:AGH_COLLECTOR_AUTH" } },
+  "batchSize": 256,
+  "batchMs": 1000,
+  "queueSize": 1024,
+  "timeoutMs": 3000,
+  "shutdownPolicy": "flush"
+}
+```
+
+The official plugin reads validated changes within one second. Headers accept only `env:NAME` secret references; put the value in the service process environment, never in configuration. Missing secrets cause safe delivery backoff. Endpoints must be HTTP(S), without user credentials, query or fragment. Optional `tracesEndpoint`, `metricsEndpoint`, `logsEndpoint` are full signal URLs; `endpoint` is a base URL with `/v1/traces`, `/v1/metrics`, `/v1/logs` appended. There is no ambient plaintext OTLP header input. `OTEL_SDK_DISABLED=true` forces export off.
+
+Batch interval and timeout are 10–30000 ms. Queue size is 1–16384 records; batch size is 1–queue size. Delivery is also bounded to 1 MiB including in-flight records. Shutdown policy is `flush` (default) or `discard`; the timeout bounds final flushing. Queue overflow, permanent refusal and partial rejection increment drop counters. Retryable collector failures retain records with exponential backoff. Delivery runs asynchronously and never awaits the collector from an agent turn.
+
+## What is exported
+
+Committed public events generate session → turn → step → model/tool spans and correlated OTLP log records for each ledger event (type, sequence, timestamp). Resources include service/version, hashed workspace/session/pin identities and generation ID when Host supplies them. Child and daemon/worker lifecycle spans and the existing duration/token/tool/queue metrics remain available. Exporters are replaceable through the process-scoped `observabilityKind` in `@agnes/observability`. The host applies the privacy filter before a committed event reaches the exporter. `bindSession(key, resource)` accepts resource identity and private roots, and optional `health()` exposes delivery health. Core does not perform network export.
+
+`metadata` is the default redaction level. `content` explicitly opts into bounded user/assistant/tool content. Credential fields, recognized secret patterns, referenced header values, credential environment values and content mentioning private state roots are omitted or redacted. A tool call mentioning a private root suppresses subsequent content from that session and its children, including results that do not repeat the path. Oversized/deep content is withheld, never partially serialized. Memory-enabled sessions receive structural events only. No exporter reads private files. Content may still include confidential business information; authorize the destination before opting in.
+
+Generation leases in the same process/home share session sequence watermarks, active spans and delivery queues. An overlapping generation switch keeps in-flight requests intact and does not replay accepted events. Queued records retain the destination and capture policy under which they were accepted; disabling stops new capture. Live settings changes clear content from open spans before they enter a new batch. Final lease disposal flushes. This is best-effort telemetry: process crashes lose the in-memory queue, and an ambiguous network acknowledgement can cause a collector duplicate on retry. It does not replace the durable ledger or implement feedback-authorized prefix uploads. Separate OS processes have separate pipelines.
+
+## Export a support bundle
+
+```sh
+node agnes.mjs diagnostics export --out diagnostics.json
+node agnes.mjs diagnostics export --session SESSION_ID --out diagnostics.json
+```
+
+The daemon must be reachable through the local owner connection. A selected session is checked against that owner's session authority. The CLI writes the file locally with private permissions and an atomic rename; an output path is never sent to the server.
+
+The versioned bundle contains AGH/Node/platform versions, profile and composition hashes when available, generation states/counts, safe doctor statuses, recent error IDs and the last 100 permitted audit metadata entries. Session exports add only its hash, last sequence and hashed loop/generation pins. It contains no conversation ledger, file contents, credentials, exception messages, stacks or raw audit detail. An unavailable worker is reported explicitly and exporting does not start one.
+
+App Server clients use `_agnes/v1/diagnostics.export` with optional `sessionId`, `limit` (1–500 audit entries) and `diagnosticId`. Errors normalized at the App Server boundary enter a 4096-record process buffer. CLI and production daemon owners persist safe error metadata in `AGH_HOME/diagnostics/errors.jsonl`, including early startup errors. Export merges the journal with the process buffer; an exact `diagnosticId` query filters the retained process buffer and a bounded recent journal window. It does not scan the complete durable history. No exception payload is persisted. Independent SDK embeddings should install a durable sink with the public `observeDiagnostics` contract if they need restart-persistent diagnostics for errors generated in that process. A sink failure marks the error `diagnosticUnavailable`.
+
+The process buffer retains up to 4096 errors. Journal reads clamp record limits to 1–1000 and scan at most `limit × 4096` recent bytes; an exact-ID query uses limit 1. An older ID can therefore be unavailable after restart while its row still exists. Audit files are read within their separate last-1-MiB bound. Deleting the home or its journal removes that history. Review even a redacted bundle before posting it publicly: timestamps, versions, hashes, platform and operational counts can reveal deployment metadata.
+
+See [troubleshooting](troubleshooting.md), [CLI reference](../reference/cli.md) and [App Server](../reference/app-server.md) for related interfaces.
+
+## Web diagnostics
+
+Open **Settings → Advanced → Run diagnostics** to view recent safe error records, copy a diagnostic ID, or find an older record by its exact ID. **Export diagnostic bundle** downloads the redacted JSON bundle; after a search, it selects that error. The page also shows worker health, generation counts and bound session counts. Technical details start collapsed.
+
+**Status check** groups the runtime, data and security, isolation, and connection checks into compact cards. The service strip shows versions and the age of the last check. Unavailable workers use a hollow dot and are excluded from group totals. Checks that need attention show repair guidance and a direct link when available. **Check again** refreshes local checks; **Test model accounts** also tests model connections and shows the result on the account line.
+
+The OTLP settings card edits enable, endpoint, content policy, batch/queue limits, timeout, shutdown policy and header secret references. **Test connection** sends synthetic traces, metrics and logs; it does not upload session content or save pending edits. **Save settings** persists a private configuration and applies it within one second. Last success, queue depth, failures and drops describe the App Server and the running session Worker separately. A missing or unreachable Worker is reported explicitly; health reads never start one. The local-owner administration method is `_agnes/v1/admin.observability`. Diagnostic bundles remain content-free.
+
+## Model-call timing and auxiliary usage
+
+Call details distinguish the enclosing turn duration from provider-call observations. All new fields are optional milliseconds measured on one provider clock; missing observations and old records remain unknown.
+
+| Field | Observation |
+| --- | --- |
+| `prepareMs` | Provider entry to completion of its local request preparation, before initial capture; excludes Core context preparation. |
+| `dispatchMs` | Offset from provider entry to the first observed transport dispatch, after request capture. An offset, not an extra stage duration. |
+| `firstOutputMs` | Offset from provider entry to the first decoded output visible to the caller, including reasoning, tools or media; not pure service-side TTFT. |
+| `outputMs` | First visible output to the adapter terminal event. |
+| `finalizeMs` | Adapter terminal event through adapter and trace cleanup. |
+| `providerCallMs` | Provider entry through cleanup, not the whole turn. |
+| `captureMs` | Union of time spent awaiting capture hooks, including failures and overlapping callbacks; overlaps the other fields and must not be added again. |
+
+Existing `ttftMs` and `durationMs` retain their sampling points after initial capture and at first decoded text/tool output and usage respectively. They include local adapter work and are not provider-service-only measurements. No new stages are reconstructed from old samples or ledger timestamps.
+
+`usage` is delivered as soon as observed so cancellation cannot discard a known bill while cleanup waits. Normal `done` may carry final timing; errors remain immediately visible with only known timing, and cleanup runs in `finally`. Terminal timing is validated and no subsequent event is emitted. Core uses the same ModelExecution transport and settlement for default and generic Loops: it retains usage immediately and merges terminal timing into the same cost record, with one billing record. Cancellation settles known real usage without waiting for provider cleanup. Background title accounting also merges terminal timing into its existing cost record. Cancellation before completion leaves unobserved final fields unknown.
+
+The usage panel labels background title calls separately from numbered reply calls, including in the collapsed summary. Their real tokens, credits and charges remain part of totals; a title call is not a second reply inference round.
+
+The local runtime writes bounded lifecycle facts to `data/audit/runtime.jsonl` (2 MiB plus one rotated file). Worker stderr is represented by a bounded byte count, never raw text. Local-owner clients may request `_agnes/v1/diagnostics.collect` with `{"runtimeLog": true}` to include it; requests without that option retain the original daemon/host log pair. The Web log bundle requests the optional log and falls back for older servers.

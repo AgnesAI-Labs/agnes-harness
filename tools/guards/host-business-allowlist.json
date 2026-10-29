@@ -1,0 +1,266 @@
+[
+  {
+    "path": "packages/host/src/runtime/adapters/index.ts",
+    "symbol": "<module>",
+    "literal": "@agnes/sandbox-remote",
+    "role": "import",
+    "max": 1,
+    "removal": "A4: supply the remote workspace pool from distribution assembly"
+  },
+  {
+    "path": "packages/host/src/runtime/assemble/assembled.ts",
+    "symbol": "<module>/TypeAliasDeclaration:Assembled",
+    "literal": "@agnes/observability",
+    "role": "import",
+    "max": 1,
+    "removal": "A4: extract the pure observability port and inject its implementation"
+  },
+  {
+    "path": "packages/host/src/runtime/assemble/kernel-stage.ts",
+    "symbol": "<module>",
+    "literal": "@agnes/observability",
+    "role": "import",
+    "max": 1,
+    "removal": "A1: supply default selections and observability bindings from distribution assembly"
+  },
+  {
+    "path": "packages/host/src/runtime/assemble/kernel-stage.ts",
+    "symbol": "<module>/FunctionDeclaration:createKernel/Block:0/VariableDeclaration:observabilityLease",
+    "literal": "agnes/observability",
+    "role": "literal",
+    "max": 1,
+    "removal": "A1: supply default selections and observability bindings from distribution assembly"
+  },
+  {
+    "path": "packages/host/src/runtime/assemble/kernel-stage.ts",
+    "symbol": "<module>/FunctionDeclaration:createKernel/Block:0/VariableDeclaration:kernel/CallExpression:0/ObjectLiteralExpression:0/PropertyAssignment:hookLeaseFor/ArrowFunction:0",
+    "literal": "agnes/observability",
+    "role": "comparison",
+    "max": 1,
+    "removal": "A1: supply default selections and observability bindings from distribution assembly"
+  },
+  {
+    "path": "packages/host/src/runtime/assemble/provider-stage.ts",
+    "symbol": "<module>/FunctionDeclaration:assembleProvider",
+    "literal": "model-adapters",
+    "role": "literal",
+    "max": 1,
+    "removal": "A1: supply the model-adapter compatibility selection from distribution assembly"
+  },
+  {
+    "path": "packages/host/src/runtime/lifecycle/host.ts",
+    "symbol": "<module>",
+    "literal": "@agnes/observability",
+    "role": "import",
+    "max": 1,
+    "removal": "A4: inject correlation through a pure observability port"
+  },
+  {
+    "path": "packages/host/src/runtime/services/observability-feed.ts",
+    "symbol": "<module>",
+    "literal": "@agnes/observability",
+    "role": "import",
+    "max": 1,
+    "removal": "A4: inject observability bindings through the pure contract"
+  },
+  {
+    "path": "packages/host/src/runtime/services/observability-feed.ts",
+    "symbol": "<module>/VariableDeclaration:OBSERVABILITY_BINDING_OWNER",
+    "literal": "agnes/observability",
+    "role": "literal",
+    "max": 1,
+    "removal": "A4: inject observability bindings through the pure contract"
+  },
+  {
+    "path": "packages/host/src/runtime/services/observability-feed.ts",
+    "symbol": "<module>/FunctionDeclaration:startObservabilityFeed/Block:0/VariableDeclaration:offSession",
+    "literal": "agnes/observability",
+    "role": "literal",
+    "max": 1,
+    "removal": "A4: inject observability bindings through the pure contract"
+  },
+  {
+    "path": "packages/host/src/runtime/services/observability-feed.ts",
+    "symbol": "<module>/FunctionDeclaration:startObservabilityFeed/Block:0/VariableDeclaration:offShutdown",
+    "literal": "agnes/observability",
+    "role": "literal",
+    "max": 1,
+    "removal": "A4: inject observability bindings through the pure contract"
+  },
+  {
+    "path": "packages/host/src/runtime/services/observability-feed.ts",
+    "symbol": "<module>/FunctionDeclaration:startObservabilityFeed/Block:0/VariableDeclaration:offStart",
+    "literal": "agnes/observability",
+    "role": "literal",
+    "max": 1,
+    "removal": "A4: inject observability bindings through the pure contract"
+  },
+  {
+    "path": "packages/host/src/runtime/services/observability-feed.ts",
+    "symbol": "<module>/FunctionDeclaration:startObservabilityFeed/Block:0/VariableDeclaration:offEnd",
+    "literal": "agnes/observability",
+    "role": "literal",
+    "max": 1,
+    "removal": "A4: inject observability bindings through the pure contract"
+  },
+  {
+    "path": "packages/host-infrastructure/src/adapters/codex-credentials.ts",
+    "symbol": "<module>",
+    "literal": "@agnes/ai",
+    "role": "import",
+    "max": 1,
+    "removal": "A4: inject provider refresh implementations through credential ports"
+  },
+  {
+    "path": "packages/host-infrastructure/src/adapters/session-workspace.ts",
+    "symbol": "<module>",
+    "literal": "@agnes/sandbox-remote",
+    "role": "import",
+    "max": 1,
+    "removal": "A4: extract the remote transport contract from its implementation package"
+  },
+  {
+    "path": "packages/host-infrastructure/src/codex-login.ts",
+    "symbol": "<module>",
+    "literal": "@agnes/ai",
+    "role": "import",
+    "max": 1,
+    "removal": "A4: inject subscription login drivers and metadata"
+  },
+  {
+    "path": "packages/host-infrastructure/src/codex-login.ts",
+    "symbol": "<module>/FunctionDeclaration:createCodexLogin/Block:0/ReturnStatement:0/ArrowFunction:0/Block:0/IfStatement:1/Block:0/VariableDeclaration:provider",
+    "literal": "openai-codex",
+    "role": "literal",
+    "max": 1,
+    "removal": "A4: inject subscription login drivers and metadata"
+  },
+  {
+    "path": "packages/host-infrastructure/src/configuration-endpoint.ts",
+    "symbol": "<module>",
+    "literal": "@agnes/ai",
+    "role": "import",
+    "max": 1,
+    "removal": "A4: inject provider configuration metadata and endpoint validation"
+  },
+  {
+    "path": "packages/host-infrastructure/src/configuration-payload-only.ts",
+    "symbol": "<module>",
+    "literal": "@agnes/ai",
+    "role": "import",
+    "max": 1,
+    "removal": "A4: inject the payload-only model driver"
+  },
+  {
+    "path": "packages/host-infrastructure/src/configuration.ts",
+    "symbol": "<module>",
+    "literal": "@agnes/ai",
+    "role": "import",
+    "max": 1,
+    "removal": "A4: inject the AI facade and model provider factory"
+  },
+  {
+    "path": "packages/host-providers/src/assemble/contracts.ts",
+    "symbol": "<module>",
+    "literal": "@agnes/ai",
+    "role": "import",
+    "max": 1,
+    "removal": "A4: extract the pure model provider interface from AI implementation"
+  },
+  {
+    "path": "packages/host-providers/src/assemble/model-adapters.ts",
+    "symbol": "<module>",
+    "literal": "@agnes/ai",
+    "role": "import",
+    "max": 1,
+    "removal": "A1: move official model adapter imports and compatibility rows to distribution assembly"
+  },
+  {
+    "path": "packages/host-providers/src/assemble/provider.ts",
+    "symbol": "<module>",
+    "literal": "@agnes/ai",
+    "role": "import",
+    "max": 2,
+    "removal": "A4: inject the provider factory and eliminate AI fallback ownership"
+  },
+  {
+    "path": "packages/host-providers/src/assemble/provider.ts",
+    "symbol": "<module>/FunctionDeclaration:buildProvider/Block:0/VariableDeclaration:instances",
+    "literal": "@agnes/ai",
+    "role": "import",
+    "max": 1,
+    "removal": "A4: inject the provider factory and eliminate AI fallback ownership"
+  },
+  {
+    "path": "packages/host-providers/src/assemble/reference-history.ts",
+    "symbol": "<module>",
+    "literal": "@agnes/history-index",
+    "role": "import",
+    "max": 1,
+    "removal": "A4: inject a history query port without transferring fact ownership"
+  },
+  {
+    "path": "packages/host/package.json",
+    "symbol": "dependencies",
+    "literal": "@agnes/ai",
+    "role": "dependency",
+    "max": 1,
+    "removal": "A4: remove official implementation dependencies after port extraction"
+  },
+  {
+    "path": "packages/host/package.json",
+    "symbol": "dependencies",
+    "literal": "@agnes/model-adapters",
+    "role": "dependency",
+    "max": 1,
+    "removal": "A4: remove official implementation dependencies after port extraction"
+  },
+  {
+    "path": "packages/host/package.json",
+    "symbol": "dependencies",
+    "literal": "@agnes/sandbox-remote",
+    "role": "dependency",
+    "max": 1,
+    "removal": "A4: remove official implementation dependencies after port extraction"
+  },
+  {
+    "path": "packages/host/package.json",
+    "symbol": "dependencies",
+    "literal": "@agnes/observability",
+    "role": "dependency",
+    "max": 1,
+    "removal": "A4: remove official implementation dependencies after port extraction"
+  },
+  {
+    "path": "packages/host-infrastructure/package.json",
+    "symbol": "dependencies",
+    "literal": "@agnes/ai",
+    "role": "dependency",
+    "max": 1,
+    "removal": "A4: remove AI and remote implementation dependencies after port extraction"
+  },
+  {
+    "path": "packages/host-infrastructure/package.json",
+    "symbol": "dependencies",
+    "literal": "@agnes/sandbox-remote",
+    "role": "dependency",
+    "max": 1,
+    "removal": "A4: remove AI and remote implementation dependencies after port extraction"
+  },
+  {
+    "path": "packages/host-providers/package.json",
+    "symbol": "dependencies",
+    "literal": "@agnes/ai",
+    "role": "dependency",
+    "max": 1,
+    "removal": "A4: remove official implementation dependencies after port extraction"
+  },
+  {
+    "path": "packages/host-providers/package.json",
+    "symbol": "dependencies",
+    "literal": "@agnes/history-index",
+    "role": "dependency",
+    "max": 1,
+    "removal": "A4: remove official implementation dependencies after port extraction"
+  }
+]

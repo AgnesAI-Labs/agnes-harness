@@ -1,7 +1,17 @@
 import type { DecodeRule } from '@agnes/protocol'
 
 export type DecodeInput = { kind: 'text' | 'thinking'; delta: string }
-export type DecodeContext = { toolNames: readonly string[]; nextOrdinal: () => number }
+/**
+ * `recover` is the model record's opt-in for reading calls out of prose: the rules whose captures may
+ * become calls. A model with native tool calling lists none unless its family is known to write calls
+ * into its answer anyway, because otherwise a call-shaped passage in its prose is something it said,
+ * not something it did.
+ */
+export type DecodeContext = {
+  toolNames: readonly string[]
+  recover: readonly DecodeRule[]
+  nextOrdinal: () => number
+}
 export type Extracted = { name: string; args: unknown; via?: DecodeRule } | { thinking: string } | null
 
 /**

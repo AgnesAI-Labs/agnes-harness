@@ -1,13 +1,34 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { verifyResults } from './result.mjs'
 import { changedPaths, detectDocsOnly, isDocsOnly } from './scope.mjs'
+import { verifyStoryResult } from './story-results.mjs'
 
 const directories: string[] = []
+
+describe('story regression results', () => {
+  it('requires the named fixture to execute, so a renamed, skipped or todo case cannot turn the gate green', () => {
+    const report = (fullName: string, status: string, success = true) => ({
+      success,
+      testResults: [{ assertionResults: [{ fullName, status }] }],
+    })
+    expect(verifyStoryResult(report('story exact fixture', 'passed'), ['exact fixture'])).toBe(1)
+    for (const status of ['failed', 'pending', 'skipped', 'todo'])
+      expect(() => verifyStoryResult(report('story exact fixture', status), ['exact fixture'])).toThrow()
+    expect(() => verifyStoryResult(report('renamed fixture', 'passed'), ['exact fixture'])).toThrow()
+    expect(() =>
+      verifyStoryResult(report('story exact fixture', 'passed', false), ['exact fixture']),
+    ).toThrow()
+    expect(() =>
+      verifyStoryResult(report('story exact fixture', 'passed'), ['exact fixture', 'missing table row']),
+    ).toThrow()
+    expect(() => verifyStoryResult(report('story exact fixture', 'passed'), [])).toThrow()
+  })
+})
 const temporary = () => {
   const directory = mkdtempSync(join(tmpdir(), 'agh-ci-'))
   directories.push(directory)
@@ -38,6 +59,16 @@ function fixture() {
 }
 
 describe('CI scope', () => {
+  it('uses the repository Node pin in every setup-node step', () => {
+    const workflows = fileURLToPath(new URL('../../.github/workflows/', import.meta.url))
+    for (const name of readdirSync(workflows).filter((name) => /\.ya?ml$/.test(name))) {
+      const workflow = readFileSync(join(workflows, name), 'utf8')
+      const setups = workflow.match(/uses: actions\/setup-node@/g) ?? []
+      expect(workflow, name).not.toMatch(/\bnode-version:/)
+      expect(workflow.match(/node-version-file: \.node-version\b/g) ?? [], name).toHaveLength(setups.length)
+    }
+  })
+
   it('allows only root documentation and Markdown under docs', () => {
     expect(isDocsOnly(['README.zh-CN.md', 'docs/guide/使用 说明.md', 'SECURITY.md'])).toBe(true)
   })
@@ -47,7 +78,10 @@ describe('CI scope', () => {
     'packages/protocol/docs/api.md',
     'examples/demo/README.md',
     'pnpm-lock.yaml',
+    '.node-version',
+    'mise.toml',
     '.github/workflows/ci.yml',
+    'tools/toolchain/check.mjs',
     'tools/ci/scope.mjs',
     'tools/public-docs/verify.mjs',
     'docs/example.mjs',

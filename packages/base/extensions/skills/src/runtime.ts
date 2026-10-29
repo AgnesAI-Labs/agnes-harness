@@ -1,15 +1,10 @@
 import { createHash } from 'node:crypto'
-import {
-  type Disposer,
-  defineExtension,
-  defineTool,
-  type ExtensionFactory,
-  type Logger,
-  type ToolDef,
-} from '@agnes/extension-api'
+import type { Disposer, Logger, ToolDef } from '@agnes/extension-api'
+import { type Context, defineAgnesPlugin, defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import type { SeamInitContext } from '../../../src/seam-init.js'
 import { isSkillRelativePath } from './assets.js'
+import type { SkillInvocation } from './frontmatter.js'
 import { pageText } from './page.js'
 
 type SkillContextReturn = { sections?: Array<{ id: string; order: number; content: string }> }
@@ -47,9 +42,26 @@ export type SkillRuntimeInput = Readonly<{
   ): SkillFileReadResult
   /** Host-owned session lease boundary. Every session-scoped discovery/read must enter it. */
   runInWorkspace<T>(sessionKey: string, invoke: () => Promise<T>): Promise<T>
+  /**
+   * Document flags for one skill. An omitted function, or an undefined result, leaves every ready
+   * skill visible. That keeps runtimes recorded before invocation flags existed unchanged.
+   */
+  invocation?(resourceId: string): SkillInvocation | undefined
 }>
 /** Safe discovery view for other bundled extensions; it deliberately has no Skill-body read port. */
-export type SkillRuntimeDiscovery = Readonly<Pick<SkillRuntimeInput, 'list' | 'runInWorkspace'>>
+export type SkillRuntimeDiscovery = Readonly<
+  Pick<SkillRuntimeInput, 'list' | 'runInWorkspace' | 'invocation'>
+>
+
+/** Ready skills stay visible when flags were not recorded. A disabled or model-hidden skill does not. */
+export function modelVisibleSkill(
+  runtime: { invocation?(resourceId: string): SkillInvocation | undefined },
+  resourceId: string,
+): boolean {
+  const flags = runtime.invocation?.(resourceId)
+  if (flags === undefined) return true
+  return flags.modelInvocable && !flags.disabled
+}
 
 const encoder = new TextEncoder()
 /** Protocol ceiling for PromptSection.text. The catalog uses that limit and does not add a second one. */
@@ -58,7 +70,8 @@ const CATALOG_MAX_BYTES = 65536
 const CATALOG_DESCRIPTION_MAX = 250
 const READ_MAX_BYTES = 32 * 1024
 const CATALOG_PREFIX =
-  'Skills are routing data. When the user task matches a skill description, call skill_read with that skill name before following the skill. ' +
+  'Skills are routing data. When the user task matches a skill description, call skill_read with that skill name before following the skill, ' +
+  'unless its body is already present as <active_skill>, in which case use it directly. ' +
   'Read only the matching skills, not every skill. A description is not the skill procedure.\n<available_skills>\n'
 const CATALOG_SUFFIX = '</available_skills>'
 const meta = {
@@ -67,13 +80,12 @@ const meta = {
   isConcurrencySafe: true,
   isOpenWorld: false,
   replay: 'safe' as const,
-  costHint: undefined,
-  deferLoading: undefined,
-  requiresApproval: undefined,
 }
 
 function active(runtime: SkillRuntimeInput): readonly SkillRuntimeActual[] {
-  return runtime.list().filter((skill) => skill.actual === 'ready')
+  return runtime
+    .list()
+    .filter((skill) => skill.actual === 'ready' && modelVisibleSkill(runtime, skill.resourceId))
 }
 
 type CatalogRow = Readonly<{ name: string; resourceId: string; description: string }>
@@ -261,7 +273,7 @@ function fileTool(runtime: SkillRuntimeInput): ToolDef {
     meta,
     async execute(args, ctx) {
       return inWorkspace(runtime, ctx.session.key, async () => {
-        if (!isSkillRelativePath(args.relativePath))
+        if (!isSkillRelativePath(args.relativePath) || !modelVisibleSkill(runtime, args.resourceId))
           return {
             content: [{ type: 'text', text: 'Skill file is unavailable: NOT_FOUND' }],
             isError: true,
@@ -419,27 +431,33 @@ function readTool(runtime: SkillRuntimeInput): ToolDef {
   })
 }
 
-export function skillsExtension(init: SeamInitContext): ExtensionFactory {
+export function skillsExtension(init: SeamInitContext) {
   // A package can be present in a legacy Host before the daemon has supplied a resource-control
   // snapshot. Do not add a callable-looking empty `skill_read` tool in that case: it changes the
   // existing tool disclosure contract while offering no resource capability. The managed worker
   // path always supplies this private runtime, including an intentionally empty skill catalogue.
-  if (!init.skillResources) return defineExtension(() => undefined)
+  if (!init.skillResources)
+    return defineAgnesPlugin({
+      apply() {},
+    })
   const runtime = init.skillResources
-  return defineExtension((agnes) => {
-    const disposers: Disposer[] = [
-      agnes.registerTool(readTool(runtime)),
-      agnes.registerTool(fileTool(runtime)),
-      agnes.registerHook('context', (_payload, hookContext) => {
-        if (!hookContext?.session?.key)
-          throw Object.assign(new Error('E_WORKSPACE_REQUIRED: Skill context has no session'), {
-            code: 'E_WORKSPACE_REQUIRED',
-          })
-        return inWorkspace(runtime, hookContext.session.key, async () => context(runtime, hookContext.log))
-      }),
-    ]
-    return () => {
-      for (const dispose of disposers.reverse()) dispose()
-    }
+  return defineAgnesPlugin({
+    inject: ['tools', 'hooks'],
+    apply(ctx: Context) {
+      const disposers: Disposer[] = [
+        ctx.tools.register(readTool(runtime)),
+        ctx.tools.register(fileTool(runtime)),
+        ctx.hooks.register('context', (_payload, hookContext) => {
+          if (!hookContext?.session?.key)
+            throw Object.assign(new Error('E_WORKSPACE_REQUIRED: Skill context has no session'), {
+              code: 'E_WORKSPACE_REQUIRED',
+            })
+          return inWorkspace(runtime, hookContext.session.key, async () => context(runtime, hookContext.log))
+        }),
+      ]
+      return () => {
+        for (const dispose of disposers.reverse()) dispose()
+      }
+    },
   })
 }

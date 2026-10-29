@@ -1,4 +1,4 @@
-import type { Event } from '../../src/types.js'
+import type { Event } from '@agnes/core-common/types'
 
 // Counts every entry written into a Map or Set, by standing in for the global constructors while `run`
 // executes. The constructors fill themselves through `set` and `add`, so an entry copied into a new

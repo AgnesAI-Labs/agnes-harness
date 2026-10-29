@@ -1,9 +1,14 @@
-import type { SurfaceNode } from '../project/surface.js'
-import { CoreError } from '../types.js'
+import { CoreError } from '@agnes/core-common/types'
+import type { SurfaceNode } from '@agnes/core-ledger/project/surface'
+import { type ModelRecord, modelImageInputError } from '@agnes/protocol'
 import type { RequestBody, RequestMessage } from './mint.js'
-import type { PreparedUserImages } from './user-images.js'
 
-export type UserImagesHeader = PreparedUserImages['header']
+export type InlineImagePolicy = {
+  model: ModelRecord | undefined
+  canRead: boolean
+  /** Already budgeted stored images, with original per-message ordinals preserved. */
+  selectedImageIndices?: ReadonlyMap<number, readonly number[]>
+}
 
 export const sessionImageRef = (seq: number, index: number): string => `session-image://${seq}/${index}`
 
@@ -43,69 +48,105 @@ export function inlineImageMediaSurface(surface: readonly SurfaceNode[]): readon
   })
 }
 
-/**
- * Places this request's user images: a note for every image, the bytes only for the selected ones.
- * Resolves to the request header's account of them. Once the bytes are in, a request still over its
- * byte limit only drops older images, never re-adds one, and never drops an image of this turn.
- */
-export function applyUserImages(
+/** Keep originals in the ledger; only this request's image blocks are replaced. */
+export function selectInlineImages(
   body: RequestBody,
-  images: PreparedUserImages,
-  maxRequestBytes: number | undefined,
-): UserImagesHeader {
-  const keep = new Map(images.mode === 'select' ? images.blocks : [])
-  const original = body.messages.map((m) => ({ ...m, content: [...m.content] }))
-  const place = () => {
-    body.messages = original.map((m) => ({ ...m, content: [...m.content] }))
-    for (const message of body.messages) {
-      if (message.role !== 'user') continue
-      let index = 0
-      message.content = message.content.flatMap((block): RequestMessage['content'] => {
-        if (block.type !== 'image') return [block]
-        const key = `${message.seq}/${++index}`
-        const chosen = keep.get(key)
-        return [
-          imageNote(sessionImageRef(message.seq, index), chosen !== undefined, images.canRead),
-          ...(chosen ? [{ type: 'image' as const, data: chosen.data, mimeType: chosen.mimeType }] : []),
-        ]
-      })
+  policy: InlineImagePolicy,
+  media: readonly { data: string; mimeType: string; untrustedLabel: string }[],
+): void {
+  const model = policy.model
+  const supportsImages = model?.input.includes('image') === true
+  const limits = model?.inputLimits
+  const cap = limits?.images?.maxPerRequest ?? Infinity
+  const perMessage = limits?.images?.maxPerMessage ?? Infinity
+  const freshMessages = new Set(
+    body.kind === 'turn'
+      ? body.messages.slice(body.messages.findLastIndex((m) => m.role === 'assistant') + 1)
+      : [],
+  )
+  const imageMessages = body.messages.filter(
+    (m) => m.role === 'user' && m.content.some((b) => b.type === 'image'),
+  )
+  const recent = new Set(imageMessages.slice(-3).map((m) => m.seq))
+  const imageRef = (seq: number, index: number) =>
+    sessionImageRef(seq, policy.selectedImageIndices?.get(seq)?.[index - 1] ?? index)
+  const selected = new Set<object>()
+  let count = media.length
+  const fresh = body.messages.flatMap((m) =>
+    freshMessages.has(m) && m.role === 'user' ? m.content.filter((b) => b.type === 'image') : [],
+  )
+  // Never silently discard newly supplied attachments to make the request fit.
+  if (fresh.length && (!supportsImages || count + fresh.length > cap))
+    throw new CoreError(
+      'E_ENVELOPE',
+      'The current images exceed the selected model request limit. Use fewer images or a model with a higher limit.',
+    )
+  let remainingBytes = limits?.maxRequestBytes ?? Infinity
+  if (Number.isFinite(remainingBytes)) {
+    const textBody = {
+      ...body,
+      messages: body.messages.map((m) => {
+        let index = 0
+        return {
+          ...m,
+          content: m.content.map((b) =>
+            b.type === 'image' ? imageNote(imageRef(m.seq, ++index), false, policy.canRead) : b,
+          ),
+        }
+      }),
+    }
+    // This is the Core representation; the adapter separately checks the real provider payload.
+    remainingBytes -= jsonBytes(textBody)
+    remainingBytes -= media.reduce(
+      (n, image) =>
+        n +
+        jsonBytes([
+          { type: 'text', text: image.untrustedLabel },
+          { type: 'image', data: image.data, mimeType: image.mimeType },
+        ]),
+      0,
+    )
+  }
+  for (const message of [...imageMessages].reverse()) {
+    let inMessage = 0
+    const required = freshMessages.has(message)
+    let index = 0
+    for (const block of message.content) {
+      if (block.type !== 'image') continue
+      const ref = imageRef(message.seq, ++index)
+      const cost =
+        jsonBytes([imageNote(ref, true, policy.canRead), block]) -
+        jsonBytes([imageNote(ref, false, policy.canRead)])
+      const eligible =
+        supportsImages &&
+        (required || recent.has(message.seq) || policy.selectedImageIndices?.has(message.seq)) &&
+        count < cap &&
+        inMessage < perMessage &&
+        cost <= remainingBytes
+      const error = eligible ? modelImageInputError(model, [{ content: [block] }]) : undefined
+      const fits = eligible && !error
+      if (!fits) {
+        if (required)
+          throw new CoreError(
+            'E_ENVELOPE',
+            error ?? 'The current images exceed the selected model size limit. Use smaller images.',
+          )
+        continue
+      }
+      selected.add(block)
+      count++
+      inMessage++
+      remainingBytes -= cost
     }
   }
-  place()
-  let dropped = 0
-  // Keys are `${seq}/${index}` and were selected oldest first; the sort keeps that order within a message.
-  const ordered = [...keep.keys()].sort((a, b) => Number(a.split('/')[0]) - Number(b.split('/')[0]))
-  while (maxRequestBytes !== undefined && jsonBytes(body) > maxRequestBytes) {
-    const oldest = ordered.find((k) => keep.has(k) && !images.fresh.has(k))
-    if (!oldest)
-      throw new CoreError(
-        'E_ENVELOPE',
-        'The current images exceed the selected model size limit. Use smaller images.',
-      )
-    keep.delete(oldest)
-    dropped++
-    place()
-  }
-  return {
-    included: images.header.included.filter((key) => keep.has(key)),
-    omitted: images.header.omitted + dropped,
-    missing: [...images.header.missing],
-  }
-}
-
-/**
- * The request without any user image bytes, for a derivation given no selection: an inline image
- * still holding its bytes is carried as it is, and any other image (stored by reference, or read
- * without its bytes) becomes the omitted-image note. An image block without bytes never leaves here.
- */
-export function withoutUnreadImages(body: RequestBody): void {
   for (const message of body.messages) {
     if (message.role !== 'user') continue
     let index = 0
-    message.content = message.content.map((block) => {
-      if (block.type !== 'image') return block
-      ++index
-      return block.data ? block : imageNote(sessionImageRef(message.seq, index), false, false)
+    message.content = message.content.flatMap((block): RequestMessage['content'] => {
+      if (block.type !== 'image') return [block]
+      const ref = imageRef(message.seq, ++index)
+      const included = selected.has(block)
+      return [imageNote(ref, included, policy.canRead), ...(included ? [block] : [])]
     })
   }
 }

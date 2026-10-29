@@ -9,6 +9,7 @@ import type {
 } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk'
 import { loginSubscription } from '@agnes/sdk'
+import { firstRunText } from './commands/first-run-locales.js'
 import { openLoginBrowser } from './login-browser.js'
 
 export type ConfigWizardIO = {
@@ -29,7 +30,24 @@ function redact(message: string, secret: string): string {
 }
 
 function requestError(prefix: string, error: unknown, secret: string): Error {
-  const message = error instanceof Error ? error.message : String(error)
+  const data =
+    error && typeof error === 'object' && 'data' in error && error.data && typeof error.data === 'object'
+      ? error.data
+      : undefined
+  const field = data && 'field' in data ? data.field : undefined
+  const key =
+    field === 'baseUrl'
+      ? 'configBaseUrl'
+      : field === 'apiKey'
+        ? 'configApiKey'
+        : field === 'credentialRef'
+          ? 'configCredentialRef'
+          : undefined
+  const message = key
+    ? firstRunText(process.env, key)
+    : error instanceof Error
+      ? error.message
+      : String(error)
   return new Error(`${prefix}: ${redact(message, secret)}`)
 }
 

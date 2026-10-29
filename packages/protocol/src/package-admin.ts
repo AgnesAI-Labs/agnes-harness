@@ -1,5 +1,6 @@
 import type { TSchema } from '@sinclair/typebox'
 import * as P from '../gen/ts/package-admin.js'
+import { contract } from './admin-contract.js'
 import { inspectJsonData } from './json-data.js'
 import { type ValidationResult, validateAgainst } from './validate.js'
 
@@ -173,6 +174,16 @@ export function isDshWebClientModuleSlotName(value: string): boolean {
   return DSH_RUNTIME_SUPPORTED_SLOT_NAMES.has(value)
 }
 
+function copyUiComponents(items: readonly P.UiComponentDeclaration[]): P.UiComponentDeclaration[] {
+  return items.map((item) => ({
+    kind: item.kind,
+    propsSchema: structuredClone(item.propsSchema),
+    maxPropsBytes: item.maxPropsBytes,
+    fallback: item.fallback,
+    accessibility: { label: item.accessibility.label, keyboard: item.accessibility.keyboard },
+  }))
+}
+
 /**
  * Build the browser-safe row projection from the compatibility roster fields.
  *
@@ -192,6 +203,9 @@ export function projectClientModuleRows(result: P.ClientModuleListResult): P.Cli
     ...(source.slotCatalogVersion === undefined ? {} : { slotCatalogVersion: source.slotCatalogVersion }),
     ...(source.contentDigest === undefined ? {} : { contentDigest: source.contentDigest }),
     extIds: [...source.extIds],
+    ...(source.intelligentComponents === undefined
+      ? {}
+      : { intelligentComponents: copyUiComponents(source.intelligentComponents) }),
     ...(source.publicConfig === undefined ? {} : { publicConfig: { ...source.publicConfig } }),
   }))
   const statuses: P.ClientModuleListResult['statuses'] = result.statuses.map((source) => ({
@@ -236,6 +250,20 @@ export function projectClientModuleRows(result: P.ClientModuleListResult): P.Cli
         enabled: source.enabled,
         phase: source.phase,
       }
+      if (source.clientId !== undefined) row.clientId = source.clientId
+      if (source.presentationRoleBindings !== undefined)
+        row.presentationRoleBindings = { ...source.presentationRoleBindings }
+      if (source.presentationRoles !== undefined) row.presentationRoles = [...source.presentationRoles]
+      if (source.exampleOf !== undefined) row.exampleOf = source.exampleOf
+      if (source.pageEntry !== undefined) row.pageEntry = source.pageEntry
+      if (source.homeEntries !== undefined)
+        row.homeEntries = source.homeEntries.map(({ id, placement }) => ({ id, placement }))
+      if (source.examplePages !== undefined) row.examplePages = [...source.examplePages]
+      if (source.binding !== undefined) {
+        const { lifetime, owner, packageId, integrity, profileId, activationId, availability } =
+          source.binding
+        row.binding = { lifetime, owner, packageId, integrity, profileId, activationId, availability }
+      }
       if (source.packageId !== undefined) row.packageId = source.packageId
       if (source.revision !== undefined) row.revision = source.revision
       if (source.entryUrl !== undefined) row.entryUrl = source.entryUrl
@@ -245,6 +273,9 @@ export function projectClientModuleRows(result: P.ClientModuleListResult): P.Cli
       if (source.contentDigest !== undefined) row.contentDigest = source.contentDigest
       if (source.extIds !== undefined) row.extIds = [...source.extIds]
       if (source.services !== undefined) row.services = [...source.services]
+      if (source.streams !== undefined) row.streams = [...source.streams]
+      if (source.intelligentComponents !== undefined)
+        row.intelligentComponents = copyUiComponents(source.intelligentComponents)
       if (source.publicConfig !== undefined) row.publicConfig = { ...source.publicConfig }
       return row
     })
@@ -287,6 +318,8 @@ export function projectClientModuleRows(result: P.ClientModuleListResult): P.Cli
       row.slots = [...module.slots]
       if (module.contentDigest !== undefined) row.contentDigest = module.contentDigest
       row.extIds = [...module.extIds]
+      if (module.intelligentComponents !== undefined)
+        row.intelligentComponents = copyUiComponents(module.intelligentComponents)
       if (module.publicConfig !== undefined) row.publicConfig = { ...module.publicConfig }
     }
     rows.push(row)
@@ -302,30 +335,83 @@ export const PACKAGE_ADMIN_PERMISSIONS = Object.freeze([
   'packages.remove',
   'catalog.configure',
   'extensions.execute',
+  'credentials.read',
+  'credentials.write',
 ] as const)
 export type PackageAdminAccessPolicy = Readonly<{
   execution: 'read' | 'effect' | 'unblock'
   permission: P.PackageAdminPermission
   identity: 'none' | 'principal-client-command'
 }>
-const contract = (
-  params: TSchema,
-  result: TSchema,
-  execution: PackageAdminAccessPolicy['execution'],
-  permission: P.PackageAdminPermission,
-) =>
-  Object.freeze({
-    kind: 'request' as const,
-    direction: 'c2s' as const,
-    params,
-    result,
-    administration: Object.freeze({
-      execution,
-      permission,
-      identity: execution === 'read' ? ('none' as const) : ('principal-client-command' as const),
-    }),
-  })
 export const PACKAGE_ADMIN_METHODS = Object.freeze({
+  '_agnes/v1/applications.get': contract(P.PackageListParams, P.ApplicationState, 'read', 'packages.read'),
+  '_agnes/v1/applications.preview': contract(
+    P.ApplicationPreviewParams,
+    P.ApplicationPreview,
+    'read',
+    'packages.read',
+  ),
+  '_agnes/v1/applications.adopt': contract(
+    P.ApplicationAdoptParams,
+    P.ApplicationState,
+    'effect',
+    'packages.activate',
+  ),
+  '_agnes/v1/applications.clear': contract(
+    P.ApplicationClearParams,
+    P.ApplicationState,
+    'effect',
+    'packages.activate',
+  ),
+  '_agnes/v1/plugins.candidates.list': contract(
+    P.PackageListParams,
+    P.AuthoringCandidateList,
+    'read',
+    'packages.read',
+  ),
+  '_agnes/v1/plugins.candidates.show': contract(
+    P.AuthoringShowParams,
+    P.AuthoringCandidate,
+    'read',
+    'packages.read',
+  ),
+  '_agnes/v1/plugins.candidates.create': contract(
+    P.AuthoringCreateParams,
+    P.AuthoringCandidate,
+    'effect',
+    'packages.install',
+  ),
+  '_agnes/v1/plugins.candidates.write': contract(
+    P.AuthoringWriteParams,
+    P.AuthoringCandidate,
+    'effect',
+    'packages.install',
+  ),
+  '_agnes/v1/plugins.candidates.test': contract(
+    P.AuthoringTestParams,
+    P.AuthoringCandidate,
+    'effect',
+    'extensions.execute',
+  ),
+  '_agnes/v1/plugins.candidates.submit': contract(
+    P.AuthoringSubmitParams,
+    P.AuthoringCandidate,
+    'effect',
+    'packages.install',
+  ),
+  '_agnes/v1/plugins.candidates.approve': contract(
+    P.AuthoringApproveParams,
+    P.AuthoringCandidate,
+    'effect',
+    'packages.trust',
+  ),
+  '_agnes/v1/plugins.candidates.reject': contract(
+    P.AuthoringRejectParams,
+    P.AuthoringCandidate,
+    'effect',
+    'packages.trust',
+  ),
+
   '_agnes/v1/packages.catalog.list': contract(
     P.PackageCatalogListParams,
     P.PackageCatalogPage,
@@ -338,6 +424,18 @@ export const PACKAGE_ADMIN_METHODS = Object.freeze({
     'read',
     'packages.read',
   ),
+  '_agnes/v1/packages.provenance': contract(
+    P.PackageProvenanceParams,
+    P.PackageProvenance,
+    'read',
+    'packages.read',
+  ),
+  '_agnes/v1/packages.sourcePolicy': contract(
+    P.PackageListParams,
+    P.PackageSourcePolicy,
+    'read',
+    'packages.read',
+  ),
   '_agnes/v1/packages.list': contract(P.PackageListParams, P.PackageListResult, 'read', 'packages.read'),
   // Skins are derived from the installed-package inventory: the request reuses PackageListParams and
   // the read permission rather than adding a permission that would ripple into the authorization surface.
@@ -345,10 +443,9 @@ export const PACKAGE_ADMIN_METHODS = Object.freeze({
   // One skin file's bytes. The path is a same-origin URL path, never a filesystem path, and the
   // daemon answers only for ids its enabled+trusted roster claims (design §22).
   '_agnes/v1/skins.read': contract(P.SkinReadParams, P.SkinReadResult, 'read', 'packages.read'),
-  // Web client modules (design WC2/WC3): the roster is derived from inventory + activation state,
-  // so the request reuses PackageListParams and the read permission, same as skins.
+  // A session selector resolves the immutable roster pinned with its backend generation.
   '_agnes/v1/clientModules.list': contract(
-    P.PackageListParams,
+    P.ClientModuleListParams,
     P.ClientModuleListResult,
     'read',
     'packages.read',
@@ -462,6 +559,24 @@ export const PACKAGE_ADMIN_METHODS = Object.freeze({
     'packages.trust',
   ),
   '_agnes/v1/plugins.tree.get': contract(P.PackageListParams, P.PluginTreeView, 'read', 'packages.read'),
+  '_agnes/v1/plugins.publicationStatus': contract(
+    P.PackageListParams,
+    P.PluginPublicationStatusResult,
+    'read',
+    'packages.read',
+  ),
+  '_agnes/v1/sessions.migrate': contract(
+    P.SessionGenerationMigrationParams,
+    P.SessionGenerationMigrationResult,
+    'effect',
+    'packages.activate',
+  ),
+  '_agnes/v1/plugins.generations': contract(
+    P.PackageListParams,
+    P.PluginGenerationStatus,
+    'read',
+    'packages.read',
+  ),
   '_agnes/v1/plugins.tree.list': contract(P.PackageListParams, P.PluginTreeView, 'read', 'packages.read'),
   '_agnes/v1/plugins.tree.apply': contract(
     P.PluginTreeApplyParams,
@@ -472,6 +587,24 @@ export const PACKAGE_ADMIN_METHODS = Object.freeze({
   '_agnes/v1/plugins.tree.rollback': contract(
     P.PluginTreeRollbackParams,
     P.PluginTreeRollbackResult,
+    'effect',
+    'packages.activate',
+  ),
+  '_agnes/v1/plugins.config.get': contract(
+    P.PluginConfigGetParams,
+    P.PluginConfigSnapshot,
+    'read',
+    'packages.read',
+  ),
+  '_agnes/v1/plugins.config.validate': contract(
+    P.PluginConfigValidateParams,
+    P.PluginConfigValidation,
+    'read',
+    'packages.read',
+  ),
+  '_agnes/v1/plugins.config.save': contract(
+    P.PluginConfigSaveParams,
+    P.PluginConfigSaveResult,
     'effect',
     'packages.activate',
   ),
@@ -499,14 +632,51 @@ export function canAccessPackageAdmin(
 // trying to print the whole literal type. An explicit annotation on the table sidesteps that by
 // giving tsc a short type reference (`Record<PackageAdminDataName, TSchema>`) to print instead.
 export type PackageAdminDataName =
+  | 'PresentationRoleSelection'
+  | 'PresentationRoleSelections'
+  | 'PresentationRoleState'
+  | 'ApplicationSelection'
+  | 'ApplicationConfigSnapshot'
+  | 'ApplicationPreviewParams'
+  | 'ApplicationPreview'
+  | 'ApplicationState'
+  | 'ApplicationAdoptParams'
+  | 'ApplicationClearParams'
+  | 'PluginConfigGetParams'
+  | 'PluginConfigValidateParams'
+  | 'PluginConfigSaveParams'
+  | 'PluginConfigEntry'
+  | 'PluginConfigAudit'
+  | 'PluginConfigSnapshot'
+  | 'PluginConfigValidation'
+  | 'PluginConfigSaveResult'
+  | 'AuthoringFile'
+  | 'AuthoringOrigin'
+  | 'AuthoringTests'
+  | 'AuthoringCandidate'
+  | 'AuthoringCandidateList'
+  | 'AuthoringCandidateSummary'
+  | 'AuthoringProvenance'
+  | 'AuthoringShowParams'
+  | 'AuthoringCreateParams'
+  | 'AuthoringWriteParams'
+  | 'AuthoringTestParams'
+  | 'AuthoringSubmitParams'
+  | 'AuthoringApproveParams'
+  | 'AuthoringRejectParams'
   | 'PackageAdminPermission'
   | 'PackageSource'
   | 'PackageContributionSummary'
   | 'PackageCapabilityDiff'
   | 'PackageBlocker'
   | 'PackageWarning'
+  | 'PackageProvenanceParams'
+  | 'PackageSourcePolicy'
   | 'PackageProvenance'
+  | 'PluginCapabilities'
   | 'PackagePreview'
+  | 'PackagePresentation'
+  | 'ContributionBinding'
   | 'PackageTrustDecision'
   | 'PackageActivationTrust'
   | 'PackageActivationRequest'
@@ -518,6 +688,11 @@ export type PackageAdminDataName =
   | 'PackageOperationReceipt'
   | 'PackageOperation'
   | 'PackageCatalogPage'
+  | 'PluginGenerationStatus'
+  | 'PluginPublicationReport'
+  | 'PluginPublicationStatusResult'
+  | 'SessionGenerationMigrationParams'
+  | 'SessionGenerationMigrationResult'
   | 'PackageListResult'
   | 'PackageCatalogListParams'
   | 'PackageCatalogGetParams'
@@ -550,14 +725,53 @@ export type PackageAdminDataName =
   | 'ClientModuleRosterRow'
   | 'ClientModuleEffectCallParams'
 const DATA_SCHEMAS: Record<PackageAdminDataName, TSchema> = {
+  PresentationRoleSelection: P.PresentationRoleSelection,
+  PresentationRoleSelections: P.PresentationRoleSelections,
+  PresentationRoleState: P.PresentationRoleState,
+  ApplicationSelection: P.ApplicationSelection,
+  ApplicationConfigSnapshot: P.ApplicationConfigSnapshot,
+  ApplicationPreviewParams: P.ApplicationPreviewParams,
+  ApplicationPreview: P.ApplicationPreview,
+  ApplicationState: P.ApplicationState,
+  ApplicationAdoptParams: P.ApplicationAdoptParams,
+  ApplicationClearParams: P.ApplicationClearParams,
+
+  PluginConfigGetParams: P.PluginConfigGetParams,
+  PluginConfigValidateParams: P.PluginConfigValidateParams,
+  PluginConfigSaveParams: P.PluginConfigSaveParams,
+  PluginConfigEntry: P.PluginConfigEntry,
+  PluginConfigAudit: P.PluginConfigAudit,
+  PluginConfigSnapshot: P.PluginConfigSnapshot,
+  PluginConfigValidation: P.PluginConfigValidation,
+  PluginConfigSaveResult: P.PluginConfigSaveResult,
+  AuthoringFile: P.AuthoringFile,
+  AuthoringOrigin: P.AuthoringOrigin,
+  AuthoringTests: P.AuthoringTests,
+  AuthoringCandidate: P.AuthoringCandidate,
+  AuthoringCandidateList: P.AuthoringCandidateList,
+  AuthoringCandidateSummary: P.AuthoringCandidateSummary,
+  AuthoringProvenance: P.AuthoringProvenance,
+  AuthoringShowParams: P.AuthoringShowParams,
+  AuthoringCreateParams: P.AuthoringCreateParams,
+  AuthoringWriteParams: P.AuthoringWriteParams,
+  AuthoringTestParams: P.AuthoringTestParams,
+  AuthoringSubmitParams: P.AuthoringSubmitParams,
+  AuthoringApproveParams: P.AuthoringApproveParams,
+  AuthoringRejectParams: P.AuthoringRejectParams,
+
   PackageAdminPermission: P.PackageAdminPermission,
   PackageSource: P.PackageSource,
   PackageContributionSummary: P.PackageContributionSummary,
   PackageCapabilityDiff: P.PackageCapabilityDiff,
   PackageBlocker: P.PackageBlocker,
   PackageWarning: P.PackageWarning,
+  PackageProvenanceParams: P.PackageProvenanceParams,
+  PackageSourcePolicy: P.PackageSourcePolicy,
   PackageProvenance: P.PackageProvenance,
+  PluginCapabilities: P.PluginCapabilities,
   PackagePreview: P.PackagePreview,
+  PackagePresentation: P.PackagePresentation,
+  ContributionBinding: P.ContributionBinding,
   PackageTrustDecision: P.PackageTrustDecision,
   PackageActivationTrust: P.PackageActivationTrust,
   PackageActivationRequest: P.PackageActivationRequest,
@@ -569,6 +783,11 @@ const DATA_SCHEMAS: Record<PackageAdminDataName, TSchema> = {
   PackageOperationReceipt: P.PackageOperationReceipt,
   PackageOperation: P.PackageOperation,
   PackageCatalogPage: P.PackageCatalogPage,
+  PluginGenerationStatus: P.PluginGenerationStatus,
+  PluginPublicationReport: P.PluginPublicationReport,
+  PluginPublicationStatusResult: P.PluginPublicationStatusResult,
+  SessionGenerationMigrationParams: P.SessionGenerationMigrationParams,
+  SessionGenerationMigrationResult: P.SessionGenerationMigrationResult,
   PackageListResult: P.PackageListResult,
   PackageCatalogListParams: P.PackageCatalogListParams,
   PackageCatalogGetParams: P.PackageCatalogGetParams,
@@ -601,8 +820,8 @@ const DATA_SCHEMAS: Record<PackageAdminDataName, TSchema> = {
   ClientModuleRosterRow: P.ClientModuleRosterRow,
   ClientModuleEffectCallParams: P.ClientModuleEffectCallParams,
 }
-function check(schema: TSchema, value: unknown): ValidationResult<unknown> {
-  const inspected = inspectJsonData(value, 1048576)
+function check(schema: TSchema, value: unknown, maxBytes = 1048576): ValidationResult<unknown> {
+  const inspected = inspectJsonData(value, maxBytes)
   if (!inspected.ok)
     return { ok: false, errors: [{ path: '', code: 'TYPE', message: 'expected bounded strict JSON data' }] }
   return validateAgainst(schema, inspected.value)
@@ -618,5 +837,11 @@ export function validatePackageAdminCall(
   side: 'params' | 'result',
   value: unknown,
 ): ValidationResult<unknown> {
-  return check(PACKAGE_ADMIN_METHODS[name][side], value)
+  // Only the immutable client-asset read needs the 32 MiB raw resource allowance
+  // (base64 plus the JSON envelope). Other administrative payloads remain at 1 MiB.
+  return check(
+    PACKAGE_ADMIN_METHODS[name][side],
+    value,
+    name === '_agnes/v1/clientModules.read' && side === 'result' ? 44739244 + 1024 : 1048576,
+  )
 }

@@ -1,0 +1,35 @@
+{
+  "name": "@agnes/subagent-codex",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/subagent-codex",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "capabilities": {
+          "hooks": [],
+          "slots": [],
+          "events": false,
+          "resources": [],
+          "network": []
+        },
+        "metadata": {
+          "displayName": "Codex child agents",
+          "summary": "Uses a configured Codex process to handle delegated coding tasks.",
+          "description": "Uses a configured Codex process to handle delegated coding tasks.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "Codex 子 Agent",
+              "summary": "使用已配置的 Codex 进程处理分派的编程任务。",
+              "description": "使用已配置的 Codex 进程处理分派的编程任务。"
+            }
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "name": "@agnes-example/research-bundle",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "files": [
+    "README.md"
+  ],
+  "agnes": {
+    "bundles": {
+      "base": {
+        "profile": {
+          "toolPolicy": {
+            "readOnly": true
+          }
+        }
+      },
+      "research": {
+        "extends": [
+          "@agnes-example/research-bundle#base"
+        ],
+        "profile": {
+          "packages": [
+            {
+              "id": "@agnes-example/dag-loop",
+              "source": "file:./examples/loops/dag-loop",
+              "version": "1.0.0"
+            },
+            {
+              "id": "@agnes-example/compaction-sliding-window",
+              "source": "file:./examples/compaction/sliding-window",
+              "version": "0.1.0"
+            }
+          ],
+          "providers": {
+            "loop": {
+              "version": "1.0.0",
+              "provider": "example.dag"
+            },
+            "compaction": {
+              "provider": "sliding-window"
+            }
+          }
+        },
+        "presets": {
+          "research": {
+            "name": "research",
+            "extends": "standard"
+          }
+        }
+      }
+    },
+    "metadata": {
+      "displayName": "Research bundle",
+      "summary": "Demonstrates a read-only research agent assembled from a task graph and profile presets.",
+      "description": "Demonstrates a read-only research agent assembled from a task graph and profile presets.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "研究组合包",
+          "summary": "演示如何用任务图和配置预设组合一个只读研究 Agent。",
+          "description": "演示如何用任务图和配置预设组合一个只读研究 Agent。"
+        }
+      }
+    },
+    "provides": [
+      "bundle",
+      "loop"
+    ]
+  }
+}

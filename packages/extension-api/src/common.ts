@@ -1,5 +1,5 @@
-// 跨文件共用的小类型：`tool.ts` / `extension.ts` 与 02 文件的 `hooks.ts` / `slots.ts` 都从这里 import，
-// 保证 `Seq` / `SessionRef` / `LeaseView` / `Logger` 全仓只有一处定义（计划 Self-Review「类型一致」）。
+// Small shared types: `tool.ts`, `extension.ts`, `hooks.ts` and `slots.ts` import from here,
+// keeping one definition of `Seq`, `SessionRef`, `LeaseView` and `Logger` across the repository.
 import type { JsonValue } from '@agnes/protocol'
 
 export type JsonSchema = { [key: string]: JsonValue }
@@ -12,7 +12,7 @@ export type TelemetryConsent = 'DISABLED' | 'LOCAL' | 'ANON' | 'FULL'
 export interface SessionRef {
   readonly key: SessionKey
   readonly lane: string
-  /** Canonical workspace identity selected by the Host for this session. Data only, never authority. */
+  /** Canonical workspace identity selected by the Host for this session. Use for workspace-owned state, policy and config, even when execution cwd differs. Data only, never authority. */
   readonly workspaceRoot: string
   /** Session access-mode hint for tool prechecks; filesystem ports independently enforce authority. */
   readonly fullAccess?: boolean
@@ -37,7 +37,7 @@ export interface LeaseView {
     readonly slots?: readonly string[]
     readonly toolPrefix?: string
   }
-  readonly budget: { readonly remaining: number } // execute 次数
+  readonly budget: { readonly remaining: number } // Number of execute calls.
 }
 
 export type Logger = Record<'debug' | 'info' | 'warn' | 'error', (msg: string, fields?: JsonValue) => void>

@@ -2,11 +2,12 @@
 
 import { Context } from '@agnes/cordis'
 import type { UINode, UITurn } from '@agnes/protocol'
-import { SlotRegistry } from '@agnes/web-client'
-import { act, createElement, useEffect, useState } from 'react'
+import { applicationIdentity, conversationCards, SlotRegistry } from '@agnes/web-client'
+import { costDetails, costSummary } from '@agnes/web-conversation/usage'
+import { setDisclosureOpen } from '@agnes/web-ui'
+import { act, createElement, type ReactNode, useEffect, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mountTranscriptRegion } from '../src/region-slots.js'
-import { costDetails, costSummary } from '../src/usage.js'
 import { zhLocaleService, zhT } from './helpers/locale.js'
 
 const contexts: Context[] = []
@@ -23,15 +24,15 @@ async function setup(options: { onFork?: (turn: UITurn) => Promise<void> } = {})
   transcript.tabIndex = -1
   const button = document.createElement('button')
   document.body.append(transcript, button)
+  const locale = zhLocaleService(ctx)
   const mount = mountTranscriptRegion(registry, transcript, {
-    nodeHost: 'react',
     newContentButton: button,
     claim: (entry, extId) => entry.owner === extId,
-    locale: zhLocaleService(),
+    locale,
     ...(options.onFork ? { onFork: options.onFork } : {}),
   })
   mounts.push(mount)
-  return { registry, transcript, button, mount }
+  return { registry, transcript, button, mount, locale }
 }
 
 function measureTranscript(transcript: HTMLElement) {
@@ -106,6 +107,7 @@ afterEach(async () => {
   while (mounts.length) mounts.pop()?.dispose()
   while (contexts.length) await contexts.pop()?.fiber.dispose()
   document.body.replaceChildren()
+  applicationIdentity.set(undefined)
 })
 
 describe('W4a opt-in transcript node host', () => {
@@ -123,7 +125,8 @@ describe('W4a opt-in transcript node host', () => {
         el.getAttribute('data-node-id'),
       ),
     ).toEqual(['user', 'slot', 'tool'])
-    expect(item(transcript, 'tool')?.textContent).toContain('failed')
+    expect(item(transcript, 'tool')?.dataset.status).toBe('failed')
+    expect(item(transcript, 'tool')?.getAttribute('aria-label')).toContain(zhT('tool.status.failed'))
     await act(async () => mount.render([user, slot(2)]))
     expect(item(transcript, 'tool')).toBeNull()
     await act(async () => mount.reset())
@@ -245,7 +248,7 @@ describe('W4a opt-in transcript node host', () => {
     const shell = transcript.querySelector<HTMLElement>('.conversation-turn')
     expect(shell?.dataset.turnId).toBe(running.id)
     expect(shell?.dataset.status).toBe('running')
-    expect(shell?.querySelector('.turn-process summary')?.textContent).toContain('等待审批')
+    expect(shell?.querySelector('.turn-process .agh-disclosure-summary')?.textContent).toContain('等待审批')
     expect(shell?.querySelector('.turn-attention')?.textContent).toContain('需要授权')
     expect(transcript.querySelector('.timeline-unassigned')?.textContent).toContain('游离消息')
     expect(
@@ -257,11 +260,13 @@ describe('W4a opt-in transcript node host', () => {
         [turn({ status: 'waiting', nodeIds: ['user', 'assistant', 'tool'] })],
       ),
     )
-    expect(shell?.querySelector('.turn-process summary')?.textContent).toContain('等待处理')
+    expect(shell?.querySelector('.turn-process .agh-disclosure-summary')?.textContent).toContain('等待处理')
     await act(async () =>
       mount.render([user, assistant, tool('running')], [turn({ nodeIds: ['user', 'assistant', 'tool'] })]),
     )
-    expect(shell?.querySelector('.turn-process summary')?.textContent).toContain('正在执行工具')
+    expect(shell?.querySelector('.turn-process .agh-disclosure-summary')?.textContent).toContain(
+      '正在执行工具',
+    )
     for (const status of ['completed', 'failed', 'cancelled'] as const) {
       await act(async () =>
         mount.render(
@@ -271,7 +276,7 @@ describe('W4a opt-in transcript node host', () => {
       )
       expect(shell?.dataset.status).toBe(status)
       expect(shell?.querySelector('.turn-final')?.textContent).toContain('最终回答')
-      expect(shell?.querySelector('.turn-process .thinking-content')?.textContent).toContain('分析中')
+      expect(shell?.querySelector('.turn-step .thinking-content')?.textContent).toContain('分析中')
       expect(shell?.querySelectorAll('.thinking')).toHaveLength(1)
     }
   })
@@ -322,13 +327,13 @@ describe('W4a opt-in transcript node host', () => {
     await act(async () => mount.render([user, assistant], [running]))
     const article = item(transcript, 'assistant')
     const paragraph = article?.querySelector('.node-body p')
-    const summary = transcript.querySelector<HTMLElement>('.turn-process summary')
-    const details = transcript.querySelector<HTMLDetailsElement>('.turn-process')
-    expect(details?.open).toBe(true)
+    const summary = transcript.querySelector<HTMLElement>('.turn-process .agh-disclosure-summary')
+    const details = transcript.querySelector<HTMLElement>('.turn-process')
+    expect(details?.dataset.open).toBe('true')
     await act(async () => summary?.click())
-    expect(details?.open).toBe(false)
+    expect(details?.dataset.open).toBe('false')
     await act(async () => mount.render([user, assistant], [running]))
-    expect(details?.open).toBe(false)
+    expect(details?.dataset.open).toBe('false')
     const range = document.createRange()
     range.selectNodeContents(paragraph?.firstChild ?? transcript)
     document.getSelection()?.removeAllRanges()
@@ -344,7 +349,7 @@ describe('W4a opt-in transcript node host', () => {
     expect(transcript.querySelector('.turn-final .node-body p')).toBe(paragraph)
     expect(document.getSelection()?.toString()).toBe('稳定段落')
     expect(document.activeElement).toBe(summary)
-    expect(details?.open).toBe(false)
+    expect(details?.dataset.open).toBe('false')
     await act(async () => summary?.click())
     await act(async () =>
       mount.render(
@@ -352,10 +357,10 @@ describe('W4a opt-in transcript node host', () => {
         [turn({ status: 'completed', finalAssistantId: 'assistant' })],
       ),
     )
-    expect(details?.open).toBe(true)
+    expect(details?.dataset.open).toBe('true')
   })
 
-  it('holds selected thinking in the final article until the reader releases it', async () => {
+  it('keeps selected thinking in place when the turn settles: reasoning is its own step', async () => {
     const { transcript, mount } = await setup()
     const thinking: UINode = {
       kind: 'assistant',
@@ -367,7 +372,15 @@ describe('W4a opt-in transcript node host', () => {
     }
     await act(async () => mount.render([user, thinking], [turn()]))
     const article = item(transcript, 'assistant')
-    const thought = article?.querySelector<HTMLElement>('.thinking-content p')
+    // The thought is a step of the process, beside the article it belongs to, from the start.
+    expect(article?.querySelector('.thinking-content')).toBeNull()
+    const step = transcript.querySelector<HTMLElement>('.turn-step .thinking')
+    const toggle = step?.querySelector<HTMLButtonElement>('[data-testid="thinking-toggle"]')
+    expect(toggle?.dataset.state).toBe('running')
+    expect(toggle?.querySelector('.activity-target')?.textContent).toBe('分析中')
+    await act(async () => toggle?.click())
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true')
+    const thought = step?.querySelector<HTMLElement>('.thinking-content p')
     const selection = document.getSelection()
     const range = document.createRange()
     range.selectNodeContents(thought?.firstChild ?? transcript)
@@ -380,11 +393,14 @@ describe('W4a opt-in transcript node host', () => {
       ),
     )
     expect(item(transcript, 'assistant')).toBe(article)
-    expect(article?.querySelector('.thinking-content p')).toBe(thought)
+    expect(transcript.querySelector('.turn-step .thinking')).toBe(step)
+    expect(step?.querySelector('.thinking-content p')).toBe(thought)
     expect(selection?.toString()).toBe('分析中')
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true')
+    expect(toggle?.dataset.state).toBeUndefined()
     selection?.removeAllRanges()
     await act(async () => document.dispatchEvent(new Event('selectionchange')))
-    expect(transcript.querySelector('.turn-process .thinking-content')?.textContent).toContain('分析中')
+    expect(transcript.querySelectorAll('.thinking')).toHaveLength(1)
     expect(article?.querySelector('.thinking-content')).toBeNull()
     expect(article?.textContent).toContain('最终回答')
   })
@@ -486,7 +502,7 @@ describe('W4a opt-in transcript node host', () => {
       expect(transcript.querySelector('.turn-status')?.textContent).toBe(activeLabel)
       visibility.mockReturnValue('visible')
       await act(async () => tick?.())
-      expect(transcript.querySelector('.turn-status')?.textContent).toContain('用时 10 秒')
+      expect(transcript.querySelector('.turn-status')?.textContent).toMatch(/ · 10 秒$/)
       const clock = setClock.mock.results.find(
         (result, index) => setClock.mock.calls[index]?.[1] === 1000 && result.type === 'return',
       )?.value
@@ -530,6 +546,92 @@ describe('W4a opt-in transcript node host', () => {
     expect(transcript.querySelector('.turn-final')?.textContent).toContain('迟到的最终正文')
     expect(transcript.querySelector<HTMLButtonElement>('[aria-label="复制回答"]')?.disabled).toBe(false)
     expect(transcript.querySelectorAll('[data-node-id="assistant"]')).toHaveLength(1)
+  })
+
+  it('refreshes global turn-tail contributions while an unrelated historical turn stays mounted', async () => {
+    const { registry, transcript, mount, locale } = await setup()
+    let historyRenders = 0
+    const removeProbe = conversationCards.register({
+      id: 'history-render-probe',
+      order: -1,
+      matches: (card) => card.kind === 'conversation.node' && (card.data as UINode).id === 'old',
+      component: ({ context }) => {
+        historyRenders++
+        return context.data as ReactNode
+      },
+    })
+    const remove = registry.register(
+      {
+        name: 'conversation.chat.turnTail',
+        id: 'global-history',
+        select: (owner) => owner,
+      },
+      ({ selected }: { selected: unknown }) => {
+        const view = selected as { turn: UITurn; nodes: readonly UINode[] }
+        return createElement(
+          'output',
+          { 'data-history-tail': view.turn.id },
+          view.nodes
+            .filter((node) => node.kind === 'assistant')
+            .map((node) => node.text)
+            .join('|'),
+        )
+      },
+    )
+    try {
+      const history = turn({ status: 'completed', nodeIds: ['user', 'old'], finalAssistantId: 'old' })
+      const live = turn({ id: 'turn:2', turn: 2, nodeIds: ['live'] })
+      await act(async () =>
+        mount.render([user, say('old', 2, 'history'), say('live', 3, 'one')], [history, live]),
+      )
+      const old = item(transcript, 'old')
+      const tail = transcript.querySelector('[data-history-tail="turn:1"]')
+      expect(tail?.textContent).toBe('history|one')
+      const renders = historyRenders
+      await act(async () =>
+        mount.render(
+          structuredClone([user, say('old', 2, 'history'), say('live', 3, 'two')]),
+          structuredClone([history, live]),
+        ),
+      )
+      expect(item(transcript, 'old')).toBe(old)
+      expect(transcript.querySelector('[data-history-tail="turn:1"]')).toBe(tail)
+      expect(tail?.textContent).toBe('history|two')
+      expect(historyRenders).toBe(renders)
+      await act(async () =>
+        mount.render(
+          [user, say('old', 2, 'history'), say('live', 3, 'two'), say('new-answer', 4, 'three')],
+          [
+            history,
+            live,
+            turn({
+              id: 'turn:3',
+              turn: 3,
+              status: 'completed',
+              nodeIds: ['new-answer'],
+              finalAssistantId: 'new-answer',
+            }),
+          ],
+        ),
+      )
+      expect(tail?.textContent).toBe('history|two|three')
+      expect(historyRenders).toBe(renders)
+      await act(async () => {
+        applicationIdentity.set({
+          revision: 1,
+          status: 'active',
+          assets: {},
+          selection: null,
+          candidates: [],
+          effective: { id: 'updated', brand: { name: { en: 'Updated Harness' } } },
+        })
+      })
+      expect(transcript.querySelector('.process-name')?.textContent).toBe('Updated Harness')
+      await act(async () => applicationIdentity.set(undefined))
+    } finally {
+      remove()
+      removeProbe()
+    }
   })
 
   it('keeps a claimed process card mounted while a streamed answer becomes final', async () => {
@@ -685,6 +787,31 @@ describe('W4a opt-in transcript node host', () => {
     expect(button.hidden).toBe(false)
   })
 
+  it('restores the reader position after a prepend without a smooth-scroll animation', async () => {
+    const { transcript, mount } = await setup()
+    measureTranscript(transcript)
+    // A skin may enable smooth scrolling on the transcript.
+    transcript.style.scrollBehavior = 'smooth'
+    const measured = Object.getOwnPropertyDescriptor(transcript, 'scrollTop')
+    const writes: { top: number; behavior: string }[] = []
+    Object.defineProperty(transcript, 'scrollTop', {
+      configurable: true,
+      get: () => measured?.get?.call(transcript),
+      set(value: number) {
+        writes.push({ top: value, behavior: transcript.style.scrollBehavior })
+        measured?.set?.call(transcript, value)
+      },
+    })
+    const tail = [say('c', 3), say('d', 4), say('e', 5)]
+    await act(async () => mount.render(tail, [], { hasEarlier: true, loadEarlier: vi.fn() }))
+    transcript.scrollTop = 20
+    transcript.dispatchEvent(new Event('scroll'))
+    writes.length = 0
+    await act(async () => mount.render([say('a', 1), say('b', 2), ...tail], [], { hasEarlier: false }))
+    expect(writes).toEqual([{ top: 220, behavior: 'auto' }])
+    expect(transcript.style.scrollBehavior).toBe('smooth')
+  })
+
   it('keeps a new history request locked when a pre-reset request settles', async () => {
     const { transcript, mount } = await setup()
     let finishOld: (() => void) | undefined
@@ -754,12 +881,14 @@ describe('W4a opt-in transcript node host', () => {
         .mockRejectedValueOnce(new Error('temporary history failure'))
         .mockResolvedValueOnce(undefined)
       await act(async () => mount.render([say('a', 1)], [], { hasEarlier: true, loadEarlier }))
-      observed.at(-1)?.notify()
+      // The history sentinel is one of the observers; the others ignore a foreign entry.
+      for (const observer of observed) observer.notify()
       await act(async () => Promise.resolve())
       transcript.querySelector<HTMLButtonElement>('.transcript-earlier button')?.click()
       expect(loadEarlier).toHaveBeenCalledTimes(2)
       await act(async () => mount.dispose())
-      expect(observed.at(-1)?.disconnect).toHaveBeenCalledTimes(1)
+      expect(observed.length).toBeGreaterThan(0)
+      for (const observer of observed) expect(observer.disconnect).toHaveBeenCalledTimes(1)
       const focus = vi.spyOn(transcript, 'focus')
       button.click()
       expect(focus).not.toHaveBeenCalled()
@@ -807,56 +936,110 @@ it('preserves complete React cost details, focus and order through the opt-in ti
     model: 'model',
     timing: { ttftMs: 0, durationMs: 2000 },
   }
-  const running = turn({ nodeIds: ['user', 'assistant', 'cost'] })
+  type Usage = NonNullable<UITurn['usage']>
+  const call: Usage['calls'][number] = {
+    id: 'call:1',
+    seq: 3,
+    purpose: 'inference' as const,
+    model: 'model',
+    creditSource: 'estimated' as const,
+    ...(cost.tokens ? { tokens: cost.tokens } : {}),
+    ...(cost.billing ? { billing: cost.billing } : {}),
+    ...(cost.credits === undefined ? {} : { credits: cost.credits }),
+    ...(cost.timing ? { timing: cost.timing } : {}),
+  }
+  const disclosed = (
+    next: typeof call,
+    source: 'estimated' | 'gateway',
+  ): Extract<UINode, { kind: 'cost' }> => ({
+    kind: 'cost',
+    id: next.id,
+    seq: next.seq,
+    source,
+    purpose: next.purpose,
+    model: next.model,
+    ...(next.tokens ? { tokens: next.tokens } : {}),
+    ...(next.billing ? { billing: next.billing } : {}),
+    ...(next.credits === undefined ? {} : { credits: next.credits }),
+    ...(next.timing ? { timing: next.timing } : {}),
+    ...('interrupted' in next && next.interrupted ? { interrupted: true } : {}),
+  })
+  const usageFor = (next: typeof call): Usage => ({
+    totals: { input: 1234, output: 20, cacheRead: 10, cacheWrite: 0, reasoning: 5 },
+    reasoningComplete: true,
+    billingComplete: true,
+    calls: [next],
+    ...(next.billing ? { cost: next.billing } : {}),
+    credits: { amount: next.credits ?? 0, source: next.creditSource ?? 'estimated', complete: true },
+  })
+  const running = turn({ nodeIds: ['user', 'assistant', 'cost'], usage: usageFor(call) })
   await act(async () => mount.render([user, say('assistant', 2), cost], [running]))
-  const article = item(transcript, 'cost')
-  const details = article?.querySelector('details')
-  const summary = article?.querySelector('summary')
+  expect(item(transcript, 'cost')).toBeNull()
+  const completed = {
+    ...running,
+    status: 'completed' as const,
+    finalAssistantId: 'assistant',
+    usage: usageFor(call),
+  }
+  await act(async () => mount.render([user, say('assistant', 2, 'final answer'), cost], [completed]))
+  const details = transcript.querySelector<HTMLElement>('.turn-footer .agh-disclosure.call-usage')
+  const summary = details?.querySelector<HTMLElement>('.agh-disclosure-summary')
   if (!details || !summary) throw new Error('missing cost disclosure')
-  details.open = true
+  setDisclosureOpen(details, true)
   summary.focus()
-  const final = {
-    ...cost,
-    source: 'gateway' as const,
+  const gateway = {
+    ...call,
+    creditSource: 'gateway' as const,
     interrupted: true,
     model: '<svg onload=alert(1)> **literal**',
     billing: { usdMicros: 0, source: 'gateway' as const, subscription: false },
     credits: 0,
   }
-  const completed = { ...running, status: 'completed' as const, finalAssistantId: 'assistant' }
-  for (const next of [final, { ...final }]) {
-    await act(async () => mount.render([user, say('assistant', 2, 'final answer'), next], [completed]))
-    expect(item(transcript, 'cost')).toBe(article)
-    expect(article?.querySelector('details')).toBe(details)
-    expect(article?.querySelector('summary')).toBe(summary)
-    expect(details.open).toBe(true)
+  for (const next of [gateway, { ...gateway }]) {
+    await act(async () =>
+      mount.render(
+        [user, say('assistant', 2, 'final answer'), cost],
+        [{ ...completed, usage: usageFor(next) }],
+      ),
+    )
+    const article = transcript.querySelector('.turn-footer .agh-disclosure.call-usage')
+    expect(article).toBe(details)
+    expect(article?.querySelector<HTMLElement>('.agh-disclosure-summary')).toBe(summary)
+    expect(details.dataset.open).toBe('true')
     expect(document.activeElement).toBe(summary)
-    expect(summary.textContent).toBe(costSummary(next, zhT))
+    // One call: the panel names its details; the totals above already say in/out/cost.
+    expect(summary.textContent).toBe('调用细节')
     expect(
       Array.from(article?.querySelectorAll('dt') ?? []).map((term) => [
         term.textContent,
         term.nextElementSibling?.textContent,
       ]),
-    ).toEqual(costDetails(next, zhT))
-    expect(article?.querySelector('svg, strong, img')).toBeNull()
-    expect(transcript.querySelectorAll('[data-node-id="cost"]')).toHaveLength(1)
-    expect(
-      Array.from(transcript.querySelectorAll('.turn-process-body [data-node-id]')).map((el) =>
-        el.getAttribute('data-node-id'),
-      ),
-    ).toEqual(['cost'])
+    ).toEqual(
+      // The usage panel prints every cost with the total's six decimals.
+      costDetails(disclosed(next, next.creditSource), zhT, (usdMicros) => `$${(usdMicros / 1e6).toFixed(6)}`),
+    )
+    // Model text never becomes markup; the only drawing is the panel's own chevron.
+    expect(article?.querySelector('svg:not(.turn-usage-chevron), strong, img')).toBeNull()
+    expect(transcript.querySelector('[data-node-id="cost"]')).toBeNull()
+    expect(transcript.querySelectorAll('.turn-process-body [data-node-id]')).toHaveLength(0)
     expect(item(transcript, 'assistant')?.textContent).toContain('final answer')
   }
-  await act(async () => mount.render([user, say('assistant', 2, 'final answer')], [completed]))
+  await act(async () =>
+    mount.render(
+      [user, say('assistant', 2, 'final answer')],
+      [{ ...completed, usage: { ...usageFor(call), calls: [] } }],
+    ),
+  )
+  expect(transcript.querySelector('.turn-footer .agh-disclosure.call-usage')).toBeNull()
   expect(details.isConnected).toBe(false)
   await act(async () => {
     registry.setSession('session-b')
     mount.reset()
     mount.render([cost])
   })
-  const fresh = item(transcript, 'cost')?.querySelector('details')
+  const fresh = item(transcript, 'cost')?.querySelector<HTMLElement>('.agh-disclosure')
   expect(fresh).not.toBe(details)
-  expect(fresh?.open).toBe(false)
+  expect(fresh?.dataset.open).toBe('false')
   await act(async () => mount.dispose())
   expect(fresh?.isConnected).toBe(false)
 })

@@ -1,0 +1,451 @@
+@layer app {
+  /* ── One settings page template ─────────────────────────────────────────────
+   Every settings page, whichever host renders it, is the same three parts: a header (title, one
+   line of description, page actions), optional tabs, and a body that scrolls inside the dialog.
+   They share one left edge and one column width, so nothing reaches the dialog edge or the
+   close button. */
+  #config-form.settings-shell #settings-content-slots {
+    container: settings-content / inline-size;
+  }
+  /* A settings page outside the dialog has no close button to leave room for. */
+  .runtime-settings {
+    --settings-header-end: 0px;
+  }
+  /* The close button is centred on the header line. */
+  #config:has(.settings-shell) #config-close {
+    top: calc((var(--settings-header-height) - var(--control-height-sm)) / 2);
+    right: var(--s16);
+    /* Stay above the sticky page header for pointer access and visible keyboard focus. */
+    z-index: 3;
+  }
+  /* Operation notices are injected above the page header, which is the only place that gives the
+     absolutely positioned close button room. Reserve the same lines here, otherwise a notice
+     slides under the button. Scoped to the dialog so the standalone settings page stays as is. */
+  #config:has(.settings-shell) #settings-operation-notices:not(:empty) {
+    padding: var(--settings-header-height) var(--settings-header-end) var(--s12) var(--settings-gutter);
+  }
+  /* The narrow screen's way back to the list (「设置」) has no place on a wide one, where the
+   rail is beside the page. */
+  .settings-shell #settings-content-slots > .agh-push-crumbs {
+    display: none;
+  }
+  /* The pane spans the dialog; its header and body keep to the column themselves. */
+  .settings-shell .settings-content {
+    flex: 1 1 auto;
+    width: auto;
+    max-width: none;
+    margin-inline: 0;
+  }
+
+  /* The dialog's own section host shows one page; that page is the pane's header and body. */
+  #settings-sections-pane[hidden] {
+    display: none;
+  }
+  #settings-sections-pane > div,
+  #settings-sections-pane > div > .agnes-settings-page {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  /* Header: the page names itself once. Actions sit on the title's line, inside the column. */
+  .settings-shell .settings-content > .agnes-settings-page-heading,
+  #settings-sections-pane > div > .agnes-settings-page .agnes-settings-page-top,
+  .settings-shell .settings-content .agnes-settings-page-top,
+  .runtime-settings .agnes-settings-page:not([data-nested]) .agnes-settings-page-top {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s12);
+    box-sizing: border-box;
+    width: 100%;
+    max-width: none;
+    min-height: var(--settings-header-height);
+    margin: 0;
+    /* The dialog's close button sits at the end of this line. */
+    padding: 0 var(--settings-header-end) 0 var(--settings-gutter);
+    border: 0;
+    border-bottom: 1px solid var(--agnes-line-primary);
+    background: var(--agnes-bg-surface);
+  }
+  /* The header line stays put: the body scrolls beneath it (also where a narrow pane scrolls as a
+   whole), opaque so nothing shows through. */
+  .settings-shell .settings-content .agnes-settings-page-top,
+  #settings-sections-pane .agnes-settings-page-top {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+  /* A page rendered in a scrolling list keeps its header in view while the body moves under it. */
+  .runtime-settings .agnes-settings-page:not([data-nested]) .agnes-settings-page-top {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    max-width: none;
+    padding-inline: 0;
+    margin-bottom: var(--s20);
+  }
+  .settings-shell .agnes-settings-page-heading > div:first-child,
+  .runtime-settings .agnes-settings-page-heading > div:first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  /* The dialog's generic heading rules are written against its id; the template outranks them. */
+  :is(#config-form, .runtime-settings) .agnes-settings-group-title {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-lg);
+    letter-spacing: 0;
+  }
+  /* The header line's title: the breadcrumb's current level, at the line's size. */
+  :is(#config-form, .runtime-settings) .agnes-settings-page-heading .agh-push-crumb-current h2 {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-md);
+    letter-spacing: 0;
+  }
+  .settings-shell .agnes-settings-page-heading > .agnes-settings-actions,
+  .runtime-settings .agnes-settings-page-heading > .agnes-settings-actions {
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    min-height: var(--line-lg);
+    max-width: 60%;
+  }
+  .agnes-settings-page-heading > .agnes-settings-actions:empty {
+    display: none;
+  }
+  /* A page's own actions sit on the header line, before the dialog's close button. */
+  #settings-sections-pane .agnes-settings-page-top > .agnes-settings-actions {
+    min-height: 0;
+  }
+  #settings-sections-pane .agnes-settings-page-top > .agnes-settings-actions .agh-btn--icon .icon {
+    width: var(--s16);
+    height: var(--s16);
+  }
+
+  /* Tabs: a group of pages carries the title; its tabs sit under it and the page adds no second
+   heading, only its description and actions. */
+  .agnes-settings-group-title {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: none;
+    min-height: var(--settings-header-height);
+    padding: 0 var(--settings-header-end) 0 var(--settings-gutter);
+  }
+  .runtime-settings .agnes-settings-group-title {
+    padding-inline: 0;
+  }
+  .agnes-settings-group-title[hidden] {
+    display: none;
+  }
+  .settings-shell .agnes-settings-section-tabs,
+  .runtime-settings .agnes-settings-section-tabs {
+    box-sizing: border-box;
+    width: calc(100% - 2 * var(--settings-gutter));
+    max-width: var(--settings-column);
+    margin: var(--s8) var(--settings-gutter) 0;
+    padding: 0;
+    gap: var(--s20);
+  }
+  .runtime-settings .agnes-settings-section-tabs {
+    width: 100%;
+    margin-inline: 0;
+  }
+  .settings-shell .agnes-settings-section-tabs button,
+  .runtime-settings .agnes-settings-section-tabs button {
+    min-height: 2.25rem;
+    padding: var(--s8) 0;
+    font-size: var(--font-size-sm);
+  }
+  /* The tab strip names a tabbed page, so its own heading line folds away. A subpage keeps its
+   header line: its crumb is the only way back and its title names the page. */
+  #settings-content-slots:has(> #settings-section-tabs:not([hidden]))
+  .agnes-settings-page-heading:not(.agnes-settings-subpage-header > *),
+  .runtime-settings
+    > section:has(> .agnes-settings-section-tabs)
+    .agnes-settings-page-heading:not(.agnes-settings-subpage-header > *) {
+    min-height: 0;
+    padding-block: var(--s12) 0;
+    padding-inline-end: var(--settings-gutter);
+    border-bottom: 0;
+  }
+  #settings-content-slots:has(> #settings-section-tabs:not([hidden]))
+    .agnes-settings-page-heading:not(.agnes-settings-subpage-header > *)
+    nav,
+  .runtime-settings
+    > section:has(> .agnes-settings-section-tabs)
+    .agnes-settings-page-heading:not(.agnes-settings-subpage-header > *)
+    nav {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  /* A tabbed page without actions starts straight at its body. */
+  #settings-content-slots:has(> #settings-section-tabs:not([hidden]))
+  .agnes-settings-page-heading:not(.agnes-settings-subpage-header > *, :has(.agnes-settings-actions > *)),
+  .runtime-settings
+    > section:has(> .agnes-settings-section-tabs)
+    .agnes-settings-page-heading:not(.agnes-settings-subpage-header > *, :has(.agnes-settings-actions > *)) {
+    padding-block: 0;
+  }
+
+  /* Body: the one vertical scroller of a page. */
+  .settings-shell .config-workspace,
+  #settings-sections-pane > div > .agnes-settings-page .agnes-settings-page-body,
+  .settings-shell .settings-content .agnes-settings-subpage-body,
+  .settings-shell #plugin-list,
+  .settings-shell #resource-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: var(--s20) var(--settings-gutter) var(--s32);
+    overflow: hidden auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+  /* The page inside the plugin list brings its own sticky header, so the scroller starts flush. */
+  .settings-shell #plugin-list,
+  .settings-shell #resource-list:has(> .agnes-settings-page-heading) {
+    padding-top: 0;
+  }
+  /* Parts of a page keep their own height in every layout; the body is what scrolls. */
+  .settings-shell .config-workspace > * {
+    flex-shrink: 0;
+  }
+  .settings-shell .config-workspace > *,
+  #settings-sections-pane > div > .agnes-settings-page .agnes-settings-page-body > *,
+  .settings-shell .settings-content .agnes-settings-subpage-body > *,
+  .settings-shell #plugin-list > *,
+  .settings-shell #resource-list > * {
+    box-sizing: border-box;
+    max-width: var(--settings-column);
+  }
+  .settings-shell .config-workspace > * + *,
+  .settings-shell .agnes-settings-stack > * + * {
+    margin-top: 0;
+  }
+  .settings-shell .config-workspace,
+  .settings-shell .agnes-settings-stack,
+  .runtime-settings .agnes-settings-stack {
+    gap: var(--s24);
+  }
+  .settings-shell .config-workspace,
+  #settings-sections-pane > div > .agnes-settings-page .agnes-settings-page-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+  }
+  /* An extension slot adds its entries to the page flow; an empty one takes no row. */
+  .settings-shell .config-workspace > [data-agnes-dsh-slot],
+  .settings-shell .config-workspace > [data-agnes-dsh-slot] > [data-slot] {
+    display: contents;
+  }
+  .settings-shell .admin-pane-body,
+  #plugin-settings-pane .admin-pane-body {
+    padding: 0;
+  }
+  .settings-shell .admin-pane-body > :not(.plugin-layout) {
+    box-sizing: border-box;
+    width: calc(100% - 2 * var(--settings-gutter));
+    max-width: var(--settings-column);
+    margin-inline: var(--settings-gutter);
+  }
+  .settings-shell .plugin-layout {
+    margin-top: 0;
+  }
+  .settings-shell .agnes-settings-page[data-layout]:not(.settings-content),
+  .runtime-settings .agnes-settings-page[data-layout] {
+    width: 100%;
+    max-width: var(--settings-column);
+    margin-inline: 0;
+  }
+  /* The page shown by the section host spans the pane, like a native pane does. */
+  .settings-shell #settings-sections-pane > div > .agnes-settings-page[data-layout] {
+    max-width: none;
+  }
+  /* The advanced pages are listed under their own small label, a step below the everyday three. */
+  .settings-shell #settings-advanced {
+    margin-top: var(--s8);
+  }
+  /* ── Dialog chrome ────────────────────────────────────────────────────────
+   Navigation rail: soft filled search, small muted group labels, rounded rows; the current page
+   is a raised pill on the panel with its icon in the accent. */
+  .settings-shell .settings-rail,
+  .runtime-settings > .settings-rail {
+    gap: var(--s12);
+    padding: var(--s20) var(--s12) var(--s16);
+    border-inline-end: 1px solid var(--agnes-line-primary);
+  }
+  .settings-shell .settings-rail-heading {
+    padding-inline: var(--s8) 0;
+  }
+  .settings-shell .settings-rail-title {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-md);
+  }
+  .settings-shell .settings-nav-label {
+    margin: var(--s8) var(--s8) var(--s4);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+  .settings-shell .settings-nav-item,
+  .runtime-settings > nav .settings-nav-item {
+    gap: var(--s10);
+    padding: var(--s4) var(--s8);
+    border: 0;
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-secondary);
+    background: transparent;
+  }
+  .settings-shell .settings-nav-item .icon {
+    color: var(--agnes-text-tertiary);
+  }
+  .settings-shell .settings-nav-item:hover:not(:disabled):not([aria-current="page"]) {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-hover);
+  }
+  .settings-shell .settings-nav-item[aria-current="page"],
+  .settings-shell .settings-nav-item[aria-current="page"]:hover:not(:disabled) {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-surface);
+    box-shadow: var(--shadow-raised);
+    font-weight: var(--font-weight-medium);
+  }
+  .settings-shell .settings-nav-item[aria-current="page"] .icon {
+    color: var(--agnes-brand-primary);
+  }
+  /* The current item is only ever the raised pill; keyboard focus adds the focus line to it. */
+  .settings-shell .settings-nav-item:focus-visible {
+    box-shadow: var(--focus-line);
+  }
+  .settings-shell .settings-nav-item[aria-current="page"]:focus-visible {
+    box-shadow: var(--focus-line), var(--shadow-raised);
+  }
+  .settings-shell #settings-advanced {
+    margin-top: var(--s8);
+  }
+  .settings-shell #settings-advanced > .agh-disclosure-summary {
+    min-height: var(--s32);
+    padding: var(--s4) var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+  .settings-shell #settings-advanced > .agh-disclosure-summary:hover {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-hover);
+  }
+  .settings-shell #settings-advanced > .agh-disclosure-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s4);
+    padding-block: var(--s4) 0;
+  }
+  .settings-shell #settings-advanced > .agh-disclosure-body > .settings-nav-item {
+    margin-top: 0;
+  }
+  .settings-shell #config-close {
+    width: var(--control-height-sm);
+    min-width: var(--control-height-sm);
+    height: var(--control-height-sm);
+    min-height: var(--control-height-sm);
+    padding: 0;
+    border-radius: var(--radius-full);
+  }
+
+  /* Consecutive section cards read as one run: half the page rhythm between them. */
+  :is(.settings-shell, .runtime-settings)
+    .agnes-settings-stack
+    > .agh-disclosure[data-variant="card"]
+    + .agh-disclosure[data-variant="card"] {
+    margin-top: calc(-1 * var(--s12));
+  }
+  /* A plain line directly in a list row is its meta line. */
+  .agnes-settings-list > .agh-list-row .agh-list-row-copy > span {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* A page that brings its own header into the scroller (Skills) keeps it in view, on the same
+   line and at the same size as every other page header. */
+  .settings-shell #resource-list > .agnes-settings-page-heading {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--s16);
+    margin: 0;
+    padding: var(--s24) 0 var(--s8);
+    background: var(--agnes-bg-surface);
+  }
+
+  /* Tabs under a group title: one hairline, the current tab marked in the accent. */
+  .settings-shell .agnes-settings-section-tabs,
+  .runtime-settings .agnes-settings-section-tabs {
+    margin-top: var(--s12);
+  }
+  .settings-shell .agnes-settings-section-tabs button,
+  .runtime-settings .agnes-settings-section-tabs button {
+    margin-bottom: -1px;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  }
+
+  @media (max-width: 767px) {
+    .settings-shell,
+    .runtime-settings,
+    .admin-page {
+      --settings-gutter: var(--s16);
+    }
+    /* One page at a time: 「设置」 leads back to the list; the page's header line names the page. */
+    .settings-shell #settings-content-slots > .agh-push-crumbs {
+      display: block;
+    }
+    .settings-shell
+      #settings-content-slots
+      > .agh-push-crumbs
+      :is(.agh-push-crumb-current, .agh-push-crumb-separator) {
+      display: none;
+    }
+    .settings-shell .settings-content .agnes-settings-page-top,
+    .runtime-settings .agnes-settings-page:not([data-nested]) .agnes-settings-page-top {
+      flex-wrap: wrap;
+    }
+    .settings-shell .agnes-settings-page-heading > .agnes-settings-actions,
+    .runtime-settings .agnes-settings-page-heading > .agnes-settings-actions {
+      max-width: 100%;
+      flex-wrap: wrap;
+    }
+  }
+  /* 作业页的「已更新」时间读作标题行的一部分（结构见 jobs-panel.tsx）：它与标题同在一个行盒里，
+     基线由行内布局对齐，不再依赖工具栏单元格按盒底对齐。 */
+  .jobs-session-updated {
+    margin-inline-start: var(--s12);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+    white-space: nowrap;
+  }
+}

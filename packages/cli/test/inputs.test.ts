@@ -31,22 +31,17 @@ const flagsFor = (cwd: string, o: Partial<ProfileFlags> = {}): ProfileFlags => (
 })
 
 describe('resolveHome', () => {
-  it('prefers AGH_HOME, then the legacy AGNES_HOME, otherwise .agh under HOME', () => {
-    expect(resolveHome({ AGH_HOME: resolve('/x/agh'), AGNES_HOME: resolve('/x/agnes'), HOME: '/h' })).toBe(
-      resolve('/x/agh'),
-    )
-    expect(resolveHome({ AGNES_HOME: resolve('/x/agnes'), HOME: '/h' })).toBe(resolve('/x/agnes'))
+  it('uses AGH_HOME, otherwise .agh under HOME', () => {
+    expect(resolveHome({ AGH_HOME: resolve('/x/agh'), HOME: '/h' })).toBe(resolve('/x/agh'))
     expect(resolveHome({ HOME: resolve('/h') })).toBe(join(resolve('/h'), '.agh'))
+    expect(resolveHome({ AGH_HOME: '', AGNES_HOME: '', HOME: resolve('/h') })).toBe(
+      join(resolve('/h'), '.agh'),
+    )
   })
 
-  // An unset variable and one set to the empty string reach a process the same way often enough
-  // that the difference cannot be left to `??`, which keeps '' and would resolve every path to the
-  // filesystem root.
-  it('an empty AGH_HOME or AGNES_HOME is treated as unset, not as the root directory', () => {
-    expect(resolveHome({ AGH_HOME: '', HOME: resolve('/h') })).toBe(join(resolve('/h'), '.agh'))
-    expect(resolveHome({ AGNES_HOME: '', HOME: resolve('/h') })).toBe(join(resolve('/h'), '.agh'))
-    expect(resolveHome({ AGH_HOME: '', AGNES_HOME: resolve('/x/agnes'), HOME: '/h' })).toBe(
-      resolve('/x/agnes'),
+  it.each([undefined, '', resolve('/x/agh')])('refuses AGNES_HOME with AGH_HOME=%s', (home) => {
+    expect(() => resolveHome({ AGH_HOME: home, AGNES_HOME: resolve('/x/agnes') })).toThrow(
+      /AGNES_HOME.*AGH_HOME.*clean home/,
     )
   })
 
@@ -71,12 +66,6 @@ describe('resolveHome', () => {
   it('refuses a relative AGH_HOME or AGNES_HOME instead of resolving it against the cwd', () => {
     expect(() => resolveHome({ AGH_HOME: 'relative/agh', HOME: '/h' })).toThrow(/AGH_HOME/)
     expect(() => resolveHome({ AGNES_HOME: 'relative/agnes', HOME: '/h' })).toThrow(/AGNES_HOME/)
-  })
-
-  // AGNES_HOME is not consulted at all once AGH_HOME is set, so a stale relative legacy value
-  // cannot fail a boot that names a valid home.
-  it('ignores a relative AGNES_HOME when AGH_HOME is set', () => {
-    expect(resolveHome({ AGH_HOME: resolve('/x/agh'), AGNES_HOME: 'relative/agnes' })).toBe(resolve('/x/agh'))
   })
 })
 
@@ -139,7 +128,7 @@ describe('readProfileInputs', () => {
     const home = scratch('home')
     const cwd = scratch('cwd')
     const inputs = await readProfileInputs({ home, cwd, flags: flagsFor(cwd), agnesVersion: '0.0.0' })
-    expect(inputs).toEqual({ builtin: 'local-dev' })
+    expect(inputs).toEqual({ builtin: 'local-dev', adminBundles: [] })
     expect(Object.hasOwn(inputs, 'user')).toBe(false)
     expect(Object.hasOwn(inputs, 'local')).toBe(false)
     expect(Object.hasOwn(inputs, 'flags')).toBe(false)
@@ -265,16 +254,13 @@ describe('readProfileInputs', () => {
       },
     },
     seams: {
-      approval: '@agnes/base',
-      checkpoint: '@agnes/base',
-      ledger: '@agnes/base',
-      sandbox: '@agnes/base',
-      verifier: '@agnes/base',
-      repair: '@agnes/base',
-      artifacts: '@agnes/base',
-      principals: '@agnes/base',
-      platform: '@agnes/base',
-      harness: '@agnes/base',
+      approval: { provider: 'local' },
+      checkpoint: { provider: 'local' },
+      billing: { provider: 'local' },
+      verifier: { provider: 'local' },
+      repair: { provider: 'local' },
+      artifacts: { provider: 'local' },
+      principals: { provider: 'local' },
     },
     provider: { package: '@agnes/ai', adapters: ['@agnes/ai'] },
     policySnapshot: { capabilityCeiling: [], workspacePackages: 'require-project-trust' },

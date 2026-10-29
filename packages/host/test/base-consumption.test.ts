@@ -2,13 +2,14 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { SeamInitContext as BaseSeamInitContext } from '@agnes/base'
-import { seams } from '@agnes/base'
+import { BASE_SEAM_PROVIDERS } from '@agnes/base'
 import { SEAM_NAMES } from '@agnes/core'
+import { SEAM_KINDS } from '@agnes/extension-api/seams'
+import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import type { LockState, ResolveEnv } from '@agnes/host-common/profile/types'
+import type { SeamInitContext as HostSeamInitContext } from '@agnes/host-extensions/assemble/packages'
 import { describe, expect, it } from 'vitest'
-import { openAdapters, toSeamAdapters } from '../src/adapters/index.js'
-import type { SeamInitContext as HostSeamInitContext } from '../src/assemble/packages.js'
-import { resolveProfile } from '../src/profile/resolve.js'
-import type { LockState, ResolveEnv } from '../src/profile/types.js'
+import { openAdapters, toSeamAdapters } from '../src/runtime/adapters/index.js'
 
 // `@agnes/base` cannot import this package, so it restates the assembly context as a consumption
 // contract of its own. This line is the whole of what keeps the two spellings honest: the host's
@@ -23,9 +24,27 @@ const env: ResolveEnv = {
 }
 const lock: LockState = {
   packages: {
-    '@agnes/base': { version: '0.1.0', integrity: 'sha512-b', trust: 'builtin', enabled: true },
-    '@agnes/code': { version: '0.1.0', integrity: 'sha512-c', trust: 'builtin', enabled: true },
-    '@agnes/ai': { version: '0.1.0', integrity: 'sha512-a', trust: 'builtin', enabled: true },
+    '@agnes/base': {
+      version: '0.1.0',
+      source: { type: 'builtin' as const, ref: 'builtin' },
+      integrity: 'builtin:0.1.0',
+      trust: 'builtin',
+      enabled: true,
+    },
+    '@agnes/code': {
+      version: '0.1.0',
+      source: { type: 'builtin' as const, ref: 'builtin' },
+      integrity: 'builtin:0.1.0',
+      trust: 'builtin',
+      enabled: true,
+    },
+    '@agnes/ai': {
+      version: '0.1.0',
+      source: { type: 'builtin' as const, ref: 'builtin' },
+      integrity: 'builtin:0.1.0',
+      trust: 'builtin',
+      enabled: true,
+    },
   },
 }
 
@@ -52,7 +71,7 @@ describe('@agnes/base consumption contract against the real host adapters', () =
         log: { debug() {}, info() {}, warn() {}, error() {} },
         signal: new AbortController().signal,
       }
-      const artifacts = await seams.artifacts(ctx)
+      const artifacts = await BASE_SEAM_PROVIDERS.artifacts.create(ctx, new AbortController().signal)
       const ref = await artifacts.put(new TextEncoder().encode('hello'), { mime: 'text/plain' })
       expect(ref.sha256).toBe('2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824')
       // On disk, under dataDir, at the path the seam's own tests assert against the fake.
@@ -87,26 +106,7 @@ describe('@agnes/base consumption contract against the real host adapters', () =
     }
   })
 
-  it('declares only seam names core knows, and the profile can be pointed at them', async () => {
-    // The list grows as the remaining pieces land, so it is checked against core's own set rather
-    // than restated here: a name outside that set is a name no profile can point at, and it would
-    // otherwise be found by whoever assembled a profile against it rather than by this file.
-    // `platform` is excluded because it is the host's own backend, not a package's to supply.
-    const declared = Object.keys(seams).sort()
-    for (const n of declared) expect(SEAM_NAMES, n).toContain(n)
-    expect(declared).not.toContain('platform')
-    // Pinned so a seam that stops being exported is a failure here rather than an assembly that
-    // refuses at startup for a package this test says delivers it.
-    expect(declared).toEqual([
-      'approval',
-      'artifacts',
-      'checkpoint',
-      'harness',
-      'ledger',
-      'principals',
-      'repair',
-      'sandbox',
-      'verifier',
-    ])
+  it('delivers the seven seam kinds as registered providers', () => {
+    expect(Object.keys(BASE_SEAM_PROVIDERS).sort()).toEqual([...SEAM_KINDS].sort())
   })
 })

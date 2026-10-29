@@ -5,11 +5,11 @@ import { ScriptedProvider } from '@agnes/ai/testkit'
 import { createTestHost } from '@agnes/host/testkit'
 import { type EventEnvelope, SESSION_TITLE_EVENT } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
+import { testWorkspaceCatalog } from '../../daemon-rpc/test/host.js'
 import { createLocalEndpoint } from '../src/local/index.js'
 import { MemorySessionWorkspaces, SessionWorkspaceIndex, StorageLister } from '../src/storage/lister.js'
 import { handleCommand } from '../src/worker/commands.js'
-import { testWorkspaceCatalog } from './host.js'
-import { sqliteTables } from './sqlite-tables.js'
 
 const title = (seq: number, value: string): EventEnvelope => ({
   v: 1,
@@ -35,15 +35,14 @@ const title = (seq: number, value: string): EventEnvelope => ({
   },
 })
 
-it('migrates an old database, preserves titles after restart and rejects stale/forged updates', async () => {
+it('preserves titles after restart and rejects stale/forged updates', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-title-index-'))
   const path = join(root, 'index.sqlite')
   const tables = sqliteTables(path)
   try {
     const table = tables.table('session_workspaces')
-    table.exec('CREATE TABLE session_workspaces (session_key TEXT PRIMARY KEY, cwd TEXT NOT NULL)')
-    table.exec('INSERT INTO session_workspaces VALUES (?, ?)', ['existing', root])
     const sql = new SessionWorkspaceIndex(table)
+    sql.put('existing', root)
     const memory = new MemorySessionWorkspaces()
     memory.put('existing', root)
     for (const store of [sql, memory]) {

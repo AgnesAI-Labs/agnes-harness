@@ -1,6 +1,6 @@
-import type { Scheduler } from '../jobs/scheduler.js'
-import { countExpiredWithTurn } from '../lease/lease.js'
-import type { Tables } from '../storage/table.js'
+import type { Scheduler } from '@agnes/daemon-foundation/jobs/scheduler'
+import { countExpiredWithTurn } from '@agnes/daemon-foundation/lease/lease'
+import type { Tables } from '@agnes/daemon-foundation/storage/table'
 import { type DaemonStatusOptions, daemonStatus } from './control.js'
 
 export type DaemonDoctorSection = {
@@ -11,12 +11,13 @@ export type DaemonDoctorSection = {
 
 export async function daemonDoctor(options: {
   dataDir: string
+  home?: string
   tables?: Pick<Tables, 'table'>
   scheduler?: Pick<Scheduler, 'doctor'>
   clock: () => number
   status?: DaemonStatusOptions
 }): Promise<{ sections: DaemonDoctorSection[] }> {
-  const state = await daemonStatus(options.dataDir, options.status)
+  const state = await daemonStatus(options.home ?? options.dataDir, options.status)
   const sections: DaemonDoctorSection[] = [
     {
       name: 'lock',

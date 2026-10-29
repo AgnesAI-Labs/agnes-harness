@@ -274,13 +274,15 @@ export function superviseConnection(
     }
     current = generation
     generation.onClose?.(() => generationDown(generation))
-    generation.onToolsChanged?.(() => {
+    const resync = (kind: 'tool' | 'resource') => {
       if (!isCurrent(generation)) return
-      log.info('tool list changed, re-syncing')
+      log.info(`${kind} list changed, re-syncing`)
       enqueueSync(generation).catch((error) => {
-        if (!disposed) log.error(`tool re-sync failed: ${String(error)}`)
+        if (!disposed) log.error(`${kind} re-sync failed: ${String(error)}`)
       })
-    })
+    }
+    generation.onToolsChanged?.(() => resync('tool'))
+    generation.onResourcesChanged?.(() => resync('resource'))
     try {
       await enqueueSync(generation)
     } catch (error) {

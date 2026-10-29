@@ -1,10 +1,12 @@
+import { sha256Hex } from '@agnes/core-common/request/hash'
+import type { OpStateObj } from '@agnes/core-common/step/op-state'
+import type { EventInput } from '@agnes/core-common/types'
+import { withTimeout } from '@agnes/core-effects/effects/wrap'
+import type { BudgetState } from '@agnes/core-ledger/reduce/shapes'
 import { type CountResult, type RequestBody, validateAgainst } from '@agnes/protocol'
 import { CountResult as CountResultSchema } from '@agnes/protocol/gen/model'
-import { decidedFields, isPending } from '../effects/approval-answer.js'
-import { withTimeout } from '../effects/wrap.js'
-import type { BudgetState } from '../reduce/shapes.js'
-import type { EventInput } from '../types.js'
-import type { OpStateObj } from './op-state.js'
+import { hookedAsk } from './approval-ask.js'
+import { domainDecisionEvents, requestDomainDecision } from './domain-decision.js'
 import type { SessionImpl, TurnEndReason } from './session.js'
 
 /** How long a recount may take before the estimate is used instead. */
@@ -121,7 +123,7 @@ export async function countCalibration(
   const projected =
     cap === null
       ? undefined
-      : await s.d.runtime.ledgerProjected({ tokensEstimate: resolved.tokens, model: wire.model })
+      : await s.d.runtime.billingProjected({ tokensEstimate: resolved.tokens, model: wire.model })
   if (cap !== null && projected && projected.credits > cap)
     return {
       event,
@@ -158,38 +160,24 @@ export async function quoteBudget(
     summary,
     risk: 'budget' as const,
     bindingHash: '',
-  }
-  // Same hook as the tool-approval path in tools.ts, the park path in gate.ts, and the
-  // unknown-outcome ask in resume.ts: the payload describes "any request for human approval", not
-  // "only a tool approval" — this ask has no tool call behind it either, so `tool` names the
-  // approval's own kind and `argv` carries nothing. Unlike those two sites, `asked.risk` here
-  // ('budget') is already a member of extension-api's ApprovalRequest risk enum, so it passes
-  // through unmapped rather than being coerced to 'always'.
-  const overridden = s.hooks.approvalRequest
-    ? (
-        await s.hooks.approvalRequest({
-          request: {
-            tool: asked.kind,
-            argv: null,
-            risk: asked.risk,
-            actor: s.d.actor,
-            summary: asked.summary,
-          },
-        })
-      ).request
-    : undefined
-  // Stamped as the question goes out, after the hook: the window is the person's.
-  const finalAsked = {
-    ...(overridden
-      ? {
-          ...asked,
-          risk: overridden.risk ?? asked.risk,
-          ...(overridden.summary !== undefined ? { summary: overridden.summary } : {}),
-        }
-      : asked),
     deadline: new Date(s.d.clock() + s.preset.approval.timeoutMs).toISOString(),
   }
-  const answer = await s.askApprovalAnswer(
+  // The payload describes "any request for human approval": this ask has no tool call behind it,
+  // so `tool` names the approval's own kind and `argv` carries nothing.
+  const { asked: finalAsked, rewrite } = await hookedAsk(s, asked.kind, null, asked)
+  const review = await requestDomainDecision(
+    s,
+    'budget',
+    `${op.meta.turn}:${op.step + 1}:${sha256Hex(summary)}`,
+    {
+      turn: op.meta.turn,
+      step: op.step + 1,
+      triggerSeq: op.meta.triggerSeq,
+      cap: s.turnBudgetCap(),
+      creditsUsed: s.state.creditsUsed,
+      risk: finalAsked.risk,
+      ...(rewrite ? { rewrite } : {}),
+    },
     {
       ...finalAsked,
       sessionKey: s.key,
@@ -197,22 +185,30 @@ export async function quoteBudget(
       actor: s.d.actor,
       taint: op.taint || s.laneTaint(),
       scope: s.key,
-      ...(overridden?.context !== undefined ? { context: overridden.context } : {}),
     },
     s.ac.signal,
   )
-  if (isPending(answer)) {
+  if (review.park && review.pending) {
     await s.endTurn('parked', {
-      events: [...events, s.ev('approval/asked', { ...finalAsked, pending: answer })],
+      events: [...events, review.park],
     })
     return { reason: 'parked' }
   }
-  await s.d.log.append([
-    ...events,
-    s.ev('approval/asked', finalAsked),
-    s.ev('approval/decided', { requestId, ...decidedFields(answer), via: 'sync' }),
-  ])
-  if (!answer.verdict.startsWith('allowed')) {
+  if (review.park)
+    await s.decisions.withdraw(
+      review.snapshot.handle,
+      review.source,
+      (review.park.data as { waitEndedBy: string }).waitEndedBy,
+    )
+  await s.locked(async () => {
+    const rows = [...events, ...domainDecisionEvents(s, review.snapshot, review.source)]
+    if (rows.length) await s.d.log.append(rows)
+  })
+  if (
+    review.snapshot.result?.reason !== 'answered' ||
+    review.snapshot.invalidation ||
+    !review.snapshot.result.response.option.startsWith('allowed')
+  ) {
     // An interrupt reaches the approval seam as a refusal, because that is how it fails closed.
     // The turn still ended because someone stopped it, not because it ran out of credit, and the
     // ledger has to say which.

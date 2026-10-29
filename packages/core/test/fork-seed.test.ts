@@ -1,16 +1,17 @@
+import { defaultIds } from '@agnes/core-common/ids'
+import { newOpState } from '@agnes/core-common/step/op-state'
+import type { Event, EventInput, Seq } from '@agnes/core-common/types'
+import { batchTrigger, type ForkBase, forkBaseProviders } from '@agnes/core-ledger/log/fork-seed'
+import { verifyLedger } from '@agnes/core-ledger/log/integrity'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import { SessionLogImpl } from '@agnes/core-ledger/log/session-log'
+import type { IntegrityCommit, OpWrite } from '@agnes/core-ledger/log/storage'
+import { SurfaceCache, seedSurface } from '@agnes/core-ledger/project/surface'
+import { markIncomplete, UIProjectionCell } from '@agnes/core-ledger/project/ui'
+import { openTracked } from '@agnes/core-ledger/reduce/tracker'
 import { describe, expect, it } from 'vitest'
-import { defaultIds } from '../src/ids.js'
-import { batchTrigger, type ForkBase, forkBaseProviders } from '../src/log/fork-seed.js'
-import { verifyLedger } from '../src/log/integrity.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import { SessionLogImpl } from '../src/log/session-log.js'
-import type { IntegrityCommit, OpWrite } from '../src/log/storage.js'
-import { SurfaceCache, seedSurface } from '../src/project/surface.js'
-import { markIncomplete, UIProjectionCell } from '../src/project/ui.js'
-import { openTracked } from '../src/reduce/tracker.js'
 import { ToolRegistry } from '../src/registry/tools.js'
-import { newOpState } from '../src/step/op-state.js'
-import type { Event, EventInput, Seq } from '../src/types.js'
+import { answerToolDecision } from './helpers/decision.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession, shellTool } from './helpers/open-session.js'
@@ -161,7 +162,6 @@ describe('the parent keeps a fork point', () => {
           receipts.set('t1', { requestId: req.requestId, bindingHash: req.bindingHash, expiresAt })
           return { ticket: 't1', expiresAt }
         },
-        resume: async (ticket) => receipts.get(ticket) ?? null,
       },
     })
     const h = await openSession({
@@ -174,7 +174,7 @@ describe('the parent keeps a fork point', () => {
     await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
     const signal = new AbortController().signal
     expect((await h.session.run({ until: 'turn-end', signal })).reason).toBe('parked')
-    await h.session.resumeApproval('t1', 'allowed-once', { ...actor, id: 'approver' })
+    await answerToolDecision(h.session, 1, 'allowed-once', { ...actor, id: 'approver' })
     await h.session.step()
     const c = triggerOf(h)
     await expectTriggerAt(h, c)
@@ -185,37 +185,29 @@ describe('the parent keeps a fork point', () => {
     await h.session.close()
   })
 
-  it('at the trigger of a verifier continuation', async () => {
+  it('keeps the original trigger through automatic verifier repair', async () => {
     let checks = 0
-    let receipt: { requestId: string; bindingHash: string; expiresAt: string } | null = null
     const seams = fakeSeams({
       verifier: {
         verify: async () =>
-          ++checks === 1 ? { verdict: 'fail', reasons: ['needs review'] } : { verdict: 'pass', reasons: [] },
+          ++checks === 1
+            ? { verdict: 'fail', reasons: ['schema_invalid'] }
+            : { verdict: 'pass', reasons: [] },
       },
       repair: { decide: async () => 'park' },
-      approval: {
-        ask: async (req) => {
-          receipt = {
-            requestId: req.requestId,
-            bindingHash: req.bindingHash,
-            expiresAt: '2099-01-01T00:00:00Z',
-          }
-          return { ticket: 'review', expiresAt: receipt.expiresAt }
-        },
-        resume: async () => receipt,
-      },
     })
     const h = await openSession({ seams, provider: fakeProvider([textTurn('first'), textTurn('second')]) })
     await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
-    const signal = new AbortController().signal
-    expect((await h.session.run({ until: 'turn-end', signal })).reason).toBe('parked')
-    await h.session.resumeApproval('review', 'allowed-once', { ...actor, id: 'reviewer' })
-    await h.session.step()
-    // The continuation's turn/start is its trigger and the head; one more row moves the head past it.
-    expect(h.log.lastSeq).toBe(triggerOf(h))
+    for (let i = 0; i < 20; i++) {
+      await h.session.step()
+      if ((await h.log.scan({ type: 'x/core/verifier-recovery', limit: 1 })).length) break
+    }
+    const c = triggerOf(h)
+    await expectTriggerAt(h, c)
+    expect(await h.session.decisions.list()).toEqual([])
     await h.session.diag('contribute-conflict', {})
-    await expectTriggerAt(h, triggerOf(h))
+    expect(triggerOf(h)).toBe(c)
+    await expectTriggerAt(h, c)
     await h.session.close()
   })
 

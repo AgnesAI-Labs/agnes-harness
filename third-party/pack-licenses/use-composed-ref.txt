@@ -1,0 +1,9 @@
+Upstream package does not ship a standalone license text.
+Declared license: MIT
+Author: not specified
+Repository: {'type': 'git', 'url': 'git+https://github.com/Andarist/use-composed-ref.git'}
+
+Upstream README:
+# use-composed-ref
+
+React hook which creates a ref function from given refs. Useful when using forwardRef.

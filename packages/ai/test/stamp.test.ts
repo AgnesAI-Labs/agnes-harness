@@ -154,7 +154,7 @@ it.each([false, true])('hashes actual Pi HTTP bytes and preserves prefix (BOM=%s
       }),
     )
     const events = await collect(provider.infer(req, run))
-    expect(events.at(-1)).toEqual({ type: 'done', reason: 'stop' })
+    expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'stop' })
     expect(bodies).toHaveLength(1)
     const firstBody = bodies[0]
     if (!firstBody) throw new Error('missing body')

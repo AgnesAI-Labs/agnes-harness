@@ -1,8 +1,8 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { EventEnvelope, HarnessMeta } from '@agnes/protocol'
-import type { Client } from '@agnes/sdk'
+import { type EventEnvelope, type HarnessMeta, rpcError, sessionVersionNotice } from '@agnes/protocol'
+import { type Client, JsonRpcError } from '@agnes/sdk'
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import type { MessageEvent, MessageRef } from '../src/adapter.js'
 import type { RunnerConfig } from '../src/runner/config.js'
@@ -393,6 +393,11 @@ describe('createRunner', () => {
       detail: {},
       at: '2026-09-12T00:00:01.000Z',
     })
+    client.emitNotice({
+      kind: 'decisions_changed',
+      detail: { profile: 'default', principal: { id: 'operator', org: 'local' } },
+      at: '2026-09-12T00:00:01.000Z',
+    })
     await new Promise((resolve) => setTimeout(resolve, 5))
     expect(adapter.sent).toHaveLength(1)
 
@@ -415,6 +420,133 @@ describe('createRunner', () => {
 
     await runner.stop()
   })
+
+  it.each(['open', 'dispatch', 'projection', 'stream'] as const)(
+    'stops a history refused during %s once, without leaks, retry or false recovery',
+    async (phase) => {
+      const client = createFakeClient()
+      const adapter = new FakeChannel()
+      const log = logger()
+      const runner = createRunner({ adapter, cfg: config, secrets: {}, client, log })
+      const event: MessageEvent = {
+        ...inboundMessage,
+        chat: { id: 'chat-1', type: 'thread', threadId: 'topic-1' },
+      }
+      const key = 'agnes:tenant:agent:fake:group:chat-1:thread:topic-1'
+      // This is the current server's wire mapping of E_LEDGER_INTEGRITY, including unsafe
+      // diagnostics that the channel must never render or log.
+      const notice = sessionVersionNotice('corrupt', {
+        sessionId: key,
+        ledgerPath: '/private/history.db',
+      })
+      const refusal = new JsonRpcError(
+        rpcError('SEMANTIC_REJECTED', {
+          code: notice.code,
+          issue: notice.issue,
+          actions: notice.actions,
+          localized: notice.message,
+          reason: 'synthetic-private-ledger-bytes',
+        }),
+      )
+      const session = await client.session.attach(key)
+      const followUp = vi.spyOn(session, 'followUp')
+      const projectUI = vi.spyOn(session, 'projectUI')
+      const events = vi.spyOn(session, 'events')
+      const attach = vi.spyOn(client.session, 'attach')
+      const create = vi.spyOn(client.session, 'new')
+      if (phase === 'open') {
+        // attach reports an unopened session as not found; session/new with the existing
+        // stable key reopens its ledger and maps its integrity refusal on the server.
+        client.fireNotFound(key)
+        create.mockRejectedValueOnce(refusal)
+      }
+      if (phase === 'dispatch') followUp.mockRejectedValueOnce(refusal)
+      if (phase === 'projection') projectUI.mockRejectedValueOnce(refusal)
+      if (phase === 'stream') {
+        events.mockReturnValueOnce({
+          [Symbol.asyncIterator]: () => ({
+            next: async () => {
+              throw refusal
+            },
+          }),
+        })
+      }
+      await runner.start()
+      try {
+        // Queue another message in the same lane before the first refusal settles.
+        await Promise.all([
+          runner.inbound.handle(event),
+          runner.inbound.handle({ ...event, eventId: 'queued', messageId: 'queued' }),
+        ])
+        if (phase === 'projection') client.emit('gap', { sessionId: key, earliestSeq: 1 })
+        await vi.waitFor(() => expect(adapter.sent).toHaveLength(1))
+        expect(adapter.sent[0]).toMatchObject({
+          target: { chatId: 'chat-1', threadId: 'topic-1', deliveryKey: expect.any(String) },
+          msg: { blocks: [{ kind: 'text', markdown: '会话历史校验失败，已停止；请联系管理员' }] },
+        })
+        const attempts = [
+          attach.mock.calls.length,
+          create.mock.calls.length,
+          followUp.mock.calls.length,
+          projectUI.mock.calls.length,
+          events.mock.calls.length,
+        ]
+        client.emit('connectionStateChanged', 'reconnecting')
+        client.emit('connectionStateChanged', 'connected')
+        client.emit('gap', { sessionId: key, earliestSeq: 1 })
+        client.emit('generationChanged', { sessionId: key, generation: 2 })
+        for (const kind of ['resumed', 'worker_crashed', 'shutting_down'] as const) {
+          client.emitNotice({ kind, sessionId: key, detail: { lastStep: 8 }, at: 'later' })
+        }
+        await runner.inbound.handle({ ...event, eventId: 'later', messageId: 'later' })
+        expect([
+          attach.mock.calls.length,
+          create.mock.calls.length,
+          followUp.mock.calls.length,
+          projectUI.mock.calls.length,
+          events.mock.calls.length,
+        ]).toEqual(attempts)
+        expect(adapter.sent).toHaveLength(1)
+        expect(create).toHaveBeenCalledTimes(phase === 'open' ? 1 : 0)
+        expect(client.calls.some((call) => call.method === 'steer')).toBe(false)
+        if (phase === 'open') expect(followUp).not.toHaveBeenCalled()
+
+        // A different thread in the same chat remains usable and gets its own notices.
+        await runner.inbound.handle({ ...inboundMessage, eventId: 'healthy', messageId: 'healthy' })
+        client.emitNotice({
+          kind: 'resumed',
+          sessionId: 'agnes:tenant:agent:fake:group:chat-1',
+          detail: { lastStep: 3 },
+          at: 'healthy',
+        })
+        await vi.waitFor(() => expect(adapter.sent).toHaveLength(2))
+        expect(adapter.sent[1]?.target.threadId).toBeUndefined()
+        const exposed = JSON.stringify([
+          adapter.sent,
+          log.info.mock.calls,
+          log.warn.mock.calls,
+          log.error.mock.calls,
+        ])
+        expect(exposed).not.toContain('/private/history.db')
+        expect(exposed).not.toContain('synthetic-private-ledger-bytes')
+
+        await runner.inbound.handle({ ...event, eventId: 'new', messageId: 'new', text: '/new' })
+        const replacement = runner.cache.current(key)
+        expect(replacement?.id).toMatch(/:thread:[0-9a-f-]{36}$/)
+        if (replacement === undefined) throw new Error('missing replacement session')
+        const replacementFollowUp = vi.spyOn(replacement, 'followUp')
+        await runner.inbound.handle({ ...event, eventId: 'replacement', messageId: 'replacement' })
+        client.emitNotice({ kind: 'resumed', sessionId: key, detail: {}, at: 'stale' })
+        await runner.inbound.handle({ ...event, eventId: 'replacement-2', messageId: 'replacement-2' })
+        expect(runner.cache.current(key)).toBe(replacement)
+        expect(replacementFollowUp).toHaveBeenCalledTimes(2)
+        expect(adapter.sent).toHaveLength(3)
+        expect(adapter.sent[2]?.msg.blocks).toEqual([{ kind: 'text', markdown: '已开始新会话' }])
+      } finally {
+        await runner.stop()
+      }
+    },
+  )
 
   it('bounds stop around an in-flight notice and waits when the adapter send can settle', async () => {
     const client = createFakeClient()

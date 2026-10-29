@@ -11,6 +11,7 @@ it('maps the actual CoreError depth refusal without exposing operands', () => {
 })
 it.each([
   ['BUDGET_EXCEEDED', 1001],
+  ['E_BUDGET', 1001],
   ['APPROVAL_REJECTED', 1002],
   ['APPROVAL_UNAVAILABLE', 1002],
   ['DEPTH_EXCEEDED', 1003],
@@ -18,6 +19,8 @@ it.each([
   ['TOOL_NOT_DISCLOSED', 1004],
   ['TOOL_ARGS_INVALID', 1005],
   ['SCHEMA_INVALID', 1005],
+  ['PARKED', 1006],
+  ['APPROVAL_PENDING', 1006],
 ] as const)('maps result code %s onto protocol code %i', (code, expected) => {
   const error = toBridgeError({ code, message: 'private detail' })
   expect(error.code).toBe(expected)
@@ -44,7 +47,7 @@ it('only accepts explicit protocol-owned bridge codes', () => {
     code: 1004,
     message: 'TOOL_NOT_FOUND',
   })
-  for (const bridgeCode of [1006, -32604, NaN, '1004', 1004.5]) {
+  for (const bridgeCode of [1007, -32604, NaN, '1004', 1004.5]) {
     expect(hasBridgeCode({ bridgeCode })).toBe(false)
     expect(toBridgeError({ bridgeCode }).code).toBe(-32603)
   }

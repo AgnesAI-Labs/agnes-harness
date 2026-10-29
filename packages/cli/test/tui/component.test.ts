@@ -11,6 +11,7 @@ import {
   VStack,
   wrapText,
 } from '../../src/tui/component.js'
+import { tt } from '../../src/tui/locale-extended.js'
 import { displayWidth } from '../../src/tui/terminal.js'
 import { TuiTheme } from '../../src/tui/theme.js'
 import { Composer } from '../../src/tui/views/composer.js'
@@ -32,6 +33,17 @@ describe('wrapping and padding', () => {
     expect(wrapText('a\n\nb', 4)).toEqual(['a', '', 'b'])
   })
 
+  it('keeps the indentation a line starts with; a wrapped continuation starts at the margin', () => {
+    expect(wrapText('def f():\n    return 1\n        deeper', 40)).toEqual([
+      'def f():',
+      '    return 1',
+      '        deeper',
+    ])
+    expect(wrapText('  ab cd', 5)).toEqual(['  ab', 'cd'])
+    expect(wrapText('ab  cd', 3)[1]).toBe('cd')
+    expect(wrapText('      ', 3).map(displayWidth)).toEqual([2])
+  })
+
   it('padLine measures columns, not code units', () => {
     expect(padLine('中', 4)).toBe('中  ')
     expect(padLine('\x1b[1mab\x1b[22m', 4)).toBe('\x1b[1mab\x1b[22m  ')
@@ -43,6 +55,7 @@ describe('wrapping and padding', () => {
     expect(escapeControl(`x${CURSOR_MARKER}y`)).toBe('xCURy')
     expect(escapeControl('a\nb\rc\x07d')).toBe('a\nbcd')
     expect(escapeControl('a\x9bb')).toBe('ab')
+    expect(escapeControl('name\tvalue\n\tindented')).toBe('name    value\n    indented')
   })
 })
 
@@ -84,33 +97,59 @@ describe('components', () => {
     expect(new Rule(undefined, createAnsi('256').dim).render(4)).toEqual(['\x1b[2m────\x1b[22m'])
   })
 
-  it('Composer spans the terminal and integrates model state without disturbing cursor geometry', () => {
-    const ansi = createAnsi('256')
+  it('Composer ends a placeholder cut to the row with an ellipsis, and keeps a space after the corner', () => {
+    const ansi = new TuiTheme('mono').ansi(createAnsi('none'))
+    const placeholder = tt('app.composerPlaceholder', 'en')
+    const cut = new Composer({ render: () => [`❯ ${placeholder.slice(0, 20)}`], invalidate() {} }, ansi)
+    const rows = cut.render(40)
+    expect(rows[1]).toContain('…')
+    expect(rows[2]).toMatch(/^ ╰─ /)
+    const whole = new Composer({ render: () => [`❯ ${placeholder}`], invalidate() {} }, ansi)
+    expect(whole.render(120)[1]).not.toContain('…')
+  })
+
+  it('Composer is an open rail with model, workspace and usage on its edges, cursor geometry intact', () => {
+    const ansi = new TuiTheme('light').ansi(createAnsi('256'))
     const input: Component = {
       render: () => [`❯ ${CURSOR_MARKER}hello`],
       invalidate() {},
     }
     const composer = new Composer(input, ansi)
-    composer.setMeta('deepseek-v4-pro · high')
+    composer.setWorkspace({ root: '~/repo', subpath: '', branch: 'main' })
+    composer.setUsage({
+      totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+      context: { tokens: 27_400, window: 262_144, autoCompact: true, compactAt: 245_760 },
+      model: { route: 'deepseek', id: 'deepseek-v4-pro', thinking: 'high' },
+    })
     const rows = composer.render(120)
     expect(rows).toHaveLength(3)
-    expect(rows[1]).toContain(`❯ ${CURSOR_MARKER}hello`)
-    expect(rows[2]).toContain('deepseek-v4-pro · high')
+    expect(rows[0]).toContain(ansi.fg('border', '╭─'))
+    expect(rows[0]).toContain(ansi.bg('surface', ansi.bold(ansi.fg('code', '◆ deepseek-v4-pro'))))
+    expect(rows[0]).toContain(ansi.fg('border', '─╮'))
+    // No side lines: the input row is the editor's own row, offset by the open frame.
+    expect(rows[1]?.startsWith(`   ❯ ${CURSOR_MARKER}hello  `)).toBe(true)
+    expect(rows[1]?.trimEnd()).toBe(`   ❯ ${CURSOR_MARKER}hello`)
+    expect(rows[2]).toContain(ansi.italic(ansi.fg('muted', 'thinking high')))
+    expect(rows[2]).toContain(ansi.fg('border', '─╯'))
     expect(rows.every((row) => displayWidth(row) === 120)).toBe(true)
-    expect(rows.join('')).not.toContain('\x1b[48;5;')
+    // Below the rail floor only the editor row remains.
+    expect(composer.render(39)).toEqual([`❯ ${CURSOR_MARKER}hello`])
   })
 
   it('user messages use a theme-aware full-width surface with a plain exit transcript', () => {
     const ansi = createAnsi('256')
     const theme = new TuiTheme('light')
-    const message = new UserMessage('中文 hello '.repeat(20), theme.ansi(ansi), theme, 63)
+    const themed = theme.ansi(ansi)
+    const message = new UserMessage('中文 hello '.repeat(20), themed, theme, 63)
     const rows = message.render(120)
-    expect(rows[0]).toContain('\x1b[38;5;63m›\x1b[39m')
+    expect(rows.length).toBeGreaterThan(1)
+    // The brand edge runs down every wrapped row, not only the first.
+    expect(rows.every((row) => row.includes('\x1b[38;5;63m▍\x1b[39m'))).toBe(true)
     expect(rows.every((row) => displayWidth(row) === 120)).toBe(true)
-    expect(rows.join('')).toContain('\x1b[48;5;254m')
+    expect(rows.every((row) => row.endsWith(themed.bg('surface', themed.fg('surfaceFg', ' '))))).toBe(true)
     theme.set('mono')
     expect(message.render(120).join('')).not.toContain('\x1b[48;5;')
-    expect(new UserMessage('中文 hello', ansi, theme).transcript(16)).toEqual(['you: 中文 hello'])
+    expect(new UserMessage('中文 hello', themed, theme).transcript(16)).toEqual(['you: 中文 hello'])
   })
 
   it('VStack stops at the first child that consumes the input', () => {

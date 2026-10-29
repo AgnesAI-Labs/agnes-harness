@@ -37,13 +37,14 @@ const COUNTS = {
   slots: 8,
   model: 8,
   preset: 149,
-  task20: 212,
+  task20: 207,
   task21: 178,
   migrate: 1,
   sequences: 4,
   workerRuntimeTarget: 8,
 } as const
-const ALL_FIXTURE_COUNT = 1396
+// Includes generation status, capability/source authoring and permission-profile fixtures.
+const ALL_FIXTURE_COUNT = 1604
 
 describe('conformance fixtures', () => {
   it('all checked-in fixtures across the complete fixture tree pass', () => {
@@ -77,6 +78,17 @@ describe('conformance fixtures', () => {
   it('a wrong expectation fails', () => {
     const r = runFixtureLine({ id: 'x', kind: 'valid', target: 'event', payload: { seq: 1 } })
     expect(r.pass).toBe(false)
+    const badLimit = {
+      id: 'wrong-field',
+      kind: 'invalid' as const,
+      target: 'method' as const,
+      name: '_agnes/v1/session.list',
+      payload: { limit: 0 },
+    }
+    expect(
+      runFixtureLine({ ...badLimit, expect: { dataCode: 'RANGE', key: 'limit', path: '/limit' } }).pass,
+    ).toBe(true)
+    expect(runFixtureLine({ ...badLimit, expect: { path: '/unrelated' } }).pass).toBe(false)
   })
   it('maps invalid params to caller error and invalid results to server error', () => {
     const params = runFixtureLine({

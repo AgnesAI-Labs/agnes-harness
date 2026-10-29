@@ -72,6 +72,39 @@ Include only the minimum information needed. Conversations, complete databases, 
 
 ## Everyday commands
 
+The development/CI Node patch lives in `.node-version`, read by mise and every CI workflow.
+`engines.node` in `package.json` describes the supported user range; it is not the development pin.
+The pnpm version comes only from `packageManager`. With mise installed, prepare each fresh worktree:
+
+```sh
+mise trust
+mise install
+mise exec -- node tools/toolchain/run.mjs install --frozen-lockfile
+mise exec -- node tools/toolchain/run.mjs
+mise exec -- node tools/toolchain/run.mjs typecheck
+mise exec -- node tools/toolchain/run.mjs test:guards
+mise exec -- node tools/toolchain/run.mjs exec vitest run packages/cli/test/args.test.ts --maxWorkers=1
+```
+
+Use `mise exec -- node tools/toolchain/run.mjs` as the single build/verification entry; append the
+usual pnpm arguments, including `--filter @agnes/cli build:local` or `e2e:web`. It checks the exact
+Node and pnpm versions and a spawned package-manager runner, prints actual `process.version` and
+`process.execPath`, and keeps runtime selection local to build/check subprocesses. It invokes
+pnpm/Corepack JavaScript with that executable, bypassing shell shim drift. No global Node change,
+manual PATH prefix or private launch command is needed. An already configured shell can use
+`pnpm run doctor:toolchain`; standard typecheck, test, guards and browser entries also check first.
+A mismatch fails with the repair command. Missing Corepack should be provisioned alongside the
+selected Node (CI may use its existing pnpm setup).
+
+Record actual `process.version` in every verification report. The project lead owns the pin:
+check patch updates periodically and apply security fixes promptly, each in a separate maintenance
+change; evaluate major upgrades separately. Developer and AI windows must not change global
+environments or bump versions independently. Existing daemons keep the runtime that started them;
+use isolated homes and restart only your own instance to verify a new runtime. User-project commands
+and external MCP servers retain their own environment and are not subject to this development pin.
+
+In the existing commands below, replace the leading `pnpm` with the entry above.
+
 ```sh
 pnpm install --frozen-lockfile
 pnpm --filter @agnes/host build:native
@@ -82,7 +115,9 @@ pnpm gen:check
 pnpm test
 ```
 
-Both `build:native` commands are package-level scripts matching [CI](../../.github/workflows/ci.yml) prerequisites. On macOS, process-identity tests need the Host helper and atomic Skill publication tests need the system-node helper. Missing helpers cause environment failures, which should be distinguished from product defects. Root `pnpm test` runs the fast tier with one worker by default, including guards. Real daemon, worker and CLI process tests are named `*.e2e.test.ts`, and large-ledger or timer-bound tests `*.slow.test.ts`; `pnpm test:heavy` runs only those, and `pnpm test:all` runs everything. `pnpm exec vitest run <file>` runs one file of either tier. The tier comes only from the file suffix: name a new test `*.e2e.test.ts` or `*.slow.test.ts` to put it in the heavy tier. A package's own `test` script runs both tiers of that package, while the root `pnpm test` runs the fast tier only. For a local module change, start with relevant tests and expand according to risk. Documentation-only changes usually do not require model or full end-to-end reruns.
+Both `build:native` commands are package-level scripts matching [CI](../../.github/workflows/ci.yml) prerequisites. On macOS, process-identity tests need the Host helper and atomic Skill publication tests need the system-node helper. Missing helpers cause environment failures, which should be distinguished from product defects. The bundled-plugin build supplies self-contained backends and client assets for fresh-home source tests; local/SEA packaging builds its own copy. Root `pnpm test` runs the fast tier with one worker by default, including guards. Real daemon, worker and CLI process tests are named `*.e2e.test.ts`, and large-ledger or timer-bound tests `*.slow.test.ts`; `pnpm test:heavy` runs only those, and `pnpm test:all` runs everything. `pnpm exec vitest run <file>` runs one file of either tier. The tier comes only from the file suffix: name a new test `*.e2e.test.ts` or `*.slow.test.ts` to put it in the heavy tier. A package's own `test` script runs both tiers of that package, while the root `pnpm test` runs the fast tier only. For a local module change, start with relevant tests and expand according to risk. Documentation-only changes usually do not require model or full end-to-end reruns.
+
+`pnpm test:story` runs the maintained regression fixtures for reviewed publication, in-flight generation pins, missing effect receipts, incomplete summaries, child receipts and per-turn memory revisions. The manifest in `tools/ci/story-fixtures.json` selects existing contract tests; named cases must actually pass, with zero test retries and no selected skips or todo stubs. Scripted models and isolated fixture effect ports never replay real external writes. The Linux contract job in [Web E2E CI](../../.github/workflows/e2e-web.yml) requires this command and retains per-fixture JSON reports under `.agnes-tmp/story-fixtures`. The same cases also remain in their normal fast/heavy tiers.
 
 ```sh
 pnpm exec vitest run packages/cli/test/args.test.ts --maxWorkers=1

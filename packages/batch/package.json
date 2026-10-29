@@ -1,0 +1,391 @@
+{
+  "name": "@agnes/batch",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/sdk": "workspace:*"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes.batch",
+        "export": "batchPlugin",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "services",
+          "profileRuntime"
+        ],
+        "runtime": "in-process",
+        "default": false,
+        "capabilities": {
+          "store": true,
+          "managedServices": [
+            {
+              "id": "batchWorker",
+              "scope": "profile",
+              "artifact": {
+                "kind": "in-process"
+              },
+              "healthPath": "/health",
+              "listeners": [],
+              "startupTimeoutMs": 30000,
+              "shutdownTimeoutMs": 5000,
+              "apiVersion": "1.0.0",
+              "requires": []
+            }
+          ],
+          "services": [
+            {
+              "name": "batch.start",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^b[0-9a-f]{12}$"
+                  },
+                  "workspaceRoot": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "dir": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "spec": {
+                    "type": "object"
+                  },
+                  "extensions": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9]{1,10}$"
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "dir",
+                  "spec"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 131072,
+              "kind": "effect",
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "batch.status",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^b[0-9a-f]{12}$"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 131072,
+              "kind": "query"
+            },
+            {
+              "name": "batch.results",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^b[0-9a-f]{12}$"
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 3
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 131072,
+              "kind": "query"
+            },
+            {
+              "name": "batch.cancel",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^b[0-9a-f]{12}$"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 131072,
+              "kind": "effect",
+              "priority": "urgent",
+              "effectPolicy": {
+                "isDestructive": false,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "never",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "batch.resume",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^b[0-9a-f]{12}$"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 131072,
+              "kind": "effect",
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "batch.list",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "cursor": {
+                    "type": "string",
+                    "maxLength": 2048
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 131072,
+              "kind": "query"
+            },
+            {
+              "name": "batch.export",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^b[0-9a-f]{12}$"
+                  },
+                  "out": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                },
+                "required": [
+                  "id",
+                  "out"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 131072,
+              "kind": "effect",
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "batchWorker.status",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "query"
+            },
+            {
+              "name": "batchWorker.configuration",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "query"
+            },
+            {
+              "name": "batchWorker.check",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "query"
+            },
+            {
+              "name": "batchWorker.retry",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "effect",
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "batchWorker.configure",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "workspaceRoot": {
+                    "type": "string",
+                    "maxLength": 4096
+                  },
+                  "ownedArea": {
+                    "type": "string",
+                    "maxLength": 4096
+                  },
+                  "socketPath": {
+                    "type": "string",
+                    "maxLength": 4096
+                  },
+                  "serverIdentity": {
+                    "type": "object",
+                    "properties": {
+                      "pid": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "processStartId": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "pid",
+                      "processStartId"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "effect",
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
+            }
+          ]
+        },
+        "metadata": {
+          "displayName": "File batches",
+          "summary": "Processes immutable file inputs with bounded, recoverable item attempts.",
+          "description": "Runs visible public SDK sessions in item-only workspaces with durable recovery."
+        }
+      }
+    ]
+  },
+  "devDependencies": {
+    "@agnes/base": "workspace:*",
+    "@agnes/core": "workspace:*",
+    "@agnes/host-extensions": "workspace:*",
+    "@agnes/host": "workspace:*",
+    "@agnes/daemon-rpc": "workspace:*",
+    "@agnes/daemon-foundation": "workspace:*",
+    "@agnes/host-infrastructure": "workspace:*",
+    "@agnes/ai": "workspace:*"
+  }
+}

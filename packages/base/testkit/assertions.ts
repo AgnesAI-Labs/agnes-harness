@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { checkToolDef, type ToolDef } from '@agnes/extension-api'
+import { bundledExtensionManifest, checkToolDef, type ToolDef } from '@agnes/extension-api'
 
 /**
  * Two assertions about a bundled extension, both of the same shape: something the extension says
@@ -43,7 +43,7 @@ export type UsedCapabilities = {
   resources: Set<string>
   tools: Set<string>
   events: boolean
-  /** Where a `registerResource` call was found whose `kind` is not a literal from the closed set. */
+  /** Where a `resources.register` call was found whose `kind` is not a literal from the closed set. */
   opaqueResources: string[]
 }
 
@@ -52,7 +52,7 @@ export type UsedCapabilities = {
  * Loading would need the extension's own dependencies and would only report what a particular run
  * happened to register; the declaration is a static claim, so it is checked statically.
  *
- * `registerResource` and `defineTool` are read by looking at the call site rather than by scanning
+ * `resources.register` and `defineTool` are read by looking at the call site rather than by scanning
  * the whole file for a `kind:` or a `name:`. Both keys are ordinary words that appear all over
  * unrelated objects - a directory entry has a `kind`, every schema property has a `name` - and a
  * whole-file scan credited an extension with capabilities it never asked for.
@@ -69,9 +69,11 @@ export function usedCapabilities(srcDir: string): UsedCapabilities {
   const near = (text: string, at: number): string => text.slice(at, at + 400)
   for (const file of walk(srcDir)) {
     const text = readFileSync(file, 'utf8')
-    for (const m of text.matchAll(/registerHook\(\s*['"]([A-Za-z0-9_]+)['"]/g)) out.hooks.add(m[1] as string)
-    for (const m of text.matchAll(/registerSlot\(\s*['"]([A-Za-z0-9_.]+)['"]/g)) out.slots.add(m[1] as string)
-    for (const m of text.matchAll(/registerResource\(/g)) {
+    for (const m of text.matchAll(/hooks\.register\(\s*['"]([A-Za-z0-9_]+)['"]/g))
+      out.hooks.add(m[1] as string)
+    for (const m of text.matchAll(/slots\.register\(\s*['"]([A-Za-z0-9_.]+)['"]/g))
+      out.slots.add(m[1] as string)
+    for (const m of text.matchAll(/resources\.register\(/g)) {
       const kind = new RegExp(`kind:\\s*['"](${RESOURCE_KINDS.join('|')})['"]`).exec(
         near(text, m.index + m[0].length),
       )
@@ -82,7 +84,7 @@ export function usedCapabilities(srcDir: string): UsedCapabilities {
       const name = /name:\s*['"]([A-Za-z_][A-Za-z0-9_]*)['"]/.exec(near(text, m.index + m[0].length))
       if (name) out.tools.add(name[1] as string)
     }
-    if (/\bevents\.append\(/.test(text)) out.events = true
+    if (/\beventLog\.append\(/.test(text)) out.events = true
   }
   return out
 }
@@ -102,7 +104,9 @@ type ManifestCapabilities = {
  * than a manifest allows is the safe direction - a name nobody registers is a name nobody calls.
  */
 export function expectManifestMatchesCode(extDir: string): void {
-  const manifest = JSON.parse(readFileSync(join(extDir, 'agnes.extension.json'), 'utf8')) as {
+  const manifest = bundledExtensionManifest(
+    JSON.parse(readFileSync(join(extDir, 'package.json'), 'utf8')),
+  ) as {
     capabilities?: ManifestCapabilities
   }
   const caps = manifest.capabilities ?? {}
@@ -118,7 +122,7 @@ export function expectManifestMatchesCode(extDir: string): void {
   both('resource', caps.resources ?? [], used.resources)
 
   for (const at of used.opaqueResources)
-    problems.push(`registerResource with no literal kind cannot be checked: ${at}`)
+    problems.push(`resources.register with no literal kind cannot be checked: ${at}`)
 
   if (used.events && caps.events !== true)
     problems.push('events.append used but capabilities.events is not true')

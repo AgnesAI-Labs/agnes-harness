@@ -1,0 +1,21 @@
+{
+  "client": {
+    "id": "conversation-ui",
+    "entry": "./client.js",
+    "lifetime": "profile",
+    "slotCatalogVersion": "dsh-client-slots/v1",
+    "slots": [
+      "ui:conversation",
+      "main.conversation",
+      "conversation.session",
+      "conversation.session.header",
+      "ui:transcript",
+      "conversation.view",
+      "conversation.chat.node",
+      "tool.call.toolview",
+      "ui:composer",
+      "conversation.composer.bar"
+    ],
+    "presentationRoles": ["conversation", "composer"]
+  }
+}

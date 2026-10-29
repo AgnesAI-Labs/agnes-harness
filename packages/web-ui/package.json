@@ -3,11 +3,17 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Web UI component layer: the only package allowed to import antd/@assistant-ui (spec 2026-09-24-web-ui-component-system-design)",
+  "description": "Web UI component layer: the only package allowed to import antd/@ant-design (spec 2026-09-24-web-ui-component-system-design)",
   "exports": {
     ".": "./src/index.ts",
-    "./assistant-ui": "./src/assistant-ui-vendor.ts",
-    "./tokens.css": "./src/tokens.css"
+    "./conversation": "./src/conversation-vendor.ts",
+    "./x": "./src/x-vendor.ts",
+    "./layers.css": "./src/layers.css",
+    "./components.css": "./src/components.css",
+    "./refinement.css": "./src/refinement.css",
+    "./tokens.css": "./src/tokens.css",
+    "./intelligent-ui.css": "./src/intelligent-ui/styles.css",
+    "./terminal": "./src/terminal/terminal.tsx"
   },
   "scripts": {
     "typecheck": "tsc -b"
@@ -15,18 +21,20 @@
   "dependencies": {
     "@agnes/protocol": "workspace:*",
     "@agnes/protocol-validation": "workspace:*",
+    "@ant-design/x": "2.9.0",
     "@ant-design/x-markdown": "2.9.0",
-    "@assistant-ui/react": "0.11.27",
-    "@assistant-ui/tap": "0.1.2",
-    "antd": "6.6.5"
+    "antd": "6.6.5",
+    "react-is": "18.3.1",
+    "recharts": "3.10.1",
+    "@xterm/xterm": "6.0.0",
+    "@xterm/addon-fit": "0.11.0"
   },
   "devDependencies": {
-    "@tailwindcss/cli": "4.3.3",
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
+    "esbuild": "0.28.2",
     "react": "18.3.1",
-    "react-dom": "18.3.1",
-    "tailwindcss": "4.3.3"
+    "react-dom": "18.3.1"
   },
   "license": "Apache-2.0"
 }

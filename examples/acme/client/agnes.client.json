@@ -1,0 +1,25 @@
+{
+  "client": {
+    "id": "acme-overview",
+    "lifetime": "profile",
+    "entry": "./index.js",
+    "styles": [],
+    "slots": [],
+    "services": [],
+    "projections": [],
+    "homeEntries": [
+      {
+        "id": "acme-overview",
+        "placement": "primary",
+        "navigation": {
+          "title": "Acme overview",
+          "titles": {
+            "zh-CN": "Acme 概览"
+          },
+          "icon": "plugin",
+          "order": 10
+        }
+      }
+    ]
+  }
+}

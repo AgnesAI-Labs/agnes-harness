@@ -16,18 +16,10 @@ it('real inspect validates versioned recovery fixtures without installing or exe
       ...emptyLock('local-dev', '0.1.0'),
       resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
       seams: Object.fromEntries(
-        [
-          'approval',
-          'checkpoint',
-          'ledger',
-          'sandbox',
-          'verifier',
-          'repair',
-          'artifacts',
-          'principals',
-          'platform',
-          'harness',
-        ].map((name) => [name, '@agnes/base']),
+        ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((name) => [
+          name,
+          { provider: 'local' },
+        ]),
       ),
       policySnapshot: {
         capabilityCeiling: ['tools', 'services'],

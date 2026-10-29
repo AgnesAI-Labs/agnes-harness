@@ -1,15 +1,23 @@
 import type { ThinkingLevel } from '@agnes/protocol'
-import type { Ansi } from '../ansi.js'
 import type { ModelChoice } from '../commands.js'
 import type { Component } from '../component.js'
-import { Box } from '../components/box.js'
+import { type Box, dialogBox } from '../components/box.js'
+import { FilterSelect } from '../components/filter-select.js'
 import { Select } from '../components/select.js'
 import { tt } from '../locale-extended.js'
+import type { ThemedAnsi } from '../theme.js'
 
 /** What the picker finally delivers — a model, and a thinking level only when the model has one. */
 export type ModelSelection = { route: string; model: string; thinking?: ThinkingLevel }
 
 const THINKING_FALLBACK: readonly ThinkingLevel[] = ['off', 'low', 'medium', 'high']
+
+/** The thinking levels a model offers: its own map when it has one, otherwise the common four. */
+export function thinkingLevelsOf(choice: Pick<ModelChoice, 'thinkingLevelMap'>): readonly ThinkingLevel[] {
+  return choice.thinkingLevelMap && Object.keys(choice.thinkingLevelMap).length > 0
+    ? (Object.keys(choice.thinkingLevelMap) as ThinkingLevel[])
+    : THINKING_FALLBACK
+}
 
 /** Transient, connection-local model chooser. It owns all input while open and never writes UI rows. */
 export class ModelPicker implements Component {
@@ -18,7 +26,7 @@ export class ModelPicker implements Component {
 
   constructor(
     private readonly o: {
-      ansi: Ansi
+      ansi: ThemedAnsi
       locale?: string
       maxRows(): number
       onChoose(choice: ModelSelection): void
@@ -33,8 +41,10 @@ export class ModelPicker implements Component {
   show(choices: readonly ModelChoice[]): void {
     this.choices = choices
     const byId = new Map(choices.map((choice) => [`${choice.route}/${choice.model}`, { ...choice }]))
-    const select = new Select({
+    const select = new FilterSelect({
       options: [...byId.keys()].map((id) => ({ id, label: id })),
+      locale: this.o.locale ?? 'en',
+      ansi: this.o.ansi,
       maxRows: () => Math.max(1, this.o.maxRows() - 3),
       onChoose: (id) => {
         const choice = byId.get(id)
@@ -48,22 +58,30 @@ export class ModelPicker implements Component {
       },
       onCancel: () => this.close(),
     })
-    this.box = new Box(select, {
+    this.box = dialogBox(select, {
       title: tt('picker.modelTitle', this.o.locale ?? 'en'),
-      rounded: true,
-      border: this.o.ansi.dim,
-      titleStyle: (text) => this.o.ansi.bold(text),
+      ansi: this.o.ansi,
+      hints: this.hints('dialog.close'),
     })
     this.o.changed()
   }
 
+  /** Move, confirm, then the way out: Esc closes the model list but only steps back from the reasoning list. */
+  private hints(out: 'dialog.close' | 'dialog.back') {
+    const locale = this.o.locale ?? 'en'
+    return [
+      { key: '↑↓', label: tt('dialog.select', locale) },
+      { key: '⏎', label: tt('dialog.confirm', locale) },
+      { key: 'esc', label: tt(out, locale) },
+    ]
+  }
+
   private showThinking(choice: ModelChoice): void {
-    const levels: readonly ThinkingLevel[] =
-      choice.thinkingLevelMap && Object.keys(choice.thinkingLevelMap).length > 0
-        ? (Object.keys(choice.thinkingLevelMap) as ThinkingLevel[])
-        : THINKING_FALLBACK
+    const levels = thinkingLevelsOf(choice)
     const select = new Select({
       options: levels.map((level) => ({ id: level, label: level })),
+      ansi: this.o.ansi,
+      locale: this.o.locale ?? 'en',
       maxRows: () => Math.max(1, this.o.maxRows() - 3),
       onChoose: (id) => {
         this.close()
@@ -73,13 +91,12 @@ export class ModelPicker implements Component {
       // outermost (model-list) screen actually closes the picker.
       onCancel: () => this.show(this.choices),
     })
-    this.box = new Box(select, {
+    this.box = dialogBox(select, {
       title: tt('picker.reasoningTitle', this.o.locale ?? 'en', {
         model: `${choice.route}/${choice.model}`,
       }),
-      rounded: true,
-      border: this.o.ansi.dim,
-      titleStyle: (text) => this.o.ansi.bold(text),
+      ansi: this.o.ansi,
+      hints: this.hints('dialog.back'),
     })
     this.o.changed()
   }

@@ -1,13 +1,14 @@
-import { scanAll } from '../log/scan-pages.js'
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
+import type { Event, Seq } from '@agnes/core-common/types'
+import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import {
   hasAuthenticToolPolicyHash,
   hasTrustedToolCallProvenance,
   type PersistedToolPolicyFields,
 } from '../registry/tool-policy.js'
-import { canonicalJson, sha256Hex } from '../request/hash.js'
-import type { Event, Seq } from '../types.js'
 import type { SessionImpl } from './session.js'
 import { toolArgumentError } from './tool-args.js'
+import { progressChecked } from './turn-restore.js'
 
 /**
  * What core hands the verifier seam as `input`. The shape is defined by base's loop-hygiene
@@ -16,12 +17,24 @@ import { toolArgumentError } from './tool-args.js'
  * below is projected from the ledger — an invented one would read as a real check result.
  */
 export type CoreVerifyInput = {
-  toolCalls: Array<{ name: string; args: unknown; schemaOk: boolean; isReadOnly: boolean }>
+  toolCalls: Array<{
+    name: string
+    args: unknown
+    schemaOk: boolean
+    isReadOnly: boolean
+    rejected?: boolean
+  }>
   deviations: number
   recentToolKeys: string[]
   surfaceTailHashes: string[]
   newToolResults: number
   lastFinishReason?: 'stop' | 'length' | 'tool_use' | 'error'
+  /**
+   * Step scope only, in a turn that runs under a prompt limit or unattended: the calls and replies of
+   * the turn's last few steps, so the repeat and no-progress checks can run on every step there
+   * rather than only when the model stops. Its verdict feeds the turn's progress checks.
+   */
+  history?: Pick<CoreVerifyInput, 'toolCalls' | 'recentToolKeys' | 'surfaceTailHashes' | 'newToolResults'>
 }
 
 /** assistant/message stopReason, spelled as VerifyInput's finish reason. */
@@ -36,21 +49,29 @@ type Window = {
   deviations: number
   messages: Event[]
   results: Event[]
+  refusals: Event[]
 }
 
-/** The four row kinds a verify input reads, over [fromSeq, lastSeq] on this lane. */
+/** The row kinds a verify input reads, over [fromSeq, lastSeq] on this lane. */
 async function scanWindow(s: SessionImpl, fromSeq: Seq): Promise<Window> {
   const rows = await scanAll((q) => s.d.log.scan(q), {
     fromSeq,
     toSeq: s.lastSeq,
-    type: ['tool/call', 'format/deviation', 'assistant/message', 'tool/result'],
+    type: [
+      'tool/call',
+      'format/deviation',
+      'assistant/message',
+      'tool/result',
+      'x/core/tool-argument-recovery',
+    ],
     lane: s.lane,
   })
-  const w: Window = { calls: [], deviations: 0, messages: [], results: [] }
+  const w: Window = { calls: [], deviations: 0, messages: [], results: [], refusals: [] }
   for (const e of rows) {
     if (e.type === 'tool/call') w.calls.push(e)
     else if (e.type === 'format/deviation') w.deviations++
     else if (e.type === 'assistant/message') w.messages.push(e)
+    else if (e.type === 'x/core/tool-argument-recovery') w.refusals.push(e)
     else w.results.push(e)
   }
   return w
@@ -95,14 +116,35 @@ function newToolResults(w: Window, hashes: string[]): number {
   return w.results.filter((e) => e.seq > since).length
 }
 
+const trustedRow = (e: Event) =>
+  e.origin === 'system' &&
+  e.trust === 'trusted' &&
+  typeof (e.data as { toolUseId?: string }).toolUseId === 'string'
+
 function assemble(s: SessionImpl, w: Window): CoreVerifyInput {
+  // Refused before any effect, with the correction in the refusal: an argument-recovery failure,
+  // or a call to a tool this request did not offer, whose schema the model never had to violate.
+  const rejected = new Set(
+    [
+      ...w.refusals.filter((e) => trustedRow(e) && Number((e.data as { failures?: number }).failures) > 0),
+      ...w.results.filter(
+        (e) => trustedRow(e) && (e.data as { code?: unknown }).code === 'TOOL_NOT_DISCLOSED',
+      ),
+    ].map((e) => (e.data as { toolUseId: string }).toolUseId),
+  )
   const toolCalls = w.calls.map((e) => {
     const d = e.data as { name?: unknown; args?: unknown }
     const name = String(d.name)
     const def = s.turn?.snapshot.byName.get(name)
     // An unknown tool has no schema to violate; malformed registered schemas fail closed.
     const schemaOk = !def || toolArgumentError(def.parameters, d.args) === undefined
-    return { name, args: d.args, schemaOk, isReadOnly: readOnlyCall(e) }
+    return {
+      name,
+      args: d.args,
+      schemaOk,
+      isReadOnly: readOnlyCall(e),
+      ...(rejected.has((e.data as { toolUseId: string }).toolUseId) ? { rejected: true } : {}),
+    }
   })
   const hashes = w.messages.map((e) => sha256Hex(messageText(e)))
   const last = w.messages[w.messages.length - 1]
@@ -140,9 +182,32 @@ export async function toolVerifyInput(
   }
 }
 
+/** Steps of history a step-scope check reads: enough for the preset's repeat and no-progress runs. */
+const HISTORY_STEPS = 8
+
+/** The start of the turn's last `HISTORY_STEPS` steps on this lane, never before the turn began. */
+async function historyStart(s: SessionImpl, triggerSeq: Seq): Promise<Seq> {
+  const starts = await s.d.log.scan({
+    type: 'step/start',
+    order: 'desc',
+    limit: HISTORY_STEPS,
+    fromSeq: triggerSeq,
+    lane: s.lane,
+  })
+  const oldest = starts.at(-1)?.seq
+  return oldest !== undefined && oldest > triggerSeq ? oldest : triggerSeq
+}
+
 /** step scope (runToolsPhase, runDeferred): everything the still-open step produced. */
 export async function stepVerifyInput(s: SessionImpl, stepStartSeq: Seq): Promise<CoreVerifyInput> {
-  return assemble(s, await scanWindow(s, stepStartSeq))
+  const input = assemble(s, await scanWindow(s, stepStartSeq))
+  const triggerSeq = s.op()?.meta.triggerSeq
+  if (!s.turn || triggerSeq === undefined || !progressChecked(s, s.turn)) return input
+  const { toolCalls, recentToolKeys, surfaceTailHashes, newToolResults } = assemble(
+    s,
+    await scanWindow(s, await historyStart(s, triggerSeq)),
+  )
+  return { ...input, history: { toolCalls, recentToolKeys, surfaceTailHashes, newToolResults } }
 }
 
 /** turn scope (stopGate): the whole turn, from the same triggerSeq the repair history scan uses. */

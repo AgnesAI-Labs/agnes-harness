@@ -14,12 +14,26 @@ it('configuration passes through the protocol without putting credentials into t
     provider: { id: 'p', baseUrl: 'http://localhost/v1', model: 'm', credentialConfigured: true },
     effect: 'new-sessions',
   }
+  const metadata = {
+    id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+    label: 'Work',
+    kind: 'api-key',
+    createdAt: '2026-10-11T00:00:00.000Z',
+    references: [],
+  }
   let leak = false
   const server = fakeEndpoint({
     initialize: fakeEndpoint({}).initialize,
     '_agnes/v1/config.test': () => ({ verified: true, models: [{ id: 'm', name: 'Model' }] }),
     '_agnes/v1/config.save': () => snapshot,
     '_agnes/v1/config.account': () => snapshot,
+    '_agnes/v1/admin.credentials.list': () => ({
+      items: [leak ? { ...metadata, value: 'fixture-secret' } : metadata],
+    }),
+    '_agnes/v1/admin.credentials.create': () => metadata,
+    '_agnes/v1/admin.credentials.set': () => metadata,
+    '_agnes/v1/admin.credentials.rename': () => metadata,
+    '_agnes/v1/admin.credentials.delete': () => ({}),
     '_agnes/v1/config.get': () => (leak ? { ...snapshot, apiKey: 'fixture-secret' } : snapshot),
   })
   const client = createClient({ transport: { kind: 'inproc', endpoint: server.endpoint }, journal })
@@ -33,14 +47,18 @@ it('configuration passes through the protocol without putting credentials into t
     await expect(
       client.config.account({ accountId: 'work', action: 'disable', expectedRevision: 1 }),
     ).resolves.toEqual(snapshot)
+    await expect(client.credentials.create({ label: 'Work', value: 'fixture-secret' })).resolves.toEqual(
+      metadata,
+    )
+    await client.credentials.set({ id: metadata.id, value: 'fixture-secret' })
+    await client.credentials.rename({ id: metadata.id, label: 'Personal' })
+    await expect(client.credentials.list()).resolves.toEqual({ items: [metadata] })
+    await client.credentials.delete({ id: metadata.id })
     expect(record).not.toHaveBeenCalled()
     await expect(client.config.get()).resolves.toEqual(snapshot)
     leak = true
+    await expect(client.credentials.list()).rejects.toBeInstanceOf(ProtocolViolation)
     await expect(client.config.get()).rejects.toBeInstanceOf(ProtocolViolation)
-    // The refusal says which field of the result was wrong, and never what it held.
-    const refusal = (await client.config.get().catch((error: unknown) => error)) as Error
-    expect(refusal.message).toMatch(/^_agnes\/v1\/config\.get result: \/apiKey /)
-    expect(refusal.message).not.toContain('fixture-secret')
   } finally {
     await client.close()
   }

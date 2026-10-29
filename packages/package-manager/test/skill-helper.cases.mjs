@@ -44,12 +44,29 @@ export function registerSkillHelperTests(test) {
               }
         },
       },
+      pluginManage: {
+        async request(input) {
+          requests.push(input)
+          return {
+            candidateId: `candidate-${'a'.repeat(32)}`,
+            state: ['prepare', 'candidate.create'].includes(input.action)
+              ? 'draft'
+              : input.action === 'commit'
+                ? 'review'
+                : 'tested',
+          }
+        },
+      },
       skillInstall: {
         async request(input) {
           requests.push(input)
           return {
             proposalId: 'proposal',
-            state: input.action === 'prepare' ? 'prepared' : input.action === 'status' ? 'ready' : 'running',
+            state: ['prepare', 'prepare-content'].includes(input.action)
+              ? 'prepared'
+              : input.action === 'status'
+                ? 'ready'
+                : 'running',
           }
         },
       },
@@ -77,7 +94,61 @@ export function registerSkillHelperTests(test) {
     assert.equal(c.requests.length, 0)
     const valid = await run('create', { name: 'requirement-organizer', files }, c.ctx)
     assert.equal(valid.structured.state, 'prepared')
-    assert.match(c.writes[0].content.toString(), /name: 需求整理助手/)
+    assert.equal(c.writes.length, 0)
+    assert.equal(c.requests[0].action, 'prepare-content')
+    assert.match(c.requests[0].files.find((f) => f.path === 'SKILL.md').content, /name: 需求整理助手/)
+  })
+  test('creation applies the final candidate UTF-8 budget without narrowing import', async () => {
+    for (const files of [
+      [
+        { path: 'SKILL.md', content: doc },
+        { path: 'references/big.md', content: '中'.repeat(44000) },
+      ],
+      [
+        { path: 'SKILL.md', content: doc },
+        ...Array.from({ length: 64 }, (_, i) => ({ path: `references/f${i}.md`, content: 'x' })),
+      ],
+      [
+        { path: 'SKILL.md', content: doc },
+        { path: `references/${'a'.repeat(220)}.md`, content: 'x' },
+      ],
+      [
+        { path: 'SKILL.md', content: doc },
+        ...['a', 'b'].map((name) => ({ path: `references/${name}.md`, content: 'x'.repeat(128 * 1024) })),
+      ],
+    ]) {
+      const x = context()
+      assert.equal(
+        (
+          await run(
+            'create',
+            { name: 'demo', files: [...files, { path: 'scripts/run.js', content: 'fixture' }] },
+            x.ctx,
+          )
+        ).isError,
+        true,
+      )
+      assert.equal(x.requests.length + x.writes.length, 0)
+    }
+    assert.equal(
+      checkedFiles([
+        { path: 'SKILL.md', content: doc },
+        { path: 'references/big.md', content: 'x'.repeat(140000) },
+      ]).length,
+      2,
+    )
+  })
+  test('candidate test failure is an error while status remains readable', async () => {
+    const x = context()
+    x.ctx.pluginManage.request = async () => ({ state: 'tested', tests: { state: 'failed' } })
+    assert.equal(
+      (await run('install', { action: 'test', proposalId: 'candidate-' + 'a'.repeat(32) }, x.ctx)).isError,
+      true,
+    )
+    assert.equal(
+      (await run('install', { action: 'status', proposalId: 'candidate-' + 'a'.repeat(32) }, x.ctx)).isError,
+      undefined,
+    )
   })
   function zip(entries) {
     const locals = [],
@@ -122,12 +193,12 @@ export function registerSkillHelperTests(test) {
     return Buffer.concat([...locals, central, end])
   }
 
-  test('ordinary AGH plugin registers four discoverable tools', () => {
+  test('ordinary AGH plugin registers four deferred discoverable tools', () => {
     const registered = []
-    skillHelper.apply({ extension: () => ({ registerTool: (t) => registered.push(t) }) })
+    skillHelper.apply({ tools: { register: (t) => registered.push(t) } })
     assert.equal(registered.length, 4)
     for (const t of registered) {
-      assert.equal(t.meta.deferLoading, false)
+      assert.equal(t.meta.deferLoading, true)
       assert.equal(t.parameters[Symbol.for('TypeBox.Kind')], 'Object')
     }
   })
@@ -150,18 +221,73 @@ export function registerSkillHelperTests(test) {
     assert.equal(x.requests[0].scope, 'user')
     assert.equal(x.requests[0].enable, false)
   })
-  test('creation stages complete bytes and only prepares; lifecycle stays with core', async () => {
+  test('instruction creation prepares static bytes without JS or staging; install lifecycle stays with core', async () => {
     const x = context()
     const r = await run('create', { name: 'demo', files }, x.ctx)
     assert.equal(r.structured.state, 'prepared')
-    assert.equal(x.writes[0].content.toString(), doc)
-    assert.ok(x.requests[0].sourceDirectory.includes('.skill-helper'))
+    assert.equal(x.writes.length, 0)
+    assert.deepEqual(x.requests[0], {
+      action: 'prepare-content',
+      name: 'demo',
+      files,
+      scope: 'workspace',
+      enable: true,
+    })
+    assert.equal(
+      createTools()
+        .find((t) => t.name === 'skill_helper_create')
+        .classify({ files, proposalId: 'proposal' }).requiresApproval,
+      'never',
+    )
+    assert.equal(
+      createTools()
+        .find((t) => t.name === 'skill_helper_install')
+        .classify({ files, proposalId: 'proposal' }).requiresApproval,
+      'never',
+    )
     for (const action of ['commit', 'status', 'cancel'])
       await run('install', { action, proposalId: 'proposal' }, x.ctx)
     assert.deepEqual(
       x.requests.slice(1),
       ['commit', 'status', 'cancel'].map((action) => ({ action, proposalId: 'proposal' })),
     )
+  })
+  test('code-bearing and unknown resources retain candidate creation and Node tests', async () => {
+    for (const path of ['scripts/lesson.js', 'scripts/lesson.md', 'lesson.py', 'package.json', 'asset.bin']) {
+      const x = context()
+      const created = await run(
+        'create',
+        { name: 'demo', files: [...files, { path, content: 'fixture' }] },
+        x.ctx,
+      )
+      assert.equal(created.structured.state, 'draft')
+      assert.equal(x.requests[0].action, 'candidate.create')
+      assert.equal(
+        createTools()
+          .find((t) => t.name === 'skill_helper_create')
+          .classify({ files: [...files, { path, content: 'fixture' }] }).requiresApproval,
+        'always',
+      )
+      assert.equal(
+        createTools()
+          .find((t) => t.name === 'skill_helper_install')
+          .classify({ proposalId: created.structured.proposalId }).requiresApproval,
+        'always',
+      )
+      assert.ok(x.requests[0].files.some((file) => file.path === 'test/skill.test.mjs'))
+      assert.equal(
+        x.requests[0].files.some((file) => file.path === 'index.mjs'),
+        false,
+      )
+      const manifest = JSON.parse(x.requests[0].files.find((file) => file.path === 'package.json').content)
+      assert.equal(manifest.agnes.plugins, undefined)
+      assert.deepEqual(manifest.agnes.contributions, [
+        { kind: 'skill', id: 'agh-skill-demo/main', path: './skills/demo/SKILL.md' },
+      ])
+      assert.equal(x.writes.length, 0)
+      await run('install', { action: 'test', proposalId: `candidate-${'a'.repeat(32)}` }, x.ctx)
+      assert.equal(x.requests[1].action, 'test')
+    }
   })
   test('core rejection is not retried and internal exception details are not exposed', async () => {
     const x = context()

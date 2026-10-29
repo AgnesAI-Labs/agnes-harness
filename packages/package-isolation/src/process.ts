@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process'
+import { withCommandOutput } from './process-output.js'
 import { runWindowsIsolatedCommand } from './process-win32.js'
 
 const windows = process.platform === 'win32' // guards-allow-platform: shared bounded command platform dispatch.
@@ -87,9 +88,9 @@ export function runIsolatedCommand(
       clearTimeout(timeout)
       options.signal?.removeEventListener('abort', abort)
       void (terminating ?? Promise.resolve()).then(() => {
-        if (failure) reject(failure)
+        if (failure) reject(withCommandOutput(failure, chunks))
         else if (code === 0) resolve({ stdout: Buffer.concat(chunks).toString('utf8') })
-        else reject(new Error(`command exited with status ${code ?? 'signal'}`))
+        else reject(withCommandOutput(new Error(`command exited with status ${code ?? 'signal'}`), chunks))
       })
     })
   })

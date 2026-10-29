@@ -1,0 +1,744 @@
+@import "./layers.css";
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Refinement layer: native (macOS-like) type, shape, control proportions,
+   motion and icon weight on top of the Graphite theme.
+
+   It changes no colour role and no brand value: every declaration reads a
+   semantic or scale token, so a skin that overrides a token still reaches
+   these controls. The interface stays complete without this file.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@layer base {
+  /* One line weight for 16px line icons; the SVG attribute is only the fallback. */
+  .icon {
+    stroke-width: var(--icon-stroke);
+  }
+  :is(
+      .agh-btn--primary,
+      .primary-button,
+      [aria-current]:not([aria-current="false"]),
+      [role="tab"][aria-selected="true"],
+      [data-selected="true"]
+    )
+    .icon {
+    stroke-width: var(--icon-stroke-strong);
+  }
+}
+
+@layer ui {
+  /* ── 1. Type: a large page title, a small muted label above each group ───────────── */
+  .agh-page-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--s12) var(--s16);
+    min-width: 0;
+    padding-top: var(--space-page-top);
+    margin-bottom: var(--space-section);
+  }
+  .agh-page-header-copy {
+    flex: 1 1 16rem;
+    min-width: 0;
+  }
+  .agh-page-header-actions {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8);
+  }
+  :is(.agh-page-title, .agnes-settings-page > .agnes-settings-page-heading h2, .agnes-settings-page-top h2) {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-title);
+    font-weight: var(--font-weight-bold);
+    line-height: var(--line-title);
+    letter-spacing: var(--tracking-title);
+    text-wrap: balance;
+    overflow-wrap: anywhere;
+  }
+  :is(
+    .agh-page-description,
+    .agnes-settings-page > .agnes-settings-page-heading p,
+    .agnes-settings-page-top > div > p
+  ) {
+    max-width: 60ch;
+    margin: 6px 0 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+    text-wrap: pretty;
+  }
+  /* The label sits on the upper left of its group; the hierarchy is size and space. */
+  :is(.agh-group-label, .agnes-settings-section-heading h3, .agnes-settings-section > h3) {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-sm);
+  }
+  :is(.agh-group-label, .agnes-settings-section > h3) {
+    padding-inline: var(--s4);
+  }
+  .agnes-settings-stack > .agnes-settings-section + .agnes-settings-section {
+    margin-top: calc(var(--space-section) - var(--s16));
+  }
+  .agnes-settings-item {
+    min-height: var(--row-min-height);
+  }
+  .agnes-settings-item-description {
+    font-size: var(--font-size-caption);
+  }
+
+  /* ── 2. Shape: hairlines on dense screens, continuous corners where supported ────── */
+  :is(.agnes-settings-card, .config-card, .agnes-settings-group) {
+    border-width: var(--hairline);
+    border-color: var(--agnes-line-hairline);
+  }
+  .agnes-settings-group > * + *::before {
+    border-top-width: var(--hairline);
+    border-top-color: var(--agnes-line-hairline);
+  }
+  .agh-menu-separator {
+    height: var(--hairline);
+    background: var(--agnes-line-hairline);
+  }
+  /* A squircle of the same radius reads tighter than an arc, so each role widens with it.
+   Pills, switches and round marks keep their arcs. */
+  @supports (corner-shape: squircle) {
+    :is(
+        .agh-btn:not(.agh-btn--link),
+        .agnes-ui-button,
+        .primary-button,
+        .secondary-button,
+        .icon-button,
+        .agnes-settings-input:not([type="checkbox"], [type="radio"]),
+        .agnes-ui-select.ant-select,
+        .select-picker-trigger,
+        .agh-menu-item,
+        .agh-segmented-option,
+        .agh-tag
+      ) {
+      corner-shape: var(--corner-shape);
+      border-radius: calc(var(--radius-control) * var(--corner-scale));
+    }
+    :is(.agh-segmented, .agh-icon-tile, .agh-list-row-icon) {
+      corner-shape: var(--corner-shape);
+      border-radius: calc(var(--radius-segmented) * var(--corner-scale));
+    }
+    :is(
+        .agnes-settings-card,
+        .config-card,
+        .agnes-settings-group,
+        .agh-banner,
+        .agh-toast,
+        .agh-empty-state-icon,
+        .agh-menu-popup .agh-menu,
+        .ant-select-dropdown,
+        .agnes-ui-popover .ant-popover-container,
+        .agnes-ui-popover .ant-popover-inner
+      ) {
+      corner-shape: var(--corner-shape);
+      border-radius: calc(var(--radius-card) * var(--corner-scale));
+    }
+    :where(dialog:not(.agh-drawer):not([data-presentation="page"])),
+    .agh-dialog .ant-modal-container,
+    .agh-dialog .ant-modal-content {
+      corner-shape: var(--corner-shape);
+      border-radius: calc(var(--radius-modal) * var(--corner-scale));
+    }
+  }
+
+  /* ── 3. Controls ─────────────────────────────────────────────────────────────────── */
+  /* Buttons: 28px, a raised neutral surface for the secondary action, a lit top edge on the
+   primary one. A press shrinks and darkens; nothing glows or ripples. */
+  :is(.agh-btn--secondary, .secondary-button):not(:disabled):not([aria-disabled="true"]) {
+    background: var(--agnes-bg-control);
+    box-shadow: var(--shadow-control);
+  }
+  :is(.agh-btn--secondary, .secondary-button):hover:not(:disabled):not([aria-disabled="true"]) {
+    background: color-mix(in srgb, var(--agnes-bg-control) 94%, var(--agnes-text-primary));
+  }
+  :is(.agh-btn--primary, .primary-button, .agh-btn--danger-filled):not(:disabled):not(
+    [aria-disabled="true"]
+  ) {
+    box-shadow: var(--shadow-control-primary);
+  }
+  :is(.agh-btn--secondary, .secondary-button):focus-visible:not(:disabled):not([aria-disabled="true"]) {
+    box-shadow: var(--focus-line), var(--shadow-control);
+  }
+  :is(.agh-btn--primary, .primary-button, .agh-btn--danger-filled):focus-visible:not(:disabled):not(
+    [aria-disabled="true"]
+  ) {
+    box-shadow: var(--focus-line), var(--shadow-control-primary);
+  }
+  /* Icon buttons are rounded squares like the buttons beside them. */
+  :is(.agh-btn--icon, .icon-button) {
+    border-radius: var(--radius-control);
+  }
+  .agh-btn--sm:not(.agh-btn--icon) {
+    height: var(--control-height-xs);
+    min-height: var(--control-height-xs);
+  }
+  /* The press itself is declared with the native button rule; this is only its 160ms ease. */
+  :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button, .select-picker-trigger) {
+    transition:
+      scale var(--motion-short) var(--motion-ease-out),
+      filter var(--motion-short) var(--motion-ease-out);
+  }
+
+  /* Switch (Ant-backed): 38×22 track, 18px knob that settles on a spring. */
+  .agnes-ui-switch.ant-switch {
+    --ant-switch-track-height: var(--switch-height);
+    --ant-switch-track-min-width: var(--switch-width);
+    --ant-switch-handle-size: var(--switch-knob);
+    --ant-switch-track-padding: calc((var(--switch-height) - var(--switch-knob)) / 2);
+    --ant-switch-handle-bg: var(--agnes-switch-knob);
+    --ant-switch-handle-shadow: var(--shadow-knob);
+    height: var(--switch-height);
+    min-height: var(--switch-height);
+    padding: 0;
+    background: var(--agnes-switch-track);
+    box-shadow: inset 0 0 0 var(--hairline) var(--agnes-input-border);
+  }
+  .agnes-ui-switch.ant-switch.ant-switch-checked {
+    --ant-switch-handle-bg: var(--agnes-button-primary-content);
+    background: var(--agnes-brand-primary);
+    box-shadow: none;
+  }
+  .agnes-ui-switch.ant-switch:hover:not(.ant-switch-disabled):not(.ant-switch-checked) {
+    background: var(--agnes-switch-track);
+  }
+  .agnes-ui-switch.ant-switch .ant-switch-handle {
+    transition: inset-inline-start var(--motion-medium) var(--motion-spring);
+  }
+
+  /* Segmented control: a rounded-rectangle track with a raised block on the picked option. */
+  .agh-segmented {
+    line-height: calc(var(--line-sm) + var(--s2));
+    --agh-segment-thumb-left: 2px;
+    --agh-segment-thumb-width: calc(50% - 2px);
+    position: relative;
+    isolation: isolate;
+    display: inline-flex;
+    align-items: stretch;
+    gap: var(--s2);
+    padding: var(--s2);
+    border-radius: var(--radius-segmented);
+    background: var(--agnes-segment-track);
+    box-shadow: inset 0 0 0 var(--hairline) var(--agnes-line-hairline);
+  }
+  .agh-segmented:not(:has([data-selected="true"])) > .agh-segmented-thumb {
+    visibility: hidden;
+  }
+  .agh-segmented-thumb {
+    position: absolute;
+    inset-block: var(--s2);
+    left: var(--agh-segment-thumb-left);
+    width: var(--agh-segment-thumb-width);
+    border-radius: calc(var(--radius-segmented) - var(--s2));
+    background: var(--agnes-bg-control);
+    box-shadow: var(--shadow-control);
+    transition:
+      left 380ms cubic-bezier(0.3, 1.35, 0.5, 1),
+      width 380ms cubic-bezier(0.3, 1.35, 0.5, 1);
+    pointer-events: none;
+  }
+  .agh-segmented > .agh-segmented-option {
+    position: relative;
+    gap: var(--s4);
+    min-height: var(--control-height-xs);
+    height: auto;
+    padding: 0 var(--s12);
+    border: 0;
+    border-radius: calc(var(--radius-segmented) - var(--s2));
+    color: var(--agnes-text-secondary);
+    background: transparent;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    white-space: nowrap;
+  }
+  .agh-segmented > .agh-segmented-option:hover {
+    color: var(--agnes-text-primary);
+    background: transparent;
+    border-color: transparent;
+  }
+  .agh-segmented > .agh-segmented-option[data-selected="true"] {
+    border-color: currentColor;
+    color: var(--agnes-text-primary);
+    background: transparent;
+    box-shadow: none;
+  }
+  .agh-segmented {
+    max-width: 100%;
+    min-width: 0;
+    margin: 0;
+    border: 0;
+  }
+  .agh-segmented[data-block="true"] {
+    display: flex;
+  }
+  .agh-segmented[data-block="true"] > .agh-segmented-option {
+    flex: 1 1 0;
+  }
+  .agh-segmented > .agh-segmented-option {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    min-width: 0;
+    line-height: var(--line-sm);
+  }
+  .agh-segmented-option > span {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+  }
+  .agh-segmented-option > input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    opacity: 0;
+    cursor: inherit;
+  }
+  .agh-segmented-option:has(input:checked) {
+    color: var(--agnes-text-primary);
+  }
+  .agh-segmented-option:has(input:focus-visible),
+  .agh-segmented-option:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
+  }
+  .agh-segmented-option:has(input:disabled),
+  .agh-segmented-option:disabled {
+    color: var(--agnes-text-tertiary);
+    cursor: not-allowed;
+  }
+  @media (max-width: 900px) {
+    .agh-segmented > .agh-segmented-option {
+      min-width: var(--s32);
+      min-height: var(--s32);
+    }
+  }
+  @media (max-width: 767px) {
+    .agh-segmented > .agh-segmented-option {
+      min-width: var(--control-height-touch);
+      min-height: var(--control-height-touch);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agh-segmented-thumb {
+      transition: none;
+    }
+  }
+
+  .select-picker-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s12);
+    width: 100%;
+    min-width: 0;
+    min-height: var(--control-height);
+    /* A popup button with the shared neutral down-chevron. */
+    padding: 0 var(--s4) 0 var(--s10);
+    border: 0;
+    border-radius: var(--radius-control);
+    color: var(--agnes-input-content-strong);
+    background: var(--agnes-bg-control);
+    font-size: var(--font-size-sm);
+    /* The value clips its overflow for the ellipsis, so its line box must hold the font's full
+     ascent and descent; the browser's 1.2 button default cuts descenders in Windows UI fonts. */
+    line-height: var(--line-sm);
+    font-weight: 400;
+    text-align: start;
+    box-shadow: var(--shadow-control);
+  }
+  .select-picker-value {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* One neutral down-chevron for rich, native and DOM select controls. */
+  .agh-popup-chevrons,
+  .select-picker-chevron {
+    position: relative;
+    display: block;
+    flex: 0 0 auto;
+    width: 1.125rem;
+    height: 1.125rem;
+    color: var(--agnes-text-tertiary);
+    background: none;
+  }
+  :is(.agh-popup-chevrons, .select-picker-chevron)::before {
+    content: none;
+  }
+  :is(.agh-popup-chevrons, .select-picker-chevron)::after {
+    content: "";
+    position: absolute;
+    left: calc(50% - 0.1875rem);
+    top: calc(50% - 0.25rem);
+    width: 0.375rem;
+    height: 0.375rem;
+    border: solid currentColor;
+    border-width: 0 1.5px 1.5px 0;
+    rotate: 45deg;
+  }
+  select.agnes-settings-input:not([multiple]) {
+    min-height: var(--control-height);
+    padding-block: 0;
+    padding-inline: var(--s10) 1.75rem;
+    appearance: none;
+    background-image:
+      linear-gradient(
+        45deg,
+        transparent calc(50% - 0.75px),
+        var(--agnes-text-tertiary) calc(50% - 0.75px),
+        var(--agnes-text-tertiary) calc(50% + 0.75px),
+        transparent calc(50% + 0.75px)
+      ),
+      linear-gradient(
+        135deg,
+        transparent calc(50% - 0.75px),
+        var(--agnes-text-tertiary) calc(50% - 0.75px),
+        var(--agnes-text-tertiary) calc(50% + 0.75px),
+        transparent calc(50% + 0.75px)
+      );
+    background-position:
+      right 13px center,
+      right 9px center;
+    background-size: 4px 4px;
+    background-repeat: no-repeat;
+  }
+  @media (max-width: 767px) {
+    select.agnes-settings-input:not([multiple]) {
+      min-height: var(--control-height-touch);
+    }
+  }
+
+  /* Menus and option lists: the one translucent surface. 94% opaque over a blurred backdrop, so
+   the text contrast is that of the solid popover; the pointed or keyboard-current row takes the
+   accent fill with its own content colour. */
+  .agh-menu-popup .agh-menu,
+  .ant-select-dropdown {
+    padding: var(--s4);
+    border: 0;
+    background: var(--agnes-bg-popover-material);
+    -webkit-backdrop-filter: saturate(1.5) blur(18px);
+    backdrop-filter: saturate(1.5) blur(18px);
+    box-shadow: var(--shadow-popover);
+  }
+  .agh-menu-popup .agh-menu-item {
+    height: var(--menu-item-height);
+    min-height: var(--menu-item-height);
+    padding: 0 var(--s8);
+    border-radius: var(--radius-menu-item);
+    font-size: var(--font-size-sm);
+    line-height: var(--line-sm);
+  }
+  .agh-menu-popup:not(.agh-menu-popup--neutral) .agh-menu-item:hover:not([aria-disabled="true"]),
+  .agh-menu-popup:not(.agh-menu-popup--neutral) .agh-menu-item:focus-visible:not([aria-disabled="true"]),
+  :root:not([data-agnes-input="pointer"])
+    .agh-menu-popup:not(.agh-menu-popup--neutral)
+    .agh-menu-item.ant-dropdown-menu-item-active:not([aria-disabled="true"]) {
+    color: var(--agnes-menu-active-text);
+    background: var(--agnes-menu-active-bg);
+    outline: none;
+    box-shadow: none;
+  }
+  .agh-menu-popup:not(.agh-menu-popup--neutral) .agh-menu-item[data-danger]:hover:not([aria-disabled="true"]),
+  .agh-menu-popup:not(.agh-menu-popup--neutral)
+    .agh-menu-item[data-danger]:focus-visible:not([aria-disabled="true"]),
+  :root:not([data-agnes-input="pointer"])
+    .agh-menu-popup:not(.agh-menu-popup--neutral)
+    .agh-menu-item[data-danger].ant-dropdown-menu-item-active:not([aria-disabled="true"]) {
+    color: var(--agnes-text-inverse);
+    background: var(--agnes-status-danger-text);
+  }
+  /* Neutral action lists: shared by project/session menus; preserve danger text and focus. */
+  .agh-menu-popup--neutral .agh-menu-item {
+    color: var(--agnes-text-primary);
+    background: transparent;
+  }
+  .agh-menu-popup--neutral .agh-menu-item:hover:not([aria-disabled="true"]),
+  .agh-menu-popup--neutral .agh-menu-item:focus:not([aria-disabled="true"]),
+  :root:not([data-agnes-input="pointer"])
+    .agh-menu-popup--neutral
+    .agh-menu-item.ant-dropdown-menu-item-active:not([aria-disabled="true"]) {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-hover);
+    box-shadow: none;
+  }
+  .agh-menu-popup--neutral .agh-menu-item:focus-visible:not([aria-disabled="true"]) {
+    outline: 2px solid var(--agnes-brand-focus-ring);
+    outline-offset: -2px;
+  }
+  .agh-menu-popup--neutral .agh-menu-item[data-danger] {
+    color: var(--agnes-status-danger-text);
+  }
+  .agh-menu-popup--neutral .agh-menu-item[data-danger]:hover:not([aria-disabled="true"]),
+  .agh-menu-popup--neutral .agh-menu-item[data-danger]:focus:not([aria-disabled="true"]),
+  :root:not([data-agnes-input="pointer"])
+    .agh-menu-popup--neutral
+    .agh-menu-item[data-danger].ant-dropdown-menu-item-active:not([aria-disabled="true"]) {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-bg-hover);
+  }
+  .agh-menu-popup--neutral .agh-menu-icon {
+    display: inline-flex;
+    width: 16px;
+    min-width: 16px;
+    flex: 0 0 16px;
+    align-items: center;
+    justify-content: center;
+  }
+  .agh-menu-popup--neutral .agh-menu-icon svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke-width: 1.5;
+  }
+  /* Choice menus group their options under a heading and mark the current one with a check. */
+  .agh-menu-popup .agh-menu .ant-menu-item-group-title,
+  .agh-menu-popup .agh-menu .ant-dropdown-menu-item-group-title {
+    padding: 0;
+  }
+  .agh-menu-popup .agh-menu-group-label {
+    display: block;
+    padding: var(--s4) var(--s8) var(--s2);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+    line-height: 1.25rem;
+  }
+  .agh-menu-popup .agh-menu-group:first-child > * > .agh-menu-group-label {
+    padding-top: 0;
+  }
+  .agh-menu-popup .agh-menu-label {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .agh-menu-popup .agh-menu-label-text {
+    min-width: 0;
+    flex: 1;
+  }
+  .agh-menu-popup .agh-menu-check {
+    width: 0.875rem;
+    height: 0.875rem;
+    flex: none;
+    color: var(--agnes-text-primary);
+  }
+  .ant-select-dropdown .ant-select-item-option {
+    border-radius: var(--radius-menu-item);
+  }
+  .ant-select-dropdown .ant-select-item-option-active:not(.ant-select-item-option-disabled) {
+    color: var(--agnes-menu-active-text);
+    background: var(--agnes-menu-active-bg);
+  }
+  .ant-select-dropdown
+    .ant-select-item-option-active:not(.ant-select-item-option-disabled)
+    .ant-select-item-option-state {
+    color: inherit;
+  }
+  @media (max-width: 767px) {
+    .agh-menu-popup .agh-menu-item {
+      height: auto;
+      min-height: var(--control-height-touch);
+    }
+  }
+
+  /* ── 4. Motion ───────────────────────────────────────────────────────────────────── */
+  @keyframes agh-pop-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96) translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes agh-pop-out {
+    from {
+      opacity: 1;
+      transform: none;
+    }
+    to {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+  }
+  @keyframes agh-slide-in {
+    from {
+      opacity: 0;
+      translate: 16px 0;
+    }
+  }
+  @keyframes agh-rise-in {
+    from {
+      opacity: 0;
+      translate: 0 4px;
+    }
+  }
+  @keyframes agh-disclose {
+    from {
+      opacity: 0;
+      translate: 0 -6px;
+    }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    /* Menus, pickers and popovers grow out of their trigger when the pointer opens them; a
+     keyboard-opened surface is simply there. Exits are shorter and do not bounce. */
+    :root[data-agnes-input="pointer"]
+      :is(.agh-menu-popup, .ant-select-dropdown):is([class*="-enter-active"], [class*="-appear-active"]),
+    .agnes-ui-popover--pointer:is([class*="-enter-active"], [class*="-appear-active"]) {
+      animation-name: agh-pop-in;
+      animation-duration: var(--motion-long) !important;
+      animation-timing-function: var(--motion-spring);
+    }
+    :root[data-agnes-input="pointer"] :is(.agh-menu-popup, .ant-select-dropdown)[class*="-leave-active"],
+    .agnes-ui-popover--pointer[class*="-leave-active"] {
+      animation-name: agh-pop-out;
+      animation-duration: calc(var(--motion-long) * var(--motion-exit)) !important;
+      animation-timing-function: var(--motion-ease-out);
+    }
+    /* Dialogs are occasional: they settle on the same spring however they were opened. */
+    .agh-dialog:is(.ant-zoom-enter-active, .ant-zoom-appear-active) {
+      animation-name: agh-pop-in;
+      animation-duration: var(--motion-long);
+      animation-timing-function: var(--motion-spring);
+    }
+    .agh-dialog.ant-zoom-leave-active {
+      animation-name: agh-pop-out;
+      animation-duration: calc(var(--motion-long) * var(--motion-exit));
+      animation-timing-function: var(--motion-ease-out);
+    }
+    @media (min-width: 768px) {
+      :where(dialog[open]:not(.agh-drawer):not([data-presentation="page"])) {
+        animation: agh-pop-in var(--motion-long) var(--motion-spring);
+      }
+    }
+    /* A side panel slides in from the edge it is attached to. */
+    .agh-drawer[open] {
+      animation: agh-slide-in var(--motion-long) var(--motion-spring);
+    }
+    /* Tabs: the indicator slides, and a pane picked with the pointer rises into place. */
+    .agnes-ui-tabs .ant-tabs-ink-bar {
+      transition:
+        inset-inline-start var(--motion-medium) var(--motion-ease-out),
+        left var(--motion-medium) var(--motion-ease-out),
+        width var(--motion-medium) var(--motion-ease-out);
+    }
+    :root[data-agnes-input="pointer"] .agnes-ui-tabs .ant-tabs-tabpane-active {
+      animation: agh-rise-in var(--motion-medium) var(--motion-ease-out);
+    }
+    /* Disclosure: the chevron turns and the content drops in from just above. */
+    .agh-disclosure-chevron {
+      transition: transform var(--motion-medium) var(--motion-spring);
+    }
+    :root[data-agnes-input="pointer"]
+      .agh-disclosure:not([data-variant="card"])
+      > .agh-disclosure-body:not([hidden]) {
+      animation: agh-disclose var(--motion-medium) var(--motion-spring);
+    }
+  }
+}
+
+/* Input states are shared without changing the controls' dimensions or typography.
+   Plain code/terminal editors and the library's internal search input keep their surfaces. */
+@layer ui {
+  :is(
+    .agnes-settings-input:not([type="checkbox"], [type="radio"]),
+    .agnes-ui-select.ant-select,
+    .select-picker-trigger
+  ) {
+    --ant-color-border: var(--agnes-input-border);
+    --ant-select-hover-border-color: var(--agnes-input-border-emphasis);
+    --ant-select-selector-bg: transparent;
+    --ant-select-active-border-color: var(--agnes-input-border-focus);
+    --ant-select-active-outline-color: var(--agnes-focus-ring-soft);
+    border-color: var(--agnes-input-border);
+    background-color: var(--agnes-input-surface);
+    color: var(--agnes-input-content-strong);
+    box-shadow: none;
+  }
+  .select-picker-trigger {
+    border: 1px solid var(--agnes-input-border);
+    background-image: none;
+  }
+  :is(.agnes-settings-input, .agnes-ui-select.ant-select, .select-picker-trigger):hover:where(
+    :not(:disabled):not(.ant-select-disabled):not([readonly]):not([aria-readonly="true"]):not(
+      [data-readonly="true"]
+    )
+  ) {
+    border-color: var(--agnes-input-border-emphasis);
+    background-color: var(--agnes-input-surface);
+    background-image: none;
+  }
+  select.agnes-settings-input:not([multiple]):hover:not(:disabled) {
+    background-image:
+      linear-gradient(
+        45deg,
+        transparent calc(50% - 0.75px),
+        var(--agnes-text-tertiary) calc(50% - 0.75px),
+        var(--agnes-text-tertiary) calc(50% + 0.75px),
+        transparent calc(50% + 0.75px)
+      ),
+      linear-gradient(
+        135deg,
+        transparent calc(50% - 0.75px),
+        var(--agnes-text-tertiary) calc(50% - 0.75px),
+        var(--agnes-text-tertiary) calc(50% + 0.75px),
+        transparent calc(50% + 0.75px)
+      );
+  }
+  :is(.agnes-settings-input, .select-picker-trigger):focus-visible,
+  .agnes-ui-select.ant-select-focused:not(.ant-select-disabled),
+  .select-picker-trigger[aria-expanded="true"] {
+    outline: none;
+    border-color: var(--agnes-input-border-focus);
+    background-color: var(--agnes-input-surface);
+    box-shadow: 0 0 0 3px var(--agnes-focus-ring-soft);
+  }
+  :is(.agnes-settings-input, .agnes-ui-select.ant-select, .select-picker-trigger)[aria-invalid="true"],
+  .agnes-ui-select.ant-select-status-error {
+    --ant-color-border: var(--agnes-status-danger-text);
+    --ant-select-hover-border-color: var(--agnes-status-danger-text);
+    border-color: var(--agnes-status-danger-text);
+  }
+  :is(.agnes-settings-input, .select-picker-trigger)[readonly],
+  .agnes-ui-select[data-readonly="true"],
+  .select-picker-trigger[aria-readonly="true"],
+  select.agnes-settings-input[aria-readonly="true"] {
+    background-color: var(--agnes-input-surface);
+    color: var(--agnes-text-secondary);
+    cursor: default;
+    --ant-select-hover-border-color: var(--agnes-input-border);
+  }
+  :is(.agnes-settings-input, .select-picker-trigger):disabled,
+  .agnes-ui-select.ant-select-disabled {
+    --ant-color-border: var(--agnes-line-primary);
+    border-color: var(--agnes-line-primary);
+    background-color: var(--agnes-bg-card);
+    color: var(--agnes-text-tertiary);
+    box-shadow: none;
+    cursor: not-allowed;
+  }
+}
+
+@layer ui {
+  .agnes-settings-code-input:not(:focus-visible) {
+    background-color: var(--agnes-bg-fill);
+  }
+  .agnes-settings-code-input:hover:not(:disabled):not(:focus-visible) {
+    background-color: var(--agnes-bg-fill-hover);
+  }
+}

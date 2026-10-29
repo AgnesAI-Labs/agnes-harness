@@ -1,0 +1,5 @@
+[
+  { "id": "diagnostic", "description": "Read service health" },
+  { "id": "restart-synthetic-service", "description": "Human approves simulated restart" },
+  { "id": "verify", "description": "Verify the returned receipt" }
+]

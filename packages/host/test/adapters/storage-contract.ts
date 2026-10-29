@@ -24,18 +24,6 @@ export function storageContract(
     ).toEqual([1, 2])
     await s.close()
   })
-  it(`${name}: raises the ledger format only when a batch asks, never lowers it, and children inherit it`, async () => {
-    const s = open()
-    expect((await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })).formatVersion).toBe(1)
-    await s.commit('k', { events: [ev('user/message', {})], expectedWriterRunId: 'r1' })
-    expect((await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })).formatVersion).toBe(1)
-    await s.commit('k', { events: [ev('user/message', {})], expectedWriterRunId: 'r1', formatVersion: 2 })
-    await s.commit('k', { events: [ev('user/message', {})], expectedWriterRunId: 'r1' })
-    expect((await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })).formatVersion).toBe(2)
-    await s.createChild('k', 3, 'child')
-    expect((await s.open('child', { writerRunId: 'r2', ttlMs: 1000 })).formatVersion).toBe(2)
-    await s.close()
-  })
   it(`${name}: stores integrity metadata beside events without exposing it in public scans`, async () => {
     const s = open()
     await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })
@@ -314,9 +302,30 @@ export function storageContract(
     expect(await read('p')).toBeUndefined()
     await s.close()
   })
+  it(`${name}: keeps one verified head per session`, async () => {
+    const s = open()
+    if (!s.readVerifiedHead || !s.writeVerifiedHead) throw new Error(`${name} keeps no verified head`)
+    const head = (sessionKey: string, throughSeq: number) => ({
+      sessionKey,
+      throughSeq,
+      headDigest: 'a'.repeat(64),
+      legacyThroughSeq: 0,
+      algorithm: 'agnes-ledger-jcs-sha256-v1' as const,
+      verifiedFullAtMs: 1,
+      writtenAtMs: 1,
+      checkpointDigest: 'b'.repeat(64),
+    })
+    await s.writeVerifiedHead(head('one', 5))
+    await s.writeVerifiedHead(head('two', 9))
+    expect((await s.readVerifiedHead('one'))?.throughSeq).toBe(5)
+    expect((await s.readVerifiedHead('two'))?.throughSeq).toBe(9)
+    expect((await s.readVerifiedHead('one'))?.sessionKey).toBe('one')
+    await s.close()
+  })
   it(`${name}: discarding a new session drops its verified head`, async () => {
     const s = open()
-    if (!s.discardNewSession || !s.writeVerifiedHead || !s.readVerifiedHead) return
+    if (!s.discardNewSession || !s.writeVerifiedHead || !s.readVerifiedHead)
+      throw new Error(`${name} cannot discard a new session or keeps no verified head`)
     await s.open('n', { writerRunId: 'r1', ttlMs: 1000 })
     await s.commit('n', { events: [ev('user/message', {})], expectedWriterRunId: 'r1' })
     await s.writeVerifiedHead({

@@ -1,8 +1,10 @@
-import { realpathSync, statSync } from 'node:fs'
+import { statSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { safeAuthoringDiagnostics } from '@agnes/error-sanitization'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { PackageError } from './errors.js'
 
-const MANIFEST_FILE = 'agnes.extension.json'
+const MANIFEST_FILE = 'package.json'
 function fail(file: string, why: string, detail: Record<string, unknown> = {}): never {
   throw new PackageError('E_EXT_LOAD', `${file}: ${why}`, { detail: { file, ...detail } })
 }
@@ -19,12 +21,21 @@ export function containedEntry(dir: string, entry: string, kind: 'file' | 'direc
   let root: string
   let target: string
   try {
-    root = realpathSync(dir)
-    target = realpathSync(resolve(root, entry))
+    root = nativeRealpathSync(dir)
+    target = nativeRealpathSync(resolve(root, entry))
     if (!statSync(root).isDirectory()) throw new Error('root type')
     const stat = statSync(target)
     if (kind === 'file' ? !stat.isFile() : !stat.isDirectory()) throw new Error('target type')
-  } catch {
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      const diagnostics = safeAuthoringDiagnostics([
+        { code: 'missing-required-file', path: 'package.json', field: 'entry', name: entry },
+      ])
+      if (diagnostics.length)
+        throw new PackageError('E_EXT_LOAD', 'Required package file is missing', {
+          detail: { file, reason, diagnostics },
+        })
+    }
     fail(file, 'entry cannot be resolved to the required filesystem type', { reason })
   }
   const rel = relative(root, target)

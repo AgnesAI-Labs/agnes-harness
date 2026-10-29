@@ -18,6 +18,7 @@ function harness() {
     '_agnes/v1/session.setPreset': () => ({ effectiveFromSeq: 2 }),
     '_agnes/v1/session.setModel': () => ({ effectiveFromSeq: 2 }),
     '_agnes/v1/session.setYolo': () => ({ effectiveFromSeq: 2 }),
+    '_agnes/v1/session.setToolFilter': () => ({ effectiveFromSeq: 2, filter: { deny: ['bash'] } }),
     '_agnes/v1/session.list': () => ({ items: [] }),
     '_agnes/v1/workspace.list': () => ({ items: [] }),
     '_agnes/v1/workspace.add': () => ({
@@ -31,16 +32,25 @@ function harness() {
     }),
     '_agnes/v1/submit': () => ({ replayed: false, result: { sessionId: 'child' } }),
     '_agnes/v1/submit.ack': () => ({}),
-    '_agnes/v1/approval.decide': () => ({ seq: 3 }),
+    '_agnes/v1/approval.decide': (p) => ({
+      digest: '0'.repeat(64),
+      commandId: (p as { commandId: string }).commandId,
+      revision: 2,
+      seq: 3,
+    }),
     '_agnes/v1/approvalGrants.list': () => ({ grants: [] }),
     '_agnes/v1/approvalGrants.revoke': () => ({
       grantId: 'grant-1',
-      profileHash: `sha256-${'a'.repeat(64)}`,
+      policyDigest: `sha256-${'a'.repeat(64)}`,
       actorId: 'local',
       actorOrg: 'local',
       toolId: 'computer_use',
       scope: 'cua:click:background',
       policyVersion: 'computer-use-v1',
+      sourceDecisionId: 'decision-fixture',
+      issuer: { id: 'reviewer', org: 'local', role: 'user', deptPath: [], attrs: {} },
+      definitionFingerprint: 'd'.repeat(64),
+      policyBinding: 'e'.repeat(64),
       createdAt: '2026-09-19T00:00:00Z',
       revokedAt: '2026-09-19T01:00:00Z',
     }),
@@ -92,18 +102,50 @@ describe('method surface: setPreset / setModel / session.list / session.fork', (
       '_agnes/v1/session.setYolo',
       { sessionId: 's', enabled: true },
     ],
+    [
+      'session.setToolFilter',
+      async () => (await s()).setToolFilter({ deny: ['bash'] }, { commandId: 'tf1' }),
+      '_agnes/v1/session.setToolFilter',
+      { sessionId: 's', commandId: 'tf1', deny: ['bash'] },
+    ],
     ['session.list', () => c.session.list({ limit: 5 }), '_agnes/v1/session.list', { limit: 5 }],
     [
       'approval.decide',
-      () => c.approval.decide('ticket-1', 'allowed-once', { kind: 'local' }),
+      () =>
+        c.approval.decide({
+          sessionId: 's',
+          id: 'd1',
+          revision: 1,
+          commandId: 'c1',
+          response: { option: 'allowed-once', value: null },
+        }),
       '_agnes/v1/approval.decide',
-      { ticket: 'ticket-1', verdict: 'allowed-once', approverCredential: { kind: 'local' } },
+      {
+        sessionId: 's',
+        id: 'd1',
+        revision: 1,
+        commandId: 'c1',
+        response: { option: 'allowed-once', value: null },
+      },
     ],
     [
       'approval.decide permanent',
-      () => c.approval.decide('ticket-2', 'allowed-permanent', { kind: 'local' }),
+      () =>
+        c.approval.decide({
+          sessionId: 's',
+          id: 'd2',
+          revision: 1,
+          commandId: 'c2',
+          response: { option: 'allowed-permanent', value: null },
+        }),
       '_agnes/v1/approval.decide',
-      { ticket: 'ticket-2', verdict: 'allowed-permanent', approverCredential: { kind: 'local' } },
+      {
+        sessionId: 's',
+        id: 'd2',
+        revision: 1,
+        commandId: 'c2',
+        response: { option: 'allowed-permanent', value: null },
+      },
     ],
     [
       'approval.listGrants',
@@ -171,9 +213,26 @@ describe('method surface: setPreset / setModel / session.list / session.fork', (
   })
 
   it('approval.decide returns the server sequence without accepting a caller-supplied Actor', async () => {
-    await expect(c.approval.decide('ticket-2', 'rejected', { kind: 'local' })).resolves.toEqual({ seq: 3 })
-    // @ts-expect-error the fourth argument must never become an Actor injection path
-    void c.approval.decide('ticket-2', 'rejected', { kind: 'local' }, { actor: 'somebody-else' })
+    await expect(
+      c.approval.decide({
+        sessionId: 's',
+        id: 'd2',
+        revision: 1,
+        commandId: 'c2',
+        response: { option: 'rejected', value: null },
+      }),
+    ).resolves.toEqual({ digest: '0'.repeat(64), commandId: 'c2', revision: 2, seq: 3 })
+    await expect(
+      c.approval.decide({
+        sessionId: 's',
+        id: 'd2',
+        revision: 1,
+        commandId: 'c2',
+        response: { option: 'rejected', value: null },
+        // @ts-expect-error canonical answer bodies cannot inject an Actor
+        actor: 'somebody-else',
+      }),
+    ).rejects.toMatchObject({ kind: 'protocol-violation' })
   })
 
   it('exposes the current Surface mount table', async () => {

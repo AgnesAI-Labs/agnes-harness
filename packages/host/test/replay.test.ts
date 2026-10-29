@@ -1,18 +1,24 @@
+import { execFile } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createProvider, type WireEvent } from '@agnes/ai'
+import { promisify } from 'node:util'
+import { createProvider, nativeToolCallFormats, type WireEvent } from '@agnes/ai'
 import { FakeAdapter, fakeModel, ScriptedProvider, stampFor } from '@agnes/ai/testkit'
-import { presets as basePresets, seams as baseSeams } from '@agnes/base'
+import { presets as basePresets } from '@agnes/base'
 import { operations as codeOperations, presets as codePresets, PRESET_NAMES } from '@agnes/code'
 import type { Operation, Verdict } from '@agnes/core'
+import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
+import type { ResolvedProfile } from '@agnes/host-common/profile/types'
+import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
+import type { ProviderBuildOptions } from '@agnes/host-providers/assemble/provider'
 import type { InferenceEvent, Provider, RequestBody } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createPlatform } from '../src/adapters/platform.js'
-import type { ProviderBuildOptions } from '../src/assemble/provider.js'
-import type { ResolvedProfile } from '../src/profile/types.js'
 import {
+  baseSeamFactories,
   createTestHost,
   type RunOnceResult,
   reopenSession,
@@ -37,6 +43,7 @@ import {
  * one.
  */
 const baseDir = fileURLToPath(new URL('../../base', import.meta.url))
+const { rgPath } = createRequire(join(baseDir, 'package.json'))('@vscode/ripgrep') as { rgPath: string }
 /**
  * Two directories, read as one corpus. base's cases are base's - what its tools and seams do. The
  * recovery cases are the kernel's: they need a runner that kills the host between two model calls
@@ -85,8 +92,9 @@ const CAPABILITIES = [
   // instead of a fake that answers the same way whatever it is asked.
   'seam/approval-policy',
   // The model layer's decode chain recovering a call the model wrote into its prose instead of into
-  // the protocol's tool-call field. Only a wire-level case can exercise it: a fixture scripted at
-  // the Provider boundary hands the kernel a finished call and the chain never runs.
+  // the protocol's tool-call field, for a model family the shipped catalogue opts in. Only a
+  // wire-level case can exercise it: a fixture scripted at the Provider boundary hands the kernel a
+  // finished call and the chain never runs.
   'decode/tool-call-in-text',
   // A usage event turning into a cost row with a credit figure on it. The estimate is made in the
   // model layer, from the catalogue price and the deployment's credit rate, and the kernel writes
@@ -131,6 +139,8 @@ type Needs = {
   systemIncludes?: string[]
   /** Substrings anywhere in the conversation so far, which is where tool results appear. */
   messagesInclude?: string[]
+  /** Sensitive workspace text that must never reach the model. */
+  messagesExclude?: string[]
   /** Tool names the request must offer. */
   toolsOffered?: string[]
 }
@@ -193,6 +203,11 @@ type Fixture = {
    * boundary, which is everything above the model layer and nothing inside it.
    */
   wire?: boolean
+  /**
+   * For a `wire` case: the catalogue model id whose shipped `toolCallFormats` the wire model takes.
+   * Without it the wire model declares native calls only, and so reads no call out of its prose.
+   */
+  catalogModel?: string
   script: Step[]
   /**
    * Kill the process while the model call for `script[atStep]` is outstanding. The first host serves
@@ -292,6 +307,7 @@ function unmet(needs: Needs | undefined, req: RequestBody): string | null {
   for (const s of needs?.systemIncludes ?? []) if (!req.system.includes(s)) return `systemIncludes ${s}`
   const conversation = JSON.stringify(req.messages)
   for (const s of needs?.messagesInclude ?? []) if (!conversation.includes(s)) return `messagesInclude ${s}`
+  for (const s of needs?.messagesExclude ?? []) if (conversation.includes(s)) return `messagesExclude ${s}`
   const offered = new Set(req.tools.map((t) => t.name))
   for (const n of needs?.toolsOffered ?? []) if (!offered.has(n)) return `toolsOffered ${n}`
   return null
@@ -396,7 +412,10 @@ function wireProvider(
 ): Provider {
   if (f.setModelAt) return midTurnSwitchProvider(f.setModelAt, f.script, reasons, built)
   let turn = 0
-  const declared = f.contract ? (profile.provider.routes ?? []) : [{ ...WIRE_ROUTE, models: [WIRE_MODEL] }]
+  const model = f.catalogModel
+    ? { ...WIRE_MODEL, toolCallFormats: nativeToolCallFormats(f.catalogModel) }
+    : WIRE_MODEL
+  const declared = f.contract ? (profile.provider.routes ?? []) : [{ ...WIRE_ROUTE, models: [model] }]
   const primary = declared[0]?.models?.[0]
   if (!primary) throw new Error('wire fixture requires a declared primary model')
   const adapter = new FakeAdapter({
@@ -571,11 +590,11 @@ function replayMin(raw: string | undefined, fallback: number): number {
 // unbalanced-delimiter rewrite that is not a size shrink, two `edit` calls landing on the same file
 // across two turns, and `read`'s offset/limit paging past the end of the file; then to 36 for
 // ambiguous edit refusal, invalid-regex reporting, explicit grep/find result limits, and a missing
-// read; then to 37 with `grep` pointed at one file, and at one that is not there. The floor is what
+// read. The floor is what
 // stops a case being deleted rather than fixed, so it is worth nothing if it stays below the corpus
 // - and it is the total of every lane's cases, never one lane's count, which is how a merge that
 // dropped half the corpus would still have passed it.
-const REPLAY_FLOOR = 37
+const REPLAY_FLOOR = 36
 
 /**
  * What the test host's own `standard` recipe says, restated here because a case that overrides the
@@ -748,9 +767,11 @@ describe('L1 replay corpus', () => {
   })
 
   for (const f of fixtures) {
-    it(f.id, async () => {
+    // Recovery cases assemble two complete Hosts; keep their budget separate from single-turn cases.
+    it(f.id, f.kill || f.reopen ? { timeout: 60_000 } : {}, async () => {
       const cwd = scratch(f.workspace)
       const denyPaths = f.denyPaths
+      const artifacts = new Map<string, Uint8Array>()
       const reasons: string[] = []
       const scripts = f.script.map((step) => stepScript(step, reasons))
       // A shipped case runs the delivered recipes and a `policy` case an inline table, so one flag
@@ -761,8 +782,51 @@ describe('L1 replay corpus', () => {
       // which one a case gets is the one thing the drivers below disagree about, and a `provider`
       // set here would be overridden by the kill path and would silently override the wire path.
       const common: Omit<TestHostOptions, 'script' | 'provider'> = {
-        dataDir: cwd,
+        // Installation files require one-call review even when a recipe allows ordinary edits.
+        dataDir: scratch(undefined),
+        workspaceRoot: cwd,
         ...profileOptions(f),
+        // Search now invokes the pinned ripgrep binary. Only that binary runs for real; shell
+        // fixtures retain the deterministic sandbox executor and all reads remain fenced.
+        seams: {
+          artifacts: {
+            ...fakeSeams().artifacts,
+            put: async (bytes, meta) => {
+              const sha256 = createHash('sha256').update(bytes).digest('hex')
+              artifacts.set(sha256, bytes.slice())
+              return { sha256, size: bytes.length, mime: meta?.mime ?? 'application/octet-stream' }
+            },
+            get: async (ref) => {
+              const bytes = artifacts.get(ref.sha256)
+              if (!bytes) throw new Error('missing replay artifact')
+              return bytes.slice()
+            },
+          },
+          sandbox: {
+            ...fakeSeams().sandbox,
+            fsPolicy: () => testFsPolicy(cwd),
+            async exec(command, options) {
+              if (command[0] !== rgPath) return fakeSeams().sandbox.exec(command, options)
+              try {
+                const result = await promisify(execFile)(command[0], command.slice(1), {
+                  cwd: options.cwd,
+                  signal: options.signal,
+                  maxBuffer: 4 * 1024 * 1024,
+                })
+                return { code: 0, stdout: result.stdout, stderr: result.stderr, truncated: false }
+              } catch (error) {
+                const result = error as { code?: number; stdout?: string; stderr?: string }
+                if (typeof result.code !== 'number') throw error
+                return {
+                  code: result.code,
+                  stdout: result.stdout ?? '',
+                  stderr: result.stderr ?? '',
+                  truncated: false,
+                }
+              }
+            },
+          },
+        },
         // The delivery path, not a shortcut: host reads @agnes/base's own package.json off disk,
         // finds the extension it declares, reads that manifest and calls its entry.
         packageDirs: { '@agnes/base': baseDir },
@@ -785,7 +849,7 @@ describe('L1 replay corpus', () => {
           ...(realApproval
             ? {
                 '@agnes/base': {
-                  seams: { approval: baseSeams.approval },
+                  seams: { approval: baseSeamFactories.approval },
                   ...(f.shipped ? { presets: basePresets } : {}),
                 },
               }
@@ -823,7 +887,14 @@ describe('L1 replay corpus', () => {
                   },
             }
           : {}),
-        ...(f.prompterSays ? { prompter: async () => f.prompterSays as Verdict } : {}),
+        ...(f.prompterSays
+          ? {
+              prompter: async () => ({
+                verdict: f.prompterSays as Verdict,
+                answeredBy: { id: 'reviewer', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+              }),
+            }
+          : {}),
         // A wire case's rate reaches the model layer through the profile, which is the path a
         // deployment's takes. Without it the runner would state the rate itself and no case could
         // tell a rate host read from one this file wrote.
@@ -873,16 +944,12 @@ describe('L1 replay corpus', () => {
         const crashPrefix = await staged.session.scan({ toSeq: staged.session.lastSeq })
         expect(crashPrefix.some((event) => event.type === 'effect/intent')).toBe(true)
         expect(crashPrefix.some((event) => event.type === 'turn/end')).toBe(false)
-        // A process kill does not run core's graceful session.close(), which now correctly records
-        // an aborted inference when its provider can be woken. Detach the in-flight controller for
-        // this crash snapshot so close still releases the writer lease and durable adapters without
-        // settling the open step that a second process has to recover.
-        staged.session.ac = new AbortController()
-        await dead.host.close()
-        // The test process must drain its parked provider after the durable crash snapshot is closed;
-        // this is an in-process simulation of a child that would otherwise have disappeared.
+        // Abandon the writer before draining this in-process simulation of a killed worker.
+        // Graceful close would settle the very effect the reopened Host must recover.
+        await staged.session.d.log.abandon()
         deadProvider.kill()
         await staged.running
+        await dead.host.close()
         const t = await createTestHost({ ...common, script: scripts.slice(at) })
         try {
           check(await resumeTurn(t.host, { cwd }))

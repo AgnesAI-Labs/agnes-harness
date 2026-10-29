@@ -1,3 +1,6 @@
+import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { listPackages, listSourceFiles, repoRoot } from './repo.js'
 
@@ -8,32 +11,54 @@ describe('repo', () => {
       .sort()
     expect(names).toEqual([
       '@agnes/ai',
+      '@agnes/authoring-eval',
       '@agnes/base',
+      '@agnes/batch',
       '@agnes/bridges',
       '@agnes/channels',
       '@agnes/cli',
-      '@agnes/cli-launch',
       '@agnes/cli-tui',
       '@agnes/code',
       '@agnes/cordis',
       '@agnes/cordis-loader',
       '@agnes/core',
+      '@agnes/core-child-control',
+      '@agnes/core-common',
+      '@agnes/core-effects',
+      '@agnes/core-ledger',
       '@agnes/cosmokit',
       '@agnes/daemon',
+      '@agnes/daemon-admin',
+      '@agnes/daemon-foundation',
+      '@agnes/daemon-rpc',
+      '@agnes/daemon-surfaces',
+      '@agnes/distribution',
+      '@agnes/e2e-web',
       '@agnes/error-sanitization',
       '@agnes/extension-api',
+      '@agnes/git-worktree-contract',
       '@agnes/guards',
+      '@agnes/history-index',
       '@agnes/host',
-      '@agnes/mcp-transport-health',
-      '@agnes/mhs',
-      '@agnes/package-admin-client-node',
+      '@agnes/host-artifacts',
+      '@agnes/host-common',
+      '@agnes/host-computer-use',
+      '@agnes/host-extensions',
+      '@agnes/host-infrastructure',
+      '@agnes/host-providers',
+      '@agnes/intelligent-ui-contract',
+      '@agnes/loop-default',
+      '@agnes/loop-jev',
+      '@agnes/memory-file',
+      '@agnes/model-adapters',
+      '@agnes/observability',
       '@agnes/package-isolation',
       '@agnes/package-manager',
       '@agnes/plugin-runtime',
+      '@agnes/plugin-streams',
       '@agnes/protocol',
       '@agnes/protocol-validation',
       '@agnes/resource-control-cli',
-      '@agnes/resource-control-client-node',
       '@agnes/resource-control-contracts',
       '@agnes/resource-control-daemon',
       '@agnes/resource-control-runtime',
@@ -45,8 +70,10 @@ describe('repo', () => {
       '@agnes/sdk',
       '@agnes/system-node',
       '@agnes/web',
-      '@agnes/web-admin-frame',
+      '@agnes/web-admin',
       '@agnes/web-client',
+      '@agnes/web-conversation',
+      '@agnes/web-foundation',
       '@agnes/web-server',
       '@agnes/web-slots',
       '@agnes/web-ui',
@@ -58,7 +85,69 @@ describe('repo', () => {
     const files = listSourceFiles(`${repoRoot()}/packages/protocol`)
     expect(files.every((f) => f.endsWith('.ts'))).toBe(true)
     expect(files.some((f) => f.split(sep).includes('gen'))).toBe(false)
+    const fixture = mkdtempSync(join(tmpdir(), 'agh-repo-scan-'))
+    try {
+      for (const file of [
+        'packages/src/main.ts',
+        'packages/src/refusal.test.ts',
+        'packages/fixtures/source.tsx',
+        'packages/src/main.mts',
+        'packages/src/main.cts',
+        'tools/build.cjs',
+        'tools/build.js',
+        'examples/plugin.jsx',
+        'packages/dist/output.ts',
+        'packages/gen/output.ts',
+        'packages/generated/output.ts',
+        'packages/node_modules/dep.ts',
+      ]) {
+        const path = join(fixture, file)
+        mkdirSync(join(path, '..'), { recursive: true })
+        writeFileSync(path, '')
+      }
+      const source = join(fixture, 'packages/src/main.ts'),
+        linked = join(fixture, 'tools/linked.ts')
+      try {
+        symlinkSync(source, linked, 'file')
+      } catch (error) {
+        if (process.platform !== 'win32' || (error as NodeJS.ErrnoException).code !== 'EPERM') throw error
+        // Unprivileged Windows can create same-volume hard links; retain every path assertion.
+        linkSync(source, linked)
+      }
+      symlinkSync(
+        join(fixture, 'packages/fixtures'),
+        join(fixture, 'tools/linked-dir'),
+        process.platform === 'win32' ? 'junction' : 'dir',
+      )
+      const tsSources = [
+        'packages/fixtures/source.tsx',
+        'packages/src/main.cts',
+        'packages/src/main.mts',
+        'packages/src/main.ts',
+        'packages/src/refusal.test.ts',
+        'tools/linked-dir/source.tsx',
+        'tools/linked.ts',
+      ]
+        .map((path) => join(fixture, path))
+        .sort()
+      expect(listSourceFiles(fixture)).toEqual(tsSources)
+      const roots = ['packages', 'tools', 'examples', 'missing'].map((dir) => join(fixture, dir))
+      expect(listSourceFiles(roots)).toEqual(tsSources)
+      expect(
+        listSourceFiles(roots, { extensions: ['.ts', '.mts', '.cts', '.tsx', '.js', '.cjs', '.jsx'] }),
+      ).toEqual(
+        [
+          ...tsSources,
+          ...['tools/build.cjs', 'tools/build.js', 'examples/plugin.jsx'].map((path) => join(fixture, path)),
+        ].sort(),
+      )
+      expect(
+        listSourceFiles(roots, {
+          excludeDirs: ['src', 'fixtures', 'linked-dir', 'dist', 'gen', 'generated', 'node_modules'],
+        }),
+      ).toEqual([join(fixture, 'tools/linked.ts')])
+    } finally {
+      rmSync(fixture, { recursive: true, force: true })
+    }
   })
 })
-
-import { sep } from 'node:path'

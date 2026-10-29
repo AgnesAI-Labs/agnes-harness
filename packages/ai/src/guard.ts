@@ -1,23 +1,31 @@
 import { type AiErrorCode, type InferenceEvent, validateAgainst } from '@agnes/protocol'
-import { ResponseMeta } from '@agnes/protocol/gen/model'
+import { ResponseMeta, Timing } from '@agnes/protocol/gen/model'
 
 type ErrorEvent = Extract<InferenceEvent, { type: 'error' }>
+const checkedTiming = (value: unknown): { timing?: Timing } =>
+  value !== undefined && validateAgainst(Timing, value).ok ? { timing: value as Timing } : {}
 
 /**
- * Whether a failure of each kind may be repeated. Ten of the eleven are decided here because they
+ * Whether a failure of each kind may be repeated. Eight of the eleven are decided here because they
  * are properties of the failure and not of the moment: an unauthenticated route is unauthenticated
  * on the second attempt too, and a model that does not exist will not exist by the third.
  *
- * `TRANSPORT` is the exception, and the value says so rather than picking a side: whether a
- * transport failure may be repeated depends on which one it was - a 503 may, a refused connection to
- * an endpoint nobody declared may not - and the adapter that saw it is the only layer that knows.
+ * `TRANSPORT`, `RATE_LIMIT` and `TIMEOUT` are the exceptions, and the value says so rather than
+ * picking a side. They may be repeated by default - a 503 may, a rate limit lifts - but whether they
+ * may be repeated *again* depends on what the adapter already did: one that has asked as often as it
+ * will hands its caller a final failure, and a caller that asked a second time over would double the
+ * wait and the load. The adapter that saw it is the only layer that knows.
  */
-export const RETRYABLE: Record<Exclude<AiErrorCode, 'TRANSPORT'>, boolean> & { TRANSPORT: 'adapter' } = {
+export const RETRYABLE: Record<Exclude<AiErrorCode, 'TRANSPORT' | 'RATE_LIMIT' | 'TIMEOUT'>, boolean> & {
+  TRANSPORT: 'adapter'
+  RATE_LIMIT: 'adapter'
+  TIMEOUT: 'adapter'
+} = {
   AUTH: false,
-  RATE_LIMIT: true,
+  RATE_LIMIT: 'adapter',
   QUOTA: false,
   OVERFLOW: false,
-  TIMEOUT: true,
+  TIMEOUT: 'adapter',
   NO_MODEL: false,
   NO_ADAPTER: false,
   FORMAT: false,
@@ -57,6 +65,7 @@ export function normalizeError(e: ErrorEvent): ErrorEvent {
   if (retryable && e.retryAfterMs !== undefined) out.retryAfterMs = e.retryAfterMs
   if (e.requestId) out.requestId = e.requestId
   Object.assign(out, checkedResponse(e.response))
+  Object.assign(out, checkedTiming(e.timing))
   return out
 }
 
@@ -129,7 +138,10 @@ export async function* guardSequence(source: AsyncIterable<InferenceEvent>): Asy
         // A finished turn with no usage is a turn nobody can account for. It is reported as a
         // failure rather than passed on, because a caller that wrote it as a success would have a
         // completed turn and no cost row for it.
-        yield seenUsage && !pendingFailure ? ev : fail(pendingFailure ?? 'done without usage')
+        const { timing, ...done } = ev
+        yield seenUsage && !pendingFailure
+          ? { ...done, ...checkedTiming(timing) }
+          : fail(pendingFailure ?? 'done without usage')
         continue
       }
       if (ev.type === 'usage') {

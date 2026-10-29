@@ -8,9 +8,9 @@ import type {
   TextContent,
   Tool,
   ToolResultMessage,
-  TSchema,
   UserMessage,
 } from '@earendil-works/pi-ai'
+import { toolParameters } from './tool-parameters.js'
 
 type Blocks = Array<TextContent | ImageContent>
 
@@ -21,11 +21,7 @@ type Blocks = Array<TextContent | ImageContent>
  */
 function contentOf(blocks: RequestMessage extends { content: infer C } ? C : never): Blocks {
   return blocks.map((b) => {
-    if (b.type === 'image') {
-      if (!('data' in b))
-        throw new Error('image bytes were omitted from this request; resolve them before inference')
-      return { type: 'image', data: b.data, mimeType: b.mimeType }
-    }
+    if (b.type === 'image') return { type: 'image', data: b.data, mimeType: b.mimeType }
     if (b.type === 'resource_link') return { type: 'text', text: `${b.name ?? ''} ${b.uri}`.trim() }
     if (b.type === 'file')
       throw new Error('pi-ai has no native file input; resolve session attachments before inference')
@@ -91,9 +87,8 @@ function toMessage(m: RequestMessage, req: RequestBody, dropThinking: boolean): 
 }
 
 /**
- * The request, as the wire library expects to receive it. Pure and content-preserving: nothing is
- * summarised, reordered or dropped, because the stamp already committed to what would be sent and
- * anything this function invented would make that commitment false.
+ * The request, as the wire library expects to receive it. Message content is neither summarised,
+ * reordered nor dropped. Tool schemas inline local root references for provider compatibility.
  */
 export function toContext(
   req: RequestBody,
@@ -102,9 +97,7 @@ export function toContext(
   const tools: Tool[] = req.tools.map((t) => ({
     name: t.name,
     description: t.description,
-    // The disclosed schema goes over exactly as it was disclosed. pi types it as a TypeBox schema;
-    // ours is plain JSON Schema, which is the same document without the compile-time brand.
-    parameters: t.parameters as unknown as TSchema,
+    parameters: toolParameters(t.name, t.parameters),
   }))
   return {
     context: {

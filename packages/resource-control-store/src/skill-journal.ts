@@ -9,7 +9,8 @@ import {
   type TrustState,
   validateResourceControlData,
 } from '@agnes/protocol'
-import { renameWriteThrough } from '@agnes/system-node'
+import { renameWriteThrough, renameWriteThroughSync } from '@agnes/system-node'
+import type { ResourceEffectAdmission } from './permissions.js'
 import { assertResourceProfile, type ResourceProfileScope } from './profile-scope.js'
 
 const windows = process.platform === 'win32' // guards-allow-platform: serialize Windows read handles and retry file replacement.
@@ -22,6 +23,8 @@ export type ResourceOperationRecord = Readonly<{
   cancelRequested?: boolean
   workspaceId?: string
   reinstall?: Readonly<{ resourceId: string; expectedRevision: string }>
+  /** A transient automatic lease must be supplied again; recovery cannot recreate it. */
+  requiresAdmission?: true
 }>
 export type SkillJournal = Readonly<{
   version: 4
@@ -113,13 +116,14 @@ function decode(value: unknown): SkillJournal {
   const actualRows = actual as Record<string, unknown>
   const operationRows = operations as unknown[]
   if (!discoveredRows.every((entry) => validateResourceControlData('SkillDescriptor', entry).ok)) bad()
-  const ids = new Set((discoveredRows as SkillDescriptor[]).map((entry) => entry.resourceId))
+  const byId = new Map((discoveredRows as SkillDescriptor[]).map((entry) => [entry.resourceId, entry]))
+  const ids = new Set(byId.keys())
   if (ids.size !== discoveredRows.length) bad()
   if (Object.keys(capabilityRows).length !== ids.size) bad()
   for (const [id, value] of Object.entries(capabilityRows))
     if (!ids.has(id) || !revisionPattern.test(String(value))) bad()
   for (const [id, decision] of Object.entries(trustRows)) {
-    const descriptor = (discoveredRows as SkillDescriptor[]).find((item) => item.resourceId === id)
+    const descriptor = byId.get(id)
     if (
       !ids.has(id) ||
       !descriptor ||
@@ -145,7 +149,15 @@ function decode(value: unknown): SkillJournal {
   for (const row of operationRows) {
     if (
       !plain(row) ||
-      !own(row, ['operation', 'owner', 'command', 'cancelRequested', 'workspaceId', 'reinstall']) ||
+      !own(row, [
+        'operation',
+        'owner',
+        'command',
+        'cancelRequested',
+        'workspaceId',
+        'reinstall',
+        'requiresAdmission',
+      ]) ||
       !validateResourceControlData('ResourceOperation', row.operation).ok ||
       !plain(row.owner) ||
       !own(row.owner, ['principalId', 'clientId']) ||
@@ -157,6 +169,7 @@ function decode(value: unknown): SkillJournal {
       typeof row.command.commandId !== 'string' ||
       !revisionPattern.test(String(row.command.payloadHash)) ||
       (row.cancelRequested !== undefined && typeof row.cancelRequested !== 'boolean') ||
+      (row.requiresAdmission !== undefined && row.requiresAdmission !== true) ||
       (row.workspaceId !== undefined && !revisionPattern.test(String(row.workspaceId))) ||
       (row.reinstall !== undefined &&
         (!plain(row.reinstall) ||
@@ -205,7 +218,11 @@ export class SkillJournalStore {
       return bad()
     }
   }
-  private async write(profile: string, journal: SkillJournal): Promise<void> {
+  private async write(
+    profile: string,
+    journal: SkillJournal,
+    admission?: ResourceEffectAdmission,
+  ): Promise<void> {
     const next = decode(journal) // validation precedes every write
     await mkdir(this.root, { recursive: true, mode: 0o700 })
     const destination = this.path(profile)
@@ -217,8 +234,13 @@ export class SkillJournalStore {
       await handle.sync()
       await handle.close()
       handle = undefined
+      if (admission) {
+        await admission.verify()
+        admission.assertActive()
+      }
       // guards-allow-platform: Windows readers can briefly deny replacement of the journal.
-      if (windows) await renameWriteThrough(temporary, destination)
+      if (admission) renameWriteThroughSync(temporary, destination)
+      else if (windows) await renameWriteThrough(temporary, destination)
       else await rename(temporary, destination)
     } catch (error) {
       await handle?.close().catch(() => undefined)
@@ -231,10 +253,20 @@ export class SkillJournalStore {
     fn: (
       current: SkillJournal,
     ) => Promise<{ next: SkillJournal; result: T }> | { next: SkillJournal; result: T },
+    admission?: ResourceEffectAdmission,
   ): Promise<T> {
     return this.serialize(profile, async () => {
-      const out = await fn(await this.load(profile))
-      await this.write(profile, out.next)
+      const current = await this.load(profile)
+      if (admission) {
+        await admission.verify()
+        admission.assertActive()
+      }
+      const out = await fn(current)
+      if (admission) {
+        await admission.verify()
+        admission.assertActive()
+      }
+      await this.write(profile, out.next, admission)
       return out.result
     })
   }

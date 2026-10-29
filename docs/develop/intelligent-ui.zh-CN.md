@@ -1,0 +1,427 @@
+# Intelligent UI 合同
+
+[English](intelligent-ui.md) | 简体中文
+
+[架构](architecture.zh-CN.md) · [插件](plugins.zh-CN.md) · [前端](frontend.zh-CN.md) · [会话与恢复](../guide/sessions.zh-CN.md) · [Web 渲染器](intelligent-ui-web.zh-CN.md) · [UI 数据源](ui-data-source.zh-CN.md)
+
+本文定义预设与已审阅自定义组件的 surface 合同。官方后端插件、已认证 App Server 方法与通用 deferred 执行桥已实现该合同；下文描述客户端渲染与财务试点。可用性仍需仓库统一验证。
+
+## 结构化系统输入
+
+终态动作通过平台写入的 `system` 通知投递，来源为 `agnes/intelligent-ui`、类型为
+`action-result`。Loop 读取 `input.system.data`：UI 回执、已准入 invocation 与 result/error，
+成功的 `ui_submit` 还包含 `submitted`。Loop 只需匹配业务 surface 和工具；Host 保证来源，
+不再解析文本前缀或反查延迟队列。普通 prompt/submit payload 不能写入该字段；数据在模型策略中仍为不可信内容。
+
+Core 为模型统一渲染 `system.summary` 和紧凑数据。Web 根据 `origin`/`system` 显示状态行与可展开的
+完整数据；UI 本地化元数据仅存在于 `system.presentation`。其他 Host 生产者共用这一通道，
+包括类型为 `invocation-queued` 的延迟调用唤醒。服务输入端口接受
+`deliver(key, { type, data, summary, presentation? }, signal)`，Host 盖章 owner 来源。
+
+## 归属与范围
+
+官方插件 `agnes/intelligent-ui` 位于 `packages/base/extensions/intelligent-ui`，负责 `ui_render`、`ui_update`、`ui_close`、扩展事实和可重放投影。Protocol 负责声明；Host 与 daemon 适配器绑定已认证的会话、actor、任务/通道以及会话锁定的插件 generation。Core 负责结构化输入持久化与模型渲染。客户端展示后台事实并提交请求；可点击的按钮或模型文字都不构成权限。
+
+默认双位置 surface 在对话中显示摘要，在工作台中显示完整界面。单位置 surface 遵循对应的 `placement` 字段。展开卡片打开同一个 `(sessionId, surfaceId, revision)` 的面板。两处共享动作回执和草稿；展开只改变展示状态，不产生第二个 surface 或第二次执行。`placement.preferred` 只是布局提示，不能隐藏其中一个位置。
+
+第一阶段支持表单、表格、仅包含数据的图表、按钮组、纯文本、状态、详情卡、分页、步骤、进度和图像。日期与日期时间是表单字段格式，不是单独的组件。没有生成 HTML、JavaScript、表达式求值器、远程组件加载器或任意 CSS。外部 UI 依赖留在 `packages/web-ui`，客户端保持其主题、无障碍、CSP 和皮肤钩子。业务插件提供的标签属于内容；渲染器控件与拒绝提示提供英文及简体中文目录、键盘操作、状态朗读和稳定 test id。
+
+要求在会话/工作台界面展示表格、图表或表单时使用 `ui_render`；标准预设直接提供其 schema。要求创建文件时使用文件工具，再通过 `present` 呈现已保存的交付物。仅展示界面不需要生成 HTML。官方工具指引明确这一区分，不授予未提供的工具或执行权限。
+
+## Schema 与绑定
+
+声明源为 [intelligent-ui.json](../../packages/protocol/schema/intelligent-ui.json)；[生成类型](../../packages/protocol/gen/ts/intelligent-ui.ts) 从 `@agnes/protocol/gen/intelligent-ui` 或根类型导出使用。修改声明时仅运行现有 protocol 生成器，不手改生成类型。该 Schema 与描述已部署应用产物的 `surface.json` 独立。
+
+`UiSurface` 是禁止未知字段的对象，必填 `id`、`revision`、`title`、`placement`、`components[]`、`data{}`、`actions[]`。Surface id 在会话内唯一，关闭后不能复用，初始 revision 为 1。组件和动作 id 分别在各自列表内唯一。数据键与组件引用只在当前 surface 中解析。后台同时验证 JSON Schema 形状和这些关联。
+
+| 组件 `kind` | 除 `id`、`kind` 外的必填字段 | 行为 |
+| --- | --- | --- |
+| `form` | `dataKey`、`schema` | 初始值来自 `data[dataKey]`；草稿通过 `input[component.id]` 提交。可选 `actionIds` 指定提交按钮。 |
+| `table` | `dataKey`、`rowKey`、`columns`、`selection` | 行为对象。`rowKey` 对应唯一非空字符串，最长 128 字符。选择模式为 `none`、`single`、`multiple`；可选 `rowActionIds` 引用声明的动作。 |
+| `chart` | `dataKey`、`chartType`、`categoryKey`、`series` | `bar`、`line`、`pie`；数据为对象数组，分类为字符串，序列为有限数值。饼图仅有一个序列且值非负。无可执行配置。 |
+| `button-group` | `actionIds` | 按钮引用 surface 的动作列表。 |
+| `text` | `dataKey` | 纯字符串，按文本渲染。 |
+| `status` | `dataKey` | 纯字符串；处理/审批状态来自回执，不能由该业务标签决定。 |
+| `detail-card` | `dataKey`、`fields` | `data[dataKey]` 是一个对象。每个字段复用列（`key`、`label`、可选 `format`）并且必须存在。可选 `statusKey` 与 `secondaryKey` 为非空字符串，最长分别为 256 与 1,024 字符。 |
+| `tabs` | `tabs` | 把同一 surface 的其他组件分组。每个分页有 `id`、`label` 与 `componentIds`。被引用的组件必须存在，每个组件最多放入一个分页，分页内不能再放分页。 |
+| `steps` | `dataKey` | 有序数组 `{id, label, state, description?}`。`state` 为 `pending`、`active`、`done` 或 `error`。 |
+| `progress` | `dataKey` | `{label, value, total}`。`value` 与 `total` 为有限数字，`total` 大于 0，`value` 从 0 到 `total`。百分比只在展示时计算。 |
+| `image` | `dataKey`、`alt` | `{source}` 为工件 `{kind:"artifact", sha256, size, mime}`、`agnes-upload://` 附件，或 png/jpeg data URL。拒绝任意远程 URL。替代文本必填。 |
+
+所有组件均可带 `title`。列包含 `key`、`label` 和可选 `format`（`text`、`number`、`currency`、`date`、`status`）；格式只影响展示，不改变值、不推断货币单位。图表序列包含 `key`、`label`。字面量数据必须存在并符合组件形状。非法的字面量行、缺失字段、重复行 id、未声明的组件类型拒绝整个 render/update。`$source` 绑定由 [UI 数据源](#ui-数据源) 解析：数据源结果形状不符时只降级该组件，surface 的其余部分继续展示。
+
+表单复用[现有 Schema 渲染器](../../packages/web-ui/src/plugin-schema-fields.tsx)与[模型](../../packages/web-ui/src/plugin-schema-model.ts)：`UiJsonSchema` 为布尔值或 JSON Schema 对象；本地 `$ref`、对象/数组/变体/枚举/标量控件、无损 JSON 回退保持既有语义。`format` 为 `"date"` 或 `"date-time"` 的字符串属性是日期输入。`date` 为真实的 `YYYY-MM-DD`。`date-time` 在该日期后加时间和 `Z` 或数字偏移；闰秒只允许 `23:59:60`。空字符串或缺失值仍是未完成草稿。Web 控件按 UTC 时钟显示 `date-time`，并写回 `YYYY-MM-DDTHH:mm:00Z`。展示递归阈值仍为 6，与后台载荷限制独立。无法展示的断言回退到 JSON 编辑器，不展示会误导人的部分表单。后台编译完整 Schema，校验提交值，不做类型转换、不丢弃未知属性。不进行网络 `$ref` 解析。秘密字段不提供权限：surface 不得携带原始凭据；业务凭据字段只能使用现有凭据引用合同。
+
+`UiAction` 必填 `id`、`label`、`tool`、`argsTemplate`、`paramsSchema`；可选 `confirm` 是业务确认提示，`style` 为 `primary`、`secondary`、`danger`。目标工具必须已声明并在会话锁定的组合中可见。标签和模板不能选择其他工具、工作区、会话、actor、通道或权限。改变动作目标必须生成新 surface revision。
+
+`argsTemplate` 将工具顶层参数名映射到以下二者之一：
+
+- `{ "literal": <JSON 值> }`：固定数据；
+- `{ "from": "data" | "input" | "row" | "selection", "key": "...", "pointer": "..." }`：值绑定。`pointer` 默认空 JSON Pointer。
+
+`data` 的键标识已提交的 surface 数据；`input` 的键标识表单组件 id；`row` 的键标识提交行上下文中的表格组件；`selection` 的键标识表格，解析结果是后台按展示顺序解析的行对象数组。当该数据键是 `$source` 时，`data`、`row` 或 `selection` 绑定必须使用非空 pointer，并且只解析为一个标量，例如行 id 或一个字段。空 pointer、对象或数组为 `UI_INVALID`。字面参数，以及模型写入数据上的绑定，保持提交的值。客户端只发送行 id，不发送具有权威性的行对象。后台从接纳的 revision 解析行，检查成员、选择 id 唯一性与选择模式；在不匹配的表格动作上下文中使用 row/selection 绑定会被拒绝。表格动作可以使用 selection；行内动作还可以使用 row。表单草稿按其表单 Schema 校验；展开后的参数必须同时符合 `paramsSchema` 与注册工具的参数 Schema。缺失键、Pointer 或非法 Pointer 转义均为错误。Pointer 只访问自身属性，禁止 `__proto__`、`prototype`、`constructor` 路径段，不执行代码、不做字符串插值。
+
+render/update 在发布前通过可纠正的 `UI_INVALID` 拒绝未知输入键和不匹配的工具参数名。input 键必须是 form 的**组件 ID**，不能是 `dataKey`，且表单必须声明该动作。提交时错误会指出动作、参数、缺失键和可用组件 ID。例如表单 `{id:"fields",kind:"form",dataKey:"draft",schema:{type:"object",properties:{name:{type:"string"}}},actionIds:["submit"]}` 配合 `data:{draft:{}}`，`ui_submit` 动作使用 `argsTemplate:{surfaceId:{literal:"contact"},answers:{from:"input",key:"fields"}}`；`paramsSchema` 也应声明 `surfaceId` 和 `answers`。
+
+### 大小限制
+
+Schema 声明结构限制并导出 `X_AGNES_UI_LIMITS`；后台与渲染器还执行语义/字节限制。字节数以持久化前 UTF-8 编码的 JSON 计算。
+
+| 项目 | 上限 |
+| --- | --- |
+| 单个 surface / 单个动作请求或展开后的参数对象 | 32,768 / 16,384 字节 |
+| 单个扩展事实 / 整体投影状态及视图 | 65,536 / 262,144 字节；保持既有归属模块更严格的限制 |
+| 组件 / 动作 / 数据键 | 每 surface 32 / 32 / 64 |
+| Id/数据键 / 标题/标签 / 确认提示 | 64 / 256 / 1,024 字符；工具名 128 |
+| 列 / 图表序列 | 32 / 8 |
+| 表格行 / 图表数据点 | 每组件 1,000 / 1,000 |
+| 数据源绑定 | 每 surface 8 个 |
+| 单个数据源结果 / 单次查询 | 65,536 字节 / 2,000 毫秒 |
+| 详情字段 | 32 |
+| 分页 / 单个分页内的组件 | 8 / 16；嵌套深度 1；每个组件最多放置一次 |
+| 步骤 | 32 |
+| 图像替代文本 | 1,024 字符 |
+| 图像 data URL | 16,384 字节；仅 `image/png` 或 `image/jpeg` |
+| 图像工件或附件 | 33,554,432 字节；png 或 jpeg；不允许远程 URL |
+| JSON / Schema 嵌套深度 | 16 / 16；拒绝不受控外部引用 |
+| 未关闭 surface / 待处理命令 | 每会话 16 / 8；每 surface 最多一个待处理命令 |
+| 恢复分页 | 16 个 surface、64 个回执；响应合计不超过 262,144 字节 |
+| 接纳 | 每已认证 actor/会话在滚动一分钟内最多 30 个新 command id |
+
+写入前校验整体投影容量，不能只校验单个 surface。render/update 超出容量时拒绝操作并保留前一个 revision。读取分页可以减少条目以满足字节限制。即使移出有界投影缓存，命令身份与关闭 surface 的墓碑仍保留在 ledger 中。重启后从回执事实重建近期接纳窗口；并发接纳串行化。同一命令的重试不消耗新的命令额度。过载返回现有 `OVERLOADED` RPC 拒绝和重试提示，不创建业务执行。
+
+### 财务 surface 示例
+
+以下是完整 surface 值。金额保持精确的整数美元分，展示标签说明单位。
+
+```json
+{
+  "id": "finance-review", "revision": 1, "title": "Reconciliation review (USD cents)",
+  "placement": { "inline": true, "workbench": true, "preferred": "workbench" },
+  "components": [
+    { "id": "differences", "kind": "table", "dataKey": "differences", "rowKey": "id", "columns": [{ "key": "id", "label": "Transaction" }, { "key": "amountCents", "label": "Difference (USD cents)", "format": "number" }, { "key": "status", "label": "Status", "format": "status" }], "selection": "multiple" },
+    { "id": "amounts", "kind": "chart", "dataKey": "differences", "chartType": "bar", "categoryKey": "id", "series": [{ "key": "amountCents", "label": "Difference (USD cents)" }] },
+    { "id": "adjustment", "kind": "form", "dataKey": "draft", "schema": { "type": "object", "additionalProperties": false, "required": ["proposals"], "properties": { "proposals": { "type": "array", "maxItems": 1000, "items": { "type": "object", "additionalProperties": false, "required": ["id", "amountCents", "reason"], "properties": { "id": { "type": "string" }, "amountCents": { "type": "integer" }, "reason": { "type": "string" } } } } } }, "actionIds": ["confirm"] },
+    { "id": "buttons", "kind": "button-group", "actionIds": ["confirm"] }
+  ],
+  "data": {
+    "differences": [{ "id": "txn-1", "amountCents": 250, "status": "needs-review", "reason": "amount-mismatch" }],
+    "draft": { "proposals": [{ "id": "txn-1", "amountCents": 250, "reason": "amount-mismatch" }] }
+  },
+  "actions": [
+    { "id": "confirm", "label": "确认调整", "tool": "fde_finance_approve", "argsTemplate": { "proposals": { "from": "input", "key": "adjustment", "pointer": "/proposals" } }, "paramsSchema": { "type": "object", "required": ["proposals"], "additionalProperties": false, "properties": { "proposals": { "type": "array" } } }, "confirm": "Confirm these simulated adjustments? Nothing is posted.", "style": "primary" }
+  ]
+}
+```
+
+行内动作隐含只选择该行。后台根据展示表格解析行 id。消费选择行的业务工具必须声明行的实际形状，或显式映射为提案；不能剥掉展示字段来绕过工具校验。示例将表单的提案数组绑定到现有工具。上面的 JSON 是字面量，也是 `rows` 数据源解析后的行形状。财务试点在 `differences` 上保存绑定，见 [UI 数据源](#ui-数据源)。
+
+### 预设目录示例
+
+详情卡、步骤、进度、图像和分页都只携带数据。下面的百分比不属于 surface；渲染器和文本回退只在展示时计算。图像来源是已授权工件身份，不是远程 URL。
+
+```json
+{
+  "id": "case", "revision": 1, "title": "Case review",
+  "placement": { "inline": true, "workbench": true },
+  "components": [
+    { "id": "card", "kind": "detail-card", "title": "Record", "dataKey": "record", "fields": [{ "key": "name", "label": "Name" }, { "key": "amount", "label": "Amount", "format": "currency" }], "statusKey": "status", "secondaryKey": "note" },
+    { "id": "flow", "kind": "steps", "dataKey": "steps" },
+    { "id": "posted", "kind": "progress", "dataKey": "progress" },
+    { "id": "scan", "kind": "image", "dataKey": "scan", "alt": "Receipt scan" },
+    { "id": "when", "kind": "form", "dataKey": "when", "schema": { "type": "object", "properties": { "day": { "type": "string", "format": "date", "title": "Day" } } } },
+    { "id": "note", "kind": "text", "dataKey": "note" },
+    { "id": "sections", "kind": "tabs", "tabs": [{ "id": "main", "label": "Main", "componentIds": ["note"] }] }
+  ],
+  "data": {
+    "record": { "name": "Ada", "amount": 250, "status": "open", "note": "Draft" },
+    "steps": [{ "id": "review", "label": "Review", "state": "active", "description": "Check the draft" }],
+    "progress": { "label": "Posted", "value": 1, "total": 4 },
+    "scan": { "source": { "kind": "artifact", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 128, "mime": "image/png" } },
+    "when": { "day": "2026-10-10" },
+    "note": "Inside the tab"
+  },
+  "actions": []
+}
+```
+
+## 公开操作与执行桥接
+
+`ui_render`、`ui_update` 与 `ui_close` 在官方预设中直接加载。render/update 的描述包含每种预设组件的数据契约与紧凑示例，包括 steps 的 `{id,label,state}` 与 progress 的 `{label,value,total}`。值放在 `surface.data[component.dataKey]`；按钮组与 tabs 没有数据值。`ui_submit` 保留为内部界面动作目标，不进入模型工具 schema 或发现目录。
+
+三个 surface 工具的确定性输入验证发生在读取状态、解析 source 或写入 ledger 之前。拒绝输入时返回 `isError`，包含 `UI_INVALID`、`effect: "none"` 和有界 issues（JSON 路径与期望形状），模型可以修正后重试。RPC 调用方仍收到 `INVALID_PARAMS`。状态错误、取消及持久化失败继续走原有错误路径。
+
+数据源 resolver 明确拒绝 render/update 时，工具返回错误 ToolResult，包含对应的 `UI_SOURCE_*`（或 `UI_STALE`）及 `published: false`，保留原 surface revision。数据源读取和审计可能已经执行，因此不声明 `effect: "none"`。RPC 调用方仍收到 `SEMANTIC_REJECTED`；resolver 的未知异常及持久化失败继续传播。
+
+| 入口 | 合同 |
+| --- | --- |
+| `ui_render(UiRenderParams)` | 创建 revision 1；后台绑定归属插件/generation、任务和通道。同一普通工具 invocation 重入时使用已有回执，不重复 render。 |
+| `ui_update(UiUpdateParams)` | 整体替换，不采用 JSON Patch。`surfaceId` 必须等于 `surface.id`；expected revision 必须是当前版本，下一版本严格为当前 + 1。归属/任务不可改变。 |
+| `ui_close(UiCloseParams)` | 按 expected revision 关闭，保留最终 surface 和墓碑。revision 不变；再次关闭相同 revision 为无操作。不能重新打开或复用 id。 |
+| `_agnes/v1/ui.action(UiActionParams)` | 已认证提交；返回持久 `UiActionReceipt`，可以是 `received` 或待审批而非终态。不接受调用方指定工具或授权。 |
+| `_agnes/v1/ui.read(UiReadParams)` | 已认证恢复读取；可选 surface/command 筛选、不透明 cursor 和 limit。返回 `UiReadResult`，包含 ledger 水位和有界 surface/回执分页。 |
+| `_agnes/v1/ui.refresh(UiRefreshParams)` | 对一个仍打开的 surface 做已认证重查。返回 `UiSurfaceRecord`。revision 不变，不写 surface 事实。见 [UI 数据源](#ui-数据源)。 |
+
+恢复读取仅为仍标记为 `received` 的持久动作唤醒既有 runner。空页或仅含终态回执的页面不启动 prompt 活动，也不占用空闲会话。
+
+以上方法是已注册的 App Server 合同；SDK 会话提供 `uiAction()`、`uiRead()` 与 `uiRefresh()`。所有读取/写入前检查会话归属。未认证或跨会话调用使用既有认证/能力 RPC 错误，不泄露 surface 或历史命令结果。格式错误的请求使用 `INVALID_PARAMS`；只有形状正确且绑定会话的命令才能进入动作状态机。归属插件由工具贡献确定，不取自模型提供的 surface 数据。Surface 归属该会话持续中的任务；单纯开启新 turn 不使其失效。后台任务完成/退役时通过本合同关闭其 surface。
+
+Service 不提供任意工具调度入口。公开[延后工具调用合同](deferred-invocations.zh-CN.md)是唯一的通用执行桥接，可供 UI、webhook、schedule 使用。Host 将持久队列绑定到会话锁定的 session/lane，通过 Loop 的通用 services 读取器接入，Core 不变。默认 Loop 与财务 Loop 在安全步骤边界，通过 `LoopContext.tools.execute`、`tools.resume`、`effects.status` 通用排空；不包含 UI 专用 helper 或组件逻辑。Intelligent UI 是一个生产方：校验动作、持久化绑定、将已声明工具 invocation 入队。队列事实与生产方通知仍基于 ledger。未安装生产插件时，空队列不改变默认 Loop 调度。缺少通用排空能力的自定义 Loop 在工具派发前拒绝提交。禁止直接调用 `ToolDef.execute`、导入 Core 私有模块、依赖模型文字指令执行或消费无关 SC1 输入。
+
+UI 动作身份从已认证连接的 credential 解析，worker 内也重新绑定；调用方提供 actor 会被拒绝。接纳及重复命令恢复比较完整 actor（`id`、`org`、`role`、`deptPath`、`attrs`），仅 id 与 org 相同不满足绑定。
+
+不可变的已接纳命令绑定 surface revision、归属 generation、任务/通道、已认证 actor、动作、完整校验的参数以及稳定 invocation id。命令事实构成工作队列，从 ledger 重建；不增加数据库或 Agent 输入通道。执行时 helper 再检查绑定任务、surface 与工具目录，再沿普通 tool policy、approval、auto review、sandbox、deny-list 控制执行原工具。业务 `confirmed: true` 仅满足 `action.confirm`，不授予工具权限。存在 `received`、`pending-approval`、`executing` 动作时，update/close 返回 `UI_BUSY`，避免审批决策请求下的审阅数据改变。未解决的 `outcomeUnknown` 失败也保持该 surface 锁定，直到既有效果对账解决它。相同 surface 以不同 command id 并发提交也返回瞬时 `OVERLOADED`，不创建第二个 invocation。
+
+回执字段依状态约束：`rejected` 必须有 `refusal`，`failed` 必须有 `failure`，`pending-approval` 必须关联 invocation/决策请求，`succeeded` 必须关联持久工具结果。不适用的 failure/refusal 字段缺省。后台在结构 Schema 之外验证这些关系。`outcomeUnknown: true` 始终意味着 `retryable: false`。
+
+终态结果/拒绝只通过现有 SC1 queued-input 到达 Agent：活跃 turn 支持 steering 时使用 `next-step`，否则使用 `next-turn` 与既有空闲唤醒。结果持久化恰逢 turn 结束时仍须留在队列，供下一轮领取。队列内容包括 surface id/revision、action/command id、状态、安全摘要和 ledger/tool-result 引用。工具输出仍是不可信证据。Agent 随后可调用 `ui_update` 或 `ui_close`；执行成功本身不生成业务数据，也不增加 surface revision。这段队列输入会污染后续 turn。工具可以用可选的 `isPresentational` 声明：效果只向用户公布展示状态，没有外部副作用。默认工具策略不会仅因该污染而升级这一声明。`requiresApproval: always`、破坏性声明，以及产出该结果的业务工具，仍然要询问。官方 `ui_render`、`ui_update`、`ui_close` 声明该标志；`ui_submit` 不声明。
+
+## UI 数据源
+
+业务插件可以把某一个 `data[dataKey]` 绑到只读查询上，而不把行写进 surface。持久 surface 只保存该绑定。Host 在已认证读取时解析。字面量 `data[dataKey]` 仍然有效，并继续使用上文的校验。Kind、provider 与实例类型、结果枚举和失败码放在 `@agnes/intelligent-ui-contract`，与 `intelligentUiKind` 并列。该包只依赖 `@agnes/extension-api` 与 `@agnes/protocol`。Host 使用这份合同，不为此导入 `@agnes/base`。该 kind 是它自己的 token。本节的短索引是 [UI 数据源](ui-data-source.zh-CN.md)。
+
+| 项 | 值 |
+| --- | --- |
+| `kind` | `ui-data-source` |
+| `cardinality` | `multi` |
+| `instanceScope` | `request`（每次查询单独 `open` / `dispose`） |
+| `scope` | `generation` |
+| `ports` | 空。数据源不能写 ledger，也不能向模型投递输入。 |
+
+每个数据源 id 注册一个 provider，例如 `finance/differences`（`^[a-z0-9-]+/[a-z0-9-]+$`，最长 128 字符）。`version` 为 semver。同一 id 的第二次注册被拒绝。`sourcePackage` 由加载器写入，作者不能改称别人的包。`multi` kind 按该 provider id 绑定。`single` kind 仍然拒绝 `providerId`。
+
+Provider 还声明封闭的 `paramsSchema`（`type: "object"` 且 `additionalProperties: false`）、`result`（`rows`、`object`、`text`、`steps`、`progress` 或 `image`）、`permission`，以及 `capabilities`（本合同只有 `refresh`）。`open(ports).query(params, signal)` 返回 JSON。Actor、session 与 generation 来自 Host 注入的描述符 capabilities，不来自查询参数。
+
+### 绑定
+
+```json
+"differences": { "$source": "finance/differences", "params": {} }
+```
+
+绑定对象恰好拥有 `$source` 与 `params` 两个自有键。`params` 最多 16 个键、4,096 字节、深度 8。其它形状仍是字面量，沿用组件校验。共享校验器只识别绑定，不在浏览器路径编译数据源 Schema。
+
+`table` 与 `chart` 要求 `rows`。`detail-card`、自定义组件和表单初值要求 `object`。`text` 与 `status` 要求 `text`。`steps`、`progress`、`image` 使用同名 result。`button-group` 与 `tabs` 不能绑定。同一个 `dataKey` 只查询一次。每个 surface 最多 8 个绑定。
+
+即使 Schema 列出这些键，`params` 里仍然拒绝：`actor`、`session`、`sessionId`、`workspace`、`workspaceRoot`、`permission`、`grant`、`role`、`generation`、`generationId`、`packageId`、`owner`、`userId`、`asUser`，以及 `__proto__`、`prototype`、`constructor`。
+
+### 解析
+
+Host 会话桥解析数据源。官方插件调用该函数并追加审计事实。它没有替其它包绑定数据源的特权。Host 绑定使用 owner `agnes/intelligent-ui`，`packageId` 等于目录中的 `sourcePackage`。
+
+| 时机 | 行为 |
+| --- | --- |
+| `ui_render` / `ui_update` | 先解析每一个绑定。第一处失败拒绝整次写入，什么都不落盘。空数组是合法数据。落盘的 surface 是绑定。 |
+| `ui.read` | 视图替换已就绪的结果，并附上 `sources[dataKey]`。一个键失败只降级该组件，兄弟组件照常渲染。持久记录仍是绑定。 |
+| `_agnes/v1/ui.refresh` | 与 `ui.read` 相同的已认证转发。重新查询，返回 `UiSurfaceRecord`，`surface.revision` 不变，不写 surface 事实。已关闭的 surface 返回 `UI_CLOSED`。`received`、`pending-approval` 或 `executing` 返回 `UI_BUSY`。 |
+| 动作执行 | 只重查该动作依赖的键：`from: "data"`，以及经组件 `dataKey` 追溯的 `from: "selection"` 或 `"row"`。这些键上的数据源被禁用或失去信任时，动作被拒绝。未被使用的数据源不阻挡动作。 |
+| 冷恢复 | 从事实恢复绑定，再按同一授权重查。失败则降级该组件。上一份行不进入视图。 |
+
+`surface.revision` 仍是作者的比较并交换。绑定数据的版本是 `resultHash`，即规范 JSON 的 SHA-256。它出现在读取视图和审计中。哈希不变时，进行中的动作仍然有效。哈希变化使依赖该数据的动作成为 `UI_STALE`，需要重新确认。客户端仍只提交行 id。执行前重查比较哈希，不用新行执行旧确认。绑定动作省略 `sources` 时为 `UI_STALE`。surface 没有绑定则忽略该字段。全部依赖键都查询之后才报告哈希不一致，因此拒绝码不会被 `UI_STALE` 盖住。数据源拒绝是 `SEMANTIC_REJECTED`，并在 `action.received` 之前抛出。`UI_STALE` 仍走现有拒绝路径，该路径会记录 `action.received`。
+
+进程内缓存键为 generation、session、actor、surface、revision、source id 与 params 哈希。最多覆盖 16 个打开的 surface。每次命中都重新检查启用与信任，检查失败则丢弃该条目。关闭、禁用、撤销、generation 变化，以及离开打开集合，都会丢弃条目。对未变化的已授权结果重复读取，不追加另一条成功事实。拒绝、写入、刷新和动作重查始终审计。
+
+每次查询最多 2,000 毫秒，到点中止。单个键的结果最多 65,536 字节，并继续适用既有的表格、图表和组件上限。超时、超限和形状不符都是错误。结果不截断。
+
+失败码只有 `UI_SOURCE_DENIED`、`UI_SOURCE_UNKNOWN`、`UI_SOURCE_INVALID`、`UI_SOURCE_TIMEOUT`、`UI_SOURCE_TOO_LARGE`、`UI_SOURCE_SHAPE` 与 `UI_SOURCE_UNAVAILABLE`。降级组件上的动作被拒绝。组件正文换成本地化的加载中、不可用或形状不符提示。提示展示失败码，不展示 provider 错误文本，也不展示数据源 id。没有数据源绑定的字面量形状错误仍然拒绝整个 surface。浏览器在渲染就绪结果之前执行既有的结构检查。
+
+文本回退对已解析的值使用 `surfaceText`。表格最多展示 20 行再加总数。仍是绑定或已经失败时，只写标题和失败码。
+
+读取和刷新绑定现有的 surface 读取者（`agnes/intelligent-ui`）。动作重查绑定已接纳的人类 actor。数据源若按这两个 actor 返回不同的行，依赖该数据的动作成为 `UI_STALE`。该拒绝保持失败关闭。
+
+表单草稿复制就绪的对象，跳过 `$source` 绑定。用户未改过的草稿会跟随同一 revision 的刷新。用户已编辑的字段保留。
+
+### 授权与审计
+
+绑定在下列条件全部成立时允许：
+
+1. 该 provider id 在会话钉住的 generation 目录中恰好出现一次。
+2. 目录中的 `sourcePackage` 仍然启用，信任决定存在，且 `capabilityHash` 等于钉住的快照。较新版本的哈希不同时，解析停留在该快照上。禁用或撤销后停止解析，即使 pin 里仍有代码。
+3. Provider 声明的 `permission` 被该信任决定覆盖。
+
+`permission` 是插件清单字段 `agnes.plugins[].capabilities.uiData` 里的能力字符串。每一项匹配 `^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$`，长度 3–128，列表最多 32 个互不相同的名称。`*` 通配不在该模式内。信任审核展示 atom `uiData:<permission>`。能力哈希覆盖该列表。解析对照密封声明检查这个精确 atom，而不是之后的 `package.json`。信任决定是唯一的授权。Surface 数据和 `params` 不携带授权字段。本合同不增加角色系统，也不增加 `audience: owner` 门闩。
+
+目录中没有该 id 时为 `UI_SOURCE_UNKNOWN`。目录条目多于一个、generation 快照多于一个、包已禁用或未信任、哈希不一致，或缺少该 atom，均为 `UI_SOURCE_DENIED`。无效绑定与有效绑定出现在同一 surface 时为 `UI_SOURCE_INVALID`。
+
+模型不能借 `params` 扩大访问。数据源按描述符上的 actor 限定查询。试点 Schema 是空对象，查询只读本包的夹具账本。
+
+审计事实写在 Intelligent UI 所有者 ledger 上，相对名为 `source.resolved`、`source.refused`、`source.refreshed`。字段为 source id、params 哈希、result 哈希、字节数、行数、耗时、generation、actor id 与失败码。其中没有参数原文、行，也没有数据源内部错误文本。刷新成功使用 `source.refreshed`。其它成功使用 `source.resolved`。任何失败使用 `source.refused`。这些事实不进入 `surfaces` 投影，也不进入折叠后的 UI 事件列表。审计追加失败时，Host 不返回未经审计的行。
+
+### 模型可见性
+
+解析后的行只走已认证的读取路径。`ui_render` 与 `ui_update` 的工具结果保留标题、组件数和链接。`details.surface` 保留绑定。以后若要给模型一份有界摘要，须经已授权的业务工具显式选择。本合同没有摘要 API。
+
+### 财务试点
+
+`examples/fde/finance-reconcile` 注册 `finance/differences`，包为 `@agnes-fde/finance-reconcile`，`result` 为 `rows`，`permission` 为 `finance.differences.read`，`capabilities` 为 `refresh`，params 为空对象。查询读取现有 CSV 夹具。行形状与上文财务示例中的差异表相同（整数美元分）。表格与金额图共用 `differences`。摘要、步骤、表单、状态和自定义差异视图保持字面量。本会话未启用该包时不会注册数据源，render 得到 `UI_SOURCE_UNKNOWN`。已注册但信任未覆盖 `finance.differences.read` 时为 `UI_SOURCE_DENIED`。示例 playbook 告诉用户账本数据源不可用，不编造行。
+
+## Ledger 事实与生命周期状态表
+
+下列插件事件使用 `x/agnes/intelligent-ui/` 命名空间，表中简写为 `ui/`。每个 surface 事实包含后台绑定的归属/任务/通道和完整验证的 surface；`surface.closed` 保留最终 revision 与原因。每个动作事实包含命令身份、actor、revision、前一事实引用和安全结果链接。接纳在会话串行边界内计算校验。`action.received` 在调度前持久化不可变原请求；绑定合法时还记录解析参数与 invocation id；绑定非法时记录拒绝，不虚构工具 invocation。若拒绝记录被中断，恢复先根据原请求补齐拒绝，不能先调度。完整工具输出保留在既有工具/效果事实中，不复制到另一份无界载荷。扩展事实解释 UI 状态；执行仍以普通 Core 授权/效果事实为权威。事实链损坏或引用结果缺失表现为恢复缺口，不能算成功。
+
+| 实体 / 转换 | 持久事实 | UI | Agent / 幂等 |
+| --- | --- | --- | --- |
+| 不存在 → open | `ui/surface.opened`（revision 1）、普通 render 工具回执 | 卡片与面板可见 | 普通 `ui_render` 结果；已有 invocation 回执复用。 |
+| Open n → updated n+1 | `ui/surface.updated`，含完整新 surface 与旧 revision | 两处替换已提交数据；旧脏草稿须重新审阅 | 普通 `ui_update` 结果；expected-revision 比较并写入。 |
+| Open n → closed | `ui/surface.closed` | 保留最终视图，禁用输入/动作 | 普通 `ui_close` 结果；重复关闭不新增事实。 |
+| 新命令 → received | `ui/action.received` | 显示已接纳/排队，冻结该 surface 提交 | 尚无业务结果；确认接纳使用该命令回执。 |
+| Received → rejected: invalid | `ui/action.rejected`（`UI_INVALID`） | 字段/动作错误，不执行 | 安全的类型化拒绝入队一次；含输入/参数/Schema 错误。 |
+| Received → rejected: stale | `ui/action.rejected`（`UI_STALE`、当前 revision） | “数据已变化，请重新确认”；读取当前数据，再次确认 | 拒绝入队一次；revision 不符绝不执行。 |
+| Received → rejected: closed | `ui/action.rejected`（`UI_CLOSED`） | 同样的重新确认提示；关闭视图保持只读 | 拒绝入队一次；closed 属于陈旧动作类，具有具体原因。 |
+| 重复传输提交 → 首个命令状态 | 相同请求不新增执行/事实；返回原命令最新持久回执，`duplicate: true` | 重新关联首个结果，包括待处理状态 | 不新增 queued input。这是重复提交处置，不是新业务动作被拒绝。 |
+| 相同 commandId、请求改变 → rejected: duplicate | 首个回执保持不变；既有命令 journal 记录冲突，不新增动作链 | `UI_COMMAND_CONFLICT`；不覆盖首个结果 | 无执行/输入；调用方应读取首个命令。 |
+| Received → rejected: unauthorized | `ui/action.rejected`（`UI_UNAUTHORIZED`）；适用时含既有 policy 拒绝 | 解释工具不可用/动作被拒 | 拒绝入队一次；无业务效果。 |
+| Received → pending-approval | 既有 `tool/call`、`decision/state`；`ui/action.pending-approval` 关联 invocation 与决策请求 | 既有审批 UI，加两处等待状态 | 无成功输入；业务确认与权限分离。 |
+| Pending-approval → rejected: unauthorized | 既有 `decision/state` 与工具拒绝；`ui/action.rejected` | 审批拒绝/取消 | 拒绝入队一次；恢复原 invocation 返回原拒绝。 |
+| Received 或 pending-approval → executing | `ui/action.executing`；既有获授权工具/效果 intent | 处理中，锁定动作 | 尚无终态输入；插件事实本身不证明授权或派发。 |
+| Executing → succeeded | 既有 `tool/result`、`effect/settled`；`ui/action.succeeded` 关联持久回执 | 成功与安全摘要；解锁 surface | 结果入队一次，Agent 继续并更新 surface。 |
+| Executing → failed | 既有工具/效果错误或恢复证据；`ui/action.failed` 含 `retryable`、`outcomeUnknown` | 错误；只允许符合条件的重试；未知结果须对账 | 失败入队一次；不乐观修改业务数据。 |
+| Failed → retried → received（新命令） | `ui/action.retried` 关联 `retryOf` 与新命令；新的 `ui/action.received` | 保留旧失败，新尝试显示排队 | 重新校验/授权；旧命令始终保留失败结果。 |
+| 终态 → 待投递 → 已投递 | 既有 SC1 enqueue/claim 事实；`ui/action.delivered` 关联队列项 | 终态显示不依赖 Agent 进度 | 稳定投递键由会话 + command id 派生；重放补投递而不重复输入。 |
+
+`retried` 是两次尝试间的边，不是原地重置或额外 `UiActionStatus`。只有普通工具路径要求审批时才进入 `pending-approval`。审批/执行拒绝与业务工具错误区分。派发前失败/取消在效果证据证明未执行时可重试；派发后的工具错误不会自动变成安全重试。
+
+### 幂等与顺序
+
+持久键为 `(sessionId, commandId)`，包括拒绝的提交；认证后、stale/closed 校验、限流与工具派发前查询。比较规范化的完整请求（不含传输 request id）；相同请求始终返回首次尝试当前回执，即使 surface 后来变化或关闭。同键不同请求属于重复冲突，不能改变首个结果。`UI_COMMAND_CONFLICT` 是类型化 `SEMANTIC_REJECTED` RPC 拒绝，不是改写首个动作回执。`UiActionReceipt.seq` 指向最新动作事实；`duplicate` 是响应元数据，不是持久业务状态。客户端重连保留 command id，仅在新的用户决定或显式安全重试时生成新 id。
+
+Render/update/close、提交接纳和执行状态转换沿会话 ledger 既有单写者顺序串行化。Received 命令在完整验证与普通工具授权通过前不具有权限。回执与调度之间失败可从 `action.received` 恢复。稳定 invocation 身份绑定接纳参数；审批恢复同一个 invocation。不能新建工具调用来消费已有决策请求。不承诺外部效果恰好一次；未知回执遵循既有效果恢复规则，在对账完成前不可重试。
+
+不同 command id 仍可能重复同一业务意图。同一 surface 仅有一个处理中动作；成功终态后 Agent 必须 update/close 以反映已处理行，业务工具必须拒绝已处理交易。传输幂等不能替代业务验证。
+
+## 恢复与降级
+
+| 情况 | 必须采取的恢复行为 |
+| --- | --- |
+| 浏览器刷新/重连 | 在一致 ledger 水位读取 surface/回执分页，然后接续该序号之后的既有会话事件；发现缺口则重新读取。两处使用同一投影。挂载卡片不能触发执行。 |
+| 未保存草稿 | 可选的会话级浏览器本地草稿，按 surface/component/revision 关联，卡片与面板共享。它不是后台处理状态。Revision 变化时丢弃或显式重新基于新数据编辑，不静默提交旧草稿。即使草稿未保存，刷新仍恢复后台已提交数据。 |
+| 待审批时刷新 | 从既有审批记录恢复原 invocation/决策请求，不能只读 UI 状态；展示既有审批控件。不自动批准、不新建决策请求。 |
+| 派发前 daemon 重启 | 重放 surface/action 事实，重建待处理工作；验证不可变绑定，通过普通 Loop helper 执行一次。 |
+| 执行中重启 | 查询既有 invocation/effect 状态。已知成功/失败补齐缺失终态 UI 事实，不重跑工具。待审批恢复原调用。缺失/不确定效果回执成为 `failed`，含 `outcomeUnknown: true`、`retryable: false` 与证据链接；既有对账机制解决后才能开始新尝试。 |
+| 结果写入与 Agent 入队之间崩溃 | 扫描尚未投递的终态事实，使用同一 SC1 去重键入队。若入队先于投递标记成功，恢复已有队列项并补标记，不产生第二次结果输入。 |
+| 工具失败与重试 | 保留旧失败；要求新 command id、`retryOf`、当前 revision/确认、已证实的重试资格与重新普通授权，串联两次尝试。 |
+| 锁定插件/Loop 缺失或投影损坏 | 遵循既有 generation/恢复的默认拒绝行为。可行时从 ledger 重建合法投影，否则展示不可用/证据缺口并禁用动作。 |
+| 不支持预设渲染的 TUI/channel | 纯文本标题、revision、状态、行/金额摘要、详情字段、步骤、进度、图像替代文本与来源身份、分页标签、动作标签，附指向既有 Web 会话 surface 面板的已认证链接。进度百分比只用于展示。图像文本不包含 data URL，也不发起远程拉取。不能创建公开 bearer 链接，不能因展示文字标签就调用工具。文字“确认”本身不是 UI 提交或审批。 |
+| 重启或刷新后的绑定数据 | 从 surface 事实恢复绑定，再重新查询。启用、信任或查询失败时降级该组件。视图不回放上一份结果。 |
+
+分页 cursor 绑定快照水位与筛选。快照期间实时事件先缓冲，再顺序应用；重连使用标准 session attach/catch-up 机制。Cursor 过期则重新读取。重建投影不新增业务事实。展示分页或缓存淘汰不能遗忘持久命令。
+
+## Trace、试点与后续迁移
+
+Fact-chain 与 trace 展示 surface id/revision 和归属、received 命令/actor、解析后的工具 invocation、审批、效果与结果、终态 UI 事实、Agent 队列输入及 Agent 下一次 surface 更新。按 ledger 序号与稳定 id 关联，不能靠相近时间猜测。缺失回执/投递/revision 链接明确展示为缺口。UI 不能将插件编写的标签/事实提升为授权决定证据。
+
+[财务对账试点](../../examples/fde/finance-reconcile/index.mjs) 保持合成源账本和精确整数分。该包在会话中启用时，差异表和柱状图的行来自 `finance/differences`。本会话未启用该包时目录中没有该源，render 以 `UI_SOURCE_UNKNOWN` 拒绝；已注册但缺少 `finance.differences.read` 时为 `UI_SOURCE_DENIED`。playbook 告诉用户账本数据源不可用，不编造行。绑定的差异表重新读取夹具。自定义差异视图保留回执状态，例如 `simulated-approved`。对账后在差异表、柱状图和调整表单旁渲染详情卡与复核步骤。“确认调整”映射到现有模拟调整工具 `fde_finance_approve`，保留其需要审批的元数据与 policy。业务工具根据已提交对账事实与选择校验提案，包括交易成员、整数分、原因、无重复 id、是否已处理。表单编辑不能悄悄覆盖已提交差异。获得权限与模拟回执后，queued result 恢复 Agent；Agent 将已处理行更新为 `simulated-approved`，保留未解决交易，明确 `posted: false`。审批拒绝/失败不能标记行已处理。通用 deferred-invocation drain 替换试点既有业务提问阶段，不再要求第二次自由文本 “Proceed”。
+
+### 已审阅的自定义组件
+
+业务插件可在 `contributes.client.intelligentComponents`，或普通插件的 `agnes.client.json` 描述符的 `client` 对象中声明命名空间 kind：`<plugin-id>/<name>@<major>`。扩展 manifest 的 namespace 是扩展 id；普通插件描述符使用包名。major 必须为正整数；不兼容的 props 合同变化需要新的 major。
+
+```json
+{
+  "client": {
+    "id": "reconciliation-diff",
+    "entry": "./reconciliation-diff.mjs",
+    "intelligentComponents": [{
+      "kind": "@agnes-fde/finance-reconcile/reconciliation-diff@1",
+      "propsSchema": { "type": "object", "required": ["rows"], "properties": { "rows": { "type": "array", "maxItems": 1000 } }, "additionalProperties": false },
+      "maxPropsBytes": 16384,
+      "fallback": "请审阅下方预设差异表。",
+      "accessibility": { "label": "对账差异", "keyboard": true }
+    }]
+  }
+}
+```
+
+模块导出 `renderers` 对象，键为声明的完整 kind。函数接收 `(mount, props, api)`，可返回清理函数或其 Promise。`@agnes/web-client` 导出 `IntelligentUiRenderer` 与 `IntelligentUiRendererApi` 类型。API 仅有 `emitAction(id)`、`readTheme()`（`light`/`dark`）和 `readLocale()`（`en`/`zh-CN`）。action id 必须同时在组件 `actionIds` 与 surface `actions` 中；宿主调用现有 surface 的确认、工具及审批路径。组件不能提交 input、row、工具名，也没有会话或服务访问接口。
+
+自定义模块沿用现有安装审阅、能力摘要、信任、不可变资源和会话 generation 名册。入口必须是自包含 ESM（不超过 262,144 字节），不允许运行时 import、slots、services 或外部样式。代码在独立 opaque-origin iframe 中运行，`sandbox="allow-scripts"` 与该文档的 CSP 禁止 fetch/网络资源、表单和嵌套 frame。宿主不将其 import 到自己的页面。渲染器只拥有自身 frame 的 mount；使用 `textContent` 展示文字，提供语义标签、键盘可操作控件、可见焦点，并在卸载时清理资源。manifest 的 keyboard 要求是作者与审阅者的责任，不等于自动无障碍认证。
+
+模型只输出数据组件：`id`、命名空间 `kind`、`dataKey`、`fallback`、`actionIds`（可选 `title`）；props 位于 `surface.data[dataKey]`。后台 `validIntelligentSurface(surface, declarations)` 从持久会话 generation 取得声明，在持久化前按本地同步 JSON Schema 校验 props，核对声明的原文 fallback，并拒绝未知或不唯一的 kind。不能替换为当前安装版本。限制：每模块最多 16 项声明；Schema 最多 16,384 字节、深度 16；props 不超过声明的上限（1–16,384 字节）；fallback 为 1–4,096 字符；继续遵守现有 surface 字节、深度与组件数量上限。Schema 不得加载远程引用或异步执行。
+
+浏览器校验服务端已验证的 surface 投影、固定模块身份、原文 fallback 和声明的 props 字节上限。完整 props Schema 编译由后台负责；工作台 CSP 不允许动态编译函数。
+
+找不到已审阅、ready、锁定版本的模块，或加载/渲染失败、加载超过 15 秒时，该组件显示声明的文本回退与本地化提示，其他组件继续工作。TUI 与 channels 从 `ui_render`/`ui_update` 工具文本得到 fallback。[财务示例](../../examples/fde/finance-reconcile/client/agnes.client.json) 使用小型对账差异组件，并保留旁边的预设差异表作为可用回退。
+
+预设 question/table 迁移与经认证的文本客户端提交见下方“问答、表格与交付物 surface”。自定义 renderer 使用相同 surface 事实和动作路径，文本客户端展示声明的 fallback。业务答案仍不代表权限授予。
+
+第二阶段已将官方问答、表格与交付物列表迁移到同一个 surface/action 模型，删除旧 inline slot 格式与答案前缀解析。没有兼容 shim 或旧数据迁移；交互路径见下文。
+
+## 实现验收
+
+扩展最近的有意义测试，覆盖状态表每项转换、规范化命令重复/冲突、非法 Schema/绑定、revision 改变、关闭 surface、归属/任务及工具缺失/不支持 Loop 拒绝、policy/approval/auto-review 拒绝、sandbox 失败、容量/限流接纳、并发命令、工具错误和安全/不安全重试、回执/投递崩溃缺口、待审批/未知效果下的重启恢复。包含 scripted-model 财务流程和共享 inline/panel 状态、刷新、重新确认的 Web spec。真实 daemon/worker 测试放在 `*.e2e.test.ts`；大 ledger/真实定时器测试放在 `*.slow.test.ts`。测试可观察的回执、事实、工具结果和 queued input，不固定内部调用次数。后台与渲染实现审阅完成后，才能声明此能力可用。
+
+Intelligent UI 是 `@agnes/intelligent-ui-contract` 的 `intelligentUiKind`：每个会话一个提供者，并钉在该会话的 generation 上。工具通过 `providers.bindOwn` 取得实例。注册仍要求插件已有的 events 授权和 `surfaces` projection 租约。Host 提供所有者账本、精确的 `ui-result:` 投递，以及业务依赖（deferred 队列、钉住的组件声明、已声明工具 schema）。用户动作和读取走会话端口：端口接纳已认证 actor，并从持久的 `action.received` 事实解析 SC1 投递。Daemon 先验证已认证会话归属，再调用同一会话端口。该服务没有执行或审批权限。SDK 会话提供 `uiAction()`／`uiRead()`。Projection 保留完整 surface、活跃 receipt，以及字节预算内最近最多 64 条终态 receipt；更早命令仍可通过 `ui.read({ commandId })` 与账本重放恢复。总 projection 预算内为 receipt 预留 64 KiB。
+
+财务 Loop 使用 version 4／codec 4，通用排空 deferred 队列，并在完成 step 的边界领取 SC1。业务校验基于已经提交的 reconciliation checkpoint；成功后先把已处理交易 ID 记录到该 checkpoint，再报告队列完成。原 invocation 可以恢复缓存回执，另一个 command 不能重复模拟相同交易。opaque invocation ID 为 surfaceId、revision、commandId 的 SHA-256 绑定，符合现有 128 字符工具 ID 上限；Surface schema 形状完全未改。Fact-chain 新增有界 `plugin-fact` 元数据节点，展示修订、deferred 状态、action 结果和 SC1 投递，只按明确 seq/id 引用连接。Trace 在 Core 之外追加有界元数据 span，标签不包含表单数据或参数。
+
+公开 Host author testkit 为本试点提供 `AuthorSession.uiAction()`／`uiRead()`；`AuthorTestOptions.packageDirs`、`presets`、`preset` 显式指定隔离夹具的官方 manifest 和业务策略预设，不读取开发者 home 或凭证。
+
+后台与渲染器复用 `@agnes/protocol/intelligent-ui` 的 surface 验证，包含表格列和图表展示语义。默认读取开放视图；按 `surfaceId` 读取仍可获得关闭后的账本证据。关闭视图不占投影容量，也不允许复用 ID。
+
+读取 cursor 经过签名，60 秒过期，并绑定水位、筛选与页大小。后续页按该水位重放，不重复首页面的有界回执。后台结果 follow-up 在 cancel 后保留为 next-turn 输入；delivery 确认持久入队，队列 claim 才消费输入。
+
+后台结果的 inbox 项使用 `origin: system` 与 `trust: untrusted`，与提交动作的人类 actor 分开记录。
+
+## 问答、表格与交付物 surface
+
+`ask_user_question` 保持模型侧参数。官方交互生产方通过普通工具调用 `ui_render`：问答使用预设 form 和声明的 `ui_submit` 收集工具，表格使用 table，交付物使用纯文本及既有 artifact 引用。收集工具核对 Host 记录的 deferred invocation 和不可变的认证 action，拒绝模型直接调用。成功收集关闭 surface，经 SC1 投递完整答案，保留认证 actor 与 untrusted 内容。回答不授予工具权限。持久化超时只限制可选等待，不关闭表单或使晚答失效；deferred 执行在下一个安全 Loop 边界进行。
+
+文本客户端通过 `ui.read` 恢复 surface。TUI 展示编号选项，以 `ui.action` 提交表单草稿；保留展示版本，传输重试复用同一 command。复杂表单／动作使用认证 Web 链接。渠道展示相同 surface 数据与编号选项；现有回调协议不能认证 surface action，因此通过 Web 链接提交。渠道 runner 的 `outbound.webUrl` 配置为可达的 HTTP(S) Web 基础地址，不含凭据、查询或片段。链接仅含 session/surface 标识，仍需正常 Web 认证与归属校验，不携带 token 或权限授予。
+
+会话 envelope 与 Loop 事件接纳使用同一条生成规则，接受 `x/<plugin>/<name>`，包括带点名称及更多路径段。Intelligent UI projection 只解释 `x/agnes/intelligent-ui/` 下契约中的事实；每个事实仍须通过自己的内容与归属校验。生成表面的官方工具声明 `tools.invoke`，通过普通授权路径调用 `ui_render`。
+
+### 对话摘要与完整界面
+
+同时设置 `placement.inline` 与 `placement.workbench` 的 surface 在对话中显示摘要，在工作台中显示完整可操作界面。两个位置字段都是必填布尔值，且至少一个为 true。可选 `summary` 最长 1024 字符；省略时从界面数据读出一行摘要（文本、表格的最近时间与行数，或可用操作数量）。仅 inline 的界面仍在对话中完整呈现；仅 workbench 的界面在对话中显示指针，并仅在首次出现时自动打开工作台。版本更新不会重新打开工作台或抢焦点。确认、草稿、回执和工具审批仍使用同一个会话客户端。
+
+### 交付文件卡片
+
+`artifact-file` 组件的 `dataKey` 指向 `{name, description, artifact: {sha256, size, mime}}`。只接受会话产物标识，不接受路径或 URL。Web 在对话和工作台均显示文件名、描述、类型、格式化大小及预览、下载入口，复用会话/lane 授权的资源加载器，在卸载时释放资源。HTML 预览沿用已有文档清洗器，不能执行脚本或请求外部资源。不支持预览的类型以及超过现有 1 MiB 预览限制的文件仍可下载（沿用 32 MiB 下载限制）。
+
+Host 发布时会对照可信的会话/lane 登记，校验完整 SHA-256、字节大小与 MIME。`ToolContext.artifacts.put` 返回前先持久化 Core 登记，因此插件可立即将其引用传给 `ui_render` 或 `ui_update`。`present` 已自动创建文件卡片。引用校验失败不产生成功 surface 事件；`UI_ARTIFACT_NOT_FOUND`、`UI_ARTIFACT_IDENTITY_MISMATCH`、`UI_ARTIFACT_RECLAIMED` 与 `UI_ARTIFACT_UNAVAILABLE` 分别表示未登记、元数据不符、已回收与可重试的可用性故障。
+
+读取和刷新会按组件 id 附带可选 `UiSurfaceRecord.artifacts`，状态为 `available`、`not_found`、`identity_mismatch`、`reclaimed` 或 `unavailable`。这是后台对当前状态的检查，不改写 ledger、不增加授权；列表仅检查元数据，不逐文件下载正文。旧可信引用仍受支持，surface 数据不能自行授予读取权限。单个错误文件不会使整页失败；缺少状态表示未知。仅当较新展示明确失效时，才展示较早且已验证可用的文件，并显示明确提示；暂时故障和未知状态不会静默切换版本。原错误卡片仍保留在同名历史中。
+
+`UiSurface.titleKey` 为可选字段，Web 使用 Intelligent UI 语言目录解析；必填 `title` 仍供其他客户端显示。内置交付物使用 `ui.deliverables`。原有组件及持久记录继续有效。
+
+### 动作回执展示
+
+Agent 输入仍保留完整机器回执，包括已提交的值。可选 `InputPresentation` 元数据随同一个幂等输入贯穿 inbox、`UserMessage` 和用户 `UINode`；其 `kind: "ui-action"`、终态 `status`、`operation`、动作 `label` 及有界字段名列表，使 Web 无需解析回执文本即可显示本地化摘要。原始正文继续保留在执行轨迹，模型请求不变。只有后台 system/untrusted 输入承载此展示，普通 prompt RPC 不接受该字段。`AgentInputPort.deliver(key, text, signal, presentation?)` 增加可选第四参数，在服务边界校验形状，原有 actor、lane、取消及投递键授权保持不变。
+
+后台 UI 回执仍是持久待接收输入，但不会进入可编辑的发送队列；接收后在对话中显示本地化摘要。
+
+### 公开问答兼容合同与可替换呈现
+
+`UI_EVENTS` 中的持久业务事件都是公开协议：
+
+| 事件 | 必须兼容的含义 |
+| --- | --- |
+| `x/agnes/intelligent-ui/` 下的 `surface.opened`、`surface.updated`、`surface.closed` | 已记录表面的身份、版本、归属、布局和生命周期；历史读取继续有效 |
+| 同一命名空间的 `action.received`、`action.rejected`、`action.pending-approval`、`action.executing`、`action.succeeded`、`action.failed`、`action.retried`、`action.delivered` | 认证动作的命令关联、回执状态和投递；收到动作或获得批准并不代表成功 |
+| `x/agnes/interaction/requested` | 持久问题身份、工具调用、问题列表和可选 deadline |
+| 来源 `agnes/intelligent-ui`、类型 `action-result` 的已投递系统输入 | 被接纳的 `submitted.surfaceId/answers`、状态和保留认证 actor 的排队输入 |
+
+客户端 store 通知、重连提示、本地呈现选择和缓存布局是官方实现细节，不能作为答案事实。
+`source.*` 来源解析审计有单独导出的诊断合同，不授权、不完成、也不回填交互。
+
+公开合同包括 `UiSurface`、`UiSurfaceRecord`、`UiReadParams/Result`、
+`UiActionParams/Receipt`、认证后的延迟动作投递，以及问题表单标记
+`data.question.kind = "ask_user_question"`、deadline 和可选 labels。
+已有持久事件 `x/agnes/interaction/requested` 与历史会话继续可读。
+
+`@agnes/intelligent-ui-contract` 导出 `UI_ANSWER_OWNER`、`UI_SUBMIT_TOOL`、
+`UI_ANSWER_EVENTS`、`readUiAnswerFact`。历史命名空间 `x/agnes/intelligent-ui/` 和
+对应的 `ext:agnes/intelligent-ui` 来源是公开兼容身份，不是包名分派规则。
+适配器读取 `surface.opened` 的 `data.record.status/surface.id`、
+`action.received` 的 `data.record.request.commandId` 及准入后的
+`{tool:"ui_submit", args:{surfaceId,answers}}`，以及 `action.succeeded` 的
+`data.commandId`。仅收到动作不会完成问题；拒绝、失败、伪造来源和用户文字不能回填答案。
+替换服务实现须保持上述公开协议和认证来源检查；替换浏览器界面不改变协议。
+
+官方包名、DOM、本地草稿存储、布局组件及临时请求/错误文本是实现细节，不应解析它们来恢复
+答案或决定权限。官方客户端通过 `interaction` 呈现角色注册问题 dock 和回执；社区客户端
+可以使用相同 SDK 读取/动作协议及注册表替换完整体验。回答不授予执行许可。
+
+Interaction 显式声明 Intelligent UI 为可选 peer。请求先持久化；渲染器缺失或拒绝时立即
+成功返回文字降级结果，取消仍向上传播。问题投影版本 3 有界缓存 `surface.opened` 身份，
+使崩溃或渲染失败后的重试补齐确定性表单，已有持久展示事实时不重复发布。
+不引入新存储，也不迁移旧产品数据。

@@ -1,17 +1,12 @@
-import {
-  defineTool,
-  type ResolvedToolCallPolicy,
-  type ToolContext,
-  type ToolResult,
-} from '@agnes/extension-api'
-import { observe, versionOf } from '../guards/observed.js'
+import type { ToolContext, ToolResult } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
+import { failureCode, fsFailure, toolFailure } from '../guards/feedback.js'
+import { observe, UNKNOWN_VERSION, versionOf } from '../guards/observed.js'
 import { byteLength, describeFailure, parseSpillLocator, splitByBytes } from '../guards/output.js'
 import { normalizeWorkspacePath } from '../paths.js'
-import { readWorkspaceImage } from './local-image.js'
-import { saveAttachment } from './save-to.js'
+import { localImageMime, readLocalImage } from './local-image.js'
+import { saveAttachment } from './save-attachment.js'
 import { ReadParams } from './schemas.js'
-
-export { SAVE_TO_MAX_BYTES } from './save-to.js'
 
 // Ceiling on how much of a file is pulled into memory for one call. Without it a single read of a
 // large file would both hold the whole file in the process and push the whole file into the
@@ -104,16 +99,28 @@ export async function loadSpilledLines(ctx: ToolContext, path: string): Promise<
   if (ref.size > MAX_ARTIFACT_READ_BYTES)
     return {
       ok: false,
-      message: `artifact is ${ref.size} bytes, too large to read (limit ${MAX_ARTIFACT_READ_BYTES})`,
+      message: `artifact is ${ref.size} bytes, too large to read (limit ${MAX_ARTIFACT_READ_BYTES}); rerun the producer with narrower output`,
     }
   let bytes: Uint8Array
   try {
     bytes = await ctx.artifacts.get(ref)
-  } catch (e) {
-    return { ok: false, message: describeFailure(e) }
+  } catch (error) {
+    const detail = describeFailure(error)
+    const cause = detail.startsWith('artifact size mismatch:')
+      ? 'artifact size mismatch'
+      : detail.startsWith('artifact not found:')
+        ? 'artifact not found'
+        : 'artifact unavailable'
+    return {
+      ok: false,
+      message: `${cause}; use the complete locator from this session or rerun the producer with narrower output`,
+    }
   }
   if (isBinary(bytes))
-    return { ok: false, message: `binary content (${bytes.byteLength} bytes); it cannot be shown as text` }
+    return {
+      ok: false,
+      message: `binary content (${bytes.byteLength} bytes); use a format-aware tool or ask for a text export`,
+    }
   let notes = ''
   if (bytes.byteLength > MAX_READ_BYTES) {
     bytes = bytes.subarray(0, MAX_READ_BYTES)
@@ -178,9 +185,13 @@ function pageOfLines(
 export const readTool = defineTool({
   name: 'read',
   description:
-    'Read a text file with line numbers; offset and limit page through it. Also reads artifact:// truncated outputs. Read uploaded text files using session-file://message-seq/file-index; long lines wrap into paged rows. session-file://list lists saved attachments (offset/limit page entries). A workspace PNG or JPEG file (up to 20 MiB and 64 megapixels, single frame) becomes an image for the model when the model supports images; it is downscaled to the model limit, and max_edge lowers its longest edge further. Other binary files, PDF, audio and video may be unreadable. For image originals, use session-image://list, then session-image://message-seq/image-index; combine references as session-image://12/1,34/2. Originals count toward the model image limit; inspect them before claiming unseen details. Use saveTo with a session-file:// or session-image:// path to copy the original into the workspace (up to 256 MiB) so shell tools can open it; saveTo is a new relative path inside the workspace; a target that already exists is refused.',
+    'Read an actual workspace file (relative paths use the session working directory), not packaged demo fixtures, with line numbers; offset and limit page through it. Also reads artifact:// truncated outputs. Read uploaded text files using session-file://message-seq/file-index; long lines wrap into paged rows. session-file://list lists saved attachments (offset/limit page entries). Local single-frame PNG/JPEG files become model image input when vision is supported; inputs are limited to 20 MiB and 64 million pixels, and are downscaled to the active limits. Other binary files, PDF, audio and video may be unreadable. For image originals, use session-image://list, then session-image://message-seq/image-index; combine references as session-image://12/1,34/2. Originals count toward the model image limit; inspect them before claiming unseen details. Use save_to with one session original to create a new workspace file without overwriting; max_edge can lower the image size.',
   parameters: ReadParams,
   meta: {
+    paths: [
+      { arg: 'path', access: 'read', nonWorkspaceSchemes: ['artifact', 'session-file', 'session-image'] },
+      { arg: 'save_to', access: 'write' },
+    ],
     isReadOnly: true,
     isDestructive: false,
     isConcurrencySafe: true,
@@ -190,13 +201,9 @@ export const readTool = defineTool({
     deferLoading: false,
     requiresApproval: 'never',
   },
-  policyVersion: 'read-save-to-v2',
-  // A call with saveTo writes a file into the workspace, so it is classified exactly as `write` is:
-  // not read-only and destructive, so the person is asked in manual mode as for `write` (and a
-  // tainted turn or an unavailable sandbox is handled as for any writing call), and never replayed
-  // after a crash, so an interrupted copy is reported as unknown rather than run again.
-  classify: (args): ResolvedToolCallPolicy =>
-    args.saveTo === undefined
+  policyVersion: 'read-original-copy-v1',
+  classify(args) {
+    return args.save_to === undefined
       ? {
           isReadOnly: true,
           isDestructive: false,
@@ -209,13 +216,21 @@ export const readTool = defineTool({
           isDestructive: true,
           replay: 'never',
           requiresApproval: 'destructive',
-          approvalScopes: [],
-        },
+          approvalScopes: ['workspace-write'],
+        }
+  },
   async execute(args, ctx): Promise<ToolResult> {
-    if (args.saveTo !== undefined) return saveAttachment(ctx, args.path, args.saveTo)
+    if (args.save_to !== undefined) return saveAttachment(args.path, args.save_to, ctx)
     if (args.path.startsWith('session-file://')) {
+      let failure =
+        'original unavailable in this session; use session-file://list to select an available original'
       try {
-        const file = await ctx.session.readAttachment?.({ ...args, maxBytes: ctx.outputMaxBytes })
+        const file = await ctx.session.readAttachment?.({
+          path: args.path,
+          ...(args.offset === undefined ? {} : { offset: args.offset }),
+          ...(args.limit === undefined ? {} : { limit: args.limit }),
+          maxBytes: 100 * 1024 * 1024,
+        })
         if (!file) throw new Error('This attachment is unavailable in the current session.')
         const header = String.fromCharCode(...file.bytes.subarray(0, 16))
         if (
@@ -225,21 +240,27 @@ export const readTool = defineTool({
           // biome-ignore lint/suspicious/noControlCharactersInRegex: Match binary magic bytes, including mislabeled PDFs and archives.
           /^(%PDF-|PK\x03\x04|\x1f\x8b|\x89PNG|\xff\xd8|GIF8|RIFF|\xd0\xcf\x11\xe0)/u.test(header) ||
           header.slice(4, 8) === 'ftyp'
-        )
+        ) {
+          failure =
+            'unsupported binary format; use an available document-reading tool for PDF, Word or ZIP, or ask for a text export'
           throw new Error(
             'The original was uploaded, but this plain-text read tool cannot parse this binary format. For PDF, Word or ZIP, try an available document-reading tool. Native pi-ai file/audio/video input is unavailable. If no suitable tool can read it, explain the limitation; do not claim to have read it.',
           )
+        }
         const encoding =
           file.bytes[0] === 0xff && file.bytes[1] === 0xfe
             ? 'utf-16le'
             : file.bytes[0] === 0xfe && file.bytes[1] === 0xff
               ? 'utf-16be'
               : 'utf-8'
+        failure = `invalid ${encoding} text; use a format-aware tool or request a text export`
         const text = new TextDecoder(encoding, { fatal: true }).decode(file.bytes)
         if (args.path === 'session-file://list') return { content: [{ type: 'text', text }] }
         // biome-ignore lint/suspicious/noControlCharactersInRegex: Binary detection must reject embedded control bytes.
-        if (/[\u0000-\u0008\u000b\u000e-\u001f]/u.test(text))
+        if (/[\u0000-\u0008\u000b\u000e-\u001f]/u.test(text)) {
+          failure = 'binary content in decoded text; use a format-aware tool or request a text export'
           throw new Error('Binary content cannot be read as text.')
+        }
         const lines = attachmentLines(text)
         return {
           content: [
@@ -256,21 +277,34 @@ export const readTool = defineTool({
           ],
         }
       } catch (error) {
-        return {
-          content: [{ type: 'text', text: `Attachment read failed: ${describeFailure(error)}` }],
-          isError: true,
+        const code = failureCode(error, 'FS_ATTACHMENT_READ')
+        const causes: Record<string, string> = {
+          ATTACHMENT_TOO_LARGE:
+            'original exceeds the attachment read byte limit (at most 100 MiB); download through bounded client windows',
+          ATTACHMENT_HASH_MISMATCH: 'original failed integrity verification; ask the user to upload it again',
+          ATTACHMENT_UNAVAILABLE:
+            'original is unavailable; use session-file://list or ask the user to upload it again',
+          ATTACHMENT_DATA: 'original data or encoding is invalid; ask the user for a valid text export',
         }
+        return toolFailure(
+          ctx,
+          causes[code] ? code : 'FS_ATTACHMENT_READ',
+          `Attachment read failed: ${causes[code] ?? failure}.`,
+        )
       }
     }
     if (args.path.startsWith('session-image://')) {
       if (!ctx.session.readImages)
-        return { content: [{ type: 'text', text: 'Session image reloading is unavailable.' }], isError: true }
+        return toolFailure(
+          ctx,
+          'FS_IMAGE_UNAVAILABLE',
+          'Session image reloading is unavailable; ask for a supported image or use another available image tool.',
+        )
       return ctx.session.readImages(args)
     }
     if (args.path.startsWith('artifact://')) {
       const spilled = await loadSpilledLines(ctx, args.path)
-      if (!spilled.ok)
-        return { content: [{ type: 'text', text: `read failed: ${spilled.message}` }], isError: true }
+      if (!spilled.ok) return toolFailure(ctx, 'FS_ARTIFACT_READ', `read failed: ${spilled.message}`)
       // A page is already within the output limit, and it is not put back into the store: the text
       // it came from is what the model reads on from, by offset.
       return {
@@ -294,26 +328,28 @@ export const readTool = defineTool({
       // Having been told the file is not there is what a session now knows of it. Keeping an older
       // version would leave a write that creates the file refused for a change the model has seen.
       if ((e as { code?: string }).code === 'ENOENT') observe(ctx.session.key, abs, undefined)
-      return { content: [{ type: 'text', text: `read failed: ${(e as Error).message}` }], isError: true }
+      return fsFailure(ctx, 'read', args.path, e)
     }
-    if (isBinary(bytes)) {
-      // Only a file the text path refuses is looked at as an image, so text reads stay as they were.
-      const image = await readWorkspaceImage(args.path, bytes, ctx, args.max_edge)
-      if (image) return image
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `binary file (${bytes.byteLength} bytes); use shell tools to inspect it`,
-          },
-        ],
-        isError: true,
+    if (localImageMime(bytes)) {
+      if (bytes.length > MAX_READ_BYTES) {
+        try {
+          bytes = await ctx.fs.read(args.path, { offset: 0, limit: 20 * 1024 * 1024 + 1 })
+        } catch (error) {
+          return fsFailure(ctx, 'read image', args.path, error)
+        }
       }
+      return readLocalImage(bytes, args.path, ctx, args.max_edge)
     }
+    if (isBinary(bytes))
+      return toolFailure(
+        ctx,
+        'FS_BINARY',
+        `binary file (${bytes.byteLength} bytes); use shell tools or a format-aware tool to inspect it`,
+      )
     // What this session has now seen of the file, taken from the whole of what came back and before
     // the cut below, so that `write` can refuse to replace it once it has changed. A page of a file
     // counts as having read the file.
-    observe(ctx.session.key, abs, await versionOf(ctx, args.path, bytes, MAX_READ_BYTES))
+    observe(ctx.session.key, abs, (await versionOf(ctx, args.path, bytes, MAX_READ_BYTES)) ?? UNKNOWN_VERSION)
     let notes = ''
     if (bytes.byteLength > MAX_READ_BYTES) {
       bytes = bytes.subarray(0, MAX_READ_BYTES)
@@ -325,6 +361,8 @@ export const readTool = defineTool({
     if (notes !== '') text = text.slice(0, Math.max(text.lastIndexOf('\n') + 1, 0)) || text
     // A file keeps its real line numbers, so a line too long for a page is cut and says so rather
     // than wrapped into extra numbers; a shell command reaches the rest of it.
+    const revision = await ctx.fs.revision?.(args.path)
+    if (revision) notes = `[Memory revision: ${revision}]\n${notes}`
     const lines = toLines(text).map(clipLine)
     return {
       content: [

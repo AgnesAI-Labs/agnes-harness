@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   type AcpPermissionKind,
+  automaticPermissionDecision,
   fromAcpOptionKind,
   OFFERED_OPTION_KINDS,
   STOP_REASON_TABLE,
@@ -74,4 +75,86 @@ describe('codec value tables ↔ schema', () => {
     // received — so OFFERED is a proper subset.
     expect(OFFERED_OPTION_KINDS.length).toBeLessThan(kinds.length)
   })
+})
+
+// Full access is an explicit session choice; it never answers questions of fact or chosen modes.
+it.each([
+  'candidate.test',
+  'plugin.publish',
+  'memory',
+  'credential.admin',
+  'skills.install',
+  'mcp.connect',
+  'gate',
+  'tool.permission',
+])('automatically allows %s through the shared permission rule', (purpose) => {
+  const actor = { id: 'owner', org: 'local', role: 'owner', deptPath: [], attrs: {} }
+  expect(automaticPermissionDecision({ policy: 'full-access', actor }, purpose)).toEqual({
+    verdict: 'allowed-once',
+    reason: 'full-access',
+    answeredBy: { ...actor, role: 'system', attrs: { permissionPolicy: 'full-access' } },
+  })
+  for (const policy of ['workspace-write', 'read-only', 'standard', 'custom'])
+    expect(automaticPermissionDecision({ policy, actor }, purpose)).toBeUndefined()
+  for (const question of ['plan.exit', 'unknown-outcome', 'business.confirm', 'unrecognized.purpose'])
+    expect(automaticPermissionDecision({ policy: 'full-access', actor }, question)).toBeUndefined()
+  expect(
+    automaticPermissionDecision({ policy: 'full-access', actor }, 'business.confirm', ['Proceed', 'Cancel']),
+  ).toBeUndefined()
+  expect(automaticPermissionDecision(undefined, purpose)).toBeUndefined()
+})
+
+it('auto-confirms only explicit business contracts for a human using the declared response value', () => {
+  const actor = { id: 'owner', org: 'local', role: 'owner', deptPath: [], attrs: {} }
+  const presentation = {
+    'zh-CN': { title: '签署', fields: [], responseValue: '我确认。' },
+    en: { title: 'Sign', fields: [], responseValue: 'I confirm.' },
+  }
+  const options = ['rejected', 'allowed-once']
+  expect(
+    automaticPermissionDecision(
+      { policy: 'full-access', actor },
+      'business.confirm',
+      options,
+      'question',
+      presentation,
+    ),
+  ).toMatchObject({
+    verdict: 'allowed-once',
+    responseValue: 'I confirm.',
+    answeredBy: {
+      id: 'owner',
+      role: 'owner',
+      attrs: { confirmationMode: 'auto-confirmed under full access' },
+    },
+  })
+  for (const role of ['system', 'agent'])
+    expect(
+      automaticPermissionDecision(
+        { policy: 'full-access', actor: { ...actor, role } },
+        'business.confirm',
+        options,
+        'question',
+        presentation,
+      ),
+    ).toBeUndefined()
+  for (const purpose of ['ask_user', 'plan.exit', 'fact-check', 'author.question', 'unknown'])
+    expect(
+      automaticPermissionDecision(
+        { policy: 'full-access', actor },
+        purpose,
+        options,
+        'question',
+        presentation,
+      ),
+    ).toBeUndefined()
+  expect(
+    automaticPermissionDecision(
+      { policy: 'full-access', actor },
+      'business.confirm',
+      ['allowed-once', 'allowed-session', 'rejected'],
+      'question',
+      presentation,
+    ),
+  ).toBeUndefined()
 })

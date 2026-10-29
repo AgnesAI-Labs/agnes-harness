@@ -1,0 +1,169 @@
+{
+  "name": "@agnes/jev-loop",
+  "version": "0.1.2",
+  "description": "Agent loop in which TypeSafe Jev chooses each step",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=24.10"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "export": "jevLoopPlugin",
+        "id": "ext:agnes.jev/loop",
+        "inject": [
+          "providers"
+        ],
+        "runtime": "in-process",
+        "apiRange": "^5.0.0",
+        "configReload": "next-session",
+        "configSchema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "jev": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "route": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "default": "jev",
+                  "description": "Side-call route that serves the Jev model.",
+                  "x-locales": {
+                    "zh-CN": {
+                      "description": "提供 Jev 模型的旁路模型路由。"
+                    }
+                  }
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "default": "typesafe/jev-1.13-20260917",
+                  "description": "Model id on that route. Pin a dated version.",
+                  "x-locales": {
+                    "zh-CN": {
+                      "description": "该路由上的模型 ID，请固定为带日期的版本。"
+                    }
+                  }
+                },
+                "deadlineMs": {
+                  "type": "integer",
+                  "minimum": 1000,
+                  "maximum": 120000,
+                  "default": 15000
+                },
+                "maxRetries": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 3,
+                  "default": 2
+                }
+              }
+            },
+            "llmMaxAttempts": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5,
+              "default": 2
+            },
+            "thresholds": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "escalate": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "default": 0.5
+                },
+                "externalWriteMin": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "default": 0.6
+                },
+                "ambiguityGate": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 1,
+                  "default": 0.4
+                },
+                "answerProgressFloor": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 3,
+                  "default": null
+                }
+              }
+            },
+            "stepCap": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 30
+            },
+            "stateTokenBudget": {
+              "type": "integer",
+              "minimum": 4000,
+              "maximum": 30000,
+              "default": 24000
+            },
+            "requestTokenBudget": {
+              "type": "integer",
+              "minimum": 8000,
+              "maximum": 60000,
+              "default": 48000
+            }
+          }
+        },
+        "metadata": {
+          "displayName": "Jev Agent Loop",
+          "summary": "Lets TypeSafe Jev choose each step and asks the conversation model only to write, bind or review.",
+          "description": "Lets TypeSafe Jev choose each step and asks the conversation model only to write, bind or review. Needs a Jev side-call route.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "Jev 运行方式",
+              "summary": "由 TypeSafe Jev 选择每一步，只在撰写、补参数或复核时调用对话模型。",
+              "description": "由 TypeSafe Jev 选择每一步，只在撰写、补参数或复核时调用对话模型。需要配置 Jev 旁路模型路由。"
+            }
+          }
+        }
+      }
+    ],
+    "metadata": {
+      "displayName": "Jev Agent Loop",
+      "summary": "Lets TypeSafe Jev choose each step and asks the conversation model only to write, bind or review.",
+      "description": "Lets TypeSafe Jev choose each step and asks the conversation model only to write, bind or review. Needs a Jev side-call route.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "Jev 运行方式",
+          "summary": "由 TypeSafe Jev 选择每一步，只在撰写、补参数或复核时调用对话模型。",
+          "description": "由 TypeSafe Jev 选择每一步，只在撰写、补参数或复核时调用对话模型。需要配置 Jev 旁路模型路由。"
+        }
+      }
+    },
+    "provides": [
+      "loop"
+    ],
+    "hostProvidedExternals": {
+      "@agnes/extension-api": "^5.0.0"
+    }
+  }
+}

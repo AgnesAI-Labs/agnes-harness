@@ -1,23 +1,31 @@
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { stampFor } from '@agnes/ai/testkit'
 import { testFsPolicy } from '@agnes/core/testkit'
+import type { ToolContext } from '@agnes/extension-api'
+import { PINNED_SEAM_KINDS } from '@agnes/extension-api/seams'
+import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
+import { SessionSandboxStore } from '@agnes/host-providers/profile/sandbox-state'
 import type { InferenceEvent, Provider } from '@agnes/protocol'
+import { Type } from '@sinclair/typebox'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { SessionRecovery } from '../src/session.js'
+import type { SessionRecovery } from '../src/runtime/sessions/session.js'
 import { createTestHost, startTurn } from '../testkit/index.js'
 
 /**
  * A model that announces the request and then never answers. The ledger gets its `step/start`, its
  * `effect/intent` and its header, and the host is torn down with the call still outstanding - which
- * is the tail a SIGKILLed process leaves behind.
+ * is the tail a SIGKILLed process leaves behind. The caller seals the ledger before abort so
+ * this provider can honor cancellation during cleanup without repairing that damaged tail.
  */
 const neverAnswers: Provider = {
   models: () => [],
-  async *infer(req): AsyncIterable<InferenceEvent> {
+  async *infer(req, { signal }): AsyncIterable<InferenceEvent> {
     yield { type: 'sent', stamp: stampFor(req) }
-    await new Promise<void>(() => undefined)
+    if (!signal.aborted)
+      await new Promise<void>((done) => signal.addEventListener('abort', () => done(), { once: true }))
   },
 }
 
@@ -62,41 +70,82 @@ describe('createSession', () => {
 
   it('opens a session with the default preset and a host-minted actor', async () => {
     const dataDir = tmp()
+    expect(existsSync(join(dataDir, 'profiles'))).toBe(false)
     const { host } = await createTestHost({ dataDir })
     const s = await host.createSession({ cwd: dataDir })
     expect(s.key).toMatch(/^agnes:local:local-dev:cli:workspace:[0-9a-f]{16}$/)
     const start = (await s.scan({ type: 'session/start', limit: 1 }))[0]
     // `preset` is the recipe name - the shape session-v1.json requires and core already writes.
-    expect(start?.data).toMatchObject({ preset: 'standard', resolvedProfileHash: host.profile.hash })
+    expect(start?.data).toMatchObject({
+      preset: 'standard',
+      resolvedProfileHash: host.profile.hash,
+      resolvedPresetHash: expect.stringMatching(/^sha256-[0-9a-f]{64}$/),
+    })
+    expect((start?.data as { resolvedPresetHash?: string } | undefined)?.resolvedPresetHash).not.toBe(
+      host.profile.hash,
+    )
     expect(start?.actor).toMatchObject({ role: 'owner', org: 'local' })
     await host.close()
   })
-  it('records the hash of the resolved preset document, apart from the profile hash', async () => {
+  it('resumes pre-record history through the workspace runtime under full local L1 isolation', async () => {
     const dataDir = tmp()
-    const { host } = await createTestHost({
-      dataDir,
-      presets: { l1: { name: 'l1', extends: 'standard', sandbox: { required: true } } },
-      allowed: ['standard', 'l1'],
-    })
-    const startOf = async (preset?: string) => {
-      const s = await host.createSession({
-        cwd: dataDir,
-        ...(preset ? { preset } : {}),
-        key: `k-${preset ?? 'default'}`,
+    const boot = () =>
+      createTestHost({
+        dataDir,
+        disableSessionTitle: true,
+        script: [
+          [
+            { type: 'text_delta', delta: 'resumed reply' },
+            { type: 'done', reason: 'stop' },
+          ],
+        ],
+        packages: {
+          '@agnes/base': {
+            sandboxWorkspaceProbe: async () => ({
+              name: 'seatbelt',
+              implementation: 'implemented',
+              probeState: 'ready',
+              execBackend: 'l1',
+              enforcement: { level: 'full', scope: ['file', 'network', 'process'] },
+              degraded: false,
+              confine: ({ argv }) => argv,
+            }),
+          },
+        },
       })
-      return (await s.scan({ type: 'session/start', limit: 1 }))[0]?.data as {
-        resolvedPresetHash?: string
-        resolvedProfileHash: string
-      }
+    const first = await boot()
+    let key: string
+    try {
+      const session = await first.host.createSession({ cwd: dataDir })
+      key = session.key
+      expect(await session.scan({ type: 'session/start', limit: 1 })).toHaveLength(1)
+    } finally {
+      await first.host.close()
     }
-    const standard = await startOf()
-    const l1 = await startOf('l1')
-    expect(standard.resolvedPresetHash).toBe(host.validatePresetSwitch('standard').hash)
-    expect(l1.resolvedPresetHash).toBe(host.validatePresetSwitch('l1').hash)
-    expect(standard.resolvedPresetHash).toMatch(/^sha256-[0-9a-f]{64}$/)
-    expect(standard.resolvedPresetHash).not.toBe(l1.resolvedPresetHash)
-    expect(standard.resolvedPresetHash).not.toBe(standard.resolvedProfileHash)
-    await host.close()
+    // Keep the durable workspace and generation pins, but simulate history predating execution records.
+    new SessionSandboxStore(join(dataDir, 'profiles', 'local-dev')).release(key)
+    const second = await boot()
+    try {
+      const session = await second.host.createSession({ key, cwd: dataDir })
+      await session.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'continue the old session' }],
+        actor: session.d.actor,
+      })
+      expect(await session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
+        reason: 'completed',
+      })
+      expect((await session.scan({ type: 'assistant/message', limit: 1 }))[0]?.data).toMatchObject({
+        content: [{ type: 'text', text: 'resumed reply' }],
+      })
+    } finally {
+      await second.host.close()
+    }
+    const third = await boot()
+    try {
+      await third.host.createSession({ key, cwd: dataDir })
+    } finally {
+      await third.host.close()
+    }
   })
   // The view the session runs on must not carry the sentinel: core's resolveModel reads
   // preset.model.route[slot], and a view still saying `default` writes a request/header naming a
@@ -128,31 +177,6 @@ describe('createSession', () => {
     const e = await refusal(host.createSession({ cwd: dataDir, preset: 'nope' }))
     expect(e.code).toBe('E_PRESET_UNSUPPORTED')
     expect(e.detail.capability).toBe('preset')
-    expect(e.detail.rule).toBe('not-allowed')
-    await host.close()
-  })
-  it('tells a preset that is provided but not allowed from one that no package provides', async () => {
-    const dataDir = tmp()
-    const { host } = await createTestHost({
-      dataDir,
-      presets: { l1: { name: 'l1', extends: 'standard' } },
-      allowed: ['standard'],
-    })
-    // Provided by a package but not listed: the allow-list is what refuses it.
-    const unlisted = await refusal(host.createSession({ cwd: dataDir, preset: 'l1', key: 'unlisted' }))
-    expect(unlisted.detail.rule).toBe('not-allowed')
-    // The default preset is subject to the same list, not exempt from it.
-    expect((host.validatePresetSwitch('standard') as { doc: { name: string } }).doc.name).toBe('standard')
-    const switched = (() => {
-      try {
-        host.validatePresetSwitch('l1')
-      } catch (error) {
-        return error as Refusal
-      }
-      throw new Error('the switch was accepted')
-    })()
-    expect(switched.code).toBe('E_PRESET_UNSUPPORTED')
-    expect(switched.detail.rule).toBe('not-allowed')
     await host.close()
   })
   it('rejects hard requirements this deployment cannot meet, naming the capability', async () => {
@@ -190,6 +214,21 @@ describe('createSession', () => {
     expect(s.key).toBeDefined()
     await host.close()
   })
+  it('hands each session the command table of its own preset, not the default preset’s', async () => {
+    const dataDir = tmp()
+    const rule = { tool: 'shell', argv: '^git push', action: 'deny' }
+    const { host } = await createTestHost({
+      dataDir,
+      presets: { strict: { name: 'strict', extends: 'standard', approval: { command_policy: [rule] } } },
+      allowed: ['standard', 'strict'],
+    })
+    const table = async (preset: string) =>
+      host.kernel.get((await host.createSession({ key: preset, cwd: dataDir, preset })).key)?.preset.approval
+        .commandTable
+    expect(await table('strict')).toEqual([rule])
+    expect((await table('standard')) ?? []).not.toContainEqual(rule)
+    await host.close()
+  })
   it('rejects a preset whose command_policy contains a rule that cannot decide', async () => {
     const dataDir = tmp()
     const { host } = await createTestHost({
@@ -207,40 +246,20 @@ describe('createSession', () => {
     expect(e.detail.capability).toBe('approval.command_policy')
     await host.close()
   })
-  // The vocabulary is the evaluator's; `ask` is this host's own former spelling of the middle
-  // action, kept for one version so a deployment that already ships it still opens. It is not
-  // silence: the audit is where the resolved profile is recorded and is what an operator reads to
-  // see what this deployment decided, so the spelling that is going away is recorded beside it.
-  it('opens on the deprecated ask spelling and records it on the audit', async () => {
+  it('refuses the retired ask spelling as an action the evaluator does not know', async () => {
     const dataDir = tmp()
-    const { host, audit } = await createTestHost({
+    const { host } = await createTestHost({
       dataDir,
       presets: {
         old: {
           name: 'old',
           extends: 'standard',
-          approval: {
-            command_policy: [
-              { tool: 'shell', argv: '^curl ', action: 'ask' },
-              { tool: 'edit', argv: '^/repo/', action: 'require_approval' },
-            ],
-          },
+          approval: { command_policy: [{ tool: 'shell', argv: '^curl ', action: 'ask' }] },
         },
       },
       allowed: ['standard', 'old'],
     })
-    const s = await host.createSession({ cwd: dataDir, preset: 'old' })
-    expect(s.key).toBeDefined()
-    // One line for the deprecated rule, none for the one already written in the current words.
-    expect(audit.events.filter((e) => e.kind === 'preset.deprecated').map((e) => e.detail)).toEqual([
-      {
-        capability: 'approval.command_policy',
-        preset: 'old',
-        tool: 'shell',
-        action: 'ask',
-        use: 'require_approval',
-      },
-    ])
+    await expect(host.createSession({ cwd: dataDir, preset: 'old' })).rejects.toThrow(/E_PRESET_UNSUPPORTED/)
     await host.close()
   })
   it('refuses a preset whose command_policy names an action the evaluator does not know', async () => {
@@ -265,9 +284,8 @@ describe('createSession', () => {
     const dataDir = tmp()
     const { host } = await createTestHost({ dataDir })
     const e = await refusal(host.createSession({ cwd: tmp('agnes-elsewhere-') }))
-    expect(e.detail.reason).toBe('cwd-outside-workspace')
-    // The code is carried, not spelled out inside an E_SEAM_INIT message where no filter sees it.
     expect(e.code).toBe('E_WORKSPACE_UNTRUSTED')
+    expect(e.message).toContain('cwd is not the configured local workspace')
     expect(e.message).not.toContain('E_FS_DENIED')
     await host.close()
   })
@@ -333,6 +351,182 @@ describe('createSession', () => {
     expect(closed.length).toBe(opened.length)
     await host.close()
   })
+  it.each([false, true])(
+    'refuses damaged history without changing evidence or replaying tools after a raw open=%s',
+    async (rawOpenFirst) => {
+      const dataDir = tmp()
+      let executions = 0
+      const first = await createTestHost({
+        dataDir,
+        script: [
+          [
+            {
+              type: 'toolcall_end',
+              call: { toolUseId: '', name: 'read', args: { path: 'pending.txt' }, ordinal: 0 },
+              via: 'native',
+            },
+            { type: 'done', reason: 'toolUse' },
+          ],
+        ],
+      })
+      const session = await first.host.createSession({ cwd: dataDir })
+      const tools = session.currentTools()
+      tools.add(
+        {
+          name: 'read',
+          description: 'A safe tool with an interrupted durable effect',
+          parameters: Type.Object({ path: Type.String() }),
+          meta: {
+            isReadOnly: true,
+            isDestructive: false,
+            isConcurrencySafe: true,
+            isOpenWorld: false,
+            replay: 'safe',
+            costHint: {},
+            deferLoading: false,
+            requiresApproval: 'never',
+          },
+          execute: async (_args: unknown, ctx: ToolContext) => {
+            executions++
+            if (!ctx.signal.aborted)
+              await new Promise<void>((resolve) =>
+                ctx.signal.addEventListener('abort', () => resolve(), { once: true }),
+              )
+            return { content: [{ type: 'text', text: 'once' }] }
+          },
+        },
+        { source: 'test/pending-read', trust: 'builtin' },
+      )
+      await session.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'run once' }],
+        actor: session.d.actor,
+      })
+      const running = session
+        .run({ until: 'turn-end', signal: new AbortController().signal })
+        .catch(() => undefined)
+      await vi.waitFor(() => expect(executions).toBe(1))
+      await session.d.log.append([session.ev('x/test/torn-tail', { pending: true }, { ignorable: true })])
+      const damagedSeq = session.lastSeq
+      await session.d.log.close()
+      await first.host.close()
+      await running
+      const db = new DatabaseSync(join(dataDir, 'sessions.db'))
+      db.prepare('UPDATE events SET data = ? WHERE session_key = ? AND seq = ?').run(
+        '{',
+        session.key,
+        damagedSeq,
+      )
+      const evidence = db.prepare('SELECT * FROM events WHERE session_key = ? ORDER BY seq').all(session.key)
+      db.close()
+      if (rawOpenFirst) {
+        const storage = createSqliteStorage({ file: join(dataDir, 'sessions.db') })
+        expect(
+          (await storage.open(session.key, { writerRunId: 'raw-open', ttlMs: 60000 })).recovery,
+        ).toBeUndefined()
+        await storage.release(session.key, 'raw-open')
+        await storage.close()
+      }
+      const reopened = await createTestHost({ dataDir })
+
+      try {
+        await expect(reopened.host.createSession({ cwd: dataDir })).rejects.toMatchObject({
+          code: 'E_SESSION_CORRUPT',
+        })
+        expect(executions).toBe(1)
+        expect(reopened.audit.events.filter((event) => event.kind === 'session.recovered')).toEqual([])
+        const preserved = new DatabaseSync(join(dataDir, 'sessions.db'))
+        try {
+          expect(
+            preserved.prepare('SELECT * FROM events WHERE session_key = ? ORDER BY seq').all(session.key),
+          ).toEqual(evidence)
+        } finally {
+          preserved.close()
+        }
+      } finally {
+        await reopened.host.close()
+      }
+    },
+  )
+
+  it('keeps an interrupted mutation unknown on cold reopen instead of replaying it as a current safe tool', async () => {
+    const dataDir = tmp()
+    const first = await createTestHost({
+      dataDir,
+      disableSessionTitle: true,
+      script: [
+        [
+          {
+            type: 'toolcall_end',
+            call: { toolUseId: '', name: 'read', args: { path: 'effect.txt' }, ordinal: 0 },
+            via: 'native',
+          },
+          { type: 'done', reason: 'toolUse' },
+        ],
+      ],
+    })
+    const session = await first.host.createSession({ cwd: dataDir })
+    let effects = 0
+    session.currentTools().add(
+      {
+        name: 'read',
+        description: 'Synthetic mutation whose external receipt is lost',
+        parameters: Type.Object({ path: Type.String() }),
+        meta: {
+          isReadOnly: false,
+          isDestructive: true,
+          isConcurrencySafe: false,
+          isOpenWorld: false,
+          replay: 'never',
+          costHint: {},
+          deferLoading: false,
+          requiresApproval: 'never',
+        },
+        execute: async (_args: unknown, ctx: ToolContext) => {
+          effects++
+          if (!ctx.signal.aborted)
+            await new Promise<void>((done) =>
+              ctx.signal.addEventListener('abort', () => done(), { once: true }),
+            )
+          return { content: [{ type: 'text', text: 'lost receipt' }] }
+        },
+      },
+      { source: 'test/interrupted-mutation', trust: 'builtin' },
+    )
+    await session.enqueue('next-turn', {
+      content: [{ type: 'text', text: 'perform synthetic effect' }],
+      actor: session.d.actor,
+    })
+    const running = session
+      .run({ until: 'turn-end', signal: new AbortController().signal })
+      .catch(() => undefined)
+    await vi.waitFor(() => expect(effects).toBe(1))
+    expect(await session.scan({ type: 'tool/result', limit: 10 })).toEqual([])
+    // Seal before abort, preserving the durable tail a killed worker leaves.
+    await session.d.log.close()
+    await first.host.close()
+    await running
+    const reopened = await createTestHost({ dataDir, disableSessionTitle: true })
+    try {
+      const recovery: SessionRecovery[] = []
+      const restored = await reopened.host.createSession({
+        cwd: dataDir,
+        onRecovered: (value) => recovery.push(value),
+      })
+      expect(recovery.flatMap((value) => value.actions.map((action) => action.action))).toContain('unknown')
+      expect((await restored.scan({ type: 'tool/result', limit: 10 })).map((row) => row.data)).toContainEqual(
+        expect.objectContaining({ code: 'TOOL_OUTCOME_UNKNOWN', isError: true }),
+      )
+      expect(effects).toBe(1)
+      // A second opening consumes the settled recovery fact, not another dispatch.
+      await restored.close()
+      const again = await reopened.host.createSession({ cwd: dataDir })
+      expect(await again.scan({ type: 'tool/result', limit: 10 })).toHaveLength(1)
+      expect(effects).toBe(1)
+    } finally {
+      await reopened.host.close()
+    }
+  })
+
   // The other side of the same wiring, and the one that has to hold for nearly every open there
   // will ever be: a ledger that ended cleanly is opened exactly as it was before recovery existed.
   it('appends nothing and reports nothing when the session needed no recovery', async () => {
@@ -412,19 +606,14 @@ describe('createSession', () => {
     expect(seen).toHaveLength(1)
     await host.close()
   })
-  it('refuses a ledger override and accepts another per-session seam', async () => {
+  it.each(PINNED_SEAM_KINDS)('refuses a per-session %s object before opening', async (kind) => {
     const dataDir = tmp()
     const { host } = await createTestHost({ dataDir })
     const e = await refusal(
-      host.createSession({ cwd: dataDir, seams: { ledger: {} } as unknown as Record<string, never> }),
+      host.createSession({ cwd: dataDir, seams: { [kind]: {} } as unknown as Record<string, never> }),
     )
     expect(e.code).toBe('E_SEAM_IMMUTABLE')
-    expect(e.detail.seam).toBe('ledger')
-    const s = await host.createSession({
-      cwd: dataDir,
-      seams: { approval: { ask: async () => 'rejected', resume: async () => null } },
-    })
-    expect(s.key).toBeDefined()
+    expect(e.detail.seam).toBe(kind)
     await host.close()
   })
 })

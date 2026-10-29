@@ -15,7 +15,18 @@ declare const AGNES_CODE_MINIMAL_SHA256: string | undefined
  * Adding a recipe means adding its name here and shipping `presets/<name>.yaml`; the two are checked
  * against each other, so a name without a file fails rather than resolving to nothing.
  */
-export const PRESET_NAMES = ['standard', 'claw', 'channel', 'minimal-rl', 'standard-windows'] as const
+export const PRESET_NAMES = [
+  'standard',
+  'claw',
+  'channel',
+  'minimal-rl',
+  'standard-windows',
+  'minimal',
+  'ptc',
+  'permission-read-only',
+  'permission-workspace-write',
+  'permission-full-access',
+] as const
 export type PresetName = (typeof PRESET_NAMES)[number]
 
 function isPresetName(name: string): name is PresetName {
@@ -36,6 +47,11 @@ export function parsePreset(text: string, name: string): PresetDoc {
 }
 
 export function loadPreset(name: string): PresetDoc {
+  if (['read-only', 'workspace-write', 'full-access'].includes(name))
+    throw new Error(
+      `Retired permission-as-preset alias ${name}; use standard with an explicit permission and a new, empty AGH_HOME (clean home).`,
+    )
+
   if (!isPresetName(name)) throw new Error(`unknown preset: ${name}`)
   const text =
     typeof AGNES_CODE_PRESET_TEXTS === 'undefined'

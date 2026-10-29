@@ -1,0 +1,46 @@
+{
+  "name": "@agnes-examples/minimal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes-examples/minimal",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "tools",
+          "hooks",
+          "slots",
+          "resources",
+          "eventLog",
+          "self"
+        ],
+        "capabilities": {
+          "tools": {
+            "prefix": "minimal_"
+          },
+          "hooks": [
+            "tool_result"
+          ],
+          "slots": [
+            "status.line"
+          ],
+          "events": true,
+          "resources": [
+            "skill"
+          ]
+        },
+        "lease": {
+          "budget": 100
+        }
+      }
+    ],
+    "provides": [
+      "tool",
+      "skills"
+    ]
+  }
+}

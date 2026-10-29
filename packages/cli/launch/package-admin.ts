@@ -1,6 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { type AdminSurfaceAction, createAdminSurface } from '@agnes/daemon/packages'
 import type {
+  AdminSessionSelection,
+  ChildEnginesSaveParams,
   ClientModuleEffectCallParams,
   ClientModuleServiceCallParams,
   PackageCatalogGetParams,
@@ -22,8 +24,15 @@ import type {
   PackageUpdateParams,
   PluginTreeApplyParams,
   PluginTreeRollbackParams,
+  SessionGenerationMigrationParams,
 } from '@agnes/protocol'
-import { validatePackageAdminCall } from '@agnes/protocol'
+import {
+  httpRpcError,
+  METHODS,
+  normalizeRpcError,
+  type RpcError,
+  validatePackageAdminCall,
+} from '@agnes/protocol'
 import type {
   ClientModuleEffectCallResult,
   ClientModuleServiceCallResult,
@@ -32,6 +41,12 @@ import { createClient, memoryJournal } from '@agnes/sdk'
 import type { PluginRebuiltEvent } from '@agnes/web/server'
 import { localPipeFactories } from '../src/boot/pipe-factory.js'
 import type { LocalBackend } from './backend.js'
+import { localClientExamples } from './client-examples.js'
+import { contextAdmin } from './context-admin.js'
+import { doctorAdmin } from './doctor-admin.js'
+import { launchFailure } from './launch-failure.js'
+import { pluginStreamProxy } from './plugin-stream-proxy.js'
+import { profileServiceRelay } from './profile-service-relay.js'
 
 const CLIENT_SERVICE_PATH = '/api/client-modules/service'
 const CLIENT_EFFECT_PATH = '/api/client-modules/effect'
@@ -92,29 +107,118 @@ function serviceReply(response: ServerResponse, status: number, value: unknown):
 }
 
 /** The local launcher's private Unix connection is the admin authority; it is never sent to Web. */
-export function localPackageAdmin(backend: LocalBackend, origin: string) {
+export function localPackageAdmin(
+  backend: LocalBackend,
+  origin: string,
+  sessionSelection?: AdminSessionSelection,
+) {
   if (!backend.web) throw new Error('local Web credential is unavailable')
   const clientId = `admin-web-${backend.scope.scopeID}`
-  const client = createClient({
-    transport: { kind: 'unix', path: backend.socketPath },
-    transportFactories: localPipeFactories(backend.socketPath, backend.scope),
-    auth: { kind: 'local' },
-    journal: memoryJournal(clientId),
-  })
+  const open = () =>
+    createClient({
+      transport: { kind: 'unix', path: backend.socketPath },
+      transportFactories:
+        backend.link?.transportFactories() ?? localPipeFactories(backend.socketPath, backend.scope),
+      auth: { kind: 'local' },
+      journal: memoryJournal(clientId),
+    })
+  // A replaced daemon connection is a new connection: the daemon enrolls roster subscribers per
+  // connection, so a live subscription has to prove itself again on the new one.
+  let rosterSubscribed = false
+  const client = backend.link
+    ? backend.link.client(open, (next) => {
+        if (rosterSubscribed) void next.clientModules.list(backend.scope.profile).catch(() => undefined)
+      })
+    : open()
   let ready: Promise<unknown> | undefined
   const initialize = () =>
     (ready ??= client.initialize().catch((error: unknown) => {
       ready = undefined
       throw error
     }))
+  const examples = localClientExamples(backend, client, initialize)
   // createAdminSurface validates each schema before dispatching this fixed typed mapping.
   const invoke = async (action: AdminSurfaceAction, params: unknown): Promise<unknown> => {
     await initialize()
     switch (action) {
+      case 'application/get':
+        return client.request(
+          '_agnes/v1/applications.get',
+          params as import('@agnes/protocol').PackageListParams,
+        )
+      case 'application/preview':
+        return client.request(
+          '_agnes/v1/applications.preview',
+          params as import('@agnes/protocol').ApplicationPreviewParams,
+        )
+      case 'application/adopt':
+        return client.request(
+          '_agnes/v1/applications.adopt',
+          params as import('@agnes/protocol').ApplicationAdoptParams,
+        )
+      case 'application/clear':
+        return client.request(
+          '_agnes/v1/applications.clear',
+          params as import('@agnes/protocol').ApplicationClearParams,
+        )
+      case 'candidates/list':
+        return client.request(
+          '_agnes/v1/plugins.candidates.list',
+          params as import('@agnes/protocol').PackageListParams,
+        )
+      case 'candidates/show':
+        return client.request(
+          '_agnes/v1/plugins.candidates.show',
+          params as import('@agnes/protocol').AuthoringShowParams,
+        )
+      case 'candidates/test':
+        return client.request(
+          '_agnes/v1/plugins.candidates.test',
+          params as import('@agnes/protocol').AuthoringTestParams,
+        )
+      case 'candidates/submit':
+        return client.request(
+          '_agnes/v1/plugins.candidates.submit',
+          params as import('@agnes/protocol').AuthoringSubmitParams,
+        )
+      case 'candidates/approve':
+        return client.request(
+          '_agnes/v1/plugins.candidates.approve',
+          params as import('@agnes/protocol').AuthoringApproveParams,
+        )
+      case 'candidates/reject':
+        return client.request(
+          '_agnes/v1/plugins.candidates.reject',
+          params as import('@agnes/protocol').AuthoringRejectParams,
+        )
+      case 'candidates/create':
+        return client.request(
+          '_agnes/v1/plugins.candidates.create',
+          params as import('@agnes/protocol').AuthoringCreateParams,
+        )
+      case 'candidates/write':
+        return client.request(
+          '_agnes/v1/plugins.candidates.write',
+          params as import('@agnes/protocol').AuthoringWriteParams,
+        )
+
       case 'catalog/list':
         return client.packages.catalog.list(params as PackageCatalogListParams)
       case 'catalog/get':
         return client.packages.catalog.get(params as PackageCatalogGetParams)
+      case 'provenance':
+        return client.request(
+          '_agnes/v1/packages.provenance',
+          params as import('@agnes/protocol').PackageProvenanceParams,
+        )
+      case 'source-policy':
+        return client.request('_agnes/v1/packages.sourcePolicy', params as PackageListParams)
+      case 'publication-status':
+        return client.packages.publicationStatus(params as PackageListParams)
+      case 'sessions/migrate':
+        return client.packages.migrateSession(params as SessionGenerationMigrationParams)
+      case 'generations':
+        return client.packages.generations(params as PackageListParams)
       case 'list':
         return client.packages.list(params as PackageListParams)
       case 'inspect':
@@ -145,6 +249,12 @@ export function localPackageAdmin(backend: LocalBackend, origin: string) {
         return client.packages.pins.release(params as PackagePinsReleaseParams)
       case 'trust-workspace':
         return client.packages.trustWorkspace(params as PackageTrustWorkspaceParams)
+      case 'config/get':
+        return client.packages.config.get(params as import('@agnes/protocol').PluginConfigGetParams)
+      case 'config/validate':
+        return client.packages.config.validate(params as import('@agnes/protocol').PluginConfigValidateParams)
+      case 'config/save':
+        return client.packages.config.save(params as import('@agnes/protocol').PluginConfigSaveParams)
       case 'tree/get':
         return client.packages.tree.get(params as PackageListParams)
       case 'tree/list':
@@ -156,6 +266,146 @@ export function localPackageAdmin(backend: LocalBackend, origin: string) {
     }
   }
   const surface = createAdminSurface({
+    credentials: {
+      async call(action, input) {
+        await initialize()
+        // The surface validated the matching generated schema; no browser-selected RPC forwarding.
+        switch (action) {
+          case 'list':
+            return client.credentials.list()
+          case 'create':
+            return client.credentials.create(
+              input as import('@agnes/protocol/gen/app-server').AdminCredentialCreate,
+            )
+          case 'set':
+            return client.credentials.set(
+              input as import('@agnes/protocol/gen/app-server').AdminCredentialSet,
+            )
+          case 'rename':
+            return client.credentials.rename(
+              input as import('@agnes/protocol/gen/app-server').AdminCredentialRename,
+            )
+          case 'delete':
+            return client.credentials.delete(
+              input as import('@agnes/protocol/gen/app-server').AdminCredentialDelete,
+            )
+        }
+      },
+    },
+    async factChain(input) {
+      await initialize()
+      return client.factChain(input)
+    },
+    modelSlots: {
+      get: async () => {
+        await initialize()
+        return client.config.modelSlots.get()
+      },
+      save: async (input) => {
+        await initialize()
+        return client.config.modelSlots.save(input)
+      },
+    },
+    autoReview: {
+      get: async () => {
+        await initialize()
+        return client.autoReview.get()
+      },
+      save: async (config) => {
+        await initialize()
+        return client.autoReview.save(config)
+      },
+    },
+    systemPrompt: {
+      async get(input) {
+        await initialize()
+        return client.systemPrompt.get(input)
+      },
+      async save(input) {
+        await initialize()
+        return client.systemPrompt.save(input)
+      },
+    },
+    diagnostics: {
+      async export(input) {
+        await initialize()
+        return client.request('_agnes/v1/diagnostics.export', input)
+      },
+      ...(Object.hasOwn(METHODS, '_agnes/v1/doctor.run')
+        ? {
+            doctor: async () => {
+              await initialize()
+              return client.call('_agnes/v1/doctor.run', {})
+            },
+          }
+        : {}),
+    },
+    searchAdmin: {
+      async handle(method, path, body) {
+        await initialize()
+        return {
+          status: 200,
+          body: await client.call(
+            path === 'search/test'
+              ? '_agnes/v1/admin.search.test'
+              : method === 'PUT'
+                ? '_agnes/v1/admin.search.save'
+                : '_agnes/v1/admin.search.get',
+            body ?? {},
+          ),
+        }
+      },
+    },
+    runtimeAdmin: {
+      async snapshot() {
+        await initialize()
+        return client.call<import('@agnes/protocol').RuntimeAdminSnapshot>(
+          '_agnes/v1/sessionSelection.runtime',
+          {},
+        )
+      },
+      async reloadLocal() {
+        await initialize()
+        await client.call('_agnes/v1/sessionSelection.reloadLocal', {})
+      },
+    },
+    composition: {
+      bundles: () => client.request('_agnes/v1/admin.bundles.get', {}),
+      dump: (preset) => client.request('_agnes/v1/admin.composition.get', preset ? { preset } : {}),
+      saveBundles: (input) => client.request('_agnes/v1/admin.bundles.save', input),
+    },
+    sessionTools: async (sessionId) => {
+      await initialize()
+      return (await client.session.load(sessionId)).tools()
+    },
+    sessionSelection: sessionSelection ?? {
+      loops: async () => {
+        await initialize()
+        return client.sessionSelection.loops()
+      },
+      modelAdapters: async () => {
+        await initialize()
+        return client.sessionSelection.modelAdapters()
+      },
+      getDefaults: async () => {
+        await initialize()
+        return client.sessionSelection.getDefaults()
+      },
+      saveDefaults: async (input) => {
+        await initialize()
+        return await client.sessionSelection.saveDefaults(input)
+      },
+    },
+    childEngines: {
+      get: async () => {
+        await initialize()
+        return client.config.childEngines.get()
+      },
+      save: async (input) => {
+        await initialize()
+        return await client.config.childEngines.save(input as ChildEnginesSaveParams)
+      },
+    },
     origin,
     profile: backend.scope.profile,
     clientId,
@@ -166,6 +416,7 @@ export function localPackageAdmin(backend: LocalBackend, origin: string) {
       'packages.operation-control.v1',
     ],
     invoke,
+    ...(backend.link ? { available: () => backend.link?.ensure() ?? Promise.resolve(true) } : {}),
     surfaceLinks: async () => {
       await initialize()
       const result = await client.surfaces.mounts()
@@ -176,8 +427,35 @@ export function localPackageAdmin(backend: LocalBackend, origin: string) {
       }))
     },
   })
+  const handleDoctor = doctorAdmin(origin, (input) => client.request('_agnes/v1/doctor.run', input))
+  const handleContext = contextAdmin(
+    origin,
+    (input) => client.request('_agnes/v1/admin.context', input),
+    (input) => client.request('_agnes/v1/admin.memory', input),
+    (input) => client.request('_agnes/v1/admin.observability', input),
+    (input) => client.request('_agnes/v1/admin.feedback', input),
+  )
   return {
-    handle: surface.handle,
+    doctor: async () => {
+      await initialize()
+      return client.request('_agnes/v1/doctor.run', {})
+    },
+    triggers: (input: import('@agnes/protocol/gen/app-server').WebhookRequest) =>
+      client.request('_agnes/v1/admin.triggers', input),
+    fileUpload: (input: import('@agnes/protocol').FileUploadRequest) =>
+      client.request(
+        '_agnes/v1/session.fileUpload',
+        input,
+        input.operation === 'finish' ? { timeoutMs: null } : {},
+      ),
+    historySearch: (input: import('@agnes/protocol').AppServerParams<'_agnes/v1/admin.history.search'>) =>
+      client.request('_agnes/v1/admin.history.search', input),
+    planCommand: (input: import('@agnes/protocol').AppServerParams<'_agnes/v1/admin.plan'>) =>
+      client.request('_agnes/v1/admin.plan', input),
+    handle: async (request: IncomingMessage, response: ServerResponse) =>
+      (await handleDoctor(request, response)) ||
+      (await handleContext(request, response)) ||
+      (await surface.handle(request, response)),
     /**
      * Bytes for one `/skins/...` path, for the Web launcher's same-origin asset route.
      *
@@ -196,7 +474,7 @@ export function localPackageAdmin(backend: LocalBackend, origin: string) {
       }
     },
     /**
-     * Bytes for one `/plugins/...` path, for the Web launcher's same-origin asset route (design WC3).
+     * Bytes for one `/plugins/...` path, for the Web launcher's same-origin asset route.
      *
      * Same shape as `readSkin`: it rides the same private package-admin connection, the daemon owns
      * path authority and answers only for its enabled+trusted roster snapshots, and a miss, a
@@ -221,6 +499,7 @@ export function localPackageAdmin(backend: LocalBackend, origin: string) {
     async subscribeClientModuleEvents(listener: (event: PluginRebuiltEvent) => void): Promise<() => void> {
       await initialize()
       await client.clientModules.list(backend.scope.profile)
+      rosterSubscribed = true
       return client.on('notice', (payload) => {
         const notice = payload as { kind?: unknown; detail?: unknown }
         if (notice.kind !== 'packages_changed' || typeof notice.detail !== 'object' || notice.detail === null)
@@ -247,7 +526,25 @@ export function localPackageAdmin(backend: LocalBackend, origin: string) {
       await initialize()
       return await client.clientModules.callEffect(input)
     },
+    pluginStreams: pluginStreamProxy({
+      client,
+      origin,
+      profile: backend.scope.profile,
+      initialize,
+      body: jsonBody,
+    }),
     async handleClientService(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+      if (
+        await profileServiceRelay({
+          client,
+          origin,
+          profile: backend.scope.profile,
+          initialize,
+          body: jsonBody,
+          reply: serviceReply,
+        })(request, response)
+      )
+        return true
       const url = new URL(request.url ?? '/', origin)
       if (url.pathname !== CLIENT_SERVICE_PATH) return false
       if (
@@ -257,7 +554,7 @@ export function localPackageAdmin(backend: LocalBackend, origin: string) {
         request.headers.origin !== origin
       ) {
         request.resume()
-        serviceReply(response, 403, { error: 'forbidden' })
+        serviceReply(response, 403, { error: httpRpcError(403, 'CAPABILITY_DENIED') })
         return true
       }
       const body = await jsonBody(request)
@@ -271,16 +568,58 @@ export function localPackageAdmin(backend: LocalBackend, origin: string) {
           }
         : undefined
       if (!params || !validatePackageAdminCall('_agnes/v1/clientModules.callService', 'params', params).ok) {
-        serviceReply(response, 400, { error: 'invalid request' })
+        serviceReply(response, 400, { error: httpRpcError(400, 'INVALID_REQUEST') })
         return true
       }
       try {
         const result = await client.clientModules.callService(params as ClientModuleServiceCallParams)
         serviceReply(response, 200, result)
-      } catch {
+      } catch (error) {
         // No host/worker exception crosses this boundary. A stale/untrusted row and a transient
         // backend failure deliberately look alike to the page.
-        serviceReply(response, 503, { error: 'service unavailable' })
+        serviceReply(response, 503, {
+          error: (error as { rpc?: RpcError })?.rpc
+            ? normalizeRpcError((error as { rpc: RpcError }).rpc)
+            : httpRpcError(503, 'UNAVAILABLE'),
+        })
+      }
+      return true
+    },
+    async handleClientExamples(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+      const url = new URL(request.url ?? '/', origin)
+      const agent = url.pathname === '/api/agents/launch'
+      if (!agent && url.pathname !== '/api/client-modules/examples') return false
+      if (
+        request.method !== 'POST' ||
+        url.search ||
+        request.headers.host !== new URL(origin).host ||
+        request.headers.origin !== origin
+      ) {
+        request.resume()
+        serviceReply(response, 403, { error: httpRpcError(403, 'CAPABILITY_DENIED') })
+        return true
+      }
+      const body = await jsonBody(request)
+      if (
+        !body ||
+        (!agent && typeof body.rowId !== 'string') ||
+        !record(body.request) ||
+        Object.keys(body).some((key) => key !== 'rowId' && key !== 'request')
+      ) {
+        serviceReply(response, 400, { error: httpRpcError(400, 'INVALID_REQUEST') })
+        return true
+      }
+      try {
+        serviceReply(
+          response,
+          200,
+          agent
+            ? await examples.callAgent(body.request)
+            : await examples.call(typeof body.rowId === 'string' ? body.rowId : '', body.request),
+        )
+      } catch (error) {
+        const { code, status } = launchFailure(error)
+        serviceReply(response, status, { error: httpRpcError(status, code) })
       }
       return true
     },
@@ -294,7 +633,7 @@ export function localPackageAdmin(backend: LocalBackend, origin: string) {
         request.headers.origin !== origin
       ) {
         request.resume()
-        serviceReply(response, 403, { error: 'forbidden' })
+        serviceReply(response, 403, { error: httpRpcError(403, 'CAPABILITY_DENIED') })
         return true
       }
       const body = await jsonBody(request)
@@ -309,14 +648,18 @@ export function localPackageAdmin(backend: LocalBackend, origin: string) {
           }
         : undefined
       if (!params || !validatePackageAdminCall('_agnes/v1/clientModules.callEffect', 'params', params).ok) {
-        serviceReply(response, 400, { error: 'invalid request' })
+        serviceReply(response, 400, { error: httpRpcError(400, 'INVALID_REQUEST') })
         return true
       }
       try {
         const result = await client.clientModules.callEffect(params as ClientModuleEffectCallParams)
         serviceReply(response, 200, result)
-      } catch {
-        serviceReply(response, 503, { error: 'effect unavailable or outcome unknown' })
+      } catch (error) {
+        serviceReply(response, 503, {
+          error: (error as { rpc?: RpcError })?.rpc
+            ? normalizeRpcError((error as { rpc: RpcError }).rpc)
+            : httpRpcError(503, 'OUTCOME_UNKNOWN'),
+        })
       }
       return true
     },

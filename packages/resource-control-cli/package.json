@@ -13,7 +13,8 @@
   "dependencies": {
     "@agnes/daemon": "workspace:*",
     "@agnes/protocol": "workspace:*",
-    "@agnes/sdk": "workspace:*"
+    "@agnes/sdk": "workspace:*",
+    "@agnes/resource-control-contracts": "workspace:*"
   },
   "license": "Apache-2.0"
 }

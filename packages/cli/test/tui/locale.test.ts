@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createAnsi, EXTENDED_KEYS, Text, tt } from '@agnes/cli-tui'
+import { CONTROL_KEYS, createAnsi, EXTENDED_KEYS, Text, tt } from '@agnes/cli-tui'
 import { describe, expect, it } from 'vitest'
 import { LOCALE_KEYS, LOCALES, resolveLocale, t } from '../../src/tui/locale.js'
 import { displayWidth } from '../../src/tui/terminal.js'
@@ -19,19 +19,31 @@ describe('locale (cli 稿 §9.4)', () => {
 
   it('has every extended key populated in every locale', () => {
     for (const locale of LOCALES) {
-      for (const key of EXTENDED_KEYS) {
+      for (const key of [...EXTENDED_KEYS, ...CONTROL_KEYS]) {
         expect(tt(key, locale), `${locale} ${key}`).toBeTruthy()
         expect(tt(key, locale)).not.toBe(key)
       }
     }
   })
 
-  it('uses only AGNES_LOCALE and falls back to English', () => {
-    expect(resolveLocale({ AGNES_LOCALE: 'zh-CN', LANG: 'en_US.UTF-8' })).toBe('zh-CN')
-    expect(resolveLocale({ AGNES_LOCALE: 'en', LANG: 'zh_CN.UTF-8' })).toBe('en')
-    expect(resolveLocale({ LANG: 'zh_CN.UTF-8' })).toBe('en')
-    expect(resolveLocale({ AGNES_LOCALE: 'unsupported', LANG: 'zh_CN.UTF-8' })).toBe('en')
-    expect(resolveLocale({})).toBe('en')
+  it.each([
+    [{ AGNES_LOCALE: 'zh-CN', LANG: 'en_US.UTF-8' }, 'zh-CN'],
+    [{ AGNES_LOCALE: 'en', LANG: 'zh_CN.UTF-8' }, 'en'],
+    [{ AGNES_LOCALE: 'unsupported', LANG: 'zh_CN.UTF-8' }, 'en'],
+    [{ AGNES_LOCALE: '', LC_ALL: 'zh_CN.UTF-8' }, 'zh-CN'],
+    [{ LC_ALL: 'en_US.UTF-8', LC_MESSAGES: 'zh_CN.UTF-8', LANG: 'zh_CN.UTF-8' }, 'en'],
+    [{ LC_MESSAGES: 'zh_CN.UTF-8', LANG: 'en_US.UTF-8' }, 'zh-CN'],
+    [{ LANG: 'zh_CN.UTF-8' }, 'zh-CN'],
+    [{ LANG: 'zh-TW' }, 'zh-CN'],
+    [{ LANG: 'C' }, 'en'],
+    [{ LANG: '' }, 'en'],
+    [{}, 'en'],
+  ] as const)('resolves %j to %s', (env, expected) => {
+    expect(resolveLocale(env)).toBe(expected)
+  })
+
+  it.each(LOCALES)('names the resume command agh in %s', (locale) => {
+    expect(t('notice.closed', locale, { id: 'abc' })).toContain('agh --resume abc')
   })
 
   it('interpolates variables and falls back to English for unknown locales', () => {

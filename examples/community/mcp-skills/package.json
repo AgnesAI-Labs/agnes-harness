@@ -1,0 +1,72 @@
+{
+  "name": "@community/mcp-skills",
+  "version": "0.1.1",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": "./dist/index.js",
+  "files": [
+    "dist",
+    "mcp",
+    "skills"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test test/*.test.mjs",
+    "mcp": "node mcp/server.mjs"
+  },
+  "dependencies": {
+    "@agnes/plugin-runtime": "0.0.0",
+    "@agnes/extension-api": "^5.0.0",
+    "@agnes/resource-control-runtime": "0.0.0",
+    "@agnes/protocol": "0.0.0",
+    "@modelcontextprotocol/sdk": "1.25.2"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "@types/node": "26.4.1",
+    "@agnes/cordis": "0.0.0"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "export": "main",
+        "apiRange": "^5.0.0",
+        "id": "ext:@community/mcp-skills/main",
+        "inject": [
+          "skills"
+        ],
+        "metadata": {
+          "displayName": "MCP and Skills example",
+          "summary": "Demonstrates a local MCP tool and reference resource used with a packaged Skill.",
+          "description": "Demonstrates a local MCP tool and reference resource used with a packaged Skill.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "MCP 与技能示例",
+              "summary": "演示本地 MCP 工具和参考资源如何与随包技能配合使用。",
+              "description": "演示本地 MCP 工具和参考资源如何与随包技能配合使用。"
+            }
+          }
+        }
+      }
+    ],
+    "metadata": {
+      "displayName": "MCP and Skills example",
+      "summary": "Demonstrates a local MCP tool and reference resource used with a packaged Skill.",
+      "description": "Demonstrates a local MCP tool and reference resource used with a packaged Skill.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "MCP 与技能示例",
+          "summary": "演示本地 MCP 工具和参考资源如何与随包技能配合使用。",
+          "description": "演示本地 MCP 工具和参考资源如何与随包技能配合使用。"
+        }
+      }
+    },
+    "provides": [
+      "mcp",
+      "skills"
+    ]
+  }
+}

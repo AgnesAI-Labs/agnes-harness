@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 const packageRoot = join(import.meta.dirname, '..')
 
 describe('plugin-runtime exports', () => {
-  it('publishes only the root, host, and testkit entrypoints', () => {
+  it('publishes only the reviewed author, bundled, host, testkit, provided-externals and deferred-contract entrypoints', () => {
     const json = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as {
       exports: Record<string, string>
     }
@@ -14,6 +14,9 @@ describe('plugin-runtime exports', () => {
       '.': './src/index.ts',
       './host': './src/host/index.ts',
       './testkit': './testkit/index.ts',
+      './provided-externals': './src/provided-externals.ts',
+      './bundled': './src/bundled.ts',
+      './deferred-contract': './src/deferred-contract.ts',
     })
   })
 

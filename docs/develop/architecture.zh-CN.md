@@ -8,20 +8,14 @@ AGH 把任务运行放在共享后台，让 CLI、Web 与 SDK 围绕同一份会
 
 AGH 的客户端展示状态，daemon 管理会话与控制面，Host 组装运行环境，Core 推进模型与工具的执行循环。模型负责生成候选行为；工具授权、执行与持久状态不由模型文本决定。
 
-## 大脑、小脑、记忆与身体
+<a id="brain-cerebellum-memory-and-body"></a>
+<a id="大脑小脑记忆与身体"></a>
 
-**LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体。** 这是一组描述产品愿景的角色比喻，总览图展示目标架构；下方请求链路图对应当前软件实现。
+## 业务 Agent 与运行时
 
-![AGH 架构与应用方向：四个角色在同一套运行时中，支撑企业 FDE 交付与 MHS 设备接入](../assets/architecture.zh-CN.svg)
+业务 Agent Loop、工具、模型适配器与角色通过插件替换，由 Host 组合。官方默认 Agent Loop 位于 [loop-default](../../packages/loop-default/src/index.ts)，只使用公开 LoopContext 端口；Core 负责授权、持久事实与恢复。[文件记忆](../guide/memory.zh-CN.md)保存学习到的偏好，账本保留执行历史。
 
-| 概念 | 职责与实现边界 |
-| --- | --- |
-| **LLM / 大脑** | [AI Provider 层](../../packages/ai/src)提供模型推理；Core 通过受控执行流程处理候选动作。 |
-| **Jev / 小脑** | 规划中的结构化决策接入，用于路由、评分和执行协调。main 使用内置 [Core loop](../../packages/core/src/step/session.ts)，没有 Jev 适配器或 Jev 驱动的 loop。[TypeSafe 的 Jev 说明](https://docs.typesafe.ai/introduction/coding-agents)介绍其结构化决策角色；AGH 的接入合同仍需实现与验证。 |
-| **Harness / 记忆** | [Core 事件记录](../../packages/core/src/log)、任务状态、共享会话与恢复机制保存任务上下文；[Skills](../guide/skills.zh-CN.md)沉淀可复用方法。Harness 同时承担执行与治理；这些记忆机制按现有合同保存事实与方法。 |
-| **MHS / 身体** | AGH 自己的设备协议，独立于 MCP（Model Context Protocol），也不是厂商专属 SDK 或 ROS 桥接。设备连接 AgnesHub；AgnesHub 是[可选插件](../../packages/mhs/README.md)，为大脑提供设备工具，并按设备的声明检查每一次调用；[MOS](../../packages/mhs/spec/mos-spec.md) 实时推送设备观测到的内容。物理身体由设备及其控制器组成，详见 [MHS 与设备接入](../guide/mhs.zh-CN.md)。 |
-
-Jev 的决策和 LLM 的候选动作都应经过后台授权与执行控制。会话记录和 Skills 提供上下文；权限由配置的策略与审批流程决定。
+Jev 仍是探索中的结构化决策接入，没有已安装的 Jev 适配器。
 
 ## 运行时请求链路
 
@@ -61,17 +55,23 @@ flowchart LR
 | Core | 执行状态机、事件事实与必要能力接缝 |
 | AI/Base/Code | 提供方协议、标准能力与可编程工作流 |
 
+每一类状态的唯一权威、其他模块持有的副本，以及不一致时如何修复，见[状态归属详表](state-ownership.zh-CN.md)。
+
 一次 prompt 经 SDK 到 daemon，路由到 session worker。Host 为该会话提供模型、工具、审批、沙箱、存储等接缝；Core 生成下一步、记录状态，再消费模型或工具结果。客户端读取事件或派生投影。取消、失败、停驻、恢复都由后台状态决定。
+
+Core 接受 Host 所有的平台适配器可选 `HostToolDispatchPort.preflight` 在 ToolRuntime 或插件执行前提供的 rejected-before-effect 诊断，或 Core 持有的 memory 审批回调在候选写入前签出的、本次调用专属的拒绝证明。此前其他受控效果或并发写入可能已开始，或已准入写入时，memory 证明不成立；CAS 和写后 metadata 失败仍为 unknown。Core 在运行时验证封闭且有界的 `RejectedBeforeEffectError` 数据，原子记录失败工具结果、`effect: "none"` 和 `error` 结算。可纠正的 `path`、`expected`、`issues` 同时进入模型可见文字和结构化数据。插件自报 `INVALID_PARAMS` 不构成无效果证明。适配器抛错、超时、断连、部分持久化及不完整返回继续保留不确定性；mutation/never-replay 调用结算为 unknown 并发起人工 reconciliation，不自动重派。
 
 ## 接缝与扩展
 
-Seam 是必要执行位置的实现，例如审批、账本、沙箱；缺失必须按合同拒绝，不能静默跳过。Extension 是可选贡献，例如工具、观察 hook、客户端槽位。它们虽可通过 Cordis 装配，但权限面并不相同。
+人工决策只有一个持久化权威：`decision/state`。工具权限、未知结果核对、记忆审核、验证器挂起、预算报价和 operation 审核都将不可变的审核对象绑定到 decision handle，再记录答复与消费。approval seam 负责送达问题；客户端和 deferred invocation 读取 decision register。机器 guardian 的策略审计仍是独立事实。扩展通过 `ctx.decisions.review` 审核一次性候选；脱离当前执行的记忆和 operation 候选会被撤回。人工核对答复只确认未知结果，不重放副作用。调用还在等待时给出的答复会随未知结果一起被消费并告知模型，批次和轮次继续；只有仍未答复的问题才让轮次挂起，挂起之后才到的答复会以 `approval-resume` 续接该轮并把答复告知模型（不重放该调用），挂起批次中尚未开始的调用以 `TOOL_NOT_STARTED` 结算。只有 Core 或 Host 持有的端口能证明失败发生在任何效果之前时，才判为确定失败、不发起核对：记忆审批回调，或管理桥在本次调用尚无其他效果时收到 daemon 以 `INVALID_PARAMS` 拒绝。工具代码自己抛出的错误码不构成证明。不支持使用已移除审批事件格式的旧 ledger。
+
+Seam 是必要执行位置的实现，例如审批、计费、沙箱；其中七个是通过 `ctx.providers.register` 注册、用 `providers.<kind>: { provider }` 选择的 provider 种类，见 [Seam](../extend/seams.zh-CN.md)；缺失会以 `E_SEAM_MISSING` 拒绝，不能静默跳过。Extension 是可选贡献，例如工具、观察 hook、客户端槽位。它们虽可通过 Cordis 装配，但权限面并不相同。
 
 受信后端 Cordis 行可贡献工具、hook 和受约束的服务等能力；浏览器模块是绑定该行的另一运行面，详见[插件边界](plugins.zh-CN.md)。前后端的 Context 不共享内存；普通 `ctx.provide()` 不是跨进程代理。浏览器通过已声明的 relay 调用行服务，不直接获取 Host 管理对象。
 
 ## Runtime target 与热更新
 
-PackageManager 产生已核验快照和治理状态；runtime target 组合普通行、资源行与平台合成的客户端行。`web:` 行不在 Host 普通树执行。Host 在受限事务中协调可变行、依赖和实际状态，合格变更增量应用；静态边界、失败补偿或污染处理可能要求重建。
+PackageManager 产生已核验快照和治理状态；runtime target 组合普通行、资源行与平台合成的客户端行。`web:` 行不在 Host 普通树执行。代码发布产生供新会话绑定的版本；保留的会话继续使用原代码与配套客户端模块。在同一版本内，Host 通过受限事务协调合格的动态资源行、依赖和实际状态。基础后端变更要求重启；失败补偿或污染处理可能要求重建。
 
 这套机制支持符合条件的增量更新。其事务范围不覆盖外部业务效果；前端还有自己的名册对账与 fiber 清理，需要分别检查后端实际状态和页面加载结果。
 
@@ -83,22 +83,24 @@ Skills 包含磁盘/包资源治理与运行时 Cordis 贡献。当前共享 wor
 
 ## App Server 与客户端
 
+每个 `AGH_HOME` 只有一个经过认证的 daemon endpoint。[App Server v1 合同](../reference/app-server.zh-CN.md) 发布生成的 JSON Schema 和方法级 TypeScript 类型。`agh app-server --stdio` 与 ACP 是连接同一 daemon 的 bridge。管理 HTTP 路径适配相同 RPC 方法；composition、search、context、history 和 plan 状态由 daemon 管理。错误保留数字代码，并携带本地化消息键、白名单 cause 和诊断 id。
+
 AGH 的 App Server 为客户端提供共享的任务运行基础：daemon 管理会话与控制面，worker 承载执行，SDK 提供通信入口。开发自己的客户端时，从本仓的[API 合同](../reference/api.zh-CN.md)选择接入方式。
+
+daemon 依次取得 home owner lock、建立 stores 与快照、worker pool、私有 worker 监听、runtime adapters、重建客户端模块、结束 boot verification，再开放客户端监听并发布 discovery。各资源 owner 在 [AssemblyLifetime](../../packages/daemon/src/supervisor/assembly-lifetime.ts) 中只登记一份生命周期记录；启动中止与正常停止共用同一逆序列表：停止入口和计时器，在 worker grace 内排空，强制终止超时 worker，再释放资源，并等待退出恢复后释放所有权。仅用于启动的请求与引用端口，在初始化前和关闭后均拒绝调用。
 
 ## 可复用场景的范围
 
-FDE 是交付方式，MHS 负责把设备接进来。FDE 交付可通过 AGH 已有扩展入口构建企业软件，也可以包含设备。知识检索、数据库连接器、业务系统与专用界面需要针对具体环境开发与验证。
+FDE 是交付方式。FDE 交付可通过 AGH 已有扩展入口构建企业软件。知识检索、数据库连接器、业务系统与专用界面需要针对具体环境开发与验证。
 
-| 模块与源码归属 | 当前软件路径怎样支撑 FDE | MHS 接入复用什么 |
-| --- | --- | --- |
-| App Server：[SDK](../../packages/sdk/src)、[daemon](../../packages/daemon/src)、[worker](../../packages/worker-runtime/src) | 共享会话、任务提交、事件、审批路由与客户端接入 | 任务入口、人工确认和状态展示 |
-| Agent Loop：[Host 装配](../../packages/host/src/assemble.ts)、[Core](../../packages/core/src)、[AI](../../packages/ai/src) | 模型与工具执行、任务状态、中断处理和恢复 | 高层设备任务编排；实际运动由设备控制器执行 |
-| 记忆：[事件记录](../../packages/core/src/log)、[资源治理](../../packages/resource-control-runtime/src) | 保存任务历史和结果，通过 Skills 复用方法 | 按任务记录合同保存设备工具调用及其结果；设备实际状态仍需设备侧验证 |
-| 执行约束：[受控工具执行](../../packages/core/src/step/tools.ts)、[sandbox](../../packages/base/src/sandbox-shell.ts)、[工作区策略](../../packages/host/src/workspace-policy.ts) | 工具审批与适用的软件执行约束 | 软件侧控制点；设备互锁、急停与本地接管仍由设备侧承担 |
-| 插件：[Cordis](../../packages/cordis/src)、[插件运行时](../../packages/plugin-runtime/src)、[包管理](../../packages/package-manager/src)、[Web 客户端模块](../../packages/web-client/src) | 后端工具与服务、hooks、Skills、MCP 连接和业务面板 | AgnesHub 作为可选插件运行：为大脑提供设备工具，在工作台中提供设备面板 |
+| 模块与源码归属 | 当前软件路径怎样支撑 FDE |
+| --- | --- |
+| App Server：[SDK](../../packages/sdk/src)、[daemon](../../packages/daemon/src)、[worker](../../packages/worker-runtime/src) | 共享会话、任务提交、事件、审批路由与客户端接入 |
+| Agent Loop：[Host 装配](../../packages/host/src/runtime/assemble/assemble.ts)、[Core](../../packages/core/src)、[AI](../../packages/ai/src) | 模型与工具执行、任务状态、中断处理和恢复 |
+| 记忆：[事件记录](../../packages/core-ledger/src/log)、[资源治理](../../packages/resource-control-runtime/src) | 保存任务历史和结果，通过 Skills 复用方法 |
+| 执行约束：[受控工具执行](../../packages/core/src/step/tools.ts)、[sandbox](../../packages/host-infrastructure/src/sandbox-seam.ts)、[工作区策略](../../packages/host-common/src/workspace-policy.ts) | 工具审批与适用的软件执行约束 |
+| 插件：[Cordis](../../packages/cordis/src)、[插件运行时](../../packages/plugin-runtime/src)、[包管理](../../packages/package-manager/src)、[Web 客户端模块](../../packages/web-client/src) | 后端工具与服务、hooks、Skills、MCP 连接和业务面板 |
 
 普通后端插件作为受信进程内代码执行；一次工具审批或可用的命令沙箱不代表任意插件代码已被隔离。审批、沙箱等必要接缝由受信部署配置选择；普通扩展注册工具或 hook 不会获得替换它们的权限。详见[安全与信任](../guide/security.zh-CN.md)。
 
-MHS 对应总览图中的设备分支。设备通过 WebSocket 连接 AgnesHub，登记工具、状态和数据源，然后接受调用；MOS 推送它观测到的内容。规范、设备库和 `mhs-check` 一致性测试见 [MHS 指南](../guide/mhs.zh-CN.md)。通过 `mhs-check` 不证明设备安全；取消任务也不代表物理设备已安全停止。企业部署、审计、隔离与设备动作均需在实际环境中分别验证。
-
-源码依据：[Host](../../packages/host/src/assemble.ts)、[Worker](../../packages/worker-runtime/src/main.ts)、[Core](../../packages/core/src)、[Daemon](../../packages/daemon/src/supervisor/supervisor.ts)、[运行目标发布](../../packages/host/src/runtime-target-publisher.ts)、[Web Context](../../packages/web/src/client-modules/boot.ts)。
+源码依据：[Host](../../packages/host/src/runtime/assemble/assemble.ts)、[Worker](../../packages/worker-runtime/src/main.ts)、[Core](../../packages/core/src)、[Daemon](../../packages/daemon/src/supervisor/runtime.ts)、[运行目标发布](../../packages/host-providers/src/runtime-target-publisher.ts)、[Web Context](../../packages/web/src/client-modules/boot.tsx)。

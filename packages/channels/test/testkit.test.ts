@@ -131,7 +131,18 @@ describe('createFakeClient', () => {
     expect((await client.apis()).families[0]?.name).toBe('custom')
     client.claimResults.set('event:e1', false)
     await expect(client.claim.once('event', 'e1')).resolves.toBe(false)
-    await expect(client.approval.decide('ticket', 'allowed-once', { kind: 'local' })).rejects.toMatchObject({
+    await expect(
+      client.approval.decide(
+        {
+          sessionId: 's',
+          id: 'd',
+          revision: 1,
+          commandId: 'c',
+          response: { option: 'allowed-once', value: null },
+        },
+        { sourceCredential: { kind: 'local' } },
+      ),
+    ).rejects.toMatchObject({
       code: -32008,
     })
 

@@ -1,7 +1,8 @@
-import { defineExtension, type ExtensionAPI, type SessionRef } from '@agnes/extension-api'
+import { DEFAULT_RULES, type RedactRules, redact } from '@agnes/error-sanitization'
+import type { SessionRef } from '@agnes/extension-api'
+import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { allowsUpload, type ConsentLevel } from './consent.js'
 import { egressReceipt } from './egress.js'
-import { DEFAULT_RULES, type RedactRules, redact } from './redact.js'
 
 type SessionEgressState = {
   active: boolean
@@ -16,10 +17,13 @@ type TrajectoryLifecycle = {
   upload(session: SessionRef, gate: EgressGate, signal: AbortSignal): Promise<void>
 }
 
-// Authority is the pair minted by the host: an ExtensionAPI instance cannot borrow a
+/** The slice of the plugin context egress receipts need. */
+type EventHost = Pick<Context, 'eventLog'>
+
+// Authority is the pair minted by the host: a plugin context instance cannot borrow a
 // canonical SessionRef owned by another host/extension instance (and a copied ref cannot
 // satisfy the inner WeakMap either).
-const states = new WeakMap<ExtensionAPI, WeakMap<SessionRef, SessionEgressState>>()
+const states = new WeakMap<EventHost, WeakMap<SessionRef, SessionEgressState>>()
 const issuedGates = new WeakSet<object>()
 
 /** Opaque runtime authority: plain objects matching EgressGate's shape are rejected. */
@@ -31,13 +35,13 @@ export const sessionEgressAuthority = Object.freeze({
 
 /** Records the receipt only after the caller has successfully sent the corresponding bytes. */
 export async function recordEgress(
-  agnes: ExtensionAPI,
+  host: EventHost,
   prev: string | null,
   bytes: Uint8Array,
   consent: ConsentLevel,
 ) {
   const receipt = egressReceipt(prev, bytes, consent)
-  await agnes.events.append('egress', receipt)
+  await host.eventLog.append('egress', receipt)
   return receipt
 }
 
@@ -66,11 +70,11 @@ export class EgressCommitError extends Error {
 
 /** One outbound gate: consent check, ANON redaction, successful send, then chained receipt. */
 export function createSessionEgressGate(
-  agnes: ExtensionAPI,
+  host: EventHost,
   session: SessionRef,
   rules: Partial<RedactRules> = {},
 ): EgressGate {
-  const state = states.get(agnes)?.get(session)
+  const state = states.get(host)?.get(session)
   if (!state?.active) throw new Error('egress session is not active')
   const resolvedRules: RedactRules = {
     ...DEFAULT_RULES,
@@ -105,7 +109,7 @@ export function createSessionEgressGate(
         const receipt = egressReceipt(state.previous, bytes, consent)
         await sender(bytes)
         try {
-          await agnes.events.append('egress', receipt)
+          await host.eventLog.append('egress', receipt)
         } catch (error) {
           state.commitFailure = new EgressCommitError(receipt, error)
           throw state.commitFailure
@@ -128,54 +132,57 @@ export function createSessionEgressGate(
 export function createPrivacyExtension(
   options: { trajectory?: TrajectoryLifecycle; rules?: Partial<RedactRules> } = {},
 ) {
-  return defineExtension((agnes) => {
-    const apiStates = new WeakMap<SessionRef, SessionEgressState>()
-    states.set(agnes, apiStates)
-    const owned = new Set<SessionRef>()
-    const deactivate = (session: SessionRef): void => {
-      const state = apiStates.get(session)
-      if (state) state.active = false
-      apiStates.delete(session)
-      owned.delete(session)
-    }
-    const stopStart = agnes.registerHook('session_start', async (payload, context) => {
-      if (apiStates.get(context.session)?.active) return
-      const consent = context.session.telemetryConsent ?? 'DISABLED'
-      if (context.session.telemetryConsentPendingAudit)
-        await agnes.events.append('consent', {
-          from: 'DISABLED',
-          to: consent,
-          by: `profile:${payload.preset}`,
-        })
-      const previous = options.trajectory
-        ? await options.trajectory.previous(context.session, context.signal)
-        : null
-      if (previous !== null && !/^[a-f0-9]{64}$/.test(previous))
-        throw new Error('trajectory previous receipt is not a lowercase sha256 digest')
-      apiStates.set(context.session, {
-        active: true,
-        consent,
-        previous,
-        tail: Promise.resolve(),
-      })
-      owned.add(context.session)
-    })
-    const stopShutdown = agnes.registerHook('shutdown', async (_payload, context) => {
-      try {
-        if (options.trajectory) {
-          const gate = createSessionEgressGate(agnes, context.session, options.rules)
-          await options.trajectory.upload(context.session, gate, context.signal)
-        }
-      } finally {
-        deactivate(context.session)
+  return defineAgnesPlugin({
+    inject: ['hooks', 'eventLog'],
+    apply(ctx: Context) {
+      const apiStates = new WeakMap<SessionRef, SessionEgressState>()
+      states.set(ctx, apiStates)
+      const owned = new Set<SessionRef>()
+      const deactivate = (session: SessionRef): void => {
+        const state = apiStates.get(session)
+        if (state) state.active = false
+        apiStates.delete(session)
+        owned.delete(session)
       }
-    })
-    return () => {
-      for (const session of owned) deactivate(session)
-      states.delete(agnes)
-      stopShutdown()
-      stopStart()
-    }
+      const stopStart = ctx.hooks.register('session_start', async (payload, context) => {
+        if (apiStates.get(context.session)?.active) return
+        const consent = context.session.telemetryConsent ?? 'DISABLED'
+        if (context.session.telemetryConsentPendingAudit)
+          await ctx.eventLog.append('consent', {
+            from: 'DISABLED',
+            to: consent,
+            by: `profile:${payload.preset}`,
+          })
+        const previous = options.trajectory
+          ? await options.trajectory.previous(context.session, context.signal)
+          : null
+        if (previous !== null && !/^[a-f0-9]{64}$/.test(previous))
+          throw new Error('trajectory previous receipt is not a lowercase sha256 digest')
+        apiStates.set(context.session, {
+          active: true,
+          consent,
+          previous,
+          tail: Promise.resolve(),
+        })
+        owned.add(context.session)
+      })
+      const stopShutdown = ctx.hooks.register('shutdown', async (_payload, context) => {
+        try {
+          if (options.trajectory) {
+            const gate = createSessionEgressGate(ctx, context.session, options.rules)
+            await options.trajectory.upload(context.session, gate, context.signal)
+          }
+        } finally {
+          deactivate(context.session)
+        }
+      })
+      return () => {
+        for (const session of owned) deactivate(session)
+        states.delete(ctx)
+        stopShutdown()
+        stopStart()
+      }
+    },
   })
 }
 
@@ -183,6 +190,7 @@ export const privacyExtension = createPrivacyExtension()
 
 export default privacyExtension
 
+export { DEFAULT_RULES, type RedactRules, redact, redactText } from '@agnes/error-sanitization'
 export {
   allowsContent,
   allowsUpload,
@@ -194,4 +202,3 @@ export {
   transitionConsent,
 } from './consent.js'
 export { type EgressReceipt, egressReceipt } from './egress.js'
-export { DEFAULT_RULES, type RedactRules, redact, redactText } from './redact.js'

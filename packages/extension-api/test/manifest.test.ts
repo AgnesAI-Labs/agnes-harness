@@ -1,16 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import { checkManifest, extEventType, isExtensionError, RESOURCE_KINDS } from '../src/index.js'
 
+const purpose = {
+  displayName: 'File search',
+  summary: 'Find project text.',
+  description: 'Find text in readable project files.',
+  locales: { 'zh-CN': { displayName: '文件搜索', summary: '检索项目文本。' } },
+}
+
 const manifest = {
   id: 'agnes/example',
   version: '1.2.0',
-  apiRange: '^1.0',
+  apiRange: '^5.0.0',
   entry: './dist/index.js',
   capabilities: {
     hooks: ['tool_call'],
     events: true,
     resources: ['skill'],
-    network: { hosts: ['erp.internal:443'] },
+    network: ['erp.internal:443'],
     artifacts: true,
     subagent: true,
     'tools.invoke': true,
@@ -29,6 +36,26 @@ describe('author manifest validation', () => {
     expect(Object.isFrozen(RESOURCE_KINDS)).toBe(true)
     expect(checkManifest({ ...manifest, capabilities: { network: [] } }).ok).toBe(true)
   })
+  it('accepts optional localized purpose and rejects unsafe or unbounded author text', () => {
+    expect(checkManifest({ ...manifest, metadata: purpose }).ok).toBe(true)
+    expect(checkManifest({ ...manifest, metadata: { ...purpose, displayName: '😀'.repeat(80) } }).ok).toBe(
+      true,
+    )
+    for (const metadata of [
+      { ...purpose, displayName: '😀'.repeat(81) },
+      { ...purpose, summary: ' x' },
+      { ...purpose, summary: 'line\nline' },
+      { ...purpose, description: 'x\u2028y' },
+      { ...purpose, summary: 'x'.repeat(241) },
+      { ...purpose, category: 'tools' },
+      { ...purpose, docsUrl: 'javascript:alert(1)' },
+      { ...purpose, docsUrl: 'https://user:pass@example.org/' },
+      { ...purpose, locales: { fr: { summary: 'Texte' } } },
+      { ...purpose, extra: true },
+    ])
+      expect(checkManifest({ ...manifest, metadata }).ok).toBe(false)
+  })
+
   it('rejects malformed capability values without throwing', () => {
     for (const capabilities of [
       null,
@@ -36,8 +63,8 @@ describe('author manifest validation', () => {
       { hooks: 1 },
       { hooks: ['nope'] },
       { events: [] },
-      { network: ['erp.internal'] },
-      { network: { hosts: ['http://erp'] } },
+      { network: { hosts: ['erp.internal'] } },
+      { network: ['http://erp'] },
       { resources: ['shell'] },
       { extra: true },
     ] as const) {
@@ -88,11 +115,32 @@ describe('author manifest validation', () => {
     expect(checkManifest(input)).toEqual({ ok: false, problems: ['manifest: expected plain JSON data'] })
     expect(calls).toBe(0)
   })
-  it('namespaces bundled and partner events and rejects reserved shortcuts', () => {
+  it('namespaces bundled and partner events and rejects malformed names', () => {
     expect(extEventType('agnes/subagent', 'worktree-skipped')).toBe('x/agnes/subagent/worktree-skipped')
     expect(extEventType('vendor/tool', 'done')).toBe('x/vendor/tool/done')
+    for (const name of [
+      'surface.opened',
+      'surface.updated',
+      'surface.closed',
+      'action.received',
+      'action.rejected',
+      'action.pending-approval',
+      'action.executing',
+      'action.succeeded',
+      'action.failed',
+      'action.retried',
+      'action.delivered',
+    ])
+      expect(extEventType('agnes/intelligent-ui', name)).toBe(`x/agnes/intelligent-ui/${name}`)
+    for (const [id, name] of [
+      ['vendor/tool', 'surface.opened'],
+      ['agnes/intelligent-ui', 'surface.forged'],
+      ['agnes/intelligent-ui', 'action.forged'],
+    ] as const)
+      expect(extEventType(id, name)).toBe(`x/${id}/${name}`)
     for (const [id, name] of [
       ['core', 'done'],
+      ['agnes/intelligent-ui', 'surface.opened/forged'],
       ['vendor/tool', 'Bad Name'],
       ['vendor/tool', 'x/other'],
       ['', 'done'],
@@ -117,7 +165,7 @@ describe('author manifest skin validation', () => {
   const skin = { id: 'midnight', name: '午夜', css: './skins/midnight/skin.css' }
   const withSkins = (skins: unknown, ui?: unknown) => ({
     ...manifest,
-    capabilities: { ...manifest.capabilities, ...(ui === undefined ? { ui: ['skin'] } : { ui }) },
+    capabilities: { ...manifest.capabilities, ...(ui === undefined ? { ui: true } : { ui }) },
     contributes: { skins },
   })
   it('accepts a skin that declares both the capability and the contribution', () => {
@@ -134,12 +182,10 @@ describe('author manifest skin validation', () => {
     ).toBe(true)
     // A manifest without any skin keeps the pre-skin behaviour untouched.
     expect(checkManifest(manifest).ok).toBe(true)
-    expect(checkManifest({ ...manifest, capabilities: { ...manifest.capabilities, ui: [] } }).ok).toBe(true)
+    expect(checkManifest({ ...manifest, capabilities: { ...manifest.capabilities, ui: [] } }).ok).toBe(false)
   })
-  it('rejects a contribution or capability that appears without its counterpart', () => {
-    expect(checkManifest(withSkins([skin], [])).ok).toBe(false)
-    expect(checkManifest(withSkins([])).ok).toBe(false)
-    expect(checkManifest(withSkins(undefined, ['skin'])).ok).toBe(false)
+  it('rejects a skin contribution without the ui capability', () => {
+    expect(checkManifest(withSkins([skin], false)).ok).toBe(false)
   })
   it('rejects duplicate skin ids inside one package', () => {
     expect(checkManifest(withSkins([skin, skin])).ok).toBe(false)
@@ -181,7 +227,12 @@ describe('author manifest skin validation', () => {
       'agnes-bg-page',
     ])
       expect(checkManifest(withSkins([{ ...skin, tokens: { [token]: modes } }])).ok, token).toBe(false)
-    for (const token of ['--agnes-bg-page', '--shadow-elevation', '--agnes-text-primary'])
+    for (const token of [
+      '--agnes-bg-page',
+      '--shadow-elevation',
+      '--agnes-text-primary',
+      '--agnes-scrollbar-thumb',
+    ])
       expect(checkManifest(withSkins([{ ...skin, tokens: { [token]: modes } }])).ok, token).toBe(true)
   })
   it('rejects a token override that supplies only one palette mode', () => {
@@ -216,5 +267,53 @@ describe('author manifest skin validation', () => {
           .ok,
         value,
       ).toBe(true)
+  })
+})
+
+describe('reviewed Intelligent UI renderer manifest', () => {
+  const declaration = {
+    kind: 'agnes/example/diff@1',
+    propsSchema: { type: 'object', properties: { amount: { type: 'integer' } } },
+    maxPropsBytes: 256,
+    fallback: 'Use the table.',
+    accessibility: { label: 'Differences', keyboard: true },
+  }
+  const candidate = {
+    ...manifest,
+    capabilities: { ui: true },
+    contributes: { client: { entry: './diff.mjs', intelligentComponents: [declaration] } },
+  }
+  it('admits bounded local schemas and refuses foreign namespaces, unsafe schemas and missing accessibility', () => {
+    expect(checkManifest(candidate).ok).toBe(true)
+    for (const changed of [
+      { ...declaration, kind: 'other/example/diff@1' },
+      { ...declaration, kind: 'agnes/example/diff@0' },
+      { ...declaration, propsSchema: { $ref: 'https://example.test/schema' } },
+      { ...declaration, propsSchema: { type: 'unknown' } },
+      { ...declaration, propsSchema: { $async: true } },
+      { ...declaration, maxPropsBytes: 16385 },
+      { ...declaration, fallback: '' },
+      { ...declaration, accessibility: { label: 'Differences', keyboard: false } },
+    ])
+      expect(
+        checkManifest({
+          ...candidate,
+          contributes: { client: { ...candidate.contributes.client, intelligentComponents: [changed] } },
+        }).ok,
+      ).toBe(false)
+    expect(
+      checkManifest({
+        ...candidate,
+        contributes: { client: { ...candidate.contributes.client, slots: ['workbench.panel'] } },
+      }).ok,
+    ).toBe(false)
+    expect(
+      checkManifest({
+        ...candidate,
+        contributes: {
+          client: { ...candidate.contributes.client, intelligentComponents: [declaration, declaration] },
+        },
+      }).ok,
+    ).toBe(false)
   })
 })

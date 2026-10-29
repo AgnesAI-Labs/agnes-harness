@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./schema": "./src/gen/resource-control.ts"
+    "./schema": "./src/gen/resource-control.ts",
+    "./mcp-presets": "./src/mcp-presets.ts"
   },
   "scripts": {
     "test": "vitest run",

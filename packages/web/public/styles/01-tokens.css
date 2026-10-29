@@ -1,0 +1,641 @@
+@layer tokens {
+  /* ═══════════════════════════════════════════════════════════════════════
+   1. 基础色 —— 唯一允许出现具体色值的区域
+   AGH 主题（Graphite）：一个带暖调的石墨灰族、一个靛蓝强调色、四个状态色。
+   命名：--agnes-color-{族}-{阶}[-a{透明}]；组件与皮肤都不直接引用本层。
+   ═══════════════════════════════════════════════════════════════════════ */
+  :root {
+    /* 灰：浅色界面取 0–200 作表面与线，400–900 作边界与文字；深色界面取 700–950 作表面。 */
+    --agnes-color-gray-0: #ffffff;
+    --agnes-color-gray-25: #fbfaf8;
+    --agnes-color-gray-50: #f3f3f1;
+    --agnes-color-gray-100: #efefec;
+    /* 125 是深色界面的正文色，偏冷一点以压住暖底上的发灰感。 */
+    --agnes-color-gray-125: #e6e7ea;
+    --agnes-color-gray-150: #e4e4e0;
+    --agnes-color-gray-200: #d5d5d0;
+    --agnes-color-gray-250: #c3c6cc;
+    --agnes-color-gray-300: #9a9ea8;
+    --agnes-color-gray-400: #868a92;
+    --agnes-color-gray-450: #777b85;
+    --agnes-color-gray-500: #606570;
+    --agnes-color-gray-600: #4b4f58;
+    --agnes-color-gray-650: #3a3d46;
+    --agnes-color-gray-700: #33363d;
+    --agnes-color-gray-750: #2c2e35;
+    --agnes-color-gray-800: #26272d;
+    --agnes-color-gray-850: #1f2026;
+    --agnes-color-gray-900: #1b1d22;
+    --agnes-color-gray-925: #1b1c21;
+    --agnes-color-gray-950: #15161a;
+
+    /* 透明叠层必须定义为完整颜色值，不得用整体 opacity 模拟。 */
+    --agnes-color-ink-a04: rgb(27 29 34 / 4%);
+    --agnes-color-ink-a06: rgb(27 29 34 / 6%);
+    --agnes-color-ink-a08: rgb(27 29 34 / 8%);
+    --agnes-color-ink-a09: rgb(27 29 34 / 9%);
+    --agnes-color-ink-a36: rgb(27 29 34 / 36%);
+    --agnes-color-white-a04: rgb(255 255 255 / 4%);
+    --agnes-color-white-a06: rgb(255 255 255 / 6%);
+    --agnes-color-white-a09: rgb(255 255 255 / 9%);
+    --agnes-color-white-a54: rgb(255 255 255 / 54%);
+    --agnes-color-white-a72: rgb(255 255 255 / 72%);
+    --agnes-color-black-a64: rgb(8 9 12 / 64%);
+    --agnes-color-black-a85: rgb(0 0 0 / 85%);
+
+    /* 靛蓝：唯一的强调色。500 是浅色主色，300 是深色主色，50/900 是各自的软底。 */
+    --agnes-color-indigo-50: #eef0fc;
+    --agnes-color-indigo-200: #a5acff;
+    --agnes-color-indigo-300: #8a93ff;
+    --agnes-color-indigo-500: #4f5bd5;
+    --agnes-color-indigo-600: #4450cb;
+    --agnes-color-indigo-900: #252845;
+    --agnes-color-indigo-950: #14152a;
+
+    /* 品牌蓝：只给品牌图形标和字标用，与强调色分开。600 用于浅色底，400 用于深色底。 */
+    --agnes-color-brand-blue-400: #6983fc;
+    --agnes-color-brand-blue-600: #3248af;
+
+    /* 状态色与强调色分离。500 用于图标、圆点等非文字标记（≥3:1）；
+     700 是浅色底上的文字（≥4.5:1）；300 同时是深色的文字与标记；50/900 是软底。 */
+    --agnes-color-green-50: #e6f3eb;
+    --agnes-color-green-300: #5cc28a;
+    --agnes-color-green-500: #2f8f5b;
+    --agnes-color-green-700: #25784a;
+    --agnes-color-green-900: #1b3327;
+    --agnes-color-amber-50: #f7eedd;
+    --agnes-color-amber-300: #e0a84a;
+    --agnes-color-amber-500: #b7791f;
+    --agnes-color-amber-700: #8a5a10;
+    --agnes-color-amber-900: #3a2e18;
+    --agnes-color-red-50: #fae9e7;
+    --agnes-color-red-300: #ef7b74;
+    --agnes-color-red-500: #c2413b;
+    --agnes-color-red-700: #b23a34;
+    --agnes-color-red-900: #40211f;
+    --agnes-color-blue-50: #e8f0f9;
+    --agnes-color-blue-300: #6fa8e8;
+    --agnes-color-blue-500: #2f6fb0;
+    --agnes-color-blue-700: #2563a8;
+    --agnes-color-blue-900: #1b2d42;
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+   2. 语义 token —— 浅色（组件只允许引用这一层）
+   组件禁止直接引用 --agnes-color-*；命名描述用途不描述色值。
+   ═══════════════════════════════════════════════════════════════════════ */
+  :root {
+    color-scheme: light;
+
+    /* Brand —— 强调色只用于主操作、当前选中和状态指示。 */
+    --agnes-brand-primary: var(--agnes-color-indigo-500);
+    /* The logo mark and wordmark keep the brand's own blue; it is not an accent. */
+    --agnes-brand-mark: var(--agnes-color-brand-blue-600);
+    --agnes-brand-focus-ring: var(--agnes-color-indigo-500);
+    --agnes-brand-emphasis-soft: var(--agnes-color-indigo-50);
+    /* Soft halo around a focused field or card; the solid ring stays for outlines. */
+    --agnes-focus-ring-soft: color-mix(in srgb, var(--agnes-brand-focus-ring) 24%, transparent);
+    /* Thin scrollbar thumb for long scroll regions; the track stays transparent. */
+    --agnes-scrollbar-thumb: color-mix(in srgb, var(--agnes-text-tertiary) 75%, transparent);
+
+    /* Text */
+    --agnes-text-primary: var(--agnes-color-gray-900);
+    --agnes-text-secondary: var(--agnes-color-gray-600);
+    /* Muted copy stays at 4.5:1 on the ground, the panel and the hover/card overlays. */
+    --agnes-text-tertiary: var(--agnes-color-gray-500);
+    --agnes-text-disabled: var(--agnes-text-tertiary);
+    --agnes-text-inverse: var(--agnes-color-gray-0);
+    --agnes-text-emphasis: var(--agnes-color-indigo-600);
+
+    /* Icon —— 只有 secondary 有"非继承"消费点（连接状态灯）；
+     其余图标一律走 .icon 的 stroke: currentColor 继承按钮文字色。 */
+    --agnes-icon-secondary: var(--agnes-text-secondary);
+
+    /* Two opaque light surfaces: white working content and one gray navigation/fill step.
+       Containers stay white; borders and elevation distinguish them from white content. */
+    --agnes-bg-page: var(--agnes-color-gray-0);
+    --agnes-bg-surface: var(--agnes-color-gray-0);
+    --agnes-bg-popover: var(--agnes-color-gray-0);
+    --agnes-bg-card: var(--agnes-bg-subtle);
+    --agnes-bg-code: var(--agnes-bg-subtle);
+    --agnes-bg-selected: var(--agnes-color-ink-a08);
+    --agnes-bg-hover: var(--agnes-color-ink-a06);
+    /* Soft neutral fill of text fields, secondary buttons and icon tiles: no border needed. */
+    --agnes-bg-fill: var(--agnes-bg-subtle);
+    --agnes-bg-fill-hover: var(--agnes-color-ink-a08);
+    /* White content containers; the legacy card role is the one gray auxiliary fill. */
+    --agnes-bg-group: var(--agnes-color-gray-0);
+    --agnes-bg-scrim: var(--agnes-color-ink-a36);
+    --agnes-bg-lightbox: var(--agnes-color-black-a85);
+    /* 头部和设置表头不使用磨砂底；-soft / -hover 仍有消费点。 */
+    --agnes-surface-glass-soft: var(--agnes-color-white-a72);
+    --agnes-surface-glass-hover: var(--agnes-color-white-a54);
+    /* The user's own message: a soft neutral bubble, never the accent. */
+    --agnes-bg-user-bubble: var(--agnes-bg-subtle);
+
+    /* Input —— 柔和填充、无重边框；聚焦时回到表面色并出现柔和强调环。 */
+    --agnes-input-surface: var(--agnes-bg-surface);
+    --agnes-input-content-strong: var(--agnes-color-gray-900);
+    --agnes-input-placeholder: var(--agnes-text-tertiary);
+    --agnes-input-border: var(--agnes-color-gray-400);
+    --agnes-input-border-emphasis: var(--agnes-color-gray-500);
+    --agnes-input-border-focus: var(--agnes-color-indigo-500);
+
+    /* Line */
+    --agnes-line-emphasis: var(--agnes-color-gray-200);
+    --agnes-line-primary: var(--agnes-color-gray-150);
+
+    /* Button —— secondary 在 .secondary-button 里是描边按钮，不需要填充角色；
+     disabled 沿用 --agnes-text-tertiary + --agnes-bg-card。 */
+    --agnes-button-primary-bg: var(--agnes-color-indigo-500);
+    --agnes-button-primary-bg-hover: var(--agnes-color-indigo-600);
+    --agnes-button-primary-content: var(--agnes-color-gray-0);
+    --agnes-button-outline-content: var(--agnes-color-gray-700);
+
+    /* Status —— -text 用于文字（4.5:1），-solid 用于圆点、图标等非文字标记（3:1）。 */
+    --agnes-status-success-text: var(--agnes-color-green-700);
+    --agnes-status-success-bg: var(--agnes-color-green-50);
+    --agnes-status-warning-text: var(--agnes-color-amber-700);
+    --agnes-status-warning-bg: var(--agnes-color-amber-50);
+    --agnes-status-danger-text: var(--agnes-color-red-700);
+    --agnes-status-danger-bg: var(--agnes-color-red-50);
+    --agnes-status-info-text: var(--agnes-color-blue-700);
+    --agnes-status-info-bg: var(--agnes-color-blue-50);
+    --agnes-bg-subtle: var(--agnes-color-gray-50);
+    --agnes-status-success-border: color-mix(in srgb, var(--agnes-status-success-text) 30%, transparent);
+    --agnes-status-warning-border: color-mix(in srgb, var(--agnes-status-warning-text) 30%, transparent);
+    --agnes-status-danger-border: color-mix(in srgb, var(--agnes-status-danger-text) 30%, transparent);
+    --agnes-status-info-border: color-mix(in srgb, var(--agnes-status-info-text) 30%, transparent);
+    --agnes-status-success-solid: var(--agnes-color-green-500);
+    --agnes-status-warning-solid: var(--agnes-color-amber-500);
+    --agnes-status-danger-solid: var(--agnes-color-red-500);
+    --agnes-status-info-solid: var(--agnes-color-blue-500);
+
+    /* Shadow —— 边框优先于阴影：只有浮层（菜单、弹窗、抽屉）使用高程。
+     阴影内含颜色，必须随主题切换，故归语义层而不是尺度层。 */
+    --shadow-elevation: var(--elevation-1);
+    /* The one keyboard focus ring, following the element's own radius: a crisp 1px solid line at
+     the element's edge (3:1 against every surface) inside a thin 2px soft ring. */
+    --focus-outline: 2px solid var(--agnes-focus-ring-soft);
+    --focus-line: 0 0 0 1px var(--agnes-brand-focus-ring);
+    --focus-line-inset: inset 0 0 0 1px var(--agnes-brand-focus-ring);
+    /* The current item of a navigation rail: a raised pill, barely lifted. */
+    --shadow-raised: 0 0 0 1px rgb(27 29 34 / 5%), 0 1px 2px var(--agnes-color-ink-a08);
+    /* The composer card's 1px lift; every other bordered card stays flat. */
+    --shadow-hairline: 0 1px 2px rgb(27 29 34 / 5%);
+    --shadow-dialog: 0 4px 12px var(--agnes-color-ink-a08), 0 24px 56px rgb(27 29 34 / 16%);
+    --shadow-elevation-soft: 0 1px 2px rgb(27 29 34 / 6%), 0 8px 24px rgb(27 29 34 / 10%);
+    --shadow-elevation-prominent: var(--elevation-1);
+    --elevation-0: none;
+    --elevation-1: var(--shadow-elevation-soft);
+    --elevation-2: var(--shadow-dialog);
+
+    /* Refinement layer (native control proportions). A hairline is a tint of the text colour, so it
+     reads on the ground, on panels and on surfaces alike. */
+    --agnes-line-hairline: color-mix(in srgb, var(--agnes-text-primary) 12%, transparent);
+    /* The one translucent surface: menus and pickers, 94% opaque over a backdrop blur. */
+    --agnes-bg-popover-material: color-mix(in srgb, var(--agnes-bg-popover) 94%, transparent);
+    /* The highlighted row of a menu or picker: an accent fill with its own content colour. */
+    --agnes-menu-active-bg: var(--agnes-color-indigo-500);
+    --agnes-menu-active-text: var(--agnes-color-gray-0);
+    --agnes-switch-track: color-mix(in srgb, var(--agnes-text-primary) 16%, transparent);
+    --agnes-switch-knob: var(--agnes-color-gray-0);
+    --agnes-segment-track: var(--agnes-color-ink-a06);
+    /* A raised control: secondary and popup buttons, the picked segment. */
+    --agnes-bg-control: var(--agnes-color-gray-0);
+    /* A raised control (secondary button, popup button, picked segment): hairline ring, 1px lift. */
+    --shadow-control: 0 0 0 var(--hairline) rgb(27 29 34 / 10%), 0 0.5px 1.5px rgb(27 29 34 / 12%);
+    --shadow-control-primary: inset 0 0.5px 0 rgb(255 255 255 / 22%), 0 0.5px 1.5px rgb(27 29 34 / 25%);
+    --shadow-knob: 0 0 0 0.5px rgb(0 0 0 / 6%), 0 1.5px 4px rgb(0 0 0 / 22%);
+    --shadow-popover:
+      0 0 0 var(--hairline) rgb(27 29 34 / 9%), 0 2px 6px rgb(27 29 34 / 6%), 0 14px 40px rgb(27 29 34 / 14%);
+
+    /* Product-specific */
+    --agnes-bg-app-sidebar: var(--agnes-color-gray-50);
+    --agnes-bg-app-content: var(--agnes-bg-page);
+
+    /* Trace 时序图和类型标记的语义色；组件层只消费这些角色，不保留具体色值。 */
+    --agnes-trace-track: rgb(127 127 127 / 8%);
+    --agnes-trace-row-current: rgb(127 127 127 / 10%);
+    --agnes-trace-row-hover: rgb(127 127 127 / 7%);
+    /* 搜索命中的标记：浅色下用琥珀底配深琥珀字，非当前命中再给整行一层弱底。 */
+    --agnes-trace-mark-bg: var(--agnes-status-warning-bg);
+    --agnes-trace-mark-text: var(--agnes-status-warning-text);
+    --agnes-trace-row-hit: color-mix(in srgb, var(--agnes-status-warning-bg) 70%, transparent);
+    --agnes-trace-lane-input: #b4b7bd;
+    --agnes-trace-lane-user: #6a6f7a;
+    --agnes-trace-lane-context: #2f8f5b;
+    --agnes-trace-lane-model: #4f5bd5;
+    --agnes-trace-lane-tool: #b7791f;
+    --agnes-trace-badge-user-text: var(--agnes-text-secondary);
+    --agnes-trace-badge-user-bg: rgb(106 111 122 / 12%);
+    --agnes-trace-badge-context-text: #256f47;
+    --agnes-trace-badge-context-bg: rgb(47 143 91 / 11%);
+    --agnes-trace-badge-assistant-text: #3f49b0;
+    --agnes-trace-badge-assistant-bg: rgb(79 91 213 / 10%);
+    --agnes-trace-badge-tool-text: #8a5a14;
+    --agnes-trace-badge-tool-bg: rgb(183 121 31 / 12%);
+    --agnes-trace-badge-approval-text: #9a3430;
+    --agnes-trace-badge-approval-bg: rgb(194 65 59 / 10%);
+    --agnes-trace-badge-compaction-text: var(--agnes-text-secondary);
+    --agnes-trace-badge-compaction-bg: rgb(106 111 122 / 12%);
+
+    /* File-type badges in the workbench Files tree: white letters on a tone per kind of file.
+       The tones keep their light values in dark mode; the badge carries its own contrast. */
+    --agnes-file-type-text: var(--agnes-color-gray-0);
+    --agnes-file-type-html: var(--agnes-color-red-500);
+    --agnes-file-type-css: var(--agnes-color-blue-500);
+    --agnes-file-type-js: var(--agnes-color-amber-700);
+    --agnes-file-type-ts: var(--agnes-color-indigo-500);
+    --agnes-file-type-json: var(--agnes-color-green-700);
+    --agnes-file-type-md: var(--agnes-color-gray-650);
+    --agnes-file-type-svg: var(--agnes-color-amber-500);
+    --agnes-file-type-image: var(--agnes-color-green-500);
+    --agnes-file-type-code: var(--agnes-color-blue-700);
+    --agnes-file-type-other: var(--agnes-color-gray-500);
+    /* A rendered HTML file is a page: it keeps a white canvas in both themes. */
+    --agnes-document-page-bg: var(--agnes-color-gray-0);
+
+    /* Preserve terminal skin hooks while following the surrounding panel theme. */
+    --agnes-terminal-bg: var(--agnes-bg-app-content);
+    --agnes-terminal-bar: var(--agnes-bg-hover);
+    --agnes-terminal-line: var(--agnes-line-hairline);
+    --agnes-terminal-text: var(--agnes-text-primary);
+    --agnes-terminal-muted: var(--agnes-text-secondary);
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+   3. 语义 token —— 深色（与浅色分类同序、名字成对）
+   必须出现在浅色 :root 之后，同名 token 才能覆盖。
+   ═══════════════════════════════════════════════════════════════════════ */
+  .dark {
+    color-scheme: dark;
+
+    /* Brand */
+    --agnes-brand-primary: var(--agnes-color-indigo-300);
+    --agnes-brand-mark: var(--agnes-color-brand-blue-400);
+    --agnes-brand-focus-ring: var(--agnes-color-indigo-300);
+    --agnes-brand-emphasis-soft: var(--agnes-color-indigo-900);
+    --agnes-focus-ring-soft: color-mix(in srgb, var(--agnes-brand-focus-ring) 36%, transparent);
+    --agnes-scrollbar-thumb: color-mix(in srgb, var(--agnes-text-tertiary) 75%, transparent);
+
+    /* Text */
+    --agnes-text-primary: var(--agnes-color-gray-125);
+    --agnes-text-secondary: var(--agnes-color-gray-250);
+    --agnes-text-tertiary: var(--agnes-color-gray-300);
+    --agnes-text-disabled: var(--agnes-text-tertiary);
+    /* 深色强调色是亮靛蓝，其上的内容必须是近黑。 */
+    --agnes-text-inverse: var(--agnes-color-indigo-950);
+    --agnes-text-emphasis: var(--agnes-color-indigo-200);
+
+    /* Icon —— 同浅色：只有 secondary 有非继承消费点（连接状态灯） */
+    --agnes-icon-secondary: var(--agnes-text-secondary);
+
+    /* Same hierarchy as light: navigation is darker than content; raised surfaces are lighter. */
+    --agnes-bg-page: var(--agnes-color-gray-925);
+    --agnes-bg-surface: var(--agnes-color-gray-850);
+    --agnes-bg-popover: var(--agnes-color-gray-850);
+    --agnes-bg-card: var(--agnes-color-white-a04);
+    --agnes-bg-code: var(--agnes-color-white-a04);
+    --agnes-bg-selected: var(--agnes-color-white-a09);
+    --agnes-bg-hover: var(--agnes-color-white-a06);
+    --agnes-bg-fill: var(--agnes-color-white-a06);
+    --agnes-bg-fill-hover: var(--agnes-color-white-a09);
+    --agnes-bg-group: var(--agnes-color-white-a04);
+    --agnes-bg-scrim: var(--agnes-color-black-a64);
+    --agnes-bg-lightbox: var(--agnes-color-black-a85);
+    --agnes-surface-glass-soft: var(--agnes-color-white-a06);
+    --agnes-surface-glass-hover: var(--agnes-color-white-a09);
+    --agnes-bg-user-bubble: var(--agnes-color-gray-800);
+
+    /* Input */
+    --agnes-input-surface: var(--agnes-bg-surface);
+    --agnes-input-content-strong: var(--agnes-color-gray-125);
+    --agnes-input-placeholder: var(--agnes-text-tertiary);
+    --agnes-input-border: var(--agnes-color-gray-450);
+    --agnes-input-border-emphasis: var(--agnes-color-gray-300);
+    --agnes-input-border-focus: var(--agnes-color-indigo-300);
+
+    /* Line */
+    --agnes-line-emphasis: var(--agnes-color-gray-650);
+    --agnes-line-primary: var(--agnes-color-gray-750);
+
+    /* Button —— 同浅色：secondary 是描边按钮，disabled 沿用 tertiary + bg-card */
+    --agnes-button-primary-bg: var(--agnes-color-indigo-300);
+    --agnes-button-primary-bg-hover: var(--agnes-color-indigo-200);
+    --agnes-button-primary-content: var(--agnes-color-indigo-950);
+    --agnes-button-outline-content: var(--agnes-color-gray-125);
+
+    /* Status */
+    --agnes-status-success-text: var(--agnes-color-green-300);
+    --agnes-status-success-bg: var(--agnes-color-green-900);
+    --agnes-status-warning-text: var(--agnes-color-amber-300);
+    --agnes-status-warning-bg: var(--agnes-color-amber-900);
+    --agnes-status-danger-text: var(--agnes-color-red-300);
+    --agnes-status-danger-bg: var(--agnes-color-red-900);
+    --agnes-status-info-text: var(--agnes-color-blue-300);
+    --agnes-status-info-bg: var(--agnes-color-blue-900);
+    --agnes-bg-subtle: var(--agnes-color-gray-925);
+    --agnes-status-success-border: color-mix(in srgb, var(--agnes-status-success-text) 30%, transparent);
+    --agnes-status-warning-border: color-mix(in srgb, var(--agnes-status-warning-text) 30%, transparent);
+    --agnes-status-danger-border: color-mix(in srgb, var(--agnes-status-danger-text) 30%, transparent);
+    --agnes-status-info-border: color-mix(in srgb, var(--agnes-status-info-text) 30%, transparent);
+    --agnes-status-success-solid: var(--agnes-color-green-300);
+    --agnes-status-warning-solid: var(--agnes-color-amber-300);
+    --agnes-status-danger-solid: var(--agnes-color-red-300);
+    --agnes-status-info-solid: var(--agnes-color-blue-300);
+
+    /* Shadow —— 深色用近黑的两层投影；边框由卡片自身声明。 */
+    --shadow-elevation: var(--elevation-1);
+    --focus-outline: 2px solid var(--agnes-focus-ring-soft);
+    --focus-line: 0 0 0 1px var(--agnes-brand-focus-ring);
+    --focus-line-inset: inset 0 0 0 1px var(--agnes-brand-focus-ring);
+    --shadow-raised: 0 0 0 1px rgb(255 255 255 / 6%), 0 1px 2px rgb(0 0 0 / 30%);
+    --shadow-hairline: 0 1px 2px rgb(0 0 0 / 24%);
+    --shadow-dialog: 0 4px 12px rgb(0 0 0 / 28%), 0 24px 56px rgb(0 0 0 / 40%);
+    --shadow-elevation-soft: 0 1px 2px rgb(0 0 0 / 24%), 0 8px 24px rgb(0 0 0 / 32%);
+    --shadow-elevation-prominent: var(--elevation-1);
+    --elevation-0: none;
+    --elevation-1: var(--shadow-elevation-soft);
+    --elevation-2: var(--shadow-dialog);
+
+    /* Refinement layer */
+    --agnes-line-hairline: color-mix(in srgb, var(--agnes-text-primary) 12%, transparent);
+    --agnes-bg-popover-material: color-mix(in srgb, var(--agnes-bg-popover) 94%, transparent);
+    /* 深色的高亮行是亮靛蓝，其上的内容是近黑。 */
+    --agnes-menu-active-bg: var(--agnes-color-indigo-300);
+    --agnes-menu-active-text: var(--agnes-color-indigo-950);
+    --agnes-switch-track: color-mix(in srgb, var(--agnes-text-primary) 16%, transparent);
+    --agnes-switch-knob: var(--agnes-color-gray-125);
+    --agnes-segment-track: var(--agnes-color-white-a06);
+    --agnes-bg-control: var(--agnes-color-gray-650);
+    --shadow-control: 0 0 0 var(--hairline) rgb(255 255 255 / 12%), 0 0.5px 1.5px rgb(0 0 0 / 40%);
+    --shadow-control-primary: inset 0 0.5px 0 rgb(255 255 255 / 30%), 0 0.5px 1.5px rgb(0 0 0 / 40%);
+    --shadow-knob: 0 0 0 0.5px rgb(0 0 0 / 20%), 0 1.5px 4px rgb(0 0 0 / 45%);
+    --shadow-popover: 0 0 0 var(--hairline) rgb(255 255 255 / 12%), 0 14px 44px rgb(0 0 0 / 55%);
+
+    /* Product-specific */
+    --agnes-bg-app-sidebar: var(--agnes-color-gray-950);
+    --agnes-bg-app-content: var(--agnes-bg-page);
+
+    /* 保留 Trace 类型的稳定识别色；透明背景自然与深色表面合成。 */
+    --agnes-trace-track: rgb(127 127 127 / 8%);
+    --agnes-trace-row-current: rgb(127 127 127 / 10%);
+    --agnes-trace-row-hover: rgb(127 127 127 / 7%);
+    /* 深色下行底本来就是深色，命中标记改用亮琥珀字加低透明琥珀底才看得见。 */
+    --agnes-trace-mark-bg: color-mix(in srgb, var(--agnes-status-warning-text) 24%, transparent);
+    --agnes-trace-mark-text: var(--agnes-status-warning-text);
+    --agnes-trace-row-hit: color-mix(in srgb, var(--agnes-status-warning-text) 12%, transparent);
+    --agnes-trace-lane-input: #5a5e68;
+    --agnes-trace-lane-user: #9a9ea8;
+    --agnes-trace-lane-context: #5cc28a;
+    --agnes-trace-lane-model: #8a93ff;
+    --agnes-trace-lane-tool: #e0a84a;
+    --agnes-trace-badge-user-text: var(--agnes-text-secondary);
+    --agnes-trace-badge-user-bg: rgb(154 158 168 / 16%);
+    --agnes-trace-badge-context-text: #7fd3a4;
+    --agnes-trace-badge-context-bg: rgb(92 194 138 / 14%);
+    --agnes-trace-badge-assistant-text: #aab0ff;
+    --agnes-trace-badge-assistant-bg: rgb(138 147 255 / 16%);
+    --agnes-trace-badge-tool-text: #e8bb6f;
+    --agnes-trace-badge-tool-bg: rgb(224 168 74 / 15%);
+    --agnes-trace-badge-approval-text: #f29a94;
+    --agnes-trace-badge-approval-bg: rgb(239 123 116 / 14%);
+    --agnes-trace-badge-compaction-text: var(--agnes-text-secondary);
+    --agnes-trace-badge-compaction-bg: rgb(154 158 168 / 16%);
+
+    --agnes-file-type-text: var(--agnes-color-gray-0);
+    --agnes-file-type-html: var(--agnes-color-red-500);
+    --agnes-file-type-css: var(--agnes-color-blue-500);
+    --agnes-file-type-js: var(--agnes-color-amber-700);
+    --agnes-file-type-ts: var(--agnes-color-indigo-500);
+    --agnes-file-type-json: var(--agnes-color-green-700);
+    --agnes-file-type-md: var(--agnes-color-gray-650);
+    --agnes-file-type-svg: var(--agnes-color-amber-500);
+    --agnes-file-type-image: var(--agnes-color-green-500);
+    --agnes-file-type-code: var(--agnes-color-blue-700);
+    --agnes-file-type-other: var(--agnes-color-gray-500);
+    --agnes-document-page-bg: var(--agnes-color-gray-0);
+
+    --agnes-terminal-bg: var(--agnes-bg-app-content);
+    --agnes-terminal-bar: var(--agnes-bg-hover);
+    --agnes-terminal-line: var(--agnes-line-hairline);
+    --agnes-terminal-text: var(--agnes-text-primary);
+    --agnes-terminal-muted: var(--agnes-text-secondary);
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+   4. 尺度 —— 无深浅维度，不参与别名映射
+   --radius-card / --radius-panel 是既有名字原样提升进本层：
+   圆角是纯尺度，既无深浅维度也无"基础/语义"分层，故不新建 token、
+   不做别名（同名别名会构成 var 自引用）。
+   ═══════════════════════════════════════════════════════════════════════ */
+  :root {
+    /* System stack: SF on Apple platforms, Segoe UI on Windows, Inter where installed; CJK falls to
+     PingFang SC and its platform peers. No web font is downloaded. */
+    --font-sans:
+      -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, "PingFang SC", "Hiragino Sans GB",
+      "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+    --font-mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --font-size-xs: 0.75rem;
+    --font-size-sm: 0.8125rem;
+    --font-size-body: 0.875rem;
+    --font-size-md: 1rem;
+    --font-size-lg: 1.125rem;
+    --font-size-xl: 1.25rem;
+    --font-size-2xl: 1.5rem;
+    /* System Settings hierarchy: a large page title, a small muted label above each group and one
+     caption size for row descriptions. Size and space carry the levels, not frames or fills. */
+    --font-size-title: 1.625rem;
+    --font-size-caption: 0.78125rem;
+    --line-title: 2rem;
+    --tracking-title: -0.022em;
+    /* Conversation prose: 14px at a 72ch measure; CJK body text never drops below 1.6. */
+    --font-size-prose: 0.875rem;
+    --line-height-body: 1.6;
+    --line-height-prose: 1.7;
+    --measure-prose: 72ch;
+    --line-xs: 1rem;
+    --line-sm: 1.25rem;
+    --line-md: 1.5rem;
+    --line-lg: 1.75rem;
+    /* One radius scale for the whole product: 8px chips inside rows, 10px controls and rows,
+     14px grouped cards and popovers, 20px dialogs. */
+    --radius-xs: 4px;
+    --radius-sm: 8px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-xl: 20px;
+    --radius-2xl: 24px;
+    --radius-main-page: var(--radius-modal);
+    --radius-modal: var(--radius-xl);
+    --radius-full: 9999px;
+    /* Roles: chips, buttons, inputs, popup buttons, menu rows and navigation items 8px; segmented
+     tracks and icon tiles 10px; grouped cards, menus and popovers 14px; dialogs and drawers 20px;
+     pills only for badges and switches. Nested radii never exceed their parent. */
+    --radius-chip: var(--radius-sm);
+    --radius-control: var(--radius-sm);
+    --radius-segmented: var(--radius-md);
+    --radius-tile: var(--radius-md);
+    /* Continuous corners where the engine draws them: the listed shared surfaces switch to a
+     squircle and widen their radius by this factor so the corner reads the same size. */
+    --corner-shape: round;
+    --corner-scale: 1;
+    --radius-card: var(--radius-lg);
+    --radius-surface: var(--radius-lg);
+    /* Menus and popovers: a soft floating surface, with rows that round inside it. */
+    --radius-popover: var(--radius-lg);
+    --radius-menu-item: var(--radius-sm);
+    /* The composer card is the one large, soft surface the user writes in. */
+    --radius-composer: var(--radius-2xl);
+    --radius-pill: var(--radius-full);
+    --radius-panel: var(--radius-surface);
+    --s2: 2px;
+    --s4: 4px;
+    --s8: 8px;
+    --s10: 10px;
+    --s12: 12px;
+    --s16: 16px;
+    --s20: 20px;
+    --s24: 24px;
+    --s32: 32px;
+    --s48: 48px;
+    --chat-content-width: 57.5rem;
+    --composer-card-max-width: calc(var(--chat-content-width) + 2rem);
+    --admin-content-width: 70rem;
+    /* Settings pages share one content column and one gutter. */
+    --settings-column: 47.5rem;
+    --settings-gutter: var(--s32);
+    --settings-frame: calc(var(--settings-column) + 2 * var(--settings-gutter));
+    /* The settings header line: title (breadcrumb), page actions, then the dialog's close button. */
+    --settings-header-height: 3.375rem;
+    --settings-header-end: calc(var(--s16) + var(--control-height-sm) + var(--s12));
+    /* Desktop-tool density: 28px buttons, popup buttons and icon buttons, 24px compact buttons,
+     32px text fields; touch widths raise fields to the touch target. */
+    --control-height: 1.75rem;
+    --control-height-sm: 28px;
+    --control-height-xs: 1.5rem;
+    --control-height-form: 2rem;
+    --menu-item-height: 1.625rem;
+    --row-min-height: 2.875rem;
+    --switch-width: 2.375rem;
+    --switch-height: 1.375rem;
+    --switch-knob: 1.125rem;
+    /* Page rhythm: 28px between sections, 36px above a page title. */
+    --space-section: 28px;
+    --space-page-top: 36px;
+    /* Dividers and control outlines: one device pixel on dense screens (see the media query below). */
+    --hairline: 1px;
+    /* One line weight for 16px line icons; the heavier one marks the selected navigation item and
+     the icon of a primary button. */
+    --icon-stroke: 1.5;
+    --icon-stroke-strong: 1.75;
+    --control-height-touch: 44px;
+    --dialog-max-height: min(46rem, calc(100dvh - 3rem));
+    /* 阴影已上移到语义层（第 2 节 Shadow 组）：内含颜色，需要 .dark 覆盖。
+     三档仍是极简口径，只是不再属于"无深浅维度"的尺度层。 */
+    --font-weight-regular: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+    /* Motion is short (160–320ms) and moves only transform and opacity. Presses and tab changes
+     ease out; disclosures, menus, dialogs, side panels and the switch knob settle on a slight
+     spring (about 8% overshoot). Exits take 60% of the entrance and never bounce. Keyboard-opened
+     surfaces do not animate, and everything is gated by prefers-reduced-motion below. */
+    --motion-fast: 120ms;
+    --motion-base: 200ms;
+    --motion-short: 160ms;
+    --motion-medium: 260ms;
+    --motion-long: 320ms;
+    --motion-exit: 0.6;
+    --motion-breathe: 2.4s;
+    --motion-ease: cubic-bezier(0.2, 0, 0, 1);
+    --motion-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --motion-spring: linear(
+      0,
+      0.009,
+      0.035 2.1%,
+      0.141 4.4%,
+      0.723 12.9%,
+      0.938 16.7%,
+      1.017 19.4%,
+      1.067 22.9%,
+      1.079 25.6%,
+      1.075 28.6%,
+      1.021 39.4%,
+      1.003 45.8%,
+      0.997 53.3%,
+      1
+    );
+    /* A press is a slight shrink and darken; no glow, ripple or shadow animates. */
+    --press-scale: 0.97;
+    --press-dim: 0.96;
+    --transition-fast: var(--motion-fast) var(--motion-ease);
+    --transition: var(--motion-base) var(--motion-ease);
+  }
+  @media (max-width: 767px) {
+    :root {
+      --control-height-form: var(--control-height-touch);
+    }
+  }
+  /* Tablet actions keep their established tap target; desktop density starts above the
+     responsive sidebar breakpoint. Phone controls keep their separate 44px hit areas. */
+  @media (min-width: 768px) and (max-width: 900px) {
+    :root {
+      --control-height: var(--s32);
+      --control-height-sm: var(--s32);
+      --control-height-xs: var(--s32);
+      --menu-item-height: var(--s32);
+    }
+  }
+  @media (min-resolution: 2dppx) {
+    :root {
+      --hairline: 0.5px;
+    }
+  }
+  @supports (corner-shape: squircle) {
+    :root {
+      --corner-shape: squircle;
+      --corner-scale: 1.3;
+    }
+  }
+  /* CJK text is never tightened. */
+  :root:lang(zh),
+  :root:lang(ja),
+  :root:lang(ko) {
+    --tracking-title: 0;
+  }
+
+  /* The ring belongs to keyboard navigation. After a pointer action nothing draws it, including on
+   a control that script focused in response to the click; text fields keep their own focus style. */
+  :root[data-agnes-input="pointer"] {
+    --focus-outline: 0 solid transparent;
+    --focus-line: 0 0 0 0 transparent;
+    --focus-line-inset: inset 0 0 0 0 transparent;
+  }
+
+  /* Private application layers: outside the semantic skin vocabulary (second :root). */
+  :root {
+    --agh-z-dropdown: 1000;
+    --agh-z-drawer: 1100;
+    --agh-z-modal: 1200;
+    --agh-z-tooltip: 1300;
+    --agh-z-notification: 1400;
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════ */
+}
+
+@layer app {
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      /* Static transforms also encode popup placement and disclosure direction. Keep those facts. */
+      transition-duration: 0s !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

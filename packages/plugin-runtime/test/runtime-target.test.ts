@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { createTreeSnapshot } from '../src/convergence.js'
-import type { PluginRow } from '../src/plugin-row.js'
+import { createPluginRow, type PluginRow } from '../src/plugin-row.js'
 import {
   buildRuntimeTarget,
   decodeCanonicalRuntimeTargetBytes,
@@ -53,6 +53,29 @@ function replaceBase64(artifact: RuntimeTargetArtifact, transform: (value: unkno
 }
 
 describe('Task 8 runtime target builder', () => {
+  it('round-trips declared live consumers while keeping code identity across resource revisions', () => {
+    const input = {
+      id: 'ext:acme/playbooks',
+      plugin: 'builtin:@acme/playbooks/main',
+      snapshotDigest: 'pinned-snapshot',
+      exportName: 'main',
+      entryRevision: 'pinned-code',
+      extrasRevision: 'extras',
+      mountRevision: 'mount',
+      liveResources: ['skills'],
+    }
+    const first = createPluginRow({ ...input, liveResourceRevision: 'skills-a' })
+    const second = createPluginRow({ ...input, liveResourceRevision: 'skills-b' })
+    expect(first.codeMountIdentity).toBe(second.codeMountIdentity)
+    expect(first.mountIdentity).not.toBe(second.mountIdentity)
+    expect(
+      createPluginRow({ ...input, entryRevision: 'new-code', liveResourceRevision: 'skills-b' })
+        .codeMountIdentity,
+    ).not.toBe(second.codeMountIdentity)
+    const target = build([second])
+    expect(decodeRuntimeTargetArtifact(encodeRuntimeTargetArtifact(target)).tree.rows[0]).toEqual(second)
+  })
+
   it('splits the closed resource-owned ids into nullable slots', () => {
     const resources = RESOURCE_OWNED_ROW_IDS.map((id) => row(id))
     const target = build([row('ext:example/ordinary'), ...resources])
@@ -170,6 +193,15 @@ describe('Task 8 runtime target builder', () => {
     expect(target.resource.resources.mcp).toEqual([{ enabled: true, id: 'one' }])
     expect(target.resource.resources.skills).toEqual({ roots: [{ names: ['alpha'] }] })
     expect(Object.isFrozen((target.resource.resources.mcp as object[])[0])).toBe(true)
+    const artifact = encodeRuntimeTargetArtifact(target)
+    expect(encodeRuntimeTargetArtifact(target)).toEqual(artifact)
+    const copied = structuredClone(target)
+    const tree = { ...copied.tree }
+    const shallow = Object.freeze({ ...copied, tree })
+    expect(encodeRuntimeTargetArtifact(shallow)).toEqual(artifact)
+    tree.hash = '0'.repeat(64)
+    expect(() => encodeRuntimeTargetArtifact(shallow)).toThrow(/E_TREE_HASH/)
+    expect(encodeRuntimeTargetArtifact(target)).toEqual(artifact)
   })
 
   it('canonicalizes inject and provides as Unicode code-point string sets', () => {

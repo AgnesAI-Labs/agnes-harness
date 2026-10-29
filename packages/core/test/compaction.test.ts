@@ -1,16 +1,16 @@
+import { canonicalJson } from '@agnes/core-common/request/hash'
+import { withPhase } from '@agnes/core-common/step/op-state'
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { HookPayloadMap } from '@agnes/extension-api'
-import type { ModelRecord, RequestBody, ThinkingLevel } from '@agnes/protocol'
+import type { ModelRecord, ThinkingLevel } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { HookBlockedError } from '../src/hooks/block.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
 import { ToolRegistry } from '../src/registry/tools.js'
-import { canonicalJson } from '../src/request/hash.js'
 import { CompactionRunner } from '../src/step/compaction.js'
 import { contextTokens } from '../src/step/gate.js'
 import { boundWireInputTokens, discloseTools, estimateTokens, resolveModel } from '../src/step/inference.js'
-import { withPhase } from '../src/step/op-state.js'
-import { presetDefaults } from '../src/step/preset.js'
-import { fakeProvider, type Script, sent, textTurn, toolTurn, usage } from './helpers/fake-provider.js'
+import { fakeProvider, type Script, sent, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession, readTool } from './helpers/open-session.js'
 
@@ -59,10 +59,13 @@ function model(id: string, slot: ModelRecord['slot'], contextWindow = 100): Mode
   }
 }
 
-async function history(summaryScript: Script = textTurn('SUMMARY')) {
+async function history(
+  summaryScript: Script = textTurn('SUMMARY'),
+  memory?: import('@agnes/extension-api').MemorySession,
+) {
   const provider = fakeProvider([textTurn('old-one'), textTurn('old-two'), summaryScript, textTurn('final')])
   provider.models = () => [model('answer-model', 'primary'), model('summary-model', 'compaction', 1000)]
-  const opened = await openSession({ provider })
+  const opened = await openSession({ provider, ...(memory ? { memory } : {}) })
   // These fixtures resize catalog models; saved conversation budgets are covered separately.
   delete opened.session.preset.model.contextWindow
   opened.session.preset.model.id.compaction = 'summary-model'
@@ -94,6 +97,53 @@ function runner(onCompact: (p: HookPayloadMap['compact']) => Promise<void> = asy
 }
 
 describe('production compaction phase', () => {
+  it.each(['elision', 'summary', 'invalid'] as const)(
+    'runs an independent engine (%s) through validated Core replacements and usage',
+    async (mode) => {
+      const { session, log, provider } = await history()
+      // This port uses the conservative serialized-wire bound, including envelope overhead.
+      provider.models = () => [model('answer-model', 'primary'), model('summary-model', 'compaction', 10000)]
+      session.compaction = new CompactionRunner({
+        engine: {
+          shouldCompact: () => false,
+          async compact(input, ports) {
+            const nodes = input.conversation
+            expect(nodes.some((node) => node.turn === 1)).toBe(true)
+            const range = [nodes[0]!.seq, nodes.at(mode === 'invalid' ? -1 : -2)!.seq] as const
+            const text =
+              mode === 'summary'
+                ? await ports.model.summarize({
+                    range,
+                    system: 'Summarize safely.',
+                    instruction: 'Summarize history.',
+                    maxTokens: 77,
+                  })
+                : 'S'
+            return { kind: 'replacement', range, text, mode: mode === 'summary' ? 'summary' : 'elision' }
+          },
+        },
+        onCompact: async () => undefined,
+      })
+      await session.requestCompaction({ actor, admissionId: 'independent-engine' })
+      expect(await session.runCompaction()).toEqual({ phase: 'checkpoint' })
+      const replacements = (await log.scan({ fromSeq: 1, limit: 500 })).filter((row) => row.surfaceOp)
+      expect(
+        replacements,
+        JSON.stringify(await log.scan({ type: 'x/core/compaction-failed', limit: 5 })),
+      ).toHaveLength(mode === 'invalid' ? 0 : 1)
+      expect(provider.requests).toHaveLength(mode === 'summary' ? 3 : 2)
+      const costs = await log.scan({ type: 'cost/ledger', limit: 100 })
+      expect(costs.filter((row) => (row.data as { purpose?: string }).purpose === 'compaction')).toHaveLength(
+        mode === 'summary' ? 1 : 0,
+      )
+      if (mode === 'invalid') {
+        expect((await log.scan({ type: 'x/core/compaction-failed', limit: 5 }))[0]?.data).toMatchObject({
+          reason: expect.stringContaining('compaction must retain a conversation suffix'),
+        })
+      }
+    },
+  )
+
   it.each([384000, 2048])(
     'summarizes a reduced session budget using the model capacity and output cap (%i)',
     async (maxTokens) => {
@@ -315,7 +365,25 @@ describe('production compaction phase', () => {
   })
 
   it('replays the primary system, tools and history before a wide summary instruction', async () => {
-    const { session, provider } = await history()
+    const revision = 'a'.repeat(64)
+    const memory = {
+      root: '/memory',
+      snapshot: async () => ({ revision, content: 'synthetic memory index', omitted: false }),
+      files: (fallback) => fallback,
+      inspect: async () => {
+        throw new Error('unused')
+      },
+      configure: async () => {
+        throw new Error('unused')
+      },
+      readFile: async () => {
+        throw new Error('unused')
+      },
+      editFile: async () => {
+        throw new Error('unused')
+      },
+    } satisfies import('@agnes/extension-api').MemorySession
+    const { session, provider } = await history(textTurn('SUMMARY'), memory)
     provider.models = () => [model('answer-model', 'primary', 10_000)]
     session.preset.model.id.compaction = 'answer-model'
     session.compaction = runner()
@@ -328,6 +396,8 @@ describe('production compaction phase', () => {
     expect(summary.kind).toBe('summary')
     expect(summary.model).toBe(previous.model)
     expect(summary.system).toBe(previous.system)
+    expect(previous.traceContext?.memoryRevision).toBe(revision)
+    expect(summary.traceContext?.memoryRevision).toBe(revision)
     expect(summary.tools).toEqual(previous.tools)
     expect(summary.messages.slice(0, previous.messages.length)).toEqual(previous.messages)
     expect((summary.messages.at(-1)?.content[0] as { text?: string } | undefined)?.text).toContain(
@@ -424,7 +494,7 @@ describe('production compaction phase', () => {
       ...session.hooks,
       context: async (sections) => {
         contextCalls++
-        return { sections, additionalContext: '' }
+        return { sections, additionalContext: '', untrustedContext: 'tainted' }
       },
     }
     session.compaction = new CompactionRunner({
@@ -446,6 +516,10 @@ describe('production compaction phase', () => {
     await session.requestCompaction({ actor, admissionId: 'nonzero-range' })
     expect(await session.runCompaction()).toEqual({ phase: 'checkpoint' })
     expect(contextCalls).toBe(1)
+    // A cold compaction assembles the prefix too, but writes no [hook data] row.
+    expect(JSON.stringify(await session.scan({ type: 'user/message', limit: 1000 }))).not.toContain(
+      '[hook data]',
+    )
     const summary = provider.requests[2]
     expect(summary?.tools).toEqual([])
     expect(summary?.system).toContain('narrow only')
@@ -463,6 +537,7 @@ describe('production compaction phase', () => {
     const previous = provider.requests[1]
     if (!previous) throw new Error('missing primary request')
     turn.lastPrefix = {
+      memoryRevision: 'a'.repeat(64),
       sections: [
         {
           id: 'core:untrusted-envelope',
@@ -479,6 +554,7 @@ describe('production compaction phase', () => {
     expect(provider.requests[2]?.tools).toEqual([])
     expect(provider.requests[2]?.system).toContain('summarize safely')
     expect(provider.requests[2]?.system).not.toContain('large section')
+    expect(provider.requests[2]?.traceContext?.memoryRevision).toBeUndefined()
   })
 
   it('inherits primary thinking unless the compaction level is explicit', async () => {
@@ -648,10 +724,9 @@ describe('production compaction phase', () => {
     })
     expect(replacements[0]?.sourceEventSeqs).toHaveLength(4)
     const replaceIndex = rows.findIndex((row) => row.seq === replacements[0]?.seq)
-    expect(rows.slice(replaceIndex - 1, replaceIndex + 4).map((row) => row.type)).toEqual([
+    expect(rows.slice(replaceIndex - 1, replaceIndex + 3).map((row) => row.type)).toEqual([
       'x/core/compaction-begin',
       'assistant/message',
-      'cost/ledger',
       'effect/settled',
       'x/core/compaction-end',
     ])
@@ -795,7 +870,7 @@ describe('production compaction phase', () => {
     expect(await log.scan({ type: 'x/core/compaction-failed', limit: 5 })).toHaveLength(1)
   })
 
-  it('materializes and runs the split-turn prefix request in parallel, then joins both summaries', async () => {
+  it('materializes parallel split-turn requests with independent receipts, then joins both summaries', async () => {
     const provider = fakeProvider([
       // Long enough (unlike the tiny 'MAIN'/'PREFIX' summaries) that the combined summary text,
       // "[turn prefix]" glue included, stays comfortably below the size guard's shadowed-token sum.
@@ -805,6 +880,20 @@ describe('production compaction phase', () => {
       textTurn('PREFIX'),
       textTurn('final'),
     ])
+    let summariesStarted = 0
+    let release = () => {}
+    const bothStarted = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const infer = provider.infer.bind(provider)
+    provider.infer = async function* (request, options) {
+      if (request.kind === 'summary') {
+        summariesStarted++
+        if (summariesStarted === 2) release()
+        await bothStarted
+      }
+      yield* infer(request, options)
+    }
     provider.models = () => [model('answer-model', 'primary'), model('summary-model', 'compaction', 1000)]
     const { session, log } = await openSession({ provider })
     session.preset.model.id.compaction = 'summary-model'
@@ -840,6 +929,12 @@ describe('production compaction phase', () => {
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'x'.repeat(40) }], actor })
     expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
     expect(provider.requests.slice(2, 4).map((request) => request.kind)).toEqual(['summary', 'summary'])
+    expect(summariesStarted).toBe(2)
+    const costRows = (await log.scan({ type: 'cost/ledger', limit: 100 })).filter(
+      (row) => (row.data as { purpose?: string }).purpose === 'compaction',
+    )
+    expect(costRows).toHaveLength(2)
+    expect(new Set(costRows.map((row) => (row.data as { effectId?: string }).effectId)).size).toBe(2)
     const prefixMessages = provider.requests[3]?.messages ?? []
     expect(prefixMessages[0]?.content[0]).toEqual({ type: 'text', text: 'two' })
     // The prefix segment reuses the same envelope cache as the main segment: 'old-two' is the same
@@ -981,7 +1076,7 @@ describe('production compaction phase', () => {
     const { session, log } = await history(errorTurn)
     session.compaction = runner()
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'overflow' }], actor })
-    expect(await session.step()).toEqual({ phase: 'checkpoint' })
+    expect(await session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
     const op = session.op()
     if (op?.phase.kind !== 'checkpoint') throw new Error('missing checkpoint')
     await session.transition(
@@ -1006,7 +1101,7 @@ describe('production compaction phase', () => {
   it('records an unavailable internal compaction phase instead of silently pretending it ran', async () => {
     const { session, log } = await openSession({ provider: fakeProvider([]) })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'compact' }], actor })
-    expect(await session.step()).toEqual({ phase: 'checkpoint' })
+    expect(await session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
     const op = session.op()
     if (op?.phase.kind !== 'checkpoint') throw new Error('missing checkpoint')
     await session.transition(
@@ -1371,6 +1466,7 @@ describe('summary stopped at the token cap', () => {
       begins: rows.filter((row) => row.type === 'x/core/compaction-begin'),
       ends: rows.filter((row) => row.type === 'x/core/compaction-end'),
       commits,
+      opened,
     }
   }
 
@@ -1385,18 +1481,29 @@ describe('summary stopped at the token cap', () => {
     // The failed call's spend, its error settlement and the replace land in one transaction.
     expect(
       commits.find((types) => types.includes('assistant/message') && types.includes('x/core/compaction-end')),
-    ).toEqual(expect.arrayContaining(['cost/ledger', 'effect/settled', 'x/core/compaction-begin']))
+    ).toEqual(expect.arrayContaining(['effect/settled', 'x/core/compaction-begin']))
   })
 
   it('does not commit a summary that was truncated at the cap', async () => {
     const truncated = 'Goal: read big.txt. Progress: read sections 1-7 and'
-    const { reasons, replaced } = await compactWith(capped(truncated))
+    const { reasons, replaced, begins, opened } = await compactWith(capped(truncated))
     expect(reasons).toEqual([])
     expect(replaced).toHaveLength(1)
     const text =
       (replaced[0]?.data as { content?: Array<{ text: string }> } | undefined)?.content?.[0]?.text ?? ''
     expect(text.startsWith('[compaction] No model summary')).toBe(true)
     expect(text).not.toContain(truncated)
+    expect(begins[0]?.data).toMatchObject({ mode: 'elided', cause: expect.stringMatching(/max_tokens/) })
+    expect(replaced[0]?.origin).toBe('system')
+    await opened.log.close()
+    const recoveredProvider = fakeProvider([textTurn('continue after recovery')])
+    const recovered = await openSession({ provider: recoveredProvider, storage: opened.storage })
+    await recovered.session.enqueue('next-turn', { content: [{ type: 'text', text: 'continue' }], actor })
+    expect((await recovered.session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+    const messages = JSON.stringify(recoveredProvider.requests.at(-1)?.messages)
+    expect(messages).toContain('[compaction] No model summary')
+    expect(messages).not.toContain(truncated)
+    await recovered.log.close()
   })
 })
 
@@ -1417,8 +1524,21 @@ describe('length-cap retry', () => {
     { type: 'done', reason: 'length' },
   ]
 
-  async function compactWithScripts(scripts: Script[], configuredThinking?: ThinkingLevel) {
+  async function compactWithScripts(
+    scripts: Script[],
+    configuredThinking?: ThinkingLevel,
+    cancelOnSummary = false,
+  ) {
     const provider = fakeProvider([textTurn('old-one'), textTurn('old-two'), ...scripts])
+    const ac = new AbortController()
+    const infer = provider.infer.bind(provider)
+    provider.infer = async function* (request, options) {
+      for await (const event of infer(request, options)) yield event
+      if (cancelOnSummary && request.kind === 'summary') {
+        await opened.session.abort()
+        ac.abort()
+      }
+    }
     const opened = await openSession({ provider })
     for (const prompt of ['one '.repeat(200), 'two '.repeat(200)]) {
       await opened.session.enqueue('next-turn', { content: [{ type: 'text', text: prompt }], actor })
@@ -1443,7 +1563,8 @@ describe('length-cap retry', () => {
       onCompact: async () => undefined,
     })
     await opened.session.requestCompaction({ actor, admissionId: 'manual' })
-    expect((await opened.session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+    const outcome = await opened.session.run({ until: 'turn-end', signal: ac.signal })
+    expect(outcome.reason).toBe(cancelOnSummary ? 'aborted' : 'completed')
     const rows = await opened.log.scan({ fromSeq: 1, limit: 500 })
     return {
       reasons: rows
@@ -1451,29 +1572,21 @@ describe('length-cap retry', () => {
         .map((row) => (row.data as { reason: string }).reason),
       replaced: rows.filter((row) => row.surfaceOp),
       begins: rows.filter((row) => row.type === 'x/core/compaction-begin'),
-      retries: rows.filter((row) => row.type === 'x/core/compaction-retry'),
       provider,
+      costs: rows.filter(
+        (row) => row.type === 'cost/ledger' && (row.data as { purpose?: string }).purpose === 'compaction',
+      ),
     }
   }
 
   it('retries once with thinking forced to low, then falls back to an elided compaction', async () => {
-    const { reasons, replaced, begins, retries, provider } = await compactWithScripts([
-      capped(''),
-      capped(''),
-    ])
+    const { reasons, replaced, begins, provider } = await compactWithScripts([capped(''), capped('')])
     // old-one, old-two, first summary attempt, retry attempt — no third attempt.
     expect(provider.calls).toBe(4)
     expect(provider.requests.at(-1)?.sampling?.thinking).toBe('low')
     expect(reasons).toEqual([])
     expect(replaced).toHaveLength(1)
     expect(begins[0]?.data).toMatchObject({ mode: 'elided', cause: expect.stringMatching(/max_tokens/) })
-    expect(retries.map((row) => row.data)).toEqual([
-      {
-        effectId: (begins[0]?.data as { effectId?: string } | undefined)?.effectId,
-        cause: 'summary stopped at the max_tokens cap',
-        form: 'low-thinking',
-      },
-    ])
   })
 
   it('does not retry when the configured level is already low or below', async () => {
@@ -1482,8 +1595,32 @@ describe('length-cap retry', () => {
     expect(provider.calls).toBe(3)
   })
 
+  it('does not retry a cancelled wide summary and settles its consumed cost once', async () => {
+    const { provider, costs, replaced } = await compactWithScripts([capped('')], undefined, true)
+    expect(provider.requests.filter((request) => request.kind === 'summary')).toHaveLength(1)
+    expect(costs).toHaveLength(1)
+    expect(costs[0]?.data).toMatchObject({ interrupted: true })
+    expect(replaced).toHaveLength(0)
+  })
+
+  it('retries a wide tool answer once with a narrow request and independent costs', async () => {
+    const { provider, replaced, costs } = await compactWithScripts([
+      toolTurn('read', { path: 'x' }),
+      textTurn('Goal: narrow summary'),
+    ])
+    expect(provider.requests.at(-1)?.tools).toEqual([])
+    expect(replaced).toHaveLength(1)
+    expect(costs).toHaveLength(2)
+    expect(new Set(costs.map((row) => (row.data as { effectId: string }).effectId)).size).toBe(2)
+  })
+
   it('commits the retry summary when it succeeds within budget', async () => {
-    const { reasons, replaced } = await compactWithScripts([capped(''), textTurn('Goal: recovered summary')])
+    const { reasons, replaced, costs } = await compactWithScripts([
+      capped(''),
+      textTurn('Goal: recovered summary'),
+    ])
+    expect(costs).toHaveLength(2)
+    expect(new Set(costs.map((row) => (row.data as { effectId: string }).effectId)).size).toBe(2)
     expect(replaced).not.toEqual([])
     expect(reasons).toEqual([])
   })
@@ -1560,7 +1697,7 @@ describe('routing a summary that is unavailable', () => {
     })
     opened.session.compaction = runner
     await opened.session.enqueue('next-turn', { content: [{ type: 'text', text: 'next' }], actor })
-    expect(await opened.session.step()).toEqual({ phase: 'checkpoint' })
+    expect(await opened.session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
     const enter = async (reason: 'threshold' | 'overflow' | 'requested') => {
       const op = opened.session.op()
       if (op?.phase.kind !== 'checkpoint') throw new Error('expected a checkpoint')
@@ -1578,7 +1715,6 @@ describe('routing a summary that is unavailable', () => {
         begins: rows.filter((row) => row.type === 'x/core/compaction-begin'),
         ends: rows.filter((row) => row.type === 'x/core/compaction-end'),
         failed: rows.filter((row) => row.type === 'x/core/compaction-failed'),
-        retries: rows.filter((row) => row.type === 'x/core/compaction-retry'),
         spends: rows.filter(
           (row) => row.type === 'cost/ledger' && (row.data as { purpose?: string }).purpose === 'compaction',
         ),
@@ -1587,7 +1723,7 @@ describe('routing a summary that is unavailable', () => {
     return { ...opened, provider, commits, seams, runner, sizes, enter, outcome, planned: () => planned }
   }
 
-  /** The elided replace was written, as one transaction with the failed call's spend when there was one. */
+  /** Replacement is atomic; each real model request's cost was already durably settled. */
   async function expectElided(
     h: Awaited<ReturnType<typeof toolHistory>>,
     cause: RegExp,
@@ -1603,13 +1739,19 @@ describe('routing a summary that is unavailable', () => {
     const tx = h.commits.find((types) => types.includes('x/core/compaction-end')) ?? []
     if (withCall) {
       expect(tx).toEqual(
-        expect.arrayContaining([
-          'cost/ledger',
-          'effect/settled',
-          'x/core/compaction-begin',
-          'assistant/message',
-        ]),
+        expect.arrayContaining(['effect/settled', 'x/core/compaction-begin', 'assistant/message']),
       )
+      expect(o.spends.length).toBeGreaterThan(0)
+      for (const spend of o.spends) {
+        expect(spend.seq).toBeLessThan(o.replaces[0]!.seq)
+        expect(
+          o.rows.some(
+            (row) =>
+              row.type === 'effect/settled' &&
+              (row.data as { effectId?: string }).effectId === (spend.data as { effectId?: string }).effectId,
+          ),
+        ).toBe(true)
+      }
       expect((o.begins[0]?.data as { effectId?: string } | undefined)?.effectId).toBeDefined()
     } else {
       expect(o.spends).toEqual([])
@@ -1672,114 +1814,14 @@ describe('routing a summary that is unavailable', () => {
   ]
 
   it.each([
-    // A narrow summary offered no tool already, so asking again in the same form would repeat it.
-    ['a narrow summary that calls a tool', toolTurn('read', { path: 'x' }), /tool/],
+    ['a summary that calls a tool', toolTurn('read', { path: 'x' }), /tool/],
     ['an empty summary', textTurn(''), /empty/],
     ['a summary request over its window', errorOf('OVERFLOW', false), /OVERFLOW/],
   ])('elides after %s', async (_label, script, cause) => {
     const h = await toolHistory([script])
     expect(await h.enter('threshold')).toEqual({ phase: 'checkpoint' })
     expect(h.provider.calls).toBe(5)
-    const o = await expectElided(h, cause, true)
-    expect(o.retries).toEqual([])
-  })
-
-  /** The same history summarized by the primary model itself: a wide request that offers its tools. */
-  async function wideToolHistory(summaryScripts: Script[]) {
-    const h = await toolHistory(summaryScripts)
-    h.session.preset.model.id.compaction = 'answer-model'
-    const toolNames: string[][] = []
-    const infer = h.provider.infer.bind(h.provider)
-    h.provider.infer = (req, options) => {
-      if (req.kind === 'summary') toolNames.push([...options.toolNames])
-      return infer(req, options)
-    }
-    const summaries = () => h.provider.requests.filter((req) => req.kind === 'summary')
-    return { ...h, toolNames, summaries }
-  }
-  const deviating: Script = [
-    sent(),
-    { type: 'text_delta', delta: '{"name": "read", "args": ' },
-    { type: 'deviation', rule: 'unparsed', sampleHash: 'c'.repeat(64) },
-    usage(),
-    { type: 'done', reason: 'stop' },
-  ]
-  const lastText = (req: RequestBody | undefined) =>
-    (req?.messages.at(-1)?.content[0] as { text?: string } | undefined)?.text ?? ''
-  const effectOf = (row: { data: unknown } | undefined) =>
-    (row?.data as { effectId?: string } | undefined)?.effectId
-
-  it.each([
-    ['calls a tool', toolTurn('read', { path: 'x' }), 'summary called a tool'],
-    ['deviates from the contract', deviating, 'summary deviated from the contract'],
-  ])(
-    'retries a wide summary that %s once without tools and keeps its summary',
-    async (_label, script, cause) => {
-      const h = await wideToolHistory([script, textTurn('Goal: read three files. Progress: done.')])
-      h.session.preset.treeBudgetCredits = 1_000_000
-      const holds: string[] = []
-      const reserve = h.storage.reserve.bind(h.storage)
-      h.storage.reserve = async (request) => {
-        holds.push(request.effectId)
-        return reserve(request)
-      }
-      expect(await h.enter('threshold')).toEqual({ phase: 'checkpoint' })
-      const [wide, retry, ...more] = h.summaries()
-      expect(more).toEqual([])
-      expect(wide?.tools.map((tool) => tool.name)).toContain('read')
-      // The retry offers no tool, so it cannot call one; one written out as text is still decoded.
-      expect(retry?.tools).toEqual([])
-      expect(retry?.system).not.toBe(wide?.system)
-      expect(lastText(retry)).toContain('Do not call any tool')
-      expect(h.toolNames[0]).toContain('read')
-      expect(h.toolNames[1]).toEqual(h.toolNames[0])
-      const o = await h.outcome()
-      expect(o.failed).toEqual([])
-      expect(o.replaces).toHaveLength(1)
-      expect(o.replaces[0]?.origin).toBe('model')
-      expect(o.begins[0]?.data).not.toHaveProperty('mode')
-      expect(o.retries.map((row) => row.data)).toEqual([
-        { effectId: effectOf(o.begins[0]), cause, form: 'without-tools' },
-      ])
-      // Each call held budget of its own, and both are charged on the one compaction spend row.
-      expect(holds).toHaveLength(2)
-      expect(new Set(holds).size).toBe(2)
-      expect(o.spends).toHaveLength(1)
-      expect(o.spends[0]?.data).toMatchObject({ tokens: { input: 20, output: 10 }, credits: 2 })
-    },
-  )
-
-  it('elides without a third request when the retry without tools is cut off too', async () => {
-    const partial = 'Goal: read three files. Progress: read a and'
-    const cut: Script = [
-      sent(),
-      { type: 'text_delta', delta: partial },
-      usage(),
-      { type: 'done', reason: 'length' },
-    ]
-    const h = await wideToolHistory([toolTurn('read', { path: 'x' }), cut])
-    expect(await h.enter('threshold')).toEqual({ phase: 'checkpoint' })
-    expect(h.summaries()).toHaveLength(2)
-    const o = await expectElided(h, /max_tokens/, true)
-    expect(o.retries.map((row) => row.data)).toEqual([
-      { effectId: effectOf(o.begins[0]), cause: 'summary called a tool', form: 'without-tools' },
-    ])
-    expect(JSON.stringify(o.replaces[0]?.data)).not.toContain(partial)
-    expect(o.spends[0]?.data).toMatchObject({ tokens: { input: 20, output: 10 } })
-  })
-
-  it('reports, without eliding, a retry without tools whose route then fails', async () => {
-    const h = await wideToolHistory([toolTurn('read', { path: 'x' }), errorOf('AUTH', false)])
-    await h.enter('threshold')
-    const o = await h.outcome()
-    expect(o.replaces).toEqual([])
-    expect(o.begins).toEqual([])
-    expect(o.retries).toHaveLength(1)
-    expect(o.failed[0]?.data).toMatchObject({
-      effectId: effectOf(o.retries[0]),
-      reason: expect.stringMatching(/AUTH/),
-    })
-    expect(o.spends[0]?.data).toMatchObject({ tokens: { input: 10, output: 5 } })
+    await expectElided(h, cause, true)
   })
 
   // A broken or exhausted compaction route has to show up as a failure, not as a lossy fallback.
@@ -1891,7 +1933,7 @@ describe('routing a summary that is unavailable', () => {
     expect(h.runner.transientFailures).toBe(1)
     expect((await h.session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
     await h.session.enqueue('next-turn', { content: [{ type: 'text', text: 'again' }], actor })
-    expect(await h.session.step()).toEqual({ phase: 'checkpoint' })
+    expect(await h.session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
     // The previous turn's failure does not count against this one: retried, not elided.
     await h.enter('threshold')
     const o = await h.outcome()
@@ -1913,16 +1955,25 @@ describe('routing a summary that is unavailable', () => {
     async (reason) => {
       const h = await toolHistory([])
       h.session.preset.treeBudgetCredits = 1
-      h.seams.ledger.projected = async () => ({ credits: 1000, creditSource: 'estimated' })
-      // A refused tree reservation ends the turn with `budget` from inside the summary call, and the
-      // compaction then fails writing its own settlement (E_ENVELOPE). That predates this routing
-      // and is left as it is; what matters here is that no elided replace is written instead.
-      await h.enter(reason).catch(() => undefined)
+      h.seams.billing.projected = async () => ({ credits: 1000, creditSource: 'estimated' })
+      await expect(h.enter(reason)).resolves.toEqual({ phase: 'terminal', reason: 'budget' })
       const o = await h.outcome()
       expect(o.replaces).toEqual([])
       expect(o.begins).toEqual([])
       expect(o.rows.filter((row) => row.type === 'turn/end').at(-1)?.data).toMatchObject({ reason: 'budget' })
       expect(h.provider.calls).toBe(4)
+      const intents = o.rows.filter(
+        (row) => row.type === 'effect/intent' && (row.data as { kind?: string }).kind === 'compaction',
+      )
+      for (const intent of intents)
+        expect(
+          o.rows.some(
+            (row) =>
+              row.type === 'effect/settled' &&
+              (row.data as { effectId?: string }).effectId ===
+                (intent.data as { effectId?: string }).effectId,
+          ),
+        ).toBe(true)
     },
   )
 
@@ -1970,7 +2021,9 @@ describe('routing a summary that is unavailable', () => {
     expect(h.provider.requests.filter((req) => req.kind === 'summary')).toHaveLength(1)
     expect(
       o2.rows.filter(
-        (row) => row.type === 'approval/asked' && (row.data as { kind?: string }).kind === 'budget',
+        (row) =>
+          row.type === 'decision/state' &&
+          (row.data as { request: { spec: { purpose: string } } }).request.spec.purpose === 'budget',
       ),
     ).toEqual([])
   })

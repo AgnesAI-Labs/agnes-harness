@@ -1,15 +1,16 @@
 // Exercises core Task 39's full-phase resume matrix against prefixes cut from real sessions. The
 // deferred fixture proves a returned job survives the tools -> deferred phase edge before the
 // poller gets a chance to finish it.
+
+import { defaultIds } from '@agnes/core-common/ids'
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import type { Event } from '@agnes/core-common/types'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import { openTracked } from '@agnes/core-ledger/reduce/tracker'
 import { describe, expect, it, vi } from 'vitest'
-import { defaultIds } from '../src/ids.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import { openTracked } from '../src/reduce/tracker.js'
 import { ToolRegistry } from '../src/registry/tools.js'
-import { canonicalJson, sha256Hex } from '../src/request/hash.js'
 import { deferredEffectId } from '../src/step/deferred.js'
-import { presetDefaults } from '../src/step/preset.js'
-import type { Event } from '../src/types.js'
 import { crashEvents, crashFixtures, crashOpCells, crashStorage } from './helpers/crash-fixtures.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
@@ -226,8 +227,8 @@ describe('resume matrix (core Task 39)', () => {
       action: 'unknown',
     })
     expect(session.op()).toBeNull()
-    expect((await log.scan({ type: 'approval/asked', order: 'desc', limit: 1 }))[0]?.data).toMatchObject({
-      kind: 'unknown-outcome',
+    expect((await log.scan({ type: 'decision/state', order: 'desc', limit: 1 }))[0]?.data).toMatchObject({
+      request: { spec: { purpose: 'unknown-outcome' } },
     })
     expect((await log.scan({ type: 'turn/end', order: 'desc', limit: 1 }))[0]?.data).toMatchObject({
       reason: 'parked',
@@ -376,6 +377,10 @@ describe('resume matrix (core Task 39)', () => {
       registry: tools,
       storage: MemoryStorage.fromEvents('k', crashPrefix, { opCells }),
       writerRunId: 'reopened-tampered',
+      // The question stays open: an answer given at once would settle it and let the turn go on.
+      seams: fakeSeams({
+        approval: { ask: async () => ({ ticket: 'T1', expiresAt: '2099-01-01T00:00:00Z' }) },
+      }),
     })
     try {
       expect(await reopened.session.resume()).toMatchObject({ actions: [{ action: 'unknown' }] })
@@ -504,7 +509,7 @@ describe('resume matrix (core Task 39)', () => {
     })
 
     await session.resume()
-    expect(await session.step()).toEqual({ phase: 'deferred' })
+    expect(await session.step()).toEqual({ outcome: 'running', phase: 'deferred' })
     expect(session.op()?.phase.kind).toBe('deferred')
     expect(await log.scan({ type: 'tool/result', limit: 20 })).toHaveLength(0)
     expect(session.state.openStep.get('main')).toMatchObject({ turn: 1, step: 1 })
@@ -525,7 +530,7 @@ describe('resume matrix (core Task 39)', () => {
     })
 
     await session.resume()
-    expect(await session.step()).toEqual({ phase: 'checkpoint' })
+    expect(await session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
     expect(session.op()?.phase.kind).toBe('checkpoint')
     expect(session.state.openStep.get('main')).toBeUndefined()
     expect(session.latest('artifact/job', 'job-1')).toMatchObject({
@@ -622,7 +627,7 @@ describe('resume matrix (core Task 39)', () => {
     await session.resume()
     await session.abort()
 
-    expect(await session.step()).toEqual({ phase: 'terminal', reason: 'aborted' })
+    expect(await session.step()).toEqual({ outcome: 'turn-ended', phase: 'terminal', reason: 'aborted' })
     expect((await log.scan({ type: 'tool/result', order: 'desc', limit: 1 }))[0]?.data).toMatchObject({
       code: 'TOOL_OUTCOME_UNKNOWN',
       isError: true,

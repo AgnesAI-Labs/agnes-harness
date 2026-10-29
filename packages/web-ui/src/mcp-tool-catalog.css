@@ -1,0 +1,60 @@
+@layer ui {
+  .mcp-tool-catalog {
+    display: grid;
+    gap: var(--s8);
+    margin: var(--s8) 0;
+    padding: 0;
+    list-style: none;
+  }
+  .mcp-tool-catalog > li,
+  .mcp-tool-card {
+    min-width: 0;
+  }
+  .mcp-tool-card code {
+    font-family: var(--font-mono);
+    overflow-wrap: anywhere;
+  }
+  .mcp-tool-card .agh-disclosure-description {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+  .mcp-tool-details {
+    display: grid;
+    gap: var(--s16);
+  }
+  .mcp-tool-details h4 {
+    margin: 0 0 var(--s8);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+  }
+  .mcp-tool-description {
+    margin: 0;
+    white-space: pre-wrap;
+    color: var(--agnes-text-secondary);
+    line-height: 1.65;
+    overflow-wrap: anywhere;
+  }
+  .mcp-tool-parameters {
+    display: grid;
+    gap: var(--s12);
+    margin: 0;
+  }
+  .mcp-tool-parameters dt {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s8);
+    align-items: baseline;
+  }
+  .mcp-tool-parameters dt > span {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+  }
+  .mcp-tool-parameters dd {
+    margin: var(--s4) 0 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+  }
+}

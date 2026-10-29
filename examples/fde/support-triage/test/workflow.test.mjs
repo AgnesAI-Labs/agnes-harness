@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { driveLoop } from '@agnes/host/author-testkit'
+import { test } from 'vitest'
+import { factory, main } from '../index.mjs'
+import { runWorkflow } from './harness.mjs'
+
+const context = {}
+test('support-triage completes through the public loop and tool ports', async () => {
+  const run = await runWorkflow(main, { context })
+  assert.equal(run.finished[0], 'completed')
+  const messages = run.events.filter((event) => event.type === 'assistant/message')
+  assert.ok(messages.length > 0)
+  assert.ok(messages.every((event) => event.data.stopReason === 'end_turn'))
+  assert.ok(run.checkpoint.state.data.deliverables.some((file) => file.ref.size > 0))
+  assert.ok(run.calls.some((call) => call.name === 'present'))
+  assert.ok(run.calls.some((call) => call.name === 'ask_user_question'))
+
+  assert.ok(run.skills.includes('support-triage'))
+  const data = run.checkpoint.state.data
+  assert.equal(data.classification.priority, 'urgent')
+  assert.equal(data.receipt.status, 'simulated-sent')
+  assert.equal(data.receipt.draft, data.draft)
+  const draft = run.requests.find((request) => request.system.includes('Draft a concise support reply.'))
+  assert.ok(draft, 'the draft stage reaches the scripted model')
+  assert.deepEqual(draft.tools, [])
+  assert.ok(draft.system.includes('Return only the reply.'))
+  const playbook = readFileSync(new URL('../skills/playbook/SKILL.md', import.meta.url), 'utf8')
+  assert.ok(!draft.system.includes(playbook), 'the draft must not inherit tool-workflow obligations')
+  assert.ok(!draft.system.includes('discover tools'))
+  assert.ok(!draft.system.includes('tool_describe'))
+})
+test('refusal and cancellation preserve workflow boundaries', async () => {
+  const stop = new AbortController()
+  stop.abort(new Error('Stopped'))
+  await assert.rejects(driveLoop(factory, { signal: stop.signal }), /Stopped/)
+
+  const denied = await runWorkflow(main, { approve: false, context })
+  assert.equal(denied.finished[0], 'error')
+  assert.equal(denied.checkpoint.state.data.receipt ?? denied.checkpoint.state.data.action, undefined)
+  const resumed = await runWorkflow(main, { checkpoint: denied.checkpoint, context })
+  assert.equal(resumed.finished[0], 'blocked')
+})

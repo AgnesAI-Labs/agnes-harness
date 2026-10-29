@@ -58,6 +58,35 @@ AGH 的发展需要真实场景中的使用体验。欢迎试用、研究源码�
 
 ## 日常命令
 
+开发与 CI 的 Node 补丁版本只维护在 `.node-version`，由 mise 和所有 CI workflow 读取。
+`package.json` 的 `engines.node` 是用户支持范围，不是开发固定版本；pnpm 只从 `packageManager` 取版本。
+安装 mise 后，每个新 worktree 从仓库根目录准备：
+
+```sh
+mise trust
+mise install
+mise exec -- node tools/toolchain/run.mjs install --frozen-lockfile
+mise exec -- node tools/toolchain/run.mjs
+mise exec -- node tools/toolchain/run.mjs typecheck
+mise exec -- node tools/toolchain/run.mjs test:guards
+mise exec -- node tools/toolchain/run.mjs exec vitest run packages/cli/test/args.test.ts --maxWorkers=1
+```
+
+统一使用 `mise exec -- node tools/toolchain/run.mjs` 构建和验证，后面追加原有 pnpm 参数，
+例如 `--filter @agnes/cli build:local` 或 `e2e:web`。入口先核验 Node、pnpm 的精确版本和包管理器启动的
+子进程，打印实际 `process.version` 与 `process.execPath`，并把运行时选择限定在构建/检查子进程内。
+它用所选 Node 直接运行 pnpm/Corepack 的 JavaScript，避开 shell shim 漂移；无需改全局 Node、手动前置
+PATH 或维护私有启动命令。已经配置正确的 shell 可运行 `pnpm run doctor:toolchain`；标准 typecheck、
+test、guards 和 browser 入口也会先检查，版本不符即失败并给出修复命令。缺少 Corepack 时应在所选 Node
+旁配置它，CI 可继续使用已有 pnpm setup。
+
+每份验证报告必须记录实际 `process.version`。项目 lead 负责固定版本：定期检查补丁更新，安全修复及时
+处理，每次通过独立维护变更交付；主版本升级单独评估。开发窗口和 AI 窗口不得修改全局环境或自行升级版本。
+已运行 daemon 保留启动时的运行时；使用隔离 home 验证，只重启自己拥有的实例。用户项目命令与外部 MCP
+服务器继续使用各自环境，不受开发版本固定规则约束。
+
+运行下面的已有命令时，将开头的 `pnpm` 替换为上述统一入口。
+
 ```sh
 pnpm install --frozen-lockfile
 pnpm --filter @agnes/host build:native
@@ -68,7 +97,9 @@ pnpm gen:check
 pnpm test
 ```
 
-两条 `build:native` 是包级脚本，与 [CI](../../.github/workflows/ci.yml) 的测试前置步骤一致。macOS 的进程身份测试需要 Host helper，Skill 安装的原子发布测试需要 system-node helper；源码测试前若缺少它们，会得到与产品缺陷不同的环境失败。`pnpm test` 是根目录脚本，默认单 worker 执行快速层，包含 guards；真实 daemon、worker 与 CLI 进程测试命名为 `*.e2e.test.ts`，大账本或依赖真实计时的测试命名为 `*.slow.test.ts`，`pnpm test:heavy` 只跑这两类，`pnpm test:all` 全部执行；`pnpm exec vitest run <文件>` 可单独运行任一层的文件。测试所属层只由文件后缀决定：新测试命名为 `*.e2e.test.ts` 或 `*.slow.test.ts` 即归入重型层。包内自己的 `test` 脚本会运行该包的两层测试，而根目录 `pnpm test` 只运行快速层。本地只改一个模块时先选择该模块相关测试，再按风险决定是否扩大范围。纯文档变更通常不需要重跑模型或全仓端到端。
+两条 `build:native` 是包级脚本，与 [CI](../../.github/workflows/ci.yml) 的测试前置步骤一致。macOS 的进程身份测试需要 Host helper，Skill 安装的原子发布测试需要 system-node helper；源码测试前若缺少它们，会得到与产品缺陷不同的环境失败。默认插件构建为全新 home 的源码测试提供独立的后端与客户端资产；local/SEA 打包会构建各自产物中的副本。`pnpm test` 是根目录脚本，默认单 worker 执行快速层，包含 guards；真实 daemon、worker 与 CLI 进程测试命名为 `*.e2e.test.ts`，大账本或依赖真实计时的测试命名为 `*.slow.test.ts`，`pnpm test:heavy` 只跑这两类，`pnpm test:all` 全部执行；`pnpm exec vitest run <文件>` 可单独运行任一层的文件。测试所属层只由文件后缀决定：新测试命名为 `*.e2e.test.ts` 或 `*.slow.test.ts` 即归入重型层。包内自己的 `test` 脚本会运行该包的两层测试，而根目录 `pnpm test` 只运行快速层。本地只改一个模块时先选择该模块相关测试，再按风险决定是否扩大范围。纯文档变更通常不需要重跑模型或全仓端到端。
+
+`pnpm test:story` 运行已审阅发布、执行中 generation 固定、丢失效果回执、不完整摘要、真实子代理回执与单轮记忆修订的维护夹具。`tools/ci/story-fixtures.json` 从已有合同测试中选择用例；命名用例必须真正通过，测试重试为零，选中用例不能 skip 或留 todo。脚本模型与隔离的 fixture 效果端口不会重放真实外部写入。[Web E2E CI](../../.github/workflows/e2e-web.yml) 的 Linux 合同 job 将此命令作为必需门禁，并保存 `.agnes-tmp/story-fixtures` 的逐夹具 JSON；同一用例仍属于原有 fast/heavy 层。
 
 ```sh
 pnpm exec vitest run packages/cli/test/args.test.ts --maxWorkers=1

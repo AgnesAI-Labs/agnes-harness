@@ -24,9 +24,11 @@ static napi_value fail(napi_env env, const char* operation, int error) {
     case ENOTSUP: code = "ENOTSUP"; break;
     case ENOENT: code = "ENOENT"; break;
     case ENOTDIR: code = "ENOTDIR"; break;
+    case ENOTEMPTY: code = "ENOTEMPTY"; break;
+    case ENOMEM: code = "ENOMEM"; break;
   }
   char message[192];
-  snprintf(message, sizeof(message), "%s failed", operation);
+  snprintf(message, sizeof(message), "%s: %s failed", code, operation);
   napi_value text, name, result;
   napi_create_string_utf8(env, message, NAPI_AUTO_LENGTH, &text);
   napi_create_string_utf8(env, code, NAPI_AUTO_LENGTH, &name);
@@ -95,7 +97,7 @@ static bool normalize_system_root_alias(const char* path, char* output, size_t c
  * allow an attacker to replace an intermediate directory with a symlink before open(). */
 static int open_absolute_directory(const char* path) {
   size_t length = strlen(path);
-  if (length < 2 || path[0] != '/' || path[length - 1] == '/') {
+  if (length < 1 || path[0] != '/' || (length > 1 && path[length - 1] == '/')) {
     errno = EINVAL;
     return -1;
   }
@@ -239,13 +241,52 @@ static napi_value delete_private_artifact(napi_env env, napi_callback_info info)
   return result;
 }
 
+/* Node's fsync on macOS is F_FULLFSYNC: every call also drains the whole drive cache. A tree is
+ * published by handing each entry to the drive with fsync(2) and draining the cache once. */
+static napi_value sync_descriptor(napi_env env, napi_callback_info info) {
+  napi_value args[2];
+  size_t count = 2;
+  int32_t fd;
+  bool full;
+  if (napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 2 ||
+      napi_get_value_int32(env, args[0], &fd) != napi_ok || fd < 0 ||
+      napi_get_value_bool(env, args[1], &full) != napi_ok) {
+    napi_throw_type_error(env, "EINVAL", "Expected a descriptor and a full flush flag");
+    return NULL;
+  }
+  int result;
+  do result = full ? fcntl(fd, F_FULLFSYNC) : fsync(fd);
+  while (result != 0 && errno == EINTR);
+  /* A volume without a full flush (some network filesystems) gets what Node's fsync falls back to. */
+  if (result != 0 && full && (errno == ENOTSUP || errno == EINVAL || errno == ENOTTY)) {
+    do result = fsync(fd);
+    while (result != 0 && errno == EINTR);
+  }
+  if (result != 0) return fail(env, full ? "flush drive cache" : "fsync", errno);
+  return NULL;
+}
+
+#include "loopback-listener.h"
 #include "rename-directory.h"
 #include "skill-delete-posix.h"
+
+#include "canonical-read-posix.h"
+#include "canonical-fs-posix.h"
 
 static napi_value initialize(napi_env env, napi_value exports) {
   napi_value abi, function;
   napi_create_uint32(env, 1, &abi);
   napi_set_named_property(env, exports, "abiVersion", abi);
+  napi_create_function(env, "openCanonicalWritableFile", NAPI_AUTO_LENGTH, open_canonical_writable_file, NULL, &function);
+  napi_set_named_property(env, exports, "openCanonicalWritableFile", function);
+  napi_create_function(env, "openCanonicalExclusiveFile", NAPI_AUTO_LENGTH, open_canonical_exclusive_file, NULL, &function);
+  napi_set_named_property(env, exports, "openCanonicalExclusiveFile", function);
+  napi_create_function(env, "canonicalFs", NAPI_AUTO_LENGTH, canonical_fs, NULL, &function);
+  napi_set_named_property(env, exports, "canonicalFs", function);
+  napi_create_function(env, "openCanonicalFile", NAPI_AUTO_LENGTH, open_canonical_file, NULL, &function);
+  napi_set_named_property(env, exports, "openCanonicalFile", function);
+  napi_create_function(env, "listCanonicalDirectory", NAPI_AUTO_LENGTH, list_canonical_directory, NULL, &function);
+  napi_set_named_property(env, exports, "listCanonicalDirectory", function);
   napi_create_function(env, "deleteSkillEntry", NAPI_AUTO_LENGTH, delete_skill_entry, NULL, &function);
   napi_set_named_property(env, exports, "deleteSkillEntry", function);
   napi_create_function(env, "deletePrivateArtifact", NAPI_AUTO_LENGTH,
@@ -254,6 +295,12 @@ static napi_value initialize(napi_env env, napi_value exports) {
   napi_create_function(env, "renameDirectoryNoReplace", NAPI_AUTO_LENGTH,
                        rename_directory_no_replace, NULL, &function);
   napi_set_named_property(env, exports, "renameDirectoryNoReplace", function);
+  napi_create_function(env, "syncDescriptor", NAPI_AUTO_LENGTH, sync_descriptor, NULL, &function);
+  napi_set_named_property(env, exports, "syncDescriptor", function);
+  napi_create_function(env, "openLoopbackListener", NAPI_AUTO_LENGTH, open_loopback_listener, NULL, &function);
+  napi_set_named_property(env, exports, "openLoopbackListener", function);
+  napi_create_function(env, "openUnixListener", NAPI_AUTO_LENGTH, open_unix_listener, NULL, &function);
+  napi_set_named_property(env, exports, "openUnixListener", function);
   return exports;
 }
 

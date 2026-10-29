@@ -26,6 +26,9 @@ describe('closed-network backend compilers', () => {
   it('builds a shell-free bwrap argv with deny mounts after writable mounts', () => {
     const confined = bwrapConfine(['--hostile-looking-executable', '-c', 'literal $HOME; touch /x'], options)
     expect(confined[0]).toBe('bwrap')
+    expect(() => bwrapConfine(['true'], { ...options, loopbackServe: true })).toThrow(
+      'loopback serving is unavailable on Linux',
+    )
     expect(confined).toEqual(
       expect.arrayContaining([
         '--ro-bind',
@@ -44,7 +47,36 @@ describe('closed-network backend compilers', () => {
       ]),
     )
     expect(confined.indexOf('--tmpfs')).toBeGreaterThan(confined.lastIndexOf('--bind'))
+    const full = bwrapConfine(['true'], { ...options, fullAccess: true, allowPaths: ['/'], network: 'allow' })
+    expect(full.slice(0, 4)).toEqual(['bwrap', '--bind', '/', '/'])
+    expect(full.lastIndexOf('/')).toBeLessThan(full.indexOf('--dev'))
+    expect(full.indexOf('--dev')).toBeGreaterThan(full.indexOf('--bind'))
+    expect(full.indexOf('--tmpfs')).toBeGreaterThan(full.indexOf('--proc'))
+    expect(full).not.toContain('--unshare-net')
+    expect(() =>
+      bwrapConfine(['true'], { ...options, fullAccess: true, allowPaths: ['/'], denyPaths: [] }),
+    ).toThrow(/private deny floor/)
     expect(confined.slice(-3)).toEqual(['--hostile-looking-executable', '-c', 'literal $HOME; touch /x'])
+    const partitioned = bwrapConfine(['true'], {
+      ...options,
+      readPaths: ['/usr', '/work/proj'],
+      denyPaths: ['/not-mounted/future-memory', '/work/proj/.agh/secrets'],
+    })
+    expect(partitioned).not.toContain('/not-mounted/future-memory')
+    const ancestor = partitioned.indexOf('/work/proj/.agh')
+    expect(partitioned[ancestor - 1]).toBe('--bind')
+    expect(ancestor).toBeLessThan(partitioned.indexOf('--tmpfs'))
+    expect(partitioned).toEqual(expect.arrayContaining(['--tmpfs', '/work/proj/.agh/secrets']))
+    expect(partitioned.slice(partitioned.lastIndexOf('--remount-ro'), -4)).toEqual(['--remount-ro', '/'])
+    const nested = bwrapConfine(['true'], {
+      ...options,
+      fullAccess: true,
+      allowPaths: ['/'],
+      denyPaths: ['/installation/profiles/local-dev', '/installation/profiles'],
+    })
+    expect(nested.filter((part) => part === '--tmpfs')).toHaveLength(1)
+    expect(nested).toEqual(expect.arrayContaining(['--tmpfs', '/installation/profiles', '--remount-ro']))
+    expect(nested).not.toContain('/installation/profiles/local-dev')
   })
 
   it('rejects lexical aliases, controls, NUL argv and unsafe writable kernel trees', () => {
@@ -70,7 +102,7 @@ describe('closed-network backend compilers', () => {
     },
   )
 
-  it('escapes Seatbelt strings and denies both operations without implicit temp/device writes', () => {
+  it('escapes Seatbelt strings and preserves denies with only literal standard device grants', () => {
     const confined = seatbeltConfine(['echo', 'a b'], {
       ...options,
       allowPaths: ['/work/quote" and \\ slash'],
@@ -83,8 +115,13 @@ describe('closed-network backend compilers', () => {
       '(deny file-read* file-write* (subpath "/work/quote\\" and \\\\ slash/secret"))',
     )
     expect(profile).toContain('(deny network*)')
-    expect(profile).not.toContain('/private/tmp')
-    expect(profile).not.toContain('/dev')
+    expect(profile).not.toContain('(allow file-write* (subpath "/private/tmp"))')
+    expect(profile).toContain('(ioctl-command TIOCSPGRP)')
+    expect(profile).toContain('(allow file-read* file-write* (literal "/dev/null"))')
+    for (const device of ['zero', 'random', 'urandom']) {
+      expect(profile).toContain(`(allow file-read* (literal "/dev/${device}"))`)
+    }
+    expect(profile).not.toMatch(/\(allow [^\n]*\(subpath "\/dev(?:\/|"|\))/)
   })
 
   it('does not return raw argv for a Windows backend it cannot enforce', () => {

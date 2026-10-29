@@ -44,7 +44,7 @@ describe('runCommand', () => {
     expect(session.budget).toHaveBeenCalledOnce()
   })
 
-  it('status reports a parked ticket without exposing the whole ticket', async () => {
+  it('status reports a parked decisionKey without exposing the whole decisionKey', async () => {
     const client = createFakeClient()
     const session = await client.session.attach('k')
     client.setTimeline('k', {
@@ -55,7 +55,7 @@ describe('runCommand', () => {
         turn: 2,
         step: 4,
         phase: 'parked',
-        parked: { ticket: 'abcdef123', expiresAt: 'T' },
+        parked: { decisionRef: { sessionId: 's', id: 'abcdef123', revision: 1 }, expiresAt: 'T' },
       },
       turns: [],
       nodes: [],

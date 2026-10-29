@@ -544,9 +544,7 @@ async function withActivationLock<T>(root: string, operation: () => Promise<T>):
   let began = false
   try {
     try {
-      database.exec(
-        'PRAGMA busy_timeout = 0; CREATE TABLE IF NOT EXISTS activation_lock (id INTEGER PRIMARY KEY);',
-      )
+      database.exec('PRAGMA busy_timeout = 0;')
       database.exec('BEGIN IMMEDIATE;')
       began = true
     } catch (error) {

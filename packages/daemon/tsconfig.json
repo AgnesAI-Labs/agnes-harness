@@ -5,11 +5,21 @@
     "outDir": "dist"
   },
   "include": ["**/*.ts"],
-  "exclude": ["dist", "node_modules"],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "test",
+    "testkit",
+    "tools",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/test/**",
+    "**/tests/**",
+    "vitest.config.ts"
+  ],
   "references": [
-    { "path": "../system-node" },
     {
-      "path": "../../tsconfig.config.json"
+      "path": "../system-node"
     },
     {
       "path": "../package-manager"
@@ -20,12 +30,56 @@
     {
       "path": "../sdk"
     },
-    { "path": "../resource-control-store" },
-    { "path": "../resource-control-daemon" },
-    { "path": "../resource-control-runtime" },
-    { "path": "../resource-control-worker" },
-    { "path": "../worker-runtime" },
-    { "path": "../base" },
-    { "path": "../code" }
+    {
+      "path": "../resource-control-store"
+    },
+    {
+      "path": "../resource-control-daemon"
+    },
+    {
+      "path": "../resource-control-runtime"
+    },
+    {
+      "path": "../resource-control-worker"
+    },
+    {
+      "path": "../worker-runtime"
+    },
+    {
+      "path": "../base"
+    },
+    {
+      "path": "../code"
+    },
+    {
+      "path": "../daemon-foundation"
+    },
+    {
+      "path": "../daemon-surfaces"
+    },
+    {
+      "path": "../daemon-admin"
+    },
+    {
+      "path": "../daemon-rpc"
+    },
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../host"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../observability"
+    },
+    {
+      "path": "../extension-api"
+    },
+    {
+      "path": "../distribution"
+    }
   ]
 }

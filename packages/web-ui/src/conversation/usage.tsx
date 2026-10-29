@@ -1,6 +1,7 @@
 import type { UsageView } from '@agnes/protocol'
-import { type CSSProperties, Fragment, useLayoutEffect, useRef } from 'react'
+import { type CSSProperties, Fragment, useLayoutEffect, useState } from 'react'
 import { fallbackT, type Translate } from '../locales/index.js'
+import { Disclosure } from '../ui/disclosure.js'
 
 export type ConversationUsageProps = {
   usage: UsageView | undefined
@@ -12,21 +13,11 @@ const compact = (n: number) =>
   n < 1000 ? String(n) : `${(n / (n >= 1e6 ? 1e6 : 1000)).toFixed(1)}${n >= 1e6 ? 'M' : 'K'}`
 const count = (n: number) => n.toLocaleString('en-US')
 
-/** The host owns visibility; native disclosure state belongs to the reader until usage clears. */
+/** The host owns visibility; the open state belongs to the reader until usage clears. */
 export function ConversationUsage({ usage, connected, t = fallbackT }: ConversationUsageProps) {
-  const details = useRef<HTMLDetailsElement>(null)
+  const [open, setOpen] = useState(false)
   useLayoutEffect(() => {
-    const element = details.current
-    if (!element) return
-    const doc = element.ownerDocument
-    const dismiss = (event: Event) => {
-      if (element.open && !event.composedPath().includes(element)) element.open = false
-    }
-    doc.addEventListener('click', dismiss)
-    return () => doc.removeEventListener('click', dismiss)
-  }, [])
-  useLayoutEffect(() => {
-    if (!usage && details.current) details.current.open = false
+    if (!usage) setOpen(false)
   }, [usage])
 
   const pct = usage ? ((usage.context.tokens / usage.context.window) * 100).toFixed(1) : ''
@@ -58,19 +49,30 @@ export function ConversationUsage({ usage, connected, t = fallbackT }: Conversat
       ]
     : []
   return (
-    <details
-      ref={details}
+    <Disclosure
       className="usage-disclosure session-usage"
+      open={open}
+      onOpenChange={setOpen}
+      dismissible
       hidden={!usage}
       data-pressure={usage ? (Number(pct) > 90 ? 'high' : Number(pct) > 70 ? 'medium' : 'normal') : undefined}
+      summaryProps={{
+        'aria-label': usage
+          ? `${t('usage.viewAria', { summary })}. ${t('usage.estimate')}`
+          : t('usage.viewAriaFallback'),
+        title: usage ? `${summary}. ${t('usage.estimate')}` : t('usage.title'),
+      }}
+      summary={
+        <>
+          <span className="usage-ring" aria-hidden="true" style={{ '--usage-pct': fill } as CSSProperties} />
+          {/* The gauge shows the share only; the tooltip and the popover carry the token counts. */}
+          <span className="usage-percent" aria-hidden="true">
+            {usage ? `${Math.round(Number(pct))}%` : ''}
+          </span>
+          <span className="usage-summary-label">{summary}</span>
+        </>
+      }
     >
-      <summary
-        aria-label={usage ? t('usage.viewAria', { summary }) : t('usage.viewAriaFallback')}
-        title={t('usage.title')}
-      >
-        <span className="usage-ring" aria-hidden="true" style={{ '--usage-pct': fill } as CSSProperties} />
-        <span className="usage-summary-label">{summary}</span>
-      </summary>
       <div className="usage-popover">
         <div className="usage-popover-head">
           <p className="usage-popover-title">{t('usage.usedTitle')}</p>
@@ -88,8 +90,7 @@ export function ConversationUsage({ usage, connected, t = fallbackT }: Conversat
             </Fragment>
           ))}
         </dl>
-        <p className="usage-note">{t('usage.note')}</p>
       </div>
-    </details>
+    </Disclosure>
   )
 }

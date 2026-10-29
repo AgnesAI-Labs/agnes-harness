@@ -7,7 +7,7 @@ import type {
   ToolContext,
   ToolResult,
 } from '@agnes/extension-api'
-import { DEFAULT_OUTPUT_MAX_BYTES, unavailableProjections } from '@agnes/extension-api'
+import { DEFAULT_OUTPUT_MAX_BYTES, unavailableDecisions, unavailableProjections } from '@agnes/extension-api'
 import type { JsonValue } from '@agnes/protocol'
 
 // An in-memory stand-in for the context the kernel hands a tool. Everything a tool is allowed to
@@ -60,6 +60,8 @@ export type FakeToolContextOpts = {
   defaultTimeoutMs?: number
   /** The `tools.output_max_bytes` a tool sees; a test that needs a small page or cut sets it. */
   outputMaxBytes?: number
+  /** The turn's wall-clock limit a tool sees; omitted leaves the field absent (a turn without one). */
+  turnTimeLimit?: { timeLimitMs: number; deadlineAt: number }
   /** Makes `artifacts.put` fail, which is how a tool's behaviour with no artifact store is tested. */
   artifactsFail?: string
   /**
@@ -79,8 +81,6 @@ export type FakeToolContextOpts = {
    * the kinds a listing tool has to be able to show - has no other way into a test.
    */
   entries?: Record<string, FsEntry[]>
-  /** The session's background jobs the tool sees; omitted leaves `ctx.jobs` out, as a kernel without them does. */
-  jobs?: ToolContext['jobs']
 }
 
 const enc = new TextEncoder()
@@ -121,6 +121,7 @@ export function fakeToolContext(opts: FakeToolContextOpts = {}): FakeToolContext
   const extraEntries = new Map(Object.entries(opts.entries ?? {}).map(([k, v]) => [abs(k), v]))
 
   const ctx: ToolContext = {
+    decisions: unavailableDecisions,
     projections: unavailableProjections,
     session: {
       key: opts.sessionKey ?? 'agnes:t:a:cli:dm:x',
@@ -157,13 +158,10 @@ export function fakeToolContext(opts: FakeToolContextOpts = {}): FakeToolContext
       },
       async list(p: string) {
         const dir = abs(p).replace(/\/$/, '')
+        if (mem.files.has(dir)) throw Object.assign(new Error('not a directory'), { code: 'ENOTDIR' })
         const listFail = listErrors.get(dir)
         if (listFail)
           throw Object.assign(new Error(listFail.message ?? 'list failed'), { code: listFail.code })
-        // A real listing refuses a file. Answering it as an empty directory would hide a tool that
-        // lists what it was asked to open.
-        if (mem.files.has(dir))
-          throw Object.assign(new Error(`ENOTDIR: not a directory, scandir '${p}'`), { code: 'ENOTDIR' })
         const names = new Map<string, 'file' | 'dir'>()
         for (const k of mem.files.keys()) {
           if (!k.startsWith(`${dir}/`)) continue
@@ -211,7 +209,6 @@ export function fakeToolContext(opts: FakeToolContextOpts = {}): FakeToolContext
       },
       list: () => [],
     },
-    ...(opts.jobs ? { jobs: opts.jobs } : {}),
     artifacts: {
       async put(bytes: Uint8Array, meta?: { mime?: string; name?: string }): Promise<ArtifactRef> {
         if (opts.artifactsFail !== undefined) throw new Error(opts.artifactsFail)
@@ -255,6 +252,7 @@ export function fakeToolContext(opts: FakeToolContextOpts = {}): FakeToolContext
     timeoutMs: opts.timeoutMs ?? 120000,
     ...(opts.defaultTimeoutMs === undefined ? {} : { defaultTimeoutMs: opts.defaultTimeoutMs }),
     outputMaxBytes: opts.outputMaxBytes ?? DEFAULT_OUTPUT_MAX_BYTES,
+    ...(opts.turnTimeLimit === undefined ? {} : { turnTimeLimit: opts.turnTimeLimit }),
     lease: { expiresAt: '2999-01-01T00:00:00Z', scope: {}, budget: { remaining: 1e9 } },
     log: { debug() {}, info() {}, warn() {}, error() {} },
   }

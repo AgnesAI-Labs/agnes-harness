@@ -9,18 +9,54 @@
     "jsx": "react-jsx"
   },
   "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["dist", "node_modules"],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "test",
+    "testkit",
+    "tools",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/test/**",
+    "**/tests/**",
+    "vitest.config.ts"
+  ],
   "references": [
-    { "path": "../../tsconfig.config.json" },
-    { "path": "../base" },
-    { "path": "../cordis" },
-    { "path": "../web-client" },
-    { "path": "../web-units" },
-    { "path": "../protocol" },
-    { "path": "../sdk" },
-    { "path": "../resource-control-web" },
-    { "path": "../web-admin-frame" },
-    { "path": "../web-server" },
-    { "path": "../web-ui" }
+    {
+      "path": "../base"
+    },
+    {
+      "path": "../cordis"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../resource-control-web"
+    },
+    {
+      "path": "../sdk"
+    },
+    {
+      "path": "../web-admin"
+    },
+    {
+      "path": "../web-client"
+    },
+    {
+      "path": "../web-conversation"
+    },
+    {
+      "path": "../web-foundation"
+    },
+    {
+      "path": "../web-server"
+    },
+    {
+      "path": "../web-ui"
+    },
+    {
+      "path": "../web-units"
+    }
   ]
 }

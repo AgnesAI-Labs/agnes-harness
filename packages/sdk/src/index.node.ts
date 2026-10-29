@@ -83,14 +83,28 @@ export * from './client.js'
 export * from './errors.js'
 // Emitter only: `Disposer` is the same `() => void` in both modules, and re-exporting
 // it twice would make the name ambiguous on the package surface.
-export { Emitter } from './events.js'
+export { Emitter, notifyListeners } from './events.js'
+export type {
+  ExampleLaunches,
+  ExampleOperation,
+  ExamplePackages,
+  ExampleRequest,
+  ExampleReview,
+  ExampleTransport,
+  ExampleView,
+} from './examples.js'
+export { createExampleClient } from './examples.js'
 export * from './extensions.node.js'
+export * from './headless.js'
 export * from './identity.node.js'
 export { jcs } from './jcs.js'
 export * from './journal.js'
 export { fileJournal } from './journal-file.node.js'
+export * from './managed-service.node.js'
 export { loginCodex, loginSubscription, type OAuthClient, type OAuthInteraction } from './oauth.js'
+export * from './owned-store.node.js'
 export * from './package-admin.node.js'
+export * from './plugin-streams.js'
 export * from './preview-merger.js'
 export { createRelay, type RelayOptions, type RelayRoute, stripIdentity } from './relay.node.js'
 export type { ResourceControlClient, ResourceControlRpc } from './resource-control.node.js'

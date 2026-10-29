@@ -1,7 +1,11 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { bundledExtensionManifest } from '@agnes/extension-api'
+import type { Context } from '@agnes/plugin-runtime'
+import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { describe, expect, it } from 'vitest'
+import { referenceResolversPlugin } from '../extensions/references/src/index.js'
 import { expectManifestMatchesCode, usedCapabilities } from '../testkit/assertions.js'
 
 /**
@@ -15,10 +19,12 @@ import { expectManifestMatchesCode, usedCapabilities } from '../testkit/assertio
 const extensionsDir = fileURLToPath(new URL('../extensions', import.meta.url))
 const names = readdirSync(extensionsDir)
   .filter((e) => statSync(join(extensionsDir, e)).isDirectory())
+  // This module is an ordinary provider plugin, declared in agnes.plugins instead of a legacy manifest.
+  .filter((e) => e !== 'references')
   .sort()
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
-  agnes?: { extensions?: string[] }
+  agnes?: { extensions?: string[]; plugins?: { id: string; export: string; inject?: string[] }[] }
 }
 const loaded = new Set((pkg.agnes?.extensions ?? []).map((p) => p.replace(/^\.\/extensions\//, '')))
 
@@ -27,6 +33,21 @@ describe('bundled extensions declare what they use', () => {
   it('found the extensions on disk', () => {
     expect(names.length).toBeGreaterThanOrEqual(4)
     expect(names).toContain('tools-core')
+    expect(pkg.agnes?.plugins?.find((entry) => entry.id === 'reference-resolvers:default')).toMatchObject({
+      export: 'referenceResolversPlugin',
+      inject: ['providers'],
+    })
+    expect(existsSync(join(extensionsDir, 'references/src/index.ts'))).toBe(true)
+    const declaration = pkg.agnes?.plugins?.find((entry) => entry.id === 'reference-resolvers:default')
+    const plugin = {
+      ...referenceResolversPlugin,
+      apply(ctx: Context) {
+        return referenceResolversPlugin.apply(ctx)
+      },
+    }
+    expect(normalizePluginExport(plugin, declaration).inject).toEqual({ providers: null })
+    const provider = usedCapabilities(join(extensionsDir, 'references/src'))
+    expect([...provider.tools, ...provider.hooks, ...provider.slots, ...provider.resources]).toEqual([])
   })
 
   it.each(names)('%s: manifest matches its source', (name) => {
@@ -35,7 +56,7 @@ describe('bundled extensions declare what they use', () => {
 
   it.each(names)('%s: the manifest names itself and points at a file that exists', (name) => {
     const dir = join(extensionsDir, name)
-    const m = JSON.parse(readFileSync(join(dir, 'agnes.extension.json'), 'utf8')) as {
+    const m = bundledExtensionManifest(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))) as {
       id: string
       entry: string
     }
@@ -46,14 +67,16 @@ describe('bundled extensions declare what they use', () => {
   /**
    * The package.json list is what the host reads off disk; a directory missing from it is never
    * loaded, so nothing it declares can ever take effect. That is fine for a piece that is only a
-   * seam implementation - the host reaches those through the package's named `seams` export - but
+   * seam implementation - the host reaches those through the provider the package registers - but
    * it must then declare no registrations at all, or the manifest is describing something that
    * cannot happen.
    */
   it.each(names)('%s: a piece the host never loads registers nothing', (name) => {
     if (loaded.has(name)) return
     const caps = (
-      JSON.parse(readFileSync(join(extensionsDir, name, 'agnes.extension.json'), 'utf8')) as {
+      bundledExtensionManifest(
+        JSON.parse(readFileSync(join(extensionsDir, name, 'package.json'), 'utf8')),
+      ) as {
         capabilities?: {
           tools?: { names?: string[] }
           hooks?: string[]

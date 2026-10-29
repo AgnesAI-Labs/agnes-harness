@@ -1,4 +1,11 @@
-import type { ChannelCapabilities, EventEnvelope, HarnessMeta, UITimeline } from '@agnes/protocol'
+import {
+  type ChannelCapabilities,
+  type EventEnvelope,
+  type HarnessMeta,
+  rpcError,
+  type UITimeline,
+} from '@agnes/protocol'
+import { JsonRpcError } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
 import type { MessageRef } from '../src/adapter.js'
 import { Outbound } from '../src/runner/outbound.js'
@@ -43,6 +50,7 @@ async function setup(
     sessionPerSec?: number
     maxDetachedWork?: number
     noticeRetry?: { attempts?: number; baseMs?: number; maxMs?: number; jitter?: () => number }
+    onHistoryRefused?: (key: string, error: unknown) => Promise<boolean>
   } = {},
 ) {
   const client = createFakeClient()
@@ -72,12 +80,82 @@ async function setup(
     ...(options.stopSettleMs === undefined ? {} : { stopSettleMs: options.stopSettleMs }),
     ...(options.maxDetachedWork === undefined ? {} : { maxDetachedWork: options.maxDetachedWork }),
     ...(options.noticeRetry === undefined ? {} : { noticeRetry: options.noticeRetry }),
+    ...(options.onHistoryRefused === undefined ? {} : { onHistoryRefused: options.onHistoryRefused }),
   })
   outbound.attach('k', session, { chatId: 'chat-1' })
   return { adapter, cache, client, outbound, refs, session }
 }
 
+it('publishes recovered surfaces through the existing outbound dedupe without creating a channel action', async () => {
+  const { adapter, client, session, outbound } = await setup()
+  const { questionSurface } = await import('../../base/extensions/interaction/src/question.js')
+  client.setSurfaces(session.id, {
+    sessionId: session.id,
+    lastSeq: 1,
+    actions: [],
+    surfaces: [
+      {
+        surface: questionSurface('q', [{ id: 'pick', question: 'Pick', options: ['A', 'B'] }]),
+        status: 'open',
+        owner: 'agnes/intelligent-ui',
+        lane: 'main',
+        taskId: 'task',
+        createdSeq: 1,
+        updatedSeq: 1,
+      },
+    ],
+  })
+  try {
+    await outbound.flush('k')
+    const count = adapter.sent.length
+    await outbound.flush('k')
+    expect(adapter.sent.length).toBe(count)
+    expect(JSON.stringify(adapter.sent)).toContain('surface=q')
+    expect(client.calls.some((call) => call.method === 'ui.respond')).toBe(false)
+  } finally {
+    await outbound.stop()
+  }
+})
+
 describe('Outbound', () => {
+  it('publishes the complete durable plan before its approval card, including markup and the tail', async () => {
+    const { adapter, client, session, outbound } = await setup({ textChars: 256 })
+    const plan = 'review正文\n'.repeat(1000) + '<script>EXACT-TAIL</script>'
+    client.setTimeline(
+      session.id,
+      timeline([
+        {
+          kind: 'approval',
+          id: 'review',
+          seq: 1,
+          state: 'pending',
+          summary: 'Review exact plan',
+          risk: 'always',
+          options: ['allow_once', 'reject_once'],
+          decisionRef: { sessionId: session.id, id: 'decision', revision: 1 },
+          subjectText: plan,
+        },
+      ]),
+    )
+    try {
+      await outbound.flush('k')
+      const delivered = adapter.sent.flatMap((row) => row.msg.blocks)
+      const card = delivered.findIndex((block) => block.kind === 'approval')
+      expect(card).toBeGreaterThan(0)
+      const full = delivered
+        .slice(0, card)
+        .flatMap((block) => (block.kind === 'text' ? [block.markdown] : []))
+        .join('')
+      expect(full).toContain('EXACT-TAIL')
+      expect(full).toContain('script')
+      expect(full.match(/review正文/g)).toHaveLength(1000)
+      expect(delivered.slice(card + 1)).toEqual([])
+      expect(adapter.sent.at(-1)?.msg.blocks).toHaveLength(1)
+    } finally {
+      await outbound.stop()
+    }
+  })
+
   it('retries a failed notice in its lane with one stable delivery identity', async () => {
     const { adapter, outbound } = await setup({
       noticeRetry: { attempts: 3, baseMs: 1, maxMs: 1, jitter: () => 0.5 },
@@ -306,11 +384,34 @@ describe('Outbound', () => {
   })
 
   it('detaches cleanly and makes later recovery flushes inert', async () => {
-    const { adapter, client, outbound } = await setup()
+    const onHistoryRefused = vi.fn(async () => true)
+    const { adapter, client, outbound, session } = await setup({ onHistoryRefused })
+    let refuse!: (error: unknown) => void
+    const projection = vi.spyOn(session, 'projectUI').mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          refuse = reject
+        }),
+    )
+    const pending = outbound.flush('k')
+    await vi.waitFor(() => expect(projection).toHaveBeenCalledOnce())
     outbound.detach('k')
     client.setTimeline('k', timeline([{ kind: 'assistant', id: 'a', seq: 2, text: 'ignored' }]))
     await outbound.flush('k', { reason: 'gap' })
     expect(adapter.sent).toHaveLength(0)
+
+    const replacement = await client.session.attach('replacement')
+    outbound.attach('k', replacement, { chatId: 'chat-1' })
+    refuse(new JsonRpcError(rpcError('SEMANTIC_REJECTED', { code: 'E_SESSION_CORRUPT' })))
+    await pending
+    expect(onHistoryRefused).not.toHaveBeenCalled()
+    client.setTimeline(
+      'replacement',
+      timeline([{ kind: 'assistant', id: 'new', seq: 2, text: 'new session' }]),
+    )
+    await outbound.flush('k')
+    expect(adapter.sent[0]?.msg.blocks).toEqual([{ kind: 'text', markdown: 'new session' }])
+    await outbound.stop()
   })
 
   it('updates multipart revisions without indefinitely appending obsolete tail chunks', async () => {

@@ -58,14 +58,16 @@ function endpoint(
       agentCapabilities: {},
       _meta: { agnes: { agnesVersion: 'test' } },
     }))
+    .on('_agnes/v1/session.integrity', () => ({
+      state: 'verified',
+      verifiedThroughSeq: events.length,
+      lastSeq: events.length,
+      legacyThroughSeq: 0,
+      verifiedAtMs: 1,
+    }))
     .on('session/load', (params) => {
       expect(params).toEqual({ sessionId, cwd: '', mcpServers: [] })
       restored = true
-      return {}
-    })
-    .on('_agnes/v1/session.verifyHistory', (params) => {
-      expect(params).toEqual({ sessionId })
-      expect(restored, 'the session is verified once it is open').toBe(true)
       return {}
     })
     .on('_agnes/v1/session.attach', (params, ep) => {
@@ -122,60 +124,6 @@ describe('export', () => {
       ).rejects.toThrow('durable session missing')
       expect(writeFile).not.toHaveBeenCalled()
       expect(ep.calls.some((call) => call.method === '_agnes/v1/session.attach')).toBe(false)
-    } finally {
-      await client.close()
-    }
-  })
-
-  it('reads nothing before the history is verified, and exports nothing when it fails', async () => {
-    const ok = endpoint()
-    const client = await clientFor(ok)
-    try {
-      await readLedger(client, SESSION_ID)
-      const order = ok.calls.map((call) => call.method)
-      expect(order.indexOf('_agnes/v1/session.verifyHistory')).toBeGreaterThan(-1)
-      expect(order.indexOf('_agnes/v1/session.verifyHistory')).toBeLessThan(
-        order.indexOf('_agnes/v1/session.attach'),
-      )
-    } finally {
-      await client.close()
-    }
-    const ep = endpoint().on('_agnes/v1/session.verifyHistory', () => {
-      throw Object.assign(new Error('SEMANTIC_REJECTED'), {
-        code: -32011,
-        data: { code: 'E_LEDGER_INTEGRITY' },
-      })
-    })
-    const failing = await clientFor(ep)
-    const writeFile = vi.fn()
-    try {
-      await expect(
-        exportSession(
-          parseArgs(['export', SESSION_ID, '--raw', '-o', 'out.agnes']),
-          { cwd: '/workspace', io: { stdout: { write: vi.fn() }, stderr: { write: vi.fn() } }, writeFile },
-          failing,
-        ),
-      ).rejects.toMatchObject({ data: { code: 'E_LEDGER_INTEGRITY' } })
-      expect(writeFile).not.toHaveBeenCalled()
-      expect(ep.calls.some((call) => call.method === '_agnes/v1/session.attach')).toBe(false)
-    } finally {
-      await failing.close()
-    }
-  })
-
-  it('waits for a verification that outlasts the request timeout', async () => {
-    const ep = endpoint().on('_agnes/v1/session.verifyHistory', async () => {
-      await new Promise((resolve) => setTimeout(resolve, 200))
-      return {}
-    })
-    const client = createClient({
-      transport: { kind: 'inproc', endpoint: ep },
-      journal: memoryJournal(),
-      timeouts: { request: 50 },
-    })
-    await client.initialize()
-    try {
-      await expect(readLedger(client, SESSION_ID)).resolves.toBeDefined()
     } finally {
       await client.close()
     }
@@ -353,7 +301,31 @@ describe('export', () => {
         content: [{ type: 'text', text: 'mail alice@example.com' }],
       },
     }
-    const events = [user, cut, { ...assistant, seq: 3 }]
+    const events = [
+      user,
+      cut,
+      { ...assistant, seq: 3 },
+      {
+        ...user,
+        seq: 4,
+        type: 'x/feedback/item',
+        ignorable: true,
+        data: { id: 'feedback-1', note: 'Cite evidence', rating: 'down', target: { messageSeq: 3, turn: 1 } },
+      } as EventEnvelope,
+      {
+        ...user,
+        seq: 5,
+        type: 'x/feedback/growth',
+        ignorable: true,
+        data: {
+          feedbackId: 'feedback-1',
+          feedbackRevision: 4,
+          messageSeq: 3,
+          candidateId: 'candidate-local',
+          candidateHash: 'sha256-' + 'a'.repeat(64),
+        },
+      } as EventEnvelope,
+    ]
     const exported = async (argv: string[]) => {
       const ep = endpoint(events)
       const client = await clientFor(ep)
@@ -361,10 +333,7 @@ describe('export', () => {
       try {
         await exportSession(parseArgs(['export', SESSION_ID, ...argv]), { cwd: '/workspace', io }, client)
         const attach = ep.calls.find((call) => call.method === '_agnes/v1/session.attach')?.params
-        // A raw native export is written one row at a time.
-        const output = io.stdout.write.mock.calls
-          .map((call) => new TextDecoder().decode(call[0] as Uint8Array))
-          .join('')
+        const output = new TextDecoder().decode(io.stdout.write.mock.calls[0]?.[0] as Uint8Array)
         return { attach, output }
       } finally {
         await client.close()
@@ -377,7 +346,9 @@ describe('export', () => {
       .trim()
       .split('\n')
       .map((line) => JSON.parse(line) as EventEnvelope)
-    expect(rows.map((row) => row.seq)).toEqual([1, 2, 3])
+    expect(rows.map((row) => row.seq)).toEqual([1, 2, 3, 4, 5])
+    expect(rows.slice(3).map((row) => row.type)).toEqual(['x/feedback/item', 'x/feedback/growth'])
+    expect(rows[3]?.data).toMatchObject({ id: 'feedback-1', rating: 'down', note: 'Cite evidence' })
     expect(redacted.output).not.toContain('alice@example.com')
     expect((await exported(['--raw'])).output).toContain('alice@example.com')
   })

@@ -1,4 +1,4 @@
-import type { FsIo, FsIoStat } from '../src/adapters/fs-io.js'
+import type { FsIo, FsIoStat } from '@agnes/host-infrastructure/adapters/fs-io'
 
 /**
  * A posix, case-sensitive tree in memory: the second FsIo behind the fence's contract suite, and
@@ -100,6 +100,13 @@ export function memoryFsIo(): MemoryFsIo {
       if (node.kind === 'dir') throw fail('EISDIR', abs)
       if (node.kind !== 'file') throw fail('ENOENT', abs)
       return new Uint8Array(node.data)
+    },
+    async readRange(abs, opts) {
+      const node = lookup(abs)
+      if (node === undefined) throw fail('ENOENT', abs)
+      if (node.kind === 'dir') throw fail('EISDIR', abs)
+      if (node.kind !== 'file') throw fail('ENOENT', abs)
+      return node.data.slice(opts.offset, opts.limit === undefined ? undefined : opts.offset + opts.limit)
     },
     async writeFile(abs, data) {
       const at = parentOf(abs)

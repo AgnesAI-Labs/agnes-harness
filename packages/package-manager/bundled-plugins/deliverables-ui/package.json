@@ -1,0 +1,71 @@
+{
+  "name": "@agnes/deliverables-ui",
+  "version": "0.1.5",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "src",
+    "README.md",
+    "LICENSE",
+    "client-build.json",
+    "NOTICE"
+  ],
+  "agnes": {
+    "plugins": [
+      {
+        "export": "main",
+        "id": "ext:deliverables-ui/main",
+        "apiRange": "^5.0.0",
+        "runtime": "in-process",
+        "capabilities": {
+          "ui": true
+        },
+        "metadata": {
+          "displayName": "Files and deliverables",
+          "summary": "View generated files, their history and the deliverables panel.",
+          "description": "View generated files, their history and the deliverables panel.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "交付物展示",
+              "summary": "查看生成的文件、文件历史和交付物面板。",
+              "description": "查看生成的文件、文件历史和交付物面板。"
+            }
+          }
+        }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:deliverables-ui/main",
+        "path": "./src/agnes.client.json"
+      }
+    ],
+    "metadata": {
+      "displayName": "Files and deliverables",
+      "summary": "View generated files, their history and the deliverables panel.",
+      "description": "View generated files, their history and the deliverables panel.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "交付物展示",
+          "summary": "查看生成的文件、文件历史和交付物面板。",
+          "description": "查看生成的文件、文件历史和交付物面板。"
+        }
+      }
+    },
+    "provides": [
+      "ui"
+    ]
+  },
+  "peerDependencies": {
+    "@agnes/web-client": "0.0.0",
+    "@agnes/web-ui": "0.0.0",
+    "react": "18.3.1"
+  },
+  "devDependencies": {
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "react": "18.3.1"
+  }
+}

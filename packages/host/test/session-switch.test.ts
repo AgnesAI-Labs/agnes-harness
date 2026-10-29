@@ -1,21 +1,30 @@
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createProvider, type WireEvent } from '@agnes/ai'
+import { createProvider, getApiKeyProvider, type WireEvent } from '@agnes/ai'
 import { FakeAdapter, ScriptedProvider } from '@agnes/ai/testkit'
+import { defaultLoopPlugin } from '@agnes/base'
+import { loadAllPresets } from '@agnes/code'
+import { CompactionRunner } from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
+import type { PresetDoc } from '@agnes/host-common/presets/types'
+import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import type { ResolvedProfile } from '@agnes/host-common/profile/types'
+import { MemoryPackageLoader, type PackageModule } from '@agnes/host-extensions/assemble/packages'
+import { createCredentialStore } from '@agnes/host-infrastructure/adapters/credential-store'
+import { createMemoryAudit } from '@agnes/host-infrastructure/audit'
+import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
+import type {} from '@agnes/host-providers/assemble/loops'
+import type { ProviderBuildOptions } from '@agnes/host-providers/assemble/provider'
+import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { ModelRecord, RouteDecl } from '@agnes/protocol'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, describe, expect, it } from 'vitest'
-import { MemoryPackageLoader, type PackageModule } from '../src/assemble/packages.js'
-import type { ProviderBuildOptions } from '../src/assemble/provider.js'
-import type { AssembleDeps, Assembled } from '../src/assemble.js'
-import { assemble } from '../src/assemble.js'
-import { createMemoryAudit } from '../src/audit.js'
-import type { PresetDoc } from '../src/presets/types.js'
-import { resolveProfile } from '../src/profile/resolve.js'
-import type { ResolvedProfile } from '../src/profile/types.js'
-import { validateModelSwitch, validatePresetSwitch } from '../src/session-switch.js'
-import { attachTestSeamPlugins } from '../testkit/cordis-seams.js'
+import type { AssembleDeps, Assembled } from '../src/runtime/assemble/assemble.js'
+import { assemble } from '../src/runtime/assemble/assemble.js'
+import { validateModelSwitch, validatePresetSwitch } from '../src/runtime/sessions/session-switch.js'
+import { attachTestSeamPlugins, seamFactories } from '../testkit/cordis-seams.js'
 import { createTestHost, type TestHost, type TestHostOptions } from '../testkit/index.js'
 
 /**
@@ -43,13 +52,12 @@ const modelRecord = (route: string, id: string): ModelRecord => ({
 const SEAM_KEYS = [
   'approval',
   'checkpoint',
-  'ledger',
+  'billing',
   'sandbox',
   'verifier',
   'repair',
   'artifacts',
   'principals',
-  'harness',
 ] as const
 const log = { debug() {}, info() {}, warn() {}, error() {} }
 
@@ -62,7 +70,10 @@ afterEach(async () => {
 const scratch = (): string => {
   const d = mkdtempSync(join(tmpdir(), 'agnes-session-switch-'))
   dirs.push(d)
-  return d
+  // The configuration store requires a private home; Windows temp ACLs may include other users.
+  const home = join(d, 'home')
+  createPrivateDirectorySync(home)
+  return home
 }
 
 function mods(
@@ -72,7 +83,21 @@ function mods(
   const modules: Record<string, PackageModule> = {
     '@agnes/base': {
       id: '@agnes/base',
-      seams: Object.fromEntries(SEAM_KEYS.map((n) => [n, async () => seams[n]])),
+      plugins: [
+        {
+          declaration: {
+            id: 'loop:agnes.default',
+            export: 'defaultLoopPlugin',
+            apiRange: '^5.0.0',
+            default: true,
+            inject: ['loops'],
+            provide: [],
+            runtime: 'in-process',
+          },
+          entry: normalizePluginExport(defaultLoopPlugin),
+        },
+      ],
+      ...seamFactories(Object.fromEntries(SEAM_KEYS.map((n) => [n, async () => seams[n]]))),
       operations: {},
       presets: { base: { name: 'base' } },
     },
@@ -95,13 +120,20 @@ async function profileWithRoutes(routes: RouteDecl[]): Promise<ResolvedProfile> 
         packages: Object.fromEntries(
           ['@agnes/ai', '@agnes/base', '@agnes/code'].map((id) => [
             id,
-            { version: '0.1.0', integrity: 'sha512-x', trust: 'builtin' as const, enabled: true },
+            {
+              version: '0.1.0',
+              source: { type: 'builtin' as const, ref: 'builtin' },
+              integrity: 'builtin:0.1.0',
+              trust: 'builtin' as const,
+              enabled: true,
+            },
           ]),
         ),
       },
       user: {
         name: 'local-dev',
-        provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes },
+        presets: { default: 'standard', allowed: ['standard'] },
+        provider: { package: '@agnes/ai', routes },
       },
     },
     {
@@ -120,8 +152,12 @@ async function profileWithRoutes(routes: RouteDecl[]): Promise<ResolvedProfile> 
  * `Assembled`/`ResolvedProfile` object drifts from what assembly actually produces in ways a test
  * written against the real pipeline cannot.
  */
-async function buildFixture(): Promise<{ assembled: Assembled; profile: ResolvedProfile }> {
+async function buildFixture(
+  extraRoutes: RouteDecl[] = [],
+  prepareHome?: (home: string) => Promise<void>,
+): Promise<{ assembled: Assembled; profile: ResolvedProfile }> {
   const dataDir = scratch()
+  await prepareHome?.(dataDir)
   // Named 'gw', not 'default': 'default' is the reserved unresolved-sentinel spelling
   // (profile/templates.ts's RESERVED_ROUTE_NAMES) and resolveProfile refuses a declared route using
   // it, so the plan text's literal `route: 'default'` in these cases is a real route name here
@@ -140,7 +176,7 @@ async function buildFixture(): Promise<{ assembled: Assembled; profile: Resolved
     baseUrl: 'https://alt.example.invalid/v1',
     models: [modelRecord('alt', 'm2')],
   }
-  const profile = await profileWithRoutes([route, alternate])
+  const profile = await profileWithRoutes([route, alternate, ...extraRoutes])
   const codePresets: Record<string, PresetDoc> = {
     standard: {
       name: 'standard',
@@ -254,6 +290,156 @@ describe('validateModelSwitch', () => {
       validateModelSwitch(profile, assembled, { slot: 'primary', route: 'gw', model: 'm', thinking: 'high' }),
     ).toThrow(/E_MODEL_UNSUPPORTED/)
   })
+
+  // A payload-only adapter answers a payload and takes no messages. A conversation that selected one
+  // of its models would only fail at the adapter, so the gate refuses the selection up front.
+  describe('payload-only adapters', () => {
+    const jevRoute: RouteDecl = {
+      route: 'jev',
+      api: 'typesafe-systemone',
+      baseUrl: 'https://example.invalid/v1',
+      models: [
+        {
+          ...modelRecord('jev', 'typesafe/jev-1.13-20260917'),
+          api: 'typesafe-systemone',
+          input: ['text'],
+          toolCallFormats: [],
+        },
+      ],
+    }
+    const entry = (capabilities: Record<string, boolean>) => ({
+      id: 'openai-completions',
+      version: '1.0.0',
+      wireApi: 'openai-completions',
+      sourcePackage: '@acme/adapter',
+      capabilities: { imageInput: false, tools: false, streaming: false, ...capabilities },
+    })
+
+    it('refuses a model served by the built-in typesafe-systemone adapter', async () => {
+      const { assembled, profile } = await buildFixture([jevRoute])
+      expect(assembled.modelAdapterCatalog().find((item) => item.id === 'typesafe-systemone')).toMatchObject({
+        capabilities: { payload: true, payloadOnly: true },
+      })
+      let thrown: unknown
+      try {
+        validateModelSwitch(profile, assembled, {
+          slot: 'primary',
+          route: 'jev',
+          model: 'typesafe/jev-1.13-20260917',
+        })
+      } catch (error) {
+        thrown = error
+      }
+      expect(thrown).toMatchObject({
+        code: 'E_MODEL_UNSUPPORTED',
+        detail: { slot: 'primary', route: 'jev', payloadOnly: true },
+      })
+      // The refusal is for this model: the other routes of the same deployment stay selectable.
+      expect(() =>
+        validateModelSwitch(profile, assembled, { slot: 'primary', route: 'gw', model: 'm' }),
+      ).not.toThrow()
+    })
+
+    it('refuses a model on the route a saved configuration account produced', async () => {
+      const home = scratch()
+      const credentialRef = 'secret://generic/11111111-1111-4111-8111-111111111111'
+      await createCredentialStore({ root: home }).putGeneric(credentialRef, 'jev-test-key', {
+        label: 'Jev',
+        createdAt: '2026-10-16T00:00:00.000Z',
+      })
+      const configuration = createConfigurationService({ home, profile: 'local-dev' })
+      await configuration.save({
+        providerId: 'typesafe-systemone',
+        accountId: 'jev',
+        label: 'Jev',
+        credentialRef,
+        model: 'typesafe/jev-1.13-20260917',
+        models: [
+          { id: 'typesafe/jev-1.13-20260917', name: 'Jev 1.13', contextWindow: 65536, maxTokens: 32768 },
+        ],
+        expectedRevision: 0,
+      })
+      const generated = (await configuration.profileInput()).provider?.routes ?? []
+      expect(generated.map((decl) => decl.route)).toEqual(['account-jev'])
+      // Assembly resolves a declared credentialRef against the deployment's own store, so the
+      // fixture home binds the same reference the saved account carries.
+      const { assembled, profile } = await buildFixture(generated, async (fixtureHome) => {
+        await createCredentialStore({ root: fixtureHome }).putGeneric(credentialRef, 'jev-test-key', {
+          label: 'Jev',
+          createdAt: '2026-10-16T00:00:00.000Z',
+        })
+      })
+      let thrown: unknown
+      try {
+        validateModelSwitch(profile, assembled, {
+          slot: 'primary',
+          route: 'account-jev',
+          model: 'typesafe/jev-1.13-20260917',
+        })
+      } catch (error) {
+        thrown = error
+      }
+      expect(thrown).toMatchObject({
+        code: 'E_MODEL_UNSUPPORTED',
+        detail: { slot: 'primary', route: 'account-jev', payloadOnly: true },
+      })
+    })
+
+    it('refuses every slot, not only the primary one', async () => {
+      const { assembled, profile } = await buildFixture()
+      Object.assign(assembled, { modelAdapterCatalog: () => [entry({ payload: true, payloadOnly: true })] })
+      for (const slot of ['primary', 'fast', 'verifier']) {
+        let thrown: unknown
+        try {
+          validateModelSwitch(profile, assembled, { slot, route: 'gw', model: 'm' })
+        } catch (error) {
+          thrown = error
+        }
+        expect(thrown).toMatchObject({
+          code: 'E_MODEL_UNSUPPORTED',
+          detail: { slot, route: 'gw', payloadOnly: true },
+        })
+      }
+    })
+
+    it('judges a route by the adapter that serves it, even when a chat adapter names the same wire API', async () => {
+      const { assembled, profile } = await buildFixture()
+      const community = { route: 'community', api: 'community-jev', baseUrl: 'https://example.invalid/v1' }
+      Object.assign(assembled, {
+        modelAdapterCatalog: () => [
+          entry({ tools: true, streaming: true }),
+          { ...entry({ payload: true, payloadOnly: true }), id: 'community-jev' },
+        ],
+      })
+      const published = assembled.provider.models()
+      Object.assign(assembled.provider, {
+        // Its wire API is openai-completions, the chat route's too.
+        models: () => [...published, modelRecord('community', 'community-model')],
+      })
+      const declared = {
+        ...profile,
+        provider: { ...profile.provider, routes: [...(profile.provider.routes ?? []), community] },
+      }
+      expect(() =>
+        validateModelSwitch(declared, assembled, {
+          slot: 'primary',
+          route: 'community',
+          model: 'community-model',
+        }),
+      ).toThrow(/E_MODEL_UNSUPPORTED/)
+      expect(() =>
+        validateModelSwitch(declared, assembled, { slot: 'primary', route: 'gw', model: 'm' }),
+      ).not.toThrow()
+    })
+
+    it('keeps a mixed adapter selectable: payload alone does not make a model payload-only', async () => {
+      const { assembled, profile } = await buildFixture()
+      Object.assign(assembled, { modelAdapterCatalog: () => [entry({ payload: true })] })
+      expect(() =>
+        validateModelSwitch(profile, assembled, { slot: 'primary', route: 'gw', model: 'm' }),
+      ).not.toThrow()
+    })
+  })
 })
 
 // Two routes wired to two slots (primary/escalation) of the same preset, so the assembled RouteTable
@@ -291,7 +477,7 @@ function twoRouteHostOptions(
     profileInputs: {
       user: {
         name: 'local-dev',
-        provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: TWO_ROUTES },
+        provider: { package: '@agnes/ai', routes: TWO_ROUTES },
       },
     },
     provider,
@@ -299,6 +485,109 @@ function twoRouteHostOptions(
 }
 
 describe('replaySwitchesOnOpen', () => {
+  it.each([
+    ['standard', false],
+    ['minimal', false],
+    ['standard', true],
+  ] as const)(
+    'compacts after a primary switch and reopen with %s (explicit summary: %s)',
+    async (preset, explicit) => {
+      const dataDir = scratch()
+      const models = [modelRecord('gw', 'default-model'), modelRecord('gw', 'chat-model')].map((record) => ({
+        ...record,
+        contextWindow: 128000,
+      }))
+      const expected = explicit ? 'default-model' : 'chat-model'
+      const provider = new ScriptedProvider({
+        models,
+        scripts: [
+          (request) =>
+            request.kind === 'summary' && request.model !== expected
+              ? [
+                  {
+                    type: 'error',
+                    reason: 'error',
+                    code: 'TRANSPORT',
+                    message: 'wrong summary target',
+                    retryable: false,
+                  },
+                ]
+              : [
+                  {
+                    type: 'text_delta',
+                    delta: request.kind === 'summary' ? 'A short summary.' : 'A complete answer.',
+                  },
+                  { type: 'done', reason: 'stop' },
+                ],
+        ],
+      })
+      const options: TestHostOptions = {
+        dataDir,
+        presets: loadAllPresets(),
+        allowed: ['standard', 'minimal'],
+        disableSessionTitle: true,
+        profileInputs: {
+          user: {
+            name: 'local-dev',
+            provider: {
+              package: '@agnes/ai',
+              routes: [
+                { route: 'gw', api: 'openai-completions', baseUrl: 'https://example.invalid/v1', models },
+              ],
+            },
+          },
+        },
+        provider,
+      }
+      const first = await createTestHost(options)
+      unwinds.push(() => first.host.close())
+      const original = await first.host.createSession({ cwd: dataDir, preset })
+      if (explicit) await original.setModel({ slot: 'compaction', route: 'gw', model: expected })
+      await original.setModel({ slot: 'primary', route: 'gw', model: 'chat-model' })
+      const turn = async (session: typeof original, text: string) => {
+        await session.enqueue('next-turn', { actor: session.d.actor, content: [{ type: 'text', text }] })
+        expect(await session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
+          reason: 'completed',
+        })
+      }
+      await turn(original, 'Synthetic history. '.repeat(100))
+      await first.host.close()
+      const second = await createTestHost(options)
+      unwinds.push(() => second.host.close())
+      const reopened = await second.host.createSession({ cwd: dataDir, key: original.key })
+      await turn(reopened, 'Continue the task.')
+      reopened.compaction = new CompactionRunner({
+        plan: async (payload) => {
+          const surface = payload.getSurface()
+          const start = surface[0]
+          const end = surface.at(-2)
+          const kept = surface.at(-1)
+          if (!start || !end || !kept) throw new Error('missing compactable history')
+          return {
+            summarizeRange: [start.seq, end.seq],
+            keepFromSeq: kept.seq,
+            prompts: { system: 'Summarize safely.', history: 'Summarize the earlier task.' },
+            maxTokens: 96,
+            details: { readFiles: [], modifiedFiles: [] },
+          }
+        },
+        onCompact: async () => undefined,
+      })
+      await reopened.requestCompaction({ actor: reopened.d.actor, admissionId: 'switched-primary' })
+      const compacted = await reopened.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(compacted.error).toBeUndefined()
+      expect(compacted.reason).toBe('completed')
+      expect(
+        provider.calls
+          .filter((request) => request.kind === 'summary')
+          .map(({ route, model }) => ({ route, model })),
+      ).toEqual([{ route: 'gw', model: expected }])
+      expect(await reopened.scan({ type: 'x/core/compaction-end', limit: 10 })).toHaveLength(1)
+      expect(await reopened.scan({ type: 'x/core/compaction-failed', limit: 10 })).toEqual([])
+      await turn(reopened, 'Continue after compaction.')
+    },
+  )
+
   it('snapshots defaults for new sessions and preserves them when the configured defaults change', async () => {
     const dataDir = scratch()
     const provider = (contextWindow: number, thinking: 'high' | 'low') =>
@@ -314,17 +603,38 @@ describe('replaySwitchesOnOpen', () => {
         ],
         scripts: [],
       })
+    const configuration = createConfigurationService({ home: dataDir, profile: 'local-dev' })
     const first = await createTestHost(twoRouteHostOptions(dataDir, provider(4096, 'high')))
     const original = await first.host.createSession({ cwd: dataDir, key: 'defaults-original' })
     expect(original.preset.model.thinking.primary).toBe('high')
     expect(original.preset.model.contextWindow?.primary).toBe(4096)
+    // Missing auxiliary slots are also a persisted choice.
+    expect(original.preset.model.route.fast).toBeUndefined()
+    await configuration.saveModelSlots({
+      revision: 0,
+      slots: { fast: { route: 'alt', model: 'm2' }, verifier: { route: 'gw', model: 'm1' } },
+    })
+    const reviewer = await first.host.createSession({ cwd: dataDir, key: 'reviewer-defaults' })
+    expect(reviewer.preset.model.id.fast).toBe('m2')
+    await reviewer.setModel({ slot: 'fast', route: 'gw', model: 'm1' })
+    await configuration.saveModelSlots({
+      revision: 1,
+      slots: { fast: null, verifier: { route: 'removed', model: 'missing' } },
+    })
     await first.host.close()
     const second = await createTestHost(twoRouteHostOptions(dataDir, provider(6144, 'low')))
     try {
       const restored = await second.host.createSession({ cwd: dataDir, key: 'defaults-original' })
+      expect(restored.preset.model.route.fast).toBeUndefined()
+      expect(restored.preset.model.route.verifier).toBeUndefined()
+      const resumedReviewer = await second.host.createSession({ cwd: dataDir, key: 'reviewer-defaults' })
+      expect(resumedReviewer.preset.model.id.fast).toBe('m1')
+      expect(resumedReviewer.preset.model.id.verifier).toBe('m1')
       expect(restored.preset.model.thinking.primary).toBe('high')
       expect(restored.preset.model.contextWindow?.primary).toBe(4096)
       const fresh = await second.host.createSession({ cwd: dataDir, key: 'defaults-new' })
+      expect(fresh.preset.model.route.fast).toBeUndefined()
+      expect(fresh.preset.model.route.verifier).toBeUndefined()
       expect(fresh.preset.model.thinking.primary).toBe('low')
       expect(fresh.preset.model.contextWindow?.primary).toBe(6144)
     } finally {
@@ -333,6 +643,67 @@ describe('replaySwitchesOnOpen', () => {
   })
 
   // Two Hosts and a reopen, and the file's first session open: 2 to 6 s on the Windows runner.
+  it('gives a new session the default account model for an unset fast slot, until the slot is set', async () => {
+    const dataDir = scratch()
+    const entry = getApiKeyProvider('openai')
+    if (!entry) throw new Error('openai registry entry missing')
+    const ids = (await entry.createAdapter()).models(entry.route).map((record) => record.id)
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ object: 'list', data: ids.map((id) => ({ id })) }))
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    unwinds.push(() => new Promise((resolve) => server.close(resolve)))
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('fixture did not bind')
+    const configuration = createConfigurationService({ home: dataDir, profile: 'local-dev' })
+    await configuration.save({
+      providerId: 'openai',
+      baseUrl: `http://127.0.0.1:${address.port}/v1`,
+      apiKey: 'sk-test-value',
+      model: ids[0] as string,
+      expectedRevision: 0,
+    })
+    const followed = (await configuration.modelSlots()).auto?.fast
+    if (!followed) throw new Error('the default account offers no fast model')
+
+    const options = (routes: RouteDecl[]): TestHostOptions => ({
+      dataDir,
+      presets: { standard: TWO_SLOT_PRESET },
+      profileInputs: { user: { name: 'local-dev', provider: { package: '@agnes/ai', routes } } },
+      provider: () =>
+        new ScriptedProvider({ models: routes.flatMap((route) => route.models ?? []), scripts: [] }),
+    })
+    const account: RouteDecl = {
+      route: followed.route,
+      api: 'openai-completions',
+      baseUrl: 'https://example.invalid/v1',
+      models: [modelRecord(followed.route, followed.model)],
+    }
+    const serving = await createTestHost(options([...TWO_ROUTES, account]))
+    try {
+      const session = await serving.host.createSession({ cwd: dataDir, key: 'fast-followed' })
+      expect(session.preset.model.route.fast).toBe(followed.route)
+      expect(session.preset.model.id.fast).toBe(followed.model)
+      expect(session.preset.model.route.verifier).toBeUndefined()
+      // "None" is an explicit choice, so nothing is followed.
+      await configuration.saveModelSlots({ revision: 1, slots: { fast: null } })
+      const none = await serving.host.createSession({ cwd: dataDir, key: 'fast-none' })
+      expect(none.preset.model.route.fast).toBeUndefined()
+      await configuration.saveModelSlots({ revision: 2, slots: {} })
+    } finally {
+      await serving.host.close()
+    }
+    // A Host that does not serve the account's model leaves the preset's own slots as they were.
+    const other = await createTestHost(options(TWO_ROUTES))
+    try {
+      const session = await other.host.createSession({ cwd: dataDir, key: 'fast-unserved' })
+      expect(session.preset.model.route.fast).toBeUndefined()
+    } finally {
+      await other.host.close()
+    }
+  })
+
   it('reopening a session with a recorded model switch lands on the switched model, not the preset default', async () => {
     const dataDir = scratch()
     const provider = () =>
@@ -470,7 +841,7 @@ describe('replaySwitchesOnOpen', () => {
           user: {
             name: 'local-dev',
             presets: { default: 'standard', allowed: ['standard', 'coding'] },
-            provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: TWO_ROUTES },
+            provider: { package: '@agnes/ai', routes: TWO_ROUTES },
           },
         },
       })
@@ -642,7 +1013,6 @@ describe('setModel end to end through a real assembly', () => {
           name: 'local-dev',
           provider: {
             package: '@agnes/ai',
-            adapters: ['@agnes/ai'],
             routes: [
               {
                 route: a.route,
@@ -729,7 +1099,6 @@ describe('setModel end to end through a real assembly', () => {
           name: 'local-dev',
           provider: {
             package: '@agnes/ai',
-            adapters: ['@agnes/ai'],
             routes: [
               {
                 route: a.route,

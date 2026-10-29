@@ -2,10 +2,24 @@ import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { writeContextConfig } from '@agnes/base'
 import type { WorkerResourceBootstrapInput } from '@agnes/resource-control-worker'
-import { scanSkills } from '@agnes/resource-control-worker'
-import { afterEach, describe, expect, it } from 'vitest'
+import { bootstrapWorkerResources, SkillScanCache, scanSkills } from '@agnes/resource-control-worker'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { removeWorkspaceSkill, scanWorkspaceSkills } from '../src/commands.js'
+
+// File reads are observable work here: a single-row control request must not load a sibling body.
+const reads = vi.hoisted(() => [] as string[])
+vi.mock('node:fs/promises', async (original) => {
+  const fs = await original<typeof import('node:fs/promises')>()
+  return {
+    ...fs,
+    readFile: (...args: Parameters<typeof fs.readFile>) => {
+      reads.push(String(args[0]))
+      return fs.readFile(...args)
+    },
+  }
+})
 
 const roots: string[] = []
 afterEach(async () => {
@@ -72,6 +86,67 @@ async function deployment(): Promise<{
 }
 
 describe('scanWorkspaceSkills (worker side of resourceSkillScan)', () => {
+  it('observes current custom directories during refresh even when control reuse is offered', async () => {
+    const { root, agnesHomeDir, input, writeSnapshot } = await deployment()
+    const workspace = join(root, 'workspace')
+    const custom = join(root, 'custom')
+    await mkdir(custom)
+    writeContextConfig({ customSkillRoots: [custom] }, agnesHomeDir)
+    const revision = await writeSnapshot({ desired: [], trust: [] })
+    const skillScanCache = new SkillScanCache()
+    const previous = await bootstrapWorkerResources({
+      ...input,
+      cwd: workspace,
+      mcpRows: true,
+      skillScanCache,
+    })
+    await previous?.runtime.mcp.close()
+    await writeFile(join(custom, 'new.md'), '---\nname: new-skill\ndescription: Useful\n---\nprivate body')
+    const result = await scanWorkspaceSkills(
+      { ...input, skillScanCache, reuseSkillsAt: revision },
+      { workspaceRoot: workspace, snapshotRevision: revision },
+    )
+    expect(result.skillScanObservation).toMatchObject({ complete: true, foundCount: 1 })
+    expect(result.candidates).toHaveLength(1)
+    const resourceId = result.candidates[0]?.descriptor.resourceId
+    if (!resourceId) throw new Error('missing test Skill')
+    reads.length = 0
+    const targeted = await scanWorkspaceSkills(
+      { ...input, skillScanCache, reuseSkillsAt: revision },
+      { workspaceRoot: workspace, snapshotRevision: revision, resourceIds: [resourceId] },
+    )
+    expect(targeted).not.toHaveProperty('skillScanObservation')
+    expect(reads.filter((path) => path.endsWith('.md'))).toEqual([])
+  })
+
+  it('returns full custom directory observation only for root refreshes that include user-agnes', async () => {
+    const { root, agnesHomeDir, input, writeSnapshot } = await deployment()
+    const custom = join(root, 'custom')
+    await mkdir(custom)
+    await writeFile(join(custom, 'review.md'), '---\nname: review\ndescription: Useful\n---\nprivate body')
+    writeContextConfig({ customSkillRoots: [custom] }, agnesHomeDir)
+    const revision = await writeSnapshot({ desired: [], trust: [] })
+    const params = { workspaceRoot: join(root, 'workspace'), snapshotRevision: revision }
+    const full = await scanWorkspaceSkills(input, params)
+    expect(full.skillScanObservation).toMatchObject({ complete: true, foundCount: 1 })
+    expect(await scanWorkspaceSkills(input, { ...params, rootKey: 'user-agnes' })).toHaveProperty(
+      'skillScanObservation',
+    )
+    expect(await scanWorkspaceSkills(input, { ...params, rootKey: 'workspace-agnes' })).not.toHaveProperty(
+      'skillScanObservation',
+    )
+    const id = full.candidates[0]?.descriptor.resourceId
+    if (!id) throw new Error('missing test Skill')
+    expect(await scanWorkspaceSkills(input, { ...params, resourceIds: [id] })).not.toHaveProperty(
+      'skillScanObservation',
+    )
+    expect(await scanWorkspaceSkills(input, { ...params, resourceIds: [] })).not.toHaveProperty(
+      'skillScanObservation',
+    )
+    expect(JSON.stringify(full.skillScanObservation)).not.toMatch(/private body|review\.md/)
+    expect(JSON.stringify(full.skillScanObservation)).not.toContain(root)
+  })
+
   it('discovers a workspace-agnes Skill scoped to the given workspace root, matching the current snapshot revision', async () => {
     const { input, writeSnapshot, addWorkspaceSkill } = await deployment()
     const workspace = await mkdtemp(join(tmpdir(), 'agnes-workspace-'))
@@ -94,6 +169,69 @@ describe('scanWorkspaceSkills (worker side of resourceSkillScan)', () => {
     expect(result.skills).toMatchObject([{ resourceId: candidate.resourceId, actual: 'ready' }])
     expect(result.candidates.map((row) => row.descriptor.resourceId)).toEqual([candidate.resourceId])
     expect(result.failedRoots).toEqual([])
+    const siblingDir = join(workspace, '.agh', 'skills', 'sibling')
+    await mkdir(siblingDir, { recursive: true })
+    await writeFile(
+      join(siblingDir, 'SKILL.md'),
+      '---\nname: sibling\ndescription: Unrelated\n---\nDo not reload me.',
+    )
+    const lkg = join(input.profile.dataDir, 'lkg')
+    await scanSkills(workspace, undefined, lkg, input.agnesHomeDir, input.agnesHomeDir)
+    const { readdir } = await import('node:fs/promises')
+    const caches = await Promise.all(
+      (await readdir(lkg)).map(async (name) => ({ name, bytes: await readFile(join(lkg, name), 'utf8') })),
+    )
+    const cachedInput = { ...input, skillScanCache: new SkillScanCache(), cwd: workspace, mcpRows: true }
+    const previous = await bootstrapWorkerResources(cachedInput)
+    const disabledRevision = await writeSnapshot({
+      desired: [{ resourceId: candidate.resourceId, state: 'disabled' }],
+      trust: [
+        {
+          resourceId: candidate.resourceId,
+          revision: candidate.revision,
+          capabilityHash: candidate.capabilityHash,
+          state: 'trusted',
+        },
+      ],
+    })
+    reads.length = 0
+    const targeted = await scanWorkspaceSkills(
+      { ...cachedInput, env: { ...input.env, AGNES_RESOURCE_SKILL_LKG_DIR: lkg } },
+      {
+        workspaceRoot: workspace,
+        snapshotRevision: disabledRevision,
+        resourceIds: [candidate.resourceId],
+      },
+    )
+    expect(targeted.skills).toMatchObject([{ resourceId: candidate.resourceId, actual: 'disabled' }])
+    expect(targeted.skills).toHaveLength(1)
+    expect(reads.some((path) => path.startsWith(siblingDir))).toBe(false)
+    expect(reads).toContain(join(workspace, '.agh', 'skills', 'reviewer', 'SKILL.md'))
+    for (const cache of caches) expect(await readFile(join(lkg, cache.name), 'utf8')).toBe(cache.bytes)
+    reads.length = 0
+    const applied = await bootstrapWorkerResources({ ...cachedInput, reuseSkillsAt: disabledRevision })
+    expect(applied?.skills.find((item) => item.resourceId === candidate.resourceId)?.actual).toBe('disabled')
+    expect(previous?.skills.find((item) => item.resourceId === candidate.resourceId)?.actual).toBe('ready')
+    expect(reads.filter((path) => path.endsWith('SKILL.md'))).toEqual([])
+    for (const reuseSkillsAt of [undefined, revision]) {
+      reads.length = 0
+      const fallback = await bootstrapWorkerResources({
+        ...cachedInput,
+        ...(reuseSkillsAt ? { reuseSkillsAt } : {}),
+      })
+      expect(reads).toContain(join(siblingDir, 'SKILL.md'))
+      await fallback?.runtime.mcp.close()
+    }
+    await applied?.runtime.mcp.close()
+    await previous?.runtime.mcp.close()
+
+    await expect(
+      scanWorkspaceSkills(input, {
+        workspaceRoot: workspace,
+        snapshotRevision: '0'.repeat(64),
+        resourceIds: [candidate.resourceId],
+      }),
+    ).rejects.toThrow('resource snapshot changed')
   })
 
   it('scopes strictly to the given workspace root: a second workspace never sees the first one’s Skill', async () => {

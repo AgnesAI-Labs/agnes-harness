@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { McpConnection, McpServerConfig } from '@agnes/base'
+import { inspectRemoteCatalog, type McpConnection, type McpServerConfig } from '@agnes/base'
 import type { McpServerDefinitionInput } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -30,6 +30,7 @@ vi.mock('@agnes/base', async (original) => ({
 const stdioDefinition: McpServerDefinitionInput = {
   serverId: 'gh',
   displayName: 'GitHub',
+  sandboxProfile: 'off-with-warning',
   transport: { kind: 'stdio', executable: '/usr/local/bin/gh-mcp', args: [] },
   secretBinding: { kind: 'stdio-env', env: { GH_TOKEN: 'secret:gh-token' } },
 } as McpServerDefinitionInput
@@ -42,7 +43,7 @@ const httpDefinition: McpServerDefinitionInput = {
 } as McpServerDefinitionInput
 
 describe('createMcpServerOpener', () => {
-  it('resolves the credential and connects with the fully-resolved config', async () => {
+  it.each([undefined, [], ['ping']])('resolves credentials and filters tools (%j)', async (allow) => {
     connectMcp.mockClear()
     const resolver = vi.fn(async (ref: string) => (ref === 'secret:gh-token' ? 'tok-123' : 'unexpected'))
     const opener = createMcpServerOpener({
@@ -52,7 +53,13 @@ describe('createMcpServerOpener', () => {
       httpPolicy: {},
     })
     const controller = new AbortController()
-    const connection = await opener.connect(stdioDefinition, controller.signal)
+    const connection = await opener.connect(
+      {
+        ...stdioDefinition,
+        ...(allow === undefined ? {} : { toolPolicy: { allow } }),
+      },
+      controller.signal,
+    )
 
     expect(connection).toBe(fakeConnection)
     expect(resolver).toHaveBeenCalledWith('secret:gh-token', controller.signal)
@@ -69,6 +76,15 @@ describe('createMcpServerOpener', () => {
       env: { GH_TOKEN: 'tok-123' },
     })
     expect(options.signal).toBe(controller.signal)
+    const catalog = await inspectRemoteCatalog(
+      {
+        ...fakeConnection,
+        id: config.id,
+        listTools: async () => [{ name: 'ping', description: 'Ping', inputSchema: { type: 'object' } }],
+      },
+      config,
+    )
+    expect(catalog.tools.map((tool) => tool.name)).toEqual(allow?.length === 0 ? [] : ['ping'])
   })
 
   it('resolves an http bearer credential into the Authorization header', async () => {
@@ -88,6 +104,43 @@ describe('createMcpServerOpener', () => {
       transport: 'http',
       url: 'https://mcp.example.com/mcp',
       headers: { authorization: 'Bearer bearer-xyz' },
+    })
+  })
+
+  it('prepares an opaque effective credential boundary and connects with that exact resolved config', async () => {
+    connectMcp.mockClear()
+    let credential = 'first-private-token'
+    const opener = createMcpServerOpener({
+      resolver: async () => credential,
+      baseEnv: {},
+      stdioPolicy: { allowedExecutables: [] },
+      httpPolicy: {},
+    })
+    const prepare = opener.prepare
+    if (!prepare) throw new Error('missing prepared MCP opener')
+    const signal = new AbortController().signal
+    const first = await prepare(httpDefinition, signal)
+    const same = await prepare(structuredClone(httpDefinition), signal)
+    expect(first.key).toBe(same.key)
+    credential = 'rotated-private-token'
+    const rotated = await prepare(httpDefinition, signal)
+    expect(rotated.key).not.toBe(first.key)
+    expect(rotated.key).not.toContain(credential)
+    const moved = await prepare(
+      {
+        ...httpDefinition,
+        transport: { kind: 'http', url: 'https://other.example/mcp' },
+      } as McpServerDefinitionInput,
+      signal,
+    )
+    expect(moved.key).not.toBe(rotated.key)
+    await first.connect(signal)
+    expect(connectMcp.mock.calls[0]?.[0]).toMatchObject({
+      headers: { authorization: 'Bearer first-private-token' },
+    })
+    await rotated.connect(signal)
+    expect(connectMcp.mock.calls[1]?.[0]).toMatchObject({
+      headers: { authorization: 'Bearer rotated-private-token' },
     })
   })
 
@@ -149,6 +202,7 @@ describe('createWorkerMcpServerOpener', () => {
     ({
       serverId: 'plain',
       displayName: 'Plain',
+      sandboxProfile: 'off-with-warning',
       transport: { kind: 'stdio', executable, args: [] },
       secretBinding: { kind: 'none' },
     }) as McpServerDefinitionInput
@@ -309,5 +363,21 @@ describe('createWorkerMcpServerOpener', () => {
     expect(resolve).toHaveBeenCalledTimes(2)
     const [config] = connectMcp.mock.calls[2] as [McpServerConfig, unknown, unknown]
     expect(config).toMatchObject({ env: { GH_TOKEN: 'value-of-secret:gh-token' } })
+  })
+})
+
+it('refuses an unconfined community stdio start unless the approved definition explicitly opts out', async () => {
+  const opener = createMcpServerOpener({
+    resolver: async () => '',
+    baseEnv: {},
+    stdioPolicy: { allowedExecutables: ['/usr/local/bin/gh-mcp'] },
+    httpPolicy: {},
+  })
+  const { sandboxProfile: _profile, ...definition } = stdioDefinition as Extract<
+    McpServerDefinitionInput,
+    { sandboxProfile?: unknown }
+  >
+  await expect(opener.connect(definition, new AbortController().signal)).rejects.toMatchObject({
+    code: 'E_MCP_SANDBOX_UNAVAILABLE',
   })
 })

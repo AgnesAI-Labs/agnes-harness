@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs'
 import type { Host, HostSession } from '@agnes/host'
+import { buildCompleteRuntimeTarget } from '@agnes/host'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { answeredDecision, pendingDecision } from '../../core-ledger/testkit/decision.js'
 import {
   SESSION_SCOPED_WORKER_METHODS,
   sessionIdleCloseMs,
@@ -17,7 +19,9 @@ afterEach(async () => {
 async function setup() {
   let now = Date.UTC(2026, 0, 1)
   let creates = 0
+  let onCreate: (o: Parameters<Host['createSession']>[0]) => void = () => {}
   const t = await realHosted({
+    limits: { 'worker.generation_idle_close_ms': 0 },
     idleCloseMs: T,
     clock: () => now,
     wrapHost: (host) =>
@@ -25,6 +29,7 @@ async function setup() {
         ...host,
         createSession: async (o: Parameters<Host['createSession']>[0]) => {
           creates++
+          onCreate(o)
           return host.createSession(o)
         },
       }) as Host,
@@ -56,7 +61,19 @@ async function setup() {
     return true
   }
   const ping = (key: string) => t.hosted.dispatch(t.command(key, 'ping'))
-  return { ...t, open, live, idle, hibernated, leaseFree, ping, creates: () => creates }
+  return {
+    ...t,
+    open,
+    live,
+    idle,
+    hibernated,
+    leaseFree,
+    ping,
+    creates: () => creates,
+    onCreate: (fn: typeof onCreate) => {
+      onCreate = fn
+    },
+  }
 }
 
 describe('HostedSessions hibernates idle sessions and wakes them on demand', () => {
@@ -69,24 +86,39 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
     expect(t.hibernated('idle')).toBe(true)
     expect(await t.leaseFree(session)).toBe(true)
     expect(t.sent.filter((f) => f.kind === 'log')).not.toHaveLength(0)
+    const waking = { ...t.openFrame('idle'), requestId: 'cancel-wake' }
+    t.onCreate((options) => {
+      const progress = options.onHistoryProgress
+      options.onHistoryProgress = (value) => {
+        progress?.(value)
+        if (value.verifiedSeq > 0) t.hosted.cancelOpen(waking.requestId, 'idle')
+      }
+    })
+    await expect(t.hosted.open(waking)).rejects.toThrow()
+    expect(t.hibernated('idle')).toBe(true)
+    expect(await t.leaseFree(session)).toBe(true)
+    expect(t.sent).toContainEqual(
+      expect.objectContaining({
+        kind: 'session.loading',
+        requestId: waking.requestId,
+        verifiedSeq: expect.any(Number),
+      }),
+    )
+    t.onCreate(() => {})
+    await t.hosted.open({ ...waking, requestId: 'retry-wake' })
+    expect(t.hibernated('idle')).toBe(false)
   })
 
-  it('reports open progress through Host and the kernel when a session with history wakes', async () => {
+  it('retains a session with a live process and hibernates after its cleanup completes', async () => {
     const t = await setup()
-    const progress = () => t.sent.filter((f) => f.kind === 'progress')
-    const session = await t.open('progress')
-    // A new ledger is empty when it is opened; session/start is written after.
-    expect(progress()).toEqual([])
-    const head = session.lastSeq
-    expect(head).toBeGreaterThan(0)
+    const session = await t.open('busy-process')
+    let active = true
+    Object.assign(session, { hasActiveProcesses: () => active })
     await t.idle()
-    expect(t.hibernated('progress')).toBe(true)
-    await t.hosted.dispatch(t.command('progress', 'latest', { register: 'op.state' }))
-    // Hibernating closed the session cleanly, so the wake opens from its verified-head checkpoint:
-    // the whole history is folded at once and verified in the background.
-    expect(progress()).toEqual([
-      { kind: 'progress', sessionKey: 'progress', phase: 'fold', done: head, total: head },
-    ])
+    expect(t.hibernated('busy-process')).toBe(false)
+    active = false
+    await t.idle()
+    expect(t.hibernated('busy-process')).toBe(true)
   })
 
   it('does nothing when T is zero', async () => {
@@ -100,6 +132,8 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
   it('answers ping and a run-less abort from the stub without waking, and wakes for anything else', async () => {
     const t = await setup()
     const session = await t.open('stub')
+    const generationId = session.pluginGenerationId
+    expect(generationId).toBeDefined()
     const lastSeq = session.lastSeq
     await t.idle()
     const created = t.creates()
@@ -107,21 +141,57 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
       ok: true,
       lastSeq,
       preset: session.preset.name,
+      permission: session.preset.permission,
       parent: null,
     })
     await expect(t.hosted.dispatch(t.command('stub', 'abort', { runId: 'none' }))).resolves.toEqual({})
     expect(t.creates()).toBe(created)
     expect(t.hibernated('stub')).toBe(true)
+    const target = t.host.runtimeTargetSnapshot?.()
+    if (!target) throw new Error('missing Host target')
+    await t.host.applyRuntimeTarget(
+      buildCompleteRuntimeTarget({
+        rows: target.tree.rows,
+        resources: { mcp: [], skills: { generation: 'next' } },
+      }).target,
+    )
+    const jobs = t.host.extensionRows.prepare({
+      extensionId: 'agnes/jobs',
+      entryRevision: 'hibernate-jobs-v2',
+    })
+    await t.host.extensionRows.apply([
+      ...t.host.extensionRows.current().filter((row) => row.id !== jobs.id),
+      jobs,
+    ])
+    await t.host.collectPluginGenerations?.()
+    expect(
+      t.host.pluginGenerationStatus?.().generations.find((item) => item.id === generationId),
+    ).toMatchObject({
+      state: 'historical',
+      openSessions: 0,
+      live: false,
+    })
     await expect(t.hosted.dispatch(t.command('stub', 'latest', { register: 'op.state' }))).resolves.toBeNull()
     expect(t.creates()).toBe(created + 1)
     expect(t.hibernated('stub')).toBe(false)
+    expect(t.live('stub').pluginGenerationId).toBe(generationId)
   })
 
   it('answers ping with the ledger head, even after another writer appended while it slept', async () => {
     const t = await setup()
     const session = await t.open('moved')
-    const storage = session.d.log.storage
     await t.idle()
+    const jobs = t.host.extensionRows.prepare({ extensionId: 'agnes/jobs', entryRevision: 'head-jobs-v2' })
+    await t.host.extensionRows.apply([
+      ...t.host.extensionRows.current().filter((row) => row.id !== jobs.id),
+      jobs,
+    ])
+    await t.host.collectPluginGenerations?.()
+    expect(
+      t.host.pluginGenerationStatus?.().generations.find((item) => item.id === session.pluginGenerationId)
+        ?.live,
+    ).toBe(false)
+    const storage = t.host.kernel.o.storage
     const before = ((await t.ping('moved')) as { lastSeq: number }).lastSeq
     await storage.open('moved', { writerRunId: 'cli', ttlMs: 60_000 })
     await storage.commit('moved', {
@@ -176,19 +246,22 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
     expect(t.hibernated('inbox')).toBe(false)
   })
 
-  it('stays open with a pending approval', async () => {
+  it.each(['pending', 'answered'])('stays open with an unconsumed %s decision', async (state) => {
     const t = await setup()
     const session = await t.open('approval')
+    const pending = pendingDecision('pending-request', { sessionId: session.key })
+    pending.request.expiresAt = '2099-01-01T00:00:00.000Z'
     await session.append([
-      session.ev('approval/asked', {
-        requestId: 'pending-request',
-        kind: 'tool',
-        summary: 'pending',
-        risk: 'destructive',
-        bindingHash: '0'.repeat(64),
-        pending: { ticket: 'pending-ticket', expiresAt: new Date(Date.now() + 3_600_000).toISOString() },
+      session.ev('decision/state', pending, {
+        register: 'decision/state',
       }),
     ])
+    if (state === 'answered')
+      await session.append([
+        session.ev('decision/state', answeredDecision(pending, session.lastSeq + 1), {
+          register: 'decision/state',
+        }),
+      ])
     await t.idle(10 * T)
     expect(t.hibernated('approval')).toBe(false)
   })
@@ -204,26 +277,6 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
     await pending
     await t.idle()
     expect(t.hibernated('prompter')).toBe(true)
-  })
-
-  it('stays open while a background job runs, and hibernates once it has ended', async () => {
-    const t = await setup()
-    const session = await t.open('job')
-    let exit!: (status: { code: number | null }) => void
-    const done = new Promise<{ code: number | null }>((resolve) => {
-      exit = resolve
-    })
-    const process = { pid: 1, onOutput: () => {}, done, stop: async () => exit({ code: null }) }
-    await session.jobs.start({ start: async () => process }, ['$SHELL', 'serve'], {
-      cwd: '/w',
-      command: 'serve',
-    })
-    await t.idle(10 * T)
-    expect(t.hibernated('job')).toBe(false)
-    exit({ code: 0 })
-    await vi.waitFor(() => expect(session.jobs.running()).toBe(0))
-    await t.idle(T)
-    expect(t.hibernated('job')).toBe(true)
   })
 
   it('stays open once its log has faulted', async () => {
@@ -243,15 +296,24 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
     const held = new Promise<void>((resolve) => {
       release = resolve
     })
+    let entered!: () => void
+    const running = new Promise<void>((resolve) => {
+      entered = resolve
+    })
     const call = t.hosted.withSession('service', 'callService', async () => {
       expect(t.hibernated('service')).toBe(false)
+      entered()
       await held
       return 'served'
     })
-    await vi.waitFor(() => expect(t.hibernated('service')).toBe(false))
-    await t.idle(10 * T)
-    expect(t.hibernated('service')).toBe(false)
-    release()
+    try {
+      // Resume rebuilds a real session; wait for the command instead of a one-second poll budget.
+      await Promise.race([running, call])
+      await t.idle(10 * T)
+      expect(t.hibernated('service')).toBe(false)
+    } finally {
+      release()
+    }
     await expect(call).resolves.toBe('served')
     // An unknown key is passed straight through, as before.
     await expect(t.hosted.withSession('nobody', 'inspectService', async () => 'through')).resolves.toBe(
@@ -297,6 +359,27 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
     expect(woken).not.toBe(session)
     expect(woken.preset.name).toBe(preset)
     expect(woken.yolo).toBe(true)
+  })
+
+  it('opens under a requested permission and wakes under the one it slept with', async () => {
+    const t = await setup()
+    let created: Parameters<Host['createSession']>[0] | undefined
+    // This test Host ships no permission overlays, so the level is recorded and then withheld from
+    // it; what is under test is that the worker hands the level on, not how the Host resolves it.
+    t.onCreate((options) => {
+      created = { ...options }
+      delete options.permission
+    })
+    await t.hosted.open(t.openFrame('level', { permission: 'read-only' }))
+    expect(created).toMatchObject({ permission: 'read-only' })
+    const session = t.live('level')
+    Object.assign(session, { preset: { ...session.preset, permission: 'read-only' } })
+    await t.idle()
+    expect(t.hibernated('level')).toBe(true)
+    await expect(t.ping('level')).resolves.toMatchObject({ permission: 'read-only' })
+    created = undefined
+    await t.hosted.dispatch(t.command('level', 'latest', { register: 'op.state' }))
+    expect(created).toMatchObject({ preset: session.preset.name, permission: 'read-only' })
   })
 
   it('hibernates a fork child before its parent, and wakes the child on its own', async () => {
@@ -426,14 +509,20 @@ describe('the session idle limit', () => {
 })
 
 describe('session-scoped worker commands', () => {
-  it('lists every worker command that names a session, and main.ts wakes the session for each', () => {
+  it('wakes session commands but leaves recorded views and runtime reads independent of the writer', () => {
     const commands = readFileSync(new URL('../src/commands.ts', import.meta.url), 'utf8')
-    const service = commands.slice(commands.indexOf('export async function handleServiceCommand'))
+    const service =
+      commands.slice(commands.indexOf('export async function handleServiceCommand')) +
+      readFileSync(new URL('../src/service-commands.ts', import.meta.url), 'utf8')
     const scoped = [...service.matchAll(/case '([\w.]+)': \{[\s\S]*?(?=\n {4}case |\n {4}default:)/g)]
       .filter(([body]) => /\bp\.(sessionKey|sessionId)\b/.test(body))
       .map(([, method]) => method)
     expect(scoped.length).toBeGreaterThan(0)
-    expect([...SESSION_SCOPED_WORKER_METHODS].sort()).toEqual([...scoped].sort())
+    const reads = ['session.runtime', 'session.view']
+    expect(scoped).toEqual(expect.arrayContaining(reads))
+    expect([...SESSION_SCOPED_WORKER_METHODS].sort()).toEqual(
+      scoped.filter((method) => !reads.includes(method!)).sort(),
+    )
     const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
     expect(main).toMatch(/SESSION_SCOPED_WORKER_METHODS/)
     expect(main).toMatch(/withSession\(/)

@@ -72,6 +72,48 @@ describe('verified row contract', () => {
     await fiber.dispose()
   })
 
+  it('revokes a cancelled in-flight mount before delayed plugin code can register', async () => {
+    const root = new Context()
+    const host = createVerifiedRowHost({ root, snapshots: snapshots() })
+    let finish!: () => void
+    let started!: () => void
+    const ready = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    const hold = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    let pluginContext: Context | undefined
+    const plugin = Object.assign(
+      async (ctx: Context) => {
+        pluginContext = ctx
+        started()
+        await hold
+        ctx.provide('late-service', true)
+      },
+      { provide: ['late-service'] },
+    )
+    const target = row({ provides: ['late-service'] })
+    const mount = await host.thirdParty.verifyAndCreate({
+      snapshot: candidate,
+      row: target,
+      entry: normalizePluginExport(plugin),
+    })
+    const abort = new AbortController()
+    const pending = host.adapter.mount(root, target, mount, abort.signal)
+    // Attach a rejection observer before cancellation so the test cannot hide an unhandled error.
+    const result = pending.then(
+      () => 'mounted',
+      () => 'cancelled',
+    )
+    await ready
+    abort.abort(new Error('transaction timed out'))
+    expect(pluginContext?.fiber.uid).toBeNull()
+    finish()
+    expect(await result).toBe('cancelled')
+    expect(root.reflect.get('late-service', false)).toBeUndefined()
+  })
+
   it('captures plugin metadata and runs a non-idempotent schema exactly once', async () => {
     let count = 0
     const applied: unknown[] = []
@@ -123,6 +165,33 @@ describe('verified row contract', () => {
     expect(count).toBe(1)
     expect(applied).toEqual([{ value: undefined, pass: 1 }])
     await host.adapter.unmount(installation)
+  })
+
+  it('takes the injected services, required or optional, from the manifest entry alone', () => {
+    const apply = () => {}
+    // Exactly what an export that listed them itself would have resolved to.
+    const repeated = normalizePluginExport({ apply, inject: ['tools', 'providers'] }).inject
+    expect(Object.keys(repeated)).toEqual(['tools', 'providers'])
+    expect(normalizePluginExport({ apply }, { inject: ['tools', 'providers'] }).inject).toEqual(repeated)
+    expect(Object.keys(normalizePluginExport(apply, { inject: ['tools'] }).inject)).toEqual(['tools'])
+    expect(
+      normalizePluginExport({ apply }, { inject: ['tools', 'providers'], optionalInject: ['tools'] }).inject,
+    ).toEqual({ tools: { required: false }, providers: null })
+    expect(normalizePluginExport({ apply }).inject).toEqual({})
+  })
+
+  it('refuses an export whose own inject list disagrees with its manifest entry', () => {
+    const apply = () => {}
+    expect(() => normalizePluginExport({ apply, inject: ['tools'] }, { inject: ['tools', 'hooks'] })).toThrow(
+      'differs',
+    )
+    expect(() =>
+      normalizePluginExport({ apply, inject: { tools: { required: false } } }, { inject: ['tools'] }),
+    ).toThrow('differs')
+    // Agreement, in any order, is not a conflict.
+    expect(
+      normalizePluginExport({ apply, inject: ['hooks', 'tools'] }, { inject: ['tools', 'hooks'] }).inject,
+    ).toEqual({ tools: null, hooks: null })
   })
 
   it('freezes caller data before snapshot verification yields', async () => {
@@ -357,21 +426,28 @@ describe('verified row contract', () => {
     await host.adapter.unmount(installation)
   })
 
-  it('allows verified builtin rows to listen to framework events', async () => {
-    const observed = vi.fn()
-    const builtinRow = row({ id: 'builtin:listener', plugin: 'builtin-listener' })
-    const entry = normalizePluginExport((ctx: Context) => {
-      ctx.on('internal/service', observed)
-    })
-    const host = createVerifiedRowHost({ builtinAllowedRowIds: [builtinRow.id] })
-    const root = new Context()
-    const mount = await host.builtin.create({ row: builtinRow, entry })
-    const installation = await host.adapter.mount(root, builtinRow, mount)
-    const dispose = root.provide('builtin-listener-test', true)
-    expect(observed).toHaveBeenCalled()
-    await dispose()
-    await host.adapter.unmount(installation)
-  })
+  it.each(['builtin:listener', 'ext:agnes/skills', 'ext:agnes/mcp-client'])(
+    'allows verified builtin row %s to mount with an origin revision and listen to framework events',
+    async (id) => {
+      const observed = vi.fn()
+      const builtinRow = row({ id, plugin: 'builtin-listener' })
+      const entry = normalizePluginExport((ctx: Context) => {
+        ctx.on('internal/service', observed)
+      })
+      const host = createVerifiedRowHost({ builtinAllowedRowIds: [builtinRow.id] })
+      const root = new Context()
+      const mount = await host.builtin.create({ row: builtinRow, entry })
+      const installation = await host.adapter.mount(root, builtinRow, mount)
+      expect(host.origins.lookup(host.adapter.fiber(installation))).toMatchObject({
+        rowId: id,
+        rowRevision: expect.stringMatching(/^[a-f0-9]{64}$/),
+      })
+      const dispose = root.provide('builtin-listener-test', true)
+      expect(observed).toHaveBeenCalled()
+      await dispose()
+      await host.adapter.unmount(installation)
+    },
+  )
 
   it('accepts the builtin desired identity without recomputing it and keeps cleanup idempotent', async () => {
     const base = row({ id: 'builtin:demo', plugin: 'builtin-demo' })

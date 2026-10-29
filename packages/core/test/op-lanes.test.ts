@@ -1,9 +1,9 @@
+import type { EventInput } from '@agnes/core'
+import { defaultIds } from '@agnes/core-common/ids'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import { opLanesAfter } from '@agnes/core-ledger/log/relations'
+import { SessionLogImpl } from '@agnes/core-ledger/log/session-log'
 import { describe, expect, it } from 'vitest'
-import { defaultIds } from '../src/ids.js'
-import type { EventInput } from '../src/index.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import { opLanesAfter } from '../src/log/relations.js'
-import { SessionLogImpl } from '../src/log/session-log.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { actor, openSession } from './helpers/open-session.js'
 
@@ -123,7 +123,7 @@ describe('the op lane set kept beside the register table', () => {
     const inSync = () => expect(h.log.opLanes()).toEqual(tableLanes(h.log))
     inSync()
     await h.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
-    expect(await h.session.step()).toEqual({ phase: 'checkpoint' })
+    expect(await h.session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
     inSync()
     expect(h.log.opLanes()).toEqual(new Set(['main']))
     h.log.replaceRegisterCache(h.log.allRegisters())

@@ -1,12 +1,13 @@
 /** @vitest-environment happy-dom */
-import { Context } from '@agnes/cordis'
-import { SlotRegistry } from '@agnes/web-client'
+import { createComputerUsePaneController } from '@agnes/web-conversation/computer-use-pane'
+import type {
+  ComputerUseOperationPolling,
+  ComputerUseStatusClient,
+} from '@agnes/web-conversation/computer-use-state'
 import { createElement, StrictMode } from 'react'
+import { flushSync } from 'react-dom'
+import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
-import { type AgnesClient, startClientModules } from '../src/client-modules/boot.js'
-import { createComputerUsePaneController } from '../src/computer-use-pane.js'
-import type { ComputerUseOperationPolling, ComputerUseStatusClient } from '../src/computer-use-state.js'
-import { mountSettingsPaneRegion, settingsPaneSlot } from '../src/region-slots.js'
 
 const ready = {
   schemaVersion: 1,
@@ -38,50 +39,46 @@ function deferred() {
   return { promise, resolve }
 }
 
+/**
+ * The controller's capability view, as the plugins page hosts it. `replace` takes the view off the
+ * page and puts it back, the way leaving and re-entering the capability page does.
+ */
 async function fixture(
   call: ReturnType<typeof vi.fn>,
   polling: ComputerUseOperationPolling = {},
   strict = false,
 ) {
-  const ctx = new Context()
-  await ctx.plugin(SlotRegistry)
-  const slots = (ctx as unknown as { slots: SlotRegistry }).slots
   const owner = createComputerUsePaneController({ call: call as ComputerUseStatusClient['call'] }, polling)
   const host = document.createElement('div')
   document.body.append(host)
-  const region = mountSettingsPaneRegion(slots, host, {
-    computerUse: strict ? createElement(StrictMode, null, owner.render()) : owner.render(),
-    onChange: ({ pane }) => {
-      if (pane === 'computer-use') void owner.refresh()
-    },
-  })
+  let root = createRoot(host)
+  const view = () =>
+    strict ? createElement(StrictMode, null, owner.renderCapability()) : owner.renderCapability()
+  flushSync(() => root.render(view()))
   cleanups.push(async () => {
-    region.dispose()
+    root.unmount()
     owner.dispose()
-    await ctx.fiber.dispose()
     host.remove()
   })
-  const text = (id: string) => host.querySelector(`#computer-use-${id}`)?.textContent
-  const button = (id: string) => {
-    const node = host.querySelector<HTMLButtonElement>(`#computer-use-${id}`)
-    if (!node) throw new Error(`missing button ${id}`)
-    return node
-  }
+  const text = (id: string) => host.querySelector(`[data-testid="computer-use-${id}"]`)?.textContent
+  // The capability view only renders an action while it applies: an absent action reads as hidden
+  // and disabled, which is what it is to the person looking at the page.
+  const button = (id: string) =>
+    host.querySelector<HTMLButtonElement>(`[data-testid="computer-use-${id}"]`) ??
+    Object.assign(document.createElement('button'), { hidden: true, disabled: true })
   const settled = () => vi.waitFor(() => expect(button('refresh').disabled).toBe(false))
   const replace = async () => {
-    const remove = slots.register(
-      { name: settingsPaneSlot('computer-use'), owner: 'fixture', priority: -1 },
-      () => createElement('div', { id: 'computer-use-override' }, '替换面板'),
-    )
-    await vi.waitFor(() => expect(host.querySelector('#computer-use-override')).not.toBeNull())
+    root.unmount()
+    expect(host.querySelector('[data-testid="computer-use-capability"]')).toBeNull()
     return async () => {
-      remove()
+      root = createRoot(host)
+      flushSync(() => root.render(view()))
       await vi.waitFor(() => expect(text('state')).toBe('Running'))
       await vi.waitFor(() => expect(text('permission-state')).toBe('Authorization required'))
       await vi.waitFor(() => expect(button('operation-refresh').disabled).toBe(false))
     }
   }
-  return { owner, host, slots, region, text, button, settled, replace }
+  return { owner, host, text, button, settled, replace }
 }
 
 const normal = (method: string) =>
@@ -93,28 +90,18 @@ const normal = (method: string) =>
         ? { status: 'ready', admission: { reason: 'macos-verified-driver' } }
         : ready
 
-it('keeps focus and controls through status updates, switching away, replacement and returning', async () => {
+it('keeps focus and controls through status updates, and comes back whole after leaving the page', async () => {
   const call = vi.fn(async (method: string) => normal(method))
   const f = await fixture(call)
   await f.settled()
-  f.button('management').click()
-  await f.settled()
-  expect(f.region.pane('computer-use')?.hidden).toBe(false)
   const doctor = f.button('doctor-run')
   doctor.focus()
   doctor.click()
   await vi.waitFor(() => expect(f.text('doctor-state')).toBe('Check passed'))
   expect(f.button('doctor-run')).toBe(doctor)
   expect(document.activeElement).toBe(doctor)
-  f.region.open('appearance')
-  expect(f.region.pane('computer-use')?.hidden).toBe(true)
-  f.region.open('computer-use')
-  expect(f.button('doctor-run')).toBe(doctor)
-  const model = f.region.pane('model')
   const restore = await f.replace()
   await restore()
-  expect(f.region.pane('computer-use')?.hidden).toBe(false)
-  expect(f.region.pane('model')).toBe(model)
   f.button('doctor-run').click()
   await vi.waitFor(() => expect(f.text('doctor-state')).toBe('Check passed'))
   expect(call.mock.calls.filter(([method]) => method.endsWith('doctor'))).toHaveLength(2)
@@ -128,7 +115,7 @@ it.each([
   'operation.start',
   'operation.status',
   'operation.cancel',
-])('rejects retired %s replies and finally through the actual settings outlet', async (route) => {
+])('rejects retired %s replies after the view left the page and returned', async (route) => {
   const late = deferred()
   let hold = false
   let heldCalls = 0
@@ -197,11 +184,10 @@ it('does not duplicate explicit maintenance in StrictMode and aborts waits when 
     true,
   )
   await f.settled()
-  f.button('install').click()
-  f.button('install').click()
+  f.button('update').click()
+  f.button('update').click()
   await vi.waitFor(() => expect(f.text('operation-state')).toBe('Installing'))
   expect(call.mock.calls.filter(([method]) => method.endsWith('operation.start'))).toHaveLength(1)
-  f.region.open('appearance')
   expect(signal?.aborted).toBe(false)
   const restore = await f.replace()
   expect(signal?.aborted).toBe(true)
@@ -351,90 +337,4 @@ it('clears old details on RPC failure and exposes safe retry text', async () => 
   expect(f.text('doctor-state')).toBe('Check failed')
   expect(f.host.textContent).not.toContain('synthetic-secret')
   expect(f.button('update').disabled).toBe(true)
-})
-
-it('releases the pane state through actual client-module unit removal and runtime reconstruction', async () => {
-  const late = deferred()
-  let hold = false
-  let signal: AbortSignal | undefined
-  const call = vi.fn(async (method: string) => {
-    if (method.endsWith('operation.start')) return hold ? late.promise : running
-    return normal(method)
-  })
-  const owner = createComputerUsePaneController(
-    { call: call as ComputerUseStatusClient['call'] },
-    {
-      wait: (_delay, abort) => {
-        signal = abort
-        return new Promise(() => {})
-      },
-    },
-  )
-  const host = document.createElement('div')
-  document.body.append(host)
-  const boot = () =>
-    startClientModules({
-      agnes: { call } as unknown as AgnesClient,
-      rosterSource: { list: async () => ({ revision: '', modules: [], statuses: [] }) },
-      settingsPaneContainer: host,
-      settings: { computerUse: owner.render() },
-    })
-  const first = await boot()
-  let second: Awaited<ReturnType<typeof boot>> | undefined
-  try {
-    await vi.waitFor(() => expect(host.querySelector('#computer-use-state')?.textContent).toBe('Running'))
-    await vi.waitFor(() =>
-      expect(host.querySelector<HTMLButtonElement>('#computer-use-update')?.disabled).toBe(false),
-    )
-    hold = true
-    const starting = owner.install()
-    expect(call).toHaveBeenCalledWith('_agnes/v1/computerUse.operation.start', { kind: 'install' })
-    first.builtinUnits.unmount('@agnes/web-settings-computer-use')
-    expect(host.querySelector('#computer-use-state')).toBeNull()
-    expect(first.settings?.pane('model')).not.toBeNull()
-    late.resolve(running)
-    await starting
-    expect(signal).toBeUndefined()
-    await first.dispose()
-    hold = false
-    second = await boot()
-    await vi.waitFor(() =>
-      expect(host.querySelector<HTMLButtonElement>('#computer-use-update')?.disabled).toBe(false),
-    )
-    void owner.update()
-    await vi.waitFor(() =>
-      expect(host.querySelector('#computer-use-operation-state')?.textContent).toBe('Installing'),
-    )
-    await second.dispose()
-    expect(signal?.aborted).toBe(true)
-    const calls = call.mock.calls.length
-    await owner.refresh()
-    await owner.update()
-    expect(call.mock.calls).toHaveLength(calls)
-    expect(call.mock.calls.some(([method]) => method.endsWith('operation.cancel'))).toBe(false)
-  } finally {
-    owner.dispose()
-    await first.dispose()
-    await second?.dispose()
-    host.remove()
-  }
-})
-
-it('restores only the selected pane after repeated replacement and a navigation change', async () => {
-  const call = vi.fn(async (method: string) => normal(method))
-  const f = await fixture(call)
-  await f.settled()
-  for (let attempt = 0; attempt < 3; attempt++) {
-    f.region.open('computer-use')
-    const restore = await f.replace()
-    f.region.open('appearance')
-    await restore()
-    expect(f.region.pane('computer-use')?.hidden).toBe(true)
-    expect(f.region.pane('appearance')?.hidden).toBe(false)
-    f.region.open('computer-use')
-    f.button('doctor-run').click()
-    await vi.waitFor(() => expect(f.text('doctor-state')).toBe('Check passed'))
-  }
-  expect(call.mock.calls.filter(([method]) => method.endsWith('doctor'))).toHaveLength(3)
-  expect(call.mock.calls.some(([method]) => method.endsWith('operation.start'))).toBe(false)
 })

@@ -36,4 +36,8 @@ The [release-readiness guard](../../tools/guards/src/release-readiness.test.ts) 
 
 - [ ] `packages.private` — Select public packages, assign non-placeholder versions, and remove `private` only from those packages. Tooling packages remain private to package registries.
 
+Follow [How to cut the first npm release](first-npm-release.md), which is still pending. Run `pnpm release:pack` to generate and audit the host-platform tarball set. Run `pnpm release:npx-smoke` to publish only to a temporary local registry, install through npx outside the checkout, and check version, doctor, Web health/assets and clean shutdown, recording install size and cold-start time. Run `pnpm release:external-examples --keep` to verify external author examples against packed public APIs. These TypeScript entrypoints use the pinned tsx runner.
+
 Passing checks establishes only their executed scope. Validate real models, external MCP, platforms, devices, and installers in their own environments.
+
+Bundled plugins and examples must change their package version when shipped content changes. The bundled-version guard compares a pull request base (or the last commit plus local edits); set `AGH_BUNDLED_VERSION_BASE` to a pinned release commit for a wider release audit. Tests and acceptance scripts alone do not change the shipped package.

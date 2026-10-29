@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import type { Socket } from 'node:net'
-import { rpcError } from '@agnes/protocol'
+import { type PermissionContext, permissionEffectAdmission, rpcError } from '@agnes/protocol'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { SharedSessionChannel } from '../../worker-runtime/src/shared-session-channel.js'
 import { encodeFrame } from '../src/supervisor/framing.js'
@@ -11,6 +11,7 @@ class FakeSocket extends EventEmitter {
 
   write(chunk: Buffer): boolean {
     this.writes.push(chunk)
+    this.emit('write', chunk)
     return true
   }
 
@@ -35,6 +36,79 @@ function setup() {
 afterEach(() => vi.useRealTimers())
 
 describe('WorkerLink command settlement', () => {
+  it('forwards only decision invalidation scope from the worker, never extra data', async () => {
+    const socket = new FakeSocket()
+    const changes: unknown[] = []
+    const link = new WorkerLink(socket as unknown as Socket, {
+      onEvent() {},
+      async onRequest() {},
+      onDecisionsChanged: (detail) => changes.push(detail),
+    })
+    socket.emit(
+      'data',
+      encodeFrame({
+        kind: 'decisionsChanged',
+        detail: {
+          profile: 'default',
+          principal: { id: 'operator', org: 'local', role: 'owner' },
+          decisions: [{ prompt: 'private' }],
+        },
+      }),
+    )
+    await vi.waitFor(() =>
+      expect(changes).toEqual([{ profile: 'default', principal: { id: 'operator', org: 'local' } }]),
+    )
+    socket.emit('data', encodeFrame({ kind: 'decisionsChanged', detail: { profile: 'default' } }))
+    await vi.waitFor(() => expect(link.alive).toBe(false))
+    expect(changes).toHaveLength(1)
+  })
+
+  it.each(['revoke', 'close-session'] as const)(
+    'keeps the %s session stopped until a new turn while preserving its sibling',
+    async (way) => {
+      const socket = new FakeSocket()
+      const signals: AbortSignal[] = []
+      const link = new WorkerLink(socket as unknown as Socket, {
+        onEvent() {},
+        async onRequest(_frame, signal) {
+          signals.push(signal)
+        },
+      })
+      const request = (sessionKey: string, id: string) =>
+        socket.emit(
+          'data',
+          encodeFrame({ kind: 'request', requestId: id, sessionKey, method: 'permission', params: {} }),
+        )
+      request('a', 'first')
+      request('b', 'sibling')
+      await vi.waitFor(() => expect(signals).toHaveLength(2))
+      link.resetSessionRequests('a')
+      if (way === 'revoke') link.revokeSessionRequests('a')
+      else {
+        const closing = link.closeSession('a', 'stopped')
+        const frame = JSON.parse(socket.writes.at(-1)!.toString().trim()) as { requestId: string }
+        socket.emit(
+          'data',
+          encodeFrame({ kind: 'reply', requestId: frame.requestId, sessionKey: 'a', result: {} }),
+        )
+        await closing
+      }
+      expect(signals[0]?.aborted).toBe(true)
+      expect(signals[0]?.reason).toBe('stopped')
+      expect(signals[1]?.aborted).toBe(false)
+      request('a', 'late')
+      await vi.waitFor(() => expect(signals).toHaveLength(3))
+      expect(signals[2]?.aborted).toBe(true)
+      link.resetSessionRequests('a')
+      request('a', 'new-turn')
+      await vi.waitFor(() => expect(signals).toHaveLength(4))
+      expect(signals[3]?.aborted).toBe(false)
+      socket.emit('close')
+      expect(signals[1]?.aborted).toBe(true)
+      expect(signals[3]?.aborted).toBe(true)
+    },
+  )
+
   it('fails the process link on an unsafe hello generation', async () => {
     const { link, socket } = setup()
     socket.emit(
@@ -79,60 +153,6 @@ describe('WorkerLink command settlement', () => {
     )
     await vi.waitFor(() => expect(logs).toEqual(['a:one', 'b:two']))
     socket.emit('data', encodeFrame({ kind: 'event', event: { seq: 1 } }))
-    await vi.waitFor(() => expect(link.alive).toBe(false))
-  })
-
-  it('hands a record frame to its observer and counts every byte received from the worker', async () => {
-    const socket = new FakeSocket()
-    const records: unknown[] = []
-    const link = new WorkerLink(socket as unknown as Socket, {
-      onEvent() {},
-      async onRequest() {},
-      onRecord: (sessionKey, record) => records.push([sessionKey, record]),
-    })
-    expect(link.receivedBytes()).toBe(0)
-    const frame = encodeFrame({
-      kind: 'record',
-      sessionKey: 'a',
-      record: { kind: 'session.open', detail: { lastSeq: 3 } },
-    })
-    socket.emit('data', frame)
-    await vi.waitFor(() => expect(records).toEqual([['a', { kind: 'session.open', detail: { lastSeq: 3 } }]]))
-    expect(link.receivedBytes()).toBe(frame.length)
-    socket.emit(
-      'data',
-      encodeFrame({ kind: 'record', sessionKey: 'a', record: { kind: 'daemon.crashed', detail: {} } }),
-    )
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(records).toHaveLength(1)
-    socket.emit('data', encodeFrame({ kind: 'record', record: { kind: 'session.open', detail: {} } }))
-    await vi.waitFor(() => expect(link.alive).toBe(false))
-  })
-
-  it('hands open progress to its observer and ignores a malformed one', async () => {
-    const socket = new FakeSocket()
-    const seen: unknown[] = []
-    const link = new WorkerLink(socket as unknown as Socket, {
-      onEvent() {},
-      async onRequest() {},
-      onProgress: (sessionKey, progress) => seen.push([sessionKey, progress]),
-    })
-    socket.emit(
-      'data',
-      encodeFrame({ kind: 'progress', sessionKey: 'a', phase: 'verify', done: 500, total: 900 }),
-    )
-    await vi.waitFor(() => expect(seen).toEqual([['a', { phase: 'verify', done: 500, total: 900 }]]))
-    for (const bad of [
-      { phase: 'read', done: 1, total: 2 },
-      { phase: 'fold', done: -1, total: 2 },
-      { phase: 'fold', done: 1.5, total: 2 },
-      { phase: 'fold', done: '1', total: 2 },
-    ])
-      socket.emit('data', encodeFrame({ kind: 'progress', sessionKey: 'a', ...bad }))
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(seen).toHaveLength(1)
-    expect(link.alive).toBe(true)
-    socket.emit('data', encodeFrame({ kind: 'progress', phase: 'fold', done: 1, total: 2 }))
     await vi.waitFor(() => expect(link.alive).toBe(false))
   })
 
@@ -286,40 +306,6 @@ describe('WorkerLink command settlement', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
-  it('carries the error code of an interrupted session to the failure observer', async () => {
-    const socket = new FakeSocket()
-    const failures: Array<{ key: string; code: unknown; message: string }> = []
-    new WorkerLink(socket as unknown as Socket, {
-      onEvent() {},
-      async onRequest() {},
-      onSessionFailure: (key, error) =>
-        failures.push({ key, code: (error as { code?: unknown }).code, message: (error as Error).message }),
-    })
-    socket.emit(
-      'data',
-      encodeFrame({
-        kind: 'session.interrupted',
-        sessionKey: 'a',
-        reason: 'ledger digest mismatch',
-        code: 'E_LEDGER_INTEGRITY',
-      }),
-    )
-    socket.emit(
-      'data',
-      encodeFrame({
-        kind: 'session.interrupted',
-        sessionKey: 'b',
-        reason: 'tail failed',
-        code: 'not a code',
-      }),
-    )
-    await vi.waitFor(() => expect(failures).toHaveLength(2))
-    expect(failures).toEqual([
-      { key: 'a', code: 'E_LEDGER_INTEGRITY', message: 'ledger digest mismatch' },
-      { key: 'b', code: undefined, message: 'tail failed' },
-    ])
-  })
-
   it('clears every pending deadline when the link closes', async () => {
     vi.useFakeTimers()
     const { link } = setup()
@@ -356,6 +342,34 @@ describe('WorkerLink command settlement', () => {
 })
 
 describe('installation errors across worker frames', () => {
+  it.each([
+    ['E_PACKAGE_SOURCE', 'E_PACKAGE_SOURCE'],
+    ['E_PACKAGE_PREVIEW_STALE', 'E_PACKAGE_PREVIEW_STALE'],
+    ['private path and token', 'SEMANTIC_REJECTED'],
+  ])('preserves only declared package reasons: %s', async (reason, code) => {
+    const socket = new FakeSocket()
+    const link = new WorkerLink(socket as unknown as Socket, {
+      onEvent() {},
+      async onRequest() {
+        throw rpcError('SEMANTIC_REJECTED', { reason, secret: 'private' })
+      },
+    })
+    const channel = new SharedSessionChannel((frame) => socket.emit('data', encodeFrame(frame)))
+    const pending = channel.run('session', () =>
+      channel.request('plugin-manage', {}, new AbortController().signal),
+    )
+    const rejected = expect(pending).rejects.toMatchObject({ code })
+    await vi.waitFor(() => expect(socket.writes.length).toBe(1))
+    const bytes = socket.writes[0]
+    if (!bytes) throw new Error('missing reply')
+    const reply = JSON.parse(bytes.toString())
+    expect(JSON.stringify(reply)).not.toContain('private')
+    channel.settle(reply)
+    await rejected
+    socket.emit('close')
+    expect(link.alive).toBe(false)
+  })
+
   it.each([
     [
       rpcError('CAPABILITY_DENIED', { code: 'SKILL_INSTALL_LOCAL_OWNER_REQUIRED', secret: 'private' }),
@@ -436,4 +450,109 @@ describe('WorkerLink preview frames', () => {
     )
     await vi.waitFor(() => expect(link.alive).toBe(false))
   })
+})
+
+it('routes load progress only to its pending open and sends cancellation without settling the open', async () => {
+  const { link, socket } = setup()
+  const controller = new AbortController()
+  const progress = vi.fn()
+  const pending = link.openSession(
+    's',
+    { binding: {} as never },
+    { historySignal: controller.signal, onHistoryProgress: progress },
+  )
+  const result = pending.catch((error: Error) => error.message)
+  const frame = JSON.parse(socket.writes.at(-1)!.toString().trim()) as { requestId: string }
+  socket.emit(
+    'data',
+    encodeFrame({
+      kind: 'session.loading',
+      requestId: frame.requestId,
+      sessionKey: 'other',
+      verifiedSeq: 1,
+      lastSeq: 2,
+    }),
+  )
+  socket.emit(
+    'data',
+    encodeFrame({
+      kind: 'session.loading',
+      requestId: frame.requestId,
+      sessionKey: 's',
+      verifiedSeq: 1,
+      lastSeq: 2,
+    }),
+  )
+  await vi.waitFor(() => expect(progress).toHaveBeenCalledWith({ verifiedSeq: 1, lastSeq: 2 }))
+  expect(progress).toHaveBeenCalledOnce()
+  expect(link.alive).toBe(true)
+  controller.abort()
+  expect(JSON.parse(socket.writes.at(-1)!.toString().trim())).toEqual({
+    kind: 'session.open.cancel',
+    requestId: frame.requestId,
+    sessionKey: 's',
+  })
+  socket.emit(
+    'data',
+    encodeFrame({
+      kind: 'reply',
+      requestId: frame.requestId,
+      sessionKey: 's',
+      error: { code: 'E_LEDGER_INTEGRITY', message: 'cancelled' },
+    }),
+  )
+  expect(await result).toContain('cancelled')
+  link.close('test finished')
+})
+
+it('fences old epochs before replying to revocation, and cannot revive them on reopen or link loss', async () => {
+  const { link, socket } = setup()
+  const context: PermissionContext = {
+    sessionKey: 'owner',
+    sessionId: 'incarnation',
+    epoch: 0,
+    policy: 'full-access',
+    actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+  }
+  const admission = (value: PermissionContext) =>
+    permissionEffectAdmission({
+      context: { expected: value, current: link.permissionFence.bind(value) },
+      unavailable: () => new Error('revoked'),
+    })
+  const old = admission(context)
+  const sibling = admission({ ...context, sessionKey: 'sibling' })
+  await old.verify()
+  const acknowledged = new Promise<void>((resolve) => socket.once('write', () => resolve()))
+  socket.emit(
+    'data',
+    encodeFrame({
+      kind: 'request',
+      method: 'permission-revoke',
+      sessionKey: 'owner',
+      requestId: 'revoke',
+      params: { sessionId: context.sessionId, epoch: 0 },
+    }),
+  )
+  await acknowledged
+  expect(socket.writes.map((b) => JSON.parse(b.toString()))).toContainEqual({
+    kind: 'reply',
+    sessionKey: 'owner',
+    requestId: 'revoke',
+    result: null,
+  })
+  expect(() => old.assertActive()).toThrow('revoked')
+  expect(() => admission(context).assertActive()).toThrow('revoked')
+  const fresh = admission({ ...context, epoch: 1 })
+  await fresh.verify()
+  link.permissionFence.revoke('owner', context.sessionId, 0)
+  fresh.assertActive()
+  sibling.assertActive()
+  link.permissionFence.closeSession('owner')
+  link.permissionFence.openSession('owner')
+  expect(() => fresh.assertActive()).toThrow('revoked')
+  const reopened = admission({ ...context, sessionId: 'reopened' })
+  await reopened.verify()
+  socket.emit('close')
+  expect(() => reopened.assertActive()).toThrow('revoked')
+  expect(() => sibling.assertActive()).toThrow('revoked')
 })

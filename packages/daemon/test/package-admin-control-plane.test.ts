@@ -3,15 +3,19 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { initializeHome } from '@agnes/host'
+import * as packageManager from '@agnes/package-manager'
 import {
   activeRuntimePinId,
   createPackageManager,
   emptyLock,
+  PackageError,
   type PackageManager,
   packageDir,
   parseSource,
   readLock,
   SKIN_MAX_ASSET_BYTES,
+  SKIN_MAX_CSS_BYTES,
   writeLock,
 } from '@agnes/package-manager'
 import { buildRuntimeTarget, createPluginRow, encodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
@@ -24,6 +28,8 @@ import {
 import * as systemNode from '@agnes/system-node'
 import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
+import { openTestHost } from '../../daemon-rpc/test/host.js'
 import {
   type ClientModuleRegistry,
   type ClientModulesChanged,
@@ -39,8 +45,6 @@ import {
 } from '../src/packages/index.js'
 import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
 import { runAgnesd } from '../src/supervisor/supervisor.js'
-import { openTestHost } from './host.js'
-import { sqliteTables } from './sqlite-tables.js'
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), '../../package-manager/test/fixtures')
 const examples = join(dirname(fileURLToPath(import.meta.url)), '../../../examples/packages')
@@ -54,18 +58,7 @@ const authority = {
   clientId,
   permissions: PACKAGE_ADMIN_ALL_PERMISSIONS,
 }
-const seams = [
-  'approval',
-  'checkpoint',
-  'ledger',
-  'sandbox',
-  'verifier',
-  'repair',
-  'artifacts',
-  'principals',
-  'platform',
-  'harness',
-]
+const seams = ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals']
 
 let root: string
 let temporaryRoot: string
@@ -79,7 +72,7 @@ function createProfile(name: string, capabilityCeiling: readonly string[] = ['to
   writeLock(directory, {
     ...emptyLock(name, '0.1.0'),
     resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
-    seams: Object.fromEntries(seams.map((seam) => [seam, '@agnes/base'])),
+    seams: Object.fromEntries(seams.map((seam) => [seam, { provider: 'local' }])),
     policySnapshot: { capabilityCeiling: [...capabilityCeiling], workspacePackages: 'require-project-trust' },
   })
   return directory
@@ -233,6 +226,7 @@ beforeEach(() => {
   temporaryRoot = mkdtempSync(join(tmpdir(), 'agnes-package-admin-'))
   root = join(temporaryRoot, 'home')
   createPrivateDirectorySync(root)
+  initializeHome(root)
   profileDir = createProfile(profile)
   createProfile(secondProfile)
   cpSync(join(fixtures, 'pkg-a'), join(root, 'candidate'), { recursive: true })
@@ -337,6 +331,75 @@ it('installs an actual local package, returns a durable idempotent receipt, and 
   expect(await admin.call('_agnes/v1/packages.list', { profile }, authority)).toMatchObject({
     packages: [expect.objectContaining({ id: 'acme/pkg-a', actual: 'unavailable' })],
   })
+  const generations = {
+    generations: [],
+    plugins: [
+      {
+        id: 'acme/pkg-a',
+        state: 'draining' as const,
+        boundSessions: 2,
+        drainingSessions: 2,
+        historicalSessions: 0,
+      },
+    ],
+  }
+  const publication = {
+    operation: 'models' as const,
+    ok: false,
+    recovery: 'retry-same-input' as const,
+    containers: [
+      { compositionHash: 'reader', status: 'applied' as const },
+      { compositionHash: 'writer', status: 'failed' as const, error: '/private/credential-secret' },
+    ],
+  }
+  const migration = {
+    previousGenerationId: '11111111-1111-4111-8111-111111111111',
+    generationId: '22222222-2222-4222-8222-222222222222',
+    changed: true,
+  }
+  const migrate = vi.fn(async (_profile: string, key: string, principalId: string) => {
+    if (principalId !== authority.principalId) throw Object.assign(new Error('denied'), { code: -32003 })
+    if (key === 'open') throw { code: 'E_COMMAND', message: 'E_GENERATION_SESSION_OPEN: private details' }
+    return migration
+  })
+  const status = service({
+    activation: {
+      actual: async () => 'unavailable',
+      reconcile: async () => ({ actual: 'unavailable' }),
+      generations: async () => generations,
+      publicationStatus: async () => ({ publication }),
+      migrateSession: migrate,
+    },
+  })
+  expect(await status.call('_agnes/v1/plugins.generations', { profile }, authority)).toEqual(generations)
+  expect(await status.call('_agnes/v1/plugins.publicationStatus', { profile }, authority)).toEqual({
+    publication: {
+      ...publication,
+      containers: [
+        publication.containers[0],
+        { compositionHash: 'writer', status: 'failed', error: 'Publication failed; retry the same input.' },
+      ],
+    },
+  })
+  const params = { profile, clientId, commandId: 'migrate-1', sessionId: 'closed' }
+  await expect(status.call('_agnes/v1/sessions.migrate', params, authority)).resolves.toEqual(migration)
+  await expect(
+    status.call('_agnes/v1/sessions.migrate', params, { ...authority, permissions: ['packages.read'] }),
+  ).rejects.toMatchObject({ data: { method: '_agnes/v1/sessions.migrate' } })
+  await expect(
+    status.call('_agnes/v1/sessions.migrate', { ...params, clientId: 'spoof' }, authority),
+  ).rejects.toMatchObject({
+    data: { reason: 'package command client does not match authenticated connection' },
+  })
+  await expect(
+    status.call('_agnes/v1/sessions.migrate', { ...params, sessionId: 'open' }, authority),
+  ).rejects.toMatchObject({ data: { reason: 'E_GENERATION_SESSION_OPEN' } })
+  expect(migrate).toHaveBeenCalledWith(profile, 'closed', authority.principalId, undefined)
+
+  expect(await status.call('_agnes/v1/packages.list', { profile }, authority)).toMatchObject({
+    generations,
+    packages: [expect.objectContaining({ draining: true, boundSessions: 2, drainingSessions: 2 })],
+  })
 })
 
 it('refreshes the client-module roster after every successful package lifecycle transition', async () => {
@@ -399,14 +462,16 @@ it('refreshes the client-module roster after every successful package lifecycle 
     id: row.id,
   })
 
-  expect(events.map(({ reason, packageId }) => ({ reason, packageId }))).toEqual([
-    { reason: 'inventory', packageId: 'acme/pkg-a' },
-    { reason: 'trust', packageId: 'acme/pkg-a' },
-    { reason: 'activation', packageId: 'acme/pkg-a' },
-    { reason: 'inventory', packageId: 'acme/pkg-a' },
-    { reason: 'activation', packageId: 'acme/pkg-a' },
-    { reason: 'inventory', packageId: 'acme/pkg-a' },
-  ])
+  await vi.waitFor(() =>
+    expect(events.map(({ reason, packageId }) => ({ reason, packageId }))).toEqual([
+      { reason: 'inventory', packageId: 'acme/pkg-a' },
+      { reason: 'trust', packageId: 'acme/pkg-a' },
+      { reason: 'activation', packageId: 'acme/pkg-a' },
+      { reason: 'inventory', packageId: 'acme/pkg-a' },
+      { reason: 'activation', packageId: 'acme/pkg-a' },
+      { reason: 'inventory', packageId: 'acme/pkg-a' },
+    ]),
+  )
 })
 
 it('untrusts a package through the admin plane and refreshes its roster authority', async () => {
@@ -532,6 +597,9 @@ it('requires the complete dynamic authority for composite update and rollback re
         id: 'acme/pkg-a',
         expectedIntegrity: activation.trust.integrity,
         activation,
+        dependents: [
+          { id: 'acme/dependent', source, expectedIntegrity: activation.trust.integrity, activation },
+        ],
       },
       { ...authority, permissions: ['packages.install'] },
     ),
@@ -613,6 +681,39 @@ it('fails a composite update on a stale active baseline before changing desired 
   })
   expect((await manager.inventory(profileDir)).packages[0]?.entry.integrity).toBe(installed.entry.integrity)
 })
+
+it.each([false, true])(
+  'fails an enable on a stale installed baseline even when the package is already enabled (enabled=%s)',
+  async (alreadyEnabled) => {
+    const preview = await manager.inspect(profileDir, source)
+    await manager.install(profileDir, source, { expectedIntegrity: preview.integrity })
+    const row = (await manager.inventory(profileDir)).packages[0]
+    if (!row) throw new Error('setup install is missing')
+    await manager.trust(profileDir, row.id, {
+      integrity: row.entry.integrity,
+      capabilityHash: row.capabilityHash,
+    })
+    if (alreadyEnabled) await manager.setEnabled(profileDir, row.id, true)
+    const admin = service()
+    const accepted = (await admin.call(
+      '_agnes/v1/packages.enable',
+      {
+        profile,
+        clientId,
+        commandId: 'stale-enable',
+        id: row.id,
+        expectedInstalledIntegrity: `sha256-${'1'.repeat(64)}`,
+      },
+      authority,
+    )) as { operationId: string }
+    expect(await operation(admin, profile, accepted.operationId)).toMatchObject({
+      state: 'failed',
+      retryable: true,
+      error: { code: 'E_PACKAGE_PREVIEW_STALE' },
+    })
+    expect((await manager.inventory(profileDir)).packages[0]?.enabled).toBe(alreadyEnabled)
+  },
+)
 
 it('keeps update and rollback trust, desired state, and activation under one command identity', async () => {
   const first = await manager.inspect(profileDir, source)
@@ -972,7 +1073,7 @@ it('replays a received install after a process crash without treating desired st
       startedAt: now,
       updatedAt: now,
     },
-    identity: { principalId: authority.principalId, clientId, commandId: 'crash-replay' },
+    identity: { principalId: authority.principalId, clientId, commandId: 'crash-replay', installer: 'agent' },
     payloadHash: createHash('sha256')
       .update(
         jcs({
@@ -985,6 +1086,34 @@ it('replays a received install after a process crash without treating desired st
     request: { kind: 'install', params },
   })
 
+  // A daemon started for another profile of the same home shares this journal but not this scope. It
+  // leaves the record queued for its owner instead of failing it on the scope refusal.
+  const foreignEvents: PackageOperation[] = []
+  const foreign = createPackageAdminService({
+    manager,
+    profileDirectory: scopedPackageProfileDirectory({
+      profile: secondProfile,
+      profileDir: profileDirectory(secondProfile),
+      profilesRoot: join(root, 'profiles'),
+    }),
+    operations: new FilePackageOperationStore(join(root, 'daemon', 'package-operations')),
+    clientModules: recordingClientModules([]),
+    clock: () => now,
+  })
+  foreign.subscribe((value) => foreignEvents.push(value))
+  await foreign.recover()
+  for (let attempt = 0; attempt < 20 && foreignEvents.length === 0; attempt++)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  expect(foreignEvents).toEqual([])
+  expect(
+    (
+      await new FilePackageOperationStore(join(root, 'daemon', 'package-operations')).get(
+        profile,
+        operationId,
+      )
+    )?.operation.state,
+  ).toBe('received')
+
   // A new service instance is the post-crash process. The operation record was fsync-written before
   // the first process could enter PackageManager, and recovery now drives the real file install.
   const clientModuleEvents: ClientModulesChanged[] = []
@@ -994,6 +1123,10 @@ it('replays a received install after a process crash without treating desired st
   })
   expect(await operation(restarted, profile, operationId)).toMatchObject({ state: 'completed' })
   expect(existsSync(packageDir(root, profile, 'acme/pkg-a'))).toBe(true)
+  expect(await manager.provenance(profileDir, 'acme/pkg-a')).toMatchObject({ installer: 'agent' })
+  await expect(restarted.call('_agnes/v1/packages.install', params, authority)).rejects.toMatchObject({
+    data: { reason: 'PACKAGE_COMMAND_ID_CONFLICT' },
+  })
   expect(clientModuleEvents).toMatchObject([{ profile, reason: 'inventory', packageId: 'acme/pkg-a' }])
 })
 
@@ -1018,7 +1151,12 @@ it('projects manager diagnostics with fixed safe text instead of package-provide
   expect(warningOperation.preview?.warnings).toEqual([
     { code: 'unlicensed', safeMessage: 'Package license information is unavailable.' },
   ])
-  expect(JSON.stringify(warningOperation)).not.toContain(root)
+  // The requested source location is deliberate admin review data; diagnostics cannot leak paths.
+  expect(warningOperation.preview?.provenance.resolvedLocation).toBe(preview.provenance.resolvedLocation)
+  const { resolvedLocation: _location, ...evidence } = warningOperation.preview!.provenance
+  expect(
+    JSON.stringify({ ...warningOperation, preview: { ...warningOperation.preview, provenance: evidence } }),
+  ).not.toContain(root)
 
   const failure = new Error(`unavailable source at ${root}`)
   Object.assign(failure, { code: 'E_PACKAGE_SOURCE' })
@@ -1037,6 +1175,63 @@ it('projects manager diagnostics with fixed safe text instead of package-provide
     error: { code: 'E_PACKAGE_SOURCE', safeMessage: 'The package source could not be accepted.' },
   })
   expect(JSON.stringify(failed)).not.toContain(root)
+
+  for (const [reason, sourceFailure] of [
+    ['package-json-missing', 'manifest-missing'],
+    ['package-json', 'manifest-invalid'],
+    ['static-declaration-required', 'not-plugin'],
+    ['git-ref', 'git-ref'],
+    ['git-fetch', 'git-fetch'],
+  ] as const) {
+    const sourceError = new PackageError('E_DEP_MISSING', `private source at ${root}`, {
+      detail: { reason },
+    })
+    const refused = service({
+      manager: {
+        ...manager,
+        inspect: async () => {
+          throw sourceError
+        },
+      },
+    })
+    const receipt = (await refused.call('_agnes/v1/packages.inspect', command(reason), authority)) as {
+      operationId: string
+    }
+    const result = await operation(refused, profile, receipt.operationId)
+    expect(result).toMatchObject({ state: 'failed', error: { code: 'E_PACKAGE_SOURCE', sourceFailure } })
+    expect(JSON.stringify(result)).not.toContain(root)
+  }
+
+  // Profile lock contention is a retryable refusal with its own safe text, for effects and reads alike.
+  const busy = () =>
+    new PackageError('E_LOCK_MISMATCH', `could not acquire the package lock under ${root}`, {
+      code: 'E_PACKAGE_BUSY',
+      detail: { reason: 'busy', lockPath: join(profileDir, '.agnes-lock.lock') },
+    })
+  const contended = service({
+    manager: { ...manager, install: async () => Promise.reject(busy()) } as PackageManager,
+  })
+  const busyReceipt = (await contended.call(
+    '_agnes/v1/packages.install',
+    { ...command('busy-install'), expectedIntegrity: preview.integrity },
+    authority,
+  )) as { operationId: string }
+  const refused = await operation(contended, profile, busyReceipt.operationId)
+  expect(refused).toMatchObject({
+    state: 'failed',
+    retryable: true,
+    error: {
+      code: 'E_PACKAGE_BUSY',
+      safeMessage: 'Another package operation is using this profile. Try again shortly.',
+    },
+  })
+  expect(JSON.stringify(refused)).not.toContain(root)
+  const busyReads = service({
+    manager: { ...manager, inventory: async () => Promise.reject(busy()) } as PackageManager,
+  })
+  await expect(busyReads.call('_agnes/v1/packages.list', { profile }, authority)).rejects.toMatchObject({
+    data: { reason: 'E_PACKAGE_BUSY' },
+  })
 })
 
 it('does not report cancellation after PackageManager committed desired state while activation aborts', async () => {
@@ -1096,6 +1291,78 @@ it('does not report cancellation after PackageManager committed desired state wh
   expect(clientModuleEvents).toMatchObject([{ profile, reason: 'activation', packageId: 'acme/pkg-a' }])
 })
 
+it('keeps a cancellation reported before the run starts its effect, and never runs the manager call', async () => {
+  const preview = await manager.inspect(profileDir, source)
+  await manager.install(profileDir, source, { expectedIntegrity: preview.integrity })
+  const row = (await manager.inventory(profileDir)).packages[0]
+  if (!row) throw new Error('setup install is missing')
+  await manager.trust(profileDir, row.id, {
+    integrity: row.entry.integrity,
+    capabilityHash: row.capabilityHash,
+  })
+  await manager.setEnabled(profileDir, row.id, true)
+
+  // Hold the disable inside its applied() check: the first inventory read after manager recovery.
+  let reached!: () => void
+  const deciding = new Promise<void>((resolve) => {
+    reached = resolve
+  })
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let held = false
+  const effects: string[] = []
+  const gated = {
+    ...manager,
+    inventory: async (...args: Parameters<PackageManager['inventory']>) => {
+      if (!held) {
+        held = true
+        reached()
+        await gate
+      }
+      return manager.inventory(...args)
+    },
+    setEnabled: async (...args: Parameters<PackageManager['setEnabled']>) => {
+      effects.push(`setEnabled:${args[2]}`)
+      return manager.setEnabled(...args)
+    },
+  } as PackageManager
+  const admin = service({ manager: gated })
+  await admin.recover()
+  const disabled = (await admin.call(
+    '_agnes/v1/packages.disable',
+    { profile, clientId, commandId: 'cancel-while-deciding', id: row.id },
+    authority,
+  )) as { operationId: string }
+  const states: string[] = []
+  admin.subscribe((value) => {
+    if (value.operationId === disabled.operationId) states.push(value.state)
+  })
+  await deciding
+  await admin.call(
+    '_agnes/v1/packages.operation.cancel',
+    { profile, clientId, commandId: 'cancel-deciding', operationId: disabled.operationId },
+    authority,
+  )
+  expect(await operation(admin, profile, disabled.operationId)).toMatchObject({ state: 'cancelled' })
+  const reported = states.length
+  release()
+
+  // Effects run in order per profile: once a later inspect settles, the cancelled run has ended.
+  const barrier = (await admin.call('_agnes/v1/packages.inspect', command('after-cancel'), authority)) as {
+    operationId: string
+  }
+  expect(await operation(admin, profile, barrier.operationId)).toMatchObject({ state: 'completed' })
+  expect(await operation(admin, profile, disabled.operationId)).toMatchObject({
+    state: 'cancelled',
+    error: { code: 'E_PACKAGE_CANCELLED' },
+  })
+  expect(states.slice(reported).filter((state) => state !== 'cancelled')).toEqual([])
+  expect(effects).toEqual([])
+  expect((await manager.inventory(profileDir)).packages[0]?.enabled).toBe(true)
+})
+
 it('keeps committed desired state and projects safe activation and unload-blocker failures', async () => {
   const preview = await manager.inspect(profileDir, source)
   await manager.install(profileDir, source, { expectedIntegrity: preview.integrity })
@@ -1118,6 +1385,7 @@ it('keeps committed desired state and projects safe activation and unload-blocke
         actualIntegrity: installed.entry.integrity,
         actualReason: `raw runtime detail ${root}`,
         cleanupPending: true,
+        draining: true,
         error: { code: 'E_PACKAGE_STATE', safeMessage: `raw runtime detail ${root}`, blockers: [] },
       }),
     },
@@ -1140,6 +1408,7 @@ it('keeps committed desired state and projects safe activation and unload-blocke
       actualIntegrity: installed.entry.integrity,
       actualReason: 'Runtime activation failed.',
       cleanupPending: true,
+      draining: true,
     },
     error: { code: 'E_PACKAGE_STATE', safeMessage: 'The package operation cannot run in the current state.' },
   })
@@ -1237,6 +1506,20 @@ it('serializes effects per profile, allows another profile to proceed, and lets 
     authority,
   )
   expect(await operation(admin, profile, queued.operationId)).toMatchObject({ state: 'cancelled' })
+  // Cancelling an unknown operation is refused before it records anything in the journal.
+  await expect(
+    admin.call(
+      '_agnes/v1/packages.operation.cancel',
+      { profile, clientId, commandId: 'cancel-unknown', operationId: 'pkg-not-an-operation' },
+      authority,
+    ),
+  ).rejects.toMatchObject({ data: { reason: 'PACKAGE_OPERATION_UNAVAILABLE' } })
+  const journal = JSON.parse(
+    readFileSync(join(root, 'daemon', 'package-operations', 'operations.json'), 'utf8'),
+  )
+  expect(
+    journal.cancels.map((entry: { identity: { commandId: string } }) => entry.identity.commandId),
+  ).toEqual(['cancel-queued'])
   release()
   expect(await operation(admin, profile, first.operationId)).toMatchObject({ state: 'completed' })
   expect(await operation(admin, secondProfile, other.operationId)).toMatchObject({ state: 'completed' })
@@ -1824,6 +2107,34 @@ it('hands out one file as bytes, and only for the enabled, trusted roster', asyn
   const onDisk = readFileSync(join(skinAssetsDir(), 'hero.jpg'))
   expect(Buffer.from(png.base64 ?? '', 'base64').equals(onDisk)).toBe(true)
 
+  // A served snapshot can grow between verification and opening the file.
+  const pins = await manager.listRuntimePins(profileDirectory(secondProfile))
+  const snapshot = pins.find(
+    (pin) => pin.purpose === 'active' && pin.snapshot.packageId === '@agnes-examples/skins-builtin',
+  )?.snapshot
+  if (!snapshot) throw new Error('active skin snapshot missing')
+  const resolveAsset = packageManager.resolveSkinAsset
+  for (const [route, relative, cap] of [
+    ['/skins/aurora/skin.css', 'skin.css', SKIN_MAX_CSS_BYTES],
+    ['/skins/aurora/assets/hero.jpg', 'assets/hero.jpg', SKIN_MAX_ASSET_BYTES],
+  ] as const) {
+    const file = join(snapshot.directory, 'extensions/main/skins/aurora', relative)
+    const saved = readFileSync(file)
+    const resolution = vi.spyOn(packageManager, 'resolveSkinAsset').mockImplementationOnce((...args) => {
+      const result = resolveAsset(...args)
+      expect(result).toBe(file)
+      writeFileSync(file, Buffer.alloc(cap + 1, 32))
+      return result
+    })
+    try {
+      expect(await read(route)).toEqual({ found: false })
+    } finally {
+      writeFileSync(file, saved)
+      resolution.mockRestore()
+    }
+    expect(await read(route)).toMatchObject({ found: true })
+  }
+
   // Every negative answer is the same answer: a miss, a skin with no assets, an unknown id, a
   // traversal attempt and a missing file are indistinguishable to the caller (design §22.3).
   for (const path of [
@@ -1865,24 +2176,66 @@ it('refuses an out-of-scope profile instead of reading another scope', async () 
   ).rejects.toMatchObject({ data: { code: 'SEMANTIC_REJECTED' } })
 })
 
-it('refuses a served skin file that grew past its cap after install', async () => {
+it('fails the whole read closed when an installed file was swapped after install', async () => {
   const admin = await installedSkinPresets()
-  // An active row's skin is served from the package's runtime snapshot. This daemon verified that
-  // tree when it first listed it and does not hash every package again on each read; the skin
-  // roster's own per-asset size check is what refuses a file grown on disk.
-  const pin = (await manager.listRuntimePins(profileDirectory(secondProfile))).find(
-    (candidate) => candidate.snapshot.packageId === '@agnes-examples/skins-builtin',
-  )
-  if (!pin) throw new Error('the enabled package has no runtime snapshot')
-  writeFileSync(
-    join(pin.snapshot.directory, 'extensions/main/skins/aurora/assets/aurora.png'),
-    Buffer.alloc(SKIN_MAX_ASSET_BYTES + 1),
-  )
+  // The read channel's own size cap is defence in depth; the primary control turned out to be
+  // stronger and is what this pins: `inventory()` re-verifies the installed tree against the lock, so
+  // a file grown (or replaced) on disk refuses the read outright instead of streaming past the cap.
+  writeFileSync(join(skinAssetsDir(), 'aurora.png'), Buffer.alloc(SKIN_MAX_ASSET_BYTES + 1))
   await expect(
     admin.call(
       '_agnes/v1/skins.read',
       { profile: secondProfile, path: '/skins/aurora/assets/aurora.png' },
       authority,
     ),
-  ).rejects.toMatchObject({ data: { reason: 'E_PACKAGE_STATE' } })
+  ).rejects.toMatchObject({ data: { reason: 'E_PACKAGE_INTEGRITY' } })
+})
+
+it('refreshes discovery source bytes before an explicit local reload activation', async () => {
+  const home = join(root, 'plugins'),
+    workspace = join(root, 'workspace-plugins')
+  mkdirSync(home)
+  cpSync(join(root, 'candidate'), join(home, 'example'), { recursive: true })
+  const local = createPackageManager({
+    dataDir: root,
+    cwd: root,
+    agnesVersion: '0.1.0',
+    localPlugins: { home, workspace },
+    references: async () => [],
+    now: () => now,
+  })
+  await local.refreshLocalPlugins(profileDir)
+  const previous = (await local.inventory(profileDir)).packages[0]!
+  writeFileSync(join(home, 'example', 'revision.txt'), 'edited bytes')
+  const admin = service({
+    manager: local,
+    activation: {
+      actual: async () => {
+        const row = (await local.inventory(profileDir)).packages[0]!
+        return { actual: 'running', actualIntegrity: row.entry.integrity }
+      },
+      reconcile: async () => {
+        const row = (await local.inventory(profileDir)).packages[0]!
+        return { actual: 'running', actualIntegrity: row.entry.integrity }
+      },
+    },
+  })
+  const receipt = (await admin.call(
+    '_agnes/v1/packages.enable',
+    {
+      profile,
+      id: previous.id,
+      clientId,
+      commandId: 'local-reload',
+    },
+    authority,
+  )) as { operationId: string }
+  expect(await operation(admin, profile, receipt.operationId)).toMatchObject({
+    state: 'completed',
+    installed: { actual: 'running' },
+  })
+  const next = (await local.inventory(profileDir)).packages[0]!
+  expect(next.entry.integrity).not.toBe(previous.entry.integrity)
+  expect(next.enabled).toBe(true)
+  expect(next.trusted).toBe(true)
 })

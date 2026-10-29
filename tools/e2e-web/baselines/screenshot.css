@@ -1,0 +1,5 @@
+/* Environment text only; controls, layout and all other content remain visible. */
+[data-e2e-environment="checkout"],
+[data-testid="turn-timing"] {
+  visibility: hidden;
+}

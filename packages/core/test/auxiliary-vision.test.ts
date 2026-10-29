@@ -1,4 +1,7 @@
 import { deflateSync } from 'node:zlib'
+import { sha256Hex } from '@agnes/core-common/request/hash'
+import type { Event } from '@agnes/core-common/types'
+import type { SurfaceNode } from '@agnes/core-ledger/project/surface'
 import { describe, expect, it, vi } from 'vitest'
 import {
   AUXILIARY_VISION_MAX_EDGE,
@@ -7,9 +10,6 @@ import {
   prepareAuxiliaryVisionPlan,
 } from '../src/orchestrator/auxiliary-vision.js'
 import { prepareRequestMediaFromSurface } from '../src/orchestrator/request-media-surface.js'
-import type { SurfaceNode } from '../src/project/surface.js'
-import { sha256Hex } from '../src/request/hash.js'
-import type { Event } from '../src/types.js'
 import { toolCallLookup } from './helpers/request-media-lookup.js'
 
 const u32 = (value: number) => [value >>> 24, value >>> 16, value >>> 8, value].map((byte) => byte & 0xff)

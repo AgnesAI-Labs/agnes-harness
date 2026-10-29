@@ -1,11 +1,18 @@
 import { createHash } from 'node:crypto'
-import { readFileSync, realpathSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, relative } from 'node:path'
-import type { ExtensionAPI, HookEvent, HookHandler } from '@agnes/extension-api'
+import type { HookEvent, HookHandler } from '@agnes/extension-api'
 import * as extensionApi from '@agnes/extension-api'
-import * as protocol from '@agnes/protocol'
-import * as typebox from '@sinclair/typebox'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
+import { extensionFactoryOf, isBundledPlugin } from '@agnes/plugin-runtime/bundled'
+import {
+  checkProvidedExternals,
+  missingPluginModule,
+  providedExternalModules,
+} from '@agnes/plugin-runtime/provided-externals'
+import type { JsonValue } from '@agnes/protocol'
 import { createJiti } from 'jiti/static'
+import { bindProvidedContractModules } from './provided-contracts.js'
 import { runnerLease } from './runner-context.js'
 
 const record = (value: unknown): value is Record<string, unknown> =>
@@ -47,7 +54,9 @@ export async function loadRunnerExtension(
     digest(data.manifestFile) !== process.env.AGNES_MANIFEST_DIGEST
   )
     throw new Error('extension bytes changed')
-  const checked = extensionApi.checkManifest(JSON.parse(readFileSync(data.manifestFile, 'utf8')))
+  const checked = extensionApi.checkManifest(
+    extensionApi.bundledExtensionManifest(JSON.parse(readFileSync(data.manifestFile, 'utf8'))),
+  )
   if (
     !checked.ok ||
     checked.value.id !== data.context.extId ||
@@ -89,8 +98,12 @@ export async function loadRunnerExtension(
     registerSlot: reject,
     registerService: reject,
     registerProjection: reject,
+    providers: Object.freeze({
+      register: unavailable,
+      bindOwn: unavailable,
+    }),
     events: Object.freeze({
-      append: (name: string, value: protocol.JsonValue) =>
+      append: (name: string, value: JsonValue) =>
         capability('events.append', { name, data: value }) as Promise<extensionApi.Seq>,
     }),
     ctx: Object.freeze({
@@ -105,6 +118,13 @@ export async function loadRunnerExtension(
       signal: shutdown.signal,
     }),
   })
+  // Standalone extension manifests predate optional package-level SDK declarations.
+  const packageManifest = `${root}/package.json`
+  if (existsSync(packageManifest)) {
+    const metadata = JSON.parse(readFileSync(packageManifest, 'utf8'))
+    checkProvidedExternals(metadata.agnes?.hostProvidedExternals)
+  }
+  bindProvidedContractModules()
   const jiti = createJiti(`${dirname(data.entry)}/package.json`, {
     moduleCache: false,
     fsCache: false,
@@ -114,15 +134,14 @@ export async function loadRunnerExtension(
     debug: false,
     tsconfigPaths: false,
     virtualModules: {
-      '@agnes/extension-api': extensionApi,
-      '@agnes/protocol': protocol,
-      '@sinclair/typebox': typebox,
+      ...providedExternalModules,
     },
   })
-  const imported: unknown = await jiti.import(data.entry)
-  if (!record(imported) || typeof imported.default !== 'function')
-    throw new Error('invalid extension factory')
-  const returned: unknown = imported.default(api)
+  const imported: unknown = await jiti.import(data.entry).catch((error) => {
+    throw missingPluginModule(error) ?? new Error('extension module evaluation failed')
+  })
+  if (!record(imported) || !isBundledPlugin(imported.default)) throw new Error('invalid extension plugin')
+  const returned: unknown = extensionFactoryOf(imported.default)(api)
   const then =
     returned && (typeof returned === 'object' || typeof returned === 'function')
       ? (returned as { then?: unknown }).then

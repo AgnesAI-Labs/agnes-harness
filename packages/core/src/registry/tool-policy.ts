@@ -1,6 +1,6 @@
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { resolveToolCallPolicy } from '@agnes/extension-api'
 import type { JsonValue, ResolvedToolCallPolicy as PersistedToolCallPolicy } from '@agnes/protocol'
-import { canonicalJson, sha256Hex } from '../request/hash.js'
 import type { ExecutionDomain, RegisteredTool } from './tools.js'
 
 export type CompleteResolvedToolCallPolicy = PersistedToolCallPolicy &
@@ -105,10 +105,9 @@ export function resolveValidatedToolCallPolicy(
   const resolvedPolicy: CompleteResolvedToolCallPolicy = Object.freeze({
     isReadOnly: callPolicy.isReadOnly,
     isDestructive: callPolicy.isDestructive,
+    isPresentational: callPolicy.isPresentational === true,
     isConcurrencySafe: tool.meta.isConcurrencySafe,
     isOpenWorld: tool.meta.isOpenWorld,
-    // Written only when declared, so a tool without it keeps its policy hash.
-    ...(tool.meta.returnsImages === true ? { returnsImages: true as const } : {}),
     replay: callPolicy.replay,
     requiresApproval: callPolicy.requiresApproval,
     approvalScopes,

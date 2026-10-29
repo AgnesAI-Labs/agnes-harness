@@ -1,7 +1,8 @@
-import type { PackageOperation, PackagePreview } from '@agnes/protocol'
+import type { PackageInstalledDescriptor, PackageOperation, PackagePreview } from '@agnes/protocol'
 import type { NodeClient } from '@agnes/sdk'
 import { UsageError } from '../errors.js'
 import {
+  activateReviewedPackage,
   formatPreview,
   inspectPackage,
   installPreview,
@@ -22,7 +23,30 @@ export {
 
 export type PackageCommandIO = {
   write(text: string): void
-  confirm(preview: PackagePreview): Promise<boolean>
+  confirm(
+    preview: Pick<PackagePreview, 'id' | 'version' | 'integrity'>,
+    action?: 'install' | 'trust' | 'enable',
+  ): Promise<boolean>
+  confirmEnable?(installed: PackageInstalledDescriptor, action?: 'trust' | 'enable'): Promise<boolean>
+}
+
+async function confirmPreview(
+  p: ParsedArgs,
+  io: PackageCommandIO,
+  preview: Pick<PackagePreview, 'id' | 'version' | 'integrity'>,
+  action: 'install' | 'trust' | 'enable' = 'install',
+): Promise<boolean> {
+  return p.yes === true || io.confirm(preview, action)
+}
+
+async function confirmInstalled(
+  p: ParsedArgs,
+  io: PackageCommandIO,
+  installed: PackageInstalledDescriptor,
+  action: 'trust' | 'enable',
+): Promise<boolean> {
+  if (p.yes) return true
+  return io.confirmEnable ? io.confirmEnable(installed, action) : io.confirm(installed, action)
 }
 
 function formatOperation(operation: PackageOperation): string {
@@ -49,10 +73,50 @@ async function directOperation(
   profile: string,
   kind: 'enable' | 'disable' | 'rollback' | 'remove',
   id: string,
+  expectedInstalledIntegrity?: string,
 ): Promise<PackageOperation> {
   const base = { profile, clientId: await client.clientId(), commandId: newPackageCommandId(kind), id }
-  const receipt = await client.packages[kind](base)
+  const receipt =
+    kind === 'enable' && expectedInstalledIntegrity
+      ? await client.packages.enable({ ...base, expectedInstalledIntegrity })
+      : await client.packages[kind](base)
   return waitForPackageOperation(client, receipt)
+}
+
+/** `agh plugins add` over an installed id: update (or repair) to the reviewed bytes and activate them. */
+async function updateInstalled(
+  p: ParsedArgs,
+  client: NodeClient,
+  io: PackageCommandIO,
+  profile: string,
+  preview: PackagePreview,
+  current: PackageInstalledDescriptor,
+): Promise<void> {
+  if (current.actual === 'restart-required')
+    throw new Error('E_GENERATION_RESTART_REQUIRED: this plugin requires a restart')
+  const same = current.integrity === preview.integrity
+  if (same && current.trusted && current.actual === 'running') {
+    io.write(`${current.id}@${current.version} is already installed, trusted and running; nothing to do.\n`)
+    return
+  }
+  io.write(
+    same
+      ? `${formatPreview(preview, { activate: true, repair: true })}\n`
+      : `${formatPreview(preview, { activate: true, installedVersion: current.version })}\n`,
+  )
+  if (preview.blockers.length > 0)
+    throw new UsageError('package preview has blockers; resolve the blockers above and inspect again')
+  if (!(await confirmPreview(p, io, preview))) {
+    io.write('Update cancelled.\n')
+    return
+  }
+  const operation = await activateReviewedPackage(client, profile, preview, current, { reenable: true })
+  if (operation) io.write(`${formatOperation(operation)}\n`)
+  const after = operation?.installed
+  if (after?.actual === 'failed')
+    throw new Error(
+      `${after.id}@${after.version} is installed but did not start: ${after.actualReason ?? after.failureHint ?? 'activation failed'}. Inspect it with agh plugins status; roll back with agh package rollback ${after.id}`,
+    )
 }
 
 export async function runPackageCommand(
@@ -67,6 +131,10 @@ export async function runPackageCommand(
     case 'status':
     case 'list': {
       const result = await client.packages.list({ profile })
+      if (p.json) {
+        io.write(JSON.stringify(result, null, 2))
+        return
+      }
       io.write(
         result.packages.length === 0
           ? 'No packages installed.'
@@ -106,19 +174,66 @@ export async function runPackageCommand(
         profile,
         parsePackageSource(requireArg(args, 1, 'agh install <source>')),
       )
-      io.write(`${formatPreview(preview)}\n`)
-      if (preview.blockers.length > 0) throw new Error('package preview has blockers')
-      if (!(await io.confirm(preview))) {
+      const current = (await client.packages.list({ profile })).packages.find(
+        (entry) => entry.id === preview.id,
+      )
+      if (current) {
+        if (p.command !== 'plugins')
+          throw new UsageError(
+            `${current.id}@${current.version} is already installed; agh ${p.command} keeps packages untrusted and disabled. Use agh plugins add <source> to update, trust and enable it, or update it in the Web admin`,
+          )
+        await updateInstalled(p, client, io, profile, preview, current)
+        return
+      }
+      io.write(`${formatPreview(preview, { activate: p.command === 'plugins' })}\n`)
+      if (preview.blockers.length > 0)
+        throw new UsageError('package preview has blockers; resolve the blockers above and inspect again')
+      if (!(await confirmPreview(p, io, preview))) {
         io.write('Installation cancelled.\n')
         return
       }
       io.write(`${formatOperation(await installPreview(client, profile, preview))}\n`)
+      if (p.command === 'plugins') {
+        if (!preview.capabilityHash)
+          throw new Error('Preview has no capability hash; update the daemon and inspect again.')
+        const trust = await client.packages.trust({
+          profile,
+          clientId: await client.clientId(),
+          commandId: newPackageCommandId('trust'),
+          id: preview.id,
+          expectedIntegrity: preview.integrity,
+          capabilityHash: preview.capabilityHash,
+        })
+        await waitForPackageOperation(client, trust)
+        io.write(
+          `${formatOperation(await directOperation(client, profile, 'enable', preview.id, preview.integrity))}\n`,
+        )
+      }
       return
     }
     case 'trust': {
-      const id = requireArg(args, 1, 'agh package trust <id> <integrity> <capabilityHash>')
-      const expectedIntegrity = requireArg(args, 2, 'agh package trust <id> <integrity> <capabilityHash>')
-      const capabilityHash = requireArg(args, 3, 'agh package trust <id> <integrity> <capabilityHash>')
+      const id = requireArg(args, 1, 'agh package trust <id> [<integrity> <capabilityHash>] [--yes]')
+      if (args.length !== 2 && args.length !== 4)
+        throw new UsageError('usage: agh package trust <id> [<integrity> <capabilityHash>] [--yes]')
+      const installed = (await client.packages.list({ profile })).packages.find((entry) => entry.id === id)
+      if (!installed) throw new UsageError(`package ${id} is not installed; run agh package status`)
+      io.write(
+        `${installed.id}@${installed.version}\nintegrity ${installed.integrity}\ncapabilityHash ${installed.capabilityHash ?? 'unavailable'}\nRequested capabilities: ${JSON.stringify(installed.declaredCapabilities ?? 'not declared')}\nblockers ${installed.blockers.map((blocker) => `${blocker.code}: ${blocker.references.join(', ')}`).join('; ') || 'none'}\n`,
+      )
+      const expectedIntegrity = args[2] ?? installed.integrity
+      const capabilityHash = args[3] ?? installed.capabilityHash
+      if (expectedIntegrity !== installed.integrity || capabilityHash !== installed.capabilityHash)
+        throw new UsageError(
+          `hash mismatch: expected integrity=${installed.integrity} capabilityHash=${installed.capabilityHash}; given integrity=${expectedIntegrity} capabilityHash=${capabilityHash}; review the installed package before trusting`,
+        )
+      if (!capabilityHash)
+        throw new UsageError('installed package has no capabilityHash; rebuild or upgrade the daemon')
+      if (installed.blockers.length)
+        throw new UsageError('package has blockers; resolve them before trusting')
+      if (!(await confirmInstalled(p, io, installed, 'trust'))) {
+        io.write('Trust cancelled.\n')
+        return
+      }
       const receipt = await client.packages.trust({
         profile,
         clientId: await client.clientId(),
@@ -135,7 +250,29 @@ export async function runPackageCommand(
     case 'rollback':
     case 'remove': {
       const id = requireArg(args, 1, `agh package ${action} <id>`)
-      io.write(`${formatOperation(await directOperation(client, profile, action, id))}\n`)
+      let reviewedIntegrity: string | undefined
+      if (action === 'enable') {
+        const installed = (await client.packages.list({ profile })).packages.find((entry) => entry.id === id)
+        if (!installed) throw new UsageError(`package ${id} is not installed; run agh package status`)
+        if (!installed.capabilityHash)
+          throw new UsageError('Installed summary has no capability hash; update the daemon.')
+        reviewedIntegrity = installed.integrity
+        io.write(
+          `Enable ${installed.id}@${installed.version} integrity=${installed.integrity} capabilityHash=${installed.capabilityHash}\nRequested capabilities: ${JSON.stringify(installed.declaredCapabilities ?? 'not declared')}\n`,
+        )
+        if (!(await confirmInstalled(p, io, installed, 'enable'))) {
+          io.write('Enable cancelled.\n')
+          return
+        }
+      }
+      io.write(`${formatOperation(await directOperation(client, profile, action, id, reviewedIntegrity))}\n`)
+      return
+    }
+    case 'source-policy': {
+      const policy = await client.call<{ allowedSources: string }>('_agnes/v1/packages.sourcePolicy', {
+        profile,
+      })
+      io.write(p.json ? JSON.stringify(policy) : `allowed sources: ${policy.allowedSources}`)
       return
     }
     case 'operation': {

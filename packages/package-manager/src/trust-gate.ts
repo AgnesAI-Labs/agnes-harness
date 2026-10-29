@@ -19,9 +19,8 @@ export const LICENSE_ALLOWLIST = [
 
 /** Capabilities that may not be admitted by a force/skip path. */
 export function isDangerous(manifest: ExtensionManifest): boolean {
-  const network = manifest.capabilities.network
   return (
-    Boolean(!Array.isArray(network) && network?.hosts.includes('*')) ||
+    Boolean(manifest.capabilities.network?.includes('*')) ||
     Boolean(manifest.capabilities['tools.invoke'] && manifest.capabilities.subagent)
   )
 }

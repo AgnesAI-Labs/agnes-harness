@@ -81,10 +81,14 @@
       "purpose": "Type declarations for React 18 used by the web workbench and the web-client module author API.",
       "rationale": "Type-only companion of the pinned react dependency; same version line.",
       "consumers": [
-        "packages/mhs",
+        "packages/package-manager/bundled-plugins/browser",
+        "packages/package-manager/bundled-plugins/goal-ui",
         "packages/resource-control-web",
         "packages/web",
+        "packages/web-admin",
         "packages/web-client",
+        "packages/web-conversation",
+        "packages/web-foundation",
         "packages/web-ui",
         "packages/web-units"
       ]
@@ -97,9 +101,11 @@
       "purpose": "Type declarations for react-dom 18 used by the web workbench and web-client.",
       "rationale": "Type-only companion of the pinned react-dom dependency; same version line.",
       "consumers": [
-        "packages/mhs",
         "packages/web",
+        "packages/web-admin",
         "packages/web-client",
+        "packages/web-conversation",
+        "packages/web-foundation",
         "packages/web-ui",
         "packages/web-units"
       ]
@@ -120,7 +126,7 @@
       "source": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/ws",
       "purpose": "TypeScript declarations for the ws transport library.",
       "rationale": "Keeps daemon tests and SDK transport code checked against the installed ws API.",
-      "consumers": ["packages/daemon", "packages/mhs", "packages/sdk"]
+      "consumers": ["packages/daemon", "packages/daemon-rpc", "packages/sdk", "packages/plugin-streams"]
     },
     {
       "name": "@xterm/headless",
@@ -130,37 +136,6 @@
       "purpose": "Headless terminal emulation for CLI and TUI tests.",
       "rationale": "Verifies terminal control sequences and screen output without an interactive terminal.",
       "consumers": ["packages/cli"]
-    },
-    {
-      "name": "esbuild",
-      "version": "0.28.2",
-      "license": "MIT",
-      "source": "https://github.com/evanw/esbuild",
-      "purpose": "SDK browser checks, the Web client bundle and the isolated hooks-runner bundle.",
-      "rationale": "Provides one fast bundler for browser compatibility and deterministic self-contained runtime artifacts.",
-      "consumers": [
-        "examples/mars-world",
-        "packages/base",
-        "packages/cli",
-        "packages/mhs",
-        "packages/sdk",
-        "packages/web"
-      ]
-    },
-    {
-      "name": "react-dom",
-      "version": "18.3.1",
-      "license": "MIT",
-      "source": "https://github.com/facebook/react/tree/main/packages/react-dom",
-      "purpose": "DOM renderer for the web workbench and client module mount points; bundled into /vendor/* shared-singleton chunks.",
-      "rationale": "Same pin line as react (WC5).",
-      "consumers": [
-        "packages/mhs",
-        "packages/web",
-        "packages/web-client",
-        "packages/web-ui",
-        "packages/web-units"
-      ]
     },
     {
       "name": "tsx",
@@ -187,7 +162,13 @@
       "source": "https://github.com/vitest-dev/vitest",
       "purpose": "Unit, integration, conformance and guard test runner.",
       "rationale": "Provides one test runtime compatible with the workspace's ESM TypeScript setup.",
-      "consumers": ["."]
+      "consumers": [
+        ".",
+        "examples/loops/plan-execute-loop",
+        "packages/web-admin",
+        "packages/web-conversation",
+        "packages/web-foundation"
+      ]
     },
     {
       "name": "postject",
@@ -203,36 +184,45 @@
       "version": "20.14.3",
       "license": "MIT",
       "source": "https://github.com/capricorn86/happy-dom",
-      "purpose": "DOM-based Web Markdown and streaming interaction regression tests.",
-      "rationale": "Runs isolated selection, focus, safe rendering and clipboard lifecycle tests without adding a browser runtime dependency to the product.",
+      "purpose": "DOM-based Web Markdown, streaming interaction and public client-panel author tests.",
+      "rationale": "Runs isolated DOM interaction tests and the Node-only author-test SDK without adding a browser runtime dependency to the product.",
+      "consumers": [".", "packages/web-client"]
+    },
+    {
+      "name": "@playwright/test",
+      "version": "1.63.0",
+      "license": "Apache-2.0",
+      "source": "https://github.com/microsoft/playwright",
+      "purpose": "Run the real daemon/Web end-to-end merge gate with cached Chromium and failure traces.",
+      "rationale": "Provides stable browser assertions, visual comparison, lifecycle fixtures and CI reports.",
+      "consumers": [".", "tools/authoring"]
+    },
+    {
+      "name": "@axe-core/playwright",
+      "version": "4.11.0",
+      "license": "MPL-2.0",
+      "source": "https://github.com/dequelabs/axe-core-npm",
+      "purpose": "Scan main Web screens for WCAG A/AA accessibility violations in the merge gate.",
+      "rationale": "Uses maintained axe rules in the same real browser as functional acceptance.",
       "consumers": ["."]
     },
     {
-      "name": "@tailwindcss/cli",
-      "version": "4.3.3",
+      "name": "@testing-library/dom",
+      "version": "10.4.1",
       "license": "MIT",
-      "source": "https://github.com/tailwindlabs/tailwindcss",
-      "purpose": "Builds the shared web-ui conversation styles from Tailwind v4 source.",
-      "rationale": "Provides the pinned Tailwind command line used by the web-ui stylesheet build.",
-      "consumers": ["packages/web-ui"]
+      "source": "https://github.com/testing-library/dom-testing-library",
+      "purpose": "Accessible DOM queries and user interaction events for frontend component tests.",
+      "rationale": "Verifies the run-status capsule through rendered labels, focus and controls in the existing DOM test environment.",
+      "consumers": ["."]
     },
     {
-      "name": "tailwindcss",
-      "version": "4.3.3",
-      "license": "MIT",
-      "source": "https://github.com/tailwindlabs/tailwindcss",
-      "purpose": "Tailwind v4 CSS framework used to build the shared web-ui conversation styles.",
-      "rationale": "Provides the source directives and theme utilities consumed by the web-ui stylesheet build.",
-      "consumers": ["packages/web-ui"]
-    },
-    {
-      "name": "@types/three",
-      "version": "0.186.0",
-      "license": "MIT",
-      "source": "https://github.com/three-types/three-ts-types",
-      "purpose": "Type the three.js API in the 3D demo world.",
-      "rationale": "three ships without TypeScript declarations.",
-      "consumers": ["examples/mars-world"]
+      "name": "playwright-core",
+      "version": "1.63.0",
+      "license": "Apache-2.0",
+      "source": "https://github.com/microsoft/playwright",
+      "purpose": "Build-time source of the complete Playwright runtime copied into the browser plugin distribution, where it operates session-isolated pages shared by AGH tools and the workbench.",
+      "rationale": "Declared as a development dependency for packaging; the copied runtime and its licenses ship with the plugin and retain the pinned engine and CDP support.",
+      "consumers": ["packages/package-manager/bundled-plugins/browser"]
     }
   ]
 }

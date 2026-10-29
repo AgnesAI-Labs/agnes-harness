@@ -10,7 +10,12 @@ const DOMAIN_CODES = {
   E_EXT_LOAD: 'E_PACKAGE_STATE',
   E_PROFILE_FRAGMENT_KEY: 'E_PACKAGE_STATE',
 } as const
-type OperationErrorCode = 'E_PACKAGE_PREVIEW_STALE' | 'E_PACKAGE_CANCELLED'
+type OperationErrorCode =
+  | 'E_PACKAGE_PREVIEW_STALE'
+  | 'E_PACKAGE_CANCELLED'
+  | 'E_PACKAGE_PROVENANCE'
+  | 'E_PACKAGE_SOURCE_POLICY'
+  | 'E_PACKAGE_BUSY'
 export type PackageErrorCode = (typeof DOMAIN_CODES)[keyof typeof DOMAIN_CODES] | OperationErrorCode
 export type LegacyPackageCode = keyof typeof DOMAIN_CODES
 export type PackageErrorSource = {

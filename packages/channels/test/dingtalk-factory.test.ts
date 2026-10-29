@@ -30,7 +30,7 @@ const rawMessage: RawRobotMessage = {
 const rawCard: RawCardCallback = {
   outTrackId: 'card-1',
   userId: 'user-1',
-  cardPrivateData: { actionIds: ['approve'], params: { ticket: 'ticket-1' } },
+  cardPrivateData: { actionIds: ['approve'], params: { decisionKey: 's/decisionKey-1/1' } },
   conversationId: 'conversation-1',
   conversationType: '2',
 }

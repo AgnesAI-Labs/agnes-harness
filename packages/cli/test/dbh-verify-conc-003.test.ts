@@ -66,7 +66,7 @@ async function chooseModel(enters: number) {
   const g = gatedClient()
   const done = runOnboardingTui(g.client, UNCONFIGURED, term)
   await settle()
-  term.feed('\x1b[B') // move off 'Agnes account'
+  term.feed('2') // move off 'Agnes account'
   term.feed('\r') // choose 'API key'
   await settle()
   term.feed('\r') // choose the first provider, DeepSeek
@@ -129,7 +129,7 @@ describe('DBH CONC-003: a second Enter on the model selector must not save twice
     } as unknown as Client
     const done = runOnboardingTui(client, UNCONFIGURED, term)
     await settle()
-    term.feed('\x1b[B')
+    term.feed('2')
     term.feed('\r')
     await settle()
     term.feed('\r') // provider

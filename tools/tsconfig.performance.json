@@ -1,0 +1,19 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../dist/performance"
+  },
+  "files": ["plugin-performance.slow.test.ts"],
+  "references": [
+    { "path": "../packages/cli" },
+    { "path": "../packages/daemon-admin" },
+    { "path": "../packages/host" },
+    { "path": "../packages/host-common" },
+    { "path": "../packages/host-extensions" },
+    { "path": "../packages/host-infrastructure" },
+    { "path": "../packages/package-manager" },
+    { "path": "../packages/sdk" },
+    { "path": "../packages/web-server" }
+  ]
+}

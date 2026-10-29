@@ -1,0 +1,71 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "composite": true,
+    "declaration": true,
+    "outDir": "../../outputs/e2e-types"
+  },
+  "include": [
+    "browser.spec.ts",
+    "browser-layout.spec.ts",
+    "diagnostics.spec.ts",
+    "credentials.spec.ts",
+    "large-upload.spec.ts",
+    "prompt-trace.spec.ts",
+    "runtime.spec.ts",
+    "ui-gate.spec.ts",
+    "ui-flows.spec.ts",
+    "mcp-management.spec.ts",
+    "candidate-review.spec.ts",
+    "first-run.spec.ts",
+    "business-agents.spec.ts",
+    "base-conversation.spec.ts",
+    "developer-example.ts",
+    "agent-sweep.spec.ts",
+    "agent-sweep.e2e.test.ts",
+    "first-run-snapshots.ts",
+    "workbench.spec.ts",
+    "narrow.spec.ts",
+    "ui.ts",
+    "navigation.spec.ts",
+    "conversation.spec.ts",
+    "ui-quality.spec.ts",
+    "examples.spec.ts",
+    "runtime.ts",
+    "sdk.ts",
+    "ledger.ts",
+    "test/sandbox.ts",
+    "fixtures.ts",
+    "quality.ts",
+    "axe.ts",
+    "trace-visual.ts",
+    "i18n.ts",
+    "../acceptance/provider-fixture.ts",
+    "observability.spec.ts",
+    "human-controls.spec.ts",
+    "references.spec.ts",
+    "intelligent-ui.spec.ts",
+    "question-surfaces.spec.ts",
+    "feedback.spec.ts",
+    "auto-review.spec.ts",
+    "memory.spec.ts",
+    "webhooks.spec.ts",
+    "fact-chain.spec.ts",
+    "plugin-config.spec.ts",
+    "plugin-purpose.spec.ts",
+    "v3-navigation.spec.ts",
+    "v3-actions.spec.ts",
+    "../../packages/web-ui/test/button-contrast.spec.ts",
+    "../../packages/web-ui/test/primitives.spec.ts"
+  ],
+  "exclude": ["fixtures/**"],
+  "references": [
+    {
+      "path": "../../packages/sdk"
+    },
+    {
+      "path": "../../packages/observability/tsconfig.testkit.json"
+    }
+  ]
+}

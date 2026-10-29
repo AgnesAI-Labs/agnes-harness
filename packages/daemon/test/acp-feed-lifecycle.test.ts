@@ -1,6 +1,7 @@
 import { createExtensionActivationBarrier } from '@agnes/host'
 import type { EventEnvelope } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
+import { workspaceBinding } from '../../daemon-foundation/test/workspace-authority.js'
 import type { AttachedFeed } from '../src/local/attached.js'
 import { CommandQueue } from '../src/local/command-queue.js'
 import { LocalEndpoint } from '../src/local/endpoint.js'
@@ -9,7 +10,6 @@ import type { SessionEntry } from '../src/local/sessions.js'
 import { WorkerRegistry } from '../src/supervisor/registry.js'
 import { SupervisorRegistry } from '../src/supervisor/supervisor.js'
 import type { WorkerPool } from '../src/supervisor/worker-pool.js'
-import { workspaceBinding } from './workspace-authority.js'
 
 const KEY = 'agnes:local:default:daemon:dm:feed-lifecycle'
 
@@ -27,6 +27,7 @@ function workerLink(hold: Hold) {
       writerRunId: 'run',
       generation: 1,
       profileHash: 'sha256-profile',
+      lastSeq: 0,
     }),
     onExit: (fn: () => void) => void exits.push(fn),
     command: vi.fn(async (method: string) => {
@@ -36,7 +37,7 @@ function workerLink(hold: Hold) {
       }
       if (method === 'enqueue') return 1
       if (method === 'ping') return { lastSeq: 0, preset: null }
-      if (method === 'scan') return { rows: [] }
+      if (method === 'scan') return []
       return undefined
     }),
     closeSession: async () => undefined,

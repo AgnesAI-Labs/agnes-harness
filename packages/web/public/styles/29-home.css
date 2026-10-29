@@ -1,0 +1,730 @@
+@layer app {
+  /* Home entries: the pages a person opens from the sidebar, above the workspace list. */
+  .home-entries {
+    min-height: 0;
+    max-height: 60dvh;
+    overflow-y: auto;
+    display: grid;
+    gap: var(--s2);
+    margin: var(--s2) 0 0;
+  }
+  /* 32px rows with a 16px icon, the same 10px inset as the new-session button above them. */
+  .home-entry {
+    width: 100%;
+    min-width: 0;
+    height: 2rem;
+    min-height: 2rem;
+    justify-content: flex-start;
+    gap: 0.625rem;
+    padding: 0 0.625rem;
+    border-color: transparent;
+    border-radius: 0.375rem;
+    color: var(--agnes-text-secondary);
+    background: transparent;
+    font-size: 0.84375rem;
+    font-weight: 400;
+    line-height: 1.25rem;
+    transition: none;
+  }
+  .home-entries .agh-menu-anchor {
+    width: 100%;
+  }
+  .home-entry:hover:not(:disabled) {
+    border-color: transparent;
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-hover);
+  }
+  .home-entry[aria-current="page"] {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-selected);
+    font-weight: var(--font-weight-medium, 500);
+  }
+  .home-entry > .icon {
+    color: var(--agnes-icon-secondary);
+  }
+  .home-entry-label {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-align: start;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .home-entry-sub {
+    margin-inline-start: var(--s4);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: 400;
+  }
+  .home-entry[aria-current="page"] .home-entry-sub {
+    color: var(--agnes-text-primary);
+  }
+  /* A count that asks for attention (「2 项待审阅」): a small accent pill at the row end. */
+  .home-entry-badge {
+    flex: 0 0 auto;
+    min-width: 1.125rem;
+    height: 1.125rem;
+    display: inline-grid;
+    place-items: center;
+    padding: 0 0.375rem;
+    border-radius: var(--radius-pill);
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+    font-size: 0.71875rem;
+    font-weight: var(--font-weight-medium);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* A home page takes the main area: the session's own surfaces step aside while it shows. */
+  main[data-home-page] > :is(.workbench-split, #approval, #composer-mount, .agh-banner),
+  main[data-home-page]
+    > .topbar-row
+    :is(
+      .task-heading,
+      .session-tabs-bar,
+      #session-view-controls,
+      .topbar-actions,
+      #session-goal-host,
+      #workbench-controls,
+      .workbench-controls
+    ) {
+    display: none;
+  }
+  main[data-home-page] > .topbar-row {
+    border-bottom-color: transparent;
+  }
+  body:has(#empty-state:not([hidden])) main[data-home-page] > .topbar-row {
+    position: static;
+  }
+  /* With the sidebar open the bar would hold nothing; the page starts at the top instead. */
+  @media (min-width: 901px) {
+    body:not(.sidebar-collapsed) main[data-home-page] > .topbar-row {
+      display: none;
+    }
+  }
+  .home-page-host {
+    min-height: 0;
+    flex: 1;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable both-edges;
+  }
+  .home-page-host[hidden] {
+    display: none;
+  }
+  .home-page {
+    width: 100%;
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: 2.25rem var(--s24) var(--s48);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.75rem;
+    animation: home-page-enter 260ms ease-out;
+  }
+  @keyframes home-page-enter {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .home-page {
+      animation: none;
+    }
+  }
+  .home-page-breadcrumb {
+    margin-bottom: calc(-1 * var(--s12));
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+  }
+  .home-page-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--s16);
+  }
+  .home-page-heading {
+    min-width: 0;
+  }
+  .home-page-heading h1 {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: 1.625rem;
+    font-weight: 700;
+    letter-spacing: -0.022em;
+    line-height: 2rem;
+  }
+  .home-page-heading p {
+    margin: 0.375rem 0 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.25rem;
+  }
+  .home-page-actions {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .home-page-tabs {
+    margin-bottom: calc(-1 * var(--s12));
+  }
+  /* Pages opened inside a home page take its column; the frame itself adds no box. */
+  .home-page-push,
+  .home-page-push > .agh-push-root:not([hidden]) {
+    display: contents;
+  }
+  .home-page-push > .agh-push-header-host:not([hidden]),
+  .home-page-push > .agh-push-body:not([hidden]) {
+    display: grid;
+    gap: 1.25rem;
+    min-width: 0;
+  }
+  .home-page-push .agh-push-header {
+    margin-bottom: 0;
+  }
+  .home-page-push .agh-push-heading h2 {
+    font-size: 1.625rem;
+    font-weight: 700;
+    letter-spacing: -0.022em;
+    line-height: 2rem;
+  }
+  /* A page that edits something ends with its actions, right-aligned, as a dialog footer did. */
+  .home-push-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--s8);
+    padding-top: var(--s8);
+  }
+  .home-page-body {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.75rem;
+  }
+  .home-page-section {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s8);
+  }
+  .home-page-section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8);
+    padding-inline-start: var(--s4);
+  }
+  .home-page-section-heading h2 {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: 0.78125rem;
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.25rem;
+  }
+  .home-page-card {
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-surface);
+  }
+  .home-page-row {
+    min-height: 2.875rem;
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+    padding: 0.8125rem var(--s16);
+  }
+  .home-page-row-tile {
+    flex: 0 0 auto;
+    width: 2.125rem;
+    height: 2.125rem;
+    display: grid;
+    place-items: center;
+    border-radius: var(--radius-md);
+    color: var(--agnes-brand-primary);
+    background: color-mix(in srgb, var(--agnes-brand-primary) 12%, transparent);
+  }
+  .home-page-row-copy {
+    min-width: 0;
+    flex: 1;
+    display: grid;
+    gap: var(--s2);
+  }
+  .home-page-row-copy strong {
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-medium, 500);
+  }
+  .home-page-row-copy span {
+    overflow: hidden;
+    color: var(--agnes-text-secondary);
+    font-size: 0.78125rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  @media (max-width: 720px) {
+    .home-page {
+      padding: var(--s16) var(--s16) var(--s32);
+    }
+    .home-page-header {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+  }
+
+  /* Session list tools sit in the heading row; the list itself keeps its own view rows below. */
+  .sidebar-section-heading .section-label {
+    flex: 1;
+    min-width: 0;
+  }
+  /* The full-list views: an optional search field, then rows in the same style as the paged list. */
+  .sidebar-inventory {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s4);
+  }
+  .sidebar-inventory-search {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-height: 1.875rem;
+    margin: 0 var(--s2) var(--s4);
+    padding: 0 var(--s8);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-tertiary);
+    background: var(--agnes-bg-surface);
+  }
+  .sidebar-inventory-search:focus-within {
+    border-color: var(--agnes-brand-primary);
+  }
+  /* The list search and the global session-search palette share one bare field: the container
+     draws the boundary, so the input itself drops its border, fill and font reset. */
+  .sidebar-inventory-search input,
+  .session-search-field input,
+  .session-search-filters input {
+    min-width: 0;
+    flex: 1;
+    border: 0;
+    outline: 0;
+    color: var(--agnes-text-primary);
+    background: transparent;
+    font: inherit;
+  }
+  .sidebar-inventory-search input {
+    font-size: var(--font-size-sm);
+  }
+  .sidebar-inventory-search input:focus,
+  .session-search-field input:focus,
+  .session-search-filters input:focus {
+    outline: 0;
+    box-shadow: none;
+  }
+  .sidebar-inventory-search input::-webkit-search-cancel-button {
+    appearance: none;
+  }
+  .sidebar-inventory .session-list-empty {
+    border: 0;
+    background: transparent;
+  }
+  .sidebar-inventory-loading {
+    margin: 0 var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .sidebar-inventory-error {
+    margin: 0 var(--s8);
+    color: var(--agnes-status-danger-text);
+    font-size: var(--font-size-xs);
+    overflow-wrap: anywhere;
+  }
+  /* Marks the full-list views add to the shared row: the workspace name, pin and archived state. */
+  .session-workspace-label {
+    max-width: 38%;
+    margin-left: auto;
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .session-pin-mark,
+  .session-archive-mark {
+    width: 0.75rem;
+    height: 0.75rem;
+    flex: none;
+    margin-left: var(--s4);
+    color: var(--agnes-text-tertiary);
+  }
+  /* An archived row stays readable but visibly secondary; opening it is still allowed. */
+  .session-row[data-archived="true"] .session-title {
+    color: var(--agnes-text-tertiary);
+  }
+  .session-row[data-archived="true"]:hover .session-title,
+  .session-row[data-archived="true"]:focus-within .session-title {
+    color: var(--agnes-text-secondary);
+  }
+  /* The restore action stays out of the way until the row is pointed at, focused, or restoring. */
+  .session-restore {
+    width: 1.5rem;
+    min-width: 1.5rem;
+    height: 1.5rem;
+    min-height: 1.5rem;
+    padding: 0;
+    flex: none;
+    opacity: 0;
+    pointer-events: none;
+  }
+  /* 「取消归档」与行尾的「…」同一字号：IconButton 默认 18px 图标，靠这一条压到 16px。 */
+  .session-restore .icon {
+    width: var(--s16);
+    height: var(--s16);
+  }
+  .session-row:hover .session-restore,
+  .session-row:focus-within .session-restore,
+  .session-restore[aria-busy="true"] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  /* Touch has no durable hover target: expose the restore action and keep a tappable row height. */
+  @media (max-width: 720px) {
+    .session-row {
+      min-height: var(--control-height-touch);
+    }
+    .session-restore {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+  /* Session search: a palette. One field, results below it, keys along the bottom. */
+  .session-search-dialog .ant-modal-container,
+  .session-search-dialog .ant-modal-content {
+    padding: 0;
+    overflow: hidden;
+  }
+  .session-search-dialog .ant-modal-header {
+    margin: 0;
+    padding: 0;
+  }
+  .session-search {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .session-search-field {
+    display: flex;
+    align-items: center;
+    gap: var(--s10);
+    min-height: 3rem;
+    padding: 0 var(--s12) 0 var(--s16);
+    border-bottom: 1px solid var(--agnes-line-primary);
+    color: var(--agnes-text-tertiary);
+  }
+  .session-search-field input {
+    height: 3rem;
+    font-size: var(--font-size-md);
+  }
+  .session-search-field input::-webkit-search-cancel-button {
+    appearance: none;
+  }
+  .session-search-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s8);
+    padding: var(--s8) var(--s16);
+    border-bottom: 1px solid var(--agnes-line-primary);
+    background: var(--agnes-bg-hover);
+  }
+  .session-search-filters input {
+    min-height: 1.75rem;
+    padding: 0 var(--s8);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-sm);
+    background: var(--agnes-bg-surface);
+    font-size: var(--font-size-sm);
+  }
+  .session-search-filters input:focus {
+    border-color: var(--agnes-brand-primary);
+  }
+  .session-search-label {
+    margin: var(--s10) var(--s16) var(--s2);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+  .session-search-results {
+    max-height: min(24rem, 52vh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--s4) var(--s8);
+    display: grid;
+    gap: var(--s2);
+  }
+  .session-search-results:empty {
+    display: none;
+  }
+  .session-search-option {
+    min-width: 0;
+    display: grid;
+    gap: var(--s2);
+    padding: var(--s8) var(--s10);
+    border-radius: var(--radius-control);
+    cursor: default;
+  }
+  .session-search-option[aria-selected="true"] {
+    background: var(--agnes-bg-selected);
+  }
+  .session-search-option-heading {
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: var(--s8);
+  }
+  .session-search-option-heading strong {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-medium);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .session-search-option-heading span {
+    flex: 0 0 auto;
+    max-width: 40%;
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .session-search-snippet {
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.25rem;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow-wrap: anywhere;
+  }
+  /* The index marks matched runs with `[match]`; the palette tints them instead of using the
+     browser's default yellow, which does not follow either theme. */
+  .session-search-snippet mark {
+    padding: 0 1px;
+    border-radius: var(--radius-xs);
+    color: inherit;
+    background: color-mix(in srgb, var(--agnes-brand-primary) 18%, transparent);
+  }
+  .session-search-count {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .session-search-status {
+    margin: 0;
+    padding: var(--s12) var(--s16);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .session-search-status:empty {
+    display: none;
+  }
+  .session-search-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s12);
+    min-height: 2.25rem;
+    padding: 0 var(--s16);
+    border-top: 1px solid var(--agnes-line-primary);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .session-search-keys {
+    display: flex;
+    align-items: center;
+    gap: var(--s4);
+  }
+  .session-search-keys kbd:not(:first-child) {
+    margin-inline-start: var(--s8);
+  }
+  .session-search-keys kbd:nth-child(2) {
+    margin-inline-start: 0;
+  }
+  .session-search-more {
+    color: var(--agnes-brand-primary);
+  }
+  @media (max-width: 720px) {
+    .session-search-keys {
+      display: none;
+    }
+    .session-search-filters {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  /* The connection bar: one strip across the top of the main area, only while disconnected. */
+  .connection-bar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--s8);
+    min-height: 2rem;
+    padding: var(--s4) var(--s16);
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+    font-size: var(--font-size-sm);
+    line-height: 1.25rem;
+  }
+  .connection-bar[hidden] {
+    display: none;
+  }
+  .connection-bar[data-state="closed"],
+  .connection-bar[data-state="stalled"] {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+  }
+  .connection-bar-dot {
+    flex: 0 0 auto;
+    width: 0.4375rem;
+    height: 0.4375rem;
+    border-radius: var(--radius-full);
+    background: currentcolor;
+  }
+  .connection-bar:is([data-state="reconnecting"], [data-state="waiting"], [data-state="recovering"])
+    .connection-bar-dot {
+    animation: session-breathe 2.4s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .connection-bar .connection-bar-dot {
+      animation: none;
+    }
+  }
+  .connection-bar-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  /* Session recovery belongs to the conversation behind the page. If the connection dropped,
+   the connection bar already states that fact for every page. */
+  main[data-home-page] > #notice[data-kind="session-recovery"],
+  main[data-home-page]:has(> .connection-bar:not([hidden])) > #notice {
+    display: none;
+  }
+  /* A new session floats the top bar over the hero; with the bar showing it returns to the flow. */
+  body:has(#empty-state:not([hidden])) main:has(> .connection-bar:not([hidden])) > .topbar-row {
+    position: static;
+  }
+
+  @media (max-width: 767px) {
+    .session-search-option {
+      min-height: var(--control-height-touch);
+    }
+  }
+}
+
+@layer app {
+  .profile-attention-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s16);
+    min-width: 0;
+    overflow-wrap: anywhere;
+    padding: 0;
+    font-size: var(--font-size-body);
+  }
+  .profile-attention-panel[hidden] {
+    display: none;
+  }
+  .profile-attention-panel :is(h3, p) {
+    margin: 0;
+  }
+  .profile-attention-panel h3 {
+    font-size: var(--font-size-body);
+    color: var(--agnes-text-secondary);
+  }
+  .profile-attention-group ul {
+    display: grid;
+    gap: var(--s8);
+    padding: 0;
+    margin: var(--s8) 0 0;
+    list-style: none;
+  }
+  .profile-attention-group a,
+  .profile-attention-panel [data-approval-key] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s8);
+    padding: var(--s12);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-surface);
+  }
+  .profile-attention-group a {
+    color: var(--agnes-text-primary);
+    text-decoration: none;
+  }
+  .profile-attention-group a:hover {
+    background: var(--agnes-bg-hover);
+  }
+  .profile-attention-group a:focus-visible {
+    outline: 2px solid var(--agnes-brand-primary);
+    outline-offset: 2px;
+  }
+  .profile-attention-group a span {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .profile-attention-panel pre {
+    max-width: 100%;
+    overflow: auto;
+  }
+  .profile-attention-panel [role="alert"] {
+    color: var(--agnes-status-danger-text);
+  }
+  .profile-attention-panel [data-approval-key] h2 {
+    margin: 0;
+    font-size: var(--font-size-body);
+    line-height: 1.5;
+  }
+}
+
+@layer app {
+  .profile-attention-dialog .approval-impact:empty {
+    display: none;
+  }
+  .profile-attention-dialog .approval-actions {
+    margin-top: var(--s4);
+  }
+  .profile-decision-expiry {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+}
+
+@layer app {
+  /* This confirmation stays centered on narrow screens too, outside the navigation sheet. */
+  @media (max-width: 767px) {
+    .ant-modal-wrap:has(.profile-attention-dialog) {
+      align-items: center;
+      padding: var(--s12);
+    }
+    .ant-modal-root .profile-attention-dialog {
+      bottom: auto;
+      max-width: calc(100vw - var(--s24));
+    }
+    .ant-modal-wrap:has(.profile-attention-dialog) .agh-sheet-handle {
+      display: none;
+    }
+    .profile-attention-dialog .ant-modal-container,
+    .profile-attention-dialog .ant-modal-content {
+      max-height: calc(100dvh - var(--s24));
+      border-radius: var(--radius-modal);
+    }
+  }
+}

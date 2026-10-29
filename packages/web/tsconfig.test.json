@@ -1,0 +1,74 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/test",
+    "tsBuildInfoFile": "dist/tsconfig.test.tsbuildinfo"
+  },
+  "include": [
+    "test/**/*.ts",
+    "test/**/*.tsx",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/test/**/*.ts",
+    "**/tests/**/*.ts",
+    "tools/**/*.ts",
+    "vitest.config.ts"
+  ],
+  "exclude": ["dist", "node_modules"],
+  "references": [
+    {
+      "path": "."
+    },
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../base"
+    },
+    {
+      "path": "../cordis"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../resource-control-web"
+    },
+    {
+      "path": "../sdk"
+    },
+    {
+      "path": "../web-admin"
+    },
+    {
+      "path": "../web-client"
+    },
+    {
+      "path": "../web-conversation"
+    },
+    {
+      "path": "../web-foundation"
+    },
+    {
+      "path": "../web-foundation/tsconfig.testkit.json"
+    },
+    {
+      "path": "../web-server"
+    },
+    {
+      "path": "../web-ui"
+    },
+    {
+      "path": "../web-units"
+    },
+    {
+      "path": "../package-manager/bundled-plugins/conversation-ui/tsconfig.sources.json"
+    },
+    {
+      "path": "../package-manager/bundled-plugins/navigation-ui/tsconfig.sources.json"
+    },
+    {
+      "path": "../package-manager/bundled-plugins/browser/tsconfig.sources.json"
+    }
+  ]
+}

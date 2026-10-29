@@ -1,0 +1,78 @@
+{
+  "comment": "Exact migration baseline. Only shrink counts/remove entries; never add allowances. Covers all Web packages, source and public HTML. CSS skin selectors and selector reads are permitted; component class writes are fenced.",
+  "offenders": {
+    "packages/resource-control-web/src/admin.tsx": {
+      "className": 3
+    },
+    "packages/resource-control-web/src/mcp-wizard.ts": {
+      "dom": 1
+    },
+    "packages/web-admin/src/admin/plugins/admin/page.tsx": {
+      "className": 13
+    },
+    "packages/web-admin/src/oauth-controls.ts": {
+      "className": 3
+    },
+    "packages/web-admin/src/settings/diagnostics-api.ts": {
+      "dom": 1
+    },
+    "packages/web-admin/src/settings/hub.tsx": {
+      "className": 1
+    },
+    "packages/web-admin/src/settings/security-status.tsx": {
+      "intrinsic": 1
+    },
+    "packages/web-admin/src/settings/session-tools.tsx": {
+      "intrinsic": 2
+    },
+    "packages/web-conversation/src/computer-use.ts": {
+      "dom": 1
+    },
+    "packages/web-conversation/src/tool-icon.ts": {
+      "dom": 2
+    },
+    "packages/web-ui/src/admin-detail.tsx": {
+      "className": 6
+    },
+    "packages/web-ui/src/conversation/document-preview-policy.ts": {
+      "dom": 3
+    },
+    "packages/web-ui/src/conversation/markdown-reveal.tsx": {
+      "dom": 1
+    },
+    "packages/web-ui/src/conversation/markdown.tsx": {
+      "intrinsic": 2
+    },
+    "packages/web-ui/src/intelligent-ui/form-fields.tsx": {
+      "intrinsic": 2
+    },
+    "packages/web-ui/src/plugin-schema-fields.tsx": {
+      "intrinsic": 1
+    },
+    "packages/web-ui/src/region-host.ts": {
+      "dom": 1
+    },
+    "packages/web-ui/src/resource-detail.tsx": {
+      "className": 1
+    },
+    "packages/web-ui/src/select-picker.ts": {
+      "dom": 9,
+      "intrinsic": 1
+    },
+    "packages/web-ui/src/settings-control-templates.ts": {
+      "dom": 2,
+      "intrinsic": 1,
+      "className": 5
+    },
+    "packages/web-ui/src/settings-layout.tsx": {
+      "intrinsic": 3,
+      "className": 1
+    },
+    "packages/web/src/client-modules/reconcile/styles.ts": {
+      "dom": 1
+    },
+    "packages/web/src/timeline-node-host.tsx": {
+      "intrinsic": 1
+    }
+  }
+}

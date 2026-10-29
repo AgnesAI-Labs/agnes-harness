@@ -77,6 +77,9 @@ function context(
         table: () => {
           throw new Error('checkpoint must not use storage.table')
         },
+        namespace: () => {
+          throw new Error('checkpoint must not use storage.namespace')
+        },
       },
     },
     profile: {
@@ -137,7 +140,7 @@ describe('filesystem checkpoint seam', () => {
     const id = (await workspace?.snapshot(['a.txt'], 'other'))?.id
     expect(id).toBeDefined()
     expect(await seam.list()).toEqual([])
-    expect(await workspace?.list()).toEqual([{ id, stepId: 'other' }])
+    expect(await workspace?.list()).toMatchObject([{ id, stepId: 'other', paths: ['a.txt'] }])
   })
 
   it('serializes shadow repository initialization for concurrent sessions on the same workspace', async () => {
@@ -191,7 +194,7 @@ describe('filesystem checkpoint seam', () => {
     }
     await fs.writeFile(join(h.workspace, 'a.txt'), 'v3')
     const reopened = await h.make()
-    expect(await reopened.list()).toEqual([
+    expect(await reopened.list()).toMatchObject([
       { id: id1, stepId: '1/1' },
       { id: id2, stepId: '1/2' },
     ])
@@ -317,6 +320,19 @@ describe('filesystem checkpoint seam', () => {
     const shadow = new ShadowGit(realFs(h.data), `checkpoints/${hash.slice(0, 16)}`)
     await shadow.init({ workspaceHash: hash })
     expect((await shadow.read(id)).manifest.schema).toBe(mode === 'full' ? 2 : 1)
+  })
+
+  it('lists the complete restore scope and session owner from the verified manifest', async () => {
+    const h = await setup()
+    const seam = await h.make()
+    await fs.writeFile(join(h.workspace, 'scoped.txt'), 'before')
+    const saved = await seam.snapshot(['scoped.txt'], '1/1', { owner: 'session-owner' })
+    expect(await seam.list()).toContainEqual({
+      id: saved.id,
+      stepId: '1/1',
+      owner: 'session-owner',
+      paths: ['scoped.txt'],
+    })
   })
 
   it('rejects relative and absolute escapes without creating refs or modifying outside content', async () => {
@@ -476,8 +492,142 @@ describe('filesystem checkpoint seam', () => {
       })
       await writeRef({ fs: shadow.fs, gitdir: shadow.gitdir, ref, value: oid, force: true })
       await expect(seam.rewind(id)).rejects.toThrow(/E_CHECKPOINT_CORRUPT/)
-      await expect(seam.list()).rejects.toThrow(/E_CHECKPOINT_CORRUPT/)
+      // The list reads no payload and trusts the cached manifest; rewind stays the integrity gate. Read
+      // cold, a tampered manifest is skipped rather than failing the whole list.
+      await fs.rm(join(h.data, shadow.gitdir, 'catalog.json'))
+      expect((await (await h.make()).list()).map((item) => item.id)).toEqual(
+        variant === 'payload' ? [id] : [],
+      )
     }
+  })
+
+  // The git object id a file's content is stored under as a payload blob.
+  const blobId = (content: string) =>
+    createHash('sha1')
+      .update(`blob ${Buffer.byteLength(content)}\0${content}`)
+      .digest('hex')
+
+  // Records object reads (commit, tree or blob) through the data handle, by object id.
+  function counted(
+    h: Awaited<ReturnType<typeof setup>>,
+    preset: Record<string, unknown> = {},
+    warn = vi.fn(),
+  ) {
+    const ctx = context(h.workspace, h.data, preset)
+    ctx.log.warn = warn
+    const data = ctx.adapters.dataFs
+    const reads = { objects: 0, ids: new Set<string>() }
+    ctx.adapters.dataFs = {
+      ...data,
+      read: async (path, opts) => {
+        const object = /[/\\]objects[/\\]([0-9a-f]{2})[/\\]([0-9a-f]{38})$/.exec(path)
+        if (object) {
+          reads.objects++
+          reads.ids.add(`${object[1]}${object[2]}`)
+        }
+        return data.read(path, opts)
+      },
+    }
+    return { ctx, data, reads, warn }
+  }
+  const catalogPath = async (h: Awaited<ReturnType<typeof setup>>) =>
+    join(
+      h.data,
+      'checkpoints',
+      h.deps.workspaceHash(await fs.realpath(h.workspace)).slice(0, 16),
+      'catalog.json',
+    )
+
+  it('decides gc and the undo list from the catalog without reading any payload', async () => {
+    const h = await setup()
+    const seam = await h.make()
+    const made: string[] = []
+    const payloads: string[] = []
+    for (let n = 0; n < 12; n++) {
+      await fs.writeFile(join(h.workspace, 'a.txt'), `v${n}`.repeat(1000))
+      payloads.push(blobId(`v${n}`.repeat(1000)))
+      made.push((await seam.snapshot(['a.txt'], `${n}/1`, { owner: 's' })).id)
+    }
+    const readPayload = (ids: Set<string>) => payloads.some((id) => ids.has(id))
+    const warm = counted(h)
+    const reopened = await createFsCheckpoint(warm.ctx, h.deps)
+    expect((await reopened.list()).map((item) => item.id).sort()).toEqual([...made].sort())
+    // The cache lags by fewer than 64 snapshots; those few are read from their manifests only.
+    expect(readPayload(warm.reads.ids)).toBe(false)
+    await fs.writeFile(join(h.workspace, 'a.txt'), 'next')
+    await reopened.snapshot(['a.txt'], '12/1', { owner: 's' })
+    // The new snapshot reads back its own objects; gc reads no earlier snapshot's payload.
+    expect(readPayload(warm.reads.ids)).toBe(false)
+    // Cold, the list reads each manifest and still no payload.
+    await fs.rm(await catalogPath(h))
+    const cold = counted(h)
+    expect(await (await createFsCheckpoint(cold.ctx, h.deps)).list()).toHaveLength(13)
+    expect(cold.reads.objects).toBeGreaterThan(0)
+    expect(readPayload(cold.reads.ids)).toBe(false)
+  })
+
+  it('ignores a torn or foreign catalog, rebuilds it, and follows refs other instances add or delete', async () => {
+    const h = await setup()
+    await fs.writeFile(join(h.workspace, 'a.txt'), 'one')
+    const seam = await h.make()
+    const first = (await seam.snapshot(['a.txt'], '1/1')).id
+    const path = await catalogPath(h)
+    expect(JSON.parse(await fs.readFile(path, 'utf8')).entries.map((e: { id: string }) => e.id)).toEqual([
+      first,
+    ])
+    for (const bad of [
+      '{"schema":1,"workspaceHash":"',
+      JSON.stringify({ schema: 1, workspaceHash: 'f'.repeat(64), entries: [] }),
+    ]) {
+      await fs.writeFile(path, bad)
+      const fresh = counted(h)
+      const other = await createFsCheckpoint(fresh.ctx, h.deps)
+      expect((await other.list()).map((item) => item.id)).toEqual([first])
+      expect(fresh.reads.ids.has(blobId('one'))).toBe(false)
+    }
+    const hash = h.deps.workspaceHash(await fs.realpath(h.workspace))
+    const a = new ShadowGit(realFs(h.data), `checkpoints/${hash.slice(0, 16)}`)
+    const b = new ShadowGit(realFs(h.data), `checkpoints/${hash.slice(0, 16)}`)
+    await a.init({ workspaceHash: hash })
+    await b.init({ workspaceHash: hash })
+    expect((await b.list()).map((item) => item.id)).toEqual([first])
+    await a.create({ id: h.ids[20] as string, stepId: '2/1', createdAt: 2_000_000_000_000, files: [] })
+    expect((await b.list()).map((item) => item.id)).toEqual([h.ids[20], first])
+    await a.deleteRef(first)
+    expect((await b.list()).map((item) => item.id)).toEqual([h.ids[20]])
+  })
+
+  it('an unreadable ref neither blocks a snapshot nor is listed or collected; a gc failure is logged', async () => {
+    const h = await setup({ checkpoint: { keep: 0 } })
+    await fs.writeFile(join(h.workspace, 'a.txt'), 'one')
+    const seam = await h.make()
+    const old = (await seam.snapshot(['a.txt'], '1/1')).id
+    const hash = h.deps.workspaceHash(await fs.realpath(h.workspace))
+    const torn = join(h.data, 'checkpoints', hash.slice(0, 16), 'refs/agnes/checkpoints', 'f'.repeat(32))
+    await fs.writeFile(torn, 'not an object id')
+    h.setClock(1_800_000_000_000 + 30 * 24 * 60 * 60 * 1000)
+    const failing = counted(h, { checkpoint: { keep: 0 } })
+    const data = failing.ctx.adapters.dataFs
+    failing.ctx.adapters.dataFs = {
+      ...data,
+      rm: async (path, opts) => {
+        if (path.includes('refs')) throw Object.assign(new Error('EACCES: read-only'), { code: 'EACCES' })
+        return data.rm(path, opts)
+      },
+    }
+    const blocked = await createFsCheckpoint(failing.ctx, h.deps)
+    await fs.writeFile(join(h.workspace, 'a.txt'), 'two')
+    const next = (await blocked.snapshot(['a.txt'], '2/1')).id
+    expect(failing.warn).toHaveBeenCalledWith(
+      'checkpoint gc failed',
+      expect.objectContaining({ code: 'EACCES' }),
+    )
+    expect((await seam.list()).map((item) => item.id).sort()).toEqual([old, next].sort())
+    // Without the fault the old snapshot is collected; the unreadable ref is left exactly as it was.
+    await fs.writeFile(join(h.workspace, 'a.txt'), 'three')
+    const last = (await seam.snapshot(['a.txt'], '3/1')).id
+    expect((await seam.list()).map((item) => item.id).sort()).toEqual([next, last].sort())
+    expect(await fs.readFile(torn, 'utf8')).toBe('not an object id')
   })
 
   it('deletes refs only outside keep and age retention, and retained refs survive reopening', async () => {
@@ -506,4 +656,106 @@ describe('filesystem checkpoint seam', () => {
     ).rejects.toBeTruthy()
     await expect(reopened.read(h.ids[3] as string)).resolves.toMatchObject({ manifest: { stepId: 'old-3' } })
   })
+
+  // Each row: snapshots as [owner, turn, createdAt (days), bytes]; survivors as indexes into them.
+  type Snap = [owner: string | undefined, turn: number, day: number, bytes: number]
+  const gcRows: Array<{ name: string; snaps: Snap[]; gc: Record<string, number>; survive: number[] }> = [
+    {
+      name: 'protects each owner’s last turns from keep and age, collects the rest',
+      snaps: [
+        ['a', 1, 0, 0],
+        ['b', 1, 1, 0],
+        ['a', 2, 2, 0],
+        ['b', 2, 3, 0],
+        ['a', 3, 4, 0],
+        ['b', 3, 5, 0],
+      ],
+      gc: { keep: 0, protectedTurns: 2 },
+      survive: [2, 3, 4, 5],
+    },
+    {
+      name: 'a turn with several snapshots is protected whole and counts once',
+      snaps: [
+        ['a', 1, 0, 0],
+        ['a', 2, 1, 0],
+        ['a', 2, 2, 0],
+        ['a', 3, 3, 0],
+      ],
+      gc: { keep: 0, protectedTurns: 2 },
+      survive: [1, 2, 3],
+    },
+    {
+      name: 'ownerless snapshots follow keep and age as before',
+      snaps: [
+        [undefined, 1, 0, 0],
+        [undefined, 2, 1, 0],
+        [undefined, 3, 9, 0],
+      ],
+      gc: { keep: 1, protectedTurns: 2 },
+      survive: [2],
+    },
+    {
+      name: 'over the byte cap unprotected go first, oldest first',
+      snaps: [
+        ['a', 1, 8, 10],
+        [undefined, 1, 9, 10],
+        ['a', 2, 9, 10],
+      ],
+      gc: { keep: 9, protectedTurns: 1, maxBytes: 20 },
+      survive: [1, 2],
+    },
+    {
+      name: 'still over the cap: owner idle longest loses oldest turn first',
+      snaps: [
+        ['a', 1, 1, 10],
+        ['a', 2, 2, 10],
+        ['b', 1, 3, 10],
+        ['b', 2, 4, 10],
+      ],
+      gc: { keep: 9, protectedTurns: 9, maxBytes: 20 },
+      survive: [2, 3],
+    },
+    {
+      name: 'at the cap nothing is collected',
+      snaps: [
+        ['a', 1, 1, 10],
+        ['b', 1, 2, 10],
+      ],
+      gc: { keep: 0, protectedTurns: 1, maxBytes: 20 },
+      survive: [0, 1],
+    },
+  ]
+  it.each(gcRows)(
+    'gc retention: $name, and the result survives reopening',
+    async ({ snaps, gc, survive }) => {
+      const h = await setup()
+      const id = (n: number) => n.toString(16).padStart(32, '0')
+      const mk = async () => {
+        const shadow = new ShadowGit(realFs(h.data), 'retention')
+        await shadow.init({ workspaceHash: 'b'.repeat(64) })
+        return shadow
+      }
+      const shadow = await mk()
+      const DAYMS = 24 * 60 * 60 * 1000
+      for (const [n, [owner, turn, day, bytes]] of snaps.entries()) {
+        const file = {
+          rel: `f${n}`,
+          state: 'file' as const,
+          bytes: new Uint8Array(bytes),
+          size: bytes,
+          sha256: createHash('sha256').update(new Uint8Array(bytes)).digest('hex'),
+        }
+        await shadow.create({
+          id: id(n),
+          stepId: `${turn}/1`,
+          createdAt: day * DAYMS,
+          ...(owner ? { owner } : {}),
+          files: bytes ? [file] : [],
+        })
+      }
+      await shadow.gc({ now: 10 * DAYMS, maxAgeMs: 7 * DAYMS, ...gc } as Parameters<ShadowGit['gc']>[0])
+      const alive = (await (await mk()).list()).map((m) => m.id).sort()
+      expect(alive).toEqual(survive.map(id).sort())
+    },
+  )
 })

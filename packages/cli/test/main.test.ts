@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
@@ -17,17 +17,15 @@ import { JsonRpcError, TransportClosed } from '@agnes/sdk'
 import { windowsWritePrivateFile } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parseArgs } from '../src/args.js'
+import { agnesVersion, type MainIO, main } from '../src/bin.js'
+import type { LocalBootDeps } from '../src/boot/local.js'
+import { bootLocal } from '../src/boot/local.js'
 import {
-  agnesVersion,
-  type MainIO,
-  main,
   safeDaemonDisconnectLine,
   safeExpectedResourceRpcFailureLine,
   safeExpectedSessionRpcFailureLine,
   safeResourceFailureLine,
-} from '../src/bin.js'
-import type { LocalBootDeps } from '../src/boot/local.js'
-import { bootLocal } from '../src/boot/local.js'
+} from '../src/command-failure.js'
 import { say, stalledProvider, TEST_LOCK, testDeps } from './boot-host.js'
 
 // The lazy runtime reports first-use preparation only where the pinned driver is admitted for this
@@ -182,13 +180,6 @@ describe('main', () => {
       safeExpectedSessionRpcFailureLine({
         kind: 'json-rpc',
         code: -32011,
-        data: { code: 'NEWER_LEDGER_FORMAT', reason: '/private/worker secret=not-safe' },
-      }),
-    ).toBe('NEWER_LEDGER_FORMAT: this session was written by a newer version; upgrade to open it.')
-    expect(
-      safeExpectedSessionRpcFailureLine({
-        kind: 'json-rpc',
-        code: -32011,
         data: { code: 'WORKSPACE_INVALID' },
       }),
     ).toBeUndefined()
@@ -197,41 +188,6 @@ describe('main', () => {
     ).toBeUndefined()
     expect(safeExpectedSessionRpcFailureLine(new Error('PRESET_SWITCH_REJECTED'))).toBeUndefined()
   })
-
-  // The daemon names why a preset or model was refused from a closed set, and the CLI answers each
-  // with its own fixed sentence. A cause outside the set, or free text posing as one, gets the
-  // general sentence, so nothing the server sends is printed.
-  it.each([
-    ['not-allowed', /presets\.allowed.*default preset has to be listed too/],
-    ['preset-unsupported', /not provided by an installed package.*agh doctor platform/],
-    ['preset-unresolved', /did not assemble.*agh doctor provider/],
-    ['model-unsupported', /requested model is not served/],
-    ['model-unknown', /requested model is not known/],
-  ])('says why a preset was refused when the daemon names the cause %s', (cause, expected) => {
-    const line = safeExpectedSessionRpcFailureLine({
-      kind: 'json-rpc',
-      code: -32008,
-      data: { code: 'PRESET_SWITCH_REJECTED', cause, reason: 'secret=not-safe /private/path' },
-    })
-    expect(line).toMatch(expected)
-    expect(line).not.toContain('secret=not-safe')
-    expect(line).not.toContain('/private')
-  })
-
-  it.each(['secret=not-safe', '__proto__', 'toString', '', undefined, 7])(
-    'falls back to the general sentence for the cause %j',
-    (cause) => {
-      expect(
-        safeExpectedSessionRpcFailureLine({
-          kind: 'json-rpc',
-          code: -32008,
-          data: { code: 'PRESET_SWITCH_REJECTED', cause },
-        }),
-      ).toBe(
-        'PRESET_SWITCH_REJECTED: the requested preset or model is not available in this profile; `agh doctor provider` lists the configured routes.',
-      )
-    },
-  )
 
   it('renders a daemon disconnect as one safe retry line without transport diagnostics', () => {
     const closed = new TransportClosed({ reason: 'error', stderrTail: 'secret=/private/worker.log' })
@@ -242,6 +198,18 @@ describe('main', () => {
       'DAEMON_CONNECTION_CLOSED: local Daemon connection closed; retry the command.',
     )
     expect(safeDaemonDisconnectLine(new Error('/private/bundle/index.js'))).toBeUndefined()
+    // The daemon's own reason for ending the connection is named by its fixed code alone.
+    const overloaded = new TransportClosed({
+      reason: 'eof',
+      error: new JsonRpcError({
+        code: -32001,
+        message: 'OVERLOADED secret=/private/worker.log',
+        data: { code: 'OVERLOADED' },
+      }),
+    })
+    expect(safeDaemonDisconnectLine(overloaded)).toBe(
+      'DAEMON_OVERLOADED: local Daemon closed the connection because this command fell behind reading it; retry the command, and report it if it persists.',
+    )
   })
 
   it('answers --version and --help without booting anything', async () => {
@@ -251,6 +219,34 @@ describe('main', () => {
     const g = harness(scratch())
     expect(await main(['--help'], g.io, g.boot)).toBe(0)
     expect(g.out()).toContain('agh -p [prompt]')
+    for (const command of [
+      'serve',
+      'web',
+      'start',
+      'mcp',
+      'skills',
+      'resources',
+      'daemon',
+      'ext',
+      'plugins',
+      'dev',
+      'run',
+      'batch',
+      'tools',
+      'package',
+      'install',
+      'doctor',
+      'config',
+    ]) {
+      const item = harness(scratch())
+      const createHostImpl = vi.fn(() => {
+        throw new Error('help must not boot')
+      })
+      expect(await main([command, '--help'], item.io, { ...item.boot, createHostImpl })).toBe(0)
+      expect(item.out()).toContain('agh')
+      expect(item.err()).toBe('')
+      expect(createHostImpl).not.toHaveBeenCalled()
+    }
   })
 
   it('dispatches doctor through the real command entry and writes its JSON once', async () => {
@@ -303,8 +299,10 @@ describe('main', () => {
     }
   }, 30_000)
 
-  it('rejects malformed computer-use lifecycle arguments before booting a daemon', async () => {
+  it('rejects malformed lifecycle arguments before booting a daemon', async () => {
     for (const argv of [
+      ['batch', 'start'],
+      ['batch', 'status', 'invalid'],
       ['computer-use', 'status', '--continue'],
       ['computer-use', 'status', '--profile', 'other'],
       ['computer-use', 'status', '--raw'],
@@ -359,11 +357,12 @@ describe('main', () => {
     }
   })
 
-  it('a flag the grammar does not know exits 2 and prints the usage', async () => {
+  it('a flag the grammar does not know exits 2 and prints a help hint', async () => {
     const h = harness(scratch())
     expect(await main(['--nope'], h.io, h.boot)).toBe(2)
     expect(h.err()).toContain('unknown flag --nope')
-    expect(h.err()).toContain('agh -p [prompt]')
+    expect(h.err()).toContain('run agh --help for usage')
+    expect(h.err().trim().split('\n')).toHaveLength(1)
     expect(h.out()).toBe('')
   })
 
@@ -390,7 +389,7 @@ describe('main', () => {
     const dir = scratch()
     const h = harness(dir)
     expect(await main(['-p', '--model', 'primary=no-such-route/foo', 'hello'], h.io, h.boot)).toBe(1)
-    expect(h.err()).toContain('PRESET_SWITCH_REJECTED: the requested model is not served by this profile')
+    expect(h.err()).toContain('E_MODEL_UNSUPPORTED: The requested model is not available in this profile.')
     expect(h.err()).not.toMatch(/^\s+at /m)
     expect(h.out()).toBe('')
   })
@@ -419,39 +418,13 @@ describe('main', () => {
     expect(existsSync(join(dir, '.agnes'))).toBe(false)
   })
 
-  // Legacy compatibility: AGNES_HOME alone still selects the home, and says once that it is
-  // deprecated. No earlier test in this file resolves AGNES_HOME, and each test file gets its own
-  // module graph, so this is the first legacy resolution and the once-per-module notice shows here.
-  it('an environment with only the legacy AGNES_HOME still boots there and warns that it is deprecated', async () => {
+  it('refuses AGNES_HOME before booting or creating a home', async () => {
     const dir = scratch()
     const legacy = join(dir, 'legacy')
-    vi.stubEnv('AGH_HOME', undefined)
-    vi.stubEnv('AGNES_HOME', undefined)
-    vi.stubEnv('HOME', dir)
-    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined)
     const h = harness(dir, {}, { AGNES_HOME: legacy, HOME: dir })
-    const dataDirs: string[] = []
-    const code = await main(['-p', 'hello'], h.io, {
-      ...h.boot,
-      createHostImpl: async (profile) => {
-        dataDirs.push(profile.dataDir)
-        return (await createTestHost({ dataDir: dir, script: [say('main says hi')] })).host
-      },
-    })
-    expect(code, h.err()).toBe(0)
-    expect(h.out()).toBe('main says hi\n')
-    expect(dataDirs).toEqual([join(legacy, 'data')])
-    expect(existsSync(join(dir, '.agh'))).toBe(false)
-    const notices = warn.mock.calls.filter(
-      ([, options]) => (options as { code?: string })?.code === 'AGH_DEP_AGNES_HOME',
-    )
-    expect(notices).toEqual([
-      [
-        `AGNES_HOME is deprecated; set AGH_HOME instead (using ${legacy}).`,
-        { type: 'DeprecationWarning', code: 'AGH_DEP_AGNES_HOME' },
-      ],
-    ])
-  }, 30_000)
+    await expect(main(['-p', 'hello'], h.io, h.boot)).rejects.toThrow(/AGNES_HOME.*AGH_HOME.*clean home/)
+    expect(existsSync(legacy)).toBe(false)
+  })
 
   // Not a TTY on either end is what makes the default form print rather than draw.
   it('a redirected stdout picks the print form even without -p', async () => {
@@ -494,7 +467,11 @@ describe('main', () => {
     try {
       // Booting the test Host takes over a second on the Windows runner.
       await vi.waitFor(() => expect(raw).toBe(true), { timeout: 10_000 })
+      // Enter before the session is ready only keeps the draft, so wait for the real app's welcome.
+      await vi.waitFor(() => expect(h.out()).toContain('Agnes AI'), { timeout: 10_000 })
       input.write('keyboard from main')
+      // Text and Enter in one instant would read as a paste on a terminal without bracketed paste.
+      await new Promise((resolve) => setTimeout(resolve, 40))
       input.write('\r')
       await vi.waitFor(() => expect(h.out()).toContain('main says hi'), { timeout: 10_000 })
       // Wait for the persisted terminal turn to reach the projected idle state before quitting.
@@ -539,7 +516,7 @@ describe('main', () => {
       },
     })
     expect(code).toBe(2)
-    expect(h.err()).toBe('host: assembly exploded\n')
+    expect(h.err()).toBe('host: assembly exploded; run agh --help for usage\n')
   })
 
   // Proven by making the configured home unusable: a run that read it would fail, so a run that
@@ -559,6 +536,18 @@ describe('main', () => {
     expect(ephemeral.out()).toBe('main says hi\n')
   })
 
+  it('--safe-mode and --ignore-rules never reach a shared daemon, and say what they do not skip', async () => {
+    const shared = harness(scratch())
+    expect(await main(['-p', 'x', '--safe-mode'], shared.io, shared.boot)).toBe(2)
+    expect(shared.err()).toContain('needs a private host')
+    expect(shared.out()).toBe('')
+
+    const private_ = harness(scratch())
+    expect(await main(['-p', 'x', '--ephemeral', '--ignore-rules'], private_.io, private_.boot)).toBe(0)
+    expect(private_.out()).toBe('main says hi\n')
+    expect(private_.err()).toContain('instruction files (AGENTS.md, CLAUDE.md) are still loaded')
+  })
+
   /**
    * `agnes resume <id>` end to end, over a ledger a dead process left mid-answer.
    *
@@ -569,18 +558,29 @@ describe('main', () => {
    */
   it('resumes a session a dead process left mid-inference and carries the conversation on', async () => {
     const dir = scratch()
-    // The process that dies. Its host is torn down with the model call still outstanding, so what
-    // stays on disk is a step nothing closed.
+    // Seal the exact damaged ledger before cancellation. An ignored abort would only exercise
+    // Host's forced-close deadline, leaving test resources live rather than simulating a crash.
+    const dying = await createTestHost({ dataDir: dir, provider: stalledProvider() })
+    let kernelSession: Awaited<ReturnType<typeof dying.host.createSession>> | undefined
     const dead = await bootLocal(
       parseArgs([]),
       testDeps(dir, {
-        createHostImpl: async () =>
-          (await createTestHost({ dataDir: dir, provider: stalledProvider() })).host,
+        createHostImpl: async () => ({
+          ...dying.host,
+          createSession: async (options) => {
+            kernelSession = await dying.host.createSession(options)
+            return kernelSession
+          },
+        }),
       }),
     )
     const killed = await dead.client.session.new({ cwd: dir })
     void killed.prompt([{ type: 'text', text: 'what is the launch code' }]).catch(() => undefined)
-    await new Promise((r) => setTimeout(r, 25))
+    await vi.waitFor(async () => {
+      expect(await kernelSession?.scan({ type: 'request/sent', limit: 1 })).toHaveLength(1)
+    })
+    if (!kernelSession) throw new Error('crash fixture did not create a session')
+    await kernelSession.d.log.close()
     const sessionId = killed.id
     await dead.close()
 
@@ -588,7 +588,7 @@ describe('main', () => {
     const h = harness(dir)
     expect(await main(['--resume', sessionId, '-p', 'go on then'], h.io, h.boot)).toBe(0)
     expect(h.out()).toBe('main says hi\n')
-    expect(h.err()).toBe('')
+    expect(h.err()).toBe(`Session: ${sessionId}\n`)
   })
 
   it.each(['--resume', 'resume'])(
@@ -643,23 +643,19 @@ describe('main', () => {
       }
     }
 
-    it.each([
-      ['only AGH_HOME', (planted: string, _other: string) => ({ AGH_HOME: planted })],
-      ['only the legacy AGNES_HOME', (planted: string, _other: string) => ({ AGNES_HOME: planted })],
-      [
-        'AGH_HOME over a different AGNES_HOME',
-        (planted: string, other: string) => ({ AGH_HOME: planted, AGNES_HOME: other }),
-      ],
-    ])('with %s set', async (_name, envFor) => {
-      const dir = scratch()
-      const planted = join(dir, 'planted')
-      const other = join(dir, 'other')
-      await plantLiveOwner(planted)
-      vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined)
-      const h = harness(dir, {}, { ...envFor(planted, other), HOME: join(dir, 'os-home') })
-      expect(await main(['daemon', 'status'], h.io, h.boot), h.err()).toBe(0)
-      expect(JSON.parse(h.out())).toMatchObject({ running: true, owner: { pid: process.pid } })
-    })
+    it.each([['only AGH_HOME', (planted: string, _other: string) => ({ AGH_HOME: planted })]])(
+      'with %s set',
+      async (_name, envFor) => {
+        const dir = scratch()
+        const planted = join(dir, 'planted')
+        const other = join(dir, 'other')
+        await plantLiveOwner(planted)
+        vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined)
+        const h = harness(dir, {}, { ...envFor(planted, other), HOME: join(dir, 'os-home') })
+        expect(await main(['daemon', 'status'], h.io, h.boot), h.err()).toBe(0)
+        expect(JSON.parse(h.out())).toMatchObject({ running: true, owner: { pid: process.pid } })
+      },
+    )
 
     it('reports not running for a home that holds no owner record', async () => {
       const dir = scratch()
@@ -673,4 +669,14 @@ describe('main', () => {
   it('reports the version off the manifest rather than a literal', () => {
     expect(agnesVersion()).toBe('0.0.0')
   })
+})
+
+it('lists the fresh session tool catalog through SDK and owner-checked daemon RPC', async () => {
+  const h = harness(scratch())
+  expect(await main(['tools', '--json'], h.io, h.boot)).toBe(0)
+  const catalog = JSON.parse(h.out())
+  expect(catalog.sessionId).toMatch(/^agnes:local:local-dev:cli:tools:/)
+  expect(catalog.tools).toEqual(expect.any(Array))
+  expect(catalog.resources).toEqual(expect.any(Array))
+  expect(catalog.tools.some((tool: { name: string }) => tool.name === 'computer_use')).toBe(false)
 })

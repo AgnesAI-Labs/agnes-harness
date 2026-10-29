@@ -3,9 +3,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ecosystem as baseEcosystem } from '@agnes/base'
+import { systemPromptPlugin } from '@agnes/code'
 import { WORKSPACE_HOOK_SANDBOX, type WorkspaceHookSandbox } from '@agnes/core'
+import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createHost } from '../src/host.js'
+import { createHost } from '../src/runtime/lifecycle/host.js'
 import { createTestHost } from '../testkit/index.js'
 
 const baseDir = fileURLToPath(new URL('../../base', import.meta.url))
@@ -36,17 +38,91 @@ describe('createHost', () => {
     expect(kinds.at(-1)).toBe('host.closed')
     await expect(host.createSession({ cwd: dataDir })).rejects.toThrow(/E_HOST_CLOSED/)
   })
-  it('the closed refusal carries the lifecycle code, not a seam code', async () => {
-    const { host } = await createTestHost({ dataDir: tmp() })
-    await host.close()
-    const e = await host.createSession({ cwd: '.' }).then(
-      () => {
-        throw new Error('expected a refusal')
-      },
-      (x: unknown) => x as { code: string },
-    )
-    expect(e.code).toBe('E_HOST_CLOSED')
+  it('records why a Host is assembled and how long each stage took', async () => {
+    const plain = await createTestHost({ dataDir: tmp() })
+    await plain.host.close()
+    const kinds = plain.audit.events.map((e) => e.kind)
+    expect(kinds.indexOf('host.assembling')).toBeGreaterThanOrEqual(0)
+    expect(kinds.indexOf('host.assembling')).toBeLessThan(kinds.indexOf('host.ready'))
+    const ready = plain.audit.events.find((e) => e.kind === 'host.ready')?.detail as Record<string, unknown>
+    expect(ready).toMatchObject({ reason: 'unspecified', durationMs: expect.any(Number) })
+    const stages = ready.stages as Record<string, number>
+    expect(Object.keys(stages).sort()).toEqual(['coreMs', 'extensionsMs', 'foundationMs', 'treeMs'])
+    expect(Object.values(stages).every((ms) => Number.isInteger(ms) && ms >= 0)).toBe(true)
+    expect(Object.values(stages).reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(ready.durationMs as number)
+
+    const cause = {
+      reason: 'session',
+      session: 'session-1',
+      composition: `sha256-${'1'.repeat(64)}`,
+    } as const
+    const opened = await createTestHost({ dataDir: tmp(), assemblyCause: cause })
+    await opened.host.close()
+    expect(opened.audit.events.find((e) => e.kind === 'host.assembling')?.detail).toMatchObject(cause)
+    expect(opened.audit.events.find((e) => e.kind === 'host.ready')?.detail).toMatchObject({
+      reason: 'session',
+    })
   })
+
+  it('carries systemPromptAppend from createSession into the new session pinned prompt', async () => {
+    const dataDir = tmp()
+    const { host } = await createTestHost({
+      dataDir,
+      packages: {
+        '@agnes/code': {
+          plugins: [
+            {
+              declaration: {
+                id: 'system-prompt:default',
+                export: 'systemPromptPlugin',
+                apiRange: '^5.0.0',
+                inject: ['providers'],
+                runtime: 'in-process',
+                default: true,
+              },
+              entry: normalizePluginExport(systemPromptPlugin),
+            },
+          ],
+        },
+      },
+    })
+    try {
+      const plain = await host.createSession({ cwd: dataDir, key: 'plain' })
+      const appended = await host.createSession({
+        cwd: dataDir,
+        key: 'appended',
+        systemPromptAppend: 'Use metric units.',
+      })
+      const pinned = await appended.systemPromptPreview()
+      expect(pinned.config.personaSuffix).toBe('Use metric units.')
+      expect(pinned.sections.some((section) => section.text.includes('Use metric units.'))).toBe(true)
+      expect(pinned.hash).not.toBe((await plain.systemPromptPreview()).hash)
+    } finally {
+      await host.close()
+    }
+  })
+  it.each([false, true])(
+    'the closed refusal carries the lifecycle code (composition=%s)',
+    async (composition) => {
+      const { host } = await createTestHost({
+        dataDir: tmp(),
+        ...(composition
+          ? {
+              profileInputs: { user: { name: 'local-dev', composition: {} } },
+              packageDirs: { '@agnes/base': baseDir },
+            }
+          : {}),
+      })
+      await host.close()
+      const e = await host.createSession({ cwd: '.' }).then(
+        () => {
+          throw new Error('expected a refusal')
+        },
+        (x: unknown) => x as { code: string },
+      )
+      expect(e.code).toBe('E_HOST_CLOSED')
+    },
+  )
   it('a second close is a no-op, not a second teardown', async () => {
     const { host, audit } = await createTestHost({ dataDir: tmp() })
     await host.close()
@@ -55,14 +131,25 @@ describe('createHost', () => {
     expect(audit.events.length).toBe(after)
     expect(audit.events.filter((e) => e.kind === 'host.closed')).toHaveLength(1)
   })
-  it('concurrent close callers join the same shutdown', async () => {
-    const { host, audit } = await createTestHost({ dataDir: tmp() })
-    const first = host.close()
-    const second = host.close()
-    expect(second).toBe(first)
-    await Promise.all([first, second])
-    expect(audit.events.filter((e) => e.kind === 'host.closed')).toHaveLength(1)
-  })
+  it.each([false, true])(
+    'concurrent close callers join the same shutdown (composition=%s)',
+    async (composition) => {
+      const { host, audit } = await createTestHost({
+        dataDir: tmp(),
+        ...(composition
+          ? {
+              profileInputs: { user: { name: 'local-dev', composition: {} } },
+              packageDirs: { '@agnes/base': baseDir },
+            }
+          : {}),
+      })
+      const first = host.close()
+      const second = host.close()
+      expect(second).toBe(first)
+      await Promise.all([first, second])
+      expect(audit.events.filter((e) => e.kind === 'host.closed')).toHaveLength(1)
+    },
+  )
   it('keeps the workspace invocation alive through a real shutdown hook, then revokes it', async () => {
     const dataDir = tmp()
     let entered!: () => void
@@ -124,32 +211,43 @@ describe('createHost', () => {
       Promise.resolve().then(() => invocation.run(async (view) => view.hookSandbox().enforcement())),
     ).rejects.toMatchObject({ code: 'E_WORKSPACE_CLOSED' })
   })
-  it('close claims a session opening before the kernel publishes it', async () => {
-    const dataDir = tmp()
-    const { host } = await createTestHost({ dataDir })
-    const original = host.kernel.session.bind(host.kernel)
-    let entered!: () => void
-    let release!: () => void
-    const started = new Promise<void>((resolve) => {
-      entered = resolve
-    })
-    const held = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    vi.spyOn(host.kernel, 'session').mockImplementation(async (...args) => {
-      entered()
-      await held
-      return original(...args)
-    })
-    const opening = host.createSession({ cwd: dataDir })
-    // An opening that fails before reaching the kernel rejects here instead of hanging the test.
-    await Promise.race([started, opening])
-    const closing = host.close()
-    release()
-    await expect(opening).rejects.toMatchObject({ code: 'E_HOST_CLOSED' })
-    await closing
-    expect(host.kernel.sessions.size).toBe(0)
-  })
+  it.each([false, true])(
+    'close claims a session opening before the kernel publishes it (composition=%s)',
+    async (composition) => {
+      const dataDir = tmp()
+      const { host } = await createTestHost({
+        dataDir,
+        ...(composition
+          ? {
+              profileInputs: { user: { name: 'local-dev', composition: {} } },
+              packageDirs: { '@agnes/base': baseDir },
+            }
+          : {}),
+      })
+      const original = host.kernel.session.bind(host.kernel)
+      let entered!: () => void
+      let release!: () => void
+      const started = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      const held = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      vi.spyOn(host.kernel, 'session').mockImplementation(async (...args) => {
+        entered()
+        await held
+        return original(...args)
+      })
+      const opening = host.createSession({ cwd: dataDir })
+      // An opening that fails before reaching the kernel rejects here instead of hanging the test.
+      await Promise.race([started, opening])
+      const closing = host.close()
+      release()
+      await expect(opening).rejects.toMatchObject({ code: 'E_HOST_CLOSED' })
+      await closing
+      expect(host.kernel.sessions.size).toBe(0)
+    },
+  )
   it('a forced close returns on time without tearing resources from a live session', async () => {
     const dataDir = tmp()
     let seamClosed = 0

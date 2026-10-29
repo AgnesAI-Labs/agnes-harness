@@ -1,6 +1,8 @@
 import type { HarnessEntry, OpContext, RefineProposal, SeamImplementations } from '@agnes/core'
 import { actor, fakeProvider, fakeSeams, openSession, textTurn } from '@agnes/core/testkit'
-import type { ExtensionAPI, HookHandler, ToolDef } from '@agnes/extension-api'
+import type { HookHandler, ToolDef } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it, vi } from 'vitest'
 import { createEcosystemExtensions } from '../../../src/ecosystem.js'
 import { operations } from '../../../src/index.js'
@@ -42,6 +44,7 @@ function context(
 ) {
   return {
     session,
+    decisions: session.operationContext('agnes/refine').decisions,
     preset: session.preset,
     state: {
       meta: { turn, triggerSeq: 1 },
@@ -70,7 +73,7 @@ describe('refine after-core operation', () => {
       },
       events: { append: async () => 1 },
     } as unknown as ExtensionAPI
-    await createEcosystemExtensions(init).refine()(api)
+    await extensionFactoryOf(createEcosystemExtensions(init).refine())(api)
 
     const tool = tools.find((candidate) => candidate.name === 'harness_propose')
     if (!tool) throw new Error('production refine extension did not register harness_propose')
@@ -95,7 +98,7 @@ describe('refine after-core operation', () => {
 
   it('receives the real verifier result through the Core after-core delivery path', async () => {
     const init = fakeSeamInit({ preset: rawPreset })
-    const queue = new RefineQueue(init.adapters.storage.table('refine_queue'))
+    const queue = new RefineQueue(init.adapters.storage.namespace('refine_queue'))
     queue.push(proposal())
     const operation = refineOperation({ queue, preset: rawPreset })
     const { session } = await openSession({
@@ -120,7 +123,7 @@ describe('refine after-core operation', () => {
 
   it('applies after a passing verifier and enforces cooldown', async () => {
     const init = fakeSeamInit({ preset: rawPreset })
-    const queue = new RefineQueue(init.adapters.storage.table('refine_queue'))
+    const queue = new RefineQueue(init.adapters.storage.namespace('refine_queue'))
     queue.push(proposal())
     const { session } = await openSession({ provider: fakeProvider([]) })
     const operation = refineOperation({ queue, preset: rawPreset })
@@ -136,29 +139,62 @@ describe('refine after-core operation', () => {
     await session.close()
   })
 
-  it('requires approval for a global edit and rejects a refusal', async () => {
-    const ask = vi.fn(async () => 'rejected' as const)
-    const seams: SeamImplementations = { ...fakeSeams(), approval: { ...fakeSeams().approval, ask } }
-    const { session } = await openSession({ provider: fakeProvider([]), seams })
-    const init = fakeSeamInit({ preset: rawPreset })
-    const queue = new RefineQueue(init.adapters.storage.table('refine_queue'))
-    queue.push(proposal({ edits: [{ op: 'upsert', entry: entry('global', 'global') }] }))
-    const operation = refineOperation({ queue, preset: rawPreset })
+  it.each(['allowed-once', 'allowed-session', 'rejected', 'agent', 'pending', 'unavailable'] as const)(
+    'reviews a global edit as %s through the public port',
+    async (answer) => {
+      const ask = vi.fn(async () =>
+        answer === 'pending'
+          ? { ticket: 'refine-pending', expiresAt: '2999-01-01T00:00:00.000Z' }
+          : answer === 'unavailable'
+            ? { verdict: 'unavailable' as const, reason: 'no-handler' as const }
+            : {
+                verdict: answer === 'agent' ? ('allowed-once' as const) : answer,
+                answeredBy: answer === 'agent' ? { ...actor, role: 'agent' } : actor,
+              },
+      )
+      const seams: SeamImplementations = { ...fakeSeams(), approval: { ...fakeSeams().approval, ask } }
+      const { session } = await openSession({ provider: fakeProvider([]), seams })
+      const init = fakeSeamInit({ preset: rawPreset })
+      const queue = new RefineQueue(init.adapters.storage.namespace('refine_queue'))
+      queue.push(proposal({ edits: [{ op: 'upsert', entry: entry('global', 'global') }] }))
+      const operation = refineOperation({ queue, preset: rawPreset })
 
-    await operation.run(context(session, 4))
-    expect(ask).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'refine', summary: 'measured improvement' }),
-    )
-    expect(queue.next()).toBeUndefined()
-    expect([...session.state.registers.harnessEntries.values()]).toEqual([])
-    await session.close()
-  })
+      await operation.run(context(session, 4))
+      expect(ask).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'refine', summary: 'measured improvement' }),
+        { signal: expect.any(AbortSignal) },
+      )
+      expect(queue.next()).toBeUndefined()
+      const allowed = answer === 'allowed-once' || answer === 'allowed-session'
+      expect([...session.state.registers.harnessEntries.values()].map((cell) => cell.value.id)).toEqual(
+        allowed ? ['global'] : [],
+      )
+      const [decision] = await session.decisions.list()
+      expect(decision?.request.spec.purpose).toBe('refine')
+      expect(decision?.result?.reason).toBe(allowed || answer === 'rejected' ? 'answered' : 'unavailable')
+      expect(await session.scan({ type: ['approval/asked', 'approval/decided'], limit: 100 })).toEqual([])
+      if (allowed) expect(decision?.consumption).not.toBeNull()
+      if (answer === 'pending' && decision)
+        await expect(
+          session.decideApproval({
+            command: {
+              handle: decision.handle,
+              revision: decision.revision,
+              commandId: 'late-refine',
+              response: { option: 'allowed-once', value: null },
+            },
+            context: { actor, category: 'human', authorize() {} },
+          }),
+        ).rejects.toThrow('NOT_PENDING')
+      await session.close()
+    },
+  )
 
   it('accepts a compact trigger from the durable extension event even when verification fails', async () => {
     const { session } = await openSession({ provider: fakeProvider([]) })
     await session.append([session.ev('x/agnes/refine/compact-trigger', {})])
     const init = fakeSeamInit({ preset: rawPreset })
-    const queue = new RefineQueue(init.adapters.storage.table('refine_queue'))
+    const queue = new RefineQueue(init.adapters.storage.namespace('refine_queue'))
     queue.push(proposal())
     const operation = refineOperation({ queue, preset: rawPreset })
 

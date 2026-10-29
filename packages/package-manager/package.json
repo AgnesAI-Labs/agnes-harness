@@ -11,16 +11,20 @@
   },
   "scripts": {
     "test": "vitest run",
+    "build:jev-payload": "node tools/build-jev-payload.mjs",
     "typecheck": "tsc -b"
   },
   "dependencies": {
     "@agnes/error-sanitization": "workspace:*",
+    "@agnes/extension-api": "workspace:*",
     "@agnes/package-isolation": "workspace:*",
     "@agnes/plugin-runtime": "workspace:*",
     "@agnes/protocol": "workspace:*",
-    "@agnes/extension-api": "workspace:*",
     "@agnes/system-node": "workspace:*",
-    "yaml": "2.9.0"
+    "esbuild": "0.28.2",
+    "sigstore": "4.1.1",
+    "yaml": "2.9.0",
+    "sharp": "0.34.5"
   },
   "license": "Apache-2.0 AND MIT"
 }

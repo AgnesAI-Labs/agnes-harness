@@ -1,29 +1,56 @@
-import { type Disposer, defineExtension, type ToolDef } from '@agnes/extension-api'
-import { editTool } from './tools/edit.js'
-import { jobTool } from './tools/job.js'
+import type { Disposer, ToolDef } from '@agnes/extension-api'
+import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
+import { type ShellJobs, standaloneShellJobs } from '../../jobs/src/registry.js'
+import { type LspSessions, standaloneLsp } from '../../lsp/src/registry.js'
+import { type FileChangeRecorder, fileChangeReceipt } from './file-change.js'
+import { createEditTool, editTool } from './tools/edit.js'
 import { readTool } from './tools/read.js'
-import { shellTool } from './tools/shell.js'
+import { createShellTool, shellTool } from './tools/shell.js'
 import { todoTool } from './tools/todo.js'
-import { writeTool } from './tools/write.js'
+import { createWriteTool, writeTool } from './tools/write.js'
 
 // The tools this extension actually registers, in the order the manifest names them. The manifest
-// is what grants the authority and it names all six; this list is what claims it. The
+// is what grants the authority and it already names all five; this list is what claims it. The
 // search tools (grep/find/ls) moved to the sibling `tools-search` extension — this package was at
 // its line-count ceiling, and they shared a walker nothing else here imports. Registering fewer
 // than the manifest allows is safe in the direction that matters — a name nobody registers is a
 // name nobody can call.
-export const TOOLS_CORE: readonly ToolDef[] = [readTool, writeTool, editTool, shellTool, jobTool, todoTool]
+export const TOOLS_CORE: readonly ToolDef[] = [readTool, writeTool, editTool, shellTool, todoTool]
 
-// The module the manifest's `entry` points at. Registration is the whole of it: a factory reaching
-// for anything else would be taking authority this manifest does not declare.
 // The placeholder the shell tool puts at the head of its argv, re-exported so the deployment's
 // sandbox implementation can substitute an interpreter for it without importing a tool module.
 export { SHELL_SENTINEL } from './tools/shell.js'
 
-export default defineExtension((agnes) => {
-  const disposers = TOOLS_CORE.map((t) => agnes.registerTool(t))
-  const dispose: Disposer = () => {
-    for (const d of disposers) d()
-  }
-  return dispose
-})
+export function createToolsCoreExtension(
+  jobs: ShellJobs = standaloneShellJobs,
+  lsp: LspSessions = standaloneLsp,
+) {
+  return defineAgnesPlugin({
+    inject: ['tools', 'hooks', 'eventLog'],
+    apply(plugin: Context) {
+      const record: FileChangeRecorder = async (input, context) => {
+        const receipt = fileChangeReceipt(input, context)
+        if (receipt) await plugin.eventLog.append('file-change', receipt)
+      }
+      const tools = [
+        readTool,
+        createWriteTool(record, lsp),
+        createEditTool(record, lsp),
+        createShellTool(jobs),
+        todoTool,
+      ]
+      const disposers = tools.map((t) => plugin.tools.register(t))
+      disposers.push(
+        plugin.hooks.register('shutdown', async (_payload, ctx) => {
+          await jobs.closeSession(ctx.session.key, ctx.session.lane)
+        }),
+      )
+      const dispose: Disposer = async () => {
+        for (const d of disposers) d()
+        await jobs.dispose()
+      }
+      return dispose
+    },
+  })
+}
+export default createToolsCoreExtension()

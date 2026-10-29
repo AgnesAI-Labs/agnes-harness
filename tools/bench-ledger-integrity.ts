@@ -8,8 +8,8 @@ import {
   prepareIntegrity,
   type StorageAdapter,
   verifyLedger,
-} from '../packages/core/src/index.js'
-import { createSqliteStorage } from '../packages/host/src/index.js'
+} from '@agnes/core'
+import { createSqliteStorage } from '@agnes/host'
 
 const readNumber = (flag: string, fallback: number): number => {
   const index = process.argv.indexOf(flag)
@@ -49,7 +49,7 @@ type Measurement = {
 
 async function openStorage(store: Store): Promise<{ storage: StorageAdapter; cleanup: () => Promise<void> }> {
   if (store === 'memory') {
-    const storage = new (await import('../packages/core/src/index.js')).MemoryStorage()
+    const storage = new (await import('@agnes/core')).MemoryStorage()
     return { storage, cleanup: () => storage.close() }
   }
   const dir = mkdtempSync(join(tmpdir(), 'agnes-integrity-bench-'))

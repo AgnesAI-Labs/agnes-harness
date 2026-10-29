@@ -1,12 +1,22 @@
 /** A request-only capability. Host approval, not plugin metadata, authorizes installation. */
 export type SkillInstallRequest =
   | Readonly<{ action: 'prepare'; sourceDirectory: string; scope: 'workspace' | 'user'; enable: boolean }>
+  /** Authored instruction data: statically validated without reading a local source or executing code. */
+  | Readonly<{
+      action: 'prepare-content'
+      name: string
+      files: readonly Readonly<{ path: string; content: string }>[]
+      scope: 'workspace' | 'user'
+      enable: boolean
+    }>
   | Readonly<{ action: 'commit' | 'status' | 'cancel'; proposalId: string }>
 
 export type SkillInstallResult = Readonly<{
   proposalId: string
   state: 'prepared' | 'running' | 'ready' | 'installed' | 'failed' | 'cancelled' | 'interrupted'
   name?: string
+  description?: string
+  files?: readonly string[]
   digest?: string
   fileCount?: number
   scope?: 'workspace' | 'user'

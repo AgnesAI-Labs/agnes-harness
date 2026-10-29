@@ -54,20 +54,39 @@ describe('Task20 document validators', () => {
       P.validateExtensionManifest({
         id: 'fixture/ext',
         version: '0.1.0',
-        apiRange: '^1.0.0',
+        apiRange: '^5.0.0',
         entry: './index.ts',
         capabilities: {},
       }).ok,
     ).toBe(true)
   })
+  it('accepts an explicit boolean keyless route without supplying a default', () => {
+    const route = { route: 'local', api: 'local-openai', baseUrl: 'http://127.0.0.1:8000/v1' }
+    const profile = (keyless: unknown) => ({
+      name: 'local-dev',
+      provider: { package: '@agnes/ai', routes: [{ ...route, keyless }] },
+    })
+    for (const keyless of [true, false]) expect(P.validateProfileManifest(profile(keyless)).ok).toBe(true)
+    for (const keyless of ['true', 1, null])
+      expect(P.validateProfileManifest(profile(keyless)).ok).toBe(false)
+    const omitted = { name: 'local-dev', provider: { package: '@agnes/ai', routes: [route] } }
+    expect(P.validateProfileManifest(omitted).ok).toBe(true)
+    expect(route).not.toHaveProperty('keyless')
+  })
   it('preserves empty prefix authority and an explicit empty names allowlist', () => {
-    const manifest = { id: 'fixture/ext', version: '0.1.0', apiRange: '^1.0.0', entry: './index.ts' }
+    const manifest = { id: 'fixture/ext', version: '0.1.0', apiRange: '^5.0.0', entry: './index.ts' }
     const broad = { ...manifest, capabilities: { tools: { prefix: '' } } }
     const none = { ...manifest, capabilities: { tools: { prefix: '', names: [] } } }
     expect(P.validateExtensionManifest(broad)).toEqual({ ok: true, value: broad })
     expect(P.validateExtensionManifest(none)).toEqual({ ok: true, value: none })
     expect(none.capabilities.tools.names).toEqual([])
     expect(broad.capabilities.tools).not.toHaveProperty('names')
+    for (const liveResources of [[], ['skills']]) {
+      const input = { ...none, liveResources }
+      expect(P.validateExtensionManifest(input)).toEqual({ ok: true, value: input })
+    }
+    for (const liveResources of [['skills', 'skills'], ['unknown'], 'skills', [1], null])
+      expect(P.validateExtensionManifest({ ...none, liveResources }).ok).toBe(false)
   })
   it('rejects non JSON numbers, undefined payload members and diagnostic secret interpolation', () => {
     const job = {
@@ -95,16 +114,28 @@ describe('Task20 document validators', () => {
 })
 
 describe('Task20 accepts actual bundled extension manifests', () => {
-  it('rejects nonempty legacy network arrays without guessing their authority', () => {
-    const base = { id: 'fixture/ext', version: '0.1.0', apiRange: '^1.0.0', entry: './index.ts' }
+  it('takes the network capability as one list of host patterns', () => {
+    const base = { id: 'fixture/ext', version: '0.1.0', apiRange: '^5.0.0', entry: './index.ts' }
     expect(P.validateExtensionManifest({ ...base, capabilities: { network: ['example.invalid'] } }).ok).toBe(
+      true,
+    )
+    expect(P.validateExtensionManifest({ ...base, capabilities: { network: { hosts: ['x'] } } }).ok).toBe(
       false,
     )
   })
   it.each(['tools-core', 'approval-policy', 'artifacts-local', 'principals-local'])('%s', (name) => {
-    const raw = JSON.parse(
-      readFileSync(new URL(`../../base/extensions/${name}/agnes.extension.json`, import.meta.url), 'utf8'),
+    const pkg = JSON.parse(
+      readFileSync(new URL(`../../base/extensions/${name}/package.json`, import.meta.url), 'utf8'),
     )
+    const [entry] = pkg.agnes.plugins
+    const raw = {
+      id: entry.id.slice('ext:'.length),
+      version: pkg.version,
+      apiRange: entry.apiRange,
+      entry: pkg.exports,
+      capabilities: entry.capabilities,
+      ...(entry.metadata ? { metadata: entry.metadata } : {}),
+    }
     expect(P.validateExtensionManifest(raw)).toEqual({ ok: true, value: raw })
   })
 })
@@ -114,14 +145,14 @@ describe('Task20 validates actual host profile assets and resolver output', () =
   const yaml = hostRequire('yaml') as { parse(text: string): unknown }
   it.each(['local-dev', 'enterprise'])('%s raw YAML', (template) => {
     const raw = yaml.parse(
-      readFileSync(new URL(`../../host/templates/${template}.yaml`, import.meta.url), 'utf8'),
+      readFileSync(new URL(`../../package-manager/templates/${template}.yaml`, import.meta.url), 'utf8'),
     )
     expect(P.validateProfileManifest(raw)).toEqual({ ok: true, value: raw })
   })
   it('accepts the real default local-dev resolved profile without repairing its shape', async () => {
     // Runtime import keeps this protocol-only schema project from acquiring a production dependency
     // on its consumer. Integration checks still call the actual host implementation in this repo.
-    const moduleUrl = new URL('../../host/src/profile/resolve.ts', import.meta.url).href
+    const moduleUrl = new URL('../../host-common/src/profile/resolve.ts', import.meta.url).href
     const { resolveProfile } = (await import(moduleUrl)) as {
       resolveProfile(inputs: unknown, env: unknown): Promise<unknown>
     }
@@ -132,7 +163,13 @@ describe('Task20 validates actual host profile assets and resolver output', () =
           packages: Object.fromEntries(
             ['@agnes/ai', '@agnes/base', '@agnes/code'].map((id) => [
               id,
-              { version: '0.1.0', integrity: `sha256-${'a'.repeat(64)}`, trust: 'builtin', enabled: true },
+              {
+                version: '0.0.0',
+                source: { type: 'builtin', ref: 'builtin' },
+                integrity: 'builtin:0.0.0',
+                trust: 'builtin',
+                enabled: true,
+              },
             ]),
           ),
         },

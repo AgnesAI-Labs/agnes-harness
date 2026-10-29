@@ -7,6 +7,7 @@ import {
   renderTools,
 } from './environment.js'
 import { createSdkRenderer } from './sdk/memo.js'
+import { renderTypeScript } from './sdk/render-typescript.js'
 
 /**
  * The slice of the assembly's dependency bundle this operation reads, declared structurally. The
@@ -34,7 +35,15 @@ const SANDBOX = 'sandbox.l1'
 
 /** Orders come from the frozen table, so a section this package invented has no order and throws. */
 function section(id: string, text: string): PromptSection {
-  return { id, order: sectionOrder(id), text, source: SOURCE }
+  return {
+    id,
+    order: sectionOrder(id),
+    text,
+    source:
+      id === 'persona' || id.endsWith('doctrine') || id === 'channel-style'
+        ? `${SOURCE}/prompts/${id}.md`
+        : SOURCE,
+  }
 }
 
 export function environmentFacts(ctx: OpContext, deps: PromptDeps): EnvironmentFacts {
@@ -44,13 +53,13 @@ export function environmentFacts(ctx: OpContext, deps: PromptDeps): EnvironmentF
     agnesVersion: ctx.session.d.agnesVersion ?? '0.0.0',
     platform: `${os.os}-${os.arch}`,
     shell: deps.adapters.shell?.description ?? platform.shell(),
-    dialect: platform.shell() === 'powershell' ? 'powershell' : 'posix',
   }
 }
 
 /** The counterpart request-scoped facts, built off the same ctx — see RuntimeSnapshotFacts. */
 export function runtimeSnapshotFacts(ctx: OpContext, deps: PromptDeps): RuntimeSnapshotFacts {
   const platform = deps.adapters.platform
+  const extras = ctx.session.d.extraDirectories
   return {
     // Use the session clock so replay and a fixed-clock test retain their original UTC date.
     date: new Date(ctx.session.d.clock()).toISOString().slice(0, 10),
@@ -62,6 +71,8 @@ export function runtimeSnapshotFacts(ctx: OpContext, deps: PromptDeps): RuntimeS
     disclosure: ctx.preset.disclosure,
     enforcement: platform.capability(SANDBOX).level,
     cwd: ctx.session.d.cwd,
+    // Paths only, never contents; omitted when empty so sessions without extras stay byte-identical.
+    ...(extras?.length ? { extraDirectories: [...extras].sort() } : {}),
   }
 }
 
@@ -85,7 +96,7 @@ export function createPromptOperation(deps: PromptDeps): Operation {
      * Splits what this package tells the model into two channels, not one: text that stays the same
      * for the whole session goes into promptSections, and the facts that can differ from one request
      * to the next request or another session — date, session key, model, preset, disclosure, cwd,
-     * enforcement, and whether the tool list is complete — go into runtimeContext, rendered as a tail message rather
+     * and enforcement — go into runtimeContext, rendered as a tail message rather
      * than folding into system. Disclosure decides which sections apply, and the rule throughout is
      * that a section is contributed only where what it describes is actually present — a prompt
      * naming a tool the model was not offered is worse than a prompt that is short.
@@ -95,8 +106,15 @@ export function createPromptOperation(deps: PromptDeps): Operation {
       if (declared?.length === 0) return { promptSections: [] }
       const sections = [
         section('persona', renderPersona()),
-        section('environment', renderEnvironment(environmentFacts(ctx, deps))),
+        section(
+          'environment',
+          renderEnvironment(environmentFacts(ctx, deps)) +
+            (deps.adapters.platform.shell() === 'powershell'
+              ? '\n\n' + loadPrompt('environment-powershell')
+              : ''),
+        ),
       ]
+      sections.push(section('tools-available', renderTools(ctx.disclosed)))
       // The code preset offers run_code alone, and the general working rules are written for an
       // agent that edits and runs things directly.
       if (ctx.preset.disclosure !== 'code')
@@ -107,7 +125,14 @@ export function createPromptOperation(deps: PromptDeps): Operation {
       if (ctx.disclosed.includes('run_code'))
         sections.push(section('code-doctrine', loadPrompt('code-doctrine')))
       if (ctx.preset.disclosure !== 'standard' && ctx.disclosed.includes('run_code'))
-        sections.push(section('tools:sdk', sdk.render(ctx.snapshot)))
+        sections.push(
+          section(
+            'tools:sdk',
+            ctx.preset.codeRuntime?.language === 'typescript'
+              ? renderTypeScript(ctx.snapshot.defs)
+              : sdk.render(ctx.snapshot),
+          ),
+        )
       if (declared?.includes('channel-style'))
         sections.push(section('channel-style', loadPrompt('channel-style')))
       return {
@@ -116,7 +141,6 @@ export function createPromptOperation(deps: PromptDeps): Operation {
           : sections,
         runtimeContext: {
           environment: runtimeSnapshotFacts(ctx, deps),
-          tools: { complete: renderTools(ctx.disclosed) },
         },
       }
     },

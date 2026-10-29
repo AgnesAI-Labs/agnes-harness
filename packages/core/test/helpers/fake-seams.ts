@@ -1,4 +1,4 @@
-import type { SeamImplementations } from '../../src/effects/seams.js'
+import type { SeamImplementations } from '@agnes/core-effects/effects/seams'
 import { testFsPolicy } from '../../testkit/fenced-fs.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
@@ -15,16 +15,8 @@ export function fakeSeams(
     fsPolicy: () => testFsPolicy('/w'),
     enforcement: () => ({ level: 'full', scope: ['file', 'network', 'process'] }),
   }
-  let approval!: SeamImplementations['approval']
-  approval = {
-    forWorkspace: async () => approval,
-    ask: async () => 'allowed-once',
-    resume: async () => null,
-    guard: async () => ({ decision: 'escalate', ruleVersion: 'fake-v1', reasons: ['human-test'] }),
-    listGrants: async () => [],
-    putGrant: async () => undefined,
-    revokeGrant: async () => null,
-    onGrantRevoked: () => () => undefined,
+  const approval: SeamImplementations['approval'] = {
+    ask: async () => ({ verdict: 'allowed-once', answeredBy: actor }),
   }
   let checkpoint!: SeamImplementations['checkpoint']
   checkpoint = {
@@ -36,7 +28,7 @@ export function fakeSeams(
   const base: SeamImplementations = {
     approval,
     checkpoint,
-    ledger: {
+    billing: {
       record: async () => undefined,
       projected: async () => ({ credits: 1, creditSource: 'estimated' }),
     },
@@ -60,13 +52,11 @@ export function fakeSeams(
       terminal: () => ({ color: false }),
       capability: () => ({ level: 'full', scope: [] }),
     },
-    harness: { propose: async () => 'queued' },
   }
   const out = { ...base } as Record<string, unknown>
   for (const [k, v] of Object.entries(over))
     out[k] = { ...(base as unknown as Record<string, object>)[k], ...(v as object) }
   const seams = out as unknown as SeamImplementations
-  if (!over.approval?.forWorkspace) seams.approval.forWorkspace = async () => seams.approval
   if (!over.checkpoint?.forWorkspace) seams.checkpoint.forWorkspace = async () => seams.checkpoint
   return seams
 }

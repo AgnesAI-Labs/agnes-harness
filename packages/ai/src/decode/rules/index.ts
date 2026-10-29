@@ -32,4 +32,4 @@ export const RULES_DIGEST = sha256Hex(
 )
 
 /** The rule set a contract stamp reports. It moves with RULES, never with the package version. */
-export const PARSER_VERSION = '2'
+export const PARSER_VERSION = '3'

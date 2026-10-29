@@ -7,12 +7,13 @@
     ".": "./index.ts"
   },
   "dependencies": {
-    "@agnes/extension-api": "^1.0.0"
+    "@agnes/extension-api": "2.0.0"
   },
   "agnes": {
     "plugins": [
       {
         "export": "main",
+        "apiRange": "^5.0.0",
         "id": "ext:acme/pkg-a/main",
         "runtime": "in-process"
       }

@@ -1,7 +1,7 @@
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { expect, it } from 'vitest'
 import { deriveRequest, sanitize } from '../src/request/derive.js'
 import { createEnvelopeCache } from '../src/request/envelope-cache.js'
-import { canonicalJson, sha256Hex } from '../src/request/hash.js'
 import { isLedgerRequest } from '../src/request/mint.js'
 import { toProviderRequest } from '../src/request/to-provider.js'
 import {
@@ -63,6 +63,21 @@ it('adopts protocol sections with trusted source, deduplicates and fits UTF8 inc
   expect(ac).not.toContain('�')
   expect(r.overflow).toEqual([{ ext: 'c/ext', bytes: 9000 }])
   expect({ base, results }).toEqual(before)
+})
+it('caps and deduplicates untrustedContext on its own, without using the additionalContext budget', () => {
+  const r = applyContextResults(
+    [],
+    [
+      { ext: 'a/ext', result: { additionalContext: 'x'.repeat(8192) } },
+      { ext: 'b/ext', result: { untrustedContext: 'tainted' } },
+      { ext: 'c/ext', result: { untrustedContext: 'tainted' } },
+      { ext: 'd/ext', result: { untrustedContext: '界'.repeat(3000) } },
+    ],
+  )
+  expect(r.additionalContext).toBe('x'.repeat(8192))
+  expect(r.untrustedContext).toBe(`tainted\n${'界'.repeat(2728)}`)
+  expect(bytes(r.untrustedContext)).toBe(8192)
+  expect(r.overflow).toEqual([{ ext: 'd/ext', bytes: 9000 }])
 })
 it('overrides a section by id: the later contributor wins the whole row, not a field-level blend', () => {
   const base = [persona]

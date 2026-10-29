@@ -108,7 +108,8 @@ describe('a signal arriving during a live turn', () => {
     h.signals.emit('SIGINT')
     // The second signal's own code goes first, before the shutdown the first one started finishes.
     expect(h.exits[0]).toBe(130)
-    expect(await run).toBe(129)
+    // The embedding result settles at the forced exit too, matching a real process's exit code.
+    expect(await run).toBe(130)
   }, 20_000)
 
   it('no signal at all leaves the ladder unused and the turn to finish on its own terms', async () => {

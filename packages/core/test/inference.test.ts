@@ -1,17 +1,19 @@
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import type { HostToolDispatchPort } from '@agnes/core-effects/effects/tool-dispatch'
 import type { ToolDef } from '@agnes/extension-api'
 import type { InferenceEvent, ModelRecord, Provider, RequestBody } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it, vi } from 'vitest'
-import type { HostToolDispatchPort } from '../src/effects/tool-dispatch.js'
+import { hookSurface } from '../src/execution/turn/compaction-summary.js'
+import { unattendedNote } from '../src/execution/turn/inference.js'
 import { mintAuxiliaryVisionProductionAdmission } from '../src/orchestrator/auxiliary-vision-assembly.js'
 import { loadAuxiliaryVisionPreflight } from '../src/orchestrator/request-media-preflight.js'
 import { REQUEST_MEDIA_ARTIFACT_RECLAIMED } from '../src/orchestrator/request-media-surface.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { headerEquals, type RequestHeaderData } from '../src/request/derive.js'
-import { canonicalJson, sha256Hex } from '../src/request/hash.js'
 import { applyBeforeRequestPatches } from '../src/request/transforms.js'
 import { surfaceToolCalls } from '../src/step/inference.js'
-import { presetDefaults } from '../src/step/preset.js'
 import { noopHooks } from '../src/step/session.js'
 import {
   fakeProvider,
@@ -53,7 +55,7 @@ it('reuses context hooks within a turn and moves changed context to a tail note'
     ...session.hooks,
     context: async (sections) => {
       calls++
-      return { sections, additionalContext: contextText }
+      return { sections, additionalContext: contextText, untrustedContext: '' }
     },
   }
   expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
@@ -78,6 +80,30 @@ it('reuses context hooks within a turn and moves changed context to a tail note'
   expect(next.messages.at(-1)?.content).toEqual([{ type: 'text', text: '[hook context]\nsecond' }])
 })
 
+it('writes untrustedContext once as an untrusted [hook data] row while the cached prefix is reused', async () => {
+  const { session, provider } = await primed(
+    [toolTurn('read', { path: 'a' }), toolTurn('read', { path: 'b' }), textTurn('done')],
+    readRegistry(),
+  )
+  session.hooks = {
+    ...session.hooks,
+    context: async (sections) => ({ sections, additionalContext: '', untrustedContext: 'tainted advice' }),
+  }
+  expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+    'completed',
+  )
+  expect(provider.requests).toHaveLength(3)
+  const rows = (await session.scan({ type: 'user/message', limit: 1000 })).filter((e) =>
+    JSON.stringify(e.data).includes('[hook data]'),
+  )
+  expect(rows).toHaveLength(1)
+  expect(rows[0]?.trust).toBe('untrusted')
+  const text = JSON.stringify(provider.requests.at(-1)?.messages)
+  expect(text).toContain('[hook data]')
+  expect(text).toContain('<untrusted')
+  expect(text).not.toContain('[hook context]')
+})
+
 it('recomputes the context hook when the primary model changes mid-turn', async () => {
   const { session } = await primed([toolTurn('read', { path: 'a' }), textTurn('done')], readRegistry())
   let calls = 0
@@ -89,7 +115,7 @@ it('recomputes the context hook when the primary model changes mid-turn', async 
     },
     context: async (sections) => {
       calls++
-      return { sections, additionalContext: 'same' }
+      return { sections, additionalContext: 'same', untrustedContext: '' }
     },
   }
   expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
@@ -133,6 +159,7 @@ function mediaRegistry(toolName = 'computer_use'): ToolRegistry {
       description: 'capture',
       parameters: Type.Object({}),
       meta: {
+        requiresImageInput: toolName === 'computer_use',
         isReadOnly: true,
         isDestructive: false,
         isConcurrencySafe: true,
@@ -409,7 +436,11 @@ describe('Inference segment', () => {
       code: 'TOOL_NOT_DISCLOSED',
     })
     const result = (await log.scan({ type: 'tool/result', limit: 10 })).at(-1)
-    expect(result?.data).toMatchObject({ code: 'TOOL_NOT_DISCLOSED', isError: true })
+    expect(result?.data).toMatchObject({
+      code: 'TOOL_NOT_DISCLOSED',
+      isError: true,
+      content: [{ text: expect.stringContaining('model_capability') }],
+    })
   })
 
   it('refuses a queued Computer Use call if the primary model becomes text-only before execution', async () => {
@@ -443,6 +474,49 @@ describe('Inference segment', () => {
     await session.acceptInput()
     expect(await session.runInference()).toEqual({ phase: 'checkpoint' })
     expect(provider.requests[0]?.tools.map((tool) => tool.name)).toContain('computer_use')
+  })
+
+  it('offers no requiresUser tool in an unattended turn, refuses a call to one, and restores both in the next attended turn', async () => {
+    const asked = vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'shown' }] }))
+    const registry = readRegistry()
+    const read = readTool(asked) as ToolDef
+    registry.add(
+      { ...read, name: 'ask_user', meta: { ...read.meta, requiresUser: true } },
+      { source: 'agnes/test-interaction', trust: 'builtin' },
+    )
+    const provider = fakeProvider([toolTurn('ask_user', {}), textTurn('done'), textTurn('next')])
+    const { session, log } = await openSession({ provider, registry })
+    const signal = new AbortController().signal
+    await session.enqueue('next-turn', {
+      content: [{ type: 'text', text: 'recover the file' }],
+      actor: { ...actor, attrs: { interaction: 'unattended' } },
+    })
+    await session.acceptInput()
+    // Recovery rebuilds the same catalog from the trigger message, not from process memory.
+    await session.rehydrateTurn(session.op() as never)
+    expect(session.turn?.snapshot.byName.has('ask_user')).toBe(false)
+    expect((await session.run({ until: 'turn-end', signal })).reason).toBe('completed')
+    const names = (i: number) => provider.requests[i]?.tools.map((tool) => tool.name)
+    expect(names(0)).toContain('read')
+    expect(names(0)).not.toContain('ask_user')
+    expect(JSON.stringify(provider.requests[0]?.messages)).toContain(
+      JSON.stringify(unattendedNote('English')).slice(1, -1),
+    )
+    // The system prompt stays the attended one: the note travels as a live tail note.
+    expect(provider.requests[0]?.system).not.toContain('unattended')
+    expect(asked).not.toHaveBeenCalled()
+    expect((await log.scan({ type: 'tool/result', limit: 1 }))[0]?.data).toMatchObject({
+      code: 'TOOL_NOT_FOUND',
+      isError: true,
+    })
+
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'and now?' }], actor })
+    expect((await session.run({ until: 'turn-end', signal })).reason).toBe('completed')
+    expect(names(2)).toContain('ask_user')
+    expect(provider.requests[2]?.system).toBe(provider.requests[0]?.system)
+    const tail = JSON.stringify(provider.requests[2]?.messages.slice(-2))
+    expect(tail).toContain('Unattended run\\nThis context item no longer applies.')
+    expect(tail).not.toContain('Do not ask the user')
   })
 
   it.each([
@@ -858,6 +932,7 @@ describe('Inference segment', () => {
         { additionalProperties: false },
       ),
       meta: {
+        requiresImageInput: true,
         isReadOnly: false,
         isDestructive: true,
         isConcurrencySafe: false,
@@ -923,6 +998,7 @@ describe('Inference segment', () => {
         description: 'computer use',
         parameters: Type.Object({ action: Type.Literal('capture') }, { additionalProperties: false }),
         meta: {
+          requiresImageInput: true,
           isReadOnly: true,
           isDestructive: false,
           isConcurrencySafe: true,
@@ -1196,18 +1272,6 @@ describe('Inference segment', () => {
       kind: 'inference',
       gen: { status: 'retry_wait', attempt: 1, code: 'RATE_LIMIT' },
     })
-    // A retried failure ends no turn, so no turn error ever names it; this row is its only record,
-    // and without it a long wait that was retried reads as a gap nobody can explain.
-    const [effect] = await s.log.scan({ type: 'effect/intent', limit: 5 })
-    expect((await s.log.scan({ type: 'x/core/inference-retry', limit: 5 })).map((e) => e.data)).toEqual([
-      {
-        effectId: (effect?.data as { effectId?: string } | undefined)?.effectId,
-        attempt: 1,
-        code: 'RATE_LIMIT',
-        message: 'slow',
-        notBefore: new Date(now + 1000).toISOString(),
-      },
-    ])
     // The interrupted attempt is still billed, and its effect is settled rather than left pending.
     expect((await s.log.scan({ type: 'cost/ledger', limit: 5 }))[0]?.data).toMatchObject({
       interrupted: true,
@@ -1290,7 +1354,7 @@ describe('Inference segment', () => {
 
   it('ledger failure marks the turn and the next inference ends the turn with error', async () => {
     const seams = fakeSeams({
-      ledger: {
+      billing: {
         record: async () => {
           throw new Error('down')
         },
@@ -1416,7 +1480,7 @@ describe('Inference segment (fix round 1)', () => {
     const s = await openSession({
       provider: fakeProvider(failing),
       seams: fakeSeams({
-        ledger: {
+        billing: {
           record: async (row) => {
             rows.push(row)
             throw new Error('ledger down')
@@ -1432,7 +1496,7 @@ describe('Inference segment (fix round 1)', () => {
     expect(rows[0]?.interrupted).toBe(true)
     expect(s.session.turn?.ledgerFailed).toBe(true)
     expect((await s.log.scan({ type: 'x/core/seam-failed', limit: 5 }))[0]?.data).toMatchObject({
-      seam: 'ledger',
+      seam: 'billing',
       op: 'record',
     })
   })
@@ -1500,6 +1564,57 @@ describe('surfaceToolCalls owner attribution (C-17 producer)', () => {
   })
 })
 
+describe('nested tool calls stay out of the model context', () => {
+  const outerTool = (): ToolDef =>
+    ({
+      name: 'outer',
+      description: 'outer',
+      parameters: Type.Object({}),
+      meta: {
+        isReadOnly: true,
+        isDestructive: false,
+        isConcurrencySafe: true,
+        isOpenWorld: false,
+        replay: 'safe' as const,
+        costHint: undefined,
+        deferLoading: undefined,
+        requiresApproval: undefined,
+      },
+      execute: async (
+        _args: unknown,
+        ctx: { tools: { invoke(name: string, args: unknown): Promise<unknown> } },
+      ) => {
+        await ctx.tools.invoke('read', { path: 'inner' })
+        return { content: [{ type: 'text' as const, text: 'outer done' }] }
+      },
+    }) as never
+
+  it('surfaceToolCalls skips nested calls', async () => {
+    const registry = readRegistry()
+    registry.add(outerTool(), { source: 's', trust: 'builtin' })
+    const { session, log } = await primed([toolTurn('outer', {}), textTurn('done')], registry)
+    await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    const rows = await log.scan({ type: 'tool/call', limit: 10 })
+    // The nested call is a real ledger row; it is the surface that must not carry it.
+    expect(rows.map((r) => (r.data as { depth?: number }).depth ?? 0).sort()).toEqual([0, 1])
+    const calls = [...(await surfaceToolCalls(session))]
+    expect(calls.map((c) => c.name)).toEqual(['outer'])
+  })
+
+  it('hookSurface omits nested results', async () => {
+    const registry = readRegistry()
+    registry.add(outerTool(), { source: 's', trust: 'builtin' })
+    const { session, log } = await primed([toolTurn('outer', {}), textTurn('done')], registry)
+    await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    const results = await log.scan({ type: 'tool/result', limit: 10 })
+    expect(results).toHaveLength(2)
+    const surface = session.surface()
+    expect(surface.filter((n) => n.kind === 'tool_result')).toHaveLength(1)
+    const listed = hookSurface(surface, new Map()).map((n) => n.seq)
+    for (const r of results.slice(0, -1)) expect(listed).not.toContain(r.seq)
+  })
+})
+
 describe('allowed-session grants (F17)', () => {
   it('an allowed-session grant outlives the turn it was given in', async () => {
     let asks = 0
@@ -1507,9 +1622,8 @@ describe('allowed-session grants (F17)', () => {
       approval: {
         ask: async () => {
           asks++
-          return 'allowed-session'
+          return { verdict: 'allowed-session' as const, answeredBy: actor }
         },
-        resume: async () => null,
       },
     })
     const registry = new ToolRegistry()
@@ -1859,24 +1973,47 @@ it('persists reported request timing and restores the same usage details in UI p
         tokens: { input: 10, output: 5, cacheRead: 20, cacheWrite: 0, reasoning: 2 },
         credits: 1,
         creditSource: 'estimated',
-        timing: { ttftMs: 120, durationMs: 450 },
+        timing: { ttftMs: 120, durationMs: 450, firstOutputMs: 150 },
         billing: { usdMicros: 250, source: 'estimated', subscription: false },
         response: { status: 200, id: 'resp-1', model: 'served-model', headerNames: ['x-litellm-call-id'] },
       },
-      { type: 'done', reason: 'stop' },
+      {
+        type: 'done',
+        reason: 'stop',
+        timing: {
+          providerCallMs: 510,
+          prepareMs: 5,
+          captureMs: 40,
+          dispatchMs: 30,
+          firstOutputMs: 150,
+          outputMs: 320,
+          finalizeMs: 40,
+        },
+      },
     ],
   ])
   await session.runInference()
   const costs = await log.scan({ type: 'cost/ledger', limit: 10 })
   expect(costs[0]?.data).toMatchObject({
-    timing: { ttftMs: 120, durationMs: 450 },
+    timing: { ttftMs: 120, durationMs: 450, providerCallMs: 510, firstOutputMs: 150, finalizeMs: 40 },
     response: { status: 200, id: 'resp-1', model: 'served-model', headerNames: ['x-litellm-call-id'] },
   })
   const timeline = await session.projectUI()
   expect(timeline.nodes.find((node) => node.kind === 'cost')).toMatchObject({
     tokens: { input: 10, output: 5, cacheRead: 20, reasoning: 2 },
-    timing: { ttftMs: 120, durationMs: 450 },
+    timing: { ttftMs: 120, durationMs: 450, providerCallMs: 510, firstOutputMs: 150, finalizeMs: 40 },
     billing: { usdMicros: 250 },
+  })
+  expect(timeline.turns?.flatMap((turn) => turn.usage.calls)[0]).toMatchObject({
+    timing: {
+      providerCallMs: 510,
+      prepareMs: 5,
+      captureMs: 40,
+      dispatchMs: 30,
+      firstOutputMs: 150,
+      outputMs: 320,
+      finalizeMs: 40,
+    },
   })
   expect(timeline.usage).toMatchObject({
     reasoningComplete: true,

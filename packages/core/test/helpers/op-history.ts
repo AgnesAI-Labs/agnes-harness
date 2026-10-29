@@ -1,7 +1,7 @@
+import type { Seq } from '@agnes/core-common/types'
+import type { SessionLogImpl } from '@agnes/core-ledger/log/session-log'
+import type { RegisterRow } from '@agnes/core-ledger/log/storage'
 import type { OpState } from '@agnes/protocol'
-import type { SessionLogImpl } from '../../src/log/session-log.js'
-import type { RegisterRow } from '../../src/log/storage.js'
-import type { Seq } from '../../src/types.js'
 
 /** One program-counter value a commit wrote: `null` when the commit removed the lane's cell. */
 export type OpWriteSeen = { lane: string; seq: Seq; data: OpState }

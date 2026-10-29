@@ -9,18 +9,25 @@
 先记下当前 commit、Node 版本、命令、错误码与所用 home/profile；不输出整个环境或凭据。下面的诊断默认仍使用你选定的隔离 AGH_HOME。
 
 ```sh
-node packages/cli/dist/local/agnes.mjs --version
-node packages/cli/dist/local/agnes.mjs daemon status
-node packages/cli/dist/local/agnes.mjs doctor platform --json
-node packages/cli/dist/local/agnes.mjs doctor storage --json
-node packages/cli/dist/local/agnes.mjs doctor provider --json
+node agnes.mjs --version
+node agnes.mjs daemon status
+node agnes.mjs doctor platform --json
+node agnes.mjs doctor storage --json
+node agnes.mjs doctor provider --json
 ```
 
-`doctor platform` 会在每个低于 `full` 的能力下方输出 `<能力>.reason=…`。`sandbox.l1=unavailable` 且原因为 `awaiting sandbox backend full-boundary probe`，表示沙箱后端尚未探测（doctor 不会启动后端），并非平台不支持命令沙箱；`no runnable OS sandbox backend passed its full-boundary probe` 才是探测失败。`doctor storage` 会建立并清理临时探测数据库；它不修复现有数据。`doctor provider --probe` 则会调用模型，排错时不要无意添加。
+`doctor storage` 会建立并清理临时探测数据库；它不修复现有数据。`doctor provider --probe` 则会调用模型，排错时不要无意添加。
+
+`doctor credentials` 只检查 home、secrets、auth 和 locks 目录的元数据，不读取凭据值、不修改权限。它显示 POSIX 当前与所需权限，仅为当前用户拥有的普通文件或目录给出已转义的 `chmod` 建议。执行前核对目标；符号链接和其他用户拥有的路径需要单独排查。
+
+Web 诊断 ZIP 勾选日志后，`logs/daemon-runtime.jsonl` 包含当前及上一代轮转文件的有界运行输出，与 `logs/daemon-request-audit.jsonl` 请求审计及 Host 日志分开保存。缺失日志会明确标出；只有旧 daemon 拒绝 runtime 参数时，才会用旧参数重试。
 
 | 现象 | 核对与处理 |
 | --- | --- |
 | Node 太旧/SQLite 模块错误 | 确认 Node >=24.10；默认 shell 与构建使用的 Node 可能不同 |
+| `E_HOME_VERSION` | home 布局不受支持：保留原目录，另选新的私有空 `AGH_HOME` |
+| `E_DATA_DIR_STALE` | 停止 AGH，备份错误指出的数据目录，只删除 `sessions.db`、其 `-wal`/`-shm` 文件及 `tables/`，保留 `profiles/`。会丢失会话、日程、工作区绑定和插件设置，自装插件须重装；不迁移数据，见[恢复步骤](install.zh-CN.md#数据格式与升级) |
+| `E_DATA_DIR_NEWER` | 升级 AGH 以支持该格式；拒绝不会修改数据 |
 | 缺少 `dist/local/agnes.mjs` | 在仓库根运行完整 `build:local`；不是 daemon stop 能修复的问题 |
 | native helper 缺失/不兼容 | 保留完整分发，按当前 OS/架构/Node 重建；不复制其他平台的单文件 |
 | `listen EPERM` | 执行环境禁止 socket/回环监听；测试需允许相应权限，不通过修改产品安全策略绕过 |
@@ -28,12 +35,13 @@ node packages/cli/dist/local/agnes.mjs doctor provider --json
 | 端口占用 | 先确认哪个实验 Web listener 持有它，再结束自己启动的服务或换端口 |
 | Origin/Host 不匹配 | 地址与 `AGNES_WEB_ORIGIN` 严格一致，不混用 localhost/127.0.0.1；旧后台不同配置时显式停止对应实例 |
 | 页面问 token/文档要求复制 token | 检查是否混用旧 build/旧说明；当前本地 Web 打印普通 URL |
-| Windows 上 `SECRET_UNRESOLVED` 且 `reason` 为 `private-file` | 密钥存储被拒绝，不是缺失；使用该存储的所有路由都会受影响，无论消息里点名的是哪个 ref。`part` 指出被拒的是 `store`、其 `namespace` 目录还是 `file`，`check` 指出目录没通过哪项检查：`not-private` 表示属主、访问列表或继承设置不满足私有要求。在私有目录里新建的子目录会继承其访问列表，但在关闭继承之前并不是私有的：执行 `icacls <目录> /inheritance:r`，再授予当前用户和 `SYSTEM` |
 | 缺 Provider / 非法 route/model | 运行 config 或 Web 设置，测试保存后从当前目录选模型；新默认不修改旧会话 |
+| `--model` 返回 `E_MODEL_UNSUPPORTED` | 运行中的配置没有该 route/model。若错误说明改动需重启后台才生效，说明账户或模型改动以 `restart-required` 保存：运行 `agh daemon stop` 后重试，下一条命令会以已保存的配置启动后台。否则运行 `agh doctor provider` 并选择列出的路由 |
+| `COMPACTION_UNAVAILABLE` / 压缩后仍提示上下文已满 | 核对 `cost/ledger` 中 `purpose: compaction` 的实际模型与凭据；切换对话模型不会替换已经固定的压缩模型。当前内置预设未单独选择压缩模型时会跟随会话主模型；旧会话保留已有选择，可用 `session.setModel` 将 `compaction` 槽位改为可用的文本模型后重试，或修正默认模型后新建会话。诊断包里的 `TRANSPORT` 本身不能确定 HTTP 错误原因 |
 | `TOOL_ARGS_INVALID` | 按错误中的参数路径补齐符合工具定义的参数再重试。`write` 必须同时传入 `path` 和 `content`；被拒绝的调用不会写文件 |
 | 输出以 `max_tokens` / `OUTPUT_LIMIT` 结束 | 模型回复达到输出额度，保留已生成文字、丢弃未完成的工具调用并停止本轮，不自动重试。可要求分步继续，或在 Provider 支持范围内配置 preset 的 `model.max_tokens`；这与输入上下文超限不同 |
 | `RATE_LIMIT` / HTTP 429 | 模型服务返回限流错误，稍后重试；若持续出现，检查账号的服务限制或联系 Provider。该错误不能证明输入上下文或输出 token 超限 |
-| 模型服务返回 `TRANSPORT` / `TIMEOUT` | 消息会写明出错的环节、所处阶段和错误码，例如 `the connection to the model provider was reset while waiting for the first byte (ECONNRESET)`（等待首字节时连接被重置），或 `the connection to the model provider timed out while connecting (connect timeout, UND_ERR_CONNECT_TIMEOUT)`（建立连接超时）；本地时限会写明是哪个计时器，如 `(first-token timeout, 120s)`。连接重置、连接被拒、DNS 失败、流式中途断开和超时会在本轮失败前自动重试，`after N attempts` 表示所报告的错误背后共发出几次请求，此前每次被重试的失败都会在会话日志中留下一条 `x/core/inference-retry` 记录。请检查网络、代理或 VPN。`CERT_HAS_EXPIRED` 等证书或 TLS 错误不会重试，通常说明有代理在拦截 TLS。Provider 返回的错误原文不会显示；只有 `status=?` 而没有错误码时，表示无法识别失败原因 |
+| `CONFIG_CREDENTIAL_REJECTED` / 推理 HTTP 401 或 403 | 已保存的凭据被拒绝。已保存 API Key 的鉴权失败属于永久错误，不会自动重试或退避。点击**修复模型账户**进入对应账户，更正凭据或重新授权，测试并保存后，在同一会话发起新一轮即可，无需重启 daemon |
 | 读取文件后显示通用后台错误 | 保留诊断编号并匹配 daemon 审计记录。仅凭通用提示不能判定是 token 超限 |
 | `SANDBOX_UNAVAILABLE` | Linux 检查 bwrap 的真实执行及 user namespace，macOS 检查系统沙箱可用性；不可用时保留拒绝 |
 | 插件安装成功却没有工具 | 看 trusted、desired、actual、行错误、依赖和 manifest；单独旧 `agnes.extensions` 不是现行普通后端插件入口 |
@@ -45,33 +53,41 @@ node packages/cli/dist/local/agnes.mjs doctor provider --json
 | Skill 删除失败/不能重新启用 | 检查 operation 与 SKILL_REMOVAL_PENDING；可能已有部分文件删除，排除占用后显式重试，不能靠重启/刷新当作撤销 |
 | MCP 目录为空或不能调用 | 检查定义 revision、信任、期望启用、连接状态、tool allow-list 与可执行程序策略；当前逐服务器会话路径跳过 OAuth 绑定，管理面测试成功不能证明会话可调用 |
 | 工具报 E_LEASE_EXPIRED | 检查当前行是否已卸载、撤权或被新版本替换，并核对运行产物版本；旧版本曾有默认 24 小时到期问题，详见[支持范围](../reference/limitations.zh-CN.md)。保留会话与错误，按实际状态重新加载 |
-| 打开旧会话一直停在"正在准备会话" / `LOAD_STALLED` | 很大的会话可能要几分钟才能打开；状态栏会显示进度，10 秒后会只读显示存储中的历史（见[打开很大的旧会话](sessions.zh-CN.md#打开很大的旧会话)）。`LOAD_STALLED` 表示后台 30 秒没有任何消息；后台仍会继续打开会话，重试会接上正在进行的打开。先查看 `daemon status`，再看 `audit/runtime.jsonl` 里的 `session.open` 与 `session.load` 记录。只读历史未经校验；不要为了绕过慢打开去复制或编辑数据库 |
-| `E_LEDGER_INTEGRITY` / 会话历史核对失败 | 存储中的历史与它的哈希链不再相符：有记录被改动，或序号中断。后台拒绝针对该会话的所有请求（包括导出），也不会自行重新打开它（见[历史完整性校验](sessions.zh-CN.md#历史完整性校验)）。先保留证据：停止后台并复制 dataDir。然后再打开一次该会话。这次打开会从第一条记录核对全部历史，所以历史本身完好（只是"核对到哪里"的记录有误）的会话能重新打开，确实被改动的历史会再次被拒绝。这种情况下，用实例停止期间做的备份恢复 `sessions.db`。编辑数据库修复不了哈希链 |
 | 浏览器断线/停止后仍运行 | 关闭客户端与取消/停止后台不同；根据后台历史确认最终状态 |
 | 导入失败 | 保留输入和错误，用脱敏最小夹具复现；不要直接改数据库 |
 
+目录中的输出容量与单次请求的输出额度不同。[DeepSeek Chat Completions API](https://api-docs.deepseek.com/api/create-chat-completion/) 在非思考模式省略 `max_tokens` 时默认 8K。因此 AGH 为 DeepSeek 直连路由（根路径、`/v1` 或 `/beta`）显式发送默认 32768 tokens，并受模型目录容量约束。preset 的明确 `model.max_tokens`、request hook、tree permit 或压缩请求额度仍然优先。此变更不提高目录容量、子任务保守预算持有额或压缩预留。其他额度应在 [preset 定义](../reference/configuration.zh-CN.md)中明确设置，并须在服务商支持范围内。
+
+macOS daemon identity 使用内核 boot-session UUID、PID 和进程保存的启动时间；calendar clock 校时不会改变该 identity。旧 owner/discovery 记录仍可读取。旧 identity 精确匹配时，系统写入私有、绑定 boot 的迁移证明，不改写仍在运行的旧 daemon 的记录。完成验证后，status 和 stop 可跨校时继续工作。若旧记录在首次验证前已经漂移，则无法确认所属 boot：status 保守报告 running，discovery/stop 拒绝 unknown identity。不使用 PID-only 匹配、时间容差或锁绕过。
+
+子进程能写入私有启动诊断时，本地 launcher 会在 early-exit 错误中附上真实拒绝原因，例如 `daemon or package mutation lock is held`。启动成功或失败后均清理诊断文件。
+
+在当前版本上无法继续的会话会返回 `E_SESSION_VERSION_NEWER`（升级 AGH）、`E_SESSION_VERSION_OLDER`（新开会话，或由管理员用 `agh sessions migrate <key> <kind> ...` 切换）或 `E_SESSION_CORRUPT`，并给出会话 id 和原始账本位置。此类拒绝不会改动账本和固定记录；见 [Seam](../extend/seams.zh-CN.md)。Web 界面仍会基于已记录的行以只读方式展示这样的会话（对话、轨迹和交付物），顶部横幅说明原因，输入框被禁用；背后的方法是 `_agnes/v1/session.view`。账本损坏时只显示能安全解码的行，并附上完整性提示。
+
+`E_SEAM_INIT` 会话初始化失败返回 `INTERNAL_ERROR`，其 `data.code` 为稳定的 `E_SEAM_INIT`；若 Provider 注册或初始化失败，则保留具体的 `E_PROVIDER_*` 原因码。daemon 审计记录该码，不记录异常消息或请求参数。缺少 loop 时，检查其精确 id/version 是否已安装、启用，并被会话 bundle 选中。
+
+如果 worker 在 `hello` 前连续三次因相同的确定性启动错误退出，daemon 停止拉起该 worker。请求返回 `INTERNAL_ERROR`，包含 `data.code: WORKER_BOOT_BLOCKED`、`bootCode`、`failures` 和 `retryable: false`。并发请求共用一次启动。修正配置或发布变更后的插件 target 会重置熔断；重启 daemon 可显式重试。临时退出仍保留有上限的退避重试。
+
 意外 daemon 错误可能附 `diagnosticId`；用它匹配所选 dataDir 下 `audit/daemon.jsonl` 的记录。审计写入失败时可能返回 `diagnosticUnavailable`，不能因此声称不存在错误。记录应只含安全的 method/code/时间等，分享前仍检查私有上下文。
 
-`audit/daemon.jsonl` 是请求审计，记录失败的请求，以及每个发起的[批次](batch.zh-CN.md)各一行；文件里没有失败请求的行表示没有请求失败，不表示 daemon 没有日志。工作进程退出（退出码或信号、它承载的会话、它最后写到 stderr 的几行）、工作进程启动失败、会话中断及原因、工作进程日志、每个会话的打开耗时（`session.open` 记录账本各阶段，`session.load` 记录整次加载；只有大小和耗时，不含名称和内容），以及 daemon 的启动、停止、崩溃和错误，记在同一 dataDir 下的 `audit/runtime.jsonl`。该日志与审计一样脱敏，超过 2 MiB 前轮转为 `audit/runtime.jsonl.1`，不保留更早的一代。一次 daemon 启动之前若没有停止记录，说明上一个 daemon 未经关闭流程就结束了。Web 诊断包分别以 `logs/daemon-runtime.jsonl` 和 `logs/daemon-request-audit.jsonl` 收录两者。运行日志出现之前的旧 daemon 无法提供它，诊断包会提示 `runtime.jsonl` 不可用。
+布局不受支持时，请通过 AGH_HOME 选择新的私有空目录。已有文件不会被修改。
 
-## 读懂运行日志里的会话打开记录
+<a id="linux-diagnostics"></a>
 
-在 worker 中运行会话的后台，会把三类与打开会话有关的记录写进 `audit/runtime.jsonl`；进程内后台不写。每行是一个 JSON 对象，含 `kind`、`detail` 和时间 `at`。`detail.session` 不是会话 ID，而是其 SHA-256 的前 16 位十六进制数字；要找某个会话的记录，用同样方法对 ID 求哈希：
+## Linux 诊断
 
-```sh
-node -e "console.log(require('node:crypto').createHash('sha256').update(process.argv[1]).digest('hex').slice(0, 16))" SESSION_ID
-```
+`doctor` 区分 bubblewrap 是否安装与 L1 完整边界是否验证，并报告 Landlock ABI（零表示不可用或已禁用，`unknown` 表示无法确认）。Landlock 可用本身不赋予隔离能力。应检查实际 sandbox 拒绝原因，不能仅凭 `bwrap --version` 判断可用。受限制的容器若不能建立完整边界，拒绝命令是预期行为；明确选择 full-access 时仍无操作系统隔离。
 
-时间单位是毫秒，大小单位是字节。记录中不含名称、路径或内容。
+Linux daemon 身份绑定 `/proc/sys/kernel/random/boot_id`、PID 与 `/proc/<pid>/stat` 启动 tick，日历时钟调整不影响身份，PID 复用或重启会改变身份。不可读或格式异常的记录保持 unknown。僵尸或死亡任务保留 PID，但不能运行 daemon，因此报告为 dead。不得仅匹配 PID 或删除锁来修复 unknown 身份。
 
-- `session.open` 由 worker 在每次打开会话历史时写入：加载、恢复，或唤醒一个它先前休眠的会话。
-  - `lastSeq` 是最后一条记录的序号。`storedBytes` 和 `maxRowBytes` 是历史的存储大小和其中最大一条记录的大小；存储报告不了时两者都省略。
-  - `checkpoint.used: true` 表示这次打开信任了"上次核对到哪里"的记录（到 `checkpoint.throughSeq` 为止），这部分不重新核对就先显示，再在后台核对（见 `session.verify_full`）。`checkpoint.used: false` 时，会话打开之前已核对了全部历史，`checkpoint.reason` 说明原因：`absent`（没有这条记录，如首次打开或核对失败之后）、`unsupported`（存储不保存这类记录），或 `algorithm`、`self-check`、`beyond-head`、`row-mismatch`（有记录但不能用）。`beyond-head` 表示历史现在结束在上次核对到的位置之前，末尾可能有记录被删除；worker 还会为此写一行警告。
-  - `ms.total` 是打开历史的耗时，其组成为 `ms.read`（从存储读取记录）、`ms.verify`（核对哈希链）、`ms.fold`（用记录重建会话）和 `ms.registers`（读取会话当前状态）。`wallMs` 是 worker 看到的整次打开，包括启动会话。
-  - 打开失败的记录只有 `wallMs`、`outcome: "failed"` 和错误 `code`，例如 `E_LEDGER_INTEGRITY` 或 `E_FORMAT`。
-- `session.load` 由后台在客户端的加载需要打开会话时写入；会话已经打开时不写。`ms.open` 是 worker 中的打开，`ms.authorityReplay` 是后台从 worker 读回历史，`ms.acpReplay` 是把历史发给客户端，`ms.total` 是三者之和。`transferBytes` 是从 worker 传到后台的字节数，`resumes` 是一页历史超出单条消息、需要在下一条消息中续传的次数。加载失败的记录有 `outcome: "failed"`、`ms.open` 与 `ms.total` 中的失败前耗时，以及错误 `code`。
-- `session.verify_full` 在后台核对结束后写入，跟在 `checkpoint.used: true` 的 `session.open` 之后。`ms` 是耗时，`rows` 是核对的记录数，`bytes` 是历史的存储大小。`outcome: "failed"` 表示该会话从此被拒绝；若有 `seq`，它是核对失败的那条记录。
+缺少原生 helper 时，使用匹配 Node 的头文件与 C 工具链重建。浏览器启动失败时，在 gate 之前运行 `playwright install --with-deps chromium` 准备依赖，不要在测试中下载浏览器。当前 Computer Use 会拒绝 Linux 平台准入；仅安装桌面不能建立驱动证据，不应注入虚假的桌面能力。
 
-要找出慢打开的时间花在哪里，先比较 `session.load` 的 `ms.open`、`ms.authorityReplay` 与 `ms.acpReplay`，再看对应 `session.open` 的各项 `ms`。`checkpoint.used: false` 时 `ms.verify` 很大，是在完整核对很长的历史；正常关闭的会话下次打开可以改用检查点。
+## 首次运行检查
 
-没有自动修复所有 home 迁移的命令。不要删除 owner、锁、SQLite 或回滚快照来让错误消失。要做版本切换，先结束任务、停止对应后台并备份自有数据，再按[安装指南](install.zh-CN.md)启动完整新分发。
+详见[首次运行指南](getting-started.zh-CN.md)：`agh home info` 只读检查唯一支持的布局；`agh doctor --json` 不连接模型，`--probe` 才主动测试。
+
+## 延迟调用链损坏
+
+带有 `kind: deferred-invocation-chain` 的 `E_LEDGER_INTEGRITY` 表示保存的延迟调用队列无法安全重建。错误包含 `sessionKey`、`lane`、`invocationId`、出错的 `seq` 和 `reason`：`previous-seq-mismatch`（前序记录断链）、`invocation-changed`（调用绑定变化或会话/分支不符）、`not-queued-first`（缺少最初的 queued 记录）、`terminal-reset`（已完成/失败的调用被再次使用）。队列会停止，绝不会静默跳过。
+
+停止使用受影响会话。保留错误并[导出会话记录](sessions.zh-CN.md)，停止本地服务并备份数据目录，再交由维护者诊断。查看该调用的工具回执，在人工向新会话提交工作前，先核对任何结果不明的外部操作。不要编辑或删除 ledger 行、重置终态调用或反复重试损坏队列。此版本没有自动修复命令；维护者指导下的恢复必须保留原始证据。

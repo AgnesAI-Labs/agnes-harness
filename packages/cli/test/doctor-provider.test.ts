@@ -1,9 +1,12 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createProvider, NullContractStore } from '@agnes/ai'
+import { createProvider, JEV_WIRE_API, JevAdapter, NullContractStore } from '@agnes/ai'
 import { FakeAdapter, fakeModel } from '@agnes/ai/testkit'
+import { createConfigurationService, createCredentialStore } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
+import type { ModelRecord, RouteDecl } from '@agnes/protocol'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { expect, it } from 'vitest'
 import { doctorProvider } from '../src/commands/doctor-provider.js'
 
@@ -80,7 +83,7 @@ it('marks an unconfigured profile as not selected without probing its bundled re
   })
   expect(probes).toBe(0)
 })
-it('fails locally for an enabled account with no usable credential without assembling or probing', async () => {
+it('warns locally for an enabled account with no usable credential without assembling or probing', async () => {
   await expect(
     doctorProvider(undefined, {
       signal: new AbortController().signal,
@@ -100,8 +103,11 @@ it('fails locally for an enabled account with no usable credential without assem
     }),
   ).resolves.toEqual({
     name: 'provider',
-    status: 'fail',
-    detail: ['enabled accounts missing usable credentials (1): missing-key'],
+    status: 'warn',
+    detail: [
+      'CONFIG_CREDENTIAL_REQUIRED: enabled accounts missing usable credentials (1): missing-key',
+      'no configured provider route selected; no credential or inference probe was run',
+    ],
   })
 })
 it('fails closed for configured routes absent from the assembled registry with a bounded summary', async () => {
@@ -114,7 +120,11 @@ it('fails closed for configured routes absent from the assembled registry with a
   }).registry
   const names = Array.from({ length: 5 }, (_, index) => `missing-${index}-${'x'.repeat(200)}`)
   const result = await doctorProvider(
-    { provider: { registry }, profile: { provider: { routes: names.map((route) => ({ route })) } } } as never,
+    {
+      provider: { registry },
+      profile: { provider: { routes: names.map((route) => ({ route })) } },
+      modelAdapterCatalog: () => [],
+    } as never,
     { signal: new AbortController().signal },
   )
   expect(result.status).toBe('fail')
@@ -146,7 +156,11 @@ it('never serialises opaque provider detail in either probe output form', async 
     secrets: () => '',
     contract: new NullContractStore(),
   }).registry
-  const host = { provider: { registry }, profile: { provider: { routes: [{ route: 'safe' }] } } } as never
+  const host = {
+    provider: { registry },
+    profile: { provider: { routes: [{ route: 'safe' }] } },
+    modelAdapterCatalog: () => [],
+  } as never
   const text = await doctorProvider(host, { signal: new AbortController().signal, probe: true })
   expect(text.status).toBe('fail')
   expect(text.detail[0]).toBe('route probe failed (1): safe')
@@ -217,5 +231,164 @@ it('consumes actual Registry diagnostics through an assembled Host and honours c
   } finally {
     await host.close()
     rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+function jevCatalogEntry() {
+  return {
+    id: JEV_WIRE_API,
+    version: '1',
+    wireApi: JEV_WIRE_API,
+    sourcePackage: 'builtin',
+    capabilities: { payloadOnly: true },
+  }
+}
+
+function chatAndJevHost(
+  opts: { jevOnly?: boolean; jevRoutes?: (RouteDecl & { models: ModelRecord[] })[] } = {},
+) {
+  let probes = 0
+  const chat = new FakeAdapter({
+    id: 'chat',
+    routes: [{ route: 'gw', api: 'openai-completions', baseUrl: 'http://127.0.0.1:1' }],
+    models: { gw: [fakeModel({ id: 'm1', route: 'gw' })] },
+  })
+  chat.probe = async () => {
+    probes++
+    return {
+      route: 'gw',
+      ok: true,
+      latencyMs: 0,
+      checks: [
+        {
+          name: 'minimal_inference',
+          ok: true,
+          detail: JSON.stringify({
+            modelId: 'm1',
+            thinking: true,
+            nativeToolCalls: true,
+            usageComplete: true,
+          }),
+        },
+      ],
+    }
+  }
+  const jevModel = fakeModel({
+    id: 'typesafe/jev-1',
+    route: 'jev',
+    api: JEV_WIRE_API,
+    baseUrl: 'https://jev.invalid/v1',
+  })
+  // The real adapter, which has no probe: asking it for one reads as a failure.
+  const jev = new JevAdapter({
+    routes: opts.jevRoutes ?? [
+      {
+        route: 'jev',
+        api: JEV_WIRE_API,
+        baseUrl: 'https://jev.invalid/v1',
+        credentialRef: 'secret://jev/key',
+        models: [jevModel],
+      },
+    ],
+  })
+  const registry = createProvider({
+    adapters: [chat, jev],
+    routes: { primary: { route: 'gw', model: 'm1' } },
+    clock: Date.now,
+    secrets: () => 'TEST-KEY-0123456789',
+    contract: new NullContractStore(),
+  }).registry
+  const jevDecls = (opts.jevRoutes ?? [{ route: 'jev', api: JEV_WIRE_API }]).map((decl) => ({
+    route: decl.route,
+    api: decl.api,
+  }))
+  const routes = [...(opts.jevOnly ? [] : [{ route: 'gw', api: 'openai-completions' }]), ...jevDecls]
+  const host = {
+    provider: { registry },
+    profile: { provider: { routes } },
+    modelAdapterCatalog: () => [jevCatalogEntry()],
+  } as never
+  return { host, probes: () => probes, dispose: () => jev.dispose() }
+}
+
+it('leaves a payload-only route out of the probe and says so', async () => {
+  const { host, probes, dispose } = chatAndJevHost()
+  try {
+    const result = await doctorProvider(host, { signal: new AbortController().signal, probe: true })
+    expect(result).toEqual({
+      name: 'provider',
+      status: 'ok',
+      detail: [
+        'selected provider route and model inference verified',
+        'payload-only routes not probed (1): jev',
+      ],
+    })
+    expect(probes()).toBe(1)
+    const json = await doctorProvider(host, { signal: new AbortController().signal, probe: true, json: true })
+    expect(json.status).toBe('ok')
+    expect(JSON.parse(json.detail[0] ?? '').routes.map((r: { route: string }) => r.route)).toEqual(['gw'])
+  } finally {
+    await dispose()
+  }
+})
+it('skips the payload-only route a saved configuration account produces', async () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'agnes-cli-doctor-'))
+  try {
+    const home = join(scratch, 'home')
+    createPrivateDirectorySync(home)
+    const credentialRef = 'secret://generic/11111111-1111-4111-8111-111111111111'
+    await createCredentialStore({ root: home }).putGeneric(credentialRef, 'jev-test-key', {
+      label: 'Jev',
+      createdAt: '2026-10-16T00:00:00.000Z',
+    })
+    const configuration = createConfigurationService({ home, profile: 'local-dev' })
+    await configuration.save({
+      providerId: 'typesafe-systemone',
+      accountId: 'jev',
+      label: 'Jev',
+      credentialRef,
+      model: 'typesafe/jev-1.13-20260917',
+      models: [
+        { id: 'typesafe/jev-1.13-20260917', name: 'Jev 1.13', contextWindow: 65536, maxTokens: 32768 },
+      ],
+      expectedRevision: 0,
+    })
+    const generated = (await configuration.profileInput()).provider?.routes ?? []
+    const jevRoutes = generated.map((decl) => ({
+      ...decl,
+      models: (decl.models ?? []) as ModelRecord[],
+    }))
+    const { host, probes, dispose } = chatAndJevHost({ jevRoutes })
+    try {
+      const result = await doctorProvider(host, { signal: new AbortController().signal, probe: true })
+      expect(result).toEqual({
+        name: 'provider',
+        status: 'ok',
+        detail: [
+          'selected provider route and model inference verified',
+          'payload-only routes not probed (1): account-jev',
+        ],
+      })
+      expect(probes()).toBe(1)
+    } finally {
+      await dispose()
+    }
+  } finally {
+    rmSync(scratch, { recursive: true, force: true })
+  }
+})
+it('warns instead of failing when every configured route is payload-only', async () => {
+  const { host, dispose } = chatAndJevHost({ jevOnly: true })
+  try {
+    expect(await doctorProvider(host, { signal: new AbortController().signal, probe: true })).toEqual({
+      name: 'provider',
+      status: 'warn',
+      detail: [
+        'payload-only routes not probed (1): jev',
+        'no route that takes conversations is configured; nothing was probed',
+      ],
+    })
+  } finally {
+    await dispose()
   }
 })

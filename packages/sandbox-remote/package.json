@@ -11,7 +11,8 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
-    "@agnes/core": "workspace:*"
+    "@agnes/core": "workspace:*",
+    "@agnes/extension-api": "workspace:*"
   },
   "license": "Apache-2.0"
 }

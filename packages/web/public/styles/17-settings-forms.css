@@ -1,0 +1,1733 @@
+@layer app {
+  #config-close .icon {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+  .settings-rail-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8);
+    padding: 0 var(--s12);
+  }
+  .settings-nav-group {
+    display: grid;
+    gap: var(--s4);
+  }
+  .settings-nav-label {
+    display: none;
+  }
+  .settings-nav-item {
+    width: 100%;
+    min-height: 2.5rem;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--s8);
+    padding: 0.5625rem var(--s16) 0.5625rem var(--s12);
+    border-radius: var(--radius-control);
+    font-size: var(--font-size-body);
+    font-weight: 400;
+    text-align: start;
+  }
+  .settings-nav-item.active,
+  .settings-nav-item[aria-current="page"] {
+    box-shadow: none;
+  }
+  .settings-nav-item:hover:not(:disabled) {
+    border-color: transparent;
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-hover);
+  }
+  #config-form .settings-nav-item .icon {
+    width: 0.9375rem;
+    height: 0.9375rem;
+  }
+  .settings-content {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: transparent;
+  }
+  #config-form .config-heading .eyebrow {
+    display: none;
+  }
+  /* 模型账户页：账户列表在上、账户详情在下（用户要求改成上下结构）。
+   外观页仍沿用两栏，未动。 */
+  .config-workspace {
+    min-width: 0;
+    min-height: 0;
+    flex: 1;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  /* A status row states its result first, then explains it. */
+  #computer-use-settings-pane .agnes-settings-item-description > :is(span, strong) {
+    display: block;
+  }
+  #computer-use-settings-pane .agnes-settings-item-description > strong {
+    color: var(--agnes-text-primary);
+    font-weight: var(--font-weight-medium);
+  }
+  #computer-use-blockers {
+    margin: var(--s4) 0 0;
+    padding-inline-start: var(--s16);
+  }
+  #computer-use-blockers:empty,
+  #computer-use-runtime:empty {
+    display: none;
+  }
+  .config-accounts-section {
+    margin: 0;
+  }
+  #model-settings-pane .config-accounts-section {
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .config-accounts-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--s16);
+    margin-top: 0;
+    padding: var(--s16) 0 var(--s12);
+    border-top: 0;
+  }
+  #model-settings-pane .config-accounts-heading h3 {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+  .config-accounts-heading h3,
+  .config-detail-heading h3 {
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    letter-spacing: 0;
+  }
+  /* Inside a card the card's own padding frames the heading. */
+  .agnes-settings-card > .config-accounts-heading {
+    padding: 0;
+  }
+  #config-form .config-accounts-heading > div > p,
+  #config-form #config-account-context {
+    margin-top: var(--s4);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+  }
+  #config-accounts {
+    display: grid;
+    align-content: start;
+    gap: var(--s8);
+    overflow: visible;
+  }
+  /* An account is one row: logo, name over its default model and count, its state, then the menu. */
+  .config-account {
+    transition: background-color var(--transition-fast);
+  }
+  .config-account[data-enabled="false"] > :not(.config-account-actions) {
+    opacity: 0.6;
+  }
+  .config-account:hover,
+  .config-account[data-selected="true"] {
+    background: var(--agnes-bg-hover);
+  }
+  .config-account-select {
+    min-width: 0;
+    min-height: var(--s32);
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--s8);
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: var(--radius-md);
+    color: var(--agnes-text-primary);
+    background: transparent;
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    text-align: start;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .config-account-select:hover:not(:disabled) {
+    border-color: transparent;
+    color: var(--agnes-text-primary);
+    background: transparent;
+    box-shadow: none;
+  }
+  .config-account-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s4) 0.375rem;
+    overflow: hidden;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  .config-account-meta > :first-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .config-account-status {
+    flex: 0 0 auto;
+  }
+  .config-account-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--s4);
+  }
+  .config-account button:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
+  }
+  /* A quiet closing line of the account list; it carries no rule of its own, so nothing is drawn
+   between it and the list above or the card below. */
+  .config-list-note {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+  }
+  .config-detail-heading {
+    min-height: 4.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s16);
+    padding: var(--s16) var(--s20);
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  #config-form .config-detail-heading .eyebrow {
+    margin-bottom: var(--s4);
+    color: var(--agnes-text-disabled);
+    font-size: var(--font-size-xs);
+  }
+  #config-form #config-account-context {
+    flex: 0 1 auto;
+    max-width: 13rem;
+    color: var(--agnes-text-tertiary);
+    text-align: end;
+  }
+  .config-detail-grid {
+    min-height: 0;
+    flex: 1;
+    padding: var(--s20);
+    overflow-y: auto;
+  }
+  /* 账户详情 / 新增弹窗：外壳沿用全局 dialog 口径（宽度 / 圆角 / 阴影 / 遮罩），
+   这里只补内部排版 —— 内容可滚动、关闭按钮浮在右上、页脚保留原分隔线样式。 */
+  #account-dialog {
+    width: min(30rem, calc(100vw - 3rem));
+  }
+  .select-picker-panel {
+    pointer-events: auto;
+    position: fixed;
+    inset: auto;
+    z-index: var(--agh-z-dropdown);
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0.375rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--agnes-line-emphasis) transparent;
+    border: 0;
+    border-radius: var(--radius-popover);
+    /* This panel spans areas of the page it covers, so it needs its own opaque surface: the shared
+       94% material only hides them while the backdrop blur composites, and runtimes that skip the
+       filter leave the text underneath readable (menus keep that material). */
+    background: var(--agnes-bg-popover);
+    color: var(--agnes-text-primary);
+    box-shadow: var(--shadow-popover);
+    font-size: var(--font-size-sm);
+  }
+  .select-picker-group + .select-picker-group {
+    margin-top: var(--s8);
+  }
+  .select-picker-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.625rem 0.625rem var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 1.25rem;
+    text-transform: none;
+    cursor: default;
+    user-select: none;
+  }
+  .select-picker-heading::after {
+    content: "";
+    flex: 1;
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  .select-picker-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s12);
+    min-height: var(--control-height);
+    box-sizing: border-box;
+    padding: var(--s2) var(--s8);
+    border-radius: var(--radius-menu-item);
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+  }
+  .select-picker-option[aria-selected="true"] {
+    font-weight: 500;
+  }
+  /* The pointed or keyboard-current row takes the accent fill with its own content colour. */
+  .select-picker-option:hover,
+  .select-picker-option:active,
+  .select-picker-panel[data-keyboard="true"] .select-picker-option[data-active="true"] {
+    color: var(--agnes-menu-active-text);
+    background: var(--agnes-menu-active-bg);
+  }
+  .select-picker-check {
+    flex: 0 0 1rem;
+    color: var(--agnes-brand-primary);
+    text-align: center;
+  }
+  .select-picker-option:is(:hover, :active) .select-picker-check,
+  .select-picker-panel[data-keyboard="true"] .select-picker-option[data-active="true"] .select-picker-check {
+    color: inherit;
+  }
+  @media (max-width: 767px) {
+    .select-picker-option {
+      min-height: var(--control-height-touch);
+    }
+  }
+  :is(#account-dialog, .account-page-host) .account-dialog-close {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    z-index: 1;
+  }
+  .account-dialog-body {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    max-height: var(--dialog-max-height);
+    overflow: hidden;
+  }
+  /* 只有表单内容滚动，标题与操作区始终保留在弹窗可视范围内。 */
+  :is(#account-dialog, .account-page-host) .config-detail-grid {
+    min-height: 0;
+    flex: 1 1 auto;
+    padding: 0.875rem var(--s20) var(--s16);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  :is(#account-dialog, .account-page-host) .config-detail-heading {
+    min-height: auto;
+    display: grid;
+    gap: 0.125rem;
+    padding: var(--s20) var(--s48) 0.875rem var(--s20);
+  }
+  :is(#account-dialog, .account-page-host) .config-detail-heading .eyebrow {
+    display: none;
+  }
+  :is(#account-dialog, .account-page-host) .config-detail-heading h3 {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-md);
+    font-weight: 500;
+    line-height: 1.5rem;
+  }
+  :is(#account-dialog, .account-page-host) #config-account-context {
+    max-width: none;
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+    text-align: start;
+  }
+  :is(#account-dialog, .account-page-host) .config-detail-footer {
+    position: static;
+    flex: 0 0 auto;
+  }
+  /* 模型账户页的字段整行铺开（用户要求改成上下结构）；
+   设置弹窗整体在 #config-form 内，故用面板 id 收窄作用范围。 */
+  #config-form #model-settings-pane .config-section {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  :is(#config-form, #account-dialog) .config-section {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s12) var(--s16);
+  }
+  :is(#config-form, #account-dialog) .config-section + .config-section {
+    margin-top: var(--s20);
+    padding-top: var(--s20);
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  :is(#config-form, #account-dialog) .config-section legend {
+    grid-column: 1 / -1;
+    margin-bottom: var(--s4);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    letter-spacing: 0;
+  }
+  :is(#config-form, #account-dialog) .form-field {
+    gap: 0.375rem;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+  }
+  :is(#config-form, #account-dialog) .form-field-wide,
+  :is(#config-form, #account-dialog) .config-validation-section .config-validation-controls,
+  :is(#config-form, #account-dialog) .config-validation-section #config-state,
+  :is(#config-form, #account-dialog) .config-validation-section #config-error {
+    grid-column: 1 / -1;
+  }
+  :is(#config-form, #account-dialog) #config-key-hint {
+    min-height: 1.1rem;
+    margin-top: 0.125rem;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  :is(#account-dialog, .account-page-host) .oauth-controls {
+    display: grid;
+    gap: var(--s12);
+    padding: 0.875rem;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-group);
+  }
+  :is(#account-dialog, .account-page-host) .oauth-controls[hidden] {
+    display: none;
+  }
+  :is(#account-dialog, .account-page-host) .oauth-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s8);
+  }
+  :is(#account-dialog, .account-page-host) .oauth-actions button {
+    flex: 1 1 8rem;
+  }
+  :is(#account-dialog, .account-page-host) .oauth-status {
+    min-height: 1.125rem;
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+  }
+  :is(#account-dialog, .account-page-host) :is(.oauth-status, .oauth-links):empty {
+    display: none;
+  }
+  :is(#account-dialog, .account-page-host) .oauth-links a {
+    color: var(--agnes-text-emphasis);
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+  }
+  :is(#account-dialog, .account-page-host) .oauth-prompt[hidden] {
+    display: none;
+  }
+  :is(#config-form, #account-dialog) .config-validation-section .config-validation-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: var(--s16);
+  }
+  :is(#config-form, #account-dialog) .config-validation-controls > #config-test {
+    height: var(--control-height-form);
+    min-height: var(--control-height-form);
+  }
+  :is(#config-form, #account-dialog) .config-validation-section #config-state,
+  :is(#config-form, #account-dialog) .config-validation-section #config-error {
+    min-height: 0;
+    margin: 0;
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+  }
+  :is(#config-form, #account-dialog) .config-validation-section #config-state {
+    color: var(--agnes-text-tertiary);
+  }
+  :is(#config-form, #account-dialog) .config-validation-section #config-error {
+    color: var(--agnes-status-danger-text);
+  }
+  :is(#config-form, #account-dialog) .config-validation-section #config-error:empty {
+    display: none;
+  }
+  .config-detail-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s16);
+    padding: var(--s16) var(--s20);
+    border-top: 1px solid var(--agnes-line-primary);
+    background: var(--agnes-bg-surface);
+  }
+  /* Actions end at the trailing edge whether or not a status sits on the left. */
+  .config-detail-footer > .agnes-settings-actions {
+    margin-inline-start: auto;
+  }
+  #config-account-guard {
+    max-width: 27rem;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+  }
+  #config-save {
+    min-width: 7rem;
+    min-height: var(--control-height);
+    flex: 0 0 auto;
+    border-radius: var(--radius-md);
+  }
+
+  @media (max-width: 900px) {
+    #config {
+      width: calc(100vw - 1.25rem);
+      height: calc(100dvh - 1.25rem);
+      max-height: calc(100dvh - 1.25rem);
+    }
+    #config-form {
+      grid-template-columns: 13rem minmax(0, 1fr);
+    }
+    #config-form .config-section {
+      grid-template-columns: 1fr;
+    }
+    #config-form .form-field-wide,
+    #config-form .config-validation-section .config-validation-controls,
+    #config-form .config-validation-section #config-state,
+    #config-form .config-validation-section #config-error,
+    #config-form .config-section legend {
+      grid-column: 1;
+    }
+  }
+
+  @media (max-width: 840px) {
+    #config {
+      width: 100vw;
+      max-width: none;
+      height: 100dvh;
+      max-height: 100dvh;
+      margin: 0;
+      border: 0;
+      border-radius: 0;
+    }
+    #config-form {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    #settings-content-slots {
+      grid-column: 1;
+      grid-row: 2;
+    }
+    .settings-rail {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: var(--s8);
+      padding: var(--s12) var(--s16);
+      border-right: 0;
+      border-bottom: 1px solid var(--agnes-line-primary);
+    }
+    .settings-rail-heading {
+      padding: 0;
+    }
+    .settings-nav-group {
+      grid-template-columns: auto auto;
+      align-items: center;
+    }
+    .settings-nav-label {
+      display: none;
+    }
+    .settings-nav-item {
+      min-height: 2.25rem;
+      width: auto;
+      padding: var(--s8) 0.625rem;
+    }
+    .settings-content {
+      overflow-y: auto;
+    }
+    .config-detail-grid {
+      overflow: visible;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .settings-rail {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .settings-nav-group {
+      grid-column: 1 / -1;
+      grid-row: 2;
+    }
+    .settings-rail-heading .eyebrow,
+    #config-form #config-account-context {
+      display: none;
+    }
+    .settings-nav-item {
+      flex: 1 1 50%;
+      justify-content: center;
+    }
+    .config-accounts-heading,
+    .config-detail-heading,
+    .config-detail-grid,
+    .config-detail-footer {
+      padding: var(--s16);
+    }
+    .config-accounts-heading {
+      align-items: center;
+    }
+    .config-accounts-heading p,
+    #config-add-account span {
+      display: none;
+    }
+    #config-add-account {
+      width: 2.75rem;
+      min-width: 2.75rem;
+      padding: 0;
+    }
+    .config-account-select {
+      grid-template-columns: 2rem minmax(0, 1fr);
+    }
+    #config-form .config-validation-section .config-validation-controls,
+    .config-detail-footer {
+      align-items: stretch;
+      grid-template-columns: 1fr;
+    }
+    #config-form #config-test,
+    #config-save {
+      width: 100%;
+    }
+    :is(#account-dialog, .account-page-host) .config-detail-footer {
+      flex-direction: column;
+    }
+  }
+  .usage-disclosure {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+  }
+  .usage-disclosure .agh-disclosure-summary {
+    cursor: pointer;
+    font-variant-numeric: tabular-nums;
+  }
+  .usage-disclosure .agh-disclosure-summary:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
+  }
+  .usage-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--s8) 1rem;
+    margin: var(--s12) 0 var(--s4);
+  }
+  .usage-grid dt,
+  .usage-grid dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .usage-grid dd {
+    color: var(--agnes-text-primary);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .turn-process-body .assistant .node-label {
+    display: none;
+  }
+  .confirm-review-section[data-open="true"] > .agh-disclosure-summary {
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  /* A general setting is one row: its name, then its choices as one segmented set. The radios
+   keep their names, values and arrow-key behaviour; only their presentation is a segment. */
+  .appearance-options {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--s8) var(--s24);
+    min-width: 0;
+    min-height: 3.5rem;
+    box-sizing: border-box;
+    margin: 0;
+    padding: var(--s10) var(--s16);
+    border: 0;
+  }
+  /* A floated legend is laid out as an ordinary item of the row instead of on the frame. */
+  .appearance-options > legend {
+    float: left;
+    padding: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-sm);
+  }
+  .appearance-choices,
+  #skin-option-items > div {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--s2);
+    min-width: 0;
+  }
+  .appearance-choices:not(:has(> div)),
+  #skin-option-items > div {
+    padding: var(--s2);
+    border-radius: var(--radius-segmented);
+    background: var(--agnes-segment-track);
+    box-shadow: inset 0 0 0 var(--hairline) var(--agnes-line-hairline);
+  }
+  /* A choice is a row of its group: radio, name and what it means. The picked row is filled. */
+  .appearance-option {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s10);
+    padding: var(--s10) var(--s12);
+    border-radius: var(--radius-control);
+    cursor: pointer;
+  }
+  .appearance-option-copy {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s2);
+    min-width: 0;
+  }
+  .appearance-option-name {
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-sm);
+  }
+  .appearance-option-hint {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  .appearance-option:hover {
+    background: var(--agnes-bg-hover);
+  }
+  .appearance-option:has(input:checked) {
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .appearance-option:has(input:focus-visible) {
+    outline: var(--focus-outline);
+    outline-offset: -3px;
+    box-shadow: var(--focus-line-inset);
+  }
+  .appearance-option:has(input:disabled) {
+    cursor: not-allowed;
+  }
+  .appearance-option:has(input:disabled) .appearance-option-name {
+    color: var(--agnes-text-tertiary);
+  }
+  #config-form .appearance-option input,
+  .runtime-settings .appearance-option input {
+    flex: 0 0 auto;
+    width: 1rem;
+    height: 1rem;
+    min-height: 0;
+    margin: 0.125rem 0 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    accent-color: var(--agnes-brand-primary);
+  }
+  /* A permission card draws its own edge and fill (components.css), so its choice is bare: icon tile
+   and radio on the first line, name and meaning under them, no row fill on hover or pick. */
+  .agnes-settings-modes .appearance-option {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--s10) var(--s8);
+    padding: 0;
+  }
+  .agnes-settings-modes .appearance-option:hover,
+  .agnes-settings-modes .appearance-option:has(input:checked) {
+    background: none;
+  }
+  .agnes-settings-modes .appearance-option:has(input:focus-visible) {
+    outline: none;
+    box-shadow: none;
+  }
+  .agnes-settings-modes .appearance-option > input {
+    grid-area: 1 / 2;
+  }
+  .agnes-settings-modes .appearance-option > .agh-icon-tile {
+    grid-area: 1 / 1;
+  }
+  .agnes-settings-modes .appearance-option-copy {
+    grid-column: 1 / -1;
+    gap: var(--s4);
+  }
+  .agnes-settings-modes .appearance-option-name {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8);
+    font-weight: var(--font-weight-semibold);
+  }
+  .agnes-settings-modes .appearance-option:has(input:disabled) .appearance-option-name {
+    color: var(--agnes-text-secondary);
+  }
+  /* While a save or reread is in flight, the cards wait as they are instead of greying out. */
+  .agnes-settings-modes[data-busy] .appearance-option:has(input:disabled) {
+    cursor: progress;
+  }
+  .agnes-settings-modes[data-busy] .appearance-option:has(input:disabled) .appearance-option-name {
+    color: var(--agnes-text-primary);
+  }
+  /* A group of choices is one outlined list; its fieldset draws no frame of its own. */
+  fieldset.agnes-settings-choices {
+    min-width: 0;
+    margin: 0;
+    padding: var(--s4);
+  }
+  /* The picked row is a rounded fill inside the card; the hairlines beside it step back. */
+  .agnes-settings-choices > * + *::before {
+    inset-inline: var(--s12);
+  }
+  .agnes-settings-choices > :has(input:checked)::before,
+  .agnes-settings-choices > :has(input:checked) + *::before {
+    border-color: transparent;
+  }
+
+  /* Segments: the same radios laid out as one compact set, for a few short, self-evident choices. */
+  .appearance-choices .appearance-option {
+    align-items: center;
+    min-height: var(--control-height-xs);
+    box-sizing: border-box;
+    padding: 0 var(--s12);
+    border-radius: calc(var(--radius-segmented) - var(--s2));
+    color: var(--agnes-text-secondary);
+  }
+  .appearance-choices .appearance-option-name {
+    color: inherit;
+    font-weight: var(--font-weight-regular);
+    white-space: nowrap;
+  }
+  /* The hint stays for assistive tech; a segment is self-explanatory. */
+  .appearance-choices .appearance-option .appearance-option-hint {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .appearance-choices p.appearance-option-hint {
+    flex: 1 0 100%;
+    margin: 0;
+    text-align: end;
+  }
+  .appearance-choices .appearance-option:hover {
+    color: var(--agnes-text-primary);
+    background: transparent;
+  }
+  .appearance-choices .appearance-option:has(input:checked) {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-control);
+    box-shadow: var(--shadow-control);
+  }
+  .appearance-choices .appearance-option:has(input:checked) .appearance-option-name {
+    font-weight: var(--font-weight-medium);
+  }
+  .appearance-choices .appearance-option:has(input:focus-visible) {
+    outline-offset: 1px;
+  }
+  /* Skins and languages are lists read at run time: each is a picker in its row, with any note
+   about the choice under it. */
+  .appearance-picker {
+    display: grid;
+    justify-items: end;
+    gap: var(--s4);
+    min-width: min(14rem, 100%);
+  }
+  .appearance-picker > :is(.agnes-settings-input, .select-picker-trigger) {
+    width: 100%;
+  }
+  /* In a settings row the pickers and segments take the shared control column. */
+  .agnes-settings-item-control > .appearance-picker {
+    justify-items: stretch;
+  }
+  .agnes-settings-item-control > .appearance-choices > .appearance-option {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+  .agnes-settings-item-control > .appearance-thumbs {
+    justify-content: space-between;
+  }
+  .appearance-picker p.appearance-option-hint {
+    margin: 0;
+    text-align: end;
+  }
+  #config-form .appearance-choices .appearance-option input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  /* 个性化 and 记忆 are two groups of the General page, a page rhythm apart. */
+  .agnes-settings-personalization,
+  #settings-subsection-custom-instructions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s24);
+  }
+  #settings-subsection-custom-instructions {
+    gap: var(--s8);
+  }
+  /* A row's choices sit in a fieldset that draws nothing of its own. */
+  fieldset.agnes-settings-fieldset {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .appearance-thumbs {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--s10);
+  }
+  .appearance-thumbs .appearance-option {
+    flex-direction: column;
+    align-items: center;
+    gap: var(--s4);
+    padding: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+  }
+  .appearance-thumbs .appearance-option:hover,
+  .appearance-thumbs .appearance-option:has(input:checked) {
+    background: transparent;
+  }
+  .appearance-thumbs .appearance-option:has(input:checked) {
+    color: var(--agnes-text-primary);
+  }
+  .appearance-thumbs .appearance-option-name {
+    color: inherit;
+    font-weight: var(--font-weight-regular);
+  }
+  .appearance-thumbs .appearance-option:has(input:checked) .appearance-option-name {
+    font-weight: var(--font-weight-medium);
+  }
+  /* The thumbnail already says what the choice is; the hint stays for assistive tech. */
+  .appearance-thumbs .appearance-option-hint {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .agh-scheme-thumbnail {
+    display: block;
+    width: 3.875rem;
+    height: 2.5rem;
+    border-radius: var(--radius-control);
+    box-shadow: 0 0 0 1px var(--agnes-line-primary);
+  }
+  .appearance-thumbs .appearance-option:has(input:checked) .agh-scheme-thumbnail {
+    box-shadow: 0 0 0 2px var(--agnes-brand-primary);
+  }
+  .appearance-thumbs .appearance-option:has(input:focus-visible) {
+    outline: 0;
+    box-shadow: none;
+  }
+  .appearance-thumbs .appearance-option:has(input:focus-visible) .agh-scheme-thumbnail {
+    box-shadow:
+      0 0 0 2px var(--agnes-brand-primary),
+      var(--focus-line);
+  }
+  #config-form .appearance-thumbs .appearance-option input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  /* On a settings page the page header names the account form, so the form drops its own title
+   bar and the dialog's dividers: the steps follow the page description, 取消 / 继续 close the page. */
+  :is(#account-dialog, .account-page-host) .account-dialog-body[data-page] .config-detail-heading {
+    display: none;
+  }
+  :is(#account-dialog, .account-page-host) .account-dialog-body[data-page] {
+    max-height: none;
+    overflow: visible;
+  }
+  :is(#account-dialog, .account-page-host) .account-dialog-body[data-page] .config-detail-grid {
+    padding: 0;
+    overflow: visible;
+  }
+  :is(#account-dialog, .account-page-host) .account-dialog-body[data-page] .config-detail-footer {
+    padding: var(--s16) 0 0;
+    border-top: 0;
+    background: transparent;
+  }
+  /* Account setup shares one stable native region in settings and the first-run guide. */
+  #account-dialog {
+    width: min(560px, calc(100vw - var(--s32)));
+  }
+  :is(#account-dialog, .account-page-host) .account-dialog-body .config-section,
+  .account-dialog-body[data-inline="true"] .config-section {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s12);
+  }
+  .account-dialog-body .config-detail-grid {
+    display: grid;
+    gap: var(--s16);
+  }
+  .account-dialog-body[data-account-step="provider"] .account-connection-step,
+  .account-dialog-body[data-account-step="connection"] #config-provider-choices,
+  .account-dialog-body[data-inline="true"] #config-provider-choices,
+  .account-dialog-body[data-inline="true"] .config-detail-heading,
+  .account-dialog-body[data-inline="true"] .config-detail-footer {
+    display: none;
+  }
+  .account-dialog-body[data-inline="true"],
+  .account-dialog-body[data-inline="true"] .config-detail-grid,
+  .account-dialog-body[data-inline="true"] .account-connection-step,
+  .account-dialog-body[data-inline="true"] .config-section {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .account-dialog-body[data-inline="true"] .config-section {
+    display: grid;
+    margin-inline: 0;
+    padding-inline: 0;
+    border-inline: 0;
+  }
+  .account-dialog-body[data-inline="true"] .config-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--s16) 0;
+    overflow: visible;
+  }
+  /* Inline means the first-run dialog owns the height and the scrolling. Keeping the dialog's height
+     cap here would clip the form, and its inner grid is not scrollable (overflow: visible above), so the
+     last section could never be reached. */
+  .account-dialog-body[data-inline="true"] {
+    max-height: none;
+    overflow: visible;
+  }
+  /* Popular providers, then the rest in a fold. */
+  .config-account-add.agnes-ui-button {
+    width: 100%;
+    min-height: 58px;
+    justify-content: flex-start;
+    padding: 12px 16px;
+    border: 1px dashed var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    color: var(--agnes-text-secondary);
+  }
+  .config-accounts-welcome {
+    padding: 24px;
+  }
+  .config-accounts-welcome .account-provider-choices {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  }
+  .config-accounts-welcome [data-provider="agnes-ai"] {
+    border-color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .config-accounts-demo {
+    margin: 16px 0 0;
+    text-align: center;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+  }
+  .config-auxiliary-disabled {
+    opacity: 0.55;
+  }
+  .account-provider-groups {
+    display: grid;
+    gap: var(--s8);
+  }
+  .account-provider-choices {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+    gap: var(--s8);
+  }
+  .account-provider-relays {
+    display: grid;
+    gap: var(--s4);
+  }
+  .account-provider-group-label {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+  }
+  /* A relay can list hundreds of models: the picked list scrolls instead of pushing the form away. */
+  .account-compatible-models .agnes-settings-chips {
+    display: flex;
+    justify-content: flex-start;
+    max-width: none;
+    max-height: 12rem;
+    overflow-y: auto;
+  }
+  .account-compatible-models .agnes-settings-chip-input {
+    width: 16rem;
+    max-width: 100%;
+    /* Keep this list's fixed width: the shared chip input grows inside its row. */
+    flex: 0 1 16rem;
+  }
+  .account-provider-choices > button {
+    white-space: normal;
+    height: auto;
+    min-height: 3.25rem;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: var(--s2);
+    padding: var(--s8) var(--s12);
+    text-align: start;
+  }
+  /* In the dialog the tiles choose the provider and the title names it; the select stays for the
+   first-run guide, which shows no tiles. */
+  :is(#account-dialog, .account-page-host) .account-provider-step {
+    display: none;
+  }
+  /* A provider tile: its name, and under it how it connects. */
+  .account-provider-choices > button strong {
+    font-weight: var(--font-weight-medium);
+  }
+  .account-provider-choices > button small {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+  }
+  /* Two steps, named once above the form; the step on screen is the emphasised one. */
+  .account-steps {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: account-step;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+  }
+  .account-steps[hidden] {
+    display: none;
+  }
+  .account-steps > li {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    counter-increment: account-step;
+  }
+  .account-steps > li::before {
+    content: counter(account-step);
+    display: grid;
+    place-items: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: var(--radius-full);
+    background: var(--agnes-bg-hover);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+  .account-steps > li + li::after {
+    content: "";
+    order: -1;
+    width: var(--s24);
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  .account-dialog-body[data-account-step="provider"] .account-steps > li[data-step="provider"],
+  .account-dialog-body[data-account-step="connection"] .account-steps > li[data-step="connection"] {
+    color: var(--agnes-text-primary);
+    font-weight: var(--font-weight-medium);
+  }
+  .account-dialog-body[data-account-step="provider"] .account-steps > li[data-step="provider"]::before,
+  .account-dialog-body[data-account-step="connection"] .account-steps > li[data-step="connection"]::before {
+    color: var(--agnes-bg-surface);
+    background: var(--agnes-brand-primary);
+  }
+  /* The test result reads where it happened: one toned line under the key, 重新测试 beside it. */
+  .account-status {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--s4) var(--s8);
+  }
+  :is(#config-form, #account-dialog) .account-status > :is(#config-state, #config-error) {
+    grid-column: 1;
+    min-height: 0;
+    margin: 0;
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  .account-status > :is(#config-state, #config-error):empty {
+    display: none;
+  }
+  :is(#config-form, #account-dialog) .account-status > #config-state {
+    color: var(--agnes-text-secondary);
+  }
+  :is(#config-form, #account-dialog) .account-status > #config-state[data-tone="progress"] {
+    color: var(--agnes-status-info-text);
+  }
+  .account-status > #config-state[data-tone="progress"]::before {
+    content: "";
+    display: inline-block;
+    width: 0.875rem;
+    height: 0.875rem;
+    margin-inline-end: var(--s8);
+    vertical-align: -0.125rem;
+    border: 2px solid var(--agnes-status-info-bg);
+    border-top-color: var(--agnes-status-info-text);
+    border-radius: var(--radius-full);
+    animation: account-status-spin 0.8s linear infinite;
+  }
+  @keyframes account-status-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .account-status > #config-state[data-tone="progress"]::before {
+      animation: none;
+    }
+  }
+  :is(#config-form, #account-dialog) .account-status > #config-state[data-tone="ok"] {
+    color: var(--agnes-status-success-text);
+  }
+  .account-status > #config-state[data-tone="ok"]::before {
+    content: "✓";
+    margin-inline-end: var(--s8);
+  }
+  :is(#config-form, #account-dialog) .account-status > #config-state[data-tone="warn"] {
+    color: var(--agnes-status-warning-text);
+  }
+  :is(#config-form, #account-dialog) .account-status > #config-error {
+    color: var(--agnes-status-danger-text);
+  }
+  /* Testing is automatic; 重新测试 stays beside any result, and is gone while a test runs. */
+  :is(#config-form, #account-dialog) .account-status > #config-test {
+    display: none;
+    grid-column: 2;
+    grid-row: 1;
+    width: auto;
+    min-height: var(--control-height-sm);
+    border: 0;
+    background: transparent;
+  }
+  :is(#config-form, #account-dialog)
+    .account-status:has(> #config-state:not(:empty), > #config-error:not(:empty))
+    > #config-test:not(:disabled, [hidden]) {
+    display: inline-flex;
+  }
+  .account-status > #config-retry:not([hidden]) {
+    grid-column: 2;
+  }
+  /* Nothing to report yet, or no subscription controls: the row takes no gap in the column. */
+  .account-status:has(> #config-state:empty):has(> #config-error:empty):has(> #config-retry[hidden]),
+  #config-oauth-controls:has(> .oauth-controls[hidden]) {
+    display: none;
+  }
+  #config-account-advanced {
+    margin-block: var(--s8) 0;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+  }
+  #config-account-advanced > .agh-disclosure-summary,
+  .agnes-first-run .agh-disclosure-summary {
+    cursor: pointer;
+    color: var(--agnes-text-secondary);
+    min-height: var(--control-height);
+  }
+  #config-account-advanced > .agh-disclosure-summary {
+    width: 100%;
+    padding: var(--s12) var(--s16);
+    color: var(--agnes-text-primary);
+    font-weight: var(--font-weight-semibold);
+  }
+  /* Closed, the summary names what the section holds; a changed value is marked. */
+  #config-account-advanced > .agh-disclosure-summary .agh-disclosure-meta {
+    flex: 1;
+    min-width: 0;
+    font-weight: var(--font-weight-regular);
+  }
+  .account-advanced-meta {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--s4) var(--s8);
+  }
+  #config-account-advanced > .agh-disclosure-summary:focus-visible,
+  .agnes-first-run .agh-disclosure-summary:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
+  }
+  /* Open, one aligned column: the name, the address, then three timeouts side by side. */
+  .account-advanced {
+    display: grid;
+    gap: var(--s16);
+    padding: var(--s4) var(--s16) var(--s16) calc(var(--s16) + var(--s24));
+  }
+  .account-network {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--s8) var(--s12);
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .account-network-legend {
+    margin-bottom: var(--s8);
+    padding: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+  }
+  .account-network > .account-field {
+    align-content: start;
+  }
+  .account-network .agnes-settings-preset {
+    display: grid;
+    gap: var(--s8);
+  }
+  .account-network .agnes-settings-preset-custom {
+    display: flex;
+  }
+  .account-network .agnes-settings-preset-custom > input {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+  .account-network[aria-disabled="true"] {
+    opacity: 0.6;
+  }
+  /* The provider being connected: its logo, name and address, and 换一个服务商. */
+  .account-provider-card {
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+    padding: var(--s12) var(--s16);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+  }
+  .account-dialog-body[data-inline="true"] .account-provider-card {
+    display: none;
+  }
+  .account-provider-card-copy {
+    display: grid;
+    flex: 1;
+    min-width: 0;
+    gap: var(--s2);
+  }
+  .account-provider-card-copy > strong {
+    font-weight: var(--font-weight-semibold);
+  }
+  #config-provider-host,
+  .account-mono {
+    font-family: var(--font-mono);
+  }
+  #config-provider-host {
+    overflow-wrap: anywhere;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+  }
+  /* A field: its label row (an action or a note on the right), the control, its hint and its error. */
+  .account-field {
+    display: grid;
+    gap: 0.375rem;
+    min-width: 0;
+  }
+  .account-field[hidden] {
+    display: none;
+  }
+  /* The form is one column: a field takes its whole width, not the 560px a lone field gets. */
+  .account-field .agh-field {
+    max-width: none;
+  }
+  .account-field > .field-hint {
+    margin: 0;
+    font-size: var(--font-size-xs);
+  }
+  .account-field-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s8);
+  }
+  .account-field-head > .agh-btn {
+    height: auto;
+    padding: 0;
+  }
+  .account-field-aside {
+    margin-inline-start: var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-weight: var(--font-weight-regular);
+  }
+  .account-field-error {
+    margin: 0;
+    color: var(--agnes-status-danger-text);
+    font-size: var(--font-size-xs);
+  }
+  .account-field-error:empty {
+    display: none;
+  }
+  .account-help {
+    margin: 0;
+    padding: var(--s8) var(--s12);
+    border-radius: var(--radius-control);
+    color: var(--agnes-status-info-text);
+    background: var(--agnes-status-info-bg);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  .account-help[hidden] {
+    display: none;
+  }
+  /* A unit or the show-key toggle sits inside the field's right edge. */
+  .account-input {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .account-input > .agnes-settings-input {
+    flex: 1;
+    min-width: 0;
+  }
+  .account-input:has(> .agh-tooltip-anchor, > .account-input-suffix) > .agnes-settings-input {
+    padding-inline-end: 4rem;
+  }
+  .account-input > .agh-tooltip-anchor {
+    position: absolute;
+    inset-inline-end: var(--s4);
+  }
+  .account-input-suffix {
+    position: absolute;
+    inset-inline-end: var(--s12);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    pointer-events: none;
+  }
+  /* The default model group: model and thinking side by side, the budget under them. Until a
+   test passes it says so once instead of showing disabled fields without a reason. */
+  .account-field-pair {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s12);
+  }
+  .account-lock-note {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    margin: 0;
+    padding: var(--s8) var(--s12);
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-hover);
+    font-size: var(--font-size-sm);
+  }
+  .account-lock-note[hidden],
+  #config-model-fields[data-locked="true"] .account-budget-field {
+    display: none;
+  }
+  .account-lock-note > .agh-btn {
+    margin-inline-start: auto;
+  }
+  /* Sections of the account form are spaced, not ruled. */
+  :is(#account-dialog, .account-page-host) .account-dialog-body .config-section + .config-section {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+  }
+  :where(#account-dialog, .account-page-host) .account-connection-step {
+    display: grid;
+    gap: var(--s20);
+  }
+  @media (max-width: 767px) {
+    .account-network,
+    .account-field-pair {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .account-advanced {
+      padding-inline: var(--s12);
+    }
+  }
+  .agnes-first-run .agnes-settings-actions {
+    flex-wrap: wrap;
+  }
+  .account-provider-form {
+    max-width: 560px;
+  }
+  @media (max-width: 767px) {
+    #account-dialog {
+      width: 100%;
+      max-width: none;
+      margin: auto 0 0;
+    }
+    :is(#account-dialog, .account-page-host) .config-detail-footer {
+      flex-direction: column;
+    }
+    :is(#account-dialog, .account-page-host) .config-detail-footer .agnes-settings-actions {
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+    :is(#account-dialog, .account-page-host) #config-save {
+      width: auto;
+    }
+    #config-account-advanced > .agh-disclosure-summary,
+    .agnes-first-run .agh-disclosure-summary {
+      min-height: var(--control-height-touch);
+    }
+    #config-add-account {
+      width: auto;
+      padding-inline: var(--s16);
+    }
+    #config-add-account span {
+      display: inline;
+    }
+  }
+
+  @media (max-width: 767px) {
+    dialog[data-agnes-region="dialog"]:has(.account-dialog-body) {
+      border-radius: var(--radius-surface) var(--radius-surface) 0 0;
+    }
+  }
+
+  @media (max-width: 767px) {
+    #config-form .appearance-choices .appearance-option {
+      min-height: var(--control-height-touch);
+    }
+  }
+
+  /* Side models: the account list's card rows, a counted heading, a one-line note above and the
+   jev.route hint below. */
+  .side-models {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s8);
+  }
+  .side-models-count {
+    margin-inline-start: var(--s4);
+    color: var(--agnes-text-secondary);
+    font-weight: 400;
+  }
+  .side-models-note {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  :is(.side-models-note, .side-model-confirm, .side-editor-route) code {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+  }
+  .side-models-note code {
+    color: var(--agnes-brand-primary);
+  }
+  .side-models-empty .agh-empty-state {
+    max-width: none;
+    justify-items: start;
+    padding: var(--s24);
+    text-align: start;
+  }
+  .side-model-name {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s4) var(--s8);
+    min-width: 0;
+  }
+  /* The route is what a loop plugin names: monospaced, tinted, with its copy button inside. */
+  .side-model-route {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+    padding-inline-start: var(--s8);
+    border-radius: var(--radius-sm);
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+    font-family: var(--font-mono);
+    font-size: 0.78125rem;
+  }
+  /* The meta line clips its first item; the pill keeps its copy button and clips only the name. */
+  .config-account-meta > .side-model-route {
+    max-width: 100%;
+    overflow: visible;
+  }
+  .side-model-route-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .side-model-notice {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+    padding: 0 var(--s8);
+    border-radius: var(--radius-full);
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
+    font-size: var(--font-size-xs);
+  }
+  .side-model-notice[data-tone="error"] {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+  }
+  /* Removing is confirmed in a strip under the row, inside the same card. */
+  .side-model-confirm {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s8) var(--s12);
+    padding: var(--s12) var(--s16);
+    border-top: 1px solid var(--agnes-status-danger-border);
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+    font-size: var(--font-size-sm);
+  }
+  .side-model-confirm > span {
+    flex: 1 1 16rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  /* The side-model page: three titled groups, each its note on the left and fields on the right. */
+  .side-editor {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .side-editor > .agnes-settings-section {
+    display: grid;
+    grid-template-columns: minmax(9rem, 12.5rem) minmax(0, 1fr);
+    gap: var(--s24);
+    padding: var(--s20) 0;
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .side-editor-fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    justify-items: stretch;
+    gap: var(--s16);
+    min-width: 0;
+  }
+  .side-editor-route {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .side-editor-route code {
+    padding: var(--s2) var(--s8);
+    border-radius: var(--radius-sm);
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .side-editor-mono {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+  }
+  .side-editor-model {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
+    gap: var(--s12);
+    padding: var(--s16);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+  }
+  .side-editor-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s12) var(--s16);
+    justify-self: stretch;
+  }
+  .side-editor-new-credential {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+    align-items: end;
+    gap: var(--s12);
+  }
+  :is(.side-editor-link, .side-editor-fold).agnes-ui-button {
+    justify-self: start;
+    padding-inline: 0;
+  }
+  .side-editor-link.agnes-ui-button {
+    color: var(--agnes-brand-primary);
+    font-weight: 600;
+  }
+  /* The optional test and the outcome on the left, 取消 / 保存 on the right, kept in view.
+     On its own page the editor fills the body to the dialog's bottom edge and scrolls itself, so
+     the bar sits on that edge and the form scrolls above it. */
+  .side-editor-footer {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--s12) var(--s16);
+    padding: var(--s16) 0;
+    border-top: 1px solid var(--agnes-line-primary);
+    background: var(--agnes-bg-surface);
+  }
+  :is(#settings-sections-pane, .settings-shell)
+    .agnes-settings-subpage-body:not([hidden]):has(> .side-model-page-host > .side-editor) {
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 0;
+    overflow: hidden;
+  }
+  .side-model-page-host:has(> .side-editor) {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .side-model-page-host > .side-editor {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .side-model-page-host > .side-editor > .side-editor-footer {
+    margin-top: auto;
+  }
+  .side-editor-test {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s8) var(--s12);
+    min-width: 0;
+  }
+  .side-editor-test > [data-tone] {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+    color: var(--agnes-status-danger-text);
+    font-size: var(--font-size-sm);
+  }
+  .side-editor-test > [data-tone="success"] {
+    color: var(--agnes-status-success-text);
+  }
+  @media (max-width: 720px) {
+    .side-editor > .agnes-settings-section,
+    .side-editor-grid,
+    .side-editor-new-credential {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--s12);
+    }
+  }
+}

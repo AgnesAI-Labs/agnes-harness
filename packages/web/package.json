@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     "./server": "./src/serve.ts",
-    "./dev": "./tools/dev.ts"
+    "./dev": "./tools/dev.ts",
+    "./presentation-renderers": "./src/presentation-renderers.ts"
   },
   "scripts": {
     "build": "tsx tools/build.ts",
@@ -14,17 +15,17 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
-    "@agnes/base": "workspace:*",
     "@agnes/cordis": "workspace:*",
     "@agnes/protocol": "workspace:*",
     "@agnes/resource-control-web": "workspace:*",
     "@agnes/sdk": "workspace:*",
-    "@agnes/web-admin-frame": "workspace:*",
     "@agnes/web-client": "workspace:*",
     "@agnes/web-server": "workspace:*",
     "@agnes/web-ui": "workspace:*",
     "@agnes/web-units": "workspace:*",
-    "marked": "18.0.12"
+    "@agnes/web-foundation": "workspace:*",
+    "@agnes/web-admin": "workspace:*",
+    "@agnes/web-conversation": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "18.3.12",

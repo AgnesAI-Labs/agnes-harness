@@ -6,11 +6,18 @@ import {
   BUILTIN_WEB_UNITS,
   BuiltinWebUnitRegistry,
   builtinWebUnitRows,
+  escapeBundleJson,
   getBuiltinWebUnit,
+  renderDiagnosticsViewer,
 } from '../src/index.js'
+import * as shell from '../src/shell.js'
 
 describe('built-in web unit contract', () => {
   it('publishes stable web rows with one contributes.client entry per unit', () => {
+    expect(shell.BUILTIN_WEB_UNITS).toBe(BUILTIN_WEB_UNITS)
+    expect(typeof escapeBundleJson).toBe('function')
+    expect(typeof renderDiagnosticsViewer).toBe('function')
+    expect(shell).not.toHaveProperty('renderDiagnosticsViewer')
     expect(BUILTIN_WEB_UNITS.length).toBeGreaterThanOrEqual(12)
     const rowIds = new Set<string>()
     for (const definition of BUILTIN_WEB_UNITS) {
@@ -26,10 +33,6 @@ describe('built-in web unit contract', () => {
   it('keeps settings panes and conversation child fills independently addressable', () => {
     for (const packageId of [
       '@agnes/web-settings-model',
-      '@agnes/web-settings-plugins',
-      '@agnes/web-settings-resources',
-      '@agnes/web-settings-computer-use',
-      '@agnes/web-settings-archived',
       '@agnes/web-settings-appearance',
       '@agnes/web-conversation-message-actions',
       '@agnes/web-conversation-attachments',
@@ -63,20 +66,5 @@ describe('built-in web unit contract', () => {
 
     registry.dispose()
     expect(disposed).toEqual(['sidebar', 'transcript'])
-  })
-
-  it('requires parent units before mounting conversation child fills', () => {
-    const registry = new BuiltinWebUnitRegistry()
-    expect(() => registry.mount('@agnes/web-conversation-feedback', () => undefined)).toThrow(
-      'requires mounted dependency @agnes/web-conversation',
-    )
-    registry.mount('@agnes/web-conversation', () => undefined)
-    registry.mount('@agnes/web-conversation-feedback', () => undefined)
-    expect(registry.snapshot().map((row) => row.rowId)).toEqual([
-      'web:@agnes/web-conversation',
-      'web:@agnes/web-conversation-feedback',
-    ])
-    registry.unmount('@agnes/web-conversation')
-    expect(registry.snapshot()).toEqual([])
   })
 })

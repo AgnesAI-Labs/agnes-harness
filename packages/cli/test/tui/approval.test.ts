@@ -4,11 +4,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { createAnsi } from '../../src/tui/ansi.js'
 import { TuiApp } from '../../src/tui/app.js'
 import { FakeTerminal } from '../../src/tui/terminal.js'
+import { TuiTheme } from '../../src/tui/theme.js'
 import { ApprovalCard } from '../../src/tui/views/approval-card.js'
 import { FakeEndpoint } from '../fake-endpoint.js'
 import { screenOf } from './harness.js'
 
-const A = createAnsi('none')
+const A = new TuiTheme('mono').ansi(createAnsi('none'))
 
 type ApprovalNode = Extract<UINode, { kind: 'approval' }>
 
@@ -28,45 +29,62 @@ const node = (over: Partial<ApprovalNode> = {}): ApprovalNode => ({
 
 describe('ApprovalCard: the persisted approval projection (distinct from the live PermissionModal)', () => {
   it('parked path (a real ticket): shows ticket/expiry and decides on keypress', async () => {
-    const decided: Array<[string, string]> = []
-    const card = new ApprovalCard(node({ ticket: 'tk-abcdef123456', expiresAt: '2026-09-08T00:00:00Z' }), {
-      ansi: A,
-      onDecide: async (t, v) => {
-        decided.push([t, v])
+    const decided: Array<[NonNullable<ApprovalNode['decisionRef']>, string]> = []
+    const card = new ApprovalCard(
+      node({
+        decisionRef: { sessionId: 's', id: 'tk-abcdef123456', revision: 1 },
+        expiresAt: '2026-09-08T00:00:00Z',
+      }),
+      {
+        ansi: A,
+        onDecide: async (t, v) => {
+          decided.push([t, v])
+        },
       },
-    })
+    )
     const lines = card.render(60).join('\n')
-    expect(lines).toContain('tk-abcde')
-    expect(lines).toContain('2026-09-08T00:00:00Z')
+    // No internal decision id and no raw ISO stamp; the expiry is a local HH:MM.
+    expect(lines).not.toContain('tk-abcde')
+    expect(lines).not.toContain('2026-09-08T00:00:00Z')
+    const at = new Date('2026-09-08T00:00:00Z')
+    expect(lines).toContain(
+      `expires ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`,
+    )
     expect(lines).toContain('[1]')
     expect(lines).toContain('[3]')
     card.handleInput('1')
     await new Promise((r) => setTimeout(r, 0))
-    expect(decided).toEqual([['tk-abcdef123456', 'allowed-once']])
-    expect(card.render(60).join('\n')).toContain('allowed-once')
+    expect(decided).toEqual([[{ sessionId: 's', id: 'tk-abcdef123456', revision: 1 }, 'allowed-once']])
+    expect(card.render(60).join('\n')).toContain('Allowed once')
   })
 
   it('surfaces the real server rejection reason on decide failure, and shows no error on success', async () => {
     // Shape a rejected `_agnes/v1/approval.decide` call actually throws: sdk's JsonRpcError has
     // `.data.reason` (protocol's `rpcError('APPROVAL_REJECTED', { reason })` puts it there).
-    const failing = new ApprovalCard(node({ ticket: 'tk-1', expiresAt: 'x' }), {
-      ansi: A,
-      onDecide: async () => {
-        throw Object.assign(new Error('APPROVAL_REJECTED (-32009)'), {
-          code: -32009,
-          data: { code: 'APPROVAL_REJECTED', reason: 'self-approval' },
-        })
+    const failing = new ApprovalCard(
+      node({ decisionRef: { sessionId: 's', id: 'tk-1', revision: 1 }, expiresAt: 'x' }),
+      {
+        ansi: A,
+        onDecide: async () => {
+          throw Object.assign(new Error('APPROVAL_REJECTED (-32009)'), {
+            code: -32009,
+            data: { code: 'APPROVAL_REJECTED', reason: 'self-approval' },
+          })
+        },
       },
-    })
+    )
     failing.handleInput('2')
     await new Promise((r) => setTimeout(r, 0))
     expect(failing.render(60).join('\n')).toContain('self-approval')
 
-    const succeeding = new ApprovalCard(node({ ticket: 'tk-2', expiresAt: 'x' }), {
-      ansi: A,
-      onDecide: async () => {},
-    })
-    succeeding.handleInput('3')
+    const succeeding = new ApprovalCard(
+      node({ decisionRef: { sessionId: 's', id: 'tk-2', revision: 1 }, expiresAt: 'x' }),
+      {
+        ansi: A,
+        onDecide: async () => {},
+      },
+    )
+    succeeding.handleInput('1')
     await new Promise((r) => setTimeout(r, 0))
     const out = succeeding.render(60).join('\n')
     expect(out).not.toContain('self-approval')
@@ -83,17 +101,49 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
     )
     const out = card.render(60)
     expect(out).toHaveLength(1)
-    expect(out[0]).toContain('rejected')
+    expect(out[0]).toContain('✗ Rejected')
+    expect(out[0]).not.toContain('->')
     expect(out[0]).not.toContain('[1]')
+    for (const locale of ['en', 'zh-CN'] as const) {
+      const automatic = new ApprovalCard(
+        node({
+          state: 'decided',
+          purpose: 'business.confirm',
+          summary: 'QA',
+          decision: {
+            verdict: 'allowed-once',
+            via: 'full-access',
+            reason: 'full-access',
+            byLabel: 'human.qa',
+          },
+        }),
+        {
+          ansi: A,
+          locale,
+          onDecide: async () => {
+            throw new Error('Automatic records cannot ask')
+          },
+        },
+      )
+      const lines = automatic.render(140)
+      expect(lines).toHaveLength(1)
+      expect(lines[0]).toContain(locale === 'en' ? 'auto-confirmed under full access' : '完全访问下自动确认')
+      expect(lines[0]).toContain('human.qa')
+      expect(automatic.handleInput('1')).toBe(false)
+    }
+
     // decided nodes are inert: no ticket to decide against, and the phase is already terminal
     expect(card.handleInput('1')).toBe(false)
   })
 
   it('a genuinely pending+parked node renders through the pending branch -- never the decided one', () => {
-    const card = new ApprovalCard(node({ ticket: 'tk-3', expiresAt: 'x' }), {
-      ansi: A,
-      onDecide: async () => {},
-    })
+    const card = new ApprovalCard(
+      node({ decisionRef: { sessionId: 's', id: 'tk-3', revision: 1 }, expiresAt: 'x' }),
+      {
+        ansi: A,
+        onDecide: async () => {},
+      },
+    )
     const out = card.render(60).join('\n')
     expect(out).toContain('[1]')
     expect(out).toContain('[2]')
@@ -103,35 +153,51 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
   })
 
   it('localizes the fixed parked-approval copy while preserving the projected summary', () => {
-    const card = new ApprovalCard(node({ ticket: 'tk-3', expiresAt: 'x' }), {
-      ansi: A,
-      locale: 'zh-CN',
-      onDecide: async () => {},
-    })
+    const card = new ApprovalCard(
+      node({ decisionRef: { sessionId: 's', id: 'tk-3', revision: 1 }, expiresAt: 'x' }),
+      {
+        ansi: A,
+        locale: 'zh-CN',
+        onDecide: async () => {},
+      },
+    )
     const out = card.render(80).join('\n')
-    expect(out).toContain('等待审批: shell rm -rf tmp')
+    expect(out).toContain('需要审批')
+    expect(out).toContain('shell rm -rf tmp')
     expect(out).toContain('[1] 允许一次')
     expect(out).toContain('[2] 本会话允许')
     expect(out).toContain('[3] 拒绝')
   })
 
   it('colors the verdict glyph by outcome on a colour tier', () => {
-    const ansi = createAnsi('256')
+    const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
     const decided = new ApprovalCard(
       node({ state: 'decided', decision: { verdict: 'allowed-once', via: 'local' } }),
       { ansi, onDecide: async () => {} },
     )
-    expect(decided.render(60)[0]).toContain('\x1b[38;5;78m✓\x1b[39m')
-    const expired = new ApprovalCard(node({ state: 'expired', ticket: 'tk-9', expiresAt: 'x' }), {
-      ansi,
-      onDecide: async () => {},
-    })
-    expect(expired.render(60)[0]).toContain('\x1b[38;5;203m✗\x1b[39m')
-    const pending = new ApprovalCard(node({ ticket: 'tk-8', expiresAt: 'x' }), {
-      ansi,
-      onDecide: async () => {},
-    })
-    expect(pending.render(60)[0]).toContain('\x1b[38;5;178m⚠\x1b[39m')
+    expect(decided.render(60)[0]).toContain(ansi.fg('success', '✓ Allowed once'))
+    const expired = new ApprovalCard(
+      node({ state: 'expired', decisionRef: { sessionId: 's', id: 'tk-9', revision: 1 }, expiresAt: 'x' }),
+      {
+        ansi,
+        onDecide: async () => {},
+      },
+    )
+    expect(expired.render(60)[0]).toContain(ansi.fg('faint', '◌ Expired'))
+    expect(expired.render(60)[0]).not.toContain('✗')
+    const pending = new ApprovalCard(
+      node({ decisionRef: { sessionId: 's', id: 'tk-8', revision: 1 }, expiresAt: 'x' }),
+      {
+        ansi,
+        onDecide: async () => {},
+      },
+    )
+    const rows = pending.render(60)
+    expect(rows[0]).toContain(ansi.bold(ansi.fg('warning', '▲ Needs approval')))
+    expect(rows[1]).toContain(ansi.fg('warning', '│ '))
+    const first = rows.find((row) => row.includes('Allow once')) ?? ''
+    expect(first).toContain(`${ansi.bg('accent', ansi.fg('onAccent', ' 1 '))} Allow once`)
+    expect(first).not.toContain('[1]')
     // none tier: the very same cards emit zero escape sequences.
     const plain = new ApprovalCard(
       node({ state: 'decided', decision: { verdict: 'rejected', via: 'local' } }),
@@ -153,31 +219,41 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
   })
 
   it('an expired node renders a single terminal line and takes no input', () => {
-    const card = new ApprovalCard(node({ state: 'expired', ticket: 'tk-4', expiresAt: 'x' }), {
-      ansi: A,
-      onDecide: async () => {},
-    })
+    const card = new ApprovalCard(
+      node({ state: 'expired', decisionRef: { sessionId: 's', id: 'tk-4', revision: 1 }, expiresAt: 'x' }),
+      {
+        ansi: A,
+        onDecide: async () => {},
+      },
+    )
     const out = card.render(60)
     expect(out).toHaveLength(1)
-    expect(out[0]).toContain('expired')
+    expect(out[0]).toContain('◌ Expired')
     expect(card.handleInput('1')).toBe(false)
   })
 
   it('only offered options get a key: an option missing from n.options is never actionable', async () => {
-    const decided: Array<[string, string]> = []
-    const card = new ApprovalCard(node({ ticket: 'tk-5', expiresAt: 'x', options: ['allow_once'] }), {
-      ansi: A,
-      onDecide: async (t, v) => {
-        decided.push([t, v])
+    const decided: Array<[NonNullable<ApprovalNode['decisionRef']>, string]> = []
+    const card = new ApprovalCard(
+      node({
+        decisionRef: { sessionId: 's', id: 'tk-5', revision: 1 },
+        expiresAt: 'x',
+        options: ['allow_once'],
+      }),
+      {
+        ansi: A,
+        onDecide: async (t, v) => {
+          decided.push([t, v])
+        },
       },
-    })
+    )
     const out = card.render(60).join('\n')
     expect(out).toContain('[1]')
     expect(out).not.toContain('[2]')
     expect(card.handleInput('2')).toBe(false)
     card.handleInput('1')
     await new Promise((r) => setTimeout(r, 0))
-    expect(decided).toEqual([['tk-5', 'allowed-once']])
+    expect(decided).toEqual([[{ sessionId: 's', id: 'tk-5', revision: 1 }, 'allowed-once']])
   })
 })
 
@@ -185,22 +261,24 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
 // isolated `ApprovalCard` class. Drives real keystrokes through a real `TuiApp` over a real
 // `@agnes/sdk` `Client`/`Session`, against a `FakeEndpoint` that serves a fixed `_agnes/v1/
 // session.projectUI` result (a real daemon's core-side projection reducer is out of scope for cli;
-// what this proves is that app.ts really calls `_agnes/v1/approval.decide` with `{ ticket, verdict,
-// approverCredential }` and that a rejection really reaches the screen through the real render loop
+// what this proves is that app.ts really calls `_agnes/v1/approval.decide` with `{ ticket, verdict }`
+// bound to the connection, and that a rejection reaches the real render loop
 // -- not a hand-wired assertion against the component alone).
 const FAKE_SID = 'agnes:local:default:cli:dm:main'
 
 async function appOnApprovalNode(
-  n: ApprovalNode,
+  shown: ApprovalNode | ApprovalNode[],
   decide: (params: unknown) => unknown,
 ): Promise<{ app: TuiApp; term: FakeTerminal; ep: FakeEndpoint; client: ReturnType<typeof createClient> }> {
+  const nodes = [shown].flat()
+  const n = nodes.at(-1) as ApprovalNode
   const timeline: UITimeline = {
     sessionId: FAKE_SID,
     upto: n.seq,
     generation: 1,
     opState: null,
     turns: [],
-    nodes: [n],
+    nodes,
   }
   const ep = new FakeEndpoint()
     .on('initialize', () => ({
@@ -222,27 +300,31 @@ async function appOnApprovalNode(
 }
 
 describe('ApprovalCard wired into the real TuiApp (app.ts nodeView / handleInput)', () => {
-  it('a real keypress calls the real wire method with { ticket, verdict, approverCredential }', async () => {
+  it('a real keypress calls the real wire method with a revision-bound decision command bound to the connection', async () => {
     const { app, term, ep, client } = await appOnApprovalNode(
-      node({ ticket: 'tk-wire-1', expiresAt: '2026-09-10T00:00:00Z' }),
-      () => ({ seq: 1 }),
+      node({
+        decisionRef: { sessionId: 's', id: 'tk-wire-1', revision: 1 },
+        expiresAt: '2026-09-10T00:00:00Z',
+      }),
+      () => ({ seq: 1, revision: 2, commandId: 'tk-wire-1:1:allowed-once', digest: '0'.repeat(64) }),
     )
     try {
-      await vi.waitFor(async () =>
-        expect((await screenOf(term, 60, 12)).join('\n')).toContain('tk-wire-1'.slice(0, 8)),
-      )
+      await vi.waitFor(async () => expect((await screenOf(term, 60, 12)).join('\n')).toContain('Allow once'))
+      await new Promise((resolve) => setTimeout(resolve, 700)) // the settle period
       term.feed('1')
       await vi.waitFor(() =>
         expect(ep.calls.some((c) => c.method === '_agnes/v1/approval.decide')).toBe(true),
       )
       const call = ep.calls.find((c) => c.method === '_agnes/v1/approval.decide')
       expect(call?.params).toEqual({
-        ticket: 'tk-wire-1',
-        verdict: 'allowed-once',
-        approverCredential: { kind: 'local' },
+        sessionId: 's',
+        id: 'tk-wire-1',
+        revision: 1,
+        commandId: 'tk-wire-1:1:allowed-once',
+        response: { option: 'allowed-once', value: null },
       })
       await vi.waitFor(async () =>
-        expect((await screenOf(term, 60, 12)).join('\n')).toContain('allowed-once'),
+        expect((await screenOf(term, 60, 12)).join('\n')).toContain('Allowed once'),
       )
       // A real, successful decide over the real app never leaves an error mark behind.
       expect((await screenOf(term, 60, 12)).join('\n')).not.toContain('✗')
@@ -253,9 +335,34 @@ describe('ApprovalCard wired into the real TuiApp (app.ts nodeView / handleInput
     }
   })
 
+  it('keys reach an older pending approval once the newer one is decided', async () => {
+    const { app, term, ep, client } = await appOnApprovalNode(
+      [
+        node({ id: 'ap-old', seq: 8, decisionRef: { sessionId: 's', id: 'tk-old', revision: 1 } }),
+        node({ id: 'ap-new', seq: 9, state: 'decided', decision: { verdict: 'allowed-once', via: 'local' } }),
+      ],
+      () => ({ seq: 1, revision: 2, commandId: 'tk-old:1:allowed-once', digest: '0'.repeat(64) }),
+    )
+    try {
+      await vi.waitFor(async () => expect((await screenOf(term, 60, 12)).join('\n')).toContain('Allow once'))
+      await new Promise((resolve) => setTimeout(resolve, 700)) // the settle period
+      term.feed('1')
+      await vi.waitFor(() =>
+        expect(ep.calls.some((c) => c.method === '_agnes/v1/approval.decide')).toBe(true),
+      )
+      expect(ep.calls.find((c) => c.method === '_agnes/v1/approval.decide')?.params).toMatchObject({
+        id: 'tk-old',
+      })
+    } finally {
+      await app.stop()
+      await client.close()
+      await ep.close()
+    }
+  })
+
   it('a real rejection from the wire surfaces its reason on screen through the real render loop', async () => {
     const { app, term, client, ep } = await appOnApprovalNode(
-      node({ ticket: 'tk-wire-2', expiresAt: 'x' }),
+      node({ decisionRef: { sessionId: 's', id: 'tk-wire-2', revision: 1 }, expiresAt: 'x' }),
       () => {
         throw Object.assign(new Error('APPROVAL_REJECTED (-32009)'), {
           code: -32009,
@@ -267,6 +374,7 @@ describe('ApprovalCard wired into the real TuiApp (app.ts nodeView / handleInput
       await vi.waitFor(async () => expect((await screenOf(term, 60, 12)).join('\n')).toContain('[2]'))
       const before = (await screenOf(term, 60, 12)).join('\n')
       expect(before).not.toContain('ticket expired')
+      await new Promise((resolve) => setTimeout(resolve, 700)) // the settle period
       term.feed('2')
       // This is exactly the regression the `changed()` callback exists to prevent: with no new
       // ledger event ever coming back for a rejected decide, nothing but that callback would ever

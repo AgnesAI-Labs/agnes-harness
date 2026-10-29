@@ -21,7 +21,15 @@
     "@agnes/protocol": "workspace:*",
     "@agnes/resource-control-runtime": "workspace:*",
     "@agnes/resource-control-worker": "workspace:*",
-    "@agnes/package-manager": "workspace:*"
+    "@agnes/package-manager": "workspace:*",
+    "@agnes/observability": "workspace:*",
+    "@agnes/plugin-streams": "workspace:*"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@agnes/host-infrastructure": "workspace:*",
+    "@agnes/core": "workspace:*",
+    "@agnes/sdk": "workspace:*",
+    "@agnes/extension-api": "workspace:*"
+  }
 }

@@ -1,0 +1,229 @@
+@layer app {
+  #config {
+    /* Fixed like every modal: it anchors its own absolute children and stays centred when it is
+     shown non-modally under a dialog opened from it. */
+    position: fixed;
+    /* While a dialog opened from settings owns modal focus, settings is shown non-modally: it keeps
+     its place above the page and below that dialog. */
+    z-index: calc(var(--agh-z-dropdown) - 1);
+    /* A small dialog: three pages (five with advanced on) beside a narrow list. */
+    width: 960px;
+    max-width: calc(100vw - 48px);
+    height: min(640px, calc(100dvh - 48px));
+    max-height: calc(100dvh - 48px);
+    border: 0;
+    border-radius: var(--radius-main-page);
+    background: var(--agnes-bg-app-content);
+    box-shadow: var(--elevation-2);
+  }
+  /* 设置拆成独立插槽后，透过宿主包装保留表单到当前面板的高度链。
+   隐藏面板仍由 [hidden] 排除，不为未选中的插槽留下空网格行。 */
+  #config > div:has(> div > #config-form),
+  #config > div > div:has(> #config-form),
+  #settings-dsh-shell-slots,
+  #settings-dsh-shell-slots > [id^="settings-dsh-slot-"],
+  #settings-dsh-shell-slots > [id^="settings-dsh-slot-"] > [data-slot],
+  #settings-dsh-shell-slots > [id^="settings-dsh-slot-"] > [data-slot] > [data-slot-entry],
+  #settings-pane-slots,
+  #settings-pane-slots > [data-agnes-settings-pane-slot],
+  #settings-pane-slots > [data-agnes-settings-pane-slot] > [data-slot],
+  #settings-pane-slots > [data-agnes-settings-pane-slot] > [data-slot] > [data-slot-entry],
+  #settings-pane-slots [data-agnes-region-owner="builtin"][data-agnes-region-unit^="settings-"] {
+    display: contents;
+  }
+  #config-form {
+    grid-template-columns: 13rem minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    border-radius: inherit;
+    height: 100%;
+    max-height: none;
+    display: grid;
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  #settings-content-slots {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  /* Admin 面板的滚动模型：文档不滚动、列表是唯一纵向滚动容器、详情只有中段滚动——
+   这样"内容超出就被裁掉"结构上不会再发生。 */
+  .admin-pane {
+    min-height: 0;
+  }
+  .admin-pane-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: var(--s8) var(--s24) var(--s24);
+  }
+  .admin-toolbar-actions {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--s8);
+  }
+  .settings-rail {
+    background: var(--agnes-bg-app-sidebar);
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1.125rem;
+    padding: 1.375rem var(--s12) 0;
+    border-right: 0;
+  }
+  /* A settings card is a hairline group on the dialog surface; it carries no tint of its own. */
+  .config-card {
+    min-width: 0;
+    border: 1px solid var(--agnes-line-primary);
+    background: transparent;
+  }
+
+  @media (max-width: 720px) {
+    body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .sidebar {
+      width: min(19rem, calc(100vw - 2.5rem));
+    }
+    #transcript-content {
+      padding: var(--s24) var(--s16) 5rem;
+    }
+    .timeline-node.user {
+      max-width: 92%;
+    }
+    #composer,
+    .application-work-actions,
+    .composer-meta {
+      width: calc(100% - 1rem);
+    }
+    /* 区域规则紧跟在同一媒体查询内、同一层叠位置：挪到文件末尾会反过来压掉这条响应式覆盖。 */
+    [data-agnes-region="composer"] {
+      border-radius: var(--radius-xl);
+    }
+    #config {
+      width: 100%;
+      max-width: none;
+      height: 100dvh;
+      max-height: none;
+      border-radius: 0;
+    }
+  }
+  .admin-main {
+    width: min(var(--admin-content-width), calc(100% - 3rem));
+    margin: 0 auto;
+    padding: 0 0 var(--s24);
+    /* 与 .admin-pane-body 同构：吃掉剩余高度，把滚动交给列表与详情。 */
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  /* The status line keeps its place in the accessibility tree but takes no room while it is silent. */
+  .admin-notice:empty {
+    min-height: 0;
+    margin: 0;
+  }
+  .admin-notice {
+    min-height: 1.35rem;
+    margin: 0 0 var(--s12);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+  }
+  .admin-notice[data-kind="error"] {
+    color: var(--agnes-status-danger-text);
+  }
+  /* resource-control-web 会写 kind=success/warning，admin 会写 kind=state；
+   此前只有 error 有样式，成功与警告态和普通提示同色。 */
+  .admin-notice[data-kind="success"] {
+    color: var(--agnes-status-success-text);
+  }
+  .admin-notice[data-kind="warning"] {
+    color: var(--agnes-status-warning-text);
+  }
+  .admin-notice[data-kind="state"] {
+    color: var(--agnes-status-info-text);
+  }
+  .recovery-notice {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--s8) var(--s12);
+    margin: 0 0 var(--s16);
+    padding: var(--s12) var(--s12);
+    border: 1px solid var(--agnes-status-warning-border);
+    border-radius: var(--radius-card);
+    background: var(--agnes-status-warning-bg);
+  }
+  .recovery-notice strong {
+    color: var(--agnes-status-warning-text);
+    font-size: var(--font-size-sm);
+  }
+  .recovery-notice p {
+    margin: 0;
+    color: var(--agnes-status-warning-text);
+    font-size: var(--font-size-sm);
+  }
+  .orphan-pins {
+    display: grid;
+    gap: var(--s8);
+    margin: 0 0 var(--s16);
+    padding: var(--s12) var(--s12);
+    border: 1px solid var(--agnes-status-warning-border);
+    border-radius: var(--radius-card);
+    background: var(--agnes-status-warning-bg);
+  }
+  .orphan-pins-heading {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--s8) var(--s12);
+  }
+  .orphan-pins-heading strong {
+    color: var(--agnes-status-warning-text);
+    font-size: var(--font-size-sm);
+  }
+  .orphan-pins-status {
+    margin: 0;
+    color: var(--agnes-status-warning-text);
+    font-size: var(--font-size-sm);
+  }
+  .orphan-pins-list {
+    display: grid;
+    gap: var(--s8);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .orphan-pin-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s12);
+    padding: var(--s8) 0.625rem;
+    border: 1px solid var(--agnes-status-warning-border);
+    border-radius: var(--radius-control);
+    background: var(--agnes-bg-surface);
+  }
+  .orphan-pin-content p {
+    margin: 0;
+    font-size: var(--font-size-sm);
+  }
+  .orphan-pin-content .orphan-pin-meta {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .orphan-pin-content .orphan-pin-error {
+    color: var(--agnes-status-danger-text);
+  }
+}

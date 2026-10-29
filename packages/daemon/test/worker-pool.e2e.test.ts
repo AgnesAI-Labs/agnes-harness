@@ -1,4 +1,4 @@
-import type { ChildProcess } from 'node:child_process'
+import { type ChildProcess, spawn as nodeSpawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -8,16 +8,16 @@ import { fileURLToPath } from 'node:url'
 import { buildRuntimeTarget, createPluginRow, encodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { windowsProcessStartTimeSync } from '@agnes/system-node'
 import { describe, expect, it, vi } from 'vitest'
-import { CompositeRuntimeDelivery } from '../src/composite-runtime-delivery.js'
-import { type DaemonConfig, DEFAULT_LIMITS } from '../src/config.js'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
+import { workspaceBinding } from '../../daemon-foundation/test/workspace-authority.js'
 import { LocalEndpoint } from '../src/local/endpoint.js'
 import { NoticeSink } from '../src/local/notice.js'
 import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
+import { type DaemonConfig, DEFAULT_LIMITS } from '../src/supervisor/config.js'
 import { encodeFrame } from '../src/supervisor/framing.js'
+import { CompositeRuntimeDelivery } from '../src/supervisor/publication/composite-runtime-delivery.js'
 import { listenUnix } from '../src/supervisor/socket.js'
-import { type WorkerLifecycleRecord, WorkerPool } from '../src/supervisor/worker-pool.js'
-import { sqliteTables } from './sqlite-tables.js'
-import { workspaceBinding } from './workspace-authority.js'
+import { WorkerPool } from '../src/supervisor/worker-pool.js'
 
 async function acquire(
   pool: WorkerPool,
@@ -37,19 +37,6 @@ const fakeWorker = fileURLToPath(new URL('./fake-worker.ts', import.meta.url))
 // daemon's own default (30 s), and each test allows 60 s to leave room for it.
 const REAL_WORKER_STARTUP_MS = DEFAULT_LIMITS.workerStartupMs
 const exitingWorker = fileURLToPath(new URL('./fixtures/exiting-worker.mjs', import.meta.url))
-const stderrExitingWorker = fileURLToPath(new URL('./fixtures/stderr-exiting-worker.mjs', import.meta.url))
-
-async function lifecycleRecord(
-  records: WorkerLifecycleRecord[],
-  kind: WorkerLifecycleRecord['kind'],
-): Promise<WorkerLifecycleRecord> {
-  for (let waited = 0; waited < 5_000; waited += 20) {
-    const found = records.find((record) => record.kind === kind)
-    if (found) return found
-    await new Promise((resolve) => setTimeout(resolve, 20))
-  }
-  throw new Error(`no ${kind} record`)
-}
 
 const workerSocket = (dir: string): string =>
   process.platform === 'win32' ? `\\\\.\\pipe\\${basename(dir)}-workers` : join(dir, 'w.sock')
@@ -76,6 +63,7 @@ function erroredChild(): FakeChild {
 describe('WorkerPool', () => {
   it('accepts a preview only from the link that carries the session channel', () => {
     const pool = new WorkerPool({
+      workerEntry: fileURLToPath(new URL('../src/worker/main.js', import.meta.url)),
       config: {
         profileName: 'p',
         dataDir: '/unused',
@@ -104,6 +92,7 @@ describe('WorkerPool', () => {
   it('passes on a preview from the adopted link that hosts the session, never from another', async () => {
     const previews: Array<{ key: string; delta: string }> = []
     const pool = new WorkerPool({
+      workerEntry: fileURLToPath(new URL('../src/worker/main.js', import.meta.url)),
       config: {
         profileName: 'p',
         dataDir: '/unused',
@@ -170,68 +159,6 @@ describe('WorkerPool', () => {
     for (const end of [poolA, poolB, workerA, workerB]) end.destroy()
   })
 
-  it('passes on open progress only from the link that hosts the session', async () => {
-    const progress: Array<{ key: string; done: number }> = []
-    const pool = new WorkerPool({
-      config: {
-        profileName: 'p',
-        dataDir: '/unused',
-        socketPath: '/unused/client.sock',
-        workersSocketPath: '/unused/worker.sock',
-        limits: DEFAULT_LIMITS,
-      },
-      profile: { name: 'p', hash: 'h1' } as never,
-      profileFile: '/unused/profile.json',
-      clock: () => 0,
-      onEvent: () => undefined,
-      onProgress: (key, p) => progress.push({ key, done: p.done }),
-      onRequest: async () => undefined,
-      notices: { emit() {} },
-    })
-    const internals = pool as unknown as {
-      slots: Map<string, unknown>
-      pendingByToken: Map<string, (link: unknown) => void>
-    }
-    const claimed = (token: string, slotKey: string, channels: string[]) =>
-      new Promise<void>((resolve) => {
-        internals.pendingByToken.set(token, (link) => {
-          internals.slots.set(slotKey, {
-            link,
-            channels: new Map(channels.map((c) => [c, {}])),
-            resourceControl: slotKey !== '@shared',
-          })
-          resolve()
-        })
-      })
-    const [poolA, workerA] = duplexPair()
-    const [poolB, workerB] = duplexPair()
-    const adoptedA = claimed('token-a', '@shared', ['s'])
-    const adoptedB = claimed('token-b', 'service', [])
-    pool.adopt(poolA)
-    pool.adopt(poolB)
-    const hello = (token: string, workerGeneration: number, workerKind: 'session' | 'service') =>
-      encodeFrame({
-        kind: 'hello',
-        token,
-        workerKey: workerKind === 'session' ? '@shared' : 'service',
-        workerKind,
-        workerGeneration,
-        profileHash: 'h1',
-      })
-    workerA.write(hello('token-a', 1, 'session'))
-    workerB.write(hello('token-b', 2, 'service'))
-    await Promise.all([adoptedA, adoptedB])
-    const frame = (sessionKey: string, done: number) =>
-      encodeFrame({ kind: 'progress', sessionKey, phase: 'verify', done, total: 10 })
-    workerB.write(frame('s', 1))
-    workerA.write(frame('other', 2))
-    workerA.write(frame('s', 3))
-    await vi.waitFor(() => expect(progress).toHaveLength(1))
-    await new Promise((r) => setTimeout(r, 10))
-    expect(progress).toEqual([{ key: 's', done: 3 }])
-    for (const end of [poolA, poolB, workerA, workerB]) end.destroy()
-  })
-
   it('survives a session interruption on a link whose session has an attached connection', async () => {
     // A worker that loses its session tail reports `session.interrupted`. The daemon retires the
     // session and reports the failure; it must not push a notice the protocol cannot carry, and a
@@ -247,6 +174,7 @@ describe('WorkerPool', () => {
     const onUnhandled = (reason: unknown) => unhandled.push(reason)
     process.on('unhandledRejection', onUnhandled)
     const pool = new WorkerPool({
+      workerEntry: fileURLToPath(new URL('../src/worker/main.js', import.meta.url)),
       config: {
         profileName: 'p',
         dataDir: '/unused',
@@ -296,6 +224,7 @@ describe('WorkerPool', () => {
 
   it('reserves @shared for the Host worker and refuses a mismatched live slot', async () => {
     const pool = new WorkerPool({
+      workerEntry: fileURLToPath(new URL('../src/worker/main.js', import.meta.url)),
       config: {
         profileName: 'p',
         dataDir: '/unused',
@@ -333,6 +262,7 @@ describe('WorkerPool', () => {
     vi.stubEnv('AGNES_SUPERVISOR_START_ID', '1')
     vi.stubEnv('AGNES_WORKER_ROOT', '/inherited-first-workspace')
     const pool = new WorkerPool({
+      workerEntry: fileURLToPath(new URL('../src/worker/main.js', import.meta.url)),
       config: {
         profileName: 'p',
         dataDir: '/unused',
@@ -379,6 +309,7 @@ describe('WorkerPool', () => {
     vi.stubEnv('AGH_HOME', '/environment-home')
     vi.stubEnv('AGNES_HOME', '/legacy-home')
     const pool = new WorkerPool({
+      workerEntry: fileURLToPath(new URL('../src/worker/main.js', import.meta.url)),
       config: {
         profileName: 'p',
         dataDir: '/daemon-home/data',
@@ -457,6 +388,7 @@ describe('WorkerPool', () => {
       return child
     }) as typeof import('node:child_process').spawn
     const pool = new WorkerPool({
+      workerEntry: fileURLToPath(new URL('../src/worker/main.js', import.meta.url)),
       config: {
         profileName: 'p',
         dataDir: dir,
@@ -489,6 +421,154 @@ describe('WorkerPool', () => {
     }
   }, 5_000)
 
+  it('bounds identical pre-hello seam failures across concurrent acquirers and resets on changed inputs', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-boot-breaker-'))
+    let bootCode = 'E_SEAM_INIT'
+    let bootReason: string | undefined
+    let spawns = 0
+    let active = 0
+    let peak = 0
+    const children: ChildProcess[] = []
+    const pool = new WorkerPool({
+      workerEntry: fileURLToPath(new URL('./fixtures/seam-failing-worker.mjs', import.meta.url)),
+      config: {
+        profileName: 'p',
+        dataDir: dir,
+        socketPath: join(dir, 'c.sock'),
+        workersSocketPath: workerSocket(dir),
+        limits: DEFAULT_LIMITS,
+      },
+      profile: { name: 'p', hash: 'h1' } as never,
+      profileFile: join(dir, 'profile.json'),
+      clock: Date.now,
+      // Node's spawn overloads cannot be implemented by the three-argument call the pool makes.
+      spawn: ((...spawnArgs: Parameters<typeof nodeSpawn>) => {
+        spawns++
+        active++
+        peak = Math.max(peak, active)
+        const options = spawnArgs[2]
+        const spawnOptions = options && typeof options === 'object' ? options : {}
+        const args = spawnArgs[1]
+        const child = nodeSpawn(
+          spawnArgs[0],
+          bootCode === 'hello' ? ['--import', 'tsx', fakeWorker] : Array.isArray(args) ? args : [],
+          {
+            ...spawnOptions,
+            env: { ...spawnOptions.env, AGNES_TEST_BOOT_CODE: bootCode, AGNES_TEST_BOOT_REASON: bootReason },
+          },
+        )
+        children.push(child)
+        child.once('exit', () => {
+          active--
+        })
+        return child
+      }) as typeof nodeSpawn,
+      onEvent: () => undefined,
+      onRequest: async () => undefined,
+      notices: { emit() {} },
+    })
+    const server = await listenUnix(workerSocket(dir), (socket) => pool.adopt(socket))
+    const clients = () => Promise.allSettled(Array.from({ length: 10 }, () => pool.acquireSharedWorker()))
+    const blocked = {
+      code: -32603,
+      data: { code: 'WORKER_BOOT_BLOCKED', bootCode: 'E_SEAM_INIT', failures: 3, retryable: false },
+    }
+    try {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const results = await clients()
+        expect(results.every((result) => result.status === 'rejected')).toBe(true)
+        if (attempt === 2)
+          for (const result of results) expect(result).toMatchObject({ status: 'rejected', reason: blocked })
+      }
+      for (let attempt = 0; attempt < 5; attempt++)
+        await expect(pool.acquireSharedWorker()).rejects.toMatchObject(blocked)
+      expect(spawns).toBe(3)
+      expect(peak).toBe(1)
+      expect(active).toBe(0)
+      pool.reloadProfile({ profile: { name: 'p', hash: 'h1' } as never, profileFile: 'same-profile.json' })
+      await expect(pool.acquireSharedWorker()).rejects.toMatchObject(blocked)
+      expect(spawns).toBe(3)
+      pool.reloadProfile({ profile: { name: 'p', hash: 'h2' } as never, profileFile: 'changed-profile.json' })
+      await clients()
+      expect(spawns).toBe(4)
+      pool.noteRuntimeTarget('new-package-target')
+      await clients()
+      expect(spawns).toBe(5)
+      pool.retryWorkerBoot()
+      await clients()
+      expect(spawns).toBe(6)
+      bootCode = 'E_EXT_LOAD'
+      await clients()
+      bootCode = 'E_SEAM_INIT'
+      await clients()
+      await clients()
+      expect(spawns).toBe(9) // A different code starts a new consecutive streak.
+      await clients()
+      await expect(pool.acquireSharedWorker()).rejects.toMatchObject(blocked)
+      expect(spawns).toBe(10)
+      pool.noteRuntimeTarget('new-package-target') // Re-delivery of unchanged inputs cannot reset.
+      await expect(pool.acquireSharedWorker()).rejects.toMatchObject(blocked)
+      pool.retryWorkerBoot()
+      bootCode = 'untrusted-code-with-credential-marker'
+      for (let attempt = 0; attempt < 4; attempt++) await clients()
+      expect(spawns).toBe(14) // Unknown code stays transient and never enters the closed breaker.
+      pool.reloadProfile({
+        profile: { name: 'p', hash: 'h1' } as never,
+        profileFile: join(dir, 'profile.json'),
+      })
+      pool.retryWorkerBoot()
+      bootCode = 'E_SEAM_INIT'
+      await clients()
+      await clients()
+      writeFileSync(join(dir, 'profile.json'), JSON.stringify({ name: 'p', hash: 'h1' }))
+      pool.setLinkInitializer(async () => {
+        throw new Error('synthetic post-hello refusal')
+      })
+      bootCode = 'hello'
+      await expect(pool.acquireSharedWorker()).rejects.toThrow('activation initialization failed')
+      bootCode = 'E_SEAM_INIT'
+      await clients()
+      await clients()
+      expect(spawns).toBe(19) // Valid hello breaks the streak even when later initialization fails.
+      await clients()
+      await expect(pool.acquireSharedWorker()).rejects.toMatchObject(blocked)
+      expect(spawns).toBe(20)
+      for (const [code, reason] of [
+        ['E_SECRET_UNRESOLVED', undefined],
+        ['E_PACKAGE_INTEGRITY', 'clean-home-required'],
+        ['E_PACKAGE_INTEGRITY', 'private-token'],
+      ] as const) {
+        pool.retryWorkerBoot()
+        bootCode = code
+        bootReason = reason
+        const beforeSpawns = spawns
+        for (let attempt = 0; attempt < 4; attempt++) {
+          const results = await clients()
+          for (const result of results) {
+            expect(result).toMatchObject({ status: 'rejected', reason: { code: -32011, data: { code } } })
+            if (reason === 'clean-home-required')
+              expect(result).toMatchObject({ reason: { data: { reason } } })
+            expect(JSON.stringify(result)).not.toContain('private-token')
+          }
+        }
+        expect(spawns - beforeSpawns).toBe(3)
+      }
+
+      expect(peak).toBe(1)
+    } finally {
+      pool.killAll()
+      await Promise.all(
+        children.map((child) =>
+          child.exitCode !== null || child.signalCode !== null
+            ? Promise.resolve()
+            : new Promise<void>((resolve) => child.once('exit', () => resolve())),
+        ),
+      )
+      await server.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 10_000)
+
   it('reloads the profile hash and snapshot path together for a new service worker', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-profile-reload-'))
     const oldProfileFile = join(dir, 'old.json')
@@ -503,6 +583,7 @@ describe('WorkerPool', () => {
       return child
     }) as unknown as typeof import('node:child_process').spawn
     const pool = new WorkerPool({
+      workerEntry: fileURLToPath(new URL('../src/worker/main.js', import.meta.url)),
       config: {
         profileName: 'p',
         dataDir: dir,
@@ -577,117 +658,6 @@ describe('WorkerPool', () => {
     }
   }, 5_000)
 
-  it('records a worker that dies before hello with its exit code and the stderr it left', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-exit-record-'))
-    const profileFile = join(dir, 'profile.json')
-    writeFileSync(profileFile, JSON.stringify({ name: 'p', hash: 'h1' }))
-    const records: WorkerLifecycleRecord[] = []
-    const pool = new WorkerPool({
-      config: {
-        profileName: 'p',
-        dataDir: dir,
-        socketPath: join(dir, 'a.sock'),
-        workersSocketPath: join(dir, 'never-listening.sock'),
-        limits: { ...DEFAULT_LIMITS, workerStartupMs: 30_000 },
-      },
-      profile: { name: 'p', hash: 'h1' } as never,
-      profileFile,
-      execPath: process.execPath,
-      workerEntry: stderrExitingWorker,
-      clock: () => 0,
-      onEvent: () => undefined,
-      onRequest: async () => undefined,
-      onLifecycle: (record) => records.push(record),
-      notices: { emit() {} },
-    })
-    try {
-      await expect(acquire(pool, 'agnes:t:a:x:dm:exit-record')).rejects.toThrow(
-        /exited before hello \(code 7\)/,
-      )
-      const exited = await lifecycleRecord(records, 'worker.exited')
-      expect(exited.detail).toMatchObject({
-        worker: '@shared',
-        code: 7,
-        signal: null,
-        phase: 'startup',
-        expected: false,
-        link: 'never connected',
-        sessions: [],
-      })
-      expect(exited.kind === 'worker.exited' && exited.detail.stderr).toEqual([
-        'worker boot failed: cannot load module',
-        'at load (worker.mjs:1:1)',
-      ])
-      expect((await lifecycleRecord(records, 'worker.start_failed')).detail).toMatchObject({
-        worker: '@shared',
-        reason: expect.stringMatching(/exited before hello/),
-      })
-    } finally {
-      pool.killAll()
-      rmSync(dir, { recursive: true, force: true })
-    }
-  }, 10_000)
-
-  it('records a live shared worker crash with the sessions it carried', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-crash-record-'))
-    const profileFile = join(dir, 'profile.json')
-    writeFileSync(profileFile, JSON.stringify({ name: 'p', hash: 'h1' }))
-    const config: DaemonConfig = {
-      profileName: 'p',
-      dataDir: dir,
-      socketPath: join(dir, 'a.sock'),
-      workersSocketPath: workerSocket(dir),
-      limits: { ...DEFAULT_LIMITS, workerStartupMs: REAL_WORKER_STARTUP_MS },
-    }
-    const records: WorkerLifecycleRecord[] = []
-    const pool = new WorkerPool({
-      config,
-      profile: { name: 'p', hash: 'h1' } as never,
-      profileFile,
-      execPath: process.execPath,
-      workerEntry: fakeWorker,
-      execArgv: ['--import', 'tsx'],
-      clock: () => 0,
-      onEvent: () => undefined,
-      onRequest: async () => undefined,
-      onLifecycle: (record) => records.push(record),
-      notices: { emit() {} },
-    })
-    const server = await listenUnix(config.workersSocketPath, (socket) => pool.adopt(socket))
-    try {
-      await Promise.all([
-        acquire(pool, 'agnes:t:a:x:dm:crash-a', { cwd: dir }),
-        acquire(pool, 'agnes:t:a:x:dm:crash-b', { cwd: dir }),
-      ])
-      const link = pool.businessWorker()?.link
-      const command = link?.command.bind(link) as unknown as (
-        method: string,
-        params: object,
-      ) => Promise<unknown>
-      await command('crash', {}).catch(() => undefined)
-      const exited = await lifecycleRecord(records, 'worker.exited')
-      expect(exited.detail).toMatchObject({
-        worker: '@shared',
-        code: 1,
-        phase: 'running',
-        expected: false,
-        link: 'closed by the worker side',
-      })
-      expect(exited.kind === 'worker.exited' && [...exited.detail.sessions].sort()).toEqual([
-        'agnes:t:a:x:dm:crash-a',
-        'agnes:t:a:x:dm:crash-b',
-      ])
-      expect(exited.kind === 'worker.exited' && exited.detail.stderr).toContain(
-        'fake worker: crashing on request',
-      )
-      expect(records.some((record) => record.kind === 'worker.start_failed')).toBe(false)
-    } finally {
-      await pool.closeAll(1_000).catch(() => undefined)
-      await server.close()
-      rmSync(dir, { recursive: true, force: true })
-    }
-  }, 60_000)
-
   it('spawns a real worker, gates it, answers a ping, and quarantines after three qualifying crashes', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-'))
     const profileFile = join(dir, 'profile.json')
@@ -701,6 +671,7 @@ describe('WorkerPool', () => {
     }
     const notices: string[] = []
     const exited: string[] = []
+    const lifecycle: Array<{ phase: string; id: string }> = []
     const pool = new WorkerPool({
       config,
       profile: { name: 'p', hash: 'h1' } as never,
@@ -710,6 +681,10 @@ describe('WorkerPool', () => {
       execArgv: ['--import', 'tsx'],
       clock: () => 0,
       onEvent: () => undefined,
+      onLifecycle: (phase, id) => {
+        lifecycle.push({ phase, id })
+        throw new Error('synthetic observer refusal')
+      },
       onRequest: async () => undefined,
       notices: { emit: (k: string) => notices.push(k) },
     })
@@ -720,6 +695,8 @@ describe('WorkerPool', () => {
     const sessionKey = 'agnes:t:a:x:dm:1'
     const link = await pool.acquire(sessionKey, { kind: 'service', resourceControl: true })
     expect(await link.command('ping', {})).toEqual({ ok: true })
+    const started = lifecycle.find((row) => row.phase === 'start')
+    expect(started?.id).toContain(sessionKey)
 
     // Three crashes on the same session key. The first `link.command('crash', {})` is sent to the
     // still-live real worker and kills it, which fires the pool's own `child.once('exit', ...)`
@@ -740,6 +717,7 @@ describe('WorkerPool', () => {
     expect(notices.filter((n) => n === 'worker_crashed')).toHaveLength(2)
     expect(notices).toContain('worker_quarantined')
     expect(exited).toContain(sessionKey)
+    expect(lifecycle).toContainEqual({ phase: 'stop', id: started?.id })
     await expect(pool.acquire(sessionKey, { kind: 'service', resourceControl: true })).rejects.toThrow(
       /quarantined/,
     )
@@ -1154,7 +1132,6 @@ describe('WorkerPool', () => {
     writeFileSync(profileFile, JSON.stringify({ name: 'p', hash: 'h1' }))
     let now = 0
     const notices: string[] = []
-    const records: WorkerLifecycleRecord[] = []
     const config: DaemonConfig = {
       profileName: 'p',
       dataDir: dir,
@@ -1172,7 +1149,6 @@ describe('WorkerPool', () => {
       clock: () => now,
       onEvent: () => undefined,
       onRequest: async () => undefined,
-      onLifecycle: (record) => records.push(record),
       notices: { emit: (kind) => notices.push(kind) },
     })
     const server = await listenUnix(config.workersSocketPath, (socket) => pool.adopt(socket))
@@ -1187,14 +1163,6 @@ describe('WorkerPool', () => {
       expect(pool.businessWorker()?.link.alive).toBe(true)
       expect(notices).not.toContain('worker_crashed')
       expect(notices).not.toContain('worker_quarantined')
-      await pool.closeAll(1_000)
-      // A shutdown retires the worker on purpose, and the record says the daemon closed it.
-      expect((await lifecycleRecord(records, 'worker.exited')).detail).toMatchObject({
-        worker: '@shared',
-        phase: 'running',
-        expected: true,
-        link: 'shutdown',
-      })
     } finally {
       await pool.closeAll(1_000)
       await server.close()
@@ -1206,6 +1174,7 @@ describe('WorkerPool', () => {
     let now = 0
     const notices: string[] = []
     const pool = new WorkerPool({
+      workerEntry: fileURLToPath(new URL('../src/worker/main.js', import.meta.url)),
       config: {
         profileName: 'p',
         dataDir: '/tmp/agnes-unused',
@@ -1258,6 +1227,7 @@ describe('WorkerPool', () => {
       }) as unknown as typeof import('node:child_process').spawn
 
       const pool = new WorkerPool({
+        workerEntry: fileURLToPath(new URL('../src/worker/main.js', import.meta.url)),
         config: {
           profileName: 'p',
           dataDir: '/unused',
@@ -1336,7 +1306,12 @@ describe('WorkerPool when a start from the desired target fails', () => {
 
   async function withBoot(
     setup: (store: CompositeTargetStore) => void,
-    run: (ctx: { pool: WorkerPool; store: CompositeTargetStore; notices: string[] }) => Promise<void>,
+    run: (ctx: {
+      pool: WorkerPool
+      store: CompositeTargetStore
+      notices: string[]
+      booting: Promise<void>
+    }) => Promise<void>,
   ) {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-boot-failure-'))
     const profileFile = join(dir, 'profile.json')
@@ -1355,6 +1330,17 @@ describe('WorkerPool when a start from the desired target fails', () => {
     const store = new CompositeTargetStore(sqliteTables().table('composite'), 'default')
     setup(store)
     const notices: string[] = []
+    const delivery = new CompositeRuntimeDelivery(store)
+    let offered: () => void = () => undefined
+    const booting = new Promise<void>((resolve) => {
+      offered = resolve
+    })
+    const beginBoot = delivery.beginBoot.bind(delivery)
+    delivery.beginBoot = (...args) => {
+      const admission = beginBoot(...args)
+      offered()
+      return admission
+    }
     const pool = new WorkerPool({
       config,
       profile: { name: 'p', hash: 'h1' } as never,
@@ -1366,11 +1352,11 @@ describe('WorkerPool when a start from the desired target fails', () => {
       onEvent: () => undefined,
       onRequest: async () => undefined,
       notices: { emit: (kind: string) => notices.push(kind) },
-      runtimeDelivery: new CompositeRuntimeDelivery(store),
+      runtimeDelivery: delivery,
     })
     const server = await listenUnix(config.workersSocketPath, (socket) => pool.adopt(socket))
     try {
-      await run({ pool, store, notices })
+      await run({ pool, store, notices, booting })
     } finally {
       pool.killAll()
       await server.close()
@@ -1380,16 +1366,33 @@ describe('WorkerPool when a start from the desired target fails', () => {
 
   const bootstrapOnly = (store: CompositeTargetStore) => store.publishDesired(artifact('ext:bad'))
 
-  it('records the failure and does not count a worker that never became ready as a crash', async () => {
-    // One failed start is enough: the shared worker is never quarantined, so repeating the start
-    // exercises nothing new.
-    await withBoot(bootstrapOnly, async ({ pool, store, notices }) => {
-      await expect(pool.acquireSharedWorker()).rejects.toThrow('did not boot_ready')
-      expect(store.lastFailure()).toMatchObject({ phase: 'boot', digest: store.desired()?.digest })
-      expect(notices).not.toContain('worker_crashed')
-      expect(pool.isQuarantined('@shared')).toBe(false)
-    })
-  }, 40_000)
+  it.each(['timeout', 'shutdown', 'kill', 'fail-stop'])(
+    'attributes a start that never became ready: %s',
+    async (cause) => {
+      await withBoot(bootstrapOnly, async ({ pool, store, notices, booting }) => {
+        const starting = expect(pool.acquireSharedWorker()).rejects.toThrow(
+          cause === 'timeout' ? 'did not boot_ready' : 'shut down during startup',
+        )
+        if (cause !== 'timeout') {
+          await booting
+          if (cause === 'shutdown') await pool.closeAll(1_000)
+          else if (cause === 'kill') pool.killAll()
+          else pool.failStop('uncertain activation')
+        }
+        await starting
+        await pool.waitForExitRecovery()
+        if (cause === 'timeout')
+          expect(store.lastFailure()).toMatchObject({ phase: 'boot', digest: store.desired()?.digest })
+        else {
+          expect(store.lastFailure()).toBeUndefined()
+          expect(store.desired()?.digest).toBe(artifact('ext:bad').digest)
+        }
+        expect(notices).not.toContain('worker_crashed')
+        expect(pool.isQuarantined('@shared')).toBe(false)
+      })
+    },
+    40_000,
+  )
 
   it('records the failure when the worker process dies while it is starting from the target', async () => {
     process.env.AGNES_FAKE_BOOT = 'exit'

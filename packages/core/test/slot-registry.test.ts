@@ -1,5 +1,5 @@
+import { projectUI } from '@agnes/core-ledger/project/ui'
 import { afterEach, expect, it, vi } from 'vitest'
-import { projectUI } from '../src/project/ui.js'
 import { SlotRegistry } from '../src/registry/slots.js'
 
 const meta = { source: 'fixture/slot', trust: 'trusted' as const }

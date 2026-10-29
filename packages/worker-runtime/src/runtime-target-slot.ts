@@ -1,8 +1,15 @@
-import type { RuntimeTarget, RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
+import type { PluginGenerationStatus } from '@agnes/host'
+import {
+  encodeRuntimeTargetArtifact,
+  type RuntimeTarget,
+  type RuntimeTargetArtifact,
+} from '@agnes/plugin-runtime/host'
 import { adaptRuntimeStaleFrame, type VerifiedRuntimeTargetDelivery } from './runtime-target-artifact.js'
 
 export type RuntimeTargetApplyPort<Result = void> = Readonly<{
   applyRuntimeTarget(target: RuntimeTarget): Result | PromiseLike<Result>
+  pluginGenerationStatus?(): PluginGenerationStatus
+  runtimeTargetSnapshot?(): RuntimeTarget
 }>
 
 export type RuntimeTargetSlotOutcome<Result = void> =
@@ -30,6 +37,8 @@ export type RuntimeTargetSlot<Result = void> = Readonly<{
    * running, only the most recently offered distinct target remains queued.
    */
   offer(frame: unknown): Promise<RuntimeTargetSlotOutcome<Result>>
+  /** Latest desired delivery and retained session generations have independent lifetimes. */
+  generations(): PluginGenerationStatus | undefined
 }>
 
 type Waiter<Result> = (outcome: RuntimeTargetSlotOutcome<Result>) => void
@@ -55,10 +64,19 @@ class LatestRuntimeTargetSlot<Result> implements RuntimeTargetSlot<Result> {
     this.#port = port
   }
 
+  generations(): PluginGenerationStatus | undefined {
+    return this.#port.pluginGenerationStatus?.()
+  }
+
+  #isCurrent(digest: string): boolean {
+    const target = this.#port.runtimeTargetSnapshot?.()
+    return target ? encodeRuntimeTargetArtifact(target).digest === digest : this.#applied?.digest === digest
+  }
+
   offer(frame: unknown): Promise<RuntimeTargetSlotOutcome<Result>> {
     let delivery: VerifiedRuntimeTargetDelivery
     try {
-      // The Task 8 adapter validates the envelope and owns immutable artifact/target snapshots
+      // The delivery adapter validates the envelope and owns immutable artifact/target snapshots
       // before this method returns control to the caller.
       delivery = adaptRuntimeStaleFrame(frame)
     } catch (error) {
@@ -81,7 +99,7 @@ class LatestRuntimeTargetSlot<Result> implements RuntimeTargetSlot<Result> {
         return
       }
 
-      if (!this.#active && !this.#pending && this.#applied?.digest === digest) {
+      if (!this.#active && !this.#pending && this.#applied?.digest === digest && this.#isCurrent(digest)) {
         resolve(
           Object.freeze({
             status: 'applied',
@@ -128,7 +146,7 @@ class LatestRuntimeTargetSlot<Result> implements RuntimeTargetSlot<Result> {
         const digest = entry.delivery.artifact.digest
         const alreadyApplied = this.#applied
 
-        if (alreadyApplied?.digest === digest) {
+        if (alreadyApplied?.digest === digest && this.#isCurrent(digest)) {
           this.#finish(
             entry,
             Object.freeze({
@@ -177,4 +195,17 @@ export function createRuntimeTargetSlot<Result = void>(
   port: RuntimeTargetApplyPort<Result>,
 ): RuntimeTargetSlot<Result> {
   return new LatestRuntimeTargetSlot(port)
+}
+
+/** Preserve the plugin's original refusal through Host transaction wrappers; the admin redacts it. */
+export function runtimeTargetFailureMessage(error: unknown): string {
+  const seen = new Set<unknown>()
+  let cause: unknown = error
+  for (let depth = 0; depth < 8 && cause instanceof Error && !seen.has(cause); depth++) {
+    seen.add(cause)
+    const next: unknown = cause instanceof AggregateError ? cause.errors[0] : cause.cause
+    if (next === undefined) break
+    cause = next
+  }
+  return cause instanceof Error ? cause.message : String(cause)
 }

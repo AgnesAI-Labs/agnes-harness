@@ -9,11 +9,24 @@ import {
   createPlatform,
   dataDir as defaultDataDir,
   expandHome,
+  fileSecretsDir,
   HostError,
+  initializeHomeLocked,
   type ResolvedProfile,
   readConfigurationProfileInputs,
   resolveProfile,
 } from '@agnes/host'
+import { createPackageManager, withPackageVerification } from '@agnes/package-manager'
+
+// Retain byte-keyed static inspection metadata, not verified tree/trust verdicts. Each read still
+// hashes current bytes. A configuration service owns one bounded manager for its current data scope.
+const profilePackages = new WeakMap<
+  ConfigurationService,
+  {
+    key: string
+    manager: ReturnType<typeof createPackageManager>
+  }
+>()
 
 /** Inputs shared by every local daemon consumer (start, status, stop and clients). */
 export type DaemonScopeOptions = {
@@ -23,6 +36,7 @@ export type DaemonScopeOptions = {
   profile?: string
   workspace?: string
   dataDir?: string
+  adminBundles?: readonly string[]
   configuration?: ConfigurationService
   agnesVersion?: string
   now?: string
@@ -32,6 +46,8 @@ export type DaemonScopeOptions = {
   allowPackageRecovery?: boolean
   /** Recovery boot may resolve the Host profile without an unreadable package lock. */
   ignorePackageLock?: boolean
+  /** Startup only: prepare private initialization objects before configured credentials are read. */
+  initializeHome?: boolean
 }
 
 /** The canonical identity and filesystem locations of one local daemon scope. */
@@ -103,7 +119,7 @@ function makeScope(paths: {
   dataDir: string
 }): DaemonScope {
   const profileDir = join(paths.home, 'profiles', paths.profile)
-  const daemonDir = join(paths.dataDir, 'daemon')
+  const daemonDir = join(paths.home, 'daemon')
   const scopeID = scopeDigest(paths)
   return Object.freeze({
     ...paths,
@@ -120,7 +136,7 @@ function makeScope(paths: {
 async function profileForScope(
   input: Pick<
     DaemonScopeOptions,
-    'home' | 'profile' | 'workspace' | 'dataDir' | 'configuration' | 'ignorePackageLock'
+    'home' | 'profile' | 'workspace' | 'dataDir' | 'configuration' | 'ignorePackageLock' | 'adminBundles'
   > & {
     env?: Readonly<Record<string, string | undefined>>
     osHome: string
@@ -137,14 +153,20 @@ async function profileForScope(
   const profile = profileName(input.profile as string)
   const workspace = await canonicalPath(input.workspace as string)
   const configuration = input.configuration ?? createConfigurationService({ home, profile })
-  const inputs = await readConfigurationProfileInputs({
+  const baseInputs = await readConfigurationProfileInputs({
     home,
-    cwd: workspace,
+    workspaceRoot: workspace,
     profile,
     agnesVersion: input.agnesVersion,
+    demoFallback: true,
     configuration: await configuration.profileInput(),
     ...(input.ignorePackageLock ? { lock: { packages: {} } } : {}),
   })
+
+  const inputs = {
+    ...baseInputs,
+    ...(input.adminBundles !== undefined ? { adminBundles: input.adminBundles } : {}),
+  }
 
   // The daemon scope is the first owner of the data path. Resolve the profile with the selected
   // path inserted into the user layer so the resulting profile hash attests to the same canonical
@@ -159,21 +181,63 @@ async function profileForScope(
     expandHome(inputs.user?.cacheDir ?? join(home, 'cache'), input.osHome),
     workspace,
   )
+  // Admin-enabled code must be present before Host assembly: a selected bundle may own the
+  // initial loop. The worker resolves these exact lock identities from immutable snapshots.
+  // Explicit package declarations (including disabled ones) still win over inventory defaults.
+  const declared = new Set(inputs.user?.packages?.map((pkg) => pkg.id))
+  const packageKey = JSON.stringify([dataDir, input.agnesVersion])
+  let packageReader = profilePackages.get(configuration)
+  if (packageReader?.key !== packageKey) {
+    packageReader = {
+      key: packageKey,
+      manager: createPackageManager({ dataDir, agnesVersion: input.agnesVersion }),
+    }
+    profilePackages.set(configuration, packageReader)
+  }
+  const snapshots =
+    !input.ignorePackageLock && inputs.lock
+      ? await packageReader.manager.runtimePluginSnapshots(join(home, 'profiles', profile))
+      : []
+  const installed = Object.entries(inputs.lock?.packages ?? {})
+    .filter(
+      ([id, pkg]) =>
+        pkg.enabled &&
+        pkg.trust !== 'builtin' &&
+        !declared.has(id) &&
+        snapshots.some(({ snapshot }) => snapshot.packageId === id && snapshot.integrity === pkg.integrity),
+    )
+    .map(([id, pkg]) => ({ id, source: 'installed', version: pkg.version }))
   const user = {
     ...(inputs.user ?? {}),
+    packages: [...(inputs.user?.packages ?? []), ...installed],
     name: profile,
     dataDir,
     cacheDir,
   }
-  const resolved = await resolveProfile(
-    { ...inputs, user },
-    {
-      platform: createPlatform().snapshot(),
-      agnesVersion: input.agnesVersion,
-      now: input.now,
-      homeDir: input.osHome,
-    },
-  )
+  const resolveEnv = {
+    platform: createPlatform().snapshot(),
+    agnesVersion: input.agnesVersion,
+    now: input.now,
+    homeDir: input.osHome,
+  }
+  let resolved = await resolveProfile({ ...inputs, user }, resolveEnv)
+  // Pin only after resolution, so a path that lives on the builtin template (enterprise) is kept.
+  // A fresh local-dev profile has kind file and no path; that is the credential-store directory.
+  if (resolved.adapters.secrets.kind === 'file' && resolved.adapters.secrets.path === undefined) {
+    resolved = await resolveProfile(
+      {
+        ...inputs,
+        user: {
+          ...user,
+          adapters: {
+            ...(user.adapters ?? {}),
+            secrets: { kind: 'file', path: fileSecretsDir(home) },
+          },
+        },
+      },
+      resolveEnv,
+    )
+  }
   return { profile: resolved, home, workspace, configuration }
 }
 
@@ -191,12 +255,22 @@ export async function resolveDaemonScope(options: DaemonScopeOptions = {}): Prom
   const home = await canonicalPath(options.home ?? agnesHome(env))
   const profile = profileName(profileValue)
   const workspace = await canonicalPath(workspaceValue)
-  if (options.dataDir !== undefined)
+  const explicitDataDir =
+    options.dataDir === undefined
+      ? undefined
+      : await canonicalPath(expandHome(options.dataDir, osHome), workspace)
+  if (options.initializeHome)
+    await initializeHomeLocked(
+      home,
+      profile,
+      explicitDataDir === undefined ? {} : { dataDir: explicitDataDir },
+    )
+  if (explicitDataDir !== undefined)
     return makeScope({
       home,
       profile,
       workspace,
-      dataDir: await canonicalPath(expandHome(options.dataDir, osHome), workspace),
+      dataDir: explicitDataDir,
     })
   try {
     const profileInput = {
@@ -205,6 +279,7 @@ export async function resolveDaemonScope(options: DaemonScopeOptions = {}): Prom
       profile,
       workspace,
       osHome,
+      ...(options.adminBundles !== undefined ? { adminBundles: options.adminBundles } : {}),
       ...(options.configuration ? { configuration: options.configuration } : {}),
       agnesVersion: options.agnesVersion ?? '0.0.0',
       now: options.now ?? new Date().toISOString(),
@@ -231,25 +306,45 @@ export async function resolveDaemonScope(options: DaemonScopeOptions = {}): Prom
   }
 }
 
+/** Boot recovery keeps a damaged package lock intact and propagates other resolution errors. */
+export function daemonProfileLoader(scope: DaemonScope, resolver: typeof resolveDaemonProfile) {
+  return async (
+    options: Parameters<typeof resolveDaemonProfile>[1] = {},
+  ): Promise<Awaited<ReturnType<typeof resolveDaemonProfile>>> => {
+    try {
+      return await resolver(scope, options)
+    } catch (error) {
+      // Preserve a corrupt package lock as recovery evidence. Host can still resolve the configured
+      // profile with an empty lock overlay; PackageManager remains the authoritative lock reader and
+      // exposes the profile as read-only rather than replacing its bytes during boot.
+      if (!(error instanceof HostError) || error.code !== 'E_LOCK_MISMATCH') throw error
+      return await resolveDaemonProfile(scope, { ...options, ignorePackageLock: true })
+    }
+  }
+}
+
 /** Resolve the Host profile associated with an already resolved scope. */
 export async function resolveDaemonProfile(
   scope: DaemonScope,
   options: Pick<
     DaemonScopeOptions,
-    'configuration' | 'agnesVersion' | 'now' | 'env' | 'ignorePackageLock'
+    'configuration' | 'agnesVersion' | 'now' | 'env' | 'ignorePackageLock' | 'adminBundles'
   > = {},
 ): Promise<{ profile: ResolvedProfile; configuration: ConfigurationService }> {
-  const resolved = await profileForScope({
-    home: scope.home,
-    profile: scope.profile,
-    workspace: scope.workspace,
-    dataDir: scope.dataDir,
-    osHome: nonempty(options.env?.HOME) ?? homedir(),
-    ...(options.env ? { env: options.env } : {}),
-    ...(options.configuration ? { configuration: options.configuration } : {}),
-    ...(options.ignorePackageLock ? { ignorePackageLock: true } : {}),
-    agnesVersion: options.agnesVersion ?? '0.0.0',
-    now: options.now ?? new Date().toISOString(),
-  })
+  const resolved = await withPackageVerification(() =>
+    profileForScope({
+      home: scope.home,
+      profile: scope.profile,
+      workspace: scope.workspace,
+      dataDir: scope.dataDir,
+      osHome: nonempty(options.env?.HOME) ?? homedir(),
+      ...(options.env ? { env: options.env } : {}),
+      ...(options.configuration ? { configuration: options.configuration } : {}),
+      ...(options.ignorePackageLock ? { ignorePackageLock: true } : {}),
+      ...(options.adminBundles !== undefined ? { adminBundles: options.adminBundles } : {}),
+      agnesVersion: options.agnesVersion ?? '0.0.0',
+      now: options.now ?? new Date().toISOString(),
+    }),
+  )
   return { profile: resolved.profile, configuration: resolved.configuration }
 }

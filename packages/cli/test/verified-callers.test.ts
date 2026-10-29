@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { type DaemonScope, readDaemonDiscovery, resolveDaemonScope } from '@agnes/daemon'
 import { type CreateClientOptions, createClient } from '@agnes/sdk'
@@ -14,19 +17,35 @@ vi.mock('@agnes/daemon', () => ({
   resolveDaemonScope: vi.fn(),
   createResourceAdminSurface: () => ({ handle() {}, close() {} }),
 }))
-vi.mock('@agnes/daemon/packages', () => ({ createAdminSurface: () => ({ handle() {}, close() {} }) }))
+vi.mock('@agnes/daemon/packages', async (original) => ({
+  ...(await original<typeof import('@agnes/daemon/packages')>()),
+  createAdminSurface: () => ({ handle() {}, close() {} }),
+}))
 vi.mock('@agnes/system-node/windows-pipe', () => ({ connectWindowsPipe: vi.fn() }))
 vi.mock('@agnes/sdk', async (original) => ({
   ...(await original<typeof import('@agnes/sdk')>()),
   createClient: vi.fn(() => ({ initialize: async () => {}, close: async () => {} })),
 }))
-afterEach(() => vi.resetAllMocks())
+const roots: string[] = []
+afterEach(() => {
+  vi.resetAllMocks()
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
 
 it.each(['automatic CLI', 'manual CLI', 'package Web', 'resource Web'])(
   '%s refreshes only its captured scope and fails closed when discovery changes path',
   async (caller) => {
     const path = '\\\\.\\pipe\\verified-caller'
-    const scope = { scopeID: 'chosen', profile: 'chosen', dataDir: '/custom-data' } as DaemonScope
+    const daemonDir = mkdtempSync(join(tmpdir(), 'agh-verified-launch-'))
+    roots.push(daemonDir)
+    const scope = {
+      daemonDir,
+      home: '/custom-home',
+      workspace: join(daemonDir, 'workspace'),
+      scopeID: 'chosen',
+      profile: 'chosen',
+      dataDir: '/custom-data',
+    } as DaemonScope
     const owner = { pid: 123, processStartId: 'win32:123:456' }
     const discovery = { socketPath: path, owner } as NonNullable<
       Awaited<ReturnType<typeof readDaemonDiscovery>>

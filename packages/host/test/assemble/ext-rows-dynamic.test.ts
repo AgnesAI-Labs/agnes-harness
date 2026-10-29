@@ -1,11 +1,15 @@
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { type McpCatalogHub, mcpCatalogHubFor } from '@agnes/base'
-import { API_VERSION, defineExtension, type ExtensionAPI, type ExtensionManifest } from '@agnes/extension-api'
+import { API_VERSION, type ExtensionManifest } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
+import type { SeamInitContext } from '@agnes/host-extensions/assemble/packages'
+import { createPluginRow } from '@agnes/plugin-runtime/host'
 import { afterEach, describe, expect, it } from 'vitest'
+import { codeRevision, liveResourceRow } from '../../src/runtime/generation/target-code.js'
 import { createTestHost } from '../../testkit/index.js'
 import { fixtureTool } from '../fixtures/tool.js'
 import { pluginRow, pluginSourceWith, targetOf } from './plugin-extension-fixture.js'
@@ -19,7 +23,9 @@ afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
 })
 const scratch = (): string => {
-  const d = mkdtempSync(join(tmpdir(), 'agnes-ext-rows-dynamic-'))
+  const parent = join(homedir(), 'agh-real-eval')
+  mkdirSync(parent, { recursive: true })
+  const d = mkdtempSync(join(parent, 'agnes-ext-rows-dynamic-'))
   dirs.push(d)
   return d
 }
@@ -52,21 +58,82 @@ function resourceExtension(name: string, log: string[], options: { failOpen?: bo
       revision: 'r1',
     },
     manifest,
-    factory: () =>
-      defineExtension(async (agnes) => {
-        log.push(`open:${name}`)
-        if (options.failOpen) throw new Error(`cannot open ${name}`)
-        const dispose = agnes.registerTool(fixtureTool(`${name}_ping`))
-        return () => {
-          dispose()
-          log.push(`close:${name}`)
-        }
-      }),
+    factory: () => async (agnes: ExtensionAPI) => {
+      log.push(`open:${name}`)
+      if (options.failOpen) throw new Error(`cannot open ${name}`)
+      const dispose = agnes.registerTool(fixtureTool(`${name}_ping`))
+      return () => {
+        dispose()
+        log.push(`close:${name}`)
+      }
+    },
   }
 }
 
 describe('dynamic ext: rows (stage 2b, D107)', () => {
-  it('keeps late registration on the row and rejects it after unmount', async () => {
+  it.each([
+    'agnes/computer-use',
+    'agnes/hooks-runner',
+    'agnes/privacy',
+    'agnes/mcp-search',
+    'agnes/tools-web',
+  ])('does not grant a dynamic extension the identity of %s even with builtin Base metadata', async (id) => {
+    const h = await createTestHost({ dataDir: scratch(), packageDirs })
+    let context: SeamInitContext | undefined
+    let registered = false
+    try {
+      const row = h.host.extensionRows.prepare({
+        extensionId: id,
+        dynamic: {
+          spec: {
+            id,
+            package: '@agnes/base',
+            packageVersion: '0.0.0',
+            dir: scratch(),
+            trust: 'builtin',
+            enabled: true,
+            revision: 'lookalike',
+          },
+          manifest: {
+            id,
+            version: '0.1.0',
+            apiRange: '^5.0.0',
+            entry: './index.mjs',
+            capabilities: {},
+          },
+          factory: (init) => {
+            context = init
+            return () => {
+              registered = true
+            }
+          },
+        },
+      })
+      await h.host.extensionRows.apply(
+        h.host.extensionRows.current().map((existing) => (existing.id === row.id ? row : existing)),
+      )
+      expect(registered).toBe(true)
+      expect(context).toBeDefined()
+      for (const field of [
+        'sessionTasks',
+        'childControl',
+        'searchProvider',
+        'trustedHookCommands',
+        'skillDiscovery',
+        'privacyTrajectory',
+        'computerUseBackendProvider',
+        'privateArtifactStore',
+      ]) {
+        expect(context, field).not.toHaveProperty(field)
+      }
+    } finally {
+      await h.host.close()
+    }
+  })
+
+  it('keeps late registration on a pinned row and rejects it after its generation drains', {
+    timeout: 60_000,
+  }, async () => {
     const dataDir = scratch()
     const provider = new ScriptedProvider({
       scripts: [
@@ -91,10 +158,9 @@ describe('dynamic ext: rows (stage 2b, D107)', () => {
     let captured: ExtensionAPI | undefined
     const dynamic = {
       ...base,
-      factory: () =>
-        defineExtension((api) => {
-          captured = api
-        }),
+      factory: () => (api: ExtensionAPI) => {
+        captured = api
+      },
     }
     await h.host.extensionRows.apply([
       ...h.host.extensionRows.current(),
@@ -117,9 +183,14 @@ describe('dynamic ext: rows (stage 2b, D107)', () => {
       h.host.extensionRows.current().filter((row) => row.id !== `ext:${dynamic.extensionId}`),
     )
     expect(toolNames(h)).not.toContain('late_again')
-    expect(() => captured?.registerTool(fixtureTool('late_after'))).toThrow()
+    expect(session.currentTools().resolve('late_again')).toBeDefined()
+    const next = await h.host.createSession({ cwd: dataDir, key: 'dynamic-after-removal' })
+    expect(next.currentTools().resolve('late_again')).toBeUndefined()
+    await next.close()
     expect(provider.calls).toHaveLength(2)
     await session.close()
+    await h.host.releaseSessionGeneration?.(session.key)
+    expect(() => captured?.registerTool(fixtureTool('late_after'))).toThrow()
     await h.host.close()
   })
 
@@ -149,6 +220,36 @@ describe('dynamic ext: rows (stage 2b, D107)', () => {
 
   it('applying a dynamic row keeps the static builtin rows', async () => {
     const h = await createTestHost({ dataDir: scratch(), packageDirs })
+    const supplied = resourceExtension('renamed-resource', [])
+    const live = h.host.extensionRows.prepare({
+      extensionId: supplied.extensionId,
+      dynamic: { ...supplied, generation: { kind: 'mcp-server', data: {} } },
+    })
+    const lookalike = resourceExtension('lookalike', [])
+    const named = 'agnes/mcp-spoof-12345678'
+    const ordinary = h.host.extensionRows.prepare({
+      extensionId: named,
+      dynamic: {
+        ...lookalike,
+        spec: { ...lookalike.spec, id: named, package: '@agnes/base' },
+        manifest: { ...lookalike.manifest, id: named },
+      },
+    })
+    expect(liveResourceRow(live)).toBe(true)
+    expect(liveResourceRow(ordinary)).toBe(false)
+    expect(codeRevision(targetOf([live]))).toBe(codeRevision(targetOf([])))
+    expect(codeRevision(targetOf([ordinary]))).not.toBe(codeRevision(targetOf([])))
+    const copiedMarker = createPluginRow({
+      id: live.id,
+      plugin: `@acme/lookalike@sha256-${'1'.repeat(64)}/plugin`,
+      snapshotDigest: `sha256-${'1'.repeat(64)}`,
+      exportName: 'plugin',
+      entryRevision: live.entryRevision,
+      extrasRevision: 'none',
+      mountRevision: live.mountRevision,
+    })
+    expect(liveResourceRow(copiedMarker)).toBe(false)
+    expect(codeRevision(targetOf([copiedMarker]))).not.toBe(codeRevision(targetOf([])))
     const staticBefore = h.host.extensionRows.current().map((r) => r.id)
     const dynamic = resourceExtension('alpha', [])
     await h.host.extensionRows.apply([
@@ -286,7 +387,7 @@ describe('dynamic ext: rows (stage 2b, D107)', () => {
       {
         exportName: 'plugin',
         rowId: 'ext:acme/plugin-tools',
-        body: "  agnes.registerTool(tool('acme_ping'))",
+        body: "  ctx.tools.register(tool('acme_ping'))",
       },
     ])
     const h = await createTestHost({
@@ -338,7 +439,7 @@ describe('dynamic ext: rows (stage 2b, D107)', () => {
         } as ExtensionManifest,
         factory: (ctx: Parameters<typeof mcpCatalogHubFor>[0]) => {
           seen.set(name, mcpCatalogHubFor(ctx))
-          return defineExtension(() => undefined)
+          return () => undefined
         },
       }
     }

@@ -1,0 +1,19 @@
+{
+  "name": "@agnes-e2e/tool-argument-recovery",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "agnes": {
+    "plugins": [
+      {
+        "export": "argumentRecovery",
+        "apiRange": "^5.0.0",
+        "id": "ext:agnes-e2e/tool-argument-recovery",
+        "inject": [
+          "tools"
+        ]
+      }
+    ]
+  }
+}

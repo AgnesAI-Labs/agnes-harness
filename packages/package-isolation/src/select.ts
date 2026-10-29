@@ -1,7 +1,7 @@
-import { realpathSync } from 'node:fs'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 
 type Profile = Readonly<{
-  seams: Record<string, string>
+  seams: Record<string, string | { provider: string }>
   provider: Readonly<{ package: string; adapters: readonly string[] }>
   adapters: Record<string, unknown>
   packages: readonly Readonly<{
@@ -30,7 +30,7 @@ export function selectIsolatedPackages<T extends Installed>(
 ): ReadonlyMap<string, T> {
   const eligible = new Map<string, T>()
   const assembly = new Set([
-    ...Object.values(profile.seams),
+    ...Object.values(profile.seams).filter((value): value is string => typeof value === 'string'),
     profile.provider.package,
     ...profile.provider.adapters,
     ...Object.values(profile.adapters).filter((value): value is string => typeof value === 'string'),
@@ -50,7 +50,7 @@ export function selectIsolatedPackages<T extends Installed>(
       row.blockers.length ||
       row.entry.version !== pkg.version ||
       row.entry.integrity !== pkg.integrity ||
-      realpathSync(row.directory) !== realpathSync(dir) ||
+      nativeRealpathSync(row.directory) !== nativeRealpathSync(dir) ||
       row.contributions.some(
         (contribution) => contribution.kind !== 'extension' && contribution.kind !== 'surface',
       )

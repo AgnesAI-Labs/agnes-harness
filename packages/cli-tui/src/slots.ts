@@ -22,7 +22,11 @@ function fillsOf(node: UINode): SlotFillView[] {
 export function collectSlots(t: UITimeline): { status: StatusItem[]; actions: ActionItem[] } {
   const status: StatusItem[] = []
   const actions: ActionItem[] = []
-  for (const node of t.nodes) {
+  const nodes: UINode[] = [
+    ...t.nodes,
+    ...(t.slots ?? []).map((fill, i) => ({ kind: 'slot' as const, id: `live-${i}`, seq: t.upto, fill })),
+  ]
+  for (const node of nodes) {
     for (const fill of fillsOf(node)) {
       if (fill.slot === 'status.line') {
         const p = fill.payload as StatusItem

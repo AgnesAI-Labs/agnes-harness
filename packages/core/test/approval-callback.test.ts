@@ -1,427 +1,292 @@
-import type { ApprovalGrant } from '@agnes/protocol'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import type { DecisionSnapshot, ToolMeta } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
-import type { ApprovalRequest, ApprovalSeam, SeamImplementations } from '../src/effects/seams.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
+import { approveMemoryFile } from '../src/execution/turn/memory-approval.js'
 import { ToolRegistry } from '../src/registry/tools.js'
-import type { Event } from '../src/types.js'
-import { createWorkspaceInvocationPort } from '../src/workspace/runtime.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
-import { actor, openSession, shellTool, testFsOps } from './helpers/open-session.js'
+import { actor, openSession, shellTool } from './helpers/open-session.js'
 
-const approver = { ...actor, id: 'reviewer' }
-type Receipt = NonNullable<Awaited<ReturnType<ApprovalSeam['resume']>>>
-async function parked(
-  profileHash: string | null = null,
-  approvalOver: Partial<SeamImplementations['approval']> = {},
-) {
+async function parked(profileHash: string | null = null) {
   let now = 1_757_203_200_000
-  let request: ApprovalRequest | undefined
-  let calls = 0
-  const ticket = 'private-ticket'
-  const deadline = new Date(now + 1000).toISOString()
-  let backend: (receipt: Receipt) => Promise<Receipt | null> = async (r) => r
+  let executions = 0
+  const seen: DecisionSnapshot[] = []
+  const registry = new ToolRegistry()
+  registry.add(
+    shellTool(async () => {
+      executions++
+      return { content: [] }
+    }),
+    { source: 'test', trust: 'builtin' },
+  )
+  const storage = new MemoryStorage({ clock: () => now })
   const seams = fakeSeams({
     approval: {
-      ask: async (req) => {
-        request = req
-        return { ticket, expiresAt: deadline }
+      ask: async (request) => {
+        const snapshot = await h.session.decisions.get(request.decision!.handle)
+        expect(snapshot.result).toBeNull()
+        expect(snapshot.handle.id).toBe(request.requestId)
+        seen.push(snapshot)
+        return { verdict: 'unavailable', reason: 'no-handler' }
       },
-      resume: async () => {
-        calls++
-        if (!request) throw new Error('missing test request')
-        return backend({
-          requestId: request.requestId,
-          bindingHash: request.bindingHash,
-          expiresAt: deadline,
-        })
-      },
-      ...approvalOver,
     },
   })
-  const releases = vi.fn()
-  const acquires = vi.fn(() => ({
-    source: {
-      root: '/w',
-      fs: testFsOps(),
-      ready: async () => ({ confine: async (argv: readonly string[]) => argv }),
-      hookSnapshot: async () => ({ workspaceDigest: 'workspace', policyRevision: 'policy', hooks: [] }),
-      hookSandbox: {
-        enforcement: () => ({ level: 'full' as const, scope: ['process' as const] }),
-        exec: async () => ({ code: 0, stdout: '', stderr: '', truncated: false }),
-      },
-      approval: seams.approval,
-      checkpoint: seams.checkpoint,
-    },
-    release: releases,
-  }))
-  const workspaceInvocation = createWorkspaceInvocationPort(acquires)
-  const registry = new ToolRegistry()
-  registry.add(shellTool(), { source: 'test', trust: 'builtin' })
-  const storage = new MemoryStorage({ clock: () => now })
-  const { session, log } = await openSession({
-    clock: () => now,
+  const h = await openSession({
     storage,
     registry,
     seams,
-    provider: fakeProvider([toolTurn('shell', {}), textTurn('done')]),
+    clock: () => now,
     resolvedProfileHash: profileHash,
-    workspaceInvocation,
+    policyDigest: profileHash,
+    provider: fakeProvider([toolTurn('shell', { command: 'synthetic' }), textTurn('done')]),
   })
-  await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'run' }] })
-  expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
-    'parked',
-  )
+  await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'run' }] })
+  expect(await h.session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
+    reason: 'parked',
+  })
   return {
-    session,
-    log,
+    ...h,
     storage,
+    registry,
     seams,
     clock: () => now,
-    ticket,
-    deadline,
-    calls: () => calls,
-    invocationCounts: () => ({ acquires: acquires.mock.calls.length, releases: releases.mock.calls.length }),
-    advance: (ms: number) => {
+    advance(ms: number) {
       now += ms
     },
-    backend: (fn: typeof backend) => {
-      backend = fn
-    },
+    seen,
+    executions: () => executions,
+    snapshot: () => h.session.decisions.get(seen[0]!.handle),
   }
 }
-const rows = (h: Awaited<ReturnType<typeof parked>>) =>
-  h.log.scan({ type: 'approval/decided', toSeq: h.log.lastSeq })
-async function reopenWithAsked(
+const answer = (
   h: Awaited<ReturnType<typeof parked>>,
-  rewrite: (data: Record<string, unknown>) => void,
-  writerRunId: string,
-) {
-  const events = await h.log.scan({ fromSeq: 1, toSeq: h.log.lastSeq })
-  const rewritten: Event[] = events.map((row) => {
-    if (row.type !== 'approval/asked') return row
-    const data = { ...(row.data as Record<string, unknown>) }
-    rewrite(data)
-    return { ...row, data: data as Event['data'] }
-  })
-  const reopened = await openSession({
-    storage: MemoryStorage.fromEvents('k', rewritten),
-    key: 'k',
-    writerRunId,
-    seams: h.seams,
-    clock: h.clock,
-    provider: fakeProvider([textTurn('unused')]),
-  })
-  return { ...h, ...reopened }
-}
+  option = 'allowed-once',
+  commandId = 'answer',
+  authorize: () => void | Promise<void> = () => undefined,
+) =>
+  h.session.decisions.answer(
+    {
+      handle: h.seen[0]!.handle,
+      revision: 1,
+      commandId,
+      response: { option, value: null },
+    },
+    { actor, category: 'human', authorize },
+  )
 
-describe('parked approval callbacks', () => {
-  it('releases one workspace lease for park and one for callback resume', async () => {
-    const h = await parked()
-    expect(h.invocationCounts()).toEqual({ acquires: 1, releases: 1 })
-    await h.session.resumeApproval(h.ticket, 'rejected', approver)
-    expect(h.invocationCounts()).toEqual({ acquires: 2, releases: 2 })
-  })
-
-  it('accepts only a verdict offered by the persisted request', async () => {
-    const h = await parked()
-    await expect(h.session.resumeApproval(h.ticket, 'allowed-permanent', approver)).rejects.toThrow(
-      'approval verdict was not offered',
-    )
-    expect(h.calls()).toBe(0)
-    expect(await rows(h)).toEqual([])
-  })
-
-  it('accepts permanent only for a tool request that explicitly offered it', async () => {
-    const h = await parked(`sha256-${'a'.repeat(64)}`)
-    await expect(h.session.resumeApproval(h.ticket, 'allowed-permanent', approver)).resolves.toEqual({
-      seq: expect.any(Number),
-    })
-    expect(h.calls()).toBe(1)
-    expect((await rows(h))[0]?.data).toMatchObject({
-      verdict: 'allowed-permanent',
-      scope: 'tool:shell:execute',
-      grantId: expect.stringMatching(/^grant-[a-f0-9]{64}$/),
-    })
-  })
-
-  it('activates a callback permanent grant only after its continuation is durably consumed', async () => {
-    const grants: ApprovalGrant[] = []
-    const h = await parked(`sha256-${'a'.repeat(64)}`, {
-      listGrants: async () => grants,
-      putGrant: async (grant) => {
-        grants.push(grant)
-      },
-    })
-    await h.session.resumeApproval(h.ticket, 'allowed-permanent', approver)
-    expect(grants).toEqual([])
-    expect(await h.session.step()).toEqual({ phase: 'tools' })
-    await h.session.runToolsPhase()
-    expect(grants).toEqual([
-      expect.objectContaining({
-        grantId: expect.stringMatching(/^grant-[a-f0-9]{64}$/),
-        profileHash: `sha256-${'a'.repeat(64)}`,
-        actorId: actor.id,
-        actorOrg: actor.org,
-        toolId: 'shell',
-        scope: 'tool:shell:execute',
+describe('durable tool decisions', () => {
+  it('withdraws a memory candidate when its delivery signal is cancelled', async () => {
+    const controller = new AbortController()
+    const h = await openSession({
+      provider: fakeProvider([]),
+      seams: fakeSeams({
+        approval: {
+          ask: async (request) => {
+            controller.abort('stopped')
+            return { ticket: 'detached-memory', expiresAt: request.deadline }
+          },
+        },
       }),
-    ])
-    expect(await h.log.scan({ type: 'x/core/approval-grant-activated', limit: 10 })).toHaveLength(1)
-    expect((await h.log.scan({ type: 'tool/result', limit: 10 }))[0]?.data).toMatchObject({
-      isError: false,
     })
+    try {
+      const tool: { name: string; meta: ToolMeta } = shellTool()
+      expect(
+        await approveMemoryFile(
+          h.session,
+          {
+            path: 'MEMORY.md',
+            baseHash: 'a'.repeat(64),
+            newHash: 'b'.repeat(64),
+            diff: 'synthetic change',
+            source: { sessionKey: h.session.key, turn: 1, toolUseId: 'write-memory' },
+          },
+          { name: tool.name, meta: tool.meta },
+          0,
+          controller.signal,
+        ),
+      ).toEqual({ status: 'unanswered', reason: 'stopped' })
+      const [decision] = await h.session.decisions.list()
+      expect(decision?.result).toMatchObject({ reason: 'stopped', code: 'stopped' })
+      expect(decision?.consumption).toBeNull()
+      if (!decision) throw new Error('missing memory decision')
+      await expect(
+        h.session.decideApproval({
+          command: {
+            handle: decision.handle,
+            revision: decision.revision,
+            commandId: 'late-memory',
+            response: { option: 'allowed-once', value: null },
+          },
+          context: { actor, category: 'human', authorize() {} },
+        }),
+      ).rejects.toThrow('NOT_PENDING')
+    } finally {
+      await h.session.close()
+    }
   })
-
-  it('limits legacy requests without options to historical verdicts', async () => {
-    const accepted = await reopenWithAsked(
-      await parked(),
-      (asked) => {
-        delete asked.options
-      },
-      'legacy-accepted',
-    )
-    await expect(
-      accepted.session.resumeApproval(accepted.ticket, 'allowed-session', approver),
-    ).resolves.toEqual({
-      seq: expect.any(Number),
-    })
-
-    const rejected = await reopenWithAsked(
-      await parked(`sha256-${'a'.repeat(64)}`),
-      (asked) => {
-        delete asked.options
-      },
-      'legacy-rejected',
-    )
-    await expect(
-      rejected.session.resumeApproval(rejected.ticket, 'allowed-permanent', approver),
-    ).rejects.toThrow('approval verdict was not offered')
-    expect(rejected.calls()).toBe(0)
-  })
-
-  it('rejects permanent for a non-tool request even if a malformed request offered it', async () => {
-    const h = await reopenWithAsked(
-      await parked(`sha256-${'a'.repeat(64)}`),
-      (asked) => {
-        asked.kind = 'budget'
-        asked.options = ['allowed-permanent']
-      },
-      'non-tool-permanent',
-    )
-    await expect(h.session.resumeApproval(h.ticket, 'allowed-permanent', approver)).rejects.toThrow(
-      'permanent approval is only valid for tool requests',
-    )
-    expect(h.calls()).toBe(0)
-  })
-
-  it('records the validated callback exactly once without pretending continuation is implemented', async () => {
+  it('persists before delivery, re-offers the original ID/deadline, and never makes no-handler an answer', async () => {
     const h = await parked()
-    const out = await h.session.resumeApproval(h.ticket, 'allowed-once', approver)
-    expect((await rows(h))[0]).toMatchObject({
-      seq: out.seq,
-      actor: approver,
-      data: { verdict: 'allowed-once', via: 'callback', decidedBy: approver },
-    })
-    expect(h.session.state.pendingApprovals.size).toBe(0)
-    expect(h.session.op()).toBeNull()
-    await expect(h.session.resumeApproval(h.ticket, 'allowed-once', approver)).rejects.toThrow(
-      'ticket unavailable',
-    )
-    expect(h.calls()).toBe(1)
+    try {
+      expect((await h.snapshot()).result).toBeNull()
+      expect(await h.session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
+        reason: 'parked',
+      })
+      expect(h.seen).toHaveLength(2)
+      expect(h.seen[1]).toEqual(h.seen[0])
+      expect(h.executions()).toBe(0)
+      expect(await h.log.scan({ type: 'approval/asked', toSeq: h.log.lastSeq })).toEqual([])
+      expect(await h.log.scan({ type: 'approval/decided', toSeq: h.log.lastSeq })).toEqual([])
+    } finally {
+      await h.session.close()
+    }
   })
-
-  it('opens a decided continuation before a queued next-turn prompt without consuming that prompt', async () => {
+  it('allows the owner to review their agent; consumes with original intent and opState in one batch', async () => {
     const h = await parked()
-    await h.session.resumeApproval(h.ticket, 'allowed-once', approver)
-    await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'later prompt' }] })
-
-    expect(await h.session.step()).toEqual({ phase: 'tools' })
-    const starts = await h.log.scan({ type: 'turn/start', order: 'desc', limit: 1, lane: 'main' })
-    expect(starts[0]?.data).toMatchObject({
-      trigger: 'approval-resume',
-      continues: { requestId: expect.any(String), toolUseId: expect.any(String) },
-    })
-    expect(h.session.latest('inbox')).toMatchObject({
-      items: [
-        expect.objectContaining({ target: 'next-turn', content: [{ type: 'text', text: 'later prompt' }] }),
-      ],
-    })
+    const commits = vi.spyOn(h.storage, 'commit')
+    try {
+      const receipt = await answer(h)
+      await expect(answer(h)).resolves.toEqual(receipt)
+      await expect(answer(h, 'rejected')).rejects.toThrow('COMMAND_CONFLICT')
+      await expect(answer(h, 'allowed-once', 'another')).rejects.toThrow('NOT_PENDING')
+      const outcome = await h.session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(outcome.error).toBeUndefined()
+      expect(outcome.reason).toBe('completed')
+      expect(h.executions()).toBe(1)
+      const snapshot = await h.snapshot()
+      expect(snapshot.result).toMatchObject({ reason: 'answered', answeredBy: actor })
+      expect(snapshot.consumption?.effectId).toEqual(expect.any(String))
+      const tx = commits.mock.calls
+        .map((call) => call[1])
+        .find((tx) =>
+          tx.events.some(
+            (row) =>
+              row.type === 'effect/intent' && row.data && (row.data as { kind?: string }).kind === 'tool',
+          ),
+        )!
+      expect(tx.opState).toBeDefined()
+      expect(tx.events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: 'effect/intent' }),
+          expect.objectContaining({
+            type: 'decision/state',
+            data: expect.objectContaining({ consumption: snapshot.consumption }),
+          }),
+        ]),
+      )
+      expect(tx.events.find((row) => row.type === 'effect/intent')?.data).toMatchObject({
+        effectId: snapshot.consumption!.effectId,
+      })
+      const again = await h.session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(again.error).toBeUndefined()
+      expect(again.reason).toBe('completed')
+      expect(h.executions()).toBe(1)
+    } finally {
+      await h.session.close()
+    }
   })
-  it('validates a pending ticket reconstructed from the ledger after reopening', async () => {
+  it('cold reopens the same call and approval without replaying a new model call', async () => {
     const h = await parked()
+    await answer(h)
     await h.session.close()
     const reopened = await openSession({
       storage: h.storage,
+      registry: h.registry,
       seams: h.seams,
       clock: h.clock,
-      provider: fakeProvider([textTurn('unused')]),
+      provider: fakeProvider([textTurn('done')]),
+      writerRunId: 'new-writer',
     })
     try {
-      expect(reopened.session.state.pendingApprovals.size).toBe(1)
-      await reopened.session.resumeApproval(h.ticket, 'allowed-once', approver)
-      expect(reopened.session.state.pendingApprovals.size).toBe(0)
-      expect(
-        (await reopened.log.scan({ type: 'approval/decided', toSeq: reopened.log.lastSeq }))[0]?.data,
-      ).toMatchObject({ via: 'callback', verdict: 'allowed-once' })
+      expect((await reopened.session.decisions.get(h.seen[0]!.handle)).handle).toEqual(h.seen[0]!.handle)
+      await reopened.session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(h.executions()).toBe(1)
+      expect(await reopened.log.scan({ type: 'tool/call', toSeq: reopened.log.lastSeq })).toHaveLength(1)
     } finally {
       await reopened.session.close()
     }
   })
-
-  it('rejects self approval before consuming a backend ticket', async () => {
+  it('rejects unoffered answers, non-null tool inputs, malformed identities and stale revisions without spending', async () => {
     const h = await parked()
-    await expect(h.session.resumeApproval(h.ticket, 'allowed-once', actor)).rejects.toThrow('self-approval')
-    expect(h.calls()).toBe(0)
-    expect(await rows(h)).toEqual([])
-  })
-  it('rejects a missing ticket without calling the backend', async () => {
-    const h = await parked()
-    await expect(h.session.resumeApproval('missing', 'allowed-once', approver)).rejects.toThrow(
-      'ticket unavailable',
-    )
-    expect(h.calls()).toBe(0)
-  })
-  it('expires at the stored deadline, with the default rejection and no duplicate expiry', async () => {
-    const h = await parked()
-    expect(await h.session.expireApprovals()).toBe(0)
-    h.advance(1000)
-    await expect(h.session.resumeApproval(h.ticket, 'allowed-once', approver)).rejects.toThrow(
-      'ticket expired',
-    )
-    expect(h.calls()).toBe(0)
-    expect(await h.session.expireApprovals()).toBe(1)
-    expect(await h.session.expireApprovals()).toBe(0)
-    expect((await rows(h))[0]?.data).toMatchObject({ verdict: 'rejected', via: 'timeout' })
-  })
-  it.each(['request', 'binding', 'expiry', 'invalid-date', 'missing'] as const)(
-    'rejects backend %s mismatch',
-    async (mode) => {
-      const h = await parked()
-      h.backend(async (r) =>
-        mode === 'missing'
-          ? null
-          : {
-              ...r,
-              ...(mode === 'request' ? { requestId: 'other' } : {}),
-              ...(mode === 'binding' ? { bindingHash: '0'.repeat(64) } : {}),
-              ...(mode === 'expiry'
-                ? { expiresAt: new Date(Date.parse(r.expiresAt) + 1000).toISOString() }
-                : {}),
-              ...(mode === 'invalid-date' ? { expiresAt: 'invalid' } : {}),
-            },
-      )
-      await expect(h.session.resumeApproval(h.ticket, 'allowed-once', approver)).rejects.toThrow()
-      expect(await rows(h)).toEqual([])
-      expect(h.session.state.pendingApprovals.size).toBe(1)
-    },
-  )
-  it.each(['other-lane', 'duplicate-ticket'] as const)(
-    'refuses %s before backend consumption',
-    async (mode) => {
-      const h = await parked()
-      const original = [...h.session.state.pendingApprovals.values()][0]
-      if (!original?.pending) throw new Error('missing approval')
-      const { seq: _seq, lane: _lane, ...data } = original
-      const ticket = mode === 'other-lane' ? 'other-ticket' : h.ticket
-      await h.log.append([
-        h.session.ev(
-          'approval/asked',
-          { ...data, requestId: 'other-request', pending: { ...original.pending, ticket } },
-          { lane: 'other' },
-        ),
-      ])
-      await expect(h.session.resumeApproval(ticket, 'allowed-once', approver)).rejects.toThrow(
-        'ticket unavailable',
-      )
-      expect(h.calls()).toBe(0)
-      expect(await rows(h)).toEqual([])
-    },
-  )
-
-  it('contains backend failure without leaking its message and permits a later retry', async () => {
-    const h = await parked()
-    h.backend(async () => {
-      throw new Error('private-backend-token')
-    })
-    await expect(h.session.resumeApproval(h.ticket, 'allowed-once', approver)).rejects.toThrow(
-      'approval backend unavailable',
-    )
-    const diagnostics = await h.log.scan({ type: 'x/core/approval-callback-rejected', toSeq: h.log.lastSeq })
-    expect(JSON.stringify(diagnostics)).not.toContain(h.ticket)
-    expect(JSON.stringify(diagnostics)).not.toContain('private-backend-token')
-    h.backend(async (r) => r)
-    await h.session.resumeApproval(h.ticket, 'rejected', approver)
-    expect(await rows(h)).toHaveLength(1)
-  })
-  it('bounds an unavailable backend using the default timeout and permits retry', async () => {
-    const h = await parked()
-    vi.useFakeTimers()
     try {
-      h.backend(() => new Promise(() => {}))
-      const pending = h.session.resumeApproval(h.ticket, 'allowed-once', approver)
-      const rejected = expect(pending).rejects.toThrow('approval backend unavailable')
-      await vi.advanceTimersByTimeAsync(60_000)
-      await rejected
-      expect(await rows(h)).toEqual([])
-      h.backend(async (r) => r)
-      await h.session.resumeApproval(h.ticket, 'rejected', approver)
-      expect(await rows(h)).toHaveLength(1)
+      await expect(answer(h, 'allowed-permanent')).rejects.toThrow('UNOFFERED_ANSWER')
+      const command = {
+        handle: h.seen[0]!.handle,
+        revision: 1,
+        commandId: 'x',
+        response: { option: 'allowed-once', value: { changed: true } },
+      }
+      await expect(
+        h.session.decisions.answer(command, { actor, category: 'human', authorize() {} }),
+      ).rejects.toThrow('RESPONSE_SCHEMA')
+      await expect(
+        h.session.decisions.answer(
+          { ...command, response: { option: 'rejected', value: 'x'.repeat(4001) } },
+          { actor, category: 'human', authorize() {} },
+        ),
+      ).rejects.toThrow('RESPONSE_SCHEMA')
+      await expect(
+        h.session.decisions.answer(
+          { ...command, response: { option: 'allowed-once', value: null }, revision: 2 },
+          { actor, category: 'human', authorize() {} },
+        ),
+      ).rejects.toThrow('revision')
+      await expect(
+        h.session.decisions.answer(
+          { ...command, response: { option: 'allowed-once', value: null } },
+          { actor: {} as typeof actor, category: 'human', authorize() {} },
+        ),
+      ).rejects.toThrow('HUMAN_REQUIRED')
+      await expect(
+        h.session.decisions.answer(
+          { ...command, response: { option: 'allowed-once', value: null } },
+          { actor: { ...actor, role: 'agent' }, category: 'human', authorize() {} },
+        ),
+      ).rejects.toThrow('HUMAN_REQUIRED')
+      expect((await h.snapshot()).result).toBeNull()
     } finally {
-      vi.useRealTimers()
+      await h.session.close()
     }
   })
-  it('does not invoke accessors in a backend receipt', async () => {
+  it.each(['expired', 'stopped', 'revoked'] as const)(
+    'rechecks %s after authority await inside the writer',
+    async (mode) => {
+      const h = await parked()
+      try {
+        if (mode === 'stopped') await h.session.decisions.stop()
+        await expect(
+          answer(h, 'allowed-once', 'late', async () => {
+            if (mode === 'expired') h.advance(h.session.preset.approval.pendingTtlMs)
+            if (mode === 'revoked') throw new Error('authority revoked')
+          }),
+        ).rejects.toThrow()
+        expect((await h.snapshot()).result?.reason).toBe(
+          mode === 'expired' ? 'expired' : mode === 'stopped' ? 'stopped' : undefined,
+        )
+        expect(h.executions()).toBe(0)
+      } finally {
+        await h.session.close()
+      }
+    },
+  )
+  it('retains answered facts when stopped and makes late consumption impossible', async () => {
     const h = await parked()
-    let reads = 0
-    h.backend(async (r) =>
-      Object.defineProperty({ ...r }, 'bindingHash', {
-        get() {
-          reads++
-          throw new Error('private')
-        },
-      }),
-    )
-    await expect(h.session.resumeApproval(h.ticket, 'allowed-once', approver)).rejects.toThrow(
-      'approval binding mismatch',
-    )
-    expect(reads).toBe(0)
-    expect(await rows(h)).toEqual([])
-  })
-
-  it('serializes simultaneous callbacks so only one reaches the backend and ledger', async () => {
-    const h = await parked()
-    const results = await Promise.allSettled([
-      h.session.resumeApproval(h.ticket, 'allowed-once', approver),
-      h.session.resumeApproval(h.ticket, 'rejected', approver),
-    ])
-    expect(results.map((r) => r.status)).toEqual(['fulfilled', 'rejected'])
-    expect(h.calls()).toBe(1)
-    expect(await rows(h)).toHaveLength(1)
-  })
-  it('rechecks expiry after the backend await and lets queued expiry reject once', async () => {
-    const h = await parked()
-    h.backend(async (r) => {
-      h.advance(1000)
-      return r
-    })
-    const callback = h.session.resumeApproval(h.ticket, 'allowed-once', approver)
-    const expiry = h.session.expireApprovals()
-    await expect(callback).rejects.toThrow('ticket expired')
-    expect(await expiry).toBe(1)
-    expect(await rows(h)).toHaveLength(1)
-  })
-})
-
-describe('a callback on a session whose writer lost its lease', () => {
-  it('fails before the approval backend is asked, leaving the ticket unspent', async () => {
-    const h = await parked()
-    await h.storage.release('k', 'r1')
-    await h.storage.open('k', { writerRunId: 'someone-else', ttlMs: 60_000 })
-    await expect(h.session.resumeApproval(h.ticket, 'allowed-once', approver)).rejects.toMatchObject({
-      code: 'E_WRITER_LEASE',
-    })
-    expect(h.calls()).toBe(0)
-    expect(h.log.faulted).toBe(true)
+    try {
+      await answer(h)
+      await h.session.decisions.stop()
+      expect(await h.snapshot()).toMatchObject({
+        result: { reason: 'answered' },
+        invalidation: { code: 'stopped' },
+        consumption: null,
+      })
+      const card = (await h.session.projectUI()).nodes.find((node) => node.kind === 'approval')
+      expect(card).toMatchObject({
+        state: 'expired',
+        decision: { verdict: 'allowed-once', reason: 'stopped', byLabel: actor.id },
+      })
+      await h.session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(h.executions()).toBe(0)
+    } finally {
+      await h.session.close()
+    }
   })
 })

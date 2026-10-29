@@ -14,12 +14,18 @@ describe('trajectory privacy integration', () => {
           return events.length
         },
       },
+      get eventLog() {
+        return (this as unknown as { events: unknown }).events
+      },
+      get hooks() {
+        return { register: (this as unknown as { registerHook: unknown }).registerHook }
+      },
       registerHook: (name: string, handler: (payload: unknown, context: never) => unknown) => {
         handlers.set(name, handler)
         return () => undefined
       },
     }
-    const dispose = privacyExtension(api as never)
+    const dispose = privacyExtension.apply(api as never)
     const session = Object.freeze({
       key: 'trajectory-integration',
       lane: 'main',

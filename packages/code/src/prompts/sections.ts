@@ -39,24 +39,16 @@ export function validateSections(specs: ReadonlyArray<PromptSectionSpec>): Reado
 }
 
 /**
- * The assembled system prompt in order. Order 0 is the model contract prefix, which the provider
- * injects and this package never touches, so it is not listed. The numbers are frozen: they are
- * gaps of ten so a section can be inserted later without renumbering the ones around it.
+ * The contributed system prompt in order. Core prepends its untrusted-envelope rule outside
+ * this table. Identity comes before plugin guidance; the remaining stable slots leave room
+ * for additions without unrelated renumbering.
  */
 export const PROMPT_SECTIONS: ReadonlyArray<PromptSectionSpec> = validateSections([
-  { id: 'persona', order: 100, source: 'file', owner: 'code' },
+  { id: 'persona', order: 1, source: 'file', owner: 'code' },
   { id: 'environment', order: 110, source: 'dynamic', owner: 'code' },
-  // Order 115, formerly 'tools-available', is retired rather than reassigned: the tool list moved
-  // to the runtime-context tail message (code-mode/prompts.ts's contribute()), and the gaps of ten
-  // exist precisely so a retirement like this one does not force renumbering everything below it.
-  //
-  // The row below, 'agents-md', is reserved for base and not yet implemented: no file under
-  // packages/base currently registers a section with this id. If a base file ever claims order 120,
-  // tools/guards/src/prompt-section-order.test.ts requires that claim's id to be 'agents-md' -- the
-  // guard does not, on its own, confirm that nothing has claimed the order in the meantime. The slot
-  // is reserved now so that when base ships AGENTS.md support it has an already-agreed position
-  // between environment and coding-doctrine, instead of a later change renumbering this table to
-  // make room.
+  { id: 'workflow:receipts', order: 113, source: 'dynamic', owner: 'base' },
+  { id: 'tools-available', order: 115, source: 'dynamic', owner: 'code' },
+  // Live repository rules contributed by the official context-rules extension.
   { id: 'agents-md', order: 120, source: 'dynamic', owner: 'base' },
   { id: 'coding-doctrine', order: 130, source: 'file', owner: 'code' },
   { id: 'code-doctrine', order: 140, source: 'file', owner: 'code' },
@@ -64,6 +56,9 @@ export const PROMPT_SECTIONS: ReadonlyArray<PromptSectionSpec> = validateSection
   // Skill routing catalog. It is a context-hook section, not additionalContext: the shared
   // additionalContext channel is capped at 8192 bytes by the hook schema.
   { id: 'skills', order: 160, source: 'dynamic', owner: 'base' },
+  { id: 'plan-mode', order: 162, source: 'dynamic', owner: 'base' },
+  { id: 'persistent-goal', order: 164, source: 'dynamic', owner: 'base' },
+  { id: 'session-query', order: 168, source: 'dynamic', owner: 'base' },
   { id: 'channel-style', order: 170, source: 'file', owner: 'code' },
 ])
 

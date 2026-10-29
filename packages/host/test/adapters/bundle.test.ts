@@ -1,16 +1,17 @@
 import { closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { isHostError } from '@agnes/host-common/errors'
+import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import type { LockState, ResolveEnv } from '@agnes/host-common/profile/types'
+import { powerShellCommand } from '@agnes/host-infrastructure/adapters/powershell-command'
 import {
   createPrivateDirectorySync,
   createPrivateFileSync,
   windowsProcessStartTimeSync,
 } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { openAdapters, sandboxHostServices, toSeamAdapters } from '../../src/adapters/index.js'
-import { isHostError } from '../../src/errors.js'
-import { resolveProfile } from '../../src/profile/resolve.js'
-import type { LockState, ResolveEnv } from '../../src/profile/types.js'
+import { openAdapters, toSeamAdapters } from '../../src/runtime/adapters/index.js'
 import { runTestNode } from './test-node.js'
 
 const env: ResolveEnv = {
@@ -20,9 +21,27 @@ const env: ResolveEnv = {
 }
 const lock: LockState = {
   packages: {
-    '@agnes/base': { version: '0.1.0', integrity: 'sha512-b', trust: 'builtin', enabled: true },
-    '@agnes/code': { version: '0.1.0', integrity: 'sha512-c', trust: 'builtin', enabled: true },
-    '@agnes/ai': { version: '0.1.0', integrity: 'sha512-a', trust: 'builtin', enabled: true },
+    '@agnes/base': {
+      version: '0.1.0',
+      source: { type: 'builtin' as const, ref: 'builtin' },
+      integrity: 'builtin:0.1.0',
+      trust: 'builtin',
+      enabled: true,
+    },
+    '@agnes/code': {
+      version: '0.1.0',
+      source: { type: 'builtin' as const, ref: 'builtin' },
+      integrity: 'builtin:0.1.0',
+      trust: 'builtin',
+      enabled: true,
+    },
+    '@agnes/ai': {
+      version: '0.1.0',
+      source: { type: 'builtin' as const, ref: 'builtin' },
+      integrity: 'builtin:0.1.0',
+      trust: 'builtin',
+      enabled: true,
+    },
   },
 }
 
@@ -96,10 +115,11 @@ describe('openAdapters', () => {
         expect(toSeamAdapters(b, { owner: '@agnes/base' }).shell?.description).toContain(
           b.powerShell?.version,
         )
-        const { services, revoke } = sandboxHostServices(b)
-        revoke()
-        const command = services.shellCommand?.('[Console]::Out.Write([Console]::In.ReadToEnd()); exit 2')
-        if (!command) throw new Error('missing selected Shell command')
+        if (!b.powerShell) throw new Error('missing selected Shell')
+        const command = powerShellCommand(
+          b.powerShell,
+          '[Console]::Out.Write([Console]::In.ReadToEnd()); exit 2',
+        )
         const policy = b.fs.fence()
         b.bindFsPolicy(policy)
         const opts = {
@@ -124,7 +144,8 @@ describe('openAdapters', () => {
       workspaceRoot: dir,
       secretsDir: join(dir, 'secrets'),
     })
-    expect(b.storage.file).toBe(join(dir, 'sessions.db'))
+    expect(b.storage.sqlite?.dialect).toBe('sqlite')
+    expect(b.storage.capabilities.ledger).toBe(true)
     expect(b.platform.capability('exec.kill-tree').reason).not.toBe('not probed')
     expect(b.secrets.kind).toBe('composite')
     const seams = toSeamAdapters(b, { owner: '@agnes/base' })
@@ -212,9 +233,7 @@ describe('openAdapters', () => {
       rmSync(ws, { recursive: true, force: true })
     }
   })
-  // `.agnes/secrets` is the store's name from before the `.agh` rename: a workspace still holding
-  // one must stay as unreadable as one that has moved.
-  it('denies the secret store, under its current and its legacy name, and the git directory from inside the workspace', async () => {
+  it('denies the AGH secret store and git directory, leaving other product names outside its floor', async () => {
     dir = mkdtempSync(join(tmpdir(), 'agnes-data-'))
     const p = await resolveProfile({ builtin: 'local-dev', lock }, env)
     const b = await openAdapters(p, { dataDir: dir, workspaceRoot: dir })
@@ -225,7 +244,7 @@ describe('openAdapters', () => {
     }
     await expect(b.fs.read('.git/config')).rejects.toThrow(/E_FS_DENIED/)
     await expect(b.fs.read('.agh/secrets/k')).rejects.toThrow(/E_FS_DENIED/)
-    await expect(b.fs.read('.agnes/secrets/k')).rejects.toThrow(/E_FS_DENIED/)
+    expect(new TextDecoder().decode(await b.fs.read('.agnes/secrets/k'))).toBe('v')
     await b.close()
   })
   it('still denies the git path when .git is a plain file, as in a worktree', async () => {
@@ -290,7 +309,7 @@ describe('openAdapters', () => {
   // Windows uses its owned Job; POSIX must still call the injected platform tree-kill route.
   it('uses the platform-specific termination route and waits for the command to exit', async () => {
     dir = mkdtempSync(join(tmpdir(), 'agnes-data-'))
-    const { createPlatform } = await import('../../src/adapters/platform.js')
+    const { createPlatform } = await import('@agnes/host-infrastructure/adapters/platform')
     const real = createPlatform()
     const calls: number[] = []
     const instrumented = {
@@ -337,7 +356,7 @@ describe('openAdapters', () => {
   })
   it('accepts an injected platform instead of detecting one, and probes it', async () => {
     dir = mkdtempSync(join(tmpdir(), 'agnes-data-'))
-    const { createWin32Platform } = await import('../../src/adapters/platform-win32.js')
+    const { createWin32Platform } = await import('@agnes/host-infrastructure/adapters/platform-win32')
     const injected = createWin32Platform()
     const p = await resolveProfile({ builtin: 'local-dev', lock }, env)
     const b = await openAdapters(p, { dataDir: dir, workspaceRoot: dir, platform: injected })

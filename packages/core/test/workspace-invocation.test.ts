@@ -1,6 +1,6 @@
+import type { WorkspaceInvocationSource, WorkspaceInvocationView } from '@agnes/core'
+import { createSessionFileReader, createWorkspaceInvocationPort, HookEngine } from '@agnes/core'
 import { describe, expect, it, vi } from 'vitest'
-import type { WorkspaceInvocationSource, WorkspaceInvocationView } from '../src/index.js'
-import { createWorkspaceInvocationPort, HookEngine } from '../src/index.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 
 const source = (over: Partial<WorkspaceInvocationSource> = {}): WorkspaceInvocationSource => {
@@ -30,6 +30,47 @@ const source = (over: Partial<WorkspaceInvocationSource> = {}): WorkspaceInvocat
 }
 
 describe('WorkspaceInvocationPort', () => {
+  it('reacquires delayed resource reads, enforces byte bounds and refuses a closed session', async () => {
+    let active = true
+    const release = vi.fn()
+    const read = vi.fn(async () => new Uint8Array([1, 2]))
+    const port = createWorkspaceInvocationPort(() => {
+      if (!active) throw new Error('session closed')
+      const state = source()
+      return { source: { ...state, fs: { ...state.fs, read } }, release }
+    })
+    const files = createSessionFileReader(port)
+    await port.run(async () => undefined)
+    await expect(files.read('image.png', { offset: 2, limit: 32 })).resolves.toEqual(new Uint8Array([1, 2]))
+    await expect(files.stat('image.png')).resolves.toMatchObject({ kind: 'file' })
+    expect(read).toHaveBeenCalledWith('image.png', { offset: 2, limit: 32 })
+    expect(release).toHaveBeenCalledTimes(3)
+    expect(() => files.read('image.png', { limit: 16 * 1024 * 1024 })).toThrow('bounded')
+    active = false
+    expect(() => files.read('image.png', { limit: 32 })).toThrow('session closed')
+    expect(read).toHaveBeenCalledTimes(1)
+  })
+  it('preserves the checkpoint owner through the revocable invocation', async () => {
+    let saved: unknown
+    const port = createWorkspaceInvocationPort(() => ({
+      source: source({
+        checkpoint: {
+          snapshot: async (_paths, _step, options) => {
+            saved = options
+            return { id: 'c' }
+          },
+          list: async () => [],
+          rewind: async () => undefined,
+        },
+      }),
+      release() {},
+    }))
+    await port.run(async (view) => {
+      await view.checkpointContext().snapshot(['a.txt'], '1/1', { owner: 's1' })
+    })
+    expect(saved).toEqual({ owner: 's1' })
+  })
+
   it('acquires synchronously and invokes on the next microtask before releasing once', async () => {
     const order: string[] = []
     const port = createWorkspaceInvocationPort(() => {
@@ -131,12 +172,8 @@ describe('WorkspaceInvocationPort', () => {
   })
 
   it('revokes cached fs, confine, approval, checkpoint and hook operations as one scope', async () => {
-    const dispose = vi.fn()
-    const raw = source()
     const port = createWorkspaceInvocationPort(() => ({
-      source: source({
-        approval: { ...raw.approval, onGrantRevoked: () => dispose },
-      }),
+      source: source(),
       release: () => undefined,
     }))
     let leaked!: WorkspaceInvocationView
@@ -153,10 +190,8 @@ describe('WorkspaceInvocationPort', () => {
       approval = view.approvalContext()
       checkpoint = view.checkpointContext()
       snapshot = await view.hookSnapshot()
-      approval.onGrantRevoked?.(() => undefined)
     })
 
-    expect(dispose).toHaveBeenCalledOnce()
     expect(Object.isFrozen(snapshot)).toBe(true)
     expect(Object.isFrozen(snapshot.hooks)).toBe(true)
     expect(Object.isFrozen(snapshot.hooks[0])).toBe(true)

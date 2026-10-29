@@ -12,14 +12,19 @@
     "dist/sea/agnes-*",
     "dist/local",
     "dist/local/THIRD-PARTY-NOTICES/computer-use-hermes.txt",
+    "dist/local/THIRD-PARTY-NOTICES/jevloop.txt",
     "dist/local/bundled-plugins",
+    "dist/local/bundled-examples",
     "dist/sea/daemon.mjs",
     "dist/sea/worker.mjs",
     "dist/sea/web",
     "dist/sea/native",
     "dist/sea/runtime",
     "dist/sea/THIRD-PARTY-NOTICES/computer-use-hermes.txt",
-    "dist/sea/bundled-plugins"
+    "dist/sea/THIRD-PARTY-NOTICES/jevloop.txt",
+    "dist/sea/bundled-plugins",
+    "dist/sea/bundled-examples",
+    "dist/sea/ripgrep"
   ],
   "bin": {
     "agh": "./bin/agh"
@@ -30,6 +35,7 @@
     "build:runtime": "tsx ../base/tools/package-isolation-runtime.ts --output dist/agnes-runtime",
     "build:sea": "node sea/build.mjs",
     "build:local": "tsx tools/build-local.ts",
+    "pack:npx": "tsx ../../tools/release/pack-npx.ts",
     "dev:web": "tsx tools/web-local.ts",
     "start": "node dist/local/agnes.mjs",
     "web": "node dist/local/agnes.mjs serve"
@@ -39,6 +45,7 @@
     "@agnes/base": "workspace:*",
     "@agnes/bridges": "workspace:*",
     "@agnes/code": "workspace:*",
+    "@agnes/core-common": "workspace:*",
     "@agnes/daemon": "workspace:*",
     "@agnes/host": "workspace:*",
     "@agnes/protocol": "workspace:*",
@@ -47,19 +54,26 @@
     "@agnes/resource-control-cli": "workspace:*",
     "@agnes/resource-control-runtime": "workspace:*",
     "@agnes/cli-tui": "workspace:*",
-    "@agnes/cli-launch": "workspace:*",
+    "ajv": "8.20.0",
     "get-east-asian-width": "1.6.0",
+    "grok-mermaid": "0.2.3",
     "marked": "18.0.12",
     "yaml": "2.9.0",
-    "@agnes/web": "workspace:*"
+    "@agnes/web": "workspace:*",
+    "@agnes/package-manager": "workspace:*",
+    "@agnes/observability": "workspace:*",
+    "@agnes/error-sanitization": "workspace:*",
+    "@agnes/host-extensions": "workspace:*"
   },
   "devDependencies": {
     "@agnes/extension-api": "workspace:*",
-    "@agnes/package-manager": "workspace:*",
     "@sinclair/typebox": "0.34.33",
     "@xterm/headless": "6.0.0",
     "esbuild": "0.28.2",
-    "postject": "1.0.0-alpha.6"
+    "postject": "1.0.0-alpha.6",
+    "@agnes/host-infrastructure": "workspace:*",
+    "@agnes/plugin-runtime": "workspace:*",
+    "@agnes/web-client": "workspace:*"
   },
   "license": "Apache-2.0"
 }

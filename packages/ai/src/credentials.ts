@@ -22,8 +22,8 @@ export function isUsableCredential(value: string): boolean {
  * request path entirely.
  *
  * A lookup that throws and one that answers with an empty or whitespace-only string are the same
- * outcome — no usable credential — and all of them stop assembly. The error names the route and the reference only: the value,
- * and anything the store said while failing, never travel, because this error is going to be logged.
+ * outcome — no usable credential — and all of them stop assembly. The error names the route, reference and allowlisted refusal metadata. Secret values,
+ * paths and arbitrary store messages never travel, because this error is going to be logged.
  */
 export type CredentialResolutionOptions = Readonly<{
   /**
@@ -34,34 +34,26 @@ export type CredentialResolutionOptions = Readonly<{
   optionalRefs?: ReadonlySet<string>
 }>
 
-/**
- * The only parts of a secret store's refusal that may travel with the assembly error: three fields,
- * each limited to a short closed list of words the store itself uses. They say which rule refused
- * (`reason`), which directory or file it was about (`part`) and which test a directory failed
- * (`check`). The store's message and every other field stay out, as before, because this error is
- * going to be logged.
- */
-const REFUSAL_WORDS: Readonly<Record<string, ReadonlySet<string>>> = {
-  reason: new Set(['private-file', 'mode', 'schema', 'bad-ref']),
-  part: new Set(['store', 'namespace', 'file']),
-  check: new Set(['symlink', 'not-directory', 'not-private']),
-}
-
-function refusalWords(error: unknown): Record<string, string> {
-  const words: Record<string, string> = {}
+// Read data descriptors only: store errors are untrusted and may have throwing accessors.
+function credentialRefusal(cause: unknown): Record<string, string> {
+  const result: Record<string, string> = {}
+  const allowed = {
+    reason: ['private-file', 'mode', 'schema', 'bad-ref'],
+    part: ['store', 'namespace', 'file'],
+    check: ['symlink', 'not-directory', 'not-private'],
+  }
   try {
-    if (error === null || typeof error !== 'object') return words
-    const detail = Object.getOwnPropertyDescriptor(error, 'detail')?.value as unknown
-    if (detail === null || typeof detail !== 'object') return words
-    for (const [key, allowed] of Object.entries(REFUSAL_WORDS)) {
-      // Data properties only: a getter on a hostile object would run code of its choosing.
-      const value = Object.getOwnPropertyDescriptor(detail, key)?.value as unknown
-      if (typeof value === 'string' && allowed.has(value)) words[key] = value
+    if (!cause || typeof cause !== 'object') return result
+    const detail: unknown = Object.getOwnPropertyDescriptor(cause, 'detail')?.value
+    if (!detail || typeof detail !== 'object') return result
+    for (const [key, words] of Object.entries(allowed)) {
+      const value: unknown = Object.getOwnPropertyDescriptor(detail, key)?.value
+      if (typeof value === 'string' && words.includes(value)) result[key] = value
     }
   } catch {
     return {}
   }
-  return words
+  return result
 }
 
 export function resolveCredentials(
@@ -72,18 +64,18 @@ export function resolveCredentials(
   for (const adapter of adapters) {
     for (const decl of adapter.routes()) {
       if (!decl.credentialRef) continue
-      const failure = (cause: unknown = undefined) =>
+      const failure = (cause?: unknown) =>
         new AiSetupError('SECRET_UNRESOLVED', {
           route: decl.route,
           ref: decl.credentialRef,
-          ...refusalWords(cause),
+          ...credentialRefusal(cause),
         })
       let value: string
       try {
         value = secrets(decl.credentialRef)
-      } catch (error) {
+      } catch (cause) {
         if (options.optionalRefs?.has(decl.credentialRef)) continue
-        throw failure(error)
+        throw failure(cause)
       }
       // Empty, whitespace-only and invisible-only are the same outcome: nothing that can
       // authenticate a request.

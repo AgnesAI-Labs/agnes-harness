@@ -4,9 +4,11 @@ import {
   constants,
   fstatSync,
   fsyncSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   openSync,
+  readdirSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -15,9 +17,12 @@ import { open, rename } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 
 export { nodeArtifactGcPreparationRuntime } from './artifact-gc-preparation.js'
+export { commandPath } from './command-path.js'
 
-import { dirname, isAbsolute, parse, resolve, toNamespacedPath } from 'node:path'
+import { dirname, isAbsolute, join, parse, resolve, toNamespacedPath } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { replacePublishedFileSync } from './durable-replace.js'
+import { syncTreeBatched } from './tree-sync.js'
 import type { PipeReservation } from './windows-pipe-listener.js'
 import type { OwnedPipe } from './windows-pipe-stream.js'
 
@@ -25,6 +30,14 @@ const windows = process.platform === 'win32' // guards-allow-platform: shared sy
 const darwin = process.platform === 'darwin' // guards-allow-platform: shared system leaf, independent of Host.
 const linux = process.platform === 'linux' // guards-allow-platform: shared system leaf, independent of Host.
 type Native = {
+  openLoopbackListener?(ipv6: boolean): { fd: number; port: number }
+  openUnixListener?(path: string): number
+  openCanonicalFile?(path: string): number
+  openCanonicalWritableFile?(path: string): number
+  openCanonicalExclusiveFile?(path: string): number
+  canonicalFs?(operation: string, path: string, recursive: boolean, mode: number): Promise<unknown>
+  listCanonicalDirectory?(path: string): string[]
+  landlockAbi?(): number
   deleteSkillEntry?(
     path: string,
     dev: bigint,
@@ -34,6 +47,7 @@ type Native = {
     directory: boolean,
   ): void
   renameDirectoryNoReplace?(from: string, to: string): void
+  syncDescriptor?(fd: number, full: boolean): void
   abiVersion: number
   spawnDetached?(executable: string, command: string, cwd: string, env: string): OwnedDetachedProcess
   reservePipeName(path: string, maximum: number): PipeReservation
@@ -55,6 +69,41 @@ type Native = {
   appendPrivateFile(path: string, bytes: Buffer, flush: boolean): void
   protectPrivateDirectory(path: string): void
   protectPrivateFile?(path: string): void
+}
+
+/** Bind an ephemeral TCP listener strictly to one numeric loopback address; caller owns the fd. */
+export function openLoopbackListener(family: 'ipv4' | 'ipv6' = 'ipv4'): { fd: number; port: number } {
+  if (family !== 'ipv4' && family !== 'ipv6') throw new Error('Invalid loopback address family')
+  const implementation = darwin ? native().openLoopbackListener : undefined
+  if (typeof implementation !== 'function')
+    throw Object.assign(
+      new Error('Loopback socket activation requires the macOS native module; rebuild it'),
+      { code: 'E_SYSTEM_NATIVE_UNAVAILABLE' },
+    )
+  return implementation(family === 'ipv6')
+}
+
+/** Reserved macOS activation namespace, denied to sandbox writes even when cwd is an ancestor. */
+export const LOOPBACK_GATE_PATH_PREFIX = '/private/tmp/agh-loopback-'
+
+/** Host-private socket activation transport; the caller owns the fd and path cleanup. */
+export function openUnixListener(path: string): number {
+  const implementation = darwin ? native().openUnixListener : undefined
+  if (typeof implementation !== 'function')
+    throw Object.assign(new Error('Unix socket activation requires the macOS native module; rebuild it'), {
+      code: 'E_SYSTEM_NATIVE_UNAVAILABLE',
+    })
+  return implementation(path)
+}
+
+/** Read-only kernel availability query; this does not establish a command boundary. */
+export function linuxLandlockAbiSync(): number {
+  const implementation = linux ? native().landlockAbi : undefined
+  if (typeof implementation !== 'function')
+    throw Object.assign(new Error('Linux Landlock diagnostic is unavailable; rebuild the native artifact'), {
+      code: 'E_SYSTEM_NATIVE_UNAVAILABLE',
+    })
+  return implementation()
 }
 
 /** Refuse stale identities and link traversal; never fall back to path-based recursive deletion. */
@@ -500,6 +549,7 @@ function filePath(path: string): string {
     typeof path !== 'string' ||
     !isAbsolute(path) ||
     path.includes('\0') ||
+    (!windows && /\p{Surrogate}/u.test(path)) ||
     (windows && (parse(path).root.length < 2 || /^\\\\[?.]\\/.test(path) || /:/.test(path.slice(2))))
   )
     throw Object.assign(new TypeError('Expected an absolute filesystem path'), { code: 'EINVAL' })
@@ -559,12 +609,15 @@ export function hasPrivateDaclSync(path: string): boolean {
   return (stat.isFile() || stat.isDirectory()) && stat.uid === process.getuid?.() && (stat.mode & 0o077) === 0
 }
 export function syncFileSync(path: string): void {
+  syncFileWith(path, fsyncSync)
+}
+function syncFileWith(path: string, flush: (fd: number) => void): void {
   const target = filePath(path)
   const fd = openSync(target, windows ? 'r+' : 'r')
   try {
     if (!fstatSync(fd).isFile())
       throw Object.assign(new Error('File synchronization requires a regular file'), { code: 'EISDIR' })
-    fsyncSync(fd)
+    flush(fd)
   } finally {
     closeSync(fd)
   }
@@ -574,7 +627,7 @@ export function renameWriteThroughSync(from: string, to: string): void {
   const source = filePath(from),
     target = filePath(to)
   if (windows) {
-    native().renameWriteThrough(source, target)
+    replacePublishedFileSync(source, target, true, (a, b) => native().renameWriteThrough(a, b))
     for (const dir of new Set([dirname(resolve(from)), dirname(resolve(to))])) syncDirectorySync(dir)
     return
   }
@@ -586,6 +639,122 @@ export function renameWriteThroughSync(from: string, to: string): void {
     } finally {
       closeSync(fd)
     }
+  }
+}
+
+/**
+ * Publishes one small record so that, once this returns, both its content and its directory entry
+ * are durable: a private temporary in the same directory is flushed, then linked (never replacing)
+ * or renamed over the destination, then the parent directory is flushed. Returns false only when
+ * `replace` is not set and the destination already exists.
+ *
+ * A process crash at any point leaves the previous file or the complete new one, never a torn file;
+ * unreferenced `*.tmp` leftovers are inert. A power loss before this returns may keep either state.
+ * Records that depend on one another (an intent written before the pin it announces, a pin written
+ * before the head that names its generation) get their order from sequencing the calls: each one is
+ * durable before the next starts, so after power loss a later record never exists without the
+ * earlier one it depends on.
+ */
+export function publishFileDurablySync(
+  path: string,
+  bytes: string,
+  options: { replace?: boolean; mode?: number } = {},
+): boolean {
+  const temporary = `${path}.${randomUUID()}.tmp`
+  try {
+    writeFileSync(temporary, bytes, { mode: options.mode ?? 0o600, flag: 'wx', flush: true })
+    if (options.replace) replacePublishedFileSync(temporary, path, windows)
+    else
+      try {
+        linkSync(temporary, path)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false
+        throw error
+      }
+  } finally {
+    rmSync(temporary, { force: true })
+  }
+  syncDirectorySync(dirname(resolve(path)))
+  return true
+}
+
+const durableEntries = new Set<string>()
+
+/**
+ * Creates the directories between `through` (exclusive) and `path` and makes each directory entry
+ * durable, so a record later published inside `path` cannot outlive the path leading to it. `through`
+ * must already exist and is never created: a caller that holds a directory open as its anchor learns
+ * by ENOENT that the anchor was removed, instead of resurrecting it. Every level's parent is flushed
+ * the first time this process sees it, also when the level already existed, because a previous
+ * process may have stopped between its mkdir and its flush.
+ */
+export function mkdirDurablySync(path: string, through: string, mode = 0o700): void {
+  const target = resolve(path),
+    base = resolve(through),
+    levels: string[] = []
+  for (let level = target; level !== base; level = dirname(level)) {
+    if (level === dirname(level)) throw new Error(`${path} is not inside ${through}`)
+    levels.unshift(level)
+  }
+  for (const level of levels) {
+    let created = true
+    try {
+      mkdirSync(filePath(level), { mode })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      created = false
+    }
+    if (created || !durableEntries.has(level)) {
+      syncDirectorySync(dirname(level))
+      durableEntries.add(level)
+    }
+  }
+}
+
+/** Flushes every file and directory under `root` (and `root` itself), children before parents. */
+export function syncTreeSync(root: string): void {
+  for (const entry of readdirSync(filePath(root), { withFileTypes: true })) {
+    const child = join(root, entry.name)
+    if (entry.isDirectory()) syncTreeSync(child)
+    else if (entry.isFile()) syncFileSync(child)
+  }
+  syncDirectorySync(root)
+}
+
+let plainFlush: Native['syncDescriptor'] | null | undefined
+/** The macOS native fsync that does not also drain the drive cache; null elsewhere or in an older artifact. */
+function plainDescriptorFlush(): NonNullable<Native['syncDescriptor']> | null {
+  if (plainFlush === undefined)
+    try {
+      plainFlush = darwin ? (native().syncDescriptor ?? null) : null
+    } catch {
+      plainFlush = null
+    }
+  return plainFlush
+}
+
+/**
+ * `syncTreeSync` for each tree of one publication: the trees are durable when this returns. Node's fsync
+ * on macOS drains the whole drive cache on every call, so there each entry gets a plain fsync and the
+ * last root one full flush (see `syncTreeBatched`). Elsewhere, or with a native artifact lacking that
+ * flush, this is `syncTreeSync` on each root, in order.
+ */
+export function syncTreeBatchedSync(...roots: string[]): void {
+  const sync = plainDescriptorFlush()
+  if (!sync) for (const root of roots) syncTreeSync(root)
+  else
+    syncTreeBatched(roots.map(filePath), (path, directory, full) =>
+      (directory ? syncDirectoryWith : syncFileWith)(path, (fd) => sync(fd, full)),
+    )
+}
+
+/** Removes one file and flushes the parent directory so the removal survives power loss. A missing file or directory is success. */
+export function removeFileDurablySync(path: string): void {
+  rmSync(path, { force: true })
+  try {
+    syncDirectorySync(dirname(resolve(path)))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
 }
 
@@ -636,9 +805,12 @@ export function syncDirectorySync(path: string): void {
     native().syncDirectory(target)
     return
   }
-  const fd = openSync(target, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+  syncDirectoryWith(path, fsyncSync)
+}
+function syncDirectoryWith(path: string, flush: (fd: number) => void): void {
+  const fd = openSync(filePath(path), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
   try {
-    fsyncSync(fd)
+    flush(fd)
   } finally {
     closeSync(fd)
   }
@@ -660,4 +832,47 @@ export function renameDirectoryNoReplaceSync(from: string, to: string): void {
   implementation(source, target)
   if (windows) return
   for (const directory of new Set([dirname(source), dirname(target)])) syncDirectorySync(directory)
+}
+
+/** Every component must be real. Refuse when the native boundary is unavailable; never fall back. */
+export function openCanonicalFileSync(path: string): number {
+  const implementation = native().openCanonicalFile
+  if (!implementation)
+    throw Object.assign(new Error('Safe canonical open is unavailable'), { code: 'ENOSYS' })
+  return implementation(filePath(path))
+}
+/** Bounded directory enumeration through a no-follow descriptor, capped at 5,001 names. */
+export function listCanonicalDirectorySync(path: string): string[] {
+  const implementation = native().listCanonicalDirectory
+  if (!implementation)
+    throw Object.assign(new Error('Safe canonical list is unavailable'), { code: 'ENOSYS' })
+  return implementation(filePath(path))
+}
+
+/** Open without truncating; callers write and close this descriptor, never reopen the path. */
+export function openCanonicalWritableFileSync(path: string, exclusive = false): number {
+  const implementation = exclusive ? native().openCanonicalExclusiveFile : native().openCanonicalWritableFile
+  if (!implementation)
+    throw Object.assign(new Error('Safe canonical write is unavailable'), { code: 'ENOSYS' })
+  return implementation(filePath(path))
+}
+export type CanonicalFsStat = {
+  kind: 'file' | 'dir' | 'symlink' | 'other'
+  size: number
+  mtimeMs: number
+  linkTarget?: string
+}
+export function canonicalFs(operation: 'stat', path: string): Promise<CanonicalFsStat>
+export function canonicalFs(
+  operation: 'list',
+  path: string,
+): Promise<{ name: string; kind: CanonicalFsStat['kind'] }[]>
+export function canonicalFs(operation: 'readlink' | 'finalPath', path: string): Promise<string>
+export function canonicalFs(operation: 'mkdir' | 'rm', path: string, recursive?: boolean): Promise<void>
+/** Async no-follow operations anchored to real directory handles; unavailable natives fail closed. */
+export function canonicalFs(operation: string, path: string, recursive = false): Promise<unknown> {
+  const implementation = native().canonicalFs
+  if (!implementation)
+    throw Object.assign(new Error('Safe canonical filesystem is unavailable'), { code: 'ENOSYS' })
+  return implementation(operation, filePath(path), recursive, 0o777)
 }

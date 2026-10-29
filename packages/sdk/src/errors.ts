@@ -9,7 +9,6 @@ export type SdkErrorKind =
   | 'protocol-violation'
   | 'claim-denied'
   | 'unsupported'
-  | 'load-stalled'
 
 // A structural copy of CloseInfo. transport/types.ts owns the definition; this module sits
 // earlier in the dependency order, so a structural type avoids an errors -> transport edge.
@@ -112,18 +111,14 @@ export class ClaimDenied extends SdkError {
   }
 }
 
-/**
- * `session.load` gave up: the daemon said nothing about the load for `ms` (or the load ran past its
- * hard limit). A large session keeps reporting progress while it opens, so silence means stuck.
- */
-export class LoadStalled extends SdkError {
-  readonly code = 'LOAD_STALLED'
-  readonly sessionId: string
-  readonly ms: number
-  constructor(sessionId: string, ms: number) {
-    super('load-stalled', `session/load for ${sessionId} made no progress for ${ms} ms`)
-    this.name = 'LoadStalled'
-    this.sessionId = sessionId
-    this.ms = ms
-  }
+/** The SDK still owns this submission; clients must not restore it as a fresh send. */
+export type UnresolvedSubmission = {
+  sessionId: string
+  commandId: string
+  state: 'pending' | 'needs-confirmation'
+}
+export function unresolvedSubmission(error: unknown): UnresolvedSubmission | undefined {
+  return error instanceof Error
+    ? (error as Error & { submission?: UnresolvedSubmission }).submission
+    : undefined
 }

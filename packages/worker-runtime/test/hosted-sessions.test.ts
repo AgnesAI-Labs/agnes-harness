@@ -73,7 +73,25 @@ describe('HostedSessions', () => {
       workspaceRoot: '/workspace',
     })
 
-    await Promise.all([hosted.open(open('a')), hosted.open(open('b'))])
+    const fresh = open('a')
+    fresh.params.agent = 'acme/kit#review'
+    fresh.params.agentDigest = 'reviewed'
+    const recovered = open('b')
+    recovered.params = {
+      ...recovered.params,
+      agent: 'acme/kit#removed-after-start',
+      agentDigest: 'old-review',
+      resume: true,
+    }
+    await Promise.all([hosted.open(fresh), hosted.open(recovered)])
+    expect(createSession.mock.calls.find(([input]) => input.key === 'a')?.[0]).toMatchObject({
+      agent: fresh.params.agent,
+      agentDigest: 'reviewed',
+    })
+    expect(createSession.mock.calls.find(([input]) => input.key === 'b')?.[0]).not.toHaveProperty('agent')
+    expect(createSession.mock.calls.find(([input]) => input.key === 'b')?.[0]).not.toHaveProperty(
+      'agentDigest',
+    )
     expect(createSession).toHaveBeenCalledTimes(2)
     const runA = hosted.dispatch(command('a', 'run', { runId: 'same', until: 'idle' }))
     const runB = hosted.dispatch(command('b', 'run', { runId: 'same', until: 'idle' }))
@@ -88,126 +106,6 @@ describe('HostedSessions', () => {
     expect(closes).toEqual(['a'])
     await expect(hosted.dispatch(command('b', 'ping'))).resolves.toMatchObject({ ok: true })
     expect(hosted.keys()).toEqual(['b'])
-  })
-
-  it('reports how a session opened, naming it by hash and carrying no content', async () => {
-    const sent: unknown[] = []
-    const openStats = {
-      lastSeq: 7,
-      storedBytes: 1234,
-      maxRowBytes: 99,
-      checkpoint: { used: false },
-      ms: { read: 1, verify: 2, fold: 3, registers: 4, total: 10 },
-    }
-    const createSession = vi.fn(
-      async ({ key }: { key: string }) =>
-        ({ key, writerRunId: 'w', lastSeq: 7, d: { log: { openStats } } }) as unknown as HostSession,
-    )
-    const hosted = new HostedSessions({
-      host: { acceptWorkspaceBinding, createSession } as unknown as Host,
-      channel: new SharedSessionChannel(() => undefined),
-      send: (frame) => sent.push(frame),
-      workerGeneration: 1,
-      workspaceRoot: '/workspace',
-    })
-    await hosted.open(open('a'))
-    expect(sent).toEqual([
-      {
-        kind: 'record',
-        sessionKey: 'a',
-        record: {
-          kind: 'session.open',
-          detail: { session: 'ca978112ca1bbdca', ...openStats, wallMs: expect.any(Number), outcome: 'ok' },
-        },
-      },
-    ])
-  })
-
-  it('relays open progress at most once a second, always passing the end of a phase', async () => {
-    const sent: unknown[] = []
-    let now = 0
-    type Progress = { phase: 'verify' | 'fold'; done: number; total: number }
-    const createSession = vi.fn(
-      async ({ key, onOpenProgress }: { key: string; onOpenProgress?: (p: Progress) => void }) => {
-        for (let done = 100; done <= 1_000; done += 100) {
-          onOpenProgress?.({ phase: 'verify', done, total: 1_000 })
-          now += 300
-        }
-        return { key, writerRunId: 'w', lastSeq: 1_000, d: { log: {} } } as unknown as HostSession
-      },
-    )
-    const hosted = new HostedSessions({
-      host: { acceptWorkspaceBinding, createSession } as unknown as Host,
-      channel: new SharedSessionChannel(() => undefined),
-      send: (frame) => {
-        if ((frame as { kind: string }).kind === 'progress') sent.push(frame)
-      },
-      workerGeneration: 1,
-      workspaceRoot: '/workspace',
-      clock: () => now,
-    })
-    await hosted.open(open('a'))
-    expect(sent).toEqual([
-      { kind: 'progress', sessionKey: 'a', phase: 'verify', done: 100, total: 1_000 },
-      { kind: 'progress', sessionKey: 'a', phase: 'verify', done: 500, total: 1_000 },
-      { kind: 'progress', sessionKey: 'a', phase: 'verify', done: 900, total: 1_000 },
-      { kind: 'progress', sessionKey: 'a', phase: 'verify', done: 1_000, total: 1_000 },
-    ])
-  })
-
-  it('opens even when sending progress throws', async () => {
-    const createSession = vi.fn(
-      async ({ key, onOpenProgress }: { key: string; onOpenProgress?: (p: unknown) => void }) => {
-        onOpenProgress?.({ phase: 'verify', done: 1, total: 1 })
-        return { key, writerRunId: 'w', lastSeq: 1, d: { log: {} } } as unknown as HostSession
-      },
-    )
-    const hosted = new HostedSessions({
-      host: { acceptWorkspaceBinding, createSession } as unknown as Host,
-      channel: new SharedSessionChannel(() => undefined),
-      send: () => {
-        throw new Error('socket gone')
-      },
-      workerGeneration: 1,
-      workspaceRoot: '/workspace',
-    })
-    await expect(hosted.open(open('a'))).resolves.toMatchObject({ sessionKey: 'a', lastSeq: 1 })
-  })
-
-  it('reports a failed open with its error code and nothing from the error message', async () => {
-    const sent: unknown[] = []
-    const failure = Object.assign(new Error('contains the file name insects.zip'), {
-      code: 'E_LEDGER_INTEGRITY',
-    })
-    const hosted = new HostedSessions({
-      host: {
-        acceptWorkspaceBinding,
-        createSession: vi.fn(async () => {
-          throw failure
-        }),
-      } as unknown as Host,
-      channel: new SharedSessionChannel(() => undefined),
-      send: (frame) => sent.push(frame),
-      workerGeneration: 1,
-      workspaceRoot: '/workspace',
-    })
-    await expect(hosted.open(open('a'))).rejects.toBe(failure)
-    expect(sent).toEqual([
-      {
-        kind: 'record',
-        sessionKey: 'a',
-        record: {
-          kind: 'session.open',
-          detail: {
-            session: 'ca978112ca1bbdca',
-            wallMs: expect.any(Number),
-            outcome: 'failed',
-            code: 'E_LEDGER_INTEGRITY',
-          },
-        },
-      },
-    ])
-    expect(JSON.stringify(sent)).not.toContain('insects')
   })
 
   it('rejects a binding for another session before creating a session', async () => {
@@ -294,3 +192,51 @@ describe('HostedSessions', () => {
     expect(hosted.keys()).toEqual(['a'])
   })
 })
+
+it.each(['before', 'during'] as const)(
+  'cancels a %s-verification open without adopting a session',
+  async (when) => {
+    const frames: unknown[] = []
+    const createSession = vi.fn(
+      async (options: {
+        historySignal: AbortSignal
+        onHistoryProgress(progress: { verifiedSeq: number; lastSeq: number }): void
+      }) => {
+        options.historySignal.throwIfAborted()
+        options.onHistoryProgress({ verifiedSeq: 0, lastSeq: 20 })
+        await new Promise<void>((_, reject) =>
+          options.historySignal.addEventListener('abort', () => reject(new Error('cancelled')), {
+            once: true,
+          }),
+        )
+        throw new Error('unreachable')
+      },
+    )
+    const hosted = new HostedSessions({
+      host: { acceptWorkspaceBinding: (value: unknown) => value, createSession } as never,
+      channel: new SharedSessionChannel(() => undefined),
+      send: (frame) => frames.push(frame),
+      workerGeneration: 1,
+      workspaceRoot: '/workspace',
+    })
+    const request = open('cancelled')
+    if (when === 'before') hosted.cancelOpen(request.requestId, request.sessionKey)
+    const loading = hosted.open(request)
+    const refused = expect(loading).rejects.toThrow()
+    if (when === 'during') {
+      await vi.waitFor(() =>
+        expect(frames).toContainEqual({
+          kind: 'session.loading',
+          requestId: request.requestId,
+          sessionKey: request.sessionKey,
+          verifiedSeq: 0,
+          lastSeq: 20,
+        }),
+      )
+      hosted.cancelOpen(request.requestId, request.sessionKey)
+    }
+    await refused
+    expect(hosted.keys()).toEqual([])
+    await hosted.closeAll()
+  },
+)

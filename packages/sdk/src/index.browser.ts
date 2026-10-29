@@ -3,7 +3,6 @@
 // queueMicrotask, setTimeout and AbortSignal only. The stdio and unix transports will
 // be wired into the node entry point alone.
 
-import { isResourceControlMethod } from '@agnes/resource-control-client-node'
 import type { AuthOption } from './auth.js'
 import {
   Client as BaseClient,
@@ -11,6 +10,7 @@ import {
   type CreateClientOptions,
   type TransportOption,
 } from './client.js'
+import { isResourceControlMethod } from './control-plane-methods.js'
 import { Unsupported } from './errors.js'
 import { localStorageJournal } from './journal-local-storage.js'
 import { wsTransport } from './transport/ws.js'
@@ -55,6 +55,10 @@ function normalizeBrowserOptions(opts: BrowserCreateClientOptions): CreateClient
 function browserControlPlaneMethod(method: string): boolean {
   return (
     method.startsWith('_agnes/v1/packages.') ||
+    method.startsWith('_agnes/v1/admin.credentials.') ||
+    method.startsWith('_agnes/v1/sessionSelection.') ||
+    method.startsWith('_agnes/v1/autoReview.') ||
+    method.startsWith('_agnes/v1/config.modelSlots.') ||
     method.startsWith('_agnes/v1/extension.') ||
     method === '_agnes/v1/clientModules.callService' ||
     method === '_agnes/v1/clientModules.callEffect' ||
@@ -106,11 +110,23 @@ export type {
 export * from './errors.js'
 // Emitter only: `Disposer` is the same `() => void` in both modules, and re-exporting
 // it twice would make the name ambiguous on the package surface.
-export { Emitter } from './events.js'
+export { Emitter, notifyListeners } from './events.js'
+export type {
+  ExampleLaunches,
+  ExampleOperation,
+  ExamplePackages,
+  ExampleRequest,
+  ExampleReview,
+  ExampleTransport,
+  ExampleView,
+} from './examples.js'
+export { createExampleClient } from './examples.js'
+export * from './headless.js'
 export { jcs } from './jcs.js'
 export * from './journal.js'
 export { localStorageJournal, type StorageLike } from './journal-local-storage.js'
 export { loginCodex, loginSubscription, type OAuthClient, type OAuthInteraction } from './oauth.js'
+export * from './plugin-streams.js'
 export * from './preview-merger.js'
 export * from './rpc.js'
 export * from './session.js'

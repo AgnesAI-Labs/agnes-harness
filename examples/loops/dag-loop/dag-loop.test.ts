@@ -1,0 +1,260 @@
+import type { LoopCheckpoint, LoopContext, LoopRequest, LoopToolCall } from '@agnes/extension-api'
+import { expect, it } from 'vitest'
+import { codec, createDagLoop, type DagNode } from './index.mjs'
+
+const nodes: DagNode[] = [
+  { id: 'a', tool: 'read', args: { path: 'a' }, after: [] },
+  { id: 'b', tool: 'read', args: { path: 'b' }, after: [] },
+  { id: 'join', tool: 'join', args: { a: { $result: 'a' }, b: { $result: 'b' } }, after: ['a', 'b'] },
+]
+function ports(planReply: string | string[] = JSON.stringify(nodes)) {
+  const replies = typeof planReply === 'string' ? [planReply] : planReply
+  let checkpoint: LoopCheckpoint | null = null
+  const batches: LoopToolCall[][] = []
+  const events: Array<{ type: string; data: unknown }> = []
+  const requests: unknown[] = []
+  let finished = false
+  const ctx: LoopContext = {
+    sessionKey: 'dag',
+    lane: 'main',
+    prepareRequest: async (options = {}) => ({ ...options }) as unknown as LoopRequest,
+    estimateRequest: async () => {
+      throw new Error('unexpected estimate')
+    },
+    jobs: {
+      status: async () => {
+        throw new Error('unexpected job status')
+      },
+      join: async () => {
+        throw new Error('unexpected job join')
+      },
+    },
+    turn: {
+      view: async () => null,
+      endStep: async () => {},
+      continuation: () => null,
+      cancelled: () => false,
+      checkpoint: async () => ({ outcome: 'running' }),
+      finishCancelled: async () => ({ outcome: 'turn-ended', reason: 'aborted' }),
+      finishFailure: async () => ({ outcome: 'turn-ended', reason: 'error' }),
+    },
+    effects: { status: async (id) => ({ status: 'may-have-sent', invocationId: id, checkpoint }) },
+    input: {
+      accept: async () => ctx.input.claim('next-turn'),
+      claim: async (target) =>
+        finished || target === 'next-step'
+          ? null
+          : {
+              id: '1',
+              turnId: 1,
+              actor: { id: 'test', org: 'test', role: 'owner', deptPath: [], attrs: {} },
+              trust: 'trusted',
+              kind: 'prompt',
+              content: [{ type: 'text', text: 'do the DAG' }],
+            },
+      resumeParked: async () => false,
+      pending: () => !finished,
+    },
+    tools: {
+      drain: async () => ({ outcome: 'running' }),
+      resume: async () => {
+        throw new Error('unexpected tool resume')
+      },
+      execute: async () => {
+        throw new Error('DAG must use the batch port')
+      },
+      batch: async (calls) => {
+        batches.push([...calls])
+        return calls.map((call) => ({ content: [{ type: 'text', text: JSON.stringify(call.args) }] }))
+      },
+    },
+    model: {
+      respond: async () => ({ outcome: 'running' }),
+      // biome-ignore lint/correctness/useYield: assert that this fixture never starts model streaming.
+      stream: async function* () {
+        throw new Error('use complete')
+      },
+      complete: async (request) => {
+        requests.push(request)
+        return [{ type: 'text_delta', delta: replies[requests.length - 1] ?? 'joined summary' }]
+      },
+    },
+    checkpoints: {
+      read: () => checkpoint,
+      write: async (next) => {
+        checkpoint = structuredClone(next)
+      },
+    },
+    events: {
+      emit: async (type, data) => {
+        events.push({ type, data })
+      },
+      assistant: async (message, next) => {
+        events.push({ type: 'assistant/message', data: message })
+        checkpoint = structuredClone(next)
+      },
+      finish: async (reason) => {
+        finished = true
+        return { outcome: 'turn-ended' as const, reason }
+      },
+    },
+    wait: {
+      park: async () => {},
+      wake: async () => {},
+      poll: async () => ({ outcome: 'running' }),
+      delay: async () => {},
+    },
+  }
+  return { ctx, batches, events, requests, checkpoint: () => checkpoint! }
+}
+const signal = new AbortController().signal
+
+it('batches independent nodes, resumes their committed wave, joins outputs and finishes without a model for a static plan', async () => {
+  const p = ports()
+  const factory = createDagLoop({ plan: nodes })
+  let driver = await factory.create(p.ctx)
+  await driver.step(signal) // accept input
+  await driver.step(signal) // parallel wave
+  expect(p.batches[0]?.map((call) => call.args)).toEqual([{ path: 'a' }, { path: 'b' }])
+  const saved = p.checkpoint()
+  await driver.dispose()
+  driver = await factory.resume(p.ctx, saved)
+  for (let i = 0; i < 4; i++) {
+    if ((await driver.step(signal)).reason) break
+  }
+  expect(p.batches).toHaveLength(2)
+  expect(p.batches[1]?.[0]).toMatchObject({
+    name: 'join',
+    args: { a: { isError: false }, b: { isError: false } },
+  })
+  expect(p.requests).toEqual([])
+  expect(p.events.at(-1)?.type).toBe('result')
+})
+
+it.each([
+  ['plain JSON', JSON.stringify(nodes)],
+  ['JSON followed by prose', `${JSON.stringify(nodes)}\n\nI will summarize after execution.`],
+  ['fenced JSON', `\`\`\`json\n${JSON.stringify(nodes)}\n\`\`\``],
+  [
+    'JSON containing bracket text',
+    JSON.stringify(
+      nodes.map((node, index) =>
+        index === 0 ? { ...node, args: { path: 'a ] bracket and "quote"' } } : node,
+      ),
+    ),
+  ],
+])('plans from %s and summarizes only after the join', async (_name, reply) => {
+  const p = ports(reply)
+  const tools = [{ name: 'read', description: 'Read a file', parameters: { type: 'object' } }]
+  p.ctx.turn.view = async () => ({
+    turnId: 1,
+    step: 0,
+    cancelled: false,
+    history: [],
+    tools,
+    model: { slot: 'primary', id: 'test', capabilities: null },
+    prompt: { sections: [], runtime: {} },
+    budget: { maxSteps: null, stepsUsed: 0, creditsUsed: 0, perRequestCap: null, onExceed: 'deny' },
+  })
+  const driver = await createDagLoop().create(p.ctx)
+  for (let i = 0; i < 10; i++) {
+    if ((await driver.step(signal)).reason) break
+  }
+  expect(p.checkpoint().state).toMatchObject({ stage: 'done' })
+  expect(p.requests).toHaveLength(2)
+  expect((p.requests[0] as { system: string }).system).toContain(JSON.stringify(tools))
+  expect(p.batches.map((batch) => batch.map((call) => call.name))).toEqual([['read', 'read'], ['join']])
+  expect(p.events).toContainEqual({
+    type: 'assistant/message',
+    data: { content: [{ type: 'text', text: 'joined summary' }], stopReason: 'end_turn' },
+  })
+})
+
+it('refuses cycles, unsupported codecs and uncertain effects before resumed work', async () => {
+  expect(() => createDagLoop({ plan: [{ ...nodes[0]!, after: ['a'] }] })).toThrow('cycle')
+  const factory = createDagLoop({ plan: nodes })
+  const p = ports()
+  const checkpoint = (await factory.create(p.ctx)).checkpoint()
+  expect(() => codec.decode({ ...checkpoint, codecVersion: 2 })).toThrow('version 2')
+  const resumed = await factory.resume(p.ctx, {
+    ...checkpoint,
+    state: { ...(checkpoint.state as object), stage: 'tools', inFlight: ['a'] },
+  })
+  await expect(resumed.step(signal)).rejects.toThrow('outcome is uncertain')
+  expect(p.batches).toEqual([])
+  for (const reply of ['No tools available', `${JSON.stringify(nodes)}\n[]`, '```json\n[]']) {
+    const refused = ports(reply)
+    const driver = await createDagLoop().create(refused.ctx)
+    await driver.step(signal)
+    expect((await driver.step(signal)).phase).toBe('plan-repair')
+    await expect(driver.step(signal)).rejects.toThrow('DAG model')
+    expect(refused.batches).toEqual([])
+  }
+})
+
+it.each([true, false])(
+  'repairs an invalid plan once (repair succeeds: %s), without early tool effects',
+  async (succeeds) => {
+    const rejected = 'PERSONA_PREFIX {"apiKey":"synthetic-secret"}'
+    const p = ports([rejected, succeeds ? JSON.stringify(nodes) : 'still invalid'])
+    let driver = await createDagLoop().create(p.ctx)
+    await driver.step(signal)
+    expect((await driver.step(signal)).phase).toBe('plan-repair')
+    expect(p.batches).toEqual([])
+    // A cold repair resumes its saved attempt rather than opening another repair budget.
+    driver = await createDagLoop().resume(p.ctx, p.checkpoint())
+    if (succeeds) {
+      expect((await driver.step(signal)).phase).toBe('tools')
+      expect(p.batches).toEqual([])
+      await driver.step(signal)
+      expect(p.batches[0]?.map((call) => call.name)).toEqual(['read', 'read'])
+    } else await expect(driver.step(signal)).rejects.toThrow('DAG model plan must begin with a JSON array')
+    const [first, repair] = p.requests as Array<{ system: string; invocationId: string; tools: unknown[] }>
+    expect(repair?.system).toContain('Exact parse error: "DAG model plan must begin with a JSON array"')
+    expect(repair?.system).toContain('Persona, AGENTS.md')
+    expect(first?.invocationId).not.toBe(repair?.invocationId)
+    expect(first?.tools).toEqual([])
+    expect(repair?.tools).toEqual([])
+    const traces = p.events.filter((event) => event.type === 'planner')
+    expect(traces.map((event) => (event.data as { attempt: number }).attempt)).toEqual([1, 2])
+    expect(JSON.stringify(traces)).not.toContain('synthetic-secret')
+    expect(JSON.stringify(traces)).toContain('PERSONA_PREFIX')
+    if (!succeeds) expect(p.batches).toEqual([])
+  },
+)
+
+it.each(['plan', 'summary'] as const)(
+  'propagates turn cancellation into the %s model request',
+  async (stage) => {
+    const p = ports('[]')
+    const driver = await createDagLoop().create(p.ctx)
+    const turn = new AbortController()
+    await driver.step(turn.signal)
+    if (stage === 'summary') {
+      await driver.step(turn.signal)
+      await driver.step(turn.signal)
+    }
+    let entered!: () => void
+    const started = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    let observed: AbortSignal | undefined
+    p.ctx.model.complete = async (_request, signal) => {
+      observed = signal
+      entered()
+      return new Promise((_, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+    }
+    const pending = driver.step(turn.signal)
+    void pending.catch(() => {})
+    await started
+    expect(observed?.aborted).toBe(false)
+    const reason = new Error('turn cancelled')
+    turn.abort(reason)
+    driver.cancel()
+    await expect(pending).rejects.toBe(reason)
+    expect(observed?.aborted).toBe(true)
+    await driver.dispose()
+  },
+)

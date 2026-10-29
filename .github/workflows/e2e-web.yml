@@ -1,0 +1,277 @@
+name: Web E2E
+on:
+  pull_request:
+  push:
+    branches: [main, feat/agh-plugin-core, feat/agh-e2e-gate, feat/agh-e2e-ui-gate, fix/agh-linux, fix/agh-ci-green, fix/agh-ci-green-2]
+  merge_group:
+  workflow_dispatch:
+permissions: { contents: read }
+concurrency:
+  group: web-e2e-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  # Explicit file/flow lists use hosted-macOS timings, including build and quality prechecks.
+  # Isolate narrow flows and candidate review; retain every scan and the ten-minute step budget.
+  e2e-web:
+    name: macOS Web E2E (${{ matrix.id }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: main-1, args: "diagnostics.spec.ts fact-chain.spec.ts" }
+          - { id: main-2, args: "first-run.spec.ts --grep 'first-run en|first run Demo'" }
+          - { id: main-3, args: "first-run.spec.ts --grep 'first-run zh-CN'" }
+          - { id: main-4, args: "memory.spec.ts" }
+          - { id: main-5, args: "prompt-trace.spec.ts" }
+          - { id: main-6, args: "runtime.spec.ts" }
+          - { id: main-7, args: "ui-flows.spec.ts" }
+          - { id: main-8, args: "ui-gate.spec.ts" }
+          - { id: main-9, args: "workbench.spec.ts" }
+          - { id: main-10, args: "human-controls.spec.ts references.spec.ts intelligent-ui.spec.ts question-surfaces.spec.ts large-upload.spec.ts credentials.spec.ts observability.spec.ts" }
+          - { id: main-11, args: "auto-review.spec.ts feedback.spec.ts plugin-config.spec.ts plugin-purpose.spec.ts webhooks.spec.ts business-agents.spec.ts v3-actions.spec.ts" }
+          - { id: main-12, args: "v3-navigation.spec.ts" }
+          - { id: candidate-review, args: "candidate-review.spec.ts" }
+          - { id: narrow-en-light, args: "narrow.spec.ts --grep 'en/light$'" }
+          - { id: narrow-en-dark, args: "narrow.spec.ts --grep 'en/dark$'" }
+          - { id: narrow-zh-CN-light, args: "narrow.spec.ts --grep 'zh-CN/light$'" }
+          - { id: narrow-zh-CN-dark, args: "narrow.spec.ts --grep 'zh-CN/dark$'" }
+    runs-on: macos-14
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version-file: .node-version, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run doctor:toolchain
+      - name: Restore Chromium cache
+        id: browser-cache
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
+        with:
+          path: ~/Library/Caches/ms-playwright
+          key: chromium-${{ runner.os }}-${{ runner.arch }}-playwright-1.63.0
+      # Provisioning may use the network. The gate itself uses only local fixtures and cached Chromium.
+      - name: Provision pinned Chromium
+        if: steps.browser-cache.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install chromium
+      - name: Real daemon and Web gate (zero retries)
+        timeout-minutes: 10
+        run: pnpm e2e:web ${{ matrix.args }} --workers=1
+      - name: Upload report, screenshots, traces and process evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: web-e2e-macos-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          # Only completed reports/traces; Playwright scratch files can disappear during teardown.
+          path: |
+            .agnes-tmp/e2e-web
+            !.agnes-tmp/e2e-web/**/.playwright-artifacts-*/**
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+  e2e-web-linux:
+    name: Linux Web E2E (${{ matrix.id }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: main-1, args: "--grep-invert 'narrow screens' --shard=1/8" }
+          - { id: main-2, args: "--grep-invert 'narrow screens' --shard=2/8" }
+          - { id: main-3, args: "--grep-invert 'narrow screens' --shard=3/8" }
+          - { id: main-4, args: "--grep-invert 'narrow screens' --shard=4/8" }
+          - { id: main-5, args: "--grep-invert 'narrow screens' --shard=5/8" }
+          - { id: main-6, args: "--grep-invert 'narrow screens' --shard=6/8" }
+          - { id: main-7, args: "--grep-invert 'narrow screens' --shard=7/8" }
+          - { id: main-8, args: "--grep-invert 'narrow screens' --shard=8/8" }
+          - { id: narrow-en-light, args: "narrow.spec.ts --grep 'en/light$'" }
+          - { id: narrow-en-dark, args: "narrow.spec.ts --grep 'en/dark$'" }
+          - { id: narrow-zh-CN-light, args: "narrow.spec.ts --grep 'zh-CN/light$'" }
+          - { id: narrow-zh-CN-dark, args: "narrow.spec.ts --grep 'zh-CN/dark$'" }
+    # Visual baselines use this image and its explicitly provisioned font families.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version-file: .node-version, cache: pnpm }
+      - name: Native toolchain and bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y build-essential libssl-dev python3 bubblewrap fonts-dejavu-core fonts-dejavu-mono
+      - name: Provision actual Linux sandbox namespaces
+        run: bash tools/e2e-web/provision-linux-sandbox.sh
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run doctor:toolchain
+        id: install
+      - name: Native helpers
+        id: native
+        run: |
+          pnpm --filter @agnes/host build:native
+          pnpm --filter @agnes/system-node build:native
+      - name: Restore Chromium cache
+        id: browser-cache
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: chromium-${{ runner.os }}-${{ runner.arch }}-playwright-1.63.0
+      - name: Provision pinned Chromium and system libraries
+        id: chromium
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Build local runtime
+        id: build
+        if: ${{ !cancelled() && steps.native.outcome == 'success' }}
+        run: |
+          pnpm --filter @agnes/cli build:local
+          node --input-type=module -e 'import { sourceHash, recordBuild } from "./tools/e2e-web/build-cache.mjs"; await recordBuild(await sourceHash())'
+      - name: Real daemon and Web gate (zero retries)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.chromium.outcome == 'success' }}
+        timeout-minutes: 10
+        run: pnpm e2e:web --reuse-build ${{ matrix.args }} --workers=1
+      - name: Upload report, screenshots, traces and process evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: web-e2e-linux-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          # Only completed reports/traces; Playwright scratch files can disappear during teardown.
+          path: |
+            .agnes-tmp/e2e-web
+            !.agnes-tmp/e2e-web/**/.playwright-artifacts-*/**
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+  linux-contracts:
+    name: Linux tests and structural guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version-file: .node-version, cache: pnpm }
+      - name: Native toolchain and bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y build-essential libssl-dev python3 bubblewrap
+      - name: Provision actual Linux sandbox namespaces
+        run: bash tools/e2e-web/provision-linux-sandbox.sh
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run doctor:toolchain
+        id: install
+      - name: Native helpers
+        id: native
+        run: |
+          pnpm --filter @agnes/host build:native
+          pnpm --filter @agnes/system-node build:native
+      - name: Typecheck production and fixtures
+        if: ${{ !cancelled() && steps.native.outcome == 'success' }}
+        run: pnpm typecheck
+      # Reviewed line budgets and structural checks are hard gates; excess is also summarized.
+      - name: Repository guards
+        if: ${{ !cancelled() && steps.native.outcome == 'success' }}
+        run: pnpm exec vitest run tools/guards/src --maxWorkers=1
+      - name: Story regressions (zero retries, no selected skips)
+        if: ${{ !cancelled() && steps.native.outcome == 'success' }}
+        run: pnpm test:story
+      - name: Upload story regression results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: story-fixtures-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .agnes-tmp/story-fixtures
+          include-hidden-files: true
+          if-no-files-found: warn
+      - name: Linux kernel identity regression
+        if: ${{ !cancelled() && steps.native.outcome == 'success' }}
+        run: pnpm exec vitest run packages/host-infrastructure/test/process-identity-linux.e2e.test.ts packages/base/extensions/sandbox/test/backend-linux.e2e.test.ts packages/host-infrastructure/test/sandbox-read-paths.e2e.test.ts packages/package-manager/test/local-watcher.slow.test.ts packages/host-infrastructure/test/adapters/storage-lock.e2e.test.ts --maxWorkers=1
+  linux-fast:
+    name: Linux fast tests (${{ matrix.shard }}/6)
+    strategy:
+      fail-fast: false
+      matrix: { shard: [1, 2, 3, 4, 5, 6] }
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version-file: .node-version, cache: pnpm }
+      - name: Native toolchain and bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y build-essential libssl-dev python3 bubblewrap
+      - name: Provision actual Linux sandbox namespaces
+        run: bash tools/e2e-web/provision-linux-sandbox.sh
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run doctor:toolchain
+        id: install
+      - name: Native helpers
+        id: native
+        run: |
+          pnpm --filter @agnes/host build:native
+          pnpm --filter @agnes/system-node build:native
+      # External template consumer tests require the declarations emitted by the original job.
+      # Each shard owns its runner; the contracts job's build products are not shared.
+      - name: Typecheck production and fixtures
+        if: ${{ !cancelled() && steps.native.outcome == 'success' }}
+        run: pnpm typecheck
+      # Reserve capacity for Vite/IPC on 2–4 vCPU runners. Six independent shards bound
+      # retained module graphs and heap pressure without changing the 5s test deadline.
+      - name: Runner capacity
+        run: node tools/ci/test-timings.mjs
+      - name: Fast tests (zero retries)
+        if: ${{ !cancelled() && steps.native.outcome == 'success' }}
+        run: /usr/bin/time -v pnpm test --pool=forks --shard=${{ matrix.shard }}/6 --reporter=default --reporter=json --reporter=./tools/guards/src/zero-test-reporter.mjs --outputFile.json=.agnes-tmp/ci-fast/timing.json
+      - name: Slow fast-tier cases
+        if: always()
+        run: node tools/ci/test-timings.mjs .agnes-tmp/ci-fast/timing.json
+      - name: Upload per-case durations
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fast-timings-${{ matrix.shard }}-${{ github.run_id }}
+          path: .agnes-tmp/ci-fast
+          include-hidden-files: true
+          if-no-files-found: error
+  linux-migrated-heavy:
+    name: Linux migrated heavy tests (${{ matrix.shard }}/3)
+    strategy:
+      fail-fast: false
+      matrix: { shard: [1, 2, 3] }
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version-file: .node-version, cache: pnpm }
+      - name: Native toolchain and bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y build-essential libssl-dev python3 bubblewrap
+      - name: Provision actual Linux sandbox namespaces
+        run: bash tools/e2e-web/provision-linux-sandbox.sh
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run doctor:toolchain
+      - name: Native helpers
+        run: |
+          pnpm --filter @agnes/host build:native
+          pnpm --filter @agnes/system-node build:native
+      - run: pnpm typecheck
+      # Filename migration changes the tier, never coverage: every migrated file stays required.
+      - name: Migrated process and data-heavy tests (zero retries)
+        run: node tools/ci/run-migrated-heavy.mjs --shard=${{ matrix.shard }}/3
+  web-e2e-gate:
+    name: Web E2E gate
+    needs: [e2e-web, e2e-web-linux, linux-contracts, linux-fast, linux-migrated-heavy]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Require every platform, shard and contract check
+        env:
+          MACOS_RESULT: ${{ needs.e2e-web.result }}
+          LINUX_RESULT: ${{ needs.e2e-web-linux.result }}
+          CONTRACTS_RESULT: ${{ needs.linux-contracts.result }}
+          FAST_RESULT: ${{ needs.linux-fast.result }}
+          MIGRATED_HEAVY_RESULT: ${{ needs.linux-migrated-heavy.result }}
+        run: |
+          test "$MACOS_RESULT" = success
+          test "$LINUX_RESULT" = success
+          test "$CONTRACTS_RESULT" = success
+          test "$FAST_RESULT" = success
+          test "$MIGRATED_HEAVY_RESULT" = success

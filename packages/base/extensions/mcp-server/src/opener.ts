@@ -19,6 +19,17 @@ import type { McpConnection } from '../../../src/mcp/register.js'
  */
 export type McpServerOpener = Readonly<{
   connect(definition: McpServerDefinitionInput, signal: AbortSignal): Promise<McpConnection>
+  /** Resolve and authorize once. The opaque key represents the effective config/credential boundary;
+   * connect uses that same resolved config. Neither config nor credentials leave the opener. */
+  prepare?(
+    definition: McpServerDefinitionInput,
+    signal: AbortSignal,
+  ): Promise<
+    Readonly<{
+      key: string
+      connect(signal: AbortSignal): Promise<McpConnection>
+    }>
+  >
 }>
 
 /**
@@ -32,16 +43,15 @@ export type McpServerOpener = Readonly<{
  * path, args, and URL are never where `resolvedConfig` puts a resolved credential -- those go in
  * `env`/`headers`, which this function deliberately leaves empty).
  *
- * `defer` is hardcoded `false`, matching `resource-control-runtime`'s own `resolvedConfig` (its
- * `McpServerConfig` also always sets `defer: false`) -- neither function derives it from the
- * definition today.
+ * `defer` and `discoveryGroup` come from the definition's `toolDisclosure` (see
+ * {@link mcpToolDisclosure}), the same mapping `resource-control-runtime`'s `resolvedConfig` makes.
  */
 export function mcpServerConfigFromDefinition(definition: McpServerDefinitionInput): McpServerConfig {
   const allowedTools = definition.toolPolicy?.allow
   const base = {
     id: definition.serverId,
     ...(allowedTools ? { allowedTools: Object.freeze([...allowedTools]) } : {}),
-    defer: false,
+    ...mcpToolDisclosure(definition),
   }
   if (definition.transport.kind === 'stdio')
     return Object.freeze({
@@ -50,4 +60,24 @@ export function mcpServerConfigFromDefinition(definition: McpServerDefinitionInp
       cmd: [definition.transport.executable, ...definition.transport.args],
     })
   return Object.freeze({ ...base, transport: definition.transport.kind, url: definition.transport.url })
+}
+
+/**
+ * A definition's tool disclosure as row config: `auto` (also when omitted) lets core defer this
+ * server's tools together with every other auto tool once the turn catalog holds many of them,
+ * `always` keeps them visible, `on-demand` always defers them. Deferred tools are listed to the
+ * model under the server's display name, one line per server.
+ */
+export function mcpToolDisclosure(
+  definition: Pick<McpServerDefinitionInput, 'displayName' | 'toolDisclosure'>,
+): Pick<McpServerConfig, 'defer' | 'discoveryGroup'> {
+  const mode = definition.toolDisclosure ?? 'auto'
+  const name = definition.displayName
+    .replace(/[\t\r\n]+/gu, ' ')
+    .trim()
+    .slice(0, 100)
+  return {
+    defer: mode === 'always' ? false : mode === 'on-demand' ? true : 'auto',
+    discoveryGroup: `MCP server ${name || 'unnamed'}`,
+  }
 }

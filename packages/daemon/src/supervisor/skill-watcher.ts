@@ -2,10 +2,11 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, readdirSync, realpathSync, statSync, watch as watchFs } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { readContextConfig } from '@agnes/base'
+import type { WorkspaceCatalog } from '@agnes/daemon-foundation/storage/workspaces'
 import { agnesHome } from '@agnes/host'
 import type { ResourceAuthority, ResourceControlService } from '@agnes/resource-control-store'
 import { skillRoots } from '@agnes/resource-control-worker'
-import type { WorkspaceCatalog } from '../storage/workspaces.js'
 
 /** No rootKey means every root, scoped to `workspaceId` for the project one. */
 export type SkillRefreshTarget = Readonly<{ rootKey?: string; workspaceId?: string }>
@@ -19,7 +20,11 @@ export type WatchFn = (
 export type SkillWatcher = Readonly<{
   /** Schedules a refresh of `target` as if one of its files had changed. */
   changed(target: SkillRefreshTarget): void
-  watchRoot(target: { rootKey: string }, path: string, options?: { followLinks?: boolean }): void
+  watchRoot(
+    target: { rootKey: string },
+    path: string | readonly string[],
+    options?: { followLinks?: boolean },
+  ): void
   watchWorkspace(
     workspaceId: string,
     paths: string | readonly string[],
@@ -51,7 +56,9 @@ function nodeLinks(root: string): readonly SkillLink[] {
     try {
       const path = realpathSync(join(root, entry.name))
       found.push({ path, dir: statSync(path).isDirectory() })
-    } catch {}
+    } catch {
+      // Ignore broken links; the next scan can observe a repaired target.
+    }
   }
   return found
 }
@@ -161,7 +168,9 @@ export function createSkillWatcher(o: {
       let found: readonly SkillLink[] = []
       try {
         found = listLinks(path)
-      } catch {}
+      } catch {
+        // An unreadable link list cannot authorize additional watches.
+      }
       const wanted = new Map(found.map((link) => [link.path, link]))
       for (const [linkPath, linkHandle] of linked)
         if (!wanted.has(linkPath)) {
@@ -179,7 +188,9 @@ export function createSkillWatcher(o: {
             linked.delete(link.path)
           }
           linked.set(link.path, watch(link.path, link.dir, onEvent, drop))
-        } catch {}
+        } catch {
+          // Watch setup races with removal; the next scan retries.
+        }
       }
     }
     const reset = () => {
@@ -245,9 +256,19 @@ export function createSkillWatcher(o: {
   }
 
   return Object.freeze({
-    watchRoot(target: { rootKey: string }, path: string, options?: { followLinks?: boolean }) {
-      if (lifetime.signal.aborted || roots.has(target.rootKey)) return
-      roots.set(target.rootKey, arm(target, path, options?.followLinks === true))
+    watchRoot(
+      target: { rootKey: string },
+      path: string | readonly string[],
+      options?: { followLinks?: boolean },
+    ) {
+      if (lifetime.signal.aborted) return
+      roots.get(target.rootKey)?.()
+      const stops = (typeof path === 'string' ? [path] : path).map((dir) =>
+        arm(target, dir, options?.followLinks === true),
+      )
+      roots.set(target.rootKey, () => {
+        for (const stop of stops) stop()
+      })
     },
     changed: schedule,
     watchWorkspace(workspaceId: string, paths: string | readonly string[], options?: { refresh?: boolean }) {
@@ -296,7 +317,7 @@ const PACKAGE_SETTLED = new Set(['completed', 'failed', 'rolled-back'])
 
 /**
  * Starts the daemon's Skill watcher: the user roots immediately, the daemon's own workspace when it
- * was launched for one, every other workspace once a session binds to it, and package Skills after
+ * was launched for one, every other workspace once registered or bound, and package Skills after
  * each settled package operation (install, trust, enable and the rest all change that inventory).
  */
 export async function startSkillWatcher(o: {
@@ -309,7 +330,12 @@ export async function startSkillWatcher(o: {
   log?: Pick<Console, 'warn'>
 }): Promise<SkillWatcher> {
   const env = o.env ?? process.env
-  const homes = { osHomeDir: env.HOME ?? env.USERPROFILE ?? homedir(), agnesHomeDir: agnesHome(env) }
+  const homes = {
+    importUserSkills: env.AGNES_SKILLS_IMPORT_USER === '1',
+    osHomeDir: env.HOME ?? env.USERPROFILE ?? homedir(),
+    agnesHomeDir: agnesHome(env),
+    customRoots: readContextConfig(agnesHome(env)).customSkillRoots,
+  }
   const workspaceSkills = (workspaceRoot: string) =>
     (skillRoots({ workspaceRoot, ...homes })[0]?.dirs ?? []).map((dir) => dir.path)
   const watcher = createSkillWatcher({
@@ -318,8 +344,38 @@ export async function startSkillWatcher(o: {
   })
   for (const root of skillRoots({ workspaceRoot: homes.agnesHomeDir, ...homes })) {
     if (root.rootKey !== 'workspace-agnes')
-      watcher.watchRoot({ rootKey: root.rootKey }, root.path, { followLinks: root.scope === 'user' })
+      watcher.watchRoot(
+        { rootKey: root.rootKey },
+        (root.dirs ?? [{ path: root.path }]).map((dir) => dir.path),
+        { followLinks: root.scope === 'user' },
+      )
   }
+  let customIdentity = JSON.stringify(homes.customRoots)
+  const configPoll = setInterval(() => {
+    try {
+      const next = readContextConfig(homes.agnesHomeDir).customSkillRoots
+      const identity = JSON.stringify(next)
+      if (identity === customIdentity) return
+      customIdentity = identity
+      homes.customRoots = next
+      const root = skillRoots({ workspaceRoot: homes.agnesHomeDir, ...homes }).find(
+        (r) => r.rootKey === 'user-agnes',
+      )
+      if (root)
+        watcher.watchRoot(
+          { rootKey: root.rootKey },
+          (root.dirs ?? [{ path: root.path }]).map((dir) => dir.path),
+          { followLinks: true },
+        )
+      watcher.changed({ rootKey: 'user-agnes' })
+    } catch (error) {
+      o.log?.warn(`skill watcher: invalid context configuration: ${String(error)}`)
+    }
+  }, 1000)
+  configPoll.unref()
+  const stopRegistered = o.catalog.onRegistered((workspaceId, root) =>
+    watcher.watchWorkspace(workspaceId, workspaceSkills(root)),
+  )
   const stopBound = o.catalog.onBound((workspaceId, root) =>
     watcher.watchWorkspace(workspaceId, workspaceSkills(root)),
   )
@@ -347,7 +403,9 @@ export async function startSkillWatcher(o: {
   return Object.freeze({
     ...watcher,
     close: () => {
+      clearInterval(configPoll)
       stopBound()
+      stopRegistered()
       stopPackages?.()
       return watcher.close()
     },

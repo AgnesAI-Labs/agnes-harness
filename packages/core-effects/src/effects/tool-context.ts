@@ -1,0 +1,579 @@
+import { externalChild, externalChildren } from '@agnes/core-child-control/child/directory'
+import type { PresetView } from '@agnes/core-common/step/preset'
+import { CoreError, type Seq } from '@agnes/core-common/types'
+import type { ArtifactJob, PlanItem } from '@agnes/core-ledger/reduce/shapes'
+import type {
+  ArtifactRef,
+  ChildAgentListing,
+  ChildAgentModel,
+  ChildAgentToolFilter,
+  ChildStatus as ChildResult,
+  ExecResult,
+  FetchInit,
+  FsEntry,
+  FsStat,
+  Logger,
+  MemoryFilePort,
+  PublicFetch,
+  ToolContext,
+  ToolDef,
+  ToolResult,
+} from '@agnes/extension-api'
+import { unavailableDecisions, unavailableProjections } from '@agnes/extension-api'
+import type { Actor } from '@agnes/protocol'
+import type { CheckpointWorkspaceContext, WorkspaceHookSandbox } from '../workspace/runtime.js'
+import { ToolEffectScope } from './effect-scope.js'
+import { assertNotDenied } from './fs-guard.js'
+import type { SeamRuntime } from './wrap.js'
+
+export type ChildStatus = {
+  state: 'running' | 'done' | 'error'
+  lastSeq: Seq
+  text?: string
+  idle?: boolean
+  /** Backend-only identity of the completed result returned by this snapshot. */
+  completionId?: string
+  completionSeq?: Seq
+  receipt?: ChildResult['receipt']
+}
+export type ChildHandle = {
+  key: string
+  role?: import('@agnes/extension-api').ChildRole
+  worktree?: string
+  run(input: string): Promise<{ text: string; lastSeq: Seq }>
+  status(): Promise<ChildStatus>
+  close(): Promise<void>
+  cancel?(): Promise<void>
+}
+export type ChildrenFactory = {
+  create(opts: {
+    parent: string
+    role?: import('@agnes/protocol').AgentRef
+    forkAt?: Seq
+    preset?: string
+    cwd: string
+    model?: string
+    budget?: number
+    isolation?: 'worktree' | 'shared'
+    input?: string
+    parentEffectId?: string
+    start?: boolean
+    resident?: boolean
+    toolFilter?: ChildAgentToolFilter
+  }): Promise<ChildHandle>
+  /** Optional richer entry used by the built-in factory without changing third-party create args. */
+  createWithKind?(
+    kind: 'fork' | 'spawn',
+    opts: Parameters<ChildrenFactory['create']>[0],
+  ): Promise<ChildHandle>
+  get?(childKey: string): ChildHandle | undefined
+  inspect?(childKey: string): Promise<ChildStatus | null>
+  collected?(childKey: string, completionId: string, resultSeq: Seq): Promise<void>
+  /** Backend recovery on an explicit owning-session run; not a model operation. */
+  recover?(): Promise<void>
+  resume?(childKey: string): Promise<ChildHandle>
+  cancel?(childKey: string): Promise<void>
+  list?(): Promise<readonly ChildAgentListing[]>
+  roles?(): Promise<readonly import('@agnes/extension-api').ChildRole[]>
+  models?(): readonly ChildAgentModel[]
+  sendMessage?(childKey: string, text: string, signal: AbortSignal): Promise<{ messageId: string }>
+  interrupt?(childKey: string): Promise<{ accepted: boolean }>
+}
+
+/**
+ * The four file operations, supplied by the host. Core cannot import a filesystem - it has no
+ * platform of its own - so both the bytes and the path policy belong to whoever assembled the
+ * session. An implementation must refuse a path its policy denies, and a refusal must be
+ * distinguishable from a missing file: throw an error whose `code` is `E_FS_DENIED`, or whose
+ * message carries it. Core checks that before a session opens and refuses to open one otherwise.
+ */
+export type FsOps = {
+  /** Host-owned admission for bounded native writes; never grants an arbitrary filesystem path. */
+  authorizeWrite?(path: string): Promise<void>
+  authorizeRemove?(path: string, opts?: { recursive?: boolean }): Promise<void>
+  rm?(path: string, opts?: { recursive?: boolean }): Promise<void>
+  preflight?(path: string, mode: 'read' | 'write'): Promise<void>
+  /**
+   * Whether the path, resolved through symlinks, names an agh configuration or instruction file:
+   * anything under the installation home or a `.agh` directory, or a file called AGENTS.md or
+   * CLAUDE.md. Case-folds where the volume does. A path that cannot be resolved answers true.
+   */
+  isConfigPath?(path: string): Promise<boolean>
+  read(path: string, opts?: { offset?: number; limit?: number }): Promise<Uint8Array>
+  write(path: string, data: Uint8Array | string): Promise<void>
+  create?(path: string, data: Uint8Array): Promise<{ size: number; sha256: string }>
+  list(path: string): Promise<FsEntry[]>
+  stat(path: string): Promise<FsStat>
+}
+
+export type ToolContextDeps = {
+  decisions?: import('@agnes/extension-api').DecisionPort
+  sessionKey: string
+  lane: string
+  turn: number
+  step: number
+  depth: number
+  generationDepth: number
+  actor: Actor
+  approval?: ToolContext['approval']
+  cwd: string
+  workspaceRoot: string
+  fullAccess?: boolean
+  runtime: SeamRuntime
+  preset: PresetView
+  children: ChildrenFactory
+  fsOps: FsOps
+  /** Private preference files have their own approval/CAS owner, outside workspace rewind. */
+  memory?: {
+    session: import('@agnes/extension-api').MemorySession
+    approve(
+      proposal: import('@agnes/extension-api').MemoryProposal,
+    ): Promise<import('@agnes/extension-api').MemoryApprovalResult>
+  }
+  /** Capabilities from the one tool-level WorkspaceInvocationPort lease. */
+  workspace?: Readonly<{
+    sandbox: WorkspaceHookSandbox
+    confine(argv: readonly string[]): Promise<readonly string[]>
+    checkpoint: CheckpointWorkspaceContext
+  }>
+  netFetch(url: string, init?: FetchInit): Promise<Response>
+  publicFetch?: PublicFetch
+  log: Logger
+  invoke(
+    name: string,
+    args: unknown,
+    opts: { signal?: AbortSignal; depth: number; parentEffectId?: string },
+  ): Promise<ToolResult>
+  listTools(): ToolDef[]
+  toolAvailability?: ToolContext['tools']['availability']
+  discloseTool?(name: string, signal: AbortSignal): Promise<void>
+  appendPlan(items: PlanItem[]): Promise<Seq>
+  requestCompaction(instructions?: string): void
+  readImages?: ToolContext['session']['readImages']
+  imageInputPolicy?: ToolContext['session']['imageInputPolicy']
+  imageInput?: ToolContext['session']['imageInput']
+  readAttachment?: ToolContext['session']['readAttachment']
+  progress(note: string): void
+  registerArtifact?(ref: ArtifactRef): Promise<void>
+  artifactJobEvent(job: ArtifactJob): Promise<void>
+  lease: { remainingMs(): number }
+}
+
+/**
+ * Every side effect a tool can reach, and nothing else. A tool is handed this object and no
+ * ambient capability: the sandbox, the approval-bearing seams and the ledger are all on the other
+ * side of it, so what a tool did is recoverable from the ledger rather than from the process.
+ *
+ * The path policy is not applied here. It used to be, on the raw string the caller wrote, while the
+ * file system underneath applied the same rule again after resolving symlinks and folding case -
+ * two statements of one rule, and the weaker one was the one the kernel showed a reader. The rule
+ * now lives only in the FsOps, which is the layer that can resolve a name into the file it names.
+ * What core owes instead is that no FsOps reaches a session without enforcing one, and that is
+ * discharged by assertFsEnforces before the session opens.
+ */
+export function buildToolContext(
+  d: ToolContextDeps,
+  call: {
+    toolUseId: string
+    name: string
+    signal: AbortSignal
+    timeoutMs: number
+    defaultTimeoutMs?: number
+    outputMaxBytes: number
+    turnTimeLimit?: { timeLimitMs: number; deadlineAt: number }
+  },
+): ToolContext {
+  const stepId = `${d.turn}/${d.step}`
+  const publicFetch = d.publicFetch
+  // Every call gets one: a memory write and a Host-owned port can both prove a refusal before effect.
+  const effects = new ToolEffectScope()
+  // The checkpoint taken before each write of this call, so a receipt can name what restores it.
+  const checkpoints = new Map<string, string>()
+  const workspaceFiles: FsOps = {
+    read: (path, opts) => d.fsOps.read(path, opts),
+    // A write is snapshotted before it happens, so a rewind has something to go back to. An
+    // unavailable checkpoint seam therefore stops the write rather than losing the old bytes.
+    // The file system is asked about the path first, so a snapshot is not taken of a file the
+    // write is about to be refused for - asked, not decided here, and a missing file is not a
+    // refusal because the path being written may not exist yet.
+    write: async (path, data) => {
+      effects.beginEffect()
+      await assertNotDenied(d.fsOps, path)
+      const snap = await d.runtime.checkpointSnapshot([path], stepId, d.workspace?.checkpoint, d.sessionKey)
+      if (!snap.ok) throw new CoreError('E_SEAM_MISSING', `checkpoint unavailable: ${snap.reason}`, { path })
+      checkpoints.set(path, snap.id)
+      return d.fsOps.write(path, data)
+    },
+    list: (path) => d.fsOps.list(path),
+    stat: (path) => d.fsOps.stat(path),
+  }
+  const files: MemoryFilePort = d.memory
+    ? d.memory.session.files(
+        workspaceFiles,
+        { sessionKey: d.sessionKey, turn: d.turn, toolUseId: call.toolUseId },
+        call.signal,
+        async (proposal) => {
+          // The service must ask before mutation. Bind its proposal to this admitted operation.
+          if (
+            proposal.source.sessionKey !== d.sessionKey ||
+            proposal.source.turn !== d.turn ||
+            proposal.source.toolUseId !== call.toolUseId
+          )
+            throw new CoreError('E_RELATION', 'memory proposal source mismatch')
+          const result = await d.memory!.approve(proposal)
+          if (result.status !== 'approved')
+            effects.reject({
+              code: result.status === 'rejected' ? 'MEMORY_APPROVAL_REJECTED' : 'MEMORY_APPROVAL_UNANSWERED',
+              message:
+                result.status === 'rejected'
+                  ? 'Memory file approval was rejected'
+                  : `Memory file approval unanswered: ${result.reason}`,
+              path: proposal.path,
+            })
+          // Once admitted, even a CAS conflict or failed metadata receipt stays uncertain.
+          effects.beginEffect()
+          return result
+        },
+      )
+    : workspaceFiles
+  const sessionFiles = d.runtime.sessionFiles()
+  const context: ToolContext = {
+    ...(sessionFiles ? { sessionFiles } : {}),
+    decisions: d.decisions ?? unavailableDecisions,
+    ...(d.approval ? { approval: structuredClone(d.approval) } : {}),
+    session: {
+      key: d.sessionKey,
+      lane: d.lane,
+      workspaceRoot: d.workspaceRoot,
+      fullAccess: d.fullAccess === true,
+      turn: d.turn,
+      step: d.step,
+      toolUseId: call.toolUseId,
+      depth: d.depth,
+      generationDepth: d.generationDepth,
+      ...(d.readImages ? { readImages: d.readImages } : {}),
+      ...(d.imageInputPolicy ? { imageInputPolicy: d.imageInputPolicy } : {}),
+      ...(d.imageInput ? { imageInput: d.imageInput } : {}),
+      ...(d.readAttachment ? { readAttachment: d.readAttachment } : {}),
+    },
+    projections: unavailableProjections,
+    ...(d.preset.codeRuntime ? { codeRuntime: d.preset.codeRuntime } : {}),
+    actor: structuredClone(d.actor),
+    cwd: d.cwd,
+    exec: (cmd, opts): Promise<ExecResult> => {
+      if (!d.workspace)
+        return Promise.reject(
+          new CoreError('E_WORKSPACE_CLOSED', 'sandbox is unavailable outside a workspace invocation'),
+        )
+      return d.workspace.sandbox.exec(cmd, {
+        cwd: opts?.cwd ?? d.cwd,
+        ...(opts?.env ? { env: opts.env } : {}),
+        ...(opts?.stdin !== undefined ? { stdin: opts.stdin } : {}),
+        ...(opts?.bridge ? { bridge: opts.bridge } : {}),
+        timeoutMs: opts?.timeoutMs ?? call.timeoutMs,
+        signal: opts?.signal ? AbortSignal.any([call.signal, opts.signal]) : call.signal,
+        ...(opts?.maxOutputBytes !== undefined ? { maxOutputBytes: opts.maxOutputBytes } : {}),
+      })
+    },
+    fs: files,
+    net: {
+      async fetch(url, init) {
+        call.signal.throwIfAborted()
+        init?.signal?.throwIfAborted()
+        const timeoutMs = Math.floor(
+          Math.min(
+            call.timeoutMs,
+            d.lease.remainingMs(),
+            init?.timeoutMs ?? call.defaultTimeoutMs ?? call.timeoutMs,
+            2_147_483_647,
+          ),
+        )
+        if (!Number.isFinite(timeoutMs) || timeoutMs <= 0)
+          throw new CoreError('E_BUDGET', 'fetch requires a positive remaining call deadline')
+        const signal = AbortSignal.any([
+          call.signal,
+          ...(init?.signal ? [init.signal] : []),
+          AbortSignal.timeout(timeoutMs),
+        ])
+        signal.throwIfAborted()
+        const response = await d.netFetch(url, { ...init, signal, timeoutMs })
+        // Native fetch cancels locked readers through its signal. This backstop also releases an
+        // unread body returned by a provider; providers still own cancellation of locked readers.
+        const cancel = () => {
+          if (response.body && !response.body.locked)
+            void response.body.cancel(signal.reason).catch(() => undefined)
+        }
+        if (signal.aborted) {
+          cancel()
+          signal.throwIfAborted()
+        }
+        signal.addEventListener('abort', cancel, { once: true })
+        return response
+      },
+      ...(publicFetch
+        ? {
+            fetchPublic: (url: string, options?: { responseType: 'zip' }) =>
+              publicFetch(url, {
+                signal: call.signal,
+                timeoutMs: Math.min(call.timeoutMs, d.lease.remainingMs()),
+                ...options,
+              }),
+          }
+        : {}),
+    },
+    sandbox: {
+      ...(d.workspace?.sandbox.openProcess ? { openProcess: d.workspace.sandbox.openProcess } : {}),
+      confine: async (argv) => {
+        if (!d.workspace)
+          throw new CoreError('E_WORKSPACE_CLOSED', 'sandbox is unavailable outside a workspace invocation')
+        return [...(await d.workspace.confine(argv))]
+      },
+      // Through SeamRuntime.enforcement(), not the raw seam: it is the same straight-through read
+      // (SeamRuntime does not cache it), but it also gets core's usual fail-closed bound - a broken
+      // sandbox backend answers { level: 'none', scope: [] } instead of throwing into tool code, and
+      // the failure is recorded via SeamRuntime's diagnostic rather than lost.
+      enforcement: () => {
+        const e = d.workspace
+          ? d.runtime.enforcement(d.workspace.sandbox)
+          : { level: 'none' as const, scope: [] }
+        return Object.freeze({ level: e.level, scope: Object.freeze([...e.scope]) })
+      },
+    },
+    // Facts read at call time, probe passed through; no manifest gate.
+    platform: d.runtime.platformView(),
+    // Action and Target are protocol's, and until protocol publishes them they are JsonValue here.
+    // The conversion is a cast at this one boundary rather than a shape core invents.
+    authorize: (action, target) =>
+      d.runtime.authorize(d.actor, String(action), target as never) as unknown as Promise<never>,
+    tools: {
+      invoke: (name, args, opts) => {
+        if (d.depth + 1 > d.preset.depthLimit)
+          throw new CoreError('E_DEPTH_EXCEEDED', `depth ${d.depth + 1} exceeds ${d.preset.depthLimit}`)
+        const signal = opts?.signal ? AbortSignal.any([call.signal, opts.signal]) : call.signal
+        return d.invoke(name, args, { signal, depth: d.depth + 1 })
+      },
+      list: () => d.listTools(),
+      ...(d.toolAvailability ? { availability: d.toolAvailability } : {}),
+      ...(d.discloseTool ? { disclose: (name: string) => d.discloseTool!(name, call.signal) } : {}),
+    },
+    artifacts: {
+      put: async (bytes, meta) => {
+        call.signal.throwIfAborted()
+        if (!d.registerArtifact) throw new Error('Session artifact registration unavailable')
+        const ref = (await d.runtime.artifactPut(bytes, meta)) as ArtifactRef
+        call.signal.throwIfAborted()
+        await d.registerArtifact(ref)
+        call.signal.throwIfAborted()
+        return ref
+      },
+      get: (ref) => d.runtime.artifactGet(ref),
+      submitJob: async (spec) => {
+        // A tool cannot name another session. Explicitly write trusted identity after the spread,
+        // including for untyped JavaScript callers, and install the local one-shot default here.
+        const jobId = await d.runtime.submitJob({
+          ...spec,
+          sessionKey: d.sessionKey,
+          schedule: spec.schedule ?? { kind: 'once' },
+        })
+        await d.artifactJobEvent({ jobId, status: 'queued' })
+        return jobId
+      },
+      poll: (id) => d.runtime.artifactPoll(id) as unknown as Promise<never>,
+      cancel: (id) => d.runtime.artifactCancel(id),
+    },
+    subagent: {
+      roles: () => d.children.roles?.() ?? Promise.resolve([]),
+      fork: async (question, opts) => {
+        const childOpts = {
+          parent: d.sessionKey,
+          cwd: d.cwd,
+          input: question,
+          parentEffectId: call.toolUseId,
+          ...(opts?.model !== undefined ? { model: opts.model } : {}),
+        }
+        const child = d.children.createWithKind
+          ? await d.children.createWithKind('fork', childOpts)
+          : await d.children.create(childOpts)
+        try {
+          return (await child.run(question)).text
+        } finally {
+          await child.close()
+        }
+      },
+      spawn: async (task, opts) => {
+        const childOpts = {
+          parent: d.sessionKey,
+          cwd: opts?.cwd ?? d.cwd,
+          input: task,
+          parentEffectId: call.toolUseId,
+          ...(opts?.role !== undefined ? { role: opts.role } : {}),
+          ...(opts?.model !== undefined ? { model: opts.model } : {}),
+          ...(opts?.budget !== undefined ? { budget: opts.budget } : {}),
+          ...(opts?.isolation !== undefined ? { isolation: opts.isolation } : {}),
+          ...(opts?.start === false ? { start: false as const } : {}),
+          ...(opts?.resident ? { resident: true } : {}),
+          ...(opts?.toolFilter ? { toolFilter: opts.toolFilter } : {}),
+        }
+        const child = d.children.createWithKind
+          ? await d.children.createWithKind(opts?.fork ? 'fork' : 'spawn', childOpts)
+          : await d.children.create(childOpts)
+        if (opts?.start !== false) void child.run(task).catch(() => undefined)
+        return {
+          childKey: child.key,
+          ...(child.role ? { role: child.role } : {}),
+          ...(child.worktree ? { worktree: child.worktree } : {}),
+        }
+      },
+      resume: async (childKey) => {
+        const child = d.children.resume ? await d.children.resume(childKey) : d.children.get?.(childKey)
+        if (!child) throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
+        return { childKey: child.key, ...(child.worktree ? { worktree: child.worktree } : {}) }
+      },
+      collect: async (childKey, opts) => {
+        const snapshot = async () => {
+          const external = externalChild(d.sessionKey, childKey)
+          if (external)
+            return {
+              childKey,
+              status: external.listing.status === 'starting' ? ('running' as const) : external.listing.status,
+              ...(external.listing.text !== undefined ? { text: external.listing.text } : {}),
+            }
+          const child = d.children.get?.(childKey)
+          if (child) {
+            const status = await child.status()
+            if (status.completionId)
+              await d.children.collected?.(childKey, status.completionId, status.completionSeq ?? 0)
+            return {
+              childKey: child.key,
+              status: (status.idle
+                ? 'idle'
+                : status.state === 'done'
+                  ? 'completed'
+                  : status.state === 'error'
+                    ? 'failed'
+                    : 'running') as 'running' | 'idle' | 'completed' | 'failed' | 'cancelled',
+              ...(status.text !== undefined ? { text: status.text } : {}),
+              ...(status.receipt === undefined ? {} : { receipt: status.receipt }),
+            }
+          }
+          const snap = await d.children.inspect?.(childKey)
+          if (!snap) throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
+          if (snap.completionId)
+            await d.children.collected?.(childKey, snap.completionId, snap.completionSeq ?? 0)
+          return {
+            childKey,
+            status: (snap.state === 'done' ? 'completed' : snap.state === 'error' ? 'failed' : 'running') as
+              | 'running'
+              | 'completed'
+              | 'failed'
+              | 'cancelled',
+            ...(snap.text !== undefined ? { text: snap.text } : {}),
+            ...(snap.receipt === undefined ? {} : { receipt: snap.receipt }),
+          }
+        }
+        if (opts?.wait !== true) return snapshot()
+        const deadline = Date.now() + Math.max(1, d.lease.remainingMs())
+        while (Date.now() < deadline) {
+          const current = await snapshot()
+          if (current.status !== 'running') return current
+          await new Promise((resolve) => setTimeout(resolve, 20))
+        }
+        return { ...(await snapshot()), waitTimedOut: true }
+      },
+      cancel: async (childKey) => {
+        const external = externalChild(d.sessionKey, childKey)
+        if (external) {
+          if (!external.cancel) throw new CoreError('E_UNSUPPORTED', 'external child cannot be cancelled')
+          await external.cancel()
+          return { childKey, status: 'cancelled' as const }
+        }
+        if (d.children.cancel) await d.children.cancel(childKey)
+        else {
+          const handle = d.children.get?.(childKey)
+          if (handle?.cancel) await handle.cancel()
+          else if (handle) await handle.close()
+        }
+        const snap = await d.children.inspect?.(childKey)
+        if (!snap) throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
+        return {
+          childKey,
+          status: snap.state === 'done' ? 'completed' : snap.state === 'error' ? 'failed' : 'cancelled',
+          ...(snap.text !== undefined ? { text: snap.text } : {}),
+        }
+      },
+      list: async () => [
+        ...((await d.children.list?.()) ?? []),
+        ...externalChildren(d.sessionKey).map((child) => child.listing),
+      ],
+      ...(d.children.models ? { models: async () => d.children.models?.() ?? [] } : {}),
+      ...(d.children.sendMessage
+        ? {
+            sendMessage: (childKey: string, text: string, signal?: AbortSignal) =>
+              d.children.sendMessage?.(
+                childKey,
+                text,
+                signal ? AbortSignal.any([call.signal, signal]) : call.signal,
+              ) ?? Promise.reject(new CoreError('E_UNSUPPORTED', 'child messages are not available')),
+          }
+        : {}),
+      ...(d.children.interrupt
+        ? {
+            interrupt: (childKey: string) =>
+              d.children.interrupt?.(childKey) ?? Promise.resolve({ accepted: false }),
+          }
+        : {}),
+    },
+    plan: { set: (items) => d.appendPlan(items as unknown as PlanItem[]) },
+    requestCompaction: (instructions) => d.requestCompaction(instructions),
+    progress: (note) => d.progress(note),
+    signal: call.signal,
+    timeoutMs: call.timeoutMs,
+    ...(call.defaultTimeoutMs === undefined ? {} : { defaultTimeoutMs: call.defaultTimeoutMs }),
+    outputMaxBytes: call.outputMaxBytes,
+    ...(call.turnTimeLimit ? { turnTimeLimit: { ...call.turnTimeLimit } } : {}),
+    lease: {
+      expiresAt: new Date(Date.now() + d.lease.remainingMs()).toISOString(),
+      scope: {},
+      budget: { remaining: 1 },
+    },
+    log: d.log,
+  }
+  return effects.bind({
+    ...effects.guard(context, ['exec', 'requestCompaction']),
+    fs: {
+      read: (path, options) => files.read(path, options),
+      write: (path, content) => effects.write(() => files.write(path, content)),
+      ...(d.fsOps.create
+        ? {
+            create: (path: string, data: Uint8Array) =>
+              effects.write(async () => {
+                const bytes = data.slice()
+                await assertNotDenied(d.fsOps, path)
+                const snap = await d.runtime.checkpointSnapshot(
+                  [path],
+                  stepId,
+                  d.workspace?.checkpoint,
+                  d.sessionKey,
+                )
+                if (!snap.ok)
+                  throw new CoreError('E_SEAM_MISSING', `checkpoint unavailable: ${snap.reason}`, { path })
+                checkpoints.set(path, snap.id)
+                call.signal.throwIfAborted()
+                return d.fsOps.create!(path, bytes)
+              }),
+          }
+        : {}),
+      list: (path) => files.list(path),
+      stat: (path) => files.stat(path),
+      ...(files.revision ? { revision: (path: string) => files.revision!(path) } : {}),
+      checkpointOf: (path) => checkpoints.get(path),
+    },
+    net: effects.guard(context.net),
+    sandbox: effects.guard(context.sandbox, ['openProcess']),
+    tools: effects.guard(context.tools, ['invoke']),
+    artifacts: effects.guard(context.artifacts),
+    subagent: effects.guard(context.subagent),
+    decisions: effects.guard(context.decisions),
+    plan: effects.guard(context.plan),
+  })
+}

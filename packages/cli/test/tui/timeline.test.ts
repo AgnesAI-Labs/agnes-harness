@@ -1,6 +1,12 @@
 import type { UINode, UITimeline } from '@agnes/protocol'
-import { expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { createAnsi } from '../../src/tui/ansi.js'
 import { Text } from '../../src/tui/component.js'
+import { assistantView } from '../../src/tui/footer-renderer.js'
+import { installKeymap, Keymap } from '../../src/tui/keymap.js'
+import type { KeyName } from '../../src/tui/keys.js'
+import { renderMarkdown, renderMarkdownChunk } from '../../src/tui/markdown.js'
+import { TuiTheme } from '../../src/tui/theme.js'
 import { Timeline } from '../../src/tui/views/timeline.js'
 
 const user = (id: string, text: string): UINode => ({
@@ -9,6 +15,9 @@ const user = (id: string, text: string): UINode => ({
   seq: 1,
   content: [{ type: 'text', text }],
 })
+/** A tool node showing `text`: tool cards sit tight, so windowing tests count rows without the blank row between other blocks. */
+const tight = (id: string, text: string): UINode =>
+  ({ kind: 'tool', id, seq: 1, toolUseId: id, name: 'x', status: text, summary: '' }) as UINode
 const timeline = (nodes: UINode[]): UITimeline => ({
   sessionId: 's',
   generation: 1,
@@ -46,17 +55,17 @@ it('reuses unchanged nodes and updates full current user/content and tool/status
   t.apply(timeline([user('u', 'first'), tool]))
   expect(factory).toHaveBeenCalledTimes(2)
   t.apply(timeline([user('u', 'changed'), { ...tool, status: 'completed' }]))
-  expect(t.render(30)).toEqual(['changed', 'completed'])
+  expect(t.render(30)).toEqual(['changed', '', 'completed'])
   expect(factory).toHaveBeenCalledTimes(4)
   t.apply(timeline([{ ...tool, status: 'completed' }, user('u', 'changed')]))
-  expect(t.render(30)).toEqual(['completed', 'changed'])
+  expect(t.render(30)).toEqual(['completed', '', 'changed'])
   expect(factory).toHaveBeenCalledTimes(4)
   t.apply(timeline([user('u', 'changed')]))
   expect(t.render(30)).toEqual(['changed'])
 })
 it('uses the default five reserved rows and clamps scrolling in both directions', () => {
   const t = new Timeline({ rows: () => 8, nodeView: view })
-  t.apply(timeline([1, 2, 3, 4].map((n) => user(String(n), String(n)))))
+  t.apply(timeline([1, 2, 3, 4].map((n) => tight(String(n), String(n)))))
   expect(t.render(30)).toEqual(['2', '3', '4'])
   t.scroll(-1)
   expect(t.render(30)).toEqual(['1', '2', '3'])
@@ -115,7 +124,7 @@ it('shows the welcome banner only for an empty conversation and excludes it from
   const t = new Timeline({ rows: () => 8, nodeView: view, top: new Text('BRAND') })
   t.apply(timeline([]))
   expect(t.render(30)).toEqual(['BRAND'])
-  t.apply(timeline([1, 2, 3, 4].map((n) => user(String(n), String(n)))))
+  t.apply(timeline([1, 2, 3, 4].map((n) => tight(String(n), String(n)))))
   expect(t.render(30)).toEqual(['2', '3', '4'])
   expect(t.transcript(30)).toEqual(['1', '2', '3', '4'])
 })
@@ -123,7 +132,7 @@ it('shows the welcome banner only for an empty conversation and excludes it from
 it('reserves the current measured footer height while retaining the legacy default', () => {
   let reserved = 6
   const t = new Timeline({ rows: () => 12, reservedRows: () => reserved, nodeView: view })
-  t.apply(timeline(Array.from({ length: 10 }, (_, i) => user(String(i), String(i)))))
+  t.apply(timeline(Array.from({ length: 10 }, (_, i) => tight(String(i), String(i)))))
   expect(t.render(30)).toHaveLength(6)
   reserved = 9
   expect(t.render(30)).toEqual(['7', '8', '9'])
@@ -212,11 +221,11 @@ it('replaces mutable tool, approval and assistant snapshots instead of appending
 it('windows an opening snapshot and retains one current copy for paging', () => {
   const t = new Timeline({ rows: () => 2, reservedRows: () => 0, nodeView: view })
   const history = Array.from({ length: 1_002 }, (_, index) =>
-    user(`history-${index + 1}`, `history ${index + 1}`),
+    tight(`history-${index + 1}`, `history ${index + 1}`),
   )
   t.apply(timeline(history), { opening: true })
   expect(t.render(40)).toEqual(['history 1001', 'history 1002'])
-  t.apply(timeline([...history, user('live', 'live')]))
+  t.apply(timeline([...history, tight('live', 'live')]))
   expect(t.render(40)).toEqual(['history 1002', 'live'])
   expect(t.transcript(40)).toHaveLength(1_003)
   t.scroll(-10000)
@@ -226,14 +235,14 @@ it('windows an opening snapshot and retains one current copy for paging', () => 
 it('does not carry transcript or viewport state across a session switch', () => {
   const t = new Timeline({ rows: () => 2, reservedRows: () => 0, nodeView: view })
   t.apply({
-    ...timeline([user('same', 'old'), user('old-2', 'old 2'), user('old-3', 'old 3')]),
+    ...timeline([tight('same', 'old'), tight('old-2', 'old 2'), tight('old-3', 'old 3')]),
     sessionId: 'old',
   })
   t.render(40)
   t.scroll(-100)
   t.apply(
     {
-      ...timeline([user('same', 'new'), user('new-2', 'new 2'), user('new-3', 'new 3')]),
+      ...timeline([tight('same', 'new'), tight('new-2', 'new 2'), tight('new-3', 'new 3')]),
       sessionId: 'new',
     },
     { opening: true },
@@ -250,7 +259,7 @@ it('anchors local transcript rows at the current cut and clears them on session 
     ...timeline([user('one', 'one'), { ...user('two', 'two'), seq: 2 }]),
     upto: 2,
   })
-  expect(t.render(40)).toEqual(['one', '› /sessions', 'first', 'second', 'two'])
+  expect(t.render(40)).toEqual(['one', '', '› /sessions', 'first', 'second', '', 'two'])
 
   t.apply({ ...timeline([user('new', 'new')]), sessionId: 'new-session' })
   expect(t.render(40)).toEqual(['new'])
@@ -306,10 +315,10 @@ it('requests an earlier page only when PageUp reaches the loaded window boundary
   const t = new Timeline({ rows: () => 2, reservedRows: () => 0, nodeView: view })
   t.apply(
     timeline([
-      user('tail-1', 'tail 1'),
-      user('tail-2', 'tail 2'),
-      user('tail-3', 'tail 3'),
-      user('tail-4', 'tail 4'),
+      tight('tail-1', 'tail 1'),
+      tight('tail-2', 'tail 2'),
+      tight('tail-3', 'tail 3'),
+      tight('tail-4', 'tail 4'),
     ]),
     { hasEarlier: true },
   )
@@ -330,4 +339,317 @@ it('localizes the earlier-history hint', () => {
   const t = new Timeline(options)
   t.apply(timeline([]), { hasEarlier: true })
   expect(t.render(40)).toEqual(['↑ 更早的记录 · PgUp 加载'])
+})
+
+it('names the jump key the user bound, not the default', () => {
+  installKeymap(new Keymap(new Map([['timeline-bottom', ['ctrl-end']]])))
+  try {
+    const t = new Timeline({ rows: () => 8, nodeView: view })
+    const nodes = [1, 2, 3, 4, 5, 6].map((n) => user(String(n), String(n)))
+    t.apply(timeline(nodes.slice(0, 5)))
+    t.render(30)
+    t.scroll(-1)
+    t.render(30)
+    t.apply(timeline(nodes))
+    expect(t.newOutputHint(false)).toBe('↓ New output below · Ctrl-End to jump back')
+  } finally {
+    installKeymap(new Keymap())
+  }
+})
+
+it.each([
+  ['only End is bound and a draft exists', ['end'], true],
+  ['nothing is bound', [], false],
+])('omits the key clause when %s', (_name, bound, hasDraft) => {
+  installKeymap(new Keymap(new Map([['timeline-bottom', bound as KeyName[]]])))
+  try {
+    const t = new Timeline({ rows: () => 8, nodeView: view })
+    const nodes = [1, 2, 3, 4, 5, 6].map((n) => user(String(n), String(n)))
+    t.apply(timeline(nodes.slice(0, 5)))
+    t.render(30)
+    t.scroll(-1)
+    t.render(30)
+    t.apply(timeline(nodes))
+    expect(t.newOutputHint(hasDraft)).toBe('↓ New output below')
+  } finally {
+    installKeymap(new Keymap())
+  }
+})
+
+it('offers the way back only when output arrived while scrolled up, and End or Ctrl-End returns to the bottom', () => {
+  const t = new Timeline({ rows: () => 8, nodeView: view, locale: 'zh-CN' })
+  const nodes = [1, 2, 3, 4, 5, 6].map((n) => tight(String(n), String(n)))
+  t.apply(timeline(nodes.slice(0, 5)))
+  t.render(30)
+  expect(t.newOutputHint(false)).toBeUndefined()
+  // Scrolling up over unchanged content has nothing new to announce.
+  t.scroll(-1)
+  t.render(30)
+  expect(t.newOutputHint(false)).toBeUndefined()
+  t.apply(timeline(nodes))
+  expect(t.newOutputHint(false)).toBe('↓ 有新内容 · End 回到底部')
+  expect(t.newOutputHint(true)).toBe('↓ 有新内容 · Ctrl-End 回到底部')
+  expect(t.render(30)).toEqual(['3', '4', '5'])
+  // With a draft End is the cursor's; only Ctrl-End jumps.
+  expect(t.jumpKey('end', true)).toBe(false)
+  expect(t.jumpKey('left', false)).toBe(false)
+  expect(t.newOutputHint(true)).toBeDefined()
+  expect(t.jumpKey('end', false)).toBe(true)
+  expect(t.render(30)).toEqual(['4', '5', '6'])
+  expect(t.newOutputHint(false)).toBeUndefined()
+  t.scroll(-1)
+  t.apply(timeline([...nodes, tight('7', '7')]))
+  expect(t.newOutputHint(false)).toBeDefined()
+  expect(t.jumpKey('ctrl-end', true)).toBe(true)
+  expect(t.render(30)).toEqual(['5', '6', '7'])
+  // Scrolling back down by hand also clears it.
+  t.scroll(-1)
+  t.apply(timeline([...nodes, tight('7', '7'), tight('8', '8')]))
+  t.scroll(1)
+  expect(t.newOutputHint(false)).toBeUndefined()
+})
+
+// Split footer (--no-alt-screen): what leaves for native scrollback, and when.
+const at = (seq: number, node: UINode): UINode => ({ ...node, seq }) as UINode
+const assistant = (id: string, seq: number, text: string, streaming: boolean): UINode => ({
+  kind: 'assistant',
+  id,
+  seq,
+  text,
+  streaming,
+})
+const tool = (id: string, seq: number, status: 'running' | 'completed', name = 'write'): UINode => ({
+  kind: 'tool',
+  id,
+  seq,
+  toolUseId: id,
+  name,
+  status,
+  summary: '',
+})
+const approval = (id: string, seq: number, state: 'pending' | 'decided'): UINode => ({
+  kind: 'approval',
+  id,
+  seq,
+  state,
+  summary: id,
+  risk: 'unknown',
+  options: [],
+})
+const splitTimeline = () => new Timeline({ rows: () => 20, nodeView: view, split: true })
+const idleAt = (nodes: UINode[]): UITimeline => timeline(nodes)
+const busyAt = (nodes: UINode[]): UITimeline => ({
+  ...timeline(nodes),
+  opState: { turn: 1, step: 1, phase: 'inference' } as never,
+})
+
+it('hands out each settled entry once, in projection order, and keeps the first unsettled one and its successors back', () => {
+  const t = splitTimeline()
+  t.apply(
+    busyAt([
+      at(1, user('u', 'ask')),
+      assistant('a', 2, '', true),
+      tool('t', 3, 'running'),
+      approval('p', 4, 'pending'),
+    ]),
+  )
+  expect(t.takeSettled(30)).toEqual(['', 'ask'])
+  expect(t.takeSettled(30)).toEqual([])
+  // The reply settles but the tool after it has not: only the reply leaves. Nothing is repeated.
+  t.apply(
+    busyAt([
+      user('u', 'ask'),
+      assistant('a', 5, 'answer', false),
+      tool('t', 3, 'running'),
+      approval('p', 4, 'pending'),
+    ]),
+  )
+  expect(t.takeSettled(30)).toEqual(['', 'answer'])
+  t.apply(
+    busyAt([
+      user('u', 'ask'),
+      assistant('a', 5, 'answer', false),
+      tool('t', 3, 'completed'),
+      approval('p', 4, 'pending'),
+    ]),
+  )
+  expect(t.takeSettled(30)).toEqual(['', 'completed'])
+  expect(t.render(30)).toEqual(['pending'])
+  t.apply(
+    idleAt([
+      user('u', 'ask'),
+      assistant('a', 5, 'answer', false),
+      tool('t', 3, 'completed'),
+      approval('p', 4, 'decided'),
+    ]),
+  )
+  expect(t.takeSettled(30)).toEqual(['', 'decided'])
+  expect(t.render(30)).toEqual([])
+})
+
+it('never rewrites an entry the projection changes afterwards, nor writes one that appears behind a written one', () => {
+  const t = splitTimeline()
+  t.apply(idleAt([at(1, user('u', 'ask')), tool('t', 2, 'completed')]))
+  expect(t.takeSettled(30)).toEqual(['', 'ask', '', 'completed'])
+  t.apply(idleAt([user('u', 'edited'), { ...tool('t', 2, 'completed'), summary: 'later review' } as UINode]))
+  expect(t.takeSettled(30)).toEqual([])
+  t.apply(
+    idleAt([user('early', 'late arrival'), user('u', 'edited'), tool('t', 2, 'completed'), user('n', 'new')]),
+  )
+  expect(t.takeSettled(30)).toEqual(['', 'new'])
+})
+
+it('keeps a trailing read-only call back while the turn runs, since the next one folds into its group', () => {
+  const t = new Timeline({
+    rows: () => 20,
+    nodeView: view,
+    groupView: (nodes) => new Text(`group of ${nodes.length}`),
+    split: true,
+  })
+  t.apply(busyAt([user('u', 'ask'), tool('r1', 2, 'completed', 'read')]))
+  expect(t.takeSettled(30)).toEqual(['', 'ask'])
+  t.apply(busyAt([user('u', 'ask'), tool('r1', 2, 'completed', 'read'), tool('r2', 3, 'completed', 'read')]))
+  expect(t.takeSettled(30)).toEqual([])
+  t.apply(idleAt([user('u', 'ask'), tool('r1', 2, 'completed', 'read'), tool('r2', 3, 'completed', 'read')]))
+  expect(t.takeSettled(30)).toEqual(['', 'group of 2'])
+})
+
+it('places connection-local output by the seq it follows, writes the unsettled only at exit, and starts over for another session', () => {
+  const t = splitTimeline()
+  t.apply(idleAt([at(1, user('u', 'ask')), assistant('a', 2, '', true)]))
+  t.appendLocal('s', new Text('/help output'), 1)
+  expect(t.takeSettled(30)).toEqual(['', 'ask', '', '/help output'])
+  expect(t.takeSettled(30, true)).toEqual(['', ''])
+  t.apply({ ...timeline([user('u', 'ask')]), sessionId: 'other' })
+  expect(t.takeSettled(30)).toEqual(['', '── session other ──', '', 'ask'])
+})
+
+it('shows only the entries not yet written, the welcome only before anything was, and no scroll state', () => {
+  const t = new Timeline({ rows: () => 20, nodeView: view, top: new Text('BRAND'), split: true })
+  t.apply(idleAt([]))
+  expect(t.render(30)).toEqual(['BRAND'])
+  t.apply(busyAt([user('u', 'ask'), assistant('a', 2, '', true)]))
+  t.takeSettled(30)
+  expect(t.render(30)).toEqual([''])
+  expect(t.scroll(-3)).toBe(false)
+  expect(t.jumpKey('end', false)).toBe(false)
+})
+
+describe('split footer: a long reply goes out block by block while it streams', () => {
+  const ansi = new TuiTheme('mono').ansi(createAnsi('none'))
+  const full = [
+    '# Title',
+    '',
+    'First paragraph that is long enough to wrap across more than one row at this width.',
+    '',
+    '- item a',
+    '- item b',
+    '',
+    '```js',
+    'const a = 1',
+    '',
+    'const b = 2',
+    '```',
+    '',
+    'Closing words.',
+  ].join('\n')
+  const make = (streamed: { text?: string }) =>
+    new Timeline({
+      rows: () => 20,
+      nodeView: (node) => (node.kind === 'assistant' ? assistantView(node, ansi, 'en') : view(node)),
+      split: true,
+      stream: { text: () => streamed.text, markdown: (md, width) => renderMarkdownChunk(md, width, ansi) },
+    })
+  const node = (text: string, streaming: boolean): UINode => ({
+    kind: 'assistant',
+    id: 'a',
+    seq: 2,
+    text,
+    streaming,
+    effectId: 'e',
+  })
+
+  it('writes every finished block once and the rest at settling, with no gap and no repeat', () => {
+    const streamed: { text?: string } = {}
+    const t = make(streamed)
+    t.apply(busyAt([at(1, user('u', 'ask')), node('', true)]))
+    const out = [...t.takeSettled(40)]
+    let seen = 0
+    for (const size of [7, 3, 40, 1, 25, 90, 5, 61]) {
+      seen = Math.min(full.length, seen + size)
+      streamed.text = full.slice(0, seen)
+      const rows = t.takeSettled(40)
+      // What the footer still shows is exactly the part that has not gone out.
+      expect(t.pending('e', streamed.text).length).toBeLessThanOrEqual(streamed.text.length)
+      out.push(...rows)
+    }
+    streamed.text = full
+    out.push(...t.takeSettled(40))
+    expect(out.length).toBeGreaterThan(2)
+    t.apply(idleAt([user('u', 'ask'), node(full, false)]))
+    out.push(...t.takeSettled(40))
+    expect(out).toEqual(['', 'ask', '', ...renderMarkdown(full, 40, ansi)])
+  })
+
+  it('shows the footer only the text that has not gone out', () => {
+    const streamed = { text: 'One.\n\nTwo.\n\nThr' }
+    const t = make(streamed)
+    t.apply(busyAt([node('', true)]))
+    t.takeSettled(40)
+    expect(t.pending('e', streamed.text)).toBe('Thr')
+    expect(t.pending('other', 'x')).toBe('x')
+  })
+
+  it('writes the partial reply at exit, after the blocks that already went out', () => {
+    const streamed = { text: 'One.\n\nTwo.\n\nThr' }
+    const t = make(streamed)
+    t.apply(busyAt([node('', true)]))
+    const first = t.takeSettled(40)
+    expect([...first, ...t.takeSettled(40, true)]).toEqual(['', ...renderMarkdown(streamed.text, 40, ansi)])
+  })
+})
+
+describe('split footer: sessions and reconnects', () => {
+  const inSession = (id: string, nodes: UINode[]): UITimeline => ({ ...timeline(nodes), sessionId: id })
+
+  it('writes a divider when the session changes after output, not when nothing was written before', () => {
+    const t = splitTimeline()
+    t.apply(inSession('s1', []))
+    t.apply(inSession('s2', [at(1, user('u', 'one'))]))
+    expect(t.takeSettled(30)).toEqual(['', 'one'])
+    t.apply(inSession('s3', [at(1, user('v', 'two'))]))
+    expect(t.takeSettled(30)).toEqual(['', '── session s3 ──', '', 'two'])
+    expect(t.takeSettled(30)).toEqual([])
+  })
+
+  it('after a reconnect rebuilds the same projection, writes only what is new, and keeps every written entry', () => {
+    const t = splitTimeline()
+    const before = [at(1, user('u', 'ask')), assistant('a', 2, 'answer', false)]
+    t.apply(idleAt(before))
+    expect(t.takeSettled(30)).toEqual(['', 'ask', '', 'answer'])
+    // The reopened timeline is a new object with new clones of every node, and something happened in the gap.
+    t.apply(idleAt([...before.map((node) => structuredClone(node)), at(3, user('w', 'while away'))]))
+    expect(t.takeSettled(30)).toEqual(['', 'while away'])
+    t.apply(idleAt([...before, at(3, user('w', 'while away'))]))
+    expect(t.takeSettled(30)).toEqual([])
+  })
+
+  it('says once that earlier output is missing when the window opens on a long history or leaves what was written behind', () => {
+    const t = splitTimeline()
+    t.apply(idleAt([at(5, user('u', 'late'))]), { hasEarlier: true })
+    expect(t.takeSettled(30)).toEqual(['', '⋯ earlier output is not shown here', '', 'late'])
+    t.apply(idleAt([at(5, user('u', 'late')), at(6, user('v', 'next'))]), { hasEarlier: true })
+    expect(t.takeSettled(30)).toEqual(['', 'next'])
+    // A gap longer than the window: nothing written is in it any more.
+    t.apply(idleAt([at(40, user('x', 'far later'))]), { hasEarlier: true })
+    expect(t.takeSettled(30)).toEqual(['', '⋯ earlier output is not shown here', '', 'far later'])
+  })
+})
+
+it('puts one blank row between blocks of different kinds and none inside a run of tool cards', () => {
+  const t = new Timeline({ rows: () => 20, reservedRows: () => 0, nodeView: view })
+  const reply: UINode = { kind: 'assistant', id: 'a', seq: 2, text: 'reply' }
+  t.apply(timeline([user('u', 'ask'), reply, tight('t1', 'one'), tight('t2', 'two'), user('v', 'again')]))
+  expect(t.render(30)).toEqual(['ask', '', 'reply', '', 'one', 'two', '', 'again'])
+  expect(t.transcript(30)).toEqual(['ask', 'reply', 'one', 'two', 'again'])
 })

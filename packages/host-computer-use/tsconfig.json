@@ -1,0 +1,35 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "resolveJsonModule": true
+  },
+  "include": ["src/**/*.ts", "src/computer-use/computer-use-driver-lock.json"],
+  "references": [
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../extension-api"
+    },
+    {
+      "path": "../host-common"
+    },
+    {
+      "path": "../host-infrastructure"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../protocol-validation"
+    },
+    {
+      "path": "../system-node"
+    }
+  ]
+}

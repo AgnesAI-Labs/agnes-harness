@@ -1,6 +1,12 @@
 import { type Cursor, validateAgainst } from '@agnes/protocol'
 import { Cursor as CursorSchema } from '@agnes/protocol/gen/agnes-v1'
-import { type JournalStore, type PendingCommand, randomId, snapshotPending } from './journal.js'
+import {
+  type JournalStore,
+  type PendingCommand,
+  randomId,
+  snapshotPending,
+  upsertPending,
+} from './journal.js'
 import { journalCommandId } from './journal-command-id.js'
 
 export type JournalState = {
@@ -23,7 +29,8 @@ const command = (value: unknown): value is PendingCommand =>
   !!value.commandId &&
   typeof value.method === 'string' &&
   !!value.method &&
-  Object.hasOwn(value, 'params')
+  Object.hasOwn(value, 'params') &&
+  (value.state === undefined || value.state === 'needs-confirmation')
 
 export function freshJournal(clientId: string = randomId()): JournalState {
   if (typeof clientId !== 'string' || !clientId) throw invalidJournal()
@@ -82,7 +89,7 @@ export function storedJournal(transact: JournalTransaction): JournalStore {
     },
     async markPending(sessionId, pending) {
       const saved = snapshotPending(pending)
-      transact((s) => put(s.pending, sessionId, [...(own(s.pending, sessionId) ?? []), saved]), true)
+      transact((s) => put(s.pending, sessionId, upsertPending(own(s.pending, sessionId) ?? [], saved)), true)
     },
     async clearPending(sessionId, commandId) {
       transact(

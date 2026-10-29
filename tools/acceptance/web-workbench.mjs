@@ -14,7 +14,7 @@ if (!modulePath) {
   process.exit(0)
 }
 const { chromium } = await import(pathToFileURL(modulePath).href)
-const { createCredentialStore } = await import('../../packages/host/src/index.ts')
+const { createCredentialStore } = await import('@agnes/host')
 const { createClient, memoryJournal } = await import('../../packages/sdk/src/index.node.ts')
 const { createPrivateDirectorySync } = await import('../../packages/system-node/src/index.ts')
 const { startWorkbenchProvider } = await import('./workbench-provider.ts')
@@ -117,8 +117,8 @@ for (const [name, version, entry, label] of [
     `${JSON.stringify({ name: failurePackageId, version, type: 'module', license: 'MIT', private: true, agnes: { extensions: ['./extensions/main'] } }, null, 2)}\n`,
   )
   await writeFile(
-    join(destination, 'extensions/main/agnes.extension.json'),
-    `${JSON.stringify({ id: 'examples/client-panel-failure', version, apiRange: '^1.1', entry: './index.mjs', runtime: { supports: ['in-process'] }, capabilities: { ui: ['client'] }, contributes: { client: { entry: './client/index.js', styles: ['./client/index.css'], slots: ['ui:sidebar'], publicConfig: { label }, services: [], projections: [] } } }, null, 2)}\n`,
+    join(destination, 'extensions/main/package.json'),
+    `${JSON.stringify({ name: '@examples/client-panel-failure', version, type: 'module', private: true, exports: './index.mjs', agnes: { plugins: [{ id: 'ext:examples/client-panel-failure', export: 'default', apiRange: '^5.0.0', runtimeSupports: ['in-process'], capabilities: { ui: true }, contributes: { client: { entry: './client/index.js', styles: ['./client/index.css'], slots: ['ui:sidebar'], publicConfig: { label }, services: [], projections: [] } } }] } }, null, 2)}\n`,
   )
   await writeFile(join(destination, 'extensions/main/client/index.js'), entry)
   failureFixtures[name] = { type: 'file', ref: `file:./client-module-failure-fixtures/${name}` }
@@ -297,7 +297,6 @@ async function openSettingsAccount(page) {
 }
 async function fillWorkspacePath(page, value) {
   const input = page.locator('#new-session-cwd')
-  if (!(await input.isVisible())) await page.locator('#workspace-manual summary').click()
   await input.fill(value)
 }
 async function startNextTask(page) {
@@ -347,7 +346,7 @@ async function stopWeb() {
 }
 try {
   const launch = await launchWeb()
-  const ownerPath = join(home, 'data', 'daemon', 'owner.json')
+  const ownerPath = join(home, 'daemon', 'owner.json')
   const owner = JSON.parse(await readFile(ownerPath, 'utf8'))
   browser = await chromium.launch({ headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
@@ -412,6 +411,14 @@ try {
   await page.locator('#config-close').click()
   await page.locator('#config[open]').waitFor({ state: 'hidden' })
   await page.locator('#new').click()
+  // The picker opens on its own only without an available workspace; otherwise the chip opens it.
+  await page.waitForFunction(
+    () =>
+      document.querySelector('#new-session[open]') ||
+      document.querySelector('#composer-workspace:not([disabled])'),
+  )
+  if (!(await page.locator('#new-session[open]').isVisible()))
+    await page.locator('#composer-workspace').click()
   await page.locator('#new-session[open]').waitFor()
   await page.screenshot({ path: join(artifacts, '00-new-task.png'), fullPage: true, animations: 'disabled' })
   await fillWorkspacePath(page, cwd)

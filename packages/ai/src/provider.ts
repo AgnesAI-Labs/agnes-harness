@@ -1,12 +1,16 @@
+import type { ModelRequestTrace, ModelRequestTraceHandle } from '@agnes/extension-api'
 import type { CountResult, InferenceEvent, Provider, RequestBody, RouteTable } from '@agnes/protocol'
 import type { WireAdapter } from './adapter.js'
 import type { ContractStore } from './contract-store.js'
 import { resolveCredentials } from './credentials.js'
 import { createState, finish, step } from './decode/machine.js'
+import { proseCallRules } from './decode/prose-calls.js'
 import { PARSER_VERSION } from './decode/rules/index.js'
 import type { DecodeContext } from './decode/types.js'
 import { AiSetupError } from './errors.js'
 import { checkedResponse, guardSequence } from './guard.js'
+import { canonicalJson, sha256Hex } from './hash.js'
+import { InferenceTiming } from './inference-timing.js'
 import { buildRegistry, type Registry } from './registry.js'
 import { resolveSelection, SlotUnresolved } from './route.js'
 import { buildStamp, renderPrefixedPrompt, type SentReport } from './stamp.js'
@@ -17,6 +21,7 @@ import { estimateBilling, estimateCredits } from './usage.js'
 const DEFAULT_TIMEOUT = { firstToken: 120_000, total: 600_000 }
 
 export type InferenceDeps = {
+  trace?: ModelRequestTrace
   registry: Registry
   routes: RouteTable
   contract: ContractStore
@@ -49,6 +54,7 @@ export async function* runInference(
   req: RequestBody,
   opts: Parameters<Provider['infer']>[1],
 ): AsyncIterable<InferenceEvent> {
+  const timing = new InferenceTiming(deps.clock)
   let resolved: ReturnType<typeof resolveSelection>
   try {
     resolved = resolveSelection(deps.registry, req.slot, req.route, req.model)
@@ -94,22 +100,98 @@ export async function* runInference(
     }
     return
   }
+  // A payload is content only an adapter that reads it can act on. Refused here, ahead of the trace
+  // and of `sent`, so a misrouted request leaves no record of having been sent and nothing reaches
+  // an adapter that would drop what the caller meant. A request without a payload is not affected.
+  if (req.payload !== undefined && hit.adapter.acceptsPayload !== true) {
+    yield {
+      type: 'error',
+      reason: 'error',
+      code: 'CONTRACT_MISMATCH',
+      message: 'the selected adapter does not accept a payload',
+      retryable: false,
+    }
+    return
+  }
+  if (wireReq.sections && req.contractId !== null)
+    wireReq.sections = [
+      {
+        id: 'model:contract',
+        order: -1000,
+        source: `model-contract:${req.contractId}`,
+        text: wireReq.system.slice(0, wireReq.system.length - req.system.length - 1),
+      },
+      ...wireReq.sections,
+    ]
+  timing.prepared()
+  let trace: ModelRequestTraceHandle | undefined
+  try {
+    let endpoint: string | null = null
+    try {
+      const url = new URL(hit.decl.baseUrl)
+      endpoint = `${url.origin}${url.pathname}`
+    } catch {
+      /* Non-HTTP adapters have no endpoint identifier. */
+    }
+    const traceStore = deps.trace
+    if (traceStore)
+      trace = await timing.capture(() =>
+        traceStore.begin(wireReq, {
+          id: hit.adapter.id,
+          version: hit.adapter.version ?? null,
+          api: hit.decl.api,
+          endpoint,
+        }),
+      )
+  } catch {
+    /* Passive local capture cannot interrupt a request. */
+  }
+  const recordEvent = (event: unknown) => {
+    try {
+      trace?.event(event)
+    } catch {
+      /* Passive capture failure cannot alter the public inference stream. */
+    }
+  }
   let sentReport: SentReport | undefined
   let sentEmitted = false
   const emitSent = (): InferenceEvent => {
     sentEmitted = true
-    return { type: 'sent', stamp: buildStamp(req, deps.contract, deps.parserVersion, sentReport) }
+    return {
+      type: 'sent',
+      stamp: {
+        ...buildStamp(req, deps.contract, deps.parserVersion, sentReport),
+        ...(trace ? { requestTraceId: trace.id } : {}),
+      },
+    }
   }
-  // The clock starts where the turn does. Both figures on the timing block are measured from here,
-  // so they describe the same interval a caller timing this call from outside would have measured.
+  // Preserve the legacy adapter-start-to-output/usage samples; new fields include local capture.
   const startedAt = deps.clock()
   let ttftMs: number | undefined
   const markFirstToken = () => {
+    timing.output()
     if (ttftMs === undefined) ttftMs = Math.max(0, Math.round(deps.clock() - startedAt))
   }
   const streamOpts = {
+    reportDispatch: () => timing.dispatched(),
     reportSent: (report: SentReport) => {
       if (!sentEmitted) sentReport = structuredClone(report)
+    },
+    reportAttempt: async (event: import('@agnes/extension-api').ModelAdapterAttemptObservation) => {
+      try {
+        const attempt = trace?.attempt?.bind(trace)
+        if (attempt) await timing.capture(() => attempt(event))
+      } catch {
+        /* Passive attempt observation. */
+      }
+    },
+    reportRequest: async (body: unknown, attemptId?: string) => {
+      try {
+        const handle = trace
+        if (handle) await timing.capture(() => handle.wire(body, attemptId))
+      } catch {
+        /* A failed capture never changes transport. */
+      }
     },
     signal: opts.signal,
     toolNames: opts.toolNames,
@@ -121,8 +203,16 @@ export async function* runInference(
   // every wire protocol instead of being reimplemented per vendor. Its ordinals and the native
   // calls' come from one counter: they number the calls of a single turn, and a reader must be able
   // to order them without knowing how each one was carried.
+  //
+  // Reading calls out of prose is an opt-in of the model record: the text rules its toolCallFormats
+  // lists beside or instead of `native`. A record that declares only `native` gets none - a native
+  // model that quotes a call in its answer is describing one - and reasoning never yields a call.
   let ordinal = 0
-  const dctx: DecodeContext = { toolNames: opts.toolNames, nextOrdinal: () => ordinal++ }
+  const dctx: DecodeContext = {
+    toolNames: opts.toolNames,
+    recover: proseCallRules(resolved.model.toolCallFormats),
+    nextOrdinal: () => ordinal++,
+  }
   let dstate = createState()
   const flush = (): InferenceEvent[] => {
     const r = finish(dstate, dctx)
@@ -130,10 +220,12 @@ export async function* runInference(
     return r.events
   }
   let terminal = false
+  let outcome: Extract<InferenceEvent, { type: 'done' | 'error' }> | undefined
   try {
     for await (const ev of hit.adapter.stream(resolved.route, wireReq, streamOpts)) {
       if (!sentEmitted) yield emitSent()
       if (terminal) break
+      recordEvent(ev)
       if (ev.type === 'text_delta' || ev.type === 'thinking_delta') {
         const r = step(
           dstate,
@@ -186,25 +278,54 @@ export async function* runInference(
         // implementations are TypeScript-typed, but a remote decoder can still hand one an invalid
         // value; only the closed shape above is allowed onto the public stream.
         const { billing: _untrustedBilling, response, ...usage } = ev
+        // Credits the adapter did not state come from the gateway's own dollars when it billed the
+        // request (a subscription has no per-request price to derive them from), and from the
+        // catalogue otherwise. The source follows the figure: it says `gateway` only when a gateway
+        // supplied the number, whatever label the adapter attached.
+        const gatewayCredits =
+          ev.credits === undefined && safeBilling?.source === 'gateway' && !safeBilling.subscription
+            ? Math.max(0, Math.round((safeBilling.usdMicros / 1e6) * deps.creditsPerUsd * 1e6) / 1e6)
+            : undefined
         yield {
           ...usage,
           ...checkedResponse(response),
-          credits: ev.credits ?? estimateCredits(resolved.model, ev.tokens, deps.creditsPerUsd),
+          credits:
+            ev.credits ?? gatewayCredits ?? estimateCredits(resolved.model, ev.tokens, deps.creditsPerUsd),
+          creditSource:
+            ev.credits !== undefined
+              ? ev.creditSource
+              : gatewayCredits !== undefined
+                ? 'gateway'
+                : 'estimated',
           ...(safeBilling ? { billing: safeBilling } : {}),
           timing: {
+            ...timing.snapshot(false),
             ...(ttftMs !== undefined ? { ttftMs } : {}),
             durationMs: Math.max(0, Math.round(deps.clock() - startedAt)),
           },
         }
         continue
       }
-      if (ev.type === 'done' || ev.type === 'error') terminal = true
+      if (ev.type === 'done' || ev.type === 'error') {
+        terminal = true
+        timing.ended()
+        if (ev.type === 'error') yield { ...ev, timing: timing.snapshot(false) }
+        else outcome = ev
+        break
+      }
+      if (ev.type === 'media') timing.output()
       yield ev
     }
     if (!sentEmitted) yield emitSent()
     if (!terminal) {
-      for (const e of flush()) yield e
+      for (const e of flush()) {
+        timing.output()
+        yield e
+      }
+      recordEvent({ type: 'error', reason: 'error', code: 'TRANSPORT' })
+      timing.ended()
       yield {
+        timing: timing.snapshot(false),
         type: 'error',
         reason: 'error',
         code: 'TRANSPORT',
@@ -216,15 +337,31 @@ export async function* runInference(
     if (!sentEmitted) yield emitSent()
     // The thrown value's own text is not forwarded: it is written by the wire library and can quote
     // request material. What the caller needs is the class of failure and whether to retry.
-    if (!terminal)
+    if (!terminal) {
+      recordEvent({
+        type: 'error',
+        reason: opts.signal.aborted ? 'aborted' : 'error',
+        code: opts.signal.aborted ? 'ABORTED' : 'TRANSPORT',
+      })
+      timing.ended()
       yield {
+        timing: timing.snapshot(false),
         type: 'error',
         reason: opts.signal.aborted ? 'aborted' : 'error',
         code: opts.signal.aborted ? 'ABORTED' : 'TRANSPORT',
         message: e instanceof Error ? e.name : 'adapter failed',
         retryable: !opts.signal.aborted,
       }
+    }
+  } finally {
+    try {
+      const handle = trace
+      if (handle) await timing.capture(() => handle.finish())
+    } catch {
+      /* Local storage failure is isolated from inference. */
+    }
   }
+  if (outcome) yield { ...outcome, timing: timing.snapshot(true) }
 }
 
 /**
@@ -237,6 +374,7 @@ export async function* runInference(
  * here counts" (fall back to an estimate once) from "this route does not" (answered per request).
  */
 export function createProvider(opts: {
+  trace?: ModelRequestTrace
   adapters: WireAdapter[]
   routes: RouteTable
   contract: ContractStore
@@ -266,6 +404,7 @@ export function createProvider(opts: {
   if (opts.pricing?.creditsPerUsd === undefined)
     opts.log?.warn('no pricing.creditsPerUsd: cost ledger credits will be denominated in USD')
   const deps: InferenceDeps = {
+    ...(opts.trace ? { trace: opts.trace } : {}),
     registry,
     routes: opts.routes,
     contract: opts.contract,
@@ -282,6 +421,28 @@ export function createProvider(opts: {
     // promises a caller, and tests that build the deps by hand still reach the unguarded stream.
     infer: (req, o) => guardSequence(runInference(deps, req, o)),
     models: () => registry.models(),
+    describeRoute: (route, model) => {
+      const hit = registry.lookup(route)
+      if (!hit) return undefined
+      const adapter = { id: hit.adapter.id, version: hit.adapter.version ?? null }
+      // Only the host is reported. The digest stands in for everything else about where the route
+      // points - path, query, userinfo - so a caller can tell that the target changed without the
+      // base URL, which may carry credentials, ever leaving the facade.
+      let endpointHost: string | null = null
+      try {
+        endpointHost = new URL(hit.decl.baseUrl).host
+      } catch {
+        /* A base URL that does not parse has no host to report. */
+      }
+      return {
+        adapter,
+        api: hit.decl.api,
+        endpointHost,
+        routeDigest: sha256Hex(
+          canonicalJson({ baseUrl: hit.decl.baseUrl, api: hit.decl.api, adapter, model }),
+        ),
+      }
+    },
   }
   if (anyCounts) {
     provider.count = async (req, o): Promise<CountResult> => {

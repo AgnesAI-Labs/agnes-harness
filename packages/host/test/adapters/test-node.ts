@@ -1,4 +1,4 @@
-import type { ExecAdapter, ExecResult } from '../../src/adapters/exec.js'
+import type { ExecAdapter, ExecResult } from '@agnes/host-infrastructure/adapters/exec'
 
 type ExecOptions = Parameters<ExecAdapter['run']>[1]
 

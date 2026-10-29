@@ -1,13 +1,17 @@
+import { CoreError } from '@agnes/core-common/types'
 import type { HookPayloadMap, HookReturnMap } from '@agnes/extension-api'
 import { inspectJsonData, type JsonValue } from '@agnes/protocol'
 import type { HookSnapshot } from '../registry/hooks.js'
 import type { PromptSection } from '../request/contribute.js'
 import type { DeriveOutput } from '../request/derive.js'
 import { applyBeforeRequestPatches, applyContextResults, type ContextResult } from '../request/transforms.js'
+import { raisedRisk } from '../step/approval-ask.js'
 import type { HookPort } from '../step/session.js'
-import { CoreError } from '../types.js'
 import { type DispatchContext, HOOK_UNHANDLED, type HookEngine } from './engine.js'
 import { discoverResources, type ResourceDiscovery, type ResourceDiscoveryInputs } from './resources.js'
+
+type CachedContextResult = { ext: string; result: ContextResult; hook?: number }
+
 import { contextReturnToWire } from './returns.js'
 
 export type SessionHookInputs = {
@@ -41,6 +45,7 @@ export class SessionHookPort implements HookPort {
   }
 
   private turnSnapshot: HookSnapshot | undefined
+  private contextResults: CachedContextResult[] = []
 
   private snapshot(): HookSnapshot {
     this.turnSnapshot ??= this.engine.snapshot()
@@ -75,6 +80,7 @@ export class SessionHookPort implements HookPort {
     } finally {
       this.turnSnapshot = undefined
       this.discovered = { resources: [], contributions: [] }
+      this.contextResults = []
     }
   }
 
@@ -94,6 +100,7 @@ export class SessionHookPort implements HookPort {
 
   resetTurn(): void {
     this.turnSnapshot = this.engine.snapshot()
+    this.contextResults = []
     this.engine.resetTurn()
   }
 
@@ -104,11 +111,11 @@ export class SessionHookPort implements HookPort {
       this.inputs.context(),
       {
         snapshot: this.snapshot(),
-        terminal: (value) => value.block === true,
+        terminal: (value) => value.block === true || value.park === true,
       },
     )
     if (result.kind === 'rejected') return { block: true, reason: result.reason }
-    return result.results.find((entry) => entry.value.block)?.value ?? {}
+    return result.results.find((entry) => entry.value.block || entry.value.park)?.value ?? {}
   }
 
   async toolCall(p: Parameters<HookPort['toolCall']>[0]): ReturnType<HookPort['toolCall']> {
@@ -152,38 +159,59 @@ export class SessionHookPort implements HookPort {
     return result.results.find((entry) => entry.value.action === 'continue')?.value ?? { action: 'stop' }
   }
 
-  async context(base: PromptSection[]): Promise<{ sections: PromptSection[]; additionalContext: string }> {
-    const results: Array<{ ext: string; result: ContextResult }> = structuredClone(
-      this.discovered.contributions,
+  async refreshContext(base: PromptSection[]) {
+    return this.context(base, true)
+  }
+
+  async context(
+    base: PromptSection[],
+    refreshOnly = false,
+  ): Promise<{ sections: PromptSection[]; additionalContext: string; untrustedContext: string }> {
+    const results: CachedContextResult[] = structuredClone(
+      refreshOnly ? this.contextResults : this.discovered.contributions,
     )
+    const refresh = new Set(
+      results.filter((entry) => entry.result.refreshOnRequest).map((entry) => entry.hook),
+    )
+    const registrations = this.snapshot().entries('context')
     const initial = applyContextResults(base, results)
     let sections = initial.sections
     let additionalContext = initial.additionalContext
+    let untrustedContext = initial.untrustedContext
     let overflow = initial.overflow
-    const outcome = await this.engine.dispatch(
-      'context',
-      () => ({
-        sections: sections.map(({ text, ...section }) => ({ ...section, content: text })),
-        surfaceDigest: this.inputs.surfaceDigest(),
-        getSurface: () => this.inputs.surface(),
-      }),
-      this.inputs.context(),
-      {
-        snapshot: this.snapshot(),
-        accept: (value, source) => {
-          const entry = { ext: source, result: contextReturnToWire(value) }
-          const next = [...results, entry]
-          const applied = applyContextResults(base, next)
-          results.push(entry)
-          sections = applied.sections
-          additionalContext = applied.additionalContext
-          overflow = applied.overflow
+    for (const [hook, registration] of registrations.entries()) {
+      if (refreshOnly && !refresh.has(hook)) continue
+      const outcome = await this.engine.dispatch(
+        'context',
+        () => ({
+          sections: sections.map(({ text, ...section }) => ({ ...section, content: text })),
+          surfaceDigest: this.inputs.surfaceDigest(),
+          getSurface: () => this.inputs.surface(),
+        }),
+        this.inputs.context(),
+        {
+          snapshot: { entries: () => [registration] },
+          accept: (value, source) => {
+            const entry = { ext: source, result: contextReturnToWire(value), hook }
+            const index = refreshOnly ? results.findIndex((item) => item.hook === hook) : -1
+            if (index < 0) results.push(entry)
+            else results[index] = entry
+            const applied = applyContextResults(base, results)
+            sections = applied.sections
+            additionalContext = applied.additionalContext
+            untrustedContext = applied.untrustedContext
+            overflow = applied.overflow
+          },
         },
-      },
-    )
-    if (outcome.kind === 'rejected') {
-      if (outcome.blocked) throw outcome.blocked
-      rejected()
+      )
+      if (outcome.kind === 'rejected') {
+        if (outcome.blocked) throw outcome.blocked
+        // Registration attribution is safe to publish; the extension's exception text is not.
+        throw new CoreError(
+          'E_ENVELOPE',
+          `hook rejected transformation (context, ${outcome.source}, ${outcome.failure})`,
+        )
+      }
     }
     for (const item of overflow) {
       try {
@@ -192,7 +220,8 @@ export class SessionHookPort implements HookPort {
         /* diagnostic isolation */
       }
     }
-    return { sections, additionalContext }
+    this.contextResults = structuredClone(results)
+    return { sections, additionalContext, untrustedContext }
   }
 
   async toolResult(p: HookPayloadMap['tool_result']): Promise<HookReturnMap['tool_result']> {
@@ -216,8 +245,11 @@ export class SessionHookPort implements HookPort {
     return { result }
   }
 
-  async approvalRequest(p: HookPayloadMap['approval_request']): Promise<HookReturnMap['approval_request']> {
+  async approvalRequest(
+    p: HookPayloadMap['approval_request'],
+  ): Promise<HookReturnMap['approval_request'] & { rewrittenBy?: readonly string[] }> {
     let request: HookReturnMap['approval_request']['request']
+    const rewrittenBy = new Set<string>()
     // Same reasoning as toolResult above: fold the accumulated override back into the payload's own
     // `request` so a later handler builds on earlier accepted changes instead of overwriting them.
     // `risk`/`context`/`summary` are the only fields a return may touch, and `ApprovalRequest`
@@ -228,15 +260,20 @@ export class SessionHookPort implements HookPort {
       this.inputs.context(),
       {
         snapshot: this.snapshot(),
-        accept: (value) => {
-          if (value.request) request = { ...request, ...value.request }
+        accept: (value, source) => {
+          if (!value.request) return
+          // The risk only moves up along the waterfall: a later handler cannot undo an earlier raise.
+          const risk = raisedRisk(request?.risk ?? p.request.risk, value.request.risk)
+          request = { ...request, ...value.request, risk }
+          if (value.request.summary !== undefined || value.request.context !== undefined)
+            rewrittenBy.add(source)
         },
       },
     )
     if (outcome.kind === 'rejected') rejected()
     // `exactOptionalPropertyTypes` refuses `{ request: undefined }` as a stand-in for "absent": the
     // key itself must be missing when no waterfall member supplied an override.
-    return request === undefined ? {} : { request }
+    return request === undefined ? {} : { request, rewrittenBy: [...rewrittenBy] }
   }
 
   async requestError(p: HookPayloadMap['request_error']): Promise<void> {
@@ -288,6 +325,36 @@ export class SessionHookPort implements HookPort {
 
   async compact(p: HookPayloadMap['compact']): Promise<void> {
     await this.engine.dispatch('compact', () => p, this.inputs.context(), { snapshot: this.snapshot() })
+  }
+
+  async requestPatch(payload: HookPayloadMap['before_request']): Promise<HookReturnMap['before_request']> {
+    let patch: NonNullable<HookReturnMap['before_request']['patch']> = {}
+    const outcome = await this.engine.dispatch(
+      'before_request',
+      () => ({
+        ...payload,
+        request: {
+          ...payload.request,
+          samplingParams: { ...payload.request.samplingParams, ...patch.samplingParams },
+          ...(patch.maxTokens === undefined ? {} : { maxTokens: patch.maxTokens }),
+        },
+      }),
+      this.inputs.context(),
+      {
+        snapshot: this.snapshot(),
+        accept: (value: HookReturnMap['before_request']) => {
+          if (value.patch)
+            patch = {
+              ...patch,
+              ...value.patch,
+              samplingParams: { ...patch.samplingParams, ...value.patch.samplingParams },
+              metadata: { ...patch.metadata, ...value.patch.metadata },
+            }
+        },
+      },
+    )
+    if (outcome.kind === 'rejected') rejected()
+    return Object.keys(patch).length ? { patch } : {}
   }
 
   async beforeRequest(base: DeriveOutput, slot: string, attempt: number): Promise<DeriveOutput> {

@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { describe, expect, it, vi } from 'vitest'
 import { SHELL_SENTINEL } from '../extensions/tools-core/src/tools/shell.js'
 import { isolatedEcosystem } from '../src/hooks-isolation.js'

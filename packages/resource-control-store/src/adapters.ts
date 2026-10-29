@@ -7,6 +7,7 @@ import type {
   SafeError,
   SkillDescriptor,
   SkillRootStatus,
+  SkillScanObservation,
   TrustState,
 } from '@agnes/protocol'
 
@@ -18,6 +19,8 @@ export type SkillCatalogRefresh = Readonly<{
   /** Entries that looked like Skills but were skipped; their prior records are kept as stale. */
   skippedResourceIds?: readonly string[]
   roots?: readonly SkillRootStatus[]
+  /** Ephemeral scan diagnostics; deliberately excluded from journals and runtime snapshots. */
+  skillScanObservation?: SkillScanObservation
 }>
 export type SkillActualObservation = Readonly<{
   resourceId: string
@@ -29,6 +32,12 @@ export type SkillActualObservation = Readonly<{
 
 /** Host supplied catalogue: Daemon never imports bridges/base to discover Skills. */
 export type SkillCatalogAdapter = Readonly<{
+  /** Read-only current-instance projection. Runtime rows must never enter the journal. */
+  view?(input: {
+    profile: string
+    skills: readonly SkillDescriptor[]
+    signal: AbortSignal
+  }): Promise<readonly SkillDescriptor[]>
   validateRemove?(input: { profile: string; descriptor: SkillDescriptor }): Promise<void>
   remove?(input: { profile: string; descriptor: SkillDescriptor; signal: AbortSignal }): Promise<void>
   refresh(input: {

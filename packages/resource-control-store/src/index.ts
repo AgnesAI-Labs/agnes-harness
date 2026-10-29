@@ -18,6 +18,7 @@ export {
   RESOURCE_ALL_PERMISSIONS,
   type ResourceAuthority,
   type ResourceAuthorityResolver,
+  type ResourceEffectAdmission,
   requireResourceAuthority,
   requireSecretUse,
 } from './permissions.js'

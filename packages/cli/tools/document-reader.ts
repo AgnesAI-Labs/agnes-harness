@@ -1,4 +1,4 @@
-import { copyFile, cp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
+import { copyFile, cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,7 +12,7 @@ export const documentReaderSource = fileURLToPath(
 
 /** Assemble this ordinary plugin's pinned JS/WASM payload; no Office executable or native addon. */
 export async function prepareDocumentReader(destination = documentReaderSource): Promise<void> {
-  const runtime = join(destination, 'src', 'runtime')
+  const runtime = join(destination, 'dist', 'runtime')
   const assets = join(runtime, 'assets')
   const require = createRequire(join(documentReaderSource, 'package.json'))
   await mkdir(assets, { recursive: true })
@@ -69,4 +69,6 @@ export async function prepareDocumentReader(destination = documentReaderSource):
     ].every((name) => files.includes(name))
   )
     throw new Error('Document reader runtime payload is incomplete')
+  // Retire the previous generated output; source files and their notices remain in src.
+  await rm(join(destination, 'src', 'runtime'), { recursive: true, force: true })
 }

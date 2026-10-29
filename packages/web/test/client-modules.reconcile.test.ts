@@ -4,13 +4,19 @@
 import { Context } from '@agnes/cordis'
 import {
   AgnesClientService,
+  type ClientContext,
   CommandService,
+  homeEntries,
+  homeNavigation,
   SessionService,
   SlotRegistry,
   ThemeService,
 } from '@agnes/web-client'
+import { Window } from 'happy-dom'
 import { createElement } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { readyRosterModules } from '../src/client-modules/reconcile/roster.js'
+import { prepareDocumentStyles } from '../src/client-modules/reconcile/styles.js'
 import {
   type ClientRoster,
   createReconciler,
@@ -74,6 +80,244 @@ function stubPlugin(ctx: Context, log: { loaded: string[]; disposed: string[] })
 }
 
 describe('client reconciler（WC10 前端状态机）', () => {
+  it.each(['en', 'zh-CN'] as const)(
+    'publishes primary roster navigation before importing and revokes failed/disabled rows in %s',
+    async (language) => {
+      const h = await harness()
+      stubPlugin(h.ctx, h)
+      const row: ReadyClientModule = {
+        ...mod('declared-page', 'v1'),
+        rowId: 'web:declared-page',
+        binding: {
+          owner: 'web:declared-page',
+          lifetime: 'profile',
+          availability: 'active',
+          packageId: 'declared-page',
+          integrity: 'v1',
+          profileId: 'test',
+          activationId: 'current',
+        },
+        homeEntries: [
+          {
+            id: 'declared-page',
+            placement: 'primary',
+            navigation: {
+              title: 'Device console',
+              titles: { 'zh-CN': '设备控制台' },
+              icon: 'cpu',
+              order: 40,
+            },
+          },
+        ],
+      }
+      let rows = [row]
+      const locale = zhLocaleService()
+      // LocaleService exposes the active UI language independently of module execution.
+      locale.setLocale(language)
+      const reconciler = createReconciler({
+        ctx: h.ctx,
+        source: { list: async () => roster(rows) },
+        importer: h.importer,
+        locale,
+      })
+      try {
+        await reconciler.reconcileNow()
+        expect(h.loaded).toEqual([])
+        expect(
+          readyRosterModules([
+            { rowId: 'web:disabled', enabled: false, phase: 'ready', moduleName: 'page' },
+            { rowId: 'web:failed', enabled: true, phase: 'blocked', moduleName: 'page' },
+          ]),
+        ).toEqual([])
+        const entry = homeEntries.get('declared-page')!
+        expect(entry).toMatchObject({ placement: 'primary', icon: 'cpu', order: 40 })
+        expect(locale.t(entry.titleKey)).toBe(language === 'zh-CN' ? '设备控制台' : 'Device console')
+        homeNavigation.open('declared-page')
+        await reconciler.reconcileNow()
+        expect(h.loaded).toContain(row.entryUrl)
+        // A declaration alone cannot substitute for the module's actual component registration.
+        expect(homeEntries.get('declared-page')).toBeUndefined()
+        rows = []
+        await reconciler.reconcileNow()
+        expect(homeEntries.get('declared-page')).toBeUndefined()
+        homeNavigation.close()
+        rows = [row]
+        await reconciler.reconcileNow()
+        expect(homeEntries.get('declared-page')).toBeDefined()
+        rows = [{ ...row, revision: 'broken', entryUrl: '/broken/index.js' }]
+        await reconciler.reconcileNow()
+        homeNavigation.open('declared-page')
+        await reconciler.reconcileNow()
+        expect(reconciler.snapshot().get('web:declared-page')?.phase).toBe('failed')
+        expect(homeEntries.get('declared-page')).toBeUndefined()
+        homeNavigation.close()
+        await reconciler.invalidate()
+        expect(homeEntries.get('declared-page')).toBeUndefined()
+      } finally {
+        homeNavigation.close()
+        rows = []
+        await reconciler.reconcileNow()
+        await h.ctx.fiber.dispose()
+      }
+    },
+  )
+  it.each([true, false])(
+    'keeps primary navigation (metadata: %s) through a generation gap and an overlapping replacement',
+    async (metadata) => {
+      const ctx = new Context()
+      await ctx.plugin(SlotRegistry)
+      new AgnesClientService(ctx, { sessions: { get: () => undefined } } as never)
+      new CommandService(ctx, async () => true)
+      new SessionService(ctx)
+      new ThemeService(ctx, 'light')
+      const locale = zhLocaleService()
+      ctx.provide('locale', locale)
+      const row: ReadyClientModule = {
+        ...mod('generation-page', 'v1'),
+        rowId: 'web:generation-page',
+        binding: {
+          owner: 'web:generation-page',
+          lifetime: 'profile',
+          availability: 'active',
+          packageId: 'generation-page',
+          integrity: 'v1',
+          profileId: 'test',
+          activationId: 'one',
+        },
+        homeEntries: [
+          {
+            id: 'generation-page',
+            placement: 'primary',
+            ...(metadata
+              ? {
+                  navigation: {
+                    title: 'Generation page',
+                    icon: 'cpu',
+                    order: 40,
+                  },
+                }
+              : {}),
+          },
+        ],
+      }
+      let current = roster([row])
+      let release: (() => void) | undefined
+      let mounted: ClientContext | undefined
+      const reconciler = createReconciler({
+        ctx,
+        locale,
+        source: { list: async () => current },
+        importer: async () => {
+          if (release)
+            await new Promise<void>((resolve) => {
+              release = resolve
+            })
+          return {
+            apply(context: ClientContext) {
+              mounted = context
+              context.homeEntries.register({
+                id: 'generation-page',
+                placement: 'primary',
+                titleKey: 'Generation page',
+                icon: 'cpu',
+                order: 40,
+                component: () => null,
+              })
+            },
+          }
+        },
+      })
+      try {
+        await reconciler.reconcileNow()
+        homeNavigation.open('generation-page')
+        await reconciler.reconcileNow()
+        const previous = homeEntries.get('generation-page')
+        expect(previous).toBeDefined()
+        current = {
+          ...roster([]),
+          statuses: [
+            {
+              packageId: row.packageId,
+              installedRevision: 'v1',
+              backendRevision: null,
+              state: 'blocked',
+              reason: 'backend-revision-unavailable',
+            },
+          ],
+        }
+        await reconciler.invalidate()
+        expect(homeEntries.get('generation-page')).toBeDefined()
+        expect(mounted?.availability.getSnapshot()?.availability).toBe('disabled')
+        await reconciler.invalidate()
+        expect(homeEntries.get('generation-page')).toBeDefined()
+        current = roster([{ ...row, binding: { ...row.binding!, activationId: 'two' } }])
+        await reconciler.invalidate()
+        expect(homeEntries.get('generation-page')).toBeDefined()
+        expect(homeEntries.get('generation-page')).not.toBe(previous)
+        expect(mounted?.availability.getSnapshot()?.activationId).toBe('two')
+        release = () => {}
+        current = roster([{ ...row, binding: { ...row.binding!, activationId: 'three' } }])
+        const pending = reconciler.invalidate()
+        await vi.waitFor(() => expect(reconciler.snapshot().get(row.rowId!)?.phase).toBe('loading'))
+        expect(homeEntries.get('generation-page')).toBeDefined()
+        const overlap = reconciler.invalidate()
+        release?.()
+        release = undefined
+        await Promise.all([pending, overlap])
+        expect(homeEntries.get('generation-page')).toBeDefined()
+        expect(mounted?.availability.getSnapshot()?.availability).toBe('active')
+        expect(mounted?.availability.getSnapshot()?.activationId).toBe('three')
+        current = {
+          ...roster([]),
+          statuses: [
+            {
+              packageId: row.packageId,
+              installedRevision: 'v1',
+              backendRevision: null,
+              state: 'blocked',
+              reason: 'resources-invalid',
+            },
+          ],
+        }
+        await reconciler.invalidate()
+        expect(homeEntries.get('generation-page')).toBeUndefined()
+      } finally {
+        release?.()
+        homeNavigation.close()
+        current = roster([])
+        await reconciler.invalidate()
+        await ctx.fiber.dispose()
+      }
+    },
+  )
+  it('leaves custom renderer modules in their isolated host on initial load and hot reload', async () => {
+    const h = await harness()
+    const custom = {
+      ...mod('finance', 'v1'),
+      intelligentComponents: [
+        {
+          kind: 'finance/reconcile/diff@1',
+          propsSchema: true,
+          maxPropsBytes: 256,
+          fallback: 'Use table.',
+          accessibility: { label: 'Differences', keyboard: true as const },
+        },
+      ],
+    }
+    const reconciler = createReconciler({
+      ctx: h.ctx,
+      importer: h.importer,
+      source: { list: async () => roster([custom]) },
+    })
+    try {
+      await reconciler.reconcileNow()
+      await reconciler.reload('finance', 'v1')
+      expect(h.loaded).toEqual([])
+      expect(reconciler.snapshot()).toEqual(new Map())
+    } finally {
+      await h.ctx.fiber.dispose()
+    }
+  })
   it('真实 clientModule 以低 priority 替换已迁移区域，撤销名册后不会被下一次对账复活', async () => {
     const ctx = new Context()
     await ctx.plugin(SlotRegistry)
@@ -136,12 +380,16 @@ describe('client reconciler（WC10 前端状态机）', () => {
     const h = await harness()
     const log = { loaded: [] as string[], disposed: [] as string[] }
     stubPlugin(h.ctx, log)
-    const source = { list: async () => roster([mod('a', 'v1')]) }
+    let module = mod('a', 'v1')
+    const source = { list: async () => roster([module]) }
     const reconciler = createReconciler({ ctx: h.ctx, source, importer: h.importer })
     await reconciler.reconcileNow()
     await reconciler.reconcileNow()
     expect(log.loaded.filter((x) => x === 'apply:a')).toHaveLength(1)
     expect(h.loaded).toEqual(['/a/v1/index.js'])
+    module = { ...module, entryUrl: '/plugins/generations/next/a/v1/index.js' }
+    await reconciler.reconcileNow()
+    expect(h.loaded).toEqual(['/a/v1/index.js', '/plugins/generations/next/a/v1/index.js'])
   })
 
   it('rejects a DSH slot before import when the catalog version is missing', async () => {
@@ -280,6 +528,115 @@ describe('client reconciler（WC10 前端状态机）', () => {
     ])
   })
 
+  it.each(
+    [false, true].flatMap((nonce) =>
+      [
+        'success',
+        'script-first-fails',
+        'script-last-fails',
+        'styles-first-fail',
+        'styles-last-fail',
+        'revoked',
+      ].map((kind) => ({ nonce, kind })),
+    ),
+  )(
+    'prepares one module concurrently and settles both resources: $kind, nonce=$nonce',
+    async ({ kind, nonce }) => {
+      const h = await harness()
+      const log = { loaded: [] as string[], disposed: [] as string[] }
+      stubPlugin(h.ctx, log)
+      const fixture = new Window({ settings: { disableCSSFileLoading: true } })
+      if (nonce) {
+        const meta = fixture.document.createElement('meta')
+        meta.name = 'agnes-csp-nonce'
+        meta.content = 'page-nonce'
+        fixture.document.head.append(meta)
+      }
+      vi.stubGlobal('document', fixture.document)
+      let scriptDone!: () => void
+      const script = new Promise<void>((done) => {
+        scriptDone = done
+      })
+      let scriptStarted = false
+      let current = roster([styledMod('a', 'v1')])
+      const link = () => fixture.document.querySelector('[data-plugin="a"]')
+      const stylesDone = () =>
+        link()?.dispatchEvent(new fixture.Event(kind.startsWith('styles-') ? 'error' : 'load'))
+      const reconciler = createReconciler({
+        ctx: h.ctx,
+        source: { list: async () => current },
+        importer: async () => {
+          scriptStarted = true
+          await script
+          if (kind.startsWith('script-')) throw new Error('script unavailable')
+          return { inject: [], apply() {} }
+        },
+        prepareStyles: prepareDocumentStyles,
+      })
+      const loading = reconciler.reconcileNow()
+      try {
+        await vi.waitFor(() => {
+          expect(scriptStarted).toBe(true)
+          expect(link()).not.toBeNull()
+          if (nonce) {
+            expect(link()?.tagName).toBe('STYLE')
+            expect(link()?.getAttribute('nonce')).toBe('page-nonce')
+            expect(link()?.textContent).toContain('layer(app)')
+            expect(link()?.textContent).not.toContain('agnes_css_layer')
+          } else expect(link()?.getAttribute('href')).toContain('agnes_css_layer=app')
+        })
+        expect(link()?.getAttribute('media')).not.toBe('all')
+        let removed: Promise<void> | undefined
+        if (kind === 'revoked') {
+          current = roster([])
+          removed = reconciler.invalidate()
+          await vi.waitFor(() => expect(reconciler.snapshot().get('a')?.phase).toBe('idle'))
+        }
+        const scriptFirst = kind === 'script-first-fails' || kind === 'styles-last-fail'
+        if (scriptFirst) scriptDone()
+        else stylesDone()
+        await Promise.resolve()
+        expect(log.loaded).toEqual([])
+        expect(link()?.getAttribute('media')).not.toBe('all')
+        scriptDone()
+        stylesDone()
+        await loading
+        await removed
+        if (kind === 'success') {
+          expect(reconciler.snapshot().get('a')?.phase).toBe('active')
+          expect(log.loaded).toEqual(['apply:a'])
+          expect(link()?.getAttribute('media')).toBe('all')
+          current = roster([])
+          await reconciler.invalidate()
+        } else {
+          expect(reconciler.snapshot().get('a')).toMatchObject({
+            phase: kind === 'revoked' ? 'idle' : 'failed',
+            revision: undefined,
+            ...(kind === 'revoked'
+              ? {}
+              : {
+                  error: {
+                    code: kind.startsWith('script-')
+                      ? 'CLIENT_MODULE_IMPORT_FAILED'
+                      : 'CLIENT_MODULE_STYLES_FAILED',
+                  },
+                }),
+          })
+          expect(log.loaded).toEqual([])
+        }
+        expect(link()?.getAttribute('media')).not.toBe('all')
+        expect(fixture.document.querySelectorAll('[data-plugin]')).toHaveLength(0)
+      } finally {
+        scriptDone()
+        stylesDone()
+        await loading
+        await h.ctx.fiber.dispose()
+        await fixture.happyDOM.abort()
+        vi.unstubAllGlobals()
+      }
+    },
+  )
+
   it('样式加载失败保留旧版，并允许同 revision 再次触发时重试', async () => {
     const h = await harness()
     const log = { loaded: [] as string[], disposed: [] as string[] }
@@ -346,7 +703,11 @@ describe('client reconciler（WC10 前端状态机）', () => {
       packageId: 'a',
       revision: undefined,
       phase: 'failed',
-      error: { code: 'CLIENT_MODULE_IMPORT_FAILED', message: '插件 UI 入口加载失败，可重试' },
+      error: {
+        code: 'CLIENT_MODULE_IMPORT_FAILED',
+        phase: 'import',
+        message: '插件 UI 入口加载失败，可重试',
+      },
     })
     expect(updates.map((state) => state.phase)).toContain('loading')
     expect(updates.at(-1)?.phase).toBe('failed')
@@ -531,7 +892,7 @@ describe('client reconciler（WC10 前端状态机）', () => {
       source: {
         list: async () =>
           roster([
-            { ...mod('bad', 'v1'), slots: ['ui:sidebar'] },
+            { ...mod('bad', 'v1'), slots: ['ui:sidebar'], presentationRoles: ['deliverables'] },
             { ...mod('good', 'v1'), slots: ['ui:topbar'] },
           ]),
       },
@@ -539,13 +900,20 @@ describe('client reconciler（WC10 前端状态机）', () => {
         apply(pluginCtx: { slots: SlotRegistry }) {
           const slot = url.includes('/bad/') ? 'ui:sidebar' : 'ui:topbar'
           pluginCtx.slots.register(slot as never, () => createElement('div', {}, url), { priority: -1 })
-          if (url.includes('/bad/') && fail) throw new Error('fixture apply failure')
+          if (url.includes('/bad/') && fail)
+            throw new Error('file:///private/token=secret/fixture apply failure')
         },
       }),
     })
 
     await reconciler.reconcileNow()
-    expect(reconciler.snapshot().get('bad')).toMatchObject({ phase: 'failed', revision: undefined })
+    expect(reconciler.snapshot().get('bad')).toMatchObject({
+      packageId: 'bad',
+      phase: 'failed',
+      revision: undefined,
+      error: { code: 'CLIENT_MODULE_APPLY_FAILED', phase: 'apply', roles: ['deliverables'] },
+    })
+    expect(JSON.stringify(reconciler.snapshot().get('bad'))).not.toMatch(/secret|private|file:/)
     expect(reconciler.snapshot().get('good')).toMatchObject({ phase: 'active', revision: 'v1' })
     expect(slots.entriesOfSlot('ui:sidebar').map((entry) => entry.owner)).toEqual(['@agnes/web-sidebar'])
     expect(slots.entriesOfSlot('ui:topbar').map((entry) => entry.owner)).toEqual(['good'])
@@ -698,11 +1066,11 @@ describe('client reconciler（WC10 前端状态机）', () => {
     current = roster([mod('update-cleanup', 'v2')])
     await reconciler.invalidate()
     expect(disposed).toEqual(['v1'])
-    expect(reconciler.snapshot().get('update-cleanup')).toMatchObject({ phase: 'failed', revision: 'v1' })
+    expect(reconciler.snapshot().get('update-cleanup')).toMatchObject({ phase: 'active', revision: 'v2' })
 
     failOldDispose = false
     await reconciler.invalidate()
-    expect(disposed).toEqual(['v1', 'v1'])
+    expect(disposed).toEqual(['v1'])
     expect(applied).toEqual(['v1', 'v2'])
     expect(reconciler.snapshot().get('update-cleanup')).toMatchObject({ phase: 'active', revision: 'v2' })
   })
@@ -746,144 +1114,94 @@ describe('client reconciler（WC10 前端状态机）', () => {
     expect(log.loaded).toEqual(['apply:a', 'apply:a'])
   })
 
-  it('dispose 失败后再次 invalidate 会重试清理并保留真实 packageId，最终回到 idle', async () => {
-    const h = await harness()
-    const log = { loaded: [] as string[], disposed: [] as string[] }
-    const disposedStyles: string[] = []
-    stubPlugin(h.ctx, log)
-    let failDispose = true
-    ;(h.ctx as unknown as { plugin: unknown }).plugin = (modLike: unknown, config?: unknown) => {
-      void modLike
-      const id = (config as { packageId: string }).packageId
-      log.loaded.push(`apply:${id}`)
-      const fiber = {
-        async dispose() {
-          log.disposed.push(`dispose:${id}`)
-          if (failDispose) throw new Error('dispose failed')
-        },
+  it.each(['throws', 'times-out'] as const)(
+    'quarantines a disposer that %s and remounts the same id before the old promise settles',
+    async (mode) => {
+      const h = await harness()
+      let release!: () => void
+      const pending = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const applied: string[] = []
+      ;(h.ctx as unknown as { plugin: unknown }).plugin = (_: unknown, config: { revision: string }) => {
+        applied.push(config.revision)
+        const fiber = {
+          async dispose() {
+            if (config.revision === 'v1') {
+              if (mode === 'throws') throw new Error('dispose failed')
+              await pending
+            }
+          },
+        }
+        return Object.assign(Promise.resolve(fiber), fiber)
       }
-      return Object.assign(Promise.resolve(fiber), fiber)
-    }
-    let current = roster([styledMod('cleanup-failure', 'v1')])
-    const reconciler = createReconciler({
-      ctx: h.ctx,
-      source: { list: async () => current },
-      importer: h.importer,
-      prepareStyles: async (target) => ({
-        activate() {},
-        dispose() {
-          disposedStyles.push(target.revision)
-        },
-      }),
-    })
+      let current = roster([mod('cleanup', 'v1')])
+      const reconciler = createReconciler({
+        ctx: h.ctx,
+        source: { list: async () => current },
+        importer: h.importer,
+        timeouts: { dispose: 10 },
+      })
+      await reconciler.reconcileNow()
+      current = roster([])
+      await reconciler.invalidate()
+      expect(reconciler.snapshot().get('cleanup')).toMatchObject({ phase: 'failed' })
+      current = roster([mod('cleanup', 'v2')])
+      await reconciler.invalidate()
+      expect(applied).toEqual(['v1', 'v2'])
+      expect(reconciler.snapshot().get('cleanup')).toMatchObject({ phase: 'active', revision: 'v2' })
+      release()
+      await Promise.resolve()
+      expect(reconciler.snapshot().get('cleanup')).toMatchObject({ phase: 'active', revision: 'v2' })
+    },
+  )
 
-    await reconciler.reconcileNow()
-    current = roster([])
-    await reconciler.invalidate()
-    expect(reconciler.snapshot().get('cleanup-failure')).toMatchObject({
-      packageId: 'cleanup-failure',
-      revision: 'v1',
-      phase: 'failed',
-    })
-    expect(disposedStyles).toEqual(['v1'])
-
-    failDispose = false
-    await reconciler.invalidate()
-    expect(log.disposed).toEqual(['dispose:cleanup-failure', 'dispose:cleanup-failure'])
-    expect(reconciler.snapshot().get('cleanup-failure')).toMatchObject({
-      packageId: 'cleanup-failure',
-      revision: 'v1',
-      phase: 'idle',
-    })
-  })
-
-  it('dispose 超时后再次 invalidate 会重新调用清理并最终回到 idle', async () => {
-    const h = await harness()
-    const log = { loaded: [] as string[], disposed: [] as string[] }
-    let releaseDispose!: () => void
-    const pendingDispose = new Promise<void>((resolve) => {
-      releaseDispose = resolve
-    })
-    let disposeCount = 0
-    ;(h.ctx as unknown as { plugin: unknown }).plugin = (modLike: unknown, config?: unknown) => {
-      void modLike
-      const id = (config as { packageId: string }).packageId
-      log.loaded.push(`apply:${id}`)
-      const fiber = {
-        async dispose() {
-          disposeCount += 1
-          log.disposed.push(`dispose:${id}`)
-          if (disposeCount === 1) await pendingDispose
-        },
+  it.each(['withdrawal', 'profile', 'session'] as const)(
+    'disposes an obsolete mount after %s without committing it',
+    async (superseded) => {
+      const h = await harness()
+      const log = { loaded: [] as string[], disposed: [] as string[] }
+      let releaseApply!: () => void
+      const gate = new Promise<void>((resolve) => {
+        releaseApply = resolve
+      })
+      ;(h.ctx as unknown as { plugin: unknown }).plugin = (modLike: unknown, config?: unknown) => {
+        void modLike
+        const id = (config as { packageId: string }).packageId
+        log.loaded.push(`apply:${id}`)
+        const fiber = {
+          async dispose() {
+            log.disposed.push(`dispose:${id}`)
+          },
+        }
+        return Object.assign(
+          gate.then(() => fiber),
+          fiber,
+        )
       }
-      return Object.assign(Promise.resolve(fiber), fiber)
-    }
-    let current = roster([mod('cleanup-timeout', 'v1')])
-    const reconciler = createReconciler({
-      ctx: h.ctx,
-      source: { list: async () => current },
-      importer: h.importer,
-      timeouts: { dispose: 10 },
-    })
-
-    await reconciler.reconcileNow()
-    current = roster([])
-    await reconciler.invalidate()
-    expect(reconciler.snapshot().get('cleanup-timeout')).toMatchObject({
-      packageId: 'cleanup-timeout',
-      revision: 'v1',
-      phase: 'failed',
-    })
-
-    const retry = reconciler.invalidate()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    releaseDispose()
-    await retry
-    expect(log.disposed).toEqual(['dispose:cleanup-timeout', 'dispose:cleanup-timeout'])
-    expect(reconciler.snapshot().get('cleanup-timeout')).toMatchObject({
-      packageId: 'cleanup-timeout',
-      revision: 'v1',
-      phase: 'idle',
-    })
-  })
-
-  it('过期 epoch 的旧挂载完成后只 dispose，不会在撤回后重新提交', async () => {
-    const h = await harness()
-    const log = { loaded: [] as string[], disposed: [] as string[] }
-    let releaseApply!: () => void
-    const gate = new Promise<void>((resolve) => {
-      releaseApply = resolve
-    })
-    ;(h.ctx as unknown as { plugin: unknown }).plugin = (modLike: unknown, config?: unknown) => {
-      void modLike
-      const id = (config as { packageId: string }).packageId
-      log.loaded.push(`apply:${id}`)
-      const fiber = {
-        async dispose() {
-          log.disposed.push(`dispose:${id}`)
-        },
+      let identity = 'profile-a:session-a:1'
+      let current = roster([mod('a', 'v1')])
+      const reconciler = createReconciler({
+        ctx: h.ctx,
+        source: { identity: () => identity, list: async () => current },
+        importer: h.importer,
+      })
+      const first = reconciler.reconcileNow()
+      while (log.loaded.length === 0) await new Promise((resolve) => setTimeout(resolve, 0))
+      current = roster([])
+      const removed = superseded === 'withdrawal' ? reconciler.invalidate() : undefined
+      if (superseded !== 'withdrawal') identity = `${superseded}-changed:2`
+      releaseApply()
+      await first
+      if (superseded !== 'withdrawal') {
+        expect(reconciler.snapshot().get('a')?.phase).not.toBe('active')
+        await reconciler.invalidate()
       }
-      return Object.assign(
-        gate.then(() => fiber),
-        fiber,
-      )
-    }
-    let current = roster([mod('a', 'v1')])
-    const reconciler = createReconciler({
-      ctx: h.ctx,
-      source: { list: async () => current },
-      importer: h.importer,
-    })
-    const first = reconciler.reconcileNow()
-    while (log.loaded.length === 0) await new Promise((resolve) => setTimeout(resolve, 0))
-    current = roster([])
-    const removed = reconciler.invalidate()
-    releaseApply()
-    await first
-    await removed
-    expect(log.disposed).toEqual(['dispose:a'])
-    expect(reconciler.snapshot().get('a')?.phase).toBe('idle')
-  })
+      await removed
+      expect(log.disposed).toEqual(['dispose:a'])
+      expect(reconciler.snapshot().get('a')?.phase).toBe('idle')
+    },
+  )
 
   it('名册源抛错：保持现状不崩，下次触发继续对账', async () => {
     const h = await harness()
@@ -1020,4 +1338,57 @@ describe('client reconciler（WC10 前端状态机）', () => {
     expect(performance.now() - started).toBeLessThan(120)
     await slow
   })
+})
+
+it('does not revive a withdrawn plugin from a late hot reload roster query', async () => {
+  const h = await harness()
+  stubPlugin(h.ctx, h)
+  const plugin = mod('withdrawn', 'v1')
+  let release!: (value: ClientRoster) => void
+  let reading!: () => void
+  const started = new Promise<void>((resolve) => {
+    reading = resolve
+  })
+  let reads = 0
+  const reconciler = createReconciler({
+    ctx: h.ctx,
+    importer: h.importer,
+    source: {
+      list: async () => {
+        if (++reads === 1) return roster([plugin])
+        if (reads === 2) {
+          reading()
+          return new Promise<ClientRoster>((resolve) => {
+            release = resolve
+          })
+        }
+        return roster([])
+      },
+    },
+  })
+  await reconciler.reconcileNow()
+  const reload = reconciler.reload('withdrawn', 'v1')
+  await started
+  const withdrawn = reconciler.invalidate()
+  // The fresh query must be able to withdraw while the obsolete query is parked.
+  await withdrawn
+  expect(reconciler.snapshot().get('withdrawn')?.phase).toBe('idle')
+  release(roster([plugin]))
+  await reload
+  expect(reconciler.snapshot().get('withdrawn')?.phase).toBe('idle')
+  expect(h.disposed).toContain('dispose:withdrawn')
+})
+
+it('reuses an unchanged module URL and advances it only for explicit hot reload', async () => {
+  const { createModuleImportUrls } = await import('../src/client-modules/reconcile.js')
+  const urls = createModuleImportUrls()
+  const url = '/plugins/example/sha256-revision/src/client.js'
+  expect(urls.resolve(url)).toBe(url)
+  expect(urls.resolve(url)).toBe(url)
+  urls.invalidate(url)
+  expect(urls.resolve(url)).toBe(`${url}?agnes_hmr=1`)
+  expect(urls.resolve(url)).toBe(`${url}?agnes_hmr=1`)
+  urls.invalidate(url)
+  expect(urls.resolve(url)).toBe(`${url}?agnes_hmr=2`)
+  expect(urls.resolve(`${url}?source=local`)).toBe(`${url}?source=local`)
 })

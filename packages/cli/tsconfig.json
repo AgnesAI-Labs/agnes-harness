@@ -5,20 +5,36 @@
     "outDir": "dist"
   },
   "include": ["**/*.ts"],
-  "exclude": ["dist", "node_modules"],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "test",
+    "testkit",
+    "tools",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/test/**",
+    "**/tests/**",
+    "vitest.config.ts"
+  ],
   "references": [
-    { "path": "../system-node" },
     {
-      "path": "../../tsconfig.config.json"
+      "path": "../system-node"
     },
     {
       "path": "../protocol"
+    },
+    {
+      "path": "../core-common"
     },
     {
       "path": "../ai"
     },
     {
       "path": "../sdk"
+    },
+    {
+      "path": "../error-sanitization"
     },
     {
       "path": "../resource-control-cli"
@@ -28,9 +44,6 @@
     },
     {
       "path": "../cli-tui"
-    },
-    {
-      "path": "../cli-launch"
     },
     {
       "path": "../host"
@@ -49,6 +62,12 @@
     },
     {
       "path": "../web"
+    },
+    {
+      "path": "../observability"
+    },
+    {
+      "path": "../host-extensions"
     }
   ]
 }

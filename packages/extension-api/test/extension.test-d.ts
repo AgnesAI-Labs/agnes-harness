@@ -1,15 +1,22 @@
 import type { JsonValue } from '@agnes/protocol'
 import { describe, expectTypeOf, it } from 'vitest'
-import type { ExtensionAPI, ExtensionContext, ExtensionFactory, PlatformFacts } from '../src/index.js'
-import { defineExtension } from '../src/index.js'
+import type { ExtensionAPI, ExtensionFactory } from '../src/host.js'
+import type { ExtensionContext, PlatformFacts } from '../src/index.js'
 
 type RootHookEvent = import('../src/index.js').HookEvent
 
-describe('ExtensionAPI surface', () => {
+describe('ExtensionAPI backend surface', () => {
+  it('is exported from the host subpath only, never from the author root', () => {
+    // @ts-expect-error The author root exports the ctx facets, not the backend port behind them.
+    type LeakedPort = import('../src/index.js').ExtensionAPI
+    // @ts-expect-error The mount factory over that port is Host-internal too.
+    type LeakedFactory = import('../src/index.js').ExtensionFactory
+    expectTypeOf<[LeakedPort, LeakedFactory]>().toBeArray()
+  })
   it('registerHook is constrained by the HookEvent on the root surface', () => {
     expectTypeOf<Parameters<ExtensionAPI['registerHook']>[0]>().toEqualTypeOf<RootHookEvent>()
   })
-  it('has six register methods plus events, ctx and the legacy optional reader', () => {
+  it('has six register methods plus providers, events, ctx and the legacy optional reader', () => {
     expectTypeOf<keyof ExtensionAPI>().toEqualTypeOf<
       | 'registerService'
       | 'registerProjection'
@@ -17,8 +24,8 @@ describe('ExtensionAPI surface', () => {
       | 'registerHook'
       | 'registerSlot'
       | 'registerResource'
+      | 'providers'
       | 'events'
-      | 'latestExtEvent'
       | 'ctx'
     >()
   })
@@ -26,14 +33,6 @@ describe('ExtensionAPI surface', () => {
     expectTypeOf<ExtensionAPI>().not.toHaveProperty('registerSeam' as never)
     expectTypeOf<ExtensionAPI>().not.toHaveProperty('registerProvider' as never)
     expectTypeOf<ExtensionAPI>().not.toHaveProperty('registerOperation' as never)
-  })
-  it('latestExtEvent reads back this extension’s own most recent event (type-only; host wiring is I5)', () => {
-    // Optional: the two existing ExtensionAPI construction sites (host's old stub and the
-    // not-yet-wired Task22 implementation) don't implement it yet, and this task doesn't touch host.
-    expectTypeOf<ExtensionAPI>().toHaveProperty('latestExtEvent')
-    expectTypeOf<NonNullable<ExtensionAPI['latestExtEvent']>>().toEqualTypeOf<
-      (name: string) => JsonValue | undefined
-    >()
   })
   it('ctx exposes only id / version / trust / lease / log / signal / info / platform', () => {
     expectTypeOf<keyof ExtensionContext>().toEqualTypeOf<
@@ -66,10 +65,27 @@ describe('ExtensionAPI surface', () => {
     void [withBoth, withoutEither]
   })
   it('a factory returning nothing, a Disposer, or a promise of either all type-check', () => {
-    const nothing: ExtensionFactory = defineExtension(() => {})
-    const disposer: ExtensionFactory = defineExtension(() => () => {})
-    const asyncNothing: ExtensionFactory = defineExtension(async () => {})
-    const asyncDisposer: ExtensionFactory = defineExtension(async () => () => {})
+    const nothing: ExtensionFactory = () => {}
+    const disposer: ExtensionFactory = () => () => {}
+    const asyncNothing: ExtensionFactory = async () => {}
+    const asyncDisposer: ExtensionFactory = async () => () => {}
     void [nothing, disposer, asyncNothing, asyncDisposer]
+  })
+})
+
+describe('plugin context facets', () => {
+  it('lists every facet a plugin can inject', () => {
+    expectTypeOf<keyof import('../src/index.js').PluginContextFacets>().toEqualTypeOf<
+      | 'tools'
+      | 'hooks'
+      | 'projections'
+      | 'services'
+      | 'slots'
+      | 'resources'
+      | 'eventLog'
+      | 'providers'
+      | 'self'
+      | 'profileRuntime'
+    >()
   })
 })

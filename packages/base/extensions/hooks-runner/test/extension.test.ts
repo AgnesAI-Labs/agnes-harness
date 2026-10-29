@@ -2,15 +2,10 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { HOOK_UNHANDLED, type SandboxSeam, WORKSPACE_HOOK_SANDBOX } from '@agnes/core'
 import { testFsPolicy } from '@agnes/core/testkit'
-import type {
-  ExtensionAPI,
-  HookContext,
-  HookEvent,
-  HookHandler,
-  HookPayloadMap,
-  HookReturnMap,
-} from '@agnes/extension-api'
+import type { HookContext, HookEvent, HookHandler, HookPayloadMap, HookReturnMap } from '@agnes/extension-api'
 import { unavailableProjections } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it, vi } from 'vitest'
 import { createEcosystemExtensions } from '../../../src/ecosystem.js'
 import { fakeSeamInit } from '../../../testkit/seam-init.js'
@@ -118,9 +113,11 @@ describe('hooksRunnerExtension', () => {
       truncated: false,
     }))
     const state = fakeApi()
-    await preparedHooksRunnerExtension(fakeSeamInit(), { map, sandbox: sandbox(exec) }, [
-      { event: 'UserPromptSubmit', hooks: [{ type: 'command', command: 'once' }] },
-    ])(state.api)
+    await extensionFactoryOf(
+      preparedHooksRunnerExtension(fakeSeamInit(), { map, sandbox: sandbox(exec) }, [
+        { event: 'UserPromptSubmit', hooks: [{ type: 'command', command: 'once' }] },
+      ]),
+    )(state.api)
     const contextual = state.handlers.get('context')
     if (!contextual) throw new Error('context handler missing')
     const payload: HookPayloadMap['context'] = {
@@ -145,9 +142,11 @@ describe('hooksRunnerExtension', () => {
       truncated: false,
     }))
     const state = fakeApi()
-    await preparedHooksRunnerExtension(fakeSeamInit(), { map, sandbox: sandbox(exec) }, [
-      { event: 'UserPromptSubmit', hooks: [{ type: 'command', command: 'once' }] },
-    ])(state.api)
+    await extensionFactoryOf(
+      preparedHooksRunnerExtension(fakeSeamInit(), { map, sandbox: sandbox(exec) }, [
+        { event: 'UserPromptSubmit', hooks: [{ type: 'command', command: 'once' }] },
+      ]),
+    )(state.api)
     const before = state.handlers.get('before_step')
     const contextual = state.handlers.get('context')
     if (!before || !contextual) throw new Error('UserPromptSubmit handlers missing')
@@ -183,9 +182,11 @@ describe('hooksRunnerExtension', () => {
       truncated: false,
     }))
     const state = fakeApi()
-    await preparedHooksRunnerExtension(fakeSeamInit(), { map, sandbox: sandbox(exec) }, [
-      { event: 'UserPromptSubmit', hooks: [{ type: 'command', command: 'once' }] },
-    ])(state.api)
+    await extensionFactoryOf(
+      preparedHooksRunnerExtension(fakeSeamInit(), { map, sandbox: sandbox(exec) }, [
+        { event: 'UserPromptSubmit', hooks: [{ type: 'command', command: 'once' }] },
+      ]),
+    )(state.api)
     const before = state.handlers.get('before_step')
     if (!before) throw new Error('before_step handler missing')
     const payload: HookPayloadMap['before_step'] = {
@@ -222,9 +223,11 @@ describe('hooksRunnerExtension', () => {
   it('preserves UserPromptSubmit blocking at before_step', async () => {
     const exec = vi.fn(async () => ({ code: 2, stdout: '', stderr: 'denied', truncated: false }))
     const state = fakeApi()
-    await preparedHooksRunnerExtension(fakeSeamInit(), { map, sandbox: sandbox(exec) }, [
-      { event: 'UserPromptSubmit', hooks: [{ type: 'command', command: 'block' }] },
-    ])(state.api)
+    await extensionFactoryOf(
+      preparedHooksRunnerExtension(fakeSeamInit(), { map, sandbox: sandbox(exec) }, [
+        { event: 'UserPromptSubmit', hooks: [{ type: 'command', command: 'block' }] },
+      ]),
+    )(state.api)
     const before = state.handlers.get('before_step')
     if (!before) throw new Error('before_step handler missing')
     expect(
@@ -239,9 +242,11 @@ describe('hooksRunnerExtension', () => {
   it('preserves a context-first UserPromptSubmit block for cold compaction', async () => {
     const exec = vi.fn(async () => ({ code: 2, stdout: '', stderr: 'cold denied', truncated: false }))
     const state = fakeApi()
-    await preparedHooksRunnerExtension(fakeSeamInit(), { map, sandbox: sandbox(exec) }, [
-      { event: 'UserPromptSubmit', hooks: [{ type: 'command', command: 'block' }] },
-    ])(state.api)
+    await extensionFactoryOf(
+      preparedHooksRunnerExtension(fakeSeamInit(), { map, sandbox: sandbox(exec) }, [
+        { event: 'UserPromptSubmit', hooks: [{ type: 'command', command: 'block' }] },
+      ]),
+    )(state.api)
     const contextual = state.handlers.get('context')
     const before = state.handlers.get('before_step')
     if (!contextual || !before) throw new Error('UserPromptSubmit handlers missing')
@@ -302,7 +307,7 @@ describe('hooksRunnerExtension', () => {
           }
     })
     const state = fakeApi()
-    const dispose = await hooksRunnerExtension(init, { map, sandbox: seam })(state.api)
+    const dispose = await extensionFactoryOf(hooksRunnerExtension(init, { map, sandbox: seam }))(state.api)
 
     expect(state.handlers.has('tool_call')).toBe(true)
     await expect(invoke(state, 'tool_call', toolCall('read'))).resolves.toEqual({ allow: true })
@@ -356,18 +361,22 @@ describe('hooksRunnerExtension', () => {
       },
     })
     const state = fakeApi()
-    const deniedNone = hooksRunnerExtension(init, {
-      map,
-      sandbox: sandbox(vi.fn(), { level: 'none', scope: [] }),
-    })(state.api)
+    const deniedNone = extensionFactoryOf(
+      hooksRunnerExtension(init, {
+        map,
+        sandbox: sandbox(vi.fn(), { level: 'none', scope: [] }),
+      }),
+    )(state.api)
     expect(state.handlers.size).toBeGreaterThan(0)
     await expect(deniedNone).rejects.toThrow('E_SANDBOX_UNAVAILABLE')
     expect(state.handlers.size).toBe(0)
 
-    const deniedFileOnly = hooksRunnerExtension(init, {
-      map,
-      sandbox: sandbox(vi.fn(), { level: 'full', scope: ['file'] }),
-    })(state.api)
+    const deniedFileOnly = extensionFactoryOf(
+      hooksRunnerExtension(init, {
+        map,
+        sandbox: sandbox(vi.fn(), { level: 'full', scope: ['file'] }),
+      }),
+    )(state.api)
     expect(state.handlers.size).toBeGreaterThan(0)
     await expect(deniedFileOnly).rejects.toThrow('E_SANDBOX_UNAVAILABLE')
     expect(state.handlers.size).toBe(0)
@@ -385,7 +394,7 @@ describe('hooksRunnerExtension', () => {
       return { code: 0, stdout: '', stderr: '', truncated: false }
     })
     const state = fakeApi()
-    await hooksRunnerExtension(init, { map, sandbox: seam })(state.api)
+    await extensionFactoryOf(hooksRunnerExtension(init, { map, sandbox: seam }))(state.api)
     await invoke(state, 'tool_call', toolCall('shell'))
     expect(ran).toEqual([['$SHELL', 'current']])
   })
@@ -393,10 +402,12 @@ describe('hooksRunnerExtension', () => {
   it('exposes the real factory through the ecosystem adapter', async () => {
     const init = fakeSeamInit()
     const state = fakeApi()
-    const initialized = createEcosystemExtensions(init).hooksRunner({
-      map,
-      sandbox: sandbox(vi.fn()),
-    })(state.api)
+    const initialized = extensionFactoryOf(
+      createEcosystemExtensions(init).hooksRunner({
+        map,
+        sandbox: sandbox(vi.fn()),
+      }),
+    )(state.api)
     // Registration is complete before the async factory result yields to configuration I/O.
     expect(state.handlers.size).toBeGreaterThan(0)
     await initialized
@@ -423,57 +434,66 @@ describe('trusted unconfined command Hooks', () => {
     const exec = vi.fn(async () => result)
     const state = fakeApi()
     await expect(
-      hooksRunnerExtension(init, { map, sandbox: sandbox(exec, partial) })(state.api),
+      extensionFactoryOf(hooksRunnerExtension(init, { map, sandbox: sandbox(exec, partial) }))(state.api),
     ).rejects.toThrow('E_SANDBOX_UNAVAILABLE')
     expect(exec).not.toHaveBeenCalled()
     expect(permits).not.toHaveBeenCalled()
     expect(state.handlers.size).toBe(0)
   })
-  it('uses the same configuration bytes, the bound exec and JSON stdin, and rechecks permission before every command', async () => {
-    const init = fakeSeamInit({
-      platform: { shell: () => 'powershell', fs: () => ({ pathSep: '\\', caseSensitive: false }) },
-      files: { '.agh/hooks.json': bytes },
-      preset: { sandbox: { on_unavailable: 'allow' } },
-    })
-    let allowed = true
-    const permits = vi.fn(
-      (source: string, value: string) => allowed && source === 'workspace' && value === digest,
-    )
-    init.trustedHookCommands = { allowsUnconfined: permits }
-    const exec = vi.fn(async () => result),
-      state = fakeApi()
-    const read = vi.spyOn(init.adapters.fs, 'read')
-    await hooksRunnerExtension(init, { map, sandbox: sandbox(exec, partial) })(state.api)
-    expect(read).toHaveBeenCalledTimes(1)
-    expect(exec).not.toHaveBeenCalled()
-    expect(await invoke(state, 'tool_call', toolCall('shell'))).toEqual({
-      allow: false,
-      reason: 'policy says no',
-    })
-    const call = exec.mock.calls[0] as unknown as [string[], { stdin: string; cwd: string }]
-    expect(call[0]).toEqual(['$SHELL', 'trusted-command'])
-    expect(JSON.parse(call[1].stdin)).toMatchObject({ session_id: context.session.key })
-    expect(state.warnings).toEqual([
-      {
-        message: 'trusted Hook commands run without process isolation',
-        fields: { source: 'workspace', configDigest: digest },
-      },
-    ])
-    allowed = false
-    await expect(invoke(state, 'tool_call', toolCall('shell'))).rejects.toThrow('E_SANDBOX_UNAVAILABLE')
-    expect(exec).toHaveBeenCalledTimes(1)
-  })
-  it.each(['missing', 'changed', 'wrong-source', 'required', 'deny', 'unbound', 'mixed'])(
+  it.each(['allow', 'allow-if-unimplemented'])(
+    'uses the bound exec and exact configuration grant, rechecking permission for %s',
+    async (onUnavailable) => {
+      const init = fakeSeamInit({
+        platform: { shell: () => 'powershell', fs: () => ({ pathSep: '\\', caseSensitive: false }) },
+        files: { '.agh/hooks.json': bytes },
+        preset: { sandbox: { on_unavailable: onUnavailable } },
+      })
+      let allowed = true
+      const permits = vi.fn(
+        (source: string, value: string) => allowed && source === 'workspace' && value === digest,
+      )
+      init.trustedHookCommands = { allowsUnconfined: permits }
+      const exec = vi.fn(async () => result),
+        state = fakeApi()
+      const read = vi.spyOn(init.adapters.fs, 'read')
+      await extensionFactoryOf(hooksRunnerExtension(init, { map, sandbox: sandbox(exec, partial) }))(
+        state.api,
+      )
+      expect(read).toHaveBeenCalledTimes(1)
+      expect(exec).not.toHaveBeenCalled()
+      expect(await invoke(state, 'tool_call', toolCall('shell'))).toEqual({
+        allow: false,
+        reason: 'policy says no',
+      })
+      const call = exec.mock.calls[0] as unknown as [string[], { stdin: string; cwd: string }]
+      expect(call[0]).toEqual(['$SHELL', 'trusted-command'])
+      expect(JSON.parse(call[1].stdin)).toMatchObject({ session_id: context.session.key })
+      expect(state.warnings).toEqual([
+        {
+          message: 'trusted Hook commands have no process isolation; Host execution policy still applies',
+          fields: { source: 'workspace', configDigest: digest },
+        },
+      ])
+      // A previously successful Hook must still surface a later Host refusal, without fallback.
+      exec.mockRejectedValueOnce(new Error('SANDBOX_UNAVAILABLE: Host revoked execution'))
+      await expect(invoke(state, 'tool_call', toolCall('shell'))).rejects.toThrow('Host revoked execution')
+      allowed = false
+      await expect(invoke(state, 'tool_call', toolCall('shell'))).rejects.toThrow('E_SANDBOX_UNAVAILABLE')
+      expect(exec).toHaveBeenCalledTimes(2)
+    },
+  )
+  // The Host owns required/deny checks at execution; this layer owns the exact Hook grant.
+  it.each(['missing', 'changed', 'wrong-source', 'unbound', 'mixed'])(
     'refuses %s without executing or registering a command',
     async (mode) => {
       const init = fakeSeamInit({
         platform: { shell: () => 'powershell', fs: () => ({ pathSep: '\\', caseSensitive: false }) },
         files: { '.agh/hooks.json': mode === 'changed' ? `${bytes} ` : bytes },
         preset: {
-          sandbox: { on_unavailable: mode === 'deny' ? 'deny' : 'allow', required: mode === 'required' },
+          sandbox: { on_unavailable: 'allow-if-unimplemented' },
         },
       })
-      if (mode === 'mixed') init.data.set('/home/u/.agh/hooks.json', enc.encode(bytes))
+      if (mode === 'mixed') init.data.set(`${init.profile.dataDir}/hooks.json`, enc.encode(bytes))
       if (mode !== 'missing')
         init.trustedHookCommands = {
           allowsUnconfined: (source, value) =>
@@ -482,10 +502,12 @@ describe('trusted unconfined command Hooks', () => {
       const exec = vi.fn(async () => result),
         state = fakeApi()
       await expect(
-        hooksRunnerExtension(init, {
-          map,
-          sandbox: sandbox(exec, mode === 'unbound' ? { level: 'none', scope: [] } : partial),
-        })(state.api),
+        extensionFactoryOf(
+          hooksRunnerExtension(init, {
+            map,
+            sandbox: sandbox(exec, mode === 'unbound' ? { level: 'none', scope: [] } : partial),
+          }),
+        )(state.api),
       ).rejects.toThrow('E_SANDBOX_UNAVAILABLE')
       expect(exec).not.toHaveBeenCalled()
       expect(state.handlers.size).toBe(0)
@@ -511,7 +533,7 @@ describe('trusted unconfined command Hooks', () => {
     )
     group.hooks.splice(0, 1, { type: 'command', command: 'replacement' })
     identity.configDigest = 'changed'
-    await factory(state.api)
+    await extensionFactoryOf(factory)(state.api)
     await invoke(state, 'tool_call', toolCall('shell'))
     expect(exec).toHaveBeenCalledWith(['$SHELL', 'original'], expect.anything())
   })
@@ -520,10 +542,12 @@ describe('trusted unconfined command Hooks', () => {
     const init = fakeSeamInit({ preset: { locale: 'en', surface: 'cli' } })
     const runHttp = vi.fn(async () => ({ exitCode: 2, stdout: '', stderr: 'blocked by workspace' }))
     const state = fakeApi()
-    await preparedHooksRunnerExtension(
-      init,
-      { map, sandbox: sandbox(vi.fn()), runHttp, workspaceSnapshots: true },
-      [],
+    await extensionFactoryOf(
+      preparedHooksRunnerExtension(
+        init,
+        { map, sandbox: sandbox(vi.fn()), runHttp, workspaceSnapshots: true },
+        [],
+      ),
     )(state.api)
     const handler = state.handlers.get('before_step')
     if (!handler) throw new Error('dynamic before_step handler was not registered')
@@ -575,10 +599,12 @@ describe('trusted unconfined command Hooks', () => {
     const firstExec = vi.fn(async () => ({ code: 0, stdout: '{}', stderr: '', truncated: false }))
     const secondExec = vi.fn(async () => ({ code: 0, stdout: '{}', stderr: '', truncated: false }))
     const state = fakeApi()
-    await preparedHooksRunnerExtension(
-      init,
-      { map, sandbox: sandbox(startupExec), workspaceSnapshots: true },
-      [],
+    await extensionFactoryOf(
+      preparedHooksRunnerExtension(
+        init,
+        { map, sandbox: sandbox(startupExec), workspaceSnapshots: true },
+        [],
+      ),
     )(state.api)
     const handler = state.handlers.get('tool_call')
     if (!handler) throw new Error('dynamic tool_call handler was not registered')
@@ -634,7 +660,7 @@ describe('PreCompact is an observer, never a compaction decision', () => {
   async function load(exec: SandboxSeam['exec']) {
     const init = fakeSeamInit({ files: { '.agh/hooks.json': bytes } })
     const state = fakeApi()
-    await hooksRunnerExtension(init, { map, sandbox: sandbox(exec) })(state.api)
+    await extensionFactoryOf(hooksRunnerExtension(init, { map, sandbox: sandbox(exec) }))(state.api)
     return state
   }
 
@@ -676,10 +702,12 @@ describe('PreCompact is an observer, never a compaction decision', () => {
     }
     const exec = vi.fn(async () => ok)
     const state = fakeApi()
-    await hooksRunnerExtension(init, {
-      map,
-      sandbox: sandbox(exec, { level: 'partial', scope: ['file'] }),
-    })(state.api)
+    await extensionFactoryOf(
+      hooksRunnerExtension(init, {
+        map,
+        sandbox: sandbox(exec, { level: 'partial', scope: ['file'] }),
+      }),
+    )(state.api)
     expect(await invoke(state, 'before_compact', beforeCompact)).toBe(HOOK_UNHANDLED)
     expect(exec).toHaveBeenCalledTimes(1)
     allowed = false
@@ -699,7 +727,7 @@ describe('PreCompact is an observer, never a compaction decision', () => {
       },
     })
     const state = fakeApi()
-    await hooksRunnerExtension(init, { map, sandbox: sandbox(exec) })(state.api)
+    await extensionFactoryOf(hooksRunnerExtension(init, { map, sandbox: sandbox(exec) }))(state.api)
     expect(await invoke(state, 'before_compact', beforeCompact)).toBe(HOOK_UNHANDLED)
     expect(exec).not.toHaveBeenCalled()
   })
@@ -723,4 +751,39 @@ describe('PreCompact is an observer, never a compaction decision', () => {
       vi.useRealTimers()
     }
   })
+})
+
+it('checks degraded Hook grants against each invocation workspace under allow-if-unimplemented', async () => {
+  const init = fakeSeamInit({
+    platform: { shell: () => 'powershell', fs: () => ({ pathSep: '\\', caseSensitive: false }) },
+    preset: { sandbox: { on_unavailable: 'allow-if-unimplemented' } },
+  })
+  init.trustedHookCommands = {
+    allowsUnconfined: (source, digest, root) =>
+      source === 'workspace' && digest === 'sha256-command' && root === '/workspace/two',
+  }
+  const exec = vi.fn(async () => ({ code: 0, stdout: '{}', stderr: '', truncated: false }))
+  const state = fakeApi()
+  await extensionFactoryOf(preparedHooksRunnerExtension(init, { map, workspaceSnapshots: true }, []))(
+    state.api,
+  )
+  const handler = state.handlers.get('tool_call')!
+  const invocation = (root: string) => ({
+    ...context,
+    session: { ...context.session, workspaceRoot: root },
+    workspaceHooks: {
+      workspaceDigest: 'sha256-command',
+      policyRevision: 'revision',
+      hooks: [{ event: 'PreToolUse', hooks: [{ type: 'command', command: 'trusted' }] }],
+    },
+    [WORKSPACE_HOOK_SANDBOX]: sandbox(exec, { level: 'partial', scope: ['file'] }),
+  })
+  await expect(handler(toolCall('shell'), invocation('/workspace/one'))).rejects.toThrow(
+    'E_SANDBOX_UNAVAILABLE',
+  )
+  expect(exec).not.toHaveBeenCalled()
+  await expect(handler(toolCall('shell'), invocation('/workspace/two'))).resolves.toEqual({ allow: true })
+  expect(exec).toHaveBeenCalledWith(['$SHELL', 'trusted'], expect.objectContaining({ cwd: '/workspace/two' }))
+  exec.mockRejectedValueOnce(new Error('SANDBOX_UNAVAILABLE: Host denies'))
+  await expect(handler(toolCall('shell'), invocation('/workspace/two'))).rejects.toThrow('Host denies')
 })

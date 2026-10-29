@@ -5,12 +5,32 @@
     "outDir": "dist",
     "resolveJsonModule": true
   },
-  "include": ["**/*.ts", "src/computer-use/computer-use-driver-lock.json"],
-  "exclude": ["dist", "node_modules"],
+  "include": ["**/*.ts"],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "test",
+    "testkit",
+    "tools",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/test/**",
+    "**/tests/**",
+    "vitest.config.ts"
+  ],
   "references": [
-    { "path": "../cordis" },
-    { "path": "../plugin-runtime" },
-    { "path": "../system-node" },
+    {
+      "path": "../cordis"
+    },
+    {
+      "path": "../model-adapters"
+    },
+    {
+      "path": "../plugin-runtime"
+    },
+    {
+      "path": "../system-node"
+    },
     {
       "path": "../resource-control-runtime"
     },
@@ -18,7 +38,49 @@
       "path": "../sandbox-remote"
     },
     {
+      "path": "../host-common"
+    },
+    {
+      "path": "../host-infrastructure"
+    },
+    {
+      "path": "../host-computer-use"
+    },
+    {
+      "path": "../host-artifacts"
+    },
+    {
+      "path": "../host-extensions"
+    },
+    {
+      "path": "../host-providers"
+    },
+    {
       "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../extension-api"
+    },
+    {
+      "path": "../package-manager"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../observability"
+    },
+    {
+      "path": "../git-worktree-contract"
+    },
+    {
+      "path": "../intelligent-ui-contract"
+    },
+    {
+      "path": "../distribution"
     }
   ]
 }

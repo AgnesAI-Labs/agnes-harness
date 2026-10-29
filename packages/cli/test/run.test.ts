@@ -1,0 +1,136 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { PassThrough, Readable, Writable } from 'node:stream'
+import { runHeadless } from '@agnes/sdk'
+import { afterEach, expect, it, vi } from 'vitest'
+import { parseArgs } from '../src/args.js'
+import { applyHeadlessBundle, loadHeadlessBundle } from '../src/boot/headless.js'
+import { commandHelp } from '../src/command-help.js'
+import { parseRunArgs, runCommand } from '../src/commands/run.js'
+import type { Booted } from '../src/types.js'
+
+vi.mock('@agnes/sdk', () => ({ runHeadless: vi.fn() }))
+const dirs: string[] = []
+afterEach(async () => {
+  vi.clearAllMocks()
+  await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+})
+it('owns the run grammar including stdin and refuses incomplete, duplicate and incompatible options', () => {
+  expect(commandHelp('run')).toContain('--bundle')
+  expect(commandHelp('run')).not.toContain('agh doctor')
+  expect(parseArgs(['--new', '-p', 'hi']).newSession).toBe(true)
+  expect(parseArgs(['tools', '--session', 's']).key).toBe('s')
+  expect(() => parseArgs(['--new', '--continue'])).toThrow('--new')
+  expect(parseArgs(['run', '--bundle', 'pkg#demo', '--input', '-', '--json']).rest).toContain('-')
+  expect(parseRunArgs(['--bundle', 'pkg#demo', '--input', '-', '--json'])).toMatchObject({
+    input: '-',
+    batch: false,
+  })
+  expect(() => parseRunArgs(['--bundle', 'pkg#demo', '--input', '-'])).toThrow('--json')
+  expect(() => parseRunArgs(['--bundle', 'pkg#demo', '--input', '-', '--json', '--batch'])).toThrow('folder')
+  expect(() => parseRunArgs(['--bundle', 'a', '--bundle', 'b'])).toThrow('duplicate')
+  expect(
+    parseRunArgs(['--bundle', 'pkg#demo', '--input', '-', '--json', '--permission', 'read-only']).args,
+  ).toMatchObject({ permission: 'read-only' })
+})
+it('runs folder inputs in stable order, streams each result and returns the first failure status', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'agh-batch-'))
+  dirs.push(dir)
+  await writeFile(join(dir, 'b.txt'), 'second')
+  await writeFile(join(dir, 'a.txt'), 'first')
+  const output: string[] = []
+  const stdout = new Writable({
+    write(chunk, _encoding, next) {
+      output.push(String(chunk))
+      next()
+    },
+  })
+  const close = vi.fn(async () => {})
+  const boot = vi.fn(
+    async () => ({ client: { workspace: { add: async () => ({}) } }, close }) as unknown as Booted,
+  )
+  vi.mocked(runHeadless).mockImplementation(async (_client, options) => {
+    const reason = options.input === 'first' ? 'blocked' : 'completed'
+    await options.write({
+      schemaVersion: 1,
+      runId: options.runId!,
+      sessionId: 's',
+      type: 'result',
+      reason,
+      lastSeq: 1,
+      eventsComplete: true,
+    })
+    return { sessionId: 's', reason, lastSeq: 1, eventsComplete: true }
+  })
+  expect(
+    await runCommand(
+      ['--bundle', 'pkg#demo', '--input', dir, '--batch', '--json', '--permission', 'read-only'],
+      {
+        cwd: dir,
+        stdin: Readable.from([]),
+        stdout,
+        boot,
+        signals: new PassThrough(),
+      },
+    ),
+  ).toBe(4)
+  expect(vi.mocked(runHeadless).mock.calls.map((call) => call[1].input)).toEqual(['first', 'second'])
+  expect(vi.mocked(runHeadless).mock.calls.map((call) => call[1].permission)).toEqual([
+    'read-only',
+    'read-only',
+  ])
+  expect(output.map((line) => JSON.parse(line).input)).toEqual([join(dir, 'a.txt'), join(dir, 'b.txt')])
+  expect(close).toHaveBeenCalled()
+})
+
+it('appends to every fresh run session and refuses to run when the daemon did not apply it', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'agh-append-run-'))
+  dirs.push(dir)
+  await writeFile(join(dir, 'rules.md'), 'Be brief.')
+  await writeFile(join(dir, 'in.txt'), 'go')
+  const detach = vi.fn(async () => {})
+  const get = vi.fn(async () => ({ sections: [{ text: 'base\n\nBe brief.' }] }))
+  const createSession = vi.fn(async () => ({ id: 'sess', detach }))
+  const run = (append: string[]) =>
+    runCommand(['--bundle', 'pkg#demo', '--input', join(dir, 'in.txt'), '--json', ...append], {
+      cwd: dir,
+      stdin: Readable.from([]),
+      stdout: new Writable({ write: (_c, _e, next) => next() }),
+      boot: async () =>
+        ({
+          client: { workspace: { add: async () => ({}) }, createSession, systemPrompt: { get } },
+          close: async () => {},
+        }) as unknown as Booted,
+      signals: new PassThrough(),
+    })
+  vi.mocked(runHeadless).mockImplementation(async (client, options) => {
+    await client.createSession({
+      cwd: dir,
+      ...(options.systemPromptAppend ? { systemPromptAppend: options.systemPromptAppend } : {}),
+    })
+    return { sessionId: 'sess', reason: 'completed', lastSeq: 1, eventsComplete: true }
+  })
+  expect(await run(['--append-system-prompt-file', 'rules.md'])).toBe(0)
+  expect(vi.mocked(runHeadless).mock.calls[0]?.[1].systemPromptAppend).toBe('Be brief.')
+  expect(get).toHaveBeenCalledWith({ sessionId: 'sess' })
+  // An older daemon ignored the field: the session is dropped and the input is reported as failed.
+  get.mockResolvedValueOnce({ sections: [{ text: 'base' }] })
+  expect(await run(['--append-system-prompt', 'Be brief.'])).toBe(1)
+  expect(detach).toHaveBeenCalledTimes(1)
+})
+
+it('loads Host bundle documents and applies a transient selection without mutating stored inputs', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'agh-bundle-'))
+  dirs.push(dir)
+  await writeFile(join(dir, 'bundle.json'), JSON.stringify({ profile: { toolPolicy: { readOnly: true } } }))
+  const bundle = await loadHeadlessBundle('./bundle.json', dir)
+  const original = { builtin: 'local-dev', adminBundles: ['installed#previous'] }
+  const next = applyHeadlessBundle(original, bundle)
+  expect(next.adminBundles).toEqual(['headless#run'])
+  expect(next.bundleCatalog?.['headless#run']?.document.profile?.toolPolicy).toEqual({ readOnly: true })
+  expect(original.adminBundles).toEqual(['installed#previous'])
+  expect(() => applyHeadlessBundle(original, { id: 'missing#bundle', catalog: {} })).toThrow()
+  await writeFile(join(dir, 'bundle.json'), JSON.stringify({ profile: { nonexistentCapability: true } }))
+  await expect(loadHeadlessBundle('./bundle.json', dir)).rejects.toThrow()
+})

@@ -1,45 +1,22 @@
 import { randomBytes } from 'node:crypto'
-import { createCredentialStore } from '@agnes/host'
 import { createOAuthHttpHandler, type OAuthHttpServerInfo } from '@agnes/resource-control-runtime'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { localPipeFactories } from '../src/boot/pipe-factory.js'
 import type { LocalBackend } from './backend.js'
 
-/**
- * Wires Task 4's `createOAuthHttpHandler` (packages/resource-control-runtime/src/oauth-http-handler.ts)
- * into this launcher process, the same way `localPackageAdmin`/`localResourceAdmin` wire their own
- * BFFs: a private Unix-socket SDK client is the sole authority for reading the daemon's managed MCP
- * server definitions (`_agnes/v1/mcp.servers.get`, already existing - not a new RPC method), never
- * exposed to the browser.
- *
- * `credentialStore` is the one exception to "everything durable lives only in the daemon process" -
- * `@agnes/host`'s `createCredentialStore` is a plain, atomic-per-file store (rename+fsync, no
- * in-memory journal to race against another process's own in-memory copy - see
- * packages/host/src/adapters/credential-files.ts), so constructing a second instance here, pointed
- * at the exact same `root` the daemon's own Host process uses (`backend.scope.home` -
- * `DaemonScope.home` is the identical anchor `createConfigurationService`/`createCredentialStore`
- * already use daemon-side, per packages/host/src/configuration.ts), is safe: writes to one
- * `secret://...` ref never collide with a concurrent write to a different ref, and this handler is
- * the only writer for any given MCP server's OAuth credential ref in practice (one browser-driven
- * callback per authorization attempt).
- *
- * `onAuthorizationStatus` (persisting `McpServerDescriptor.authorizationStatus`, the daemon's
- * single-writer `resource-control-store` journal) is wired here to `client.mcp.servers.oauth.
- * statusSet` - the daemon-local RPC method the mcp-oauth-authorization plan's Task 5 added for
- * exactly this purpose, reached over the same private Unix-socket `client` this file already uses
- * for `resolveServer`'s `mcp.servers.get` reads. Task 4 deliberately left this hook unconnected
- * because that RPC method did not exist yet (see oauth-http-handler.ts's module header and the
- * Task 4 report); this is that gap being closed, not a new design.
- */
+/** Browser redirects and PKCE belong to the launch origin; credential writes go to the daemon. */
 export function localOAuthAdmin(backend: LocalBackend, baseUrl: URL) {
   if (!backend.web) throw new Error('local Web credential is unavailable')
   const clientId = `oauth-admin-web-${backend.scope.scopeID}`
-  const client = createClient({
-    transport: { kind: 'unix', path: backend.socketPath },
-    transportFactories: localPipeFactories(backend.socketPath, backend.scope),
-    auth: { kind: 'local' },
-    journal: memoryJournal(clientId),
-  })
+  const open = () =>
+    createClient({
+      transport: { kind: 'unix', path: backend.socketPath },
+      transportFactories:
+        backend.link?.transportFactories() ?? localPipeFactories(backend.socketPath, backend.scope),
+      auth: { kind: 'local' },
+      journal: memoryJournal(clientId),
+    })
+  const client = backend.link ? backend.link.client(open) : open()
   let ready: Promise<unknown> | undefined
   const initialize = () =>
     (ready ??= client.initialize().catch((error: unknown) => {
@@ -67,7 +44,17 @@ export function localOAuthAdmin(backend: LocalBackend, baseUrl: URL) {
     }
   }
 
-  const credentialStore = createCredentialStore({ root: backend.scope.home })
+  const credentialStore = {
+    async putOAuth(ref: string, credential: import('@agnes/resource-control-runtime').OAuthStoredCredential) {
+      const prefix = 'secret://mcp-oauth/'
+      if (!ref.startsWith(prefix)) throw new Error('OAuth reference is invalid')
+      await initialize()
+      await client.request('_agnes/v1/admin.mcp.oauth.save', {
+        serverId: ref.slice(prefix.length),
+        credential: { ...credential, scope: [...credential.scope] },
+      })
+    },
+  }
   // Signs/verifies this process's own `state` round trip only (see oauth-state.ts and
   // oauth-http-handler.ts's own doc comments on why nonce/registration bookkeeping is already
   // scoped to one process's lifetime) - a fresh random secret per `agnes serve` launch is

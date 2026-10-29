@@ -3,8 +3,9 @@
 // tool step of a real recorded session (the `batch-k1` golden recording): the same row types in the
 // same order, with ids, seqs and turn/step numbers rewritten. Op-mark rows keep the recorded shape
 // with only the call ids updated; nothing here folds them further.
-import type { Event, Seq } from '../src/types.js'
-import { expectedFromGolden, readGolden } from './record-transitions.js'
+import type { Event, Seq } from '@agnes/core-common/types'
+import { answeredDecision, pendingDecision } from '../../core-ledger/testkit/decision.js'
+import { readGolden } from './record-transitions.js'
 
 type Row = Omit<Event, 'seq' | 'id' | 'ts'> & { seq: Seq }
 
@@ -17,7 +18,7 @@ export function goldenLedger(name: string): Event[] {
 }
 
 function recordedRows(name: string): Row[] {
-  return expectedFromGolden(readGolden(name)).flatMap((commit) => commit.events as Row[])
+  return readGolden(name).flatMap((commit) => commit.events as Row[])
 }
 
 type Templates = {
@@ -130,16 +131,21 @@ export function* toolHeavyLedger(opts: {
       const common = { lane: 'main', v: 1, origin: 'system', trust: 'trusted', actor: t.actor } as const
       yield {
         ...common,
-        type: 'approval/asked',
-        data: { requestId, toolUseId, tool: 'read', bindingHash: 'h', scopes: [] },
+        type: 'decision/state',
+        register: 'decision/state',
+        data: pendingDecision(requestId, { operationId: toolUseId, actor: t.actor }),
         seq: ++seq,
         id: `tool-heavy-${seq}`,
         ts: '2025-09-07T00:00:00.000Z',
       } as Event
       yield {
         ...common,
-        type: 'approval/decided',
-        data: { requestId, verdict: 'allowed-once', via: 'sync', by: t.actor },
+        type: 'decision/state',
+        register: 'decision/state',
+        data: answeredDecision(
+          pendingDecision(requestId, { operationId: toolUseId, actor: t.actor }),
+          seq + 1,
+        ),
         seq: ++seq,
         id: `tool-heavy-${seq}`,
         ts: '2025-09-07T00:00:00.000Z',

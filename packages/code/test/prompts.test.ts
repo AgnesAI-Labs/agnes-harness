@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
+  defaultSystemPrompt,
   loadPrompt,
   PROMPT_SECTIONS,
   renderEnvironment,
@@ -19,13 +20,18 @@ const shippedFiles = readdirSync(promptsDir)
 describe('prompt section order table', () => {
   it('registers every section at its frozen order', () => {
     expect(PROMPT_SECTIONS.map((s) => [s.id, s.order])).toEqual([
-      ['persona', 100],
+      ['persona', 1],
       ['environment', 110],
+      ['workflow:receipts', 113],
+      ['tools-available', 115],
       ['agents-md', 120],
       ['coding-doctrine', 130],
       ['code-doctrine', 140],
       ['tools:sdk', 150],
       ['skills', 160],
+      ['plan-mode', 162],
+      ['persistent-goal', 164],
+      ['session-query', 168],
       ['channel-style', 170],
     ])
     expect(sectionOrder('code-doctrine')).toBe(140)
@@ -43,10 +49,18 @@ describe('prompt section order table', () => {
 
   it('records who supplies each section, and registers the other packages only to reserve an order', () => {
     const byOwner = (owner: string) => PROMPT_SECTIONS.filter((s) => s.owner === owner).map((s) => s.id)
-    expect(byOwner('base')).toEqual(['agents-md', 'skills'])
+    expect(byOwner('base')).toEqual([
+      'workflow:receipts',
+      'agents-md',
+      'skills',
+      'plan-mode',
+      'persistent-goal',
+      'session-query',
+    ])
     expect(byOwner('code')).toEqual([
       'persona',
       'environment',
+      'tools-available',
       'coding-doctrine',
       'code-doctrine',
       'tools:sdk',
@@ -68,13 +82,12 @@ describe('prompt section order table', () => {
     'channel-style.md': 'channel-style',
     'code-doctrine.md': 'code-doctrine',
     'coding-doctrine.md': 'coding-doctrine',
-    'environment-powershell.md': 'environment',
     'environment.md': 'environment',
+    'environment-powershell.md': 'environment',
     'persona.md': 'persona',
   }
   // Loaded directly by renderTools() (code-mode/environment.ts), not registered in PROMPT_SECTIONS:
-  // their content moved out of the assembled system prompt and into the runtime-context tail message,
-  // so there is no section id left for them to serve.
+  // the renderer selects the available/none variant for the tools-available section.
   const NON_SECTION_FILES = ['tools-available.md', 'tools-none.md']
 
   it('ships exactly the prompt files the table accounts for', () => {
@@ -116,14 +129,18 @@ const PROMPT_TEXT: Record<string, string> = {
     '- Put file contents and long output behind an artifact reference rather than pasting them.',
   ].join('\n'),
   'code-doctrine': [
-    'You act by writing code. One `run_code` call is one program, not one command.',
+    'You act by writing code. One run_code call is one program in a fresh managed process.',
     '',
-    '- Variables, imports, and helper functions persist across cells in this kernel. Build on what you already defined.',
-    '- `%%bash` must be the first line of a cell to run shell. Each `%%bash` cell is a throw-away subshell: `cd`, `export`, and shell variables do not carry to later cells. Python state does.',
-    '- Assign large reads and searches to named variables and print only a summary. Never dump a whole file or a whole search result into the transcript.',
-    '- Do not poll with `time.sleep` or a shell `sleep`. Start long work, record its handle, end the turn, and collect the result next turn.',
-    "- Do not install dependencies into this kernel to make an external project import or run. Use that project's own environment through `%%bash`.",
-    '- Every `await tools.<name>(...)` call goes back through the harness: approval, sandbox, and accounting all apply, and each call can raise `agnes.BridgeError`. Catch it and adapt rather than letting the whole cell die.',
+    '- Use top-level await and return. TypeScript is the official PTC language; CPython is experimental when configured.',
+    '- Variables and imports do not persist across cells. Store durable outputs as files or artifacts through harness tools.',
+    '- Call harness tools with await tools.<name>({ ...arguments }). Tool parameter declarations appear in the SDK section.',
+    '- Every nested tool call uses the harness approval, budget, validation and sandbox path. Await all calls; the preset caps how many run concurrently (four by default).',
+    '- Assign large results to variables and print summaries. Do not dump whole files into the transcript.',
+    '- Use tools.shell for commands. Shell permissions and network restrictions still apply.',
+    '- Use tools.workflow for sequential stages with parallel child members, and retain its runId to resume an interrupted run.',
+    '- Only what a cell prints or returns comes back to you; results of tools called inside the cell stay out of your context.',
+    "- Error code 1006 means a nested call is waiting for the user's approval: end the cell and say so. An approved call has already run; its result arrives as a [nested result] note — do not run it again.",
+    '- If several calls got 1006, only one waits for approval; the others were withdrawn and did not run — call them again after it is settled if they are still needed.',
   ].join('\n'),
   'coding-doctrine': [
     'When working with code or repository files:',
@@ -131,43 +148,45 @@ const PROMPT_TEXT: Record<string, string> = {
     '- Read the file before editing it. Never guess a path, an import name, or an API shape.',
     '- Create generated files, including Markdown and HTML, in the current workspace by default. Use paths relative to the cwd in the latest runtime context, such as `result.md` or `result.html`. A leading `/` is an absolute operating-system path, not a workspace prefix. Use a different destination only when the user explicitly requests it.',
     '- Change one thing at a time and verify it before moving on. Prefer the smallest edit that works.',
+    '- Decide up front what "done" means for the request: the result it asks for and the check that shows it works. Once that check passes, stop and report. Do not build or test behaviour the request did not ask for.',
+    '- If several attempts have not moved your measure of progress, step back to the most direct approach instead of building more tooling around the problem.',
+    '- When a helper script you wrote disagrees with a direct check, trust the direct check and fix or drop the helper.',
     '- Build large generated files, including HTML and SVG, across multiple tool calls. Write a small valid scaffold with unique section markers first, then replace one marker per edit call with a complete section. Aim for at most 8 KiB of new content per call, and retain a unique marker for each remaining section. Never attempt the entire large file in one tool call.',
     "- Run the project's own test or build command to check your work. If none exists, say so instead of inventing one.",
-    '- Name a cause only when output in this session shows it. Without that output, say the cause is unconfirmed and run a step that would show it.',
-    "- Never print a secret's value (an API key, token or password); to check one, test only whether it is set.",
     '- Keep output short. Report what changed, what you verified, and what is still open.',
     '- Leave the workspace consistent: no half-applied edits, no stray files.',
   ].join('\n'),
+  'environment-powershell':
+    "Run shell commands directly in the Host-selected PowerShell interpreter. Do not wrap them in another powershell/pwsh -Command. Use curl.exe when you need native curl, and PowerShell here-strings for multiline text. Use -Encoding utf8 for text file reads and writes. Follow the measured interpreter version: Windows PowerShell 5.1 does not support && or ||. Python commands receive UTF-8 and unbuffered output defaults. A timeout alone does not identify its cause; inspect captured output and current state before retrying. Never print a secret's value; check only whether it is set.",
   environment: [
     'Your situation on this request. Every line is a fact the harness measured; none of it is a guess.',
     '',
     '- Harness: Agnes Harness {{agnesVersion}}.',
     '- Platform: {{platform}}. Shell dialect for any shell tool: {{shell}}.',
-    '- Transcript: this session is an append-only event ledger the harness keeps under the session key stated in the most recent message beginning "[runtime context]". Your requests, your answers, every tool call and every tool result are rows in it. Nothing outside that ledger carries over between sessions.',
+    '- Transcript: this session is an append-only event ledger the harness keeps under the session key stated in the most recent message beginning "[runtime context]". Your requests, your answers, every tool call and every tool result are rows in it. History or memory from other sessions reaches you only through context the harness explicitly provides or tools you are authorized to call; do not assume anything else carries over.',
     '',
     'The UTC date, session key, answering model, preset, tool-disclosure mode, working directory, and operating-system sandbox level in force are stated in the most recent message beginning "[runtime context]", not here: those seven facts can change between requests or sessions, and restating them here would rewrite this section every time one does.',
   ].join('\n'),
-  'environment-powershell': [
-    'Shell commands already run inside PowerShell, so for them:',
-    '',
-    '- Write commands and `$` variables directly. Never wrap a command in `powershell -Command` or `pwsh -Command`: the outer shell expands `$` and quotes in that string before the inner one runs.',
-    '- `curl` and `wget` may be aliases of Invoke-WebRequest. Call `curl.exe`, or Invoke-WebRequest with its own parameters.',
-    "- No bash syntax: no heredoc, `export`, or, in Windows PowerShell 5.1, `&&` and `||`. Pipe a here-string into the program instead (`@'` ends its line and `'@` starts one; for example into `python -`), set `$env:NAME = 'value'`, and separate commands with `;`.",
-    '- Pass `-Encoding utf8` every time you read or write a file with Get-Content, Set-Content, Add-Content or Out-File.',
-  ].join('\n'),
   persona: [
-    'You are Agnes, a general-purpose AI agent powered by Agnes Harness. You help users understand problems, plan work, and complete tasks using the tools and capabilities available in the current session.',
+    'You are Agnes, a general-purpose AI agent developed by Agnes AI and powered by Agnes Harness. You help users understand problems, plan work, and complete tasks using the tools and capabilities available in the current session.',
     '',
     "Agnes Harness runs your execution loop, registers the tools you can call, enforces approval and sandboxing, and keeps this session's transcript. The harness and the model are separate: the harness supports different models, and your identity as Agnes does not depend on the model provider.",
     '',
     'Answer questions about what you are from this prompt and from the situation described below it, not from what you recall about yourself. Where a fact you need is not stated here, say you do not have it instead of supplying a plausible one.',
     '',
-    "Understand the user's goal and inspect relevant information before acting. Distinguish plans from actions you have actually taken, and explain results clearly.",
+    "Reply in the user's language unless they request another language. Keep that language throughout each reply, including progress updates and narration before and after tool calls. English tool descriptions, results, examples, or source text do not change the reply language; preserve exact code, identifiers, paths, and quotations when needed.",
+    '',
+    "Understand the user's goal and inspect relevant information before acting. Distinguish plans from actions you have actually taken, and explain results clearly. Describe material limitations in ordinary language; keep incidental runtime diagnostics in the execution record.",
+    "For questions about the workspace or a named local file, read the actual file relative to the session's working directory. Use that file as the source for calculations and conclusions. State the source and do not substitute example data or a requested target for observed values.",
     'You do not claim a task is done until the evidence for it exists in this session.',
     'When you cannot do something, you say so plainly and stop; you never simulate a result.',
+    '',
+    'Before delivering, reconcile internal contradictions (including dates, times and totals) against the source and correct your output. Do not infer unstated facts from related information. When the source makes the answer clear, complete the correction yourself; ask the user only for a genuinely unresolved decision.',
   ].join('\n'),
   'tools-available': [
-    "The tools named in this request's tools field are the complete set offered this turn. You have no others: no filesystem access, no command execution and no network access except through one of them. When a task needs something the list does not cover, say which capability is missing rather than describing what you would have done with it.",
+    'Use only tools offered in this request. When a capability is missing, use tool_search if offered, then tool_describe to load a matching deferred tool for subsequent requests. For plugin or Skill authoring, search for the version-matched authoring guide first, then describe the tools it recommends. Discovery grants no execution permission. If discovery finds nothing, explain the missing capability. Filesystem, command and network access require the corresponding tools.',
+    '',
+    'One response can carry several tool calls. Put independent calls, such as reads, searches and status checks, in the same response: read-only calls run together, and the rest run in the order given. Join dependent shell steps that need no inspection in between into one command (`&&` or a short script). Use a separate response only when the next step depends on reading a result.',
   ].join('\n'),
   'tools-none': [
     'You have no tools on this request. The harness registered none, so you cannot read or write files, run commands, or reach the network. Answer from this conversation alone, and say plainly when a question needs a capability you do not have.',
@@ -188,15 +207,16 @@ describe('prompt text', () => {
       expect(readFileSync(new URL(f, promptsDir), 'utf8'), f).not.toMatch(/[　-鿿＀-￯]/)
   })
 
-  it('code-doctrine carries every discipline of writing code against a live kernel', () => {
+  it('code-doctrine describes fresh cells and governed tool calls', () => {
     const t = loadPrompt('code-doctrine')
     for (const needle of [
-      'persist across cells',
-      '`%%bash` must be the first line',
-      'print only a summary',
-      'Do not poll with `time.sleep`',
-      'Do not install dependencies into this kernel',
-      'end the turn, and collect the result next turn',
+      'fresh managed process',
+      'do not persist across cells',
+      'top-level await and return',
+      'approval, budget, validation and sandbox',
+      'Await all calls',
+      'tools.shell',
+      'runId',
     ])
       expect(t, needle).toContain(needle)
   })
@@ -207,16 +227,20 @@ describe('prompt text', () => {
       'Read the file before editing it',
       'Change one thing at a time',
       "Run the project's own test or build command",
-      'Name a cause only when output in this session shows it',
-      "Never print a secret's value",
-      'test only whether it is set',
       'Keep output short',
+      'Once that check passes, stop and report',
+      'step back to the most direct approach',
+      'trust the direct check',
     ])
       expect(t, needle).toContain(needle)
   })
 
   it('environment.md is a template with the documented placeholders', () => {
     const t = loadPrompt('environment')
+    expect(t).not.toContain('Nothing outside that ledger carries over between sessions.')
+    expect(t).toContain(
+      'History or memory from other sessions reaches you only through context the harness explicitly provides or tools you are authorized to call; do not assume anything else carries over.',
+    )
     for (const p of ['{{platform}}', '{{shell}}', '{{agnesVersion}}']) expect(t, p).toContain(p)
     for (const moved of [
       '{{cwd}}',
@@ -243,7 +267,7 @@ describe('prompt text', () => {
 
   it('the tool templates never promise a capability the list does not carry', () => {
     expect(loadPrompt('tools-available')).not.toContain('{{')
-    expect(loadPrompt('tools-available')).toContain('complete set offered this turn')
+    expect(loadPrompt('tools-available')).toContain('Use only tools offered in this request')
     expect(loadPrompt('tools-none')).toContain('You have no tools on this request')
     expect(loadPrompt('tools-none')).not.toContain('{{')
   })
@@ -252,7 +276,9 @@ describe('prompt text', () => {
 describe('prompt rendering', () => {
   it('renders persona with no placeholders standing', () => {
     const text = renderPersona()
-    expect(text).toContain('You are Agnes, a general-purpose AI agent powered by Agnes Harness.')
+    expect(text).toContain(
+      'You are Agnes, a general-purpose AI agent developed by Agnes AI and powered by Agnes Harness.',
+    )
     expect(text).not.toContain('{{')
   })
 
@@ -260,8 +286,7 @@ describe('prompt rendering', () => {
     agnesVersion: '0.1.0',
     platform: 'darwin-arm64',
     shell: 'posix',
-    dialect: 'posix',
-  } as const
+  }
 
   it('fills every environment placeholder, leaving none standing', () => {
     const text = renderEnvironment(facts)
@@ -269,25 +294,16 @@ describe('prompt rendering', () => {
     for (const v of Object.values(facts)) expect(text, v).toContain(v)
   })
 
-  // Wrapping in `powershell -Command`, curl's flags on Invoke-WebRequest and heredocs all failed in
-  // real PowerShell sessions, so the rules against them follow the facts there and nowhere else.
-  it('appends the PowerShell rules where the shell speaks PowerShell, and only there', () => {
-    const rules = loadPrompt('environment-powershell')
-    const shell = 'PowerShell 5.1.26100.1 (Desktop); use PS5.1 syntax, without && or ||'
-    const powershell = renderEnvironment({ ...facts, shell, dialect: 'powershell' })
-    expect(powershell).toBe(`${renderEnvironment({ ...facts, shell })}\n\n${rules}`)
-    expect(powershell).toContain(shell)
-    for (const needle of ['`powershell -Command`', '`curl.exe`', 'here-string', '`-Encoding utf8`'])
-      expect(rules, needle).toContain(needle)
-    const posix = renderEnvironment(facts)
-    expect(posix).toBe(applyVars(loadPrompt('environment'), { ...facts }))
-    expect(posix).not.toContain(rules)
-    expect(posix).not.toMatch(/Invoke-WebRequest|here-string/)
-  })
-
-  it('states that the offered tools are complete, without enumerating them', () => {
+  it('requires offered tools and discovers missing schemas without granting permission', () => {
     const text = renderTools(['read', 'shell'])
-    expect(text).toContain('complete set offered this turn')
+    expect(text).toContain('Use only tools offered in this request')
+    expect(text).toContain('tool_search if offered, then tool_describe')
+    expect(text).toContain('Discovery grants no execution permission.')
+    expect(text).toContain('Filesystem, command and network access require the corresponding tools.')
+    expect(text).toContain(
+      'Put independent calls, such as reads, searches and status checks, in the same response',
+    )
+    expect(text.split('\n\n').at(-1)).toBe(PROMPT_TEXT['tools-available']?.split('\n\n').at(-1))
     expect(text).not.toContain('- read')
     expect(text).not.toContain('{{')
   })
@@ -295,7 +311,7 @@ describe('prompt rendering', () => {
   it('says there are none rather than saying the (empty) list is complete', () => {
     const text = renderTools([])
     expect(text).toContain('You have no tools on this request')
-    expect(text).not.toContain('complete set offered this turn')
+    expect(text).not.toContain('Use only tools offered in this request')
     expect(text).not.toContain('{{')
   })
 
@@ -316,4 +332,25 @@ describe('prompt rendering', () => {
     for (const s of PROMPT_SECTIONS)
       if (s.source === 'file') expect(loadPrompt(s.id), s.id).toBe(loadPrompt(s.id).trimEnd())
   })
+})
+
+it('composes deployment persona around plugin sections and makes full replacement explicit', () => {
+  expect(() =>
+    defaultSystemPrompt.compose({ fullOverride: 'replacement', personaPrefix: 'ambiguous' }, []),
+  ).toThrow('conflicts')
+  const defaults = defaultSystemPrompt.defaults()
+  expect(defaults.find((section) => section.id === 'persona')?.source).toBe('@agnes/code/prompts/persona.md')
+  const persona = defaults.find((section) => section.id === 'persona')!.text
+  expect(persona).toContain('reconcile internal contradictions')
+  expect(persona).toContain('Do not infer unstated facts')
+  expect(persona).toContain('complete the correction yourself')
+  const customized = defaultSystemPrompt.compose(
+    { personaPrefix: 'opening', personaSuffix: 'closing', replyStyle: 'concise' },
+    defaults,
+  )
+  expect(customized[0]?.text).toBe('opening')
+  expect(customized.slice(-2).map((section) => section.text)).toEqual(['closing', 'concise'])
+  expect(defaultSystemPrompt.compose({ fullOverride: 'business persona' }, defaults)).toEqual([
+    { id: 'deployment:full-override', order: 100, source: 'profile:system-prompt', text: 'business persona' },
+  ])
 })

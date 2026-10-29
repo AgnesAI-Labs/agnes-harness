@@ -1,0 +1,128 @@
+@layer app {
+  .agh-browser-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    min-width: 0;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--agnes-bg-card);
+  }
+  .agh-browser-address {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px;
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .agh-browser-address input {
+    min-width: 0;
+    flex: 1;
+    border-radius: 999px;
+    background: var(--agnes-bg-subtle);
+  }
+  .agh-browser-navigation {
+    display: flex;
+    flex: 0 0 auto;
+  }
+  .agh-browser-address > button,
+  .agh-browser-control {
+    flex: 0 0 auto;
+  }
+  .agh-browser-tabs {
+    padding-inline: 8px;
+  }
+  .agh-browser-tabs .ant-tabs-nav {
+    margin: 0;
+  }
+  .agh-browser-tabs .ant-tabs-tab-btn > span {
+    display: block;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agh-browser-tabs > :is(.ant-tabs-content-holder, .ant-tabs-body-holder) {
+    display: none;
+  }
+  .agh-browser-screen {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
+    margin: 10px;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 8px;
+    background: var(--agnes-bg-subtle);
+    overflow: hidden;
+  }
+  .agh-browser-screen[data-scale="actual"] {
+    overflow: auto;
+  }
+  .agh-browser-screen canvas {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+    border: 0;
+    cursor: pointer;
+  }
+  .agh-browser-screen[data-scale="actual"] canvas {
+    max-width: none;
+    max-height: none;
+  }
+  .agh-browser-screen[data-controlling="true"] canvas {
+    cursor: auto;
+  }
+  /* Keep a real focus/IME target near the clicked point, without a second visible editor. */
+  .agh-browser-screen .agh-browser-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    min-height: 0;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    opacity: 0;
+    pointer-events: none;
+    resize: none;
+    font-size: 16px;
+  }
+  .agh-browser-connection {
+    position: absolute;
+    right: 8px;
+    top: 8px;
+    padding: 4px 8px;
+    border-radius: 8px;
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-popover);
+    pointer-events: none;
+  }
+  .agh-browser-sr-only,
+  .agh-browser-connection[data-connected="true"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .agh-browser-events,
+  .agh-browser-panel > p {
+    padding: 12px;
+  }
+  .agh-browser-panel > :not(.agh-browser-screen) {
+    flex-shrink: 0;
+  }
+  .agh-browser-events {
+    max-height: 30%;
+    overflow: auto;
+  }
+  .agh-browser-panel [role="alert"] {
+    color: var(--agnes-status-danger-text);
+    overflow-wrap: anywhere;
+  }
+}

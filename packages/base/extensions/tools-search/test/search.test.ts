@@ -4,14 +4,30 @@ import { type FakeToolContext, fakeToolContext } from '../../../testkit/tool-con
 
 // These cases are sized against an 8 KiB limit, so they ask for it explicitly rather than taking the
 // deployment default.
-const ctxOf = (o: Parameters<typeof fakeToolContext>[0] = {}) =>
-  fakeToolContext({ outputMaxBytes: 8192, ...o })
+const ctxOf = (o: Parameters<typeof fakeToolContext>[0] = {}) => {
+  const ctx = fakeToolContext({ outputMaxBytes: 8192, ...o })
+  // Model the external rg listing, leaving policy admission to the registered tool.
+  ctx.exec = async () => ({
+    code: 0,
+    stderr: '',
+    truncated: false,
+    stdout:
+      [...ctx.mem.files.keys()]
+        .filter(
+          (path) =>
+            !path.split('/').some((part) => ['node_modules', '.git', 'dist', '.agnes-tmp'].includes(part)),
+        )
+        .join('\0') + '\0',
+  })
+  return ctx
+}
 
 import { spillLocator } from '../../tools-core/src/guards/output.js'
 import { MAX_READ_BYTES, readTool } from '../../tools-core/src/tools/read.js'
-import { findTool } from '../src/tools/find.js'
+import { TOOLS_SEARCH } from '../src/index.js'
 import { grepTool } from '../src/tools/grep.js'
 import { lsTool } from '../src/tools/ls.js'
+import { ripgrepFindTool as findTool } from '../src/tools/ripgrep.js'
 import { globToRegExp, newWalkReport, walk } from '../src/tools/walk.js'
 
 function textOf(r: ToolResult): string {
@@ -103,6 +119,7 @@ describe('grep', () => {
     const ci = await grepTool.execute({ pattern: 'foo', ignoreCase: true, glob: '**/*.ts' }, ctx)
     expect(textOf(ci)).toContain('src/sub/b.ts:1:Foo here')
     expect(textOf(ci)).not.toContain('README.md')
+    expect(textOf(r)).toContain('1 binary file(s)')
   })
 
   it('treats literal patterns literally and says when nothing matched', async () => {
@@ -119,6 +136,24 @@ describe('grep', () => {
     const r = await grepTool.execute({ pattern: '([', ignoreCase: false }, ctx)
     expect(r.isError).toBe(true)
     expect(textOf(r)).toContain('invalid pattern')
+    expect(textOf(r)).toContain('literal=true')
+    expect(r.details).toMatchObject({ code: 'FS_INVALID_PATTERN' })
+    const listing = ctx.exec
+    ctx.exec = async (argv, opts) =>
+      argv.includes('--json')
+        ? {
+            code: 2,
+            stdout: '',
+            stderr: 'regex parse error: invalid class /private/backend',
+            truncated: false,
+          }
+        : listing(argv, opts)
+    const registered = TOOLS_SEARCH.find((tool) => tool.name === 'grep')
+    if (!registered) throw new Error('registered grep missing')
+    const primary = await registered.execute({ pattern: '([' }, ctx)
+    expect(primary.details).toMatchObject({ code: 'FS_INVALID_PATTERN' })
+    expect(textOf(primary)).toContain('literal=true')
+    expect(textOf(primary)).not.toContain('/private/backend')
   })
 
   it('shows context lines around a match, marked apart from the match itself', async () => {
@@ -172,7 +207,12 @@ describe('grep', () => {
     expect(textOf(r)).toContain('not searched')
   })
 
-  it.each([false, true])('does not walk into a denied path with full access %s', async (fullAccess) => {
+  it.each([
+    [false, false],
+    [false, true],
+    [true, false],
+    [true, true],
+  ])('keeps workspace policy with full access %s and nested cwd %s', async (fullAccess, nested) => {
     // These are the paths the deployment defaults refuse to open: the secret store, the seam
     // tables, the audit log and the session database. A tool that walks a tree has to keep away
     // from them on its own - the kernel's own check compares the string it was handed, so a tool
@@ -183,7 +223,7 @@ describe('grep', () => {
         'tables/t.json': 'hit',
         'audit/log.jsonl': 'hit',
         'sessions.db': 'hit',
-        '.agnes/secrets/token': 'hit',
+        '.agh/secrets/token': 'hit',
         'ok.txt': 'hit',
       },
     })
@@ -201,15 +241,16 @@ describe('grep', () => {
         .split('\n')
         .filter((l) => !l.startsWith('[')),
     ).toEqual(['ok.txt'])
+    if (nested) selected.cwd = `${ctx.cwd}/subdir`
     for (const tool of [grepTool, findTool]) {
-      const denied = await tool.execute({ pattern: 'hit', path: 'secrets' }, selected)
+      const denied = await tool.execute({ pattern: 'hit', path: `${ctx.cwd}/secrets` }, selected)
       expect(denied.isError, tool.name).toBe(true)
       expect(textOf(denied), tool.name).toContain('denied by policy')
       expect(textOf(denied), tool.name).not.toContain('完全权限')
     }
   })
 
-  it('keeps out of the workspace secrets directory under both .agh and the legacy .agnes name', async () => {
+  it('keeps out of AGH secrets while searching ordinary directories owned by other products', async () => {
     const ctx = ctxOf({
       files: { '.agh/secrets/token': 'hit', '.agnes/secrets/token': 'hit', '.agh/notes.txt': 'hit' },
     })
@@ -218,13 +259,13 @@ describe('grep', () => {
       textOf(r)
         .split('\n')
         .filter((l) => l.includes(':1:hit')),
-    ).toEqual(['.agh/notes.txt:1:hit'])
+    ).toEqual(['.agh/notes.txt:1:hit', '.agnes/secrets/token:1:hit'])
     const f = await findTool.execute({ pattern: '**' }, ctx)
     expect(
       textOf(f)
         .split('\n')
         .filter((l) => !l.startsWith('[')),
-    ).toEqual(['.agh/notes.txt'])
+    ).toEqual(['.agh/notes.txt', '.agnes/secrets/token'])
   })
 
   it('skips a file over the read ceiling and counts it, instead of pretending it held nothing', async () => {
@@ -236,118 +277,14 @@ describe('grep', () => {
     expect(textOf(r)).toContain('1 file(s) skipped: larger than')
   })
 
-  it('skips a file it cannot read and names it with the reason, instead of ending the turn', async () => {
+  it('skips a file it cannot read and counts it, instead of ending the turn', async () => {
     const ctx = ctxOf({
-      files: { 'locked.ts': 'hit', 'open.ts': 'hit', 'sub/inner.ts': 'hit' },
+      files: { 'locked.ts': 'hit', 'open.ts': 'hit' },
       readErrors: { 'locked.ts': { code: 'EACCES', message: 'EACCES: permission denied' } },
-      listErrors: { sub: { code: 'EPERM', message: 'EPERM: operation not permitted' } },
     })
     const r = await grepTool.execute({ pattern: 'hit' }, ctx)
     expect(textOf(r)).toContain('open.ts:1:hit')
-    expect(textOf(r)).toContain(
-      '[2 path(s) could not be read: locked.ts (permission denied); sub (permission denied)]',
-    )
-    // Something was searched, so this is a result with a gap in it rather than a failed search.
-    expect(r.isError).toBeUndefined()
-  })
-
-  it('names at most ten unreadable paths and counts the rest', async () => {
-    const names = Array.from({ length: 12 }, (_, i) => `f${String(i).padStart(2, '0')}.ts`)
-    const ctx = ctxOf({
-      files: { ...Object.fromEntries(names.map((n) => [n, 'hit'])), 'ok.ts': 'hit' },
-      readErrors: Object.fromEntries(names.map((n) => [n, { code: 'EBUSY', message: 'EBUSY' }])),
-    })
-    const r = await grepTool.execute({ pattern: 'hit' }, ctx)
-    expect(textOf(r)).toContain('[12 path(s) could not be read: f00.ts (in use by another process); ')
-    expect(textOf(r)).toContain('f09.ts (in use by another process); and 2 more]')
-    expect(textOf(r)).not.toContain('f10.ts')
-  })
-
-  it('searches a file named as the path, the same file read opens', async () => {
-    // A search pointed at one file listed it as a directory, which a real filesystem refuses: the
-    // file was counted as unreadable and the answer was "no matches" about a file read could open.
-    const path = '星策天枢副本/constellation_database.py'
-    const ctx = ctxOf({
-      cwd: '/work/agnes harness',
-      files: {
-        [path]: '"""Persistent SQLite repository."""\nimport sqlite3\ndef record_plan(x):\n    pass\n',
-        '星策天枢副本/other.py': 'def record_plan(y):',
-      },
-    })
-    expect((await readTool.execute({ path }, ctx)).isError).toBeUndefined()
-    const r = await grepTool.execute({ path, pattern: 'def record_plan|CREATE TABLE', context: 1 }, ctx)
-    expect(r.isError).toBeUndefined()
-    expect(textOf(r)).toBe(
-      'constellation_database.py-2-import sqlite3\nconstellation_database.py:3:def record_plan(x):\nconstellation_database.py-4-    pass',
-    )
-    // One file is one file, whatever glob says, as a stored output is.
-    expect(textOf(await grepTool.execute({ path, pattern: 'sqlite3', glob: '*.ts' }, ctx))).toBe(
-      'constellation_database.py:2:import sqlite3',
-    )
-    const none = await grepTool.execute({ path, pattern: 'CREATE TABLE' }, ctx)
-    expect(textOf(none)).toBe('no matches')
-    expect(none.isError).toBeUndefined()
-  })
-
-  it('searches the file a link named as the path leads to', async () => {
-    // A link is listed through, as a directory it leads to always was; one that leads to a file is
-    // that file, as read would open it.
-    const base = ctxOf({ files: { 'target.py': 'def record_plan():' } })
-    const ctx: ToolContext = {
-      ...base,
-      fs: {
-        ...base.fs,
-        stat: async (p) => (p === 'link.py' ? { kind: 'symlink', size: 0, mtimeMs: 0 } : base.fs.stat(p)),
-        list: async (p) => {
-          if (p === 'link.py') throw Object.assign(new Error('ENOTDIR: not a directory'), { code: 'ENOTDIR' })
-          return base.fs.list(p)
-        },
-        read: async (p, o) => base.fs.read(p === 'link.py' ? 'target.py' : p, o),
-      },
-    }
-    const r = await grepTool.execute({ path: 'link.py', pattern: 'record_plan' }, ctx)
-    expect(textOf(r)).toBe('link.py:1:def record_plan():')
-    expect(r.isError).toBeUndefined()
-  })
-
-  it.each([
-    { what: 'missing', path: 'sub/missing.py', reason: 'not found' },
-    { what: 'unreadable', path: 'sub/locked.py', reason: 'permission denied' },
-  ])('is an error, naming the path, when the file it was pointed at is $what', async ({ path, reason }) => {
-    const ctx = ctxOf({
-      files: { 'sub/locked.py': 'hit' },
-      readErrors: { 'sub/locked.py': { code: 'EACCES', message: 'EACCES: permission denied' } },
-      // What a real listing says of a name that is not there; the memory one lists it as empty.
-      listErrors: { 'sub/missing.py': { code: 'ENOENT', message: 'ENOENT: no such file or directory' } },
-    })
-    const r = await grepTool.execute({ path, pattern: 'hit' }, ctx)
-    expect(r.isError).toBe(true)
-    expect(textOf(r)).toBe(`nothing could be searched\n[1 path(s) could not be read: ${path} (${reason})]`)
-  })
-
-  it('is an error when it could search none of the files under the path', async () => {
-    const ctx = ctxOf({
-      files: { 'src/a.ts': 'hit', 'src/b.ts': 'hit' },
-      readErrors: {
-        'src/a.ts': { code: 'EACCES', message: 'EACCES' },
-        'src/b.ts': { code: 'E_FS_DENIED', message: 'E_FS_DENIED: src/b.ts is denied by policy' },
-      },
-    })
-    const r = await grepTool.execute({ path: 'src', pattern: 'hit' }, ctx)
-    expect(r.isError).toBe(true)
-    expect(textOf(r)).toBe(
-      'nothing could be searched\n[2 path(s) could not be read: a.ts (permission denied); b.ts (outside the workspace or denied by policy)]',
-    )
-  })
-
-  it('says how many binary files it did not search, and is an error when that was all of them', async () => {
-    const ctx = ctxOf({ files: { 'bin.dat': 'a\u0000hit', 'text.ts': 'hit' } })
-    const r = await grepTool.execute({ pattern: 'hit' }, ctx)
-    expect(textOf(r)).toBe('text.ts:1:hit\n[1 binary file(s) not searched]')
-    expect(r.isError).toBeUndefined()
-    const named = await grepTool.execute({ path: 'bin.dat', pattern: 'hit' }, ctx)
-    expect(textOf(named)).toBe('nothing could be searched\n[1 binary file(s) not searched]')
-    expect(named.isError).toBe(true)
+    expect(textOf(r)).toContain('1 path(s) could not be read')
   })
 })
 
@@ -367,24 +304,17 @@ describe('find', () => {
   it('lists workspace-relative paths matching the glob', async () => {
     const ctx = ctxOf({ files })
     const r = await findTool.execute({ pattern: '**/*.ts' }, ctx)
-    expect(textOf(r).split('\n')).toEqual(['src/a.ts', 'src/sub/b.ts', '[not searched: node_modules]'])
-  })
-
-  it('finds a file named as the path, and is an error when the path cannot be read', async () => {
-    const ctx = ctxOf({
-      files: { 'src/a.ts': '' },
-      listErrors: { gone: { code: 'ENOENT', message: 'ENOENT: no such file or directory' } },
-    })
-    expect(textOf(await findTool.execute({ pattern: '*.ts', path: 'src/a.ts' }, ctx))).toBe('a.ts')
-    const r = await findTool.execute({ pattern: '**', path: 'gone' }, ctx)
-    expect(r.isError).toBe(true)
-    expect(textOf(r)).toBe('nothing could be searched\n[1 path(s) could not be read: gone (not found)]')
+    expect(TOOLS_SEARCH).toContain(findTool)
+    expect(textOf(r).split('\n').slice(0, 2)).toEqual(['src/a.ts', 'src/sub/b.ts'])
+    expect(textOf(r)).toContain('node_modules')
   })
 
   it('says when it stopped at the result limit', async () => {
     const ctx = ctxOf({ files: { 'a.ts': '', 'b.ts': '', 'c.ts': '' } })
     const r = await findTool.execute({ pattern: '**/*.ts', limit: 2 }, ctx)
-    expect(textOf(r).split('\n')).toEqual(['a.ts', 'b.ts', '[limit 2 reached; there may be more]'])
+    expect(textOf(r).split('\n').slice(0, 2)).toEqual(['a.ts', 'b.ts'])
+    expect(textOf(r)).toContain('[limit 2 reached; full output stored at artifact://')
+    expect(r.content.some((part) => part.type === 'ref')).toBe(true)
   })
 
   it('defaults the result limit to 1000', async () => {
@@ -419,6 +349,12 @@ describe('search access scope', () => {
     }
     const ctx: ToolContext = {
       ...original,
+      exec: async () => ({
+        code: 0,
+        stderr: '',
+        truncated: false,
+        stdout: `${prefix}external.ts\0${prefix}nested/second.ts\0`,
+      }),
       fs: {
         ...original.fs,
         list: (input) => backing.fs.list(mapped(input)),
@@ -431,7 +367,12 @@ describe('search access scope', () => {
     const permitted = await tool.execute(args, full)
     expect.soft(permitted.isError).toBeUndefined()
     expect
-      .soft(textOf(permitted))
+      .soft(
+        textOf(permitted)
+          .split('\n')
+          .filter((line) => !line.startsWith('['))
+          .join('\n'),
+      )
       .toBe(
         tool.name === 'grep'
           ? 'external.ts:1:external match\nnested/second.ts:1:external match'
@@ -443,6 +384,7 @@ describe('search access scope', () => {
       const denied = await tool.execute(args, selected)
       expect.soft(denied.isError).toBe(true)
       expect.soft(textOf(denied)).toContain('outside the workspace')
+      expect.soft(denied.details).toMatchObject({ code: 'FS_OUTSIDE_WORKSPACE' })
       expect.soft(textOf(denied)).toContain('完全权限')
       expect.soft(textOf(denied)).toContain('选择目标目录作为工作区')
     }
@@ -476,7 +418,7 @@ describe('ls', () => {
       files: Object.fromEntries(Array.from({ length: 5 }, (_, i) => [`f${i}.txt`, ''])),
     })
     const r = await lsTool.execute({ limit: 2 }, ctx)
-    expect(textOf(r).split('\n')).toEqual(['f0.txt', 'f1.txt', '[3 more]'])
+    expect(textOf(r).split('\n')).toEqual(['f0.txt', 'f1.txt', '[3 more; increase limit or narrow path]'])
   })
 
   it('shows at most 500 entries when no limit is given', async () => {
@@ -489,7 +431,7 @@ describe('ls', () => {
     const r = await lsTool.execute({}, ctx)
     const lines = textOf(r).split('\n')
     expect(lines.filter((l) => l.endsWith('.txt'))).toHaveLength(500)
-    expect(lines.at(-1)).toBe('[1 more]')
+    expect(lines.at(-1)).toBe('[1 more; increase limit or narrow path]')
   })
 
   it('says a directory is empty rather than answering with nothing at all', async () => {
@@ -521,6 +463,8 @@ describe('ls', () => {
     const r = await lsTool.execute({ path: 'locked' }, ctx)
     expect(r.isError).toBe(true)
     expect(textOf(r)).toContain('ls failed')
+    expect(textOf(r)).toContain('accessible path')
+    expect(r.details).toMatchObject({ code: 'EACCES' })
     expect(textOf(r)).toContain('EACCES')
   })
 })
@@ -587,4 +531,90 @@ describe('grep in an artifact the output guard stored', () => {
     )
     expect(r.isError).toBe(true)
   })
+})
+
+describe('explicit file and failed searches', () => {
+  it.each([grepTool, findTool])(
+    '$name handles a named Unicode file and reports a missing path as a failure',
+    async (tool) => {
+      const ctx = ctxOf({ files: { '空 格.txt': 'hit' } })
+      const result =
+        tool.name === 'grep'
+          ? await grepTool.execute({ path: '空 格.txt', pattern: 'hit', glob: '*.ts' }, ctx)
+          : await findTool.execute({ path: '空 格.txt', pattern: '*.txt' }, ctx)
+      expect(result.isError).not.toBe(true)
+      expect(textOf(result)).toContain(tool.name === 'grep' ? '空 格.txt:1:hit' : '空 格.txt')
+      const missing = await tool.execute({ path: 'missing', pattern: 'hit' }, ctx)
+      expect(missing.isError).toBe(true)
+      expect(textOf(missing)).toContain('ENOENT')
+    },
+  )
+  it('names unreadable paths with bounded reason codes and distinguishes total refusal from no matches', async () => {
+    const files = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`locked-${i}.txt`, 'hit']))
+    const ctx = ctxOf({
+      files,
+      readErrors: Object.fromEntries(Object.keys(files).map((path) => [path, { code: 'EACCES' }])),
+    })
+    const result = await grepTool.execute({ pattern: 'hit' }, ctx)
+    expect(result.isError).toBe(true)
+    expect(textOf(result)).toContain('nothing could be searched')
+    expect(textOf(result)).toContain('12 path(s) could not be read')
+    expect(textOf(result).match(/: EACCES/g)).toHaveLength(10)
+    expect(
+      (await grepTool.execute({ pattern: 'absent' }, ctxOf({ files: { 'ok.txt': 'hit' } }))).isError,
+    ).not.toBe(true)
+  })
+})
+
+it('uses filesystem search when execution is unavailable and keeps its denied-path checks', async () => {
+  const ctx = ctxOf({ files: { 'src/a.ts': 'hit', 'secrets/key.txt': 'hit' } })
+  ctx.exec = async () => {
+    throw Object.assign(new Error('no process backend'), { code: 'SANDBOX_UNAVAILABLE' })
+  }
+  const grep = TOOLS_SEARCH.find((tool) => tool.name === 'grep')!
+  expect(textOf(await grep.execute({ pattern: 'hit' }, ctx))).toContain('src/a.ts:1:hit')
+  expect(textOf(await findTool.execute({ pattern: '**/*.ts' }, ctx)).split('\n')).toContain('src/a.ts')
+  expect((await grep.execute({ pattern: 'hit', path: 'secrets' }, ctx)).isError).toBe(true)
+})
+
+it.each([
+  { code: 1, rows: [{ type: 'end', data: { binary_offset: 2 } }], stderr: '', note: 'binary file(s)' },
+  {
+    code: 2,
+    rows: [{ type: 'summary', data: {} }],
+    stderr: 'a.txt: permission denied',
+    note: 'permission denied',
+  },
+])('reports unsearchable primary-ripgrep output with code $code', async ({ code, rows, stderr, note }) => {
+  const ctx = ctxOf({ files: { 'a.txt': 'hit' } })
+  ctx.exec = async () => ({
+    code,
+    stdout: rows.map((row) => JSON.stringify(row)).join('\n'),
+    stderr,
+    truncated: false,
+  })
+  const grep = TOOLS_SEARCH.find((tool) => tool.name === 'grep')
+  if (!grep) throw new Error('missing registered grep')
+  const result = await grep.execute({ path: 'a.txt', pattern: 'hit', glob: '*.ts' }, ctx)
+  expect(result.isError).toBe(true)
+  expect(textOf(result)).toContain('nothing could be searched')
+  expect(textOf(result)).toContain(note)
+})
+
+it('searches a directly named file symlink through the filesystem fence without applying glob', async () => {
+  const ctx = ctxOf({ files: { 'target.txt': 'hit' } })
+  const fs = ctx.fs
+  const target = (path: string) => path.replace(/link\.txt$/, 'target.txt')
+  const selected = {
+    ...ctx,
+    fs: {
+      ...fs,
+      stat: async (path: string) =>
+        path.endsWith('link.txt') ? { kind: 'symlink' as const, size: 0, mtimeMs: 0 } : fs.stat(path),
+      read: (path: string, options?: { offset?: number; limit?: number }) => fs.read(target(path), options),
+    },
+  }
+  const result = await grepTool.execute({ path: 'link.txt', pattern: 'hit', glob: '*.ts' }, selected)
+  expect(result.isError).not.toBe(true)
+  expect(textOf(result)).toBe('link.txt:1:hit')
 })

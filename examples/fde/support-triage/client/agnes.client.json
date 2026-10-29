@@ -1,0 +1,13 @@
+{
+  "client": {
+    "entry": "./index.js",
+    "styles": [],
+    "slots": ["tool.call.toolview"],
+    "publicConfig": {
+      "label": "Support triage"
+    },
+    "services": [],
+    "projections": [],
+    "slotCatalogVersion": "dsh-client-slots/v1"
+  }
+}

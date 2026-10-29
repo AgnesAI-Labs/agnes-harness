@@ -1,0 +1,327 @@
+@layer app {
+  /* 报告问题弹窗：照重命名弹窗的尺寸；四个步骤用 [hidden] 切换。 */
+  .diagnostics-dialog {
+    width: min(480px, calc(100vw - 32px));
+  }
+  /* 内边距与滚动放在内层：落在 <dialog> 自身的点击才算点遮罩（bindDismissibleDialog）。 */
+  .diagnostics-body {
+    max-height: var(--dialog-max-height);
+    padding: var(--s24);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .diagnostics-dialog section {
+    display: grid;
+    gap: var(--s16);
+    margin-top: var(--s16);
+  }
+  .diagnostics-badge {
+    justify-self: start;
+    margin: 0;
+    padding: var(--s2) var(--s8);
+    border-radius: var(--radius-full);
+    background: var(--agnes-status-success-bg);
+    color: var(--agnes-status-success-text);
+    font-size: var(--font-size-sm);
+  }
+  .diagnostics-include {
+    display: grid;
+    gap: var(--s8);
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .diagnostics-include label {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    color: var(--agnes-text-primary);
+  }
+  /* 全局 input 规则把 checkbox 撑成 width:100%，把标签文字挤成竖排换行；
+   缩到原生勾选框大小，复用 #config-form .appearance-option input 的方案。 */
+  .diagnostics-include input[type="checkbox"] {
+    width: 1rem;
+    height: 1rem;
+    min-height: 0;
+    flex: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    accent-color: var(--agnes-brand-primary);
+  }
+  .diagnostics-file {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    overflow-wrap: anywhere;
+  }
+  .diagnostics-dialog .dialog-error {
+    margin: var(--s12) 0 0;
+    color: var(--agnes-status-danger-text);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+  }
+  .diagnostics-dialog .dialog-error:empty {
+    display: none;
+  }
+
+  .session {
+    width: 100%;
+    height: 1.875rem;
+    min-height: 1.875rem;
+    justify-content: flex-start;
+    gap: var(--s8);
+    overflow: hidden;
+    /* 每一行（置顶、项目内、临时会话、单列表）同一套 10px 内边距；层级由引导线表达，不靠缩进。 */
+    padding: 0 0.625rem;
+    border-color: transparent;
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-primary);
+    text-align: start;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: transparent;
+    font-size: 0.84375rem;
+    font-weight: 400;
+    line-height: 1.25rem;
+  }
+  /* 底色由上方的 `.session-row` 承担。这里仍要显式声明，是为了压掉通用
+   `button:hover:not(:disabled)`：不清的话按钮悬停时会多出一圈 `--agnes-line-emphasis` 描边，
+   并在动作槽左侧补一块断开的底色。 */
+  .session:hover:not(:disabled) {
+    border-color: transparent;
+    background: transparent;
+  }
+  .session.active {
+    color: var(--agnes-text-primary);
+    font-weight: 400;
+  }
+  .sidebar-footer {
+    /* 底部操作行不参与压缩：侧栏是 flex column，空间紧张时若不显式 flex:none，
+     这一行会被 `#sessions` 挤扁。配合 `.sidebar` 的 overflow:hidden，
+     「设置」始终完整留在侧栏底部。52px 高，顶部一条通栏细线，延伸到侧栏两侧内边距之外。 */
+    flex: none;
+    min-height: 3.25rem;
+    display: flex;
+    align-items: center;
+    gap: var(--s4);
+    margin: var(--s8) -0.75rem 0;
+    padding: 0 0.75rem;
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  /* Settings and the host-owned application actions share one icon column and type scale. */
+  :is(.sidebar-footer button, .application-footer-item) {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    justify-content: flex-start;
+    gap: var(--s8);
+    min-height: var(--control-height);
+    padding: 0 var(--s8);
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
+    font-family: var(--font-sans);
+    font-size: var(--font-size-sm);
+    font-weight: 400;
+    line-height: 1.25rem;
+  }
+  :is(.sidebar-footer button, .application-footer-item) svg {
+    width: 16px;
+    height: 16px;
+    flex: none;
+  }
+
+  /* 设置 › 运行时与诊断 › 近期错误: summary, kind filters, day groups and one row per kind. */
+  .agnes-diagnostics-errors {
+    gap: var(--s12);
+  }
+  .agnes-diagnostics-errors > .agnes-settings-block-label {
+    flex-wrap: wrap;
+  }
+  .agnes-diagnostics-lookup {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8);
+    min-width: 0;
+    max-width: 100%;
+  }
+  .agnes-diagnostics-lookup > :first-child {
+    flex: 0 1 18.75rem;
+    min-width: 0;
+  }
+  /* In a page header the lookup keeps one line: the field shrinks instead of pushing the refresh
+   button onto a second row, which grew the header and lifted the field onto the dialog edge. */
+  .agh-push-actions .agnes-diagnostics-lookup {
+    flex-wrap: nowrap;
+  }
+  /* In the page header the input's placeholder names it; the label stays for assistive tech only. */
+  .agnes-diagnostics-lookup .agnes-ui-field-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .agnes-diagnostics-lookup .agnes-settings-search {
+    width: 100%;
+    font-family: var(--font-mono);
+  }
+  .agnes-diagnostics-filter-count {
+    margin-inline-start: var(--s4);
+    color: var(--agnes-text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+  .agnes-diagnostics-day {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--s4) var(--s8);
+    margin: 0;
+    padding: var(--s8) var(--s16);
+    border-bottom: 1px solid var(--agnes-line-primary);
+    color: var(--agnes-text-tertiary);
+    background: var(--agnes-bg-subtle);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+    font-variant-numeric: tabular-nums;
+  }
+  .agnes-diagnostics-day strong {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+  }
+  /* The list reads as three columns: kind, summary with time, count. Category stays neutral;
+     the dot carries the fact that every entry is an error, so kind colours mean only kind. */
+  .agnes-diagnostics-errors .agnes-diagnostics-error.agnes-settings-drill {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: var(--s4) var(--s12);
+  }
+  .agnes-diagnostics-kind-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+    min-width: 4.5rem;
+  }
+  .agnes-diagnostics-severity {
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-full);
+    background: var(--agnes-status-danger-solid);
+  }
+  .agnes-diagnostics-kind {
+    justify-content: center;
+    font-weight: var(--font-weight-regular);
+  }
+  /* The count never yields to the message; the message wraps instead. */
+  .agnes-diagnostics-error.agnes-settings-drill > .agnes-settings-value {
+    flex: none;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .agnes-diagnostics-when {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: var(--s4) var(--s12);
+    font-variant-numeric: tabular-nums;
+  }
+  .agnes-diagnostics-when code,
+  .agnes-diagnostics-details code {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+  }
+  .agnes-diagnostics-id,
+  .agnes-diagnostics-occurrences li {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  .agnes-diagnostics-id code {
+    overflow-wrap: anywhere;
+  }
+  .agnes-diagnostics-occurrences {
+    display: grid;
+    gap: var(--s4);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+  }
+  .agnes-diagnostics-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8) var(--s12);
+    padding: var(--s12) var(--s16);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  /* The summary and the retention note are read, not skimmed: one step above tertiary. */
+  .agnes-diagnostics-errors .agnes-diagnostics-summary {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  /* The export dialog explains scope as two short columns, not one long paragraph. */
+  .agnes-diagnostics-export-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s8) var(--s16);
+  }
+  .agnes-diagnostics-export-grid p {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  .agnes-diagnostics-export-grid .agnes-diagnostics-export-note {
+    grid-column: 1 / -1;
+  }
+  @media (max-width: 560px) {
+    .agnes-diagnostics-export-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  /* The read states are one card: mark, what happened and why, then the one action. */
+  .agh-empty-state.agnes-diagnostics-state {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    justify-items: start;
+    align-items: start;
+    column-gap: var(--s12);
+    padding: var(--s20);
+    text-align: start;
+  }
+  .agnes-diagnostics-state > .agh-empty-state-icon {
+    grid-row: span 2;
+    margin-bottom: 0;
+  }
+  .agnes-diagnostics-state > :is(h3, p) {
+    grid-column: 2;
+  }
+  .agnes-diagnostics-state > .agh-empty-state-actions {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    margin-top: 0;
+  }
+  .agnes-diagnostics-state[data-tone="ok"] > .agh-empty-state-icon {
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
+  }
+  .agnes-diagnostics-state[data-tone="error"] > .agh-empty-state-icon {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+  }
+  @media (max-width: 560px) {
+    .agnes-diagnostics-state > .agh-empty-state-actions {
+      grid-column: 2;
+      grid-row: auto;
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "name": "@agnes/approval-policy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/approval-policy",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "capabilities": {
+          "hooks": [],
+          "slots": [],
+          "events": false,
+          "resources": [],
+          "network": []
+        },
+        "metadata": {
+          "displayName": "Approval rules",
+          "summary": "Decides which tool actions need approval under the selected session policy.",
+          "description": "Decides which tool actions need approval under the selected session policy.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "审批规则",
+              "summary": "按会话策略判断哪些工具操作需要先获得批准。",
+              "description": "按会话策略判断哪些工具操作需要先获得批准。"
+            }
+          }
+        }
+      }
+    ]
+  }
+}

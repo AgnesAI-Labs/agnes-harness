@@ -69,12 +69,31 @@ describe('guardSequence', () => {
     expect(o[2]).toMatchObject({ message: 'done without usage' })
   })
 
-  it('drops events after usage and ends with an error', async () => {
-    expect(types(await collect(guardSequence(src([sent, usage, delta, done]))))).toEqual([
-      'sent',
-      'usage',
-      'error',
-    ])
+  it.each([delta, usage])(
+    'rejects post-usage $type but preserves a subsequent adapter error',
+    async (invalid) => {
+      const failed = await collect(guardSequence(src([sent, usage, invalid, done])))
+      expect(types(failed)).toEqual(['sent', 'usage', 'error'])
+      expect(failed.at(-1)).toMatchObject({
+        message: invalid.type === 'usage' ? 'duplicate usage' : 'event after usage',
+      })
+      const error: InferenceEvent = {
+        type: 'error',
+        reason: 'error',
+        code: 'RATE_LIMIT',
+        message: 'original',
+        retryable: true,
+        timing: { prepareMs: 12 },
+      }
+      expect((await collect(guardSequence(src([sent, usage, invalid, error])))).at(-1)).toEqual(error)
+    },
+  )
+
+  it('preserves valid terminal timing and drops malformed diagnostic timing', async () => {
+    for (const timing of [{ providerCallMs: 50, finalizeMs: 10 }, { providerCallMs: -1 }]) {
+      const events = await collect(guardSequence(src([sent, usage, { ...done, timing }])))
+      expect(events.at(-1)).toEqual(timing.providerCallMs >= 0 ? { ...done, timing } : done)
+    }
   })
 
   it('rejects a second sent', async () => {
@@ -115,11 +134,13 @@ describe('normalizeError', () => {
       message: 'x'.repeat(600),
       retryable: true,
       retryAfterMs: 5,
+      timing: { prepareMs: -1 },
       // Not a shape the ledger row accepts, so it cannot be allowed to make the spend unrecordable.
       response: { status: 401, headers: { Authorization: 'x' } },
     })
     expect(e.retryable).toBe(false)
     expect(e).not.toHaveProperty('response')
+    expect(e).not.toHaveProperty('timing')
     // A wait attached to a failure nobody may retry is a number that can only be acted on wrongly.
     expect(e.retryAfterMs).toBeUndefined()
     expect(e.message).toHaveLength(512)
@@ -127,7 +148,7 @@ describe('normalizeError', () => {
       normalizeError({ type: 'error', reason: 'error', code: 'ABORTED', message: '', retryable: false })
         .reason,
     ).toBe('aborted')
-    expect(RETRYABLE.RATE_LIMIT).toBe(true)
+    expect(RETRYABLE.AUTH).toBe(false)
   })
 
   // TRANSPORT is the one code the table does not decide: whether a transport failure may be repeated
@@ -139,6 +160,38 @@ describe('normalizeError', () => {
           .retryable,
       ).toBe(retryable)
   })
+
+  // RATE_LIMIT and TIMEOUT are asked again by default, but an adapter that has already asked as often as
+  // it will says so, and its caller must not ask a second time over: that doubled the wait and the load.
+  it.each(['RATE_LIMIT', 'TIMEOUT'] as const)(
+    'leaves the adapter’s own verdict on %s alone, both ways',
+    (code) => {
+      for (const retryable of [true, false])
+        expect(
+          normalizeError({ type: 'error', reason: 'error', code, message: '', retryable }).retryable,
+        ).toBe(retryable)
+      // A wait is kept only on a failure that may be retried.
+      const spent = normalizeError({
+        type: 'error',
+        reason: 'error',
+        code,
+        message: '',
+        retryable: false,
+        retryAfterMs: 1000,
+      })
+      expect(spent.retryable).toBe(false)
+      expect(spent.retryAfterMs).toBeUndefined()
+    },
+  )
+
+  it.each(['AUTH', 'QUOTA', 'NO_MODEL', 'FORMAT', 'OVERFLOW', 'CONTRACT_MISMATCH'] as const)(
+    'still clamps the permanent failure %s to not retryable',
+    (code) => {
+      expect(
+        normalizeError({ type: 'error', reason: 'error', code, message: '', retryable: true }).retryable,
+      ).toBe(false)
+    },
+  )
 
   it('keeps the wait, the request id and the response on a failure that may be retried', () => {
     const e = normalizeError({

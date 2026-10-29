@@ -1,0 +1,247 @@
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
+import { basename, dirname, join, resolve } from 'node:path'
+import { hasPrivateDaclSync } from '@agnes/system-node'
+import { afterEach, describe, expect, it } from 'vitest'
+import { isHostError } from '../src/errors.js'
+import { initializeHome, initializeHomeLocked } from '../src/home-initialize.js'
+import { homeLayout, inspectHome } from '../src/home-layout.js'
+import {
+  agnesHome,
+  cacheDir,
+  dataDir,
+  fileSecretsDir,
+  hasLegacySessionsDb,
+  inDataDir,
+  legacySessionsDbPath,
+  ownStateRoots,
+} from '../src/paths.js'
+
+const roots: string[] = []
+const scratch = (): string => {
+  const dir = mkdtempSync(join(tmpdir(), 'agnes-paths-'))
+  roots.push(dir)
+  return dir
+}
+afterEach(() => {
+  for (const dir of roots.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
+
+describe('fileSecretsDir', () => {
+  it('sits beside data, in the directory the credential store writes', () => {
+    const home = '/srv/agh'
+    expect(fileSecretsDir(home)).toBe(join(home, 'secrets'))
+    expect(fileSecretsDir(home)).not.toBe(join(dataDir(home), 'secrets'))
+  })
+})
+
+describe('agnesHome', () => {
+  it.runIf(process.platform === 'win32')(
+    'refuses drive-dependent homes from every environment variable',
+    () => {
+      for (const path of ['/shared-agnes', '\\shared-agnes', 'C:shared-agnes', 'relative']) {
+        expect(() => agnesHome({ AGH_HOME: path }), path).toThrow(/AGH_HOME/)
+        expect(() => agnesHome({ AGNES_HOME: path }), path).toThrow(/AGNES_HOME/)
+        expect(() => agnesHome({ HOME: path }), path).toThrow(/HOME/)
+      }
+    },
+  )
+  it.runIf(process.platform === 'win32')('accepts qualified Windows homes and ignores an unused HOME', () => {
+    for (const path of ['C:\\用户 空格\\agnes', 'D:/agnes', '\\\\server\\share\\agnes']) {
+      expect(agnesHome({ AGH_HOME: path, HOME: '/unused' })).toBe(path)
+      expect(agnesHome({ HOME: path })).toBe(join(path, '.agh'))
+    }
+  })
+  it('falls back to <os home>/.agh when neither AGH_HOME nor AGNES_HOME is set', () => {
+    const home = scratch()
+    expect(agnesHome({ HOME: home })).toBe(join(home, '.agh'))
+  })
+
+  it('falls back to node:os homedir() when no home variable is set at all', () => {
+    expect(agnesHome({})).toBe(join(homedir(), '.agh'))
+  })
+
+  it('treats an empty AGH_HOME or AGNES_HOME as unset rather than as the root directory', () => {
+    const home = scratch()
+    expect(agnesHome({ AGH_HOME: '', AGNES_HOME: '', HOME: home })).toBe(join(home, '.agh'))
+  })
+
+  it('honours an explicit absolute AGH_HOME verbatim', () => {
+    expect(agnesHome({ AGH_HOME: resolve('/srv/agh'), HOME: '/ignored' })).toBe(resolve('/srv/agh'))
+  })
+
+  it.each([
+    { AGNES_HOME: resolve('/srv/agnes') },
+    { AGNES_HOME: 'relative/agnes' },
+    { AGH_HOME: resolve('/srv/agh'), AGNES_HOME: resolve('/srv/agnes') },
+  ])('refuses retired AGNES_HOME instead of silently selecting a home: %j', (env) => {
+    expect(() => agnesHome(env)).toThrow(
+      expect.objectContaining({
+        code: 'E_HOME_INVALID',
+        detail: { variable: 'AGNES_HOME', reason: 'clean-home-required' },
+      }),
+    )
+    expect(() => agnesHome(env)).toThrow('AGNES_HOME is no longer supported')
+  })
+
+  // The regression this module exists to make impossible to reintroduce silently: a relative
+  // home used to resolve against whatever the process's cwd happened to be, so a daemon and a
+  // one-shot CLI invocation with different working directories would quietly pick different homes.
+  it.each(['AGH_HOME'])('refuses a relative %s and names that variable', (variable) => {
+    const e = (() => {
+      try {
+        agnesHome({ [variable]: 'relative/agnes' })
+        return undefined
+      } catch (error) {
+        return error
+      }
+    })()
+    expect(isHostError(e, 'E_HOME_INVALID')).toBe(true)
+    expect((e as Error).message).toContain(variable)
+    expect((e as Error).message).toContain('relative/agnes')
+  })
+
+  it('refuses a bare relative segment and a dot-relative home alike', () => {
+    for (const bad of ['relative', './relative', '../relative', '~/relative']) {
+      expect(() => agnesHome({ AGH_HOME: bad }), bad).toThrow(/E_HOME_INVALID/)
+      expect(() => agnesHome({ AGNES_HOME: bad }), bad).toThrow(/E_HOME_INVALID/)
+    }
+  })
+})
+
+describe('dataDir, cacheDir and inDataDir', () => {
+  it('are always one level below the home root, never the root itself', () => {
+    expect(dataDir('/srv/agnes')).toBe(join('/srv/agnes', 'data'))
+    expect(cacheDir('/srv/agnes')).toBe(join('/srv/agnes', 'cache'))
+  })
+
+  it('inDataDir joins inside dataDir, not inside the home root', () => {
+    expect(inDataDir('/srv/agnes', 'sessions.db')).toBe(join('/srv/agnes', 'data', 'sessions.db'))
+  })
+})
+
+describe('legacy session database detection', () => {
+  it('is not found when nothing sits at the home root', () => {
+    const home = scratch()
+    expect(hasLegacySessionsDb(home)).toBe(false)
+  })
+
+  it('is found when a database sits directly under the home root, and never touches it', () => {
+    const home = scratch()
+    const legacy = legacySessionsDbPath(home)
+    expect(legacy).toBe(join(home, 'sessions.db'))
+    writeFileSync(legacy, 'not-actually-sqlite-but-detection-does-not-care')
+    expect(hasLegacySessionsDb(home)).toBe(true)
+    // Detection only: the file this test wrote is still exactly what this test wrote.
+    expect(readFileSync(legacy, 'utf8')).toBe('not-actually-sqlite-but-detection-does-not-care')
+  })
+
+  it('is not fooled by a database that already lives under data/, only by one at the root', () => {
+    const home = scratch()
+    mkdirSync(dataDir(home), { recursive: true })
+    writeFileSync(join(dataDir(home), 'sessions.db'), 'current')
+    expect(hasLegacySessionsDb(home)).toBe(false)
+  })
+})
+
+describe('ownStateRoots', () => {
+  it('names credentials and profiles beside data/, and the pinned secrets directory', () => {
+    const home = join(tmpdir(), 'agnes-own-roots')
+    expect(
+      ownStateRoots({
+        profileDir: join(home, 'profiles', 'local-dev'),
+        dataDir: dataDir(home),
+        secretsDir: join(tmpdir(), 'pinned-secrets'),
+      }).sort(),
+    ).toEqual(
+      [
+        join(home, 'profiles', 'local-dev'),
+        join(home, 'secrets'),
+        join(home, 'auth'),
+        join(home, 'profiles'),
+        join(tmpdir(), 'pinned-secrets'),
+      ].sort(),
+    )
+  })
+
+  it('infers no home from a layout that is not the conventional one', () => {
+    const odd = join(tmpdir(), 'agnes-odd-layout')
+    expect(ownStateRoots({ profileDir: join(odd, 'p'), dataDir: join(odd, 'state') })).toEqual([
+      join(odd, 'p'),
+    ])
+  })
+})
+
+describe('versioned home layout', () => {
+  it('inspects a fresh home without writes and initializes private paths with a stable marker', async () => {
+    const home = join(scratch(), 'fresh')
+    expect(inspectHome(home)).toMatchObject({ state: 'fresh', version: null })
+    expect(existsSync(home)).toBe(false)
+    const info = initializeHome(home)
+    expect(info).toMatchObject({ state: 'current', version: 1, paths: homeLayout(home) })
+    expect(initializeHome(home).instanceId).toBe(info.instanceId)
+    expect(info.instanceId).toMatch(/^[a-f0-9-]{36}$/)
+    expect(initializeHome(home + '/').instanceId).toBe(info.instanceId)
+    await expect(initializeHomeLocked('relative-home')).rejects.toThrow('E_HOME_INVALID')
+    const concurrentHome = join(scratch(), 'concurrent')
+    const initializations = await Promise.all(
+      ['local-dev', 'other'].map((profile) => initializeHomeLocked(concurrentHome, profile)),
+    )
+    expect(initializations.every((result) => result.instanceId === initializations[0]?.instanceId)).toBe(true)
+    expect(initializations.map((result) => result.state)).toEqual(['current', 'current'])
+    if (process.platform !== 'win32') {
+      expect(lstatSync(home).mode & 0o777).toBe(0o700)
+      expect(lstatSync(join(home, 'home-layout.json')).mode & 0o777).toBe(0o600)
+    } else {
+      for (const path of [home, join(home, 'home-layout.json'), ...Object.values(info.paths)]) {
+        if (path !== info.paths.packages) expect(hasPrivateDaclSync(path), path).toBe(true)
+      }
+      expect(hasPrivateDaclSync(join(concurrentHome, '..', '.concurrent.initialize.sqlite'))).toBe(true)
+    }
+  })
+  it('refuses an occupied unversioned home without changing its files', async () => {
+    const home = scratch()
+    writeFileSync(join(home, 'unknown.txt'), 'synthetic data')
+    expect(inspectHome(home)).toMatchObject({ state: 'unsupported', version: null })
+    expect(() => initializeHome(home)).toThrow('E_HOME_VERSION')
+    await expect(initializeHomeLocked(home)).rejects.toMatchObject({
+      code: 'E_HOME_VERSION',
+      home,
+      reason: 'unversioned',
+    })
+    expect(existsSync(join(dirname(home), `.${basename(home)}.initialize.sqlite`))).toBe(false)
+    expect(readdirSync(home)).toEqual(['unknown.txt'])
+    expect(readFileSync(join(home, 'unknown.txt'), 'utf8')).toBe('synthetic data')
+  })
+  it.skipIf(process.platform === 'win32')(
+    'refuses links and future versions without changing the source',
+    () => {
+      const home = scratch(),
+        outside = scratch()
+      mkdirSync(join(outside, 'profile'))
+      symlinkSync(outside, join(home, 'profiles'))
+      expect(() => initializeHome(home)).toThrow('E_HOME_UNSAFE')
+      expect(readdirSync(outside)).toEqual(['profile'])
+      for (const version of [0, 99]) {
+        const unsupported = scratch()
+        writeFileSync(join(unsupported, 'home-layout.json'), JSON.stringify({ version }))
+        expect(() => initializeHome(unsupported)).toThrow('E_HOME_VERSION')
+        expect(readFileSync(join(unsupported, 'home-layout.json'), 'utf8')).toBe(JSON.stringify({ version }))
+      }
+      const linkedData = scratch()
+      symlinkSync(outside, join(linkedData, 'data'))
+      expect(() => inspectHome(linkedData)).toThrow('E_HOME_UNSAFE')
+      expect(() => initializeHome(linkedData)).toThrow('E_HOME_UNSAFE')
+    },
+  )
+})

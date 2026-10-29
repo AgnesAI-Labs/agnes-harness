@@ -1,3 +1,5 @@
+import type { OpStateObj } from '@agnes/core-common/step/op-state'
+import { CoreError } from '@agnes/core-common/types'
 import type { DispatchPhase, ResolvedToolCallPolicy } from '@agnes/protocol'
 
 export type ToolRecoveryMode = 'resume' | 'close' | 'cancel'
@@ -39,6 +41,22 @@ export type ToolRecoveryInput = Readonly<{
 }>
 
 const PRE_DISPATCH = new Set<RecoverableToolCall['status']>(['planned', 'awaiting_approval', 'approved'])
+
+/**
+ * `op` as it is, for the commit that dispatches `toolUseId` for the first time. A call the batch holds
+ * past that point (dispatched, answered, or closed without running) is refused instead: whatever
+ * approved it, it is never dispatched again. A call the batch does not hold is left to the caller.
+ */
+export function dispatchable(op: OpStateObj | null, toolUseId: string): OpStateObj | null {
+  const call =
+    op?.phase.kind === 'tools' ? op.phase.batch.calls.find((c) => c.toolUseId === toolUseId) : undefined
+  if (call && !PRE_DISPATCH.has(call.status))
+    throw new CoreError('E_RELATION', 'Tool call is no longer planned; it is not dispatched', {
+      toolUseId,
+      status: call.status,
+    })
+  return op
+}
 
 /**
  * Pure crash classification for a persisted tool call. This function grants no authority and does

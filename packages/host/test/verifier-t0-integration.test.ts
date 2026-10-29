@@ -1,16 +1,14 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { seams as baseSeams } from '@agnes/base'
 import type { InferenceEvent } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createTestHost, runOnce } from '../testkit/index.js'
+import { baseSeamFactories, createTestHost, runOnce } from '../testkit/index.js'
 
 /**
  * core's four verify call sites against the real `verifierT0` from @agnes/base — not a fake. The
  * seam blind-casts core's `input` into its own VerifyInput, so the contract can only be pinned
- * end-to-end: a clean turn must come back `pass`, and a turn that really repeats one call must
- * come back `needs_revision` with repeated_write, with no 'verifier unavailable' anywhere.
+ * end-to-end: a clean turn must come back `pass`, and calls without trusted policy retain conservative repeat detection, with no 'verifier unavailable' anywhere.
  */
 const say = (text: string): InferenceEvent[] => [
   { type: 'text_delta', delta: text },
@@ -45,7 +43,7 @@ describe('verifierT0 against real core verify inputs', () => {
     const { host } = await createTestHost({
       dataDir,
       script: [say('clean answer')],
-      packages: { '@agnes/base': { seams: { verifier: baseSeams.verifier } } },
+      packages: { '@agnes/base': { seams: { verifier: baseSeamFactories.verifier } } },
     })
     try {
       const r = await runOnce(host, { prompt: 'hi', cwd: dataDir })
@@ -58,14 +56,14 @@ describe('verifierT0 against real core verify inputs', () => {
     }
   })
 
-  it('three identical back-to-back calls verify needs_revision repeated_write:3', async () => {
+  it('calls without persisted policy retain repeat detection and honor explicit completion', async () => {
     const dataDir = tmp()
     const { host } = await createTestHost({
       dataDir,
       script: [callRead(), callRead(), callRead(), say('gave up')],
-      // Let the turn close on the first needs_revision, so the signal row is the assertion.
+      // This minimal Host fixture registers no read tool: no trusted read-only policy is available.
       seams: { repair: { decide: async () => 'complete' } },
-      packages: { '@agnes/base': { seams: { verifier: baseSeams.verifier } } },
+      packages: { '@agnes/base': { seams: { verifier: baseSeamFactories.verifier } } },
     })
     try {
       const r = await runOnce(host, { prompt: 'hi', cwd: dataDir })
@@ -75,6 +73,15 @@ describe('verifierT0 against real core verify inputs', () => {
       const stepSignals = signals.filter((s) => s.scope === 'step')
       expect(stepSignals).toHaveLength(3)
       for (const s of stepSignals) expect(s).toMatchObject({ verdict: 'pass', reasons: [] })
+      expect(
+        r.events
+          .filter((e) => e.type === 'tool/call')
+          .map((e) => (e.data as { resolvedPolicy?: unknown }).resolvedPolicy),
+      ).toEqual([undefined, undefined, undefined])
+      expect(r.events.find((e) => e.type === 'x/core/verifier-recovery')?.data).toMatchObject({
+        handling: 'complete',
+        verdict: { verdict: 'needs_revision' },
+      })
       const turnSignals = signals.filter((s) => s.scope === 'turn')
       expect(turnSignals.at(-1)).toMatchObject({
         verdict: 'needs_revision',

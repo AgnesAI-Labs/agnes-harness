@@ -10,7 +10,11 @@ export interface Component {
   render(width: number): string[]
   /** Optional plain shell-history form when the fullscreen TUI exits. */
   transcript?(width: number): string[]
+  /** The plain form of what follows `prefix`, a leading part of the source text that was already written out. */
+  transcriptAfter?(prefix: string, width: number): string[]
   handleInput?(data: string): boolean
+  /** A mouse click on the first row this component drew (a card's head); the viewport repaints after. */
+  clickHead?(): void
   invalidate(): void
 }
 
@@ -29,9 +33,11 @@ export function wrapText(text: string, width: number): string[] {
   const limit = Math.max(1, width)
   const out: string[] = []
   for (const para of text.split('\n')) {
-    let line = ''
-    for (const word of para.split(' ')) {
-      const candidate = line ? `${line} ${word}` : word
+    // The indent a line starts with is kept (short of the width); a wrapped continuation starts at the margin.
+    const indent = /^ */.exec(para)?.[0] ?? ''
+    let line = indent.slice(0, limit - 1)
+    for (const word of para.slice(indent.length).split(' ')) {
+      const candidate = line.trim() ? `${line} ${word}` : line + word
       if (displayWidth(candidate) <= limit) {
         line = candidate
         continue
@@ -61,9 +67,20 @@ export function wrapText(text: string, width: number): string[] {
 // biome-ignore lint/suspicious/noControlCharactersInRegex: removing them is the point
 const CONTROL = /[\x00-\x1f\x7f-\x9f]/g
 
+// Tab becomes four spaces, as in Markdown and the bang output, so indentation and columns survive.
 export function escapeControl(s: string): string {
-  return s.replace(CONTROL, (c) => (c === '\n' ? c : ''))
+  return s.replace(CONTROL, (c) => (c === '\n' ? c : c === '\t' ? '    ' : ''))
 }
+
+/** `escapeControl` plus invisible format characters (bidi overrides, zero-width, BOM) spelled out; line structure is kept. */
+export const escapeVisible = (text: string): string =>
+  // Before the trim in `visibleLine`, which would drop a leading or trailing BOM unseen.
+  escapeControl(
+    text.replace(/\p{Cf}/gu, (c) => `\\u{${(c.codePointAt(0) as number).toString(16).toUpperCase()}}`),
+  )
+
+/** One inert line of untrusted text: `escapeVisible`, whitespace collapsed. */
+export const visibleLine = (text: string): string => escapeVisible(text).replace(/\s+/g, ' ').trim()
 
 export class Text implements Component {
   private cache: { width: number; lines: string[] } | null = null

@@ -2,13 +2,13 @@ import { sanitize } from '@agnes/core'
 import {
   checkToolDef,
   type Disposer,
-  defineTool,
-  type ExtensionAPI,
   TOOL_DESCRIPTION_MAX_LENGTH,
   TOOL_PARAMETERS_MAX_BYTES,
   type ToolDef,
   type ToolResult,
 } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
+import { type Context, defineTool } from '@agnes/plugin-runtime'
 import { inspectJsonData, type McpStatus, validateResourceControlData } from '@agnes/protocol'
 import { decodeSafeImages, type SafeImage, type SafeImageLimits } from '@agnes/protocol-validation'
 import {
@@ -19,16 +19,38 @@ import {
   spillLocator,
 } from '../../extensions/tools-core/src/guards/output.js'
 import { MAX_READ_BYTES } from '../../extensions/tools-core/src/tools/read.js'
-import { remoteInputSchema } from '../mcp-json-schema.js'
-import type { McpServerConfig } from './config.js'
-import { mcpLocalToolPrefix } from './naming.js'
+import { normalizeRemoteInputSchema, remoteInputSchema } from '../mcp-json-schema.js'
+import { McpCallError } from './call-error.js'
+import { type McpServerConfig, mcpErrorText, redactMcpSecrets } from './config.js'
+import { mcpPublicToolName, mcpStablePrefix } from './naming.js'
+import { admitMcpResourceTools, bindMcpResourceServer } from './resources.js'
 
 export type McpRemoteTool = {
   name: string
   description: string
   inputSchema: Record<string, unknown>
-  annotations?: { readOnlyHint?: boolean }
+  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean }
 }
+export type McpRemoteResource = Readonly<{
+  uri: string
+  name: string
+  description?: string
+  mimeType?: string
+}>
+export type McpRemoteResourceTemplate = Readonly<{
+  uriTemplate: string
+  name: string
+  description?: string
+  mimeType?: string
+}>
+export type McpResourceContent = Readonly<
+  { uri: string; mimeType?: string; text: string } | { uri: string; mimeType?: string; blob: string }
+>
+export type McpResourceCallOptions = Readonly<{
+  cursor?: string
+  signal?: AbortSignal
+  timeoutMs?: number
+}>
 type RemoteContent = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
 export type RemoteToolIndexRow = { name: string; description: string; schema: string }
 /** A remote tool left out of registration, and why; `name` only when it is a usable remote name. */
@@ -39,7 +61,7 @@ export type McpCheckedCatalog = Readonly<{
 }>
 
 /**
- * All limits are mandatory when media is enabled. P0 has not frozen production values, so an
+ * All limits are mandatory when media is enabled. Production evidence has not frozen the limits, so an
  * omitted policy disables MCP images instead of silently installing guessed defaults.
  * `maxBlocks` counts the provider-facing pair emitted for every selected image: one untrusted label
  * plus one image block. It is deliberately distinct from `maxImages`.
@@ -58,48 +80,40 @@ export const MAX_MCP_TEXT_BLOCKS = 128
 export type McpConnection = {
   id: string
   listTools(options?: { signal?: AbortSignal; timeoutMs?: number }): Promise<McpRemoteTool[]>
+  /**
+   * Rejects with `McpCallError` when the failure is known not to have run the tool: the request never
+   * left, or the server answered it with an error. Any other rejection may have reached the server.
+   */
   callTool(
     name: string,
     args: unknown,
-    opts: { signal: AbortSignal },
+    opts: { signal: AbortSignal; timeoutMs?: number },
   ): Promise<{ content: RemoteContent[]; isError?: boolean }>
   close(): Promise<void>
+  /** True only when the server's initialize result advertised the `resources` capability. */
+  supportsResources?: boolean
+  listResources?(
+    options?: McpResourceCallOptions,
+  ): Promise<{ resources: McpRemoteResource[]; nextCursor?: string }>
+  listResourceTemplates?(
+    options?: McpResourceCallOptions,
+  ): Promise<{ resourceTemplates: McpRemoteResourceTemplate[]; nextCursor?: string }>
+  readResource?(uri: string, options?: McpResourceCallOptions): Promise<{ contents: McpResourceContent[] }>
   /** Reports an unexpected transport close/error; disposal stops the subscription. */
   onClose?(listener: () => void): () => void
   /** Reports the server's `notifications/tools/list_changed`; disposal stops the subscription. */
   onToolsChanged?(listener: () => void): () => void
+  /** Reports the server's `notifications/resources/list_changed`; disposal stops the subscription. */
+  onResourcesChanged?(listener: () => void): () => void
 }
 
-const secretValues = (cfg: McpServerConfig): string[] =>
-  [...Object.values(cfg.env ?? {}), ...Object.values(cfg.headers ?? {})]
-    .flatMap((value) => (value.startsWith('Bearer ') ? [value, value.slice('Bearer '.length)] : [value]))
-    .filter((value) => value.length > 0)
-    .sort((a, b) => b.length - a.length)
+const redactSecrets = redactMcpSecrets
+const errorText = mcpErrorText
 
-const redactSecrets = (value: string, cfg: McpServerConfig): string => {
-  let redacted = value
-  for (const secret of secretValues(cfg)) redacted = redacted.replaceAll(secret, '[REDACTED]')
-  return redacted
-}
-
-const errorText = (error: unknown, cfg?: McpServerConfig): string => {
-  let message = 'unknown failure'
-  try {
-    // `Error.message` is only typed as a string; an untrusted realm can replace it with an object.
-    // Own the primitive before redaction so a hostile `replaceAll` never receives configured secrets.
-    message = String(error instanceof Error ? error.message : error)
-  } catch {
-    // Untrusted transports may reject with objects whose coercion throws. Error reporting must stay total.
-  }
-  if (cfg) message = redactSecrets(message, cfg)
-  return message.replace(/[\r\n]+/g, ' ').slice(0, 1024)
-}
-
-function localName(serverId: string, remoteName: string): string {
-  const remote = remoteName.replace(/[^A-Za-z0-9_]/g, '_')
-  const prefix = mcpLocalToolPrefix(serverId)
-  if (!remote || prefix.length >= 64) throw new Error(`invalid remote tool name: ${remoteName}`)
-  return `${prefix}${remote.slice(0, 64 - prefix.length)}`
+function allocatePublicName(serverId: string, remoteName: string, taken: ReadonlySet<string>): string {
+  const name = mcpPublicToolName(serverId, remoteName, taken)
+  if (!name || taken.has(name)) throw new Error(`remote tool name collision: ${name || remoteName}`)
+  return name
 }
 
 function positiveLimit(value: number, name: string): number {
@@ -287,31 +301,46 @@ function remoteDefinition(
   conn: McpConnection,
   cfg: McpServerConfig,
   remote: McpRemoteTool,
-  mediaLimits?: McpMediaLimits,
+  mediaLimits: McpMediaLimits | undefined,
+  name: string,
 ): ToolDef {
-  const readOnly = remote.annotations?.readOnlyHint === true
-  const name = localName(cfg.id, remote.name)
+  // Hints never override contradictory destructive metadata. Missing write hints stay
+  // conservative; idempotency describes replay, not permission to act unattended.
+  const destructive = remote.annotations?.destructiveHint ?? remote.annotations?.readOnlyHint !== true
+  const readOnly = remote.annotations?.readOnlyHint === true && !destructive
+  const idempotent = remote.annotations?.idempotentHint === true
   return defineTool({
     name,
     description: redactSecrets(remote.description || remote.name, cfg),
     parameters: remoteInputSchema(remote.inputSchema),
     meta: {
       isReadOnly: readOnly,
-      isDestructive: !readOnly,
+      isDestructive: destructive,
       isConcurrencySafe: false,
       isOpenWorld: true,
-      replay: readOnly ? 'safe' : 'never',
+      replay: readOnly ? 'safe' : idempotent ? 'idempotent' : 'never',
       costHint: {},
       deferLoading: cfg.defer,
-      requiresApproval: undefined,
+      ...(cfg.discoveryGroup === undefined ? {} : { discoveryGroup: cfg.discoveryGroup }),
+      requiresApproval: destructive || (!readOnly && !idempotent) ? 'always' : undefined,
     },
     async execute(args, ctx): Promise<ToolResult> {
       let result: Awaited<ReturnType<McpConnection['callTool']>>
       try {
-        result = await conn.callTool(remote.name, args, { signal: ctx.signal })
+        // Core's deadline, not the SDK's 60 s default, so a slow call is not cut off as a failure
+        // while Core still counts it as running.
+        result = await conn.callTool(remote.name, args, { signal: ctx.signal, timeoutMs: ctx.timeoutMs })
       } catch (error) {
+        // A timeout or a dropped connection after the request left says nothing about what the
+        // tool did. A tool that changes things throws, so Core records the outcome as unknown
+        // instead of the model reading a failure and calling it again; reads and idempotent calls
+        // are safe to repeat, and a call refused or answered with an error did not run.
+        if (!(error instanceof McpCallError) && !readOnly && !idempotent)
+          throw new Error(`mcp server ${cfg.id} did not answer the call: ${errorText(error, cfg)}`)
+        const failure =
+          error instanceof McpCallError && error.stage === 'answered' ? 'returned an error' : 'unavailable'
         return {
-          content: [{ type: 'text', text: `mcp server ${cfg.id} unavailable: ${errorText(error, cfg)}` }],
+          content: [{ type: 'text', text: `mcp server ${cfg.id} ${failure}: ${errorText(error, cfg)}` }],
           isError: true,
         }
       }
@@ -396,14 +425,19 @@ function remoteDefinition(
         includePersistedRefs(content, persistedRefs)
         return result.isError === true ? { content, isError: true } : { content }
       } catch (error) {
+        // The server has answered, so the call ran whatever its content looks like. For a tool that
+        // changes things, report it the way the server did: an error here would invite a repeat.
+        const ran = !readOnly && !idempotent
         const content: ToolResult['content'] = [
-          { type: 'text', text: `mcp server ${cfg.id} returned invalid content: ${errorText(error, cfg)}` },
+          {
+            type: 'text',
+            text: ran
+              ? `mcp server ${cfg.id} ${result.isError === true ? 'reported an error' : 'completed the call'} but returned content that cannot be shown: ${errorText(error, cfg)}`
+              : `mcp server ${cfg.id} returned invalid content: ${errorText(error, cfg)}`,
+          },
         ]
         includePersistedRefs(content, persistedRefs)
-        return {
-          content,
-          isError: true,
-        }
+        return ran && result.isError !== true ? { content } : { content, isError: true }
       }
     },
   })
@@ -420,20 +454,15 @@ function mcpToolProblem(
 ): McpSkippedTool['code'] | undefined {
   if (typeof tool?.name !== 'string' || !tool.name || typeof tool.description !== 'string') return 'malformed'
   if (tool.name.length > 128) return 'invalid-name'
-  try {
-    localName(cfg.id, tool.name)
-  } catch {
-    return 'invalid-name'
-  }
   const inspected = inspectJsonData(tool.inputSchema, TOOL_PARAMETERS_MAX_BYTES)
   if (!inspected.ok) return inspected.reason.startsWith('size ') ? 'schema-too-large' : 'invalid-schema'
   let definition: ToolDef
   try {
-    definition = remoteDefinition(conn, cfg, tool)
+    definition = remoteDefinition(conn, cfg, tool, undefined, mcpPublicToolName(cfg.id, tool.name))
   } catch {
     return 'invalid-schema'
   }
-  const checked = checkToolDef(definition, { prefix: 'mcp_' })
+  const checked = checkToolDef(definition, { prefix: mcpStablePrefix(cfg.id) })
   const problems = checked.ok ? [] : checked.problems
   if (problems.some((p) => p.startsWith('parameters: serialized size'))) return 'schema-too-large'
   if (problems.some((p) => p.startsWith('parameters:'))) return 'invalid-schema'
@@ -465,19 +494,26 @@ export function validateRemoteCatalog(
     allowed === undefined
       ? remote
       : remote.filter((tool) => typeof tool?.name === 'string' && allowed.has(tool.name))
-  const names = new Set<string>()
+  const seenRaw = new Set<string>()
+  const taken = new Set<string>()
   const tools: McpRemoteTool[] = []
   const skipped: McpSkippedTool[] = []
-  for (const tool of accepted) {
+  for (const remote of accepted) {
+    let tool = remote
+    try {
+      tool = { ...remote, inputSchema: normalizeRemoteInputSchema(remote.inputSchema) }
+    } catch {
+      // Keep the original for the bounded per-tool refusal classification below.
+    }
     const code = mcpToolProblem(conn, cfg, tool)
     if (code) {
       const name: unknown = tool?.name
       skipped.push(typeof name === 'string' && name && name.length <= 128 ? { code, name } : { code })
       continue
     }
-    const local = localName(cfg.id, tool.name)
-    if (names.has(local)) throw new Error(`remote tool name collision: ${local}`)
-    names.add(local)
+    if (seenRaw.has(tool.name)) throw new Error(`remote tool name collision: ${tool.name}`)
+    seenRaw.add(tool.name)
+    taken.add(allocatePublicName(cfg.id, tool.name, taken))
     tools.push(tool)
   }
   return Object.freeze({ tools: Object.freeze(tools), skipped: Object.freeze(skipped) })
@@ -502,7 +538,7 @@ export async function inspectRemoteCatalog(
  * registration and closing its connection when this extension owns it.
  */
 export async function registerRemoteToolsStrict(
-  agnes: ExtensionAPI,
+  host: Pick<Context, 'tools' | 'resources' | 'self'>,
   conn: McpConnection,
   cfg: McpServerConfig,
   opts: {
@@ -520,7 +556,7 @@ export async function registerRemoteToolsStrict(
      * candidate connection or an old generation retained by the Host.
      */
     ownsConnection?: boolean
-    /** Explicit trusted policy; omission safely disables media until P0 freezes production caps. */
+    /** Explicit trusted policy; omission safely disables media until production evidence freezes the caps. */
     mediaLimits?: McpMediaLimits
   } = {},
 ): Promise<Disposer> {
@@ -532,27 +568,53 @@ export async function registerRemoteToolsStrict(
         : validateRemoteCatalog(conn, cfg, opts.catalog)
     opts.onRemoteCatalog?.(remote, skipped)
     const mediaLimits = resolveMediaLimits(opts.mediaLimits)
-    const definitions = remote.map((tool) => remoteDefinition(conn, cfg, tool, mediaLimits))
-    const duplicate = definitions.find((definition) => opts.claimedNames?.has(definition.name))
-    if (duplicate) throw new Error(`duplicate MCP tool name: ${duplicate.name}`)
-    const catalog = definitions.map((definition) => ({
+    const external = opts.claimedNames ?? new Set<string>()
+    const reserved = new Set<string>(external)
+    const allocated: { tool: McpRemoteTool; name: string }[] = []
+    for (const tool of remote) {
+      const stable = mcpPublicToolName(cfg.id, tool.name)
+      const name = mcpPublicToolName(cfg.id, tool.name, reserved)
+      if (!name || reserved.has(name)) {
+        throw new Error(
+          external.has(stable) || external.has(name)
+            ? `duplicate MCP tool name: ${name || tool.name}`
+            : `remote tool name collision: ${name || tool.name}`,
+        )
+      }
+      reserved.add(name)
+      allocated.push({ tool, name })
+    }
+    const definitions = allocated.map((row) => remoteDefinition(conn, cfg, row.tool, mediaLimits, row.name))
+    const admitted = admitMcpResourceTools(conn, cfg, reserved, (name) =>
+      host.self.log.warn('MCP resource tool name conflicts with a registered tool', { id: cfg.id, name }),
+    )
+    const resourceTools = admitted.tools
+    const catalog = [...definitions, ...resourceTools].map((definition) => ({
       name: definition.name,
       description: definition.description,
       schema: JSON.stringify(definition.parameters),
     }))
+    const resourceNote =
+      conn.supportsResources === true
+        ? `, ${resourceTools.length} resource tools${
+            admitted.conflicts > 0 ? `, ${admitted.conflicts} omitted for name conflict` : ''
+          }`
+        : ''
     disposers.push(
-      agnes.registerResource({
+      host.resources.register({
         id: cfg.id,
         kind: 'mcp',
         name: cfg.id,
-        description: `MCP server ${cfg.id} (${definitions.length} tools)`,
+        description: `MCP server ${cfg.id} (${definitions.length} tools${resourceNote})`,
       }),
     )
-    for (const definition of definitions) disposers.push(agnes.registerTool(definition))
+    disposers.push(bindMcpResourceServer(cfg.id, conn, cfg))
+    for (const definition of [...definitions, ...resourceTools])
+      disposers.push(host.tools.register(definition))
     // `tool_search` discovers only tools omitted from the default disclosure. Eager MCP tools
     // are already offered directly in every request and must not be duplicated in that index.
     if (cfg.defer) opts.onCatalog?.(catalog)
-    for (const definition of definitions) opts.claimedNames?.add(definition.name)
+    for (const definition of [...definitions, ...resourceTools]) opts.claimedNames?.add(definition.name)
   } catch (error) {
     for (const dispose of disposers.reverse()) dispose()
     if (opts.ownsConnection !== false) await conn.close().catch(() => undefined)
@@ -565,7 +627,7 @@ export async function registerRemoteToolsStrict(
     for (const dispose of disposers.reverse()) dispose()
     if (opts.ownsConnection !== false)
       void conn.close().catch((error) =>
-        agnes.ctx.log.warn('MCP connection did not close cleanly', {
+        host.self.log.warn('MCP connection did not close cleanly', {
           id: cfg.id,
           message: errorText(error, cfg),
         }),

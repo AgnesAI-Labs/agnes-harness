@@ -1,13 +1,30 @@
 // @vitest-environment happy-dom
-import type { UINode, UsageView } from '@agnes/protocol'
-import { afterEach, expect, it, vi } from 'vitest'
-import { createTimelineRenderer } from '../src/timeline.js'
-import { costDetails, costSummary, createUsagePanel, type UsagePanelUpdater } from '../src/usage.js'
-import { zhLocaleService, zhT } from './helpers/locale.js'
 
-const panels: UsagePanelUpdater[] = []
-function mountUsage(parent: HTMLElement) {
-  const panel = createUsagePanel(parent, zhT)
+import type { UINode, UsageView } from '@agnes/protocol'
+import { costDetails, costSummary } from '@agnes/web-conversation/usage'
+import { createRegionRenderer, setDisclosureOpen } from '@agnes/web-ui'
+import { ConversationUsage } from '@agnes/web-ui/conversation'
+import { createElement } from 'react'
+import { afterEach, expect, it, vi } from 'vitest'
+import { zhT } from './helpers/locale.js'
+
+type UsagePanel = ((usage: UsageView | undefined, connected: boolean) => void) & { dispose(): void }
+const panels: UsagePanel[] = []
+/** The composer renders this component in its own tree; the fixture drives it the same way. */
+function mountUsage(parent: HTMLElement): UsagePanel {
+  const root = createRegionRenderer(parent)
+  let disposed = false
+  const panel = ((usage, connected) => {
+    if (disposed) return
+    root.render(createElement(ConversationUsage, { usage, connected, t: zhT }))
+    root.flush()
+  }) as UsagePanel
+  panel.dispose = () => {
+    if (disposed) return
+    disposed = true
+    root.unmount()
+  }
+  panel(undefined, false)
   panels.push(panel)
   return panel
 }
@@ -37,6 +54,15 @@ const usage: UsageView = {
   context: { tokens: 1500, window: 128000, autoCompact: true, source: 'estimated' },
   model: { route: 'account-acct-private', id: 'm', thinking: 'high', maxTokens: 8192 },
 }
+const unknownTiming = [
+  ['调用总耗时（非整轮）', '未提供'],
+  ['调用内准备', '未提供'],
+  ['其中：轨迹采集（与其他阶段重叠）', '未提供'],
+  ['首次发送时点（距调用开始）', '未提供'],
+  ['首次可见输出（距调用开始）', '未提供'],
+  ['输出阶段', '未提供'],
+  ['收尾', '未提供'],
+]
 it('shows per-call values and known timing, without double counting reasoning or fabricating dollars', () => {
   expect(costSummary(call, zhT)).toBe('输入 120 · 输出 50 · $0.000125（估算）')
   expect(
@@ -50,29 +76,12 @@ it('shows per-call values and known timing, without double counting reasoning or
   ).toContain('（网关记录）')
   expect(costDetails(call, zhT)).toContainEqual(['额度', '0.000206 credits · 估算'])
   expect(costDetails(call, zhT)).toContainEqual(['推理 Token（输出的子集）', '20'])
-  expect(costDetails(call, zhT)).toContainEqual(['模型请求耗时', '2.40 秒'])
+  expect(costDetails(call, zhT)).toContainEqual(['请求采样耗时（不含收尾）', '2.40 秒'])
+  for (const row of unknownTiming) expect(costDetails(call, zhT)).toContainEqual(row)
   const legacy = { kind: 'cost', id: 'c2', seq: 5, source: 'estimated', credits: 2 } as const
   expect(costSummary(legacy, zhT)).toBe('2 credits（估算）')
   expect(costDetails(legacy, zhT)).toContainEqual(['Token 明细', '未提供'])
   expect(costDetails(legacy, zhT).flat().join(' ')).not.toContain('$')
-})
-it('keeps a call disclosure open on replacement and renders model names as text', () => {
-  const transcript = document.createElement('section')
-  const timeline = createTimelineRenderer({
-    locale: zhLocaleService(),
-    transcript,
-    newContentButton: document.createElement('button'),
-  })
-  document.body.append(transcript)
-  timeline.render([call])
-  const disclosure = transcript.querySelector('details')
-  if (!disclosure) throw new Error('missing details')
-  disclosure.open = true
-  timeline.render([{ ...call, model: '<img src=x onerror=alert(1)>', interrupted: true }])
-  expect(transcript.querySelector('details')).toBe(disclosure)
-  expect(disclosure.open).toBe(true)
-  expect(transcript.querySelector('img')).toBeNull()
-  expect(transcript.textContent).toContain('已中断')
 })
 it('上下文弹窗按 DSH 的头部行排版，并在下半段接 Token 用量分区', () => {
   const container = document.createElement('section')
@@ -86,21 +95,29 @@ it('上下文弹窗按 DSH 的头部行排版，并在下半段接 Token 用量�
   expect(head?.querySelector('.usage-context-value')?.textContent).toBe('1.2%')
   expect(head?.querySelector('.usage-context-caption')?.textContent).toBe('约 1.5K / 128.0K')
   expect(container.querySelector<HTMLElement>('.usage-bar > span')?.style.width).toBe('1.2%')
-  expect(container.querySelector('summary')?.textContent).toBe('上下文约 1.5K / 128.0K · 1.2%')
+  // 量表只显示占比；完整读数在提示与无障碍名称里。
+  expect(container.querySelector('.usage-percent')?.textContent).toBe('1%')
+  expect(container.querySelector('.usage-summary-label')?.textContent).toBe('上下文约 1.5K / 128.0K · 1.2%')
+  expect(container.querySelector<HTMLElement>('.agh-disclosure-summary')?.title).toBe(
+    '上下文约 1.5K / 128.0K · 1.2%. 上下文占用为后台估算。',
+  )
+  expect(container.querySelector('.agh-disclosure-summary')?.getAttribute('aria-label')).toBe(
+    '查看上下文约 1.5K / 128.0K · 1.2%. 上下文占用为后台估算。',
+  )
   expect(container.textContent).toContain('上下文占用')
   expect(container.textContent).toContain('1,500 Token')
   expect(container.textContent).toContain('128,000 Token')
   expect(container.textContent).toContain('8,192 Token')
   expect(container.textContent).toContain('已启用')
-  const details = container.querySelector('details')
+  const details = container.querySelector<HTMLElement>('.agh-disclosure')
   if (!details) throw new Error('missing details')
-  details.open = true
+  setDisclosureOpen(details, true)
   update(usage, false)
-  expect(details.open).toBe(true)
+  expect(details.dataset.open).toBe('true')
   expect(container.textContent).toContain('上次同步')
   update(undefined, true)
-  expect(container.hidden).toBe(true)
-  expect(details.open).toBe(false)
+  expect(details.hidden).toBe(true)
+  expect(details.dataset.open).toBe('false')
 })
 
 it('会话累计 Token / 额度 / 费用不在上下文弹窗里展示（按用户要求隐藏）', () => {
@@ -108,9 +125,9 @@ it('会话累计 Token / 额度 / 费用不在上下文弹窗里展示（按用�
   document.body.append(container)
   const update = mountUsage(container)
   update(usage, true)
-  const details = container.querySelector('details')
+  const details = container.querySelector<HTMLElement>('.agh-disclosure')
   if (!details) throw new Error('missing details')
-  expect(container.querySelectorAll('details')).toHaveLength(1)
+  expect(container.querySelectorAll('.agh-disclosure')).toHaveLength(1)
   const popover = container.querySelector('.usage-popover')
   // 弹窗只剩上下文口径：头部 + 分段条 + 上下文明细 + 说明。
   expect(popover?.querySelector('.usage-popover-head')).not.toBeNull()
@@ -124,13 +141,13 @@ it('会话累计 Token / 额度 / 费用不在上下文弹窗里展示（按用�
   }
   expect(text).not.toContain('0.000206')
   expect(text).not.toContain('account-acct-private')
-  details.open = true
+  setDisclosureOpen(details, true)
   update(usage, false)
-  expect(details.open).toBe(true)
+  expect(details.dataset.open).toBe('true')
   expect(container.textContent).toContain('上次同步')
   update(undefined, true)
-  expect(container.hidden).toBe(true)
-  expect(details.open).toBe(false)
+  expect(details.hidden).toBe(true)
+  expect(details.dataset.open).toBe('false')
 })
 
 it('preserves zero and missing values and separate dollar/credit provenance in pure cost formatting', () => {
@@ -140,21 +157,33 @@ it('preserves zero and missing values and separate dollar/credit provenance in p
     credits: 0,
     billing: { usdMicros: 0, source: 'gateway' as const, subscription: true },
     tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
-    timing: { ttftMs: 0, durationMs: 0 },
+    timing: {
+      providerCallMs: 0,
+      prepareMs: 0,
+      captureMs: 0,
+      dispatchMs: 0,
+      firstOutputMs: 0,
+      outputMs: 0,
+      finalizeMs: 0,
+      ttftMs: 0,
+      durationMs: 0,
+    },
     interrupted: true,
   }
   expect(costSummary(zero, zhT)).toBe('输入 0 · 输出 0 · $0.00（网关记录） · 已中断')
   expect(costDetails(zero, zhT)).toContainEqual(['额度', '0 credits · 估算'])
   expect(costDetails(zero, zhT)).toContainEqual(['美元费用', '$0.00 · 网关记录'])
   expect(costDetails(zero, zhT)).toContainEqual(['推理 Token（输出的子集）', '0'])
-  expect(costDetails(zero, zhT)).toContainEqual(['首次输出等待', '0 ms'])
-  expect(costDetails(zero, zhT)).toContainEqual(['模型请求耗时', '0 ms'])
+  expect(costDetails(zero, zhT)).toContainEqual(['初始采集后的首次输出等待', '0 ms'])
+  expect(costDetails(zero, zhT)).toContainEqual(['请求采样耗时（不含收尾）', '0 ms'])
+  for (const [label] of unknownTiming) expect(costDetails(zero, zhT)).toContainEqual([label, '0 ms'])
   const missing = { kind: 'cost', id: 'missing', seq: 1, source: 'gateway' } as const
   expect(costSummary(missing, zhT)).toBe('费用未提供')
   expect(costDetails(missing, zhT)).toEqual([
     ['记录范围', '单次费用记录'],
     ['Token 明细', '未提供'],
     ['额度', '未提供'],
+    ...unknownTiming,
   ])
 })
 
@@ -164,25 +193,22 @@ it('treats unknown and object-prototype purpose names as the generic single-call
   }
 })
 
-it('hides before first data, owns dismiss cleanup and ignores retired compatibility updates', () => {
+it('hides before first data and releases its dismiss listener once closed', () => {
   const container = document.createElement('section')
   document.body.append(container)
   const removed = vi.spyOn(document, 'removeEventListener')
   const added = vi.spyOn(document, 'addEventListener')
   const update = mountUsage(container)
-  expect(container.hidden).toBe(true)
+  expect(required(container.querySelector<HTMLElement>('.agh-disclosure')).hidden).toBe(true)
   update(usage, true)
-  const details = required(container.querySelector('details'))
-  details.open = true
+  const details = required(container.querySelector<HTMLElement>('.agh-disclosure'))
+  expect(details.hidden).toBe(false)
+  setDisclosureOpen(details, true)
   required(container.querySelector<HTMLElement>('.usage-popover')).click()
-  expect(details.open).toBe(true)
+  expect(details.dataset.open).toBe('true')
   document.body.click()
-  expect(details.open).toBe(false)
+  expect(details.dataset.open).toBe('false')
   update.dispose()
-  update.dispose()
-  update(usage, false)
-  expect(container.hidden).toBe(true)
-  expect(container.childElementCount).toBe(0)
   const click = added.mock.calls.find(([event]) => event === 'click')
   expect(click).toBeDefined()
   expect(removed.mock.calls.some(([event, callback]) => event === 'click' && callback === click?.[1])).toBe(

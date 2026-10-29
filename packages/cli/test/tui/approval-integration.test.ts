@@ -2,10 +2,10 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { presets as basePresets, seams as baseSeams } from '@agnes/base'
+import { presets as basePresets } from '@agnes/base'
 import { presets as codePresets, operations, PRESET_NAMES } from '@agnes/code'
 import { createLocalEndpoint, createPrompterBridge } from '@agnes/daemon/local'
-import { createTestHost } from '@agnes/host/testkit'
+import { baseSeamFactories, createTestHost } from '@agnes/host/testkit'
 import { createClient, TransportClosed } from '@agnes/sdk'
 import { expect, it, vi } from 'vitest'
 import { TuiApp } from '../../src/tui/app.js'
@@ -16,14 +16,16 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
   'actual write permission is decided by terminal input: %s',
   async (mode) => {
     const root = mkdtempSync(join(tmpdir(), 'agnes-tui-approval-'))
+    // The workspace must not sit inside the Agnes home, whose files are approved one call at a time.
+    const home = mkdtempSync(join(tmpdir(), 'agnes-tui-home-'))
     const content = mode === 'paged_allow' ? 'x'.repeat(300) : 'approved'
     const dimensions = mode === 'paged_allow' ? { columns: 40, rows: 12 } : { columns: 100, rows: 35 }
     const bridge = createPrompterBridge()
     const { host } = await createTestHost({
-      dataDir: root,
+      dataDir: home,
       packageDirs: { '@agnes/base': fileURLToPath(new URL('../../../base', import.meta.url)) },
       packages: {
-        '@agnes/base': { seams: { approval: baseSeams.approval }, presets: basePresets },
+        '@agnes/base': { seams: { approval: baseSeamFactories.approval }, presets: basePresets },
         '@agnes/code': { operations },
       },
       presets: {
@@ -66,7 +68,7 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
       await vi.waitFor(
         async () =>
           expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-            'Approval: write',
+            'Needs approval · Write file',
           ),
         { timeout: 10_000 },
       )
@@ -89,11 +91,13 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
         term.feed('\x1b[A')
         await Promise.resolve()
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-          'allow_always',
+          '❯ [2] Allow for this session',
         )
         term.feed('\x1b[A')
         await Promise.resolve()
-        expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain('allow_once')
+        expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
+          '❯ [1] Allow once',
+        )
       } else {
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
           '"path": "receipt.txt"',
@@ -103,8 +107,20 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
         )
       }
       if (mode === 'disconnect') await client.close()
-      else if (mode === 'stop') await app.stop()
-      else term.feed(mode === 'allow' ? '1' : '\r')
+      else if (mode === 'stop') {
+        await app.stop()
+        // Closing the UI detaches its offer; only explicit session cancellation stops the turn.
+        expect(
+          (await session.projectUI()).nodes.some(
+            (node) => node.kind === 'approval' && node.decision?.verdict === 'rejected',
+          ),
+        ).toBe(false)
+        await session.cancel()
+      } else {
+        // A single key only counts once the card has sat untouched for the settle period.
+        await new Promise((resolve) => setTimeout(resolve, 700))
+        term.feed(mode === 'allow' ? '1' : '\r')
+      }
       const outcome = await result
       if (mode === 'disconnect') expect(outcome).toBeInstanceOf(TransportClosed)
       else expect(outcome).toBeUndefined()
@@ -113,7 +129,7 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
       if (mode === 'allow') {
         await vi.waitFor(async () =>
           expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-            '◆ write  write',
+            '◆ write +1 -0  write',
           ),
         )
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).not.toContain(
@@ -122,24 +138,24 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
         term.feed('\x0f')
         await vi.waitFor(async () =>
           expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-            'Arguments:',
+            'receipt.txt whole file, replaces it if it exists +1 -0',
           ),
         )
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-          'receipt.txt',
+          '1 + approved',
         )
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain('Result:')
         term.feed('\x0f')
         await vi.waitFor(async () =>
           expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).not.toContain(
-            'Arguments:',
+            'whole file',
           ),
         )
       }
       if (mode !== 'stop') {
         await Promise.resolve()
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).not.toContain(
-          'Approval: write',
+          'Needs approval · Write file',
         )
       }
     } finally {
@@ -148,6 +164,7 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
       await endpoint.close()
       await host.close()
       rmSync(root, { recursive: true, force: true })
+      rmSync(home, { recursive: true, force: true })
     }
   },
   // A real Host turn plus TUI paging: under a second alone, past the 5 s default on the Windows runner.

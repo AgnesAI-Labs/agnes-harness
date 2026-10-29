@@ -1,5 +1,0 @@
-{
-  "enforce": true,
-  "byReference": { "loadMs": 1000, "maxRowBytes": 65536, "dbGrowthBytes": 1048576 },
-  "upload100MbMs": 10000
-}

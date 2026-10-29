@@ -1,17 +1,18 @@
+import { canonicalJson } from '@agnes/core-common/request/hash'
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import type { Event, IdMinter, Seq } from '@agnes/core-common/types'
+import { forkBaseProviders } from '@agnes/core-ledger/log/fork-seed'
+import { verifyLedger } from '@agnes/core-ledger/log/integrity'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import { type OpenLogOptions, SessionLogImpl } from '@agnes/core-ledger/log/session-log'
+import type { StorageAdapter } from '@agnes/core-ledger/log/storage'
+import { encodeLedgerState } from '@agnes/core-ledger/testkit/encode-ledger-state'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { Kernel } from '../src/kernel.js'
-import { forkBaseProviders } from '../src/log/fork-seed.js'
-import { verifyLedger } from '../src/log/integrity.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import { type OpenLogOptions, SessionLogImpl } from '../src/log/session-log.js'
-import type { StorageAdapter } from '../src/log/storage.js'
-import { canonicalJson } from '../src/request/hash.js'
 import { CompactionRunner } from '../src/step/compaction.js'
-import { presetDefaults } from '../src/step/preset.js'
 import type { SessionImpl } from '../src/step/session.js'
-import type { Event, IdMinter, Seq } from '../src/types.js'
-import { encodeLedgerState } from '../testkit/encode-ledger-state.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { type FakeProvider, fakeProvider, type Script, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, readTool, testFsOps } from './helpers/open-session.js'
@@ -60,6 +61,7 @@ function createChild(from: SessionImpl, kind: 'fork' | 'spawn', opts: CreateOpts
 function kernel(storage: StorageAdapter, provider: FakeProvider, warnings: unknown[] = [], ids = fixedIds()) {
   Object.assign(provider, { models: () => [model()] })
   const k = Kernel.create({
+    loops: defaultLoops(),
     storage,
     seams: fakeSeams(),
     provider,

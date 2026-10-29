@@ -1,16 +1,15 @@
 #define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
-#include <linux/if_alg.h>
 #include <limits.h>
 #include <node_api.h>
+#include <openssl/evp.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/sendfile.h>
-#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 static napi_value fail(napi_env env, const char* operation, int error) {
@@ -27,9 +26,11 @@ static napi_value fail(napi_env env, const char* operation, int error) {
     case ENOTSUP: code = "ENOTSUP"; break;
     case ENOENT: code = "ENOENT"; break;
     case ENOTDIR: code = "ENOTDIR"; break;
+    case ENOTEMPTY: code = "ENOTEMPTY"; break;
+    case ENOMEM: code = "ENOMEM"; break;
   }
   char message[192];
-  snprintf(message, sizeof(message), "%s failed", operation);
+  snprintf(message, sizeof(message), "%s: %s failed", code, operation);
   napi_value text, name, result;
   napi_create_string_utf8(env, message, NAPI_AUTO_LENGTH, &text);
   napi_create_string_utf8(env, code, NAPI_AUTO_LENGTH, &name);
@@ -70,7 +71,7 @@ static bool lowercase_sha256(const char* value) {
  * allow an attacker to replace an intermediate directory with a symlink before open(). */
 static int open_absolute_directory(const char* path) {
   size_t length = strlen(path);
-  if (length < 2 || path[0] != '/' || path[length - 1] == '/') {
+  if (length < 1 || path[0] != '/' || (length > 1 && path[length - 1] == '/')) {
     errno = EINVAL;
     return -1;
   }
@@ -161,43 +162,33 @@ static napi_value delete_private_artifact(napi_env env, napi_callback_info info)
     return fail(env, "validate artifact", saved);
   }
 
-  int hash_fd = socket(AF_ALG, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
-  if (hash_fd < 0) {
-    int saved = errno;
+  /* Hash the verified, already opened file. No AF_ALG socket: container seccomp commonly
+   * denies that optional kernel interface. EVP also handles empty and multi-block files. */
+  EVP_MD_CTX* hash = EVP_MD_CTX_new();
+  if (!hash || EVP_DigestInit_ex(hash, EVP_sha256(), NULL) != 1) {
+    EVP_MD_CTX_free(hash);
     close(file_fd); close(shard_fd); close(root_fd);
-    return fail(env, "create artifact hash", saved);
+    return fail(env, "initialize artifact hash", EIO);
   }
-  struct sockaddr_alg address = {0};
-  address.salg_family = AF_ALG;
-  memcpy(address.salg_type, "hash", 5);
-  memcpy(address.salg_name, "sha256", 7);
-  if (bind(hash_fd, (struct sockaddr*)&address, sizeof(address)) != 0) {
-    int saved = errno;
-    close(hash_fd); close(file_fd); close(shard_fd); close(root_fd);
-    return fail(env, "bind artifact hash", saved);
-  }
-  int operation_fd = accept4(hash_fd, NULL, NULL, SOCK_CLOEXEC);
-  if (operation_fd < 0) {
-    int saved = errno;
-    close(hash_fd); close(file_fd); close(shard_fd); close(root_fd);
-    return fail(env, "open artifact hash", saved);
-  }
-  off_t offset = 0;
-  /* One sendfile call is one complete AF_ALG hash message. Retrying a short transfer without
-   * MSG_MORE would finalize separate messages, so fail closed instead of accepting a wrong digest. */
-  ssize_t sent = sendfile(operation_fd, file_fd, &offset, (size_t)opened.st_size);
-  if (sent < 0 || sent != opened.st_size) {
-    int saved = sent < 0 ? errno : EIO;
-    close(operation_fd); close(hash_fd); close(file_fd); close(shard_fd); close(root_fd);
-    return fail(env, "hash artifact", saved);
+  unsigned char block[65536];
+  off_t remaining = opened.st_size;
+  int hash_error = 0;
+  while (remaining > 0) {
+    size_t count = remaining < (off_t)sizeof(block) ? (size_t)remaining : sizeof(block);
+    ssize_t got = read(file_fd, block, count);
+    if (got < 0 && errno == EINTR) continue;
+    if (got <= 0) { hash_error = got < 0 ? errno : EIO; break; }
+    if (EVP_DigestUpdate(hash, block, (size_t)got) != 1) { hash_error = EIO; break; }
+    remaining -= got;
   }
   unsigned char bytes[32];
-  ssize_t digest_size = read(operation_fd, bytes, sizeof(bytes));
-  close(operation_fd);
-  close(hash_fd);
-  if (digest_size != (ssize_t)sizeof(bytes)) {
+  unsigned int digest_size = 0;
+  if (!hash_error && (EVP_DigestFinal_ex(hash, bytes, &digest_size) != 1 || digest_size != sizeof(bytes)))
+    hash_error = EIO;
+  EVP_MD_CTX_free(hash);
+  if (hash_error) {
     close(file_fd); close(shard_fd); close(root_fd);
-    return fail(env, "read artifact hash", digest_size < 0 ? errno : EIO);
+    return fail(env, "hash artifact", hash_error);
   }
   char actual[65];
   for (size_t index = 0; index < sizeof(bytes); index++)
@@ -211,7 +202,10 @@ static napi_value delete_private_artifact(napi_env env, napi_callback_info info)
   struct stat current;
   stat_result = fstatat(shard_fd, basename, &current, AT_SYMLINK_NOFOLLOW);
   if (stat_result != 0 ||
-      !private_file(&current) || current.st_dev != opened.st_dev || current.st_ino != opened.st_ino) {
+      !private_file(&current) || current.st_dev != opened.st_dev || current.st_ino != opened.st_ino ||
+      current.st_size != opened.st_size ||
+      current.st_mtim.tv_sec != opened.st_mtim.tv_sec || current.st_mtim.tv_nsec != opened.st_mtim.tv_nsec ||
+      current.st_ctim.tv_sec != opened.st_ctim.tv_sec || current.st_ctim.tv_nsec != opened.st_ctim.tv_nsec) {
     int saved = stat_result == 0 ? EACCES : errno;
     close(file_fd); close(shard_fd); close(root_fd);
     return fail(env, "revalidate artifact entry", saved);
@@ -236,10 +230,39 @@ static napi_value delete_private_artifact(napi_env env, napi_callback_info info)
 #include "rename-directory.h"
 #include "skill-delete-posix.h"
 
+/* Availability only: querying an ABI does not install a sandbox. */
+static napi_value landlock_abi(napi_env env, napi_callback_info info) {
+  (void)info;
+  long abi = 0;
+#ifdef SYS_landlock_create_ruleset
+  abi = syscall(SYS_landlock_create_ruleset, NULL, 0, 1 /* LANDLOCK_CREATE_RULESET_VERSION */);
+  if (abi < 0) {
+    if (errno == ENOSYS || errno == EOPNOTSUPP) abi = 0;
+    else return fail(env, "query Landlock ABI", errno);
+  }
+#endif
+  napi_value result;
+  napi_create_int64(env, abi, &result);
+  return result;
+}
+
+#include "canonical-read-posix.h"
+#include "canonical-fs-posix.h"
+
 static napi_value initialize(napi_env env, napi_value exports) {
   napi_value abi, function;
   napi_create_uint32(env, 1, &abi);
   napi_set_named_property(env, exports, "abiVersion", abi);
+  napi_create_function(env, "openCanonicalWritableFile", NAPI_AUTO_LENGTH, open_canonical_writable_file, NULL, &function);
+  napi_set_named_property(env, exports, "openCanonicalWritableFile", function);
+  napi_create_function(env, "openCanonicalExclusiveFile", NAPI_AUTO_LENGTH, open_canonical_exclusive_file, NULL, &function);
+  napi_set_named_property(env, exports, "openCanonicalExclusiveFile", function);
+  napi_create_function(env, "canonicalFs", NAPI_AUTO_LENGTH, canonical_fs, NULL, &function);
+  napi_set_named_property(env, exports, "canonicalFs", function);
+  napi_create_function(env, "openCanonicalFile", NAPI_AUTO_LENGTH, open_canonical_file, NULL, &function);
+  napi_set_named_property(env, exports, "openCanonicalFile", function);
+  napi_create_function(env, "listCanonicalDirectory", NAPI_AUTO_LENGTH, list_canonical_directory, NULL, &function);
+  napi_set_named_property(env, exports, "listCanonicalDirectory", function);
   napi_create_function(env, "deleteSkillEntry", NAPI_AUTO_LENGTH, delete_skill_entry, NULL, &function);
   napi_set_named_property(env, exports, "deleteSkillEntry", function);
   napi_create_function(env, "deletePrivateArtifact", NAPI_AUTO_LENGTH,
@@ -248,6 +271,8 @@ static napi_value initialize(napi_env env, napi_value exports) {
   napi_create_function(env, "renameDirectoryNoReplace", NAPI_AUTO_LENGTH,
                        rename_directory_no_replace, NULL, &function);
   napi_set_named_property(env, exports, "renameDirectoryNoReplace", function);
+  napi_create_function(env, "landlockAbi", NAPI_AUTO_LENGTH, landlock_abi, NULL, &function);
+  napi_set_named_property(env, exports, "landlockAbi", function);
   return exports;
 }
 

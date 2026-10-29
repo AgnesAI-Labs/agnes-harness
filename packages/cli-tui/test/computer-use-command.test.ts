@@ -51,8 +51,8 @@ describe('computer-use read-only TUI commands', () => {
     expect(call).toHaveBeenNthCalledWith(2, '_agnes/v1/computerUse.doctor', {})
     expect(slashCommand('/computer-use')?.args).toBe('status')
     expect(slashCommand('/doctor')?.args).toBe('computer-use')
-    expect(completeToken('/comp', '/unused')).toContain('/computer-use')
-    expect(completeToken('/doc', '/unused')).toContain('/doctor')
+    expect(completeToken('/comp')).toContain('/computer-use')
+    expect(completeToken('/doc')).toContain('/doctor')
   })
 
   it('renders an unreachable live doctor without substituting cached status', async () => {

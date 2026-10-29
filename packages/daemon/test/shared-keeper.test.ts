@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { keepSharedWorker } from '../src/supervisor/shared-keeper.js'
+import { WorkerBootFailures } from '../src/supervisor/worker-boot-failures.js'
 import type { WorkerLink } from '../src/supervisor/worker-link.js'
 
 afterEach(() => {
@@ -81,3 +82,41 @@ it('stops retrying once closed', async () => {
   await vi.advanceTimersByTimeAsync(60_000)
   expect(acquire).toHaveBeenCalledTimes(1)
 })
+
+it.each(['E_SEAM_INIT', 'E_SECRET_UNRESOLVED', 'E_PACKAGE_INTEGRITY'])(
+  'stops on a %s boot breaker until changed inputs',
+  async (code) => {
+    vi.useFakeTimers()
+    let retry!: () => void
+    const failures = new WorkerBootFailures()
+    for (let attempt = 0; attempt < 3; attempt++)
+      failures.record(
+        '@shared',
+        code,
+        failures.epoch,
+        code === 'E_PACKAGE_INTEGRITY' ? 'clean-home-required' : undefined,
+      )
+    const acquire = vi.fn(async () => {
+      throw failures.blocked('@shared')
+    })
+    const offRetry = vi.fn()
+    const keeper = keepSharedWorker({
+      acquire,
+      onRetry: (listener) => {
+        retry = listener
+        return offRetry
+      },
+      log: { warn() {} },
+    })
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(acquire).toHaveBeenCalledTimes(1)
+    retry()
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(acquire).toHaveBeenCalledTimes(2)
+    keeper.close()
+    expect(offRetry).toHaveBeenCalledOnce()
+    retry()
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(acquire).toHaveBeenCalledTimes(2)
+  },
+)

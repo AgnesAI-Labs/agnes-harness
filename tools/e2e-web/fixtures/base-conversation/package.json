@@ -1,0 +1,54 @@
+{
+  "name": "plain-conversation-test",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:plain-conversation-test/main",
+        "export": "main",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "tools"
+        ],
+        "capabilities": {
+          "tools": {
+            "names": [
+              "plain_review"
+            ],
+            "prefix": "plain_"
+          }
+        }
+      }
+    ],
+    "application": {
+      "id": "plain-review",
+      "workbench": {
+        "tabs": [
+          {
+            "id": "signatures",
+            "title": {
+              "en": "Pending signatures",
+              "zh-CN": "待签署"
+            },
+            "order": -20,
+            "slot": "workbench.panel",
+            "view": "signatures"
+          },
+          {
+            "id": "evidence",
+            "title": {
+              "en": "Evidence & reports",
+              "zh-CN": "证据与报告"
+            },
+            "order": -10,
+            "slot": "workbench.panel",
+            "view": "evidence"
+          }
+        ]
+      }
+    }
+  }
+}

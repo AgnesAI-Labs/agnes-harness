@@ -23,7 +23,12 @@ function fixture() {
     log: () => undefined,
     createClientImpl: vi.fn(() => client),
   }
-  const scope = { scopeID: 'selected-scope' } as Awaited<ReturnType<typeof resolveDaemonScope>>
+  const scope = {
+    scopeID: 'selected-scope',
+    home: deps.home,
+    profile: 'local-dev',
+    workspace: deps.cwd,
+  } as Awaited<ReturnType<typeof resolveDaemonScope>>
   vi.mocked(resolveDaemonScope).mockResolvedValue(scope)
   const discovery = {
     socketPath: '\\\\.\\pipe\\selected-daemon',
@@ -41,13 +46,16 @@ describe('manual pipe connection identity', () => {
       parseArgs(['--connect', 'pipe:///selected-daemon', '--profile', 'chosen']),
       deps,
     )
-    expect(resolveDaemonScope).toHaveBeenCalledWith({
-      env: deps.env,
-      home: deps.home,
-      cwd: deps.cwd,
-      profile: 'chosen',
-      agnesVersion: deps.agnesVersion,
-    })
+    expect(resolveDaemonScope).toHaveBeenCalledWith(
+      expect.objectContaining({
+        env: deps.env,
+        home: deps.home,
+        cwd: deps.cwd,
+        profile: 'chosen',
+        agnesVersion: deps.agnesVersion,
+        dataDir: expect.any(String),
+      }),
+    )
     expect(readDaemonDiscovery).toHaveBeenCalledWith(scope)
     expect(deps.createClientImpl).toHaveBeenCalledWith(
       expect.objectContaining({

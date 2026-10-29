@@ -3,12 +3,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { serviceFixture } from '@agnes/extension-api/testkit'
+import { PublicationGate } from '@agnes/host-common/publication-gate'
+import { pluginRowSource } from '@agnes/host-extensions/ext-host/row-extension-host'
+import { isServicePreDispatchFailure } from '@agnes/host-extensions/ext-host/service-invocation'
 import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import { buildRuntimeTarget, createPluginRow } from '@agnes/plugin-runtime/host'
 import { afterEach, expect, it, vi } from 'vitest'
-import { pluginRowSource } from '../../src/ext-host/row-extension-host.js'
-import { isServicePreDispatchFailure } from '../../src/ext-host/service-invocation.js'
-import { PublicationGate } from '../../src/publication-gate.js'
 import { createTestHost, type TestHost } from '../../testkit/index.js'
 
 const held: { root: string; host: TestHost['host'] }[] = []
@@ -35,17 +35,21 @@ async function fixture(authorized = true) {
       version: '1.0.0',
       type: 'module',
       exports: './index.mjs',
-      agnes: { plugins: [{ id: rowId, export: 'main', services: [cap.name] }] },
+      agnes: { plugins: [{ apiRange: '^5.0.0', id: rowId, export: 'main', services: [cap.name] }] },
     }),
   )
   writeFileSync(
     join(pkg, 'index.mjs'),
-    `export const main = { apply(ctx) { ctx.services.register({ ...${JSON.stringify(cap)}, async handler(input, serviceCtx) {
+    `let delayedFiles;
+    export const main = { apply(ctx) { ctx.services.register({ ...${JSON.stringify(cap)}, async handler(input, serviceCtx) {
     if (input.value === 2) await serviceCtx.fs.write('forbidden-write', 'no');
     if (input.value === 3) return {value: (await serviceCtx.fs.read('read.txt')).length};
     if (input.value === 4) await serviceCtx.fs.read('../outside');
     if (input.value === 5) await serviceCtx.exec(['touch', 'forbidden-exec']);
     if (input.value === 6) await new Promise((resolve) => setTimeout(resolve, 40));
+    if (input.value === 7) delayedFiles = serviceCtx.sessionFiles;
+    if (input.value === 8) return {value: (await delayedFiles.read('read.txt', {limit: 32})).length};
+    if (input.value === 9) await delayedFiles.read('../outside', {limit: 32});
     return {value: input.value};
   } }); } };`,
   )
@@ -124,7 +128,9 @@ it('loads a real bundled factory and enforces the selected session workspace/que
   expect(h.host.kernel.sessions.size).toBe(1)
   await expect(h.call(1)).resolves.toEqual({ output: { value: 1 } })
   await expect(h.call(3)).resolves.toEqual({ output: { value: 4 } })
-  for (const value of [2, 4, 5])
+  await expect(h.call(7)).resolves.toEqual({ output: { value: 7 } })
+  await expect(h.call(8)).resolves.toEqual({ output: { value: 4 } })
+  for (const value of [2, 4, 5, 9])
     await expect(h.call(value)).rejects.toMatchObject({ data: { code: 'INTERNAL_ERROR' } })
   await h.host.close()
   let closedFailure: unknown
@@ -271,7 +277,7 @@ it('does not poison publication admission when an ordinary service call fails', 
   await expect(h.call(1)).resolves.toEqual({ output: { value: 1 } })
 })
 
-it('rejects a service after its Cordis row is removed', async () => {
+it('keeps a pinned service after removal and rejects it for a new session', async () => {
   const h = await fixture()
   await h.host.applyRuntimeTarget(
     buildRuntimeTarget({
@@ -281,7 +287,15 @@ it('rejects a service after its Cordis row is removed', async () => {
       compositeRevision: '0'.repeat(64),
     }),
   )
-  await expect(h.call(1)).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
+  await expect(h.call(1)).resolves.toEqual({ output: { value: 1 } })
+  const next = await h.host.createSession({ cwd: h.root, key: 'service-after-removal' })
+  await expect(
+    h.host.callService(
+      { sessionId: next.key, extension: owner, service: 'fixture.echo', input: { value: 1 } },
+      'opaque',
+    ),
+  ).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
+  await next.close()
 })
 
 it('holds activation cutover until a real service invocation finishes', async () => {

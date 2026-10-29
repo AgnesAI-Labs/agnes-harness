@@ -1,14 +1,14 @@
+import { withPhase } from '@agnes/core-common/step/op-state'
+import { CoreError } from '@agnes/core-common/types'
+import { CORE_CHECKS } from '@agnes/core-ledger/invariants/core-checks'
+import { InvariantRegistry } from '@agnes/core-ledger/invariants/registry'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import { foldEvents } from '@agnes/core-ledger/reduce/reducer'
 import type { InferenceEvent, Provider } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
-import { describe, expect, it } from 'vitest'
-import { CORE_CHECKS } from '../src/invariants/core-checks.js'
-import { InvariantRegistry } from '../src/invariants/registry.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import { foldEvents } from '../src/reduce/reducer.js'
+import { describe, expect, it, vi } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
-import { withPhase } from '../src/step/op-state.js'
 import { type HookPort, noopHooks } from '../src/step/session.js'
-import { CoreError } from '../src/types.js'
 import {
   fakeProvider,
   type Script,
@@ -48,6 +48,21 @@ const slowTool = (fn: (args: unknown) => Promise<{ content: Array<{ type: 'text'
   }) as never
 
 const wait = (ms: number) => new Promise<void>((res) => setTimeout(res, ms))
+
+it('still cancels execution and refuses a new lifecycle when durable child withdrawal fails', async () => {
+  const h = await openSession({ provider: fakeProvider([textTurn('must not run')]) })
+  vi.spyOn(h.storage, 'listByParent').mockRejectedValue(new Error('withdrawal unavailable'))
+  try {
+    await expect(h.session.abort(actor)).rejects.toThrow('withdrawal unavailable')
+    expect(h.session.ac.signal.aborted).toBe(true)
+    await expect(
+      h.session.run({ until: 'turn-end', signal: new AbortController().signal }),
+    ).rejects.toMatchObject({ code: 'E_CLOSED' })
+  } finally {
+    // The failed stop remains visible to close; it still releases its own writer before rejecting.
+    await expect(h.session.close()).rejects.toThrow('withdrawal unavailable')
+  }
+})
 
 function slowRegistry(started: string[]): ToolRegistry {
   const r = new ToolRegistry()
@@ -362,9 +377,11 @@ describe('the run loop bounds', () => {
     )
     // A phase edge that reports where it went without writing where it went, which is the shape the
     // bound exists for. Stubbing it is the only way to hold one still long enough to observe.
-    ;(session as unknown as { step: () => Promise<{ phase: string }> }).step = async () => ({
-      phase: 'tools',
-    })
+    ;(session as unknown as { step: () => Promise<{ outcome: 'running'; phase: string }> }).step =
+      async () => ({
+        outcome: 'running',
+        phase: 'tools',
+      })
     const out = await session.run({ until: 'turn-end', signal: new AbortController().signal })
     expect(out.reason).toBe('error')
     const t = await types(log as never)

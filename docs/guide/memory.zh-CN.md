@@ -1,0 +1,39 @@
+# 学到的文件记忆
+
+[English](memory.md) | 简体中文
+
+记忆保存同一工作区跨会话使用的小份偏好与约定。设置 → 通用 → 个性化 → 记忆提供**关闭**、**写入前询问**、**自动记住**。官方文件 provider 默认安装，Agent 访问默认关闭。关闭后，下次请求不能通过记忆 API 和受控文件工具读取或写入记忆；shell 防护取决于平台，见下文；已经发送给模型的内容无法撤回。
+
+用“打开记忆文件”在现有文本编辑器中查看和修改 Markdown。关闭 Agent 访问不影响人工编辑。保存使用打开文件时的哈希；发生冲突会保留人或其他会话的改动，应重新读取、合并后保存。页面显示最后记录的写入会话与轮次；直接在此编辑器外改文件不会更新该记录。记忆在项目 checkpoint 之外，回滚代码不会回滚偏好。
+
+## 文件与预算
+
+文件位于 `$AGH_HOME/memory/workspaces/<规范工作区路径的 SHA256>/`。`MEMORY.md` 是索引，`conventions.md` 等平铺主题文件保存可选细节。只有索引进入现有 context contribution；Agent 用普通 read 工具按需读取主题。索引和主题读取使用每轮同一修订，包括重复请求与重试。人工编辑及 Agent 本轮刚提交的改动在下一轮可读；同轮再次修改同一文件会因基线过期发生冲突。
+
+默认存储上限：索引 16 KiB / 200 行，主题 32 KiB，工作区合计 256 KiB。独立的注入预算是工作区 2,048 tokens、可选用户层 512 tokens，含贡献头部。provider 用 UTF-8 字节数作为保守 token 上界，每层独立遵守上界，不借用另一层的剩余额度。省略标记说明请求中缺少部分内容，磁盘文件不会被静默截断。超限写入返回 `MEMORY_CONSOLIDATION_REQUIRED`，原文件不变。应合并重复或失效偏好，避免无限追加。
+
+可选用户偏好由人创建 `$AGH_HOME/memory/user/MEMORY.md`，通过 [SDK](../reference/api.zh-CN.md) 管理方法开启 `userEnabled`。用户层只读，使用相同索引存储上限和独立注入预算。Agent 不能修改用户文件或读取其他工作区记忆。
+
+SDK 方法 `_agnes/v1/admin.memory` 接收 `cwd`、可选 settings 补丁，或人工编辑的 `file`、`content`、`baseHash`。可配置 `indexMaxBytes`、`indexMaxLines`、`topicMaxBytes`、`totalMaxBytes`、`tokenBudget`、`userTokenBudget`、`userEnabled`。选择 `_agnes/v1/admin.context` 返回的可用工作区。设置和编辑需要本机 owner 管理权限，插件工具不能自行开启访问。
+
+## 审批与隐私
+
+内置 **remembering** Skill 指导记录稳定偏好、约定和决策。不要保存凭据、令牌、秘密、私人标识、一次性任务细节或聊天记录。常见凭据检测器拒绝疑似秘密；它是保守过滤器，不是万能检测器。
+
+询问模式下，普通 write/edit 工具生成完整文件 diff、前后哈希和来源会话/轮次。正常审批只允许该变更一次。拒绝、取消、策略改变或基线变化都不能发布旧候选。完全访问在询问模式下也会自动允许每项精确记忆变更，记录执行者与 `full-access` 原因；会话授权仍不代替记忆审批。macOS/Linux 上，进程隔离拒绝访问整个记忆树，bash、别名、符号链接不能绕过 provider；不能落实此边界时拒绝未隔离执行。此底线在关闭模式下仍有效：命令工具和终端需要可用的 Seatbelt（macOS）或 bwrap namespace（Linux），受控文件工具仍可使用。显式选择的 `full-access` 权限是例外，与其他 Agent 工具的完全访问模式一致：它信任用户及其环境。OS 边界可用时命令仍无法访问记忆树；边界不可用时（例如 Docker 容器或未装 bubblewrap 的服务器），命令不经隔离执行，记忆保持启用，shell 可以直接读写记忆文件。`sandbox.required: true` 仍会拒绝。记忆文件自 provider 上次写入或确认后在其之外被改动时，下一轮仍会载入，并在对话中显示提示，列出该文件。provider 把这些哈希保存在自己的记忆目录中，因此这只是提示，不是防护。受隔离的 stdio MCP 进程采用同一份 Host 私有目录底线，覆盖实际安装的记忆树、别名及启动后才创建的目录；明确未隔离的 MCP profile 不在此保证之内。
+
+可信 Windows 本机后端尚未实现系统隔离。`read-only`、`workspace-write` 权限的条件策略及显式允许的 L0 可执行命令，不再因记忆的系统隔离要求阻断会话。记忆关闭/询问/自动、一次批准、工作区归属、版本哈希、原子保存和人工编辑的应用规则保持不变。获准的 Windows shell 能以系统账户直接访问记忆文件；没有系统隔离，关闭与询问模式不能阻止这种绕过。macOS/Linux 隔离失败、未知能力或远程 provider 不适用此例外。
+
+Linux 上 Host 在编译沙箱前安全准备工作区自有 `.agh` 目录，新工作区同样适用。符号链接或非目录会拒绝会话初始化；挂载的祖先不能被重命名来暴露 `.agh/secrets`。目录使用普通权限并保留已有内容。AGH 不预留、不隐式保护其他产品的 `.agnes/secrets`，也不迁移旧路径。
+
+跨进程写入串行化，比较精确哈希后通过同步临时文件及原子 rename 提交。先成功写入主题，再在索引加链接。多文件独立提交；主题成功而索引拒绝属于部分成功。文件已提交而元数据失败返回 `MEMORY_COMMITTED_METADATA_FAILED`，不声称文件未写入。
+
+记忆保留在本地文件和执行工具所需的会话 ledger。记忆会话的遥测只输出结构元数据，即使已开启内容导出也如此。经过校验的 token 统计与封闭枚举的轮次结果仍可观测，自由文本错误与回显内容不输出。曾注入记忆的会话，诊断事件导出还会移除消息、工具、摘要内容，防止回显偏好泄漏。诊断包不收集记忆目录。主动保留的本地请求 trace 可能含模型输入，应与会话 ledger 一同作为私密资料管理。
+
+## 与知识源一起使用
+
+`AGENTS.md` 保存 Git 中的团队规则，记忆保存 Git 外的学习偏好。会话搜索回答“之前讨论了什么”；知识库通过 MCP、工具或 [FDE bundle](demo.zh-CN.md) 提供资料。这些可与一个记忆 provider 共存。AGENTS.md 和权威知识源优先；通过相同审批流程纠正冲突记忆，不将原始资料复制进记忆。
+
+Demo 模型不推理。`显示记住的偏好` 或 `show remembered preferences` 展示该请求实际收到的记忆贡献。`call write {"path":"<记忆目录>/MEMORY.md","content":"Prefer concise summaries."}` 走与推理模型相同的普通工具和审批路径。覆盖现有文件前先 read。
+
+可替换企业实现见[记忆 providers](../extend/memory.zh-CN.md)。

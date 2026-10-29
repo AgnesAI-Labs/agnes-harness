@@ -1,0 +1,73 @@
+{
+  "name": "@agnes/goal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/goal",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "tools",
+          "hooks",
+          "projections",
+          "slots",
+          "eventLog",
+          "self"
+        ],
+        "capabilities": {
+          "tools": {
+            "prefix": "goal_",
+            "names": [
+              "goal_get",
+              "goal_update"
+            ]
+          },
+          "hooks": [
+            "session_start",
+            "before_step",
+            "context",
+            "turn_stopping"
+          ],
+          "events": true,
+          "slots": [
+            "status.line"
+          ],
+          "projections": [
+            {
+              "name": "goal",
+              "inputEventTypes": [
+                "inbox",
+                "user/message",
+                "cost/ledger",
+                "turn/end",
+                "x/agnes/goal/reserved",
+                "x/agnes/goal/updated",
+                "x/agnes/goal/paused"
+              ],
+              "maxStateBytes": 65536
+            }
+          ]
+        },
+        "metadata": {
+          "displayName": "Task goals",
+          "summary": "Keeps an explicit task goal and its progress visible while the agent continues working.",
+          "description": "Keeps an explicit task goal and its progress visible while the agent continues working.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "任务目标",
+              "summary": "在 Agent 持续工作时跟踪明确的任务目标，并展示进度。",
+              "description": "在 Agent 持续工作时跟踪明确的任务目标，并展示进度。"
+            }
+          }
+        }
+      }
+    ],
+    "provides": [
+      "tool"
+    ]
+  }
+}

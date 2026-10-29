@@ -1,0 +1,28 @@
+{
+  "client": {
+    "entry": "./index.js",
+    "styles": [],
+    "slots": [],
+    "publicConfig": {
+      "label": "__PACKAGE_NAME__"
+    },
+    "services": ["__SERVICE_NAME__.list", "__SERVICE_NAME__.change"],
+    "projections": [],
+    "id": "__SKILL_NAME__",
+    "lifetime": "profile",
+    "homeEntries": [
+      {
+        "id": "__SKILL_NAME__",
+        "placement": "secondary",
+        "navigation": {
+          "title": "__PACKAGE_NAME__",
+          "titles": {
+            "zh-CN": "__PACKAGE_NAME__"
+          },
+          "icon": "plugin",
+          "order": 50
+        }
+      }
+    ]
+  }
+}

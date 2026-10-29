@@ -29,7 +29,8 @@ describe('mcpServerConfigFromDefinition', () => {
       id: 'gh',
       transport: 'stdio',
       cmd: ['/usr/local/bin/gh-mcp', '--stdio'],
-      defer: false,
+      defer: 'auto',
+      discoveryGroup: 'MCP server GitHub',
     })
     // The SecretRef in secretBinding.env never becomes a resolved value here.
     expect(cfg.env).toBeUndefined()
@@ -41,7 +42,8 @@ describe('mcpServerConfigFromDefinition', () => {
       id: 'remote',
       transport: 'http',
       url: 'https://mcp.example.com/mcp',
-      defer: false,
+      defer: 'auto',
+      discoveryGroup: 'MCP server Remote',
     })
     expect(cfg.headers).toBeUndefined()
   })
@@ -61,6 +63,18 @@ describe('mcpServerConfigFromDefinition', () => {
       stdio({ toolPolicy: { allow: ['list_prs', 'merge'] } } as Partial<McpServerDefinitionInput>),
     )
     expect(cfg.allowedTools).toEqual(['list_prs', 'merge'])
+  })
+
+  it.each([
+    [undefined, 'auto'],
+    ['auto', 'auto'],
+    ['always', false],
+    ['on-demand', true],
+  ] as const)('maps tool disclosure %s to defer %s', (toolDisclosure, defer) => {
+    const cfg = mcpServerConfigFromDefinition(
+      stdio(toolDisclosure ? ({ toolDisclosure } as Partial<McpServerDefinitionInput>) : {}),
+    )
+    expect(cfg.defer).toBe(defer)
   })
 
   it('omits allowedTools entirely when the definition declares no tool policy', () => {

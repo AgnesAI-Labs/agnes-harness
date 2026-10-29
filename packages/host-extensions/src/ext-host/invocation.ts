@@ -1,0 +1,163 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { type ProjectionRegistry, type SessionImpl, scanAll } from '@agnes/core'
+import { ExtensionError, type SessionRef } from '@agnes/extension-api'
+import type { EventEnvelope } from '@agnes/protocol'
+import type { ExtensionActivationBarrier } from './activation-barrier.js'
+import type { KernelPorts, RegMeta } from './ports.js'
+
+export type SessionResolver = (ref: SessionRef) => SessionImpl | undefined
+
+type Invocation = { session: SessionImpl; signal: AbortSignal; active: boolean; owner?: string }
+const refused = (message: string) => new ExtensionError('E_EVENT_NAMESPACE', message)
+
+/** Runtime-owned session identity; no extension API accepts a session selector. */
+export class ExtensionInvocation {
+  private readonly current = new AsyncLocalStorage<Invocation>()
+
+  constructor(private readonly activationBarrier?: ExtensionActivationBarrier) {}
+
+  runFor<T>(
+    ref: SessionRef,
+    signal: AbortSignal,
+    resolve: SessionResolver,
+    invoke: (session: SessionImpl) => T,
+    owner?: string,
+  ) {
+    const session = resolve(ref)
+    if (!session || session.key !== ref.key || session.lane !== ref.lane)
+      throw refused('extension callback session unavailable')
+    return this.run(session, signal, () => invoke(session), owner)
+  }
+
+  run<T>(
+    session: SessionImpl,
+    signal: AbortSignal,
+    invoke: () => T,
+    owner?: string,
+  ): T | Promise<Awaited<T>> {
+    if (signal.aborted) throw refused('extension invocation is cancelled')
+    const admitted = this.activationBarrier?.admit('tool')
+    const invocation = { session, signal, active: true, ...(owner ? { owner } : {}) }
+    const run = () =>
+      this.current.run(invocation, () => {
+        try {
+          const value = invoke()
+          const then =
+            value && (typeof value === 'object' || typeof value === 'function')
+              ? (value as { then?: unknown }).then
+              : undefined
+          if (typeof then === 'function') {
+            return new Promise<Awaited<T>>((resolve, reject) => {
+              Reflect.apply(then, value, [resolve, reject])
+            }).finally(() => {
+              invocation.active = false
+            })
+          }
+          invocation.active = false
+          return value
+        } catch (error) {
+          invocation.active = false
+          throw error
+        }
+      })
+    return admitted ? admitted.run(run) : run()
+  }
+
+  /** Snapshot of the admitted callback. `token` identifies that callback, not a later one. */
+  admission():
+    | {
+        readonly token: object
+        readonly owner?: string
+        readonly active: boolean
+        readonly signal: AbortSignal
+        readonly session: SessionImpl
+      }
+    | undefined {
+    const invocation = this.current.getStore()
+    if (!invocation) return undefined
+    return {
+      token: invocation,
+      ...(invocation.owner === undefined ? {} : { owner: invocation.owner }),
+      active: invocation.active,
+      signal: invocation.signal,
+      session: invocation.session,
+    }
+  }
+
+  assertSession(ref: SessionRef): void {
+    const invocation = this.current.getStore()
+    if (
+      !invocation?.active ||
+      invocation.signal.aborted ||
+      invocation.session.closingOrClosed ||
+      invocation.session.key !== ref.key ||
+      invocation.session.lane !== ref.lane
+    )
+      throw refused('extension session selector is unavailable')
+  }
+
+  assertActive(owner: string): void {
+    const invocation = this.current.getStore()
+    if (
+      !invocation?.active ||
+      invocation.signal.aborted ||
+      invocation.session.closingOrClosed ||
+      invocation.owner !== owner
+    )
+      throw refused('extension input has no active session')
+  }
+
+  async readProjection(registry: ProjectionRegistry, key: string, meta: RegMeta, beforeFold: () => void) {
+    const invocation = this.current.getStore()
+    const valid = () =>
+      invocation?.active &&
+      !invocation.signal.aborted &&
+      !invocation.session.closingOrClosed &&
+      invocation.owner === meta.source &&
+      key.startsWith(`${meta.source}/`)
+    if (!invocation || !valid()) throw new ExtensionError('E_PROJECTION_STATE', 'projection unavailable')
+    const { session } = invocation
+    const asOfSeq = session.lastSeq
+    const scan = (fromSeq?: number) =>
+      scanAll((q) => session.scan(q), { ...(fromSeq === undefined ? {} : { fromSeq }), toSeq: asOfSeq })
+    const fold = async <U>(
+      read: () => Promise<EventEnvelope[]>,
+      snapshot: (rows: EventEnvelope[]) => U,
+    ): Promise<U> => {
+      const rows = await read()
+      if (!valid()) throw new ExtensionError('E_PROJECTION_STATE', 'projection unavailable')
+      beforeFold()
+      const failures = registry.failures().length
+      const unit = snapshot(rows)
+      if (registry.failures().length > failures) await session.diag('projection-failed', { key, asOfSeq })
+      return unit
+    }
+    // Rows up to the cached line are already folded. The registry takes only the newer rows, and
+    // only while that line is still where this read found it; otherwise the read starts over.
+    const after = registry.cacheLine(session.key, key)?.seq
+    const unit =
+      (after !== undefined &&
+        (await fold(
+          async () => (after < asOfSeq ? scan(after + 1) : []),
+          (rows) => registry.snapshotOneAfter(session.key, key, after, rows, asOfSeq),
+        ))) ||
+      (await fold(
+        () => scan(),
+        (rows) => registry.snapshotOne(session.key, key, rows, asOfSeq),
+      ))
+    return { asOfSeq, unit }
+  }
+
+  append: KernelPorts['extEvents']['append'] = (type, data, meta: RegMeta) => {
+    const invocation = this.current.getStore()
+    if (!invocation?.active || invocation.signal.aborted)
+      throw refused('extension event has no active session')
+    try {
+      return invocation.session.appendExtensionEvent(type, data, meta).catch(() => {
+        throw refused('extension event write failed')
+      })
+    } catch {
+      throw refused('extension event write failed')
+    }
+  }
+}

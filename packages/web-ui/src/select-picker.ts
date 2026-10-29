@@ -1,4 +1,5 @@
 import { fallbackT, type Translate } from './locales/index.js'
+import { getOverlayContainer } from './overlay-policy.js'
 import { listboxIntent, positionPopover } from './popover.js'
 
 const optionLabel = (item: HTMLOptionElement): string => item.getAttribute('label') || item.textContent || ''
@@ -40,6 +41,9 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
   let active = 0
   let typed = ''
   let typedAt = 0
+  let syncedState = ''
+  let anchor: DOMRect | undefined
+  let openedAt = 0
   const available = (item: HTMLOptionElement) =>
     (options.includeEmpty !== false || !!item.value) &&
     !item.hidden &&
@@ -59,6 +63,18 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
   }
 
   function sync(): void {
+    const state = JSON.stringify([
+      select.disabled,
+      select.getAttribute('aria-invalid'),
+      select.getAttribute('aria-readonly'),
+      select.getAttribute('aria-describedby'),
+      Array.from(select.options).map((item) => {
+        const group = item.closest('optgroup')
+        return [item.value, optionLabel(item), item.selected, available(item), group?.label]
+      }),
+    ])
+    if (state === syncedState) return
+    syncedState = state
     close()
     const selected = select.options[select.selectedIndex]
     const selectedLabel = selected ? optionLabel(selected) : undefined
@@ -67,7 +83,7 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
       : (options.translate ?? fallbackT)('settings.selectPicker.fallback', { label: options.label })
     label.textContent = text
     trigger.title = text
-    // 标签与当前值的连接符随语言变化（中文用全角冒号），所以走目录而不是写死。
+    // The separator between label and current value varies by locale (a fullwidth colon in Chinese), so use the catalog.
     trigger.setAttribute(
       'aria-label',
       (options.translate ?? fallbackT)('settings.selectPicker.ariaJoin', {
@@ -75,6 +91,12 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
         value: text,
       }),
     )
+    const invalid = select.getAttribute('aria-invalid') === 'true' || !!selected?.disabled
+    trigger.setAttribute('aria-invalid', String(invalid))
+    trigger.setAttribute('aria-readonly', select.getAttribute('aria-readonly') ?? 'false')
+    const description = select.getAttribute('aria-describedby')
+    if (description) trigger.setAttribute('aria-describedby', description)
+    else trigger.removeAttribute('aria-describedby')
     trigger.disabled = select.disabled || !Array.from(select.options).some(available)
   }
 
@@ -84,7 +106,32 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
   }
 
   function onScroll(event: Event): void {
-    if (panel && !event.composedPath().includes(panel)) close()
+    if (!panel || event.composedPath().includes(panel)) return
+    const next = trigger.getBoundingClientRect()
+    // Focus/scroll-into-view can queue a trusted scroll before this popup existed. Re-anchor
+    // when that event arrives late; only a new external scroll should dismiss the new popup.
+    if (event.isTrusted && event.timeStamp < openedAt) {
+      if (next.top !== anchor?.top || next.left !== anchor?.left) placePanel()
+      return
+    }
+    // Scroll anchoring can settle fractional layout after focus. Keep the original
+    // anchor so cumulative movement still dismisses, but subpixel jitter does not.
+    if (anchor && (Math.abs(next.top - anchor.top) >= 1 || Math.abs(next.left - anchor.left) >= 1)) close()
+  }
+
+  function placePanel(): void {
+    if (!panel) return
+    positionPopover(trigger, panel, {
+      preferredWidth: Math.max(trigger.getBoundingClientRect().width, 300),
+      preferredHeight: 360,
+      gap: 6,
+    })
+    const bottom = trigger.getBoundingClientRect().bottom + 6
+    if (view && view.innerHeight - bottom - 12 >= panel.getBoundingClientRect().height) {
+      panel.style.top = `${bottom}px`
+      panel.dataset.placement = 'below'
+    }
+    anchor = trigger.getBoundingClientRect()
   }
 
   function highlight(index: number): void {
@@ -96,7 +143,12 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
     const row = rows?.[active]
     if (!row) return
     trigger.setAttribute('aria-activedescendant', row.id)
-    row.scrollIntoView?.({ block: 'nearest' })
+    // Scroll only this menu. scrollIntoView can also scroll the containing dialog and dismiss it.
+    if (panel) {
+      const bottom = row.offsetTop + row.offsetHeight
+      if (row.offsetTop < panel.scrollTop) panel.scrollTop = row.offsetTop
+      else if (bottom > panel.scrollTop + panel.clientHeight) panel.scrollTop = bottom - panel.clientHeight
+    }
   }
 
   function choose(index: number): void {
@@ -104,6 +156,7 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
     if (!choice || select.disabled) return
     const changed = select.value !== choice.value
     select.value = choice.value
+    close()
     sync()
     trigger.focus({ preventScroll: true })
     // Use the select's own realm (including embedded settings/test documents).
@@ -111,9 +164,10 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
   }
 
   function open(): void {
-    if (trigger.disabled || panel) return
+    if (trigger.disabled || select.getAttribute('aria-readonly') === 'true' || panel) return
     choices = Array.from(select.options).filter(available)
     if (!choices.length) return
+    openedAt = view?.performance.now() ?? 0
     typed = ''
     panel = doc.createElement('div')
     panel.id = `${select.id}-listbox`
@@ -158,22 +212,13 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
       container.append(row)
     }
     // Keep the popup in the modal's subtree; native popover escapes its scroll clipping.
-    ;(select.closest('dialog') ?? doc.body).append(panel)
+    getOverlayContainer(trigger, doc).append(panel)
     if (typeof panel.showPopover === 'function') {
       panel.setAttribute('popover', 'manual')
       panel.showPopover()
     }
-    positionPopover(trigger, panel, {
-      preferredWidth: Math.max(trigger.getBoundingClientRect().width, 300),
-      preferredHeight: 360,
-      gap: 6,
-    })
     // The shared picker defaults upward (composer). In a form, prefer below when it fits.
-    const bottom = trigger.getBoundingClientRect().bottom + 6
-    if (view && view.innerHeight - bottom - 12 >= panel.getBoundingClientRect().height) {
-      panel.style.top = `${bottom}px`
-      panel.dataset.placement = 'below'
-    }
+    placePanel()
     trigger.setAttribute('aria-expanded', 'true')
     trigger.setAttribute('aria-controls', panel.id)
     highlight(
@@ -226,7 +271,11 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
   })
   select.closest('dialog')?.addEventListener('close', close)
   select.addEventListener('change', sync)
-  const onReset = () => queueMicrotask(sync)
+  const onReset = () =>
+    queueMicrotask(() => {
+      close()
+      sync()
+    })
   select.form?.addEventListener('reset', onReset)
   sync()
   return {

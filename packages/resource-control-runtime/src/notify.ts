@@ -41,7 +41,7 @@ const RESOURCE_STALE_NOTIFY_TIMEOUT_MS = 2_000
  * generation until its own next reload/restart -- no different from any other missed live-update.
  *
  * Returns the session keys whose notification did *not* deliver (empty when every live worker
- * acknowledged). resource-live-reload Task 7: the daemon's wiring
+ * acknowledged). The daemon's wiring
  * (packages/daemon/src/supervisor/supervisor.ts's `wireResourceSnapshotNotifications`) uses this list
  * to fall back to killing/respawning only those specific sessions, instead of unconditionally retiring
  * every live session regardless of whether its lightweight notice actually got through.
@@ -49,11 +49,12 @@ const RESOURCE_STALE_NOTIFY_TIMEOUT_MS = 2_000
 export async function notifyLiveSessionWorkers(
   pool: ActivationLinkPool,
   log?: Pick<Console, 'warn'>,
+  change?: { skillControlRevision: string },
 ): Promise<readonly string[]> {
   const failedSessionKeys: string[] = []
   for (const target of pool.activationLinks()) {
     await target.link
-      .command('resource.stale', {}, { timeoutMs: RESOURCE_STALE_NOTIFY_TIMEOUT_MS })
+      .command('resource.stale', change ?? {}, { timeoutMs: RESOURCE_STALE_NOTIFY_TIMEOUT_MS })
       .catch((error: unknown) => {
         failedSessionKeys.push(target.sessionKey)
         log?.warn?.('failed to notify a session worker of a stale resource snapshot', {

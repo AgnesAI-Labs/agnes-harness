@@ -1,0 +1,261 @@
+@layer ui {
+  .agnes-doctor {
+    container-type: inline-size;
+  }
+  .agnes-doctor-card {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--agnes-line-hairline);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-group);
+  }
+  .agnes-doctor-card[data-checking="true"]::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 35%;
+    height: 2px;
+    background: var(--agnes-brand-primary);
+    opacity: 0.5;
+    animation: agnes-doctor-trace 1.6s linear infinite;
+  }
+  .agnes-doctor-footer {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--agnes-line-hairline);
+    color: var(--agnes-text-tertiary);
+    font-size: 11px;
+  }
+  .agnes-doctor-service {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .agnes-doctor-service-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--agnes-status-success-text);
+    animation: agnes-doctor-breathe 2s ease-in-out infinite;
+  }
+  .agnes-doctor-footer[data-state="warn"] .agnes-doctor-service-dot {
+    background: var(--agnes-status-warning-text);
+    animation: none;
+  }
+  .agnes-doctor-footer[data-state="fail"] .agnes-doctor-service-dot {
+    background: var(--agnes-status-danger-text);
+    animation: none;
+  }
+  .agnes-doctor-footer[data-state="unavailable"] .agnes-doctor-service-dot {
+    background: var(--agnes-text-tertiary);
+    animation: none;
+  }
+  .agnes-doctor-footer-actions {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+  }
+  .agnes-doctor-probe {
+    opacity: 0;
+  }
+  .agnes-doctor-group li:is(:hover, :focus-within) .agnes-doctor-probe {
+    opacity: 1;
+  }
+  .agnes-doctor-groups {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+  }
+  .agnes-doctor-group {
+    border-inline-end: 1px solid var(--agnes-line-hairline);
+    border-block-end: 1px solid var(--agnes-line-hairline);
+    padding: 9px 12px;
+    min-width: 0;
+  }
+  .agnes-doctor-group h4 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--agnes-text-primary);
+  }
+  .agnes-doctor-fix > .icon {
+    flex: none;
+    margin-top: 2px;
+  }
+  .agnes-doctor-group h4 .icon {
+    color: var(--agnes-text-emphasis);
+  }
+  .agnes-doctor-group small {
+    margin-left: auto;
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
+    border-radius: 99px;
+    padding: 0 6px;
+    font-size: 11px;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+  }
+  .agnes-doctor-group small[data-tone="warn"] {
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+  }
+  .agnes-doctor-group:nth-child(2n) {
+    border-inline-end: 0;
+  }
+  .agnes-doctor-group:nth-last-child(-n + 2) {
+    border-block-end: 0;
+  }
+  .agnes-doctor-group ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .agnes-doctor-group li {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    padding: 2px 0;
+    min-height: 20px;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--agnes-text-secondary);
+  }
+  .agnes-doctor-dot {
+    width: 7px;
+    height: 7px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--agnes-status-success-text);
+  }
+  .agnes-doctor-group [data-state="warn"] .agnes-doctor-dot {
+    background: var(--agnes-status-warning-text);
+  }
+  .agnes-doctor-group [data-state="fail"] .agnes-doctor-dot {
+    background: var(--agnes-status-danger-text);
+  }
+  .agnes-doctor-group [data-state="pending"] .agnes-doctor-dot {
+    background: var(--agnes-line-hairline);
+  }
+  .agnes-doctor-group [data-state="unavailable"] .agnes-doctor-dot {
+    background: transparent;
+    border: 1px solid var(--agnes-text-tertiary);
+  }
+  .agnes-doctor-value {
+    margin-left: auto;
+    color: var(--agnes-text-tertiary);
+    font-size: 11px;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+  .agnes-doctor-group [data-state="pending"] .agnes-doctor-value {
+    visibility: hidden;
+  }
+  .agnes-doctor-fix {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    margin-top: 8px;
+    border-radius: var(--radius-control);
+    background: var(--agnes-status-warning-bg);
+    color: var(--agnes-status-warning-text);
+    font-size: 12px;
+  }
+  .agnes-doctor-fix[data-state="fail"] {
+    background: var(--agnes-status-danger-bg);
+    color: var(--agnes-status-danger-text);
+  }
+  .agnes-doctor-fix b {
+    color: var(--agnes-text-primary);
+    font-weight: 600;
+  }
+  .agnes-doctor-fix p {
+    margin: 2px 0 0;
+    color: var(--agnes-text-secondary);
+  }
+  .agnes-doctor-fix a {
+    margin-left: auto;
+    flex: none;
+    color: var(--agnes-text-emphasis);
+  }
+  .agnes-doctor-failure {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    color: var(--agnes-status-danger-text);
+    font-size: 12px;
+  }
+  .agnes-doctor-refresh {
+    display: inline-flex;
+  }
+  .agnes-doctor-refresh[data-checking="true"] {
+    animation: agnes-doctor-spin 1s linear infinite;
+  }
+  .agnes-doctor-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+  @keyframes agnes-doctor-trace {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(390%);
+    }
+  }
+  @keyframes agnes-doctor-breathe {
+    50% {
+      opacity: 0.4;
+    }
+  }
+  @keyframes agnes-doctor-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @container (max-width: 560px) {
+    .agnes-doctor-footer-actions {
+      flex-wrap: wrap;
+      flex-basis: 100%;
+      min-width: 0;
+    }
+    .agnes-doctor-groups {
+      grid-template-columns: 1fr;
+    }
+    .agnes-doctor-group {
+      border-inline-end: 0;
+    }
+    .agnes-doctor-group:nth-child(3) {
+      border-block-end: 1px solid var(--agnes-line-hairline);
+    }
+    .agnes-doctor-fix {
+      flex-wrap: wrap;
+    }
+  }
+  @media (hover: none) {
+    .agnes-doctor-probe {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agnes-doctor-card[data-checking="true"]::before,
+    .agnes-doctor-service-dot,
+    .agnes-doctor-refresh[data-checking="true"] {
+      animation: none;
+    }
+  }
+}

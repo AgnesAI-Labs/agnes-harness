@@ -12,7 +12,8 @@ import { appendFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'no
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { pnpmInvocation, verificationEnvironment } from '../toolchain/check.mjs'
 
 export const PARITY_LAYERS = Object.freeze(['pixels', 'text', 'accessibility', 'interaction'])
 export const VIEWPORTS = Object.freeze([
@@ -107,7 +108,7 @@ const EXPECTED_REGIONS = [
   'slot-card',
 ]
 
-const repoRoot = resolve(dirname(new URL(import.meta.url).pathname), '../..')
+const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
 const cliEntry = resolve(process.env.AGNES_LOCAL_CLI ?? 'packages/cli/dist/local/agnes.mjs')
 const MASK_TEXT = Object.freeze([
   [/agnes-d31-[a-z0-9]+/gi, '<d31-run>'],
@@ -340,9 +341,10 @@ function spawnResult(command, args, options = {}) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, args, { ...options, stdio: ['ignore', 'pipe', 'pipe'] })
     let stderr = ''
-    child.stderr.on('data', (chunk) => (stderr += String(chunk)))
+    child.stdout.resume()
+    child.stderr.on('data', (chunk) => (stderr = (stderr + String(chunk)).slice(-4000)))
     child.once('error', reject)
-    child.once('exit', (code, signal) => {
+    child.once('close', (code, signal) => {
       if (code === 0) resolvePromise()
       else
         reject(new Error(`${command} ${args.join(' ')} failed (${code ?? signal})\n${stderr.slice(-4000)}`))
@@ -503,7 +505,7 @@ async function createRuntime(entry) {
       web.stderr.on('data', (chunk) => (output += String(chunk)))
       const started = Date.now()
       while (!launchUrl) {
-        const match = output.match(/http:\/\/127\.0\.0\.1:\d+\/#\S+/)
+        const match = output.match(/http:\/\/127\.0\.0\.1:\d+\//)
         if (match) launchUrl = match[0]
         else if (Date.now() - started > 30000)
           throw new Error(`D31 Web launch timeout\n${output.slice(-4000)}`)
@@ -572,13 +574,15 @@ async function configureWorkbench(page, runtime) {
       .catch(() => false))
   ) {
     if (
-      await page
+      (await page
         .locator('#prompt')
         .isDisabled()
-        .catch(() => false)
+        .catch(() => false)) ||
+      !(await visible(page, '#composer-workspace'))
     ) {
       await openMobileSidebar(page)
       await page.locator('#new').click()
+      await chipOpensPicker(page)
     } else {
       if (
         await page
@@ -598,9 +602,18 @@ async function configureWorkbench(page, runtime) {
   await ensureSessionModel(page)
 }
 
+// A new draft reuses the last available workspace; the picker then opens from the composer chip.
+async function chipOpensPicker(page) {
+  await page.waitForFunction(
+    () =>
+      document.querySelector('#new-session[open]') ||
+      document.querySelector('#composer-workspace:not([disabled])'),
+  )
+  if (!(await visible(page, '#new-session[open]'))) await page.locator('#composer-workspace').click()
+}
+
 async function fillWorkspacePath(page, cwd) {
   const input = page.locator('#new-session-cwd')
-  if (!(await input.isVisible())) await page.locator('#workspace-manual summary').click()
   await input.fill(cwd)
 }
 
@@ -686,16 +699,14 @@ async function setupState(page, runtime, stateId) {
         .isVisible()
         .catch(() => false))
     ) {
-      if (
-        await page
-          .locator('body.sidebar-open')
-          .isVisible()
-          .catch(() => false)
-      )
-        await page.locator('#sidebar-close').click()
-      // The composer workspace control is the product path that always opens the workspace
-      // picker, even when the current session already has a selected workspace.
-      await page.locator('#composer-workspace').click()
+      if (!(await visible(page, '#composer-workspace'))) {
+        await openMobileSidebar(page)
+        await page.locator('#new').click()
+        await chipOpensPicker(page)
+      } else {
+        if (await visible(page, 'body.sidebar-open')) await page.locator('#sidebar-close').click()
+        await page.locator('#composer-workspace').click()
+      }
     }
     await page.locator('#new-session[open]').waitFor()
     return
@@ -840,7 +851,7 @@ async function setupState(page, runtime, stateId) {
 
 async function selectWorkspacePermission(page) {
   await page.locator('#composer-permission').click()
-  const option = page.getByRole('option', { name: /工作区内修改/ })
+  const option = page.getByRole('option', { name: /可修改工作区/ })
   await option.waitFor()
   await option.click()
   await page.waitForFunction(
@@ -923,7 +934,7 @@ async function keyboardContract(page) {
       .catch(() => {})
     await press('Escape', '#config-close')
   } else if (await visible(page, '#new-session[open]')) {
-    await press('Enter', '#new-session-cancel')
+    await press('Escape', '#new-session-cwd')
     await page
       .locator('#new')
       .click()
@@ -932,7 +943,7 @@ async function keyboardContract(page) {
       .locator('#new-session[open]')
       .waitFor()
       .catch(() => {})
-    await press('Escape', '#new-session-cancel')
+    await press('Escape', '#new-session-cwd')
   } else if (await visible(page, '#account-dialog[open]')) {
     await press('Enter', '#account-dialog-close')
     await page
@@ -958,7 +969,7 @@ async function keyboardContract(page) {
     await press('Escape', '#composer-permission')
   } else {
     await press('Enter', '#new')
-    await press('Escape', '#new-session-cancel')
+    await press('Escape', '#new-session-cwd')
   }
   return { tab, keys: events }
 }
@@ -1185,33 +1196,39 @@ async function captureBuild(buildDir, outDir) {
   await captureMatrix(entry, outDir)
 }
 
-async function buildCommit(commit, outputDir) {
+export async function buildCommit(commit, outputDir, repository = repoRoot) {
   if (Number(process.versions.node.split('.')[0]) < 24)
     throw new Error('D31 commit builds require Node >=24.10; current runtime is below the repository engine')
-  const checkout = await mkdtemp(join(tmpdir(), 'agnes-d31-build-'))
+  const scratch = await mkdtemp(join(tmpdir(), 'agnes-d31-build-'))
+  const checkout = join(scratch, 'source')
+  const destination = resolve(outputDir)
+  const env = verificationEnvironment()
   try {
-    await new Promise((resolvePromise, reject) => {
-      const archive = spawn('git', ['archive', commit], { cwd: repoRoot })
-      const extract = spawn('tar', ['-x', '-C', checkout])
-      let error = ''
-      archive.stderr.on('data', (chunk) => (error += String(chunk)))
-      extract.stderr.on('data', (chunk) => (error += String(chunk)))
-      archive.stdout.pipe(extract.stdin)
-      extract.once('error', reject)
-      archive.once('error', reject)
-      extract.once('exit', (code) => (code === 0 ? resolvePromise() : reject(new Error(error))))
-    })
-    await mkdir(dirname(outputDir), { recursive: true })
-    const sourceModules = join(repoRoot, 'node_modules')
-    if (!(await readFile(join(sourceModules, '.modules.yaml'), 'utf8').catch(() => undefined)))
-      throw new Error('D31 commit build requires an installed root node_modules/.modules.yaml')
-    await spawnResult('cp', ['-al', sourceModules, join(checkout, 'node_modules')])
-    const tsx = resolve(repoRoot, 'node_modules/.bin/tsx')
-    await spawnResult(tsx, [join(checkout, 'packages/cli/tools/build-local.ts'), '--output-dir', outputDir], {
-      cwd: checkout,
-    })
+    await mkdir(checkout)
+    const archive = join(scratch, 'source.tar')
+    await spawnResult('git', ['archive', '--format=tar', `--output=${archive}`, commit], { cwd: repository })
+    await spawnResult('tar', ['-xf', archive, '-C', checkout])
+    await mkdir(dirname(destination), { recursive: true })
+    // Each historical tree needs its own lockfile/workspace links; hard-linking today's
+    // node_modules also depends on POSIX cp and can bind a comparison to today's sources.
+    await spawnResult(
+      process.execPath,
+      [...pnpmInvocation(env), 'install', '--frozen-lockfile', '--ignore-scripts'],
+      { cwd: checkout, env },
+    )
+    await spawnResult(
+      process.execPath,
+      [
+        '--import',
+        import.meta.resolve('tsx'),
+        join(checkout, 'packages/cli/tools/build-local.ts'),
+        '--output-dir',
+        destination,
+      ],
+      { cwd: checkout, env },
+    )
   } finally {
-    await rm(checkout, { recursive: true, force: true })
+    await rm(scratch, { recursive: true, force: true })
   }
 }
 

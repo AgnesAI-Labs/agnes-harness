@@ -1,15 +1,15 @@
-import { describe, expect, it, vi } from 'vitest'
-import type { FsPolicy } from '../src/effects/fs-guard.js'
-import { buildToolContext, type FsOps } from '../src/effects/tool-context.js'
-import { SeamRuntime, settlesWithin, withTimeout } from '../src/effects/wrap.js'
-import { presetDefaults } from '../src/step/preset.js'
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import type { FsPolicy } from '@agnes/core-effects/effects/fs-guard'
+import { buildToolContext, type FsOps } from '@agnes/core-effects/effects/tool-context'
+import { SeamRuntime, settlesWithin, withTimeout } from '@agnes/core-effects/effects/wrap'
 import {
   createWorkspaceInvocationPort,
   type WorkspaceInvocationPort,
   type WorkspaceInvocationSource,
   type WorkspaceInvocationView,
   type WorkspacePublicationDispatch,
-} from '../src/workspace/runtime.js'
+} from '@agnes/core-effects/workspace/runtime'
+import { describe, expect, it, vi } from 'vitest'
 import { fencedFs, testFsPolicy } from '../testkit/fenced-fs.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { testFsOps } from './helpers/open-session.js'
@@ -48,29 +48,27 @@ const workspacePort = (seams: ReturnType<typeof fakeSeams>, release: () => void 
   }))
 
 describe('SeamRuntime', () => {
-  it('maps approval failures to rejected, says the approver failed, and reports which seam and op failed', async () => {
+  it('maps approval failures to transport unavailability and reports which seam and op failed', async () => {
     const failures: unknown[] = []
     const seams = fakeSeams({
       approval: {
         ask: async () => {
           throw new Error('oa down')
         },
-        resume: async () => null,
       },
     })
     const rt = new SeamRuntime(seams, presetDefaults(), {
       clock: () => 0,
       onFailure: (f) => failures.push(f),
     })
-    // Nobody answered: the refusal is the approver's failure, never something the user decided.
-    expect(await rt.approvalAsk(req, sig())).toEqual({ verdict: 'rejected', reason: 'approver_failed' })
+    expect(await rt.approvalAsk(req, sig())).toEqual({ verdict: 'unavailable', reason: 'transport' })
     expect(failures).toEqual([{ seam: 'approval', op: 'ask', message: 'oa down' }])
   })
 
   it('hands workspace approval acquisition through Host publication exactly once', async () => {
     const events: string[] = []
     const seams = fakeSeams({
-      approval: { ask: async () => 'allowed-once', resume: async () => null },
+      approval: { ask: async () => 'allowed-once' },
     })
     const port = workspacePort(seams, () => {
       events.push('workspace:release')
@@ -102,9 +100,9 @@ describe('SeamRuntime', () => {
     expect(events).toEqual(['publication:enter', 'publication:release', 'handler', 'workspace:release'])
   })
 
-  it('approval timeout is rejected with its reason; an out-of-set verdict is the approver failing', async () => {
+  it('approval deadline and invalid answers remain distinct unanswered reasons', async () => {
     const never = fakeSeams({
-      approval: { ask: () => new Promise(() => undefined), resume: async () => null },
+      approval: { ask: () => new Promise(() => undefined) },
     })
     const short = { ...presetDefaults(), approval: { ...presetDefaults().approval, timeoutMs: 5 } }
     const timeouts: unknown[] = []
@@ -113,34 +111,34 @@ describe('SeamRuntime', () => {
         req,
         sig(),
       ),
-    ).toEqual({ verdict: 'rejected', reason: 'timeout' })
+    ).toEqual({ verdict: 'unavailable', reason: 'deadline' })
     expect(timeouts).toEqual([{ seam: 'approval', op: 'ask', message: 'timeout: approval.ask' }])
 
-    const weird = fakeSeams({ approval: { ask: async () => 'yes' as never, resume: async () => null } })
+    const weird = fakeSeams({ approval: { ask: async () => 'yes' as never } })
     const odd: unknown[] = []
     expect(
       await new SeamRuntime(weird, presetDefaults(), {
         clock: () => 0,
         onFailure: (f) => odd.push(f),
       }).approvalAsk(req, sig()),
-    ).toEqual({ verdict: 'rejected', reason: 'approver_failed' })
+    ).toEqual({ verdict: 'unavailable', reason: 'invalid-answer' })
     expect(odd).toEqual([{ seam: 'approval', op: 'ask', message: 'verdict out of set: yes' }])
     const oddAnswer = fakeSeams({
-      approval: { ask: async () => ({ verdict: 'yes' }) as never, resume: async () => null },
+      approval: { ask: async () => ({ verdict: 'yes' }) as never },
     })
     expect(
       await new SeamRuntime(oddAnswer, presetDefaults(), {
         clock: () => 0,
         onFailure: () => undefined,
       }).approvalAsk(req, sig()),
-    ).toEqual({ verdict: 'rejected', reason: 'approver_failed' })
+    ).toEqual({ verdict: 'unavailable', reason: 'invalid-answer' })
   })
 
   it.each(['deny', 'park'] as const)(
     'unavailable is recorded as unavailable and not folded into rejected under on_unavailable=%s',
     async (onUnavailable) => {
       const unavailable = fakeSeams({
-        approval: { ask: async () => 'unavailable', resume: async () => null },
+        approval: { ask: async () => 'unavailable' },
       })
       const preset = {
         ...presetDefaults(),
@@ -151,13 +149,13 @@ describe('SeamRuntime', () => {
           clock: () => 0,
           onFailure: () => undefined,
         }).approvalAsk(req, sig()),
-      ).toEqual({ verdict: 'unavailable', reason: 'no_approver' })
+      ).toEqual({ verdict: 'unavailable', reason: 'no-approver' })
     },
   )
 
   it('an abort while waiting is cancelled for the stop, not a rejection by the approver', async () => {
     const never = fakeSeams({
-      approval: { ask: () => new Promise(() => undefined), resume: async () => null },
+      approval: { ask: () => new Promise(() => undefined) },
     })
     const stop = new AbortController()
     const rt = new SeamRuntime(never, presetDefaults(), { clock: () => 0, onFailure: () => undefined })
@@ -170,17 +168,13 @@ describe('SeamRuntime', () => {
   it('keeps a bare verdict bare, passes a known reason through and drops an unknown one', async () => {
     const answers: unknown[] = [
       'rejected',
-      { verdict: 'rejected', reason: 'user_rejected' },
+      { verdict: 'rejected', reason: 'user-rejected' },
       { verdict: 'rejected', reason: 'because I said so' },
       { verdict: 'allowed-once' },
-      { verdict: 'allowed-once', reason: 'policy_allowed' },
-      { verdict: 'allowed-session', reason: 'user_allowed' },
-      { verdict: 'rejected', reason: 'approver_failed' },
-      { verdict: 'cancelled', reason: 'client_cancelled' },
     ]
     const got: unknown[] = []
     for (const answer of answers) {
-      const seams = fakeSeams({ approval: { ask: async () => answer as never, resume: async () => null } })
+      const seams = fakeSeams({ approval: { ask: async () => answer as never } })
       got.push(
         await new SeamRuntime(seams, presetDefaults(), {
           clock: () => 0,
@@ -190,13 +184,9 @@ describe('SeamRuntime', () => {
     }
     expect(got).toEqual([
       'rejected',
-      { verdict: 'rejected', reason: 'user_rejected' },
+      { verdict: 'rejected', reason: 'user-rejected' },
       'rejected',
       'allowed-once',
-      { verdict: 'allowed-once', reason: 'policy_allowed' },
-      { verdict: 'allowed-session', reason: 'user_allowed' },
-      { verdict: 'rejected', reason: 'approver_failed' },
-      { verdict: 'cancelled', reason: 'client_cancelled' },
     ])
   })
 
@@ -204,103 +194,68 @@ describe('SeamRuntime', () => {
     const pending = fakeSeams({
       approval: {
         ask: async () => ({ ticket: 'T1', expiresAt: '2026-09-08T00:00:00Z' }),
-        resume: async () => null,
       },
     })
     const rt = new SeamRuntime(pending, presetDefaults(), { clock: () => 0, onFailure: () => undefined })
     expect(await rt.approvalAsk(req, sig())).toEqual({ ticket: 'T1', expiresAt: '2026-09-08T00:00:00Z' })
   })
 
-  it.each([
-    {
-      name: 'throw',
-      guard: async () => {
-        throw new Error('guardian down')
-      },
-    },
-    {
-      name: 'invalid response',
-      guard: async () =>
-        ({ decision: 'escalate', ruleVersion: 'v1', reasons: [], model: 'm'.repeat(129) }) as never,
-    },
-  ])('guardian $name escalates instead of allowing', async ({ guard }) => {
+  it('a failed durable put is never reported successful', async () => {
     const failures: unknown[] = []
-    const rt = new SeamRuntime(fakeSeams({ approval: { guard } }), presetDefaults(), {
+    const rt = new SeamRuntime(fakeSeams(), presetDefaults(), {
       clock: () => 0,
       onFailure: (f) => failures.push(f),
-    })
-    await expect(rt.approvalGuard(req, sig())).resolves.toEqual({
-      decision: 'escalate',
-      ruleVersion: 'failed',
-      reasons: ['guardian unavailable'],
-    })
-    expect(failures).toEqual([expect.objectContaining({ seam: 'approval', op: 'guard' })])
-  })
-
-  it('guardian timeout escalates and a failed durable put is never reported successful', async () => {
-    const short = { ...presetDefaults(), approval: { ...presetDefaults().approval, timeoutMs: 5 } }
-    const failures: unknown[] = []
-    const rt = new SeamRuntime(
-      fakeSeams({
-        approval: {
-          guard: () => new Promise(() => undefined),
-          putGrant: async () => {
-            throw new Error('grant store down')
-          },
+      approvalGrants: {
+        list: async () => [],
+        put: async () => {
+          throw new Error('grant store down')
         },
-      }),
-      short,
-      { clock: () => 0, onFailure: (f) => failures.push(f) },
-    )
-    await expect(rt.approvalGuard(req, sig())).resolves.toMatchObject({
-      decision: 'escalate',
-      ruleVersion: 'failed',
+      },
     })
     await expect(
       rt.approvalPutGrant(
         {
           grantId: 'g',
-          profileHash: `sha256-${'a'.repeat(64)}`,
+          policyDigest: `sha256-${'a'.repeat(64)}`,
           actorId: 'u',
           actorOrg: 'local',
           toolId: 'computer_use',
           scope: 'cua:click:background',
           policyVersion: 'cua-v1',
+          sourceDecisionId: 'decision-fixture',
+          issuer: { id: 'reviewer', org: 'local', role: 'user' as const, deptPath: [], attrs: {} },
+          definitionFingerprint: 'd'.repeat(64),
+          policyBinding: 'e'.repeat(64),
           createdAt: '2026-09-17T00:00:00.000Z',
         },
         sig(),
       ),
     ).resolves.toBe(false)
-    expect(failures).toEqual([
-      expect.objectContaining({ op: 'guard', message: 'timeout: approval.guard' }),
-      expect.objectContaining({ op: 'putGrant', message: 'grant store down' }),
-    ])
+    expect(failures).toEqual([expect.objectContaining({ op: 'putGrant', message: 'grant store down' })])
   })
 
-  it('lists and revokes durable approval grants through the bounded seam runtime', async () => {
+  it('lists and stores durable approval grants through the bounded host port', async () => {
     const grant = {
       grantId: 'g',
-      profileHash: `sha256-${'a'.repeat(64)}`,
+      policyDigest: `sha256-${'a'.repeat(64)}`,
       actorId: 'u',
       actorOrg: 'local',
       toolId: 'computer_use',
       scope: 'cua:click:background',
       policyVersion: 'cua-v1',
+      sourceDecisionId: 'decision-fixture',
+      issuer: { id: 'reviewer', org: 'local', role: 'user' as const, deptPath: [], attrs: {} },
+      definitionFingerprint: 'd'.repeat(64),
+      policyBinding: 'e'.repeat(64),
       createdAt: '2026-09-17T00:00:00.000Z',
     }
-    const rt = new SeamRuntime(
-      fakeSeams({
-        approval: {
-          listGrants: async () => [grant],
-          revokeGrant: async (grantId, revokedAt) =>
-            grantId === grant.grantId ? { ...grant, revokedAt } : null,
-        },
-      }),
-      presetDefaults(),
-      { clock: () => 0, onFailure: () => undefined },
-    )
+    const rt = new SeamRuntime(fakeSeams(), presetDefaults(), {
+      clock: () => 0,
+      onFailure: () => undefined,
+      approvalGrants: { list: async () => [grant], put: async () => undefined },
+    })
     const query = {
-      profileHash: grant.profileHash,
+      policyDigest: grant.policyDigest,
       actorId: grant.actorId,
       actorOrg: grant.actorOrg,
       toolId: grant.toolId,
@@ -308,10 +263,13 @@ describe('SeamRuntime', () => {
       policyVersion: grant.policyVersion,
     }
     await expect(rt.approvalGrants(query, sig())).resolves.toEqual([grant])
-    await expect(rt.approvalRevokeGrant('g', '2026-09-17T01:00:00.000Z', sig())).resolves.toEqual({
-      ...grant,
-      revokedAt: '2026-09-17T01:00:00.000Z',
-    })
+    await expect(rt.approvalPutGrant(grant, sig())).resolves.toBe(true)
+  })
+
+  it('reads no grants and stores none without a host port', async () => {
+    const rt = new SeamRuntime(fakeSeams(), presetDefaults(), { clock: () => 0, onFailure: () => undefined })
+    await expect(rt.approvalGrants({} as never, sig())).resolves.toEqual([])
+    await expect(rt.approvalPutGrant({} as never, sig())).resolves.toBe(false)
   })
 
   it('owns one workspace lease across approval timeout, failure, and park outcomes', async () => {
@@ -339,8 +297,8 @@ describe('SeamRuntime', () => {
       workspaceInvocation: workspacePort(timeoutApproval, timeoutRelease),
     })
     await expect(timeoutRuntime.approvalAsk(req, sig())).resolves.toEqual({
-      verdict: 'rejected',
-      reason: 'timeout',
+      verdict: 'unavailable',
+      reason: 'deadline',
     })
     expect(timeoutRelease).not.toHaveBeenCalled()
     settleTimedOutApproval('allowed-once')
@@ -360,8 +318,8 @@ describe('SeamRuntime', () => {
       workspaceInvocation: workspacePort(failedApproval, failureRelease),
     })
     await expect(failureRuntime.approvalAsk(req, sig())).resolves.toEqual({
-      verdict: 'rejected',
-      reason: 'approver_failed',
+      verdict: 'unavailable',
+      reason: 'transport',
     })
     expect(failureRelease).toHaveBeenCalledOnce()
 
@@ -378,7 +336,7 @@ describe('SeamRuntime', () => {
     })
     await expect(parkRuntime.approvalAsk(req, sig())).resolves.toEqual({
       verdict: 'unavailable',
-      reason: 'no_approver',
+      reason: 'no-approver',
     })
     expect(parkRelease).toHaveBeenCalledOnce()
   })
@@ -386,12 +344,16 @@ describe('SeamRuntime', () => {
   it('routes approval and checkpoint operations only through the workspace invocation', async () => {
     const grant = {
       grantId: 'g',
-      profileHash: `sha256-${'a'.repeat(64)}`,
+      policyDigest: `sha256-${'a'.repeat(64)}`,
       actorId: 'u',
       actorOrg: 'local',
       toolId: 'shell',
       scope: 'tool:shell:execute',
       policyVersion: 'v1',
+      sourceDecisionId: 'decision-fixture',
+      issuer: { id: 'reviewer', org: 'local', role: 'user' as const, deptPath: [], attrs: {} },
+      definitionFingerprint: 'd'.repeat(64),
+      policyBinding: 'e'.repeat(64),
       createdAt: '2026-09-17T00:00:00.000Z',
     }
     const globalApproval = vi.fn(async () => {
@@ -401,14 +363,7 @@ describe('SeamRuntime', () => {
       throw new Error('global checkpoint called')
     })
     const global = fakeSeams({
-      approval: {
-        ask: globalApproval,
-        resume: globalApproval,
-        guard: globalApproval,
-        listGrants: globalApproval,
-        putGrant: globalApproval,
-        revokeGrant: globalApproval,
-      },
+      approval: { ask: globalApproval },
       checkpoint: {
         snapshot: globalCheckpoint,
         rewind: globalCheckpoint,
@@ -416,14 +371,7 @@ describe('SeamRuntime', () => {
       },
     })
     const bound = fakeSeams({
-      approval: {
-        ask: async () => 'allowed-once',
-        resume: async () => ({ requestId: 'r', bindingHash: 'h', expiresAt: 't' }),
-        guard: async () => ({ decision: 'allow-once', ruleVersion: 'v1', reasons: [] }),
-        listGrants: async () => [grant],
-        putGrant: async () => undefined,
-        revokeGrant: async (_id, revokedAt) => ({ ...grant, revokedAt }),
-      },
+      approval: { ask: async () => 'allowed-once' },
       checkpoint: {
         snapshot: async () => ({ id: 'cp' }),
         rewind: async () => undefined,
@@ -435,14 +383,14 @@ describe('SeamRuntime', () => {
       clock: () => 0,
       onFailure: () => undefined,
       workspaceInvocation: workspacePort(bound, release),
+      approvalGrants: { list: async () => [grant], put: async () => undefined },
     })
 
     await expect(rt.approvalAsk(req, sig())).resolves.toBe('allowed-once')
-    await expect(rt.approvalGuard(req, sig())).resolves.toMatchObject({ decision: 'allow-once' })
     await expect(
       rt.approvalGrants(
         {
-          profileHash: grant.profileHash,
+          policyDigest: grant.policyDigest,
           actorId: grant.actorId,
           actorOrg: grant.actorOrg,
           toolId: grant.toolId,
@@ -453,16 +401,11 @@ describe('SeamRuntime', () => {
       ),
     ).resolves.toEqual([grant])
     await expect(rt.approvalPutGrant(grant, sig())).resolves.toBe(true)
-    await expect(rt.approvalRevokeGrant('g', 'revoked', sig())).resolves.toMatchObject({
-      grantId: 'g',
-      revokedAt: 'revoked',
-    })
-    await expect(rt.approvalResume('ticket', 'allowed-once')).resolves.toMatchObject({ requestId: 'r' })
     await expect(rt.checkpointSnapshot(['a'], '1/1')).resolves.toEqual({ ok: true, id: 'cp' })
     await expect(rt.checkpointRewind('cp')).resolves.toBe(true)
     await expect(rt.checkpointList()).resolves.toEqual([{ id: 'cp', stepId: '1/1' }])
 
-    expect(release).toHaveBeenCalledTimes(9)
+    expect(release).toHaveBeenCalledTimes(4)
     expect(globalApproval).not.toHaveBeenCalled()
     expect(globalCheckpoint).not.toHaveBeenCalled()
   })
@@ -494,22 +437,26 @@ describe('SeamRuntime', () => {
     expect(release).toHaveBeenCalledTimes(3)
   })
 
-  it('verifier failure is fail, repair failure is park, ledger failure is false and an infinite projection', async () => {
+  it('verifier and repair failures report unavailability, ledger failure is false and an infinite projection', async () => {
     const boom = () => {
       throw new Error('x')
     }
     const seams = fakeSeams({
       verifier: { verify: async () => boom() },
       repair: { decide: async () => boom() },
-      ledger: { record: async () => boom(), projected: async () => boom() },
+      billing: { record: async () => boom(), projected: async () => boom() },
     })
     const rt = new SeamRuntime(seams, presetDefaults(), { clock: () => 0, onFailure: () => undefined })
-    expect(await rt.verify('tool', {}, sig())).toEqual({ verdict: 'fail', reasons: ['verifier unavailable'] })
+    expect(await rt.verify('tool', {}, sig())).toEqual({
+      verdict: 'fail',
+      reasons: ['verifier unavailable'],
+      unavailable: true,
+    })
     expect(await rt.repairDecide({ turn: 1, round: 1, history: [] }, { verdict: 'fail', reasons: [] })).toBe(
-      'park',
+      'unavailable',
     )
     expect(
-      await rt.ledgerRecord({
+      await rt.billingRecord({
         purpose: 'inference',
         effectId: 'e',
         tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -521,7 +468,7 @@ describe('SeamRuntime', () => {
         step: 1,
       }),
     ).toBe(false)
-    expect((await rt.ledgerProjected({ tokensEstimate: 1, model: 'm' })).credits).toBe(
+    expect((await rt.billingProjected({ tokensEstimate: 1, model: 'm' })).credits).toBe(
       Number.POSITIVE_INFINITY,
     )
   })
@@ -667,6 +614,9 @@ describe('SeamRuntime', () => {
     ac.abort()
     await expect(p).rejects.toThrow('aborted: y')
     await expect(withTimeout(Promise.resolve(7), 1000, 'z')).resolves.toBe(7)
+    // A limit past what one runtime timer can express is still that limit, not a millisecond.
+    const slow = new Promise((resolve) => setTimeout(() => resolve('late'), 30))
+    await expect(withTimeout(slow, 2 ** 31 + 5, 'long')).resolves.toBe('late')
   })
 })
 
@@ -803,6 +753,10 @@ describe('buildToolContext hands every path to the file system, and decides none
       write: async (path) => {
         seen.push(path)
       },
+      create: async (path, data) => {
+        seen.push(path)
+        return { size: data.length, sha256: 'a'.repeat(64) }
+      },
       list: async (path) => {
         seen.push(path)
         return []
@@ -822,6 +776,7 @@ describe('buildToolContext hands every path to the file system, and decides none
         generationDepth: 0,
         actor,
         cwd: '/w/project',
+        workspaceRoot: '/w/project',
         runtime,
         preset: presetDefaults(),
         children: { create: async () => ({}) as never },
@@ -923,5 +878,27 @@ describe('buildToolContext hands every path to the file system, and decides none
     expect(snapshots).toEqual([])
     await ctx.fs.write('notes.md', 'x')
     expect(snapshots).toEqual([['notes.md']])
+    await expect(ctx.fs.create!('./secrets/attachment', new Uint8Array())).rejects.toThrow(/E_FS_DENIED/)
+    await ctx.fs.create!('original.bin', new Uint8Array([0, 1]))
+    expect(snapshots).toEqual([['notes.md'], ['original.bin']])
   })
 })
+
+it.each(['allowed-session', 'allowed-permanent'] as const)(
+  'refuses an unoffered %s without storing it as a human answer',
+  async (verdict) => {
+    const seams = fakeSeams({
+      approval: {
+        ask: async (request) => {
+          request.options?.push(verdict)
+          return verdict
+        },
+      },
+    })
+    const runtime = new SeamRuntime(seams, presetDefaults(), { clock: () => 0, onFailure: () => undefined })
+    expect(await runtime.approvalAsk({ ...req, options: ['allowed-once', 'rejected'] }, sig())).toEqual({
+      verdict: 'unavailable',
+      reason: 'invalid-answer',
+    })
+  },
+)

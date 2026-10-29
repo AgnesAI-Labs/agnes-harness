@@ -1,7 +1,7 @@
 {
   "name": "@agnes/plugin-helper",
-  "version": "0.1.1",
-  "description": "Create, inspect and install AGH plugins through approved host requests",
+  "version": "0.2.22",
+  "description": "Draft, test and submit AGH plugins for human review",
   "type": "module",
   "license": "Apache-2.0",
   "exports": "./index.mjs",
@@ -18,11 +18,39 @@
     "plugins": [
       {
         "export": "pluginHelper",
+        "apiRange": "^5.0.0",
         "id": "ext:plugin-helper/main",
         "inject": [
-          "extension"
-        ]
+          "tools"
+        ],
+        "metadata": {
+          "displayName": "Plugin helper",
+          "summary": "Helps draft, test and submit plugins for human review.",
+          "description": "Helps draft, test and submit plugins for human review.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "插件助手",
+              "summary": "帮助编写、测试插件并提交人工审阅。",
+              "description": "帮助编写、测试插件并提交人工审阅。"
+            }
+          }
+        }
       }
+    ],
+    "metadata": {
+      "displayName": "Plugin helper",
+      "summary": "Helps draft, test and submit plugins for human review.",
+      "description": "Helps draft, test and submit plugins for human review.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "插件助手",
+          "summary": "帮助编写、测试插件并提交人工审阅。",
+          "description": "帮助编写、测试插件并提交人工审阅。"
+        }
+      }
+    },
+    "provides": [
+      "tool"
     ]
   }
 }

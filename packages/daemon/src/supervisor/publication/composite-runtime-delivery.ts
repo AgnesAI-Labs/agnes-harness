@@ -1,0 +1,252 @@
+import type { CompositeTargetStore } from '@agnes/daemon-foundation/storage/composite-target-store'
+import type { RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
+import {
+  validateRuntimeApplyFailedFrame,
+  validateRuntimeBootReadyFrame,
+  validateRuntimeConvergedFrame,
+} from '@agnes/protocol'
+import { RuntimeAdmission } from './runtime-admission.js'
+
+export type RuntimeBootDelivery = Readonly<{
+  artifact: RuntimeTargetArtifact
+  source: 'lastGood' | 'bootstrap'
+}>
+
+export type CompositeRuntimeDeliveryOptions = Readonly<{
+  /** Invalidation only: a matching report is durably qualified before observers re-read. */
+  onConverged?: ((artifact: RuntimeTargetArtifact) => void) | undefined
+  /** Called, without blocking the frame, after a failure of the desired target was recorded. */
+  onFailureRecorded?: (() => unknown) | undefined
+}>
+
+/**
+ * Owns lastGood/bootstrap delivery, boot_ready admission, and qualified converged/failure writes.
+ * Probe-successful artifacts are never rebuilt here.
+ */
+export class CompositeRuntimeDelivery {
+  #bootTargetDigest: string | undefined
+  #startupComplete = false
+  #startupPublication: RuntimeTargetArtifact | undefined
+  readonly #store: CompositeTargetStore
+  readonly #boots = new Map<number, RuntimeAdmission>()
+  readonly #onConverged: ((artifact: RuntimeTargetArtifact) => void) | undefined
+  readonly #onFailureRecorded: (() => unknown) | undefined
+  readonly #applies = new Map<
+    number,
+    {
+      artifact: RuntimeTargetArtifact
+      resolve: (receipt: {
+        generation: number
+        report: import('@agnes/protocol').RuntimeConvergenceReport
+      }) => void
+      reject: (error: Error) => void
+    }
+  >()
+
+  /** Live config candidates use the business worker's existing acknowledgement frames before commit. */
+  applyBeforeCommit(
+    generation: number,
+    artifact: RuntimeTargetArtifact,
+    offer: () => void,
+  ): Promise<{ generation: number; report: import('@agnes/protocol').RuntimeConvergenceReport }> {
+    if (this.#applies.has(generation)) return Promise.reject(new Error('E_RUNTIME_TARGET_BUSY'))
+    return new Promise((resolve, reject) => {
+      this.#applies.set(generation, { artifact, resolve, reject })
+      try {
+        offer()
+      } catch (error) {
+        this.#applies.delete(generation)
+        reject(error)
+      }
+    })
+  }
+
+  workerExited(generation: number): void {
+    const pending = this.#applies.get(generation)
+    this.#applies.delete(generation)
+    pending?.reject(new Error('E_RUNTIME_TARGET_OUTCOME_UNKNOWN'))
+    this.#boots.delete(generation)
+  }
+
+  constructor(store: CompositeTargetStore, options: CompositeRuntimeDeliveryOptions = {}) {
+    this.#store = store
+    this.#onFailureRecorded = options.onFailureRecorded
+    this.#onConverged = options.onConverged
+  }
+
+  #failureRecorded(): void {
+    const notify = this.#onFailureRecorded
+    if (!notify) return
+    void Promise.resolve()
+      .then(notify)
+      .catch(() => undefined)
+  }
+
+  /**
+   * A worker start that never reached boot_ready. When the target it was started with is the desired
+   * one, that target is what failed, and the failure is recorded so it gets put back. Answers whether
+   * the desired target was the cause: it was when nothing had ever been confirmed to start from.
+   */
+  recordBootFailure(generation: number, boot: RuntimeBootDelivery, error: Error): boolean {
+    if (boot.source !== 'bootstrap') return false
+    const recorded = this.#store.qualifyFailed(generation, boot.artifact, {
+      generation,
+      digest: boot.artifact.digest,
+      identity: boot.artifact.identity,
+      phase: 'boot',
+      message: error.message,
+    })
+    if (recorded) this.#failureRecorded()
+    // Not recorded because the failure frame got there first and the target is already put back.
+    // A target that moved on for any other reason blames nothing, so the exit stays a crash.
+    return recorded || this.#store.revertedFrom(boot.artifact.digest) !== undefined
+  }
+
+  /** Coalesce pinned/probed boot publications without acquiring a resource-bearing worker. */
+  stageStartup(artifact: RuntimeTargetArtifact): boolean {
+    if (this.#startupComplete) return false
+    this.#startupPublication = artifact
+    return true
+  }
+
+  completeStartup(): void {
+    if (this.#startupPublication) this.preferBootTarget(this.#startupPublication)
+    this.#startupPublication = undefined
+    this.#startupComplete = true
+  }
+
+  /** Only a pinned/probed startup publication may supersede lastGood before the first mount. */
+  preferBootTarget(artifact: RuntimeTargetArtifact): void {
+    if (artifact.digest !== this.#store.desired()?.digest) throw new Error('E_RUNTIME_TARGET_STALE')
+    this.#bootTargetDigest = artifact.digest
+  }
+
+  bootFor(_generation: number): RuntimeBootDelivery | undefined {
+    const desired = this.#store.desired()
+    if (desired && desired.digest === this.#bootTargetDigest)
+      return Object.freeze({ artifact: desired, source: 'bootstrap' as const })
+    const lastGood = this.#store.lastGood()
+    if (lastGood) return Object.freeze({ artifact: lastGood, source: 'lastGood' as const })
+    if (desired) return Object.freeze({ artifact: desired, source: 'bootstrap' as const })
+    return undefined
+  }
+
+  desired(): RuntimeTargetArtifact | undefined {
+    return this.#store.desired()
+  }
+
+  /** A bootstrap already mounted its target; only a newer desired needs another worker apply. */
+  desiredAfterBoot(boot: RuntimeBootDelivery): RuntimeTargetArtifact | undefined {
+    const desired = this.#store.desired()
+    if (!desired) return undefined
+    return desired.digest === boot.artifact.digest &&
+      desired.identity.treeHash === boot.artifact.identity.treeHash &&
+      desired.identity.resourceRevision === boot.artifact.identity.resourceRevision &&
+      desired.identity.compositeRevision === boot.artifact.identity.compositeRevision
+      ? undefined
+      : desired
+  }
+
+  beginBoot(generation: number, boot: RuntimeBootDelivery): RuntimeAdmission {
+    const admission = new RuntimeAdmission({
+      workerKind: 'session',
+      workerKey: '@shared',
+      generation,
+      digest: boot.artifact.digest,
+      identity: boot.artifact.identity,
+      source: boot.source,
+    })
+    this.#boots.set(generation, admission)
+    return admission
+  }
+
+  admission(generation: number): RuntimeAdmission | undefined {
+    return this.#boots.get(generation)
+  }
+
+  handleWorkerFrame(generation: number, frame: unknown): boolean {
+    const candidate = this.#applies.get(generation)
+    if (candidate) {
+      const converged = validateRuntimeConvergedFrame(frame)
+      const failed = validateRuntimeApplyFailedFrame(frame)
+      const value = converged.ok ? converged.value : failed.ok ? failed.value : undefined
+      if (
+        value?.generation === generation &&
+        value.digest === candidate.artifact.digest &&
+        value.identity.treeHash === candidate.artifact.identity.treeHash &&
+        value.identity.resourceRevision === candidate.artifact.identity.resourceRevision &&
+        value.identity.compositeRevision === candidate.artifact.identity.compositeRevision
+      ) {
+        this.#applies.delete(generation)
+        if (converged.ok) {
+          candidate.resolve({ generation, report: converged.value.report })
+        } else {
+          const error = new Error(failed.ok ? failed.value.message : 'E_PLUGIN_CONFIG_REFUSED')
+          error.name = 'PluginConfigRefused'
+          candidate.reject(error)
+        }
+        // An unpublished refusal must never enter desired-failure compensation.
+        return true
+      }
+    }
+    const boot = validateRuntimeBootReadyFrame(frame)
+    if (boot.ok) return this.#boots.get(generation)?.admit(boot.value) === true
+    const failedBoot = validateRuntimeApplyFailedFrame(frame)
+    if (failedBoot.ok && failedBoot.value.generation === generation) {
+      const admission = this.#boots.get(generation)
+      if (admission && !admission.ready && admission.expected.digest === failedBoot.value.digest)
+        admission.fail(new Error(failedBoot.value.message))
+    }
+    const desired = this.#store.desired()
+    if (!desired) return false
+    const converged = validateRuntimeConvergedFrame(frame)
+    if (converged.ok) {
+      const value = converged.value
+      if (value.generation !== generation || value.digest !== desired.digest) return false
+      const recorded = this.#store.qualifyConverged(value.generation, desired, value.report)
+      if (recorded) {
+        try {
+          this.#onConverged?.(desired)
+        } catch {
+          // An invalidation observer cannot undo durable qualification.
+        }
+      }
+      return recorded
+    }
+    const failed = validateRuntimeApplyFailedFrame(frame)
+    if (failed.ok) {
+      const value = failed.value
+      if (value.generation !== generation || value.digest !== desired.digest) return false
+      const recorded = this.#store.qualifyFailed(value.generation, desired, {
+        generation: value.generation,
+        digest: value.digest,
+        identity: value.identity,
+        phase: value.phase,
+        message: value.message,
+      })
+      if (recorded) this.#failureRecorded()
+      return recorded
+    }
+    return false
+  }
+}
+
+/**
+ * A published desired must reach a Host-bearing worker so it can emit runtime.converged.
+ * Serve-only plugin admin never opens a session, so acquire the shared worker when none is live.
+ */
+export async function deliverDesiredToWorkers(
+  pool: {
+    businessWorker(): { link: { offerRuntimeTarget(artifact: RuntimeTargetArtifact): void } } | undefined
+    acquireSharedWorker(): Promise<unknown>
+  },
+  artifact: RuntimeTargetArtifact,
+): Promise<void> {
+  const live = pool.businessWorker()
+  if (live) {
+    live.link.offerRuntimeTarget(artifact)
+    return
+  }
+  await pool.acquireSharedWorker()
+  pool.businessWorker()?.link.offerRuntimeTarget(artifact)
+}

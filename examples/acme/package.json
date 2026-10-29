@@ -1,0 +1,140 @@
+{
+  "name": "@acme/operations",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "client",
+    "assets",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE",
+    "adopt.mjs"
+  ],
+  "scripts": {
+    "build": "node --check index.mjs"
+  },
+  "agnes": {
+    "provides": [
+      "tool",
+      "ui",
+      "bundle"
+    ],
+    "plugins": [
+      {
+        "id": "ext:@acme/operations/main",
+        "export": "main",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "tools"
+        ],
+        "capabilities": {
+          "ui": true,
+          "tools": {
+            "names": [
+              "acme_status"
+            ],
+            "prefix": "acme_"
+          }
+        }
+      }
+    ],
+    "hostProvidedExternals": {
+      "@agnes/plugin-runtime": "0.0.0",
+      "@sinclair/typebox": "~0.34.0"
+    },
+    "clientDescriptors": [
+      {
+        "rowId": "ext:@acme/operations/main",
+        "path": "./client/agnes.client.json"
+      }
+    ],
+    "bundles": {
+      "desk": {
+        "presets": {
+          "acme": {
+            "name": "acme",
+            "extends": "standard"
+          }
+        },
+        "launch": {
+          "title": {
+            "en": "Acme operations",
+            "zh-CN": "Acme 运营助手"
+          },
+          "description": {
+            "en": "Inspect a synthetic service status.",
+            "zh-CN": "查看模拟服务状态。"
+          },
+          "preset": "acme",
+          "pages": [
+            "acme-overview"
+          ],
+          "prompt": {
+            "text": {
+              "en": "call acme_status",
+              "zh-CN": "call acme_status"
+            },
+            "mode": "draft"
+          }
+        },
+        "profile": {
+          "tools": [
+            "acme_status"
+          ]
+        }
+      }
+    },
+    "application": {
+      "id": "acme-operations",
+      "brand": {
+        "name": {
+          "en": "Acme",
+          "zh-CN": "Acme"
+        },
+        "title": {
+          "en": "Acme Operations",
+          "zh-CN": "Acme 运营台"
+        },
+        "assistantName": {
+          "en": "Ava",
+          "zh-CN": "艾娃"
+        },
+        "mark": "assets/mark.png",
+        "favicon": "assets/favicon.png"
+      },
+      "presentation": {
+        "home": "@acme/operations#acme-overview",
+        "navigation": {
+          "entries": [
+            "@acme/operations#acme-overview"
+          ],
+          "hideBuiltin": [
+            "automation"
+          ]
+        }
+      },
+      "defaultAgent": "@acme/operations#desk",
+      "agents": [
+        "@acme/operations#desk"
+      ]
+    },
+    "metadata": {
+      "displayName": "Acme reference application",
+      "summary": "A synthetic operations desk with an explicitly adopted identity and agent.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "Acme 参考应用",
+          "summary": "含显式采纳品牌和智能体的模拟运营台。",
+          "description": "含显式采纳品牌和智能体的模拟运营台。"
+        }
+      },
+      "description": "A synthetic operations desk with an explicitly adopted identity and agent."
+    }
+  }
+}

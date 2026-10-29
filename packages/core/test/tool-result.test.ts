@@ -1,7 +1,7 @@
+import { artifactUri, toLedgerContent } from '@agnes/core-effects/effects/tool-result'
 import type { ToolDef } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
-import { artifactUri, toLedgerContent } from '../src/effects/tool-result.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { actor, openSession, readTool } from './helpers/open-session.js'
@@ -75,6 +75,7 @@ describe('the tools phase records converted blocks', () => {
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
     await session.run({ until: 'turn-end', signal: new AbortController().signal })
     const rows = await log.scan({ type: 'tool/result', limit: 5 })
+    expect(rows[0]?.data).toMatchObject({ artifactRefs: [ref] })
     expect((rows[0]?.data as { content?: unknown })?.content).toEqual([
       { type: 'resource_link', uri: `artifact://${'a'.repeat(64)}`, mimeType: 'text/csv', name: 'artifact' },
     ])

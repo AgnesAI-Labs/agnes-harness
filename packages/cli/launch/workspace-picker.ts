@@ -3,8 +3,8 @@ import { resolveLocale, tt } from '@agnes/cli-tui'
 const TITLE = (env: NodeJS.ProcessEnv): string => tt('picker.chooseWorkspace', resolveLocale(env))
 
 // 提示语来自语言目录，要按脚本语言拼成字符串字面量再嵌入：漏掉引号或转义会让脚本文本非法，
-// macOS 上表现为 osascript 编译失败、选择器降级为不可用。
-const appleScriptText = (value: string): string => `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+// macOS 上表现为 osascript 编译失败、选择器降级为不可用。JSON 字符串字面量同时是合法的 JavaScript 字面量。
+const jsText = (value: string): string => JSON.stringify(value)
 const powerShellText = (value: string): string => `'${value.replace(/'/g, "''")}'`
 
 import { spawn } from 'node:child_process'
@@ -37,31 +37,55 @@ type PickerBackend = Readonly<{
   decode(result: PickerCommandResult): WorkspacePickerResult
 }>
 
+// The dialog must belong to the osascript process itself: a dialog shown through Finder outlives the
+// killed osascript (Web "Cancel", a dropped request), stays open invisibly and blocks Finder, so the
+// next click queues behind it. Killing osascript closes this one with it and asks for no extra permission.
+// Written in JXA because the AppleScript `activate` command costs about 2 s on every run (measured
+// 2.9 s vs 1.1 s to first dialog window); NSApplication activation is immediate and also really
+// brings the dialog's process to the front. The result goes to stdout: JXA prints its return value to stderr.
 const macScript = (env: NodeJS.ProcessEnv) =>
   `
-tell application "Finder"
-  activate
-  try
-    set chosenFolder to choose folder with prompt ${appleScriptText(TITLE(env))}
-    return "selected" & linefeed & POSIX path of chosenFolder
-  on error number -128
-    return "cancelled"
-  end try
-end tell`.trim()
+ObjC.import('AppKit')
+$.NSApplication.sharedApplication.activateIgnoringOtherApps(true)
+const app = Application.currentApplication()
+app.includeStandardAdditions = true
+const out = (text) => $.NSFileHandle.fileHandleWithStandardOutput.writeData($(text).dataUsingEncoding($.NSUTF8StringEncoding))
+try {
+  const chosenFolder = app.chooseFolder({ withPrompt: ${jsText(TITLE(env))} })
+  out('selected\\n' + chosenFolder.toString())
+} catch (error) {
+  if (error.errorNumber !== -128) throw error
+  out('cancelled')
+}`.trim()
 
 const windowsScript = (env: NodeJS.ProcessEnv) =>
   `
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 try {
-  Add-Type -AssemblyName System.Windows.Forms
+  Add-Type -AssemblyName System.Windows.Forms, System.Drawing
   $dialog = [System.Windows.Forms.FolderBrowserDialog]::new()
   $dialog.Description = ${powerShellText(TITLE(env))}
   $dialog.ShowNewFolderButton = $true
-  if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-    $result = @{ status = 'selected'; path = $dialog.SelectedPath }
-  } else {
-    $result = @{ status = 'cancelled' }
+  # A dialog without an owner opens behind the browser: this process is not the foreground one.
+  # A tiny invisible top-most owner makes Windows stack the dialog above every other window.
+  $owner = [System.Windows.Forms.Form]::new()
+  $owner.TopMost = $true
+  $owner.ShowInTaskbar = $false
+  $owner.FormBorderStyle = 'None'
+  $owner.Opacity = 0
+  $owner.StartPosition = 'CenterScreen'
+  $owner.Size = [System.Drawing.Size]::new(1, 1)
+  try {
+    $owner.Show()
+    $owner.Activate()
+    if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {
+      $result = @{ status = 'selected'; path = $dialog.SelectedPath }
+    } else {
+      $result = @{ status = 'cancelled' }
+    }
+  } finally {
+    $owner.Dispose()
   }
 } catch {
   $result = @{ status = 'unavailable' }
@@ -210,7 +234,7 @@ export function createNativeWorkspacePicker(options: NativeWorkspacePickerOption
         return executable
           ? {
               executable,
-              args: ['-e', macScript(env)],
+              args: ['-l', 'JavaScript', '-e', macScript(env)],
               decode: macResult,
             }
           : undefined

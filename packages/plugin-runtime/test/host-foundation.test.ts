@@ -6,12 +6,46 @@ import {
   E_LEASE_DENIED,
   E_SEAM_UNAVAILABLE,
   FiberLeases,
+  formatSnapshotPluginLocator,
   MultiProviderRegistry,
+  parseSnapshotPluginLocator,
   SeamRuntime,
   typeBoxStandardSchema,
 } from '../src/host/index.js'
 
 describe('plugin row foundation', () => {
+  it('round-trips snapshot locators without consuming client contribution paths', () => {
+    for (const packageId of ['plain', '@scope/pkg']) {
+      for (const path of ['main', 'client', 'client/acme/panel']) {
+        const value = `${packageId}@sha256-abc/${path}`
+        const expected = {
+          packageId,
+          snapshotId: 'sha256-abc',
+          exportName: path.startsWith('client/') ? 'client' : path,
+          ...(path.startsWith('client/') ? { contributionId: 'acme/panel' } : {}),
+        }
+        expect(parseSnapshotPluginLocator(value)).toEqual(expected)
+        expect(formatSnapshotPluginLocator(expected)).toBe(value)
+      }
+    }
+    const npmSnapshot = `sha512-${'A/'.repeat(43)}==`
+    const npmLocator = `@scope/pkg@${npmSnapshot}/client/acme/panel`
+    expect(parseSnapshotPluginLocator(npmLocator)?.snapshotId).toBe(npmSnapshot)
+    expect(formatSnapshotPluginLocator(parseSnapshotPluginLocator(npmLocator)!)).toBe(npmLocator)
+    for (const value of [
+      'pkg@/main',
+      'pkg@sha256-abc/',
+      'pkg@sha256-abc/main/other',
+      'pkg@sha256-abc/client/',
+      'pkg@sha256-abc/client/acme//panel',
+      'builtin:pkg/main',
+    ])
+      expect(parseSnapshotPluginLocator(value)).toBeUndefined()
+    expect(() =>
+      formatSnapshotPluginLocator({ packageId: 'pkg', snapshotId: 'sha256-abc/client', exportName: 'main' }),
+    ).toThrow('Invalid snapshot plugin locator')
+  })
+
   it('normalizes the runtime before creating the mount identity', () => {
     const row = createPluginRow({
       id: 'seam:example',
@@ -141,17 +175,6 @@ describe('stable seams', () => {
       await expect(result).resolves.toBe('two:Ada')
     },
   )
-
-  it('keeps listener registration synchronous because it does not dispatch business work', () => {
-    const disposer = () => {}
-    const seam = new SeamRuntime<{ onGrantRevoked(listener: () => void): () => void }>('approval', {
-      ordinary: async () => {
-        throw new Error('business dispatch should not run')
-      },
-    })
-    seam.provide({ onGrantRevoked: () => disposer })
-    expect(seam.facade.onGrantRevoked(() => {})).toBe(disposer)
-  })
 })
 
 describe('multi-provider registry', () => {

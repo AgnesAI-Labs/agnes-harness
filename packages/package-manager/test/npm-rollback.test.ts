@@ -14,22 +14,11 @@ it('installs actual npm archives, then rolls back offline using the pinned tree 
     archives = new Map<string, { bytes: Buffer; integrity: string }>()
   try {
     mkdirSync(profile, { recursive: true })
-    const seams = [
-      'approval',
-      'checkpoint',
-      'ledger',
-      'sandbox',
-      'verifier',
-      'repair',
-      'artifacts',
-      'principals',
-      'platform',
-      'harness',
-    ]
+    const seams = ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals']
     writeLock(profile, {
       ...emptyLock('local-dev', '0.1.0'),
       resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
-      seams: Object.fromEntries(seams.map((s) => [s, '@agnes/base'])),
+      seams: Object.fromEntries(seams.map((s) => [s, { provider: 'local' }])),
       policySnapshot: { capabilityCeiling: ['tools'], workspacePackages: 'require-project-trust' },
     })
     for (const version of ['1.0.0', '2.0.0']) {
@@ -50,7 +39,11 @@ it('installs actual npm archives, then rolls back offline using the pinned tree 
           version,
           license: 'MIT',
           exports: './extension/index.ts',
-          agnes: { plugins: [{ export: 'main', id: 'ext:acme/pkg-a/main', runtime: 'in-process' }] },
+          agnes: {
+            plugins: [
+              { apiRange: '^5.0.0', export: 'main', id: 'ext:acme/pkg-a/main', runtime: 'in-process' },
+            ],
+          },
           scripts: { postinstall: 'exit 99' },
         }),
       )
@@ -85,11 +78,24 @@ it('installs actual npm archives, then rolls back offline using the pinned tree 
       agnesVersion: '0.1.0',
       now: () => '2026-09-13T00:00:00Z',
       exec,
+      npmProvenance: async () => ({
+        signatureVerified: true,
+        verification: 'npm-sigstore',
+        publisher: 'fixture verified publisher',
+      }),
       references: async () => [],
     })
+    writeFileSync(
+      join(profile, 'package-sources.json'),
+      JSON.stringify({ allowedSources: 'official+npm-with-provenance' }),
+    )
     const first = parseSource('npm:@acme/pkg-a@1.0.0'),
       preview = await manager.inspect(profile, first)
     await manager.install(profile, first, { expectedIntegrity: preview.integrity })
+    expect(await manager.provenance(profile, '@acme/pkg-a')).toMatchObject({
+      verification: 'npm-sigstore',
+      signatureVerified: true,
+    })
     const initial = (await manager.inventory(profile)).packages[0]
     if (!initial) throw Error('missing')
     await manager.trust(profile, '@acme/pkg-a', {

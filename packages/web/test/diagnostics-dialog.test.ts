@@ -1,8 +1,8 @@
 /** @vitest-environment happy-dom */
-import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { DiagnosticsWarning } from '@agnes/web-units'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import type { CollectedDiagnostics, collectDiagnostics } from '../src/diagnostics-bundle.js'
 import { createDiagnosticsDialog, type DiagnosticsDialogDeps, saveZip } from '../src/diagnostics-dialog.js'
 
@@ -326,18 +326,19 @@ describe('createDiagnosticsDialog', () => {
   })
 
   it('keeps padding off the <dialog> so its own box is only the backdrop edge', () => {
-    const css = readFileSync(resolve(__dirname, '../public/style.css'), 'utf8')
+    const css = readWebStyleSource(resolve(__dirname, '../public/style.css'))
     const rule = (selector: string) =>
-      new RegExp(`^${selector.replace('.', '\\.')} \\{([^}]*)\\}`, 'm').exec(css)?.[1]
+      new RegExp(`^\\s*${selector.replace('.', '\\.')} \\{([^}]*)\\}`, 'm').exec(css)?.[1]
     expect(rule('.diagnostics-dialog')).not.toMatch(/padding|margin/)
     expect(rule('.diagnostics-body')).toMatch(/padding/)
     expect(rule('.diagnostics-body')).toMatch(/max-height: var\(--dialog-max-height\)/)
   })
 
   it('scopes the share step checkboxes to a fixed size instead of the global 100% width', () => {
-    const css = readFileSync(resolve(__dirname, '../public/style.css'), 'utf8')
+    const css = readWebStyleSource(resolve(__dirname, '../public/style.css'))
     const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const rule = (selector: string) => new RegExp(`^${escapeRe(selector)} \\{([^}]*)\\}`, 'm').exec(css)?.[1]
+    const rule = (selector: string) =>
+      new RegExp(`^\\s*${escapeRe(selector)} \\{([^}]*)\\}`, 'm').exec(css)?.[1]
     const checkboxRule = rule('.diagnostics-include input[type="checkbox"]')
     expect(checkboxRule).toBeTruthy()
     expect(checkboxRule).not.toMatch(/width:\s*100%/)

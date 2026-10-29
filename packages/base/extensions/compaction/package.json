@@ -1,0 +1,47 @@
+{
+  "name": "@agnes/compaction",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/compaction",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "tools"
+        ],
+        "capabilities": {
+          "tools": {
+            "prefix": "",
+            "names": [
+              "compact"
+            ]
+          },
+          "hooks": [],
+          "slots": [],
+          "events": false,
+          "resources": [],
+          "network": []
+        },
+        "metadata": {
+          "displayName": "Conversation compaction",
+          "summary": "Lets the agent shorten a long conversation to make room for continuing work.",
+          "description": "Lets the agent shorten a long conversation to make room for continuing work.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "对话压缩",
+              "summary": "让 Agent 压缩过长的对话，为继续处理任务腾出上下文空间。",
+              "description": "让 Agent 压缩过长的对话，为继续处理任务腾出上下文空间。"
+            }
+          }
+        }
+      }
+    ],
+    "provides": [
+      "tool"
+    ]
+  }
+}

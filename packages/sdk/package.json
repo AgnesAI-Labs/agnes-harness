@@ -13,16 +13,17 @@
       "browser": "./src/surface.browser.ts",
       "default": "./src/surface.node.ts"
     },
-    "./composer-selection": "./src/composer-selection.ts"
+    "./composer-selection": "./src/composer-selection.ts",
+    "./owned-store": "./src/owned-store.node.ts",
+    "./managed-service": "./src/managed-service.node.ts",
+    "./streams": "./src/plugin-streams.ts"
   },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -b"
   },
   "dependencies": {
-    "@agnes/package-admin-client-node": "workspace:*",
     "@agnes/protocol": "workspace:*",
-    "@agnes/resource-control-client-node": "workspace:*",
     "@agnes/system-node": "workspace:*",
     "ws": "8.21.3"
   },

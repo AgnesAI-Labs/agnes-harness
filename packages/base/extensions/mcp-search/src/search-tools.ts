@@ -1,7 +1,7 @@
-import { defineTool } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
-import type { ToolIndexReader } from '../../../src/mcp/index-table.js'
-import type { SkillRuntimeDiscovery } from '../../skills/src/runtime.js'
+import { scoreToolIndexRows, type ToolIndexReader } from '../../../src/mcp/index-table.js'
+import { modelVisibleSkill, type SkillRuntimeDiscovery } from '../../skills/src/runtime.js'
 
 const READ_ONLY = {
   isReadOnly: true,
@@ -61,7 +61,7 @@ function matchingSkills(runtime: SkillRuntimeDiscovery | undefined, query: strin
     .list()
     // `ready` is the narrow runtime projection of enabled + trusted + winner. The body remains
     // inside skill_read; this discovery bridge receives only the existing safe descriptor.
-    .filter((skill) => skill.actual === 'ready')
+    .filter((skill) => skill.actual === 'ready' && modelVisibleSkill(runtime, skill.resourceId))
   return ready
     .map((skill) => {
       const name = normalized(skill.name)
@@ -86,7 +86,7 @@ export const toolSearchTool = (index: ToolIndexReader, skills?: SkillRuntimeDisc
   defineTool({
     name: 'tool_search',
     description:
-      'Search deferred tools and ready Skills by name or description, including Skills already in available_skills. Call skill_read with the exact Skill name. Already provided tools can also be queried by exact name. Use tool_describe for parameters.',
+      'Search all available tools and ready Skills by name, description or parameter keywords. Call skill_read with the exact Skill name. Use tool_describe to load deferred tool schemas; each result reports availability in the current model request.',
     parameters: Type.Object(
       {
         query: Type.String({ minLength: 1, maxLength: 256 }),
@@ -104,14 +104,33 @@ export const toolSearchTool = (index: ToolIndexReader, skills?: SkillRuntimeDisc
         // index. Otherwise an exact Skill can be silently hidden by an unrelated MCP result.
         const reserveSkillSlot = skillHits.length > 0 && (asksForSkills(args.query) || exactSkill)
         const toolLimit = reserveSkillSlot ? limit - 1 : limit
-        const eager = ctx.tools.list().find((tool) => normalized(tool.name) === normalized(args.query))
-        const hits = index.search(args.query, toolLimit)
-        const toolRows =
-          eager && !hits.some((hit) => hit.name === eager.name)
-            ? [
-                `${eager.name} — ${eager.description}\nAlready provided in this session; call it directly or use tool_describe.`,
-              ]
-            : hits.map(({ name }) => `${name} — ${index.get(name)?.description ?? ''}`)
+        const catalog = ctx.tools.list()
+        const names = new Set(catalog.map((tool) => tool.name))
+        // A deferred tool's group label (an MCP server's name) is searchable with its description,
+        // because that label is all the model saw of the tool before searching.
+        const local = catalog.map((tool) => ({
+          name: tool.name,
+          description: tool.meta.discoveryGroup
+            ? `${tool.description} ${tool.meta.discoveryGroup}`
+            : tool.description,
+          schema: JSON.stringify(tool.parameters),
+        }))
+        const hits = [
+          ...scoreToolIndexRows(local, args.query, toolLimit),
+          // Visible catalog rows are authoritative. Overfetch so indexed duplicates cannot hide
+          // lower-ranked MCP-only results, then use the same canonical ranking for both sources.
+          ...index.search(args.query, toolLimit + names.size).filter((hit) => !names.has(hit.name)),
+        ]
+          .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
+          .filter((hit, i, all) => all.findIndex((row) => row.name === hit.name) === i)
+          .slice(0, toolLimit)
+        const toolRows = hits.map(({ name }) => {
+          const tool = catalog.find((item) => item.name === name)
+          return (
+            `${name} — ${tool?.description ?? index.get(name)?.description ?? ''}` +
+            `\n${ctx.tools.availability?.(name).message ?? 'Availability unknown (request snapshot unavailable); use the schemas supplied in the current model request and refresh discovery after the next model request.'}`
+          )
+        })
         const visibleTools = toolRows.slice(0, toolLimit)
         const visibleSkills = skillHits.slice(0, limit - visibleTools.length)
         if (visibleTools.length === 0 && visibleSkills.length === 0)
@@ -136,7 +155,7 @@ export const toolDescribeTool = (index: ToolIndexReader) =>
   defineTool({
     name: 'tool_describe',
     description:
-      'Show the description and parameter schema of a deferred or currently provided tool by exact name.',
+      'Load an available tool by exact name for subsequent model requests and show its parameters. Loading grants no permission; normal validation and authorization still apply.',
     parameters: Type.Object(
       { name: Type.String({ minLength: 1, maxLength: 128 }) },
       { additionalProperties: false },
@@ -148,6 +167,7 @@ export const toolDescribeTool = (index: ToolIndexReader) =>
         ? { name: visible.name, description: visible.description, schema: JSON.stringify(visible.parameters) }
         : index.get(args.name)
       if (!row) return textResult(`unknown tool: ${args.name}`, true)
+      if (visible) await ctx.tools.disclose?.(visible.name)
       return textResult(`${row.name}: ${row.description}\nparameters: ${capUtf8(row.schema, 8192)}`)
     },
   })

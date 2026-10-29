@@ -1,28 +1,34 @@
-import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { expect, it } from 'vitest'
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 
 const packageDirectory = process.cwd().endsWith('/packages/web')
   ? process.cwd()
   : resolve(process.cwd(), 'packages/web')
 
 function ruleBody(css: string, selector: string): string {
-  const start = css.indexOf(`\n${selector} {`)
-  expect(start, `missing rule ${selector}`).toBeGreaterThan(-1)
-  return css.slice(start, css.indexOf('}', start))
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = new RegExp(`^\\s*${escaped} \\{([^}]*)\\}`, 'm').exec(css)
+  expect(match, `missing rule ${selector}`).not.toBeNull()
+  return match?.[1] ?? ''
 }
 
 it('lets permission options scroll inside the viewport-clamped popover', async () => {
-  const css = await readFile(resolve(packageDirectory, 'public', 'style.css'), 'utf8')
+  const css = readWebStyleSource(resolve(packageDirectory, 'public', 'style.css'))
   const panel = ruleBody(css, '.permission-picker')
 
   expect(panel).toContain('overflow-y: auto')
   expect(panel).toContain('overscroll-behavior-y: contain')
 })
 
-it('gives the permission popover more width while keeping it bounded by the viewport', async () => {
-  const css = await readFile(resolve(packageDirectory, 'public', 'style.css'), 'utf8')
+it('keeps the permission popover compact and never wider than the viewport', async () => {
+  const css = readWebStyleSource(resolve(packageDirectory, 'public', 'style.css'))
   const panel = ruleBody(css, '.permission-picker')
 
-  expect(panel).toContain('max-width: min(360px, calc(100vw - 32px))')
+  // Each row is a name over one short line, so the list stays narrow; both bounds yield to a
+  // narrow window, leaving a 16px gutter on each side.
+  expect(panel).toContain('min-width: min(15rem, calc(100vw - 32px))')
+  expect(panel).toContain('max-width: min(20rem, calc(100vw - 32px))')
+  for (const bound of panel.match(/(?:min|max)-width: [^;]+/g) ?? [])
+    expect(bound).toContain('calc(100vw - 32px)')
 })

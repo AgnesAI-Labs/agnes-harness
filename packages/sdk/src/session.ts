@@ -1,6 +1,10 @@
+import type { ReferenceSearchResult, ReferenceSelection } from '@agnes/protocol'
 import { PermissionGate, type PermissionHandler, type PermissionRequest } from './permission.js'
+import { checkTurnLimits, promptMetadata, type TurnOptions, toContentBlocks } from './prompt-budget.js'
 
 export type { PermissionOption, PermissionOutcome, PermissionRequest } from './permission.js'
+export { toContentBlocks } from './prompt-budget.js'
+export type { DeliverablesOptions, ToolDetail } from './session-tool-records.js'
 
 import {
   type AcpStopReason,
@@ -12,20 +16,29 @@ import {
   type EventEnvelope,
   getHarnessMeta,
   type HarnessMeta,
-  rpcError,
   type SessionAttachParams,
   type SessionAttachResult,
   type SessionBudgetResult,
+  type SessionDeliverablesResult,
+  type SessionJob,
+  type SessionJobsControlParams,
+  type SessionJobsControlResult,
+  type SessionJobsReadResult,
   type SessionPreviewParams,
   type SessionProjectUIHistoryParams,
   type SessionProjectUIOpeningParams,
   type SessionProjectUIParams,
   type SessionProjectUIPatchParams,
-  type SessionReadToolDetailResult,
+  type SessionSetToolFilterResult,
+  type SessionToolFilterRequest,
+  type SessionUndoPreviewResult,
+  type SessionUndoResult,
+  type SessionWorkspaceChangesParams,
+  type SessionWorkspaceChangesResult,
+  type SessionWorkspaceListResult,
+  type SessionWorkspaceReadResult,
   type SlotName,
   type ThinkingLevel,
-  type ToolCall,
-  type ToolResult,
   type TurnEndReason,
   toAcpPrompt,
   toAcpStopReason,
@@ -37,18 +50,34 @@ import {
   type UIOpeningResult,
   type UIProjectionUpdate,
   type UITimeline,
-  validateAgainst,
   validateEvent,
   validateMethod,
 } from '@agnes/protocol'
-import { ToolCall as ToolCallSchema, ToolResult as ToolResultSchema } from '@agnes/protocol/gen/session-v1'
 import type { Client } from './client.js'
 import { JsonRpcError, ProtocolViolation, TransportClosed } from './errors.js'
+import { notifyListeners } from './events.js'
+import { SessionReads } from './session-reads.js'
+import {
+  checkDeliverablesPage,
+  type DeliverablesOptions,
+  readToolDetail,
+  type ToolDetail,
+} from './session-tool-records.js'
 // A handle on one conversation. It owns two things the client cannot own for it:
 // the running position in that session's event stream (cursor, generation), and the
 // assembly of a turn's outcome out of two independent arrivals - the prompt response
 // and the terminal notification that precedes it.
-import { type CompactOutcome, submitCommand, submitCompactAware } from './submit.js'
+import {
+  type CompactOutcome,
+  resendPending,
+  submitCommand,
+  submitCompactAware,
+  submitInput,
+} from './submit.js'
+
+type JobControlInput<P = SessionJobsControlParams> = P extends unknown
+  ? Omit<P, 'sessionId' | 'commandId'> & { commandId?: string }
+  : never
 
 export type TurnResult = {
   stopReason: AcpStopReason
@@ -59,7 +88,6 @@ export type TurnResult = {
 
 export type UIOpeningOptions = Pick<SessionProjectUIOpeningParams, 'surface' | 'maxNodes' | 'maxBytes'>
 export type UIHistoryOptions = Pick<SessionProjectUIHistoryParams, 'limit' | 'maxBytes'>
-export type ToolDetail = { call: ToolCall; result?: ToolResult }
 
 // Used only when a turn produced no terminal notification of its own; the ACP stop
 // reason is coarser than our own vocabulary, so this is a fallback, not the mapping.
@@ -99,47 +127,11 @@ function sameList(a: string[] | undefined, b: string[] | undefined): boolean {
   return a.every((x, i) => x === b[i])
 }
 
-/**
- * Refusals that end a session for this client until it is opened again on purpose: the daemon will
- * answer every reopen of it the same way (a history that failed its integrity check, or a ledger
- * written by an older or a newer build), so recovering it again would only retry forever.
- */
-const TERMINAL_REFUSALS: ReadonlySet<unknown> = new Set([
-  'E_LEDGER_INTEGRITY',
-  'LEGACY_LEDGER_FORMAT',
-  'NEWER_LEDGER_FORMAT',
-])
-
-function terminalRefusal(error: unknown): string | undefined {
-  if (!(error instanceof JsonRpcError) || error.code !== AGNES_ERRORS.SEMANTIC_REJECTED) return undefined
-  const code = error.data.code
-  return TERMINAL_REFUSALS.has(code) ? (code as string) : undefined
-}
-
-/** What a client notice says when a session was given up for good; `code` is the daemon's refusal. */
-export type SessionRefusedNotice = { kind: 'session-refused'; sessionId: string; code: string }
-
-function eventSeq(params: Record<string, unknown>): number | null {
-  const event = params.event as { seq?: unknown } | undefined
-  return typeof event?.seq === 'number' ? event.seq : null
-}
-
-/** How far a `session/load` in flight has got, as the daemon reports it. */
-export type SessionLoadingNotice = {
-  phase: 'open' | 'verify' | 'fold' | 'replay'
-  done: number
-  total: number
-}
-
 export type SessionNotificationListener = (
   method: string,
   params: Record<string, unknown>,
   meta: HarnessMeta | undefined,
 ) => void
-
-export function toContentBlocks(input: ContentBlock[] | string): ContentBlock[] {
-  return typeof input === 'string' ? [{ type: 'text', text: input }] : input
-}
 
 type TurnEndRecord = { reason: TurnEndReason; seq: number; credits?: TurnResult['credits'] }
 
@@ -209,6 +201,7 @@ export class Session {
   // `events()` are how they change. A consumer that sets `attached = false` by hand gets
   // a second subscription racing the first, and one that edits `filter` gets a stream
   // that no longer matches what it says it is.
+  private readonly reads: SessionReads
   private seq = 0
   private gen = 0
   private serverSeq = 0
@@ -247,10 +240,10 @@ export class Session {
   // from process.cwd() in a browser-capable SDK.
   private workspace: string | null
   private restoring: Promise<void> | null = null
-  // Set when the daemon refused this session for good (see TERMINAL_REFUSALS); cleared by an attach
-  // that succeeds, which only an explicit open can bring about.
-  private refusedCode: string | null = null
   private readonly permission = new PermissionGate()
+  withdrawPermission(requestId: string, reason: 'stopped' | 'deadline' | 'detached'): void {
+    this.permission.withdraw(requestId, reason)
+  }
   onPermissionRequest(handler: PermissionHandler): () => void {
     return this.permission.register(handler)
   }
@@ -267,7 +260,13 @@ export class Session {
     readonly id: string,
     cwd?: string,
   ) {
+    this.reads = new SessionReads(client, () => this)
     this.workspace = cwd || null
+  }
+
+  /** The workspace session.new/load supplied for this session, when one did. */
+  get cwd(): string | undefined {
+    return this.workspace ?? undefined
   }
 
   /** Called when a later explicit load supplies information an older cached handle lacked. */
@@ -296,11 +295,6 @@ export class Session {
     return this.isClosed
   }
 
-  /** The daemon's refusal that ended this session for this client (`E_LEDGER_INTEGRITY`, …), if any. */
-  get refused(): string | undefined {
-    return this.refusedCode ?? undefined
-  }
-
   /** A copy: the filter in force is a fact about the subscription, not a handle on it. */
   get filter(): AttachFilter {
     return { ...this.currentFilter }
@@ -313,10 +307,10 @@ export class Session {
   /** Entry point for everything the client routes to this session id. */
   onNotification(method: string, params: Record<string, unknown>): void {
     if (method === EVENT_METHOD) {
-      const seq = eventSeq(params)
+      const seq = (params.event as { seq?: unknown } | undefined)?.seq
       // Deduplicated here rather than per iterator: the wire stream belongs to the
       // session, so two iterators must agree on which rows were already delivered.
-      if (seq === null || seq <= this.lastAdmitted) return
+      if (typeof seq !== 'number' || seq <= this.lastAdmitted) return
       // `METHODS` lists this notification, but `call()`'s validation covers what this
       // client sends, not what it receives, so the row is checked here before anyone can
       // see it as a `LedgerEvent`. Dropped rather than thrown: this runs on the
@@ -350,7 +344,8 @@ export class Session {
           ...(meta.credits ? { credits: meta.credits } : {}),
         }
     }
-    for (const l of [...this.listeners]) l(method, params, meta)
+    if (method !== PREVIEW_METHOD) this.reads.changed()
+    notifyListeners(this.listeners, `session ${this.id}`, method, params, meta)
   }
 
   // The in-flight attach is registered before the first await inside, so anything that
@@ -399,7 +394,6 @@ export class Session {
     const r = await this.client.call<SessionAttachResult>('_agnes/v1/session.attach', params)
     this.gen = r.generation
     this.serverSeq = r.lastSeq
-    this.refusedCode = null
     if (cursor) {
       // Everything the cursor says was applied stays applied. Without the two watermarks
       // a resumed session persists a position behind the one it resumed from, and a
@@ -443,6 +437,7 @@ export class Session {
   }
 
   async detach(): Promise<void> {
+    this.reads.invalidate()
     this.cancelStreamRecovery()
     this.overflowed = false
     while (this.attaching) await this.attaching.catch(() => undefined)
@@ -457,46 +452,23 @@ export class Session {
   // connection is doing. Resends this session's pending writes before touching attach at
   // all: a steer sitting in the journal from before the drop must reach the server before
   // the event stream resumes, never after.
-  //
-  // A refusal the daemon will repeat on every reopen (TERMINAL_REFUSALS) ends recovery for this
-  // session only: it is marked detached and a `session-refused` notice says why, and the reconnect
-  // goes on with the other sessions instead of retrying this one forever.
   async recover(): Promise<void> {
+    await this.client.resendPending(this.id)
+    // Verbatim, per the cursor convention above - no `+ 1`.
+    const cursor: Cursor = { fromSeq: this.lastApplied, generation: this.gen }
     try {
-      await this.client.resendPending(this.id)
-      // Verbatim, per the cursor convention above - no `+ 1`.
-      const cursor: Cursor = { fromSeq: this.lastApplied, generation: this.gen }
-      try {
-        await this.attachForRecovery(cursor)
-      } catch (e) {
-        if (!this.isSessionNotFound(e) || !this.workspace) throw e
-        await this.restoreAfterReclaim()
-      }
+      await this.attachForRecovery(cursor)
     } catch (e) {
-      const code = terminalRefusal(e)
-      if (code === undefined) throw e
-      this.onRefused(code)
+      if (!this.isSessionNotFound(e)) throw e
+      if (!this.workspace) {
+        // The daemon no longer holds this session, and a handle without the workspace session.new
+        // or load supplied cannot reopen it. Retrying fails the same way forever while every
+        // events() reader stays parked, so the handle ends as it would on a final close.
+        await this.onClosed()
+        return
+      }
+      await this.restoreAfterReclaim()
     }
-  }
-
-  /**
-   * The daemon refused this session for good: stop following it. Iterators end, a prompt waiting
-   * for its turn's end is told, and nothing reattaches it until an explicit attach succeeds. A
-   * notice says so unless the daemon's own notice already did (`announce: false`).
-   */
-  onRefused(code: string, opts: { announce?: boolean } = {}): void {
-    if (this.refusedCode === code && !this.isAttached) return
-    this.refusedCode = code
-    this.cancelStreamRecovery()
-    this.isAttached = false
-    const ends = [...this.enders]
-    this.enders.clear()
-    for (const end of ends) end()
-    const waiters = [...this.quiescenceWaiters]
-    this.quiescenceWaiters.clear()
-    for (const reject of waiters) reject(new JsonRpcError(rpcError('SEMANTIC_REJECTED', { code })))
-    if (opts.announce !== false)
-      this.client.notice({ kind: 'session-refused', sessionId: this.id, code } satisfies SessionRefusedNotice)
   }
 
   /** Applies the two cursor repairs shared by transport reconnect and idle-worker restoration. */
@@ -545,15 +517,7 @@ export class Session {
     if (!cwd) return Promise.reject(new Error('session workspace unavailable'))
     const wasAttached = this.isAttached
     const restoring = (async () => {
-      try {
-        await this.client.restoreSession(this.id, cwd)
-      } catch (e) {
-        // Refused for good: whoever called (a reconnect, a prompt) learns it, and this handle stops
-        // being recovered rather than reopened once per retry.
-        const code = terminalRefusal(e)
-        if (code !== undefined) this.onRefused(code)
-        throw e
-      }
+      await this.client.restoreSession(this.id, cwd)
       if (wasAttached) {
         await this.attachForRecovery({ fromSeq: this.lastApplied, generation: this.gen })
       }
@@ -564,22 +528,118 @@ export class Session {
     return restoring
   }
 
-  /**
-   * Settles once the daemon has verified every stored row of this session; rejects when the
-   * history failed its integrity check. Call it before handing the history on, as export does.
-   */
-  verifyHistory(opts: { signal?: AbortSignal } = {}): Promise<Record<string, never>> {
-    return this.client.session.verifyHistory(this.id, opts)
-  }
-
   budget(): Promise<SessionBudgetResult> {
     return this.client.call<SessionBudgetResult>('_agnes/v1/session.budget', { sessionId: this.id })
+  }
+
+  factChain(
+    anchor: import('@agnes/protocol').FactChainAnchor,
+    laneId = 'main',
+    options: import('./client.js').CallOptions = {},
+  ): Promise<import('@agnes/protocol').FactChainResult> {
+    return this.client.factChain({ sessionId: this.id, laneId, anchor }, options)
+  }
+
+  jobsRead(jobId?: string): Promise<SessionJobsReadResult> {
+    return this.client.call('_agnes/v1/session.jobs.read', {
+      sessionId: this.id,
+      ...(jobId ? { jobId } : {}),
+    })
+  }
+
+  jobsControl(input: JobControlInput): Promise<SessionJobsControlResult> {
+    return this.client.call('_agnes/v1/session.jobs.control', {
+      ...input,
+      sessionId: this.id,
+      commandId: input.commandId ?? crypto.randomUUID(),
+    })
+  }
+
+  /** Runs one non-interactive shell command on the daemon host; poll `jobsRead(job.id)` for output. */
+  async jobsRun(
+    command: string,
+    options: { timeoutMs?: number; commandId?: string } = {},
+  ): Promise<SessionJob> {
+    const { output } = await this.jobsControl({
+      operation: 'run',
+      command,
+      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      ...(options.commandId === undefined ? {} : { commandId: options.commandId }),
+    })
+    if (!('id' in output)) throw new Error('session.jobs.control run returned no job')
+    return output
+  }
+
+  workspaceChanges(
+    input: Omit<SessionWorkspaceChangesParams, 'sessionId'> = {},
+  ): Promise<SessionWorkspaceChangesResult> {
+    return this.reads.read('_agnes/v1/session.workspace.changes', { ...input, sessionId: this.id })
+  }
+
+  /** What undoing a turn's file changes would do (the latest file-changing turn when `turn` is omitted). Read-only. */
+  undoPreview(turn?: number): Promise<SessionUndoPreviewResult> {
+    return this.client.call<SessionUndoPreviewResult>('_agnes/v1/session.undo.preview', {
+      sessionId: this.id,
+      ...(turn === undefined ? {} : { turn }),
+    })
+  }
+
+  /**
+   * Put a turn's file changes back. Owner only; refused while a turn runs and, as a whole, when a file
+   * changed after the turn. A retry with the same `commandId` returns the first attempt's result.
+   */
+  undo(turn: number, opts: { commandId?: string } = {}): Promise<SessionUndoResult> {
+    return this.client.call<SessionUndoResult>('_agnes/v1/session.undo', {
+      sessionId: this.id,
+      turn,
+      commandId: opts.commandId ?? crypto.randomUUID(),
+    })
+  }
+
+  workspaceList(path = ''): Promise<SessionWorkspaceListResult> {
+    return this.client.call<SessionWorkspaceListResult>('_agnes/v1/session.workspace.list', {
+      sessionId: this.id,
+      ...(path ? { path } : {}),
+    })
+  }
+
+  searchReferences(query: string): Promise<ReferenceSearchResult> {
+    return this.client.call<ReferenceSearchResult>('_agnes/v1/session.references.search', {
+      sessionId: this.id,
+      query,
+    })
+  }
+
+  workspaceRead(path: string): Promise<SessionWorkspaceReadResult> {
+    return this.client.call<SessionWorkspaceReadResult>('_agnes/v1/session.workspace.read', {
+      sessionId: this.id,
+      path,
+    })
   }
 
   setPreset(preset: string): Promise<EffectiveFromResult> {
     return this.client.call<EffectiveFromResult>('_agnes/v1/session.setPreset', {
       sessionId: this.id,
       preset,
+    })
+  }
+
+  /**
+   * Narrows the tools this session may use, for the rest of the session: `deny` is added to what is
+   * already denied, `allow` is intersected with any earlier `allow`. Nothing in the session can
+   * widen it again, so to get a tool back start a new session or fork from before the call. Names
+   * are exact tool names from `tools()`; an unknown name refuses the whole call. Owner only. A retry
+   * with the same `commandId` returns the first attempt's result. An older daemon answers
+   * METHOD_NOT_FOUND (-32601): the filter was not applied.
+   */
+  setToolFilter(
+    filter: SessionToolFilterRequest,
+    opts: { commandId?: string } = {},
+  ): Promise<SessionSetToolFilterResult> {
+    return this.client.call<SessionSetToolFilterResult>('_agnes/v1/session.setToolFilter', {
+      sessionId: this.id,
+      commandId: opts.commandId ?? crypto.randomUUID(),
+      ...filter,
     })
   }
 
@@ -600,8 +660,12 @@ export class Session {
     })
   }
 
+  integrity(verify = false): Promise<import('@agnes/protocol').SessionIntegrityStatus> {
+    return this.client.session.integrity(this.id, verify)
+  }
+
   projectUI(upto?: number, opts: Pick<SessionProjectUIParams, 'surface'> = {}): Promise<UITimeline> {
-    return this.client.call<UITimeline>('_agnes/v1/session.projectUI', {
+    return this.reads.read<UITimeline>('_agnes/v1/session.projectUI', {
       sessionId: this.id,
       ...(upto !== undefined ? { upto } : {}),
       ...(opts.surface !== undefined ? { surface: opts.surface } : {}),
@@ -648,85 +712,82 @@ export class Session {
     return result
   }
 
+  /** Tools and authorized resources visible in this session's pinned runtime. */
+  uiAction(
+    input: Omit<import('@agnes/protocol').UiActionParams, 'sessionId'>,
+  ): Promise<import('@agnes/protocol').UiActionReceipt> {
+    return this.client.call('_agnes/v1/ui.action', { ...input, sessionId: this.id })
+  }
+
+  uiRead(
+    input: Omit<import('@agnes/protocol').UiReadParams, 'sessionId'> = {},
+  ): Promise<import('@agnes/protocol').UiReadResult> {
+    return this.reads.read('_agnes/v1/ui.read', { ...input, sessionId: this.id })
+  }
+
+  /** Re-queries bound data for one open surface. The stored revision stays the author's. */
+  uiRefresh(
+    input: Omit<import('@agnes/protocol').UiRefreshParams, 'sessionId'>,
+  ): Promise<import('@agnes/protocol').UiSurfaceRecord> {
+    return this.client.call('_agnes/v1/ui.refresh', { ...input, sessionId: this.id })
+  }
+
+  tools(): Promise<import('@agnes/protocol').SessionToolsResult> {
+    return this.client.call('_agnes/v1/session.tools', { sessionId: this.id })
+  }
+
+  /** Same authenticated read as tools(); undefined means an older server without this snapshot. */
+  async capabilities(): Promise<import('@agnes/protocol').SessionCapabilitySet | undefined> {
+    return (await this.tools()).capabilities
+  }
+
   /** Reads one durable tool call and its optional result without changing the live attach cursor. */
-  async readToolDetail(
+  readToolDetail(
     callSeq: number,
     resultSeq?: number,
     opts: { signal?: AbortSignal } = {},
   ): Promise<ToolDetail> {
-    let complete: Uint8Array | undefined
-    let offset = 0
-    let totalBytes: number | undefined
-    for (;;) {
-      opts.signal?.throwIfAborted()
-      const page = await this.client.call<SessionReadToolDetailResult>('_agnes/v1/session.readToolDetail', {
-        sessionId: this.id,
-        callSeq,
-        ...(resultSeq === undefined ? {} : { resultSeq }),
-        offset,
-      })
-      opts.signal?.throwIfAborted()
-      if (
-        page.sessionId !== this.id ||
-        page.callSeq !== callSeq ||
-        page.resultSeq !== resultSeq ||
-        page.offset !== offset ||
-        (totalBytes !== undefined && page.totalBytes !== totalBytes)
-      )
-        throw new ProtocolViolation('invalid tool detail response: coordinates mismatch')
-      if (!Number.isSafeInteger(page.totalBytes) || page.totalBytes > 64 * 1024 * 1024)
-        throw new ProtocolViolation('invalid tool detail response: total byte limit')
-      totalBytes = page.totalBytes
-      complete ??= new Uint8Array(totalBytes)
-      let binary: string
-      try {
-        binary = atob(page.data)
-      } catch {
-        throw new ProtocolViolation('invalid tool detail response: base64')
-      }
-      const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
-      if (
-        bytes.byteLength > 256 * 1024 ||
-        offset + bytes.byteLength > totalBytes ||
-        page.nextOffset !== (offset + bytes.byteLength < totalBytes ? offset + bytes.byteLength : null) ||
-        (page.nextOffset !== null && bytes.byteLength === 0)
-      )
-        throw new ProtocolViolation('invalid tool detail response: page bounds')
-      complete.set(bytes, offset)
-      if (page.nextOffset === null) break
-      offset = page.nextOffset
-    }
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(complete))
-    } catch {
-      throw new ProtocolViolation('invalid tool detail response: JSON')
-    }
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))
-      throw new ProtocolViolation('invalid tool detail response: shape')
-    const detail = parsed as Record<string, unknown>
-    const keys = Object.keys(detail).sort().join(',')
-    if (keys !== (resultSeq === undefined ? 'call' : 'call,result'))
-      throw new ProtocolViolation('invalid tool detail response: fields')
-    if (
-      !validateAgainst(ToolCallSchema, detail.call).ok ||
-      (resultSeq !== undefined && !validateAgainst(ToolResultSchema, detail.result).ok)
-    )
-      throw new ProtocolViolation('invalid tool detail response: event data')
-    const call = detail.call as ToolCall
-    const result = detail.result as ToolResult | undefined
-    if (result && result.toolUseId !== call.toolUseId)
-      throw new ProtocolViolation('invalid tool detail response: tool identity')
-    return { call, ...(result ? { result } : {}) }
+    return readToolDetail(this.client, this.id, callSeq, resultSeq, opts)
+  }
+
+  /** One bounded page of `present` results recorded after `afterSeq`; continue from `nextAfterSeq`. */
+  async deliverables(opts: DeliverablesOptions = {}): Promise<SessionDeliverablesResult> {
+    const params = { ...opts, sessionId: this.id }
+    return checkDeliverablesPage(params, await this.reads.read('_agnes/v1/session.deliverables', params))
   }
 
   async prompt(
     input: ContentBlock[] | string,
-    opts: { signal?: AbortSignal; titleLocale?: 'en' | 'zh-CN' } = {},
+    opts: {
+      signal?: AbortSignal
+      titleLocale?: 'en' | 'zh-CN'
+      /** Durable total turn ceiling. Refuses servers without hard-turn budget support. */
+      creditLimit?: number
+      /** Model steps this prompt may take (1 to 1000); only lowers the preset's ceiling. Refuses servers without `turnMaxSteps`. */
+      maxSteps?: number
+      /**
+       * Wall-clock milliseconds this turn may take (1 to 86400000). The model is told the limit and
+       * how much of it remains; the server does not stop the turn at it, so cancel the turn at the
+       * deadline yourself (`agh -p --timeout` does). Refuses servers without `turnTimeLimit`.
+       */
+      timeLimitMs?: number
+      references?: readonly ReferenceSelection[]
+      /**
+       * Nobody attends this turn (a script, CI, an evaluation run): the turn offers the model no tool
+       * that waits on a person and tells it to finish on its own judgment. A daemon that predates
+       * the flag ignores it.
+       */
+      unattended?: boolean
+    } = {},
   ): Promise<TurnResult> {
     // Captured by identity: the outcome of *this* turn is only the record that was
     // installed while the request was in flight, never one left over from a past turn.
     const before = this.lastTurnEnd
+    const limits = { creditLimit: opts.creditLimit, maxSteps: opts.maxSteps, timeLimitMs: opts.timeLimitMs }
+    const meta: TurnOptions = { ...limits, ...(opts.unattended ? { unattended: true } : {}) }
+    // Skipped, not awaited, with no limit: an extra tick here reorders a prompt against a lazy attach.
+    if (limits.creditLimit !== undefined || limits.maxSteps !== undefined || limits.timeLimitMs !== undefined)
+      await checkTurnLimits(this.client, limits, opts.signal)
     // Best effort: the turn's own outcome is what the caller gets either way, so a
     // cancel that cannot be sent must not become an unhandled rejection. Held for the
     // whole call, including a fallback wait on quiescence: an abort during that wait
@@ -736,7 +797,7 @@ export class Session {
     }
     opts.signal?.addEventListener('abort', onAbort, { once: true })
     try {
-      return await this.requestPrompt(input, before, false, opts.titleLocale)
+      return await this.requestPrompt(input, before, false, opts.titleLocale, opts.references, meta)
     } finally {
       opts.signal?.removeEventListener('abort', onAbort)
     }
@@ -747,6 +808,8 @@ export class Session {
     before: TurnEndRecord | null,
     restored = false,
     titleLocale?: 'en' | 'zh-CN',
+    references?: readonly ReferenceSelection[],
+    limits?: TurnOptions,
   ): Promise<TurnResult> {
     try {
       // No deadline: a turn is bounded by the transport's liveness, not by a stopwatch.
@@ -755,7 +818,7 @@ export class Session {
         {
           sessionId: this.id,
           prompt: toAcpPrompt(toContentBlocks(input)),
-          ...(titleLocale ? { _meta: { 'ai.agnes.harness': { titleLocale } } } : {}),
+          ...promptMetadata(titleLocale, references, limits),
         },
         { timeoutMs: null },
       )
@@ -779,7 +842,7 @@ export class Session {
       // exactly once. No other failure is safe to replay here.
       if (!restored && this.workspace && this.isSessionNotFound(e)) {
         await this.restoreAfterReclaim()
-        return this.requestPrompt(input, before, true, titleLocale)
+        return this.requestPrompt(input, before, true, titleLocale, references, limits)
       }
       // The request itself failing to the transport dropping, not to a cancel or a
       // protocol error, is the one case with anything to wait for: the daemon may already
@@ -829,12 +892,91 @@ export class Session {
     })
   }
 
-  steer(input: ContentBlock[] | string, opts: { commandId?: string } = {}): Promise<number> {
-    return this.write('steer', input, opts)
+  steer(
+    input: ContentBlock[] | string,
+    opts: { commandId?: string; references?: readonly ReferenceSelection[] } = {},
+  ): Promise<number> {
+    return submitInput(this.client, this.id, 'steer', input, opts)
   }
 
-  followUp(input: ContentBlock[] | string, opts: { commandId?: string } = {}): Promise<number> {
-    return this.write('followUp', input, opts)
+  /**
+   * Authoritative controls of this session's pinned Loop, and its durable pause/queue state.
+   * Without `afterSeq` this is the latest window of at most 200 facts. `factsMore` then means
+   * older facts may exist; use `afterSeq` (from 0) and follow `factsThrough` to read that history.
+   */
+  controls(
+    opts: { afterSeq?: number } = {},
+  ): Promise<import('@agnes/protocol/gen/agnes-v1').SessionControlStateResult> {
+    return this.reads.read('_agnes/v1/session.controls', { sessionId: this.id, ...opts })
+  }
+
+  control(
+    action: 'pause' | 'resume' | 'cancel' | 'interrupt' | 'promote' | 'child-stop' | 'child-continue',
+    opts: { itemId?: string; childId?: string; text?: string; commandId?: string } = {},
+  ): Promise<number> {
+    return submitCommand(
+      this.client,
+      this.id,
+      'control',
+      {
+        sessionId: this.id,
+        action,
+        ...(opts.itemId ? { itemId: opts.itemId } : {}),
+        ...(opts.childId ? { childId: opts.childId } : {}),
+        ...(opts.text !== undefined ? { text: opts.text } : {}),
+      },
+      opts.commandId,
+    )
+  }
+  stopChild(childId: string, opts: { commandId?: string } = {}): Promise<number> {
+    return this.control('child-stop', { ...opts, childId })
+  }
+  continueChild(childId: string, text: string, opts: { commandId?: string } = {}): Promise<number> {
+    return this.control('child-continue', { ...opts, childId, text })
+  }
+  pause(opts: { commandId?: string } = {}): Promise<number> {
+    return this.control('pause', opts)
+  }
+  resume(opts: { commandId?: string } = {}): Promise<number> {
+    return this.control('resume', opts)
+  }
+  interrupt(itemId: string, opts: { commandId?: string } = {}): Promise<number> {
+    return this.control('interrupt', { ...opts, itemId })
+  }
+  /** Atomically turn this existing queued item into guidance without sending a second message. */
+  promoteQueued(itemId: string, opts: { commandId?: string } = {}): Promise<number> {
+    return this.control('promote', { ...opts, itemId })
+  }
+
+  /** All locally owned unresolved submissions, including commands excluded from automatic replay. */
+  pendingCommands() {
+    return this.client.journal.pending(this.id)
+  }
+
+  /** Explicit reconciliation resends only the original command, with its original identity. */
+  checkCommand(commandId: string): Promise<void> {
+    return resendPending(this.client, this.id, commandId)
+  }
+
+  editQueued(
+    itemId: string,
+    input: ContentBlock[] | string,
+    opts: { commandId?: string } = {},
+  ): Promise<number> {
+    return submitCommand(
+      this.client,
+      this.id,
+      'editQueued',
+      { sessionId: this.id, itemId, content: toContentBlocks(input) },
+      opts.commandId,
+    )
+  }
+
+  followUp(
+    input: ContentBlock[] | string,
+    opts: { commandId?: string; references?: readonly ReferenceSelection[] } = {},
+  ): Promise<number> {
+    return submitInput(this.client, this.id, 'followUp', input, opts)
   }
 
   /** Stop the current turn and run this existing inbox item first, without re-enqueuing its content. */
@@ -867,24 +1009,9 @@ export class Session {
     ).then(({ compact }) => compact)
   }
 
-  private write(
-    kind: 'steer' | 'followUp',
-    input: ContentBlock[] | string,
-    opts: { commandId?: string },
-  ): Promise<number> {
-    return submitCommand(
-      this.client,
-      this.id,
-      kind,
-      { sessionId: this.id, content: toContentBlocks(input) },
-      opts.commandId,
-    )
-  }
-
-  // A notification, not a request: cancellation is reported through the turn's own
-  // stop reason, so there is nothing to wait for here.
+  /** Durable cancellation ends the turn and returns pending steers on the ledger. */
   async cancel(): Promise<void> {
-    await this.client.notify('session/cancel', { sessionId: this.id })
+    await this.control('cancel')
   }
 
   // Stopping the stream is better than growing without bound: the daemon keeps the
@@ -949,6 +1076,7 @@ export class Session {
   // the cursor write this session owes: close() waits for it, so the position a resume
   // reads is the position the consumer actually reached.
   onClosed(): Promise<void> {
+    this.reads.invalidate()
     this.cancelStreamRecovery()
     if (this.isClosed) return Promise.resolve()
     this.isClosed = true

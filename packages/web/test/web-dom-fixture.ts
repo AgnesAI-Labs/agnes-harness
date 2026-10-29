@@ -1,21 +1,30 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import type { ComposerRegionOptions } from '@agnes/web-conversation/composer'
 import { vi } from 'vitest'
+import { mountAppShell } from '../src/app-shell.js'
 import {
   type AgnesClient,
   type ClaimResolver,
   type ClientModulesRuntime,
   startClientModules,
 } from '../src/client-modules/boot.js'
-import type { ComposerRegionOptions } from '../src/composer.js'
+import { mountNewSessionDialog } from '../src/new-session-dialog.js'
+import type { SettingsRegionOptions } from '../src/region-slots.js'
 import type { SidebarActions, SidebarState } from '../src/sidebar.js'
+import type { VoiceController } from '../src/voice/controller.js'
+import { mountReleasePresentations } from './release-presentations-fixture.js'
 
 export type WebPageName = 'index.html' | 'admin.html' | 'resources.html'
 export type WebDomFixtureOptions = {
+  clientProfileCaller?: Parameters<typeof startClientModules>[0]['clientProfileCaller']
+  agnes?: AgnesClient
   composer?: Partial<ComposerRegionOptions>
   sidebar?: { state?: SidebarState; actions?: Partial<SidebarActions> }
-  transcript?: { nodeHost: 'react' }
   claim?: ClaimResolver
+  settings?: SettingsRegionOptions
+  /** Without one the page has no voice: the fixture's client has no daemon to ask. */
+  voice?: VoiceController
 }
 
 const packageRoot = process.cwd().endsWith('/packages/web')
@@ -26,7 +35,7 @@ function publicPath(page: WebPageName): string {
   return resolve(packageRoot, 'public', page)
 }
 
-/** Static pages are intentionally parsed without starting their standalone scripts. */
+/** The alias pages are parsed without running the script that forwards to the workbench. */
 export function readStaticPage(page: Exclude<WebPageName, 'index.html'>): Document {
   const markup = readFileSync(publicPath(page), 'utf8')
     .replace(/<script[\s\S]*?<\/script>/g, '')
@@ -46,21 +55,22 @@ export async function mountRenderedIndex(options: WebDomFixtureOptions = {}): Pr
     .replace(/<script[\s\S]*?<\/script>/g, '')
     .replace(/<link\b[^>]*>/g, '')
   document.documentElement.innerHTML = markup
+  const { hosts, dispose: unmountShell } = mountAppShell()
 
   const runtime = await startClientModules({
-    // The region bootstrap only retains this client for the reconciler. No roster read is issued by
-    // this fixture, so an empty test double keeps the fixture independent of daemon contracts.
-    agnes: {} as AgnesClient,
+    // Tests may supply a synthetic client for shell operations such as profile approvals.
+    // The separate roster source keeps this fixture independent of the daemon.
+    agnes: options.agnes ?? ({} as AgnesClient),
+    ...(options.clientProfileCaller ? { clientProfileCaller: options.clientProfileCaller } : {}),
     rosterSource: { list: async () => ({ revision: '', modules: [], statuses: [] }) },
-    panelContainer: document.getElementById('main-content') ?? undefined,
-    sidebarContainer: document.querySelector<HTMLElement>('aside.sidebar') ?? undefined,
+    panelContainer: hosts.panels,
+    sidebarContainer: hosts.sidebar,
     ...(options.sidebar ? { sidebar: options.sidebar } : {}),
-    ...(options.transcript ? { transcript: options.transcript } : {}),
     ...(options.claim ? { claim: options.claim } : {}),
-    conversationContainer: document.getElementById('conversation-shell') ?? undefined,
-    topbarContainer: document.querySelector<HTMLElement>('header.topbar') ?? undefined,
-    approvalContainer: document.getElementById('approval') ?? undefined,
-    composerContainer: document.getElementById('composer-mount') ?? undefined,
+    conversationContainer: hosts.conversation,
+    topbarContainer: hosts.topbar,
+    approvalContainer: hosts.approval,
+    composerContainer: hosts.composer,
     composer: {
       initialDraft: '',
       onCancel: () => undefined,
@@ -72,15 +82,30 @@ export async function mountRenderedIndex(options: WebDomFixtureOptions = {}): Pr
       onWorkspace: () => undefined,
       ...options.composer,
     },
-    traceContainer: document.getElementById('trace-panel') ?? undefined,
-    trace: {
-      toggle: document.getElementById('view-trace') as HTMLButtonElement,
-      chatToggle: document.getElementById('view-chat') as HTMLButtonElement,
-      conversation: document.getElementById('conversation-shell') as HTMLElement,
-    },
-    rightbarContainer: document.getElementById('rightbar-panel') ?? undefined,
-    settingsPaneContainer: document.getElementById('config') ?? undefined,
+    traceContainer: hosts.trace,
+    trace: { toggle: hosts.viewTrace, chatToggle: hosts.viewChat, conversation: hosts.conversation },
+    rightbarContainer: hosts.rightbar,
+    settingsPaneContainer: hosts.settings,
+    ...(options.settings ? { settings: options.settings } : {}),
+    voice: options.voice ?? false,
   })
+
+  await mountReleasePresentations(runtime)
+
+  const workspaceDialog = mountNewSessionDialog(hosts.newSession, {
+    translate: (key, vars) => runtime.locale.t(key, vars),
+    submit() {},
+    pick() {},
+    select() {},
+    remove() {},
+    restoreFocus() {},
+  })
+  const dispose = runtime.dispose.bind(runtime)
+  runtime.dispose = async () => {
+    workspaceDialog.dispose()
+    await dispose()
+    unmountShell()
+  }
 
   // React roots that are not flushed by a region mount (the panel outlet, and the empty state the
   // conversation mounts as a child) commit on a later scheduler task, which a loaded runner can

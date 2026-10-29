@@ -1,0 +1,80 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/test",
+    "tsBuildInfoFile": "dist/tsconfig.test.tsbuildinfo"
+  },
+  "include": [
+    "test/**/*.ts",
+    "test/**/*.tsx",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/test/**/*.ts",
+    "**/tests/**/*.ts",
+    "tools/**/*.ts",
+    "vitest.config.ts"
+  ],
+  "exclude": ["dist", "node_modules"],
+  "references": [
+    {
+      "path": "../error-sanitization"
+    },
+    {
+      "path": "."
+    },
+    {
+      "path": "../system-node"
+    },
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../ai"
+    },
+    {
+      "path": "../sdk"
+    },
+    {
+      "path": "../resource-control-cli"
+    },
+    {
+      "path": "../resource-control-runtime"
+    },
+    {
+      "path": "../cli-tui"
+    },
+    {
+      "path": "../host"
+    },
+    {
+      "path": "../daemon"
+    },
+    {
+      "path": "../package-manager"
+    },
+    {
+      "path": "../base"
+    },
+    {
+      "path": "../code"
+    },
+    {
+      "path": "../web"
+    },
+    {
+      "path": "../web/tsconfig.test.json"
+    },
+    {
+      "path": "../host/tsconfig.testkit.json"
+    },
+    {
+      "path": "../base/tsconfig.test.json"
+    },
+    {
+      "path": "../web-client"
+    }
+  ]
+}

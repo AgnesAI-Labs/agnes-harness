@@ -9,6 +9,12 @@
   "references": [
     {
       "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../../packages/core/tsconfig.testkit.json"
+    },
+    {
+      "path": "../../packages/host/tsconfig.testkit.json"
     }
   ]
 }

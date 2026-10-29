@@ -1,3 +1,4 @@
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 /** @vitest-environment happy-dom */
 
 import { readFileSync } from 'node:fs'
@@ -25,21 +26,35 @@ const EXPECTED: Record<string, Record<string, readonly [string, number]>> = {
     conversation: ['div', 1],
     trace: ['aside', 1],
     rightbar: ['aside', 1],
+    'workbench-right': ['aside', 1],
+    'workbench-bottom': ['aside', 1],
     transcript: ['section', 1],
     'empty-state': ['section', 1],
+    // The full page a home sidebar entry opens, in place of the conversation.
+    'home-page': ['section', 1],
     approval: ['section', 1],
     composer: ['form', 1],
     'composer-input': ['textarea', 1],
     // Every icon glyph, so a skin can restyle or replace them without reaching for `.icon`.
-    // 26 减 1：顶栏的「断开连接」按钮移除后少了一个图标字形。
-    icon: ['svg', 25],
+    // Counts the composed shell's glyphs, including the workspace chooser, the report-problem action,
+    // the top bar's Conversation/Trace glyphs (replacing its overflow menu), the empty session list's
+    // illustration and search action, the session heading's search and view-menu buttons (the archive
+    // entry moved into that menu, so it adds no glyph of its own), the trace toolbar's fold-all
+    // chevron and ⋯ menu, and the
+    // settings pages' ⓘ explanations (General twice, the accounts label once), and the chevrons
+    // of the two hidden account page rows, plus the side-model list page's two glyphs. Adding an
+    // account now renders with the loaded list, so the unloaded shell has no header-plus glyph.
+    // Also includes the Agents link row's bot and chevron, and the host application footer's puzzle.
+    // The official footer has Settings only; application recovery controls appear after adoption.
+    // The 项目 heading shows even with no project yet (it carries the list tools), adding its chevron.
+    icon: ['svg', 44],
     // 插件详情、资源详情和账户详情/新增都使用独立模态框。
     dialog: ['dialog', 9],
-    'settings-pane': ['section', 6],
+    'settings-pane': ['section', 3],
   },
-  // These two pages intentionally use the static sampling path; they do not start the workbench.
-  'admin.html': { app: ['body', 1], topbar: ['header', 1], dialog: ['dialog', 4] },
-  'resources.html': { app: ['body', 1], topbar: ['header', 1], dialog: ['dialog', 3] },
+  // These two addresses forward to the workbench settings; only the themed page ground is theirs.
+  'admin.html': { app: ['body', 1] },
+  'resources.html': { app: ['body', 1] },
 }
 
 function hooks(root: ParentNode): RegionHook[] {
@@ -96,15 +111,15 @@ describe('skin region hooks', () => {
   it.each(Object.keys(EXPECTED))('%s declares exactly the contracted regions', (page) => {
     const root = page === 'index.html' ? document : readStaticPage(page as 'admin.html' | 'resources.html')
     assertRegionContract(page, root)
+    expect(root.querySelectorAll('svg.icon:not([data-agnes-region="icon"])')).toHaveLength(0)
   })
 
-  it('keeps the shared shell hooks on every page', () => {
+  it('keeps the app ground hook on every page', () => {
     for (const { page, root } of skinSamples()) {
       const regions = new Set(hooks(root).map((hook) => hook.region))
-      // A skin that paints the app background or the header band must work on all three pages,
-      // including the standalone management pages reached from the workbench.
-      for (const shared of ['app', 'topbar', 'dialog'])
-        expect(regions.has(shared), `${page} is missing ${shared}`).toBe(true)
+      // A skin that paints the app background must also cover the frame the alias pages show
+      // while they forward to the workbench.
+      expect(regions.has('app'), `${page} is missing app`).toBe(true)
     }
   })
 
@@ -112,11 +127,13 @@ describe('skin region hooks', () => {
     // The guide's table is the contract a skin author reads; it must list exactly the regions this
     // file pins. Several workbench regions are component-rendered, so the table is compared against
     // the EXPECTED contract rather than the static markup.
-    const packageRoot = process.cwd().endsWith('/packages/web')
-      ? process.cwd()
-      : resolve(process.cwd(), 'packages/web')
+    const packageRoot = resolve(import.meta.dirname, '..')
     const doc = readFileSync(resolve(packageRoot, '../../docs/develop', docName), 'utf8')
-    const listed = new Set([...doc.matchAll(/^\| `([a-z-]+)` \|/gm)].map((match) => match[1] as string))
+    const regionTable = doc.match(/^\| (?:Hook|钩子) \|[^\n]*\n(?:\|[^\n]*\n)+/m)?.[0]
+    expect(regionTable, `${docName}: region contract table is present`).toBeDefined()
+    const listed = new Set(
+      [...(regionTable ?? '').matchAll(/^\| `([a-z-]+)` \|/gm)].map((match) => match[1] as string),
+    )
     const contracted = new Set<string>()
     for (const page of Object.keys(EXPECTED))
       for (const region of Object.keys(EXPECTED[page] as Record<string, readonly [string, number]>))
@@ -126,24 +143,33 @@ describe('skin region hooks', () => {
   })
 
   it('finds hooks at all instead of passing on an empty parse', () => {
-    for (const { root } of skinSamples()) expect(hooks(root).length).toBeGreaterThan(2)
+    for (const { page, root } of skinSamples())
+      expect(hooks(root).length).toBeGreaterThan(page === 'index.html' ? 2 : 0)
   })
 
-  it('reports built-in slots from live registrations rather than their declared manifest', () => {
-    // The sidebar owner now carries both the legacy `ui:sidebar` boundary and the DSH `sidebar`
-    // frame that is rendered inside it.
-    expect(runtime?.actualSlots('@agnes/web-sidebar')).toEqual(['sidebar', 'ui:sidebar'])
-    // The conversation owner carries the DSH shell seam and session header alongside the legacy
-    // `ui:conversation` boundary.
-    expect(runtime?.actualSlots('@agnes/web-conversation')).toEqual([
-      'main.conversation',
-      'ui:conversation',
-      'conversation.session',
-      'conversation.session.header',
+  it('reports presentation and built-in slots from live registrations', () => {
+    // The release modules own their complete presentations, including composer and transcript.
+    expect([...(runtime?.actualSlots('@agnes/navigation-ui') ?? [])].sort()).toEqual([
+      'sidebar',
+      'ui:sidebar',
     ])
+    expect([...(runtime?.actualSlots('@agnes/conversation-ui') ?? [])].sort()).toEqual(
+      [
+        'main.conversation',
+        'conversation.session',
+        'ui:conversation',
+        'conversation.session.header',
+        'conversation.composer.bar',
+        'ui:composer',
+        'ui:transcript',
+        'conversation.view',
+        'conversation.chat.node',
+        'tool.call.toolview',
+      ].sort(),
+    )
     // Settings panes now have separate live rows; this is runtime evidence rather than the
     // declaration copied out of the built-in manifest.
-    expect(runtime?.actualSlots('@agnes/web-settings-plugins')).toEqual(['ui:settings-pane.plugin'])
+    expect(runtime?.actualSlots('@agnes/web-settings-appearance')).toEqual(['ui:settings-pane.appearance'])
   })
 
   it('fails when a rendered region hook is removed', () => {
@@ -235,7 +261,9 @@ function assertNoIdSurfaceProperties(css: string, samples: readonly PageRoot[]):
 }
 
 describe('skin region surface invariant (R1)', () => {
-  const css = readFileSync(resolve(process.cwd(), 'packages/web/public/style.css'), 'utf8')
+  const css = readWebStyleSource(
+    resolve(resolve(import.meta.dirname, '../../..'), 'packages/web/public/style.css'),
+  )
   let runtime: Awaited<ReturnType<typeof mountRenderedIndex>> | undefined
   let samples: PageRoot[]
 

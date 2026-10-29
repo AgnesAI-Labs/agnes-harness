@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
+import { ContentBlock as ContentBlockSchema } from '../gen/ts/session-v1.js'
 import {
+  attachmentLink,
   canAccessResourceControl,
   fromAcpPrompt,
   METHODS,
   toAcpPrompt,
   UI_PROJECTION_MAX_BYTES,
   type ValidationError,
+  validateAgainst,
   validateMethod,
   validateUserAttachments,
 } from '../src/index.js'
@@ -39,7 +42,36 @@ function errorsOf(r: ReturnType<typeof validateMethod>): ValidationError[] {
 }
 
 describe('methods (I1 set)', () => {
-  it('carries file originals through standard ACP embedded resources and the native follow-up schema', () => {
+  it('accepts profile decision invalidation and refuses decision payloads on that notice', () => {
+    const notice = {
+      kind: 'decisions_changed',
+      at: '2026-10-17T00:00:00Z',
+      detail: { profile: 'default', principal: { id: 'operator', org: 'local' } },
+    }
+    expect(validateMethod('_agnes/v1/daemon.notice', 'params', notice).ok).toBe(true)
+    for (const field of ['decisions', 'id', 'prompt', 'subject', 'response', 'count'])
+      expect(
+        validateMethod('_agnes/v1/daemon.notice', 'params', {
+          ...notice,
+          detail: { ...notice.detail, [field]: 'private' },
+        }).ok,
+        field,
+      ).toBe(false)
+    expect(
+      validateMethod('_agnes/v1/daemon.notice', 'params', {
+        ...notice,
+        detail: { profile: 'default' },
+      }).ok,
+    ).toBe(false)
+  })
+
+  it('accepts optional runtime diagnostics without changing the legacy request', () => {
+    for (const params of [{}, { runtimeLog: true }, { runtimeLog: false }])
+      expect(validateMethod('_agnes/v1/diagnostics.collect', 'params', params)?.ok).toBe(true)
+    expect(validateMethod('_agnes/v1/diagnostics.collect', 'params', { runtimeLog: 'yes' })?.ok).toBe(false)
+  })
+
+  it('carries file originals through standard ACP embedded resources and the submit envelope', () => {
     const blocks = [
       { type: 'file' as const, name: '资料 #%../video.mp4', mimeType: 'video/mp4', data: 'AAAAAA==' },
     ]
@@ -63,11 +95,51 @@ describe('methods (I1 set)', () => {
       { type: 'file', name: 'https://test.invalid/video', mimeType: 'application/octet-stream', data: '' },
     ])
     expect(() => validateUserAttachments(embedded)).not.toThrow()
-    expect(
-      validateMethod('_agnes/v1/session.followUp', 'params', {
-        sessionId: 's',
-        content: blocks,
+    const stored = attachmentLink({ sha256: 'b'.repeat(64), size: 3, mime: 'text/plain' }, 'report.txt', {
+      receiptId: '00000000-0000-4000-8000-000000000001',
+    })
+    const submit = (content: unknown[]) =>
+      validateMethod('_agnes/v1/submit', 'params', {
+        clientId: 'protocol-test',
+        kind: 'followUp',
         commandId: 'c',
+        payload: { sessionId: 's', content },
+      })
+    expect(submit([stored]).ok).toBe(true)
+    expect(fromAcpPrompt(toAcpPrompt([stored]))).toEqual([stored])
+    expect(
+      validateMethod('session/prompt', 'params', { sessionId: 's', prompt: toAcpPrompt([stored]) }).ok,
+    ).toBe(true)
+    expect(
+      validateAgainst(ContentBlockSchema, {
+        ...stored,
+        attachment: { artifact: { ...stored.attachment.artifact, size: -1 } },
+      }).ok,
+    ).toBe(false)
+    expect(JSON.stringify(stored)).not.toContain('base64')
+    const uploaded = {
+      type: 'resource_link' as const,
+      name: '../contract.pdf',
+      mimeType: 'application/pdf',
+      uri: `agnes-upload://${'a'.repeat(64)}/${'b'.repeat(64)}/536870912/00000000-0000-4000-8000-000000000001`,
+    }
+    expect(() => validateUserAttachments([uploaded])).not.toThrow()
+    expect(fromAcpPrompt(toAcpPrompt([uploaded]))).toEqual([uploaded])
+    for (const block of [
+      { ...uploaded, uri: uploaded.uri.replace('536870912', '9007199254740992') },
+      { ...uploaded, name: 'bad\nname' },
+      { ...uploaded, mimeType: 'bad' },
+    ])
+      expect(() => validateUserAttachments([block])).toThrow('invalid')
+    expect(() => validateUserAttachments(Array.from({ length: 51 }, () => uploaded))).toThrow(
+      'ATTACHMENT_COUNT',
+    )
+    expect(
+      validateMethod('_agnes/v1/submit', 'params', {
+        clientId: 'protocol-test',
+        kind: 'followUp',
+        commandId: 'c',
+        payload: { sessionId: 's', content: blocks },
       }).ok,
     ).toBe(true)
     expect(() =>
@@ -76,317 +148,252 @@ describe('methods (I1 set)', () => {
       ]),
     ).toThrow()
   })
-  it('carries attachment references through ACP prompts as resource links', () => {
-    const sha256 = 'b'.repeat(64)
-    const blocks = [
-      { type: 'text' as const, text: 'see' },
-      {
-        type: 'image' as const,
-        mimeType: 'image/png',
-        attachment: { sha256, bytes: 9 },
-        width: 8,
-        height: 8,
-        thumbnail: { sha256: 'c'.repeat(64), bytes: 4, width: 8, height: 8 },
-      },
-      { type: 'file' as const, mimeType: 'application/zip', name: 'a.zip', attachment: { sha256, bytes: 9 } },
-    ] as Parameters<typeof toAcpPrompt>[0]
-    const prompt = toAcpPrompt(blocks)
-    expect(validateMethod('session/prompt', 'params', { sessionId: 's', prompt }).ok).toBe(true)
-    expect(prompt[1]).toMatchObject({ type: 'resource_link', uri: `artifact://${sha256}`, name: 'image' })
-    expect(fromAcpPrompt(prompt)).toEqual(blocks)
-    // An ordinary link, or one whose carried block does not match its own link, stays a link.
-    const link = { type: 'resource_link', uri: `artifact://${sha256}`, name: 'a.zip' }
-    expect(fromAcpPrompt([link])).toEqual([link])
-    const mismatched = {
-      ...(prompt[2] as object),
-      uri: `artifact://${'d'.repeat(64)}`,
-    }
-    expect(fromAcpPrompt([mismatched])).toEqual([mismatched])
-    const malformed = {
-      ...link,
-      _meta: {
-        'ai.agnes.harness': { attachment: { type: 'file', mimeType: 'a/b', name: 'a', data: 'QUJD' } },
-      },
-    }
-    expect(fromAcpPrompt([malformed])).toEqual([malformed])
-  })
   it('lists the I1 methods with kind and direction', () => {
-    expect(Object.keys(METHODS).sort()).toEqual([
-      '_agnes/v1/apis.list',
-      '_agnes/v1/approval.decide',
-      '_agnes/v1/approvalGrants.list',
-      '_agnes/v1/approvalGrants.revoke',
-      '_agnes/v1/artifact.job.status',
-      '_agnes/v1/artifact.read',
-      '_agnes/v1/attachment.upload',
-      '_agnes/v1/auth.claim',
-      '_agnes/v1/batch.cancel',
-      '_agnes/v1/batch.list',
-      '_agnes/v1/batch.start',
-      '_agnes/v1/batch.status',
-      '_agnes/v1/clientModules.callEffect',
-      '_agnes/v1/clientModules.callService',
-      '_agnes/v1/clientModules.list',
-      '_agnes/v1/clientModules.read',
-      '_agnes/v1/computerUse.doctor',
-      '_agnes/v1/computerUse.operation.cancel',
-      '_agnes/v1/computerUse.operation.start',
-      '_agnes/v1/computerUse.operation.status',
-      '_agnes/v1/computerUse.permissions.grant',
-      '_agnes/v1/computerUse.permissions.status',
-      '_agnes/v1/computerUse.status',
-      '_agnes/v1/config.account',
-      '_agnes/v1/config.get',
-      '_agnes/v1/config.oauth',
-      '_agnes/v1/config.providers',
-      '_agnes/v1/config.save',
-      '_agnes/v1/config.test',
-      '_agnes/v1/daemon.notice',
-      '_agnes/v1/diagnostics.collect',
-      '_agnes/v1/diagnostics.events',
-      '_agnes/v1/directory.upsert',
-      '_agnes/v1/ext.ui.response',
-      '_agnes/v1/extension.ack',
-      '_agnes/v1/extension.call',
-      '_agnes/v1/jobs.cancel',
-      '_agnes/v1/jobs.enqueue',
-      '_agnes/v1/jobs.poll',
-      '_agnes/v1/mcp.servers.create',
-      '_agnes/v1/mcp.servers.disable',
-      '_agnes/v1/mcp.servers.enable',
-      '_agnes/v1/mcp.servers.get',
-      '_agnes/v1/mcp.servers.list',
-      '_agnes/v1/mcp.servers.oauth.status',
-      '_agnes/v1/mcp.servers.oauth.status.set',
-      '_agnes/v1/mcp.servers.reconnect',
-      '_agnes/v1/mcp.servers.remove',
-      '_agnes/v1/mcp.servers.status',
-      '_agnes/v1/mcp.servers.test',
-      '_agnes/v1/mcp.servers.tools.list',
-      '_agnes/v1/mcp.servers.trust.set',
-      '_agnes/v1/mcp.servers.update',
-      '_agnes/v1/packages.catalog.get',
-      '_agnes/v1/packages.catalog.list',
-      '_agnes/v1/packages.disable',
-      '_agnes/v1/packages.enable',
-      '_agnes/v1/packages.inspect',
-      '_agnes/v1/packages.install',
-      '_agnes/v1/packages.list',
-      '_agnes/v1/packages.operation.cancel',
-      '_agnes/v1/packages.operation.get',
-      '_agnes/v1/packages.pins.inspect',
-      '_agnes/v1/packages.pins.release',
-      '_agnes/v1/packages.remove',
-      '_agnes/v1/packages.rollback',
-      '_agnes/v1/packages.trust',
-      '_agnes/v1/packages.trustWorkspace',
-      '_agnes/v1/packages.untrust',
-      '_agnes/v1/packages.update',
-      '_agnes/v1/participant.join',
-      '_agnes/v1/participant.leave',
-      '_agnes/v1/participant.list',
-      '_agnes/v1/plugins.tree.apply',
-      '_agnes/v1/plugins.tree.get',
-      '_agnes/v1/plugins.tree.list',
-      '_agnes/v1/plugins.tree.rollback',
-      '_agnes/v1/resources.desired.set',
-      '_agnes/v1/resources.get',
-      '_agnes/v1/resources.list',
-      '_agnes/v1/resources.operation.cancel',
-      '_agnes/v1/resources.operation.get',
-      '_agnes/v1/session.archive',
-      '_agnes/v1/session.attach',
-      '_agnes/v1/session.attachmentRead',
-      '_agnes/v1/session.budget',
-      '_agnes/v1/session.detach',
-      '_agnes/v1/session.event',
-      '_agnes/v1/session.exportRaw',
-      '_agnes/v1/session.followUp',
-      '_agnes/v1/session.fork',
-      '_agnes/v1/session.list',
-      '_agnes/v1/session.loading',
-      '_agnes/v1/session.preview',
-      '_agnes/v1/session.projectUI',
-      '_agnes/v1/session.projectUIHistory',
-      '_agnes/v1/session.projectUIOpening',
-      '_agnes/v1/session.projectUIPatch',
-      '_agnes/v1/session.readToolDetail',
-      '_agnes/v1/session.rename',
-      '_agnes/v1/session.setModel',
-      '_agnes/v1/session.setPreset',
-      '_agnes/v1/session.setYolo',
-      '_agnes/v1/session.steer',
-      '_agnes/v1/session.storedOpening',
-      '_agnes/v1/session.verifyHistory',
-      '_agnes/v1/skills.priority.set',
-      '_agnes/v1/skills.refresh',
-      '_agnes/v1/skills.remove',
-      '_agnes/v1/skills.trust.set',
-      '_agnes/v1/skins.list',
-      '_agnes/v1/skins.read',
-      '_agnes/v1/submit',
-      '_agnes/v1/submit.ack',
-      '_agnes/v1/surfaces.mounts',
-      '_agnes/v1/workspace.add',
-      '_agnes/v1/workspace.list',
-      'authenticate',
-      'initialize',
-      'session/cancel',
-      'session/load',
-      'session/new',
-      'session/prompt',
-      'session/request_permission',
-      'session/set_mode',
-      'session/update',
-    ])
-    expect(Object.keys(METHODS)).toHaveLength(126)
+    expect(Object.keys(METHODS).sort()).toEqual(
+      [
+        '_agnes/v1/admin.feedback',
+        '_agnes/v1/admin.triggers',
+        '_agnes/v1/agents.resolve',
+        '_agnes/v1/applications.adopt',
+        '_agnes/v1/applications.clear',
+        '_agnes/v1/applications.get',
+        '_agnes/v1/applications.preview',
+        '_agnes/v1/plugins.config.get',
+        '_agnes/v1/plugins.config.validate',
+        '_agnes/v1/plugins.config.save',
+        '_agnes/v1/profile.decisions.answer',
+        '_agnes/v1/profile.decisions.list',
+        '_agnes/v1/session.control',
+        '_agnes/v1/session.controls',
+        '_agnes/v1/ui.action',
+        '_agnes/v1/ui.read',
+        '_agnes/v1/ui.refresh',
+        '_agnes/v1/autoReview.get',
+        '_agnes/v1/autoReview.save',
+        '_agnes/v1/systemPrompt.get',
+        '_agnes/v1/systemPrompt.save',
+        '_agnes/v1/session.factChain',
+        '_agnes/v1/trace.request',
+        '_agnes/v1/trace.clear',
+        '_agnes/v1/admin.credentials.list',
+        '_agnes/v1/admin.credentials.create',
+        '_agnes/v1/admin.credentials.set',
+        '_agnes/v1/admin.credentials.rename',
+        '_agnes/v1/admin.credentials.delete',
+        '_agnes/v1/admin.bundles.get',
+        '_agnes/v1/admin.bundles.save',
+        '_agnes/v1/admin.composition.get',
+        '_agnes/v1/admin.search.get',
+        '_agnes/v1/admin.search.save',
+        '_agnes/v1/admin.search.test',
+        '_agnes/v1/admin.context',
+        '_agnes/v1/admin.memory',
+        '_agnes/v1/admin.observability',
+        '_agnes/v1/admin.history.search',
+        '_agnes/v1/admin.plan',
+        '_agnes/v1/admin.mcp.oauth.save',
+
+        '_agnes/v1/apis.list',
+        '_agnes/v1/approval.decide',
+        '_agnes/v1/decision.list',
+        '_agnes/v1/approval.withdraw',
+        '_agnes/v1/approvalGrants.list',
+        '_agnes/v1/approvalGrants.forSession',
+        '_agnes/v1/approvalGrants.revoke',
+        '_agnes/v1/approvalGrants.revokeForSession',
+        '_agnes/v1/artifact.job.status',
+        '_agnes/v1/artifact.read',
+        '_agnes/v1/auth.claim',
+        '_agnes/v1/clientModules.callEffect',
+        '_agnes/v1/clientModules.callService',
+        '_agnes/v1/clientModules.list',
+        '_agnes/v1/clientModules.read',
+        '_agnes/v1/computerUse.doctor',
+        '_agnes/v1/doctor.run',
+        '_agnes/v1/computerUse.operation.cancel',
+        '_agnes/v1/computerUse.operation.start',
+        '_agnes/v1/computerUse.operation.status',
+        '_agnes/v1/computerUse.permissions.grant',
+        '_agnes/v1/computerUse.permissions.status',
+        '_agnes/v1/computerUse.status',
+        '_agnes/v1/config.account',
+        '_agnes/v1/config.childEngines.get',
+        '_agnes/v1/config.childEngines.save',
+        '_agnes/v1/config.modelSlots.get',
+        '_agnes/v1/config.modelSlots.save',
+        '_agnes/v1/config.get',
+        '_agnes/v1/config.oauth',
+        '_agnes/v1/config.providers',
+        '_agnes/v1/config.save',
+        '_agnes/v1/config.test',
+        '_agnes/v1/daemon.notice',
+        '_agnes/v1/diagnostics.export',
+        '_agnes/v1/diagnostics.collect',
+        '_agnes/v1/diagnostics.events',
+        '_agnes/v1/directory.upsert',
+        '_agnes/v1/ext.ui.response',
+        '_agnes/v1/extension.ack',
+        '_agnes/v1/extension.call',
+        '_agnes/v1/extension.callScoped',
+        '_agnes/v1/extension.readOperation',
+        '_agnes/v1/extension.wakes.enqueue',
+        '_agnes/v1/extension.wakes.read',
+        '_agnes/v1/jobs.cancel',
+        '_agnes/v1/jobs.enqueue',
+        '_agnes/v1/jobs.poll',
+        '_agnes/v1/mcp.servers.create',
+        '_agnes/v1/mcp.servers.disable',
+        '_agnes/v1/mcp.servers.enable',
+        '_agnes/v1/mcp.servers.get',
+        '_agnes/v1/mcp.servers.list',
+        '_agnes/v1/mcp.servers.oauth.status',
+        '_agnes/v1/mcp.servers.oauth.status.set',
+        '_agnes/v1/mcp.servers.reconnect',
+        '_agnes/v1/mcp.servers.remove',
+        '_agnes/v1/mcp.servers.status',
+        '_agnes/v1/mcp.servers.test',
+        '_agnes/v1/mcp.servers.tools.list',
+        '_agnes/v1/mcp.servers.trust.set',
+        '_agnes/v1/mcp.servers.update',
+        '_agnes/v1/packages.catalog.get',
+        '_agnes/v1/plugins.candidates.list',
+        '_agnes/v1/plugins.candidates.show',
+        '_agnes/v1/plugins.candidates.create',
+        '_agnes/v1/plugins.candidates.write',
+        '_agnes/v1/plugins.candidates.test',
+        '_agnes/v1/plugins.candidates.submit',
+        '_agnes/v1/plugins.candidates.approve',
+        '_agnes/v1/plugins.candidates.reject',
+        '_agnes/v1/packages.catalog.list',
+        '_agnes/v1/packages.disable',
+        '_agnes/v1/packages.enable',
+        '_agnes/v1/packages.inspect',
+        '_agnes/v1/packages.install',
+        '_agnes/v1/packages.list',
+        '_agnes/v1/packages.operation.cancel',
+        '_agnes/v1/packages.operation.get',
+        '_agnes/v1/packages.pins.inspect',
+        '_agnes/v1/packages.pins.release',
+        '_agnes/v1/packages.provenance',
+        '_agnes/v1/packages.sourcePolicy',
+        '_agnes/v1/packages.remove',
+        '_agnes/v1/packages.rollback',
+        '_agnes/v1/packages.trust',
+        '_agnes/v1/packages.trustWorkspace',
+        '_agnes/v1/packages.untrust',
+        '_agnes/v1/packages.update',
+        '_agnes/v1/participant.join',
+        '_agnes/v1/participant.leave',
+        '_agnes/v1/participant.list',
+        '_agnes/v1/plugins.generations',
+        '_agnes/v1/plugins.publicationStatus',
+        '_agnes/v1/plugins.tree.apply',
+        '_agnes/v1/plugins.tree.get',
+        '_agnes/v1/plugins.tree.list',
+        '_agnes/v1/plugins.tree.rollback',
+        '_agnes/v1/resources.desired.set',
+        '_agnes/v1/resources.get',
+        '_agnes/v1/resources.list',
+        '_agnes/v1/resources.operation.cancel',
+        '_agnes/v1/resources.operation.get',
+        '_agnes/v1/schedules.archive',
+        '_agnes/v1/schedules.control',
+        '_agnes/v1/schedules.history',
+        '_agnes/v1/schedules.list',
+        '_agnes/v1/schedules.receipt',
+        '_agnes/v1/schedules.upsert',
+        '_agnes/v1/session.archive',
+        '_agnes/v1/session.attach',
+        '_agnes/v1/session.btw',
+        '_agnes/v1/session.voice.transcribe',
+        '_agnes/v1/session.voice.speak',
+        '_agnes/v1/session.bookmarks.set',
+        '_agnes/v1/session.budget',
+        '_agnes/v1/session.deliverables',
+        '_agnes/v1/session.detach',
+        '_agnes/v1/session.event',
+        '_agnes/v1/session.loading',
+        '_agnes/v1/session.loadingCancel',
+        '_agnes/v1/session.open',
+        '_agnes/v1/session.pin',
+        '_agnes/v1/session.fileUpload',
+        '_agnes/v1/session.fork',
+        '_agnes/v1/session.activity',
+        '_agnes/v1/session.groups',
+        '_agnes/v1/session.list',
+        '_agnes/v1/session.preview',
+        '_agnes/v1/session.projectUI',
+        '_agnes/v1/session.projectUIHistory',
+        '_agnes/v1/session.projectUIOpening',
+        '_agnes/v1/session.projectUIPatch',
+        '_agnes/v1/session.readToolDetail',
+        '_agnes/v1/session.rename',
+        '_agnes/v1/session.setModel',
+        '_agnes/v1/session.setPreset',
+        '_agnes/v1/session.setYolo',
+        '_agnes/v1/session.setToolFilter',
+        '_agnes/v1/session.revealWorkspace',
+        '_agnes/v1/session.runtime',
+        '_agnes/v1/session.integrity',
+        '_agnes/v1/session.view',
+        '_agnes/v1/session.tools',
+        '_agnes/v1/session.jobs.read',
+        '_agnes/v1/session.jobs.control',
+        '_agnes/v1/session.workspace.list',
+        '_agnes/v1/session.references.search',
+        '_agnes/v1/session.workspace.read',
+        '_agnes/v1/session.workspace.changes',
+        '_agnes/v1/session.undo.preview',
+        '_agnes/v1/session.undo',
+        '_agnes/v1/sessionSelection.defaults.get',
+        '_agnes/v1/sessionSelection.defaults.save',
+        '_agnes/v1/sessionSelection.loops',
+        '_agnes/v1/sessionSelection.modelAdapters',
+        '_agnes/v1/sessionSelection.reloadLocal',
+        '_agnes/v1/sessionSelection.runtime',
+        '_agnes/v1/sessions.migrate',
+        '_agnes/v1/skills.priority.set',
+        '_agnes/v1/skills.refresh',
+        '_agnes/v1/skills.remove',
+        '_agnes/v1/skills.trust.set',
+        '_agnes/v1/skins.list',
+        '_agnes/v1/skins.read',
+        '_agnes/v1/submit',
+        '_agnes/v1/submit.ack',
+        '_agnes/v1/pluginRuntime.status',
+        '_agnes/v1/pluginStreams.endpoint',
+        '_agnes/v1/surfaces.mounts',
+        '_agnes/v1/voice.status',
+        '_agnes/v1/voice.settings.get',
+        '_agnes/v1/voice.settings.save',
+        '_agnes/v1/workspace.add',
+        '_agnes/v1/workspace.list',
+        '_agnes/v1/workspace.reveal',
+        '_agnes/v1/workspace.remove',
+        'authenticate',
+        'initialize',
+        'session/cancel',
+        'session/load',
+        'session/new',
+        'session/prompt',
+        'session/request_permission',
+        'session/set_mode',
+        'session/update',
+      ].sort(),
+    )
+    expect(Object.keys(METHODS)).toHaveLength(227)
+    expect(METHODS['_agnes/v1/session.integrity']).toMatchObject({ kind: 'request', direction: 'c2s' })
+    expect(METHODS['_agnes/v1/session.loading']).toMatchObject({ kind: 'notification', direction: 's2c' })
+    expect(METHODS['_agnes/v1/session.loadingCancel']).toMatchObject({
+      kind: 'notification',
+      direction: 'c2s',
+    })
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
   })
 
-  it('describes session load progress and the stored opening', () => {
-    expect(METHODS['_agnes/v1/session.loading']).toMatchObject({ kind: 'notification', direction: 's2c' })
-    for (const phase of ['open', 'verify', 'fold', 'replay'])
-      expect(
-        validateMethod('_agnes/v1/session.loading', 'params', { sessionId: 's', phase, done: 3, total: 9 })
-          .ok,
-      ).toBe(true)
-    for (const bad of [
-      { sessionId: 's', phase: 'read', done: 0, total: 0 },
-      { sessionId: 's', phase: 'fold', done: -1, total: 0 },
-      { sessionId: 's', phase: 'fold', done: 1.5, total: 2 },
-      { sessionId: 's', phase: 'fold', done: 1 },
-      { sessionId: 's', phase: 'fold', done: 1, total: 2, extra: true },
-    ])
-      expect(validateMethod('_agnes/v1/session.loading', 'params', bad).ok).toBe(false)
-
-    const method = '_agnes/v1/session.storedOpening'
-    expect(METHODS[method]).toMatchObject({ kind: 'request', direction: 'c2s' })
-    expect(validateMethod(method, 'params', { sessionId: 's' }).ok).toBe(true)
-    expect(validateMethod(method, 'params', { sessionId: 's', maxNodes: 500 }).ok).toBe(true)
-    expect(validateMethod(method, 'params', { sessionId: 's', maxNodes: 0 }).ok).toBe(false)
-    expect(validateMethod(method, 'params', { sessionId: 's', maxNodes: 501 }).ok).toBe(false)
-    const timeline = { sessionId: 's', upto: 9, generation: 1, opState: null, nodes: [], turns: [] }
-    expect(
-      validateMethod(method, 'result', { timeline, hasEarlier: true, verified: false, lastSeq: 9 }).ok,
-    ).toBe(true)
-    expect(
-      validateMethod(method, 'result', { timeline, hasEarlier: true, verified: true, lastSeq: 9 }).ok,
-    ).toBe(false)
-    expect(
-      validateMethod(method, 'result', { timeline: {}, hasEarlier: true, verified: false, lastSeq: 9 }).ok,
-    ).toBe(false)
-  })
-
   it('keeps unknown method names outside the closed method table', () => {
     expect(Object.hasOwn(METHODS, '_agnes/v1/not-a-method')).toBe(false)
-  })
-
-  it('closes each upload step and bounds a chunk to one MiB of base64', () => {
-    const method = '_agnes/v1/attachment.upload'
-    const uploadId = '0f0e0d0c-0b0a-4908-8706-050403020100'
-    const sha256 = 'a'.repeat(64)
-    expect(METHODS[method]).toMatchObject({ kind: 'request', direction: 'c2s' })
-    for (const ok of [
-      { operation: 'limits', sessionId: 's' },
-      { operation: 'start', sessionId: 's', uploadId, name: 'a.zip', mimeType: 'application/zip', size: 0 },
-      {
-        operation: 'start',
-        sessionId: 's',
-        uploadId,
-        name: 't.jpg',
-        mimeType: 'image/jpeg',
-        size: 9,
-        purpose: 'thumbnail',
-      },
-      { operation: 'chunk', sessionId: 's', uploadId, offset: 0, data: 'A'.repeat(1398104), sha256 },
-      { operation: 'status', sessionId: 's', uploadId },
-      { operation: 'cancel', sessionId: 's', uploadId },
-      { operation: 'finish', sessionId: 's', uploadId },
-      { operation: 'finish', sessionId: 's', uploadId, sha256 },
-    ])
-      expect(validateMethod(method, 'params', ok).ok, JSON.stringify(ok).slice(0, 80)).toBe(true)
-    const start = { operation: 'start', sessionId: 's', uploadId, name: 'a', mimeType: 'a/b', size: 1 }
-    for (const bad of [
-      { operation: 'limits', sessionId: 's', uploadId },
-      { ...start, uploadId: 'not-a-uuid' },
-      { ...start, uploadId: uploadId.toUpperCase() },
-      { ...start, name: '' },
-      { ...start, name: 'n'.repeat(257) },
-      { ...start, mimeType: 'm'.repeat(129) },
-      { ...start, size: -1 },
-      { ...start, size: 2 ** 53 },
-      { ...start, purpose: 'other' },
-      { operation: 'chunk', sessionId: 's', uploadId, offset: 0, data: 'A'.repeat(1398105), sha256 },
-      { operation: 'chunk', sessionId: 's', uploadId, offset: 0, data: '', sha256 },
-      { operation: 'chunk', sessionId: 's', uploadId, offset: 0, data: 'QUJD', sha256: 'A'.repeat(64) },
-      { operation: 'chunk', sessionId: 's', uploadId, offset: -1, data: 'QUJD', sha256 },
-      { operation: 'status', sessionId: 's' },
-      { operation: 'finish', sessionId: 's', uploadId, extra: 1 },
-      { operation: 'resume', sessionId: 's', uploadId },
-    ])
-      expect(validateMethod(method, 'params', bad).ok, JSON.stringify(bad).slice(0, 80)).toBe(false)
-    const ref = { type: 'file', mimeType: 'application/zip', name: 'a.zip', attachment: { sha256, bytes: 3 } }
-    for (const ok of [
-      { limits: { maxBytes: 2 ** 31, chunkBytes: 1048576, maxConcurrent: 4 } },
-      { offset: 3 },
-      {},
-      { offset: 3, attachment: ref },
-      { offset: 3, attachment: { sha256, bytes: 3, width: 320, height: 200 } },
-    ])
-      expect(validateMethod(method, 'result', ok).ok).toBe(true)
-    for (const bad of [
-      { limits: { maxBytes: 1, chunkBytes: 1048577, maxConcurrent: 4 } },
-      { offset: -1 },
-      { offset: 3, attachment: { sha256, bytes: 3, width: 321, height: 200 } },
-      { offset: 3, extra: true },
-    ])
-      expect(validateMethod(method, 'result', bad).ok).toBe(false)
-  })
-
-  it('bounds attachment windows to one MiB and names the attachment by place', () => {
-    const method = '_agnes/v1/session.attachmentRead'
-    const ok = { sessionId: 's', seq: 5, kind: 'file', index: 1, offset: 0, length: 1048576 }
-    expect(validateMethod(method, 'params', ok).ok).toBe(true)
-    expect(validateMethod(method, 'params', { ...ok, kind: 'image', thumbnail: true }).ok).toBe(true)
-    for (const bad of [
-      { ...ok, length: 1048577 },
-      { ...ok, length: 0 },
-      { ...ok, offset: -1 },
-      { ...ok, seq: 0 },
-      { ...ok, index: 0 },
-      { ...ok, kind: 'audio' },
-      { ...ok, thumbnail: 'yes' },
-      { ...ok, sessionId: '' },
-      { ...ok, extra: 1 },
-    ])
-      expect(validateMethod(method, 'params', bad).ok).toBe(false)
-    expect(
-      validateMethod(method, 'result', { mimeType: 'image/png', totalBytes: 3, base64: 'QUJD' }).ok,
-    ).toBe(true)
-    expect(
-      validateMethod(method, 'result', { mimeType: 'image/png', totalBytes: 3, base64: 'A'.repeat(1398105) })
-        .ok,
-    ).toBe(false)
-  })
-
-  it('bounds raw row export positions and pieces', () => {
-    const method = '_agnes/v1/session.exportRaw'
-    expect(validateMethod(method, 'params', { sessionId: 's', seq: 1, offset: 0 }).ok).toBe(true)
-    for (const bad of [
-      { sessionId: 's', seq: 0, offset: 0 },
-      { sessionId: 's', seq: 1, offset: -1 },
-      { sessionId: 's', seq: 1.5, offset: 0 },
-      { sessionId: '', seq: 1, offset: 0 },
-      { sessionId: 's', seq: 1 },
-      { sessionId: 's', seq: 1, offset: 0, extra: true },
-    ])
-      expect(validateMethod(method, 'params', bad).ok).toBe(false)
-    expect(validateMethod(method, 'result', { seq: 1, base64: 'QUJD', nextOffset: null }).ok).toBe(true)
-    expect(validateMethod(method, 'result', { seq: 1, base64: 'QUJD', nextOffset: 3 }).ok).toBe(true)
-    expect(
-      validateMethod(method, 'result', { seq: 1, base64: 'A'.repeat(11184813), nextOffset: null }).ok,
-    ).toBe(false)
   })
 
   it('bounds on-demand tool detail reads and validates base64 chunks', () => {
@@ -429,6 +436,56 @@ describe('methods (I1 set)', () => {
         }),
       ),
     ).toContainEqual(expect.objectContaining({ path: '/data', code: 'PATTERN' }))
+  })
+
+  it('bounds deliverable source pages and keeps each item closed', () => {
+    const method = '_agnes/v1/session.deliverables'
+    expect(validateMethod(method, 'params', { sessionId: 'session-a', afterSeq: 0, limit: 200 }).ok).toBe(
+      true,
+    )
+    expect(validateMethod(method, 'params', { sessionId: 'session-a' }).ok).toBe(true)
+    expect(errorsOf(validateMethod(method, 'params', { sessionId: 'session-a', limit: 201 }))).toContainEqual(
+      expect.objectContaining({ path: '/limit', code: 'RANGE' }),
+    )
+    expect(
+      errorsOf(validateMethod(method, 'params', { sessionId: 'session-a', afterSeq: -1 })),
+    ).toContainEqual(expect.objectContaining({ path: '/afterSeq', code: 'RANGE' }))
+    const item = {
+      callSeq: 3,
+      resultSeq: 5,
+      toolUseId: 'call-1',
+      turnId: 'turn:1',
+      structured: { deliverables: [] },
+    }
+    expect(
+      validateMethod(method, 'result', { sessionId: 'session-a', upto: 5, items: [item], nextAfterSeq: 5 })
+        .ok,
+    ).toBe(true)
+    expect(
+      validateMethod(method, 'result', {
+        sessionId: 'session-a',
+        upto: 5,
+        items: [{ ...item, structured: null }],
+      }).ok,
+    ).toBe(true)
+    expect(
+      errorsOf(
+        validateMethod(method, 'result', {
+          sessionId: 'session-a',
+          upto: 5,
+          items: [{ ...item, args: { files: [] } }],
+        }),
+      ),
+    ).toContainEqual(expect.objectContaining({ code: 'UNKNOWN_KEY' }))
+    expect(
+      errorsOf(
+        validateMethod(method, 'result', {
+          sessionId: 'session-a',
+          upto: 5,
+          items: Array.from({ length: 201 }, () => item),
+        }),
+      ),
+    ).not.toEqual([])
   })
 
   it('binds artifact reads to a complete ref and one bounded range without path or owner authority', () => {
@@ -566,7 +623,7 @@ describe('methods (I1 set)', () => {
     ).toContainEqual(expect.objectContaining({ code: 'ENUM' }))
     expect(
       errorsOf(validateMethod('_agnes/v1/computerUse.status', 'result', { ...blocked, platform: 'darwin' })),
-    ).toContainEqual(expect.objectContaining({ code: 'ENUM' }))
+    ).toContainEqual(expect.objectContaining({ path: '/platform', key: 'platform', code: 'UNKNOWN_KEY' }))
     expect(
       validateMethod('_agnes/v1/computerUse.status', 'result', {
         schemaVersion: 1,
@@ -728,16 +785,7 @@ describe('methods (I1 set)', () => {
     if (!r.ok) expect(r.errors[0]).toMatchObject({ code: 'UNKNOWN_KEY', key: 'seams' })
   })
 
-  it('validates steer result and Ack', () => {
-    expect(validateMethod('_agnes/v1/session.steer', 'result', { seq: 3 }).ok).toBe(true)
-    expect(
-      validateMethod('_agnes/v1/session.steer', 'params', {
-        sessionId: 'agnes:local:test',
-        content: [{ type: 'text', text: 'next' }],
-        commandId: 'command-1',
-        generation: 2,
-      }).ok,
-    ).toBe(true)
+  it('validates submit Ack', () => {
     expect(validateMethod('_agnes/v1/submit', 'result', { replayed: true, seq: 3 }).ok).toBe(true)
     expect(
       validateMethod('_agnes/v1/submit', 'result', {
@@ -830,7 +878,7 @@ describe('methods (I1 set)', () => {
           },
         }),
       ),
-    ).toContainEqual(expect.objectContaining({ code: 'ENUM' }))
+    ).toContainEqual(expect.objectContaining({ path: '/patch/changes/0/index', code: 'RANGE' }))
   })
 
   it('validates bounded UI opening and opaque history page contracts', () => {
@@ -952,16 +1000,6 @@ describe('methods (I1 set)', () => {
     ).toBe(true)
   })
 
-  it('followUp shares the steer shape', () => {
-    expect(
-      validateMethod('_agnes/v1/session.followUp', 'params', {
-        sessionId: 's',
-        content: [{ type: 'text', text: 'x' }],
-        commandId: 'c',
-      }).ok,
-    ).toBe(true)
-  })
-
   // The two outbound notifications daemon sends. They have params and no result; asserting the shape
   // here is what makes the daemon side validated rather than merely spelled the same way.
   it('session.event and daemon.notice are s2c notifications', () => {
@@ -974,6 +1012,16 @@ describe('methods (I1 set)', () => {
         _meta: { 'ai.agnes.harness': harnessMeta },
       }).ok,
     ).toBe(true)
+    for (const type of ['x/acme/budget', 'x/acme/planner', 'x/acme/report.ready']) {
+      expect(
+        validateMethod('_agnes/v1/session.event', 'params', {
+          sessionId: 's',
+          event: { ...ledgerRow, type, data: { value: 1 }, ignorable: true },
+          _meta: { 'ai.agnes.harness': harnessMeta },
+        }).ok,
+        type,
+      ).toBe(true)
+    }
     // A row cut down to its seq: the envelope's other seven required fields are what should be
     // reported, starting with `ts`.
     expect(
@@ -1007,7 +1055,7 @@ describe('methods (I1 set)', () => {
     ).toContainEqual(expect.objectContaining({ code: 'ENUM' }))
     expect(
       errorsOf(validateMethod('_agnes/v1/daemon.notice', 'params', { detail: {}, at: 't' })),
-    ).toContainEqual(expect.objectContaining({ code: 'ENUM' }))
+    ).toContainEqual(expect.objectContaining({ path: '', key: 'kind', code: 'MISSING' }))
   })
 
   it('validates the packages_changed profile invalidation payload as a closed contract', () => {
@@ -1120,9 +1168,16 @@ describe('methods (I1 set)', () => {
         limit: 20,
       }).ok,
     ).toBe(true)
-    expect(errorsOf(validateMethod('_agnes/v1/session.list', 'params', { limit: 0 }))).toContainEqual(
-      expect.objectContaining({ code: 'RANGE', key: 'limit' }),
-    )
+    // The legacy and sidebar shapes share a union; invalid input is rejected at that boundary.
+    expect(validateMethod('_agnes/v1/session.list', 'params', { limit: 0 }).ok).toBe(false)
+    const sidebar = { groupId: 'unassigned' }
+    expect(validateMethod('_agnes/v1/session.list', 'params', { sidebar, limit: 5 }).ok).toBe(true)
+    for (const input of [
+      { sidebar, limit: 0 },
+      { sidebar, limit: 6 },
+      { sidebar, q: { cwd: '/work' } },
+    ])
+      expect(validateMethod('_agnes/v1/session.list', 'params', input).ok).toBe(false)
     const meta = {
       sessionId: 's',
       createdAt: '2026-09-10T00:00:00Z',
@@ -1195,5 +1250,48 @@ describe('methods (I1 set)', () => {
       errorsOf(validateMethod('_agnes/v1/session.setYolo', 'params', { sessionId: 's' })),
     ).toContainEqual(expect.objectContaining({ code: 'MISSING', key: 'enabled' }))
     expect(validateMethod('_agnes/v1/session.setYolo', 'result', { effectiveFromSeq: 9 }).ok).toBe(true)
+  })
+
+  it('jobs.control run takes a bounded command and timeout and nothing else', () => {
+    const run = { sessionId: 's', commandId: 'c', operation: 'run' }
+    const ok = (extra: Record<string, unknown>) =>
+      validateMethod('_agnes/v1/session.jobs.control', 'params', { ...run, ...extra }).ok
+    expect(ok({ command: 'ls' })).toBe(true)
+    expect(ok({ command: 'x'.repeat(8192), timeoutMs: 1000 })).toBe(true)
+    expect(ok({ command: 'ls', timeoutMs: 600000 })).toBe(true)
+    for (const bad of [
+      {},
+      { command: '' },
+      { command: 'x'.repeat(8193) },
+      { command: 'a\0b' },
+      { command: 'ls', timeoutMs: 999 },
+      { command: 'ls', timeoutMs: 600001 },
+      { command: 'ls', timeoutMs: 1.5 },
+      { command: 'ls', jobId: 'j' },
+      { command: 'ls', shell: 'bash' },
+    ])
+      expect(ok(bad)).toBe(false)
+  })
+
+  it('setToolFilter takes exact names in bounded lists and returns the merged filter', () => {
+    const call = (extra: Record<string, unknown>) =>
+      validateMethod('_agnes/v1/session.setToolFilter', 'params', {
+        sessionId: 's',
+        commandId: 'c',
+        ...extra,
+      })
+    expect(call({ deny: ['bash'], allow: ['bash', 'grep'] }).ok).toBe(true)
+    expect(call({ deny: ['bash*'] }).ok).toBe(false)
+    expect(call({ allow: [] }).ok).toBe(false)
+    expect(call({ deny: Array.from({ length: 129 }, (_, n) => `t${n}`) }).ok).toBe(false)
+    expect(
+      errorsOf(validateMethod('_agnes/v1/session.setToolFilter', 'params', { sessionId: 's', deny: ['a'] })),
+    ).toContainEqual(expect.objectContaining({ code: 'MISSING', key: 'commandId' }))
+    expect(
+      validateMethod('_agnes/v1/session.setToolFilter', 'result', {
+        effectiveFromSeq: 9,
+        filter: { allow: [], deny: ['bash'] },
+      }).ok,
+    ).toBe(true)
   })
 })

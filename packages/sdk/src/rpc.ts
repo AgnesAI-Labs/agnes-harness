@@ -31,6 +31,7 @@ export type RpcConnectionOptions = {
 }
 
 export type RequestOptions = {
+  metadata?: Record<string, unknown>
   // null means no deadline at all. prompt travels this way: a turn is ended by the
   // transport noticing it is dead, not by a stopwatch on the request.
   timeoutMs?: number | null
@@ -44,7 +45,7 @@ export class RpcConnection {
   private transport: Transport | null = null
   private open = false
   // Terminal, and deliberately separate from `open`: a transport that dropped can be
-  // brought back (Task 15), a connection the owner closed cannot. Without this latch a
+  // brought back, a connection the owner closed cannot. Without this latch a
   // request after close() walks straight back into doConnect() and builds a second
   // transport - which for stdio means respawning a child the owner believed was killed.
   private closed = false
@@ -56,7 +57,7 @@ export class RpcConnection {
   // and keeps pouring messages into the same connection. Sharing one promise is what makes
   // connect idempotent.
   private connecting: Promise<void> | null = null
-  // Monotonic, and never reset - not even across a reconnect (Task 15): a late response
+  // Monotonic, and never reset - not even across a reconnect: a late response
   // carries the old connection's id, and a reset would let it collide with a request of the
   // same number on the new one.
   private nextId = 1
@@ -64,6 +65,10 @@ export class RpcConnection {
   private readonly pending = new Map<JsonRpcId, Pending>()
   private readonly notificationHandlers = new Set<(method: string, params: unknown) => void>()
   private serverRequestHandler: ((method: string, params: unknown) => Promise<unknown>) | null = null
+  // A server about to end the connection sends one error with `id: null` naming why (OVERLOADED,
+  // PARSE_ERROR ...). No request owns it, so it rides on the close it precedes: callers then see a
+  // TransportClosed that says why instead of a bare EOF.
+  private peerError: JsonRpcError | undefined
 
   constructor(
     private readonly factory: TransportFactory,
@@ -85,6 +90,7 @@ export class RpcConnection {
 
   private async doConnect(): Promise<void> {
     const generation = ++this.generation
+    this.peerError = undefined
     const previous = this.transport
     if (previous) {
       await previous.close()
@@ -133,7 +139,13 @@ export class RpcConnection {
     const signal = opts.signal
     if (signal?.aborted) throw signal.reason
     const id = this.nextId++
-    const msg: JsonRpcRequest = { jsonrpc: '2.0', id, method, params }
+    const msg: JsonRpcRequest = {
+      jsonrpc: '2.0',
+      id,
+      method,
+      params,
+      ...(opts.metadata ? { _meta: opts.metadata } : {}),
+    }
     return new Promise<T>((resolve, reject) => {
       let timer: ReturnType<typeof setTimeout> | undefined
       const onAbort = () => this.takePending(id)?.reject(signal?.reason as Error)
@@ -226,6 +238,10 @@ export class RpcConnection {
     switch (classify(msg)) {
       case 'response': {
         const r = msg as JsonRpcResponse
+        if ((r.id as JsonRpcId | null) === null && r.error) {
+          this.peerError = new JsonRpcError(r.error)
+          return
+        }
         // A response nobody is waiting for - late after a timeout, or an id the server got
         // wrong - is dropped rather than thrown: a throw kills the whole read loop.
         const p = this.takePending(r.id)
@@ -276,7 +292,8 @@ export class RpcConnection {
   private handleClose(info: CloseInfo): void {
     if (!this.open) return
     this.open = false
-    for (const id of [...this.pending.keys()]) this.takePending(id)?.reject(new TransportClosed(info))
-    this.opts.onClose?.(info)
+    const closed = !info.error && this.peerError ? { ...info, error: this.peerError } : info
+    for (const id of [...this.pending.keys()]) this.takePending(id)?.reject(new TransportClosed(closed))
+    this.opts.onClose?.(closed)
   }
 }

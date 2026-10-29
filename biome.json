@@ -10,10 +10,14 @@
       "**",
       "!**/gen",
       "!**/generated",
+      "!packages/package-manager/bundled-plugins/goal-ui/src/client.js",
+      "!packages/package-manager/bundled-plugins/interaction-ui/src/client.js",
+      "!packages/package-manager/bundled-plugins/navigation-ui/src/client.js",
+      "!packages/package-manager/bundled-plugins/conversation-ui/src/client.js",
+      "!packages/package-manager/bundled-plugins/browser/src/client.js",
       "!**/dist",
       "!**/node_modules",
       "!docs",
-      "!packages/web-ui/src/conversation/tailwind.css",
       "!packages/base/fixtures/tool-schemas",
       "!packages/cordis",
       "!packages/cosmokit"
@@ -38,10 +42,17 @@
   },
   "overrides": [
     {
+      "includes": ["packages/package-manager/test/fixtures/runtime-snapshots-v1/home/**"],
+      "formatter": {
+        "enabled": false
+      }
+    },
+    {
       "includes": [
         "packages/web-ui/src/**",
         "packages/resource-control-web/src/**",
-        "packages/web/src/admin/**"
+        "packages/web/src/admin/**",
+        "packages/web-admin/src/admin/**"
       ],
       "linter": {
         "rules": {

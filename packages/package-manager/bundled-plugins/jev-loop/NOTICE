@@ -1,0 +1,20 @@
+@agnes/loop-jev
+Copyright 2026 Agnes Harness contributors. Licensed under the Apache License, Version 2.0.
+
+This package contains material adapted from JevLoop:
+  Source: https://github.com/parkavenue9639/jevloop, commit 61e7994
+  License: Apache License, Version 2.0
+  Changes: ported to TypeScript; HTTP calls replaced by AGH side model calls; the ANSWER and
+  CANNOT_BIND tools replaced by a tail-note convention; limits counted in estimated tokens;
+  tool descriptions rewritten for the AGH built-in tools.
+
+The NOTICE of JevLoop follows, unchanged:
+
+JevLoop
+Copyright 2026 JevLoop contributors
+
+This product is licensed under the Apache License, Version 2.0.
+
+JevLoop is an independent open-source project powered by TypeSafe Jev.
+TypeSafe and Jev are names of their respective owners. No affiliation or
+endorsement is implied.

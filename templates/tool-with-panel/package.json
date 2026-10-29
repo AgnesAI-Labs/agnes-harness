@@ -1,0 +1,67 @@
+{
+  "name": "__PACKAGE_NAME__",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": "./dist/index.js",
+  "files": [
+    "dist",
+    "client",
+    "skills",
+    "mcp.json"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --import tsx --test"
+  },
+  "dependencies": {
+    "@agnes/plugin-runtime": "0.0.0",
+    "@agnes/extension-api": "^5.0.0",
+    "@sinclair/typebox": "0.34.33"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "@types/node": "26.4.1",
+    "tsx": "4.23.13",
+    "@agnes/host": "0.0.0",
+    "@agnes/web-client": "0.0.0"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "export": "main",
+        "apiRange": "^5.0.0",
+        "id": "ext:__PACKAGE_NAME__/main",
+        "inject": [
+          "tools",
+          "services"
+        ],
+        "capabilities": {
+          "ui": true,
+          "store": true
+        }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:__PACKAGE_NAME__/main",
+        "path": "./client/agnes.client.json"
+      }
+    ],
+    "hostProvidedExternals": {
+      "@agnes/plugin-runtime": "0.0.0",
+      "@agnes/extension-api": "^5.0.0",
+      "@sinclair/typebox": "0.34.33"
+    },
+    "provides": [
+      "tool",
+      "ui"
+    ]
+  },
+  "peerDependencies": {
+    "react": "18.3.1"
+  }
+}

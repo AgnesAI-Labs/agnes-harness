@@ -16,7 +16,7 @@ approval: { on_unavailable: park }
 # `required: true` is a hard requirement, not a preference: the host refuses to open a session when
 # the platform cannot provide L1. An unattended run has no operator to notice that the isolation it
 # assumed is not there.
-sandbox: { level: L1, required: true }
+sandbox: { required: true }
 # Long tasks have no cumulative step ceiling; the per-request spend ceiling still applies.
 budget: { per_request_cap: 4000, max_steps: null }
 subagent: { max_depth: 2, max_fan_out: 4 }

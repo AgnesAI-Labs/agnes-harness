@@ -29,7 +29,7 @@ export type {
   RuntimeConvergenceRow,
   TreeSnapshot,
 } from '../convergence.js'
-export { createTreeSnapshot, ROW_STATES, verifyTreeSnapshot } from '../convergence.js'
+export { createTreeSnapshot, pluginConfigDigest, ROW_STATES, verifyTreeSnapshot } from '../convergence.js'
 export type { DependencyEdge } from '../dependency-graph.js'
 export { detectDependencyCycle, missingDependencies, persistSecretRef } from '../dependency-graph.js'
 export { E_LEASE_DENIED, FiberLease, FiberLeases, SPINE_LEASES } from '../lease.js'
@@ -46,6 +46,7 @@ export type {
   HostPluginImporterFactory,
   PackageSnapshotCandidateRef,
   PackageSnapshotVerifier,
+  PluginInjectDeclaration,
   RowImporter,
   ThirdPartyRowDescriptor,
   ThirdPartyRowMountFactory,
@@ -94,4 +95,9 @@ export {
   DYNAMIC_SEAM_NAMES,
   type DynamicSeamName,
 } from '../seam-implementations.js'
+export {
+  formatSnapshotPluginLocator,
+  parseSnapshotPluginLocator,
+  type SnapshotPluginLocator,
+} from '../snapshot-locator.js'
 export { typeBoxStandardSchema } from '../standard-schema.js'

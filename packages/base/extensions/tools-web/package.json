@@ -1,0 +1,46 @@
+{
+  "name": "@agnes/tools-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/tools-web",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "tools"
+        ],
+        "capabilities": {
+          "tools": {
+            "prefix": "",
+            "names": [
+              "web_fetch",
+              "web_search"
+            ]
+          },
+          "network": [],
+          "network.publicRead": true,
+          "artifacts": true
+        },
+        "metadata": {
+          "displayName": "Web research",
+          "summary": "Lets the agent search the web and fetch readable page content.",
+          "description": "Lets the agent search the web and fetch readable page content.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "网页检索",
+              "summary": "让 Agent 搜索网页并获取可读的页面内容。",
+              "description": "让 Agent 搜索网页并获取可读的页面内容。"
+            }
+          }
+        }
+      }
+    ],
+    "provides": [
+      "tool"
+    ]
+  }
+}

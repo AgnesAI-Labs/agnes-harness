@@ -2,10 +2,12 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { getApiKeyProvider } from '@agnes/ai'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import { subagentCollectTool, subagentForkTool, subagentSpawnTool } from '@agnes/base'
 import { createWorkspaceInvocationPort, Kernel, presetDefaults } from '@agnes/core'
 import {
+  defaultLoops,
   fakeProvider,
   fakeSeams,
   fencedFs,
@@ -14,9 +16,9 @@ import {
   textTurn,
   toolTurn,
 } from '@agnes/core/testkit'
+import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
 import { Type } from '@sinclair/typebox'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createSqliteStorage } from '../src/adapters/storage-sqlite.js'
 import { createTestHost } from '../testkit/index.js'
 
 const baseDir = fileURLToPath(new URL('../../base', import.meta.url))
@@ -114,11 +116,13 @@ function kernel(
     generationLimit: 2,
     maxFanOut: 4,
   },
+  seams = fakeSeams(),
 ) {
   Object.assign(provider, { models: () => [model()] })
   return Kernel.create({
+    loops: defaultLoops(),
     storage,
-    seams: fakeSeams(),
+    seams,
     provider,
     contract: { contract_id: null, parser_version: '1' },
     preset,
@@ -185,11 +189,15 @@ describe('real subagent tools on sqlite', () => {
         writerRunId: 'r0',
       })
       await parent0.enqueue('next-turn', { content: [{ type: 'text', text: 'fork' }], actor })
-      await parent0.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(await parent0.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
+        reason: 'completed',
+      })
       const forkResult = (await parent0.scan({ type: 'tool/result', limit: 5 }))[0]?.data as
         | { isError?: boolean }
         | undefined
       expect(forkResult?.isError).toBe(true)
+      expect(JSON.stringify(forkResult)).toContain('E_CHILD_LIMIT')
+      expect(await parent0.scan({ type: 'approval/asked', limit: 5 })).toEqual([])
       expect(await storage0.listByParent('parent')).toEqual([])
       expect(limited.requests.length).toBe(2)
       log.push(`pass ${pass} over-limit providerCalls=${limited.requests.length} children=0`)
@@ -245,10 +253,18 @@ describe('real subagent tools on sqlite', () => {
       await parent1.enqueue('next-turn', { content: [{ type: 'text', text: 'spawn' }], actor })
       await parent1.run({ until: 'turn-end', signal: new AbortController().signal })
       const spawned = (await parent1.scan({ type: 'tool/result', limit: 5 }))[0]?.data as
-        | { details?: { childKey?: string }; content?: Array<{ text?: string }> }
+        | { isError?: boolean; content?: Array<{ text?: string }> }
         | undefined
-      const childKey =
-        spawned?.details?.childKey ?? spawned?.content?.[0]?.text?.replace(/^spawned /, '') ?? ''
+      expect(spawned?.isError).toBe(false)
+      // This fixture offers spawn/fork/collect, so the unavailable list tool must not be suggested.
+      expect(spawned?.content?.[0]?.text).toContain('Keep the task reference for follow-up')
+      expect(spawned?.content?.[0]?.text).not.toContain('Use subagent_list')
+      // The same backend catalog exposed by subagent_list, rather than parsing a UI receipt.
+      const children = await parent1.d.children.list?.()
+      expect(children).toHaveLength(1)
+      const childKey = children?.[0]?.id
+      if (!childKey) throw new Error('child catalog did not return a handle')
+      expect(spawned?.content?.[0]?.text).not.toContain(childKey)
       expect(childKey.includes('/')).toBe(true)
       log.push(`pass ${pass} spawned ${childKey}`)
       await k1.close()
@@ -352,6 +368,69 @@ describe('host sqlite + core children factory entry (legacy factory path)', () =
       expect(nobudget.requests.length).toBe(beforeB)
       log.push(`pass ${pass} default-budget providerCalls=${nobudget.requests.length}`)
       await kB.close()
+
+      // Use the installed DeepSeek catalog in a scripted child. At unit output cost, the
+      // existing 384000 cap fits 0.39 credits; the proposed 393216 catalog increase does not.
+      const deepseek = (await getApiKeyProvider('deepseek')!.createAdapter())
+        .models('deepseek')
+        .find((entry) => entry.id === 'deepseek-flash')!
+      for (const inflated of [false, true]) {
+        const script = textTurn('bounded child completed').map((event) =>
+          event.type === 'usage' ? { ...event, credits: 0.01 } : event,
+        )
+        const budgetProvider = fakeProvider([script])
+        const budgetKernel = kernel(
+          createSqliteStorage({
+            file: join(dir, `deepseek-${inflated}.db`),
+            tablesDir: join(dir, `tables-deepseek-${inflated}`),
+          }),
+          budgetProvider,
+          { ...presetDefaults(), treeBudgetCredits: 1, generationLimit: 2, maxFanOut: 4 },
+          fakeSeams({
+            billing: { projected: async () => ({ credits: 0.000001, creditSource: 'estimated' }) },
+          }),
+        )
+        Object.assign(budgetProvider, {
+          models: () => [
+            {
+              ...deepseek,
+              maxTokens: inflated ? 393216 : deepseek.maxTokens,
+              id: 'm1',
+              route: 'default',
+              cost: { input: 0, output: 1, cacheRead: 0, cacheWrite: 0 },
+            },
+          ],
+        })
+        try {
+          const root = await budgetKernel.session('deepseek-root', {
+            ...workspaceSessionOptions('deepseek-root'),
+            actor,
+            resolvedProfileHash: 'h1',
+            cwd: '/w',
+            writerRunId: 'rd',
+          })
+          const child = await root.d.children.create({
+            parent: root.key,
+            cwd: '/w',
+            input: 'bounded child',
+            budget: 0.39,
+          })
+          if (inflated) {
+            await expect(child.run('bounded child')).rejects.toMatchObject({
+              code: 'E_RELATION',
+              message: expect.stringContaining('budget'),
+            })
+            expect(budgetProvider.requests.some((request) => request.sessionKey === child.key)).toBe(false)
+          } else {
+            await expect(child.run('bounded child')).resolves.toMatchObject({
+              text: 'bounded child completed',
+            })
+            expect(budgetProvider.requests.some((request) => request.sessionKey === child.key)).toBe(true)
+          }
+        } finally {
+          await budgetKernel.close()
+        }
+      }
 
       const liveDb = join(dir, 'live.db')
       const tables = join(dir, 'tables-live')

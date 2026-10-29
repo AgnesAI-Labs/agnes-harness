@@ -12,7 +12,10 @@ describe('slot contracts and JSON boundary', () => {
   it('measures exact JSON UTF-8 bytes through the default limit path', () => {
     expect(SLOT_PAYLOAD_MAX_BYTES).toBe(65536)
     expect(isJsonPayload('a'.repeat(65534))).toEqual({ ok: true, bytes: 65536 })
-    expect(isJsonPayload('a'.repeat(65535))).toEqual({ ok: false, reason: 'size 65537 > 65536' })
+    expect(isJsonPayload('a'.repeat(65535))).toEqual({
+      ok: false,
+      reason: 'payload is not bounded JSON data',
+    })
     expect(isJsonPayload('中'.repeat(21844))).toEqual({ ok: true, bytes: 65534 })
     expect(isJsonPayload('中'.repeat(21845))).toEqual({ ok: false, reason: 'size 65537 > 65536' })
     expect(isJsonPayload('\n', 4)).toEqual({ ok: true, bytes: 4 })

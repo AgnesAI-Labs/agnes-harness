@@ -1,0 +1,226 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`agh completion > prints the bash script 1`] = `
+"# bash completion for agh. Load it with: eval "$(agh completion bash)"
+_agh_sessions() {
+  local key
+  while IFS=$'\\t' read -r key _; do COMPREPLY+=("$key"); done < <(agh __complete sessions "$1" 2>/dev/null)
+  # ':' is a word break in bash; drop the part of each key the word already holds.
+  if [[ "$1" == *:* ]]; then
+    local pre="\${1%"\${1##*:}"}" i
+    for i in "\${!COMPREPLY[@]}"; do COMPREPLY[i]="\${COMPREPLY[i]#"$pre"}"; done
+  fi
+}
+_agh() {
+  local line="\${COMP_LINE:0:COMP_POINT}" cur prev n
+  local -a w
+  read -ra w <<< "$line"
+  if [[ "$line" == *[[:space:]] ]]; then
+    cur=""; n=\${#w[@]}; prev="\${w[n-1]}"
+  else
+    n=$((\${#w[@]} - 1)); cur="\${w[n]}"; prev="\${w[n-1]}"
+  fi
+  COMPREPLY=()
+  case "$prev" in
+    --permission) COMPREPLY=($(compgen -W "read-only workspace-write full-access default" -- "$cur")); return ;;
+    --mode) COMPREPLY=($(compgen -W "text json stream-json acp" -- "$cur")); return ;;
+    --format) COMPREPLY=($(compgen -W "agnes sharegpt claude-code" -- "$cur")); return ;;
+    --from) COMPREPLY=($(compgen -W "claude-code codex pi auto" -- "$cur")); return ;;
+    --unattended) COMPREPLY=($(compgen -W "notify refuse" -- "$cur")); return ;;
+    --resume|--session) _agh_sessions "$cur"; return ;;
+  esac
+  local cmd="\${w[1]}"
+  if [[ $n -eq 1 ]]; then
+    if [[ "$cur" == -* ]]; then COMPREPLY=($(compgen -W "--agent --all --append-system-prompt --append-system-prompt-file --archived --at --candidate-hash --connect --continue --cron --cwd --daily --data-dir --days --disallowed-tools --ephemeral --every --file --force --format --from --help --html --ignore-rules --include --json --key --last --limit --loop --max-budget --max-turns --min-count --mode --model --new --new-session --no-alt-screen --out --output-file --output-schema --params --park --payload --permission --preset --print --probe --profile --prompt --raw --repair --resolved --resume --review-hash --safe-mode --save --session --skip --standalone --steer --text --timeout --title --tools --turn --tz --unattended --upgrade --version --weekly --yes" -- "$cur"))
+    else COMPREPLY=($(compgen -W "acp agents api app app-server approvals batch completion computer-use config conformance consent credentials daemon dev diagnostics doctor export ext home import install mcp package packages plugin plugins profile queue resources resume run runtime schedules serve sessions settings skills start stats tools triggers web" -- "$cur")); fi
+    return
+  fi
+  if [[ "$cur" == -* ]]; then COMPREPLY=($(compgen -W "--agent --all --append-system-prompt --append-system-prompt-file --archived --at --candidate-hash --connect --continue --cron --cwd --daily --data-dir --days --disallowed-tools --ephemeral --every --file --force --format --from --help --html --ignore-rules --include --json --key --last --limit --loop --max-budget --max-turns --min-count --mode --model --new --new-session --no-alt-screen --out --output-file --output-schema --params --park --payload --permission --preset --print --probe --profile --prompt --raw --repair --resolved --resume --review-hash --safe-mode --save --session --skip --standalone --steer --text --timeout --title --tools --turn --tz --unattended --upgrade --version --weekly --yes" -- "$cur")); return; fi
+  if [[ $n -eq 2 ]]; then
+    case "$cmd" in
+      resume) _agh_sessions "$cur" ;;
+      app) COMPREPLY=($(compgen -W "clear show preview adopt" -- "$cur")) ;;
+      approvals) COMPREPLY=($(compgen -W "grants revoke suggest" -- "$cur")) ;;
+      completion) COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur")) ;;
+      computer-use) COMPREPLY=($(compgen -W "status install restart rescue operation cancel permissions" -- "$cur")) ;;
+      credentials) COMPREPLY=($(compgen -W "list rename delete" -- "$cur")) ;;
+      daemon) COMPREPLY=($(compgen -W "start stop status" -- "$cur")) ;;
+      doctor) COMPREPLY=($(compgen -W "platform network provider storage credentials profile extensions daemon binary code-runtime computer-use subagents" -- "$cur")) ;;
+      home) COMPREPLY=($(compgen -W "info" -- "$cur")) ;;
+      mcp) COMPREPLY=($(compgen -W "list get status tools add update trust enable disable test reconnect remove" -- "$cur")) ;;
+      package) COMPREPLY=($(compgen -W "inspect add trust enable disable rollback remove status list catalog operation cancel source-policy" -- "$cur")) ;;
+      plugins) COMPREPLY=($(compgen -W "add pack trust enable reload candidates provenance publication-status config tree generations" -- "$cur")) ;;
+      profile) COMPREPLY=($(compgen -W "list inspect trust" -- "$cur")) ;;
+      resources) COMPREPLY=($(compgen -W "list get operation cancel enable disable" -- "$cur")) ;;
+      schedules) COMPREPLY=($(compgen -W "list show pause resume run archive add edit" -- "$cur")) ;;
+      sessions) COMPREPLY=($(compgen -W "list show verify pin unpin archive unarchive rename search groups deliverables undo migrate" -- "$cur")) ;;
+      skills) COMPREPLY=($(compgen -W "list refresh trust" -- "$cur")) ;;
+      triggers) COMPREPLY=($(compgen -W "list add edit remove test configure" -- "$cur")) ;;
+    esac
+  elif [[ $n -eq 3 && "$cmd" == sessions ]]; then
+    case "$prev" in
+      show|verify|pin|unpin|archive|unarchive|rename|deliverables|undo|migrate) _agh_sessions "$cur" ;;
+    esac
+  fi
+}
+complete -o default -o bashdefault -F _agh agh
+"
+`;
+
+exports[`agh completion > prints the fish script 1`] = `
+"# fish completion for agh. Load it with: agh completion fish | source
+complete -c agh -f
+complete -c agh -n '__fish_use_subcommand' -a 'acp agents api app app-server approvals batch completion computer-use config conformance consent credentials daemon dev diagnostics doctor export ext home import install mcp package packages plugin plugins profile queue resources resume run runtime schedules serve sessions settings skills start stats tools triggers web'
+complete -c agh -n '__fish_seen_subcommand_from app' -a 'clear show preview adopt'
+complete -c agh -n '__fish_seen_subcommand_from approvals' -a 'grants revoke suggest'
+complete -c agh -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish'
+complete -c agh -n '__fish_seen_subcommand_from computer-use' -a 'status install restart rescue operation cancel permissions'
+complete -c agh -n '__fish_seen_subcommand_from credentials' -a 'list rename delete'
+complete -c agh -n '__fish_seen_subcommand_from daemon' -a 'start stop status'
+complete -c agh -n '__fish_seen_subcommand_from doctor' -a 'platform network provider storage credentials profile extensions daemon binary code-runtime computer-use subagents'
+complete -c agh -n '__fish_seen_subcommand_from home' -a 'info'
+complete -c agh -n '__fish_seen_subcommand_from mcp' -a 'list get status tools add update trust enable disable test reconnect remove'
+complete -c agh -n '__fish_seen_subcommand_from package' -a 'inspect add trust enable disable rollback remove status list catalog operation cancel source-policy'
+complete -c agh -n '__fish_seen_subcommand_from plugins' -a 'add pack trust enable reload candidates provenance publication-status config tree generations'
+complete -c agh -n '__fish_seen_subcommand_from profile' -a 'list inspect trust'
+complete -c agh -n '__fish_seen_subcommand_from resources' -a 'list get operation cancel enable disable'
+complete -c agh -n '__fish_seen_subcommand_from schedules' -a 'list show pause resume run archive add edit'
+complete -c agh -n '__fish_seen_subcommand_from sessions' -a 'list show verify pin unpin archive unarchive rename search groups deliverables undo migrate'
+complete -c agh -n '__fish_seen_subcommand_from skills' -a 'list refresh trust'
+complete -c agh -n '__fish_seen_subcommand_from triggers' -a 'list add edit remove test configure'
+complete -c agh -n '__fish_seen_subcommand_from resume' -a '(agh __complete sessions (commandline -ct) 2>/dev/null)'
+complete -c agh -n '__fish_seen_subcommand_from sessions; and __fish_seen_subcommand_from show verify pin unpin archive unarchive rename deliverables undo migrate' -a '(agh __complete sessions (commandline -ct) 2>/dev/null)'
+complete -c agh -l agent -r -F
+complete -c agh -l all
+complete -c agh -l append-system-prompt -r -F
+complete -c agh -l append-system-prompt-file -r -F
+complete -c agh -l archived
+complete -c agh -l at -r -F
+complete -c agh -l candidate-hash -r -F
+complete -c agh -l connect -r -F
+complete -c agh -l continue
+complete -c agh -l cron -r -F
+complete -c agh -l cwd -r -F
+complete -c agh -l daily -r -F
+complete -c agh -l data-dir -r -F
+complete -c agh -l days -r -F
+complete -c agh -l disallowed-tools -r -F
+complete -c agh -l ephemeral
+complete -c agh -l every -r -F
+complete -c agh -l file -r -F
+complete -c agh -l force
+complete -c agh -l format -x -a 'agnes sharegpt claude-code'
+complete -c agh -l from -x -a 'claude-code codex pi auto'
+complete -c agh -l help
+complete -c agh -l html
+complete -c agh -l ignore-rules
+complete -c agh -l include -r -F
+complete -c agh -l json
+complete -c agh -l key -r -F
+complete -c agh -l last
+complete -c agh -l limit -r -F
+complete -c agh -l loop -r -F
+complete -c agh -l max-budget -r -F
+complete -c agh -l max-turns -r -F
+complete -c agh -l min-count -r -F
+complete -c agh -l mode -x -a 'text json stream-json acp'
+complete -c agh -l model -r -F
+complete -c agh -l new
+complete -c agh -l new-session
+complete -c agh -l no-alt-screen
+complete -c agh -l out -r -F
+complete -c agh -l output-file -r -F
+complete -c agh -l output-schema -r -F
+complete -c agh -l params -r -F
+complete -c agh -l park
+complete -c agh -l payload -r -F
+complete -c agh -l permission -x -a 'read-only workspace-write full-access default'
+complete -c agh -l preset -r -F
+complete -c agh -l print
+complete -c agh -l probe
+complete -c agh -l profile -r -F
+complete -c agh -l prompt -r -F
+complete -c agh -l raw
+complete -c agh -l repair
+complete -c agh -l resolved
+complete -c agh -l resume -x -a '(agh __complete sessions (commandline -ct) 2>/dev/null)'
+complete -c agh -l review-hash -r -F
+complete -c agh -l safe-mode
+complete -c agh -l save -r -F
+complete -c agh -l session -x -a '(agh __complete sessions (commandline -ct) 2>/dev/null)'
+complete -c agh -l skip -r -F
+complete -c agh -l standalone
+complete -c agh -l steer
+complete -c agh -l text -r -F
+complete -c agh -l timeout -r -F
+complete -c agh -l title -r -F
+complete -c agh -l tools -r -F
+complete -c agh -l turn -r -F
+complete -c agh -l tz -r -F
+complete -c agh -l unattended -x -a 'notify refuse'
+complete -c agh -l upgrade
+complete -c agh -l version
+complete -c agh -l weekly -r -F
+complete -c agh -l yes
+"
+`;
+
+exports[`agh completion > prints the zsh script 1`] = `
+"#compdef agh
+# zsh completion for agh. Load it with: eval "$(agh completion zsh)"   (after compinit)
+_agh_sessions() {
+  local -a keys descs
+  local key desc
+  while IFS=$'\\t' read -r key desc; do keys+=("$key"); descs+=("$key  $desc"); done < <(agh __complete sessions "$1" 2>/dev/null)
+  (( \${#keys} )) && compadd -d descs -a keys
+}
+_agh() {
+  local cur="$words[CURRENT]" prev="$words[CURRENT-1]" cmd="$words[2]"
+  local n=$((CURRENT - 1))
+  case "$prev" in
+    --permission) compadd -- read-only workspace-write full-access default; return ;;
+    --mode) compadd -- text json stream-json acp; return ;;
+    --format) compadd -- agnes sharegpt claude-code; return ;;
+    --from) compadd -- claude-code codex pi auto; return ;;
+    --unattended) compadd -- notify refuse; return ;;
+    --resume|--session) _agh_sessions "$cur"; return ;;
+  esac
+  if (( n == 1 )); then
+    if [[ "$cur" == -* ]]; then compadd -- --agent --all --append-system-prompt --append-system-prompt-file --archived --at --candidate-hash --connect --continue --cron --cwd --daily --data-dir --days --disallowed-tools --ephemeral --every --file --force --format --from --help --html --ignore-rules --include --json --key --last --limit --loop --max-budget --max-turns --min-count --mode --model --new --new-session --no-alt-screen --out --output-file --output-schema --params --park --payload --permission --preset --print --probe --profile --prompt --raw --repair --resolved --resume --review-hash --safe-mode --save --session --skip --standalone --steer --text --timeout --title --tools --turn --tz --unattended --upgrade --version --weekly --yes
+    else compadd -- acp agents api app app-server approvals batch completion computer-use config conformance consent credentials daemon dev diagnostics doctor export ext home import install mcp package packages plugin plugins profile queue resources resume run runtime schedules serve sessions settings skills start stats tools triggers web; fi
+    return
+  fi
+  if [[ "$cur" == -* ]]; then compadd -- --agent --all --append-system-prompt --append-system-prompt-file --archived --at --candidate-hash --connect --continue --cron --cwd --daily --data-dir --days --disallowed-tools --ephemeral --every --file --force --format --from --help --html --ignore-rules --include --json --key --last --limit --loop --max-budget --max-turns --min-count --mode --model --new --new-session --no-alt-screen --out --output-file --output-schema --params --park --payload --permission --preset --print --probe --profile --prompt --raw --repair --resolved --resume --review-hash --safe-mode --save --session --skip --standalone --steer --text --timeout --title --tools --turn --tz --unattended --upgrade --version --weekly --yes; return; fi
+  if (( n == 2 )); then
+    case "$cmd" in
+      resume) _agh_sessions "$cur" ;;
+      app) compadd -- clear show preview adopt ;;
+      approvals) compadd -- grants revoke suggest ;;
+      completion) compadd -- bash zsh fish ;;
+      computer-use) compadd -- status install restart rescue operation cancel permissions ;;
+      credentials) compadd -- list rename delete ;;
+      daemon) compadd -- start stop status ;;
+      doctor) compadd -- platform network provider storage credentials profile extensions daemon binary code-runtime computer-use subagents ;;
+      home) compadd -- info ;;
+      mcp) compadd -- list get status tools add update trust enable disable test reconnect remove ;;
+      package) compadd -- inspect add trust enable disable rollback remove status list catalog operation cancel source-policy ;;
+      plugins) compadd -- add pack trust enable reload candidates provenance publication-status config tree generations ;;
+      profile) compadd -- list inspect trust ;;
+      resources) compadd -- list get operation cancel enable disable ;;
+      schedules) compadd -- list show pause resume run archive add edit ;;
+      sessions) compadd -- list show verify pin unpin archive unarchive rename search groups deliverables undo migrate ;;
+      skills) compadd -- list refresh trust ;;
+      triggers) compadd -- list add edit remove test configure ;;
+      *) _files ;;
+    esac
+  elif (( n == 3 )) && [[ "$cmd" == sessions ]]; then
+    case "$prev" in
+      show|verify|pin|unpin|archive|unarchive|rename|deliverables|undo|migrate) _agh_sessions "$cur" ;;
+    esac
+  else
+    _files
+  fi
+}
+if [[ "$funcstack[1]" == _agh ]]; then _agh "$@"; else compdef _agh agh; fi
+"
+`;

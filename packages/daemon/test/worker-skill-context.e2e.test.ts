@@ -9,41 +9,46 @@ import { createTestHost } from '@agnes/host/testkit'
 import type { InferenceEvent, RequestBody } from '@agnes/protocol'
 import { bootstrapWorkerResources, scanSkills } from '@agnes/resource-control-worker'
 import { afterEach, expect, it } from 'vitest'
-import { workspaceBinding } from './workspace-authority.js'
+import { workspaceBinding } from '../../daemon-foundation/test/workspace-authority.js'
 
 const baseDir = fileURLToPath(new URL('../../base', import.meta.url))
 const roots: string[] = []
 // Explicit preload now adds one durable tail note. It does not alter the disclosed tool schema:
 // discovery and read tools remain available for the loaded and generic turns alike.
-// Pagination changes both read-tool schemas; pin the merged, model-visible tool set.
-// The write description also includes the incremental-generation guidance shipped with the tools.
-// The read description names session-file attachments and what this runtime can read natively.
-// Background shell jobs add the job tool and reword the shell and write descriptions.
-// Batch processing adds batch_start, batch_status and batch_cancel.
-// The read tool takes max_edge for workspace images, reads stored attachments by range and saves originals into the workspace.
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '9d23cc36302b27af36671272f1100c4883669d194ed41c07ea3a5013fce50554'
+// Pin the eager model-visible schema, including interaction, delivery, UI guidance and
+// bounded questions. Plugin authoring is disclosed on demand. Jobs, workflows, PTYs, reminders, goals and child tools now load through
+// tool_describe, alongside past-session and MCP resource discovery.
+// Includes eager UI display schemas, explicit file/question/UI routing, and child completion notices.
+// Candidate source reads now advertise bounded pages with offset and expectedHash.
+// ui_render/ui_update retain their contracts with the reviewed slim model guidance.
+// plugin_test/install now describe automatic full-access admission and retained OS isolation.
+// UI parameters use the generated bounded tool guidance and reject a top-level locale.
+// Authoring guidance now distinguishes initial templates, hash tests and install/browser verification.
+// Includes candidate merge/remove edits and bounded shell waits with retained background children.
+// Tool schemas now carry standard #/$defs refs and no $id (8db85dc27).
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '5458f89d98091d6fe33c9a8db7ffc35ad3efb228b2d0df6f754c4aeaaeadbe9c'
 const expectedToolNames = [
-  'batch_cancel',
-  'batch_start',
-  'batch_status',
+  'ask_user_question',
   'compact',
   'edit',
+  'exit_plan_mode',
   'find',
   'grep',
-  'job',
   'ls',
+  'present',
   'read',
   'shell',
   'skill_read',
   'skill_read_file',
-  'subagent_cancel',
-  'subagent_collect',
-  'subagent_fork',
-  'subagent_spawn',
   'todo',
   'tool_describe',
   'tool_search',
+  'ui_close',
+  'ui_guide',
+  'ui_render',
+  'ui_update',
   'web_fetch',
+  'web_search',
   'write',
 ]
 
@@ -59,7 +64,8 @@ const barrier = {
     publish({}),
 }
 
-it.each([false, true])('preloads and discovers workspace Skills with shared worker = %s', async (shared) => {
+// Exercises six real turns and multiple Skill generations before closing the Host.
+it.each([false, true])('Skill preload/discovery (shared=%s)', { timeout: 60_000 }, async (shared) => {
   // Skill identity must use the same canonical workspace as the Host session (macOS /var alias).
   const root = await realpath(await mkdtemp(join(tmpdir(), 'agnes-worker-skill-context-')))
   roots.push(root)
@@ -128,7 +134,6 @@ it.each([false, true])('preloads and discovers workspace Skills with shared work
         expect(request.tools.find((tool) => tool.name === 'find')).toBeDefined()
         expect(request.tools.find((tool) => tool.name === 'grep')).toBeDefined()
         expect(request.tools.find((tool) => tool.name === 'ls')).toBeDefined()
-        expect(request.tools.map((tool) => tool.name).sort()).toEqual(expectedToolNames)
         return [
           { type: 'text_delta', delta: 'Read the synthetic Skill.' },
           { type: 'done', reason: 'stop' },
@@ -249,15 +254,15 @@ it.each([false, true])('preloads and discovers workspace Skills with shared work
       actor: session.d.actor,
       kind: 'prompt',
     })
-    await expect(
-      session.run({ until: 'turn-end', signal: new AbortController().signal }),
-    ).resolves.toMatchObject({ reason: 'completed' })
+    const firstRun = await session.run({ until: 'turn-end', signal: new AbortController().signal })
     expect(provider.calls).toHaveLength(1)
     const headers = (await session.scan({ fromSeq: 1, toSeq: session.lastSeq })).filter(
       (row) => row.type === 'request/header',
     )
     const firstRequest = provider.calls[0]
     if (!firstRequest) throw new Error('missing first Skill request')
+    expect(firstRequest.tools.map((tool) => tool.name).sort()).toEqual(expectedToolNames)
+    expect(firstRun).toMatchObject({ reason: 'completed' })
     const firstToolSchemaHash = sha256hex(canonicalJson(firstRequest.tools).normalize('NFC'))
     expect(headers.map((row) => (row.data as { tool_schema_hash?: string }).tool_schema_hash)).toEqual([
       firstToolSchemaHash,
@@ -482,4 +487,4 @@ it('discovers 45 disk Skills and lets the model page a 100 KiB Skill after prelo
     await host.close()
     await resources.runtime.mcp.close()
   }
-})
+}, 60_000)

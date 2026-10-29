@@ -45,7 +45,10 @@ export function renderToolsMetaDoc(input: {
     if (!description) throw new Error(`missing tool metadata description: ${key}`)
     return `| \`${key}\` | ${cell(description)} |`
   })
-  return `${header('tooldef.json')}# Tool metadata\n\nAll eight keys must be explicitly present. Authors may explicitly set costHint, deferLoading and requiresApproval to undefined; wire metadata normalizes these to null. A missing key is E_TOOLDEF_META. returnsImages is the one optional key; absent means false.\n\n| Key | Meaning |\n|---|---|\n${rows.join('\n')}\n`
+  const optional = input.keys.includes('isPresentational')
+    ? '\n`isPresentational` is optional. Omitting it means the tool is not presentational.\n'
+    : ''
+  return `${header('tooldef.json')}# Tool metadata\n\nThe five safety keys (isReadOnly, isDestructive, isConcurrencySafe, isOpenWorld, replay) must be present. Optional costHint, deferLoading and requiresApproval default to no estimate, initial discovery and approval inferred from isDestructive. Import readOnlyTool / writeTool presets from @agnes/plugin-runtime and override fields for your contract.\n${optional}\n| Key | Meaning |\n|---|---|\n${rows.join('\n')}\n`
 }
 type Schema = {
   description?: string
@@ -53,8 +56,9 @@ type Schema = {
   required?: string[]
   properties?: Record<string, Schema>
   enum?: unknown[]
+  const?: unknown
   oneOf?: unknown[]
-  anyOf?: unknown[]
+  anyOf?: Schema[]
   $ref?: string
 }
 type Document = {
@@ -88,7 +92,9 @@ export function schemaSummary(doc: Document, file: string, name: string): string
 export function generateAll(): Record<string, string> {
   const hooks = read('hooks.json'),
     slots = read('slots.json'),
-    tools = read('tooldef.json')
+    tools = read('tooldef.json'),
+    services = read('extension-service.json')
+  const serviceBranches = services.$defs.ServiceCapability?.anyOf ?? []
   const descriptions = Object.fromEntries(
     HOOK_EVENTS.map((name) => {
       const io = hooks['x-agnes-hook-io']?.[name]
@@ -109,30 +115,41 @@ export function generateAll(): Record<string, string> {
       return [name, schemaSummary(slots, 'slots.json', mapping.payload)]
     }),
   ) as Record<SlotName, string>
+  const documentedMetaKeys = [
+    ...TOOL_META_KEYS,
+    'costHint',
+    'deferLoading',
+    'discoveryGroup',
+    'requiresApproval',
+    'isPresentational',
+    'attestsHistory',
+    'invalidArgumentLimit',
+    'modelVisible',
+    'requiresImageInput',
+    'requiresUser',
+    'paths',
+    'commandArg',
+  ]
   const descriptionsMeta = Object.fromEntries(
-    [...TOOL_META_KEYS, 'returnsImages'].map((key) => [
-      key,
-      tools.$defs.ToolMeta?.properties?.[key]?.description ?? '',
-    ]),
+    documentedMetaKeys.map((key) => [key, tools.$defs.ToolMeta?.properties?.[key]?.description ?? '']),
   )
   return {
     'services.md': `${header('extension-service.json')}# Extension Services
 
-${schemaSummary(read('extension-service.json'), 'extension-service.json', 'ServiceCapability')}
+${schemaSummary(services, 'extension-service.json', 'ServiceCapability')}
 
-Register a declared name with registerService and a Promise-returning handler. Schemas are plain JSON data objects; Host compiles them. checkServiceDef validates metadata only and never executes the handler. Actor, source and requestId come from Host. Effect identity, grants, lease, timeout and result limits require Host/daemon wiring. Service has no session/model/UI access.
+${serviceBranches.map((branch) => `- Scope: ${branch.properties?.scope?.const ?? 'session'}; kind: ${branch.properties?.kind?.const ?? branch.properties?.kind?.enum?.join(', ')}; required: ${branch.required?.join(', ')}`).join('\n')}
+
+Register a declared name with registerService and a Promise-returning handler. Schemas are plain JSON data objects; Host compiles them. checkServiceDef validates metadata only and never executes the handler. Actor, source and requestId come from Host. Host enforces source grants, policy, current activation, timeouts and result limits. Services default to session scope. Explicit profile services have no session or workspace ports; effects reuse durable native decisions and operation receipts. prepare is read-only and excluded from the static capability snapshot. See [profile services](../../../docs/develop/profile-services.md).
 `,
     'projections.md': `${header('projection.json')}# Extension Projections
 
 ${schemaSummary(read('projection.json'), 'projection.json', 'ProjectionCapability')}
 
-registerProjection accepts name, positive stateVersion, plain JSON stateSchema and synchronous init/apply/view functions. Handlers receive no context and must not perform I/O. Host filters exact declared event types, validates state/view and owns quarantine and cleanup. Host injects ProjectionReader.readOwn(name) into Tool, Hook and Slot callbacks for the current extension and session. It rechecks lease after scanning and before folding. Saved readers are unavailable outside their owner invocation. Core callbacks without extension authority use unavailableProjections. Reload and package removal acceptance remain separate lifecycle tasks.
+registerProjection accepts name, positive stateVersion, plain JSON stateSchema and synchronous init/apply/view functions. Handlers receive no context and must not perform I/O. Host filters exact declared event types, feeds an x/<owner>/... event only when Core or that owner wrote it, validates state/view and owns quarantine and cleanup. Host injects ProjectionReader.readOwn(name) into Tool, Hook and Slot callbacks for the current extension and session. It rechecks lease after scanning and before folding. Saved readers are unavailable outside their owner invocation. Core callbacks without extension authority use unavailableProjections. Reload and package removal acceptance remain separate lifecycle tasks.
 `,
     'hooks.md': renderHooksDoc({ table: HOOK_TABLE, descriptions }),
     'slots.md': renderSlotsDoc({ table: SLOT_TABLE, payloadDescriptions }),
-    'tools-meta.md': renderToolsMetaDoc({
-      keys: [...TOOL_META_KEYS, 'returnsImages'],
-      descriptions: descriptionsMeta,
-    }),
+    'tools-meta.md': renderToolsMetaDoc({ keys: documentedMetaKeys, descriptions: descriptionsMeta }),
   }
 }

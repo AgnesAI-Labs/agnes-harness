@@ -1,9 +1,11 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import { CoreError } from '@agnes/core-common/types'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { Kernel } from '../src/kernel.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import { presetDefaults } from '../src/step/preset.js'
 import type { QuietGate } from '../src/step/session.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, openSession, testFsOps } from './helpers/open-session.js'
@@ -49,6 +51,7 @@ describe('Core quiet gate', () => {
       },
     }
     const kernel = Kernel.create({
+      loops: defaultLoops(),
       storage: new MemoryStorage(),
       seams: fakeSeams(),
       provider: Object.assign(fakeProvider([textTurn('child says hi')]), { models: () => [catalogue()] }),
@@ -76,9 +79,9 @@ describe('Core quiet gate', () => {
     session.step = async () => {
       if (parentEdges++ === 0) {
         await child.run('what?')
-        return { phase: 'checkpoint' }
+        return { outcome: 'running', phase: 'checkpoint' }
       }
-      return { phase: 'terminal', reason: 'completed' }
+      return { outcome: 'turn-ended', phase: 'terminal', reason: 'completed' }
     }
 
     await expect(session.run({ until: 'turn-end', signal: signal() })).resolves.toMatchObject({
@@ -94,36 +97,56 @@ describe('Core quiet gate', () => {
     await kernel.close()
   })
 
-  it('balances enter and leave on a thrown step and still reaches the turn yield', async () => {
-    const calls: string[] = []
-    let stepping = 0
-    const { session } = await openSession({
-      provider: fakeProvider([textTurn('unused')]),
-      quiet: {
-        enter: () => {
-          stepping++
-          calls.push('enter')
+  it.each([false, true])(
+    'balances a thrown step and surfaces integrity errors (integrity=%s)',
+    async (integrity) => {
+      const calls: string[] = []
+      let stepping = 0
+      const { session } = await openSession({
+        provider: fakeProvider([textTurn('unused')]),
+        quiet: {
+          enter: () => {
+            stepping++
+            calls.push('enter')
+          },
+          leave: () => {
+            stepping--
+            calls.push('leave')
+          },
+          yieldPoint: async (kind) => {
+            calls.push(`yield:${kind}`)
+          },
         },
-        leave: () => {
-          stepping--
-          calls.push('leave')
-        },
-        yieldPoint: async (kind) => {
-          calls.push(`yield:${kind}`)
-        },
-      },
-    })
-    session.step = async () => {
-      throw new Error('broken phase')
-    }
+      })
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
+      await session.step()
+      calls.length = 0
+      const failure = integrity
+        ? new CoreError(
+            'E_LEDGER_INTEGRITY',
+            'deferred chain: session=s lane=main invocation=test seq=9 previous-seq-mismatch',
+          )
+        : new Error('broken phase')
+      session.step = async () => {
+        throw failure
+      }
 
-    await expect(session.run({ until: 'turn-end', signal: signal() })).resolves.toMatchObject({
-      reason: 'error',
-      error: { code: 'E_STEP_FAILED', message: 'broken phase' },
-    })
-    expect(calls).toEqual(['enter', 'leave', 'yield:turn'])
-    expect(stepping).toBe(0)
-  })
+      await expect(session.run({ until: 'turn-end', signal: signal() })).resolves.toMatchObject({
+        reason: 'error',
+        error: { code: integrity ? 'E_LEDGER_INTEGRITY' : 'E_STEP_FAILED', message: failure.message },
+      })
+      const ends = await session.scan({ type: 'turn/end', limit: 10 })
+      expect(ends.at(-1)?.data).toMatchObject({
+        error: {
+          code: integrity ? 'E_LEDGER_INTEGRITY' : 'E_STEP_FAILED',
+          message: failure.message,
+        },
+      })
+      await session.close()
+      expect(calls).toEqual(['enter', 'leave', 'yield:turn'])
+      expect(stepping).toBe(0)
+    },
+  )
 
   it('surfaces a yield failure and still runs the turn-finally yield', async () => {
     const failed = new Error('reconciler unavailable')
@@ -146,7 +169,7 @@ describe('Core quiet gate', () => {
         },
       },
     })
-    session.step = async () => ({ phase: 'checkpoint' })
+    session.step = async () => ({ outcome: 'running', phase: 'checkpoint' })
 
     await expect(session.run({ until: 'turn-end', signal: signal() })).rejects.toBe(failed)
     expect(calls).toEqual(['enter', 'leave', 'yield:step', 'yield:turn'])
@@ -174,7 +197,7 @@ describe('Core quiet gate', () => {
     let stepped = false
     session.step = async () => {
       stepped = true
-      return { phase: 'terminal', reason: 'completed' }
+      return { outcome: 'turn-ended', phase: 'terminal', reason: 'completed' }
     }
     const running = session.run({ until: 'turn-end', signal: signal() })
     await Promise.resolve()
@@ -187,12 +210,12 @@ describe('Core quiet gate', () => {
   it.each([
     {
       name: 'deferred poll',
-      outcome: { phase: 'deferred' as const },
+      outcome: { outcome: 'running' as const, phase: 'deferred' as const },
       operation: { phase: { kind: 'deferred' as const } },
     },
     {
       name: 'inference retry',
-      outcome: { phase: 'inference' as const },
+      outcome: { outcome: 'running' as const, phase: 'inference' as const },
       operation: {
         phase: {
           kind: 'inference' as const,
@@ -226,7 +249,7 @@ describe('Core quiet gate', () => {
     })
     session.step = async () => {
       edges++
-      return edges === 1 ? outcome : { phase: 'terminal', reason: 'completed' }
+      return edges === 1 ? outcome : { outcome: 'turn-ended', phase: 'terminal', reason: 'completed' }
     }
     session.op = () => (edges === 1 ? (operation as never) : null)
 

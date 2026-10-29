@@ -1,5 +1,6 @@
 // Root export surface of the product shell. Grows one block per task; test/boundary.test.ts pins it
 // in both directions, so adding a name here without adding it there fails.
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { loadAllPresets } from './presets/load.js'
 
 export const PACKAGE_ID = '@agnes/code' as const
@@ -54,7 +55,7 @@ import { createPromptOperation } from './extensions/code-mode/prompts.js'
 export const operations = { prompts: createPromptOperation }
 
 /** Trusted factory table used by Host for both package-directory and SEA-embedded discovery. */
-export const ecosystem = { 'agnes/code-mode': () => codeModeExtension } as const
+export const ecosystem = { 'agnes/code-mode': () => extensionFactoryOf(codeModeExtension) } as const
 
 export {
   BRIDGE_METHODS,
@@ -92,3 +93,12 @@ export {
   type SkipReason,
 } from './extensions/code-mode/sdk/render-python.js'
 export { type DoctorCheck, type DoctorSection, runtimeDoctor } from './runtime/doctor.js'
+
+import { processRuntime } from './runtime/process.js'
+
+/** Host capability table; execution requires an invocation-bound provider executor. */
+export const runtimes = {
+  typescript: async () => processRuntime(undefined, 'typescript'),
+  python: async () => processRuntime(undefined, 'python'),
+}
+export { defaultSystemPrompt, systemPromptPlugin } from './prompts/system-prompt.js'

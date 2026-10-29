@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agnes.ai/schema/lockfile.json",
-  "title": "agnes-lock.json (\u89c4\u683c \u00a718.2.1)",
+  "title": "agnes-lock.json (规格 §18.2.1)",
   "$ref": "#/$defs/Lockfile",
   "$defs": {
     "PackageLock": {
@@ -129,7 +129,7 @@
                       "required": ["type", "ref"],
                       "properties": {
                         "type": {
-                          "enum": ["npm", "market", "git", "file", "workspace"]
+                          "enum": ["npm", "market", "git", "file", "workspace", "local", "path", "url"]
                         },
                         "ref": {
                           "type": "string",
@@ -207,6 +207,33 @@
                     },
                     "trustDecision": {
                       "$ref": "package-admin.json#/$defs/PackageTrustDecision"
+                    },
+                    "declaredCapabilities": {
+                      "$ref": "package-admin.json#/$defs/PluginCapabilities"
+                    },
+                    "provenance": {
+                      "$ref": "package-admin.json#/$defs/PackageProvenance"
+                    },
+                    "metadata": {
+                      "$ref": "extension-manifest.json#/$defs/PluginMetadata"
+                    },
+                    "declaredProvides": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "extension-manifest.json#/$defs/PluginProvide"
+                      },
+                      "uniqueItems": true,
+                      "maxItems": 8
+                    },
+                    "agents": {
+                      "type": "array",
+                      "maxItems": 64,
+                      "items": {
+                        "$ref": "extension-manifest.json#/$defs/DeclaredAgent"
+                      }
+                    },
+                    "application": {
+                      "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
                     }
                   }
                 }
@@ -235,6 +262,33 @@
             },
             "trustDecision": {
               "$ref": "package-admin.json#/$defs/PackageTrustDecision"
+            },
+            "declaredCapabilities": {
+              "$ref": "package-admin.json#/$defs/PluginCapabilities"
+            },
+            "provenance": {
+              "$ref": "package-admin.json#/$defs/PackageProvenance"
+            },
+            "metadata": {
+              "$ref": "extension-manifest.json#/$defs/PluginMetadata"
+            },
+            "declaredProvides": {
+              "type": "array",
+              "items": {
+                "$ref": "extension-manifest.json#/$defs/PluginProvide"
+              },
+              "uniqueItems": true,
+              "maxItems": 8
+            },
+            "agents": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "$ref": "extension-manifest.json#/$defs/DeclaredAgent"
+              }
+            },
+            "application": {
+              "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
             }
           }
         },
@@ -262,7 +316,7 @@
               "required": ["type", "ref"],
               "properties": {
                 "type": {
-                  "enum": ["git", "workspace", "file"]
+                  "enum": ["git", "workspace", "file", "local", "path", "url"]
                 },
                 "ref": {
                   "type": "string",
@@ -360,7 +414,7 @@
                       "required": ["type", "ref"],
                       "properties": {
                         "type": {
-                          "enum": ["npm", "market", "git", "file", "workspace"]
+                          "enum": ["npm", "market", "git", "file", "workspace", "local", "path", "url"]
                         },
                         "ref": {
                           "type": "string",
@@ -438,6 +492,33 @@
                     },
                     "trustDecision": {
                       "$ref": "package-admin.json#/$defs/PackageTrustDecision"
+                    },
+                    "declaredCapabilities": {
+                      "$ref": "package-admin.json#/$defs/PluginCapabilities"
+                    },
+                    "provenance": {
+                      "$ref": "package-admin.json#/$defs/PackageProvenance"
+                    },
+                    "metadata": {
+                      "$ref": "extension-manifest.json#/$defs/PluginMetadata"
+                    },
+                    "declaredProvides": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "extension-manifest.json#/$defs/PluginProvide"
+                      },
+                      "uniqueItems": true,
+                      "maxItems": 8
+                    },
+                    "agents": {
+                      "type": "array",
+                      "maxItems": 64,
+                      "items": {
+                        "$ref": "extension-manifest.json#/$defs/DeclaredAgent"
+                      }
+                    },
+                    "application": {
+                      "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
                     }
                   }
                 }
@@ -466,6 +547,33 @@
             },
             "trustDecision": {
               "$ref": "package-admin.json#/$defs/PackageTrustDecision"
+            },
+            "declaredCapabilities": {
+              "$ref": "package-admin.json#/$defs/PluginCapabilities"
+            },
+            "provenance": {
+              "$ref": "package-admin.json#/$defs/PackageProvenance"
+            },
+            "metadata": {
+              "$ref": "extension-manifest.json#/$defs/PluginMetadata"
+            },
+            "declaredProvides": {
+              "type": "array",
+              "items": {
+                "$ref": "extension-manifest.json#/$defs/PluginProvide"
+              },
+              "uniqueItems": true,
+              "maxItems": 8
+            },
+            "agents": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "$ref": "extension-manifest.json#/$defs/DeclaredAgent"
+              }
+            },
+            "application": {
+              "$ref": "extension-manifest.json#/$defs/ApplicationTemplate"
             }
           }
         }
@@ -577,48 +685,28 @@
         "seams": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "approval",
-            "checkpoint",
-            "ledger",
-            "sandbox",
-            "verifier",
-            "repair",
-            "artifacts",
-            "principals",
-            "platform",
-            "harness"
-          ],
+          "required": ["approval", "checkpoint", "billing", "verifier", "repair", "artifacts", "principals"],
           "properties": {
             "approval": {
-              "type": "string"
+              "$ref": "#/$defs/SeamSelection"
             },
             "checkpoint": {
-              "type": "string"
+              "$ref": "#/$defs/SeamSelection"
             },
-            "ledger": {
-              "type": "string"
-            },
-            "sandbox": {
-              "type": "string"
+            "billing": {
+              "$ref": "#/$defs/SeamSelection"
             },
             "verifier": {
-              "type": "string"
+              "$ref": "#/$defs/SeamSelection"
             },
             "repair": {
-              "type": "string"
+              "$ref": "#/$defs/SeamSelection"
             },
             "artifacts": {
-              "type": "string"
+              "$ref": "#/$defs/SeamSelection"
             },
             "principals": {
-              "type": "string"
-            },
-            "platform": {
-              "type": "string"
-            },
-            "harness": {
-              "type": "string"
+              "$ref": "#/$defs/SeamSelection"
             }
           }
         }
@@ -632,6 +720,9 @@
     },
     "UiSlotName": {
       "$ref": "slots.json#/$defs/UiSlotName"
+    },
+    "SeamSelection": {
+      "$ref": "profile.json#/$defs/SeamSelection"
     },
     "SeamName": {
       "$ref": "profile.json#/$defs/SeamName"

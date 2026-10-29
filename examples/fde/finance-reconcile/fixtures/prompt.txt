@@ -1,0 +1,1 @@
+Reconcile the fixture bank and book ledgers, explain mismatches and ask before approving simulated adjusting entries.

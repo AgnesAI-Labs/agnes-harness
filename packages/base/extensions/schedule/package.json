@@ -1,0 +1,575 @@
+{
+  "name": "@agnes/schedule",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/schedule",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "tools",
+          "slots",
+          "providers"
+        ],
+        "capabilities": {
+          "tools": {
+            "prefix": "",
+            "names": [
+              "schedule_create",
+              "schedule_list",
+              "schedule_update",
+              "schedule_delete"
+            ]
+          },
+          "slots": [
+            "notification"
+          ],
+          "tools.invoke": true,
+          "services": [
+            {
+              "name": "scheduling.list",
+              "kind": "query",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "includeArchived": {
+                    "type": "boolean"
+                  },
+                  "recentDeliverySince": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {
+                "type": "object",
+                "properties": {
+                  "schedules": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  },
+                  "recentDelivery": {
+                    "type": "object",
+                    "properties": {
+                      "title": {
+                        "type": "string"
+                      },
+                      "prompt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "title",
+                      "prompt"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "schedules"
+                ],
+                "additionalProperties": false
+              },
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "scheduling.get",
+              "kind": "query",
+              "inputSchema": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "pattern": "^sched_[0-9a-f]{16}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              },
+              "outputSchema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "scheduling.upsert",
+              "kind": "effect",
+              "inputSchema": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "pattern": "^sched_[0-9a-f]{16}$",
+                    "type": "string"
+                  },
+                  "agent": {
+                    "$id": "AgentRef",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 384,
+                    "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)#[a-z][a-z0-9-]{0,63}$"
+                  },
+                  "title": {
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "type": "string"
+                  },
+                  "prompt": {
+                    "minLength": 1,
+                    "maxLength": 16000,
+                    "type": "string"
+                  },
+                  "selector": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "after_seconds": {
+                            "minimum": 1,
+                            "maximum": 31622400,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "after_seconds"
+                        ]
+                      },
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "at": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "at"
+                        ]
+                      },
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "every_seconds": {
+                            "minimum": 60,
+                            "maximum": 31622400,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "every_seconds"
+                        ]
+                      },
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "daily": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "properties": {
+                              "time": {
+                                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                                "type": "string"
+                              },
+                              "timeZone": {
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "time",
+                              "timeZone"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "daily"
+                        ]
+                      },
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "weekly": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "properties": {
+                              "time": {
+                                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                                "type": "string"
+                              },
+                              "timeZone": {
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "type": "string"
+                              },
+                              "weekdays": {
+                                "minItems": 1,
+                                "maxItems": 7,
+                                "type": "array",
+                                "items": {
+                                  "minimum": 0,
+                                  "maximum": 7,
+                                  "type": "integer"
+                                }
+                              }
+                            },
+                            "required": [
+                              "time",
+                              "timeZone",
+                              "weekdays"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "weekly"
+                        ]
+                      },
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "cron": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "properties": {
+                              "expr": {
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "type": "string"
+                              },
+                              "timeZone": {
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "expr"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "cron"
+                        ]
+                      }
+                    ]
+                  },
+                  "target": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "const": "session",
+                            "type": "string"
+                          },
+                          "sessionKey": {
+                            "minLength": 1,
+                            "maxLength": 256,
+                            "type": "string"
+                          },
+                          "unattendedApproval": {
+                            "anyOf": [
+                              {
+                                "const": "notify",
+                                "type": "string"
+                              },
+                              {
+                                "const": "refuse",
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "sessionKey"
+                        ]
+                      },
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "const": "new-session",
+                            "type": "string"
+                          },
+                          "unattendedApproval": {
+                            "anyOf": [
+                              {
+                                "const": "notify",
+                                "type": "string"
+                              },
+                              {
+                                "const": "refuse",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "cwd": {
+                            "minLength": 1,
+                            "maxLength": 4096,
+                            "type": "string"
+                          },
+                          "loop": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                                "type": "string"
+                              },
+                              "version": {
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "version"
+                            ]
+                          },
+                          "bundles": {
+                            "maxItems": 64,
+                            "type": "array",
+                            "items": {
+                              "minLength": 1,
+                              "maxLength": 512,
+                              "type": "string"
+                            }
+                          },
+                          "preset": {
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "type": "string"
+                          },
+                          "model": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "properties": {
+                              "route": {
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "type": "string"
+                              },
+                              "model": {
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "route",
+                              "model"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "cwd"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "title",
+                  "prompt",
+                  "selector"
+                ]
+              },
+              "outputSchema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "updated": {
+                        "const": false
+                      },
+                      "code": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "updated",
+                      "code"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "scheduling.control",
+              "kind": "effect",
+              "inputSchema": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "pattern": "^sched_[0-9a-f]{16}$",
+                    "type": "string"
+                  },
+                  "action": {
+                    "anyOf": [
+                      {
+                        "const": "run",
+                        "type": "string"
+                      },
+                      {
+                        "const": "pause",
+                        "type": "string"
+                      },
+                      {
+                        "const": "resume",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "action"
+                ]
+              },
+              "outputSchema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "updated": {
+                        "const": false
+                      },
+                      "code": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "updated",
+                      "code"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "scheduling.archive",
+              "kind": "effect",
+              "inputSchema": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "pattern": "^sched_[0-9a-f]{16}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              },
+              "outputSchema": {
+                "type": "object",
+                "properties": {
+                  "deleted": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "deleted"
+                ],
+                "additionalProperties": false
+              },
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "scheduling.runs",
+              "kind": "query",
+              "inputSchema": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "pattern": "^sched_[0-9a-f]{16}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              },
+              "outputSchema": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              },
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            }
+          ]
+        },
+        "metadata": {
+          "displayName": "Scheduled tasks",
+          "summary": "Lets the agent create and manage tasks that run at scheduled times.",
+          "description": "Lets the agent create and manage tasks that run at scheduled times.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "定时任务",
+              "summary": "让 Agent 创建和管理按指定时间运行的任务。",
+              "description": "让 Agent 创建和管理按指定时间运行的任务。"
+            }
+          }
+        }
+      }
+    ],
+    "provides": [
+      "tool"
+    ]
+  }
+}

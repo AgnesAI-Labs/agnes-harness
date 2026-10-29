@@ -35,3 +35,31 @@ learn/
 outputs/
 spikes/
 docs/task-records/
+
+# Playwright MCP writes page snapshots, console logs and screenshots here while it runs.
+.playwright-mcp/
+
+# Generated from packages/loop-jev by `pnpm --filter @agnes/package-manager build:jev-payload`.
+packages/package-manager/bundled-plugins/jev-loop/index.mjs
+packages/package-manager/bundled-plugins/jev-loop/index.mjs.*.tmp
+
+# Deterministic presentation build records
+packages/package-manager/bundled-plugins/*/client-build.json
+
+# Presentation clients and their dependency notices are build outputs, not source.
+packages/package-manager/bundled-plugins/conversation-ui/src/client.js
+packages/package-manager/bundled-plugins/conversation-ui/NOTICE
+packages/package-manager/bundled-plugins/navigation-ui/src/client.js
+packages/package-manager/bundled-plugins/navigation-ui/NOTICE
+packages/package-manager/bundled-plugins/interaction-ui/src/client.js
+packages/package-manager/bundled-plugins/interaction-ui/NOTICE
+packages/package-manager/bundled-plugins/goal-ui/src/client.js
+packages/package-manager/bundled-plugins/goal-ui/NOTICE
+packages/package-manager/bundled-plugins/deliverables-ui/src/client.js
+packages/package-manager/bundled-plugins/deliverables-ui/NOTICE
+
+packages/package-manager/bundled-plugins/browser/src/client.js
+packages/package-manager/bundled-plugins/browser/NOTICE
+
+# DevBoard live projects written into the session workspace during manual demos
+/devboard-projects/

@@ -25,6 +25,47 @@ describe('Renderer differential output', () => {
     expect(screen.lines.slice(0, 3)).toEqual(['ZZZ', 'ccc', 'ZZZ'])
   })
 
+  // A row that animates beside static text (the welcome's wordmark and identity) is rewritten every
+  // frame. Erasing it first, or presenting the frame piecemeal, shows the static text flashing.
+  it('rewrites a changed row in place and presents the frame atomically', async () => {
+    const term = new FakeTerminal({ columns: 10, rows: 5 })
+    const row = new Text('aaa')
+    const r = new Renderer(term, new VStack([row]))
+    r.start()
+    const first = term.writes.length
+    row.set('ccc')
+    r.renderNow()
+    const frame = term.writes.slice(first).join('')
+    expect(frame).not.toContain('\x1b[2K')
+    expect(frame.indexOf('ccc')).toBeGreaterThan(-1)
+    expect(frame.indexOf('ccc')).toBeLessThan(frame.indexOf('\x1b[K'))
+    expect(frame.startsWith('\x1b[?2026h')).toBe(true)
+    expect(frame.endsWith('\x1b[?2026l')).toBe(true)
+    // A shorter row leaves nothing of the old one behind.
+    row.set('c')
+    r.renderNow()
+    const screen = await emulate(term, 10, 5)
+    expect(screen.lines[0]).toBe('c')
+  })
+
+  it('does not erase after a row that fills the terminal width, and clears the tail of a shorter one', async () => {
+    const term = new FakeTerminal({ columns: 6, rows: 3 })
+    const row = new Text('abcdef', { wrap: false })
+    const r = new Renderer(term, new VStack([row]))
+    r.start()
+    const first = term.writes.length
+    row.set('uvwxyz')
+    r.renderNow()
+    const full = term.writes.slice(first).join('')
+    expect(full).toContain('uvwxyz')
+    expect(full).not.toContain('\x1b[K')
+    expect((await emulate(term, 6, 3)).lines[0]).toBe('uvwxyz')
+    row.set('ab')
+    r.renderNow()
+    expect(term.writes.slice(first).join('')).toContain('ab\x1b[K')
+    expect((await emulate(term, 6, 3)).lines[0]).toBe('ab')
+  })
+
   it('positions the hardware cursor at CURSOR_MARKER', async () => {
     const term = new FakeTerminal({ columns: 10, rows: 3 })
     const r = new Renderer(term, new VStack([new Text('x'), new Text(`ab${CURSOR_MARKER}`, { wrap: false })]))
@@ -220,6 +261,20 @@ describe('Renderer bookkeeping', () => {
     expect(term.writes.length).toBe(before)
   })
 
+  it('redraw clears the screen and paints every row again, though nothing changed', async () => {
+    const term = new FakeTerminal({ columns: 10, rows: 4 })
+    const r = new Renderer(term, new VStack([new Text('one'), new Text('two')]))
+    r.start()
+    const before = term.writes.length
+    r.redraw()
+    const out = term.writes.slice(before).join('')
+    expect(out.startsWith('\x1b[H\x1b[2J')).toBe(true)
+    expect(out).toContain('\x1b[1;1Hone')
+    expect(out).toContain('\x1b[2;1Htwo')
+    expect(r.lastFrame).toEqual(['one', 'two'])
+    expect((await emulate(term, 10, 4)).lines.slice(0, 2)).toEqual(['one', 'two'])
+  })
+
   it('coalesces many requestRender calls into one repaint', async () => {
     const term = new FakeTerminal({ columns: 10, rows: 4 })
     const t = new Text('a')
@@ -274,6 +329,54 @@ describe('Renderer bookkeeping', () => {
     term.feed('k')
     term.resize(4, 4)
     expect(term.writes.length).toBe(after)
+  })
+
+  it('turns bracketed paste on and off, and hands a paste split across chunks over whole', () => {
+    const term = new FakeTerminal({ columns: 10, rows: 4 })
+    const seen: string[] = []
+    const r = new Renderer(term, {
+      render: () => ['a'],
+      handleInput: (d) => seen.push(d) > 0,
+      invalidate() {},
+    })
+    r.start()
+    expect(term.writes.join('')).toContain('\x1b[?2004h')
+    for (const chunk of ['k\x1b[200~one\r', 'two\x1b[20', '1~z']) term.feed(chunk)
+    expect(seen).toEqual(['k', '\x1b[200~one\rtwo\x1b[201~', 'z'])
+    r.stop()
+    expect(term.writes.at(-1)).toContain('\x1b[?2004l')
+  })
+
+  it('on a terminal that reports input timing, a burst without brackets reaches the root wrapped', () => {
+    const term = new FakeTerminal({ columns: 10, rows: 4 })
+    term.pasteBursts = true
+    const seen: string[] = []
+    const r = new Renderer(term, {
+      render: () => ['a'],
+      handleInput: (d) => seen.push(d) > 0,
+      invalidate() {},
+    })
+    r.start()
+    term.feed('first line of text\r')
+    expect(seen).toEqual(['\x1b[200~first line of text\r\x1b[201~'])
+    r.stop()
+  })
+
+  // The signal ladder and a crash leave through process.exit, which runs no finally: without an exit
+  // hook the shell is left in paste, focus and mouse mode and prints ^[[I, ^[[O and 200~ markers.
+  it('gives the terminal back when the process exits without stopping it', () => {
+    const term = new FakeTerminal({ columns: 10, rows: 4 })
+    const before = process.listeners('exit')
+    const r = new Renderer(term, { render: () => ['a'], handleInput: () => false, invalidate() {} })
+    r.start()
+    const hook = process.listeners('exit').find((listener) => !before.includes(listener))
+    expect(hook).toBeDefined()
+    hook?.call(process, 1)
+    expect(term.writes.at(-1)).toContain('\x1b[?1004l\x1b[?2004l')
+    expect(process.listeners('exit')).toEqual(before)
+    r.start()
+    r.stop()
+    expect(process.listeners('exit')).toEqual(before)
   })
 
   it('does not push a full-height fixed chrome frame into scrollback on stop', async () => {

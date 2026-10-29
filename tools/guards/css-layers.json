@@ -1,0 +1,146 @@
+{
+  "order": ["tokens", "base", "vendor", "ui", "app", "skin"],
+  "source": "packages/web-ui/src/layers.css",
+  "wrappedInputs": {
+    "examples/packages/client-panel/v1/extensions/main/client/index.css": {
+      "count": 1,
+      "layer": "app",
+      "reason": "Client reconciliation loads CSS through the App Server layer(app) import."
+    },
+    "examples/packages/client-panel/v2/extensions/main/client/index.css": {
+      "count": 1,
+      "layer": "app",
+      "reason": "Client reconciliation loads CSS through the App Server layer(app) import."
+    },
+    "examples/packages/dsh-input-controls/broken/extensions/main/client/index.css": {
+      "count": 2,
+      "layer": "app",
+      "reason": "Client reconciliation loads CSS through the App Server layer(app) import."
+    },
+    "examples/packages/dsh-input-controls/v1/extensions/main/client/index.css": {
+      "count": 2,
+      "layer": "app",
+      "reason": "Client reconciliation loads CSS through the App Server layer(app) import."
+    },
+    "examples/packages/dsh-input-controls/v2/extensions/main/client/index.css": {
+      "count": 2,
+      "layer": "app",
+      "reason": "Client reconciliation loads CSS through the App Server layer(app) import."
+    },
+    "examples/packages/dsh-model-picker-a/broken/extensions/main/client/index.css": {
+      "count": 1,
+      "layer": "app",
+      "reason": "Client reconciliation loads CSS through the App Server layer(app) import."
+    },
+    "examples/packages/dsh-model-picker-a/v1/extensions/main/client/index.css": {
+      "count": 1,
+      "layer": "app",
+      "reason": "Client reconciliation loads CSS through the App Server layer(app) import."
+    },
+    "examples/packages/dsh-model-picker-a/v2/extensions/main/client/index.css": {
+      "count": 1,
+      "layer": "app",
+      "reason": "Client reconciliation loads CSS through the App Server layer(app) import."
+    },
+    "examples/packages/dsh-model-picker-b/broken/extensions/main/client/index.css": {
+      "count": 1,
+      "layer": "app",
+      "reason": "Client reconciliation loads CSS through the App Server layer(app) import."
+    },
+    "examples/packages/dsh-model-picker-b/v1/extensions/main/client/index.css": {
+      "count": 1,
+      "layer": "app",
+      "reason": "Client reconciliation loads CSS through the App Server layer(app) import."
+    },
+    "examples/packages/dsh-model-picker-b/v2/extensions/main/client/index.css": {
+      "count": 1,
+      "layer": "app",
+      "reason": "Client reconciliation loads CSS through the App Server layer(app) import."
+    },
+    "examples/packages/dsh-tool-view/broken/extensions/main/client/index.css": {
+      "count": 1,
+      "layer": "app",
+      "reason": "Client reconciliation loads CSS through the App Server layer(app) import."
+    },
+    "examples/packages/dsh-tool-view/v1/extensions/main/client/index.css": {
+      "count": 1,
+      "layer": "app",
+      "reason": "Client reconciliation loads CSS through the App Server layer(app) import."
+    },
+    "examples/packages/dsh-tool-view/v2/extensions/main/client/index.css": {
+      "count": 1,
+      "layer": "app",
+      "reason": "Client reconciliation loads CSS through the App Server layer(app) import."
+    },
+    "examples/packages/skin-example/v1/extensions/main/skins/midnight/skin.css": {
+      "count": 8,
+      "layer": "skin",
+      "reason": "SkinSheet wraps the authored CSS in the skin layer."
+    },
+    "examples/packages/skins-builtin/broken/extensions/main/skins/aurora/skin.css": {
+      "count": 19,
+      "layer": "skin",
+      "reason": "SkinSheet wraps the authored CSS in the skin layer."
+    },
+    "examples/packages/skins-builtin/broken/extensions/main/skins/high-contrast/skin.css": {
+      "count": 1,
+      "layer": "skin",
+      "reason": "SkinSheet wraps the authored CSS in the skin layer."
+    },
+    "examples/packages/skins-builtin/broken/extensions/main/skins/midnight/skin.css": {
+      "count": 6,
+      "layer": "skin",
+      "reason": "SkinSheet wraps the authored CSS in the skin layer."
+    },
+    "examples/packages/skins-builtin/broken/extensions/main/skins/paper/skin.css": {
+      "count": 6,
+      "layer": "skin",
+      "reason": "SkinSheet wraps the authored CSS in the skin layer."
+    },
+    "examples/packages/skins-builtin/v1/extensions/main/skins/aurora/skin.css": {
+      "count": 19,
+      "layer": "skin",
+      "reason": "SkinSheet wraps the authored CSS in the skin layer."
+    },
+    "examples/packages/skins-builtin/v1/extensions/main/skins/high-contrast/skin.css": {
+      "count": 1,
+      "layer": "skin",
+      "reason": "SkinSheet wraps the authored CSS in the skin layer."
+    },
+    "examples/packages/skins-builtin/v1/extensions/main/skins/midnight/skin.css": {
+      "count": 6,
+      "layer": "skin",
+      "reason": "SkinSheet wraps the authored CSS in the skin layer."
+    },
+    "examples/packages/skins-builtin/v1/extensions/main/skins/paper/skin.css": {
+      "count": 6,
+      "layer": "skin",
+      "reason": "SkinSheet wraps the authored CSS in the skin layer."
+    },
+    "examples/packages/skins-builtin/v2/extensions/main/skins/aurora/skin.css": {
+      "count": 19,
+      "layer": "skin",
+      "reason": "SkinSheet wraps the authored CSS in the skin layer."
+    },
+    "examples/packages/skins-builtin/v2/extensions/main/skins/high-contrast/skin.css": {
+      "count": 1,
+      "layer": "skin",
+      "reason": "SkinSheet wraps the authored CSS in the skin layer."
+    },
+    "examples/packages/skins-builtin/v2/extensions/main/skins/midnight/skin.css": {
+      "count": 6,
+      "layer": "skin",
+      "reason": "SkinSheet wraps the authored CSS in the skin layer."
+    },
+    "examples/packages/skins-builtin/v2/extensions/main/skins/paper/skin.css": {
+      "count": 6,
+      "layer": "skin",
+      "reason": "SkinSheet wraps the authored CSS in the skin layer."
+    },
+    "tools/e2e-web/baselines/screenshot.css": {
+      "count": 1,
+      "layer": "ui",
+      "reason": "Visual test normalization is injected only by browser fixtures."
+    }
+  }
+}

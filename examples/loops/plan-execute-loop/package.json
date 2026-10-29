@@ -1,0 +1,59 @@
+{
+  "name": "@agnes-example/plan-execute-loop",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "types": "./index.d.mts",
+  "scripts": {
+    "build": "node --check index.mjs",
+    "test": "vitest run plan-execute-loop.test.ts --maxWorkers=1"
+  },
+  "peerDependencies": {
+    "@agnes/extension-api": "*"
+  },
+  "devDependencies": {
+    "@agnes/plugin-runtime": "0.0.0",
+    "vitest": "5.0.0"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:example-plan-execute",
+        "export": "plugin",
+        "apiRange": "^5.0.0",
+        "default": true,
+        "inject": [
+          "providers"
+        ],
+        "metadata": {
+          "displayName": "Plan-Execute Loop",
+          "summary": "Plans with a model, asks a person to approve, then runs the steps through the generic Loop ports.",
+          "description": "Plans with a model, asks a person to approve, then runs the steps through the generic Loop ports.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "计划-执行 Loop",
+              "summary": "用模型制定计划，经真人批准后，仅通过通用 Loop 端口逐步执行。",
+              "description": "用模型制定计划，经真人批准后，仅通过通用 Loop 端口逐步执行。"
+            }
+          }
+        }
+      }
+    ],
+    "metadata": {
+      "displayName": "Plan-Execute Loop",
+      "summary": "Plans with a model, asks a person to approve, then runs the steps through the generic Loop ports.",
+      "description": "Plans with a model, asks a person to approve, then runs the steps through the generic Loop ports.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "计划-执行 Loop",
+          "summary": "用模型制定计划，经真人批准后，仅通过通用 Loop 端口逐步执行。",
+          "description": "用模型制定计划，经真人批准后，仅通过通用 Loop 端口逐步执行。"
+        }
+      }
+    },
+    "provides": [
+      "loop"
+    ]
+  }
+}

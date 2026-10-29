@@ -1,0 +1,18 @@
+{
+  "packages/resource-control-web/src/credential-editor.tsx": 1,
+  "packages/resource-control-web/src/credentials.tsx": 1,
+  "packages/web-admin/src/admin/plugins/skill-authoring.tsx": 1,
+  "packages/web-admin/src/settings/diagnostics.tsx": 1,
+  "packages/web-admin/src/settings/jobs-panel.tsx": 1,
+  "packages/web-admin/src/settings/permission-defaults.tsx": 1,
+  "packages/web-admin/src/settings/search.tsx": 2,
+  "packages/web-admin/src/settings/status-check.tsx": 1,
+  "packages/web-ui/src/first-run.tsx": 1,
+  "packages/web-units/src/workspace-dialog.tsx": 1,
+  "packages/web/src/pages/plugins/capabilities.tsx": 1,
+  "packages/web/src/pages/plugins/skill-run.tsx": 1,
+  "packages/web/src/regions/profile-approvals.tsx": 1,
+  "packages/web/src/session-actions.tsx": 1,
+  "packages/web/src/session-runtime-dialog.tsx": 1,
+  "packages/web/src/session-search.tsx": 1
+}

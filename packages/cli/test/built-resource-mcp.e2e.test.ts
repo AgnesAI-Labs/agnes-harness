@@ -6,8 +6,10 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readDaemonDiscovery, resolveDaemonScope } from '@agnes/daemon'
+import { initializeHome } from '@agnes/host'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
+import { build } from 'esbuild'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { setupMcpLegacySentinel } from './built-resource-mcp-legacy.js'
 import { mcpChatProvider } from './built-resource-mcp-provider.js'
@@ -113,30 +115,36 @@ function processAlive(pid: number): boolean {
 
 async function officialPagedServer(directory: string): Promise<string> {
   const server = join(directory, 'official-paged-mcp.mjs')
-  await writeFile(
-    server,
-    [
-      "import { createRequire } from 'node:module'",
-      'const require = createRequire(import.meta.url)',
-      `const { Server } = require(${JSON.stringify(sdkPaths.server)})`,
-      `const { StdioServerTransport } = require(${JSON.stringify(sdkPaths.stdio)})`,
-      `const { ListToolsRequestSchema, CallToolRequestSchema } = require(${JSON.stringify(sdkPaths.types)})`,
-      "const tools = Array.from({ length: 120 }, (_, i) => ({ name: 'tool' + String(i + 1).padStart(3, '0'), description: 'Fixture tool ' + (i + 1), inputSchema: { type: 'object', properties: { marker: { type: 'string' }, behavior: { type: 'string', enum: ['ok', 'fail', 'disconnect', 'hang'] } }, required: ['marker', 'behavior'], additionalProperties: false } }))",
-      "const server = new Server({ name: 'built-cli-pager', version: '1.0.0' }, { capabilities: { tools: {} } })",
-      "server.setRequestHandler(ListToolsRequestSchema, async (request) => { const start = request.params?.cursor === '100' ? 100 : 0; return { tools: tools.slice(start, start + 100), ...(start === 0 ? { nextCursor: '100' } : {}) } })",
-      `const { appendFileSync } = require('node:fs')`,
-      `appendFileSync(${JSON.stringify(join(directory, 'starts.jsonl'))}, JSON.stringify({ pid: process.pid, parentPid: process.ppid }) + '\\n')`,
-      `server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+  await build({
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    outfile: server,
+    banner: {
+      js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
+    },
+    stdin: {
+      resolveDir: directory,
+      contents: [
+        `import { Server } from ${JSON.stringify(sdkPaths.server)}`,
+        `import { StdioServerTransport } from ${JSON.stringify(sdkPaths.stdio)}`,
+        `import { ListToolsRequestSchema, CallToolRequestSchema } from ${JSON.stringify(sdkPaths.types)}`,
+        "const tools = Array.from({ length: 120 }, (_, i) => ({ name: 'tool' + String(i + 1).padStart(3, '0'), description: 'Fixture tool ' + (i + 1), inputSchema: { type: 'object', properties: { marker: { type: 'string' }, behavior: { type: 'string', enum: ['ok', 'fail', 'disconnect', 'hang'] } }, required: ['marker', 'behavior'], additionalProperties: false } }))",
+        "const server = new Server({ name: 'built-cli-pager', version: '1.0.0' }, { capabilities: { tools: {} } })",
+        "server.setRequestHandler(ListToolsRequestSchema, async (request) => { const start = request.params?.cursor === '100' ? 100 : 0; return { tools: tools.slice(start, start + 100), ...(start === 0 ? { nextCursor: '100' } : {}) } })",
+        `const { appendFileSync } = require('node:fs')`,
+        `appendFileSync(${JSON.stringify(join(directory, 'starts.jsonl'))}, JSON.stringify({ pid: process.pid, parentPid: process.ppid }) + '\\n')`,
+        `server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         const { marker, behavior } = request.params.arguments;
         appendFileSync(${JSON.stringify(join(directory, 'calls.jsonl'))}, JSON.stringify({ pid: process.pid, parentPid: process.ppid, name: request.params.name, marker, behavior }) + '\\n');
         if (behavior === 'disconnect') { process.exit(0); }
         if (behavior === 'hang') await new Promise((resolve) => extra.signal.addEventListener('abort', resolve, { once: true }));
         return { content: [{ type: 'text', text: (behavior === 'fail' ? 'MCP_FAILURE_' : 'MCP_RESULT_') + marker }], ...(behavior === 'fail' ? { isError: true } : {}) }
       })`,
-      'await server.connect(new StdioServerTransport())',
-    ].join('\n'),
-    'utf8',
-  )
+        'await server.connect(new StdioServerTransport())',
+      ].join('\n'),
+    },
+  })
   return server
 }
 
@@ -194,10 +202,11 @@ describe('built CLI managed MCP lifecycle', () => {
     const workspace = join(root, 'workspace')
     if (!windows) {
       for (const name of ['agnesd.sock', 'workers.sock'])
-        expect(Buffer.byteLength(join(home, 'data', 'daemon', name))).toBeLessThanOrEqual(103)
+        expect(Buffer.byteLength(join(home, 'daemon', name))).toBeLessThanOrEqual(103)
     }
     if (windows) windowsEnsurePrivateDirectorySync(home)
     else await mkdir(home, { mode: 0o700 })
+    initializeHome(home)
     await mkdir(workspace)
     const server = await officialPagedServer(root)
     const managedExecutable = windows ? join(root, 'managed-node.exe') : nodePath
@@ -213,7 +222,7 @@ describe('built CLI managed MCP lifecycle', () => {
       (await readFile(legacy.startsPath, 'utf8').catch(() => '')).trim().split('\n').filter(Boolean)
     const tools = Array.from({ length: 120 }, (_, index) => `tool${String(index + 1).padStart(3, '0')}`)
     const recordDaemon = async () => {
-      const owner = JSON.parse(await readFile(join(home, 'data', 'daemon', 'owner.json'), 'utf8'))
+      const owner = JSON.parse(await readFile(join(home, 'daemon', 'owner.json'), 'utf8'))
       daemonPids.add(owner.pid)
       return owner.pid as number
     }
@@ -247,13 +256,15 @@ describe('built CLI managed MCP lifecycle', () => {
         expect(stopped.code, stopped.output).toBe(0)
         await expect.poll(() => pids.filter(processAlive), { timeout: 10_000 }).toEqual([])
       } catch (error) {
-        for (const pid of pids.filter(processAlive)) process.kill(pid, 'SIGKILL')
+        // Recorded PIDs may have been reused. Only the original child handle is safe to stop;
+        // unknown descendants keep the fixture on disk instead of risking another process.
+        if (daemon.exitCode === null && daemon.signalCode === null) daemon.kill('SIGKILL')
         await expect.poll(() => pids.filter(processAlive), { timeout: 5_000 }).toEqual([])
         throw error
       }
       console.info('MCP_PROCESS_CLEANUP', JSON.stringify({ pids, alive: pids.filter(processAlive) }))
     }
-    await mkdir(join(home, 'data', 'daemon'), { recursive: true, mode: 0o700 })
+    await mkdir(join(home, 'daemon'), { recursive: true, mode: 0o700 })
     let daemonLog = ''
     const daemon = spawn(
       nodePath,
@@ -280,7 +291,12 @@ describe('built CLI managed MCP lifecycle', () => {
       daemonLog += String(chunk)
     })
     try {
-      await expect.poll(() => daemonLog.includes('agnesd listening'), { timeout: 15_000 }).toBe(true)
+      await expect
+        .poll(() => daemonLog.includes('agnesd listening'), { timeout: 15_000 })
+        .toBe(true)
+        .catch((error) => {
+          throw new Error(`daemon did not start: ${daemonLog}`, { cause: error })
+        })
       const added = await invoke(
         [
           'mcp',
@@ -292,6 +308,10 @@ describe('built CLI managed MCP lifecycle', () => {
           managedExecutable,
           '--arg',
           server,
+          '--sandbox-profile',
+          windows ? 'off-with-warning' : 'workspace-write',
+          '--sandbox-workspace',
+          root,
           ...tools.flatMap((tool) => ['--allow-tool', tool]),
         ],
         workspace,
@@ -522,6 +542,10 @@ describe('built CLI managed MCP lifecycle', () => {
             nodePath,
             '--arg',
             server,
+            '--sandbox-profile',
+            windows ? 'off-with-warning' : 'workspace-write',
+            '--sandbox-workspace',
+            root,
             ...tools.flatMap((tool) => ['--allow-tool', tool]),
           ],
           workspace,
@@ -539,7 +563,7 @@ describe('built CLI managed MCP lifecycle', () => {
           true,
         )
         expect(enableNeverTrusted.code, enableNeverTrusted.output).not.toBe(0)
-        expect(enableNeverTrusted.output).toContain('MCP_RECONCILE_FAILED')
+        expect(enableNeverTrusted.output).toContain('MCP_UNTRUSTED_REVISION: trust is untrusted')
         await chat('neverTrusted', 'ok', 'ABSENT')
         expect(await calls()).toHaveLength(count)
         // A failed enable still records the requested desired state. Return it to disabled and

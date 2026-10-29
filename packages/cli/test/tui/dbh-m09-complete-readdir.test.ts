@@ -13,7 +13,7 @@ import { pathToFileURL } from 'node:url'
 import { createClient } from '@agnes/sdk'
 import { expect, it, vi } from 'vitest'
 import { TuiApp } from '../../src/tui/app.js'
-import { completeToken } from '../../src/tui/commands.js'
+import { attachmentsFrom, completeToken } from '../../src/tui/commands.js'
 import { FakeTerminal } from '../../src/tui/terminal.js'
 import { FakeEndpoint } from '../fake-endpoint.js'
 import { screenOf } from './harness.js'
@@ -79,19 +79,6 @@ function fixtureDirs() {
   }
 }
 
-it('[control] Tab completion of @token in a readable cwd does not throw and completes', async () => {
-  const dirs = fixtureDirs()
-  try {
-    await withApp(dirs.readable, async (term) => {
-      term.feed('@x')
-      expect(() => term.feed('\t')).not.toThrow()
-      await vi.waitFor(async () => expect((await screenOf(term, 80, 24)).join('\n')).toContain('@xfile.txt '))
-    })
-  } finally {
-    dirs.cleanup()
-  }
-})
-
 it('[M-09] Tab completion of @token in an unreadable cwd does not throw out of the input callback', async () => {
   const dirs = fixtureDirs()
   try {
@@ -108,15 +95,14 @@ it('[M-09] Tab completion of @token in an unreadable cwd does not throw out of t
   }
 })
 
-it('[M-09/unit] completeToken offers no @path in an unreadable or missing cwd; slash commands still complete', () => {
+it('[M-09/unit] neither completion nor @ attachments throw in an unreadable or missing cwd', () => {
   const dirs = fixtureDirs()
   try {
     for (const cwd of [dirs.unreadable, '/nonexistent-agnes-dbh-m09']) {
-      expect(() => completeToken('@x', cwd), cwd).not.toThrow()
-      expect(completeToken('@x', cwd), cwd).toEqual([])
-      expect(completeToken('/he', cwd), cwd).toEqual(['/help'])
+      expect(() => attachmentsFrom('see @x', cwd), cwd).not.toThrow()
+      expect(attachmentsFrom('see @x', cwd), cwd).toEqual([{ type: 'text', text: 'see @x' }])
+      expect(completeToken('/he'), cwd).toEqual(['/help', '/heads-up'])
     }
-    expect(completeToken('@x', dirs.readable)).toEqual(['@xfile.txt'])
   } finally {
     dirs.cleanup()
   }

@@ -82,7 +82,7 @@ describe('createRelay', () => {
         sessionId: 's',
         actor: { id: 'evil' },
         credential: { kind: 'local' },
-        nested: { keep: true, _meta: { auth: 'evil' }, approverCredential: { kind: 'local' } },
+        nested: { keep: true, _meta: { auth: 'evil' }, sourceCredential: { kind: 'local' } },
       }),
     })
     expect(response.status).toBe(200)
@@ -98,7 +98,12 @@ describe('createRelay', () => {
       initialize: fakeEndpoint({}).initialize,
       '_agnes/v1/session.list': () => ({ items: [] }),
       '_agnes/v1/participant.join': () => ({ seq: 1 }),
-      '_agnes/v1/approval.decide': () => ({ seq: 2 }),
+      '_agnes/v1/approval.decide': (p) => ({
+        digest: '0'.repeat(64),
+        commandId: (p as { commandId: string }).commandId,
+        revision: 2,
+        seq: 2,
+      }),
     })
     const real = createClient({
       transport: { kind: 'inproc', endpoint: endpoint.endpoint },
@@ -118,7 +123,6 @@ describe('createRelay', () => {
           method: 'POST',
           path: '/api/approval',
           rpc: '_agnes/v1/approval.decide',
-          principalParam: 'approverCredential',
         },
       ])
       expect((await fetch(`${base}/api/sessions`)).status).toBe(200)
@@ -135,9 +139,12 @@ describe('createRelay', () => {
           await fetch(`${base}/api/approval`, {
             method: 'POST',
             body: JSON.stringify({
-              ticket: 't',
-              verdict: 'allowed-once',
-              approverCredential: { kind: 'local' },
+              sessionId: 's',
+              id: 'd',
+              revision: 1,
+              commandId: 'c',
+              response: { option: 'allowed-once', value: null },
+              sourceCredential: { kind: 'local' },
             }),
           })
         ).status,
@@ -147,7 +154,13 @@ describe('createRelay', () => {
         { method: '_agnes/v1/participant.join', params: { sessionId: 's', credential } },
         {
           method: '_agnes/v1/approval.decide',
-          params: { ticket: 't', verdict: 'allowed-once', approverCredential: credential },
+          params: {
+            sessionId: 's',
+            id: 'd',
+            revision: 1,
+            commandId: 'c',
+            response: { option: 'allowed-once', value: null },
+          },
         },
       ])
     } finally {
@@ -939,7 +952,7 @@ describe('createRelay', () => {
         ],
         { principal: async () => credential },
       ),
-    ).toThrow(/requires approverCredential/)
+    ).toThrow(/does not accept/)
   })
 })
 

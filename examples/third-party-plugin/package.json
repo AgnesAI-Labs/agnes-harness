@@ -3,19 +3,59 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": "./echo.js",
   "agnes": {
     "plugins": [
       {
         "export": "echo",
+        "provide": [
+          "ext:example/echo"
+        ],
+        "apiRange": "^5.0.0",
         "id": "ext:example/echo",
         "runtime": "in-process",
-        "default": true
-      },
-      {
-        "export": "echo",
-        "id": "ext:example/echo-isolated",
-        "runtime": "isolated"
+        "default": true,
+        "configSchema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "type": "string",
+              "default": "ok",
+              "minLength": 1,
+              "description": "Message exposed by the echo service."
+            }
+          }
+        },
+        "configReload": "live",
+        "metadata": {
+          "displayName": "Echo service example",
+          "summary": "Demonstrates a configurable echo service in a trusted in-process plugin row.",
+          "description": "Demonstrates a configurable echo service in a trusted in-process plugin row.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "回声服务示例",
+              "summary": "演示在受信任的进程内插件行中运行可配置的回声服务。",
+              "description": "演示在受信任的进程内插件行中运行可配置的回声服务。"
+            }
+          }
+        }
       }
+    ],
+    "metadata": {
+      "displayName": "Echo service example",
+      "summary": "Demonstrates a configurable echo service in a trusted in-process plugin row.",
+      "description": "Demonstrates a configurable echo service in a trusted in-process plugin row.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "回声服务示例",
+          "summary": "演示在受信任的进程内插件行中运行可配置的回声服务。",
+          "description": "演示在受信任的进程内插件行中运行可配置的回声服务。"
+        }
+      }
+    },
+    "provides": [
+      "service"
     ]
   },
   "license": "Apache-2.0"

@@ -1,12 +1,14 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { bundledExtensionManifest } from '@agnes/extension-api'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it } from 'vitest'
 import { fakeSeamInit } from '../../../testkit/seam-init.js'
 import factory from '../src/index.js'
 import { principalsLocal } from '../src/seam.js'
 
-const manifest = JSON.parse(
-  readFileSync(fileURLToPath(new URL('../agnes.extension.json', import.meta.url)), 'utf8'),
+const manifest = bundledExtensionManifest(
+  JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')),
 ) as { id: string; capabilities: Record<string, unknown> }
 
 describe('principals-local', () => {
@@ -82,7 +84,7 @@ describe('principals-local', () => {
       },
     )
     // A factory that took any authority would have to touch the API object to do it.
-    expect(await factory(api as never)).toBeUndefined()
+    expect(await extensionFactoryOf(factory)(api as never)).toBeUndefined()
     expect(reached).toEqual([])
   })
 })

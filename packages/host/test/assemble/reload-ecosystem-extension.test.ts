@@ -6,9 +6,13 @@ import { fileURLToPath } from 'node:url'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
 import type { ExtensionManifest } from '@agnes/extension-api'
+import { bundledExtensionManifest } from '@agnes/extension-api'
+import type { DynamicExtension } from '@agnes/host-extensions/assemble/ext-rows'
+import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
+import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
+import { createPluginRow } from '@agnes/plugin-runtime/host'
 import type { InferenceEvent } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { SkillRuntimeInput } from '../../src/resources/skills.js'
 import { createTestHost } from '../../testkit/index.js'
 
 // The package directory, not an import: this is a real assemble()-based integration test - the host
@@ -51,69 +55,12 @@ const fakeSkillRuntimeInput = (hexChar: string): SkillRuntimeInput => {
   }
 }
 
-// Every shipped template (templates/local-dev.yaml, templates/enterprise.yaml) routes almost every
-// seam to @agnes/base, the same package that bundles agnes/skills. managed-host's
-// own E_SEAM_IMMUTABLE guard (see managed-host.ts's `mutable()`, tested in
-// managed-host.test.ts: "protects the owning seam package even when its extension id differs")
-// refuses to revoke *any* extension owned by a package that supplies a seam, deliberately and by
-// package identity - not only the seam factory itself. Task 3 found this was a real conflict with
-// reloading agnes/mcp-client (retired in MCP rows step 4) and agnes/skills in a default deployment
-// (see task-3-report.md); Task 3b resolved it with a narrow allowlist naming exactly those extension
-// ids (see task-3b-report.md and the "reloads agnes/skills end-to-end under the real default
-// template" test below, which exercises the real unmodified template). The two tests immediately below still use this
-// seam-rerouted fixture on purpose: they isolate the reload *plumbing* question (manifest re-lookup,
-// spec reconstruction, fresh ecosystemContext, sequential revoke-then-load genuinely swapping the
-// registered set rather than appending to it) from the seam-immutability allowlist question, so a
-// regression in either one fails a different, more specific test.
-const SEAM_NAMES = [
-  'approval',
-  'checkpoint',
-  'ledger',
-  'sandbox',
-  'verifier',
-  'repair',
-  'artifacts',
-  'principals',
-  'harness',
-] as const
-
-/**
- * Reroutes every seam from @agnes/base to @agnes/code, so agnes/skills (bundled by @agnes/base)
- * is not seam-protected in this fixture. The sandbox fake must still report the real workspace root
- * or assemble()'s `adapters.bindFsPolicy` refuses the whole host at startup (matching the same fix
- * createTestHost applies to its own default @agnes/base sandbox fake).
- */
-const seamsOnCode = (
-  dataDir: string,
-): Pick<Parameters<typeof createTestHost>[0], 'profileInputs' | 'packages'> => {
-  const seamsImpl = fakeSeams({})
-  const testExec = seamsImpl.sandbox.exec.bind(seamsImpl.sandbox)
-  const forWorkspace: NonNullable<typeof seamsImpl.sandbox.forWorkspace> = async (workspace) => ({
-    forWorkspace,
-    exec: testExec,
-    confine: async (argv) => [...argv],
-    fsPolicy: () => workspace.policy,
-    enforcement: () => ({ level: 'full', scope: ['file', 'network', 'process'] }),
-  })
-  seamsImpl.sandbox = {
-    ...seamsImpl.sandbox,
-    forWorkspace,
-    fsPolicy: () => {
-      const policy = testFsPolicy('/workspace')
-      const workspaceRoot = realpathSync.native(dataDir)
-      const rules = policy.rules.map((rule) => ({
-        ...rule,
-        path: join(workspaceRoot, ...rule.path.slice(policy.workspaceRoot.length).split('/')),
-      }))
-      const content = { ...policy, workspaceRoot, rules }
-      return { ...content, digest: createHash('sha256').update(JSON.stringify(content)).digest('hex') }
-    },
-  }
+/** Moves the local probe from @agnes/base to @agnes/code, so agnes/skills (bundled by @agnes/base) stays reloadable. */
+const seamsOnCode = (dataDir: string): Pick<Parameters<typeof createTestHost>[0], 'packages'> => {
   return {
-    profileInputs: {
-      user: { name: 'local-dev', seams: Object.fromEntries(SEAM_NAMES.map((n) => [n, '@agnes/code'])) },
-    },
     packages: {
+      // One builtin package supplies the local probe; moving it keeps @agnes/base reloadable.
+      '@agnes/base': { sandboxWorkspaceProbe: undefined } as never,
       '@agnes/code': {
         sandboxWorkspaceProbe: async () => ({
           name: 'bwrap',
@@ -122,13 +69,153 @@ const seamsOnCode = (
           degraded: false,
           confine: ({ argv }) => argv,
         }),
-        seams: Object.fromEntries(SEAM_NAMES.map((n) => [n, async () => seamsImpl[n]])),
       },
     },
   }
 }
 
 describe('Host.reloadEcosystemExtension', () => {
+  it('refreshes all declared consumers, preserves code and unrelated rows, and rolls back a failure', async () => {
+    const dataDir = scratch()
+    const { host } = await createTestHost({
+      dataDir,
+      packageDirs: { '@agnes/base': baseDir },
+      disableSessionTitle: true,
+      skillResources: fakeSkillRuntimeInput('a'),
+    })
+    let failNext = false
+    let read: (() => readonly string[]) | undefined
+    const manifest: ExtensionManifest = {
+      id: 'acme/live-skills',
+      version: '1.0.0',
+      apiRange: '^5.0.0',
+      entry: './index.js',
+      liveResources: ['skills'],
+      capabilities: {},
+    }
+    const dynamic: DynamicExtension = {
+      spec: {
+        id: manifest.id,
+        package: '@acme/live-skills',
+        packageVersion: '1.0.0',
+        dir: dataDir,
+        trust: 'builtin',
+        enabled: true,
+        revision: 'pinned-code',
+      },
+      manifest,
+      factory: (ctx) => () => {
+        if (failNext) {
+          failNext = false
+          throw new Error('consumer refresh failed')
+        }
+        read = () => ctx.skillResources?.list().map((skill) => skill.name) ?? []
+      },
+    }
+    try {
+      const second = host.extensionRows.prepare({
+        extensionId: manifest.id,
+        dynamic,
+        config: { marker: true },
+      })
+      const sleeping = host.extensionRows.prepare({
+        extensionId: 'acme/disabled-skills',
+        disabled: true,
+        config: { marker: 'disabled' },
+        dynamic: {
+          ...dynamic,
+          spec: { ...dynamic.spec, id: 'acme/disabled-skills' },
+          manifest: { ...manifest, id: 'acme/disabled-skills' },
+          factory: () => {
+            throw new Error('disabled consumer must stay unloaded')
+          },
+        },
+      })
+      await host.extensionRows.apply([...host.extensionRows.current(), second, sleeping])
+      const session = await host.createSession({ key: 'live-consumers', cwd: dataDir })
+      const generation = session.pluginGenerationId
+      const catalog = async () => {
+        session.hooks.resetTurn?.()
+        return (await session.hooks.context([])).sections.map((section) => section.text).join('\n')
+      }
+      const unrelated = host.extensionRows.current().find((row) => row.id === 'ext:agnes/jobs')!
+      await host.refreshSkillRow(fakeSkillRuntimeInput('b'))
+      const consumers = host.extensionRows.current().filter((row) => row.liveResources?.includes('skills'))
+      expect(consumers.map((row) => row.id)).toEqual(expect.arrayContaining(['ext:agnes/skills', second.id]))
+      expect(
+        consumers
+          .filter((row) => !row.disabled)
+          .every((row) => row.liveResourceRevision === consumers[0]?.liveResourceRevision),
+      ).toBe(true)
+      expect(host.extensionRows.current().find((row) => row.id === second.id)).toMatchObject({
+        entryRevision: 'pinned-code',
+        config: { marker: true },
+        disabled: false,
+      })
+      expect(host.extensionRows.current().find((row) => row.id === sleeping.id)).toEqual(sleeping)
+      expect(read?.()).toEqual(['skill-b'])
+      expect(await catalog()).toContain('skill-b')
+      expect(host.extensionRows.current().find((row) => row.id === unrelated.id)).toEqual(unrelated)
+      expect(host.pluginGenerationStatus?.().currentGenerationId).toBe(generation)
+      const runtime = host.sessionRuntime?.(session.key)
+      expect(runtime).toMatchObject({
+        sessionKey: session.key,
+        generation: { id: generation, current: true, state: 'active' },
+        restartRequired: [],
+      })
+      expect(runtime?.providers.some((item) => item.kind === 'loop')).toBe(true)
+      expect(runtime?.resources?.items.find((item) => item.id === 'ext:agnes/skills')).toMatchObject({
+        resources: expect.arrayContaining(['skills']),
+        revision: consumers[0]?.liveResourceRevision,
+      })
+      // A refused backend change stays visible until the next publication evaluates the target again.
+      const live = host.runtimeTargetSnapshot!()
+      const withBackend = buildCompleteRuntimeTarget({
+        rows: [
+          ...live.tree.rows,
+          createPluginRow({
+            id: 'adapter:probe',
+            plugin: 'missing@unavailable/main',
+            snapshotDigest: 'missing',
+            exportName: 'main',
+            entryRevision: 'missing',
+            extrasRevision: 'none',
+            mountRevision: 'v1',
+          }),
+        ],
+        resources: live.resource.resources,
+      }).target
+      await expect(host.applyRuntimeTarget(withBackend)).rejects.toThrow('E_GENERATION_RESTART_REQUIRED')
+      expect(host.sessionRuntime?.(session.key).restartRequired).toEqual(['adapter:probe'])
+      await host.applyRuntimeTarget(live)
+      expect(host.sessionRuntime?.(session.key).restartRequired).toEqual([])
+      const before = host.runtimeTargetSnapshot?.()
+      await host.refreshSkillRow(fakeSkillRuntimeInput('b'))
+      expect(host.runtimeTargetSnapshot?.()).toEqual(before)
+      failNext = true
+      await expect(host.refreshSkillRow(fakeSkillRuntimeInput('c'))).rejects.toThrow()
+      expect(host.runtimeTargetSnapshot?.()).toEqual(before)
+      expect(read?.()).toEqual(['skill-b'])
+      expect(await catalog()).toContain('skill-b')
+      expect(
+        host
+          .extensions()
+          .filter((entry) => ['agnes/skills', manifest.id].includes(entry.id))
+          .every((entry) => entry.loaded),
+      ).toBe(true)
+      expect(
+        await host.reloadEcosystemExtension(manifest.id, { skillResources: fakeSkillRuntimeInput('c') }),
+      ).toMatchObject({ id: manifest.id, loaded: true })
+      expect(read?.()).toEqual(['skill-c'])
+      expect(await catalog()).toContain('skill-c')
+      await host.refreshSkillRow(undefined)
+      expect(read?.()).toEqual([])
+      expect(await catalog()).not.toContain('skill-c')
+    } finally {
+      await host.close()
+    }
+  })
+
   // Design §3.9 (D123): agnes/mcp-search's tool_search lists the Skills generation agnes/skills
   // currently serves. Reloading agnes/skills alone changes what it lists; the search extension itself
   // is never reloaded, which is why a resource reload no longer has to touch it.
@@ -160,17 +247,17 @@ describe('Host.reloadEcosystemExtension', () => {
     })
     try {
       const session = await host.createSession({ cwd: dataDir })
-      const searchTurn = async () => {
-        const from = session.lastSeq + 1
-        await session.enqueue('next-turn', {
+      const searchTurn = async (sessionToRun = session) => {
+        const from = sessionToRun.lastSeq + 1
+        await sessionToRun.enqueue('next-turn', {
           content: [{ type: 'text', text: 'Which Skills do I have?' }],
-          actor: session.d.actor,
+          actor: sessionToRun.d.actor,
           kind: 'prompt',
         })
         await expect(
-          session.run({ until: 'turn-end', signal: new AbortController().signal }),
+          sessionToRun.run({ until: 'turn-end', signal: new AbortController().signal }),
         ).resolves.toMatchObject({ reason: 'completed' })
-        const rows = await session.scan({ fromSeq: from, toSeq: session.lastSeq })
+        const rows = await sessionToRun.scan({ fromSeq: from, toSeq: sessionToRun.lastSeq })
         return JSON.stringify(rows.filter((row) => row.type === 'tool/result'))
       }
       const before = await searchTurn()
@@ -227,6 +314,14 @@ describe('Host.reloadEcosystemExtension', () => {
       const after = await host.createSession({ key: 'skills-after', cwd: dataDir })
       expect(await catalog(after)).not.toContain('skill-a')
       expect(await catalog(after)).toContain('skill-e')
+      await before.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'Use current Skills.' }],
+        actor: before.d.actor,
+        kind: 'prompt',
+      })
+      await before.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(await catalog(before)).not.toContain('skill-a')
+      expect(await catalog(before)).toContain('skill-e')
     } finally {
       await host.close()
     }
@@ -260,8 +355,10 @@ describe('Host.reloadEcosystemExtension', () => {
   // exactly the way loadBundledExtensions' embeddedExtensions loop at assemble time does.
   it('reloads a builtin extension that is only reachable via embeddedExtensions (packaged-build shape)', async () => {
     const dataDir = scratch()
-    const skillsManifest = JSON.parse(
-      readFileSync(new URL('../../../base/extensions/skills/agnes.extension.json', import.meta.url), 'utf8'),
+    const skillsManifest = bundledExtensionManifest(
+      JSON.parse(
+        readFileSync(new URL('../../../base/extensions/skills/package.json', import.meta.url), 'utf8'),
+      ),
     ) as ExtensionManifest
     // seamsOnCode's own `packages` overlay (for @agnes/code) must be spread before adding the
     // @agnes/base overlay below - a later `packages:` key in the same object literal replaces the
@@ -272,7 +369,10 @@ describe('Host.reloadEcosystemExtension', () => {
       disableSessionTitle: true,
       skillResources: fakeSkillRuntimeInput('a'),
       ...seams,
-      packages: { ...seams.packages, '@agnes/base': { embeddedExtensions: [skillsManifest] } },
+      packages: {
+        ...seams.packages,
+        '@agnes/base': { embeddedExtensions: [skillsManifest], sandboxWorkspaceProbe: undefined } as never,
+      },
     })
     try {
       expect(host.extensions().find((s) => s.id === 'agnes/skills')).toMatchObject({ loaded: true })

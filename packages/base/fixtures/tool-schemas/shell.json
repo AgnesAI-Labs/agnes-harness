@@ -6,6 +6,12 @@
       "minLength": 1,
       "type": "string"
     },
+    "description": {
+      "minLength": 1,
+      "maxLength": 1024,
+      "description": "Brief human-readable action, affected files or scope, and purpose. Shown before approval; the command remains in technical details.",
+      "type": "string"
+    },
     "timeoutMs": {
       "minimum": 1,
       "type": "integer"
@@ -17,6 +23,32 @@
     },
     "background": {
       "type": "boolean"
+    },
+    "timeoutToBackground": {
+      "type": "boolean"
+    },
+    "persistent": {
+      "type": "boolean"
+    },
+    "shell": {
+      "anyOf": [
+        {
+          "const": "bash",
+          "type": "string"
+        },
+        {
+          "const": "zsh",
+          "type": "string"
+        },
+        {
+          "const": "pwsh",
+          "type": "string"
+        }
+      ]
+    },
+    "sessionId": {
+      "minLength": 1,
+      "type": "string"
     }
   },
   "required": [

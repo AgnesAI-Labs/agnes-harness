@@ -1,10 +1,11 @@
 /** @vitest-environment happy-dom */
 
 import type { UINode, UITurn } from '@agnes/protocol'
-import { webUiLocaleCatalog } from '@agnes/web-ui'
+import { setDisclosureOpen, webUiLocaleCatalog } from '@agnes/web-ui'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createConversationAttachmentsRenderer,
+  createConversationFeedback,
   createConversationMessageActions,
   createConversationToolCard,
   webUnitsLocaleCatalog,
@@ -54,90 +55,51 @@ function required<T extends Element>(parent: ParentNode, selector: string): T {
 }
 
 describe('conversation leaf renderers', () => {
-  it('owns outside-click dismissal without an injected binding and preserves the disclosure on updates', () => {
+  it('dismisses its usage panel on an outside click and preserves the open panel on updates', async () => {
     const actions = createConversationMessageActions({ t: zhT })
     document.body.append(actions.element)
     expect(actions.element.querySelector('footer.turn-footer')).not.toBeNull()
-    const details = required<HTMLDetailsElement>(actions.element, '.turn-usage')
-    const summary = required<HTMLElement>(details, 'summary')
-    const process = document.createElement('details')
-    process.open = true
-    document.body.append(process)
+    const details = required<HTMLElement>(actions.element, '.turn-usage')
+    const summary = required<HTMLElement>(details, '.turn-meta')
     try {
       actions.update({ turn: completedTurn(), finalText: 'answer', settled: true })
-      details.open = true
+      setDisclosureOpen(details, true)
       summary.focus()
       actions.update({ turn: completedTurn({ durationMs: 4000 }), finalText: 'answer', settled: true })
       expect(actions.element.querySelector('.turn-usage')).toBe(details)
-      expect(details.open).toBe(true)
+      expect(details.dataset.open).toBe('true')
       expect(document.activeElement).toBe(summary)
       required<HTMLElement>(details, 'dl').click()
-      expect(details.open).toBe(true)
+      await new Promise((resolve) => setTimeout(resolve))
+      expect(details.dataset.open).toBe('true')
       document.body.click()
-      expect(details.open).toBe(false)
-      expect(process.open).toBe(true)
+      await vi.waitFor(() => expect(details.dataset.open).toBe('false'))
     } finally {
       actions.dispose()
     }
   })
 
-  it('releases its document click listener on disposal, including repeated disposal', () => {
+  it('releases its document click listener on disposal, including repeated disposal', async () => {
     const add = vi.spyOn(document, 'addEventListener')
     const remove = vi.spyOn(document, 'removeEventListener')
     const actions = createConversationMessageActions({ t: zhT })
     document.body.append(actions.element)
-    const details = required<HTMLDetailsElement>(actions.element, '.turn-usage')
-    const clicks = add.mock.calls.filter(([type]) => type === 'click')
     try {
-      expect(clicks).toHaveLength(1)
+      actions.update({ turn: completedTurn(), finalText: 'answer', settled: true })
+      setDisclosureOpen(required<HTMLElement>(actions.element, '.turn-usage'), true)
+      await vi.waitFor(() => expect(add.mock.calls.filter(([type]) => type === 'click')).toHaveLength(1))
+      const listener = add.mock.calls.find(([type]) => type === 'click')?.[1]
       actions.dispose()
       actions.dispose()
-      expect(
-        remove.mock.calls.filter(([type, listener]) => type === 'click' && listener === clicks[0]?.[1]),
-      ).toHaveLength(1)
-      details.open = true
-      document.body.click()
-      expect(details.open).toBe(true)
+      await vi.waitFor(() =>
+        expect(
+          remove.mock.calls.filter(([type, removed]) => type === 'click' && removed === listener),
+        ).toHaveLength(1),
+      )
     } finally {
       actions.dispose()
       add.mockRestore()
       remove.mockRestore()
-    }
-  })
-
-  it('ignores a detached disclosure while another mounted action renderer still dismisses', () => {
-    const first = createConversationMessageActions({ t: zhT })
-    const second = createConversationMessageActions({ t: zhT })
-    document.body.append(first.element, second.element)
-    const detached = required<HTMLDetailsElement>(first.element, '.turn-usage')
-    const live = required<HTMLDetailsElement>(second.element, '.turn-usage')
-    try {
-      first.element.remove()
-      detached.open = true
-      live.open = true
-      document.body.click()
-      expect(detached.open).toBe(true)
-      expect(live.open).toBe(false)
-      first.dispose()
-      live.open = true
-      document.body.click()
-      expect(live.open).toBe(false)
-    } finally {
-      first.dispose()
-      second.dispose()
-    }
-  })
-
-  it('keeps the caller-supplied dismissal binding as a compatibility override', () => {
-    const bindAutoDismiss = vi.fn()
-    const add = vi.spyOn(document, 'addEventListener')
-    const actions = createConversationMessageActions({ bindAutoDismiss, t: zhT })
-    try {
-      expect(bindAutoDismiss).toHaveBeenCalledExactlyOnceWith(actions.element.querySelector('.turn-usage'))
-      expect(add.mock.calls.filter(([type]) => type === 'click')).toHaveLength(0)
-    } finally {
-      actions.dispose()
-      add.mockRestore()
     }
   })
 
@@ -163,30 +125,41 @@ describe('conversation leaf renderers', () => {
     const detail = element.querySelector<HTMLButtonElement>('.tool-detail')
     detail?.click()
     expect(element.dataset.expanded).toBe('true')
-    for (const [status, label] of [
-      ['planned', '等待执行'],
-      ['awaiting_approval', '等待审批'],
-      ['running', '正在执行'],
-      ['completed', '执行完成'],
-      ['cancelled', '已取消'],
+    // The row names the status only when the step needs the reader or did not finish; the label
+    // on the article always does.
+    for (const [status, label, shown] of [
+      ['planned', '等待执行', undefined],
+      ['awaiting_approval', '等待审批', '等待审批'],
+      ['running', '正在执行', undefined],
+      ['completed', '执行完成', undefined],
+      ['cancelled', '已取消', '已取消'],
     ] as const) {
       card.update({ ...node, status })
       expect(element.dataset.status).toBe(status)
-      expect(element.querySelector('.tool-status')?.textContent).toBe(label)
-      expect(element.querySelector('.tool-detail-text')?.textContent).toContain(`状态：${label}`)
+      expect(element.getAttribute('aria-label')).toBe(`工具 read_file：${label}`)
+      expect(element.querySelector('.tool-status')?.textContent).toBe(shown)
     }
+    card.update({ ...node, status: 'running' })
+    expect(element.querySelector('.activity-row')?.getAttribute('data-state')).toBe('running')
+    // A summary that only repeats the call is not shown; a readable one is the row's target.
     card.update({ ...node, summary: 'read_file {"path":"README.md"}' })
-    expect(element.querySelector<HTMLElement>('.tool-summary')?.hidden).toBe(true)
+    expect(element.querySelector('.activity-target')).toBeNull()
     card.update({ ...node, summary: 'read_file 已读取 README.md' })
-    expect(element.querySelector<HTMLElement>('.tool-summary')?.hidden).toBe(false)
-    expect(element.querySelector('.tool-summary')?.textContent).toBe('read_file 已读取 README.md')
+    expect(element.querySelector('.activity-target')?.textContent).toBe('read_file 已读取 README.md')
+    card.update({
+      ...node,
+      argsPreview: JSON.stringify({ path: `${['', 'Users', 'someone'].join('/')}/project/README.md` }),
+    })
+    expect(element.querySelector('.activity-target')?.textContent).toBe('~/project/README.md')
     expect(element.querySelector('[data-agnes-tool-card]')).not.toBeNull()
 
     card.update({ ...node, status: 'failed', resultPreview: 'Permission denied' })
     expect(element.dataset.status).toBe('failed')
     expect(element.getAttribute('aria-label')).toBe('工具 read_file：执行失败')
-    expect(element.querySelector('.tool-detail-text')?.textContent).toContain('错误详情')
-    expect(element.querySelector('.tool-detail-text')?.textContent).toContain('Permission denied')
+    expect(element.querySelector('[data-testid="tool-detail-text"]')?.textContent).toContain('错误详情')
+    expect(element.querySelector('[data-testid="tool-detail-text"]')?.textContent).toContain(
+      'Permission denied',
+    )
     expect(element.dataset.expanded).toBe('true')
     card.dispose()
     card.update({ ...node, status: 'completed' })
@@ -200,7 +173,11 @@ describe('conversation leaf renderers', () => {
     vi.useFakeTimers()
     const first = createConversationMessageActions({ t: zhT })
     const second = createConversationMessageActions({ t: zhT })
-    document.body.append(first.element, second.element)
+    const standalone = createConversationFeedback()
+    document.body.append(first.element, second.element, standalone.element)
+    standalone.report('standalone', 1600)
+    expect(standalone.element.getAttribute('role')).toBe('status')
+    expect(standalone.element.textContent).toBe('standalone')
     const state = { turn: completedTurn(), finalText: 'answer', settled: true }
     first.update(state)
     second.update(state)
@@ -212,8 +189,14 @@ describe('conversation leaf renderers', () => {
     await vi.runAllTimersAsync()
     expect(first.element.querySelector('.turn-feedback')?.textContent).toBe('')
     expect(second.element.querySelector('.turn-feedback')?.textContent).toBe('')
+    expect(standalone.element.textContent).toBe('')
+    standalone.report('dispose clears this', 1600)
+    standalone.dispose()
+    standalone.dispose()
+    expect(standalone.element.textContent).toBe('')
 
     first.feedback.report('only first', 1600)
+    expect(first.element.contains(first.feedback.element)).toBe(true)
     expect(first.feedback.element.textContent).toBe('only first')
     expect(second.feedback.element.textContent).toBe('')
     first.dispose()
@@ -242,13 +225,13 @@ describe('conversation leaf renderers', () => {
     try {
       first.update({ turn: firstTurn, finalText: 'first answer', settled: true })
       second.update({ turn: secondTurn, finalText: 'second answer', settled: true })
-      const firstDetails = required<HTMLDetailsElement>(first.element, '.turn-usage')
-      const secondDetails = required<HTMLDetailsElement>(second.element, '.turn-usage')
-      firstDetails.open = true
+      const firstDetails = required<HTMLElement>(first.element, '.turn-usage')
+      const secondDetails = required<HTMLElement>(second.element, '.turn-usage')
+      setDisclosureOpen(firstDetails, true)
       first.update({ turn: { ...firstTurn, durationMs: 4000 }, finalText: 'first answer+', settled: true })
       first.update({ turn: firstTurn, finalText: 'first answer+', settled: true })
       expect(required(first.element, '.turn-usage')).toBe(firstDetails)
-      expect(firstDetails.open).toBe(true)
+      expect(firstDetails.dataset.open).toBe('true')
       expect(required(second.element, '.turn-usage')).toBe(secondDetails)
 
       const fork = required<HTMLButtonElement>(first.element, '[aria-label="分支到新聊天"]')
@@ -256,6 +239,7 @@ describe('conversation leaf renderers', () => {
       await vi.waitFor(() => expect(fork.disabled).toBe(true))
       rejectFirst(new Error('offline'))
       await vi.waitFor(() => expect(first.feedback.element.textContent).toBe('分支失败，请重试。'))
+      expect(first.element.contains(first.feedback.element)).toBe(true)
       expect(fork.disabled).toBe(false)
       expect(second.feedback.element.textContent).toBe('')
       fork.click()
@@ -274,5 +258,6 @@ describe('conversation leaf renderers', () => {
     attachments.clear()
     expect(attachments.element.hidden).toBe(true)
     expect(attachments.element.childElementCount).toBe(0)
+    attachments.dispose()
   })
 })

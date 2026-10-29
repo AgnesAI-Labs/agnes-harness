@@ -13,10 +13,24 @@
   },
   "dependencies": {
     "@agnes/protocol": "workspace:*",
-    "@earendil-works/pi-ai": "0.87.1"
+    "@agnes/extension-api": "workspace:*",
+    "@earendil-works/pi-ai": "1.4.0",
+    "@agnes/system-node": "workspace:*"
   },
   "devDependencies": {
     "@sinclair/typebox": "0.34.33"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "id": "model-adapters:pi",
+        "export": "modelAdaptersPlugin",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "providers"
+        ]
+      }
+    ]
   },
   "license": "Apache-2.0"
 }

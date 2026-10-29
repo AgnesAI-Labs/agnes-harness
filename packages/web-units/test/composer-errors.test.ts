@@ -1,39 +1,59 @@
-import { AttachmentValidationError, SafeImageError } from '@agnes/protocol-validation'
 import { describe, expect, it } from 'vitest'
-import { attachmentErrorNotice } from '../src/composer-errors.js'
+import { attachmentErrorMessage } from '../src/composer-errors.js'
+import { webUnitsLocaleCatalog } from '../src/locales/index.js'
 
-const attachment = (code: AttachmentValidationError['code']) => new AttachmentValidationError(code, 'refused')
-
-const image = (code: SafeImageError['code']) => new SafeImageError(code, 'refused')
-
-describe('attachment and image validation errors map to composer entries', () => {
-  it('keeps file refusals on file entries', () => {
-    // 文件与图片共用一条解码器，但「文件数据坏了」不能报成「图片无效」。
-    expect(attachmentErrorNotice(attachment('ATTACHMENT_DATA'))).toEqual({
-      key: 'composer.attachment.dataInvalid',
+for (const locale of ['en', 'zh-CN'] as const)
+  describe(locale, () => {
+    const t = (key: string, vars?: Readonly<Record<string, string | number>>) =>
+      (webUnitsLocaleCatalog[locale][key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) =>
+        String(vars?.[name] ?? name),
+      )
+    it.each([
+      'ATTACHMENT_COUNT',
+      'ATTACHMENT_DATA',
+      'ATTACHMENT_NAME',
+      'ATTACHMENT_BYTES',
+      'PIXEL_LIMIT',
+      'BYTE_LIMIT',
+      'FORMAT_INVALID',
+      'MIME_MISMATCH',
+      'ATTACHMENT_PIXELS',
+      'ATTACHMENT_MIME',
+      'ATTACHMENT_HASH_MISMATCH',
+      'ATTACHMENT_NOT_AUTHORIZED',
+      'ATTACHMENT_MISSING',
+      'ATTACHMENT_QUOTA',
+      'ATTACHMENT_CANCELLED',
+      'ATTACHMENT_TIMEOUT',
+      'ATTACHMENT_UNAVAILABLE',
+      'ATTACHMENT_TOO_LARGE',
+    ])('uses the same safe translation for local and submitted %s errors', (code) => {
+      const local = attachmentErrorMessage({ code, message: 'untrusted details' }, t)
+      expect(local).toBeTruthy()
+      expect(local).not.toContain('composer.')
+      expect(local).not.toContain('untrusted')
+      expect(attachmentErrorMessage({ data: { code: 'E_INVALID_PARAMS', reason: code } }, t)).toBe(local)
+      expect(attachmentErrorMessage({ data: { code } }, t)).toBe(local)
+      expect(attachmentErrorMessage({ code: 'E_ATTACHMENT', detail: { code } }, t)).toBe(local)
+      expect(attachmentErrorMessage({ data: { code: 'E_ATTACHMENT', detail: { code } } }, t)).toBe(local)
     })
-    expect(attachmentErrorNotice(attachment('ATTACHMENT_NAME'))).toEqual({
-      key: 'composer.attachment.nameInvalid',
+    it('preserves the caller fallback when a translation is missing', () => {
+      expect(attachmentErrorMessage({ code: 'ATTACHMENT_BYTES' }, (key) => key)).toBeUndefined()
     })
-    expect(attachmentErrorNotice(attachment('ATTACHMENT_BYTES'))).toEqual({
-      key: 'composer.attachment.tooLarge',
-    })
-    expect(attachmentErrorNotice(attachment('ATTACHMENT_COUNT'))).toEqual({
-      key: 'composer.attachment.tooMany',
-      vars: { count: 50 },
+    it('distinguishes image limits, malformed images and invalid MIME and does not reinterpret unknown errors', () => {
+      expect(
+        new Set(
+          ['PIXEL_LIMIT', 'BYTE_LIMIT', 'FORMAT_INVALID', 'MIME_MISMATCH'].map((code) =>
+            attachmentErrorMessage({ code }, t),
+          ),
+        ).size,
+      ).toBe(4)
+      for (const error of [
+        null,
+        new Error('ATTACHMENT_BYTES'),
+        { code: 'toString' },
+        { data: { reason: 'private bytes' } },
+      ])
+        expect(attachmentErrorMessage(error, t)).toBeUndefined()
     })
   })
-
-  it('splits image refusals by cause', () => {
-    expect(attachmentErrorNotice(image('PIXEL_LIMIT'))).toEqual({ key: 'composer.image.tooLargePixels' })
-    expect(attachmentErrorNotice(image('BYTE_LIMIT'))).toEqual({ key: 'composer.image.tooLarge' })
-    for (const code of ['BASE64_INVALID', 'FORMAT_INVALID', 'MIME_MISMATCH', 'DIMENSIONS_INVALID'] as const)
-      expect(attachmentErrorNotice(image(code)), code).toEqual({ key: 'composer.image.invalid' })
-  })
-
-  it('leaves unrelated failures to the caller', () => {
-    // 后台错误、网络错误没有词条，调用方沿用原文案。
-    expect(attachmentErrorNotice(new Error('follow-up rejected'))).toBeUndefined()
-    expect(attachmentErrorNotice(undefined)).toBeUndefined()
-  })
-})

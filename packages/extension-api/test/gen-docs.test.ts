@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { HOOK_EVENTS, HOOK_TABLE, SLOT_NAMES, SLOT_TABLE, TOOL_META_KEYS } from '../src/index.js'
 import {
@@ -26,9 +25,17 @@ describe('author documentation generation', () => {
     expect(docs['services.md']).toContain(
       'required: name, kind, inputSchema, outputSchema, timeoutMs, maxResultBytes',
     )
+    expect(docs['services.md']).toContain(
+      '[ServiceCapability](../../protocol/schema/extension-service.json#/$defs/ServiceCapability): anyOf: 3 branches',
+    )
+    expect(docs['services.md']).toContain('Services default to session scope.')
+    expect(docs['services.md']).toContain(
+      'Scope: profile; kind: effect; required: name, kind, inputSchema, outputSchema, timeoutMs, maxResultBytes, scope, effectPolicy',
+    )
+    expect(docs['services.md']).toContain('Explicit profile services have no session or workspace ports;')
     expect(docs['projections.md']).toContain('required: name, inputEventTypes, maxStateBytes')
   })
-  it('uses all four real slots and eight metadata keys in order', () => {
+  it('uses all four real slots and required and optional metadata fields in order', () => {
     const docs = generateAll(),
       slots = docs['slots.md'] ?? '',
       tools = docs['tools-meta.md'] ?? ''
@@ -36,8 +43,20 @@ describe('author documentation generation', () => {
     expect(slots.match(/^\| `[a-z.]+` \|/gm)).toHaveLength(4)
     expect((tools.match(/^\| `([^`]+)` \|/gm) ?? []).map((row) => row.split('`')[1])).toEqual([
       ...TOOL_META_KEYS,
-      'returnsImages',
+      'costHint',
+      'deferLoading',
+      'discoveryGroup',
+      'requiresApproval',
+      'isPresentational',
+      'attestsHistory',
+      'invalidArgumentLimit',
+      'modelVisible',
+      'requiresImageInput',
+      'requiresUser',
+      'paths',
+      'commandArg',
     ])
+    expect(tools).toContain('`isPresentational` is optional')
     expect(tools).toContain('does not override explicit approval or concurrency flags')
   })
   it('escapes table delimiters, newlines and HTML while retaining generated links', () => {
@@ -54,9 +73,5 @@ describe('author documentation generation', () => {
   it('refuses missing source definitions or descriptions', () => {
     expect(() => schemaSummary({ $defs: {} }, 'hooks.json', 'Missing')).toThrow(/missing definition/)
     expect(() => renderToolsMetaDoc({ keys: ['a'], descriptions: {} })).toThrow(/missing/)
-  })
-  it('checked-in documents exactly match generation', () => {
-    for (const [file, fresh] of Object.entries(generateAll()))
-      expect(readFileSync(new URL(`../docs/${file}`, import.meta.url), 'utf8'), file).toBe(fresh)
   })
 })

@@ -1,4 +1,5 @@
-import { tr } from './locale-bridge.js'
+import { tr } from '@agnes/web-foundation/locale-bridge'
+import { cycleTaskFocus } from './workbench/focus.js'
 
 const getButton = (id: string) => {
   const value = document.getElementById(id)
@@ -20,9 +21,8 @@ export function bindSidebar(narrow: MediaQueryList): { close(): void; dismiss():
     toggle.setAttribute('aria-expanded', String(visible))
     toggle.setAttribute('aria-label', visible ? tr('shell.collapseNav') : tr('shell.openNav'))
     const sidebar = document.querySelector<HTMLElement>('.sidebar')
-    // 宽屏的「收起」只是把侧栏压成 3.5rem 轨道：图标还在屏幕上，点了就得有反应，所以
-    // 这个状态下不能 inert。真正移出视口的只有窄屏的抽屉，那时才需要把它挡在键盘和
-    // 辅助技术之外——`visible` 在宽屏表示「展开」，在窄屏表示「抽屉打开」，两者含义不同。
+    // A collapsed desktop sidebar is still an interactive rail. Only the closed mobile
+    // drawer is off-screen and must leave the keyboard/accessibility tree.
     if (sidebar) sidebar.inert = narrow.matches && !visible
     const main = document.querySelector('main')
     if (main) main.inert = narrow.matches && visible
@@ -36,6 +36,8 @@ export function bindSidebar(narrow: MediaQueryList): { close(): void; dismiss():
     readingTop = undefined
   }
   const dismiss = (): void => {
+    // Only an open drawer has anything to dismiss; a closed one must not take focus.
+    if (!document.body.classList.contains('sidebar-open')) return
     hide()
     getButton('sidebar-toggle').focus({ preventScroll: true })
     if (readingTop !== undefined) {
@@ -55,9 +57,10 @@ export function bindSidebar(narrow: MediaQueryList): { close(): void; dismiss():
     if (narrow.matches && document.body.classList.contains('sidebar-open'))
       getButton('sidebar-close').focus({ preventScroll: true })
   }
-  const onDismiss = () => dismiss()
+  const onDismiss = () => (narrow.matches ? dismiss() : onToggle())
   const onMediaChange = () => sync()
   const onKeydown = (event: KeyboardEvent) => {
+    cycleTaskFocus(event)
     if (
       !event.defaultPrevented &&
       !document.querySelector('dialog[open]') &&
@@ -72,6 +75,7 @@ export function bindSidebar(narrow: MediaQueryList): { close(): void; dismiss():
   closeButton.addEventListener('click', onDismiss)
   backdrop.addEventListener('click', onDismiss)
   document.addEventListener('keydown', onKeydown)
+  window.addEventListener('agnes:locale-changed', sync)
   sync()
   return {
     close,
@@ -82,36 +86,7 @@ export function bindSidebar(narrow: MediaQueryList): { close(): void; dismiss():
       closeButton.removeEventListener('click', onDismiss)
       backdrop.removeEventListener('click', onDismiss)
       document.removeEventListener('keydown', onKeydown)
+      window.removeEventListener('agnes:locale-changed', sync)
     },
-  }
-}
-
-// 第三项是 rail 上的入口按钮 id。技能与 MCP 拆成两条独立 Tab（共用同一个面板），
-// 所以这里允许一项对应多个入口。
-const SETTINGS = [
-  ['model', 'model-settings-pane', ['model-settings']],
-  ['plugin', 'plugin-settings-pane', ['plugin-management']],
-  ['resources', 'resource-settings-pane', ['skills-tab', 'mcp-tab']],
-  ['archived', 'archived-settings-pane', ['archived-settings']],
-  ['computer-use', 'computer-use-settings-pane', ['computer-use-management']],
-  ['appearance', 'appearance-settings-pane', ['appearance-settings']],
-] as const
-export function showSettingsPane(pane: (typeof SETTINGS)[number][0]): void {
-  for (const [name, paneId, navigationIds] of SETTINGS) {
-    const content = document.getElementById(paneId)
-    if (!(content instanceof HTMLElement)) throw new Error('missing settings panes')
-    const selected = pane === name
-    content.hidden = !selected
-    for (const navigationId of navigationIds) {
-      const navigation = getButton(navigationId)
-      // 「技能 / MCP」这两个入口同时也是资源类型的切换器，高亮跟着 aria-selected 走，
-      // 否则两条 Tab 会同时亮（面板里真正在看哪一类就分不出来了）。
-      const highlighted = navigation.hasAttribute('aria-selected')
-        ? selected && navigation.getAttribute('aria-selected') === 'true'
-        : selected
-      navigation.classList.toggle('active', highlighted)
-      navigation.toggleAttribute('aria-current', highlighted)
-      if (highlighted) navigation.setAttribute('aria-current', 'page')
-    }
   }
 }

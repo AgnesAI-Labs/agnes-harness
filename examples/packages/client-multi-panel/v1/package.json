@@ -8,13 +8,39 @@
     "plugins": [
       {
         "export": "primary",
+        "apiRange": "^5.0.0",
         "id": "ext:examples/client-multi-panel/primary",
-        "runtime": "in-process"
+        "runtime": "in-process",
+        "metadata": {
+          "displayName": "Multiple panels example",
+          "summary": "Demonstrates two independently owned workbench panels from one plugin package.",
+          "description": "Demonstrates two independently owned workbench panels from one plugin package.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "多面板示例",
+              "summary": "演示一个插件包如何提供两个各自归属明确的工作台面板。",
+              "description": "演示一个插件包如何提供两个各自归属明确的工作台面板。"
+            }
+          }
+        }
       },
       {
         "export": "secondary",
+        "apiRange": "^5.0.0",
         "id": "ext:examples/client-multi-panel/secondary",
-        "runtime": "in-process"
+        "runtime": "in-process",
+        "metadata": {
+          "displayName": "Multiple panels example",
+          "summary": "Demonstrates two independently owned workbench panels from one plugin package.",
+          "description": "Demonstrates two independently owned workbench panels from one plugin package.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "多面板示例",
+              "summary": "演示一个插件包如何提供两个各自归属明确的工作台面板。",
+              "description": "演示一个插件包如何提供两个各自归属明确的工作台面板。"
+            }
+          }
+        }
       }
     ],
     "clientDescriptors": [
@@ -26,6 +52,21 @@
         "rowId": "ext:examples/client-multi-panel/secondary",
         "path": "./extensions/secondary/agnes.client.json"
       }
+    ],
+    "metadata": {
+      "displayName": "Multiple panels example",
+      "summary": "Demonstrates two independently owned workbench panels from one plugin package.",
+      "description": "Demonstrates two independently owned workbench panels from one plugin package.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "多面板示例",
+          "summary": "演示一个插件包如何提供两个各自归属明确的工作台面板。",
+          "description": "演示一个插件包如何提供两个各自归属明确的工作台面板。"
+        }
+      }
+    },
+    "provides": [
+      "ui"
     ]
   },
   "exports": "./index.mjs"

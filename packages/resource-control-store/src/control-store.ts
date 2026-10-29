@@ -1,7 +1,7 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { ResourceControlMethodName } from '@agnes/protocol'
+import { jcs, type ResourceControlMethodName, rpcError, type SkillScanReport } from '@agnes/protocol'
 import { windowsWritePrivateFile } from '@agnes/system-node'
 import type { McpLifecycleAdapter, SkillCatalogAdapter } from './adapters.js'
 import type { ResourceStateStore } from './handler.js'
@@ -12,12 +12,16 @@ import { createSkillResourceStore, type SkillResourceStore } from './skills.js'
 
 /** One daemon service with independently durable Skill and MCP journals. */
 export class ResourceControlStore implements ResourceStateStore {
+  private readonly instanceId = randomUUID()
   readonly skills: SkillResourceStore
   readonly mcp: McpResourceStore
   private readonly directory: string
   private readonly tails = new Map<string, Promise<unknown>>()
   private readonly drives = new Map<string, Promise<unknown>>()
-  private onSuccessfulSnapshot: ((profile: string) => void) | undefined
+  private readonly snapshotRevisions = new Map<string, string>()
+  private onSuccessfulSnapshot:
+    | ((profile: string, change?: { skillControlRevision: string }) => void)
+    | undefined
   constructor(options: {
     directory: string
     scope: ResourceProfileScope
@@ -101,26 +105,12 @@ export class ResourceControlStore implements ResourceStateStore {
         } while (cursor)
         return items
       }
-      const skillAll = async (): Promise<{ items: unknown[]; skillRoots?: unknown }> => {
-        const items: unknown[] = []
-        let skillRoots: unknown
-        let cursor: string | undefined
-        do {
-          const page = (await this.skills.call(
-            method,
-            {
-              profile: params.profile,
-              ...(params.kind ? { kind: params.kind } : {}),
-              ...(params.workspaceId ? { workspaceId: params.workspaceId } : {}),
-              ...(cursor ? { cursor } : {}),
-            },
-            authority,
-          )) as { items: unknown[]; nextCursor?: string; skillRoots?: unknown }
-          items.push(...page.items)
-          if (skillRoots === undefined && page.skillRoots) skillRoots = page.skillRoots
-          cursor = page.nextCursor
-        } while (cursor)
-        return { items, ...(skillRoots === undefined ? {} : { skillRoots }) }
+      const skillAll = async (): Promise<{
+        items: unknown[]
+        skillRoots?: unknown
+        skillScanReport?: SkillScanReport
+      }> => {
+        return this.skills.view(params)
       }
       const [skills, mcp] = await Promise.all([
         skillAll(),
@@ -129,19 +119,39 @@ export class ResourceControlStore implements ResourceStateStore {
         mcpAll(),
       ])
       const kind = params.kind
-      const all = (
+      const sorted = (
         [...(kind === 'mcp' ? [] : skills.items), ...(kind === 'skill' ? [] : mcp)] as Array<{
           resourceId: string
         }>
-      )
-        .sort((a, b) => a.resourceId.localeCompare(b.resourceId))
-        .filter((item) => !params.cursor || item.resourceId > params.cursor)
+      ).sort((a, b) => a.resourceId.localeCompare(b.resourceId))
+      const revision = createHash('sha256')
+        .update(
+          jcs({
+            instance: this.instanceId,
+            profile: params.profile,
+            principal: authority.principalId,
+            kind: kind ?? null,
+            workspace: params.workspaceId ?? null,
+            roots: skills.skillRoots ?? null,
+            items: sorted,
+          }),
+        )
+        .digest('hex')
+      const prefix = `v1:${revision}:`
+      if (params.cursor && (typeof params.cursor !== 'string' || !params.cursor.startsWith(prefix)))
+        throw rpcError('SEMANTIC_REJECTED', {
+          code: 'RESOURCE_CURSOR_STALE',
+          reason: 'Resource list changed; reload the first page',
+        })
+      const after = typeof params.cursor === 'string' ? params.cursor.slice(prefix.length) : undefined
+      const all = sorted.filter((item) => !after || item.resourceId > after)
       const items = all.slice(0, 100)
       const last = items.at(-1)
       return {
         items,
-        ...(all.length > items.length && last ? { nextCursor: last.resourceId } : {}),
+        ...(all.length > items.length && last ? { nextCursor: prefix + last.resourceId } : {}),
         ...(kind === 'mcp' || skills.skillRoots === undefined ? {} : { skillRoots: skills.skillRoots }),
+        ...(kind === 'mcp' || !skills.skillScanReport ? {} : { skillScanReport: skills.skillScanReport }),
       }
     }
     if (method === '_agnes/v1/resources.get')
@@ -171,7 +181,13 @@ export class ResourceControlStore implements ResourceStateStore {
           params.profile as string,
           (result as { operationId: string }).operationId,
           () => this.writeWorkerSnapshot(params.profile as string),
-          () => this.onSuccessfulSnapshot?.(params.profile as string),
+          () =>
+            this.onSuccessfulSnapshot?.(
+              params.profile as string,
+              ['_agnes/v1/resources.desired.set', '_agnes/v1/skills.trust.set'].includes(method)
+                ? { skillControlRevision: this.snapshotRevisions.get(params.profile as string) ?? '' }
+                : undefined,
+            ),
         )
       })
     return result
@@ -195,7 +211,9 @@ export class ResourceControlStore implements ResourceStateStore {
     ])
   }
   /** Called only after a successful effect's latest worker snapshot and terminal operation commit. */
-  setSuccessfulSnapshotHandler(handler: (profile: string) => void): void {
+  setSuccessfulSnapshotHandler(
+    handler: (profile: string, change?: { skillControlRevision: string }) => void,
+  ): void {
     if (this.onSuccessfulSnapshot) throw new Error('worker snapshot handler is already configured')
     this.onSuccessfulSnapshot = handler
   }
@@ -219,10 +237,13 @@ export class ResourceControlStore implements ResourceStateStore {
       mcp: await this.mcp.workerManaged(profile),
       mcpAuthority: 'resource-control' as const,
     }
+    const bytes = JSON.stringify(snapshot)
+    const revision = createHash('sha256').update(bytes).digest('hex')
     const target = this.snapshotPath(profile)
     const windows = process.platform === 'win32' // guards-allow-platform: select shared Windows persistence; retain POSIX.
     if (windows) {
-      await windowsWritePrivateFile(target, Buffer.from(JSON.stringify(snapshot)))
+      await windowsWritePrivateFile(target, Buffer.from(bytes))
+      this.snapshotRevisions.set(profile, revision)
       return
     }
     await mkdir(join(this.directory, 'worker-snapshots'), { recursive: true, mode: 0o700 })
@@ -230,12 +251,13 @@ export class ResourceControlStore implements ResourceStateStore {
     try {
       const handle = await open(temporary, 'wx', 0o600)
       try {
-        await handle.writeFile(JSON.stringify(snapshot))
+        await handle.writeFile(bytes)
         await handle.sync()
       } finally {
         await handle.close()
       }
       await rename(temporary, target)
+      this.snapshotRevisions.set(profile, revision)
     } finally {
       await rm(temporary, { force: true }).catch(() => undefined)
     }

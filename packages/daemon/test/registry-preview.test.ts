@@ -1,14 +1,17 @@
 import type { EventEnvelope } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
+import { workspaceBinding } from '../../daemon-foundation/test/workspace-authority.js'
 import type { PreviewUpdate } from '../src/registry.js'
 import { WorkerRegistry } from '../src/supervisor/registry.js'
 import { PREVIEW_SNAPSHOT_TIMEOUT_MS } from '../src/supervisor/remote-session.js'
 import type { WorkerPool } from '../src/supervisor/worker-pool.js'
-import { workspaceBinding } from './workspace-authority.js'
 
 const update: PreviewUpdate = { lane: 'main', effectId: 'e1', stream: 'text', offset: 0, delta: 'hi' }
 
-function fakeLink(command: (method: string, params: Record<string, unknown>) => Promise<unknown>) {
+function fakeLink(
+  command: (method: string, params: Record<string, unknown>) => Promise<unknown>,
+  lastSeq = 0,
+) {
   return {
     alive: true,
     hello: Promise.resolve({
@@ -18,6 +21,7 @@ function fakeLink(command: (method: string, params: Record<string, unknown>) => 
       writerRunId: 'run',
       generation: 1,
       profileHash: 'sha256-profile',
+      lastSeq,
     }),
     onExit: vi.fn(),
     closeSession: vi.fn(async () => undefined),
@@ -36,7 +40,7 @@ async function openWith(registry: WorkerRegistry, key: string) {
 
 describe('WorkerRegistry live previews', () => {
   it('fans a preview out to every subscriber and stops after unsubscribe and close', async () => {
-    const link = fakeLink(async (method) => (method === 'scan' ? { rows: [] } : undefined))
+    const link = fakeLink(async (method) => (method === 'scan' ? [] : undefined))
     const registry = new WorkerRegistry({ acquire: vi.fn(async () => link) } as unknown as WorkerPool)
     await openWith(registry, 's')
     const a: PreviewUpdate[] = []
@@ -59,7 +63,7 @@ describe('WorkerRegistry live previews', () => {
   })
 
   it('does not let a preview overtake an event still being projected for artifact authority', async () => {
-    const link = fakeLink(async (method) => (method === 'scan' ? { rows: [] } : undefined))
+    const link = fakeLink(async (method) => (method === 'scan' ? [] : undefined))
     let release!: () => void
     const gate = new Promise<void>((resolve) => {
       release = resolve
@@ -95,11 +99,15 @@ describe('WorkerRegistry live previews', () => {
     let generation = 0
     const acquire = vi.fn(async () => {
       const second = ++generation === 2
-      const link = fakeLink(async (method) => {
-        if (method !== 'scan') return undefined
-        if (second) await scanGate
-        return { rows: [] }
-      })
+      // The reopened generation has history to read, so its replay has a scan to hold back.
+      const link = fakeLink(
+        async (method) => {
+          if (method !== 'scan') return undefined
+          if (second) await scanGate
+          return []
+        },
+        second ? 1 : 0,
+      )
       link.onExit = vi.fn((fn: () => void) => {
         if (!second) exit = fn
       })
@@ -130,7 +138,7 @@ describe('WorkerRegistry live previews', () => {
   it('asks the hosting worker for the snapshot', async () => {
     const snapshot = [{ lane: 'main', effectId: 'e1', text: 'so far', thinking: '' }]
     const command = vi.fn(async (method: string) => {
-      if (method === 'scan') return { rows: [] }
+      if (method === 'scan') return []
       if (method === 'previewSnapshot') return snapshot
       return undefined
     })

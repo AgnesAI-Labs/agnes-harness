@@ -99,33 +99,6 @@ describe('session-v1 I2: every closed-set type has a data schema', () => {
           tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
         },
       ],
-      // bindingHash is the empty string on the budget and the unknown-outcome paths: neither ask is
-      // bound to a tool argv, so the pattern has to admit '' as well as 64 hex digits.
-      [
-        'approval/asked',
-        {
-          requestId: 'r1',
-          kind: 'budget',
-          summary: 's',
-          risk: 'budget',
-          bindingHash: '',
-          deadline: '2026-09-09T00:00:00Z',
-        },
-      ],
-      [
-        'approval/asked',
-        {
-          requestId: 'r2',
-          kind: 'tool',
-          toolUseId: 't1',
-          summary: 'read {}',
-          risk: 'destructive',
-          bindingHash: 'b'.repeat(64),
-          deadline: '2026-09-09T00:00:00Z',
-          pending: { ticket: 'tk', expiresAt: '2026-09-09T00:01:00Z' },
-        },
-      ],
-      ['approval/decided', { requestId: 'r1', verdict: 'rejected', via: 'sync' }],
       ['plan.items', { items: [{ id: 'a', text: 'do', status: 'todo' }] }],
       ['artifact/job', { jobId: 'j1', status: 'queued' }],
     ]
@@ -165,10 +138,8 @@ describe('session-v1 I2: every closed-set type has a data schema', () => {
     // queue at all and report an empty inbox rather than a malformed one.
     expect(validateEvent(env('inbox', { nextTurn: null, nextStep: null })).ok).toBe(false)
   })
-  it('approval/decided requires via in the closed set', () => {
-    const bad = validateEvent(env('approval/decided', { requestId: 'r1', verdict: 'rejected', via: 'magic' }))
-    expect(bad.ok).toBe(false)
-    if (!bad.ok) expect(bad.errors[0]).toMatchObject({ code: 'ENUM' })
+  it.each(['approval/asked', 'approval/decided'])('rejects the retired %s event', (type) => {
+    expect(validateEvent(env(type, {})).ok).toBe(false)
   })
   it('all checked-in i2 fixtures agree with the validator', () => {
     const lines = readFileSync(new URL('../fixtures/events/i2-types.jsonl', import.meta.url), 'utf8')

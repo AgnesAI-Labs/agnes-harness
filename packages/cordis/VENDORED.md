@@ -29,6 +29,12 @@ Cordis 核心（Context / fiber / reflect / registry / events / Service），前
 6. `ReflectService.provide()` 增加写 effect/store 前的同步 `internal/provide` waterfall，并让 dependency refresh 同时覆盖私有 prepared runtime。
 7. 五类事件 dispatch 在分派前统一报告 source Context、显式 listener `this` 与模块私有 system provenance；Cordis 生命周期经不可枚举/不可反射伪造的私有 dispatcher 标记，公开 `ctx.*` / `ctx.events.*` / 提取调用始终按非 system 路径处理。
 
+8. PLUGFIX：公开 emit、私有 system emit 和 dispatch 观察器的异步失败经监听器所属 context 的 logger 记录（保留 fiber 归属）；旧 fiber 仅删除仍属于其 runtime 的 registry 条目；logger exporter disposer 捕获注册时的 id。同步 gate 拒绝和 awaited dispatch 错误保持传播；detached 错误记录时 exporter 抛错也不会产生二次 unhandled rejection。
+
+9. PLUGFIX：公开/prepared awaitable fiber 在稳定 PENDING 时拒绝 DEPENDENCY_UNAVAILABLE，dispose 后拒绝 INACTIVE_EFFECT；Fiber.await() 保留等待当前迁移稳定（允许 PENDING）的 Host 语义。
+
+10. 声明为 `{ required: false }` 的服务依赖在缺失时不阻止 fiber 激活，读取返回 `undefined`；服务注册、撤销时仍按依赖变化重新加载。清单中已有的 `optionalInject` 由此在公开与 prepared 生命周期中一致生效。
+
 ## 生命周期
 
 - 后续升级：取新版 npm 包源码，重做上述机械改写，diff 审查后更新本文件与棘轮值；跑 A4 同组级联用例回归。

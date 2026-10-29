@@ -8,8 +8,21 @@
     "plugins": [
       {
         "export": "main",
+        "apiRange": "^5.0.0",
         "id": "ext:examples/dsh-model-picker-b/main",
-        "runtime": "in-process"
+        "runtime": "in-process",
+        "metadata": {
+          "displayName": "Fallback model entry example (failure fixture)",
+          "summary": "Deliberately fails fallback model entry example validation or loading to demonstrate refusal and recovery.",
+          "description": "Deliberately fails fallback model entry example validation or loading to demonstrate refusal and recovery.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "备用模型入口示例（失败测试包）",
+              "summary": "故意使备用模型入口示例的校验或加载失败，用于演示拒绝和恢复。",
+              "description": "故意使备用模型入口示例的校验或加载失败，用于演示拒绝和恢复。"
+            }
+          }
+        }
       }
     ],
     "clientDescriptors": [
@@ -17,6 +30,21 @@
         "rowId": "ext:examples/dsh-model-picker-b/main",
         "path": "./extensions/main/agnes.client.json"
       }
+    ],
+    "metadata": {
+      "displayName": "Fallback model entry example (failure fixture)",
+      "summary": "Deliberately fails fallback model entry example validation or loading to demonstrate refusal and recovery.",
+      "description": "Deliberately fails fallback model entry example validation or loading to demonstrate refusal and recovery.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "备用模型入口示例（失败测试包）",
+          "summary": "故意使备用模型入口示例的校验或加载失败，用于演示拒绝和恢复。",
+          "description": "故意使备用模型入口示例的校验或加载失败，用于演示拒绝和恢复。"
+        }
+      }
+    },
+    "provides": [
+      "ui"
     ]
   },
   "exports": "./index.mjs"

@@ -21,6 +21,7 @@ import {
   sessionKeyFor,
   whitelistCredential,
 } from '../src/adapter.js'
+import { decisionKey } from '../src/decision.js'
 
 // Same drop as runner/draw.ts's toAcpOptions: UINode's approval options can include Agnes' own
 // 'allow_permanent' (durable-grant) entry, which has no ACP PermissionOptionKind counterpart and no
@@ -132,7 +133,7 @@ export class FakeChannel implements ChannelAdapter {
           risk: node.risk,
           options: toAcpOptions(node.options),
           ...(node.requestSeq !== undefined ? { requestSeq: node.requestSeq } : {}),
-          ...(node.ticket !== undefined ? { ticket: node.ticket } : {}),
+          ...(node.decisionRef ? { decisionKey: decisionKey(node.decisionRef) } : {}),
           ...(node.expiresAt !== undefined ? { expiresAt: node.expiresAt } : {}),
         })
       case 'cost':
@@ -167,8 +168,8 @@ export class FakeChannel implements ChannelAdapter {
     this.reactions.push({ ref, emoji })
   }
 
-  renderApproval(request: ApprovalView, ticket?: string): ChannelMessage {
-    const effectiveTicket = ticket ?? request.ticket
+  renderApproval(request: ApprovalView, decisionKey?: string): ChannelMessage {
+    const effectiveDecisionKey = decisionKey ?? request.decisionKey
     return {
       blocks: [
         {
@@ -177,7 +178,7 @@ export class FakeChannel implements ChannelAdapter {
           summary: request.summary,
           risk: request.risk,
           options: request.options,
-          ...(effectiveTicket !== undefined ? { ticket: effectiveTicket } : {}),
+          ...(effectiveDecisionKey !== undefined ? { decisionKey: effectiveDecisionKey } : {}),
           ...(request.requestSeq !== undefined ? { requestSeq: request.requestSeq } : {}),
           ...(request.expiresAt !== undefined ? { expiresAt: request.expiresAt } : {}),
         },
@@ -196,7 +197,7 @@ export class FakeChannel implements ChannelAdapter {
     const verdict =
       action === 'allow_once' ? 'allowed-once' : action === 'allow_always' ? 'allowed-session' : 'rejected'
     return {
-      ...(requestSeq !== undefined ? { requestSeq } : { ticket: key }),
+      ...(requestSeq !== undefined ? { requestSeq } : { decisionKey: key }),
       verdict,
       approverCredential: this.credentialOf(event),
     }

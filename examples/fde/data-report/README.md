@@ -1,0 +1,74 @@
+# Data report agent
+
+English | [简体中文](README.zh-CN.md) · [Enterprise application examples](../README.md)
+
+A finance analyst needs reproducible figures and a shareable CSV report.
+
+**Workflow:** Read CSV → compute totals and margin → markdown/HTML with SVG charts → model commentary.
+
+No chart library is needed. Reports are returned in tool results, then written to the bounded output directory and registered by official `present`. The bounded CSV dialect rejects quoted fields instead of silently misreading them.
+
+## What ships
+
+- `main`: author-kit plugin registering business tools, `fde.data-report` loop and policy, and the packaged Skill.
+- `defineWorkflowLoop` from `@agnes/plugin-runtime`: official checkpoints, confirmation, cancellation and refusal on uncertain recovery; the package contains only business stages and connectors.
+- `fixtures/`: synthetic business input; `skills/playbook/SKILL.md`: customer playbook registered and used in model prompts.
+- The bundle kind is declared in `agnes.provides`; `agnes.bundles.data-report` selects the loop and supplies its preset.
+
+## Install and run
+
+Use Node 24.10+ and a source-built `agh` from [installation](../../../docs/guide/install.md). Preview author packages are not promised as public npm releases. A fresh local-dev profile supplies keyless `demo/demo-model`. Existing configured profiles must retain that route or use the real-model configuration below. Review the source, dependencies and capabilities when installing; confirmation installs, trusts and enables the reviewed package.
+
+Start from the repository root:
+
+```sh
+cd examples/fde/data-report
+agh plugins add .
+agh --new --agent '@agnes-fde/data-report#data-report' -p "$(cat fixtures/prompt.txt)"
+agh serve
+```
+
+For a portable package, run `npm pack` here and install the resulting tarball with `agh plugins add ./NAME.tgz`. Runtime, fixtures, playbook and any panel/MCP server travel together. No workspace imports or sibling examples are required.
+
+This read-only workflow completes headlessly. Inspect the report in JSONL tool results and assistant messages.
+
+Web: open the serve URL and choose `@agnes-fde/data-report#data-report` on **Agents**. Review the launch configuration, create a new session and submit `fixtures/prompt.txt`. Inspect deliverables and business questions; backend tool authorization still applies.
+
+This is a one-turn fixture workflow with fixed identifiers. The built-in Demo route makes no live inference; tools produce deterministic evidence and support/CRM drafts are scripted. Quick tests use scripted model replies. With a real model, tool evidence remains the same and model prose becomes live inference.
+
+## Use a real model
+
+Configure a real route/model in AGH, then edit the preset primary route in [real-model.bundle.json](real-model.bundle.json) to the configured pair:
+
+```sh
+agh --new --agent '@agnes-fde/data-report#data-report' -p "$(cat fixtures/prompt.txt)"
+```
+
+The loop uses Core’s public `prepareRequest()`; the session primary model supplies the route, contracts and hashes. For Web, configure the equivalent preset primary route and choose that real model for a new session. Keep keys outside this bundle.
+
+## Adapt for a customer
+
+Define customer CSV dialect, KPI definitions and source lineage. Replace fixture loading through supported file/read ports; add approved export separately.
+
+Keep facts and approval in the backend. Ordinary plugins are trusted in-process code; declarations are review metadata, not process isolation. Denied tools, model errors and interrupted pending stages stop this example. Reconcile a pending checkpoint before starting a new run; it never automatically repeats an uncertain effect.
+
+## Official tools and outputs
+
+The installed standard preset supplies [official tools](../../../docs/reference/default-tools.md). This bundle registers business connectors and formatters only. Business-source mutation remains denied by the bundle policy.
+
+Official `write` creates reports in `fde-output/data-report/<run-hash>/`; `present` copies them into session artifacts for the standard Open/Download card. Drafts are presented before questions; completed runs also present the final result. The policy allows report writes only at this bounded path, and the official observation/stale-write guard remains active. All other source writes remain denied in evidence-only workflows. Output paths are relative to the session workspace, and the manifest declares their read/write scope.
+
+Loop version **5.0.0** uses checkpoint codec **1** for pending questions. Start a new session after upgrading; incompatible checkpoints are refused rather than replayed. Model selection now comes from the preset primary route. Quick tests script the official tool ports, model and artifact receipts; they do not exercise real question projections, downloads, web providers or background process confinement.
+
+Enable official Plan mode with `/plan on` in Web/TUI **before submitting a fresh task**. The loop detects the public plan-mode prompt section and submits its fixed business steps with `exit_plan_mode`. The official approval card must be approved before connectors, reports or commands run. A denied plan stops the workflow; an inactive plan mode skips this gate. The example policy preserves the shipped default policy's plan-mode denials. Plan approval does not replace a later business question or tool permission. Native single-call tickets resume through public continuation ports and the original invocation receipt; an unknown receipt blocks replay.
+
+## Quick test
+
+After installing matching author-package tarballs from this source revision into this directory:
+
+```sh
+npm run build
+npm test
+```
+
+Tests drive public loop/tool contracts with fixed model replies and check results and refusal boundaries.  See [external verification](../README.md#verification) for the repository harness command.

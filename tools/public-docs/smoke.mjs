@@ -5,8 +5,10 @@ import { execFile, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
+import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { initializeHomeLocked } from '@agnes/host'
 import { createClient, memoryJournal, wsTransport } from '../../packages/sdk/src/index.node.ts'
 import { startProviderFixture } from '../acceptance/provider-fixture.ts'
 
@@ -15,10 +17,10 @@ const args = process.argv.slice(2)
 if (args.length && (args.length !== 2 || args[0] !== '--entry'))
   throw new Error('Usage: smoke.mjs [--entry PATH_TO_BUILT_AGNES]')
 const entry = args[1] ? resolve(args[1]) : resolve(repo, 'packages/cli/dist/local/agnes.mjs')
-const root = await mkdtemp('/tmp/agh-pdocs-')
+const root = await mkdtemp(join(tmpdir(), 'agh-pdocs-'))
 const home = join(root, 'h')
 const cwd = join(root, 'w')
-await mkdir(join(home, 'profiles/local-dev'), { recursive: true, mode: 0o700 })
+await initializeHomeLocked(home, 'local-dev')
 await mkdir(cwd)
 await writeFile(
   join(home, 'profiles/local-dev/profile.yaml'),
@@ -50,7 +52,12 @@ const origin = `http://127.0.0.1:${port}`
 // Allow-list child environment so no account credentials or connection overrides are inherited.
 const env = {
   PATH: process.env.PATH,
-  TMPDIR: '/tmp',
+  SystemRoot: process.env.SystemRoot,
+  HOME: root,
+  USERPROFILE: root,
+  TMPDIR: tmpdir(),
+  TEMP: tmpdir(),
+  TMP: tmpdir(),
   AGH_HOME: home,
   AGNES_PROFILE: 'local-dev',
   AGNES_WEB_ORIGIN: origin,
@@ -94,9 +101,15 @@ try {
   assert.deepEqual(JSON.parse((await run(['sessions', '--json'])).stdout).items, [])
   assert.match((await run(['daemon', 'status'])).stdout, /running/)
   pass('daemon cold start and sessions list')
-  const owner = JSON.parse(await readFile(join(home, 'data/daemon/owner.json'), 'utf8'))
+  const owner = JSON.parse(await readFile(join(home, 'daemon/owner.json'), 'utf8'))
   client = createClient({
-    transport: { kind: 'unix', path: owner.socketPath },
+    transport: {
+      kind: 'unix',
+      path: owner.socketPath,
+      ...(owner.socketPath.startsWith('\\\\.\\pipe\\')
+        ? { serverIdentity: { pid: owner.pid, processStartId: owner.processStartId } }
+        : {}),
+    },
     auth: { kind: 'local' },
     journal: memoryJournal(),
   })
@@ -145,7 +158,14 @@ try {
   pass('default MCP helper invoked through CLI/daemon/worker without manual installation')
   stage = 'conversation plugin authoring'
   const approvals = []
-  const authorSession = await client.session.load(sessionId, {
+  const author = await client.session.new({
+    cwd,
+    preset: 'standard',
+    permission: 'workspace-write',
+    bundles: [],
+  })
+  const authorSession = await client.session.load(author.id, {
+    cwd,
     onPermissionRequest: async (request) => {
       approvals.push(request)
       return { optionId: request.options.find((option) => option.kind === 'allow_once').optionId }
@@ -167,50 +187,74 @@ try {
   provider.queueTool({ name: 'plugin_helper_guide', args: { kind: 'tool' } })
   await authorSession.prompt('Read the AGH plugin guide', { signal: AbortSignal.timeout(30000) })
   const guide = latestToolJSON((data) => data.host === 'Agnes Harness' && Array.isArray(data.files))
-  assert.equal(guide.apiVersion, '1.4.0')
+  const authorApi = JSON.parse(await readFile(join(repo, 'packages/extension-api/package.json'), 'utf8'))
+  assert.equal(guide.apiVersion, authorApi.version)
   stage = 'conversation plugin create'
   provider.queueTool({ name: 'plugin_helper_create', args: { files: guide.files } })
   await authorSession.prompt('Create the sample AGH text statistics plugin', {
     signal: AbortSignal.timeout(30000),
   })
-  const prepared = latestToolJSON((data) => data.state === 'prepared' && data.directory)
+  const prepared = latestToolJSON((data) => data.state === 'draft' && data.candidateId)
+  const candidate = await client.call('_agnes/v1/plugins.candidates.show', {
+    profile: 'local-dev',
+    candidateId: prepared.candidateId,
+  })
+  assert.equal(candidate.candidateHash, prepared.candidateHash)
   assert.equal(
-    await readFile(join(prepared.directory, 'index.mjs'), 'utf8'),
-    guide.files.find((f) => f.path === 'index.mjs').content,
+    candidate.sourceFiles.find((file) => file.path === 'index.mjs').content,
+    guide.files.find((file) => file.path === 'index.mjs').content,
   )
   assert.ok(
     !(await client.packages.list({ profile: 'local-dev' })).packages.some((p) => p.id === 'my-agh-plugin'),
   )
-  stage = 'conversation plugin install/status'
+  stage = 'conversation plugin tests'
   provider.queueTool({
     name: 'plugin_helper_install',
-    args: { action: 'commit', proposalId: prepared.proposalId },
+    args: { action: 'test', proposalId: prepared.candidateId },
   })
-  await authorSession.prompt('Install the prepared plugin into AGH', { signal: AbortSignal.timeout(30000) })
+  await authorSession.prompt('Test the exact plugin candidate', { signal: AbortSignal.timeout(30000) })
+  assert.equal(latestToolJSON((data) => data.tests).tests.state, 'passed')
+  stage = 'conversation plugin review'
+  provider.queueTool({
+    name: 'plugin_helper_install',
+    args: { action: 'commit', proposalId: prepared.candidateId },
+  })
+  await authorSession.prompt('Submit the tested plugin for human review', {
+    signal: AbortSignal.timeout(30000),
+  })
+  const reviewed = await client.call('_agnes/v1/plugins.candidates.show', {
+    profile: 'local-dev',
+    candidateId: prepared.candidateId,
+  })
+  assert.equal(reviewed.state, 'review')
+  assert.equal(reviewed.tests.state, 'passed')
+  assert.equal(reviewed.tests.hash, prepared.candidateHash)
+  assert.ok(
+    approvals.some((request) => JSON.stringify(request).includes(prepared.candidateHash)),
+    'native test approval must bind exact package contents',
+  )
+  stage = 'conversation plugin publication'
+  await client.call('_agnes/v1/plugins.candidates.approve', {
+    profile: 'local-dev',
+    clientId: await client.clientId(),
+    commandId: `docs-${randomUUID()}`,
+    candidateId: prepared.candidateId,
+    expectedHash: prepared.candidateHash,
+    reviewHash: reviewed.reviewHash,
+  })
   await waitUntil(async () =>
     (await client.packages.list({ profile: 'local-dev' })).packages.some(
       (p) => p.id === 'my-agh-plugin' && p.actual === 'running' && p.trusted,
     ),
   )
-  assert.ok(
-    approvals.some((request) => JSON.stringify(request).includes('sha256-')),
-    'native prompt must bind exact package contents',
-  )
-  stage = 'conversation plugin install/status'
-  provider.queueTool({
-    name: 'plugin_helper_install',
-    args: { action: 'status', proposalId: prepared.proposalId },
-  })
-  await authorSession.prompt('Verify the installed plugin', { signal: AbortSignal.timeout(30000) })
-  assert.equal(latestToolJSON((data) => data.proposalId === prepared.proposalId).state, 'ready')
+  // Existing sessions retain their code pin; a new session admits the published tool.
+  const installedAuthor = await client.session.new({ cwd, permission: 'full-access', bundles: [] })
   provider.queueTool({ name: 'my_text_stats', args: { text: 'created in AGH' } })
-  await authorSession.prompt('Use the newly created text statistics tool', {
+  await installedAuthor.prompt('Use the newly created text statistics tool', {
     signal: AbortSignal.timeout(30000),
   })
   assert.equal(latestToolJSON((data) => data.characters === 14).words, 3)
-  pass(
-    'default Plugin Helper: guide/create/native approval/install/actual status/new tool through daemon and worker',
-  )
+  pass('default Plugin Helper: guide/create/exact-hash tests/human publication/new-session tool')
   stage = 'Web launch'
   web = spawn(process.execPath, [entry, 'serve', '--port', String(port)], {
     cwd,
@@ -259,8 +303,20 @@ try {
         profile: common.profile,
         operationId: receipt.operationId,
       })
-      if (result.state === 'failed' || result.state === 'cancelled')
+      if (result.state === 'failed' || result.state === 'cancelled') {
+        await writeFile(
+          join(root, 'package-failure.json'),
+          JSON.stringify(
+            {
+              result,
+              inventory: await client.packages.list({ profile: common.profile }),
+            },
+            null,
+            2,
+          ),
+        )
         throw new Error(`${kind}: ${result.error?.code ?? result.state}`)
+      }
       return ['completed', 'rolled-back'].includes(result.state) ? result : undefined
     })
   }
@@ -280,8 +336,10 @@ try {
     pass(`${name}: inspect/install/trust/enable`)
   }
   stage = 'backend tool'
+  const toolSession = await client.session.new({ cwd, permission: 'full-access', bundles: [] })
+  assert.ok((await toolSession.tools()).tools.some((tool) => tool.name === 'demo_text_stats'))
   provider.queueTool({ name: 'demo_text_stats', args: { text: 'hello world' } })
-  await run(['-p', '--resume', sessionId, 'Count hello world with demo_text_stats'])
+  await run(['-p', '--resume', toolSession.id, 'Count hello world with demo_text_stats'])
   assert.ok(
     provider.requests.some((request) =>
       request.messages.some(
@@ -305,11 +363,12 @@ try {
   pass('frontend and linked service packages projected to client roster')
   stage = 'linked service'
   const serviceId = '@agnes-examples/client-service-panel'
+  let serviceSessionId = toolSession.id
   const callVersion = () =>
     client.clientModules.callService({
       profile: 'local-dev',
       rowId: `web:${serviceId}`,
-      sessionId,
+      sessionId: serviceSessionId,
       service: 'panel.version',
       input: {},
     })
@@ -317,7 +376,7 @@ try {
   pass('linked query through daemon/worker/Host (no browser)')
   const serviceBody = JSON.stringify({
     rowId: `web:${serviceId}`,
-    sessionId,
+    sessionId: serviceSessionId,
     service: 'panel.version',
     input: {},
   })
@@ -343,10 +402,13 @@ try {
     capabilityHash: preview.capabilityHash,
   })
   await op('enable', { id: serviceId })
+  assert.deepEqual((await callVersion()).output, { version: '1.0.0' })
+  serviceSessionId = (await client.session.new({ cwd, permission: 'full-access', bundles: [] })).id
   assert.deepEqual((await callVersion()).output, { version: '2.0.0' })
   pass('linked service update v1 → v2')
   stage = 'service rollback'
   await op('rollback', { id: serviceId })
+  serviceSessionId = (await client.session.new({ cwd, permission: 'full-access', bundles: [] })).id
   await assert.rejects(callVersion(), /CAPABILITY_DENIED/)
   const { preview: previous } = await op('inspect', { source: { type: 'file', ref: 'file:./service-v1' } })
   await op('trust', {
@@ -355,8 +417,9 @@ try {
     capabilityHash: previous.capabilityHash,
   })
   await op('enable', { id: serviceId })
+  serviceSessionId = (await client.session.new({ cwd, permission: 'full-access', bundles: [] })).id
   assert.deepEqual((await callVersion()).output, { version: '1.0.0' })
-  pass('rollback denies calls until explicit trust/enable restores v1')
+  pass('rollback denies fresh-session calls until explicit trust/enable restores v1')
   stage = 'disable/remove'
   for (const id of [
     '@agnes-examples/hot-tool-plugin',
@@ -366,10 +429,30 @@ try {
     await op('disable', { id })
     await op('remove', { id })
   }
-  assert.equal((await client.clientModules.list('local-dev')).modules.length, 0)
+  assert.equal(
+    (await client.clientModules.list('local-dev')).modules.some((row) =>
+      ['@agnes-examples/hot-tool-plugin', '@agnes-examples/client-panel', serviceId].includes(row.packageId),
+    ),
+    false,
+  )
+  serviceSessionId = (await client.session.new({ cwd, permission: 'full-access', bundles: [] })).id
   await assert.rejects(callVersion(), /CAPABILITY_DENIED/)
   pass('disable/remove clears roster and denies stale service calls')
 } catch (error) {
+  if (provider)
+    await writeFile(
+      join(root, 'provider-tools.json'),
+      JSON.stringify(
+        provider.requests.map((request) => ({
+          tools: request.tools,
+          results: request.messages
+            .filter((message) => message.role === 'tool')
+            .map((message) => message.content),
+        })),
+        null,
+        2,
+      ),
+    )
   // This harness owns every request and secret; still print only bounded code/message, not data/headers.
   console.error(`FAIL ${stage}: ${error.name}: ${error.message}`)
   if (/^CONFIG_[A-Z_]+$/.test(error.data?.reason ?? '')) console.error(`safe reason: ${error.data.reason}`)

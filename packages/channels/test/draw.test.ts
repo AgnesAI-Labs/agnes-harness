@@ -1,6 +1,6 @@
 import type { ChannelCapabilities, UINode } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import { contentHash, whatToDraw } from '../src/runner/draw.js'
+import { contentHash, drawSurfaceMessage, whatToDraw } from '../src/runner/draw.js'
 
 const caps: ChannelCapabilities = {
   edit: true,
@@ -62,7 +62,6 @@ describe('whatToDraw', () => {
           requestSeq: 3,
           payload: {
             title: '销售',
-            table: { columns: ['战区', '金额'], rows: [['华东', '10']] },
             actions: [{ id: 'export', label: '导出' }],
           },
         },
@@ -71,11 +70,6 @@ describe('whatToDraw', () => {
     const message = whatToDraw(tool, context)
     expect(message?.blocks[0]).toEqual({ kind: 'text', markdown: '⚙ query · 完成' })
     expect(message?.blocks[1]).toMatchObject({
-      kind: 'table',
-      title: '销售',
-      columns: ['战区', '金额'],
-    })
-    expect(message?.blocks[2]).toMatchObject({
       kind: 'card',
       title: '销售',
       actions: [{ id: 'export', label: '导出' }],
@@ -93,12 +87,12 @@ describe('whatToDraw', () => {
       summary: 'delete report',
       risk: 'destructive',
       options: ['allow_once', 'reject_once'],
-      ticket: 'abcdef123',
+      decisionRef: { sessionId: 's', id: 'abcdef123', revision: 1 },
       expiresAt: 'T',
     }
     expect(whatToDraw(pending, context)?.blocks[0]).toMatchObject({
       kind: 'approval',
-      ticket: 'abcdef123',
+      decisionKey: 's/abcdef123/1',
     })
     expect(
       whatToDraw(
@@ -114,6 +108,17 @@ describe('whatToDraw', () => {
       kind: 'text',
       markdown: '审批已超时',
     })
+
+    expect(
+      whatToDraw(
+        {
+          ...pending,
+          state: 'expired',
+          decision: { verdict: 'allowed-once', via: 'human', reason: 'stopped' },
+        },
+        context,
+      )?.blocks[0],
+    ).toEqual({ kind: 'text', markdown: '任务已停止，审批已撤销' })
 
     const cost: UINode = { kind: 'cost', id: 'cost', seq: 5, credits: 12.5, source: 'gateway' }
     expect(whatToDraw(cost, context)?.blocks[0]).toEqual({
@@ -177,7 +182,7 @@ describe('whatToDraw', () => {
       summary: 'grant tool access',
       risk: 'destructive',
       options: ['allow_once', 'allow_always', 'allow_permanent'],
-      ticket: 'abcdef123',
+      decisionRef: { sessionId: 's', id: 'abcdef123', revision: 1 },
     }
     expect(whatToDraw(pending, context)?.blocks[0]).toMatchObject({
       kind: 'approval',
@@ -197,4 +202,33 @@ describe('whatToDraw', () => {
     )
     expect(message.blocks[0]?.bytes).toBe(bytes)
   })
+})
+
+it('renders numbered surface choices with an authenticated Web fallback and no permission buttons', async () => {
+  const { questionSurface } = await import('../../base/extensions/interaction/src/question.js')
+  const record = {
+    surface: questionSurface('questions', [{ id: 'pick', question: 'Choose', options: ['A', 'B'] }]),
+    status: 'open' as const,
+    owner: 'agnes/intelligent-ui',
+    lane: 'main',
+    taskId: 'task',
+    createdSeq: 1,
+    updatedSeq: 1,
+  }
+  record.surface.components.push({
+    id: 'custom',
+    kind: 'example/review@1',
+    dataKey: 'custom',
+    fallback: 'Review the preset form',
+    actionIds: [],
+  })
+  record.surface.data.custom = {}
+  const message = drawSurfaceMessage(record, 'session x', 'https://web.example/')
+  expect(JSON.stringify(message)).toContain('1. A')
+  expect(JSON.stringify(message)).toContain('2. B')
+  expect(JSON.stringify(message)).toContain('Review the preset form')
+  expect(JSON.stringify(message)).toContain('https://web.example/?session=session%20x&surface=questions')
+  expect(JSON.stringify(message)).toContain('认证 Web')
+  expect(message.blocks).toHaveLength(1)
+  expect(message.blocks[0]?.kind).toBe('text')
 })

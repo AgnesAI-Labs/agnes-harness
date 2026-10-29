@@ -1,7 +1,16 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isPackageError } from '../src/errors.js'
 import {
   emptyLock,
@@ -18,16 +27,13 @@ import {
 // ten-key object, and an npm/market entry carries license, releasedAt and dependencies.
 const HASH = `sha256-${'0'.repeat(64)}`
 const SEAMS = {
-  approval: '@agnes/base',
-  checkpoint: '@agnes/base',
-  ledger: '@agnes/base',
-  sandbox: '@agnes/base',
-  verifier: '@agnes/base',
-  repair: '@agnes/base',
-  artifacts: '@agnes/base',
-  principals: '@agnes/base',
-  platform: '@agnes/base',
-  harness: '@agnes/base',
+  approval: { provider: 'local-prompt' },
+  checkpoint: { provider: 'fs' },
+  billing: { provider: 'budget' },
+  verifier: { provider: 't0' },
+  repair: { provider: 'default' },
+  artifacts: { provider: 'local' },
+  principals: { provider: 'local' },
 }
 const npmEntry = (id: string): LockEntry => ({
   version: '0.1.0',
@@ -66,6 +72,19 @@ describe('lockfile', () => {
     expect(back.packages['@agnes/base']?.integrity).toBe('sha512-x')
     expect(back.resolvedProfileHash).toBe(HASH)
     expect(existsSync(`${lockPath(dir)}.tmp`)).toBe(false)
+
+    const capturedText = readFileSync(
+      new URL('./fixtures/runtime-snapshots-v1/home/profiles/local-dev/agnes-lock.json', import.meta.url),
+      'utf8',
+    )
+    const captured = JSON.parse(capturedText)
+    writeFileSync(lockPath(dir), capturedText)
+    expect(() => readLock(dir, { profile: 'local-dev', agnesVersion: '0.1.0' })).toThrow(
+      /Retired.*clean home/,
+    )
+    expect(readFileSync(lockPath(dir), 'utf8')).toBe(capturedText)
+    expect(() => writeLock(dir, captured)).toThrow(/Retired.*clean home/)
+    expect(readFileSync(lockPath(dir), 'utf8')).toBe(capturedText)
   })
 
   it('rejects a lock that is not JSON, and one that does not validate, with E_LOCK_MISMATCH', () => {
@@ -91,6 +110,17 @@ describe('lockfile', () => {
     })()
     expect(isPackageError(b, 'E_LOCK_MISMATCH')).toBe(true)
     expect((b as { detail?: unknown }).detail).toMatchObject({ reason: 'invalid' })
+
+    const legacy = JSON.parse(
+      readFileSync(
+        new URL('./fixtures/runtime-snapshots-v1/home/profiles/local-dev/agnes-lock.json', import.meta.url),
+        'utf8',
+      ),
+    )
+    legacy.packages['acme/legacy'].metadata.category = 'unknown-category'
+    writeFileSync(lockPath(dir), JSON.stringify(legacy))
+    expect(() => readLock(dir, { profile: 'local-dev', agnesVersion: '0.1.0' })).toThrow()
+    expect(() => writeLock(dir, legacy)).toThrow()
   })
 
   it('replaces an existing lock and preserves it if the next temporary write fails', () => {
@@ -153,6 +183,73 @@ describe('lockfile', () => {
       }),
     ).rejects.toThrow('boom')
     expect(existsSync(join(dir, '.agnes-lock.lock'))).toBe(false)
+  })
+
+  it('never exposes a lock without its owner', async () => {
+    const lock = join(dir, '.agnes-lock.lock')
+    await withLock(dir, async () => {
+      expect(readFileSync(lock, 'utf8')).toBe(String(process.pid))
+      expect(readdirSync(dir).filter((name) => name.endsWith('.tmp'))).toEqual([])
+    })
+  })
+
+  it.each(['stale empty owner', 'fresh dead owner'])('reclaims an abandoned lock: %s', async (scenario) => {
+    const lock = join(dir, '.agnes-lock.lock')
+    const deadPid = 2147483647
+    writeFileSync(lock, scenario === 'fresh dead owner' ? String(deadPid) : '')
+    if (scenario === 'stale empty owner') {
+      const old = new Date(Date.now() - 5 * 60_000)
+      utimesSync(lock, old, old)
+    }
+    const kill = process.kill.bind(process)
+    const probe = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+      if (pid === deadPid) throw Object.assign(new Error('exited fixture owner'), { code: 'ESRCH' })
+      return kill(pid, signal)
+    })
+    vi.useFakeTimers()
+    try {
+      const attempt = withLock(dir, async () => 'ran').then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      )
+      await vi.advanceTimersByTimeAsync(11_000)
+      expect(await attempt).toEqual({ value: 'ran' })
+      expect(existsSync(lock)).toBe(false)
+    } finally {
+      vi.useRealTimers()
+      probe.mockRestore()
+    }
+  })
+
+  it.each(['live owner', 'fresh empty owner'])('keeps a contended lock: %s', async (owner) => {
+    const lock = join(dir, '.agnes-lock.lock')
+    const recordedOwner = owner === 'live owner' ? String(process.pid) : ''
+    writeFileSync(lock, recordedOwner)
+    vi.useFakeTimers()
+    try {
+      const attempt = withLock(dir, async () => 'never').catch((error: unknown) => error)
+      await vi.advanceTimersByTimeAsync(11_000)
+      const error = (await attempt) as {
+        code: string
+        legacyCode: string
+        message: string
+        detail: Record<string, unknown>
+      }
+      expect(error.message).toContain(lock)
+      // Contention with a live holder is retryable, not a verification failure.
+      expect([error.code, error.legacyCode]).toEqual(['E_PACKAGE_BUSY', 'E_LOCK_MISMATCH'])
+      expect(error.detail).toMatchObject({ reason: 'busy', lockPath: lock })
+      expect(String(error.detail.recovery)).toContain('delete the lock file')
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(readFileSync(lock, 'utf8')).toBe(recordedOwner)
+  })
+
+  it('reports a filesystem failure as itself, never as a busy lock', async () => {
+    const error = await withLock(join(dir, 'missing'), async () => 'never').catch((caught: unknown) => caught)
+    expect((error as NodeJS.ErrnoException).code).toBe('ENOENT')
+    expect(isPackageError(error, 'E_LOCK_MISMATCH')).toBe(false)
   })
 
   it('never writes host names or absolute paths', () => {

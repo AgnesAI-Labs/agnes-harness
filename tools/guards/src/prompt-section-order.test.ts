@@ -18,14 +18,12 @@ const root = repoRoot()
  * at runtime), so the cross-check has to live above both, as a second, independent read of what
  * each package's source literally says.
  *
- * The 'core'-owned rows are fixed reserved values, not scanned claims: unlike the 'code' and
- * 'base' rows, nothing in this file re-reads packages/core's source to confirm they still say
- * what this table says they say. Core is trusted, in-tree source, not the failure mode this guard
- * polices (two independent contributors landing on the same order by accident) — but leaving its
- * orders out of the table entirely is what let this gap exist in the first place: a code or base
- * row could previously claim any of core's orders and pass every check here anyway. Listing them
- * closes that, since the no-duplicate-order check below now covers all three mechanisms' numbers
- * at once.
+ * The 'core'-owned rows are reserved values that packages/core writes as section literals. Leaving
+ * its orders out of the table is what let a code or base row claim any of core's orders and pass
+ * every check here anyway, and what let a new core live note land on an order base already owned
+ * ('core:unattended-run' once shared 113 with 'workflow:receipts'). The table lists them, and the
+ * core scan below checks that every literal section in packages/core/src claims its row, so the
+ * no-duplicate-order check covers all three mechanisms' numbers at once.
  *
  * A change to either side's order without a matching change here is exactly the defect this guard
  * exists to catch: a `packages/base` file registering a context-hook section whose order collides
@@ -49,22 +47,37 @@ const CANONICAL_PROMPT_SECTIONS: ReadonlyArray<{
   // space, so a future row claiming 0 would collide with it at the wire even though nothing here
   // scans derive.ts to notice.
   { id: 'core:untrusted-envelope', order: 0, owner: 'core' },
-  { id: 'persona', order: 100, owner: 'code' },
+  { id: 'persona', order: 1, owner: 'code' },
   { id: 'environment', order: 110, owner: 'code' },
-  // Reserved for base, not yet implemented: no file under packages/base currently registers a
-  // section with this id. If a base file ever claims order 120, the third test below requires that
-  // claim's id to be 'agents-md' -- it does not, on its own, confirm that nothing currently claims
-  // the order. See the comment on this row in packages/code/src/prompts/sections.ts.
+  // packages/core/src/execution/turn/inference.ts: the note that Computer Use is not offered to
+  // the selected model.
+  { id: 'core:computer-use-model', order: 111, owner: 'core' },
+  // Live repository guidance supplied by the official context-rules extension.
+  { id: 'core:child-receipts', order: 112, owner: 'core' },
+  { id: 'workflow:receipts', order: 113, owner: 'base' },
+  // packages/core/src/execution/turn/turn-limits.ts: a live note, delivered at the tail.
+  { id: 'core:turn-limits', order: 114, owner: 'core' },
+  { id: 'tools-available', order: 115, owner: 'code' },
+  // packages/core/src/execution/turn/inference.ts: the unattended-run live note, delivered at the
+  // tail after the turn-limits note.
+  { id: 'core:unattended-run', order: 116, owner: 'core' },
+  { id: 'memory:index', order: 131, owner: 'core' },
   { id: 'agents-md', order: 120, owner: 'base' },
   { id: 'coding-doctrine', order: 130, owner: 'code' },
   { id: 'code-doctrine', order: 140, owner: 'code' },
   { id: 'tools:sdk', order: 150, owner: 'code' },
+  { id: 'core:deferred-tools', order: 155, owner: 'core' },
   { id: 'skills', order: 160, owner: 'base' },
+  { id: 'plan-mode', order: 162, owner: 'base' },
+  { id: 'persistent-goal', order: 164, owner: 'base' },
+  { id: 'session-query', order: 168, owner: 'base' },
   { id: 'channel-style', order: 170, owner: 'code' },
   // packages/core/src/request/contribute.ts's harnessSections(), which folds harness register
   // entries into the same sorted section list at these two fixed orders.
   { id: 'harness:prompt', order: 180, owner: 'core' },
   { id: 'harness:memory', order: 181, owner: 'core' },
+  // packages/core/src/loop/request-options.ts: a loop's own system text, after everything else.
+  { id: 'loop:system', order: 1000, owner: 'core' },
   // A context hook's additionalContext travels as a tail note, not a section.
 ]
 
@@ -110,7 +123,7 @@ describe('prompt section order table has one claimant per order, across both con
         // Scoped to files that actually register a 'context' hook: an incidental id/order pair
         // elsewhere (a fixture object, an unrelated registry) is not a prompt-section claim, and
         // scanning every file for the bare pattern would make this guard fire on those.
-        if (!/registerHook\(\s*['"]context['"]/.test(text)) continue
+        if (!/hooks\.register\(\s*['"]context['"]/.test(text)) continue
         for (const { id, order } of extract(HOOK_SECTION_RE, text)) {
           const claimant = byOrder.get(order)
           expect(claimant, `${relative(root, f)} claims order ${order} for '${id}'`).toBe(id)
@@ -118,20 +131,33 @@ describe('prompt section order table has one claimant per order, across both con
         }
       }
     }
-    // 'agents-md' is currently the only base-owned row in the table, and it is allowed to stay
-    // unclaimed (see its row's comment above) — so this loop has zero iterations today. It is kept
-    // rather than deleted because it is not vacuous forever: the day a base-owned row is added back
-    // (a real agents-md contributor, or something new), this is what starts requiring it to actually
-    // exist rather than silently trusting a stale reservation.
+    // Every official base context contributor must fill its canonical section.
     for (const s of CANONICAL_PROMPT_SECTIONS)
-      if (s.owner === 'base' && s.id !== 'agents-md') expect(seenBaseIds.has(s.id), s.id).toBe(true)
+      if (s.owner === 'base') expect(seenBaseIds.has(s.id), s.id).toBe(true)
+  })
+
+  it('every literal section in packages/core/src claims its canonical row', () => {
+    const byId = new Map(CANONICAL_PROMPT_SECTIONS.map((s) => [s.id, s]))
+    const seen = new Set<string>()
+    for (const f of listSourceFiles(join(root, 'packages/core/src'))) {
+      if (isTestFile(f)) continue
+      for (const { id, order } of extract(CODE_SECTION_RE, readFileSync(f, 'utf8'))) {
+        const row = byId.get(id)
+        expect(row, `${relative(root, f)} writes section '${id}' that the table does not list`).toBeDefined()
+        expect(order, `${relative(root, f)} writes '${id}' at order ${order}`).toBe(row?.order)
+        seen.add(id)
+      }
+    }
+    // The scan must keep finding core's literal sections, or it checks nothing.
+    for (const id of ['core:untrusted-envelope', 'core:turn-limits', 'core:unattended-run'])
+      expect(seen.has(id), id).toBe(true)
   })
 
   it('the two extractors are not dead regexes: each matches its own file shape and not the other', () => {
-    const codeLiteral = "{ id: 'persona', order: 100, source: 'file', owner: 'code' },"
+    const codeLiteral = "{ id: 'persona', order: 1, source: 'file', owner: 'code' },"
     const hookLiteral =
       "{\n        id: 'example-section',\n        order: 999,\n        content: 'x',\n      }"
-    expect(extract(CODE_SECTION_RE, codeLiteral)).toEqual([{ id: 'persona', order: 100 }])
+    expect(extract(CODE_SECTION_RE, codeLiteral)).toEqual([{ id: 'persona', order: 1 }])
     expect(extract(HOOK_SECTION_RE, hookLiteral)).toEqual([{ id: 'example-section', order: 999 }])
     expect(extract(HOOK_SECTION_RE, codeLiteral)).toEqual([])
     expect(extract(CODE_SECTION_RE, hookLiteral)).toEqual([])

@@ -9,12 +9,19 @@ export function inspectJsonData(
 ): { ok: true; bytes: number; value: JsonValue } | { ok: false; reason: string } {
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) return { ok: false, reason: 'invalid byte limit' }
   const active = new Set<object>()
+  // A lower bound of the encoded size, so an over-limit value stops the walk instead of being copied whole.
+  let floor = 0
+  const grow = (n: number): void => {
+    floor += n
+    if (floor > maxBytes) throw new Error('over the byte limit')
+  }
   const reject = (reason: string): never => {
     throw new Error(reason)
   }
   const walk = (v: unknown, depth: number): JsonValue => {
     if (depth > 32) return reject('nesting exceeds 32')
-    if (v === null || typeof v === 'string' || typeof v === 'boolean') return v
+    if (v === null || typeof v === 'boolean') return grow(1), v
+    if (typeof v === 'string') return grow(v.length + 2), v
     if (typeof v === 'number') return Number.isFinite(v) ? v : reject('non-finite number')
     if (typeof v !== 'object') return reject(`unsupported ${typeof v}`)
     if (active.has(v)) return reject('cycle')
@@ -24,6 +31,7 @@ export function inspectJsonData(
       proto = Object.getPrototypeOf(v)
     if (array ? proto !== Array.prototype : proto !== null && proto !== Object.prototype)
       return reject('non-plain object')
+    grow(2)
     const descriptors = Object.getOwnPropertyDescriptors(v)
     if (Object.getOwnPropertySymbols(v).length) return reject('symbol key')
     if (
@@ -38,6 +46,7 @@ export function inspectJsonData(
     const result: JsonValue[] | { [key: string]: JsonValue } = array ? [] : Object.create(null)
     for (const [key, descriptor] of Object.entries(descriptors)) {
       if (array && key === 'length') continue
+      if (!array) grow(key.length + 3)
       if (!descriptor.enumerable || !('value' in descriptor)) return reject('non-data property')
       const child = walk(descriptor.value, depth + 1)
       Object.defineProperty(result, key, {

@@ -1,9 +1,10 @@
+import { withPhase } from '@agnes/core-common/step/op-state'
 import type { RequestBody } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
 import type { RuntimePromptPreloader } from '../src/runtime/current.js'
 import { CompactionRunner } from '../src/step/compaction.js'
-import { withPhase } from '../src/step/op-state.js'
+import { answerToolDecision } from './helpers/decision.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession, readTool, shellTool } from './helpers/open-session.js'
@@ -98,7 +99,6 @@ describe('the current prompt once compaction has masked the trigger', () => {
           receipts.set(ticket, { requestId: req.requestId, bindingHash: req.bindingHash, expiresAt })
           return { ticket, expiresAt }
         },
-        resume: async (ticket) => receipts.get(ticket) ?? null,
       },
     })
     const registry = new ToolRegistry()
@@ -113,7 +113,7 @@ describe('the current prompt once compaction has masked the trigger', () => {
     })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
     expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('parked')
-    await session.resumeApproval('ticket-1', 'allowed-once', { ...actor, id: 'approver' })
+    await answerToolDecision(session, 1, 'allowed-once', { ...actor, id: 'approver' })
     expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
     expect(provider.calls).toBe(2)
     // Only the user-triggered turn had a prompt to preload for; the resumed turn has none.

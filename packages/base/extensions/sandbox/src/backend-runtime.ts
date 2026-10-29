@@ -5,6 +5,12 @@ import { seatbeltConfine } from './backends/seatbelt.js'
 import type { ClosedNetworkConfineOptions } from './backends/shared.js'
 import { backendCompileFault, requireClosedNetwork, validateArgv } from './backends/shared.js'
 
+export function sandboxImplementation(platform: string): 'implemented' | 'unimplemented' | 'unknown' {
+  if (platform === 'darwin' || platform === 'linux') return 'implemented'
+  if (platform === 'win32') return 'unimplemented'
+  return 'unknown'
+}
+
 export type BackendName = 'none' | 'bwrap' | 'seatbelt'
 
 export type RuntimeBackend = Readonly<{
@@ -29,6 +35,7 @@ export type BackendProbeExec = (
 
 export type DetectBackendInput = Readonly<{
   level: 'L0' | 'L1'
+  platform?: string
   shell: 'posix' | 'powershell'
   options: ClosedNetworkConfineOptions
   probeExec: BackendProbeExec
@@ -75,6 +82,17 @@ export const SEATBELT_BACKEND: RuntimeBackend = Object.freeze({
   confine: seatbeltConfine,
 })
 
+/**
+ * The same boundary without the terminal job-control grant, for a macOS whose `sandbox-exec`
+ * refuses that rule (macOS 12: `unbound variable: TIOCSPGRP`). Selected only after the full
+ * profile failed its probe and this one passed; everything else the profile denies is unchanged.
+ */
+export const SEATBELT_COMPAT_BACKEND: RuntimeBackend = Object.freeze({
+  name: 'seatbelt',
+  enforcement: FULL_ENFORCEMENT,
+  confine: (argv, options) => seatbeltConfine(argv, options, false),
+})
+
 const PROBE_TOKEN = 'agnes-sandbox-probe-v1'
 
 async function runsBoundary(input: DetectBackendInput, backend: RuntimeBackend): Promise<boolean> {
@@ -99,8 +117,17 @@ async function runsBoundary(input: DetectBackendInput, backend: RuntimeBackend):
       maxOutputBytes: 4_096,
       ...(input.signal === undefined ? {} : { signal: input.signal }),
     })
-    return !result.timedOut && result.code === 0 && result.stdout === PROBE_TOKEN
-  } catch {
+    const ok = !result.timedOut && result.code === 0 && result.stdout === PROBE_TOKEN
+    if (!ok)
+      input.log.info('sandbox probe failed', {
+        name: backend.name,
+        code: result.code,
+        timedOut: result.timedOut,
+        stderr: result.stderr.slice(0, 300),
+      })
+    return ok
+  } catch (error) {
+    input.log.info('sandbox probe failed', { name: backend.name, error: String(error).slice(0, 300) })
     return false
   }
 }
@@ -113,10 +140,23 @@ async function runsBoundary(input: DetectBackendInput, backend: RuntimeBackend):
  * restricted token/job/network boundary; this module never fabricates one by rewriting argv.
  */
 export async function detectBackend(input: DetectBackendInput): Promise<RuntimeBackend> {
+  if (input.options.loopbackServe && (input.level !== 'L1' || input.platform !== 'darwin'))
+    throw backendCompileFault(
+      'E_SANDBOX_BACKEND_POLICY',
+      'loopback serving requires the macOS L1 Seatbelt backend',
+    )
   if (input.level !== 'L1' || input.shell !== 'posix') return NONE_BACKEND
   requireClosedNetwork(input.options.networkAllow)
 
-  for (const backend of [BWRAP_BACKEND, SEATBELT_BACKEND]) {
+  const candidates =
+    input.platform === undefined
+      ? [BWRAP_BACKEND, SEATBELT_BACKEND, SEATBELT_COMPAT_BACKEND]
+      : input.platform === 'linux'
+        ? [BWRAP_BACKEND]
+        : input.platform === 'darwin'
+          ? [SEATBELT_BACKEND, SEATBELT_COMPAT_BACKEND]
+          : []
+  for (const backend of candidates) {
     if (await runsBoundary(input, backend)) {
       input.log.info('sandbox backend', { name: backend.name, enforcement: backend.enforcement })
       return backend

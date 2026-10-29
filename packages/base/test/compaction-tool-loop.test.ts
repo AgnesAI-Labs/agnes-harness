@@ -36,6 +36,7 @@ type Setup = {
   resultChars: number
   answerAt: (step: number) => boolean
   tokenFactor?: number
+  outputMaxBytes?: number
   readArgs?: (step: number) => Record<string, unknown>
   summaryFaults?: ReadonlyMap<number, SummaryFault>
   /** Result text override for one read, by path. */
@@ -71,6 +72,7 @@ async function open(o: Setup) {
   preset.compaction.reserveTokens = o.reserve
   preset.compaction.keepRecentTokens = o.keep
   preset.budget.maxSteps = 200
+  if (o.outputMaxBytes !== undefined) preset.tools.outputMaxBytes = o.outputMaxBytes
   preset.telemetry.invariants = 'strict'
   const opened = await openSession({
     provider,
@@ -103,8 +105,18 @@ type Metrics = ReturnType<typeof summarize>
 function summarize(rows: Event[], provider: ToolLoopProvider) {
   const replaces = rows.filter((row) => typeof row.surfaceOp === 'object')
   const begins = rows.filter((row) => row.type === 'x/core/compaction-begin')
+  const billedRequests = new Set(
+    rows
+      .filter(
+        (row) => row.type === 'cost/ledger' && (row.data as { purpose?: string }).purpose === 'compaction',
+      )
+      .map((row) => (row.data as { effectId: string }).effectId),
+  )
   const attempts = rows.filter(
-    (row) => row.type === 'effect/intent' && (row.data as { kind?: string }).kind === 'compaction',
+    (row) =>
+      row.type === 'effect/intent' &&
+      (row.data as { kind?: string }).kind === 'compaction' &&
+      !billedRequests.has((row.data as { effectId: string }).effectId),
   ).length
   const mainInputs = provider.requests.flatMap((req, i) =>
     req.kind === 'summary' ? [] : [provider.inputs[i] as number],
@@ -125,11 +137,13 @@ function summarize(rows: Event[], provider: ToolLoopProvider) {
       .map((row) => (row.data as { reason: string }).reason)
       .slice(0, 3),
     quotes: rows.filter(
-      (row) => row.type === 'approval/asked' && (row.data as { kind?: string }).kind === 'budget',
+      (row) =>
+        row.type === 'decision/state' &&
+        (row.data as { request?: { spec?: { purpose?: string } } }).request?.spec?.purpose === 'budget',
     ).length,
     summaryRequests: provider.summaries,
     summaryOutputTokens: summaryOutputs,
-    // Summary calls that led to no replace: each LLM-backed replace carries its effect id.
+    // Top-level attempts that led to no replace; model requests now have separate billed effects.
     wastedAttempts: attempts - begins.filter((row) => (row.data as { effectId?: string }).effectId).length,
     peakMainInput: Math.max(...mainInputs),
     overflows: provider.overflows,
@@ -343,6 +357,8 @@ describe('compaction inside long tool loops', () => {
       keep: 4000,
       resultChars: 400,
       tokenFactor: 1.5,
+      // Let this fixture reach provider overflow before the independent tool-result budget truncates it.
+      outputMaxBytes: 64 * 1024,
       answerAt: (step) => hugeAt !== undefined && step >= hugeAt + 3,
       resultFor: (path, provider) => {
         const last = provider.inputs.at(-1) ?? 0

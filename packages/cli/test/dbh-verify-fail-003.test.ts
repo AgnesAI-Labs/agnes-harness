@@ -178,7 +178,7 @@ describe('DBH FAIL-003: a failed import must leave the target session importable
     }
   }, 60_000)
 
-  it('does not delete an import target that existed before this import, even when it is still fresh', async () => {
+  it('refuses an existing empty import target before appending or attempting rollback', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'dbh-fail-003-fresh-existing-'))
     tmp.push(dir)
     const file = join(dir, 'pi.jsonl')
@@ -187,17 +187,19 @@ describe('DBH FAIL-003: a failed import must leave the target session importable
     const { host } = await createTestHost({ dataDir: dir })
     const admission = await memoryAdmission(host, dir)
     const existing = await openAdmittedSession(host, admission, key, dir)
+    const before = await existing.scan({ limit: 10 })
     await existing.close()
     const flaky = flakyHost(host, 1)
     const io = { stdout: { write: () => undefined }, stderr: { write: () => undefined } }
     const args = parseArgs(['import', file, '--key', key])
     await expect(importFile(args, { env: {}, cwd: dir, host: flaky.host, admission, io })).rejects.toThrow(
-      /could not roll back the new target/,
+      /E_LANE_BUSY: import target is not fresh/,
     )
+    expect(flaky.appends()).toBe(0)
     const reopened = await openAdmittedSession(host, admission, key, dir)
     try {
       expect(reopened.lastSeq).toBe(1)
-      expect(await reopened.scan({ limit: 10 })).toHaveLength(1)
+      expect(await reopened.scan({ limit: 10 })).toEqual(before)
     } finally {
       await reopened.close()
       await host.close()

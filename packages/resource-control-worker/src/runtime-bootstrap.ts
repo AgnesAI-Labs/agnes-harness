@@ -7,6 +7,7 @@ import {
   type McpStatus,
   type SkillDescriptor,
   type SkillRootStatus,
+  type SkillScanObservation,
   validateResourceControlData,
 } from '@agnes/protocol'
 import {
@@ -19,9 +20,11 @@ import {
   type ResourceActivationBarrier,
   validateManagedHttpUrl,
 } from '@agnes/resource-control-runtime'
+import { mcpSandboxProfile, sandboxMcpConfig } from './mcp-sandbox.js'
 import { syncManagedMcpExecutableAllowlist } from './mcp-server-opener.js'
 import { deploymentMcpPolicy, scanSkills } from './skill-bootstrap.js'
 import { removeFilesystemSkill } from './skill-remove.js'
+import type { SkillScanCache } from './skill-scan-cache.js'
 import { workspaceSkills } from './workspace-skills.js'
 
 type ResourceProfile = Readonly<{
@@ -51,6 +54,7 @@ export type WorkerResourceState = Readonly<{
     /** Entries that looked like Skills but were skipped; the store keeps their prior records. */
     skippedResourceIds: readonly string[]
     roots: readonly SkillRootStatus[]
+    skillScanObservation?: SkillScanObservation
   }>
   runtime: ReturnType<typeof createWorkerResourceRuntime>
   /** Starts forwarding safe live MCP health only after the worker hello handshake. */
@@ -65,7 +69,7 @@ export type WorkerResourceBootstrapInput = Readonly<{
   createBarrier(): ResourceActivationBarrier
   createSecrets(profile: ResourceProfile): ResolvedSecrets
   /**
-   * Mirrors `createSecrets` above, for `secretBinding.kind === 'oauth'` (Task 6, spec §1.6/§3.2).
+   * Mirrors `createSecrets` above, for `secretBinding.kind === 'oauth'` (spec §1.6/§3.2).
    * Optional and lazily invoked for the same reason `createSecrets`'s result is lazily memoized
    * below: a resource generation with no oauth-bound MCP servers must not require one configured.
    * Omitted (or a generation with no oauth-bound server), oauth-bound servers simply have no
@@ -82,12 +86,16 @@ export type WorkerResourceBootstrapInput = Readonly<{
    */
   agnesHomeDir?: string
   /**
-   * The shared session worker (stage 2b step 3, D107'): its MCP servers are Host rows, one per
+   * The shared session worker: its MCP servers are Host rows, one per
    * server, each owning its own connection. This generation then connects nothing -- the manager gets
    * no MCP input -- and hands the validated entries back as `mcpEntries`. Omitted, the manager
    * connects them as before; dedicated resource-control service workers keep that path unchanged.
    */
   mcpRows?: boolean
+  /** Existing catalog rows to observe; omitted for complete discovery. */
+  skillResourceIds?: readonly string[]
+  skillScanCache?: SkillScanCache
+  reuseSkillsAt?: string
 }>
 
 const digest = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex')
@@ -195,24 +203,49 @@ export async function bootstrapWorkerResources(
         }
       : {}),
     // Deployment-owned policy stays separate from resource definitions and durable state.
-    stdioPolicy: { allowedExecutables: mcpPolicy.allowedExecutables },
+    stdioPolicy: {
+      allowedExecutables: mcpPolicy.allowedExecutables,
+      sandboxProfile: (definition) =>
+        mcpSandboxProfile(definition, {
+          dataDir: input.profile.dataDir,
+          ...(input.agnesHomeDir
+            ? { profileDir: join(input.agnesHomeDir, 'profiles', input.profile.name) }
+            : {}),
+        }),
+    },
     httpPolicy: { allowLoopbackHttp: mcpPolicy.allowLoopbackHttp, localDaemon: mcpPolicy.localDaemon },
     connect: async (config, options) =>
-      connectMcp(config, undefined, {
-        signal: options.signal,
-        connectTimeoutMs: options.timeoutMs,
-        // An HTTP redirect target gets the same HTTPS/loopback policy check the configured URL
-        // already passed, so a compromised server cannot bounce the connection past it (SSRF).
-        validateRedirectUrl: (url) =>
-          validateManagedHttpUrl(url, {
-            allowLoopbackHttp: mcpPolicy.allowLoopbackHttp,
-            localDaemon: mcpPolicy.localDaemon,
-          }),
-      }),
+      connectMcp(
+        await sandboxMcpConfig(
+          config,
+          {
+            dataDir: input.profile.dataDir,
+            ...(input.agnesHomeDir ? { home: input.agnesHomeDir } : {}),
+            ...(input.profile.adapters?.secrets.path
+              ? { secretsDir: input.profile.adapters.secrets.path }
+              : {}),
+            ...(input.cwd ? { workspace: input.cwd } : {}),
+            ...(input.env.PATH ? { path: input.env.PATH } : {}),
+          },
+          options.signal,
+        ),
+        undefined,
+        {
+          signal: options.signal,
+          connectTimeoutMs: options.timeoutMs,
+          // An HTTP redirect target gets the same HTTPS/loopback policy check the configured URL
+          // already passed, so a compromised server cannot bounce the connection past it (SSRF).
+          validateRedirectUrl: (url) =>
+            validateManagedHttpUrl(url, {
+              allowLoopbackHttp: mcpPolicy.allowLoopbackHttp,
+              localDaemon: mcpPolicy.localDaemon,
+            }),
+        },
+      ),
     inspectCatalog: inspectRemoteCatalog,
     // Deliberately still a no-op, not the cross-worker notifier this docstring's function name might
-    // suggest (@agnes/resource-control-runtime's `notifyLiveSessionWorkers`, resource-live-reload
-    // Task 5). This function (bootstrapWorkerResources) always runs inside a spawned worker child
+    // suggest (@agnes/resource-control-runtime's `notifyLiveSessionWorkers`). This function
+    // (bootstrapWorkerResources) always runs inside a spawned worker child
     // process (packages/daemon/src/supervisor/worker-pool.ts spawns `worker/main.js` via
     // node:child_process `spawn`, for every worker kind including `resourceControl` ones) - it has no
     // in-memory reference to the daemon's WorkerPool and cannot get one, since a live object reference
@@ -227,13 +260,20 @@ export async function bootstrapWorkerResources(
     onStatus: (status) => reportMcpStatus?.(status),
   })
   const runtime = createWorkerResourceRuntime({ profile: input.profile.name, skills: registry, mcp: manager })
-  const scanned = await scanSkills(
-    input.cwd,
-    input.env.AGNES_PACKAGE_SKILL_SNAPSHOT,
-    input.env.AGNES_RESOURCE_SKILL_LKG_DIR,
-    input.env.HOME ?? input.env.USERPROFILE ?? homedir(),
-    input.agnesHomeDir,
-  )
+  const revision = digest(snapshotText)
+  const cached = input.reuseSkillsAt === revision ? input.skillScanCache?.get(input.cwd, revision) : undefined
+  const scanned =
+    cached ??
+    (await scanSkills(
+      input.cwd,
+      input.env.AGNES_PACKAGE_SKILL_SNAPSHOT,
+      input.env.AGNES_RESOURCE_SKILL_LKG_DIR,
+      input.env.HOME ?? input.env.USERPROFILE ?? homedir(),
+      input.agnesHomeDir,
+      input.env.AGNES_SKILLS_IMPORT_USER === '1',
+      input.skillResourceIds,
+    ))
+  if (!cached) input.skillScanCache?.observe(input.cwd, revision, scanned, input.skillResourceIds)
   // A test/single-server candidate worker still needs its one server *staged* (createMcpResourceManager's
   // test()/tools() call verify(), which reads only from `staged`, populated by the manager's own
   // bootstrap reconcile over these entries - not by this file talking to it directly). But it must
@@ -277,19 +317,26 @@ export async function bootstrapWorkerResources(
         cwd: input.cwd,
         osHomeDir: input.env.HOME ?? input.env.USERPROFILE ?? homedir(),
         agnesHomeDir: input.agnesHomeDir,
+        importUserSkills: input.env.AGNES_SKILLS_IMPORT_USER === '1',
       }),
     skillResources: input.cwd
       ? boot.skillResources
       : workspaceSkills(boot.skillResources, async (root) => {
           const scoped = createSkillCandidateRegistry({ barrier: input.createBarrier() })
           scoped.shareRuntimeFrom(registry)
-          const scan = await scanSkills(
-            root,
-            input.env.AGNES_PACKAGE_SKILL_SNAPSHOT,
-            input.env.AGNES_RESOURCE_SKILL_LKG_DIR,
-            input.env.HOME ?? input.env.USERPROFILE ?? homedir(),
-            input.agnesHomeDir,
-          )
+          const cached =
+            input.reuseSkillsAt === revision ? input.skillScanCache?.get(root, revision) : undefined
+          const scan =
+            cached ??
+            (await scanSkills(
+              root,
+              input.env.AGNES_PACKAGE_SKILL_SNAPSHOT,
+              input.env.AGNES_RESOURCE_SKILL_LKG_DIR,
+              input.env.HOME ?? input.env.USERPROFILE ?? homedir(),
+              input.agnesHomeDir,
+              input.env.AGNES_SKILLS_IMPORT_USER === '1',
+            ))
+          if (!cached) input.skillScanCache?.observe(root, revision, scan)
           for (const item of scan.roots) {
             if (item.rootKey === 'package') scoped.replacePackage(item.candidates)
             else scoped.replaceRoot(item.rootKey, item.candidates)
@@ -315,6 +362,9 @@ export async function bootstrapWorkerResources(
       failedRoots: scanned.failedRoots,
       skippedResourceIds: scanned.skippedResourceIds,
       roots: scanned.rootStatuses,
+      ...(input.skillResourceIds === undefined && scanned.skillScanObservation
+        ? { skillScanObservation: scanned.skillScanObservation }
+        : {}),
     },
     runtime,
     reportMcpStatus(listener) {

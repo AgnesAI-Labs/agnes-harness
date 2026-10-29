@@ -1,5 +1,6 @@
 import { ToolRegistry } from '@agnes/core'
-import type { ExtensionAPI, ToolDef } from '@agnes/extension-api'
+import type { ToolDef } from '@agnes/extension-api'
+import type { Context } from '@agnes/plugin-runtime'
 import { validateAgainst } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { type McpConnection, type McpSkippedTool, registerRemoteToolsStrict } from '../../src/mcp/register.js'
@@ -23,12 +24,15 @@ async function attempted(
     close: vi.fn(async () => undefined),
   }
   const api = {
-    registerResource: () => () => undefined,
-    registerTool: (tool: ToolDef) => {
-      captured = tool
-      return () => undefined
+    resources: { register: () => () => undefined },
+    tools: {
+      register: (tool: ToolDef) => {
+        captured = tool
+        return () => undefined
+      },
     },
-  } as unknown as ExtensionAPI
+    self: { log: { debug() {}, info() {}, warn() {}, error() {} } },
+  } as unknown as Pick<Context, 'tools' | 'resources' | 'self'>
   await registerRemoteToolsStrict(
     api,
     conn,
@@ -48,6 +52,22 @@ async function attempted(
 }
 
 describe('MCP remote schema in the core argument validator', () => {
+  it.each([{}, { properties: { text: { type: 'string' } }, additionalProperties: false }])(
+    'normalizes an object-like root without type: %j',
+    async (schema) => {
+      const before = structuredClone(schema)
+      const tool = await registered(schema)
+      expect(JSON.parse(JSON.stringify(tool.parameters))).toEqual({ ...schema, type: 'object' })
+      expect(validateAgainst(tool.parameters, {}).ok).toBe(true)
+      expect(validateAgainst(tool.parameters, []).ok).toBe(false)
+      expect(validateAgainst(tool.parameters, 'forged').ok).toBe(false)
+      expect(schema).toEqual(before)
+      const registry = new ToolRegistry()
+      registry.add(tool, { source: 'schema-test', trust: 'builtin' })
+      expect(registry.snapshot(0).byName.has(tool.name)).toBe(true)
+    },
+  )
+
   it('accepts empty object arguments and preserves the provider JSON schema', async () => {
     const schema = { type: 'object', properties: {}, additionalProperties: false }
     const tool = await registered(schema)
@@ -108,6 +128,9 @@ describe('MCP remote schema in the core argument validator', () => {
 
   it.each([
     { type: 'bogus' },
+    { type: 'string' },
+    { type: 'array', items: { type: 'string' } },
+    { items: { type: 'string' } },
     { type: 'object', properties: { x: { type: 'string', minLength: -1 } } },
     { type: 'object', properties: { x: { type: 'string', pattern: '[' } } },
     { type: 'object', properties: { x: { type: 'string', unknownConstraint: true } } },

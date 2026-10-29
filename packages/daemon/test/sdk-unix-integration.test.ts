@@ -4,11 +4,11 @@ import { resolveWorkspaceDirectory } from '@agnes/host'
 import type { Provider, RequestBody } from '@agnes/protocol'
 import { createClient, fileJournal, memoryJournal, TransportClosed } from '@agnes/sdk'
 import { afterEach, expect, it, vi } from 'vitest'
+import { openTestHost, say, slowProvider } from '../../daemon-rpc/test/host.js'
 import { type createLocalEndpoint, MemoryWorkspaceStore, WorkspaceCatalog } from '../src/local/index.js'
 import { MemorySessionWorkspaces } from '../src/storage/lister.js'
 import { bindConnection } from '../src/supervisor/connection.js'
 import { listenUnix } from '../src/supervisor/socket.js'
-import { openTestHost, say, slowProvider } from './host.js'
 import { localSdkTransport, localSocketPath } from './local-socket-path.js'
 
 const cleanup: Array<() => Promise<void>> = []
@@ -85,7 +85,7 @@ it('client disconnect rejects the pending SDK prompt and aborts the actual core 
   expect(session.closed).toBe(true)
 })
 
-it('routes real daemon permission requests to SDK sessions and defaults to rejection', async () => {
+it('routes real daemon permission requests to SDK sessions and reports no handler without a human answer', async () => {
   const s = await service()
   const session = await s.client.session.new({ cwd: s.h.dataDir })
   const ep = s.endpoints[0]
@@ -100,7 +100,10 @@ it('routes real daemon permission requests to SDK sessions and defaults to rejec
         { optionId: 'reject', name: 'Reject', kind: 'reject_once' },
       ],
     })
-  expect(await ask()).toEqual({ outcome: { outcome: 'selected', optionId: 'reject' } })
+  expect(await ask()).toEqual({
+    outcome: { outcome: 'cancelled' },
+    _meta: { 'ai.agnes.harness': { reason: 'no-handler' } },
+  })
   session.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
   expect(await ask()).toEqual({ outcome: { outcome: 'selected', optionId: 'allow' } })
   let start!: () => void
@@ -179,14 +182,14 @@ it('projects the actual core timeline with generation and historical cuts throug
   const s = await service({ script: [say('project first'), say('project second')] })
   const session = await s.client.session.new({ cwd: s.h.dataDir })
   await session.prompt('first question')
-  const first = await session.projectUI()
+  const first = await session.projectUI(undefined, { surface: 'tui' })
   expect(first.sessionId).toBe(session.id)
   expect(first.generation).toBe(1)
   expect(first.upto).toBeGreaterThan(0)
   expect(JSON.stringify(first.nodes)).toContain('project first')
   expect(JSON.stringify(first.nodes)).toContain('first question')
   await session.prompt('second question')
-  const update = await session.projectUIPatch(first.upto)
+  const update = await session.projectUIPatch(first.upto, undefined, { surface: 'tui' })
   expect(update.kind).toBe('patch')
   if (update.kind !== 'patch') throw new Error('expected projection patch')
   expect(update.patch.from).toBe(first.upto)
@@ -210,7 +213,7 @@ it('projects the actual core timeline with generation and historical cuts throug
       totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
       reasoningComplete: false,
       billingComplete: false,
-      context: { tokens: 0, window: 128000, autoCompact: true, source: 'estimated' },
+      context: { tokens: 0, window: 128000, autoCompact: true, source: 'estimated', compactAt: 111616 },
       model: { route: 'gw', id: 'm1', thinking: 'off', settings: { contextWindow: 128000 } },
     },
     yolo: false,
@@ -301,7 +304,7 @@ it('stops before inference when projected credits exhaust the selected preset bu
       },
     },
     seams: {
-      ledger: {
+      billing: {
         projected: async ({ model }) => {
           projected.push(model)
           return { credits: 5, creditSource: 'estimated' }

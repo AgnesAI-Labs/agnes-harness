@@ -13,7 +13,7 @@ describe('AuthMethodView', () => {
     expect(output).toContain('选择认证方式')
     expect(output).toContain('使用 Agnes 账户登录')
     expect(output).toContain('使用 API Key / ChatGPT 订阅登录')
-    expect(output).toContain('↑↓ 导航')
+    expect(output).toContain('↑↓ 选择')
   })
 
   it.each([40, 80, 120])('renders the two product choices and hint within %i columns', (width) => {
@@ -23,9 +23,7 @@ describe('AuthMethodView', () => {
     expect(lines.every((line) => displayWidth(line) === width)).toBe(true)
     expect(lines.join('\n')).toContain('Sign in with an Agnes account')
     expect(lines.join('\n')).toContain('Sign in with an API key')
-    expect(lines.map((line) => line.trimEnd()).join(' ')).toContain(
-      '↑↓ navigate  enter select  escape/ctrl+c cancel',
-    )
+    expect(lines.map((line) => line.trimEnd()).join(' ')).toContain('↑↓ select  ⏎ confirm  esc close')
   })
 
   it('reuses Select navigation, root Escape cancels, and Ctrl-C stays with the outer ladder', () => {
@@ -90,6 +88,17 @@ describe('SecretInputView', () => {
     expect(view.handleInput('\x03')).toBe(false)
   })
 
+  it('accepts a bracketed paste the way it accepts typed input', () => {
+    const submitted = vi.fn()
+    const invalid = vi.fn()
+    const view = new SecretInputView({ onSubmit: submitted, onBack: () => {}, onInvalid: invalid })
+    expect(view.handleInput('\x1b[200~\r\nsk-test-key\r\n\x1b[201~')).toBe(true)
+    expect(view.handleInput('\x1b[200~bad key\x1b[201~')).toBe(true)
+    expect(invalid).toHaveBeenCalledExactlyOnceWith('invalid-characters')
+    view.handleInput('\r')
+    expect(submitted).toHaveBeenCalledExactlyOnceWith('sk-test-key')
+  })
+
   it('rejects empty, whitespace and non-printable input without echoing it', () => {
     const submit = vi.fn()
     const invalid = vi.fn()
@@ -135,7 +144,6 @@ it('keeps onboarding and TUI view imports behind their dependency boundaries', a
     new URL('../src/tui/views/auth-method.ts', import.meta.url),
     new URL('../src/tui/views/secret-input.ts', import.meta.url),
     new URL('../src/onboarding/state.ts', import.meta.url),
-    new URL('../src/onboarding/controller.ts', import.meta.url),
   ]
   const sources = await Promise.all(urls.map((url) => readFile(url, 'utf8')))
   for (const source of sources) {

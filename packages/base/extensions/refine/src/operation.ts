@@ -8,6 +8,7 @@ import {
   scanAll,
   type VerifierVerdict,
 } from '@agnes/core'
+import { inspectJsonData, type JsonValue } from '@agnes/protocol'
 import { gateT0 } from './gate.js'
 import type { RefineQueue } from './queue.js'
 
@@ -81,59 +82,28 @@ async function compactTriggered(ctx: OpContext): Promise<boolean> {
 async function askForGlobal(ctx: OpContext, proposal: RefineProposal): Promise<boolean> {
   const op = ctx.state
   if (!op) return false
-  const asked = {
-    requestId: ctx.session.d.ids.requestId(),
-    kind: 'refine' as const,
-    summary: proposal.rationale,
-    risk: 'always' as const,
-    bindingHash: '',
-  }
-  const overridden = ctx.session.hooks.approvalRequest
-    ? (
-        await ctx.session.hooks.approvalRequest({
-          request: {
-            tool: 'refine',
-            argv: null,
-            risk: asked.risk,
-            actor: ctx.session.d.actor,
-            summary: asked.summary,
-          },
-        })
-      ).request
-    : undefined
-  // Stamped as the question goes out, after the hook: the window is the person's.
-  const finalAsked = {
-    ...asked,
-    ...(overridden?.summary === undefined ? {} : { summary: overridden.summary }),
-    deadline: new Date(ctx.session.d.clock() + ctx.preset.approval.timeoutMs).toISOString(),
-  }
-  const answer = await ctx.session.askApprovalAnswer(
+  if (!ctx.decisions) return false
+  const subject = inspectJsonData(
+    { proposalId: proposal.proposalId, edits: proposal.edits, baseline: proposal.baseline },
+    96000,
+  )
+  if (!subject.ok) return false
+  const snapshot = await ctx.decisions.review(
     {
-      ...finalAsked,
-      sessionKey: ctx.session.key,
-      stepId: `${op.meta.turn}/${op.step}`,
-      actor: ctx.session.d.actor,
-      taint: op.taint || ctx.session.laneTaint(),
-      scope: ctx.session.key,
-      context: overridden?.context ?? JSON.stringify({ proposalId: proposal.proposalId }),
+      key: proposal.proposalId,
+      purpose: 'refine',
+      subject: subject.value as JsonValue,
+      prompt: proposal.rationale,
+      options: ['allowed-once', 'allowed-session', 'rejected'],
+      responseSchema: { type: 'null' },
     },
-    ctx.signal,
+    { signal: ctx.signal },
   )
-  // The decided row carries who or what answered, as every other approval row does.
-  await ctx.session.append(
-    'ticket' in answer
-      ? [ctx.session.ev('approval/asked', { ...finalAsked, pending: answer })]
-      : [
-          ctx.session.ev('approval/asked', finalAsked),
-          ctx.session.ev('approval/decided', {
-            requestId: finalAsked.requestId,
-            verdict: answer.verdict,
-            ...(answer.reason === undefined ? {} : { reason: answer.reason }),
-            via: 'sync',
-          }),
-        ],
+  return (
+    !snapshot.invalidation &&
+    snapshot.result?.reason === 'answered' &&
+    snapshot.result.response.option.startsWith('allowed')
   )
-  return !('ticket' in answer) && (answer.verdict === 'allowed-once' || answer.verdict === 'allowed-session')
 }
 
 /** Durable queue drain that runs only after the turn's verifier result is known. */

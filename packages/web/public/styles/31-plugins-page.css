@@ -1,0 +1,644 @@
+@layer app {
+  .application-footer {
+    flex: none;
+    display: grid;
+    gap: var(--s4);
+    padding: 0 0 var(--s8);
+  }
+  .application-footer-item {
+    background: transparent;
+    color: var(--agnes-text-secondary);
+    text-align: start;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .application-footer-item:hover {
+    background: var(--agnes-bg-hover);
+    color: var(--agnes-text-primary);
+  }
+  .application-footer-item:focus-visible {
+    outline: 2px solid var(--agnes-brand-primary);
+    outline-offset: -2px;
+  }
+  .application-footer-item:disabled {
+    opacity: 0.5;
+    cursor: wait;
+  }
+  .application-footer > p {
+    margin: 0;
+    padding: var(--s8);
+    font-size: var(--font-size-xs);
+  }
+  .application-settings {
+    display: grid;
+    gap: var(--s24);
+    min-width: 0;
+  }
+  .application-settings .agnes-settings-item {
+    flex-wrap: wrap;
+  }
+  .application-settings p a {
+    text-decoration-line: underline;
+  }
+  .application-review {
+    display: grid;
+    gap: var(--s24);
+    min-width: 0;
+  }
+  /* Review rows read across: the name on the left, its value on the right. */
+  .application-review-row > .agnes-settings-item-copy {
+    flex: 0 1 38%;
+  }
+  .application-review-row > .agnes-settings-item-control {
+    flex: 1 1 62%;
+    justify-content: flex-start;
+    color: var(--agnes-text-secondary);
+    font-weight: normal;
+    text-align: start;
+  }
+  .application-review-value {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .application-review-brand .agnes-settings-item-description {
+    max-width: none;
+  }
+  .application-review-mark {
+    flex: none;
+    object-fit: contain;
+    border-radius: var(--radius-sm);
+  }
+  .application-version {
+    margin-inline-start: var(--s8);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: normal;
+  }
+  .plugin-source-filter {
+    flex: none;
+    display: flex;
+    align-items: center;
+  }
+  .plugin-source-filter > select {
+    width: auto;
+    min-width: 9rem;
+    padding-inline-end: 2.25rem;
+  }
+  .plugins-page-resources[data-resource-tab="skills"] {
+    align-content: start;
+  }
+  .plugins-page-resources[data-resource-tab="skills"] > .plugin-list {
+    flex: none;
+    overflow: visible;
+  }
+  .plugins-page-resources[data-resource-tab="skills"] .agh-empty-state {
+    min-height: 0;
+    padding-block: var(--s16);
+  }
+  /* The plugins page: tabs under the header, grouped rows, the catalog as a gallery. */
+  .plugins-page-tabs > .ant-tabs-nav {
+    margin-bottom: var(--s20, 1.25rem);
+  }
+  .plugins-page-panel {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.75rem;
+  }
+  .home-page-section-heading small,
+  .plugins-page-summary {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-caption);
+    font-weight: 400;
+    white-space: nowrap;
+  }
+  .plugins-page-summary {
+    max-width: 16rem;
+    overflow: hidden;
+    color: var(--agnes-text-secondary);
+    text-overflow: ellipsis;
+  }
+  .plugins-page-capability {
+    cursor: pointer;
+  }
+  .plugins-page-capability .agh-list-row-actions {
+    color: var(--agnes-text-tertiary);
+  }
+  .plugins-page-alias {
+    margin-inline-start: var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-medium, 500);
+    letter-spacing: 0;
+  }
+  .home-page-heading h1 .agh-tag {
+    vertical-align: middle;
+    letter-spacing: 0;
+  }
+  .home-page-breadcrumb .agnes-ui-button {
+    height: auto;
+    padding: 0;
+  }
+  .plugins-page-note {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-caption);
+  }
+  .plugins-page-note .agnes-ui-button {
+    height: auto;
+    padding: 0;
+    font-size: inherit;
+  }
+  /* A primary action with its alternatives: one button, split by a hairline. */
+  .plugins-page-split {
+    display: inline-flex;
+  }
+  .plugins-page-split > .agnes-ui-button:first-child {
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
+  }
+  .plugins-page-split > :last-child .agnes-ui-button,
+  .plugins-page-split > .agnes-ui-button:last-child {
+    min-width: 0;
+    padding-inline: calc(var(--s4) * 1.5);
+    border-inline-start: 0.5px solid color-mix(in srgb, currentColor 35%, transparent);
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+  }
+  .plugins-page-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s12);
+  }
+  .plugins-page-toolbar[hidden] {
+    display: none;
+  }
+  .plugins-page-toolbar > p {
+    min-width: 12rem;
+    flex: 1;
+    margin: 0;
+  }
+  /* The capability shortcuts read as one row and wrap instead of overflowing a narrow page. */
+  .plugins-page-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s8);
+  }
+  .plugins-page-resources {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s16);
+  }
+  .plugins-page-resources > .admin-notice:empty,
+  .plugins-page-resources > .admin-notice[hidden] {
+    display: none;
+  }
+  .plugins-page-callout {
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+    padding: var(--s12) var(--s16);
+    border: 1px solid color-mix(in srgb, var(--agnes-brand-primary) 25%, var(--agnes-line-primary));
+    border-radius: var(--radius-card);
+    background: color-mix(in srgb, var(--agnes-brand-primary) 8%, var(--agnes-bg-surface));
+  }
+  .plugins-page-callout > div {
+    min-width: 0;
+    flex: 1;
+    display: grid;
+    gap: var(--s2);
+  }
+  .plugins-page-callout strong {
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-medium, 500);
+  }
+  .plugins-page-callout span {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-caption);
+  }
+  .plugins-page-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 16.875rem), 1fr));
+    gap: var(--s12);
+  }
+  /* Header, summary, footer, and the optional failed-check line under the footer. */
+  .plugins-page-card {
+    min-width: 0;
+    display: grid;
+    grid-template-rows: auto 1fr auto auto;
+    gap: var(--s10, 0.625rem);
+    padding: var(--s16);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-surface);
+  }
+  .plugins-page-card > header {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+  }
+  .plugins-page-card > header > div {
+    min-width: 0;
+    display: grid;
+  }
+  .plugins-page-card h3 {
+    min-width: 0;
+    margin: 0;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+  }
+  /* The title is a button: as a block it can clip one line and keep the ellipsis, like an agent
+     card's heading. An inline-flex button would clip the text without drawing the ellipsis. */
+  .plugins-page-card .plugins-page-card-title {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    padding: 0;
+    overflow: hidden;
+    font: inherit;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .plugins-page-card > p {
+    margin: 0;
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+  .plugins-page-card > footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8);
+  }
+  .dialog-step,
+  .form-hint {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-caption);
+    line-height: 1.6;
+  }
+  .dialog-step:empty,
+  .dialog-step[hidden],
+  .form-hint[hidden] {
+    display: none;
+  }
+  .resource-oauth {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8);
+  }
+  /* The plugin detail: the on/off switch sits in the header, actions on the tab they belong to. */
+  .plugin-detail-heading > .switch {
+    margin-inline-start: auto;
+  }
+  .plugin-detail-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s8);
+  }
+  .admin-detail-actions[hidden] {
+    display: none;
+  }
+  .confirm-version-step {
+    margin: 0 0 var(--s4);
+    color: var(--agnes-text-primary);
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-medium, 500);
+  }
+  /* A second path in a confirmation sits apart from Cancel and the main action. */
+  .dialog-actions > .dialog-action-aside {
+    margin-inline-end: auto;
+  }
+  .confirm-facts > section > h3 {
+    margin: 0 0 var(--s4);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+  }
+  /* A built-in capability's detail and the configuration its settings tab holds. */
+  .plugins-page-builtin .ant-tabs-nav {
+    margin-bottom: var(--s16);
+  }
+  .plugins-page-builtin .home-page-section + .home-page-section {
+    margin-top: var(--s20, 1.25rem);
+  }
+  .plugins-page-builtin-actions:empty {
+    display: none;
+  }
+  .plugins-page-builtin-label {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s8);
+    margin: var(--s20, 1.25rem) 0 var(--s8);
+    padding-inline: var(--s4);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+  }
+  .plugins-page-builtin-label small {
+    color: var(--agnes-text-tertiary);
+    font-size: inherit;
+    font-weight: 400;
+  }
+  .plugins-page-summary[data-attention] {
+    color: var(--agnes-status-warning-text);
+  }
+  .capability-panel {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s16);
+  }
+  .capability-panel > .agnes-settings-section {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s8);
+  }
+  .capability-panel .agnes-settings-section-heading small {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-caption);
+  }
+  .capability-form {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s12);
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .capability-form-columns {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--s12);
+  }
+  /* Plugin and capability details share one field grid: one field per row, its label beside its
+     value. Some markup wraps each pair in a div and some leaves dt/dd bare; a wrapper spans both
+     tracks and repeats them, so neither shape nests a value inside the label column. */
+  :is(.plugin-facts, .capability-facts) {
+    display: grid;
+    grid-template-columns: minmax(6rem, 9rem) minmax(0, 1fr);
+    gap: var(--s8) var(--s12);
+  }
+  :is(.plugin-facts, .capability-facts) > div {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: minmax(6rem, 9rem) minmax(0, 1fr);
+    gap: var(--s12);
+    min-width: 0;
+  }
+  .capability-facts {
+    margin: 0;
+    font-size: var(--font-size-sm);
+  }
+  :is(.plugin-facts, .capability-facts) dt {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+  }
+  :is(.plugin-facts, .capability-facts) dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  /* Monospace belongs to the secret reference only; ordinary prose keeps the body face. */
+  .capability-facts dd[translate="no"] {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+  }
+  /* What an enabled engine needs, opened under its own row inside the same card. */
+  .capability-engine-fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s12);
+    padding: var(--s4) var(--s16) var(--s16);
+    border-top: 1px solid var(--agnes-line-primary);
+    background: var(--agnes-bg-subtle, transparent);
+  }
+  .capability-engine-flags {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: 0.75rem;
+    line-height: 1.5;
+  }
+  /* The save sits on the right; what happened is said beside it. */
+  .capability-save {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--s12);
+  }
+  .capability-save > span {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .capability-save > span[data-tone="error"] {
+    color: var(--agnes-status-danger-text);
+  }
+  .capability-editor {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s12);
+    padding: var(--s16);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-surface);
+  }
+  .capability-editor textarea {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+  }
+  .capability-panel .agnes-settings-item-description > [translate="no"] {
+    display: block;
+    overflow: hidden;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .capability-panel .agnes-settings-item-control > select {
+    max-width: 14rem;
+  }
+  @media (max-width: 720px) {
+    .plugins-page-summary {
+      display: none;
+    }
+    .plugins-page-callout {
+      flex-wrap: wrap;
+    }
+    .capability-form-columns {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  /* A controller's detail or form drawn as a page: in the column, without a frame of its own. Its own
+   title and close button give way to the page header's title and 返回. */
+  .plugins-page-hosted > dialog[data-presentation="page"][open] {
+    position: static;
+    display: block;
+    width: auto !important;
+    max-width: none !important;
+    height: auto;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    box-shadow: none;
+    overflow: visible;
+    animation: none;
+  }
+  /* The host is the page's body, not a control: it never draws a focus ring of its own. */
+  .plugins-page-hosted > dialog[data-presentation="page"]:focus,
+  .plugins-page-hosted > dialog[data-presentation="page"]:focus-visible {
+    outline: none;
+  }
+  .plugins-page-hosted
+    > dialog[data-presentation="page"]
+    :is(.admin-detail-head, .admin-detail-scroll, .admin-detail-actions) {
+    padding-inline: 0;
+    border: 0;
+    overflow: visible;
+  }
+  .plugins-page-hosted
+    > dialog[data-presentation="page"]
+    :is(.plugin-detail-heading > h2, .plugin-detail-close) {
+    display: none;
+  }
+  /* A draft under review is a page: its header's 返回 replaces the review's own back button. */
+  [data-testid="home-page-plugins"] .agh-push-body [data-testid="candidate-back"] {
+    display: none;
+  }
+  /* A form shown as a page: the header carries its title, and the column its margins. The page
+   scrolls, not the form: a form that kept its dialog scrolling (auto, contained) swallows the wheel
+   once a fold opens and the column outgrows the viewport. */
+  .plugins-page-hosted > dialog[data-presentation="page"] .plugin-dialog-form {
+    max-height: none;
+    padding: 0;
+    overflow: visible;
+    overscroll-behavior: auto;
+  }
+  .plugins-page-hosted > dialog[data-presentation="page"] .plugin-dialog-form > .dialog-heading {
+    display: none;
+  }
+  /* With the title in the page header, the main switch sits at the end of the version line. */
+  .plugins-page-hosted > dialog[data-presentation="page"] .admin-detail-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: var(--s12);
+    padding-top: 0;
+  }
+  .plugins-page-hosted > dialog[data-presentation="page"] .admin-detail-head > * {
+    grid-column: 1 / -1;
+  }
+  .plugins-page-hosted > dialog[data-presentation="page"] .admin-detail-head > .plugin-detail-heading {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .plugins-page-hosted > dialog[data-presentation="page"] .admin-detail-head > .plugin-detail-version {
+    grid-column: 1;
+    grid-row: 1;
+    margin: 0;
+  }
+
+  /* A check that stopped: one line under the card, with its retry. */
+  .plugins-page-card-error {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--s4) var(--s8);
+    color: var(--agnes-status-danger-text);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+  }
+
+  /* ── Install review page ───────────────────────────────────────────────────
+   What the reader judges up front; the full record under 技术详情, wrapping, never cut off. */
+  .install-review {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s16);
+  }
+  .install-review-hero {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+  }
+  .install-review-name {
+    font-size: var(--font-size-lg, 1rem);
+    overflow-wrap: anywhere;
+  }
+  .install-review-meta,
+  .install-review-lead,
+  .install-review-note {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+  }
+  .install-review section {
+    min-width: 0;
+    display: grid;
+    gap: var(--s8);
+  }
+  .install-review section > h3 {
+    margin: 0;
+    padding-inline-start: var(--s4);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+  }
+  .install-review .agnes-settings-item {
+    flex-wrap: nowrap;
+  }
+  .install-review .agnes-settings-item-description {
+    overflow-wrap: anywhere;
+  }
+  .install-review-technical :is(dd, li, p, code) {
+    min-width: 0;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: var(--font-size-xs);
+    overflow-wrap: anywhere;
+  }
+  .install-review-technical :is(dl, ul, section) {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .install-review-error {
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--s4) var(--s8);
+    color: var(--agnes-status-danger-text);
+    font-size: var(--font-size-sm);
+    overflow-wrap: anywhere;
+  }
+  .install-review-bar {
+    position: sticky;
+    bottom: 0;
+    flex-wrap: wrap;
+    background: var(--agnes-bg-app-content);
+  }
+}

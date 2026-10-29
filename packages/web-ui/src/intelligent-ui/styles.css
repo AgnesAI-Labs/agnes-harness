@@ -1,0 +1,1777 @@
+@import "../layers.css";
+
+@layer ui {
+  .agnes-intelligent-surface {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-surface);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s16);
+    padding: var(--s20);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-lg);
+    box-shadow: none;
+    min-width: 0;
+    font-size: var(--font-size-body);
+    line-height: var(--line-md);
+  }
+  .agnes-intelligent-catalog {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s24);
+    min-width: 0;
+    color: var(--agnes-text-primary);
+  }
+  .agnes-intelligent-component {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s12);
+  }
+  /* A block's title and its refresh action share one line above the content. */
+  .agnes-intelligent-component-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  .agnes-intelligent-component-head > h4 {
+    flex: 1;
+    min-width: 0;
+    text-wrap: balance;
+  }
+  .agnes-intelligent-refresh {
+    flex: 0 0 auto;
+    margin-inline-start: auto;
+    color: var(--agnes-text-secondary);
+  }
+  /* Structured result data: a framed monospace block that scrolls inside a fixed height. */
+  .agnes-intelligent-code {
+    min-width: 0;
+    margin: var(--s8) 0 0;
+    overflow: hidden;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-surface);
+  }
+  .agnes-intelligent-code > figcaption {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8);
+    min-height: 2rem;
+    padding: 0 var(--s4) 0 var(--s12);
+    border-bottom: 1px solid var(--agnes-line-primary);
+    color: var(--agnes-text-tertiary);
+    background: var(--agnes-bg-code);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+  }
+  .agnes-intelligent-code > pre {
+    max-height: 15rem;
+    margin: 0;
+    padding: var(--s8) var(--s12) var(--s12);
+    overflow: auto;
+    color: var(--agnes-text-primary);
+    font: var(--font-size-xs) / 1.65 var(--font-mono);
+    tab-size: 2;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .agnes-intelligent-component-head > h4,
+  .agnes-intelligent-component > h4,
+  .agnes-intelligent-catalog caption {
+    margin: 0;
+    text-align: start;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-md);
+    font-weight: 600;
+    line-height: var(--line-md);
+    overflow-wrap: anywhere;
+  }
+  .agnes-intelligent-catalog caption {
+    padding: var(--s12);
+  }
+  .agnes-intelligent-catalog caption[data-repeats-heading] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .agnes-intelligent-catalog td .agnes-intelligent-tag {
+    white-space: nowrap;
+  }
+  .agnes-intelligent-catalog section {
+    min-width: 0;
+  }
+  .agnes-intelligent-catalog fieldset {
+    border: 0;
+    padding: 0;
+    min-width: 0;
+  }
+  .agnes-intelligent-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s8);
+  }
+  .agnes-intelligent-table-scroll {
+    overflow-x: auto;
+    min-width: 0;
+    max-width: 100%;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+  }
+  .agnes-intelligent-catalog table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+  .agnes-intelligent-catalog th,
+  .agnes-intelligent-catalog td {
+    padding: var(--s10) var(--s12);
+    text-align: start;
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .agnes-intelligent-catalog thead {
+    background: var(--agnes-bg-card);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .agnes-intelligent-catalog tbody tr:nth-child(even) {
+    background: var(--agnes-bg-card);
+  }
+  .agnes-intelligent-catalog tbody tr:hover,
+  .agnes-intelligent-catalog tbody tr:focus-within {
+    background: var(--agnes-bg-hover);
+  }
+  .agnes-intelligent-catalog tbody tr:has(input:checked) {
+    background: var(--agnes-bg-selected);
+  }
+  .agnes-intelligent-catalog tbody th {
+    font-weight: 500;
+  }
+  .agnes-intelligent-catalog :is(th, td)[data-numeric] {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+  }
+  .agnes-intelligent-cell {
+    display: block;
+    max-width: 20rem;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .agnes-intelligent-catalog td.agnes-intelligent-table-empty {
+    text-align: center;
+    padding: var(--s24);
+    color: var(--agnes-text-secondary);
+  }
+  .agnes-intelligent-table-empty p {
+    margin: 0;
+  }
+  .agnes-intelligent-catalog figure {
+    margin: 0;
+  }
+  .agnes-intelligent-catalog :focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
+  }
+  .agnes-intelligent-surface[data-placement="inline"] {
+    padding: var(--s12);
+    gap: var(--s12);
+  }
+  .agnes-intelligent-surface[data-placement="inline"] .agnes-intelligent-catalog {
+    max-height: none;
+    overflow-y: visible;
+    gap: var(--s16);
+    padding: var(--s4);
+  }
+  .agnes-intelligent-surface > header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8);
+    padding-block-end: var(--s12);
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .agnes-intelligent-surface h3 {
+    margin: 0;
+    flex: 1 1 12rem;
+    min-width: 0;
+    font-size: var(--font-size-lg);
+    line-height: var(--line-md);
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .agnes-intelligent-surface [data-testid="ui-receipts"] {
+    padding-inline-start: var(--s20);
+    margin: 0;
+    display: grid;
+    gap: var(--s12);
+  }
+
+  .agnes-intelligent-surface p {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .agnes-intelligent-surface[data-placement="inline"] [data-testid="ui-receipts"] {
+    max-height: 180px;
+    overflow: auto;
+  }
+
+  .agnes-intelligent-choices legend {
+    font-weight: 600;
+    margin-block-end: var(--s8);
+  }
+  .agnes-intelligent-choices label {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s8);
+    padding: var(--s8);
+    border-radius: var(--radius-sm);
+  }
+  .agnes-intelligent-choices input:is([type="radio"], [type="checkbox"]) {
+    width: var(--s16);
+    height: var(--s16);
+    min-height: 0;
+    flex: 0 0 var(--s16);
+    margin-block-start: 3px;
+    padding: 0;
+    accent-color: var(--agnes-brand-primary);
+  }
+
+  .agnes-custom-ui-frame {
+    width: 100%;
+    height: 320px;
+    border: 0;
+    display: block;
+  }
+  .agnes-custom-ui-frame[hidden] {
+    display: none;
+  }
+  .agnes-intelligent-detail-card {
+    container-type: inline-size;
+    background: var(--agnes-bg-group);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    padding: var(--s16);
+    display: grid;
+    gap: var(--s12);
+    min-width: 0;
+  }
+  .agnes-intelligent-subtitle {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .agnes-intelligent-tag {
+    display: inline-flex;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    padding: var(--s2) var(--s8);
+    border: 1px solid currentColor;
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--agnes-status-info-text);
+    background: var(--agnes-bg-surface);
+  }
+  .agnes-intelligent-tag[data-tone="success"] {
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
+  }
+  .agnes-intelligent-tag[data-tone="warning"] {
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+  }
+  .agnes-intelligent-tag[data-tone="error"] {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+  }
+  .agnes-intelligent-detail {
+    display: grid;
+    margin: 0;
+  }
+  .agnes-intelligent-detail > div {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    gap: var(--s8) var(--s16);
+    padding-block: var(--s10);
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .agnes-intelligent-detail > div:last-child {
+    border-bottom: 0;
+  }
+  .agnes-intelligent-detail dt {
+    color: var(--agnes-text-secondary);
+    overflow-wrap: anywhere;
+  }
+  .agnes-intelligent-detail dd {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .agnes-intelligent-detail dd[data-numeric] {
+    font-size: var(--font-size-lg);
+    font-variant-numeric: tabular-nums;
+  }
+  @container (max-width: 320px) {
+    .agnes-intelligent-detail > div {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--s4);
+    }
+  }
+  .agnes-intelligent-steps {
+    list-style: none;
+    counter-reset: intelligent-step;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--s8);
+  }
+  .agnes-intelligent-steps li {
+    counter-increment: intelligent-step;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: var(--s4) var(--s12);
+    align-items: center;
+    padding: var(--s12);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    color: var(--agnes-text-primary);
+    overflow-wrap: anywhere;
+  }
+  .agnes-intelligent-steps li::before {
+    content: counter(intelligent-step);
+    display: grid;
+    place-items: center;
+    width: var(--s32);
+    height: var(--s32);
+    border-radius: var(--radius-full);
+    background: var(--agnes-bg-card);
+    color: var(--agnes-text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+  .agnes-intelligent-steps li[aria-current="step"] {
+    border-color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .agnes-intelligent-steps li[data-state="done"]::before {
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
+  }
+  .agnes-intelligent-steps li > span:first-of-type {
+    font-weight: 600;
+  }
+  .agnes-intelligent-steps p {
+    grid-column: 2 / -1;
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .agnes-intelligent-progress {
+    display: grid;
+    gap: var(--s8);
+    padding: var(--s12);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+  }
+  .agnes-intelligent-progress p {
+    margin: 0;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .agnes-intelligent-progress-track {
+    height: var(--s8);
+    background: var(--agnes-line-primary);
+    border-radius: var(--radius-full);
+    overflow: hidden;
+  }
+  .agnes-intelligent-progress-fill {
+    height: 100%;
+    background: var(--agnes-brand-primary);
+  }
+  .agnes-intelligent-image {
+    display: grid;
+    gap: var(--s8);
+    margin: 0;
+    color: var(--agnes-text-primary);
+  }
+  .agnes-intelligent-image img {
+    max-width: 100%;
+    height: auto;
+    background: var(--agnes-bg-surface);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+  }
+  .agnes-intelligent-source-state {
+    display: grid;
+    gap: var(--s8);
+    justify-items: start;
+    color: var(--agnes-text-primary);
+  }
+  .agnes-intelligent-catalog .agnes-ui-tabs [role="tab"] {
+    color: var(--agnes-text-primary);
+  }
+  .agnes-intelligent-catalog .agnes-ui-tabs [role="tab"][aria-selected="true"] {
+    color: var(--agnes-brand-primary);
+  }
+
+  .agnes-intelligent-surface [data-testid="ui-confirmation"] {
+    padding: var(--s16);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-group);
+  }
+  .agnes-intelligent-surface > :focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
+  }
+  @media (max-width: 480px) {
+    .agnes-intelligent-surface {
+      padding: var(--s12);
+    }
+  }
+
+  .agnes-intelligent-text,
+  .agnes-intelligent-status {
+    margin: 0;
+  }
+  .agnes-intelligent-text {
+    line-height: var(--line-md);
+  }
+  .agnes-intelligent-tabs {
+    min-width: 0;
+  }
+  .agnes-intelligent-tabs [data-testid^="ui-tabpanel-"] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s16);
+  }
+  .agnes-intelligent-catalog fieldset.agnes-intelligent-form {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+  .agnes-intelligent-form .config-field {
+    display: grid;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  .agnes-intelligent-form :is(label, legend) {
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+  .agnes-intelligent-form .config-field p {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .agnes-intelligent-form fieldset {
+    margin: 0;
+  }
+  .agnes-intelligent-form legend {
+    margin-block-end: var(--s8);
+    color: var(--agnes-text-secondary);
+  }
+  .agnes-intelligent-form :is(input, select, textarea) {
+    max-width: 100%;
+    min-width: 0;
+  }
+  .agnes-intelligent-choices label:has(input[type="text"]) {
+    flex-direction: column;
+  }
+  .agnes-intelligent-choices input[type="text"] {
+    width: 100%;
+    padding: var(--s8) var(--s12);
+    border: 1px solid var(--agnes-input-border);
+    border-radius: var(--radius-md);
+    background: var(--agnes-input-surface);
+    color: var(--agnes-input-content-strong);
+    font: inherit;
+  }
+  .agnes-intelligent-choices label:hover {
+    background: var(--agnes-bg-hover);
+  }
+  .agnes-intelligent-chart {
+    display: grid;
+    gap: var(--s12);
+    min-width: 0;
+  }
+  .agnes-intelligent-chart svg {
+    display: block;
+    min-width: 0;
+    color: var(--agnes-text-secondary);
+  }
+  .agnes-intelligent-chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s8) var(--s16);
+    font-size: var(--font-size-sm);
+  }
+  .agnes-intelligent-chart-legend > span {
+    display: inline-flex;
+    min-width: 0;
+    max-width: 100%;
+    align-items: center;
+    gap: var(--s8);
+    overflow-wrap: anywhere;
+  }
+  .agnes-intelligent-chart-key {
+    width: var(--s10);
+    height: var(--s10);
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
+  }
+  .agnes-intelligent-chart .agh-disclosure-summary {
+    cursor: pointer;
+    color: var(--agnes-text-secondary);
+    padding-block: var(--s4);
+  }
+  .agnes-intelligent-image figcaption {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
+  .agnes-intelligent-attribution {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    margin: var(--s8) 0;
+  }
+  .agnes-intelligent-surface[data-placement="inline"] .agnes-intelligent-body {
+    max-height: 320px;
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+  .agnes-intelligent-surface > header {
+    gap: var(--s8);
+  }
+  .agnes-intelligent-surface > header h3 {
+    flex: 1;
+  }
+  @media (max-width: 900px) {
+    body[data-agnes-region="app"] .agnes-intelligent-surface > header button {
+      min-width: var(--s32);
+      min-height: var(--s32);
+    }
+  }
+
+  /* Conversation placement: the list shares the message column, so cards and chips line up with
+     the messages above and the composer below instead of spanning the pane. */
+  .agnes-intelligent-inline {
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s12);
+    width: min(100%, var(--chat-content-width, 57.5rem));
+    margin-inline: auto;
+    padding: 0 var(--s32) var(--s16);
+  }
+  .agnes-intelligent-inline:empty {
+    display: none;
+  }
+  .agnes-intelligent-dock {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  .agnes-intelligent-chip {
+    display: inline-flex;
+    align-items: stretch;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-surface);
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    line-height: var(--line-md);
+    transition:
+      border-color var(--transition-fast),
+      background var(--transition-fast);
+  }
+  .agnes-intelligent-chip:hover {
+    border-color: var(--agnes-line-emphasis);
+  }
+  .agnes-intelligent-chip[data-active] {
+    border-color: var(--agnes-input-border-focus);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .agnes-intelligent-chip .agnes-intelligent-chip-main:not(:disabled) {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--s8);
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: var(--s32);
+    height: auto;
+    margin: 0;
+    padding: var(--s4) var(--s10) var(--s4) var(--s12);
+    border: 0;
+    border-radius: var(--radius-md) 0 0 var(--radius-md);
+    background: transparent;
+    box-shadow: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+  .agnes-intelligent-chip .agnes-intelligent-chip-main:hover:not(:disabled) {
+    background: var(--agnes-bg-hover);
+  }
+  .agnes-intelligent-chip :focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
+  }
+  .agnes-intelligent-chip-main > .agh-icon {
+    flex: none;
+    color: var(--agnes-text-secondary);
+  }
+  .agnes-intelligent-chip-title {
+    flex: 0 1 auto;
+    min-width: 2em;
+    max-width: 16rem;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-weight: 600;
+  }
+  .agnes-intelligent-chip-summary {
+    flex: 0 10 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--agnes-text-secondary);
+  }
+  .agnes-intelligent-chip[data-attention] .agnes-intelligent-chip-summary {
+    color: var(--agnes-status-warning-text);
+  }
+  .agnes-intelligent-chip-state {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    margin-inline-start: var(--s4);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+  }
+  .agnes-intelligent-chip[data-active] .agnes-intelligent-chip-state {
+    color: var(--agnes-text-emphasis);
+  }
+  .agnes-intelligent-chip > :not(.agnes-intelligent-chip-main):has(.agh-btn--icon) {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    padding-inline: var(--s2);
+    border-inline-start: 1px solid var(--agnes-line-primary);
+  }
+  @media (max-width: 900px) {
+    .agnes-intelligent-inline {
+      padding-inline: var(--s16);
+    }
+  }
+  @media (max-width: 767px) {
+    .agnes-intelligent-chip > :not(.agnes-intelligent-chip-main):has(.agh-btn--icon) {
+      padding-inline: var(--s8);
+    }
+    .agnes-intelligent-chip .agnes-intelligent-chip-main:not(:disabled) {
+      min-height: var(--control-height-touch);
+    }
+  }
+  @media (max-width: 540px) {
+    .agnes-intelligent-dock {
+      flex-wrap: wrap;
+    }
+    .agnes-intelligent-chip {
+      flex: 1 1 100%;
+    }
+    .agnes-intelligent-chip-title {
+      max-width: none;
+    }
+  }
+  @media (max-width: 380px) {
+    .agnes-intelligent-inline {
+      padding-inline: var(--s12);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agnes-intelligent-chip {
+      transition: none;
+    }
+  }
+  .agnes-intelligent-surface :is(p, label, legend) {
+    line-height: 1.6;
+  }
+  .agnes-intelligent-component > h4 {
+    text-wrap: balance;
+  }
+}
+
+@layer ui {
+  /* Deliverables are a grouped list of compact file cards, not a form: the surface drops its box,
+   its heading shrinks to a caption, and each file is one row — type tile, name, one muted line,
+   actions on the right. */
+  .agnes-intelligent-surface[data-kind="deliverables"] {
+    gap: var(--s8);
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+  .agnes-intelligent-surface[data-kind="deliverables"] > header {
+    padding: 0;
+    border-bottom: 0;
+  }
+  .agnes-intelligent-surface[data-kind="deliverables"] h3 {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+  /* In the conversation the row carries every action, so the surface's own controls step aside. */
+  .agnes-intelligent-surface[data-kind="deliverables"][data-placement="inline"] > header > :not(h3) {
+    display: none;
+  }
+  .agnes-intelligent-surface[data-kind="deliverables"] .agnes-intelligent-catalog {
+    gap: 0;
+    max-height: none;
+    overflow: hidden;
+    padding: 0;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-lg);
+    background: var(--agnes-bg-surface);
+  }
+  .agnes-intelligent-surface[data-kind="deliverables"]
+    .agnes-intelligent-component
+    + .agnes-intelligent-component {
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  .deliverable-row {
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+    min-width: 0;
+    padding: var(--s8) var(--s12);
+  }
+  .deliverable-file[data-placement="inline"]:has(.deliverable-target) .deliverable-row {
+    cursor: pointer;
+  }
+  .deliverable-file .deliverable-target.agh-btn {
+    display: inline;
+    height: auto;
+    min-height: 0;
+    max-width: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    text-align: start;
+    user-select: text;
+  }
+  .deliverable-target > span {
+    user-select: text;
+  }
+  .deliverable-actions > .agh-menu-anchor:first-child {
+    border-inline-start: 0;
+  }
+  /* The tile says what kind of file it is by icon and hue. */
+  .deliverable-tile {
+    --deliverable-hue: var(--agnes-text-secondary);
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: var(--radius-md);
+    color: var(--deliverable-hue);
+    background: color-mix(in srgb, var(--deliverable-hue) 12%, transparent);
+  }
+  .deliverable-tile[data-type="markdown"],
+  .deliverable-tile[data-type="text"] {
+    --deliverable-hue: var(--agnes-status-info-text);
+  }
+  .deliverable-tile[data-type="html"] {
+    --deliverable-hue: var(--agnes-status-warning-text);
+  }
+  .deliverable-tile[data-type="pdf"] {
+    --deliverable-hue: var(--agnes-status-danger-text);
+  }
+  .deliverable-tile[data-type="sheet"] {
+    --deliverable-hue: var(--agnes-status-success-text);
+  }
+  .deliverable-tile[data-type="image"] {
+    --deliverable-hue: var(--agnes-brand-primary);
+  }
+  .deliverable-text {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .deliverable-name {
+    margin: 0;
+    overflow: hidden;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .deliverable-file .deliverable-meta {
+    margin: 0;
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Open, with a chevron beside it that lists the other ways to open: one split control. The frame
+     owns the 28px height, the outline and the outer corners; the halves share it and a divider. */
+  .deliverable-actions {
+    flex: none;
+    align-self: center;
+    display: inline-flex;
+    align-items: stretch;
+    height: 1.75rem;
+    border: 1px solid var(--agnes-line-emphasis);
+    border-radius: var(--radius-control);
+    background: var(--agnes-bg-surface);
+    overflow: hidden;
+  }
+  @supports (corner-shape: squircle) {
+    .deliverable-actions {
+      corner-shape: var(--corner-shape);
+      border-radius: calc(var(--radius-control) * var(--corner-scale));
+    }
+  }
+  .deliverable-actions > .agh-menu-anchor,
+  .deliverable-actions > .agh-menu-anchor > .agh-tooltip-anchor {
+    display: flex;
+    align-items: stretch;
+  }
+  .deliverable-actions > .agh-menu-anchor {
+    border-inline-start: 1px solid var(--agnes-line-emphasis);
+  }
+  /* Scoped past the shared button size, outline, corner and shadow rules: the halves draw none. */
+  .deliverable-file .deliverable-actions :is(.deliverable-open, .deliverable-open-with).agh-btn {
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    corner-shape: initial;
+    box-shadow: none;
+    background: transparent;
+    color: var(--agnes-text-primary);
+  }
+  .deliverable-file .deliverable-actions .deliverable-open.agh-btn {
+    padding-inline: var(--s12);
+    font-weight: var(--font-weight-medium);
+  }
+  .deliverable-file .deliverable-actions .deliverable-open-with.agh-btn {
+    width: 1.75rem;
+    min-width: 1.75rem;
+    padding: 0;
+    color: var(--agnes-text-secondary);
+  }
+  .deliverable-file
+    .deliverable-actions
+    :is(.deliverable-open, .deliverable-open-with).agh-btn:hover:not(:disabled) {
+    background: var(--agnes-bg-hover);
+    color: var(--agnes-text-primary);
+  }
+  /* Narrow screens keep the shell's 32px touch floor: the frame grows to fit, both halves alike. */
+  @media (max-width: 900px) {
+    .deliverable-actions {
+      height: auto;
+    }
+    .deliverable-file .deliverable-actions .deliverable-open-with.agh-btn {
+      width: 2rem;
+      min-width: 2rem;
+      min-height: 2rem;
+    }
+  }
+  /* The frame clips its children, so the focus ring is drawn inside the half. */
+  .deliverable-file
+    .deliverable-actions
+    :is(.deliverable-open, .deliverable-open-with).agh-btn:focus-visible {
+    outline-offset: -2px;
+  }
+  /* A view inside the answer that produced it: a compact card in the reading column. */
+  .agnes-intelligent-surface[data-in-answer] {
+    gap: var(--s8);
+    margin-block: var(--s12) var(--s4);
+    padding: var(--s12) var(--s16);
+    border-radius: var(--radius-md);
+  }
+  .agnes-intelligent-surface[data-in-answer] > header {
+    flex-wrap: nowrap;
+    padding-block-end: var(--s8);
+  }
+  .agnes-intelligent-surface[data-in-answer] > header h3 {
+    overflow: hidden;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agnes-intelligent-surface[data-in-answer] .agnes-intelligent-body[data-capped] {
+    max-height: 22rem;
+    overflow: hidden;
+  }
+  .agnes-intelligent-surface[data-in-answer] .agnes-intelligent-body[data-overflows] {
+    mask-image: linear-gradient(to bottom, #000 80%, transparent);
+  }
+  .agnes-intelligent-surface .agnes-intelligent-more.agh-btn {
+    justify-self: start;
+  }
+  /* In an answer: one quiet framed list between the text and the action row. */
+  .turn-deliverables {
+    display: grid;
+    gap: var(--s4);
+    min-width: 0;
+    max-width: 40rem;
+    margin-block: var(--s12) var(--s4);
+  }
+  .turn-deliverables-head {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+  .turn-deliverables-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .turn-deliverables > .turn-deliverables-list {
+    overflow: hidden;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-lg);
+    background: var(--agnes-bg-surface);
+  }
+  .turn-deliverables-list > li + li {
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  .turn-deliverable-earlier {
+    padding: 0 var(--s12) var(--s8) calc(2.25rem + var(--s24));
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .turn-deliverable-earlier .turn-deliverables-list {
+    margin-top: var(--s4);
+    border-inline-start: 2px solid var(--agnes-line-primary);
+  }
+  .turn-deliverable-earlier .deliverable-row {
+    padding-block: var(--s4);
+  }
+  .deliverable-file .deliverable-note {
+    margin: 0;
+    padding: 0 var(--s12) var(--s12);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  /* The card owns its actions; preview content follows the row directly. */
+  .deliverable-preview {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  .deliverable-preview > .deliverable-note {
+    padding: var(--s12);
+  }
+  .deliverable-preview > [data-document-preview] {
+    min-width: 0;
+    max-height: 24rem;
+    overflow: auto;
+  }
+  .deliverable-file[data-placement="workbench"] .deliverable-preview > [data-document-preview] {
+    max-height: min(70vh, 48rem);
+  }
+  .deliverable-preview > [data-document-preview="markdown"] {
+    padding: var(--s12);
+  }
+  .deliverable-preview iframe {
+    display: block;
+    width: 100%;
+    height: 24rem;
+    border: 0;
+    background: var(--agnes-bg-surface);
+  }
+  .deliverable-file[data-placement="workbench"] .deliverable-preview iframe {
+    height: min(70vh, 48rem);
+  }
+  /* Source is shown as source: monospace, its own line breaks, scrolling in both directions. */
+  .deliverable-preview pre {
+    margin: 0;
+    padding: var(--s12);
+    overflow: visible;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+    tab-size: 2;
+    white-space: pre;
+  }
+  .deliverable-preview img {
+    display: block;
+    max-width: 100%;
+    margin: 0 auto;
+  }
+
+  /* ask_user_question: a step card docked above the composer. */
+  .agnes-question-card {
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    /* Same column as the composer card it sits on. */
+    width: min(calc(100% - 2rem), var(--composer-card-max-width, 48rem));
+    max-height: min(62vh, 34rem);
+    margin: 0 auto var(--s8);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-lg);
+    background: var(--agnes-bg-surface);
+    box-shadow: var(--shadow-popover);
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    line-height: var(--line-md);
+    overflow: hidden;
+  }
+  .agnes-question-card[data-collapsed] {
+    grid-template-rows: auto;
+  }
+  .agnes-question-head {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-width: 0;
+    padding: var(--s10) var(--s12) var(--s10) var(--s16);
+  }
+  .agnes-question-card:not([data-collapsed]) .agnes-question-head {
+    padding-bottom: 0;
+  }
+  .agnes-question-head h3 {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agnes-question-status {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    padding: 1px var(--s8);
+    border-radius: var(--radius-sm);
+    background: var(--agnes-bg-subtle);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agnes-question-status[data-waiting] {
+    background: var(--agnes-status-warning-bg);
+    color: var(--agnes-status-warning-text);
+  }
+  .agnes-question-toggle.agh-btn {
+    margin-inline-start: auto;
+    flex: 0 0 auto;
+  }
+  .agnes-question-steps {
+    display: flex;
+    gap: calc(var(--s4) + var(--s2));
+    margin: 0;
+    padding: var(--s10) var(--s16) 0;
+    list-style: none;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .agnes-question-steps > li {
+    flex: 0 0 auto;
+  }
+  .agnes-question-step.agh-btn {
+    gap: calc(var(--s4) + var(--s2));
+    height: 1.625rem;
+    padding: 0 var(--s10) 0 var(--s4);
+    border: 1px solid transparent;
+    border-radius: var(--radius-full);
+    background: var(--agnes-bg-subtle);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-regular);
+  }
+  .agnes-question-step.agh-btn:hover:not(:disabled) {
+    background: var(--agnes-bg-hover);
+    color: var(--agnes-text-primary);
+  }
+  .agnes-question-step[data-state="current"].agh-btn {
+    border-color: color-mix(in srgb, var(--agnes-brand-primary) 22%, transparent);
+    background: var(--agnes-brand-emphasis-soft);
+    color: var(--agnes-brand-primary);
+  }
+  .agnes-question-step-mark {
+    display: inline-grid;
+    place-items: center;
+    /* The inherited line box is taller than the glyph, which leaves a digit looking high in the circle. */
+    line-height: 1;
+    width: 1.125rem;
+    height: 1.125rem;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-full);
+    background: var(--agnes-bg-surface);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+  .agnes-question-step-mark svg {
+    width: 0.75rem;
+    height: 0.75rem;
+  }
+  .agnes-question-step[data-state="done"] .agnes-question-step-mark {
+    border-color: transparent;
+    background: var(--agnes-status-success-bg);
+    color: var(--agnes-status-success-text);
+  }
+  .agnes-question-step[data-state="current"] .agnes-question-step-mark {
+    border-color: transparent;
+    background: var(--agnes-brand-primary);
+    color: var(--agnes-button-primary-content);
+  }
+  .agnes-question-step-label {
+    max-width: 12em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agnes-question-body {
+    min-height: 0;
+    padding: var(--s12) var(--s16) var(--s4);
+    overflow-y: auto;
+  }
+  .agnes-question-step-body {
+    display: grid;
+    gap: var(--s4);
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .agnes-question-prompt {
+    margin: 0;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    overflow-wrap: anywhere;
+  }
+  .agnes-question-kind {
+    margin: 0 0 calc(var(--s4) + var(--s2));
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+  }
+  .agnes-question-options {
+    display: grid;
+    gap: calc(var(--s4) + var(--s2));
+  }
+  .agnes-question-option {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--s10);
+    min-height: var(--control-height);
+    padding: calc(var(--s4) + var(--s2)) var(--s10);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-surface);
+    cursor: pointer;
+    transition:
+      background-color var(--transition-fast),
+      border-color var(--transition-fast);
+  }
+  .agnes-question-option:hover {
+    background: var(--agnes-bg-hover);
+  }
+  .agnes-question-option[data-selected] {
+    border-color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .agnes-question-option:has(.agnes-question-option-input:focus-visible) {
+    outline: var(--focus-outline);
+    outline-offset: 1px;
+  }
+  .agnes-question-option > .agnes-question-option-input.agnes-settings-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .agnes-question-option-key.agh-kbd {
+    font-variant-numeric: tabular-nums;
+  }
+  .agnes-question-option[data-selected] .agnes-question-option-key .agh-kbd-key {
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-bg-selected);
+  }
+  .agnes-question-option-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .agnes-question-option-mark {
+    flex: 0 0 auto;
+    width: 1rem;
+    height: 1rem;
+    border: 1.5px solid var(--agnes-line-emphasis);
+    border-radius: var(--radius-full);
+  }
+  .agnes-question-option[data-multiple] .agnes-question-option-mark {
+    border-radius: 0.25rem;
+  }
+  .agnes-question-option[data-selected] .agnes-question-option-mark {
+    border-color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-primary);
+    box-shadow: inset 0 0 0 3px var(--agnes-bg-surface);
+  }
+  .agnes-question-option[data-multiple][data-selected] .agnes-question-option-mark {
+    box-shadow: none;
+    background:
+      var(--agnes-brand-primary)
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.5l2.5 2.5L12 5.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+      center / 0.75rem no-repeat;
+  }
+  .agnes-question-other {
+    display: flex;
+    align-items: center;
+    padding: 0 var(--s4);
+    border: 1px dashed var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+  }
+  .agnes-question-other[data-filled] {
+    border-style: solid;
+    border-color: var(--agnes-brand-primary);
+  }
+  .agnes-question-other > .agnes-question-other-input.agnes-settings-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+  }
+  .agnes-question-text.agnes-settings-input {
+    width: 100%;
+    resize: vertical;
+  }
+  .agnes-question-foot {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    padding: var(--s10) var(--s16);
+    border-top: 1px solid var(--agnes-line-primary);
+    margin-top: var(--s8);
+  }
+  .agnes-question-hint {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agnes-question-remaining {
+    flex: none;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+  }
+  .agnes-question-error {
+    color: var(--agnes-status-danger-text);
+  }
+  @media (max-width: 767px) {
+    .agnes-question-hint .agh-kbd,
+    .agnes-question-option-key.agh-kbd {
+      display: none;
+    }
+    .agnes-question-option {
+      min-height: var(--control-height-touch);
+    }
+    .agnes-question-status {
+      display: none;
+    }
+  }
+  /* The submitted answers, in the conversation where the person's reply landed. */
+  .agnes-question-receipt {
+    max-width: 40rem;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-surface);
+  }
+  .agnes-question-receipt > header {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--s4) + var(--s2));
+    padding: var(--s8) var(--s12);
+    border-bottom: 1px solid var(--agnes-line-primary);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .agnes-question-receipt > header svg {
+    color: var(--agnes-status-success-text);
+  }
+  .agnes-question-receipt dl {
+    display: grid;
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+    gap: var(--s4) var(--s16);
+    margin: 0;
+    padding: var(--s8) var(--s12);
+    font-size: var(--font-size-sm);
+  }
+  .agnes-question-receipt dl > div {
+    display: contents;
+  }
+  .agnes-question-receipt dl[data-unlabelled] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .agnes-question-receipt dt {
+    max-width: 14em;
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agnes-question-receipt dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .agnes-question-pill {
+    display: inline-block;
+    margin: 0 var(--s4) var(--s2) 0;
+    padding: 0 calc(var(--s4) + var(--s2));
+    border-radius: var(--radius-sm);
+    background: var(--agnes-bg-subtle);
+  }
+
+  /* «✓ Answered N items»: first in the asking answer's action row, answers in a small panel above it. */
+  .agnes-answered {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    margin-inline: 0.375rem var(--s4);
+  }
+  /* Past the shared ghost-button colours: the mark keeps its green at rest. */
+  .agnes-answered > .agnes-answered-badge.agh-btn.agh-btn--ghost {
+    gap: var(--s4);
+    height: 1.375rem;
+    min-height: 1.375rem;
+    padding: 0 var(--s8) 0 calc(var(--s4) + var(--s2));
+    border: 0;
+    border-radius: var(--radius-full);
+    corner-shape: initial;
+    box-shadow: none;
+    background: var(--agnes-status-success-bg);
+    color: var(--agnes-status-success-text);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .agnes-answered > .agnes-answered-badge.agh-btn.agh-btn--ghost:hover:not(:disabled) {
+    background: var(--agnes-status-success-bg);
+    color: var(--agnes-status-success-text);
+  }
+  .agnes-answered-badge svg {
+    width: 0.75rem;
+    height: 0.75rem;
+  }
+  .agnes-answered-pop {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + var(--s8));
+    z-index: 20;
+    width: min(20rem, calc(100vw - 2rem));
+    padding: var(--s10) var(--s12) var(--s8);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-lg);
+    background: var(--agnes-bg-surface);
+    box-shadow: var(--shadow-popover);
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+    text-align: start;
+    opacity: 0;
+    transform: translateY(4px);
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      opacity 120ms ease-out,
+      transform 140ms ease-out,
+      visibility 0s linear 140ms;
+  }
+  .agnes-answered:hover > .agnes-answered-pop,
+  .agnes-answered:focus-within > .agnes-answered-pop,
+  .agnes-answered[data-open] > .agnes-answered-pop {
+    opacity: 1;
+    transform: none;
+    visibility: visible;
+    pointer-events: auto;
+    transition:
+      opacity 120ms ease-out,
+      transform 140ms ease-out;
+  }
+  .agnes-answered[data-below] > .agnes-answered-pop {
+    top: calc(100% + var(--s8));
+    bottom: auto;
+    transform: translateY(-4px);
+  }
+  .agnes-answered[data-below]:is(:hover, :focus-within, [data-open]) > .agnes-answered-pop {
+    transform: none;
+  }
+  .agnes-answered-head {
+    margin: 0 0 calc(var(--s4) + var(--s2));
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .agnes-answered-pop dl {
+    display: grid;
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+    gap: 0.1875rem var(--s12);
+    margin: 0;
+  }
+  .agnes-answered-pop dl[data-unlabelled] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .agnes-answered-row {
+    display: contents;
+  }
+  .agnes-answered-pop dt {
+    max-width: 8em;
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agnes-answered-pop dd {
+    display: -webkit-box;
+    margin: 0;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agnes-answered-pop {
+      transition: none;
+    }
+  }
+}
+
+/* The panel frame shared by the workbench «Views» tab and the card inside an answer: a header with
+   the surface's icon, title and source line, the preset body, then an action bar whose left side
+   reports the latest action state. File lists keep their own compact rows. */
+@layer ui {
+  .agnes-intelligent-surface:not([data-kind="deliverables"]) {
+    gap: var(--s12);
+    padding: 0 0 var(--s12);
+    overflow: hidden;
+    border-radius: var(--radius-lg);
+  }
+  .agnes-intelligent-surface:not([data-kind="deliverables"]) > :not(header, footer) {
+    margin-inline: var(--s12);
+  }
+  .agnes-intelligent-surface:not([data-kind="deliverables"]) > header {
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: var(--s8);
+    margin: 0;
+    padding: var(--s10) var(--s8) var(--s10) var(--s12);
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .agnes-intelligent-icon {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: var(--radius-md);
+    background: var(--agnes-brand-emphasis-soft);
+    color: var(--agnes-brand-primary);
+  }
+  .agnes-intelligent-icon > .agh-icon {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+  .agnes-intelligent-heading {
+    display: grid;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .agnes-intelligent-surface:not([data-kind="deliverables"]) .agnes-intelligent-heading > h3 {
+    overflow: hidden;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-md);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agnes-intelligent-surface .agnes-intelligent-meta {
+    margin: 0;
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* The technical source block is a two-column list of label and value. Without the margin reset
+     the browser indents every <dd> by 40px, which drops each value onto its own line below the
+     label. The id can be 40 characters, so the value column truncates instead of widening the card. */
+  .agnes-intelligent-source-list {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: var(--s4) var(--s12);
+    margin: 0;
+    font-size: var(--font-size-xs);
+  }
+  .agnes-intelligent-source-list dt {
+    color: var(--agnes-text-tertiary);
+  }
+  .agnes-intelligent-source-list dd {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: var(--agnes-text-secondary);
+    font-family: var(--font-mono);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agnes-intelligent-surface [data-testid="ui-receipts"][hidden] {
+    display: none;
+  }
+  /* Action bar: execution state on the left, secondary actions then the one primary on the right. */
+  .agnes-intelligent-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8);
+    margin-block-end: calc(-1 * var(--s12));
+    padding: var(--s8) var(--s12);
+    border-top: 1px solid var(--agnes-line-primary);
+    background: var(--agnes-bg-card);
+  }
+  .agnes-intelligent-footer-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--s8);
+    margin-inline-start: auto;
+  }
+  .agnes-intelligent-run {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s4) var(--s8);
+    min-width: 0;
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .agnes-intelligent-run-note {
+    color: var(--agnes-text-tertiary);
+  }
+  .agnes-intelligent-surface .agnes-intelligent-run .agh-btn--link {
+    height: auto;
+    padding: 0;
+  }
+  /* Status values are small flat tags. */
+  .agnes-intelligent-surface .agnes-intelligent-tag {
+    padding: 0 var(--s8);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: var(--agnes-bg-subtle);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.6;
+  }
+  .agnes-intelligent-surface .agnes-intelligent-tag[data-tone="success"] {
+    background: var(--agnes-status-success-bg);
+  }
+  .agnes-intelligent-surface .agnes-intelligent-tag[data-tone="warning"] {
+    background: var(--agnes-status-warning-bg);
+  }
+  .agnes-intelligent-surface .agnes-intelligent-tag[data-tone="error"] {
+    background: var(--agnes-status-danger-bg);
+  }
+  /* Located from the workbench: a short brand ring on the conversation's card or chip. */
+  :is(.agnes-intelligent-surface, .agnes-intelligent-chip)[data-located] {
+    outline: 2px solid var(--agnes-brand-primary);
+    outline-offset: 2px;
+    transition: outline-color var(--transition-fast);
+  }
+
+  /* Metrics: two to four sunken tiles with tabular figures. */
+  .agnes-intelligent-detail-card[data-variant="metrics"] {
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+  .agnes-intelligent-detail-card[data-variant="metrics"] .agnes-intelligent-detail {
+    grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+    gap: var(--s8);
+  }
+  .agnes-intelligent-detail-card[data-variant="metrics"] .agnes-intelligent-detail > div {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s2);
+    padding: var(--s8) var(--s10);
+    border: 0;
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-subtle);
+  }
+  .agnes-intelligent-detail-card[data-variant="metrics"] dt {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .agnes-intelligent-detail-card[data-variant="metrics"] dd {
+    font-size: var(--font-size-lg);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Table: a light header, 32px rows, figures right-aligned, the selected rows in brand tint. */
+  .agnes-intelligent-surface .agh-table {
+    --ant-table-row-selected-bg: var(--agnes-brand-emphasis-soft);
+    --ant-table-row-selected-hover-bg: var(--agnes-brand-emphasis-soft);
+  }
+  .agnes-intelligent-surface .agnes-intelligent-catalog :is(th, td) {
+    height: 2rem;
+    padding: 0 var(--s8);
+    font-variant-numeric: tabular-nums;
+  }
+  .agnes-intelligent-surface .agnes-intelligent-catalog thead :is(th, td) {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+  .agnes-intelligent-surface .agnes-intelligent-catalog tbody tr:nth-child(even) {
+    background: transparent;
+  }
+  .agnes-intelligent-surface .agnes-intelligent-catalog tbody tr:has(input:checked) > :is(th, td) {
+    background: var(--agnes-brand-emphasis-soft);
+  }
+
+  /* Form: the label above a 32px control, a small dot after a required label. */
+  .agnes-intelligent-field {
+    display: grid;
+    gap: var(--s4);
+    min-width: 0;
+  }
+  .agnes-intelligent-form + .agnes-intelligent-actions,
+  .agnes-intelligent-field + .agnes-intelligent-field {
+    margin-block-start: var(--s12);
+  }
+  .agnes-intelligent-surface .agnes-intelligent-form .config-field {
+    gap: var(--s4);
+  }
+  .agnes-intelligent-surface .agnes-intelligent-form :is(label, legend) {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+  }
+  .agnes-intelligent-surface
+    .agnes-intelligent-form
+    :is(input:not([type="checkbox"], [type="radio"]), select) {
+    min-height: 2rem;
+  }
+  .agnes-intelligent-field[data-required] > .config-field > label::after,
+  .agnes-intelligent-choices[data-required] > legend::after {
+    content: "";
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    margin-inline-start: var(--s4);
+    border-radius: var(--radius-full);
+    background: var(--agnes-status-danger-text);
+    vertical-align: 0.2em;
+  }
+
+  /* Chart: a faint grid and quiet axes so the series carry the colour. */
+  .agnes-intelligent-surface .recharts-cartesian-grid line {
+    stroke-opacity: 0.6;
+    stroke-dasharray: 2 3;
+  }
+  .agnes-intelligent-surface .recharts-cartesian-axis-line {
+    stroke: var(--agnes-line-primary);
+  }
+
+  /* Inside an answer the same frame stays compact. */
+  .agnes-intelligent-surface[data-in-answer]:not([data-kind="deliverables"]) {
+    gap: var(--s8);
+    padding: 0 0 var(--s8);
+    border-radius: var(--radius-md);
+  }
+  .agnes-intelligent-surface[data-in-answer]:not([data-kind="deliverables"]) > header {
+    padding: var(--s8) var(--s8) var(--s8) var(--s12);
+  }
+  .agnes-intelligent-surface[data-in-answer]:not([data-kind="deliverables"]) .agnes-intelligent-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+  .agnes-intelligent-surface[data-in-answer] .agnes-intelligent-footer {
+    margin-block-end: calc(-1 * var(--s8));
+    padding-block: var(--s4);
+  }
+
+  /* The workbench «Views» tab: panels on the ground colour, the footnote as one quiet line. */
+  .agnes-intelligent-panel {
+    display: grid;
+    gap: var(--s12);
+    min-height: 100%;
+    align-content: start;
+    padding: var(--s12);
+    background: var(--agnes-bg-app-content);
+  }
+  .agnes-intelligent-panel > [data-testid="intelligent-ui-workbench"] {
+    display: grid;
+    gap: var(--s12);
+    min-width: 0;
+  }
+  .agnes-intelligent-panel-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8);
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  @media (max-width: 480px) {
+    .agnes-intelligent-panel {
+      padding: var(--s8);
+    }
+    .agnes-intelligent-footer-actions {
+      flex: 1 1 100%;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :is(.agnes-intelligent-surface, .agnes-intelligent-chip)[data-located] {
+      transition: none;
+    }
+  }
+}

@@ -7,7 +7,7 @@
     "surfaces": [
       {
         "id": "dashboard",
-        "apiRange": "^1.0",
+        "apiRange": "^5.0.0",
         "artifact": {
           "kind": "node",
           "entry": "./dist/server.mjs"
@@ -27,12 +27,40 @@
     "plugins": [
       {
         "export": "backend",
+        "apiRange": "^5.0.0",
         "id": "ext:acme/dashboard/backend",
         "runtime": "in-process",
         "services": [
           "data.read"
-        ]
+        ],
+        "metadata": {
+          "displayName": "Sample dashboard",
+          "summary": "Demonstrates a separately served dashboard backed by a versioned plugin data service.",
+          "description": "Demonstrates a separately served dashboard backed by a versioned plugin data service.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "样例仪表盘",
+              "summary": "演示由版本化插件数据服务支持的独立仪表盘页面。",
+              "description": "演示由版本化插件数据服务支持的独立仪表盘页面。"
+            }
+          }
+        }
       }
+    ],
+    "metadata": {
+      "displayName": "Sample dashboard",
+      "summary": "Demonstrates a separately served dashboard backed by a versioned plugin data service.",
+      "description": "Demonstrates a separately served dashboard backed by a versioned plugin data service.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "样例仪表盘",
+          "summary": "演示由版本化插件数据服务支持的独立仪表盘页面。",
+          "description": "演示由版本化插件数据服务支持的独立仪表盘页面。"
+        }
+      }
+    },
+    "provides": [
+      "ui"
     ]
   },
   "exports": "./extension/index.mjs"

@@ -1,5 +1,6 @@
 import { type HarnessMeta, setHarnessMeta } from '@agnes/protocol'
 import type { JsonRpcMessage, JsonRpcNotification, RpcEndpoint } from '@agnes/sdk'
+import { pendingDecision } from '../../core-ledger/testkit/decision.js'
 
 type Handler = (params: unknown, ep: FakeEndpoint) => unknown | Promise<unknown>
 
@@ -187,6 +188,13 @@ export function scriptedEndpoint(
     toolCall?: { toolUseId: string; name: string; durationMs?: number; outcome?: 'ok' | 'error' | 'aborted' }
     /** The `error` a failed turn's turn/end row carries. */
     turnEndError?: { code: string; message: string }
+    /** What the handshake advertises under `agentCapabilities._meta['ai.agnes.harness']`; none by default, like an older daemon. */
+    harnessCapabilities?: {
+      hardTurnBudget?: boolean
+      turnMaxSteps?: boolean
+      turnTimeLimit?: boolean
+      forkAdditionalDirectories?: boolean
+    }
   } = {},
 ): FakeEndpoint {
   const reply = opts.reply ?? 'hello from fake'
@@ -232,7 +240,9 @@ export function scriptedEndpoint(
   return new FakeEndpoint()
     .on('initialize', () => ({
       protocolVersion: 1,
-      agentCapabilities: {},
+      agentCapabilities: opts.harnessCapabilities
+        ? { _meta: { 'ai.agnes.harness': opts.harnessCapabilities } }
+        : {},
       _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
     }))
     .on('_agnes/v1/apis.list', () => ({
@@ -288,16 +298,10 @@ export function scriptedEndpoint(
         if (opts.parkedTicket !== undefined)
           ep.pushEvent(
             FAKE_SESSION_ID,
-            // A full row: protocol validates approval/asked data now, and the sdk drops a row it
-            // cannot validate, which would take the ticket with it.
-            ev('approval/asked', {
-              requestId: 'req-1',
-              kind: 'tool',
-              risk: 'destructive',
-              summary: 'rm -rf /tmp/x',
-              bindingHash: 'b'.repeat(64),
-              pending: { ticket: opts.parkedTicket, expiresAt: new Date(0).toISOString() },
-            }),
+            {
+              ...ev('decision/state', pendingDecision(opts.parkedTicket, { sessionId: FAKE_SESSION_ID })),
+              register: 'decision/state',
+            },
             meta('event'),
           )
         const end = ev('turn/end', {

@@ -1,70 +1,45 @@
-import type { AttachmentRefusalCode } from '@agnes/protocol'
-import {
-  AttachmentValidationError,
-  SafeImageError,
-  USER_MESSAGE_ATTACHMENT_LIMITS,
-} from '@agnes/protocol-validation'
+type Translate = (key: string, vars?: Readonly<Record<string, string | number>>) => string
 
-/** 词条 key 与插值变量。文案由调用方用自己的 `t` 取，这一层不碰语言。 */
-export type AttachmentErrorNotice = Readonly<{
-  key: string
-  vars?: Record<string, string | number>
-}>
-
-/**
- * 附件与图片校验错误 → 词条 key，供输入框和提交路径共用一份映射。
- *
- * 文件数据走的是图片那条解码器，抛出的也是 `SafeImageError`，所以判断顺序是「先看是不是
- * 附件校验错误」：文件数据坏了报成「图片无效」会让用户去换图片格式。返回 undefined 表示
- * 不是校验错误，调用方沿用后台返回的原文案。
- *
- * 词条都在 `composer.*` 下：同一批限制由输入框先报一次、提交时兜底再报一次，两处取同一份
- * 文案才不会各自漂移。
- */
-/** The daemon's attachment refusals (`data.code` of the RPC error) and the sentence each gets. */
-const REFUSAL_KEYS: Readonly<Partial<Record<AttachmentRefusalCode, string>>> = {
-  UPLOAD_QUOTA: 'composer.upload.quota',
-  UPLOAD_SIZE_LIMIT: 'composer.upload.tooLarge',
-  UPLOAD_NOT_IMAGE: 'composer.image.invalid',
-  ATTACHMENT_NOT_AUTHORIZED: 'composer.upload.notAuthorized',
-  ATTACHMENT_MISSING: 'composer.upload.missing',
-  ATTACHMENT_CORRUPT: 'composer.upload.missing',
-  ATTACHMENT_HASH_MISMATCH: 'composer.upload.missing',
+/** Closed codes only: never echo server detail or parse an English validator message. */
+export function attachmentErrorMessage(error: unknown, t: Translate): string | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const value = error as {
+    code?: unknown
+    detail?: { code?: unknown }
+    data?: { code?: unknown; reason?: unknown; detail?: { code?: unknown } }
+  }
+  const code = [
+    value.code,
+    value.detail?.code,
+    value.data?.detail?.code,
+    value.data?.reason,
+    value.data?.code,
+  ].find((code) => typeof code === 'string' && Object.hasOwn(messages, code))
+  if (typeof code !== 'string') return undefined
+  const key = messages[code]
+  if (!key) return undefined
+  const message = t(key, code === 'ATTACHMENT_COUNT' ? { count: 50 } : undefined)
+  return message === key ? undefined : message
+}
+const messages: Readonly<Record<string, string>> = Object.freeze({
+  ATTACHMENT_COUNT: 'composer.attachment.tooMany',
   ATTACHMENT_DATA: 'composer.attachment.dataInvalid',
+  ATTACHMENT_NAME: 'composer.attachment.nameInvalid',
   ATTACHMENT_BYTES: 'composer.attachment.tooLarge',
-  ATTACHMENT_IMAGE_TOO_LARGE: 'composer.image.overBudget',
-  ATTACHMENT_TIMEOUT: 'composer.attachment.storeTimeout',
-  ATTACHMENT_UNAVAILABLE: 'composer.attachment.storeUnavailable',
-  ATTACHMENT_TOO_LARGE: 'composer.attachment.storeTooLarge',
-}
-
-export function attachmentErrorNotice(error: unknown): AttachmentErrorNotice | undefined {
-  const data = (error as { data?: { code?: unknown; name?: unknown } } | null)?.data
-  const refusal = data?.code
-  // The daemon names an attachment that is gone, so the person knows which one to add again.
-  if (refusal === 'ATTACHMENT_MISSING' && typeof data?.name === 'string')
-    return { key: 'composer.upload.missingNamed', vars: { name: data.name } }
-  if (typeof refusal === 'string' && Object.hasOwn(REFUSAL_KEYS, refusal))
-    return { key: REFUSAL_KEYS[refusal as AttachmentRefusalCode] as string }
-  if (error instanceof AttachmentValidationError) {
-    switch (error.code) {
-      case 'ATTACHMENT_COUNT':
-        return {
-          key: 'composer.attachment.tooMany',
-          vars: { count: USER_MESSAGE_ATTACHMENT_LIMITS.maxCount },
-        }
-      case 'ATTACHMENT_BYTES':
-        return { key: 'composer.attachment.tooLarge' }
-      case 'ATTACHMENT_DATA':
-        return { key: 'composer.attachment.dataInvalid' }
-      case 'ATTACHMENT_NAME':
-        return { key: 'composer.attachment.nameInvalid' }
-    }
-  }
-  if (error instanceof SafeImageError) {
-    if (error.code === 'PIXEL_LIMIT') return { key: 'composer.image.tooLargePixels' }
-    if (error.code === 'BYTE_LIMIT') return { key: 'composer.image.tooLarge' }
-    return { key: 'composer.image.invalid' }
-  }
-  return undefined
-}
+  ATTACHMENT_TOO_LARGE: 'composer.attachment.tooLarge',
+  ATTACHMENT_PIXELS: 'composer.image.tooLargePixels',
+  ATTACHMENT_MIME: 'composer.attachment.nameInvalid',
+  ATTACHMENT_HASH_MISMATCH: 'composer.attachment.hashMismatch',
+  ATTACHMENT_NOT_AUTHORIZED: 'composer.attachment.notAuthorized',
+  ATTACHMENT_MISSING: 'composer.attachment.missing',
+  ATTACHMENT_QUOTA: 'composer.attachment.quota',
+  ATTACHMENT_CANCELLED: 'composer.attachment.cancelled',
+  ATTACHMENT_TIMEOUT: 'composer.attachment.timeout',
+  ATTACHMENT_UNAVAILABLE: 'composer.attachment.unavailable',
+  BASE64_INVALID: 'composer.image.invalid',
+  FORMAT_INVALID: 'composer.image.invalid',
+  DIMENSIONS_INVALID: 'composer.image.invalid',
+  MIME_MISMATCH: 'composer.image.mimeMismatch',
+  PIXEL_LIMIT: 'composer.image.tooLargePixels',
+  BYTE_LIMIT: 'composer.image.tooLarge',
+})

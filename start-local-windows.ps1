@@ -5,14 +5,14 @@
 $ErrorActionPreference = 'Stop'
 $repoDir = $PSScriptRoot
 
-# Same order as @agnes/host agnesHome(): AGH_HOME, then the deprecated AGNES_HOME, then HOME\.agh,
+# Same order as @agnes/host agnesHome(): AGH_HOME, then HOME\.agh,
 # then %USERPROFILE%\.agh (os.homedir() on Windows). The data directory is passed explicitly below,
 # so it must not name a different root than the CLI resolves for the same environment.
 function Resolve-LocalDataDir([string]$AghHome, [string]$AgnesHome, [string]$OsHome, [string]$UserProfile) {
     $name = 'AGH_HOME'
     $root = $AghHome
     $data = 'data'
-    if (-not $root -or -not $root.Trim()) { $name = 'AGNES_HOME'; $root = $AgnesHome }
+    if ($AgnesHome -and $AgnesHome.Trim()) { throw 'AGNES_HOME is no longer supported; unset it and select a new, empty AGH_HOME (clean home).' }
     if (-not $root -or -not $root.Trim()) { $name = 'HOME'; $root = $OsHome; $data = '.agh\data' }
     if (-not $root -or -not $root.Trim()) { return [IO.Path]::Combine($UserProfile, '.agh\data') }
     if ($root -notmatch '^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]+)') {
@@ -26,6 +26,25 @@ $outputDir = Join-Path $repoDir (
     'packages\cli\dist\local-dev-' + (Get-Date -Format 'yyyyMMdd-HHmmssfff')
 )
 $entry = Join-Path $outputDir 'agnes.mjs'
+
+# Select one executable for stop, build and launch without changing the user's PATH.
+function Resolve-LocalNode {
+    $pin = (Get-Content -LiteralPath (Join-Path $repoDir '.node-version') -Raw).Trim()
+    $probe = 'JSON.stringify({version:process.version,execPath:process.execPath})'
+    $runtime = $null
+    if (Get-Command node -ErrorAction SilentlyContinue) {
+        $runtime = (& node -p $probe) | ConvertFrom-Json
+        if ($LASTEXITCODE -eq 0 -and $runtime.version -ceq "v$pin" -and $runtime.execPath) { return $runtime.execPath }
+    }
+    if (-not (Get-Command mise -ErrorAction SilentlyContinue)) {
+        throw "Node $pin is required. Install mise, then run 'mise install' from this repository. The existing server has not been stopped."
+    }
+    $runtime = (& mise exec -- node -p $probe) | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $runtime.version -cne "v$pin" -or -not $runtime.execPath) {
+        throw "Could not select Node $pin. Run 'mise install' from this repository. The existing server has not been stopped."
+    }
+    return $runtime.execPath
+}
 
 # Fail closed: only the exact launcher grammar and this repository's build outputs qualify.
 function Test-LocalAgnesProcess($ProcessInfo, [string]$Kind) {
@@ -87,10 +106,17 @@ function Stop-VerifiedLocalProcess($Candidate, [string]$Kind) {
 
 Push-Location -LiteralPath $repoDir
 try {
-    Write-Host '[1/5] Checking local dependencies...'
+    Write-Host '[1/5] Checking local dependencies and pinned Node runtime...'
+    $nodeExe = Resolve-LocalNode
+    $toolchainRunner = Join-Path $repoDir 'tools\toolchain\run.mjs'
+    & $nodeExe $toolchainRunner
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Toolchain check failed. The existing server has not been stopped.'
+    }
+    Write-Host "Using Node: $nodeExe"
     $tsxCommand = Join-Path $repoDir 'node_modules\.bin\tsx.cmd'
     if (-not (Test-Path -LiteralPath $tsxCommand -PathType Leaf)) {
-        & pnpm install --frozen-lockfile
+        & $nodeExe $toolchainRunner install --frozen-lockfile
         if ($LASTEXITCODE -ne 0) {
             throw 'Dependency install failed. The existing server has not been stopped.'
         }
@@ -100,7 +126,7 @@ try {
     }
 
     Write-Host '[2/5] Building the current local code...'
-    & pnpm --filter @agnes/cli build:local --output-dir $outputDir
+    & $nodeExe $toolchainRunner --filter @agnes/cli build:local --output-dir $outputDir
     if ($LASTEXITCODE -ne 0) {
         throw 'Build failed. The existing server has not been stopped.'
     }
@@ -118,7 +144,7 @@ try {
         }
     }
     Write-Host '[4/5] Stopping the old daemon and cleaning verified local leftovers...'
-    & node $entry daemon stop --profile local-dev --workspace $repoDir --data-dir $dataDir
+    & $nodeExe $entry daemon stop --profile local-dev --workspace $repoDir --data-dir $dataDir
     if ($LASTEXITCODE -ne 0) {
         Write-Warning 'Normal daemon stop failed; checking for verified local leftovers.'
     }
@@ -134,7 +160,7 @@ try {
 
     Write-Host '[5/5] Starting the new build. Keep this terminal open.'
     Write-Host 'Open the FULL new URL printed below. Re-running this script replaces this local instance.'
-    & node $entry serve --port 4180 --profile local-dev --cwd $repoDir --data-dir $dataDir
+    & $nodeExe $entry serve --port 4180 --profile local-dev --cwd $repoDir --data-dir $dataDir
     if ($LASTEXITCODE -ne 0) {
         throw 'The web server exited with an error. See the output above.'
     }

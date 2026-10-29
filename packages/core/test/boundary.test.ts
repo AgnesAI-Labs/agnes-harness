@@ -2,8 +2,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { isBuiltin } from 'node:module'
 import { join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { Provider } from '@agnes/core'
 import { describe, expect, it } from 'vitest'
-import type { Provider } from '../src/index.js'
 
 const src = fileURLToPath(new URL('../src/', import.meta.url))
 const files: string[] = []
@@ -14,9 +14,11 @@ const walk = (d: string) => {
     else if (e.endsWith('.ts')) files.push(p)
   }
 }
-walk(src)
+const ownerSrc = (owner: string): string => fileURLToPath(new URL(`../../${owner}/src/`, import.meta.url))
+const roots = [src, ...['core-common', 'core-child-control', 'core-ledger', 'core-effects'].map(ownerSrc)]
+for (const root of roots) walk(root)
 
-// Value imports are limited to the tool-contract helpers and the extension event-name builder.
+// Value imports are limited to tool-contract helpers, event names, provider errors and public default algorithms.
 // Hook registration reuses that builder for source attribution instead of copying its identifier gate.
 // The registry reads the description bound from the contract so its post-sanitize check cannot drift.
 // Everything else remains type-only; new runtime dependencies require an explicit boundary decision.
@@ -28,11 +30,15 @@ const EXT_VALUE_ALLOWED = new Set([
   'checkToolDef',
   'resolveToolCallPolicy',
   'extEventType',
+  'ProviderError', // shared provider admission failures; Core session opening keeps its compatibility alias
+  'createCompactionThreshold', // authority-free default threshold shared with Base
+  'mcpStablePrefix', // authority-free MCP namespace binding shared with role delegation
+  'defaultToolPolicy', // authority-free default risk decision shared with Base
+  'APPROVAL_DEFAULTS', // single public configuration defaults, shared with Core
+  'unavailableDecisions', // registration and unconfigured test scopes refuse session access
   'unavailableProjections', // authority-free default; Host supplies the scoped invocation reader
 ])
 
-/** Every module specifier a source text names: `from` clauses, side-effect `import '…'`, dynamic
- * `import(…)` and `require(…)`, with any quote style. */
 function moduleSpecifiers(text: string): string[] {
   return [...text.matchAll(/\b(?:from|import|require)\s*\(?\s*['"`]([^'"`]+)['"`]/g)].map(
     (m) => m[1] as string,
@@ -153,14 +159,14 @@ describe('core src boundary', () => {
   })
 
   it('keeps the minting function and the unbranded body off the root export', async () => {
-    const surface = await import('../src/index.js')
+    const surface = await import('@agnes/core')
     expect(Object.keys(surface)).not.toContain('mintFrom')
     expect(Object.keys(surface)).not.toContain('sanitizeJson')
     expect(Object.keys(surface)).toContain('isLedgerRequest')
   })
 
   it('keeps the one function that spells a register cache key off the root export', async () => {
-    const surface = await import('../src/index.js')
+    const surface = await import('@agnes/core')
     expect(Object.keys(surface)).not.toContain('cacheKey')
     // The cell store itself is reachable inside the package but is not part of what core promises.
     expect(Object.keys(surface)).not.toContain('RegisterMap')
@@ -170,12 +176,17 @@ describe('core src boundary', () => {
     const owners = (pattern: RegExp) =>
       files
         .filter((file) => pattern.test(readFileSync(file, 'utf8')))
-        .map((file) => file.slice(src.length).split(sep).join('/'))
+        .map((file) =>
+          file
+            .slice(fileURLToPath(new URL('../../', import.meta.url)).length)
+            .split(sep)
+            .join('/'),
+        )
         .sort()
 
-    expect(owners(/\.ev\(\s*['"]harness\/refine['"]/)).toEqual(['refine/apply.ts'])
+    expect(owners(/\.ev\(\s*['"]harness\/refine['"]/)).toEqual(['core/src/refine/apply.ts'])
     expect(owners(/Kernel\.create\(/)).toEqual([])
-    expect(owners(/globalThis\.crypto/)).toEqual(['ids.ts'])
+    expect(owners(/globalThis\.crypto/)).toEqual(['core-common/src/ids.ts'])
     expect(owners(/process\.env/)).toEqual([])
   })
 })

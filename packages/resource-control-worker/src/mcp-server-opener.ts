@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto'
+import { createHash, createHmac, randomBytes } from 'node:crypto'
 import { open, readFile, realpath, stat } from 'node:fs/promises'
-import { win32 } from 'node:path'
+import { join, win32 } from 'node:path'
 import { connectMcp, type McpServerOpener } from '@agnes/base'
 import { jcs, type McpServerDefinitionInput, validateResourceControlData } from '@agnes/protocol'
 import {
@@ -11,6 +11,7 @@ import {
   resolvedConfig,
   validateManagedHttpUrl,
 } from '@agnes/resource-control-runtime'
+import { type McpSandboxContext, mcpSandboxProfile, sandboxMcpConfig } from './mcp-sandbox.js'
 import type { WorkerResourceBootstrapInput } from './runtime-bootstrap.js'
 import { deploymentMcpPolicy } from './skill-bootstrap.js'
 
@@ -96,15 +97,16 @@ export type McpServerOpenerDeps = Readonly<{
    * (`McpOAuthNeedsReconnectError`) -- matching `bootstrapWorkerResources`'s own optional wiring.
    * Moot in practice: `mcpServerRowsFromDefinitions` (`@agnes/worker-runtime`) filters
    * `secretBinding.kind === 'oauth'` definitions out before any row (and so this opener) ever sees
-   * them (design doc §3.4, D105/D109). */
+   * them. */
   oauthCredentials?: McpOAuthCredentialResolver
   approvedLocalStart?(definition: McpServerDefinitionInput): Promise<boolean>
   connectTimeoutMs?: number
+  sandbox?: McpSandboxContext
 }>
 
 /**
  * Composes `resolvedConfig` (credential resolution + deployment policy) with `connectMcp`
- * (stage 2b step 3, D102) into the one `McpServerOpener` port `@agnes/base`'s row extensions depend
+ * into the one `McpServerOpener` port `@agnes/base`'s row extensions depend
  * on. One instance is definition-agnostic and serves every MCP row: `deps` here is deployment-wide
  * state (the credential resolver, the two policies), never anything specific to one server.
  *
@@ -116,45 +118,70 @@ export type McpServerOpenerDeps = Readonly<{
  * them would need this comment (and likely this whole function's signature) revisited anyway.
  */
 export function createMcpServerOpener(deps: McpServerOpenerDeps): McpServerOpener {
+  const salt = randomBytes(32)
+  const prepare: NonNullable<McpServerOpener['prepare']> = async (definition, signal) => {
+    const approved = definition.transport.kind === 'stdio' && (await deps.approvedLocalStart?.(definition))
+    const stdioPolicy =
+      approved && definition.transport.kind === 'stdio'
+        ? {
+            ...deps.stdioPolicy,
+            allowedExecutables: [...deps.stdioPolicy.allowedExecutables, definition.transport.executable],
+          }
+        : deps.stdioPolicy
+    const resolved = await resolvedConfig(
+      { definition, revision: '', desired: 'enabled', trust: 'trusted' },
+      deps.resolver,
+      signal,
+      deps.baseEnv,
+      { stdioPolicy, httpPolicy: deps.httpPolicy },
+      deps.oauthCredentials ? { oauthCredentials: deps.oauthCredentials } : undefined,
+    )
+    const config = await sandboxMcpConfig(
+      {
+        ...resolved,
+        ...(definition.transport.kind === 'stdio'
+          ? {
+              sandboxProfile: mcpSandboxProfile(definition, deps.sandbox) as NonNullable<
+                typeof resolved.sandboxProfile
+              >,
+            }
+          : {}),
+      },
+      deps.sandbox,
+      signal,
+    )
+    // Worker-local HMAC avoids persisting credentials or exposing guessable credential digests.
+    const key = createHmac('sha256', salt).update(jcs({ definition, config })).digest('hex')
+    return Object.freeze({
+      key,
+      connect: (signal: AbortSignal) =>
+        connectMcp(config, undefined, {
+          signal,
+          ...(deps.connectTimeoutMs !== undefined ? { connectTimeoutMs: deps.connectTimeoutMs } : {}),
+          validateRedirectUrl: (url) => validateManagedHttpUrl(url, deps.httpPolicy),
+        }),
+    })
+  }
   return Object.freeze({
+    prepare,
     async connect(definition, signal) {
-      const approved = definition.transport.kind === 'stdio' && (await deps.approvedLocalStart?.(definition))
-      const stdioPolicy =
-        approved && definition.transport.kind === 'stdio'
-          ? { allowedExecutables: [...deps.stdioPolicy.allowedExecutables, definition.transport.executable] }
-          : deps.stdioPolicy
-      const config = await resolvedConfig(
-        { definition, revision: '', desired: 'enabled', trust: 'trusted' },
-        deps.resolver,
-        signal,
-        deps.baseEnv,
-        { stdioPolicy, httpPolicy: deps.httpPolicy },
-        deps.oauthCredentials ? { oauthCredentials: deps.oauthCredentials } : undefined,
-      )
-      return connectMcp(config, undefined, {
-        signal,
-        ...(deps.connectTimeoutMs !== undefined ? { connectTimeoutMs: deps.connectTimeoutMs } : {}),
-        // Same redirect re-validation bootstrapWorkerResources already wires for
-        // createMcpResourceManager's own `connect` -- an HTTP redirect target must pass the same
-        // loopback/HTTPS policy the configured URL already passed (SSRF).
-        validateRedirectUrl: (url) => validateManagedHttpUrl(url, deps.httpPolicy),
-      })
+      return (await prepare(definition, signal)).connect(signal)
     },
   })
 }
 
 /**
- * The one `McpServerOpener` a shared session worker gives every MCP row (stage 2b step 3), wired
+ * The one `McpServerOpener` a shared session worker gives every MCP row, wired
  * exactly like `bootstrapWorkerResources` wires `createMcpResourceManager` today: the same
  * `AGNES_RESOURCE_MCP_POLICY` deployment policy, and the same lazily built `createSecrets` resolver
  * (a worker whose servers all use `secretBinding: none` never needs a configured secret backend).
  * The resolver is built once per worker, not per generation: the file and env resolvers read their
  * source on every `resolve`, so a rotated secret is still picked up by the next connect attempt.
  * `baseEnv` is `{}` because the manager's `baseEnvironment` is never set in production either.
- * No OAuth resolver: OAuth-bound definitions never become rows (design §3.4, D105/D109).
+ * No OAuth resolver: OAuth-bound definitions never become rows.
  */
 export function createWorkerMcpServerOpener(
-  input: Pick<WorkerResourceBootstrapInput, 'env' | 'profile' | 'createSecrets'>,
+  input: Pick<WorkerResourceBootstrapInput, 'env' | 'profile' | 'createSecrets' | 'cwd' | 'agnesHomeDir'>,
   managedAllowedExecutables: readonly string[] = [],
 ): McpServerOpener {
   const policy = deploymentMcpPolicy(input.env)
@@ -175,6 +202,14 @@ export function createWorkerMcpServerOpener(
             ),
         }
       : {}),
+    sandbox: {
+      ...(input.agnesHomeDir ? { home: input.agnesHomeDir } : {}),
+      ...(input.profile.adapters?.secrets.path ? { secretsDir: input.profile.adapters.secrets.path } : {}),
+      ...(input.agnesHomeDir ? { profileDir: join(input.agnesHomeDir, 'profiles', input.profile.name) } : {}),
+      dataDir: input.profile.dataDir,
+      ...(input.cwd ? { workspace: input.cwd } : {}),
+      ...(input.env.PATH ? { path: input.env.PATH } : {}),
+    },
     baseEnv: {},
     stdioPolicy: {
       get allowedExecutables() {

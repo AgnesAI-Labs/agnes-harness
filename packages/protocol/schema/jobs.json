@@ -92,6 +92,47 @@
             {
               "type": "object",
               "additionalProperties": false,
+              "properties": {
+                "pluginNotification": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "bindingId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    },
+                    "event": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9.-]{0,127}$"
+                        },
+                        "summary": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2048
+                        },
+                        "data": {
+                          "$ref": "session-v1.json#/$defs/JsonValue"
+                        }
+                      },
+                      "required": ["name", "summary"]
+                    },
+                    "delivery": {
+                      "enum": ["next-turn", "follow-steer"]
+                    }
+                  },
+                  "required": ["bindingId", "event"]
+                }
+              },
+              "required": ["pluginNotification"]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
               "required": ["prompt"],
               "properties": {
                 "prompt": {

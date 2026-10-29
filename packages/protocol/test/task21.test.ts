@@ -15,9 +15,9 @@ describe('Task21 public contracts and existing consumer', () => {
   it('requires a real approval correlation identifier and accepts both forms together', () => {
     const action = { verdict: 'allowed-once', approverCredential: { kind: 'local' } }
     expect(validateApprovalAction(action).ok).toBe(false)
-    expect(validateApprovalAction({ ...action, ticket: 'fixture' }).ok).toBe(true)
+    expect(validateApprovalAction({ ...action, decisionKey: 's/fixture/1' }).ok).toBe(true)
     expect(validateApprovalAction({ ...action, requestSeq: 1 }).ok).toBe(true)
-    expect(validateApprovalAction({ ...action, ticket: 'fixture', requestSeq: 1 }).ok).toBe(true)
+    expect(validateApprovalAction({ ...action, decisionKey: 's/fixture/1', requestSeq: 1 }).ok).toBe(true)
     expect(validateApprovalAction({ ...action, requestSeq: 0 }).ok).toBe(false)
   })
   it('rejects SQL and empty named-region lists through Decision itself', () => {
@@ -61,7 +61,7 @@ describe('Task21 public contracts and existing consumer', () => {
     const error = { code: -32603, message: 'internal bridge error' }
     expect(validateBridgeFrame({ jsonrpc: '2.0', id: 7, error, result: null }).ok).toBe(false)
     expect(validateBridgeFrame({ jsonrpc: '2.0', id: 7, error: { ...error, code: -32604 } }).ok).toBe(false)
-    expect(validateBridgeFrame({ jsonrpc: '2.0', id: 7, error: { ...error, code: 1006 } }).ok).toBe(false)
+    expect(validateBridgeFrame({ jsonrpc: '2.0', id: 7, error: { ...error, code: 1007 } }).ok).toBe(false)
   })
   it('pins all eight bridge method names and schema-owned errors; byte cap remains transport work', () => {
     const doc = JSON.parse(readFileSync(new URL('../schema/bridge.json', import.meta.url), 'utf8'))
@@ -76,7 +76,7 @@ describe('Task21 public contracts and existing consumer', () => {
       'bridge.log',
     ])
     expect(BRIDGE_ERRORS).toEqual(doc['x-agnes-bridge-errors'])
-    expect(Object.keys(BRIDGE_ERRORS)).toEqual(['1001', '1002', '1003', '1004', '1005'])
+    expect(Object.keys(BRIDGE_ERRORS)).toEqual(['1001', '1002', '1003', '1004', '1005', '1006'])
     expect(Object.isFrozen(BRIDGE_ERRORS)).toBe(true)
     expect(doc['x-agnes-max-bytes']).toBe(1048576)
   })

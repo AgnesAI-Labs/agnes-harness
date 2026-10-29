@@ -1,0 +1,157 @@
+{
+  "name": "@fixture/confirmation-app",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "client",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node --check index.mjs"
+  },
+  "agnes": {
+    "provides": [
+      "tool",
+      "ui",
+      "bundle"
+    ],
+    "plugins": [
+      {
+        "id": "ext:@fixture/confirmation-app/main",
+        "export": "main",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "tools"
+        ],
+        "capabilities": {
+          "ui": true,
+          "tools": {
+            "names": [
+              "acme_status"
+            ],
+            "prefix": "acme_"
+          }
+        }
+      }
+    ],
+    "hostProvidedExternals": {
+      "@agnes/plugin-runtime": "0.0.0",
+      "@sinclair/typebox": "~0.34.0"
+    },
+    "clientDescriptors": [
+      {
+        "rowId": "ext:@fixture/confirmation-app/main",
+        "path": "./client/agnes.client.json"
+      }
+    ],
+    "bundles": {
+      "desk": {
+        "presets": {
+          "acme": {
+            "name": "acme",
+            "extends": "standard",
+            "approval": {
+              "command_policy": []
+            }
+          }
+        },
+        "launch": {
+          "title": {
+            "en": "Acme operations",
+            "zh-CN": "Acme 运营助手"
+          },
+          "description": {
+            "en": "Inspect a synthetic service status.",
+            "zh-CN": "查看模拟服务状态。"
+          },
+          "preset": "acme",
+          "pages": [
+            "acme-overview"
+          ],
+          "prompt": {
+            "text": {
+              "en": "call acme_status",
+              "zh-CN": "call acme_status"
+            },
+            "mode": "draft"
+          }
+        },
+        "profile": {
+          "tools": [
+            "acme_status"
+          ]
+        }
+      }
+    },
+    "application": {
+      "id": "confirmation-app",
+      "brand": {
+        "name": {
+          "en": "Acme",
+          "zh-CN": "Acme"
+        },
+        "title": {
+          "en": "Acme Operations",
+          "zh-CN": "Acme 运营台"
+        },
+        "assistantName": {
+          "en": "Ava",
+          "zh-CN": "艾娃"
+        }
+      },
+      "presentation": {
+        "home": "@fixture/confirmation-app#acme-overview",
+        "navigation": {
+          "entries": [
+            "@fixture/confirmation-app#acme-overview"
+          ],
+          "hideBuiltin": [
+            "automation"
+          ]
+        }
+      },
+      "defaultAgent": "@fixture/confirmation-app#desk",
+      "agents": [
+        "@fixture/confirmation-app#desk"
+      ],
+      "workbench": {
+        "tabs": [
+          {
+            "id": "signatures",
+            "title": {
+              "en": "Signatures",
+              "zh-CN": "已签署"
+            },
+            "slot": "workbench.panel",
+            "view": "signatures",
+            "order": -20
+          }
+        ],
+        "actions": [
+          {
+            "id": "sign",
+            "title": {
+              "en": "Sign synthetic record",
+              "zh-CN": "签署模拟记录"
+            },
+            "prompt": {
+              "en": "call acme_status synthetic",
+              "zh-CN": "call acme_status synthetic"
+            }
+          }
+        ]
+      }
+    },
+    "metadata": {
+      "displayName": "Synthetic confirmation app",
+      "summary": "Synthetic business confirmation fixture.",
+      "description": "A plain application fixture for the reviewed quick-action launch and live permission switch."
+    }
+  }
+}

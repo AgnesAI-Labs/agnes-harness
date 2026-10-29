@@ -110,8 +110,8 @@ describe('the Host binds compiled sandbox policy to each session workspace', () 
       await inWorkspace(session, async (view) => {
         await expect(view.fs().read('.git/config')).rejects.toThrow(/E_FS_DENIED/)
         await expect(view.fs().read('.agh/secrets/key')).rejects.toThrow(/E_FS_DENIED/)
-        // The secrets directory's name from before the `.agh` rename stays denied too.
-        await expect(view.fs().read('.agnes/secrets/key')).rejects.toThrow(/E_FS_DENIED/)
+        await view.fs().write('.agnes/secrets/key', new TextEncoder().encode('other product'))
+        expect(new TextDecoder().decode(await view.fs().read('.agnes/secrets/key'))).toBe('other product')
       })
     } finally {
       await host.close()

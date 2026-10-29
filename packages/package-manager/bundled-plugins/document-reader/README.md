@@ -54,7 +54,7 @@ this does not constitute an operating-system sandbox or a hard limit on all WASM
 
 ## Delivery and compatibility
 
-The release build and `pnpm dev` prepare `src/runtime/` with bundled JS, WASM, local language
+The release build and `pnpm dev` prepare `dist/runtime/` with bundled JS, WASM, local language
 models, and third-party notices. Generated payloads are ignored in source control and included
 in the ordinary plugin snapshot and integrity checks. Release users need no Office, LibreOffice,
 Python, native Node addon, network OCR service, or separate plugin install. The same Node 24.10+

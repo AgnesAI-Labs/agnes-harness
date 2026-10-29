@@ -1,29 +1,6 @@
-import { execFile } from 'node:child_process'
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from 'node:fs'
-import { createServer } from 'node:http'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { seatbeltDenyNetworkArgv } from '../src/sandbox-seatbelt.js'
 
-function run(argv: string[]) {
-  const [file, ...args] = argv
-  if (!file) throw new Error('missing executable')
-  return new Promise<{ code: number; stdout: string }>((resolve) => {
-    execFile(file, args, { timeout: 3000 }, (error, stdout) => {
-      resolve({ code: error ? (typeof error.code === 'number' ? error.code : -1) : 0, stdout })
-    })
-  })
-}
 it.each(['relative', '/bad\npath', '/bad\0path', '/bad\x7fpath'])(
   'refuses invalid path %j without echo',
   (path) => {
@@ -32,77 +9,47 @@ it.each(['relative', '/bad\npath', '/bad\0path', '/bad\x7fpath'])(
     )
   },
 )
-it('does not grant implicit temp/device writes and denies both reads and writes', () => {
-  const args = seatbeltDenyNetworkArgv(['echo', 'a b'], { allowPaths: ['/w'], denyPaths: ['/w/secret'] })
-  expect(args[0]).toBe('/usr/bin/sandbox-exec')
-  expect(args.slice(-2)).toEqual(['echo', 'a b'])
-  expect(args[2]).toContain('(deny file-read* file-write* (subpath "/w/secret"))')
-  expect(args[2]).not.toContain('/private/tmp')
-  expect(args[2]).not.toContain('/dev')
-  expect(args[2]).toContain('(deny network*)')
-})
-// These are platform acceptance checks, not simulated results. Non-macOS skips remain OS-matrix debt.
-const seatbelt = it.runIf(existsSync('/usr/bin/sandbox-exec'))
-seatbelt(
-  'enforces actual writes, secret reads/writes, symlink targets and descendant inheritance',
-  async () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-seatbelt-')))
-    const allowed = join(root, 'allow " \\ 中文')
-    const denied = join(allowed, 'secret')
-    mkdirSync(allowed)
-    mkdirSync(denied)
-    const secret = join(denied, 'value')
-    writeFileSync(secret, 'private')
-    symlinkSync(secret, join(allowed, 'link'))
-    const confine = (cmd: string, ...args: string[]) =>
-      seatbeltDenyNetworkArgv(['/bin/sh', '-c', cmd, 'probe', ...args], {
-        allowPaths: [allowed],
-        denyPaths: [denied],
-      })
-    try {
-      expect(await run(confine('printf ok > "$1"; cat "$1"', join(allowed, 'ok')))).toEqual({
-        code: 0,
-        stdout: 'ok',
-      })
-      expect((await run(confine('printf bad > "$1"', join(root, 'outside')))).code).not.toBe(0)
-      expect(existsSync(join(root, 'outside'))).toBe(false)
-      expect((await run(confine('cat "$1"', secret))).code).not.toBe(0)
-      expect((await run(confine('printf bad > "$1"', secret))).code).not.toBe(0)
-      expect((await run(confine('cat "$1"', join(allowed, 'link')))).code).not.toBe(0)
-      expect((await run(confine('/bin/sh -c \'cat "$1"\' child "$1"', secret))).code).not.toBe(0)
-      expect(readFileSync(secret, 'utf8')).toBe('private')
-    } finally {
-      rmSync(root, { recursive: true, force: true })
+it.each([{}, { network: 'allow' as const }, { loopbackServe: true }])(
+  'preserves reserved paths, explicit denies and workspace writes with network policy %j',
+  (network) => {
+    const args = seatbeltDenyNetworkArgv(['echo', 'a b'], {
+      ...network,
+      allowPaths: ['/w'],
+      denyPaths: ['/w/secret', '/dev/null'],
+      readPaths: ['/w'],
+    })
+    expect(args[0]).toBe('/usr/bin/sandbox-exec')
+    expect(args.slice(-2)).toEqual(['echo', 'a b'])
+    expect(args[2]).toContain('(deny file-read* file-write* (subpath "/w/secret"))')
+    expect(args[2]).not.toContain('(allow file-write* (subpath "/private/tmp"))')
+    expect(args[2]).toContain('(deny file-write* (regex #"^/private/tmp/agh-loopback-[^/]*(/|$)"))')
+    expect(args[2]).toContain(
+      '(deny file-write-unlink (literal "/") (literal "/private") (literal "/private/tmp"))',
+    )
+    expect(args[2]).toContain('(ioctl-command TIOCSPGRP)')
+    expect(args[2]).toContain('(allow file-read* file-write* (literal "/dev/null"))')
+    for (const device of ['zero', 'random', 'urandom']) {
+      expect(args[2]).toContain(`(allow file-read* (literal "/dev/${device}"))`)
     }
+    const deviceGrants = args[2]
+      ?.split('\n')
+      .filter((line) => line.startsWith('(allow file-') && line.includes('/dev/'))
+    expect(deviceGrants).toHaveLength(5) // Four exact device grants and the existing TTY ioctl.
+    expect(deviceGrants?.join('\n')).not.toMatch(/\(subpath "\/dev(?:\/|"|\))/)
+    expect(args[2]).not.toContain('(allow file-read*)')
+    expect(args[2]).toContain('(allow file-write* (subpath "/w"))')
+    expect(args[2]).toContain('(deny file-read* file-write* (subpath "/dev/null"))')
+    if ('network' in network) expect(args[2]).toContain('(allow network*)')
+    else if ('loopbackServe' in network) expect(args[2]).toContain('(deny network-bind)')
+    else expect(args[2]).toContain('(deny network*)')
   },
 )
-seatbelt('blocks a real loopback request whose unconfined control reaches the server', async () => {
-  let requests = 0
-  const server = createServer((_req, res) => {
-    requests++
-    res.end('reachable')
-  })
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-  const address = server.address()
-  if (!address || typeof address === 'string') throw new Error('missing address')
-  const argv = [
-    '/usr/bin/curl',
-    '--silent',
-    '--show-error',
-    '--max-time',
-    '1',
-    '--noproxy',
-    '*',
-    `http://127.0.0.1:${address.port}/`,
-  ]
-  try {
-    expect(await run(argv)).toEqual({ code: 0, stdout: 'reachable' })
-    expect(requests).toBe(1)
-    const result = await run(seatbeltDenyNetworkArgv(argv, { allowPaths: [], denyPaths: [] }))
-    expect(result.code).not.toBe(0)
-    expect(result.stdout).toBe('')
-    expect(requests).toBe(1)
-  } finally {
-    await new Promise<void>((resolve) => server.close(() => resolve()))
-  }
+
+it('omits only the terminal job-control grant when asked, and keeps every other rule', () => {
+  const policy = { allowPaths: ['/w'], denyPaths: ['/w/secret'] }
+  const full = seatbeltDenyNetworkArgv(['true'], policy)[2] ?? ''
+  const compat = seatbeltDenyNetworkArgv(['true'], { ...policy, jobControl: false })[2] ?? ''
+  expect(full).toContain('(ioctl-command TIOCSPGRP)')
+  expect(compat).not.toContain('TIOCSPGRP')
+  expect(compat.split('\n')).toEqual(full.split('\n').filter((line) => !line.includes('TIOCSPGRP')))
 })

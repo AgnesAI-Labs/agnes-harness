@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import { CoreError } from '@agnes/core-common/types'
 import {
   assertFsEnforces,
   decideFsPath,
@@ -7,13 +8,13 @@ import {
   type FsRule,
   isDenial,
   validateFsPolicy,
-} from '../src/effects/fs-guard.js'
-import type { FsOps } from '../src/effects/tool-context.js'
+} from '@agnes/core-effects/effects/fs-guard'
+import type { FsOps } from '@agnes/core-effects/effects/tool-context'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import { describe, expect, it } from 'vitest'
 import { Kernel } from '../src/kernel.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import { presetDefaults } from '../src/step/preset.js'
-import { CoreError } from '../src/types.js'
 import { fencedFs, testFsPolicy } from '../testkit/fenced-fs.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers } from './helpers/open-session.js'
@@ -158,18 +159,25 @@ describe('what the probe asks', () => {
     // Apart from the deny entries themselves, every probe names a file that cannot exist, so a
     // conforming file system answers from the policy rather than from a disk.
     expect(probes.filter((p) => !p.includes('agnes-fs-enforcement-probe')).sort()).toEqual(
-      [
-        '.agh/secrets',
-        '.agnes/secrets',
-        '.git',
-        '/data',
-        '/w/.agh/secrets',
-        '/w/.agnes/secrets',
-        '/w/.git',
-        '/w/secrets',
-        'secrets',
-      ].sort(),
+      ['.agh/secrets', '.git', '/data', '/w/.agh/secrets', '/w/.git', '/w/secrets', 'secrets'].sort(),
     )
+  })
+
+  it.each([
+    [String.raw`C:\work\项目`, 'C:/work/项目'],
+    [String.raw`\\server\share\work`, '//server/share/work'],
+  ])('keeps the absolute identity of %s in denial probes', (workspaceRoot, canonical) => {
+    const policy: FsPolicy = {
+      workspaceRoot,
+      rules: [rule('allow', workspaceRoot), rule('deny', `${workspaceRoot}/private`, true)],
+      networkAllow: [],
+      digest: '0'.repeat(64),
+    }
+    const probes = enforcementProbes(policy)
+    expect(probes).toContain(`${canonical}/../agnes-fs-enforcement-probe`)
+    expect(probes).toContain(`${canonical}/private`)
+    expect(probes).toContain('private/agnes-fs-enforcement-probe')
+    expect(probes.some((path) => /^\/[A-Za-z]:/.test(path))).toBe(false)
   })
 
   it('probes nothing for an allow rule: a policy is held to its denials, not its openings', () => {
@@ -274,6 +282,7 @@ describe('assertFsEnforces', () => {
 describe('no session opens against a file system that enforces no policy', () => {
   const kernel = (fsOps: FsOps) =>
     Kernel.create({
+      loops: defaultLoops(),
       storage: new MemoryStorage(),
       seams: fakeSeams(),
       provider: fakeProvider([]),

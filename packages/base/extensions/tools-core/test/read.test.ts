@@ -1,4 +1,5 @@
 import { checkToolDef } from '@agnes/extension-api'
+import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
 import { type FakeToolContext, fakeToolContext } from '../../../testkit/tool-context.js'
 
@@ -80,6 +81,24 @@ describe('read', () => {
     },
   )
 
+  it.each([
+    ['ATTACHMENT_TOO_LARGE', '100 MiB', 'bounded client windows'],
+    ['ATTACHMENT_HASH_MISMATCH', 'integrity', 'upload it again'],
+    ['ATTACHMENT_UNAVAILABLE', 'unavailable', 'session-file://list'],
+    ['ATTACHMENT_DATA', 'invalid', 'text export'],
+  ])('reports a refused original %s without reflecting backend text', async (code, cause, next) => {
+    const ctx = ctxOf()
+    ctx.session.readAttachment = async () => {
+      throw Object.assign(new Error('/private/backend sk-private-backend-value-123456789'), { code })
+    }
+    const result = await readTool.execute({ path: 'session-file://3/1' }, ctx)
+    expect(result.details).toMatchObject({ code })
+    expect(textOf(result)).toContain(cause)
+    expect(textOf(result)).toContain(next)
+    expect(JSON.stringify(result)).not.toContain('/private/backend')
+    expect(ctx.calls.read).toEqual([])
+  })
+
   it('pages a long attachment line without losing its middle or confusing list offsets', async () => {
     const base = ctxOf()
     const bytes = new TextEncoder().encode('中'.repeat(12000))
@@ -137,6 +156,10 @@ describe('read', () => {
       costHint: {},
       deferLoading: false,
       requiresApproval: 'never',
+      paths: [
+        { arg: 'path', access: 'read', nonWorkspaceSchemes: ['artifact', 'session-file', 'session-image'] },
+        { arg: 'save_to', access: 'write' },
+      ],
     })
   })
 
@@ -174,8 +197,41 @@ describe('read', () => {
     expect(textOf(missing)).toContain('ENOENT')
     const bin = await readTool.execute({ path: 'b.bin' }, ctx)
     expect(bin.isError).toBe(true)
+    expect(bin.details).toMatchObject({ code: 'FS_BINARY' })
     expect(bin.content[0]).toMatchObject({ type: 'text', text: expect.stringContaining('binary') })
     expect(textOf(bin)).toContain('5 bytes')
+  })
+
+  it.each([
+    ['ENOENT', 'path does not exist', 'use ls/find'],
+    ['EISDIR', 'directory', 'use ls'],
+    ['ENOTDIR', 'not a directory', 'correct the path'],
+    ['EACCES', 'permission denied', 'accessible path'],
+    ['E_FS_DENIED', 'denied by file policy', 'allowed path'],
+  ])('reports %s with safe path and recovery, without backend details', async (code, cause, next) => {
+    const ctx = ctxOf({
+      readErrors: { 'a.txt': { code, message: '/private/secret-root sk-private-backend-value-123456789' } },
+    })
+    const result = await readTool.execute({ path: 'a.txt' }, ctx)
+    expect(result.details).toMatchObject({ code })
+    expect(textOf(result)).toContain('a.txt')
+    expect(textOf(result)).toContain(cause)
+    expect(textOf(result)).toContain(next)
+    expect(JSON.stringify(result)).not.toContain('/private/secret-root')
+    expect(JSON.stringify(result)).not.toContain('sk-private')
+  })
+
+  it('names a missing file under a content-addressed directory instead of redacting the line', async () => {
+    const digest = 'a'.repeat(24) + '627f3aad5d82e1c66e1a9ff7c70ee206617dc9a6219fb0c'
+    const path = `fde-output/data-report/${digest}/4-report.md`
+    const result = await readTool.execute({ path }, ctxOf())
+    expect(result.details).toMatchObject({ code: 'ENOENT' })
+    expect(textOf(result)).toContain(path)
+    expect(textOf(result)).toContain('path does not exist')
+    expect(textOf(result)).not.toContain('REDACTED')
+    // A credential shape in the path is still withheld, digest segment or not.
+    const leaky = await readTool.execute({ path: `${digest}/sk-live-abcdefghijklmnop.md` }, ctxOf())
+    expect(JSON.stringify(leaky)).not.toContain('sk-live-abcdefghijklmnop')
   })
 
   it('scans only the first 8 KB for the NUL that marks a binary file', async () => {
@@ -327,6 +383,7 @@ describe('read of an artifact the output guard stored', () => {
     const r = await readTool.execute({ path }, ctx)
     expect(r.isError).toBe(true)
     expect(textOf(r)).toContain(message)
+    expect(r.details).toMatchObject({ code: 'FS_ARTIFACT_READ' })
     // A refusal that can be decided from the locator alone never reaches the store.
     expect(ctx.calls.artifactGets).toHaveLength(asked)
   })
@@ -367,4 +424,125 @@ it('reads session images through the session port and fails closed on older runt
     content,
   })
   expect(ctx.calls.read).toEqual([])
+})
+
+it('reads confined local PNG/JPEG bytes as model images, downsizes them, and falls back honestly for text models', async () => {
+  for (const format of ['png', 'jpeg'] as const) {
+    const bytes = await sharp({ create: { width: 2000, height: 1000, channels: 3, background: 'red' } })
+      .toFormat(format)
+      .toBuffer()
+    const base = ctxOf({ cwd: '/w', files: { '/w/picture': bytes } })
+    const received: Uint8Array[] = []
+    const ctx = {
+      ...base,
+      session: {
+        ...base.session,
+        imageInputPolicy: async () => ({
+          supported: true,
+          maxWidth: 100,
+          maxHeight: 100,
+          maxBytes: 100000,
+          maxPixels: 10000,
+        }),
+        imageInput: async ({ bytes, mimeType }: { bytes: Uint8Array; mimeType: string }) => {
+          received.push(bytes)
+          const ref = await base.artifacts.put(bytes, { mime: mimeType })
+          return { content: [{ type: 'image' as const, ref, mime: mimeType }] }
+        },
+      },
+    }
+    const result = await readTool.execute({ path: 'picture' }, ctx)
+    expect(result.content[0]?.type).toBe('image')
+    expect(await sharp(received[0]).metadata()).toMatchObject({ width: 100, height: 50 })
+    expect(base.calls.read[0]?.path).toBe('picture')
+    const fallback = await readTool.execute(
+      { path: 'picture' },
+      {
+        ...ctx,
+        session: {
+          ...ctx.session,
+          imageInputPolicy: async () => ({
+            supported: false,
+            maxWidth: 100,
+            maxHeight: 100,
+            maxBytes: 100000,
+            maxPixels: 10000,
+          }),
+        },
+      },
+    )
+    expect(textOf(fallback)).toContain('pixels were not inspected')
+    expect(received).toHaveLength(1)
+    base.mem.files.set('/w/picture', Uint8Array.of(0x89, 0x50, 0x4e, 0x47))
+    expect((await readTool.execute({ path: 'picture' }, ctx)).isError).toBe(true)
+  }
+})
+
+it('copies authorized originals with the writing policy and verifies the actual exclusive-create receipt', async () => {
+  const { resolveToolCallPolicy } = await import('@agnes/extension-api')
+  const { createHash } = await import('node:crypto')
+  const sha256Hex = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
+  const bytes = new Uint8Array([0, 1, 250, 255])
+  const base = ctxOf()
+  const files = new Map<string, Uint8Array>()
+  const ctx = {
+    ...base,
+    session: {
+      ...base.session,
+      readAttachment: async () => ({ bytes, name: 'original.bin', mimeType: 'application/octet-stream' }),
+    },
+    fs: {
+      ...base.fs,
+      create: async (path: string, content: Uint8Array) => {
+        if (files.has(path)) throw Object.assign(new Error('exists'), { code: 'EEXIST' })
+        files.set(path, content.slice())
+        return { size: content.length, sha256: sha256Hex(content) }
+      },
+    },
+  }
+  expect(resolveToolCallPolicy(readTool, { path: 'session-file://3/1' }).isReadOnly).toBe(true)
+  const args = { path: 'session-file://3/1', save_to: 'copies/original.bin' }
+  expect(resolveToolCallPolicy(readTool, args)).toMatchObject({
+    isReadOnly: false,
+    isDestructive: true,
+    requiresApproval: 'destructive',
+    replay: 'never',
+  })
+  const copied = await readTool.execute(args, ctx)
+  expect(copied.isError).not.toBe(true)
+  expect(copied.details).toMatchObject({ size: bytes.length, sha256: sha256Hex(bytes) })
+  expect([...files.values()]).toEqual([bytes])
+  expect((await readTool.execute(args, ctx)).isError).toBe(true)
+  expect(
+    (
+      await readTool.execute(
+        { ...args, save_to: 'another' },
+        { ...ctx, fs: { ...ctx.fs, create: async () => ({ size: 1, sha256: 'a'.repeat(64) }) } },
+      )
+    ).isError,
+  ).toBe(true)
+  expect((await readTool.execute(args, { ...ctx, fs: base.fs })).isError).toBe(true)
+})
+
+it.each([
+  '/absolute',
+  '../escape',
+  'a/../b',
+  'a//b',
+  'C:/drive',
+  'a\\b',
+  'a/CON.txt',
+  'LPT1',
+  'nul',
+  'a/x.',
+  'a/x ',
+  'a/COM¹.txt',
+  'a/b:stream',
+  'a/\u0000x',
+])('refuses save_to %s before reading an original', async (save_to) => {
+  const base = ctxOf()
+  const result = await readTool.execute({ path: 'session-file://3/1', save_to }, base)
+  expect(result.isError).toBe(true)
+  expect(base.calls.read).toEqual([])
+  expect(base.mem.files.size).toBe(0)
 })

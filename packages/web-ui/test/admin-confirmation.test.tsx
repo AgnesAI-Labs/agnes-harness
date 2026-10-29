@@ -10,7 +10,9 @@ import {
   UiLocaleProvider,
   UntrustConfirmationFacts,
   UpdateActivationFacts,
+  UpdateDiff,
 } from '../src/index.js'
+import { adminConfirmationLocaleCatalog } from '../src/locales/admin-confirmation.js'
 import type { UiLocaleSource } from '../src/ui-locale.js'
 
 afterEach(() => {
@@ -42,7 +44,7 @@ const preview = {
       capabilities: {
         tools: { prefix: 'review_', names: ['inspect'] },
         'tools.invoke': true,
-        network: { hosts: ['api.example.test'] },
+        network: ['api.example.test'],
       },
     },
   ],
@@ -123,7 +125,7 @@ describe('plugin confirmation facts (React)', () => {
     expect(tags(createElement(PreviewConfirmationFacts, { preview }))).not.toContain('script')
   })
 
-  it('explains that an absent difference report does not mean the package has no capabilities', () => {
+  it('reports an empty capability comparison without implying missing capabilities', () => {
     const withoutDiff = {
       ...preview,
       capabilityDiff: {
@@ -136,8 +138,58 @@ describe('plugin confirmation facts (React)', () => {
     } as PackagePreview
 
     expect(renderText(createElement(PreviewConfirmationFacts, { preview: withoutDiff }))).toContain(
-      'this does not mean the package has no capabilities.',
+      'No capability changes found in this comparison.',
     )
+    for (const [locale, added, removed, files, permissions] of [
+      [
+        'en',
+        'Added capability: Write files: reports/**',
+        'Removed capability: Network access: old.example',
+        'File comparison unavailable',
+        'Permission comparison unavailable',
+      ],
+      [
+        'zh-CN',
+        '新增能力：写入文件: reports/**',
+        '移除能力：网络访问: old.example',
+        '无法比较文件',
+        '无法比较权限',
+      ],
+    ]) {
+      document.documentElement.lang = locale!
+      const changes = {
+        ...preview,
+        capabilityDiff: {
+          ...withoutDiff.capabilityDiff,
+          added: ['filesystem.write:reports/**'],
+          removed: ['network:old.example'],
+        },
+      }
+      const source: UiLocaleSource = {
+        getSnapshot: () => (locale === 'zh-CN' ? 'zh-CN' : 'en'),
+        getVersion: () => 0,
+        subscribe: () => () => undefined,
+        t: (key) => key,
+        bind: () => (key, vars) =>
+          (adminConfirmationLocaleCatalog[locale === 'zh-CN' ? 'zh-CN' : 'en'][key] ?? key).replace(
+            /\{([^}]+)\}/g,
+            (match, name: string) => String(vars?.[name] ?? match),
+          ),
+      }
+      const result = renderText(
+        createElement(
+          UiLocaleProvider,
+          { source },
+          createElement(UpdateDiff, { preview: changes, fromVersion: '1.0.0', current: installed }),
+        ),
+      )
+      expect(result).toContain('1.0.0 → 1.2.3')
+      expect(result).toContain(added)
+      expect(result).toContain(removed)
+      expect(result).toContain(files)
+      expect(result).toContain(permissions)
+    }
+    document.documentElement.lang = 'en'
   })
 
   it('binds trust and untrust decisions to the immutable baselines without enabling anything', () => {

@@ -23,7 +23,7 @@ export interface UiLocaleSource {
 
 export const UI_LOCALE_STORAGE_KEY = 'agnes-locale'
 
-/** Adapts the host document preference for standalone admin pages and their separate React roots. */
+/** Adapts the host document preference for admin surfaces mounted outside the client-module locale service. */
 export function createDocumentLocaleSource(
   catalogs: Readonly<Record<string, LocaleCatalog>>,
 ): Readonly<{ source: UiLocaleSource; dispose(): void }> {
@@ -38,34 +38,11 @@ export function createDocumentLocaleSource(
     }
     return key
   }
-  const translateStaticText = (): void => {
-    for (const node of document.querySelectorAll<HTMLElement>('[data-i18n]')) {
-      const key = node.dataset.i18n
-      if (key) {
-        const value = translate(key)
-        if (value !== key) node.textContent = value
-      }
-    }
-    for (const [attribute, selector] of [
-      ['aria-label', 'data-i18n-aria'],
-      ['placeholder', 'data-i18n-placeholder'],
-      ['title', 'data-i18n-title'],
-    ] as const) {
-      for (const node of document.querySelectorAll<HTMLElement>(`[${selector}]`)) {
-        const key = node.getAttribute(selector)
-        if (key) {
-          const value = translate(key)
-          if (value !== key) node.setAttribute(attribute, value)
-        }
-      }
-    }
-  }
   const refresh = (): void => {
     const next = readLocale()
     if (next === locale) return
     locale = next
     version++
-    translateStaticText()
     for (const listener of [...listeners]) listener()
   }
   const onStorage = (event: StorageEvent): void => {
@@ -73,7 +50,9 @@ export function createDocumentLocaleSource(
   }
   window.addEventListener('agnes:locale-changed', refresh)
   window.addEventListener('storage', onStorage)
-  translateStaticText()
+  // The host writes `lang` after its own listeners run, so the event alone can arrive before the write.
+  const observer = new MutationObserver(refresh)
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] })
 
   const source: UiLocaleSource = {
     getSnapshot: () => locale,
@@ -97,6 +76,7 @@ export function createDocumentLocaleSource(
     dispose: () => {
       window.removeEventListener('agnes:locale-changed', refresh)
       window.removeEventListener('storage', onStorage)
+      observer.disconnect()
       listeners.clear()
     },
   }
@@ -117,7 +97,7 @@ export function UiLocaleProvider({
 export function useUiText(
   namespace: string,
   fallback: LocaleCatalog,
-): Readonly<{ locale: UiLocale; t: LocaleTranslator }> {
+): Readonly<{ locale: UiLocale; t: LocaleTranslator; hostT: LocaleTranslator }> {
   const source = useContext(LocaleSourceContext)
   const subscribe = source?.subscribe ?? noSubscribe
   const getVersion = source?.getVersion ?? zeroVersion
@@ -127,7 +107,7 @@ export function useUiText(
     () => createUiTranslator(source, namespace, fallback, locale),
     [fallback, locale, namespace, source],
   )
-  return { locale, t }
+  return { locale, t, hostT: source?.t ?? t }
 }
 
 export function createUiTranslator(

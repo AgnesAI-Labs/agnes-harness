@@ -1,7 +1,10 @@
+import { withPhase } from '@agnes/core-common/step/op-state'
+import type { EventInput, Seq } from '@agnes/core-common/types'
+import { settlesWithin } from '@agnes/core-effects/effects/wrap'
 import type { Actor } from '@agnes/protocol'
-import type { EventInput, Seq } from '../types.js'
+import { persistChildLifecycleStop, revokeChildLifecycle } from '../child/lifecycle.js'
+import { refusalNotes } from '../execution/turn/nested-note.js'
 import { deferredEffectId } from './deferred.js'
-import { withPhase } from './op-state.js'
 import type { SessionImpl, StepOutcome, TurnEndReason } from './session.js'
 
 export type AbortResult = { seq: Seq | null; alreadyTerminal: boolean }
@@ -14,23 +17,28 @@ export type AbortResult = { seq: Seq | null; alreadyTerminal: boolean }
  * on the ledger says anyone asked it to.
  */
 export async function abortSession(s: SessionImpl, by: Actor): Promise<AbortResult> {
-  const op = s.op()
-  // No open turn leaves nothing to mark, but the caller still asked for whatever is running to
-  // stop, and a `run({ until: 'idle' })` sitting between two turns is running.
-  if (!op) {
-    s.ac.abort()
-    return { seq: null, alreadyTerminal: true }
-  }
-  if (op.control.status === 'cancel_requested') {
-    s.ac.abort()
-    return { seq: s.opSeq(), alreadyTerminal: false }
-  }
-  const requestedAt = new Date(s.d.clock()).toISOString()
+  revokeChildLifecycle(s)
+  s.decisions.revokeScope()
   try {
-    const seqs = await s.transition(
-      [],
-      withPhase(op, op.phase, { control: { status: 'cancel_requested', requestedAt, by } }),
+    await persistChildLifecycleStop(s)
+    const op = s.op()
+    // No open turn leaves nothing to mark, but the caller still asked for whatever is running to
+    // stop, and a `run({ until: 'idle' })` sitting between two turns is running.
+    if (!op) {
+      s.ac.abort()
+      await s.decisions.stop()
+      return { seq: null, alreadyTerminal: true }
+    }
+    if (op.control.status === 'cancel_requested') {
+      s.ac.abort()
+      await s.decisions.stop()
+      return { seq: s.opSeq(), alreadyTerminal: false }
+    }
+    const requestedAt = new Date(s.d.clock()).toISOString()
+    const seqs = await s.transition([], (cur) =>
+      cur ? withPhase(cur, cur.phase, { control: { status: 'cancel_requested', requestedAt, by } }) : null,
     )
+    s.ac.abort('stopped')
     return { seq: seqs[seqs.length - 1] as Seq, alreadyTerminal: false }
   } finally {
     // A refused write must not leave the request undelivered. The phases end a cancelled turn off
@@ -38,6 +46,23 @@ export async function abortSession(s: SessionImpl, by: Actor): Promise<AbortResu
     // running on with a caller who believes it was stopped.
     s.ac.abort()
   }
+}
+
+/** Keep the owning writer alive while cancelled producers settle, with the existing time bound. */
+export async function drainClosingWork(s: SessionImpl, work: ReadonlySet<Promise<unknown>>): Promise<void> {
+  if (!(await settlesWithin(Promise.allSettled([...work]), s.d.closeDrainMs ?? 30_000)))
+    s.d.logger.warn('session closed with work still in flight', {
+      sessionKey: s.key,
+      pending: work.size,
+      drainMs: s.d.closeDrainMs ?? 30_000,
+    })
+}
+
+export function cancelSessionRuntimes(s: SessionImpl, cancel: readonly (() => unknown)[]): void {
+  // This is a cancellation request, not a drain: a tool may await the abort itself.
+  void Promise.all(cancel.map((request) => Promise.resolve().then(request))).catch((error: unknown) => {
+    void s.diag('invariant', { kind: 'loop-cancel-failed', message: String(error) }).catch(() => undefined)
+  })
 }
 
 /**
@@ -82,8 +107,10 @@ export async function drainAborted(s: SessionImpl): Promise<void> {
   if (op?.phase.kind !== 'tools') return
   const by = op.control.status === 'cancel_requested' ? op.control.by : s.d.actor
   const events: EventInput[] = []
-  const calls = op.phase.batch.calls.map((c) => {
-    if (c.status !== 'planned' && c.status !== 'awaiting_approval' && c.status !== 'approved') return c
+  const unstarted = new Set<string>()
+  for (const c of op.phase.batch.calls) {
+    if (c.status !== 'planned' && c.status !== 'awaiting_approval' && c.status !== 'approved') continue
+    unstarted.add(c.toolUseId)
     events.push(
       s.ev(
         'tool/result',
@@ -99,9 +126,13 @@ export async function drainAborted(s: SessionImpl): Promise<void> {
         },
         { sourceEventSeqs: [c.argsSeq] },
       ),
+      // An approved approval continuation the stop caught before it started: nothing reads that.
+      ...(await refusalNotes(s, c.toolUseId, 'CANCELLED')),
     )
-    return { ...c, status: 'completed' as const }
-  })
+  }
+  const calls = op.phase.batch.calls.map((c) =>
+    unstarted.has(c.toolUseId) ? { ...c, status: 'completed' as const } : c,
+  )
   if (events.length)
     await s.transition(events, withPhase(op, { ...op.phase, batch: { ...op.phase.batch, calls } }))
 }
@@ -134,6 +165,7 @@ export async function finishAborted(s: SessionImpl): Promise<StepOutcome> {
   const op = s.op()
   if (!op) return { phase: 'terminal', reason: 'aborted' }
   const error = op.phase.kind === 'failure_drain' ? op.phase.error : undefined
-  await closeTurn(s, 'aborted', error ? { error } : {})
-  return { phase: 'terminal', reason: 'aborted' }
+  const reason = (await s.controls.ending())?.reason ?? 'aborted'
+  await closeTurn(s, reason, error ? { error } : {})
+  return { phase: 'terminal', reason }
 }

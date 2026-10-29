@@ -172,7 +172,7 @@ it.each(['pending requests', 'oversized reply'])('bounds total bytes for %s', as
   }
 })
 
-it('local Web accepts no-token browser upgrades but rejects wrong Origin and Host before creating an endpoint', async () => {
+it('local Web needs no secret: it admits the page origin and non-browser clients, and refuses cross-site pages and rebinding hosts', async () => {
   let opened = 0
   const origin = 'http://127.0.0.1:4177'
   const listener = await listenWebSocket({
@@ -184,30 +184,39 @@ it('local Web accepts no-token browser upgrades but rejects wrong Origin and Hos
       return { endpoint: endpoint(), onClose() {} }
     },
   })
-  const rejected = (headers: Record<string, string>) =>
+  const port = new URL(listener.url).port
+  const upgrade = (headers: Record<string, string>) =>
     new Promise<number>((resolve, reject) => {
-      const socket = new WebSocket(listener.url, { headers })
+      const socket = new WebSocket(listener.url, ['agnes-v1'], { headers })
       socket.once('unexpected-response', (_req, response) => {
         response.resume()
         resolve(response.statusCode ?? 0)
       })
       socket.once('open', () => {
         socket.close()
-        reject(new Error('unexpected authorization'))
+        resolve(101)
       })
       socket.once('error', reject)
     })
   try {
-    const browser = await new Promise<WebSocket>((resolve, reject) => {
-      const socket = new WebSocket(listener.url, ['agnes-v1'], { headers: { Origin: origin } })
-      socket.once('open', () => resolve(socket))
-      socket.once('error', reject)
-    })
-    browser.close()
-    expect(await rejected({})).toBe(403)
-    expect(await rejected({ Origin: 'http://evil.example' })).toBe(403)
-    expect(await rejected({ Origin: origin, Host: 'evil.example' })).toBe(403)
-    expect(opened).toBe(1)
+    // The Web page itself, under any loopback name for its port, with no token or ticket.
+    expect(await upgrade({ Origin: origin })).toBe(101)
+    expect(await upgrade({ Origin: 'http://localhost:4177' })).toBe(101)
+    expect(await upgrade({ Origin: origin, Host: `localhost:${port}` })).toBe(101)
+    // No Origin: a CLI or other local process, which is the user's own.
+    expect(await upgrade({})).toBe(101)
+    expect(opened).toBe(4)
+    // A page on another site, another local port, an opaque origin, or https.
+    expect(await upgrade({ Origin: 'http://evil.example' })).toBe(403)
+    expect(await upgrade({ Origin: 'http://127.0.0.1:9999' })).toBe(403)
+    expect(await upgrade({ Origin: 'null' })).toBe(403)
+    expect(await upgrade({ Origin: 'https://127.0.0.1:4177' })).toBe(403)
+    // DNS rebinding: a foreign name resolving to loopback, even with a matching port or Origin.
+    expect(await upgrade({ Origin: origin, Host: `evil.example:${port}` })).toBe(403)
+    expect(await upgrade({ Host: `evil.example:${port}` })).toBe(403)
+    expect(await upgrade({ Origin: origin, Host: 'evil.example' })).toBe(403)
+    expect(await upgrade({ Origin: origin, Host: '127.0.0.1:1' })).toBe(403)
+    expect(opened).toBe(4)
   } finally {
     await listener.close()
   }

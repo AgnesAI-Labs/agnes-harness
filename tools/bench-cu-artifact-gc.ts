@@ -7,10 +7,8 @@ import { join } from 'node:path'
 import { monitorEventLoopDelay, performance } from 'node:perf_hooks'
 import { DatabaseSync } from 'node:sqlite'
 import { setTimeout as delay } from 'node:timers/promises'
-import { DDL } from '../packages/host/src/adapters/ddl.js'
-import { createPlatform } from '../packages/host/src/adapters/platform.js'
-import { scanComputerUseArtifactCandidates } from '../packages/host/src/artifact-gc-candidate-scanner.js'
-import { extractArtifactRefs } from '../packages/host/src/artifact-ledger-refs.js'
+import { scanComputerUseArtifactCandidates } from '@agnes/host-artifacts/artifact-gc-candidate-scanner'
+import { extractArtifactRefs } from '@agnes/host-artifacts/artifact-ledger-refs'
 import {
   ARTIFACT_REF_INDEX_FILE,
   catchUpArtifactRefIndex,
@@ -18,14 +16,16 @@ import {
   readIndexedActivity,
   readIndexedRoots,
   verifyRootsUnderLedgerLock,
-} from '../packages/host/src/artifact-ref-index.js'
-import { planRetentionProtection } from '../packages/host/src/artifact-retention-protection.js'
-import { createComputerUseArtifactGcRuntime } from '../packages/host/src/computer-use-artifact-gc.js'
+} from '@agnes/host-artifacts/artifact-ref-index'
+import { planRetentionProtection } from '@agnes/host-artifacts/artifact-retention-protection'
+import { createComputerUseArtifactGcRuntime } from '@agnes/host-artifacts/computer-use-artifact-gc'
 import {
   createPrivateArtifactStore,
   withComputerUseArtifactMutation,
   writeComputerUseTombstoneLocked,
-} from '../packages/host/src/private-artifact-store.js'
+} from '@agnes/host-artifacts/private-artifact-store'
+import { DDL } from '@agnes/host-infrastructure/adapters/ddl'
+import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
 
 // Computer Use artifact GC evidence. Every dataset lives in a fresh temporary data directory that is
 // removed afterwards. Usage: tsx tools/bench-cu-artifact-gc.ts [--mib 1024] [--sessions 200]

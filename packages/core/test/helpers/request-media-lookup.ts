@@ -1,5 +1,5 @@
+import type { Event } from '@agnes/core-common/types'
 import type { RequestMediaToolCallLookup } from '../../src/orchestrator/request-media-surface.js'
-import type { Event } from '../../src/types.js'
 
 export type CountingToolCallLookup = RequestMediaToolCallLookup & {
   /** Every seq list the lookup was asked for, in call order. */

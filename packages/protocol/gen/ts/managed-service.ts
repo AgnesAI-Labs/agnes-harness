@@ -1,0 +1,23 @@
+// generated from schema by tools/gen.ts — do not edit
+import { Type, type Static } from '@sinclair/typebox'
+
+export const ManagedServiceSchema = Type.Module({
+  "ManagedServiceDescriptor": Type.Object({ "id": Type.String({ minLength: 1, maxLength: 64, pattern: "^[a-z][a-z0-9-]{0,63}$" }), "scope": Type.Union([Type.Literal('profile'), Type.Literal('installation')]), "artifact": Type.Union([Type.Ref('SurfaceArtifact'), Type.Object({ "kind": Type.Literal('in-process') }, { additionalProperties: false })]), "healthPath": Type.String({ minLength: 1, maxLength: 256, pattern: "^/[A-Za-z0-9/_-]*$" }), "listeners": Type.Array(Type.Object({ "name": Type.String({ minLength: 1, maxLength: 64, pattern: "^[a-z][a-z0-9-]{0,63}$" }), "host": Type.Literal('127.0.0.1'), "port": Type.Union([Type.Integer({ minimum: 1, maximum: 65535 }), Type.Literal('auto')]) }, { additionalProperties: false }), { maxItems: 16, uniqueItems: true }), "startupTimeoutMs": Type.Integer({ minimum: 1, maximum: 30000 }), "shutdownTimeoutMs": Type.Integer({ minimum: 1, maximum: 5000 }), "apiVersion": Type.String({ minLength: 1, maxLength: 32, pattern: "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$" }), "requires": Type.Array(Type.Ref('SurfaceServiceGrant'), { maxItems: 64, uniqueItems: true }) }, { additionalProperties: false }),
+  "ManagedServiceReady": Type.Object({ "incarnation": Type.String({ minLength: 1, maxLength: 128 }), "apiVersion": Type.String({ minLength: 1, maxLength: 32 }), "listeners": Type.Array(Type.String({ minLength: 1, maxLength: 64 }), { maxItems: 16, uniqueItems: true }), "storageReady": Type.Literal(true), "shutdownReady": Type.Literal(true) }, { additionalProperties: false }),
+  "ManagedServiceStatus": Type.Object({ "id": Type.String({ minLength: 1, maxLength: 64 }), "instanceId": Type.String({ minLength: 1, maxLength: 128 }), "revision": Type.String({ minLength: 1, maxLength: 256 }), "state": Type.Union([Type.Literal('starting'), Type.Literal('ready'), Type.Literal('draining'), Type.Literal('stopped'), Type.Literal('failed')]), "reason": Type.Optional(Type.Union([Type.Literal('port-in-use'), Type.Literal('startup-timeout'), Type.Literal('health-failed'), Type.Literal('shutdown-unconfirmed'), Type.Literal('unavailable'), Type.Literal('incompatible-api')])), "listeners": Type.Optional(Type.Record(Type.String(), Type.Object({ "host": Type.Literal('127.0.0.1'), "port": Type.Integer({ minimum: 1, maximum: 65535 }) }, { additionalProperties: false }))) }, { additionalProperties: false }),
+  "SurfaceArtifact": Type.Union([Type.Object({ "kind": Type.Literal('node'), "entry": Type.String({ minLength: 1, maxLength: 512, pattern: "^\\./dist/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*\\.(?:js|mjs|cjs)$" }) }, { additionalProperties: false }), Type.Object({ "kind": Type.Literal('oci'), "image": Type.String({ minLength: 1, maxLength: 512, pattern: "^[a-z0-9]+(?:[.-][a-z0-9]+)*(?::[0-9]{1,5})?/(?:[a-z0-9]+(?:[._-][a-z0-9]+)*/)*[a-z0-9]+(?:[._-][a-z0-9]+)*@sha256:[a-f0-9]{64}$" }) }, { additionalProperties: false })]),
+  "SurfaceServiceGrant": Type.Object({ "extension": Type.String({ minLength: 1, maxLength: 256, pattern: "^[a-z0-9-]+/[a-z0-9-]+$" }), "name": Type.String({ minLength: 1, maxLength: 128, pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$" }), "range": Type.String({ minLength: 1, maxLength: 64, pattern: "^(?:(?:>=|<=|>|<|=|\\^|~)?(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)|\\^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)|(?:0|[1-9][0-9]*)(?:\\.(?:0|[1-9][0-9]*))?\\.(?:x|\\*)|\\*)(?: +(?:(?:>=|<=|>|<|=|\\^|~)?(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)|\\^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)|(?:0|[1-9][0-9]*)(?:\\.(?:0|[1-9][0-9]*))?\\.(?:x|\\*)|\\*))*$" }) }, { additionalProperties: false }),
+})
+
+export const ManagedServiceDescriptor = ManagedServiceSchema.Import('ManagedServiceDescriptor')
+export type ManagedServiceDescriptor = Static<typeof ManagedServiceDescriptor>
+export const ManagedServiceReady = ManagedServiceSchema.Import('ManagedServiceReady')
+export type ManagedServiceReady = Static<typeof ManagedServiceReady>
+export const ManagedServiceStatus = ManagedServiceSchema.Import('ManagedServiceStatus')
+export type ManagedServiceStatus = Static<typeof ManagedServiceStatus>
+export const SurfaceArtifact = ManagedServiceSchema.Import('SurfaceArtifact')
+export type SurfaceArtifact = Static<typeof SurfaceArtifact>
+export const SurfaceServiceGrant = ManagedServiceSchema.Import('SurfaceServiceGrant')
+export type SurfaceServiceGrant = Static<typeof SurfaceServiceGrant>
+export const Root = ManagedServiceDescriptor
+export type Root = ManagedServiceDescriptor

@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync, statSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import type { JsonValue } from '@agnes/protocol'
 import type {
   Api,
   AssistantMessage,
@@ -7,11 +11,13 @@ import type {
   ProviderStreamOptions,
   UserMessage,
 } from '@earendil-works/pi-ai'
-import { describe, expect, it } from 'vitest'
+import { Type } from '@sinclair/typebox'
+import { describe, expect, it, vi } from 'vitest'
 import { redact } from '../src/adapters/pi/errors.js'
 import { toContext } from '../src/adapters/pi/to-context.js'
 import type { WireEvent } from '../src/index.js'
 import { createProvider, NullContractStore, PiAdapter, toPiModel } from '../src/index.js'
+import { memoryRetryLedger } from '../src/retry.js'
 import { fakeModel, fakeRequest } from '../testkit/index.js'
 
 const route = {
@@ -103,28 +109,38 @@ it('resolves request credentials without shared binding races and refreshes on s
   expect(wire.seen[2]?.options?.apiKey).toBe('rotated-a')
 })
 
-it('invalidates and resolves OAuth once after an initial AUTH rejection', async () => {
-  const wire = fakeStream([
-    [err('401 Unauthorized')],
-    [{ type: 'done', reason: 'stop', message: assistant() }],
-  ])
-  const resolved = ['expired-access', 'fresh-access']
-  const rejected: string[] = []
-  const adapter = new PiAdapter({
-    manualRoutes: [route],
-    streamImpl: wire.impl,
-    resolveCredential: async () => ({ apiKey: resolved.shift() ?? 'unexpected' }),
-    recoverRejectedAuth: async (_route, auth) => {
-      rejected.push(auth.apiKey ?? '')
-      return true
-    },
-    sleep: async () => {},
-  })
-  const events = await collect(adapter.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
-  expect(events.map((event) => event.type)).toEqual(['usage', 'done'])
-  expect(rejected).toEqual(['expired-access'])
-  expect(wire.seen.map((seen) => seen.options?.apiKey)).toEqual(['expired-access', 'fresh-access'])
-})
+it.each([true, false])(
+  'honors retry=%s for OAuth recovery after an initial AUTH rejection',
+  async (retry) => {
+    const wire = fakeStream([
+      [err('401 Unauthorized')],
+      [{ type: 'done', reason: 'stop', message: assistant() }],
+    ])
+    const resolved = ['expired-access', 'fresh-access']
+    const rejected: string[] = []
+    const adapter = new PiAdapter({
+      manualRoutes: [route],
+      streamImpl: wire.impl,
+      resolveCredential: async () => ({ apiKey: resolved.shift() ?? 'unexpected' }),
+      recoverRejectedAuth: async (_route, auth) => {
+        rejected.push(auth.apiKey ?? '')
+        return true
+      },
+      sleep: async () => {},
+    })
+    const events = await collect(
+      adapter.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), {
+        ...opts(),
+        ...(retry ? {} : { retry: false as const }),
+      }),
+    )
+    expect(events.map((event) => event.type)).toEqual(retry ? ['usage', 'done'] : ['error'])
+    expect(rejected).toEqual(retry ? ['expired-access'] : [])
+    expect(wire.seen.map((seen) => seen.options?.apiKey)).toEqual(
+      retry ? ['expired-access', 'fresh-access'] : ['expired-access'],
+    )
+  },
+)
 
 it('does not loop or recover AUTH after output', async () => {
   const twice = fakeStream([
@@ -232,13 +248,7 @@ it('cancels a hung auth recovery and gives the replacement request a first-token
     }),
   )
   expect(timedOut).toMatchObject([
-    {
-      type: 'error',
-      code: 'TIMEOUT',
-      message:
-        'no answer from the model provider while waiting for the first byte (first-token timeout, 20ms), after 2 attempts',
-      retryable: true,
-    },
+    { type: 'error', code: 'TIMEOUT', message: 'first token timeout', retryable: true },
   ])
   expect(calls).toBe(2)
 })
@@ -292,6 +302,39 @@ const err = (m: string): AssistantMessageEvent => ({
 })
 
 describe('toContext', () => {
+  it('inlines third-party Module.Import roots without losing nested definitions or mutating the request', () => {
+    const imported = Type.Module({
+      Params: Type.Object({ item: Type.Ref('Item') }, { additionalProperties: false }),
+      Item: Type.Object({ label: Type.String() }),
+    }).Import('Params')
+    for (const parameters of [imported, { ...imported, $ref: '#/$defs/Params' }]) {
+      const req = fakeRequest({
+        tools: [
+          { name: 'community_widget', description: 'Widget', parameters: parameters as unknown as JsonValue },
+        ],
+      })
+      const { tools } = toContext(req)
+      expect(tools[0]?.parameters).toMatchObject({
+        type: 'object',
+        properties: imported.$defs.Params.properties,
+        $defs: imported.$defs,
+      })
+      expect(tools[0]?.parameters).not.toHaveProperty('$ref')
+      expect(req.tools[0]?.parameters).toBe(parameters)
+      expect(parameters.$ref).toBeDefined()
+    }
+  })
+  it('refuses incompatible tool roots locally with the tool name', () => {
+    for (const parameters of [
+      { type: 'string' },
+      { $ref: '#/$defs/Missing', $defs: {} },
+      { $ref: '#/$defs/A', $defs: { A: { $ref: '#/$defs/A' } } },
+    ]) {
+      expect(() =>
+        toContext(fakeRequest({ tools: [{ name: 'community_widget', description: 'Widget', parameters }] })),
+      ).toThrow(/Tool community_widget: parameters root must resolve to type "object"/)
+    }
+  })
   it('maps system, three message roles and tools one-to-one', () => {
     const req = fakeRequest({
       tools: [
@@ -398,6 +441,25 @@ describe('toContext', () => {
 })
 
 describe('PiAdapter', () => {
+  it('reports incompatible tool schemas before invoking the provider', async () => {
+    const wire = fakeStream([[{ type: 'done', reason: 'stop', message: assistant() }]])
+    const adapter = bound({ manualRoutes: [route], streamImpl: wire.impl })
+    const result = await collect(
+      adapter.stream(
+        'gw',
+        fakeRequest({
+          route: 'gw',
+          model: 'flash',
+          tools: [{ name: 'community_bad', description: 'Bad schema', parameters: { type: 'array' } }],
+        }),
+        opts(),
+      ),
+    )
+    expect(result).toMatchObject([
+      { type: 'error', code: 'FORMAT', retryable: false, message: expect.stringContaining('community_bad') },
+    ])
+    expect(wire.seen).toEqual([])
+  })
   it('declares the manual route without its catalogue, and the catalogue separately', () => {
     const a = new PiAdapter({ manualRoutes: [route] })
     expect(a.routes()).toEqual([
@@ -423,6 +485,32 @@ describe('PiAdapter', () => {
     expect(seen[0]?.options?.apiKey).toBe('sk-1')
     expect(seen[0]?.model.baseUrl).toBe('https://gw.invalid/v1')
     expect(seen[0]?.model.id).toBe('flash')
+    expect(seen[0]?.options?.maxTokens).toBeUndefined()
+    for (const baseUrl of [
+      'https://api.deepseek.com',
+      'https://api.deepseek.com/v1/',
+      'https://api.deepseek.com/beta',
+    ]) {
+      for (const capacity of [384000, 2048]) {
+        const wire = fakeStream([[{ type: 'done', reason: 'stop', message: assistant() }]])
+        const record = fakeModel({ id: 'flash', route: 'gw', baseUrl, maxTokens: capacity })
+        const direct = bound({
+          manualRoutes: [{ ...route, baseUrl, models: [record] }],
+          streamImpl: wire.impl,
+        })
+        for (const maxTokens of [undefined, 512, ...(capacity > 65536 ? [65536] : [])]) {
+          const request = fakeRequest({
+            route: 'gw',
+            model: 'flash',
+            ...(maxTokens === undefined ? {} : { sampling: { maxTokens } }),
+          })
+          await collect(direct.stream('gw', request, opts()))
+          expect(wire.seen.at(-1)?.options?.maxTokens).toBe(maxTokens ?? Math.min(32768, capacity))
+          expect(direct.models('gw')[0]?.maxTokens).toBe(capacity)
+          expect(request.sampling?.maxTokens).toBe(maxTokens)
+        }
+      }
+    }
     // the session key travels from the request, which is what the stamp committed to
     expect(seen[0]?.options?.sessionId).toBe('agnes:t:a:cli:dm:s7')
     // pi's own retry loop stays off: retrying is this adapter's decision, and it only retries
@@ -451,6 +539,19 @@ describe('PiAdapter', () => {
     )
     expect(unknownModel[0]).toMatchObject({ type: 'error', code: 'NO_MODEL', retryable: false })
     expect(unknownRoute[0]).toMatchObject({ type: 'error', code: 'NO_MODEL', retryable: false })
+    const generation = ['agnes-image-2.5-flash', 'agnes-video-1.0', 'relay/agnes-image-2.5-flash']
+    const legacy = bound({
+      manualRoutes: [
+        { ...route, models: [...route.models, ...generation.map((id) => fakeModel({ id, route: 'gw' }))] },
+      ],
+      streamImpl: impl,
+    })
+    expect(legacy.models('gw').map((model) => model.id)).toEqual(['flash'])
+    for (const model of generation) {
+      expect(await collect(legacy.stream('gw', fakeRequest({ route: 'gw', model }), opts()))).toEqual([
+        expect.objectContaining({ type: 'error', code: 'NO_MODEL', retryable: false }),
+      ])
+    }
     expect(seen).toHaveLength(0)
   })
 
@@ -565,25 +666,81 @@ describe('PiAdapter', () => {
     expect(ordinals).toEqual([0, 0, 1, 1])
   })
 
-  it('retries before the first event but never after a delta', async () => {
-    const { impl, seen } = fakeStream([
-      [err('503 upstream')],
-      [{ type: 'done', reason: 'stop', message: assistant() }],
-    ])
-    const a = bound({ manualRoutes: [route], streamImpl: impl, maxRetries: 2, sleep: async () => {} })
-    const events = await collect(a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
-    expect(events.map((e) => e.type)).toEqual(['usage', 'done'])
-    expect(seen).toHaveLength(2)
+  it.each(['resume', 'cancel', 'deadline'] as const)(
+    'honors a persisted retry wait on %s before sending',
+    async (outcome) => {
+      vi.useFakeTimers()
+      try {
+        const ledger = memoryRetryLedger()
+        const key = 'k\0gw\0flash'
+        ledger.commit(key, 2, Date.now() + 1500)
+        const ac = new AbortController()
+        const wire = fakeStream([[{ type: 'done', reason: 'stop', message: assistant() }]])
+        const a = bound({ manualRoutes: [route], streamImpl: wire.impl, ledger })
+        const run = collect(
+          a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), {
+            ...opts(ac.signal),
+            timeoutMs: { firstToken: 1000, total: outcome === 'deadline' ? 1000 : 5000 },
+          }),
+        )
+        await vi.advanceTimersByTimeAsync(1499)
+        expect(wire.seen).toHaveLength(0)
+        if (outcome === 'cancel') ac.abort()
+        await vi.advanceTimersByTimeAsync(1)
+        const events = await run
+        if (outcome === 'resume') {
+          expect(wire.seen).toHaveLength(1)
+          expect(events.map((event) => event.type)).toEqual(['usage', 'done'])
+          expect(ledger.read(key)).toBeUndefined()
+        } else {
+          expect(wire.seen).toHaveLength(0)
+          expect(events).toMatchObject([
+            {
+              type: 'error',
+              code: outcome === 'cancel' ? 'ABORTED' : 'TIMEOUT',
+              retryable: outcome !== 'cancel',
+            },
+          ])
+          expect(ledger.read(key)?.count).toBe(2)
+        }
+      } finally {
+        vi.useRealTimers()
+      }
+    },
+  )
 
-    const late = fakeStream([
-      [{ type: 'text_delta', contentIndex: 0, delta: 'a', partial }, err('503 upstream')],
-      [{ type: 'done', reason: 'stop', message: assistant() }],
-    ])
-    const b = bound({ manualRoutes: [route], streamImpl: late.impl, maxRetries: 2, sleep: async () => {} })
-    const ev2 = await collect(b.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
-    expect(ev2.map((e) => e.type)).toEqual(['text_delta', 'error'])
-    expect(late.seen).toHaveLength(1)
-  })
+  it.each(['503 upstream', '429 Too Many Requests, retry-after: 0'])(
+    'commits retries before output for %s but never retries after a delta',
+    async (failure) => {
+      const { impl, seen } = fakeStream([
+        [err(failure)],
+        [{ type: 'done', reason: 'stop', message: assistant() }],
+      ])
+      const ledger = memoryRetryLedger()
+      const a = bound({
+        manualRoutes: [route],
+        streamImpl: impl,
+        maxRetries: 2,
+        ledger,
+        sleep: async (ms) => {
+          expect(ledger.read('k\0gw\0flash')?.count).toBe(1)
+          if (failure.startsWith('429')) expect(ms).toBe(0)
+        },
+      })
+      const events = await collect(a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
+      expect(events.map((e) => e.type)).toEqual(['usage', 'done'])
+      expect(seen).toHaveLength(2)
+
+      const late = fakeStream([
+        [{ type: 'text_delta', contentIndex: 0, delta: 'a', partial }, err('503 upstream')],
+        [{ type: 'done', reason: 'stop', message: assistant() }],
+      ])
+      const b = bound({ manualRoutes: [route], streamImpl: late.impl, maxRetries: 2, sleep: async () => {} })
+      const ev2 = await collect(b.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
+      expect(ev2.map((e) => e.type)).toEqual(['text_delta', 'error'])
+      expect(late.seen).toHaveLength(1)
+    },
+  )
 
   it('gives up after the configured number of attempts and reports the failure', async () => {
     const waits: number[] = []
@@ -598,15 +755,137 @@ describe('PiAdapter', () => {
     })
     const events = await collect(a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
     expect(seen).toHaveLength(3)
-    expect(waits).toEqual([500, 1000])
+    expect(waits).toHaveLength(2)
+    for (const [index, base] of [500, 1000].entries()) {
+      expect(waits[index]).toBeGreaterThanOrEqual(base * 0.9)
+      expect(waits[index]).toBeLessThanOrEqual(base * 1.1)
+    }
     expect(events).toHaveLength(1)
-    // The retries are otherwise invisible: the one error that leaves says how many requests it took.
-    expect(events[0]).toMatchObject({
-      type: 'error',
-      code: 'TRANSPORT',
-      message: 'status=503, after 3 attempts',
-      retryable: true,
+    // Its own retries are spent, so the failure is final: a caller asking again gets the same answer after
+    // the same waits.
+    expect(events[0]).toMatchObject({ type: 'error', code: 'TRANSPORT', retryable: false })
+  })
+
+  it.each(['503 upstream', '429 Too Many Requests, retry-after: 0'])(
+    'stops when the attempt ledger cannot commit for %s',
+    async (failure) => {
+      const { impl, seen } = fakeStream([
+        [err(failure)],
+        [{ type: 'done', reason: 'stop', message: assistant() }],
+      ])
+      const a = bound({
+        manualRoutes: [route],
+        streamImpl: impl,
+        maxRetries: 2,
+        sleep: async () => {},
+        ledger: {
+          read: () => undefined,
+          commit() {
+            throw new Error('disk full')
+          },
+          clear() {},
+        },
+      })
+      const events = await collect(a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
+      expect(seen).toHaveLength(1)
+      expect(events).toMatchObject([
+        {
+          type: 'error',
+          code: failure.startsWith('429') ? 'RATE_LIMIT' : 'TRANSPORT',
+          message: `status=${failure.slice(0, 3)} (retry ledger commit failed: disk full)`,
+        },
+      ])
+    },
+  )
+
+  it('keeps a successful result when clearing the retry ledger fails', async () => {
+    const { impl } = fakeStream([[{ type: 'done', reason: 'stop', message: assistant() }]])
+    const warnings: unknown[] = []
+    const spy = vi.spyOn(process, 'emitWarning').mockImplementation((warning, options) => {
+      warnings.push(typeof options === 'object' ? options : warning)
     })
+    try {
+      const a = bound({
+        manualRoutes: [route],
+        streamImpl: impl,
+        ledger: {
+          read: () => undefined,
+          commit() {},
+          clear() {
+            throw new Error('clear failed')
+          },
+        },
+      })
+      const events = await collect(a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
+      expect(events.map((event) => event.type)).toEqual(['usage', 'done'])
+      expect(warnings).toContainEqual(expect.objectContaining({ code: 'AGH_RETRY_LEDGER_CLEAR' }))
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('stops when retry-after exceeds the remaining deadline and still waits when it fits', async () => {
+    const over = fakeStream([
+      [err('429 Too Many Requests, retry-after: 30')],
+      [{ type: 'done', reason: 'stop', message: assistant() }],
+    ])
+    const stopped = bound({
+      manualRoutes: [route],
+      streamImpl: over.impl,
+      maxRetries: 2,
+      sleep: async () => {},
+    })
+    const refused = await collect(
+      stopped.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), {
+        ...opts(),
+        timeoutMs: { firstToken: 1000, total: 1000 },
+      }),
+    )
+    expect(over.seen).toHaveLength(1)
+    expect(refused).toMatchObject([{ type: 'error', code: 'RATE_LIMIT', retryAfterMs: 30_000 }])
+
+    const waits: number[] = []
+    const within = fakeStream([
+      [err('429 Too Many Requests, retry-after: 1')],
+      [{ type: 'done', reason: 'stop', message: assistant() }],
+    ])
+    const continued = bound({
+      manualRoutes: [route],
+      streamImpl: within.impl,
+      maxRetries: 2,
+      sleep: async (ms) => {
+        waits.push(ms)
+      },
+    })
+    const events = await collect(continued.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
+    expect(within.seen).toHaveLength(2)
+    expect(waits).toEqual([1000])
+    expect(events.map((event) => event.type)).toEqual(['usage', 'done'])
+  })
+
+  it('writes retry state under the injected directory', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agh-home-'))
+    const dir = join(root, 'model-retry')
+    try {
+      const { impl } = fakeStream([
+        [err('503 upstream')],
+        [{ type: 'done', reason: 'stop', message: assistant() }],
+      ])
+      const a = bound({
+        manualRoutes: [route],
+        streamImpl: impl,
+        maxRetries: 1,
+        sleep: async () => {},
+        retryDirectory: dir,
+      })
+      const events = await collect(a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
+      expect(events.map((event) => event.type)).toEqual(['usage', 'done'])
+      const stat = statSync(dir)
+      expect(stat.isDirectory()).toBe(true)
+      if (process.platform !== 'win32') expect(stat.mode & 0o777).toBe(0o700)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it.each(['429 Too Many Requests', '503 upstream'])(
@@ -615,6 +894,7 @@ describe('PiAdapter', () => {
       const { impl, seen } = fakeStream([[err(message)]])
       const waits: number[] = []
       const adapter = bound({
+        maxRetries: 2,
         manualRoutes: [route],
         streamImpl: impl,
         sleep: async (ms) => {
@@ -651,9 +931,9 @@ describe('PiAdapter', () => {
     const events = await collect(
       a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts(ac.signal)),
     )
-    expect(seen).toHaveLength(1)
+    expect(seen).toHaveLength(0)
     expect(events).toHaveLength(1)
-    expect(events[0]).toMatchObject({ type: 'error' })
+    expect(events[0]).toMatchObject({ type: 'error', code: 'ABORTED', retryable: false })
   })
 
   it('reports an abort as ABORTED and does not offer a retry', async () => {

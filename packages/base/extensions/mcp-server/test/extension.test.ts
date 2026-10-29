@@ -1,7 +1,9 @@
-import type { ExtensionAPI, ResourceEntry, ToolDef } from '@agnes/extension-api'
+import type { ResourceEntry, ToolDef } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it, vi } from 'vitest'
 import type { McpServerConfig } from '../../../src/mcp/config.js'
-import { mcpLocalToolPrefix } from '../../../src/mcp/naming.js'
+import { mcpPublicToolName, mcpStablePrefix } from '../../../src/mcp/naming.js'
 import type { McpConnection, RemoteToolIndexRow } from '../../../src/mcp/register.js'
 import type { McpCatalogHub } from '../src/catalog-hub.js'
 import { mcpServerExtension } from '../src/extension.js'
@@ -93,7 +95,25 @@ function fakeCatalogHub(): McpCatalogHub & {
 }
 
 const cfg: McpServerConfig = { id: 'gh', transport: 'stdio', cmd: ['gh-mcp'], defer: true }
-const GH_PREFIX = mcpLocalToolPrefix('gh')
+const GH_PREFIX = mcpStablePrefix('gh')
+
+function registeredNames(serverId: string, remoteNames: readonly string[]): string[] {
+  const reserved = new Set<string>()
+  return remoteNames.map((remote) => {
+    const name = mcpPublicToolName(serverId, remote, reserved)
+    reserved.add(name)
+    return name
+  })
+}
+
+function catalogNames(serverId: string, remoteNames: readonly string[]): string[] {
+  const reserved = new Set<string>()
+  return remoteNames.map((remote) => {
+    const name = mcpPublicToolName(serverId, remote, reserved)
+    reserved.add(name)
+    return name
+  })
+}
 
 describe('mcpServerExtension', () => {
   it('returns the disposer synchronously, without waiting for the connection to land (the row must not block application)', () => {
@@ -101,7 +121,7 @@ describe('mcpServerExtension', () => {
     const connect = vi.fn(async () => fakeConnection('gh'))
     const factory = mcpServerExtension(cfg, { catalogHub: fakeCatalogHub(), connect })
 
-    const result = factory(api)
+    const result = extensionFactoryOf(factory)(api)
 
     expect(result).not.toBeInstanceOf(Promise)
     expect(typeof result).toBe('function')
@@ -117,18 +137,15 @@ describe('mcpServerExtension', () => {
     const catalogHub = fakeCatalogHub()
     const factory = mcpServerExtension(cfg, { catalogHub, connect })
 
-    factory(api)
+    extensionFactoryOf(factory)(api)
 
     await vi.waitFor(() =>
-      expect(tools.map((tool) => tool.name)).toEqual([`${GH_PREFIX}ping`, `${GH_PREFIX}pong`]),
+      expect(tools.map((tool) => tool.name)).toEqual(registeredNames('gh', ['ping', 'pong'])),
     )
     expect(resources.map((resource) => resource.id)).toEqual(['gh'])
     expect(catalogHub.upserts).toHaveLength(1)
     expect(catalogHub.upserts[0]?.serverId).toBe('gh')
-    expect(catalogHub.upserts[0]?.rows.map((row) => row.name)).toEqual([
-      `${GH_PREFIX}ping`,
-      `${GH_PREFIX}pong`,
-    ])
+    expect(catalogHub.upserts[0]?.rows.map((row) => row.name)).toEqual(catalogNames('gh', ['ping', 'pong']))
   })
 
   it('a non-deferred server never contributes rows to the catalog hub (eager tools are already disclosed directly)', async () => {
@@ -139,7 +156,7 @@ describe('mcpServerExtension', () => {
     const catalogHub = fakeCatalogHub()
     const factory = mcpServerExtension(eagerCfg, { catalogHub, connect })
 
-    factory(api)
+    extensionFactoryOf(factory)(api)
 
     await vi.waitFor(() => expect(tools).toHaveLength(1))
     expect(catalogHub.upserts).toEqual([])
@@ -151,7 +168,7 @@ describe('mcpServerExtension', () => {
     const connect = vi.fn(async () => conn)
     const catalogHub = fakeCatalogHub()
     const factory = mcpServerExtension(cfg, { catalogHub, connect })
-    const dispose = factory(api) as () => void
+    const dispose = extensionFactoryOf(factory)(api) as () => void
     await vi.waitFor(() => expect(tools).toHaveLength(1))
     void resources
 
@@ -178,10 +195,12 @@ describe('mcpServerExtension', () => {
       conn.closeCount += 1
     }
     const catalogHub = fakeCatalogHub()
-    const dispose = mcpServerExtension(cfg, {
-      catalogHub,
-      connect: async () => conn,
-    })(api) as () => Promise<void>
+    const dispose = extensionFactoryOf(
+      mcpServerExtension(cfg, {
+        catalogHub,
+        connect: async () => conn,
+      }),
+    )(api) as () => Promise<void>
     await vi.waitFor(() => expect(tools).toHaveLength(1))
     const pending = dispose()
     expect(pending).toBeInstanceOf(Promise)
@@ -206,7 +225,7 @@ describe('mcpServerExtension', () => {
     const connect = vi.fn(async () => conn)
     const catalogHub = fakeCatalogHub()
     const factory = mcpServerExtension(cfg, { catalogHub, connect })
-    factory(api)
+    extensionFactoryOf(factory)(api)
     await vi.waitFor(() => expect(tools).toHaveLength(1))
 
     conn.fireToolsChanged()
@@ -250,7 +269,7 @@ describe('mcpServerExtension', () => {
     const connect = vi.fn(async () => conn)
     const catalogHub = fakeCatalogHub()
     const factory = mcpServerExtension(cfg, { catalogHub, connect })
-    const dispose = factory(api) as () => void
+    const dispose = extensionFactoryOf(factory)(api) as () => void
     await vi.waitFor(() => expect(catalogHub.upserts).toHaveLength(1))
 
     for (const listener of [...toolsChangedListeners]) listener()
@@ -281,7 +300,7 @@ describe('mcpServerExtension', () => {
     const catalogHub = fakeCatalogHub()
     const policy = { initialDelayMs: 10_000, maxDelayMs: 10_000, maxAttempts: 10 }
     const factory = mcpServerExtension(cfg, { catalogHub, connect, policy })
-    const dispose = factory(api) as () => void
+    const dispose = extensionFactoryOf(factory)(api) as () => void
     await vi.waitFor(() => expect(connect).toHaveBeenCalledTimes(1))
 
     dispose()
@@ -297,10 +316,12 @@ describe('mcpServerExtension', () => {
     const catalogHub = fakeCatalogHub()
     const mount = async () => {
       const { api, tools } = fakeApi()
-      const dispose = mcpServerExtension(cfg, {
-        catalogHub,
-        connect: vi.fn(async () => fakeConnection('gh')),
-      })(api) as () => void
+      const dispose = extensionFactoryOf(
+        mcpServerExtension(cfg, {
+          catalogHub,
+          connect: vi.fn(async () => fakeConnection('gh')),
+        }),
+      )(api) as () => void
       await vi.waitFor(() => expect(tools).toHaveLength(1))
       return dispose
     }
@@ -321,30 +342,34 @@ describe('mcpServerExtension', () => {
   it('hands onFirstAttempt the first attempt outcome: settled once tools are registered, or on failure', async () => {
     const ok = fakeApi()
     let okReady: Promise<{ error?: unknown }> | undefined
-    mcpServerExtension(cfg, {
-      catalogHub: fakeCatalogHub(),
-      connect: vi.fn(async () => fakeConnection('gh')),
-      onFirstAttempt: (ready) => {
-        okReady = ready
-      },
-    })(ok.api)
+    extensionFactoryOf(
+      mcpServerExtension(cfg, {
+        catalogHub: fakeCatalogHub(),
+        connect: vi.fn(async () => fakeConnection('gh')),
+        onFirstAttempt: (ready) => {
+          okReady = ready
+        },
+      }),
+    )(ok.api)
     expect(okReady).toBeDefined()
     expect(await okReady).toEqual({})
     // Settling means the tools are already there, not merely that the socket opened.
-    expect(ok.tools.map((tool) => tool.name)).toEqual([`${GH_PREFIX}ping`])
+    expect(ok.tools.map((tool) => tool.name)).toEqual(registeredNames('gh', ['ping']))
 
     const failed = fakeApi()
     let failedReady: Promise<{ error?: unknown }> | undefined
-    const dispose = mcpServerExtension(cfg, {
-      catalogHub: fakeCatalogHub(),
-      connect: vi.fn(async (): Promise<McpConnection> => {
-        throw new Error('down')
+    const dispose = extensionFactoryOf(
+      mcpServerExtension(cfg, {
+        catalogHub: fakeCatalogHub(),
+        connect: vi.fn(async (): Promise<McpConnection> => {
+          throw new Error('down')
+        }),
+        policy: { initialDelayMs: 10_000, maxDelayMs: 10_000, maxAttempts: 10 },
+        onFirstAttempt: (ready) => {
+          failedReady = ready
+        },
       }),
-      policy: { initialDelayMs: 10_000, maxDelayMs: 10_000, maxAttempts: 10 },
-      onFirstAttempt: (ready) => {
-        failedReady = ready
-      },
-    })(failed.api) as () => void
+    )(failed.api) as () => void
     expect((await failedReady)?.error).toBeInstanceOf(Error)
     expect(failed.tools).toEqual([])
     dispose()
@@ -356,11 +381,13 @@ describe('mcpServerExtension', () => {
     const eagerCfg: McpServerConfig = { id: 'gh', transport: 'stdio', cmd: ['gh-mcp'], defer: false }
     const events: unknown[] = []
     const { api } = fakeApi()
-    mcpServerExtension(eagerCfg, {
-      catalogHub: fakeCatalogHub(),
-      connect: vi.fn(async () => fakeConnection('gh', ['ping', 'pong'])),
-      onStatus: (event) => events.push(event),
-    })(api)
+    extensionFactoryOf(
+      mcpServerExtension(eagerCfg, {
+        catalogHub: fakeCatalogHub(),
+        connect: vi.fn(async () => fakeConnection('gh', ['ping', 'pong'])),
+        onStatus: (event) => events.push(event),
+      }),
+    )(api)
     await vi.waitFor(() => expect(events).toHaveLength(2))
     expect(events[0]).toEqual({ state: 'connecting' })
     expect(events[1]).toMatchObject({ state: 'ready', toolCount: 2 })
@@ -369,14 +396,16 @@ describe('mcpServerExtension', () => {
 
   it('reports unavailable, with the failure, once reconnection gives up', async () => {
     const events: unknown[] = []
-    const dispose = mcpServerExtension(cfg, {
-      catalogHub: fakeCatalogHub(),
-      connect: vi.fn(async (): Promise<McpConnection> => {
-        throw new Error('down')
+    const dispose = extensionFactoryOf(
+      mcpServerExtension(cfg, {
+        catalogHub: fakeCatalogHub(),
+        connect: vi.fn(async (): Promise<McpConnection> => {
+          throw new Error('down')
+        }),
+        policy: { initialDelayMs: 1, maxDelayMs: 1, maxAttempts: 1 },
+        onStatus: (event) => events.push(event),
       }),
-      policy: { initialDelayMs: 1, maxDelayMs: 1, maxAttempts: 1 },
-      onStatus: (event) => events.push(event),
-    })(fakeApi().api) as () => void
+    )(fakeApi().api) as () => void
     await vi.waitFor(() =>
       expect(events.at(-1)).toMatchObject({ state: 'unavailable', error: new Error('down') }),
     )
@@ -394,24 +423,27 @@ describe('mcpServerExtension: name collisions among a partly skipped catalog', (
   const run = async (tools: readonly unknown[]) => {
     const events: { state: string }[] = []
     const state = fakeApi()
-    const dispose = mcpServerExtension(cfg, {
-      catalogHub: fakeCatalogHub(),
-      connect: vi.fn(async () => catalogConnection(tools)),
-      policy: { initialDelayMs: 10_000, maxDelayMs: 10_000, maxAttempts: 1 },
-      onStatus: (event) => events.push(event),
-    })(state.api) as () => void
+    const dispose = extensionFactoryOf(
+      mcpServerExtension(cfg, {
+        catalogHub: fakeCatalogHub(),
+        connect: vi.fn(async () => catalogConnection(tools)),
+        policy: { initialDelayMs: 10_000, maxDelayMs: 10_000, maxAttempts: 1 },
+        onStatus: (event) => events.push(event),
+      }),
+    )(state.api) as () => void
     await vi.waitFor(() => expect(events.length).toBeGreaterThan(1))
     dispose()
     return { events, tools: state.tools }
   }
 
-  it('fails the server when two admitted tools map to one local name', async () => {
+  it('admits two remote names that sanitize to one spelling, hashing the rewritten one', async () => {
     const { events, tools } = await run([
       { name: 'a-b', description: 'first', inputSchema: { type: 'object' } },
       { name: 'a_b', description: 'second', inputSchema: { type: 'object' } },
     ])
-    expect(events[1]).toMatchObject({ state: 'unavailable' })
-    expect(tools).toEqual([])
+    expect(events[1]).toMatchObject({ state: 'ready', toolCount: 2 })
+    expect(tools.map((tool) => tool.name)).toEqual(registeredNames('gh', ['a-b', 'a_b']))
+    expect(tools).toHaveLength(2)
   })
 
   it('does not count a skipped tool as a collision with an admitted one', async () => {
@@ -425,6 +457,6 @@ describe('mcpServerExtension: name collisions among a partly skipped catalog', (
       skippedToolCount: 1,
       skippedTools: [{ code: 'description-too-long', name: 'a-b' }],
     })
-    expect(tools.map((tool) => tool.name)).toEqual([`${mcpLocalToolPrefix('gh')}a_b`])
+    expect(tools.map((tool) => tool.name)).toEqual(registeredNames('gh', ['a_b']))
   })
 })

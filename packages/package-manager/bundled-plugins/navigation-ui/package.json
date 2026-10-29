@@ -1,0 +1,75 @@
+{
+  "name": "@agnes/navigation-ui",
+  "version": "0.1.1",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "src",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "client-build.json"
+  ],
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:navigation-ui/main",
+        "export": "main",
+        "apiRange": "^5.0.0",
+        "runtime": "in-process",
+        "capabilities": {
+          "ui": true
+        },
+        "metadata": {
+          "displayName": "Navigation presentation",
+          "summary": "Default history, workspace and navigation presentation.",
+          "description": "Default history, workspace and navigation presentation.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "\u5bfc\u822a\u5448\u73b0",
+              "summary": "\u9ed8\u8ba4\u5bf9\u8bdd\u5386\u53f2\u3001\u5de5\u4f5c\u533a\u4e0e\u5bfc\u822a\u5448\u73b0\u3002",
+              "description": "\u9ed8\u8ba4\u5bf9\u8bdd\u5386\u53f2\u3001\u5de5\u4f5c\u533a\u4e0e\u5bfc\u822a\u5448\u73b0\u3002"
+            }
+          }
+        }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:navigation-ui/main",
+        "path": "./src/agnes.client.json"
+      }
+    ],
+    "metadata": {
+      "displayName": "Navigation presentation",
+      "summary": "Default history, workspace and navigation presentation.",
+      "description": "Default history, workspace and navigation presentation.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "\u5bfc\u822a\u5448\u73b0",
+          "summary": "\u9ed8\u8ba4\u5bf9\u8bdd\u5386\u53f2\u3001\u5de5\u4f5c\u533a\u4e0e\u5bfc\u822a\u5448\u73b0\u3002",
+          "description": "\u9ed8\u8ba4\u5bf9\u8bdd\u5386\u53f2\u3001\u5de5\u4f5c\u533a\u4e0e\u5bfc\u822a\u5448\u73b0\u3002"
+        }
+      }
+    },
+    "provides": [
+      "ui"
+    ]
+  },
+  "peerDependencies": {
+    "@agnes/web-client": "0.0.0",
+    "@agnes/web-ui": "0.0.0",
+    "react": "18.3.1",
+    "@agnes/web": "0.0.0",
+    "@agnes/web-units": "0.0.0"
+  },
+  "devDependencies": {
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "react": "18.3.1",
+    "@agnes/web": "workspace:*",
+    "@agnes/web-units": "workspace:*"
+  }
+}

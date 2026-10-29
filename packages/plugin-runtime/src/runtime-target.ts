@@ -69,6 +69,9 @@ const REVISION = /^[a-f0-9]{64}$/
 // MAX_RUNTIME_TARGET_ARTIFACT_BASE64_LENGTH: one complete runtime.stale envelope must fit a frame.
 const MAX_CANONICAL_BASE64_LENGTH = 16_776_788
 const SORTED_RESOURCE_OWNED_ROW_IDS = Object.freeze([...RESOURCE_OWNED_ROW_IDS].sort(compareCodePoints))
+// Weak ownership, not a caller-supplied frozen flag. Only our fully canonical builders qualify.
+const ownedTargets = new WeakSet<object>()
+const encodedTargets = new WeakMap<object, RuntimeTargetArtifact>()
 
 function invalidTarget(code: string, reason: string): never {
   throw new Error(`${code}: ${reason}`)
@@ -207,7 +210,9 @@ export function buildRuntimeTarget(input: RuntimeTargetBuildInput): RuntimeTarge
     resources,
     rows: Object.freeze(resourceRows),
   })
-  return Object.freeze({ tree, resource })
+  const target = Object.freeze({ tree, resource })
+  ownedTargets.add(target)
+  return target
 }
 
 function verifyTarget(value: unknown): RuntimeTarget {
@@ -340,15 +345,19 @@ export function decodeCanonicalRuntimeTargetBytes(bytes: Uint8Array): RuntimeTar
 
 /** Encodes a verified target once into the sole durable artifact representation. */
 export function encodeRuntimeTargetArtifact(value: RuntimeTarget): RuntimeTargetArtifact {
-  const target = verifyTarget(value)
+  const cached = encodedTargets.get(value)
+  if (cached) return cached
+  const target = ownedTargets.has(value) ? value : verifyTarget(value)
   const bytes = canonicalBytes(target)
   const identity = Object.freeze({ ...target.resource.target })
-  return Object.freeze({
-    encoding: 'base64',
+  const artifact = Object.freeze({
+    encoding: 'base64' as const,
     canonicalBase64: Buffer.from(bytes).toString('base64'),
     digest: digestBytes(bytes),
     identity,
   })
+  if (ownedTargets.has(value)) encodedTargets.set(value, artifact)
+  return artifact
 }
 
 function verifiedArtifactBytes(value: unknown): Readonly<{ bytes: Uint8Array; target: RuntimeTarget }> {

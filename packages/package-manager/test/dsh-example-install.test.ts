@@ -13,18 +13,7 @@ import {
 
 const examples = fileURLToPath(new URL('../../../examples/packages/dsh-input-controls', import.meta.url))
 const packageId = '@agnes-examples/dsh-input-controls'
-const seams = [
-  'approval',
-  'checkpoint',
-  'ledger',
-  'sandbox',
-  'verifier',
-  'repair',
-  'artifacts',
-  'principals',
-  'platform',
-  'harness',
-]
+const seams = ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals']
 
 let root: string
 let profile: string
@@ -38,7 +27,7 @@ beforeEach(() => {
   writeLock(profile, {
     ...emptyLock('local-dev', '0.1.0'),
     resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
-    seams: Object.fromEntries(seams.map((name) => [name, '@agnes/base'])),
+    seams: Object.fromEntries(seams.map((name) => [name, { provider: 'local' }])),
     policySnapshot: { capabilityCeiling: ['ui', 'services'], workspacePackages: 'require-project-trust' },
   })
 })

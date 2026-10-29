@@ -1,0 +1,47 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    { "path": "../error-sanitization" },
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../extension-api"
+    },
+    {
+      "path": "../daemon-foundation"
+    },
+    {
+      "path": "../host"
+    },
+    {
+      "path": "../package-manager"
+    },
+    {
+      "path": "../plugin-runtime"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../resource-control-store"
+    },
+    {
+      "path": "../system-node"
+    },
+    {
+      "path": "../base"
+    },
+    {
+      "path": "../history-index"
+    },
+    {
+      "path": "../resource-control-runtime"
+    }
+  ]
+}

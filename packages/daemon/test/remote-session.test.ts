@@ -1,11 +1,12 @@
 import type { Host, HostSession } from '@agnes/host'
+import { rpcError } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { encodeFrame } from '../src/supervisor/framing.js'
 import { RemoteSession } from '../src/supervisor/remote-session.js'
 import { handleCommand } from '../src/worker/commands.js'
 
-it('propagates scan errors, including a single row too large for one frame', async () => {
-  for (const code of ['SCAN_ROW_TOO_LARGE', 'UNAUTHORIZED']) {
+it('propagates unrelated scan errors and refuses an indivisible oversized row', async () => {
+  for (const code of ['SCAN_PAGE_TOO_LARGE', 'UNAUTHORIZED']) {
     const error = { code: -32603, message: 'refused', data: { code } }
     const remote = new RemoteSession(
       'error',
@@ -19,7 +20,9 @@ it('propagates scan errors, including a single row too large for one frame', asy
       } as never,
       '/test',
     )
-    await expect(remote.scan({ fromSeq: 1, toSeq: 500, limit: 500 })).rejects.toBe(error)
+    await expect(
+      remote.scan({ fromSeq: 1, toSeq: code === 'UNAUTHORIZED' ? 500 : 1, limit: 500 }),
+    ).rejects.toBe(error)
   }
 })
 
@@ -27,22 +30,23 @@ it.each(['asc', 'desc'] as const)(
   'reads large history pages completely in %s order across worker frames',
   async (order) => {
     const rows = [1, 2, 3].map((seq) => ({ seq, data: 'A'.repeat(512) }))
-    const read = async (q: { fromSeq: number; toSeq: number; limit: number; order: string }) => {
-      const found = rows.filter((row) => row.seq >= q.fromSeq && row.seq <= q.toSeq)
-      return (q.order === 'desc' ? found.reverse() : found).slice(0, q.limit)
-    }
-    const hosted = { scan: read, scanLean: read } as unknown as HostSession
-    const sent: unknown[] = []
+    const hosted = {
+      async scan(q: { fromSeq: number; toSeq: number; limit: number; order: string }) {
+        const found = rows.filter((row) => row.seq >= q.fromSeq && row.seq <= q.toSeq)
+        return (q.order === 'desc' ? found.reverse() : found).slice(0, q.limit)
+      },
+    } as unknown as HostSession
     const link = {
       alive: true,
       async command(method: string, params: Record<string, unknown>) {
-        sent.push(params)
-        // A small frame budget keeps the resume path covered when the production ceiling grows.
         const result = await handleCommand(
           hosted,
           { kind: 'command', requestId: '1', method: method as 'scan', params },
-          { host: {} as Host, aborts: new Map(), maxScanFrameBytes: 1024 },
+          { host: {} as Host, aborts: new Map() },
         )
+        // A small wire budget keeps this refusal path covered when the production ceiling grows.
+        if (Buffer.byteLength(JSON.stringify(result)) > 1024)
+          throw rpcError('INTERNAL_ERROR', { code: 'SCAN_PAGE_TOO_LARGE' })
         return JSON.parse(encodeFrame({ kind: 'reply', requestId: '1', result }).toString()).result
       },
     }
@@ -55,18 +59,8 @@ it.each(['asc', 'desc'] as const)(
     })) as typeof rows
     expect(result.map((row) => row.seq)).toEqual(order === 'asc' ? [1, 2, 3] : [3, 2])
     expect(result).toEqual(order === 'asc' ? rows : [...rows].reverse().slice(0, 2))
-    // Each row was read once: one reply per row here, never a re-read of a half.
-    expect(sent).toHaveLength(order === 'asc' ? 3 : 2)
-    expect(remote.scanResumes).toBe(sent.length - 1)
   },
 )
-
-it('counts no resumes while every page fits one worker frame', async () => {
-  const link = { alive: true, command: async () => ({ rows: [{ seq: 1 }] }) }
-  const remote = new RemoteSession('small', 'writer', 1, link as never, '/test')
-  await remote.scan({ fromSeq: 1, toSeq: 1, limit: 1 })
-  expect(remote.scanResumes).toBe(0)
-})
 
 describe('RemoteSession switch result bridge', () => {
   it('unwraps worker command envelopes to the HostSession sequence contract', async () => {
@@ -75,7 +69,9 @@ describe('RemoteSession switch result bridge', () => {
       alive: true,
       async command(method: string, params: unknown) {
         calls.push([method, params])
-        return { effectiveFromSeq: method === 'setPreset' ? 7 : method === 'setModel' ? 9 : 11 }
+        return method === 'setToolFilter'
+          ? { effectiveFromSeq: 13, filter: { deny: ['bash'] } }
+          : { effectiveFromSeq: method === 'setPreset' ? 7 : method === 'setModel' ? 9 : 11 }
       },
     }
     const session = new RemoteSession('s', 'run', 1, link as never, '/workspace')
@@ -86,10 +82,13 @@ describe('RemoteSession switch result bridge', () => {
     expect(session.lastSeq).toBe(9)
     expect(await session.setYolo(true, operator)).toBe(11)
     expect(session.lastSeq).toBe(11)
+    expect(await session.setToolFilter({ deny: ['bash'] })).toEqual({ seq: 13, filter: { deny: ['bash'] } })
+    expect(session.lastSeq).toBe(13)
     expect(calls).toEqual([
       ['setPreset', { preset: 'standard' }],
       ['setModel', { sel: { slot: 'primary', route: 'faux', model: 'faux-1' } }],
       ['setYolo', { enabled: true, actor: operator }],
+      ['setToolFilter', { filter: { deny: ['bash'] } }],
     ])
   })
 
@@ -244,4 +243,103 @@ describe('RemoteSession switch result bridge', () => {
     ).rejects.toThrow('worker link closed')
     expect(commandCalls).toBe(0)
   })
+})
+
+it('forwards UI credentials through the remote bridge and binds identity in the worker', async () => {
+  const credential = { kind: 'local', principal: 'operator' }
+  const actor = { id: 'operator', org: 'synthetic', role: 'reviewer', deptPath: ['review'], attrs: {} }
+  const input = {
+    sessionId: 'owned',
+    surfaceId: 'review',
+    revision: 1,
+    actionId: 'confirm',
+    commandId: 'one',
+    input: {},
+    selection: {},
+  }
+  const receipt = { status: 'received' }
+  const admitted: unknown[] = []
+  const hosted = {
+    ac: new AbortController(),
+    intelligentUi: {
+      action: async (request: unknown, resolved: unknown) => {
+        admitted.push({ request, actor: resolved })
+        return receipt
+      },
+    },
+  } as unknown as HostSession
+  const host = {
+    resolveActor: async (provided: unknown, surface: string) => {
+      expect(provided).toEqual(credential)
+      expect(surface).toBe('session')
+      return actor
+    },
+  } as unknown as Host
+  const frames: unknown[] = []
+  const remote = new RemoteSession(
+    'owned',
+    'writer',
+    1,
+    {
+      alive: true,
+      command: async (method: string, params: Record<string, unknown>) => {
+        frames.push(params)
+        return handleCommand(
+          hosted,
+          {
+            kind: 'command',
+            requestId: 'ui',
+            method: method as 'ui.action',
+            params,
+          },
+          { host, aborts: new Map() },
+        )
+      },
+    } as never,
+    '/synthetic',
+  )
+  expect(
+    await remote.intelligentUi.actionFromCredential(input, credential, new AbortController().signal),
+  ).toEqual(receipt)
+  expect(frames).toEqual([{ input, credential }])
+  expect(admitted).toEqual([{ request: input, actor }])
+})
+
+it('forwards voice calls with a voice run id and aborts them by run id', async () => {
+  const calls: unknown[][] = []
+  let settle!: (value: unknown) => void
+  const link = {
+    alive: true,
+    command: async (...args: unknown[]) => {
+      calls.push(args)
+      return args[0] === 'abort' ? undefined : new Promise((resolve) => (settle = resolve))
+    },
+  }
+  const remote = new RemoteSession('s', 'writer', 1, link as never, '/test')
+  const abort = new AbortController()
+  const spoken = remote.voice('voice.speak', { text: 'hi', route: 'r' }, abort.signal)
+  expect(calls).toEqual([
+    [
+      'voice.speak',
+      { text: 'hi', route: 'r', runId: expect.stringMatching(/^voice:/) },
+      { timeoutMs: 35_000 },
+    ],
+  ])
+  const runIdOf = (index: number) => (calls[index]?.[1] as { runId?: string } | undefined)?.runId
+  const runId = runIdOf(0)
+  expect(remote.running).toBe(true)
+  abort.abort()
+  expect(calls[1]).toEqual(['abort', { runId }])
+  expect(remote.running).toBe(true)
+  settle({ audio: 'AAAA', mimeType: 'audio/mpeg' })
+  await expect(spoken).resolves.toEqual({ audio: 'AAAA', mimeType: 'audio/mpeg' })
+  expect(remote.running).toBe(false)
+  // Each call has its own run id, and a call already aborted never reaches the worker.
+  const heard = remote.voice('voice.transcribe', { audio: 'A', route: 'r' }, new AbortController().signal)
+  expect(runIdOf(2)).toMatch(/^voice:/)
+  expect(runIdOf(2)).not.toBe(runId)
+  settle({ text: 'ok' })
+  await expect(heard).resolves.toEqual({ text: 'ok' })
+  await expect(remote.voice('voice.speak', { text: 'x', route: 'r' }, abort.signal)).rejects.toThrow()
+  expect(calls).toHaveLength(3)
 })

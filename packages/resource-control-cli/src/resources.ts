@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { McpServerDefinitionInput, ResourceDescriptor, ResourceOperation } from '@agnes/protocol'
+import { createMcpPreset } from '@agnes/resource-control-contracts/mcp-presets'
 import type { NodeClient } from '@agnes/sdk'
 
 /** Resource parser failures remain typed without importing the outer CLI command layer. */
@@ -59,7 +60,11 @@ export type TuiResourceController = Readonly<{
   ): Promise<Readonly<{ text: string; unsupported?: boolean }>>
 }>
 
-export type ResourceCommandIO = { write(text: string): void; confirm?: (summary: string) => Promise<boolean> }
+export type ResourceCommandIO = {
+  workspacePath?: string
+  write(text: string): void
+  confirm?: (summary: string) => Promise<boolean>
+}
 type Parsed = { action: string; positional: string[]; flags: Map<string, string[]> }
 
 /** Only a missing method is compatible with an older daemon; authorization and policy errors stay visible. */
@@ -97,6 +102,9 @@ const VALUE_FLAGS = new Set([
   '--expected-revision',
   '--root-key',
   '--name',
+  '--preset',
+  '--sandbox-profile',
+  '--sandbox-workspace',
   '--stdio',
   '--http',
   '--sse',
@@ -124,6 +132,10 @@ function parse(argv: readonly string[]): Parsed {
     if (FORBIDDEN_SECRET_FLAGS.has(value))
       throw new UsageError(`${value} is not accepted; use a secret:// reference flag instead`)
     if (value.startsWith('-')) {
+      if (value === '--yes') {
+        flags.set(value, ['true'])
+        continue
+      }
       if (!VALUE_FLAGS.has(value)) throw new UsageError(`unknown resource command flag ${value}`)
       const next = argv[++i]
       // A stdio argument may itself begin with a dash (`--arg -y`). It is still parsed as data,
@@ -163,7 +175,7 @@ function noExtra(parsed: Parsed, usage: string): void {
 }
 function onlyFlags(parsed: Parsed, allowed: readonly string[], usage: string): void {
   for (const flag of parsed.flags.keys())
-    if (!allowed.includes(flag))
+    if (flag !== '--yes' && !allowed.includes(flag))
       throw new UsageError(`usage: ${usage}; ${flag} does not apply to this action`)
 }
 function valid(value: string, expression: RegExp, label: string): string {
@@ -196,6 +208,24 @@ function expected(parsed: Parsed, usage: string): string {
   return valid(need(one(parsed, '--expected-revision'), usage), REVISION, 'expected revision')
 }
 
+async function workspaceIdFor(
+  parsed: Parsed,
+  client: NodeClient,
+  io: ResourceCommandIO,
+): Promise<string | undefined> {
+  const id = one(parsed, '--workspace-id')
+  if (id !== undefined) {
+    if (!REVISION.test(id)) throw new UsageError('--workspace-id must be a 64-character hex workspace id')
+    return id
+  }
+  if (!io.workspacePath) return undefined
+  const { workspace } = await client.workspace.add(io.workspacePath)
+  if (!workspace.workspaceId)
+    throw new UsageError('daemon did not return a workspaceId; upgrade it or pass --workspace-id explicitly')
+  io.write(`workspaceId ${workspace.workspaceId}\n`)
+  return workspace.workspaceId
+}
+
 function resourceLine(resource: ResourceDescriptor): string {
   if (resource.kind === 'skill') {
     const resolution = resource.resolution.winner ? 'winner' : 'shadowed'
@@ -204,7 +234,7 @@ function resourceLine(resource: ResourceDescriptor): string {
       : ''
     return `${resource.resourceId} name=${resource.name} revision=${resource.revision} trust=${resource.trust} desired=${resource.desired} actual=${resource.actual} ${resolution} source=${resource.sourceIdentity.scope}/${resource.sourceIdentity.rootKey}${resource.stale ? ' stale=true' : ''}${error}`
   }
-  return `${resource.serverId} revision=${resource.revision} trust=${resource.trust} desired=${resource.desired} actual=${resource.actual} transport=${resource.transportKind}`
+  return `${resource.serverId} revision=${resource.revision} trust=${resource.trust} desired=${resource.desired} actual=${resource.actual} transport=${resource.transportKind}${resource.transportKind === 'stdio' ? ` sandbox=${resource.sandboxProfile ?? ('sandboxProfile' in resource.definition ? resource.definition.sandboxProfile : undefined) ?? 'strict'}` : ''}`
 }
 function operationLine(operation: ResourceOperation): string {
   const result = operation.result
@@ -225,7 +255,11 @@ function receiptLine(operationId: string, state: string): string {
 }
 const TERMINAL = new Set<ResourceOperation['state']>(['succeeded', 'failed', 'cancelled'])
 const MAX_OPERATION_POLLS = 300
-async function confirm(io: ResourceCommandIO, summary: string): Promise<void> {
+async function confirm(io: ResourceCommandIO, summary: string, parsed: Parsed): Promise<void> {
+  if (parsed.flags.has('--yes')) {
+    io.write(`${summary}\n`)
+    return
+  }
   if (!(await (io.confirm?.(summary) ?? Promise.resolve(false))))
     throw new UsageError('operation cancelled; rerun and confirm the displayed revision and trust change')
 }
@@ -266,6 +300,16 @@ function buildDefinition(parsed: Parsed, serverId: string): McpServerDefinitionI
   const stdio = one(parsed, '--stdio')
   const http = one(parsed, '--http')
   const sse = one(parsed, '--sse')
+  const workspacePath = one(parsed, '--sandbox-workspace')
+  if (workspacePath && !stdio) throw new UsageError('--sandbox-workspace requires stdio')
+  const sandboxProfile = one(parsed, '--sandbox-profile')
+  if (
+    sandboxProfile &&
+    (!stdio || !['strict', 'workspace-write', 'network', 'off-with-warning'].includes(sandboxProfile))
+  )
+    throw new UsageError(
+      '--sandbox-profile requires stdio and one of strict, workspace-write, network, off-with-warning',
+    )
   // Count how many transport flags were provided
   const transportCount = [stdio, http, sse].filter((v) => v !== undefined).length
   if (transportCount !== 1)
@@ -302,6 +346,10 @@ function buildDefinition(parsed: Parsed, serverId: string): McpServerDefinitionI
       serverId,
       displayName,
       transport: { kind: 'stdio', executable: stdio, args },
+      ...(workspacePath ? { workspacePath } : {}),
+      ...(sandboxProfile
+        ? { sandboxProfile: sandboxProfile as 'strict' | 'workspace-write' | 'network' | 'off-with-warning' }
+        : {}),
       secretBinding: secretEnv.length ? { kind: 'stdio-env', env } : { kind: 'none' },
       ...(many(parsed, '--allow-tool').length
         ? { toolPolicy: { allow: [...many(parsed, '--allow-tool')] } }
@@ -360,6 +408,20 @@ export async function runResourceCommand(
 ): Promise<void> {
   const parsed = parse(argv)
   const p = profile(parsed)
+  if (kind === 'skills' && parsed.action === 'list') {
+    noExtra(parsed, 'agh skills list [--workspace-id <id>] [--cursor <cursor>]')
+    return runResourceCommand(
+      'resources',
+      [
+        'list',
+        '--kind',
+        'skill',
+        ...[...parsed.flags].flatMap(([key, values]) => values.flatMap((value) => [key, value])),
+      ],
+      client,
+      io,
+    )
+  }
   if (kind === 'resources') {
     if (parsed.action === 'list') {
       onlyFlags(
@@ -372,9 +434,10 @@ export async function runResourceCommand(
       if (kind !== undefined && kind !== 'skill' && kind !== 'mcp')
         throw new UsageError('--kind must be skill or mcp')
       const cursor = one(parsed, '--cursor')
-      const workspaceId = one(parsed, '--workspace-id')
-      if (workspaceId !== undefined && !/^[a-f0-9]{64}$/.test(workspaceId))
-        throw new UsageError('--workspace-id must be a 64-character hex workspace id')
+      const workspaceId =
+        kind === 'mcp' ? one(parsed, '--workspace-id') : await workspaceIdFor(parsed, client, io)
+      if (workspaceId !== undefined && !REVISION.test(workspaceId))
+        throw new UsageError('invalid workspace id')
       const page = await client.resources.list({
         profile: p,
         ...(kind ? { kind } : {}),
@@ -394,11 +457,9 @@ export async function runResourceCommand(
                 'No resources found.',
                 'Skill files are scanned from these templates only:',
                 '<workspace>/.agh/skills/<name>/SKILL.md',
-                '~/.agh/skills/<name>/SKILL.md',
-                '~/.agents/skills/<name>/SKILL.md',
-                '~/.claude/skills/<name>/SKILL.md',
-                '~/.codex/skills/<name>/SKILL.md',
-                'Only immediate child directories of those roots. Ordinary skills/ folders are ignored.',
+                '$AGH_HOME/skills/<name>/SKILL.md (or <name>.md)',
+                'Other tools user folders require AGNES_SKILLS_IMPORT_USER=1 on daemon startup.',
+                'Ordinary skills/ folders are ignored.',
               ].join('\n'),
       )
       if (page.nextCursor) io.write(`\nnextCursor ${page.nextCursor}`)
@@ -426,7 +487,7 @@ export async function runResourceCommand(
       onlyFlags(parsed, ['--profile'], 'agh resources cancel <operationId>')
       noExtra({ ...parsed, positional: parsed.positional.slice(1) }, 'agh resources cancel <operationId>')
       const operationId = need(parsed.positional[0], 'agh resources cancel <operationId>')
-      await confirm(io, `cancel resource operation ${operationId}`)
+      await confirm(io, `cancel resource operation ${operationId}`, parsed)
       const receipt = await client.resources.operation.cancel({
         profile: p,
         operationId,
@@ -458,7 +519,7 @@ export async function runResourceCommand(
         parsed,
         `agh resources ${parsed.action} <skillResourceId> --expected-revision <revision>`,
       )
-      await confirm(io, `${parsed.action} ${resourceId} at revision ${revision}`)
+      await confirm(io, `${parsed.action} ${resourceId} at revision ${revision}`, parsed)
       const receipt = await client.resources.desiredSet({
         profile: p,
         resourceId,
@@ -485,10 +546,11 @@ export async function runResourceCommand(
       if (requestedRoot !== undefined && !isSkillRoot(requestedRoot))
         throw new UsageError('invalid skill root key')
       const rootKey = requestedRoot
-      const workspaceId = one(parsed, '--workspace-id')
-      if (workspaceId !== undefined && !/^[a-f0-9]{64}$/.test(workspaceId))
-        throw new UsageError('--workspace-id must be a 64-character hex workspace id')
-      await confirm(io, `refresh skills${rootKey ? ` from ${rootKey}` : ''}`)
+      const givenWorkspace = one(parsed, '--workspace-id')
+      if (givenWorkspace !== undefined && !REVISION.test(givenWorkspace))
+        throw new UsageError('invalid workspace id')
+      await confirm(io, `refresh skills${rootKey ? ` from ${rootKey}` : ''}`, parsed)
+      const workspaceId = await workspaceIdFor(parsed, client, io)
       const receipt = await client.skills.refresh({
         profile: p,
         ...(rootKey ? { rootKey } : {}),
@@ -516,7 +578,7 @@ export async function runResourceCommand(
       const trust = (parsed.positional[2] ?? 'trusted') as 'trusted' | 'rejected'
       if (trust !== 'trusted' && trust !== 'rejected')
         throw new UsageError('skill trust must be trusted or rejected')
-      await confirm(io, `set Skill ${resourceId} revision ${revision} trust=${trust}`)
+      await confirm(io, `set Skill ${resourceId} revision ${revision} trust=${trust}`, parsed)
       const receipt = await client.skills.trustSet({
         profile: p,
         resourceId,
@@ -528,7 +590,7 @@ export async function runResourceCommand(
       await waitForOperation(client, p, receipt, io)
       return
     }
-    throw new UsageError('usage: agh skills refresh|trust ...')
+    throw new UsageError('usage: agh skills list|refresh|trust ...')
   }
   const serverId = parsed.positional[0]
   const effect = async (action: 'remove' | 'test' | 'enable' | 'disable' | 'reconnect' | 'trust') => {
@@ -550,7 +612,7 @@ export async function runResourceCommand(
     const trust = action === 'trust' ? (parsed.positional[1] ?? 'trusted') : undefined
     if (trust !== undefined && trust !== 'trusted' && trust !== 'rejected')
       throw new UsageError('MCP trust must be trusted or rejected')
-    await confirm(io, `${action} MCP ${id} at revision ${revision}${trust ? ` trust=${trust}` : ''}`)
+    await confirm(io, `${action} MCP ${id} at revision ${revision}${trust ? ` trust=${trust}` : ''}`, parsed)
     const common = {
       profile: p,
       serverId: id,
@@ -573,7 +635,18 @@ export async function runResourceCommand(
                     ...common,
                     trust: (parsed.positional[1] ?? 'trusted') as 'trusted' | 'rejected',
                   })
-    await waitForOperation(client, p, receipt, io)
+    try {
+      await waitForOperation(client, p, receipt, io)
+    } catch (error) {
+      if (error instanceof ResourceOperationFailure && ['enable', 'test', 'reconnect'].includes(action)) {
+        const status = await client.mcp.servers.status({ profile: p, serverId: id }).catch(() => undefined)
+        if (status?.lastSafeError)
+          io.write(
+            `${status.lastSafeError.code}: ${status.lastSafeError.message}; run agh mcp status ${id} after correcting the definition or policy\n`,
+          )
+      }
+      throw error
+    }
   }
   switch (parsed.action) {
     case 'list': {
@@ -606,7 +679,7 @@ export async function runResourceCommand(
           serverId: valid(need(serverId, 'agh mcp status <serverId>'), SERVER, 'server id'),
         })
         io.write(
-          `${value.serverId} connection=${value.connectionState} revision=${value.observedRevision ?? 'none'} catalog=${value.catalogRevision ?? 'none'} tools=${value.toolCount}${value.lastSafeError ? `\n${value.lastSafeError.code}: ${value.lastSafeError.message}` : ''}`,
+          `${value.serverId} connection=${value.connectionState} revision=${value.observedRevision ?? 'none'} catalog=${value.catalogRevision ?? 'none'} tools=${value.toolCount}${value.sandboxProfile ? ` sandbox=${value.sandboxProfile}` : ''}${value.lastSafeError ? `\n${value.lastSafeError.code}: ${value.lastSafeError.message}` : ''}`,
         )
         return
       }
@@ -629,11 +702,15 @@ export async function runResourceCommand(
       return
     }
     case 'add': {
+      const preset = one(parsed, '--preset')
       onlyFlags(
         parsed,
         [
           '--profile',
+          '--preset',
           '--name',
+          '--sandbox-profile',
+          '--sandbox-workspace',
           '--stdio',
           '--http',
           '--sse',
@@ -645,17 +722,40 @@ export async function runResourceCommand(
         ],
         'agh mcp add <serverId> ...',
       )
-      if (parsed.positional.length !== 1) throw new UsageError('usage: agh mcp add <serverId> ...')
+      if (parsed.positional.length > 1 || (!preset && parsed.positional.length !== 1))
+        throw new UsageError(
+          'usage: agh mcp add [<serverId>] --preset playwright, or agh mcp add <serverId> ...',
+        )
       const id = valid(
         need(
-          serverId,
+          serverId ?? preset,
           'agh mcp add <serverId> --name <name> (--stdio <executable> | --http <url> | --sse <url>)',
         ),
         SERVER,
         'server id',
       )
-      const definition = buildDefinition(parsed, id)
-      await confirm(io, `add MCP ${id} (${definition.transport.kind}) with trust=untrusted`)
+      let definition: McpServerDefinitionInput
+      if (preset) {
+        onlyFlags(
+          parsed,
+          ['--profile', '--preset', '--sandbox-workspace'],
+          'agh mcp add [<serverId>] --preset playwright [--sandbox-workspace <path>]',
+        )
+        try {
+          const workspacePath = one(parsed, '--sandbox-workspace')
+          definition = createMcpPreset(preset, {
+            serverId: id,
+            ...(workspacePath === undefined ? {} : { workspacePath }),
+          })
+        } catch (error) {
+          throw new UsageError(error instanceof Error ? error.message : 'Invalid MCP preset')
+        }
+      } else definition = buildDefinition(parsed, id)
+      await confirm(
+        io,
+        `add MCP ${id} (${definition.transport.kind}) with trust=untrusted${'sandboxProfile' in definition ? ` sandbox=${definition.sandboxProfile}` : ''}${'workspacePath' in definition ? ` workspace=${definition.workspacePath}` : ''}`,
+        parsed,
+      )
       const receipt = await client.mcp.servers.create({
         profile: p,
         definition,
@@ -664,7 +764,7 @@ export async function runResourceCommand(
       })
       await waitForOperation(client, p, receipt, io)
       io.write(
-        `MCP ${id} was created but is not usable yet (trust=untrusted, desired=disabled): run /mcp trust ${id} --expected-revision <revision> to pass the trust review, then /mcp enable ${id} --expected-revision <revision> to enable it (see revision=... above for <revision>)
+        `MCP ${id} was created but is not usable yet (trust=untrusted, desired=disabled): run agh mcp trust ${id} --expected-revision <revision> to pass the trust review, then agh mcp enable ${id} --expected-revision <revision> to enable it (see revision=... above for <revision>)
 `,
       )
       return
@@ -676,6 +776,8 @@ export async function runResourceCommand(
           '--profile',
           '--expected-revision',
           '--name',
+          '--sandbox-profile',
+          '--sandbox-workspace',
           '--stdio',
           '--http',
           '--sse',
@@ -698,7 +800,11 @@ export async function runResourceCommand(
       )
       const revision = expected(parsed, 'agh mcp update <serverId> --expected-revision <revision> ...')
       const definition = buildDefinition(parsed, id)
-      await confirm(io, `update MCP ${id} at revision ${revision}; trust will need review`)
+      await confirm(
+        io,
+        `update MCP ${id} at revision ${revision}; trust will need review${'sandboxProfile' in definition ? ` sandbox=${definition.sandboxProfile}` : ''}${'workspacePath' in definition ? ` workspace=${definition.workspacePath}` : ''}`,
+        parsed,
+      )
       const receipt = await client.mcp.servers.update({
         profile: p,
         serverId: id,

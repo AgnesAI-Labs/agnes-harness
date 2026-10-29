@@ -2,9 +2,10 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { presets as basePresets } from '@agnes/base'
-import { presets as codePresets, PRESET_NAMES } from '@agnes/code'
+import { presets as codePresets, PRESET_NAMES, runtimes } from '@agnes/code'
+import { DEFAULT_LOOP } from '@agnes/core'
+import type { PresetDoc } from '@agnes/host-common/presets/types'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { PresetDoc } from '../src/presets/types.js'
 import { createTestHost, runOnce } from '../testkit/index.js'
 
 /**
@@ -48,8 +49,11 @@ const hostFor = async (
   createTestHost({
     dataDir,
     presets: codePresets as Record<string, PresetDoc>,
-    packages: { '@agnes/base': { presets: basePresets as Record<string, PresetDoc> } },
-    allowed: [...PRESET_NAMES],
+    packages: {
+      '@agnes/base': { presets: basePresets as Record<string, PresetDoc> },
+      '@agnes/code': { runtimes },
+    },
+    allowed: [...RECIPES],
     ...(platformCaps ? { platformCaps } : {}),
     script: [
       () => [
@@ -59,11 +63,14 @@ const hostFor = async (
     ],
   })
 
+// Permission overlays are merged after a recipe; they are not recipes a session can open.
+const RECIPES = PRESET_NAMES.filter((name) => !name.startsWith('permission-'))
+
 describe('the shipped presets, loaded from disk', () => {
   // One Host and one session per shipped recipe: each is about a second on the Windows runner.
   it('every registered recipe is a document the assembly accepts and a session opens on', async () => {
-    expect(PRESET_NAMES.length).toBeGreaterThan(0)
-    for (const name of PRESET_NAMES) {
+    expect(RECIPES.length).toBeGreaterThan(0)
+    for (const name of RECIPES) {
       const dataDir = tmp()
       const t = await hostFor(dataDir, name)
       try {
@@ -77,11 +84,24 @@ describe('the shipped presets, loaded from disk', () => {
 
   it('the default recipe carries a turn end to end', async () => {
     const dataDir = tmp()
-    const t = await hostFor(dataDir, 'standard')
+    let t = await hostFor(dataDir, 'standard')
     try {
       const r = await runOnce(t.host, { prompt: 'hello', cwd: dataDir })
       expect(r.reason).toBe('completed')
       expect(r.finalText).toContain('opened on standard')
+      const start = r.events.find((event) => event.type === 'session/start')?.data as
+        | { key: string; loop: unknown }
+        | undefined
+      if (!start) throw new Error('the default recipe did not record session/start')
+      expect(start.loop).toEqual(DEFAULT_LOOP)
+      const key = start.key
+      await t.host.close()
+      t = await hostFor(dataDir, 'standard')
+      const resumed = await t.host.createSession({ key, cwd: dataDir })
+      expect(resumed.loop).toEqual(DEFAULT_LOOP)
+      expect((await resumed.scan({ type: 'session/start', limit: 1 }))[0]?.data).toMatchObject({
+        loop: DEFAULT_LOOP,
+      })
     } finally {
       await t.host.close()
     }
@@ -91,7 +111,7 @@ describe('the shipped presets, loaded from disk', () => {
   // not open a session when the platform cannot provide it: an unattended run has no operator to
   // notice that the isolation it assumed is missing. The recipe declaring the key is one claim; the
   // host acting on it is the other, and only this one is evidence.
-  it('refuses to open claw on a platform that cannot provide L1, and opens standard on the same one', async () => {
+  it('refuses to open claw on a platform that cannot provide L1, and opens explicit full-access on the same one', async () => {
     const dataDir = tmp()
     const t = await hostFor(dataDir, 'claw', { 'sandbox.l1': 'unavailable' })
     try {
@@ -99,9 +119,9 @@ describe('the shipped presets, loaded from disk', () => {
         code: 'E_PRESET_UNSUPPORTED',
         detail: { capability: 'sandbox.l1' },
       })
-      // The same platform, a recipe that does not require L1: it opens. Without this the case would
+      // The same platform, an explicit L0 recipe: it opens. Without this the case would
       // also pass if the host refused every session on that platform.
-      const s = await t.host.createSession({ cwd: dataDir, preset: 'standard' })
+      const s = await t.host.createSession({ cwd: dataDir, preset: 'standard', permission: 'full-access' })
       expect(s.key).toBeDefined()
     } finally {
       await t.host.close()

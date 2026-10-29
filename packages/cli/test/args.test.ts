@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { type ParsedArgs, parseArgs, resolveMode, usage } from '../src/args.js'
+import { COMMANDS, type ParsedArgs, parseArgs, resolveMode, usage } from '../src/args.js'
 import { UsageError } from '../src/errors.js'
+import { mistypedCommand } from '../src/suggest.js'
+import { refuseTurnCapsOutsidePrint } from '../src/turn-caps.js'
 
 const throws = (argv: string[]): UsageError => {
   try {
@@ -31,13 +33,34 @@ describe('parseArgs: the common forms', () => {
     expect(p.command).toBeUndefined()
   })
 
+  it('--no-alt-screen is a boolean flag of the interactive form, absent by default and listed in usage', () => {
+    expect(parseArgs(['hello'])).not.toHaveProperty('noAltScreen')
+    expect(parseArgs(['--no-alt-screen', 'hello'])).toMatchObject({
+      noAltScreen: true,
+      positional: ['hello'],
+    })
+    expect(usage()).toContain('--no-alt-screen')
+  })
+
+  it('--safe-mode and --ignore-rules are refused unless this client starts the host itself', () => {
+    for (const flag of ['--safe-mode', '--ignore-rules']) {
+      expect(parseArgs([flag, '--ephemeral'])).toMatchObject({ ephemeral: true })
+      expect(parseArgs(['-p', 'x', flag, '--standalone'])).toMatchObject({ standalone: true })
+      // The shared daemon, whether attached by default or named with --connect (even beside --standalone).
+      expect(() => parseArgs([flag])).toThrow(/needs a private host/)
+      expect(() => parseArgs([flag, '--connect', 'ws://h'])).toThrow(/needs a private host/)
+      expect(() => parseArgs([flag, '--standalone', '--connect', 'ws://h'])).toThrow(/needs a private host/)
+      expect(() => parseArgs(['sessions', flag, '--ephemeral'])).toThrow(/only to starting or resuming/)
+    }
+    expect(parseArgs(['--safe-mode', '--ephemeral'])).toMatchObject({ safeMode: true })
+    expect(parseArgs(['--ignore-rules', '--ephemeral'])).toMatchObject({ ignoreRules: true })
+  })
+
   it('-p with the one-shot flags', () => {
-    const p = parseArgs(['-p', 'hi', '--mode', 'json', '--park', '--meta', '--ephemeral', '--standalone'])
+    const p = parseArgs(['-p', 'hi', '--mode', 'json', '--ephemeral', '--standalone'])
     expect(p).toMatchObject({
       print: true,
       mode: 'json',
-      park: true,
-      meta: true,
       ephemeral: true,
       standalone: true,
       positional: ['hi'],
@@ -47,6 +70,7 @@ describe('parseArgs: the common forms', () => {
   it('--mode selects the one-shot form on its own, for both of its printing values', () => {
     expect(parseArgs(['--mode', 'json']).print).toBe(true)
     expect(parseArgs(['--mode', 'text']).print).toBe(true)
+    expect(parseArgs(['--mode', 'stream-json']).print).toBe(true)
     // acp is a third form, not a printing one, so it does not set print.
     expect(parseArgs(['--mode', 'acp']).print).toBe(false)
   })
@@ -62,7 +86,6 @@ describe('parseArgs: the common forms', () => {
       version: false,
       continue: false,
       park: false,
-      meta: false,
       ephemeral: false,
       json: false,
       html: false,
@@ -70,6 +93,8 @@ describe('parseArgs: the common forms', () => {
       repair: false,
       upgrade: false,
       resolved: false,
+      archived: false,
+      force: false,
       probe: false,
     })
   })
@@ -86,7 +111,31 @@ describe('parseArgs: the common forms', () => {
   it('every long value flag records its value under its own key', () => {
     const p = parseArgs(['--profile', 'a', '--preset', 'b', '--cwd', '/c', '--connect', 'unix:///s'])
     expect(p).toMatchObject({ profile: 'a', preset: 'b', cwd: '/c', connect: 'unix:///s' })
+    expect(p.permission).toBeUndefined()
+    for (const level of ['read-only', 'workspace-write', 'full-access', 'default'])
+      expect(parseArgs(['--preset', 'b', '--permission', level])).toMatchObject({
+        preset: 'b',
+        permission: level,
+      })
     expect(parseArgs(['--resume', 'sid']).resume).toBe('sid')
+  })
+
+  it('--tools and --disallowed-tools record exact names, deduplicated, for a new or resumed session', () => {
+    expect(
+      parseArgs(['--tools', 'read_file,grep,read_file', '--disallowed-tools', 'bash']).toolFilter,
+    ).toEqual({
+      allow: ['read_file', 'grep'],
+      deny: ['bash'],
+    })
+    expect(parseArgs(['-p', 'go', '--disallowed-tools', 'bash,web_fetch']).toolFilter).toEqual({
+      deny: ['bash', 'web_fetch'],
+    })
+    expect(parseArgs(['resume', 'sid', '--tools', 'read_file']).toolFilter).toEqual({ allow: ['read_file'] })
+    expect(parseArgs(['--resume', 'sid', '--tools', 'read_file']).toolFilter).toEqual({
+      allow: ['read_file'],
+    })
+    expect(parseArgs(['go']).toolFilter).toBeUndefined()
+    expect(usage()).toContain('--disallowed-tools')
   })
 
   it('-h/-v are the short spellings of --help/--version', () => {
@@ -144,16 +193,6 @@ describe('parseArgs: subcommands', () => {
     expect(usage()).toContain('agh computer-use status [--json]')
   })
 
-  it('hands the tail of agh batch to its own grammar and lists it in the usage', () => {
-    expect(parseArgs(['batch', 'start', 'lab', '--prompt', 'x', '--json'])).toMatchObject({
-      command: 'batch',
-      rest: ['start', 'lab', '--prompt', 'x', '--json'],
-      positional: [],
-      json: false,
-    })
-    expect(usage()).toContain('agh batch start <dir>')
-  })
-
   it('collects repeated Computer Use doctor include and skip selectors without swallowing them', () => {
     expect(
       parseArgs([
@@ -169,6 +208,7 @@ describe('parseArgs: subcommands', () => {
     ).toMatchObject({ include: ['binary', 'display'], skip: ['display'] })
     expect(throws(['doctor', 'computer-use', '--include', '--json']).message).toBe('--include needs a value')
     expect(throws(['computer-use', 'status', '--include', 'binary']).message).toBe('unknown flag --include')
+    expect(throws(['-p', 'hi', '--meta']).message).toBe('unknown flag --meta')
     expect(throws(['doctor', 'computer-use', '--token=S3CR3T_MARKER']).message).toBe('unknown flag --token')
     expect(throws(['doctor', 'computer-use', '-S3CR3T_MARKER']).message).toBe('unknown flag')
     expect(usage()).toContain('permissions status|grant [--json]')
@@ -195,6 +235,14 @@ describe('parseArgs: subcommands', () => {
       ['serve', 'model-api', '--port', '8080'],
       ['model-api', '--port', '8080'],
     ],
+    [
+      ['web', '--port', '4180', '--home', '/tmp/agh-home'],
+      ['--port', '4180', '--home', '/tmp/agh-home'],
+    ],
+    [
+      ['start', '--port', '4180'],
+      ['--port', '4180'],
+    ],
     [['daemon'], []],
   ])('%j forwards everything after the command verbatim', (argv, rest) => {
     const p = parseArgs(argv as string[])
@@ -213,6 +261,15 @@ describe('parseArgs: subcommands', () => {
     ])
   })
 
+  it('a lone word one typo from a command is still a prompt, but is named for the hint', () => {
+    expect(parseArgs(['sesions']).positional).toEqual(['sesions'])
+    expect(mistypedCommand(parseArgs(['sesions']), COMMANDS)).toBe('sessions')
+    expect(mistypedCommand(parseArgs(['sessions']), COMMANDS)).toBeUndefined()
+    expect(mistypedCommand(parseArgs(['-p', 'sesions']), COMMANDS)).toBeUndefined()
+    expect(mistypedCommand(parseArgs(['fix', 'the', 'bug']), COMMANDS)).toBeUndefined()
+    expect(mistypedCommand(parseArgs(['hello']), COMMANDS)).toBeUndefined()
+  })
+
   it('a word that is not a command is a prompt, not an error', () => {
     const unknown = parseArgs(['doctorr'])
     expect(unknown.command).toBeUndefined()
@@ -224,6 +281,12 @@ describe('parseArgs: subcommands', () => {
     expect(late.rest).toEqual([])
   })
 
+  it('a lone dash is stdin data: a value for --file and --params, a positional otherwise', () => {
+    expect(parseArgs(['triggers', 'add', '--file', '-']).file).toBe('-')
+    expect(parseArgs(['api', 'session.list', '--params', '-']).params).toBe('-')
+    expect(parseArgs(['queue', 'k', '-']).positional).toEqual(['k', '-'])
+  })
+
   it('-- stops parsing and passes the remainder through as positionals', () => {
     expect(parseArgs(['-p', '--', '--not-a-flag', '-x']).positional).toEqual(['--not-a-flag', '-x'])
   })
@@ -232,13 +295,16 @@ describe('parseArgs: subcommands', () => {
 describe('parseArgs: every rejection says which check fired', () => {
   it.each([
     [['--bogus'], 'unknown flag --bogus'],
+    [['--jsno'], 'unknown flag --jsno; did you mean --json?'],
+    [['--no-alt-scren'], 'unknown flag --no-alt-scren; did you mean --no-alt-screen?'],
     [['-x'], 'unknown flag -x'],
     [['--profile'], '--profile needs a value'],
     [['--profile', '--preset', 'b'], '--profile needs a value'],
     [['--mode'], '--mode needs a value'],
-    [['--mode', 'rpc'], '--mode must be one of text|json|acp'],
+    [['--mode', 'rpc'], '--mode must be one of text|json|stream-json|acp'],
     [['--format', 'yaml'], '--format must be one of agnes|sharegpt|claude-code'],
     [['--from', 'aider'], '--from must be one of claude-code|codex|pi|auto'],
+    [['--permission', 'root'], '--permission must be one of read-only|workspace-write|full-access|default'],
     [['--model'], '--model expects <slot>=<route>/<model>'],
     [['--model', 'noequals'], '--model expects <slot>=<route>/<model>'],
     [['--model', 'primary=gateway'], '--model expects <slot>=<route>/<model>'],
@@ -257,9 +323,47 @@ describe('parseArgs: every rejection says which check fired', () => {
     [['--model', 'pri mary=gateway/x'], '--model expects <slot>=<route>/<model>'],
     [['--model', 'primary.fast=gateway/x'], '--model expects <slot>=<route>/<model>'],
     [['--model', '1=gateway/x'], '--model expects <slot>=<route>/<model>'],
+    [['--tools'], '--tools needs a value'],
+    [['--disallowed-tools', '--json'], '--disallowed-tools needs a value'],
+    [
+      ['--tools', 'read,'],
+      '--tools expects comma-separated tool names (letters, digits, underscore; no wildcards)',
+    ],
+    [
+      ['--tools', 'read*'],
+      '--tools expects comma-separated tool names (letters, digits, underscore; no wildcards)',
+    ],
+    [
+      ['--disallowed-tools', 'a b'],
+      '--disallowed-tools expects comma-separated tool names (letters, digits, underscore; no wildcards)',
+    ],
+    [
+      ['--tools', Array.from({ length: 129 }, (_, n) => `t${n}`).join(',')],
+      '--tools names more than 128 tools',
+    ],
+    [['--tools', 'a', '--tools', 'b'], '--tools was given twice; list every tool in one value'],
+    [
+      ['sessions', '--tools', 'a'],
+      '--tools and --disallowed-tools apply only when starting or resuming a session',
+    ],
+    [
+      ['--mode', 'acp', '--disallowed-tools', 'a'],
+      '--tools and --disallowed-tools apply only when starting or resuming a session',
+    ],
   ])('%j is rejected with %s', (argv, message) => {
     expect(throws(argv as string[]).message).toBe(message)
   })
+
+  it.each([['--max-budget'], ['--max-turns'], ['--timeout'], ['--output-file']])(
+    '%s is refused outside -p and allowed with it',
+    (flag) => {
+      for (const mode of ['tui', 'acp'])
+        expect(() => refuseTurnCapsOutsidePrint(parseArgs([flag, '1']), mode)).toThrow(
+          `${flag} is supported only with -p`,
+        )
+      expect(() => refuseTurnCapsOutsidePrint(parseArgs(['-p', flag, '1']), 'print')).not.toThrow()
+    },
+  )
 
   it('a rejection is a UsageError and carries exit code 2', () => {
     const e = throws(['--bogus'])
@@ -330,6 +434,8 @@ describe('usage', () => {
     'import',
     'doctor',
     'profile',
+    'plugins',
+    'dev',
     'package',
     'install',
     'consent',
@@ -337,15 +443,22 @@ describe('usage', () => {
     'config',
     'conformance',
     'daemon',
-    'ext',
-    'mcp serve',
-    'serve model-api',
+    'agh web',
+    'agh start',
   ])('mentions %s', (c) => {
     expect(usage()).toContain(c)
   })
 
+  it('does not list commands this build refuses, nor the removed --meta and --park', () => {
+    expect(usage()).not.toMatch(/agh ext|mcp serve|serve model-api|--meta|--park/)
+  })
+
   it('mentions every accepted flag spelling, so the grammar and the help text cannot drift', () => {
     const text = usage()
+    expect(text.split('Advanced:')[0]).toContain('--agent <package#agent>')
+    expect(text.split('Advanced:')[0]).not.toMatch(/--bundle|--preset|FDE/)
+    expect(usage('zh-CN')).toContain('智能体')
+    expect(usage('zh-CN')).toContain('应用恢复：agh app clear')
     for (const flag of [
       '--profile',
       '--preset',
@@ -355,8 +468,6 @@ describe('usage', () => {
       '--connect',
       '--model',
       '--mode',
-      '--park',
-      '--meta',
       '--ephemeral',
       '--standalone',
       '--json',
@@ -371,4 +482,92 @@ describe('usage', () => {
     ])
       expect(text, flag).toContain(flag)
   })
+})
+
+it('selects a versioned loop, including a scoped id, and refuses missing versions or resume overrides', () => {
+  expect(parseArgs(['-p', 'hello', '--loop', '@example/dag@1.0.0']).loop).toEqual({
+    id: '@example/dag',
+    version: '1.0.0',
+  })
+  for (const argv of [
+    ['--loop'],
+    ['--loop', 'dag'],
+    ['--loop', 'dag@'],
+    ['--continue', '--loop', 'dag@1'],
+    ['resume', 'id', '--loop', 'dag@1'],
+  ])
+    expect(() => parseArgs(argv)).toThrow(UsageError)
+})
+
+it('appends to a new session prompt only: refuses a resume, an agent, both flags and a missing value', () => {
+  expect(parseArgs(['-p', 'hi', '--append-system-prompt', 'Be brief.']).appendSystemPrompt).toBe('Be brief.')
+  expect(parseArgs(['-p', 'hi', '--append-system-prompt-file', 'rules.md']).appendSystemPromptFile).toBe(
+    'rules.md',
+  )
+  for (const argv of [
+    ['--append-system-prompt'],
+    ['--append-system-prompt', 'a', '--append-system-prompt-file', 'b'],
+    ['--continue', '--append-system-prompt', 'a'],
+    ['--resume', 'id', '--append-system-prompt-file', 'a'],
+    ['resume', 'id', '--append-system-prompt', 'a'],
+    ['--agent', '@acme/kit#review', '--append-system-prompt', 'a'],
+  ])
+    expect(() => parseArgs(argv), argv.join(' ')).toThrow(UsageError)
+})
+
+it('recognizes help before forwarding commands and leaves stdio arguments as data', () => {
+  for (const command of [
+    'serve',
+    'web',
+    'start',
+    'mcp',
+    'skills',
+    'resources',
+    'daemon',
+    'ext',
+    'plugins',
+    'package',
+    'install',
+    'doctor',
+    'config',
+  ]) {
+    expect(parseArgs([command, '--help']).help, command).toBe(true)
+    expect(parseArgs([command, 'test', '--help']).help, command).toBe(true)
+  }
+  expect(parseArgs(['mcp', 'add', 'example', '--arg', '--help']).help).toBe(false)
+  expect(parseArgs(['mcp', 'serve', '--', '--help']).help).toBe(false)
+  expect(parseArgs(['install', 'file:./example', '--yes']).yes).toBe(true)
+})
+
+it('keeps candidate review digests supplied by the human instead of selecting the latest draft', () => {
+  const candidateHash = 'sha256-' + 'a'.repeat(64),
+    reviewHash = 'sha256-' + 'b'.repeat(64)
+  expect(
+    parseArgs([
+      'plugins',
+      'candidates',
+      'approve',
+      'candidate-' + 'c'.repeat(32),
+      '--candidate-hash',
+      candidateHash,
+      '--review-hash',
+      reviewHash,
+    ]),
+  ).toMatchObject({ command: 'plugins', candidateHash, reviewHash })
+  for (const flag of ['--candidate-hash', '--review-hash'])
+    expect(() => parseArgs(['plugins', 'candidates', 'approve', flag])).toThrow(UsageError)
+})
+
+it('selects an explicit agent without exposing bundle knowledge and refuses conflicting or resumed targets', () => {
+  expect(parseArgs(['-p', 'hello', '--agent', '@acme/kit#review']).agent).toBe('@acme/kit#review')
+  for (const argv of [
+    ['--agent'],
+    ['--agent', 'missing-ref'],
+    ['--agent', '@acme/kit#review', '--loop', 'dag@1'],
+    ['--agent', '@acme/kit#review', '--preset', 'safe'],
+    ['--agent', '@acme/kit#review', '--permission', 'read-only'],
+    ['--continue', '--agent', '@acme/kit#review'],
+    ['tools', '--session', 'existing', '--agent', '@acme/kit#review'],
+  ])
+    expect(() => parseArgs(argv)).toThrow()
 })

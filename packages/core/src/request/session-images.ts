@@ -1,14 +1,14 @@
+import { sha256Hex } from '@agnes/core-common/request/hash'
 import type { ToolResult } from '@agnes/extension-api'
-import { type ContentBlock, modelImageInputError } from '@agnes/protocol'
+import { type ContentBlock, modelImageInputError, storedAttachment } from '@agnes/protocol'
 import { decodeSafeImages, USER_MESSAGE_IMAGE_LIMITS } from '@agnes/protocol-validation'
 import { REQUEST_MEDIA_MIN_DIMENSION } from '../orchestrator/request-media.js'
 import { resolveModel } from '../step/inference.js'
 import { resolvedModelRecord } from '../step/model-tools.js'
 import type { SessionImpl } from '../step/session.js'
-import { attachmentBytes, attachmentFailureCode } from './attachment-bytes.js'
-import type { AttachmentEntry } from './attachment-index.js'
-import { sha256Hex } from './hash.js'
+import { attachmentIndex } from './attachment-index.js'
 import { sessionImageRef } from './inline-images.js'
+import { readSessionAttachment } from './session-files.js'
 
 const result = (text: string, isError = false): ToolResult => ({
   content: [{ type: 'text', text }],
@@ -31,16 +31,15 @@ export async function readSessionImages(
     const limit = Math.min(input.limit ?? 20, 100)
     if (!Number.isSafeInteger(offset) || offset < 1 || !Number.isSafeInteger(limit) || limit < 1)
       return result('Invalid image list offset or limit.', true)
-    // From the session's attachment index: the ledger is not read to list what it holds.
     const lines: string[] = []
-    let ordinal = 0
-    for (const entry of session.attachmentIndex.list('image', session.lane)) {
-      if (entry.seq > end) break
+    let ordinal = offset - 1
+    const indexed = await attachmentIndex(session)
+    for (const image of indexed.images.slice(offset - 1, offset + limit)) {
+      abort()
       ordinal++
-      if (ordinal < offset) continue
       if (lines.length === limit)
         return result(`${lines.join('\n')}\n[read session-image://list with offset=${ordinal} to continue]`)
-      lines.push(`${ordinal}. ${sessionImageRef(entry.seq, entry.index)}`)
+      lines.push(`${ordinal}. ${sessionImageRef(image.seq, image.index)}`)
     }
     return result(lines.join('\n') || 'No images at this offset in this session.')
   }
@@ -51,47 +50,39 @@ export async function readSessionImages(
     new Set(references).size !== references.length
   )
     return result('Invalid session image reference.', true)
-  // Every image is located first, and the batch is judged on the sizes the index records, so a
-  // batch that cannot be admitted is refused before any of its bytes are read.
-  const entries: AttachmentEntry[] = []
+  const images: Extract<ContentBlock, { type: 'image' }>[] = []
   for (const reference of references) {
     const match = /^([1-9][0-9]*)\/([1-9][0-9]*)$/.exec(reference)
     const seq = Number(match?.[1])
     const index = Number(match?.[2])
     if (!match || !Number.isSafeInteger(seq) || seq > end || !Number.isSafeInteger(index))
       return result('Invalid session image reference.', true)
-    const entry = session.attachmentIndex.get(seq, 'image', index)
-    if (!entry || entry.lane !== session.lane)
-      return result('The image is not available in this session.', true)
-    entries.push(entry)
-  }
-  const recorded = entries.reduce((n, entry) => n + entry.bytes, 0)
-  const media = session.d.requestMedia?.mediaLimits
-  if (
-    entries.some((entry) => entry.bytes > USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage) ||
-    recorded > USER_MESSAGE_IMAGE_LIMITS.maxAggregateBytes ||
-    (media &&
-      (entries.some((entry) => entry.bytes > media.maxBytesPerImage) || recorded > media.maxSelectedBytes))
-  )
-    return result('The requested image batch exceeds safe size or pixel limits. Read fewer images.', true)
-  const images: Extract<ContentBlock, { type: 'image'; data: string }>[] = []
-  for (const [at, entry] of entries.entries()) {
     abort()
-    let bytes: Uint8Array
-    try {
-      bytes = await attachmentBytes(session, entry, signal)
-    } catch (error) {
-      if (!attachmentFailureCode(error)) throw error
-      return result(
-        `session-image://${references[at]} cannot be read: ${(error as Error).message.replace(/^E_ENVELOPE: /u, '')}`,
-        true,
+    const rows = await session.d.log.scan({
+      fromSeq: seq,
+      toSeq: seq,
+      type: 'user/message',
+      lane: session.lane,
+      limit: 1,
+    })
+    const content = (rows[0]?.data as { content?: ContentBlock[] } | undefined)?.content ?? []
+    const image = content.filter(
+      (block) => block.type === 'image' || (storedAttachment(block) && block.attachment.image),
+    )[index - 1]
+    if (!image) return result('The image is not available in this session.', true)
+    if (image.type === 'image') images.push(image)
+    else {
+      const original = await readSessionAttachment(
+        session,
+        { path: `session-image://${reference}`, maxBytes: USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage },
+        signal,
       )
+      if (!original) return result('The image is not available in this session.', true)
+      const parts: string[] = []
+      for (let at = 0; at < original.bytes.length; at += 16384)
+        parts.push(String.fromCharCode(...original.bytes.subarray(at, at + 16384)))
+      images.push({ type: 'image', data: btoa(parts.join('')), mimeType: original.mimeType })
     }
-    images.push({
-      type: 'image',
-      mimeType: entry.mimeType,
-      data: Buffer.from(bytes).toString('base64'),
-    } as Extract<ContentBlock, { type: 'image'; data: string }>)
   }
   const target = resolveModel(session, 'primary')
   const model = resolvedModelRecord(session.d.provider, target)

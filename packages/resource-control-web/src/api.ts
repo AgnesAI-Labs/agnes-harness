@@ -7,13 +7,17 @@ import type {
   ResourceOperationReceipt,
   SkillDescriptor,
   SkillRootStatus,
+  SkillScanReport,
   TrustState,
 } from '@agnes/protocol'
+import { appServerErrorMessage } from '@agnes/web-ui'
 import type { ResourceAdminContext, ResourceAdminError } from './types.js'
 
 export const RESOURCE_ADMIN_API_ROOT = '/admin/resources/api'
 type FetchLike = typeof fetch
-type ErrorResponse = { error?: { code?: unknown; message?: unknown } }
+type ErrorResponse = {
+  error?: { code?: unknown; message?: unknown; data?: { code?: unknown; messageKey?: unknown } }
+}
 
 export class ResourceAdminApiError extends Error {
   readonly details: ResourceAdminError
@@ -23,6 +27,14 @@ export class ResourceAdminApiError extends Error {
     this.details = details
   }
 }
+export const resourceAdminError = (error: unknown): ResourceAdminError =>
+  error instanceof ResourceAdminApiError
+    ? error.details
+    : {
+        code: 'RESOURCE_ADMIN_UNAVAILABLE',
+        message: 'The resource admin service is temporarily unavailable. Try again later.',
+      }
+
 function safeError(
   value: unknown,
   fallback = 'The resource admin service is temporarily unavailable. Try again later.',
@@ -30,8 +42,17 @@ function safeError(
   if (!value || typeof value !== 'object') return { code: 'RESOURCE_ADMIN_UNAVAILABLE', message: fallback }
   const error = value as ErrorResponse
   return {
-    code: typeof error.error?.code === 'string' ? error.error.code : 'RESOURCE_ADMIN_UNAVAILABLE',
-    message: typeof error.error?.message === 'string' ? error.error.message : fallback,
+    code:
+      typeof error.error?.data?.code === 'string'
+        ? error.error.data.code
+        : typeof error.error?.code === 'string'
+          ? error.error.code
+          : 'RESOURCE_ADMIN_UNAVAILABLE',
+    message:
+      appServerErrorMessage(
+        error.error,
+        typeof document === 'undefined' ? 'en' : document.documentElement.lang,
+      ) ?? (typeof error.error?.message === 'string' ? error.error.message : fallback),
   }
 }
 function commandId(): string {
@@ -89,6 +110,7 @@ export class ResourceAdminApi {
     items: SkillDescriptor[]
     nextCursor?: string
     skillRoots?: SkillRootStatus[]
+    skillScanReport?: SkillScanReport
   }> {
     return this.#post('skills/list', {
       profile: this.#context.profile,
@@ -96,6 +118,16 @@ export class ResourceAdminApi {
       ...(cursor ? { cursor } : {}),
       ...(this.#workspaceId ? { workspaceId: this.#workspaceId } : {}),
     })
+  }
+  /** Rebase a list cursor only when another page is explicitly requested after a mutation. */
+  async skillsThrough(loadedCount: number): Promise<{ items: SkillDescriptor[]; nextCursor?: string }> {
+    let page = await this.skills()
+    const items = [...page.items]
+    while (page.nextCursor && items.length <= loadedCount) {
+      page = await this.skills(page.nextCursor)
+      items.push(...page.items)
+    }
+    return { ...page, items }
   }
   async skill(resourceId: string): Promise<SkillDescriptor> {
     return this.#post('skills/get', {

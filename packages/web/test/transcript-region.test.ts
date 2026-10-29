@@ -1,10 +1,10 @@
 /** @vitest-environment happy-dom */
 
-import type { UINode } from '@agnes/protocol'
+import type { UINode, UITurn } from '@agnes/protocol'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { bindSlotCardContext } from '../src/client-modules/timeline-slot.js'
 import { TRANSCRIPT_SLOT } from '../src/region-slots.js'
+import { fakeVoice } from './helpers/fake-voice.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
 // A slot card or shadow commits in a few milliseconds, but a loaded runner has taken longer than the
@@ -36,9 +36,8 @@ describe('rendered transcript region', () => {
     expect(content?.querySelector('[data-node-id="assistant-1"]')).toBeNull()
   })
 
-  it('mounts slot cards with a per-card React root and restores the built-in after shadow unload', async () => {
-    runtime = await mountRenderedIndex()
-    bindSlotCardContext({ registry: runtime.registry, claim: () => true })
+  it('mounts slot cards within the application and restores the buffered view after shadow unload', async () => {
+    runtime = await mountRenderedIndex({ claim: () => true })
     const slot: UINode = {
       kind: 'slot',
       id: 'slot-1',
@@ -65,45 +64,18 @@ describe('rendered transcript region', () => {
     await vi.waitFor(() => {
       expect(document.querySelector('#transcript-content')).toBeTruthy()
       expect(document.querySelector('#shadow-transcript')).toBeNull()
+      expect(document.querySelector('[data-slot-node="tool.card.inline"]')).toBeTruthy()
     }, committed)
-  })
-
-  it('keeps a session-scoped tool view registered once across new sessions and switches', async () => {
-    runtime = await mountRenderedIndex({ transcript: { nodeHost: 'react' } })
-    // A plugin registers its tool views once, when it is applied, not once per session.
-    runtime.registry.register(
-      { name: 'tool.call.toolview', key: 'probe_tool', id: 'fixture-tool-view', owner: 'fixture' },
-      () => createElement('span', { className: 'fixture-tool-view' }, '插件工具视图'),
+    runtime.session.setSession('different-session')
+    await vi.waitFor(
+      () => expect(document.querySelector('[data-slot-node="tool.card.inline"]')).toBeNull(),
+      committed,
     )
-    const tool: UINode = {
-      kind: 'tool',
-      id: 'tool-1',
-      seq: 1,
-      toolUseId: 'call-1',
-      name: 'probe_tool',
-      status: 'completed',
-      summary: 'probe',
-      enforcement: { level: 'full', scope: ['file'] },
-      children: [],
-      slots: [],
-    }
-    // New session sets no session first; that remounts the conversation and its transcript.
-    for (const sessionId of ['session-a', undefined, 'session-b', undefined, 'session-a']) {
-      runtime.session.setSession(sessionId)
-      if (sessionId === undefined) continue
-      await vi.waitFor(() => expect(runtime?.transcript).toBeDefined(), committed)
-      await vi.waitFor(() => {
-        runtime?.transcript?.render([tool])
-        expect(document.querySelector('#transcript-content .fixture-tool-view')?.textContent).toBe(
-          '插件工具视图',
-        )
-      }, committed)
-    }
+    runtime.transcript?.reset()
   })
 
   it('renders a claimed plugin card through the default React region bootstrap', async () => {
     runtime = await mountRenderedIndex({
-      transcript: { nodeHost: 'react' },
       claim: (entry, extId) => entry.owner === extId,
     })
     const remove = runtime.registry.register(
@@ -130,5 +102,42 @@ describe('rendered transcript region', () => {
     } finally {
       remove()
     }
+  })
+
+  it('passes the transcript voice port to the timeline and lets it watch every update', async () => {
+    const { voice } = fakeVoice()
+    runtime = await mountRenderedIndex({ voice })
+    expect(voice.bindSession).toHaveBeenCalledWith(runtime.session)
+    const reply: UINode = { kind: 'assistant', id: 'reply-1', seq: 2, text: '可以朗读的回答' }
+    const completed: UITurn = {
+      id: 'turn:1',
+      turn: 1,
+      startSeq: 1,
+      startedAt: '2026-10-27T00:00:00.000Z',
+      endedAt: '2026-10-27T00:00:01.000Z',
+      status: 'completed',
+      nodeIds: ['reply-1'],
+      finalAssistantId: 'reply-1',
+      inherited: false,
+      forkable: true,
+      usage: {
+        totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+        reasoningComplete: true,
+        billingComplete: true,
+        calls: [],
+      },
+    }
+    runtime.transcript?.render([reply], [completed])
+    expect(voice.observeTranscript).toHaveBeenCalledWith([reply], [completed])
+    runtime.transcript?.render([reply])
+    expect(voice.observeTranscript).toHaveBeenLastCalledWith([reply], [])
+    runtime.transcript?.render([reply], [completed])
+    const read = await vi.waitFor(() => {
+      const button = document.querySelector<HTMLButtonElement>('[data-testid="voice-read"]')
+      if (!button) throw new Error('no read button yet')
+      return button
+    }, committed)
+    read.click()
+    expect(voice.toggleReading).toHaveBeenCalledWith('reply-1', '可以朗读的回答')
   })
 })

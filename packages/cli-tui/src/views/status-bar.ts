@@ -1,8 +1,5 @@
 import type { UsageView } from '@agnes/protocol'
-import type { Branding } from '@agnes/sdk'
-import type { Ansi } from '../ansi.js'
-import { xterm256 } from '../ansi.js'
-import { type Component, escapeControl } from '../component.js'
+import { type Component, escapeControl, wrapText } from '../component.js'
 import { fitLine } from '../components/line.js'
 import {
   formatCredits,
@@ -11,12 +8,28 @@ import {
   PRESSURE_WARNING_FRACTION,
 } from '../format-usage.js'
 import { type Locale, t } from '../locale.js'
+import type { Tone } from '../palette.js'
 import type { StatusItem } from '../slots.js'
-import { tuiColor } from '../theme.js'
+import type { StatusField, StatusLineConfig } from '../statusline-config.js'
+import { displayWidth } from '../terminal.js'
+import type { ThemedAnsi } from '../theme.js'
+import { RAIL_MIN_WIDTH } from './composer-rail.js'
 
 export type LinkState = 'ok' | 'reconnecting' | 'catching-up'
 export type NoticeTone = 'info' | 'success' | 'warning' | 'error'
-const NOTICE_COLOR = { success: tuiColor.success, warning: tuiColor.warning, error: tuiColor.danger } as const
+const NOTICE_TONE = { info: 'info', success: 'success', warning: 'warning', error: 'danger' } as const
+/**
+ * The mark in front of a notice, and the tone it takes; the words keep the notice's own tone. Info has
+ * none: the row already joins its parts with ` · `, so a `·` mark would read as an empty part.
+ */
+const NOTICE_MARK: Record<NoticeTone, [string, Tone]> = {
+  error: ['✗ ', 'danger'],
+  warning: ['▲ ', 'warning'],
+  success: ['✓ ', 'success'],
+  info: ['', 'muted'],
+}
+// Keyed by string: the level arrives in an extension's slot payload.
+const LEVEL_TONE: Record<string, Tone> = { info: 'info', warn: 'warning', error: 'danger' }
 
 /**
  * One composed status line: `status.line` slot fills, the current budget, a parked approval
@@ -33,11 +46,22 @@ export class StatusBar implements Component {
   private noticeTone: NoticeTone = 'info'
   private link: LinkState = 'ok'
   private usage: UsageView | undefined
+  private preset = ''
+  private fullAccess = false
+  private raw = false
 
   constructor(
-    private readonly ansi: Ansi,
+    private readonly ansi: ThemedAnsi,
     private readonly locale: Locale = 'en',
-  ) {}
+    /** A run that skipped parts of its setup says so for its whole life, so nobody forgets it. */
+    private readonly safeMode = false,
+    /** The launcher passes `(default)` when argv named no preset; only a real name is shown. */
+    preset = '',
+    /** Which fields the user keeps; the budget warning, the approval ticket and notices are always shown. */
+    private readonly fields: Pick<StatusLineConfig, 'shows'> = { shows: () => true },
+  ) {
+    if (preset !== '(default)') this.preset = preset
+  }
 
   setSlots(items: StatusItem[]): void {
     this.slots = items
@@ -45,8 +69,8 @@ export class StatusBar implements Component {
 
   /**
    * Below the 70% warning threshold, or with no hard cap at all, this stays hidden -- a number
-   * that never changes colour is background noise nobody reads by the time it matters (spec
-   * RP2). Above it, the segment shows the fraction crossed and, at 90%, an explicit warning
+   * that never changes colour is background noise nobody reads by the time it matters.
+   * Above it, the segment shows the fraction crossed and, at 90%, an explicit warning
    * glyph on top of the colour change.
    */
   setBudget(used: number, cap?: number): void {
@@ -67,6 +91,15 @@ export class StatusBar implements Component {
     this.budgetTier = isError ? 'error' : 'warning'
   }
 
+  /**
+   * The approval mode is the preset's name, and a loud full-access marker while routine approvals
+   * are skipped (`yolo`), which is a safety signal. Background work has no count in the projection
+   * the TUI already holds, so none is shown.
+   */
+  setPreset(name: string): void {
+    this.preset = name
+  }
+
   setParked(ticket?: string): void {
     this.parked = ticket ? `${t('status.parked', this.locale)} ${ticket.slice(0, 8)}…` : ''
   }
@@ -76,13 +109,19 @@ export class StatusBar implements Component {
     this.noticeTone = tone
   }
 
+  /** `/raw` is on: say so for as long as it lasts, since the screen no longer looks like itself. */
+  setRaw(on: boolean): void {
+    this.raw = on
+  }
+
   setLink(state: LinkState): void {
     this.link = state
   }
 
   /** Updates the Pi-style usage footer from the same projection as the timeline. */
-  setUsage(usage?: UsageView): void {
+  setUsage(usage?: UsageView, fullAccess = false): void {
     this.usage = usage
+    this.fullAccess = fullAccess
   }
 
   invalidate(): void {}
@@ -91,69 +130,55 @@ export class StatusBar implements Component {
     // `escapeControl` on the two pieces that can carry text an extension or the daemon chose
     // (slot fills, notices): every other part is minted by this component itself from numbers
     // and a fixed enum, so nothing else here can carry a stray control byte to the terminal.
-    // Each segment carries its own emphasis instead of one dim blanket: the budget is the number
-    // a user watches, a notice is always worth attention, and a broken link spins yellow.
-    const paintedNotice =
-      this.noticeTone === 'info'
-        ? this.ansi.dim(escapeControl(this.notice))
-        : this.ansi.fg(NOTICE_COLOR[this.noticeTone], escapeControl(this.notice))
+    const on = (field: StatusField): boolean => this.fields.shows(field)
+    const link = t(this.link === 'reconnecting' ? 'status.reconnecting' : 'status.catchingUp', this.locale)
+    const [mark, markTone] = NOTICE_MARK[this.noticeTone]
+    const notice = this.notice
+      ? `${mark ? this.ansi.fg(markTone, mark) : ''}${this.ansi.fg(NOTICE_TONE[this.noticeTone], escapeControl(this.notice))}`
+      : ''
     const parts = [
-      ...this.slots.map((s) => this.ansi.dim(`[${s.level}] ${escapeControl(s.text)}`)),
-      this.budget ? this.ansi.bold(this.ansi.fg(this.budgetTier === 'error' ? 196 : 214, this.budget)) : '',
+      this.raw ? this.ansi.bold(this.ansi.fg('warning', 'RAW')) : '',
+      ...(on('slots') ? this.slots : []).map(
+        (s) =>
+          `${this.ansi.fg(LEVEL_TONE[s.level] ?? 'muted', `[${s.level}]`)} ${this.ansi.dim(escapeControl(s.text))}`,
+      ),
+      this.fullAccess ? this.ansi.bold(this.ansi.fg('danger', t('status.fullAccess', this.locale))) : '',
+      this.budget
+        ? this.ansi.bold(this.ansi.fg(this.budgetTier === 'error' ? 'danger' : 'warning', this.budget))
+        : '',
+      this.safeMode ? this.ansi.fg('warning', t('status.safeMode', this.locale)) : '',
       this.parked ? this.ansi.dim(this.parked) : '',
-      this.notice ? paintedNotice : '',
-      this.link === 'ok'
-        ? ''
-        : `${this.ansi.fg(178, '⟳')}${this.ansi.dim(
-            ` ${t(this.link === 'reconnecting' ? 'status.reconnecting' : 'status.catchingUp', this.locale)}`,
-          )}`,
+      notice,
+      this.link === 'ok' || !on('link') ? '' : this.ansi.fg('warning', `⟳ ${link}`),
+      // Last, so a narrow line cuts the preset name before it cuts a notice.
+      this.preset && !this.fullAccess && on('preset')
+        ? this.ansi.dim(`${t('status.preset', this.locale)} ${escapeControl(this.preset)}`)
+        : '',
     ].filter(Boolean)
-    const lines = [fitLine(parts.join(this.ansi.dim(' · ')), width)]
-    if (this.usage) lines.push(formatUsageLine(this.usage, width, this.ansi, false))
+    const separator = this.ansi.fg('faint', ' · ')
+    const content = parts.join(separator)
+    const lines = [fitLine(content, width)]
+    // A public refusal includes both a reason and an action; keep the action readable on narrow terminals.
+    if (notice && this.noticeTone === 'error' && displayWidth(content) > width) {
+      const context = parts.filter((part) => part !== notice).join(separator)
+      lines.splice(
+        0,
+        lines.length,
+        ...(context ? [fitLine(context, width)] : []),
+        ...wrapText(escapeControl(this.notice), Math.max(1, width - 2)).map((line, i) =>
+          fitLine(
+            `${i === 0 ? this.ansi.fg(markTone, mark) : '  '}${this.ansi.fg(NOTICE_TONE.error, line)}`,
+            width,
+          ),
+        ),
+      )
+    }
+    // The composer rail draws the context gauge at the same width; below its floor this line does.
+    const usage =
+      this.usage && on('usage')
+        ? formatUsageLine(this.usage, width, this.ansi, false, width < RAIL_MIN_WIDTH, this.locale)
+        : undefined
+    if (usage?.trim()) lines.push(usage)
     return lines
-  }
-}
-
-export type HeaderState = {
-  profile: string
-  preset: string
-  model?: string
-  sessionId: string
-  generation: number
-  opState?: { turn: number; step: number; phase: string }
-}
-
-/** One header line: the brand segment, then profile, preset, session id's last 8 characters,
- * generation, and op state, with dim separators between the segments. */
-export class Header implements Component {
-  private state: HeaderState | undefined
-
-  constructor(
-    private readonly ansi: Ansi,
-    private readonly branding: Branding,
-  ) {}
-
-  set(h: HeaderState): void {
-    this.state = { ...h, ...(h.opState ? { opState: { ...h.opState } } : {}) }
-  }
-
-  invalidate(): void {}
-
-  render(width: number): string[] {
-    const h = this.state
-    if (!h) return ['']
-    const op = h.opState ? `turn ${h.opState.turn} step ${h.opState.step} ${h.opState.phase}` : ''
-    const fields = [
-      this.ansi.fg(tuiColor.muted, h.profile),
-      this.ansi.fg(tuiColor.muted, h.preset),
-      ...(h.model ? [this.ansi.bold(h.model)] : []),
-      this.ansi.fg(tuiColor.muted, h.sessionId.slice(-8)),
-      this.ansi.fg(tuiColor.muted, `g${h.generation}`),
-      op ? this.ansi.fg(tuiColor.warning, op) : '',
-    ].filter(Boolean)
-    const label = this.branding.mark || this.branding.selfLabel
-    const brand = this.ansi.bold(this.ansi.fg(xterm256(this.branding.accent), escapeControl(label)))
-    const line = [brand, ...fields].join(this.ansi.dim(' · '))
-    return [fitLine(line, width)]
   }
 }

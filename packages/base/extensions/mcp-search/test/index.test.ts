@@ -1,4 +1,6 @@
-import type { ExtensionAPI, ToolDef } from '@agnes/extension-api'
+import type { ToolDef } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import type { McpCatalogHub } from '../../mcp-server/src/catalog-hub.js'
@@ -45,7 +47,7 @@ describe('mcpSearchExtension', () => {
     const { api, tools } = fakeApi()
     const factory = mcpSearchExtension({ catalogHub: fakeCatalogHub({}) })
 
-    factory(api)
+    extensionFactoryOf(factory)(api)
 
     expect(tools.map((tool) => tool.name)).toEqual(['tool_search', 'tool_describe'])
   })
@@ -57,7 +59,7 @@ describe('mcpSearchExtension', () => {
     })
     const factory = mcpSearchExtension({ catalogHub })
 
-    factory(api)
+    extensionFactoryOf(factory)(api)
 
     const search = tools.find((tool) => tool.name === 'tool_search') as ToolDef
     const result = await search.execute({ query: 'list_prs' }, fakeToolContext())
@@ -71,7 +73,7 @@ describe('mcpSearchExtension', () => {
     })
     const factory = mcpSearchExtension({ catalogHub })
 
-    factory(api)
+    extensionFactoryOf(factory)(api)
 
     const describe = tools.find((tool) => tool.name === 'tool_describe') as ToolDef
     const result = await describe.execute({ name: 'mcp_gh_merge' }, fakeToolContext())
@@ -82,7 +84,7 @@ describe('mcpSearchExtension', () => {
     const { api, disposed } = fakeApi()
     const factory = mcpSearchExtension({ catalogHub: fakeCatalogHub({}) })
 
-    const dispose = factory(api) as () => void
+    const dispose = extensionFactoryOf(factory)(api) as () => void
     dispose()
 
     expect(disposed).toEqual(['tool_describe', 'tool_search'])

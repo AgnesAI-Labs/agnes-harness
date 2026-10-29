@@ -1,28 +1,35 @@
 import type { LocaleCatalog } from '@agnes/web-ui'
+import { resourceFailureCatalog } from '@agnes/web-ui'
 import { resourceAdminShellLocaleCatalog } from './shell.js'
 
 export const RESOURCE_ADMIN_LOCALE_NAMESPACE = '@agnes/resource-control-web/admin'
 
 export const resourceAdminLocaleCatalog: LocaleCatalog = {
   en: {
+    'preset.add': 'Add preset',
+    'preset.label': 'MCP preset',
+    'preset.output':
+      'Automatic output uses .playwright-mcp in a writable workspace, or the server’s private temporary directory in the network sandbox. Review and save, then explicitly enable.',
+    ...resourceFailureCatalog.en,
     ...resourceAdminShellLocaleCatalog.en,
     'error.unavailable': 'The resource admin service is temporarily unavailable. Try again later.',
     'error.not-connected': 'Resource admin is not connected.',
     'error.invalid-transport': 'Unrecognized transport: {value}. Refresh the page and try again.',
     'confirmation.description':
       '{summary}\n\nThe request will be sent to the local host, which checks it against the current version and security policy.',
-    'notice.loading': 'Reading the local resource catalog…',
     'notice.read-only':
       'The host is in read-only recovery mode. You can review status, but cannot change resources.',
     'notice.load-more-failed': 'Could not read more resources. Try again.',
+    'notice.scan-finished': 'Folder scan finished. Review the folder results for warnings and counts.',
     'notice.submitted': 'Operation submitted. Waiting for the host to confirm…',
     'notice.succeeded':
       'The control plane has been updated. Idle sessions will use the new snapshot on their next request. Active turns switch after they finish; a successful refresh does not mean every session has switched.',
     'notice.failed': 'The operation did not complete. Review the security status.',
     'notice.running': 'The operation is still running on the host. Refresh the status later.',
     'notice.changed': 'The resource version has changed. Review the latest details before enabling it again.',
-    'notice.created':
-      'MCP “{name}” was created but is not available yet. Review its configuration, then enable it.',
+    'notice.created': 'MCP “{name}” created and currently disabled. Enable it from its details when ready.',
+    'notice.updated':
+      'MCP “{name}” saved and disabled. Review the new configuration before enabling it again.',
     'empty.mcp.title': 'No MCP services found',
     'empty.mcp.description': 'Add an MCP service to review its connection and enabled state here.',
     'empty.skills.title': 'No Skills found',
@@ -55,7 +62,7 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'action.remove-mcp-summary':
       'Remove MCP “{name}”\n{revision}\nThe host blocks removal while the definition is in use or has not been safely retired.',
     'action.refresh-skills':
-      'Refresh the Skill catalog\nThe host rescans controlled roots and keeps the last safe catalog until the new result passes validation.',
+      'Refresh the Skill catalog\nThe host scans configured folders and updates skills using the existing rules. Newly discovered skills will be enabled.',
     'action.edit-mcp': 'Edit {name}',
     'action.create-mcp': 'Add MCP service',
     'action.update-mcp-summary':
@@ -67,14 +74,14 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'error.form.identity': 'Enter a service ID and display name.',
     'error.form.executable': 'Enter an executable allowed by local policy.',
     'error.form.env-format': 'Use TOKEN=secret://namespace/name, with each environment variable listed once.',
-    'error.form.env-empty': 'Enter at least one environment-variable SecretRef.',
+    'error.form.env-empty': 'Enter at least one environment-variable credential reference.',
     'error.form.url': 'Enter an HTTPS address or a loopback HTTP address allowed by local policy.',
-    'error.form.secret': 'Enter an existing SecretRef.',
+    'error.form.secret': 'Enter an existing credential reference.',
     'validation.url-format': 'Enter a complete URL.',
     'validation.url-no-credentials':
-      'The address cannot include a username, password, or #fragment. Use a SecretRef for credentials.',
+      'The address cannot include a username, password, or #fragment. Use a credential reference for credentials.',
     'validation.url-no-secret-query':
-      'URL query parameters cannot contain token, secret, password, api-key, or credential. Use a SecretRef for credentials.',
+      'URL query parameters cannot contain token, secret, password, api-key, or credential. Use a credential reference for credentials.',
     'validation.url-secure': 'Use an https:// URL or a loopback http:// URL without spaces.',
     'validation.executable':
       'The executable cannot be a shell (sh/bash/zsh/fish/cmd/powershell/pwsh); a bare name cannot contain spaces.',
@@ -83,7 +90,7 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'validation.env-name':
       'Environment variable {index} needs a valid uppercase name; reserved names such as PATH and HOME are not allowed.',
     'validation.env-ref': 'Environment variable {index} must use the form TOKEN=secret://namespace/name.',
-    'validation.secret-ref': 'Use a SecretRef in the form secret://namespace/name.',
+    'validation.secret-ref': 'Use a credential reference in the form secret://namespace/name.',
     'validation.tools-limit': 'Allow at most {count} tools.',
     'validation.tool-name':
       'Tool name {index} is invalid. It must start with a letter and contain only letters, numbers, underscores, dots, or hyphens.',
@@ -92,6 +99,9 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'validation.server-id-format':
       'Use a service ID that starts with a lowercase letter and contains only lowercase letters, numbers, dots, underscores, or hyphens.',
     'validation.executable-required': 'Enter an executable.',
+    'validation.workspace-required':
+      'Choose a workspace folder containing the local script and its dependencies before saving.',
+    'validation.workspace-format': 'Enter an absolute workspace folder path, up to 4096 characters.',
     'validation.url-required': 'Enter an HTTPS address or a loopback HTTP address allowed by local policy.',
     'placeholder.env': 'TOKEN=secret://namespace/name (one per line)',
     'select.transport': 'Transport',
@@ -104,24 +114,30 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'tab.label': 'Resource type',
   },
   'zh-CN': {
+    'preset.add': '添加预设',
+    'preset.label': 'MCP 预设',
+    'preset.output':
+      '自动输出使用可写工作区中的 .playwright-mcp；联网沙箱下使用服务器私有临时目录。请审核并保存，再明确启用。',
+    ...resourceFailureCatalog['zh-CN'],
     ...resourceAdminShellLocaleCatalog['zh-CN'],
     'error.unavailable': '资源管理后台暂时不可用，请稍后重试。',
     'error.not-connected': '资源管理尚未连接。',
     'error.invalid-transport': '未识别的传输方式：{value}，请刷新页面后重试。',
     'confirmation.description': '{summary}\n\n确认后将提交到本地后台，并按当前版本和策略完成安全校验。',
-    'notice.loading': '正在读取本地资源目录…',
     'notice.read-only': '后台处于只读恢复模式；可以查看状态，不能更改资源。',
     'notice.load-more-failed': '读取更多资源失败，可重试。',
+    'notice.scan-finished': '目录扫描已结束，请查看目录结果中的警告和数量。',
     'notice.submitted': '操作已提交，正在等待后台确认…',
     'notice.succeeded':
       '控制面已更新。空闲会话的下一次请求会使用新快照；正在进行的回合会等到本回合结束后再切换，刷新成功不等于所有会话已经切换。',
     'notice.failed': '操作未完成，请查看安全状态。',
     'notice.running': '操作仍在后台运行；可稍后刷新状态。',
     'notice.changed': '资源版本已经变化，请确认最新内容后再次启用。',
-    'notice.created': 'MCP「{name}」已创建，但尚未可用：请检查配置后点击「启用」。',
+    'notice.created': 'MCP「{name}」已添加，当前未启用。需要使用时，可在服务详情中启用。',
+    'notice.updated': 'MCP「{name}」修改已保存，当前未启用。请检查新配置后重新启用。',
     'empty.mcp.title': '还没有 MCP 服务',
     'empty.mcp.description': '添加一个 MCP 服务后，可以在这里查看连接和启用状态。',
-    'empty.skills.title': '还没有发现 Skill',
+    'empty.skills.title': '还没有发现 技能',
     'empty.skills.description':
       '把 SKILL.md 放到下列模板路径后刷新。只扫描这些根的直属子目录，不会递归，也不会读取普通 skills/ 文件夹。',
     'progress.waiting': '正在等待后台…',
@@ -140,30 +156,29 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'action.request': '请求{action} {kind}「{name}」\n版本：{revision}',
     'action.remove-skill.label': '永久删除',
     'action.remove-skill.summary':
-      '永久删除 Skill「{name}」及目录中的全部文件。不可恢复；同名的其他来源可能接替生效。用户目录中的 Skill 可能也被其他应用使用。',
+      '永久删除 技能「{name}」及目录中的全部文件。不可恢复；同名的其他来源可能接替生效。用户目录中的技能可能也被其他应用使用。',
     'action.test-mcp': '测试连接',
     'action.test-mcp-summary': '测试 MCP「{name}」\n{revision}\n测试不会启用服务或调用工具。',
     'action.reconnect': '重连',
     'action.reconnect-summary': '重连 MCP「{name}」\n{revision}\n失败会保留已生效的旧连接。',
     'action.remove-mcp': '移除',
     'action.remove-mcp-summary': '移除 MCP「{name}」\n{revision}\n后台会阻断仍被使用或尚未安全退役的定义。',
-    'action.refresh-skills':
-      '刷新 Skill 目录\n后台将重新扫描受控根目录，并保留最近一次安全目录直到新结果通过校验。',
+    'action.refresh-skills': '刷新技能目录\n后台将扫描已配置目录并按现有规则更新技能；新发现的技能会启用。',
     'action.edit-mcp': '编辑 {name}',
     'action.create-mcp': '添加 MCP 服务',
     'action.update-mcp-summary': '更新 MCP「{name}」\n版本：{revision}\n更新后需要重新启用。',
     'action.create-mcp-summary': '创建 MCP「{name}」\n它将以停用状态保存，可在检查后直接启用。',
-    'action.adjust-priority': '调整同名 Skill「{name}」的覆盖优先级：{current} → {next}。不会改变启用状态。',
+    'action.adjust-priority': '调整同名 技能「{name}」的覆盖优先级：{current} → {next}。不会改变启用状态。',
     'error.form.identity': '请填写服务 ID 和显示名称。',
     'error.form.executable': '请填写受允许的可执行文件。',
     'error.form.env-format': '环境变量格式为 TOKEN=secret://namespace/name，每项只能出现一次。',
-    'error.form.env-empty': '请填写至少一个环境变量 SecretRef。',
+    'error.form.env-empty': '请填写至少一个环境变量凭据引用。',
     'error.form.url': '请填写 HTTPS 地址，或获本地策略允许的 loopback HTTP 地址。',
-    'error.form.secret': '请填写已有的 SecretRef。',
+    'error.form.secret': '请填写已有的凭据引用。',
     'validation.url-format': '地址格式不正确，请填写完整 URL。',
-    'validation.url-no-credentials': '地址不能携带用户名、密码或 #fragment（凭据请用 SecretRef）。',
+    'validation.url-no-credentials': '地址不能携带用户名、密码或 #fragment（凭据请用凭据引用）。',
     'validation.url-no-secret-query':
-      '地址查询参数不能包含 token / secret / password / api-key / credential（凭据请用 SecretRef）。',
+      '地址查询参数不能包含 token / secret / password / api-key / credential（凭据请用凭据引用）。',
     'validation.url-secure': '地址需为 https:// 或 loopback 的 http:// URL，且不含空格。',
     'validation.executable':
       '可执行文件不能是 shell（sh/bash/zsh/fish/cmd/powershell/pwsh），裸名称不能含空格。',
@@ -171,13 +186,15 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'validation.arg-invalid': '第 {index} 个参数不合法：不能是 -c 或 /c，也不能为空。',
     'validation.env-name': '第 {index} 项环境变量名不合法：需大写字母开头（不能是 PATH/HOME 等保留名）。',
     'validation.env-ref': '第 {index} 项需形如 TOKEN=secret://namespace/name。',
-    'validation.secret-ref': 'SecretRef 需形如 secret://namespace/name。',
+    'validation.secret-ref': '凭据引用 需形如 secret://namespace/name。',
     'validation.tools-limit': '允许工具最多 {count} 个。',
     'validation.tool-name': '第 {index} 个工具名不合法：需以字母开头，只能含字母、数字、下划线、点、连字符。',
     'validation.tool-duplicate': '允许工具中有重复项：「{name}」。',
     'validation.server-id-required': '请填写服务 ID。',
     'validation.server-id-format': '服务 ID 需以小写字母开头，只能含小写字母、数字、点、下划线、连字符。',
     'validation.executable-required': '请填写可执行文件。',
+    'validation.workspace-required': '保存前请填写包含本地脚本及其依赖的工作区目录。',
+    'validation.workspace-format': '请填写工作区目录的绝对路径，最多 4096 个字符。',
     'validation.url-required': '请填写 HTTPS 地址，或本地策略允许的 loopback HTTP 地址。',
     'placeholder.env': 'TOKEN=secret://namespace/name（每行一个）',
     'select.transport': '传输',

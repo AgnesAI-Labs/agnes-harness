@@ -91,6 +91,31 @@ describe('migrated empty-state region', () => {
       expect(section.querySelector('[data-slot="ui:empty-state"]')).toBeTruthy()
       expect(section.querySelector('[data-agnes-region-unit="empty-state"]')).toBeTruthy()
       expect(section.querySelector('#empty-state-title')?.textContent).toBe('Agnes Harness')
+      // The hero is one lockup: the mark sits beside the wordmark, and the wordmark is the heading.
+      const lockup = section.querySelector('.empty-state-lockup')
+      expect(!!lockup?.firstElementChild?.querySelector('.empty-brand-mark[aria-hidden="true"]')).toBe(true)
+      expect(lockup?.lastElementChild?.id).toBe('empty-state-title')
+      expect(lockup?.closest('h1, h2, h3, h4, h5, h6')).toBeTruthy()
+      expect(section.querySelector('#empty-state-title')?.getAttribute('translate')).toBe('no')
+      expect(section.querySelectorAll('.empty-brand-mark')).toHaveLength(1)
+    }, committed)
+  })
+
+  it('names the product over its promise without starter cards or suggestion copy', async () => {
+    const slots = await registry()
+    const section = document.createElement('section')
+    section.id = 'empty-state'
+    document.body.append(section)
+    mounts.push(mountEmptyStateRegion(slots, section, { locale: zhLocaleService() }))
+    await vi.waitFor(() => {
+      expect(section.querySelector('#empty-state-title')?.textContent).toBe('Agnes Harness')
+      expect(section.querySelector('.empty-state-copy')?.textContent).toBe('以可信为根基，为真实世界而生。')
+      expect(
+        section.querySelectorAll(
+          '[data-testid="agent-suggestion"], [data-testid="task-suggestions"], .empty-state-agents-note',
+        ),
+      ).toHaveLength(0)
+      expect(section.textContent).not.toContain('业务 Agent 是装好就能用')
     }, committed)
   })
 
@@ -107,7 +132,7 @@ describe('migrated empty-state region', () => {
     await vi.waitFor(() => {
       expect(section.id).toBe('empty-state')
       expect(section.textContent).toContain('替换空态')
-      expect(section.textContent).not.toContain('Agnes Harness')
+      expect(section.textContent).not.toContain('app.emptyState.tagline')
     }, committed)
     remove()
   })
@@ -138,18 +163,115 @@ describe('migrated sidebar region', () => {
     sidebar.innerHTML =
       '<button id="new">新会话</button><nav id="sessions"></nav><button id="settings">设置</button>'
     document.body.append(sidebar)
-    mounts.push(mountSidebarRegion(slots, sidebar, {}, zhLocaleService()))
+    const locale = zhLocaleService()
+    const mount = mountSidebarRegion(slots, sidebar, {}, locale)
+    mounts.push(mount)
+    mount.update({
+      sessions: [],
+      workspaces: [],
+      labels: new Map(),
+      locale: 'zh-CN',
+      sessionPending: false,
+      newDisabled: false,
+    })
 
+    expect(sidebar.querySelector('[data-testid=application-switch]')).toBeNull()
+    expect(sidebar.querySelector('.application-footer')).toBeNull()
+    expect(sidebar.querySelector('.sidebar-footer')?.textContent?.trim()).toBe('设置')
     expect(sidebar.querySelector('[data-slot="ui:sidebar"]')).toBeTruthy()
-    expect(sidebar.querySelector('#new')?.textContent).toBe('新会话')
+    expect(sidebar.querySelectorAll('#new')).toHaveLength(1)
+    expect(sidebar.querySelectorAll('#settings')).toHaveLength(1)
+    expect(sidebar.querySelector('#new')?.getAttribute('aria-label')).toBe('新对话')
+    locale.setLocale('en')
+    expect(locale.getSnapshot()).toBe('en')
+    expect(locale.t('sidebar.settings')).toBe('Settings')
+    await vi.waitFor(
+      () => expect(sidebar.querySelector('#settings')?.textContent).toBe('Settings'),
+      committed,
+    )
+    expect(sidebar.querySelector('[data-testid=application-switch]')).toBeNull()
+    expect(sidebar.querySelector('.sidebar-footer')?.textContent?.trim()).toBe('Settings')
+    expect(sidebar.querySelector('#new')?.getAttribute('aria-label')).toBe('New conversation')
+    expect(sidebar.querySelector<HTMLButtonElement>('#new')?.disabled).toBe(false)
+    locale.setLocale('zh-CN')
+    await vi.waitFor(
+      () => expect(sidebar.querySelector('#new')?.getAttribute('aria-label')).toBe('新对话'),
+      committed,
+    )
     const remove = slots.register(
       { name: SIDEBAR_SLOT as string, id: 'plugin-sidebar', owner: 'fixture', priority: -1 },
       () => createElement('div', { id: 'replacement-sidebar' }, '替换侧栏'),
     )
     await vi.waitFor(() => {
       expect(sidebar.querySelector('#replacement-sidebar')).toBeTruthy()
+      expect(sidebar.querySelector('[data-testid=application-switch]')).toBeNull()
       expect(sidebar.querySelector('#new')).toBeNull()
     }, committed)
+    const { applicationIdentity } = await import('@agnes/web-client')
+    applicationIdentity.set({
+      revision: 2,
+      status: 'active',
+      selection: {
+        packageId: 'fixture/app',
+        applicationId: 'fixture',
+        integrity: `sha256-${'a'.repeat(64)}`,
+        declarationDigest: 'b'.repeat(64),
+        consentDigest: 'c'.repeat(64),
+        bindingDigest: 'd'.repeat(64),
+      },
+      effective: null,
+      candidates: [],
+      assets: {},
+    })
+    await vi.waitFor(() => {
+      expect(sidebar.querySelector('[data-testid=application-return]')?.textContent).toContain('返回官方界面')
+      expect(sidebar.querySelector('[data-testid=application-switch]')?.textContent).toContain('切换应用')
+      expect(sidebar.querySelector('[data-testid=application-return] svg')).not.toBeNull()
+    }, committed)
+    expect(sidebar.querySelector('[data-testid=application-switch]')?.getAttribute('href')).toBe(
+      '?settings=application',
+    )
+    locale.setLocale('en')
+    await vi.waitFor(() => {
+      expect(sidebar.querySelector('[data-testid=application-return]')?.textContent).toContain(
+        'Return to official UI',
+      )
+      expect(sidebar.querySelector('[data-testid=application-switch]')?.textContent).toContain(
+        'Switch application',
+      )
+    }, committed)
+    locale.setLocale('zh-CN')
+    await vi.waitFor(
+      () =>
+        expect(sidebar.querySelector('[data-testid=application-return]')?.textContent).toContain(
+          '返回官方界面',
+        ),
+      committed,
+    )
+    const adminModule = await import('../src/pages/admin-api.js')
+    const clear = vi.fn(async (_revision: number) => {
+      throw new Error('CONFIG_REVISION_CONFLICT')
+    })
+    const connection = vi.spyOn(adminModule, 'homeAdmin').mockResolvedValue({
+      api: { clearApplication: clear },
+      context: { readOnly: false, permissions: ['packages.activate'] },
+    } as unknown as Awaited<ReturnType<typeof adminModule.homeAdmin>>)
+    sidebar.querySelector<HTMLButtonElement>('[data-testid=application-return]')?.click()
+    await vi.waitFor(() => {
+      expect(clear).toHaveBeenCalledWith(2)
+      expect(sidebar.querySelector('[role=alert]')?.textContent).toContain('未能恢复界面')
+      expect(sidebar.querySelector('[data-testid=application-return]')).not.toBeNull()
+    }, committed)
+    connection.mockResolvedValue({
+      api: { clearApplication: clear },
+      context: { readOnly: true, permissions: [] },
+    } as unknown as Awaited<ReturnType<typeof adminModule.homeAdmin>>)
+    clear.mockClear()
+    sidebar.querySelector<HTMLButtonElement>('[data-testid=application-return]')?.click()
+    await vi.waitFor(() => expect(connection).toHaveBeenCalledTimes(2), committed)
+    expect(clear).not.toHaveBeenCalled()
+    connection.mockRestore()
+    applicationIdentity.set(undefined)
     remove()
   })
 
@@ -185,8 +307,11 @@ describe('migrated sidebar region', () => {
       () => createElement('span', { id: 'fixture-directory-flow-content' }, '目录流程'),
     )
     await vi.waitFor(() => {
+      // The grouped list carries the list tools, this outlet included, on its 项目 heading.
       expect(
-        sidebar.querySelector('#fixture-directory-flow-content')?.closest('.sidebar-section-heading'),
+        sidebar
+          .querySelector('#fixture-directory-flow-content')
+          ?.closest('[data-section="workspaces"] .sidebar-section-tools'),
       ).toBeTruthy()
     }, committed)
     remove()
@@ -265,18 +390,16 @@ describe('migrated transcript region', () => {
       expect(transcript.querySelector<HTMLElement>('[data-agnes-timeline-native]')?.hidden).toBe(false)
     }, committed)
 
-    // The conversation remounts this region for every new session; plugin entries outlive it.
-    mount.dispose()
-    expect(slots.spec('tool.view.cordis')).toMatchObject({ kind: 'keyed', scope: 'session' })
-    expect(slots.entries('conversation.chat.assistant-actions')).toHaveLength(1)
-    expect(slots.entries('tool.view.cordis')).toHaveLength(1)
     removeActions()
     removeCordis()
+    mount.dispose()
+    expect(slots.spec('conversation.chat.assistant-actions')).toBeUndefined()
+    expect(slots.spec('tool.view.cordis')).toBeUndefined()
   })
 })
 
 describe('migrated settings panes', () => {
-  it('mounts six independently owned pane rows and removing one leaves siblings intact', async () => {
+  it('mounts two independently owned pane rows and removing one leaves its sibling intact', async () => {
     const slots = await registry()
     const config = document.createElement('dialog')
     config.id = 'config'
@@ -285,25 +408,33 @@ describe('migrated settings panes', () => {
     mounts.push(mount)
 
     expect(config.querySelector('[data-slot="ui:settings-pane.model"]')).toBeTruthy()
-    expect(config.querySelector('[data-slot="ui:settings-pane.plugin"]')).toBeTruthy()
+    expect(config.querySelector('[data-slot="ui:settings-pane.appearance"]')).toBeTruthy()
     expect(slots.entriesByOwner('@agnes/web-settings-model').map((entry) => entry.name)).toEqual([
       'ui:settings-pane.model',
     ])
-    expect(slots.entriesByOwner('@agnes/web-settings-plugins').map((entry) => entry.name)).toEqual([
-      'ui:settings-pane.plugin',
+    expect(slots.entriesByOwner('@agnes/web-settings-appearance').map((entry) => entry.name)).toEqual([
+      'ui:settings-pane.appearance',
     ])
+    // The panes that moved to full pages are not part of the dialog any more.
+    for (const id of ['plugin', 'resource', 'archived', 'computer-use'])
+      expect(config.querySelector(`#${id}-settings-pane`)).toBeNull()
 
-    mount.open('plugin')
-    expect(config.querySelector('#plugin-settings-pane')?.hasAttribute('hidden')).toBe(false)
+    mount.open('appearance')
+    expect(config.querySelector('#appearance-settings-pane')?.hasAttribute('hidden')).toBe(false)
     expect(config.querySelector('#model-settings-pane')?.hasAttribute('hidden')).toBe(true)
-    mount.unmountPane('plugin')
-    expect(config.querySelector('#plugin-settings-pane')).toBeNull()
+    mount.unmountPane('appearance')
+    expect(config.querySelector('#appearance-settings-pane')).toBeNull()
     expect(config.querySelector('#model-settings-pane')).toBeTruthy()
-    expect(slots.entries(settingsPaneSlot('plugin') as string)).toEqual([])
+    expect(slots.entries(settingsPaneSlot('appearance') as string)).toEqual([])
     expect(slots.entries(settingsPaneSlot('model') as string)).toHaveLength(1)
   })
 
   it('keeps every pane rendered after the locale changes', async () => {
+    // The group's explanation sits behind its ⓘ: a note named by the localized text.
+    const intro = () =>
+      config
+        .querySelector('#appearance-settings-pane .appearance-group [role="note"]')
+        ?.getAttribute('aria-label')
     const slots = await registry()
     const config = document.createElement('dialog')
     config.id = 'config'
@@ -312,26 +443,37 @@ describe('migrated settings panes', () => {
     const mount = mountSettingsPaneRegion(slots, config, {}, locale)
     mounts.push(mount)
 
-    await vi.waitFor(
-      () => expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('通用设置'),
-      committed,
-    )
-    expect(config.querySelector('#model-settings-pane')?.textContent).toContain('模型账户')
+    await vi.waitFor(() => expect(intro()).toContain('界面外观和语言'), committed)
+    expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('通用')
+    expect(config.querySelector('#model-settings-pane')?.textContent).toContain('模型与账户')
+    const hosts = [
+      ...config.querySelectorAll<HTMLElement>('[data-agnes-settings-pane-slot], [data-agnes-dsh-slot]'),
+    ]
+    const accounts = config.querySelector('#config-accounts')
+    mount.open('appearance')
+    const dark = config.querySelector<HTMLInputElement>('input[name="agnes-theme"][value="dark"]')
+    dark?.click()
+    dark?.focus()
     locale.setLocale('en')
-    // 语言变化会替换外壳的 innerHTML，六个面板的宿主元素随之重建。回归时只有 model 面板被重挂到
-    // 旧宿主，其余面板的根指向已丢弃的节点，右侧内容区变空白，要刷新页面才恢复。
-    await vi.waitFor(
-      () =>
-        expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain(
-          'Adjust interface language',
-        ),
-      committed,
-    )
-    expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('English')
-    expect(config.querySelector('#computer-use-settings-pane')?.textContent).toContain('Computer Use')
+    // Locale reconciliation keeps independent roots, controller bindings and the selected pane alive.
+    await vi.waitFor(() => expect(intro()).toContain('Appearance and language'), committed)
+    expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('General')
+    // The pane's own copy follows the language; language names come from the picker, filled at run time.
+    expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('Font size')
     // 模型面板的标题与说明也要跟着切换，而不是停在挂载时的语言。
-    expect(config.querySelector('#model-settings-pane')?.textContent).toContain('Model accounts')
-    expect(config.querySelector('#model-settings-pane')?.textContent).not.toContain('模型账户')
+    expect(config.querySelector('#model-settings-pane')?.textContent).toContain('Models & accounts')
+    expect(config.querySelector('#model-settings-pane')?.textContent).not.toContain('模型与账户')
+    for (const host of hosts) expect(config.querySelector(`#${host.id}`)).toBe(host)
+    expect(config.querySelector('#config-accounts')).toBe(accounts)
+    expect(config.querySelector('#model-settings-pane .agnes-settings-header button')).toBeNull()
+    expect(config.querySelector('#appearance-settings-pane')?.hasAttribute('hidden')).toBe(false)
+    expect(config.querySelector('#model-settings-pane')?.hasAttribute('hidden')).toBe(true)
+    expect(dark?.checked).toBe(true)
+    expect(document.activeElement).toBe(dark)
+    locale.setLocale('zh-CN')
+    expect(intro()).toContain('界面外观和语言')
+    expect(config.querySelector('#appearance-settings-pane')?.textContent).toContain('通用')
+    for (const host of hosts) expect(config.querySelector(`#${host.id}`)).toBe(host)
   })
 
   it('mounts DSH settings outlets at the existing pane controls', async () => {
@@ -350,15 +492,6 @@ describe('migrated settings panes', () => {
       { name: 'settings.models.footer', id: 'fixture-settings-footer', owner: 'fixture' },
       () => createElement('span', { id: 'fixture-settings-footer-content' }, '扩展模型尾部'),
     )
-    const removePluginItem = slots.register(
-      {
-        name: 'settings.plugin.item',
-        id: 'fixture-settings-plugin-item',
-        owner: 'fixture',
-        key: 'fixture-plugin',
-      },
-      () => createElement('span', { id: 'fixture-settings-plugin-item-content' }, '扩展插件项'),
-    )
     await vi.waitFor(() => {
       expect(
         config.querySelector('#fixture-settings-header-content')?.closest('#settings-dsh-shell-slots'),
@@ -366,20 +499,14 @@ describe('migrated settings panes', () => {
       expect(
         config.querySelector('#fixture-settings-footer-content')?.closest('.config-workspace'),
       ).toBeTruthy()
-      expect(
-        config.querySelector('#fixture-settings-plugin-item-content')?.closest('#plugin-list'),
-      ).toBeTruthy()
-      expect(config.querySelector('#config-add-account')).toBeTruthy()
-      expect(config.querySelector('#installed-tab')).toBeTruthy()
+      expect(config.querySelector('#config-accounts')).toBeTruthy()
       expect(config.querySelector('#account-dialog')).toBeTruthy()
     }, committed)
 
-    mount.unmountPane('plugin')
-    expect(config.querySelector('#fixture-settings-plugin-item-content')).toBeNull()
+    mount.unmountPane('appearance')
     expect(config.querySelector('#fixture-settings-footer-content')).toBeTruthy()
     removeHeader()
     removeFooter()
-    removePluginItem()
   })
 })
 
@@ -454,7 +581,7 @@ describe('migrated topbar region', () => {
     mount.setStatus('运行中', 'running')
     mount.setConnectionState('connected')
     expect(topbar.querySelector('#task-title')?.textContent).toBe('组件标题')
-    expect(topbar.querySelector('#status')?.textContent).toBe('运行中')
+    expect(topbar.querySelector('.run-status-phase > span:last-child')?.textContent).toBe('运行中')
     expect(topbar.querySelector<HTMLElement>('#status')?.dataset.state).toBe('running')
     expect(topbar.querySelector('#connection')?.textContent).toBe('本地后台已连接')
     const remove = slots.register(
@@ -508,7 +635,7 @@ describe('migrated approval region', () => {
       expect(approval.querySelector('pre')?.textContent).toBe('{"path":"README.md"}')
       expect(approval.querySelector('#fixture-approval-detail-content')?.textContent).toBe('扩展审批详情')
     }, committed)
-    const allow = approval.querySelector<HTMLButtonElement>('button')
+    const allow = approval.querySelector<HTMLButtonElement>('[data-approval-action=allow]')
     allow?.focus()
     mount.render({
       key: 'approval-1',
@@ -523,7 +650,7 @@ describe('migrated approval region', () => {
       disabled: true,
     })
     await vi.waitFor(() => {
-      const disabledAllow = approval.querySelector<HTMLButtonElement>('button')
+      const disabledAllow = approval.querySelector<HTMLButtonElement>('[data-approval-action=allow]')
       expect(document.activeElement).not.toBe(disabledAllow)
       expect(disabledAllow?.disabled).toBe(true)
     }, committed)
@@ -540,10 +667,10 @@ describe('migrated approval region', () => {
       disabled: false,
     })
     await vi.waitFor(() => {
-      const restoredAllow = approval.querySelector<HTMLButtonElement>('button')
+      const restoredAllow = approval.querySelector<HTMLButtonElement>('[data-approval-action=allow]')
       expect(document.activeElement).toBe(restoredAllow)
     }, committed)
-    approval.querySelectorAll<HTMLButtonElement>('button')[2]?.click()
+    approval.querySelector<HTMLButtonElement>('[data-approval-action=cancel]')?.click()
     expect(selected).toEqual(['cancel'])
 
     const remove = slots.register(
@@ -595,7 +722,7 @@ describe('migrated trace region', () => {
     mount.render([{ kind: 'assistant', id: 'trace-a', seq: 1, text: 'trace content' }], [], {
       hasEarlier: true,
     })
-    expect(trace.textContent).toContain('已加载部分')
+    expect(trace.textContent).toContain('更早记录未加载')
 
     const remove = slots.register(
       { name: TRACE_SLOT as string, id: 'plugin-trace', owner: 'fixture', priority: -1 },

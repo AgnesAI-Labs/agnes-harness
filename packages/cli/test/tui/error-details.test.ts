@@ -18,13 +18,17 @@ it('maps only an exact approved business rejection to a local action', () => {
       code: -32011,
       data: { code: 'SEMANTIC_REJECTED', reason: 'choose a turn/end seq' },
     }),
-  ).toBe('Request failed (SEMANTIC_REJECTED).')
+  ).toBe(
+    'Request failed (SEMANTIC_REJECTED): The operation was refused. Check its configuration and current state.',
+  )
   expect(
     formatTuiErrorNotice({
       code: -32011,
       data: { code: 'SEMANTIC_REJECTED', reason: 'fork boundary must be a completed turn/end' },
     }),
-  ).toBe('Request failed (SEMANTIC_REJECTED): Choose a completed turn/end sequence.')
+  ).toBe(
+    'Request failed (SEMANTIC_REJECTED): The fork boundary must be a completed turn. Choose a completed turn/end sequence.',
+  )
   expect(formatTuiErrorNotice(new Error('secret upstream message'))).toBe('Request failed. Try again.')
   expect(formatTuiErrorNotice({ data: { code: {}, reason: ['not text'] } })).toBe(
     'Request failed. Try again.',
@@ -40,7 +44,9 @@ it('never reflects arbitrary reason text', () => {
   ]
   for (const reason of reasons) {
     const notice = formatTuiErrorNotice({ data: { code: 'SEMANTIC_REJECTED', reason } })
-    expect(notice).toBe('Request failed (SEMANTIC_REJECTED).')
+    expect(notice).toBe(
+      'Request failed (SEMANTIC_REJECTED): The operation was refused. Check its configuration and current state.',
+    )
     expect(notice).not.toContain(reason)
   }
 })
@@ -52,7 +58,9 @@ it('contains malformed getters and proxies without losing a readable stable code
       throw new Error('getter private value')
     },
   }
-  expect(formatTuiErrorNotice({ data })).toBe('Request failed (SEMANTIC_REJECTED).')
+  expect(formatTuiErrorNotice({ data })).toBe(
+    'Request failed (SEMANTIC_REJECTED): The operation was refused. Check its configuration and current state.',
+  )
   expect(
     formatTuiErrorNotice(
       new Proxy(
@@ -90,8 +98,8 @@ it('renders a daemon rejection reason through the TUI error path', async () => {
   try {
     await app.start()
     await vi.waitFor(async () =>
-      expect((await screenOf(term, 100, 24)).join('\n')).toContain(
-        'Request failed (SEMANTIC_REJECTED): Choose a completed turn/end sequence.',
+      expect((await screenOf(term, 100, 24)).join(' ').replace(/\s+/g, ' ')).toContain(
+        'Request failed (SEMANTIC_REJECTED): The fork boundary must be a completed turn. Choose a completed turn/end sequence.',
       ),
     )
     expect((await screenOf(term, 100, 24)).join('\n')).not.toContain('secret backend detail')
@@ -144,7 +152,7 @@ it('does not render a late error after the TUI has stopped', async () => {
 // daemon's TURN_ERROR envelope, and its cause is the turn's own stable code in `data.error.code`.
 // The TUI showed only the envelope, so a model the account may not use read as "TURN_ERROR".
 const AUTH_NOTICE =
-  'Request failed (AUTH): The provider refused this model or its credentials; pick another with /model or sign in again.'
+  'Request failed (AUTH): The provider refused this model or its credentials. Pick another model or sign in again.'
 const turnError = (error: unknown) => ({
   code: -32603,
   data: { code: 'TURN_ERROR', turnEnd: { reason: 'error' }, error },
@@ -152,11 +160,16 @@ const turnError = (error: unknown) => ({
 
 it('names the turn error code under a TURN_ERROR envelope, never its message', () => {
   expect(formatTuiErrorNotice(turnError({ code: 'AUTH', message: 'status=403' }))).toBe(AUTH_NOTICE)
+  expect(formatTuiErrorNotice({ data: { code: 'CONFIG_CREDENTIAL_REJECTED' } })).toBe(
+    'Request failed (CONFIG_CREDENTIAL_REJECTED): The credential was rejected. Check it and try again.',
+  )
   expect(
     formatTuiErrorNotice(turnError({ code: 'RATE_LIMIT', message: 'upstream https://x.test/?k=private' })),
-  ).toBe('Request failed (RATE_LIMIT).')
+  ).toBe(
+    'Request failed (RATE_LIMIT): The provider rate limit was reached. Wait before submitting another request.',
+  )
   expect(formatTuiErrorNotice(turnError({ code: 'constructor', message: 'x' }))).toBe(
-    'Request failed (constructor).',
+    'Request failed (TURN_ERROR).',
   )
   // No usable inner code keeps the envelope, as before.
   expect(formatTuiErrorNotice(turnError(undefined))).toBe('Request failed (TURN_ERROR).')
@@ -172,11 +185,11 @@ it('names the turn error code under a TURN_ERROR envelope, never its message', (
   ).toBe('Request failed (TURN_ERROR).')
   // Only the TURN_ERROR envelope is unwrapped; another code's `data.error` is not read.
   expect(formatTuiErrorNotice({ data: { code: 'SESSION_BUSY', error: { code: 'AUTH' } } })).toBe(
-    'Request failed (SESSION_BUSY).',
+    'Request failed (SESSION_BUSY): The resource is busy. Wait for the current operation to finish.',
   )
 })
 
-it('shows the AUTH cause when a real turn ends in a provider 403', async () => {
+it('shows a safe credential refusal when a real turn ends in a provider 403', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'tui-turn-auth-'))
   const { host } = await createTestHost({
     dataDir: dir,
@@ -206,7 +219,10 @@ it('shows the AUTH cause when a real turn ends in a provider 403', async () => {
     term.feed('hi')
     term.feed('\r')
     await vi.waitFor(
-      async () => expect((await screenOf(term, 160, 24)).join('\n')).toContain('Request failed (AUTH)'),
+      async () =>
+        expect((await screenOf(term, 160, 24)).join('\n')).toContain(
+          'Request failed (CONFIG_CREDENTIAL_REJECTED)',
+        ),
       { timeout: 5_000 },
     )
     const screen = (await screenOf(term, 160, 24)).join('\n')
@@ -220,3 +236,46 @@ it('shows the AUTH cause when a real turn ends in a provider 403', async () => {
     rmSync(dir, { recursive: true, force: true })
   }
 }, 20_000)
+
+it('shows only allowlisted attachment refusal codes from RPC reasons', () => {
+  expect(
+    formatTuiErrorNotice({ data: { code: 'SEMANTIC_REJECTED', reason: 'ATTACHMENT_HASH_MISMATCH' } }),
+  ).toContain('ATTACHMENT_HASH_MISMATCH')
+  expect(
+    formatTuiErrorNotice({ data: { code: 'SEMANTIC_REJECTED', reason: 'untrusted private content' } }),
+  ).not.toContain('untrusted private content')
+})
+
+it('renders the shared public rejection reason and action in English and Chinese', () => {
+  for (const code of [
+    'E_PERMISSION_REVOKED',
+    'E_PRESET_UNSUPPORTED',
+    'BUDGET_EXCEEDED',
+    'APPROVAL_REJECTED',
+    'E_PACKAGE_BLOCKED',
+  ]) {
+    const error = { data: { code, reason: 'private reason', userAction: 'private action' } }
+    const en = formatTuiErrorNotice(error, 'en')
+    const zh = formatTuiErrorNotice(error, 'zh-CN')
+    expect(en).not.toContain('private')
+    expect(zh).toMatch(/[\u4e00-\u9fff]/)
+    expect(zh).not.toBe(en)
+  }
+})
+
+it('keeps unknown public error codes generic in both terminal locales', () => {
+  for (const locale of ['en', 'zh-CN'])
+    expect(
+      formatTuiErrorNotice(
+        {
+          data: {
+            code: 'UNKNOWN_DENIED_private',
+            reason: 'private',
+            publicReason: 'private',
+            userAction: 'private',
+          },
+        },
+        locale,
+      ),
+    ).toBe(locale === 'zh-CN' ? '请求失败，请检查状态后重试。' : 'Request failed. Try again.')
+})

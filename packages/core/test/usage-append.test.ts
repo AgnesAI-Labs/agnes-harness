@@ -1,8 +1,8 @@
+import type { Event } from '@agnes/core-common/types'
+import { applyCacheHealthEvent, initialCacheHealthState } from '@agnes/core-ledger/project/cache-health'
+import { computeSurface, SurfaceCache } from '@agnes/core-ledger/project/surface'
+import { UIProjectionCell } from '@agnes/core-ledger/project/ui'
 import { describe, expect, it } from 'vitest'
-import { applyCacheHealthEvent, initialCacheHealthState } from '../src/project/cache-health.js'
-import { computeSurface, SurfaceCache } from '../src/project/surface.js'
-import { UIProjectionCell } from '../src/project/ui.js'
-import type { Event } from '../src/types.js'
 import { TRANSITION_SCENARIOS } from '../testkit/record-transitions.js'
 import { goldenLedger, toolHeavyLedger } from '../testkit/tool-heavy-ledger.js'
 import { copiedPerRow } from './helpers/copy-counter.js'
@@ -135,11 +135,13 @@ describe('the surface, appended in place', () => {
   it.each(sources)('matches the reference row for row: %s', { timeout: 60_000 }, (_name, rows) => {
     const cache = new SurfaceCache('main')
     let reference: ReturnType<typeof referenceComputeSurface> = []
+    const nested = new Set<string>()
     const all: Event[] = []
     for (const row of rows()) {
       all.push(row)
       cache.push([row])
-      if ((row.lane ?? 'main') === 'main') reference = referenceApplyEvent(reference, row, new Set()).nodes
+      if ((row.lane ?? 'main') === 'main')
+        reference = referenceApplyEvent(reference, row, new Set(), nested).nodes
       expect(cache.nodes(), `row ${row.seq}`).toEqual(reference)
     }
     expect(computeSurface(all)).toEqual(referenceComputeSurface(all))

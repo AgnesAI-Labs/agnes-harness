@@ -24,7 +24,7 @@ export type SurfaceRelayOptions = Readonly<{
 export type SurfaceServiceClient = Readonly<{
   /** Authenticated server-side session binding; browser input is never consulted for this value. */
   sessionId: string
-  extensions: ExtensionClient
+  extensions: Pick<ExtensionClient, 'call'>
 }>
 
 const DEFAULT_MAX_BODY_BYTES = 1024 * 1024

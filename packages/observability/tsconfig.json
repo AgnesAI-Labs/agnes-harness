@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "rootDir": ".", "outDir": "dist" },
+  "include": ["src/**/*.ts"],
+  "references": [
+    { "path": "../extension-api" },
+    { "path": "../protocol" },
+    { "path": "../error-sanitization" },
+    { "path": "../system-node" }
+  ]
+}

@@ -3,5 +3,5 @@
   "compilerOptions": { "rootDir": ".", "outDir": "dist" },
   "include": ["**/*.ts"],
   "exclude": ["dist", "node_modules"],
-  "references": [{ "path": "../../tsconfig.config.json" }]
+  "references": [{ "path": "../../tsconfig.config.json" }, { "path": "../history-index" }]
 }

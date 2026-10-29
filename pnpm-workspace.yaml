@@ -1,8 +1,23 @@
 packages:
   - packages/*
   - packages/package-manager/bundled-plugins/document-reader
+  - packages/package-manager/bundled-plugins/browser
+  - packages/package-manager/bundled-plugins/deliverables-ui
+  - packages/package-manager/bundled-plugins/goal-ui
+  - packages/package-manager/bundled-plugins/navigation-ui
+  - packages/package-manager/bundled-plugins/conversation-ui
+  - packages/package-manager/bundled-plugins/interaction-ui
+  - examples/community/deliverables-gallery
   - examples/packages/cordis-greeting
-  - examples/mars-world
+  - examples/loops/decision-loop
+  - examples/loops/dag-loop
+  - examples/loops/react-loop
+  - examples/loops/plan-execute-loop
+  - examples/ui/*
+  - examples/demos
+  - examples/persistence
+  - examples/sandbox/docker
   - tools/*
 patchedDependencies:
+  '@earendil-works/pi-ai@1.4.0': patches/@earendil-works__pi-ai@1.4.0.patch
   jiti@2.7.0: patches/jiti@2.7.0.patch

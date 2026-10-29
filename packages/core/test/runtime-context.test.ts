@@ -38,6 +38,54 @@ const snapshots = (rows: Array<{ data: unknown }>): string[] => {
 }
 
 describe('runtime context notification', () => {
+  it('persists live contributions with requests and deduplicates across a reopened session', async () => {
+    let state = 'running'
+    const operation: Operation = {
+      ...environment(() => ({})),
+      contribute: () => ({
+        promptSections: [
+          {
+            id: 'receipts',
+            order: 112,
+            source: 'fixture',
+            text: state,
+            delivery: 'live-note',
+          },
+        ],
+      }),
+    }
+    const provider = fakeProvider([textTurn('a')])
+    let opened = await openSession({ provider, operations: [operation] })
+    const ask = async () => {
+      await opened.session.enqueue('next-turn', { content: [{ type: 'text', text: 'continue' }], actor })
+      expect((await opened.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
+    }
+    await ask()
+    await ask()
+    state = 'completed'
+    await ask()
+    await opened.session.close()
+    opened = await openSession({
+      provider,
+      operations: [operation],
+      storage: opened.storage,
+      writerRunId: 'r2',
+    })
+    await ask()
+    const notes = (await opened.log.scan({ type: 'user/message', limit: 100 })).filter((row) => {
+      const data = row.data as { kind?: string; content?: Array<{ text?: string }> }
+      return data.kind === 'runtime_context' && data.content?.[0]?.text?.startsWith('[live context ')
+    })
+    expect(notes).toHaveLength(2)
+    expect(new Set(provider.requests.map((request) => request.system)).size).toBe(1)
+    const headers = await opened.log.scan({ type: 'request/header', limit: 100 })
+    expect(headers).toHaveLength(4)
+    expect(
+      new Set(headers.map((row) => (row.data as { prompt_prefix_hash: string }).prompt_prefix_hash)).size,
+    ).toBe(1)
+    await opened.session.close()
+  })
+
   it('sends the snapshot once and not again while nothing about it changes', async () => {
     const { session, log } = await openSession({
       provider: fakeProvider([textTurn('a')]),

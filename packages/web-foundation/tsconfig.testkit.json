@@ -1,0 +1,25 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/testkit",
+    "tsBuildInfoFile": "dist/tsconfig.testkit.tsbuildinfo"
+  },
+  "include": ["testkit/**/*.ts"],
+  "references": [
+    {
+      "path": "."
+    },
+    {
+      "path": "../cordis"
+    },
+    {
+      "path": "../web-client"
+    },
+    {
+      "path": "../web-ui"
+    },
+    {
+      "path": "../web-units"
+    }
+  ]
+}

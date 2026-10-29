@@ -1,0 +1,73 @@
+{
+  "name": "@agnes/interaction-ui",
+  "version": "0.1.2",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "src",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "client-build.json"
+  ],
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:interaction-ui/main",
+        "export": "main",
+        "apiRange": "^5.0.0",
+        "runtime": "in-process",
+        "capabilities": {
+          "ui": true
+        },
+        "metadata": {
+          "displayName": "Questions and confirmations",
+          "summary": "Answer questions, confirm actions and review interaction history.",
+          "description": "Answer questions, confirm actions and review interaction history.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "交互与确认",
+              "summary": "在对话中回答问题、确认操作并查看交互记录。",
+              "description": "在对话中回答问题、确认操作并查看交互记录。"
+            }
+          }
+        }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:interaction-ui/main",
+        "path": "./src/agnes.client.json"
+      }
+    ],
+    "metadata": {
+      "displayName": "Questions and confirmations",
+      "summary": "Answer questions, confirm actions and review interaction history.",
+      "description": "Answer questions, confirm actions and review interaction history.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "交互与确认",
+          "summary": "在对话中回答问题、确认操作并查看交互记录。",
+          "description": "在对话中回答问题、确认操作并查看交互记录。"
+        }
+      }
+    },
+    "provides": [
+      "ui"
+    ]
+  },
+  "peerDependencies": {
+    "@agnes/web-client": "0.0.0",
+    "@agnes/web-ui": "0.0.0",
+    "react": "18.3.1",
+    "@agnes/web-conversation": "0.0.0"
+  },
+  "devDependencies": {
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "react": "18.3.1",
+    "@agnes/web-conversation": "workspace:*"
+  }
+}

@@ -15,7 +15,7 @@ export type UiSlotTableRow = {
   order: number
   surfaces: ReadonlyArray<'tui' | 'web' | 'channel'>
   failPolicy: 'open' | 'closed'
-  trigger: ReadonlyArray<'tool_result' | 'turn_end' | 'tick'>
+  trigger: ReadonlyArray<'tool_result' | 'tool_call' | 'turn_end' | 'tick'>
   payload: string
 }
 export const UI_SLOT_TABLE: Record<UiSlotName, UiSlotTableRow> = Sl.X_AGNES_SLOT_TABLE

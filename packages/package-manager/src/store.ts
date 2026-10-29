@@ -1,18 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
-import { validateLockfile } from '@agnes/protocol'
-import { renameWriteThroughSync } from '@agnes/system-node'
+import { type PermissionEffectAdmission, validateLockfile } from '@agnes/protocol'
+import { renameWriteThroughSync, syncTreeBatchedSync } from '@agnes/system-node'
 import { appendPackageAudit, type PackageAuditSink } from './audit.js'
 import { PackageError } from './errors.js'
-import {
-  canonical,
-  readStaticJson,
-  snapshotHash,
-  syncDirectory,
-  type VerificationCache,
-} from './integrity.js'
-import { type LockEntry, type Lockfile, readLock, writeLock } from './lockfile.js'
+import { canonical, own, readStaticJson, snapshotHash, syncDirectory } from './integrity.js'
+import { type LockEntry, type Lockfile, prepareLockPublication, readLock } from './lockfile.js'
+import { assertCurrentPackageFormat } from './package-format.js'
 import { hashDirectory, packageDir } from './sources.js'
 
 export type PackageCommitPoint =
@@ -32,6 +27,7 @@ export type RuntimeSnapshotCommitPoint =
   | 'runtime-gc-state-written'
   | 'runtime-finished'
 export type PackageStore = {
+  admission?: PermissionEffectAdmission
   dataDir: string
   profileDir: string
   profile: string
@@ -41,8 +37,6 @@ export type PackageStore = {
   actor?: string
   checkpoint?: (point: PackageCommitPoint) => void
   runtimeCheckpoint?: (point: RuntimeSnapshotCommitPoint) => void
-  /** Present only on the manager's read-only views; see `VerificationCache`. */
-  verified?: VerificationCache
 }
 type Journal = {
   version: 1
@@ -62,8 +56,11 @@ const TREE = /^sha256-[a-f0-9]{64}$/
 const journalPath = (s: PackageStore) => join(s.profileDir, '.agnes-package-transaction.json')
 export const previousPackageDir = (s: Pick<PackageStore, 'dataDir' | 'profile'>, id: string) =>
   join(dirname(packageDir(s.dataDir, s.profile, id)), `.previous-${snapshotHash(id)}`)
-function fail(reason: string): never {
-  throw new PackageError('E_LOCK_MISMATCH', 'package store requires recovery', { detail: { reason } })
+function fail(reason: string, path?: string): never {
+  // The path stays in the detail: hashed directory names would make the message read as a secret.
+  throw new PackageError('E_LOCK_MISMATCH', 'package store requires recovery', {
+    detail: { reason, ...(path ? { path } : {}) },
+  })
 }
 function present(path: string): boolean {
   try {
@@ -78,7 +75,7 @@ function tree(path: string): string | null {
   return present(path) ? hashDirectory(path, { exclude: [] }) : null
 }
 function exact(path: string, expected: string | null): void {
-  if (tree(path) !== expected) fail('tree-mismatch')
+  if (tree(path) !== expected) fail('tree-mismatch', path)
 }
 function state(entry: LockEntry | null): string {
   return entry === null
@@ -97,7 +94,16 @@ function paths(s: PackageStore, j: Journal) {
     backup: join(root, `.transaction-${j.transactionId}`),
     stage: j.stage === null ? null : join(root, j.stage),
     previous: previousPackageDir(s, j.id),
+    trash: join(root, `.trash-${j.transactionId}`),
   }
+}
+/**
+ * Deletes a tree the caller has just verified. It is first renamed to this journal's trash, so a
+ * crash part-way through the recursive delete leaves only a tree recovery may drop unchecked.
+ */
+function discard(p: ReturnType<typeof paths>, path: string): void {
+  renameSync(path, p.trash)
+  rmSync(p.trash, { recursive: true })
 }
 function checked(s: PackageStore, lock: Lockfile, raw: Record<string, unknown>): Journal {
   if (
@@ -139,6 +145,7 @@ function checked(s: PackageStore, lock: Lockfile, raw: Record<string, unknown>):
   for (const key of ['oldTree', 'nextTree'])
     if (raw[key] !== null && (typeof raw[key] !== 'string' || !TREE.test(raw[key] as string)))
       fail('journal-tree')
+  for (const key of ['old', 'next']) assertCurrentPackageFormat(raw[key])
   for (const key of ['old', 'next'])
     if (raw[key] !== null && !validateLockfile({ ...lock, packages: { [raw.id]: raw[key] } }).ok)
       fail('journal-entry')
@@ -190,24 +197,26 @@ function finish(s: PackageStore, j: Journal): void {
       // This directory is exclusively owned by PackageManager. Its identity is pinned by the old lock.
       if (present(p.previous)) {
         const previousExpected = j.old.previous?.treeIntegrity
-        if (!previousExpected || tree(p.previous) !== previousExpected) fail('previous-mismatch')
-        rmSync(p.previous, { recursive: true })
+        if (!previousExpected || tree(p.previous) !== previousExpected) fail('previous-mismatch', p.previous)
+        discard(p, p.previous)
       }
       renameSync(p.backup, p.previous)
-    } else rmSync(p.backup, { recursive: true })
+    } else discard(p, p.backup)
   }
   if (j.next === null && present(p.previous)) {
     const expected = j.old?.previous?.treeIntegrity
-    if (!expected || tree(p.previous) !== expected) fail('previous-mismatch')
-    rmSync(p.previous, { recursive: true })
+    if (!expected || tree(p.previous) !== expected) fail('previous-mismatch', p.previous)
+    discard(p, p.previous)
   }
   if (moves && j.next !== null && j.old !== null) exact(p.previous, j.oldTree)
   syncDirectory(dirname(p.dest))
   s.checkpoint?.('previous-saved')
   if (p.stage && present(p.stage)) {
     exact(p.stage, j.nextTree)
-    rmSync(p.stage, { recursive: true })
+    discard(p, p.stage)
   }
+}
+function complete(s: PackageStore): void {
   rmSync(journalPath(s))
   syncDirectory(s.profileDir)
   s.checkpoint?.('finished')
@@ -215,36 +224,59 @@ function finish(s: PackageStore, j: Journal): void {
 /** Caller holds the unique Profile lock. No decision uses operation labels or UI state. */
 export function recoverPackageStore(s: PackageStore): void {
   if (!existsSync(journalPath(s))) return
-  const lock = readLock(s.profileDir, { profile: s.profile, agnesVersion: s.agnesVersion }),
-    j = checked(s, lock, readStaticJson(journalPath(s))),
-    p = paths(s, j)
-  const current = lock.packages[j.id] ?? null
-  if (canonical(current) === canonical(j.next)) {
-    finish(s, j)
-    return
+  const lock = readLock(s.profileDir, { profile: s.profile, agnesVersion: s.agnesVersion })
+  const raw = readStaticJson(journalPath(s))
+  let entries: Journal[]
+  if (raw.version === 2) {
+    if (
+      Object.keys(raw).sort().join(',') !== 'entries,version' ||
+      !Array.isArray(raw.entries) ||
+      raw.entries.length < 2 ||
+      raw.entries.length > 33
+    )
+      fail('journal-group')
+    entries = raw.entries.map((entry) => checked(s, lock, entry))
+    if (
+      new Set(entries.map((j) => j.id)).size !== entries.length ||
+      new Set(entries.map((j) => paths(s, j).dest)).size !== entries.length ||
+      new Set(entries.map((j) => j.transactionId)).size !== entries.length
+    )
+      fail('journal-group-identity')
+  } else entries = [checked(s, lock, raw)]
+  for (const j of entries) rmSync(paths(s, j).trash, { recursive: true, force: true })
+  const matches = (key: 'old' | 'next') =>
+    entries.every((j) => canonical(own(lock.packages, j.id) ?? null) === canonical(j[key]))
+  if (matches('next')) {
+    for (const j of entries) finish(s, j)
+  } else {
+    if (!matches('old')) fail('lock-mismatch')
+    for (const j of [...entries].reverse()) restore(s, j)
   }
-  if (canonical(current) !== canonical(j.old)) fail('lock-mismatch')
+  complete(s)
+}
+function restore(s: PackageStore, j: Journal): void {
+  const p = paths(s, j)
+  // Only this journal names its trash, and only verified trees enter it: a partial delete is expected.
+  rmSync(p.trash, { recursive: true, force: true })
   if (j.stage !== null || j.next === null) {
     if (present(p.backup)) {
       exact(p.backup, j.oldTree)
       if (present(p.dest)) {
         exact(p.dest, j.nextTree)
-        rmSync(p.dest, { recursive: true })
+        discard(p, p.dest)
       }
       renameSync(p.backup, p.dest)
     } else if (j.old === null) {
       if (present(p.dest)) {
         exact(p.dest, j.nextTree)
-        rmSync(p.dest, { recursive: true })
+        discard(p, p.dest)
       }
     } else exact(p.dest, j.oldTree)
     if (p.stage && present(p.stage)) {
       exact(p.stage, j.nextTree)
-      rmSync(p.stage, { recursive: true })
+      discard(p, p.stage)
     }
   } else exact(p.dest, j.oldTree)
-  rmSync(journalPath(s))
-  syncDirectory(s.profileDir)
 }
 /** Retains crash fixtures at each point; subsequent calls recover from lock+digest. */
 export function commitPackage(
@@ -255,9 +287,133 @@ export function commitPackage(
   operation: string,
   stage?: string,
 ): void {
-  if (existsSync(journalPath(s))) fail('pending-transaction')
+  commitPackages(s, lock, [{ id, next, operation, ...(stage ? { stage } : {}) }])
+}
+export type PackageChange = { id: string; next: LockEntry | null; operation: string; stage?: string }
+/** One atomic lock publication, with digest-checked rollback before it and roll-forward after it. */
+export function commitPackages(s: PackageStore, lock: Lockfile, changes: readonly PackageChange[]): void {
+  if (s.admission) throw new Error('Admitted package mutations require the asynchronous transaction')
+  for (const _ of packageTransaction(s, lock, changes)) {
+    /* synchronous human path */
+  }
+}
+
+export async function commitPackagesAdmitted(
+  s: PackageStore,
+  lock: Lockfile,
+  changes: readonly PackageChange[],
+): Promise<void> {
+  const transaction = packageTransaction(s, lock, changes)
+  try {
+    for (;;) {
+      await s.admission?.verify()
+      s.admission?.assertActive()
+      if (transaction.next().done) return
+    }
+  } catch (error) {
+    transaction.throw(error)
+    throw error
+  }
+}
+
+function* packageTransaction(
+  s: PackageStore,
+  lock: Lockfile,
+  changes: readonly PackageChange[],
+): Generator<void, void> {
+  if (!changes.length || changes.length > 33 || new Set(changes.map((c) => c.id)).size !== changes.length)
+    fail('transaction-group')
+  if (existsSync(journalPath(s))) fail('pending-transaction', journalPath(s))
+  const draft = { ...lock, packages: { ...lock.packages } }
+  const entries = changes.map((change) => {
+    const j = prepare(s, lock, change)
+    if (j.next) draft.packages[j.id] = j.next
+    else delete draft.packages[j.id]
+    return j
+  })
+  if (new Set(entries.map((j) => paths(s, j).dest)).size !== entries.length) fail('package-path-collision')
+  assertCurrentPackageFormat(draft)
+  if (!validateLockfile(draft).ok) fail('new-lock')
+  const serialized = `${JSON.stringify(entries.length === 1 ? entries[0] : { version: 2, entries })}\n`
+  if (Buffer.byteLength(serialized) > 1048576) fail('journal-size')
+  const file = journalPath(s),
+    tmp = `${file}.tmp`
+  s.admission?.assertActive()
+  let published = false
+  try {
+    mkdirSync(dirname(paths(s, entries[0]!).dest), { recursive: true })
+    // Staged trees reach the disk before the journal names them: after power loss a published tree
+    // must still hash to the digest the lockfile records.
+    const staged = entries.flatMap((j) => paths(s, j).stage ?? [])
+    if (staged.length) syncTreeBatchedSync(...staged)
+    writeFileSync(tmp, serialized, { mode: 0o600, flush: true })
+    yield
+    s.admission?.assertActive()
+    renameWriteThroughSync(resolve(tmp), resolve(file))
+    s.checkpoint?.('prepared')
+    for (const j of entries) {
+      yield
+      s.admission?.assertActive()
+      const p = paths(s, j)
+      if ((j.stage || j.next === null) && j.oldTree !== null) renameSync(p.dest, p.backup)
+      s.checkpoint?.('old-moved')
+      yield
+      s.admission?.assertActive()
+      if (p.stage) renameSync(p.stage, p.dest)
+      s.checkpoint?.('new-moved')
+    }
+    // The renames reach the disk before the lock names their result, so recovery after power loss never
+    // finds a lock that says "next" over a directory still holding the old tree.
+    for (const dir of new Set(
+      entries.flatMap((j) => [dirname(paths(s, j).dest), dirname(paths(s, j).backup)]),
+    ))
+      syncDirectory(dir)
+    const pending = prepareLockPublication(s.profileDir, draft)
+    try {
+      yield
+      s.admission?.assertActive()
+      pending.publish()
+      published = true
+    } finally {
+      pending.discard()
+    }
+  } catch (error) {
+    if (s.admission && !published) {
+      if (existsSync(file)) {
+        // A directory flush can fail after rename. Preserve the journal for roll-forward if
+        // the lock already names the new trees; never restore trees behind a published lock.
+        const disk = readLock(s.profileDir, { profile: s.profile, agnesVersion: s.agnesVersion })
+        const committed = entries.every(
+          (j) => canonical(own(disk.packages, j.id) ?? null) === canonical(j.next),
+        )
+        if (!committed) {
+          for (const j of [...entries].reverse()) restore(s, j)
+          const { checkpoint: _checkpoint, ...recovery } = s
+          complete(recovery)
+        }
+      }
+      rmSync(tmp, { force: true })
+    }
+    throw error
+  }
+  s.checkpoint?.('lock-written')
+  for (const j of entries) finish(s, j)
+  complete(s)
+}
+function prepare(s: PackageStore, lock: Lockfile, change: PackageChange): Journal {
+  const { id, operation, stage } = change
+  let { next } = change
+  if (next?.provenance)
+    next = {
+      ...next,
+      provenance: {
+        ...next.provenance,
+        trustDecision: next.state.trusted ? 'confirmed' : operation === 'untrust' ? 'revoked' : 'pending',
+      },
+    }
+  if (existsSync(journalPath(s))) fail('pending-transaction', journalPath(s))
   const dest = packageDir(s.dataDir, s.profile, id),
-    old = lock.packages[id] ?? null
+    old = own(lock.packages, id) ?? null
   for (const other of Object.keys(lock.packages))
     if (other !== id && packageDir(s.dataDir, s.profile, other) === dest) fail('package-path-collision')
   if (old === null && present(dest)) fail('unowned-directory')
@@ -285,26 +441,8 @@ export function commitPackage(
     oldTree,
     nextTree,
   }
-  // Validate all future lock bytes before publishing an intent or moving any directory.
-  const draft = { ...lock, packages: { ...lock.packages } }
-  if (next) draft.packages[id] = next
-  else delete draft.packages[id]
-  if (!validateLockfile(draft).ok) fail('new-lock')
-  const serialized = `${JSON.stringify(j)}\n`
+  const serialized = JSON.stringify(j)
   if (Buffer.byteLength(serialized) > 1048576) fail('journal-size')
   checked(s, lock, JSON.parse(serialized) as Record<string, unknown>)
-  const file = journalPath(s),
-    tmp = `${file}.tmp`
-  mkdirSync(dirname(dest), { recursive: true })
-  writeFileSync(tmp, serialized, { mode: 0o600, flush: true })
-  renameWriteThroughSync(resolve(tmp), resolve(file))
-  s.checkpoint?.('prepared')
-  const p = paths(s, j)
-  if ((stage || next === null) && oldTree !== null) renameSync(dest, p.backup)
-  s.checkpoint?.('old-moved')
-  if (stage) renameSync(stage, dest)
-  s.checkpoint?.('new-moved')
-  writeLock(s.profileDir, draft)
-  s.checkpoint?.('lock-written')
-  finish(s, j)
+  return j
 }

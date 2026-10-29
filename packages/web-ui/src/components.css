@@ -1,0 +1,3071 @@
+@import "./layers.css";
+@import "./native.css";
+@import "./refinement.css";
+@import "./doctor-groups.css";
+@import "./mcp-tool-catalog.css";
+
+@layer ui {
+  .agh-notifications {
+    position: fixed;
+    inset-block-start: var(--s16);
+    inset-inline-end: var(--s16);
+    z-index: 1400;
+    width: min(380px, calc(100vw - 32px));
+    display: grid;
+    gap: var(--s8);
+    pointer-events: none;
+  }
+  .agh-notification {
+    display: flex;
+    align-items: start;
+    gap: var(--s8);
+    padding: var(--s12);
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-popover);
+    border: 1px solid var(--agnes-line-emphasis);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-elevation);
+    pointer-events: auto;
+  }
+  .agh-notification-message {
+    flex: 1;
+    overflow-wrap: anywhere;
+  }
+
+  :root {
+    --agnes-ui-input-font-size: var(--font-size-sm);
+  }
+
+  /* Public component contracts and native aliases share one declaration source. */
+  :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button) {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--s8);
+    height: var(--control-height);
+    min-height: var(--control-height);
+    padding: 0 var(--s12);
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-fill);
+    box-shadow: none;
+    font-family: var(--font-sans);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-sm);
+    cursor: pointer;
+    /* Surface and text change together, including when enabled under the pointer; the focus ring
+     appears at once, never as a growing glow. */
+    transition: none;
+  }
+  :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button):hover:not(:disabled):not(
+    [aria-disabled="true"]
+  ) {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-fill-hover);
+    border-color: transparent;
+  }
+  :is(.agh-btn--primary, .primary-button):not(:disabled):not([aria-disabled="true"]) {
+    color: var(--agnes-button-primary-content);
+    background: var(--agnes-button-primary-bg);
+    border-color: var(--agnes-button-primary-bg);
+  }
+  :is(.agh-btn--primary, .primary-button):hover:not(:disabled):not([aria-disabled="true"]) {
+    color: var(--agnes-button-primary-content);
+    background: var(--agnes-button-primary-bg-hover);
+    border-color: var(--agnes-button-primary-bg-hover);
+  }
+  :is(.agh-btn--ghost, .agh-btn--link, .icon-button):not(:disabled):not([aria-disabled="true"]) {
+    border-color: transparent;
+    background: transparent;
+    color: var(--agnes-text-secondary);
+  }
+  :is(.agh-btn--ghost, .icon-button):hover:not(:disabled):not([aria-disabled="true"]) {
+    border-color: transparent;
+    background: var(--agnes-bg-hover);
+    color: var(--agnes-text-primary);
+  }
+  /* A link sits on the text edge of its column; the underline answers the pointer and the keyboard. */
+  .agh-btn--link:not(:disabled):not([aria-disabled="true"]) {
+    padding-inline: 0;
+    color: var(--agnes-text-emphasis);
+    text-underline-offset: 0.16em;
+  }
+  .agh-btn--link:is(:hover, :focus-visible):not(:disabled):not([aria-disabled="true"]) {
+    text-decoration: underline;
+  }
+  /* Destructive: a soft red fill; the label carries the colour. */
+  .agh-btn--danger:not(:disabled):not([aria-disabled="true"]) {
+    color: var(--agnes-status-danger-text);
+    border-color: transparent;
+    background: var(--agnes-status-danger-bg);
+  }
+  .agh-btn--danger:hover:not(:disabled):not([aria-disabled="true"]) {
+    color: var(--agnes-status-danger-text);
+    border-color: transparent;
+    background: color-mix(in srgb, var(--agnes-status-danger-text) 6%, var(--agnes-status-danger-bg));
+  }
+  /* Filled danger is reserved for destructive confirmation footers. */
+  .agh-btn--danger-filled:not(:disabled):not([aria-disabled="true"]),
+  .agh-btn--danger-filled:hover:not(:disabled):not([aria-disabled="true"]) {
+    color: var(--agnes-text-inverse);
+    background: var(--agnes-status-danger-text);
+    border-color: var(--agnes-status-danger-text);
+  }
+  :is(.agh-btn--sm, .secondary-button:where(.compact), .icon-button) {
+    height: var(--control-height-sm);
+    min-height: var(--control-height-sm);
+    padding-inline: var(--s8);
+  }
+  :is(.agh-btn--icon, .icon-button) {
+    width: var(--control-height-sm);
+    min-width: var(--control-height-sm);
+    padding: 0;
+    border-radius: var(--radius-full);
+  }
+  /* New icon actions retain 28px visuals even inside the legacy 32px responsive floor. */
+  .agh-btn.agh-btn--icon {
+    min-width: var(--control-height-sm);
+    min-height: var(--control-height-sm);
+  }
+  :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button):focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
+  }
+  :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button):disabled,
+  :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button)[aria-disabled="true"] {
+    color: var(--agnes-text-tertiary);
+    background: var(--agnes-bg-card);
+    border-color: transparent;
+    opacity: 1;
+    cursor: not-allowed;
+  }
+  .agh-btn[aria-busy="true"] {
+    cursor: progress;
+  }
+  .agh-btn--loading-no-icon > .ant-btn-icon {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+  }
+  .agh-btn--loading-no-icon > span:not(.ant-btn-icon) {
+    visibility: hidden;
+  }
+  @media (max-width: 767px) {
+    :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button)::after {
+      content: "";
+      position: absolute;
+      /* Static geometry must survive reduced-motion's removal of transforms. */
+      inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
+    }
+  }
+  @media (min-width: 768px) and (max-width: 900px) {
+    :is(.agh-btn--icon, .agnes-ui-switch, .switch) {
+      position: relative;
+    }
+    :is(.agh-btn--icon, .agnes-ui-switch, .switch)::after {
+      content: "";
+      position: absolute;
+      inset: min(0px, calc((100% - var(--s32)) / 2));
+    }
+  }
+  .agh-btn--secondary:not(:disabled):not([aria-disabled="true"]) {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-fill);
+    border-color: transparent;
+  }
+  .agh-btn--secondary:hover:not(:disabled):not([aria-disabled="true"]) {
+    background: var(--agnes-bg-fill-hover);
+  }
+  /* Keyboard hint: one small rounded keycap per key, a light fill and no outline, never the primary
+   label. */
+  .agh-kbd {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.1875rem;
+    /* The UI face, not the mono one: at this size a mono capital O reads as a zero. */
+    font-family: var(--font-sans);
+    font-size: 0.6875rem;
+    font-weight: var(--font-weight-medium);
+    white-space: nowrap;
+  }
+  .agh-kbd-key {
+    display: inline-grid;
+    place-items: center;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    padding: 0 0.3125rem;
+    border-radius: 0.3125rem;
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-fill);
+    line-height: 1;
+  }
+  /* A tooltip that names its shortcut: the label, then the keycaps. */
+  .agh-tooltip-shortcut {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+  }
+  /* A file or folder named inside text: its type icon and name, quiet like an inline code span. */
+  .agh-file-mention {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.1875rem;
+    max-width: 100%;
+    margin: 0 0.0625rem;
+    padding: 0 0.3125rem 0 0.25rem;
+    border: 0;
+    border-radius: var(--radius-sm);
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+    font: inherit;
+    line-height: 1.4;
+    vertical-align: baseline;
+  }
+  .agh-file-mention > svg {
+    flex: none;
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+  .agh-file-mention-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  button.agh-file-mention {
+    cursor: pointer;
+  }
+  button.agh-file-mention:hover {
+    text-decoration: underline;
+  }
+  button.agh-file-mention:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: 1px;
+  }
+  /* Push pages: an opened page takes the region; its breadcrumb (Parent › Current) leads back. */
+  .agh-push-stack {
+    min-width: 0;
+  }
+  .agh-push-root[hidden],
+  .agh-push-header-host[hidden],
+  .agh-push-body[hidden] {
+    display: none;
+  }
+  .agh-push-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--s16);
+    margin-bottom: var(--s16);
+  }
+  .agh-push-heading {
+    min-width: 0;
+  }
+  .agh-push-heading h2 {
+    margin: var(--s4) 0 0;
+    color: var(--agnes-text-primary);
+    font-size: 1.25rem;
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.75rem;
+  }
+  .agh-push-heading h2:focus {
+    outline: none;
+  }
+  .agh-push-heading > p {
+    margin: var(--s4) 0 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .agh-push-crumbs ol {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+  }
+  .agh-push-crumbs li {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s2);
+    min-width: 0;
+  }
+  .agh-push-crumb {
+    padding: 0;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+  }
+  .agh-push-crumb {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s2);
+  }
+  .agh-push-crumb:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+  .agh-push-crumb:hover:not(:disabled) {
+    color: var(--agnes-text-primary);
+    text-decoration: underline;
+  }
+  .agh-push-crumb:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+  .agh-push-crumb-separator {
+    width: 0.75rem;
+    height: 0.75rem;
+  }
+  .agh-push-crumb-current {
+    color: var(--agnes-text-secondary);
+  }
+  .agh-push-actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+  }
+  /* One header line (settings): the breadcrumb is the title, the actions sit at its end. Earlier
+   levels are quiet links back; the current level is the page heading. */
+  .agh-push-header--line {
+    align-items: center;
+    gap: var(--s12);
+    min-height: 3.375rem;
+    margin-bottom: 0;
+  }
+  .agh-push-header--line > .agh-push-heading {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+  }
+  .agh-push-crumbs--title {
+    min-width: 0;
+  }
+  .agh-push-crumbs--title ol {
+    flex-wrap: nowrap;
+    gap: var(--s4);
+    color: var(--agnes-text-tertiary);
+    font-size: 1rem;
+    line-height: 1.5rem;
+  }
+  .agh-push-crumbs--title li {
+    gap: var(--s4);
+    flex: none;
+  }
+  .agh-push-crumbs--title .agh-push-crumb {
+    max-width: 14rem;
+    margin-inline-start: calc(-1 * var(--s4));
+    padding: var(--s2) var(--s4);
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .agh-push-crumbs--title .agh-push-crumb:hover:not(:disabled) {
+    background: var(--agnes-bg-hover);
+  }
+  .agh-push-crumbs--title .agh-push-crumb-current {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .agh-push-header--line .agh-push-crumbs--title .agh-push-crumb-current h2 {
+    margin: 0;
+    overflow: hidden;
+    color: var(--agnes-text-primary);
+    font-size: 1rem;
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.5rem;
+    letter-spacing: 0;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .agh-push-crumbs--title .agh-push-crumb-current h2:focus {
+    outline: none;
+  }
+  .agh-push-header--line > .agh-push-actions:empty {
+    display: none;
+  }
+  /* Loading: a quiet placeholder after 200 ms, words only once it is slow, a fade on arrival. */
+  .agh-loadable-placeholder {
+    display: grid;
+    gap: var(--s12);
+  }
+  .agh-loadable-shapes {
+    display: grid;
+    gap: var(--s8);
+  }
+  .agh-loadable-placeholder[data-shape="cards"] .agh-loadable-shapes {
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    gap: var(--s12);
+  }
+  .agh-loadable-shape {
+    display: block;
+    height: 0.875rem;
+    border-radius: var(--radius-sm);
+    background: var(--agnes-bg-fill);
+  }
+  .agh-loadable-shape:nth-child(3n) {
+    width: 62%;
+  }
+  .agh-loadable-placeholder[data-shape="rows"] .agh-loadable-shape {
+    height: 2.5rem;
+    width: auto;
+  }
+  .agh-loadable-placeholder[data-shape="cards"] .agh-loadable-shape {
+    height: 9rem;
+    width: auto;
+    border-radius: var(--radius-card);
+  }
+  .agh-loadable-status {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+  }
+  .agh-loadable-error {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    margin-bottom: var(--s12);
+    padding: var(--s8) var(--s12);
+    border-radius: var(--radius-md);
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+    font-size: var(--font-size-sm);
+  }
+  .agh-loadable-content[data-fade] {
+    animation: agh-loadable-fade 160ms ease-out;
+  }
+  @keyframes agh-loadable-fade {
+    from {
+      opacity: 0;
+    }
+  }
+  /* The one progress indicator for page reads: 2px along the top of the window. */
+  .agh-top-progress {
+    position: fixed;
+    z-index: 2000;
+    inset: 0 0 auto;
+    height: 2px;
+    pointer-events: none;
+    opacity: 0;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--agnes-brand-primary) 40%,
+      var(--agnes-brand-primary) 60%,
+      transparent
+    );
+    background-size: 50% 100%;
+    background-repeat: no-repeat;
+    transition: opacity 200ms ease;
+  }
+  .agh-top-progress[data-active] {
+    opacity: 1;
+    animation: agh-top-progress 1.2s ease-in-out infinite;
+  }
+  @keyframes agh-top-progress {
+    from {
+      background-position: -50% 0;
+    }
+    to {
+      background-position: 150% 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .agh-loadable-content[data-fade],
+    .agh-top-progress[data-active] {
+      animation: none;
+    }
+    .agh-top-progress[data-active] {
+      background: var(--agnes-brand-primary);
+    }
+  }
+  .agh-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+    max-width: 100%;
+    padding: var(--s2) var(--s8);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-sm);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-subtle);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-sm);
+    overflow-wrap: anywhere;
+  }
+  .agh-tag[data-tone="warn"] {
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+    border-color: var(--agnes-status-warning-border);
+  }
+  .agh-tag[data-tone="bad"] {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+    border-color: var(--agnes-status-danger-border);
+  }
+  .agh-tag[data-tone="info"] {
+    color: var(--agnes-status-info-text);
+    background: var(--agnes-status-info-bg);
+    border-color: var(--agnes-status-info-border);
+  }
+  /* Legacy Badge keeps its public tones; business-page status selection is migrated separately. */
+  .agh-tag[data-tone="ok"] {
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
+    border-color: var(--agnes-status-success-border);
+  }
+  .agh-meta {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .agh-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--s16);
+    padding-inline: var(--s4);
+    border-radius: var(--radius-pill);
+    background: var(--agnes-bg-selected);
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-xs);
+  }
+  .agh-tooltip-anchor,
+  .agh-menu-anchor {
+    display: inline-flex;
+    max-width: 100%;
+  }
+  .agh-tooltip-anchor:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
+  }
+  /* Text-only hints must not intercept a neighboring action as focus or hover moves. */
+  .agh-tooltip,
+  .agh-tooltip * {
+    pointer-events: none;
+  }
+  /* Tooltips raised by vendor components share the surface of the Tooltip primitive. */
+  :is(.agh-tooltip, .ant-tooltip) .ant-tooltip-inner,
+  :is(.agh-tooltip, .ant-tooltip) .ant-tooltip-container {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-popover);
+    border: 0;
+    border-radius: var(--radius-control);
+    box-shadow: var(--elevation-1);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  :is(.agh-tooltip, .ant-tooltip) .ant-tooltip-arrow {
+    --antd-arrow-background-color: var(--agnes-bg-popover);
+  }
+  .agh-menu {
+    display: grid;
+    min-width: 180px;
+    gap: var(--s4);
+  }
+  .agh-menu-item {
+    display: flex;
+    justify-content: flex-start;
+    width: 100%;
+    height: var(--control-height);
+    padding: 0 var(--s12);
+    border: 0;
+    border-radius: var(--radius-menu-item);
+    background: transparent;
+    color: var(--agnes-text-primary);
+    font-weight: var(--font-weight-regular);
+  }
+  .agh-menu-item[data-danger] {
+    color: var(--agnes-status-danger-text);
+  }
+  .agh-menu-item:hover:not([aria-disabled="true"]) {
+    background: var(--agnes-bg-hover);
+  }
+  .agh-menu-item[data-danger]:hover:not([aria-disabled="true"]) {
+    background: var(--agnes-status-danger-bg);
+  }
+  .agh-menu-item:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: -3px;
+    box-shadow: var(--focus-line-inset);
+  }
+  .agh-menu-item[aria-disabled="true"] {
+    color: var(--agnes-text-tertiary);
+    cursor: not-allowed;
+  }
+  .agh-menu-separator {
+    border: 0;
+    height: 1px;
+    margin-block: var(--s4);
+    background: var(--agnes-line-primary);
+  }
+  /* One toast shape product-wide: a single-line card with an outcome icon, top-centre below the
+   top bar. It sizes to its text between the two bounds and wraps only when the text is long. Both
+   bounds are viewport lengths: the message layer shrinks to fit, so a percentage would collapse. */
+  .agh-toast {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s8);
+    box-sizing: border-box;
+    width: max-content;
+    min-width: min(15rem, calc(100vw - var(--s32)));
+    max-width: min(26.25rem, calc(100vw - var(--s32)));
+    margin-inline: auto;
+    padding: var(--s8) var(--s16) var(--s8) var(--s12);
+    border: 1px solid var(--agnes-status-success-border);
+    border-radius: var(--radius-lg);
+    background: var(--agnes-status-success-bg);
+    color: var(--agnes-status-success-text);
+    box-shadow: var(--shadow-elevation-soft);
+    font-size: var(--font-size-body);
+    overflow-wrap: anywhere;
+    line-height: 1.6;
+    text-align: start;
+    pointer-events: auto;
+  }
+  .agh-toast-icon {
+    flex: 0 0 auto;
+    margin-block: calc((1.6em - 1rem) / 2);
+  }
+  .agh-toast-text {
+    min-width: 0;
+  }
+  /* Outcome modifiers change colour only; placement and timing are shared by every toast. */
+  .agh-toast--info {
+    border-color: var(--agnes-status-info-border);
+    background: var(--agnes-status-info-bg);
+    color: var(--agnes-status-info-text);
+  }
+  .agh-toast--error {
+    border-color: var(--agnes-status-danger-border);
+    background: var(--agnes-status-danger-bg);
+    color: var(--agnes-status-danger-text);
+  }
+  @media (max-width: 767px) {
+    .agh-menu-item {
+      min-height: var(--control-height-touch);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button)::after {
+      inset: calc((100% - max(100%, var(--control-height-touch))) / 2);
+    }
+  }
+  .agh-icon[data-size="16"] {
+    width: var(--s16);
+    height: var(--s16);
+  }
+  .agh-icon[data-size="18"] {
+    width: 18px;
+    height: 18px;
+  }
+  .agh-icon[data-size="20"] {
+    width: 20px;
+    height: 20px;
+  }
+  .agh-icon[data-size="48"] {
+    width: var(--s48);
+    height: var(--s48);
+  }
+  .agh-btn--icon .ant-btn-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* Shared settings page order: heading, banner, toolbar, content, dirty save bar. */
+  :is(.agnes-settings-card, .config-card) {
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-group);
+    box-shadow: var(--elevation-0);
+  }
+  /* Icon tile: the small tinted square that leads a row, a card header or an empty state. */
+  .agh-icon-tile {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-chip);
+    color: var(--agnes-icon-secondary);
+    background: var(--agnes-bg-fill);
+  }
+  .agnes-settings-page[data-layout] {
+    width: 100%;
+    max-width: 720px;
+    min-width: 0;
+    margin-inline: auto;
+  }
+  .agnes-settings-page[data-layout="list"] {
+    max-width: 960px;
+  }
+  .agnes-settings-page > .agnes-settings-page-heading,
+  .agnes-settings-page .agnes-settings-page-top {
+    margin-bottom: var(--s24);
+  }
+  .agnes-settings-page > .agnes-settings-page-heading h2,
+  .agnes-settings-page .agnes-settings-page-top h2 {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-md);
+  }
+  .agnes-settings-page > .agnes-settings-toolbar,
+  .agnes-settings-page > .agh-banner,
+  .agnes-settings-subpage-main > .agnes-settings-toolbar,
+  .agnes-settings-subpage-main > .agh-banner {
+    margin-bottom: var(--s16);
+  }
+  .agh-settings-toolbar-search {
+    flex: 1 1 240px;
+    min-width: 0;
+  }
+  .agh-settings-toolbar-filters,
+  .agh-settings-toolbar-controls {
+    display: flex;
+    gap: var(--s12);
+    align-items: flex-end;
+  }
+  .agh-settings-save-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--s16);
+    margin-top: var(--s24);
+    padding: var(--s16);
+    border-top: 1px solid var(--agnes-line-primary);
+    background: var(--agnes-bg-popover);
+    color: var(--agnes-text-primary);
+  }
+  .agh-settings-saved {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    color: var(--agnes-status-success-text);
+  }
+  /* A quiet placeholder: small mark, one line that names the state, one that says what to do. */
+  .agh-empty-state {
+    display: grid;
+    justify-items: center;
+    gap: var(--s4);
+    width: 100%;
+    max-width: 420px;
+    margin-inline: auto;
+    padding-block: var(--s32);
+    color: var(--agnes-text-primary);
+    text-align: center;
+  }
+  /* On a settings page the placeholder fills the card its list would occupy. */
+  :is(.agnes-settings-page, .settings-content)
+  .agh-empty-state:not(
+    :is(.agnes-settings-group, .agnes-settings-card, .agnes-settings-list, .agh-disclosure-body) *
+  ) {
+    box-sizing: border-box;
+    max-width: none;
+    padding: var(--s32) var(--s24);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-group);
+  }
+  .agh-empty-state-icon {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    margin-bottom: var(--s12);
+    border-radius: var(--radius-lg);
+    color: var(--agnes-icon-secondary);
+    background: var(--agnes-bg-fill);
+  }
+  /* One mark size wherever the state appears, whatever size the icon was authored at. */
+  .agh-empty-state .agh-empty-state-icon > svg {
+    width: var(--s20);
+    height: var(--s20);
+  }
+  .agh-empty-state h3 {
+    margin: 0;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-md);
+    text-wrap: balance;
+  }
+  .agh-empty-state p {
+    max-width: 44ch;
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+    text-wrap: pretty;
+  }
+  .agh-empty-state-actions {
+    display: flex;
+    justify-content: center;
+    gap: var(--s8);
+    flex-wrap: wrap;
+    margin-top: var(--s16);
+  }
+  .agh-empty-state-help {
+    margin-top: var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+  }
+  .agh-banner {
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+    min-height: 3rem;
+    box-sizing: border-box;
+    padding: var(--s10) var(--s16);
+    border: 0;
+    border-radius: var(--radius-card);
+    color: var(--agnes-text-primary);
+    background: var(--agnes-status-info-bg);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  /* The tint and the icon carry the tone; the sentence stays in the reading colour. */
+  .agh-banner > .agh-icon {
+    flex: 0 0 auto;
+    color: var(--agnes-status-info-solid);
+  }
+  .agh-banner[data-tone="warning"] {
+    background: var(--agnes-status-warning-bg);
+  }
+  .agh-banner[data-tone="warning"] > .agh-icon {
+    color: var(--agnes-status-warning-solid);
+  }
+  .agh-banner[data-tone="error"] {
+    background: var(--agnes-status-danger-bg);
+  }
+  .agh-banner[data-tone="error"] > .agh-icon {
+    color: var(--agnes-status-danger-solid);
+  }
+  .agh-banner-copy {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .agh-banner-copy p {
+    margin: 0;
+    color: inherit;
+  }
+  .agh-banner-action {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s8);
+    flex: 0 0 auto;
+    max-width: 100%;
+  }
+  .agh-list-row {
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+    min-height: 56px;
+    padding-block: var(--s10);
+    border-bottom: 1px solid var(--agnes-line-primary);
+    color: var(--agnes-text-primary);
+  }
+  .agnes-settings-list > .agh-list-row {
+    min-height: 3.25rem;
+    border-bottom: 0;
+  }
+  .agh-list-row-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--s32);
+    height: var(--s32);
+    flex: 0 0 auto;
+    border-radius: var(--radius-chip);
+    color: var(--agnes-icon-secondary);
+    background: var(--agnes-bg-fill);
+  }
+  .agh-list-row-copy {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .agh-list-row-heading {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    flex-wrap: wrap;
+  }
+  .agh-list-row h3 {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-sm);
+  }
+  .agh-list-row .agh-list-row-title {
+    justify-content: flex-start;
+    height: auto;
+    min-height: var(--s24);
+    padding: 0;
+    white-space: normal;
+    text-align: start;
+    color: inherit;
+    font-weight: var(--font-weight-semibold);
+    font-size: inherit;
+    line-height: var(--line-sm);
+  }
+  .agh-list-row p {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  .agh-list-row-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+    flex: 0 0 auto;
+  }
+  .agh-field {
+    width: 100%;
+    max-width: 560px;
+  }
+  .agh-field-optional {
+    color: var(--agnes-text-secondary);
+    font-weight: var(--font-weight-regular);
+  }
+  .agh-field .agnes-ui-field-hint {
+    color: var(--agnes-text-secondary);
+  }
+  .agh-field .agnes-ui-field-error {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s4);
+    line-height: var(--line-sm);
+  }
+  /* Same three sizes for native modal shells and React confirmations. A host shown as a page has none. */
+  :where(dialog:not(.agh-drawer):not([data-presentation="page"])) {
+    width: min(560px, calc(100vw - var(--s32)));
+    border-radius: var(--radius-modal);
+    box-shadow: var(--elevation-2);
+  }
+  .agh-dialog .ant-modal-container,
+  .agh-dialog .ant-modal-content {
+    border-radius: var(--radius-modal);
+    box-shadow: var(--elevation-2);
+    max-height: var(--dialog-max-height);
+    display: flex;
+    flex-direction: column;
+  }
+  /* One title scale for every dialog, whether the caller passed text or its own heading element. */
+  .agh-dialog .ant-modal-title,
+  .agh-dialog .ant-modal-title :is(h1, h2, h3) {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-md);
+    text-wrap: balance;
+  }
+  .agh-dialog .ant-modal-header {
+    margin-bottom: var(--s12);
+    padding-inline-end: var(--s32);
+  }
+  /* The close control is a compact icon button centred on the title line. */
+  .agh-dialog .ant-modal-close {
+    top: 18px;
+    inset-inline-end: var(--s16);
+    width: var(--control-height-sm);
+    height: var(--control-height-sm);
+    min-height: var(--control-height-sm);
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-secondary);
+  }
+  .agh-dialog .ant-modal-close:hover {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-hover);
+  }
+  .agh-dialog .ant-modal-close-x {
+    font-size: var(--font-size-body);
+  }
+  .agh-dialog .ant-modal-body {
+    overflow: auto;
+    min-height: 0;
+    /* Preserve the content inset while keeping 2px focus outlines inside the scrollport. */
+    padding: var(--s4);
+    margin: calc(-1 * var(--s4));
+  }
+  /* A form in a dialog has one vertical rhythm between its fields and sections. */
+  .agh-dialog .ant-modal-body > form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s12);
+  }
+  .agh-dialog .ant-modal-footer,
+  .agh-dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .agh-dialog-footer {
+    padding: var(--s16) var(--s24);
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  :where(dialog) :is(.dialog-kicker, .eyebrow),
+  .agh-dialog :is(.dialog-kicker, .eyebrow) {
+    display: none;
+  }
+  .agh-table-scroll :is(.ant-table-body, .ant-table-content):focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: -3px;
+    box-shadow: var(--focus-line-inset);
+  }
+  .agh-sheet-handle {
+    display: none;
+  }
+  .agh-drawer[open] {
+    position: fixed;
+    inset: 0 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    width: min(480px, 100vw);
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    padding: 0;
+    border-radius: var(--radius-surface) 0 0 var(--radius-surface);
+    background: var(--agnes-bg-popover);
+    color: var(--agnes-text-primary);
+    box-shadow: var(--elevation-2);
+  }
+  .agh-drawer-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--s16);
+    padding: var(--s24);
+  }
+  .agh-drawer-heading h2 {
+    margin: 0;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+  }
+  .agh-drawer-heading p {
+    margin: var(--s8) 0 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-body);
+  }
+  .agh-drawer-content {
+    flex: 1;
+    min-height: 0;
+    padding: 0 var(--s24) var(--s24);
+    overflow: auto;
+  }
+  @media (max-width: 767px) {
+    .agh-settings-toolbar-search {
+      flex-basis: 100%;
+    }
+    .agh-settings-toolbar-filters {
+      flex-wrap: wrap;
+    }
+    .agh-list-row {
+      gap: var(--s12);
+    }
+    .agh-list-row-icon {
+      display: none;
+    }
+    .agh-list-row-actions {
+      gap: var(--s8);
+    }
+    .agh-banner {
+      flex-wrap: wrap;
+    }
+    .agh-banner-copy {
+      flex-basis: calc(100% - 18px - var(--s12));
+    }
+    .agh-banner-action {
+      padding-inline-start: calc(18px + var(--s12));
+    }
+    .agh-drawer[open] {
+      width: 100vw;
+      border-radius: 0;
+    }
+    .agh-drawer-heading,
+    .agh-drawer-content {
+      padding-inline: var(--s16);
+    }
+    .ant-modal-root .agh-dialog {
+      top: auto;
+      bottom: 0;
+      margin: 0;
+      padding-bottom: 0;
+      max-width: 100vw;
+    }
+    .ant-modal-wrap:has(.agh-dialog) {
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .ant-modal-wrap:has(.agh-dialog)::before {
+      display: none;
+    }
+    .agh-dialog .ant-modal-container,
+    .agh-dialog .ant-modal-content {
+      border-radius: var(--radius-modal) var(--radius-modal) 0 0;
+      max-height: calc(100dvh - var(--s16));
+    }
+    .agh-sheet-handle {
+      display: flex;
+      width: 100%;
+      height: var(--control-height-touch);
+      min-height: var(--control-height-touch);
+      padding: 0;
+      border: 0;
+      border-radius: var(--radius-modal) var(--radius-modal) 0 0;
+      background: var(--agnes-bg-popover);
+      touch-action: none;
+      flex: 0 0 auto;
+    }
+    .agh-sheet-handle span {
+      width: var(--s32);
+      height: var(--s4);
+      border-radius: var(--radius-pill);
+      background: var(--agnes-text-secondary);
+    }
+  }
+  /* Portalled in after the dialog's own content, and laid out first. */
+  .agh-native-sheet-handle {
+    order: -1;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  dialog[data-size="sm"] {
+    width: min(420px, calc(100vw - var(--s32)));
+  }
+  dialog[data-size="md"] {
+    width: min(560px, calc(100vw - var(--s32)));
+  }
+  dialog[data-size="lg"] {
+    width: min(720px, calc(100vw - var(--s32)));
+  }
+  @media (max-width: 767px) {
+    /* Native hosts retain their IDs and controllers; dimensions supersede desktop ID widths. */
+    dialog:not(.agh-drawer):not(.lightbox):not([data-presentation="page"])[open] {
+      --dialog-max-height: min(46rem, calc(100dvh - var(--s16) - var(--control-height-touch)));
+      display: flex;
+      flex-direction: column;
+      inset: auto 0 0;
+      width: 100vw !important;
+      max-width: 100vw !important;
+      max-height: calc(100dvh - var(--s16));
+      margin: 0;
+      border-radius: var(--radius-modal) var(--radius-modal) 0 0;
+    }
+    dialog[open]:has(> .agh-native-sheet-handle) > .account-dialog-body {
+      flex: 1 1 auto;
+    }
+  }
+
+  .agnes-settings-toolbar .agh-btn--sm,
+  .agnes-settings-actions .agh-btn--sm {
+    height: var(--control-height-sm);
+    min-height: var(--control-height-sm);
+  }
+  @media (max-width: 900px) {
+    /* Preserve existing pages' 32px floor; new icon actions use the 28px contract. */
+    body[data-agnes-region="app"]
+      :is(.agnes-ui-button.agh-btn--sm:not(.agh-btn--icon), .secondary-button:where(.compact), .icon-button) {
+      min-height: var(--s32);
+      min-width: var(--s32);
+    }
+    /* Rows and toolbars keep the same narrow-screen target floor as native controls. */
+    .agh-list-row .agh-list-row-title,
+    .agh-list-row-actions .agh-btn.agh-btn--icon,
+    .agnes-settings-toolbar .agh-btn.agh-btn--icon,
+    .agh-tag[tabindex="0"] {
+      min-height: var(--s32);
+      min-width: var(--s32);
+    }
+  }
+  @media (max-width: 767px) {
+    .agh-tag[tabindex="0"] {
+      position: relative;
+    }
+    .agh-tag[tabindex="0"]::after {
+      content: "";
+      position: absolute;
+      inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .skip-link:not(:focus) {
+      visibility: hidden;
+    }
+  }
+
+  .agh-btn .ant-btn-icon {
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .agh-btn--loading-no-icon > .ant-btn-icon {
+    width: auto;
+    height: auto;
+  }
+
+  .agh-list-row[data-highlighted="true"] {
+    background: var(--agnes-bg-hover);
+  }
+
+  /* Loading remains quiet under reduced motion and never adds duplicate status text. */
+  .agh-skeleton {
+    display: grid;
+    width: 100%;
+    gap: var(--s12);
+    margin-bottom: var(--s16);
+  }
+  .agh-skeleton > span {
+    display: block;
+    height: var(--s16);
+    border-radius: var(--radius-sm);
+    background: var(--agnes-bg-subtle);
+    animation: agh-skeleton-pulse 1.4s ease-in-out infinite alternate;
+  }
+  .agh-skeleton > span:last-child {
+    width: 60%;
+  }
+  @keyframes agh-skeleton-pulse {
+    to {
+      opacity: 0.45;
+    }
+  }
+  @media (max-width: 767px) {
+    :root {
+      --agnes-ui-input-font-size: max(var(--font-size-md), 16px);
+    }
+    /* Labels own checkbox/radio targets; form and disclosure targets cannot overlap. */
+    :is(
+        .agnes-settings-checkbox,
+        .appearance-option,
+        .agnes-settings-details > .agh-disclosure-summary,
+        .agnes-settings-card .agh-disclosure-summary,
+        .ant-tabs-tab,
+        .agnes-settings-section-tabs button
+      ) {
+      min-height: var(--control-height-touch);
+      min-width: var(--control-height-touch);
+    }
+    .agnes-settings-input:not([type="checkbox"]):not([type="radio"]),
+    .agnes-ui-select .ant-select-input,
+    .agnes-ui-textarea {
+      font-size: var(--agnes-ui-input-font-size);
+    }
+    .agnes-settings-input:not([type="checkbox"]):not([type="radio"]) {
+      min-height: var(--control-height-touch);
+    }
+    .agnes-ui-switch {
+      position: relative;
+    }
+    .agnes-ui-switch::after {
+      content: "";
+      position: absolute;
+      inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
+    }
+  }
+
+  @media (max-width: 767px) {
+    /* Native hosts share the same hit-area contract as React controls. Low specificity
+     preserves positioned actions and the existing disclosure/choice presentation. */
+    :where(
+        button:not(.agh-btn, .ant-modal-close),
+        .agh-disclosure-summary,
+        a[href],
+        [role="tab"],
+        .agh-tooltip-anchor[tabindex="0"]
+      ) {
+      position: relative;
+    }
+    :where(
+        button:not(.agh-btn),
+        .agh-disclosure-summary,
+        a[href],
+        [role="tab"],
+        .agh-tooltip-anchor[tabindex="0"]
+      )::after {
+      content: "";
+      position: absolute;
+      inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
+    }
+    body[data-agnes-region="app"]
+      :is(.agnes-settings-checkbox, .appearance-option, .ant-checkbox-wrapper, .ant-radio-wrapper) {
+      min-height: var(--control-height-touch);
+    }
+  }
+
+  @media (max-width: 767px) {
+    :is(.agnes-ui-field, .form-field, .agnes-settings-toolbar)
+      .agnes-settings-input:not([type="checkbox"]):not([type="radio"]),
+    .agnes-settings-toolbar .agnes-ui-select {
+      font-size: var(--agnes-ui-input-font-size);
+    }
+    .agnes-ui-select.ant-select,
+    .ant-select-item-option {
+      min-height: var(--control-height-touch);
+    }
+  }
+
+  @media (max-width: 900px) {
+    .agh-touch-target {
+      position: relative;
+    }
+    .agh-touch-target::after {
+      content: "";
+      position: absolute;
+      inset: min(0px, calc((100% - var(--s32)) / 2));
+    }
+  }
+  @media (max-width: 767px) {
+    .agh-touch-target::after {
+      inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
+    }
+  }
+
+  /* Long localized session labels must shrink inside their shared field. */
+  .agh-field > .agnes-ui-select {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  @media (min-width: 768px) and (max-width: 900px) {
+    /* Compact tablet actions retain their 28px visual and a 32px pointer target. */
+    .ant-tabs-tab {
+      min-width: var(--s32);
+      justify-content: center;
+    }
+    .agh-btn--sm {
+      position: relative;
+    }
+    .agh-btn--sm::after {
+      content: "";
+      position: absolute;
+      inset: min(0px, calc((100% - var(--s32)) / 2));
+    }
+  }
+  .agh-drawer-frame {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  .agh-drawer .ant-drawer-header,
+  .agh-drawer .ant-drawer-body {
+    padding: 0;
+  }
+  .agh-drawer .ant-drawer-header {
+    border-bottom: 0;
+  }
+  .agh-drawer .ant-drawer-title,
+  .agh-drawer .ant-drawer-body {
+    min-width: 0;
+  }
+  .agh-drawer .ant-drawer-body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .agh-drawer .ant-drawer-footer {
+    padding: var(--s16) var(--s24);
+    border-color: var(--agnes-line-primary);
+  }
+  /* The native navigation drawer has no Ant z-index context; its menu sits above that surface. */
+  body.sidebar-open .agh-menu-popup {
+    --ant-dropdown-z-index-popup: calc(var(--agh-z-drawer) + 1);
+  }
+  .agh-menu-popup .agh-menu {
+    display: block;
+    min-width: 180px;
+    border-radius: var(--radius-popover);
+    background: var(--agnes-bg-popover);
+    box-shadow: var(--shadow-elevation);
+  }
+  /* Modal wrappers ignore pointers; popups portaled inside their focus scope remain interactive. */
+  .ant-modal :is(.agh-menu-popup, .agnes-ui-popover, .ant-select-dropdown) {
+    pointer-events: auto;
+  }
+  .agh-menu-popup .agh-menu-item {
+    display: flex;
+    align-items: center;
+    margin: 0;
+    height: var(--control-height);
+  }
+  .agh-toast-host {
+    display: contents;
+  }
+  /* The message layer only places and animates; the toast draws the whole card. The layer's own
+   styles are unlayered, so these few resets need the important flag to reach it. */
+  .agh-toast-host .ant-message {
+    top: calc(2.75rem - var(--s12)) !important;
+  }
+  .agh-toast-host .ant-message-notice {
+    padding: 0 !important;
+    border-radius: var(--radius-lg) !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+  /* The textarea autosize helper measures with a hidden copy it appends to the page and hides with
+   an inline style attribute. The content security policy drops that attribute, so without this
+   rule the copy is a visible box in the page flow: it makes the page taller than the window and
+   lets it scroll. The helper's own hiding rules are restated here, where the policy allows them. */
+  body > textarea[name="hiddenTextarea"][aria-hidden="true"] {
+    position: fixed !important;
+    z-index: -1000 !important;
+    top: 0 !important;
+    right: 0 !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: hidden !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+  .agh-table-scroll {
+    min-width: 0;
+    max-width: 100%;
+    /* y must be hidden: a fractional table height gives 1px of y range that latches the first wheel gesture. */
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .agh-table .ant-table {
+    line-height: 1.6;
+  }
+  .agh-table caption {
+    text-align: start;
+    color: var(--agnes-text-primary);
+    font-weight: var(--font-weight-semibold);
+    padding: var(--s8) 0;
+  }
+  .agh-table caption[data-repeats-heading] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .agh-decision-fields {
+    margin: var(--s12) 0;
+    font: var(--font-size-sm) / var(--line-md) var(--font-sans);
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .agh-decision-fields > div {
+    display: grid;
+    grid-template-columns: minmax(6rem, 20%) minmax(0, 1fr);
+    gap: var(--s12);
+    padding: var(--s4) 0;
+  }
+  .agh-decision-fields dt {
+    color: var(--agnes-text-secondary);
+  }
+  .agh-decision-fields dd {
+    white-space: pre-wrap;
+    margin: 0;
+  }
+  .approval-summary-text {
+    font-family: var(--font-sans);
+  }
+  .agh-table .agh-table-cell {
+    display: block;
+    max-width: 32rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agh-chart-plot {
+    min-width: 0;
+    /* Keep the plot footprint while its on-demand engine loads. */
+    min-height: 210px;
+    color: var(--agnes-text-primary);
+    font: var(--font-size-xs) var(--font-sans);
+  }
+  /* Small touches shared by every surface: state dot, completion mark, copy confirmation. */
+  .agh-status-dot {
+    display: inline-block;
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-full);
+    background: var(--agnes-brand-primary);
+  }
+  .agh-status-dot[data-tone="success"] {
+    background: var(--agnes-status-success-solid);
+  }
+  .agh-status-dot[data-tone="warning"] {
+    background: var(--agnes-status-warning-solid);
+  }
+  .agh-status-dot[data-tone="danger"] {
+    background: var(--agnes-status-danger-solid);
+  }
+  .agh-status-dot[data-tone="info"] {
+    background: var(--agnes-status-info-solid);
+  }
+  .agh-status-dot[data-tone="neutral"] {
+    background: var(--agnes-text-tertiary);
+  }
+  @keyframes agh-breathe {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .agh-status-dot[data-running] {
+      animation: agh-breathe var(--motion-breathe) ease-in-out infinite;
+    }
+  }
+  .agh-completion {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-sm);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .agh-completion > .agh-icon {
+    color: var(--agnes-status-success-solid);
+  }
+  .agh-copy[data-copied] {
+    color: var(--agnes-status-success-text);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .agh-copy[data-copied] .agh-icon {
+      animation: agh-copy-confirm var(--motion-base) var(--motion-ease);
+    }
+  }
+  @keyframes agh-copy-confirm {
+    from {
+      opacity: 0;
+      scale: 0.9;
+    }
+  }
+  .agh-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  @media (max-width: 767px) {
+    .agh-menu-popup .agh-menu-item {
+      min-height: var(--control-height-touch);
+    }
+    .agh-drawer .ant-drawer-content {
+      border-radius: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :is(.agh-dialog, .agh-drawer-layer, .agnes-ui-popover, .agh-menu-popup, .agh-toast-host) *,
+    :is(.agh-dialog, .agh-drawer-layer, .agnes-ui-popover, .agh-menu-popup, .agh-toast-host) {
+      animation-duration: 0s !important;
+      transition-duration: 0s !important;
+    }
+  }
+  :is(.agnes-settings-page, .agh-dialog, .agh-drawer, .agh-empty-state) :is(h2, h3, h4) {
+    text-wrap: balance;
+  }
+  :is(.agnes-settings-page, .agh-dialog, .agh-drawer, .agh-empty-state) p {
+    text-wrap: pretty;
+  }
+  :is(.agh-count, .agh-meta, .agh-tag, .agh-table, .agh-chart, .agnes-conversation-card table) {
+    font-variant-numeric: tabular-nums;
+  }
+  .agnes-ui-field-label {
+    overflow-wrap: anywhere;
+    line-height: 1.6;
+  }
+  /* Keep Ant's popup lifecycle and nested Escape handling; frequent controls have no visual motion. */
+  :is(.agh-menu-popup, .agnes-ui-popover, .agh-tooltip, .ant-select-dropdown) {
+    animation-duration: 0s !important;
+    transition-duration: 0s !important;
+  }
+
+  /* Phone navigation shares the available strip; long labels wrap inside full touch targets. */
+  @media (max-width: 767px) {
+    .agnes-ui-tabs:is(.ant-tabs-top, .ant-tabs-bottom) > .ant-tabs-nav .ant-tabs-nav-list {
+      flex: 1 1 auto;
+      width: 100%;
+      min-width: 0;
+    }
+    .agnes-ui-tabs:is(.ant-tabs-top, .ant-tabs-bottom) > .ant-tabs-nav .ant-tabs-tab {
+      flex: 1 1 0;
+      min-width: var(--control-height-touch);
+      min-height: var(--control-height-touch);
+      padding: var(--s8) var(--s4);
+    }
+    .agnes-ui-tabs:is(.ant-tabs-top, .ant-tabs-bottom) > .ant-tabs-nav .ant-tabs-tab-btn {
+      width: 100%;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      text-align: center;
+    }
+  }
+
+  /* Tabs are frequent navigation; their final indicator/scroll positions remain immediate. */
+  .agnes-ui-tabs :is(.ant-tabs-ink-bar, .ant-tabs-nav-list) {
+    transition: none;
+  }
+
+  /* The host region is the card (skins paint it); Sender contributes layout and the textarea only. */
+  .agnes-ui-sender.agnes-ui-sender {
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    box-shadow: none;
+  }
+  .agnes-ui-sender textarea {
+    color: var(--agnes-text-primary);
+    caret-color: var(--agnes-brand-primary);
+    line-height: 1.6;
+  }
+  .agnes-ui-sender textarea::placeholder {
+    color: var(--agnes-text-tertiary);
+  }
+
+  /* ── Settings template parts ─────────────────────────────────────────────── */
+  /* Disclosure: a button that names a section and the region it shows. The summary starts from a
+   plain text row with a small marker; a caller may restyle it, and a variant swaps the marker for
+   the shared chevron. The content box is transparent to layout unless a variant gives it a body. */
+  .agh-disclosure-summary {
+    appearance: none;
+    display: block;
+    width: 100%;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    gap: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-align: start;
+    justify-content: flex-start;
+    cursor: default;
+    transition: none;
+  }
+  .agh-disclosure-summary:hover:not(:disabled) {
+    background: none;
+  }
+  .agh-disclosure-summary:active:not(:disabled) {
+    scale: none;
+    filter: none;
+  }
+  .agh-disclosure-marker {
+    display: inline-block;
+    width: 0;
+    height: 0;
+    margin-inline-end: 0.4em;
+    border-block: 0.3em solid transparent;
+    border-inline-start: 0.5em solid currentColor;
+    vertical-align: 0.05em;
+  }
+  .agh-disclosure[data-open="true"] > .agh-disclosure-summary > .agh-disclosure-marker {
+    transform: rotate(90deg);
+  }
+  .agh-disclosure-content {
+    display: contents;
+  }
+  .agh-disclosure-content.agh-disclosure-body {
+    display: block;
+  }
+  .agh-disclosure-content[hidden] {
+    display: none;
+  }
+  .agh-disclosure[data-variant] {
+    min-width: 0;
+  }
+  .agh-disclosure[data-variant] > .agh-disclosure-summary {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-height: var(--control-height-sm);
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: var(--line-sm);
+    cursor: pointer;
+    user-select: none;
+    overflow-wrap: anywhere;
+  }
+  .agh-disclosure[data-variant] > .agh-disclosure-summary:hover {
+    color: var(--agnes-text-primary);
+  }
+  .agh-disclosure[data-variant] > .agh-disclosure-summary:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
+  }
+  .agh-disclosure-chevron {
+    flex: 0 0 auto;
+    color: var(--agnes-text-tertiary);
+  }
+  .agh-disclosure[data-variant][data-open="true"] > .agh-disclosure-summary > .agh-disclosure-chevron {
+    transform: rotate(90deg);
+  }
+  .agh-disclosure-title {
+    min-width: 0;
+  }
+  /* An advanced fold is a card with a dashed outline: present only while advanced settings show. */
+  .agh-disclosure[data-variant="card"].agnes-settings-advanced {
+    border-style: dashed;
+    border-color: var(--agnes-line-emphasis);
+    background: transparent;
+  }
+  .agh-advanced-mark {
+    display: inline-flex;
+    align-items: center;
+    height: 1.25rem;
+    margin-inline-start: var(--s8);
+    padding-inline: var(--s8);
+    border: 1px dashed var(--agnes-line-emphasis);
+    border-radius: 999px;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+    line-height: 1;
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+  /* The current value, in one line, pushed to the far side of the header. */
+  .agh-disclosure-meta {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-regular);
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agh-disclosure[data-variant] > .agh-disclosure-body {
+    min-width: 0;
+    padding-block: var(--s8);
+    overflow-wrap: anywhere;
+  }
+  /* A row disclosure is a line of its list; the group that holds it draws the divider. */
+  .agh-disclosure[data-variant="row"] > .agh-disclosure-summary {
+    min-height: 3rem;
+    color: var(--agnes-text-primary);
+    font-weight: var(--font-weight-medium);
+  }
+  .agh-disclosure[data-variant="row"] > .agh-disclosure-body {
+    padding-block: var(--s4) var(--s16);
+  }
+  /* A card disclosure is a grouped card of its own: the header names the section and states its
+   current value; the content opens inside the same outline, under one inset hairline. */
+  .agh-disclosure[data-variant="card"] {
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-group);
+  }
+  .agh-disclosure[data-variant="card"] > .agh-disclosure-summary {
+    gap: var(--s12);
+    min-height: 3.25rem;
+    padding: var(--s12) var(--s16);
+    /* One pixel inside the card's own corner. */
+    border-radius: calc(var(--radius-card) - 1px);
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-medium);
+  }
+  .agh-disclosure[data-variant="card"] > .agh-disclosure-summary > .agh-disclosure-title {
+    flex: 0 1 auto;
+  }
+  .agh-disclosure-heading {
+    flex: 1 1 auto;
+    display: grid;
+    gap: var(--s2);
+    min-width: 0;
+  }
+  .agh-disclosure-description {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-regular);
+    line-height: 1.6;
+  }
+  .agh-disclosure-heading + .agh-disclosure-meta {
+    flex: 0 1 auto;
+    max-width: 45%;
+  }
+  .agh-disclosure[data-variant="card"] > .agh-disclosure-summary:hover {
+    background: var(--agnes-bg-card);
+  }
+  .agh-disclosure[data-variant="card"][data-open="true"] > .agh-disclosure-summary {
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
+  }
+  .agh-disclosure[data-variant="card"]
+    > .agh-disclosure-summary
+    > .agh-disclosure-title:not(:has(+ .agh-disclosure-meta)) {
+    flex: 1 1 auto;
+  }
+  .agh-disclosure[data-variant="card"] > .agh-disclosure-body {
+    position: relative;
+    box-sizing: border-box;
+    padding: var(--s16);
+  }
+  .agh-disclosure[data-variant="card"] > .agh-disclosure-body::before {
+    content: "";
+    position: absolute;
+    inset: 0 var(--s16) auto;
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .agh-disclosure-chevron {
+      transition: transform var(--transition-fast);
+    }
+    /* The content grows out of its header; where the browser cannot interpolate to its natural
+     height it opens at once. */
+    .agh-disclosure[data-variant="card"] {
+      interpolate-size: allow-keywords;
+    }
+    .agh-disclosure[data-variant="card"] > .agh-disclosure-body {
+      overflow: clip;
+      transition:
+        height var(--transition),
+        padding-block var(--transition),
+        opacity var(--transition),
+        display var(--transition) allow-discrete;
+    }
+    .agh-disclosure[data-variant="card"] > .agh-disclosure-body[hidden] {
+      height: 0;
+      padding-block: 0;
+      opacity: 0;
+    }
+    @starting-style {
+      .agh-disclosure[data-variant="card"] > .agh-disclosure-body:not([hidden]) {
+        height: 0;
+        padding-block: 0;
+        opacity: 0;
+      }
+    }
+  }
+
+  /* Search bar: one field, then filters, then the action. */
+  .agh-search-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  .agh-search-bar-field {
+    position: relative;
+    flex: 1 1 14rem;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+  }
+  .agh-search-bar-field > svg {
+    position: absolute;
+    inset-inline-start: var(--s10);
+    color: var(--agnes-text-tertiary);
+    pointer-events: none;
+  }
+  .agh-search-bar-field > input {
+    width: 100%;
+    min-width: 0;
+    height: var(--control-height-form);
+    min-height: var(--control-height-form);
+    padding: 0 var(--s12) 0 var(--s32);
+    border: 1px solid var(--agnes-input-border);
+    border-radius: var(--radius-control);
+    color: var(--agnes-input-content-strong);
+    background: var(--agnes-input-surface);
+    font: inherit;
+    font-size: var(--agnes-ui-input-font-size);
+  }
+  .agh-search-bar-field > input::placeholder {
+    color: var(--agnes-text-tertiary);
+  }
+  .agh-search-bar-field > input:hover {
+    border-color: var(--agnes-input-border-emphasis);
+    background: var(--agnes-input-surface);
+  }
+  .agh-search-bar-field > input:focus-visible {
+    border-color: var(--agnes-input-border-focus);
+    background: var(--agnes-input-surface);
+  }
+  .agh-search-bar-filters,
+  .agh-search-bar-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  .agh-search-bar-filters > select {
+    width: auto;
+    max-width: 14rem;
+  }
+  .agh-search-bar-filters > :is(input, .agnes-ui-select) {
+    width: 10rem;
+  }
+  .agh-search-bar-filters > :is(input, select, .agnes-ui-select) {
+    min-width: 0;
+    height: var(--control-height-form);
+    min-height: var(--control-height-form);
+    padding-block: 0;
+    border-radius: var(--radius-control);
+  }
+
+  /* A switch always shows its state in words beside the knob. */
+  .agh-labeled-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+    white-space: nowrap;
+  }
+  .agh-labeled-switch-state {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .agh-labeled-switch[data-checked="true"] > .agh-labeled-switch-state {
+    color: var(--agnes-text-primary);
+  }
+
+  /* Section: one title style, content directly beneath it. */
+  .agnes-settings-section {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s8);
+    min-width: 0;
+  }
+  .agnes-settings-section-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--s16);
+    min-width: 0;
+  }
+  .agnes-settings-section-heading > div:first-child {
+    flex: 1 1 12rem;
+    min-width: 0;
+  }
+  .agnes-settings-section-heading > .agnes-settings-actions {
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+  }
+  .agnes-settings-section-heading {
+    padding-inline: var(--s4);
+  }
+  .agnes-settings-section-heading h3,
+  .agnes-settings-section > h3 {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-sm);
+  }
+  .agnes-settings-section-heading p {
+    max-width: 60ch;
+    margin: var(--s2) 0 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  /* Group: a single quiet outline around setting rows; rows are divided, never boxed again. */
+  .agnes-settings-group {
+    min-width: 0;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-group);
+  }
+  /* Rows are divided by one inset hairline; the last row never draws one beneath it. */
+  .agnes-settings-group > * {
+    position: relative;
+  }
+  .agnes-settings-group > * + *::before {
+    content: "";
+    position: absolute;
+    inset: 0 var(--s16) auto;
+    border-top: 1px solid var(--agnes-line-primary);
+    pointer-events: none;
+  }
+  /* Prose that is not made of setting rows keeps one rhythm: a paragraph, then one divided
+     group per role with its own 8px stack and a start-aligned action. */
+  .agnes-settings-prose {
+    display: grid;
+    min-width: 0;
+  }
+  .agnes-settings-prose > p {
+    margin: 0 0 var(--s12);
+  }
+  .agnes-settings-prose > section {
+    display: grid;
+    gap: var(--s8);
+    min-width: 0;
+    padding-block: var(--s12);
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  .agnes-settings-prose > section > :is(h4, p) {
+    margin: 0;
+  }
+  .agnes-settings-prose > section > .agh-btn {
+    justify-self: start;
+  }
+  .agnes-settings-item {
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+    min-width: 0;
+    min-height: 3.5rem;
+    box-sizing: border-box;
+    padding: var(--s12) var(--s16);
+  }
+  .agnes-settings-item[data-stacked] {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .agnes-settings-item-copy {
+    flex: 1 1 auto;
+    display: grid;
+    gap: var(--s2);
+    min-width: 0;
+  }
+  .agnes-settings-item-label {
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-sm);
+    overflow-wrap: anywhere;
+  }
+  .agnes-settings-item-description {
+    max-width: 60ch;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+  .agnes-settings-item-control {
+    flex: 0 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--s8);
+    min-width: 0;
+    margin-inline-start: var(--s12);
+  }
+  .agnes-settings-item:not([data-stacked]) > .agnes-settings-item-control > :is(select, .agnes-ui-select) {
+    width: 100%;
+    max-width: 100%;
+  }
+  .agnes-settings-item[data-stacked] > .agnes-settings-item-control {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    margin-inline-start: 0;
+  }
+  /* A stacked text field takes the row's full width, under its label. */
+  .agnes-settings-item[data-stacked]
+    > .agnes-settings-item-control
+    > :is(textarea, input[type="text"], input:not([type])) {
+    flex: 1 1 12rem;
+    min-width: 0;
+  }
+  .agh-plugin-source-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8);
+    margin: 0;
+  }
+  .agh-plugin-source-line > .agh-tag {
+    flex: 0 0 auto;
+  }
+  /* Computer use states carry a sentence and a button: in a narrow host the button drops below. */
+  .agh-computer-use .agnes-settings-item {
+    flex-wrap: wrap;
+  }
+  .agh-computer-use .agnes-settings-item-copy {
+    flex: 1 1 14rem;
+  }
+  .agh-computer-use .agnes-settings-item-control {
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    max-width: 100%;
+    margin-inline-start: auto;
+  }
+  /* A disclosure listed in a group is one of its rows; its content keeps the row's inset. */
+  .agnes-settings-group > .agh-disclosure[data-variant] {
+    padding-inline: var(--s16);
+  }
+  /* Disclosed settings content has one rhythm, whatever mix of text, fields and tables it holds. */
+  .agnes-settings-details > .agh-disclosure-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s12);
+  }
+  .agnes-settings-details > .agh-disclosure-body > :is(p, h3, h4, h5, dl, ul, ol) {
+    margin-block: 0;
+  }
+  .agnes-settings-section > div:empty {
+    display: none;
+  }
+  /* View filters of a list share one row: what is shown on the left, optional extras on the right. */
+  .agnes-settings-filters {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--s8) var(--s16);
+    min-width: 0;
+  }
+  /* A page's own panel keeps the page rhythm between its parts. */
+  .agnes-settings-stack
+  > :is(section, form):not(.agnes-settings-section, .agnes-settings-page, .agh-empty-state) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s16);
+    min-width: 0;
+  }
+  .agnes-settings-stack > :is(section, form) > :is(p, h3, h4) {
+    margin-block: 0;
+  }
+  /* Rows inside an open section are already framed by it: a group there keeps its rows and
+   hairlines and draws no second outline, however deep in the section it sits. */
+  .agh-disclosure[data-variant="card"]
+    > .agh-disclosure-body
+    :is(.agnes-settings-stack, .agnes-settings-section)
+    > .agnes-settings-group {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .agh-disclosure[data-variant="card"]
+    > .agh-disclosure-body
+    :is(.agnes-settings-stack, .agnes-settings-section)
+    > .agnes-settings-group
+    > :is(.agnes-settings-item, .agh-disclosure[data-variant]) {
+    padding-inline: 0;
+  }
+  .agh-disclosure[data-variant="card"]
+    > .agh-disclosure-body
+    :is(.agnes-settings-stack, .agnes-settings-section)
+    > .agnes-settings-group
+    > *
+    + *::before {
+    inset-inline: 0;
+  }
+  /* Rows revealed by a fold inside a group line up with the group's own rows. */
+  .agnes-settings-group > .agh-disclosure[data-variant="row"] > .agh-disclosure-body > .agnes-settings-item {
+    min-height: 0;
+    padding-inline: 0;
+  }
+  /* Read-only code or prompt text: one quiet block that scrolls inside itself, copy in its corner. */
+  .agnes-settings-code {
+    position: relative;
+    min-width: 0;
+  }
+  .agnes-settings-code > pre {
+    max-height: 20rem;
+    margin: 0;
+    padding: var(--s12);
+    overflow: auto;
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-code);
+    color: var(--agnes-text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    line-height: 1.65;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    scrollbar-width: thin;
+  }
+  .agnes-settings-code > .agh-btn {
+    position: absolute;
+    inset-block-start: var(--s4);
+    inset-inline-end: var(--s4);
+  }
+  .agnes-settings-code:has(> .agh-btn) > pre {
+    padding-inline-end: var(--s32);
+  }
+  /* Where a chosen item sits in an ordered list of rows. */
+  .agnes-settings-order {
+    display: inline-grid;
+    place-items: center;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    margin-inline-end: var(--s8);
+    border-radius: var(--radius-full);
+    background: var(--agnes-bg-hover);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+  /* A saving section ends in one line: what happened on the left, the actions on the right. */
+  .agnes-settings-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s12);
+    min-width: 0;
+  }
+  .agnes-settings-footer-status {
+    min-width: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .agnes-settings-details > .agh-disclosure-body > section:not([class]) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s12);
+    justify-items: start;
+  }
+  .agnes-settings-details > .agh-disclosure-body > section:not([class]) > .agnes-ui-field {
+    width: 100%;
+  }
+  .agnes-settings-summary {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+  /* What a disclosure row reveals belongs to that row: a card directly inside it draws no second
+   outline. Cards further in are objects and keep theirs. */
+  .agnes-settings-details:is([data-variant="row"], [data-variant="card"])
+    > .agh-disclosure-body
+    > .agnes-settings-card {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  /* A review section keeps its own framed layout; the shared body adds no padding to it. */
+  .confirm-review-section > .agh-disclosure-body {
+    padding: 0;
+  }
+  .confirm-review-section.agh-disclosure[data-variant] > .agh-disclosure-summary {
+    padding-inline: var(--s12);
+  }
+  .agnes-settings-technical[data-variant="plain"] {
+    margin-top: calc(-1 * var(--s8));
+  }
+  /* What an open card reveals is already inside its outline: a group or list directly in it keeps
+   its rows and hairlines and draws no second frame. */
+  .agh-disclosure[data-variant="card"]
+    > .agh-disclosure-body
+    > :is(.agnes-settings-group, .agnes-settings-list) {
+    margin-inline: calc(-1 * var(--s16));
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .agh-disclosure[data-variant="card"]
+    > .agh-disclosure-body
+    > :is(.agnes-settings-group, .agnes-settings-list):first-child {
+    margin-top: calc(-1 * var(--s12));
+  }
+  .agh-disclosure[data-variant="card"]
+    > .agh-disclosure-body
+    > :is(.agnes-settings-group, .agnes-settings-list):last-child {
+    margin-bottom: calc(-1 * var(--s12));
+  }
+  .agh-disclosure[data-variant="card"] > .agh-disclosure-body > .agnes-settings-list {
+    margin-inline: calc(-1 * var(--s12));
+  }
+  /* A list further inside an open section is already framed by it: rows and hairlines only. */
+  .agh-disclosure[data-variant="card"] .agh-disclosure-body .agnes-settings-list {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .agh-disclosure[data-variant="card"] .agh-disclosure-body .agnes-settings-list > * {
+    padding-inline: 0;
+    border-radius: 0;
+  }
+  .agh-disclosure[data-variant="card"] .agh-disclosure-body .agnes-settings-list > * + *::before {
+    inset-inline: 0;
+  }
+  .agh-disclosure[data-variant="card"] .agh-disclosure-body .agnes-settings-list > :hover {
+    background: transparent;
+  }
+  /* Technical facts read as a two-column grid: the name, then its value. */
+  :is(.agnes-settings-details, .agnes-settings-technical) dl {
+    display: grid;
+    grid-template-columns: minmax(6rem, 11rem) minmax(0, 1fr);
+    gap: var(--s4) var(--s16);
+    margin: 0;
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  :is(.agnes-settings-details, .agnes-settings-technical) dt {
+    color: var(--agnes-text-tertiary);
+  }
+  :is(.agnes-settings-details, .agnes-settings-technical) dd {
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
+  }
+  @media (max-width: 640px) {
+    :is(.agnes-settings-details, .agnes-settings-technical) dl {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0;
+    }
+    :is(.agnes-settings-details, .agnes-settings-technical) dd {
+      margin-bottom: var(--s8);
+    }
+  }
+  /* A disclosure inside a list row is a quiet line of that row. */
+  :is(.agh-list-row, .agnes-settings-row) .agh-disclosure[data-variant="row"] > .agh-disclosure-summary {
+    width: auto;
+    min-height: var(--control-height-sm);
+    color: var(--agnes-text-secondary);
+    font-weight: var(--font-weight-regular);
+  }
+  :is(.agh-list-row, .agnes-settings-row) .agh-disclosure[data-variant="row"] > .agh-disclosure-body {
+    padding-block: var(--s4) var(--s8);
+  }
+  /* A card disclosure met inside another outline gives its own up: one outline per group. */
+  :is(.agnes-settings-card, .config-card, .agnes-settings-group, .agnes-settings-list, .agh-disclosure-body)
+  > .agh-disclosure[data-variant="card"] {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  @media (max-width: 640px) {
+    /* A section's actions drop under its title and description instead of squeezing them. */
+    .agnes-settings-section-heading > div:first-child {
+      flex-basis: 100%;
+    }
+    .agnes-settings-item:not([data-stacked]) {
+      flex-wrap: wrap;
+    }
+    .agnes-settings-item-control {
+      justify-content: flex-start;
+    }
+  }
+
+  /* ── Settings v4: labelled groups, drill rows, subpages, chips ─────────────── */
+  .agnes-settings-block {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s4);
+    min-width: 0;
+  }
+  .agnes-settings-block-label {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-height: var(--s24);
+    padding-inline: var(--s4);
+  }
+  .agnes-settings-block-label > h3 {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-sm);
+  }
+  .agnes-settings-block-actions {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--s4);
+    margin-inline-start: auto;
+  }
+  /* A second group under the cards of the same block is its own choice, not a footnote to them. */
+  .agnes-settings-default-recipe {
+    margin-block-start: var(--s16);
+  }
+  .agnes-settings-save-failed {
+    color: var(--agnes-status-danger-text);
+    font-size: var(--font-size-xs);
+  }
+  .agnes-settings-save-failed > button,
+  .agnes-settings-read-failed > button {
+    padding: 0;
+    border: 0;
+    color: var(--agnes-brand-primary);
+    background: none;
+    font: inherit;
+    cursor: pointer;
+  }
+  .agnes-settings-read-failed {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    padding: var(--s8) var(--s12);
+    border-radius: var(--radius-control);
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+    font-size: var(--font-size-sm);
+  }
+  /* A drill row is a button that reads as a row: name left, value and chevron right. */
+  .agnes-settings-drill {
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+  .agnes-settings-drill:hover:not(:disabled) {
+    background: var(--agnes-bg-hover);
+  }
+  .agnes-settings-drill:focus-visible {
+    outline: none;
+    box-shadow: inset var(--focus-line);
+  }
+  .agnes-settings-drill:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+  .agnes-settings-group > :first-child > .agnes-settings-drill,
+  .agnes-settings-group > .agnes-settings-drill:first-child {
+    border-start-start-radius: var(--radius-card);
+    border-start-end-radius: var(--radius-card);
+  }
+  .agnes-settings-group > :last-child > .agnes-settings-drill:last-of-type,
+  .agnes-settings-group > .agnes-settings-drill:last-child {
+    border-end-start-radius: var(--radius-card);
+    border-end-end-radius: var(--radius-card);
+  }
+  .agnes-settings-value {
+    display: inline-flex;
+    flex: 0 1 auto;
+    align-items: center;
+    gap: var(--s4);
+    min-width: 0;
+    margin-inline-start: auto;
+    overflow: hidden;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agnes-settings-chevron {
+    flex: 0 0 auto;
+    color: var(--agnes-text-tertiary);
+  }
+  .agnes-settings-expand-body {
+    padding: var(--s8) var(--s16) var(--s12);
+    background: var(--agnes-bg-subtle);
+  }
+  .agnes-settings-info {
+    display: inline-flex;
+    margin-inline-start: var(--s4);
+    color: var(--agnes-text-tertiary);
+    /* The icon only explains on hover and focus; the system help cursor would add a question mark. */
+    cursor: default;
+  }
+  /* The tooltip anchor is the inline box around the icon, so the optical nudge lives there;
+     vertical-align on the icon itself would be inert inside the anchor's flex layout. */
+  .agh-tooltip-anchor:has(> .agnes-settings-info) {
+    vertical-align: -2px;
+  }
+  .agnes-settings-info:focus-visible {
+    border-radius: var(--radius-full);
+    outline: none;
+    box-shadow: var(--focus-line);
+  }
+  .agnes-settings-info > .icon {
+    width: 14px;
+    height: 14px;
+  }
+  .agnes-settings-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 var(--s4);
+    border-radius: var(--radius-sm);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-subtle);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-sm);
+    white-space: nowrap;
+  }
+  .agnes-settings-tag[data-tone="ok"] {
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
+  }
+  .agnes-settings-tag[data-tone="warn"] {
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+  }
+  .agnes-settings-tag[data-tone="error"] {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+  }
+  .agnes-settings-tag[data-tone="brand"] {
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .agnes-settings-chips {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--s4);
+    min-width: 0;
+    max-width: 24rem;
+  }
+  .agnes-settings-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+    min-height: var(--s24);
+    padding: 0 var(--s8);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-full);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-surface);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+  }
+  .agnes-settings-chip[data-on="true"] {
+    border-color: var(--agnes-brand-primary);
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .agnes-settings-chip > button {
+    display: inline-grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    color: inherit;
+    background: none;
+    cursor: pointer;
+  }
+  .agnes-settings-chip > button > .icon {
+    width: 12px;
+    height: 12px;
+  }
+  .agnes-settings-chip-input {
+    /* The add-field carries a whole hint sentence: take 12rem, and more where the chips row has it. */
+    flex: 1 1 12rem;
+    width: auto;
+    min-width: 9rem;
+    min-height: var(--s24);
+    padding: 0 var(--s8);
+    border: 1px dashed var(--agnes-line-primary);
+    border-radius: var(--radius-full);
+    color: var(--agnes-text-primary);
+    background: transparent;
+    font: inherit;
+    font-size: var(--font-size-sm);
+  }
+  .agnes-settings-chip-input:focus {
+    border-style: solid;
+    border-color: var(--agnes-brand-primary);
+    outline: none;
+  }
+  .agnes-settings-preset,
+  .agnes-settings-preset-custom {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+  }
+  /* The themed trigger sizes itself inside the shrink-to-fit preset row. */
+  .agnes-settings-preset > .select-picker-trigger {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .agnes-settings-preset-custom > input {
+    width: 6rem;
+    text-align: end;
+  }
+  /* The subpage frame and undo scope add no boxes of their own: the page lays out its header and
+   body as before. */
+  .agnes-settings-undo-scope,
+  .agnes-settings-subpage-frame,
+  .agnes-settings-subpage-main:not([hidden]),
+  .agnes-settings-subpage-main-header:not([hidden]),
+  .agnes-settings-subpage-header:not([hidden]) {
+    display: contents;
+  }
+  .agnes-settings-back {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s2);
+    margin: 0 0 var(--s4) calc(-1 * var(--s4));
+    padding: var(--s2) var(--s4);
+    border: 0;
+    border-radius: var(--radius-control);
+    color: var(--agnes-brand-primary);
+    background: none;
+    font: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+  }
+  .agnes-settings-back:hover {
+    background: var(--agnes-bg-hover);
+  }
+  .agnes-settings-back:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-line);
+  }
+  .agnes-settings-subpage-header h2:focus {
+    outline: none;
+  }
+  .agnes-settings-subpage-body:not([hidden]) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    gap: var(--s16);
+  }
+  /* A text area that is the first row of a group has no frame of its own. */
+  .agnes-settings-group > textarea.agnes-settings-bare {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 5.5rem;
+    padding: var(--s12) var(--s16);
+    border: 0;
+    border-radius: var(--radius-card) var(--radius-card) 0 0;
+    color: var(--agnes-text-primary);
+    background: transparent;
+    font: inherit;
+    line-height: 1.6;
+    resize: vertical;
+  }
+  .agnes-settings-group > textarea.agnes-settings-bare:focus {
+    outline: none;
+    background: var(--agnes-bg-subtle);
+  }
+  /* A page in the navigation that needs attention carries one small dot. */
+  [data-attention]::after {
+    content: "";
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    margin-inline-start: auto;
+    border-radius: var(--radius-full);
+    background: var(--agnes-status-warning-solid);
+  }
+  [data-attention="error"]::after {
+    background: var(--agnes-status-danger-solid);
+  }
+
+  /* A short note under a group: what happens elsewhere, in one muted line. */
+  .agnes-settings-note {
+    margin: 0;
+    padding-inline: var(--s4);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+  }
+  /* A value that is text the user wrote: one line, cut with an ellipsis. */
+  .agnes-settings-value-text {
+    display: inline-block;
+    max-width: 16rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* A field holding file or prompt text reads in the monospace face. */
+  .agnes-settings-code-input {
+    width: 100%;
+    min-height: 10rem;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+
+  /* The one place a consequential change is confirmed: what it does on the left, the action right. */
+  .agnes-settings-apply {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--s8);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .agnes-settings-apply > :first-child {
+    margin-inline-end: auto;
+  }
+  .agnes-settings-toolbar-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .agnes-settings-spacer {
+    flex: 1 1 auto;
+  }
+  .agnes-settings-anchor {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    outline: none;
+  }
+  .agnes-settings-item[draggable="true"] {
+    cursor: grab;
+  }
+  .agnes-settings-item[data-dragging] {
+    opacity: 0.5;
+  }
+  .agnes-settings-drag {
+    cursor: grab;
+  }
+
+  /* Three permission modes as cards side by side. The chosen card has one accent edge (1px border
+   plus a 0.5px inset) on a faint accent fill; hover only darkens the edge, so it never reads as
+   disabled. A card that cannot be picked sits on the quieter fill and keeps its words readable. */
+  fieldset.agnes-settings-modes {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--s12);
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .agnes-settings-modes > div {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s10);
+    min-width: 0;
+    box-sizing: border-box;
+    padding: var(--s16);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-group);
+    transition: border-color 120ms ease;
+  }
+  .agnes-settings-modes > div:not(:has(input:disabled)):hover {
+    border-color: var(--agnes-line-emphasis);
+  }
+  .agnes-settings-modes > div:has(input:checked) {
+    border-color: var(--agnes-brand-primary);
+    box-shadow: inset 0 0 0 0.5px var(--agnes-brand-primary);
+    background: color-mix(in srgb, var(--agnes-brand-primary) 5%, var(--agnes-bg-group));
+  }
+  /* Only the full-access card grows while its five exceptions are open. */
+  fieldset.agnes-settings-modes:has(.agh-disclosure[data-open="true"]) {
+    align-items: start;
+  }
+  .agnes-settings-modes:not([data-busy]) > div:has(input:disabled) {
+    background: var(--agnes-bg-subtle);
+  }
+  .agnes-settings-modes:not([data-busy]) > div:has(input:disabled:checked) {
+    border-color: color-mix(in srgb, var(--agnes-brand-primary) 55%, var(--agnes-line-primary));
+    box-shadow: none;
+  }
+  .agnes-settings-modes > div:has(input:focus-visible) {
+    outline: var(--focus-outline);
+    outline-offset: 2px;
+  }
+  .agnes-settings-modes > div:has(input:checked) .agh-icon-tile {
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  /* The bottom line of a card: what happens to commands, and full access's five exceptions. */
+  .agnes-settings-mode-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s4) var(--s8);
+    margin-top: auto;
+    padding-top: var(--s10);
+    border-top: 1px solid var(--agnes-line-hairline);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+  }
+  .agnes-settings-mode-foot > span {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .agnes-settings-mode-foot > .agh-disclosure {
+    display: contents;
+  }
+  .agnes-settings-mode-foot > .agh-disclosure > .agh-disclosure-summary {
+    min-height: 0;
+    color: var(--agnes-brand-primary);
+    font-size: var(--font-size-xs);
+  }
+  .agnes-settings-mode-foot > .agh-disclosure > .agh-disclosure-summary .agh-disclosure-chevron {
+    order: 1;
+    color: inherit;
+  }
+  .agnes-settings-mode-foot > .agh-disclosure > .agh-disclosure-body {
+    flex-basis: 100%;
+  }
+  .agnes-settings-exceptions {
+    display: grid;
+    gap: var(--s10);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .agnes-settings-exceptions > li {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s8);
+  }
+  .agnes-settings-exceptions > li > svg {
+    flex: 0 0 auto;
+    margin-top: 0.125rem;
+    color: var(--agnes-status-warning-text);
+  }
+  .agnes-settings-exceptions > li > span {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s2);
+    min-width: 0;
+  }
+  .agnes-settings-exception-name {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+  }
+  .agnes-settings-exception-hint {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+  }
+  /* The same five, as the confirmation dialog lists them. */
+  .agnes-settings-exceptions-box {
+    display: grid;
+    gap: var(--s8);
+    margin-top: var(--s12);
+    padding: var(--s12) var(--s16);
+    border: 1px solid var(--agnes-line-hairline);
+    border-radius: var(--radius-panel);
+    background: var(--agnes-bg-subtle);
+  }
+  @media (max-width: 639px) {
+    fieldset.agnes-settings-modes {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  .agnes-settings-number {
+    width: 4.5rem;
+    text-align: end;
+  }
+
+  /* A provider's logo tile: its initial on one of six stable colours. */
+  .agnes-settings-logo {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-inverse);
+    background: var(--agnes-brand-primary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+  }
+  .agnes-settings-logo[data-hue="1"] {
+    background: var(--agnes-status-info-solid);
+  }
+  .agnes-settings-logo[data-hue="2"] {
+    background: var(--agnes-status-success-solid);
+  }
+  .agnes-settings-logo[data-hue="3"] {
+    background: var(--agnes-status-warning-solid);
+  }
+  .agnes-settings-logo[data-hue="4"] {
+    background: var(--agnes-status-danger-solid);
+  }
+  .agnes-settings-logo[data-hue="5"] {
+    background: var(--agnes-text-secondary);
+  }
+
+  /* A drill row stays one line at any width: the value gives way, the chevron stays at the end. */
+  .agnes-settings-item.agnes-settings-drill {
+    flex-wrap: nowrap;
+  }
+  .agnes-settings-drill > .agnes-settings-value {
+    flex: 0 1 auto;
+    max-width: 55%;
+  }
+
+  /* An ID shown only because no name exists: small and monospace, never a title. */
+  .agnes-settings-id {
+    color: var(--agnes-text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+    overflow-wrap: anywhere;
+  }
+  .agnes-settings-drag:not(:disabled) {
+    cursor: grab;
+  }
+  .agnes-settings-drag:disabled {
+    opacity: 0.35;
+  }
+
+  /* One control column for every settings row: a select, text field, picker or segmented choice
+   fills the same width, so their left edges line up down the page. Switches, ›, plain values,
+   number fields and chips keep their own size at the right. Narrow rows give the column less. */
+  .agnes-settings-item:not([data-stacked])
+  > .agnes-settings-item-control:has(
+    > :is(
+        select,
+        .agnes-ui-select,
+        input:not([type="checkbox"], [type="radio"], [type="number"]),
+        .agh-segmented,
+        .agnes-settings-preset,
+        .appearance-picker,
+        .appearance-choices,
+        .appearance-thumbs
+      )
+  ) {
+    flex: 0 1 260px;
+    width: 260px;
+    min-width: min(10rem, 50%);
+    max-width: 100%;
+    justify-content: stretch;
+  }
+  .agnes-settings-item:not([data-stacked])
+    > .agnes-settings-item-control
+    > :is(
+      select,
+      .agnes-ui-select,
+      input:not([type="checkbox"], [type="radio"], [type="number"]),
+      .agh-segmented,
+      .agnes-settings-preset,
+      .appearance-picker,
+      .appearance-choices,
+      .appearance-thumbs
+    ) {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  /* Chips size to their content, so their row needs its own ceiling: half the row, leaving the
+     description the other half. Below 640px rows wrap, so the control takes the whole line. */
+  @media (min-width: 640px) {
+    .agnes-settings-item:not([data-stacked]) > .agnes-settings-item-control:has(> .agnes-settings-chips) {
+      max-width: 50%;
+    }
+  }
+  /* A path or an ID takes only the room its row's label leaves, cut with an ellipsis. Sharing the
+     shrink with the label would wrap the label, even mid-word («director/y», 「记忆目/录」). */
+  .agnes-settings-item:not([data-stacked]) > .agnes-settings-item-control:has(> .agnes-settings-value-path) {
+    flex: 100 1 0;
+  }
+  .agnes-settings-value-path {
+    display: block;
+  }
+  /* A segmented choice spans the column with equal segments. */
+  .agnes-settings-item-control > .agh-segmented {
+    display: flex;
+  }
+  .agnes-settings-item-control > .agh-segmented > .agh-segmented-option {
+    flex: 1 1 0;
+    justify-content: center;
+    min-width: 0;
+    padding-inline: var(--s4);
+  }
+  /* On a narrow screen the control takes the whole row under its name, for every such row alike. */
+  @media (max-width: 639px) {
+    .agnes-settings-item:not([data-stacked]):has(
+        > .agnes-settings-item-control
+          > :is(
+            select,
+            .agnes-ui-select,
+            input:not([type="checkbox"], [type="radio"], [type="number"]),
+            .agh-segmented,
+            .agnes-settings-preset,
+            .appearance-picker,
+            .appearance-choices,
+            .appearance-thumbs
+          )
+      ) {
+      flex-wrap: wrap;
+    }
+    .agnes-settings-item:not([data-stacked])
+      > .agnes-settings-item-control:has(
+        > :is(
+            select,
+            .agnes-ui-select,
+            input:not([type="checkbox"], [type="radio"], [type="number"]),
+            .agh-segmented,
+            .agnes-settings-preset,
+            .appearance-picker,
+            .appearance-choices,
+            .appearance-thumbs
+          )
+      ) {
+      flex-basis: 100%;
+      width: 100%;
+      margin-inline-start: 0;
+    }
+  }
+  .agnes-settings-item-control > .agnes-settings-preset > select {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .agnes-settings-drill[hidden] {
+    display: none;
+  }
+}
+
+@layer base {
+  #settings-operation-notices:empty {
+    display: none;
+  }
+  #settings-operation-notices:not(:empty) {
+    padding: var(--s12) var(--s32);
+  }
+  #settings-operation-notices > * + * {
+    margin-top: var(--s8);
+  }
+}
+
+@layer base {
+  .agh-feedback-notices {
+    width: min(50rem, calc(100% - var(--s32)));
+    margin-inline: auto;
+  }
+  .agh-feedback-notices > * + * {
+    margin-top: var(--s8);
+  }
+  #settings-operation-notices .agh-feedback-notices {
+    width: 100%;
+  }
+}

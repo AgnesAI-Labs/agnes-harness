@@ -1,0 +1,23 @@
+{
+  "name": "@agnes/distribution",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@agnes/ai": "workspace:*",
+    "@agnes/core": "workspace:*",
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/model-adapters": "workspace:*",
+    "@agnes/package-manager": "workspace:*",
+    "@agnes/plugin-runtime": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/cordis": "workspace:*"
+  },
+  "license": "Apache-2.0"
+}

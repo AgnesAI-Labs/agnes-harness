@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 
+import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { setLocaleTranslator } from '../src/locale-bridge.js'
-import { bindSidebar, showSettingsPane } from '../src/shell.js'
+import { bindSidebar } from '../src/shell.js'
 import { zhT } from './helpers/locale.js'
 
 // i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
@@ -37,40 +37,10 @@ describe('mobile sidebar navigation', () => {
     transcript.scrollTop = 0
     sidebar.close()
     expect(transcript.scrollTop).toBe(0)
-  })
-})
 
-describe('settings navigation', () => {
-  it('keeps exactly the selected pane marked as the current page', () => {
-    document.body.innerHTML = `
-      <button id="model-settings"></button><button id="plugin-management"></button>
-      <button id="skills-tab" aria-selected="true"></button><button id="mcp-tab" aria-selected="false"></button>
-      <button id="archived-settings"></button><button id="computer-use-management"></button><button id="appearance-settings"></button>
-      <section id="model-settings-pane"></section><section id="plugin-settings-pane"></section><section id="resource-settings-pane"></section><section id="archived-settings-pane"></section><section id="computer-use-settings-pane"></section><section id="appearance-settings-pane"></section>
-    `
-    const model = document.getElementById('model-settings') as HTMLButtonElement
-    const skills = document.getElementById('skills-tab') as HTMLButtonElement
-    const mcp = document.getElementById('mcp-tab') as HTMLButtonElement
-    const computerUse = document.getElementById('computer-use-management') as HTMLButtonElement
-    const appearance = document.getElementById('appearance-settings') as HTMLButtonElement
-
-    // 技能 / MCP 是同属一个面板的两条 Tab：只有当前那一类（aria-selected=true）算当前页，
-    // 否则进面板时两条 Tab 会同时高亮。
-    showSettingsPane('resources')
-    expect(skills.getAttribute('aria-current')).toBe('page')
-    expect(mcp.hasAttribute('aria-current')).toBe(false)
-
-    showSettingsPane('model')
-    expect(model.getAttribute('aria-current')).toBe('page')
-    expect(skills.hasAttribute('aria-current')).toBe(false)
-    expect(mcp.hasAttribute('aria-current')).toBe(false)
-
-    showSettingsPane('computer-use')
-    expect(computerUse.getAttribute('aria-current')).toBe('page')
-    expect(model.hasAttribute('aria-current')).toBe(false)
-
-    showSettingsPane('appearance')
-    expect(appearance.getAttribute('aria-current')).toBe('page')
-    expect(computerUse.hasAttribute('aria-current')).toBe(false)
+    // A closed drawer has nothing to dismiss, so it must not pull focus to its toggle.
+    focus.mockClear()
+    sidebar.dismiss()
+    expect(focus).not.toHaveBeenCalled()
   })
 })

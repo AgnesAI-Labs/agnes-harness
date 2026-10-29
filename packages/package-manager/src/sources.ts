@@ -3,24 +3,47 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
-  realpathSync,
   renameSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from 'node:fs'
-import { lstat, readdir, readFile, realpath, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { runIsolatedCommand } from '@agnes/package-isolation'
-import { bundledPluginSourceRoot } from './bundled-plugin-source.js'
+import type { PackageProvenance } from '@agnes/protocol'
+import { deploymentFetch } from '@agnes/system-node/deployment-network'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
+import {
+  bundledExampleSource,
+  bundledPluginSource,
+  OPTIONAL_BUNDLED_PACKAGES,
+} from './bundled-plugin-source.js'
 import { copyPackageTreeSync } from './copy-tree.js'
+import {
+  contained,
+  DEFAULT_EXCLUDES,
+  excluded,
+  hashDirectory,
+  hashDirectoryAsync,
+  sourceError,
+} from './directory-digest.js'
 import { PackageError } from './errors.js'
+import { checkoutGitSource } from './git-source.js'
+import { extractPluginArchive } from './plugin-archives.js'
 import { checkCancelled } from './ports.js'
+import { fetchNpmProvenance } from './provenance.js'
 import { claimFetch, readyStage } from './staging.js'
 
+export {
+  forgetDirectoryDigests,
+  hashDirectory,
+  hashDirectoryAsync,
+  withFreshDigests,
+} from './directory-digest.js'
+
 export type PackageSource = {
-  type: 'npm' | 'git' | 'file' | 'workspace' | 'market'
+  type: 'npm' | 'git' | 'file' | 'workspace' | 'market' | 'local' | 'path' | 'url'
   ref: string
 }
 export type ExecFn = (
@@ -29,7 +52,11 @@ export type ExecFn = (
   opts: { cwd: string; signal?: AbortSignal },
 ) => Promise<{ stdout: string }>
 export type FetchedSource = {
+  provenance?: PackageProvenance
+  sourceKind?: PackageProvenance['sourceKind']
+  resolvedLocation?: string
   dir: string
+  source?: PackageSource
   version: string
   integrity: string
   license?: string
@@ -47,10 +74,6 @@ const EXACT_VERSION = new RegExp(`^${SEMVER}$`)
 const PACKAGE_ID =
   /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)?)$/
 const PROFILE = /^[a-z][a-z0-9.-]{0,63}$/
-const DEFAULT_EXCLUDES = ['node_modules', '.git', 'fixtures/out'] as const
-
-const sourceError = (message: string, reason: string, extraDetail?: Record<string, unknown>): PackageError =>
-  new PackageError('E_DEP_MISSING', message, { detail: { reason, ...extraDetail } })
 
 function safeRelative(value: string, prefix: './' | 'extensions/'): boolean {
   if (!value.startsWith(prefix) || value.length === prefix.length || isAbsolute(value)) return false
@@ -62,38 +85,41 @@ function safeRelative(value: string, prefix: './' | 'extensions/'): boolean {
 export function parseSource(spec: string): PackageSource {
   if (typeof spec !== 'string' || spec.length === 0 || spec.length > MAX_REF)
     throw sourceError('invalid package source', 'invalid-ref')
+  if (spec.startsWith('local:')) {
+    if (!/^local:(home|workspace)\/[a-z0-9][a-z0-9._-]*$/.test(spec))
+      throw sourceError('invalid local plugin source', 'invalid-local-ref')
+    return { type: 'local', ref: spec }
+  }
   if (spec.startsWith('npm:')) {
     const match = NPM_SOURCE.exec(spec)
     if (!match?.[2] || match[2].length > 64)
       throw sourceError('npm source needs an exact version', 'exact-version')
     return { type: 'npm', ref: spec }
   }
-  if (spec.startsWith('git:')) {
-    const raw = spec.slice(4)
-    const hashAt = raw.lastIndexOf('#')
-    const commit = raw.slice(hashAt + 1)
+  if (spec.startsWith('git:') || spec.startsWith('url:')) {
+    const type = spec.startsWith('git:') ? 'git' : 'url'
     let url: URL
     try {
-      url = new URL(raw.slice(0, hashAt))
+      url = new URL(spec.slice(4))
     } catch {
-      throw sourceError('git source needs a credential-free HTTPS URL and full commit', 'invalid-git-ref')
+      throw sourceError('Use a credential-free HTTPS URL', 'invalid-url')
     }
     if (
-      hashAt <= 0 ||
-      !/^[a-f0-9]{40}$/.test(commit) ||
       url.protocol !== 'https:' ||
-      url.username !== '' ||
-      url.password !== '' ||
-      url.search !== '' ||
-      url.hash !== ''
+      url.username ||
+      url.password ||
+      url.search ||
+      (type === 'url' && url.hash) ||
+      (url.hash && !/^#[A-Za-z0-9._/-]+$/.test(url.hash))
     )
-      throw sourceError('git source needs a credential-free HTTPS URL and full commit', 'invalid-git-ref')
-    return { type: 'git', ref: spec }
+      throw sourceError('Use a credential-free HTTPS URL and optional git ref', 'invalid-url')
+    return { type, ref: spec }
   }
-  if (spec.startsWith('file:')) {
-    if (!safeRelative(spec.slice(5), './'))
-      throw sourceError('file source must be a contained ./ relative path', 'invalid-file-ref')
-    return { type: 'file', ref: spec }
+  if (spec.startsWith('file:') || spec.startsWith('path:')) {
+    const raw = spec.slice(5)
+    if (!raw || raw.includes('\0') || raw.includes('\\'))
+      throw sourceError('Use a folder or archive path', 'invalid-file-ref')
+    return { type: spec.startsWith('file:') ? 'file' : 'path', ref: spec }
   }
   if (spec.startsWith('workspace:')) {
     if (!safeRelative(spec.slice(10), 'extensions/'))
@@ -107,163 +133,8 @@ export function parseSource(spec: string): PackageSource {
   throw sourceError('unknown package source', 'unknown-source')
 }
 
-function normalizedExcludes(values: readonly string[]): string[] {
-  return values.map((value) => {
-    const normalized = value.replaceAll('\\', '/').replace(/^\.\//, '').replace(/\/$/, '')
-    if (
-      normalized.length === 0 ||
-      normalized.includes('\0') ||
-      normalized.split('/').some((part) => part === '' || part === '.' || part === '..')
-    )
-      throw new Error('invalid hash exclusion')
-    return normalized
-  })
-}
-
-function excluded(rel: string, rules: readonly string[]): boolean {
-  const parts = rel.split('/')
-  return rules.some((rule) => {
-    if (!rule.includes('/') && parts.includes(rule)) return true
-    return rel === rule || rel.startsWith(`${rule}/`)
-  })
-}
-
 function errorCode(error: unknown): unknown {
   return error !== null && typeof error === 'object' && 'code' in error ? error.code : undefined
-}
-
-function contained(root: string, candidate: string): boolean {
-  const rel = relative(root, candidate)
-  return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel))
-}
-
-export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: AbortSignal } = {}): string {
-  checkCancelled(opts.signal)
-  let root: string
-  try {
-    if (lstatSync(dir).isSymbolicLink()) throw sourceError('package directory is a symbolic link', 'symlink')
-    root = realpathSync(dir)
-  } catch (error) {
-    if (error instanceof PackageError) throw error
-    throw sourceError('package directory is unavailable', 'directory-unavailable')
-  }
-  try {
-    if (!statSync(root).isDirectory()) throw sourceError('package source is not a directory', 'not-directory')
-  } catch (error) {
-    if (error instanceof PackageError) throw error
-    throw sourceError('package directory changed while hashing', 'tree-changed')
-  }
-  const rules = normalizedExcludes(opts.exclude ?? [...DEFAULT_EXCLUDES])
-  const files: Array<{ rel: string; file: string }> = []
-  const walk = (current: string): void => {
-    for (const entry of readdirSync(current, { withFileTypes: true })) {
-      checkCancelled(opts.signal)
-      const file = join(current, entry.name)
-      const rel = relative(root, file).split(sep).join('/')
-      if (excluded(rel, rules)) continue
-      const stat = lstatSync(file)
-      if (stat.isSymbolicLink()) throw sourceError('package tree contains a symbolic link', 'symlink')
-      if (stat.isDirectory()) {
-        walk(file)
-        continue
-      }
-      if (!stat.isFile()) throw sourceError('package tree contains a special entry', 'special-entry')
-      let actual: string
-      try {
-        actual = realpathSync(file)
-      } catch {
-        throw sourceError('package file changed while hashing', 'tree-changed')
-      }
-      if (!contained(root, actual)) throw sourceError('package file escapes its source tree', 'path-escape')
-      files.push({ rel, file })
-    }
-  }
-  walk(root)
-  const outer = createHash('sha256')
-  for (const { rel, file } of files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))) {
-    checkCancelled(opts.signal)
-    const inner = createHash('sha256').update(rel).update('\0').update(readFileSync(file)).digest()
-    outer.update(inner)
-  }
-  return `sha256-${outer.digest('hex')}`
-}
-
-/** Files read at once by `hashDirectoryAsync`. */
-const HASH_READ_CONCURRENCY = 16
-
-/**
- * The same digest as `hashDirectory`, with the same checks and errors, but on asynchronous file
- * system calls so the event loop keeps serving while a large tree is read. Files are read several at
- * a time and folded into the result in the same sorted order.
- */
-export async function hashDirectoryAsync(
-  dir: string,
-  opts: { exclude?: string[]; signal?: AbortSignal } = {},
-): Promise<string> {
-  checkCancelled(opts.signal)
-  let root: string
-  try {
-    if ((await lstat(dir)).isSymbolicLink())
-      throw sourceError('package directory is a symbolic link', 'symlink')
-    root = await realpath(dir)
-  } catch (error) {
-    if (error instanceof PackageError) throw error
-    throw sourceError('package directory is unavailable', 'directory-unavailable')
-  }
-  try {
-    if (!(await stat(root)).isDirectory())
-      throw sourceError('package source is not a directory', 'not-directory')
-  } catch (error) {
-    if (error instanceof PackageError) throw error
-    throw sourceError('package directory changed while hashing', 'tree-changed')
-  }
-  const rules = normalizedExcludes(opts.exclude ?? [...DEFAULT_EXCLUDES])
-  const files: Array<{ rel: string; file: string }> = []
-  const walk = async (current: string): Promise<void> => {
-    // Entries of one directory are checked in parallel; the first failure in directory order wins,
-    // as it does in the synchronous walk.
-    const checked = await Promise.allSettled(
-      (await readdir(current, { withFileTypes: true })).map(async (entry) => {
-        checkCancelled(opts.signal)
-        const file = join(current, entry.name)
-        const rel = relative(root, file).split(sep).join('/')
-        if (excluded(rel, rules)) return
-        const entryStat = await lstat(file)
-        if (entryStat.isSymbolicLink()) throw sourceError('package tree contains a symbolic link', 'symlink')
-        if (entryStat.isDirectory()) return walk(file)
-        if (!entryStat.isFile()) throw sourceError('package tree contains a special entry', 'special-entry')
-        let actual: string
-        try {
-          actual = await realpath(file)
-        } catch {
-          throw sourceError('package file changed while hashing', 'tree-changed')
-        }
-        if (!contained(root, actual)) throw sourceError('package file escapes its source tree', 'path-escape')
-        files.push({ rel, file })
-      }),
-    )
-    for (const result of checked) if (result.status === 'rejected') throw result.reason
-  }
-  await walk(root)
-  files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))
-  const inner: Buffer[] = new Array(files.length)
-  let next = 0
-  const reader = async (): Promise<void> => {
-    while (next < files.length) {
-      const index = next++
-      checkCancelled(opts.signal)
-      const { rel, file } = files[index] as { rel: string; file: string }
-      inner[index] = createHash('sha256')
-        .update(rel)
-        .update('\0')
-        .update(await readFile(file))
-        .digest()
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(HASH_READ_CONCURRENCY, files.length) }, reader))
-  const outer = createHash('sha256')
-  for (const digest of inner) outer.update(digest)
-  return `sha256-${outer.digest('hex')}`
 }
 
 type PackageJson = {
@@ -273,14 +144,17 @@ type PackageJson = {
   dependencies: Record<string, string>
 }
 
-function readPackageJson(dir: string): PackageJson {
+export function readPackageJson(dir: string): PackageJson {
   const file = join(dir, 'package.json')
   let text: string
   try {
     if (statSync(file).size > MAX_JSON) throw new Error('too large')
     text = readFileSync(file, 'utf8')
-  } catch {
-    throw sourceError('package source has no readable package.json', 'package-json')
+  } catch (error) {
+    throw sourceError(
+      'package source has no readable package.json',
+      errorCode(error) === 'ENOENT' ? 'package-json-missing' : 'package-json',
+    )
   }
   let value: unknown
   try {
@@ -319,7 +193,22 @@ function readPackageJson(dir: string): PackageJson {
   }
 }
 
-const INHERITED_ENV = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'TEMP', 'TMP', 'SystemRoot'] as const
+const INHERITED_ENV = [
+  'PATH',
+  'HOME',
+  'LANG',
+  'LC_ALL',
+  'TMPDIR',
+  'TEMP',
+  'TMP',
+  'SystemRoot',
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'NO_PROXY',
+  'http_proxy',
+  'https_proxy',
+  'no_proxy',
+] as const
 function childEnvironment(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     npm_config_ignore_scripts: 'true',
@@ -330,10 +219,14 @@ function childEnvironment(): NodeJS.ProcessEnv {
     GIT_TERMINAL_PROMPT: '0',
   }
   for (const name of INHERITED_ENV) if (process.env[name] !== undefined) env[name] = process.env[name]
+  // Git/curl consume lower-case proxy names; preserve explicit lower-case precedence.
+  env.http_proxy ??= env.HTTP_PROXY
+  env.https_proxy ??= env.HTTPS_PROXY ?? env.http_proxy
+  env.no_proxy ??= env.NO_PROXY
   return env
 }
 
-const defaultExec: ExecFn = (command, args, opts) =>
+export const defaultExec: ExecFn = (command, args, opts) =>
   runIsolatedCommand(command, args, {
     ...opts,
     env: childEnvironment(),
@@ -426,14 +319,15 @@ function metadata(fetchedDir: string, expected?: { name?: string; version?: stri
 }
 
 function localSource(src: PackageSource, cwd: string): string {
-  cwd = bundledPluginSourceRoot(src.ref) ?? cwd
-  const raw = src.ref.slice(src.ref.indexOf(':') + 1)
+  const example = bundledExampleSource(src.ref) ?? bundledPluginSource(src.ref)
+  cwd = example?.root ?? cwd
+  const raw = example?.path ?? src.ref.slice(src.ref.indexOf(':') + 1)
   // Resolved separately so a missing/escaping source can still name the root it was
   // checked against, which is rarely the process's own cwd (the daemon that fetches
   // this may have started in a different directory than whoever is calling it).
   let cwdRoot: string
   try {
-    cwdRoot = realpathSync(cwd)
+    cwdRoot = nativeRealpathSync(cwd)
   } catch {
     throw sourceError('package workspace root is unavailable', 'workspace-unavailable')
   }
@@ -442,7 +336,7 @@ function localSource(src: PackageSource, cwd: string): string {
     const candidate = resolve(cwdRoot, raw)
     if (lstatSync(candidate).isSymbolicLink())
       throw sourceError('local package source is a symbolic link', 'symlink', { workspaceRoot: cwdRoot })
-    from = realpathSync(candidate)
+    from = nativeRealpathSync(candidate)
   } catch (error) {
     if (error instanceof PackageError) throw error
     throw sourceError(
@@ -452,22 +346,46 @@ function localSource(src: PackageSource, cwd: string): string {
       { workspaceRoot: cwdRoot },
     )
   }
-  if (!contained(cwdRoot, from))
+  if (src.type === 'workspace' && !contained(cwdRoot, from))
     throw sourceError('local package source is outside cwd', 'source-escape', { workspaceRoot: cwdRoot })
+  requireGeneratedEntry(src.ref, from)
   return from
 }
 
-function copyLocal(from: string, into: string, signal?: AbortSignal): string {
+/** A bundled package whose entry is generated says how to build it when a checkout has not yet. */
+export function requireGeneratedEntry(ref: string, directory: string): void {
+  const build = OPTIONAL_BUNDLED_PACKAGES.find((item) => item.ref === ref)?.build
+  if (!build) return
+  let entry: unknown
+  try {
+    entry = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')).exports
+  } catch {
+    return
+  }
+  if (typeof entry !== 'string') return
+  try {
+    statSync(resolve(directory, entry))
+    return
+  } catch {
+    // Missing: fall through to the hint.
+  }
+  throw sourceError(
+    `the bundled package at ${ref} has no generated ${entry}; in a development checkout build it with \`${build}\``,
+    'bundled-entry-missing',
+  )
+}
+
+async function copyLocal(from: string, into: string, signal?: AbortSignal): Promise<string> {
   // Validate before copying and again afterwards. The second pass is what catches a source swapped
   // to a link during the copy rather than trusting a preflight snapshot.
-  const before = hashDirectory(from, { ...(signal ? { signal } : {}) })
+  const before = await hashDirectoryAsync(from, { ...(signal ? { signal } : {}) })
   copyPackageTreeSync(from, into, (path) => {
     checkCancelled(signal)
     const rel = relative(from, path).split(sep).join('/')
     return rel === '' || !excluded(rel, DEFAULT_EXCLUDES)
   })
-  const sourceAfter = hashDirectory(from, { ...(signal ? { signal } : {}) })
-  const copied = hashDirectory(into, { ...(signal ? { signal } : {}) })
+  const sourceAfter = await hashDirectoryAsync(from, { ...(signal ? { signal } : {}) })
+  const copied = await hashDirectoryAsync(into, { ...(signal ? { signal } : {}) })
   if (before !== sourceAfter || copied !== sourceAfter)
     throw sourceError('local package source changed while copying', 'source-changed')
   return copied
@@ -490,6 +408,7 @@ export async function fetchSource(
   opts: {
     cwd: string
     exec?: ExecFn
+    npmProvenance?: typeof fetchNpmProvenance
     extract?: (tarball: string, into: string, signal?: AbortSignal) => Promise<void>
     signal?: AbortSignal
   },
@@ -498,10 +417,15 @@ export async function fetchSource(
   // Never trust a hand-built PackageSource that bypassed parseSource.
   const checked = parseSource(src.ref)
   if (checked.type !== src.type) throw sourceError('package source type differs from its ref', 'source-type')
+  if (src.type === 'local')
+    throw sourceError('Local plugins are discovered from configured roots', 'local-discovery-only')
   const target = resolve(into)
   ensureEmptyDestination(target)
   const parent = dirname(target)
   mkdirSync(parent, { recursive: true })
+  // The destination leaf does not exist yet; canonicalize its existing parent so an 8.3/subst
+  // spelling cannot hide a destination inside the native-resolved source tree.
+  const canonicalTarget = join(nativeRealpathSync(parent), basename(target))
   const work = mkdtempSync(join(parent, '.agnes-fetch-'))
   const payload = join(work, 'payload')
   const run = opts.exec ?? defaultExec
@@ -522,13 +446,22 @@ export async function fetchSource(
     let pkg: PackageJson
     let integrity: string
     let releasedAt: string | undefined
+    let resolvedSource: PackageSource | undefined
+    let resolvedLocation: string | undefined
+    let sourceKind: PackageProvenance['sourceKind']
     switch (checked.type) {
       case 'file':
+      case 'path':
       case 'workspace': {
         const from = localSource(checked, opts.cwd)
-        if (contained(from, target))
+        resolvedLocation = from
+        sourceKind = lstatSync(from).isFile() ? 'tarball' : 'local-folder'
+        if (contained(from, canonicalTarget))
           throw sourceError('package destination is inside its source', 'destination-inside-source')
-        integrity = copyLocal(from, payload, opts.signal)
+        if (statSync(from).isFile()) {
+          await extractPluginArchive(from, payload, exec, opts.signal)
+          integrity = hashDirectory(payload)
+        } else integrity = await copyLocal(from, payload, opts.signal)
         pkg = metadata(payload)
         break
       }
@@ -571,8 +504,8 @@ export async function fetchSource(
         let bytes: Buffer
         try {
           const archiveStat = lstatSync(tarball)
-          const archiveRealpath = realpathSync(tarball)
-          if (!archiveStat.isFile() || !contained(realpathSync(packDir), archiveRealpath))
+          const archiveRealpath = nativeRealpathSync(tarball)
+          if (!archiveStat.isFile() || !contained(nativeRealpathSync(packDir), archiveRealpath))
             throw new Error('unsafe archive')
           bytes = readFileSync(tarball)
         } catch {
@@ -600,35 +533,34 @@ export async function fetchSource(
         break
       }
       case 'git': {
-        const raw = checked.ref.slice(4)
-        const split = raw.lastIndexOf('#')
-        const url = raw.slice(0, split)
-        const commit = raw.slice(split + 1)
-        mkdirSync(payload)
-        const prefix = [
-          '-c',
-          'core.hooksPath=/dev/null',
-          '-c',
-          'core.attributesFile=/dev/null',
-          '-c',
-          'protocol.file.allow=never',
-        ]
-        const git = (args: string[]): Promise<{ stdout: string }> =>
-          exec('git', [...prefix, ...args], { cwd: opts.cwd })
-        await git(['init', '--quiet', payload])
-        await git(['-C', payload, 'remote', 'add', 'origin', url])
-        await git(['-C', payload, 'fetch', '--quiet', '--depth', '1', 'origin', commit])
-        await git(['-C', payload, 'checkout', '--quiet', '--detach', 'FETCH_HEAD'])
-        const head = (await git(['-C', payload, 'rev-parse', 'HEAD'])).stdout.trim()
-        if (head !== commit)
-          throw new PackageError('E_LOCK_MISMATCH', 'git checkout differs from the pinned commit', {
-            detail: { reason: 'commit' },
-          })
-        rmSync(join(payload, '.git'), { recursive: true, force: true })
+        resolvedSource = await checkoutGitSource(checked.ref, payload, opts.cwd, exec, opts.signal)
         pkg = metadata(payload)
         integrity = hashDirectory(payload)
         break
       }
+      case 'url': {
+        const response = await deploymentFetch(checked.ref.slice(4), {
+          redirect: 'error',
+          signal: AbortSignal.any([AbortSignal.timeout(120000), ...(opts.signal ? [opts.signal] : [])]),
+        })
+        if (!response.ok || Number(response.headers.get('content-length') ?? 0) > 256 * 1024 * 1024)
+          throw sourceError('Archive download failed or is too large', 'archive-download')
+        const chunks: Uint8Array[] = []
+        let size = 0
+        for await (const chunk of response.body ?? []) {
+          size += chunk.length
+          if (size > 256 * 1024 * 1024) throw sourceError('Archive is too large', 'archive-size')
+          chunks.push(chunk)
+        }
+        const archive = join(work, 'download')
+        writeFileSync(archive, Buffer.concat(chunks))
+        await extractPluginArchive(archive, payload, exec, opts.signal)
+        pkg = metadata(payload)
+        integrity = hashDirectory(payload)
+        break
+      }
+      case 'local':
+        throw sourceError('Local plugins are discovery-only', 'local-discovery-only')
       case 'market':
         throw new PackageError('E_DEP_MISSING', 'market sources are v0.x', {
           detail: { reason: 'market v0.x' },
@@ -636,10 +568,34 @@ export async function fetchSource(
     }
     checkCancelled(opts.signal)
     ensureEmptyDestination(target)
+    const provenance =
+      checked.type === 'npm'
+        ? await (opts.npmProvenance ?? fetchNpmProvenance)(
+            pkg.name,
+            pkg.version,
+            integrity,
+            opts.signal,
+            join(work, 'sigstore-cache'),
+          )
+        : undefined
+    // Local copies now yield too. A destination created while hashing is still occupied.
+    ensureEmptyDestination(target)
     readyStage(target)
     renameSync(payload, target)
     return {
+      ...(provenance
+        ? {
+            provenance: {
+              source: (resolvedSource ?? checked) as PackageProvenance['source'],
+              integrity,
+              ...provenance,
+            },
+          }
+        : {}),
+      ...(sourceKind ? { sourceKind } : {}),
+      ...(resolvedLocation ? { resolvedLocation } : {}),
       dir: target,
+      ...(resolvedSource ? { source: resolvedSource } : {}),
       version: pkg.version,
       integrity,
       ...(pkg.license === undefined ? {} : { license: pkg.license }),

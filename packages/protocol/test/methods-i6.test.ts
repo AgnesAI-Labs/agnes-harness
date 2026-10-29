@@ -46,34 +46,34 @@ describe('I6 method contracts', () => {
       expect(METHODS[method]).toMatchObject({ kind: 'request', direction: 'c2s' })
   })
 
-  it('approval.decide uses a credential and rejects forged actor fields or verdicts', () => {
+  it('approval.decide accepts only a closed decision command; backend identity is not in its body', () => {
+    const command = {
+      sessionId: 's',
+      id: 'd',
+      revision: 1,
+      commandId: 'c',
+      response: { option: 'allowed-once', value: null },
+    }
+    expect(validateMethod('_agnes/v1/approval.decide', 'params', command).ok).toBe(true)
+    for (const forbidden of [
+      { actor },
+      { sourceCredential: channelCredential },
+      { approverCredential: { kind: 'local' } },
+      { ticket: 'old' },
+      { verdict: 'allowed-once' },
+    ])
+      expect(validateMethod('_agnes/v1/approval.decide', 'params', { ...command, ...forbidden }).ok).toBe(
+        false,
+      )
     expect(
-      validateMethod('_agnes/v1/approval.decide', 'params', {
-        ticket: 'ticket-1',
-        verdict: 'allowed-once',
-        approverCredential: channelCredential,
+      validateMethod('_agnes/v1/approval.decide', 'result', {
+        digest: '0'.repeat(64),
+        commandId: 'c',
+        revision: 2,
+        seq: 1,
       }).ok,
     ).toBe(true)
-    expect(
-      errorsOf(
-        validateMethod('_agnes/v1/approval.decide', 'params', {
-          ticket: 'ticket-1',
-          verdict: 'allowed-once',
-          approverCredential: { kind: 'local' },
-          actor,
-        }),
-      ),
-    ).toContainEqual(expect.objectContaining({ code: 'UNKNOWN_KEY', key: 'actor' }))
-    expect(
-      errorsOf(
-        validateMethod('_agnes/v1/approval.decide', 'params', {
-          ticket: 'ticket-1',
-          verdict: 'cancelled',
-          approverCredential: { kind: 'local' },
-        }),
-      ),
-    ).toContainEqual(expect.objectContaining({ code: 'ENUM', key: 'verdict' }))
-    expect(validateMethod('_agnes/v1/approval.decide', 'result', { seq: 1 }).ok).toBe(true)
+    expect(validateMethod('_agnes/v1/approval.decide', 'result', { seq: 1 }).ok).toBe(false)
   })
 
   it('participant join/leave share the credential contract and list returns participant records', () => {

@@ -1,9 +1,9 @@
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
+import { withPhase } from '@agnes/core-common/step/op-state'
+import type { SeamImplementations } from '@agnes/core-effects/effects/seams'
 import type { ToolDef } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
-import type { SeamImplementations } from '../src/effects/seams.js'
 import { ToolRegistry } from '../src/registry/tools.js'
-import { canonicalJson, sha256Hex } from '../src/request/hash.js'
-import { withPhase } from '../src/step/op-state.js'
 import { turnVerifyInput } from '../src/step/verify-input.js'
 import { fakeProvider, sent, textTurn, toolTurn, usage } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
@@ -124,7 +124,7 @@ describe('verify input contract', () => {
     expect(turn?.lastFinishReason).toBe('stop')
   })
 
-  it.each(['persisted', 'missing policy', 'bad hash', 'untrusted call'] as const)(
+  it.each(['persisted', 'missing policy', 'bad hash', 'untrusted call', 'result error code'] as const)(
     'classifies repeat evidence from the %s without a live tool snapshot',
     async (kind) => {
       const { session, log } = await openSession({
@@ -138,6 +138,12 @@ describe('verify input contract', () => {
         const scan = log.scan.bind(log)
         vi.spyOn(log, 'scan').mockImplementation(async (query) =>
           (await scan(query)).map((row) => {
+            // A tool-returned code is not Core evidence that execution was refused.
+            if (kind === 'result error code' && row.type === 'tool/result')
+              return {
+                ...row,
+                data: { ...(row.data as object), code: 'TOOL_ARGS_INVALID' } as typeof row.data,
+              }
             if (row.type !== 'tool/call') return row
             const data = row.data as Record<string, unknown>
             if (kind === 'missing policy') {
@@ -152,7 +158,12 @@ describe('verify input contract', () => {
         )
         const input = await turnVerifyInput(session, 1)
         expect(input.toolCalls).toEqual([
-          { name: 'read', args: {}, schemaOk: true, isReadOnly: kind === 'persisted' },
+          {
+            name: 'read',
+            args: {},
+            schemaOk: true,
+            isReadOnly: kind === 'persisted' || kind === 'result error code',
+          },
         ])
       } finally {
         await session.close()

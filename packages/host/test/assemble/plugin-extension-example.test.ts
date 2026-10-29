@@ -6,7 +6,15 @@ import { buildRuntimeTarget, createPluginRow } from '@agnes/plugin-runtime/host'
 import type { InferenceEvent } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'
-import { packageDirs, scratch, settle } from './plugin-extension-fixture.js'
+import {
+  packageDirs,
+  pluginHost,
+  pluginRow,
+  pluginSource,
+  targetOf as pluginTarget,
+  scratch,
+  settle,
+} from './plugin-extension-fixture.js'
 
 const EXAMPLE = fileURLToPath(new URL('../../../../examples/packages/hot-tool-plugin', import.meta.url))
 const PACKAGE = '@agnes-examples/hot-tool-plugin'
@@ -64,8 +72,8 @@ const callStats: InferenceEvent[] = [
 ]
 
 describe('the hot-tool-plugin example', () => {
-  it('declares one plugin entry that asks for the extension service', () => {
-    expect(declared).toMatchObject({ export: 'textStatsTool', inject: ['extension'] })
+  it('declares one plugin entry that asks for tools and extension services', () => {
+    expect(declared).toMatchObject({ export: 'textStatsTool', inject: ['tools', 'hooks', 'self'] })
   })
 
   it('gives the model a tool, and takes it away with the row', async () => {
@@ -98,4 +106,61 @@ describe('the hot-tool-plugin example', () => {
     expect(host.kernel.tools.list().map((t) => t.name)).not.toContain('demo_text_stats')
     await host.close()
   })
+})
+
+it('preserves request availability through the production ordinary plugin bridge', async () => {
+  const plugin = pluginSource(`
+    const { Type } = await import(${JSON.stringify(import.meta.resolve('@sinclair/typebox'))})
+    const typed = name => ({ ...tool(name), parameters: Type.Object({}, { additionalProperties: false }) })
+    ctx.tools.register({ ...typed('availability_probe'), async execute(_, context) {
+      const states = ['availability_probe', 'later', 'image_only', 'outside'].map(name => [name, context.tools.availability?.(name)])
+      return { content: [{ type: 'text', text: JSON.stringify(states) }] }
+    } })
+    ctx.tools.register({ ...typed('later'), meta: { ...tool('later').meta, deferLoading: true } })
+    ctx.tools.register({ ...typed('image_only'), meta: { ...tool('image_only').meta, requiresImageInput: true } })
+  `)
+  const { host, dataDir } = await pluginHost(plugin, {
+    script: [
+      [
+        {
+          type: 'toolcall_end',
+          via: 'native',
+          call: { toolUseId: '', name: 'availability_probe', args: {}, ordinal: 0 },
+        },
+        { type: 'done', reason: 'toolUse' },
+      ],
+      [
+        { type: 'text_delta', delta: 'done' },
+        { type: 'done', reason: 'stop' },
+      ],
+    ],
+  })
+  try {
+    await host.applyRuntimeTarget(pluginTarget([pluginRow()]))
+    const session = await host.createSession({ cwd: dataDir })
+    try {
+      await session.enqueue('next-turn', {
+        actor: session.d.actor,
+        content: [{ type: 'text', text: 'check' }],
+      })
+      await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      const results = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
+      const text = JSON.stringify(results.map((r) => r.data))
+      const result = results[0]
+      if (!result) throw new Error('missing availability result')
+      const states = JSON.parse((result.data as { content: { text: string }[] }).content[0]!.text)
+      // Host removes image-incompatible tools before Core freezes the catalog.
+      expect(states).toMatchObject([
+        ['availability_probe', { status: 'offered' }],
+        ['later', { status: 'deferred' }],
+        ['image_only', { status: 'unavailable', reason: 'catalog' }],
+        ['outside', { status: 'unavailable', reason: 'catalog' }],
+      ])
+      expect(text).not.toContain('snapshot unavailable')
+    } finally {
+      await session.close()
+    }
+  } finally {
+    await host.close()
+  }
 })

@@ -1,12 +1,11 @@
-import type { EventEnvelope } from '@agnes/protocol'
+import { type EventEnvelope, rpcError } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
+import { workspaceBinding } from '../../daemon-foundation/test/workspace-authority.js'
 import type { LocalContext } from '../src/local/methods/acp.js'
 import type { SessionEntry } from '../src/local/sessions.js'
 import type { Registry } from '../src/registry.js'
 import { type RemoteEntry, WorkerRegistry } from '../src/supervisor/registry.js'
 import type { WorkerPool } from '../src/supervisor/worker-pool.js'
-import { handleCommand } from '../src/worker/commands.js'
-import { workspaceBinding } from './workspace-authority.js'
 
 async function open(
   registry: WorkerRegistry,
@@ -22,103 +21,6 @@ async function open(
 // `tsc` accepts these assignments at all, not any particular runtime behavior. Each `it` still calls
 // one shared method so the assertion is not entirely inert.
 describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/registry.ts WorkerRegistry)', () => {
-  describe('session.load records', () => {
-    function coldRegistry(audit: (record: unknown) => void) {
-      let received = 0
-      const link = {
-        alive: true,
-        hello: Promise.resolve({
-          kind: 'hello' as const,
-          token: 'token-load-trace',
-          sessionKey: 'load-trace-session',
-          writerRunId: 'run-load-trace',
-          generation: 1,
-          profileHash: 'sha256-profile',
-        }),
-        onExit: vi.fn(),
-        receivedBytes: () => received,
-        command: vi.fn(async () => undefined),
-        closeSession: vi.fn(async () => undefined),
-        close: vi.fn(),
-      }
-      const registry = new WorkerRegistry(
-        {
-          acquire: vi.fn(async () => link),
-          retire: vi.fn(),
-        } as unknown as WorkerPool,
-        undefined,
-        audit,
-      )
-      return { registry, receive: (bytes: number) => (received += bytes) }
-    }
-    const key = 'load-trace-session'
-
-    it('is written for a load that opened the session and counts only that open', async () => {
-      const audit = vi.fn()
-      const { registry, receive } = coldRegistry(audit)
-      await open(registry, { key, cwd: '/workspace', resume: true })
-      receive(4096)
-      registry.recordLoad(key, { acpReplayMs: 5 })
-      registry.recordLoad(key, { acpReplayMs: 5 })
-      expect(audit).toHaveBeenCalledTimes(1)
-      const record = audit.mock.calls[0]?.[0] as { kind: string; detail: Record<string, unknown> }
-      expect(record.kind).toBe('session.load')
-      expect(record.detail).toMatchObject({
-        transferBytes: 4096,
-        resumes: 0,
-        outcome: 'ok',
-        ms: { acpReplay: 5, open: expect.any(Number), authorityReplay: expect.any(Number) },
-      })
-      expect(record.detail.session).toMatch(/^[0-9a-f]{16}$/)
-      expect(JSON.stringify(record)).not.toContain(key)
-    })
-
-    it('is not written for a load that finds the session already open', async () => {
-      const audit = vi.fn()
-      const { registry, receive } = coldRegistry(audit)
-      // A new session is opened by session/new, which never asks for a record.
-      await open(registry, { key, cwd: '/workspace' })
-      receive(1_000_000)
-      // The later session/load finds it live.
-      await open(registry, { key, cwd: '/workspace', resume: true })
-      registry.recordLoad(key, { acpReplayMs: 5 })
-      expect(audit).not.toHaveBeenCalled()
-    })
-
-    it('is not written after the session was closed, and nothing is kept for it', async () => {
-      const audit = vi.fn()
-      const { registry } = coldRegistry(audit)
-      await open(registry, { key, cwd: '/workspace', resume: true })
-      await registry.close(key)
-      registry.recordLoad(key, { acpReplayMs: 5 })
-      expect(audit).not.toHaveBeenCalled()
-      expect(registry.get(key)).toBeUndefined()
-    })
-
-    it('keeps working when the audit sink throws', async () => {
-      const { registry } = coldRegistry(() => {
-        throw new Error('disk full')
-      })
-      await open(registry, { key, cwd: '/workspace', resume: true })
-      expect(() => registry.recordLoad(key, { acpReplayMs: 1 })).not.toThrow()
-      expect(() => registry.recordLoadFailed(key, { elapsedMs: 1, error: new Error('x') })).not.toThrow()
-    })
-
-    it('records a failed load with the error code only', () => {
-      const audit = vi.fn()
-      const registry = new WorkerRegistry({} as unknown as WorkerPool, undefined, audit)
-      registry.recordLoadFailed('failing-session', {
-        elapsedMs: 12,
-        error: Object.assign(new Error('path /private/name'), { code: 'E_LEDGER_INTEGRITY' }),
-      })
-      expect(audit.mock.calls[0]?.[0]).toMatchObject({
-        kind: 'session.load',
-        detail: { outcome: 'failed', code: 'E_LEDGER_INTEGRITY', transferBytes: 0, ms: { total: 12 } },
-      })
-      expect(JSON.stringify(audit.mock.calls)).not.toContain('private')
-    })
-  })
-
   it('lets the live tool-result projection satisfy an overtaking same-turn media read', async () => {
     const artifactEvent = {
       seq: 7,
@@ -127,8 +29,8 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     } as EventEnvelope
     const command = vi.fn(async (method: string, params: Record<string, unknown>) => {
       if (method !== 'scan') return undefined
-      if (params.fromSeq === 1) return { rows: [] }
-      return { rows: [] }
+      if (params.fromSeq === 1) return []
+      return []
     })
     const link = {
       alive: true,
@@ -139,6 +41,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-on-demand',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       command,
@@ -170,7 +73,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
       type: 'tool/result',
       lane: 'main',
     } as EventEnvelope
-    const command = vi.fn(async (method: string) => (method === 'scan' ? { rows: [] } : undefined))
+    const command = vi.fn(async (method: string) => (method === 'scan' ? [] : undefined))
     const link = {
       alive: true,
       hello: Promise.resolve({
@@ -180,6 +83,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-live-projected',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       command,
@@ -211,9 +115,10 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-missing-row',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
-      command: vi.fn(async (method: string) => (method === 'scan' ? { rows: [] } : undefined)),
+      command: vi.fn(async (method: string) => (method === 'scan' ? [] : undefined)),
     }
     const lifecycle = { resetSession: vi.fn(), observe: vi.fn(async () => undefined) }
     const registry = new WorkerRegistry(
@@ -261,6 +166,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-artifacts',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 3,
       }),
       onExit: vi.fn(),
       closeSession: vi.fn(async () => {
@@ -268,17 +174,17 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
       }),
       command: vi.fn(async (method: string, params: Record<string, unknown>) => {
         if (method !== 'scan') return undefined
-        const read = async (q: { fromSeq: number; toSeq?: number; limit: number }) =>
-          (await scan)
-            .filter((event) => event.seq >= q.fromSeq && (q.toSeq === undefined || event.seq <= q.toSeq))
-            .slice(0, q.limit)
-        // The real worker command with a small frame budget: a page that does not fit comes back in
-        // parts, without large fixtures.
-        return handleCommand(
-          { scanLean: read } as never,
-          { kind: 'command', requestId: 'scan', method: 'scan', params },
-          { host: {} as never, aborts: new Map(), maxScanFrameBytes: 1024 },
-        )
+        const page = (await scan)
+          .filter(
+            (event) =>
+              event.seq >= Number(params.fromSeq) &&
+              (params.toSeq === undefined || event.seq <= Number(params.toSeq)),
+          )
+          .slice(0, Number(params.limit))
+        // A small synthetic wire budget exercises the real oversized-page refusal without large fixtures.
+        if (Buffer.byteLength(JSON.stringify(page)) > 1024)
+          throw rpcError('INTERNAL_ERROR', { code: 'SCAN_PAGE_TOO_LARGE' })
+        return page
       }),
     }
     const pool = { acquire: vi.fn(async () => link), retire: vi.fn() } as unknown as WorkerPool
@@ -306,6 +212,70 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     expect(order.slice(-2)).toEqual(['reset', 'worker-close'])
   })
 
+  it('drains buffered frames in wire order, including ones arriving mid-drain, and projects each row once', async () => {
+    let releaseScan: ((events: EventEnvelope[]) => void) | undefined
+    const scan = new Promise<EventEnvelope[]>((resolve) => {
+      releaseScan = resolve
+    })
+    const row = (seq: number) => ({ seq, type: 'request/header', lane: 'main' }) as EventEnvelope
+    let releaseFour: (() => void) | undefined
+    const order: string[] = []
+    const link = {
+      alive: true,
+      hello: Promise.resolve({
+        kind: 'hello' as const,
+        token: 'token-drain',
+        sessionKey: 'drain-session',
+        writerRunId: 'run-drain',
+        generation: 1,
+        profileHash: 'sha256-profile',
+        lastSeq: 3,
+      }),
+      onExit: vi.fn(),
+      command: vi.fn(async (method: string, params: Record<string, unknown>) =>
+        method === 'scan' ? (await scan).filter((event) => event.seq >= Number(params.fromSeq)) : undefined,
+      ),
+    }
+    const lifecycle = {
+      resetSession: vi.fn(),
+      observe: vi.fn(async (_session: string, event: EventEnvelope) => {
+        order.push(`observe-${event.seq}`)
+        if (event.seq === 4)
+          await new Promise<void>((resolve) => {
+            releaseFour = resolve
+          })
+      }),
+    }
+    const registry = new WorkerRegistry(
+      { acquire: vi.fn(async () => link), retire: vi.fn() } as unknown as WorkerPool,
+      lifecycle,
+    )
+    const opening = open(registry, { key: 'drain-session', cwd: '/workspace', resume: true })
+    await vi.waitFor(() => expect(link.command).toHaveBeenCalledWith('scan', expect.anything()))
+    const publish = (event: EventEnvelope) =>
+      registry.deliver('drain-session', event, () => order.push(`publish-${event.seq}`))
+    // Rows 1..3 are repeated by a tail that was already running; 4 is new and its projection waits.
+    for (const seq of [1, 2, 3, 4]) publish(row(seq))
+    releaseScan?.([1, 2, 3].map(row))
+    await vi.waitFor(() => expect(releaseFour).toBeDefined())
+    publish(row(5))
+    releaseFour?.()
+    await opening
+
+    expect(order).toEqual([
+      'observe-1',
+      'observe-2',
+      'observe-3',
+      'publish-1',
+      'publish-2',
+      'publish-3',
+      'observe-4',
+      'publish-4',
+      'observe-5',
+      'publish-5',
+    ])
+  })
+
   it('wakes a waiter registered while openFresh replay is still in flight, like deliver() does for live frames', async () => {
     vi.useFakeTimers()
     try {
@@ -323,11 +293,12 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
           writerRunId: 'run-replay-waiter',
           generation: 1,
           profileHash: 'sha256-profile',
+          lastSeq: 1,
         }),
         onExit: vi.fn(),
         closeSession: vi.fn(async () => undefined),
         command: vi.fn((method: string) => {
-          if (method === 'scan') return scan.then((rows) => ({ rows }))
+          if (method === 'scan') return scan
           return Promise.resolve(undefined)
         }),
       }
@@ -368,6 +339,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-tail-failure',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       tail: vi.fn(async () => {
@@ -404,6 +376,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-one',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       command: vi.fn(),
@@ -433,9 +406,10 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
           writerRunId: `run-${generation}`,
           generation,
           profileHash: 'sha256-profile',
+          lastSeq: 0,
         }),
         onExit: vi.fn(),
-        command: vi.fn(async (method: string) => (method === 'scan' ? { rows: [] } : undefined)),
+        command: vi.fn(async (method: string) => (method === 'scan' ? [] : undefined)),
       })),
       retire,
     } as unknown as WorkerPool
@@ -470,6 +444,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: token,
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       closeSession: vi.fn(async () => undefined),
@@ -520,10 +495,11 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: token,
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       closeSession: vi.fn(closeSession),
-      command: vi.fn(async (method: string) => (method === 'scan' ? { rows: [] } : undefined)),
+      command: vi.fn(async (method: string) => (method === 'scan' ? [] : undefined)),
     })
     const initial = link('old-generation', async () => {
       staleDeliveries.push(
@@ -578,6 +554,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
           writerRunId: `run-${generation}`,
           generation,
           profileHash: 'sha256-profile',
+          lastSeq: 0,
         }),
         onExit: vi.fn(),
         command: vi.fn(),
@@ -611,6 +588,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: token,
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       closeSession: vi.fn(async () => undefined),
@@ -658,6 +636,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-busy',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       command: vi.fn((method: string) => (method === 'run' ? run : undefined)),
@@ -689,6 +668,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-old',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn((notify: () => void) => {
         oldExit = notify
@@ -704,6 +684,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-current',
         generation: 2,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       command: vi.fn(),
@@ -742,6 +723,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-scheduler',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       command: vi.fn(),
@@ -769,6 +751,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-prompt',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       command: vi.fn(async () => ({ reason: 'completed', lastSeq: 4 })),
@@ -787,10 +770,11 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
   })
 
   it('forks through the parent worker, reopens the child independently, and keeps retry identity', async () => {
+    let ownerActive = false
     const parentCommand = vi.fn(async (method: string) => {
-      if (method === 'ping') return { lastSeq: 12, preset: 'coding', parent: null }
+      if (method === 'ping') return { lastSeq: 12, preset: 'coding', permission: 'full-access', parent: null }
       if (method === 'projectUI') return { opState: null }
-      if (method === 'scan') return { rows: [{ type: 'turn/end', data: { reason: 'completed' } }] }
+      if (method === 'scan') return [{ type: 'turn/end', data: { reason: 'completed' } }]
       if (method === 'fork') return { sessionId: 'child', parent: { key: 'parent', boundarySeq: 9 } }
       throw new Error(`unexpected parent command ${method}`)
     })
@@ -812,28 +796,47 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: `${key}-run`,
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       command,
     })
     const pool = {
-      acquire: vi.fn(async (key: string) =>
-        key === 'parent' ? link(key, parentCommand) : link(key, childCommand),
-      ),
+      acquire: vi.fn(async (key: string) => {
+        if (key !== 'parent' && !ownerActive) throw new Error('artifact owner is still pending')
+        return key === 'parent' ? link(key, parentCommand) : link(key, childCommand)
+      }),
     } as unknown as WorkerPool
     const registry = new WorkerRegistry(pool)
-    await open(registry, { key: 'parent', cwd: '/workspace', preset: 'coding' })
+    await open(registry, { key: 'parent', cwd: '/workspace', preset: 'coding', permission: 'full-access' })
+    expect(pool.acquire).toHaveBeenCalledWith(
+      'parent',
+      expect.objectContaining({ preset: 'coding', permission: 'full-access' }),
+    )
 
     const childBinding = await workspaceBinding('child')
-    const first = await registry.fork({ parent: 'parent', at: 9, childKey: 'child', binding: childBinding })
+    const beforeHistoryReplay = vi.fn((key: string) => {
+      expect(key).toBe('child')
+      expect(parentCommand).toHaveBeenCalledWith('fork', expect.objectContaining({ childKey: 'child' }))
+      ownerActive = true
+    })
+    const first = await registry.fork({
+      parent: 'parent',
+      at: 9,
+      childKey: 'child',
+      binding: childBinding,
+      beforeHistoryReplay,
+    })
     const retried = await registry.fork({
       parent: 'parent',
       at: 9,
       childKey: 'child',
       binding: childBinding,
+      beforeHistoryReplay,
     })
 
     expect(retried).toBe(first)
+    expect(beforeHistoryReplay).toHaveBeenCalledTimes(1)
     expect(parentCommand).toHaveBeenCalledWith('fork', {
       at: 9,
       childKey: 'child',
@@ -845,56 +848,81 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
       cwd: '/workspace',
       binding: childBinding,
       preset: 'coding',
+      permission: 'full-access',
       parent: { key: 'parent', boundarySeq: 9 },
     })
   })
 
-  it('closes a worker-adopted child when its daemon-side open is not acknowledged', async () => {
-    const parentCommand = vi.fn(async (method: string) => {
-      if (method === 'ping') return { lastSeq: 12, preset: 'coding', parent: null }
-      if (method === 'projectUI') return { opState: null }
-      if (method === 'scan') return { rows: [{ type: 'turn/end', data: { reason: 'completed' } }] }
-      if (method === 'fork') return { sessionId: 'orphan', parent: { key: 'parent', boundarySeq: 9 } }
-      throw new Error(`unexpected parent command ${method}`)
-    })
-    const parentLink = {
-      alive: true,
-      hello: Promise.resolve({
-        kind: 'hello' as const,
-        token: 'parent-token',
-        sessionKey: 'parent',
-        writerRunId: 'parent-run',
-        generation: 1,
-        profileHash: 'sha256-profile',
-      }),
-      onExit: vi.fn(),
-      command: parentCommand,
-    }
-    const closeHostedSession = vi.fn(async () => undefined)
-    const pool = {
-      acquire: vi.fn(async (key: string) => {
-        if (key === 'parent') return parentLink
-        throw new Error('child open ACK lost')
-      }),
-      closeHostedSession,
-    } as unknown as WorkerPool
-    const registry = new WorkerRegistry(pool)
-    await open(registry, { key: 'parent', cwd: '/workspace', preset: 'coding' })
-    const binding = await workspaceBinding('orphan')
+  it.each(['parent', 'activation', 'open'] as const)(
+    'compensates a fork failure at %s without opening an unauthorized child',
+    async (stage) => {
+      const parentCommand = vi.fn(async (method: string) => {
+        if (method === 'ping') return { lastSeq: 12, preset: 'coding', parent: null }
+        if (method === 'projectUI') return { opState: null }
+        if (method === 'scan') return [{ type: 'turn/end', data: { reason: 'completed' } }]
+        if (method === 'fork') {
+          if (stage === 'parent') throw new Error('parent fork failed')
+          return { sessionId: 'orphan', parent: { key: 'parent', boundarySeq: 9 } }
+        }
+        throw new Error(`unexpected parent command ${method}`)
+      })
+      const parentLink = {
+        alive: true,
+        hello: Promise.resolve({
+          kind: 'hello' as const,
+          token: 'parent-token',
+          sessionKey: 'parent',
+          writerRunId: 'parent-run',
+          generation: 1,
+          profileHash: 'sha256-profile',
+          lastSeq: 0,
+        }),
+        onExit: vi.fn(),
+        command: parentCommand,
+      }
+      const closeHostedSession = vi.fn(async () => undefined)
+      const pool = {
+        acquire: vi.fn(async (key: string) => {
+          if (key === 'parent') return parentLink
+          throw new Error('child open ACK lost')
+        }),
+        closeHostedSession,
+      } as unknown as WorkerPool
+      const registry = new WorkerRegistry(pool)
+      await open(registry, { key: 'parent', cwd: '/workspace', preset: 'coding' })
+      const binding = await workspaceBinding('orphan')
 
-    await expect(registry.fork({ parent: 'parent', at: 9, childKey: 'orphan', binding })).rejects.toThrow(
-      'child open ACK lost',
-    )
+      const beforeHistoryReplay = vi.fn(() => {
+        if (stage === 'activation') throw rpcError('CAPABILITY_DENIED', { reason: 'owner CAS rejected' })
+      })
+      const failed = registry.fork({
+        parent: 'parent',
+        at: 9,
+        childKey: 'orphan',
+        binding,
+        beforeHistoryReplay,
+      })
+      if (stage === 'activation')
+        await expect(failed).rejects.toMatchObject({ data: { reason: 'owner CAS rejected' } })
+      else
+        await expect(failed).rejects.toThrow(
+          stage === 'parent' ? 'parent fork failed' : 'child open ACK lost',
+        )
 
-    expect(parentCommand).toHaveBeenCalledWith('fork', {
-      at: 9,
-      childKey: 'orphan',
-      credential: undefined,
-      binding,
-    })
-    expect(closeHostedSession).toHaveBeenCalledWith('orphan', 'fork adoption failed')
-    expect(registry.get('orphan')).toBeUndefined()
-  })
+      expect(parentCommand).toHaveBeenCalledWith('fork', {
+        at: 9,
+        childKey: 'orphan',
+        credential: undefined,
+        binding,
+      })
+      if (stage === 'parent') {
+        expect(beforeHistoryReplay).not.toHaveBeenCalled()
+        expect(closeHostedSession).not.toHaveBeenCalled()
+      } else expect(closeHostedSession).toHaveBeenCalledWith('orphan', 'fork adoption failed')
+      if (stage !== 'open') expect(pool.acquire).toHaveBeenCalledTimes(1)
+      expect(registry.get('orphan')).toBeUndefined()
+    },
+  )
 
   it('does not publish a link that died before its exit observer was registered', async () => {
     const link = {
@@ -907,6 +935,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         generation: 1,
         workerGeneration: 2,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn((notify: () => void) => {
         link.alive = false
@@ -938,6 +967,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'old-run',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn((notify: () => void) => {
         oldExit = notify
@@ -953,6 +983,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'new-run',
         generation: 2,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       closeSession: vi.fn(async () => {
         throw new Error('recovery channel close failed')
@@ -995,11 +1026,12 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: token,
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       // Like a real session channel, exit is observed on the whole worker link.
       onExit: (notify: () => void) => void workerExit.push(notify),
       closeSession: vi.fn(async () => undefined),
-      command: vi.fn(async (method: string) => (method === 'scan' ? { rows: [] } : undefined)),
+      command: vi.fn(async (method: string) => (method === 'scan' ? [] : undefined)),
     })
     let releaseFirst: ((link: unknown) => void) | undefined
     const first = new Promise<unknown>((resolve) => {
@@ -1026,104 +1058,6 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     await registry.closeAll()
   })
 
-  describe('a session whose ledger failed its integrity check', () => {
-    const integrity = () => Object.assign(new Error('ledger digest mismatch'), { code: 'E_LEDGER_INTEGRITY' })
-    const channel = (key: string, onExit?: (notify: () => void) => void) => ({
-      alive: true,
-      hello: Promise.resolve({
-        kind: 'hello' as const,
-        token: 'token',
-        sessionKey: key,
-        writerRunId: 'run',
-        generation: 1,
-        profileHash: 'sha256-profile',
-      }),
-      onExit: onExit ?? (() => undefined),
-      closeSession: vi.fn(async () => undefined),
-      command: vi.fn(async () => undefined),
-    })
-
-    it('is not reopened when its worker reports the integrity failure', async () => {
-      const key = 'tampered-interrupted'
-      const acquire = vi.fn().mockResolvedValue(channel(key))
-      const failed = vi.fn()
-      const registry = new WorkerRegistry(
-        { acquire, retire: vi.fn() } as unknown as WorkerPool,
-        undefined,
-        undefined,
-        failed,
-      )
-      await open(registry, { key, cwd: '/workspace', resume: true })
-      registry.subscribe(key, () => undefined)
-      registry.interrupt(key, integrity())
-      await new Promise((r) => setTimeout(r, 300))
-      expect(acquire).toHaveBeenCalledOnce()
-      expect(registry.get(key)).toBeUndefined()
-      expect(failed).toHaveBeenCalledExactlyOnceWith(key)
-      await registry.closeAll()
-    })
-
-    it('fails an open the integrity failure interrupted with that failure, not as unavailable', async () => {
-      const key = 'tampered-while-opening'
-      let releaseTail!: () => void
-      let tailing!: () => void
-      const tailStarted = new Promise<void>((resolve) => {
-        tailing = resolve
-      })
-      const link = {
-        ...channel(key),
-        command: vi.fn(async (method: string) => (method === 'scan' ? { rows: [] } : undefined)),
-        tail: () => {
-          tailing()
-          return new Promise<void>((resolve) => {
-            releaseTail = resolve
-          })
-        },
-      }
-      const lifecycle = { resetSession: vi.fn(), observe: vi.fn(async () => undefined) }
-      const registry = new WorkerRegistry(
-        { acquire: vi.fn().mockResolvedValue(link), retire: vi.fn() } as unknown as WorkerPool,
-        lifecycle,
-        undefined,
-        vi.fn(),
-      )
-      const opening = open(registry, { key, cwd: '/workspace', resume: true })
-      await tailStarted
-      registry.interrupt(key, integrity())
-      releaseTail()
-      await expect(opening).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
-      await registry.closeAll()
-    })
-
-    it('stops recovering after a reopen fails the integrity check', async () => {
-      const key = 'tampered-recovery'
-      let crash: (() => void) | undefined
-      const acquire = vi
-        .fn()
-        .mockResolvedValueOnce(
-          channel(key, (notify) => {
-            crash = notify
-          }),
-        )
-        .mockRejectedValue(integrity())
-      const failed = vi.fn()
-      const registry = new WorkerRegistry(
-        { acquire, retire: vi.fn() } as unknown as WorkerPool,
-        undefined,
-        undefined,
-        failed,
-      )
-      await open(registry, { key, cwd: '/workspace', resume: true })
-      registry.subscribe(key, () => undefined)
-      crash?.()
-      await vi.waitFor(() => expect(failed).toHaveBeenCalledOnce())
-      await new Promise((r) => setTimeout(r, 1_500))
-      expect(acquire).toHaveBeenCalledTimes(2)
-      expect(failed).toHaveBeenCalledExactlyOnceWith(key)
-      await registry.closeAll()
-    })
-  })
-
   it('finishes pending and map cleanup after the first session close fails', async () => {
     const link = {
       alive: true,
@@ -1134,6 +1068,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'close-failure-run',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       command: vi.fn(),
@@ -1215,4 +1150,46 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     const registry: LocalContext['registry'] = wr
     expect(registry).toBe(wr)
   })
+})
+
+it('fences generation migration by authenticated ownership and releases admission after failure', async () => {
+  const registry = new WorkerRegistry({} as WorkerPool)
+  const ownership = { resolve: () => ({ active: true as const, principalId: 'owner' }) }
+  await expect(
+    registry.migrateGeneration('closed', 'other', ownership, async () => 'changed'),
+  ).rejects.toMatchObject({ data: { reason: 'session owner unavailable' } })
+  await expect(
+    registry.migrateGeneration(
+      'closed',
+      'owner',
+      {
+        resolve: () => {
+          throw new Error('corrupt')
+        },
+      },
+      async () => 'changed',
+    ),
+  ).rejects.toMatchObject({ data: { reason: 'session owner unavailable' } })
+  let fail: ((error: Error) => void) | undefined
+  const migrating = registry.migrateGeneration(
+    'closed',
+    'owner',
+    ownership,
+    () =>
+      new Promise<string>((_resolve, reject) => {
+        fail = reject
+      }),
+  )
+  await expect(open(registry, { key: 'closed', cwd: '/workspace' })).rejects.toThrow(
+    'E_GENERATION_SESSION_OPEN',
+  )
+  await expect(
+    registry.migrateGeneration('closed', 'owner', ownership, async () => 'changed'),
+  ).rejects.toThrow('E_GENERATION_SESSION_OPEN')
+  if (!fail) throw new Error('migration fixture did not start')
+  fail(new Error('E_GENERATION_INCOMPATIBLE'))
+  await expect(migrating).rejects.toThrow('E_GENERATION_INCOMPATIBLE')
+  await expect(
+    registry.migrateGeneration('closed', 'owner', ownership, async () => 'migrated'),
+  ).resolves.toBe('migrated')
 })

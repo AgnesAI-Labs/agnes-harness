@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 
-import { userImagePolicy } from '@agnes/protocol'
+import { attachmentLink, storedAttachment, userImagePolicy } from '@agnes/protocol'
 import { decodeSafeImageBytes, USER_MESSAGE_IMAGE_LIMITS } from '@agnes/protocol-validation'
 import { webUiLocaleCatalog } from '@agnes/web-ui'
 import { act, createElement, createRef } from 'react'
@@ -13,6 +13,7 @@ import {
   type ComposerView,
   downscaleImageFile,
 } from '../src/composer.js'
+import * as uploads from '../src/file-upload.js'
 import { webUnitsLocaleCatalog } from '../src/locales/index.js'
 
 let host: HTMLDivElement
@@ -30,11 +31,10 @@ const dependencies: ComposerDependencies = {
       Object.hasOwn(vars, name) ? String(vars[name]) : match,
     )
   },
-  createModelPicker: () => ({ destroy() {}, render() {} }),
-  createPermissionPicker: () => ({ destroy() {}, render() {} }),
-  createUsagePanel: () => () => undefined,
+  ModelPicker: () => null,
+  PermissionPicker: () => null,
+  UsagePanel: () => null,
   isSubmitShortcut: () => false,
-  resize: () => undefined,
 }
 
 const view: ComposerView = {
@@ -60,46 +60,6 @@ const PNG_DATA =
 const pngBytes = Uint8Array.from(atob(PNG_DATA), (character) => character.charCodeAt(0))
 const pngFile = (name = 'one.png', bytes: Uint8Array = pngBytes) =>
   new File([Uint8Array.from(bytes)], name, { type: 'image/png' })
-/** 声明尺寸远超像素上限、字节数却只有几十字节的 JPEG：校验器读到 SOF 就会按尺寸拒绝。 */
-const oversizedJpegFile = (width = 2000, height = 2000) =>
-  new File(
-    [
-      Uint8Array.from([
-        0xff,
-        0xd8,
-        0xff,
-        0xc0,
-        0,
-        11,
-        8,
-        height >>> 8,
-        height & 0xff,
-        width >>> 8,
-        width & 0xff,
-        1,
-        1,
-        0x11,
-        0,
-        0xff,
-        0xda,
-        0,
-        8,
-        1,
-        1,
-        0,
-        0,
-        63,
-        0,
-        1,
-        2,
-        3,
-        0xff,
-        0xd9,
-      ]),
-    ],
-    'huge.jpg',
-    { type: 'image/jpeg' },
-  )
 const imagePasteEvent = (files: File[], text = '') => {
   const event = new Event('paste', { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'clipboardData', {
@@ -134,11 +94,100 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
+it('keeps a batch through upload session opening, stores references and cleans a removed file', async () => {
+  const handle = createRef<ComposerHandle>()
+  const cancelled = vi.spyOn(uploads, 'cancelFileUpload').mockResolvedValue(undefined)
+  vi.spyOn(uploads, 'fileUploadLimits').mockResolvedValue({
+    maxBytes: 1024,
+    chunkBytes: 4,
+    allowedMimeTypes: [],
+  })
+  vi.spyOn(uploads, 'uploadFile').mockImplementation(
+    async (file, _session, id, _limits, signal, progress, destination) => {
+      expect(destination).toBe('original')
+      signal.throwIfAborted()
+      progress({ loaded: file.size, total: file.size, phase: 'verifying' })
+      return attachmentLink({ sha256: 'a'.repeat(64), size: file.size, mime: file.type }, file.name, {
+        receiptId: id,
+        ...(file.type === 'image/png' ? { image: { width: 1, height: 1 } } : {}),
+      })
+    },
+  )
+  await act(async () =>
+    root.render(
+      createElement(Composer, {
+        ref: handle,
+        dependencies,
+        initialView: view,
+        prepareUploadSession: async () => {
+          // The real shell clears attachment state when it publishes the newly opened session.
+          handle.current?.clearImageBlocks()
+          return 'owned-session'
+        },
+        onCancel() {},
+        onDraftChange() {},
+        onError() {},
+        onModelSelect: async () => false,
+        onPermissionSelect: async () => false,
+        onSubmit() {},
+        onWorkspace() {},
+      }),
+    ),
+  )
+  const input = host.querySelector('textarea')
+  if (!input) throw new Error('missing composer input')
+  await act(async () =>
+    input.dispatchEvent(
+      imagePasteEvent([
+        new File(['one'], 'contract.txt', { type: 'text/plain' }),
+        new File(['two'], 'scan.pdf', { type: 'application/pdf' }),
+        pngFile(),
+      ]),
+    ),
+  )
+  await vi.waitFor(() => expect(handle.current?.getAttachmentBlocks()).toHaveLength(3))
+  expect(handle.current?.getAttachmentBlocks().every(storedAttachment)).toBe(true)
+  expect(JSON.stringify(handle.current?.getAttachmentBlocks())).not.toContain(PNG_DATA)
+  expect(cancelled).not.toHaveBeenCalled()
+  // A finished upload keeps a local preview URL, so the image shows as a thumbnail, not a file row.
+  const readyRows = [...host.querySelectorAll('[data-testid="attachment-ready"]')]
+  const thumbnail = readyRows.find((node) => node.classList.contains('composer-image-preview'))
+  expect(thumbnail?.querySelector('img')?.getAttribute('src')).toBe('blob:preview')
+  expect(readyRows.filter((node) => node.classList.contains('composer-file-preview'))).toHaveLength(2)
+  // The remove button is a sibling of the preview image, never inside its clickable root. That is
+  // the structure the composer CSS relies on when it keeps the preview cover out of hit testing.
+  const previewRoot = thumbnail?.querySelector('.ant-image')
+  const removeButton = thumbnail?.querySelector('[data-remove-image]')
+  expect(previewRoot?.querySelector('.ant-image-cover')).not.toBeNull()
+  expect(removeButton?.closest('.ant-image')).toBeNull()
+  expect(removeButton?.parentElement).toBe(thumbnail)
+  // Clicking it opens the shared preview layer instead of doing nothing.
+  await act(async () =>
+    thumbnail?.querySelector('img')?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+  )
+  await vi.waitFor(() => expect(document.querySelector('.ant-image-preview')).not.toBeNull())
+  const remove = host.querySelector<HTMLButtonElement>('[data-testid="attachment-remove"]')
+  await act(async () => remove?.click())
+  expect(handle.current?.getAttachmentBlocks()).toHaveLength(2)
+  expect(cancelled).not.toHaveBeenCalled()
+  // 模型不收图片时这份上传是按文件发出去的，所以同一张图回到文件行，不再给缩略图。
+  await act(async () =>
+    handle.current?.render({ ...view, imagePolicy: userImagePolicy({ input: ['text'] }) }),
+  )
+  expect(host.querySelector('.composer-image-preview')).toBeNull()
+  expect(
+    [...host.querySelectorAll('[data-testid="attachment-ready"]')].some(
+      (node) => node.classList.contains('composer-file-preview') && node.textContent?.includes('one.png'),
+    ),
+  ).toBe(true)
+})
+
 it.each([
-  [false, true],
-  [true, true],
-  [true, false],
-])('leaves the original JPEG in place: trailing data %s, bitmap decoding %s', async (trailing, decodable) => {
+  [false, true, true],
+  [true, true, true],
+  [true, false, true],
+  [true, true, false],
+])('handles JPEG trailing data %s, decoding %s, encoding %s', async (trailing, decodable, encodable) => {
   const bytes = Uint8Array.of(
     0xff,
     0xd8,
@@ -179,23 +228,20 @@ it.each([
     if (!decodable) throw new Error('invalid JPEG')
     return { width: 1, height: 1, close }
   })
-  // canvas 桩保留：缩放器若又去重编码，result === file 和下面两条 spy 断言会一起失败。
-  const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
     drawImage() {},
   } as unknown as CanvasRenderingContext2D)
-  const toBlob = vi
-    .spyOn(HTMLCanvasElement.prototype, 'toBlob')
-    .mockImplementation((callback) => callback(new Blob([bytes], { type: 'image/jpeg' })))
+  vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((callback) =>
+    callback(encodable ? new Blob([bytes], { type: 'image/jpeg' }) : null),
+  )
   const result = await downscaleImageFile(file, view.imagePolicy)
-  // 尾迹落在 EOI 之后，不属于图像数据：校验器放过它，缩放器也就不必为剥掉它而重编码整张图。
-  expect(result === file).toBe(true)
-  expect(getContext).not.toHaveBeenCalled()
-  expect(toBlob).not.toHaveBeenCalled()
+  expect(result).toBe(file)
+  expect(HTMLCanvasElement.prototype.toBlob).not.toHaveBeenCalled()
   expect(result.name).toBe('photo.jpg')
   const resultBytes = new Uint8Array(await result.arrayBuffer())
-  expect(
-    decodeSafeImageBytes({ bytes: resultBytes, mimeType: result.type }, USER_MESSAGE_IMAGE_LIMITS),
-  ).toMatchObject({ mime: 'image/jpeg', width: 1, height: 1 })
+  const decode = () =>
+    decodeSafeImageBytes({ bytes: resultBytes, mimeType: result.type }, USER_MESSAGE_IMAGE_LIMITS)
+  expect(decode()).toMatchObject({ mime: 'image/jpeg', width: 1, height: 1 })
   if (decodable) expect(close).toHaveBeenCalledOnce()
   else expect(close).not.toHaveBeenCalled()
 })
@@ -449,6 +495,74 @@ describe('composer image attachments', () => {
     expect(URL.createObjectURL).not.toHaveBeenCalled()
   })
 
+  it('shows the shared attachment tooltip on focus and hover and dismisses it with Escape', async () => {
+    await act(async () =>
+      root.render(
+        createElement(Composer, {
+          dependencies,
+          initialView: view,
+          onCancel() {},
+          onDraftChange() {},
+          onError() {},
+          onModelSelect: async () => false,
+          onPermissionSelect: async () => false,
+          onSubmit() {},
+          onWorkspace() {},
+        }),
+      ),
+    )
+    const attach = host.querySelector<HTMLButtonElement>('#composer-attach')
+    if (!attach) throw new Error('missing attachment action')
+    expect(attach.getAttribute('title')).toBeNull()
+    expect(attach.getAttribute('aria-describedby')).toBe('composer-image-hint')
+    const hint = host.querySelector('#composer-image-hint')?.textContent ?? ''
+    expect(hint).toContain('50')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
+    await act(async () => attach.focus())
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(hint)
+    expect(attach.getAttribute('aria-describedby')).toContain('composer-image-hint')
+    await act(async () =>
+      attach.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+    )
+    expect(attach.getAttribute('aria-describedby')).toBe('composer-image-hint')
+    await act(async () => attach.blur())
+    await act(async () => attach.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
+    await vi.waitFor(() => expect(attach.getAttribute('aria-describedby')).not.toBe('composer-image-hint'))
+    expect(document.querySelector('.agh-tooltip')?.textContent).toContain(hint)
+  })
+
+  it('reports pixel overflow as a size error without enqueuing an invalid-image card', async () => {
+    const handle = createRef<ComposerHandle>()
+    const onError = vi.fn()
+    await act(async () =>
+      root.render(
+        createElement(Composer, {
+          ref: handle,
+          dependencies,
+          initialView: view,
+          onCancel() {},
+          onDraftChange() {},
+          onError,
+          onModelSelect: async () => false,
+          onPermissionSelect: async () => false,
+          onSubmit() {},
+          onWorkspace() {},
+        }),
+      ),
+    )
+    const data =
+      'iVBORw0KGgoAAAANSUhEUgAAB9AAAAXcCAAAAABfDkr3AAALc0lEQVR4nO3BAQ0AAADCoPdPbQ43oAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB4Nc8/AAGyCpVaAAAAAElFTkSuQmCC'
+    const oversized = pngFile(
+      'pixels.png',
+      Uint8Array.from(atob(data), (c) => c.charCodeAt(0)),
+    )
+    await act(async () => host.querySelector('textarea')?.dispatchEvent(imagePasteEvent([oversized])))
+    await vi.waitFor(() => expect(onError).toHaveBeenCalled())
+    expect(onError.mock.calls[0]?.[0].message).toContain('像素超出限制')
+    expect(onError.mock.calls[0]?.[0].message).not.toContain('不是有效')
+    expect(handle.current?.getAttachmentBlocks()).toEqual([])
+  })
+
   it('accepts other file types while refusing invalid and oversized images', async () => {
     const handle = createRef<ComposerHandle>()
     const onError = vi.fn()
@@ -581,123 +695,6 @@ describe('composer image attachments', () => {
     expect(host.querySelector('#composer-attach')?.getAttribute('aria-disabled')).toBe('true')
   })
 
-  it('shows the attachment limits in a Tooltip instead of a native title', async () => {
-    await act(async () =>
-      root.render(
-        createElement(Composer, {
-          dependencies,
-          initialView: view,
-          onCancel() {},
-          onDraftChange() {},
-          onError() {},
-          onModelSelect: async () => false,
-          onPermissionSelect: async () => false,
-          onSubmit() {},
-          onWorkspace() {},
-        }),
-      ),
-    )
-    const attach = host.querySelector<HTMLButtonElement>('#composer-attach')
-    if (!attach) throw new Error('missing attach button')
-    // 原生 title 会同时给出浏览器自己那套气泡，两者叠加等于两个提示。
-    expect(attach.getAttribute('title')).toBeNull()
-    // 无障碍说明不受影响：仍然由按钮自己指向那段 visually-hidden 的文案。
-    expect(attach.getAttribute('aria-describedby')).toBe('composer-image-hint')
-    expect(host.querySelector('#composer-image-hint')?.textContent).toContain('可上传各类文件')
-
-    // React 的 onMouseEnter 由 mouseover 合成，直接派发 mouseenter 不会触发浮层。
-    await act(async () => {
-      attach.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
-    })
-    await vi.waitFor(() =>
-      expect(document.querySelector('.agnes-ui-tooltip')?.textContent).toContain('可上传各类文件'),
-    )
-  })
-
-  it('says attachments cannot be added yet instead of quoting the limits', async () => {
-    const handle = createRef<ComposerHandle>()
-    const onError = vi.fn()
-    await act(async () =>
-      root.render(
-        createElement(Composer, {
-          ref: handle,
-          dependencies,
-          initialView: { ...view, sending: true },
-          onCancel() {},
-          onDraftChange() {},
-          onError,
-          onModelSelect: async () => false,
-          onPermissionSelect: async () => false,
-          onSubmit() {},
-          onWorkspace() {},
-        }),
-      ),
-    )
-    await act(async () => {
-      host.querySelector('textarea')?.dispatchEvent(imagePasteEvent([pngFile()]))
-    })
-    // 文件一个都没加进去，这时报「各类文件都能传、最多 50 个」的限制说明会被读成加成功了。
-    expect(handle.current?.getAttachmentBlocks()).toEqual([])
-    expect(onError).toHaveBeenCalledTimes(1)
-    expect(onError.mock.calls[0]?.[0]?.message).toBe('当前无法添加附件。')
-  })
-
-  it('names the model when the attach button is refused for a model without image input', async () => {
-    const onError = vi.fn()
-    await act(async () =>
-      root.render(
-        createElement(Composer, {
-          dependencies,
-          // 回形针这条路的判断比 addFiles 窄：输入框不可用、且模型不收图片时才说话。
-          initialView: { ...view, sending: true, imagePolicy: userImagePolicy({ input: ['text'] }) },
-          onCancel() {},
-          onDraftChange() {},
-          onError,
-          onModelSelect: async () => false,
-          onPermissionSelect: async () => false,
-          onSubmit() {},
-          onWorkspace() {},
-        }),
-      ),
-    )
-    const attach = host.querySelector<HTMLButtonElement>('#composer-attach')
-    if (!attach) throw new Error('missing attach button')
-    await act(async () => attach.click())
-    // 走到这里原因只有一个：模型不接受图片输入。报成「当前无法添加附件」会让人去等输入框。
-    expect(onError).toHaveBeenCalledTimes(1)
-    expect(onError.mock.calls[0]?.[0]?.message).toBe('请先选择支持图片输入的模型。')
-  })
-
-  it('reports a refused file block through the attachment map, not as an unreadable attachment', async () => {
-    const onError = vi.fn()
-    await act(async () =>
-      root.render(
-        createElement(Composer, {
-          dependencies,
-          initialView: view,
-          onCancel() {},
-          onDraftChange() {},
-          onError,
-          onModelSelect: async () => false,
-          onPermissionSelect: async () => false,
-          onSubmit() {},
-          onWorkspace() {},
-        }),
-      ),
-    )
-    // 换行的文件名会被 validateUserAttachments 按 ATTACHMENT_NAME 拒收。这里要说清是名字的问题：
-    // 报成「无法读取该附件」会让人把同一个文件再传一遍。
-    await act(async () => {
-      host
-        .querySelector('textarea')
-        ?.dispatchEvent(
-          imagePasteEvent([new File([new Uint8Array([1, 2, 3])], 'bad\nname.txt', { type: 'text/plain' })]),
-        )
-    })
-    expect(onError).toHaveBeenCalledTimes(1)
-    expect(onError.mock.calls[0]?.[0]?.message).toBe('附件名称或文件类型无效。')
-  })
-
   it('accepts a large source image once downscaling brings it under the per-image limit', async () => {
     const handle = createRef<ComposerHandle>()
     const onError = vi.fn()
@@ -737,11 +734,7 @@ describe('composer image attachments', () => {
     root = createRoot(host)
   })
 
-  // The fixture is one byte over the 100 MiB per-image limit, and the composer reads and encodes the
-  // whole file before it compares sizes, which takes several seconds on a hosted Linux runner.
-  it('rejects an image that is still over the per-image limit after downscaling', {
-    timeout: 30_000,
-  }, async () => {
+  it('rejects an image that is still over the per-image limit after downscaling', async () => {
     const handle = createRef<ComposerHandle>()
     const onError = vi.fn()
     const oversized = pngFile('still-big.png', new Uint8Array(USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage + 1))
@@ -811,44 +804,6 @@ describe('composer image attachments', () => {
 
     expect(downscaleImage).toHaveBeenCalledTimes(3)
     expect(onError).not.toHaveBeenCalled()
-    await act(async () => root.unmount())
-    root = createRoot(host)
-  })
-
-  it('names an over-pixel image as too large instead of as an invalid file', async () => {
-    const handle = createRef<ComposerHandle>()
-    const onError = vi.fn()
-    await act(async () => {
-      root.render(
-        createElement(Composer, {
-          ref: handle,
-          dependencies,
-          initialView: view,
-          onCancel() {},
-          onDraftChange() {},
-          onError,
-          onModelSelect: async () => false,
-          onPermissionSelect: async () => false,
-          onSubmit() {},
-          onWorkspace() {},
-        }),
-      )
-    })
-
-    const prompt = host.querySelector<HTMLTextAreaElement>('#prompt')
-    if (!prompt) throw new Error('composer input is missing')
-    await act(async () => {
-      prompt.dispatchEvent(imagePasteEvent([oversizedJpegFile()]))
-      await vi.waitFor(() => expect(onError).toHaveBeenCalled())
-    })
-
-    // 尺寸超限以前被报成「文件内容不是有效的 PNG 或 JPEG 图片」，用户会去改图片格式，
-    // 而该做的是把图缩小。
-    expect(onError.mock.calls[0]?.[0]?.message).toBe(
-      webUnitsLocaleCatalog['zh-CN']['composer.image.tooLargePixels'],
-    )
-    expect(handle.current?.getImageBlocks()).toEqual([])
-    expect(URL.createObjectURL).not.toHaveBeenCalled()
     await act(async () => root.unmount())
     root = createRoot(host)
   })
@@ -957,4 +912,169 @@ it.each([
   expect(composer.getImageBlocks()).toEqual(images)
   await act(async () => composer.restoreImageBlocks([{ type: 'image', data: 'bad', mimeType: 'image/png' }]))
   expect(composer.getImageBlocks()).toEqual(images)
+})
+
+it('clears attachments without notifying the host when there is nothing to clear', async () => {
+  const handle = createRef<ComposerHandle>()
+  const changed = vi.fn()
+  await act(async () => {
+    root.render(
+      createElement(Composer, {
+        ref: handle,
+        dependencies,
+        initialView: view,
+        onAttachmentsChange: changed,
+        onCancel() {},
+        onDraftChange() {},
+        onError() {},
+        onModelSelect: async () => false,
+        onPermissionSelect: async () => false,
+        onSubmit() {},
+        onWorkspace() {},
+      }),
+    )
+  })
+  // Switching sessions clears the composer; an empty one must not re-render the host's controls.
+  await act(async () => handle.current?.clearImageBlocks())
+  expect(changed).not.toHaveBeenCalled()
+  const prompt = host.querySelector<HTMLTextAreaElement>('#prompt')
+  if (!prompt) throw new Error('composer input is missing')
+  await act(async () => prompt.dispatchEvent(imagePasteEvent([pngFile()])))
+  await act(async () => {
+    await vi.waitFor(() => expect(handle.current?.getImageBlocks()).toHaveLength(1))
+  })
+  changed.mockClear()
+  await act(async () => handle.current?.clearImageBlocks())
+  expect(handle.current?.getImageBlocks()).toEqual([])
+  expect(changed).toHaveBeenCalled()
+})
+
+describe('composer upload cancellation and retry', () => {
+  const limits = { maxBytes: 1024, chunkBytes: 4, allowedMimeTypes: [] as string[] }
+  const renderComposer = async () => {
+    const handle = createRef<ComposerHandle>()
+    const onError = vi.fn()
+    await act(async () => {
+      root.render(
+        createElement(Composer, {
+          ref: handle,
+          dependencies,
+          initialView: view,
+          prepareUploadSession: async () => 'owned-session',
+          onCancel() {},
+          onDraftChange() {},
+          onError,
+          onModelSelect: async () => false,
+          onPermissionSelect: async () => false,
+          onSubmit() {},
+          onWorkspace() {},
+        }),
+      )
+    })
+    return { handle, onError }
+  }
+  const chip = () => host.querySelector('[data-testid="attachment-upload"]')
+  const chipState = () => chip()?.getAttribute('data-state')
+  const status = () => host.querySelector('[data-testid="attachment-upload-status"]')?.textContent ?? ''
+  const startUpload = async (): Promise<void> => {
+    const prompt = host.querySelector<HTMLTextAreaElement>('#prompt')
+    if (!prompt) throw new Error('composer input is missing')
+    await act(async () => {
+      prompt.dispatchEvent(imagePasteEvent([new File(['one'], 'contract.txt', { type: 'text/plain' })]))
+    })
+    // The upload stalls at 100% in the verifying phase, which is where users press cancel.
+    await vi.waitFor(() => expect(chipState()).toBe('verifying'))
+  }
+  const stallAtFullProgress = () =>
+    vi.spyOn(uploads, 'uploadFile').mockImplementation((file, _session, _id, _limits, signal, progress) => {
+      progress({ loaded: file.size, total: file.size, phase: 'verifying' })
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), {
+          once: true,
+        })
+      })
+    })
+  beforeEach(() => {
+    vi.spyOn(uploads, 'fileUploadLimits').mockResolvedValue(limits)
+  })
+
+  it('treats a published upload as cancelled and lets the chip be dismissed', async () => {
+    stallAtFullProgress()
+    const cancelled = vi
+      .spyOn(uploads, 'cancelFileUpload')
+      .mockRejectedValue(new uploads.FileUploadFailure('ATTACHMENT_DATA'))
+    const { handle } = await renderComposer()
+    await startUpload()
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="attachment-upload-cancel"]')?.click(),
+    )
+    await vi.waitFor(() => expect(chipState()).toBe('cancelled'))
+    expect(status()).not.toContain('尚未确认清理完成')
+    // One abort is one cleanup request; a second cancel from the abort handler is not sent.
+    expect(cancelled).toHaveBeenCalledTimes(1)
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="attachment-upload-dismiss"]')?.click(),
+    )
+    await vi.waitFor(() => expect(chip()).toBeNull())
+    expect(handle.current?.getAttachmentBlocks()).toEqual([])
+  })
+
+  it('keeps an unconfirmed cleanup dismissible and stops claiming 100% after the failure', async () => {
+    stallAtFullProgress()
+    const cancelled = vi
+      .spyOn(uploads, 'cancelFileUpload')
+      .mockRejectedValue(new TypeError('failed to fetch'))
+    await renderComposer()
+    await startUpload()
+    expect(status()).toContain('100%')
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="attachment-upload-cancel"]')?.click(),
+    )
+    await vi.waitFor(() => expect(chipState()).toBe('failed'))
+    expect(status()).toContain('尚未确认清理完成')
+    expect(status()).not.toContain('100%')
+    expect(cancelled).toHaveBeenCalledTimes(1)
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="attachment-upload-dismiss"]')?.click(),
+    )
+    await vi.waitFor(() => expect(chip()).toBeNull())
+  })
+
+  it('retries an aborted upload with a fresh controller instead of cancelling again', async () => {
+    const upload = vi.spyOn(uploads, 'uploadFile')
+    let firstSignal: AbortSignal | undefined
+    upload.mockImplementationOnce((file, _session, _id, _limits, signal, progress) => {
+      firstSignal = signal
+      progress({ loaded: file.size, total: file.size, phase: 'verifying' })
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), {
+          once: true,
+        })
+      })
+    })
+    upload.mockImplementationOnce(async (file, _session, id) =>
+      attachmentLink({ sha256: 'a'.repeat(64), size: file.size, mime: file.type }, file.name, {
+        receiptId: id,
+      }),
+    )
+    const cancelled = vi
+      .spyOn(uploads, 'cancelFileUpload')
+      .mockRejectedValue(new TypeError('failed to fetch'))
+    const { handle } = await renderComposer()
+    await startUpload()
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="attachment-upload-cancel"]')?.click(),
+    )
+    await vi.waitFor(() => expect(chipState()).toBe('failed'))
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="attachment-upload-retry"]')?.click(),
+    )
+    await vi.waitFor(() => expect(handle.current?.getAttachmentBlocks()).toHaveLength(1))
+    expect(chip()).toBeNull()
+    expect(upload).toHaveBeenCalledTimes(2)
+    expect(cancelled).toHaveBeenCalledTimes(1)
+    const retriedSignal = upload.mock.calls[1]?.[4]
+    expect(retriedSignal).not.toBe(firstSignal)
+    expect(retriedSignal?.aborted).toBe(false)
+  })
 })

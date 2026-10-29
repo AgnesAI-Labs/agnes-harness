@@ -9,6 +9,197 @@ import { fakeEndpoint, flush, type Handler } from './helpers/fake-endpoint.js'
 const providers = { local: () => localAuth() }
 const init: Handler = fakeEndpoint({}).initialize
 
+it.each([true, false])(
+  'negotiates admission-only opening (supported=%s) and remembers it for restoration',
+  async (supported) => {
+    const f = fakeEndpoint({
+      initialize: () => ({
+        protocolVersion: 1,
+        agentCapabilities: { _meta: { [META_KEY]: { sessionOpen: supported } } },
+      }),
+      'session/load': () => ({}),
+      '_agnes/v1/session.open': () => ({}),
+    })
+    const client = createClient({
+      sessionRestoreHistory: 'none',
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      journal: memoryJournal(),
+      authProviders: providers,
+    })
+    try {
+      await client.session.open('web', { cwd: '/workspace' })
+      await client.restoreSession('web', '/workspace')
+      const loads = f.calls.filter((call) => call.method !== 'initialize')
+      expect(loads.map((call) => call.method)).toEqual(
+        Array(2).fill(supported ? '_agnes/v1/session.open' : 'session/load'),
+      )
+      if (supported) {
+        expect(loads[0]?.params).toMatchObject({
+          sessionId: 'web',
+          cwd: '/workspace',
+          requestId: expect.any(String),
+        })
+        expect(loads[0]?.params).not.toEqual(loads[1]?.params)
+      }
+      await client.session.load('web')
+      await client.restoreSession('web', '/workspace')
+      expect(f.calls.at(-1)?.method).toBe('session/load')
+    } finally {
+      await client.close()
+    }
+  },
+)
+
+it('never falls back after admission refusal and cancels just the caller-owned open', async () => {
+  let release!: () => void
+  const f = fakeEndpoint({
+    initialize: () => ({
+      protocolVersion: 1,
+      agentCapabilities: { _meta: { [META_KEY]: { sessionOpen: true } } },
+    }),
+    '_agnes/v1/session.open': (params) => {
+      if ((params as { sessionId: string }).sessionId === 'refused') throw rpcError('CAPABILITY_DENIED')
+      return new Promise<void>((resolve) => {
+        release = resolve
+      })
+    },
+  })
+  const client = createClient({
+    transport: { kind: 'inproc', endpoint: f.endpoint },
+    journal: memoryJournal(),
+    authProviders: providers,
+  })
+  try {
+    await expect(client.session.open('refused')).rejects.toMatchObject({ code: -32006 })
+    const controller = new AbortController()
+    const pending = client.session.open('pending', { signal: controller.signal })
+    const rejected = expect(pending).rejects.toThrow()
+    await flush()
+    controller.abort(new Error('selection changed'))
+    await rejected
+    const opening = f.calls.find(
+      (call) =>
+        call.method === '_agnes/v1/session.open' &&
+        (call.params as { sessionId: string }).sessionId === 'pending',
+    )
+    expect(f.calls).toContainEqual({
+      method: '_agnes/v1/session.loadingCancel',
+      params: {
+        sessionId: 'pending',
+        requestId: (opening?.params as { requestId?: string } | undefined)?.requestId,
+      },
+    })
+    expect(f.calls.some((call) => call.method === 'session/load')).toBe(false)
+    release()
+  } finally {
+    await client.close()
+  }
+})
+
+it.each(['open', 'new', 'fork'] as const)(
+  'reconnect restoration of a Web %s handle never asks for ACP replay',
+  async (creation) => {
+    let attaches = 0
+    const f = fakeEndpoint({
+      initialize: () => ({
+        protocolVersion: 1,
+        agentCapabilities: { _meta: { [META_KEY]: { sessionOpen: true } } },
+      }),
+      '_agnes/v1/session.open': () => ({}),
+      'session/new': () => ({ sessionId: 'web' }),
+      '_agnes/v1/submit': () => ({ replayed: false, result: { sessionId: 'web' } }),
+      '_agnes/v1/submit.ack': () => ({}),
+      '_agnes/v1/session.attach': () => {
+        if (++attaches === 2) throw rpcError('SESSION_NOT_FOUND', { sessionId: 'web' })
+        return { generation: 1, lastSeq: 0, resolvedProfileHash: null }
+      },
+    })
+    const client = createClient({
+      sessionRestoreHistory: 'none',
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      journal: memoryJournal(),
+      authProviders: providers,
+    })
+    try {
+      const session =
+        creation === 'new'
+          ? await client.session.new({ cwd: '/workspace' })
+          : creation === 'fork'
+            ? await client.session.fork('parent', 1, { cwd: '/workspace' })
+            : await client.session.open('web', { cwd: '/workspace' })
+      await session.attach()
+      await session.recover()
+      expect(f.calls.filter((call) => call.method === '_agnes/v1/session.open')).toHaveLength(
+        creation === 'open' ? 2 : 1,
+      )
+      expect(f.calls.some((call) => call.method === 'session/load')).toBe(false)
+    } finally {
+      await client.close()
+    }
+  },
+)
+
+it('ends the stream of a handle without a workspace that the daemon no longer holds after a reconnect', async () => {
+  // `agh export` restores with no workspace and then attaches. A dropped connection took the
+  // daemon's open with it, so every recovery attach answered SESSION_NOT_FOUND, the reconnect loop
+  // retried it forever and the export's reader waited on a stream that could not resume.
+  let attaches = 0
+  const f = fakeEndpoint({
+    initialize: init,
+    '_agnes/v1/session.attach': () => {
+      if (++attaches === 2) throw rpcError('SESSION_NOT_FOUND', { sessionId: 'gone' })
+      return { generation: 1, lastSeq: 0, resolvedProfileHash: null }
+    },
+  })
+  const client = createClient({
+    transport: { kind: 'inproc', endpoint: f.endpoint },
+    journal: memoryJournal(),
+    authProviders: providers,
+  })
+  try {
+    const session = await client.session.attach('gone')
+    const reader = session.events()[Symbol.asyncIterator]()
+    const next = reader.next()
+    await session.recover()
+    await expect(next).resolves.toMatchObject({ done: true })
+    expect(session.attached).toBe(false)
+  } finally {
+    await client.close()
+  }
+})
+
+it('cancels an opening during a shared handshake without cancelling initialization for the next selection', async () => {
+  let finish!: (value: unknown) => void
+  const f = fakeEndpoint({
+    initialize: () =>
+      new Promise((resolve) => {
+        finish = resolve
+      }),
+    'session/load': () => ({}),
+  })
+  const client = createClient({
+    transport: { kind: 'inproc', endpoint: f.endpoint },
+    journal: memoryJournal(),
+    authProviders: providers,
+  })
+  try {
+    const controller = new AbortController()
+    const opening = client.session.open('cancelled', { signal: controller.signal })
+    const rejected = expect(opening).rejects.toThrow('switched before initialization')
+    await flush()
+    controller.abort(new Error('switched before initialization'))
+    await rejected
+    finish({ protocolVersion: 1, agentCapabilities: {} })
+    await client.initialize()
+    await client.session.open('next')
+    expect(f.calls.filter((call) => call.method === 'session/load').map((call) => call.params)).toEqual([
+      { sessionId: 'next', cwd: '', mcpServers: [] },
+    ])
+  } finally {
+    await client.close()
+  }
+})
+
 const meta = (seq: number, phase: string, extra: Record<string, unknown> = {}) => ({
   [META_KEY]: { promptTurnId: '1', eventSequence: seq, generation: 1, lane: 'main', phase, ...extra },
 })
@@ -32,30 +223,276 @@ describe('toContentBlocks', () => {
 })
 
 describe('Session', () => {
-  it('session.new sends cwd, empty mcpServers, preset + sessionKey in _meta', async () => {
-    let got: unknown
+  it('undoes a turn with a stable commandId and previews without one', async () => {
+    const seen: Array<{ method: string; params: Record<string, unknown> }> = []
     const f = fakeEndpoint({
       initialize: init,
-      'session/new': (p) => {
-        got = p
-        return { sessionId: 'agnes:t:a:cli:dm:1' }
+      'session/new': () => ({ sessionId: 's' }),
+      '_agnes/v1/session.undo.preview': (params: unknown) => {
+        seen.push({ method: 'preview', params: params as Record<string, unknown> })
+        return {
+          sessionId: 's',
+          busy: false,
+          undoable: false,
+          blockedBy: 'none',
+          laterTurns: [],
+          shellChanges: false,
+          files: [],
+        }
+      },
+      '_agnes/v1/session.undo': (params: unknown) => {
+        seen.push({ method: 'undo', params: params as Record<string, unknown> })
+        return { sessionId: 's', turn: 2, seq: 9, restored: ['a.txt'], failed: [], conflicts: [] }
       },
     })
-    const c = createClient({
+    const c = createClient({ transport: { kind: 'inproc', endpoint: f.endpoint }, authProviders: providers })
+    const s = await c.session.new({ cwd: '/w' })
+    await s.undoPreview(2)
+    await s.undo(2, { commandId: 'retry-1' })
+    await s.undo(2, { commandId: 'retry-1' })
+    await s.undo(2)
+    expect(seen[0]).toEqual({ method: 'preview', params: { sessionId: 's', turn: 2 } })
+    expect(seen.slice(1, 3).map((call) => call.params)).toEqual([
+      { sessionId: 's', turn: 2, commandId: 'retry-1' },
+      { sessionId: 's', turn: 2, commandId: 'retry-1' },
+    ])
+    expect(seen[3]?.params.commandId).toEqual(expect.any(String))
+    expect(seen[3]?.params.commandId).not.toBe('retry-1')
+    await c.close()
+  })
+
+  it.each([
+    ['controls', '_agnes/v1/session.controls', { controls: {}, paused: false, pending: [] }],
+    [
+      'projectUI',
+      '_agnes/v1/session.projectUI',
+      { sessionId: 's', generation: 1, upto: 0, opState: null, nodes: [], turns: [] },
+    ],
+    ['uiRead', '_agnes/v1/ui.read', { sessionId: 's', lastSeq: 0, surfaces: [], actions: [] }],
+    [
+      'workspaceChanges',
+      '_agnes/v1/session.workspace.changes',
+      {
+        scope: 'session',
+        revision: 'a'.repeat(64),
+        observedAt: '2026-10-17T00:00:00Z',
+        fromSeq: 0,
+        toSeq: 0,
+        turn: null,
+        truncated: false,
+        unrecorded: false,
+        files: [],
+      },
+    ],
+  ] as const)(
+    'coalesces concurrent %s reads with a fresh follow-up after events',
+    async (read, method, result) => {
+      const finish: Array<(value: unknown) => void> = []
+      const f = fakeEndpoint({
+        initialize: init,
+        '_agnes/v1/session.attach': () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: null }),
+        'session/new': () => ({ sessionId: 's' }),
+        [method]: () => new Promise((resolve) => finish.push(resolve)),
+      })
+      const c = createClient({
+        transport: { kind: 'inproc', endpoint: f.endpoint },
+        authProviders: providers,
+      })
+      const s = await c.session.new({ cwd: '/w' })
+      const detached = [s[read](), s[read]()]
+      await flush()
+      expect(finish).toHaveLength(2)
+      for (const resolve of finish.splice(0)) resolve(result)
+      await Promise.all(detached)
+      await s.attach()
+      const a = s[read](),
+        b = s[read]()
+      await flush()
+      expect(finish).toHaveLength(1)
+      // Events during a flight queue a fresh read; a burst shares the same follow-up.
+      f.push(update('s', meta(1, 'event')))
+      await flush()
+      const newer = s[read]()
+      f.push(update('s', meta(2, 'event')))
+      await flush()
+      const newest = s[read]()
+      await flush()
+      expect(finish).toHaveLength(1)
+      finish[0]?.(result)
+      const [first, second] = await Promise.all([a, b])
+      expect(first).toEqual(result)
+      expect(second).toEqual(result)
+      expect(first).not.toBe(second)
+      await flush()
+      expect(finish).toHaveLength(2)
+      const updated =
+        read === 'controls'
+          ? { ...result, paused: true }
+          : read === 'projectUI'
+            ? { ...result, upto: 2 }
+            : read === 'uiRead'
+              ? { ...result, lastSeq: 2 }
+              : { ...result, toSeq: 2 }
+      finish[1]?.(updated)
+      const [fresh, latest] = await Promise.all([newer, newest])
+      expect(fresh).toEqual(updated)
+      expect(latest).toEqual(updated)
+      expect(fresh).not.toBe(latest)
+      const again = s[read]()
+      await flush()
+      expect(finish).toHaveLength(3)
+      finish[2]?.(result)
+      await again
+      await c.close()
+    },
+  )
+
+  it.each(['detach', 'disconnect', 'generation'] as const)(
+    'rejects a coalesced read after %s and does not reuse it',
+    async (change) => {
+      const finish: Array<(value: unknown) => void> = []
+      const result = { controls: {}, paused: false, pending: [] }
+      const f = fakeEndpoint({
+        initialize: init,
+        '_agnes/v1/session.attach': () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: null }),
+        'session/new': () => ({ sessionId: 's' }),
+        '_agnes/v1/session.detach': () => ({}),
+        '_agnes/v1/session.controls': () => new Promise((resolve) => finish.push(resolve)),
+      })
+      const c = createClient({
+        transport: { kind: 'inproc', endpoint: f.endpoint },
+        authProviders: providers,
+      })
+      const s = await c.session.new({ cwd: '/w' })
+      await s.attach()
+      const a = s.controls(),
+        b = s.controls()
+      await flush()
+      expect(finish).toHaveLength(1)
+      f.push(update('s', meta(1, 'event')))
+      await flush()
+      const queued = s.controls()
+      await flush()
+      expect(finish).toHaveLength(1)
+      const stale = expect(Promise.all([a, b, queued])).rejects.toThrow()
+      if (change === 'detach') await s.detach()
+      else if (change === 'disconnect') c.emit('connectionStateChanged', 'reconnecting')
+      else f.push(update('s', meta(2, 'event', { generation: 2 })))
+      await flush()
+      const next = s.controls()
+      await flush()
+      expect(finish).toHaveLength(2)
+      finish[0]?.(result)
+      await stale
+      // A late obsolete completion cannot evict a new read that is still in flight.
+      const joined = s.controls()
+      await flush()
+      expect(finish).toHaveLength(change === 'detach' ? 3 : 2)
+      finish[1]?.(result)
+      if (change === 'detach') finish[2]?.(result)
+      expect(await next).toEqual(result)
+      expect(await joined).toEqual(result)
+      await c.close()
+    },
+  )
+
+  it('keeps read parameters and sessions separate, propagates refusal, and retries after it', async () => {
+    let refused = true
+    const f = fakeEndpoint({
+      initialize: init,
+      '_agnes/v1/session.attach': () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: null }),
+      'session/load': () => ({}),
+      '_agnes/v1/session.controls': () => {
+        if (refused) throw rpcError('AUTH_INVALID')
+        return { controls: {}, paused: false, pending: [] }
+      },
+    })
+    const c = createClient({ transport: { kind: 'inproc', endpoint: f.endpoint }, authProviders: providers })
+    const s = await c.session.load('s'),
+      other = await c.session.load('other')
+    await s.attach()
+    await other.attach()
+    const denied = await Promise.allSettled([
+      s.controls(),
+      s.controls(),
+      s.controls({ afterSeq: 1 }),
+      other.controls(),
+    ])
+    expect(denied.every((r) => r.status === 'rejected')).toBe(true)
+    expect(f.calls.filter((r) => r.method === '_agnes/v1/session.controls')).toHaveLength(3)
+    await expect(s.controls({ afterSeq: 1n } as never)).rejects.toMatchObject({ kind: 'protocol-violation' })
+    expect(f.calls.filter((r) => r.method === '_agnes/v1/session.controls')).toHaveLength(3)
+    refused = false
+    expect(await s.controls()).toEqual({ controls: {}, paused: false, pending: [] })
+    expect(f.calls.filter((r) => r.method === '_agnes/v1/session.controls')).toHaveLength(4)
+    const valid = s.controls({ afterSeq: 1 })
+    // A boxed number serializes like the valid scalar but must not bypass parameter validation.
+    await expect(s.controls({ afterSeq: Object(1) } as never)).rejects.toMatchObject({
+      kind: 'protocol-violation',
+    })
+    await valid
+    expect(f.calls.filter((r) => r.method === '_agnes/v1/session.controls')).toHaveLength(5)
+    await c.close()
+  })
+
+  it('reads capabilities through the authenticated tool catalog and supports older servers', async () => {
+    let params: unknown
+    const f = fakeEndpoint({
+      initialize: init,
+      'session/new': () => ({ sessionId: 'fixture' }),
+      '_agnes/v1/session.tools': (input) => {
+        params = input
+        return { sessionId: 'fixture', tools: [], resources: [] }
+      },
+    })
+    const client = createClient({
       transport: { kind: 'inproc', endpoint: f.endpoint },
       journal: memoryJournal(),
       authProviders: providers,
     })
-
-    const s = await c.session.new({ cwd: '/w', preset: 'standard', sessionKey: 'agnes:t:a:cli:dm:1' })
-
-    expect(s.id).toBe('agnes:t:a:cli:dm:1')
-    expect(got).toEqual({
-      cwd: '/w',
-      mcpServers: [],
-      _meta: { [META_KEY]: { preset: 'standard', sessionKey: 'agnes:t:a:cli:dm:1' } },
-    })
+    const session = await client.session.new({ cwd: '/synthetic' })
+    expect(await session.capabilities()).toBeUndefined()
+    expect(params).toMatchObject({ sessionId: 'fixture' })
+    await client.close()
   })
+  it.each([
+    ['standard', undefined],
+    ['default', 'default'],
+    ['acme-custom', 'read-only'],
+  ] as const)(
+    'session.new sends explicit recipe %s and permission %s with its session key',
+    async (preset, permission) => {
+      let got: unknown
+      const f = fakeEndpoint({
+        initialize: init,
+        'session/new': (p) => {
+          got = p
+          return { sessionId: 'agnes:t:a:cli:dm:1' }
+        },
+      })
+      const c = createClient({
+        transport: { kind: 'inproc', endpoint: f.endpoint },
+        journal: memoryJournal(),
+        authProviders: providers,
+      })
+
+      const s = await c.session.new({
+        cwd: '/w',
+        preset,
+        ...(permission ? { permission } : {}),
+        sessionKey: 'agnes:t:a:cli:dm:1',
+      })
+
+      expect(s.id).toBe('agnes:t:a:cli:dm:1')
+      expect(got).toEqual({
+        cwd: '/w',
+        mcpServers: [],
+        _meta: {
+          [META_KEY]: { preset, permission: permission ?? 'default', sessionKey: 'agnes:t:a:cli:dm:1' },
+        },
+      })
+    },
+  )
 
   it('leaves preset and sessionKey out when the caller gave neither', async () => {
     let got: unknown
@@ -74,7 +511,7 @@ describe('Session', () => {
     await c.session.new({ cwd: '/w' })
     // Strict: an explicit `preset: undefined` would compare equal to an absent key,
     // yet it is a real difference on a transport that does not drop undefined values.
-    expect(got).toStrictEqual({ cwd: '/w', mcpServers: [], _meta: { [META_KEY]: {} } })
+    expect(got).toStrictEqual({ cwd: '/w', mcpServers: [], _meta: { [META_KEY]: { permission: 'default' } } })
   })
 
   it('hands back the same handle for a session id it already knows', async () => {
@@ -183,6 +620,69 @@ describe('Session', () => {
     expect(seen).toEqual(['first', 'second'])
   })
 
+  it('refuses hard-budget prompts on older servers without sending a prompt', async () => {
+    const f = fakeEndpoint({ initialize: init, 'session/new': () => ({ sessionId: 'budget' }) })
+    const client = createClient({
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      journal: memoryJournal(),
+      authProviders: providers,
+    })
+    try {
+      const session = await client.createSession({ cwd: '/synthetic' })
+      await expect(session.prompt('bounded', { creditLimit: 1 })).rejects.toThrow(
+        'server does not support hard turn budgets',
+      )
+      for (const creditLimit of [-1, Infinity, NaN])
+        await expect(session.prompt('invalid', { creditLimit })).rejects.toThrow('invalid turn credit limit')
+      await expect(session.prompt('capped', { maxSteps: 3 })).rejects.toThrow(
+        'server does not support turn step caps',
+      )
+      for (const maxSteps of [0, 1001, 1.5, NaN])
+        await expect(session.prompt('invalid', { maxSteps })).rejects.toThrow('invalid turn step cap')
+      await expect(session.prompt('timed', { timeLimitMs: 1000 })).rejects.toThrow(
+        'server does not support turn time limits',
+      )
+      for (const timeLimitMs of [0, 1.5, 86_400_001, NaN])
+        await expect(session.prompt('invalid', { timeLimitMs })).rejects.toThrow('invalid turn time limit')
+      expect(f.calls.filter((row) => row.method === 'session/prompt')).toEqual([])
+    } finally {
+      await client.close()
+    }
+  })
+
+  it('sends the limits on a server that advertises them, and the unattended flag only when asked', async () => {
+    const f = fakeEndpoint({
+      initialize: () => ({
+        protocolVersion: 1,
+        agentCapabilities: {
+          _meta: { [META_KEY]: { hardTurnBudget: true, turnMaxSteps: true, turnTimeLimit: true } },
+        },
+      }),
+      'session/new': () => ({ sessionId: 'caps' }),
+      'session/prompt': () => ({ stopReason: 'end_turn' }),
+    })
+    const client = createClient({
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      journal: memoryJournal(),
+      authProviders: providers,
+    })
+    try {
+      const session = await client.createSession({ cwd: '/synthetic' })
+      await session.prompt('x', { creditLimit: 2, maxSteps: 3, timeLimitMs: 60_000 })
+      await session.prompt('y', { unattended: true })
+      const prompts = f.calls.filter((x) => x.method === 'session/prompt').map((x) => x.params)
+      expect(prompts[0]).toMatchObject({
+        _meta: { [META_KEY]: { creditLimit: 2, maxSteps: 3, timeLimitMs: 60_000 } },
+      })
+      expect((prompts[0] as { _meta: Record<string, object> })._meta[META_KEY]).not.toHaveProperty(
+        'unattended',
+      )
+      expect(prompts[1]).toMatchObject({ _meta: { [META_KEY]: { unattended: true } } })
+    } finally {
+      await client.close()
+    }
+  })
+
   it.each([undefined, 'en', 'zh-CN'] as const)(
     'prompt carries title language %s and returns its own turn outcome',
     async (titleLocale) => {
@@ -215,7 +715,8 @@ describe('Session', () => {
         titleLocale === 'zh-CN'
           ? [{ type: 'file' as const, name: '资料.txt', mimeType: 'text/plain', data: 'aGVsbG8=' }]
           : 'hello'
-      const r = await s.prompt(input, titleLocale ? { titleLocale } : {})
+      const references = [{ source: 'file', id: 'notes.txt' }]
+      const r = await s.prompt(input, { ...(titleLocale ? { titleLocale } : {}), references })
 
       expect(r).toEqual({
         stopReason: 'end_turn',
@@ -238,7 +739,7 @@ describe('Session', () => {
                 },
               ]
             : [{ type: 'text', text: 'hello' }],
-        ...(titleLocale ? { _meta: { 'ai.agnes.harness': { titleLocale } } } : {}),
+        _meta: { 'ai.agnes.harness': { ...(titleLocale ? { titleLocale } : {}), references } },
       })
     },
   )
@@ -292,34 +793,6 @@ describe('Session', () => {
       cwd: '/workspace',
       mcpServers: [],
     })
-  })
-
-  it('stops following a reclaimed session whose reopen the daemon refuses for good, and says why', async () => {
-    const f = fakeEndpoint({
-      initialize: init,
-      'session/new': () => ({ sessionId: 'tampered' }),
-      'session/load': () => {
-        throw rpcError('SEMANTIC_REJECTED', { code: 'E_LEDGER_INTEGRITY', reason: 'ledger-integrity' })
-      },
-      '_agnes/v1/session.attach': () => ({ generation: 1, lastSeq: 1, resolvedProfileHash: null }),
-      'session/prompt': () => {
-        throw rpcError('SESSION_NOT_FOUND', { sessionId: 'tampered' })
-      },
-    })
-    const c = createClient({
-      transport: { kind: 'inproc', endpoint: f.endpoint },
-      journal: memoryJournal(),
-      authProviders: providers,
-    })
-    const notices: unknown[] = []
-    c.on('notice', (n) => notices.push(n))
-    const s = await c.session.new({ cwd: '/workspace' })
-    await s.attach()
-    await expect(s.prompt('after idle')).rejects.toMatchObject({ data: { code: 'E_LEDGER_INTEGRITY' } })
-    expect(s.attached).toBe(false)
-    expect(s.refused).toBe('E_LEDGER_INTEGRITY')
-    expect(notices).toEqual([{ kind: 'session-refused', sessionId: 'tampered', code: 'E_LEDGER_INTEGRITY' }])
-    expect(f.calls.filter((call) => call.method === 'session/load')).toHaveLength(1)
   })
 
   it('does not guess a workspace or loop when a reclaimed session cannot be restored', async () => {
@@ -481,7 +954,7 @@ describe('Session', () => {
     expect(await s.prompt('two')).toEqual({ stopReason: 'end_turn', reason: 'completed', lastSeq: 4 })
   })
 
-  it('pulling the prompt signal sends session/cancel without abandoning the request', async () => {
+  it('pulling the prompt signal submits durable cancel without abandoning the request', async () => {
     let cancelled = false
     let release: () => void = () => {}
     const cancelSeen = new Promise<void>((r) => {
@@ -494,9 +967,11 @@ describe('Session', () => {
         await cancelSeen
         return { stopReason: 'cancelled' }
       },
-      'session/cancel': () => {
+      '_agnes/v1/submit': (params) => {
+        expect(params).toMatchObject({ kind: 'control', payload: { sessionId: 's5', action: 'cancel' } })
         cancelled = true
         release()
+        return { seq: 1, replayed: false }
       },
     })
     const c = createClient({
@@ -538,7 +1013,7 @@ describe('Session', () => {
     await flush()
   })
 
-  it('steer / followUp / compact / sendNow / removeQueued carry a journal commandId and return seq; cancel is a notification', async () => {
+  it('steer / followUp / compact / sendNow / removeQueued carry journal identities, including durable controls and queue editing', async () => {
     const f = fakeEndpoint({
       initialize: init,
       'session/new': () => ({ sessionId: 's3' }),
@@ -556,7 +1031,14 @@ describe('Session', () => {
     const s = await c.session.new({ cwd: '/w' })
 
     expect(await s.steer('now')).toBe(41)
-    expect(await s.followUp([{ type: 'text', text: 'later' }])).toBe(42)
+    expect(
+      await s.followUp([{ type: 'text', text: 'later' }], {
+        references: [{ source: 'file', id: 'notes.txt' }],
+      }),
+    ).toBe(42)
+    expect(f.calls.filter((x) => x.method === '_agnes/v1/submit')[1]?.params).toMatchObject({
+      payload: { references: [{ source: 'file', id: 'notes.txt' }] },
+    })
     expect(await s.compact('keep decisions')).toBe(43)
     expect(await s.sendNow('queued-C')).toBe(43)
     expect(await s.removeQueued('queued-D')).toBe(43)
@@ -578,7 +1060,39 @@ describe('Session', () => {
       kind: 'compact',
       payload: { sessionId: 's3', instructions: 'keep decisions' },
     })
-    expect(f.calls.at(-1)).toMatchObject({ method: 'session/cancel', params: { sessionId: 's3' } })
+    expect(
+      f.calls.find(
+        (call) => call.method === '_agnes/v1/submit' && (call.params as { kind?: string }).kind === 'control',
+      ),
+    ).toMatchObject({
+      params: { kind: 'control', commandId: 'cid:s3:6', payload: { sessionId: 's3', action: 'cancel' } },
+    })
+    expect(await s.pause()).toBe(43)
+    expect(await s.resume()).toBe(43)
+    expect(await s.interrupt('queued-E')).toBe(43)
+    expect(await s.editQueued('queued-F', 'edited')).toBe(43)
+    expect(
+      f.calls
+        .filter((call) => call.method === '_agnes/v1/submit')
+        .slice(-4)
+        .map((call) => (call.params as { payload: unknown }).payload),
+    ).toEqual([
+      { sessionId: 's3', action: 'pause' },
+      { sessionId: 's3', action: 'resume' },
+      { sessionId: 's3', action: 'interrupt', itemId: 'queued-E' },
+      { sessionId: 's3', itemId: 'queued-F', content: [{ type: 'text', text: 'edited' }] },
+    ])
+    expect(await s.stopChild('child-1')).toBe(43)
+    expect(await s.continueChild('child-1', 'new instructions')).toBe(43)
+    expect(
+      f.calls
+        .filter((call) => call.method === '_agnes/v1/submit')
+        .slice(-2)
+        .map((call) => (call.params as { payload: unknown }).payload),
+    ).toEqual([
+      { sessionId: 's3', action: 'child-stop', childId: 'child-1' },
+      { sessionId: 's3', action: 'child-continue', childId: 'child-1', text: 'new instructions' },
+    ])
     expect(
       f.calls.find(
         (call) => call.method === '_agnes/v1/submit' && (call.params as { kind?: string }).kind === 'sendNow',
@@ -600,7 +1114,7 @@ describe('Session', () => {
     })
   })
 
-  it.each(['sendNow', 'removeQueued'] as const)(
+  it.each(['sendNow', 'removeQueued', 'promoteQueued'] as const)(
     'does not replay a definitive %s refusal when attaching again',
     async (kind) => {
       const f = fakeEndpoint({

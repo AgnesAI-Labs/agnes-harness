@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
+import { workspaceBinding } from '../../daemon-foundation/test/workspace-authority.js'
 import { WorkerRegistry } from '../src/supervisor/registry.js'
 import { wireResourceSnapshotNotifications } from '../src/supervisor/supervisor.js'
 import type { WorkerPool } from '../src/supervisor/worker-pool.js'
-import { workspaceBinding } from './workspace-authority.js'
 
 /**
  * Task 5 (resource-live-reload plan) wiring, narrowed by Task 7: the daemon's one hook for "a
@@ -20,50 +20,60 @@ import { workspaceBinding } from './workspace-authority.js'
  * for the session keys `notifyLiveSessionWorkers()` reports as failed.
  */
 describe('wireResourceSnapshotNotifications', () => {
-  it('does not retire any session when every lightweight notification is delivered successfully', async () => {
-    let registeredHandler: ((profile: string) => void) | undefined
-    const localResourceStore = {
-      setSuccessfulSnapshotHandler(handler: (profile: string) => void) {
-        registeredHandler = handler
-      },
-    }
-    const retiredKeys: string[] = []
-    let commits = 0
-    const registry = {
-      retireForResourceSnapshot: () => {
-        throw new Error('retireForResourceSnapshot must not be called by this wiring anymore')
-      },
-      noteResourceSnapshotCommitted: () => {
-        commits++
-      },
-      retireSessions: (keys: readonly string[]) => retiredKeys.push(...keys),
-    }
-    const notified: string[] = []
-    const pool = {
-      activationLinks: () => [
-        {
-          sessionKey: 's1',
-          generation: 1,
-          link: {
-            command: async (method: string) => {
-              notified.push(method)
-              return {}
+  it.each([undefined, { skillControlRevision: 'a'.repeat(64) }])(
+    'does not retire any session when every lightweight notification is delivered successfully (%j)',
+    async (change) => {
+      let registeredHandler:
+        | ((profile: string, change?: { skillControlRevision: string }) => void)
+        | undefined
+      const localResourceStore = {
+        setSuccessfulSnapshotHandler(
+          handler: (profile: string, change?: { skillControlRevision: string }) => void,
+        ) {
+          registeredHandler = handler
+        },
+      }
+      const retiredKeys: string[] = []
+      let commits = 0
+      const registry = {
+        retireForResourceSnapshot: () => {
+          throw new Error('retireForResourceSnapshot must not be called by this wiring anymore')
+        },
+        noteResourceSnapshotCommitted: () => {
+          commits++
+        },
+        retireSessions: (keys: readonly string[]) => retiredKeys.push(...keys),
+      }
+      const notified: string[] = []
+      const payloads: unknown[] = []
+      const pool = {
+        activationLinks: () => [
+          {
+            sessionKey: 's1',
+            generation: 1,
+            link: {
+              command: async (method: string, params: unknown) => {
+                payloads.push(params)
+                notified.push(method)
+                return {}
+              },
             },
           },
-        },
-      ],
-    }
-    wireResourceSnapshotNotifications({ localResourceStore, registry, pool })
-    expect(registeredHandler).toBeDefined()
-    registeredHandler?.('local-dev')
-    // The notification (and the retire-on-failure follow-up) is fire-and-forget (async, not awaited
-    // by the synchronous handler) - give its microtasks a turn before asserting.
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(notified).toEqual(['resource.stale'])
-    expect(retiredKeys).toEqual([])
-    // Retiring nobody is not the same as ignoring the commit: the epoch fence still has to advance.
-    expect(commits).toBe(1)
-  })
+        ],
+      }
+      wireResourceSnapshotNotifications({ localResourceStore, registry, pool })
+      expect(registeredHandler).toBeDefined()
+      registeredHandler?.('local-dev', change)
+      // The notification (and the retire-on-failure follow-up) is fire-and-forget (async, not awaited
+      // by the synchronous handler) - give its microtasks a turn before asserting.
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(notified).toEqual(['resource.stale'])
+      expect(payloads).toEqual([change ?? {}])
+      expect(retiredKeys).toEqual([])
+      // Retiring nobody is not the same as ignoring the commit: the epoch fence still has to advance.
+      expect(commits).toBe(1)
+    },
+  )
 
   // Deliberately built on the REAL WorkerRegistry, not a fake: the two tests that already covered the
   // halves of this (registry.test.ts's "retireSessions still bumps the resource epoch", which calls
@@ -88,6 +98,7 @@ describe('wireResourceSnapshotNotifications', () => {
         writerRunId: token,
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       closeSession: vi.fn(async () => undefined),

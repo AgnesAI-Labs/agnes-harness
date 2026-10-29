@@ -1,11 +1,14 @@
-import { createReadStream, existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { resolve } from 'node:path'
 import { importSession, OLDER_EXPORT_FORMAT } from '@agnes/bridges/convert'
+import { escapeControl } from '@agnes/cli-tui'
 import { SessionAdmissionDenied } from '@agnes/daemon/local'
-import { type AttachmentStore, createAttachmentStore, type Host, type HostSession } from '@agnes/host'
-import { attachmentForm, type EventEnvelope, type SessionStart } from '@agnes/protocol'
+import type { Host, HostSession } from '@agnes/host'
+import type { EventEnvelope, SessionStart } from '@agnes/protocol'
+import type { LocalBootDeps } from '../boot/local.js'
 import { CommandError, ExitCode, UsageError } from '../errors.js'
 import type { ParsedArgs, SessionAdmissionPort } from '../types.js'
+import { readImportFile } from './import-file.js'
+import { bundleOriginals, readNativeBundle } from './native-bundle.js'
 
 type Sink = { write(chunk: string | Uint8Array): unknown }
 export type ImportDeps = {
@@ -15,13 +18,19 @@ export type ImportDeps = {
   admission: SessionAdmissionPort
   io: { stdout: Sink; stderr: Sink }
   readFile?: (path: string) => Uint8Array
+  /** Told the target key once the import is committed; the TUI uses it to point at /resume. */
+  imported?: (key: string) => void
 }
 
 const BATCH_SIZE = 500
 
 type AppendEvent = Omit<EventEnvelope, 'seq'>
 
-/** Pack only at a closed-turn boundary: core refuses a transaction ending on an open turn. */
+/**
+ * Pack only at a closed-turn boundary: core refuses a transaction ending on an open turn, because an
+ * open turn must hold a program counter that an export does not carry. A turn is therefore the
+ * smallest unit, and a turn longer than `limit` is appended alone as one transaction of its own.
+ */
 export function importBatches(events: AppendEvent[], limit = BATCH_SIZE): AppendEvent[][] {
   const units: AppendEvent[][] = []
   let turn: AppendEvent[] | undefined
@@ -47,8 +56,6 @@ export function importBatches(events: AppendEvent[], limit = BATCH_SIZE): Append
   const batches: AppendEvent[][] = []
   let batch: AppendEvent[] = []
   for (const unit of units) {
-    if (unit.length > limit)
-      throw new Error(`one imported turn has ${unit.length} events, exceeding batch limit ${limit}`)
     if (batch.length > 0 && batch.length + unit.length > limit) {
       batches.push(batch)
       batch = []
@@ -82,107 +89,15 @@ const importedMarker = (
   const data = startData(events)
   const marker = data?.imported
   if (marker && typeof marker === 'object' && !Array.isArray(marker))
-    return marker as SessionStart['imported']
+    return source === 'agnes'
+      ? ({
+          ...marker,
+          cwd: (marker as { cwd?: string }).cwd || cwd.slice(0, 4096),
+        } as SessionStart['imported'])
+      : (marker as SessionStart['imported'])
   if (source !== 'agnes') return undefined
   const key = typeof data?.key === 'string' ? data.key : ''
   return { source: 'agnes', sourceId: key.slice(0, 256), cwd: cwd.slice(0, 4096) }
-}
-
-/** An import refused because its rows name attachment bytes it does not bring. */
-export class ImportAttachmentError extends CommandError {
-  constructor(
-    readonly reason: 'ATTACHMENT_MISSING' | 'ATTACHMENT_HASH_MISMATCH',
-    message: string,
-  ) {
-    // The code leads the message: the command line prints only the message.
-    super(`${reason}: ${message}`)
-    this.name = 'ImportAttachmentError'
-  }
-}
-
-type NamedObject = Readonly<{ sha256: string; bytes: number; mimeType: string }>
-
-/** The stored objects user input rows name: attachment references and their thumbnails. */
-function namedObjects(events: readonly EventEnvelope[]): NamedObject[] {
-  const found = new Map<string, NamedObject>()
-  const add = (value: unknown, mimeType: string) => {
-    const v = value as { sha256?: unknown; bytes?: unknown } | null
-    if (typeof v?.sha256 === 'string' && typeof v.bytes === 'number' && !found.has(v.sha256))
-      found.set(v.sha256, { sha256: v.sha256, bytes: v.bytes, mimeType })
-  }
-  const visit = (content: unknown) => {
-    if (!Array.isArray(content)) return
-    for (const block of content as Array<Record<string, unknown>>) {
-      if (attachmentForm(block) !== 'reference') continue
-      add(block.attachment, String(block.mimeType))
-      // Thumbnails are JPEG; the marker's type is informative only.
-      if (block.thumbnail !== undefined) add(block.thumbnail, 'image/jpeg')
-    }
-  }
-  for (const event of events) {
-    const data = event.data as { content?: unknown; items?: unknown } | null
-    if (event.type === 'user/message') visit(data?.content)
-    if (event.type === 'inbox' && Array.isArray(data?.items))
-      for (const item of data.items) visit((item as { content?: unknown } | null)?.content)
-  }
-  return [...found.values()]
-}
-
-/**
- * Imported rows meet the same rule as live input: a reference is written only for bytes the store
- * holds as a user attachment. An import brings them in `<file>.attachments/<sha256>`, which a raw
- * export writes; each is checked against its digest and size on the way in. A reference whose bytes
- * are neither there nor already stored refuses the whole import before anything is written.
- */
-async function admitImportedAttachments(
-  file: string,
-  objects: readonly NamedObject[],
-  store: AttachmentStore,
-): Promise<void> {
-  const dir = `${file}.attachments`
-  const mismatch = (sha256: string) =>
-    new ImportAttachmentError(
-      'ATTACHMENT_HASH_MISMATCH',
-      `${file}: ${join(dir, sha256)} is not the attachment the rows name; nothing was imported`,
-    )
-  for (const object of objects) {
-    const side = join(dir, object.sha256)
-    if (existsSync(side)) {
-      const staging = await store.stage({
-        kind: 'user-attachment',
-        mimeType: object.mimeType,
-        maxBytes: object.bytes,
-      })
-      let stored: Awaited<ReturnType<typeof staging.commit>>
-      try {
-        for await (const chunk of createReadStream(side, { highWaterMark: 1024 * 1024 }))
-          await staging.write(chunk as Buffer)
-        // A size the row understates is refused before anything is published: a committed object
-        // nobody marks would never be reclaimed.
-        if (staging.bytes !== object.bytes) throw mismatch(object.sha256)
-        stored = await staging.commit(object.sha256)
-      } catch (error) {
-        await staging.abort().catch(() => undefined)
-        if (error instanceof ImportAttachmentError) throw error
-        const code = (error as { code?: unknown } | null)?.code
-        if (code === 'ATTACHMENT_HASH_MISMATCH' || code === 'ATTACHMENT_TOO_LARGE')
-          throw mismatch(object.sha256)
-        throw error
-      }
-      await store.markUserAttachment(stored, { mimeType: object.mimeType })
-      continue
-    }
-    const missing = () =>
-      new ImportAttachmentError(
-        'ATTACHMENT_MISSING',
-        `${file}: attachment ${object.sha256} is neither in ${dir} nor stored here; nothing was imported (a raw export with --out writes that directory)`,
-      )
-    if (!(await store.userAttachment(object.sha256).catch(() => undefined))) throw missing()
-    // Seen now, before the bytes are checked: the attachment sweep re-reads the marker after setting
-    // bytes aside, so it cannot take them between this check and the rows that name them.
-    await store.markUserAttachment(object, { mimeType: object.mimeType })
-    if ((await store.stat(object.sha256))?.bytes !== object.bytes) throw missing()
-  }
 }
 
 export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<number> {
@@ -190,7 +105,9 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
     throw new UsageError('import only runs in one-shot form (no --connect)')
   const file = parsed.positional[0]
   if (!file || parsed.positional.length !== 1) throw new UsageError('import expects exactly one file')
-  const converted = importSession((deps.readFile ?? readFileSync)(file), {
+  const bytes = (deps.readFile ?? readImportFile)(resolve(deps.cwd, file))
+  const bundle = await readNativeBundle(resolve(deps.cwd, file), bytes)
+  const converted = importSession(bundle?.raw ?? bytes, {
     from: parsed.from ?? 'auto',
     ...(parsed.key ? { sessionKey: parsed.key } : {}),
   })
@@ -206,7 +123,19 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
         ? `${file} line ${hole.line}: this export comes from an older format (${hole.reason}); an agnes export must keep every row, and this build cannot import it`
         : `${file} line ${hole.line}: ${hole.reason}; an agnes export must keep every row -- re-export it with this build`,
     )
-  const objects = namedObjects(converted.events)
+  const originals = bundleOriginals(converted.events)
+  if (originals.length && !bundle) throw new CommandError('native import requires original artifact sidecars')
+  if (
+    bundle &&
+    (converted.events.at(-1)?.seq !== bundle.manifest.lastSeq ||
+      JSON.stringify(originals) !== JSON.stringify(bundle.manifest.originals))
+  )
+    throw new CommandError('native bundle ledger and original declarations disagree')
+  // Validate every transaction boundary before reserving or opening any target.
+  const body = converted.events
+    .filter((event) => event.type !== 'session/start')
+    .map(({ seq: _sequence, ...event }) => event)
+  const batches = importBatches(body)
   // No session_start hooks: an extension may record a row there (code-mode notes that no kernel is
   // alive yet), and anything after session/start would move the imported body off its sequence.
   let reservedNew = false
@@ -214,9 +143,6 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
   try {
     const reserved = await deps.admission.reserve(key, deps.cwd)
     reservedNew = reserved.reservedNew
-    // After the key is admitted: a key that is refused stores and marks nothing.
-    if (objects.length > 0)
-      await admitImportedAttachments(file, objects, createAttachmentStore({ dataDir: deps.host.dataDir }))
     const imported = importedMarker(converted.events, converted.report.source, reserved.binding.canonicalRoot)
     session = await deps.host
       .createSession({
@@ -224,6 +150,10 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
         cwd: reserved.binding.canonicalRoot,
         binding: reserved.binding,
         skipSessionStartHooks: true,
+        // Title generation and approval expiry append rows in reply to imported ones; landing between
+        // two batches, one would shift every later row off its exported sequence.
+        skipBackgroundWriters: true,
+        requireNew: true,
         ...(imported ? { imported } : {}),
       })
       .catch((error: unknown) => {
@@ -244,19 +174,43 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
   try {
     if (session.lastSeq !== 1)
       throw new CommandError(`import target ${key} is not fresh (last sequence ${session.lastSeq})`)
-    const body = converted.events
-      .filter((event) => event.type !== 'session/start')
-      .map(({ seq: _sequence, ...event }) => event)
     let written = 0
+    const attachments = session.d.runtime.attachmentStore()
+    const receipts: Array<{
+      scope: { sessionKey: string; lane: string }
+      receipt: Awaited<ReturnType<NonNullable<typeof attachments>['store']>>
+    }> = []
     try {
-      for (const batch of importBatches(body)) {
-        await session.append(batch)
+      if (originals.length && !attachments) throw new Error('native import attachment storage unavailable')
+      for (const { lane, ref } of originals) {
+        const bytes = await bundle?.readOriginal(ref)
+        if (!bytes) throw new Error('native bundle original is missing')
+        const scope = { sessionKey: key, lane }
+        const receipt = await attachments?.store(scope, bytes, ref.mime, new AbortController().signal)
+        if (!receipt) throw new Error('native import attachment storage unavailable')
+        receipts.push({ scope, receipt })
+        const stored = receipt.artifact
+        if (stored.sha256 !== ref.sha256 || stored.size !== ref.size || stored.mime !== ref.mime)
+          throw new Error('native import artifact store identity mismatch')
+      }
+      for (const batch of batches) {
+        // Each batch must start right after the last imported row and land contiguously; anything
+        // else means another writer reached the target, and the import is refused and rolled back.
+        const expected = written + 2
+        if (session.lastSeq !== expected - 1)
+          throw new Error(`import target moved to sequence ${session.lastSeq} before row ${expected}`)
+        const { seqs } = await session.append(batch)
+        if (seqs[0] !== expected || seqs.at(-1) !== expected + batch.length - 1)
+          throw new Error(`import batch landed at sequence ${seqs[0]} instead of ${expected}`)
         written += batch.length
       }
+      for (const { scope, receipt } of receipts) await attachments?.confirm(scope, receipt.id)
     } catch (error) {
       const detail = (error as Error).message
+      // Keep pending roots until rollback has removed every possibly committed reference.
       try {
         await session.discardNewSession()
+        for (const { scope, receipt } of receipts) await attachments?.discard(scope, receipt.id)
       } catch (rollbackError) {
         const rollbackDetail = (rollbackError as Error).message
         throw new CommandError(
@@ -283,13 +237,76 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
         `import of ${key} wrote ${written} events but could not admit the session; the new target was rolled back and may be retried with the same key: ${detail}`,
       )
     }
+    deps.imported?.(key)
     deps.io.stdout.write(
       `imported ${written} events into ${key} (source ${converted.report.source}; skipped ${converted.report.skipped.length}, repaired ${converted.report.repaired.length}, branches dropped ${converted.report.branches.dropped})\n`,
     )
     for (const skipped of converted.report.skipped.slice(0, 20))
-      deps.io.stderr.write(`skipped line ${skipped.line}: ${skipped.reason}\n`)
+      deps.io.stderr.write(`skipped line ${skipped.line}: ${escapeControl(skipped.reason)}\n`)
     return ExitCode.OK
   } finally {
     await session.close().catch(() => undefined)
+  }
+}
+
+const SOURCES = ['claude-code', 'codex', 'pi', 'auto'] as const
+
+/**
+ * What the TUI's /import runs: the same one-shot path as `agh import FILE`, on a local Host booted for
+ * the purpose and closed afterwards. Failures are thrown for the caller to show; the key comes back on success.
+ */
+export async function importInto(
+  p: ParsedArgs,
+  deps: LocalBootDeps,
+  where: { cwd: string; env: NodeJS.ProcessEnv },
+  file: string,
+  from?: string,
+): Promise<{ key: string }> {
+  if (from !== undefined && !(SOURCES as readonly string[]).includes(from))
+    throw new UsageError(`--from must be one of ${SOURCES.join('|')}`)
+  const { bootLocal } = await import('../boot/local.js')
+  const args: ParsedArgs = {
+    positional: [file],
+    rest: [],
+    command: 'import',
+    print: false,
+    help: false,
+    version: false,
+    continue: false,
+    park: false,
+    ephemeral: false,
+    json: false,
+    repair: false,
+    upgrade: false,
+    html: false,
+    raw: false,
+    resolved: false,
+    archived: false,
+    force: false,
+    probe: false,
+    ...(p.profile ? { profile: p.profile } : {}),
+    ...(p.cwd ? { cwd: p.cwd } : {}),
+    ...(from ? { from: from as NonNullable<ParsedArgs['from']> } : {}),
+  }
+  const booted = await bootLocal(args, deps)
+  try {
+    if (booted.host === undefined || booted.sessionAdmission === undefined)
+      throw new CommandError('local import requires a Host')
+    let key: string | undefined
+    const sink = { write: () => true }
+    await importFile(args, {
+      env: where.env,
+      cwd: where.cwd,
+      host: booted.host,
+      admission: booted.sessionAdmission,
+      io: { stdout: sink, stderr: sink },
+      imported: (k) => {
+        key = k
+      },
+    })
+    if (key === undefined) throw new CommandError('import finished without a session key')
+    return { key }
+  } finally {
+    await booted.close().catch(() => undefined)
   }
 }

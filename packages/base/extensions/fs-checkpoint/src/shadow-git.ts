@@ -23,7 +23,18 @@ export type CheckpointManifest = {
   workspaceHash: string
   stepId: string
   createdAt: number
+  /** Session key that took the snapshot; absent on snapshots from before it was recorded. */
+  owner?: string
   entries: ManifestEntry[]
+}
+/** What gc and the undo list need from a manifest, cached so neither reads a payload. */
+export type CatalogEntry = {
+  id: string
+  stepId: string
+  createdAt: number
+  owner?: string
+  size: number
+  paths: string[]
 }
 export type Captured =
   | { rel: string; state: 'absent' }
@@ -44,7 +55,7 @@ function validate(value: unknown, id: string, workspaceHash: string): Checkpoint
     throw fault('E_CHECKPOINT_CORRUPT', `${id} manifest`)
   const manifest = value as Partial<CheckpointManifest>
   // biome-ignore format: this is one manifest-header invariant.
-  if ((manifest.schema !== 1 && manifest.schema !== 2) || manifest.id !== id || manifest.workspaceHash !== workspaceHash || typeof manifest.stepId !== 'string' || !Number.isSafeInteger(manifest.createdAt) || !Array.isArray(manifest.entries))
+  if ((manifest.schema !== 1 && manifest.schema !== 2) || manifest.id !== id || manifest.workspaceHash !== workspaceHash || typeof manifest.stepId !== 'string' || !Number.isSafeInteger(manifest.createdAt) || !Array.isArray(manifest.entries) || (manifest.owner !== undefined && typeof manifest.owner !== 'string'))
     throw fault('E_CHECKPOINT_CORRUPT', `${id} manifest fields`)
   let previous = ''
   for (const entry of manifest.entries) {
@@ -60,9 +71,19 @@ function validate(value: unknown, id: string, workspaceHash: string): Checkpoint
   return manifest as CheckpointManifest
 }
 
+// biome-ignore format: one manifest projection.
+const entryOf = (m: CheckpointManifest): CatalogEntry => ({ id: m.id, stepId: m.stepId, createdAt: m.createdAt, ...(m.owner === undefined ? {} : { owner: m.owner }), size: m.entries.reduce((n, e) => n + (e.state === 'file' ? e.size : 0), 0), paths: m.entries.map((e) => e.rel) })
+// biome-ignore format: one cached-entry shape check; anything else rebuilds the cache.
+const cached = (e: Partial<CatalogEntry> | null): boolean => !!e && typeof e === 'object' && ID.test(e.id ?? '') && typeof e.stepId === 'string' && Number.isSafeInteger(e.createdAt) && (e.owner === undefined || typeof e.owner === 'string') && Number.isSafeInteger(e.size) && (e.size as number) >= 0 && Array.isArray(e.paths) && e.paths.every((p) => typeof p === 'string')
+
 export class ShadowGit {
   readonly fs
   private workspaceHash = ''
+  /** Live snapshots by id. Refs stay authoritative: every read reconciles against them. */
+  private catalog: Map<string, CatalogEntry> | undefined
+  private dirty = false
+  /** Snapshots added since the cache was written; a reopened instance reads at most this many manifests. */
+  private added = 0
   // biome-ignore format: the adapter and its relative gitdir are one construction pair.
   constructor(dataFs: HostFs, readonly gitdir: string) { this.fs = toGitFs(dataFs) }
 
@@ -95,7 +116,13 @@ export class ShadowGit {
       throw fault('E_CHECKPOINT_IDENTITY', `repository prefix collision at ${this.gitdir}`)
   }
 
-  async create(input: { id: string; stepId: string; createdAt: number; files: Captured[] }): Promise<void> {
+  async create(input: {
+    id: string
+    stepId: string
+    createdAt: number
+    owner?: string
+    files: Captured[]
+  }): Promise<void> {
     if (!ID.test(input.id)) throw fault('E_CHECKPOINT_ID', input.id)
     const entries: ManifestEntry[] = []
     const payloads: Array<{ path: string; oid: string }> = []
@@ -110,7 +137,7 @@ export class ShadowGit {
     }
     entries.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))
     // biome-ignore format: this mirrors the compact manifest schema.
-    const manifest: CheckpointManifest = { schema: entries.some((entry) => isAbsolute(entry.rel)) ? 2 : 1, id: input.id, workspaceHash: this.workspaceHash, stepId: input.stepId, createdAt: input.createdAt, entries }
+    const manifest: CheckpointManifest = { schema: entries.some((entry) => isAbsolute(entry.rel)) ? 2 : 1, id: input.id, workspaceHash: this.workspaceHash, stepId: input.stepId, createdAt: input.createdAt, ...(input.owner === undefined ? {} : { owner: input.owner }), entries }
     // biome-ignore format: one plumbing operation.
     const manifestOid = await writeBlob({ fs: this.fs, gitdir: this.gitdir, blob: encoder.encode(JSON.stringify(manifest)) })
     // biome-ignore format: one root-tree declaration.
@@ -123,12 +150,16 @@ export class ShadowGit {
     const who = { name: 'agnes', email: 'checkpoint@local', timestamp: Math.floor(input.createdAt / 1000), timezoneOffset: 0 }
     // biome-ignore format: one parentless plumbing operation.
     const oid = await writeCommit({ fs: this.fs, gitdir: this.gitdir, commit: { tree: treeOid, parent: [], author: who, committer: who, message: `checkpoint ${input.id}\n` } })
-    await this.readAt(oid, input.id)
+    const written = await this.readAt(oid, input.id)
     // biome-ignore format: the ref is the checkpoint visibility boundary.
     await writeRef({ fs: this.fs, gitdir: this.gitdir, ref: `refs/agnes/checkpoints/${input.id}`, value: oid, force: false })
+    if (this.catalog) {
+      this.catalog.set(input.id, entryOf(written.manifest))
+      this.added++
+    }
   }
 
-  private async readAt(oid: string, id: string) {
+  private async manifestAt(oid: string, id: string): Promise<CheckpointManifest> {
     const { commit } = await readCommit({ fs: this.fs, gitdir: this.gitdir, oid })
     if (commit.parent.length) throw fault('E_CHECKPOINT_CORRUPT', `${id} has parents`)
     const raw = (await readBlob({ fs: this.fs, gitdir: this.gitdir, oid, filepath: 'manifest.json' })).blob
@@ -138,7 +169,11 @@ export class ShadowGit {
     } catch {
       throw fault('E_CHECKPOINT_CORRUPT', `${id} manifest JSON`)
     }
-    const manifest = validate(parsed, id, this.workspaceHash)
+    return validate(parsed, id, this.workspaceHash)
+  }
+
+  private async readAt(oid: string, id: string) {
+    const manifest = await this.manifestAt(oid, id)
     const files = new Map<string, Uint8Array>()
     for (const entry of manifest.entries)
       if (entry.state === 'file') {
@@ -156,32 +191,157 @@ export class ShadowGit {
     return this.readAt(oid, id)
   }
 
-  async list(): Promise<CheckpointManifest[]> {
-    let ids: string[]
+  /** Ref names under refs/agnes/checkpoints that can be ours; a foreign name is neither listed nor collected. */
+  private async refIds(): Promise<string[]> {
     try {
-      ids = await listRefs({ fs: this.fs, gitdir: this.gitdir, filepath: 'refs/agnes/checkpoints' })
+      return (
+        await listRefs({ fs: this.fs, gitdir: this.gitdir, filepath: 'refs/agnes/checkpoints' })
+      ).filter((id) => ID.test(id))
     } catch (error) {
       if (missing(error)) return []
       throw error
     }
-    for (const id of ids) if (!ID.test(id)) throw fault('E_CHECKPOINT_CORRUPT', `invalid ref ${id}`)
-    const rows = await Promise.all(ids.map(async (id) => (await this.read(id)).manifest))
-    return rows.sort((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id))
+  }
+
+  private async loadCatalog(): Promise<Map<string, CatalogEntry>> {
+    try {
+      // biome-ignore format: one cache read.
+      const raw = (await this.fs.promises.readFile(`${this.gitdir}/catalog.json`)) as Uint8Array
+      const found = JSON.parse(decoder.decode(raw)) as {
+        schema?: unknown
+        workspaceHash?: unknown
+        entries?: unknown
+      }
+      // biome-ignore format: one cache-header check.
+      if (found?.schema === 1 && found.workspaceHash === this.workspaceHash && Array.isArray(found.entries) && found.entries.every(cached))
+        return new Map((found.entries as CatalogEntry[]).map((e) => [e.id, e]))
+    } catch {
+      // Missing, torn or foreign: rebuilt from manifests below.
+    }
+    this.dirty = true
+    return new Map()
+  }
+
+  /**
+   * Live snapshots, newest first, without reading a payload. Ids the cache lacks are read from their
+   * manifest; one that cannot be read is skipped (not listed, counted or collected) and retried next time.
+   */
+  async list(): Promise<CatalogEntry[]> {
+    const ids = await this.refIds()
+    this.catalog ??= await this.loadCatalog()
+    const catalog = this.catalog
+    const live = new Set(ids)
+    for (const id of catalog.keys()) if (!live.has(id) && catalog.delete(id)) this.dirty = true
+    const unknown = ids.filter((id) => !catalog.has(id))
+    for (let at = 0; at < unknown.length; at += 16)
+      await Promise.all(
+        unknown.slice(at, at + 16).map(async (id) => {
+          try {
+            const oid = await resolveRef({
+              fs: this.fs,
+              gitdir: this.gitdir,
+              ref: `refs/agnes/checkpoints/${id}`,
+            })
+            catalog.set(id, entryOf(await this.manifestAt(oid, id)))
+            this.dirty = true
+          } catch {
+            // Unreadable (torn, tampered or still being written): rewind reports it; gc leaves it alone.
+          }
+        }),
+      )
+    return [...catalog.values()].sort((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id))
+  }
+
+  /** Written when gc or a reconcile changed it, or every 64 new snapshots, not on every write. */
+  private async saveCatalog(): Promise<void> {
+    if (!this.catalog || (!this.dirty && this.added < 64)) return
+    // biome-ignore format: one cache write; a torn one is ignored on load.
+    await this.fs.promises.writeFile(`${this.gitdir}/catalog.json`, encoder.encode(JSON.stringify({ schema: 1, workspaceHash: this.workspaceHash, entries: [...this.catalog.values()] })))
+    this.dirty = false
+    this.added = 0
   }
 
   async deleteRef(id: string): Promise<void> {
     await removeRef({ fs: this.fs, gitdir: this.gitdir, ref: `refs/agnes/checkpoints/${id}` })
   }
 
-  async gc(input: { keep: number; now: number; maxAgeMs: number }): Promise<{ deleted: string[] }> {
+  /**
+   * Deletes refs, never git objects, deciding from the catalog alone. Order: (1) outside `keep`, older
+   * than `maxAgeMs` and not protected; (2) while live bytes exceed `maxBytes`, unprotected oldest first,
+   * then protected ones (owner with the oldest newest snapshot first, oldest turn first). Protected = an
+   * owner's last `protectedTurns` distinct turns. An unreadable ref is never collected. Any error here
+   * happens before the next delete, so it keeps refs.
+   */
+  async gc(input: {
+    keep: number
+    now: number
+    maxAgeMs: number
+    protectedTurns?: number
+    maxBytes?: number
+  }) {
+    const all = await this.list()
+    const protectedIds = protectedSet(all, input.protectedTurns ?? 0)
+    const doomed = all
+      .slice(input.keep)
+      .filter((m) => m.createdAt < input.now - input.maxAgeMs && !protectedIds.has(m.id))
+    const gone = new Set(doomed.map((m) => m.id))
+    const live = all.filter((m) => !gone.has(m.id))
+    let total = live.reduce((n, m) => n + m.size, 0)
+    for (const m of capOrder(live, protectedIds)) {
+      if (total <= (input.maxBytes ?? Number.POSITIVE_INFINITY)) break
+      total -= m.size
+      doomed.push(m)
+    }
     const deleted: string[] = []
-    for (const manifest of (await this.list()).slice(input.keep))
-      if (manifest.createdAt < input.now - input.maxAgeMs) {
-        await this.deleteRef(manifest.id)
-        deleted.push(manifest.id)
-      }
-    const remaining = new Set((await this.list()).map((item) => item.id))
+    for (const m of doomed) {
+      await this.deleteRef(m.id)
+      this.catalog?.delete(m.id)
+      this.dirty = true
+      deleted.push(m.id)
+    }
+    const remaining = new Set(await this.refIds())
     if (deleted.some((id) => remaining.has(id))) throw fault('E_CHECKPOINT_GC', 'deleted ref remains visible')
+    await this.saveCatalog()
     return { deleted }
   }
+}
+
+// A stepId is `${turn}/${step}`; an unparseable one is its own turn so it is never lost to a parse error.
+const turnOf = (m: CatalogEntry) => m.stepId.split('/')[0] ?? m.stepId
+
+function protectedSet(all: CatalogEntry[], turns: number): Set<string> {
+  // Runs after every snapshot, so each owner's turns are ranked in one pass, not per comparison.
+  const byOwner = new Map<string, Map<string, number>>()
+  for (const m of all) {
+    if (m.owner === undefined) continue
+    const turnsOf = byOwner.get(m.owner) ?? new Map<string, number>()
+    turnsOf.set(turnOf(m), Math.max(turnsOf.get(turnOf(m)) ?? m.createdAt, m.createdAt))
+    byOwner.set(m.owner, turnsOf)
+  }
+  const recent = new Map<string, Set<string>>()
+  for (const [owner, turnsOf] of byOwner)
+    recent.set(
+      owner,
+      new Set(
+        [...turnsOf]
+          .sort(([a, ra], [b, rb]) => rb - ra || (a < b ? 1 : -1))
+          .slice(0, turns)
+          .map(([turn]) => turn),
+      ),
+    )
+  return new Set(
+    all.filter((m) => m.owner !== undefined && recent.get(m.owner)?.has(turnOf(m))).map((m) => m.id),
+  )
+}
+
+function capOrder(live: CatalogEntry[], protectedIds: Set<string>): CatalogEntry[] {
+  const oldest = (a: CatalogEntry, b: CatalogEntry) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1)
+  const newest = new Map<string, number>()
+  for (const m of live) newest.set(m.owner ?? '', Math.max(newest.get(m.owner ?? '') ?? 0, m.createdAt))
+  const kept = live.filter((m) => protectedIds.has(m.id))
+  const rank = (m: CatalogEntry) => newest.get(m.owner ?? '') ?? 0
+  return [
+    ...live.filter((m) => !protectedIds.has(m.id)).sort(oldest),
+    ...kept.sort((a, b) => rank(a) - rank(b) || (a.owner ?? '').localeCompare(b.owner ?? '') || oldest(a, b)),
+  ]
 }

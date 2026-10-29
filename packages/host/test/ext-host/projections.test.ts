@@ -8,12 +8,12 @@ import type {
   ProjectionReader,
   ProjectionReadResult,
 } from '@agnes/extension-api'
+import { bindExtensionInvocations } from '@agnes/host-extensions/assemble/extension-ports'
+import { buildExtensionAPI } from '@agnes/host-extensions/ext-host/api-proxy'
+import { DisposerBag } from '@agnes/host-extensions/ext-host/disposers'
+import { leaseFor } from '@agnes/host-extensions/ext-host/lease'
 import type { JsonValue } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { bindExtensionInvocations } from '../../src/assemble/extension-ports.js'
-import { buildExtensionAPI } from '../../src/ext-host/api-proxy.js'
-import { DisposerBag } from '../../src/ext-host/disposers.js'
-import { leaseFor } from '../../src/ext-host/lease.js'
 import { createTestHost } from '../../testkit/index.js'
 import { fixtureTool } from '../fixtures/tool.js'
 
@@ -66,7 +66,7 @@ async function setup() {
     const manifest: ExtensionManifest = {
       id,
       version: '1.0.0',
-      apiRange: '^1.0',
+      apiRange: '^5.0.0',
       entry: './index.ts',
       capabilities: {
         projections: ['count', 'other'].map((name) => ({
@@ -129,6 +129,18 @@ describe('P4/P5 production Projection ports', () => {
     api.registerSlot('status.line', async (ctx) => {
       saved = ctx.projections
       await api.events.append('unrelated', {})
+      // The same type written by someone who does not own the namespace is not folded.
+      await h.session.d.log.append([
+        {
+          type: 'x/fixture/projection/count',
+          data: {},
+          actor: h.session.d.actor,
+          origin: 'ext:fixture/other',
+          trust: 'untrusted',
+          lane: h.session.lane,
+          ignorable: true,
+        },
+      ])
       await api.events.append('count', {})
       const first = await ctx.projections.readOwn<{ count: number }>('count')
       expect(first.status).toBe('available')
@@ -332,6 +344,33 @@ describe('P4/P5 production Projection ports', () => {
       expect(init).not.toHaveBeenCalled()
     },
   )
+  it('reads only the rows written since its previous read of the real session', async () => {
+    const h = await setup(),
+      { api } = h.author()
+    api.registerProjection(counter())
+    const scan = h.session.scan.bind(h.session)
+    let rows = 0
+    vi.spyOn(h.session, 'scan').mockImplementation(async (query) => {
+      const page = await scan(query)
+      rows += page.length
+      return page
+    })
+    const reads: { value: unknown; rows: number; through: number }[] = []
+    api.registerSlot('status.line', async (ctx) => {
+      for (let n = 0; n < 3; n++) await api.events.append('count', {})
+      rows = 0
+      const read = await ctx.projections.readOwn('count')
+      reads.push({ value: read.status === 'available' ? read.value : read, rows, through: h.session.lastSeq })
+      return null
+    })
+    for (let n = 0; n < 3; n++) await h.runSlot()
+    vi.restoreAllMocks()
+    const [first, second, third] = reads
+    expect(reads.map((read) => read.value)).toEqual([3, 6, 9])
+    expect(first?.rows).toBe(first?.through)
+    expect(second?.rows).toBe((second?.through ?? 0) - (first?.through ?? 0))
+    expect(third?.rows).toBe((third?.through ?? 0) - (second?.through ?? 0))
+  })
   it('uses the same reader for actual Hook and Tool callbacks on the real session', async () => {
     const h = await setup(),
       { api, lease } = h.author(),

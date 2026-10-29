@@ -3,7 +3,9 @@ import { existsSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { type RunAgnesdArgs, runAgnesd } from '@agnes/daemon'
-import { reportStartupFailure } from './startup-report.js'
+import { homeVersionMessage } from '@agnes/host'
+import { publishStartupDiagnostic } from '../src/boot/startup-diagnostic.js'
+import { startupFailure } from '../src/commands/first-run-locales.js'
 
 type LocalWeb = { addr: string; origin: string }
 
@@ -50,20 +52,28 @@ export function parseDaemonEntryArgs(argv: readonly string[]): {
 export async function runDaemonEntry(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
   const parsed = parseDaemonEntryArgs(argv)
   if (parsed.args.home !== undefined) process.env.AGH_HOME = parsed.args.home
-  const packagedWorker = join(dirname(fileURLToPath(import.meta.url)), 'worker.mjs')
-  const sourceWorker = join(dirname(fileURLToPath(import.meta.url)), 'worker-entry.ts')
-  const workerEntry = existsSync(packagedWorker)
-    ? packagedWorker
-    : existsSync(sourceWorker)
-      ? sourceWorker
-      : (() => {
-          throw new Error('Agnes local worker entry is unavailable; rebuild the production distribution')
-        })()
-  await runAgnesd(parsed.args, {
-    workerEntry,
-    ...(workerEntry.endsWith('.ts') ? { workerExecArgv: ['--import', 'tsx'] } : {}),
-    ...(parsed.localWeb ? { localWeb: parsed.localWeb } : {}),
-  })
+  try {
+    const packagedWorker = join(dirname(fileURLToPath(import.meta.url)), 'worker.mjs')
+    const sourceWorker = join(dirname(fileURLToPath(import.meta.url)), 'worker-entry.ts')
+    const workerEntry = existsSync(packagedWorker)
+      ? packagedWorker
+      : existsSync(sourceWorker)
+        ? sourceWorker
+        : (() => {
+            throw new Error('Agnes local worker entry is unavailable; rebuild the production distribution')
+          })()
+    await runAgnesd(parsed.args, {
+      workerEntry,
+      ...(workerEntry.endsWith('.ts') ? { workerExecArgv: ['--import', 'tsx'] } : {}),
+      ...(parsed.localWeb ? { localWeb: parsed.localWeb } : {}),
+    })
+  } catch (error) {
+    if (!homeVersionMessage(error, process.env.AGNES_LOCALE))
+      publishStartupDiagnostic(error, process.env.AGH_HOME)
+    const message = startupFailure(error, process.env)
+    if (message) throw new Error(message, { cause: error })
+    throw error
+  }
 }
 
 function isMainModule(moduleUrl: string): boolean {
@@ -78,9 +88,6 @@ function isMainModule(moduleUrl: string): boolean {
 
 if (isMainModule(import.meta.url))
   void runDaemonEntry().catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error)
-    process.stderr.write(`${message}\n`)
-    // The launcher that started this detached process cannot read stderr; it reads this instead.
-    reportStartupFailure(message)
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
     process.exitCode = 1
   })

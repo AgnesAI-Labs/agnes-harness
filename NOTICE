@@ -8,18 +8,28 @@ following material retains its original notices and license terms:
   Copyright (c) 2021-present Shigma. MIT License. The corresponding LICENSE
   and VENDORED.md files are retained in each package.
 - Portions of packages/base/extensions/tools-web and
-  packages/host/src/adapters/public-fetch:
+  packages/host-infrastructure/src/adapters/public-fetch:
   Copyright (c) 2026 DeepSeek. MIT License. See the local
   DEEPSEEK-LICENSE.txt files and source-file notices.
 - Computer Use adaptation in packages/base/extensions/computer-use:
   Copyright (c) 2025 Nous Research. MIT License. See the local NOTICE for
   provenance, changes, and the full license text.
+- Jev agent loop in packages/loop-jev, shipped as the optional bundled package in
+  packages/package-manager/bundled-plugins/jev-loop (its bundle is generated from the source):
+  portions adapted from JevLoop (https://github.com/parkavenue9639/jevloop, commit 61e7994).
+  Copyright 2026 JevLoop contributors. Apache License 2.0. See packages/loop-jev/NOTICE for
+  provenance and changes; the bundled package carries an identical NOTICE, and packaged builds
+  also include it as THIRD-PARTY-NOTICES/jevloop.txt.
 - Bundled Skill Helper in packages/package-manager/bundled-plugins/skill-helper:
   Copyright (c) 2026 2812348473. MIT License. See its local LICENSE.
 - Bundled Document Reader in packages/package-manager/bundled-plugins/document-reader:
   its own code is Apache-2.0. Pinned PDF, Word, ZIP and offline OCR dependencies
   retain their upstream licenses; the plugin payload includes THIRD-PARTY-NOTICES.
   See its README.md and third-party/build-dependencies.json for provenance.
+- Browser presentation plugins in packages/package-manager/bundled-plugins:
+  build-generated NOTICE files list dependencies embedded in each client. Shared
+  protocol validation and UI dependencies are supplied by the Web platform vendor
+  build, whose THIRD-PARTY-NOTICES retains their upstream license texts.
 - Legacy DOC test fixture in packages/package-manager/test/fixtures/document-reader:
   Copyright (c) 2016-2021 Stuart Watt. MIT License. The source revision and LICENSE
   are retained alongside the fixture.
@@ -39,12 +49,31 @@ following material retains its original notices and license terms:
   Source: https://github.com/lucide-icons/lucide; retrieved through Iconify.
   See packages/web-units/LUCIDE-LICENSE.
 
-- The local and single-executable runtimes bundle sharp (Apache License 2.0) and
-  its platform libvips binaries (LGPL-3.0-or-later, loaded as separate shared
-  libraries, with the further libraries they contain listed in that package's
-  README). The upstream license files and licensing tables are retained beside
-  the codec in the distributed node_modules payload. See
-  third-party/runtime-dependencies.json.
+- Linux system helper dynamically links the operating system's OpenSSL 3 libcrypto.
+  OpenSSL Project, Apache License 2.0. No OpenSSL source or shared library is vendored.
+  See third-party/native-system-dependencies.md for provenance and runtime requirements.
+
+- The local image runtime bundles sharp (Apache License 2.0) and platform libvips binaries.
+  Their upstream LICENSE, NOTICE and third-party dependency notices are retained beside the
+  codec in the distributed node_modules payload. See third-party/runtime-dependencies.json.
+
+- Lucide icon subset in packages/web-ui/src/ui/icons.ts:
+  Copyright (c) 2026 Lucide Icons and Contributors. ISC License.
+  Feather-derived geometries retain the MIT notice of Cole Bemis.
+  See packages/web-ui/THIRD_PARTY_NOTICES.md and LUCIDE-LICENSE.
+  Web builds retain the full license in THIRD-PARTY-NOTICES/lucide-icons.txt.
+
+- xterm.js and its fit addon in the lazy-loaded Web terminal renderer:
+  MIT License; original copyright notices and licenses are copied from the pinned packages
+  to web/THIRD-PARTY-NOTICES/xterm-xterm.txt and xterm-addon-fit.txt by both Web builds.
+  See packages/web-ui/THIRD_PARTY_NOTICES.md and third-party/runtime-dependencies.json.
+
+
+- The optional built-in browser plugin uses playwright-core 1.63.0 (Microsoft,
+  Apache-2.0), retaining its complete LICENSE, NOTICE and dependency notices in
+  the prepared plugin runtime. Browser binaries are separately downloaded
+  Google Chrome for Testing payloads with their own ABOUT, credits and terms.
+  See third-party/browser-runtime.md.
 
 This NOTICE is informational and does not modify any license. It records known
 source-tree attributions; a separately distributed binary or package must also

@@ -17,7 +17,11 @@ import {
   skillRoots,
   workspaceSkillKey,
 } from '../../extensions/skills/src/discover.js'
-import { MAX_DESCRIPTION_LENGTH, MAX_NAME_LENGTH } from '../../extensions/skills/src/frontmatter.js'
+import {
+  MAX_DESCRIPTION_LENGTH,
+  MAX_NAME_LENGTH,
+  parseSkillFrontmatter,
+} from '../../extensions/skills/src/frontmatter.js'
 
 const bytes = new TextEncoder()
 const workspaceRoot = (path: string, workspace = '/work'): SkillRoot => ({
@@ -82,6 +86,34 @@ describe('skill discovery', () => {
     expect(JSON.stringify({ ...scan.candidates[0], directory: undefined })).not.toContain('/private/project')
     expect(scan.candidates[0]?.resourceId).toMatch(/^skill\/workspace\/workspace-agnes\/[a-f0-9]{64}$/)
     expect(scan.candidates[0]?.revision).toMatch(/^[a-f0-9]{64}$/)
+    const selectedId = skillResourceIdAt(root, 'review')
+    const files = fs({
+      '/private/project/.agh/skills/review/SKILL.md':
+        '---\nname: review\ndescription: Review a change\n---\nsecret body',
+      '/private/project/.agh/skills/review/references/guide.md': 'Selected attachment',
+      '/private/project/.agh/skills/neighbor/SKILL.md':
+        '---\nname: neighbor\ndescription: Separate\n---\nUnrelated body',
+    })
+    const reads: string[] = []
+    const selective = {
+      ...files,
+      read: async (path: string) => {
+        reads.push(path)
+        if (path.includes(`${sep}neighbor${sep}`)) throw new Error('unrelated Skill must not be loaded')
+        return files.read(path)
+      },
+    }
+    const selected = await discoverSkillRoot(selective, root, new Set([selectedId]))
+    expect(selected).toMatchObject({
+      ok: true,
+      candidates: [
+        { resourceId: selectedId, body: 'secret body', files: [{ relativePath: 'references/guide.md' }] },
+      ],
+    })
+    expect(reads.some((path) => path.includes(`${sep}neighbor${sep}`))).toBe(false)
+    reads.length = 0
+    expect(await discoverSkillRoot(selective, root, new Set())).toMatchObject({ ok: true, candidates: [] })
+    expect(reads).toEqual([])
   })
 
   it('splits the Agnes-owned root from the OS-home-relative ones when AGH_HOME diverges from the OS home', () => {
@@ -90,7 +122,14 @@ describe('skill discovery', () => {
     // assertion to mean anything -- neither is a substring or prefix of the other.
     const osHomeDir = '/srv/os-account'
     const agnesHomeDir = '/var/agnes-deployment/custom-home'
-    const roots = skillRoots({ workspaceRoot: '/work/project', osHomeDir, agnesHomeDir })
+    const input = { workspaceRoot: '/work/project', osHomeDir, agnesHomeDir }
+    expect(skillRoots(input).map((root) => root.rootKey)).toEqual(['workspace-agnes', 'user-agnes'])
+    const customPath = resolve('/opt/team-skills')
+    const custom = skillRoots({ ...input, customRoots: [customPath, customPath] })
+    expect(custom[1]?.dirs?.map((dir) => dir.path)).toEqual([join(agnesHomeDir, 'skills'), customPath])
+    expect(custom[1]?.dirs?.[1]?.prefix).toMatch(/^custom\/[a-f0-9]{64}\/$/)
+    expect(() => skillRoots({ ...input, customRoots: ['relative'] })).toThrow()
+    const roots = skillRoots({ ...input, importUserSkills: true })
     expect(roots.map((root) => [root.rootKey, root.path])).toEqual([
       ['workspace-agnes', join('/work/project', '.agh', 'skills')],
       // The one Agnes-owned root follows the resolved Agnes home, not the OS home -- this is
@@ -364,11 +403,15 @@ describe('skill discovery', () => {
     expect(scan.ok && scan.candidates[0]?.files?.length).toBe(32)
   })
 
-  it('discovers single-file Skills, ignores plain markdown, and lets a directory win a same-name file', async () => {
+  it('accepts bare flat Skills, rejects invalid metadata, and lets a directory win a same-name file', async () => {
     const scan = await discoverSkillRoot(
       fs({
         '/work/.agh/skills/solo.md': '---\nname: solo\ndescription: one file\n---\nsolo body',
         '/work/.agh/skills/README.md': '# About these skills',
+        '/work/.agh/skills/plain.md': '\n  Plain instructions\nKeep this body.',
+        '/work/.agh/skills/empty.md': '\n  \n',
+        '/work/.agh/skills/broken.md': '---\nname: broken\ndescription: [\n---\nbody',
+        '/work/.agh/skills/directory-plain/SKILL.md': '# Directory still needs metadata',
         '/work/.agh/skills/review/SKILL.md': '---\nname: review\ndescription: directory\n---\nbody',
         '/work/.agh/skills/review.md': '---\nname: review\ndescription: file\n---\nbody',
       }),
@@ -376,11 +419,21 @@ describe('skill discovery', () => {
     )
     expect(scan.ok).toBe(true)
     if (!scan.ok) return
-    expect(scan.candidates.map((item) => [item.name, item.description])).toEqual([
-      ['review', 'directory'],
-      ['solo', 'one file'],
+    expect(Object.fromEntries(scan.candidates.map((item) => [item.name, item.description]))).toEqual({
+      README: 'About these skills',
+      plain: 'Plain instructions',
+      review: 'directory',
+      solo: 'one file',
+    })
+    expect(scan.skipped?.map((entry) => entry.code)).toEqual([
+      'invalid-frontmatter',
+      'invalid-frontmatter',
+      'invalid-frontmatter',
     ])
-    expect(scan.skipped).toBeUndefined()
+    expect(scan.candidates.find((item) => item.name === 'plain')).toMatchObject({
+      body: '\n  Plain instructions\nKeep this body.',
+      invocation: { modelInvocable: true, userInvocable: true, disabled: false },
+    })
     // A single file has no directory of its own; naming its parent would expose the whole root.
     expect(scan.candidates.find((item) => item.name === 'solo')?.directory).toBeUndefined()
     expect(scan.candidates.find((item) => item.name === 'review')?.directory).toBe(
@@ -434,4 +487,58 @@ describe('frontmatter bounds agree with the protocol schema', () => {
     expect(descriptor.name.maxLength).toBe(128)
     expect(MAX_NAME_LENGTH).toBe(descriptor.name.maxLength)
   })
+
+  it('reads invocation flags, drops an invalid flag, and refreshes when content changes', async () => {
+    const skill = (flags: string, body: string, guide: string) => ({
+      '/work/.agh/skills/review/SKILL.md': `---\nname: review\ndescription: useful\n${flags}---\n${body}`,
+      '/work/.agh/skills/review/references/guide.md': guide,
+      '/work/.agh/skills/broken/SKILL.md':
+        '---\nname: broken\ndescription: useful\ndisable-model-invocation: maybe\n---\nbody',
+    })
+    const first = await discoverSkillRoot(
+      fs(skill('disable-model-invocation: true\n', 'body one', 'guide one')),
+      workspaceRoot('/work/.agh/skills'),
+    )
+    expect(first.ok).toBe(true)
+    if (!first.ok) return
+    expect(first.candidates.map((item) => item.name)).toEqual(['review'])
+    expect(first.candidates[0]?.invocation).toEqual({
+      modelInvocable: false,
+      userInvocable: true,
+      disabled: false,
+    })
+    expect(first.candidates[0]?.files?.map((file) => file.relativePath)).toEqual(['references/guide.md'])
+    expect(first.skipped?.map((entry) => entry.code)).toEqual(['invalid-frontmatter'])
+    const revision = first.candidates[0]?.revision
+    const second = await discoverSkillRoot(
+      fs(skill('disable-model-invocation: true\n', 'body two', 'guide two')),
+      workspaceRoot('/work/.agh/skills'),
+    )
+    expect(second.ok && second.candidates[0]?.body).toBe('body two')
+    expect(second.ok && second.candidates[0]?.revision).not.toBe(revision)
+
+    const permitted = parseSkillFrontmatter('---\nname: review\ndescription: useful\n---\nbody')
+    const userOnly = parseSkillFrontmatter(
+      '---\nname: review\ndescription: useful\nuser-invocable: false\n---\nbody',
+    )
+    const disabled = parseSkillFrontmatter(
+      '---\nname: review\ndescription: useful\ndisable: true\nuser-invocable: "yes"\n---\nstill disabled',
+    )
+    const bodyOnly = parseSkillFrontmatter('---\nname: review\ndescription: useful\n---\nother body')
+    expect(permitted?.invocation).toEqual({ modelInvocable: true, userInvocable: true, disabled: false })
+    expect(userOnly?.invocation).toEqual({ modelInvocable: true, userInvocable: false, disabled: false })
+    expect(disabled?.invocation).toEqual({ modelInvocable: false, userInvocable: false, disabled: true })
+    expect(permitted?.capabilityHash).toBe(bodyOnly?.capabilityHash)
+    expect(userOnly?.capabilityHash).not.toBe(permitted?.capabilityHash)
+  })
+})
+
+it('never discovers candidate Markdown through explicit roots or canonical root aliases', async () => {
+  const root = '/profile/.authoring-candidates/candidate-a/trees/revision/skills'
+  const files = fs({
+    [root + '/draft/SKILL.md']: '---\nname: draft\ndescription: Draft only\n---\nNever discovered.',
+  })
+  expect(await discoverSkillRoot(files, workspaceRoot(root))).toMatchObject({ ok: true, candidates: [] })
+  const alias = { ...files, realpath: async () => root }
+  expect(await discoverSkillRoot(alias, workspaceRoot('/alias'))).toMatchObject({ ok: true, candidates: [] })
 })

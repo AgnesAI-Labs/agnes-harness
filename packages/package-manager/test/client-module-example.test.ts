@@ -18,18 +18,7 @@ const serviceExamples = join(
   '../../../examples/packages/client-service-panel',
 )
 const packageId = '@agnes-examples/client-panel'
-const seams = [
-  'approval',
-  'checkpoint',
-  'ledger',
-  'sandbox',
-  'verifier',
-  'repair',
-  'artifacts',
-  'principals',
-  'platform',
-  'harness',
-]
+const seams = ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals']
 
 let root: string
 let profile: string
@@ -44,7 +33,7 @@ beforeEach(() => {
   writeLock(profile, {
     ...emptyLock('local-dev', '0.1.0'),
     resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
-    seams: Object.fromEntries(seams.map((name) => [name, '@agnes/base'])),
+    seams: Object.fromEntries(seams.map((name) => [name, { provider: 'local' }])),
     policySnapshot: { capabilityCeiling: ['ui', 'services'], workspacePackages: 'require-project-trust' },
   })
 })
@@ -65,7 +54,7 @@ it('archives a client module bound to the package plugin row without an executab
       {
         kind: 'client',
         rowId: 'ext:examples/client-service-panel/runtime',
-        client: { services: ['panel.version'], slots: ['ui:sidebar'] },
+        client: { services: ['panel.version'], slots: ['workbench.panel'] },
       },
     ],
   })
@@ -76,7 +65,7 @@ afterEach(() => rmSync(root, { recursive: true, force: true }))
 it.each([
   ['v1', 'Agnes client module demo · v1'],
   ['v2', 'Agnes client module demo · v2'],
-])('the %s browser entry shadows one migrated sidebar region', async (version, marker) => {
+])('the %s browser entry adds a workbench view', async (version, marker) => {
   const register = vi.fn()
   const entry = join(examples, version, 'extensions/main/client/index.js')
   const mod = await import(`${pathToFileURL(entry).href}?test=${Date.now()}`)
@@ -85,8 +74,8 @@ it.each([
 
   expect(register).toHaveBeenCalledOnce()
   const [slot, component, options] = register.mock.calls[0] ?? []
-  expect(slot).toBe('ui:sidebar')
-  expect(options).toEqual({ priority: -1 })
+  expect(slot).toBe('workbench.panel')
+  expect(options).toBeUndefined()
   expect(component()).toBe(marker)
 })
 
@@ -120,7 +109,7 @@ it('installs v1, atomically updates to v2, and disables the real client package'
         client: {
           entry: 'client/index.js',
           styles: ['client/index.css'],
-          slots: ['ui:sidebar'],
+          slots: ['workbench.panel'],
           publicConfig: { label: 'Agnes client module demo · v1' },
           services: [],
           projections: [],
@@ -161,3 +150,21 @@ it('installs v1, atomically updates to v2, and disables the real client package'
     entry: { version: '2.0.0' },
   })
 })
+
+it.each(['component-library', 'interaction-renderer', 'tool-result-card'])(
+  'inspects the public Intelligent UI %s example without private runtime imports',
+  async (name) => {
+    const source = join(dirname(fileURLToPath(import.meta.url)), '../../../examples/ui', name)
+    cpSync(source, join(root, name), { recursive: true })
+    const manager = createPackageManager({
+      dataDir: root,
+      cwd: root,
+      agnesVersion: '0.1.0',
+      now: () => '2026-10-18T00:00:00Z',
+      references: async () => [],
+    })
+    const inspected = await manager.inspect(profile, parseSource(`file:./${name}`))
+    expect(inspected.blockers).toEqual([])
+    expect(inspected.contributions.some((entry) => entry.kind === 'client')).toBe(true)
+  },
+)

@@ -1,7 +1,7 @@
+import { CoreError, type Disposer } from '@agnes/core-common/types'
+import { OwnedRegistryTable } from '@agnes/core-ledger/registry/owner-batch'
 import { extEventType, type HookEvent, type HookHandler } from '@agnes/extension-api'
 import { isHookEvent } from '@agnes/protocol'
-import { CoreError, type Disposer } from '../types.js'
-import { OwnedRegistryTable } from './owner-batch.js'
 import type { ToolSource } from './tools.js'
 
 // Callback types are erased only in storage; registration and invocation retain the event key.

@@ -10,13 +10,15 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PersistentCommandJournal } from '@agnes/daemon-foundation/storage/command-journal'
 import { createExtensionActivationBarrier, type Host, type ResolvedProfile } from '@agnes/host'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { type DaemonConfig, DEFAULT_LIMITS } from '../src/config.js'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { CommandQueue } from '../src/local/command-queue.js'
 import { LocalEndpoint } from '../src/local/endpoint.js'
 import { registerExtensions } from '../src/local/methods/extensions.js'
-import { MemoryJournal } from '../src/local/ports.js'
+import { type CommandJournal, MemoryJournal } from '../src/local/ports.js'
+import { type DaemonConfig, DEFAULT_LIMITS } from '../src/supervisor/config.js'
 import type { CommandFrame } from '../src/supervisor/frames.js'
 import { workerServiceCaller, workerServiceInspector } from '../src/supervisor/service-worker.js'
 import { listenUnix } from '../src/supervisor/socket.js'
@@ -49,7 +51,7 @@ afterEach(async () => {
 function surfaceEndpoint(
   callService: Host['callService'],
   inspectService: Host['inspectService'],
-  journal: MemoryJournal,
+  journal: CommandJournal,
   resolveServiceSession = async (sessionId: string) => sessionId,
 ): { ep: LocalEndpoint; queue: CommandQueue } {
   const ep = new LocalEndpoint({ clock: Date.now, principalId: 'transport' })
@@ -108,7 +110,19 @@ describe('S5 service worker boundary', () => {
       subjectCredential: { kind: 'local' },
       grants: [grant],
     })
+    const workbench = {
+      ...localWeb,
+      source: 'session-workbench',
+      grants: [{ extension: 'agnes/jobs-web', name: 'jobs.control', range: '*' }],
+    }
+    await expect(authority.resolve(workbench)).resolves.toMatchObject({
+      source: 'session-workbench',
+      grants: workbench.grants,
+    })
     for (const invalid of [
+      { ...workbench, grants: [grant] },
+      { ...workbench, grants: [{ ...workbench.grants[0], name: '*' }] },
+      { ...workbench, grants: [...workbench.grants, ...workbench.grants] },
       { ...credential, source: '../reports' },
       { ...credential, kind: 'source-auth' },
       { ...credential, subjectCredential: { kind: 'local' } },
@@ -282,7 +296,14 @@ describe('S5 service worker boundary', () => {
         type: 'module',
         exports: './index.mjs',
         agnes: {
-          plugins: [{ id: serviceRowId, export: 'main', services: [capability.name, effectCapability.name] }],
+          plugins: [
+            {
+              apiRange: '^5.0.0',
+              id: serviceRowId,
+              export: 'main',
+              services: [capability.name, effectCapability.name],
+            },
+          ],
         },
       }),
     )
@@ -405,8 +426,24 @@ describe('S5 service worker boundary', () => {
       method: string,
       params: Record<string, unknown>,
     ) => Promise<unknown>
-    await expect(uncheckedCommand('scan', {})).rejects.toMatchObject({
+    // Preserve the refusal diagnosis at its owner; the wire boundary redacts raw exceptions.
+    await expect(
+      handleServiceCommand(
+        undefined,
+        {
+          kind: 'command',
+          requestId: 'refused-scan',
+          method: 'scan',
+          params: {},
+        } as unknown as Parameters<typeof handleServiceCommand>[1],
+        new Map(),
+      ),
+    ).rejects.toMatchObject({
       message: expect.stringContaining('method unavailable in service worker'),
+    })
+    await expect(uncheckedCommand('scan', {})).rejects.toEqual({
+      code: 'E_WORKER',
+      message: 'Worker operation failed.',
     })
   }, 20_000)
 
@@ -441,7 +478,9 @@ describe('S5 service worker boundary', () => {
         version: '1.0.0',
         type: 'module',
         exports: './index.mjs',
-        agnes: { plugins: [{ id: serviceRowId, export: 'main', services: [capability.name] }] },
+        agnes: {
+          plugins: [{ apiRange: '^5.0.0', id: serviceRowId, export: 'main', services: [capability.name] }],
+        },
       }),
     )
     writeFileSync(
@@ -516,7 +555,15 @@ describe('S5 service worker boundary', () => {
       }
       return sessionId
     }
-    const journal = new MemoryJournal(Date.now)
+    const journalFile = join(dir, 'commands.db')
+    let tables = sqliteTables(journalFile)
+    let journal = new PersistentCommandJournal(tables.table('command_journal'), Date.now)
+    cleanup.push(() => tables.close())
+    const reopenJournal = async () => {
+      await tables.close()
+      tables = sqliteTables(journalFile)
+      journal = new PersistentCommandJournal(tables.table('command_journal'), Date.now)
+    }
     const markerModes = (): string[] =>
       existsSync(marker)
         ? readFileSync(marker, 'utf8')
@@ -530,6 +577,9 @@ describe('S5 service worker boundary', () => {
       commandId: string,
       requestId: number,
     ): Promise<void> => {
+      // Lose every in-memory receipt as at daemon restart. The durable command identity must
+      // still refuse another effect through a fresh endpoint and SQLite connection.
+      await reopenJournal()
       const retry = surfaceEndpoint(callService, inspectService, journal, resolveServiceSession)
       await expect(retry.ep.handle(effectRequest(requestId, mode, commandId))).resolves.toMatchObject({
         error: { data: { code: 'OUTCOME_UNKNOWN' } },
@@ -615,6 +665,7 @@ describe('S5 service worker boundary', () => {
     })
     await crashed.ep.close()
     await crashed.queue.close()
+    await reopenJournal()
     // A killed session writer keeps its durable writer lease until expiry. The immediate retry
     // therefore cannot rebuild a workspace yet, but it must fail closed and must not execute the
     // already-uncertain effect a second time.

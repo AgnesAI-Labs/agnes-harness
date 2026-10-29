@@ -1,6 +1,7 @@
 import { type ComponentProps, type Tokens, XMarkdown, type XMarkdownProps } from '@ant-design/x-markdown'
 import {
   createContext,
+  memo,
   type ReactNode,
   useContext,
   useEffect,
@@ -57,7 +58,8 @@ function defaultFragment(id: string): void {
 
 function Link({ children, title, ...props }: ComponentProps) {
   const { onFragment } = useContext(Callbacks)
-  const safe = safeMarkdownHref(typeof props.href === 'string' ? props.href : '')
+  const rawHref = typeof props.href === 'string' ? props.href : undefined
+  const safe = safeMarkdownHref(rawHref ?? '')
   if (!safe) return <>{children}</>
   if (safe.startsWith('#')) {
     return (
@@ -77,8 +79,10 @@ function Link({ children, title, ...props }: ComponentProps) {
       </a>
     )
   }
+  // The address behind a source link is only visible after opening it; fall back to the full href
+  // so hovering reveals data-only targets such as `?format=j1` without rewriting the link.
   return (
-    <a href={safe} title={title} target="_blank" rel="noopener noreferrer">
+    <a href={safe} title={title ?? rawHref} target="_blank" rel="noopener noreferrer">
       {children}
     </a>
   )
@@ -160,7 +164,7 @@ function TableScroll({ children }: { children?: ReactNode }) {
   )
 }
 
-export function ConversationMarkdown({
+export const ConversationMarkdown = memo(function ConversationMarkdown({
   source,
   part,
   streaming = false,
@@ -269,4 +273,4 @@ export function ConversationMarkdown({
       </MarkdownRevealOwner.Provider>
     </div>
   )
-}
+})

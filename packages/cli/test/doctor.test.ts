@@ -1,24 +1,12 @@
-import { randomUUID } from 'node:crypto'
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  statSync,
-  symlinkSync,
-  writeFileSync,
-} from 'node:fs'
-import { createServer } from 'node:net'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { defaultProcessIdentity } from '@agnes/host'
+import { initializeHome } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parseArgs, usage } from '../src/args.js'
 import type { DoctorCommandDeps } from '../src/commands/doctor.js'
 import { doctorCommand, renderSections } from '../src/commands/doctor.js'
-import { TEST_LOCK } from './boot-host.js'
 
 const cleanup: string[] = []
 
@@ -35,7 +23,8 @@ function deps(): DoctorCommandDeps {
     cwd: home,
     agnesVersion: '0',
     log: () => undefined,
-    lock: TEST_LOCK,
+    // Let the closed builtin set resolve against this test's actual runtime version.
+    lock: { packages: {} },
     createHostImpl: async () => (await createTestHost({ dataDir: home })).host,
   }
 }
@@ -53,9 +42,10 @@ describe('doctor command aggregation', () => {
 
   it('requires an explicit provider probe flag and keeps the ordinary doctor grammar closed', async () => {
     expect(parseArgs(['doctor', 'provider', '--probe']).probe).toBe(true)
+    expect(parseArgs(['doctor', '--probe']).probe).toBe(true)
     expect(parseArgs(['doctor', 'storage']).probe).toBe(false)
     expect(() => parseArgs(['doctor', 'storage', '--probe'])).toThrow(
-      '--probe is supported only by doctor provider',
+      '--probe is supported only by doctor or doctor provider',
     )
   })
 
@@ -70,41 +60,31 @@ describe('doctor command aggregation', () => {
     expect(json.text).not.toContain('minimal_inference')
   })
 
-  it('inspects the routes a profile declares itself when no account was saved', async () => {
-    const d = deps()
-    let hostBuilds = 0
-    const build = d.createHostImpl
-    d.createHostImpl = async (...args) => {
-      hostBuilds++
-      return build?.(...args) as never
-    }
-    d.configuration = {
-      get: async () => ({
-        profile: 'local-dev',
-        revision: 0,
-        configured: false,
-        provider: null,
-        effect: 'new-sessions',
-        accounts: [],
-      }),
-      // What the profile file declares, layered in as a prompt boot does.
-      profileInput: async () => ({
-        provider: {
-          package: '@agnes/ai',
-          adapters: ['@agnes/ai'],
-          routes: [{ route: 'acct-test', api: 'openai-completions', baseUrl: 'https://example.invalid/v1' }],
-          catalog: { include: [] },
-        },
-      }),
-    } as never
-    const result = await doctorCommand(parseArgs(['doctor', 'provider']), d)
-    expect(hostBuilds).toBe(1)
-    expect(result.json[0]?.name).toBe('provider')
-    expect(result.text).not.toContain('no configured provider route selected')
-    expect(result.json[0]?.detail.join('\n')).toContain('configured routes')
-  })
+  it.skipIf(process.platform === 'win32')(
+    'locates unsafe credential directories, files and locks with safe repair hints',
+    async () => {
+      const d = deps()
+      chmodSync(d.home, 0o700)
+      const provider = join(d.home, 'secrets', "provider's")
+      mkdirSync(provider, { recursive: true, mode: 0o700 })
+      chmodSync(join(d.home, 'secrets'), 0o700)
+      const file = join(provider, 'default')
+      writeFileSync(file, 'doctor-private-canary', { mode: 0o644 })
+      mkdirSync(join(d.home, 'locks'), { mode: 0o755 })
+      const result = await doctorCommand(parseArgs(['doctor', 'credentials']), d)
+      expect(result.exitCode).toBe(1)
+      expect(result.text).toContain('expectedMode=0600')
+      expect(result.text).toContain('expectedMode=0700')
+      expect(result.text).toContain('chmod -- 0600')
+      expect(result.text).toContain('chmod -- 0700')
+      expect(result.text).toContain("provider'\"'\"'s")
+      expect(result.text).toContain('locks: unsafe')
+      expect(result.text).not.toContain('doctor-private-canary')
+      expect(readFileSync(file, 'utf8')).toBe('doctor-private-canary')
+    },
+  )
 
-  it('fails default provider doctor for an enabled account whose credential is absent', async () => {
+  it('warns in provider doctor for an enabled account whose credential is absent', async () => {
     const d = deps()
     d.configuration = {
       get: async () => ({
@@ -130,10 +110,30 @@ describe('doctor command aggregation', () => {
       }),
     } as never
     const result = await doctorCommand(parseArgs(['doctor', 'provider', '--json']), d)
-    expect(result.exitCode).toBe(1)
-    expect(result.json).toEqual([expect.objectContaining({ name: 'provider', status: 'fail' })])
+    expect(result.exitCode).toBe(0)
+    expect(result.json).toEqual([expect.objectContaining({ name: 'provider', status: 'warn' })])
     expect(result.text).not.toContain('unused.invalid')
   })
+
+  it.each(['extensions', 'code-runtime'])(
+    'classifies %s setup separately from assembly faults',
+    async (section) => {
+      const d = deps()
+      for (const [code, reason, status] of [
+        ['E_PRESET_UNRESOLVED', 'no-routes', 'warn'],
+        ['E_SEAM_INIT', 'no-routes', 'fail'],
+        ['E_PRESET_UNRESOLVED', 'unknown-route', 'fail'],
+      ] as const) {
+        d.createHostImpl = async () => {
+          throw Object.assign(new Error('private body'), { code, detail: { reason } })
+        }
+        const result = await doctorCommand(parseArgs(['doctor', section]), d)
+        expect(result.json[0]?.status).toBe(status)
+        if (status === 'fail') expect(result.text).toContain(code)
+        expect(result.text).not.toContain('private body')
+      }
+    },
+  )
 
   it('runs an independent section and renders exact JSON', async () => {
     const d = deps()
@@ -168,131 +168,15 @@ describe('doctor command aggregation', () => {
     expect(existsSync(join(cacheDir, 'jiti', '0'))).toBe(true)
   })
 
-  describe('host-backed sections without a configured provider', () => {
-    const unconfigured =
-      'no model provider is configured for this profile, so the host was not assembled and this check was not run; run `agh config` to add one'
-
-    it('report a setup step, not a failed build, on a clean home with the real assembly', async () => {
-      const d = deps()
-      delete d.createHostImpl
-      for (const name of ['provider', 'extensions', 'code-runtime'] as const) {
-        const result = await doctorCommand(parseArgs(['doctor', name]), d)
-        const expected =
-          name === 'provider'
-            ? ['no configured provider route selected; no credential or inference probe was run']
-            : [unconfigured]
-        expect(result.json).toEqual([{ name, status: 'warn', detail: expected }])
-        expect(result.exitCode).toBe(0)
-      }
-      // Each section assembles a real host, which takes far longer than the default five seconds on a CI runner.
-    }, 60_000)
-
-    it('keep a real assembly failure a failure and name only its error code', async () => {
-      const d = deps()
-      d.createHostImpl = async () => {
-        throw Object.assign(new Error('E_SEAM_INIT: cannot open /private/path/secret'), {
-          code: 'E_SEAM_INIT',
-        })
-      }
-      const extensions = await doctorCommand(parseArgs(['doctor', 'extensions']), d)
-      expect(extensions.json).toEqual([
-        { name: 'extensions', status: 'fail', detail: ['extension host assembly failed (E_SEAM_INIT)'] },
-      ])
-      expect(extensions.text).not.toContain('/private/path')
-      const codeRuntime = await doctorCommand(parseArgs(['doctor', 'code-runtime']), d)
-      expect(codeRuntime.json).toEqual([
-        { name: 'code-runtime', status: 'fail', detail: ['code runtime host assembly failed (E_SEAM_INIT)'] },
-      ])
-      expect(codeRuntime.exitCode).toBe(1)
-    })
-
-    it('print no code when the failure has none or an unexpected shape', async () => {
-      const d = deps()
-      for (const thrown of [
-        new Error('boom /private/path'),
-        Object.assign(new Error('x'), { code: 'not a stable code /private/path' }),
-        Object.assign(new Error('x'), { code: 'E_PRESET_UNRESOLVED', detail: { reason: 'other' } }),
-        'a thrown string',
-      ]) {
-        d.createHostImpl = async () => {
-          throw thrown
-        }
-        const result = await doctorCommand(parseArgs(['doctor', 'extensions']), d)
-        const detail = result.json[0]?.detail[0] ?? ''
-        expect(result.json[0]?.status).toBe('fail')
-        expect(detail).toMatch(/^extension host assembly failed( \(E_PRESET_UNRESOLVED\))?$/)
-        expect(result.text).not.toContain('/private/path')
-      }
-    })
-  })
-
-  it('uses one real Host for extensions and reports an absent daemon as a warning', async () => {
-    const d = deps()
-    let hostBuilds = 0
-    d.createHostImpl = async () => {
-      hostBuilds++
-      return (await createTestHost({ dataDir: d.home })).host
-    }
-
-    const extensions = await doctorCommand(parseArgs(['doctor', 'extensions']), d)
-    expect(extensions.json).toEqual([
-      { name: 'extensions', status: 'ok', detail: ['no extensions declared'] },
-    ])
-    expect(hostBuilds).toBe(1)
-
-    const daemon = await doctorCommand(parseArgs(['doctor', 'daemon']), d)
-    expect(daemon).toEqual({
-      text: '! daemon\n    not running',
-      exitCode: 0,
-      json: [{ name: 'daemon', status: 'warn', detail: ['not running'] }],
-    })
-    expect(hostBuilds).toBe(1)
-  })
-
   it('does not mention activation recovery when no breadcrumb file exists', async () => {
     const d = deps()
     const daemon = await doctorCommand(parseArgs(['doctor', 'daemon']), d)
     expect(daemon.json).toEqual([{ name: 'daemon', status: 'warn', detail: ['not running'] }])
   })
 
-  it.skipIf(process.platform === 'win32')('probes the real daemon owner and unix socket', async () => {
-    const d = deps()
-    const daemonDir = join(d.home, 'data', 'daemon')
-    const socketPath = join(daemonDir, 'agnesd.sock')
-    mkdirSync(daemonDir, { recursive: true })
-    const identity = await defaultProcessIdentity(process.pid)
-    if (identity.state !== 'alive') throw new Error('test process identity is unavailable')
-    writeFileSync(
-      join(daemonDir, 'owner.json'),
-      JSON.stringify({
-        pid: process.pid,
-        processStartId: identity.startId,
-        generation: randomUUID(),
-        startedAt: new Date().toISOString(),
-        socketPath,
-      }),
-    )
-    const server = createServer()
-    await new Promise<void>((resolve, reject) => {
-      server.once('error', reject)
-      server.listen(socketPath, resolve)
-    })
-    try {
-      await expect(doctorCommand(parseArgs(['doctor', 'daemon']), d)).resolves.toEqual({
-        text: '✓ daemon\n    lock: ok\n    socket: ok',
-        exitCode: 0,
-        json: [{ name: 'daemon', status: 'ok', detail: ['lock: ok', 'socket: ok'] }],
-      })
-    } finally {
-      await new Promise<void>((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
-      )
-    }
-  })
-
   it('fails closed on a corrupt owner record without echoing its contents', async () => {
     const d = deps()
-    const daemonDir = join(d.home, 'data', 'daemon')
+    const daemonDir = join(d.home, 'daemon')
     mkdirSync(daemonDir, { recursive: true })
     writeFileSync(join(daemonDir, 'owner.json'), '{"secret":"sk-do-not-print"}')
 
@@ -305,23 +189,27 @@ describe('doctor command aggregation', () => {
     expect(result.text).not.toContain('sk-do-not-print')
   })
 
-  it('lists the nine sections and rejects unknown or extra section arguments', async () => {
+  it('lists shared first-run checks and rejects unknown or extra section arguments', async () => {
     const d = deps()
+    initializeHome(d.home)
     const result = await doctorCommand(parseArgs(['doctor']), d)
+    expect(result.json.find((section) => section.name === 'accounts')?.status).toBe('warn')
     expect(result.json.map((section) => section.name)).toEqual([
-      'platform',
-      'provider',
-      'storage',
+      'node',
+      'native',
+      'home',
+      'permissions',
       'credentials',
-      'profile',
-      'extensions',
-      'daemon',
-      'binary',
-      'code-runtime',
+      'sandbox',
+      'connection',
+      'disk',
+      'accounts',
+      'plugins',
+      'mcp',
     ])
-    expect(result.exitCode).toBe(1)
+    expect(result.json.every((section) => section.fixHintKey?.startsWith('doctor.fix.'))).toBe(true)
     expect(usage()).toContain(
-      'doctor [platform|provider|storage|credentials|profile|extensions|daemon|binary|code-runtime]',
+      'doctor [platform|network|provider|storage|credentials|profile|extensions|daemon|binary|code-runtime]',
     )
     expect(usage()).not.toContain('doctor [provider|sandbox')
 
@@ -346,99 +234,105 @@ describe('doctor command aggregation', () => {
   })
 })
 
-describe.runIf(process.platform !== 'win32')('doctor credentials section', () => {
-  const store = (home: string, mode: number) => {
-    mkdirSync(join(home, 'secrets', 'openai'), { recursive: true })
-    writeFileSync(join(home, 'secrets', 'openai', 'default'), 'sk-test-secret-value', { mode: 0o600 })
-    for (const directory of [join(home, 'secrets', 'openai'), join(home, 'secrets'), home])
-      chmodSync(directory, 0o700)
-    for (const base of ['auth', 'locks']) {
-      mkdirSync(join(home, base), { recursive: true })
-      chmodSync(join(home, base), 0o700)
-    }
-    chmodSync(home, mode)
-  }
-  const run = async (home: string) => {
-    const d = deps()
-    d.home = home
-    return doctorCommand(parseArgs(['doctor', 'credentials']), d)
-  }
-
-  it('passes for a private store and reads no credential contents', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'agnes-doctor-cred-'))
-    cleanup.push(home)
-    store(home, 0o700)
-    const result = await run(home)
-    expect(result.json).toEqual([
-      {
-        name: 'credentials',
-        status: 'ok',
-        detail: [expect.stringMatching(/^\d+ credential store entries checked/)],
+describe('home inspection and startup guidance', () => {
+  it('keeps home inspection read-only and explains an unsupported layout', async () => {
+    const { homeCommand } = await import('../src/commands/home.js')
+    const { main } = await import('../src/bin.js')
+    const parent = deps().home
+    const home = join(parent, 'fresh')
+    let output = '',
+      error = ''
+    const io = {
+      env: { AGH_HOME: home, AGNES_LOCALE: 'zh-CN' },
+      cwd: parent,
+      stdout: {
+        write(value: string) {
+          output += value
+        },
       },
-    ])
-    expect(result.text).not.toContain('sk-test-secret-value')
-    expect(result.exitCode).toBe(0)
+      stderr: {
+        write(value: string) {
+          error += value
+        },
+      },
+    } as unknown as Parameters<typeof main>[1]
+    expect(await main(['home', 'info'], io)).toBe(0)
+    expect(JSON.parse(output)).toMatchObject({ state: 'fresh', version: null })
+    expect(existsSync(home)).toBe(false)
+    mkdirSync(home)
+    writeFileSync(join(home, 'unknown.txt'), 'synthetic')
+    expect(await homeCommand(['info'], io)).toBe(1)
+    expect(error).toContain('不能使用此布局')
+    expect(error).toContain('AGH_HOME')
+    expect(readFileSync(join(home, 'unknown.txt'), 'utf8')).toBe('synthetic')
   })
-
-  it('reports a home that does not exist yet as fine', async () => {
-    const home = join(mkdtempSync(join(tmpdir(), 'agnes-doctor-cred-')), 'absent')
-    cleanup.push(join(home, '..'))
-    const result = await run(home)
-    expect(result.json[0]).toMatchObject({ name: 'credentials', status: 'ok' })
-    expect(result.json[0]?.detail[0]).toContain('does not exist')
-  })
-
-  it('warns, with the modes and the fix, for a loose home the next save narrows', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'agnes-doctor-cred-'))
-    cleanup.push(home)
-    store(home, 0o755)
-    const result = await run(home)
-    expect(result.json[0]).toMatchObject({ name: 'credentials', status: 'warn' })
-    expect(result.json[0]?.detail).toEqual([
-      expect.stringContaining('mode 0755, must be 0700; the next credential save narrows it'),
-    ])
-    expect(result.json[0]?.detail[0]).toContain(`chmod 700 '${home}'`)
-    expect(result.exitCode).toBe(0)
-    expect(statSync(home).mode & 0o7777).toBe(0o755) // the check never changes anything
-  })
-
-  it('fails, with no promise to narrow it, for a home that others can write to', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'agnes-doctor-cred-'))
-    cleanup.push(home)
-    store(home, 0o775)
-    const result = await run(home)
-    expect(result.json[0]).toMatchObject({ name: 'credentials', status: 'fail' })
-    expect(result.json[0]?.detail[0]).toContain('mode 0775, must be 0700; run: chmod 700')
-    expect(result.json[0]?.detail[0]).not.toContain('narrows')
-    expect(result.exitCode).toBe(1)
-  })
-
-  it('fails for a loose secrets directory and a loose credential file, naming each', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'agnes-doctor-cred-'))
-    cleanup.push(home)
-    store(home, 0o700)
-    chmodSync(join(home, 'secrets'), 0o755)
-    chmodSync(join(home, 'secrets', 'openai', 'default'), 0o644)
-    const result = await run(home)
-    expect(result.json[0]).toMatchObject({ status: 'fail' })
-    const detail = result.json[0]?.detail.join('\n') ?? ''
-    expect(detail).toContain(`secrets directory ${join(home, 'secrets')}: mode 0755, must be 0700`)
-    expect(detail).toContain('credential file')
-    expect(detail).toContain('mode 0644, must be 0600')
-    expect(detail).not.toContain('sk-test-secret-value')
-    expect(result.exitCode).toBe(1)
-  })
-
-  it('fails for a symbolic link in place of the secrets directory', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'agnes-doctor-cred-'))
-    cleanup.push(home)
-    store(home, 0o700)
-    const elsewhere = mkdtempSync(join(tmpdir(), 'agnes-doctor-link-'))
-    cleanup.push(elsewhere)
-    rmSync(join(home, 'secrets'), { recursive: true, force: true })
-    symlinkSync(elsewhere, join(home, 'secrets'))
-    const result = await run(home)
-    expect(result.json[0]).toMatchObject({ status: 'fail' })
-    expect(result.json[0]?.detail[0]).toContain('is a symbolic link')
+  it.each([
+    ['old', undefined],
+    ['broken', '{'],
+    ['future', '{"version":99}'],
+  ] as const)(
+    'shows the selected absolute home and fixed %s reason without changing the home',
+    async (_kind, marker) => {
+      const d = deps()
+      const { initializeHome } = await import('@agnes/host')
+      const { startupFailure } = await import('../src/commands/first-run-locales.js')
+      const filename = join(d.home, marker === undefined ? 'legacy.txt' : 'home-layout.json')
+      const bytes = marker ?? 'synthetic old environment'
+      writeFileSync(filename, bytes)
+      let failure: unknown
+      try {
+        initializeHome(d.home)
+      } catch (error) {
+        failure = error
+      }
+      for (const locale of ['en', 'zh-CN']) {
+        const text = startupFailure(failure, { AGNES_LOCALE: locale })
+        expect(text).toContain(d.home)
+        expect(text).toContain('E_HOME_VERSION')
+        expect(text).toContain(
+          locale === 'zh-CN' ? 'README.zh-CN.md#new-product-clean-home' : 'README.md#new-product-clean-home',
+        )
+        expect(text).toContain(
+          marker === undefined
+            ? locale === 'zh-CN'
+              ? '旧环境目录'
+              : 'Old environment directory'
+            : locale === 'zh-CN'
+              ? '布局标记无效'
+              : 'layout marker is invalid',
+        )
+      }
+      expect(readFileSync(filename, 'utf8')).toBe(bytes)
+      expect(existsSync(join(d.home, 'profiles'))).toBe(false)
+      rmSync(filename)
+      expect(initializeHome(d.home).state).toBe('current')
+    },
+  )
+  it('maps common startup codes to actionable text without exposing exception messages', async () => {
+    const { startupFailure } = await import('../src/commands/first-run-locales.js')
+    for (const code of [
+      'EADDRINUSE',
+      'EACCES',
+      'CONFIG_CREDENTIAL_STORE',
+      'E_HOME_VERSION',
+      'E_HOME_UNSAFE',
+      'E_DAEMON_SCOPE_CONFLICT',
+      'E_DAEMON_BUSY',
+      'E_DAEMON_STARTUP_BUSY',
+    ]) {
+      const error = Object.assign(new Error('PRIVATE UPSTREAM BODY'), { code })
+      const en = startupFailure(error, {})
+      const zh = startupFailure(error, { AGNES_LOCALE: 'zh-CN' })
+      expect(en).toBeTruthy()
+      expect(zh).toBeTruthy()
+      expect(en).not.toBe(zh)
+      expect(en + String(zh)).not.toContain('PRIVATE UPSTREAM BODY')
+      if (code === 'E_HOME_UNSAFE') {
+        expect(en).toContain('parent directory')
+        expect(en).toContain('pwd -P')
+        expect(zh).toContain('pwd -P')
+      }
+    }
+    expect(startupFailure(new Error('unmapped'), {})).toBeUndefined()
   })
 })

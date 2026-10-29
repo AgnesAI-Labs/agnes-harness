@@ -1,0 +1,52 @@
+{
+  "name": "@agnes/web-conversation",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./approval-card": "./src/approval-card.ts",
+    "./approval": "./src/approval.ts",
+    "./composer": "./src/composer.ts",
+    "./computer-use-pane": "./src/computer-use-pane.tsx",
+    "./computer-use-state": "./src/computer-use-state.ts",
+    "./computer-use": "./src/computer-use.ts",
+    "./conversation-card-layout": "./src/conversation-card-layout.ts",
+    "./conversation-visibility": "./src/conversation-visibility.ts",
+    "./default-tool-cards": "./src/default-tool-cards.tsx",
+    "./document-preview": "./src/document-preview.tsx",
+    "./goal-card": "./src/goal-card.tsx",
+    "./live-projection": "./src/live-projection.ts",
+    "./markdown": "./src/markdown.tsx",
+    "./plan-mode": "./src/plan-mode.ts",
+    "./presentation": "./src/presentation.ts",
+    "./tool-icon": "./src/tool-icon.ts",
+    "./trace-panel": "./src/trace-panel.ts",
+    "./usage": "./src/usage.ts",
+    "./conversation-registry": "./src/conversation-registry.tsx",
+    "./workbench/terminal": "./src/workbench/terminal-client.ts",
+    "./workbench": "./src/workbench/register.tsx",
+    "./session-actions": "./src/registered-card.tsx",
+    "./goal-renderers": "./src/goal-renderers.ts",
+    "./interaction-renderer": "./src/intelligent-ui/mount.tsx"
+  },
+  "scripts": {
+    "test": "pnpm --dir ../.. exec vitest run packages/web-conversation/test --maxWorkers=1",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@agnes/protocol": "workspace:*",
+    "@agnes/sdk": "workspace:*",
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-foundation": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "@agnes/web-units": "workspace:*",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "vitest": "5.0.0",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1"
+  },
+  "license": "Apache-2.0"
+}

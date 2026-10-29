@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import {
@@ -6,6 +7,7 @@ import {
   isolatedEcosystem as BASE_ISOLATED_ECOSYSTEM,
   operations as BASE_OPERATIONS,
   buildCompactionPlan,
+  defaultLoopPlugin,
 } from '@agnes/base'
 import type {
   ApprovalAnswer,
@@ -16,38 +18,41 @@ import type {
   SeamWorkspace,
   Verdict,
 } from '@agnes/core'
-import {
-  defaultIds,
-  type Event,
-  inboxEvent,
-  prepareIntegrity,
-  SessionLogImpl,
-  scanAll,
-  verifyLedger,
-} from '@agnes/core'
+import { type Event, prepareIntegrity, scanAll, verifyLedger } from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
+import type { TrajectoryResolver } from '@agnes/host-artifacts/trajectory-network'
+import type { PresetDoc } from '@agnes/host-common/presets/types'
+import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import type { LockState, ProfileInputs, ResolvedProfile } from '@agnes/host-common/profile/types'
+import { MemoryPackageLoader, type PackageModule } from '@agnes/host-extensions/assemble/packages'
+import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
+import { localRealpathSync } from '@agnes/host-infrastructure/adapters/fs-io-local'
+import type { CapabilityLevel, PlatformBackend } from '@agnes/host-infrastructure/adapters/platform'
+import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
+import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
+import { type AuditEvent, type AuditSink, createMemoryAudit } from '@agnes/host-infrastructure/audit'
+import type { ProviderBuildOptions } from '@agnes/host-providers/assemble/provider'
+import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { ModelRecord, RouteDecl } from '@agnes/protocol'
-import { localRealpathSync } from '../src/adapters/fs-io-local.js'
-import type { CapabilityLevel, PlatformBackend } from '../src/adapters/platform.js'
-import { createPlatform } from '../src/adapters/platform.js'
-import { createSqliteStorage } from '../src/adapters/storage-sqlite.js'
-import { MemoryPackageLoader, type PackageModule } from '../src/assemble/packages.js'
-import type { ProviderBuildOptions } from '../src/assemble/provider.js'
-import { ASSEMBLY_STEPS, type AssemblyStep } from '../src/assemble.js'
-import { type AuditEvent, type AuditSink, createMemoryAudit } from '../src/audit.js'
-import { createHost, type Host, type HostOptions, type HostSession } from '../src/host.js'
-import type { PresetDoc } from '../src/presets/types.js'
-import { resolveProfile } from '../src/profile/resolve.js'
-import type { LockState, ProfileInputs, ResolvedProfile } from '../src/profile/types.js'
-import type { SkillRuntimeInput } from '../src/resources/skills.js'
-import type { SessionRecovery } from '../src/session.js'
-import type { TrajectoryResolver } from '../src/trajectory-network.js'
-import { attachTestSeamPlugins } from './cordis-seams.js'
+import { ASSEMBLY_STEPS, type AssemblyStep } from '../src/runtime/assemble/assemble.js'
+import { createHost, type Host, type HostOptions, type HostSession } from '../src/runtime/lifecycle/host.js'
+import type { SessionRecovery } from '../src/runtime/sessions/session.js'
+import { attachTestSeamPlugins, type TestSeamFactories, testSeams } from './cordis-seams.js'
 
-export { attachTestSeamPlugins } from './cordis-seams.js'
+export {
+  attachTestSeamPlugins,
+  baseSeamFactories,
+  seamFactories,
+  type TestSeamFactories,
+  testSeams,
+} from './cordis-seams.js'
 export type { CapturedRequest, WireApi, WireReply } from './wire-capture.js'
 export { expectExtends, renderedParts, sharedPrefix, startWireCapture } from './wire-capture.js'
 export { ASSEMBLY_STEPS, type AssemblyStep }
+
+/** Reviewed descriptors embedded by the isolated author distribution. */
+declare const AGNES_BASE_EXTENSION_MANIFESTS: NonNullable<PackageModule['embeddedExtensions']> | undefined
+declare const AGNES_CODE_EXTENSION_MANIFESTS: NonNullable<PackageModule['embeddedExtensions']> | undefined
 
 const ROUTE: RouteDecl = {
   route: 'gw',
@@ -103,13 +108,11 @@ const log = { debug() {}, info() {}, warn() {}, error() {} }
 const SEAM_KEYS = [
   'approval',
   'checkpoint',
-  'ledger',
-  'sandbox',
+  'billing',
   'verifier',
   'repair',
   'artifacts',
   'principals',
-  'harness',
 ] as const
 
 // A backend built from the fields it needs, not spread from a real one: spreading copies methods
@@ -130,6 +133,8 @@ function fakePlatform(caps: Record<string, CapabilityLevel['level']>): PlatformB
     terminal: () => ({ color: false }),
     async probe() {},
     recordSandboxBackend() {},
+    // The test states the capabilities, so they count as measured.
+    sandboxProbed: () => true,
     killTree() {},
     capability: level,
     snapshot: () => ({ os: real.os, arch: 'x64', capabilities: caps }),
@@ -137,10 +142,13 @@ function fakePlatform(caps: Record<string, CapabilityLevel['level']>): PlatformB
 }
 
 export type TestHostOptions = {
+  /** Recorded on the host.assembling/host.ready audit rows only. */
+  assemblyCause?: import('../src/runtime/assemble/assembly-deps.js').AssemblyCause
   /** Opt out of the production publisher view in tests that deliberately exercise raw Kernel ports. */
   currentRuntime?: import('@agnes/core').KernelOptions['currentRuntime']
-  serviceAuthority?: import('../src/ext-host/service-invocation.js').ServiceAuthority
+  serviceAuthority?: import('@agnes/host-extensions/ext-host/service-invocation').ServiceAuthority
   dataDir: string
+  workspaceRoot?: string
   /** Builtin template loaded by the real resolver; omitted uses local-dev. */
   template?: string
   /** Exact lock state; omitted supplies the test packages, never merged into an explicit lock. */
@@ -156,6 +164,10 @@ export type TestHostOptions = {
   platformCaps?: Record<string, CapabilityLevel['level']>
   platform?: PlatformBackend
   seams?: Parameters<typeof fakeSeams>[0]
+  /** Real factories for seams whose adapter integration the fixture exercises. */
+  seamFactories?: TestSeamFactories
+  /** Replaces the fake sandbox shell, e.g. with the production `createSandboxSeam()`. */
+  sandboxSeam?: SandboxSeam
   /**
    * The model this host runs on. A function is handed the resolved profile and the pair host
    * resolved for the model layer - its logger and the deployment's credit rate - which is the only
@@ -165,18 +177,11 @@ export type TestHostOptions = {
   provider?: Provider | ((p: ResolvedProfile, o: ProviderBuildOptions) => Provider)
   /** Profile `limits` this host resolves with, e.g. the deployment's `cost.credits_per_usd`. */
   limits?: Record<string, number>
-  /**
-   * The profile's `attachments.storeByReference`. On unless a case turns it off, so attachments a
-   * case sends are stored by reference and read back from the store, as a new install does.
-   */
-  storeAttachmentsByReference?: boolean
-  /** The trusted request-media port a worker assembles in production; omitted, a test host has none. */
-  requestMedia?: HostOptions['requestMedia']
   script?: ConstructorParameters<typeof ScriptedProvider>[0]['scripts']
   // One argument, matching ApprovalSeam.ask. The brief wrote `(req, opts)`; core's seam takes the
   // request alone and carries the deadline on the request, so a two-argument override would have
   // been handed an undefined it then had to guess about.
-  approval?: (req: ApprovalRequest) => Promise<Verdict | ApprovalAnswer>
+  approval?: (req: ApprovalRequest) => ReturnType<SeamImplementations['approval']['ask']>
   // Whoever is connected, from the assembly's point of view. It reaches a seam through
   // SeamAdapters.prompter, so it means nothing to the faked approval seam above - that one answers
   // on its own - and everything to a case that installs a real one. Without it, a real approval
@@ -191,9 +196,9 @@ export type TestHostOptions = {
   /** Private daemon-owned Skill view, for asserting the production Host request path. */
   mcpManage?: HostOptions['mcpManage']
   pluginManage?: HostOptions['pluginManage']
-  /** The daemon bridge for the bundled batch tools, as the session worker supplies it. */
-  batch?: HostOptions['batch']
+  scheduling?: HostOptions['scheduling']
   skillResources?: SkillRuntimeInput
+  skillContribution?: HostOptions['skillContribution']
   // A seam with a close(), so a test can watch the teardown run instead of reading an audit line
   // that claims it did. It lands on the rollback stack like every other seam close.
   onSeamClose?: () => void
@@ -203,8 +208,11 @@ export type TestHostOptions = {
   packageDirs?: Record<string, string>
   // Installed third-party snapshots a later runtime target may name, and the importer that serves them.
   runtimePluginCatalogue?: HostOptions['runtimePluginCatalogue']
+  runtimePluginSnapshots?: HostOptions['runtimePluginSnapshots']
   // Installed snapshots re-read before every target, the way a worker supplies them in production.
   runtimePluginSources?: HostOptions['runtimePluginSources']
+  deferInitialGeneration?: HostOptions['deferInitialGeneration']
+  restoreGenerationExtension?: HostOptions['restoreGenerationExtension']
   ordinaryStartTimeoutMs?: HostOptions['ordinaryStartTimeoutMs']
   extensionLoader?: HostOptions['extensionLoader']
   // Per-extension isolation policy and the services that stand in for the sandbox runtime.
@@ -215,7 +223,7 @@ export type TestHostOptions = {
   // the assembled system prompt above all - has to hand the real table in, and until this option
   // existed there was no way to. Keyed by package id; an overlay replaces only the fields it names,
   // and the id is not overridable because the loader is keyed by it.
-  packages?: Record<string, Omit<Partial<PackageModule>, 'id'>>
+  packages?: Record<string, Omit<Partial<PackageModule>, 'id' | 'seams'> & { seams?: TestSeamFactories }>
   /** Forwarded to `createHost` — see its own doc comment for why a case would set this. */
   disableSessionTitle?: boolean
 }
@@ -261,8 +269,8 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
     ...seamsImpl.sandbox,
     forWorkspace,
     ...(!configuredSandbox && {
-      // The canonical root, resolved lazily: dataDir may not exist until the adapters open, and
-      // the bound fence compares canonical spellings, so the policy must name the real one.
+      // Resolve the canonical root after fixture bootstrap: the bound fence compares canonical
+      // spellings, so the policy must name the real one.
       fsPolicy: () => {
         const policy = testFsPolicy('/workspace')
         const workspaceRoot = localRealpathSync(o.dataDir)
@@ -279,17 +287,37 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
   if (approval) seamsImpl.approval = { ...seamsImpl.approval, ask: (req) => approval(req) }
   const prompter = o.prompter ?? (async () => 'unavailable' as Verdict)
   if (o.onSeamClose)
-    seamsImpl.harness = { ...seamsImpl.harness, close: o.onSeamClose } as SeamImplementations['harness']
+    seamsImpl.repair = { ...seamsImpl.repair, close: o.onSeamClose } as SeamImplementations['repair']
   const base: PackageModule = {
     id: '@agnes/base',
+    ...(typeof AGNES_BASE_EXTENSION_MANIFESTS === 'undefined'
+      ? {}
+      : { embeddedExtensions: AGNES_BASE_EXTENSION_MANIFESTS }),
+    plugins: [
+      {
+        declaration: {
+          export: 'defaultLoopPlugin',
+          id: 'loop:agnes.default',
+          apiRange: '^5.0.0',
+          default: true,
+          inject: ['loops'],
+          provide: [],
+          runtime: 'in-process',
+        },
+        entry: normalizePluginExport(defaultLoopPlugin),
+      },
+    ],
+    // Simulated isolation matches fakePlatform's full capability, independently of the test host OS.
+    sandboxImplementation: () => 'implemented',
     sandboxWorkspaceProbe: async () => ({
+      implementation: 'implemented',
+      probeState: 'ready',
       name: 'bwrap',
       execBackend: 'l1',
       enforcement: { level: 'full', scope: ['file', 'network', 'process'] },
       degraded: false,
       confine: ({ argv }) => argv,
     }),
-    seams: Object.fromEntries(SEAM_KEYS.map((n) => [n, async () => seamsImpl[n]])),
     operations: BASE_OPERATIONS,
     presets: {
       base:
@@ -304,8 +332,15 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
     isolatedEcosystem: BASE_ISOLATED_ECOSYSTEM,
     buildCompactionPlan,
   }
+  Object.assign(testSeams(base), {
+    ...Object.fromEntries(SEAM_KEYS.map((n) => [n, async () => seamsImpl[n]])),
+    ...o.seamFactories,
+  })
   const code: PackageModule = {
     id: '@agnes/code',
+    ...(typeof AGNES_CODE_EXTENSION_MANIFESTS === 'undefined'
+      ? {}
+      : { embeddedExtensions: AGNES_CODE_EXTENSION_MANIFESTS }),
     operations: {},
     presets: { standard: STANDARD_PRESET, ...(o.presets ?? {}) },
   }
@@ -313,7 +348,13 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
   const packages = Object.fromEntries(
     ids.map((id) => [
       id,
-      { version: '0.1.0', integrity: 'sha512-fixture', trust: 'builtin' as const, enabled: true },
+      {
+        version: '0.1.0',
+        source: { type: 'builtin', ref: 'builtin' },
+        integrity: 'builtin:0.1.0',
+        trust: 'builtin' as const,
+        enabled: true,
+      },
     ]),
   )
   const template = o.template ?? 'local-dev'
@@ -324,17 +365,16 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
       lock: o.lock ?? { packages },
       user: {
         name: template,
-        ...(o.allowed ? { presets: { allowed: o.allowed } } : {}),
-        provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
+        // This synthetic package provides only standard; product templates list more recipes.
+        presets: { default: 'standard', allowed: o.allowed ?? ['standard'] },
+        provider: { package: '@agnes/ai', routes: [ROUTE] },
         ...(o.limits ? { limits: o.limits } : {}),
-        attachments: { storeByReference: o.storeAttachmentsByReference ?? true },
         ...o.profileInputs?.user,
         ...(o.contract !== undefined
           ? {
               provider: {
                 ...(o.profileInputs?.user?.provider ?? {
                   package: '@agnes/ai',
-                  adapters: ['@agnes/ai'],
                   routes: [ROUTE],
                 }),
                 contract: o.contract,
@@ -362,39 +402,59 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
     // `seams` merges by seam name rather than replacing the whole map. A case that wants one real
     // seam factory in an otherwise faked assembly would otherwise have to restate the other eight,
     // and a restated fake is one that drifts from the one every other case runs against.
-    const seams = over.seams ? { ...modules[id]?.seams, ...over.seams } : modules[id]?.seams
-    modules[id] = { ...(modules[id] as PackageModule), ...over, ...(seams ? { seams } : {}), id }
+    const { seams: overSeams, ...rest } = over
+    const previous = modules[id] as PackageModule
+    const next: PackageModule = { ...previous, ...rest, id }
+    Object.assign(testSeams(next), testSeams(previous), overSeams)
+    modules[id] = next
   }
-  for (const module of Object.values(modules)) if (module.seams) attachTestSeamPlugins(module)
+  for (const module of Object.values(modules)) attachTestSeamPlugins(module)
   const loader = new MemoryPackageLoader(modules)
+  const profileDir = join(o.dataDir, 'profiles', template)
+  // Match daemon bootstrap independently of whether the checkpoint creates a SQLite directory.
+  await mkdir(profileDir, { recursive: true, mode: 0o700 })
   const host = await createHost(profile, {
+    ...(o.assemblyCause ? { assemblyCause: o.assemblyCause } : {}),
     dataDir: o.dataDir,
-    packageDirs: new Map(ids.map((id) => [id, o.packageDirs?.[id] ?? o.dataDir])),
-    profileDir: `${o.dataDir}/profiles/${template}`,
-    workspaceRoot: o.dataDir,
+    packageDirs: new Map([
+      ...ids.map((id) => [id, o.packageDirs?.[id] ?? o.dataDir] as const),
+      ...Object.entries(o.packageDirs ?? {}),
+    ]),
+    profileDir,
+    workspaceRoot: o.workspaceRoot ?? o.dataDir,
     homeDir: o.dataDir,
     hostRoot: process.cwd(),
     loader,
     log,
     platform: o.platform ?? fakePlatform(o.platformCaps ?? {}),
+    sandboxSeam: o.sandboxSeam ?? seamsImpl.sandbox,
     agnesVersion: '0.1.0',
     env: o.env ?? { ...process.env },
     ...(o.serviceAuthority ? { serviceAuthority: o.serviceAuthority } : {}),
     ...(o.runtimePluginCatalogue ? { runtimePluginCatalogue: o.runtimePluginCatalogue } : {}),
-    ...(o.runtimePluginSources ? { runtimePluginSources: o.runtimePluginSources } : {}),
+    ...(o.runtimePluginSnapshots ? { runtimePluginSnapshots: o.runtimePluginSnapshots } : {}),
+    ...(o.deferInitialGeneration ? { deferInitialGeneration: true } : {}),
+    // A lockless host trusts a package only when the live source re-read returns that same snapshot.
+    // The catalogue is that re-read unless the test supplies its own.
+    ...(o.runtimePluginSources
+      ? { runtimePluginSources: o.runtimePluginSources }
+      : o.runtimePluginCatalogue
+        ? { runtimePluginSources: async () => o.runtimePluginCatalogue ?? [] }
+        : {}),
     ...(o.ordinaryStartTimeoutMs === undefined ? {} : { ordinaryStartTimeoutMs: o.ordinaryStartTimeoutMs }),
     ...(o.extensionLoader ? { extensionLoader: o.extensionLoader } : {}),
     ...(o.extensionIsolation ? { extensionIsolation: o.extensionIsolation } : {}),
     ...(o.pluginManage ? { pluginManage: o.pluginManage } : {}),
+    ...(o.scheduling ? { scheduling: o.scheduling } : {}),
     ...(o.mcpManage ? { mcpManage: o.mcpManage } : {}),
-    ...(o.batch ? { batch: o.batch } : {}),
     ...(o.extensionIsolationServices ? { extensionIsolationServices: o.extensionIsolationServices } : {}),
     ...(o.skillResources ? { skillResources: o.skillResources } : {}),
+    ...(o.skillContribution ? { skillContribution: o.skillContribution } : {}),
+    ...(o.restoreGenerationExtension ? { restoreGenerationExtension: o.restoreGenerationExtension } : {}),
     ...(o.trajectoryFetch ? { trajectoryFetch: o.trajectoryFetch } : {}),
     ...(o.trajectoryResolver ? { trajectoryResolver: o.trajectoryResolver } : {}),
     ...(o.disableSessionTitle ? { disableSessionTitle: true } : {}),
     ...(o.currentRuntime ? { currentRuntime: o.currentRuntime } : {}),
-    ...(o.requestMedia ? { requestMedia: o.requestMedia } : {}),
     // Omission exercises production buildProvider. A script explicitly requests the test model.
     ...(o.provider !== undefined || o.script !== undefined
       ? {
@@ -636,123 +696,4 @@ export async function appendRowAsOlderBuild(
   }
 }
 
-/**
- * Writes inbox rows to a stored session the way a build that queued attachments inline did: each
- * snapshot is the whole queue at that moment, one row per snapshot, and every item carries its
- * content block list as given. The session's next turn then claims the first item and copies it
- * into the ledger, so the same bytes sit in several rows. The session must be closed.
- */
-export async function appendInboxRowsAsOlderBuild(
-  dataDir: string,
-  key: string,
-  snapshots: ReadonlyArray<ReadonlyArray<{ content: unknown[] }>>,
-): Promise<void> {
-  const storage = createSqliteStorage({
-    file: join(dataDir, 'sessions.db'),
-    tablesDir: join(dataDir, 'older-build'),
-  })
-  try {
-    const log = await SessionLogImpl.open({
-      storage,
-      key,
-      writerRunId: 'older-build',
-      ttlMs: 60_000,
-      ids: defaultIds(),
-      clock: () => Date.now(),
-      timers: {
-        setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
-        clearTimeout: (t) => globalThis.clearTimeout(t as never),
-      },
-    })
-    try {
-      const [last] = await storage.scan(key, { fromSeq: log.lastSeq, toSeq: log.lastSeq, limit: 1 })
-      if (!last) throw new Error(`session ${key} has no rows`)
-      for (const snapshot of snapshots)
-        await log.append([
-          inboxEvent('main', last.actor, {
-            items: snapshot.map((item, index) => ({
-              itemId: `older-build-${index}`,
-              target: 'next-turn' as const,
-              content: item.content as never,
-              actor: last.actor,
-              kind: 'follow_up' as const,
-              commandId: `older-build-${index}`,
-              enqueuedAt: new Date().toISOString(),
-            })),
-          }),
-        ])
-    } finally {
-      await log.close()
-    }
-  } finally {
-    await storage.close()
-  }
-}
-
-/**
- * Writes one turn that was claimed from the queue and answered, the way a build that copied queued
- * content into the ledger left it: the claim empties the queue, the content becomes the user message
- * as given, and the turn runs to its end. The queue must already hold the item (see
- * `appendInboxRowsAsOlderBuild`), `turn` is the number this turn takes, and the session must be closed.
- */
-export async function appendClaimedTurnAsOlderBuild(
-  dataDir: string,
-  key: string,
-  o: { turn: number; content: unknown[]; answer: string },
-): Promise<void> {
-  const storage = createSqliteStorage({
-    file: join(dataDir, 'sessions.db'),
-    tablesDir: join(dataDir, 'older-build'),
-  })
-  try {
-    const log = await SessionLogImpl.open({
-      storage,
-      key,
-      writerRunId: 'older-build',
-      ttlMs: 60_000,
-      ids: defaultIds(),
-      clock: () => Date.now(),
-      timers: {
-        setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
-        clearTimeout: (t) => globalThis.clearTimeout(t as never),
-      },
-    })
-    try {
-      const [last] = await storage.scan(key, { fromSeq: log.lastSeq, toSeq: log.lastSeq, limit: 1 })
-      if (!last) throw new Error(`session ${key} has no rows`)
-      const system = { origin: 'system', trust: 'trusted', actor: last.actor, lane: 'main' } as const
-      const assistantSeq = log.lastSeq + 5
-      await log.append([
-        inboxEvent('main', last.actor, { items: [] }),
-        {
-          type: 'user/message',
-          origin: 'principal',
-          trust: 'trusted',
-          actor: last.actor,
-          lane: 'main',
-          data: { content: o.content, kind: 'follow_up' },
-        },
-        { type: 'turn/start', ...system, data: { turn: o.turn, trigger: 'follow_up' } },
-        { type: 'step/start', ...system, data: { turn: o.turn, step: 1 } },
-        {
-          type: 'assistant/message',
-          origin: 'model',
-          trust: 'trusted',
-          actor: last.actor,
-          lane: 'main',
-          data: { content: [{ type: 'text', text: o.answer }], stopReason: 'end_turn' },
-        },
-        { type: 'step/end', ...system, data: { turn: o.turn, step: 1 } },
-        {
-          type: 'turn/end',
-          ...system,
-          data: { reason: 'completed', lastAssistantSeq: assistantSeq },
-        },
-      ] as never)
-    } finally {
-      await log.close()
-    }
-  } finally {
-    await storage.close()
-  }
-}
+export { createPluginTestRegistration } from './plugin-registration.js'

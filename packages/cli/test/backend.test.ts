@@ -1,15 +1,23 @@
 import type { ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import type { DaemonDiscovery, DaemonScope } from '@agnes/daemon'
 import * as daemon from '@agnes/daemon'
 import * as host from '@agnes/host'
-import type { Client } from '@agnes/sdk'
+import type { Client, CreateClientOptions } from '@agnes/sdk'
+import * as sdk from '@agnes/sdk'
+import { createPrivateFileSync } from '@agnes/system-node'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import * as sources from '../../package-manager/src/sources.js'
+import { ensureLocalBackend as ensureWebBackend } from '../launch/backend.js'
 import type { LaunchResources } from '../launch/resources.js'
-import { ensureLocalBackend, type SpawnDaemonInput } from '../src/boot/backend.js'
+import { parseArgs } from '../src/args.js'
+import { ensureLocalBackend, resolveLocalControlScope, type SpawnDaemonInput } from '../src/boot/backend.js'
+import * as connection from '../src/boot/connection-scope.js'
+import { bootDefault } from '../src/boot/default.js'
+import { STARTUP_DIAGNOSTIC_ENV } from '../src/boot/startup-diagnostic.js'
 import { BootError } from '../src/errors.js'
 
 const TEST_RESOURCES = {
@@ -31,6 +39,16 @@ vi.mock('@agnes/daemon', async (importOriginal) => {
     resolveDaemonScope: vi.fn(),
     stopDaemon: vi.fn(),
   }
+})
+
+vi.mock('@agnes/sdk', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@agnes/sdk')>()
+  return { ...actual, createClient: vi.fn(actual.createClient) }
+})
+
+vi.mock('../src/boot/connection-scope.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/boot/connection-scope.js')>()
+  return { ...actual, connectionScope: vi.fn(), validateConnectionSocket: vi.fn() }
 })
 
 vi.mock('@agnes/host', async (importOriginal) => {
@@ -106,13 +124,13 @@ function fakeChild(pid = 123): FakeChild {
 
 function fakeClient(
   overrides: Partial<{
-    initialize: () => Promise<void>
+    initialize: () => Promise<unknown>
     configGet: () => Promise<unknown>
     apis: () => Promise<unknown>
   }> = {},
 ): Client {
   return {
-    initialize: overrides.initialize ?? (async () => undefined),
+    initialize: overrides.initialize ?? (async () => ({ agnesVersion: '0.0.0-test' })),
     config: { get: overrides.configGet ?? (async () => ({ profile: scope.profile })) },
     apis: overrides.apis ?? (async () => ({ profile: { name: scope.profile } })),
     close: vi.fn(async () => undefined),
@@ -121,6 +139,8 @@ function fakeClient(
 
 function setupMocks(): void {
   vi.clearAllMocks()
+  vi.mocked(connection.connectionScope).mockResolvedValue(scope)
+  vi.mocked(connection.validateConnectionSocket).mockResolvedValue(undefined)
   vi.mocked(host.defaultProcessIdentity).mockImplementation(async (pid) => ({
     state: 'alive',
     startId: `start-${pid}`,
@@ -152,6 +172,158 @@ beforeEach(() => {
 })
 
 describe('ensureLocalBackend', () => {
+  it.each([true, false])('resolves control scope without starting a daemon (ready=%s)', async (ready) => {
+    vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(ready ? descriptor() : null)
+    await expect(resolveLocalControlScope()).resolves.toEqual(scope)
+    expect(daemon.resolveDaemonScope).toHaveBeenCalledTimes(ready ? 0 : 1)
+    expect(daemon.acquireDaemonStartup).not.toHaveBeenCalled()
+  })
+  it.each([['sessions', '--json'], ['config'], ['tools'], ['mcp', 'status', 'example'], []])(
+    'attaches %j without full preparation and performs the authenticated readiness proof',
+    async (...argv) => {
+      const root = mkdtempSync(join(tmpdir(), 'agh-cli-light-'))
+      const actualDaemon = await vi.importActual<typeof import('@agnes/daemon')>('@agnes/daemon')
+      const actualConnection = await vi.importActual<typeof import('../src/boot/connection-scope.js')>(
+        '../src/boot/connection-scope.js',
+      )
+      vi.mocked(daemon.resolveDaemonScope).mockImplementation(actualDaemon.resolveDaemonScope)
+      vi.mocked(connection.connectionScope).mockImplementation(actualConnection.connectionScope)
+      const hash = vi.spyOn(sources, 'hashDirectory')
+      const prepare = vi.spyOn(host, 'resolveProfile')
+      vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(descriptor())
+      const initialize = vi.fn(async () => ({ agnesVersion: '0.0.0-test' }))
+      const configGet = vi.fn(async () => ({}))
+      const apis = vi.fn(async () => ({ profile: { name: scope.profile } }))
+      const client = fakeClient({ initialize, configGet, apis })
+      const createClientImpl = vi.fn(() => client)
+      const booted = await bootDefault(parseArgs(argv), {
+        home: root,
+        cwd: root,
+        env: {},
+        agnesVersion: '0.0.0-test',
+        log() {},
+        createClientImpl,
+      })
+      expect(
+        vi.mocked(daemon.resolveDaemonScope).mock.calls.every(([options]) => options?.dataDir !== undefined),
+      ).toBe(true)
+      expect(hash).not.toHaveBeenCalled()
+      expect(prepare).not.toHaveBeenCalled()
+      expect(daemon.acquireDaemonStartup).not.toHaveBeenCalled()
+      expect(connection.validateConnectionSocket).toHaveBeenCalledWith(descriptor().socketPath)
+      // The readiness client is the session connection: one client, one initialize.
+      expect(createClientImpl).toHaveBeenCalledOnce()
+      expect(initialize).toHaveBeenCalledOnce()
+      expect(booted.client).toBe(client)
+      expect(configGet).toHaveBeenCalled()
+      expect(apis).toHaveBeenCalled()
+      expect(client.close).not.toHaveBeenCalled()
+      await booted.close()
+      expect(client.close).toHaveBeenCalledOnce()
+      rmSync(root, { recursive: true, force: true })
+    },
+  )
+
+  it.each(['absent', 'unhealthy', 'incompatible'] as const)(
+    'starts or refuses an %s daemon, re-resolving the full scope only when one answered',
+    async (state) => {
+      if (state !== 'absent') vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(descriptor())
+      const initialize =
+        state === 'unhealthy'
+          ? async () => {
+              throw new Error('unhealthy endpoint')
+            }
+          : async () => ({ agnesVersion: 'older' })
+      const spawnDaemon = vi.fn(() => {
+        vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(descriptor())
+        return fakeChild()
+      })
+      const result = ensureLocalBackend({
+        preparation: 'connect-first',
+        agnesVersion: '0.0.0-test',
+        resources: TEST_RESOURCES,
+        createClientImpl: () => (state === 'absent' ? fakeClient() : fakeClient({ initialize })),
+        spawnDaemon,
+      })
+      if (state === 'absent') await expect(result).resolves.toBeDefined()
+      else
+        await expect(result).rejects.toThrow(
+          state === 'incompatible' ? /version.*stop\/restart/ : /unhealthy/,
+        )
+      // An absent daemon reuses the connect-first identity; its own startup resolves the profile.
+      expect(daemon.resolveDaemonScope).toHaveBeenCalledTimes(state === 'absent' ? 0 : 1)
+      expect(daemon.stopDaemon).not.toHaveBeenCalled()
+      expect(spawnDaemon).toHaveBeenCalledTimes(state === 'absent' ? 1 : 0)
+    },
+  )
+
+  it('cold-starts with one scope resolution and one client', async () => {
+    const initialize = vi.fn(async () => ({ agnesVersion: '0.0.0-test' }))
+    const client = fakeClient({ initialize })
+    const createClientImpl = vi.fn((_options: CreateClientOptions) => client)
+    const spawnDaemon = vi.fn(() => {
+      vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(descriptor())
+      return fakeChild()
+    })
+    const booted = await bootDefault(
+      parseArgs(['sessions']),
+      {
+        home: scope.home,
+        cwd: '/tmp/agnes-test-cwd',
+        env: { AGNES_LOCALE: 'zh-CN' },
+        agnesVersion: '0.0.0-test',
+        log() {},
+        createClientImpl,
+      },
+      { backend: { resources: TEST_RESOURCES, spawnDaemon } },
+    )
+    expect(connection.connectionScope).toHaveBeenCalledOnce()
+    expect(daemon.resolveDaemonScope).not.toHaveBeenCalled()
+    expect(spawnDaemon).toHaveBeenCalledOnce()
+    expect(createClientImpl).toHaveBeenCalledOnce()
+    // The discovered address reaches the SDK unchanged, with session (not readiness) options.
+    const options = createClientImpl.mock.calls[0]?.[0]
+    expect(options).toMatchObject({
+      transport: { kind: 'unix', path: descriptor().socketPath },
+      locale: 'zh-CN',
+    })
+    expect(options).not.toHaveProperty('timeouts')
+    expect(initialize).toHaveBeenCalledOnce()
+    expect(booted.client).toBe(client)
+    expect(booted.resolvedProfileHash).toBe('profile-hash-1')
+    await booted.close()
+  })
+
+  it('closes the readiness client after a serve cold start', async () => {
+    const discovery = descriptor({ web: { url: 'ws://127.0.0.1:49100', origin: 'http://127.0.0.1:4180' } })
+    const client = fakeClient()
+    vi.mocked(sdk.createClient).mockReturnValueOnce(client)
+    vi.spyOn(host, 'spawnDetachedProcess').mockImplementation(() => {
+      vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(discovery)
+      return fakeChild() as unknown as host.DetachedChild
+    })
+    const backend = await ensureWebBackend({
+      env: {},
+      workspace: '/tmp/agnes-test-cwd',
+      webOrigin: 'http://127.0.0.1:4180',
+      webPort: 4180,
+      resources: TEST_RESOURCES,
+    })
+    // Web keeps no SDK client: the readiness client is closed, not retained.
+    expect(backend.client).toBeUndefined()
+    expect(client.close).toHaveBeenCalledOnce()
+  })
+
+  it('refuses unsafe sockets before initializing or sending configuration requests', async () => {
+    vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(descriptor())
+    vi.mocked(connection.validateConnectionSocket).mockRejectedValue(new BootError('unsafe socket'))
+    const createClientImpl = vi.fn(() => fakeClient())
+    await expect(ensureLocalBackend({ preparation: 'connect-first', createClientImpl })).rejects.toThrow(
+      'unsafe socket',
+    )
+    expect(createClientImpl).not.toHaveBeenCalled()
+  })
+
   it.skipIf(process.platform === 'win32')(
     'reports unsafe short directory before spawning, but still reuses a live discovery',
     async () => {
@@ -195,6 +367,24 @@ describe('ensureLocalBackend', () => {
       expect(daemon.readDaemonWebCredential).not.toHaveBeenCalled()
     },
   )
+
+  it('names the missing native helper when the daemon owner cannot be identified', async () => {
+    const refusal = (reason: string) =>
+      Object.assign(new Error('daemon discovery owner identity is unavailable'), {
+        code: 'E_DAEMON_DISCOVERY',
+        reason,
+      })
+    vi.mocked(daemon.readDaemonDiscovery).mockRejectedValue(refusal('helper unavailable'))
+    await expect(ensureLocalBackend({ createClientImpl: () => fakeClient() })).rejects.toThrow(
+      'pnpm --filter @agnes/host build:native',
+    )
+    // Any other cause keeps the plain refusal: the hint would send people the wrong way.
+    vi.mocked(daemon.readDaemonDiscovery).mockRejectedValue(refusal('EPERM'))
+    const other = await ensureLocalBackend({ createClientImpl: () => fakeClient() }).catch((e: Error) => e)
+    expect((other as Error).message).toBe(
+      'local daemon discovery read failed: daemon discovery owner identity is unavailable',
+    )
+  })
 
   it('does not relax an explicit Web origin to the discovered one', async () => {
     vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(
@@ -301,87 +491,6 @@ describe('ensureLocalBackend', () => {
       }
     },
   )
-  describe('a daemon child that exits before it is ready', () => {
-    const exits = (reason: string | undefined, code = 1) =>
-      vi.fn((input: SpawnDaemonInput) => {
-        const child = fakeChild()
-        const file = input.env.AGNES_DAEMON_STARTUP_REPORT
-        setTimeout(() => {
-          if (reason !== undefined && file !== undefined) writeFileSync(file, reason)
-          child.emit('exit', code, null)
-        }, 5)
-        return child
-      })
-
-    it('says why in the error, from the file the launcher gave it', async () => {
-      const spawnDaemon = exits('Private directory validation failed')
-      await expect(
-        ensureLocalBackend({
-          resources: TEST_RESOURCES,
-          spawnDaemon,
-          readinessTimeoutMs: 2_000,
-          readinessPollMs: 3,
-        }),
-      ).rejects.toThrow('daemon child exited before readiness (1): Private directory validation failed')
-    })
-
-    it('removes the file and its directory once startup has failed, and also once it has succeeded', async () => {
-      const seen: string[] = []
-      const failing = exits('boom')
-      const record = (spawn: (input: SpawnDaemonInput) => FakeChild) =>
-        vi.fn((input: SpawnDaemonInput) => {
-          seen.push(input.env.AGNES_DAEMON_STARTUP_REPORT ?? '')
-          return spawn(input)
-        })
-      await expect(
-        ensureLocalBackend({
-          resources: TEST_RESOURCES,
-          spawnDaemon: record(failing),
-          readinessTimeoutMs: 2_000,
-          readinessPollMs: 3,
-        }),
-      ).rejects.toThrow(/exited before readiness/)
-      await ensureLocalBackend({
-        resources: TEST_RESOURCES,
-        spawnDaemon: record(() => {
-          vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(descriptor())
-          return fakeChild()
-        }),
-        createClientImpl: () => fakeClient(),
-      })
-      expect(seen).toHaveLength(2)
-      for (const file of seen) {
-        expect(file).not.toBe('')
-        expect(existsSync(dirname(file))).toBe(false)
-      }
-    })
-
-    it('keeps the old message when the child left no reason', async () => {
-      await expect(
-        ensureLocalBackend({
-          resources: TEST_RESOURCES,
-          spawnDaemon: exits(undefined, 7),
-          readinessTimeoutMs: 2_000,
-          readinessPollMs: 3,
-        }),
-      ).rejects.toThrow(/daemon child exited before readiness \(7\)$/)
-    })
-
-    it('shows the reason as one bounded line, however the child wrote it', async () => {
-      const spawnDaemon = exits(`first line\n\u001b[31mred\u0000 ${'x'.repeat(2_000)}`)
-      const error = (await ensureLocalBackend({
-        resources: TEST_RESOURCES,
-        spawnDaemon,
-        readinessTimeoutMs: 2_000,
-        readinessPollMs: 3,
-      }).catch((caught: unknown) => caught)) as Error
-      expect(error.message).toMatch(/exited before readiness \(1\): first line .*red x+…$/)
-      // biome-ignore lint/suspicious/noControlCharactersInRegex: finding one is the point of the check
-      expect(error.message).not.toMatch(/[\u0000-\u001f]/)
-      expect(error.message.length).toBeLessThan(460)
-    })
-  })
-
   it('fails within the finite startup deadline and cleans up its child', async () => {
     const child = fakeChild()
     const spawnDaemon = vi.fn((_input: SpawnDaemonInput) => child)
@@ -400,6 +509,39 @@ describe('ensureLocalBackend', () => {
     expect(spawnDaemon).toHaveBeenCalledOnce()
     expect(child.kill).toHaveBeenCalledWith('SIGTERM')
     expect(vi.mocked(daemon.acquireDaemonStartup).mock.results[0]?.value.release).toHaveBeenCalledOnce()
+  })
+
+  it('attaches to a daemon of the trusted scope without resolving a scope or ever spawning one', async () => {
+    const discovery = descriptor({ web: { url: 'ws://127.0.0.1:49101', origin: 'http://127.0.0.1:4180' } })
+    vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(discovery)
+    vi.mocked(daemon.readDaemonWebCredential).mockResolvedValue('web-token')
+    vi.mocked(sdk.createClient).mockReturnValueOnce(fakeClient())
+    const spawnDaemon = vi.fn()
+    const backend = await ensureLocalBackend({
+      attach: { scope },
+      webOrigin: 'http://127.0.0.1:4180',
+      resources: TEST_RESOURCES,
+      spawnDaemon,
+    })
+    expect(backend.web?.url).toBe('ws://127.0.0.1:49101')
+    expect(daemon.resolveDaemonScope).not.toHaveBeenCalled()
+    expect(spawnDaemon).not.toHaveBeenCalled()
+  })
+
+  it('waits for a missing daemon only until the deadline when attaching, and never starts one', async () => {
+    vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(null)
+    const spawnDaemon = vi.fn()
+    await expect(
+      ensureLocalBackend({
+        attach: { scope },
+        resources: TEST_RESOURCES,
+        spawnDaemon,
+        readinessTimeoutMs: 30,
+        readinessPollMs: 3,
+      }),
+    ).rejects.toThrow(/did not become ready/)
+    expect(spawnDaemon).not.toHaveBeenCalled()
+    expect(daemon.acquireDaemonStartup).not.toHaveBeenCalled()
   })
 
   it('honours an abort during startup and terminates only its child', async () => {
@@ -493,47 +635,90 @@ describe('ensureLocalBackend', () => {
     expect(launch.input?.execPath).not.toBe('node')
   })
 
-  it('keeps the startup lock through SDK verification and cleans up its own failed generation', async () => {
+  it.each([undefined, { locale: 'en' }])(
+    'keeps the startup lock through SDK verification and cleans up its own failed generation (retain=%j)',
+    async (retainClient) => {
+      const child = fakeChild()
+      const events: string[] = []
+      const release = vi.fn(() => events.push('release'))
+      vi.mocked(daemon.acquireDaemonStartup).mockReturnValue({ release })
+      let statusReads = 0
+      vi.mocked(daemon.daemonStatus).mockImplementation(async () => {
+        statusReads += 1
+        return statusReads === 1 ? { running: false } : { running: true, owner: statusOwner(descriptor()) }
+      })
+      let reads = 0
+      vi.mocked(daemon.readDaemonDiscovery).mockImplementation(async () => {
+        reads += 1
+        return reads >= 3 ? descriptor() : null
+      })
+      vi.mocked(daemon.stopDaemon).mockImplementation(async () => {
+        events.push('stop')
+        return 'stopped'
+      })
+      const configFailure = new Error('config handshake failed')
+      const client = fakeClient({
+        configGet: async () => {
+          events.push('config-failure')
+          throw configFailure
+        },
+      })
+
+      await expect(
+        ensureLocalBackend({
+          resources: TEST_RESOURCES,
+          spawnDaemon: vi.fn(() => child),
+          createClientImpl: () => client,
+          readinessTimeoutMs: 500,
+          readinessPollMs: 2,
+          ...(retainClient ? { retainClient } : {}),
+        }),
+      ).rejects.toThrow(/^local daemon SDK readiness handshake failed: config handshake failed$/)
+
+      expect(events.indexOf('config-failure')).toBeGreaterThanOrEqual(0)
+      expect(events.indexOf('stop')).toBeGreaterThan(events.indexOf('config-failure'))
+      expect(events.indexOf('release')).toBeGreaterThan(events.indexOf('stop'))
+      expect(vi.mocked(daemon.stopDaemon)).toHaveBeenCalledOnce()
+      // A failed proof leaves no half-initialized connection, retained or not.
+      expect(client.close).toHaveBeenCalledOnce()
+    },
+  )
+
+  it('surfaces the child startup refusal and removes its private receipt', async () => {
     const child = fakeChild()
-    const events: string[] = []
-    const release = vi.fn(() => events.push('release'))
-    vi.mocked(daemon.acquireDaemonStartup).mockReturnValue({ release })
-    let statusReads = 0
-    vi.mocked(daemon.daemonStatus).mockImplementation(async () => {
-      statusReads += 1
-      return statusReads === 1 ? { running: false } : { running: true, owner: statusOwner(descriptor()) }
-    })
-    let reads = 0
-    vi.mocked(daemon.readDaemonDiscovery).mockImplementation(async () => {
-      reads += 1
-      return reads >= 3 ? descriptor() : null
-    })
-    vi.mocked(daemon.stopDaemon).mockImplementation(async () => {
-      events.push('stop')
-      return 'stopped'
-    })
-    const configFailure = new Error('config handshake failed')
-    const client = fakeClient({
-      configGet: async () => {
-        events.push('config-failure')
-        throw configFailure
-      },
-    })
-
-    await expect(
-      ensureLocalBackend({
-        resources: TEST_RESOURCES,
-        spawnDaemon: vi.fn(() => child),
-        createClientImpl: () => client,
-        readinessTimeoutMs: 500,
-        readinessPollMs: 2,
-      }),
-    ).rejects.toThrow(/config handshake failed/)
-
-    expect(events.indexOf('config-failure')).toBeGreaterThanOrEqual(0)
-    expect(events.indexOf('stop')).toBeGreaterThan(events.indexOf('config-failure'))
-    expect(events.indexOf('release')).toBeGreaterThan(events.indexOf('stop'))
-    expect(vi.mocked(daemon.stopDaemon)).toHaveBeenCalledOnce()
+    const root = mkdtempSync(join(tmpdir(), 'agnes-launch-refusal-'))
+    const daemonDir = join(root, 'daemon')
+    mkdirSync(daemonDir)
+    vi.mocked(daemon.resolveDaemonScope).mockResolvedValue({ ...scope, dataDir: root, daemonDir })
+    let path = ''
+    const spawnDaemon = ({ env }: SpawnDaemonInput) => {
+      path = env[STARTUP_DIAGNOSTIC_ENV] ?? ''
+      const diagnostic = createPrivateFileSync(path)
+      try {
+        writeFileSync(diagnostic, JSON.stringify({ message: 'daemon or package mutation lock is held' }))
+      } finally {
+        closeSync(diagnostic)
+      }
+      queueMicrotask(() => {
+        ;(child as unknown as { exitCode: number | null }).exitCode = 1
+        child.emit('exit', 1, null)
+      })
+      return child
+    }
+    try {
+      await expect(
+        ensureLocalBackend({
+          resources: TEST_RESOURCES,
+          spawnDaemon,
+          readinessTimeoutMs: 500,
+          readinessPollMs: 2,
+        }),
+      ).rejects.toThrow(/daemon child exited before readiness \(1\): daemon or package mutation lock is held/)
+      expect(existsSync(path)).toBe(false)
+      expect(child.kill).not.toHaveBeenCalled()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('preserves an unrelated owner when its child fails after ownership changed', async () => {
@@ -690,4 +875,20 @@ describe('ensureLocalBackend', () => {
     await expect(ensureLocalBackend({ readinessTimeoutMs: 0 })).rejects.toBeInstanceOf(BootError)
     expect(vi.mocked(daemon.resolveDaemonScope)).not.toHaveBeenCalled()
   })
+})
+
+it('refuses standalone before opening storage when the profile daemon is running', async () => {
+  vi.mocked(daemon.resolveDaemonScope).mockResolvedValue(scope)
+  vi.mocked(daemon.daemonStatus).mockResolvedValue({ running: true } as Awaited<
+    ReturnType<typeof daemon.daemonStatus>
+  >)
+  await expect(
+    bootDefault(parseArgs(['--standalone', '-p', 'hi']), {
+      home: scope.home,
+      cwd: scope.workspace,
+      env: {},
+      agnesVersion: '0.0.0',
+      log: () => {},
+    }),
+  ).rejects.toThrow('Omit --standalone to connect')
 })

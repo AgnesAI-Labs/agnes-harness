@@ -6,6 +6,8 @@ English | [简体中文](quickstart.zh-CN.md)
 
 [Documentation](../README.md) · Prerequisite: [Build AGH](install.md)
 
+Previous-version users: follow the [upgrade guide](upgrade-from-previous.md) to back up and clean up first. The fresh-environment steps below do not migrate old data.
+
 Configure a model, run a small task, and find the Web session from the CLI. Complete the [source build](install.md) first; use its isolated home setup for your first trial. Without a model account, start with the [local simulated-model demo](demo.md#run-locally-without-a-model-account).
 
 <a id="第一次打开-web"></a>
@@ -13,14 +15,14 @@ Configure a model, run a small task, and find the Web session from the CLI. Comp
 ## Open Web for the first time
 
 ```sh
-node packages/cli/dist/local/agnes.mjs serve
+node agnes.mjs serve
 ```
 
 The default address is `http://127.0.0.1:4177`; use the actual URL printed by your terminal. Local mode opens a normal URL. You do not need to copy a connection token from the address bar or paste daemon credentials into the page.
 
-If no model is available, AGH opens Provider settings. Choose an account/provider, check the Base URL, enter the API key in the password field, test the connection, select a model from the returned catalog, and save. The page displays configuration status without reading saved plaintext keys back to the browser. Connection tests and conversations may contact the provider and incur charges. Use the [local demo](demo.md) if you do not have a model account.
+With no saved model account or previous session, AGH opens the [first-run guide](getting-started.md). You can skip it at any step. Account setup uses the existing model settings. Choose an account/provider, check the Base URL, enter the API key in the password field, test the connection, select a model from the returned catalog, and save. The page displays configuration status without reading saved plaintext keys back to the browser. Connection tests and conversations may contact the provider and incur charges. Use the [local demo](demo.md) if you do not have a model account.
 
-You can choose Agnes AI, Kimi, Kimi Coding Plan, GLM, Qwen, DeepSeek, OpenAI, Anthropic, Google, OpenRouter, MiniMax, or xAI. Web lists Agnes AI first. Available models, routes, and capabilities come from the current catalog and account configuration; a provider's name alone does not establish tool, vision, or reasoning support. Test custom endpoints through the configuration service and select their models without disguising incompatible endpoints as a known model.
+You can choose Agnes AI, Kimi, Kimi Coding Plan, GLM, Qwen, DeepSeek, OpenAI, Anthropic, Google, OpenRouter, MiniMax, xAI, Groq, Together AI, Cerebras, NVIDIA, Hugging Face, Moonshot / Kimi (moonshot.cn), or GLM Coding (bigmodel.cn). Web lists Agnes AI first, followed by **Agnes AI International**: the same provider at the international gateway `https://apihub.agnes-ai.com/v1`. Agnes issues keys per gateway, so use a China key with Agnes AI and an international key with Agnes AI International; you can also change an Agnes account's Base URL yourself. Available models, routes, and capabilities come from the current catalog and account configuration; a provider's name alone does not establish tool, vision, or reasoning support. Test custom endpoints through the configuration service and select their models without disguising incompatible endpoints as a known model. For a relay, aggregator or self-hosted gateway that speaks OpenAI `/chat/completions`, choose **OpenAI-compatible endpoint** or one of the relays under it (OpenRouter, SiliconFlow, 302.AI, AiHubMix, Volcengine Ark, Alibaba Cloud Model Studio): enter its address, usually ending in `/v1`, an API key if it needs one, and the models its `/models` lists or ids you type. Those models run as text chat with native tool calls; no image input or reasoning capability is assumed. A keyless account sends the placeholder bearer `no-key`.
 
 After saving, read the activation message. `new-sessions` means the setting applies to new sessions; existing sessions keep their selections. If a restart is required, finish any tasks you need to preserve, run `daemon stop` with the same home/profile, then run `serve` again. On connection errors, check that the home/profile still identifies the same instance.
 
@@ -41,13 +43,13 @@ This expresses your intent; approvals and policy determine the execution boundar
 Configure interactively:
 
 ```sh
-node packages/cli/dist/local/agnes.mjs config
+node agnes.mjs config
 ```
 
 Once configured, run the following from the repository root. `AGH_ENTRY` saves the absolute entry path so you can continue using it after changing to your own project directory:
 
 ```sh
-AGH_ENTRY="$PWD/packages/cli/dist/local/agnes.mjs"
+AGH_ENTRY="$PWD/agnes.mjs"
 node "$AGH_ENTRY" -p "Summarize this project without modifying files"
 node "$AGH_ENTRY" sessions --json
 node "$AGH_ENTRY"
@@ -86,4 +88,4 @@ Keeping the trial home lets you return to sessions later. It may contain convers
 
 Add a [Skill](skills.md) to bring your team's methods into a task, start [plugin development](../develop/plugins.md) to connect business systems, or read [sessions and recovery](sessions.md) to continue existing work.
 
-Implementation: [configuration controller](../../packages/host/src/configuration.ts), [provider registry](../../packages/cli/src/onboarding/provider-registry.ts), [Web model settings](../../packages/web/src/settings.ts), [CLI arguments](../../packages/cli/src/args.ts).
+Implementation: [configuration controller](../../packages/host-infrastructure/src/configuration.ts), [provider registry](../../packages/ai/src/adapters/pi/api-key-providers.ts), [Web model settings](../../packages/web-admin/src/settings.ts), [CLI arguments](../../packages/cli/src/args.ts).

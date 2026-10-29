@@ -1,3 +1,4 @@
+import { CoreError } from '@agnes/core-common/types'
 import {
   SLOT_NAMES,
   validateAgainst,
@@ -5,8 +6,11 @@ import {
   type RequestMessage as WireMessage,
 } from '@agnes/protocol'
 import { RequestBody as WireSchema } from '@agnes/protocol/gen/model'
-import { CoreError } from '../types.js'
-import { auxiliaryVisionSettledForProvider, requestMediaForProvider } from './derive.js'
+import {
+  auxiliaryVisionSettledForProvider,
+  requestMediaForProvider,
+  requestMemoryRevision,
+} from './derive.js'
 import { isLedgerRequest, type LedgerRequest, type RequestMessage } from './mint.js'
 
 type ProviderMediaBlock =
@@ -23,20 +27,17 @@ type ProviderMediaBlock =
  * only moves an already-derived body into the vocabulary the provider speaks, which is why it sits
  * at the call site of `infer` and not inside `deriveRequest`.
  *
- * **What does not survive, and why that is stated rather than left to be discovered.** The wire has
- * one `system` string, so `sections[].id` and `sections[].source` have nowhere to go: the ordered
- * text ships and the contributor identity does not. That loss is on the ledger — the `request/header`
- * and the minted body both keep the sections whole — so it is a loss of what the *provider* can
- * see, not of what happened. Everything else either survives or stops the request: a slot the wire
- * does not name and a tool result with nothing to name are refused here rather than quietly
- * rewritten to something the ledger never recorded.
+ * Section boundaries and sources survive as passive adapter metadata alongside the flattened
+ * system text. Adapters decide their wire encoding; local request capture can retain both shapes.
+ * Unknown slots and orphaned tool results remain errors.
  */
 export function toProviderRequest(
   req: LedgerRequest,
-  o: { sessionKey: string; derivedHash: string },
+  o: { sessionKey: string; derivedHash: string; compactionBoundary?: number | undefined },
 ): WireBody {
   if (!isLedgerRequest(req)) throw new CoreError('E_ENVELOPE', 'provider request was not minted by Core')
   const requestMedia = requestMediaForProvider(req, o.sessionKey, o.derivedHash)
+  const memoryRevision = requestMemoryRevision(req)
   // Auxiliary media is consumed by the Core-owned image-slot effect before the primary request is
   // dispatched. Until that effect has replaced it with an attested untrusted-text bridge, sending
   // these bytes here would violate capability pre-routing and expose images to a text-only model.
@@ -82,6 +83,15 @@ export function toProviderRequest(
     // Joined with a blank line rather than concatenated: the sections are separate instructions and
     // the ledger keeps them apart, so the flattening must not run two of them into one paragraph.
     // `prompt_prefix_hash` hashes this same join, so the stamp covers the bytes that ship.
+    ...(o.compactionBoundary !== undefined || memoryRevision !== undefined
+      ? {
+          traceContext: {
+            ...(o.compactionBoundary === undefined ? {} : { compactionBoundary: o.compactionBoundary }),
+            ...(memoryRevision === undefined ? {} : { memoryRevision }),
+          },
+        }
+      : {}),
+    sections: req.sections.map((section) => ({ ...section })),
     system: req.sections.map((s) => s.text).join('\n\n'),
     messages: req.messages.map((message) => {
       const media = mediaBySeq.get(message.seq) ?? []
@@ -93,6 +103,7 @@ export function toProviderRequest(
       description: t.description,
       parameters: t.parameters as WireBody['tools'][number]['parameters'],
     })),
+    ...(req.requestOnlyMessages ? { requestOnlyMessages: req.requestOnlyMessages } : {}),
     ...(Object.keys(sampling).length ? { sampling } : {}),
   }
   if (mediaBySeq.size > 0)

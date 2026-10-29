@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/managed-service.json",
+  "title": "Reviewed managed services",
+  "$ref": "#/$defs/ManagedServiceDescriptor",
+  "$defs": {
+    "ManagedServiceDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "scope",
+        "artifact",
+        "healthPath",
+        "listeners",
+        "startupTimeoutMs",
+        "shutdownTimeoutMs",
+        "apiVersion",
+        "requires"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "scope": {
+          "enum": ["profile", "installation"]
+        },
+        "artifact": {
+          "oneOf": [
+            { "$ref": "surface.json#/$defs/SurfaceArtifact" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind"],
+              "properties": { "kind": { "const": "in-process" } }
+            }
+          ]
+        },
+        "healthPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^/[A-Za-z0-9/_-]*$"
+        },
+        "listeners": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "host", "port"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[a-z][a-z0-9-]{0,63}$"
+              },
+              "host": {
+                "const": "127.0.0.1"
+              },
+              "port": {
+                "oneOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535
+                  },
+                  {
+                    "const": "auto"
+                  }
+                ]
+              }
+            }
+          },
+          "maxItems": 16,
+          "uniqueItems": true
+        },
+        "startupTimeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30000
+        },
+        "shutdownTimeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5000
+        },
+        "apiVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        },
+        "requires": {
+          "type": "array",
+          "items": {
+            "$ref": "surface.json#/$defs/SurfaceServiceGrant"
+          },
+          "maxItems": 64,
+          "uniqueItems": true
+        }
+      }
+    },
+    "ManagedServiceReady": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["incarnation", "apiVersion", "listeners", "storageReady", "shutdownReady"],
+      "properties": {
+        "incarnation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "apiVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "listeners": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "maxItems": 16,
+          "uniqueItems": true
+        },
+        "storageReady": {
+          "const": true
+        },
+        "shutdownReady": {
+          "const": true
+        }
+      }
+    },
+    "ManagedServiceStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "instanceId", "revision", "state"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "instanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "state": {
+          "enum": ["starting", "ready", "draining", "stopped", "failed"]
+        },
+        "reason": {
+          "enum": [
+            "port-in-use",
+            "startup-timeout",
+            "health-failed",
+            "shutdown-unconfirmed",
+            "unavailable",
+            "incompatible-api"
+          ]
+        },
+        "listeners": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["host", "port"],
+            "properties": {
+              "host": {
+                "const": "127.0.0.1"
+              },
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

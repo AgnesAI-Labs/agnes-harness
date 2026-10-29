@@ -1,12 +1,11 @@
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import type { DecisionSnapshot } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import { MemoryStorage } from '../src/log/memory-storage.js'
 import { opMarkProblems } from '../testkit/op-mark-checks.js'
 import {
   CONCURRENT_SCENARIOS,
   callEventProblems,
-  expectedFromGolden,
   MERGED_STATUSES,
-  mergeLedgerWriteCommits,
   readGolden,
   recordTransitions,
   statusProjectionProblems,
@@ -26,12 +25,35 @@ describe('program-counter transitions match the recorded reference (MemoryStorag
   })
   it.each(TRANSITION_SCENARIOS)('%s', async (name) => {
     const recorded = await recordTransitions(name, new MemoryStorage())
-    const reference = expectedFromGolden(readGolden(name))
+    if (name === 'approval-sync' || name === 'approval-parked') {
+      const rows = recorded.flatMap((commit) => commit.events as Array<{ type: string; data: unknown }>)
+      const states = rows
+        .filter((row) => row.type === 'decision/state')
+        .map((row) => row.data as DecisionSnapshot)
+      expect(states.map((row) => row.revision)).toEqual([1, 2, 3])
+      expect(states[0]?.result).toBeNull()
+      expect(states[1]?.result).toMatchObject({
+        reason: 'answered',
+        response: { option: 'allowed-once' },
+      })
+      const consume = recorded.find((commit) =>
+        commit.events.some((item) => {
+          const row = item as { type: string; data: unknown }
+          return row.type === 'decision/state' && (row.data as DecisionSnapshot).consumption
+        }),
+      )
+      expect(consume?.events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: 'effect/intent', data: expect.objectContaining({ kind: 'tool' }) }),
+        ]),
+      )
+      expect(opMarkProblems(recorded)).toEqual([])
+    }
+    const reference = readGolden(name)
     if (CONCURRENT_SCENARIOS.has(name)) {
       expect(statusProjectionProblems(recorded, reference, MERGED_STATUSES)).toEqual([])
       expect(callEventProblems(recorded, reference)).toEqual([])
-    } else
-      expect(withMintedIdsInOrder(recorded)).toEqual(withMintedIdsInOrder(mergeLedgerWriteCommits(reference)))
+    } else expect(withMintedIdsInOrder(recorded)).toEqual(withMintedIdsInOrder(reference))
     expect(opMarkProblems(recorded)).toEqual([])
   })
 })

@@ -5,6 +5,7 @@ import {
   type DaemonDiscovery,
   type DaemonDiscoveryWeb,
   type DaemonScope,
+  type DaemonScopeOptions,
   DaemonStartupBusyError,
   daemonSocketPaths,
   daemonStatus,
@@ -23,24 +24,45 @@ import {
 } from '@agnes/host'
 import { type Client, type CreateClientOptions, createClient, memoryJournal } from '@agnes/sdk'
 import { type LaunchResources, resolveLaunchResources } from '../../launch/resources.js'
-import { createStartupReport, type StartupReport } from '../../launch/startup-report.js'
 import { BootError } from '../errors.js'
+import { connectionScope, validateConnectionSocket } from './connection-scope.js'
+import { localPipeFactories } from './pipe-factory.js'
+import {
+  readStartupDiagnostic,
+  removeStartupDiagnostic,
+  STARTUP_DIAGNOSTIC_ENV,
+  startupDiagnosticPath,
+} from './startup-diagnostic.js'
 
 /** A private Web capability returned by the validated daemon discovery handshake. */
 export type LocalBackendWeb = DaemonDiscoveryWeb & { token: string }
 
 /**
- * The result intentionally has no long-lived SDK client. CLI boot creates its own client with
- * `bootConnect`; Web reads the endpoint and private bearer here and owns its HTTP server lifecycle.
+ * Web reads the endpoint and private bearer here and owns its HTTP server lifecycle. CLI boot asks
+ * for `retainClient` and receives the client that passed the readiness proof as its connection.
  */
 export type LocalBackend = {
   scope: DaemonScope
   discovery: DaemonDiscovery
   socketPath: string
   web?: LocalBackendWeb
-  /** Compatibility name for Web launchers that only need to release their client-side resources. */
+  /** The initialized readiness client, present only when `retainClient` was requested. */
+  client?: Client
+  /** Releases the retained client, if any; Web launchers have nothing else to release. */
   closeClient(): Promise<void>
   close(): Promise<void>
+  /** Set by a long-lived launcher so its SDK clients survive a daemon restart (see daemon-link). */
+  link?: ClientLink
+}
+
+/** What a launcher's private SDK clients need to outlive one daemon generation. */
+export type ClientLink = {
+  /** A client that is replaced after the daemon closes it for good; `onReplace` sees each new one. */
+  client(open: () => Client, onReplace?: (next: Client) => void): Client
+  /** Transport factories that re-verify the daemon on every connection attempt. */
+  transportFactories(): NonNullable<CreateClientOptions['transportFactories']>
+  /** Wait (bounded) for the daemon to be reachable; false means a request should report it unavailable. */
+  ensure(): Promise<boolean>
 }
 
 type LocalWebOptions = { addr: string; origin: string }
@@ -55,15 +77,21 @@ export type EnsureLocalBackendOptions = {
   agnesVersion?: string
   /** Management Web may start read-only recovery without evaluating a damaged package lock. */
   allowPackageRecovery?: boolean
+  /** Full preparation is the default for launchers and maintenance callers. */
+  preparation?: 'connect-first' | 'full'
   signal?: AbortSignal
   /** Request the daemon's authenticated loopback Web listener for this exact origin. */
   webOrigin?: string
   localWeb?: LocalWebOptions
   /** Used only when this invocation starts a daemon; never constrains IPC attachment. */
   startupWeb?: LocalWebOptions
+  /** Re-attach to a daemon of this already-trusted scope. Never starts one and never re-resolves the scope. */
+  attach?: { scope: DaemonScope }
   resources?: LaunchResources
   /** Test seam for the SDK handshake; production uses the Node SDK factory. */
   createClientImpl?: (options: CreateClientOptions) => Client
+  /** Keep the readiness client as the caller's session connection, so the daemon sees one initialize. */
+  retainClient?: { locale: string }
   /** Bounded readiness deadline. The default is deliberately finite. */
   readinessTimeoutMs?: number
   readinessPollMs?: number
@@ -84,10 +112,32 @@ const DEFAULT_READINESS_POLL_MS = 50
 /** Cleanup is best effort after a bounded startup failure; it must not defeat the readiness bound. */
 const CLIENT_CLEANUP_TIMEOUT_MS = 250
 
+/** Status/stop use the existing identity-bound process control, without starting a daemon or
+ * requiring its RPC version to match (operators must be able to stop an older daemon). */
+export async function resolveLocalControlScope(options: DaemonScopeOptions = {}): Promise<DaemonScope> {
+  try {
+    const scope = await connectionScope({ ...options, env: { ...(options.env ?? process.env) } })
+    const discovery = await readDaemonDiscovery(scope)
+    if (discovery) {
+      await validateConnectionSocket(discovery.socketPath)
+      return scope
+    }
+  } catch {
+    // Maintenance diagnostics and absent/stale owners retain the original full resolution path.
+  }
+  return resolveDaemonScope(options)
+}
+
 function asBootError(stage: string, error: unknown): BootError {
   if (error instanceof BootError) return error
   const message = error instanceof Error ? error.message : String(error)
-  return new BootError(`local daemon ${stage} failed: ${message}`, error)
+  // A source checkout that never built its native helpers cannot tell whether the daemon it just
+  // started is alive; the bare refusal reads like a daemon fault, so name the missing step.
+  const hint =
+    (error as { reason?: unknown } | null)?.reason === 'helper unavailable'
+      ? ' (the native process-identity helper is missing; run `pnpm --filter @agnes/host build:native`)'
+      : ''
+  return new BootError(`local daemon ${stage} failed: ${message}${hint}`, error)
 }
 
 function signalError(signal: AbortSignal | undefined): BootError | undefined {
@@ -269,7 +319,7 @@ function launchChild(
   scope: DaemonScope,
   options: EnsureLocalBackendOptions,
   requested: LocalWebOptions | undefined,
-  report?: StartupReport,
+  diagnosticPath: string,
 ): DetachedChild {
   const resources = productionResources(options) as LaunchResources & { runtimeNode?: string }
   const entry = resources.daemonEntry
@@ -292,7 +342,7 @@ function launchChild(
     ...(options.env ?? {}),
     AGH_HOME: scope.home,
     AGNES_PROFILE: scope.profile,
-    ...(report?.env ?? {}),
+    [STARTUP_DIAGNOSTIC_ENV]: diagnosticPath,
   }
   const runtimeOverride = options.env?.AGNES_NODE_EXEC_PATH ?? process.env.AGNES_NODE_EXEC_PATH
   const execPath = isSea() ? runtimeOverride || resources.runtimeNode : process.execPath
@@ -303,14 +353,18 @@ function launchChild(
   return spawnDetachedProcess(execPath, argv, { cwd: workspace, env })
 }
 
+type ReadyEndpoint = { discovery: DaemonDiscovery; client?: Client }
+
 async function sdkReady(
   scope: DaemonScope,
   discovery: DaemonDiscovery,
   options: EnsureLocalBackendOptions,
   deadlineAt: number,
-): Promise<DaemonDiscovery> {
+): Promise<ReadyEndpoint> {
+  await withinDeadline(() => validateConnectionSocket(discovery.socketPath), deadlineAt, options.signal)
   const makeClient = options.createClientImpl ?? createClient
   const remaining = Math.max(1, deadlineAt - Date.now())
+  const retain = options.retainClient
   const client = makeClient({
     transport: {
       kind: 'unix',
@@ -326,10 +380,17 @@ async function sdkReady(
     },
     auth: { kind: 'local' },
     journal: memoryJournal(),
-    timeouts: { initialize: remaining, request: remaining },
+    // Client timeouts are fixed for its lifetime, so a retained session client keeps the SDK
+    // defaults; withinDeadline below still bounds every readiness step by the startup deadline.
+    ...(retain
+      ? { locale: retain.locale, transportFactories: localPipeFactories(discovery.socketPath, scope) }
+      : { timeouts: { initialize: remaining, request: remaining } }),
   })
+  let retained = false
   try {
-    await withinDeadline(() => client.initialize(), deadlineAt, options.signal)
+    const info = await withinDeadline(() => client.initialize(), deadlineAt, options.signal)
+    if (options.agnesVersion !== undefined && info.agnesVersion !== options.agnesVersion)
+      throw new BootError('local daemon version does not match this CLI; stop/restart the local daemon')
     // Configuration is part of the readiness contract: a listening socket and initialize alone do
     // not prove this is the same fully assembled daemon that CLI/Web settings will use.
     await withinDeadline(() => client.config.get(), deadlineAt, options.signal)
@@ -347,16 +408,20 @@ async function sdkReady(
       current.scopeID !== discovery.scopeID
     )
       throw new BootError('local daemon changed during readiness verification')
-    return current
+    retained = retain !== undefined
+    return retained ? { discovery: current, client } : { discovery: current }
   } catch (error) {
     throw asBootError('SDK readiness handshake', error)
   } finally {
-    await closeClientBounded(client).catch(() => undefined)
+    // A failed proof never leaves a half-initialized connection behind.
+    if (!retained) await closeClientBounded(client).catch(() => undefined)
   }
 }
 
 type DiscoveryResult = {
   discovery: DaemonDiscovery
+  /** The retained readiness client, when requested and verified. */
+  client?: Client
   /** Set only when this invocation spawned the daemon, for failure cleanup. */
   child?: DetachedChild
   childStartId?: string
@@ -372,6 +437,11 @@ async function discoverOrStart(
 ): Promise<DiscoveryResult> {
   let discovery = await readReady(scope, requested, deadlineAt, options.signal)
   if (discovery) return { discovery }
+  if (options.attach) {
+    // Attach-only callers wait for a daemon to appear within the deadline; they never spawn one.
+    discovery = await waitReady(scope, options, requested, () => undefined, deadlineAt)
+    return { ...(await sdkReady(scope, discovery, options, deadlineAt)), verified: true }
+  }
 
   // An owner record without a descriptor may be a daemon still starting. Ask the daemon-owned
   // status primitive whether its identity is alive before deciding to acquire startup rights; a
@@ -382,7 +452,7 @@ async function discoverOrStart(
     try {
       const identityTimeoutMs = Math.min(1_000, Math.max(1, deadlineAt - Date.now()))
       status = await withinDeadline(
-        () => daemonStatus(scope.dataDir, { identityTimeoutMs, socketTimeoutMs: identityTimeoutMs }),
+        () => daemonStatus(scope.home, { identityTimeoutMs, socketTimeoutMs: identityTimeoutMs }),
         deadlineAt,
         options.signal,
       )
@@ -416,7 +486,7 @@ async function discoverOrStart(
   let child: DetachedChild | undefined
   let childStartId: string | undefined
   let childError: Error | undefined
-  const startupReport = createStartupReport()
+  let diagnosticPath: string | undefined
   try {
     // Recheck after taking the launcher lock: another process may have published while this caller
     // was resolving its scope or waiting for the lock.
@@ -429,7 +499,8 @@ async function discoverOrStart(
             ipc: createPlatform().snapshot().os === 'win32' ? 'pipe' : 'unix',
           }),
         )
-        child = launchChild(scope, options, requested ?? options.startupWeb, startupReport)
+        diagnosticPath = startupDiagnosticPath(scope.daemonDir)
+        child = launchChild(scope, options, requested ?? options.startupWeb, diagnosticPath)
       } catch (error) {
         throw asBootError('spawn', error)
       }
@@ -437,10 +508,9 @@ async function discoverOrStart(
         childError = error instanceof Error ? error : new Error(String(error))
       })
       child.once('exit', (code, signal) => {
-        const reason = startupReport?.read()
+        const reason = diagnosticPath ? readStartupDiagnostic(diagnosticPath) : undefined
         childError = new Error(
-          `daemon child exited before readiness (${code === null ? 'signal' : code}${signal ? `/${signal}` : ''})` +
-            (reason ? `: ${reason}` : ''),
+          `daemon child exited before readiness (${code === null ? 'signal' : code}${signal ? `/${signal}` : ''})${reason ? `: ${reason}` : ''}`,
         )
       })
       // Register lifecycle listeners before the identity probe: a very short-lived child can exit
@@ -454,7 +524,7 @@ async function discoverOrStart(
     // competing launcher can observe and reuse it.
     const verified = await sdkReady(scope, discovery, options, deadlineAt)
     return {
-      discovery: verified,
+      ...verified,
       ...(child ? { child } : {}),
       ...(childStartId ? { childStartId } : {}),
       verified: true,
@@ -467,7 +537,7 @@ async function discoverOrStart(
     }
     throw error
   } finally {
-    startupReport?.dispose()
+    removeStartupDiagnostic(diagnosticPath)
     startupLock.release()
   }
 }
@@ -509,7 +579,7 @@ async function stopOwnChild(
   let status: Awaited<ReturnType<typeof daemonStatus>> | undefined
   try {
     status = await withinDeadline(
-      () => daemonStatus(scope.dataDir, { identityTimeoutMs: 250, socketTimeoutMs: 250 }),
+      () => daemonStatus(scope.home, { identityTimeoutMs: 250, socketTimeoutMs: 250 }),
       Date.now() + CLIENT_CLEANUP_TIMEOUT_MS,
     )
   } catch {
@@ -519,7 +589,7 @@ async function stopOwnChild(
     try {
       const result = await withinDeadline(
         () =>
-          stopDaemon(scope.dataDir, {
+          stopDaemon(scope.home, {
             identityTimeoutMs: 250,
             waitMs: CLIENT_CLEANUP_TIMEOUT_MS,
             pollMs: 25,
@@ -566,7 +636,7 @@ async function terminateChildHandle(child: DetachedChild): Promise<void> {
 /**
  * Resolve, discover, or start the one detached daemon for a local scope, then prove it through the
  * SDK before returning. The daemon remains owned by its own process; this function releases only
- * the launcher lock and the temporary readiness client.
+ * the launcher lock and, unless `retainClient` hands it to the caller, the readiness client.
  */
 export async function ensureLocalBackend(options: EnsureLocalBackendOptions = {}): Promise<LocalBackend> {
   const requested = expectedWeb(options)
@@ -576,31 +646,47 @@ export async function ensureLocalBackend(options: EnsureLocalBackendOptions = {}
   if (!Number.isSafeInteger(timeout) || timeout <= 0 || !Number.isSafeInteger(poll) || poll <= 0)
     throw new BootError('local daemon readiness timing is invalid')
   const deadlineAt = Date.now() + timeout
-  let scope: DaemonScope
-  try {
-    scope = await withinDeadline(
-      () =>
-        resolveDaemonScope({
-          ...(options.env ? { env: options.env } : {}),
-          ...(options.cwd ? { cwd: options.cwd } : {}),
-          ...(options.home ? { home: options.home } : {}),
-          ...(options.profile ? { profile: options.profile } : {}),
-          ...(options.workspace ? { workspace: options.workspace } : {}),
-          ...(options.dataDir ? { dataDir: options.dataDir } : {}),
-          ...(options.agnesVersion ? { agnesVersion: options.agnesVersion } : {}),
-          ...(options.allowPackageRecovery ? { allowPackageRecovery: true } : {}),
-        }),
-      deadlineAt,
-      options.signal,
-    )
-  } catch (error) {
-    throw asBootError('scope resolution', error)
+  let scope: DaemonScope | undefined = options.attach?.scope
+  let started: DiscoveryResult | undefined
+  if (!scope && options.preparation === 'connect-first') {
+    try {
+      const candidate = await withinDeadline(() => connectionScope(options), deadlineAt, options.signal)
+      const discovery = await readReady(candidate, requested, deadlineAt, options.signal)
+      if (discovery)
+        started = { ...(await sdkReady(candidate, discovery, options, deadlineAt)), verified: true }
+      // With no daemon running, the one being started resolves and verifies the full profile itself,
+      // so this identity is the scope; resolving it again here would only repeat that package work.
+      scope = candidate
+    } catch {
+      // Full preparation below preserves existing startup/recovery and diagnostic refusals.
+      // An unverified endpoint never receives a command, and we never stop a reused daemon.
+    }
   }
-  const started = await discoverOrStart(scope, options, requested, deadlineAt)
+  if (!scope)
+    try {
+      scope = await withinDeadline(
+        () =>
+          resolveDaemonScope({
+            ...(options.env ? { env: options.env } : {}),
+            ...(options.cwd ? { cwd: options.cwd } : {}),
+            ...(options.home ? { home: options.home } : {}),
+            ...(options.profile ? { profile: options.profile } : {}),
+            ...(options.workspace ? { workspace: options.workspace } : {}),
+            ...(options.dataDir ? { dataDir: options.dataDir } : {}),
+            ...(options.agnesVersion ? { agnesVersion: options.agnesVersion } : {}),
+            ...(options.allowPackageRecovery ? { allowPackageRecovery: true } : {}),
+          }),
+        deadlineAt,
+        options.signal,
+      )
+    } catch (error) {
+      throw asBootError('scope resolution', error)
+    }
+  started ??= await discoverOrStart(scope, options, requested, deadlineAt)
+  let client = started.client
   try {
-    const discovery = started.verified
-      ? started.discovery
-      : await sdkReady(scope, started.discovery, options, deadlineAt)
+    let discovery = started.discovery
+    if (!started.verified) ({ discovery, client } = await sdkReady(scope, discovery, options, deadlineAt))
     validateWeb(discovery, requested)
     let web: LocalBackendWeb | undefined
     if (requested && discovery.web) {
@@ -614,15 +700,20 @@ export async function ensureLocalBackend(options: EnsureLocalBackendOptions = {}
         throw new BootError('local daemon Web credential is unavailable; stop/restart the local daemon')
       web = { ...discovery.web, token }
     }
+    const retained = client
     return {
       scope,
       discovery,
       socketPath: discovery.socketPath,
       ...(web ? { web } : {}),
-      closeClient: async () => undefined,
+      ...(retained ? { client: retained } : {}),
+      closeClient: async () => {
+        await retained?.close()
+      },
       close: async () => undefined,
     }
   } catch (error) {
+    if (client) await closeClientBounded(client).catch(() => undefined)
     await stopOwnChild(scope, started.child, started.childStartId)
     throw error
   } finally {

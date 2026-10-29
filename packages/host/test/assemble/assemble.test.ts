@@ -1,25 +1,41 @@
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ScriptedProvider } from '@agnes/ai/testkit'
+import { fakeRequest, ScriptedProvider } from '@agnes/ai/testkit'
 import type { Context } from '@agnes/cordis'
 import type { RemoteTransport, SandboxSeam, SeamWorkspace } from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
-import { hashDirectory, type RuntimePluginSnapshot, type RuntimeSnapshot } from '@agnes/package-manager'
-import { buildRuntimeTarget, createPluginRow, DYNAMIC_SEAM_NAMES } from '@agnes/plugin-runtime/host'
+import type { ProviderPluginContext } from '@agnes/extension-api'
+import { bundledPackageJson } from '@agnes/extension-api'
+import { checkpointKind, SEAM_KINDS } from '@agnes/extension-api/seams'
+import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import { WorkspaceBindingAuthority } from '@agnes/host-common/workspace-authority'
+import {
+  loadRuntimePackage,
+  MemoryPackageLoader,
+  type PackageModule,
+} from '@agnes/host-extensions/assemble/packages'
+import { createLoader } from '@agnes/host-extensions/ext-host/loader'
+import { createCredentialStore } from '@agnes/host-infrastructure/adapters/credential-store'
+import { localFsIo } from '@agnes/host-infrastructure/adapters/fs-io-local'
+import { type AuditEvent, type AuditSink, createMemoryAudit } from '@agnes/host-infrastructure/audit'
+import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
+import { SessionWorkspaceRuntimeTable } from '@agnes/host-infrastructure/session-workspace-runtime'
+import { buildOrdinaryRows, type OrdinaryPluginLayers } from '@agnes/host-providers/assemble/ordinary-rows'
+import {
+  assertCurrentPackageFormat,
+  hashDirectory,
+  type RuntimePluginSnapshot,
+  type RuntimeSnapshot,
+} from '@agnes/package-manager'
+import { buildRuntimeTarget, createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { Actor, ModelRecord, RouteDecl } from '@agnes/protocol'
+import { defineRemoteSandboxProvider } from '@agnes/sandbox-remote'
+import { privateArtifactDeleteAvailable } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { localFsIo } from '../../src/adapters/fs-io-local.js'
-import { buildOrdinaryRows, type OrdinaryPluginLayers } from '../../src/assemble/ordinary-rows.js'
-import { loadRuntimePackage, MemoryPackageLoader, type PackageModule } from '../../src/assemble/packages.js'
-import { ASSEMBLY_STEPS, type AssembleDeps, assemble } from '../../src/assemble.js'
-import { type AuditEvent, type AuditSink, createMemoryAudit } from '../../src/audit.js'
-import { createLoader } from '../../src/ext-host/loader.js'
-import { closeHost } from '../../src/lifecycle.js'
-import { resolveProfile } from '../../src/profile/resolve.js'
-import { SessionWorkspaceRuntimeTable } from '../../src/session-workspace-runtime.js'
-import { WorkspaceBindingAuthority } from '../../src/workspace-authority.js'
-import { attachTestSeamPlugins } from '../../testkit/cordis-seams.js'
+import { ASSEMBLY_STEPS, type AssembleDeps, assemble } from '../../src/runtime/assemble/assemble.js'
+import { closeHost } from '../../src/runtime/lifecycle/lifecycle.js'
+import { attachTestSeamPlugins, testSeams } from '../../testkit/cordis-seams.js'
 
 const MODEL: ModelRecord = {
   id: 'm1',
@@ -43,21 +59,37 @@ const env = {
   now: '2026-09-07T00:00:00Z',
 }
 const lockPkgs = {
-  '@agnes/ai': { version: '0.1.0', integrity: 'sha512-a', trust: 'builtin' as const, enabled: true },
-  '@agnes/base': { version: '0.1.0', integrity: 'sha512-b', trust: 'builtin' as const, enabled: true },
-  '@agnes/code': { version: '0.1.0', integrity: 'sha512-c', trust: 'builtin' as const, enabled: true },
+  '@agnes/ai': {
+    version: '0.1.0',
+    source: { type: 'builtin' as const, ref: 'builtin' },
+    integrity: 'builtin:0.1.0',
+    trust: 'builtin' as const,
+    enabled: true,
+  },
+  '@agnes/base': {
+    version: '0.1.0',
+    source: { type: 'builtin' as const, ref: 'builtin' },
+    integrity: 'builtin:0.1.0',
+    trust: 'builtin' as const,
+    enabled: true,
+  },
+  '@agnes/code': {
+    version: '0.1.0',
+    source: { type: 'builtin' as const, ref: 'builtin' },
+    integrity: 'builtin:0.1.0',
+    trust: 'builtin' as const,
+    enabled: true,
+  },
 }
 const log = { debug() {}, info() {}, warn() {}, error() {} }
 const SEAM_KEYS = [
   'approval',
   'checkpoint',
-  'ledger',
-  'sandbox',
+  'billing',
   'verifier',
   'repair',
   'artifacts',
   'principals',
-  'harness',
 ] as const
 
 async function publishRows(
@@ -93,24 +125,11 @@ function baseModule(over: Partial<PackageModule> = {}): PackageModule {
   const seams = fakeSeams()
   const module: PackageModule = {
     id: '@agnes/base',
-    // The sandbox fake answers for the workspace it is actually fitted into, the way any real
-    // seam must: the assembly binds whatever fsPolicy() returns onto the workspace FsOps, and a
-    // policy naming another root is refused.
-    seams: Object.fromEntries(
-      SEAM_KEYS.map((n) => [
-        n,
-        n === 'sandbox'
-          ? async (ctx: { profile: { workspaceRoot: string } }) => ({
-              ...seams.sandbox,
-              fsPolicy: () => testFsPolicy(realpathSync.native(ctx.profile.workspaceRoot)),
-            })
-          : async () => seams[n],
-      ]),
-    ),
     operations: {},
     presets: { base: { name: 'base' } },
     ...over,
   }
+  Object.assign(testSeams(module), Object.fromEntries(SEAM_KEYS.map((n) => [n, async () => seams[n]])))
   return attachTestSeamPlugins(module)
 }
 const codeModule: PackageModule = {
@@ -127,7 +146,8 @@ const profileFor = (over: Record<string, unknown> = {}) =>
       lock: { packages: lockPkgs },
       user: {
         name: 'local-dev',
-        provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
+        presets: { default: 'standard', allowed: ['standard'] },
+        provider: { package: '@agnes/ai', routes: [ROUTE] },
         ...over,
       },
     },
@@ -161,6 +181,381 @@ describe('assemble', () => {
     }
   }
 
+  const gate = () => {
+    let resolve = () => {}
+    let reject: (error: Error) => void = () => {}
+    const promise = new Promise<void>((yes, no) => {
+      resolve = yes
+      reject = no
+    })
+    return { promise, resolve, reject }
+  }
+  const prepareSource = (id: string, manifest: Record<string, unknown> = {}): RuntimePluginSnapshot => {
+    const directory = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-prepare-')))
+    dirs.push(directory)
+    writeFileSync(
+      join(directory, 'package.json'),
+      JSON.stringify({
+        name: id,
+        version: '1.0.0',
+        exports: './index.js',
+        agnes: { plugins: [{ export: 'main', apiRange: '^5.0.0' }] },
+        ...manifest,
+      }),
+    )
+    writeFileSync(join(directory, 'index.js'), 'export const main = () => {}\n')
+    const integrity = hashDirectory(directory, { exclude: [] })
+    return {
+      trusted: true,
+      generation: 1,
+      snapshot: {
+        packageId: id,
+        profile: 'local-dev',
+        version: '1.0.0',
+        snapshotId: integrity,
+        integrity,
+        treeIntegrity: integrity,
+        capabilityHash: 'capability',
+        directory,
+        contributions: [],
+      },
+    }
+  }
+
+  it.each([1, 2, 4])('bounds independent prepare at %i and preserves registration order', async (limit) => {
+    const sources = Array.from({ length: 6 }, (_, i) => prepareSource(`@acme/prepare-${i}`))
+    const originalProfile = await profileFor()
+    const profile = {
+      ...originalProfile,
+      packages: [
+        ...originalProfile.packages,
+        ...sources.map(({ snapshot }) => ({
+          id: snapshot.packageId,
+          source: 'test',
+          version: snapshot.version,
+          integrity: snapshot.integrity,
+          trust: 'trusted' as const,
+          enabled: true,
+        })),
+      ],
+    }
+    const held = Array.from({ length: limit }, gate)
+    const reached = gate()
+    const started: string[] = []
+    const mounted: string[] = []
+    let active = 0
+    let peak = 0
+    const assembly = assemble(
+      profile,
+      deps(allModules(), {
+        runtimePluginSnapshots: sources,
+        ...(limit === 4 ? {} : { runtimePrepareConcurrency: limit }),
+        runtimePrepareIndependent: sources.map(({ snapshot }) => snapshot),
+        extensionLoader: {
+          import: async (file) => {
+            const source = sources.find(({ snapshot }) => file.startsWith(snapshot.directory))
+            if (!source) throw new Error('unexpected prepare source')
+            const index = started.length
+            started.push(source.snapshot.packageId)
+            peak = Math.max(peak, ++active)
+            if (started.length === limit) reached.resolve()
+            await held[index]?.promise
+            active--
+            return {
+              main: () => {
+                mounted.push(source.snapshot.packageId)
+              },
+            }
+          },
+        },
+      }),
+    )
+    void assembly.catch((error) => reached.reject(error))
+    await reached.promise
+    expect(new Set(started)).toEqual(
+      new Set(sources.slice(0, limit).map(({ snapshot }) => snapshot.packageId)),
+    )
+    expect(mounted).toEqual([])
+    for (const heldImport of [...held].reverse()) heldImport.resolve()
+    const a = await assembly
+    try {
+      expect(peak).toBe(limit)
+      expect(active).toBe(0)
+      expect(mounted).toEqual(sources.map(({ snapshot }) => snapshot.packageId))
+    } finally {
+      await closeHost(a, new Set(), { timeoutMs: 1000, audit: createMemoryAudit() })
+    }
+  })
+
+  it.each(['rejected', 'changed'])(
+    'drains %s in-flight prepares, collects errors and allows a fresh retry',
+    async (kind) => {
+      const sources = Array.from({ length: 4 }, (_, i) => prepareSource(`@acme/fail-${i}`))
+      const held = [gate(), gate()]
+      const reached = gate()
+      const secondEntered = gate()
+      const started: string[] = []
+      let settled = false
+      const options = deps(allModules(), {
+        crashAt: 'packages',
+        runtimePluginSnapshots: sources,
+        runtimePrepareConcurrency: 2,
+        runtimePrepareIndependent: sources.map(({ snapshot }) => snapshot),
+        extensionLoader: {
+          import: async (file) => {
+            const index = sources.findIndex(({ snapshot }) => file.startsWith(snapshot.directory))
+            // Independent imports may arrive in either order; exercise the reverse order explicitly.
+            if (index === 0) await secondEntered.promise
+            started.push(file)
+            if (index === 1) secondEntered.resolve()
+            if (started.length === 2) reached.resolve()
+            await held[index]?.promise
+            return { main: () => {} }
+          },
+        },
+      })
+      const profile = await profileFor()
+      const outcome = assemble(profile, options)
+        .catch((error: unknown) => error)
+        .finally(() => {
+          settled = true
+        })
+      void outcome.then((error) => {
+        if (error instanceof Error) reached.reject(error)
+      })
+      await reached.promise
+      const changedFile = join(sources[0]?.snapshot.directory ?? '', 'changed.txt')
+      if (kind === 'changed') {
+        writeFileSync(changedFile, 'changed during import')
+        held[0]?.resolve()
+      } else held[0]?.reject(new Error('first module failed'))
+      await Promise.resolve()
+      expect(settled).toBe(false)
+      held[1]?.reject(new Error('second module failed'))
+      const error = await outcome
+      expect(error).toMatchObject({
+        code: 'E_EXT_LOAD',
+        detail: {
+          reason: 'runtime-prepare-failed',
+          packages: sources.slice(0, 2).map(({ snapshot }) => snapshot.packageId),
+        },
+        cause: {
+          errors: [
+            expect.objectContaining({
+              detail: { reason: kind === 'changed' ? 'snapshot-changed' : 'module-import' },
+            }),
+            expect.objectContaining({ detail: { reason: 'module-import' } }),
+          ],
+        },
+      })
+      expect(started).toHaveLength(2)
+      if (kind === 'changed') rmSync(changedFile)
+      options.extensionLoader = { import: async () => ({ main: () => {} }) }
+      await expect(assemble(profile, options)).rejects.toThrow('crash:packages')
+    },
+  )
+
+  it.each(['unknown', 'updated', 'package-dependency', 'service-dependency'])(
+    'keeps %s sources serial even at concurrency 4',
+    async (kind) => {
+      const first = prepareSource(
+        '@acme/serial-a',
+        kind === 'package-dependency'
+          ? {
+              dependencies: { '@acme/serial-b': '^1.0.0' },
+            }
+          : kind === 'service-dependency'
+            ? {
+                agnes: { plugins: [{ export: 'main', apiRange: '^5.0.0', inject: ['serial-service'] }] },
+              }
+            : {},
+      )
+      const second = prepareSource(
+        '@acme/serial-b',
+        kind === 'service-dependency'
+          ? {
+              agnes: { plugins: [{ export: 'main', apiRange: '^5.0.0', provide: ['serial-service'] }] },
+            }
+          : {},
+      )
+      const sources = [first, second]
+      const reached = gate()
+      const held = gate()
+      const started: string[] = []
+      const outcome = assemble(
+        await profileFor(),
+        deps(allModules(), {
+          crashAt: 'packages',
+          runtimePluginSnapshots: sources,
+          runtimePrepareConcurrency: 4,
+          runtimePrepareIndependent:
+            kind === 'unknown'
+              ? []
+              : sources.map(({ snapshot }) => ({
+                  packageId: snapshot.packageId,
+                  snapshotId: kind === 'updated' ? 'old-snapshot' : snapshot.snapshotId,
+                })),
+          extensionLoader: {
+            import: async (file) => {
+              started.push(file)
+              if (file.startsWith(first.snapshot.directory)) {
+                reached.resolve()
+                await held.promise
+              }
+              return { main: () => {} }
+            },
+          },
+        }),
+      ).catch((error: unknown) => error)
+      void outcome.then((error) => {
+        if (error instanceof Error) reached.reject(error)
+      })
+      await reached.promise
+      expect(started).toEqual([join(first.snapshot.directory, 'index.js')])
+      held.resolve()
+      expect(await outcome).toMatchObject({ message: expect.stringContaining('crash:packages') })
+      expect(started).toEqual(sources.map(({ snapshot }) => join(snapshot.directory, 'index.js')))
+    },
+  )
+
+  it.each([
+    'duplicate-source',
+    'duplicate-row',
+    'untrusted',
+    'profile',
+    'generation',
+    'stale',
+    'dependency-manifest',
+    'identity',
+    'isolated',
+    'externals',
+    'entry',
+    'concurrency',
+  ])('rejects %s across the full selection before any import', async (kind) => {
+    const first = prepareSource('@acme/preflight-a')
+    let second = prepareSource(
+      '@acme/preflight-b',
+      kind === 'dependency-manifest'
+        ? { dependencies: { '@acme/example': 42 } }
+        : kind === 'identity'
+          ? { name: '@acme/wrong' }
+          : kind === 'isolated'
+            ? { agnes: { plugins: [{ export: 'main', apiRange: '^5.0.0', runtime: 'isolated' }] } }
+            : kind === 'externals'
+              ? {
+                  agnes: {
+                    hostProvidedExternals: { 'private-host-module': '*' },
+                    plugins: [{ export: 'main', apiRange: '^5.0.0' }],
+                  },
+                }
+              : kind === 'entry'
+                ? { exports: '../outside.js' }
+                : kind === 'duplicate-row'
+                  ? {
+                      agnes: {
+                        plugins: [
+                          { export: 'main', apiRange: '^5.0.0', id: `ext:${first.snapshot.packageId}/main` },
+                        ],
+                      },
+                    }
+                  : {},
+    )
+    if (kind === 'duplicate-source') second = first
+    if (kind === 'untrusted') second = { ...second, trusted: false }
+    if (kind === 'profile') second = { ...second, snapshot: { ...second.snapshot, profile: 'other-profile' } }
+    if (kind === 'generation') second = { ...second, generation: 0 }
+    if (kind === 'stale')
+      writeFileSync(join(second.snapshot.directory, 'changed.txt'), 'changed before prepare')
+    const imported: string[] = []
+    const d = deps(allModules(), {
+      runtimePluginSnapshots: [first, second],
+      runtimePrepareConcurrency: kind === 'concurrency' ? 5 : 4,
+      extensionLoader: {
+        import: async (file) => {
+          imported.push(file)
+          return { main: () => {} }
+        },
+      },
+    })
+    const builtin = vi.spyOn(d.loader, 'importPackage')
+    const outcome = assemble(await profileFor(), d)
+    if (kind === 'externals')
+      await expect(outcome).rejects.toMatchObject({
+        code: 'E_EXT_LOAD',
+        detail: { reason: 'external-unavailable', module: 'private-host-module' },
+      })
+    else await expect(outcome).rejects.toThrow()
+    expect(imported).toEqual([])
+    expect(builtin).not.toHaveBeenCalled()
+  })
+
+  it('drains active prepares on cancellation without starting the remaining sources', async () => {
+    const sources = Array.from({ length: 4 }, (_, i) => prepareSource(`@acme/cancel-${i}`))
+    const held = gate(),
+      reached = gate()
+    const abort = new AbortController()
+    let active = 0,
+      started = 0,
+      settled = false
+    const outcome = assemble(
+      await profileFor(),
+      deps(allModules(), {
+        signal: abort.signal,
+        runtimePluginSnapshots: sources,
+        runtimePrepareConcurrency: 2,
+        runtimePrepareIndependent: sources.map(({ snapshot }) => snapshot),
+        extensionLoader: {
+          import: async () => {
+            active++
+            started++
+            if (started === 2) reached.resolve()
+            await held.promise
+            active--
+            return { main: () => {} }
+          },
+        },
+      }),
+    )
+      .catch((error: unknown) => error)
+      .finally(() => {
+        settled = true
+      })
+    void outcome.then((error) => {
+      if (error instanceof Error) reached.reject(error)
+    })
+    await reached.promise
+    abort.abort()
+    expect(settled).toBe(false)
+    held.resolve()
+    expect(await outcome).toMatchObject({ message: expect.stringContaining('aborted') })
+    expect(active).toBe(0)
+    expect(started).toBe(2)
+  })
+
+  it('honors cancellation during full-selection preflight before any import', async () => {
+    const sources = Array.from({ length: 4 }, (_, i) => prepareSource(`@acme/preflight-cancel-${i}`))
+    const abort = new AbortController()
+    const imports: string[] = []
+    const d = deps(allModules(), {
+      signal: abort.signal,
+      runtimePluginSnapshots: sources,
+      runtimePrepareIndependent: sources.map(({ snapshot }) => snapshot),
+      extensionLoader: {
+        import: async (file) => {
+          imports.push(file)
+          return { main: () => {} }
+        },
+      },
+    })
+    const profile = await profileFor()
+    const builtin = vi.spyOn(d.loader, 'importPackage')
+    const outcome = assemble(profile, d)
+    queueMicrotask(() => abort.abort())
+    await expect(outcome).rejects.toThrow('aborted')
+    expect(imports).toEqual([])
+    expect(builtin).not.toHaveBeenCalled()
+  })
+
   it('mounts a package trusted after boot from the installed snapshots read at apply time', async () => {
     const vendor = '@acme/late-trust'
     const snapshotDir = mkdtempSync(join(tmpdir(), 'agnes-runtime-late-trust-'))
@@ -171,7 +566,7 @@ describe('assemble', () => {
         name: vendor,
         version: '1.0.0',
         exports: './index.js',
-        agnes: { plugins: [{ export: 'ordinary', id: 'ext:acme/late-trust' }] },
+        agnes: { plugins: [{ export: 'ordinary', apiRange: '^5.0.0', id: 'ext:acme/late-trust' }] },
       })}\n`,
     )
     writeFileSync(join(snapshotDir, 'index.js'), 'export const snapshotMarker = true\n')
@@ -193,7 +588,8 @@ describe('assemble', () => {
           lock: { packages: { ...lockPkgs, ...packages } },
           user: {
             name: 'local-dev',
-            provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
+            presets: { default: 'standard', allowed: ['standard'] },
+            provider: { package: '@agnes/ai', routes: [ROUTE] },
             packages: extra,
           },
         },
@@ -248,7 +644,7 @@ describe('assemble', () => {
         name: vendor,
         version: '1.0.0',
         exports: './index.js',
-        agnes: { plugins: [{ export: 'ordinary', id: 'ext:acme/close-race' }] },
+        agnes: { plugins: [{ export: 'ordinary', apiRange: '^5.0.0', id: 'ext:acme/close-race' }] },
       })}\n`,
     )
     writeFileSync(join(snapshotDir, 'index.js'), 'export const snapshotMarker = true\n')
@@ -271,7 +667,7 @@ describe('assemble', () => {
         name: vendor,
         version: '1.0.0',
         exports: './index.js',
-        agnes: { plugins: [{ export: 'boot', id: 'ext:acme/close-race-boot' }] },
+        agnes: { plugins: [{ export: 'boot', apiRange: '^5.0.0', id: 'ext:acme/close-race-boot' }] },
       }),
     )
     writeFileSync(join(bootDir, 'index.js'), 'export const boot = () => {}\n')
@@ -298,7 +694,8 @@ describe('assemble', () => {
         },
         user: {
           name: 'local-dev',
-          provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
+          presets: { default: 'standard', allowed: ['standard'] },
+          provider: { package: '@agnes/ai', routes: [ROUTE] },
           packages: [{ id: vendor, source: 'test' }],
         },
       },
@@ -386,8 +783,6 @@ describe('assemble', () => {
 
   it('builds the default local workspace runtime factory with a fitted per-session seam', async () => {
     const modules = allModules()
-    const originalSandboxFactory = modules['@agnes/base'].seams?.sandbox
-    if (!originalSandboxFactory) throw new Error('missing test sandbox factory')
     modules['@agnes/base'] = {
       ...modules['@agnes/base'],
       sandboxWorkspaceProbe: async () => ({
@@ -397,32 +792,6 @@ describe('assemble', () => {
         degraded: true,
         confine: ({ argv }) => argv,
       }),
-      seams: {
-        ...modules['@agnes/base'].seams,
-        sandbox: async (ctx) => {
-          const template = (await originalSandboxFactory(ctx)) as SandboxSeam
-          return {
-            ...template,
-            forWorkspace: async (workspace: SeamWorkspace): Promise<SandboxSeam> => ({
-              ...template,
-              forWorkspace: async () => {
-                throw new Error('workspace seam is already fitted')
-              },
-              fsPolicy: () => workspace.policy,
-              enforcement: () => workspace.enforcement,
-              confine: async (argv) => {
-                const backend = await workspace.readiness.ready()
-                return [...(await backend.confine({ argv, cwd: workspace.root }))]
-              },
-              exec: (argv, options) =>
-                workspace.exec(argv, {
-                  ...options,
-                  sandbox: { policyDigest: workspace.policy.digest, backend: workspace.execBackend },
-                }),
-            }),
-          }
-        },
-      },
     }
     const workspaceRoot = mkdtempSync(join(tmpdir(), 'agnes-asm-workspace-'))
     dirs.push(workspaceRoot)
@@ -478,7 +847,7 @@ describe('assemble', () => {
     expect(loaded).toBe(false)
   })
 
-  it('assembles the eight required seam rows without exposing a third-party factory when no target selects one', async () => {
+  it('assembles the seven required seam binding rows after every registration row', async () => {
     const a = await assemble(
       await profileFor(),
       deps(allModules(), {
@@ -487,7 +856,7 @@ describe('assemble', () => {
     )
     try {
       expect(a.pluginTree.bootRows.filter(({ id }) => id.startsWith('seam:')).map(({ id }) => id)).toEqual(
-        DYNAMIC_SEAM_NAMES.map((name) => `seam:${name}`),
+        SEAM_KINDS.map((name) => `seam:${name}`),
       )
       expect(a.pluginTree.bootRows.filter(({ id }) => id.startsWith('preset:')).map(({ id }) => id)).toEqual([
         'preset:base',
@@ -509,7 +878,7 @@ describe('assemble', () => {
       effect: 'allow' as const,
       reason: 'test',
     }))
-    const seams = module.seams as NonNullable<PackageModule['seams']>
+    const seams = testSeams(module)
     seams.approval = async (ctx) => ({
       ...original,
       ask: async () =>
@@ -519,6 +888,11 @@ describe('assemble', () => {
     seams.principals = async () => ({ ...originalPrincipals, authorize })
     const profile = await profileFor()
     const assemblyDeps = deps({ '@agnes/base': module, '@agnes/code': codeModule, '@agnes/ai': aiModule })
+    // The Kernel opens a session on the unbound static seam here, so it must answer for the workspace.
+    assemblyDeps.sandboxSeam = {
+      ...fakeSeams().sandbox,
+      fsPolicy: () => testFsPolicy(realpathSync.native(assemblyDeps.workspaceRoot)),
+    }
     const a = await assemble(profile, assemblyDeps)
     try {
       const stable = a.seams.approval
@@ -588,214 +962,6 @@ describe('assemble', () => {
     }
   })
 
-  it('fails closed when a profile-selected third-party seam lacks an immutable runtime snapshot', async () => {
-    const vendor = '@acme/approval'
-    const approval = fakeSeams().approval
-    const vendorModule = attachTestSeamPlugins({
-      id: vendor,
-      seams: {
-        approval: async () => ({
-          ...approval,
-          ask: async () => 'rejected' as const,
-        }),
-      },
-    })
-    const verifiedPlugins = Object.freeze(
-      (vendorModule.plugins ?? []).map((plugin) =>
-        Object.freeze({
-          ...plugin,
-          candidate: Object.freeze({
-            packageId: vendor,
-            snapshotId: 'snapshot-vendor-1',
-            exportName: plugin.declaration.export,
-            generation: 7,
-          }),
-          snapshotDigest: 'sha512-vendor',
-        }),
-      ),
-    )
-    Object.defineProperty(vendorModule, 'plugins', {
-      configurable: true,
-      enumerable: true,
-      value: verifiedPlugins,
-    })
-    const profile = await resolveProfile(
-      {
-        builtin: 'local-dev',
-        lock: {
-          packages: {
-            ...lockPkgs,
-            [vendor]: { version: '1.0.0', integrity: 'sha512-vendor', trust: 'trusted', enabled: true },
-          },
-        },
-        user: {
-          name: 'local-dev',
-          provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
-          seams: { approval: vendor },
-          packages: [{ id: vendor, source: 'test' }],
-        },
-      },
-      env,
-    )
-    await expect(
-      assemble(
-        profile,
-        deps(
-          {
-            '@agnes/base': baseModule(),
-            '@agnes/code': codeModule,
-            '@agnes/ai': aiModule,
-            [vendor]: vendorModule,
-          },
-          {
-            pluginSnapshots: {
-              async verify(candidate) {
-                return {
-                  packageId: candidate.packageId,
-                  snapshotId: candidate.snapshotId,
-                  generation: candidate.generation,
-                  digest: 'sha512-vendor',
-                  exports: (vendorModule.plugins ?? []).map(({ declaration }) => declaration.export),
-                  trusted: true,
-                }
-              },
-            },
-          },
-        ),
-      ),
-    ).rejects.toThrow('trusted package has no immutable runtime snapshot')
-  })
-
-  it('keeps a managed package available to Cordis when its immutable snapshot owns a selected seam', async () => {
-    const vendor = '@acme/runtime-approval'
-    const directory = mkdtempSync(join(tmpdir(), 'agnes-runtime-approval-'))
-    dirs.push(directory)
-    writeFileSync(
-      join(directory, 'package.json'),
-      `${JSON.stringify({
-        name: vendor,
-        version: '1.0.0',
-        exports: './index.js',
-        agnes: { plugins: [{ export: 'approvalPlugin', id: 'seam:approval' }] },
-      })}\n`,
-    )
-    writeFileSync(join(directory, 'index.js'), 'export const marker = true\n')
-    const snapshot: RuntimeSnapshot = Object.freeze({
-      snapshotId: `sha256-${'7'.repeat(64)}`,
-      profile: 'local-dev',
-      packageId: vendor,
-      version: '1.0.0',
-      integrity: `sha256-${'8'.repeat(64)}`,
-      treeIntegrity: hashDirectory(directory, { exclude: [] }),
-      capabilityHash: 'capability',
-      directory,
-      contributions: Object.freeze([]),
-    })
-    const directoryV2 = mkdtempSync(join(tmpdir(), 'agnes-runtime-approval-v2-'))
-    dirs.push(directoryV2)
-    writeFileSync(join(directoryV2, 'package.json'), readFileSync(join(directory, 'package.json')))
-    writeFileSync(join(directoryV2, 'index.js'), 'export const marker = "v2"\n')
-    const snapshotV2: RuntimeSnapshot = Object.freeze({
-      ...snapshot,
-      snapshotId: `sha256-${'c'.repeat(64)}`,
-      integrity: `sha256-${'d'.repeat(64)}`,
-      treeIntegrity: hashDirectory(directoryV2, { exclude: [] }),
-      directory: directoryV2,
-    })
-    const observed = vi.fn()
-    const approvalPlugin = Object.assign(
-      (ctx: Context) => {
-        observed(ctx.get('host:seam-init' as never))
-        return ctx.provide('seam:approval', { ask: async () => 'rejected' as const })
-      },
-      { inject: ['host:seam-init'], provide: 'seam:approval' },
-    )
-    const approvalPluginV2 = Object.assign(
-      (ctx: Context) => {
-        observed(ctx.get('host:seam-init' as never))
-        return ctx.provide('seam:approval', { ask: async () => 'allowed-once' as const })
-      },
-      { inject: ['host:seam-init'], provide: 'seam:approval' },
-    )
-    const profile = await resolveProfile(
-      {
-        builtin: 'local-dev',
-        lock: {
-          packages: {
-            ...lockPkgs,
-            [vendor]: {
-              version: '1.0.0',
-              integrity: snapshot.integrity,
-              trust: 'trusted',
-              enabled: true,
-            },
-          },
-        },
-        user: {
-          name: 'local-dev',
-          provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
-          seams: { approval: vendor },
-          packages: [{ id: vendor, source: 'test' }],
-        },
-      },
-      env,
-    )
-    const a = await assemble(
-      profile,
-      deps(allModules(), {
-        runtimePluginSnapshots: [{ snapshot, generation: 4, trusted: true }],
-        runtimePluginCatalogue: [
-          { snapshot, generation: 4, trusted: true },
-          { snapshot: snapshotV2, generation: 4, trusted: true },
-        ],
-        managedExtensionPackageIds: [vendor],
-        extensionLoader: {
-          import: async (file) =>
-            file.includes('agnes-runtime-approval-v2-')
-              ? { approvalPlugin: approvalPluginV2 }
-              : { approvalPlugin },
-        },
-      }),
-    )
-    try {
-      expect(observed).toHaveBeenCalledOnce()
-      expect(await a.seams.approval.ask({} as never)).toBe('rejected')
-      const firstRow = a.pluginTree.currentRows().find((row) => row.id === 'seam:approval')
-      expect(firstRow).toMatchObject({
-        plugin: `${vendor}@${snapshot.snapshotId}/approvalPlugin`,
-      })
-      if (!firstRow) throw new Error('missing assembled seam:approval row')
-      // A complete target may re-point a third-party seam row at another catalogue snapshot; the
-      // Host-private exact extras still gate the mount, so the row keeps its assembled extras.
-      const upgraded = createPluginRow({
-        id: firstRow.id,
-        plugin: `${vendor}@${snapshotV2.snapshotId}/approvalPlugin`,
-        snapshotDigest: snapshotV2.integrity,
-        exportName: 'approvalPlugin',
-        entryRevision: snapshotV2.snapshotId,
-        extrasRevision: firstRow.extrasRevision,
-        mountRevision: firstRow.mountRevision,
-        config: firstRow.config,
-        inject: firstRow.inject,
-        provides: firstRow.provides,
-        runtime: firstRow.runtime,
-      })
-      await publishRows(
-        a,
-        a.pluginTree.currentRows().map((row) => (row.id === 'seam:approval' ? upgraded : row)),
-      )
-      expect(await a.seams.approval.ask({} as never)).toBe('allowed-once')
-      const secondRow = a.pluginTree.currentRows().find((row) => row.id === 'seam:approval')
-      expect(secondRow).toMatchObject({
-        plugin: `${vendor}@${snapshotV2.snapshotId}/approvalPlugin`,
-        entryRevision: snapshotV2.snapshotId,
-      })
-      expect(secondRow?.mountIdentity).not.toBe(firstRow?.mountIdentity)
-    } finally {
-      await a.rollback.unwind()
-    }
-  })
-
   it('does not execute an enabled managed package that is absent from the selected snapshot set', async () => {
     const vendor = '@acme/managed-but-unselected'
     const profile = await resolveProfile(
@@ -809,7 +975,8 @@ describe('assemble', () => {
         },
         user: {
           name: 'local-dev',
-          provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
+          presets: { default: 'standard', allowed: ['standard'] },
+          provider: { package: '@agnes/ai', routes: [ROUTE] },
           packages: [{ id: vendor, source: 'test' }],
         },
       },
@@ -840,6 +1007,7 @@ describe('assemble', () => {
           plugins: [
             {
               export: 'greeting',
+              apiRange: '^5.0.0',
               id: 'ext:acme/greeting',
               config: { message: 'bundle' },
             },
@@ -919,7 +1087,8 @@ describe('assemble', () => {
         },
         user: {
           name: 'local-dev',
-          provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
+          presets: { default: 'standard', allowed: ['standard'] },
+          provider: { package: '@agnes/ai', routes: [ROUTE] },
           packages: [{ id: vendor, source: 'test' }],
         },
       },
@@ -1030,7 +1199,7 @@ describe('assemble', () => {
         name: vendor,
         version: '1.0.0',
         exports: './index.js',
-        agnes: { plugins: [{ export: 'ordinary', id: 'ext:acme/default-owner' }] },
+        agnes: { plugins: [{ export: 'ordinary', apiRange: '^5.0.0', id: 'ext:acme/default-owner' }] },
       })}\n`,
     )
     writeFileSync(join(directory, 'index.js'), 'export const marker = true\n')
@@ -1057,7 +1226,7 @@ describe('assemble', () => {
         },
         user: {
           name: 'local-dev',
-          provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
+          provider: { package: '@agnes/ai', routes: [ROUTE] },
           packages: [{ id: vendor, source: 'test' }],
           presets: { default: 'runtime-default', allowed: ['runtime-default'] },
         },
@@ -1126,7 +1295,7 @@ describe('assemble', () => {
         name: vendor,
         version: '1.0.0',
         exports: './index.js',
-        agnes: { plugins: [{ export: 'ordinary' }] },
+        agnes: { plugins: [{ export: 'ordinary', apiRange: '^5.0.0' }] },
       })}\n`,
     )
     writeFileSync(join(directory, 'index.js'), 'export const marker = true\n')
@@ -1203,41 +1372,20 @@ describe('assemble', () => {
         return { code: 0, stdout, stderr: '', truncated: false }
       },
     }
-    const originalSandbox = baseModule().seams?.sandbox
-    if (!originalSandbox) throw new Error('missing fixture sandbox')
     m[vendor] = {
       id: vendor,
-      openTransport: async (config, ctx) => {
-        order.push('open')
-        expect(order.slice(0, -1).sort()).toEqual(Object.keys(m).sort())
-        expect(config.opaque).toEqual({ value: 42 })
-        expect(typeof ctx.secret).toBe('function')
-        expect(ctx.signal).toBeInstanceOf(AbortSignal)
-        return t
-      },
-      seams: {
-        sandbox: async (ctx) => {
-          const seam = (await originalSandbox(ctx)) as ReturnType<typeof fakeSeams>['sandbox']
-          expect(ctx.sandboxHost?.transport).toBe(t)
-          ctx.sandboxHost?.declareExecGate({ backend: 'remote', onUnavailable: 'deny' })
-          return {
-            ...seam,
-            forWorkspace: async (workspace: SeamWorkspace): Promise<SandboxSeam> => ({
-              ...seam,
-              forWorkspace: async () => {
-                throw new Error('already fitted')
-              },
-              exec: (argv, opts) =>
-                workspace.exec(argv, {
-                  ...opts,
-                  sandbox: { backend: 'remote', policyDigest: workspace.policy.digest },
-                }),
-              fsPolicy: () => workspace.policy,
-              enforcement: () => workspace.enforcement,
-            }),
-          }
+      sandboxProvider: defineRemoteSandboxProvider({
+        id: 'vendor-remote',
+        version: '1.0.0',
+        openTransport: async (config, ctx) => {
+          order.push('open')
+          expect(order.slice(0, -1).sort()).toEqual(Object.keys(m).sort())
+          expect(config.opaque).toEqual({ value: 42 })
+          expect(typeof ctx.secret).toBe('function')
+          expect(ctx.signal).toBeInstanceOf(AbortSignal)
+          return t
         },
-      },
+      }),
     }
     d.loader = {
       importPackage: async (id) => {
@@ -1258,8 +1406,8 @@ describe('assemble', () => {
         },
         user: {
           name: 'p',
-          provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
-          seams: { sandbox: vendor },
+          provider: { package: '@agnes/ai', routes: [ROUTE] },
+          providers: { sandbox: { provider: 'vendor-remote' } },
           packages: [
             {
               id: vendor,
@@ -1281,15 +1429,14 @@ describe('assemble', () => {
     expect(order).toEqual([])
   })
 
-  it('assembles a kernel with ten seams, provider, presets and the resolved default preset', async () => {
+  it('assembles a kernel with nine seams, provider, presets and the resolved default preset', async () => {
     const p = await profileFor()
     const a = await assemble(p, deps(allModules()))
     expect(Object.keys(a.seams).sort()).toEqual([
       'approval',
       'artifacts',
+      'billing',
       'checkpoint',
-      'harness',
-      'ledger',
       'platform',
       'principals',
       'repair',
@@ -1367,11 +1514,29 @@ describe('assemble', () => {
     expect(a.presets.standard?.telemetry).toMatchObject({ consent: 'ANON' })
     await a.rollback.unwind()
   })
+  it('keeps the profile consent out of permission overlays, so a profile that gave consent still assembles', async () => {
+    const p = await profileFor()
+    const code: PackageModule = {
+      ...codeModule,
+      presets: {
+        ...codeModule.presets,
+        'permission-workspace-write': { name: 'permission-workspace-write', sandbox: { level: 'L1' } },
+      },
+    }
+    const d = deps({ '@agnes/base': baseModule(), '@agnes/code': code, '@agnes/ai': aiModule })
+    mkdirSync(d.profileDir, { recursive: true })
+    writeFileSync(join(d.profileDir, 'consent.yaml'), 'telemetry:\n  consent: LOCAL\n')
+    const a = await assemble(p, d)
+    expect(a.presets['permission-workspace-write']).not.toHaveProperty('telemetry')
+    expect(a.presets.standard?.telemetry).toMatchObject({ consent: 'LOCAL' })
+    expect(a.defaultPreset.hash).toMatch(/^sha256-/)
+    await a.rollback.unwind()
+  })
   it('gives each seam a context bound to its own package and the seven profile fields base reads', async () => {
     const p = await profileFor()
     const seen: Array<Record<string, unknown>> = []
     const m = baseModule()
-    const seams = m.seams as NonNullable<PackageModule['seams']>
+    const seams = testSeams(m)
     seams.approval = async (ctx) => {
       seen.push(ctx.profile)
       return { ask: async () => 'allowed-once', resume: async () => null }
@@ -1391,10 +1556,10 @@ describe('assemble', () => {
     expect((ctx.preset as { name: string }).name).toBe('standard')
     await a.rollback.unwind()
   })
-  it('keeps Computer Use artifact retention out of a never-enabled profile', async () => {
+  it('keeps screenshot collection off while permitting private shared CAS writes', async () => {
     const p = await profileFor({ computerUse: { enabled: false } })
     const m = baseModule()
-    const seams = m.seams as NonNullable<PackageModule['seams']>
+    const seams = testSeams(m)
     const originalArtifacts = seams.artifacts
     if (!originalArtifacts) throw new Error('missing fixture artifacts seam')
     let privateStoreInjected = false
@@ -1404,29 +1569,90 @@ describe('assemble', () => {
     }
 
     const a = await assemble(p, deps({ '@agnes/base': m, '@agnes/code': codeModule, '@agnes/ai': aiModule }))
-    expect(privateStoreInjected).toBe(false)
+    expect(privateStoreInjected).toBe(privateArtifactDeleteAvailable())
     expect(a.computerUseArtifactGc).toBeUndefined()
     await a.rollback.unwind()
   })
-  it('missing seam factory is E_SEAM_EXPORT_MISSING; a rejecting factory is E_SEAM_INIT; both roll back', async () => {
+  it('binds a selected seam provider that another package registers through the same path as base', async () => {
+    const snapshots: string[] = []
+    const alt = {
+      id: 'alt',
+      version: '1.0.0',
+      create: async () => ({
+        snapshot: async (paths: string[]) => {
+          snapshots.push(...paths)
+          return { id: 'alt-1' }
+        },
+        rewind: async () => undefined,
+        list: async () => [],
+      }),
+    }
+    const vendor: PackageModule = {
+      id: '@agnes/code',
+      presets: codeModule.presets as never,
+      operations: {},
+      plugins: [
+        {
+          declaration: {
+            export: 'altCheckpointPlugin',
+            apiRange: '^5.0.0',
+            id: 'seam-providers:alt',
+            inject: ['providers'],
+            runtime: 'in-process',
+            default: true,
+          },
+          entry: normalizePluginExport({
+            inject: ['providers'],
+            apply: (ctx: ProviderPluginContext) => {
+              ctx.providers.register(checkpointKind, alt as never)
+            },
+          } as never),
+        },
+      ],
+    }
+    const profile = await profileFor({ providers: { checkpoint: { provider: 'alt' } } })
+    const a = await assemble(
+      profile,
+      deps({ '@agnes/base': baseModule(), '@agnes/code': vendor, '@agnes/ai': aiModule }),
+    )
+    try {
+      expect(await a.seams.checkpoint.snapshot(['x.txt'], '1/1')).toEqual({ id: 'alt-1' })
+      expect(snapshots).toEqual(['x.txt'])
+      const rows = a.pluginTree.currentRows().map(({ id }) => id)
+      expect(rows.indexOf('seam:checkpoint')).toBeGreaterThan(rows.indexOf('seam-providers:alt'))
+      const entry = a.pluginTree.root.providers
+        .catalog()
+        .find((e) => e.kind === 'checkpoint' && e.id === 'alt')
+      expect(entry).toMatchObject({
+        sourcePackage: '@agnes/code',
+        required: true,
+        pinned: true,
+        active: true,
+      })
+    } finally {
+      await a.rollback.unwind()
+    }
+  })
+
+  it('an unregistered selected provider is E_SEAM_MISSING; a rejecting factory is E_SEAM_INIT; both roll back', async () => {
     const p = await profileFor()
     const noApproval = baseModule()
-    delete (noApproval.seams as NonNullable<PackageModule['seams']>).approval
+    delete testSeams(noApproval).approval
     await expect(
       assemble(p, deps({ '@agnes/base': noApproval, '@agnes/code': codeModule, '@agnes/ai': aiModule })),
-    ).rejects.toThrow(/E_SEAM_EXPORT_MISSING/)
+    ).rejects.toThrow(/E_SEAM_MISSING.*approval/)
     const bad = baseModule()
-    ;(bad.seams as NonNullable<PackageModule['seams']>).ledger = async () => {
+    testSeams(bad).billing = async () => {
       throw new Error('db down')
     }
     const d = deps({ '@agnes/base': bad, '@agnes/code': codeModule, '@agnes/ai': aiModule })
-    await expect(assemble(p, d)).rejects.toThrow(/E_SEAM_INIT.*ledger/)
+    await expect(assemble(p, d)).rejects.toThrow(/E_SEAM_INIT.*billing/)
     expect(events(d).at(-1)).toMatchObject({ kind: 'startup.failed', detail: { step: 'seams' } })
   })
   it('reports the first seam in SEAM_NAMES order when two fail, not whichever rejected soonest', async () => {
     const p = await profileFor()
     const m = baseModule()
-    const seams = m.seams as NonNullable<PackageModule['seams']>
+    const seams = testSeams(m)
     // repair comes after checkpoint in SEAM_NAMES, and rejects first in wall-clock time.
     seams.repair = async () => {
       throw new Error('immediate')
@@ -1471,11 +1697,11 @@ describe('assemble', () => {
     const closed: string[] = []
     const real = fakeSeams()
     const m = baseModule()
-    const seams = m.seams as NonNullable<PackageModule['seams']>
-    seams.harness = async () => ({
-      ...real.harness,
+    const seams = testSeams(m)
+    seams.verifier = async () => ({
+      ...real.verifier,
       close: () => {
-        closed.push('harness')
+        closed.push('verifier')
         throw new Error('teardown refused')
       },
     })
@@ -1490,16 +1716,30 @@ describe('assemble', () => {
       { crashAt: 'provider' },
     )
     await expect(assemble(p, d)).rejects.toThrow('crash:provider')
-    expect(closed.sort()).toEqual(['harness', 'repair'])
+    expect(closed.sort()).toEqual(['repair', 'verifier'])
     // Cordis owns plugin cleanup and reports disposer failures through its logger while continuing
     // to tear down sibling rows. The Host rollback therefore completes instead of retaining the
     // legacy per-seam rollback label.
     expect(events(d).at(-1)?.detail?.rollbackFailed).toEqual([])
   })
+  it('keeps a retired package format actionable while unwinding Host assembly', async () => {
+    const p = await profileFor()
+    const d = deps(allModules(), {
+      providerFactory: () => {
+        assertCurrentPackageFormat({ metadata: { category: 'private-log' } })
+        return new ScriptedProvider({ scripts: [] })
+      },
+    })
+    await expect(assemble(p, d)).rejects.toMatchObject({
+      code: 'E_PACKAGE_INTEGRITY',
+      detail: { reason: 'clean-home-required' },
+    })
+    expect(events(d).at(-1)?.detail?.rollbackFailed).toEqual([])
+  })
   it('seam factory timeout is E_SEAM_INIT with reason timeout', async () => {
     const p = await profileFor()
     const slow = baseModule()
-    ;(slow.seams as NonNullable<PackageModule['seams']>).verifier = () => new Promise(() => {})
+    testSeams(slow).verifier = () => new Promise(() => {})
     await expect(
       assemble(
         p,
@@ -1513,7 +1753,7 @@ describe('assemble', () => {
   it('a seam that hands back something that is not an object is refused, not fitted', async () => {
     const p = await profileFor()
     const m = baseModule()
-    ;(m.seams as NonNullable<PackageModule['seams']>).harness = async () => 'not a seam'
+    testSeams(m).verifier = async () => 'not a seam' as never
     await expect(
       assemble(p, deps({ '@agnes/base': m, '@agnes/code': codeModule, '@agnes/ai': aiModule })),
     ).rejects.toThrow(/E_SEAM_INIT.*non-object/)
@@ -1522,10 +1762,10 @@ describe('assemble', () => {
     const p = await profileFor()
     let closed = 0
     const m = baseModule()
-    const seams = m.seams as NonNullable<PackageModule['seams']>
+    const seams = testSeams(m)
     const real = fakeSeams()
-    seams.harness = async () => ({
-      ...real.harness,
+    seams.verifier = async () => ({
+      ...real.verifier,
       close: () => {
         closed++
       },
@@ -1598,14 +1838,50 @@ describe('assemble', () => {
     expect(e.code).toBe('E_PACKAGE_DUPLICATE')
     expect(e.detail.source).toBe('python')
   })
-  it('assembles applyRuntimeTarget when the profile declares no provider.routes', async () => {
-    const p = await profileFor({
-      provider: { package: '@agnes/ai', adapters: ['@agnes/ai'] },
-    })
+  it('assembles applyRuntimeTarget with all account credentials missing and refuses inference clearly', async () => {
     const d = deps(allModules())
+    const configuration = createConfigurationService({
+      home: join(d.dataDir, 'home'),
+      profile: 'local-dev',
+      request: async () =>
+        new Response(JSON.stringify({ data: [{ id: 'deepseek-flash' }] }), {
+          headers: { 'content-type': 'application/json' },
+        }),
+    })
+    await configuration.save({
+      accountId: 'lost',
+      providerId: 'deepseek',
+      model: 'deepseek-flash',
+      apiKey: 'test-lost-key',
+    })
+    const before = await configuration.profileInput()
+    const ref = before.provider?.routes?.[0]?.credentialRef
+    if (!ref) throw new Error('missing credential reference')
+    await createCredentialStore({ root: join(d.dataDir, 'home') }).remove(ref)
+    const overlay = await configuration.profileInput()
+    expect(overlay.provider?.routes).toEqual([])
+    const p = await resolveProfile(
+      {
+        builtin: 'local-dev',
+        user: { name: 'local-dev', ...overlay, presets: { default: 'standard', allowed: ['standard'] } },
+      },
+      env,
+    )
     delete d.providerFactory
     d.allowUnresolvedProvider = true
     const a = await assemble(p, d)
+    expect(a.provider.models()).toEqual([])
+    await expect(
+      a.provider
+        .infer(fakeRequest(), { signal: new AbortController().signal, toolNames: [] })
+        [Symbol.asyncIterator]()
+        .next(),
+    ).rejects.toMatchObject({
+      code: 'E_PRESET_UNRESOLVED',
+      message: expect.stringContaining('Configure a model account'),
+      detail: { reason: 'no-routes' },
+    })
+    expect(JSON.stringify(events(d))).not.toContain('test-lost-key')
     expect(typeof a.applyRuntimeTarget).toBe('function')
     const report = await a.applyRuntimeTarget(
       buildRuntimeTarget({
@@ -1643,12 +1919,18 @@ describe('assemble', () => {
     // to fill. verifyRoutes is the half that reads what the adapters actually accepted.
     const ghost: RouteDecl = { route: 'gw', api: 'openai', baseUrl: 'https://gw.example/v1', models: [] }
     const p = await profileFor({
-      provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ghost] },
+      provider: { package: '@agnes/ai', routes: [ghost] },
     })
     const pinned: PackageModule = {
       id: '@agnes/code',
       operations: {},
-      presets: { standard: { name: 'standard', extends: 'base', model: { id: { primary: 'ghost-model' } } } },
+      presets: {
+        standard: {
+          name: 'standard',
+          extends: 'base',
+          model: { route: { primary: { route: 'gw', model: 'ghost-model' } } },
+        },
+      },
     }
     const d = deps({ '@agnes/base': baseModule(), '@agnes/code': pinned, '@agnes/ai': aiModule })
     delete d.providerFactory
@@ -1713,8 +1995,9 @@ describe('assemble', () => {
         },
         user: {
           name: 'local-dev',
+          presets: { default: 'standard', allowed: ['standard'] },
           packages: [{ id, source: 'trusted' }],
-          provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
+          provider: { package: '@agnes/ai', routes: [ROUTE] },
         },
       },
       env,
@@ -1726,14 +2009,16 @@ describe('assemble', () => {
     const extDir = mkdtempSync(join(tmpdir(), 'agnes-ext-widgets-'))
     dirs.push(extDir)
     writeFileSync(
-      join(extDir, 'agnes.extension.json'),
-      JSON.stringify({
-        id,
-        version: '1.0.0',
-        apiRange: '^1.0',
-        entry: './index.ts',
-        capabilities: { hooks: ['before_step'], slots: ['status.line'] },
-      }),
+      join(extDir, 'package.json'),
+      JSON.stringify(
+        bundledPackageJson({
+          id,
+          version: '1.0.0',
+          apiRange: '^5.0.0',
+          entry: './index.ts',
+          capabilities: { hooks: ['before_step'], slots: ['status.line'] },
+        }),
+      ),
     )
     writeFileSync(
       join(extDir, 'index.ts'),
@@ -1763,14 +2048,16 @@ describe('assemble', () => {
     const extDir = mkdtempSync(join(tmpdir(), 'agnes-ext-broken-'))
     dirs.push(extDir)
     writeFileSync(
-      join(extDir, 'agnes.extension.json'),
-      JSON.stringify({
-        id: 'demo/not-broken', // deliberately not `id`: preflight refuses the identity mismatch
-        version: '1.0.0',
-        apiRange: '^1.0',
-        entry: './index.ts',
-        capabilities: {},
-      }),
+      join(extDir, 'package.json'),
+      JSON.stringify(
+        bundledPackageJson({
+          id: 'demo/not-broken', // deliberately not `id`: preflight refuses the identity mismatch
+          version: '1.0.0',
+          apiRange: '^5.0.0',
+          entry: './index.ts',
+          capabilities: {},
+        }),
+      ),
     )
     const d = deps({ ...allModules(), [id]: { id, operations: {}, extensionEntry: extDir } })
     d.packageDirs = new Map([

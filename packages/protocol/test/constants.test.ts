@@ -18,11 +18,13 @@ import {
 } from '../src/index.js'
 
 describe('constants', () => {
-  it('freezes 31 event types', () => {
-    expect(EVENT_TYPES).toHaveLength(31)
-    expect(new Set(EVENT_TYPES).size).toBe(31)
+  it('freezes 29 event types', () => {
+    expect(EVENT_TYPES).toHaveLength(29)
+    expect(new Set(EVENT_TYPES).size).toBe(29)
     // The program counter is a register cell, not a row.
     expect(EVENT_TYPES).not.toContain('op.state')
+    expect(EVENT_TYPES).not.toContain('approval/request')
+    expect(EVENT_TYPES).not.toContain('approval/decision')
     for (const t of [
       'session/start',
       'turn/end',
@@ -30,6 +32,7 @@ describe('constants', () => {
       'tool/result',
       'request/sent',
       'subagent/cost',
+      'decision/state',
     ])
       expect(EVENT_TYPES).toContain(t)
   })
@@ -37,11 +40,31 @@ describe('constants', () => {
     expect(isEventType('x/core/invariant')).toBe(true)
     expect(isEventType('x/agnes/subagent/worktree-skipped')).toBe(true)
     expect(isEventType('x/xinwei/sales-analysis/foo')).toBe(true)
-    expect(isEventType('x/xinwei/foo')).toBe(false) // the three-segment form is reserved for core / agnes
-    expect(isEventType('x/Core/bad')).toBe(false)
+    expect(isEventType('x/xinwei/foo')).toBe(true)
+    expect(isEventType('x/Vendor_1/report.ready')).toBe(true)
     expect(isEventType('user/message')).toBe(true)
     expect(isEventType('user/msg')).toBe(false)
     expect(EXT_EVENT_PATTERN.test('x/core/invariant')).toBe(true)
+    expect(EXT_EVENT_PATTERN.test('x/feedback/item')).toBe(true)
+    expect(EXT_EVENT_PATTERN.test('x/feedback/growth')).toBe(true)
+    expect(EXT_EVENT_PATTERN.test('x/feedback/other')).toBe(true)
+    expect(EXT_EVENT_PATTERN.test('x/approval/review')).toBe(true)
+    expect(EXT_EVENT_PATTERN.test('x/approval/reservation')).toBe(true)
+    expect(EXT_EVENT_PATTERN.test('x/approval/other')).toBe(true)
+    expect(EXT_EVENT_PATTERN.test('x/agnes/intelligent-ui/surface.opened')).toBe(true)
+    expect(EXT_EVENT_PATTERN.test('x/agnes/intelligent-ui/action.pending-approval')).toBe(true)
+    expect(EXT_EVENT_PATTERN.test('x/agnes/intelligent-ui/source.resolved')).toBe(true)
+    expect(EXT_EVENT_PATTERN.test('x/agnes/intelligent-ui/source.refused')).toBe(true)
+    expect(EXT_EVENT_PATTERN.test('x/agnes/intelligent-ui/source.refreshed')).toBe(true)
+    for (const type of [
+      'x/agnes/intelligent-ui/action.forged',
+      'x/agnes/intelligent-ui/source.forged',
+      'x/vendor/tool/surface.opened',
+      'x/agnes/intelligent-ui/surface.opened/extra',
+    ])
+      expect(EXT_EVENT_PATTERN.test(type)).toBe(true)
+    for (const type of ['x/acme', 'x/acme/', 'x/invalid plugin/report', 'x/acme/report ready', 'tool/result'])
+      expect(EXT_EVENT_PATTERN.test(type)).toBe(false)
   })
   it('exposes namespace constants', () => {
     expect(META_KEY).toBe('ai.agnes.harness')

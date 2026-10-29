@@ -1,16 +1,17 @@
-import type { Ansi } from '../ansi.js'
+import type { Colour } from '../ansi.js'
 import { type Component, escapeControl, padLine, wrapText } from '../component.js'
-import type { TuiTheme } from '../theme.js'
+import type { Tone } from '../palette.js'
+import type { ThemedAnsi, TuiTheme } from '../theme.js'
 
-/** A Grok-like turn separator: quiet full-width surface, with only the role marker in brand colour. */
+/** A quiet full-width surface whose brand-colour left edge runs down every wrapped row. */
 export class UserMessage implements Component {
   private readonly text: string
 
   constructor(
     text: string,
-    private readonly ansi: Ansi,
+    private readonly ansi: ThemedAnsi,
     private readonly theme: TuiTheme,
-    private readonly accent = 141,
+    private readonly accent: Tone | Colour = 'accent',
   ) {
     this.text = escapeControl(text)
   }
@@ -19,13 +20,13 @@ export class UserMessage implements Component {
 
   render(width: number): string[] {
     width = Math.max(1, Math.trunc(width))
-    if (width < 3) return wrapText(this.text, width)
+    // Raw view: the words alone, with no bar and no padding to come along in a copy.
+    if (width < 3 || this.ansi.raw) return wrapText(this.text, width)
     const inset = width >= 8 ? 1 : 0
     const inner = Math.max(1, width - inset * 2)
-    const marker = this.ansi.bold(this.ansi.fg(this.accent, '›'))
-    return wrapText(this.text, Math.max(1, inner - 4)).map((line, index) => {
-      const prefix = index === 0 ? `  ${marker} ` : '    '
-      const body = padLine(line, Math.max(1, inner - 4))
+    const prefix = `${this.ansi.bold(this.ansi.fg(this.accent, '▍'))} `
+    return wrapText(this.text, Math.max(1, inner - 2)).map((line) => {
+      const body = padLine(line, Math.max(1, inner - 2))
       return `${' '.repeat(inset)}${this.theme.surface(this.ansi, prefix)}${this.theme.surface(
         this.ansi,
         body,

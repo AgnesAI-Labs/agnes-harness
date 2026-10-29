@@ -1,14 +1,265 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agnes.ai/schema/profile.json",
-  "title": "Profile shapes (\u89c4\u683c \u00a718.2)",
+  "title": "Profile shapes (规格 §18.2)",
   "$defs": {
+    "CompositionPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packages": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/PackageRef"
+          }
+        },
+        "plugins": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "config": {
+                "$ref": "#/$defs/JsonValue"
+              }
+            }
+          }
+        },
+        "toolPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "readOnly": {
+              "type": "boolean"
+            },
+            "allow": {
+              "type": "array",
+              "maxItems": 256,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+              }
+            },
+            "deny": {
+              "type": "array",
+              "maxItems": 256,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+              }
+            }
+          }
+        },
+        "tools": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+          }
+        },
+        "mcp": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+          }
+        },
+        "skills": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+          }
+        },
+        "uiModules": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+          }
+        },
+        "surfaces": {
+          "type": "array",
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["web", "acp", "http"]
+          }
+        },
+        "shell": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "modules": {
+              "type": "array",
+              "maxItems": 256,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
+            },
+            "slots": {
+              "type": "array",
+              "maxItems": 256,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
+            }
+          }
+        },
+        "providers": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "loop": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["provider", "version"],
+              "properties": {
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                },
+                "provider": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                }
+              }
+            },
+            "model-adapter": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["provider"],
+              "properties": {
+                "provider": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    {
+                      "type": "array",
+                      "maxItems": 256,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512,
+                        "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "compaction": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "provider": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512,
+                      "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                    }
+                  },
+                  "required": ["provider"]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "persistence": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                }
+              },
+              "required": ["provider"]
+            },
+            "sandbox": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                }
+              },
+              "required": ["provider"]
+            }
+          }
+        }
+      }
+    },
+    "CompositionSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "layer": {
+          "enum": ["default", "profile", "preset", "admin", "session"]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+        }
+      },
+      "required": ["layer", "name"]
+    },
     "Capability": {
       "type": "string",
       "pattern": "^[a-z][A-Za-z0-9.-]{0,63}$"
     },
     "ApprovalMode": {
-      "enum": ["manual", "smart", "off"]
+      "enum": ["manual", "off", "auto-review"]
     },
     "ApprovalProfile": {
       "type": "object",
@@ -20,22 +271,19 @@
         }
       }
     },
-    "AttachmentsProfile": {
+    "SeamSelection": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["provider"],
       "properties": {
-        "storeByReference": {
-          "type": "boolean"
-        }
-      }
-    },
-    "ResolvedAttachmentsProfile": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["storeByReference"],
-      "properties": {
-        "storeByReference": {
-          "type": "boolean"
+        "provider": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
         }
       }
     },
@@ -43,14 +291,13 @@
       "enum": [
         "approval",
         "checkpoint",
-        "ledger",
+        "billing",
         "sandbox",
         "verifier",
         "repair",
         "artifacts",
         "principals",
-        "platform",
-        "harness"
+        "platform"
       ]
     },
     "PackageRef": {
@@ -484,6 +731,33 @@
       "additionalProperties": false,
       "required": ["name"],
       "properties": {
+        "bundles": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+          }
+        },
+        "composition": {
+          "$ref": "#/$defs/CompositionPatch"
+        },
+        "sandbox": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "options": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "maxLength": 4096
+              }
+            }
+          }
+        },
         "name": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]{0,63}$"
@@ -502,40 +776,87 @@
             "$ref": "#/$defs/PackageRef"
           }
         },
-        "seams": {
+        "providers": {
           "type": "object",
           "additionalProperties": false,
           "required": [],
           "properties": {
             "approval": {
-              "type": "string"
+              "$ref": "#/$defs/SeamSelection"
             },
             "checkpoint": {
-              "type": "string"
+              "$ref": "#/$defs/SeamSelection"
             },
-            "ledger": {
-              "type": "string"
-            },
-            "sandbox": {
-              "type": "string"
+            "billing": {
+              "$ref": "#/$defs/SeamSelection"
             },
             "verifier": {
-              "type": "string"
+              "$ref": "#/$defs/SeamSelection"
             },
             "repair": {
-              "type": "string"
+              "$ref": "#/$defs/SeamSelection"
             },
             "artifacts": {
-              "type": "string"
+              "$ref": "#/$defs/SeamSelection"
             },
             "principals": {
-              "type": "string"
+              "$ref": "#/$defs/SeamSelection"
             },
-            "platform": {
-              "type": "string"
+            "loop": {
+              "$ref": "#/$defs/ProviderSelection"
             },
-            "harness": {
-              "type": "string"
+            "compaction": {
+              "$ref": "#/$defs/ProviderSelection"
+            },
+            "persistence": {
+              "$ref": "#/$defs/ProviderSelection"
+            },
+            "sandbox": {
+              "$ref": "#/$defs/ProviderSelection"
+            },
+            "tool-runtime": {
+              "$ref": "#/$defs/ProviderSelection"
+            },
+            "tool-policy": {
+              "$ref": "#/$defs/ProviderSelection"
+            },
+            "child-agent": {
+              "$ref": "#/$defs/ProviderSelection"
+            },
+            "memory": {
+              "$ref": "#/$defs/ProviderSelection"
+            },
+            "model-adapter": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["provider"],
+              "properties": {
+                "provider": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    {
+                      "type": "array",
+                      "maxItems": 256,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512,
+                        "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                      }
+                    }
+                  ]
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              }
             }
           }
         },
@@ -546,12 +867,6 @@
           "properties": {
             "package": {
               "type": "string"
-            },
-            "adapters": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
             },
             "routes": {
               "type": "array",
@@ -654,6 +969,21 @@
             }
           }
         },
+        "permissions": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "default": {
+              "enum": ["read-only", "workspace-write", "full-access"]
+            },
+            "allowed": {
+              "type": "array",
+              "items": {
+                "enum": ["read-only", "workspace-write", "full-access"]
+              }
+            }
+          }
+        },
         "policy": {
           "$ref": "#/$defs/Policy"
         },
@@ -665,9 +995,6 @@
         },
         "computerUse": {
           "$ref": "#/$defs/ComputerUseProfile"
-        },
-        "attachments": {
-          "$ref": "#/$defs/AttachmentsProfile"
         },
         "extensionIsolation": {
           "$ref": "#/$defs/ExtensionIsolationPolicy"
@@ -687,7 +1014,7 @@
           "required": ["mode"],
           "properties": {
             "mode": {
-              "enum": ["manual", "smart"]
+              "enum": ["manual"]
             }
           }
         },
@@ -780,11 +1107,173 @@
         "presets",
         "policy",
         "computerUse",
-        "attachments",
         "hash",
         "reconcile"
       ],
       "properties": {
+        "bundles": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+          }
+        },
+        "composition": {
+          "$ref": "#/$defs/CompositionPatch"
+        },
+        "compaction": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "engine": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+            }
+          },
+          "required": ["engine"]
+        },
+        "persistence": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+            }
+          },
+          "required": ["provider"]
+        },
+        "sandbox": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+            }
+          },
+          "required": ["provider"]
+        },
+        "adminBundles": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+          }
+        },
+        "compositionToolScope": {
+          "description": "Host-compiled bundle tool ownership, pinned with the session composition.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["bundlePackages", "activePackages"],
+          "properties": {
+            "bundlePackages": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
+            },
+            "activePackages": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
+            }
+          }
+        },
+        "sessionComposition": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bundles": {
+              "type": "array",
+              "maxItems": 64,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+              }
+            },
+            "loop": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "version"],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                }
+              }
+            }
+          }
+        },
+        "compositionSources": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/CompositionSource"
+          }
+        },
+        "bundleCatalog": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        "bundlePresets": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        "loop": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "version"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+            }
+          }
+        },
         "name": {
           "type": "string"
         },
@@ -840,48 +1329,28 @@
         "seams": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "approval",
-            "checkpoint",
-            "ledger",
-            "sandbox",
-            "verifier",
-            "repair",
-            "artifacts",
-            "principals",
-            "platform",
-            "harness"
-          ],
+          "required": ["approval", "checkpoint", "billing", "verifier", "repair", "artifacts", "principals"],
           "properties": {
             "approval": {
-              "type": "string"
+              "$ref": "#/$defs/SeamSelection"
             },
             "checkpoint": {
-              "type": "string"
+              "$ref": "#/$defs/SeamSelection"
             },
-            "ledger": {
-              "type": "string"
-            },
-            "sandbox": {
-              "type": "string"
+            "billing": {
+              "$ref": "#/$defs/SeamSelection"
             },
             "verifier": {
-              "type": "string"
+              "$ref": "#/$defs/SeamSelection"
             },
             "repair": {
-              "type": "string"
+              "$ref": "#/$defs/SeamSelection"
             },
             "artifacts": {
-              "type": "string"
+              "$ref": "#/$defs/SeamSelection"
             },
             "principals": {
-              "type": "string"
-            },
-            "platform": {
-              "type": "string"
-            },
-            "harness": {
-              "type": "string"
+              "$ref": "#/$defs/SeamSelection"
             }
           }
         },
@@ -1002,6 +1471,22 @@
             }
           }
         },
+        "permissions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["default", "allowed"],
+          "properties": {
+            "default": {
+              "enum": ["read-only", "workspace-write", "full-access"]
+            },
+            "allowed": {
+              "type": "array",
+              "items": {
+                "enum": ["read-only", "workspace-write", "full-access"]
+              }
+            }
+          }
+        },
         "policy": {
           "type": "object",
           "additionalProperties": false,
@@ -1026,9 +1511,6 @@
         },
         "computerUse": {
           "$ref": "#/$defs/ResolvedComputerUseProfile"
-        },
-        "attachments": {
-          "$ref": "#/$defs/ResolvedAttachmentsProfile"
         },
         "runtimes": {
           "type": "array",
@@ -1071,6 +1553,27 @@
       "additionalProperties": false,
       "required": ["extensions"],
       "properties": {
+        "networkTimeouts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600000
+            },
+            "connectMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600000
+            },
+            "streamIdleMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600000
+            }
+          }
+        },
         "backend": {
           "enum": ["auto", "seatbelt", "bwrap", "restricted-token"]
         },
@@ -1169,6 +1672,24 @@
           }
         }
       ]
+    },
+    "ProviderSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
     }
   }
 }

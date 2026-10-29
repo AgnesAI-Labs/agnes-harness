@@ -1,0 +1,126 @@
+import { compilePluginConfig } from '@agnes/extension-api'
+import { HostError } from '@agnes/host-common/errors'
+import type { ResolvedProfile } from '@agnes/host-common/profile/types'
+import type { PackageModule } from '@agnes/host-extensions/assemble/packages'
+import type { HostBuiltinRowClaim } from '@agnes/host-extensions/assemble/seams-cordis'
+import {
+  createPluginRow,
+  isResourceOwnedRowId,
+  type PackageSnapshotCandidateRef,
+  type VerifiedRowEntry,
+} from '@agnes/plugin-runtime/host'
+
+export type HostThirdPartyRowClaim = Readonly<{
+  row: ReturnType<typeof createPluginRow>
+  entry: VerifiedRowEntry
+  snapshot: Readonly<PackageSnapshotCandidateRef>
+}>
+
+export type OrdinaryPluginLayerEntry = Readonly<{ enabled?: boolean; config?: unknown }>
+export type OrdinaryPluginLayer = Readonly<Record<string, OrdinaryPluginLayerEntry>>
+export type OrdinaryPluginLayers = Readonly<{
+  deployment?: OrdinaryPluginLayer
+  user?: OrdinaryPluginLayer
+  workspace?: OrdinaryPluginLayer
+}>
+
+export type BuiltOrdinaryRows = Readonly<{
+  rows: readonly ReturnType<typeof createPluginRow>[]
+  builtinClaims: readonly Readonly<HostBuiltinRowClaim>[]
+  thirdPartyClaims: readonly Readonly<HostThirdPartyRowClaim>[]
+}>
+
+/** Expand package defaults and deployment/user/workspace overrides through one normalized builder. */
+export function buildOrdinaryRows(
+  profile: ResolvedProfile,
+  modules: ReadonlyMap<string, PackageModule>,
+  layers: OrdinaryPluginLayers = {},
+): BuiltOrdinaryRows {
+  const rows: ReturnType<typeof createPluginRow>[] = []
+  const builtinClaims: HostBuiltinRowClaim[] = []
+  const thirdPartyClaims: HostThirdPartyRowClaim[] = []
+  const owners = new Map<string, string>()
+  const packageById = new Map(profile.packages.map((pkg) => [pkg.id, pkg] as const))
+
+  for (const [packageId, module] of [...modules].sort(([left], [right]) => left.localeCompare(right))) {
+    const resolved = packageById.get(packageId)
+    if (!resolved) continue
+    for (const plugin of module.plugins ?? []) {
+      const { declaration, entry } = plugin
+      if (declaration.id.startsWith('seam:'))
+        throw new HostError('E_EXT_LOAD', `plugin row ${declaration.id} uses the reserved seam: prefix`, {
+          detail: { row: declaration.id, package: packageId, reason: 'reserved-row-id' },
+        })
+      if (isResourceOwnedRowId(declaration.id)) {
+        throw new HostError('E_EXT_LOAD', `ordinary plugin row ${declaration.id} is resource-owned`, {
+          detail: { row: declaration.id, package: packageId, reason: 'resource-owned' },
+        })
+      }
+      const previous = owners.get(declaration.id)
+      if (previous) {
+        throw new HostError('E_EXT_LOAD', `ordinary plugin row ${declaration.id} has multiple owners`, {
+          detail: { row: declaration.id, first: previous, second: packageId },
+        })
+      }
+      owners.set(declaration.id, packageId)
+
+      let enabled = resolved.enabled && declaration.default
+      let config = declaration.config
+      for (const layer of [layers.deployment, profile.composition?.plugins, layers.user, layers.workspace]) {
+        const override = layer?.[declaration.id]
+        if (!override) continue
+        if (override.enabled !== undefined) enabled = override.enabled
+        if (Object.hasOwn(override, 'config')) config = override.config
+      }
+
+      if (resolved.trust !== 'builtin' && (!plugin.candidate || !plugin.snapshotDigest)) {
+        throw new HostError(
+          'E_EXT_LOAD',
+          `${packageId} plugin ${declaration.id} is not backed by an immutable runtime snapshot`,
+          { detail: { package: packageId, row: declaration.id, reason: 'snapshot-unavailable' } },
+        )
+      }
+      if (config !== undefined && compilePluginConfig(declaration.configSchema ?? true)(config).length)
+        throw new HostError('E_EXT_LOAD', 'Invalid plugin configuration', {
+          detail: { row: declaration.id, reason: 'config-schema' },
+        })
+      enabled = resolved.enabled && enabled
+      const snapshotDigest = plugin.snapshotDigest ?? resolved.integrity
+      const snapshotId = plugin.candidate?.snapshotId ?? resolved.integrity
+      const row = createPluginRow({
+        id: declaration.id,
+        plugin:
+          resolved.trust === 'builtin'
+            ? `builtin:${packageId}/${declaration.export}`
+            : `${packageId}@${snapshotId}/${declaration.export}`,
+        snapshotDigest,
+        exportName: declaration.export,
+        entryRevision: snapshotId,
+        extrasRevision: 'none',
+        mountRevision: 'host-ordinary-row:v1',
+        ...(declaration.configReload === undefined ? {} : { configReload: declaration.configReload }),
+        ...(config === undefined ? {} : { config }),
+        inject: Object.keys(entry.inject),
+        provides: entry.provides,
+        runtime: declaration.runtime,
+        disabled: !enabled,
+      })
+      rows.push(row)
+      if (resolved.trust === 'builtin')
+        builtinClaims.push(Object.freeze({ row, entry, ownerPackage: packageId }))
+      else
+        thirdPartyClaims.push(
+          Object.freeze({ row, entry, snapshot: plugin.candidate as NonNullable<typeof plugin.candidate> }),
+        )
+    }
+  }
+
+  for (const id of Object.keys(profile.composition?.plugins ?? {}))
+    if (!owners.has(id))
+      throw new HostError('E_EXT_LOAD', `composition selects unknown ordinary plugin row: ${id}`)
+  return Object.freeze({
+    rows: Object.freeze(rows),
+    builtinClaims: Object.freeze(builtinClaims),
+    thirdPartyClaims: Object.freeze(thirdPartyClaims),
+  })
+}

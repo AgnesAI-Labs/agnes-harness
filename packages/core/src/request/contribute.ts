@@ -1,9 +1,17 @@
-import type { HarnessEntry } from '../reduce/shapes.js'
+import type { Conflict } from '@agnes/core-common/context-diagnostics'
+import type { HarnessEntry } from '@agnes/core-ledger/reduce/shapes'
 import type { RegistrySnapshot } from '../registry/tools.js'
 
 // Owned here: the author-facing package does not publish this name, and every core module that
 // assembles a request reads it from this file.
-export type PromptSection = { id: string; order: number; text: string; source: string }
+export type PromptSection = {
+  id: string
+  order: number
+  text: string
+  source: string
+  /** Omitted means stable-section. Live items become durable, latest-deduplicated tail notes. */
+  delivery?: 'stable-section' | 'live-note'
+}
 
 export type Contribution = {
   op: string
@@ -11,11 +19,11 @@ export type Contribution = {
   promptSections?: PromptSection[]
   runtimeContext?: Record<string, unknown>
 }
-export type Conflict = { key: string; ops: string[] }
-/** One section's token cost, as recorded for observability -- text itself is not kept, only its
- * estimated size, so this stays cheap enough to write unconditionally every turn. */
-export type ContextSectionSummary = { id: string; order: number; source: string; tokens: number }
-export type ContextBreakdownDiag = { sections: ContextSectionSummary[] }
+export type {
+  Conflict,
+  ContextBreakdownDiag,
+  ContextSectionSummary,
+} from '@agnes/core-common/context-diagnostics'
 export type Merged = {
   tools: string[]
   sections: PromptSection[]

@@ -1,0 +1,9 @@
+# Programmatic tool calling. The permission is chosen separately and defaults to workspace-write.
+name: ptc
+extends: standard
+disclosure: code
+model:
+  prompt_sections: [persona, environment, tools-available, code-doctrine]
+code_runtime: { language: typescript, state: stateless, isolation: process, raw_io: false, max_parallel_sub_calls: 4, cell_timeout_ms: 120000, max_output_chars: 65536 }
+tools:
+  core: [run_code, workflow, workflow_status, subagent_spawn, read, write, edit, shell, grep, find, ls, todo, web_fetch, web_search, ask_user_question, ui_guide, ui_render, ui_update, ui_close, ui_submit, present, job_output, job_list, job_kill]

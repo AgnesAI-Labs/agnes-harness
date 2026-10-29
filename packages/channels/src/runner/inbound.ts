@@ -13,7 +13,7 @@ import { isApprovalText } from './approval.js'
 import { decideAttention } from './attention.js'
 import { parseCommand, runCommand } from './commands.js'
 import type { RunnerConfig } from './config.js'
-import { shouldAck } from './notices.js'
+import { historyRefusalText, shouldAck } from './notices.js'
 import type { BoundSession, SessionCache } from './session-cache.js'
 
 export { SessionCache } from './session-cache.js'
@@ -28,7 +28,7 @@ type Log = {
   error(message: string, meta?: Record<string, unknown>): void
 }
 
-type CachePort = Pick<SessionCache, 'get' | 'busy' | 'markParticipant' | 'unmarkParticipant'>
+type CachePort = Pick<SessionCache, 'get' | 'busy' | 'current' | 'markParticipant' | 'unmarkParticipant'>
 
 export type InboundDeps = {
   adapter: ChannelAdapter
@@ -51,6 +51,7 @@ export type InboundDeps = {
     event: Extract<ChannelEvent, { kind: 'message' }>,
   ) => Promise<boolean>
   onNewSession?: (oldKey: string) => Promise<void>
+  onHistoryRefused?: (key: string) => void
   signal?: AbortSignal
   maxPendingLanes?: number
   ackTimeoutMs?: number
@@ -58,6 +59,8 @@ export type InboundDeps = {
 
 export class Inbound {
   private readonly lanes = new Map<string, Promise<void>>()
+  // Keep refusals even after cache eviction: queued/new messages must never reopen that history.
+  private readonly refused = new Set<string>()
 
   constructor(private readonly dependencies: InboundDeps) {}
 
@@ -67,9 +70,16 @@ export class Inbound {
       agent: this.dependencies.config.agent,
     })
     if (intent === null) return Promise.resolve()
+    if (this.refused.has(intent.sessionKey) && !isNewSession(intent)) return Promise.resolve()
 
     const maxPendingLanes = Math.max(1, this.dependencies.maxPendingLanes ?? 1_024)
-    if (!this.lanes.has(intent.sessionKey) && this.lanes.size >= maxPendingLanes) {
+    // Refusal markers are not evicted to make room; at capacity, fail closed for new routes.
+    if (
+      !this.lanes.has(intent.sessionKey) &&
+      !this.refused.has(intent.sessionKey) &&
+      this.dependencies.cache.current(intent.sessionKey) === undefined &&
+      this.lanes.size + this.refused.size >= maxPendingLanes
+    ) {
       this.safeWarn('channel inbound lane capacity reached; dropping event', {
         sessionKey: intent.sessionKey,
       })
@@ -80,6 +90,9 @@ export class Inbound {
     current = previous
       .catch(() => undefined)
       .then(() => this.process(event, intent))
+      .catch(async (error: unknown) => {
+        if (!(await this.refuseHistory(intent.sessionKey, chatTarget(event), error))) throw error
+      })
       .finally(() => {
         if (this.lanes.get(intent.sessionKey) === current) this.lanes.delete(intent.sessionKey)
       })
@@ -87,8 +100,29 @@ export class Inbound {
     return current
   }
 
+  async refuseHistory(key: string, target: ChatTarget, error: unknown): Promise<boolean> {
+    const text = historyRefusalText(error)
+    if (text === null) return false
+    if (this.refused.has(key)) return true
+    this.refused.add(key)
+    const sessionId = this.dependencies.cache.current(key)?.id ?? key
+    this.dependencies.onHistoryRefused?.(key)
+    if (this.isStopped()) return true
+    try {
+      // One delivery attempt, with a stable id for adapters that support deduplication. A send
+      // failure must neither retry the session nor erase its terminal marker.
+      await this.dependencies.adapter.send(
+        { ...target, deliveryKey: commandIdFor(sessionId, 'history-refusal') },
+        { blocks: [{ kind: 'text', markdown: text }] },
+      )
+    } catch {
+      this.safeWarn('channel history refusal notice delivery failed')
+    }
+    return true
+  }
+
   private async process(event: ChannelEvent, intent: InboundIntent): Promise<void> {
-    if (this.isStopped()) return
+    if (this.isStopped() || (this.refused.has(intent.sessionKey) && !isNewSession(intent))) return
     const attention =
       this.dependencies.adapter.attention?.(event) ??
       decideAttention(event, this.dependencies.config, intent.kind === 'command')
@@ -104,6 +138,17 @@ export class Inbound {
     }
     if (!fresh) return
 
+    if (this.refused.has(intent.sessionKey)) {
+      if (this.dependencies.onNewSession === undefined) return
+      await this.dependencies.onNewSession(intent.sessionKey)
+      this.refused.delete(intent.sessionKey)
+      await this.dependencies.adapter.send(chatTarget(event), {
+        blocks: [{ kind: 'text', markdown: '已开始新会话' }],
+        ephemeral: true,
+      })
+      return
+    }
+
     if (
       event.kind === 'message' &&
       this.dependencies.adapter.capabilities().reactions === true &&
@@ -118,6 +163,7 @@ export class Inbound {
     }
 
     const { session, created } = await this.dependencies.cache.get(intent.sessionKey)
+    if (this.refused.has(intent.sessionKey)) return
     if (
       possibleApproval &&
       event.kind === 'message' &&
@@ -178,6 +224,7 @@ export class Inbound {
   }
 
   private async dispatch(session: BoundSession, intent: InboundIntent): Promise<void> {
+    if (this.refused.has(intent.sessionKey)) return
     const options = { commandId: commandIdFor(intent.sessionKey, intent.messageId) }
     if (this.dependencies.cache.busy(intent.sessionKey)) {
       try {
@@ -187,6 +234,7 @@ export class Inbound {
         if (!(error instanceof JsonRpcError) || error.code !== AGNES_ERRORS.SESSION_BUSY) throw error
       }
     }
+    if (this.refused.has(intent.sessionKey)) return
     await session.followUp(intent.content, options)
   }
 
@@ -212,6 +260,17 @@ export class Inbound {
 
   private isStopped(): boolean {
     return this.dependencies.signal?.aborted === true
+  }
+}
+
+function isNewSession(intent: InboundIntent): boolean {
+  return intent.kind === 'command' && intent.command?.name === 'new'
+}
+
+function chatTarget(event: ChannelEvent): ChatTarget {
+  return {
+    chatId: event.chat.id,
+    ...(event.chat.threadId === undefined ? {} : { threadId: event.chat.threadId }),
   }
 }
 

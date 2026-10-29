@@ -60,6 +60,45 @@ describe('model.json', () => {
     expect(r.errors[0]?.code).toBe('UNKNOWN_KEY')
   })
 
+  it('carries an optional payload of any JSON value', () => {
+    const body = {
+      kind: 'inference',
+      sessionKey: 'k',
+      slot: 'primary',
+      route: 'r',
+      model: 'm',
+      contractId: null,
+      derivedHash: 'a'.repeat(64),
+      system: '',
+      messages: [],
+      tools: [],
+    }
+    for (const payload of [{ a: 1 }, [1, 'a', null], 'text', 3, null, undefined])
+      expect(Value.Check(M.RequestBody, { ...body, payload }), JSON.stringify(payload)).toBe(true)
+    // A value that is not JSON (a function, a symbol, a bigint) is not a payload.
+    expect(Value.Check(M.RequestBody, { ...body, payload: () => 1 })).toBe(false)
+    expect(Value.Check(M.RequestBody, { ...body, payload: Symbol('p') })).toBe(false)
+    expect(Value.Check(M.RequestBody, { ...body, payload: { nested: [() => 1] } })).toBe(false)
+  })
+
+  it('accepts request timeouts down to 100 ms and no lower', () => {
+    const body = {
+      kind: 'inference',
+      sessionKey: 'k',
+      slot: 'primary',
+      route: 'r',
+      model: 'm',
+      contractId: null,
+      derivedHash: 'a'.repeat(64),
+      system: '',
+      messages: [],
+      tools: [],
+    }
+    expect(Value.Check(M.RequestBody, { ...body, timeoutMs: { firstToken: 100, total: 100 } })).toBe(true)
+    expect(Value.Check(M.RequestBody, { ...body, timeoutMs: { firstToken: 99, total: 100 } })).toBe(false)
+    expect(Value.Check(M.RequestBody, { ...body, timeoutMs: { firstToken: 100, total: 99 } })).toBe(false)
+  })
+
   it('rejects a derivedHash that is not 64 lowercase hex digits', () => {
     const body = {
       kind: 'inference',

@@ -60,7 +60,6 @@ describe('cross-session wire prefix', () => {
             name: 'wire-cross-session',
             provider: {
               package: '@agnes/ai',
-              adapters: ['@agnes/ai'],
               routes: [{ route: 'wire', api, baseUrl, credentialRef: 'secret://test/wire', models: [model] }],
             },
             adapters: { secrets: { kind: 'file', path: credentials } },

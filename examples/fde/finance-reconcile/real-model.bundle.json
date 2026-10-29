@@ -1,0 +1,22 @@
+{
+  "extends": ["@agnes-fde/finance-reconcile#finance-reconcile"],
+  "presets": {
+    "finance-reconcile": {
+      "name": "finance-reconcile",
+      "extends": "standard",
+      "model": {
+        "route": {
+          "primary": {
+            "route": "customer",
+            "model": "customer-model"
+          }
+        }
+      },
+      "providers": {
+        "tool-policy": {
+          "provider": "fde.finance-reconcile"
+        }
+      }
+    }
+  }
+}

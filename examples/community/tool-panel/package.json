@@ -1,0 +1,83 @@
+{
+  "name": "@community/tool-panel",
+  "version": "0.1.1",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": "./dist/index.js",
+  "files": [
+    "dist",
+    "client"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@agnes/plugin-runtime": "0.0.0",
+    "@agnes/extension-api": "^5.0.0",
+    "@sinclair/typebox": "0.34.33"
+  },
+  "devDependencies": {
+    "@agnes/cordis": "0.0.0",
+    "typescript": "7.0.2",
+    "@types/node": "26.4.1",
+    "@agnes/host": "0.0.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "export": "main",
+        "apiRange": "^5.0.0",
+        "id": "ext:@community/tool-panel/main",
+        "inject": [
+          "tools"
+        ],
+        "config": {
+          "prefix": "Echo: "
+        },
+        "metadata": {
+          "displayName": "Tool result panel",
+          "summary": "Demonstrates an echo tool with an interactive result panel.",
+          "description": "Demonstrates an echo tool with an interactive result panel.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "工具结果面板",
+              "summary": "演示一个回声工具及其交互结果面板。",
+              "description": "演示一个回声工具及其交互结果面板。"
+            }
+          }
+        }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:@community/tool-panel/main",
+        "path": "./client/agnes.client.json"
+      }
+    ],
+    "metadata": {
+      "displayName": "Tool result panel",
+      "summary": "Demonstrates an echo tool with an interactive result panel.",
+      "description": "Demonstrates an echo tool with an interactive result panel.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "工具结果面板",
+          "summary": "演示一个回声工具及其交互结果面板。",
+          "description": "演示一个回声工具及其交互结果面板。"
+        }
+      }
+    },
+    "provides": [
+      "tool",
+      "ui"
+    ]
+  },
+  "peerDependencies": {
+    "react": "18.3.1"
+  }
+}

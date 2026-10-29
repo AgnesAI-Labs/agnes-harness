@@ -19,9 +19,9 @@ function resourceOwnedIds(): string[] {
 }
 
 function extRowIds(): string[] {
-  const source = read('packages/host/src/assemble/ext-rows.ts')
-  const block = /EXT_ROW_EXTENSION_IDS[\s\S]*?new Set\(\[([\s\S]*?)\]\)/.exec(source)
-  expect(block, 'EXT_ROW_EXTENSION_IDS must be a literal Set of string literals').toBeTruthy()
+  const source = read('packages/package-manager/src/release-policy.ts')
+  const block = /RELEASE_EXTENSION_IDS[\s\S]*?new Set\(\[([\s\S]*?)\]\)/.exec(source)
+  expect(block, 'RELEASE_EXTENSION_IDS must be a literal Set of string literals').toBeTruthy()
   return [...(block?.[1] ?? '').matchAll(/'([^']+)'/g)].map((m) => m[1] as string)
 }
 
@@ -40,14 +40,5 @@ describe('builtin ext: row id list', () => {
     expect(resourceOwned.has('agnes/skills')).toBe(true)
     expect(extRowIds()).toContain('agnes/skills')
     expect(extRowIds()).not.toContain('agnes/mcp-client')
-  })
-
-  it('the computer-use grant is keyed on the row id, not on the owning package name', () => {
-    // Read as text, not imported: tools/guards may not depend on any @agnes package. The narrow
-    // literal is the GRANT condition that EXTENSION_ROW_GRANTS replaces; the Computer Use SUPPLY
-    // gates elsewhere in the same file legitimately still compare the extension id.
-    expect(read('packages/host/src/assemble.ts')).not.toContain(
-      "owner === '@agnes/base' && extensionId === 'agnes/computer-use'",
-    )
   })
 })

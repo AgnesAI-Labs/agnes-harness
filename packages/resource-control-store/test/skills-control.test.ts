@@ -24,6 +24,7 @@ type TestResult = Readonly<{
   operationId: string
   state: string
   items: readonly Readonly<{ resourceId: string; revision: string; name?: string }>[]
+  nextCursor?: string
   skillRoots?: readonly Readonly<{
     rootKey: string
     scope: string
@@ -77,21 +78,82 @@ afterEach(async () => {
 })
 
 describe('Skill resource control', () => {
+  it('persists an isolated load failure for list/get and clears it after a successful reload', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'agnes-skill-load-failure-'))
+    const item = candidate('broken')
+    const lastSafeError = { code: 'SKILL_ATTACHMENTS_LIMIT', message: 'Skill attachment budget exceeded.' }
+    let broken = true
+    const service = testService(
+      createSkillResourceStore({
+        directory,
+        scope,
+        adapter: {
+          refresh: async () => [
+            {
+              ...item,
+              descriptor: {
+                ...item.descriptor,
+                ...(broken ? { actual: 'unavailable' as const, lastSafeError } : {}),
+              },
+            },
+          ],
+          reconcile: async () => [
+            {
+              resourceId: item.descriptor.resourceId,
+              actual: broken ? 'unavailable' : 'disabled',
+              ...(broken ? { lastSafeError } : {}),
+            },
+          ],
+        },
+      }),
+    )
+    for (const failed of [true, false]) {
+      broken = failed
+      const receipt = await service.call(
+        '_agnes/v1/skills.refresh',
+        { profile, clientId: 'client', commandId: `failure-${failed}` },
+        authority,
+      )
+      expect(await settled(service, receipt.operationId)).toMatchObject({ state: 'succeeded' })
+      const result = await service.call(
+        '_agnes/v1/resources.get',
+        { profile, resourceId: item.descriptor.resourceId },
+        authority,
+      )
+      const listed = await service.call('_agnes/v1/resources.list', { profile }, authority)
+      if (failed) {
+        expect(result).toMatchObject({ actual: 'unavailable', lastSafeError })
+        expect(listed.items).toContainEqual(expect.objectContaining({ lastSafeError }))
+      } else {
+        expect(result).toMatchObject({ actual: 'disabled' })
+        expect(result).not.toHaveProperty('lastSafeError')
+      }
+    }
+  })
   it('keeps Host capability/actual observations private while making refresh/trust/desired idempotent', async () => {
     directory = await mkdtemp(join(tmpdir(), 'agnes-skill-control-'))
     const item = candidate()
+    const unrelated = candidate('unrelated')
+    const observations: string[][] = []
+    const views: string[][] = []
     const service = testService(
       createResourceControlService(
         createSkillResourceStore({
           directory,
           scope,
           adapter: {
-            refresh: async () => [item],
-            reconcile: async ({ resources }) =>
-              resources.map((resource) => ({
+            refresh: async () => [item, unrelated],
+            view: async ({ skills }) => {
+              views.push(skills.map((skill) => skill.resourceId))
+              return skills
+            },
+            reconcile: async ({ resources }) => {
+              observations.push(resources.map((resource) => resource.resourceId))
+              return resources.map((resource) => ({
                 resourceId: resource.resourceId,
                 actual: resource.desired === 'enabled' ? 'ready' : 'disabled',
-              })),
+              }))
+            },
           },
         }),
       ),
@@ -107,7 +169,7 @@ describe('Skill resource control', () => {
     expect(listed.skillRoots).toEqual(
       expect.arrayContaining([{ rootKey: 'user-agnes', scope: 'user', state: 'ready' }]),
     )
-    const skill = listed.items[0]
+    const skill = listed.items.find((skill) => skill.resourceId === item.descriptor.resourceId)
     if (!skill) throw new Error('refresh must publish the fixture skill')
     const trust = await service.call(
       '_agnes/v1/skills.trust.set',
@@ -140,6 +202,15 @@ describe('Skill resource control', () => {
     expect(
       await service.call('_agnes/v1/resources.get', { profile, resourceId: skill.resourceId }, authority),
     ).toMatchObject({ trust: 'trusted', desired: 'enabled', actual: 'ready' })
+    expect(observations.slice(-2)).toEqual([[skill.resourceId], [skill.resourceId]])
+    expect(views.at(-1)).toEqual([skill.resourceId])
+    expect(
+      await service.call(
+        '_agnes/v1/resources.get',
+        { profile, resourceId: unrelated.descriptor.resourceId },
+        authority,
+      ),
+    ).toMatchObject({ desired: 'enabled', actual: 'ready' })
   })
 
   it('fails closed without a Host adapter and retains the durable desired operation', async () => {
@@ -158,6 +229,83 @@ describe('Skill resource control', () => {
 })
 
 describe('ResourceControlStore admission barrier', () => {
+  it('reads current runtime Skills without persisting control records and expires changed pages', async () => {
+    const { createResourceControlStore } = await import('../src/index.js')
+    directory = await mkdtemp(join(tmpdir(), 'agnes-runtime-skill-view-'))
+    let unavailable = false
+    let runtime = Array.from({ length: 101 }, (_, index) => ({
+      ...candidate(`runtime-${index}`).descriptor,
+      resourceId: `skill/runtime/runtime/${hash(`runtime-${index}`)}`,
+      sourceIdentity: {
+        scope: 'runtime' as const,
+        rootKey: 'runtime' as const,
+        sourceId: hash(`runtime-${index}`),
+      },
+      priority: 450,
+      actual: 'ready' as const,
+      desired: 'enabled' as const,
+      trust: 'trusted' as const,
+    }))
+    const store = createResourceControlStore({
+      directory,
+      scope,
+      skills: {
+        view: async ({ skills }) => {
+          if (unavailable) throw new Error('worker unavailable')
+          return [...skills, ...runtime]
+        },
+        refresh: async () => [],
+        reconcile: async () => [],
+      },
+    })
+    const service = testService(createResourceControlService(store))
+    const first = await service.call('_agnes/v1/resources.list', { profile, kind: 'skill' }, authority)
+    expect(first.items).toHaveLength(100)
+    expect(first.skillRoots).toContainEqual({ rootKey: 'runtime', scope: 'runtime', state: 'ready' })
+    const cursor = first.nextCursor
+    expect(cursor?.length).toBeLessThanOrEqual(256)
+    expect(
+      (await service.call('_agnes/v1/resources.list', { profile, kind: 'skill', cursor }, authority)).items,
+    ).toHaveLength(1)
+    const item = first.items[0]
+    if (!item) throw new Error('missing runtime Skill')
+    expect(
+      await service.call('_agnes/v1/resources.get', { profile, resourceId: item.resourceId }, authority),
+    ).toMatchObject(item)
+    await expect(
+      service.call(
+        '_agnes/v1/resources.desired.set',
+        {
+          profile,
+          resourceId: item.resourceId,
+          expectedRevision: item.revision,
+          state: 'disabled',
+          config: { kind: 'none' },
+          clientId: 'client',
+          commandId: 'disable-runtime',
+        },
+        authority,
+      ),
+    ).rejects.toMatchObject({ data: { code: 'SKILL_MANAGED_BY_PLUGIN' } })
+    expect(await store.skills.workerControl(profile)).toEqual({
+      priorities: {},
+      removed: [],
+      desired: [],
+      trust: [],
+    })
+    runtime = runtime.slice(1)
+    await expect(
+      service.call('_agnes/v1/resources.list', { profile, kind: 'skill', cursor }, authority),
+    ).rejects.toMatchObject({ data: { code: 'RESOURCE_CURSOR_STALE' } })
+    runtime = []
+    expect(
+      (await service.call('_agnes/v1/resources.list', { profile, kind: 'skill' }, authority)).items,
+    ).toEqual([])
+    unavailable = true
+    await expect(
+      service.call('_agnes/v1/resources.list', { profile, kind: 'skill' }, authority),
+    ).rejects.toThrow()
+  })
   it('notifies session lifecycle only after a successful durable resource snapshot publication', async () => {
     const { createResourceControlStore } = await import('../src/index.js')
     directory = await mkdtemp(join(tmpdir(), 'agnes-resource-session-refresh-'))
@@ -165,6 +313,7 @@ describe('ResourceControlStore admission barrier', () => {
     let fail = false
     let removed = false
     const published: string[] = []
+    const revisions: Array<{ skillControlRevision: string } | undefined> = []
     const store = createResourceControlStore({
       directory,
       scope,
@@ -189,7 +338,10 @@ describe('ResourceControlStore admission barrier', () => {
         tools: async () => ({ serverId: 'unused', catalogRevision: 'a'.repeat(64), items: [] }),
       },
     })
-    store.setSuccessfulSnapshotHandler((target) => published.push(target))
+    store.setSuccessfulSnapshotHandler((target, change) => {
+      published.push(target)
+      revisions.push(change)
+    })
     const service = testService(createResourceControlService(store))
 
     const success = await service.call(
@@ -198,7 +350,9 @@ describe('ResourceControlStore admission barrier', () => {
       authority,
     )
     await expect(settled(service, success.operationId)).resolves.toMatchObject({ state: 'succeeded' })
-    expect(published).toEqual([profile])
+    // A durable terminal receipt precedes downstream session notification. Await that observable
+    // notification itself rather than assuming it was delivered before the operation read returned.
+    await vi.waitFor(() => expect(published).toEqual([profile]))
 
     const listed = await service.call('_agnes/v1/resources.list', { profile }, authority)
     const skill = listed.items[0]
@@ -230,6 +384,10 @@ describe('ResourceControlStore admission barrier', () => {
       authority,
     )
     await expect(settled(service, enable.operationId)).resolves.toMatchObject({ state: 'succeeded' })
+    await vi.waitFor(() => expect(revisions).toHaveLength(3))
+    expect(revisions[0]).toBeUndefined()
+    expect(revisions[2]?.skillControlRevision).toBe(hash(await readFile(store.snapshotPath(profile), 'utf8')))
+
     const disable = await service.call(
       '_agnes/v1/resources.desired.set',
       {
@@ -244,7 +402,7 @@ describe('ResourceControlStore admission barrier', () => {
       authority,
     )
     await expect(settled(service, disable.operationId)).resolves.toMatchObject({ state: 'succeeded' })
-    expect(published).toEqual([profile, profile, profile, profile])
+    await vi.waitFor(() => expect(published).toEqual([profile, profile, profile, profile]))
 
     const unchanged = await service.call(
       '_agnes/v1/skills.refresh',
@@ -261,7 +419,7 @@ describe('ResourceControlStore admission barrier', () => {
       authority,
     )
     await expect(settled(service, edited.operationId)).resolves.toMatchObject({ state: 'succeeded' })
-    expect(published).toEqual([profile, profile, profile, profile, profile])
+    await vi.waitFor(() => expect(published).toEqual([profile, profile, profile, profile, profile]))
 
     removed = true
     const deleted = await service.call(
@@ -270,7 +428,7 @@ describe('ResourceControlStore admission barrier', () => {
       authority,
     )
     await expect(settled(service, deleted.operationId)).resolves.toMatchObject({ state: 'succeeded' })
-    expect(published).toEqual([profile, profile, profile, profile, profile, profile])
+    await vi.waitFor(() => expect(published).toEqual([profile, profile, profile, profile, profile, profile]))
 
     fail = true
     const failed = await service.call(
@@ -680,6 +838,7 @@ describe('Skill root persistence and workspace binding', () => {
       createSkillResourceStore({
         directory,
         scope,
+        resolveWorkspaceId: async (id) => id ?? firstId,
         adapter: {
           refresh: async ({ workspaceId }) =>
             workspaceId === secondId
@@ -736,6 +895,26 @@ describe('Skill root persistence and workspace binding', () => {
     )
     expect(listedA.items.map((item) => item.name)).toEqual(['alpha'])
     expect(listedB.items.map((item) => item.name)).toEqual(['beta'])
+    expect(
+      await service.call(
+        '_agnes/v1/resources.get',
+        {
+          profile,
+          resourceId: second.descriptor.resourceId,
+        },
+        authority,
+      ),
+    ).toMatchObject({ name: 'beta', workspaceId: secondId })
+    expect(
+      await service.call(
+        '_agnes/v1/resources.get',
+        {
+          profile,
+          resourceId: first.descriptor.resourceId,
+        },
+        authority,
+      ),
+    ).toMatchObject({ name: 'alpha', workspaceId: firstId })
   })
 
   it('loads a v2 journal without roots and writes v4 after the next refresh', async () => {
@@ -1461,3 +1640,177 @@ it('keeps a skipped Skill and its decisions as stale and restores them when it i
   await run('_agnes/v1/skills.refresh')
   expect(await item()).toMatchObject({ stale: false, trust: 'trusted', desired: 'disabled' })
 })
+
+it.each([
+  '_agnes/v1/skills.trust.set',
+  '_agnes/v1/resources.desired.set',
+  '_agnes/v1/skills.refresh',
+] as const)('refused private admission leaves the real journal unchanged for %s', async (method) => {
+  directory = await mkdtemp(join(tmpdir(), 'agnes-skill-refused-effect-'))
+  const item = candidate('admission')
+  const store = createSkillResourceStore({
+    directory,
+    scope,
+    adapter: {
+      refresh: async () => [item],
+      reconcile: async ({ resources }) =>
+        resources.map((r) => ({ resourceId: r.resourceId, actual: 'disabled' as const })),
+    },
+  })
+  const service = testService(createResourceControlService(store))
+  const seed = await service.call(
+    '_agnes/v1/skills.refresh',
+    { profile, clientId: 'client', commandId: 'seed' },
+    authority,
+  )
+  await settled(service, seed.operationId)
+  store.setDeferredDrive(true)
+  const file = join(directory, `${profile}.skills.json`)
+  const before = await readFile(file, 'utf8')
+  const extra =
+    method === '_agnes/v1/skills.refresh'
+      ? {}
+      : {
+          resourceId: item.descriptor.resourceId,
+          expectedRevision: item.descriptor.revision,
+          ...(method === '_agnes/v1/skills.trust.set'
+            ? { trust: 'rejected' }
+            : { state: 'disabled', config: { kind: 'none' } }),
+        }
+  await expect(
+    service.call(
+      method,
+      { profile, clientId: 'client', commandId: 'refused', ...extra },
+      {
+        ...authority,
+        admission: {
+          verify: async () => {
+            throw new Error('permission revoked')
+          },
+          assertActive() {},
+        },
+      },
+    ),
+  ).rejects.toThrow('permission revoked')
+  expect(await readFile(file, 'utf8')).toBe(before)
+})
+
+it.each(['refresh', 'reconcile'])(
+  'retains the permission lease through deferred %s writes',
+  async (phase) => {
+    directory = await mkdtemp(join(tmpdir(), 'agnes-skill-deferred-lease-'))
+    const file = join(directory, `${profile}.skills.json`)
+    const item = candidate('deferred')
+    let active = true
+    let armed = false
+    let before = ''
+    const revoke = async () => {
+      before = await readFile(file, 'utf8')
+      active = false
+    }
+    const store = createSkillResourceStore({
+      directory,
+      scope,
+      adapter: {
+        refresh: async () => {
+          if (armed && phase === 'refresh') await revoke()
+          return [item]
+        },
+        reconcile: async ({ resources }) => {
+          if (armed && phase === 'reconcile') await revoke()
+          return resources.map((r) => ({ resourceId: r.resourceId, actual: 'disabled' as const }))
+        },
+      },
+    })
+    const service = testService(createResourceControlService(store))
+    if (phase === 'reconcile') {
+      const seed = await service.call(
+        '_agnes/v1/skills.refresh',
+        { profile, clientId: 'client', commandId: 'seed' },
+        authority,
+      )
+      await settled(service, seed.operationId)
+    }
+    armed = true
+    store.setDeferredDrive(true)
+    const controlled = {
+      ...authority,
+      admission: {
+        verify: async () => {
+          if (!active) throw new Error('permission revoked')
+        },
+        assertActive: () => {
+          if (!active) throw new Error('permission revoked')
+        },
+      },
+    }
+    const receipt = await service.call(
+      phase === 'refresh' ? '_agnes/v1/skills.refresh' : '_agnes/v1/resources.desired.set',
+      {
+        profile,
+        clientId: 'client',
+        commandId: 'controlled',
+        ...(phase === 'refresh'
+          ? {}
+          : {
+              resourceId: item.descriptor.resourceId,
+              expectedRevision: item.descriptor.revision,
+              state: 'disabled',
+              config: { kind: 'none' },
+            }),
+      },
+      controlled,
+    )
+    await expect(store.driveOperation(profile, receipt.operationId)).rejects.toThrow('permission revoked')
+    expect(active).toBe(false)
+    expect(await readFile(file, 'utf8')).toBe(before)
+    if (phase === 'refresh') expect(JSON.parse(before).trust).toEqual({})
+  },
+)
+
+it.each(['automatic', 'human'])(
+  'recovery preserves the %s operation authorization boundary',
+  async (source) => {
+    directory = await mkdtemp(join(tmpdir(), 'agnes-skill-recovery-lease-'))
+    const item = candidate('recovery')
+    const adapter = {
+      refresh: async () => [item],
+      reconcile: async () => [{ resourceId: item.descriptor.resourceId, actual: 'disabled' as const }],
+    }
+    const first = createSkillResourceStore({ directory, scope, adapter })
+    first.setDeferredDrive(true)
+    const receipt = (await first.call(
+      '_agnes/v1/skills.refresh',
+      { profile, clientId: 'client', commandId: 'pending' },
+      {
+        ...authority,
+        ...(source === 'automatic' ? { admission: { verify: async () => {}, assertActive() {} } } : {}),
+      },
+    )) as { operationId: string }
+    const file = join(directory, `${profile}.skills.json`)
+    const before = await readFile(file, 'utf8')
+    const reopened = createSkillResourceStore({ directory, scope, adapter })
+    await reopened.recover()
+    if (source === 'automatic') {
+      expect(await readFile(file, 'utf8')).toBe(before)
+      expect(JSON.parse(before).trust).toEqual({})
+      await expect(reopened.driveOperation(profile, receipt.operationId)).rejects.toThrow(
+        'RESOURCE_PERMISSION_REQUIRED',
+      )
+      expect(await readFile(file, 'utf8')).toBe(before)
+    } else {
+      const journal = JSON.parse(await readFile(file, 'utf8'))
+      expect(journal.trust[item.descriptor.resourceId]).toMatchObject({ state: 'trusted' })
+      expect(
+        journal.operations.find(
+          (row: { operation: { operationId: string } }) => row.operation.operationId === receipt.operationId,
+        ).operation.state,
+      ).toBe('succeeded')
+      expect(
+        journal.operations.every(
+          (row: { requiresAdmission?: boolean }) => row.requiresAdmission === undefined,
+        ),
+      ).toBe(true)
+    }
+  },
+)

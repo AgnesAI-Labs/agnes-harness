@@ -1,0 +1,1 @@
+Follow the sample runbook: run the diagnostic in the background, show me its output, and ask me before the restart step. Then verify the restart receipt.

@@ -2,11 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="theme-color" content="" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="agnes-csp-nonce" content="__AGNES_CSP_NONCE__" />
-    <link rel="icon" href="/brand-mark.png" type="image/png" />
-    <title data-i18n="shell.document-title">Skills and MCP · Agnes</title>
-    <!-- 与 index.html 同理：本页也会被嵌进设置对话框，必须同源跟随主题且不闪。 -->
+    <link rel="icon" href="/favicon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
+    <title>Agnes Harness</title>
+    <!-- This address is an alias of the workbench settings: the entry script forwards to it, and
+         the theme script keeps the forwarding frame on the reader's theme. -->
     <script src="/theme.js"></script>
     <link rel="stylesheet" href="/style.css" />
     <link rel="stylesheet" href="/antd.css" />
@@ -19,75 +22,26 @@
     "react-dom": "/vendor/react-dom.js",
     "react-dom/client": "/vendor/react-dom-client.js",
     "antd": "/vendor/antd.js",
-    "@agnes/web-ui/assistant-ui": "/vendor/assistant-ui.js",
+    "recharts": "/vendor/recharts.js",
+    "antd/locale/en_US.js": "/vendor/antd-en-us.js",
+    "antd/locale/zh_CN.js": "/vendor/antd-zh-cn.js",
+    "@agnes/web-ui": "/vendor/web-ui.js",
+    "@agnes/web-ui/conversation": "/vendor/conversation.js",
+    "@agnes/web-ui/x": "/vendor/x.js",
     "@agnes/cordis": "/vendor/cordis.js",
-    "@agnes/web-client": "/vendor/web-client.js"
+    "@agnes/web-client": "/vendor/web-client.js",
+    "@agnes/protocol": "/vendor/protocol.js",
+    "@agnes/sdk/browser": "/vendor/sdk-browser.js",
+    "@agnes/sdk": "/vendor/sdk-browser.js",
+    "@agnes/web-units/shell": "/vendor/web-units-shell.js",
+    "@agnes/web-foundation/locale-catalog": "/vendor/web-locale-catalog.js",
+    "@agnes/web-conversation/goal-renderers": "/vendor/goal-renderers.js",
+    "@agnes/web-conversation/interaction-renderer": "/vendor/interaction-renderer.js",
+    "@agnes/web/presentation-renderers": "/vendor/presentation-renderers.js"
   }
 }
     </script>
     <script type="module" src="/resources-standalone.js"></script>
   </head>
-  <body data-agnes-region="app" id="resource-admin-page" class="admin-page resource-admin-page">
-    <a class="skip-link" href="#resource-content" data-i18n="shell.skip">Skip to resource list</a>
-    <header data-agnes-region="topbar" class="admin-header resource-admin-header">
-      <button id="resource-return" class="secondary-button compact" type="button" data-i18n="shell.return">Return to workbench</button>
-      <div class="admin-heading"><p class="eyebrow" data-i18n="shell.eyebrow">Settings</p><h1 data-i18n="shell.heading">Skills and MCP</h1></div>
-    </header>
-    <main id="resource-content" class="admin-main resource-admin-main" tabindex="-1">
-      <p id="resource-notice" class="admin-notice" role="status" aria-live="polite"></p>
-      <div class="resource-toolbar">
-        <div class="plugin-tabs" role="tablist" data-i18n-aria="shell.tabs.aria" aria-label="Resource type">
-          <button id="skills-tab" type="button" role="tab" aria-controls="resource-list" aria-selected="true" data-i18n="tab.skills">Skills</button>
-          <button id="mcp-tab" type="button" role="tab" aria-controls="resource-list" aria-selected="false" tabindex="-1">MCP</button>
-        </div>
-        <div class="resource-toolbar-actions">
-          <button id="skill-refresh" class="secondary-button compact" type="button" data-i18n="button.refresh">Refresh Skill catalog</button>
-          <button id="mcp-create" class="primary-button compact" type="button" hidden data-i18n="button.create">Add MCP service</button>
-        </div>
-      </div>
-      <div id="resource-layout" class="plugin-layout resource-layout">
-        <section id="resource-list" class="plugin-list" aria-live="polite" data-i18n-aria="shell.list.aria" aria-label="Resource catalog"></section>
-      </div>
-    </main>
-
-    <!-- 详情从右侧固定抽屉改为独立模态框，与插件页一致。 -->
-    <dialog data-agnes-region="dialog" id="resource-detail" class="plugin-detail" data-i18n-aria="shell.detail.aria" aria-label="Resource details"></dialog>
-    <dialog data-agnes-region="dialog" id="mcp-dialog" aria-labelledby="mcp-dialog-title">
-      <form id="mcp-form" class="plugin-dialog-form">
-        <div class="dialog-heading"><div><p class="eyebrow" data-i18n="shell.dialog.kicker">Managed connection</p><h2 id="mcp-dialog-title">Add MCP service</h2></div></div>
-        <p class="dialog-intro" data-i18n="shell.dialog.description">Only managed transports and existing secret:// references are accepted. Secret values are never sent to this page.</p>
-        <label class="form-field"><span data-i18n="shell.form.server-id">Service ID</span><input id="mcp-id" required maxlength="128" autocomplete="off" data-i18n-placeholder="shell.form.id-placeholder" placeholder="github" /></label>
-        <label class="form-field"><span data-i18n="shell.form.display-name">Display name</span><input id="mcp-name" required maxlength="128" autocomplete="off" data-i18n-placeholder="shell.form.name-placeholder" placeholder="GitHub" /></label>
-        <label class="form-field"><span data-i18n="shell.form.transport">Transport</span><select id="mcp-transport"><option value="stdio" data-i18n="shell.form.transport.stdio">Local stdio</option><option value="http" data-i18n="shell.form.transport.http">HTTPS / local HTTP</option><option value="sse" data-i18n="shell.form.transport.sse">SSE (remote, legacy protocol)</option></select></label>
-        <label id="mcp-executable-row" class="form-field"><span data-i18n="shell.form.executable">Executable</span><input id="mcp-executable" autocomplete="off" data-i18n-placeholder="shell.form.executable-placeholder" placeholder="mcp-github" /></label>
-        <label id="mcp-args-row" class="form-field"><span data-i18n="shell.form.args">Arguments (one per line)</span><textarea id="mcp-args" rows="3" spellcheck="false"></textarea></label>
-        <label id="mcp-url-row" class="form-field" hidden><span data-i18n="shell.form.url">HTTPS or local loopback address</span><input id="mcp-url" type="url" autocomplete="off" data-i18n-placeholder="shell.form.url-placeholder" placeholder="https://example.com/mcp" /></label>
-        <label class="form-field"><span data-i18n="shell.form.secret-kind">Credential method</span><select id="mcp-secret-kind"><option value="none" data-i18n="shell.form.secret-none">No credentials</option><option value="stdio-env" data-i18n="shell.form.secret-stdio">stdio environment variables</option><option value="http-bearer" data-i18n="shell.form.secret-bearer">HTTP Bearer</option><option value="http-header" data-i18n="shell.form.secret-header">HTTP API Key</option></select></label>
-        <label id="mcp-header-row" class="form-field" hidden><span data-i18n="shell.form.header-name">HTTP Header</span><select id="mcp-header-name"><option value="x-api-key">x-api-key</option><option value="x-api-token">x-api-token</option></select></label>
-        <label id="mcp-secret-row" class="form-field"><span data-i18n="shell.form.secret">SecretRef / environment mapping</span><textarea id="mcp-secret" rows="3" spellcheck="false" data-i18n-placeholder="shell.form.secret-placeholder" placeholder="secret://namespace/name or TOKEN=secret://namespace/name"></textarea></label>
-        <label class="form-field"><span data-i18n="shell.form.tools">Allowed tools (one per line, optional)</span><textarea id="mcp-tools" rows="3" spellcheck="false"></textarea></label>
-        <p id="mcp-error" class="plugin-form-error" role="alert"></p>
-        <div class="dialog-actions"><button id="mcp-cancel" class="secondary-button" type="button" data-i18n="shell.form.cancel">Cancel</button><button class="primary-button" type="submit" data-i18n="shell.form.submit">Create and wait for confirmation</button></div>
-      </form>
-    </dialog>
-    <!-- 共享确认弹窗（@agnes/web-admin-frame 的 createConfirmController）。此前本页每个操作都弹
-         原生 window.confirm，与本页其余样式不搭且无法展示结构化事实。同一份标记也存在于
-         index.html 与 admin.html，由 admin-pane-contract.test.ts 断言三处都有。 -->
-    <dialog data-agnes-region="dialog" id="admin-confirm" aria-labelledby="admin-confirm-title">
-      <div class="plugin-dialog-form">
-        <div class="dialog-heading">
-          <div>
-            <p class="eyebrow" data-i18n="shell.confirm.kicker">Confirmation required</p>
-            <h2 id="admin-confirm-title" data-i18n="confirmation.title">Confirm action</h2>
-          </div>
-        </div>
-        <p id="admin-confirm-description" class="dialog-intro"></p>
-        <div id="admin-confirm-preview" class="confirm-facts" hidden></div>
-        <div class="dialog-actions">
-          <button id="admin-confirm-cancel" class="secondary-button" type="button" data-i18n="confirmation.cancel">Cancel</button>
-          <button id="admin-confirm-action" class="primary-button" type="button" data-i18n="confirmation.confirm">Confirm</button>
-        </div>
-      </div>
-    </dialog>
-  </body>
+  <body data-agnes-region="app"></body>
 </html>

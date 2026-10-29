@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { readConfigurationProfileInputs } from '../src/profile/inputs.js'
+import { readConfigurationProfileInputs } from '../src/runtime/profile/inputs.js'
 
 const roots: string[] = []
 
@@ -33,7 +33,7 @@ it('keeps all profile layers and merges configuration into user adapters', async
 
   const inputs = await readConfigurationProfileInputs({
     home: root,
-    cwd,
+    workspaceRoot: cwd,
     profile: 'local-dev',
     agnesVersion: '0.0.0',
     configuration: {
@@ -57,7 +57,7 @@ it('keeps all profile layers and merges configuration into user adapters', async
 
 // `.agnes` was the workspace directory's name before the `.agh` rename. A local override left there
 // is not read: nothing falls back to the old name, because that directory may belong to another product.
-it('reads the local override from <cwd>/.agh and never from <cwd>/.agnes', async () => {
+it('reads the local override from <workspaceRoot>/.agh and never from <workspaceRoot>/.agnes', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agnes-profile-inputs-'))
   roots.push(root)
   const cwd = join(root, 'workspace')
@@ -68,7 +68,12 @@ it('reads the local override from <cwd>/.agh and never from <cwd>/.agnes', async
   await writeFile(join(cwd, '.agh', 'profile.local.yaml'), 'limits:\n  test.limit: 1\n')
   await writeFile(join(cwd, '.agnes', 'profile.local.yaml'), 'limits:\n  test.limit: 2\n')
   const read = () =>
-    readConfigurationProfileInputs({ home: root, cwd, profile: 'local-dev', agnesVersion: '0.0.0' })
+    readConfigurationProfileInputs({
+      home: root,
+      workspaceRoot: cwd,
+      profile: 'local-dev',
+      agnesVersion: '0.0.0',
+    })
 
   expect((await read()).local).toEqual({ limits: { 'test.limit': 1 } })
   await rm(join(cwd, '.agh', 'profile.local.yaml'))
@@ -86,7 +91,7 @@ it('keeps malformed YAML errors available for the CLI wrapper to translate', asy
   await expect(
     readConfigurationProfileInputs({
       home: root,
-      cwd: root,
+      workspaceRoot: root,
       profile: 'local-dev',
       agnesVersion: '0.0.0',
     }),

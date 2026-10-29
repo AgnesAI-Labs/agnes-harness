@@ -13,6 +13,7 @@ export type BoundSession = Pick<
   | 'budget'
   | 'events'
   | 'projectUI'
+  | 'uiRead'
   | 'detach'
 >
 

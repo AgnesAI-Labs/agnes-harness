@@ -1,0 +1,68 @@
+{
+  "name": "@agnes/intelligent-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/intelligent-ui",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "tools",
+          "projections",
+          "providers"
+        ],
+        "capabilities": {
+          "tools": {
+            "prefix": "ui_",
+            "names": [
+              "ui_guide",
+              "ui_render",
+              "ui_update",
+              "ui_close",
+              "ui_submit"
+            ]
+          },
+          "events": true,
+          "projections": [
+            {
+              "name": "surfaces",
+              "inputEventTypes": [
+                "x/agnes/intelligent-ui/surface.opened",
+                "x/agnes/intelligent-ui/surface.updated",
+                "x/agnes/intelligent-ui/surface.closed",
+                "x/agnes/intelligent-ui/action.received",
+                "x/agnes/intelligent-ui/action.rejected",
+                "x/agnes/intelligent-ui/action.pending-approval",
+                "x/agnes/intelligent-ui/action.executing",
+                "x/agnes/intelligent-ui/action.succeeded",
+                "x/agnes/intelligent-ui/action.failed",
+                "x/agnes/intelligent-ui/action.retried",
+                "x/agnes/intelligent-ui/action.delivered"
+              ],
+              "maxStateBytes": 262144
+            }
+          ]
+        },
+        "metadata": {
+          "displayName": "Interactive task forms",
+          "summary": "Lets the agent present forms and interactive views for people to review and act on.",
+          "description": "Lets the agent present forms and interactive views for people to review and act on.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "交互任务表单",
+              "summary": "让 Agent 展示表单与交互视图，供用户查看并执行操作。",
+              "description": "让 Agent 展示表单与交互视图，供用户查看并执行操作。"
+            }
+          }
+        }
+      }
+    ],
+    "provides": [
+      "tool"
+    ]
+  }
+}

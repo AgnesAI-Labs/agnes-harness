@@ -64,15 +64,13 @@ describe('presets/base.yaml', () => {
     for (const k of PRODUCT_KEYS) expect(doc, k).not.toHaveProperty(k)
   })
 
-  // Not a restatement of the list above: it is the list against what this package actually ships,
-  // so a tool added to the package without being named here, or named here without being shipped,
-  // is a failure rather than a preset that offers a tool nobody registers. The preset names one
-  // flat `tools.core` list across every bundled extension - read/write/edit/shell/todo from
-  // `tools-core`, grep/find/ls from the sibling `tools-search` - so membership is what is checked,
-  // not the order either extension happens to register its own tools in.
-  it('names exactly the tools this package delivers', () => {
+  // The base core inventory retains the original default tools. The tools-web plugin also
+  // registers optional web_search, advertised by product presets and requiring a search provider.
+  // Check both lists exactly so additions cannot disappear from either assertion.
+  it('names the default core tools and ships the optional web search tool', () => {
     expect(doc.tools).toHaveProperty('core')
-    const shipped = [...TOOLS_CORE, ...TOOLS_SEARCH, ...TOOLS_WEB].map((t) => t.name).sort()
+    expect(TOOLS_WEB.map((tool) => tool.name)).toEqual(['web_fetch', 'web_search'])
+    const shipped = [...TOOLS_CORE, ...TOOLS_SEARCH, TOOLS_WEB[0]].map((t) => t.name).sort()
     expect([...(doc.tools as { core: string[] }).core].sort()).toEqual(shipped)
   })
 })

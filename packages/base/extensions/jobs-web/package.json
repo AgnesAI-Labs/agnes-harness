@@ -1,0 +1,166 @@
+{
+  "name": "@agnes/jobs-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/jobs-web",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "hooks",
+          "services"
+        ],
+        "capabilities": {
+          "services": [
+            {
+              "name": "jobs.read",
+              "kind": "query",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "jobId": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "timeoutMs": 10000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "jobs.control",
+              "kind": "effect",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "anyOf": [
+                      {
+                        "const": "open",
+                        "type": "string"
+                      },
+                      {
+                        "const": "run",
+                        "type": "string"
+                      },
+                      {
+                        "const": "send",
+                        "type": "string"
+                      },
+                      {
+                        "const": "resize",
+                        "type": "string"
+                      },
+                      {
+                        "const": "signal",
+                        "type": "string"
+                      },
+                      {
+                        "const": "kill",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "jobId": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "shell": {
+                    "anyOf": [
+                      {
+                        "const": "bash",
+                        "type": "string"
+                      },
+                      {
+                        "const": "zsh",
+                        "type": "string"
+                      },
+                      {
+                        "const": "pwsh",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "text": {
+                    "maxLength": 65536,
+                    "type": "string"
+                  },
+                  "columns": {
+                    "minimum": 1,
+                    "maximum": 1000,
+                    "type": "integer"
+                  },
+                  "rows": {
+                    "minimum": 1,
+                    "maximum": 1000,
+                    "type": "integer"
+                  },
+                  "signal": {
+                    "anyOf": [
+                      {
+                        "const": "SIGINT",
+                        "type": "string"
+                      },
+                      {
+                        "const": "SIGTERM",
+                        "type": "string"
+                      },
+                      {
+                        "const": "SIGHUP",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "command": {
+                    "minLength": 1,
+                    "maxLength": 8192,
+                    "type": "string"
+                  },
+                  "timeoutMs": {
+                    "minimum": 1000,
+                    "maximum": 600000,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "operation"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "timeoutMs": 10000,
+              "maxResultBytes": 1048576
+            }
+          ],
+          "hooks": [
+            "shutdown"
+          ]
+        },
+        "metadata": {
+          "displayName": "Jobs and terminal controls",
+          "summary": "Connects Web job and terminal controls to the session's background processes.",
+          "description": "Connects Web job and terminal controls to the session's background processes.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "任务与终端控制",
+              "summary": "把 Web 中的任务与终端控件连接到会话的后台进程。",
+              "description": "把 Web 中的任务与终端控件连接到会话的后台进程。"
+            }
+          }
+        }
+      }
+    ]
+  }
+}

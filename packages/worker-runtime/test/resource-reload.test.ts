@@ -7,7 +7,12 @@ import type { Host, HostSession } from '@agnes/host'
 import type { McpStatus } from '@agnes/protocol'
 import { bootstrapWorkerResources, type WorkerResourceBootstrapInput } from '@agnes/resource-control-worker'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { applyMcpRowChange, handleCommand, prepareIdleResources } from '../src/commands.js'
+import {
+  applyMcpRowChange,
+  handleCommand,
+  handleServiceCommand,
+  prepareIdleResources,
+} from '../src/commands.js'
 import type { McpRowRuntime } from '../src/mcp-row-runtime.js'
 
 type CommandFrame = Parameters<typeof handleCommand>[1]
@@ -111,7 +116,8 @@ function recordingRows(options: { events?: string[]; gate?: Promise<void>; rejec
         if (options.reject === 'once') options.reject = false
         throw new Error('rows fixture rejection')
       }
-      for (const entry of entries)
+      statuses.clear()
+      for (const entry of entries.filter((entry) => entry.desired === 'enabled' && entry.trust === 'trusted'))
         statuses.set(entry.definition.serverId, {
           serverId: entry.definition.serverId,
           connectionState: 'ready',
@@ -123,6 +129,7 @@ function recordingRows(options: { events?: string[]; gate?: Promise<void>; rejec
       return { rowIds: ids.map((id) => `ext:agnes/mcp-${id}`), skipped: [], statuses: new Map(statuses) }
     },
     status: (serverId) => statuses.get(serverId),
+    waitForStatus: async (serverId) => statuses.get(serverId),
     tools: () => undefined,
     reconnect: (serverId) => reconnected.push(serverId),
   }
@@ -306,6 +313,70 @@ describe('worker-side resource.stale/run reload (next-turn reload, not mid-turn 
     expect(ctx.resources).toMatchObject({ staleMarks: 0, reloadedMarks: 0 })
   })
 
+  it('joins cold composition attempts and names a still-connecting server once per session', async () => {
+    const notices: unknown[] = []
+    const runs: string[] = []
+    const session = {
+      run: async () => {
+        runs.push('run')
+        return { reason: 'completed' }
+      },
+      diag: async (name: string, data: unknown) => {
+        notices.push({ name, data })
+      },
+    } as unknown as HostSession
+    let connecting = [{ serverId: 'slow', displayName: 'Slow Server' }]
+    const rows = recordingRows()
+    let preparing = false
+    let release!: () => void
+    const ready = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const ctx: Parameters<typeof handleCommand>[2] = {
+      host: {} as unknown as Host,
+      aborts: new Map(),
+      resources: {
+        generation: undefined,
+        staleMarks: 0,
+        reloadedMarks: 0,
+        mcpRows: {
+          ...rows.runtime,
+          connecting: () => connecting,
+          prepareTurn: async () => {
+            preparing = true
+            await ready
+          },
+        },
+      },
+    }
+    const run = (id: string) =>
+      handleCommand(
+        session,
+        { kind: 'command', requestId: id, method: 'run', params: { runId: id, until: 'turn-end' } },
+        ctx,
+      )
+    const first = run('cold')
+    await expect.poll(() => preparing).toBe(true)
+    expect(runs).toEqual([])
+    connecting = []
+    release()
+    await first
+    expect(notices).toEqual([])
+    connecting = [{ serverId: 'slow', displayName: 'Slow Server' }]
+    await run('r1')
+    await run('r2')
+    expect(notices).toEqual([
+      { name: 'tool-source-pending', data: { kind: 'mcp', sources: ['Slow Server'] } },
+    ])
+    // Once connected it is forgotten, so a later remount that is slow again is announced again.
+    connecting = []
+    await run('r3')
+    connecting = [{ serverId: 'slow', displayName: 'Slow Server' }]
+    await run('r4')
+    expect(notices).toHaveLength(2)
+    expect(runs).toHaveLength(5)
+  })
+
   it('waits for every active session run and blocks later runs while reloading', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wrr-'))
     cleanup.push(() => rm(root, { recursive: true, force: true }))
@@ -368,6 +439,8 @@ describe('worker-side resource.stale/run reload (next-turn reload, not mid-turn 
       staleMarks: 0,
       reloadedMarks: 0,
       mcpRows: recordingRows({ events, gate: reloadReleased }).runtime,
+      // Run A finishes well inside the barrier's bound here; the next test covers a turn that does not.
+      reloadBarrierTimeoutMs: 60_000,
     }
     const context = (): Parameters<typeof handleCommand>[2] => ({
       host,
@@ -421,7 +494,7 @@ describe('worker-side resource.stale/run reload (next-turn reload, not mid-turn 
     cleanup.push(() => resources.generation?.runtime.mcp.close() ?? Promise.resolve())
   })
 
-  it('a reload that reports loaded: false leaves workerResources and staleness untouched', async () => {
+  it('defers the reload when an earlier turn outlasts the barrier, and reloads once the worker is idle', async () => {
     const root = await mkdtemp(join(tmpdir(), 'wrr-'))
     cleanup.push(() => rm(root, { recursive: true, force: true }))
     const urlA = await mcpFixture('toolA')
@@ -430,7 +503,6 @@ describe('worker-side resource.stale/run reload (next-turn reload, not mid-turn 
       snapshotPath,
       JSON.stringify(snapshotDoc([{ serverId: 'a', url: urlA, toolName: 'toolA' }])),
     )
-
     const input: WorkerResourceBootstrapInput = {
       env: {
         AGNES_RESOURCE_SNAPSHOT: snapshotPath,
@@ -446,89 +518,204 @@ describe('worker-side resource.stale/run reload (next-turn reload, not mid-turn 
       profile: { name: 'local', dataDir: root, adapters: { secrets: { kind: 'env' } } },
       createBarrier: () => ({ quiesce: async (_operation, publish) => publish({} as never) }),
       createSecrets: () => {
-        throw new Error('createSecrets should never run: every fixture server uses secretBinding: none')
+        throw new Error('fixture has no secret-bound servers')
       },
       mcpRows: true,
     }
+    const initial = await bootstrapWorkerResources(input)
+    if (!initial) throw new Error('expected initial resource generation')
+    cleanup.push(() => initial.runtime.mcp.close())
 
-    const state1 = await bootstrapWorkerResources(input)
-    if (!state1) throw new Error('expected a resource generation for a snapshot naming a real server')
-    cleanup.push(() => state1.runtime.mcp.close())
-
-    const session = {
-      run: async () => ({ reason: 'completed' }),
-    } as unknown as HostSession
-    // `reloadEcosystemExtension`'s real implementation (managed-host.ts's `load()`) swallows its own
-    // errors and resolves with `{ loaded: false, error }` rather than throwing - this fake reproduces
-    // exactly that non-throwing failure shape for the skills extension, which a naive try/catch
-    // around the call (with no explicit `.loaded` check) would silently miss.
-    const reloadCalls: string[] = []
+    // Session A's turn waits on an approval for as long as the test wants.
+    let approveA!: () => void
+    const approvalA = new Promise<void>((resolve) => {
+      approveA = resolve
+    })
+    const events: string[] = []
+    const session = (name: string, wait?: Promise<void>) =>
+      ({
+        lastSeq: 0,
+        run: async () => {
+          events.push(`run:${name}`)
+          await wait
+          events.push(`done:${name}`)
+          return { reason: 'completed' }
+        },
+      }) as unknown as HostSession
     const host = {
       reloadEcosystemExtension: async (id: string) => {
-        reloadCalls.push(id)
-        if (id !== 'agnes/skills')
-          return { id, package: '@agnes/base', version: '0.0.0', trust: 'builtin' as const, loaded: true }
-        return {
-          id,
-          package: '@agnes/base',
-          version: '0.0.0',
-          trust: 'builtin' as const,
-          loaded: false,
-          error: new Error('skills fixture failure'),
-        }
+        events.push(`reload:${id}`)
+        return { id, package: '@agnes/base', version: '0.0.0', trust: 'builtin' as const, loaded: true }
       },
     } as unknown as Host
-    const rows = recordingRows()
-    const ctx: Parameters<typeof handleCommand>[2] = {
+    const resources: NonNullable<Parameters<typeof handleCommand>[2]['resources']> = {
+      generation: initial,
+      staleMarks: 0,
+      reloadedMarks: 0,
+      mcpRows: recordingRows({ events }).runtime,
+      reloadBarrierTimeoutMs: 50,
+    }
+    const context = (): Parameters<typeof handleCommand>[2] => ({
       host,
       aborts: new Map(),
-      resources: { generation: state1, staleMarks: 0, reloadedMarks: 0, mcpRows: rows.runtime },
+      resources,
       workerResourcesInput: input,
-    }
+    })
+    const run = (name: string, wait?: Promise<void>) =>
+      handleCommand(
+        session(name, wait),
+        { kind: 'command', requestId: name, method: 'run', params: { runId: name } },
+        context(),
+      )
 
-    const staleResult = await handleCommand(
-      session,
-      { kind: 'command', requestId: 's1', method: 'resource.stale', params: {} },
-      ctx,
+    const runA = run('a', approvalA)
+    await vi.waitFor(() => expect(events).toContain('run:a'))
+    await handleCommand(
+      session('marker'),
+      { kind: 'command', requestId: 'stale', method: 'resource.stale', params: {} },
+      context(),
     )
-    expect(staleResult).toEqual({ ok: true })
-    expect(ctx.resources).toMatchObject({ staleMarks: 1, reloadedMarks: 0 })
+    // B waits for A only as long as the barrier allows, then runs on the current generation. C,
+    // arriving while A is still out, does not queue behind A again.
+    await expect(run('b')).resolves.toEqual({ reason: 'completed' })
+    await expect(run('c')).resolves.toEqual({ reason: 'completed' })
+    expect(events).toEqual(['run:a', 'run:b', 'done:b', 'run:c', 'done:c'])
+    expect(resources).toMatchObject({ staleMarks: 1, reloadedMarks: 0 })
 
-    // The daemon's side of a real enable, exactly as the happy-path test above - if the reload had
-    // gone through despite the failure, this second server would show up in workerResources.mcp.
-    const urlB = await mcpFixture('toolB')
-    await writeFile(
-      snapshotPath,
-      JSON.stringify(
-        snapshotDoc([
-          { serverId: 'a', url: urlA, toolName: 'toolA' },
-          { serverId: 'b', url: urlB, toolName: 'toolB' },
-        ]),
-      ),
-    )
-
-    const runResult = await handleCommand(
-      session,
-      { kind: 'command', requestId: 'r1', method: 'run', params: { runId: 'run-1', until: 'turn-end' } },
-      ctx,
-    )
-
-    // The turn itself must still complete on the old-but-working resource set - a failed reload must
-    // never throw out of `run`.
-    expect(runResult).toEqual({ reason: 'completed' })
-    // Skills failed after MCP applied; reverse compensation restores the old server set.
-    expect(rows.applied).toEqual([['a', 'b'], ['a']])
-    expect(reloadCalls).toEqual(['agnes/skills'])
-    // The old generation is untouched: not swapped for whatever the failed reload might have
-    // half-produced, and still only naming server A.
-    expect(ctx.resources?.generation).toBe(state1)
-    expect(ctx.resources?.generation?.mcpEntries.map((entry) => entry.definition.serverId)).toEqual(['a'])
-    // Staleness is not cleared, so the next `run` retries the reload instead of silently giving up.
-    expect(ctx.resources).toMatchObject({ staleMarks: 1, reloadedMarks: 0 })
+    approveA()
+    await runA
+    // The reload is still owed, and the first run that finds the worker idle performs it.
+    await expect(run('d')).resolves.toEqual({ reason: 'completed' })
+    expect(events.slice(-4)).toEqual(['rows:a', 'reload:agnes/skills', 'run:d', 'done:d'])
+    expect(resources).toMatchObject({ staleMarks: 1, reloadedMarks: 1 })
+    cleanup.push(() => resources.generation?.runtime.mcp.close() ?? Promise.resolve())
   })
 
+  it.each(['addition', 'disable', 'removal'] as const)(
+    'Skills failure preserves the applied MCP %s through the next admission',
+    async (change) => {
+      const root = await mkdtemp(join(tmpdir(), 'wrr-'))
+      cleanup.push(() => rm(root, { recursive: true, force: true }))
+      const urlA = await mcpFixture('toolA')
+      const snapshotPath = join(root, 'snapshot.json')
+      await writeFile(
+        snapshotPath,
+        JSON.stringify(snapshotDoc([{ serverId: 'a', url: urlA, toolName: 'toolA' }])),
+      )
+
+      const input: WorkerResourceBootstrapInput = {
+        env: {
+          AGNES_RESOURCE_SNAPSHOT: snapshotPath,
+          AGNES_RESOURCE_MCP_POLICY: JSON.stringify({
+            allowedExecutables: [],
+            allowLoopbackHttp: true,
+            localDaemon: true,
+          }),
+          HOME: root,
+        },
+        cwd: root,
+        agnesHomeDir: root,
+        profile: { name: 'local', dataDir: root, adapters: { secrets: { kind: 'env' } } },
+        createBarrier: () => ({ quiesce: async (_operation, publish) => publish({} as never) }),
+        createSecrets: () => {
+          throw new Error('createSecrets should never run: every fixture server uses secretBinding: none')
+        },
+        mcpRows: true,
+      }
+
+      const state1 = await bootstrapWorkerResources(input)
+      if (!state1) throw new Error('expected a resource generation for a snapshot naming a real server')
+      cleanup.push(() => state1.runtime.mcp.close())
+
+      const session = {
+        run: async () => ({ reason: 'completed' }),
+      } as unknown as HostSession
+      // `reloadEcosystemExtension`'s real implementation (managed-host.ts's `load()`) swallows its own
+      // errors and resolves with `{ loaded: false, error }` rather than throwing - this fake reproduces
+      // exactly that non-throwing failure shape for the skills extension, which a naive try/catch
+      // around the call (with no explicit `.loaded` check) would silently miss.
+      const reloadCalls: string[] = []
+      const host = {
+        reloadEcosystemExtension: async (id: string) => {
+          reloadCalls.push(id)
+          if (id !== 'agnes/skills')
+            return { id, package: '@agnes/base', version: '0.0.0', trust: 'builtin' as const, loaded: true }
+          return {
+            id,
+            package: '@agnes/base',
+            version: '0.0.0',
+            trust: 'builtin' as const,
+            loaded: false,
+            error: new Error('skills fixture failure'),
+          }
+        },
+      } as unknown as Host
+      const rows = recordingRows()
+      const ctx: Parameters<typeof handleCommand>[2] = {
+        host,
+        aborts: new Map(),
+        resources: { generation: state1, staleMarks: 0, reloadedMarks: 0, mcpRows: rows.runtime },
+        workerResourcesInput: input,
+      }
+
+      const staleResult = await handleCommand(
+        session,
+        { kind: 'command', requestId: 's1', method: 'resource.stale', params: {} },
+        ctx,
+      )
+      expect(staleResult).toEqual({ ok: true })
+      expect(ctx.resources).toMatchObject({ staleMarks: 1, reloadedMarks: 0 })
+
+      // Apply an addition, disable, or removal independently of the failing Skills refresh.
+      const urlB = await mcpFixture('toolB')
+      const desired = snapshotDoc([
+        ...(change === 'removal' ? [] : [{ serverId: 'a', url: urlA, toolName: 'toolA' }]),
+        { serverId: 'b', url: urlB, toolName: 'toolB' },
+      ]) as { mcp: Array<{ desired: string }> }
+      if (change === 'disable') desired.mcp[0]!.desired = 'disabled'
+      await writeFile(snapshotPath, JSON.stringify(desired))
+
+      const runResult = await handleCommand(
+        session,
+        { kind: 'command', requestId: 'r1', method: 'run', params: { runId: 'run-1', until: 'turn-end' } },
+        ctx,
+      )
+
+      // A compensated Skills failure permits admission on the successfully applied MCP set.
+      expect(runResult).toEqual({ reason: 'completed' })
+      expect(rows.applied).toEqual([change === 'removal' ? ['b'] : ['a', 'b']])
+      expect(rows.runtime.status('a')?.connectionState).toBe(change === 'addition' ? 'ready' : undefined)
+      const nextAdmission = {
+        run: async () => {
+          expect(rows.runtime.status('a')?.connectionState).toBe(change === 'addition' ? 'ready' : undefined)
+          expect(rows.runtime.status('b')?.connectionState).toBe('ready')
+          return { reason: 'completed' }
+        },
+      } as unknown as HostSession
+      await expect(
+        handleCommand(
+          nextAdmission,
+          {
+            kind: 'command',
+            requestId: 'r2',
+            method: 'run',
+            params: { runId: 'run-2' },
+          },
+          ctx,
+        ),
+      ).resolves.toEqual({ reason: 'completed' })
+      expect(reloadCalls).toEqual(['agnes/skills', 'agnes/skills'])
+      // The old generation is untouched: not swapped for whatever the failed reload might have
+      // half-produced, and still only naming server A.
+      expect(ctx.resources?.generation).toBe(state1)
+      expect(ctx.resources?.generation?.mcpEntries.map((entry) => entry.definition.serverId)).toEqual(['a'])
+      // Staleness is not cleared, so the next `run` retries the reload instead of silently giving up.
+      expect(ctx.resources).toMatchObject({ staleMarks: 1, reloadedMarks: 0 })
+    },
+  )
+
   it.each([false, true])(
-    'a refused MCP apply compensates before skills; failed compensation blocks turns = %s',
+    'a refused MCP apply blocks admission without restoring revoked rows (persistent failure = %s)',
     async (failRollback) => {
       const root = await mkdtemp(join(tmpdir(), 'wrr-'))
       cleanup.push(() => rm(root, { recursive: true, force: true }))
@@ -580,13 +767,56 @@ describe('worker-side resource.stale/run reload (next-turn reload, not mid-turn 
           { kind: 'command', requestId: 'r1', method: 'run', params: { runId: 'run-1', until: 'turn-end' } },
           ctx,
         )
-      if (failRollback) await expect(run()).rejects.toThrow(/recovery required/)
-      else await expect(run()).resolves.toEqual({ reason: 'completed' })
-      expect(rows.applied).toEqual([['a', 'b'], ['a']])
+      await expect(run()).rejects.toThrow(/recovery required/)
+      expect(rows.applied).toEqual([['a', 'b']])
       expect(reloadCalls).toEqual([])
       expect(ctx.resources?.generation).toBe(state1)
       expect(ctx.resources).toMatchObject({ staleMarks: 1, reloadedMarks: 0 })
-      expect(ctx.resources?.recoveryRequired ?? false).toBe(failRollback)
+      expect(ctx.resources?.recoveryRequired).toBe(true)
+      host.migrateSessionGeneration = vi.fn()
+      await expect(
+        handleServiceCommand(
+          host,
+          {
+            kind: 'command',
+            requestId: 'migration',
+            method: 'pluginGenerations.migrate',
+            params: { sessionId: 'session' },
+          },
+          ctx.aborts,
+          undefined,
+          undefined,
+          () => ctx.resources?.recoveryRequired === true,
+        ),
+      ).rejects.toMatchObject({
+        code: 'E_GENERATION_EXECUTION_UNSETTLED',
+        detail: { reasons: [expect.objectContaining({ kind: 'recovery-required' })] },
+      })
+      expect(host.migrateSessionGeneration).not.toHaveBeenCalled()
+
+      // The next run retries the reload. A fully successful one brings every row back in line with
+      // the snapshot and clears the flag; one that fails again is handed to the worker's owner.
+      const recoveryFailures: unknown[] = []
+      if (ctx.resources) ctx.resources.onRecoveryFailed = (error) => recoveryFailures.push(error)
+      if (failRollback) {
+        await expect(run()).rejects.toThrow(/recovery required/)
+        expect(ctx.resources?.recoveryRequired).toBe(true)
+        expect(recoveryFailures).toHaveLength(1)
+      } else {
+        await expect(run()).resolves.toEqual({ reason: 'completed' })
+        expect(ctx.resources?.recoveryRequired).toBe(false)
+        expect(ctx.resources).toMatchObject({ staleMarks: 1, reloadedMarks: 1 })
+        expect(recoveryFailures).toEqual([])
+        await expect(run()).resolves.toEqual({ reason: 'completed' })
+      }
+      expect(rows.applied).toEqual([
+        ['a', 'b'],
+        ['a', 'b'],
+      ])
+      cleanup.push(async () => {
+        const current = ctx.resources?.generation
+        if (current && current !== state1) await current.runtime.mcp.close()
+      })
     },
   )
 })

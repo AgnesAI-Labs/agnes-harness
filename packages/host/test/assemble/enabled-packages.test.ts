@@ -13,16 +13,20 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { fakeSeams } from '@agnes/core/testkit'
 import type { HookEvent, HookReturnMap } from '@agnes/extension-api'
-import { parseAgnesPluginEntries } from '@agnes/package-manager'
+import { bundledPackageJson } from '@agnes/extension-api'
+import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import { WorkspaceBindingAuthority } from '@agnes/host-common/workspace-authority'
+import { readNamedExports } from '@agnes/host-extensions/assemble/packages'
+import { type AuditEvent, type AuditSink, createMemoryAudit } from '@agnes/host-infrastructure/audit'
+import { SessionWorkspaceRuntimeTable } from '@agnes/host-infrastructure/session-workspace-runtime'
+import { hashDirectory, parseAgnesPluginEntries } from '@agnes/package-manager'
 import type { RouteDecl } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
-import { readNamedExports } from '../../src/assemble/packages.js'
-import { type AssembleDeps, assemble } from '../../src/assemble.js'
-import { type AuditEvent, type AuditSink, createMemoryAudit } from '../../src/audit.js'
-import { resolveProfile } from '../../src/profile/resolve.js'
-import { createSession } from '../../src/session.js'
-import { SessionWorkspaceRuntimeTable } from '../../src/session-workspace-runtime.js'
-import { WorkspaceBindingAuthority } from '../../src/workspace-authority.js'
+import { type AssembleDeps, assemble } from '../../src/runtime/assemble/assemble.js'
+import { createAssemblyContext } from '../../src/runtime/assemble/context.js'
+import { loadPackages } from '../../src/runtime/assemble/packages.js'
+import { createSession } from '../../src/runtime/sessions/session.js'
+import { pluginSourceWith } from './plugin-extension-fixture.js'
 
 const roots: string[] = []
 const packagedIsolation = it.runIf(Boolean(process.env.AGNES_TEST_RUNTIME_DIRECTORY))
@@ -63,7 +67,13 @@ async function setup(projections = false) {
         packages: Object.fromEntries(
           ids.map((id) => [
             id,
-            { version: '0.1.0', integrity: 'sha512-test', trust: 'builtin', enabled: true },
+            {
+              version: '0.1.0',
+              source: { type: 'builtin' as const, ref: 'builtin' },
+              integrity: 'builtin:0.1.0',
+              trust: 'builtin',
+              enabled: true,
+            },
           ]),
         ),
       },
@@ -87,7 +97,7 @@ async function setup(projections = false) {
               },
             }
           : {}),
-        provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [route] },
+        provider: { package: '@agnes/ai', routes: [route] },
       },
     },
     {
@@ -137,19 +147,6 @@ async function setup(projections = false) {
               )
             : []
         const result = readNamedExports(id, dir, mod, declarations)
-        // This test owns package selection, not the remaining base seams awaiting implementation.
-        // Keep the real exported seams and fill only those unrelated assembly dependencies.
-        if (id === '@agnes/base') {
-          const fallback = fakeSeams()
-          result.seams = {
-            ...Object.fromEntries(
-              Object.entries(fallback)
-                .filter(([name]) => name !== 'platform' && name !== 'sandbox')
-                .map(([name, value]) => [name, async () => value]),
-            ),
-            ...result.seams,
-          }
-        }
         return result
       },
     },
@@ -169,17 +166,19 @@ async function setup(projections = false) {
     JSON.stringify({ type: 'module', agnes: { extensions: ['./ext'] } }),
   )
   writeFileSync(
-    join(extra, 'ext', 'agnes.extension.json'),
-    JSON.stringify({
-      id: 'agnes/enabled-test',
-      version: '1.0.0',
-      apiRange: '^1.0.0',
-      // The current extension-manifest schema requires a `./`-prefixed entry (protocol's
-      // extension-manifest.json `entry` pattern `^\./`); the old bare `'index.mjs'` here predates
-      // that and only ever passed the legacy reader's looser check, not the new one.
-      entry: './index.mjs',
-      capabilities: {},
-    }),
+    join(extra, 'ext', 'package.json'),
+    JSON.stringify(
+      bundledPackageJson({
+        id: 'agnes/enabled-test',
+        version: '1.0.0',
+        apiRange: '^5.0.0',
+        // The current extension-manifest schema requires a `./`-prefixed entry (protocol's
+        // extension-manifest.json `entry` pattern `^\./`); the old bare `'index.mjs'` here predates
+        // that and only ever passed the legacy reader's looser check, not the new one.
+        entry: './index.mjs',
+        capabilities: {},
+      }),
+    ),
   )
   writeFileSync(
     join(extra, 'ext', 'index.mjs'),
@@ -195,6 +194,40 @@ async function setup(projections = false) {
     extensionMarker,
   }
 }
+
+it('never grants release capabilities to an installed snapshot shadowing the release package name', async () => {
+  const f = await setup()
+  const raw = pluginSourceWith([{ exportName: 'plugin', rowId: 'ext:acme/shadow', body: '' }], {
+    vendor: '@agnes/base',
+  })
+  const file = join(raw.snapshot.directory, 'index.js')
+  writeFileSync(
+    file,
+    readFileSync(file, 'utf8') + "\nexport const ecosystem = { 'agnes/tools-web': () => () => {} }\n",
+  )
+  const source = {
+    ...raw,
+    snapshot: { ...raw.snapshot, treeIntegrity: hashDirectory(raw.snapshot.directory, { exclude: [] }) },
+  }
+  const pkgs = await loadPackages(
+    createAssemblyContext(f.profile, {
+      ...f.deps,
+      runtimePluginSnapshots: [source],
+      extensionLoader: { import: async (file) => await import(pathToFileURL(file).href) },
+    }),
+  )
+  const loaded = pkgs.modules.get('@agnes/base')
+  expect(loaded?.ecosystem?.['agnes/tools-web']).toBeTypeOf('function')
+  for (const id of [
+    'agnes/tools-web',
+    'agnes/hooks-runner',
+    'agnes/computer-use',
+    'agnes/privacy',
+    'agnes/mcp-search',
+  ])
+    expect(pkgs.grants.extension('@agnes/base', id, loaded)).toEqual({})
+  expect(pkgs.grants.seam('@agnes/base', 'artifacts', loaded)).toEqual({})
+})
 
 it.each(['absent', 'disabled'] as const)(
   'directory for %s package grants no import, preset or extension authority',
@@ -473,16 +506,14 @@ it('a disabled seam provider is refused even when its directory is supplied', as
   const base = x.profile.packages.find((p) => p.id === '@agnes/base')
   if (!base) throw new Error('test profile has no base package')
   base.enabled = false
-  await expect(assemble(x.profile, x.deps)).rejects.toMatchObject({
-    code: 'E_DEP_MISSING',
-    detail: { seam: 'approval', package: '@agnes/base' },
-  })
+  // Its presets and seam providers are not registered, so the assembly refuses before any seam binds.
+  await expect(assemble(x.profile, x.deps)).rejects.toThrow(/E_PRESET_UNSUPPORTED|E_SEAM_MISSING/)
   expect(x.imported).not.toContain('@agnes/base')
 })
 it('consumes resolved required policy despite a weaker legacy constructor option', async () => {
   const x = await setup()
-  const { withAssemblyIsolation } = await import('../../src/profile/isolation.js')
-  const { createHost } = await import('../../src/host.js')
+  const { withAssemblyIsolation } = await import('@agnes/host-common/profile/isolation')
+  const { createHost } = await import('../../src/runtime/lifecycle/host.js')
   const profile = withAssemblyIsolation(x.profile, { extensions: { 'agnes/hooks-runner': 'required' } })
   x.deps.extensionIsolation = { extensions: { 'agnes/hooks-runner': 'off' } }
   const prepareRuntime = vi.fn(() => {

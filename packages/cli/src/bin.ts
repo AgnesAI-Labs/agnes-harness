@@ -1,129 +1,31 @@
 #!/usr/bin/env node
+
 import { readFileSync, realpathSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import {
-  acquireDaemonOfflineMaintenance,
-  daemonStatus,
-  resolveDaemonScope,
-  runDaemonControl,
-  stopDaemon,
-} from '@agnes/daemon'
-import { AGNES_ERRORS, JSONRPC_ERRORS } from '@agnes/protocol'
-import {
-  confirmResourceOperation,
-  isResourceOperationFailure,
-  resourceOperationFailureWasRendered,
-  runResourceCliCommand,
-} from '@agnes/resource-control-cli'
-import { TransportClosed } from '@agnes/sdk'
-import { parseArgs, resolveMode, usage } from './args.js'
-import { ensureLocalBackend } from './boot/backend.js'
-import { bootDefault } from './boot/default.js'
-import { makeEphemeralHome, profileNameFrom, resolveHome } from './boot/inputs.js'
-import { bootLocal, type LocalBootDeps } from './boot/local.js'
+import { COMMANDS } from './args.js'
+import type { bootDefault as BootDefault } from './boot/default.js'
+import type { LocalBootDeps } from './boot/local.js'
 import { installSignalLadder } from './boot/signals.js'
-import { type ConfigWizardIO, runConfigurationWizard } from './config-wizard.js'
-import {
-  BootError,
-  CommandError,
-  ExitCode,
-  SIGNAL_EXIT_CODES,
-  type SignalName,
-  UsageError,
-} from './errors.js'
-import { runAcp } from './modes/acp.js'
-import { runPrint } from './modes/print.js'
-import { runTui } from './modes/tui.js'
-import { runOnboardingTui } from './onboarding/tui.js'
-import { resolveLocale } from './tui/locale.js'
-import { NodeTerminal } from './tui/terminal.js'
+import { dispatchProfileCli, isProfileCommand, prepareCommandArgs, resolveMode } from './command-entry.js'
+import { commandHelp } from './command-help.js'
+import type { BranchContext } from './commands/bin-branches.js'
+import type { ExportIntoRequest } from './commands/export-into.js'
+import { BootError, ExitCode, SIGNAL_EXIT_CODES, type SignalName, UsageError } from './errors.js'
+import { mistypedCommand } from './suggest.js'
+import { timingMark } from './timing.js'
+import { refuseTurnCapsOutsidePrint } from './turn-caps.js'
 import type { Booted } from './types.js'
+import { versionLine } from './version-line.js'
 
-/** The resource command layer only raises these for backend-confirmed terminal outcomes. */
-export function safeResourceFailureLine(error: unknown): string | undefined {
-  if (!isResourceOperationFailure(error)) return undefined
-  return `${error.code}: ${error.message} operation ${error.operationId}`
-}
+// Everything heavier than argument parsing and help text is imported where its command runs, so
+// `agh --help` and a usage error never evaluate the Host, Daemon, SDK or protocol schemas.
 
-/** A daemon disappearing during a client command is operational, not a CLI programming failure. */
-export function safeDaemonDisconnectLine(error: unknown): string | undefined {
-  const kind = (error as { kind?: unknown } | null)?.kind
-  if (!(error instanceof TransportClosed) && kind !== 'transport-closed') return undefined
-  return 'DAEMON_CONNECTION_CLOSED: local Daemon connection closed; retry the command.'
-}
-
-type RpcFailureShape = Readonly<{
-  kind?: unknown
-  code?: unknown
-  data?: Readonly<{ code?: unknown; cause?: unknown }>
-}>
-
-/**
- * These are the only confirmed resource-operation JSON-RPC outcomes that can occur while a local
- * command is finishing. Match their wire shape so the handling survives the local/SEA bundle edge;
- * do not interpolate server messages or data because either can contain untrusted diagnostics.
- */
-export function safeExpectedResourceRpcFailureLine(error: unknown): string | undefined {
-  const value = error as RpcFailureShape | null
-  if (value?.kind !== 'json-rpc') return undefined
-  if (value.code === JSONRPC_ERRORS.INVALID_REQUEST && value.data?.code === 'SHUTTING_DOWN')
-    return 'DAEMON_SHUTTING_DOWN: local Daemon is shutting down; retry the command.'
-  if (value.code === AGNES_ERRORS.SEMANTIC_REJECTED && value.data?.code === 'RESOURCE_OPERATION_TERMINAL')
-    return 'RESOURCE_OPERATION_TERMINAL: resource operation has already reached a terminal state.'
-  return undefined
-}
-
-/**
- * One fixed sentence per cause the daemon names for a refused preset or model. The cause is a closed
- * set chosen by the daemon, so it is looked up here and never printed; anything else gets the
- * general sentence below.
- */
-const PRESET_REFUSAL_LINES: Readonly<Record<string, string>> = {
-  'not-allowed':
-    "PRESET_SWITCH_REJECTED: the requested preset is not in this profile's presets.allowed; list it there (the default preset has to be listed too).",
-  'preset-unsupported':
-    'PRESET_SWITCH_REJECTED: the requested preset is not provided by an installed package or needs a capability this host does not have; `agh doctor platform` lists the capabilities.',
-  'preset-unresolved':
-    'PRESET_SWITCH_REJECTED: the requested preset asks for a model route this host did not assemble; `agh doctor provider` lists the configured routes.',
-  'model-unsupported':
-    'PRESET_SWITCH_REJECTED: the requested model is not served by this profile; `agh doctor provider` lists the configured routes.',
-  'model-unknown':
-    'PRESET_SWITCH_REJECTED: the requested model is not known to the configured provider; `agh doctor provider` lists the configured routes.',
-}
-
-/** Own keys only: a cause named like an Object.prototype member must not select a function. */
-function presetRefusalLine(cause: unknown): string | undefined {
-  return typeof cause === 'string' && Object.hasOwn(PRESET_REFUSAL_LINES, cause)
-    ? PRESET_REFUSAL_LINES[cause]
-    : undefined
-}
-
-/**
- * Refusals a session command meets because of what the operator asked for or has configured: a
- * `--model`/`--preset` this profile does not carry, or a home with no provider at all. Each gets
- * one fixed line saying what to do next. Same rule as above: the server's message and data are not
- * interpolated.
- */
-export function safeExpectedSessionRpcFailureLine(error: unknown): string | undefined {
-  const value = error as RpcFailureShape | null
-  if (value?.kind !== 'json-rpc') return undefined
-  if (value.code === AGNES_ERRORS.PRESET_SWITCH_REJECTED)
-    return (
-      presetRefusalLine(value.data?.cause) ??
-      'PRESET_SWITCH_REJECTED: the requested preset or model is not available in this profile; `agh doctor provider` lists the configured routes.'
-    )
-  if (value.code === AGNES_ERRORS.SEMANTIC_REJECTED && value.data?.code === 'PROVIDER_UNCONFIGURED')
-    return 'PROVIDER_UNCONFIGURED: no model provider is configured for this profile; run `agh config` to add one.'
-  if (value.code === AGNES_ERRORS.SEMANTIC_REJECTED && value.data?.code === 'LEGACY_LEDGER_FORMAT')
-    return 'LEGACY_LEDGER_FORMAT: this session was created by an older version and cannot be opened by this one; start a new session.'
-  if (value.code === AGNES_ERRORS.SEMANTIC_REJECTED && value.data?.code === 'NEWER_LEDGER_FORMAT')
-    return 'NEWER_LEDGER_FORMAT: this session was written by a newer version; upgrade to open it.'
-  if (value.code === AGNES_ERRORS.SEMANTIC_REJECTED && value.data?.code === 'E_LEDGER_INTEGRITY')
-    return "E_LEDGER_INTEGRITY: this session's stored history failed its integrity check, so it cannot be opened or exported; start a new session."
-  return undefined
-}
+/** The branches that live outside this file, loaded on first use. */
+const branches = () => import('./commands/bin-branches.js')
+const bootDefault: typeof BootDefault = async (...args) =>
+  (await import('./boot/default.js')).bootDefault(...args)
 
 export type MainIO = {
   env: NodeJS.ProcessEnv
@@ -142,215 +44,6 @@ export type MainIO = {
 const GRACE_MS = 5_000
 /** And how long, after that, anything still queued on a pipe gets to reach it. */
 const FLUSH_MS = 100
-
-type ConfigInputStream = NodeJS.ReadableStream & {
-  setRawMode?: (mode: boolean) => void
-  resume(): void
-  pause(): void
-  setEncoding(encoding: string): void
-  on(event: 'data', handler: (chunk: string | Buffer) => void): void
-  off(event: 'data', handler: (chunk: string | Buffer) => void): void
-}
-
-/** A line reader that can briefly switch the same TTY into masked raw input for API keys. */
-class MaskedConfigInput implements AsyncIterable<string>, AsyncIterator<string> {
-  #queue: string[] = []
-  #waiters: Array<(result: IteratorResult<string>) => void> = []
-  #line = ''
-  #secret = ''
-  #secretResolve: ((value: string) => void) | undefined
-  #secretReject: ((reason: Error) => void) | undefined
-  #secretMode = false
-  #skipLf = false
-  #closed = false
-
-  constructor(
-    private readonly input: ConfigInputStream,
-    private readonly output: NodeJS.WritableStream,
-  ) {
-    input.setEncoding('utf8')
-    input.on('data', this.onData)
-    input.resume()
-  }
-
-  [Symbol.asyncIterator](): AsyncIterator<string> {
-    return this
-  }
-
-  next(): Promise<IteratorResult<string>> {
-    const value = this.#queue.shift()
-    if (value !== undefined) return Promise.resolve({ done: false, value })
-    if (this.#closed) return Promise.resolve({ done: true, value: undefined })
-    return new Promise((resolve) => this.#waiters.push(resolve))
-  }
-
-  return(): Promise<IteratorResult<string>> {
-    this.close()
-    return Promise.resolve({ done: true, value: undefined })
-  }
-
-  secret = (prompt: string): Promise<string> => {
-    if (this.#closed) return Promise.reject(new Error('configuration input is closed'))
-    if (this.#secretMode) return Promise.reject(new Error('configuration secret prompt is already active'))
-    this.#secretMode = true
-    this.#secret = ''
-    this.output.write(prompt)
-    this.input.setRawMode?.(true)
-    return new Promise((resolve, reject) => {
-      this.#secretResolve = resolve
-      this.#secretReject = reject
-    })
-  }
-
-  close(): void {
-    if (this.#closed) return
-    this.#closed = true
-    this.input.off('data', this.onData)
-    this.input.setRawMode?.(false)
-    this.input.pause()
-    this.#secretReject?.(new Error('configuration input is closed'))
-    this.#secretResolve = undefined
-    this.#secretReject = undefined
-    for (const resolve of this.#waiters.splice(0)) resolve({ done: true, value: undefined })
-    this.#queue = []
-    this.#line = ''
-    this.#secret = ''
-  }
-
-  private readonly onData = (chunk: string | Buffer): void => {
-    if (this.#closed) return
-    const data = String(chunk)
-    if (this.#secretMode) {
-      for (const char of data) {
-        if (char === '\r' || char === '\n') {
-          this.#skipLf = char === '\r'
-          this.finishSecret()
-          return
-        }
-        if (char === '\u0003') {
-          this.failSecret(new Error('configuration cancelled'))
-          return
-        }
-        if (char === '\u007f' || char === '\b') {
-          if (this.#secret.length > 0) {
-            this.#secret = this.#secret.slice(0, -1)
-            this.output.write('\b \b')
-          }
-          continue
-        }
-        if (char >= '!' && char <= '~') {
-          this.#secret += char
-          this.output.write('*')
-        }
-      }
-      return
-    }
-    let start = 0
-    if (this.#skipLf && data.startsWith('\n')) start = 1
-    this.#skipLf = false
-    this.#line += data.slice(start)
-    for (;;) {
-      const at = this.#line.search(/[\r\n]/)
-      if (at < 0) break
-      const value = this.#line.slice(0, at).trim()
-      const newline = this.#line[at]
-      this.#line = this.#line.slice(at + 1)
-      if (newline === '\r' && this.#line.startsWith('\n')) this.#line = this.#line.slice(1)
-      this.push(value)
-    }
-  }
-
-  private finishSecret(): void {
-    const value = this.#secret
-    const resolve = this.#secretResolve
-    this.#secretResolve = undefined
-    this.#secretReject = undefined
-    this.#secret = ''
-    this.#secretMode = false
-    this.input.setRawMode?.(false)
-    this.output.write('\n')
-    resolve?.(value)
-  }
-
-  private failSecret(error: Error): void {
-    const reject = this.#secretReject
-    this.#secretResolve = undefined
-    this.#secretReject = undefined
-    this.#secret = ''
-    this.#secretMode = false
-    this.input.setRawMode?.(false)
-    this.output.write('\n')
-    reject?.(error)
-  }
-
-  private push(value: string): void {
-    const resolve = this.#waiters.shift()
-    if (resolve) resolve({ done: false, value })
-    else this.#queue.push(value)
-  }
-}
-
-function configurationWizardInput(io: MainIO): { io: ConfigWizardIO; close(): void } {
-  const input = io.stdin as ConfigInputStream
-  if (io.stdin.isTTY === true && typeof input.setRawMode === 'function') {
-    const reader = new MaskedConfigInput(input, io.stderr)
-    return {
-      io: { input: reader, write: (text) => io.stderr.write(text), secret: reader.secret },
-      close: () => reader.close(),
-    }
-  }
-  const rl = createInterface({ input: io.stdin as NodeJS.ReadableStream, crlfDelay: Infinity })
-  return {
-    io: { input: rl as AsyncIterable<string>, write: (text) => io.stderr.write(text) },
-    close: () => rl.close(),
-  }
-}
-
-type DaemonCommand = 'start' | 'status' | 'stop'
-
-function daemonCommandArgs(
-  rest: readonly string[],
-  io: MainIO,
-): {
-  command: DaemonCommand
-  args: Parameters<typeof runDaemonControl>[0]
-} {
-  let command: DaemonCommand | undefined
-  let profile = io.env.AGNES_PROFILE || 'local-dev'
-  let home: string | undefined
-  let workspace = io.cwd
-  let dataDir: string | undefined
-  for (let index = 0; index < rest.length; index++) {
-    const value = rest[index]
-    if (value === 'start' || value === 'status' || value === 'stop') {
-      if (command !== undefined) throw new UsageError('daemon accepts one of start, status or stop')
-      command = value
-      continue
-    }
-    const next = rest[index + 1]
-    if (value === '--profile' || value === '--home' || value === '--workspace' || value === '--data-dir') {
-      if (next === undefined || next.startsWith('-')) throw new UsageError(`${value} needs a value`)
-      index += 1
-      if (value === '--profile') profile = next
-      else if (value === '--home') home = next
-      else if (value === '--workspace') workspace = next
-      else dataDir = next
-      continue
-    }
-    throw new UsageError(`unknown daemon argument ${value}`)
-  }
-  if (command === undefined) throw new UsageError('daemon expects start, status or stop')
-  return {
-    command,
-    args: {
-      profile,
-      ...(home ? { home } : {}),
-      ...(workspace ? { workspace } : {}),
-      ...(dataDir ? { dataDir } : {}),
-      command,
-    } as Parameters<typeof runDaemonControl>[0],
-  }
-}
 
 /**
  * Where the signal ladder sends the process.
@@ -378,7 +71,11 @@ function hardExit(code: number): void {
  * default termination, so the hook still runs. The default termination acts the instant a signal is
  * delivered, so the handlers exist before the home does and outlive its removal.
  */
-function ephemeralHome(io: MainIO, ladderInstalled: () => boolean): { home: string; release(): void } {
+function ephemeralHome(
+  io: MainIO,
+  ladderInstalled: () => boolean,
+  makeEphemeralHome: () => { home: string; dispose(): void },
+): { home: string; release(): void } {
   const signals = io.signals ?? process
   const exit = io.exit ?? ((code: number) => process.exit(code))
   const handlers = (Object.keys(SIGNAL_EXIT_CODES) as SignalName[]).map((sig) => {
@@ -409,28 +106,91 @@ function ephemeralHome(io: MainIO, ladderInstalled: () => boolean): { home: stri
  * package loader. It is not a general escape hatch: nothing else about the run is injectable here.
  */
 export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDeps> = {}): Promise<number> {
-  let p: ReturnType<typeof parseArgs>
+  // Hidden callback for shell completion scripts. It runs before any home, profile or daemon work so
+  // that a TAB never pays for (or causes) a startup.
+  if (argv[0] === '__complete') {
+    if (argv[1] === 'sessions') {
+      const { completeSessions, daemonSessionReader } = await import('./commands/complete.js')
+      // The 300 ms deadline bounds the daemon exchange; loading its modules comes first and is not counted.
+      const read = await daemonSessionReader(io.env, io.cwd).catch(() => async () => [])
+      const lines = await completeSessions(argv[2] ?? '', () => read(250))
+      if (lines.length > 0) io.stdout.write(`${lines.join('\n')}\n`)
+    }
+    return ExitCode.OK
+  }
+  let p: ReturnType<typeof prepareCommandArgs>
   try {
-    p = parseArgs(argv)
+    p = prepareCommandArgs(argv, io.cwd)
   } catch (e) {
-    io.stderr.write(`${(e as Error).message}\n${usage()}\n`)
+    io.stderr.write(`${(e as Error).message}; run agh --help for usage\n`)
     return ExitCode.USAGE
   }
-  // A relative --cwd means relative to where the user typed it. Left raw, it reaches the daemon,
-  // which resolves it against its own working directory (WORKSPACE_INVALID, or an empty listing).
-  if (p.cwd !== undefined) p = { ...p, cwd: resolve(io.cwd, p.cwd) }
   if (p.version) {
-    io.stdout.write(`agh ${io.agnesVersion} node ${process.versions.node} protocol _agnes/v1\n`)
+    io.stdout.write(versionLine(io.agnesVersion))
     return ExitCode.OK
   }
   if (p.help) {
-    io.stdout.write(`${usage()}\n`)
+    const help =
+      p.command === 'api'
+        ? (await import('./commands/api.js')).apiHelp()
+        : commandHelp(p.command, io.env.AGNES_LOCALE)
+    io.stdout.write(`${help}\n`)
     return ExitCode.OK
   }
 
+  if (p.safeMode || p.ignoreRules)
+    // Said every time and on stderr: a flag that sounds like a guarantee must not hide what this build cannot skip.
+    io.stderr.write(
+      p.safeMode
+        ? 'agh: --safe-mode skips custom slash commands and non-built-in plugins; instruction files, hooks and MCP servers are still loaded by this build\n'
+        : 'agh: --ignore-rules skips custom slash commands; instruction files (AGENTS.md, CLAUDE.md) are still loaded by this build\n',
+    )
+  if (p.command === 'completion')
+    return (await import('./commands/completion.js')).completionCommand(p.positional, io)
+
+  if (p.command === 'plugin') {
+    try {
+      const { runPluginTests } = await import('./commands/plugin-test.js')
+      return await runPluginTests(p.rest, io)
+    } catch (error) {
+      io.stderr.write(`${error instanceof Error ? error.message : 'Plugin tests failed'}\n`)
+      return error instanceof UsageError ? ExitCode.USAGE : ExitCode.ERROR
+    }
+  }
+
+  const { makeEphemeralHome, resolveHome } = await import('./boot/inputs.js')
   let ladderInstalled = false
-  const eph = p.ephemeral ? ephemeralHome(io, () => ladderInstalled) : undefined
+  const eph = p.ephemeral ? ephemeralHome(io, () => ladderInstalled, makeEphemeralHome) : undefined
   const home = eph?.home ?? resolveHome(io.env)
+  const { recoveryCommand } = await import('./commands/app.js')
+  const recovery = await recoveryCommand(p, io, home)
+  if (recovery !== undefined) return recovery
+  const production = Object.keys(boot).length === 0
+  let diagnosticHome = home
+  if (production && p.command !== 'doctor') {
+    const { initializeHomeLocked } = await import('@agnes/host')
+    const { startupFailure } = await import('./commands/first-run-locales.js')
+    try {
+      let profile = p.profile ?? 'local-dev'
+      if (p.command === 'serve' || p.command === 'web' || p.command === 'start') {
+        const { parseWebCommand } = await import('../launch/web-command.js')
+        const web = parseWebCommand(p.rest, io.env)
+        diagnosticHome = web.home ?? home
+        profile = web.profile ?? profile
+      }
+      // Publish the layout before the diagnostic journal becomes the first home writer.
+      await initializeHomeLocked(diagnosticHome, profile)
+    } catch (error) {
+      const message = startupFailure(error, io.env)
+      if (!message) throw error
+      io.stderr.write(`${message}\n`)
+      return ExitCode.ERROR
+    }
+  }
+  const stopDiagnostics =
+    production && p.command !== 'doctor'
+      ? (await import('@agnes/observability')).installDiagnosticJournal(diagnosticHome)
+      : undefined
   // Progress goes to a terminal or nowhere. A redirected stderr belongs to whatever the operator
   // pointed it at, and filling it with spinner text is how a log becomes unreadable.
   const log = (s: string): void => {
@@ -444,44 +204,62 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     log,
     ...boot,
   }
+  const branchContext: BranchContext = { io, deps, home, useEmbedded: Object.keys(boot).length > 0 }
   try {
-    if (p.command === 'serve') {
-      const { runWebCommand } = await import('../launch/web-command.js')
-      await runWebCommand(p.rest, {
-        env: io.env,
+    if (isProfileCommand(p.command)) return await dispatchProfileCli(p, io, deps, !production)
+    if (p.command === 'run') {
+      const { runCommand } = await import('./commands/run.js')
+      const { bootHeadless } = await import('./boot/headless.js')
+      return await runCommand(p.rest, {
         cwd: io.cwd,
-        write: (text) => io.stdout.write(text),
+        stdin: io.stdin,
+        stdout: io.stdout,
         ...(io.signals ? { signals: io.signals } : {}),
+        ...(io.exit ? { exit: io.exit } : {}),
+        boot: (input) => bootHeadless(input, deps),
       })
-      return ExitCode.OK
     }
-    if (p.command === 'daemon') {
-      const parsed = daemonCommandArgs(p.rest, io)
-      if (parsed.command === 'start') {
-        const webOrigin = io.env.AGNES_WEB_ORIGIN ?? 'http://127.0.0.1:4177'
-        await ensureLocalBackend({
+    if ((p.command === 'acp' || p.mode === 'acp') && Object.keys(boot).length === 0) {
+      if (p.standalone || p.ephemeral)
+        throw new UsageError('ACP uses the shared App Server; omit standalone/ephemeral')
+      if (!p.connect) {
+        const { runAppServer } = await import('./commands/app-server.js')
+        return await runAppServer(
+          [
+            '--stdio',
+            '--home',
+            deps.home,
+            '--cwd',
+            p.cwd ?? io.cwd,
+            ...(p.profile ? ['--profile', p.profile] : []),
+          ],
+          io,
+        )
+      }
+    }
+    if (p.command === 'app-server') {
+      const { runAppServer } = await import('./commands/app-server.js')
+      return await runAppServer(p.rest, io)
+    }
+    if (p.command === 'serve' || p.command === 'web' || p.command === 'start') {
+      const { runWebCommand } = await import('../launch/web-command.js')
+      const { startupFailure } = await import('./commands/first-run-locales.js')
+      try {
+        await runWebCommand(p.rest, {
           env: io.env,
           cwd: io.cwd,
-          ...(parsed.args.home ? { home: parsed.args.home } : {}),
-          profile: parsed.args.profile,
-          ...(parsed.args.workspace ? { workspace: parsed.args.workspace } : {}),
-          ...(parsed.args.dataDir ? { dataDir: parsed.args.dataDir } : {}),
-          agnesVersion: io.agnesVersion,
-          webOrigin,
-          localWeb: { addr: '127.0.0.1:0', origin: webOrigin },
+          write: (text) => io.stdout.write(text),
+          ...(io.signals ? { signals: io.signals } : {}),
         })
-        return ExitCode.OK
+      } catch (error) {
+        const message = startupFailure(error, io.env)
+        if (!message) throw error
+        io.stderr.write(message + '\n')
+        return ExitCode.ERROR
       }
-      const controlExit = await runDaemonControl(parsed.args, {
-        env: io.env,
-        write: (text) => io.stdout.write(text),
-        // The command line parser above has already made these explicit selections. Reusing the
-        // daemon's control path keeps owner identity and stale PID handling in one place.
-        scope: resolveDaemonScope,
-        ...(parsed.command === 'status' ? { status: daemonStatus } : { stop: stopDaemon }),
-      })
-      return controlExit ?? ExitCode.ERROR
+      return ExitCode.OK
     }
+    if (p.command === 'daemon') return await (await branches()).runDaemonBranch(p, branchContext)
     if (p.command === 'consent') {
       const { consentCommand } = await import('./commands/consent.js')
       io.stdout.write(`${consentCommand(p, deps)}\n`)
@@ -492,157 +270,9 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       io.stdout.write(`${await statsDeviation(p, deps)}\n`)
       return ExitCode.OK
     }
-    if (p.command === 'config') {
-      const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
-      try {
-        const snapshot = await readConfigurationSnapshot(booted)
-        if (!snapshot) throw new UsageError('configuration is unavailable on this connection')
-        const wizard = configurationWizardInput(io)
-        try {
-          await runConfigurationWizard(booted.client, snapshot, wizard.io)
-        } finally {
-          wizard.close()
-        }
-        return ExitCode.OK
-      } finally {
-        await booted.close().catch(() => undefined)
-      }
-    }
-    if (p.command === 'doctor') {
-      if (p.connect !== undefined) throw new UsageError('doctor only runs in one-shot form')
-      if ((p.include !== undefined || p.skip !== undefined) && p.positional[0] !== 'computer-use')
-        throw new UsageError('--include and --skip are only supported by doctor computer-use')
-      if (p.positional[0] === 'computer-use') {
-        const { doctorComputerUseCommand, validateDoctorComputerUseArgs } = await import(
-          './commands/computer-use.js'
-        )
-        validateDoctorComputerUseArgs(p)
-        const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
-        try {
-          const result = await doctorComputerUseCommand(p, booted.client)
-          io.stdout.write(`${result.text}\n`)
-          return result.exitCode
-        } finally {
-          await booted.close().catch(() => undefined)
-        }
-      }
-      const { doctorCommand } = await import('./commands/doctor.js')
-      const result = await doctorCommand(p, deps)
-      ;(result.exitCode === ExitCode.USAGE ? io.stderr : io.stdout).write(`${result.text}\n`)
-      return result.exitCode
-    }
-    if (p.command === 'batch') {
-      const { BATCH_USAGE, parseBatchArgs, runBatchCommand } = await import('./commands/batch.js')
-      const command = parseBatchArgs(p.rest)
-      if (command.verb === 'help') {
-        io.stdout.write(`${BATCH_USAGE}\n`)
-        return ExitCode.OK
-      }
-      const cwd = command.cwd !== undefined ? resolve(io.cwd, command.cwd) : io.cwd
-      const booted = await bootDefault(
-        { ...p, cwd, ...(command.profile !== undefined ? { profile: command.profile } : {}) },
-        deps,
-        { useEmbedded: Object.keys(boot).length > 0 },
-      )
-      try {
-        return await runBatchCommand(command, booted.client, {
-          cwd,
-          write: (text) => io.stdout.write(text),
-          error: (text) => io.stderr.write(text),
-        })
-      } finally {
-        await booted.close().catch(() => undefined)
-      }
-    }
-    if (p.command === 'computer-use') {
-      const {
-        computerUsePermissionsGrantCommand,
-        computerUsePermissionsStatusCommand,
-        computerUseOperationCommand,
-        computerUseStatusCommand,
-        isComputerUsePermissionsStatus,
-        validateComputerUsePermissionsStatusArgs,
-        validateComputerUsePermissionsGrantArgs,
-        validateComputerUseOperationArgs,
-        validateComputerUseRescueArgs,
-        validateComputerUseStatusArgs,
-        computerUseRescueCommand,
-      } = await import('./commands/computer-use.js')
-      if (p.positional[0] === 'rescue') {
-        const rescueAction = validateComputerUseRescueArgs(p)
-        const scope = await resolveDaemonScope({
-          env: io.env,
-          cwd: p.cwd ?? io.cwd,
-          home,
-          ...(p.profile ? { profile: p.profile } : {}),
-          ...(p.dataDir ? { dataDir: p.dataDir } : {}),
-          agnesVersion: io.agnesVersion,
-          allowPackageRecovery: true,
-        })
-        const executeRescue = async () => {
-          const daemon = await daemonStatus(scope.dataDir)
-          const { runComputerUseRescue } = await import('@agnes/host')
-          return computerUseRescueCommand(p, {
-            dataDir: scope.dataDir,
-            daemonRunning: daemon.running,
-            ...(deps.signal ? { signal: deps.signal } : {}),
-            run: runComputerUseRescue,
-          })
-        }
-        if (rescueAction === 'status') {
-          const result = await executeRescue()
-          io.stdout.write(`${result.text}\n`)
-          return result.exitCode
-        }
-        // Exclude both ordinary launchers and a directly started daemon across the liveness check
-        // and activation mutation. The startup lock alone does not exclude direct agnesd startup.
-        const maintenance = acquireDaemonOfflineMaintenance(scope)
-        try {
-          const result = await executeRescue()
-          io.stdout.write(`${result.text}\n`)
-          return result.exitCode
-        } finally {
-          maintenance.release()
-        }
-      }
-      // Grammar validation precedes daemon discovery/start so malformed lifecycle verbs cannot have
-      // side effects merely because their spelling resembles an installation command.
-      if (['install', 'restart', 'operation', 'cancel'].includes(p.positional[0] ?? '')) {
-        validateComputerUseOperationArgs(p)
-        const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
-        try {
-          const result = await computerUseOperationCommand(p, booted.client)
-          io.stdout.write(`${result.text}\n`)
-          return result.exitCode
-        } finally {
-          await booted.close().catch(() => undefined)
-        }
-      }
-      if (isComputerUsePermissionsStatus(p)) {
-        const grant = p.positional[1] === 'grant'
-        if (grant) validateComputerUsePermissionsGrantArgs(p)
-        else validateComputerUsePermissionsStatusArgs(p)
-        const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
-        try {
-          const result = grant
-            ? await computerUsePermissionsGrantCommand(p, booted.client)
-            : await computerUsePermissionsStatusCommand(p, booted.client)
-          io.stdout.write(`${result.text}\n`)
-          return result.exitCode
-        } finally {
-          await booted.close()
-        }
-      }
-      validateComputerUseStatusArgs(p)
-      const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
-      try {
-        const result = await computerUseStatusCommand(p, booted.client)
-        io.stdout.write(`${result.text}\n`)
-        return result.exitCode
-      } finally {
-        await booted.close().catch(() => undefined)
-      }
-    }
+    if (p.command === 'config') return await (await branches()).runConfigBranch(p, branchContext)
+    if (p.command === 'doctor') return await (await branches()).runDoctorBranch(p, branchContext)
+    if (p.command === 'computer-use') return await (await branches()).runComputerUseBranch(p, branchContext)
     if (p.command === 'conformance') {
       const { conformanceGateway } = await import('./commands/conformance.js')
       const result = await conformanceGateway(p, deps)
@@ -666,6 +296,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       const { importFile } = await import('./commands/import.js')
       if (p.connect !== undefined || io.env.AGNES_CONNECT !== undefined)
         throw new UsageError('import only runs in one-shot form (no --connect)')
+      const { bootLocal } = await import('./boot/local.js')
       const booted = await bootLocal(p, deps)
       try {
         if (booted.host === undefined) throw new BootError('local import requires a Host')
@@ -682,48 +313,87 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         await booted.close().catch(() => undefined)
       }
     }
-    if (p.command === 'sessions') {
+    if (p.command === 'diagnostics') {
+      if (p.positional[0] !== 'export' || !p.out)
+        throw new UsageError('usage: agh diagnostics export [--session <id>] --out <file>')
       const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
       try {
-        const { sessionsCommand } = await import('./commands/sessions.js')
-        return await sessionsCommand(p, booted.client, { stdout: io.stdout, stderr: io.stderr })
+        const { diagnosticsCommand } = await import('./commands/diagnostics.js')
+        await diagnosticsCommand(p, booted.client, io.cwd)
+        return ExitCode.OK
       } finally {
         await booted.close().catch(() => undefined)
       }
     }
-    if (p.command === 'package' || p.command === 'install') {
+    // approvals, schedules, triggers, settings, credentials, agents, queue and api share sessions' boot and entry point.
+    if (
+      /^(sessions|approvals|schedules|triggers|settings|credentials|agents|queue|api)$/.test(p.command ?? '')
+    ) {
+      const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
+      try {
+        const { sessionsCommand } = await import('./commands/sessions.js')
+        return await sessionsCommand({ ...p, profile: booted.profileName }, booted.client, {
+          stdout: io.stdout,
+          stderr: io.stderr,
+        })
+      } finally {
+        await booted.close().catch(() => undefined)
+      }
+    }
+    if (p.command === 'plugins' && p.positional[0] === 'pack')
+      return await (await branches()).runPluginsPackBranch(p, branchContext)
+    if (
+      (p.command === 'plugins' &&
+        !/^(reload|publication-status|provenance|candidates|config|tree|generations)$/.test(
+          p.positional[0] ?? '',
+        )) ||
+      p.command === 'package' ||
+      p.command === 'install'
+    ) {
       const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
       try {
         const { runPackageCommand } = await import('./commands/package.js')
         // The daemon scope serves only the profile it was booted for, which AGNES_PROFILE can choose.
         await runPackageCommand({ ...p, profile: booted.profileName }, booted.client, {
           write: (text) => io.stdout.write(text),
-          confirm: (preview) => confirmPackageInstall(io, preview.id, preview.version, preview.integrity),
+          confirm: (preview, action) =>
+            confirmPackageInstall(
+              io,
+              preview.id,
+              preview.version,
+              preview.integrity,
+              p.command === 'plugins' && (action === undefined || action === 'install')
+                ? 'install, trust and enable'
+                : action,
+            ),
+          confirmEnable: (item, action) =>
+            confirmPackageInstall(io, item.id, item.version, item.integrity, action ?? 'enable'),
         })
         return ExitCode.OK
       } finally {
         await booted.close().catch(() => undefined)
       }
     }
-    if (p.command === 'packages') {
+    if (p.command === 'plugins' || p.command === 'dev' || p.command === 'app') {
       const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
       try {
-        const { packagesPinsCommand } = await import('./commands/packages-pins.js')
-        await packagesPinsCommand({ ...p, profile: booted.profileName }, booted.client, {
-          write: (text) => io.stdout.write(text),
-        })
-        return ExitCode.OK
+        const { runPluginDevelopmentCommand: run } = await import('./commands/plugins.js')
+        const w = (t: string) => io.stdout.write(t)
+        return (await run({ ...p, profile: booted.profileName }, booted.client, w)) ?? ExitCode.OK
       } finally {
         await booted.close().catch(() => undefined)
       }
     }
+    if (p.command === 'packages') return await (await branches()).runPackagesBranch(p, branchContext)
     if (
       (p.command === 'resources' || p.command === 'skills' || p.command === 'mcp') &&
       !(p.command === 'mcp' && p.rest[0] === 'serve')
     ) {
+      const { confirmResourceOperation, runResourceCliCommand } = await import('@agnes/resource-control-cli')
       await runResourceCliCommand({
         kind: p.command,
         rest: p.rest,
+        workspacePath: p.cwd ?? io.cwd,
         boot: (profile) =>
           bootDefault({ ...p, ...(profile ? { profile } : {}) }, deps, {
             useEmbedded: Object.keys(boot).length > 0,
@@ -736,40 +406,76 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       })
       return ExitCode.OK
     }
-    if (p.command === 'profile') {
-      const { profileInspect, profileList, profileTrust } = await import('./commands/profile.js')
-      const [sub, arg] = p.positional
-      if (sub === 'list') {
-        io.stdout.write(`${profileList(deps.home)}\n`)
+    if (p.command === 'tools') {
+      const { toolsCommand } = await import('./commands/tools.js')
+      const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
+      try {
+        io.stdout.write((await toolsCommand(booted, p, p.cwd ?? deps.cwd)) + '\n')
         return ExitCode.OK
+      } finally {
+        await booted.close().catch(() => undefined)
       }
-      if (sub === 'inspect') {
-        if (!arg) throw new UsageError('agh profile inspect requires a profile name')
-        io.stdout.write(`${await profileInspect(p, deps, arg)}\n`)
-        return ExitCode.OK
-      }
-      if (sub === 'trust') {
-        if (!arg) throw new UsageError('agh profile trust requires a deploy directory')
-        const deployDir = resolve(p.cwd ?? deps.cwd, arg)
-        const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
-        try {
-          const profileName = profileNameFrom(p, deps.env)
-          io.stdout.write(`${await profileTrust(booted.client, profileName, deployDir)}\n`)
-          return ExitCode.OK
-        } finally {
-          await booted.close().catch(() => undefined)
-        }
-      }
-      throw new UsageError('agh profile requires a subcommand: list | inspect | trust')
     }
+    if (p.command === 'profile') return await (await branches()).runProfileBranch(p, branchContext)
     // Commands still require their own runners. ACP is a mode as well as a command alias.
     if (p.command && p.command !== 'resume' && p.command !== 'acp')
       throw new UsageError(`agh ${p.command} is not available in this build`)
     const mode = resolveMode(p, { stdin: io.stdin.isTTY === true, stdout: io.stdout.isTTY === true })
     if (mode !== 'print' && mode !== 'tui' && mode !== 'acp')
       throw new UsageError(`agh ${mode} is not available in this build; use -p`)
-    const booted: Booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
+    const near = mistypedCommand(p, COMMANDS)
+    if (near)
+      io.stderr.write(`note: ${p.positional[0]} is sent as a prompt; did you mean the command ${near}?\n`)
+    if (p.outputSchema !== undefined && mode !== 'print')
+      throw new UsageError('--output-schema is supported only with -p')
+    refuseTurnCapsOutsidePrint(p, mode)
+    // Resolve the selected mode before installing its signal ladder, so loading cannot race cancel.
+    const tuiMode = mode === 'tui' ? await import('./modes/tui.js') : undefined
+    const acpMode = mode === 'acp' ? await import('./modes/acp.js') : undefined
+    const printMode = mode === 'print' ? await import('./modes/print.js') : undefined
+    const { resolveLocale } = await import('./tui/locale.js')
+    if (p.addDir !== undefined)
+      (await import('./add-dir.js')).resolveAddDirs(p, mode, io, resolveLocale(io.env))
+    const worktreeFlag = p.worktree !== undefined ? await import('./worktree.js') : undefined
+    const worktree = await worktreeFlag?.openWorktreeFlag(p, mode, io, resolveLocale(io.env))
+    if (worktree && mode === 'print')
+      io.stderr.write(worktreeFlag?.printWorktreeStart(worktree, resolveLocale(io.env)) ?? '')
+    // The composer goes up before the daemon is reached; it keeps what is typed while that happens.
+    // The opening composer draws on the alternate screen, which --no-alt-screen never enters.
+    const openingMode = p.noAltScreen ? undefined : tuiMode
+    let opening = openingMode
+      ? new openingMode.TuiOpening(p, {
+          stdin: io.stdin,
+          stdout: io.stdout,
+          stderr: io.stderr,
+          env: io.env,
+          cwd: p.cwd ?? io.cwd,
+          signals: io.signals ?? process,
+          giveUp: (code) => (io.exit ?? hardExit)(code),
+          composerSelectionPath: join(resolveHome(io.env), 'composer-selection.json'),
+        })
+      : undefined
+    // Remembering a pane's session only makes sense for this machine's own home: not over --connect,
+    // and not for --ephemeral, whose home is gone when the run ends.
+    const breadcrumb =
+      p.connect === undefined && !p.ephemeral
+        ? (await import('./terminal-breadcrumb.js')).terminalBreadcrumb(resolveHome(io.env), io.env)
+        : undefined
+    let booted: Booted
     try {
+      booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
+    } catch (error) {
+      opening?.abandon()
+      if (worktree) await worktreeFlag?.printWorktreeEnd(worktree, resolveLocale(io.env))
+      throw error
+    }
+    let stashed: string | undefined
+    let leave!: (code: number) => void
+    const exited = new Promise<number>((resolve) => {
+      leave = resolve
+    })
+    try {
+      if (opening?.gaveUp !== undefined) return opening.gaveUp
       // The config wizard is deliberately after boot: it uses the same authenticated SDK endpoint as
       // Web and never opens Host credential stores itself. A daemon without the optional config
       // capability remains usable for ordinary sessions; an actual config failure is surfaced.
@@ -781,18 +487,23 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         // and consuming the stream here would steal bytes from the embedder's own TUI.
         Object.keys(boot).length === 0
       ) {
-        const snapshot = await readConfigurationSnapshot(booted)
+        const snapshot = await (await branches()).readConfigurationSnapshot(booted)
         if (snapshot && !snapshot.configured) {
           // Rendered with the TUI's own selectors. `agh config` keeps the line-oriented wizard so
           // a piped or non-TTY caller still has a scriptable path to the same config endpoint.
+          const { NodeTerminal, runOnboardingTui } = await import('./onboarding/tui.js')
+          // The wizard needs the normal screen; the draft waits and is put back afterwards.
+          stashed = opening?.stash()
+          opening = undefined
           const term = new NodeTerminal(io.stdin, io.stdout, io.env)
           const saved = await runOnboardingTui(booted.client, snapshot, term, resolveLocale(io.env))
-          // Cancelled at the root selector: leave without writing anything, as an unconfigured CLI
-          // has nothing to open a session with.
-          if (saved === undefined || saved.effect === 'restart-required') return ExitCode.OK
+          // Cancellation leaves setup; Demo continues through the already selected local backend.
+          if (saved === undefined || (saved !== 'demo' && saved.effect === 'restart-required'))
+            return ExitCode.OK
         }
       }
       let cancel: () => Promise<void> = async () => undefined
+      let interruptIgnored: () => boolean = () => false
       // Remembered rather than acted on here: the turn the signal cancels ends as `aborted`, and which
       // code that becomes -- 130, 143 or 129 -- is only knowable from the signal that caused it. The
       // ladder exits with the same number by its own route, so the two cannot disagree.
@@ -821,117 +532,137 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         },
         {
           graceMs: GRACE_MS,
-          exit: io.exit ?? hardExit,
+          exit: (code) => {
+            // A forced exit must also settle the embedding contract and release its temporary home.
+            leave(code)
+            ;(io.exit ?? hardExit)(code)
+          },
           log,
           onSignal: (s) => {
             signal = s
           },
+          ignoreInterrupt: () => interruptIgnored(),
           ...(io.signals ? { proc: io.signals } : {}),
         },
       )
       try {
-        const run =
-          mode === 'acp'
-            ? runAcp(booted, p, {
+        const run = acpMode
+          ? acpMode.runAcp(booted, p, {
+              stdin: io.stdin,
+              stdout: io.stdout,
+              stderr: io.stderr,
+              registerCancel: (fn) => {
+                cancel = fn
+              },
+              signal: () => signal,
+            })
+          : tuiMode
+            ? tuiMode.runTui(booted, p, {
+                ...(opening ? { opening } : {}),
+                ...(worktree ? { worktree } : {}),
+                ...(stashed ? { draft: stashed } : {}),
+                env: io.env,
                 stdin: io.stdin,
                 stdout: io.stdout,
+                cwd: p.cwd ?? io.cwd,
+                registerCancel: (fn) => {
+                  cancel = fn
+                },
+                registerInterruptGuard: (fn) => {
+                  interruptIgnored = fn
+                },
+                signal: () => signal,
+                ...(resourceController ? { resourceController } : {}),
+                composerSelectionPath: join(resolveHome(io.env), 'composer-selection.json'),
+                historyPath: join(resolveHome(io.env), 'tui-history.jsonl'),
+                commandsDir: join(home, 'commands'),
+                ...(breadcrumb ? { breadcrumb } : {}),
+                // /import needs this machine's own Host and /export a second connection to the daemon that
+                // holds the session; only the shared local daemon form leaves both free.
+                ...(p.connect === undefined &&
+                !p.standalone &&
+                !p.ephemeral &&
+                io.env.AGNES_CONNECT === undefined &&
+                Object.keys(boot).length === 0
+                  ? {
+                      importSession: async (file: string, from?: string) =>
+                        (await import('./commands/import.js')).importInto(
+                          p,
+                          deps,
+                          { cwd: p.cwd ?? io.cwd, env: io.env },
+                          file,
+                          from,
+                        ),
+                      exportSession: async (request: ExportIntoRequest) =>
+                        (await import('./commands/export-into.js')).exportInto(
+                          p,
+                          (args) => bootDefault(args, deps),
+                          { cwd: p.cwd ?? io.cwd },
+                          request,
+                        ),
+                    }
+                  : {}),
+                editorTmpDir: join(resolveHome(io.env), 'tmp'),
+                agnesVersion: io.agnesVersion,
+              })
+            : printMode!.runPrint(booted, p, {
+                ...(breadcrumb ? { breadcrumb } : {}),
+                locale: resolveLocale(io.env),
+                stdout: io.stdout,
                 stderr: io.stderr,
+                stdin: io.stdin,
+                cwd: p.cwd ?? io.cwd,
                 registerCancel: (fn) => {
                   cancel = fn
                 },
                 signal: () => signal,
               })
-            : mode === 'tui'
-              ? runTui(booted, p, {
-                  env: io.env,
-                  stdin: io.stdin,
-                  stdout: io.stdout,
-                  cwd: p.cwd ?? io.cwd,
-                  registerCancel: (fn) => {
-                    cancel = fn
-                  },
-                  signal: () => signal,
-                  ...(resourceController ? { resourceController } : {}),
-                  composerSelectionPath: join(resolveHome(io.env), 'composer-selection.json'),
-                })
-              : runPrint(booted, p, {
-                  stdout: io.stdout,
-                  stderr: io.stderr,
-                  stdin: io.stdin,
-                  cwd: p.cwd ?? io.cwd,
-                  registerCancel: (fn) => {
-                    cancel = fn
-                  },
-                  signal: () => signal,
-                })
         // Assigned before the first await, so a signal arriving in the same tick already has something
         // to wait for rather than closing on an empty promise.
         settled = run
-        return await run
+        return await Promise.race([run, exited])
       } finally {
         off()
         ladderInstalled = false
       }
     } finally {
-      await booted.close().catch(() => undefined)
+      opening?.abandon()
+      await Promise.race([booted.close().catch(() => undefined), exited])
+      // The TUI reports its own worktrees on the way out; the one-shot form does it here, on stderr.
+      if (worktree && mode === 'print')
+        io.stderr.write((await worktreeFlag?.printWorktreeEnd(worktree, resolveLocale(io.env))) ?? '')
     }
   } catch (e) {
-    const safeFailure =
-      safeResourceFailureLine(e) ??
-      safeExpectedResourceRpcFailureLine(e) ??
-      safeExpectedSessionRpcFailureLine(e) ??
-      safeDaemonDisconnectLine(e)
-    if (safeFailure !== undefined) {
-      if (!resourceOperationFailureWasRendered(e)) io.stderr.write(`${safeFailure}\n`)
-      return ExitCode.ERROR
-    }
-    if (e instanceof UsageError || e instanceof BootError || e instanceof CommandError) {
-      io.stderr.write(`${e.message}\n`)
-      return e.code
-    }
-    // The stack alone is not an answer: a JSON-RPC failure stringifies to its name and number, and
-    // everything an operator could act on -- which refusal, from where -- is in `data.code`.
-    const data = (e as { data?: { code?: unknown; message?: unknown } } | null)?.data
-    const detail = [data?.code, data?.message].filter((x) => typeof x === 'string').join(': ')
-    io.stderr.write(`agnes: ${(e as Error).message}${detail ? ` ${detail}` : ''}\n`)
-    io.stderr.write(`${(e as Error).stack ?? String(e)}\n`)
-    return ExitCode.ERROR
+    return (await import('./command-failure.js')).reportCommandFailure(e, p.command, io)
   } finally {
+    stopDiagnostics?.()
     eph?.release()
   }
 }
 
 /** A non-interactive command never guesses consent: it previews then exits without an install. */
-function confirmPackageInstall(io: MainIO, id: string, version: string, integrity: string): Promise<boolean> {
-  if (io.stdin.isTTY !== true || io.stdout.isTTY !== true) return Promise.resolve(false)
+function confirmPackageInstall(
+  io: MainIO,
+  id: string,
+  version: string,
+  integrity: string,
+  action: 'install' | 'trust' | 'enable' | 'install, trust and enable' = 'install',
+): Promise<boolean> {
+  if (io.stdin.isTTY !== true || io.stdout.isTTY !== true)
+    return Promise.reject(
+      new UsageError('confirmation requires a TTY; review the preview and rerun with --yes'),
+    )
   return new Promise((resolve) => {
     const prompt = createInterface({ input: io.stdin, output: io.stdout, terminal: true })
     // EOF and Ctrl-C close the interface without ever calling the question callback. Settling as
     // "not confirmed" keeps INV-33: an unanswered prompt is never read as consent. Resolve before
     // close() below, which emits 'close' synchronously and would otherwise bury the answer.
     prompt.once('close', () => resolve(false))
-    prompt.question(`Install ${id}@${version} (${integrity})? [y/N] `, (answer) => {
+    prompt.question(`${action} ${id}@${version} (${integrity})? [y/N] `, (answer) => {
       resolve(/^y(?:es)?$/i.test(answer.trim()))
       prompt.close()
     })
   })
-}
-
-function configErrorCode(error: unknown): string | undefined {
-  const code = (error as { data?: { code?: unknown } } | null)?.data?.code
-  return typeof code === 'string' ? code : undefined
-}
-
-async function readConfigurationSnapshot(booted: Booted) {
-  try {
-    return await booted.client.config.get()
-  } catch (error) {
-    // Older/remote daemons may intentionally omit local configuration. Do not turn a normal chat
-    // connection into a startup failure solely because its optional settings surface is absent.
-    if (configErrorCode(error) === 'METHOD_NOT_FOUND' || configErrorCode(error) === 'CAPABILITY_DENIED')
-      return undefined
-    throw error
-  }
 }
 
 /** The version this build reports. Read from the manifest so there is one place it is written. */
@@ -954,6 +685,14 @@ export async function runExecutable(): Promise<void> {
     agnesVersion: agnesVersion(),
   })
   process.exitCode = code
+  // main has completed all owned cleanup. Flush redirected output before ending the executable;
+  // unrelated library timers must not keep a successful one-shot command alive.
+  await Promise.all(
+    [process.stdout, process.stderr].map(
+      (stream) => new Promise<void>((resolve) => stream.write('', () => resolve())),
+    ),
+  )
+  process.exit(code)
 }
 
 const entry = process.argv[1]
@@ -969,10 +708,7 @@ function isMainModule(moduleUrl: string): boolean {
 }
 
 if (!process.getBuiltinModule('node:sea').isSea() && isMainModule(import.meta.url)) {
-  // The code is set, not taken. `process.exit` discards whatever is still queued on a pipe, and the
-  // last two things a run writes -- the answer and the reason word -- are queued immediately before
-  // this point, so exiting here truncated exactly the output the caller was reading. Node leaves
-  // with this code once the loop is empty; the signal ladder keeps its own hard exit, which is what
-  // a shutdown that will not finish needs.
+  timingMark('main-loaded')
+  // The executable flushes both output streams after main completes its owned cleanup.
   void runExecutable()
 }

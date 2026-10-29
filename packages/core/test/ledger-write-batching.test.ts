@@ -2,20 +2,16 @@
 // dispatched — commit as one append, and so do the result and its settlement; this file counts those
 // commits, checks the reopened state and the recovery decision at each side of every merged commit,
 // and covers the paths that keep their own commits.
+
+import { defaultIds } from '@agnes/core-common/ids'
+import type { OpStateObj, ToolCallState } from '@agnes/core-common/step/op-state'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import { scanAll } from '@agnes/core-ledger/log/scan-pages'
+import type { CommitTx, RegisterRow } from '@agnes/core-ledger/log/storage'
+import { openTracked } from '@agnes/core-ledger/reduce/tracker'
 import { describe, expect, it } from 'vitest'
-import { defaultIds } from '../src/ids.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import { scanAll } from '../src/log/scan-pages.js'
-import type { CommitTx, RegisterRow } from '../src/log/storage.js'
-import { openTracked } from '../src/reduce/tracker.js'
 import { ToolRegistry } from '../src/registry/tools.js'
-import type { OpStateObj, ToolCallState } from '../src/step/op-state.js'
-import {
-  expectedFromGolden,
-  readGolden,
-  recordTransitions,
-  TRANSITION_SCENARIOS,
-} from '../testkit/record-transitions.js'
+import { readGolden, recordTransitions, TRANSITION_SCENARIOS } from '../testkit/record-transitions.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { actor, openSession, openWorldTool, readTool, shellTool } from './helpers/open-session.js'
 
@@ -171,9 +167,7 @@ describe('commits of one tool call', () => {
     const rows = recorded.flatMap((commit) => commit.events as Array<{ type: string }>)
     expect(rows.filter((row) => row.type === 'x/core/op-mark')).toHaveLength(marks)
     // Every row but the op-marks the merged commits no longer need is still written.
-    const reference = expectedFromGolden(readGolden(name)).flatMap(
-      (commit) => commit.events as Array<{ type: string }>,
-    )
+    const reference = readGolden(name).flatMap((commit) => commit.events as Array<{ type: string }>)
     const count = (list: Array<{ type: string }>) => {
       const by: Record<string, number> = {}
       for (const row of list) if (row.type !== 'x/core/op-mark') by[row.type] = (by[row.type] ?? 0) + 1
@@ -219,7 +213,14 @@ describe('a stop around the pre-dispatch commit', () => {
     const runs = counted('shell', () => opened?.session)
     // The stop arrives while the approval's answer is being written, so it is seen before dispatch.
     const { proxy } = tapped(({ tx }) => {
-      if (tx.events.some((e) => e.type === 'approval/decided')) opened?.session.ac.abort()
+      if (
+        tx.events.some(
+          (e) =>
+            e.type === 'decision/state' &&
+            (e.data as { result?: { reason?: string } }).result?.reason === 'answered',
+        )
+      )
+        opened?.session.ac.abort()
       return false
     })
     opened = await openSession({
@@ -230,15 +231,18 @@ describe('a stop around the pre-dispatch commit', () => {
     await opened.session.enqueue('next-turn', go)
     await opened.session.acceptInput()
     await opened.session.runInference()
-    await opened.session.runToolsPhase()
+    await expect(opened.session.runToolsPhase()).resolves.toMatchObject({ reason: 'aborted' })
+    await opened.session.run(turnEnd())
     const rows = await opened.log.scan({ fromSeq: 1, toSeq: opened.log.lastSeq })
-    const decided = rows.findIndex((row) => row.type === 'approval/decided')
-    expect(rows.slice(decided + 1, decided + 3).map((row) => row.type)).toEqual([
-      'x/core/op-mark',
-      'tool/result',
-    ])
-    expect(rows[decided + 1]?.data).toMatchObject({ calls: [{ status: 'approved' }] })
-    expect(rows[decided + 2]?.data).toMatchObject({ code: 'CANCELLED', isError: true })
+    const decided = rows.findIndex(
+      (row) =>
+        row.type === 'decision/state' &&
+        (row.data as { result?: { reason?: string } }).result?.reason === 'answered',
+    )
+    expect(rows.slice(decided + 1).find((row) => row.type === 'tool/result')?.data).toMatchObject({
+      code: 'CANCELLED',
+      isError: true,
+    })
     expect(rows.filter(isToolIntentRow)).toEqual([])
     expect(runs.seen).toEqual([])
   })

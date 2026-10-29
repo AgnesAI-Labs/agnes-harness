@@ -25,7 +25,7 @@
   "type": "module",
   "exports": "./index.mjs",
   "agnes": {
-    "plugins": [{ "id": "ext:my-agh-skin/main", "export": "main" }],
+    "plugins": [{ "apiRange": "^5.0.0", "id": "ext:my-agh-skin/main", "export": "main" }],
     "clientDescriptors": [{ "rowId": "ext:my-agh-skin/main", "path": "./extensions/main/agnes.client.json" }]
   }
 }
@@ -58,7 +58,7 @@
 
 要点：
 
-- `clientDescriptors.rowId` 必须与插件行 id 相同；描述中的 `skins` 注册皮肤。旧 `agnes.extension.json` 格式不作为新包入口。
+- `clientDescriptors.rowId` 必须与插件行 id 相同；描述中的 `skins` 注册皮肤。不再有单独的扩展清单文件；插件条目自带 `capabilities` 和 `contributes`。
 - `css` 必须是**包内相对路径**（以 `./` 开头，不含 `..`、盘符、反斜杠）。
 - 皮肤 id 不能用 `light` / `dark` / `system` / `none`（内置主题保留字），且在**已安装的整套皮肤里唯一**。
 
@@ -71,18 +71,21 @@ Agnes 可以随时重命名它们；钩子则是版本化契约，改名会让�
 | --- | --- | --- |
 | `app` | `body` | 三页 |
 | `topbar` | 页头 `header` | 三页 |
-| `dialog` | `dialog`（工作台 9 个 / 插件管理 4 个 / 技能与 MCP 3 个） | 三页 |
+| `dialog` | `dialog` | 三页 |
 | `sidebar` | `aside.sidebar` | 工作台 |
 | `conversation` | 会话区外框 | 工作台 |
 | `trace` | 运行轨迹面板 `aside` | 工作台 |
 | `rightbar` | 右侧扩展面板 `aside` | 工作台 |
+| `workbench-right` | 右侧会话停靠区 `aside` | 工作台 |
+| `workbench-bottom` | 底部会话停靠区 `aside` | 工作台 |
 | `transcript` | 对话列表容器 | 工作台 |
 | `empty-state` | 空状态 | 工作台 |
+| `home-page` | 首页侧栏入口打开的整页 `section` | 工作台 |
 | `approval` | 审批区 | 工作台 |
 | `composer` | 输入框外框 `form` | 工作台 |
 | `composer-input` | 输入文本域 `textarea` | 工作台 |
-| `icon` | 界面图标 `svg`（工作台 26 个） | 工作台 |
-| `settings-pane` | 设置分页（工作台 6 个） | 工作台 |
+| `icon` | 界面图标 `svg` | 工作台 |
+| `settings-pane` | 设置分页 | 工作台 |
 
 - 皮肤在**三个页面**都会生效（工作台 `/`、插件管理 `/admin/plugins`、技能与 MCP `/admin/resources`），
   所以 `app` / `topbar` / `dialog` 上的规则在所有页面都适用。
@@ -130,39 +133,37 @@ textarea {
 **不改资产也能换字体**：直接写系统字体栈（无需额外分发字体文件），例如
 `font-family: "Chalkboard SE", "Comic Sans MS", cursive;`。
 
-### 2.3 特异性：为什么用钩子选择器就够，不需要 `!important`
+### 2.3 级联层与皮肤优先级
 
-皮肤样式表以 `adoptedStyleSheets` 注入，层叠顺序**永远在所有文档样式表之后**；
-而层叠顺序只在**特异性相同**时才决定胜负。所以基础样式表里凡是你可能想覆盖的表面属性，
-都**故意声明在 `data-agnes-region` 选择器 (0,1,0) 上**，而不是元素自己的 `#id` (1,0,0) 上。
-你和基础样式同为 (0,1,0)，由顺序决定——你必胜。**因此不需要 `!important`。**
+唯一层序声明位于 `@agnes/web-ui/layers.css`：
 
 ```css
-/* 这样写就能生效：改输入框背景图 */
+@layer tokens, base, vendor, ui, app, skin;
+```
+
+平台主题变量属于 `tokens`，原生控件默认值属于 `base`，Ant Design 与 Markdown 外部样式属于 `vendor`，共享组件与 Ant Design 主题桥属于 `ui`，应用规则属于 `app`。Web 构建在三个页面入口的规则之前输出一次层序；共享组件 CSS 导出也引用同一个层序文件，供其他 Web UI 消费者使用。
+
+宿主在采用皮肤样式表时，将作者的 CSS 包进 `skin` 层。皮肤文件直接使用公共区域钩子写普通 CSS，无需自行声明层。普通皮肤声明优先于前面的层，也能覆盖应用的 ID 选择器，因此设置弹窗表面覆盖不再需要 `!important`。Token 覆盖继续按现有方式内联应用，保留浅深色切换行为。CSS 的重要声明仍高于普通声明；隐藏元素与减少动效等保障保留必要的重要声明。
+
+```css
 [data-agnes-region="composer"] {
   background-image: linear-gradient(160deg, #101820, #1d2b3a);
 }
 ```
 
-这条不变量有机检守卫（`packages/web/test/skin-regions.test.ts`）：谁把表面属性写回 `#id`，
-守卫就会变红。
-
-**一个例外：工作台设置弹窗。** 九个弹窗共用一个 `dialog` 钩子，而工作台设置（`#config`）
-有自己不同的表面，因此它仍以 `#id` 声明。要覆盖它的表面：
-
-- 优先用 **token**（`--agnes-bg-surface`、`--agnes-bg-page` 等在白名单里，改 token 一定生效）；
-- 只有需要给它加**任意 CSS**（例如背景图）时才需要 `!important`。
-
-其余弹窗、`settings-pane` 以及上表所有钩子都不需要 `!important`。
+区域钩子仍是稳定合同，`packages/web/test/skin-regions.test.ts` 继续检查其表面声明。客户端模块样式通过原生 CSS `@import` 加载进 `app` 层，相对导入与资产 URL 继续以原包样式表为基准解析。客户端模块维护自己的组件样式；皮肤负责跨宿主的外观覆盖。
 
 ## 3. 语义 token 清单
 
-以下是可以写进 `tokens` 的变量名。白名单由 `packages/web/public/style.css` 生成，文档测试会将本清单与生成结果核对。**该样式表是唯一色彩权威**；增删 token 后未更新生成物会使 `gen:check` 失败。
+以下是可以写进 `tokens` 的变量名。白名单由 `packages/web/public/style.css` 生成，文档测试会将本清单与生成结果核对。**该清单按顺序引用的 `public/styles/` 文件是唯一色彩权威**；增删 token 后未更新生成物会使 `gen:check` 失败。
 
 <!-- theme-tokens:begin -->
 --agnes-brand-primary
+--agnes-brand-mark
 --agnes-brand-focus-ring
 --agnes-brand-emphasis-soft
+--agnes-focus-ring-soft
+--agnes-scrollbar-thumb
 --agnes-text-primary
 --agnes-text-secondary
 --agnes-text-tertiary
@@ -177,10 +178,14 @@ textarea {
 --agnes-bg-code
 --agnes-bg-selected
 --agnes-bg-hover
+--agnes-bg-fill
+--agnes-bg-fill-hover
+--agnes-bg-group
 --agnes-bg-scrim
 --agnes-bg-lightbox
 --agnes-surface-glass-soft
 --agnes-surface-glass-hover
+--agnes-bg-user-bubble
 --agnes-input-surface
 --agnes-input-content-strong
 --agnes-input-placeholder
@@ -200,16 +205,48 @@ textarea {
 --agnes-status-danger-text
 --agnes-status-danger-bg
 --agnes-status-info-text
+--agnes-status-info-bg
+--agnes-bg-subtle
+--agnes-status-success-border
+--agnes-status-warning-border
+--agnes-status-danger-border
+--agnes-status-info-border
+--agnes-status-success-solid
+--agnes-status-warning-solid
+--agnes-status-danger-solid
+--agnes-status-info-solid
 --shadow-elevation
+--focus-outline
+--focus-line
+--focus-line-inset
+--shadow-raised
 --shadow-hairline
 --shadow-dialog
 --shadow-elevation-soft
 --shadow-elevation-prominent
+--elevation-0
+--elevation-1
+--elevation-2
+--agnes-line-hairline
+--agnes-bg-popover-material
+--agnes-menu-active-bg
+--agnes-menu-active-text
+--agnes-switch-track
+--agnes-switch-knob
+--agnes-segment-track
+--agnes-bg-control
+--shadow-control
+--shadow-control-primary
+--shadow-knob
+--shadow-popover
 --agnes-bg-app-sidebar
 --agnes-bg-app-content
 --agnes-trace-track
 --agnes-trace-row-current
 --agnes-trace-row-hover
+--agnes-trace-mark-bg
+--agnes-trace-mark-text
+--agnes-trace-row-hit
 --agnes-trace-lane-input
 --agnes-trace-lane-user
 --agnes-trace-lane-context
@@ -227,7 +264,56 @@ textarea {
 --agnes-trace-badge-approval-bg
 --agnes-trace-badge-compaction-text
 --agnes-trace-badge-compaction-bg
+--agnes-file-type-text
+--agnes-file-type-html
+--agnes-file-type-css
+--agnes-file-type-js
+--agnes-file-type-ts
+--agnes-file-type-json
+--agnes-file-type-md
+--agnes-file-type-svg
+--agnes-file-type-image
+--agnes-file-type-code
+--agnes-file-type-other
+--agnes-document-page-bg
+--agnes-terminal-bg
+--agnes-terminal-bar
+--agnes-terminal-line
+--agnes-terminal-text
+--agnes-terminal-muted
 <!-- theme-tokens:end -->
+
+主题合同新增的状态区域与层级 token：
+
+| Token | 用途 |
+| --- | --- |
+| `--agnes-status-info-bg` | 信息提示的背景。 |
+| `--agnes-bg-subtle` | 次要区域的柔和背景。 |
+| `--agnes-status-success-border` | 成功状态的边框。 |
+| `--agnes-status-warning-border` | 警告状态的边框。 |
+| `--agnes-status-danger-border` | 错误或危险状态的边框。 |
+| `--agnes-status-info-border` | 信息状态的边框。 |
+| `--elevation-0` | 无阴影的平面区域。 |
+| `--elevation-1` | 小型浮层的阴影。 |
+| `--elevation-2` | 弹窗与较高浮层的阴影。 |
+| `--agnes-bg-user-bubble` | 用户自己消息的气泡底色；中性色，不使用强调色。 |
+| `--agnes-status-success-solid` | 成功状态的圆点、图标等非文字标记（至少 3:1）。 |
+| `--agnes-status-warning-solid` | 警告状态的非文字标记。 |
+| `--agnes-status-danger-solid` | 错误或危险状态的非文字标记。 |
+| `--agnes-status-info-solid` | 信息状态的非文字标记。 |
+| `--agnes-line-hairline` | 分隔线与控件描边；取文字色的浅色调，高分屏上为一个物理像素宽。 |
+| `--agnes-bg-popover-material` | 菜单与选项列表的表面：浮层色 94% 不透明，叠在背景模糊之上。不透明度不要低于 94%，否则文字对比度无法保证。 |
+| `--agnes-menu-active-bg`、`--agnes-menu-active-text` | 菜单或选择器中指针所在行、键盘当前行的底色与内容色；这一对必须保持 4.5:1。 |
+| `--agnes-switch-track`、`--agnes-switch-knob` | 关闭状态开关的轨道与旋钮；开启状态使用 `--agnes-brand-primary` 与 `--agnes-button-primary-content`。 |
+| `--agnes-segment-track` | 分段控件的轨道。 |
+| `--agnes-bg-control` | 凸起控件的表面：次按钮、弹出按钮和分段控件的选中块。 |
+| `--shadow-control`、`--shadow-control-primary` | 凸起控件的发丝描边与 1px 抬升；主按钮顶部的高光。 |
+| `--shadow-knob` | 开关旋钮的阴影。 |
+| `--shadow-popover` | 菜单与选项列表的阴影。 |
+
+尺度不在 `tokens` 白名单里，但皮肤样式表可以像写普通 CSS 一样在 `:root` 上设置它们：字阶（`--font-size-title`、`--font-size-caption`）、圆角（`--radius-sm` … `--radius-xl`）、控件尺寸（`--control-height`、`--switch-width`、`--switch-height`）、图标线宽（`--icon-stroke`、`--icon-stroke-strong`）、发丝线宽度（`--hairline`）、连续圆角（`--corner-shape`、`--corner-scale`）和动效（`--motion-short`、`--motion-medium`、`--motion-long`、`--motion-spring`）。共享控件读取这些值，一处声明即可作用到所有按钮、开关、菜单和弹窗。你自己加的动效必须写在 `@media (prefers-reduced-motion: no-preference)` 之内。
+
+内置主题的取值、字号与圆角尺度，以及这些 token 如何传给 Ant Design 与 Ant Design X，见[主题说明](ui-theme.zh-CN.md)。
 
 每个 token 都要**同时**给出 `light` 与 `dark` 两个值：
 
@@ -315,3 +401,7 @@ skins/aurora/
   如果某份皮肤让设置入口变得点不到，用这个办法恢复。
 - **改完 CSS 不生效**：皮肤样式表按清单的 `revision` 缓存。停用再启用该包，或重新选择一次皮肤，即可拿到新内容。
 - **看当前有哪些皮肤**：设置 →「通用」→ 外观 → 皮肤。清单只包含**已启用且已信任**的包里声明的皮肤。
+
+## 共享控件与可读性
+
+遵循[UI 作者指南](ui-author-guide.zh-CN.md)的 token 规则。共享 `.agh-btn*`、状态、表单、骨架和抽屉都消费语义 token；不要覆盖内部 antd 类或削弱焦点环与窄屏 44px 命中区。正文、图标与状态文字至少 4.5:1，控件边界和焦点至少 3:1，两种主题分别检查。用[token 对比度表](../../packages/web-ui/test/token-contrast.test.ts)作为基础；自定义皮肤须复核其实际覆盖颜色。保留 reduced-motion。

@@ -8,10 +8,11 @@ export function manifestCapabilities(manifest: ExtensionManifest): string[] {
   const c = checked.value.capabilities
   return [
     ...(c.tools ? ['tools'] : []),
-    ...(['hooks', 'slots', 'resources', 'services', 'projections', 'ui'] as const).filter(
-      (key) => c[key]?.length,
-    ),
-    ...(c.network && !Array.isArray(c.network) && c.network.hosts.length ? ['network'] : []),
+    ...(
+      ['hooks', 'slots', 'resources', 'services', 'projections', 'streams', 'managedServices'] as const
+    ).filter((key) => c[key]?.length),
+    ...(c.ui === true ? ['ui'] : []),
+    ...(c.network?.length ? ['network'] : []),
     ...(c['network.publicRead'] === true ? ['network.publicRead'] : []),
     ...(['events', 'tools.invoke', 'artifacts', 'subagent'] as const).filter((key) => c[key] === true),
   ]

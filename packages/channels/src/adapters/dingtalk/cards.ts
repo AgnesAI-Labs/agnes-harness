@@ -13,10 +13,10 @@ export function cardBizIdFor(sessionKey: string, nodeId: string): string {
   return createHash('sha256').update(`${sessionKey}#${nodeId}`).digest('hex').slice(0, 32)
 }
 export function approvalValue(
-  key: { ticket?: string; requestSeq?: number },
+  key: { decisionKey?: string; requestSeq?: number },
   kind: AcpPermissionKind,
 ): string {
-  return `appr:${key.ticket ?? `#${key.requestSeq ?? 0}`}:${kind}`
+  return `appr:${key.decisionKey ?? `#${key.requestSeq ?? 0}`}:${kind}`
 }
 export function slotValue(requestSeq: number, actionId: string): string {
   return `slot:${requestSeq}:${actionId}`
@@ -73,7 +73,7 @@ export function buildCard(
             ...APPROVAL_LABEL[option],
             value: approvalValue(
               {
-                ...(block.ticket === undefined ? {} : { ticket: block.ticket }),
+                ...(block.decisionKey === undefined ? {} : { decisionKey: block.decisionKey }),
                 ...(block.requestSeq === undefined ? {} : { requestSeq: block.requestSeq }),
               },
               option,

@@ -1,9 +1,9 @@
+import type { Seq } from '@agnes/core-common/types'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import type { RegisterMap } from '@agnes/core-ledger/log/storage'
 import type { InferenceEvent, Provider } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import type { RegisterMap } from '../src/log/storage.js'
 import type { SessionImpl } from '../src/step/session.js'
-import type { Seq } from '../src/types.js'
 import { sentFor } from './helpers/fake-provider.js'
 import { actor, openSession } from './helpers/open-session.js'
 
@@ -20,8 +20,8 @@ const hanging = (): Provider => ({
 async function inInference(storage = new MemoryStorage()) {
   const h = await openSession({ provider: hanging(), storage })
   await h.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
-  expect(await h.session.step()).toEqual({ phase: 'checkpoint' })
-  expect(await h.session.step()).toEqual({ phase: 'inference' })
+  expect(await h.session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
+  expect(await h.session.step()).toEqual({ outcome: 'running', phase: 'inference' })
   return h
 }
 

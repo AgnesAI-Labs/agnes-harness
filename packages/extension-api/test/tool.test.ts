@@ -5,7 +5,6 @@ import {
   checkResolvedToolCallPolicy,
   checkToolDef,
   checkToolMeta,
-  defineTool,
   MAX_APPROVAL_SCOPES,
   resolveToolCallPolicy,
   TOOL_DESCRIPTION_MAX_LENGTH,
@@ -14,6 +13,7 @@ import {
   TOOL_PARAMETERS_MAX_BYTES,
   TOOL_PARAMETERS_MAX_DEPTH,
   TOOL_POLICY_VERSION_PATTERN,
+  type ToolDef,
 } from '../src/index.js'
 
 const fullMeta = {
@@ -27,25 +27,55 @@ const fullMeta = {
   requiresApproval: undefined,
 } as const
 
-describe('checkToolMeta (every one of the eight keys must be written out)', () => {
-  it('accepts explicit undefined for the last three keys', () => {
+describe('checkToolMeta (explicit safety keys, optional hints)', () => {
+  it('accepts omitted optional hints and validates declared fields', () => {
     expect(checkToolMeta(fullMeta)).toEqual({ ok: true })
+    for (const invalidArgumentLimit of [1, 2, 5])
+      expect(checkToolMeta({ ...fullMeta, invalidArgumentLimit }).ok).toBe(true)
+    for (const invalidArgumentLimit of [0, 6, 1.5, '2', null])
+      expect(checkToolMeta({ ...fullMeta, invalidArgumentLimit }).ok).toBe(false)
+    expect(checkToolMeta({ ...fullMeta, modelVisible: false, requiresImageInput: true })).toEqual({
+      ok: true,
+    })
+    expect(checkToolMeta({ ...fullMeta, modelVisible: 'no' }).ok).toBe(false)
+    expect(checkToolMeta({ ...fullMeta, requiresImageInput: 'yes' }).ok).toBe(false)
+    expect(checkToolMeta({ ...fullMeta, commandArg: 'command' }).ok).toBe(true)
+    for (const commandArg of ['', 'a.b', 1]) expect(checkToolMeta({ ...fullMeta, commandArg }).ok).toBe(false)
+    expect(
+      checkToolMeta({
+        ...fullMeta,
+        paths: [{ arg: 'file', access: 'read', default: '.', nonWorkspaceSchemes: ['artifact'] }],
+      }),
+    ).toEqual({ ok: true })
     expect(TOOL_META_KEYS).toEqual([
       'isReadOnly',
       'isDestructive',
       'isConcurrencySafe',
       'isOpenWorld',
       'replay',
-      'costHint',
-      'deferLoading',
-      'requiresApproval',
     ])
   })
-  it('rejects a missing key even if optional', () => {
-    const { deferLoading: _d, ...noDefer } = fullMeta
+  it.each(
+    [
+      null,
+      [{ arg: 'file', access: 'execute' }],
+      [{ arg: '__proto__', access: 'read' }],
+      [
+        { arg: 'file', access: 'read' },
+        { arg: 'file', access: 'write' },
+      ],
+      [{ arg: 'file', access: 'read', default: '' }],
+      [{ arg: 'file', access: 'read', nonWorkspaceSchemes: ['bad://'] }],
+      [{ arg: 'file', access: 'read', typo: true }],
+    ].map((paths) => [paths]),
+  )('rejects invalid path declarations %j', (paths) => {
+    expect(checkToolMeta({ ...fullMeta, paths }).ok).toBe(false)
+  })
+  it('rejects a missing required safety key', () => {
+    const { isReadOnly: _d, ...noDefer } = fullMeta
     const r = checkToolMeta(noDefer)
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.problems).toEqual(['missing key: deferLoading'])
+    if (!r.ok) expect(r.problems).toEqual(['missing key: isReadOnly'])
   })
   it('rejects wrong value domains', () => {
     const r = checkToolMeta({
@@ -81,19 +111,36 @@ describe('checkToolMeta (every one of the eight keys must be written out)', () =
     expect(checkToolMeta({ ...fullMeta, costHint: { credits: 1.5, wallMs: 200 } })).toEqual({ ok: true })
     expect(checkToolMeta({ ...fullMeta, costHint: { credits: undefined } })).toEqual({ ok: true })
   })
-  it('takes returnsImages as an optional boolean', () => {
-    expect(checkToolMeta({ ...fullMeta, returnsImages: true })).toEqual({ ok: true })
-    expect(checkToolMeta({ ...fullMeta, returnsImages: 'yes' })).toEqual({
-      ok: false,
-      problems: ['returnsImages: expected boolean | undefined'],
-    })
-  })
   it('rejects non-objects', () => {
     expect(checkToolMeta(null).ok).toBe(false)
     expect(checkToolMeta('x').ok).toBe(false)
   })
   it('preserves legacy static metadata compatibility even for contradictory safety flags', () => {
     expect(checkToolMeta({ ...fullMeta, isDestructive: true })).toEqual({ ok: true })
+  })
+  it('rejects presentational metadata combined with a destructive or open-world effect', () => {
+    const destructive = checkToolMeta({
+      ...fullMeta,
+      isReadOnly: false,
+      isDestructive: true,
+      isPresentational: true,
+    })
+    expect(destructive.ok).toBe(false)
+    if (!destructive.ok)
+      expect(destructive.problems).toEqual(['isPresentational/isDestructive: cannot both be true'])
+    const openWorld = checkToolMeta({
+      ...fullMeta,
+      isReadOnly: false,
+      isOpenWorld: true,
+      isPresentational: true,
+    })
+    expect(openWorld.ok).toBe(false)
+    if (!openWorld.ok)
+      expect(openWorld.problems).toEqual(['isPresentational/isOpenWorld: cannot both be true'])
+    const wrong = checkToolMeta({ ...fullMeta, isPresentational: 'yes' })
+    expect(wrong.ok).toBe(false)
+    if (!wrong.ok) expect(wrong.problems).toEqual(['isPresentational: expected boolean | undefined'])
+    expect(checkToolMeta({ ...fullMeta, isReadOnly: false, isPresentational: true })).toEqual({ ok: true })
   })
 })
 
@@ -147,6 +194,27 @@ describe('checkResolvedToolCallPolicy', () => {
         'approvalScopes: expected array',
       ])
   })
+  it('rejects a presentational policy that is also destructive', () => {
+    const r = checkResolvedToolCallPolicy({ ...policy, isPresentational: true })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.problems).toEqual(['isPresentational/isDestructive: cannot both be true'])
+    expect(
+      checkResolvedToolCallPolicy({
+        ...policy,
+        isDestructive: false,
+        requiresApproval: 'never',
+        isPresentational: true,
+      }),
+    ).toEqual({ ok: true })
+    const wrong = checkResolvedToolCallPolicy({
+      ...policy,
+      isDestructive: false,
+      requiresApproval: 'never',
+      isPresentational: 'yes',
+    })
+    expect(wrong.ok).toBe(false)
+    if (!wrong.ok) expect(wrong.problems).toEqual(['isPresentational: expected boolean'])
+  })
   it('enforces the bounded approval-scope collection', () => {
     const r = checkResolvedToolCallPolicy({
       ...policy,
@@ -158,13 +226,13 @@ describe('checkResolvedToolCallPolicy', () => {
 })
 
 describe('checkToolDef', () => {
-  const def = defineTool({
+  const def = {
     name: 'sales_query',
     description: 'Query sales',
     parameters: Type.Object({ q: Type.String() }, { additionalProperties: false }),
     meta: fullMeta,
     execute: async () => ({ content: [{ type: 'text' as const, text: 'ok' }] }),
-  })
+  } satisfies ToolDef
   it('accepts a well-formed def and enforces prefix when given', () => {
     expect(checkToolDef(def)).toEqual({ ok: true })
     expect(checkToolDef(def, { prefix: 'sales_' })).toEqual({ ok: true })
@@ -188,21 +256,18 @@ describe('checkToolDef', () => {
         'meta.replay: expected safe | never | idempotent',
       ])
   })
-  it('defineTool is identity', () => {
-    expect(defineTool(def)).toBe(def)
-  })
   it('accepts a synchronous classifier with an explicit stable policy version', () => {
-    const dynamic = defineTool({
+    const dynamic = {
       ...def,
       policyVersion: 'computer-use-v1',
-      classify: (args) => ({
+      classify: (args: { q: string }) => ({
         isReadOnly: args.q === 'read',
         isDestructive: args.q !== 'read',
         replay: args.q === 'read' ? 'safe' : 'never',
         requiresApproval: args.q === 'read' ? 'never' : 'destructive',
         approvalScopes: args.q === 'read' ? [] : ['cua:click:background'],
       }),
-    })
+    } satisfies ToolDef
     expect(TOOL_POLICY_VERSION_PATTERN.test(dynamic.policyVersion as string)).toBe(true)
     expect(checkToolDef(dynamic)).toEqual({ ok: true })
     expect(dynamic.classify?.({ q: 'read' })).toEqual({
@@ -215,6 +280,7 @@ describe('checkToolDef', () => {
     expect(resolveToolCallPolicy(dynamic, { q: 'write' })).toEqual({
       isReadOnly: false,
       isDestructive: true,
+      isPresentational: false,
       replay: 'never',
       requiresApproval: 'destructive',
       approvalScopes: ['cua:click:background'],
@@ -224,10 +290,61 @@ describe('checkToolDef', () => {
     expect(resolveToolCallPolicy(def, { q: 'read' })).toEqual({
       isReadOnly: true,
       isDestructive: false,
+      isPresentational: false,
       replay: 'safe',
       requiresApproval: 'never',
       approvalScopes: [],
     })
+  })
+  it('rejects a presentational classifier on an open-world tool', () => {
+    const open = {
+      ...def,
+      meta: { ...fullMeta, isReadOnly: false, isOpenWorld: true },
+      policyVersion: 'surface-v1',
+      classify: () => ({
+        isReadOnly: false,
+        isDestructive: false,
+        isPresentational: true,
+        replay: 'never' as const,
+        requiresApproval: 'never' as const,
+        approvalScopes: [],
+      }),
+    } satisfies ToolDef
+    expect(() => resolveToolCallPolicy(open, { q: 'read' })).toThrow(
+      'isPresentational cannot combine with isDestructive or isOpenWorld',
+    )
+  })
+  it('keeps presentational true only when static meta declares it', () => {
+    const classify = () => ({
+      isReadOnly: true,
+      isDestructive: false,
+      isPresentational: true,
+      replay: 'safe' as const,
+      requiresApproval: 'never' as const,
+      approvalScopes: [] as string[],
+    })
+    const destructive = {
+      ...def,
+      meta: { ...fullMeta, isDestructive: true, isReadOnly: false, replay: 'never' },
+      policyVersion: 'surface-v1',
+      classify,
+    } satisfies ToolDef
+    expect(() => resolveToolCallPolicy(destructive, { q: 'read' })).toThrow(
+      'isPresentational cannot combine with isDestructive or isOpenWorld',
+    )
+    const undeclared = {
+      ...def,
+      policyVersion: 'surface-v1',
+      classify,
+    } satisfies ToolDef
+    expect(resolveToolCallPolicy(undeclared, { q: 'read' }).isPresentational).toBe(false)
+    const declared = {
+      ...def,
+      meta: { ...fullMeta, isPresentational: true },
+      policyVersion: 'surface-v1',
+      classify,
+    } satisfies ToolDef
+    expect(resolveToolCallPolicy(declared, { q: 'read' }).isPresentational).toBe(true)
   })
   it('rejects classifier/version mismatches, invalid versions, and declared async classifiers', () => {
     const noVersion = checkToolDef({ ...def, classify: () => ({}) })
@@ -309,7 +426,7 @@ describe('checkToolDef bounds on what a model is shown', () => {
   const nested = (depth: number): Record<string, unknown> => {
     let value: unknown = 'leaf'
     for (let i = 0; i < depth; i++) value = { a: value }
-    return value as Record<string, unknown>
+    return { ...(value as Record<string, unknown>), type: 'object' }
   }
   /** `{"type":"object","description":"…"}` padded to exactly `bytes` UTF-8 bytes. */
   const sized = (bytes: number) => ({ type: 'object', description: 'x'.repeat(bytes - 34) })
@@ -327,11 +444,18 @@ describe('checkToolDef bounds on what a model is shown', () => {
     expect(problems({ parameters: sized(262_145) })).toEqual([
       'parameters: serialized size must be at most 262144 bytes',
     ])
+    expect(problems({ modelParameters: Type.Object({}) })).toEqual([])
+    expect(problems({ modelParameters: undefined })).toEqual([])
+    expect(problems({ modelParameters: null })).toEqual(['modelParameters: expected schema object'])
+    expect(problems({ modelParameters: sized(262_145) })).toEqual([
+      'modelParameters: serialized size must be at most 262144 bytes',
+    ])
   })
 
   it('bounds parameter nesting at 32 with the root at depth 0', () => {
     expect(problems({ parameters: nested(32) })).toEqual([])
     expect(problems({ parameters: nested(33) })).toEqual(['parameters: nesting must be at most 32'])
+    expect(problems({ modelParameters: nested(33) })).toEqual(['modelParameters: nesting must be at most 32'])
   })
 
   it('ignores symbol keys, so a TypeBox schema with its kind markers passes', () => {
@@ -346,6 +470,7 @@ describe('checkToolDef bounds on what a model is shown', () => {
     const cyclic: Record<string, unknown> = { type: 'object', properties: {} }
     ;(cyclic.properties as Record<string, unknown>).self = cyclic
     expect(problems({ parameters: cyclic })).toEqual(['parameters: must be acyclic JSON data'])
+    expect(problems({ modelParameters: cyclic })).toEqual(['modelParameters: must be acyclic JSON data'])
   })
 
   it('reports a schema holding values JSON cannot carry', () => {
@@ -373,4 +498,18 @@ describe('checkToolDef bounds on what a model is shown', () => {
     expect(TOOL_PARAMETERS_MAX_BYTES).toBe(262_144)
     expect(TOOL_PARAMETERS_MAX_DEPTH).toBe(32)
   })
+})
+
+it('validates optional human presentation without changing safety metadata', () => {
+  expect(
+    checkToolMeta({ ...fullMeta, presentation: { title: 'Review', description: 'Read the selected record' } })
+      .ok,
+  ).toBe(true)
+  for (const presentation of [
+    { title: '', description: 'Read' },
+    { title: 'Review' },
+    [],
+    { title: 'Review', description: 'Read', extra: true },
+  ])
+    expect(checkToolMeta({ ...fullMeta, presentation }).ok).toBe(false)
 })

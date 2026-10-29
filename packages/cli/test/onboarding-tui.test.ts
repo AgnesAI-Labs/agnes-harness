@@ -76,7 +76,7 @@ describe('first-run onboarding TUI', () => {
     })
     const done = runOnboardingTui(client, UNCONFIGURED, term)
     await settle()
-    term.feed('\x1b[B')
+    term.feed('2')
     term.feed('\r')
     await settle()
     term.feed('\r')
@@ -97,16 +97,19 @@ describe('first-run onboarding TUI', () => {
     expect(test).not.toHaveBeenCalled()
     expect(save).not.toHaveBeenCalled()
   })
-  it('paints both authentication choices when it starts', async () => {
+  it('offers authentication and a no-key demo that skips provider setup', async () => {
     const term = new FakeTerminal({ columns: 80, rows: 24 })
     const client = { config: {} } as unknown as Client
 
-    void runOnboardingTui(client, UNCONFIGURED, term)
+    const done = runOnboardingTui(client, UNCONFIGURED, term)
     await Promise.resolve()
 
     const screen = (await screenOf(term, 80, 24)).join('\n')
     expect(screen).toContain('Sign in with an Agnes account')
     expect(screen).toContain('Sign in with an API key')
+    expect(screen).toContain('Demo')
+    term.feed('3')
+    await expect(done).resolves.toBe('demo')
   })
 
   it('uses the selected locale for the first-run authentication screen', async () => {
@@ -118,6 +121,8 @@ describe('first-run onboarding TUI', () => {
     const screen = (await screenOf(term, 80, 24)).join('\n')
     expect(screen).toContain('选择认证方式')
     expect(screen).toContain('使用 API Key / ChatGPT 订阅登录')
+    expect(screen).toContain('Demo')
+    expect(screen).toContain('跳过设置')
     term.feed('\x1b')
     await expect(done).resolves.toBeUndefined()
   })
@@ -129,7 +134,7 @@ describe('first-run onboarding TUI', () => {
     const done = runOnboardingTui(client, UNCONFIGURED, term)
     await settle()
 
-    term.feed('\x1b[B') // move off 'Agnes account'
+    term.feed('2') // choose the API-key option
     term.feed('\r') // choose 'API key'
     await settle()
     term.feed('\r') // choose the first provider, DeepSeek
@@ -197,7 +202,7 @@ describe('first-run onboarding TUI', () => {
       settled = true
     })
     await settle()
-    term.feed('\x1b[B')
+    term.feed('2')
     term.feed('\r')
     await settle()
     term.feed('\r')
@@ -216,7 +221,7 @@ describe('first-run onboarding TUI', () => {
     {
       name: 'kitty ctrl+c on the key prompt',
       env: GHOSTTY,
-      before: ['\x1b[B', '\r', '\r'],
+      before: ['2', '\r'],
       key: '\x1b[99;5u',
     },
   ])('$name cancels without saving', async ({ env, before, key }) => {
@@ -246,7 +251,7 @@ describe('first-run onboarding TUI', () => {
 
     const done = runOnboardingTui(client, UNCONFIGURED, term)
     await settle()
-    term.feed('\x1b[B')
+    term.feed('2')
     term.feed('\r')
     await settle()
     term.feed('\r')
@@ -273,26 +278,31 @@ describe('first-run onboarding TUI', () => {
     )
   })
 
-  it('never renders the key after the provider rejects it', async () => {
-    const term = new FakeTerminal({ columns: 80, rows: 24 })
-    const { client, save } = stubClient({
-      test: vi.fn().mockRejectedValue(new Error('401 Unauthorized for key sk-secret-value')),
-    })
+  it.each(['401 Unauthorized', '403 Forbidden', 'TimeoutError'])(
+    'never renders a reflected key after %s',
+    async (reason) => {
+      const term = new FakeTerminal({ columns: 80, rows: 24 })
+      const { client, save } = stubClient({
+        test: vi.fn().mockRejectedValue(new Error(`${reason} for key sk-secret-value`)),
+      })
 
-    void runOnboardingTui(client, UNCONFIGURED, term)
-    await settle()
-    term.feed('\x1b[B')
-    term.feed('\r')
-    await settle()
-    term.feed('\r')
-    await settle()
-    term.feed('sk-secret-value')
-    term.feed('\r')
-    await settle()
+      void runOnboardingTui(client, UNCONFIGURED, term)
+      await settle()
+      term.feed('2')
+      term.feed('\r')
+      await settle()
+      term.feed('\r')
+      await settle()
+      term.feed('sk-secret-value')
+      term.feed('\r')
+      await settle()
 
-    const screen = (await screenOf(term, 80, 24)).join('\n')
-    expect(screen).not.toContain('sk-secret-value')
-    expect(screen).toContain('Could not verify that key')
-    expect(save).not.toHaveBeenCalled()
-  })
+      const screen = (await screenOf(term, 80, 24)).join('\n')
+      expect(screen).not.toContain('sk-secret-value')
+      expect(screen).toContain('Could not verify that key')
+      expect(save).not.toHaveBeenCalled()
+      term.feed('\x03')
+      await settle()
+    },
+  )
 })

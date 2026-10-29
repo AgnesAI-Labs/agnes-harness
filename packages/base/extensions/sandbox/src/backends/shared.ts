@@ -6,6 +6,11 @@ export type ClosedNetworkConfineOptions = Readonly<{
   denyPaths: readonly string[]
   /** A non-empty list is deliberately unsupported until a real host-filtering proxy exists. */
   networkAllow?: readonly string[]
+  readPaths?: readonly string[]
+  network?: 'deny' | 'allow'
+  loopbackServe?: boolean
+  /** Host-selected full access retains an explicit private-store deny floor. */
+  fullAccess?: boolean
 }>
 
 export type SandboxBackendCompileCode =
@@ -41,7 +46,11 @@ export function validateArgv(argv: readonly string[]): string[] {
  * caller must do that before invoking them. Reject lexical aliases here instead of silently
  * compiling a policy for a different path identity.
  */
-export function validateAbsolutePaths(paths: readonly string[], kind: 'allow' | 'deny'): string[] {
+export function validateAbsolutePaths(
+  paths: readonly string[],
+  kind: 'allow' | 'deny',
+  fullAccess = false,
+): string[] {
   if (!Array.isArray(paths)) throw backendCompileFault('E_SANDBOX_BACKEND_POLICY', 'invalid path list')
   const unique = new Set<string>()
   for (const path of paths) {
@@ -53,7 +62,7 @@ export function validateAbsolutePaths(paths: readonly string[], kind: 'allow' | 
       hasControl(path)
     )
       throw backendCompileFault('E_SANDBOX_BACKEND_POLICY', 'invalid canonical path')
-    if (kind === 'allow' && (path === '/' || path === '/proc' || path.startsWith('/proc/')))
+    if (kind === 'allow' && ((path === '/' && !fullAccess) || path === '/proc' || path.startsWith('/proc/')))
       throw backendCompileFault('E_SANDBOX_BACKEND_POLICY', 'unsafe writable path')
     if (kind === 'allow' && (path === '/dev' || path.startsWith('/dev/')))
       throw backendCompileFault('E_SANDBOX_BACKEND_POLICY', 'unsafe writable path')
@@ -79,13 +88,28 @@ export function validateClosedNetworkOptions(options: ClosedNetworkConfineOption
   cwd: string
   allowPaths: string[]
   denyPaths: string[]
+  readPaths?: string[]
+  network?: 'deny' | 'allow'
+  loopbackServe?: boolean
 } {
   requireClosedNetwork(options.networkAllow)
+  if (options.loopbackServe !== undefined && typeof options.loopbackServe !== 'boolean')
+    throw backendCompileFault('E_SANDBOX_BACKEND_POLICY', 'invalid loopback service grant')
+  if (options.loopbackServe && options.network === 'allow')
+    throw backendCompileFault('E_SANDBOX_BACKEND_POLICY', 'loopback service cannot grant outbound network')
+  if (options.fullAccess && options.denyPaths.length === 0)
+    throw backendCompileFault(
+      'E_SANDBOX_BACKEND_POLICY',
+      'full access requires an explicit private deny floor',
+    )
   const cwd = validateAbsolutePaths([options.cwd], 'deny')[0]
   if (!cwd) throw backendCompileFault('E_SANDBOX_BACKEND_POLICY', 'missing cwd')
   return {
     cwd,
-    allowPaths: validateAbsolutePaths(options.allowPaths, 'allow'),
+    ...(options.loopbackServe ? { loopbackServe: true } : {}),
+    ...(options.readPaths ? { readPaths: validateAbsolutePaths(options.readPaths, 'deny') } : {}),
+    ...(options.network ? { network: options.network } : {}),
+    allowPaths: validateAbsolutePaths(options.allowPaths, 'allow', options.fullAccess),
     denyPaths: validateAbsolutePaths(options.denyPaths, 'deny'),
   }
 }

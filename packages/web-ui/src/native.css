@@ -1,0 +1,162 @@
+@import "./layers.css";
+
+@layer base {
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    border: 1px solid var(--agnes-line-emphasis);
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-page);
+  }
+  /* Input controls use their own semantic background/text/border roles; buttons do not use this group.
+     Previously inputs shared the page background and placeholders the text color, obscuring their control affordance. */
+  input,
+  select,
+  textarea {
+    border-color: var(--agnes-input-border);
+    color: var(--agnes-input-content-strong);
+    background: var(--agnes-input-surface);
+  }
+  button {
+    min-height: var(--control-height);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    line-height: 1.2;
+    transition:
+      background-color var(--transition-fast),
+      border-color var(--transition-fast),
+      color var(--transition-fast),
+      transform var(--transition-fast);
+  }
+  button:hover:not(:disabled) {
+    border-color: var(--agnes-line-emphasis);
+    background: var(--agnes-bg-hover);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    :is(button, a.agh-btn):not(:empty):active:not(:disabled):not(:focus-visible):not([aria-disabled="true"]) {
+      /* A press is a slight shrink and darken: no glow, ripple or shadow animates. */
+      scale: var(--press-scale);
+      filter: brightness(var(--press-dim));
+    }
+  }
+  button:focus-visible,
+  .agh-disclosure-summary:focus-visible,
+  a[href]:focus-visible,
+  [role="tab"]:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: 1px;
+    box-shadow: var(--focus-line);
+  }
+
+  /* After a pointer action no control draws a ring, whichever rule or library would have: a
+   control focused from script in response to a click is not keyboard navigation. */
+  :root[data-agnes-input="pointer"]
+  :is(button, a, summary, [role], [tabindex]):focus-visible:not(input, textarea, select, [contenteditable]) {
+    outline: none;
+  }
+
+  /* An outline doubles up with form-control borders, looking heavy and cluttered.
+     Use a changed border color plus a soft brand ring for a restrained but visible focus state. */
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: none;
+    border-color: var(--agnes-input-border-focus);
+    /* The border carries the focus colour; the halo is soft so a focused field is not a 4px band. */
+    box-shadow: 0 0 0 3px var(--agnes-focus-ring-soft);
+  }
+  button:disabled,
+  button.ant-btn:disabled {
+    cursor: not-allowed;
+    opacity: 1;
+    color: var(--agnes-text-tertiary);
+    border-color: var(--agnes-line-primary);
+    background: var(--agnes-bg-card);
+  }
+  input:disabled,
+  select:disabled,
+  textarea:disabled {
+    cursor: not-allowed;
+    opacity: 1;
+    color: var(--agnes-text-tertiary);
+    background: var(--agnes-bg-card);
+  }
+  input,
+  select {
+    min-height: var(--control-height-form);
+    width: 100%;
+    padding: 0.3125rem 0.625rem;
+  }
+  textarea {
+    min-height: 2.875rem;
+    max-height: 11.25rem;
+    padding: 0.25rem 0;
+    resize: none;
+  }
+  input,
+  textarea {
+    caret-color: var(--agnes-brand-primary);
+  }
+  a[href] {
+    text-underline-offset: 0.16em;
+  }
+  ::placeholder {
+    color: var(--agnes-input-placeholder);
+    opacity: 1;
+  }
+  .icon {
+    width: 1rem;
+    height: 1rem;
+    display: block;
+    flex: 0 0 auto;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.5;
+  }
+
+  @media (max-width: 540px) {
+    button,
+    input,
+    select {
+      min-height: 2.75rem;
+    }
+  }
+
+  @media (max-width: 540px) {
+    .icon-button {
+      width: 2.75rem;
+      min-width: 2.75rem;
+      height: 2.75rem;
+      min-height: 2.75rem;
+    }
+  }
+
+  @media (max-width: 900px) {
+    body[data-agnes-region="app"] :is(button, select, .agh-disclosure-summary) {
+      min-width: 32px;
+      min-height: 32px;
+    }
+  }
+
+  @media (max-width: 900px) {
+    :is(.agnes-settings-checkbox, .ant-checkbox-wrapper, .ant-radio-wrapper) {
+      min-height: 32px;
+      align-content: center;
+    }
+  }
+  .runtime-settings .agh-disclosure-summary {
+    cursor: pointer;
+    padding-block: var(--s8);
+  }
+}

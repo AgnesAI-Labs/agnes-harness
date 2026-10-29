@@ -2,6 +2,9 @@ import { createHash } from 'node:crypto'
 import type { PluginRow } from './plugin-row.js'
 import { isResourceOwnedRowId } from './resource-owned.js'
 
+// Only rows canonicalized here are deeply immutable. Foreign/frozen-only inputs still get copied.
+const canonicalRowObjects = new WeakSet<object>()
+
 export const ROW_STATES = Object.freeze([
   'pending',
   'loading',
@@ -26,7 +29,7 @@ export type RuntimeConvergenceReport = Readonly<{
   rows: readonly RuntimeConvergenceRow[]
 }>
 
-/** Task 7's ordinary plugin tree. Resource generations are introduced separately in Task 8. */
+/** Ordinary plugin tree snapshot, independent of resource generations. */
 export type TreeSnapshot = Readonly<{
   hash: string
   rows: readonly Readonly<PluginRow>[]
@@ -104,13 +107,27 @@ function snapshotJson(value: unknown, path = 'config'): unknown {
   return Object.freeze(output)
 }
 
+/** Host-owned digest of the plugin row's declarative configuration, including absence. */
+export function pluginConfigDigest(config: unknown): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify(
+        config === undefined ? { defined: false } : { defined: true, value: snapshotJson(config) },
+      ),
+    )
+    .digest('hex')
+}
+
 export function canonicalizePluginRow(value: unknown): Readonly<PluginRow> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) invalidTree('row must be an object')
+  if (canonicalRowObjects.has(value)) return value as Readonly<PluginRow>
   const row = value as Record<string, unknown>
   if (typeof row.disabled !== 'boolean') invalidTree('row.disabled must be a boolean')
   if (row.runtime !== 'in-process' && row.runtime !== 'isolated') {
     invalidTree('row.runtime must be normalized')
   }
+  if (row.configReload !== undefined && row.configReload !== 'live' && row.configReload !== 'next-session')
+    invalidTree('row.configReload must be live or next-session')
   const snapshot = {
     id: nonEmptyString(row.id, 'row.id'),
     plugin: nonEmptyString(row.plugin, 'row.plugin'),
@@ -120,12 +137,31 @@ export function canonicalizePluginRow(value: unknown): Readonly<PluginRow> {
     provides: canonicalStringSet(row.provides, 'row.provides'),
     runtime: row.runtime,
     mountIdentity: nonEmptyString(row.mountIdentity, 'row.mountIdentity') as PluginRow['mountIdentity'],
+    ...(row.codeMountIdentity === undefined
+      ? {}
+      : {
+          codeMountIdentity: nonEmptyString(
+            row.codeMountIdentity,
+            'row.codeMountIdentity',
+          ) as PluginRow['mountIdentity'],
+        }),
     mountRevision: nonEmptyString(row.mountRevision, 'row.mountRevision'),
     entryRevision: nonEmptyString(row.entryRevision, 'row.entryRevision'),
     extrasRevision: nonEmptyString(row.extrasRevision, 'row.extrasRevision'),
+    ...(row.liveResources === undefined
+      ? {}
+      : { liveResources: canonicalStringSet(row.liveResources, 'row.liveResources') }),
+    ...(row.liveResourceRevision === undefined
+      ? {}
+      : { liveResourceRevision: nonEmptyString(row.liveResourceRevision, 'row.liveResourceRevision') }),
+    ...(row.configReload === undefined
+      ? {}
+      : { configReload: row.configReload as NonNullable<PluginRow['configReload']> }),
     ...(row.config === undefined ? {} : { config: snapshotJson(row.config) }),
   } satisfies PluginRow
-  return Object.freeze(snapshot)
+  Object.freeze(snapshot)
+  canonicalRowObjects.add(snapshot)
+  return snapshot
 }
 
 function canonicalRows(value: unknown): readonly Readonly<PluginRow>[] {
@@ -146,6 +182,11 @@ function canonicalRows(value: unknown): readonly Readonly<PluginRow>[] {
 
 function hashRows(rows: readonly Readonly<PluginRow>[]): string {
   return createHash('sha256').update(JSON.stringify({ rows })).digest('hex')
+}
+
+/** Canonical identity for one mounted row, including rows owned by a resource generation. */
+export function canonicalRowRevision(row: Readonly<PluginRow>): string {
+  return hashRows([canonicalizePluginRow(row)])
 }
 
 /** Copies, canonicalizes and freezes rows before deriving their identity. */

@@ -21,7 +21,7 @@ export type RunnerConfig = {
   requireMention: boolean
   ackReaction: 'all' | 'direct' | 'group-all' | 'group-mentions' | 'off'
   workspace: string
-  outbound: { costLine: boolean }
+  outbound: { costLine: boolean; webUrl?: string }
   directory: { sync: string | false }
   healthz: { enabled: boolean; port: number }
 }
@@ -92,6 +92,22 @@ export function parseConnect(value: unknown): Connect {
   return invalid('connect must be unix:<path> or ws[s]://<host>', 'connect')
 }
 
+function parseWebUrl(value: unknown): string | undefined {
+  if (value === undefined) return undefined
+  const text = nonEmptyString(value, 'outbound.webUrl')
+  try {
+    const url = new URL(text)
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash)
+      invalid(
+        'outbound.webUrl must be an HTTP(S) Web base URL without credentials, query or fragment',
+        'outbound.webUrl',
+      )
+    return url.href
+  } catch {
+    return invalid('outbound.webUrl must be a valid HTTP(S) Web base URL', 'outbound.webUrl')
+  }
+}
+
 function parseAllowFrom(value: unknown): string[] {
   if (value === undefined) return []
   if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string' || entry.length === 0)) {
@@ -139,6 +155,7 @@ export async function loadConfig(path: string): Promise<RunnerConfig> {
   }
 
   const outbound = mapping(input.outbound, 'outbound')
+  const webUrl = parseWebUrl(outbound.webUrl)
   const directory = mapping(input.directory, 'directory')
   const healthz = mapping(input.healthz, 'healthz')
   const sync = directory.sync
@@ -166,6 +183,7 @@ export async function loadConfig(path: string): Promise<RunnerConfig> {
     workspace: input.workspace === undefined ? process.cwd() : nonEmptyString(input.workspace, 'workspace'),
     outbound: {
       costLine: optionalBoolean(outbound.costLine, true, 'outbound.costLine'),
+      ...(webUrl ? { webUrl } : {}),
     },
     directory: {
       sync: sync === undefined ? 'every 15m' : sync,

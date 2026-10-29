@@ -1,0 +1,26 @@
+{
+  "conversation-ui": {
+    "bytes": 2048,
+    "inputs": 1
+  },
+  "navigation-ui": {
+    "bytes": 1024,
+    "inputs": 1
+  },
+  "interaction-ui": {
+    "bytes": 1024,
+    "inputs": 1
+  },
+  "goal-ui": {
+    "bytes": 2048,
+    "inputs": 1
+  },
+  "deliverables-ui": {
+    "bytes": 12288,
+    "inputs": 1
+  },
+  "browser": {
+    "bytes": 34816,
+    "inputs": 6
+  }
+}

@@ -1,4 +1,5 @@
 import type { ApprovalAnswer, ApprovalRequest, PlatformSeam, Verdict } from '@agnes/core'
+import type { PersistenceMetadataNamespace } from '@agnes/extension-api'
 import { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 import type {
   HostExecResult,
@@ -6,7 +7,6 @@ import type {
   Prompter,
   SandboxBackendReport,
   SandboxGateState,
-  SandboxHostServices,
   SeamInitContext,
   TableHandle,
 } from '../src/seam-init.js'
@@ -34,6 +34,8 @@ type MemTables = ConstructorParameters<typeof MemTable>[1]
 export type FakeSeamInit = SeamInitContext & {
   /** One entry per name asked of `storage.table`, all sharing one registry. */
   tables: Map<string, MemTable>
+  /** One entry per name asked of `storage.namespace`; the same name returns the same namespace. */
+  namespaces: Map<string, MemNamespace>
   /** Every argv passed to `adapters.exec`, in order. */
   execCalls: string[][]
   /** The opts each exec call carried, parallel to execCalls. */
@@ -42,16 +44,6 @@ export type FakeSeamInit = SeamInitContext & {
   mem: Map<string, Uint8Array>
   /** The dataDir file contents, keyed by absolute path. */
   data: Map<string, Uint8Array>
-  /** The knobs behind the fake sandbox host services: what the seam declared, and what the fake
-   * host has bound. `setBound` is the fake of the host's policy binding: enforcement() honesty is
-   * tested by moving it. */
-  sandboxState: {
-    execGate: SandboxGateState | null
-    boundDigest: string | null
-    setBound(digest: string | null): void
-    probeCalls: string[][]
-    backendReports: SandboxBackendReport[]
-  }
 }
 
 export type FakeSeamInitOpts = {
@@ -169,57 +161,9 @@ export function fakeSeamInit(opts: FakeSeamInitOpts = {}): FakeSeamInit {
 
   const registry: MemTables = new Map()
   const tables = new Map<string, MemTable>()
+  const namespaces = new Map<string, MemNamespace>()
   const execCalls: string[][] = []
   const execOpts: Array<Record<string, unknown>> = []
-  // The fake sandbox host services. The canonicalizer is lexical - the Map has no symlinks, so it
-  // resolves `.`/`..`, refuses NUL, empty and root-escaping spellings, and says nothing about
-  // realpath; the host integration tests are where the real canonicalizer is held to the policy.
-  const lexCanonicalize = (path: string, opts?: { base?: string }): string => {
-    if (typeof path !== 'string' || path.length === 0 || path.includes('\0'))
-      throw Object.assign(new Error('E_FS_DENIED: unusable path'), { code: 'E_FS_DENIED' })
-    const abs = path.startsWith('/') ? path : `${opts?.base ?? workspaceRoot}/${path}`
-    const parts: string[] = []
-    for (const seg of abs.split('/')) {
-      if (seg === '' || seg === '.') continue
-      if (seg === '..') {
-        if (parts.length === 0)
-          throw Object.assign(new Error('E_FS_DENIED: escapes the volume root'), { code: 'E_FS_DENIED' })
-        parts.pop()
-      } else parts.push(seg)
-    }
-    return `/${parts.join('/')}`
-  }
-  const sandboxState: FakeSeamInit['sandboxState'] = {
-    execGate: null,
-    boundDigest: null,
-    setBound(digest) {
-      this.boundDigest = digest
-    },
-    probeCalls: [],
-    backendReports: [],
-  }
-  const sandboxServices: SandboxHostServices = {
-    pathPolicy: { canonicalize: async (path, opts) => lexCanonicalize(path, opts) },
-    async probeExec(argv, execOptions) {
-      void execOptions
-      sandboxState.probeCalls.push(argv)
-      return {
-        code: 0,
-        stdout: '',
-        stderr: '',
-        truncated: false,
-        timedOut: false,
-        ...opts.exec?.(argv),
-      }
-    },
-    declareExecGate(state) {
-      sandboxState.execGate = state
-    },
-    reportBackend(report) {
-      sandboxState.backendReports.push(report)
-    },
-    binding: () => ({ policyDigest: sandboxState.boundDigest }),
-  }
   const platform: PlatformSeam = {
     shell: () => 'posix',
     fs: () => ({ caseSensitive: true, pathSep: '/' }),
@@ -253,6 +197,14 @@ export function fakeSeamInit(opts: FakeSeamInitOpts = {}): FakeSeamInit {
           }
           return t
         },
+        namespace(name: string): MemNamespace {
+          let ns = namespaces.get(name)
+          if (!ns) {
+            ns = new MemNamespace()
+            namespaces.set(name, ns)
+          }
+          return ns
+        },
       },
       ...(prompter ? { prompter } : {}),
     },
@@ -267,12 +219,55 @@ export function fakeSeamInit(opts: FakeSeamInitOpts = {}): FakeSeamInit {
     },
     log: { debug() {}, info() {}, warn() {}, error() {} },
     signal: new AbortController().signal,
-    sandboxHost: sandboxServices,
     tables,
+    namespaces,
     execCalls,
     execOpts,
     mem,
     data,
-    sandboxState,
+  }
+}
+
+/**
+ * Owner-scoped metadata in memory. It keeps the host's JSON round trip, so a value that would not
+ * survive the SQLite metadata store does not survive here either, and reads are detached copies.
+ */
+export class MemNamespace implements PersistenceMetadataNamespace {
+  /** JSON text by key. */
+  readonly data = new Map<string, string>()
+
+  get(key: string): unknown | undefined {
+    const json = this.data.get(key)
+    return json === undefined ? undefined : JSON.parse(json)
+  }
+
+  set(key: string, value: unknown): void {
+    const json = JSON.stringify(value)
+    if (json === undefined) throw new TypeError('metadata value must be JSON serializable')
+    this.data.set(key, json)
+  }
+
+  delete(key: string): void {
+    this.data.delete(key)
+  }
+
+  entries(): readonly Readonly<{ key: string; value: unknown }>[] {
+    return [...this.data.keys()]
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+      .map((key) => ({ key, value: this.get(key) }))
+  }
+
+  transaction<T>(fn: () => T): T {
+    const snapshot = new Map(this.data)
+    try {
+      const result = fn()
+      if (result && typeof (result as { then?: unknown }).then === 'function')
+        throw new TypeError('metadata transaction callback must be synchronous')
+      return result
+    } catch (error) {
+      this.data.clear()
+      for (const [key, value] of snapshot) this.data.set(key, value)
+      throw error
+    }
   }
 }

@@ -1,0 +1,58 @@
+{
+  "name": "@agnes/jobs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/jobs",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "tools",
+          "hooks"
+        ],
+        "capabilities": {
+          "tools": {
+            "prefix": "",
+            "names": [
+              "job_list",
+              "job_output",
+              "job_kill",
+              "pty_open",
+              "pty_read",
+              "pty_send",
+              "pty_signal",
+              "pty_resize",
+              "pty_list",
+              "pty_close"
+            ]
+          },
+          "hooks": [
+            "shutdown",
+            "context",
+            "turn_stopping"
+          ],
+          "artifacts": true
+        },
+        "metadata": {
+          "displayName": "Background jobs",
+          "summary": "Lets the agent inspect and control background commands and interactive terminals.",
+          "description": "Lets the agent inspect and control background commands and interactive terminals.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "后台任务",
+              "summary": "让 Agent 查看和控制后台命令及交互终端。",
+              "description": "让 Agent 查看和控制后台命令及交互终端。"
+            }
+          }
+        }
+      }
+    ],
+    "provides": [
+      "tool"
+    ]
+  }
+}

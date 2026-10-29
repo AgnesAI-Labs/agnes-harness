@@ -1,11 +1,19 @@
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
+import { type ToolCallState, withPhase } from '@agnes/core-common/step/op-state'
+import { type PresetView, presetDefaults } from '@agnes/core-common/step/preset'
+import type { Event, EventInput } from '@agnes/core-common/types'
+import type { SeamImplementations } from '@agnes/core-effects/effects/seams'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import type { SessionLogImpl } from '@agnes/core-ledger/log/session-log'
 import type { InferenceEvent, Provider } from '@agnes/protocol'
-import { describe, expect, it } from 'vitest'
-import type { SeamImplementations } from '../src/effects/seams.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import type { SessionLogImpl } from '../src/log/session-log.js'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  createSideCallEffectPort,
+  type SideCallEffectAudit,
+  type SideCallEffectBinding,
+} from '../src/orchestrator/side-call-effect-port.js'
+import { checkSideCallCost } from '../src/orchestrator/side-call-terminal.js'
 import { ToolRegistry } from '../src/registry/tools.js'
-import { type ToolCallState, withPhase } from '../src/step/op-state.js'
-import { type PresetView, presetDefaults } from '../src/step/preset.js'
 import { fakeProvider, sentFor, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession, readTool, shellTool } from './helpers/open-session.js'
@@ -36,17 +44,24 @@ const hangingModelAfter = (text: string): Provider => ({
 
 /** A tool that stops until the test lets it go, so the kill lands with the call in flight. */
 function gatedTool(kind: 'read' | 'shell') {
+  let enter!: () => void
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve
+  })
+  const effects: string[] = []
   let release!: () => void
   const gate = new Promise<void>((res) => {
     release = res
   })
   const run = async () => {
+    effects.push(`${kind}:synthetic-effect`)
+    enter()
     await gate
     return { content: [{ type: 'text' as const, text: 'ok' }] }
   }
   const registry = new ToolRegistry()
   registry.add(kind === 'read' ? readTool(run) : shellTool(run), { source: 's', trust: 'builtin' })
-  return { registry, release: () => release() }
+  return { registry, effects, entered, release: () => release() }
 }
 
 const retryOnce = (): PresetView => {
@@ -78,11 +93,16 @@ async function crashInToolCall(
     storage,
   })
   await a.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
-  expect(await a.session.step()).toEqual({ phase: 'checkpoint' })
-  expect(await a.session.step()).toEqual({ phase: 'inference' })
-  expect(await a.session.step()).toEqual({ phase: 'tools' })
+  expect(await a.session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
+  expect(await a.session.step()).toEqual({ outcome: 'running', phase: 'inference' })
+  expect(await a.session.step()).toEqual({ outcome: 'running', phase: 'tools' })
   const stuck = a.session.step().catch(() => undefined)
-  await new Promise((r) => setTimeout(r, 10))
+  await first.entered
+  expect(a.session.op()?.phase).toMatchObject({
+    kind: 'tools',
+    batch: { calls: [expect.objectContaining({ status: 'dispatched', dispatchPhase: 'may_have_sent' })] },
+  })
+  expect(await a.log.scan({ type: 'tool/result', limit: 10 })).toEqual([])
   await a.log.close()
   // Released only once the ledger is gone, so the call's own writes land nowhere - which is what a
   // killed process's in-flight work does. Awaited, so the abandoned step is finished with before the
@@ -94,13 +114,14 @@ async function crashInToolCall(
     source: 's',
     trust: 'builtin',
   })
-  return openSession({
+  const recovered = await openSession({
     provider: fakeProvider([textTurn('after')]),
     registry: second,
     storage,
     key: 'k',
     ...(reopened.seams ? { seams: reopened.seams } : {}),
   })
+  return { ...recovered, effects: first.effects }
 }
 
 /** The same kill, one phase earlier: inside the model request, with no answer of any kind. */
@@ -112,8 +133,8 @@ async function crashInInference(o: { preset?: PresetView; abortFirst?: boolean; 
     ...(o.preset ? { preset: o.preset } : {}),
   })
   await a.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
-  expect(await a.session.step()).toEqual({ phase: 'checkpoint' })
-  expect(await a.session.step()).toEqual({ phase: 'inference' })
+  expect(await a.session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
+  expect(await a.session.step()).toEqual({ outcome: 'running', phase: 'inference' })
   if (o.extra) await a.session.append([a.session.ev('effect/intent', o.extra)])
   void a.session.step().catch(() => undefined)
   await new Promise((r) => setTimeout(r, 10))
@@ -279,99 +300,6 @@ describe('resume', () => {
     ).toHaveLength(1)
   })
 
-  it('settles an interrupted guardian and falls back to human approval without rerunning it', async () => {
-    const storage = new MemoryStorage()
-    const registry = new ToolRegistry()
-    let executions = 0
-    registry.add(
-      shellTool(async () => {
-        executions++
-        return { content: [{ type: 'text', text: 'executed after human approval' }] }
-      }),
-      { source: 's', trust: 'builtin' },
-    )
-    let guardianEntered!: () => void
-    let releaseGuardian!: () => void
-    const entered = new Promise<void>((resolve) => {
-      guardianEntered = resolve
-    })
-    const blocked = new Promise<never>((_resolve, reject) => {
-      releaseGuardian = () => reject(new Error('old process killed'))
-    })
-    const first = await openSession({
-      provider: fakeProvider([toolTurn('shell', { command: 'x' })]),
-      registry,
-      storage,
-      approvalMode: 'smart',
-      seams: fakeSeams({
-        approval: {
-          guard: async () => {
-            guardianEntered()
-            return blocked
-          },
-        },
-      }),
-    })
-    await first.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
-    await first.session.acceptInput()
-    await first.session.runInference()
-    const abandoned = first.session.runToolsPhase().catch(() => undefined)
-    await entered
-    expect(first.session.pendingEffects()).toEqual([
-      expect.objectContaining({
-        kind: 'approval-guardian',
-        tool: expect.objectContaining({ name: 'shell' }),
-      }),
-    ])
-    await first.log.close()
-    releaseGuardian()
-    await abandoned
-
-    let resumedGuardianCalls = 0
-    let humanAsks = 0
-    const reopened = await openSession({
-      provider: fakeProvider([]),
-      registry,
-      storage,
-      key: 'k',
-      writerRunId: 'guardian-reopen',
-      approvalMode: 'smart',
-      seams: fakeSeams({
-        approval: {
-          guard: async () => {
-            resumedGuardianCalls++
-            return { decision: 'allow-once', ruleVersion: 'must-not-run', reasons: [] }
-          },
-          ask: async (request) => {
-            humanAsks++
-            return { ticket: 'guardian-fallback', expiresAt: request.deadline }
-          },
-        },
-      }),
-    })
-    const report = await reopened.session.resume()
-    expect(report.actions).toEqual([{ effectId: expect.any(String), action: 'error' }])
-    expect(
-      (await reopened.log.scan({ type: 'effect/settled', order: 'desc', limit: 1 }))[0]?.data,
-    ).toMatchObject({
-      outcome: 'error',
-    })
-    expect(
-      await reopened.log.scan({ type: 'x/core/approval-guardian-failed', order: 'desc', limit: 1 }),
-    ).toHaveLength(1)
-    expect(await reopened.session.runToolsPhase()).toEqual({ phase: 'terminal', reason: 'parked' })
-    expect({ resumedGuardianCalls, humanAsks, executions }).toEqual({
-      resumedGuardianCalls: 0,
-      humanAsks: 1,
-      executions: 0,
-    })
-    expect(
-      (await reopened.log.scan({ type: 'approval/asked', order: 'desc', limit: 1 }))[0]?.data,
-    ).toMatchObject({
-      pending: { ticket: 'guardian-fallback' },
-    })
-  })
-
   it('settles a durable responded result without dispatching the tool again', async () => {
     const originalRegistry = new ToolRegistry()
     originalRegistry.add(readTool(), { source: 's', trust: 'builtin' })
@@ -501,41 +429,89 @@ describe('resume', () => {
       },
     }
     await opened.session.abort(actor)
-    expect(await opened.session.step()).toEqual({ phase: 'terminal', reason: 'aborted' })
+    expect(await opened.session.step()).toEqual({
+      outcome: 'turn-ended',
+      phase: 'terminal',
+      reason: 'aborted',
+    })
     expect(resultHooks).toBe(0)
     expect((await opened.log.scan({ type: 'tool/result', order: 'desc', limit: 1 }))[0]?.data).toMatchObject({
       code: 'CANCELLED',
     })
   })
 
-  it('a tool that must not be replayed becomes TOOL_OUTCOME_UNKNOWN and parks the turn', async () => {
-    const { session, log } = await crashInToolCall('shell')
+  it('a tool that must not be replayed becomes TOOL_OUTCOME_UNKNOWN and parks the turn while the question is open', async () => {
+    const duplicateEffects: string[] = []
+    const { session, log, effects } = await crashInToolCall('shell', {
+      seams: fakeSeams({
+        approval: { ask: async () => ({ ticket: 'T1', expiresAt: '2099-01-01T00:00:00Z' }) },
+      }),
+      run: async () => {
+        duplicateEffects.push('duplicate external write')
+        return { content: [{ type: 'text', text: 'must not execute' }] }
+      },
+    })
+    expect(effects).toEqual(['shell:synthetic-effect'])
     expect((await session.resume()).actions[0]?.action).toBe('unknown')
     const result = (await log.scan({ type: 'tool/result', limit: 10 }))[0]
     expect(result?.data).toMatchObject({ code: 'TOOL_OUTCOME_UNKNOWN', isError: true })
     // It names the call it closes. Relations accepts a synthetic closer only when it does.
     expect(result?.sourceEventSeqs).toHaveLength(1)
-    expect((await log.scan({ type: 'approval/asked', limit: 10 })).at(-1)?.data).toMatchObject({
-      kind: 'unknown-outcome',
+    expect((await log.scan({ type: 'decision/state', limit: 10 })).at(-1)?.data).toMatchObject({
+      request: { spec: { purpose: 'unknown-outcome' } },
     })
     expect(session.op()).toBeNull()
     expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'parked' })
     // The turn is parked, so the step it was in is closed with it: a turn/end beside an open step is
     // refused, and this is a path where one is still open.
     expect((await types(log)).filter((x) => x === 'step/end')).toHaveLength(1)
+    expect((await log.scan({ type: 'effect/settled', order: 'desc', limit: 1 }))[0]?.data).toMatchObject({
+      outcome: 'unknown',
+    })
+    // Repeated recovery cannot turn a missing receipt into success or repeat the fixture effect.
+    await session.resume()
+    await session.resume()
+    expect(duplicateEffects).toEqual([])
+    expect(await log.scan({ type: 'tool/result', limit: 10 })).toEqual([result])
+  })
+
+  // The answer arrived while recovery waited: it is consumed with the reconciliation and the turn
+  // carries on to the model instead of stopping on a question nobody has left to answer.
+  it('a recovered unknown outcome answered at once is consumed and the turn continues', async () => {
+    const duplicateEffects: string[] = []
+    const { session, log } = await crashInToolCall('shell', {
+      seams: fakeSeams({ approval: { ask: async () => ({ verdict: 'rejected', answeredBy: actor }) } }),
+      run: async () => {
+        duplicateEffects.push('duplicate external write')
+        return { content: [{ type: 'text', text: 'must not execute' }] }
+      },
+    })
+    expect((await session.resume()).actions[0]?.action).toBe('unknown')
+    const decision = (await session.decisions.list()).find(
+      (value) => value.request.spec.purpose === 'unknown-outcome',
+    )
+    expect(decision).toMatchObject({
+      result: { reason: 'answered' },
+      consumption: { operationId: expect.any(String) },
+    })
+    expect(session.op()).not.toBeNull()
+    await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    expect((await log.scan({ type: 'turn/end', order: 'desc', limit: 1 }))[0]?.data).toMatchObject({
+      reason: 'completed',
+    })
+    expect(duplicateEffects).toEqual([])
   })
 
   // Nobody was asked, so "it did not happen" must not be written as the answer: the question stays
   // unanswered on the ledger, with the reason, and the turn still parks.
   it('records an unknown outcome nobody could be asked about as unavailable, never as rejected', async () => {
     const { session, log } = await crashInToolCall('shell', {
-      seams: fakeSeams({ approval: { ask: async () => 'unavailable', resume: async () => null } }),
+      seams: fakeSeams({ approval: { ask: async () => 'unavailable' } }),
     })
     expect((await session.resume()).actions[0]?.action).toBe('unknown')
-    expect((await log.scan({ type: 'approval/decided', limit: 10 })).at(-1)?.data).toMatchObject({
-      verdict: 'unavailable',
-      via: 'sync',
-      reason: 'no_approver',
+    expect((await session.decisions.list()).at(-1)).toMatchObject({ result: null })
+    expect((await log.scan({ type: 'x/core/decision-delivery', limit: 10 })).at(-1)?.data).toMatchObject({
+      waitEndedBy: 'no-approver',
     })
     expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'parked' })
   })
@@ -544,18 +520,9 @@ describe('resume', () => {
     'requires a human callback to resolve unknown as %s without replay',
     async (verdict) => {
       let executions = 0
-      let receipt: { requestId: string; bindingHash: string; expiresAt: string } | undefined
       const seams = fakeSeams({
         approval: {
-          ask: async (request) => {
-            receipt = {
-              requestId: request.requestId,
-              bindingHash: request.bindingHash,
-              expiresAt: request.deadline,
-            }
-            return { ticket: 'unknown-ticket', expiresAt: request.deadline }
-          },
-          resume: async () => receipt ?? null,
+          ask: async (request) => ({ ticket: 'unknown-ticket', expiresAt: request.deadline }),
         },
       })
       const { session, log } = await crashInToolCall('shell', {
@@ -568,18 +535,27 @@ describe('resume', () => {
 
       expect((await session.resume()).actions[0]?.action).toBe('unknown')
       expect(executions).toBe(0)
-      expect((await log.scan({ type: 'approval/asked', limit: 10 })).at(-1)?.data).toMatchObject({
-        kind: 'unknown-outcome',
-        pending: { ticket: 'unknown-ticket' },
+      expect((await log.scan({ type: 'decision/state', limit: 10 })).at(-1)?.data).toMatchObject({
+        request: { spec: { purpose: 'unknown-outcome' } },
+        result: null,
       })
-      await session.resumeApproval('unknown-ticket', verdict, { ...actor, id: 'human-approver' })
-      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
-        'completed',
-      )
+      const decision = (await session.decisions.list()).at(-1)!
+      await session.decideApproval({
+        command: {
+          handle: decision.handle,
+          revision: decision.revision,
+          commandId: 'unknown-answer',
+          response: { option: verdict, value: null },
+        },
+        context: { actor: { ...actor, id: 'human-approver' }, category: 'human', authorize() {} },
+      })
+      const out = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(out.reason).toBe('completed')
       expect(executions).toBe(0)
-      expect(await log.scan({ type: 'approval/decided', limit: 10 })).toContainEqual(
-        expect.objectContaining({ data: expect.objectContaining({ verdict, via: 'callback' }) }),
-      )
+      expect((await session.decisions.list()).at(-1)?.result).toMatchObject({
+        reason: 'answered',
+        response: { option: verdict },
+      })
     },
   )
 
@@ -606,9 +582,8 @@ describe('resume', () => {
       actor: expect.objectContaining({ id: 'u' }),
       summary: expect.stringContaining('did shell happen?'),
     })
-    expect((await log.scan({ type: 'approval/asked', limit: 10 })).at(-1)?.data).toMatchObject({
-      kind: 'unknown-outcome',
-      summary: 'escalated by extension',
+    expect((await log.scan({ type: 'decision/state', limit: 10 })).at(-1)?.data).toMatchObject({
+      request: { spec: { purpose: 'unknown-outcome', prompt: 'escalated by extension' } },
     })
   })
 
@@ -810,14 +785,17 @@ describe('resume', () => {
 describe('resume and a run in progress exclude each other', () => {
   it('refuses to resume while a run is in progress', async () => {
     const { session } = await openSession({ provider: hangingModel() })
+    expect(session.isRunning).toBe(false)
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
     const ac = new AbortController()
     const running = session.run({ until: 'turn-end', signal: ac.signal })
     await new Promise((r) => setTimeout(r, 10))
     expect(session.op()).not.toBeNull()
+    expect(session.isRunning).toBe(true)
     await expect(session.resume()).rejects.toMatchObject({ code: 'E_LANE_BUSY' })
     ac.abort()
     await running.catch(() => undefined)
+    expect(session.isRunning).toBe(false)
   })
 
   it('lets a run wait for a resume in progress and then finish the turn', async () => {
@@ -875,4 +853,259 @@ describe('a run waiting behind a resume', () => {
     expect((await running).reason).toBe('completed')
     expect(stepped).toBe(true)
   })
+})
+
+const hash = (digit: string) => digit.repeat(64)
+const sideEffectId = 'side:call-1'
+const sideBinding = (over: Partial<SideCallEffectBinding> = {}): SideCallEffectBinding => ({
+  effectId: sideEffectId,
+  sessionKey: 'k',
+  lane: 'main',
+  auditBindingHash: hash('a'),
+  budgetBindingHash: hash('b'),
+  subjectHash: hash('c'),
+  requestDerivedHash: hash('d'),
+  route: 'side-route',
+  model: 'side-model',
+  ...over,
+})
+const sideAudit = (over: Partial<SideCallEffectAudit> = {}): SideCallEffectAudit => ({
+  label: 'sample.decide',
+  adapter: { id: 'sample-adapter', version: '1.0.0' },
+  api: 'sample-adapter',
+  endpointHost: 'models.example.com',
+  deadlineMs: 10_000,
+  output: 'json',
+  inputTokens: 120,
+  estimateSource: 'estimate',
+  projectedCredits: 0.5,
+  payloadBytes: 2048,
+  ...over,
+})
+
+type SideCallRows = 'valid' | 'missing' | 'untrusted' | 'hash-mismatch'
+
+/**
+ * A ledger killed with a side call outstanding: its intent row, and the binding row after it as the
+ * variant asks. With `inFlight` the main inference has also started and hangs, so the kill leaves
+ * both effects open; without it the turn is parked in its inference phase before any request goes
+ * out, so the side call is the only effect pending.
+ */
+async function crashWithSideCall(
+  o: { rows?: SideCallRows; audit?: SideCallEffectAudit; inFlight?: boolean } = {},
+) {
+  const storage = new MemoryStorage()
+  const a = await openSession({ provider: hangingModel(), storage })
+  await a.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
+  expect(await a.session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
+  expect(await a.session.step()).toEqual({ outcome: 'running', phase: 'inference' })
+  const identity = sideBinding()
+  const audit = o.audit ?? sideAudit()
+  const rows = o.rows ?? 'valid'
+  if (rows === 'valid') await createSideCallEffectPort(a.session).begin(identity, audit)
+  else {
+    const external = rows === 'untrusted' ? { origin: 'external:fixture', trust: 'untrusted' } : {}
+    const intent: EventInput = {
+      ...a.session.ev('effect/intent', { effectId: sideEffectId, kind: 'side-call', replay: 'never' }),
+      ...external,
+    } as EventInput
+    const binding: EventInput = {
+      ...a.session.ev(
+        'x/core/side-call-intent',
+        {
+          version: 1,
+          binding: identity,
+          bindingHash: rows === 'hash-mismatch' ? hash('f') : sha256Hex(canonicalJson(identity)),
+          audit,
+        },
+        { ignorable: true },
+      ),
+      ...external,
+    } as EventInput
+    await a.session.append(rows === 'missing' ? [intent] : [intent, binding])
+  }
+  if (o.inFlight) {
+    void a.session.step().catch(() => undefined)
+    await new Promise((r) => setTimeout(r, 10))
+  }
+  await a.log.close()
+  return { storage, identity, phase: a.session.op()?.phase }
+}
+
+const reopenWithBilling = (storage: MemoryStorage) => {
+  const record = vi.fn(async () => undefined)
+  return {
+    record,
+    opened: openSession({
+      provider: fakeProvider([textTurn('ok')]),
+      storage,
+      key: 'k',
+      seams: fakeSeams({ billing: { record } }),
+    }),
+  }
+}
+
+const settledOf = async (log: SessionLogImpl, effectId: string): Promise<Event[]> =>
+  (await log.scan({ type: 'effect/settled', limit: 20 })).filter(
+    (event) => (event.data as { effectId?: string }).effectId === effectId,
+  )
+const costsOf = async (log: SessionLogImpl, effectId?: string): Promise<Event[]> =>
+  (await log.scan({ type: 'cost/ledger', limit: 20 })).filter(
+    (event) => effectId === undefined || (event.data as { effectId?: string }).effectId === effectId,
+  )
+
+describe('resume of an interrupted side call', () => {
+  it('settles it as unknown with one estimated cost row in the same commit and leaves the turn alone', async () => {
+    const { storage, identity, phase } = await crashWithSideCall()
+    const { record, opened } = reopenWithBilling(storage)
+    const { session, log } = await opened
+    const batches: Event[][] = []
+    session.onAppended((events) => batches.push(events))
+    expect((await session.resume()).actions).toEqual([{ effectId: sideEffectId, action: 'unknown' }])
+
+    const [cost] = await costsOf(log)
+    expect(await costsOf(log)).toHaveLength(1)
+    expect(cost?.data).toEqual({
+      purpose: 'side-call',
+      effectId: sideEffectId,
+      model: 'side-model',
+      tokens: { input: 120, output: 0, cacheRead: 0, cacheWrite: 0 },
+      credits: 0.5,
+      creditSource: 'estimated',
+      interrupted: true,
+      route: 'side-route',
+    })
+    expect(checkSideCallCost(cost as EventInput, identity)).toMatchObject({ purpose: 'side-call' })
+    const [settled] = await settledOf(log, sideEffectId)
+    expect(settled?.data).toEqual({ effectId: sideEffectId, outcome: 'unknown' })
+    // Cost first, then the settlement, in one append.
+    expect(batches.map((rows) => rows.map((row) => row.type))).toEqual([['cost/ledger', 'effect/settled']])
+
+    // No inference was retried or charged, and the program counter did not move.
+    expect((await costsOf(log)).map((row) => (row.data as { purpose: string }).purpose)).toEqual([
+      'side-call',
+    ])
+    expect(session.op()?.phase).toEqual(phase)
+    expect(session.op()?.phase).toMatchObject({ kind: 'inference', gen: { status: 'ready', attempt: 0 } })
+    expect(session.pendingEffects()).toEqual([])
+    expect(record).not.toHaveBeenCalled()
+    expect(await types(log)).not.toContain('x/core/invariant')
+
+    // The loop sees the same answer a later call for this id gets.
+    await expect(createSideCallEffectPort(session).status('call-1')).resolves.toMatchObject({
+      status: 'finished',
+      result: { status: 'unknown', reason: 'interrupted', replayed: true },
+    })
+  })
+
+  it('leaves the credits out of the cost row when the call had no price estimate', async () => {
+    const { storage } = await crashWithSideCall({ audit: sideAudit({ projectedCredits: null }) })
+    const { session, log } = await reopen(storage)
+    await session.resume()
+    const [cost] = await costsOf(log)
+    expect(cost?.data).not.toHaveProperty('credits')
+    expect(cost?.data).toMatchObject({ creditSource: 'estimated', interrupted: true })
+  })
+
+  it('does not disturb the retry of an inference that was in flight beside it', async () => {
+    const { storage } = await crashWithSideCall({ inFlight: true })
+    const { session, log } = await reopen(storage)
+    expect((await session.resume()).actions).toEqual([
+      { effectId: sideEffectId, action: 'unknown' },
+      { effectId: expect.any(String), action: 'retry' },
+    ])
+    expect(session.op()?.phase).toMatchObject({ kind: 'inference', gen: { status: 'ready', attempt: 1 } })
+    expect(
+      (await costsOf(log)).map((row) => {
+        const { purpose, model } = row.data as { purpose: string; model: string }
+        return [purpose, model]
+      }),
+    ).toEqual([
+      ['side-call', 'side-model'],
+      ['inference', 'primary'],
+    ])
+  })
+
+  it('settles it as unknown with its cost row when the session is closed', async () => {
+    const { storage, identity } = await crashWithSideCall()
+    const { record, opened } = reopenWithBilling(storage)
+    const { session, log } = await opened
+    const batches: Event[][] = []
+    session.onAppended((events) => batches.push(events))
+    expect((await session.resume({ mode: 'close' })).actions).toEqual([
+      { effectId: sideEffectId, action: 'unknown' },
+    ])
+    const [cost] = await costsOf(log)
+    expect(await costsOf(log)).toHaveLength(1)
+    expect(cost?.data).toMatchObject({
+      purpose: 'side-call',
+      effectId: sideEffectId,
+      tokens: { input: 120, output: 0, cacheRead: 0, cacheWrite: 0 },
+      credits: 0.5,
+      creditSource: 'estimated',
+      interrupted: true,
+    })
+    expect(checkSideCallCost(cost as EventInput, identity)).toMatchObject({ purpose: 'side-call' })
+    expect((await settledOf(log, sideEffectId))[0]?.data).toEqual({
+      effectId: sideEffectId,
+      outcome: 'unknown',
+    })
+    const commit = batches.map((rows) => rows.map((row) => row.type))
+    expect(commit).toHaveLength(1)
+    expect(commit[0]?.slice(0, 2)).toEqual(['cost/ledger', 'effect/settled'])
+    expect(commit[0]).toContain('turn/end')
+    expect(record).not.toHaveBeenCalled()
+    expect(session.pendingEffects()).toEqual([])
+  })
+
+  it('closes a side call and an inference that were both in flight', async () => {
+    const { storage } = await crashWithSideCall({ inFlight: true })
+    const { session, log } = await reopen(storage)
+    expect((await session.resume({ mode: 'close' })).actions).toEqual([
+      { effectId: sideEffectId, action: 'unknown' },
+      { effectId: expect.any(String), action: 'error' },
+    ])
+    expect((await costsOf(log)).map((row) => (row.data as { purpose: string }).purpose)).toEqual([
+      'side-call',
+    ])
+  })
+
+  describe.each(['continue', 'close'] as const)('in %s mode, without a trustworthy binding row', (mode) => {
+    it.each(['missing', 'untrusted', 'hash-mismatch'] as const)(
+      'settles it as unknown with no cost row and one diagnostic when the binding is %s',
+      async (rows) => {
+        const { storage } = await crashWithSideCall({ rows })
+        const { session, log } = await reopen(storage)
+        const report = await session.resume(mode === 'close' ? { mode } : {})
+        expect(report.actions).toEqual([{ effectId: sideEffectId, action: 'unknown' }])
+        expect(await costsOf(log)).toEqual([])
+        expect((await settledOf(log, sideEffectId)).map((row) => row.data)).toEqual([
+          { effectId: sideEffectId, outcome: 'unknown' },
+        ])
+        expect((await log.scan({ type: 'x/core/invariant', limit: 5 })).map((row) => row.data)).toEqual([
+          { kind: 'resume-side-call-binding-unusable', effectId: sideEffectId },
+        ])
+        expect(session.pendingEffects()).toEqual([])
+      },
+    )
+  })
+
+  it.each(['continue', 'close'] as const)(
+    'does not settle anything in %s mode when reading the binding row fails',
+    async (mode) => {
+      const { storage } = await crashWithSideCall()
+      const { session, log } = await reopen(storage)
+      const intentSeq = session.pendingEffects()[0]?.intentSeq
+      const scan = session.scan.bind(session)
+      vi.spyOn(session, 'scan').mockImplementation(async (query) => {
+        if (query.fromSeq === intentSeq && query.toSeq === (intentSeq as number) + 1)
+          throw new Error('storage unavailable')
+        return scan(query)
+      })
+      await expect(session.resume(mode === 'close' ? { mode } : {})).rejects.toThrow('storage unavailable')
+      expect(await settledOf(log, sideEffectId)).toEqual([])
+      expect(await costsOf(log)).toEqual([])
+      expect(session.pendingEffects().map((effect) => effect.effectId)).toEqual([sideEffectId])
+    },
+  )
 })

@@ -1,0 +1,1053 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`fresh data directory schema > creates every database at its final schema from an empty data directory 1`] = `
+{
+  "artifacts/computer-use-ref-index.db": {
+    "objects": [
+      {
+        "name": "artifact_ref_session",
+        "sql": "CREATE INDEX artifact_ref_session ON artifact_ref(session_key, last_tool_image_seq)",
+        "tbl_name": "artifact_ref",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_meta_1",
+        "sql": null,
+        "tbl_name": "meta",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_session_cursor_1",
+        "sql": null,
+        "tbl_name": "session_cursor",
+        "type": "index",
+      },
+      {
+        "name": "artifact_ref",
+        "sql": "CREATE TABLE artifact_ref (sha256 TEXT NOT NULL, session_key TEXT NOT NULL,
+     source TEXT NOT NULL CHECK (source IN ('ledger','request-media','attachment')),
+     last_seq INTEGER NOT NULL, last_ts_ms INTEGER NOT NULL, last_tool_image_seq INTEGER,
+     PRIMARY KEY (sha256, session_key, source)) WITHOUT ROWID",
+        "tbl_name": "artifact_ref",
+        "type": "table",
+      },
+      {
+        "name": "meta",
+        "sql": "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+        "tbl_name": "meta",
+        "type": "table",
+      },
+      {
+        "name": "session_cursor",
+        "sql": "CREATE TABLE session_cursor (session_key TEXT PRIMARY KEY, last_seq INTEGER NOT NULL,
+     anchor_id TEXT NOT NULL, anchor_digest TEXT, last_ts_ms INTEGER NOT NULL,
+     open_lanes TEXT NOT NULL DEFAULT '[]')",
+        "tbl_name": "session_cursor",
+        "type": "table",
+      },
+    ],
+    "version": 0,
+  },
+  "history-index.db": {
+    "objects": [
+      {
+        "name": "sessions_parent",
+        "sql": "CREATE INDEX sessions_parent ON sessions(parent_id, session_id)",
+        "tbl_name": "sessions",
+        "type": "index",
+      },
+      {
+        "name": "sessions_workspace",
+        "sql": "CREATE INDEX sessions_workspace ON sessions(workspace)",
+        "tbl_name": "sessions",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_docs_1",
+        "sql": null,
+        "tbl_name": "docs",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_meta_1",
+        "sql": null,
+        "tbl_name": "meta",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_sessions_1",
+        "sql": null,
+        "tbl_name": "sessions",
+        "type": "index",
+      },
+      {
+        "name": "docs",
+        "sql": "CREATE TABLE docs (
+      rowid INTEGER PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      ts TEXT NOT NULL,
+      type TEXT NOT NULL,
+      text TEXT NOT NULL,
+      body TEXT NOT NULL,
+      sources TEXT NOT NULL,
+      truncated INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(session_id, seq)
+    )",
+        "tbl_name": "docs",
+        "type": "table",
+      },
+      {
+        "name": "docs_fts",
+        "sql": "CREATE VIRTUAL TABLE docs_fts USING fts5(
+      text,
+      content = 'docs',
+      content_rowid = 'rowid',
+      tokenize = 'unicode61'
+    )",
+        "tbl_name": "docs_fts",
+        "type": "table",
+      },
+      {
+        "name": "docs_fts_config",
+        "sql": "CREATE TABLE 'docs_fts_config'(k PRIMARY KEY, v) WITHOUT ROWID",
+        "tbl_name": "docs_fts_config",
+        "type": "table",
+      },
+      {
+        "name": "docs_fts_data",
+        "sql": "CREATE TABLE 'docs_fts_data'(id INTEGER PRIMARY KEY, block BLOB)",
+        "tbl_name": "docs_fts_data",
+        "type": "table",
+      },
+      {
+        "name": "docs_fts_docsize",
+        "sql": "CREATE TABLE 'docs_fts_docsize'(id INTEGER PRIMARY KEY, sz BLOB)",
+        "tbl_name": "docs_fts_docsize",
+        "type": "table",
+      },
+      {
+        "name": "docs_fts_idx",
+        "sql": "CREATE TABLE 'docs_fts_idx'(segid, term, pgno, PRIMARY KEY(segid, term)) WITHOUT ROWID",
+        "tbl_name": "docs_fts_idx",
+        "type": "table",
+      },
+      {
+        "name": "meta",
+        "sql": "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+        "tbl_name": "meta",
+        "type": "table",
+      },
+      {
+        "name": "sessions",
+        "sql": "CREATE TABLE sessions (
+      session_id TEXT PRIMARY KEY,
+      workspace TEXT NOT NULL,
+      title TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      parent_id TEXT,
+      principal TEXT,
+      indexed_seq INTEGER NOT NULL DEFAULT 0,
+      indexed_id TEXT,
+      first_ts TEXT,
+      generated_title TEXT,
+      prompt TEXT
+    )",
+        "tbl_name": "sessions",
+        "type": "table",
+      },
+    ],
+    "version": 4,
+  },
+  "sessions.db": {
+    "objects": [
+      {
+        "name": "budget_reservations_root_effect",
+        "sql": "CREATE UNIQUE INDEX budget_reservations_root_effect ON budget_reservations (root_task_id, effect_id)",
+        "tbl_name": "budget_reservations",
+        "type": "index",
+      },
+      {
+        "name": "child_tasks_creating",
+        "sql": "CREATE INDEX child_tasks_creating ON child_tasks (child_key) WHERE creation_phase = 'creating'",
+        "tbl_name": "child_tasks",
+        "type": "index",
+      },
+      {
+        "name": "child_tasks_parent",
+        "sql": "CREATE INDEX child_tasks_parent ON child_tasks (parent_key)",
+        "tbl_name": "child_tasks",
+        "type": "index",
+      },
+      {
+        "name": "child_tasks_root",
+        "sql": "CREATE INDEX child_tasks_root ON child_tasks (root_task_id)",
+        "tbl_name": "child_tasks",
+        "type": "index",
+      },
+      {
+        "name": "child_workspaces_child",
+        "sql": "CREATE INDEX child_workspaces_child ON child_workspaces (child_key)",
+        "tbl_name": "child_workspaces",
+        "type": "index",
+      },
+      {
+        "name": "events_type",
+        "sql": "CREATE INDEX events_type ON events (session_key, type, seq)",
+        "tbl_name": "events",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_budget_reservations_1",
+        "sql": null,
+        "tbl_name": "budget_reservations",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_budget_scopes_1",
+        "sql": null,
+        "tbl_name": "budget_scopes",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_child_ordinals_1",
+        "sql": null,
+        "tbl_name": "child_ordinals",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_child_tasks_1",
+        "sql": null,
+        "tbl_name": "child_tasks",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_child_tasks_2",
+        "sql": null,
+        "tbl_name": "child_tasks",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_child_workspaces_1",
+        "sql": null,
+        "tbl_name": "child_workspaces",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_child_writer_gens_1",
+        "sql": null,
+        "tbl_name": "child_writer_gens",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_cost_origins_1",
+        "sql": null,
+        "tbl_name": "cost_origins",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_events_1",
+        "sql": null,
+        "tbl_name": "events",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_ledger_integrity_failure_v1_1",
+        "sql": null,
+        "tbl_name": "ledger_integrity_failure_v1",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_ledger_verified_head_v1_1",
+        "sql": null,
+        "tbl_name": "ledger_verified_head_v1",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_registers_1",
+        "sql": null,
+        "tbl_name": "registers",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_sessions_1",
+        "sql": null,
+        "tbl_name": "sessions",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_writer_claims_1",
+        "sql": null,
+        "tbl_name": "writer_claims",
+        "type": "index",
+      },
+      {
+        "name": "budget_reservations",
+        "sql": "CREATE TABLE budget_reservations (
+     permit_id TEXT PRIMARY KEY, root_task_id TEXT NOT NULL, scope_ids TEXT NOT NULL,
+     q_micro TEXT NOT NULL, effect_id TEXT NOT NULL, request_hash TEXT NOT NULL,
+     writer_generation INTEGER NOT NULL, status TEXT NOT NULL)",
+        "tbl_name": "budget_reservations",
+        "type": "table",
+      },
+      {
+        "name": "budget_scopes",
+        "sql": "CREATE TABLE budget_scopes (
+     scope_id TEXT PRIMARY KEY, root_task_id TEXT NOT NULL, child_key TEXT, parent_scope_id TEXT,
+     cap_micro TEXT NOT NULL, settled_micro TEXT NOT NULL, held_micro TEXT NOT NULL)",
+        "tbl_name": "budget_scopes",
+        "type": "table",
+      },
+      {
+        "name": "child_ordinals",
+        "sql": "CREATE TABLE child_ordinals (
+     parent_key TEXT NOT NULL, effect_id TEXT NOT NULL, n INTEGER NOT NULL,
+     PRIMARY KEY (parent_key, effect_id))",
+        "tbl_name": "child_ordinals",
+        "type": "table",
+      },
+      {
+        "name": "child_tasks",
+        "sql": "CREATE TABLE child_tasks (
+     child_key TEXT PRIMARY KEY, creation_id TEXT NOT NULL UNIQUE, parent_key TEXT NOT NULL,
+     root_task_id TEXT NOT NULL, runtime_owner TEXT NOT NULL, kind TEXT NOT NULL,
+     generation_depth INTEGER NOT NULL, generation_limit INTEGER NOT NULL, input_hash TEXT NOT NULL,
+     input_text TEXT NOT NULL DEFAULT '', cwd TEXT NOT NULL, actor_id TEXT NOT NULL, budget_scope_id TEXT NOT NULL,
+     ancestor_scope_ids TEXT NOT NULL, workspace_id TEXT, isolation TEXT NOT NULL,
+     state TEXT NOT NULL, state_revision INTEGER NOT NULL, control_format INTEGER NOT NULL,
+     attempt_id TEXT NOT NULL, creation_phase TEXT NOT NULL, creation_revision INTEGER NOT NULL,
+     attempt_started_at INTEGER NOT NULL, deferred_fact TEXT, cancelled_fact TEXT)",
+        "tbl_name": "child_tasks",
+        "type": "table",
+      },
+      {
+        "name": "child_workspaces",
+        "sql": "CREATE TABLE child_workspaces (
+     workspace_id TEXT PRIMARY KEY, child_key TEXT NOT NULL, isolation TEXT NOT NULL,
+     path TEXT NOT NULL, phase TEXT NOT NULL, root TEXT, branch TEXT)",
+        "tbl_name": "child_workspaces",
+        "type": "table",
+      },
+      {
+        "name": "child_writer_gens",
+        "sql": "CREATE TABLE child_writer_gens (
+     root_task_id TEXT PRIMARY KEY, generation INTEGER NOT NULL)",
+        "tbl_name": "child_writer_gens",
+        "type": "table",
+      },
+      {
+        "name": "cost_origins",
+        "sql": "CREATE TABLE cost_origins (
+     origin_key TEXT PRIMARY KEY, micro TEXT NOT NULL, scope_ids TEXT NOT NULL)",
+        "tbl_name": "cost_origins",
+        "type": "table",
+      },
+      {
+        "name": "events",
+        "sql": "CREATE TABLE events (
+     session_key TEXT NOT NULL, seq INTEGER NOT NULL, ts TEXT NOT NULL, id TEXT NOT NULL, type TEXT NOT NULL,
+     lane BLOB NOT NULL DEFAULT x'6d61696e', v INTEGER NOT NULL DEFAULT 1,
+     actor TEXT NOT NULL, origin TEXT NOT NULL, trust TEXT NOT NULL,
+     register TEXT, ignorable INTEGER, surface_op TEXT, source_event_seqs TEXT, data TEXT NOT NULL,
+     integrity_mode TEXT, integrity_prev TEXT, integrity_digest TEXT,
+     PRIMARY KEY (session_key, seq))",
+        "tbl_name": "events",
+        "type": "table",
+      },
+      {
+        "name": "ledger_integrity_failure_v1",
+        "sql": "CREATE TABLE ledger_integrity_failure_v1 (session_key TEXT PRIMARY KEY, seq INTEGER)",
+        "tbl_name": "ledger_integrity_failure_v1",
+        "type": "table",
+      },
+      {
+        "name": "ledger_verified_head_v1",
+        "sql": "CREATE TABLE ledger_verified_head_v1 (
+  session_key TEXT PRIMARY KEY, through_seq INTEGER NOT NULL, head_digest TEXT NOT NULL,
+  legacy_through_seq INTEGER NOT NULL, algorithm TEXT NOT NULL, verified_full_at_ms INTEGER NOT NULL,
+  written_at_ms INTEGER NOT NULL, checkpoint_digest TEXT NOT NULL)",
+        "tbl_name": "ledger_verified_head_v1",
+        "type": "table",
+      },
+      {
+        "name": "registers",
+        "sql": "CREATE TABLE registers (
+     session_key TEXT NOT NULL, register TEXT NOT NULL, key BLOB NOT NULL, seq INTEGER NOT NULL, data TEXT NOT NULL,
+     PRIMARY KEY (session_key, register, key))",
+        "tbl_name": "registers",
+        "type": "table",
+      },
+      {
+        "name": "sessions",
+        "sql": "CREATE TABLE sessions (
+     session_key TEXT PRIMARY KEY, format_version INTEGER NOT NULL DEFAULT 1, parent_key TEXT, boundary_seq INTEGER, created_at TEXT NOT NULL,
+     head_version INTEGER NOT NULL DEFAULT 0 CHECK (head_version IN (0, 1)), head_seq INTEGER, head_digest TEXT)",
+        "tbl_name": "sessions",
+        "type": "table",
+      },
+      {
+        "name": "writer_claims",
+        "sql": "CREATE TABLE writer_claims (
+     session_key TEXT PRIMARY KEY, run_id TEXT NOT NULL, until INTEGER NOT NULL, ttl_ms INTEGER NOT NULL,
+     generation INTEGER NOT NULL DEFAULT 1)",
+        "tbl_name": "writer_claims",
+        "type": "table",
+      },
+    ],
+    "version": 2,
+  },
+  "tables/_40agnes_2fdaemon.db": {
+    "objects": [
+      {
+        "name": "auth_claims_bv",
+        "sql": "CREATE INDEX auth_claims_bv ON auth_claims (bucket, value)",
+        "tbl_name": "auth_claims",
+        "type": "index",
+      },
+      {
+        "name": "command_journal_acked_at",
+        "sql": "CREATE INDEX command_journal_acked_at ON command_journal (acked_at)",
+        "tbl_name": "command_journal",
+        "type": "index",
+      },
+      {
+        "name": "jobs_due",
+        "sql": "CREATE INDEX jobs_due ON jobs (status, delay_until)",
+        "tbl_name": "jobs",
+        "type": "index",
+      },
+      {
+        "name": "jobs_session",
+        "sql": "CREATE INDEX jobs_session ON jobs (session_key, status)",
+        "tbl_name": "jobs",
+        "type": "index",
+      },
+      {
+        "name": "schedule_receipts_task_unread",
+        "sql": "CREATE INDEX schedule_receipts_task_unread ON schedule_run_receipts (schedule_id, is_read, run_rowid DESC)",
+        "tbl_name": "schedule_run_receipts",
+        "type": "index",
+      },
+      {
+        "name": "schedule_receipts_unread",
+        "sql": "CREATE INDEX schedule_receipts_unread ON schedule_run_receipts (is_read, run_rowid DESC)",
+        "tbl_name": "schedule_run_receipts",
+        "type": "index",
+      },
+      {
+        "name": "schedule_runs_open_job",
+        "sql": "CREATE INDEX schedule_runs_open_job ON schedule_runs (schedule_id) WHERE outcome IN ('running', 'waiting_approval', 'needs_attention')",
+        "tbl_name": "schedule_runs",
+        "type": "index",
+      },
+      {
+        "name": "schedule_runs_open_progress",
+        "sql": "CREATE INDEX schedule_runs_open_progress ON schedule_runs (session_key) WHERE progress IS NOT NULL AND ended_at IS NULL",
+        "tbl_name": "schedule_runs",
+        "type": "index",
+      },
+      {
+        "name": "schedule_runs_previous",
+        "sql": "CREATE INDEX schedule_runs_previous ON schedule_runs (schedule_id, at) WHERE session_key IS NOT NULL AND (reason IS NULL OR reason != 'approval_pending_previous_run')",
+        "tbl_name": "schedule_runs",
+        "type": "index",
+      },
+      {
+        "name": "schedule_runs_schedule",
+        "sql": "CREATE INDEX schedule_runs_schedule ON schedule_runs (schedule_id, at)",
+        "tbl_name": "schedule_runs",
+        "type": "index",
+      },
+      {
+        "name": "schedule_runs_session",
+        "sql": "CREATE INDEX schedule_runs_session ON schedule_runs (session_key, at)",
+        "tbl_name": "schedule_runs",
+        "type": "index",
+      },
+      {
+        "name": "schedule_runs_task",
+        "sql": "CREATE INDEX schedule_runs_task ON schedule_runs (schedule_id)",
+        "tbl_name": "schedule_runs",
+        "type": "index",
+      },
+      {
+        "name": "schedules_next_run",
+        "sql": "CREATE INDEX schedules_next_run ON schedules (next_run_at) WHERE status = 'active' AND next_run_at IS NOT NULL",
+        "tbl_name": "schedules",
+        "type": "index",
+      },
+      {
+        "name": "schedules_session",
+        "sql": "CREATE INDEX schedules_session ON schedules (session_key, status)",
+        "tbl_name": "schedules",
+        "type": "index",
+      },
+      {
+        "name": "sidebar_cwd",
+        "sql": "CREATE INDEX sidebar_cwd ON session_workspaces (cwd)",
+        "tbl_name": "session_workspaces",
+        "type": "index",
+      },
+      {
+        "name": "sidebar_order",
+        "sql": "CREATE INDEX sidebar_order ON session_workspaces (sidebar_group, sidebar_sort_at DESC, session_key DESC)",
+        "tbl_name": "session_workspaces",
+        "type": "index",
+      },
+      {
+        "name": "sidebar_owner",
+        "sql": "CREATE INDEX sidebar_owner ON session_principal_ownership (principal_id, reservation_state, session_id)",
+        "tbl_name": "session_principal_ownership",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_approval_tickets_1",
+        "sql": null,
+        "tbl_name": "approval_tickets",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_auth_nonces_1",
+        "sql": null,
+        "tbl_name": "auth_nonces",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_command_journal_1",
+        "sql": null,
+        "tbl_name": "command_journal",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_composite_target_package_failures_1",
+        "sql": null,
+        "tbl_name": "composite_target_package_failures",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_composite_target_pins_1",
+        "sql": null,
+        "tbl_name": "composite_target_pins",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_composite_target_reverts_1",
+        "sql": null,
+        "tbl_name": "composite_target_reverts",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_composite_targets_1",
+        "sql": null,
+        "tbl_name": "composite_targets",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_jobs_1",
+        "sql": null,
+        "tbl_name": "jobs",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_plugin_config_audit_1",
+        "sql": null,
+        "tbl_name": "plugin_config_audit",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_plugin_config_intents_1",
+        "sql": null,
+        "tbl_name": "plugin_config_intents",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_plugin_config_values_1",
+        "sql": null,
+        "tbl_name": "plugin_config_values",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_schedule_run_receipts_1",
+        "sql": null,
+        "tbl_name": "schedule_run_receipts",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_schedules_1",
+        "sql": null,
+        "tbl_name": "schedules",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_session_preferences_1",
+        "sql": null,
+        "tbl_name": "session_preferences",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_session_principal_ownership_1",
+        "sql": null,
+        "tbl_name": "session_principal_ownership",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_session_workspaces_1",
+        "sql": null,
+        "tbl_name": "session_workspaces",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_sidebar_versions_1",
+        "sql": null,
+        "tbl_name": "sidebar_versions",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_workspace_binding_extra_roots_1",
+        "sql": null,
+        "tbl_name": "workspace_binding_extra_roots",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_workspace_bindings_1",
+        "sql": null,
+        "tbl_name": "workspace_bindings",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_workspace_registry_1",
+        "sql": null,
+        "tbl_name": "workspace_registry",
+        "type": "index",
+      },
+      {
+        "name": "approval_tickets",
+        "sql": "CREATE TABLE approval_tickets (ticket TEXT PRIMARY KEY, session_key TEXT NOT NULL, expires_at INTEGER NOT NULL, cwd TEXT)",
+        "tbl_name": "approval_tickets",
+        "type": "table",
+      },
+      {
+        "name": "auth_claims",
+        "sql": "CREATE TABLE auth_claims (
+  bucket TEXT NOT NULL,
+  value TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+)",
+        "tbl_name": "auth_claims",
+        "type": "table",
+      },
+      {
+        "name": "auth_nonces",
+        "sql": "CREATE TABLE auth_nonces (
+  client_id TEXT NOT NULL,
+  nonce TEXT NOT NULL,
+  seen_at INTEGER NOT NULL,
+  PRIMARY KEY (client_id, nonce)
+)",
+        "tbl_name": "auth_nonces",
+        "type": "table",
+      },
+      {
+        "name": "command_journal",
+        "sql": "CREATE TABLE command_journal (
+        principal_id TEXT NOT NULL,
+        client_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        command_id TEXT NOT NULL,
+        binding_algorithm TEXT NOT NULL,
+        binding_digest TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        generation INTEGER,
+        received_at INTEGER NOT NULL,
+        result TEXT,
+        result_at INTEGER,
+        acked_at INTEGER,
+        PRIMARY KEY (principal_id, client_id, session_id, command_id)
+      )",
+        "tbl_name": "command_journal",
+        "type": "table",
+      },
+      {
+        "name": "composite_target_package_failures",
+        "sql": "CREATE TABLE composite_target_package_failures (
+        profile TEXT NOT NULL,
+        package_id TEXT NOT NULL,
+        failure_json TEXT NOT NULL,
+        PRIMARY KEY (profile, package_id)
+      )",
+        "tbl_name": "composite_target_package_failures",
+        "type": "table",
+      },
+      {
+        "name": "composite_target_pins",
+        "sql": "CREATE TABLE composite_target_pins (
+        profile TEXT NOT NULL,
+        pin TEXT NOT NULL,
+        PRIMARY KEY (profile, pin)
+      )",
+        "tbl_name": "composite_target_pins",
+        "type": "table",
+      },
+      {
+        "name": "composite_target_reverts",
+        "sql": "CREATE TABLE composite_target_reverts (
+        profile TEXT NOT NULL,
+        failed_digest TEXT NOT NULL,
+        target_digest TEXT NOT NULL,
+        at TEXT NOT NULL,
+        live INTEGER NOT NULL DEFAULT 1,
+        PRIMARY KEY (profile, failed_digest)
+      )",
+        "tbl_name": "composite_target_reverts",
+        "type": "table",
+      },
+      {
+        "name": "composite_targets",
+        "sql": "CREATE TABLE composite_targets (
+        profile TEXT PRIMARY KEY,
+        desired_json TEXT,
+        previous_json TEXT,
+        last_good_json TEXT,
+        report_json TEXT,
+        last_failure_json TEXT,
+        acknowledged_json TEXT
+      )",
+        "tbl_name": "composite_targets",
+        "type": "table",
+      },
+      {
+        "name": "jobs",
+        "sql": "CREATE TABLE jobs (
+  idempotency_key TEXT PRIMARY KEY,
+  session_key TEXT NOT NULL,
+  profile_hash TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  schedule TEXT NOT NULL,
+  status TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL,
+  backoff_ms INTEGER NOT NULL DEFAULT 1000,
+  delay_until INTEGER NOT NULL DEFAULT 0,
+  lease_owner TEXT,
+  lease_until INTEGER,
+  heartbeat INTEGER,
+  stalled_counter INTEGER NOT NULL DEFAULT 0,
+  budget REAL,
+  protected INTEGER NOT NULL DEFAULT 0,
+  result TEXT,
+  error TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+)",
+        "tbl_name": "jobs",
+        "type": "table",
+      },
+      {
+        "name": "plugin_config_audit",
+        "sql": "CREATE TABLE plugin_config_audit (
+      seq INTEGER PRIMARY KEY AUTOINCREMENT, profile TEXT NOT NULL, command_id TEXT NOT NULL,
+      revision TEXT NOT NULL, fact_json TEXT NOT NULL, UNIQUE(profile, command_id))",
+        "tbl_name": "plugin_config_audit",
+        "type": "table",
+      },
+      {
+        "name": "plugin_config_intents",
+        "sql": "CREATE TABLE plugin_config_intents (
+      profile TEXT PRIMARY KEY, expected_digest TEXT NOT NULL, target_digest TEXT NOT NULL,
+      command_id TEXT NOT NULL, fact_json TEXT NOT NULL, value_json TEXT)",
+        "tbl_name": "plugin_config_intents",
+        "type": "table",
+      },
+      {
+        "name": "plugin_config_values",
+        "sql": "CREATE TABLE plugin_config_values (
+      profile TEXT NOT NULL, package_id TEXT NOT NULL, row_id TEXT NOT NULL, value_json TEXT NOT NULL,
+      PRIMARY KEY(profile, package_id, row_id))",
+        "tbl_name": "plugin_config_values",
+        "type": "table",
+      },
+      {
+        "name": "schedule_run_receipts",
+        "sql": "CREATE TABLE schedule_run_receipts (run_rowid INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, snapshot TEXT, summary TEXT, is_read INTEGER NOT NULL DEFAULT 0, schedule_id TEXT NOT NULL)",
+        "tbl_name": "schedule_run_receipts",
+        "type": "table",
+      },
+      {
+        "name": "schedule_runs",
+        "sql": "CREATE TABLE schedule_runs (
+    schedule_id TEXT NOT NULL,
+    job_key TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    outcome TEXT NOT NULL,
+    session_key TEXT,
+    ended_at INTEGER,
+    seq INTEGER,
+    reason TEXT,
+    detail TEXT,
+    progress TEXT
+  )",
+        "tbl_name": "schedule_runs",
+        "type": "table",
+      },
+      {
+        "name": "schedules",
+        "sql": "CREATE TABLE schedules (
+    id TEXT PRIMARY KEY,
+    session_key TEXT NOT NULL,
+    title TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    search_text TEXT NOT NULL DEFAULT '',
+    selector TEXT NOT NULL,
+    status TEXT NOT NULL,
+    job_key TEXT,
+    revision INTEGER NOT NULL,
+    next_run_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    target TEXT,
+    origin TEXT
+  )",
+        "tbl_name": "schedules",
+        "type": "table",
+      },
+      {
+        "name": "session_preferences",
+        "sql": "CREATE TABLE session_preferences (
+      session_key TEXT PRIMARY KEY, title TEXT, archived INTEGER NOT NULL DEFAULT 0, pinned_at INTEGER,
+      bookmarks TEXT
+    )",
+        "tbl_name": "session_preferences",
+        "type": "table",
+      },
+      {
+        "name": "session_principal_ownership",
+        "sql": "CREATE TABLE session_principal_ownership (
+          session_id TEXT PRIMARY KEY,
+          principal_id TEXT NOT NULL,
+          reservation_kind TEXT NOT NULL,
+          reservation_state TEXT NOT NULL,
+          parent_session_id TEXT,
+          boundary_seq INTEGER
+        )",
+        "tbl_name": "session_principal_ownership",
+        "type": "table",
+      },
+      {
+        "name": "session_workspaces",
+        "sql": "CREATE TABLE session_workspaces (
+        session_key TEXT PRIMARY KEY,
+        cwd TEXT NOT NULL,
+        created_at TEXT,
+        last_seq INTEGER NOT NULL DEFAULT 0,
+        generation INTEGER NOT NULL DEFAULT 0,
+        preset TEXT,
+        profile_hash TEXT,
+        title TEXT,
+        last_active_at TEXT,
+        loop_pin TEXT,
+        message_at INTEGER,
+        message_seq INTEGER NOT NULL DEFAULT 0,
+        sidebar_sort_at INTEGER NOT NULL DEFAULT 0,
+        sidebar_failed INTEGER NOT NULL DEFAULT 0,
+        sidebar_group TEXT NOT NULL DEFAULT 'unassigned',
+        sidebar_target_seq INTEGER NOT NULL DEFAULT 0
+      )",
+        "tbl_name": "session_workspaces",
+        "type": "table",
+      },
+      {
+        "name": "sidebar_versions",
+        "sql": "CREATE TABLE sidebar_versions (
+    principal_id TEXT NOT NULL, group_id TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (principal_id, group_id))",
+        "tbl_name": "sidebar_versions",
+        "type": "table",
+      },
+      {
+        "name": "sqlite_sequence",
+        "sql": "CREATE TABLE sqlite_sequence(name,seq)",
+        "tbl_name": "sqlite_sequence",
+        "type": "table",
+      },
+      {
+        "name": "workspace_binding_extra_roots",
+        "sql": "CREATE TABLE workspace_binding_extra_roots (
+        session_key TEXT PRIMARY KEY,
+        roots TEXT NOT NULL
+      )",
+        "tbl_name": "workspace_binding_extra_roots",
+        "type": "table",
+      },
+      {
+        "name": "workspace_bindings",
+        "sql": "CREATE TABLE workspace_bindings (
+        session_key TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        canonical_root TEXT NOT NULL
+      )",
+        "tbl_name": "workspace_bindings",
+        "type": "table",
+      },
+      {
+        "name": "workspace_registry",
+        "sql": "CREATE TABLE workspace_registry (
+        path TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        registered_at TEXT NOT NULL,
+        last_used_at TEXT,
+        listed INTEGER NOT NULL DEFAULT 1
+      )",
+        "tbl_name": "workspace_registry",
+        "type": "table",
+      },
+      {
+        "name": "sidebar_ownership_delete",
+        "sql": "CREATE TRIGGER sidebar_ownership_delete AFTER DELETE ON session_principal_ownership BEGIN UPDATE sidebar_versions SET revision = revision + 1 WHERE group_id IN ((SELECT sidebar_group FROM session_workspaces WHERE session_key = OLD.session_id), (SELECT 'pinned' FROM session_preferences WHERE session_key = OLD.session_id AND pinned_at IS NOT NULL))
+       AND principal_id IN (OLD.principal_id); END",
+        "tbl_name": "session_principal_ownership",
+        "type": "trigger",
+      },
+      {
+        "name": "sidebar_ownership_insert",
+        "sql": "CREATE TRIGGER sidebar_ownership_insert AFTER INSERT ON session_principal_ownership BEGIN UPDATE sidebar_versions SET revision = revision + 1 WHERE group_id IN ((SELECT sidebar_group FROM session_workspaces WHERE session_key = NEW.session_id), (SELECT 'pinned' FROM session_preferences WHERE session_key = NEW.session_id AND pinned_at IS NOT NULL))
+       AND principal_id IN (NEW.principal_id); END",
+        "tbl_name": "session_principal_ownership",
+        "type": "trigger",
+      },
+      {
+        "name": "sidebar_ownership_update",
+        "sql": "CREATE TRIGGER sidebar_ownership_update AFTER UPDATE ON session_principal_ownership WHEN OLD.reservation_state IS NOT NEW.reservation_state OR OLD.principal_id IS NOT NEW.principal_id BEGIN UPDATE sidebar_versions SET revision = revision + 1 WHERE group_id IN ((SELECT sidebar_group FROM session_workspaces WHERE session_key = NEW.session_id), (SELECT 'pinned' FROM session_preferences WHERE session_key = NEW.session_id AND pinned_at IS NOT NULL))
+       AND principal_id IN (OLD.principal_id, NEW.principal_id); END",
+        "tbl_name": "session_principal_ownership",
+        "type": "trigger",
+      },
+      {
+        "name": "sidebar_preferences_delete",
+        "sql": "CREATE TRIGGER sidebar_preferences_delete AFTER DELETE ON session_preferences WHEN OLD.archived != 0 OR OLD.pinned_at IS NOT NULL BEGIN UPDATE sidebar_versions SET revision = revision + 1
+    WHERE principal_id IN (SELECT principal_id FROM session_principal_ownership WHERE session_id = OLD.session_key)
+    AND group_id IN ((SELECT sidebar_group FROM session_workspaces WHERE session_key = OLD.session_key), CASE WHEN OLD.pinned_at IS NOT NULL THEN 'pinned' END); END",
+        "tbl_name": "session_preferences",
+        "type": "trigger",
+      },
+      {
+        "name": "sidebar_preferences_insert",
+        "sql": "CREATE TRIGGER sidebar_preferences_insert AFTER INSERT ON session_preferences WHEN NEW.archived != 0 OR NEW.pinned_at IS NOT NULL BEGIN UPDATE sidebar_versions SET revision = revision + 1
+    WHERE principal_id IN (SELECT principal_id FROM session_principal_ownership WHERE session_id = NEW.session_key)
+    AND group_id IN ((SELECT sidebar_group FROM session_workspaces WHERE session_key = NEW.session_key), CASE WHEN NEW.pinned_at IS NOT NULL THEN 'pinned' END); END",
+        "tbl_name": "session_preferences",
+        "type": "trigger",
+      },
+      {
+        "name": "sidebar_preferences_update",
+        "sql": "CREATE TRIGGER sidebar_preferences_update AFTER UPDATE ON session_preferences WHEN OLD.archived IS NOT NEW.archived OR OLD.pinned_at IS NOT NEW.pinned_at BEGIN UPDATE sidebar_versions SET revision = revision + 1
+    WHERE principal_id IN (SELECT principal_id FROM session_principal_ownership WHERE session_id = NEW.session_key)
+    AND group_id IN ((SELECT sidebar_group FROM session_workspaces WHERE session_key = NEW.session_key), CASE WHEN OLD.pinned_at IS NOT NULL OR NEW.pinned_at IS NOT NULL THEN 'pinned' END); END",
+        "tbl_name": "session_preferences",
+        "type": "trigger",
+      },
+      {
+        "name": "sidebar_session_delete",
+        "sql": "CREATE TRIGGER sidebar_session_delete AFTER DELETE ON session_workspaces BEGIN UPDATE sidebar_versions SET revision = revision + 1
+    WHERE principal_id IN (SELECT principal_id FROM session_principal_ownership WHERE session_id = OLD.session_key)
+    AND group_id IN (OLD.sidebar_group, (SELECT 'pinned' FROM session_preferences WHERE session_key = OLD.session_key AND pinned_at IS NOT NULL)); END",
+        "tbl_name": "session_workspaces",
+        "type": "trigger",
+      },
+      {
+        "name": "sidebar_session_insert",
+        "sql": "CREATE TRIGGER sidebar_session_insert AFTER INSERT ON session_workspaces BEGIN 
+    UPDATE session_workspaces SET sidebar_group = COALESCE(
+      (SELECT workspace_id FROM workspace_registry WHERE path = NEW.cwd AND listed = 1), 'unassigned') WHERE session_key = NEW.session_key;
+    UPDATE sidebar_versions SET revision = revision + 1
+    WHERE principal_id IN (SELECT principal_id FROM session_principal_ownership WHERE session_id = NEW.session_key)
+    AND group_id IN ((SELECT sidebar_group FROM session_workspaces WHERE session_key = NEW.session_key), (SELECT 'pinned' FROM session_preferences WHERE session_key = NEW.session_key AND pinned_at IS NOT NULL)); END",
+        "tbl_name": "session_workspaces",
+        "type": "trigger",
+      },
+      {
+        "name": "sidebar_session_update",
+        "sql": "CREATE TRIGGER sidebar_session_update AFTER UPDATE ON session_workspaces WHEN
+    OLD.sidebar_group IS NOT NEW.sidebar_group OR OLD.sidebar_sort_at IS NOT NEW.sidebar_sort_at OR
+    OLD.created_at IS NOT NEW.created_at OR
+    (OLD.message_seq = OLD.last_seq AND OLD.message_seq >= OLD.sidebar_target_seq) IS NOT
+    (NEW.message_seq = NEW.last_seq AND NEW.message_seq >= NEW.sidebar_target_seq) OR OLD.sidebar_failed IS NOT NEW.sidebar_failed BEGIN UPDATE sidebar_versions SET revision = revision + 1
+    WHERE principal_id IN (SELECT principal_id FROM session_principal_ownership WHERE session_id = NEW.session_key)
+    AND group_id IN (OLD.sidebar_group, NEW.sidebar_group, (SELECT 'pinned' FROM session_preferences WHERE session_key = NEW.session_key AND pinned_at IS NOT NULL)); END",
+        "tbl_name": "session_workspaces",
+        "type": "trigger",
+      },
+      {
+        "name": "sidebar_workspace_delete",
+        "sql": "CREATE TRIGGER sidebar_workspace_delete AFTER DELETE ON workspace_registry BEGIN UPDATE session_workspaces SET sidebar_group = 'unassigned' WHERE cwd = OLD.path; END",
+        "tbl_name": "workspace_registry",
+        "type": "trigger",
+      },
+      {
+        "name": "sidebar_workspace_insert",
+        "sql": "CREATE TRIGGER sidebar_workspace_insert AFTER INSERT ON workspace_registry BEGIN UPDATE session_workspaces SET sidebar_group = CASE WHEN NEW.listed = 1 THEN NEW.workspace_id ELSE 'unassigned' END WHERE cwd = NEW.path; END",
+        "tbl_name": "workspace_registry",
+        "type": "trigger",
+      },
+      {
+        "name": "sidebar_workspace_update",
+        "sql": "CREATE TRIGGER sidebar_workspace_update AFTER UPDATE ON workspace_registry WHEN OLD.path IS NOT NEW.path OR OLD.workspace_id IS NOT NEW.workspace_id OR OLD.listed IS NOT NEW.listed BEGIN UPDATE session_workspaces SET sidebar_group = COALESCE(
+      (SELECT workspace_id FROM workspace_registry WHERE path = cwd AND listed = 1), 'unassigned') WHERE cwd IN (OLD.path, NEW.path); END",
+        "tbl_name": "workspace_registry",
+        "type": "trigger",
+      },
+    ],
+    "version": 0,
+  },
+  "tables/_40agnes_2fdaemon_2fartifact-read-authority.db": {
+    "objects": [
+      {
+        "name": "artifact_read_authority_v1_lane",
+        "sql": "CREATE INDEX artifact_read_authority_v1_lane ON artifact_read_authority_v1 (session_id, lane_id)",
+        "tbl_name": "artifact_read_authority_v1",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_artifact_read_authority_v1_1",
+        "sql": null,
+        "tbl_name": "artifact_read_authority_v1",
+        "type": "index",
+      },
+      {
+        "name": "artifact_read_authority_meta",
+        "sql": "CREATE TABLE artifact_read_authority_meta (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)",
+        "tbl_name": "artifact_read_authority_meta",
+        "type": "table",
+      },
+      {
+        "name": "artifact_read_authority_v1",
+        "sql": "CREATE TABLE artifact_read_authority_v1 (session_id TEXT NOT NULL, lane_id TEXT NOT NULL, owner_id TEXT NOT NULL, sha256 TEXT NOT NULL, size INTEGER NOT NULL, mime TEXT NOT NULL, PRIMARY KEY (session_id, lane_id, sha256, mime))",
+        "tbl_name": "artifact_read_authority_v1",
+        "type": "table",
+      },
+    ],
+    "version": 0,
+  },
+  "tables/metadata_3a_40agnes_2fbase.db": {
+    "objects": [
+      {
+        "name": "sqlite_autoindex_persistence_kv_1",
+        "sql": null,
+        "tbl_name": "persistence_kv",
+        "type": "index",
+      },
+      {
+        "name": "persistence_kv",
+        "sql": "CREATE TABLE persistence_kv (namespace TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (namespace, key))",
+        "tbl_name": "persistence_kv",
+        "type": "table",
+      },
+    ],
+    "version": 0,
+  },
+}
+`;

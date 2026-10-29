@@ -4,6 +4,9 @@
   "title": "PresetDoc",
   "$ref": "#/$defs/PresetDoc",
   "$defs": {
+    "CompositionPatch": {
+      "$ref": "profile.json#/$defs/CompositionPatch"
+    },
     "RouteTable": {
       "$ref": "model.json#/$defs/RouteTable"
     },
@@ -12,6 +15,20 @@
       "additionalProperties": false,
       "required": ["name"],
       "properties": {
+        "bundles": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+          }
+        },
+        "composition": {
+          "$ref": "#/$defs/CompositionPatch"
+        },
         "name": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]{0,63}$"
@@ -51,13 +68,27 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "primary": { "$ref": "model.json#/$defs/ThinkingLevel" },
-                "escalation": { "$ref": "model.json#/$defs/ThinkingLevel" },
-                "fast": { "$ref": "model.json#/$defs/ThinkingLevel" },
-                "compaction": { "$ref": "model.json#/$defs/ThinkingLevel" },
-                "verifier": { "$ref": "model.json#/$defs/ThinkingLevel" },
-                "image": { "$ref": "model.json#/$defs/ThinkingLevel" },
-                "video": { "$ref": "model.json#/$defs/ThinkingLevel" }
+                "primary": {
+                  "$ref": "model.json#/$defs/ThinkingLevel"
+                },
+                "escalation": {
+                  "$ref": "model.json#/$defs/ThinkingLevel"
+                },
+                "fast": {
+                  "$ref": "model.json#/$defs/ThinkingLevel"
+                },
+                "compaction": {
+                  "$ref": "model.json#/$defs/ThinkingLevel"
+                },
+                "verifier": {
+                  "$ref": "model.json#/$defs/ThinkingLevel"
+                },
+                "image": {
+                  "$ref": "model.json#/$defs/ThinkingLevel"
+                },
+                "video": {
+                  "$ref": "model.json#/$defs/ThinkingLevel"
+                }
               }
             },
             "retry": {
@@ -68,10 +99,6 @@
                   "type": "integer",
                   "minimum": 1,
                   "maximum": 8
-                },
-                "backoff_ms": {
-                  "type": "integer",
-                  "minimum": 0
                 },
                 "base_delay_ms": {
                   "type": "integer",
@@ -88,6 +115,9 @@
               "minimum": 1,
               "maximum": 9007199254740991,
               "description": "Per-request output allowance, independent of the model catalog capacity. Omission preserves the selected provider default."
+            },
+            "system_prompt": {
+              "$ref": "agnes-v1.json#/$defs/SystemPromptConfig"
             }
           }
         },
@@ -98,8 +128,21 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "max_parallel": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64
+            },
             "core": {
               "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$"
+              }
+            },
+            "allow": {
+              "type": "array",
+              "maxItems": 256,
               "items": {
                 "type": "string",
                 "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$"
@@ -262,6 +305,14 @@
         "sandbox": {
           "type": "object",
           "additionalProperties": false,
+          "not": {
+            "type": "object",
+            "required": ["level", "on_unavailable"],
+            "properties": {
+              "level": { "const": "L0" },
+              "on_unavailable": { "const": "allow-if-unimplemented" }
+            }
+          },
           "properties": {
             "level": {
               "enum": ["L0", "L1", "L2"]
@@ -270,7 +321,7 @@
               "type": "boolean"
             },
             "on_unavailable": {
-              "enum": ["deny", "allow"]
+              "enum": ["deny", "allow", "allow-if-unimplemented"]
             },
             "extra_paths": {
               "type": "array",
@@ -283,6 +334,10 @@
               "items": {
                 "type": "string"
               }
+            },
+            "loopback_serve": {
+              "type": "boolean",
+              "description": "Host-revocable loopback serving on macOS L1 via an inherited private listener; all new binds and outbound connections remain denied. Applications consume AGH_LOOPBACK_FD and AGH_LOOPBACK_URL. Requires on_unavailable deny."
             },
             "network_allow": {
               "type": "array",
@@ -350,6 +405,11 @@
             "no_progress_steps": {
               "type": "integer",
               "minimum": 1
+            },
+            "progress_check_steps": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Turns progress checks on: model steps between progress checks in a turn that runs under a prompt limit or unattended (20 is a typical value). Absent or 0, the default: no progress checks."
             }
           }
         },
@@ -530,7 +590,7 @@
           "additionalProperties": false,
           "properties": {
             "unknown_child": {
-              "enum": ["model", "park", "human"]
+              "enum": ["model", "human"]
             }
           }
         },
@@ -629,6 +689,129 @@
             "poll_ms": {
               "type": "integer",
               "minimum": 1
+            }
+          }
+        },
+        "providers": {
+          "description": "The preset's provider selections: one providers.<kind> table, the only selection form. A kind named here replaces the profile and bundle choice for sessions using the preset.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tool-runtime": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["provider"],
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              }
+            },
+            "tool-policy": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["provider"],
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              }
+            },
+            "loop": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["provider", "version"],
+              "properties": {
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                },
+                "provider": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                }
+              }
+            },
+            "model-adapter": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["provider"],
+              "properties": {
+                "provider": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    {
+                      "type": "array",
+                      "maxItems": 256,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512,
+                        "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "compaction": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "provider": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512,
+                      "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                    }
+                  },
+                  "required": ["provider"]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "persistence": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                }
+              },
+              "required": ["provider"]
+            },
+            "sandbox": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$"
+                }
+              },
+              "required": ["provider"]
             }
           }
         }

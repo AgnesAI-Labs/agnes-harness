@@ -1,0 +1,11 @@
+# Permission overlay, explicit opt-in: the resolved full-access permission routes trusted permission
+# decisions through the central automatic rule and records exact, revocable authority. Questions,
+# plan/fact checks and hard secret/integrity denials remain authoritative. A memory provider keeps its
+# tree denied where an OS boundary works and runs commands unconfined where none is usable;
+# sandbox.required still refuses. Merged after a recipe; it writes permission-axis fields only.
+name: permission-full-access
+approval: { command_policy: [] }
+sandbox: { level: L0, on_unavailable: allow }
+subagent: { isolation: worktree }
+providers:
+  tool-policy: { provider: full-access }

@@ -1,0 +1,27 @@
+{
+  "name": "@fixture/report-example",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@agnes/plugin-helper": "0.2.0"
+  },
+  "agnes": {
+    "metadata": {
+      "displayName": "Report example",
+      "summary": "Synthetic report",
+      "description": "Synthetic report",
+      "exampleOf": "@agnes/plugin-helper"
+    },
+    "plugins": [
+      {
+        "id": "ext:fixture.report",
+        "export": "reportPlugin",
+        "apiRange": "^5.0.0",
+        "inject": [],
+        "runtime": "in-process"
+      }
+    ]
+  },
+  "license": "Apache-2.0",
+  "exports": "./index.mjs"
+}

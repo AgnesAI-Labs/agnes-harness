@@ -1,5 +1,5 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
 import { describe, expect, it, vi } from 'vitest'
-import { presetDefaults } from '../src/step/preset.js'
 import { fakeProvider } from './helpers/fake-provider.js'
 import { openSession } from './helpers/open-session.js'
 

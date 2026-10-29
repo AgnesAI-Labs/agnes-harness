@@ -1,5 +1,5 @@
+import { foldEvents } from '@agnes/core-ledger/reduce/reducer'
 import { describe, expect, it } from 'vitest'
-import { foldEvents } from '../src/reduce/reducer.js'
 import { toolHeavyLedger } from '../testkit/tool-heavy-ledger.js'
 
 describe('the tool-heavy synthetic ledger', () => {
@@ -8,7 +8,7 @@ describe('the tool-heavy synthetic ledger', () => {
     expect(rows.map((row) => row.seq)).toEqual(rows.map((_, i) => i + 1))
     const state = foldEvents(rows)
     expect(state.toolCalls.size).toBe(120)
-    expect(state.decisions.size).toBe(12)
+    expect(state.registers.decisionStates.size).toBe(12)
     expect(state.pendingEffects.size).toBe(0)
     expect(state.lastTurn.get('main')).toBe(3)
     expect(new Set(rows.map((row) => row.id)).size).toBe(rows.length)

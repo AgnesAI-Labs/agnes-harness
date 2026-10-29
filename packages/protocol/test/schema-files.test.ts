@@ -9,7 +9,12 @@ describe('session-v1.json', () => {
   it('enum of type equals EVENT_TYPES and pattern equals EXT_EVENT_PATTERN', () => {
     const anyOf = doc.$defs.EventEnvelope.properties.type.anyOf
     expect(anyOf[0].enum).toEqual([...EVENT_TYPES])
-    expect(anyOf[1].pattern).toBe(EXT_EVENT_PATTERN_SOURCE)
+    expect(anyOf[1].$ref).toBe('#/$defs/ExtensionEventType')
+    expect(doc.$defs.ExtensionEventType).toMatchObject({
+      type: 'string',
+      maxLength: 128,
+      pattern: EXT_EVENT_PATTERN_SOURCE,
+    })
   })
   // ULID_PATTERN was the one duplicated constant in constants.ts that nothing pinned. Its two
   // siblings (EVENT_TYPES / EXT_EVENT_PATTERN_SOURCE) are bound character for character to the schema

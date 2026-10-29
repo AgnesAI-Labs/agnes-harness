@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agnes.ai/schema/extension-manifest.json",
-  "title": "agnes.extension.json (\u89c4\u683c \u00a719.3)",
+  "title": "agnes.extension.json (规格 §19.3)",
   "$ref": "#/$defs/ExtensionManifest",
   "$defs": {
     "Capabilities": {
@@ -45,13 +45,8 @@
           "type": "boolean"
         },
         "ui": {
-          "type": "array",
-          "uniqueItems": true,
-          "maxItems": 8,
-          "items": {
-            "enum": ["skin", "client"]
-          },
-          "description": "UI contributions this package makes; declaring 'skin' requires a matching contributes.skins entry, declaring 'client' requires contributes.client."
+          "type": "boolean",
+          "description": "The package contributes browser UI (skins, a client module) or needs the UI surface. contributes.skins and contributes.client require it."
         },
         "resources": {
           "type": "array",
@@ -61,32 +56,104 @@
         },
         "network.publicRead": {
           "type": "boolean",
-          "description": "Anonymous bounded public GET via net.fetchPublic, independent of network.hosts."
+          "description": "Anonymous bounded public GET via net.fetchPublic, independent of the network host list."
         },
         "network": {
-          "oneOf": [
-            {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[A-Za-z0-9*.-]+(:[0-9]{1,5})?$"
+          },
+          "description": "Host patterns the package may reach. An empty list declares no network."
+        },
+        "exec": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "secrets": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "credentials": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "filesystem": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "read": {
               "type": "array",
-              "maxItems": 0,
+              "maxItems": 128,
+              "uniqueItems": true,
               "items": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
               }
             },
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["hosts"],
-              "properties": {
-                "hosts": {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "pattern": "^[a-z0-9.-]+(:[0-9]{1,5})?$"
-                  }
-                }
+            "write": {
+              "type": "array",
+              "maxItems": 128,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
               }
             }
-          ]
+          }
+        },
+        "model": {
+          "type": "boolean"
+        },
+        "device": {
+          "type": "boolean"
+        },
+        "childAgents": {
+          "type": "boolean"
+        },
+        "wake": {
+          "type": "boolean",
+          "description": "Bound notifications to targets created by admitted session invocations."
+        },
+        "store": {
+          "type": "boolean",
+          "description": "Bounded transactional JSON state in the plugin owner namespace."
+        },
+        "uiData": {
+          "description": "Exact UI data-source permissions. Trust shows each value as the atom uiData:<value>. The capability hash covers this list; resolution accepts only an exact atom, never a glob.",
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+$"
+          }
         },
         "artifacts": {
           "type": "boolean"
@@ -109,6 +176,22 @@
             "$ref": "projection.json#/$defs/ProjectionCapability"
           },
           "description": "Names must be distinct; validateExtensionManifest enforces name uniqueness even when descriptors differ."
+        },
+        "streams": {
+          "type": "array",
+          "items": {
+            "$ref": "plugin-stream.json#/$defs/StreamDeclaration"
+          },
+          "maxItems": 64,
+          "uniqueItems": true
+        },
+        "managedServices": {
+          "type": "array",
+          "items": {
+            "$ref": "managed-service.json#/$defs/ManagedServiceDescriptor"
+          },
+          "maxItems": 16,
+          "uniqueItems": true
         }
       }
     },
@@ -143,8 +226,12 @@
             "additionalProperties": false,
             "required": ["light", "dark"],
             "properties": {
-              "light": { "$ref": "#/$defs/SkinTokenValue" },
-              "dark": { "$ref": "#/$defs/SkinTokenValue" }
+              "light": {
+                "$ref": "#/$defs/SkinTokenValue"
+              },
+              "dark": {
+                "$ref": "#/$defs/SkinTokenValue"
+              }
             }
           }
         }
@@ -234,7 +321,79 @@
         "publicConfig": {
           "description": "Optional browser-visible, package-authored JSON configuration. This is immutable manifest metadata only; runtime configuration, credentials, secret references and backend row config must never be placed here.",
           "type": "object",
-          "additionalProperties": { "$ref": "session-v1.json#/$defs/JsonValue" }
+          "additionalProperties": {
+            "$ref": "session-v1.json#/$defs/JsonValue"
+          }
+        },
+        "intelligentComponents": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/UiComponentDeclaration"
+          }
+        },
+        "requiresBackendRows": {
+          "description": "Optional presentation dependencies. Mount this client only while every named backend row is active in the current observed runtime target. This grants no backend authority; absent or unobserved dependencies fail closed.",
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[^\\u0000-\\u001f]+$"
+          }
+        },
+        "lifetime": {
+          "enum": ["profile", "session"],
+          "description": "Defaults to session for legacy modules. Profile contributions always follow current activation, independently of the selected session."
+        },
+        "homeEntries": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/HomeContributionDeclaration"
+          }
+        },
+        "examplePages": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9.-]*$",
+            "maxLength": 128
+          }
+        },
+        "assets": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "streams": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$"
+          },
+          "maxItems": 64,
+          "uniqueItems": true
+        },
+        "presentationRoles": {
+          "type": "array",
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/PresentationRole"
+          }
         }
       }
     },
@@ -259,6 +418,14 @@
           "type": "string",
           "pattern": "^\\./"
         },
+        "liveResources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": ["skills"]
+          },
+          "description": "Live resource kinds consumed by this extension row. Resource refresh preserves pinned plugin code and reloads every declaring row."
+        },
         "capabilities": {
           "$ref": "#/$defs/Capabilities"
         },
@@ -269,9 +436,13 @@
             "skins": {
               "type": "array",
               "maxItems": 8,
-              "items": { "$ref": "#/$defs/SkinContribution" }
+              "items": {
+                "$ref": "#/$defs/SkinContribution"
+              }
             },
-            "client": { "$ref": "#/$defs/ClientContribution" }
+            "client": {
+              "$ref": "#/$defs/ClientContribution"
+            }
           }
         },
         "provides": {
@@ -305,6 +476,9 @@
             }
           },
           "required": ["supports"]
+        },
+        "metadata": {
+          "$ref": "#/$defs/PluginMetadata"
         }
       }
     },
@@ -316,6 +490,613 @@
     },
     "SeamName": {
       "$ref": "profile.json#/$defs/SeamName"
+    },
+    "UiComponentDeclaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "propsSchema", "maxPropsBytes", "fallback", "accessibility"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 256,
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)+@[1-9][0-9]*$"
+        },
+        "propsSchema": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "session-v1.json#/$defs/JsonValue"
+              }
+            }
+          ]
+        },
+        "maxPropsBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16384
+        },
+        "fallback": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "accessibility": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["label", "keyboard"],
+          "properties": {
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "keyboard": {
+              "const": true
+            }
+          }
+        }
+      }
+    },
+    "PluginMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["displayName", "summary", "description"],
+      "properties": {
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^(?!\\s)(?![\\s\\S]*[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029])(?:(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])|[^\\uD800-\\uDFFF]){1,80}(?<!\\s)$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 480,
+          "pattern": "^(?!\\s)(?![\\s\\S]*[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029])(?:(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])|[^\\uD800-\\uDFFF]){1,240}(?<!\\s)$"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2400,
+          "pattern": "^(?!\\s)(?![\\s\\S]*[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029])(?:(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])|[^\\uD800-\\uDFFF]){1,1200}(?<!\\s)$"
+        },
+        "docsUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "format": "agnes-plugin-docs-url",
+          "pattern": "^(?!\\s)(?![\\s\\S]*[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029])(?:(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])|[^\\uD800-\\uDFFF]){1,2048}(?<!\\s)$"
+        },
+        "samplePrompt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["en"],
+          "properties": {
+            "en": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1200,
+              "pattern": "^(?!\\s)(?![\\s\\S]*[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029])(?:(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])|[^\\uD800-\\uDFFF]){1,600}(?<!\\s)$"
+            },
+            "zh-CN": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1200,
+              "pattern": "^(?!\\s)(?![\\s\\S]*[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029])(?:(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])|[^\\uD800-\\uDFFF]){1,600}(?<!\\s)$"
+            }
+          }
+        },
+        "experimental": {
+          "type": "boolean"
+        },
+        "locales": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "en": {
+              "$ref": "#/$defs/PluginMetadataLocale"
+            },
+            "zh-CN": {
+              "$ref": "#/$defs/PluginMetadataLocale"
+            }
+          }
+        },
+        "exampleOf": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+        },
+        "pageEntry": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9.-]*$",
+          "maxLength": 128
+        }
+      }
+    },
+    "PluginMetadataLocale": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^(?!\\s)(?![\\s\\S]*[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029])(?:(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])|[^\\uD800-\\uDFFF]){1,80}(?<!\\s)$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 480,
+          "pattern": "^(?!\\s)(?![\\s\\S]*[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029])(?:(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])|[^\\uD800-\\uDFFF]){1,240}(?<!\\s)$"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2400,
+          "pattern": "^(?!\\s)(?![\\s\\S]*[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029])(?:(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])|[^\\uD800-\\uDFFF]){1,1200}(?<!\\s)$"
+        },
+        "docsUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "format": "agnes-plugin-docs-url",
+          "pattern": "^(?!\\s)(?![\\s\\S]*[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029])(?:(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])|[^\\uD800-\\uDFFF]){1,2048}(?<!\\s)$"
+        }
+      }
+    },
+    "HomeContributionDeclaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "placement"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9.-]*$",
+          "maxLength": 128
+        },
+        "placement": {
+          "enum": ["primary", "secondary"]
+        },
+        "navigation": {
+          "description": "Optional eager navigation metadata. Profile primary pages can load their module on first open; legacy declarations retain eager module loading.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["title", "icon", "order"],
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "titles": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "icon": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "order": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    },
+    "PluginLocalizedText": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["en"],
+      "properties": {
+        "en": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16384
+        },
+        "zh-CN": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16384
+        }
+      }
+    },
+    "PluginProvide": {
+      "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui", "bundle", "service"]
+    },
+    "AgentRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 384,
+      "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)#[a-z][a-z0-9-]{0,63}$"
+    },
+    "BundleLaunch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "description", "preset"],
+      "properties": {
+        "title": {
+          "$ref": "#/$defs/PluginLocalizedText"
+        },
+        "description": {
+          "$ref": "#/$defs/PluginLocalizedText"
+        },
+        "preset": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "pages": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9.-]*$"
+          }
+        },
+        "prompt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["text", "mode"],
+          "properties": {
+            "text": {
+              "$ref": "#/$defs/PluginLocalizedText"
+            },
+            "mode": {
+              "const": "draft"
+            }
+          }
+        }
+      }
+    },
+    "ApplicationTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "defaultAgent": {
+          "$ref": "#/$defs/AgentRef"
+        },
+        "agents": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/AgentRef"
+          }
+        },
+        "delegableAgents": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/AgentRef" }
+        },
+        "delegatedFullAccess": {
+          "const": true,
+          "description": "Opt in: while the coordinating session runs under full access, roles from delegableAgents get Core's automatic full-access answer for tool permission gates. Business signatures and plugin gates stay refused for roles; a switch away from full access revokes it. Requires non-empty delegableAgents."
+        },
+        "brand": {
+          "$ref": "#/$defs/ApplicationBrand"
+        },
+        "presentation": {
+          "$ref": "#/$defs/ApplicationPresentation"
+        },
+        "workbench": {
+          "$ref": "#/$defs/ApplicationWorkbench"
+        }
+      }
+    },
+    "DeclaredAgent": {
+      "description": "Static projection of a Bundle launch declaration; not an author-owned execution object.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "launch"],
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/AgentRef"
+        },
+        "launch": {
+          "$ref": "#/$defs/BundleLaunch"
+        }
+      }
+    },
+    "PresentationRole": {
+      "enum": ["navigation", "conversation", "composer", "goal", "interaction", "deliverables"]
+    },
+    "ApplicationAsset": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^(?:\\./)?[A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*\\.(?:png|jpg|jpeg|webp|gif|ico)$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 131072
+        },
+        "mime": {
+          "enum": ["image/png", "image/jpeg", "image/webp", "image/gif", "image/x-icon"]
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": ["path", "size", "mime", "sha256"]
+    },
+    "ApplicationBrand": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/PluginLocalizedText"
+        },
+        "title": {
+          "$ref": "#/$defs/PluginLocalizedText"
+        },
+        "assistantName": {
+          "$ref": "#/$defs/PluginLocalizedText"
+        },
+        "mark": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^(?:\\./)?[A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*\\.(?:png|jpg|jpeg|webp|gif|ico)$",
+          "description": "Package-relative raster asset; inspect and immutable package integrity bind its bytes, length, type and digest."
+        },
+        "favicon": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^(?:\\./)?[A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*\\.(?:png|jpg|jpeg|webp|gif|ico)$",
+          "description": "Package-relative raster asset; inspect and immutable package integrity bind its bytes, length, type and digest."
+        }
+      },
+      "required": []
+    },
+    "ApplicationRoleTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": ["packageId", "clientId"]
+    },
+    "ApplicationPresentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "skin": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "home": {
+          "$ref": "#/$defs/ApplicationPageRef"
+        },
+        "navigation": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "entries": {
+              "type": "array",
+              "maxItems": 64,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/ApplicationPageRef"
+              }
+            },
+            "hideBuiltin": {
+              "type": "array",
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": {
+                "enum": ["agents", "business-agents", "automation", "schedules", "triggers", "plugins"]
+              }
+            }
+          },
+          "required": []
+        },
+        "roles": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "navigation": {
+              "$ref": "#/$defs/ApplicationRoleTarget"
+            },
+            "conversation": {
+              "$ref": "#/$defs/ApplicationRoleTarget"
+            },
+            "composer": {
+              "$ref": "#/$defs/ApplicationRoleTarget"
+            },
+            "goal": {
+              "$ref": "#/$defs/ApplicationRoleTarget"
+            },
+            "interaction": {
+              "$ref": "#/$defs/ApplicationRoleTarget"
+            },
+            "deliverables": {
+              "$ref": "#/$defs/ApplicationRoleTarget"
+            }
+          },
+          "required": []
+        }
+      },
+      "required": []
+    },
+    "ApplicationPageRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)#[a-z][a-z0-9.-]{0,127}$"
+    },
+    "ApplicationWorkbench": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "includes": {
+          "type": "array",
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": { "enum": ["pages", "tools", "signatures", "reports"] }
+        },
+        "tabs": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/ApplicationPanelTab"
+          }
+        },
+        "actions": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "$ref": "#/$defs/ApplicationWorkAction"
+          }
+        },
+        "scenarios": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/ApplicationWorkbenchText"
+          }
+        }
+      },
+      "required": []
+    },
+    "ApplicationPanelTab": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$",
+          "maxLength": 64
+        },
+        "title": {
+          "$ref": "#/$defs/ApplicationWorkbenchText"
+        },
+        "icon": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "order": {
+          "type": "integer",
+          "minimum": -100,
+          "maximum": 100
+        },
+        "slot": {
+          "const": "workbench.panel"
+        },
+        "view": {
+          "enum": ["page", "signatures", "evidence"]
+        },
+        "page": {
+          "$ref": "#/$defs/ApplicationPageRef"
+        },
+        "when": {
+          "enum": ["session", "object"]
+        }
+      },
+      "required": ["id", "title", "order", "slot", "view"]
+    },
+    "ApplicationWorkAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$",
+          "maxLength": 64
+        },
+        "title": {
+          "$ref": "#/$defs/ApplicationWorkbenchText"
+        },
+        "agent": {
+          "$ref": "#/$defs/AgentRef"
+        },
+        "prompt": {
+          "$ref": "#/$defs/ApplicationWorkbenchText"
+        },
+        "focusTab": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$",
+          "maxLength": 64
+        },
+        "object": {
+          "$ref": "#/$defs/ApplicationWorkObject"
+        }
+      },
+      "required": ["id", "title", "prompt"]
+    },
+    "ApplicationWorkObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z][A-Za-z0-9.-]*$"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": ["type", "id"]
+    },
+    "ApplicationWorkbenchText": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["en"],
+      "properties": {
+        "en": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "zh-CN": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      }
     }
   }
 }

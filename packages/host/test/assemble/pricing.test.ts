@@ -2,14 +2,14 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
+import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import { MemoryPackageLoader, type PackageModule } from '@agnes/host-extensions/assemble/packages'
+import { type AuditEvent, type AuditSink, createMemoryAudit } from '@agnes/host-infrastructure/audit'
+import { CREDITS_PER_USD_LIMIT, readCreditsPerUsd } from '@agnes/host-providers/assemble/provider'
 import type { ModelRecord, RouteDecl } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
-import { MemoryPackageLoader, type PackageModule } from '../../src/assemble/packages.js'
-import { CREDITS_PER_USD_LIMIT, readCreditsPerUsd } from '../../src/assemble/provider.js'
-import { type AssembleDeps, assemble } from '../../src/assemble.js'
-import { type AuditEvent, type AuditSink, createMemoryAudit } from '../../src/audit.js'
-import { resolveProfile } from '../../src/profile/resolve.js'
-import { attachTestSeamPlugins } from '../../testkit/cordis-seams.js'
+import { type AssembleDeps, assemble } from '../../src/runtime/assemble/assemble.js'
+import { attachTestSeamPlugins, seamFactories } from '../../testkit/cordis-seams.js'
 
 /**
  * What a delivered assembly denominates its ledger in.
@@ -43,20 +43,36 @@ const env = {
   now: '2026-09-09T00:00:00Z',
 }
 const lockPkgs = {
-  '@agnes/ai': { version: '0.1.0', integrity: 'sha512-a', trust: 'builtin' as const, enabled: true },
-  '@agnes/base': { version: '0.1.0', integrity: 'sha512-b', trust: 'builtin' as const, enabled: true },
-  '@agnes/code': { version: '0.1.0', integrity: 'sha512-c', trust: 'builtin' as const, enabled: true },
+  '@agnes/ai': {
+    version: '0.1.0',
+    source: { type: 'builtin' as const, ref: 'builtin' },
+    integrity: 'builtin:0.1.0',
+    trust: 'builtin' as const,
+    enabled: true,
+  },
+  '@agnes/base': {
+    version: '0.1.0',
+    source: { type: 'builtin' as const, ref: 'builtin' },
+    integrity: 'builtin:0.1.0',
+    trust: 'builtin' as const,
+    enabled: true,
+  },
+  '@agnes/code': {
+    version: '0.1.0',
+    source: { type: 'builtin' as const, ref: 'builtin' },
+    integrity: 'builtin:0.1.0',
+    trust: 'builtin' as const,
+    enabled: true,
+  },
 }
 const SEAM_KEYS = [
   'approval',
   'checkpoint',
-  'ledger',
-  'sandbox',
+  'billing',
   'verifier',
   'repair',
   'artifacts',
   'principals',
-  'harness',
 ] as const
 
 function modules(): Record<string, PackageModule> {
@@ -64,17 +80,7 @@ function modules(): Record<string, PackageModule> {
   const result: Record<string, PackageModule> = {
     '@agnes/base': {
       id: '@agnes/base',
-      seams: Object.fromEntries(
-        SEAM_KEYS.map((n) => [
-          n,
-          n === 'sandbox'
-            ? async (ctx: { profile: { workspaceRoot: string } }) => ({
-                ...seams.sandbox,
-                fsPolicy: () => testFsPolicy(realpathSync.native(ctx.profile.workspaceRoot)),
-              })
-            : async () => seams[n],
-        ]),
-      ),
+      ...seamFactories(Object.fromEntries(SEAM_KEYS.map((n) => [n, async () => seams[n]]))),
       operations: {},
       presets: { base: { name: 'base' } },
     },
@@ -96,7 +102,8 @@ const profileFor = (limits?: Record<string, number>) =>
       lock: { packages: lockPkgs },
       user: {
         name: 'local-dev',
-        provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [ROUTE] },
+        presets: { default: 'standard', allowed: ['standard'] },
+        provider: { package: '@agnes/ai', routes: [ROUTE] },
         ...(limits ? { limits } : {}),
       },
     },

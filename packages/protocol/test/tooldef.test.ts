@@ -29,12 +29,28 @@ describe('tooldef', () => {
   it('accepts the base read tool', () => {
     const r = validateToolDef(def)
     expect(r.ok, r.ok ? '' : JSON.stringify(r.errors)).toBe(true)
+    expect(
+      validateToolDef({
+        ...def,
+        meta: {
+          ...meta,
+          presentation: {
+            title: 'Read document',
+            description: 'Inspect the selected document',
+            summary: 'Review requested source',
+          },
+        },
+      }).ok,
+    ).toBe(true)
+    expect(
+      validateToolDef({ ...def, meta: { ...meta, presentation: { title: '', description: 'Read' } } }).ok,
+    ).toBe(false)
   })
-  it('rejects meta missing one of the eight keys', () => {
-    const { deferLoading: _d, ...seven } = meta
-    const r = validateToolDef({ ...def, meta: seven })
+  it('rejects meta missing a required execution flag', () => {
+    const { isConcurrencySafe: _flag, ...missingFlag } = meta
+    const r = validateToolDef({ ...def, meta: missingFlag })
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.errors[0]).toMatchObject({ code: 'MISSING', key: 'deferLoading' })
+    if (!r.ok) expect(r.errors[0]).toMatchObject({ code: 'MISSING', key: 'isConcurrencySafe' })
   })
   // Two different rejection reasons. Asserting only `.ok` would let either one quietly start
   // failing for the other's reason.
@@ -58,16 +74,21 @@ describe('tooldef', () => {
     })
     expect(r.ok, r.ok ? '' : JSON.stringify(r.errors)).toBe(true)
   })
-  // The trap this schema creates, pinned so nobody meets it in a debugger instead: an in-process
-  // ToolMeta spells "no declaration" as `undefined`, and JSON.stringify DROPS keys whose value is
-  // undefined. Serializing one straight into validateToolDef fails on MISSING, not on shape.
-  // Anything putting a ToolDef on the wire has to map undefined to null first.
-  it('a bare JSON.stringify of an in-process ToolMeta fails, and mapping undefined to null fixes it', () => {
+  // Optional declarations may be omitted or null on the wire; required execution flags may not.
+  it('accepts omitted or null optional metadata while preserving required execution flags', () => {
     const inProcess = { ...meta, costHint: undefined, deferLoading: undefined, requiresApproval: undefined }
     const naive = JSON.parse(JSON.stringify({ ...def, meta: inProcess }))
-    const bad = validateToolDef(naive)
-    expect(bad.ok).toBe(false)
-    if (!bad.ok) expect(bad.errors[0]).toMatchObject({ code: 'MISSING' })
+    expect(validateToolDef(naive).ok).toBe(true)
+    expect(naive.meta).not.toHaveProperty('costHint')
+    expect(naive.meta).not.toHaveProperty('deferLoading')
+    expect(naive.meta).not.toHaveProperty('requiresApproval')
+    expect(naive.meta).toMatchObject({
+      isReadOnly: true,
+      isDestructive: false,
+      isConcurrencySafe: true,
+      isOpenWorld: false,
+      replay: 'safe',
+    })
     const mapped = {
       ...def,
       meta: { ...inProcess, costHint: null, deferLoading: null, requiresApproval: null },
@@ -79,9 +100,7 @@ describe('tooldef', () => {
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.errors[0]).toMatchObject({ code: 'UNKNOWN_KEY', key: 'execute' })
   })
-  // deferLoading: null is documented as "the package default, which the MCP importer reads as
-  // true". Nothing implements that yet, so this pins what the schema alone promises: the value is
-  // accepted and carries no default of its own. The importer is what will make null mean true.
+  // The schema accepts null without inserting a default; discovery owns its runtime meaning.
   it('deferLoading null is accepted and is not yet a default of any kind', () => {
     expect(validateToolDef({ ...def, meta: { ...meta, deferLoading: null } }).ok).toBe(true)
     const doc = JSON.parse(readFileSync(new URL('../schema/tooldef.json', import.meta.url), 'utf8')) as {

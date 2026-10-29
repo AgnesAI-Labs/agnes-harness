@@ -12,6 +12,18 @@
   "agnes": {
     "extensions": [
       "./src/extensions/code-mode"
+    ],
+    "plugins": [
+      {
+        "id": "system-prompt:default",
+        "export": "systemPromptPlugin",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "providers"
+        ],
+        "runtime": "in-process",
+        "default": true
+      }
     ]
   },
   "scripts": {
@@ -25,14 +37,15 @@
   },
   "devDependencies": {
     "@agnes/base": "workspace:*",
-    "@agnes/core": "workspace:*",
     "@agnes/extension-api": "workspace:*",
-    "@agnes/host": "workspace:*",
-    "@agnes/protocol": "workspace:*"
+    "@agnes/protocol": "workspace:*",
+    "@agnes/host-infrastructure": "workspace:*"
   },
   "dependencies": {
     "@sinclair/typebox": "0.34.33",
-    "yaml": "2.9.0"
+    "yaml": "2.9.0",
+    "@agnes/core": "workspace:*",
+    "@agnes/plugin-runtime": "workspace:*"
   },
   "license": "Apache-2.0"
 }

@@ -7,22 +7,22 @@
       "maxLength": 4096,
       "type": "string"
     },
+    "save_to": {
+      "minLength": 1,
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "max_edge": {
+      "minimum": 8,
+      "maximum": 1456,
+      "type": "integer"
+    },
     "offset": {
       "minimum": 1,
       "type": "integer"
     },
     "limit": {
       "minimum": 1,
-      "type": "integer"
-    },
-    "saveTo": {
-      "minLength": 1,
-      "maxLength": 4096,
-      "type": "string"
-    },
-    "max_edge": {
-      "minimum": 64,
-      "maximum": 1456,
       "type": "integer"
     }
   },

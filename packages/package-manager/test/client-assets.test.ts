@@ -1,7 +1,15 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  truncateSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { checkManifest, type ExtensionManifest } from '@agnes/extension-api'
+import { bundledPackageJson, checkManifest, type ExtensionManifest } from '@agnes/extension-api'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   CLIENT_ASSET_EXTENSIONS,
@@ -15,9 +23,24 @@ import {
 } from '../src/index.js'
 import { inspectStaged } from '../src/inspect.js'
 import { snapshotHash } from '../src/integrity.js'
-import { readManifestIn } from '../src/manifest.js'
+import { readBundledManifest } from '../src/manifest.js'
 
 const roots: string[] = []
+const missingClientFile = (entry: string) =>
+  expect.objectContaining({
+    code: 'E_PACKAGE_STATE',
+    detail: expect.objectContaining({
+      reason: 'entry-escape',
+      diagnostics: [
+        expect.objectContaining({
+          code: 'missing-required-file',
+          path: 'package.json',
+          field: 'entry',
+          name: entry,
+        }),
+      ],
+    }),
+  })
 function makePackage(): string {
   const dir = mkdtempSync(join(tmpdir(), 'agnes-client-'))
   roots.push(dir)
@@ -31,7 +54,7 @@ function manifestWith(client: unknown, ui: unknown = ['client']): ExtensionManif
   return {
     id: 'agnes/example',
     version: '1.0.0',
-    apiRange: '^1.1',
+    apiRange: '^5.0.0',
     entry: './index.mjs',
     capabilities: { ui },
     ...(client === undefined ? {} : { contributes: { client } }),
@@ -62,6 +85,17 @@ describe('client asset resolution', () => {
     expect(resolved?.entryPath).toBe(realpathSync(join(dir, 'dist', 'client', 'index.js')))
     // styles 保序，与声明顺序一致。
     expect(resolved?.stylePaths).toEqual(styles.map((p) => realpathSync(join(dir, p))))
+  })
+  it('validates declared scene resources without accepting traversal, scripts as models or oversized assets', () => {
+    const dir = makePackage()
+    const { entry } = writeClientFiles(dir)
+    writeFileSync(join(dir, 'scene.glb'), Buffer.from([1, 2, 3]))
+    expect(resolveClientAssets(dir, manifestWith({ entry, assets: ['scene.glb'] }))?.entryPath).toBeTruthy()
+    expect(() => resolveClientAssets(dir, manifestWith({ entry, assets: ['../scene.glb'] }))).toThrow()
+    expect(() => resolveClientAssets(dir, manifestWith({ entry, assets: ['scene.html'] }))).toThrow()
+    writeFileSync(join(dir, 'large.glb'), '')
+    truncateSync(join(dir, 'large.glb'), 32 * 1024 * 1024 + 1)
+    expect(() => resolveClientAssets(dir, manifestWith({ entry, assets: ['large.glb'] }))).toThrow('cap')
   })
   it('accepts ./-prefixed paths and reports no client when none is declared', () => {
     const dir = makePackage()
@@ -118,7 +152,21 @@ describe('client asset resolution', () => {
     writeFileSync(join(dir, 'dist', 'client', 'entry.mjs'), 'export {}\n')
     expect(resolveClientAssets(dir, manifestWith({ entry: 'dist/client/entry.mjs' }))).toBeDefined()
     // `.map` may be served as a transitive source-map resource, but it cannot be declared as entry/style.
-    expect(CLIENT_ASSET_EXTENSIONS).toEqual(['js', 'mjs', 'css', 'map'])
+    expect(CLIENT_ASSET_EXTENSIONS).toEqual([
+      'js',
+      'mjs',
+      'css',
+      'map',
+      'gltf',
+      'glb',
+      'bin',
+      'png',
+      'jpg',
+      'jpeg',
+      'webp',
+      'ktx2',
+      'wasm',
+    ])
   })
   it('rejects a single file over the byte cap and allows exactly the cap', () => {
     const dir = makePackage()
@@ -143,7 +191,7 @@ describe('client asset resolution', () => {
   it('rejects an entry that does not exist in the install tree', () => {
     const dir = makePackage()
     expect(() => resolveClientAssets(dir, manifestWith({ entry: 'dist/client/missing.js' }))).toThrow(
-      /cannot be resolved/,
+      missingClientFile('dist/client/missing.js'),
     )
   })
   it('rejects an entry that only reaches the package through a symlink', () => {
@@ -156,24 +204,26 @@ describe('client asset resolution', () => {
       /escapes the directory/,
     )
   })
-  it('makes readManifestIn fail the package when declared client files are missing', () => {
-    // 运行时读取路径（readManifestIn → checkManifest → resolveClientAssets）与 staging 走同一道门。
+  it('makes readBundledManifest fail the package when declared client files are missing', () => {
+    // 运行时读取路径（readBundledManifest → checkManifest → resolveClientAssets）与 staging 走同一道门。
     const dir = makePackage()
     writeFileSync(join(dir, 'index.mjs'), 'export {}\n')
     writeFileSync(
-      join(dir, 'agnes.extension.json'),
-      JSON.stringify({
-        id: 'agnes/example',
-        version: '1.0.0',
-        apiRange: '^1.1',
-        entry: './index.mjs',
-        capabilities: { ui: ['client'] },
-        contributes: { client: { entry: 'dist/client/index.js' } },
-      }),
+      join(dir, 'package.json'),
+      JSON.stringify(
+        bundledPackageJson({
+          id: 'agnes/example',
+          version: '1.0.0',
+          apiRange: '^5.0.0',
+          entry: './index.mjs',
+          capabilities: { ui: true },
+          contributes: { client: { entry: 'dist/client/index.js' } },
+        }),
+      ),
     )
-    expect(() => readManifestIn(dir)).toThrow(/cannot be resolved/)
+    expect(() => readBundledManifest(dir)).toThrow(missingClientFile('dist/client/index.js'))
     writeClientFiles(dir)
-    expect(readManifestIn(dir)?.contributes?.client?.entry).toBe('dist/client/index.js')
+    expect(readBundledManifest(dir)?.contributes?.client?.entry).toBe('dist/client/index.js')
   })
 })
 
@@ -182,21 +232,21 @@ describe('client capability/contribution coupling', () => {
   const base = {
     id: 'agnes/example',
     version: '1.0.0',
-    apiRange: '^1.1',
+    apiRange: '^5.0.0',
     entry: './index.mjs',
   }
   it('accepts a manifest that declares both sides, and one that declares neither', () => {
     expect(
       checkManifest({
         ...base,
-        capabilities: { ui: ['client'] },
+        capabilities: { ui: true },
         contributes: { client: { entry: 'dist/client/index.js' } },
       }).ok,
     ).toBe(true)
     expect(checkManifest({ ...base, capabilities: {} }).ok).toBe(true)
-    expect(checkManifest({ ...base, capabilities: { ui: ['skin'] } }).ok).toBe(false)
+    expect(checkManifest({ ...base, capabilities: { ui: true } }).ok).toBe(true)
   })
-  it('rejects a contribution without the capability and a capability without the contribution', () => {
+  it('rejects a contribution without the ui capability', () => {
     const withoutCapability = checkManifest({
       ...base,
       capabilities: {},
@@ -204,12 +254,8 @@ describe('client capability/contribution coupling', () => {
     })
     expect(withoutCapability.ok).toBe(false)
     if (!withoutCapability.ok)
-      expect(withoutCapability.problems.join(' ')).toContain("capabilities.ui to include 'client'")
-    const withoutContribution = checkManifest({ ...base, capabilities: { ui: ['client'] } })
-    expect(withoutContribution.ok).toBe(false)
-    if (!withoutContribution.ok)
-      expect(withoutContribution.problems.join(' ')).toContain('requires a contributes.client')
-    // ui 为空数组同样不满足「含 client」。
+      expect(withoutCapability.problems.join(' ')).toContain('requires capabilities.ui')
+    // ui is a flag: a list is not the capability.
     expect(
       checkManifest({
         ...base,
@@ -224,12 +270,14 @@ describe('client contribution normalization', () => {
   it('keeps styles in order, dedupes and sorts the sets, and defaults missing lists to []', () => {
     const normalized = normalizeClientContribution({
       entry: './dist/client/index.js',
+      streams: ['panel.events', 'panel.media', 'panel.events'],
       styles: ['./dist/client/b.css', 'dist/client/a.css'],
       slots: ['workbench.panel', 'client.card', 'workbench.panel'],
       services: ['s.b', 's.a', 's.b'],
     })
     expect(normalized).toEqual({
       entry: 'dist/client/index.js',
+      streams: ['panel.events', 'panel.media'],
       styles: ['dist/client/b.css', 'dist/client/a.css'],
       slots: ['client.card', 'workbench.panel'],
       services: ['s.a', 's.b'],
@@ -351,7 +399,9 @@ describe('client module request resolution', () => {
     mkdirSync(join(outside, 'dist'), { recursive: true })
     writeFileSync(join(outside, 'dist', 'served.js'), 'export {}\n')
     const planted = `sha256-${'c'.repeat(64)}`
-    symlinkSync(outside, join(root, 'acme', 'panel', planted))
+    // Directory junctions exercise the same escape refusal without Windows file-symlink privileges.
+    const directoryLink = process.platform === 'win32' ? 'junction' : 'dir'
+    symlinkSync(outside, join(root, 'acme', 'panel', planted), directoryLink)
     expect(resolveClientModuleAsset(root, `/plugins/acme/panel/${planted}/dist/served.js`)).toBeNull()
   })
 })
@@ -369,7 +419,7 @@ describe('client capability hash integration', () => {
         name: '@agnes-examples/client-hash',
         version: '1.0.0',
         agnes: {
-          plugins: [{ id: rowId, export: 'main', runtime: 'in-process' }],
+          plugins: [{ apiRange: '^5.0.0', id: rowId, export: 'main', runtime: 'in-process' }],
           ...(client ? { clientDescriptors: [{ rowId, path: './dist/agnes.client.json' }] } : {}),
         },
       }),
@@ -404,12 +454,12 @@ describe('client capability hash integration', () => {
   const baseManifest = {
     id: 'agnes/example',
     version: '1.0.0',
-    apiRange: '^1.1',
+    apiRange: '^5.0.0',
     entry: './index.mjs',
   }
 
-  it('keeps a client-less package summary free of the field and its hash identical to the old algorithm', () => {
-    const { preview } = staged({ ...baseManifest, capabilities: {} }, {})
+  it('keeps a client-less package summary free of the field and its hash identical to the old algorithm', async () => {
+    const { preview } = await staged({ ...baseManifest, capabilities: {} }, {})
     expect(preview.contributions).toHaveLength(0)
     expect(JSON.stringify(preview.contributions)).not.toContain('"client"')
     // 旧算法基线：无 client 字段的贡献摘要 + runtimeSupports 缺省归一，逐字段照抄改动前的计算。
@@ -417,11 +467,25 @@ describe('client capability hash integration', () => {
     expect(preview.capabilityHash).toBe(baseline)
     expect(capabilityHash({ contributions: preview.contributions, dependencies: {} })).toBe(baseline)
   })
-  it('adds the normalized client field to the summary and the hash for a declaring package', () => {
-    const { preview } = staged(
+  it('binds launch content independently of example metadata to the reviewed capability digest', () => {
+    const launch = { title: { en: 'Work' }, description: { en: 'Read sample data' }, preset: 'safe' }
+    const base = { contributions: [], dependencies: {}, agents: [{ ref: 'acme/kit#work', launch }] }
+    const first = capabilityHash(base)
+    expect(
+      capabilityHash({ ...base, agents: [{ ref: 'acme/kit#work', launch: { ...launch, preset: 'write' } }] }),
+    ).not.toBe(first)
+    expect(
+      capabilityHash({
+        ...base,
+        application: { id: 'acme', brand: { name: { en: 'Acme' } }, defaultAgent: 'acme/demo#work' },
+      }),
+    ).not.toBe(first)
+  })
+  it('adds the normalized client field to the summary and the hash for a declaring package', async () => {
+    const { preview } = await staged(
       {
         ...baseManifest,
-        capabilities: { ui: ['client'] },
+        capabilities: { ui: true },
         contributes: {
           client: {
             entry: './dist/client/index.js',
@@ -447,28 +511,28 @@ describe('client capability hash integration', () => {
     const expected = capabilityHash({ contributions: preview.contributions, dependencies: {} })
     expect(preview.capabilityHash).toBe(expected)
   })
-  it('moves the capability hash when only the declared services change', () => {
+  it('moves the capability hash when only the declared services change', async () => {
     const files = { 'dist/client/index.js': 64 }
     const withServices = (services: string[]) => ({
       ...baseManifest,
-      capabilities: { ui: ['client'] },
+      capabilities: { ui: true },
       contributes: { client: { entry: 'dist/client/index.js', services } },
     })
-    const first = staged(withServices(['hello.query']), files).preview.capabilityHash
-    const second = staged(withServices(['hello.other']), files).preview.capabilityHash
+    const first = (await staged(withServices(['hello.query']), files)).preview.capabilityHash
+    const second = (await staged(withServices(['hello.other']), files)).preview.capabilityHash
     expect(second).not.toBe(first)
   })
-  it('rejects a staged package whose declared client files are missing or oversized', () => {
+  it('rejects a staged package whose declared client files are missing or oversized', async () => {
     // inspect/staging 与运行时读取走同一道校验：文件系统真相在 staging 上就把坏包挡下。
-    expect(() =>
+    await expect(
       staged(
         {
           ...baseManifest,
-          capabilities: { ui: ['client'] },
+          capabilities: { ui: true },
           contributes: { client: { entry: 'dist/client/index.js' } },
         },
         {},
       ),
-    ).toThrow(/cannot be resolved/)
+    ).rejects.toMatchObject(missingClientFile('./client/index.js'))
   })
 })

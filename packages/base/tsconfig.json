@@ -5,13 +5,39 @@
     "outDir": "dist"
   },
   "include": ["**/*.ts"],
-  "exclude": ["dist", "node_modules"],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "test",
+    "testkit",
+    "tools",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/test/**",
+    "**/tests/**",
+    "vitest.config.ts"
+  ],
   "references": [
     {
-      "path": "../../tsconfig.config.json"
+      "path": "../error-sanitization"
     },
     {
       "path": "../plugin-runtime"
+    },
+    {
+      "path": "../history-index"
+    },
+    {
+      "path": "../observability"
+    },
+    {
+      "path": "../memory-file"
+    },
+    {
+      "path": "../intelligent-ui-contract"
+    },
+    {
+      "path": "../git-worktree-contract"
     }
   ]
 }

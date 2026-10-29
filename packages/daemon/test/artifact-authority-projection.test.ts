@@ -2,11 +2,13 @@ import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createAuthenticatedArtifactReadHandler } from '@agnes/daemon-rpc/local/artifact-read'
 import { createLocalArtifactReadStore } from '@agnes/host'
+import { validateEvent } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { PersistentArtifactReadAuthorityIndex } from '../src/local/artifact-read-authority.js'
 import { createArtifactAuthorityProjection } from '../src/supervisor/artifact-authority-projection.js'
-import { sqliteTables } from './sqlite-tables.js'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -78,6 +80,7 @@ async function fixture() {
     sha256,
     bytes,
     inspector,
+    store,
     ownership,
     writer,
     makeProjection,
@@ -86,73 +89,85 @@ async function fixture() {
 }
 
 describe('artifact authority ledger projection', () => {
-  it('derives exact size from trusted CAS bytes and isolates authenticated session lanes', async () => {
-    const f = await fixture()
-    await f.projection.observe('session-a', f.event(), new AbortController().signal)
-    expect(f.index.resolve('session-a', 'main', f.sha256)).toMatchObject({
-      ownerId: 'owner-a',
-      artifact: { sha256: f.sha256, size: f.bytes.byteLength, mime: 'image/png' },
-    })
-    await expect(
-      f.projection.scope.resolve(
-        { principalId: 'owner-a', authKind: 'local', sessionId: 'session-a', laneId: 'main' },
-        new AbortController().signal,
-      ),
-    ).resolves.toEqual({ sessionId: 'session-a', laneId: 'main' })
-    for (const target of [
-      { principalId: 'owner-b', authKind: 'local' as const, sessionId: 'session-a', laneId: 'main' },
-      { principalId: 'owner-a', authKind: 'local' as const, sessionId: 'session-b', laneId: 'main' },
-      { principalId: 'owner-a', authKind: 'local' as const, sessionId: 'session-a', laneId: 'other' },
-    ])
-      await expect(f.projection.scope.resolve(target, new AbortController().signal)).resolves.toBeUndefined()
-    await f.tables.close()
-  })
-
-  it.each([
-    ['tool:computer_use', 'untrusted'],
-    ['tool:read', 'trusted'],
-    ['tool:document_read', 'untrusted'],
-  ] as const)(
-    'projects a validated %s image before request-media preflight reads it',
-    async (origin, trust) => {
+  it.each(['header', 'registration'])(
+    'derives exact size from trusted CAS bytes and isolates authenticated session lanes (%s)',
+    async (source) => {
       const f = await fixture()
-      await f.projection.observe(
-        'session-a',
-        {
-          seq: 3,
-          ts: '2026-09-17T00:00:00.000Z',
-          id: '01J6ZM2Q3R4S5T6V7W8X9Y0Z03',
-          lane: 'main',
-          type: 'tool/result',
-          v: 1,
-          actor: { id: 'owner-a', org: 'local', role: 'owner', deptPath: [], attrs: {} },
-          origin,
-          trust,
-          sourceEventSeqs: [2],
-          data: {
-            toolUseId: 'call-1',
-            content: [
-              {
-                type: 'resource_link',
-                name: 'image',
-                uri: `artifact://${f.sha256}`,
-                mimeType: 'image/png',
-              },
-            ],
-            isError: false,
-            enforcement: { level: 'full', scope: [] },
-            authz: { decisionId: 'n/a' },
-          },
-        },
-        new AbortController().signal,
-      )
+      const event =
+        source === 'header'
+          ? f.event()
+          : {
+              ...f.event(),
+              type: 'x/core/artifact.registered',
+              ignorable: true,
+              data: { artifact: { sha256: f.sha256, size: f.bytes.byteLength, mime: 'image/png' } },
+            }
+      await f.projection.observe('session-a', event, new AbortController().signal)
       expect(f.index.resolve('session-a', 'main', f.sha256)).toMatchObject({
         ownerId: 'owner-a',
         artifact: { sha256: f.sha256, size: f.bytes.byteLength, mime: 'image/png' },
       })
+      await expect(
+        f.projection.scope.resolve(
+          { principalId: 'owner-a', authKind: 'local', sessionId: 'session-a', laneId: 'main' },
+          new AbortController().signal,
+        ),
+      ).resolves.toEqual({ sessionId: 'session-a', laneId: 'main' })
+      for (const target of [
+        { principalId: 'owner-b', authKind: 'local' as const, sessionId: 'session-a', laneId: 'main' },
+        { principalId: 'owner-a', authKind: 'local' as const, sessionId: 'session-b', laneId: 'main' },
+        { principalId: 'owner-a', authKind: 'local' as const, sessionId: 'session-a', laneId: 'other' },
+      ])
+        await expect(
+          f.projection.scope.resolve(target, new AbortController().signal),
+        ).resolves.toBeUndefined()
       await f.tables.close()
     },
   )
+
+  it.each([
+    ['tool:computer_use', 'untrusted', 'image/png'],
+    ['tool:read', 'trusted', 'image/png'],
+    ['tool:present', 'trusted', 'text/plain'],
+    ['tool:document_read', 'untrusted', 'image/png'],
+  ] as const)('projects a validated %s artifact before clients read it', async (origin, trust, mime) => {
+    const f = await fixture()
+    await f.projection.observe(
+      'session-a',
+      {
+        seq: 3,
+        ts: '2026-09-17T00:00:00.000Z',
+        id: '01J6ZM2Q3R4S5T6V7W8X9Y0Z03',
+        lane: 'main',
+        type: 'tool/result',
+        v: 1,
+        actor: { id: 'owner-a', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+        origin,
+        trust,
+        sourceEventSeqs: [2],
+        data: {
+          toolUseId: 'call-1',
+          content: [
+            {
+              type: 'resource_link',
+              name: 'image',
+              uri: `artifact://${f.sha256}`,
+              mimeType: mime,
+            },
+          ],
+          isError: false,
+          enforcement: { level: 'full', scope: [] },
+          authz: { decisionId: 'n/a' },
+        },
+      },
+      new AbortController().signal,
+    )
+    expect(f.index.resolve('session-a', 'main', f.sha256)).toMatchObject({
+      ownerId: 'owner-a',
+      artifact: { sha256: f.sha256, size: f.bytes.byteLength, mime },
+    })
+    await f.tables.close()
+  })
 
   it.each([
     ['another tool', { origin: 'tool:other', trust: 'untrusted', isError: false }],
@@ -161,6 +176,8 @@ describe('artifact authority ledger projection', () => {
     ['an untrusted session image result', { origin: 'tool:read', trust: 'untrusted', isError: false }],
     ['a trusted document image result', { origin: 'tool:document_read', trust: 'trusted', isError: false }],
     ['a failed document image result', { origin: 'tool:document_read', trust: 'untrusted', isError: true }],
+    ['an untrusted deliverable result', { origin: 'tool:present', trust: 'untrusted', isError: false }],
+    ['a failed deliverable result', { origin: 'tool:present', trust: 'trusted', isError: true }],
     ['a failed session image result', { origin: 'tool:read', trust: 'trusted', isError: true }],
   ])('does not project an image claimed by %s', async (_label, provenance) => {
     const f = await fixture()
@@ -199,78 +216,6 @@ describe('artifact authority ledger projection', () => {
   })
 
   it.each([
-    ['a trusted result whose call declared images', true, 'trusted', true],
-    ['a trusted result whose call did not declare images', false, 'trusted', false],
-    ['an untrusted result whose call declared images', true, 'untrusted', false],
-  ] as const)('another tool: projects %s only when allowed', async (_label, declared, trust, projected) => {
-    const f = await fixture()
-    const head = {
-      ts: '2026-09-17T00:00:00.000Z',
-      lane: 'main',
-      v: 1,
-      actor: { id: 'owner-a', org: 'local', role: 'owner', deptPath: [], attrs: {} },
-    }
-    const policy = {
-      isReadOnly: true,
-      isDestructive: false,
-      isConcurrencySafe: true,
-      isOpenWorld: trust === 'untrusted',
-      ...(declared ? { returnsImages: true } : {}),
-      replay: 'safe',
-      requiresApproval: 'never',
-      approvalScopes: [],
-      policyVersion: 'static-v1',
-    }
-    const signal = new AbortController().signal
-    await f.projection.observe(
-      'session-a',
-      {
-        ...head,
-        seq: 2,
-        id: '01J6ZM2Q3R4S5T6V7W8X9Y0Z02',
-        type: 'tool/call',
-        origin: 'model',
-        trust: 'trusted',
-        data: {
-          toolUseId: 'call-1',
-          name: 'read_device',
-          args: {},
-          ordinal: 0,
-          resolvedPolicy: policy,
-          executionDomain: 'workspace',
-          definitionFingerprint: 'e'.repeat(64),
-          policyHash: 'f'.repeat(64),
-        },
-      },
-      signal,
-    )
-    await f.projection.observe(
-      'session-a',
-      {
-        ...head,
-        seq: 3,
-        id: '01J6ZM2Q3R4S5T6V7W8X9Y0Z03',
-        type: 'tool/result',
-        origin: 'tool:read_device',
-        trust,
-        sourceEventSeqs: [2],
-        data: {
-          toolUseId: 'call-1',
-          content: [
-            { type: 'resource_link', name: 'image', uri: `artifact://${f.sha256}`, mimeType: 'image/png' },
-          ],
-          isError: false,
-          enforcement: { level: 'full', scope: [] },
-          authz: { decisionId: 'n/a' },
-        },
-      },
-      signal,
-    )
-    expect(f.index.resolve('session-a', 'main', f.sha256) !== undefined).toBe(projected)
-    await f.tables.close()
-  })
-
-  it.each([
     ['an untrusted request header', { origin: 'system', trust: 'untrusted' }],
     ['a non-system request header', { origin: 'tool:computer_use', trust: 'trusted' }],
   ])('does not project media from %s', async (_label, provenance) => {
@@ -281,6 +226,88 @@ describe('artifact authority ledger projection', () => {
       new AbortController().signal,
     )
     expect(f.index.resolve('session-a', 'main', f.sha256)).toBeUndefined()
+    await f.tables.close()
+  })
+
+  it('projects generic plugin registration before any tool result and refuses forged or mismatched registrations', async () => {
+    const f = await fixture()
+    const ref = { sha256: f.sha256, size: f.bytes.byteLength, mime: 'text/html' }
+    const event = {
+      ...f.event(),
+      type: 'x/core/artifact.registered',
+      ignorable: true,
+      data: { artifact: ref },
+    }
+    for (const provenance of [
+      { origin: 'ext:fixture/plugin', trust: 'trusted' },
+      { origin: 'system', trust: 'untrusted' },
+    ]) {
+      await f.projection.observe('session-a', { ...event, ...provenance }, new AbortController().signal)
+      expect(f.index.resolve('session-a', 'main', f.sha256)).toBeUndefined()
+    }
+    await f.projection.observe('session-a', event, new AbortController().signal)
+    await expect(
+      f.projection.observe(
+        'session-a',
+        { ...event, data: { artifact: { ...ref, size: ref.size - 1 } } },
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow()
+    expect(f.index.resolve('session-a', 'main', f.sha256)?.artifact).toEqual(ref)
+    const read = createAuthenticatedArtifactReadHandler({
+      authority: { resolve: async (session, lane, hash) => f.index.resolve(session, lane, hash) },
+      artifacts: { get: (ref, signal) => f.store.get(ref, signal) },
+      limits: { maxArtifactBytes: 1024, maxResponseBytes: 1024 },
+      operationTimeoutMs: 1000,
+    })
+    const response = await read(
+      { sessionId: 'session-a', laneId: 'main', artifact: ref },
+      { principalId: 'owner-a', sessionId: 'session-a', laneId: 'main', authKind: 'local' },
+    )
+    expect(response.ok).toBe(true)
+    if (response.ok) expect(response.body).toEqual(f.bytes)
+    // Cold replay consumes the durable registration with no present result or surface as a root.
+    f.projection.resetSession('session-a')
+    const cold = f.makeProjection()
+    await cold.observe('session-a', event, new AbortController().signal)
+    expect(f.index.resolve('session-a', 'main', f.sha256)?.artifact).toEqual(ref)
+    const cancelled = new AbortController()
+    cancelled.abort()
+    await cold.observe('other', event, cancelled.signal)
+    expect(f.index.resolve('other', 'main', f.sha256)).toBeUndefined()
+    const { attachmentLink } = await import('@agnes/protocol')
+    await cold.observe(
+      'session-a',
+      {
+        ...event,
+        type: 'user/message',
+        origin: 'principal',
+        data: { content: [attachmentLink(ref, 'original.html')] },
+      },
+      new AbortController().signal,
+    )
+    expect(f.index.resolve('session-a', 'main', f.sha256, ref.mime)?.artifact).toEqual(ref)
+    await cold.observe(
+      'session-a',
+      {
+        ...event,
+        type: 'inbox',
+        register: 'inbox',
+        data: {
+          items: Array.from({ length: 6 }, (_, index) => ({
+            itemId: `queued-${index}`,
+            target: 'next-turn',
+            actor: event.actor,
+            enqueuedAt: event.ts,
+            content: Array.from({ length: 50 }, () =>
+              attachmentLink({ ...ref, mime: 'text/plain' }, 'queued.txt'),
+            ),
+          })),
+        },
+      },
+      new AbortController().signal,
+    )
+    expect(f.index.resolve('session-a', 'main', f.sha256, 'text/plain')?.artifact.mime).toBe('text/plain')
     await f.tables.close()
   })
 
@@ -312,6 +339,11 @@ describe('artifact authority ledger projection', () => {
 
   it('ignores non-media rows and refuses malformed roots without granting scope', async () => {
     const f = await fixture()
+    const clearedInbox = { ...f.event(), type: 'inbox', register: 'inbox', data: null }
+    expect(validateEvent(clearedInbox).ok).toBe(true)
+    await expect(
+      f.projection.observe('session-a', clearedInbox, new AbortController().signal),
+    ).resolves.toBeUndefined()
     await f.projection.observe(
       'session-a',
       { ...f.event(), type: 'turn/end', data: { reason: 'completed' } },
@@ -329,33 +361,44 @@ describe('artifact authority ledger projection', () => {
     await f.tables.close()
   })
 
-  it('fences an observe that resumes after its lane was revoked', async () => {
-    const f = await fixture()
-    let release: (() => void) | undefined
-    let markStarted: (() => void) | undefined
-    const pending = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    const started = new Promise<void>((resolve) => {
-      markStarted = resolve
-    })
-    const projection = f.makeProjection({
-      inspector: {
-        inspect: async (identity, signal) => {
-          markStarted?.()
-          await pending
-          return f.inspector.inspect(identity, signal)
+  it.each(['legacy', 'registration'] as const)(
+    'fences %s projection that resumes after its lane was revoked',
+    async (kind) => {
+      const f = await fixture()
+      let release: (() => void) | undefined
+      let markStarted: (() => void) | undefined
+      const pending = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const started = new Promise<void>((resolve) => {
+        markStarted = resolve
+      })
+      const projection = f.makeProjection({
+        ownership: {
+          resolve: async (sessionId, signal) => {
+            markStarted?.()
+            await pending
+            return f.ownership.resolve()
+          },
         },
-      },
-    })
-    const observing = projection.observe('session-a', f.event(), new AbortController().signal)
-    await started
-    projection.revokeLane('session-a', 'main')
-    release?.()
-    await expect(observing).rejects.toThrow('artifact authority projection unavailable')
-    expect(f.index.resolve('session-a', 'main', f.sha256)).toBeUndefined()
-    await f.tables.close()
-  })
+      })
+      const event =
+        kind === 'legacy'
+          ? f.event()
+          : {
+              ...f.event(),
+              type: 'x/core/artifact.registered',
+              data: { artifact: { sha256: f.sha256, size: f.bytes.byteLength, mime: 'image/png' } },
+            }
+      const observing = projection.observe('session-a', event, new AbortController().signal)
+      await started
+      projection.revokeLane('session-a', 'main')
+      release?.()
+      await expect(observing).rejects.toThrow('artifact authority projection unavailable')
+      expect(f.index.resolve('session-a', 'main', f.sha256)).toBeUndefined()
+      await f.tables.close()
+    },
+  )
 
   it('detaches every lane before reset revocation and continues after the first failure', async () => {
     const f = await fixture()

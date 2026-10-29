@@ -1,0 +1,10 @@
+{
+  "client": {
+    "entry": "./client.js",
+    "lifetime": "profile",
+    "slotCatalogVersion": "dsh-client-slots/v1",
+    "slots": ["conversation.chat.turnTail"],
+    "id": "gallery",
+    "presentationRoles": ["deliverables"]
+  }
+}

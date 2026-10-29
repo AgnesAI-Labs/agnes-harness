@@ -1,6 +1,9 @@
+import { mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
 import { createClient, memoryJournal } from '@agnes/sdk'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { parseArgs } from '../src/args.js'
 import { runPrint } from '../src/modes/print.js'
 import { cliResultLine, findParkedTicket, lastAssistantText } from '../src/modes/result-line.js'
@@ -19,8 +22,8 @@ async function booted(ep: FakeEndpoint = scriptedEndpoint()): Promise<Booted> {
   }
 }
 
-function io(o: { stderrTTY?: boolean; stdin?: string } = {}) {
-  const stdout = new PassThrough()
+function io(o: { stderrTTY?: boolean; stdoutTTY?: boolean; stdin?: string } = {}) {
+  const stdout = Object.assign(new PassThrough(), { isTTY: o.stdoutTTY ?? false })
   const stderr = Object.assign(new PassThrough(), { isTTY: o.stderrTTY ?? false })
   let out = ''
   let err = ''
@@ -38,7 +41,7 @@ function io(o: { stderrTTY?: boolean; stdin?: string } = {}) {
 }
 
 describe('runPrint in text mode', () => {
-  it('prints the last assistant text and exits 0, with nothing on stderr', async () => {
+  it('prints the last assistant text and identifies the session on stderr', async () => {
     const o = io()
     const code = await runPrint(
       await booted(scriptedEndpoint({ reply: 'answer 42' })),
@@ -47,7 +50,17 @@ describe('runPrint in text mode', () => {
     )
     expect(code).toBe(0)
     expect(o.out()).toBe('answer 42\n')
-    expect(o.err()).toBe('')
+    expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
+  })
+
+  it('keeps escapes in the reply away from a terminal, and passes them through a pipe', async () => {
+    const reply = 'ok\x1b]52;c;cm0gLXJm\x07\x1b[2Jdone'
+    const tty = io({ stdoutTTY: true })
+    await runPrint(await booted(scriptedEndpoint({ reply })), parseArgs(['-p', 'q']), tty)
+    expect(tty.out()).toBe('ok]52;c;cm0gLXJm[2Jdone\n')
+    const pipe = io()
+    await runPrint(await booted(scriptedEndpoint({ reply })), parseArgs(['-p', 'q']), pipe)
+    expect(pipe.out()).toBe(`${reply}\n`)
   })
 
   it('joins a multi-word prompt rather than sending only the first word', async () => {
@@ -55,8 +68,11 @@ describe('runPrint in text mode', () => {
     await runPrint(await booted(ep), parseArgs(['-p', 'what', 'is', 'six', 'times', 'seven']), io())
     const prompt = ep.calls.find((c) => c.method === 'session/prompt')?.params as {
       prompt: Array<{ text: string }>
+      _meta?: Record<string, unknown>
     }
     expect(prompt.prompt).toEqual([{ type: 'text', text: 'what is six times seven' }])
+    // Nobody can answer a -p run: its one prompt says so, and the daemon withholds human-waiting tools.
+    expect(prompt._meta).toEqual({ 'ai.agnes.harness': { unattended: true } })
   })
 
   it('takes the prompt off a pipe when there is no positional', async () => {
@@ -87,7 +103,7 @@ describe('runPrint in text mode', () => {
     const code = await runPrint(await booted(ep), parseArgs(['-p', 'rm tmp']), o)
     expect(code).toBe(3)
     expect(o.out()).toBe(`parked ticket=tk-123 session=${FAKE_SESSION_ID}\n`)
-    expect(o.err()).toBe('agnes: turn ended: parked (exit 3)\n')
+    expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\nagh: turn ended: parked (exit 3)\n`)
   })
 
   // The whole table, under both arrival orders. The second one matters more than it looks: with the
@@ -113,7 +129,7 @@ describe('runPrint in text mode', () => {
       const ep = scriptedEndpoint({ reason, rowsAfterReply })
       const got = await runPrint(await booted(ep), parseArgs(['-p', 'q']), o)
       expect(got).toBe(code)
-      expect(o.err()).toBe(`agnes: turn ended: ${reason} (exit ${code})\n`)
+      expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\nagh: turn ended: ${reason} (exit ${code})\n`)
     })
 
     it('a completed turn exits 0 and prints no reason word', async () => {
@@ -121,7 +137,7 @@ describe('runPrint in text mode', () => {
       const ep = scriptedEndpoint({ reason: 'completed', reply: 'done', rowsAfterReply })
       expect(await runPrint(await booted(ep), parseArgs(['-p', 'q']), o)).toBe(0)
       expect(o.out()).toBe('done\n')
-      expect(o.err()).toBe('')
+      expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
     })
 
     it('a parked turn exits 3 with its ticket', async () => {
@@ -138,6 +154,36 @@ describe('runPrint in text mode', () => {
       expect(code).toBe(4)
       expect(JSON.parse(o.out())).toMatchObject({ reason: 'blocked', exitCode: 4, lastSeq: 3 })
     })
+
+    it.each([
+      ['completed', 0, { reply: 'done' }],
+      ['parked', 3, { parkedTicket: 'tk-9' }],
+    ])(
+      'stream-json writes each event as its own line before the %s result line',
+      async (reason, code, extra) => {
+        const o = io()
+        const ep = scriptedEndpoint({ reason, rowsAfterReply, ...extra })
+        const got = await runPrint(await booted(ep), parseArgs(['-p', 'q', '--mode', 'stream-json']), o)
+        expect(got).toBe(code)
+        const lines = o
+          .out()
+          .trimEnd()
+          .split('\n')
+          .map((line) => JSON.parse(line))
+        const result = lines.at(-1)
+        expect(result).toMatchObject({ v: 'agnes-cli-result/v1', reason, exitCode: code })
+        const events = lines.slice(0, -1)
+        expect(events.length).toBeGreaterThan(0)
+        for (const line of events)
+          expect(line).toMatchObject({ schema: 'agnes-cli-event/v1', event: { type: expect.any(String) } })
+        expect(events.at(-1).event.type).toBe('turn/end')
+        expect(events.map((l) => l.event.seq)).toEqual(
+          [...events.map((l) => l.event.seq)].sort((a, b) => a - b),
+        )
+        // stderr follows the json rules: the session line only, no reason word.
+        expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
+      },
+    )
   })
 
   // daemon raises TURN_ERROR rather than answering with an ACP stop reason it has no member for, so
@@ -153,7 +199,7 @@ describe('runPrint in text mode', () => {
     const o = io()
     const t0 = performance.now()
     expect(await runPrint(await booted(ep), parseArgs(['-p', 'q']), o)).toBe(1)
-    expect(o.err()).toBe('agnes: turn ended: error (exit 1)\n')
+    expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\nagh: turn ended: error (exit 1)\n`)
     // And it comes back at once. daemon raises TURN_ERROR *instead of* a turn outcome, so no
     // turn/end is coming and waiting the full drain out would be a second of silence before the
     // same exit code -- on the one path where the caller already knows something went wrong.
@@ -171,7 +217,9 @@ describe('runPrint in text mode', () => {
         turnEndError: { code: 'TRANSPORT', message: 'status=400\u001b[2J' },
       })
       expect(await runPrint(await booted(ep), parseArgs(['-p', 'q']), o)).toBe(1)
-      expect(o.err()).toBe('agnes: turn ended: error (exit 1): TRANSPORT status=400 [2J\n')
+      expect(o.err()).toBe(
+        `Session: ${FAKE_SESSION_ID}\nagh: turn ended: error (exit 1): TRANSPORT: The provider could not be reached, or it answered with a server error. Check connectivity and try again later. If it keeps happening, the provider may be down.\n`,
+      )
     },
   )
 
@@ -188,7 +236,9 @@ describe('runPrint in text mode', () => {
     })
     const o = io()
     expect(await runPrint(await booted(ep), parseArgs(['-p', 'q']), o)).toBe(1)
-    expect(o.err()).toBe('agnes: turn ended: error (exit 1): AUTH status=401\n')
+    expect(o.err()).toBe(
+      `Session: ${FAKE_SESSION_ID}\nagh: turn ended: error (exit 1): AUTH: The provider refused this model or its credentials. Pick another model or sign in again.\n`,
+    )
   })
 
   it('an rpc error that is not a turn outcome is not dressed up as one', async () => {
@@ -230,7 +280,7 @@ describe('runPrint in text mode', () => {
   it('emits no progress lines when the turn calls no tools', async () => {
     const quiet = io({ stderrTTY: false })
     await runPrint(await booted(scriptedEndpoint()), parseArgs(['-p', 'q']), quiet)
-    expect(quiet.err()).toBe('')
+    expect(quiet.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
   })
 
   it('reports each tool call and its outcome to stderr, on a TTY or not', async () => {
@@ -238,11 +288,11 @@ describe('runPrint in text mode', () => {
 
     const nonTty = io({ stderrTTY: false })
     await runPrint(await booted(scriptedEndpoint({ toolCall })), parseArgs(['-p', 'q']), nonTty)
-    expect(nonTty.err()).toBe('- tool read\n- tool read · ok · 124ms\n')
+    expect(nonTty.err()).toBe(`Session: ${FAKE_SESSION_ID}\n- tool read\n- tool read · ok · 124ms\n`)
 
     const tty = io({ stderrTTY: true })
     await runPrint(await booted(scriptedEndpoint({ toolCall })), parseArgs(['-p', 'q']), tty)
-    expect(tty.err()).toBe('- tool read\n- tool read · ok · 124ms\n')
+    expect(tty.err()).toBe(`Session: ${FAKE_SESSION_ID}\n- tool read\n- tool read · ok · 124ms\n`)
   })
 
   it('omits the tool call marker entirely in --mode json, start and end alike', async () => {
@@ -253,7 +303,7 @@ describe('runPrint in text mode', () => {
       parseArgs(['-p', 'q', '--mode', 'json']),
       nonTty,
     )
-    expect(nonTty.err()).toBe('')
+    expect(nonTty.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
   })
 
   // Each refusal names the flag the user typed and what is missing. `--park` and `--preset --resume`
@@ -264,10 +314,214 @@ describe('runPrint in text mode', () => {
     [['-p', 'q', '--park'], '--park'],
     [['-p', 'q', '--preset', 'standard', '--continue'], '--preset'],
     [['-p', 'q', '--preset', 'standard', '--resume', FAKE_SESSION_ID], '--preset'],
+    [['-p', 'q', '--permission', 'read-only', '--continue'], '--permission'],
+    [['-p', 'q', '--permission', 'read-only', '--resume', FAKE_SESSION_ID], '--permission'],
   ])('%j is refused by the flag it names, with exit 2', async (argv, flag) => {
     const e = await runPrint(await booted(), parseArgs(argv as string[]), io()).catch((x: unknown) => x)
     expect(e).toMatchObject({ name: 'UsageError', code: 2 })
     expect((e as Error).message.startsWith(flag as string)).toBe(true)
+  })
+
+  describe('--max-budget', () => {
+    const promptMeta = (ep: FakeEndpoint) =>
+      (
+        ep.calls.find((c) => c.method === 'session/prompt')?.params as
+          | { _meta?: Record<string, unknown> }
+          | undefined
+      )?._meta
+
+    it('travels as the hard credit limit on the one prompt', async () => {
+      const ep = scriptedEndpoint({ harnessCapabilities: { hardTurnBudget: true } })
+      expect(await runPrint(await booted(ep), parseArgs(['-p', 'q', '--max-budget', '2.5']), io())).toBe(0)
+      expect(promptMeta(ep)).toEqual({ 'ai.agnes.harness': { creditLimit: 2.5, unattended: true } })
+    })
+
+    it.each([['0'], ['abc'], ['1e3'], ['Infinity'], ['1.'], ['99999999999999999']])(
+      '%s is a usage error and nothing is sent',
+      async (v) => {
+        const ep = scriptedEndpoint({ harnessCapabilities: { hardTurnBudget: true } })
+        const e = await runPrint(await booted(ep), parseArgs(['-p', 'q', '--max-budget', v]), io()).catch(
+          (x: unknown) => x,
+        )
+        expect(e).toMatchObject({ name: 'UsageError', code: 2 })
+        expect(ep.calls.map((c) => c.method)).not.toContain('session/prompt')
+      },
+    )
+
+    it('an older daemon is refused with exit 2 before any session or prompt is sent', async () => {
+      const ep = scriptedEndpoint()
+      const e = await runPrint(await booted(ep), parseArgs(['-p', 'q', '--max-budget', '1']), io()).catch(
+        (x: unknown) => x,
+      )
+      expect(e).toMatchObject({ name: 'UsageError', code: 2 })
+      expect((e as Error).message).toContain('does not support --max-budget')
+      expect(ep.calls.map((c) => c.method)).not.toContain('session/new')
+    })
+
+    it('a turn that runs out of credits exits 4', async () => {
+      const ep = scriptedEndpoint({ reason: 'budget', harnessCapabilities: { hardTurnBudget: true } })
+      expect(await runPrint(await booted(ep), parseArgs(['-p', 'q', '--max-budget', '1']), io())).toBe(4)
+    })
+  })
+
+  describe('--max-turns', () => {
+    const harness = (ep: FakeEndpoint) =>
+      (
+        ep.calls.find((c) => c.method === 'session/prompt')?.params as
+          | { _meta?: Record<string, unknown> }
+          | undefined
+      )?._meta
+
+    it('travels as the step cap on the one prompt', async () => {
+      const ep = scriptedEndpoint({ harnessCapabilities: { turnMaxSteps: true } })
+      expect(await runPrint(await booted(ep), parseArgs(['-p', 'q', '--max-turns', '3']), io())).toBe(0)
+      expect(harness(ep)).toEqual({ 'ai.agnes.harness': { maxSteps: 3, unattended: true } })
+    })
+
+    it.each([['0'], ['1001'], ['1.5'], ['abc'], ['1e2'], ['']])(
+      '%j is a usage error and nothing is sent',
+      async (v) => {
+        const ep = scriptedEndpoint({ harnessCapabilities: { turnMaxSteps: true } })
+        const e = await runPrint(await booted(ep), parseArgs(['-p', 'q', '--max-turns', v]), io()).catch(
+          (x: unknown) => x,
+        )
+        expect(e).toMatchObject({ name: 'UsageError', code: 2 })
+        expect(ep.calls.map((c) => c.method)).not.toContain('session/prompt')
+      },
+    )
+
+    it('an older daemon is refused with exit 2 before any session or prompt is sent', async () => {
+      // Hard credit budgets alone do not imply the step cap.
+      const ep = scriptedEndpoint({ harnessCapabilities: { hardTurnBudget: true } })
+      const e = await runPrint(await booted(ep), parseArgs(['-p', 'q', '--max-turns', '2']), io()).catch(
+        (x: unknown) => x,
+      )
+      expect(e).toMatchObject({ name: 'UsageError', code: 2 })
+      expect((e as Error).message).toContain('does not support --max-turns')
+      expect(ep.calls.map((c) => c.method)).not.toContain('session/new')
+    })
+
+    it('a turn that reaches the cap exits 5', async () => {
+      const ep = scriptedEndpoint({ reason: 'max_steps', harnessCapabilities: { turnMaxSteps: true } })
+      expect(await runPrint(await booted(ep), parseArgs(['-p', 'q', '--max-turns', '1']), io())).toBe(5)
+    })
+
+    it('travels together with --max-budget', async () => {
+      const ep = scriptedEndpoint({ harnessCapabilities: { hardTurnBudget: true, turnMaxSteps: true } })
+      await runPrint(await booted(ep), parseArgs(['-p', 'q', '--max-budget', '2', '--max-turns', '4']), io())
+      expect(harness(ep)).toEqual({ 'ai.agnes.harness': { creditLimit: 2, maxSteps: 4, unattended: true } })
+    })
+  })
+
+  describe('--timeout and --output-file', () => {
+    // A turn that never ends on its own: it answers only once a cancel command has been submitted.
+    async function hung(): Promise<FakeEndpoint> {
+      // A daemon that takes the time limit: it is told the deadline, and the CLI still enforces it.
+      const ep = scriptedEndpoint({ harnessCapabilities: { turnTimeLimit: true } })
+      ep.on('session/prompt', async (_p, e) => {
+        while (!e.calls.some((c) => JSON.stringify(c.params ?? {}).includes('"cancel"')))
+          await new Promise((r) => setTimeout(r, 5))
+        return {
+          stopReason: 'cancelled',
+          _meta: {
+            'ai.agnes.harness': {
+              phase: 'terminalQuiescence',
+              promptTurnId: '1',
+              eventSequence: 1,
+              generation: 1,
+              lane: 'main',
+              turnEnd: { reason: 'aborted' },
+            },
+          },
+        }
+      })
+      return ep
+    }
+
+    const sentMeta = (ep: FakeEndpoint) =>
+      (
+        ep.calls.find((c) => c.method === 'session/prompt')?.params as
+          | { _meta?: Record<string, unknown> }
+          | undefined
+      )?._meta
+
+    it('cancels the turn at the deadline and exits 124 with the reason on stderr', async () => {
+      const o = io()
+      const ep = await hung()
+      const code = await runPrint(await booted(ep), parseArgs(['-p', 'q', '--timeout', '0.05']), o)
+      expect(code).toBe(124)
+      expect(sentMeta(ep)).toEqual({ 'ai.agnes.harness': { timeLimitMs: 50, unattended: true } })
+      expect(o.err()).toContain('agh: timeout after 0.05s; turn cancelled (exit 124)')
+      expect(o.err()).not.toContain('turn ended')
+    })
+
+    it.each([['0'], ['abc'], ['86401'], ['1e2']])(
+      '--timeout %j is a usage error and nothing is sent',
+      async (v) => {
+        const ep = scriptedEndpoint()
+        const e = await runPrint(await booted(ep), parseArgs(['-p', 'q', '--timeout', v]), io()).catch(
+          (x: unknown) => x,
+        )
+        expect(e).toMatchObject({ name: expect.stringMatching(/UsageError/), code: 2 })
+        expect(ep.calls.map((c) => c.method)).not.toContain('session/prompt')
+      },
+    )
+
+    it('a turn that ends before the deadline keeps exit 0', async () => {
+      expect(await runPrint(await booted(), parseArgs(['-p', 'q', '--timeout', '30']), io())).toBe(0)
+    })
+
+    it('travels as the time limit with the other caps, and an older daemon is not refused', async () => {
+      const ep = scriptedEndpoint({ harnessCapabilities: { turnMaxSteps: true, turnTimeLimit: true } })
+      const argv = ['-p', 'q', '--timeout', '90', '--max-turns', '7']
+      expect(await runPrint(await booted(ep), parseArgs(argv), io())).toBe(0)
+      expect(sentMeta(ep)).toEqual({
+        'ai.agnes.harness': { maxSteps: 7, timeLimitMs: 90_000, unattended: true },
+      })
+      // Without turnTimeLimit the deadline is the CLI's alone, as before: nothing extra is sent.
+      const older = scriptedEndpoint()
+      expect(await runPrint(await booted(older), parseArgs(['-p', 'q', '--timeout', '90']), io())).toBe(0)
+      expect(sentMeta(older)).toEqual({ 'ai.agnes.harness': { unattended: true } })
+    })
+
+    it('writes the final text to --output-file and still prints it', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'agh-print-out-'))
+      try {
+        const o = { ...io(), cwd: dir }
+        const code = await runPrint(
+          await booted(scriptedEndpoint({ reply: 'to a file' })),
+          parseArgs(['-p', 'q', '--output-file', 'out.txt']),
+          o,
+        )
+        expect(code).toBe(0)
+        expect(o.out()).toBe('to a file\n')
+        expect(readFileSync(join(dir, 'out.txt'), 'utf8')).toBe('to a file\n')
+        if (process.platform !== 'win32') expect(statSync(join(dir, 'out.txt')).mode & 0o777).toBe(0o600)
+        if (process.platform !== 'win32') {
+          writeFileSync(join(dir, 'victim'), 'keep')
+          symlinkSync(join(dir, 'victim'), join(dir, 'link.txt'))
+          const linked = await runPrint(
+            await booted(scriptedEndpoint({ reply: 'to a file' })),
+            parseArgs(['-p', 'q', '--output-file', 'link.txt']),
+            { ...io(), cwd: dir },
+          ).catch((x: unknown) => x)
+          expect(linked).toMatchObject({ code: 1 })
+          expect(readFileSync(join(dir, 'victim'), 'utf8')).toBe('keep')
+        }
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('an unwritable --output-file is a CommandError', async () => {
+      const e = await runPrint(
+        await booted(),
+        parseArgs(['-p', 'q', '--output-file', 'missing-dir/out.txt']),
+        io(),
+      ).catch((x: unknown) => x)
+      expect(e).toMatchObject({ code: 1 })
+      expect((e as Error).message).toContain('--output-file missing-dir/out.txt')
+    })
   })
 
   it('the two remaining refusals say two different things', async () => {
@@ -338,13 +592,74 @@ describe('runPrint in text mode', () => {
     expect(setModelIndex).toBeLessThan(promptIndex)
   })
 
+  it('--tools and --disallowed-tools narrow the session before anything else is sent, resumed or not', async () => {
+    for (const argv of [
+      ['-p', 'q'],
+      ['-p', 'q', '--resume', FAKE_SESSION_ID],
+    ]) {
+      const ep = scriptedEndpoint()
+      ep.on('_agnes/v1/session.setToolFilter', () => ({ effectiveFromSeq: 3, filter: { allow: ['read'] } }))
+      const args = [...argv, '--tools', 'read', '--disallowed-tools', 'bash,web_fetch']
+      expect(await runPrint(await booted(ep), parseArgs(args), io())).toBe(0)
+      const methods = ep.calls.map((c) => c.method)
+      const at = methods.indexOf('_agnes/v1/session.setToolFilter')
+      expect(at).toBeGreaterThanOrEqual(0)
+      expect(at).toBeLessThan(methods.indexOf('session/prompt'))
+      expect(at).toBeLessThan(methods.indexOf('_agnes/v1/session.attach'))
+      expect(ep.calls[at]?.params).toMatchObject({
+        sessionId: FAKE_SESSION_ID,
+        allow: ['read'],
+        deny: ['bash', 'web_fetch'],
+        commandId: expect.any(String),
+      })
+    }
+  })
+
+  it('an older daemon, or a name the session does not have, stops the run before any prompt is sent', async () => {
+    const old = scriptedEndpoint()
+    const o = io()
+    const e = await runPrint(await booted(old), parseArgs(['-p', 'q', '--tools', 'read']), o).catch(
+      (x: unknown) => x,
+    )
+    expect(e).toMatchObject({
+      name: 'CommandError',
+      message: expect.stringContaining('cannot limit a session'),
+    })
+    expect(old.calls.map((c) => c.method)).not.toContain('session/prompt')
+
+    const strict = scriptedEndpoint().on('_agnes/v1/session.setToolFilter', () => {
+      throw Object.assign(new Error('rejected'), {
+        code: -32011,
+        data: { code: 'TOOL_FILTER_REJECTED', reason: 'unknown-tool', names: ['nope'] },
+      })
+    })
+    const rejected = await runPrint(
+      await booted(strict),
+      parseArgs(['-p', 'q', '--disallowed-tools', 'nope']),
+      io(),
+    ).catch((x: unknown) => x)
+    expect(rejected).toMatchObject({ message: expect.stringContaining('nope') })
+    expect(strict.calls.map((c) => c.method)).not.toContain('session/prompt')
+  })
+
   // Not refused: on a new session a preset travels on session/new, where daemon checks it against
   // presets.allowed. Only a resume cannot take one.
   it('--preset on a new session is passed through rather than refused', async () => {
     const ep = scriptedEndpoint()
     expect(await runPrint(await booted(ep), parseArgs(['-p', 'q', '--preset', 'standard']), io())).toBe(0)
+    const params = ep.calls.find((c) => c.method === 'session/new')?.params as {
+      _meta: Record<string, Record<string, unknown>>
+    }
+    expect(params).toMatchObject({ _meta: { 'ai.agnes.harness': { preset: 'standard' } } })
+    expect(params._meta['ai.agnes.harness']).toHaveProperty('permission', 'default')
+  })
+
+  it('--permission on a new session travels with --preset on session/new', async () => {
+    const ep = scriptedEndpoint()
+    const argv = ['-p', 'q', '--preset', 'standard', '--permission', 'full-access']
+    expect(await runPrint(await booted(ep), parseArgs(argv), io())).toBe(0)
     expect(ep.calls.find((c) => c.method === 'session/new')?.params).toMatchObject({
-      _meta: { 'ai.agnes.harness': { preset: 'standard' } },
+      _meta: { 'ai.agnes.harness': { preset: 'standard', permission: 'full-access' } },
     })
   })
 })
@@ -369,7 +684,37 @@ describe('runPrint in json mode', () => {
     expect(o.out().endsWith('\n')).toBe(true)
     // The reason already rides in the line; repeating it on stderr would corrupt a caller that reads
     // both streams into one.
-    expect(o.err()).toBe('')
+    expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
+  })
+
+  // Machine modes keep stderr quiet, so an `error` turn whose turn/end never arrived left a wrapper
+  // with exit 1 and nothing else to go on. The code rides in the line; the message stays out.
+  it.each([
+    ['a thrown TURN_ERROR without a row', undefined],
+    ['the turn/end row', { code: 'TRANSPORT', message: 'status=400 private' }],
+  ] as const)('names the error code from %s in the line', async (_from, turnEndError) => {
+    const ep = turnEndError
+      ? scriptedEndpoint({ reason: 'error', turnEndError })
+      : scriptedEndpoint().on('session/prompt', () => {
+          throw Object.assign(new Error('INTERNAL_ERROR'), {
+            code: -32603,
+            data: {
+              code: 'TURN_ERROR',
+              turnEnd: { reason: 'error' },
+              error: { code: 'E_STEP_FAILED', message: 'private detail' },
+            },
+          })
+        })
+    const o = io()
+    expect(await runPrint(await booted(ep), parseArgs(['-p', 'q', '--mode', 'json']), o)).toBe(1)
+    const line = JSON.parse(o.out())
+    expect(line).toMatchObject({
+      reason: 'error',
+      exitCode: 1,
+      error: { code: turnEndError ? 'TRANSPORT' : 'E_STEP_FAILED' },
+    })
+    expect(o.out()).not.toContain('private')
+    expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
   })
 
   it('carries the ticket in the line when the turn parked', async () => {
@@ -378,6 +723,108 @@ describe('runPrint in json mode', () => {
     const code = await runPrint(await booted(ep), parseArgs(['-p', 'q', '--mode', 'json']), o)
     expect(code).toBe(3)
     expect(JSON.parse(o.out())).toMatchObject({ reason: 'parked', exitCode: 3, ticket: 'tk-9' })
+  })
+})
+
+describe('runPrint with --output-schema', () => {
+  const dirs: string[] = []
+  afterEach(() => {
+    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
+  })
+  const schema = { type: 'object', required: ['n'], properties: { n: { type: 'integer' } } }
+  const setup = (content: string | object = schema) => {
+    const dir = mkdtempSync(join(tmpdir(), 'agh-schema-'))
+    dirs.push(dir)
+    writeFileSync(join(dir, 's.json'), typeof content === 'string' ? content : JSON.stringify(content))
+    const o = io()
+    o.cwd = dir
+    return o
+  }
+  const run = async (o: ReturnType<typeof io>, extra: string[], ep = scriptedEndpoint()) =>
+    runPrint(await booted(ep), parseArgs(['-p', 'q', '--output-schema', 's.json', ...extra]), o)
+
+  it.each([
+    ['bare JSON', '{ "n": 4 }'],
+    ['a json fence', '```json\n{"n":4}\n```'],
+    ['a plain fence with surrounding space', '  ```\n{"n":4}```\n'],
+  ])('%s passes: text mode prints the compact value and exits 0', async (_n, reply) => {
+    const o = setup()
+    expect(await run(o, [], scriptedEndpoint({ reply }))).toBe(0)
+    expect(o.out()).toBe('{"n":4}\n')
+    expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
+  })
+
+  it('appends the instruction and the schema to the prompt, in the locale', async () => {
+    const o = setup()
+    const ep = scriptedEndpoint({ reply: '{"n":1}' })
+    await run(o, [], ep)
+    const call = ep.calls.find((c) => c.method === 'session/prompt') as {
+      params: { prompt: Array<{ text: string }> }
+    }
+    const sent = call.params.prompt
+    expect(sent[0]?.text).toBe('q')
+    expect(sent[1]?.text).toContain(JSON.stringify(schema))
+    expect(sent[1]?.text).toContain('Reply with exactly one JSON value')
+    const zh = setup()
+    const zhEp = scriptedEndpoint({ reply: '{"n":1}' })
+    await runPrint(
+      await booted(zhEp),
+      parseArgs(['-p', 'q', '--output-schema', 's.json']),
+      Object.assign(zh, { locale: 'zh-CN' }),
+    )
+    expect(JSON.stringify(zhEp.calls)).toContain('只输出一个符合')
+  })
+
+  it.each([
+    ['text that is not JSON', 'sorry, no'],
+    ['JSON that breaks the schema', '{"n":"four"}'],
+    ['a fence around something else', '```js\n{"n":4}\n```'],
+  ])('%s exits 6, names the problem on stderr and still prints the original reply', async (_n, reply) => {
+    const o = setup()
+    expect(await run(o, [], scriptedEndpoint({ reply }))).toBe(6)
+    expect(o.out()).toBe(`${reply}\n`)
+    expect(o.err()).toMatch(/agh: output schema: /)
+    expect(o.err()).not.toContain('turn ended')
+  })
+
+  it('--mode json adds structured to the result line, and a mismatch keeps the text and exit code 6', async () => {
+    const ok = setup()
+    expect(await run(ok, ['--mode', 'json'], scriptedEndpoint({ reply: '{"n":2}' }))).toBe(0)
+    expect(JSON.parse(ok.out())).toMatchObject({ exitCode: 0, text: '{"n":2}', structured: { n: 2 } })
+    const bad = setup()
+    expect(await run(bad, ['--mode', 'json'], scriptedEndpoint({ reply: '{}' }))).toBe(6)
+    const line = JSON.parse(bad.out())
+    expect(line).toMatchObject({ reason: 'completed', exitCode: 6, text: '{}' })
+    expect(line).not.toHaveProperty('structured')
+    const streamed = setup()
+    expect(await run(streamed, ['--mode', 'stream-json'], scriptedEndpoint({ reply: '{"n":3}' }))).toBe(0)
+    expect(JSON.parse(streamed.out().trimEnd().split('\n').at(-1) as string)).toMatchObject({
+      structured: { n: 3 },
+    })
+  })
+
+  it('a turn that did not complete keeps its own exit code and is not validated', async () => {
+    const o = setup()
+    expect(await run(o, [], scriptedEndpoint({ reason: 'max_steps', reply: 'not json' }))).toBe(5)
+    expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\nagh: turn ended: max_steps (exit 5)\n`)
+  })
+
+  it.each([
+    ['a missing file', undefined, /cannot read/],
+    ['a file that is not JSON', 'nope', /not valid JSON/],
+    ['JSON that is not an object', '[1]', /must hold a JSON object/],
+    ['a schema that does not compile', { type: 'nonsense' }, /not a usable schema/],
+    ['a remote $ref', { $ref: 'https://example.invalid/s.json' }, /not a usable schema/],
+    ['a file over 64 KiB', ' '.repeat(70 * 1024), /larger than 64 KiB/],
+  ])('%s is a usage error and no session is opened', async (_n, content, want) => {
+    const o = setup(content ?? '{}')
+    if (content === undefined) o.cwd = join(o.cwd, 'missing')
+    const ep = scriptedEndpoint()
+    const err = await run(o, [], ep).catch((e: Error) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).name).toBe('UsageError')
+    expect((err as Error).message).toMatch(want)
+    expect(ep.calls.some((c) => c.method === 'session/new')).toBe(false)
   })
 })
 
@@ -395,23 +842,33 @@ describe('result line helpers', () => {
     })
   })
 
-  const asked = (seq: number, pending?: { ticket: string }) =>
+  const decision = (
+    seq: number,
+    id: string,
+    state: 'pending' | 'answered' | 'consumed' | 'invalidated' = 'pending',
+  ) =>
     ({
       seq,
-      ts: 't',
-      id: `01J6ZM2Q3R4S5T6V7W8X9Y0${String(seq).padStart(3, '0')}`,
-      type: 'approval/asked',
-      data: { kind: 'tool', ...(pending ? { pending: { ...pending, expiresAt: 'x' } } : {}) },
-      actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
-      origin: 'system',
-      trust: 'trusted',
+      type: 'decision/state',
+      data: {
+        handle: { id, sessionId: 'session' },
+        revision: seq,
+        request: { owner: 'core/tool-permission', purpose: 'tool.permission' },
+        result: state === 'answered' ? { option: 'allowed-once' } : null,
+        consumption: state === 'consumed' ? {} : null,
+        invalidation: state === 'invalidated' ? {} : null,
+      },
     }) as never
 
-  it('takes the last ask that actually parked, skipping asks that were answered', () => {
-    expect(findParkedTicket([asked(1, { ticket: 'old' }), asked(2, { ticket: 'new' })])).toBe('new')
-    expect(findParkedTicket([asked(1, { ticket: 'old' }), asked(2)])).toBe('old')
-    expect(findParkedTicket([asked(1)])).toBeUndefined()
+  it('reports pending durable decisions and domain tickets without reviving closed requests', () => {
     expect(findParkedTicket([])).toBeUndefined()
+    expect(findParkedTicket([decision(1, 'old'), decision(2, 'current')])).toBe('current')
+    expect(
+      findParkedTicket([decision(1, 'old'), decision(2, 'current'), decision(3, 'current', 'answered')]),
+    ).toBe('old')
+    for (const state of ['answered', 'consumed', 'invalidated'] as const)
+      expect(findParkedTicket([decision(1, 'closed'), decision(2, 'closed', state)])).toBeUndefined()
+    expect(findParkedTicket([decision(1, '')])).toBeUndefined()
   })
 
   const message = (seq: number, content: unknown) =>
@@ -447,5 +904,169 @@ describe('result line helpers', () => {
     ).toBe('the answer')
     expect(lastAssistantText([])).toBe('')
     expect(lastAssistantText([message(1, [])])).toBe('')
+  })
+})
+
+it('--new chooses an explicit fresh session without changing stdout', async () => {
+  const endpoint = scriptedEndpoint({ reply: 'fresh' })
+  const output = io()
+  await runPrint(await booted(endpoint), parseArgs(['--new', '-p', 'hello']), output)
+  expect(endpoint.calls.find((call) => call.method === 'session/new')?.params).toMatchObject({
+    _meta: {
+      'ai.agnes.harness': { sessionKey: expect.stringMatching(/^agnes:local:local-dev:cli:session:/) },
+    },
+  })
+  expect(output.out()).toBe('fresh\n')
+  expect(output.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
+})
+
+it.each([
+  [
+    'en',
+    'The operation was refused by the budget limit.',
+    'Review the remaining budget and limits before trying again.',
+  ],
+  ['zh-CN', '操作因预算限制被拒绝。', '请检查剩余预算和上限后再重试。'],
+])(
+  'prints the public budget reason and action in %s without provider text',
+  async (locale, reason, action) => {
+    const output = io()
+    const endpoint = scriptedEndpoint({
+      reason: 'error',
+      turnEndError: { code: 'BUDGET_EXCEEDED', message: 'private provider log' },
+    })
+    const connected = await booted(endpoint)
+    try {
+      expect(await runPrint(connected, parseArgs(['-p', 'q']), { ...output, locale })).toBe(1)
+      expect(output.err()).toContain(reason)
+      expect(output.err()).toContain(action)
+      expect(output.err()).not.toContain('private')
+    } finally {
+      await connected.close()
+    }
+  },
+)
+
+it('keeps unknown turn failures generic without printing their code or private logs', async () => {
+  const output = io()
+  const connected = await booted(
+    scriptedEndpoint({
+      reason: 'error',
+      turnEndError: { code: 'UNKNOWN_PRIVATE', message: 'private provider log' },
+    }),
+  )
+  try {
+    expect(await runPrint(connected, parseArgs(['-p', 'q']), output)).toBe(1)
+    expect(output.err()).toContain('turn ended: error (exit 1)')
+    expect(output.err()).not.toContain('UNKNOWN_PRIVATE')
+    expect(output.err()).not.toContain('private')
+  } finally {
+    await connected.close()
+  }
+})
+
+describe('runPrint --append-system-prompt', () => {
+  const dirs: string[] = []
+  afterEach(() => {
+    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
+  })
+  const scratch = (): string => {
+    const d = mkdtempSync(join(tmpdir(), 'agh-append-'))
+    dirs.push(d)
+    return d
+  }
+  const metaOf = (ep: FakeEndpoint): Record<string, unknown> | undefined =>
+    (
+      ep.calls.find((c) => c.method === 'session/new')?.params as
+        | { _meta: Record<string, Record<string, unknown>> }
+        | undefined
+    )?._meta['ai.agnes.harness']
+  /** A daemon that reports the session's prompt back with `applied` text (or none, like an old one). */
+  const daemon = (applied?: string) =>
+    scriptedEndpoint().on('_agnes/v1/systemPrompt.get', () => ({
+      config: {},
+      effect: 'new-sessions',
+      hash: 'a'.repeat(64),
+      preview: 'session-assembled',
+      sections: [
+        { id: 'core', order: 1, source: 'core', text: applied === undefined ? 'base' : `base\n\n${applied}` },
+      ],
+    }))
+  const methodsOf = (ep: FakeEndpoint) => ep.calls.map((c) => c.method)
+
+  it('sends the text on a fresh session and reads the prompt back before the first prompt', async () => {
+    const ep = daemon('Answer in French.')
+    const code = await runPrint(
+      await booted(ep),
+      parseArgs(['-p', 'q', '--append-system-prompt', 'Answer in French.']),
+      io(),
+    )
+    expect(code).toBe(0)
+    expect(metaOf(ep)).toMatchObject({ systemPromptAppend: 'Answer in French.' })
+    expect(String(metaOf(ep)?.sessionKey)).toContain(':cli:session:')
+    const methods = methodsOf(ep)
+    expect(methods.indexOf('_agnes/v1/systemPrompt.get')).toBeGreaterThan(methods.indexOf('session/new'))
+    expect(methods.indexOf('_agnes/v1/systemPrompt.get')).toBeLessThan(methods.indexOf('session/prompt'))
+    expect(ep.calls.find((c) => c.method === '_agnes/v1/systemPrompt.get')?.params).toEqual({
+      sessionId: FAKE_SESSION_ID,
+    })
+  })
+
+  it('reads --append-system-prompt-file from the working directory', async () => {
+    const dir = scratch()
+    writeFileSync(join(dir, 'rules.md'), 'Be brief.\n')
+    const ep = daemon('Be brief.\n')
+    const code = await runPrint(
+      await booted(ep),
+      parseArgs(['-p', 'q', '--append-system-prompt-file', 'rules.md']),
+      { ...io(), cwd: dir },
+    )
+    expect(code).toBe(0)
+    expect(metaOf(ep)).toMatchObject({ systemPromptAppend: 'Be brief.\n' })
+  })
+
+  it('refuses a symlinked, oversize, empty, NUL or missing file before any session exists', async () => {
+    const dir = scratch()
+    writeFileSync(join(dir, 'real.md'), 'text')
+    symlinkSync(join(dir, 'real.md'), join(dir, 'link.md'))
+    writeFileSync(join(dir, 'big.md'), 'x'.repeat(8193))
+    writeFileSync(join(dir, 'empty.md'), '')
+    writeFileSync(join(dir, 'nul.md'), 'a\0b')
+    for (const file of ['link.md', 'big.md', 'empty.md', 'nul.md', 'missing.md']) {
+      const ep = daemon('text')
+      const e = await runPrint(
+        await booted(ep),
+        parseArgs(['-p', 'q', '--append-system-prompt-file', file]),
+        {
+          ...io(),
+          cwd: dir,
+        },
+      ).catch((x: unknown) => x)
+      expect(e, file).toMatchObject({ name: 'UsageError', code: 2 })
+      expect(methodsOf(ep), file).not.toContain('session/new')
+    }
+  })
+
+  it('does not send the first prompt when an older daemon ignored the field', async () => {
+    const ep = daemon()
+    const e = await runPrint(
+      await booted(ep),
+      parseArgs(['-p', 'q', '--append-system-prompt', 'Answer in French.']),
+      io(),
+    ).catch((x: unknown) => x)
+    expect(e).toMatchObject({ name: 'CommandError' })
+    expect((e as Error).message).toContain('did not apply')
+    expect(methodsOf(ep)).not.toContain('session/prompt')
+  })
+
+  it('does not send the first prompt when the daemon cannot report the prompt back', async () => {
+    const ep = scriptedEndpoint()
+    const e = await runPrint(
+      await booted(ep),
+      parseArgs(['-p', 'q', '--append-system-prompt', 'x']),
+      io(),
+    ).catch((x: unknown) => x)
+    expect(e).toMatchObject({ name: 'CommandError' })
+    expect(methodsOf(ep)).not.toContain('session/prompt')
   })
 })

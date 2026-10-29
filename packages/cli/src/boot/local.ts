@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -14,7 +16,10 @@ import {
 } from '@agnes/daemon/local'
 import {
   type ConfigurationService,
+  cacheDir,
   composeProductionRequestMedia,
+  compositionPreset,
+  compositionSurfaceAllowed,
   createConfigurationService,
   createHost,
   createJitiPackageLoader,
@@ -23,22 +28,33 @@ import {
   createPlatform,
   createSqliteStorage,
   DEFAULT_COMPUTER_USE,
+  dataDir,
   type ExtensionIsolationOptions,
   type Host,
   HostError,
   type HostOptions,
   type LockState,
   type PackageLoader,
+  type ProfileInputs,
   type Prompter,
   packageDirs,
   type ResolvedProfile,
   readLock,
+  resolveComposition,
   resolveProfile,
   resolveWorkspaceDirectory,
   type SqliteStorage,
   verifyLockIntegrity,
 } from '@agnes/host'
-import { createPackageManager } from '@agnes/package-manager'
+import {
+  createPackageManager,
+  isRuntimePackageEligible,
+  localPluginRoots,
+  runtimePluginSnapshotsFromInventory,
+  snapshotPolicy,
+} from '@agnes/package-manager'
+import { jcs } from '@agnes/protocol'
+import { createSkillCandidateRegistry, createSkillCordisService } from '@agnes/resource-control-runtime'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { packagedPackages } from '../../launch/packaged-host.js'
 import { resolveLaunchResources } from '../../launch/resources.js'
@@ -63,8 +79,13 @@ export function hostRootFrom(): string {
 }
 
 export type LocalBootDeps = BootDeps & {
+  /** One-shot headless state is isolated from shared daemon sessions and generation pins. */
+  runtimeDirectory?: string
+  packageDataDir?: string
   /** Optional interactive onboarding gate. It runs before profile/Host assembly. */
   onboarding?: (input: { profile: string; home: string; cwd: string; signal?: AbortSignal }) => Promise<void>
+  /** Privileged one-shot CLI composition; Host still resolves and validates the resulting inputs. */
+  transformProfileInputs?: (inputs: ProfileInputs) => ProfileInputs | Promise<ProfileInputs>
   /**
    * Replaces the default package wiring (host's jiti loader over the directories `packageDirs`
    * resolves from the profile's lockfile). A test seam, like `createHostImpl`: a caller that
@@ -98,48 +119,42 @@ async function defaultPackages(
   loader: PackageLoader
   packageDirs: Map<string, string>
   extensionLoader?: { import(file: string): Promise<Record<string, unknown>> }
+  runtimePluginSnapshots?: NonNullable<HostOptions['runtimePluginSnapshots']>
+  runtimePluginSources?: NonNullable<HostOptions['runtimePluginSources']>
 }> {
-  const lock = readLock(profileDir, { profile: profile.name, agnesVersion: deps.agnesVersion })
-  verifyLockIntegrity(lock, { dataDir: profile.dataDir, profile: profile.name })
-  if (process.getBuiltinModule('node:sea').isSea() || packagedRuntime())
-    return packagedPackages(
-      profile,
-      deps.home,
-      process.getBuiltinModule('node:sea').isSea() ? process.execPath : fileURLToPath(import.meta.url),
-    )
-  return {
-    loader: createJitiPackageLoader(
-      createLoader({ cacheDir: profile.cacheDir, hostRoot, agnesVersion: deps.agnesVersion }),
+  const sourceProfile = { ...profile, dataDir: deps.packageDataDir ?? profile.dataDir }
+  const manager = createPackageManager({ dataDir: sourceProfile.dataDir, agnesVersion: deps.agnesVersion })
+  const runtimePluginSources = async () =>
+    runtimePluginSnapshotsFromInventory(await manager.inventory(profileDir))
+  const runtimePluginSnapshots = (await runtimePluginSources()).filter((source) =>
+    profile.packages.some(
+      (pkg) =>
+        pkg.id === source.snapshot.packageId && pkg.enabled && pkg.integrity === source.snapshot.integrity,
     ),
-    packageDirs: packageDirs(profile, { dataDir: profile.dataDir, profileDir, lock, hostRoot }),
-  }
-}
-
-/**
- * The immutable snapshots of the profile's installed packages, found the way a daemon worker finds
- * them. Host refuses a trusted non-builtin package whose snapshot it was not handed, so an embedded
- * boot (`--standalone`, `--ephemeral`, `--mode acp`) that skipped this lookup could not load any
- * package the profile names, and said the snapshot was missing when it had only not been read.
- * A snapshot is admitted only when it matches the integrity the profile pins for that package.
- */
-async function installedPackageSnapshots(
-  profile: ResolvedProfile,
-  profileDir: string,
-): Promise<Pick<HostOptions, 'runtimePluginSnapshots' | 'runtimePluginSources'>> {
-  const pinned = new Map(
-    (profile.packages ?? [])
-      .filter((pkg) => pkg.enabled && pkg.trust !== 'builtin')
-      .map((pkg) => [pkg.id, pkg.integrity]),
   )
-  if (pinned.size === 0) return {}
-  // '0.0.0' is what the daemon and its workers read the store with, so both see the same inventory.
-  const manager = createPackageManager({ dataDir: profile.dataDir, agnesVersion: '0.0.0' })
-  const sources = () => manager.runtimePluginSnapshots(profileDir)
+  const lock = readLock(profileDir, { profile: profile.name, agnesVersion: deps.agnesVersion })
+  verifyLockIntegrity(lock, { dataDir: sourceProfile.dataDir, profile: profile.name })
+  if (process.getBuiltinModule('node:sea').isSea() || packagedRuntime())
+    return {
+      ...(await packagedPackages(
+        sourceProfile,
+        deps.home,
+        process.getBuiltinModule('node:sea').isSea() ? process.execPath : fileURLToPath(import.meta.url),
+      )),
+      runtimePluginSources,
+      runtimePluginSnapshots,
+    }
+  const extensionLoader = createLoader({
+    cacheDir: profile.cacheDir,
+    hostRoot,
+    agnesVersion: deps.agnesVersion,
+  })
   return {
-    runtimePluginSources: sources,
-    runtimePluginSnapshots: (await sources()).filter(
-      (source) => pinned.get(source.snapshot.packageId) === source.snapshot.integrity,
-    ),
+    extensionLoader,
+    runtimePluginSources,
+    runtimePluginSnapshots,
+    loader: createJitiPackageLoader(extensionLoader),
+    packageDirs: packageDirs(sourceProfile, { dataDir: sourceProfile.dataDir, profileDir, lock, hostRoot }),
   }
 }
 
@@ -161,26 +176,33 @@ export async function assembleLocalHost(
     !deps.createHostImpl && process.getBuiltinModule('node:sea').isSea()
       ? resolveLaunchResources().runtimeNode
       : undefined
-  return deps.createHostImpl
-    ? deps.createHostImpl(profile, prompter)
-    : createHost(profile, {
-        dataDir: profile.dataDir,
-        profileDir,
-        workspaceRoot: cwd,
-        hostRoot,
-        log: hostLogger(deps.log),
-        prompter,
-        ...(deps.requestMedia ? { requestMedia: deps.requestMedia } : {}),
-        agnesVersion: deps.agnesVersion,
-        ...(windowsNodeExecutable !== undefined ? { windowsNodeExecutable } : {}),
-        ...(deps.extensionIsolation ? { extensionIsolation: deps.extensionIsolation } : {}),
-        ...(deps.loader
-          ? { loader: deps.loader }
-          : await defaultPackages(deps, profile, profileDir, hostRoot)),
-        // A caller that supplies its own loader owns where packages come from, snapshots included.
-        ...(deps.loader ? {} : await installedPackageSnapshots(profile, profileDir)),
-        ...(deps.signal ? { signal: deps.signal } : {}),
-      })
+  if (deps.createHostImpl) return deps.createHostImpl(profile, prompter)
+  let host: Host | undefined
+  const skills = createSkillCandidateRegistry({
+    barrier: {
+      quiesce(operationId, publish) {
+        if (!host) throw new HostError('E_HOST_CLOSED', 'local Skill publication requires a ready Host')
+        return host.activationBarrier.quiesce(operationId, publish)
+      },
+    },
+  })
+  host = await createHost(profile, {
+    dataDir: profile.dataDir,
+    profileDir: deps.runtimeDirectory ?? profileDir,
+    workspaceRoot: cwd,
+    hostRoot,
+    log: hostLogger(deps.log),
+    prompter,
+    skillContribution: createSkillCordisService(skills),
+    skillResources: skills.snapshot(),
+    ...(deps.requestMedia ? { requestMedia: deps.requestMedia } : {}),
+    agnesVersion: deps.agnesVersion,
+    ...(windowsNodeExecutable !== undefined ? { windowsNodeExecutable } : {}),
+    ...(deps.extensionIsolation ? { extensionIsolation: deps.extensionIsolation } : {}),
+    ...(deps.loader ? { loader: deps.loader } : await defaultPackages(deps, profile, profileDir, hostRoot)),
+    ...(deps.signal ? { signal: deps.signal } : {}),
+  })
+  return host
 }
 
 /**
@@ -224,6 +246,61 @@ function hostLogger(
   return { debug: at('debug'), info: at('info'), warn: at('warn'), error: at('error') }
 }
 
+type PackageRef = NonNullable<NonNullable<ProfileInputs['user']>['packages']>[number]
+
+/**
+ * `--safe-mode` for a private host: every package that is not built in is switched off. This is the
+ * input-level half, applied to every layer that can name a package so the resolved profile (and its
+ * hash) already describes the safe run; `enforceSafeMode` is the guarantee. The shared daemon's
+ * profile and the saved profile files are never written.
+ */
+export function safeModeInputs(inputs: ProfileInputs): ProfileInputs {
+  const off = <T extends { source: string }>(packages: T[] | undefined): T[] | undefined =>
+    packages?.map((pkg) => (pkg.source === 'builtin' ? pkg : { ...pkg, enabled: false }))
+  const layer = <L extends { packages?: PackageRef[] | undefined }>(value: L | undefined): L | undefined =>
+    value?.packages ? { ...value, packages: off(value.packages) as PackageRef[] } : value
+  const next: ProfileInputs = { ...inputs }
+  const user = layer(inputs.user)
+  const workspaceOverlay = layer(inputs.workspaceOverlay)
+  const local = layer(inputs.local)
+  const flags = layer(inputs.flags)
+  if (user) next.user = user
+  if (workspaceOverlay) next.workspaceOverlay = workspaceOverlay
+  if (local) next.local = local
+  if (flags) next.flags = flags
+  return next
+}
+
+/**
+ * The guarantee behind `--safe-mode`, applied to the fully resolved profile on every resolution:
+ * whatever layer, local plugin root, bundle or configuration contributed a package, a package that is
+ * not built in comes out disabled. If one is still enabled afterwards the boot is refused rather than
+ * run unsafe. `disable` is a seam so a test can force that leak.
+ */
+export function enforceSafeMode(
+  profile: ResolvedProfile,
+  disable: (pkg: ResolvedProfile['packages'][number]) => ResolvedProfile['packages'][number] = (pkg) => ({
+    ...pkg,
+    enabled: false,
+  }),
+): ResolvedProfile {
+  const { hash: _hash, ...body } = profile
+  const packages = profile.packages.map((pkg) => (pkg.source === 'builtin' ? pkg : disable(pkg)))
+  const leaked = packages.filter((pkg) => pkg.source !== 'builtin' && pkg.enabled)
+  if (leaked.length > 0)
+    throw new BootError(
+      `--safe-mode could not switch off ${leaked.map((pkg) => pkg.id).join(', ')}; refusing to start`,
+    )
+  const safe = { ...body, packages }
+  return { ...safe, hash: `sha256-${createHash('sha256').update(jcs(safe)).digest('hex')}` }
+}
+
+function composeSafeMode(
+  next: LocalBootDeps['transformProfileInputs'],
+): NonNullable<LocalBootDeps['transformProfileInputs']> {
+  return async (inputs) => safeModeInputs(next ? await next(inputs) : inputs)
+}
+
 export async function bootLocal(p: ParsedArgs, deps: LocalBootDeps): Promise<Booted> {
   const t0 = performance.now()
   const profileName = profileNameFrom(p, deps.env)
@@ -247,7 +324,7 @@ export async function bootLocal(p: ParsedArgs, deps: LocalBootDeps): Promise<Boo
   let profile: ResolvedProfile
   try {
     const configurationInput = configuration ? await configuration.profileInput() : undefined
-    const inputs = await readProfileInputs({
+    const inputOptions = {
       home: deps.home,
       cwd,
       flags: {
@@ -258,22 +335,87 @@ export async function bootLocal(p: ParsedArgs, deps: LocalBootDeps): Promise<Boo
         ...(p.model ? { model: p.model } : {}),
       },
       agnesVersion: deps.agnesVersion,
+      demoFallback: !deps.createHostImpl && !deps.lock,
       ...(deps.lock ? { lock: deps.lock } : {}),
       ...(configurationInput ? { configuration: configurationInput } : {}),
-    })
-    profile = await resolveProfile(inputs, {
-      platform: createPlatform().snapshot(),
-      agnesVersion: deps.agnesVersion,
-      now: new Date().toISOString(),
-      // `--ephemeral` owns this home. Letting resolveProfile fall back to os.homedir() made the
-      // supposedly disposable run write its data/audit/cache beneath the real ~/.agh.
-      homeDir: deps.home,
-    })
+    }
+    let inputs = await readProfileInputs(inputOptions)
+    const transform = p.safeMode ? composeSafeMode(deps.transformProfileInputs) : deps.transformProfileInputs
+    const resolveInputs = async () => {
+      const resolved = await resolveProfile(transform ? await transform(inputs) : inputs, {
+        platform: createPlatform().snapshot(),
+        agnesVersion: deps.agnesVersion,
+        now: new Date().toISOString(),
+        // `--ephemeral` owns this home. Letting resolveProfile fall back to os.homedir() made the
+        // supposedly disposable run write its data/audit/cache beneath the real ~/.agh.
+        homeDir: deps.home,
+      })
+      return p.safeMode ? enforceSafeMode(resolved) : resolved
+    }
+    profile = await resolveInputs()
+    if (!deps.loader && !deps.createHostImpl) {
+      const sourceManager = createPackageManager({
+        dataDir: profile.dataDir,
+        agnesVersion: deps.agnesVersion,
+        localPlugins: localPluginRoots(deps.home, cwd),
+      })
+      const directory = join(deps.home, 'profiles', profileName)
+      mkdirSync(directory, { recursive: true, mode: 0o700 })
+      if (
+        readLock(directory, { profile: profileName, agnesVersion: deps.agnesVersion }).resolvedProfileHash ===
+        null
+      )
+        await snapshotPolicy(directory, profile, deps.agnesVersion)
+      await sourceManager.refreshLocalPlugins(directory)
+      const inventory = await sourceManager.inventory(directory)
+      for (const pkg of inventory.packages)
+        if (pkg.localFailure) deps.log('Local plugin ' + pkg.id + ': ' + pkg.localFailure)
+      inputs = await readProfileInputs(inputOptions)
+      // The shared daemon delivers installed rows as a target. An embedded Host must include the
+      // same enabled, trusted packages in its initial profile; a lock alone is not a package list.
+      const declared = new Set(inputs.user?.packages?.map((pkg) => pkg.id))
+      inputs = {
+        ...inputs,
+        user: {
+          name: profileName,
+          ...inputs.user,
+          packages: [
+            ...(inputs.user?.packages ?? []),
+            ...inventory.packages
+              .filter((pkg) => isRuntimePackageEligible(pkg) && !declared.has(pkg.id))
+              .map((pkg) => ({ id: pkg.id, source: pkg.entry.source.ref, version: pkg.entry.version })),
+          ],
+        },
+      }
+      profile = await resolveInputs()
+    }
   } catch (e) {
     throw asBootError('profile', e)
   }
 
+  if (deps.runtimeDirectory) {
+    const directory = deps.runtimeDirectory
+    deps = { ...deps, packageDataDir: profile.dataDir }
+    const { hash: _sourceHash, ...body } = profile
+    const isolated = JSON.parse(
+      JSON.stringify({
+        ...body,
+        dataDir: dataDir(directory),
+        cacheDir: cacheDir(directory),
+      }),
+    ) as Omit<ResolvedProfile, 'hash'>
+    profile = { ...isolated, hash: 'sha256-' + createHash('sha256').update(jcs(isolated)).digest('hex') }
+  }
   const bridge = createPrompterBridge()
+  if (
+    (p.mode === 'acp' || p.command === 'acp') &&
+    !compositionSurfaceAllowed(
+      resolveComposition(profile, { preset: compositionPreset(profile, p.preset ?? profile.presets.default) })
+        .selection,
+      'acp',
+    )
+  )
+    throw new BootError('ACP is disabled by the selected composition')
   let ownershipStorage: SqliteStorage | undefined
   let sessionOwnership: SessionPrincipalOwnershipIndex
   let workspaces: WorkspaceCatalog
@@ -293,6 +435,8 @@ export async function bootLocal(p: ParsedArgs, deps: LocalBootDeps): Promise<Boo
       resolveWorkspaceDirectory,
       () => Date.now(),
       new WorkspaceBindingIndex(daemonTable(ownershipStorage, 'workspace_bindings')),
+      undefined,
+      { protectedRoots: [profile.dataDir, join(homedir(), '.ssh')] },
     )
     // Same authority source as the daemon supervisor: the CLI launch cwd is registered once. Ambient
     // session/new still cannot mint a workspace from an unregistered path.
@@ -306,7 +450,7 @@ export async function bootLocal(p: ParsedArgs, deps: LocalBootDeps): Promise<Boo
   const imageBytes = computerUse.capture.maxBytesPerImage
   const artifacts = createLocalArtifactReadStore({
     dataDir: profile.dataDir,
-    maxArtifactBytes: imageBytes,
+    maxArtifactBytes: Math.max(32 * 1024 * 1024, imageBytes),
   })
   let mediaHost: Host | undefined
   const requestMedia = composeProductionRequestMedia({
@@ -316,16 +460,11 @@ export async function bootLocal(p: ParsedArgs, deps: LocalBootDeps): Promise<Boo
         const session = mediaHost?.kernel.get(sessionKey)
         if (!before?.active || !session || signal.aborted) return undefined
         const [event] = await session.scan({ fromSeq: nodeSeq, toSeq: nodeSeq, order: 'asc', limit: 1 })
-        const source = event?.sourceEventSeqs?.[0]
-        const [call] =
-          source === undefined
-            ? []
-            : await session.scan({ fromSeq: source, toSeq: source, order: 'asc', limit: 1 })
         if (
           !event ||
           event.seq !== nodeSeq ||
           event.type !== 'tool/result' ||
-          !requestMediaOriginIsValid(event, call) ||
+          !requestMediaOriginIsValid(event) ||
           (event.lane ?? 'main') !== lane
         )
           return undefined

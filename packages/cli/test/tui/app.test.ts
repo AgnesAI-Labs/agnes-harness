@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
@@ -14,10 +14,18 @@ import {
   memoryJournal,
   type TransportFactory,
 } from '@agnes/sdk'
+import {
+  createPrivateDirectorySync,
+  hasPrivateDaclSync,
+  windowsProtectPrivateFileSync,
+} from '@agnes/system-node'
 import { expect, it, vi } from 'vitest'
-import { createAnsi } from '../../src/tui/ansi.js'
+import { type Colour, createAnsi } from '../../src/tui/ansi.js'
 import { TuiApp } from '../../src/tui/app.js'
-import { FakeTerminal } from '../../src/tui/terminal.js'
+import { runSlash, SLASH_COMMANDS } from '../../src/tui/commands.js'
+import { installKeymap, Keymap } from '../../src/tui/keymap.js'
+import { displayWidth, FakeTerminal } from '../../src/tui/terminal.js'
+import { type Tone, TuiTheme } from '../../src/tui/theme.js'
 import { Timeline } from '../../src/tui/views/timeline.js'
 import { ToolCard } from '../../src/tui/views/tool-card.js'
 import { say, slowProvider } from '../boot-host.js'
@@ -33,6 +41,8 @@ it('keyboard input reaches real core through SDK/daemon and renders the projecte
   const endpoint = createLocalEndpoint(host, { pollMs: 5 })
   const client = createClient({ transport: { kind: 'inproc', endpoint } })
   let app: TuiApp | undefined
+  // The bell is the background alert on any terminal but the verified ones; pin it.
+  vi.stubEnv('AGH_NOTIFY', 'bell')
   try {
     await client.workspace.add(dir)
     const session = await client.session.new({ cwd: dir })
@@ -51,10 +61,16 @@ it('keyboard input reaches real core through SDK/daemon and renders the projecte
     })
     expect(term.writes.join('')).not.toContain('\x1b]52;')
     await vi.waitFor(() => expect(app?.busy).toBe(false))
-    term.feed('second question')
-    term.feed('\r')
+    const bells = () => term.writes.filter((w) => w === '\x07').length
+    // In the foreground the first turn ended without a bell; in the background the next one rings once.
+    expect(bells()).toBe(0)
+    term.feed('\x1b[O')
+    // Text and Enter in one stdin chunk (a stalled event loop, tmux send-keys) still submit.
+    term.feed('second question\r')
     await vi.waitFor(async () => expect((await screenOf(term, 80, 24)).join('\n')).toContain('next answer'))
     await vi.waitFor(() => expect(app?.busy).toBe(false))
+    await vi.waitFor(() => expect(bells()).toBe(1))
+    expect(term.writes.join('')).toContain('\x1b[?1004h')
     term.feed('\x04')
     expect(quit).toHaveBeenCalledTimes(1)
     const clock = vi.spyOn(Date, 'now')
@@ -75,11 +91,14 @@ it('keyboard input reaches real core through SDK/daemon and renders the projecte
     }
     await app.stop()
     expect(term.raw).toBe(false)
+    expect(term.writes.filter((w) => w === '\x1b[22;0t')).toHaveLength(1)
+    expect(term.writes.filter((w) => w === '\x1b[23;0t')).toHaveLength(1)
     expect(session.listeners.size).toBe(0)
     const writes = term.writes.length
     term.feed('after stop')
     expect(term.writes).toHaveLength(writes)
   } finally {
+    vi.unstubAllEnvs()
     await app?.stop()
     await client.close()
     await endpoint.close()
@@ -131,71 +150,41 @@ it('renders localized daemon notices delivered through the real SDK Client event
     await vi.waitFor(async () =>
       expect((await screenOf(term, 80, 24)).join('\n')).toContain('执行中断，30 秒内自动恢复'),
     )
+
+    // A session-scoped notice for another session (e.g. the one just switched away from) is not ours.
+    endpoint.pushNotice({
+      kind: 'resumed',
+      sessionId: session.id,
+      detail: { lastStep: 9 },
+      at: new Date(0).toISOString(),
+    })
+    await vi.waitFor(async () =>
+      expect((await screenOf(term, 80, 24)).join('\n')).toContain('上次停在第 9 步，已续跑'),
+    )
+    endpoint.pushNotice({
+      kind: 'worker_crashed',
+      sessionId: 'agnes:local:default:cli:dm:other',
+      detail: {},
+      at: new Date(0).toISOString(),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const screen = (await screenOf(term, 80, 24)).join('\n')
+    expect(screen).toContain('上次停在第 9 步，已续跑')
+    expect(screen).not.toContain('执行中断')
+
+    // The SDK gives up re-subscribing and sends only this; without a message the timeline just freezes.
+    endpoint.pushNotice({ kind: 'stream-recovery-failed', sessionId: session.id } as never)
+    await vi.waitFor(async () =>
+      expect((await screenOf(term, 80, 24)).join('\n')).toContain(
+        '实时更新已中断，请用 /resume 重新打开本会话',
+      ),
+    )
   } finally {
     await app.stop()
     await client.close()
     await endpoint.close()
   }
 })
-
-it.each([
-  [
-    'the daemon reports its history failed verification',
-    { kind: 'integrity_failed', detail: { code: 'E_LEDGER_INTEGRITY' } },
-    '历史未通过完整性校验',
-  ],
-  [
-    'a reconnect was refused for a newer ledger',
-    { kind: 'session-refused', code: 'NEWER_LEDGER_FORMAT' },
-    '当前版本无法读取该会话',
-  ],
-])(
-  'ends a session when %s: says so, keeps the transcript and sends nothing more',
-  async (_case, notice, text) => {
-    const sessionId = 'agnes:local:default:cli:dm:refused'
-    const endpoint = new FakeEndpoint()
-      .on('initialize', () => ({
-        protocolVersion: 1,
-        agentCapabilities: {},
-        _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
-      }))
-      .on('session/new', () => ({ sessionId }))
-      .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 1, resolvedProfileHash: 'h' }))
-      .on('_agnes/v1/session.detach', () => ({}))
-      .on('_agnes/v1/session.projectUI', () => ({
-        sessionId,
-        generation: 1,
-        upto: 1,
-        opState: null,
-        turns: [],
-        nodes: [{ kind: 'user', id: 'u1', seq: 1, content: [{ type: 'text', text: 'earlier question' }] }],
-      }))
-      .on('session/prompt', () => ({ stopReason: 'end_turn' }))
-    const client = createClient({ transport: { kind: 'inproc', endpoint } })
-    const session = await client.session.new({ cwd: '/tmp' })
-    const term = new FakeTerminal({ columns: 80, rows: 24 })
-    const app = new TuiApp({ session, term, header: 'Agnes', locale: 'zh-CN' })
-    try {
-      await app.start()
-      await vi.waitFor(async () =>
-        expect((await screenOf(term, 80, 24)).join('\n')).toContain('earlier question'),
-      )
-      // The SDK's own notice stands for a refused reconnect; the daemon's arrives over the wire.
-      if (notice.kind === 'session-refused') client.notice({ ...notice, sessionId })
-      else endpoint.pushNotice({ ...notice, sessionId, at: new Date(0).toISOString() } as never)
-      await vi.waitFor(async () => expect((await screenOf(term, 80, 24)).join('\n')).toContain(text))
-      expect((await screenOf(term, 80, 24)).join('\n')).toContain('earlier question')
-      term.feed('one more')
-      term.feed('\r')
-      await new Promise((resolve) => setTimeout(resolve, 100))
-      expect(endpoint.calls.map((call) => call.method)).not.toContain('session/prompt')
-    } finally {
-      await app.stop()
-      await client.close()
-      await endpoint.close()
-    }
-  },
-)
 
 it('opens a long restored session without replaying off-window history or fixed chrome into scrollback', async () => {
   const sessionId = 'agnes:local:default:cli:dm:long-opening'
@@ -312,7 +301,78 @@ it('loads an earlier fixed-cut page on PgUp without moving the live attach curso
   }
 })
 
-it('shows a stable error code without exposing the raw failure message', async () => {
+it('Ctrl-T pages through the whole conversation, reads older history from its top, and closes where it began', async () => {
+  const sessionId = 'agnes:local:default:cli:dm:pager-history'
+  const user = (index: number) => ({
+    kind: 'user' as const,
+    id: `user-${index}`,
+    seq: index,
+    content: [{ type: 'text' as const, text: `history ${index}` }],
+  })
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 10, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.projectUIOpening', () => ({
+      timeline: { sessionId, generation: 1, upto: 10, opState: null, turns: [], nodes: [user(8), user(9)] },
+      history: { hasEarlier: true, cursor: 'before-8', startIndex: 8, totalNodes: 10 },
+    }))
+    .on('_agnes/v1/session.projectUIHistory', () => ({
+      sessionId,
+      generation: 1,
+      cut: 10,
+      turns: [],
+      nodes: [user(4), user(5), user(6), user(7)],
+      hasEarlier: true,
+      cursor: 'before-4',
+      startIndex: 4,
+      totalNodes: 10,
+    }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  const session = await client.session.new({ cwd: '/tmp' })
+  const term = new FakeTerminal({ columns: 60, rows: 12 })
+  const copied: string[] = []
+  const app = new TuiApp({ session, term, header: 'Agnes', copy: (text) => void copied.push(text) })
+  const screen = async () => (await screenOf(term, 60, 12)).join('\n')
+  const history = () => endpoint.calls.filter((c) => c.method === '_agnes/v1/session.projectUIHistory')
+  try {
+    await app.start()
+    await vi.waitFor(async () => expect(await screen()).toContain('history 9'))
+    const before = (await screenOf(term, 60, 12)).filter((l) => l.includes('history'))
+    term.feed('\x14')
+    await vi.waitFor(async () => expect(await screen()).toContain('esc close'))
+    expect(await screen()).toContain('Earlier history')
+    expect(history()).toHaveLength(0)
+    // At the top, one more step up reads the older page; it lands above what was on screen.
+    term.feed('\x1b[H')
+    term.feed('\x1b[A')
+    await vi.waitFor(() => expect(history()).toHaveLength(1))
+    term.feed('\x1b[H')
+    await vi.waitFor(async () => expect(await screen()).toContain('history 4'))
+    // Search runs over what is now loaded, and `c` hands the message with the hit to the clipboard.
+    term.feed('/')
+    term.feed('HISTORY 5')
+    term.feed('\r')
+    await vi.waitFor(async () => expect(await screen()).toContain('/HISTORY 5  1/1'))
+    term.feed('c')
+    expect(copied).toEqual(['history 5'])
+    term.feed('\x14')
+    await vi.waitFor(async () => expect(await screen()).not.toContain('esc close'))
+    expect(
+      (await screenOf(term, 60, 12)).filter((l) => l.includes('history 8') || l.includes('history 9')),
+    ).toEqual(before.filter((l) => l.includes('history 8') || l.includes('history 9')))
+  } finally {
+    await app.stop()
+    await client.close()
+  }
+})
+
+it('keeps an unknown error generic without exposing the raw failure message', async () => {
   const endpoint = new FakeEndpoint()
     .on('initialize', () => ({
       protocolVersion: 1,
@@ -332,47 +392,12 @@ it('shows a stable error code without exposing the raw failure message', async (
   try {
     await app.start()
     await vi.waitFor(async () =>
-      expect((await screenOf(term, 80, 24)).join('\n')).toContain('Request failed (E_PROJECTION_TEST).'),
+      expect((await screenOf(term, 80, 24)).join('\n')).toContain('Request failed. Try again.'),
     )
     expect((await screenOf(term, 80, 24)).join('\n')).not.toContain('secret backend detail')
   } finally {
     await app.stop()
     await client.close()
-  }
-})
-
-it('dispatches input queued while the prompt RPC is settling as the next real turn', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'agnes-tui-queued-'))
-  const { host } = await createTestHost({ dataDir: dir, provider: slowProvider(20) })
-  const endpoint = createLocalEndpoint(host, { pollMs: 5 })
-  const client = createClient({ transport: { kind: 'inproc', endpoint } })
-  let app: TuiApp | undefined
-  try {
-    await client.workspace.add(dir)
-    const session = await client.session.new({ cwd: dir })
-    app = new TuiApp({ session, term: new FakeTerminal({ columns: 80, rows: 24 }), header: 'Agnes' })
-    await app.start()
-
-    const first = app.submit('first prompt')
-    expect(app.busy).toBe(true)
-    await app.submit('second prompt')
-    await first
-
-    await vi.waitFor(async () => {
-      const users = (await session.projectUI()).nodes
-        .filter((node) => node.kind === 'user')
-        .flatMap((node) => node.content)
-        .filter((block) => block.type === 'text')
-        .map((block) => block.text)
-      expect(users).toEqual(['first prompt', 'second prompt'])
-    })
-    await vi.waitFor(() => expect(app?.busy).toBe(false))
-  } finally {
-    await app?.stop()
-    await client.close()
-    await endpoint.close()
-    await host.close()
-    rmSync(dir, { recursive: true, force: true })
   }
 })
 
@@ -407,6 +432,97 @@ it('Ctrl-C cancels actual core inference and restores an idle editor', async () 
   }
 })
 
+it('Esc cancels actual core inference and keeps the half-written draft', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agnes-tui-esc-'))
+  const { host } = await createTestHost({ dataDir: dir, provider: slowProvider(60_000) })
+  const endpoint = createLocalEndpoint(host, { pollMs: 5 })
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    await client.workspace.add(dir)
+    const session = await client.session.new({ cwd: dir })
+    const term = new FakeTerminal({ columns: 80, rows: 24 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    term.feed('slow question')
+    term.feed('\r')
+    await vi.waitFor(async () => expect((await session.projectUI()).opState).not.toBeNull())
+    expect(app.busy).toBe(true)
+    term.feed('half a thought')
+    term.feed('\x1b')
+    await vi.waitFor(() => expect(app?.busy).toBe(false))
+    expect((await session.projectUI()).opState).toBeNull()
+    const shown = async () => (await screenOf(term, 80, 24)).join('\n')
+    await vi.waitFor(async () => expect(await shown()).toContain('half a thought'))
+    // With nothing running, the same key clears the draft as before.
+    term.feed('\x1b')
+    await vi.waitFor(async () => expect(await shown()).not.toContain('half a thought'))
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+    await host.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+type Submitted = { kind: string; commandId: string; payload: Record<string, unknown> }
+
+/** fakeSessionEndpoint that records every `_agnes/v1/submit` and answers it like a daemon that accepted it. */
+function submitEndpoint(answer: (params: Submitted) => unknown = () => ({ seq: 1, replayed: false })) {
+  const base = fakeSessionEndpoint()
+  const submits: Submitted[] = []
+  base.endpoint
+    .on('_agnes/v1/submit', (params) => {
+      submits.push(params as Submitted)
+      return answer(params as Submitted)
+    })
+    .on('_agnes/v1/submit.ack', () => ({}))
+  return { ...base, submits }
+}
+
+it.each([
+  ['sends the cancel', undefined, undefined],
+  [
+    'says only the owner can cancel when the daemon refuses it',
+    rpcError('CAPABILITY_DENIED', {}),
+    'Only the session owner can cancel this turn',
+  ],
+  [
+    'names the code of a rejected cancel',
+    rpcError('SEMANTIC_REJECTED', { code: 'LOOP_CONTROL_UNSUPPORTED' }),
+    'Cancel refused (LOOP_CONTROL_UNSUPPORTED)',
+  ],
+])('treats a turn another client started as busy, and Ctrl-C %s', async (_name, refusal, shown) => {
+  const { endpoint, submits } = submitEndpoint(() => {
+    if (refusal) throw refusal
+    return { seq: 1, replayed: false }
+  })
+  endpoint.on('_agnes/v1/session.projectUI', () => ({
+    ...EMPTY_TIMELINE,
+    opState: { turn: 1, step: 1, phase: 'tools' },
+  }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 24 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    await vi.waitFor(() => expect(app?.busy).toBe(true))
+    term.feed('\x03')
+    await vi.waitFor(() =>
+      expect(submits.map((s) => [s.kind, s.payload.action])).toEqual([['control', 'cancel']]),
+    )
+    if (shown)
+      await vi.waitFor(async () => expect((await screenOf(term, 80, 24)).join('\n')).toContain(shown))
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})
+
 it('keeps long-conversation history inside fullscreen while paging the projected window', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agnes-tui-history-'))
   const { host } = await createTestHost({
@@ -420,7 +536,8 @@ it('keeps long-conversation history inside fullscreen while paging the projected
     await client.workspace.add(dir)
     const session = await client.session.new({ cwd: dir })
     const term = new FakeTerminal({ columns: 40, rows: 16 })
-    app = new TuiApp({ session, term, header: 'Agnes' })
+    const copied: string[] = []
+    app = new TuiApp({ session, term, header: 'Agnes', copy: (text) => copied.push(text) })
     await app.start()
     await app.submit('long question')
     await vi.waitFor(async () => {
@@ -435,8 +552,40 @@ it('keeps long-conversation history inside fullscreen while paging the projected
     await vi.waitFor(async () => expect((await emulate(term, 40, 16)).lines).toContain('line 1'))
     term.feed('\x1b[6~')
     await vi.waitFor(async () => expect((await emulate(term, 40, 16)).lines).toContain('line 8'))
+    const bottom = (await emulate(term, 40, 16)).lines
+    // The wheel scrolls the same window; without mouse reporting it would arrive as arrow keys and
+    // recall "long question" into the prompt instead.
+    expect(term.writes.join('')).toContain('\x1b[?1002h\x1b[?1006h')
+    term.feed('\x1b[<64;1;1M'.repeat(10))
+    await vi.waitFor(async () => expect((await emulate(term, 40, 16)).lines).toContain('line 1'))
+    term.feed('\x1b[<65;1;1M'.repeat(10))
+    await vi.waitFor(async () => expect((await emulate(term, 40, 16)).lines).toContain('line 8'))
+    expect((await emulate(term, 40, 16)).lines).toEqual(bottom)
+    // End returns to the bottom; with a draft, End stays with the cursor and only Ctrl-End jumps.
+    term.feed('\x1b[5~')
+    await vi.waitFor(async () => expect((await emulate(term, 40, 16)).lines).toContain('line 1'))
+    term.feed('\x1b[F')
+    await vi.waitFor(async () => expect((await emulate(term, 40, 16)).lines).toContain('line 8'))
+    expect((await emulate(term, 40, 16)).lines).toEqual(bottom)
+    term.feed('draft')
+    term.feed('\x1b[5~')
+    await vi.waitFor(async () => expect((await emulate(term, 40, 16)).lines).toContain('line 1'))
+    term.feed('\x1b[F')
+    expect((await emulate(term, 40, 16)).lines).toContain('line 1')
+    term.feed('\x1b[1;5F')
+    await vi.waitFor(async () => expect((await emulate(term, 40, 16)).lines).toContain('line 8'))
+    term.feed('\x15')
+    // Dragging over the reply copies what the screen shows and says so without moving a row.
+    const row = bottom.indexOf('line 8') + 1
+    term.feed(`\x1b[<0;1;${row}M\x1b[<32;7;${row}M\x1b[<0;7;${row}m`)
+    expect(copied).toEqual(['line 8'])
+    await vi.waitFor(async () =>
+      expect((await emulate(term, 40, 16)).lines.join('\n')).toContain('✓ Copied to clipboard'),
+    )
+    expect((await emulate(term, 40, 16)).lines.indexOf('line 8')).toBe(row - 1)
     expect((await emulate(term, 40, 16)).scrollback).toEqual(history)
     await app.stop()
+    expect(term.writes.join('')).toContain('\x1b[?1006l\x1b[?1002l\x1b[?1049l')
     const exited = await emulate(term, 40, 16)
     const shell = [...exited.scrollback, ...exited.lines].join('\n')
     expect(shell).not.toContain('long question')
@@ -473,11 +622,11 @@ it('renders actual projected Markdown with safe styles and literal user input', 
     await vi.waitFor(async () => {
       const screen = await emulate(term, 40, 40)
       const lines = [...screen.scrollback, ...screen.lines].map((line) => line.trimEnd())
-      expect(lines.some((line) => line.trimEnd() === '   › **literal question**')).toBe(true)
+      expect(lines.some((line) => line.trimEnd() === ' ▍ **literal question**')).toBe(true)
       expect(lines).toContain('Answer')
       expect(lines).toContain('bold')
       expect(lines).toContain('• item')
-      expect(lines).toContain('  let x = 1')
+      expect(lines).toContain(`${'  let x = 1'.padEnd(36)} js`)
       expect(lines).toContain('<b>raw</b> alt')
     })
     expect(term.writes.join('')).toContain('\x1b[1mbold\x1b[22m')
@@ -504,7 +653,7 @@ it('keeps a tall draft cursor visible and submits all original lines through act
     app = new TuiApp({ session, term, header: 'Agnes' })
     await app.start()
     const draft = Array.from({ length: 15 }, (_, i) => `draft ${i}`).join('\n')
-    term.feed(draft)
+    term.feed(draft.replaceAll('\n', '\x1b\r'))
     await vi.waitFor(async () => {
       const screen = await emulate(term, 30, 12)
       expect(screen.lines.some((line) => line.includes('draft 14'))).toBe(true)
@@ -550,9 +699,7 @@ it("mints a fresh requestSeq for every real action click, never the slot fill's 
     sessionId: SID,
     upto: 1,
     generation: 1,
-    // A late historical projection may still advertise a running turn. It is display state, not
-    // permission to trap the next editor submission in a local queue.
-    opState: { turn: 7, step: 1, phase: 'tools' },
+    opState: null,
     turns: [],
     nodes: [
       {
@@ -619,6 +766,775 @@ it("mints a fresh requestSeq for every real action click, never the slot fill's 
     await app?.stop()
     await client.close()
     await endpoint.close()
+  }
+})
+
+// Ctrl+O on a tool card asks the daemon for the whole record; the previews stay on screen until the
+// answer lands, and when it cannot be had the card keeps them and names the reason on one line.
+it.each([
+  ['replaces the previews with the full record', false],
+  ['keeps the previews and says why the record could not be read', true],
+])('Ctrl+O %s', async (_name, refuse) => {
+  const SID = 'agnes:local:default:cli:dm:detail'
+  const record = {
+    call: { toolUseId: 'c1', name: 'query', args: { sql: 'select 1', limit: 3 }, ordinal: 0 },
+    result: {
+      toolUseId: 'c1',
+      content: [{ type: 'text', text: 'full line one\nfull line two' }],
+      isError: false,
+      enforcement: { level: 'none', scope: [] },
+      authz: { decisionId: 'd1' },
+    },
+  }
+  const body = JSON.stringify(record)
+  const reads: unknown[] = []
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: SID }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.projectUI', () => ({
+      sessionId: SID,
+      upto: 2,
+      generation: 1,
+      opState: null,
+      turns: [],
+      nodes: [
+        {
+          kind: 'tool',
+          id: 't1',
+          seq: 1,
+          resultSeq: 2,
+          toolUseId: 'c1',
+          name: 'query',
+          status: 'completed',
+          summary: '2 rows',
+          argsPreview: '{"sql":"sel…',
+          resultPreview: 'preview only',
+        },
+      ],
+    }))
+    .on('_agnes/v1/session.readToolDetail', (params) => {
+      reads.push(params)
+      if (refuse) throw rpcError('INTERNAL_ERROR', { reason: 'boom' })
+      return {
+        sessionId: SID,
+        callSeq: 1,
+        resultSeq: 2,
+        offset: 0,
+        totalBytes: Buffer.byteLength(body),
+        data: Buffer.from(body).toString('base64'),
+        nextOffset: null,
+      }
+    })
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 20 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    await vi.waitFor(async () =>
+      expect((await screenOf(term, 80, 20)).join('\n')).toContain('◆ query  2 rows'),
+    )
+    term.feed('\x0f')
+    // Expanding is immediate and shows the previews; the fetch is asked for exactly this call/result pair.
+    await vi.waitFor(() => expect(reads).toEqual([{ sessionId: SID, callSeq: 1, resultSeq: 2, offset: 0 }]))
+    await vi.waitFor(async () => {
+      const screen = (await screenOf(term, 80, 20)).join('\n')
+      if (refuse) {
+        expect(screen).toContain('preview only')
+        expect(screen).toContain('Full record unavailable (Request failed (INTERNAL_ERROR)')
+      } else {
+        expect(screen).toContain('full line two')
+        expect(screen).toContain('"sql": "select 1"')
+        expect(screen).not.toContain('preview only')
+      }
+    })
+    // Closing and opening again retries only a failed fetch.
+    term.feed('\x0f')
+    term.feed('\x0f')
+    await vi.waitFor(() => expect(reads).toHaveLength(refuse ? 2 : 1))
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})
+
+// A click on a card's head row opens that card, whichever one it is; Ctrl-O keeps toggling the latest.
+it('toggles the clicked tool card by its head row', async () => {
+  const SID = 'agnes:local:default:cli:dm:click'
+  const tool = (n: number) => ({
+    kind: 'tool',
+    id: `t${n}`,
+    seq: n,
+    toolUseId: `c${n}`,
+    name: 'query',
+    status: 'completed',
+    summary: `rows ${n}`,
+    argsPreview: `{"n":${n}}`,
+  })
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: SID }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.projectUI', () => ({
+      sessionId: SID,
+      upto: 2,
+      generation: 1,
+      opState: null,
+      turns: [],
+      nodes: [tool(1), tool(2)],
+    }))
+    .on('_agnes/v1/session.readToolDetail', () => {
+      throw rpcError('INTERNAL_ERROR', { reason: 'unused' })
+    })
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 20 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    await vi.waitFor(async () => expect((await screenOf(term, 80, 20)).join('\n')).toContain('rows 2'))
+    const click = async (label: string) => {
+      const row = (await screenOf(term, 80, 20)).findIndex((line) => line.includes(label)) + 1
+      expect(row).toBeGreaterThan(0)
+      term.feed(`\x1b[<0;5;${row}M\x1b[<0;5;${row}m`)
+    }
+    await click('rows 1') // the older card, not the latest
+    await vi.waitFor(async () => expect((await screenOf(term, 80, 20)).join('\n')).toContain('{"n":1}'))
+    expect((await screenOf(term, 80, 20)).join('\n')).not.toContain('{"n":2}')
+    await click('query') // the first card's head again closes it
+    await vi.waitFor(async () => expect((await screenOf(term, 80, 20)).join('\n')).not.toContain('{"n":1}'))
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})
+
+// The plan, subagent and job tools get cards of their own, built from the projected timeline alone:
+// a subagent's state and time come from the trace spans, which change while its node does not.
+it('draws plan, subagent and job cards from the projected timeline', async () => {
+  const SID = 'agnes:local:default:cli:dm:cards'
+  const span = (over: Record<string, unknown>) => ({
+    id: 'sp',
+    kind: 'other',
+    name: 'n',
+    status: 'completed',
+    startSeq: 1,
+    startedAt: '2026-10-22T00:00:00Z',
+    children: [],
+    nodeIds: [],
+    ...over,
+  })
+  const tool = (id: string, seq: number, over: Record<string, unknown>) => ({
+    kind: 'tool',
+    id,
+    seq,
+    toolUseId: id,
+    status: 'completed',
+    summary: '',
+    ...over,
+  })
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: SID }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.projectUI', () => ({
+      sessionId: SID,
+      upto: 3,
+      generation: 1,
+      opState: null,
+      turns: [
+        {
+          id: 'turn-1',
+          turn: 1,
+          startSeq: 1,
+          startedAt: '2026-10-22T00:00:00Z',
+          status: 'completed',
+          nodeIds: [],
+          usage: {
+            totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+            reasoningComplete: true,
+            billingComplete: true,
+            calls: [],
+          },
+          inherited: false,
+          forkable: false,
+          trace: span({
+            kind: 'turn',
+            children: [span({ kind: 'subagent', childSessionKey: 'kid', durationMs: 4_200 })],
+          }),
+        },
+      ],
+      nodes: [
+        tool('p', 1, {
+          name: 'update_plan',
+          argsPreview: JSON.stringify({
+            plan: [
+              { step: 'read the code', status: 'completed' },
+              { step: 'write the card', status: 'in_progress' },
+            ],
+          }),
+        }),
+        tool('a', 2, {
+          name: 'subagent_spawn',
+          summary: 'spawned',
+          delegatedTask: { childKey: 'kid', task: 'check the build', status: 'running' },
+        }),
+        tool('j', 3, { name: 'job_list', summary: '2 jobs' }),
+      ],
+    }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 24 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    await vi.waitFor(async () => {
+      const screen = (await screenOf(term, 80, 24)).join('\n')
+      expect(screen).toContain('Plan  1/2 done')
+      expect(screen).toContain('[x] read the code')
+      expect(screen).toContain('[>] write the card')
+      expect(screen).toContain('Subagent  check the build')
+      // Its node still says running; the child's finished turn span has the final state and time.
+      expect(screen).toMatch(/Subagent {2}check the build\s+done · 4\.2s/)
+      expect(screen).toMatch(/Job job_list {2}2 jobs\s+done/)
+    })
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})
+
+it('pins the plan above the prompt and /todos hide takes it off', async () => {
+  const SID = 'agnes:local:default:cli:dm:plan-panel'
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: SID }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.projectUI', () => ({
+      sessionId: SID,
+      upto: 1,
+      generation: 1,
+      opState: null,
+      turns: [],
+      nodes: [
+        {
+          kind: 'tool',
+          id: 'p',
+          seq: 1,
+          toolUseId: 'p',
+          status: 'completed',
+          summary: '',
+          name: 'update_plan',
+          argsPreview: JSON.stringify({
+            plan: [
+              { step: 'read the code', status: 'completed' },
+              { step: 'write the panel', status: 'in_progress' },
+            ],
+          }),
+        },
+      ],
+    }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 24 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    const count = async () =>
+      (await screenOf(term, 80, 24)).filter((line) => line.includes('[>] write the panel'))
+    // The plan card in the conversation and the pinned panel just above the prompt's top rail.
+    await vi.waitFor(async () => expect(await count()).toHaveLength(2))
+    const lines = await screenOf(term, 80, 24)
+    expect(lines.findLastIndex((line) => line.includes('[>] write the panel'))).toBe(
+      lines.findIndex((line) => line.includes('╭─')) - 1,
+    )
+    await app.runInput('/todos hide')
+    await vi.waitFor(async () => expect(await count()).toHaveLength(1))
+    await app.runInput('/todos')
+    await vi.waitFor(async () => expect(await count()).toHaveLength(2))
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})
+
+it('Ctrl-X moves between tool cards without touching the draft, and /expand opens them all', async () => {
+  const SID = 'agnes:local:default:cli:dm:card-focus'
+  const tool = (id: string, seq: number) => ({
+    kind: 'tool',
+    id,
+    seq,
+    toolUseId: id,
+    status: 'completed',
+    summary: id,
+    name: 'shell',
+    argsPreview: JSON.stringify({ cmd: id }),
+  })
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: SID }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.projectUI', () => ({
+      sessionId: SID,
+      upto: 2,
+      generation: 1,
+      opState: null,
+      turns: [],
+      nodes: [tool('first', 1), tool('second', 2)],
+    }))
+    .on('_agnes/v1/session.readToolDetail', () => ({ args: '{"cmd":"x"}', result: 'out' }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 30 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    const screen = async () => (await screenOf(term, 80, 30)).filter((line) => line.trim() !== '')
+    await vi.waitFor(async () => expect((await screen()).join('\n')).toContain('second'))
+    term.feed('draft')
+    term.feed('\x18')
+    await vi.waitFor(async () => expect((await screen()).join('\n')).toContain('Esc/Ctrl-X leave'))
+    // The bar is on the newest card; letters do not reach the draft; up moves the bar.
+    expect((await screen()).find((line) => line.startsWith('▌'))).toContain('second')
+    term.feed('xyz')
+    term.feed('\x1b[A')
+    await vi.waitFor(async () =>
+      expect((await screen()).find((line) => line.startsWith('▌'))).toContain('first'),
+    )
+    term.feed('\x18')
+    await vi.waitFor(async () => expect((await screen()).join('\n')).not.toContain('Esc/Ctrl-X leave'))
+    expect(app.editor.text).toBe('draft')
+    expect((await screen()).some((line) => line.startsWith('▌'))).toBe(false)
+    await app.runInput('/expand all')
+    await vi.waitFor(async () =>
+      expect(
+        (await screen()).filter((line) => line.includes('Arguments:') || line.includes('Result:')).length,
+      ).toBeGreaterThanOrEqual(2),
+    )
+    await app.runInput('/expand none')
+    await vi.waitFor(async () => expect((await screen()).join('\n')).not.toContain('Arguments:'))
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})
+
+it('/statusline hides a field from the live status bar, saves the choice beside the theme, and reset brings it back', async () => {
+  const SID = 'agnes:local:default:cli:dm:statusline'
+  const dir = mkdtempSync(join(tmpdir(), 'agnes-tui-statusline-'))
+  const prefs = join(dir, 'tui-theme.json')
+  writeFileSync(prefs, '{"theme":"dark"}')
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: SID }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.projectUI', () => ({
+      sessionId: SID,
+      upto: 0,
+      generation: 1,
+      opState: null,
+      turns: [],
+      nodes: [],
+    }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 24 })
+    app = new TuiApp({ session, term, header: 'Agnes', preset: 'review', themePreferencePath: prefs })
+    await app.start()
+    const screen = async () => (await screenOf(term, 80, 24)).join('\n')
+    await vi.waitFor(async () => expect(await screen()).toContain('preset review'))
+    await app.runInput('/statusline')
+    await vi.waitFor(async () => expect(await screen()).toContain('[x] Preset'))
+    term.feed('\x1b[B')
+    term.feed(' ')
+    await vi.waitFor(async () => expect(await screen()).toContain('[ ] Preset'))
+    term.feed('\x1b')
+    await vi.waitFor(async () => expect(await screen()).not.toContain('preset review'))
+    expect(JSON.parse(readFileSync(prefs, 'utf8'))).toEqual({
+      theme: 'dark',
+      statusLine: { hide: ['preset'] },
+    })
+    await app.runInput('/statusline reset')
+    await vi.waitFor(async () => expect(await screen()).toContain('preset review'))
+    expect(JSON.parse(readFileSync(prefs, 'utf8'))).toEqual({ theme: 'dark' })
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+it('sets the window title from the saved /title choice, and writes nothing when it is off', async () => {
+  const SID = 'agnes:local:default:cli:dm:window-title'
+  const dir = mkdtempSync(join(tmpdir(), 'agnes-tui-title-'))
+  const prefs = join(dir, 'tui-theme.json')
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: SID }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.list', () => ({
+      items: [
+        {
+          sessionId: SID,
+          createdAt: '2026-10-23T09:00:00Z',
+          lastSeq: 0,
+          generation: 1,
+          preset: null,
+          title: 'Release notes',
+        },
+      ],
+    }))
+    .on('_agnes/v1/session.projectUI', () => ({
+      sessionId: SID,
+      upto: 0,
+      generation: 1,
+      opState: null,
+      turns: [],
+      nodes: [],
+    }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  const titles = (term: FakeTerminal) =>
+    term.writes.filter((w) => w.startsWith('\x1b]2;')).map((w) => w.slice(4, -1))
+  const apps: TuiApp[] = []
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const open = async (saved: string) => {
+      writeFileSync(prefs, saved)
+      const term = new FakeTerminal({ columns: 80, rows: 24 })
+      const app = new TuiApp({
+        session,
+        term,
+        header: 'Agnes',
+        cwd: '/work/proj',
+        themePreferencePath: prefs,
+      })
+      apps.push(app)
+      await app.start()
+      return { app, term }
+    }
+    const off = await open('{"title":"off"}')
+    await off.app.runInput('/help')
+    expect(off.term.writes.join('')).not.toContain('\x1b]2;')
+    expect(off.term.writes.join('')).not.toContain('\x1b[22;0t')
+    await off.app.runInput('/title session-cwd')
+    // The directory shows first; the session's name follows once the list is read.
+    await vi.waitFor(() => expect(titles(off.term).at(-1)).toBe('agh · Release notes · proj'))
+    expect(JSON.parse(readFileSync(prefs, 'utf8'))).toEqual({ title: 'session-cwd' })
+    const fresh = await open('{}')
+    await vi.waitFor(() => expect(titles(fresh.term)).toEqual(['agh · proj']))
+  } finally {
+    for (const app of apps) await app.stop()
+    await client.close()
+    await endpoint.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+/** An app on a fake daemon whose session projects `nodes`, started on the preferences file `saved` holds. */
+async function fakeApp(
+  saved: string,
+  nodes: UINode[] = [],
+  options: Partial<ConstructorParameters<typeof TuiApp>[0]> = {},
+  columns = 80,
+) {
+  const SID = 'agnes:local:default:cli:dm:display'
+  const dir = mkdtempSync(join(tmpdir(), 'agnes-tui-display-'))
+  const prefs = join(dir, 'tui-theme.json')
+  writeFileSync(prefs, saved)
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: SID }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.projectUI', () => ({
+      sessionId: SID,
+      upto: 0,
+      generation: 1,
+      opState: null,
+      turns: [],
+      nodes,
+    }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  const session = await client.session.new({ cwd: '/tmp' })
+  const term = new FakeTerminal({ columns, rows: 24 })
+  const app = new TuiApp({
+    session,
+    term,
+    header: 'Agnes',
+    cwd: '/work/proj',
+    themePreferencePath: prefs,
+    ...options,
+  })
+  await app.start()
+  return {
+    app,
+    term,
+    prefs,
+    screen: async () => (await screenOf(term, columns, 24)).join('\n'),
+    saved: () => JSON.parse(readFileSync(prefs, 'utf8')) as unknown,
+    async close() {
+      await app.stop()
+      await client.close()
+      await endpoint.close()
+      rmSync(dir, { recursive: true, force: true })
+    },
+  }
+}
+
+it('/vim edits the prompt with vim keys, marks the mode, and saves the choice beside the other preferences', async () => {
+  const open = await fakeApp('{"theme":"dark","title":"off"}')
+  try {
+    expect(await open.screen()).not.toMatch(/INSERT|NORMAL/)
+    await open.app.runInput('/vim')
+    expect(open.saved()).toEqual({ theme: 'dark', title: 'off', vim: true })
+    await vi.waitFor(async () => expect(await open.screen()).toContain('INSERT'))
+    open.term.feed('hello')
+    open.term.feed('\x1b')
+    await vi.waitFor(async () => expect(await open.screen()).toContain('NORMAL'))
+    open.term.feed('0x')
+    expect(open.app.editor.text).toBe('ello')
+    await open.app.runInput('/vim off')
+    expect(open.saved()).toEqual({ theme: 'dark', title: 'off', vim: false })
+    await vi.waitFor(async () => expect(await open.screen()).not.toMatch(/INSERT|NORMAL/))
+    await open.app.runInput('/vim maybe')
+    expect(open.app.editor.vim?.enabled).toBe(false)
+  } finally {
+    await open.close()
+  }
+  const again = await fakeApp('{"vim":true}')
+  try {
+    expect(again.app.editor.vim).toMatchObject({ enabled: true, mode: 'insert' })
+    await vi.waitFor(async () => expect(await again.screen()).toContain('INSERT'))
+  } finally {
+    await again.close()
+  }
+})
+
+it('/config lists every preference with its value, follows changes, and forwards NAME VALUE to the command', async () => {
+  const open = await fakeApp('{"theme":"dark","title":"off"}')
+  try {
+    const rows = async () =>
+      Object.fromEntries(
+        ((await runSlash(open.app, '/config')).text ?? '')
+          .split('\n')
+          .slice(1)
+          .map((row) => {
+            const [name, ...rest] = row.split(/\s{2,}/)
+            return [name, rest]
+          }),
+      )
+    const before = await rows()
+    expect(Object.keys(before)).toEqual([
+      'theme',
+      'borders',
+      'images',
+      'vim',
+      'notify',
+      'mouse',
+      'thinking',
+      'todos',
+      'statusline',
+      'title',
+      'raw',
+      'heads-up',
+    ])
+    expect(before).toMatchObject({
+      theme: ['dark', '/theme dark'],
+      vim: ['off', '/vim on'],
+      title: ['off', '/title cwd'],
+      todos: ['auto', '/todos hide'],
+      statusline: ['all shown', '/statusline'],
+    })
+    // The same as typing /vim on, and the table follows.
+    await runSlash(open.app, '/config vim on')
+    expect(open.app.editor.vim?.enabled).toBe(true)
+    expect(open.saved()).toMatchObject({ vim: true })
+    expect((await rows()).vim).toEqual(['on', '/vim on'])
+    await runSlash(open.app, '/config todos hide')
+    expect((await rows()).todos?.[0]).toBe('hide')
+    const unknown = (await runSlash(open.app, '/config nope')).text
+    expect(unknown).toContain('usage: /config [theme|borders|')
+    expect((await runSlash(open.app, '/config config')).text).toBe(unknown)
+  } finally {
+    await open.close()
+  }
+})
+
+const MOUSE_ON = '\x1b[?1002h'
+const MOUSE_OFF = '\x1b[?1002l'
+const times = (term: FakeTerminal, mark: string) => term.writes.join('').split(mark).length - 1
+
+it('/raw drops the mouse capture and the bars and shading, shows RAW, and puts everything back', async () => {
+  const nodes = [
+    { kind: 'user', id: 'u1', seq: 1, content: [{ type: 'text', text: 'copy my question' }] },
+    { kind: 'assistant', id: 'a1', seq: 2, text: '> a quote\n\n```ts\nconst answer = 42\n```' },
+  ] as UINode[]
+  const open = await fakeApp('{}', nodes)
+  try {
+    await vi.waitFor(async () => expect(await open.screen()).toContain('const answer = 42'))
+    const styled = await open.screen()
+    expect(styled).toContain('▍ copy my question')
+    expect(styled).toContain('▎ a quote')
+    expect(styled).toMatch(/^ {2}const answer = 42/m)
+    expect(styled).not.toContain('RAW')
+    expect(times(open.term, MOUSE_ON)).toBe(1)
+    await open.app.runInput('/raw')
+    await vi.waitFor(async () => expect(await open.screen()).toContain('RAW'))
+    const raw = await open.screen()
+    expect(raw).toMatch(/^copy my question/m)
+    expect(raw).toMatch(/^a quote/m)
+    expect(raw).toMatch(/^ts\s*$/m)
+    expect(raw).toMatch(/^const answer = 42/m)
+    expect(raw).not.toMatch(/[▍▎│]/)
+    expect([times(open.term, MOUSE_OFF), times(open.term, MOUSE_ON)]).toEqual([1, 1])
+    await open.app.runInput('/raw')
+    await vi.waitFor(async () => expect(await open.screen()).not.toContain('RAW'))
+    expect(await open.screen()).toContain('▍ copy my question')
+    expect(await open.screen()).toMatch(/^ {2}const answer = 42/m)
+    expect([times(open.term, MOUSE_OFF), times(open.term, MOUSE_ON)]).toEqual([1, 2])
+  } finally {
+    await open.close()
+  }
+  // A run that started with the mouse off stays that way after /raw is switched off again.
+  const quiet = await fakeApp('{}', [], { mouse: false })
+  try {
+    await quiet.app.runInput('/raw')
+    await quiet.app.runInput('/raw')
+    expect([times(quiet.term, MOUSE_OFF), times(quiet.term, MOUSE_ON)]).toEqual([0, 0])
+  } finally {
+    await quiet.close()
+  }
+})
+
+// biome-ignore lint/suspicious/noControlCharactersInRegex: the range starts at NUL on purpose
+const ASCII_ONLY = /^[\x00-\x7f]*$/
+
+it('/borders ascii draws every frame and icon in ASCII, at the same widths, and unicode brings them back', async () => {
+  const tool = (n: number, status: string) => ({
+    kind: 'tool',
+    id: `t${n}`,
+    seq: n,
+    toolUseId: `c${n}`,
+    name: 'read',
+    status,
+    summary: `step ${n}`,
+  })
+  const nodes = [
+    { kind: 'user', id: 'u1', seq: 1, content: [{ type: 'text', text: 'a question' }] },
+    tool(2, 'completed'),
+    tool(3, 'failed'),
+    {
+      kind: 'assistant',
+      id: 'a1',
+      seq: 4,
+      text: '> quoted\n\n- one\n- two\n\n| k | v |\n|---|---|\n| a | 1 |\n\n---',
+    },
+  ] as UINode[]
+  const open = await fakeApp('{"theme":"dark","title":"off"}', nodes)
+  try {
+    await vi.waitFor(async () => expect(await open.screen()).toContain('a question'))
+    await open.app.runInput('/vim')
+    open.term.feed('/')
+    await vi.waitFor(async () => expect(await open.screen()).toContain('/help'))
+    const fancy = await open.screen()
+    expect(fancy).not.toMatch(ASCII_ONLY)
+    // The rail's edges, the menu's rows and the status line keep their widths when their glyphs change.
+    const rowWidth = (screen: string, mark: string) =>
+      displayWidth(
+        screen
+          .split('\n')
+          .find((line) => line.includes(mark))
+          ?.trimEnd() ?? '',
+      )
+    await open.app.runInput('/borders ascii')
+    await vi.waitFor(async () => expect(await open.screen()).toMatch(ASCII_ONLY))
+    const plain = await open.screen()
+    expect(plain).toContain('* one')
+    for (const [from, to] of [
+      ['╭─ /work/proj', '+- /work/proj'],
+      ['│ ❯ /help', '| > /help'],
+      ['/ commands', '/ commands'],
+    ] as const)
+      expect(rowWidth(plain, to), from).toBe(rowWidth(fancy, from))
+    expect(open.saved()).toEqual({ theme: 'dark', title: 'off', vim: true, borders: 'ascii' })
+    await open.app.runInput('/borders unicode')
+    await vi.waitFor(async () => expect(await open.screen()).not.toMatch(ASCII_ONLY))
+    expect(open.saved()).toEqual({ theme: 'dark', title: 'off', vim: true, borders: 'unicode' })
+  } finally {
+    await open.close()
+  }
+})
+
+it('shows the welcome banner and the editor in ASCII from the start on a Linux console', async () => {
+  vi.stubEnv('TERM', 'linux')
+  const open = await fakeApp('{}')
+  try {
+    await vi.waitFor(async () => expect(await open.screen()).toContain('Agnes'))
+    expect(await open.screen()).toMatch(ASCII_ONLY)
+    // A saved choice beats the console default.
+    vi.stubEnv('TERM', 'linux')
+    const saved = await fakeApp('{"borders":"unicode"}')
+    try {
+      await vi.waitFor(async () => expect(await saved.screen()).not.toMatch(ASCII_ONLY))
+    } finally {
+      await saved.close()
+    }
+  } finally {
+    vi.unstubAllEnvs()
+    await open.close()
   }
 })
 
@@ -743,45 +1659,451 @@ it('keeps a pending approval at its usual page height when nothing below the dia
   }
 })
 
-it.each(['SESSION_BUSY', 'OVERLOADED'] as const)(
-  'keeps a queued prompt the daemon refused with %s before admitting it, and sends it again',
-  async (code) => {
-    const { endpoint } = fakeSessionEndpoint()
-    const prompts: string[] = []
-    let release!: () => void
-    const gate = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    endpoint.on('session/prompt', async (params) => {
-      prompts.push((params as { prompt: Array<{ text?: string }> }).prompt[0]?.text ?? '')
-      if (prompts.length === 1) await gate
-      // Refused before the input is recorded (daemon acp.ts: activation barrier / another in-flight prompt).
-      if (prompts.length === 2) throw rpcError(code, {})
-      return { stopReason: 'end_turn' }
-    })
-    const client = createClient({ transport: { kind: 'inproc', endpoint } })
-    let app: TuiApp | undefined
-    try {
-      const session = await client.session.new({ cwd: '/tmp' })
-      const term = new FakeTerminal({ columns: 80, rows: 24 })
-      app = new TuiApp({ session, term, header: 'Agnes' })
-      await app.start()
-      term.feed('a')
-      term.feed('\r')
-      await vi.waitFor(() => expect(prompts).toEqual(['a']))
-      term.feed('b')
-      term.feed('\r')
+it('draws an open picker in the composer slot, and a pending approval brings the composer back above it', async () => {
+  const { endpoint } = fakeSessionEndpoint()
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 30 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    const screen = async () => (await screenOf(term, 80, 30)).join('\n')
+    const prompt = 'What do you want to do?'
+    await vi.waitFor(async () => expect(await screen()).toContain(prompt))
+    for (const key of ['/theme', '\r']) term.feed(key)
+    await vi.waitFor(async () => expect(await screen()).toContain('Dark colour-blind'))
+    // A theme's look sits in the description column, apart from its name and the current mark.
+    expect(await screen()).toMatch(/1\. Auto ✓ {2,}follow the terminal background/)
+    // One prompt on screen: the picker has the keys, so the composer is not drawn.
+    expect(await screen()).not.toContain(prompt)
+    endpoint.push({
+      jsonrpc: '2.0',
+      id: 'perm-2',
+      method: 'session/request_permission',
+      params: {
+        sessionId: session.id,
+        toolCall: { toolCallId: 'tool-2', status: 'pending', title: 'write', rawInput: { path: 'a.md' } },
+        options: [
+          { optionId: 'allow', name: 'Allow once', kind: 'allow_once' },
+          { optionId: 'reject', name: 'Reject', kind: 'reject_once' },
+        ],
+      },
+    } as JsonRpcNotification)
+    // The approval stays above a visible composer; the picker waits behind it.
+    await vi.waitFor(async () => expect(await screen()).toContain('Allow once'))
+    expect(await screen()).toContain(prompt)
+    expect(await screen()).not.toContain('Dark colour-blind')
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})
+
+/** An app whose first prompt stays in flight until `release()`, so everything typed after it arrives busy. */
+async function busyHarness(
+  opts: { answer?: (params: Submitted) => unknown; steer?: boolean; promptError?: unknown } = {},
+) {
+  const { endpoint, submits } = submitEndpoint(opts.answer)
+  const prompts: string[] = []
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  endpoint.on('_agnes/v1/session.controls', () => ({
+    controls: { steer: opts.steer ?? true },
+    paused: false,
+    pending: [],
+  }))
+  endpoint.on('session/prompt', async (params) => {
+    prompts.push((params as { prompt: Array<{ text?: string }> }).prompt[0]?.text ?? '')
+    if (opts.promptError) throw opts.promptError
+    if (prompts.length === 1) await gate
+    return { stopReason: 'end_turn' }
+  })
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  const session = await client.session.new({ cwd: '/tmp' })
+  const term = new FakeTerminal({ columns: 100, rows: 24 })
+  const app = new TuiApp({ session, term, header: 'Agnes' })
+  await app.start()
+  return {
+    app,
+    term,
+    endpoint,
+    submits,
+    prompts,
+    release,
+    shown: async () => (await screenOf(term, 100, 24)).join('\n'),
+    type: (text: string, key = '\r') => {
+      term.feed(text)
+      term.feed(key)
+    },
+    async dispose() {
       release()
-      await vi.waitFor(() => expect(prompts).toEqual(['a', 'b', 'b']))
-    } finally {
-      await app?.stop()
+      await app.stop()
       await client.close()
       await endpoint.close()
-    }
-  },
-)
+    },
+  }
+}
 
-it('paints the startup session card, compact header and editor surface once across /new', async () => {
+it('Enter while a turn runs queues the input in the daemon under its own command id, hinting once', async () => {
+  const h = await busyHarness()
+  try {
+    h.type('a')
+    await vi.waitFor(() => expect(h.prompts).toEqual(['a']))
+    h.type('b')
+    await vi.waitFor(() => expect(h.submits).toHaveLength(1))
+    await vi.waitFor(async () => expect(await h.shown()).toContain('Alt+Enter steers the running turn'))
+    h.type('c')
+    await vi.waitFor(() => expect(h.submits).toHaveLength(2))
+    await vi.waitFor(async () => expect(await h.shown()).toContain('Queued: c'))
+    expect(await h.shown()).not.toContain('Alt+Enter steers')
+    expect(h.submits.map((s) => [s.kind, s.payload.content])).toEqual([
+      ['followUp', [{ type: 'text', text: 'b' }]],
+      ['followUp', [{ type: 'text', text: 'c' }]],
+    ])
+    expect(new Set(h.submits.map((s) => s.commandId)).size).toBe(2)
+    // Nothing is held here: the daemon owns the queue, and no second prompt was sent.
+    h.release()
+    await vi.waitFor(() => expect(h.app.busy).toBe(false))
+    expect(h.prompts).toEqual(['a'])
+  } finally {
+    await h.dispose()
+  }
+})
+
+it('sends a message that starts with a file path as a prompt, while /foo is still refused as a command', async () => {
+  const h = await busyHarness()
+  try {
+    h.type('/tmp/pic.png describe this')
+    await vi.waitFor(() => expect(h.prompts).toEqual(['/tmp/pic.png describe this']))
+    h.type('/foo')
+    await vi.waitFor(async () => expect(await h.shown()).toContain('unknown command /foo'))
+    expect(h.prompts).toHaveLength(1)
+    expect(h.submits).toHaveLength(0)
+  } finally {
+    await h.dispose()
+  }
+})
+
+it('the first queued-message hint drops the steer clause when no key is bound to steering', async () => {
+  installKeymap(new Keymap(new Map([['steer', []]])))
+  const h = await busyHarness()
+  try {
+    h.type('a')
+    await vi.waitFor(() => expect(h.prompts).toEqual(['a']))
+    h.type('b')
+    await vi.waitFor(async () =>
+      expect(await h.shown()).toContain('Queued: b · sent when the turn ends · /queue manages'),
+    )
+    expect(await h.shown()).not.toContain('steers the running turn')
+  } finally {
+    await h.dispose()
+    installKeymap(new Keymap())
+  }
+})
+
+it('Alt+Enter while a turn runs steers it, and queues instead when the turn takes no guidance', async () => {
+  const image = { type: 'resource_link' as const, uri: 'artifact://clipboard-image', name: 'clipboard.png' }
+  const steering = await busyHarness()
+  try {
+    steering.type('a')
+    await vi.waitFor(() => expect(steering.prompts).toEqual(['a']))
+    steering.app.busyInput.attach('[Image #1]', image, steering.app.session.id)
+    steering.type('look at b [Image #1]', '\x1b\r')
+    await vi.waitFor(() => expect(steering.submits.map((s) => s.kind)).toEqual(['steer']))
+    expect(steering.submits[0]?.commandId).toBeTruthy()
+    expect(steering.submits[0]?.payload.content).toEqual([
+      { type: 'text', text: 'look at b [Image #1]' },
+      image,
+    ])
+    expect(steering.app.busyInput.takeKept('[Image #1]')).toEqual([])
+    await vi.waitFor(async () =>
+      expect(await steering.shown()).toContain('Sent to the running turn: look at b'),
+    )
+  } finally {
+    await steering.dispose()
+  }
+  const refusing = await busyHarness({ steer: false })
+  try {
+    refusing.type('a')
+    await vi.waitFor(() => expect(refusing.prompts).toEqual(['a']))
+    refusing.app.busyInput.attach('[Image #1]', image, refusing.app.session.id)
+    refusing.type('b [Image #1]', '\x1b\r')
+    await vi.waitFor(() => expect(refusing.submits.map((s) => s.kind)).toEqual(['followUp']))
+    expect(refusing.submits[0]?.payload.content).toEqual([{ type: 'text', text: 'b [Image #1]' }, image])
+    await vi.waitFor(async () => expect(await refusing.shown()).toContain('queued instead'))
+  } finally {
+    await refusing.dispose()
+  }
+})
+
+it('keeps clipboard temporary files private under the CLI private directory and cleans failed reads', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agnes-clipboard-'))
+  const directory = join(root, '中文 clipboard')
+  createPrivateDirectorySync(directory)
+  const h = await busyHarness()
+  const permissions: boolean[] = []
+  h.app.o.externalEditor = { env: {}, tmpDir: directory }
+  h.app.o.clipboard = {
+    readImage: async (file) => {
+      // Node inherits this private parent's ACL. The native validator refuses foreign/broad
+      // grants before freezing inheritance; it does not turn a shared file into a private one.
+      if (process.platform === 'win32') windowsProtectPrivateFileSync(file)
+      permissions.push(hasPrivateDaclSync(directory), hasPrivateDaclSync(file))
+      return { ok: false, reason: 'empty' }
+    },
+  }
+  try {
+    await h.app.command('/paste')
+    expect(permissions).toEqual([true, true])
+    expect(readdirSync(directory)).toEqual([])
+    expect(h.submits).toEqual([])
+  } finally {
+    await h.dispose()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it('retries a failed queue submit once under the same command id, then returns the draft to the editor', async () => {
+  let failures = 1
+  const retried = await busyHarness({
+    answer: () => {
+      if (failures-- > 0) throw rpcError('INTERNAL_ERROR', {})
+      return { seq: 1, replayed: false }
+    },
+  })
+  try {
+    retried.type('a')
+    await vi.waitFor(() => expect(retried.prompts).toEqual(['a']))
+    retried.type('b')
+    await vi.waitFor(() => expect(retried.submits).toHaveLength(2))
+    expect(retried.submits[1]?.commandId).toBe(retried.submits[0]?.commandId)
+    await vi.waitFor(async () => expect(await retried.shown()).toContain('Queued: b'))
+  } finally {
+    await retried.dispose()
+  }
+  const failing = await busyHarness({
+    answer: () => {
+      throw rpcError('SEMANTIC_REJECTED', { code: 'LOOP_CONTROL_UNSUPPORTED' })
+    },
+  })
+  try {
+    failing.type('a')
+    await vi.waitFor(() => expect(failing.prompts).toEqual(['a']))
+    const image = { type: 'resource_link' as const, uri: 'artifact://clipboard-image', name: 'clipboard.png' }
+    failing.app.busyInput.attach('[Image #1]', image, failing.app.session.id)
+    failing.type('keep me [Image #1]')
+    // A definitive refusal clears the SDK journal; both attempts still use the same command id.
+    await vi.waitFor(() => expect(failing.submits).toHaveLength(2))
+    expect(new Set(failing.submits.map((s) => s.commandId)).size).toBe(1)
+    await vi.waitFor(async () => {
+      const screen = await failing.shown()
+      expect(screen).toContain('Not sent: the draft is back in the editor')
+      expect(screen).toMatch(/❯ keep me \[Image #1\]\s*$/m)
+    })
+    expect(failing.app.busyInput.takeKept(failing.app.editor.expanded())).toEqual([image])
+    failing.release()
+    await vi.waitFor(() => expect(failing.app.busy).toBe(false))
+    // No local replay: the only prompt this client ever sent is the first one.
+    expect(failing.prompts).toEqual(['a'])
+  } finally {
+    await failing.dispose()
+  }
+  const unknown = await busyHarness({
+    answer: () => {
+      throw rpcError('INTERNAL_ERROR', {})
+    },
+  })
+  try {
+    unknown.type('a')
+    await vi.waitFor(() => expect(unknown.prompts).toEqual(['a']))
+    const image = { type: 'resource_link' as const, uri: 'artifact://clipboard-image', name: 'clipboard.png' }
+    unknown.app.busyInput.attach('[Image #1]', image, unknown.app.session.id)
+    unknown.type('answer lost [Image #1]')
+    await vi.waitFor(async () => expect(await unknown.shown()).toContain('Not sure the daemon took it'))
+    expect(unknown.submits).toHaveLength(3)
+    expect(new Set(unknown.submits.map((s) => s.commandId)).size).toBe(1)
+    expect(await unknown.app.session.pendingCommands()).toMatchObject([{ state: 'needs-confirmation' }])
+    expect(unknown.app.editor.text).toBe('')
+    expect(unknown.app.busyInput.takeKept('[Image #1]')).toEqual([])
+    unknown.release()
+    await vi.waitFor(() => expect(unknown.app.busy).toBe(false))
+    expect(unknown.submits).toHaveLength(3)
+    expect(unknown.prompts).toEqual(['a'])
+  } finally {
+    await unknown.dispose()
+  }
+  // The daemon took the command but the answers were lost twice: the check under the same id lands it.
+  let lost = 2
+  const landed = await busyHarness({
+    answer: () => {
+      if (lost-- > 0) throw rpcError('INTERNAL_ERROR', {})
+      return { seq: 1, replayed: true }
+    },
+  })
+  try {
+    landed.type('a')
+    await vi.waitFor(() => expect(landed.prompts).toEqual(['a']))
+    landed.type('kept by daemon')
+    await vi.waitFor(async () => expect(await landed.shown()).toContain('it is queued, see /queue'))
+    expect(landed.submits).toHaveLength(3)
+    expect(new Set(landed.submits.map((s) => s.commandId)).size).toBe(1)
+    expect(await landed.shown()).not.toMatch(/❯ kept by daemon/)
+  } finally {
+    await landed.dispose()
+  }
+})
+
+it('Alt+Up takes the newest queued message back into an empty editor, and its attachment goes out with the next one', async () => {
+  const link = { type: 'resource_link', uri: 'file:///w/a.txt', name: 'a.txt' }
+  const h = await busyHarness()
+  h.endpoint.on('_agnes/v1/session.controls', () => ({
+    controls: {},
+    paused: false,
+    pending: [
+      { itemId: 'one', target: 'next-turn', kind: 'follow_up', content: [{ type: 'text', text: 'older' }] },
+      {
+        itemId: 'two',
+        target: 'next-turn',
+        kind: 'follow_up',
+        content: [{ type: 'text', text: 'newer\u001b[2J\u0007\nline2' }, link],
+      },
+    ],
+  }))
+  try {
+    h.term.feed('half typed')
+    h.term.feed('\x1b[1;3A')
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    // A draft is never overwritten.
+    expect(h.submits).toEqual([])
+    h.term.feed('\x15') // Ctrl-U clears the draft
+    h.term.feed('\x1b[1;3A')
+    await vi.waitFor(() =>
+      expect(h.submits.map((s) => [s.kind, s.payload.itemId])).toEqual([['removeQueued', 'two']]),
+    )
+    expect(h.submits[0]?.commandId).toBeTruthy()
+    await vi.waitFor(async () => {
+      const screen = await h.shown()
+      expect(screen).toMatch(/❯ newer\[2J\s*$/m)
+      expect(screen).toContain('line2')
+    })
+    h.term.feed('\r')
+    await vi.waitFor(() => expect(h.prompts).toHaveLength(1))
+    const prompt = h.endpoint.calls.find((c) => c.method === 'session/prompt')?.params as {
+      prompt: Array<{ type: string }>
+    }
+    expect(prompt.prompt.map((b) => b.type)).toEqual(['text', 'resource_link'])
+  } finally {
+    await h.dispose()
+  }
+})
+
+it('Esc Esc on an empty idle editor opens the rewind picker, and does not when a draft is there', async () => {
+  const { endpoint } = fakeSessionEndpoint()
+  endpoint.on('_agnes/v1/session.projectUI', () => ({
+    ...EMPTY_TIMELINE,
+    upto: 12,
+    turns: [
+      {
+        id: 't1',
+        turn: 1,
+        startSeq: 10,
+        endSeq: 12,
+        startedAt: '2026-10-03T00:00:00Z',
+        status: 'completed',
+        nodeIds: ['u1'],
+        usage: {
+          totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+          reasoningComplete: true,
+          billingComplete: true,
+          calls: [],
+        },
+        inherited: false,
+        forkable: true,
+      },
+    ],
+    nodes: [{ kind: 'user', id: 'u1', seq: 10, content: [{ type: 'text', text: 'earlier question' }] }],
+  }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 24 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    const shown = async () => (await screenOf(term, 80, 24)).join('\n')
+    // The first Esc clears the draft; it takes a later pair on the empty editor to ask for the picker.
+    term.feed('half typed')
+    term.feed('\x1b')
+    term.feed('\x1b')
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    expect(await shown()).not.toContain('Rewind To Turn')
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    term.feed('\x1b')
+    term.feed('\x1b')
+    await vi.waitFor(async () => {
+      const screen = await shown()
+      expect(screen).toContain('Rewind To Turn')
+      expect(screen).toContain('#1 earlier question')
+    })
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})
+
+it('queues a prompt the daemon refused as busy exactly once, and shows any other refusal as it comes', async () => {
+  const lagging = await busyHarness({ promptError: rpcError('SESSION_BUSY', {}) })
+  try {
+    lagging.type('x')
+    await vi.waitFor(() =>
+      expect(lagging.submits.map((s) => [s.kind, s.payload.content])).toEqual([
+        ['followUp', [{ type: 'text', text: 'x' }]],
+      ]),
+    )
+    await vi.waitFor(() => expect(lagging.app.busy).toBe(false))
+    expect(lagging.prompts).toEqual(['x'])
+  } finally {
+    await lagging.dispose()
+  }
+  const overloaded = await busyHarness({ promptError: rpcError('OVERLOADED', {}) })
+  try {
+    const image = { type: 'resource_link' as const, uri: 'artifact://clipboard-image', name: 'clipboard.png' }
+    overloaded.app.busyInput.attach('[Image #1]', image, overloaded.app.session.id)
+    overloaded.type('x [Image #1]')
+    await vi.waitFor(async () => expect(await overloaded.shown()).toContain('Request failed'))
+    expect(overloaded.submits).toEqual([])
+    expect(overloaded.prompts).toEqual(['x [Image #1]'])
+    // A refusal means no turn started: the draft comes back with its image still bound.
+    expect(overloaded.app.editor.expanded()).toBe('x [Image #1]')
+    expect(overloaded.app.busyInput.takeKept(overloaded.app.editor.expanded())).toEqual([image])
+  } finally {
+    await overloaded.dispose()
+  }
+  const offline = await busyHarness()
+  try {
+    const image = { type: 'resource_link' as const, uri: 'artifact://clipboard-image', name: 'clipboard.png' }
+    offline.app.busyInput.attach('[Image #1]', image, offline.app.session.id)
+    vi.spyOn(offline.app.session.client, 'connectionState', 'get').mockReturnValue('reconnecting')
+    offline.type('x [Image #1]')
+    await vi.waitFor(async () =>
+      expect(await offline.shown()).toContain('Not sent: the daemon is not connected'),
+    )
+    // Nothing left the process, no turn is pending, and the draft is back with its image bound.
+    expect(offline.prompts).toEqual([])
+    expect(offline.app.editor.expanded()).toBe('x [Image #1]')
+    expect(offline.app.busyInput.takeKept(offline.app.editor.expanded())).toEqual([image])
+    expect(offline.app.busy).toBe(false)
+  } finally {
+    await offline.dispose()
+  }
+})
+
+it('paints the startup welcome and editor surface once across /new', async () => {
   const { endpoint, sessions } = fakeSessionEndpoint()
   const client = createClient({ transport: { kind: 'inproc', endpoint } })
   let app: TuiApp | undefined
@@ -793,27 +2115,141 @@ it('paints the startup session card, compact header and editor surface once acro
     await vi.waitFor(async () => {
       const screen = await screenOf(term, 60, 20)
       const text = screen.join('\n')
-      expect(text).toContain('Agnes AI ·ᴗ·')
-      expect(text).toContain('local-dev · standard')
-      expect(text).toContain('● deepseek-v4-pro')
-      expect(text).toContain('Type / for commands')
+      // 60 columns by 20 rows is too short for art: the welcome is two plain lines.
+      expect(text).toContain('agnes ·ᴗ·  deepseek-v4-pro')
+      expect(text).toContain('local-dev')
       expect(text).not.toContain('Ctrl+C×2 退出')
-      // The header's first segment is the brand, separated from the profile.
-      expect(text).toContain('agnes · local-dev · standard')
       expect(text).toContain('What do you want to do? Start with a sentence.')
     })
     term.feed('/new')
     term.feed('\r')
     await vi.waitFor(() => expect(sessions()).toBe(2))
     // The banner belongs to the app, not the session: the switch must not repaint it.
-    await vi.waitFor(async () => expect((await screenOf(term, 60, 20)).join('\n')).toContain('li:dm:s2'))
+    await vi.waitFor(() => expect(app?.session.id).toContain('s2'))
     const text = (await screenOf(term, 60, 20)).join('\n')
-    expect(text.split('Agnes AI').length - 1).toBe(1)
+    expect(text.split('agnes ·ᴗ·  resolving model').length - 1).toBe(1)
   } finally {
     await app?.stop()
     await client.close()
     await endpoint.close()
   }
+})
+
+it('fills the welcome after the first frame, omits what fails, and shows the full welcome on every launch', async () => {
+  const launch = async (resources: boolean) => {
+    const { endpoint } = fakeSessionEndpoint()
+    endpoint
+      .on('_agnes/v1/session.list', () => ({
+        items: [
+          {
+            sessionId: 'x1',
+            createdAt: new Date(Date.now() - 7_200_000).toISOString(),
+            lastSeq: 3,
+            generation: 1,
+            preset: null,
+            title: 'Earlier work',
+          },
+        ],
+      }))
+      .on('_agnes/v1/session.tools', () => {
+        if (!resources) throw new Error('unavailable')
+        const on = (n: number) =>
+          Array.from({ length: n }, (_, i) => ({ id: `i${i}`, enabled: true, reasons: [] }))
+        return {
+          sessionId: 'x',
+          tools: [],
+          resources: [],
+          capabilities: {
+            preset: 'standard',
+            bundles: [],
+            codePin: { legacy: false, packages: [] },
+            loop: { value: { id: 'l', version: '1' }, source: { layer: 'default', name: 'x' } },
+            modelRoutes: { value: null, source: { layer: 'default', name: 'x' } },
+            permissions: {
+              preset: 'standard',
+              policy: 'p',
+              toolRuntime: 't',
+              readOnly: false,
+              source: { layer: 'default', name: 'x' },
+            },
+            sandbox: { provider: 'none', onUnavailable: 'allow', source: { layer: 'default', name: 'x' } },
+            compaction: { engine: null, source: { layer: 'default', name: 'x' } },
+            persistence: { provider: 'sqlite', source: { layer: 'default', name: 'x' } },
+            tools: [],
+            mcp: [],
+            skills: [...on(3), { id: 'off', enabled: false, reasons: [] }],
+            modelAdapters: [],
+            childEngines: [],
+            childModels: [],
+            uiModules: [],
+            surfaces: [],
+            packages: [],
+            plugins: on(2),
+            selectedModelAdapters: [],
+          },
+        }
+      })
+    const client = createClient({ transport: { kind: 'inproc', endpoint } })
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 100, rows: 30 })
+    const app = new TuiApp({
+      session,
+      term,
+      profile: 'local-dev',
+      preset: 'standard',
+      model: 'm1',
+      welcome: { version: '0.9.3' },
+    })
+    await app.start()
+    return { app, client, term }
+  }
+  const first = await launch(true)
+  await vi.waitFor(async () => {
+    const text = (await screenOf(first.term, 100, 30)).join('\n')
+    expect(text).toContain('v0.9.3')
+    expect(text).toContain('◉ 2 plugins   ◉ 3 skills   ◉ 0 MCP servers')
+    expect(text).toMatch(/2h {2}Earlier work/)
+  })
+  await first.app.stop()
+  await first.client.close()
+  // A second launch of the same version still draws the full hero, and a failing resource query
+  // only leaves its field out.
+  const second = await launch(false)
+  await vi.waitFor(async () => {
+    const text = (await screenOf(second.term, 100, 30)).join('\n')
+    expect(text).toContain('local agent workbench')
+    expect(text).toContain('What shall we build?')
+    expect(text).toMatch(/2h {2}Earlier work/)
+  })
+  expect((await screenOf(second.term, 100, 30)).join('\n')).not.toContain('plugins')
+  await second.app.stop()
+  await second.client.close()
+})
+
+it('repaints the welcome while it animates and stops the timer with the app', async () => {
+  const { endpoint } = fakeSessionEndpoint()
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  const session = await client.session.new({ cwd: '/tmp' })
+  const term = new FakeTerminal({ columns: 132, rows: 40 }, { TERM: 'xterm-256color' })
+  const app = new TuiApp({
+    session,
+    term,
+    profile: 'local-dev',
+    preset: 'standard',
+    welcome: { motion: true },
+  })
+  try {
+    await app.start()
+    const before = term.writes.length
+    // The shine runs at ~60 ms a frame without any input or projection tick.
+    await vi.waitFor(() => expect(term.writes.length).toBeGreaterThan(before + 4))
+  } finally {
+    await app.stop()
+  }
+  const after = term.writes.length
+  await new Promise((resolve) => setTimeout(resolve, 250))
+  expect(term.writes.length).toBe(after)
+  await client.close()
 })
 
 it('uses the projected model in both empty-state card and composer when argv did not pin one', async () => {
@@ -892,6 +2328,9 @@ it('stacks the editor above the status footer without an idle shortcut legend', 
     expect(lines.join('\n')).not.toContain('Enter send')
     const lastNonBlank = lines.reduce((last, l, i) => (l === '' ? last : i), -1)
     expect(statusRow).toBe(lastNonBlank)
+    // A short conversation still leaves the input area on the bottom edge, the gap above it.
+    expect(statusRow).toBe(19)
+    expect(lines.slice(lines.findIndex((l) => l.includes('Agnes')) + 1, editorRow - 1)).toContain('')
   } finally {
     await app?.stop()
     await client.close()
@@ -944,8 +2383,10 @@ it('opens /model choices above the footer, switches primary once, and cancels wi
     expect(open.findIndex((line) => line.includes('Select Model'))).toBeLessThan(
       open.findIndex((line) => line.includes('credits 3000/4000')),
     )
+    // The open picker grows the bottom-anchored input area upward; the footer stays on the last row.
+    expect(open.findIndex((line) => line.includes('credits 3000/4000'))).toBe(23)
 
-    term.feed('x') // The open picker owns unrelated keys too; this must not enter the editor.
+    term.feed('\t') // The open picker owns unrelated keys too; this must not enter the editor.
     term.feed('\x1b[B')
     term.feed('\r')
     await vi.waitFor(() =>
@@ -972,6 +2413,118 @@ it('opens /model choices above the footer, switches primary once, and cancels wi
       expect((await screenOf(term, 70, 24)).join('\n')).not.toContain('Select Model'),
     )
     expect(endpoint.calls.filter((entry) => entry.method === '_agnes/v1/session.setModel')).toHaveLength(1)
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})
+
+it('cycles the thinking level on Shift+Tab through setModel, and declines a model without thinking', async () => {
+  const usage = (id: string) => ({
+    totals: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+    context: { tokens: 10, window: 1_000, autoCompact: false },
+    model: { route: 'deepseek', id, thinking: 'low' },
+  })
+  for (const [id, reasoning] of [
+    ['deepseek-v4-pro', true],
+    ['deepseek-v4-flash', false],
+  ] as const) {
+    const endpoint = new FakeEndpoint()
+      .on('initialize', () => ({
+        protocolVersion: 1,
+        agentCapabilities: {},
+        _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+      }))
+      .on('session/new', () => ({ sessionId: 'agnes:local:default:cli:dm:think' }))
+      .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+      .on('_agnes/v1/session.detach', () => ({}))
+      .on('_agnes/v1/session.projectUI', () => ({ ...EMPTY_TIMELINE, usage: usage(id) }))
+      .on('_agnes/v1/apis.list', () => ({
+        profile: {
+          name: 'local-dev',
+          resolvedProfileHash: 'h',
+          presets: { default: 'standard', allowed: ['standard'] },
+          models: [{ route: 'deepseek', id, reasoning }],
+        },
+        families: [],
+      }))
+      .on('_agnes/v1/session.setModel', () => ({ effectiveFromSeq: 5 }))
+    const client = createClient({ transport: { kind: 'inproc', endpoint } })
+    let app: TuiApp | undefined
+    try {
+      const session = await client.session.new({ cwd: '/tmp' })
+      const term = new FakeTerminal({ columns: 100, rows: 24 })
+      app = new TuiApp({ session, term, profile: 'local-dev', preset: 'standard' })
+      await app.start()
+      term.feed('\x1b[Z')
+      if (reasoning) {
+        await vi.waitFor(async () =>
+          expect((await screenOf(term, 100, 24)).join('\n')).toContain('thinking medium from seq 5'),
+        )
+        term.feed('\x1b[Z')
+        await vi.waitFor(() =>
+          expect(endpoint.calls.filter((e) => e.method === '_agnes/v1/session.setModel')).toHaveLength(2),
+        )
+        const sent = endpoint.calls.filter((e) => e.method === '_agnes/v1/session.setModel')
+        expect(sent[0]?.params).toMatchObject({ slot: 'primary', model: id, thinking: 'medium' })
+        expect(sent[1]?.params).toMatchObject({ thinking: 'high' })
+      } else {
+        await vi.waitFor(async () =>
+          expect((await screenOf(term, 100, 24)).join('\n')).toContain('no thinking levels'),
+        )
+        expect(endpoint.calls.some((e) => e.method === '_agnes/v1/session.setModel')).toBe(false)
+      }
+    } finally {
+      await app?.stop()
+      await client.close()
+      await endpoint.close()
+    }
+  }
+})
+
+it('switches to the next and previous /model entry on Alt+P and Alt+Shift+P through setModel', async () => {
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: 'agnes:local:default:cli:dm:altp' }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.projectUI', () => ({ ...EMPTY_TIMELINE }))
+    .on('_agnes/v1/apis.list', () => ({
+      profile: {
+        name: 'local-dev',
+        resolvedProfileHash: 'h',
+        presets: { default: 'standard', allowed: ['standard'] },
+        models: [
+          { route: 'r', id: 'one' },
+          { route: 'r', id: 'two' },
+        ],
+      },
+      families: [],
+    }))
+    .on('_agnes/v1/session.setModel', () => ({ effectiveFromSeq: 7 }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 100, rows: 24 })
+    app = new TuiApp({ session, term, profile: 'local-dev', preset: 'standard' })
+    await app.start()
+    const sent = () => endpoint.calls.filter((e) => e.method === '_agnes/v1/session.setModel')
+    // Nothing known yet: next starts at the first model, then goes on from it.
+    term.feed('\x1bp')
+    await vi.waitFor(async () =>
+      expect((await screenOf(term, 100, 24)).join('\n')).toContain('model r/one from seq 7'),
+    )
+    term.feed('\x1bp')
+    await vi.waitFor(() => expect(sent()).toHaveLength(2))
+    term.feed('\x1bP')
+    await vi.waitFor(() => expect(sent()).toHaveLength(3))
+    expect(sent().map((e) => (e.params as { model: string }).model)).toEqual(['one', 'two', 'one'])
   } finally {
     await app?.stop()
     await client.close()
@@ -1058,7 +2611,7 @@ it('opens /resume choices above the footer, owns input, loads the selection and 
     )
     expect(endpoint.calls.some((entry) => entry.method === 'session/load')).toBe(false)
 
-    term.feed('x')
+    term.feed('\t')
     term.feed('\x1b[B')
     term.feed('\r')
     await vi.waitFor(() =>
@@ -1107,26 +2660,47 @@ it('colors the user marker, prompt and slash-menu highlight on the light user-tu
     .on('_agnes/v1/session.detach', () => ({}))
     .on('_agnes/v1/session.projectUI', () => timeline)
   const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  const prefs = mkdtempSync(join(tmpdir(), 'agnes-tui-light-'))
   let app: TuiApp | undefined
   try {
     const session = await client.session.new({ cwd: '/tmp' })
     const term = new FakeTerminal({ columns: 60, rows: 20 }, { TERM: 'xterm-256color' })
-    app = new TuiApp({ session, term, profile: 'local-dev', preset: 'standard' })
+    // Dark is the default; this surface is the light theme's.
+    writeFileSync(join(prefs, 'tui-theme.json'), '{"theme":"light"}')
+    app = new TuiApp({
+      session,
+      term,
+      profile: 'local-dev',
+      preset: 'standard',
+      themePreferencePath: join(prefs, 'tui-theme.json'),
+    })
     await app.start()
-    await vi.waitFor(async () => expect((await screenOf(term, 60, 20)).join('\n')).toContain('› hello agnes'))
+    await vi.waitFor(async () => expect((await screenOf(term, 60, 20)).join('\n')).toContain('▍ hello agnes'))
     const out = term.writes.join('')
+    const light = new TuiTheme('light')
+    const sgr = (layer: 'fg' | 'bg', tone: Tone): string =>
+      createAnsi('256')
+        [layer](light.colour(tone) as Colour, '')
+        .slice(0, -'\x1b[39m'.length)
     // The prompt keeps its editor accent; the brand word consumes the resolved branding accent.
-    expect(out).toContain('\x1b[38;5;98m❯ \x1b[38;5;238m')
-    expect(out).toContain('\x1b[38;5;63magnes\x1b[38;5;238m')
-    expect(out).toContain('\x1b[1m\x1b[38;5;63m›\x1b[38;5;238m\x1b[22m')
-    expect(out).toContain('\x1b[48;5;254m')
+    expect(out).toContain(`${sgr('fg', 'accent')}❯ ${sgr('fg', 'fg')}`)
+    expect(out).toContain(`\x1b[38;5;63magnes${sgr('fg', 'fg')}`)
+    expect(out).toContain(`\x1b[1m\x1b[38;5;63m▍${sgr('fg', 'fg')}\x1b[22m`)
+    expect(out).toContain(sgr('bg', 'surface'))
     expect(out).not.toContain('\x1b[38;5;45myou:')
     term.feed('/')
-    await vi.waitFor(() => expect(term.writes.join('')).toContain('\x1b[48;5;254m'))
+    await vi.waitFor(() => expect(term.writes.join('')).toContain(sgr('bg', 'selection')))
+    // Local command output recedes to muted text; only the end of a long /help fits the screen.
+    term.feed('help')
+    term.feed('\r')
+    await vi.waitFor(() =>
+      expect(term.writes.join('')).toContain(`${sgr('fg', 'muted')}  ${SLASH_COMMANDS.at(-1)?.name}`),
+    )
   } finally {
     await app?.stop()
     await client.close()
     await endpoint.close()
+    rmSync(prefs, { recursive: true, force: true })
   }
 })
 
@@ -1212,7 +2786,7 @@ it('the loader spins while a turn is in flight and shows the elapsed time once i
 })
 
 it('renders a 1000-tool-card timeline well within one ticker interval (RP1.1 regression guard)', () => {
-  const ansi = createAnsi('none')
+  const ansi = new TuiTheme('mono').ansi(createAnsi('none'))
   const nodes: UINode[] = Array.from({ length: 1_000 }, (_, i) => ({
     kind: 'tool' as const,
     id: `t${i}`,
@@ -1238,10 +2812,10 @@ it('renders a 1000-tool-card timeline well within one ticker interval (RP1.1 reg
   expect(elapsedMs).toBeLessThan(20)
 })
 
-// Fix round (post-review): `applyOpState`'s null/non-null edge detection alone cannot see a turn
+// Fix round (post-review): `TurnClock.apply`'s null/non-null edge detection alone cannot see a turn
 // number changing while `opState` stays non-null the whole time -- exactly what a debounced
 // projection tick can coalesce (projection.ts's REPROJECT_DEBOUNCE_MS skips an intervening
-// `opState: null`). Reaches `applyOpState` directly (a private method) rather than driving a real
+// `opState: null`). Reaches `apply` directly (a private method) rather than driving a real
 // timed turn through a real host, which is the more deterministic way to force the exact coalesced
 // sequence a real debounce could produce non-deterministically.
 it('re-baselines the wall clock on a coalesced turn boundary instead of fabricating an elapsed time', async () => {
@@ -1295,16 +2869,18 @@ it('resets the turn clock and stops the ticker across a mid-turn session switch'
     app = new TuiApp({ session, term, header: 'Agnes' })
     await app.start()
     const internals = app as unknown as {
-      applyOpState(opState: UITimeline['opState']): void
-      ticker?: unknown
-      turnActive: boolean
-      turnStartedAt?: number
-      currentTurn: number
+      clock: {
+        apply(opState: UITimeline['opState']): void
+        ticker?: unknown
+        active: boolean
+        startedAt?: number
+        turn: number
+      }
       loader: { render(width: number): string[] }
     }
     // A turn genuinely in flight on the OLD session: ticker running, loader spinning on it.
-    internals.applyOpState({ turn: 7, step: 1, phase: 'mid-flight' })
-    expect(internals.ticker).not.toBeUndefined()
+    internals.clock.apply({ turn: 7, step: 1, phase: 'mid-flight' })
+    expect(internals.clock.ticker).not.toBeUndefined()
     expect(internals.loader.render(60)[0]).toContain('mid-flight')
 
     term.feed('/new')
@@ -1314,12 +2890,13 @@ it('resets the turn clock and stops the ticker across a mid-turn session switch'
     // the turn that was in flight, so this waits for the new session's own first (idle) apply()
     // tick to have actually landed -- the same point at which a stale ticker/loader would leak the
     // old session's turn number and elapsed time onto the new session's screen.
-    await vi.waitFor(async () => expect((await screenOf(term, 60, 20)).join('\n')).toContain('li:dm:s2'))
+    await vi.waitFor(() => expect(app?.session.id).toContain('s2'))
+    await new Promise((resolve) => setTimeout(resolve, 100))
 
-    expect(internals.ticker).toBeUndefined()
-    expect(internals.turnActive).toBe(false)
-    expect(internals.turnStartedAt).toBeUndefined()
-    expect(internals.currentTurn).toBe(0)
+    expect(internals.clock.ticker).toBeUndefined()
+    expect(internals.clock.active).toBe(false)
+    expect(internals.clock.startedAt).toBeUndefined()
+    expect(internals.clock.turn).toBe(0)
     // Zero rows, matching a freshly-constructed TuiApp -- not a stale "✓ turn 7 · Xs" bleeding
     // across the switch.
     expect(internals.loader.render(60)).toEqual([])
@@ -1358,6 +2935,8 @@ async function daemonRestartHarness(
     .on('_agnes/v1/session.detach', () => ({}))
     .on('_agnes/v1/session.projectUI', () => timeline({ turn: 1, step: 1, phase: 'tools' }, options.nodes))
     .on('session/prompt', () => (options.hangPrompt ? new Promise(() => {}) : { stopReason: 'end_turn' }))
+    .on('_agnes/v1/submit', () => ({ seq: 2, replayed: false }))
+    .on('_agnes/v1/submit.ack', () => ({}))
   const newDaemon = new FakeEndpoint()
     .on('initialize', init)
     .on('session/load', () => ({}))
@@ -1423,27 +3002,30 @@ it('stops the turn spinner on a terminal close and refuses input it could never 
   }
 })
 
-it('after a terminal close, a padded /quit quits locally instead of being sent as a prompt', async () => {
-  const h = await daemonRestartHarness()
-  try {
-    await h.stopDaemon()
-    h.term.feed(' /quit ')
-    h.term.feed('\r')
-    await vi.waitFor(() => expect(h.quit).toHaveBeenCalled())
-    expect(h.dials()).toBe(1)
-    expect(h.newDaemon.calls).toEqual([])
-  } finally {
-    await h.dispose()
-  }
-})
+it.each(['/quit', '/exit'])(
+  'after a terminal close, a padded %s quits locally instead of being sent as a prompt',
+  async (command) => {
+    const h = await daemonRestartHarness()
+    try {
+      await h.stopDaemon()
+      h.term.feed(` ${command} `)
+      h.term.feed('\r')
+      await vi.waitFor(() => expect(h.quit).toHaveBeenCalled())
+      expect(h.dials()).toBe(1)
+      expect(h.newDaemon.calls).toEqual([])
+    } finally {
+      await h.dispose()
+    }
+  },
+)
 
-it('a terminal close cancels the queued-prompt wake so nothing re-dials in the background', async () => {
+it('input queued in the daemon leaves nothing behind that re-dials after a terminal close', async () => {
   const h = await daemonRestartHarness({ hangPrompt: true })
   try {
     h.term.feed('first')
     h.term.feed('\r')
     await vi.waitFor(async () => expect(await h.screen()).toMatch(spinnerFrames))
-    // Busy with a prompt in flight: this one is queued and arms the 100ms wake poll.
+    // Busy with a prompt in flight: this one goes to the daemon queue, and this client keeps no timer for it.
     h.term.feed('second')
     h.term.feed('\r')
     await vi.waitFor(async () => expect(await h.screen()).toContain('Queued: second'))
@@ -1468,12 +3050,12 @@ it('a terminal close stops a parked approval card from deciding its ticket on th
         summary: 'shell rm -rf tmp',
         risk: 'destructive',
         options: ['allow_once', 'allow_always', 'reject_once'],
-        ticket: 'tk-parked',
+        decisionRef: { sessionId: 's', id: 'tk-parked', revision: 1 },
       },
     ],
   })
   try {
-    await vi.waitFor(async () => expect(await h.screen()).toContain('ticket tk-parke'))
+    await vi.waitFor(async () => expect(await h.screen()).toContain('Allow once'))
     await h.stopDaemon()
     h.term.feed('1')
     await new Promise((resolve) => setTimeout(resolve, 300))
@@ -1520,5 +3102,105 @@ it('a terminal close that lands mid session switch does not start the new sessio
   } finally {
     release?.()
     await h.dispose()
+  }
+})
+
+// SGR mouse reports are 1-based; the prompt text starts after the rail's three-column indent and "❯ ".
+const pressAt = (row: number, col: number) => `\x1b[<0;${col};${row}M\x1b[<0;${col};${row}m`
+const screenRowOf = async (h: Awaited<ReturnType<typeof fakeApp>>, text: string) => {
+  const row = (await h.screen()).split('\n').findIndex((line) => line.includes(text)) + 1
+  expect(row).toBeGreaterThan(0)
+  return row
+}
+
+it('a click in the prompt moves the cursor to that cell, and a drag only selects', async () => {
+  const h = await fakeApp('{}')
+  try {
+    h.term.feed('hello world')
+    await vi.waitFor(async () => expect(await h.screen()).toContain('hello world'))
+    const row = await screenRowOf(h, 'hello world')
+    h.term.feed(pressAt(row, 3 + 2 + 6 + 1)) // on the "w"
+    await vi.waitFor(() => expect(h.app.editor.cursor).toBe(6))
+    h.term.feed(pressAt(row, 3 + 2 + 40)) // past the end of the line
+    await vi.waitFor(() => expect(h.app.editor.cursor).toBe(11))
+    h.term.feed(pressAt(row, 2)) // on the rail's indent
+    await vi.waitFor(() => expect(h.app.editor.cursor).toBe(0))
+    h.app.editor.cursor = 4
+    h.term.feed(`\x1b[<0;6;${row}M\x1b[<32;12;${row}M\x1b[<0;12;${row}m`)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(h.app.editor.cursor).toBe(4)
+  } finally {
+    await h.close()
+  }
+})
+
+it('a click on the slash menu above the prompt leaves the cursor alone', async () => {
+  const h = await fakeApp('{}')
+  try {
+    h.term.feed('/m')
+    await vi.waitFor(async () => expect(await h.screen()).toMatch(/│.*\/mouse/))
+    const row = await screenRowOf(h, '/mouse')
+    const before = h.app.editor.cursor
+    h.term.feed(pressAt(row, 8))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(h.app.editor.cursor).toBe(before)
+    expect(h.app.editor.text).toBe('/m')
+  } finally {
+    await h.close()
+  }
+})
+
+it('a slow slash command whose session was replaced does not submit its prompt to the new session', async () => {
+  let news = 0
+  let release!: () => void
+  const gate = new Promise<void>((r) => {
+    release = r
+  })
+  const prompts: string[] = []
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: `S${news++}` }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.workspace.read', async () => {
+      await gate
+      throw Object.assign(new Error('nf'), { data: { code: 'NOT_FOUND' } })
+    })
+    .on('session/prompt', (p) => {
+      prompts.push((p as { sessionId: string }).sessionId)
+      return { stopReason: 'end_turn' }
+    })
+    .on('_agnes/v1/session.projectUIOpening', (p) => ({
+      timeline: {
+        sessionId: (p as { sessionId: string }).sessionId,
+        upto: 0,
+        generation: 1,
+        opState: null,
+        turns: [],
+        nodes: [],
+      },
+      history: { hasEarlier: false, startIndex: 0, totalNodes: 0 },
+    }))
+    .on('_agnes/v1/session.detach', () => ({}))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  const session = await client.session.new({ cwd: '/tmp' })
+  const term = new FakeTerminal({ columns: 80, rows: 24 })
+  const app = new TuiApp({ session, term, header: 'Agnes' })
+  try {
+    await app.start()
+    term.feed('/init\r')
+    await new Promise((r) => setTimeout(r, 30))
+    term.feed('/new\r')
+    await vi.waitFor(() => expect(app.session.id).toBe('S1'))
+    release()
+    await new Promise((r) => setTimeout(r, 300))
+    expect(prompts).toEqual([])
+  } finally {
+    await app.stop()
+    await client.close()
+    await endpoint.close()
   }
 })

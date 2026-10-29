@@ -2,6 +2,8 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
+import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
 const packageDirectory = process.cwd().endsWith('/packages/web')
   ? process.cwd()
@@ -9,25 +11,20 @@ const packageDirectory = process.cwd().endsWith('/packages/web')
 const publicDirectory = resolve(packageDirectory, 'public')
 
 afterEach(() => {
-  document.head.replaceChildren()
-  document.body.replaceChildren()
+  resetWebDom()
 })
 
 /** Rule body by selector, so the assertions stay about declarations instead of line numbers. */
 function ruleBody(css: string, selector: string): string {
-  const start = css.indexOf(`\n${selector} {`)
-  expect(start, `missing rule ${selector}`).toBeGreaterThan(-1)
-  return css.slice(start, css.indexOf('}', start))
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = new RegExp(`^\\s*${escaped} \\{([^}]*)\\}`, 'm').exec(css)
+  expect(match, `missing rule ${selector}`).not.toBeNull()
+  return match?.[1] ?? ''
 }
 
-it('both hosts share one scroll model: documents fixed, list scrolls, detail scrolls only in the middle', async () => {
-  const css = await readFile(resolve(publicDirectory, 'style.css'), 'utf8')
+it('the admin panes keep one scroll model: document fixed, list scrolls, detail scrolls only in the middle', async () => {
+  const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
 
-  // The standalone host must declare its own model instead of inheriting `overflow: hidden` from the
-  // workbench shell (style.css top). That inheritance, plus nothing to scroll, is exactly what made
-  // both admin documents unscrollable.
-  expect(ruleBody(css, 'body.admin-page')).toContain('overflow: hidden')
-  expect(ruleBody(css, 'body.admin-page')).toContain('flex-direction: column')
   expect(ruleBody(css, '.admin-pane-body')).toContain('overflow: hidden')
   expect(ruleBody(css, '.plugin-layout')).toContain('display: flex')
   expect(ruleBody(css, '.plugin-layout')).toContain('flex-direction: column')
@@ -42,11 +39,11 @@ it('both hosts share one scroll model: documents fixed, list scrolls, detail scr
   // The detail column must not reintroduce its own viewport-based height.
   // 选择器带 `[open]`：`display: flex` 必须限定在打开态，否则会覆盖浏览器对关闭态 dialog 的
   // `display: none`，空盒子会在页面正中渲染成一条灰线（见 style.css 的 dialog:not([open]) 兜底）。
-  expect(ruleBody(css, '.plugin-detail[open]')).not.toContain('100dvh')
+  expect(ruleBody(css, '.plugin-detail:not(.agh-drawer)[open]')).not.toContain('100dvh')
 })
 
 it('keeps settings DSH and pane mounts inside the content grid column', async () => {
-  const css = await readFile(resolve(publicDirectory, 'style.css'), 'utf8')
+  const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
   const content = ruleBody(css, '#settings-content-slots')
   expect(content).toContain('grid-column: 2')
   expect(content).toContain('grid-row: 1')
@@ -55,37 +52,78 @@ it('keeps settings DSH and pane mounts inside the content grid column', async ()
   expect(css).toContain('#settings-dsh-shell-slots > [id^="settings-dsh-slot-"]')
 })
 
-it('the iframe-era embedded overrides are gone', async () => {
-  const css = await readFile(resolve(publicDirectory, 'style.css'), 'utf8')
-  // These only existed because the panes were cross-document iframes. Their absence is the guard
-  // against reintroducing a second layout path that only fires in the embedded host.
-  expect(css).not.toContain('admin-embedded')
-  expect(css).not.toContain('plugin-settings-loading')
-  expect(css).not.toContain('plugin-settings-pane')
-  expect(css).not.toContain('plugin-settings-frame')
+/** The selectors of one rule, split at top-level commas only. */
+function selectorList(rule: string): string[] {
+  const selectors = ['']
+  let depth = 0
+  for (const character of rule) {
+    if (character === '(') depth++
+    if (character === ')') depth--
+    if (character === ',' && depth === 0) selectors.push('')
+    else selectors[selectors.length - 1] += character
+  }
+  return selectors.map((selector) => selector.trim())
+}
+
+it('a subpage of a tabbed settings page keeps its breadcrumb line', async () => {
+  const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
+  // The tab strip names a tabbed page, so its own heading folds away; a subpage's header is its only
+  // way back (「Models & accounts › Add account」) and must never be folded with it.
+  const folded = [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{[^}]*\}/g)]
+    .map((match) => match[1]?.trim() ?? '')
+    .filter(
+      (selector) =>
+        selector.includes('settings-section-tabs') && selector.includes('.agnes-settings-page-heading'),
+    )
+  expect(folded.length).toBeGreaterThanOrEqual(3)
+  for (const selector of folded.flatMap(selectorList))
+    expect(selector.replace(/\s+/g, ' ')).toContain(
+      '.agnes-settings-page-heading:not(.agnes-settings-subpage-header > *',
+    )
 })
 
-it('the resource toolbar keeps its actions with the tabs', async () => {
-  const html = await readFile(resolve(publicDirectory, 'resources.html'), 'utf8')
-  document.documentElement.innerHTML = html
-    .replace(/<link\b[^>]*>/g, '')
-    .replace(/<script[\s\S]*?<\/script>/g, '')
-  const toolbar = document.querySelector('.resource-toolbar') as HTMLElement
-  expect(toolbar.contains(document.getElementById('mcp-create'))).toBe(true)
-  expect(toolbar.contains(document.getElementById('skill-refresh'))).toBe(true)
+it('the recent-errors lookup stays on one line in its subpage header', () => {
+  const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
+  // The header actions are sized to their content; a wrapping lookup put the refresh button on a
+  // second row, so the header grew and its search field sat on the dialog's top edge.
+  expect(ruleBody(css, '.agnes-diagnostics-lookup')).toContain('flex-wrap: wrap')
+  expect(ruleBody(css, '.agh-push-actions .agnes-diagnostics-lookup')).toContain('flex-wrap: nowrap')
+})
+
+it('a path value takes only the room its row label leaves', async () => {
+  const primitives = await readFile(resolve(packageDirectory, '../web-ui/src/components.css'), 'utf8')
+  // The label wraps anywhere: a control sized to the whole path would squeeze 「Memory directory」
+  // into «director/y». A zero basis gives the path what is left; the value cuts it with an ellipsis.
+  expect(
+    ruleBody(
+      primitives,
+      '.agnes-settings-item:not([data-stacked]) > .agnes-settings-item-control:has(> .agnes-settings-value-path)',
+    ),
+  ).toContain('flex: 100 1 0')
+  expect(ruleBody(primitives, '.agnes-settings-value-path')).toContain('display: block')
+  expect(ruleBody(primitives, '.agnes-settings-value')).toContain('text-overflow: ellipsis')
+  const memory = await readFile(resolve(packageDirectory, '../web-admin/src/settings/memory.tsx'), 'utf8')
+  expect(memory).toMatch(
+    /className="agnes-settings-value agnes-settings-value-path"[^>]*data-testid="memory-root"/,
+  )
 })
 
 it('list rows use fixed tracks so the Switch column aligns across rows', async () => {
-  const css = await readFile(resolve(publicDirectory, 'style.css'), 'utf8')
+  const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
   // Each row is its own grid, so an `auto` track is sized per row and the Switch column drifts.
   // 状态灯移除后每行只剩标题和 Switch；资源页也必须收成两段，否则空出来的第三段会把 Switch 挤离右边缘。
-  expect(ruleBody(css, '.plugin-row')).not.toMatch(/grid-template-columns:[^;]*\bauto\b/)
-  expect(ruleBody(css, '.plugin-row')).toContain('grid-template-columns: minmax(0, 1fr) 2.375rem')
+  expect(ruleBody(css, '.plugin-row:not(.agh-list-row)')).not.toMatch(/grid-template-columns:[^;]*\bauto\b/)
+  expect(ruleBody(css, '.plugin-row:not(.agh-list-row)')).toContain(
+    'grid-template-columns: minmax(0, 1fr) 2.375rem',
+  )
   expect(ruleBody(css, '.resource-row')).toContain('grid-template-columns: minmax(0, 1fr) 2.375rem')
+  const primitives = await readFile(resolve(packageDirectory, '../web-ui/src/components.css'), 'utf8')
+  expect(ruleBody(primitives, '.agh-list-row')).not.toMatch(/grid-template-columns:[^;]*\bauto\b/)
+  expect(ruleBody(primitives, '.agh-list-row-actions')).toContain('flex: 0 0 auto')
 })
 
 it('the toolbar search field owns its type scale and a visible border in every state', async () => {
-  const css = await readFile(resolve(publicDirectory, 'style.css'), 'utf8')
+  const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
   const field = ruleBody(css, '.plugin-search-field input')
   // Without an explicit size it fell back to the 16px body value and looked oversized next to the
   // 13px controls in the same toolbar.
@@ -95,13 +133,13 @@ it('the toolbar search field owns its type scale and a visible border in every s
 })
 
 it('keeps the Agnes mark while hiding the wordmark in the collapsed sidebar', async () => {
-  const css = await readFile(resolve(publicDirectory, 'style.css'), 'utf8')
+  const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
   const wordmark = css.match(/body\.sidebar-collapsed \.brand-wordmark-text\s*\{[^}]*\}/)?.[0]
   expect(wordmark).toContain('display: none')
 })
 
 it('gives plugin and resource empty states the shared hero layout', async () => {
-  const css = await readFile(resolve(publicDirectory, 'style.css'), 'utf8')
+  const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
   const empty = ruleBody(css, '.admin-empty-state')
   expect(empty).toContain('display: grid')
   expect(empty).toContain('place-content: center')

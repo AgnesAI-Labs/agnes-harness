@@ -1,13 +1,16 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { remoteSandboxSeam } from '@agnes/sandbox-remote'
+import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import type { LockState, ResolveEnv } from '@agnes/host-common/profile/types'
+import { WorkspaceBindingAuthority } from '@agnes/host-common/workspace-authority'
+import {
+  createLoopbackTransport,
+  type RemoteTransport,
+} from '@agnes/host-infrastructure/adapters/remote-transport'
+import { defineRemoteSandboxProvider } from '@agnes/sandbox-remote'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { openAdapters, sandboxHostServices, toSeamAdapters } from '../../src/adapters/index.js'
-import { createLoopbackTransport, type RemoteTransport } from '../../src/adapters/remote-transport.js'
-import { resolveProfile } from '../../src/profile/resolve.js'
-import type { LockState, ResolveEnv } from '../../src/profile/types.js'
-import { WorkspaceBindingAuthority } from '../../src/workspace-authority.js'
+import { openAdapters } from '../../src/runtime/adapters/index.js'
 
 // Toggled only by the close()-failure test below: everything else in this file must see the real
 // loopback transport's exec behave exactly as it always has.
@@ -19,14 +22,14 @@ const created: RemoteTransport[] = []
 // The input every session workspace factory was built from, so a test can see what openAdapters
 // hands it without having to reach the roots through a live fence.
 const factoryInputs: Parameters<
-  typeof import('../../src/adapters/session-workspace.js').createSessionWorkspaceAdapterFactory
+  typeof import('@agnes/host-infrastructure/adapters/session-workspace').createSessionWorkspaceAdapterFactory
 >[0][] = []
 // guards-allow-platform: the loopback spawns remote POSIX commands on this machine.
 const posixIt = process.platform === 'win32' ? it.skip : it
 
 // Inject failures through the test vendor factory while retaining real loopback operations.
-vi.mock('../../src/adapters/remote-transport.js', async (importOriginal) => {
-  const real = await importOriginal<typeof import('../../src/adapters/remote-transport.js')>()
+vi.mock('@agnes/host-infrastructure/adapters/remote-transport', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@agnes/host-infrastructure/adapters/remote-transport')>()
   return {
     ...real,
     createLoopbackTransport: (opts: { root: string }) => {
@@ -45,8 +48,8 @@ vi.mock('../../src/adapters/remote-transport.js', async (importOriginal) => {
   }
 })
 
-vi.mock('../../src/adapters/session-workspace.js', async (importOriginal) => {
-  const real = await importOriginal<typeof import('../../src/adapters/session-workspace.js')>()
+vi.mock('@agnes/host-infrastructure/adapters/session-workspace', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@agnes/host-infrastructure/adapters/session-workspace')>()
   return {
     ...real,
     createSessionWorkspaceAdapterFactory: (
@@ -66,9 +69,27 @@ const env: ResolveEnv = {
 }
 const lock: LockState = {
   packages: {
-    '@agnes/base': { version: '0.1.0', integrity: 'sha512-b', trust: 'builtin', enabled: true },
-    '@agnes/code': { version: '0.1.0', integrity: 'sha512-c', trust: 'builtin', enabled: true },
-    '@agnes/ai': { version: '0.1.0', integrity: 'sha512-a', trust: 'builtin', enabled: true },
+    '@agnes/base': {
+      version: '0.1.0',
+      source: { type: 'builtin' as const, ref: 'builtin' },
+      integrity: 'builtin:0.1.0',
+      trust: 'builtin',
+      enabled: true,
+    },
+    '@agnes/code': {
+      version: '0.1.0',
+      source: { type: 'builtin' as const, ref: 'builtin' },
+      integrity: 'builtin:0.1.0',
+      trust: 'builtin',
+      enabled: true,
+    },
+    '@agnes/ai': {
+      version: '0.1.0',
+      source: { type: 'builtin' as const, ref: 'builtin' },
+      integrity: 'builtin:0.1.0',
+      trust: 'builtin',
+      enabled: true,
+    },
   },
 }
 
@@ -90,7 +111,7 @@ const remoteSeamProfile = (
       },
       user: {
         name: 'p',
-        seams: { sandbox: '@agnes/sandbox-remote' },
+        providers: { sandbox: { provider: 'remote-test' } },
         packages: [{ id: '@agnes/sandbox-remote', source: 'test', config }],
       },
     },
@@ -102,7 +123,11 @@ const remoteModules = () =>
       '@agnes/sandbox-remote',
       {
         id: '@agnes/sandbox-remote',
-        openTransport: async () => createLoopbackTransport({ root: '/' }),
+        sandboxProvider: defineRemoteSandboxProvider({
+          id: 'remote-test',
+          version: '1.0.0',
+          openTransport: async () => createLoopbackTransport({ root: '/' }),
+        }),
       },
     ],
   ])
@@ -189,9 +214,6 @@ describe('remote assembly wiring (RA17)', () => {
     try {
       expect(bundle.transport).toBeDefined()
       expect(bundle.transport?.alive()).toBe(true)
-      const { services, revoke } = sandboxHostServices(bundle)
-      expect(services.transport).toBe(bundle.transport)
-      revoke()
     } finally {
       await bundle.close()
     }
@@ -205,7 +227,6 @@ describe('remote assembly wiring (RA17)', () => {
     const bundle = await openAdapters(profile, { dataDir, workspaceRoot })
     try {
       expect(bundle.transport).toBeUndefined()
-      expect(sandboxHostServices(bundle).services.transport).toBeUndefined()
     } finally {
       await bundle.close()
     }
@@ -323,7 +344,7 @@ describe('remote assembly wiring (RA17)', () => {
 // remote host with a directory on this disk, which on win32 has no posix spelling.
 const onPosix = process.platform === 'win32' ? describe.skip : describe
 
-onPosix('the remote seam over a real openAdapters bundle (C1: the exec gate is in the path)', () => {
+onPosix('the remote sandbox over a real openAdapters bundle (C1: the exec gate is in the path)', () => {
   let dir: string
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
@@ -343,24 +364,20 @@ onPosix('the remote seam over a real openAdapters bundle (C1: the exec gate is i
     return { bundle, dataDir, workspaceRoot, homeDir }
   }
 
-  // The real assembly hands the sandbox factory exactly these two objects (assemble/packages.ts):
-  // `toSeamAdapters(bundle, ...)` for `adapters` and `sandboxHostServices(bundle).services` for
-  // `sandboxHost`. Building the context from them rather than from a double is the whole point -
-  // this is the first place in the branch where the seam's own declarations reach the real gate,
-  // the real platform capability table and the real bindFsPolicy.
+  // The Host declares the remote posture once at assembly (seam-contexts.ts) and the sandbox shell
+  // stamps every remote exec with the bound digest; this is that same path over a real bundle, so
+  // the gate, the platform capability table and bindFsPolicy are the real ones.
   const fitSeam = async (
     bundle: Awaited<ReturnType<typeof openAdapters>>,
-    p: { workspaceRoot: string; dataDir: string; homeDir: string; preset?: Record<string, unknown> },
+    _p?: { workspaceRoot: string; dataDir: string; homeDir: string },
   ) => {
-    const { services, revoke } = sandboxHostServices(bundle)
-    try {
-      return await remoteSandboxSeam({
-        profile: { ...p, preset: p.preset ?? {} },
-        adapters: toSeamAdapters(bundle, { owner: 'test' }),
-        sandboxHost: services,
-      })
-    } finally {
-      revoke()
+    bundle.reportSandboxBackend({ name: 'remote', enforcement: { level: 'none', scope: [] } })
+    bundle.declareExecGate({ backend: 'remote', onUnavailable: 'deny' })
+    const policy = bundle.fs.fence()
+    return {
+      fsPolicy: () => policy,
+      exec: (cmd: string[], opts: { cwd: string }) =>
+        bundle.policyExec(cmd, { ...opts, sandbox: { policyDigest: policy.digest, backend: 'remote' } }),
     }
   }
 
@@ -378,28 +395,6 @@ onPosix('the remote seam over a real openAdapters bundle (C1: the exec gate is i
       const l1 = bundle.platform.capability('sandbox.l1')
       expect(l1.level).toBe('unavailable')
       expect(l1.reason).toMatch(/remote host boundary/)
-    } finally {
-      await bundle.close()
-    }
-  })
-
-  it('binds the seam-compiled policy through the real bindFsPolicy without poisoning the fence', async () => {
-    const { bundle, dataDir, workspaceRoot, homeDir } = await openRemote()
-    try {
-      const seam = await fitSeam(bundle, {
-        workspaceRoot,
-        dataDir,
-        homeDir,
-        preset: { sandbox: { extra_paths: ['vendor'], deny_paths: ['secret.env'] } },
-      })
-      const policy = seam.fsPolicy()
-      bundle.bindFsPolicy(policy)
-      // A refused bind does not throw quietly - it poisons the fence to deny-all - so both halves
-      // are asserted: the digest is pinned, and the fence still serves the workspace afterwards.
-      expect(bundle.fsBinding().policyDigest).toBe(policy.digest)
-      expect(bundle.fs.fence().digest).toBe(policy.digest)
-      await expect(bundle.fs.realpath(workspaceRoot)).resolves.toBe(workspaceRoot)
-      await expect(bundle.fs.realpath(join(workspaceRoot, '.git'))).rejects.toThrow(/E_FS_DENIED/)
     } finally {
       await bundle.close()
     }

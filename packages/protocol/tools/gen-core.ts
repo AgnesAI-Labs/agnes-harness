@@ -23,9 +23,11 @@ const IMPORT_FORMAT_REGISTRY = "import { FormatRegistry } from '@sinclair/typebo
 // ajv-formats accepts and `new URL()` rejects. Recorded and deliberately not fixed: an acceptable
 // simplification, not the class of hole this check exists to close.
 const FORMAT_CHECKERS: Record<string, string> = {
+  'agnes-plugin-docs-url':
+    "(value) => { try { const url = new URL(value); return value === value.trim() && !/[\\x00-\\x20\\x7f-\\x9f]/.test(value) && value.startsWith('https://') && url.protocol === 'https:' && url.username === '' && url.password === ''; } catch { return false; } }",
   // Matches PackageManager's existing URL parser, including IPv6 and normalized numeric ports.
   'agnes-git-source':
-    "(value) => { const raw = value.slice(4); const hashAt = raw.lastIndexOf('#'); const commit = raw.slice(hashAt + 1); try { const url = new URL(raw.slice(0, hashAt)); return value.startsWith('git:') && hashAt > 0 && /^[a-f0-9]{40}$/.test(commit) && url.protocol === 'https:' && url.username === '' && url.password === '' && url.search === '' && url.hash === ''; } catch { return false; } }",
+    "(value) => { try { const url = new URL(value.slice(4)); return value.startsWith('git:') && url.protocol === 'https:' && url.username === '' && url.password === '' && url.search === '' && (!url.hash || /^#[A-Za-z0-9._/-]+$/.test(url.hash)); } catch { return false; } }",
   // Calendar-aware RFC3339 check. Unconditional local hour/minute bounds precede leap seconds;
   // installed ajv-formats full mode omits them on its leap-second path. Keep the prior wire
   // shape: T/t separator and Z/z or sign-HH:MM offsets; reference-library differences are pinned.
@@ -728,7 +730,17 @@ export function generateModule(schema: JsonSchemaDoc, moduleName: string, schema
     }
   }
 
+  const planned = [
+    'AgnesV1',
+    'SessionV1',
+    'AppServerV1',
+    'PackageAdminSchema',
+    'LockfileSchema',
+    'ExtensionManifestSchema',
+  ].includes(moduleName)
   let out = HEADER_COMMENT + IMPORT_TYPE
+  if (planned)
+    out += "import { importValidationSchema, prepareValidationSchemas } from '@agnes/protocol-validation'\n"
   if (formats.length > 0) out += IMPORT_FORMAT_REGISTRY
   out += '\n'
   // One format may be used by several fields in a schema (several timestamp fields all using
@@ -755,12 +767,16 @@ export function generateModule(schema: JsonSchemaDoc, moduleName: string, schema
     .join('\n')
   out += `export const ${moduleName} = Type.Module({\n${entries}\n})\n\n`
   for (const n of moduleNames) {
-    out += `export const ${n} = ${moduleName}.Import(${lit(n)})\nexport type ${n} = Static<typeof ${n}>\n`
+    const imported = planned
+      ? `importValidationSchema(${moduleName}, ${lit(n)})`
+      : `${moduleName}.Import(${lit(n)})`
+    out += `export const ${n} = ${imported}\nexport type ${n} = Static<typeof ${n}>\n`
   }
   if (typeof schema.$ref === 'string') {
     out += `export const Root = ${refName(schema.$ref)}\nexport type Root = ${refName(schema.$ref)}\n`
   }
   out += emitExtras(schema)
+  if (planned) out += `\nprepareValidationSchemas([${names.join(', ')}])\n`
   return out
 }
 

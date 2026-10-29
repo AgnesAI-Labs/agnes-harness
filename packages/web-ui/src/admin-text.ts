@@ -8,14 +8,14 @@ import { ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog } from './locales/admin.js'
 import { createCatalogTranslator, type LocaleTranslator } from './ui-locale.js'
 
 /**
- * 浏览器 UI 运行状态的展示视图。结构与 web 包的 PluginRuntimeState 保持结构化等价
- * （phase/packageId/revision/error.message），组件层不 import web 包。
+ * Display view of browser UI runtime status. Structurally equivalent to the web package PluginRuntimeState
+ * (phase/packageId/revision/error.message) without importing web into the component layer.
  */
 export type RuntimeStateView = Readonly<{
   packageId: string
   revision: string | undefined
   phase: 'idle' | 'loading' | 'active' | 'stopping' | 'failed'
-  error?: Readonly<{ message: string }>
+  error?: Readonly<{ message: string; code?: string }>
 }>
 
 export type { LocaleTranslator as AdminTranslator }
@@ -112,6 +112,10 @@ export function terminal(operation: PackageOperation): boolean {
 }
 
 export function blockerText(blocker: PackageBlocker, t: LocaleTranslator = englishText): string {
+  if (blocker.code === 'incompatible')
+    return t('blocker.incompatible-action', {
+      references: blocker.references.filter((ref) => !ref.startsWith('docs/')).join(t('list.separator')),
+    })
   const name = t(`blocker.${blocker.code}`)
   const references = blocker.references.length
     ? t('blocker.references', { references: blocker.references.join(t('list.separator')) })

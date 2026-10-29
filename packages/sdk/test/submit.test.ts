@@ -1,7 +1,7 @@
 import { rpcError } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createClient } from '../src/client.js'
-import { ProtocolViolation } from '../src/errors.js'
+import { ProtocolViolation, RequestTimeout } from '../src/errors.js'
 import { memoryJournal, type PendingCommand } from '../src/journal.js'
 import { fakeEndpoint, type Handler } from './helpers/fake-endpoint.js'
 
@@ -24,6 +24,7 @@ async function setup(handler: Handler, journal = memoryJournal('cid')) {
     'session/new': () => ({ sessionId: 's' }),
     '_agnes/v1/submit': handler,
     '_agnes/v1/submit.ack': () => ({}),
+    '_agnes/v1/session.attach': () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: null }),
   })
   const client = createClient({ transport: { kind: 'inproc', endpoint: f.endpoint }, journal })
   clients.push(client)
@@ -129,7 +130,11 @@ it('settles an uncertain acknowledgement explicitly without reporting a sequence
     code: -32603,
     data: { code: 'UNCERTAIN', commandId: 'stable-id' },
   })
-  expect(await s.journal.pending('s')).toEqual([])
+  expect(await s.journal.pending('s')).toMatchObject([
+    { commandId: 'stable-id', state: 'needs-confirmation' },
+  ])
+  await s.session.recover()
+  expect(s.f.calls.filter((entry) => entry.method === '_agnes/v1/submit')).toHaveLength(1)
   expect(s.f.calls.some((entry) => entry.method === '_agnes/v1/submit.ack')).toBe(false)
 })
 it.each(['method', 'identity', 'session', 'commandId', 'actor'])(
@@ -165,4 +170,70 @@ it('does not send when persistence fails', async () => {
   const before = s.f.calls.length
   await expect(s.session.steer('go')).rejects.toThrow('storage unavailable')
   expect(s.f.calls).toHaveLength(before)
+})
+
+// Architecture audit regression: a legal unknown receipt must not strand recovery before attach.
+it.each(['ack', 'error', 'overload', 'timeout'] as const)(
+  'quarantines %s replay, continues later commands and subscribes without auto-retrying uncertainty',
+  async (outcome) => {
+    let replay = false
+    const s = await setup((params) => {
+      const id = (params as { commandId: string }).commandId
+      if (!replay) throw rpcError('OVERLOADED')
+      if (id === 'unknown') {
+        if (outcome === 'error') throw rpcError('INTERNAL_ERROR', { code: 'UNCERTAIN' })
+        if (outcome === 'overload') throw rpcError('OVERLOADED')
+        return { replayed: false, status: 'uncertain' }
+      }
+      return { seq: 9, replayed: false }
+    })
+    await expect(s.session.steer('unknown instruction', { commandId: 'unknown' })).rejects.toMatchObject({
+      submission: { commandId: 'unknown', state: 'pending' },
+    })
+    await expect(s.session.followUp('later')).rejects.toMatchObject({ code: -32001 })
+    replay = true
+    if (outcome === 'timeout') {
+      const call = s.client.call.bind(s.client)
+      vi.spyOn(s.client, 'call').mockImplementation((method, params, opts) => {
+        if (method === '_agnes/v1/submit' && (params as { commandId: string }).commandId === 'unknown')
+          return Promise.reject(new RequestTimeout(method, 1))
+        return call(method, params, opts)
+      })
+    }
+    const notices: unknown[] = []
+    s.client.on('notice', (value) => notices.push(value))
+    await s.session.recover()
+    expect(await s.session.pendingCommands()).toMatchObject([
+      { commandId: 'unknown', state: 'needs-confirmation' },
+    ])
+    expect(notices).toContainEqual({
+      kind: 'command-needs-confirmation',
+      sessionId: 's',
+      commandId: 'unknown',
+    })
+    const submits = s.f.calls.filter((call) => call.method === '_agnes/v1/submit').length
+    await s.session.recover()
+    expect(s.f.calls.filter((call) => call.method === '_agnes/v1/submit')).toHaveLength(submits)
+    expect(s.f.calls.filter((call) => call.method === '_agnes/v1/session.attach')).toHaveLength(2)
+    expect(s.f.calls.filter((call) => call.method === '_agnes/v1/submit').at(-1)?.params).toMatchObject({
+      kind: 'followUp',
+    })
+  },
+)
+it('checks needs-confirmation with the exact original identity and payload', async () => {
+  let known = false
+  const s = await setup(() => (known ? { seq: 9, replayed: true } : { replayed: false, status: 'uncertain' }))
+  await expect(s.session.followUp('one action', { commandId: 'one' })).rejects.toMatchObject({
+    data: { code: 'UNCERTAIN' },
+  })
+  await expect(s.session.followUp('one action', { commandId: 'one' })).rejects.toMatchObject({
+    data: { code: 'UNCERTAIN' },
+  })
+  expect(s.f.calls.filter((call) => call.method === '_agnes/v1/submit')).toHaveLength(1)
+  known = true
+  await s.session.checkCommand('one')
+  expect(await s.session.pendingCommands()).toEqual([])
+  const submits = s.f.calls.filter((call) => call.method === '_agnes/v1/submit')
+  expect(submits).toHaveLength(2)
+  expect(submits[1]?.params).toEqual(submits[0]?.params)
 })

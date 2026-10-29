@@ -1,0 +1,52 @@
+import { execFile } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
+import { describe, expect, it } from 'vitest'
+
+const execute = promisify(execFile)
+const entry = new URL('../src/bin.ts', import.meta.url)
+
+// Each case starts the daemon bin from TypeScript source through tsx: under a second alone, but
+// past vitest's 5 s default on a loaded macOS runner.
+const bin = { timeout: 30_000 }
+// Discovery resolves under the AGH home; an isolated home keeps a developer's running daemon out of scope.
+const isolated = (dir: string) => ({ encoding: 'utf8' as const, env: { ...process.env, AGH_HOME: dir } })
+
+describe('agnesd control commands through the real bin', () => {
+  it('prints status JSON and uses a nonzero exit when no daemon is running', bin, async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-bin-status-'))
+    try {
+      let failure: { code?: unknown; stdout?: unknown } | undefined
+      try {
+        await execute(
+          process.execPath,
+          ['--import', 'tsx', fileURLToPath(entry), 'status', '--profile', 'default', '--data-dir', dir],
+          isolated(dir),
+        )
+      } catch (error) {
+        failure = error as { code?: unknown; stdout?: unknown }
+      }
+      expect(failure?.code).toBe(1)
+      expect(failure?.stdout).toBe('{"running":false}\n')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('makes stop idempotent when no owner exists', bin, async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-bin-stop-'))
+    try {
+      const result = await execute(
+        process.execPath,
+        ['--import', 'tsx', fileURLToPath(entry), 'stop', '--profile', 'default', '--data-dir', dir],
+        isolated(dir),
+      )
+      expect(result.stdout).toBe('not-running\n')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})

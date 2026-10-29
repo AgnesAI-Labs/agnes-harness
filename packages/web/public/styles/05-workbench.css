@@ -1,0 +1,604 @@
+@layer app {
+  main {
+    height: 100dvh;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--agnes-bg-app-content);
+  }
+  /* The main area is focusable only as the skip link's target. A ring around the whole pane says
+   nothing about where typing goes, so it draws none; the next Tab lands on a real control. */
+  #main-content:focus {
+    outline: none;
+  }
+  /* One 44px bar: session identity on the left, view and workbench controls on the right. */
+  .topbar-row {
+    /* The bar's own width, not the window's, decides what it can show: the sidebar and docks take
+     their share first. */
+    container: topbar-row / inline-size;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-height: 2.75rem;
+    padding: 0 var(--s12) 0 var(--s16);
+    border-bottom: var(--hairline) solid var(--agnes-line-hairline);
+    background: var(--agnes-bg-app-content);
+  }
+  .topbar {
+    min-width: 0;
+    flex: 1;
+    gap: var(--s8);
+  }
+  .sidebar-toggle {
+    flex: 0 0 auto;
+  }
+  /* The title gives way first; the capsule and tabs keep their own space. */
+  .task-heading {
+    min-width: 0;
+    flex: 1 1 0;
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .task-heading h1 {
+    max-width: min(36rem, 100%);
+    min-width: 0;
+    flex: 0 1 auto;
+    margin: 0;
+    overflow: hidden;
+    padding: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.25rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .task-heading .topbar-agent {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.125rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* The Agent bound to this session: a quiet chip, never accent-coloured. */
+  .task-heading .topbar-agent {
+    flex: 0 1 auto;
+    max-width: 12rem;
+    padding: 0 var(--s8);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-pill);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-surface);
+    line-height: 1.25rem;
+  }
+  .task-heading .topbar-agent > span {
+    color: inherit;
+  }
+  #status:is(
+    [data-state="error"],
+    [data-state="failed"],
+    [data-state="blocked"],
+    [data-state="budget"],
+    [data-state="max_steps"]
+  ) {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+  }
+  #status[data-state="not-verified"] {
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+  }
+  /* The connection bar above the main area is the one place connection state shows. The top bar
+   keeps `#connection` as the machine-readable state only. */
+  .connection-group {
+    display: none;
+  }
+  #notice {
+    width: min(50rem, calc(100% - 3rem));
+    min-height: 0;
+    margin: 0 auto;
+    padding-top: var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+  }
+  #notice:empty {
+    display: none;
+  }
+  #notice[data-kind="error"] {
+    color: var(--agnes-status-danger-text);
+  }
+  .workbench-split {
+    position: relative;
+    min-height: 0;
+    flex: 1;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* The right of the bar: the view switch, then one group of icon buttons. */
+  .session-tabs-bar {
+    min-width: 0;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--s12);
+  }
+  .topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--s4);
+  }
+  /* Compact actions keep the workbench closest to its panel. */
+  .topbar-actions :is(.agh-btn--icon, .workbench-toggle) {
+    min-width: 1.75rem;
+    height: 1.75rem;
+    min-height: 1.75rem;
+    padding-inline: var(--s4);
+    color: var(--agnes-text-secondary);
+  }
+  .topbar-actions .workbench-toggle {
+    gap: var(--s4);
+  }
+  .topbar-actions .workbench-toggle[aria-pressed="true"] {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-selected);
+  }
+  .topbar-actions::before {
+    content: "";
+    width: var(--hairline);
+    height: 18px;
+    margin-inline-end: var(--s4);
+    background: var(--agnes-line-primary);
+  }
+  .workbench-toggle-icon {
+    position: relative;
+    display: inline-flex;
+  }
+  .workbench-toggle-pane {
+    position: absolute;
+    inset-block: 3px;
+    inset-inline-end: 3px;
+    width: 3.75px;
+    background: currentColor;
+    opacity: 0;
+    transition: opacity var(--transition);
+  }
+  [aria-pressed="true"] .workbench-toggle-pane {
+    opacity: 0.35;
+  }
+  .topbar-report:hover .icon {
+    animation: topbar-bug-wiggle 500ms ease-in-out 2;
+  }
+  @keyframes topbar-bug-wiggle {
+    0%,
+    100% {
+      transform: rotate(0);
+    }
+    25% {
+      transform: rotate(-12deg);
+    }
+    75% {
+      transform: rotate(12deg);
+    }
+  }
+  .topbar-report-anchor {
+    position: relative;
+    display: inline-flex;
+  }
+  /* Retain the command/composer Goal host without offering a topbar Goal entry. */
+  .topbar-report-anchor > .session-goal-host {
+    position: absolute;
+    inset: 0;
+    width: auto;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .topbar-report-anchor > .session-goal-host :is(span, .agnes-ui-button) {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  #session-view-controls,
+  #session-view-controls > .agh-tooltip-anchor,
+  .session-view-tabs,
+  .session-view-tabs > .ant-tabs-content-holder {
+    display: contents;
+  }
+  .session-view-tabs > .ant-tabs-content-holder {
+    display: none;
+  }
+  .session-view-live {
+    display: none;
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 5px;
+    height: 5px;
+    border-radius: var(--radius-full);
+    background: var(--agnes-text-emphasis);
+    color: var(--agnes-text-emphasis);
+  }
+  .topbar-row:has(#status:is([data-state="running"], [data-state="approval"], [data-state="parked"]))
+    .session-view-live {
+    display: block;
+  }
+  .session-view-live::after {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: inherit;
+    background: currentColor;
+    animation: run-status-breathe 1.8s ease-in-out infinite;
+  }
+  [data-view-enter="right"] {
+    animation: session-view-enter-right 300ms var(--motion-ease-out);
+  }
+  [data-view-enter="left"] {
+    animation: session-view-enter-left 300ms var(--motion-ease-out);
+  }
+  @keyframes session-view-enter-right {
+    from {
+      opacity: 0;
+      transform: translateX(-18px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  @keyframes session-view-enter-left {
+    from {
+      opacity: 0;
+      transform: translateX(18px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .workbench-toggle-pane {
+      transition: none;
+    }
+    .session-view-live::after {
+      display: none;
+    }
+    .topbar-report:hover .icon,
+    .session-view-live::after,
+    [data-view-enter] {
+      animation: none;
+    }
+  }
+  .conversation-shell {
+    position: relative;
+    width: 100%;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--agnes-bg-app-content);
+  }
+  .conversation-region-root {
+    position: absolute;
+    inset: 0;
+    min-height: 0;
+  }
+
+  #status[data-state="idle"],
+  #status[data-state="done"] {
+    display: none;
+  }
+  .topbar .connection-group {
+    display: none;
+  }
+  /* What a crowded bar gives up, in order: the title shortens first, then the Agent chip goes.
+   The view switch and the action group always stay. */
+  @container topbar-row (max-width: 55rem) {
+    .task-heading .topbar-agent {
+      display: none;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    body:not(.sidebar-collapsed) .sidebar-toggle {
+      display: none;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    body:not(.sidebar-collapsed) .sidebar-close {
+      display: inline-flex;
+    }
+  }
+
+  .task-heading h1:has(.topbar-title-editor) {
+    overflow: visible;
+  }
+  .task-heading .topbar-title-editor {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    width: min(24ch, 46vw);
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    height: 1.75rem;
+    overflow: visible;
+    border: 1px solid var(--agnes-line-emphasis);
+    border-radius: var(--radius-control);
+    background: var(--agnes-bg-surface);
+  }
+  .topbar-title-editor:focus-within {
+    outline: var(--focus-outline);
+    box-shadow: var(--focus-line);
+    outline-offset: 1px;
+  }
+  .topbar-title-editor #task-title-input {
+    flex: 1 1 0;
+    min-width: 0;
+    width: 0;
+    height: 100%;
+    min-height: 0;
+    padding: 0 var(--s8);
+    border: 0;
+    box-shadow: none;
+    outline: 0;
+    background: transparent;
+    color: var(--agnes-text-primary);
+    font: inherit;
+  }
+  .topbar-title-editor > .agh-tooltip-anchor {
+    flex: none;
+    display: flex;
+  }
+  .topbar-title-editor .agh-btn--icon.agh-btn {
+    width: 1.5rem;
+    min-width: 1.5rem;
+    height: 1.5rem;
+    min-height: 0;
+    padding: 0;
+  }
+  .task-heading .topbar-title-error {
+    position: absolute;
+    inset-block-start: calc(100% + var(--s8));
+    inset-inline-start: 0;
+    z-index: var(--agh-z-tooltip);
+    width: max-content;
+    max-width: min(28rem, 75vw);
+    padding: var(--s8) var(--s12);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-control);
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-bg-surface);
+    white-space: normal;
+  }
+  #task-title {
+    display: block;
+    color: var(--agnes-text-primary);
+    text-align: left;
+    font: inherit;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .topbar :where([data-slot], [data-slot-entry]) {
+    display: contents;
+  }
+  #status {
+    display: inline-flex;
+    flex: 0 0 auto;
+    min-width: 0;
+    max-width: calc(100% - var(--s8));
+    overflow: hidden;
+    height: 24px;
+    align-items: center;
+    border-radius: var(--radius-pill);
+    background: var(--agnes-brand-emphasis-soft);
+    color: var(--agnes-text-emphasis);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+  }
+  #status:focus-within {
+    outline: var(--focus-outline);
+    box-shadow: var(--focus-line);
+  }
+  #status .run-status-toggle {
+    display: inline-flex;
+    flex: 0 1 auto;
+    min-width: 0;
+    min-height: 0;
+    height: 24px;
+    gap: var(--s8);
+    padding: 0 var(--s8);
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: inherit;
+    opacity: 1;
+    font: inherit;
+  }
+  #status .run-status-toggle:disabled {
+    cursor: default;
+  }
+  .run-status-dot {
+    position: relative;
+    width: 7px;
+    height: 7px;
+    flex: 0 0 7px;
+    border-radius: var(--radius-full);
+    background: currentColor;
+  }
+  .run-status-breathe .run-status-dot::after {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: inherit;
+    background: currentColor;
+    animation: run-status-breathe 1.8s ease-in-out infinite;
+  }
+  @keyframes run-status-breathe {
+    0%,
+    100% {
+      transform: scale(0.6);
+      opacity: 0.35;
+    }
+    50% {
+      transform: scale(1.25);
+      opacity: 0;
+    }
+  }
+  .run-status-phase {
+    display: inline-grid;
+    width: 12em;
+    min-width: 2em;
+    flex: 0 1 auto;
+    text-align: left;
+  }
+  .run-status-phase:lang(zh) {
+    width: 7em;
+  }
+  .run-status-word {
+    grid-area: 1 / 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .run-status-in {
+    animation: run-status-rise 260ms var(--motion-ease-out);
+  }
+  .run-status-out {
+    animation: run-status-exit 260ms var(--motion-ease-out) forwards;
+  }
+  @keyframes run-status-rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes run-status-exit {
+    to {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+  }
+  .run-status-time {
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+  }
+  .run-status-action {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    width: 0;
+    opacity: 0;
+    overflow: hidden;
+    visibility: hidden;
+    transition:
+      width var(--motion-long) var(--motion-spring),
+      opacity var(--transition);
+  }
+  #status[data-expanded="true"] .run-status-action {
+    width: var(--s24);
+    opacity: 1;
+    visibility: visible;
+  }
+  #status .run-status-stop {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    min-width: 20px;
+    height: 20px;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: var(--agnes-bg-hover);
+    color: inherit;
+  }
+  #status .run-status-stop:hover {
+    background: var(--agnes-bg-selected);
+  }
+  .run-status-square {
+    width: 7px;
+    height: 7px;
+    background: currentColor;
+  }
+  #status:is([data-state="approval"], [data-state="parked"]) {
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+  }
+  #status:is([data-state="approval"], [data-state="parked"]) .run-status-dot::after {
+    animation-duration: 1.1s;
+  }
+  #status[data-state="stopping"] {
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-surface);
+    border: var(--hairline) solid var(--agnes-line-primary);
+  }
+  #status:not(
+    :is(
+      [data-state="running"],
+      [data-state="not-verified"],
+      [data-state="stopping"],
+      [data-state="error"],
+      [data-state="failed"],
+      [data-state="blocked"],
+      [data-state="budget"],
+      [data-state="max_steps"],
+      [data-state="approval"],
+      [data-state="parked"]
+    )
+  ) {
+    display: none;
+  }
+  /* On narrow bars the title is already at zero; let the phase ellipsize further so the
+     timer and an in-flow stop button still fit beside the view tabs. */
+  @container topbar-row (max-width: 32rem) {
+    .session-tabs button {
+      padding-inline: var(--s8);
+      font-size: var(--font-size-xs);
+    }
+    .run-status-phase {
+      min-width: 0;
+    }
+    #status .run-status-toggle {
+      gap: var(--s4);
+      padding-inline: var(--s4);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .run-status-dot::after,
+    .run-status-in,
+    .run-status-out {
+      animation: none;
+    }
+    .run-status-action {
+      transition: none;
+    }
+  }
+  @media (max-width: 900px) {
+    /* The left bar keeps space for navigation and workbench actions before view tabs shrink. */
+    .topbar {
+      min-width: calc(2 * var(--s32) + var(--s8));
+    }
+    #sidebar-toggle {
+      min-width: var(--s32);
+      min-height: var(--s32);
+    }
+  }
+  @media (max-width: 767px) {
+    .topbar {
+      min-width: var(--control-height-touch);
+    }
+  }
+}

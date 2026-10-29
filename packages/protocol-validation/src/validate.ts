@@ -1,5 +1,8 @@
 import { FormatRegistry, type TSchema } from '@sinclair/typebox'
 import { Value, type ValueError, ValueErrorType } from '@sinclair/typebox/value'
+import { checkWithPlan } from './check-plan.js'
+
+export { prepareValidationSchemas } from './check-plan.js'
 export type ValidationError = {
   path: string
   message: string
@@ -8,24 +11,48 @@ export type ValidationError = {
 }
 export type ValidationResult<T> = { ok: true; value: T } | { ok: false; errors: ValidationError[] }
 
-const MAX_LOCATION = 200
-
-/**
- * One line that says where the first validation error is and what is wrong with it, with a count of
- * the rest. A missing property is reported with its parent as `path` and its name as `key`, so the
- * two are joined here. Only the JSON path and the validator's message are used, never a value, and
- * a very long path is cut.
- */
+/** Describe the first field failure without serializing the rejected value. */
 export function describeValidationErrors(errors: readonly ValidationError[]): string {
   const first = errors[0]
   if (!first) return 'invalid'
-  const full = first.code === 'MISSING' && first.key ? `${first.path}/${first.key}` : first.path
-  const where = full.length > MAX_LOCATION ? `${full.slice(0, MAX_LOCATION)}…` : full
-  const text = where === '' ? first.message : `${where} ${first.message}`
-  return errors.length > 1 ? `${text} (+${errors.length - 1} more)` : text
+  const location = first.code === 'MISSING' && first.key ? `${first.path}/${first.key}` : first.path
+  const path = location.length > 200 ? `${location.slice(0, 200)}…` : location
+  return `${path ? `${path} ` : ''}${first.message}${errors.length > 1 ? ` (+${errors.length - 1} more)` : ''}`
+}
+
+/** Prefer a uniquely matching shape; never diagnose a field from a different discriminant. */
+function specificUnionError(error: ValueError): ValueError {
+  let remaining = 64
+  const visit = (value: ValueError, level: number): ValueError => {
+    if (value.type !== ValueErrorType.Union || level >= 8 || remaining <= 0) return value
+    const candidates: ValueError[][] = []
+    for (const member of value.errors) {
+      const errors: ValueError[] = []
+      for (const nested of member) {
+        if (remaining-- <= 0) return value
+        errors.push(nested)
+      }
+      // A literal mismatch is a different tagged shape, not a correction hint for this one.
+      if (errors.some((item) => item.type === ValueErrorType.Literal)) continue
+      if (errors.length && errors.every((item) => item.path.length > value.path.length))
+        candidates.push(errors)
+    }
+    // Shared constraints (such as list.limit) are useful even when several shapes match.
+    // Otherwise keep the union diagnostic when the intended shape is ambiguous.
+    const best = candidates[0]?.find((item) =>
+      candidates.every((errors) =>
+        errors.some(
+          (other) => other.type === item.type && other.path === item.path && other.message === item.message,
+        ),
+      ),
+    )
+    return best ? visit(best, level + 1) : value
+  }
+  return visit(error, 0)
 }
 
 function classify(e: ValueError): ValidationError {
+  if (e.type === ValueErrorType.Union) e = specificUnionError(e)
   const key = e.path.split('/').pop() || undefined
   // Measured against TypeBox 0.34.33: for ObjectRequiredProperty, `e.path` points at the missing key
   // itself (a missing `enforcement` gives e.path '/enforcement'). The shape we report is the other
@@ -91,8 +118,17 @@ export function isDateTime(value: unknown): value is string {
 }
 
 export function validateAgainst<T>(schema: TSchema, x: unknown, pathPrefix = ''): ValidationResult<T> {
-  if (Value.Check(schema, x)) return { ok: true, value: x as T }
-  const errors = [...Value.Errors(schema, x)].map(classify).map((e) => ({ ...e, path: pathPrefix + e.path }))
+  // Inlined module roots still use TypeBox references to definitions identified by $id.
+  const planned = checkWithPlan(schema, x)
+  if (planned) return { ok: true, value: x as T }
+  const references: TSchema[] = Object.values(schema.$defs ?? {})
+  // Mutable or ambiguous schemas keep the original check/reference/error path. Never retry a
+  // rejected value: an accessor could return different data on a second check. Generated plans
+  // have unambiguous references; the existing error visitor resolves those while enumerating.
+  if (planned === undefined && Value.Check(schema, references, x)) return { ok: true, value: x as T }
+  const errors = [...Value.Errors(schema, references, x)]
+    .map(classify)
+    .map((e) => ({ ...e, path: pathPrefix + e.path }))
   return {
     ok: false,
     errors: errors.length ? errors : [{ path: pathPrefix, message: 'invalid', code: 'OTHER' }],

@@ -32,12 +32,12 @@ export function validateComputerUseRescueArgs(parsed: ParsedArgs): ComputerUseRe
     parsed.help ||
     parsed.version ||
     parsed.preset !== undefined ||
+    parsed.permission !== undefined ||
     parsed.continue ||
     parsed.resume !== undefined ||
     parsed.connect !== undefined ||
     parsed.model !== undefined ||
     parsed.park ||
-    parsed.meta ||
     parsed.ephemeral ||
     parsed.standalone !== undefined ||
     parsed.repair ||
@@ -106,13 +106,13 @@ function validateReadOnlyComputerUseFlags(parsed: ParsedArgs, label: string): vo
     parsed.version ||
     parsed.profile !== undefined ||
     parsed.preset !== undefined ||
+    parsed.permission !== undefined ||
     parsed.cwd !== undefined ||
     parsed.continue ||
     parsed.resume !== undefined ||
     parsed.connect !== undefined ||
     parsed.model !== undefined ||
     parsed.park ||
-    parsed.meta ||
     parsed.ephemeral ||
     parsed.standalone !== undefined ||
     parsed.format !== undefined ||
@@ -138,13 +138,13 @@ function validateCommonComputerUseFlags(parsed: ParsedArgs, label: string): void
     parsed.version ||
     parsed.profile !== undefined ||
     parsed.preset !== undefined ||
+    parsed.permission !== undefined ||
     parsed.cwd !== undefined ||
     parsed.continue ||
     parsed.resume !== undefined ||
     parsed.connect !== undefined ||
     parsed.model !== undefined ||
     parsed.park ||
-    parsed.meta ||
     parsed.ephemeral ||
     parsed.standalone !== undefined ||
     parsed.format !== undefined ||
@@ -219,13 +219,13 @@ export function validateComputerUseOperationArgs(parsed: ParsedArgs): ComputerUs
     parsed.version ||
     parsed.profile !== undefined ||
     parsed.preset !== undefined ||
+    parsed.permission !== undefined ||
     parsed.cwd !== undefined ||
     parsed.continue ||
     parsed.resume !== undefined ||
     parsed.connect !== undefined ||
     parsed.model !== undefined ||
     parsed.park ||
-    parsed.meta ||
     parsed.ephemeral ||
     parsed.standalone !== undefined ||
     parsed.repair ||

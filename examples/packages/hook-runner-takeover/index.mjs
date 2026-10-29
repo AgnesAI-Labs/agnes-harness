@@ -11,24 +11,22 @@
 // clearly-marked demo call so the takeover's real effect is directly observable: the return value
 // genuinely reaches the kernel, not just "the row mounted without throwing".
 export const hooksRunnerReplacement = {
-  inject: ['extension'],
+  inject: ['hooks'],
   apply(ctx) {
-    const agnes = ctx.extension()
-
     // Observe-only events hooks-runner also declares: on() would work for these five, but
     // registerHook is used uniformly here since the row must register all twelve to satisfy the
     // governance check regardless of which entry point each individual event could use.
-    agnes.registerHook('session_start', () => undefined)
-    agnes.registerHook('shutdown', () => undefined)
-    agnes.registerHook('subagent_start', () => undefined)
-    agnes.registerHook('subagent_end', () => undefined)
-    agnes.registerHook('compact', () => undefined)
+    ctx.hooks.register('session_start', () => undefined)
+    ctx.hooks.register('shutdown', () => undefined)
+    ctx.hooks.register('subagent_start', () => undefined)
+    ctx.hooks.register('subagent_end', () => undefined)
+    ctx.hooks.register('compact', () => undefined)
 
     // Directive (intercept) category: before_step and turn_stopping pass through unchanged;
     // tool_call blocks the one marked demo call.
-    agnes.registerHook('before_step', () => ({}))
-    agnes.registerHook('turn_stopping', () => ({ action: 'stop' }))
-    agnes.registerHook('tool_call', (payload) => {
+    ctx.hooks.register('before_step', () => ({}))
+    ctx.hooks.register('turn_stopping', () => ({ action: 'stop' }))
+    ctx.hooks.register('tool_call', (payload) => {
       if (payload.name === 'demo_text_stats' && payload.args?.text === 'BLOCK_ME') {
         return { allow: false, reason: 'blocked by the hook-runner-takeover demo policy' }
       }
@@ -36,9 +34,9 @@ export const hooksRunnerReplacement = {
     })
 
     // Transform (chain) category: pass through unchanged.
-    agnes.registerHook('context', () => ({}))
-    agnes.registerHook('tool_result', () => ({}))
-    agnes.registerHook('approval_request', () => ({}))
-    agnes.registerHook('before_compact', () => null)
+    ctx.hooks.register('context', () => ({}))
+    ctx.hooks.register('tool_result', () => ({}))
+    ctx.hooks.register('approval_request', () => ({}))
+    ctx.hooks.register('before_compact', () => null)
   },
 }

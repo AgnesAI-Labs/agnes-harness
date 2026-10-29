@@ -1,10 +1,10 @@
 import { type ChildProcess, spawn as nodeSpawn } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createPlatform } from '@agnes/host'
-import { decodeRuntimeTargetBytes } from '@agnes/plugin-runtime/host'
+import { decodeCanonicalRuntimeTargetBytes, decodeRuntimeTargetBytes } from '@agnes/plugin-runtime/host'
 import type { RuntimeTargetArtifact } from '@agnes/protocol'
 import { validateRuntimeTargetArtifact } from '@agnes/protocol'
 import { createPrivateDirectorySync, windowsWritePrivateFile } from '@agnes/system-node'
@@ -72,6 +72,31 @@ function canonicalBytes(artifact: RuntimeTargetArtifact): Uint8Array {
   if (!checked.ok)
     throw new RuntimeTargetProbeError('E_RUNTIME_TARGET_SCHEMA', 'artifact envelope is invalid')
   return decodeRuntimeTargetBytes(checked.value)
+}
+
+/** The isolated probe's accepted size range for the canonical target file. */
+const MAX_CANONICAL_TARGET_BYTES = 12 * 1024 * 1024
+
+/**
+ * The same validation the isolated probe Worker performs (it opens no business runtime and loads no
+ * plugin code), run in the daemon: envelope, size range, digest and canonical decode. Starting a
+ * process for it cost about a third of a second per plugin switch.
+ */
+export function createInProcessRuntimeTargetProbe(): (artifact: RuntimeTargetArtifact) => Promise<void> {
+  return async (artifact) => {
+    const bytes = canonicalBytes(artifact)
+    if (bytes.byteLength <= 0 || bytes.byteLength > MAX_CANONICAL_TARGET_BYTES)
+      throw new RuntimeTargetProbeError(
+        'E_RUNTIME_TARGET_SCHEMA',
+        'target size is outside the accepted range',
+      )
+    if (`sha256-${createHash('sha256').update(bytes).digest('hex')}` !== artifact.digest)
+      throw new RuntimeTargetProbeError(
+        'E_RUNTIME_TARGET_DIGEST',
+        'artifact digest does not match target bytes',
+      )
+    decodeCanonicalRuntimeTargetBytes(bytes)
+  }
 }
 
 function probeEnvironment(input: {

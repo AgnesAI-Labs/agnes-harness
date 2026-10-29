@@ -1,14 +1,11 @@
 // Demonstrates the "addition" scenario (third-party-transform-directive-hooks design §2.1): a brand
-// new plugin row registers on a *transform*-category event through `registerHook`, not `on`. Before
-// that design shipped, `agnes.on('context', ...)` was flatly refused for every plugin row — `context`
-// is not one of the seven observe-only events `on` has always allowed. This plugin replaces nothing:
-// it just adds its own section to the prompt, after every built-in context contributor has already
-// run, and its return value genuinely reaches the model (unlike `on`, which discards it).
+// new plugin row registers on a *transform*-category event through `ctx.hooks.register`. This plugin replaces
+// nothing: it just adds its own section to the prompt, after every built-in context contributor has
+// already run, and its return value genuinely reaches the model (observe-only events discard it).
 export const contextNoteHook = {
-  inject: ['extension'],
+  inject: ['hooks'],
   apply(ctx) {
-    const agnes = ctx.extension()
-    agnes.registerHook('context', () => ({
+    ctx.hooks.register('context', () => ({
       sections: [
         {
           id: 'hook-context-note/reminder',

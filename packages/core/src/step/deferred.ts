@@ -1,4 +1,4 @@
-import { canonicalJson, sha256Hex } from '../request/hash.js'
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 
 /**
  * Stable identity for the external job that outlives its originating tool effect. Both parts are

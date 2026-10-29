@@ -1,0 +1,35 @@
+{
+  "name": "@agnes/subagent-acp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/subagent-acp",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "capabilities": {
+          "hooks": [],
+          "slots": [],
+          "events": false,
+          "resources": [],
+          "network": []
+        },
+        "metadata": {
+          "displayName": "ACP child agents",
+          "summary": "Connects an external ACP agent process to handle delegated tasks.",
+          "description": "Connects an external ACP agent process to handle delegated tasks.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "ACP 子 Agent",
+              "summary": "连接外部 ACP Agent 进程来处理分派的任务。",
+              "description": "连接外部 ACP Agent 进程来处理分派的任务。"
+            }
+          }
+        }
+      }
+    ]
+  }
+}

@@ -170,7 +170,7 @@ export class EventsService {
     const filter = source?.[Context.filter]
     const dispatchHooks = (this._hooks['internal/dispatch'] || [])
       .filter(hook => hook.global || !filter || filter.call(source, hook.ctx))
-      .map(hook => hook.callback.bind(source))
+      .map(hook => this.#bind(hook, source, true))
     for (const callback of dispatchHooks) {
       callback(type, name, args, thisArg, system)
     }
@@ -181,7 +181,26 @@ export class EventsService {
     const listenerFilter = thisArg?.[Context.filter]
     return (this._hooks[name] || [])
       .filter(hook => hook.global || !listenerFilter || listenerFilter.call(thisArg, hook.ctx))
-      .map(hook => hook.callback.bind(thisArg))
+      .map(hook => this.#bind(hook, thisArg, type === 'emit'))
+  }
+
+  // Keep synchronous gate failures observable to the caller. Only detached
+  // promise failures are diagnostic; attribute them to the listener's owner.
+  #bind(hook: Hook, thisArg: any, detached: boolean) {
+    return (...args: any[]) => {
+      const result = hook.callback.apply(thisArg, args)
+      if (detached) {
+        void Promise.resolve(result).catch(error => {
+          try {
+            hook.ctx.logger.error(error)
+          } catch {
+            // The built-in buffer precedes exporters. A faulty diagnostic
+            // sink must not turn a detached listener failure into a crash.
+          }
+        })
+      }
+      return result
+    }
   }
 
   dispatch(type: DispatchMode, args: any[]) {

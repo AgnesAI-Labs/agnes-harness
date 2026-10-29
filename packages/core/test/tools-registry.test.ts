@@ -1,7 +1,10 @@
+import { CoreError } from '@agnes/core-common/types'
 import type { ToolDef } from '@agnes/extension-api'
+import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
+import { ToolRegistryView } from '../src/registry/tool-allow.js'
 import { ToolRegistry } from '../src/registry/tools.js'
-import { CoreError } from '../src/types.js'
+import { modelToolSchema } from '../src/request/tool-schema.js'
 
 const meta = {
   isReadOnly: true,
@@ -34,6 +37,43 @@ const codeOf = (fn: () => unknown): string => {
 }
 
 describe('ToolRegistry', () => {
+  it('execution binding comes only from Host registration and is detached from author data', () => {
+    const binding = {
+      rowId: 'ext:fixture',
+      exportName: 'read',
+      snapshotId: 'snapshot',
+      configDigest: 'a'.repeat(64),
+    }
+    const registry = new ToolRegistry()
+    registry.add({ ...def('unproved'), executionBinding: binding } as ToolDef, {
+      source: 'fixture',
+      trust: 'trusted',
+    })
+    expect(registry.resolve('unproved')?.executionBinding).toBeUndefined()
+    registry.add(def('proved'), {
+      source: 'fixture',
+      trust: 'trusted',
+      packageIdentity: '@fixture/tools',
+      packageVersion: '1.0.0',
+      executionBinding: binding,
+    })
+    const captured = structuredClone(binding)
+    binding.configDigest = 'b'.repeat(64)
+    expect(registry.resolve('proved')?.executionBinding).toEqual(captured)
+    for (const snapshot of [
+      registry.snapshot(0),
+      new ToolRegistryView(registry, ['proved'], ['proved']).snapshot(0),
+    ]) {
+      expect(snapshot.byName.get('proved')).toMatchObject({
+        packageIdentity: '@fixture/tools',
+        packageVersion: '1.0.0',
+        executionBinding: captured,
+        definitionFingerprint: registry.resolve('proved')?.definitionFingerprint,
+      })
+    }
+    expect(Object.isFrozen(registry.resolve('proved')?.executionBinding)).toBe(true)
+  })
+
   it('adds, resolves, lists, counts and disposes', () => {
     const r = new ToolRegistry()
     expect(r.size).toBe(0)
@@ -82,7 +122,7 @@ describe('ToolRegistry', () => {
     expect(changed.resolve('computer_use')?.definitionFingerprint).not.toBe(first)
   })
 
-  it('only accepts the host-computer-use domain for the exact built-in package and extension', () => {
+  it('accepts Host execution-domain data without knowing the package or extension', () => {
     const exact = {
       source: 'agnes/computer-use',
       trust: 'builtin' as const,
@@ -93,16 +133,23 @@ describe('ToolRegistry', () => {
     const accepted = new ToolRegistry()
     accepted.add(def('computer_use'), exact)
     expect(accepted.resolve('computer_use')?.executionDomain).toBe('host-computer-use')
+    const communityDistribution = new ToolRegistry()
+    communityDistribution.add(def('computer_use'), {
+      ...exact,
+      source: 'acme/device',
+      packageIdentity: '@acme/distribution',
+    })
+    expect(communityDistribution.resolve('computer_use')?.executionDomain).toBe('host-computer-use')
 
     for (const forged of [
-      { ...exact, source: 'third-party/computer-use' },
+      { ...exact, source: '' },
       { ...exact, trust: 'trusted' as const },
-      { ...exact, packageIdentity: 'third-party' },
+      { ...exact, packageIdentity: '' },
       { ...exact, packageVersion: '' },
     ]) {
       const registry = new ToolRegistry()
       expect(() => registry.add(def('computer_use'), forged)).toThrow(
-        /host-computer-use requires exact built-in package attestation/,
+        /host-computer-use requires Host execution-domain attestation/,
       )
       expect(registry.size).toBe(0)
     }
@@ -122,6 +169,21 @@ describe('ToolRegistry', () => {
 
   it('delegates well-formedness to extension-api checkToolDef and rejects duplicates', () => {
     const r = new ToolRegistry()
+    for (const parameters of [
+      Type.String(),
+      Type.Module({ Params: Type.Array(Type.String()) }).Import('Params'),
+    ]) {
+      expect(() =>
+        r.add({ ...def('community_bad'), parameters }, { source: 'community/widgets', trust: 'trusted' }),
+      ).toThrow(/community\/widgets: community_bad: parameters: root must be type "object"/)
+    }
+    const imported = Type.Module({ Params: Type.Object({ label: Type.String() }) }).Import('Params')
+    const dispose = r.add(
+      { ...def('community_widget'), parameters: imported },
+      { source: 'community/widgets', trust: 'trusted' },
+    )
+    expect(r.resolve('community_widget')?.parameters).toEqual(imported)
+    dispose()
     // CoreError, not ExtensionError: both packages spell E_TOOLDEF_META, so matching the message
     // alone would not say which gate fired.
     expect(() => r.add(def('bad-name'), { source: 's', trust: 'trusted' })).toThrow(CoreError)
@@ -129,10 +191,10 @@ describe('ToolRegistry', () => {
     expect(() => r.add(def('bad-name'), { source: 's', trust: 'trusted' })).toThrow(
       /name: must match \^\[A-Za-z_\]/,
     )
-    const { costHint: _dropped, ...seven } = meta
+    const { isReadOnly: _dropped, ...seven } = meta
     expect(() =>
       r.add({ ...def('x'), meta: seven } as unknown as ToolDef, { source: 's', trust: 'trusted' }),
-    ).toThrow(/meta\.costHint: missing/)
+    ).toThrow(/meta\.isReadOnly: missing/)
     expect(() => r.add(def('y', { replay: 'maybe' }), { source: 's', trust: 'trusted' })).toThrow(
       /replay: expected safe \| never \| idempotent/,
     )
@@ -208,7 +270,8 @@ describe('ToolRegistry', () => {
       additionalProperties: false,
       [schemaKind]: 'Object',
     }
-    const definition = { ...def('read'), parameters } as unknown as ToolDef
+    const modelParameters = { type: 'object', description: 'Read the guide for the full contract.' }
+    const definition = { ...def('read'), parameters, modelParameters } as unknown as ToolDef
     const r = new ToolRegistry()
     r.add(definition, { source: 's', trust: 'trusted' })
     const registered = r.resolve('read')
@@ -218,18 +281,39 @@ describe('ToolRegistry', () => {
 
     parameters.properties.value.type = 'number'
     parameters.required.push('other')
+    modelParameters.description = 'caller mutation'
 
     expect(registered.parameters).toMatchObject({
       properties: { value: { type: 'string' } },
       required: ['value'],
     })
     expect(registered.definitionFingerprint).toBe(fingerprint)
+    expect(registered.modelParameters).toMatchObject({ description: 'Read the guide for the full contract.' })
+    expect(Object.isFrozen(registered.modelParameters)).toBe(true)
     expect(r.snapshot(2).hash).toBe(snapshotHash)
     expect((registered.parameters as unknown as Record<symbol, unknown>)[schemaKind]).toBe('Object')
     expect(Object.isFrozen(registered.parameters)).toBe(true)
     expect(Object.isFrozen((registered.parameters as unknown as { properties: object }).properties)).toBe(
       true,
     )
+  })
+
+  it('projects Type.Module parameters to providers without $id or non-local refs', () => {
+    const M = Type.Module({
+      Key: Type.String({ minLength: 1 }),
+      Node: Type.Object({ key: Type.Ref('Key'), next: Type.Optional(Type.Ref('Node')) }),
+      Params: Type.Object({ target: Type.Ref('Key'), tree: Type.Ref('Node') }),
+    })
+    const parameters = M.Import('Params')
+    const wire = JSON.stringify(
+      modelToolSchema({ ...def('mod'), parameters } as unknown as ToolDef).parameters,
+    )
+    expect(wire).not.toContain('"$id"')
+    const refs = [...wire.matchAll(/"\$ref":"([^"]*)"/g)].map((m) => m[1])
+    expect(refs.length).toBeGreaterThan(0)
+    for (const ref of refs) expect(ref).toMatch(/^#\//)
+    expect(JSON.parse(wire).$defs).toHaveProperty('Key')
+    expect(JSON.parse(wire).$defs).toHaveProperty('Node')
   })
 
   it('rejects accessor-backed parameter schemas instead of freezing a live getter', () => {
@@ -253,7 +337,8 @@ describe('ToolRegistry', () => {
 
   it('snapshots tool and source metadata once before validating or fingerprinting it', () => {
     let metaReads = 0
-    const changingMeta = { ...meta } as Record<string, unknown>
+    const presentation = { title: 'Review document', description: 'Verify the selected source' }
+    const changingMeta = { ...meta, presentation } as Record<string, unknown>
     Object.defineProperty(changingMeta, 'isReadOnly', {
       enumerable: true,
       get: () => ++metaReads === 1,
@@ -273,6 +358,8 @@ describe('ToolRegistry', () => {
     expect(r.resolve('read')?.meta.isReadOnly).toBe(true)
     expect(r.resolve('read')?.source.source).toBe('first')
     expect(r.registrations('first')).toEqual(['tool:read'])
+    presentation.title = 'changed later'
+    expect(r.resolve('read')?.meta.presentation?.title).toBe('Review document')
   })
 
   it('hashes names and parameter schemas, independent of registration order', () => {
@@ -287,10 +374,13 @@ describe('ToolRegistry', () => {
     expect(other.snapshot(99).hash).toBe(one.snapshot(1).hash)
     const changed = new ToolRegistry()
     changed.add(def('a'), { source: 's', trust: 'builtin' })
-    changed.add({ ...def('b'), parameters: { type: 'string' } } as unknown as ToolDef, {
-      source: 's',
-      trust: 'builtin',
-    })
+    changed.add(
+      { ...def('b'), parameters: Type.Object({ label: Type.String() }) },
+      {
+        source: 's',
+        trust: 'builtin',
+      },
+    )
     expect(changed.snapshot(1).hash).not.toBe(one.snapshot(1).hash)
     const renamed = new ToolRegistry()
     renamed.add(def('a'), { source: 's', trust: 'builtin' })

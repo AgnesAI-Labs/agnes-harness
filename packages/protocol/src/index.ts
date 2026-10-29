@@ -1,6 +1,18 @@
+export type { ApplicationWorkbenchText } from '../gen/ts/extension-manifest.js'
+export type { DecisionPresentation, ToolPresentation } from '../gen/ts/session-v1.js'
 // jcs is the shared strict RFC 8785 serializer for SDK/daemon signature bytes; it does not replace core request hashing.
 export { type ValidatedRequestMedia, validateRequestMedia } from './request-media.js'
 export { readSessionTitle, SESSION_TITLE_EVENT, SessionTitleRecord } from './session-title.js'
+export {
+  boundedUiJson,
+  componentDataValid,
+  uiDataBinding,
+  uiObject,
+  validIntelligentSurface,
+  validIntelligentSurfaceProjection,
+  validUiComponentDeclaration,
+} from './ui-surface-validation.js'
+export { readWorkbenchEvidence, WorkbenchEvidenceItem } from './workbench-evidence.js'
 
 // ── What belongs on the root export surface ──────────────────────────────────────────────────
 // This surface used to have no discernible rule. Only 8 of the 11 event data types were exported
@@ -36,20 +48,15 @@ export type {
   ApprovalGrantListResult,
   ApprovalGrantRecord,
   ApprovalGrantRevokeParams,
+  ApprovalGrantSessionParams,
+  ApprovalGrantSessionResult,
+  ApprovalGrantSessionRevokeParams,
   ArtifactReadParams,
   ArtifactReadResult,
   AttachFilter,
-  AttachmentUploadParams,
-  AttachmentUploadResult,
   Auth,
   AuthClaimParams,
   AuthClaimResult,
-  BatchCounts,
-  BatchIdParams,
-  BatchList,
-  BatchSpec,
-  BatchStartParams,
-  BatchStatus,
   CommandAckParams,
   CompactOutcome,
   ComputerUseDoctorParams,
@@ -77,10 +84,14 @@ export type {
   ConfigTestResult,
   Cursor,
   DaemonNotice,
+  DecisionListResult,
+  DiagnosticRecord,
   DiagnosticsCollectParams,
   DiagnosticsCollectResult,
   DiagnosticsEventsParams,
   DiagnosticsEventsResult,
+  DiagnosticsExportParams,
+  DiagnosticsExportResult,
   DirectoryUpsertParams,
   DirectoryUpsertResult,
   EffectiveFromResult,
@@ -91,52 +102,137 @@ export type {
   ExtensionCallParams,
   ExtensionCallResult,
   ExtUiResponseParams,
+  FactChainAnchor,
+  FactChainEdge,
+  FactChainGap,
+  FactChainNode,
+  FactChainPackage,
+  FactChainParams,
+  FactChainResult,
+  FileUploadParams,
+  FileUploadResultSchema,
   HarnessMeta,
   InitializeMeta,
   JobIdParams,
   JobIdResult,
+  ModelRequestAttempt,
+  ModelRequestClearParams,
+  ModelRequestClearResult,
+  ModelRequestParams,
+  ModelRequestResult,
+  ModelRequestSnapshot,
   NewSessionMeta,
   PageSessionMeta,
   ParticipantListResult,
   ParticipantParams,
+  PermissionWithdrawParams,
+  PluginRuntimeStatusParams,
+  PluginRuntimeStatusResult,
+  PluginStreamsEndpointParams,
+  PluginStreamsEndpointResult,
   SeqResult,
+  SessionActivity,
+  SessionActivityParams,
+  SessionActivityResult,
+  SessionAdapterCatalogResult,
+  SessionApprovalGrant,
   SessionArchiveParams,
-  SessionAttachmentReadParams,
-  SessionAttachmentReadResult,
   SessionAttachParams,
   SessionAttachResult,
+  SessionBookmarksSetParams,
+  SessionBtwParams,
+  SessionBtwResult,
   SessionBudgetResult,
   SessionCompactParams,
+  SessionControlFact,
+  SessionControlledChild,
+  SessionControlParams,
+  SessionControlStateResult,
+  SessionControlsParams,
+  SessionDefaultsState,
+  SessionDeliverableSource,
+  SessionDeliverablesParams,
+  SessionDeliverablesResult,
+  SessionEditQueuedParams,
   SessionEventParams,
-  SessionExportRawParams,
-  SessionExportRawResult,
   SessionForkParams,
+  SessionGroup,
+  SessionGroupsParams,
+  SessionGroupsResult,
   SessionIdParams,
+  SessionJob,
+  SessionJobsControlParams,
+  SessionJobsControlResult,
+  SessionJobsReadParams,
+  SessionJobsReadResult,
+  SessionLegacyListParams,
   SessionListParams,
+  SessionLoadingCancelParams,
   SessionLoadingParams,
+  SessionLoopCatalogResult,
   SessionMeta,
+  SessionOpenParams,
+  SessionPinParams,
   SessionPreferences,
   SessionPreviewParams,
   SessionProjectUIHistoryParams,
   SessionProjectUIOpeningParams,
   SessionProjectUIParams,
   SessionProjectUIPatchParams,
+  SessionQueuedControlInput,
   SessionReadToolDetailParams,
   SessionReadToolDetailResult,
+  SessionReferenceSearchParams,
+  SessionReferenceSearchResult,
   SessionRemoveQueuedParams,
   SessionRenameParams,
+  SessionRevealWorkspaceParams,
+  SessionRevealWorkspaceResult,
   SessionSendNowParams,
   SessionSetModelParams,
   SessionSetPresetParams,
+  SessionSetToolFilterParams,
+  SessionSetToolFilterResult,
   SessionSetYoloParams,
+  SessionSidebarListParams,
   SessionSteerParams,
   SessionSteerResult,
-  SessionStoredOpeningParams,
-  SessionStoredOpeningResult,
+  SessionToolFilter,
+  SessionToolFilterName,
+  SessionToolFilterNames,
+  SessionToolFilterRequest,
+  SessionUndoFile,
+  SessionUndoParams,
+  SessionUndoPathReason,
+  SessionUndoPreviewParams,
+  SessionUndoPreviewResult,
+  SessionUndoResult,
+  SessionViewNotice,
+  SessionViewParams,
+  SessionViewResult,
+  SessionVoiceSpeakParams,
+  SessionVoiceSpeakResult,
+  SessionVoiceTranscribeParams,
+  SessionVoiceTranscribeResult,
+  SessionWorkspaceChange,
+  SessionWorkspaceChangeEvidence,
+  SessionWorkspaceChangesParams,
+  SessionWorkspaceChangesResult,
+  SessionWorkspaceChangesSelected,
+  SessionWorkspaceEntry,
+  SessionWorkspaceListParams,
+  SessionWorkspaceListResult,
+  SessionWorkspaceReadParams,
+  SessionWorkspaceReadResult,
   SlotFillView,
   SubmitParams,
   SurfacesMountsParams,
   SurfacesMountsResult,
+  SystemPromptConfig,
+  SystemPromptGetParams,
+  SystemPromptSaveParams,
+  SystemPromptSection,
+  SystemPromptSnapshot,
   UIHistoryCursor,
   UIHistoryInfo,
   UIHistoryPage,
@@ -154,12 +250,23 @@ export type {
   UITurnCall,
   UITurnUsage,
   UsageView,
+  VoiceFeatureState,
+  VoiceSettings,
+  VoiceSettingsSaveParams,
+  VoiceSettingsSnapshot,
+  VoiceStatusResult,
   WorkspaceAddParams,
   WorkspaceAddResult,
   WorkspaceEntry,
   WorkspaceListParams,
   WorkspaceListResult,
+  WorkspaceRemoveParams,
+  WorkspaceRemoveResult,
+  WorkspaceRevealParams,
+  WorkspaceRevealResult,
 } from '../gen/ts/agnes-v1.js'
+export type * from '../gen/ts/app-server-methods.js'
+export { APP_SERVER_SCHEMA } from '../gen/ts/app-server-schema.js'
 export type { Action, Decision, RowScope, Target } from '../gen/ts/authz.js'
 export type { BridgeMethod, BridgeRequest, BridgeResponse, ToolsInvokeParams } from '../gen/ts/bridge.js'
 export type {
@@ -177,15 +284,87 @@ export type {
 } from '../gen/ts/channel.js'
 export type { DeployManifest } from '../gen/ts/deploy-manifest.js'
 export type {
+  AgentRef,
+  ApplicationPanelTab,
+  ApplicationTemplate,
+  ApplicationWorkAction,
+  ApplicationWorkbench,
+  ApplicationWorkObject,
+  BundleLaunch,
   Capabilities,
   ClientContribution,
+  DeclaredAgent,
   ExtensionManifest,
+  HomeContributionDeclaration,
+  PluginLocalizedText,
+  PluginMetadata,
+  PluginMetadataLocale,
+  PluginProvide,
   SkinContribution,
   SkinTokenValue,
+  UiComponentDeclaration,
 } from '../gen/ts/extension-manifest.js'
 export type { ServiceCapability } from '../gen/ts/extension-service.js'
+/** The one capabilities shape every plugin declares, bundled or installed. */
+export type PluginCapabilities = import('../gen/ts/extension-manifest.js').Capabilities
+
+export type {
+  ApplicationAsset,
+  ApplicationBrand,
+  ApplicationPageRef,
+  ApplicationPresentation,
+  ApplicationRoleTarget,
+  PresentationRole,
+} from '../gen/ts/extension-manifest.js'
+export type {
+  BoundWakeEnqueueParams,
+  BoundWakeReadParams,
+  BoundWakeReceipt,
+  ProfileDecisionAnswerParams,
+  ProfileServiceCallParams,
+  ProfileServiceCallResult,
+  ProfileServiceOperationParams,
+  ProfileServiceReceipt,
+  ServiceEffectPolicy,
+} from '../gen/ts/extension-service.js'
+// Preset surface declarations; execution is supplied by the official Intelligent UI plugin.
+export type {
+  UiAction,
+  UiActionParams,
+  UiActionReceipt,
+  UiActionStatus,
+  UiArgument,
+  UiArtifactFileData,
+  UiArtifactStatus,
+  UiChartSeries,
+  UiCloseParams,
+  UiColumn,
+  UiComponent,
+  UiCustomComponent,
+  UiDataBinding,
+  UiFailure,
+  UiJsonSchema,
+  UiKey,
+  UiPlacement,
+  UiReadParams,
+  UiReadResult,
+  UiRefreshParams,
+  UiRefusal,
+  UiRenderParams,
+  UiRevision,
+  UiRowContext,
+  UiSourceStatus,
+  UiSurface,
+  UiSurfaceRecord,
+  UiUpdateParams,
+} from '../gen/ts/intelligent-ui.js'
 export type { JobSpec, JobStatus, Schedule } from '../gen/ts/jobs.js'
 export type { Lockfile, PackageLock } from '../gen/ts/lockfile.js'
+export type {
+  ManagedServiceDescriptor,
+  ManagedServiceReady,
+  ManagedServiceStatus,
+} from '../gen/ts/managed-service.js'
 export type {
   AiErrorCode,
   ContractManifest,
@@ -211,12 +390,28 @@ export type {
   ToolSchema,
 } from '../gen/ts/model.js'
 export type {
+  AuthoringApproveParams,
+  AuthoringCandidate,
+  AuthoringCandidateList,
+  AuthoringCandidateSummary,
+  AuthoringCreateParams,
+  AuthoringFile,
+  AuthoringOrigin,
+  AuthoringProvenance,
+  AuthoringRejectParams,
+  AuthoringShowParams,
+  AuthoringSubmitParams,
+  AuthoringTestParams,
+  AuthoringTests,
+  AuthoringWriteParams,
   ClientModuleEffectCallParams,
+  ClientModuleListParams,
   ClientModuleListResult,
   ClientModuleReadParams,
   ClientModuleReadResult,
   ClientModuleRosterRow,
   ClientModuleServiceCallParams,
+  ContributionBinding,
   PackageActivationRequest,
   PackageActivationTrust,
   PackageAdminContext,
@@ -244,12 +439,15 @@ export type {
   PackagePinsInspectResult,
   PackagePinsReleaseParams,
   PackagePinsReleaseResult,
+  PackagePresentation,
   PackagePreview,
   PackageProvenance,
+  PackageProvenanceParams,
   PackageRemoveParams,
   PackageRollbackParams,
   PackageRollbackTarget,
   PackageSource,
+  PackageSourcePolicy,
   PackageTrustDecision,
   PackageTrustParams,
   PackageTrustWorkspaceParams,
@@ -257,6 +455,17 @@ export type {
   PackageUntrustParams,
   PackageUpdateParams,
   PackageWarning,
+  PluginConfigAudit,
+  PluginConfigEntry,
+  PluginConfigGetParams,
+  PluginConfigSaveParams,
+  PluginConfigSaveResult,
+  PluginConfigSnapshot,
+  PluginConfigValidateParams,
+  PluginConfigValidation,
+  PluginGenerationStatus,
+  PluginPublicationReport,
+  PluginPublicationStatusResult,
   PluginTreeApplyParams,
   PluginTreeApplyResult,
   PluginTreeArtifact,
@@ -265,18 +474,40 @@ export type {
   PluginTreeView,
   RuntimePinDescriptor,
   RuntimePinReleaseResult,
+  SessionGenerationMigrationParams,
+  SessionGenerationMigrationResult,
   SkinListResult,
   SkinReadParams,
   SkinReadResult,
 } from '../gen/ts/package-admin.js'
+export {
+  ApplicationAdoptParams,
+  ApplicationClearParams,
+  ApplicationConfigSnapshot,
+  ApplicationPreview,
+  ApplicationPreviewParams,
+  ApplicationSelection,
+  ApplicationState,
+  PresentationRoleSelection,
+  PresentationRoleSelections,
+  PresentationRoleState,
+} from '../gen/ts/package-admin.js'
+export type {
+  PluginStreamClose,
+  PluginStreamGrant,
+  PluginStreamOpen,
+  StreamDeclaration,
+  StreamScope,
+} from '../gen/ts/plugin-stream.js'
 export type { PresetDoc } from '../gen/ts/preset.js'
 export type {
   ApprovalMode,
   ApprovalProfile,
-  AttachmentsProfile,
   Capability,
   CommandHookGrant,
   CommandHooksPolicy,
+  CompositionPatch,
+  CompositionSource,
   ComputerUseAppIdentity,
   ComputerUseCapturePolicy,
   ComputerUseProfile,
@@ -288,13 +519,14 @@ export type {
   PackageRef,
   Policy,
   ProfileFragment,
+  ProviderSelection,
   ReconcilePoint,
   ReconcilePolicy,
-  ResolvedAttachmentsProfile,
   ResolvedComputerUseProfile,
   ResolvedProfile,
   RuntimeProfileManifest,
   SeamName,
+  SeamSelection,
   SecretRef,
   Transport,
 } from '../gen/ts/profile.js'
@@ -330,6 +562,7 @@ export type {
   McpStdioTransport,
   McpTool,
   McpToolCatalogPage,
+  McpToolDisclosure,
   McpToolPolicy,
   McpToolsListParams,
   McpTrustSetParams,
@@ -349,6 +582,7 @@ export type {
   SafeError,
   ServerId,
   SkillDescriptor,
+  SkillDirectoryScan,
   SkillPrioritySetParams,
   SkillRefreshParams,
   SkillRemoveParams,
@@ -356,6 +590,9 @@ export type {
   SkillRootDiagnostic,
   SkillRootKey,
   SkillRootStatus,
+  SkillScanIssue,
+  SkillScanObservation,
+  SkillScanReport,
   SkillSourceIdentity,
   SkillTrustSetParams,
   SourceScope,
@@ -364,25 +601,29 @@ export type {
 } from '../gen/ts/resource-control.js'
 export type {
   Actor,
-  ApprovalAsked,
-  ApprovalDecided,
   ApprovalGrant,
-  ApprovalGuardianDecision,
   ArtifactJob,
   ArtifactRef,
   AssistantMessage,
   AssistantOutput,
-  AttachmentRef,
-  AttachmentThumbnail,
   Billing,
   BudgetState,
   ContentBlock,
   CostLedger,
+  DecisionCommandReceipt,
+  DecisionConsumption,
+  DecisionHandle,
+  DecisionRequest,
+  DecisionResponse,
+  DecisionResult,
+  DecisionSnapshot,
+  DecisionSpec,
   DispatchPhase,
   EffectIntent,
   EffectSettled,
   EventEnvelope,
   ExecutionDomain,
+  ExtensionEventType,
   FeedbackImplicit,
   FeedbackRating,
   FormatDeviation,
@@ -392,7 +633,6 @@ export type {
   Inbox,
   InboxItem,
   JsonValue,
-  OmittedData,
   OpState,
   Participant,
   PlanItems,
@@ -410,6 +650,8 @@ export type {
   StepStart,
   SubagentCost,
   SurfaceOp,
+  SystemInput,
+  SystemInputPresentation,
   ToolCall,
   ToolCallState,
   ToolResult,
@@ -441,19 +683,29 @@ export type {
   RuntimeTargetIdentity,
   WorkerGeneration,
 } from '../gen/ts/worker.js'
-export * from './attachment-blocks.js'
+export * from './admin-session-selection.js'
+export * from './agents.js'
+export * from './app-server.js'
+export { attachmentErrorCode } from './attachment-errors.js'
 export * from './attachments.js'
-export type { BatchRequest } from './batch.js'
-export { BATCH_ITEM_SESSION_PATTERN } from './batch.js'
+export { AutoReviewConfig, ToolReviewFact } from './auto-review.js'
+export * from './child-engine-document.js'
+export { CLIENT_PLATFORM_IMPORTS } from './client-platform-imports.js'
 export * from './codec/permission.js'
 export * from './codec/stop-reason.js'
 export * from './configs.js'
 export * from './constants.js'
+export * from './decision-journal.js'
+export { diagnosticRecords, observeDiagnostics, safeDiagnosticRecord } from './diagnostic-records.js'
+export { errorMessageKey, httpRpcError, normalizeRpcError } from './error-envelope.js'
 export * from './errors.js'
+export * from './file-upload.js'
 export * from './hooks.js'
-export { jcs, jcsWrite } from './jcs.js'
+export { JcsByteLimitError, jcs, jcsChunks, jcsWrite } from './jcs.js'
 export { DEFAULT_JSON_DATA_MAX_BYTES, inspectJsonData } from './json-data.js'
+export * from './loop-selection.js'
 export * from './meta.js'
+export * from './method-tiers.js'
 export * from './methods.js'
 // migrate.js is re-exported by name:
 //   - `register` / `supported` are extremely generic names and read ambiguously from core / host:
@@ -468,25 +720,78 @@ export * from './methods.js'
 //     './migrate.js' directly.
 export { CURRENT_V, listMigrations, normalize, registerMigration, supportedVersions } from './migrate.js'
 export * from './model.js'
+export * from './model-slots.js'
 export * from './package-admin.js'
+export {
+  automaticPermissionDecision,
+  isPermissionPurpose,
+  type PermissionContext,
+  type PermissionEffectAdmission,
+  samePermissionContext,
+} from './permission-decision.js'
+export { permissionEffectAdmission } from './permission-effect-admission.js'
+export {
+  compilePluginConfig,
+  PLUGIN_SECRET_REF_PATTERN,
+  redactPluginConfig,
+} from './plugin-config-validation.js'
+export { type PluginFailureHelp, pluginFailureHelp } from './plugin-failure-help.js'
+export * from './plugin-transports.js'
 export { validateProjectionCapability, validateProjectionReadResult } from './projections.js'
 export * from './provider.js'
+export * from './public-errors.js'
+export {
+  type ReferenceCandidate,
+  type ReferenceSearchResult,
+  type ReferenceSelection,
+  validateReferenceSelections,
+} from './references.js'
 export * from './resource-control.js'
+export * from './runtime-admin.js'
 export * from './runtime-target-artifact.js'
+export * from './schedules.js'
 export * from './sequence.js'
 export { validateExtensionCall, validateExtensionCallError, validateServiceCapability } from './services.js'
+export {
+  ARTIFACT_REGISTERED_EVENT,
+  SESSION_ARTIFACT_ROOT_EVENT_TYPES,
+  sessionArtifactRoots,
+} from './session-artifacts.js'
+export * from './session-capabilities.js'
+export {
+  parseAgentRef,
+  parseSessionBundles,
+  parseSystemPromptAppend,
+  SYSTEM_PROMPT_APPEND_MAX,
+} from './session-composition.js'
+export * from './session-integrity.js'
+export * from './session-runtime.js'
+export * from './session-tools.js'
+export type {
+  SessionVersionAction,
+  SessionVersionCode,
+  SessionVersionFacts,
+  SessionVersionIssue,
+  SessionVersionNotice,
+} from './session-version.js'
+export { SESSION_VERSION_CODES, sessionVersionNotice } from './session-version.js'
+export { IncrementalSha256, sha256Hex } from './sha256.js'
 export * from './slots.js'
+export * from './stored-attachments.js'
 export * from './surfaces.js'
 export type { ValidationError, ValidationResult } from './validate.js'
 export {
-  AttachmentValidationError,
+  ATTACHMENT_ERROR_CODES,
+  AttachmentError,
+  type AttachmentErrorCode,
   decodeAttachmentData,
+  decodeSafeImageBytes,
   decodeSafeImages,
   describeValidationErrors,
   isDateTime,
   modelImageInputError,
-  SafeImageError,
   toRpcError,
+  USER_IMAGE_ORIGINAL_LIMITS,
   USER_MESSAGE_ATTACHMENT_LIMITS,
   USER_MESSAGE_IMAGE_LIMITS,
   userImagePolicy,
@@ -496,4 +801,6 @@ export {
   validateToolDef,
   validateUserAttachments,
 } from './validate.js'
+export { HARNESS_VERSION } from './version.js'
+export * from './voice.js'
 export * from './worker-generation.js'

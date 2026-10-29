@@ -4,38 +4,241 @@
   "$ref": "#/$defs/ServiceCapability",
   "$defs": {
     "ServiceCapability": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["name", "kind", "inputSchema", "outputSchema", "timeoutMs", "maxResultBytes"],
-      "properties": {
-        "name": {
-          "type": "string",
-          "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$",
-          "maxLength": 128
-        },
-        "kind": {
-          "enum": ["query", "effect"]
-        },
-        "inputSchema": {
-          "$ref": "tooldef.json#/$defs/ParametersSchema"
-        },
-        "outputSchema": {
+      "anyOf": [
+        {
           "type": "object",
-          "additionalProperties": {
-            "$ref": "session-v1.json#/$defs/JsonValue"
+          "additionalProperties": false,
+          "required": ["name", "kind", "inputSchema", "outputSchema", "timeoutMs", "maxResultBytes"],
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$",
+              "maxLength": 128
+            },
+            "kind": {
+              "enum": ["query", "effect"]
+            },
+            "inputSchema": {
+              "$ref": "tooldef.json#/$defs/ParametersSchema"
+            },
+            "outputSchema": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "session-v1.json#/$defs/JsonValue"
+              }
+            },
+            "timeoutMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30000
+            },
+            "maxResultBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1048576
+            },
+            "scope": {
+              "const": "session"
+            },
+            "priority": {
+              "enum": ["normal", "urgent"]
+            },
+            "effectPolicy": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["isDestructive", "isOpenWorld", "replay", "requiresApproval", "approvalScopes"],
+              "properties": {
+                "isDestructive": {
+                  "type": "boolean"
+                },
+                "isOpenWorld": {
+                  "type": "boolean"
+                },
+                "replay": {
+                  "enum": ["never", "idempotent"]
+                },
+                "requiresApproval": {
+                  "enum": ["never", "destructive", "always"]
+                },
+                "approvalScopes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,63}$"
+                  },
+                  "maxItems": 16,
+                  "uniqueItems": true
+                }
+              }
+            },
+            "controlLeaseMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30000
+            },
+            "controlSessionMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 300000
+            }
           }
         },
-        "timeoutMs": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 30000
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "kind", "inputSchema", "outputSchema", "timeoutMs", "maxResultBytes", "scope"],
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$",
+              "maxLength": 128
+            },
+            "kind": {
+              "const": "query"
+            },
+            "inputSchema": {
+              "$ref": "tooldef.json#/$defs/ParametersSchema"
+            },
+            "outputSchema": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "session-v1.json#/$defs/JsonValue"
+              }
+            },
+            "timeoutMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30000
+            },
+            "maxResultBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1048576
+            },
+            "scope": {
+              "const": "profile"
+            },
+            "priority": {
+              "enum": ["normal", "urgent"]
+            },
+            "effectPolicy": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["isDestructive", "isOpenWorld", "replay", "requiresApproval", "approvalScopes"],
+              "properties": {
+                "isDestructive": {
+                  "type": "boolean"
+                },
+                "isOpenWorld": {
+                  "type": "boolean"
+                },
+                "replay": {
+                  "enum": ["never", "idempotent"]
+                },
+                "requiresApproval": {
+                  "enum": ["never", "destructive", "always"]
+                },
+                "approvalScopes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,63}$"
+                  },
+                  "maxItems": 16,
+                  "uniqueItems": true
+                }
+              }
+            },
+            "controlLeaseMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30000
+            }
+          }
         },
-        "maxResultBytes": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 1048576
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "kind",
+            "inputSchema",
+            "outputSchema",
+            "timeoutMs",
+            "maxResultBytes",
+            "scope",
+            "effectPolicy"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$",
+              "maxLength": 128
+            },
+            "kind": {
+              "const": "effect"
+            },
+            "inputSchema": {
+              "$ref": "tooldef.json#/$defs/ParametersSchema"
+            },
+            "outputSchema": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "session-v1.json#/$defs/JsonValue"
+              }
+            },
+            "timeoutMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30000
+            },
+            "maxResultBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1048576
+            },
+            "scope": {
+              "const": "profile"
+            },
+            "priority": {
+              "enum": ["normal", "urgent"]
+            },
+            "effectPolicy": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["isDestructive", "isOpenWorld", "replay", "requiresApproval", "approvalScopes"],
+              "properties": {
+                "isDestructive": {
+                  "type": "boolean"
+                },
+                "isOpenWorld": {
+                  "type": "boolean"
+                },
+                "replay": {
+                  "enum": ["never", "idempotent"]
+                },
+                "requiresApproval": {
+                  "enum": ["never", "destructive", "always"]
+                },
+                "approvalScopes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,63}$"
+                  },
+                  "maxItems": 16,
+                  "uniqueItems": true
+                }
+              }
+            },
+            "controlLeaseMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30000
+            }
+          }
         }
-      }
+      ]
     },
     "ExtensionCallParams": {
       "type": "object",
@@ -264,6 +467,263 @@
           }
         }
       ]
+    },
+    "ServiceEffectPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["isDestructive", "isOpenWorld", "replay", "requiresApproval", "approvalScopes"],
+      "properties": {
+        "isDestructive": {
+          "type": "boolean"
+        },
+        "isOpenWorld": {
+          "type": "boolean"
+        },
+        "replay": {
+          "enum": ["never", "idempotent"]
+        },
+        "requiresApproval": {
+          "enum": ["never", "destructive", "always"]
+        },
+        "approvalScopes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,63}$"
+          },
+          "maxItems": 16,
+          "uniqueItems": true
+        }
+      }
+    },
+    "ProfileServiceCallParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["extension", "service", "input"],
+      "properties": {
+        "extension": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+/[a-z0-9-]+$"
+        },
+        "service": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$",
+          "maxLength": 128
+        },
+        "input": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "session-v1.json#/$defs/JsonValue"
+          }
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "sessionReads": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+        }
+      }
+    },
+    "ProfileServiceOperationParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["extension", "service", "operationId"],
+      "properties": {
+        "extension": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+/[a-z0-9-]+$"
+        },
+        "service": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$",
+          "maxLength": 128
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "ProfileServiceReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "operationId"],
+      "properties": {
+        "state": {
+          "enum": ["approval-required", "running", "completed", "refused", "cancelled", "unknown"]
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "decision": {
+          "$ref": "session-v1.json#/$defs/DecisionHandle"
+        },
+        "output": {
+          "$ref": "session-v1.json#/$defs/JsonValue"
+        },
+        "code": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "controlGrant": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["grantId", "expiresAt"],
+          "properties": {
+            "grantId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "expiresAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        }
+      }
+    },
+    "ProfileServiceCallResult": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ExtensionCallResult"
+        },
+        {
+          "$ref": "#/$defs/ProfileServiceReceipt"
+        }
+      ]
+    },
+    "ProfileDecisionsListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {}
+    },
+    "ProfileDecisionsListResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decisions"],
+      "properties": {
+        "decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "session-v1.json#/$defs/DecisionSnapshot"
+          },
+          "maxItems": 1000
+        }
+      }
+    },
+    "ProfileDecisionAnswerParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["handle", "revision", "commandId", "response"],
+      "properties": {
+        "handle": {
+          "$ref": "session-v1.json#/$defs/DecisionHandle"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "response": {
+          "$ref": "session-v1.json#/$defs/DecisionResponse"
+        }
+      }
+    },
+    "BoundWakeEnqueueParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bindingId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          "required": ["bindingId"]
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "event": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9.-]{0,127}$"
+            },
+            "summary": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "data": {
+              "$ref": "session-v1.json#/$defs/JsonValue"
+            }
+          },
+          "required": ["name", "summary"]
+        },
+        "delivery": {
+          "enum": ["next-turn", "follow-steer"]
+        }
+      },
+      "required": ["target", "idempotencyKey", "event"]
+    },
+    "BoundWakeReadParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "wakeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": ["wakeId"]
+    },
+    "BoundWakeReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "wakeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "state": {
+          "enum": ["queued", "delivered", "refused"]
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": ["wakeId", "state"]
+    },
+    "ProfileDecisionAnswerResult": {
+      "$ref": "session-v1.json#/$defs/DecisionCommandReceipt"
     }
   }
 }

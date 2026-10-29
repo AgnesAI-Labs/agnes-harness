@@ -1,11 +1,11 @@
 /** @vitest-environment happy-dom */
 import { Context } from '@agnes/cordis'
 import { ClientResourceService, SessionService, SlotOutlet, SlotRegistry } from '@agnes/web-client'
+import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { createElement, StrictMode, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { startClientModules } from '../src/client-modules/boot.js'
-import { setLocaleTranslator } from '../src/locale-bridge.js'
 import { mountRightbarRegion, type RightbarDocument } from '../src/region-slots.js'
 import { zhLocaleService, zhT } from './helpers/locale.js'
 
@@ -181,8 +181,10 @@ describe('real rightbar document resource boundary', () => {
 
   it('rejects late content after a same-host document change and preserves current node identity', async () => {
     const pending: Array<() => void> = []
-    const call = vi.fn(
-      (_method, input) => new Promise((resolve) => pending.push(() => resolve(result(input, 'Loaded')))),
+    const call = vi.fn((method, input) =>
+      method === '_agnes/v1/artifact.read'
+        ? new Promise((resolve) => pending.push(() => resolve(result(input, 'Loaded'))))
+        : Promise.resolve({}),
     )
     const f = await fixture(reference('text'), call)
     await vi.waitFor(() => expect(pending.length).toBeGreaterThan(0))
@@ -205,8 +207,10 @@ describe('real rightbar document resource boundary', () => {
     let serial = 0
     const created = vi.spyOn(URL, 'createObjectURL').mockImplementation(() => `blob:fixture-${++serial}`)
     const revoked = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
-    const call = vi.fn(
-      (_method, input) => new Promise((resolve) => pending.push(() => resolve(result(input, 'Loaded')))),
+    const call = vi.fn((method, input) =>
+      method === '_agnes/v1/artifact.read'
+        ? new Promise((resolve) => pending.push(() => resolve(result(input, 'Loaded'))))
+        : Promise.resolve({}),
     )
     const f = await fixture(reference('image'), call)
     await vi.waitFor(() => expect(pending.length).toBeGreaterThan(0))
@@ -245,8 +249,10 @@ describe('real rightbar document resource boundary', () => {
     let serial = 0
     vi.spyOn(URL, 'createObjectURL').mockImplementation(() => `blob:cycle-${++serial}`)
     const revoked = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
-    const call = vi.fn(
-      (_method, input) => new Promise((resolve) => pending.push(() => resolve(result(input, 'Loaded')))),
+    const call = vi.fn((method, input) =>
+      method === '_agnes/v1/artifact.read'
+        ? new Promise((resolve) => pending.push(() => resolve(result(input, 'Loaded'))))
+        : Promise.resolve({}),
     )
     const initial = reference('image')
     const f = await fixture(initial, call)
@@ -308,8 +314,10 @@ describe('real rightbar document resource boundary', () => {
     const created = vi.spyOn(URL, 'createObjectURL').mockImplementation(() => `blob:runtime-${++serial}`)
     const revoked = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
     const pending: Array<() => void> = []
-    const call = vi.fn(
-      (_method, input) => new Promise((resolve) => pending.push(() => resolve(result(input, 'Loaded')))),
+    const call = vi.fn((method, input) =>
+      method === '_agnes/v1/artifact.read'
+        ? new Promise((resolve) => pending.push(() => resolve(result(input, 'Loaded'))))
+        : Promise.resolve({}),
     )
     const start = async () => {
       const runtime = await startClientModules({

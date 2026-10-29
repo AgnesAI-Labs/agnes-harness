@@ -1,5 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import {
+  canonicalRowRevision,
   createTreeSnapshot,
   type RowState,
   type RuntimeConvergenceReport,
@@ -33,6 +34,7 @@ describe('Task 7 convergence contracts', () => {
 
     expect(first.hash).toMatch(/^[a-f0-9]{64}$/)
     expect(first.hash).toBe(second.hash)
+    expect(canonicalRowRevision(row('a'))).toBe(createTreeSnapshot([row('a')]).hash)
     expect(first.rows.map(({ id }) => id)).toEqual(['a', 'b'])
     expect(Object.isFrozen(first)).toBe(true)
     expect(Object.isFrozen(first.rows)).toBe(true)
@@ -41,6 +43,8 @@ describe('Task 7 convergence contracts', () => {
 
     config.nested.enabled = false
     expect(first.rows[0]?.config).toEqual({ nested: { enabled: true } })
+    expect(createTreeSnapshot(first.rows)).toEqual(first)
+    expect(createTreeSnapshot([row('b'), row('a', config)]).hash).not.toBe(first.hash)
   })
 
   it('rejects a forged hash and returns a fresh immutable snapshot', () => {

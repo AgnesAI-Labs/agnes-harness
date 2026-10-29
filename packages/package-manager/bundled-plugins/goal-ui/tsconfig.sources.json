@@ -1,0 +1,29 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "references": [
+    {
+      "path": "../../../web-client"
+    },
+    {
+      "path": "../../../web-ui"
+    },
+    {
+      "path": "../../../protocol"
+    },
+    {
+      "path": "../../../web-foundation"
+    },
+    {
+      "path": "../../../web-conversation"
+    }
+  ]
+}

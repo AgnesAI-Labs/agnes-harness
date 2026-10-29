@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { validateAgainst } from '@agnes/protocol'
 import { PackageCatalogDescriptor } from '@agnes/protocol/gen/package-admin'
@@ -80,25 +82,52 @@ it('failed discovery uses only a still-fresh snapshot and reports cache provenan
   fail = true
   expect((await catalog.read()).sources).toEqual([{ sourceId: 'curated', status: 'cached' }])
 })
-it.each(['ttl', 'future', 'duplicate', 'source', 'unknown', 'oversize'])(
-  'rejects invalid %s documents without publishing',
-  async (kind) => {
-    const doc = fixture()
-    if (kind === 'ttl') doc.ttlMs = 86400001
-    if (kind === 'future') doc.issuedAt = '2026-09-14T00:00:00.000Z'
-    if (kind === 'duplicate') doc.entries.push({ ...doc.entries[0] })
-    if (kind === 'source') doc.entries[0].source = { type: 'npm', ref: 'npm:acme-widget@latest' }
-    if (kind === 'unknown') doc.extra = true
-    if (kind === 'oversize') doc.entries[0].license = 'x'.repeat(1024 * 1024)
-    const catalog = createCatalog([source('curated', doc)], { priority: ['curated'], now: () => epoch })
-    expect(await catalog.read()).toEqual({
-      entries: [],
-      conflicts: [],
-      sources: [{ sourceId: 'curated', status: 'unavailable' }],
-    })
-    expect(catalog.snapshots()).toEqual([])
-  },
-)
+it.each([
+  'ttl',
+  'future',
+  'duplicate',
+  'source',
+  'unknown',
+  'oversize',
+  'duplicate-agent',
+  'foreign-agent',
+  'secret-agent',
+  'oversize-agent',
+])('rejects invalid %s documents without publishing', async (kind) => {
+  const doc = fixture()
+  if (kind === 'ttl') doc.ttlMs = 86400001
+  if (kind === 'future') doc.issuedAt = '2026-09-14T00:00:00.000Z'
+  if (kind === 'duplicate') doc.entries.push({ ...doc.entries[0] })
+  if (kind === 'source') doc.entries[0].source = { type: 'npm', ref: 'npm:acme-widget@latest' }
+  if (kind === 'unknown') doc.extra = true
+  if (kind === 'oversize') doc.entries[0].license = 'x'.repeat(1024 * 1024)
+  const agent = {
+    ref: `${doc.entries[0].id}#work`,
+    launch: { title: { en: 'Work' }, description: { en: 'Work' }, preset: 'safe' },
+  }
+  if (kind === 'duplicate-agent') doc.entries[0].agents = [agent, agent]
+  if (kind === 'foreign-agent') doc.entries[0].agents = [{ ...agent, ref: 'other/package#work' }]
+  if (kind === 'secret-agent' || kind === 'oversize-agent')
+    doc.entries[0].agents = [
+      {
+        ...agent,
+        launch: {
+          ...agent.launch,
+          prompt: {
+            mode: 'draft',
+            text: { en: kind === 'secret-agent' ? 'secret://private' : '😀'.repeat(4097) },
+          },
+        },
+      },
+    ]
+  const catalog = createCatalog([source('curated', doc)], { priority: ['curated'], now: () => epoch })
+  expect(await catalog.read()).toEqual({
+    entries: [],
+    conflicts: [],
+    sources: [{ sourceId: 'curated', status: 'unavailable' }],
+  })
+  expect(catalog.snapshots()).toEqual([])
+})
 it.each([{ priority: ['curated', 'curated'] }, { priority: ['missing'] }, { priority: [] }])(
   'rejects invalid managed priority $priority',
   ({ priority }) => {
@@ -182,12 +211,34 @@ it('rechecks every snapshot at the common publication time after slow discovery'
 describe('local example catalog', () => {
   const workspace = fileURLToPath(new URL('../../..', import.meta.url))
 
+  it('uses the install payload digest even with nested development dependencies', async () => {
+    const isolated = mkdtempSync(join(tmpdir(), 'agnes-catalog-payload-'))
+    try {
+      cpSync(join(workspace, 'examples', 'packages'), join(isolated, 'examples', 'packages'), {
+        recursive: true,
+        filter: (path) => !['node_modules', '.git'].includes(basename(path)),
+      })
+      const target = join(isolated, 'examples', 'packages', 'hot-service', 'v1')
+      const nested = join(target, 'development', 'node_modules')
+      mkdirSync(nested, { recursive: true })
+      writeFileSync(join(nested, 'ignored.txt'), 'Not part of the installed payload')
+      const catalog = await createLocalExamplesCatalog({ workspace: isolated, now: () => epoch })
+      const entry = (await catalog.read({ offline: true })).entries.find(
+        (row) => row.source.ref === 'file:./examples/packages/hot-service/v1',
+      )
+      expect(entry?.integrity).toBe(hashDirectory(target))
+      expect(entry?.integrity).not.toBe(hashDirectory(target, { exclude: [] }))
+    } finally {
+      rmSync(isolated, { recursive: true, force: true })
+    }
+  })
+
   it('publishes only current plugin-row examples with verified source trees', async () => {
     const catalog = await createLocalExamplesCatalog({ workspace, now: () => epoch })
     const result = await catalog.read({ offline: true })
 
     expect(result.sources).toEqual([{ sourceId: 'local-examples', status: 'cached' }])
-    expect(result.entries).toHaveLength(24)
+    expect(result.entries).toHaveLength(29)
     expect(result.entries.map(({ id, version }) => `${id}@${version}`).sort()).toEqual([
       '@agnes-examples/client-multi-panel@1.0.0',
       '@agnes-examples/client-multi-panel@2.0.0',
@@ -211,9 +262,66 @@ describe('local example catalog', () => {
       '@agnes-examples/skin-example@1.0.0',
       '@agnes-examples/skins-builtin@1.0.0',
       '@agnes-examples/skins-builtin@1.1.0',
+      '@agnes-fde/data-report@1.1.1',
+      '@agnes-fde/finance-reconcile@1.1.1',
+      '@agnes-fde/knowledge-qa@1.1.1',
+      '@agnes-fde/ops-runbook@1.1.1',
+      '@agnes-fde/support-triage@1.1.1',
       'acme/dashboard@1.0.0',
       'acme/dashboard@2.0.0',
     ])
+    const fde = result.entries.filter((entry) => entry.id.startsWith('@agnes-fde/'))
+    expect(fde).toHaveLength(5)
+    expect(fde.every((entry) => entry.provides?.includes('bundle'))).toBe(true)
+    // The gallery finds business agents by category and offers each one's own prompt in both languages.
+    expect(result.entries.filter((entry) => (entry.agents?.length ?? 0) > 0)).toEqual(fde)
+    for (const entry of fde) {
+      const prompt = entry.metadata?.samplePrompt
+      expect(prompt?.en).toBeTruthy()
+      expect(prompt?.['zh-CN']).toBeTruthy()
+      expect(prompt?.en).not.toMatch(/^Run the .* workflow/)
+      expect(entry.agents?.[0]?.launch.prompt).toEqual({ mode: 'draft', text: prompt })
+      const name = entry.id.slice('@agnes-fde/'.length)
+      const manifest = JSON.parse(
+        readFileSync(new URL(`../../../examples/fde/${name}/package.json`, import.meta.url), 'utf8'),
+      )
+      // Shipped agents inherit the selected deployment model, including homes without a Demo route.
+      expect(manifest.agnes.bundles[name].presets[name].model).toBeUndefined()
+      // Keyed tool views are mounted only under the declared public slot contract.
+      for (const descriptor of manifest.agnes.clientDescriptors ?? []) {
+        const { client } = JSON.parse(
+          readFileSync(new URL(`../../../examples/fde/${name}/${descriptor.path}`, import.meta.url), 'utf8'),
+        )
+        if (client.slots?.includes('tool.call.toolview'))
+          expect(client.slotCatalogVersion).toBe('dsh-client-slots/v1')
+      }
+    }
+    expect(new Set(fde.map((entry) => entry.metadata?.samplePrompt?.en)).size).toBe(5)
+    // Their policy lives in plugin code, which a listing never runs: the summary says so instead of
+    // repeating the package's own description, and reports the declared absence of network use.
+    for (const entry of fde) {
+      const name = entry.id.slice('@agnes-fde/'.length)
+      expect(entry.presentation?.presets).toEqual([
+        {
+          bundle: `${entry.id}#${name}`,
+          id: name,
+          toolPolicy: `fde.${name}`,
+          readOnly: 'unknown',
+          confirmBeforeActions: 'unknown',
+          network: 'none',
+        },
+      ])
+    }
+    // What each one contains is derived: the declared kinds, and a count only where the data has one.
+    for (const entry of fde) {
+      const includes = entry.presentation?.includes
+      expect(new Set(includes?.provides)).toEqual(new Set(entry.provides))
+      expect(includes?.counts.bundles).toBe(1)
+      expect(includes?.counts.tools).toBeUndefined()
+      expect(includes?.counts.ui === 1).toBe(entry.provides?.includes('ui'))
+      // One category level: the package's, which its plugin rows repeat rather than contradict.
+      for (const row of entry.presentation?.rows ?? []) expect(row.metadata?.displayName).toBeTruthy()
+    }
     for (const entry of result.entries) {
       const directory = fileURLToPath(
         new URL(`../../../${entry.source.ref.slice('file:./'.length)}`, import.meta.url),

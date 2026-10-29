@@ -1,32 +1,19 @@
-import { randomUUID } from 'node:crypto'
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { customName } from './custom-theme.js'
+import { type DaltonizedName, isDaltonized } from './palette.js'
+import { readPrefs, updatePrefs } from './prefs.js'
 import type { TuiThemeName } from './theme.js'
 
-export function readTheme(path?: string): TuiThemeName {
-  try {
-    const name: unknown = JSON.parse(readFileSync(path ?? '', 'utf8')).theme
-    return name === 'dark' || name === 'mono' ? name : 'light'
-  } catch {
-    return 'light'
-  }
+/** What the user chose; `auto` follows the terminal background and is what no saved choice means. `custom:<name>` is a file in tui-themes/. */
+export type ThemePreference = TuiThemeName | DaltonizedName | 'auto' | `custom:${string}`
+
+export function readTheme(path?: string): ThemePreference {
+  const name = readPrefs(path).theme
+  if (typeof name === 'string' && customName(name) !== undefined) return name as ThemePreference
+  if (typeof name === 'string' && isDaltonized(name)) return name
+  return name === 'light' || name === 'mono' || name === 'dark' ? name : 'auto'
 }
 
-export function saveTheme(path: string | undefined, theme: TuiThemeName): boolean {
-  if (!path) return false
-  const temporary = `${path}.${randomUUID()}.tmp`
-  try {
-    mkdirSync(dirname(path), { recursive: true })
-    writeFileSync(temporary, `${JSON.stringify({ theme })}\n`, { mode: 0o600 })
-    renameSync(temporary, path)
-    return true
-  } catch {
-    return false
-  } finally {
-    try {
-      rmSync(temporary, { force: true })
-    } catch {
-      /* Best-effort temporary cleanup. */
-    }
-  }
+/** Saves the theme and leaves every other key of the preferences file as it was. */
+export function saveTheme(path: string | undefined, theme: ThemePreference): boolean {
+  return updatePrefs(path, { theme })
 }

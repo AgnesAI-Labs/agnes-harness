@@ -1,8 +1,8 @@
 import type { ResourceEntry as ProtocolResource } from '@agnes/protocol/gen/hooks'
 import { describe, expectTypeOf, it } from 'vitest'
+import type { ExtensionAPI } from '../src/host.js'
 import type {
   CompactionPlan,
-  ExtensionAPI,
   HookContext,
   HookEvent,
   HookHandler,
@@ -21,7 +21,16 @@ describe('author hook contracts', () => {
       [HookPayloadMap['context'], HookContext]
     >()
     expectTypeOf<keyof HookContext>().toEqualTypeOf<
-      'session' | 'replayed' | 'signal' | 'lease' | 'log' | 'projections' | 'platform' | 'workspaceHooks'
+      | 'session'
+      | 'replayed'
+      | 'signal'
+      | 'input'
+      | 'lease'
+      | 'log'
+      | 'projections'
+      | 'platform'
+      | 'workspaceHooks'
+      | 'unattended'
     >()
     // Hooks run on every kernel event: facts only, no capability probe (spec P2/P4).
     expectTypeOf<HookContext['platform']>().toEqualTypeOf<PlatformFacts>()

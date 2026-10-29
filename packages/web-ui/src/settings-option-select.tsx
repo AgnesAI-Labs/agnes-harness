@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
-import { createAntdRoot } from './antd-root.js'
+import { createRegionRenderer } from './antd-root.js'
+import { SettingsSelect } from './settings-layout.js'
 
 export type SettingsSelectOption = { label: string; value: string }
 export type SettingsSelectGroup = { label: string; options: readonly SettingsSelectOption[] }
@@ -60,7 +61,14 @@ export function setSettingsSelectOptions(
   if (select.dispatchEvent(event)) throw new Error(`settings select #${select.id} is not mounted by React`)
 }
 
-export function SettingsOptionSelect({ id }: { id: string }) {
+export function SettingsOptionSelect({
+  id,
+  'aria-labelledby': labelledBy,
+}: {
+  id: string
+  /** The setting row's label, so the picker is named by what the row shows. */
+  'aria-labelledby'?: string
+}) {
   const ref = useRef<HTMLSelectElement>(null)
   const [content, setContent] = useState<SelectContent>({ options: [], groups: [] })
 
@@ -71,15 +79,15 @@ export function SettingsOptionSelect({ id }: { id: string }) {
   }, [])
 
   return (
-    <select id={id} ref={ref}>
+    <SettingsSelect id={id} ref={ref} {...(labelledBy ? { 'aria-labelledby': labelledBy } : {})}>
       {optionNodes(content)}
-    </select>
+    </SettingsSelect>
   )
 }
 
 /** Render options in the static settings fixture used by non-React hosts and controller tests. */
 export function mountSettingsSelectOptions(select: HTMLSelectElement): () => void {
-  const root = createAntdRoot(select)
+  const root = createRegionRenderer(select)
   function FixtureOptions() {
     const [content, setContent] = useState<SelectContent>({ options: [], groups: [] })
     useLayoutEffect(() => {

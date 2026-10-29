@@ -1,3 +1,5 @@
+import { CoreError, type Disposer } from '@agnes/core-common/types'
+import type { WorkspaceHookSandbox } from '@agnes/core-effects/workspace/runtime'
 import type {
   HookContext,
   HookEvent,
@@ -10,8 +12,6 @@ import type {
 import { unavailableProjections } from '@agnes/extension-api'
 import { HookRegistry, type HookSnapshot } from '../registry/hooks.js'
 import type { ToolSource } from '../registry/tools.js'
-import { CoreError, type Disposer } from '../types.js'
-import type { WorkspaceHookSandbox } from '../workspace/runtime.js'
 import { type DispatchOutcome, HookDispatch } from './dispatch.js'
 import { authorHookReturn } from './returns.js'
 
@@ -33,6 +33,8 @@ type EngineOptions = ConstructorParameters<typeof HookDispatch>[0] & {
   retainSessionRefIdentity?: (session: HookContext['session']) => boolean
   /** Read-only facts every hook context carries (spec 2026-09-15 §4 row 9). Required: no default platform. */
   platform: PlatformFacts
+  /** Text budget a `tool_result` return is cut to before it is validated or cloned. */
+  toolResultMaxBytes?: number
 }
 
 function freeze<T>(value: T): T {
@@ -136,6 +138,7 @@ export class HookEngine {
       event,
       entries.map((registration) => ({
         source: registration.meta.source,
+        contextBlocking: registration.meta.trust === 'builtin' && registration.meta.contextBlocking === true,
         invoke: async ({ signal, replayed }) => {
           const lease = this.options.leaseFor ? this.options.leaseFor(registration.meta.source) : legacyLease
           if (!lease) throw new CoreError('E_ENVELOPE', 'hook source lease unavailable')
@@ -148,6 +151,7 @@ export class HookEngine {
             log,
             signal,
             replayed,
+            ...(context.unattended ? { unattended: true } : {}),
             ...(context.workspaceHooks
               ? { workspaceHooks: freeze(structuredClone(context.workspaceHooks)) }
               : {}),
@@ -156,7 +160,9 @@ export class HookEngine {
           const handler = registration.handler as HookHandler<E>
           const invoke = async () => {
             const value = await handler(payload, handlerContext)
-            return value === (HOOK_UNHANDLED as unknown) ? (value as never) : authorHookReturn(event, value)
+            return value === (HOOK_UNHANDLED as unknown)
+              ? (value as never)
+              : authorHookReturn(event, value, this.options.toolResultMaxBytes)
           }
           // Emit dispatches and timeout arbitration may stop awaiting a handler before its raw
           // promise settles. When a Host-fitted workspace sandbox is present, register that raw

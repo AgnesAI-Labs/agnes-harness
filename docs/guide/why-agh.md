@@ -12,6 +12,20 @@ A business agent needs models and system integrations, along with task records, 
 
 <a id="一套基础组合你的应用"></a>
 
+## Compare design choices
+
+These are source-based architectural comparisons, not performance rankings. The linked dsh and pi revisions fix the scope of the reading; no competitor runtime or paid model benchmark was run for this comparison. Products continue to evolve.
+
+| Approach | Useful starting point | AGH's choice and cost |
+| --- | --- | --- |
+| [dsh](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/boot/hmr/src/index.ts) | Cordis module/configuration reload is a developer iteration path; its [system-prompt composer](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/core/system-prompt/src/index.ts) organizes sections and persona overrides. | AGH makes durable per-session code snapshots an explicit contract, distinct from module reload. Old/new versions coexist, costing retained storage and lifecycle coordination. Live resources still refresh. This comparison does not claim dsh cannot support other versioning designs. |
+| [pi coding agent](https://github.com/earendil-works/pi/blob/ce950d78f424dcaf9f5d6a03ce80ab141130eb1d/packages/coding-agent/src/core/session-manager.ts) | Its JSONL session manager exposes branches and conversation history, a useful base for a coding client. | AGH adds a shared authenticated App Server and installable business compositions, candidate review and UI evidence. This brings more control-plane and package-management machinery; choose the smaller client when those surfaces are unnecessary. |
+| [LangGraph persistence](https://docs.langchain.com/oss/python/langgraph/persistence) | Threads, checkpoints and pending writes support stateful graph applications. | AGH supplies a business-agent product shell around plugin Loops and ledger-owned effects. Graph libraries leave more application policy and UI assembly to the integrator. Neither checkpointing nor AGH's ledger creates an atomic transaction with arbitrary external systems. |
+
+Choose AGH when independently installed business agents, ongoing session versions, reviewed growth and user-facing evidence belong in one product. Choose a focused coding harness or graph library when you prefer its interaction model or are assembling those product responsibilities yourself. Validate your own models, tools, latency and isolation rather than inferring them from this table.
+
+AGH's implemented contracts are [pinned code/live resources](../develop/architecture-plugins.md#pinned-code-live-resources), [candidate publication](../extend/agent-built-plugins.md), [App Server](../reference/app-server.md) and [execution evidence](fact-chain.md). The [three demos](demos.md) demonstrate them with synthetic data. Ordinary plugins remain trusted in-process code, and external effects can remain unknown after a crash.
+
 ## One runtime for your application
 
 AGH is built for Forward Deployed Engineering (FDE): working in users' environments to deliver software through integration, validation, and iteration. Each environment has its own data, workflows, and roles. AGH provides a way to organize those differences as extensions.
@@ -23,6 +37,8 @@ AGH is built for Forward Deployed Engineering (FDE): working in users' environme
 | Role-specific interfaces | Web slots and controlled service calls | Display business state and connect user actions to service results |
 | Ongoing work | Shared daemon, session history, and recovery entry points | Find and continue tasks through CLI, Web, and SDK |
 | Execution control | Package trust, tool approvals, and execution constraints | Decide which code loads, which actions are allowed, and how to inspect results |
+
+Start with the [demo scripts](demos.md): business agents as plugins, upgrades that preserve work, and an agent that builds a reusable capability. Developers can use the [five teaching examples](../../examples/fde/README.md) to learn tools, panels, approvals, reports and scheduling.
 
 Each part has its own entry points and examples. Start with one query tool, add a Skill and a business panel, and grow the application around the needs of the deployment.
 
@@ -64,14 +80,6 @@ Integrators implement the business APIs. The repository's [backend tool](../deve
 Making execution inspectable and controllable is an engineering priority for AGH. Package trust binds to specific content and declared capabilities. Approvals and execution policies constrain tool operations, while session records retain the task history for result checks and recovery.
 
 Ordinary third-party plugins run as trusted in-process code. Review their source and provenance before installing them. See [security and trust](security.md) for each mechanism's responsibilities and platform boundaries.
-
-<a id="从数字业务走向设备现场"></a>
-
-## From business systems to physical devices
-
-Devices connect through MHS (Model Hardware Standard), AGH's own device protocol, independent of MCP. A device registers its state, tools, and data sources with AgnesHub; the brain reads its state and calls its tools, so device state, human confirmation, and results join task workflows across inspection, instrument coordination, and field operations.
-
-[Try devices without hardware →](mhs.md)
 
 <a id="带着你的问题开始"></a>
 

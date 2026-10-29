@@ -1,0 +1,22 @@
+{
+  "extends": ["@agnes-fde/knowledge-qa#knowledge-qa"],
+  "presets": {
+    "knowledge-qa": {
+      "name": "knowledge-qa",
+      "extends": "standard",
+      "model": {
+        "route": {
+          "primary": {
+            "route": "customer",
+            "model": "customer-model"
+          }
+        }
+      },
+      "providers": {
+        "tool-policy": {
+          "provider": "fde.knowledge-qa"
+        }
+      }
+    }
+  }
+}

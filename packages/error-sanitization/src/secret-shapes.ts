@@ -104,5 +104,22 @@ export function domainFailureFromUnknown(error: unknown): DomainFailure {
   const raw = typeof err?.message === 'string' ? err.message : String(error)
   const message = looksLikeSecret(raw) ? `${code}: ${REDACTED_ERROR_MESSAGE}` : raw
   const reason = err?.reason ?? err?.detail?.reason
-  return isPublicErrorReason(reason) ? { code, message, reason } : { code, message }
+  const presetReasons = [
+    'no-routes',
+    'no-models',
+    'pin-without-route',
+    'unknown-slot',
+    'unknown-route',
+    'model-undeclared',
+    'no-primary',
+    'route-unserved',
+    'model-unserved',
+    'route-not-assembled',
+    'route-duplicate',
+    'reserved-route-name',
+    'bedrock-region-conflict',
+  ]
+  return isPublicErrorReason(reason) && (code !== 'E_PRESET_UNRESOLVED' || presetReasons.includes(reason))
+    ? { code, message, reason }
+    : { code, message }
 }

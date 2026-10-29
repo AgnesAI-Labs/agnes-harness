@@ -2,7 +2,7 @@
   {
     "register": "op.state",
     "key": "main",
-    "seq": 42,
+    "seq": 46,
     "data": {
       "meta": {
         "turn": 2,
@@ -34,6 +34,7 @@
               "resolvedPolicy": {
                 "isReadOnly": true,
                 "isDestructive": false,
+                "isPresentational": false,
                 "isConcurrencySafe": true,
                 "isOpenWorld": false,
                 "replay": "safe",
@@ -41,7 +42,7 @@
                 "approvalScopes": [],
                 "policyVersion": "static-v1"
               },
-              "policyHash": "2440d18ddde5694e1a0e604fdf1d3b640a264a87334416a7073bbce13e310b9a",
+              "policyHash": "98eae655d46b0b7f23316813965df674f18e235e396fc26d8a864c2bb3a5e4d8",
               "definitionFingerprint": "1dcc0de216bb73976c128ab2eac6bebde822afef6c0bf3528572169edbea17fd",
               "executionDomain": "workspace",
               "effectId": "e-00000000000000000000000000000044",
@@ -54,10 +55,11 @@
               "name": "shell",
               "argsSeq": 33,
               "replay": "never",
-              "status": "dispatched",
+              "status": "completed",
               "resolvedPolicy": {
                 "isReadOnly": false,
                 "isDestructive": true,
+                "isPresentational": false,
                 "isConcurrencySafe": false,
                 "isOpenWorld": false,
                 "replay": "never",
@@ -65,12 +67,12 @@
                 "approvalScopes": [],
                 "policyVersion": "static-v1"
               },
-              "policyHash": "e1c825ad9e611d86b8c9e9bd7bfa0bd5690058117d3c27e0e1d8c2b6b6583fbc",
+              "policyHash": "b0e4839814cacc7dc5da4ea6a5b4d4a904179a6496f1152bb0331ac4fde055db",
               "definitionFingerprint": "f3946b9d2174572b0ce3f4433e97dcfd42b5611f08469897d4f8f812aab427d1",
               "executionDomain": "workspace",
-              "effectId": "e-00000000000000000000000000000052",
+              "effectId": "e-00000000000000000000000000000053",
               "dispatchAttempt": 1,
-              "dispatchPhase": "may_have_sent"
+              "dispatchPhase": "responded"
             }
           ]
         }

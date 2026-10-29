@@ -11,6 +11,7 @@ import {
   windowsProtectPrivateDirectorySync,
   windowsReadPrivateFileSync,
 } from '@agnes/system-node'
+import { resolveOwnerIdentity } from './owner-identity.js'
 import type { Owner } from './owner-record.js'
 import { readOwner } from './owner-record.js'
 import type { DaemonScope } from './scope.js'
@@ -47,6 +48,14 @@ type WebCredentialFile = {
 
 export class DaemonDiscoveryError extends Error {
   override name = 'DaemonDiscoveryError'
+  readonly code: string
+  /** Why the owner's process identity could not be established, when that is the refusal. */
+  readonly reason?: string
+  constructor(message: string, code = 'E_DAEMON_DISCOVERY', reason?: string) {
+    super(message)
+    this.code = code
+    if (reason !== undefined) this.reason = reason
+  }
 }
 
 export type DaemonDiscoveryReadOptions = {
@@ -301,7 +310,7 @@ export async function readDaemonDiscovery(
   scope: DaemonScope,
   options: DaemonDiscoveryReadOptions = {},
 ): Promise<DaemonDiscovery | null> {
-  const owner = await readOwner(scope.dataDir)
+  const owner = await readOwner(scope.home)
   if (!owner) return null
   const descriptor = await readJsonFile(scope.discoveryPath, 64 * 1024, 0o600)
   if (descriptor === undefined) return null
@@ -310,6 +319,20 @@ export async function readDaemonDiscovery(
   // may survive until the new daemon publishes its ready record; it is stale, not a scope conflict.
   // Scope mismatches are refused only when the descriptor belongs to the current owner generation.
   if (!sameOwner(owner, parsed.owner)) return null
+  const found = await identity(
+    owner.pid,
+    async (pid) =>
+      resolveOwnerIdentity(scope.home, owner, await (options.processIdentity ?? defaultProcessIdentity)(pid)),
+    options.identityTimeoutMs ?? 1000,
+  )
+  if (found.state === 'dead') return null
+  if (found.state !== 'alive')
+    throw new DaemonDiscoveryError(
+      'daemon discovery owner identity is unavailable',
+      'E_DAEMON_DISCOVERY',
+      found.reason,
+    )
+  if (found.startId !== owner.processStartId) return null
   if (
     parsed.scopeID !== scope.scopeID ||
     parsed.profile !== scope.profile ||
@@ -320,16 +343,10 @@ export async function readDaemonDiscovery(
         parsed.web.url !== options.expectedWeb.url ||
         parsed.web.origin !== options.expectedWeb.origin))
   )
-    throw new DaemonDiscoveryError('daemon discovery does not match the selected scope')
-  const found = await identity(
-    owner.pid,
-    options.processIdentity ?? defaultProcessIdentity,
-    options.identityTimeoutMs ?? 1000,
-  )
-  if (found.state === 'dead') return null
-  if (found.state !== 'alive')
-    throw new DaemonDiscoveryError('daemon discovery owner identity is unavailable')
-  if (found.startId !== owner.processStartId) return null
+    throw new DaemonDiscoveryError(
+      'daemon discovery does not match the selected scope',
+      'E_DAEMON_SCOPE_CONFLICT',
+    )
   return parsed
 }
 
@@ -343,7 +360,7 @@ export async function publishDaemonDiscovery(
     web?: DaemonDiscoveryWeb & { token: string }
   },
 ): Promise<DaemonDiscovery> {
-  const current = await readOwner(scope.dataDir)
+  const current = await readOwner(scope.home)
   if (!current || !sameOwner(current, input.owner))
     throw new DaemonDiscoveryError('cannot publish discovery for a non-current owner')
   if (input.socketPath !== current.socketPath || input.owner.socketPath !== input.socketPath)

@@ -1,5 +1,6 @@
 import { expectTypeOf } from 'vitest'
-import type { ExtensionAPI, SlotContext, SlotFill, SlotName, SlotPayloadMap } from '../src/index.js'
+import type { ExtensionAPI } from '../src/host.js'
+import type { SlotContext, SlotFill, SlotName, SlotPayloadMap } from '../src/index.js'
 
 expectTypeOf<keyof SlotPayloadMap>().toEqualTypeOf<SlotName>()
 expectTypeOf<SlotContext['session']>().not.toHaveProperty('toolUseId')

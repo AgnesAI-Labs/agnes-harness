@@ -1,0 +1,11 @@
+{
+  "client": {
+    "entry": "./client.js",
+    "lifetime": "profile",
+    "slotCatalogVersion": "dsh-client-slots/v1",
+    "slots": ["conversation.view"],
+    "requiresBackendRows": ["ext:agnes/intelligent-ui"],
+    "presentationRoles": ["interaction"],
+    "id": "interaction-ui"
+  }
+}

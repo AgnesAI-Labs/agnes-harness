@@ -1,4 +1,4 @@
-[data-slot="ui:sidebar"] {
+[data-slot="workbench.panel"] {
   margin: 12px 0;
   border: 1px solid var(--agnes-accent, #2563eb);
   border-radius: 10px;

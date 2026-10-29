@@ -1,46 +1,10 @@
 import { types as utilTypes } from 'node:util'
-import { type ArtifactRef, type EventEnvelope, validateEvent } from '@agnes/protocol'
 import type {
   ArtifactAuthorityBinding,
   ArtifactAuthorityWriteResult,
-} from '../local/artifact-read-authority.js'
-import type { ArtifactReadScopeAuthority } from '../local/methods/artifacts.js'
-
-type MediaResult = Pick<EventEnvelope, 'origin' | 'trust'> &
-  Partial<Pick<EventEnvelope, 'lane' | 'sourceEventSeqs' | 'data'>>
-
-/**
- * Whether the images in a tool result may reach the model: the screen and document readers' when
- * untrusted, read's when trusted, and any other tool's only when the result is closed-world (trusted)
- * and `call`, the recorded tool/call row the result names as its source, declared `returnsImages`.
- */
-export function requestMediaOriginIsValid(result: MediaResult, call?: EventEnvelope): boolean {
-  if (['tool:computer_use', 'tool:document_read'].includes(result.origin)) return result.trust === 'untrusted'
-  if (result.trust !== 'trusted') return false
-  if (result.origin === 'tool:read') return true
-  if (call?.type !== 'tool/call' || call.origin !== 'model' || call.trust !== 'trusted') return false
-  const data = call.data as {
-    toolUseId?: unknown
-    name?: unknown
-    resolvedPolicy?: { returnsImages?: unknown }
-  }
-  return (
-    result.sourceEventSeqs?.length === 1 &&
-    result.sourceEventSeqs[0] === call.seq &&
-    (result.lane ?? 'main') === (call.lane ?? 'main') &&
-    result.origin === `tool:${String(data.name)}` &&
-    (result.data as { toolUseId?: unknown } | undefined)?.toolUseId === data.toolUseId &&
-    data.resolvedPolicy?.returnsImages === true
-  )
-}
-
-/** A tool/call row whose recorded policy declares that its results carry images. */
-const declaresImages = (event: EventEnvelope): boolean =>
-  event.type === 'tool/call' &&
-  (event.data as { resolvedPolicy?: { returnsImages?: unknown } }).resolvedPolicy?.returnsImages === true
-
-const MAX_ROOTS_PER_HEADER = 256
-const ARTIFACT_URI = /^artifact:\/\/([0-9a-f]{64})$/u
+} from '@agnes/daemon-rpc/local/artifact-read-authority'
+import type { ArtifactReadScopeAuthority } from '@agnes/daemon-rpc/local/methods/artifacts'
+import { type ArtifactRef, sessionArtifactRoots, validateEvent } from '@agnes/protocol'
 
 export type TrustedArtifactOwnership = Readonly<{
   resolve(sessionId: string, signal: AbortSignal): Promise<unknown>
@@ -127,7 +91,7 @@ function artifact(value: unknown, sha256: string, mime: string): ArtifactRef | u
       Reflect.ownKeys(d).length !== 3 ||
       d.sha256?.value !== sha256 ||
       d.mime?.value !== mime ||
-      !Number.isSafeInteger(d.size?.value) ||
+      !Number.isInteger(d.size?.value) ||
       (d.size?.value as number) < 0
     )
       return
@@ -137,47 +101,7 @@ function artifact(value: unknown, sha256: string, mime: string): ArtifactRef | u
   }
 }
 
-function mediaRoots(
-  event: EventEnvelope,
-  call: EventEnvelope | undefined,
-): readonly Readonly<{ sha256: string; mime: string }>[] | undefined {
-  if (event.type === 'request/header') {
-    if (event.origin !== 'system' || event.trust !== 'trusted') return undefined
-    const data = event.data as { media?: { manifest?: unknown } }
-    if (!data.media) return undefined
-    const manifest = data.media.manifest
-    if (!Array.isArray(manifest) || manifest.length > MAX_ROOTS_PER_HEADER) throw unavailable()
-    return manifest.map((value) => {
-      if (!value || typeof value !== 'object' || Array.isArray(value)) throw unavailable()
-      const entry = value as Record<string, unknown>
-      if (
-        typeof entry.sha256 !== 'string' ||
-        typeof entry.mime !== 'string' ||
-        entry.artifactUri !== `artifact://${entry.sha256}`
-      )
-        throw unavailable()
-      return Object.freeze({ sha256: entry.sha256, mime: entry.mime })
-    })
-  }
-  if (event.type !== 'tool/result') return undefined
-  const data = event.data as { content?: unknown; isError?: unknown }
-  if (!requestMediaOriginIsValid(event, call) || data.isError !== false) return undefined
-  if (!Array.isArray(data.content)) return undefined
-  const roots = new Map<string, Readonly<{ sha256: string; mime: string }>>()
-  for (const value of data.content) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
-    const block = value as Record<string, unknown>
-    if (block.type !== 'resource_link') continue
-    const match = typeof block.uri === 'string' ? ARTIFACT_URI.exec(block.uri) : null
-    if (!match || (block.mimeType !== 'image/png' && block.mimeType !== 'image/jpeg')) continue
-    const sha256 = match[1] as string
-    roots.set(`${sha256}:${block.mimeType}`, Object.freeze({ sha256, mime: block.mimeType }))
-    if (roots.size > MAX_ROOTS_PER_HEADER) throw unavailable()
-  }
-  return [...roots.values()]
-}
-
-/** Projects validated tool-result image refs and persisted request-media roots into durable authority. */
+/** Projects trusted storage registrations and legacy media roots into durable read authority. */
 export function createArtifactAuthorityProjection(
   input: Readonly<{
     writer: ArtifactAuthorityProjectionWriter
@@ -217,8 +141,6 @@ export function createArtifactAuthorityProjection(
     throw unavailable()
   }
   const lanes = new Map<string, Map<string, LaneState>>()
-  // Per session, the tool/call rows that declared images, by seq; their results name them as source.
-  const imageCalls = new Map<string, Map<number, EventEnvelope>>()
   const epochs = new Map<string, EpochState>()
   const epoch = (sessionId: string, laneId: string) => {
     const state = epochs.get(sessionId) ?? { session: 0, lanes: new Map<string, number>() }
@@ -245,10 +167,8 @@ export function createArtifactAuthorityProjection(
     try {
       const checked = validateEvent(raw)
       if (!checked.ok || signal.aborted) return
-      const event = checked.value as EventEnvelope
-      const calls = imageCalls.get(sessionId) ?? new Map<number, EventEnvelope>()
-      if (declaresImages(event)) imageCalls.set(sessionId, calls.set(event.seq, event))
-      const roots = mediaRoots(event, calls.get(event.sourceEventSeqs?.[0] ?? 0))
+      const event = checked.value as import('@agnes/protocol').EventEnvelope
+      const roots = sessionArtifactRoots(event)
       if (!roots?.length) return
       const laneId = event.lane ?? 'main'
       const observedEpoch = epoch(sessionId, laneId)
@@ -258,8 +178,13 @@ export function createArtifactAuthorityProjection(
       if (existingState && existingState.ownerId !== ownerId) throw unavailable()
       const bindings: ArtifactAuthorityBinding[] = []
       for (const entry of roots) {
+        // A Core registration attests storage, not this adapter's Web readability or byte limit.
+        // Legacy roots have no size and still require the existing trusted inspector.
+        const registered = existingState?.bindings.get(`${entry.sha256}:${entry.mime}`)?.artifact
         const ref = artifact(
-          await inspector.inspect({ sha256: entry.sha256, mime: entry.mime }, signal),
+          entry.size !== undefined
+            ? entry
+            : (registered ?? (await inspector.inspect({ sha256: entry.sha256, mime: entry.mime }, signal))),
           entry.sha256,
           entry.mime,
         )
@@ -281,7 +206,8 @@ export function createArtifactAuthorityProjection(
       if (!current(sessionId, laneId, observedEpoch)) throw unavailable()
       const session = lanes.get(sessionId) ?? new Map<string, LaneState>()
       const state = existingState ?? { ownerId, bindings: new Map() }
-      for (const binding of bindings) state.bindings.set(binding.artifact.sha256, binding)
+      for (const binding of bindings)
+        state.bindings.set(`${binding.artifact.sha256}:${binding.artifact.mime}`, binding)
       session.set(laneId, state)
       lanes.set(sessionId, session)
     } catch {
@@ -349,7 +275,6 @@ export function createArtifactAuthorityProjection(
     revokeLane,
     resetSession(sessionId: string) {
       bumpSession(sessionId)
-      imageCalls.delete(sessionId)
       const session = lanes.get(sessionId)
       lanes.delete(sessionId)
       if (!session) return

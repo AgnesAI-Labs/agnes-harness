@@ -4,19 +4,21 @@
 
 [文档导航](../README.zh-CN.md) · 前提：[已完成构建](install.zh-CN.md)
 
+旧版用户请先按[旧版升级指南](upgrade-from-previous.zh-CN.md)备份并清理环境；本页的新环境步骤不迁移旧数据。
+
 完成这一页后，你将配置一个模型、运行一个小任务，并从 CLI 找到 Web 中创建的会话。前提是已完成[源码构建](install.zh-CN.md)，建议首次试用采用其中的独立 home。没有模型账号时，可以先体验[本地模拟模型演示](demo.zh-CN.md#不配置模型账号先跑通本地链路)。
 
 ## 第一次打开 Web
 
 ```sh
-node packages/cli/dist/local/agnes.mjs serve
+node agnes.mjs serve
 ```
 
 默认地址为 `http://127.0.0.1:4177`，以终端实际输出为准。当前本地模式直接打开普通 URL，不需要从地址栏复制连接 token，也不需要把 daemon 凭据粘贴进页面。
 
-没有可用模型时会进入 Provider 设置。选择账号/Provider，核对 Base URL，在密码输入框输入 API key，执行“测试连接”，选择返回目录中的模型，再保存。页面只显示已配置状态，不会读回已保存的明文密钥。测试连接和后续对话可能访问提供方并产生费用；无模型账号时请用[本地演示](demo.zh-CN.md)。
+没有已保存的模型账户和历史会话时，会进入[首次运行引导](getting-started.zh-CN.md)，每一步都可以跳过。账户配置复用已有模型设置。选择账号/Provider，核对 Base URL，在密码输入框输入 API key，执行“测试连接”，选择返回目录中的模型，再保存。页面只显示已配置状态，不会读回已保存的明文密钥。测试连接和后续对话可能访问提供方并产生费用；无模型账号时请用[本地演示](demo.zh-CN.md)。
 
-你可以使用 Agnes AI，也可以选择 Kimi、Kimi Coding Plan、GLM、Qwen、DeepSeek、OpenAI、Anthropic、Google、OpenRouter、MiniMax 或 xAI。Web 将 Agnes AI 优先展示；实际模型、路由及能力来自当前目录与账号配置，不能用品牌名称推定工具、视觉或思考能力。自定义端点也应走配置服务的测试和模型选择流程，不用把不兼容端点伪装成某个已知模型。
+你可以使用 Agnes AI，也可以选择 Kimi、Kimi Coding Plan、GLM、Qwen、DeepSeek、OpenAI、Anthropic、Google、OpenRouter、MiniMax、xAI、Groq、Together AI、Cerebras、NVIDIA、Hugging Face、Moonshot / Kimi（moonshot.cn）或 GLM Coding（bigmodel.cn）。Web 将 Agnes AI 优先展示，紧随其后的是 **Agnes AI 国际版**：同一服务商，地址为国际站 `https://apihub.agnes-ai.com/v1`。Agnes 的 Key 按站点签发，国内 Key 用于 Agnes AI，国际站 Key 用于 Agnes AI 国际版；也可以自行修改 Agnes 账户的 Base URL。实际模型、路由及能力来自当前目录与账号配置，不能用品牌名称推定工具、视觉或思考能力。自定义端点也应走配置服务的测试和模型选择流程，不用把不兼容端点伪装成某个已知模型。中转站、聚合服务或自建网关只要支持 OpenAI `/chat/completions`，就选「兼容 OpenAI 的接口」或下面「中转站」一行里的预设（OpenRouter、硅基流动、302.AI、AiHubMix、火山方舟、阿里百炼）：填地址（通常以 `/v1` 结尾）、需要时填 API Key，再从 `/models` 拉到的列表里选模型，或手动填写模型 ID。这些模型按纯文本对话、原生工具调用处理，不假定支持图片输入或推理。不填 Key 的账户会发送占位凭据 `Bearer no-key`。
 
 保存后关注生效提示：`new-sessions` 表示新会话可用，已有会话保留自己的选择；若提示重启，先结束需要保留的任务，使用同一 home/profile 执行 `daemon stop`，再重新 `serve`。连接失败时核对当前 home/profile，确保仍在操作同一个实例。
 
@@ -35,13 +37,13 @@ node packages/cli/dist/local/agnes.mjs serve
 交互式配置：
 
 ```sh
-node packages/cli/dist/local/agnes.mjs config
+node agnes.mjs config
 ```
 
 配置好后，先在源码仓库根执行下面命令。`AGH_ENTRY` 保存入口绝对路径；以后切换到自己的项目目录，也可以继续用它运行：
 
 ```sh
-AGH_ENTRY="$PWD/packages/cli/dist/local/agnes.mjs"
+AGH_ENTRY="$PWD/agnes.mjs"
 node "$AGH_ENTRY" -p "只读概括当前项目"
 node "$AGH_ENTRY" sessions --json
 node "$AGH_ENTRY"
@@ -76,4 +78,4 @@ node "$AGH_ENTRY" daemon stop
 
 想让 Agent 采用团队的方法，添加一个[Skill](skills.zh-CN.md)；想接入业务系统，从[插件开发](../develop/plugins.zh-CN.md)开始；想继续已有任务，阅读[会话与恢复](sessions.zh-CN.md)。
 
-实现依据：[配置控制器](../../packages/host/src/configuration.ts)、[Provider 入口](../../packages/cli/src/onboarding/provider-registry.ts)、[Web 模型配置](../../packages/web/src/settings.ts)、[CLI 参数](../../packages/cli/src/args.ts)。
+实现依据：[配置控制器](../../packages/host-infrastructure/src/configuration.ts)、[Provider 入口](../../packages/ai/src/adapters/pi/api-key-providers.ts)、[Web 模型配置](../../packages/web-admin/src/settings.ts)、[CLI 参数](../../packages/cli/src/args.ts)。

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { testSubscriptionCredential } from '@agnes/ai'
-import { createCodexLogin } from '../../../host/src/codex-login.js'
+import { createCodexLogin } from '@agnes/host-infrastructure/codex-login'
 
 // Exercise the real pi-ai flows and Host interaction bridge. Only HTTP is faked;
 // never replace the login implementation (that would hide missing bundled modules).
@@ -33,23 +33,17 @@ globalThis.fetch = async (input, init) => {
   const request = new Request(input, init)
   assert.equal(request.headers.get('authorization'), 'Bearer fixture-access')
   assert.equal(request.headers.get('x-api-key'), null)
-  assert.equal(new URL(request.url).pathname, '/coding/v1/messages')
+  assert.equal(new URL(request.url).pathname, '/coding/v1/chat/completions')
   inferenceRequests++
-  const events = [
-    {
-      type: 'message_start',
-      message: {
-        id: 'fixture',
-        role: 'assistant',
-        model: 'kimi-for-coding',
-        content: [],
-        usage: { input_tokens: 5, output_tokens: 0 },
-      },
-    },
-    { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 1 } },
-    { type: 'message_stop' },
-  ]
-  return new Response(events.map((e) => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join(''), {
+  const chunk = (delta: object, finish: string | null) => ({
+    id: 'fixture',
+    object: 'chat.completion.chunk',
+    created: 0,
+    model: 'kimi-for-coding',
+    choices: [{ index: 0, delta, finish_reason: finish }],
+  })
+  const events = [chunk({ role: 'assistant', content: 'OK' }, null), chunk({}, 'stop')]
+  return new Response(`${events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join('')}data: [DONE]\n\n`, {
     headers: { 'content-type': 'text/event-stream' },
   })
 }

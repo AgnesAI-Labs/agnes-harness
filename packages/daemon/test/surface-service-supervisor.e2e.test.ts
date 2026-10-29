@@ -17,17 +17,17 @@ import {
 import { createClient, createSurfaceRelay, memoryJournal } from '@agnes/sdk'
 import { afterEach, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
-import { type DaemonConfig, DEFAULT_LIMITS } from '../src/config.js'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { signSourceAuth, sourceAuthCanonical } from '../src/local/auth.js'
 import { SessionWorkspaceIndex } from '../src/storage/lister.js'
 import { SessionPrincipalOwnershipIndex } from '../src/storage/session-ownership.js'
 import type { Tables } from '../src/storage/table.js'
 import { WorkspaceBindingIndex, WorkspaceCatalog, WorkspaceIndex } from '../src/storage/workspaces.js'
+import { type DaemonConfig, DEFAULT_LIMITS } from '../src/supervisor/config.js'
 import { daemonSocketPaths } from '../src/supervisor/socket-paths.js'
 import { startSupervisor } from '../src/supervisor/supervisor.js'
 import { createSurfaceRoutes, type SurfaceRelay } from '../src/surfaces/routes.js'
 import { serviceOwner, servicePackageId, serviceRowId } from './service-row-fixture.js'
-import { sqliteTables } from './sqlite-tables.js'
 
 type Rpc = Readonly<{ id?: number; result?: unknown; error?: unknown }>
 const cleanup: Array<() => void | Promise<void>> = []
@@ -47,6 +47,7 @@ function profile(dataDir: string): ResolvedProfile {
     name: 'local-dev',
     dataDir,
     cacheDir: join(dataDir, 'cache'),
+    approvals: { mode: 'manual' },
     computerUse: DEFAULT_COMPUTER_USE,
   } as unknown as Omit<ResolvedProfile, 'hash'>
   return { ...body, hash: `sha256-${sha256hex(canonicalJson(hashInput(body)))}` }
@@ -155,7 +156,9 @@ it('runs a Surface effect through startSupervisor WebSocket and acknowledges it 
       version: '1.0.0',
       type: 'module',
       exports: './index.mjs',
-      agnes: { plugins: [{ id: serviceRowId, export: 'main', services: [capability.name] }] },
+      agnes: {
+        plugins: [{ apiRange: '^5.0.0', id: serviceRowId, export: 'main', services: [capability.name] }],
+      },
     }),
   )
   writeFileSync(
@@ -352,7 +355,9 @@ it('runs a Portal request through Surface routes, the SDK relay and client, WSS,
       version: '1.0.0',
       type: 'module',
       exports: './index.mjs',
-      agnes: { plugins: [{ id: serviceRowId, export: 'main', services: [capability.name] }] },
+      agnes: {
+        plugins: [{ apiRange: '^5.0.0', id: serviceRowId, export: 'main', services: [capability.name] }],
+      },
     }),
   )
   writeFileSync(
@@ -426,7 +431,7 @@ it('runs a Portal request through Surface routes, the SDK relay and client, WSS,
         integrity: `sha256-${'a'.repeat(64)}`,
         descriptor: {
           id: 'portal',
-          apiRange: '^1.0.0',
+          apiRange: '^5.0.0',
           artifact: { kind: 'node', entry: './server.js' },
           healthPath: '/healthz',
           requires: {

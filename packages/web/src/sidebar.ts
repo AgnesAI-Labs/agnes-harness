@@ -15,4 +15,4 @@ export {
   type SidebarNavigationOptions,
   type SidebarShell,
   type SidebarState,
-} from '@agnes/web-units'
+} from '@agnes/web-units/shell'

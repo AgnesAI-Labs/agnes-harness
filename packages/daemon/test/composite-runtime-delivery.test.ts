@@ -1,8 +1,11 @@
 import { buildRuntimeTarget, createPluginRow, encodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { describe, expect, it } from 'vitest'
-import { CompositeRuntimeDelivery, deliverDesiredToWorkers } from '../src/composite-runtime-delivery.js'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
-import { sqliteTables } from './sqlite-tables.js'
+import {
+  CompositeRuntimeDelivery,
+  deliverDesiredToWorkers,
+} from '../src/supervisor/publication/composite-runtime-delivery.js'
 
 const revision = 'e'.repeat(64)
 
@@ -38,10 +41,17 @@ describe('CompositeRuntimeDelivery', () => {
       store.qualifyConverged(1, lastGood, { hash: lastGood.identity.treeHash, ok: true, rows: [] }),
     ).toBe(true)
     store.publishDesired(newer)
-    const delivery = new CompositeRuntimeDelivery(store)
+    const qualified: (string | undefined)[] = []
+    const delivery = new CompositeRuntimeDelivery(store, {
+      onConverged: () => {
+        qualified.push(store.lastGood()?.digest)
+        throw new Error('Synthetic notification sink closed')
+      },
+    })
     const boot = delivery.bootFor(4)
     expect(boot).toEqual({ artifact: lastGood, source: 'lastGood' })
     if (!boot) throw new Error('expected lastGood boot')
+    expect(delivery.desiredAfterBoot(boot)).toEqual(newer)
     const admission = delivery.beginBoot(4, boot)
     expect(
       delivery.handleWorkerFrame(4, {
@@ -67,6 +77,7 @@ describe('CompositeRuntimeDelivery', () => {
       }),
     ).toBe(false)
     expect(store.pending()).toBe(true)
+    expect(qualified).toEqual([])
     expect(
       delivery.handleWorkerFrame(4, {
         type: 'runtime.converged',
@@ -80,7 +91,76 @@ describe('CompositeRuntimeDelivery', () => {
     ).toBe(true)
     expect(store.pending()).toBe(false)
     expect(store.lastGood()?.digest).toBe(newer.digest)
+    expect(qualified).toEqual([newer.digest])
   })
+
+  it.each(['success', 'refusal', 'exit'] as const)(
+    'correlates unpublished live config receipts without changing durable state (%s)',
+    async (outcome) => {
+      const tables = sqliteTables()
+      try {
+        const store = new CompositeTargetStore(tables.table('composite'), 'default')
+        const prior = artifact('ext:prior')
+        const next = artifact('ext:next')
+        store.publishDesired(prior)
+        store.qualifyConverged(1, prior, { hash: prior.identity.treeHash, ok: true, rows: [] })
+        const delivery = new CompositeRuntimeDelivery(store)
+        const pending = delivery.applyBeforeCommit(2, next, () => {})
+        const frame = {
+          type: 'runtime.converged',
+          workerKind: 'session',
+          workerKey: '@shared',
+          generation: 2,
+          digest: next.digest,
+          identity: next.identity,
+          report: { hash: next.identity.treeHash, ok: true, rows: [] },
+        }
+        // A stale worker or mismatched identity cannot settle this save.
+        expect(delivery.handleWorkerFrame(1, { ...frame, generation: 1 })).toBe(false)
+        expect(
+          delivery.handleWorkerFrame(2, {
+            ...frame,
+            identity: { ...next.identity, compositeRevision: 'f'.repeat(64) },
+          }),
+        ).toBe(false)
+        if (outcome === 'success') {
+          expect(delivery.handleWorkerFrame(2, frame)).toBe(true)
+          expect(await pending).toMatchObject({ generation: 2, report: { ok: true } })
+        } else if (outcome === 'refusal') {
+          const rejected = expect(pending).rejects.toMatchObject({
+            name: 'PluginConfigRefused',
+            message: 'synthetic refusal',
+          })
+          expect(
+            delivery.handleWorkerFrame(2, {
+              type: 'runtime.apply_failed',
+              workerKind: 'session',
+              workerKey: '@shared',
+              generation: 2,
+              digest: next.digest,
+              identity: next.identity,
+              phase: 'apply',
+              message: 'synthetic refusal',
+            }),
+          ).toBe(true)
+          await rejected
+        } else {
+          const unknown = expect(pending).rejects.toThrow('E_RUNTIME_TARGET_OUTCOME_UNKNOWN')
+          delivery.workerExited(2)
+          await unknown
+          expect(delivery.handleWorkerFrame(2, frame)).toBe(false)
+        }
+        expect(store.desired()).toEqual(prior)
+        expect(store.previous()).toBeUndefined()
+        expect(store.lastGood()).toEqual(prior)
+        expect(store.acknowledged()?.generation).toBe(1)
+        expect(store.lastFailure()).toBeUndefined()
+        expect(store.configAudit.facts(['ext:next'])).toEqual([])
+      } finally {
+        await tables.close()
+      }
+    },
+  )
 
   it('uses desired as bootstrap when there is no lastGood and ignores a stale failure', () => {
     const tables = sqliteTables()
@@ -92,8 +172,10 @@ describe('CompositeRuntimeDelivery', () => {
     const boot = delivery.bootFor(1)
     expect(boot?.source).toBe('bootstrap')
     if (!boot) throw new Error('expected bootstrap')
+    expect(delivery.desiredAfterBoot(boot)).toBeUndefined()
     delivery.beginBoot(1, boot)
     store.publishDesired(second)
+    expect(delivery.desiredAfterBoot(boot)).toEqual(second)
     expect(
       delivery.handleWorkerFrame(1, {
         type: 'runtime.apply_failed',
@@ -107,6 +189,39 @@ describe('CompositeRuntimeDelivery', () => {
       }),
     ).toBe(false)
     expect(store.lastFailure()).toBeUndefined()
+  })
+
+  it('boots the final pinned startup publication before registering resources, retaining stale-target fencing', async () => {
+    const tables = sqliteTables()
+    const store = new CompositeTargetStore(tables.table('composite'), 'default')
+    const delivery = new CompositeRuntimeDelivery(store)
+    const old = artifact('ext:old'),
+      intermediate = artifact('ext:intermediate'),
+      refreshed = artifact('ext:refreshed')
+    store.publishDesired(old)
+    store.qualifyConverged(1, old, { hash: old.identity.treeHash, ok: true, rows: [] })
+    const registrations: string[] = []
+    const pool = {
+      businessWorker: () => undefined,
+      acquireSharedWorker: async () => {
+        const boot = delivery.bootFor(2)
+        if (!boot) throw new Error('missing boot target')
+        registrations.push(boot.artifact.digest)
+      },
+    }
+    store.onDesired((next) => {
+      if (!delivery.stageStartup(next)) void deliverDesiredToWorkers(pool, next)
+    })
+    store.publishDesired(intermediate)
+    store.publishDesired(refreshed)
+    expect(registrations).toEqual([])
+    delivery.completeStartup()
+    await deliverDesiredToWorkers(pool, refreshed)
+    expect(registrations).toEqual([refreshed.digest])
+    expect(delivery.bootFor(2)).toEqual({ artifact: refreshed, source: 'bootstrap' })
+    expect(() => delivery.preferBootTarget(intermediate)).toThrow('E_RUNTIME_TARGET_STALE')
+    store.publishDesired(intermediate)
+    expect(delivery.bootFor(3)).toEqual({ artifact: old, source: 'lastGood' })
   })
 
   it('offers a live Host worker the new desired, otherwise acquires the shared worker', async () => {

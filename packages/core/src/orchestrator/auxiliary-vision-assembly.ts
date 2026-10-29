@@ -1,4 +1,6 @@
 import { types as utilTypes } from 'node:util'
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
+import { withTimeout } from '@agnes/core-effects/effects/wrap'
 import {
   type CountResult,
   type InferenceEvent,
@@ -12,8 +14,6 @@ import {
   InferenceEvent as InferenceEventSchema,
   ModelRecord as ModelRecordSchema,
 } from '@agnes/protocol/gen/model'
-import { withTimeout } from '../effects/wrap.js'
-import { canonicalJson, sha256Hex } from '../request/hash.js'
 import type { SessionImpl } from '../step/session.js'
 import {
   type AuxiliaryVisionImageLimits,
@@ -65,7 +65,7 @@ export function consumeAuxiliaryVisionNotDispatchedAuthority(
 }
 
 /**
- * Internal composition capability. It is deliberately not re-exported from `@agnes/core`; P0 stays
+ * Internal composition capability. It is deliberately not re-exported from `@agnes/core`; auxiliary vision stays
  * closed until the Host owns a reviewed issuer/wiring path rather than passing a caller-authored flag.
  */
 export function mintAuxiliaryVisionProductionAdmission(): AuxiliaryVisionProductionAdmission {
@@ -460,7 +460,7 @@ export async function runAuxiliaryVisionAssembly(
   const inputTokens = await countInputTokens(input.session, input.media, plan.request, input.signal)
   if (inputTokens === undefined || input.signal.aborted)
     return fallback(input, input.signal.aborted ? 'cancelled' : 'count_unavailable')
-  const projection = await input.session.d.runtime.ledgerProjected({
+  const projection = await input.session.d.runtime.billingProjected({
     tokensEstimate: inputTokens,
     model: plan.request.model,
   })

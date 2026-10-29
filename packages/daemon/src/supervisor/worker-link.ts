@@ -1,9 +1,13 @@
 import type { Duplex } from 'node:stream'
-import type { EventEnvelope, McpStatus, RuntimeTargetArtifact } from '@agnes/protocol'
-import type { PreviewUpdate } from '../registry.js'
+import type { PreviewUpdate } from '@agnes/daemon-foundation/registry'
 import type {
-  ProgressFrame,
-  RecordFrame,
+  DaemonNotice,
+  EventEnvelope,
+  LoopSelection,
+  McpStatus,
+  RuntimeTargetArtifact,
+} from '@agnes/protocol'
+import type {
   RequestFrame,
   SessionMethod,
   SessionOpenResult,
@@ -14,9 +18,16 @@ import type {
 } from './frames.js'
 import { parseWorkerHello } from './frames.js'
 import { encodeFrame, JsonlDecoder } from './framing.js'
+import { packageManageReplyError } from './package-manage-error.js'
+import { PermissionFence } from './permission-fence.js'
+import { PermissionRequestFailure } from './permission-requests.js'
 import { skillInstallReplyError } from './skill-install-error.js'
 
-export type WorkerCommandOptions = { timeoutMs?: number }
+export type WorkerCommandOptions = {
+  historySignal?: AbortSignal
+  timeoutMs?: number
+  onHistoryProgress?: (progress: { verifiedSeq: number; lastSeq: number }) => void
+}
 
 /** Session-scoped view of the shared process connection. */
 export class WorkerSessionChannel {
@@ -29,12 +40,23 @@ export class WorkerSessionChannel {
     open: Readonly<{
       binding: WorkspaceBindingFrame
       preset?: string
+      permission?: string
+      agent?: string
+      agentDigest?: string
+      bundles?: readonly string[]
+      systemPromptAppend?: string
+      loop?: LoopSelection
       resume?: boolean
       parent?: { key: string; boundarySeq: number }
     }>,
     private readonly onClosed?: () => void,
+    onHistoryProgress?: WorkerCommandOptions['onHistoryProgress'],
+    historySignal?: AbortSignal,
   ) {
-    this.hello = worker.openSession(sessionKey, open)
+    this.hello = worker.openSession(sessionKey, open, {
+      ...(onHistoryProgress ? { onHistoryProgress } : {}),
+      ...(historySignal ? { historySignal } : {}),
+    })
   }
 
   get alive(): boolean {
@@ -52,11 +74,6 @@ export class WorkerSessionChannel {
 
   close(_reason = 'session closed'): void {
     void this.closeSession(_reason).catch(() => undefined)
-  }
-
-  /** Bytes the whole worker connection has received so far; a difference measures a span of work. */
-  receivedBytes(): number {
-    return this.worker.receivedBytes()
   }
 
   tail(fromSeq: number): Promise<void> {
@@ -81,6 +98,9 @@ export class WorkerSessionChannel {
 
 /** One process-wide connection. Session routing remains explicit on every session frame. */
 export class WorkerLink {
+  readonly permissionFence = new PermissionFence()
+  private readonly requestsLifetime = new AbortController()
+  private readonly sessionRequests = new Map<string, AbortController>()
   readonly hello: Promise<WorkerHello>
   private resolveHello!: (hello: WorkerHello) => void
   private readonly pending = new Map<
@@ -89,28 +109,30 @@ export class WorkerLink {
       sessionKey?: string
       resolve: (value: unknown) => void
       reject: (error: unknown) => void
+      onHistoryProgress?: WorkerCommandOptions['onHistoryProgress']
       timer?: ReturnType<typeof setTimeout>
     }
   >()
   private nextId = 1
   alive = true
-  /** Why this side closed the link; unset when the worker went away first. */
-  closeReason: string | undefined
   private readonly exitHandlers: Array<() => void> = []
   private readonly frameChains = new Map<string, Promise<void>>()
   private readonly failedSessions = new Set<string>()
-  private received = 0
 
   constructor(
     private readonly socket: Duplex,
     private readonly options: {
       onEvent: (sessionKey: string, event: EventEnvelope) => void | Promise<void>
       onPreview?: (sessionKey: string, update: PreviewUpdate) => void
+      onDecisionsChanged?: (detail: Extract<DaemonNotice, { kind: 'decisions_changed' }>['detail']) => void
       onResourceStatus?: (serverId: string, status: McpStatus) => void
-      onRequest: (frame: RequestFrame) => Promise<unknown>
-      onLog?: (sessionKey: string, level: 'debug' | 'info' | 'warn' | 'error', message: string) => void
-      onRecord?: (sessionKey: string, record: RecordFrame['record']) => void
-      onProgress?: (sessionKey: string, progress: Omit<ProgressFrame, 'kind' | 'sessionKey'>) => void
+      onRequest: (frame: RequestFrame, signal: AbortSignal) => Promise<unknown>
+      onLog?: (
+        sessionKey: string,
+        level: 'debug' | 'info' | 'warn' | 'error',
+        message: string,
+        correlation?: { traceId: string; spanId: string },
+      ) => void
       onActivity?: (sessionKey: string) => void
       onSessionFailure?: (sessionKey: string, error: unknown) => void
       onRuntimeFrame?: (frame: unknown) => void
@@ -121,7 +143,6 @@ export class WorkerLink {
     })
     const decoder = new JsonlDecoder()
     socket.on('data', (chunk: Buffer) => {
-      this.received += chunk.length
       let frames: WorkerToSupervisor[]
       try {
         frames = decoder.feed(chunk) as WorkerToSupervisor[]
@@ -132,10 +153,7 @@ export class WorkerLink {
       for (const frame of frames) this.enqueue(frame)
     })
     socket.on('close', () => this.markDead())
-    socket.on('error', (error: NodeJS.ErrnoException) => {
-      if (this.alive) this.closeReason ??= `socket error ${error.code ?? error.name}`
-      this.markDead()
-    })
+    socket.on('error', () => this.markDead())
   }
 
   private enqueue(frame: WorkerToSupervisor): void {
@@ -162,9 +180,8 @@ export class WorkerLink {
       'preview',
       'request',
       'session.interrupted',
+      'session.loading',
       'log',
-      'record',
-      'progress',
     ])
     const candidate = frame as WorkerToSupervisor & { sessionKey?: unknown }
     if (
@@ -179,12 +196,12 @@ export class WorkerLink {
       'event',
       'preview',
       'resourceStatus',
+      'decisionsChanged',
       'reply',
       'request',
       'session.interrupted',
+      'session.loading',
       'log',
-      'record',
-      'progress',
     ])
     if (!knownKinds.has(frame.kind)) {
       this.close('unknown worker frame')
@@ -214,8 +231,25 @@ export class WorkerLink {
    * it would be an unhandled rejection (fatal to the daemon) and would re-run the handler for the
    * session's next queued frame.
    */
+  revokeSessionRequests(sessionKey: string): void {
+    let lifetime = this.sessionRequests.get(sessionKey)
+    if (!lifetime) {
+      lifetime = new AbortController()
+      this.sessionRequests.set(sessionKey, lifetime)
+    }
+    lifetime.abort('stopped')
+  }
+
+  resetSessionRequests(sessionKey: string): void {
+    // Keep live controllers: a delayed turn/start must not orphan an offer from a later stop.
+    if (this.sessionRequests.get(sessionKey)?.signal.aborted) this.sessionRequests.delete(sessionKey)
+  }
+
   private failSession(sessionKey: string, error: unknown): void {
+    this.permissionFence.closeSession(sessionKey)
     this.failedSessions.add(sessionKey)
+    this.sessionRequests.get(sessionKey)?.abort('stopped')
+    this.sessionRequests.delete(sessionKey)
     try {
       this.options.onSessionFailure?.(sessionKey, error)
     } catch (observerError) {
@@ -242,31 +276,56 @@ export class WorkerLink {
       this.options.onPreview?.(sessionKey, update)
       return
     }
+    if (frame.kind === 'decisionsChanged') {
+      const { detail } = frame
+      if (
+        !detail ||
+        typeof detail.profile !== 'string' ||
+        !detail.principal ||
+        typeof detail.principal.id !== 'string' ||
+        typeof detail.principal.org !== 'string'
+      )
+        throw new Error('invalid decision invalidation')
+      // Reconstruct the signal, never forward unrecognized worker payload fields.
+      this.options.onDecisionsChanged?.({
+        profile: detail.profile,
+        principal: { id: detail.principal.id, org: detail.principal.org },
+      })
+      return
+    }
     if (frame.kind === 'resourceStatus') {
       this.options.onResourceStatus?.(frame.serverId, frame.status)
       return
     }
     if (frame.kind === 'session.interrupted') {
-      const code =
-        typeof frame.code === 'string' && /^E_[A-Z0-9_]{1,64}$/.test(frame.code) ? frame.code : undefined
-      this.failSession(frame.sessionKey, Object.assign(new Error(frame.reason), code ? { code } : {}))
+      this.failSession(frame.sessionKey, new Error(frame.reason))
       return
     }
-    if (frame.kind === 'progress') {
-      const progress = openProgress(frame)
-      if (progress) this.options.onProgress?.(frame.sessionKey, progress)
+    if (frame.kind === 'session.loading') {
+      const pending = this.pending.get(frame.requestId)
+      if (
+        pending?.sessionKey === frame.sessionKey &&
+        Number.isSafeInteger(frame.verifiedSeq) &&
+        frame.verifiedSeq >= 0 &&
+        Number.isSafeInteger(frame.lastSeq) &&
+        frame.lastSeq >= frame.verifiedSeq
+      )
+        pending.onHistoryProgress?.({ verifiedSeq: frame.verifiedSeq, lastSeq: frame.lastSeq })
       return
     }
     if (frame.kind === 'log') {
-      this.options.onLog?.(frame.sessionKey, frame.level, frame.message)
+      this.options.onLog?.(
+        frame.sessionKey,
+        frame.level,
+        frame.message,
+        typeof frame.traceId === 'string' &&
+          /^[a-f0-9]{32}$/.test(frame.traceId) &&
+          typeof frame.spanId === 'string' &&
+          /^[a-f0-9]{16}$/.test(frame.spanId)
+          ? { traceId: frame.traceId, spanId: frame.spanId }
+          : undefined,
+      )
       this.options.onActivity?.(frame.sessionKey)
-      return
-    }
-    if (frame.kind === 'record') {
-      // A worker may only report the records it owns; the runtime log is the daemon's to write.
-      const kind = frame.record?.kind
-      if (kind === 'session.open' || kind === 'session.verify_full')
-        this.options.onRecord?.(frame.sessionKey, frame.record)
       return
     }
     if (frame.kind === 'reply') {
@@ -280,50 +339,62 @@ export class WorkerLink {
       if (replySessionKey) this.options.onActivity?.(replySessionKey)
       return
     }
-    void this.options.onRequest(frame).then(
-      (result) =>
-        this.send({
-          kind: 'reply',
-          requestId: frame.requestId,
-          sessionKey: frame.sessionKey,
-          result,
-        }),
-      (error) =>
-        this.send({
-          kind: 'reply',
-          requestId: frame.requestId,
-          sessionKey: frame.sessionKey,
-          error:
-            frame.method === 'mcp-manage' || frame.method === 'plugin-manage'
-              ? {
-                  code:
-                    typeof (error as { data?: { code?: unknown } })?.data?.code === 'string'
-                      ? (error as { data: { code: string } }).data.code
-                      : 'HELPER_MANAGEMENT_FAILED',
-                  message:
-                    'The AGH extension operation did not finish. Check its status or policy in Settings.',
-                }
-              : frame.method === 'skill-install'
-                ? skillInstallReplyError(error)
-                : frame.method === 'batch'
-                  ? // Batch refusals are written for the model that called the tool.
-                    {
-                      code: 'E_BATCH',
-                      message: error instanceof Error ? error.message : 'the batch request failed',
+    if (frame.method === 'permission-revoke') {
+      const context = frame.params as { sessionId?: unknown; epoch?: unknown } | null
+      if (typeof context?.sessionId !== 'string' || typeof context.epoch !== 'number')
+        throw new Error('Invalid permission revocation')
+      this.permissionFence.revoke(frame.sessionKey, context.sessionId, context.epoch)
+      this.send({ kind: 'reply', sessionKey: frame.sessionKey, requestId: frame.requestId, result: null })
+      return
+    }
+    let sessionLifetime = this.sessionRequests.get(frame.sessionKey)
+    if (!sessionLifetime) {
+      sessionLifetime = new AbortController()
+      this.sessionRequests.set(frame.sessionKey, sessionLifetime)
+    }
+    void this.options
+      .onRequest(frame, AbortSignal.any([this.requestsLifetime.signal, sessionLifetime.signal]))
+      .then(
+        (result) =>
+          this.send({
+            kind: 'reply',
+            requestId: frame.requestId,
+            sessionKey: frame.sessionKey,
+            result,
+          }),
+        (failure) => {
+          const error = failure instanceof PermissionRequestFailure ? failure.cause : failure
+          this.send({
+            kind: 'reply',
+            ...(failure instanceof PermissionRequestFailure ? { permissionEvidence: failure.evidence } : {}),
+            requestId: frame.requestId,
+            sessionKey: frame.sessionKey,
+            error:
+              frame.method === 'plugin-manage'
+                ? packageManageReplyError(error)
+                : frame.method === 'mcp-manage'
+                  ? {
+                      code:
+                        typeof (error as { data?: { code?: unknown } })?.data?.code === 'string'
+                          ? (error as { data: { code: string } }).data.code
+                          : 'HELPER_MANAGEMENT_FAILED',
+                      message:
+                        'The AGH extension operation did not finish. Check its status or policy in Settings.',
                     }
-                  : { code: 'E_REQUEST', message: String(error) },
-        }),
-    )
+                  : frame.method === 'skill-install'
+                    ? skillInstallReplyError(error)
+                    : { code: 'E_REQUEST', message: String(error) },
+          })
+        },
+      )
     this.options.onActivity?.(frame.sessionKey)
-  }
-
-  receivedBytes(): number {
-    return this.received
   }
 
   private markDead(): void {
     if (!this.alive) return
     this.alive = false
+    this.permissionFence.close()
+    this.requestsLifetime.abort('stopped')
     for (const requestId of [...this.pending.keys()])
       this.settle(requestId, (pending) => pending.reject(new Error('worker link closed')))
     for (const handler of this.exitHandlers) handler()
@@ -376,20 +447,37 @@ export class WorkerLink {
     params: Readonly<{
       binding: WorkspaceBindingFrame
       preset?: string
+      permission?: string
+      agent?: string
+      agentDigest?: string
+      bundles?: readonly string[]
+      systemPromptAppend?: string
+      loop?: LoopSelection
       resume?: boolean
       parent?: { key: string; boundarySeq: number }
     }>,
     options: WorkerCommandOptions = {},
   ): Promise<SessionOpenResult> {
     if (!this.alive) return Promise.reject(new Error('worker link closed'))
+    this.permissionFence.openSession(sessionKey)
     const requestId = `s${this.nextId++}`
-    return new Promise((resolve, reject) => {
+    const signal = options.historySignal
+    const cancel = () => {
+      if (this.alive) this.send({ kind: 'session.open.cancel', requestId, sessionKey })
+    }
+    const result = new Promise<SessionOpenResult>((resolve, reject) => {
       const pending: {
         sessionKey: string
         resolve: (value: unknown) => void
         reject: (error: unknown) => void
+        onHistoryProgress?: WorkerCommandOptions['onHistoryProgress']
         timer?: ReturnType<typeof setTimeout>
-      } = { sessionKey, resolve: (value) => resolve(value as SessionOpenResult), reject }
+      } = {
+        sessionKey,
+        resolve: (value) => resolve(value as SessionOpenResult),
+        reject,
+        ...(options.onHistoryProgress ? { onHistoryProgress: options.onHistoryProgress } : {}),
+      }
       this.pending.set(requestId, pending)
       if (options.timeoutMs) {
         pending.timer = setTimeout(() => {
@@ -398,7 +486,10 @@ export class WorkerLink {
         pending.timer.unref()
       }
       this.send({ kind: 'session.open', requestId, sessionKey, params })
+      signal?.addEventListener('abort', cancel, { once: true })
+      if (signal?.aborted) cancel()
     })
+    return result.finally(() => signal?.removeEventListener('abort', cancel))
   }
 
   tailSession(sessionKey: string, fromSeq: number, options: WorkerCommandOptions = {}): Promise<void> {
@@ -406,6 +497,8 @@ export class WorkerLink {
   }
 
   async closeSession(sessionKey: string, reason: string, options: WorkerCommandOptions = {}): Promise<void> {
+    this.permissionFence.closeSession(sessionKey)
+    this.revokeSessionRequests(sessionKey)
     try {
       await this.sendSessionLifecycle('session.close', sessionKey, { reason }, options)
     } finally {
@@ -427,6 +520,7 @@ export class WorkerLink {
         sessionKey: string
         resolve: (value: unknown) => void
         reject: (error: unknown) => void
+        onHistoryProgress?: WorkerCommandOptions['onHistoryProgress']
         timer?: ReturnType<typeof setTimeout>
       } = { sessionKey, resolve, reject }
       this.pending.set(requestId, pending)
@@ -445,12 +539,20 @@ export class WorkerLink {
     open: Readonly<{
       binding: WorkspaceBindingFrame
       preset?: string
+      permission?: string
+      agent?: string
+      agentDigest?: string
+      bundles?: readonly string[]
+      systemPromptAppend?: string
+      loop?: LoopSelection
       resume?: boolean
       parent?: { key: string; boundarySeq: number }
     }>,
     onClosed?: () => void,
+    onHistoryProgress?: WorkerCommandOptions['onHistoryProgress'],
+    historySignal?: AbortSignal,
   ): WorkerSessionChannel {
-    return new WorkerSessionChannel(sessionKey, this, open, onClosed)
+    return new WorkerSessionChannel(sessionKey, this, open, onClosed, onHistoryProgress, historySignal)
   }
 
   private sendCommand(
@@ -461,13 +563,23 @@ export class WorkerLink {
   ): Promise<unknown> {
     if (!this.alive) return Promise.reject(new Error('worker link closed'))
     const requestId = `s${this.nextId++}`
-    return new Promise((resolve, reject) => {
+    const signal = options.historySignal
+    const cancel = () => {
+      if (this.alive && sessionKey) this.send({ kind: 'session.open.cancel', requestId, sessionKey })
+    }
+    const result = new Promise<unknown>((resolve, reject) => {
       const pending: {
         sessionKey?: string
         resolve: (value: unknown) => void
         reject: (error: unknown) => void
+        onHistoryProgress?: WorkerCommandOptions['onHistoryProgress']
         timer?: ReturnType<typeof setTimeout>
-      } = { ...(sessionKey ? { sessionKey } : {}), resolve, reject }
+      } = {
+        ...(sessionKey ? { sessionKey } : {}),
+        resolve,
+        reject,
+        ...(options.onHistoryProgress ? { onHistoryProgress: options.onHistoryProgress } : {}),
+      }
       this.pending.set(requestId, pending)
       if (options.timeoutMs) {
         pending.timer = setTimeout(() => {
@@ -476,12 +588,14 @@ export class WorkerLink {
         pending.timer.unref()
       }
       this.send({ kind: 'command', requestId, ...(sessionKey ? { sessionKey } : {}), method, params })
+      signal?.addEventListener('abort', cancel, { once: true })
+      if (signal?.aborted) cancel()
     })
+    return result.finally(() => signal?.removeEventListener('abort', cancel))
   }
 
   close(reason: string): void {
     if (!this.alive) return
-    this.closeReason = reason
     this.send({ kind: 'close', reason })
     this.socket.end()
     this.markDead()
@@ -494,12 +608,4 @@ export class WorkerLink {
     }
     this.exitHandlers.push(handler)
   }
-}
-
-/** A progress frame's figures, or nothing when the worker sent something that is not one. */
-function openProgress(frame: ProgressFrame): Omit<ProgressFrame, 'kind' | 'sessionKey'> | undefined {
-  const { phase, done, total } = frame
-  if (phase !== 'verify' && phase !== 'fold') return undefined
-  if (!Number.isSafeInteger(done) || !Number.isSafeInteger(total) || done < 0 || total < 0) return undefined
-  return { phase, done, total }
 }

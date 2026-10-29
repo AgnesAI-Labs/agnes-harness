@@ -5,26 +5,29 @@
   "type": "module",
   "description": "Author-facing API for Agnes web client modules (in-page plugins); WC6 of the web client modules design",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./testkit": "./testkit/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",
-    "test": "vitest run"
+    "test": "node ../../tools/toolchain/run.mjs exec vitest run packages/web-client/test --maxWorkers=1"
   },
   "dependencies": {
     "@agnes/cordis": "workspace:*",
-    "@agnes/web-slots": "workspace:*"
+    "@agnes/web-slots": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/sdk": "workspace:*",
+    "@agnes/web-units": "workspace:*"
   },
   "peerDependencies": {
     "react": "18.3.1"
   },
   "devDependencies": {
-    "@agnes/protocol": "workspace:*",
-    "@agnes/sdk": "workspace:*",
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
     "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "react-dom": "18.3.1",
+    "happy-dom": "20.14.3"
   },
   "license": "Apache-2.0"
 }

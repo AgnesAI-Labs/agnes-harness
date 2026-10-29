@@ -2,11 +2,11 @@ import { mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } fr
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { SeamInitContext } from '@agnes/base'
-import { seams } from '@agnes/base'
+import { BASE_SEAM_PROVIDERS } from '@agnes/base'
+import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import type { LockState, ResolvedProfile, ResolveEnv } from '@agnes/host-common/profile/types'
 import { afterEach, describe, expect, it } from 'vitest'
-import { type AdapterBundle, openAdapters, toSeamAdapters } from '../src/adapters/index.js'
-import { resolveProfile } from '../src/profile/resolve.js'
-import type { LockState, ResolvedProfile, ResolveEnv } from '../src/profile/types.js'
+import { type AdapterBundle, openAdapters, toSeamAdapters } from '../src/runtime/adapters/index.js'
 
 const env: ResolveEnv = {
   platform: { os: 'linux', arch: 'x64', capabilities: {} },
@@ -15,9 +15,27 @@ const env: ResolveEnv = {
 }
 const lock: LockState = {
   packages: {
-    '@agnes/base': { version: '0.1.0', integrity: 'sha512-b', trust: 'builtin', enabled: true },
-    '@agnes/code': { version: '0.1.0', integrity: 'sha512-c', trust: 'builtin', enabled: true },
-    '@agnes/ai': { version: '0.1.0', integrity: 'sha512-a', trust: 'builtin', enabled: true },
+    '@agnes/base': {
+      version: '0.1.0',
+      source: { type: 'builtin' as const, ref: 'builtin' },
+      integrity: 'builtin:0.1.0',
+      trust: 'builtin',
+      enabled: true,
+    },
+    '@agnes/code': {
+      version: '0.1.0',
+      source: { type: 'builtin' as const, ref: 'builtin' },
+      integrity: 'builtin:0.1.0',
+      trust: 'builtin',
+      enabled: true,
+    },
+    '@agnes/ai': {
+      version: '0.1.0',
+      source: { type: 'builtin' as const, ref: 'builtin' },
+      integrity: 'builtin:0.1.0',
+      trust: 'builtin',
+      enabled: true,
+    },
   },
 }
 const log = { debug() {}, info() {}, warn() {}, error() {} }
@@ -41,7 +59,10 @@ async function openCheckpoint(profile: ResolvedProfile, dataDir: string, workspa
     signal: new AbortController().signal,
   }
   try {
-    return { bundle, checkpoint: await seams.checkpoint(context) }
+    return {
+      bundle,
+      checkpoint: await BASE_SEAM_PROVIDERS.checkpoint.create(context, new AbortController().signal),
+    }
   } catch (error) {
     await bundle.close()
     throw error
@@ -68,19 +89,56 @@ describe('@agnes/base checkpoint against real host adapters', () => {
       const opened = await openCheckpoint(profile, dataDir, workspaceRoot)
       first = opened.bundle
       const saved = await opened.checkpoint.snapshot(['state.txt'], 'turn-1/step-1')
-      expect(await opened.checkpoint.list()).toEqual([{ id: saved.id, stepId: 'turn-1/step-1' }])
+      expect(await opened.checkpoint.list()).toMatchObject([
+        { id: saved.id, stepId: 'turn-1/step-1', paths: ['state.txt'] },
+      ])
       await first.close()
       first = undefined
 
       await writeFile(join(workspaceRoot, 'state.txt'), 'after')
       const next = await openCheckpoint(profile, dataDir, workspaceRoot)
       reopened = next.bundle
-      expect(await next.checkpoint.list()).toEqual([{ id: saved.id, stepId: 'turn-1/step-1' }])
+      expect(await next.checkpoint.list()).toMatchObject([
+        { id: saved.id, stepId: 'turn-1/step-1', paths: ['state.txt'] },
+      ])
       await next.checkpoint.rewind(saved.id)
       expect(await readFile(join(workspaceRoot, 'state.txt'), 'utf8')).toBe('before')
     } finally {
       await first?.close()
       await reopened?.close()
+    }
+  })
+
+  it('keeps a session’s workspace-fitted checkpoint usable when its seam instance is rebuilt in the same container', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agnes-checkpoint-rebuild-'))
+    roots.push(root)
+    const workspaceRoot = join(root, 'workspace')
+    const dataDir = join(root, 'data')
+    await mkdir(workspaceRoot)
+    await writeFile(join(workspaceRoot, 'state.txt'), 'before')
+    const profile = await resolveProfile({ builtin: 'local-dev', lock }, env)
+    const opened = await openCheckpoint(profile, dataDir, workspaceRoot)
+    try {
+      const fit = opened.checkpoint.forWorkspace
+      if (!fit) throw new Error('the base checkpoint fits itself to a session workspace')
+      const derived = await fit.call(opened.checkpoint, {
+        root: workspaceRoot,
+        fs: opened.bundle.fs,
+      } as never)
+      // The instance owns no resource that a rebuild would release; the derived object lives on the
+      // process adapters, so replacing the instance behind the stable facade cannot strand it.
+      expect(typeof (opened.checkpoint as { close?: unknown }).close).toBe('undefined')
+      const replacement = await openCheckpoint(profile, dataDir, workspaceRoot).then(async (next) => {
+        await next.bundle.close()
+        return next.checkpoint
+      })
+      const saved = await derived.snapshot(['state.txt'], 'turn-1/step-1')
+      expect(await derived.list()).toMatchObject([
+        { id: saved.id, stepId: 'turn-1/step-1', paths: ['state.txt'] },
+      ])
+      expect(replacement).not.toBe(opened.checkpoint)
+    } finally {
+      await opened.bundle.close()
     }
   })
 

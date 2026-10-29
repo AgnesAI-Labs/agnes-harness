@@ -1,0 +1,15 @@
+---
+name: remembering
+description: Remember stable user preferences and workspace conventions through approved Markdown memory files; consolidate or correct learned memory.
+---
+
+# Remember durable preferences
+
+1. Read the active memory contribution. If permission is off, neither read nor write memory. Do not use shell, aliases, links, other workspaces or another tool to bypass this setting.
+2. Remember only stable user preferences, project conventions or decisions useful in later sessions. Never save credentials, tokens, secrets, personal identifiers, one-off task details, chat transcripts, copied knowledge-base material or speculative claims. History belongs in session search; source documents belong in a knowledge base.
+3. Use ordinary read/write/edit tools only in the directory supplied by the active memory provider. Read a file before replacing or editing it. The index is MEMORY.md; use small flat Markdown topic files for optional detail. Topic reads show the same turn revision as the injected index.
+4. Consolidate and correct existing text instead of appending duplicates. Keep the index under the configured byte and line caps. Storage caps and context token budgets are separate. An omission marker means the complete file still exists; read relevant topics on demand. A failed consolidation must leave the original intact.
+5. In ask mode, submit the complete file change through ordinary tools. The normal approval shows its diff, base/new hashes and source session/turn. A rejection or cancellation commits nothing. Approval applies only to that exact candidate and base revision; never treat full access, a session grant or an earlier approval as memory-write permission.
+6. Write a topic successfully before adding its index link. Each file commits separately: report a topic written but an index refused as a partial result. Do not claim both committed. On a conflict, preserve the human or other session's edit, wait for the next turn's revision, read again and merge before proposing another change. Never retry stale writes blindly.
+7. AGENTS.md team rules and authoritative knowledge sources win over learned memory. Correct conflicting memory through the same approval path. Do not silently edit AGENTS.md or a knowledge base while consolidating memory.
+8. Verify the tool's actual result before claiming a preference was saved. Learned content stays local; diagnostics and telemetry expose structural metadata only. The human can review or edit files and disable agent access in Settings → Memory.

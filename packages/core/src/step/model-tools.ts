@@ -1,8 +1,9 @@
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
+import type { ToolDef } from '@agnes/extension-api'
 import type { ModelRecord, Provider } from '@agnes/protocol'
 import { validateAgainst } from '@agnes/protocol'
 import { ModelRecord as ModelRecordSchema } from '@agnes/protocol/gen/model'
 import type { RegisteredTool, RegistrySnapshot } from '../registry/tools.js'
-import { canonicalJson, sha256Hex } from '../request/hash.js'
 
 export type ModelInput = readonly ('text' | 'image')[]
 
@@ -39,10 +40,40 @@ export function supportsComputerUse(input: ModelInput): boolean {
   return input.includes('text') && input.includes('image')
 }
 
-/** Hide Computer Use from operation-owned tool renderers such as the code-mode SDK. */
+export function modelAllowsTool(
+  tool: { meta: Pick<ToolDef['meta'], 'requiresImageInput'> },
+  computerUseAllowed: boolean,
+): boolean {
+  return tool.meta.requiresImageInput !== true || computerUseAllowed
+}
+
+/** Platform action targets stay executable internally but never enter model discovery or schemas. */
+export function modelVisibleTool(tool: Pick<ToolDef, 'meta'>, computerUseAllowed: boolean): boolean {
+  return tool.meta.modelVisible !== false && modelAllowsTool(tool, computerUseAllowed)
+}
+
+/** Filter model discovery and operation-owned renderers such as the code-mode SDK. */
 export function toolsForModel(snapshot: RegistrySnapshot, computerUseAllowed: boolean): RegistrySnapshot {
-  if (computerUseAllowed || !snapshot.byName.has('computer_use')) return snapshot
-  const defs = Object.freeze(snapshot.defs.filter((definition) => definition.name !== 'computer_use'))
+  return narrowSnapshot(snapshot, (definition) => modelVisibleTool(definition, computerUseAllowed))
+}
+
+/**
+ * The turn catalog for a turn nobody attends: tools that need a person present are left out
+ * entirely, so the model is neither offered them nor able to call them, and discovery cannot find
+ * them. An attended turn keeps the snapshot as it is.
+ */
+export function toolsForAttendance(snapshot: RegistrySnapshot, unattended: boolean): RegistrySnapshot {
+  return unattended
+    ? narrowSnapshot(snapshot, (definition) => definition.meta.requiresUser !== true)
+    : snapshot
+}
+
+function narrowSnapshot(
+  snapshot: RegistrySnapshot,
+  keep: (definition: ToolDef) => boolean,
+): RegistrySnapshot {
+  const defs = Object.freeze(snapshot.defs.filter(keep))
+  if (defs.length === snapshot.defs.length) return snapshot
   const byName = new Map<string, RegisteredTool>()
   for (const definition of defs) {
     const registered = snapshot.byName.get(definition.name)
@@ -54,6 +85,13 @@ export function toolsForModel(snapshot: RegistrySnapshot, computerUseAllowed: bo
   return Object.freeze({ defs, byName, hash, takenAtSeq: snapshot.takenAtSeq })
 }
 
-export function toolNamesForModel(names: readonly string[], computerUseAllowed: boolean): string[] {
-  return computerUseAllowed ? [...names] : names.filter((name) => name !== 'computer_use')
+export function toolNamesForModel(
+  names: readonly string[],
+  snapshot: RegistrySnapshot,
+  computerUseAllowed: boolean,
+): string[] {
+  return names.filter((name) => {
+    const tool = snapshot.byName.get(name)
+    return !tool || modelVisibleTool(tool, computerUseAllowed)
+  })
 }

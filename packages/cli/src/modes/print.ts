@@ -1,19 +1,46 @@
+import { randomUUID } from 'node:crypto'
+import { constants } from 'node:fs'
+import { writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import type { EffectIntent, EffectSettled, EventEnvelope, ToolCall, TurnEndReason } from '@agnes/protocol'
+import { publicErrorHelp } from '@agnes/protocol'
 import type { Session } from '@agnes/sdk'
-import { CommandError, exitCodeForReason, SIGNAL_EXIT_CODES, type SignalName, UsageError } from '../errors.js'
+import {
+  CommandError,
+  ExitCode,
+  exitCodeForReason,
+  SIGNAL_EXIT_CODES,
+  type SignalName,
+  UsageError,
+} from '../errors.js'
+import { checkStructured, loadOutputSchema, schemaInstruction } from '../output-schema.js'
+import { timingMark } from '../timing.js'
+import { parseTimeoutMs, parseTurnCaps, requireTurnCaps, timeLimitCap } from '../turn-caps.js'
 import type { Booted, ParsedArgs } from '../types.js'
+import { resolveAppendSystemPrompt, verifyAppendApplied } from './append-system-prompt.js'
 import { readPromptInput } from './prompt-input.js'
-import { cliResultLine, findParkedTicket, lastAssistantText } from './result-line.js'
+import { cliEventLine, cliResultLine, findParkedTicket, lastAssistantText } from './result-line.js'
+import { applyToolFilter } from './tool-filter.js'
+
+export type Breadcrumb = {
+  /** The session last used in this terminal pane for `cwd`, if one was left. Never throws. */
+  read(cwd: string): string | undefined
+  /** Remember `sessionKey` for this pane. Failures are ignored: a breadcrumb is a convenience. */
+  write(sessionKey: string, cwd: string): void
+}
 
 export type PrintIO = {
-  stdout: NodeJS.WritableStream
+  stdout: NodeJS.WritableStream & { isTTY?: boolean }
   stderr: NodeJS.WritableStream & { isTTY?: boolean }
   stdin: NodeJS.ReadableStream & { isTTY?: boolean }
   cwd: string
+  locale?: string
   /** How the signal ladder reaches the turn in flight. Absent in tests that send no signals. */
   registerCancel?: (cancel: () => Promise<void>) => void
   /** Which signal, if any, has arrived. Read after the turn: an abort's exit code is the signal's. */
   signal?: () => SignalName | undefined
+  /** This terminal pane's memory of its last session; absent over --connect and without a pane id. */
+  breadcrumb?: Breadcrumb
 }
 
 /**
@@ -53,9 +80,21 @@ export function resumedSessionId(p: ParsedArgs): string | undefined {
  * orders it by recent activity; an archived session is one the user put away, so it is skipped the way
  * the Web sidebar skips it.
  */
-export async function sessionToOpen(booted: Booted, p: ParsedArgs, cwd: string): Promise<string | undefined> {
+export async function sessionToOpen(
+  booted: Booted,
+  p: ParsedArgs,
+  cwd: string,
+  breadcrumb?: Breadcrumb,
+): Promise<string | undefined> {
   const named = resumedSessionId(p)
   if (named !== undefined || !p.continue) return named
+  // The session this terminal pane used last wins over the most recent one in the directory, so two
+  // panes in one directory each get their own back. It must still exist here and not be archived.
+  const left = breadcrumb?.read(cwd)
+  if (left !== undefined) {
+    const found = await booted.client.session.list({ q: { cwd, text: left }, limit: 50 })
+    if (found.items.some((item) => item.sessionId === left && item.archived !== true)) return left
+  }
   const page = await booted.client.session.list({ q: { cwd }, limit: 50 })
   const latest = page.items.find((item) => item.archived !== true)
   if (!latest) throw new CommandError(`--continue found no session in ${cwd}; run without it to start one`)
@@ -83,9 +122,20 @@ export function refuseWhatCannotBeHonoured(p: ParsedArgs): void {
     )
   if (p.preset !== undefined && (p.continue || resumedSessionId(p) !== undefined))
     throw new UsageError('--preset cannot be applied to a resumed session: session/load takes no preset')
+  if (p.permission !== undefined && (p.continue || resumedSessionId(p) !== undefined))
+    throw new UsageError(
+      '--permission cannot be applied to a resumed session: session/load takes no permission',
+    )
 }
 
-async function openSession(booted: Booted, p: ParsedArgs, cwd: string): Promise<Session> {
+async function openSession(
+  booted: Booted,
+  p: ParsedArgs,
+  cwd: string,
+  breadcrumb?: Breadcrumb,
+  append?: string,
+  locale = 'en',
+): Promise<Session> {
   // `session/load` rather than attach: a session this daemon has not opened yet is not in its
   // registry, and attach requires one. Load opens it from the ledger and replays it, which is what
   // makes `agnes --resume <id> -p` pick up a session the previous process left behind.
@@ -94,10 +144,33 @@ async function openSession(booted: Booted, p: ParsedArgs, cwd: string): Promise<
   // there the cwd becomes that session's own -- sdk's default empty string put every relative path
   // a tool was handed outside the workspace root, which only a resumed run against a real model
   // showed, because a unit test on either side agreed with itself.
-  const resume = await sessionToOpen(booted, p, cwd)
+  const resume = await sessionToOpen(booted, p, cwd, breadcrumb)
   if (resume !== undefined) return booted.client.session.load(resume, { cwd })
   await booted.client.workspace.add(cwd)
-  return booted.client.session.new({ cwd, ...(p.preset ? { preset: p.preset } : {}) })
+  const extraDirs = p.addDir
+    ? await (await import('./add-dir.js')).addDirectoriesFor(booted.client, p, locale)
+    : {}
+  const session = await booted.client.session.new({
+    cwd,
+    ...extraDirs,
+    ...(p.preset ? { preset: p.preset } : {}),
+    ...(p.permission !== undefined || !p.agent ? { permission: p.permission ?? 'default' } : {}),
+    ...(p.loop ? { loop: p.loop } : {}),
+    ...(p.agent ? { agent: p.agent } : {}),
+    ...(append === undefined ? {} : { systemPromptAppend: append }),
+    ...(p.agent || p.loop || p.newSession || append !== undefined
+      ? { sessionKey: `agnes:local:${booted.profileName}:cli:${p.loop ? 'loop' : 'session'}:${randomUUID()}` }
+      : {}),
+  })
+  if (append !== undefined) {
+    try {
+      await verifyAppendApplied(booted.client, session.id, append)
+    } catch (error) {
+      await session.detach().catch(() => undefined)
+      throw error
+    }
+  }
+  return session
 }
 
 /** Resolves to true if `p` settled within `ms`, false if the deadline came first. */
@@ -127,15 +200,14 @@ function reasonFromThrow(e: unknown): TurnEndReason | null {
   return typeof reason === 'string' ? (reason as TurnEndReason) : null
 }
 
-// `error{code,message}` as the turn/end row (or daemon's TURN_ERROR data) carries it. The message is
-// already redacted upstream; this only keeps it to one printable line.
-function errorCause(error: unknown): string {
-  const e = error as { code?: unknown; message?: unknown } | null | undefined
-  return [e?.code, e?.message]
-    .filter((part): part is string => typeof part === 'string' && part.length > 0)
-    .join(' ')
-    .replace(/\p{Cc}+/gu, ' ')
-    .slice(0, 200)
+/** Only schema-owned reasons and actions are public; turn messages may contain provider logs. */
+// C0 except line feed, DEL and C1: a reply cannot reach a terminal as escapes. Tab becomes spaces.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: removing them is the point
+const TERMINAL_CONTROL = /[\x00-\x09\x0b-\x1f\x7f-\x9f]/g
+
+function errorCause(error: unknown, locale = 'en'): string {
+  const help = publicErrorHelp(error, locale)
+  return help ? `${help.code}: ${help.reason} ${help.action}` : ''
 }
 
 /**
@@ -150,23 +222,33 @@ function errorCause(error: unknown): string {
  */
 export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Promise<number> {
   refuseWhatCannotBeHonoured(p)
+  const caps = parseTurnCaps(p)
+  const timeoutMs = parseTimeoutMs(p)
+  // Both machine modes keep stderr quiet; stream-json only adds one stdout line per event.
+  const machine = p.mode === 'json' || p.mode === 'stream-json'
+  // Switched off before the result line so a late row cannot land after it.
+  let streaming = p.mode === 'stream-json'
 
+  // Before anything is sent: a schema that cannot be used is a usage error, not a failed run.
+  const outputSchema = p.outputSchema === undefined ? undefined : loadOutputSchema(p.outputSchema, io.cwd)
   const blocks = await readPromptInput({
     positional: (p.command === 'resume' ? p.positional.slice(1) : p.positional).join(' '),
     stdin: io.stdin,
     stdinIsTTY: io.stdin.isTTY === true,
   })
+  if (outputSchema) blocks.push({ type: 'text', text: schemaInstruction(outputSchema, io.locale) })
   // The ladder can only cancel a turn that exists. A signal that lands before the prompt is sent --
   // while stdin is still being read, or while the session opens -- is honoured by never sending it.
   const signalledBeforePrompt = (): number | undefined => {
     const signal = io.signal?.()
     if (!signal) return undefined
-    if (p.mode !== 'json')
-      io.stderr.write(`agnes: ${signal}; prompt not sent (exit ${SIGNAL_EXIT_CODES[signal]})\n`)
+    if (!machine) io.stderr.write(`agh: ${signal}; prompt not sent (exit ${SIGNAL_EXIT_CODES[signal]})\n`)
     return SIGNAL_EXIT_CODES[signal]
   }
   const early = signalledBeforePrompt()
   if (early !== undefined) return early
+  // A bad flag or file is a usage error before the session exists.
+  const append = await resolveAppendSystemPrompt(p, io.cwd)
 
   // Heterogeneous by design: a row this client dropped arrives as `kind: 'invalid-event'` from sdk
   // itself, a daemon notice arrives with the daemon's own kind. Discriminating on `kind` is the only
@@ -174,11 +256,17 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
   // never printed -- so it goes to stderr whether or not anyone is watching a terminal.
   const offNotice = booted.client.on('notice', (payload) => {
     const kind = (payload as { kind?: unknown } | null)?.kind
-    io.stderr.write(`agnes: notice ${typeof kind === 'string' ? kind : 'unknown'}\n`)
+    io.stderr.write(`agh: notice ${typeof kind === 'string' ? kind : 'unknown'}\n`)
   })
 
   try {
-    const session = await openSession(booted, p, io.cwd)
+    await requireTurnCaps(booted.client, caps)
+    Object.assign(caps, await timeLimitCap(booted.client, timeoutMs))
+    const session = await openSession(booted, p, io.cwd, io.breadcrumb, append, io.locale)
+    io.breadcrumb?.write(session.id, io.cwd)
+    io.stderr.write(`Session: ${session.id}\n`)
+    // Before the model switch, attach and the one prompt: the agent never sees a tool the user took away.
+    if (p.toolFilter) await applyToolFilter(session, p.toolFilter)
     // Before attach/prompt, not after: setModel takes effect for the next request onward, so it has
     // to land before the one prompt this invocation is about to send, not race it.
     if (p.model) await session.setModel(p.model)
@@ -199,11 +287,17 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     const toolNames = new Map<string, string>()
     const toolEffects = new Map<string, string>()
     const events: EventEnvelope[] = []
+    let sawToken = false
     const collector = (async () => {
       for await (const e of session.events()) {
         if (e.seq <= startSeq) continue
+        if (!sawToken && (e.type === 'assistant/output' || e.type === 'assistant/message')) {
+          sawToken = true
+          timingMark('first-token')
+        }
         events.push(e)
-        if (p.mode !== 'json') {
+        if (streaming) io.stdout.write(cliEventLine(e))
+        if (!machine) {
           if (e.type === 'tool/call') {
             const call = e.data as ToolCall
             toolNames.set(call.toolUseId, call.name)
@@ -225,11 +319,22 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
       }
     })()
 
+    // The deadline starts with the prompt and uses the same cancel a signal does. Whether it fired is
+    // remembered here because the turn itself only reports `aborted`.
+    let timedOut = false
+    const deadline =
+      timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            timedOut = true
+            void session.cancel().catch(() => undefined)
+          }, timeoutMs)
     let outcome: Outcome
     let threw = false
     let thrownError: unknown
     try {
-      const r = await session.prompt(blocks)
+      // Nobody attends a -p run, so its turn offers no tool that waits on a person (see headless.md).
+      const r = await session.prompt(blocks, { ...caps, unattended: true })
       outcome = { reason: r.reason, lastSeq: r.lastSeq, ...(r.credits ? { credits: r.credits } : {}) }
     } catch (e) {
       const reason = reasonFromThrow(e)
@@ -238,10 +343,11 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
       thrownError = (e as { data?: { error?: unknown } }).data?.error
       outcome = { reason, lastSeq: session.lastSeq }
     }
+    clearTimeout(deadline)
     const drained = await settleWithin(collector, threw ? ERROR_DRAIN_MS : DRAIN_MS)
     if (!drained && !threw)
       io.stderr.write(
-        `agnes: no turn/end row arrived within ${DRAIN_MS} ms; the reason below is the one the reply carried\n`,
+        `agh: no turn/end row arrived within ${DRAIN_MS} ms; the reason below is the one the reply carried\n`,
       )
 
     // The ledger row wins over what the response implied. sdk derives the reason from the terminal
@@ -261,11 +367,42 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     // leaves with this same number by its own route, so the two cannot disagree -- which they did
     // while `aborted` was pinned to 130 and a SIGTERM raced it.
     const signal = io.signal?.()
-    const exitCode = signal ? SIGNAL_EXIT_CODES[signal] : exitCodeForReason(reason)
+    let exitCode: number = signal ? SIGNAL_EXIT_CODES[signal] : exitCodeForReason(reason)
+    // A signal still wins; a turn that finished before the cancel landed keeps its own code.
+    if (timedOut && !signal && reason !== 'completed') {
+      exitCode = ExitCode.TIMEOUT
+      io.stderr.write(`agh: timeout after ${p.timeout}s; turn cancelled (exit ${ExitCode.TIMEOUT})\n`)
+    }
     const ticket = reason === 'parked' ? findParkedTicket(events) : undefined
+    const turnError = (ended?.data as { error?: unknown } | null)?.error ?? thrownError
+    const errorCode = reason === 'error' ? (turnError as { code?: unknown } | undefined)?.code : undefined
     const text = lastAssistantText(events)
-    if (p.mode === 'json') {
-      // I1 writes the result line and nothing else; the per-event JSONL stream is Task 9.
+    // Only a turn that completed is checked; any other ending keeps its own code and prints as before.
+    const structured =
+      outputSchema && exitCode === ExitCode.OK ? checkStructured(text, outputSchema) : undefined
+    if (structured && !structured.ok) {
+      exitCode = ExitCode.SCHEMA_MISMATCH
+      for (const line of structured.errors) io.stderr.write(`agh: output schema: ${line}\n`)
+    }
+    streaming = false
+    if (p.outputFile !== undefined) {
+      try {
+        // A checkout can commit the output name as a symlink to a file the run may write, and the
+        // reply can carry secrets: never follow a link, and create the file private.
+        await writeFile(
+          resolve(io.cwd, p.outputFile),
+          structured?.ok ? `${JSON.stringify(structured.value)}\n` : text ? `${text}\n` : '',
+          {
+            flag: constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0),
+            mode: 0o600,
+          },
+        )
+      } catch (e) {
+        throw new CommandError(`--output-file ${p.outputFile}: ${(e as Error).message}`)
+      }
+    }
+    if (machine) {
+      // The result line is last in both machine modes; stream-json has already written the events.
       io.stdout.write(
         cliResultLine({
           sessionId: session.id,
@@ -274,23 +411,39 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
           lastSeq,
           ...(outcome.credits ? { credits: outcome.credits } : {}),
           ...(ticket ? { ticket } : {}),
+          // A turn can end in `error` with no turn/end row behind it; the code is what a wrapper has.
+          ...(typeof errorCode === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(errorCode)
+            ? { error: { code: errorCode } }
+            : {}),
           text,
+          ...(structured?.ok ? { structured: structured.value } : {}),
         }),
       )
     } else if (reason === 'parked') {
       io.stdout.write(`parked ticket=${ticket ?? '?'} session=${session.id}\n`)
+    } else if (structured?.ok) {
+      io.stdout.write(`${JSON.stringify(structured.value)}\n`)
     } else if (text) {
-      io.stdout.write(`${text}\n`)
+      // A terminal would act on escapes in the reply (clipboard writes, title, repaint); a pipe gets
+      // the reply byte for byte.
+      io.stdout.write(
+        `${io.stdout.isTTY ? text.replace(TERMINAL_CONTROL, (c) => (c === '\t' ? '    ' : '')) : text}\n`,
+      )
     }
     // The reason word on every non-zero exit, in text mode as well as json. `blocked` and `budget`
     // share exit 4 by design and want opposite remediations -- raise the budget and retry, or never
     // retry at all -- so a wrapper reading the integer alone either retries forever or gives up on a
     // turn that would have succeeded. The word is what tells them apart. An `error` turn also names
     // its cause: without it the caller cannot tell a bad key from an unknown model from an outage.
-    if (exitCode !== 0 && p.mode !== 'json') {
-      const cause = errorCause((ended?.data as { error?: unknown } | null)?.error ?? thrownError)
+    if (
+      exitCode !== 0 &&
+      exitCode !== ExitCode.SCHEMA_MISMATCH &&
+      exitCode !== ExitCode.TIMEOUT &&
+      !machine
+    ) {
+      const cause = errorCause(turnError, io.locale)
       io.stderr.write(
-        `agnes: ${signal ? `${signal}; ` : ''}turn ended: ${reason} (exit ${exitCode})${cause ? `: ${cause}` : ''}\n`,
+        `agh: ${signal ? `${signal}; ` : ''}turn ended: ${reason} (exit ${exitCode})${cause ? `: ${cause}` : ''}\n`,
       )
     }
     return exitCode

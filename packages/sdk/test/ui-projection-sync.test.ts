@@ -73,6 +73,26 @@ function patchOf(from: number, upto: number, totalNodes: number, changes: UITime
 }
 
 describe('the pure patch functions', () => {
+  it.each([undefined, []])(
+    'preserves or clears live status slots with %s without changing history coordinates',
+    (slots) => {
+      const original = [
+        {
+          slot: 'status.line' as const,
+          extId: 'agnes/goal',
+          payload: { text: 'Goal paused', level: 'info' },
+        },
+      ]
+      const current = deepFreeze({ ...timeline(1, []), slots: original })
+      const patch = deepFreeze({ ...patchOf(1, 2, 0, []), ...(slots ? { slots } : {}) })
+      expect(applyUITimelinePatch(current, patch).slots).toEqual(slots ?? original)
+      const window = applyWindowedUITimelinePatch(current, { startIndex: 0, totalNodes: 0 }, patch)
+      expect(window.timeline.slots).toEqual(slots ?? original)
+      expect(window.timeline.nodes).toEqual([])
+      expect(window.coordinates.startIndex).toBe(0)
+    },
+  )
+
   it.each([undefined, [], [{ itemId: 'C', preview: 'C' }]])(
     'replaces pending input with %s without transcript changes',
     (pendingInputs) => {
@@ -404,12 +424,13 @@ describe('UIProjectionSync connection gate', () => {
 })
 
 describe('UIProjectionSync event bypass', () => {
-  it('passes each later event to the sink once', async () => {
+  it('passes each later event once and projects turn completion without the ordinary delay', async () => {
     vi.useFakeTimers()
     const h = harness({}, open(3, []))
     await h.sync.start()
     await h.emit({ seq: 2 })
     await h.emit({ seq: 4, type: 'turn/end' })
+    expect(h.projectUIPatch).toHaveBeenCalledWith(3, undefined, { surface: 'tui' })
     await h.emit({ seq: 4, type: 'turn/end' })
     expect(h.sink.event.mock.calls.map(([event]) => (event as LedgerEvent).seq)).toEqual([4])
     await h.sync.stop()
@@ -464,6 +485,30 @@ describe('UIProjectionSync review fixes', () => {
 })
 
 describe('UIProjectionSync previews', () => {
+  it('projects a stream start immediately and retains terminal urgency behind an in-flight patch', async () => {
+    vi.useFakeTimers()
+    const h = harness()
+    await h.sync.start()
+    let finish!: (value: Update) => void
+    h.projectUIPatch.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    await h.emit({ seq: 1, type: 'assistant/output', data: { state: 'started' } } as Partial<LedgerEvent> & {
+      seq: number
+    })
+    expect(h.projectUIPatch).toHaveBeenCalledTimes(1)
+    await h.emit({ seq: 2, type: 'turn/end' })
+    expect(h.projectUIPatch).toHaveBeenCalledTimes(1)
+    finish({ kind: 'patch', patch: patchOf(0, 1, 0, []) })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(h.projectUIPatch).toHaveBeenCalledTimes(2)
+    expect(h.projectUIPatch).toHaveBeenLastCalledWith(1, undefined, { surface: 'tui' })
+    await h.sync.stop()
+  })
+
   it('asks for previews on the attach and forwards them until stopped', async () => {
     const iterator = {
       next: () => new Promise<IteratorResult<LedgerEvent>>(() => undefined),

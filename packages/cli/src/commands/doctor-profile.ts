@@ -4,6 +4,7 @@ import {
   createPlatform,
   type LockState,
   type PlatformBackend,
+  probeLinuxSandboxSupport,
   type ResolvedProfile,
   resolveConfiguredPowerShell,
   resolveProfile,
@@ -27,7 +28,7 @@ export async function doctorPlatform(
           `PowerShell ${shell.version} (${shell.edition})`,
           `shell path ${shell.path}`,
           `native arguments ${shell.nativeArguments}`,
-          ...(shell.codePage === undefined ? [] : [`console code page ${shell.codePage}`]),
+          ...(shell.codePage ? [`console code page ${shell.codePage}`] : []),
         )
       } catch {
         return {
@@ -40,17 +41,24 @@ export async function doctorPlatform(
         }
       }
     }
+    if (platform.os === 'linux' && platform.matches()) {
+      const support = await probeLinuxSandboxSupport()
+      shellDetail.push(
+        `bubblewrap=${support.bubblewrap}; install bubblewrap and enable user namespaces for L1. Presence alone does not verify the boundary.`,
+        `Landlock ABI=${support.landlockAbi}; diagnostic only, AGH currently uses bubblewrap for Linux command isolation.`,
+        'Unavailable L1 refuses commands by default. Explicit full-access runs commands without OS confinement and keeps memory enabled; the shell can then change memory files directly.',
+        'Computer Use is unsupported by the current pinned Linux driver admission; a graphical session alone cannot enable it.',
+      )
+    }
     return {
       name: 'platform',
       status: Object.values(snapshot.capabilities).some((value) => value !== 'full') ? 'warn' : 'ok',
       detail: [
         `os ${snapshot.os} ${snapshot.arch}`,
         ...shellDetail,
-        // A level below full carries the platform's own reason on the next line, so "not probed
-        // yet" and "probed and failed" can be told apart. The level lines keep their old shape.
         ...Object.entries(snapshot.capabilities).flatMap(([key, value]) => {
-          const reason = value === 'full' ? undefined : platform.capability(key).reason
-          return reason ? [`${key}=${value}`, `${key}.reason=${reason}`] : [`${key}=${value}`]
+          const reason = value !== 'full' ? platform.capability(key).reason : undefined
+          return [`${key}=${value}`, ...(reason ? [`${key}.reason=${reason}`] : [])]
         }),
       ],
     }
@@ -67,6 +75,7 @@ export async function doctorPlatform(
 export async function resolveDoctorProfile(
   d: BootDeps & { lock?: LockState; configuration?: ConfigurationService },
   p: ParsedArgs,
+  compositionInputs: { adminBundles?: readonly string[] } = {},
 ): Promise<ResolvedProfile> {
   const cwd = p.cwd ?? d.cwd
   const name = profileNameFrom(p, d.env)
@@ -83,16 +92,19 @@ export async function resolveDoctorProfile(
   })
   const platform = createPlatform()
   await platform.probe({ root: cwd })
-  return resolveProfile(inputs, {
-    platform: platform.snapshot(),
-    agnesVersion: d.agnesVersion,
-    now: new Date().toISOString(),
-    // Without this, an unset dataDir/cacheDir would expand against the raw OS home instead of
-    // d.home (AGH_HOME), which for a plain `agnes doctor` run are the same directory anyway --
-    // but not for a custom AGH_HOME or an `--ephemeral` run, where it would resolve a profile
-    // that assembleLocalHost never would, and could put a probe's own writes in the real home.
-    homeDir: d.home,
-  })
+  return resolveProfile(
+    { ...inputs, ...compositionInputs },
+    {
+      platform: platform.snapshot(),
+      agnesVersion: d.agnesVersion,
+      now: new Date().toISOString(),
+      // Without this, an unset dataDir/cacheDir would expand against the raw OS home instead of
+      // d.home (AGH_HOME), which for a plain `agnes doctor` run are the same directory anyway --
+      // but not for a custom AGH_HOME or an `--ephemeral` run, where it would resolve a profile
+      // that assembleLocalHost never would, and could put a probe's own writes in the real home.
+      homeDir: d.home,
+    },
+  )
 }
 
 export async function doctorProfile(d: BootDeps & { lock?: LockState }, p: ParsedArgs): Promise<Section> {
@@ -106,22 +118,16 @@ export async function doctorProfile(d: BootDeps & { lock?: LockState }, p: Parse
 
 /** Projects the one profile resolved by the aggregate command without resolving it a second time. */
 export function doctorResolvedProfile(profile: ResolvedProfile): Section {
-  // A session opens under the default preset unless one is named, and the host refuses any preset
-  // that is not listed, so a default outside the list leaves no preset a session can start under.
-  const { default: defaultPreset, allowed } = profile.presets
-  const unlisted = !allowed.includes(defaultPreset)
   return {
     name: 'profile',
-    status: unlisted ? 'fail' : 'ok',
+    status: profile.presets.allowed.includes(profile.presets.default) ? 'ok' : 'fail',
     detail: [
+      `presets default ${profile.presets.default}; allowed ${profile.presets.allowed.join(', ')}`,
+      ...(profile.presets.allowed.includes(profile.presets.default)
+        ? []
+        : ['presets.default must be listed in presets.allowed before a session can start.']),
       `${profile.name} hash ${profile.hash}`,
       `packages ${profile.packages.map((pkg) => pkg.id).join(', ')}`,
-      `presets default ${defaultPreset}, allowed ${allowed.join(', ') || '(none)'}`,
-      ...(unlisted
-        ? [
-            `presets.default "${defaultPreset}" is not in presets.allowed: no session can start under it, and a preset that is not listed is refused when named. List it in presets.allowed.`,
-          ]
-        : []),
       `dataDir ${profile.dataDir}`,
       `cacheDir ${profile.cacheDir}`,
     ],

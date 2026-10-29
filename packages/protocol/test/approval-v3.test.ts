@@ -18,30 +18,20 @@ const event = (type: string, data: unknown) => ({
 })
 
 describe('v3 approval protocol', () => {
-  it('accepts allowed-permanent with explicit scope and grant id', () => {
-    expect(
-      validateEvent(
-        event('approval/decided', {
-          requestId: 'r1',
-          verdict: 'allowed-permanent',
-          via: 'sync',
-          scope: 'cua:click:background',
-          grantId: 'grant-r1',
-        }),
-      ).ok,
-    ).toBe(true)
-  })
-
   it('validates a durable grant with actor org and policy version bindings', () => {
     expect(
       validateAgainst(ApprovalGrant, {
         grantId: 'g1',
-        profileHash: `sha256-${'a'.repeat(64)}`,
+        policyDigest: `sha256-${'a'.repeat(64)}`,
         actorId: 'u',
         actorOrg: 'o',
         toolId: 'computer_use',
         scope: 'cua:click:background',
         policyVersion: 'cua-v1',
+        sourceDecisionId: 'decision-fixture',
+        issuer: { id: 'reviewer', org: 'local', role: 'user' as const, deptPath: [], attrs: {} },
+        definitionFingerprint: 'd'.repeat(64),
+        policyBinding: 'e'.repeat(64),
         createdAt: '2026-09-17T00:00:00.000Z',
       }).ok,
     ).toBe(true)
@@ -52,9 +42,9 @@ describe('v3 approval protocol', () => {
     expect(fromAcpOptionKind('allow_always')).toBe('allowed-session')
   })
 
-  it('allows fragments to select manual/smart but never to escalate themselves to off', () => {
+  it('allows fragments to select manual but never to escalate themselves to off', () => {
     expect(validateProfileFragment({ approvals: { mode: 'manual' } }).ok).toBe(true)
-    expect(validateProfileFragment({ approvals: { mode: 'smart' } }).ok).toBe(true)
+    expect(validateProfileFragment({ approvals: { mode: 'smart' } }).ok).toBe(false)
     expect(validateProfileFragment({ approvals: { mode: 'off' } }).ok).toBe(false)
   })
 })

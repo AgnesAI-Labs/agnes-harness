@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import * as testkit from '@agnes/extension-api/testkit'
+import * as persistenceTestkit from '@agnes/extension-api/testkit/persistence-contract'
 import { describe, expect, it } from 'vitest'
 import * as api from '../src/index.js'
 import { releaseProblems } from '../tools/release-check-core.js'
@@ -17,13 +18,28 @@ const input = {
 describe('author API consistency', () => {
   it('pins root and optional runtime exports without confusing them with type exports', () => {
     expect(Object.keys(api).sort()).toEqual(surface.runtimeExports)
+    expect(Object.keys(api)).not.toContain('RemoteTransport')
     expect(surface.apiVersion).toBe(api.API_VERSION)
     expect(Object.keys(testkit).sort()).toEqual([
       'NEGATIVE_ACTIONS',
       'TRANSPORT_CONTRACT_CASES',
+      'childAgentConformance',
+      'compactionConformance',
       'defineFixture',
+      'loopConformance',
+      'modelAdapterConformance',
+      'persistenceConformance',
       'projectionFixture',
+      'runProviderConformance',
+      'sandboxConformance',
       'serviceFixture',
+      'toolPolicyConformance',
+      'toolRuntimeConformance',
+    ])
+    expect(Object.keys(persistenceTestkit).sort()).toEqual([
+      'persistenceContract',
+      'persistenceHostContract',
+      'persistenceSqliteContract',
     ])
     expect(releaseProblems(input)).toEqual([])
   })

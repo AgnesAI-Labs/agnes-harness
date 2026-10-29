@@ -1,23 +1,33 @@
-import { createHash } from 'node:crypto'
 import { createReadStream, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Duplex } from 'node:stream'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { domainFailureFromUnknown } from '@agnes/error-sanitization'
 import { createSkillCordisService } from '@agnes/resource-control-runtime'
 import {
   bootstrapWorkerResources,
   createWorkerMcpServerOpener,
   deploymentMcpPolicy,
+  SkillScanCache,
   syncManagedMcpExecutableAllowlist,
   type WorkerResourceBootstrapInput,
 } from '@agnes/resource-control-worker'
-import { connectSupervisor } from './supervisor-connection.js'
+import { decodeArtifactMediaResponse } from './artifact-media-response.js'
+import { bestEffort } from './best-effort.js'
+import { reportWorkerBootFailure } from './boot-failure.js'
+import { requestPluginManage } from './plugin-manage.js'
+import { profileWakeProducer } from './profile-wake-producer.js'
+import { generationExtensionRestorer } from './runtime-generation-restore.js'
+import { scanWorkspaceSkillRequest } from './skill-scan.js'
+import { runtimeSkillView } from './skill-view.js'
+import { connectSupervisor, observeSupervisorClosure } from './supervisor-connection.js'
+import { workerDomainFailure } from './worker-errors.js'
 
 export { scanSkills } from '@agnes/resource-control-worker'
+export { decodeArtifactMediaResponse } from './artifact-media-response.js'
 
 import {
   agnesHome,
+  assertHostPublication,
   composeProductionRequestMedia,
   composeSecrets,
   createCredentialStore,
@@ -32,12 +42,13 @@ import {
   type Host,
   type HostOptions,
   isServicePreDispatchFailure,
+  loadChildEnginePluginLayers,
   type PackageLoader,
   type Prompter,
   packageDirs,
-  REQUEST_MEDIA_ARTIFACT_RECLAIMED,
   type ResolvedProfile,
   readLock,
+  resolveFileSecretsDirectory,
 } from '@agnes/host'
 import { createPackageManager } from '@agnes/package-manager'
 import { LocalGate, type RuntimeConvergenceReport } from '@agnes/plugin-runtime/host'
@@ -54,7 +65,6 @@ import {
   handleServiceCommand,
   prepareIdleResources,
   removeWorkspaceSkill,
-  scanWorkspaceSkills,
   type WorkerResourceSlot,
 } from './commands.js'
 import type {
@@ -68,35 +78,28 @@ import type {
 } from './frames.js'
 import { encodeFrame, JsonlDecoder } from './framing.js'
 import {
+  type WorkerHostSkillResources,
+  workerBootGenerationOptions,
+  workerBootPackageSnapshots,
+} from './host-resources.js'
+import {
   HostedSessions,
   SESSION_SCOPED_WORKER_METHODS,
   sessionIdleCloseMs,
   sessionScopedKey,
 } from './hosted-sessions.js'
 import { createMcpRowRuntime } from './mcp-row-runtime.js'
-import { createRuntimeTargetSlot, type RuntimeTargetApplyPort } from './runtime-target-slot.js'
+import { frameFailure, installWorkerProcessGuards, sessionFailure } from './process-guards.js'
+import {
+  createRuntimeTargetSlot,
+  type RuntimeTargetApplyPort,
+  runtimeTargetFailureMessage,
+} from './runtime-target-slot.js'
 import { createWorkerServiceAuthority } from './service-authority.js'
-import { SharedSessionChannel } from './shared-session-channel.js'
+import { SharedSessionChannel, sessionPermissions } from './shared-session-channel.js'
 import { createMcpStatusFrameBuffer } from './status-frame-buffer.js'
 
-/** Runtime capabilities already bootstrapped for this worker; reuse them without reconnecting. */
-export type WorkerHostSkillResources = Readonly<{
-  mcpManage?: NonNullable<HostOptions['mcpManage']>
-  pluginManage?: NonNullable<HostOptions['pluginManage']>
-  /** The bundled batch tools' bridge to the daemon batch engine. */
-  batch?: NonNullable<HostOptions['batch']>
-  skillInstall?: NonNullable<HostOptions['skillInstall']>
-  /** The same bounded, session-scoped artifact reader used by the executable-owned Host path. */
-  requestMedia: NonNullable<HostOptions['requestMedia']>
-  skillResources?: NonNullable<HostOptions['skillResources']>
-  skillContribution?: NonNullable<HostOptions['skillContribution']>
-  runtimePluginSnapshots?: NonNullable<HostOptions['runtimePluginSnapshots']>
-  runtimePluginCatalogue?: NonNullable<HostOptions['runtimePluginCatalogue']>
-  runtimePluginSources?: NonNullable<HostOptions['runtimePluginSources']>
-  managedExtensionPackageIds?: NonNullable<HostOptions['managedExtensionPackageIds']>
-  /** Trusted daemon-to-worker authority for narrowly scoped surface service calls. */
-  serviceAuthority?: NonNullable<HostOptions['serviceAuthority']>
-}>
+export type { WorkerHostSkillResources } from './host-resources.js'
 
 /** Session workers assemble a Host that owns applyRuntimeTarget. */
 export type WorkerHostLike = Host
@@ -117,59 +120,6 @@ export type WorkerHostDeps = {
   extensionIsolation?: ExtensionIsolationOptions
 }
 
-/** @internal Exported for byte-level contract tests; callers should use the composed request-media port. */
-export function decodeArtifactMediaResponse(
-  value: unknown,
-  expectedSha256: string,
-  maxBytes: number,
-): Uint8Array | typeof REQUEST_MEDIA_ARTIFACT_RECLAIMED | undefined {
-  try {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
-    const descriptors = Object.getOwnPropertyDescriptors(value)
-    const keys = Reflect.ownKeys(descriptors)
-    if (
-      keys.length === 2 &&
-      descriptors.sha256?.value === expectedSha256 &&
-      descriptors.reclaimed?.value === true
-    )
-      return REQUEST_MEDIA_ARTIFACT_RECLAIMED
-    if (
-      keys.length !== 4 ||
-      keys.some(
-        (key) =>
-          typeof key !== 'string' ||
-          !['sha256', 'size', 'mime', 'data'].includes(key) ||
-          descriptors[key]?.enumerable !== true ||
-          !Object.hasOwn(descriptors[key] ?? {}, 'value'),
-      )
-    )
-      return undefined
-    const response = Object.fromEntries(
-      (keys as string[]).map((key) => [key, descriptors[key]?.value]),
-    ) as Record<string, unknown>
-    if (
-      response.sha256 !== expectedSha256 ||
-      !Number.isSafeInteger(response.size) ||
-      (response.size as number) < 1 ||
-      (response.size as number) > maxBytes ||
-      (response.mime !== 'image/png' && response.mime !== 'image/jpeg') ||
-      typeof response.data !== 'string' ||
-      response.data.length > Math.ceil(maxBytes / 3) * 4
-    )
-      return undefined
-    const bytes = Uint8Array.from(Buffer.from(response.data, 'base64'))
-    if (
-      bytes.byteLength !== response.size ||
-      Buffer.from(bytes).toString('base64') !== response.data ||
-      createHash('sha256').update(bytes).digest('hex') !== expectedSha256
-    )
-      return undefined
-    return bytes
-  } catch {
-    return undefined
-  }
-}
-
 /** This package's own install root, the same role `hostRootFrom()` plays in cli's boot path. */
 function hostRootFrom(): string {
   return join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -186,7 +136,12 @@ function hostRootFrom(): string {
  */
 export async function runWorker(
   env: NodeJS.ProcessEnv,
-  io: { connect(path: string): Promise<Duplex>; gate: NodeJS.ReadableStream | null },
+  io: {
+    connect(path: string): Promise<Duplex>
+    gate: NodeJS.ReadableStream | null
+    /** The worker executable owns its process; embedders and tests keep their own handlers. */
+    guardProcess?: boolean
+  },
   deps: WorkerHostDeps = {},
 ): Promise<void> {
   const token = env.AGNES_WORKER_TOKEN
@@ -221,7 +176,19 @@ export async function runWorker(
     link.write(encodeFrame(frame))
   }
 
-  const sharedChannel = new SharedSessionChannel(send)
+  const sharedChannel = new SharedSessionChannel(
+    send,
+    sessionPermissions((key) => host?.kernel.sessions.get(key)),
+  )
+  const scheduling: NonNullable<HostOptions['scheduling']> = (session, operation, input, signal) => {
+    if (session.key !== sharedChannel.currentSessionKey()) throw new Error('Scheduling session mismatch')
+    return sharedChannel.request(
+      'scheduling',
+      { operation, input, workspaceRoot: session.workspaceRoot },
+      signal,
+    )
+  }
+  const boundWakes = profileWakeProducer(sharedChannel)
   const skillInstall: NonNullable<HostOptions['skillInstall']> = async (input, signal) => {
     if (input.sessionKey !== sharedChannel.currentSessionKey())
       throw new Error('Skill install session mismatch')
@@ -234,27 +201,8 @@ export async function runWorker(
       throw new Error('MCP management session mismatch')
     return sharedChannel.request('mcp-manage', input, signal)
   }
-  const pluginManage: NonNullable<HostOptions['pluginManage']> = async (input, signal) => {
-    if (input.sessionKey !== sharedChannel.currentSessionKey())
-      throw new Error('plugins management session mismatch')
-    return sharedChannel.request('plugin-manage', input, signal)
-  }
-  // The daemon takes the session from this channel's frame; the request's own key only lets a call
-  // made outside its session's context be refused here.
-  const batch: NonNullable<HostOptions['batch']> = async (input, signal) => {
-    if (input.sessionKey !== sharedChannel.currentSessionKey()) throw new Error('batch session mismatch')
-    try {
-      return (await sharedChannel.request('batch', input, signal)) as Awaited<
-        ReturnType<NonNullable<HostOptions['batch']>>
-      >
-    } catch (error) {
-      // The daemon answers a refusal as { code, message }; the tool shows the message.
-      const message = (error as { message?: unknown } | null)?.message
-      throw new Error(typeof message === 'string' ? message : 'the batch request failed')
-    }
-  }
-  // The same daemon bridges reach the Host on both assembly paths below.
-  const daemonBridges = { skillInstall, mcpManage, pluginManage, batch } as const
+  const pluginManage: NonNullable<HostOptions['pluginManage']> = (input, signal) =>
+    requestPluginManage(host?.kernel.sessions.get(input.sessionKey), input, signal, sharedChannel)
   const prompter: Prompter = {
     ask(req, opts) {
       return sharedChannel.ask(req, opts)
@@ -263,9 +211,15 @@ export async function runWorker(
   const sessionLog: NonNullable<WorkerHostDeps['log']> = Object.fromEntries(
     (['debug', 'info', 'warn', 'error'] as const).map((level) => [
       level,
-      (message: string) => {
+      (message: string, fields?: { traceId?: unknown; spanId?: unknown }) => {
         try {
-          sharedChannel.log(level, message)
+          sharedChannel.log(
+            level,
+            message,
+            typeof fields?.traceId === 'string' && typeof fields?.spanId === 'string'
+              ? { traceId: fields.traceId, spanId: fields.spanId }
+              : undefined,
+          )
         } catch {
           // Host assembly and worker-wide maintenance have no session context.
         }
@@ -279,6 +233,7 @@ export async function runWorker(
   // as `workerResourcesInput` through dispatch()'s command context.
   const workerResourcesInput: WorkerResourceBootstrapInput = {
     env,
+    skillScanCache: new SkillScanCache(),
     ...(resourceWorkspaceRoot ? { cwd: resourceWorkspaceRoot } : {}),
     profile,
     // The one call site that can see both @agnes/host and @agnes/resource-control-worker: resolve
@@ -289,23 +244,28 @@ export async function runWorker(
     createSecrets: (resourceProfile) => {
       const environment = createSecretsEnv()
       if (resourceProfile.adapters.secrets.kind === 'env') return environment
+      const explicitHome = env.AGH_HOME?.trim() || undefined
       return composeSecrets(
         createSecretsFile({
-          dir: resourceProfile.adapters.secrets.path ?? join(resourceProfile.dataDir, 'secrets'),
+          dir: resolveFileSecretsDirectory({
+            path: resourceProfile.adapters.secrets.path,
+            dataDir: resourceProfile.dataDir,
+            ...(explicitHome ? { home: explicitHome } : {}),
+          }),
         }),
         environment,
       )
     },
     // Mirrors createSecrets above, for secretBinding.kind === 'oauth' (spec §1.6/§3.2/§3.5). Same
     // root `createConfigurationService` uses for its own `createCredentialStore` call
-    // (packages/host/src/configuration.ts:565) -- both this worker process and the daemon-owned
+    // (packages/host-infrastructure/src/configuration.ts:565) -- both this worker process and the daemon-owned
     // config service read/write the same `~/.agh`-shaped credential store, by design (the
     // callback route that writes the initial token exchange runs in yet a third process --
     // `agnes serve`'s launcher -- see oauth-http-handler.ts's module header; all three agree on the
     // same on-disk root, not a shared in-memory handle).
     createOAuthCredentialStore: () => createCredentialStore({ root: agnesHome(env) }),
     // The shared session worker supplies MCP as Host rows, one per server, each owning its own
-    // connection (stage 2b step 3, D107'); its resource generation connects nothing itself. The
+    // connection; its resource generation connects nothing itself. The
     // resource-control service workers keep the manager path.
     ...(workerKind === 'session' ? { mcpRows: true } : {}),
   }
@@ -329,11 +289,13 @@ export async function runWorker(
     resourcesClosed = true
 
     await idleResourcePreparation
-    await hostedSessions?.closeAll().catch(() => undefined)
+    await hostedSessions?.closeAll().catch(bestEffort(deps.log ?? sessionLog, 'hosted-sessions-close'))
     sharedChannel.closeAll()
 
-    await host?.close().catch(() => undefined)
-    await resourceSlot.generation?.runtime.mcp.close().catch(() => undefined)
+    await host?.close().catch(bestEffort(deps.log ?? sessionLog, 'worker-host-close'))
+    await resourceSlot.generation?.runtime.mcp
+      .close()
+      .catch(bestEffort(deps.log ?? sessionLog, 'worker-resources-close'))
     link.destroy()
   }
   const assemble = async <T>(operation: Promise<T>): Promise<T> => {
@@ -349,12 +311,26 @@ export async function runWorker(
   const bootResources = resourceSlot.generation
   if (resourceLifecycleWorker && !bootResources)
     throw new Error('resource lifecycle worker lacks a resource snapshot')
+  const managedAllowed: string[] = []
+  const sharedMcpOpener = createWorkerMcpServerOpener(workerResourcesInput, managedAllowed)
   const hostRoot = deps.hostRoot ?? hostRootFrom()
   const profileDir = join(agnesHome(env), 'profiles', profile.name)
   // Re-read trust and immutable active pins for every target. Installed package directories are
-  // mutable and must never become executable sources for ordinary rows.
-  const installedPackages = createPackageManager({ dataDir: profile.dataDir, agnesVersion: '0.0.0' })
-  const runtimePluginSources = () => installedPackages.runtimePluginSnapshots(profileDir)
+  // mutable and must never become executable sources for ordinary rows. AGH-stored trees are hashed
+  // once per Worker process and re-hashed when their directory is replaced.
+  const installedPackages = createPackageManager({
+    dataDir: profile.dataDir,
+    agnesVersion: '0.0.0',
+    settleStoredTrees: true,
+  })
+  // One target application rebuilds several compositions; they share that target's single verified
+  // read instead of each re-verifying every snapshot tree. Outside an application every call re-reads.
+  let applying: { sources?: ReturnType<typeof installedPackages.runtimePluginSnapshots> } | undefined
+  const runtimePluginSources = () => {
+    if (!applying) return installedPackages.runtimePluginSnapshots(profileDir)
+    applying.sources ??= installedPackages.runtimePluginSnapshots(profileDir)
+    return applying.sources
+  }
   const computerUse = profile.computerUse ?? DEFAULT_COMPUTER_USE
   // The shared `session` worker owns the ordinary Host and is where the supervisor dispatches
   // browser surface-service calls. Pass this through both default and packaged/custom Host assembly
@@ -397,32 +373,46 @@ export async function runWorker(
   // Explicit profile packages can supply presets at assembly time. Admit only active immutable
   // pins matching that profile's exact integrity; the Host still rejects any missing snapshot.
   // Like `computerUse` above, a profile file that lists no packages means there are none.
-  const bootPackages = new Map(
-    (profile.packages ?? [])
-      .filter((pkg) => pkg.enabled && pkg.trust !== 'builtin')
-      .map((pkg) => [pkg.id, pkg.integrity]),
+  const bootPackageSnapshots = resourceLifecycleWorker
+    ? {}
+    : await assemble(workerBootPackageSnapshots(profile, runtimePluginSources))
+  if (profile.adapters?.secrets?.kind === 'file') {
+    const explicitHome = env.AGH_HOME?.trim() || undefined
+    resolveFileSecretsDirectory({
+      path: profile.adapters.secrets.path,
+      dataDir: profile.dataDir,
+      ...(explicitHome ? { home: explicitHome } : {}),
+    })
+  }
+  const bootGenerationOptions = workerBootGenerationOptions(
+    env.AGNES_RUNTIME_BOOT_SOURCE,
+    !!bootResources?.mcpEntries.length,
   )
-  const bootPackageSnapshots =
-    !resourceLifecycleWorker && bootPackages.size
-      ? {
-          runtimePluginSnapshots: (await assemble(runtimePluginSources())).filter(
-            (source) => bootPackages.get(source.snapshot.packageId) === source.snapshot.integrity,
-          ),
-        }
-      : {}
   const hostCandidate: Promise<WorkerHostLike | undefined> = resourceLifecycleWorker
     ? Promise.resolve(undefined)
     : deps.buildHost
       ? deps.buildHost(profile, prompter, {
-          ...daemonBridges,
+          decisionsChanged: (detail) => send({ kind: 'decisionsChanged', detail }),
+          restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput, sharedMcpOpener),
+          boundWakes,
+          scheduling,
+          skillInstall,
+          mcpManage,
+          pluginManage,
           requestMedia,
           runtimePluginSources,
+          ...bootGenerationOptions,
           ...bootPackageSnapshots,
           ...(bootResources ? { skillResources: bootResources.skillResources } : {}),
           ...(workerServiceAuthority ? { serviceAuthority: workerServiceAuthority } : {}),
           ...(skillContribution ? { skillContribution } : {}),
         })
-      : (() => {
+      : (async () => {
+          const childEngineLayers = await loadChildEnginePluginLayers({
+            home: agnesHome(env),
+            profile: profile.name,
+            profileDir,
+          })
           // Resource-control workers and embedders with a custom buildHost never import extension
           // source, and their intentionally minimal profile fixtures need not provide cacheDir.
           const moduleLoader =
@@ -435,6 +425,8 @@ export async function runWorker(
                 }
               : createLoader({ cacheDir: profile.cacheDir, hostRoot, agnesVersion: '0.0.0' }))
           return createHost(profile, {
+            decisionsChanged: (detail) => send({ kind: 'decisionsChanged', detail }),
+            restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput, sharedMcpOpener),
             dataDir: profile.dataDir,
             profileDir,
             workspaceRoot: cwd,
@@ -442,7 +434,11 @@ export async function runWorker(
             allowUnresolvedProvider: true,
             log: deps.log ?? sessionLog,
             prompter,
-            ...daemonBridges,
+            boundWakes,
+            scheduling,
+            skillInstall,
+            mcpManage,
+            pluginManage,
             requestMedia,
             // Browser/surface service calls are executed by the shared Host-bearing session worker.
             // The `service` kind is reserved for the resource-control lifecycle worker and does not
@@ -453,7 +449,9 @@ export async function runWorker(
             extensionLoader: moduleLoader,
             ...(bootResources ?? {}),
             ...bootPackageSnapshots,
+            ...bootGenerationOptions,
             ...(skillContribution ? { skillContribution } : {}),
+            ...(childEngineLayers ? { ordinaryPluginLayers: childEngineLayers } : {}),
             ...(deps.loader
               ? { loader: deps.loader }
               : {
@@ -475,11 +473,10 @@ export async function runWorker(
   // reload re-derives the rows and applies them again.
   if (workerKind === 'session' && host && bootResources) {
     const deploymentAllowed = deploymentMcpPolicy(env).allowedExecutables
-    const managedAllowed: string[] = []
     const restoreUnsetAllowlist = env.AGNES_MCP_STDIO_ALLOWLIST === undefined
     const mcpRows = createMcpRowRuntime({
       host,
-      opener: createWorkerMcpServerOpener(workerResourcesInput, managedAllowed),
+      opener: sharedMcpOpener,
       beforeApply: (entries) =>
         syncManagedMcpExecutableAllowlist(
           entries,
@@ -509,7 +506,27 @@ export async function runWorker(
     if (typeof candidate.applyRuntimeTarget !== 'function') {
       throw new Error('E_RUNTIME_TARGET_UNAVAILABLE: Host has no runtime target publisher')
     }
-    return Object.freeze({ applyRuntimeTarget: candidate.applyRuntimeTarget.bind(candidate) })
+    return Object.freeze({
+      async applyRuntimeTarget(target) {
+        const scope = {}
+        applying = scope
+        let report: Awaited<ReturnType<typeof candidate.applyRuntimeTarget>>
+        try {
+          report = await candidate.applyRuntimeTarget(target)
+        } finally {
+          if (applying === scope) applying = undefined
+        }
+        assertHostPublication(report.publication)
+        // Host-local per-composition diagnostics must not extend the closed wire report schema.
+        return { hash: report.hash, ok: report.ok, rows: report.rows }
+      },
+      ...(candidate.runtimeTargetSnapshot
+        ? { runtimeTargetSnapshot: candidate.runtimeTargetSnapshot.bind(candidate) }
+        : {}),
+      ...(candidate.pluginGenerationStatus
+        ? { pluginGenerationStatus: candidate.pluginGenerationStatus.bind(candidate) }
+        : {}),
+    })
   }
   const bootSource =
     env.AGNES_RUNTIME_BOOT_SOURCE === 'lastGood' || env.AGNES_RUNTIME_BOOT_SOURCE === 'bootstrap'
@@ -546,6 +563,21 @@ export async function runWorker(
     await closeResources()
     process.exit(code)
   }
+  // Rows that a failed rollback left out of line with the snapshot, and that a retry could not fix
+  // either: a fresh worker rebuilds them from the snapshot. Exiting is how the supervisor learns of
+  // it; it restarts the shared worker with backoff and reports the crash.
+  resourceSlot.onRecoveryFailed = (error) => {
+    console.error('agnes worker: resource recovery failed again; restarting the worker:', error)
+    void shutdown(1)
+  }
+  const failSession = sessionFailure(send, (key) => hostedSessions?.close(key))
+  if (io.guardProcess)
+    installWorkerProcessGuards({
+      sessionOf: () => sharedChannel.sessionInContext(),
+      failSession,
+      fatal: () => void shutdown(1),
+    })
+  const frameFailed = frameFailure({ failSession, fatal: () => void shutdown(1) })
 
   // Live MCP health forwarding is per-generation (bootstrapWorkerResources()'s reportMcpStatus closes
   // over the one manager that particular call created), so a stale reload that swaps in a new
@@ -597,7 +629,7 @@ export async function runWorker(
           digest: outcome.artifact.digest,
           identity: outcome.artifact.identity,
           phase: 'apply',
-          message: outcome.error instanceof Error ? outcome.error.message : String(outcome.error),
+          message: runtimeTargetFailureMessage(outcome.error),
         })
       }
       return
@@ -607,7 +639,12 @@ export async function runWorker(
       return
     }
     if (frame.kind === 'close') {
+      sharedChannel.closeAll()
       await shutdown(0)
+      return
+    }
+    if (frame.kind === 'session.open.cancel') {
+      hostedSessions?.cancelOpen(frame.requestId, frame.sessionKey)
       return
     }
     try {
@@ -633,6 +670,9 @@ export async function runWorker(
         const resources = resourceSlot.generation
         const command = frame as WorkerCommandFrame
         if (command.method === 'resource.stale') {
+          resourceSlot.skillControlRevision = (
+            (command.params ?? {}) as { skillControlRevision?: string }
+          ).skillControlRevision
           resourceSlot.staleMarks++
           // Acknowledge promptly; use idle time instead of deferring startup scans to the first prompt.
           idleResourcePreparation = idleResourcePreparation
@@ -660,6 +700,8 @@ export async function runWorker(
             workspaceRoot?: unknown
             rootKey?: unknown
             snapshotRevision?: unknown
+            skills?: unknown
+            resourceIds?: unknown
             descriptor?: unknown
             validateOnly?: unknown
           }
@@ -684,15 +726,14 @@ export async function runWorker(
             if (!page) throw new Error('MCP tool catalog is unavailable for this revision')
             return page
           }
-          if (command.method === 'resourceSkillScan') {
-            if (typeof p.workspaceRoot !== 'string' || typeof p.snapshotRevision !== 'string')
-              throw new TypeError('invalid Skill scan request')
-            return scanWorkspaceSkills(workerResourcesInput, {
-              workspaceRoot: p.workspaceRoot,
-              ...(typeof p.rootKey === 'string' ? { rootKey: p.rootKey } : {}),
-              snapshotRevision: p.snapshotRevision,
-            })
-          }
+          if (command.method === 'resourceSkillScan')
+            return scanWorkspaceSkillRequest(workerResourcesInput, p)
+          if (command.method === 'resourceSkillView')
+            return runtimeSkillView(
+              p,
+              workerResourcesInput.env?.AGNES_RESOURCE_SNAPSHOT ?? process.env.AGNES_RESOURCE_SNAPSHOT,
+              requireHost().runtimeSkillCandidates,
+            )
           if (command.method === 'resourceSkillRemove') {
             if (
               typeof p.workspaceRoot !== 'string' ||
@@ -715,6 +756,7 @@ export async function runWorker(
             serviceAborts,
             resources ? { mcp: resources.runtime.mcp } : undefined,
             workerGeneration,
+            () => resourceSlot.recoveryRequired === true,
           )
         const scopedKey = sessionScopedKey(command.params)
         // A command that names a session needs that session open; a hibernated one is woken first.
@@ -756,7 +798,7 @@ export async function runWorker(
                 code: typeof err.code === 'string' ? err.code : 'INTERNAL_ERROR',
                 _servicePhase: 'pre-dispatch',
               })
-            : domainFailureFromUnknown(e)
+            : workerDomainFailure(e)
       const reply = {
         kind: 'reply' as const,
         requestId: frame.requestId,
@@ -783,9 +825,8 @@ export async function runWorker(
   // order" loop.
   const dispatchFrames = async (frames: SupervisorToWorker[]): Promise<void> => {
     for (const raw of frames) {
-      if ('type' in raw) void dispatch(raw).catch(() => shutdown(1))
-      else if (raw.kind === 'command' && raw.method === 'resource.stale') await dispatch(raw)
-      else void dispatch(raw).catch(() => shutdown(1))
+      if (!('type' in raw) && raw.kind === 'command' && raw.method === 'resource.stale') await dispatch(raw)
+      else void dispatch(raw).catch((error: unknown) => frameFailed(raw, error))
     }
   }
   link.on('data', (chunk: Buffer) => {
@@ -802,8 +843,7 @@ export async function runWorker(
     }
     void dispatchFrames(frames as SupervisorToWorker[]).catch(() => shutdown(1))
   })
-  link.on('close', () => void shutdown(0))
-  link.on('error', () => void shutdown(1))
+  observeSupervisorClosure(link, () => sharedChannel.closeAll(), shutdown)
 
   const hello: WorkerHello = {
     kind: 'hello',
@@ -856,6 +896,7 @@ export function runWorkerExecutable(deps: WorkerHostDeps = {}): Promise<void> {
     {
       connect: (path) => connectSupervisor(path, env),
       gate,
+      guardProcess: true,
     },
     deps,
   )
@@ -870,7 +911,8 @@ if (
   process.argv[1] &&
   pathToFileURL(process.argv[1]).href === import.meta.url
 ) {
-  void runWorkerExecutable().catch((error: unknown) => {
+  void runWorkerExecutable().catch(async (error: unknown) => {
+    await reportWorkerBootFailure(error)
     console.error('agnes worker failed to start:', error)
     process.exit(1)
   })

@@ -3,28 +3,27 @@
 exports[`AuthMethodView > renders the two product choices and hint within 40 columns 1`] = `
 [
   "Select authentication method:",
-  "▶ 1. Sign in with an Agnes account",
+  "❯ 1. Sign in with an Agnes account",
   "  2. Sign in with an API key / ChatGPT …",
-  "↑↓ navigate  enter select  escape/ctrl+c",
-  "cancel",
+  "↑↓ select  ⏎ confirm  esc close",
 ]
 `;
 
 exports[`AuthMethodView > renders the two product choices and hint within 80 columns 1`] = `
 [
   "Select authentication method:",
-  "▶ 1. Sign in with an Agnes account",
+  "❯ 1. Sign in with an Agnes account",
   "  2. Sign in with an API key / ChatGPT subscription",
-  "↑↓ navigate  enter select  escape/ctrl+c cancel",
+  "↑↓ select  ⏎ confirm  esc close",
 ]
 `;
 
 exports[`AuthMethodView > renders the two product choices and hint within 120 columns 1`] = `
 [
   "Select authentication method:",
-  "▶ 1. Sign in with an Agnes account",
+  "❯ 1. Sign in with an Agnes account",
   "  2. Sign in with an API key / ChatGPT subscription",
-  "↑↓ navigate  enter select  escape/ctrl+c cancel",
+  "↑↓ select  ⏎ confirm  esc close",
 ]
 `;
 

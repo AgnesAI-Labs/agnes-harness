@@ -1,11 +1,89 @@
+import { LEGACY_LOOP } from '@agnes/core-common/loop/registry'
+import { sha256Hex } from '@agnes/core-common/request/hash'
+import { newOpState, type OpStateObj, opMark, withPhase } from '@agnes/core-common/step/op-state'
+import type { PresetView } from '@agnes/core-common/step/preset'
+import {
+  type Clock,
+  CoreError,
+  type Event,
+  type EventInput,
+  type IdMinter,
+  type Seq,
+} from '@agnes/core-common/types'
+import { isPending } from '@agnes/core-effects/effects/approval-answer'
+import { EffectRuntime } from '@agnes/core-effects/effects/effect'
+import { type ExecuteAttempt, ExecutePermitRegistry } from '@agnes/core-effects/effects/execute-permits'
+import { type NestedToolLease, NestedToolScheduler } from '@agnes/core-effects/effects/scheduler'
+import type {
+  ApprovalAnswer,
+  ApprovalRequest,
+  Pending,
+  Verdict,
+  VerifierVerdict,
+} from '@agnes/core-effects/effects/seams'
+import type { ChildrenFactory, ToolContextDeps } from '@agnes/core-effects/effects/tool-context'
+import {
+  assertToolDispatchAvailable,
+  dispatchTool,
+  type HostDispatchObservation,
+  type HostToolDispatchPort,
+} from '@agnes/core-effects/effects/tool-dispatch'
+import { ToolPolicyRegistry, ToolRuntimeRegistry } from '@agnes/core-effects/effects/tool-providers'
+import type { SeamRuntime } from '@agnes/core-effects/effects/wrap'
+import type { InvariantRegistry } from '@agnes/core-ledger/invariants/registry'
+import { scanAll, scanPages } from '@agnes/core-ledger/log/scan-pages'
+import type { SessionLogImpl, Timers } from '@agnes/core-ledger/log/session-log'
+import { SCAN_PAGE_MAX, type ScanQuery } from '@agnes/core-ledger/log/storage'
+import {
+  type ChildTrace,
+  type ChildTraceCache,
+  embedChildTraces,
+} from '@agnes/core-ledger/project/child-trace-cache'
+import type { RlafRange } from '@agnes/core-ledger/project/rlaf'
+import type { SurfaceCache, SurfaceNode } from '@agnes/core-ledger/project/surface'
+import {
+  attachChildTraces,
+  collectSubagentKeys,
+  subagentOwners,
+  type TraceOwners,
+} from '@agnes/core-ledger/project/trace'
+import { turnsForNodes } from '@agnes/core-ledger/project/turns'
+import {
+  boundedTimelinePage,
+  type CoreUIHistoryPage,
+  type CoreUIOpeningResult,
+  type CoreUIProjectionUpdate,
+  type CoreUITimeline,
+  projectUI,
+  turnCharge,
+  type UIOptions,
+  type UIProjectionCell,
+} from '@agnes/core-ledger/project/ui'
+import { fillInlineNodes, fillInlinePage } from '@agnes/core-ledger/project/ui-inline-slots'
+import { fillLiveSlots } from '@agnes/core-ledger/project/ui-live-slots'
+import { contextTokensAtCut, projectUsage } from '@agnes/core-ledger/project/usage'
+import type { Inbox, InboxItem } from '@agnes/core-ledger/reduce/shapes'
+import { type EffectTree, effectTree } from '@agnes/core-ledger/reduce/state'
+import { currentOp, type StateTracker } from '@agnes/core-ledger/reduce/tracker'
 import type {
   HookPayloadMap,
   HookReturnMap,
   Logger,
+  LoopContext,
+  LoopDriver,
+  LoopEventRegistryPort,
+  LoopFactory,
+  LoopSelection,
+  LoopStepOutcome,
   ToolContext,
   ToolMeta,
+  ToolPolicyRegistryPort,
   ToolResult,
+  ToolRuntime,
+  ToolRuntimeProvider,
+  ToolRuntimeRegistryPort,
 } from '@agnes/extension-api'
+import { ProviderError } from '@agnes/extension-api'
 import type {
   Actor,
   ApprovalMode,
@@ -23,36 +101,36 @@ import type {
   UITurn,
 } from '@agnes/protocol'
 import {
-  inspectJsonData,
   MAX_FRAME_BYTES,
   modelImageInputError,
   UI_HISTORY_DEFAULT_LIMIT,
   UI_OPENING_DEFAULT_MAX_NODES,
   UI_PROJECTION_DEFAULT_MAX_BYTES,
-  validateActor,
+  validateAgainst,
 } from '@agnes/protocol'
-import { hasChildControl } from '../child/store.js'
-import { isPending, normalizeApproval } from '../effects/approval-answer.js'
-import { EffectRuntime } from '../effects/effect.js'
-import { type ExecuteAttempt, ExecutePermitRegistry } from '../effects/execute-permits.js'
-import { JobRegistry } from '../effects/jobs.js'
-import { type NestedToolLease, NestedToolScheduler } from '../effects/scheduler.js'
-import type { ApprovalAnswer, ApprovalRequest, Pending, Verdict, VerifierVerdict } from '../effects/seams.js'
-import type { ChildrenFactory, ToolContextDeps } from '../effects/tool-context.js'
+import { SystemInput as SystemInputSchema } from '@agnes/protocol/gen/session-v1'
+import { bestEffort } from '../best-effort.js'
 import {
-  assertToolDispatchAvailable,
-  dispatchTool,
-  type HostDispatchObservation,
-  type HostToolDispatchPort,
-} from '../effects/tool-dispatch.js'
-import { artifactUri } from '../effects/tool-result.js'
-import type { SeamRuntime } from '../effects/wrap.js'
-import type { InvariantRegistry } from '../invariants/registry.js'
+  childLifecycle,
+  childLifecycleRevoked,
+  persistChildLifecycleStop,
+  renewChildLifecycle,
+  revokeChildLifecycle,
+} from '../child/lifecycle.js'
+import { roleAuthority, rolePermissionContext } from '../child/role-authority.js'
+import { type ChildRolePort, type RoleDelegation, roleToolSnapshot } from '../child/roles.js'
+import { unbindChildFactory } from '../child/sessions.js'
+import { sessionCommandFloor } from '../command-table/floor.js'
+import { runDeferred } from '../execution/turn/deferred.js'
+import { restoreToolDisclosure } from '../execution/turn/tool-disclosure.js'
 // A type-only import, erased at compile time, so it is not a runtime cycle back to the kernel.
 import type { CoreDiagName } from '../kernel.js'
-import { scanAll, scanPages } from '../log/scan-pages.js'
-import type { SessionLogImpl, Timers } from '../log/session-log.js'
-import { SCAN_PAGE_MAX, type ScanQuery } from '../log/storage.js'
+import { LoopChildren } from '../loop/children.js'
+import { SessionControls } from '../loop/controls.js'
+import { LoopEventRegistry, loopEventContext } from '../loop/events.js'
+import { drivenOutcome, isAdmissionEnding, publicOutcome, shouldStopLoop } from '../loop/outcome.js'
+import { createLoopContext, disposeLoopContext } from '../loop/ports.js'
+import { settleSideCalls, sideCallInFlight } from '../loop/side-call-receipts.js'
 import type {
   AuxiliaryVisionAssemblyInput,
   AuxiliaryVisionProductionAdmission,
@@ -62,83 +140,71 @@ import type {
   RequestMediaArtifactReader,
   RequestMediaSurfaceLimits,
 } from '../orchestrator/request-media-surface.js'
-import { type ChildTrace, ChildTraceCache, embedChildTraces } from '../project/child-trace-cache.js'
-import { exportRlaf, type RlafDump, type RlafRange } from '../project/rlaf.js'
-import type { SurfaceCache, SurfaceNode } from '../project/surface.js'
-import { attachChildTraces, collectSubagentKeys, subagentOwners, type TraceOwners } from '../project/trace.js'
-import { turnsForNodes } from '../project/turns.js'
-import {
-  boundedTimelinePage,
-  type CoreUIHistoryPage,
-  type CoreUIOpeningResult,
-  type CoreUIProjectionUpdate,
-  type CoreUITimeline,
-  projectUI,
-  turnCharge,
-  type UIOptions,
-  type UIProjectionCell,
-} from '../project/ui.js'
-import { contextTokensAtCut, projectUsage } from '../project/usage.js'
-import type { ArtifactJob, Inbox, InboxItem } from '../reduce/shapes.js'
-import { type EffectTree, effectTree } from '../reduce/state.js'
-import { currentOp, type StateTracker } from '../reduce/tracker.js'
 import { ResourceRegistry } from '../registry/resources.js'
-import {
-  hasAuthenticToolPolicyHash,
-  hasCompleteToolPolicyEnvelope,
-  hasTrustedToolCallProvenance,
-} from '../registry/tool-policy.js'
+import { ToolRegistryView } from '../registry/tool-allow.js'
 import type { RegistrySnapshot, ToolRegistry, ToolSource } from '../registry/tools.js'
-import { type AttachmentWindow, attachmentRange } from '../request/attachment-bytes.js'
-import type { AttachmentIndex, AttachmentKind } from '../request/attachment-index.js'
+import { commitSessionAttachments, queuedInputSizeFloor } from '../request/attachment-admission.js'
 import type { PromptSection } from '../request/contribute.js'
+import { harnessSections, mergeContributions } from '../request/contribute.js'
 import type { ContractRef, DeriveOutput, RequestHeaderData } from '../request/derive.js'
+import { sanitize, UNTRUSTED_RULE_SECTION } from '../request/derive.js'
 import { createEnvelopeCache, type EnvelopeCache } from '../request/envelope-cache.js'
 import { type EnvelopeEpochs, nonceFor, recordHeader } from '../request/envelope-epochs.js'
 import type { RequestBody as MintedRequestBody } from '../request/mint.js'
-import type { RequestImageTransform } from '../request/request-version.js'
+import { composeSystemPrompt, type PinnedSystemPrompt } from '../request/system-prompt.js'
 import { validateUserMessageImages } from '../request/user-message-images.js'
 import type {
   CurrentRuntimeLookup,
   RuntimePromptPreload,
   RuntimePromptPreloader,
 } from '../runtime/current.js'
-import { type Clock, CoreError, type Event, type EventInput, type IdMinter, type Seq } from '../types.js'
-import { expireApprovals, resumeApproval } from './approval-callback.js'
+import type { HumanAnswerCommand, HumanAnswerContext } from './approval-callback.js'
 import { restoreSessionGrants } from './approval-grants.js'
-import {
-  admitAttachments,
-  attachmentDeadlineMs,
-  checkUserImageBudget,
-  type UserAttachmentPort,
-} from './attachment-admission.js'
 import { runCompaction } from './compaction.js'
-import { type AbortResult, abortSession, closeTurn, finishAborted } from './control.js'
-import { deferredEffectId } from './deferred.js'
+import {
+  type AbortResult,
+  abortSession,
+  cancelSessionRuntimes,
+  closeTurn,
+  drainClosingWork,
+  finishAborted,
+} from './control.js'
+import { askApprovalAnswer } from './decision-delivery.js'
+import { DecisionCommands, type DecisionSource } from './decisions.js'
+import { assertCurrentDomainDecisions } from './domain-decision.js'
 import { sysEvent } from './events.js'
 import { appendExtensionEvent, prepareExtensionEvent } from './ext-events.js'
-import { checkpointRoutine, contextWindowFor } from './gate.js'
-import {
-  budgetOverrideEvent,
-  claimFrom,
-  type EnqueueMsg,
-  INBOX_BUDGET_EVENT,
-  type InboxBudgetOverride,
-  inboxEvent,
-  TRIGGER,
-  TURN_BUDGET_EVENT,
-  type TurnBudgetOverride,
-} from './inbox.js'
+import { compactionSettingsFor, contextWindowFor } from './gate.js'
+import { createChildTraceCache, exportVerifiedRlaf } from './history.js'
+import { claimFrom, type EnqueueMsg, inboxEvent, inputMessageEvents, inputTainted, TRIGGER } from './inbox.js'
 import { discloseTools, resolveModel, runInference } from './inference.js'
+import { LoopScope, stepWithinLoopDeadline } from './loop-deadline.js'
 import { resolvedModelInput, supportsComputerUse, toolNamesForModel, toolsForModel } from './model-tools.js'
-import { newOpState, type OpStateObj, opMark, withPhase } from './op-state.js'
+import { operationDecisionPort } from './operation-decisions.js'
 import { continueParked } from './parked.js'
-import type { PresetView } from './preset.js'
 import { type PreviewDelta, PreviewHub, type PreviewSnapshot } from './preview.js'
 import { type CoreOpName, invokeTool, runCoreReplacement, setModel, setPreset } from './reentry.js'
 import { type ResumeMode, type ResumeReport, resumeSession } from './resume.js'
+import {
+  permissionOperator,
+  SessionPermissionAuthority,
+  setSessionYolo,
+} from './session-permission-authority.js'
+import { invalidatePermissionProjection } from './session-permission-projection.js'
+import {
+  applyTurnCaps,
+  inboxOverrideEvents,
+  inboxTurnCaps,
+  rehydrateTurnCaps,
+  turnOverrideEvents,
+  validateTurnOverrides,
+} from './step-cap.js'
+import { sessionToolCatalog } from './tool-catalog.js'
+import { filteredTools, NO_TOOL_FILTER, type SessionToolFilter, setToolFilter } from './tool-filter.js'
+import { effectiveToolPolicy } from './tool-policy.js'
 import { runToolsPhase } from './tools.js'
-import { stepVerifyInput } from './verify-input.js'
+import { inboxBudget, rehydratedBudget } from './turn-budget.js'
+import { attend, attendRecovered, rehydratedCallState } from './turn-restore.js'
 
 type OperationCommon = {
   name: string
@@ -239,6 +305,8 @@ export type ReplacementOperation<K extends CoreOpName = CoreOpName> = OperationC
  */
 export type Operation = SlotOperation | { [K in CoreOpName]: ReplacementOperation<K> }[CoreOpName]
 export type OpContext = {
+  /** Present on admitted operations; candidate reviews use the public decision contract. */
+  decisions?: import('@agnes/extension-api').DecisionReviewPort
   session: SessionImpl
   preset: PresetView
   state: OpStateObj | null
@@ -262,6 +330,8 @@ export type OpContext = {
  * it is assembled above core, and a session with no extensions runs against `noopHooks`.
  */
 export type HookPort = {
+  /** Resources already authorized by this session's discovery lifecycle. */
+  resources?(): ReadonlyArray<import('@agnes/extension-api').ResourceEntry>
   sessionStart?(p: { reason: 'new' | 'resume'; preset: string; cwd: string }): Promise<void>
   shutdown?(): Promise<void>
   resetTurn?(): void
@@ -283,11 +353,24 @@ export type HookPort = {
     proposedReason: string
     verifier?: VerifierVerdict
   }): Promise<{ action: 'stop' } | { action: 'continue'; note: string }>
-  context(sections: PromptSection[]): Promise<{ sections: PromptSection[]; additionalContext: string }>
+  context(
+    sections: PromptSection[],
+  ): Promise<{ sections: PromptSection[]; additionalContext: string; untrustedContext: string }>
+  refreshContext?(
+    sections: PromptSection[],
+  ): Promise<{ sections: PromptSection[]; additionalContext: string; untrustedContext: string }>
   beforeRequest(out: DeriveOutput, slot: string, attempt: number): Promise<DeriveOutput>
-  beforeStep(p: { turn: number; step: number; depth: number }): Promise<{ block?: boolean; reason?: string }>
+  requestPatch?(payload: HookPayloadMap['before_request']): Promise<HookReturnMap['before_request']>
+  beforeStep(p: {
+    turn: number
+    step: number
+    depth: number
+  }): Promise<{ block?: boolean; park?: boolean; reason?: string }>
   toolResult?(p: HookPayloadMap['tool_result']): Promise<HookReturnMap['tool_result']>
-  approvalRequest?(p: HookPayloadMap['approval_request']): Promise<HookReturnMap['approval_request']>
+  /** `rewrittenBy` names the hook sources whose summary or context the answer carries. */
+  approvalRequest?(
+    p: HookPayloadMap['approval_request'],
+  ): Promise<HookReturnMap['approval_request'] & { rewrittenBy?: readonly string[] }>
   requestError?(p: HookPayloadMap['request_error']): Promise<void>
   formatDeviation?(p: HookPayloadMap['format_deviation']): Promise<void>
   beforeCompact?(p: HookPayloadMap['before_compact']): Promise<BeforeCompactHookSelection>
@@ -301,7 +384,7 @@ export type BeforeCompactHookSelection =
 export const noopHooks: HookPort = {
   toolCall: async () => ({ allow: true }),
   turnStopping: async () => ({ action: 'stop' }),
-  context: async (s) => ({ sections: s, additionalContext: '' }),
+  context: async (s) => ({ sections: s, additionalContext: '', untrustedContext: '' }),
   beforeRequest: async (o) => o,
   beforeStep: async () => ({}),
 }
@@ -330,18 +413,8 @@ export const noCompaction: CompactionPort = {
   onOverflow: () => 'failure',
 }
 
-export type StepOutcome = {
-  phase:
-    | 'idle'
-    | 'checkpoint'
-    | 'inference'
-    | 'tools'
-    | 'compaction'
-    | 'deferred'
-    | 'failure_drain'
-    | 'terminal'
-  reason?: TurnEndReason
-}
+/** Internal ledger-operation result; public drivers use LoopStepOutcome. */
+export type StepOutcome = { phase: string; reason?: TurnEndReason }
 export type TurnEndReason =
   | 'completed'
   | 'aborted'
@@ -354,15 +427,31 @@ export type TurnEndReason =
 export type TurnOutcome = { reason: TurnEndReason; lastSeq: Seq; error?: { code: string; message: string } }
 
 export type SessionDeps = {
+  roleDelegation?: RoleDelegation
+  childRoles?: ChildRolePort
+  commandPathScope?: import('../command-table/floor.js').CommandPathScope
+  memory?: import('@agnes/extension-api').MemorySession
+  systemPrompt?: PinnedSystemPrompt
+  bindLoopChildren?: (
+    parent: import('@agnes/extension-api').ChildAgentParentScope,
+  ) => import('@agnes/extension-api').ChildAgentSessionService
+  loopChildToolFilter?: import('@agnes/extension-api').ChildAgentToolFilter
+  loopChildren?: import('@agnes/extension-api').ChildAgentSessionService
+  toolRuntimes?: ToolRuntimeRegistryPort
+  toolPolicies?: ToolPolicyRegistryPort
+  loopEvents?: LoopEventRegistryPort
   log: SessionLogImpl
   tracker: StateTracker
   surface: SurfaceCache
   ui: UIProjectionCell
+  /** Fresh registry runner for inline tool cards. Explicit dynamic fills override it. */
+  slotFills?: () => import('@agnes/core-ledger/project/ui').SlotFillRunner
   lane: string
-  /** Every user attachment of the session, kept current by the tracker that feeds `surface` and `ui`. */
-  attachmentIndex: AttachmentIndex
   runtime: SeamRuntime
   provider: Provider
+  loopFactory: LoopFactory
+  loopSourcePackage?: string | undefined
+  loopResume?: boolean
   withModelSnapshot?: <T>(operation: () => Promise<T>) => Promise<T>
   /**
    * Trusted host boundary for a conservative total-input-token bound when a wire request contains
@@ -389,20 +478,6 @@ export type SessionDeps = {
       transformImage?: AuxiliaryVisionAssemblyInput['transformImage']
     }>
   }>
-  /**
-   * Host attachment store: inline attachments become references before they are queued, and user
-   * attachments are read from it. Omitted where no store is assembled.
-   */
-  attachments?: UserAttachmentPort
-  /**
-   * A stored image made to fit a route's image limits, from the host's request-version cache. Omitted,
-   * an image the route cannot take as it is is left out of the request (or refused, for this turn's).
-   */
-  requestVersions?: (
-    source: Readonly<{ sha256: string; bytes: number; mimeType: string }>,
-    t: RequestImageTransform,
-    signal: AbortSignal,
-  ) => Promise<{ bytes: Uint8Array; mimeType: string; width: number; height: number }>
   registry: ToolRegistry
   /** Legacy fixed resource table used when Host does not supply a current-generation lookup. */
   resources?: ResourceRegistry
@@ -415,32 +490,43 @@ export type SessionDeps = {
   contractForModel?: (target: { route: string; model: string }) => ContractRef
   children: ChildrenFactory
   /** Safe authority data; raw workspace runtime capabilities are consumed before Session publish. */
-  workspaceIdentity?: import('../workspace/runtime.js').WorkspaceSessionIdentity
+  workspaceIdentity?: import('@agnes/core-effects/workspace/runtime').WorkspaceSessionIdentity
   /** Sole invocation lease owner for workspace-bound effects. */
-  workspaceInvocation?: import('../workspace/runtime.js').WorkspaceInvocationPort
+  workspaceInvocation?: import('@agnes/core-effects/workspace/runtime').WorkspaceInvocationPort
   /** Host publication admission used before every workspace invocation acquire. */
-  workspacePublication?: import('../workspace/runtime.js').WorkspacePublicationDispatch
+  workspacePublication?: import('@agnes/core-effects/workspace/runtime').WorkspacePublicationDispatch
   /** The sole workspace close delegate retained by this session. */
-  workspaceLease?: import('../workspace/runtime.js').SessionWorkspaceLifecycle
+  workspaceLease?: import('@agnes/core-effects/workspace/runtime').SessionWorkspaceLifecycle
   /** Host-owned reservation port inherited by default child factories. */
-  childWorkspaceRuntime?: import('../workspace/runtime.js').ChildWorkspaceRuntimePort
+  childWorkspaceRuntime?: import('@agnes/core-effects/workspace/runtime').ChildWorkspaceRuntimePort
   ids: IdMinter
   clock: Clock
   actor: Actor
   resolvedProfileHash: string | null
-  /** Carried into a new session/start only; a reopened ledger keeps the one it has. */
   resolvedPresetHash?: string
+  policyDigest?: string | null
   /** Carried into a new session/start only; a reopened ledger keeps the one it has. */
   imported?: SessionStart['imported']
+  delegation?: SessionStart['delegation']
   cwd: string
+  /** Extra directories this session's workspace binding admits (paths only); omitted when none. */
+  extraDirectories?: readonly string[]
   netFetch: ToolContextDeps['netFetch']
   publicFetch?: ToolContextDeps['publicFetch']
   /** Trusted resolved profile value. Omission preserves the safe manual default. */
+  toolPolicySettings?: (
+    basePolicy: string,
+    signal: AbortSignal,
+  ) => Promise<import('@agnes/extension-api').ToolPolicySelection>
   approvalMode?: ApprovalMode
   /** Host-private attestation boundary for host-computer-use dispatches. */
   hostToolDispatch?: HostToolDispatchPort
   logger: Logger
   timers?: Timers
+  /** How long one `loopDriver.step` may stay silent, with no progress and no platform-owned wait in flight, before the turn ends as an error. Defaults to 30 minutes, and is never below the model timeout. */
+  loopStepTimeoutMs?: number
+  /** How long `close()` waits for work in flight to come to rest after cancelling it. Defaults to 30 seconds. */
+  closeDrainMs?: number
   hooks?: HookPort
   compaction?: CompactionPort
   /** Host-private request contribution; never exposed through extension hook payloads. */
@@ -473,20 +559,25 @@ export type QuietGate = {
 
 /** What one turn holds in memory. It is lost on a kill; everything durable is on the ledger. */
 export type TurnMemory = {
+  budgetAdmission?: { step: number; cap: number | null; creditsUsed: number }
   snapshot: RegistrySnapshot
   /** Context-hook output is frozen for identical assembly inputs within this turn. */
-  prefix?: { key: string; sections: PromptSection[]; additionalContext: string }
+  prefix?: { key: string; sections: PromptSection[]; additionalContext: string; untrustedContext: string }
   /** A null result means this turn already tried the Host-owned Skill preloader. */
   preload?: RuntimePromptPreload | null
   nonce: string
   /** Prefix of the most recent primary request after all request hooks have run. */
-  lastPrefix?: Pick<MintedRequestBody, 'sections' | 'tools' | 'model' | 'samplingParams'>
+  lastPrefix?: Pick<MintedRequestBody, 'sections' | 'tools' | 'model' | 'samplingParams'> & {
+    memoryRevision?: string
+  }
   lastHeader: RequestHeaderData | null
   lastHeaderSeq: Seq | null
   ordinal: number
   ledgerFailed: boolean
   compactionRequested: string | null | false
+  hardBudgetCap?: number
   budgetCap?: number
+  maxStepsCap?: number
   /** Extension rows counted toward this turn's quota so far, through `countedTo`. */
   extEvents?: { triggerSeq: Seq; countedTo: Seq; count: number }
 }
@@ -521,16 +612,36 @@ function webTurns(owners: TraceOwners, traces: ReadonlyMap<string, ChildTrace | 
 }
 
 export class SessionImpl {
+  /** Identity comes from the Host binding; standalone Core uses its fixed session root. */
+  readonly workspaceRoot: string
+
+  readonly decisions: DecisionCommands
   readonly d: SessionDeps
+  readonly loop: LoopSelection
+  loopEdge = 0
+  readonly controls = new SessionControls(this)
+  private loopDriver!: LoopDriver
+  private loopContext?: LoopContext
+  private loopChildren?: LoopChildren
   private fallbackHooks: HookPort
   private readonly fallbackResources: ResourceRegistry
   compaction: CompactionPort
   preset: PresetView
-  yolo = false
+  get yolo(): boolean {
+    // A declaring role follows the parent's full access for tool gates only; its sandbox and process
+    // ceilings stay those of a role, so it never reads as a full-access session.
+    return !this.closing && !this.roleAuthority && this.permissionContext.policy === 'full-access'
+  }
   turn: TurnMemory | null = null
   // run/step/resume calls in progress, and the resume they wait behind. `turn` and `op()` cannot say
   // this: both are set while a crashed turn waits to be continued, with nothing running.
   private activeOps = 0
+  /** Live activity only; a recoverable persisted turn does not count as running. */
+  get isRunning(): boolean {
+    return this.activeOps > 0
+  }
+  private readonly activeWork = new Set<Promise<unknown>>()
+  loopScope = new LoopScope()
   private resuming: Promise<unknown> | undefined
   private running: Promise<TurnOutcome> | undefined
   // The error the last turn/end row carried, for run() to hand back with its outcome. Phases report
@@ -549,8 +660,8 @@ export class SessionImpl {
    * A fresh instance rebuilds validated session grants from approval and call records before use.
    */
   readonly sessionAllows = new Set<string>()
-  /** Background processes the session's tool calls started; closing the session stops them. */
-  readonly jobs = new JobRegistry()
+  /** Scopes (`shell:prefix:[…]`) of the command-prefix grants among `sessionAllows`. */
+  readonly sessionPrefixScopes = new Set<string>()
   readonly preview = new PreviewHub()
   /** Wrapping memo is optional; the durable header epochs determine historical envelope ids. */
   readonly envelopeCache: EnvelopeCache = createEnvelopeCache()
@@ -590,8 +701,6 @@ export class SessionImpl {
     this.grantsRestored = true
   }
   private lock: Promise<void> = Promise.resolve()
-  /** Settles once the latest enqueue has taken its place in the lock queue, or failed before it. */
-  private enqueueTail: Promise<void> = Promise.resolve()
   /**
    * The cancellation scope of the work in flight, which is the scope of one `run()`. `run()`
    * replaces it, because "stop this turn" and "this session is over" are different statements and
@@ -601,6 +710,8 @@ export class SessionImpl {
    * on the counter before it pulls the signal, and `step()` ends a turn marked cancelled whichever
    * controller is current.
    */
+  // A Stop received after run admission survives replacement of the old controller.
+  private abortRevision = 0
   ac = new AbortController()
   /** `close()` is final, so a closed session must not be handed a fresh signal by the next `run()`. */
   private closing = false
@@ -609,16 +720,134 @@ export class SessionImpl {
     return this.closing
   }
 
+  private readonly authorization: SessionPermissionAuthority
+  get permissionContext(): import('@agnes/protocol').PermissionContext {
+    const context = this.authorization.context(this.key, this.preset.permission ?? '')
+    return this.roleAuthority && !this.closing ? rolePermissionContext(this.roleAuthority, context) : context
+  }
+  onPermissionChange(listener: () => void): () => void {
+    return this.authorization.subscribe(listener)
+  }
+  onBeforePermissionChange(listener: () => Promise<void>): () => void {
+    return this.authorization.beforeChange(listener)
+  }
+  preparePermissionRevocation(): Promise<void> {
+    return this.authorization.prepare()
+  }
+  revokeAutomaticPermissions(): Promise<void> {
+    const revocation = this.preparePermissionRevocation()
+    this.authorization.revoke()
+    return revocation
+  }
+
+  /** The live parent permission is bound to; `false` until the first binding, which happens at open. */
+  private permissionParent: SessionImpl | undefined | false = false
+
+  /** The first binding happens before readers attach; only a later rebind needs a projection notice. */
+  inheritAutomaticPermissions(parent: SessionImpl | undefined): Promise<void> {
+    const revocation = this.preparePermissionRevocation()
+    const rebound = this.permissionParent !== false && this.permissionParent !== parent
+    this.permissionParent = parent
+    this.authorization.inherit(
+      parent ? () => parent.permissionContext : undefined,
+      parent
+        ? (listener) =>
+            parent.onPermissionChange(() => {
+              listener()
+              invalidatePermissionProjection(this)
+            })
+        : undefined,
+      parent ? (listener) => parent.onBeforePermissionChange(listener) : undefined,
+    )
+    if (rebound) invalidatePermissionProjection(this)
+    return revocation
+  }
+
   constructor(deps: SessionDeps) {
+    const authorization = new SessionPermissionAuthority(deps.actor)
+    this.authorization = authorization
+    deps = {
+      ...deps,
+      get actor() {
+        return authorization.actor
+      },
+    }
     this.d = deps
+    const session = this
+    this.decisions = new DecisionCommands({
+      get key() {
+        return session.key
+      },
+      get lane() {
+        return session.lane
+      },
+      get lastSeq() {
+        return session.lastSeq
+      },
+      get closed() {
+        return session.closingOrClosed || deps.log.isClosed
+      },
+      get cancelled() {
+        return session.op()?.control.status === 'cancel_requested' || childLifecycleRevoked(session)
+      },
+      get actor() {
+        return session.authorization.actor
+      },
+      get permissionContext() {
+        return session.permissionContext
+      },
+      get delegatedToolApprovals() {
+        return session.roleAuthority?.humanApprovals !== false
+      },
+      get refuseApprovals() {
+        return session.d.roleDelegation !== undefined
+      },
+      get delegatedFullAccess() {
+        return session.d.roleDelegation?.delegatedFullAccess === true
+      },
+      get ttlMs() {
+        return session.preset.approval.pendingTtlMs
+      },
+      ...(deps.timers ? { timers: deps.timers } : {}),
+      log: deps.log,
+      beforeAttestation: () => deps.log.fullVerified(),
+      historyVerified: () => deps.log.historyVerified,
+      readDecisions: () => session.state.registers.decisionStates,
+      clock: () => deps.clock(),
+      id: () => deps.ids.ulid(),
+      transact: (work) => session.locked(work),
+      event: (value) => session.ev('decision/state', value, { register: 'decision/state' }),
+    })
+    this.workspaceRoot = deps.workspaceIdentity?.canonicalRoot ?? deps.cwd
+    this.loopEvents = deps.loopEvents ?? new LoopEventRegistry()
+    this.toolRuntimes = deps.toolRuntimes ?? new ToolRuntimeRegistry()
+    this.toolPolicies = deps.toolPolicies ?? new ToolPolicyRegistry()
+    this.loop = Object.freeze({
+      id: deps.loopFactory.id,
+      version: deps.loopFactory.version,
+    })
     this.fallbackHooks = deps.hooks ?? noopHooks
     this.fallbackResources = deps.resources ?? new ResourceRegistry()
     this.compaction = deps.compaction ?? noCompaction
-    this.preset = deps.preset
+    this.preset = structuredClone(deps.preset)
     this.effects = new EffectRuntime({
       ev: (type, data) => this.ev(type, data),
       clock: deps.clock,
       effectId: () => deps.ids.effectId(),
+    })
+  }
+
+  loopDecisionSource(): DecisionSource {
+    const scope = this.loopScope
+    return this.decisions.bindSource({
+      owner: this.loop.id,
+      sourcePackage: this.d.loopSourcePackage ?? this.loop.id,
+      packageVersion: this.loop.version,
+      operationId: `loop:${this.loop.id}`,
+      alive: () => {
+        scope.assertAlive()
+        if (this.closingOrClosed) throw new CoreError('E_CLOSED', 'Session closed')
+      },
     })
   }
 
@@ -631,9 +860,42 @@ export class SessionImpl {
     this.fallbackHooks = hooks
   }
 
+  get roleAuthority() {
+    return this.d.roleDelegation ? roleAuthority(this.d.roleDelegation) : undefined
+  }
+
   /** Current tool registry used only when taking a new lookup/snapshot. */
   currentTools(): ToolRegistry {
-    return this.d.currentRuntime?.current(this.key)?.tools ?? this.d.registry
+    const tools = this.d.currentRuntime?.current(this.key)?.tools ?? this.d.registry
+    const allow = this.roleAuthority?.tools.ids ?? this.preset.tools.allow
+    let view = tools
+    if (allow !== undefined) {
+      // One view per registry and list, so repeated lookups in a turn share it.
+      if (this.allowedTools?.source !== tools || this.allowedTools.allow !== allow)
+        this.allowedTools = { source: tools, allow, view: new ToolRegistryView(tools, allow, allow) }
+      view = this.allowedTools.view
+    }
+    if (this.toolFilter === NO_TOOL_FILTER) return view
+    // The session filter sits on top of preset and profile, so it can only take tools away.
+    if (this.filteredView?.source !== view || this.filteredView.filter !== this.toolFilter)
+      this.filteredView = {
+        source: view,
+        filter: this.toolFilter,
+        view: filteredTools(view, () => this.toolFilter),
+      }
+    return this.filteredView.view
+  }
+  private allowedTools?: { source: ToolRegistry; allow: readonly string[]; view: ToolRegistry }
+  private filteredView?: { source: ToolRegistry; filter: SessionToolFilter; view: ToolRegistry }
+  /** Narrowed only by `setToolFilter`, and rebuilt from the ledger on open. Never widened. */
+  toolFilter: SessionToolFilter = NO_TOOL_FILTER
+  setToolFilter(request: unknown): Promise<{ seq: Seq; filter: SessionToolFilter }> {
+    return setToolFilter(this, request)
+  }
+
+  /** Read-only catalog from the same model filtering and authorized discovery as this session. */
+  toolCatalog(): import('@agnes/protocol').SessionToolsResult {
+    return sessionToolCatalog(this)
   }
 
   /** Current resource registry used by lifecycle discovery and Host adapters. */
@@ -688,44 +950,147 @@ export class SessionImpl {
   get state() {
     return this.d.tracker.state
   }
-  get attachmentIndex(): AttachmentIndex {
-    return this.d.attachmentIndex
-  }
-  /** One window of a user attachment (or its thumbnail) for a client download; never rescans the ledger. */
-  readAttachmentRange(
-    input: {
-      seq: number
-      kind: AttachmentKind
-      index: number
-      offset: number
-      length: number
-      thumbnail?: boolean
-    },
-    signal?: AbortSignal,
-  ): Promise<AttachmentWindow> {
-    const { seq, kind, index } = input
-    // Confined to this session's lane, as the tool readers are.
-    // A reference only an inbox row names (a queued item, or one removed from the queue) is located
-    // the same way, by that row's seq.
-    const entry =
-      this.d.attachmentIndex.get(seq, kind, index) ?? this.d.attachmentIndex.queued(seq, kind, index)
-    return attachmentRange(
-      this,
-      { seq, kind, index },
-      input,
-      entry?.lane === this.lane ? entry : undefined,
-      signal,
+
+  readonly loopEvents: LoopEventRegistryPort
+  private readonly toolRuntimes: ToolRuntimeRegistryPort
+  private readonly toolPolicies: ToolPolicyRegistryPort
+  private readonly runtimeInstances: Array<{
+    provider: ToolRuntimeProvider
+    maxParallel: number
+    runtime: ToolRuntime
+  }> = []
+
+  async toolRuntime(): Promise<ToolRuntime> {
+    const provider = this.toolRuntimes.resolve(this.preset.tools.runtime ?? 'default')
+    const maxParallel = this.preset.tools.maxParallel ?? 4
+    let instance = this.runtimeInstances.find(
+      (entry) => entry.provider === provider && entry.maxParallel === maxParallel,
     )
+    if (!instance) {
+      instance = { provider, maxParallel, runtime: await provider.create({ maxParallel }, this.ac.signal) }
+      this.runtimeInstances.push(instance)
+      if (this.ac.signal.aborted) {
+        await instance.runtime.cancel()
+        this.ac.signal.throwIfAborted()
+      }
+    }
+    // Keep previous instances until close: an in-flight batch may still own one after a preset switch.
+    return instance.runtime
+  }
+  private readonly commandFloor = sessionCommandFloor(
+    (tool) => this.turn?.snapshot.byName.get(tool)?.meta.commandArg,
+    (input, signal) => this.d.commandPathScope?.(input, signal) ?? Promise.resolve(undefined),
+    // The floor normalizes the `path` argument, so only that declaration can name a reference
+    // outside the workspace (`ToolMeta.paths[].nonWorkspaceSchemes`).
+    (t) => this.turn?.snapshot.byName.get(t)?.meta.paths?.find((p) => p.arg === 'path')?.nonWorkspaceSchemes,
+  )
+  /** The selected policy inside this session's effective command and captured role floors. */
+  toolPolicy(selection?: string) {
+    return effectiveToolPolicy(this, this.toolPolicies, this.commandFloor, selection)
+  }
+
+  loopChildrenPort(): import('@agnes/extension-api').ChildAgentSessionService | undefined {
+    if (!this.d.bindLoopChildren && !this.d.loopChildren) return undefined
+    this.loopChildren ??= new LoopChildren(this)
+    return this.loopChildren.port
   }
 
   private initialModelSettingsRestored = false
 
+  private async initializeLoop(resumed = false): Promise<void> {
+    if (this.loopDriver) return
+    const done = this.beginLoopOperation()
+    try {
+      this.toolPolicy()
+      await this.toolRuntime()
+      const factory = this.d.loopFactory
+      const ctx = await createLoopContext(this, resumed)
+      this.loopContext = ctx
+      const checkpoint =
+        ctx.checkpoints.read() ??
+        (resumed && factory.checkpointMode === 'ledger' ? factory.codec.encode(null) : null)
+      if (resumed && !checkpoint) throw new Error('Pinned loop checkpoint is missing')
+      if (checkpoint) factory.codec.decode(checkpoint)
+      const signal = this.ac.signal
+      signal.throwIfAborted()
+      const driver = await (resumed && checkpoint
+        ? factory.resume(ctx, checkpoint, signal)
+        : factory.create(ctx, signal))
+      if (
+        !driver ||
+        ['step', 'cancel', 'dispose', 'checkpoint'].some(
+          (key) => typeof driver[key as keyof LoopDriver] !== 'function',
+        )
+      ) {
+        if (typeof driver?.dispose === 'function') await driver.dispose()
+        throw new ProviderError('E_PROVIDER_INVALID', 'Loop factory returned an invalid driver', {
+          kind: 'loop',
+          provider: factory.id,
+          operation: resumed ? 'resume' : 'create',
+        })
+      }
+      if (signal.aborted) {
+        try {
+          await driver.cancel()
+        } finally {
+          await driver.dispose()
+        }
+        signal.throwIfAborted()
+      }
+      this.loopDriver = driver
+      if (!resumed && factory.checkpointMode !== 'ledger')
+        await ctx.checkpoints.write(this.loopDriver.checkpoint())
+    } finally {
+      done()
+    }
+  }
+
+  /** Assembly from pinned configuration for owner previews; captures retain actual request content. */
+  async systemPromptPreview(): Promise<import('@agnes/protocol').SystemPromptSnapshot> {
+    const ctx = this.operationContext()
+    const merged = mergeContributions(
+      this.d.operations
+        .filter((op) => op.contribute)
+        .map((op) => ({
+          op: op.name,
+          ...op.contribute!(ctx),
+        })),
+      ctx.snapshot,
+    )
+    const sections = [
+      UNTRUSTED_RULE_SECTION,
+      ...composeSystemPrompt(
+        this.d.systemPrompt,
+        merged.sections,
+        harnessSections([...this.state.registers.harnessEntries.values()].map((cell) => cell.value)),
+      ).map((section) => ({
+        ...section,
+        text: sanitize(section.text),
+        id: sanitize(section.id),
+        source: sanitize(section.source),
+      })),
+    ]
+    return {
+      config: structuredClone(this.d.systemPrompt?.config ?? {}),
+      effect: 'new-sessions',
+      sections,
+      hash: sha256Hex(sections.map((section) => section.text).join('\n\n')),
+      preview: 'session-assembled',
+    }
+  }
+
   /** Idempotent: a reopened ledger already carries its session/start and must not gain a second. */
   async start(): Promise<void> {
+    assertCurrentDomainDecisions(this)
     if (this.state.session) {
+      const pinned = this.state.session.loop ?? LEGACY_LOOP
+      if (pinned.id !== this.loop.id || pinned.version !== this.loop.version)
+        throw new Error('Session loop does not match its persisted identity')
       if (!this.initialModelSettingsRestored)
         this.restoreInitialModelSettings(this.state.session.modelSettings)
       await this.restoreYolo()
+      await this.restoreGrants()
+      await this.initializeLoop(this.d.loopResume ?? true)
       return
     }
     const modelSettings: NonNullable<SessionStart['modelSettings']> = []
@@ -761,16 +1126,32 @@ export class SessionImpl {
         actor: this.d.actor,
         data: {
           key: this.key,
+          ...(this.d.systemPrompt
+            ? {
+                systemPrompt: {
+                  config: structuredClone(this.d.systemPrompt.config),
+                  provider: {
+                    id: this.d.systemPrompt.provider.id,
+                    version: this.d.systemPrompt.provider.version,
+                  },
+                  hash: (await this.systemPromptPreview()).hash,
+                },
+              }
+            : {}),
+          loop: { ...this.loop },
           resolvedProfileHash: this.d.resolvedProfileHash,
           ...(this.d.resolvedPresetHash ? { resolvedPresetHash: this.d.resolvedPresetHash } : {}),
           preset: this.preset.name,
+          ...(this.preset.permission ? { permission: this.preset.permission } : {}),
           agnesVersion: this.d.agnesVersion ?? '0.0.0',
           ...(modelSettings.length ? { modelSettings } : {}),
           ...(this.d.imported ? { imported: this.d.imported } : {}),
+          ...(this.d.delegation ? { delegation: this.d.delegation } : {}),
         },
       },
     ])
     this.restoreInitialModelSettings(modelSettings)
+    await this.initializeLoop()
   }
 
   private restoreInitialModelSettings(models: SessionStart['modelSettings']): void {
@@ -782,6 +1163,13 @@ export class SessionImpl {
       id: { ...this.preset.model.id },
       thinking: { ...this.preset.model.thinking },
       contextWindow: { ...this.preset.model.contextWindow },
+    }
+    // Absence is part of the initial auxiliary selection, not permission to adopt new defaults.
+    for (const slot of ['fast', 'verifier']) {
+      delete model.route[slot]
+      delete model.id[slot]
+      delete model.thinking[slot]
+      delete model.contextWindow[slot]
     }
     for (const selection of models) {
       const slot = selection.slot
@@ -800,41 +1188,16 @@ export class SessionImpl {
    * corrupt or partially migrated revocation into an authorization grant.
    */
   private async restoreYolo(): Promise<void> {
-    this.yolo = false
     try {
       const [row] = await this.d.log.scan({ type: 'x/core/yolo-switch', order: 'desc', limit: 1 })
-      if (row?.origin !== 'system' || row.trust !== 'trusted' || row.lane !== this.lane) return
-      const inspectedActor = inspectJsonData(row.actor, 16 * 1024)
-      if (!inspectedActor.ok) return
-      const checkedActor = validateActor(inspectedActor.value)
-      if (!checkedActor.ok) return
-      const inspected = inspectJsonData(row.data, 16 * 1024)
-      if (!inspected.ok || !inspected.value || Array.isArray(inspected.value)) return
-      const data = inspected.value as Record<string, unknown>
-      if (
-        Reflect.ownKeys(data).length !== 7 ||
-        data.version !== 1 ||
-        typeof data.to !== 'boolean' ||
-        data.sessionKey !== this.key ||
-        data.lane !== this.lane ||
-        data.profileHash !== this.d.resolvedProfileHash ||
-        data.operatorId !== checkedActor.value.id
-      )
-        return
-      const owner = data.sessionOwner
-      if (
-        !owner ||
-        typeof owner !== 'object' ||
-        Array.isArray(owner) ||
-        Reflect.ownKeys(owner).length !== 2 ||
-        (owner as Record<string, unknown>).id !== this.d.actor.id ||
-        (owner as Record<string, unknown>).org !== this.d.actor.org
-      )
-        return
-      this.yolo = data.to
+      this.authorization.restore(row, {
+        key: this.key,
+        lane: this.lane,
+        profileHash: this.d.resolvedProfileHash,
+        owner: this.d.actor,
+      })
     } catch {
-      // A bypass is never required to open a session. Unreadable/corrupt history stays disabled.
-      this.yolo = false
+      this.authorization.select(false, this.d.actor)
     }
   }
 
@@ -859,13 +1222,13 @@ export class SessionImpl {
   }
 
   /** Serializes work against every other writer on this session, transitions and inbox alike. */
-  appendExtensionEvent(type: string, data: unknown, meta: ToolSource): Promise<Seq> {
+  appendExtensionEvent(type: string, data: unknown, meta: ToolSource, sourceSeq?: number): Promise<Seq> {
     const event = prepareExtensionEvent(type, data, meta)
-    return this.locked(() => appendExtensionEvent(this, event))
+    return this.locked(() => appendExtensionEvent(this, event, sourceSeq === undefined ? {} : { sourceSeq }))
   }
 
   /**
-   * Not `private`: Task 32a's `setModel` lives in `reentry.ts` as a standalone function (the same
+   * Not `private`: `setModel` lives in `reentry.ts` as a standalone function (the same
    * shape `setPreset` already takes), not as a method on this class, so it needs this lock from
    * outside the class body. Still excluded from `index.ts`'s public export surface.
    */
@@ -923,7 +1286,14 @@ export class SessionImpl {
    * like the function form of `transition`. Returns the seqs of each step's own rows; the op-mark a
    * chain with no rows at all writes belongs to its last step.
    */
-  transitionChain(steps: ChainStep[], opts: { refineCaller?: boolean } = {}): Promise<Seq[][]> {
+  transitionChain(
+    steps: ChainStep[],
+    opts: {
+      refineCaller?: boolean
+      beforeCommit?: () => void | Promise<void>
+      commitCheck?: () => void
+    } = {},
+  ): Promise<Seq[][]> {
     return this.commitChain(steps, undefined, opts, (seqs) => {
       let at = 0
       return steps.map((step, index) => {
@@ -938,7 +1308,7 @@ export class SessionImpl {
   private commitChain<T>(
     steps: ChainStep[],
     expected: Seq | null | undefined,
-    opts: { refineCaller?: boolean },
+    opts: { refineCaller?: boolean; beforeCommit?: () => void | Promise<void>; commitCheck?: () => void },
     receipt: (seqs: Seq[]) => T,
   ): Promise<T> {
     if (steps.length === 0) throw new CoreError('E_RELATION', 'a transition chain needs at least one step')
@@ -961,7 +1331,10 @@ export class SessionImpl {
       // The counter is a register cell committed with the batch. A commit with no row of its own
       // still writes one, so the head, the cell's seq and the CAS all move on together.
       if (rows.length === 0) rows.push(opMark(first, state, this.lane, this.d.actor))
+      if (state?.control.status === 'cancel_requested' && first?.control.status !== 'cancel_requested')
+        rows.push(...this.decisions.stoppedEvents())
       const r = await this.d.log.append(rows, {
+        beforeFullVerify: 'refuse',
         expectedRegisterSeq: { register: 'op.state', key: this.lane, seq },
         opState: { lane: this.lane, data: state },
         ...opts,
@@ -978,19 +1351,60 @@ export class SessionImpl {
       events?: EventInput[] | ((nextSeq: Seq) => EventInput[])
     } = {},
   ): Promise<Seq> {
-    const last = extra.lastAssistantSeq ?? this.op()?.latestAssistantSeq ?? null
-    const events = extra.events
-    const end = this.ev('turn/end', {
-      reason,
-      lastAssistantSeq: last,
-      ...(extra.error ? { error: extra.error } : {}),
+    const expected = this.opSeq()
+    const turnNumber = this.op()?.meta.turn ?? 0
+    if (sideCallInFlight(this)) await settleSideCalls(this, expected)
+    // Serialize completion with pause admission; whichever fact commits first wins.
+    const seqs = await this.locked(async () => {
+      if (reason === 'completed' && (await this.controls.paused()))
+        throw new CoreError('E_LANE_BUSY', 'Turn completion is paused', { reason: 'CONTROL_PAUSED' })
+      const controlEnd =
+        reason === 'aborted' || reason === 'interrupted' ? await this.controls.ending() : null
+      if (controlEnd) reason = controlEnd.reason
+      const last = extra.lastAssistantSeq ?? this.op()?.latestAssistantSeq ?? null
+      const events = extra.events
+      const end = this.ev('turn/end', {
+        reason,
+        lastAssistantSeq: last,
+        ...(extra.error ? { error: extra.error } : {}),
+      })
+      const seq = this.lastSeq + 1
+      const rows = (() => {
+        const inbox = this.latest('inbox') as Inbox | undefined
+        // A steer arriving after the final boundary remains pending for the next turn.
+        const carry =
+          reason === 'completed' && inbox?.items.some((item) => item.target === 'next-step')
+            ? [
+                inboxEvent(this.lane, this.d.actor, {
+                  items: inbox.items.map((item) =>
+                    item.target === 'next-step' ? { ...item, target: 'next-turn' as const } : item,
+                  ),
+                }),
+              ]
+            : []
+        return [
+          ...(typeof events === 'function' ? events(seq) : (events ?? [])),
+          ...carry,
+          ...(controlEnd ? [controlEnd.event] : []),
+          end,
+        ]
+      })()
+      const result = await this.d.log.append(rows, {
+        expectedRegisterSeq: { register: 'op.state', key: this.lane, seq: expected },
+        opState: { lane: this.lane, data: null },
+      })
+      this.turn = null
+      return result.seqs
     })
-    const seqs = await this.transition(
-      typeof events === 'function' ? (seq) => [...events(seq), end] : [...(events ?? []), end],
-      null,
-    )
-    this.turn = null
     this.turnEndError = extra.error
+    // Observer failure cannot undo a committed turn ending.
+    await this.loopEvents
+      .dispatch(
+        'turn_end',
+        { turn: turnNumber, reason },
+        loopEventContext(this, new AbortController().signal),
+      )
+      .catch((error) => this.d.logger.warn('turn_end observer failed', { message: String(error) }))
     return seqs[seqs.length - 1] as Seq
   }
 
@@ -1005,129 +1419,123 @@ export class SessionImpl {
    * enqueues drop one item, and one landing mid-transition shifts the sequence numbers the turn's
    * anchor and its tool arguments are addressed by.
    */
-  enqueue(target: 'next-turn' | 'next-step', msg: EnqueueMsg): Promise<Seq> {
+  async enqueue(
+    target: 'next-turn' | 'next-step',
+    msg: EnqueueMsg,
+    options: { dedupeByCommandId?: boolean; skipIf?: () => boolean | Promise<boolean> } = {},
+  ): Promise<Seq> {
     let content: ContentBlock[]
+    const system = msg.system === undefined ? undefined : structuredClone(msg.system)
     try {
       content = structuredClone(msg.content)
-      // Images a model request could not carry are refused first, with their own code.
-      checkUserImageBudget(content)
-      validateUserMessageImages(content)
-      // Refusals that cost nothing to decide come before any bytes are stored.
-      this.checkQueuedInput(target, msg, content)
     } catch (error) {
       return Promise.reject(error)
     }
-    // Outside the lock: storing bytes can take seconds and writes nothing to the ledger.
-    const admitted = admitAttachments({
-      content,
-      sessionKey: this.key,
-      port: this.d.attachments,
-      referenced: (sha256) => this.attachmentIndex.referenced(sha256),
-      sessionBytes: () => this.attachmentIndex.referencedBytes(),
-      signal: AbortSignal.timeout(attachmentDeadlineMs(content)),
-    })
-    admitted.catch(() => undefined)
-    // Inputs still reach the lock in the order they were sent: each waits for the one before it to
-    // take its place in the queue, while the stores themselves run side by side.
-    const previous = this.enqueueTail
-    let placed!: () => void
-    this.enqueueTail = new Promise<void>((resolve) => {
-      placed = resolve
-    })
-    return previous
-      .then(() => admitted)
-      .then(
-        (queued) => {
-          const written = this.lockedEnqueue(target, msg, content, queued)
-          placed()
-          return written
-        },
-        (error: unknown) => {
-          placed()
-          throw error
-        },
-      )
-  }
-
-  private checkQueuedInput(
-    target: 'next-turn' | 'next-step',
-    msg: EnqueueMsg,
-    checked: ContentBlock[],
-  ): void {
-    if (msg.budget !== undefined) {
-      if (target !== 'next-turn')
-        throw new CoreError('E_ENVELOPE', 'a per-turn budget override requires next-turn input')
-      if (!Number.isFinite(msg.budget) || msg.budget < 0)
-        throw new CoreError('E_ENVELOPE', 'a per-turn budget override must be a finite non-negative number')
+    if (system !== undefined) {
+      if (msg.origin !== 'system' || !validateAgainst(SystemInputSchema, system).ok)
+        throw new CoreError('E_ENVELOPE', 'structured system input requires platform provenance')
     }
-    if (checked.some((block) => block.type === 'image')) {
-      const route = resolveModel(this, 'primary')
-      const model = this.d.provider.models().find((m) => m.route === route.route && m.id === route.model)
-      const error = modelImageInputError(model, [{ content: checked }])
-      if (error) throw new CoreError('E_ENVELOPE', error)
-    }
-  }
-
-  /** `checked` is the input as sent, for the model's image limits; `content` is what the ledger keeps. */
-  private lockedEnqueue(
-    target: 'next-turn' | 'next-step',
-    msg: EnqueueMsg,
-    checked: ContentBlock[],
-    content: ContentBlock[],
-  ): Promise<Seq> {
+    if (target === 'next-step' || msg.kind === 'steer') await this.controls.require('steer', msg.actor)
     return this.locked(async () => {
-      // Again under the lock: the selected model may have changed while the bytes were stored.
-      this.checkQueuedInput(target, msg, checked)
-      const cur = (this.latest('inbox') as Inbox | undefined) ?? { items: [] }
-      const item: InboxItem = {
-        itemId: this.d.ids.requestId(),
-        target,
-        content,
-        actor: msg.actor,
-        enqueuedAt: new Date(this.d.clock()).toISOString(),
-        ...(msg.commandId ? { commandId: msg.commandId } : {}),
-        ...(msg.admissionId ? { admissionId: msg.admissionId } : {}),
-        kind: msg.kind ?? (target === 'next-turn' ? 'prompt' : 'steer'),
-        ...(msg.titleLocale ? { titleLocale: msg.titleLocale } : {}),
-        trust: msg.trust ?? 'trusted',
+      // Backend lifecycle checks must share the inbox writer lock with result collection.
+      if (await options.skipIf?.()) return this.lastSeq
+      if (options.dedupeByCommandId) {
+        if (!msg.commandId) throw new CoreError('E_ENVELOPE', 'input deduplication requires commandId')
+        const rows = await scanAll((query) => this.scan(query), {
+          type: 'inbox',
+          lane: this.lane,
+          toSeq: this.lastSeq,
+        })
+        const original = rows.find(
+          (row) =>
+            row.origin === 'system' &&
+            row.trust === 'trusted' &&
+            (row.data as Inbox).items.some((item) => item.commandId === msg.commandId),
+        )
+        if (original) return original.seq
       }
-      const nextInbox = inboxEvent(this.lane, this.d.actor, { items: [...cur.items, item] })
-      if (encoder.encode(JSON.stringify(nextInbox)).byteLength > MAX_FRAME_BYTES - 4096)
-        throw new CoreError(
+      validateTurnOverrides(msg, target)
+      const cur = (this.latest('inbox') as Inbox | undefined) ?? { items: [] }
+      const oversized = () =>
+        new CoreError(
           'E_ENVELOPE',
           'Queued inputs are too large. Wait for a pending message to finish or remove one before sending more attachments.',
         )
-      // Queuing input is the one write let through while the history is still being verified.
-      const r = await this.d.log.append(
-        [
-          nextInbox,
-          ...(msg.budget !== undefined
-            ? [
-                budgetOverrideEvent(INBOX_BUDGET_EVENT, this.d.actor, {
-                  itemId: item.itemId,
-                  creditsCap: msg.budget,
-                }),
-              ]
-            : []),
-        ],
-        { beforeFullVerify: 'allow' },
-      )
-      return r.firstSeq
+      // String lengths are a conservative UTF-8/JSON lower bound. Refuse a known-oversized
+      // inbox before decoding large media or allocating its entire serialized frame.
+      if (queuedInputSizeFloor([...cur.items, { content }], MAX_FRAME_BYTES - 4096) > MAX_FRAME_BYTES - 4096)
+        throw oversized()
+      validateUserMessageImages(content)
+      if (content.some((block) => block.type === 'image')) {
+        const target = resolveModel(this, 'primary')
+        const model = this.d.provider.models().find((m) => m.route === target.route && m.id === target.model)
+        const error = modelImageInputError(model, [{ content }])
+        if (error) throw new CoreError('E_ENVELOPE', error)
+      }
+      if (msg.ifEmpty && cur.items.length)
+        throw new CoreError('E_RELATION', 'continuation input competed with pending input')
+      // Completion and admission share this lock. A late steer has the same next-turn
+      // destination as one carried by endTurn; stopped or failed turns stay untouched.
+      const [end] =
+        target === 'next-step' && !this.op()
+          ? await this.scan({ type: 'turn/end', order: 'desc', limit: 1, lane: this.lane })
+          : []
+      const completed = (end?.data as { reason?: TurnEndReason } | undefined)?.reason === 'completed'
+      return commitSessionAttachments(this, content, msg.signal, async (content) => {
+        const item: InboxItem = {
+          itemId: this.d.ids.requestId(),
+          target: completed ? 'next-turn' : target,
+          content,
+          actor: msg.actor,
+          enqueuedAt: new Date(this.d.clock()).toISOString(),
+          ...(msg.commandId ? { commandId: msg.commandId } : {}),
+          ...(msg.admissionId ? { admissionId: msg.admissionId } : {}),
+          kind: msg.kind ?? (target === 'next-turn' ? 'prompt' : 'steer'),
+          ...(system ? { system } : {}),
+          ...(msg.titleLocale ? { titleLocale: msg.titleLocale } : {}),
+          trust: msg.origin === 'system' ? 'untrusted' : (msg.trust ?? 'trusted'),
+          ...(msg.origin ? { origin: msg.origin } : {}),
+        }
+        const nextInbox = inboxEvent(this.lane, this.d.actor, { items: [...cur.items, item] })
+        if (encoder.encode(JSON.stringify(nextInbox)).byteLength > MAX_FRAME_BYTES - 4096) throw oversized()
+        // Queuing input is the one write let through while the history is still being verified.
+        const r = await this.d.log.append(
+          [
+            nextInbox,
+            ...(item.kind === 'steer'
+              ? [this.controls.fact('steer', 'queued', msg.actor, { itemId: item.itemId })]
+              : []),
+            ...inboxOverrideEvents(this.d.actor, item.itemId, msg, this.d.clock()),
+          ],
+          { beforeFullVerify: 'allow' },
+        )
+        return r.firstSeq
+      })
     })
   }
 
-  /** Remove only unclaimed next-turn input under the same lock as enqueue and acceptInput. */
+  /** Withdraw unclaimed input under the same lock as enqueue and delivery. */
   removeQueuedInput(itemId: string, by: Actor, admissionId: string): Promise<Seq> {
     return this.locked(async () => {
       const inbox = (this.latest('inbox') as Inbox | undefined) ?? { items: [] }
-      if (!inbox.items.some((item) => item.itemId === itemId && item.target === 'next-turn'))
+      if (!inbox.items.some((item) => item.itemId === itemId)) {
+        await this.d.log.append([
+          this.controls.fact('steer', 'refused', by, {
+            itemId,
+            admissionId,
+            operation: 'withdraw',
+            reason: 'QUEUED_INPUT_GONE',
+          }),
+        ])
         throw new CoreError('E_RELATION', 'queued input is no longer pending', { itemId })
+      }
       const written = await this.d.log.append(
         [
           inboxEvent(this.lane, this.d.actor, {
             items: inbox.items.filter((item) => item.itemId !== itemId),
           }),
           this.ev('x/core/queued-input-removed', { itemId, admissionId, by }, { ignorable: true }),
+          this.controls.fact('steer', 'withdrawn', by, { itemId, admissionId }),
         ],
         { beforeFullVerify: 'allow' },
       )
@@ -1137,19 +1545,39 @@ export class SessionImpl {
 
   /** Atomically prioritize existing input and cancel the current turn; wait for its drain before resuming. */
   async sendQueuedNow(itemId: string, by: Actor, admissionId: string): Promise<Seq> {
+    await this.controls.require('interrupt', by)
     let draining: Promise<TurnOutcome> | undefined
     const seq = await this.locked(async () => {
       const inbox = (this.latest('inbox') as Inbox | undefined) ?? { items: [] }
-      const item = inbox.items.find((item) => item.itemId === itemId && item.target === 'next-turn')
-      if (!item) throw new CoreError('E_RELATION', 'queued input is no longer pending', { itemId })
+      const item = inbox.items.find((item) => item.itemId === itemId)
+      if (!item) {
+        await this.d.log.append([
+          this.controls.fact('interrupt', 'refused', by, {
+            itemId,
+            admissionId,
+            reason: 'QUEUED_INPUT_GONE',
+          }),
+        ])
+        throw new CoreError('E_RELATION', 'queued input is no longer pending', { itemId })
+      }
       const op = this.op()
       draining = this.running
       const written = await this.d.log.append(
         [
           inboxEvent(this.lane, this.d.actor, {
-            items: [item, ...inbox.items.filter((candidate) => candidate.itemId !== itemId)],
+            items: [
+              { ...item, target: 'next-turn' },
+              ...inbox.items.filter((candidate) => candidate.itemId !== itemId),
+            ],
           }),
           this.ev('x/core/queued-send-now', { itemId, admissionId }, { ignorable: true }),
+          this.ev(
+            'x/core/pause-state',
+            { paused: false },
+            { actor: by, origin: 'principal', ignorable: true },
+          ),
+          this.controls.fact('interrupt', 'requested', by, { itemId, admissionId }),
+          ...(!op ? [this.controls.fact('interrupt', 'applied', by, { itemId, admissionId })] : []),
         ],
         op
           ? {
@@ -1167,14 +1595,22 @@ export class SessionImpl {
             }
           : {},
       )
+      this.controls.interrupting = true
       this.ac.abort()
       return written.firstSeq
     })
-    if (draining) await draining
-    // A parked/recovered turn has no run promise; close its cancelled state before the new run.
-    if (this.op()?.control.status === 'cancel_requested')
-      await this.run({ until: 'turn-end', signal: new AbortController().signal })
-    return seq
+    try {
+      await this.abort(by)
+      if (draining) await draining
+      if (!this.op() && (await continueParked(this)) === 'opened') await this.abort(by)
+      // A parked/recovered turn has no run promise; close its cancelled state before the new run.
+      if (this.op()?.control.status === 'cancel_requested')
+        await this.run({ until: 'turn-end', signal: new AbortController().signal })
+      await this.restartLoopDriver()
+      return seq
+    } finally {
+      this.controls.interrupting = false
+    }
   }
 
   lastTurnNumber(): number {
@@ -1195,42 +1631,25 @@ export class SessionImpl {
       if (!claimed) return false
       const { item, rest } = claimed
       const turn = this.lastTurnNumber() + 1
-      const budget = await this.inboxBudget(item.itemId)
+      const budget = await inboxBudget(this, item.itemId)
+      const { stepCap, timeLimit } = await inboxTurnCaps(this, item.itemId)
       const triggerSeq = (this.lastSeq + 2) as Seq
       await this.d.log.append(
         [
           inboxEvent(this.lane, this.d.actor, rest),
-          {
-            type: 'user/message',
-            origin: 'principal',
-            // Whoever enqueued the item decided how far it is trusted; the accept path stamps what
-            // it was told rather than inferring it from the actor's role.
-            trust: item.trust ?? 'trusted',
-            actor: item.actor,
-            lane: this.lane,
-            data: {
-              content: item.content,
-              kind: item.kind ?? 'prompt',
-              ...(item.titleLocale ? { titleLocale: item.titleLocale } : {}),
-            },
-          },
+          ...inputMessageEvents(item, this.lane),
           {
             type: 'turn/start',
             origin: 'system',
             trust: 'trusted',
             actor: this.d.actor,
             lane: this.lane,
-            data: { turn, trigger: TRIGGER[item.kind ?? 'prompt'] },
+            data: { turn, trigger: TRIGGER[item.kind ?? 'prompt'], inputTainted: inputTainted(item) },
           },
-          ...(budget !== undefined
-            ? [
-                budgetOverrideEvent(TURN_BUDGET_EVENT, this.d.actor, {
-                  turn,
-                  itemId: item.itemId,
-                  creditsCap: budget,
-                }),
-              ]
+          ...(item.kind === 'steer'
+            ? [this.controls.fact('steer', 'delivered', item.actor, { itemId: item.itemId })]
             : []),
+          ...turnOverrideEvents(this.d.actor, turn, budget, stepCap, timeLimit),
         ],
         {
           expectedRegisterSeq: { register: 'op.state', key: this.lane, seq: this.opSeq() },
@@ -1252,8 +1671,12 @@ export class SessionImpl {
         },
       )
       this.hooks.resetTurn?.()
-      this.turn = this.freshTurn()
-      if (budget !== undefined) this.turn.budgetCap = budget
+      this.turn = attend(this.freshTurn(), item.actor)
+      if (budget !== undefined) {
+        this.turn.budgetCap = budget.creditsCap
+        if (budget.hard) this.turn.hardBudgetCap = budget.creditsCap
+      }
+      applyTurnCaps(this.turn, stepCap, timeLimit)
       return true
     })
   }
@@ -1324,64 +1747,6 @@ export class SessionImpl {
     return seqs[2] as Seq
   }
 
-  private async inboxBudget(itemId: string): Promise<number | undefined> {
-    let found: number | undefined
-    let toSeq: Seq | undefined
-    for (;;) {
-      const rows = await this.d.log.scan({
-        type: INBOX_BUDGET_EVENT,
-        order: 'desc',
-        limit: SCAN_PAGE_MAX,
-        ...(toSeq === undefined ? {} : { toSeq }),
-      })
-      for (const event of rows) {
-        const data = event.data as Partial<InboxBudgetOverride> | null
-        if (data?.itemId !== itemId) continue
-        if (typeof data.creditsCap !== 'number' || !Number.isFinite(data.creditsCap) || data.creditsCap < 0)
-          throw new CoreError('E_ENVELOPE', 'stored per-turn budget override is invalid')
-        if (found !== undefined)
-          throw new CoreError('E_RELATION', `duplicate budget override for inbox item ${itemId}`)
-        found = data.creditsCap
-      }
-      if (rows.length < SCAN_PAGE_MAX) return found
-      const oldest = rows.at(-1)
-      if (!oldest || oldest.seq <= 1) return found
-      toSeq = (oldest.seq - 1) as Seq
-    }
-  }
-
-  private async rehydratedBudget(op: OpStateObj): Promise<number | undefined> {
-    let found: number | undefined
-    let fromSeq = op.meta.triggerSeq
-    for (;;) {
-      const rows = await this.d.log.scan({
-        fromSeq,
-        toSeq: this.lastSeq,
-        type: TURN_BUDGET_EVENT,
-        order: 'asc',
-        limit: SCAN_PAGE_MAX,
-      })
-      for (const event of rows) {
-        const data = event.data as Partial<TurnBudgetOverride> | null
-        if (data?.turn !== op.meta.turn) continue
-        if (
-          typeof data.itemId !== 'string' ||
-          typeof data.creditsCap !== 'number' ||
-          !Number.isFinite(data.creditsCap) ||
-          data.creditsCap < 0
-        )
-          throw new CoreError('E_ENVELOPE', 'stored turn budget override is invalid')
-        if (found !== undefined)
-          throw new CoreError('E_RELATION', `duplicate budget override for turn ${op.meta.turn}`)
-        found = data.creditsCap
-      }
-      if (rows.length < SCAN_PAGE_MAX) return found
-      const newest = rows.at(-1)
-      if (!newest || newest.seq >= this.lastSeq) return found
-      fromSeq = (newest.seq + 1) as Seq
-    }
-  }
-
   /**
    * `asOf` is the seq the tool registry is snapshotted at. A resumed turn passes its own start, not
    * the resume point: a tool registered while the turn was down was never disclosed to the model,
@@ -1390,7 +1755,7 @@ export class SessionImpl {
    */
   freshTurn(ordinal = 0, asOf: Seq = this.lastSeq): TurnMemory {
     return {
-      snapshot: this.currentTools().snapshot(asOf),
+      snapshot: roleToolSnapshot(this.currentTools().snapshot(asOf), this.availableRoles),
       nonce: this.d.ids.nonce(),
       lastHeader: null,
       lastHeaderSeq: null,
@@ -1406,6 +1771,8 @@ export class SessionImpl {
     const op = this.op()
     if (!op) return this.preset.budget.perRequestCap
     if (!this.turn) throw new CoreError('E_RELATION', 'open turn budget has not been rehydrated')
+    if (this.turn.hardBudgetCap !== undefined && this.preset.budget.perRequestCap !== null)
+      return Math.min(this.turn.hardBudgetCap, this.preset.budget.perRequestCap)
     return this.turn.budgetCap ?? this.preset.budget.perRequestCap
   }
 
@@ -1413,17 +1780,18 @@ export class SessionImpl {
    * The one canonical context for a core-segment replacement. Call sites add only their typed
    * segment input; model selection, disclosure and the turn snapshot stay identical everywhere.
    */
-  operationContext(): OpContext {
+  operationContext(owner = 'core/operation'): OpContext {
     const target = resolveModel(this, 'primary')
     const computerUseAllowed = this.computerUseAllowed(target)
     const snapshot = this.turn?.snapshot ?? this.currentTools().snapshot(this.lastSeq)
     return {
+      decisions: operationDecisionPort(this, owner),
       session: this,
       preset: this.preset,
       state: this.op(),
       snapshot: toolsForModel(snapshot, computerUseAllowed),
       signal: this.ac.signal,
-      disclosed: toolNamesForModel(discloseTools(this), computerUseAllowed),
+      disclosed: toolNamesForModel(discloseTools(this), snapshot, computerUseAllowed),
       model: { slot: 'primary', ...target },
     }
   }
@@ -1439,16 +1807,10 @@ export class SessionImpl {
   }
 
   async askApprovalAnswer(request: ApprovalRequest, signal: AbortSignal): Promise<ApprovalAnswer | Pending> {
-    const raw = this.d.segments?.Approval
-      ? await runCoreReplacement(this, 'Approval', this.operationContext(), { request, signal }, () =>
-          this.d.runtime.approvalAsk(request, signal),
-        )
-      : await this.d.runtime.approvalAsk(request, signal)
-    // A replacement that answers outside the set is refused like a seam that does.
-    return normalizeApproval(raw) ?? { verdict: 'rejected', reason: 'approver_failed' }
+    return askApprovalAnswer(this, request, signal)
   }
 
-  executeTool(
+  async executeTool(
     name: string,
     args: unknown,
     context: ToolContext,
@@ -1460,6 +1822,10 @@ export class SessionImpl {
     // the sequence returned by the append that durably wrote effect/intent; authority itself stays
     // process-local and is consumed before either the built-in or a replacement is entered.
     this.assertToolDispatchAvailable(dispatch.executionDomain)
+    const lifecycle = childLifecycle(this)
+    const runtime = await this.toolRuntime()
+    lifecycle.assertActive()
+    this.loopScope.assertAlive()
     const binding = { ...started, owner: this.executePermitOwner, attempt: dispatch.attempt }
     const permit = this.executePermits.issue(binding)
     this.executePermits.consume(permit, binding)
@@ -1469,8 +1835,11 @@ export class SessionImpl {
       context,
       executionDomain: dispatch.executionDomain,
       attempt: dispatch.attempt,
+      runtime,
+      concurrencySafe: this.turn?.snapshot.byName.get(name)?.meta.isConcurrencySafe === true,
       ...(this.d.hostToolDispatch ? { hostPort: this.d.hostToolDispatch } : {}),
       invoke: () => {
+        lifecycle.assertActive()
         if (!this.d.segments?.ToolExecution) return builtin()
         return runCoreReplacement(
           this,
@@ -1506,17 +1875,15 @@ export class SessionImpl {
    */
   async rehydrateTurn(op: OpStateObj): Promise<void> {
     await this.restoreGrants()
-    const range = { fromSeq: op.meta.triggerSeq, toSeq: this.lastSeq, lane: this.lane }
-    const [lastRow] = await this.d.log.scan({ ...range, type: 'request/header', order: 'desc', limit: 1 })
-    const last = lastRow?.data as RequestHeaderData | undefined
-    let calls = 0
-    for await (const page of scanPages((q) => this.d.log.scan(q), { ...range, type: 'tool/call' }))
-      calls += page.length
-    const ordinal =
-      op.phase.kind === 'tools' ? Math.max(calls, ...op.phase.batch.calls.map((c) => c.ordinal + 1)) : calls
-    const turn = this.freshTurn(ordinal, op.meta.triggerSeq)
-    const budget = await this.rehydratedBudget(op)
-    if (budget !== undefined) turn.budgetCap = budget
+    await restoreToolDisclosure(this)
+    const { lastRow, last, ordinal } = await rehydratedCallState(this, op)
+    const turn = await attendRecovered(this, op, this.freshTurn(ordinal, op.meta.triggerSeq))
+    const budget = await rehydratedBudget(this, op)
+    if (budget !== undefined) {
+      turn.budgetCap = budget.creditsCap
+      if (budget.hard) turn.hardBudgetCap = budget.creditsCap
+    }
+    await rehydrateTurnCaps(this, op, turn)
     if (last?.envelopeNonce) {
       turn.nonce = last.envelopeNonce
       turn.lastHeader = last
@@ -1544,7 +1911,13 @@ export class SessionImpl {
     // Already restored and not running: restoring it again would replace the live turn.
     if (o.mode !== 'close' && op && this.turn)
       return Promise.resolve({ state: 'resumed', phase: op.phase.kind, actions: [] })
-    const resuming = this.active(() => resumeSession(this, o), false)
+    const resuming = this.active(
+      async () =>
+        o.mode !== 'close' && (await this.controls.paused())
+          ? { state: 'resumed' as const, phase: this.op()?.phase.kind ?? 'paused', actions: [] }
+          : resumeSession(this, o),
+      false,
+    )
     const settled = resuming.then(
       () => undefined,
       () => undefined,
@@ -1560,22 +1933,43 @@ export class SessionImpl {
    * Counts one run/step/resume in progress for as long as `fn` runs. A run or step waits for a
    * resume in progress first, and counts while it waits, so no second resume can start before it.
    */
-  private async active<T>(fn: () => Promise<T>, afterResume = true): Promise<T> {
+  /** Public-port invocation ownership: close waits even when a driver forgets to await a call. */
+  trackEffectReceipt(work: Promise<void>): void {
+    this.activeWork.add(work)
+    void work.finally(() => this.activeWork.delete(work)).catch(() => undefined)
+  }
+
+  beginLoopOperation(): () => void {
+    this.loopScope.assertAlive()
+    if (this.closing) throw new CoreError('E_CLOSED', 'session closed')
+    let done!: () => void
+    const work = new Promise<void>((resolve) => {
+      done = resolve
+    })
+    this.activeWork.add(work)
+    return this.loopScope.own(() => {
+      this.activeWork.delete(work)
+      done()
+    })
+  }
+
+  private active<T>(fn: () => Promise<T>, afterResume = true): Promise<T> {
+    if (this.closing) return Promise.reject(new CoreError('E_CLOSED', 'session closed'))
     this.activeOps++
-    try {
+    const work = (async () => {
       while (afterResume && this.resuming) await this.resuming
-      return await fn()
-    } finally {
+      return fn()
+    })()
+    this.activeWork.add(work)
+    return work.finally(() => {
+      this.activeWork.delete(work)
       this.activeOps--
-    }
+    })
   }
 
   /** Dispatches on the phase the ledger says the lane is in, and advances it by exactly one edge. */
-  async step(): Promise<StepOutcome> {
-    // Every model request, tool run and step hook starts in a step, so none starts on history that an
-    // open folded from a checkpoint until the background verification has hashed all of it, and none
-    // at all once that verification failed: `fullVerified()` then rejects with the failure.
-    if (!this.d.log.historyVerified) await this.d.log.fullVerified()
+  async step(): Promise<LoopStepOutcome> {
+    this.d.log.sealCheck()
     return this.active(() =>
       this.d.withModelSnapshot
         ? this.d.withModelSnapshot(() => this.stepWithModelSnapshot())
@@ -1583,68 +1977,41 @@ export class SessionImpl {
     )
   }
 
-  private async stepWithModelSnapshot(): Promise<StepOutcome> {
+  private async stepWithModelSnapshot(): Promise<LoopStepOutcome> {
     const op = this.op()
-    if (!op) {
-      const continued = await continueParked(this)
-      if (continued === 'opened') return { phase: this.op()?.phase.kind ?? 'checkpoint' }
-      if (continued === 'blocked') return { phase: 'terminal', reason: 'blocked' }
-      if (continued === 'waiting') return { phase: 'terminal', reason: 'parked' }
-      // A decided parked continuation is ledger work already owed by this session. It is checked
-      // before the queue so a newly enqueued prompt cannot open a different turn and starve it. An
-      // undecided ask still yields false above and retains the existing next-turn input policy.
-      if (await this.acceptInput()) return { phase: 'checkpoint' }
-      return { phase: 'idle' }
+    if (op?.control.status === 'cancel_requested') return publicOutcome(await finishAborted(this))
+    if (await this.controls.boundary()) return { outcome: 'parked', phase: 'paused', reason: 'parked' }
+    if (op && !this.turn) await this.rehydrateTurn(op)
+    this.loopEdge++
+    try {
+      return drivenOutcome(await stepWithinLoopDeadline(this, this.loopDriver), this.op()?.phase.kind)
+    } catch (error) {
+      if (error instanceof CoreError && error.detail?.reason === 'CONTROL_PAUSED')
+        return { outcome: 'parked', phase: 'paused', reason: 'parked' }
+      throw error
     }
-    if (!this.turn) await this.rehydrateTurn(op)
-    // A cancellation is a decision already on the ledger, and every phase owes the same thing after
-    // it: answer whatever the cancel stopped, then end the turn. Handling it here rather than inside
-    // each phase means a cancel landing between two phases is not waited out by the phase it lands
-    // in front of, and no phase starts a model request or a tool once one has been recorded.
-    if (op.control.status === 'cancel_requested') return finishAborted(this)
-    switch (op.phase.kind) {
-      case 'checkpoint':
-        return checkpointRoutine(this)
-      case 'inference':
-        return this.runInference()
-      case 'tools':
-        return this.runToolsPhase()
-      case 'compaction':
-        return this.runCompaction()
-      case 'deferred':
-        return this.runDeferred()
-      default: {
-        // failure_drain: a queued steer is a chance for the operator to redirect rather than lose
-        // the turn, and only with nothing queued does the turn end on the error it drained on.
-        const claimed = claimFrom(this.latest('inbox') as Inbox | undefined, 'next-step')
-        if (claimed) {
-          await this.transition(
-            [
-              inboxEvent(this.lane, this.d.actor, claimed.rest),
-              this.ev(
-                'user/message',
-                { content: claimed.item.content, kind: claimed.item.kind ?? 'steer' },
-                {
-                  origin: 'principal',
-                  trust: claimed.item.trust ?? 'trusted',
-                  actor: claimed.item.actor,
-                },
-              ),
-            ],
-            withPhase(op, {
-              kind: 'checkpoint',
-              continuation: 'need_assistant',
-              triggerSeq: op.meta.triggerSeq,
-              skipInboxOnce: true,
-            }),
-          )
-          return { phase: 'checkpoint' }
-        }
-        const reason = op.phase.error.code === 'ABORTED' ? 'aborted' : 'error'
-        await this.endTurn(reason, { error: op.phase.error })
-        return { phase: 'terminal', reason }
-      }
-    }
+  }
+
+  async drainCancelledTurn(): Promise<void> {
+    if (this.running) await this.running
+    if (this.op()?.control.status === 'cancel_requested')
+      await this.run({ until: 'turn-end', signal: new AbortController().signal })
+  }
+
+  /** An interrupt ends the old execution scope; construct the pinned driver from its durable checkpoint. */
+  async restartLoopDriver(): Promise<void> {
+    const ctx = this.loopContext
+    if (!ctx) throw new CoreError('E_RELATION', 'Loop context is missing')
+    renewChildLifecycle(this)
+    const checkpoint = ctx.checkpoints.read() ?? this.loopDriver.checkpoint()
+    await this.loopDriver.dispose()
+    this.ac = new AbortController()
+    disposeLoopContext(ctx)
+    this.decisions.renewScope()
+    this.loopScope = new LoopScope()
+    const fresh = await createLoopContext(this, true)
+    this.loopContext = fresh
+    this.loopDriver = await this.d.loopFactory.resume(fresh, checkpoint, this.ac.signal)
   }
 
   /** Runs the configured compaction mechanism or records an unavailable-runner failure. */
@@ -1652,150 +2019,9 @@ export class SessionImpl {
     return runCompaction(this)
   }
 
-  /** Polls external artifact jobs without closing their owning step until every result is known. */
+  /** Polls external artifact jobs through the default loop operation. */
   async runDeferred(): Promise<StepOutcome> {
-    const op = this.op() as OpStateObj
-    if (op.phase.kind !== 'deferred') return { phase: 'checkpoint' }
-    const events: EventInput[] = []
-    const remaining: typeof op.phase.jobs = []
-    for (const pending of op.phase.jobs) {
-      const job = await this.d.runtime.artifactsPoll(pending.jobId)
-      if (job.status === 'queued' || job.status === 'running') {
-        remaining.push(pending)
-        continue
-      }
-      const jobEffect = this.state.pendingEffects.get(deferredEffectId(pending.jobId, pending.toolUseId))
-      if (jobEffect?.kind === 'job')
-        events.push(
-          this.ev('effect/settled', {
-            effectId: jobEffect.effectId,
-            outcome: job.status === 'done' && job.ref ? 'ok' : 'error',
-          }),
-        )
-      events.push(this.ev('artifact/job', job, { register: 'artifact/job' }))
-      const provenance = await this.deferredResultProvenance(pending)
-      const source = {
-        trust: provenance.trust,
-        ...(provenance.callSeq === undefined ? {} : { sourceEventSeqs: [provenance.callSeq] }),
-      }
-      const data =
-        job.status === 'done' && job.ref
-          ? {
-              toolUseId: pending.toolUseId,
-              content: [
-                {
-                  type: 'resource_link' as const,
-                  uri: artifactUri(job.ref),
-                  mimeType: job.ref.mime,
-                  name: 'artifact',
-                },
-              ],
-              isError: false,
-              enforcement: this.d.runtime.enforcement(),
-              authz: { decisionId: 'n/a' },
-            }
-          : {
-              toolUseId: pending.toolUseId,
-              content: [
-                {
-                  type: 'text' as const,
-                  text:
-                    (job as ArtifactJob).error ??
-                    (job.status === 'done' ? 'artifact job completed without a result' : job.status),
-                },
-              ],
-              isError: true,
-              code: 'JOB_FAILED',
-              enforcement: this.d.runtime.enforcement(),
-              authz: { decisionId: 'n/a' },
-            }
-      events.push(this.ev('tool/result', data, source))
-    }
-    if (remaining.length > 0) {
-      if (events.length > 0) await this.transition(events, withPhase(op, { ...op.phase, jobs: remaining }))
-      return { phase: 'deferred' }
-    }
-    const openStep = this.state.openStep.get(this.lane)
-    if (openStep) {
-      const verdict = await this.d.runtime.verify(
-        'step',
-        await stepVerifyInput(this, openStep.startSeq),
-        this.ac.signal,
-      )
-      events.push(
-        this.ev('verifier/signal', {
-          scope: 'step',
-          tier: this.preset.verifier.defaultTier,
-          verdict: verdict.verdict,
-          reasons: verdict.reasons,
-        }),
-        this.ev('step/end', { turn: openStep.turn, step: openStep.step }),
-      )
-    }
-    await this.transition(events, withPhase(op, op.phase.resumeAfter as OpStateObj['phase']))
-    return { phase: 'checkpoint' }
-  }
-
-  /**
-   * Deferred completion happens after the original ToolDef may have changed or disappeared. Trust
-   * therefore comes only from the exact durable tool/call row. Old or repaired ledgers remain
-   * readable, but an absent field, broken hash, or missing row can never upgrade external output.
-   */
-  private async deferredResultProvenance(pending: {
-    jobId: string
-    toolUseId: string
-    callSeq?: Seq
-  }): Promise<{ trust: 'trusted' | 'untrusted'; callSeq?: Seq }> {
-    const fromSeq = this.state.openStep.get(this.lane)?.startSeq ?? 1
-    const toSeq = this.lastSeq
-    let markerCallSeq: Seq | undefined
-    const pages = scanPages((q) => this.d.log.scan(q), {
-      fromSeq,
-      toSeq,
-      type: 'x/core/deferred-job',
-      lane: this.lane,
-    })
-    for await (const markers of pages) {
-      for (const marker of markers) {
-        const data = marker.data as { jobId?: unknown; toolUseId?: unknown } | null
-        if (data?.jobId !== pending.jobId || data.toolUseId !== pending.toolUseId) continue
-        const sourceSeq = marker.sourceEventSeqs?.[0]
-        if (
-          markerCallSeq !== undefined ||
-          marker.origin !== 'system' ||
-          marker.trust !== 'trusted' ||
-          marker.sourceEventSeqs?.length !== 1 ||
-          sourceSeq === undefined ||
-          sourceSeq < fromSeq ||
-          sourceSeq > toSeq
-        )
-          return { trust: 'untrusted' }
-        markerCallSeq = sourceSeq
-      }
-    }
-    if (markerCallSeq === undefined || (pending.callSeq !== undefined && pending.callSeq !== markerCallSeq))
-      return { trust: 'untrusted' }
-    const callSeq = markerCallSeq
-    const [call] = await this.d.log.scan({ fromSeq: callSeq, toSeq: callSeq, limit: 1 })
-    if (!hasTrustedToolCallProvenance(call) || call?.lane !== this.lane)
-      return { trust: 'untrusted', callSeq }
-    const policy = call.data as {
-      toolUseId?: unknown
-      resolvedPolicy?: ResolvedToolCallPolicy
-      policyHash?: string
-      definitionFingerprint?: string
-      executionDomain?: ExecutionDomain
-    }
-    if (
-      policy.toolUseId !== pending.toolUseId ||
-      !hasCompleteToolPolicyEnvelope(policy) ||
-      !hasAuthenticToolPolicyHash(policy)
-    )
-      return { trust: 'untrusted', callSeq }
-    return {
-      trust: policy.resolvedPolicy.isOpenWorld ? 'untrusted' : 'trusted',
-      callSeq,
-    }
+    return runDeferred(this)
   }
 
   /**
@@ -1803,10 +2029,17 @@ export class SessionImpl {
    * that a cancellation outlives the controller that delivered it.
    */
   abort(by: Actor = this.d.actor): Promise<AbortResult> {
-    return abortSession(this, by)
+    this.abortRevision++
+    return abortSession(this, by).finally(() => {
+      cancelSessionRuntimes(this, [
+        () => this.loopDriver?.cancel(),
+        ...this.runtimeInstances.map((instance) => () => instance.runtime.cancel()),
+      ])
+    })
   }
 
   run(opts: { until: 'turn-end' | 'idle'; signal: AbortSignal }): Promise<TurnOutcome> {
+    const abortRevision = this.abortRevision
     const previous = this.running
     const work = this.active(async () => {
       if (previous) {
@@ -1814,9 +2047,18 @@ export class SessionImpl {
         // A queued cancellation must not reset the active run's signal or claim its next input.
         if (opts.signal.aborted) return { reason: 'aborted' as const, lastSeq: this.lastSeq }
         // Concurrent admissions share a stop/failure boundary; a later explicit run can resume.
-        if (outcome.reason !== 'completed') return outcome
+        if (
+          outcome.reason !== 'completed' &&
+          !(outcome.reason === 'parked' && this.op() && !(await this.controls.paused()))
+        )
+          return outcome
       }
-      return this.runTurns(opts)
+      if (!opts.signal.aborted && this.abortRevision === abortRevision) {
+        renewChildLifecycle(this)
+        await this.d.children.recover?.()
+      }
+      this.availableRoles = (await this.d.childRoles?.list(this).catch(() => [])) ?? []
+      return this.runTurns(opts, abortRevision)
     })
     this.running = work
     return work.finally(() => {
@@ -1824,25 +2066,47 @@ export class SessionImpl {
     })
   }
 
-  private async runTurns(opts: { until: 'turn-end' | 'idle'; signal: AbortSignal }): Promise<TurnOutcome> {
+  private turnOutcome(reason: TurnEndReason): TurnOutcome {
+    return { reason, lastSeq: this.lastSeq, ...(this.turnEndError ? { error: this.turnEndError } : {}) }
+  }
+
+  private availableRoles: readonly import('@agnes/extension-api').ChildRole[] = []
+
+  private async runTurns(
+    opts: { until: 'turn-end' | 'idle'; signal: AbortSignal },
+    abortRevision: number,
+  ): Promise<TurnOutcome> {
     // Fresh work gets a fresh scope, unless the session is closed, in which case there is no work.
-    if (!this.closing) this.ac = new AbortController()
+    if (!this.closing) {
+      // A run already overtaken by Stop only drains its cancelled turn; it admits no fresh scope.
+      if (this.decisions.scopeRevoked && !opts.signal.aborted && this.abortRevision === abortRevision)
+        await this.restartLoopDriver()
+      this.ac = new AbortController()
+    }
     this.turnEndError = undefined
-    const onAbort = () => void this.abort().catch(() => undefined)
+    const cancelled = () => opts.signal.aborted || this.abortRevision !== abortRevision
+    const onAbort = () => void this.abort().catch(bestEffort(this.d.logger, 'session-abort'))
     opts.signal.addEventListener('abort', onAbort, { once: true })
-    // A caller whose signal was already aborted gets no event, and would otherwise have handed in a
-    // cancelled run that runs.
-    if (opts.signal.aborted) onAbort()
     // A phase edge that reports where it went without writing where it went leaves step() reading
     // the same phase forever. Bound consecutive edges without a committed program-counter change,
     // independently of the optional step budget. Real tool dispatch and model steps advance the
     // counter, so long tasks and large tool batches do not consume this livelock allowance.
     const maxEdges = 64
     let edges = 0
-    let cursor = this.opSeq()
+    let cursor = this.lastSeq
     try {
+      // A caller whose signal was already aborted never fires the listener. Claim a queued prompt
+      // before the first step: a fitted deferred queue throws on that signal before it can claim,
+      // and the turn would otherwise come back aborted with the prompt still queued.
+      if (cancelled() && !this.op() && (await this.acceptInput())) {
+        await this.abort()
+        const stopped = await finishAborted(this)
+        return this.turnOutcome(stopped.reason ?? 'aborted')
+      }
+      // Nothing was queued. Pull the signal so the cancelled run does not start work.
+      if (cancelled()) onAbort()
       for (;;) {
-        const nextCursor = this.opSeq()
+        const nextCursor = this.lastSeq
         if (nextCursor !== cursor) edges = 0
         cursor = nextCursor
         if (++edges > maxEdges) {
@@ -1861,12 +2125,18 @@ export class SessionImpl {
         const open = this.op()
         if (open && this.ac.signal.aborted && !this.closing && open.control.status !== 'cancel_requested')
           await this.abort()
-        let out: StepOutcome
+        let out: LoopStepOutcome
         const quietEntry = this.d.quiet?.enter(this.d.quietGroup ?? this.key)
         if (quietEntry) await quietEntry
         try {
           out = await this.step()
         } catch (err) {
+          if (err instanceof CoreError && err.code === 'E_BUDGET' && !this.op()) {
+            const reason = err.detail?.reason
+            if (isAdmissionEnding(reason)) return this.turnOutcome(reason)
+          }
+          if (!this.op() && (err as { code?: string })?.code === 'PARKED')
+            return { reason: 'parked', lastSeq: this.lastSeq }
           // `run()` promises an outcome. An exception out of a phase — an extension hook that throws
           // is the reachable case — would otherwise reject and leave the turn and its step open, a
           // state only a resume can clear. The turn ends on the ledger with the failure that ended
@@ -1874,27 +2144,20 @@ export class SessionImpl {
           // throws, so a bug is not hidden from whoever is debugging one.
           const phase = this.op()?.phase.kind ?? null
           const error = {
-            // A ledger that failed its integrity check is reported as itself: the session cannot go on.
-            code:
-              err instanceof CoreError && err.code === 'E_LEDGER_INTEGRITY'
-                ? 'E_LEDGER_INTEGRITY'
-                : 'E_STEP_FAILED',
+            // Integrity refusals must remain recognizable in turn/end and client outcomes.
+            code: err instanceof CoreError && err.code === 'E_LEDGER_INTEGRITY' ? err.code : 'E_STEP_FAILED',
             message: err instanceof Error ? err.message : String(err),
           }
           // A fail-closed hook or request stage that the cancel cut off throws like a failure, but
           // the user asked for the stop. End the turn as the stop it was, with no invariant row for
           // what the cancel itself caused; if even that cannot be written, the failure path below
           // still records and closes the turn.
-          if (this.ac.signal.aborted && !this.closing) {
+          const expired = this.loopScope.takeExpired()
+          if (this.ac.signal.aborted && !expired) {
             try {
               await this.abort()
               const stopped = await finishAborted(this)
-              if (stopped.phase === 'terminal')
-                return {
-                  reason: stopped.reason ?? 'aborted',
-                  lastSeq: this.lastSeq,
-                  ...(this.turnEndError ? { error: this.turnEndError } : {}),
-                }
+              if (stopped.phase === 'terminal') return this.turnOutcome(stopped.reason ?? 'aborted')
             } catch {
               /* fall through to the failure close */
             }
@@ -1905,20 +2168,16 @@ export class SessionImpl {
         } finally {
           this.d.quiet?.leave(this.d.quietGroup ?? this.key)
         }
-        if (out.phase === 'terminal')
-          return {
-            reason: out.reason ?? 'completed',
-            lastSeq: this.lastSeq,
-            ...(this.turnEndError ? { error: this.turnEndError } : {}),
-          }
+        if (shouldStopLoop(out, opts.until) && out.outcome !== 'idle')
+          return this.turnOutcome(out.reason ?? 'completed')
         // Idle means no open turn and nothing queued to open one. Looping on would only spin:
         // acceptInput answers false every time, and new input arrives by enqueue then run().
-        if (out.phase === 'idle') return { reason: 'completed', lastSeq: this.lastSeq }
+        if (out.outcome === 'idle') return { reason: 'completed', lastSeq: this.lastSeq }
         const op = this.op()
         // Reconciliation gets the boundary before a deferred poll or retry backoff can put this run
         // to sleep. The Host decides whether this point means immediate, step, or turn policy.
         await this.d.quiet?.yieldPoint('step', this.d.quietGroup ?? this.key)
-        if (out.phase === 'deferred' && op?.phase.kind === 'deferred') {
+        if (out.outcome === 'running' && op?.phase.kind === 'deferred') {
           // A queued/running external job is expected waiting, not an in-process phase livelock.
           // Do not spend the edge guard while the configured delay is pacing real polls; the run's
           // AbortSignal remains the bound for a job that never completes.
@@ -1960,7 +2219,7 @@ export class SessionImpl {
    * being noticed only once the delay is over — and a fitted `Timers` that never fires cannot hold
    * the loop past a cancellation.
    */
-  private sleep(ms: number): Promise<void> {
+  sleep(ms: number): Promise<void> {
     const timers = this.d.timers ?? DEFAULT_TIMERS
     return new Promise<void>((res) => {
       if (this.ac.signal.aborted) {
@@ -1980,12 +2239,15 @@ export class SessionImpl {
     })
   }
 
-  resumeApproval(ticket: string, verdict: Verdict, decidedBy: Actor): Promise<{ seq: Seq }> {
-    return resumeApproval(this, ticket, verdict, decidedBy)
+  decideApproval(input: { command: HumanAnswerCommand; context: HumanAnswerContext }) {
+    return this.decisions.answer(input.command, input.context)
   }
 
-  expireApprovals(): Promise<number> {
-    return expireApprovals(this)
+  async expireApprovals(): Promise<number> {
+    const before = this.lastSeq
+    await this.decisions.list()
+    const expired = this.lastSeq - before
+    return expired
   }
 
   invokeTool(
@@ -1995,8 +2257,9 @@ export class SessionImpl {
       signal?: AbortSignal
       depth: number
       parentEffectId?: string
+      invocationId?: string
       nestedLease?: NestedToolLease
-      onPark?: (event: EventInput) => void
+      onPark?: (event: EventInput, toolUseId: string) => void
       onAttachmentRead?: () => void
     },
   ): Promise<ToolResult> {
@@ -2028,55 +2291,28 @@ export class SessionImpl {
 
   async setYolo(enabled: boolean, operator: Actor): Promise<Seq> {
     if (typeof enabled !== 'boolean') throw new CoreError('E_ENVELOPE', 'invalid yolo state')
-    const inspected = inspectJsonData(operator, 16 * 1024)
-    if (!inspected.ok) throw new CoreError('E_ENVELOPE', 'invalid yolo operator')
-    const checked = validateActor(inspected.value)
-    if (!checked.ok) throw new CoreError('E_ENVELOPE', 'invalid yolo operator')
-    const actor = checked.value
-    // A projection triggered by the committed event must wait for the matching live flag.
-    return this.exclusively(async () => {
-      const r = await this.d.log.append([
-        sysEvent(
-          { actor, lane: this.lane },
-          'x/core/yolo-switch',
-          {
-            version: 1,
-            to: enabled,
-            operatorId: actor.id,
-            sessionKey: this.key,
-            lane: this.lane,
-            profileHash: this.d.resolvedProfileHash,
-            sessionOwner: { id: this.d.actor.id, org: this.d.actor.org },
-          },
-          { ignorable: true },
-        ),
-      ])
-      this.yolo = enabled
-      return r.firstSeq
-    })
+    if (enabled && this.preset.permission === 'read-only')
+      throw new CoreError('E_ENVELOPE', 'full access requires a new session outside read-only isolation')
+    const actor = permissionOperator(operator)
+    const seq = await this.exclusively(() => setSessionYolo(this, this.authorization, enabled, actor))
+    await this.decisions.list()
+    return seq
   }
 
   append(tx: EventInput[]) {
     return this.d.log.append(tx)
   }
-  async discardNewSession(): Promise<void> {
-    await this.d.log.discardNewSession()
-    // The key can be bound again by a new session, which must not inherit uploads made to this one.
-    // The session is gone either way, so a failure here is reported, not raised as a failed discard.
-    try {
-      await this.d.attachments?.forgetReceipts?.(this.key)
-    } catch (error) {
-      this.d.logger.warn('upload receipts of a discarded session were not removed', {
-        sessionKey: this.key,
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
+  discardNewSession(): Promise<void> {
+    return this.d.log.discardNewSession()
   }
+  verifyHistory = (...args: Parameters<SessionLogImpl['verifyHistory']>) => this.d.log.verifyHistory(...args)
+
+  auditHistory = (signal?: AbortSignal) => this.d.log.auditHistory(signal)
+  integrityStatus = () => this.d.log.integrityStatus()
+  requireVerifiedHistory = () => this.d.log.fullVerified()
+
   scan(q: ScanQuery): Promise<Event[]> {
     return this.d.log.scan(q)
-  }
-  scanLean(q: ScanQuery): Promise<Event[]> {
-    return this.d.log.scanLean(q)
   }
   latest(register: string, key?: string): unknown {
     return this.d.log.latest(
@@ -2087,7 +2323,14 @@ export class SessionImpl {
   surface(): readonly SurfaceNode[] {
     return this.d.surface.nodes()
   }
+  private withSlots<T extends Omit<UIOptions, 'sessionKey' | 'upto' | 'lane'>>(opts: T): T {
+    return opts.fills || !this.d.slotFills
+      ? opts
+      : { ...opts, inlineFills: this.d.slotFills(), liveFills: this.d.slotFills() }
+  }
+
   projectUI(upto?: Seq, opts: Omit<UIOptions, 'sessionKey' | 'upto' | 'lane'> = {}): Promise<CoreUITimeline> {
+    opts = this.withSlots(opts)
     if (upto !== undefined && (!Number.isSafeInteger(upto) || upto < 0))
       return Promise.reject(
         new CoreError('E_ENVELOPE', 'UI upper bound must be a nonnegative safe sequence number'),
@@ -2113,6 +2356,7 @@ export class SessionImpl {
     upto?: Seq,
     opts: Omit<UIOptions, 'sessionKey' | 'upto' | 'lane'> = {},
   ): Promise<CoreUIProjectionUpdate> {
+    opts = this.withSlots(opts)
     if (
       !Number.isSafeInteger(after) ||
       after < 0 ||
@@ -2121,8 +2365,18 @@ export class SessionImpl {
       return Promise.reject(new CoreError('E_ENVELOPE', 'invalid UI projection patch bounds'))
     return this.exclusively<CoreUIProjectionUpdate>(async () => {
       this.guardProjection()
-      // Historical cuts and dynamic extension fills retain the authoritative slow path. Production
-      // daemon calls do not supply fills, so a live head hit stays wholly on the event-driven cell.
+      const filledPatch = async (
+        patch: import('@agnes/core-ledger/project/ui').CoreUITimelinePatch,
+      ): Promise<CoreUIProjectionUpdate> => {
+        await fillInlineNodes(
+          patch.changes.flatMap((change) => (change.op === 'upsert' ? [change.node] : [])),
+          opts,
+        )
+        const slots = await fillLiveSlots(opts)
+        return { kind: 'patch', patch: { ...patch, ...(slots ? { slots } : {}) } }
+      }
+      // Explicit dynamic fills may synthesize nodes. Registry inline cards decorate only the
+      // journal changes, so production calls retain the incremental path.
       const live = () =>
         this.d.ui.complete && this.d.ui.upto === this.lastSeq && (upto === undefined || upto >= this.lastSeq)
       if (!live() || opts.fills) return { kind: 'replace', timeline: await this.projectFull(upto, opts) }
@@ -2130,7 +2384,7 @@ export class SessionImpl {
         const usage = this.headProjectionUsage()
         const patch = this.d.ui.journalPatch(after, usage)
         if (!patch) return { kind: 'replace', timeline: await this.d.ui.view({ ...opts, usage }) }
-        return { kind: 'patch', patch }
+        return filledPatch(patch)
       }
       const traces = await this.probeChildren(this.d.ui.turnList)
       if (!live()) return { kind: 'replace', timeline: await this.projectFull(upto, opts) }
@@ -2170,7 +2424,7 @@ export class SessionImpl {
         upserts.push({ op: 'upsert', index, turn: copy })
       }
       upserts.sort((a, b) => a.index - b.index)
-      return { kind: 'patch', patch: { ...patch, turnChanges: [...removals, ...upserts] } }
+      return filledPatch({ ...patch, turnChanges: [...removals, ...upserts] })
     }).then((update) =>
       update.kind === 'patch'
         ? { ...update, patch: { ...update.patch, yolo: this.yolo } }
@@ -2184,6 +2438,7 @@ export class SessionImpl {
       maxBytes?: number
     } = {},
   ): Promise<CoreUIOpeningResult> {
+    opts = this.withSlots(opts)
     const maxNodes = opts.maxNodes ?? UI_OPENING_DEFAULT_MAX_NODES
     const maxBytes = opts.maxBytes ?? UI_PROJECTION_DEFAULT_MAX_BYTES
     if (!Number.isSafeInteger(maxNodes) || maxNodes < 1 || !Number.isSafeInteger(maxBytes) || maxBytes < 1)
@@ -2239,6 +2494,7 @@ export class SessionImpl {
       maxBytes?: number
     } = {},
   ): Promise<CoreUIHistoryPage> {
+    opts = this.withSlots(opts)
     const limit = opts.limit ?? UI_HISTORY_DEFAULT_LIMIT
     const maxBytes = opts.maxBytes ?? UI_PROJECTION_DEFAULT_MAX_BYTES
     if (
@@ -2261,10 +2517,17 @@ export class SessionImpl {
         const traces = web ? await this.probeChildren(this.d.ui.turnList) : undefined
         if (live()) {
           const embed = traces && webTurns(subagentOwners(this.d.ui.turnList), traces)
-          const page = this.d.ui.history(cut, beforeIndex, limit, maxBytes, embed?.bytes)
+          const page = await fillInlinePage(
+            this.d.ui.history(cut, beforeIndex, limit, maxBytes, embed?.bytes),
+            opts,
+            limit,
+            maxBytes,
+            embed && turnCharge(this.d.ui.turnList, embed.bytes),
+          )
           if (beforeIndex > page.totalNodes)
             throw new CoreError('E_ENVELOPE', 'UI history cursor is outside the captured timeline')
-          return embed ? { ...page, turns: page.turns.map(embed.take) } : page
+          const turns = turnsForNodes(page.turns, page.nodes, false)
+          return { ...page, turns: embed ? turns.map(embed.take) : turns }
         }
       }
 
@@ -2340,7 +2603,14 @@ export class SessionImpl {
       },
       thinking: this.preset.model.thinking.primary ?? 'off',
       autoCompact: this.preset.compaction.enabled,
+      ...this.compactAt(contextWindowFor(this, target.route, target.model)),
     })
+  }
+
+  /** Where threshold compaction fires (compaction.ts's `window - reserve`), for the usage gauge. */
+  private compactAt(contextWindow: number): { compactAt?: number } {
+    if (!this.preset.compaction.enabled) return {}
+    return { compactAt: contextWindow - compactionSettingsFor(this, contextWindow).reserveTokens }
   }
 
   private async projectHistoricalUI(
@@ -2350,9 +2620,8 @@ export class SessionImpl {
   ): Promise<CoreUITimeline> {
     const events: Event[] = []
     let fromSeq = 1
-    // Lean rows, as the live UI cell folds them: nothing below reads attachment bytes.
     while (fromSeq <= cut) {
-      const page = await this.d.log.scanLean({ fromSeq, toSeq: cut, limit: SCAN_PAGE_MAX })
+      const page = await this.d.log.scan({ fromSeq, toSeq: cut, limit: SCAN_PAGE_MAX })
       if (page.length === 0)
         throw new CoreError('E_STORAGE_FAULT', 'UI projection scan ended before its captured cut', {
           fromSeq,
@@ -2395,6 +2664,7 @@ export class SessionImpl {
       thinking: this.preset.model.thinking.primary ?? 'off',
       contextTokens: contextTokensAtCut(events, this.lane, cut),
       autoCompact: this.preset.compaction.enabled,
+      ...this.compactAt(contextWindowFor(this, target.route, target.model)),
     })
     const timeline = await projectUI(events, {
       sessionKey: this.key,
@@ -2427,20 +2697,10 @@ export class SessionImpl {
   }
 
   private childTraces(): ChildTraceCache | undefined {
-    const storage = this.d.log.storage
-    if (!hasChildControl(storage)) return undefined
-    this.childTraceCache ??= new ChildTraceCache(this.key, {
-      lookup: (childKey) => storage.lookupByKey(childKey),
-      scan: (childKey, q) => storage.scan(childKey, q),
-    })
+    this.childTraceCache ??= createChildTraceCache(this.key, this.d.log.storage)
     return this.childTraceCache
   }
-  async exportRlaf(range: RlafRange = {}): Promise<RlafDump> {
-    // Capture one bound before the await, so concurrent appends cannot change this export's cut.
-    const upto = this.lastSeq
-    const events = await scanAll((q) => this.d.log.scan(q), { toSeq: upto })
-    return exportRlaf(events, range)
-  }
+  exportRlaf = (range: RlafRange = {}) => exportVerifiedRlaf(this.d.log, range)
   pendingEffects(): EffectTree {
     return effectTree(this.state)
   }
@@ -2449,13 +2709,42 @@ export class SessionImpl {
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise
     this.closing = true
+    revokeChildLifecycle(this)
+    this.d.log.cancelHistoryVerification()
+    const revocation = this.preparePermissionRevocation()
+    void revocation.catch(() => undefined)
+    this.authorization.detach()
+    this.decisions.detach()
+    const draining = this.activeWork.size > 0
+    unbindChildFactory(this.key)
     this.executePermits.close()
     this.ac.abort()
+    this.loopChildren?.cancel()
     this.closePromise = Promise.resolve().then(async () => {
       const failures: unknown[] = []
-      await this.hooks.shutdown?.().catch((error: unknown) => failures.push(error))
-      await this.jobs.stopAll().catch((error: unknown) => failures.push(error))
-      await this.d.log.close().catch((error: unknown) => failures.push(error))
+      const attempt = async (fn: () => unknown | Promise<unknown>) => {
+        try {
+          await fn()
+        } catch (error) {
+          failures.push(error)
+        }
+      }
+      await attempt(() => revocation)
+      await attempt(() => persistChildLifecycleStop(this))
+      await attempt(() => this.loopDriver?.cancel())
+      await Promise.all(this.runtimeInstances.map((instance) => attempt(() => instance.runtime.cancel())))
+      await attempt(() => this.loopChildren?.close())
+      // Keep hooks, log and lease alive while producers settle effects and final checkpoints. Work
+      // that ignores its cancellation is left behind: it must not hold the log and the lease open.
+      await drainClosingWork(this, this.activeWork)
+      await attempt(() => this.loopDriver?.dispose())
+      await Promise.all(this.runtimeInstances.map((instance) => attempt(() => instance.runtime.dispose())))
+      if (this.loopContext) disposeLoopContext(this.loopContext)
+      // An inactive ledger continuation remains resumable after releasing its writer.
+      if (draining && this.op()) await attempt(() => finishAborted(this))
+      await attempt(() => this.hooks.shutdown?.())
+      await attempt(() => this.d.memory?.close?.())
+      await attempt(() => this.d.log.close())
       await this.d.workspaceLease?.close().catch((error: unknown) => failures.push(error))
       if (failures.length === 1) throw failures[0]
       if (failures.length > 1) throw new AggregateError(failures, 'session close failed')

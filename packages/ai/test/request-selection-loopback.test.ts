@@ -87,7 +87,7 @@ it('sends selected models through two real Pi adapters to their declared loopbac
     ] as const) {
       expect(events[0]).toMatchObject({ type: 'sent', stamp: { model: { route, id: `model-${route}` } } })
       expect(events.find((event) => event.type === 'usage')).toMatchObject({ credits })
-      expect(events.at(-1)).toEqual({ type: 'done', reason: 'stop' })
+      expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'stop' })
     }
     expect(await run('b', 'unsealed')).toEqual([
       expect.objectContaining({ type: 'error', code: 'NO_MODEL', retryable: false }),

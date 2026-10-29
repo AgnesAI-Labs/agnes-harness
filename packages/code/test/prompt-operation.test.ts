@@ -1,6 +1,6 @@
 import type { OpContext } from '@agnes/core'
 import { describe, expect, it } from 'vitest'
-import { createPromptOperation, loadPrompt, operations, PROMPT_SECTIONS } from '../src/index.js'
+import { createPromptOperation, operations, PROMPT_SECTIONS } from '../src/index.js'
 
 const platform = {
   shell: () => 'posix',
@@ -13,7 +13,9 @@ function ctxFor(over: {
   disclosure?: 'standard' | 'hybrid' | 'code'
   disclosed?: string[]
   cwd?: string
+  extraDirectories?: string[]
   now?: number
+  promptSections?: string[]
   model?: string
   route?: string
   presetName?: string
@@ -23,11 +25,16 @@ function ctxFor(over: {
       key: 'agnes:local:demo:cli:workspace:abcd',
       d: {
         cwd: over.cwd ?? '/w/repo',
+        ...(over.extraDirectories ? { extraDirectories: over.extraDirectories } : {}),
         agnesVersion: '0.1.0',
         clock: () => over.now ?? Date.parse('2026-09-09T04:00:00.000Z'),
       },
     },
-    preset: { name: over.presetName ?? 'standard', disclosure: over.disclosure ?? 'standard' },
+    preset: {
+      name: over.presetName ?? 'standard',
+      disclosure: over.disclosure ?? 'standard',
+      ...(over.promptSections ? { model: { promptSections: over.promptSections } } : {}),
+    },
     state: null,
     snapshot: { defs: [], byName: new Map() },
     signal: new AbortController().signal,
@@ -46,20 +53,15 @@ const contribute = (ctx: OpContext) => {
 describe('the prompt operation', () => {
   it('reports the actual Host-selected interpreter while preserving the dialect fallback', () => {
     const description = 'PowerShell 5.1.26100.9444 (Desktop); native argument mode: Legacy'
-    const op = createPromptOperation({ adapters: { platform, shell: { description } } })
+    const op = createPromptOperation({
+      adapters: { platform: { ...platform, shell: () => 'powershell' }, shell: { description } },
+    })
     const environment = op.contribute?.(ctxFor({}))?.promptSections?.find((s) => s.id === 'environment')
     expect(environment?.text).toContain(description)
+    expect(environment?.text).toContain('curl.exe')
+    expect(environment?.text).toContain('5.1 does not support && or ||')
+    expect(contribute(ctxFor({})).find((s) => s.id === 'environment')?.text).not.toContain('curl.exe')
     expect(contribute(ctxFor({})).find((s) => s.id === 'environment')?.text).toContain('posix')
-  })
-  it('states the PowerShell rules in the environment section where the platform shell is PowerShell, and only there', () => {
-    const rules = loadPrompt('environment-powershell')
-    const windows = { ...platform, shell: () => 'powershell' }
-    const description = 'PowerShell 7.5.0 (Core)'
-    const op = createPromptOperation({ adapters: { platform: windows, shell: { description } } })
-    const sections = op.contribute?.(ctxFor({}))?.promptSections ?? []
-    expect(sections.map((s) => s.id)).toEqual(['persona', 'environment', 'coding-doctrine'])
-    expect(sections.find((s) => s.id === 'environment')?.text.endsWith(`\n\n${rules}`)).toBe(true)
-    for (const s of contribute(ctxFor({}))) expect(s.text, s.id).not.toContain(rules)
   })
   it('is a before-inference operation that contributes prompt text and the tail runtime context, nothing else', () => {
     const op = createPromptOperation(deps)
@@ -78,11 +80,25 @@ describe('the prompt operation', () => {
 
   it('carries the frozen order of every section it contributes, in table order', () => {
     const sections = contribute(ctxFor({}))
-    expect(sections.map((s) => s.id)).toEqual(['persona', 'environment', 'coding-doctrine'])
+    expect(sections.map((s) => s.id)).toEqual([
+      'persona',
+      'environment',
+      'tools-available',
+      'coding-doctrine',
+    ])
     const table = new Map(PROMPT_SECTIONS.map((s) => [s.id, s.order]))
     expect(sections.map((s) => s.order)).toEqual(sections.map((s) => table.get(s.id)))
     expect(sections.map((s) => s.order)).toEqual([...sections.map((s) => s.order)].sort((a, b) => a - b))
-    for (const s of sections) expect(s.source).toBe('@agnes/code')
+    expect(sections[0]?.id).toBe('persona')
+    expect(sections[0]?.order).toBeLessThan(
+      Math.min(...PROMPT_SECTIONS.filter((s) => s.owner === 'base').map((s) => s.order)),
+    )
+    for (const s of sections)
+      expect(s.source).toBe(
+        ['persona', 'coding-doctrine', 'code-doctrine', 'channel-style'].includes(s.id)
+          ? `@agnes/code/prompts/${s.id}.md`
+          : '@agnes/code',
+      )
   })
 
   it('states stable platform and transcript guidance in prompt text; volatile facts in the tail runtime context', () => {
@@ -119,17 +135,32 @@ describe('the prompt operation', () => {
     expect(second?.runtimeContext).toMatchObject({ environment: { date: '2026-12-25' } })
   })
 
-  it('states that the offered tool list is complete in the tail runtime context, not as a prompt section', () => {
+  it("lists a session's extra directories sorted, and leaves the facts untouched without them", () => {
+    const env = (extraDirectories?: string[]): Record<string, unknown> => {
+      const ctx = ctxFor({ ...(extraDirectories ? { extraDirectories } : {}) })
+      const c = createPromptOperation(deps).contribute?.(ctx)
+      return (c?.runtimeContext?.environment ?? {}) as Record<string, unknown>
+    }
+    expect(env(['/z/lib', '/a/data']).extraDirectories).toEqual(['/a/data', '/z/lib'])
+    expect('extraDirectories' in env([])).toBe(false)
+    expect('extraDirectories' in env()).toBe(false)
+  })
+
+  it('renders tool guidance as prompt text, keeping runtime context limited to facts', () => {
     const op = createPromptOperation(deps)
-    const some = op.contribute?.(ctxFor({ disclosed: ['read', 'write', 'grep'] }))
-    expect(some?.promptSections?.map((s) => s.id)).not.toContain('tools-available')
-    expect(some?.runtimeContext).toMatchObject({
-      tools: { complete: expect.stringContaining('complete set offered this turn') },
-    })
-    const none = op.contribute?.(ctxFor({ disclosed: [] }))
-    expect(none?.runtimeContext).toMatchObject({
-      tools: { complete: expect.stringContaining('You have no tools on this request') },
-    })
+    for (const disclosed of [['read', 'write', 'grep'], []]) {
+      const c = op.contribute?.(
+        ctxFor({
+          disclosed,
+          promptSections: ['persona', 'environment', 'tools-available', 'coding-doctrine'],
+        }),
+      )
+      expect(c?.promptSections?.find((s) => s.id === 'tools-available')?.text).toContain(
+        disclosed.length ? 'Use only tools offered in this request' : 'You have no tools on this request',
+      )
+      expect(c?.runtimeContext).not.toHaveProperty('tools')
+      expect(JSON.stringify(c?.runtimeContext)).not.toContain('tool_search')
+    }
   })
 
   // The two doctrine sections are the pair that can lie about what the model can do, so each is
@@ -141,6 +172,7 @@ describe('the prompt operation', () => {
     expect(with_.map((s) => s.id)).toEqual([
       'persona',
       'environment',
+      'tools-available',
       'coding-doctrine',
       'code-doctrine',
       'tools:sdk',
@@ -149,7 +181,7 @@ describe('the prompt operation', () => {
 
   it('drops the direct-editing rules under the code preset', () => {
     const ids = contribute(ctxFor({ disclosure: 'code', disclosed: ['run_code'] })).map((s) => s.id)
-    expect(ids).toEqual(['persona', 'environment', 'code-doctrine', 'tools:sdk'])
+    expect(ids).toEqual(['persona', 'environment', 'tools-available', 'code-doctrine', 'tools:sdk'])
   })
 
   it('keeps the assembled system string byte-identical across a model switch, a preset-name switch, and a cwd change, holding disclosure fixed', () => {
@@ -161,7 +193,9 @@ describe('the prompt operation', () => {
         .join('\n\n')
     const base = flatten({})
     expect(base.length).toBeGreaterThan(500)
-    expect(base).toContain('You are Agnes, a general-purpose AI agent powered by Agnes Harness.')
+    expect(base).toContain(
+      'You are Agnes, a general-purpose AI agent developed by Agnes AI and powered by Agnes Harness.',
+    )
     expect(flatten({ model: 'a-totally-different-model', route: 'a-different-route' })).toBe(base)
     expect(flatten({ presetName: 'renamed-preset' })).toBe(base)
     expect(flatten({ cwd: '/a/totally/different/workspace' })).toBe(base)

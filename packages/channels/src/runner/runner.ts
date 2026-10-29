@@ -92,6 +92,10 @@ export function createRunner(dependencies: RunnerDeps): Runner {
     caps: dependencies.adapter.capabilities(),
     limits: dependencies.adapter.manifest.limits,
     log: dependencies.log,
+    onHistoryRefused: async (key, error) => {
+      const target = targets.get(key)
+      return target !== undefined && inbound.refuseHistory(key, target, error)
+    },
   })
   const targets = new Map<string, { chatId: string; threadId?: string }>()
   const requesters = new Map<string, string>()
@@ -171,6 +175,10 @@ export function createRunner(dependencies: RunnerDeps): Runner {
         outbound.attach(key, session, target)
         watchApproval(key, session, target)
       }
+    },
+    onHistoryRefused: (key) => {
+      // evict removes targets, output pumps and approval watches synchronously, before detach I/O.
+      void cache.evict(key).catch(() => safeWarn('channel refused session detach failed'))
     },
     onSession: (key, session, target, requesterUserId) => {
       if (abort.signal.aborted || !cache.owns(key, session)) return
@@ -346,17 +354,19 @@ export function createRunner(dependencies: RunnerDeps): Runner {
       unsubscribers.push(
         dependencies.client.on('notice', (payload) => {
           if (abort.signal.aborted || !isDaemonNotice(payload)) return
-          // Client-module roster notices are consumed by the Web client. They deliberately carry
+          // Profile invalidations are consumed by the Web client. They deliberately carry
           // profile scope instead of a session id, so channel routing must ignore them before
           // narrowing to the session-scoped notice variants below.
-          if (payload.kind === 'packages_changed' || payload.kind === 'tree_changed') return
+          if (
+            payload.kind === 'packages_changed' ||
+            payload.kind === 'tree_changed' ||
+            payload.kind === 'decisions_changed'
+          )
+            return
           const text = noticeText(payload)
           if (text === null) return
           const matching = [...targets].filter(
-            ([key]) =>
-              payload.sessionId === undefined ||
-              key === payload.sessionId ||
-              cache.current(key)?.id === payload.sessionId,
+            ([key]) => payload.sessionId === undefined || cache.current(key)?.id === payload.sessionId,
           )
           const unique = new Map<string, string>()
           for (const [key, target] of matching) {
@@ -567,8 +577,8 @@ function isDaemonNotice(payload: unknown): payload is DaemonNotice {
       'overloaded',
       'job_dispatched',
       'job_dead',
+      'automation_attention',
       'shutting_down',
-      'integrity_failed',
     ].includes(notice.kind) &&
     'detail' in notice &&
     typeof notice.at === 'string'

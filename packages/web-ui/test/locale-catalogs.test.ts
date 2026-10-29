@@ -4,16 +4,24 @@ import { adminConfirmationLocaleCatalog } from '../src/locales/admin-confirmatio
 import { adminDetailLocaleCatalog } from '../src/locales/admin-detail.js'
 import { adminDialogsLocaleCatalog } from '../src/locales/admin-dialogs.js'
 import { adminListLocaleCatalog } from '../src/locales/admin-list.js'
+import { baseToolCatalog } from '../src/locales/base-tools.js'
+import { computerUseUiCatalog } from '../src/locales/computer-use.js'
+import { configFormCatalog } from '../src/locales/config-form.js'
 import { conversationLocaleCatalog } from '../src/locales/conversation.js'
+import { firstRunCatalog } from '../src/locales/first-run.js'
 import { resourceDetailLocaleCatalog } from '../src/locales/resource-detail.js'
 import { resourceListLocaleCatalog } from '../src/locales/resource-list.js'
 
 const catalogs = [
+  ['first run and doctor', firstRunCatalog],
+  ['computer use', computerUseUiCatalog],
+  ['config form', configFormCatalog],
   ['admin confirmation', adminConfirmationLocaleCatalog],
   ['admin dialogs', adminDialogsLocaleCatalog],
   ['admin detail', adminDetailLocaleCatalog],
   ['admin list', adminListLocaleCatalog],
   ['conversation', conversationLocaleCatalog],
+  ['base tool titles', baseToolCatalog],
   ['admin aggregate', adminLocaleCatalog],
   ['resource detail', resourceDetailLocaleCatalog],
   ['resource list', resourceListLocaleCatalog],

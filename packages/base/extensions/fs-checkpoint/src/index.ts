@@ -1,3 +1,5 @@
-import { defineExtension } from '@agnes/extension-api'
+import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 
-export default defineExtension(() => undefined)
+export default defineAgnesPlugin({
+  apply() {},
+})

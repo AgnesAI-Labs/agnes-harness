@@ -1,0 +1,267 @@
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
+import { CoreError } from '@agnes/core-common/types'
+import { scanAll } from '@agnes/core-ledger/log/scan-pages'
+import type { LoopCheckpoint, LoopEffectStatus, ToolResult } from '@agnes/extension-api'
+import type { InferenceEvent } from '@agnes/protocol'
+import type { SessionImpl } from '../step/session.js'
+import { lateToolResponse } from './late-receipt.js'
+
+const EVENT = 'x/core/loop-invocation'
+type Record = {
+  loop: { id: string; version: string }
+  invocationId: string
+  fingerprint: string
+  status: 'may-have-sent' | 'responded'
+  checkpoint: LoopCheckpoint | null
+  result?: ToolResult | readonly InferenceEvent[]
+}
+export class LoopInvocations {
+  constructor(
+    private readonly s: SessionImpl,
+    private readonly checkpoint: () => LoopCheckpoint | null,
+  ) {}
+  private async record(id: string): Promise<Record | undefined> {
+    if (!id || id.length > 256)
+      throw new CoreError('E_ENVELOPE', 'invocationId must contain 1 to 256 characters')
+    const rows = await scanAll((query) => this.s.d.log.scan(query), {
+      type: EVENT,
+      lane: this.s.lane,
+      fromSeq: (this.s.d.log.parent?.boundarySeq ?? 0) + 1,
+      toSeq: this.s.lastSeq,
+    })
+    const event = rows
+      .reverse()
+      .find(
+        (row) =>
+          row.origin === 'system' &&
+          row.trust === 'trusted' &&
+          (row.data as { invocationId?: string }).invocationId === id,
+      )
+    if (!event) return undefined
+    const record = event.data as unknown as Record
+    if (record.loop?.id !== this.s.loop.id || record.loop?.version !== this.s.loop.version)
+      throw new CoreError('E_RELATION', 'Invocation receipt does not match the pinned loop')
+    return record
+  }
+  async status(id: string): Promise<LoopEffectStatus> {
+    const row = await this.record(id)
+    if (!row) return { status: 'not-sent', invocationId: id }
+    if (row.status === 'responded' && row.result !== undefined)
+      return {
+        status: 'responded',
+        invocationId: id,
+        checkpoint: row.checkpoint,
+        result: structuredClone(row.result),
+      }
+    // A process can die after Core committed a tool response but before the driver's receipt.
+    // Associate the public id with that call in its original transaction, then recover the result.
+    const links = await scanAll((query) => this.s.d.log.scan(query), {
+      type: 'x/core/loop-effect',
+      lane: this.s.lane,
+      fromSeq: (this.s.d.log.parent?.boundarySeq ?? 0) + 1,
+      toSeq: this.s.lastSeq,
+    })
+    const link = links
+      .reverse()
+      .find(
+        (event) =>
+          event.origin === 'system' &&
+          event.trust === 'trusted' &&
+          (event.data as { invocationId?: string }).invocationId === id,
+      )
+    const toolUseId = (link?.data as { toolUseId?: string } | undefined)?.toolUseId
+    if (toolUseId) {
+      const late = await lateToolResponse(this.s, toolUseId)
+      if (late) return { status: 'responded', invocationId: id, checkpoint: row.checkpoint, result: late }
+      const results = await scanAll((query) => this.s.d.log.scan(query), {
+        type: 'tool/result',
+        lane: this.s.lane,
+        fromSeq: (this.s.d.log.parent?.boundarySeq ?? 0) + 1,
+        toSeq: this.s.lastSeq,
+      })
+      const result = results
+        .reverse()
+        .find((event) => (event.data as { toolUseId?: string }).toolUseId === toolUseId)
+      if (result) {
+        // Core appends this versioned author response beside tool/result in the same transaction.
+        const responses = await this.s.d.log.scan({
+          type: 'x/core/tool-response',
+          lane: this.s.lane,
+          fromSeq: result.seq + 1,
+          toSeq: result.seq + 1,
+          limit: 1,
+        })
+        const response = responses[0]
+        const saved = response?.data as
+          | { version?: number; toolUseId?: string; result?: ToolResult }
+          | undefined
+        if (
+          response?.origin === 'system' &&
+          response.trust === 'trusted' &&
+          saved?.version === 1 &&
+          saved.toolUseId === toolUseId &&
+          saved.result
+        )
+          return {
+            status: 'responded',
+            invocationId: id,
+            checkpoint: row.checkpoint,
+            result: structuredClone(saved.result),
+          }
+        const data = result.data as {
+          content: ToolResult['content']
+          isError?: boolean
+          code?: string
+          structured?: unknown
+        }
+        // A recovery placeholder is uncertainty, not a real response from the external tool.
+        if (data.code !== 'TOOL_OUTCOME_UNKNOWN')
+          return {
+            status: 'responded',
+            invocationId: id,
+            checkpoint: row.checkpoint,
+            result: structuredClone({
+              content: data.content,
+              ...(data.structured === undefined ? {} : { structured: data.structured }),
+              ...(data.isError === undefined ? {} : { isError: data.isError }),
+            }),
+          }
+      }
+    }
+    if (toolUseId) {
+      const markers = await scanAll((q) => this.s.d.log.scan(q), {
+        type: 'x/core/deferred-job',
+        lane: this.s.lane,
+        fromSeq: (this.s.d.log.parent?.boundarySeq ?? 0) + 1,
+        toSeq: this.s.lastSeq,
+      })
+      const marker = markers.find((event) => (event.data as { toolUseId: string }).toolUseId === toolUseId)
+      if (marker?.origin === 'system' && marker.trust === 'trusted') {
+        const jobId = (marker.data as { jobId: string }).jobId
+        const result = { content: [], deferred: { jobId } }
+        return { status: 'responded', invocationId: id, checkpoint: row.checkpoint, result }
+      }
+    }
+
+    return { status: 'may-have-sent', invocationId: id, checkpoint: row.checkpoint }
+  }
+  async toolUseId(id: string): Promise<string | undefined> {
+    await this.record(id)
+    const links = await scanAll((query) => this.s.d.log.scan(query), {
+      type: 'x/core/loop-effect',
+      lane: this.s.lane,
+      fromSeq: (this.s.d.log.parent?.boundarySeq ?? 0) + 1,
+      toSeq: this.s.lastSeq,
+    })
+    return (
+      links
+        .reverse()
+        .find(
+          (row) =>
+            row.origin === 'system' &&
+            row.trust === 'trusted' &&
+            (row.data as { invocationId?: string }).invocationId === id,
+        )?.data as { toolUseId?: string } | undefined
+    )?.toolUseId
+  }
+  /** Whether `id` has a receipt for exactly this input; none, or one for another input, is false. */
+  async recordedFor(id: string, input: unknown): Promise<boolean> {
+    return (await this.record(id))?.fingerprint === sha256Hex(canonicalJson(input))
+  }
+  /** Whether `id` has a receipt for exactly this input; a receipt for another input is refused. */
+  async claimedFor(id: string, input: unknown): Promise<boolean> {
+    const previous = await this.record(id)
+    if (previous && previous.fingerprint !== sha256Hex(canonicalJson(input)))
+      throw new CoreError('E_RELATION', 'invocationId was reused for a different operation')
+    return previous !== undefined
+  }
+  async settleTool(id: string, result: ToolResult): Promise<void> {
+    const previous = await this.record(id)
+    if (!previous) throw new CoreError('E_RELATION', 'Approval invocation is missing')
+    await this.s.d.log.append([
+      this.s.ev(
+        EVENT,
+        {
+          ...previous,
+          status: 'responded',
+          checkpoint: this.checkpoint(),
+          result,
+        },
+        { ignorable: true },
+      ),
+    ])
+  }
+  async awaitingApproval(toolUseId: string): Promise<boolean> {
+    return [...this.s.state.registers.decisionStates.values()].some(
+      ({ value }) =>
+        value.request.owner === 'core/tool-permission' &&
+        value.request.sourcePackage === '@agnes/core' &&
+        value.request.operationId === toolUseId &&
+        !value.consumption &&
+        !value.invalidation &&
+        (!value.result || value.result.reason === 'answered'),
+    )
+  }
+
+  async claim(id: string, input: unknown): Promise<ToolResult | readonly InferenceEvent[] | undefined> {
+    const fingerprint = sha256Hex(canonicalJson(input))
+    let cached: ToolResult | readonly InferenceEvent[] | undefined
+    await this.s.locked(async () => {
+      const previous = await this.record(id)
+      if (previous) {
+        if (previous.fingerprint !== fingerprint)
+          throw new CoreError('E_RELATION', 'invocationId was reused for a different operation')
+        const recovered = await this.status(id)
+        if (recovered.status !== 'responded')
+          throw new CoreError(
+            'E_RELATION',
+            'Invocation may have been sent; reconcile its effect before replay',
+            { invocationId: id },
+          )
+        cached = structuredClone(recovered.result)
+        return
+      }
+      await this.s.d.log.append([
+        this.s.ev(
+          EVENT,
+          {
+            loop: this.s.loop,
+            invocationId: id,
+            fingerprint,
+            status: 'may-have-sent',
+            checkpoint: this.checkpoint(),
+          },
+          { ignorable: true },
+        ),
+      ])
+    })
+    return cached
+  }
+  async settle(id: string, input: unknown, result: ToolResult | readonly InferenceEvent[]): Promise<void> {
+    await this.s.d.log.append([
+      this.s.ev(
+        EVENT,
+        {
+          loop: this.s.loop,
+          invocationId: id,
+          fingerprint: sha256Hex(canonicalJson(input)),
+          status: 'responded',
+          checkpoint: this.checkpoint(),
+          result,
+        },
+        { ignorable: true },
+      ),
+    ])
+  }
+  async run<T extends ToolResult | readonly InferenceEvent[]>(
+    id: string,
+    input: unknown,
+    invoke: () => Promise<T>,
+  ): Promise<T> {
+    const cached = await this.claim(id, input)
+    if (cached !== undefined) return cached as T
+    const result = await invoke()
+    await this.settle(id, input, result)
+    return result
+  }
+}

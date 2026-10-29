@@ -13,6 +13,7 @@ const messages: Record<BridgeError['code'], string> = {
 const governed: Record<string, BridgeError['code']> = {
   E_DEPTH_EXCEEDED: 1003,
   BUDGET_EXCEEDED: 1001,
+  E_BUDGET: 1001,
   APPROVAL_REJECTED: 1002,
   APPROVAL_UNAVAILABLE: 1002,
   DEPTH_EXCEEDED: 1003,
@@ -20,6 +21,8 @@ const governed: Record<string, BridgeError['code']> = {
   TOOL_NOT_DISCLOSED: 1004,
   TOOL_ARGS_INVALID: 1005,
   SCHEMA_INVALID: 1005,
+  PARKED: 1006,
+  APPROVAL_PENDING: 1006,
 }
 export function bridgeError(code: BridgeError['code']): BridgeError {
   return { code, message: messages[code] }

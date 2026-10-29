@@ -4,7 +4,13 @@
 import type { RpcError } from '@agnes/protocol'
 
 export type JsonRpcId = number | string
-export type JsonRpcRequest = { jsonrpc: '2.0'; id: JsonRpcId; method: string; params?: unknown }
+export type JsonRpcRequest = {
+  jsonrpc: '2.0'
+  id: JsonRpcId
+  method: string
+  params?: unknown
+  _meta?: Record<string, unknown>
+}
 export type JsonRpcNotification = { jsonrpc: '2.0'; method: string; params?: unknown }
 export type JsonRpcResponse = { jsonrpc: '2.0'; id: JsonRpcId; result?: unknown; error?: RpcError }
 export type JsonRpcMessage = JsonRpcRequest | JsonRpcNotification | JsonRpcResponse
@@ -44,7 +50,7 @@ export interface Transport {
   close(): Promise<void>
 }
 
-// A factory rather than a built transport: reconnect (Task 15) has to be able to build
+// A factory rather than a built transport: reconnect has to be able to build
 // another one, and the handlers must be bound before the transport starts producing
 // messages - there is no window in which one exists but nobody is subscribed.
 export type TransportFactory = (handlers: TransportHandlers) => Promise<Transport>

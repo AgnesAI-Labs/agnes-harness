@@ -1,9 +1,18 @@
 export type { AdapterStreamOptions, WireEvent } from './adapter.js'
 export { WireAdapter } from './adapter.js'
+export { JEV_WIRE_API, JevAdapter } from './adapters/jev/index.js'
 export type { ImagesImpl } from './adapters/media/index.js'
 export { IMAGE_ROUTE, MediaAdapter, VIDEO_ROUTE } from './adapters/media/index.js'
 export type { VideoClient, VideoStatus } from './adapters/media/video-job.js'
 export { pollUntilDone } from './adapters/media/video-job.js'
+export {
+  MAX_SPEECH_BYTES,
+  OPENAI_AUDIO_WIRE_API,
+  OpenAiAudioAdapter,
+  openAiAudioUnits,
+  probeOpenAiAudioEndpoint,
+  wavHeader,
+} from './adapters/openai-audio/index.js'
 export type {
   ApiKeyAdapterOptions,
   ApiKeyAdaptersOptions,
@@ -17,6 +26,7 @@ export {
   API_KEY_PROVIDER_REGISTRY,
   ApiKeyProviderError,
   createApiKeyProviderAdapters,
+  createApiKeyProviderConfigs,
   getApiKeyProvider,
 } from './adapters/pi/api-key-providers.js'
 export type {
@@ -47,7 +57,14 @@ export {
 } from './adapters/pi/codex.js'
 export type { ManualRoute } from './adapters/pi/index.js'
 export { PiAdapter, toPiModel } from './adapters/pi/index.js'
-export { fetchProviderModels, type ProviderModels } from './adapters/pi/probe-models.js'
+export {
+  fetchProviderModels,
+  type ProviderCatalogueFailure,
+  type ProviderModels,
+} from './adapters/pi/probe-models.js'
+export { PI_ADAPTER_APIS } from './adapters/pi/wire.js'
+export { validateModelBaseUrl } from './base-url.js'
+export { isChatModelId } from './chat-model.js'
 export type { ContractStoreOptions } from './contract/store.js'
 export { FileContractStore, loadContractStore } from './contract/store.js'
 export type { ContractManifest, ContractSyntax } from './contract/types.js'
@@ -61,6 +78,7 @@ export {
   runDecodeFixture,
 } from './decode/fixtures.js'
 export { createState, finish, mergeDeltas, step } from './decode/machine.js'
+export { nativeToolCallFormats } from './decode/prose-calls.js'
 export { PARSER_VERSION, RULES, RULES_DIGEST } from './decode/rules/index.js'
 export type { DecodeContext, DecodeInput, DecodeState, Rule } from './decode/types.js'
 export type { AiSetupErrorCode } from './errors.js'
@@ -68,6 +86,7 @@ export { AiSetupError } from './errors.js'
 export type { EscalationSignals } from './escalation.js'
 export { Escalation } from './escalation.js'
 export { guardSequence, normalizeError, RETRYABLE, retryHint } from './guard.js'
+export { modelAdaptersPlugin } from './model-adapters.js'
 export type { InferenceDeps } from './provider.js'
 export { createProvider, runInference } from './provider.js'
 export type {
@@ -98,5 +117,16 @@ export {
 export { compareDeclaration, type DoctorReport, type Observation, runDoctor } from './quality/doctor.js'
 export type { Registry } from './registry.js'
 export { buildRegistry } from './registry.js'
+export {
+  type ClassifiedModelFailure,
+  classifyModelFailure,
+  fileRetryLedger,
+  type ModelFailureClass,
+  memoryRetryLedger,
+  nextRetryDelay,
+  RETRY_ATTEMPT_STALE_MS,
+  type RetryAttemptLedger,
+  type RetryAttemptRecord,
+} from './retry.js'
 export { buildStamp, renderPrefixedPrompt, type SentReport, toolSchemaHash } from './stamp.js'
 export { estimateBilling, estimateCredits } from './usage.js'

@@ -1,6 +1,6 @@
 /**
- * 平台共享单例表（WC5）：插件构建必须把以下说明符标 external，由宿主 import map 提供唯一实例。
- * `@agnes/web` 的官方构建链以本表为准做依赖图检查（共享平台模块不得内联进插件 chunk，M10）。
+ * Shared platform singletons: plugin builds must externalize these specifiers; the host import map supplies one instance.
+ * The official `@agnes/web` build checks dependency graphs against this table: never inline shared platform modules into plugin chunks.
  */
 export const externals = [
   'react',
@@ -9,9 +9,18 @@ export const externals = [
   'react-dom/client',
   '@agnes/cordis',
   '@agnes/web-client',
+  '@agnes/web-ui',
+  '@agnes/protocol',
+  '@agnes/sdk/browser',
+  '@agnes/sdk',
+  '@agnes/web-units/shell',
+  '@agnes/web-foundation/locale-catalog',
+  '@agnes/web-conversation/goal-renderers',
+  '@agnes/web-conversation/interaction-renderer',
+  '@agnes/web/presentation-renderers',
 ] as const
 
 export type ExternalSpecifier = (typeof externals)[number]
 
-/** 插件构建器合同版本；资源清单与构建声明携带（WC1/WC5 安装检查用）。 */
+/** Plugin builder contract version, carried by asset manifests and build declarations for installation checks. */
 export const BUILDER_VERSION = 1

@@ -1,0 +1,150 @@
+{
+  "name": "@agnes-fde/finance-reconcile",
+  "version": "1.1.1",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": "./index.mjs",
+  "files": [
+    "*.mjs",
+    "fixtures",
+    "skills",
+    "client",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE",
+    "real-model.bundle.json"
+  ],
+  "scripts": {
+    "build": "node --check index.mjs && node --check ledgers.mjs && node --check surface.mjs",
+    "test": "vitest run test/workflow.test.mjs --maxWorkers=1"
+  },
+  "dependencies": {
+    "@agnes/extension-api": "^5.0.0",
+    "@agnes/intelligent-ui-contract": "0.0.0",
+    "@agnes/plugin-runtime": "0.0.0",
+    "@sinclair/typebox": "0.34.33",
+    "@agnes/protocol": "0.0.0"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "export": "main",
+        "id": "ext:@agnes-fde/finance-reconcile/main",
+        "inject": [
+          "tools",
+          "providers",
+          "skills"
+        ],
+        "apiRange": "^5.0.0",
+        "metadata": {
+          "displayName": "Ledger reconciliation example",
+          "summary": "Compares sample bank and book ledgers, then prepares balanced simulated adjustments for approval.",
+          "description": "Compares sample bank and book ledgers, then prepares balanced simulated adjustments for approval.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "账目核对示例",
+              "summary": "核对样例银行账与账簿，准备平衡的模拟调整分录供批准。",
+              "description": "核对样例银行账与账簿，准备平衡的模拟调整分录供批准。"
+            }
+          }
+        },
+        "capabilities": {
+          "model": true,
+          "filesystem": {
+            "read": [
+              "fixtures/**",
+              "skills/playbook/SKILL.md",
+              "fde-output/finance-reconcile/**"
+            ],
+            "write": [
+              "fde-output/finance-reconcile/**"
+            ]
+          },
+          "uiData": [
+            "finance.differences.read"
+          ]
+        }
+      }
+    ],
+    "bundles": {
+      "finance-reconcile": {
+        "profile": {
+          "skills": [
+            "finance-reconcile"
+          ],
+          "providers": {
+            "loop": {
+              "version": "5.0.0",
+              "provider": "fde.finance-reconcile"
+            }
+          }
+        },
+        "presets": {
+          "finance-reconcile": {
+            "name": "finance-reconcile",
+            "extends": "standard",
+            "providers": {
+              "tool-policy": {
+                "provider": "fde.finance-reconcile"
+              }
+            }
+          }
+        },
+        "launch": {
+          "title": {
+            "en": "Ledger reconciliation example",
+            "zh-CN": "账目核对示例"
+          },
+          "description": {
+            "en": "Compares sample bank and book ledgers, then prepares balanced simulated adjustments for approval."
+          },
+          "preset": "finance-reconcile",
+          "prompt": {
+            "text": {
+              "en": "Reconcile the sample bank and book ledgers to the cent, explain each mismatch, and ask me before recording the proposed adjusting entries.",
+              "zh-CN": "把示例银行流水和账簿逐分对平，解释每一笔差异，记录拟定的调整分录前先问我。"
+            },
+            "mode": "draft"
+          }
+        }
+      }
+    },
+    "clientDescriptors": [
+      {
+        "rowId": "ext:@agnes-fde/finance-reconcile/main",
+        "path": "./client/agnes.client.json"
+      }
+    ],
+    "metadata": {
+      "displayName": "Ledger reconciliation example",
+      "summary": "Compares sample bank and book ledgers, then prepares balanced simulated adjustments for approval.",
+      "description": "Compares sample bank and book ledgers, then prepares balanced simulated adjustments for approval.",
+      "samplePrompt": {
+        "en": "Reconcile the sample bank and book ledgers to the cent, explain each mismatch, and ask me before recording the proposed adjusting entries.",
+        "zh-CN": "把示例银行流水和账簿逐分对平，解释每一笔差异，记录拟定的调整分录前先问我。"
+      },
+      "locales": {
+        "zh-CN": {
+          "displayName": "账目核对示例",
+          "summary": "核对样例银行账与账簿，准备平衡的模拟调整分录供批准。",
+          "description": "核对样例银行账与账簿，准备平衡的模拟调整分录供批准。"
+        }
+      }
+    },
+    "provides": [
+      "bundle",
+      "loop",
+      "tool",
+      "skills",
+      "ui"
+    ]
+  },
+  "devDependencies": {
+    "@agnes/host": "0.0.0",
+    "@agnes/resource-control-runtime": "0.0.0",
+    "vitest": "5.0.0"
+  }
+}

@@ -1,15 +1,18 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { requireChildControl } from '@agnes/core-child-control/child/store'
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import { CoreError } from '@agnes/core-common/types'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import type { ToolDef } from '@agnes/extension-api'
 import type { ModelRecord } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
-import { requireChildControl } from '../src/child/store.js'
+import { KernelChildren } from '../src/child/factory.js'
 import { Kernel } from '../src/kernel.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
 import { mintFrom } from '../src/request/mint.js'
 import { toProviderRequest } from '../src/request/to-provider.js'
-import { presetDefaults } from '../src/step/preset.js'
-import { CoreError } from '../src/types.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, sent, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, shellTool, testFsOps, testWorkspaceInvocation } from './helpers/open-session.js'
@@ -41,6 +44,7 @@ function kernel(over: Partial<Parameters<typeof Kernel.create>[0]> = {}) {
   const provider = fakeProvider([textTurn('root'), textTurn('child')])
   Object.assign(provider, { models: () => [model()] })
   return Kernel.create({
+    loops: defaultLoops(),
     storage: new MemoryStorage(),
     seams: fakeSeams(),
     provider,
@@ -78,7 +82,7 @@ describe('tree budget on the live inference path', () => {
     const provider = fakeProvider([expensiveTool, textTurn('after')])
     Object.assign(provider, { models: () => [model()] })
     const seams = fakeSeams({
-      ledger: { projected: async () => ({ credits: 8, creditSource: 'estimated' }) },
+      billing: { projected: async () => ({ credits: 8, creditSource: 'estimated' }) },
     })
     const k = kernel({
       storage,
@@ -130,9 +134,12 @@ describe('tree budget on the live inference path', () => {
     await k.close()
   })
 
-  it('shares reserveTreeBudget with compaction', () => {
-    const src = readFileSync(fileURLToPath(new URL('../src/step/compaction.ts', import.meta.url)), 'utf8')
-    expect(src.includes('reserveTreeBudget(')).toBe(true)
+  it('uses an independent tree budget handle for compaction', () => {
+    const src = readFileSync(
+      fileURLToPath(new URL('../src/execution/turn/compaction-summary.ts', import.meta.url)),
+      'utf8',
+    )
+    expect(src.includes('reserveTreeBudgetHandle(')).toBe(true)
   })
 
   it('maps maxTokens onto the provider wire body', () => {
@@ -363,40 +370,70 @@ describe('recovery descriptor and close reasons', () => {
     const child = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'x' })
     await child.cancel?.()
     expect((await storage.lookupByKey(child.key))?.state).toBe('cancelled')
+    expect(await new KernelChildren(k, () => parent).humanControlState(child.key)).toMatchObject({
+      status: 'cancelled',
+      controls: { stop: false, continue: false },
+      totalTokens: 0,
+      durationMs: 0,
+    })
     await k.close()
   })
 
-  it('returns the same child for a repeated creationId and does not start a second run', async () => {
-    const storage = new MemoryStorage()
-    await storage.ensureRootScope('root', 10_000_000n)
-    const input = {
-      childKey: 'parent/c1',
-      parentKey: 'parent',
-      boundarySeq: 1 as const,
-      creationId: 'parent:main:direct:1',
-      kind: 'spawn' as const,
-      rootTaskId: 'root',
-      runtimeOwnerSessionKey: 'parent',
-      generationDepth: 1,
-      generationLimit: 2,
-      maxFanOut: 4,
-      inputHash: 'abc',
-      inputText: 'async',
-      cwd: '/w',
-      actorId: 'u',
-      isolation: 'shared' as const,
-      workspaceId: 'ws1',
-      treeCapMicro: 10_000_000n,
-      childCapMicro: null,
-      writerRunId: 'w',
-    }
-    await storage.open('parent', { writerRunId: 'r1', ttlMs: 1000 })
-    const first = await storage.createDelegatedChild(input)
-    const second = await storage.createDelegatedChild({ ...input, childKey: 'parent/c2', workspaceId: 'ws2' })
-    expect(first.status).toBe('created')
-    expect(second.status).toBe('existing')
-    if (second.status === 'existing') expect(second.record.childKey).toBe('parent/c1')
-  })
+  it.each([false, true])(
+    'keeps repeated creationId and runtime-owned child controls (grandchild=%s)',
+    async (grandchild) => {
+      const storage = new MemoryStorage()
+      const k = kernel({ storage })
+      const parent = await k.session('parent', sessionOpts)
+      await storage.ensureRootScope('root', 10_000_000n)
+      const input = {
+        childKey: 'parent/c1',
+        parentKey: grandchild ? 'parent/middle' : 'parent',
+        boundarySeq: 1 as const,
+        creationId: 'parent:main:direct:1',
+        kind: 'spawn' as const,
+        rootTaskId: 'root',
+        runtimeOwnerSessionKey: 'parent',
+        generationDepth: grandchild ? 2 : 1,
+        generationLimit: 2,
+        maxFanOut: 4,
+        inputHash: 'abc',
+        inputText: 'async',
+        cwd: '/w',
+        actorId: 'u',
+        isolation: 'shared' as const,
+        workspaceId: 'ws1',
+        treeCapMicro: 10_000_000n,
+        childCapMicro: null,
+        writerRunId: 'w',
+      }
+      if (grandchild) await storage.open('parent/middle', { writerRunId: 'r1', ttlMs: 1000 })
+      const first = await storage.createDelegatedChild(input)
+      const second = await storage.createDelegatedChild({
+        ...input,
+        childKey: 'parent/c2',
+        workspaceId: 'ws2',
+      })
+      expect(first.status).toBe('created')
+      expect(second.status).toBe('existing')
+      if (second.status === 'existing') expect(second.record.childKey).toBe('parent/c1')
+      try {
+        const children = new KernelChildren(k, () => parent)
+        expect((await children.list()).map((row) => row.id)).toEqual(grandchild ? [] : ['parent/c1'])
+        await expect(children.humanControlState('parent/c1')).resolves.toMatchObject({
+          id: 'parent/c1',
+          providerId: 'in-process',
+          status: 'starting',
+          controls: { stop: false, continue: false },
+        })
+        await expect(children.humanControlState('foreign')).rejects.toMatchObject({
+          code: 'E_CHILD_NOT_FOUND',
+        })
+      } finally {
+        await k.close()
+      }
+    },
+  )
 
   it('does not re-run a replay:never tool after abort', async () => {
     let runs = 0
@@ -427,7 +464,7 @@ describe('old backend capability', () => {
 })
 
 describe('parent close reasons and late approval', () => {
-  it('does not cancel spawn on parent turn complete or parent close, and marks kernel close as recovery', async () => {
+  it('keeps spawn after turn completion and persists cancellation after explicit parent close', async () => {
     const storage = new MemoryStorage()
     const k = kernel({ storage })
     const parent = await k.session('parent', sessionOpts)
@@ -441,9 +478,9 @@ describe('parent close reasons and late approval', () => {
     await parent.run({ until: 'turn-end', signal: new AbortController().signal })
     expect((await storage.lookupByKey(child.key))?.state).toBe('ready')
     await parent.close()
-    expect((await storage.lookupByKey(child.key))?.state).toBe('ready')
+    expect((await storage.lookupByKey(child.key))?.state).toBe('cancelled')
     await k.close()
-    expect((await storage.lookupByKey(child.key))?.state).toBe('failed')
+    expect((await storage.lookupByKey(child.key))?.state).toBe('cancelled')
   })
 
   it('does not execute a tool when approval arrives after cancel', async () => {
@@ -513,10 +550,8 @@ describe('a delegated sub-agent with nobody to ask', () => {
     const child = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'tool' })
     await child.run('tool')
     expect(runs).toBe(0)
-    expect((await storage.scan(child.key, { type: 'approval/decided', limit: 5 }))[0]?.data).toMatchObject({
-      verdict: 'rejected',
-      via: 'sync',
-      reason: 'subagent_scope',
+    expect((await storage.scan(child.key, { type: 'decision/state', limit: 5 }))[0]?.data).toMatchObject({
+      result: null,
     })
     const result = (await storage.scan(child.key, { type: 'tool/result', limit: 5 }))[0]?.data as {
       code: string
@@ -524,6 +559,50 @@ describe('a delegated sub-agent with nobody to ask', () => {
     }
     expect(result.code).toBe('APPROVAL_REJECTED')
     expect(result.content[0]?.text).toMatch(/sub-agent.*fixed permission scope.*do not retry/s)
+    expect((await child.status()).receipt).toMatchObject({
+      workspace: { cwd: '/w', isolation: 'shared' },
+      tools: [{ name: 'shell', isError: true }],
+      truncated: false,
+    })
+    // The handle can be gone: collection still reads the same child-local ledger evidence.
+    expect((await parent.d.children.inspect?.(child.key))?.receipt).toMatchObject({
+      tools: [{ name: 'shell', isError: true }],
+    })
+    await k.close()
+  })
+})
+
+describe('a child of an unattended turn', () => {
+  it.each([
+    ['an unattended', true],
+    ['an attended', false],
+  ])('opened from %s turn, offers ask tools only when the parent turn could', async (_label, unattended) => {
+    const storage = new MemoryStorage()
+    const provider = fakeProvider([textTurn('child done')])
+    Object.assign(provider, { models: () => [model()] })
+    const k = kernel({ storage, provider })
+    const shell: ToolDef = shellTool()
+    k.tools.add(shell, { source: 't', trust: 'builtin' })
+    k.tools.add(
+      { ...shell, name: 'ask_user', meta: { ...shell.meta, requiresUser: true } },
+      { source: 't', trust: 'builtin' },
+    )
+    const parent = await k.session('parent', sessionOpts)
+    await parent.enqueue('next-turn', {
+      content: [{ type: 'text', text: 'delegate' }],
+      actor: unattended ? { ...actor, attrs: { interaction: 'unattended' } } : actor,
+    })
+    await parent.acceptInput()
+    const child = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'work' })
+    await child.run('work')
+    const names = provider.requests[0]?.tools.map((tool) => tool.name)
+    expect(names).toContain('shell')
+    expect(names?.includes('ask_user')).toBe(!unattended)
+    // The declaration sits on the child's own trigger row, so the child's recovery (and any child
+    // it opens in turn) reads it without the parent.
+    const [trigger] = await storage.scan(child.key, { type: 'user/message', limit: 1 })
+    expect(trigger?.actor?.attrs?.interaction).toBe(unattended ? 'unattended' : undefined)
+    expect(JSON.stringify(provider.requests[0]?.messages).includes('This run is unattended')).toBe(unattended)
     await k.close()
   })
 })
@@ -536,6 +615,11 @@ describe('subagent cost isolation', () => {
     expect(parent.state.creditsUsed).toBe(0)
     const child = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'cost' })
     await child.run('cost')
+    expect(await new KernelChildren(k, () => parent).humanControlState(child.key)).toMatchObject({
+      totalTokens: 15,
+      durationMs: 0,
+      controls: { stop: false, continue: false },
+    })
     expect(parent.state.lastLedgerTokens).toBeNull()
     expect(parent.state.creditsUsed).toBe(0)
     const rows = await parent.scan({ type: 'subagent/cost', limit: 5 })

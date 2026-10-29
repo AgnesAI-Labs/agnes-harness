@@ -40,7 +40,7 @@ export async function setupMcpLegacySentinel(input: { home: string; workspace: s
       type: 'module',
       license: 'MIT',
       exports: './index.js',
-      agnes: { plugins: [{ id: 'ext:test/legacy-preset', export: 'default' }] },
+      agnes: { plugins: [{ apiRange: '^5.0.0', id: 'ext:test/legacy-preset', export: 'default' }] },
     }),
   )
   await writeFile(
@@ -93,16 +93,13 @@ export async function setupMcpLegacySentinel(input: { home: string; workspace: s
     seams: Object.keys(lock.seams).length
       ? lock.seams
       : {
-          approval: '@agnes/base',
-          checkpoint: '@agnes/base',
-          ledger: '@agnes/base',
-          sandbox: '@agnes/base',
-          verifier: '@agnes/base',
-          repair: '@agnes/base',
-          artifacts: '@agnes/base',
-          principals: '@agnes/base',
-          platform: '@agnes/host',
-          harness: '@agnes/base',
+          approval: { provider: 'local-prompt' },
+          checkpoint: { provider: 'fs' },
+          billing: { provider: 'budget' },
+          verifier: { provider: 't0' },
+          repair: { provider: 'default' },
+          artifacts: { provider: 'local' },
+          principals: { provider: 'local' },
         },
     policySnapshot: lock.policySnapshot.capabilityCeiling.length
       ? lock.policySnapshot

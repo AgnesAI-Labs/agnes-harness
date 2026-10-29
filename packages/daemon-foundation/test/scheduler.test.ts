@@ -1,0 +1,787 @@
+import { createExtensionActivationBarrier } from '@agnes/host-extensions/ext-host/activation-barrier'
+import type { Actor, ContentBlock } from '@agnes/protocol'
+import { describe, expect, it, vi } from 'vitest'
+import { type JobRow, JobsRepo } from '../src/jobs/repo.js'
+import { Scheduler, type SchedulerRegistry } from '../src/jobs/scheduler.js'
+import type { WorkspaceBindingEnvelope } from '../src/storage/workspaces.js'
+import { sqliteTables } from './sqlite-tables.js'
+
+const row = (key: string, over: Partial<JobRow> = {}): JobRow => ({
+  idempotencyKey: key,
+  sessionKey: 'k',
+  profileHash: 'h',
+  payload: { prompt: 'go' },
+  schedule: { kind: 'once' },
+  status: 'waiting',
+  attempts: 0,
+  maxAttempts: 2,
+  backoffMs: 1_000,
+  delayUntil: 0,
+  stalledCounter: 0,
+  protected: false,
+  createdAt: 0,
+  updatedAt: 0,
+  ...over,
+})
+
+const workspaceAuthority = (path: string | null = '/workspace') => ({
+  async restoreBinding(sessionKey: string): Promise<WorkspaceBindingEnvelope> {
+    if (!path) throw new Error(`session workspace unavailable for ${sessionKey}`)
+    return {
+      version: 1,
+      sessionKey,
+      workspaceId: 'a'.repeat(64),
+      revision: 1,
+      canonicalRoot: path,
+    } as WorkspaceBindingEnvelope
+  },
+})
+
+function fakeRegistry(
+  options: { busy?: boolean; fail?: boolean; live?: boolean; cwd?: string; reason?: string } = {},
+) {
+  const calls: Array<{ kind: string; value?: unknown }> = []
+  const entry = {
+    key: 'k',
+    inflight: options.busy ? { promptId: 'x', abort: new AbortController() } : null,
+    session: {
+      cwd: options.cwd ?? '/workspace',
+      enqueue: async (target: 'next-turn' | 'next-step', message: unknown) => {
+        calls.push({ kind: `enqueue:${target}`, value: message })
+        return 5
+      },
+      run: async (_options: { until: 'turn-end'; signal: AbortSignal }) => {
+        calls.push({ kind: 'run' })
+        return options.fail
+          ? { reason: 'error', lastSeq: 6, error: { code: 'X', message: 'boom' } }
+          : { reason: options.reason ?? 'completed', lastSeq: 6 }
+      },
+      resume: async () => {
+        calls.push({ kind: 'resume' })
+        return { state: 'resumed' }
+      },
+    },
+  }
+  const registry: SchedulerRegistry = {
+    open: async (value) => {
+      calls.push({ kind: 'open', value })
+      return entry
+    },
+    get: () => (options.live === false ? undefined : entry),
+    keys: () => (options.live === false ? [] : ['k']),
+  }
+  return { calls, registry }
+}
+
+function scheduler(
+  repo: JobsRepo,
+  registry: SchedulerRegistry,
+  clock: () => number,
+  emit: (kind: string, options: { sessionId?: string; detail: unknown }) => void = () => undefined,
+  unattendedApproval?: (job: JobRow) => 'notify' | 'refuse',
+) {
+  return new Scheduler({
+    ...(unattendedApproval ? { unattendedApproval } : {}),
+    repo,
+    registry,
+    notices: { emit } as never,
+    clock,
+    owner: 'owner',
+    limits: { tickMs: 1_000, lockMs: 60_000, maxStalled: 5 },
+    workspaces: workspaceAuthority(),
+    ownership: { resolve: () => ({ active: true, principalId: 'owner' }) },
+    activationBarrier: createExtensionActivationBarrier(),
+    random: () => 0.5,
+  })
+}
+
+describe('Scheduler', () => {
+  it('admits later jobs within the shared concurrency bound and drains active work on stop', async () => {
+    vi.useFakeTimers()
+    const tables = sqliteTables()
+    let instance: Scheduler | undefined
+    const releases = new Map<string, () => void>()
+    const signals = new Map<string, AbortSignal>()
+    const started: string[] = []
+    try {
+      const clock = () => Date.now()
+      const repo = new JobsRepo(tables.table('jobs'), clock)
+      const registry = fakeRegistry().registry
+      registry.open = async (options) => {
+        const key = options.key ?? ''
+        const entry = await fakeRegistry().registry.open(options)
+        entry.session.run = async ({ signal }) => {
+          started.push(key)
+          signals.set(key, signal)
+          if (key === 'failed') throw new Error('synthetic run failure')
+          if (key !== 'fast') await new Promise<void>((resolve) => releases.set(key, resolve))
+          return { reason: 'completed', lastSeq: 1 }
+        }
+        return entry
+      }
+      instance = new Scheduler({
+        repo,
+        registry,
+        clock,
+        owner: 'owner',
+        notices: { emit() {} } as never,
+        limits: { tickMs: 10, lockMs: 5, maxStalled: 5 },
+        workspaces: workspaceAuthority(),
+        ownership: { resolve: () => ({ active: true, principalId: 'owner' }) },
+        activationBarrier: createExtensionActivationBarrier(),
+      })
+      repo.insert(row('slow', { sessionKey: 'slow' }))
+      instance.start()
+      await vi.advanceTimersByTimeAsync(10)
+      expect(started).toEqual(['slow'])
+      repo.insert(row('fast', { sessionKey: 'fast' }))
+      await vi.advanceTimersByTimeAsync(10)
+      expect(repo.get('fast')?.status).toBe('completed')
+      expect(repo.get('slow')).toMatchObject({ status: 'active', stalledCounter: 0 })
+      repo.insert(row('failed', { sessionKey: 'failed', maxAttempts: 1 }))
+      await vi.advanceTimersByTimeAsync(10)
+      expect(repo.get('failed')?.status).toBe('failed')
+
+      for (let n = 0; n < 16; n++) {
+        const key = `held-${String(n).padStart(2, '0')}`
+        repo.insert(row(key, { sessionKey: key }))
+      }
+      await vi.advanceTimersByTimeAsync(30)
+      expect(repo.activeSince()).toHaveLength(16)
+      expect(repo.waitingDepth(0).reduce((total, entry) => total + entry.depth, 0)).toBe(1)
+      expect(new Set(started).size).toBe(started.length)
+      expect(await instance.tick()).toEqual({ claimed: 0, requeued: 0, dead: 0 })
+      releases.get('held-00')?.()
+      await vi.advanceTimersByTimeAsync(10)
+      expect(repo.get('held-15')?.status).toBe('active')
+
+      let stopped = false
+      const stopping = instance.stop().then(() => {
+        stopped = true
+      })
+      await vi.advanceTimersByTimeAsync(0)
+      for (const [key, signal] of signals)
+        if (key !== 'fast' && key !== 'failed' && key !== 'held-00') expect(signal.aborted).toBe(true)
+      expect(stopped).toBe(false)
+      for (const release of releases.values()) release()
+      await stopping
+      expect(repo.get('slow')?.status).toBe('active')
+      const count = started.length
+      await vi.advanceTimersByTimeAsync(100)
+      expect(started).toHaveLength(count)
+    } finally {
+      for (const release of releases.values()) release()
+      await instance?.stop()
+      await tables.close()
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not start a scheduled remote turn across an activation cutover', async () => {
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => 10_000)
+    repo.insert(row('activation-race'))
+    const { calls, registry } = fakeRegistry()
+    const activationBarrier = createExtensionActivationBarrier()
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const activation = activationBarrier.quiesce('scheduled-cutover', () => held)
+    await Promise.resolve()
+    const instance = new Scheduler({
+      repo,
+      registry,
+      notices: { emit() {} } as never,
+      clock: () => 10_000,
+      owner: 'owner',
+      limits: { tickMs: 1_000, lockMs: 60_000, maxStalled: 5 },
+      workspaces: workspaceAuthority(),
+      ownership: { resolve: () => ({ active: true, principalId: 'owner' }) },
+      activationBarrier,
+      random: () => 0.5,
+    })
+
+    await instance.tick()
+    expect(calls).toEqual([])
+    expect(repo.get('activation-race')).toMatchObject({
+      status: 'delayed',
+      error: 'activation-in-progress',
+    })
+    release()
+    await activation
+  })
+
+  it('does not let a queued tick claim or open work after intake stops', async () => {
+    vi.useFakeTimers()
+    try {
+      const repo = new JobsRepo(sqliteTables().table('jobs'), () => 10_000)
+      repo.insert(row('first'))
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const opened: string[] = []
+      const registry = fakeRegistry().registry
+      registry.open = vi.fn(async (options) => {
+        opened.push(options.key ?? '')
+        const entry = await fakeRegistry().registry.open(options)
+        entry.session.run = async () => {
+          await gate
+          return { reason: 'completed', lastSeq: 1 }
+        }
+        return entry
+      })
+      const instance = new Scheduler({
+        repo,
+        registry,
+        notices: { emit() {} } as never,
+        clock: () => 10_000,
+        owner: 'owner',
+        limits: { tickMs: 10, lockMs: 60_000, maxStalled: 5 },
+        workspaces: workspaceAuthority(),
+        ownership: { resolve: () => ({ active: true, principalId: 'owner' }) },
+        activationBarrier: createExtensionActivationBarrier(),
+      })
+      instance.start()
+      await vi.advanceTimersByTimeAsync(10)
+      expect(opened).toEqual(['k'])
+      repo.insert(row('queued', { sessionKey: 'queued' }))
+      vi.advanceTimersByTime(30)
+
+      instance.stopIntake()
+      release()
+      await instance.stop()
+
+      expect(opened).toEqual(['k'])
+      expect(repo.get('queued')).toMatchObject({ status: 'waiting' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('immediately aborts a controller created reentrantly after stop', async () => {
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => 10_000)
+    repo.insert(row('racing'))
+    let instance!: Scheduler
+    let stopping!: Promise<void>
+    const fake = fakeRegistry()
+    fake.registry.open = vi.fn(fake.registry.open)
+    instance = new Scheduler({
+      repo,
+      registry: fake.registry,
+      notices: {
+        emit() {
+          stopping = instance.stop()
+        },
+      } as never,
+      clock: () => 10_000,
+      owner: 'owner',
+      limits: { tickMs: 1_000, lockMs: 60_000, maxStalled: 5 },
+      workspaces: workspaceAuthority(),
+      ownership: { resolve: () => ({ active: true, principalId: 'owner' }) },
+      activationBarrier: createExtensionActivationBarrier(),
+    })
+
+    await instance.tick()
+    await stopping
+
+    expect(fake.registry.open).not.toHaveBeenCalled()
+    expect(repo.get('racing')).toMatchObject({ status: 'active', leaseOwner: 'owner' })
+  })
+
+  it('does not claim waiting work when a dead-job notice stops intake during a tick', async () => {
+    let now = 0
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => now)
+    repo.insert(row('dead', { stalledCounter: 5 }))
+    repo.claimDue(now, 'old-owner', 10, 1)
+    repo.insert(row('waiting'))
+    now = 20
+    let instance!: Scheduler
+    const opened = vi.fn(fakeRegistry().registry.open)
+    instance = scheduler(
+      repo,
+      { ...fakeRegistry().registry, open: opened },
+      () => now,
+      (kind) => {
+        if (kind === 'job_dead') instance.stopIntake()
+      },
+    )
+
+    await expect(instance.tick()).resolves.toEqual({ claimed: 0, requeued: 0, dead: 1 })
+    expect(opened).not.toHaveBeenCalled()
+    expect(repo.get('waiting')).toMatchObject({ status: 'waiting' })
+  })
+
+  it('does not heartbeat an admitted job after stop aborts it', async () => {
+    vi.useFakeTimers()
+    try {
+      const repo = new JobsRepo(sqliteTables().table('jobs'), () => 10_000)
+      repo.insert(row('heartbeat'))
+      repo.heartbeat = vi.fn(repo.heartbeat.bind(repo))
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const fake = fakeRegistry()
+      const entry = await fake.registry.open({ key: 'k', cwd: '/workspace' })
+      entry.session.run = async () => {
+        await gate
+        return { reason: 'completed', lastSeq: 1 }
+      }
+      fake.registry.open = async () => entry
+      const instance = scheduler(repo, fake.registry, () => 10_000)
+      const ticking = instance.tick()
+      await Promise.resolve()
+      const stopping = instance.stop()
+
+      vi.advanceTimersByTime(10_000)
+      expect(repo.heartbeat).not.toHaveBeenCalled()
+      release()
+      await Promise.all([ticking, stopping])
+      expect(repo.get('heartbeat')).toMatchObject({ status: 'active', leaseOwner: 'owner' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each(['completed', 'parked'])(
+    'dispatches a due once-job and preserves its %s outcome',
+    async (reason) => {
+      const now = 10_000
+      const repo = new JobsRepo(sqliteTables().table('jobs'), () => now)
+      repo.insert(row('j1'))
+      const notices: Array<{ kind: string; sessionId?: string }> = []
+      const { calls, registry } = fakeRegistry({ reason })
+      const instance = scheduler(
+        repo,
+        registry,
+        () => now,
+        (kind, options) =>
+          notices.push({ kind, ...(options.sessionId ? { sessionId: options.sessionId } : {}) }),
+      )
+
+      expect(await instance.tick()).toEqual({ claimed: 1, requeued: 0, dead: 0 })
+      expect(calls.map((call) => call.kind)).toEqual(['open', 'enqueue:next-turn', 'run'])
+      expect(repo.get('j1')).toMatchObject({
+        status: 'completed',
+        result: { seq: 6, reason },
+      })
+      expect(notices).toEqual([{ kind: 'job_dispatched', sessionId: 'k' }])
+    },
+  )
+
+  it('steers a busy session and preserves the scheduler actor and prompt', async () => {
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => 10_000)
+    repo.insert(row('busy', { payload: { prompt: 'x', delivery: 'steer' } }))
+    const { calls, registry } = fakeRegistry({ busy: true })
+    await scheduler(repo, registry, () => 10_000).tick()
+    expect(calls.map((call) => call.kind)).toEqual(['open', 'enqueue:next-step'])
+    const message = calls[1]?.value as { actor: Actor; content: ContentBlock[] }
+    expect(message.actor).toMatchObject({ id: 'job:busy', role: 'system' })
+    expect(message.content).toEqual([{ type: 'text', text: 'x' }])
+    expect(repo.get('busy')).toMatchObject({ status: 'completed', result: { seq: 5 } })
+  })
+
+  it.each([
+    ['refuse', { unattendedApproval: 'refuse', interaction: 'unattended' }],
+    ['notify', { unattendedApproval: 'notify' }],
+  ] as const)('marks the prompt of a %s job as the policy declares attendance', async (policy, attrs) => {
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => 10_000)
+    repo.insert(row('j'))
+    const { calls, registry } = fakeRegistry()
+    const instance = scheduler(
+      repo,
+      registry,
+      () => 10_000,
+      undefined,
+      () => policy,
+    )
+    await instance.tick()
+    // Nobody answers a `refuse` run, so its turn offers no tool that waits on a person; a `notify`
+    // run hands decisions to the owner and stays attended.
+    expect((calls[1]?.value as { actor: Actor } | undefined)?.actor.attrs).toEqual(attrs)
+  })
+
+  it('reopens a non-live session only at its persisted workspace and forwards its budget', async () => {
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => 10_000)
+    repo.insert(row('budgeted', { budget: 7 }))
+    const { calls, registry } = fakeRegistry({ live: false, cwd: '/workspace/from-index' })
+    const instance = new Scheduler({
+      repo,
+      registry,
+      notices: { emit: () => undefined } as never,
+      clock: () => 10_000,
+      owner: 'owner',
+      limits: { tickMs: 1_000, lockMs: 60_000, maxStalled: 5 },
+      workspaces: workspaceAuthority('/workspace/from-index'),
+      ownership: { resolve: () => ({ active: true, principalId: 'owner' }) },
+      activationBarrier: createExtensionActivationBarrier(),
+    })
+    await instance.tick()
+    expect(calls[0]).toMatchObject({
+      kind: 'open',
+      value: {
+        key: 'k',
+        cwd: '/workspace/from-index',
+        binding: { sessionKey: 'k', canonicalRoot: '/workspace/from-index' },
+      },
+    })
+    expect(calls[1]).toMatchObject({
+      kind: 'enqueue:next-turn',
+      value: { budget: 7 },
+    })
+  })
+
+  it('fails closed when a non-live session has no persisted workspace', async () => {
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => 10_000)
+    repo.insert(row('missing-cwd'))
+    const { calls, registry } = fakeRegistry({ live: false })
+    const instance = new Scheduler({
+      repo,
+      registry,
+      notices: { emit: () => undefined } as never,
+      clock: () => 10_000,
+      owner: 'owner',
+      limits: { tickMs: 1_000, lockMs: 60_000, maxStalled: 5 },
+      workspaces: workspaceAuthority(null),
+      ownership: { resolve: () => ({ active: true, principalId: 'owner' }) },
+      activationBarrier: createExtensionActivationBarrier(),
+      random: () => 0.5,
+    })
+    await instance.tick()
+    expect(calls).toEqual([])
+    expect(repo.get('missing-cwd')).toMatchObject({
+      status: 'delayed',
+      error: 'session workspace unavailable for k',
+    })
+  })
+
+  it('does not run a legacy job without an active session owner', async () => {
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => 10_000)
+    repo.insert(row('unowned'))
+    const { calls, registry } = fakeRegistry()
+    const instance = new Scheduler({
+      repo,
+      registry,
+      notices: { emit: () => undefined } as never,
+      clock: () => 10_000,
+      owner: 'owner',
+      limits: { tickMs: 1_000, lockMs: 60_000, maxStalled: 5 },
+      workspaces: workspaceAuthority(),
+      ownership: { resolve: () => undefined },
+      activationBarrier: createExtensionActivationBarrier(),
+      random: () => 0.5,
+    })
+    await instance.tick()
+    expect(calls).toEqual([])
+    expect(repo.get('unowned')).toMatchObject({
+      status: 'delayed',
+      error: 'session owner unavailable for k',
+    })
+  })
+
+  it('retries with jittered backoff, promotes delayed work, then fails', async () => {
+    let now = 10_000
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => now)
+    repo.insert(row('flaky'))
+    const failed = fakeRegistry({ fail: true })
+    const instance = scheduler(repo, failed.registry, () => now)
+    await instance.tick()
+    expect(repo.get('flaky')).toMatchObject({ status: 'delayed', attempts: 1, delayUntil: 11_000 })
+    now = 11_000
+    await instance.tick()
+    expect(repo.get('flaky')).toMatchObject({ status: 'failed', attempts: 2, error: 'boom' })
+  })
+
+  it('runs a prepared job in the session prepare opened and records it there', async () => {
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => 10_000)
+    repo.insert(row('schedule:sched_0000000000000001:1', { sessionKey: 'schedule:sched_0000000000000001' }))
+    const { calls, registry } = fakeRegistry()
+    const dispatched: unknown[] = []
+    const prepare = vi.fn(async () => ({ sessionKey: 'fresh' }))
+    const instance = new Scheduler({
+      repo,
+      registry,
+      notices: { emit: () => undefined } as never,
+      clock: () => 10_000,
+      owner: 'owner',
+      limits: { tickMs: 1_000, lockMs: 60_000, maxStalled: 5 },
+      workspaces: workspaceAuthority(),
+      ownership: {
+        resolve: (key: string) => (key === 'fresh' ? { active: true, principalId: 'owner' } : undefined),
+      },
+      activationBarrier: createExtensionActivationBarrier(),
+      prepare,
+      onDispatched: (_job: JobRow, info: unknown) => dispatched.push(info),
+    } as never)
+    await instance.tick()
+    expect(prepare).toHaveBeenCalledOnce()
+    expect(calls[0]).toMatchObject({ kind: 'open', value: { key: 'fresh' } })
+    expect(dispatched).toEqual([{ at: 10_000, seq: 5, reason: 'prompt', sessionKey: 'fresh' }])
+    expect(repo.get('schedule:sched_0000000000000001:1')).toMatchObject({ status: 'completed' })
+  })
+
+  it('reports a final failure once, without retry, and moves a repeating job to its next run', async () => {
+    const now = 10_000
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => now)
+    repo.insert(row('once', { maxAttempts: 3 }))
+    repo.insert(row('repeat', { maxAttempts: 3, schedule: { kind: 'every', everyMs: 60_000 }, createdAt: 1 }))
+    repo.insert(row('opened', { maxAttempts: 3, createdAt: 2 }))
+    const failures: unknown[] = []
+    const settled: unknown[] = []
+    const failed = fakeRegistry({ fail: true })
+    const instance = new Scheduler({
+      repo,
+      registry: failed.registry,
+      notices: { emit: () => undefined } as never,
+      clock: () => now,
+      owner: 'owner',
+      limits: { tickMs: 1_000, lockMs: 60_000, maxStalled: 5 },
+      workspaces: workspaceAuthority(),
+      ownership: { resolve: () => ({ active: true, principalId: 'owner' }) },
+      activationBarrier: createExtensionActivationBarrier(),
+      random: () => 0.5,
+      prepare: async (job: JobRow) => {
+        // A new session that opened and then failed while it was being set up names itself.
+        if (job.idempotencyKey === 'opened')
+          throw Object.assign(new Error('model unavailable'), { sessionKey: 'half-set-up' })
+        return job.idempotencyKey === 'repeat' ? { sessionKey: 'fresh' } : undefined
+      },
+      retryable: () => false,
+      onFailed: (job: JobRow, info: unknown) => failures.push([job.idempotencyKey, info]),
+      recurAfterFailure: (job: JobRow) => job.idempotencyKey === 'repeat',
+      onSettled: (job: JobRow, info: unknown) => settled.push([job.idempotencyKey, info]),
+    } as never)
+    await instance.tick()
+    expect(failures).toHaveLength(3)
+    expect(failures).toEqual(
+      expect.arrayContaining([
+        ['once', { at: now, error: 'boom' }],
+        ['repeat', { at: now, error: 'boom', sessionKey: 'fresh' }],
+        ['opened', { at: now, error: 'model unavailable', sessionKey: 'half-set-up' }],
+      ]),
+    )
+    expect(repo.get('once')).toMatchObject({ status: 'failed', attempts: 1 })
+    expect(repo.get('repeat')).toMatchObject({
+      status: 'waiting',
+      attempts: 0,
+      delayUntil: 70_000,
+      error: 'boom',
+    })
+    expect(settled).toHaveLength(3)
+    expect(settled).toEqual(
+      expect.arrayContaining([
+        ['once', { at: now, nextRunAt: null, status: 'completed' }],
+        ['repeat', { at: now, nextRunAt: 70_000, status: 'waiting' }],
+        ['opened', { at: now, nextRunAt: null, status: 'completed' }],
+      ]),
+    )
+  })
+
+  it('reschedules recurring jobs after success and executes resume commands', async () => {
+    const now = 10_000
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => now)
+    repo.insert(row('every', { schedule: { kind: 'every', everyMs: 60_000 } }))
+    repo.insert(
+      row('resume', {
+        payload: { command: { method: 'resume', params: {} } },
+        createdAt: 1,
+      }),
+    )
+    const fake = fakeRegistry()
+    await scheduler(repo, fake.registry, () => now).tick()
+    expect(repo.get('every')).toMatchObject({ status: 'waiting', delayUntil: 70_000 })
+    expect(repo.get('resume')).toMatchObject({ status: 'completed', result: { reason: 'resumed' } })
+    expect(fake.calls.map((call) => call.kind)).toContain('resume')
+  })
+
+  it('reclaims stale leases, emits routed dead notices, and reports doctor signals', async () => {
+    let now = 0
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => now)
+    repo.insert(row('dead', { stalledCounter: 5 }))
+    repo.claimDue(now, 'old-owner', 10, 1)
+    for (let index = 0; index < 11; index++) repo.insert(row(`w${index}`, { createdAt: index + 1 }))
+    now = 2 * 3_600_000
+    const emit = vi.fn()
+    const instance = scheduler(repo, fakeRegistry().registry, () => now, emit)
+    const result = await instance.tick()
+    expect(result.dead).toBe(1)
+    expect(emit).toHaveBeenCalledWith('job_dead', {
+      sessionId: 'k',
+      detail: { jobId: 'dead', reason: 'stalled' },
+    })
+
+    for (let index = 0; index < 11; index++)
+      repo.insert(row(`later${index}`, { sessionKey: 'deep', delayUntil: now + 1, createdAt: now + index }))
+    repo.insert(row('old-active', { sessionKey: 'old', createdAt: now + 20 }))
+    repo.claimDue(now, 'owner', 10_000_000, 1)
+    now += 2 * 3_600_000
+    expect(instance.doctor()).toEqual({
+      stalledForever: ['old-active'],
+      waitingDepth: [{ sessionKey: 'deep', depth: 11 }],
+    })
+  })
+})
+
+describe('Scheduler after an interrupted run', () => {
+  /**
+   * A daemon whose prepare opens a new session per run, like a new-session schedule. `stopIn`
+   * decides where the first daemon is shut down: during the turn, or before the session opens.
+   */
+  function daemon(
+    repo: JobsRepo,
+    clock: () => number,
+    world: { sessions: string[]; prompts: string[]; failures: unknown[]; settled: unknown[] },
+    options: { retryable: boolean; stopIn?: 'run' | 'prepare'; onStop?: () => void },
+  ) {
+    const registry: SchedulerRegistry = {
+      open: async ({ key }) => {
+        const entry = await fakeRegistry().registry.open({ key: key ?? '', cwd: '/workspace' })
+        entry.session.enqueue = async () => {
+          world.prompts.push(key ?? '')
+          return 1
+        }
+        entry.session.run = ({ signal }) =>
+          options.stopIn === 'run'
+            ? new Promise((_resolve, reject) => {
+                signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+                options.onStop?.()
+              })
+            : Promise.resolve({ reason: 'completed', lastSeq: 2 })
+        return entry
+      },
+      get: () => undefined,
+      keys: () => [],
+    }
+    return new Scheduler({
+      repo,
+      registry,
+      notices: { emit: () => undefined } as never,
+      clock,
+      owner: `owner-${world.sessions.length}-${options.stopIn ?? 'done'}`,
+      limits: { tickMs: 1_000, lockMs: 60_000, maxStalled: 5 },
+      workspaces: workspaceAuthority(),
+      ownership: { resolve: () => ({ active: true, principalId: 'owner' }) },
+      activationBarrier: createExtensionActivationBarrier(),
+      random: () => 0.5,
+      prepare: async (_job: JobRow, signal: AbortSignal, dispatching: () => void) => {
+        if (options.stopIn === 'prepare') {
+          const stopped = new Promise((_resolve, reject) =>
+            signal.addEventListener('abort', () => reject(signal.reason), { once: true }),
+          )
+          options.onStop?.()
+          await stopped
+        }
+        dispatching()
+        const sessionKey = `agnes:schedule:${world.sessions.length}`
+        world.sessions.push(sessionKey)
+        return { sessionKey }
+      },
+      retryable: () => options.retryable,
+      onFailed: (job: JobRow, info: unknown) => world.failures.push([job.idempotencyKey, info]),
+      recurAfterFailure: (job: JobRow) => job.schedule.kind === 'every',
+      onSettled: (job: JobRow, info: unknown) => world.settled.push([job.idempotencyKey, info]),
+    } as never)
+  }
+
+  async function interrupt(
+    repo: JobsRepo,
+    clock: () => number,
+    world: Parameters<typeof daemon>[2],
+    options: { retryable: boolean; stopIn: 'run' | 'prepare' },
+  ) {
+    let stopping: Promise<void> | undefined
+    const first: Scheduler = daemon(repo, clock, world, {
+      ...options,
+      onStop: () => {
+        stopping = first.stop()
+      },
+    })
+    await first.tick()
+    await stopping
+  }
+
+  const world = () => ({
+    sessions: [] as string[],
+    prompts: [] as string[],
+    failures: [] as unknown[],
+    settled: [] as unknown[],
+  })
+
+  it('does not open a second session for a non-retryable job interrupted mid-run', async () => {
+    let now = 10_000
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => now)
+    repo.insert(row('schedule:once', { maxAttempts: 3 }))
+    const seen = world()
+    await interrupt(repo, () => now, seen, { retryable: false, stopIn: 'run' })
+    expect(repo.get('schedule:once')).toMatchObject({
+      status: 'active',
+      result: { dispatched: { sessionKey: 'agnes:schedule:0' } },
+    })
+
+    now += 61_000
+    await daemon(repo, () => now, seen, { retryable: false }).tick()
+
+    expect(seen.sessions).toEqual(['agnes:schedule:0'])
+    expect(seen.prompts).toEqual(['agnes:schedule:0'])
+    expect(seen.failures).toEqual([
+      ['schedule:once', { at: now, error: 'interrupted', sessionKey: 'agnes:schedule:0' }],
+    ])
+    expect(repo.get('schedule:once')).toMatchObject({ status: 'failed', error: 'interrupted', attempts: 1 })
+    expect(repo.get('schedule:once')?.result).toBeUndefined()
+  })
+
+  it('moves an interrupted repeating job to its next occurrence instead of running it again', async () => {
+    let now = 10_000
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => now)
+    repo.insert(row('schedule:every', { schedule: { kind: 'every', everyMs: 600_000 } }))
+    const seen = world()
+    await interrupt(repo, () => now, seen, { retryable: false, stopIn: 'run' })
+
+    now += 61_000
+    await daemon(repo, () => now, seen, { retryable: false }).tick()
+
+    expect(seen.sessions).toHaveLength(1)
+    expect(repo.get('schedule:every')).toMatchObject({
+      status: 'waiting',
+      error: 'interrupted',
+      attempts: 0,
+      delayUntil: now + 600_000,
+    })
+    expect(seen.settled).toEqual([
+      ['schedule:every', { at: now, nextRunAt: now + 600_000, status: 'waiting' }],
+    ])
+  })
+
+  it('runs a non-retryable job again when it was interrupted before its first side effect', async () => {
+    let now = 10_000
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => now)
+    repo.insert(row('schedule:early'))
+    const seen = world()
+    await interrupt(repo, () => now, seen, { retryable: false, stopIn: 'prepare' })
+    expect(seen.sessions).toEqual([])
+
+    now += 61_000
+    await daemon(repo, () => now, seen, { retryable: false }).tick()
+
+    expect(seen.sessions).toEqual(['agnes:schedule:0'])
+    expect(seen.prompts).toEqual(['agnes:schedule:0'])
+    expect(seen.failures).toEqual([])
+    expect(repo.get('schedule:early')).toMatchObject({ status: 'completed', result: { reason: 'completed' } })
+  })
+
+  it('still retries a retryable job interrupted mid-run', async () => {
+    let now = 10_000
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => now)
+    repo.insert(row('existing'))
+    const seen = world()
+    await interrupt(repo, () => now, seen, { retryable: true, stopIn: 'run' })
+
+    now += 61_000
+    await daemon(repo, () => now, seen, { retryable: true }).tick()
+
+    expect(seen.prompts).toEqual(['agnes:schedule:0', 'agnes:schedule:1'])
+    expect(seen.failures).toEqual([])
+    expect(repo.get('existing')).toMatchObject({ status: 'completed', stalledCounter: 1 })
+  })
+})

@@ -2,13 +2,14 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 
 const root = resolve(import.meta.dirname, '../../..')
 
 describe('web-ui theme bridge', () => {
   it('only references semantic tokens declared by the existing Web skin', () => {
     const bridge = readFileSync(resolve(root, 'packages/web-ui/src/tokens.css'), 'utf8')
-    const skin = readFileSync(resolve(root, 'packages/web/public/style.css'), 'utf8')
+    const skin = readWebStyleSource(resolve(root, 'packages/web/public/style.css'))
     const references = [...bridge.matchAll(/var\((--[a-z0-9-]+)/g)].map((match) => match[1])
     const missing = [...new Set(references)].filter((name) => !skin.includes(`${name}:`))
     expect(missing).toEqual([])
@@ -34,9 +35,33 @@ describe('web-ui theme bridge', () => {
       '--ant-color-border',
       '--ant-color-split',
       '--ant-control-outline',
+      '--ant-table-header-bg',
+      '--ant-table-header-color',
+      '--ant-table-border-color',
+      '--ant-table-row-hover-bg',
+      '--ant-table-row-selected-bg',
+      '--ant-table-header-sort-active-bg',
+      '--ant-menu-popup-bg',
+      '--ant-menu-item-color',
+      '--ant-menu-item-hover-bg',
+      '--ant-menu-item-disabled-color',
+      '--ant-menu-danger-item-color',
+      '--ant-message-content-bg',
     ]
     expect(required.filter((name) => !antd.includes(`var(${name})`))).toEqual([])
     expect(required.filter((name) => !bridge.includes(`${name}: var(--agnes-`))).toEqual([])
+  })
+
+  it('bridges every global colour alias the static Ant Design stylesheet reads', () => {
+    const bridge = readFileSync(resolve(root, 'packages/web-ui/src/tokens.css'), 'utf8')
+    const antd = readFileSync(createRequire(import.meta.url).resolve('antd/dist/antd.css'), 'utf8')
+    // Constants rather than roles: pure white on saturated fills and the transparent blur base.
+    const constants = new Set(['--ant-color-white', '--ant-color-bg-blur'])
+    const used = new Set([...antd.matchAll(/var\((--ant-color-[a-z0-9-]+)\)/g)].map((match) => match[1]!))
+    const unbridged = [...used]
+      .filter((name) => !constants.has(name) && !bridge.includes(`${name}: var(--agnes-`))
+      .sort()
+    expect(unbridged).toEqual([])
   })
 
   it('loads the theme bridge after Ant Design CSS on every Web entry page', () => {

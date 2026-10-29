@@ -1,0 +1,1171 @@
+@layer app {
+  /* 空态判据取 `#empty-state` 的 hidden，与 app 的 shouldShowEmptyState 同一个信号。
+   （`#transcript:empty` 永远不成立：React 树恒定渲染一个 `#transcript-content` 子节点。）
+   输入框的高度由 Sender 按行数自适应，这里不再给空态单独定最小高度。 */
+  /* 新会话（空态）：hero 与输入卡作为**一组**在剩余空间里垂直居中。两级绝对定位
+   （.conversation-region-root 与 #empty-state）必须在空态下放开，hero 才撑得出真实
+   高度；否则 shell 高度为 0，后面两份 auto 外边距无处可吃。顶栏在空态是绝对定位的
+   悬浮开关，不占流，所以不再需要补偿它的高度。 */
+  body:has(#empty-state:not([hidden])) .workbench-split {
+    flex: 0 1 auto;
+    margin-top: auto;
+  }
+  body:has(#empty-state:not([hidden])) .conversation-region-root,
+  body:has(#empty-state:not([hidden])) #empty-state {
+    position: static;
+    inset: auto;
+  }
+  body:has(#empty-state:not([hidden])) .conversation-shell {
+    overflow: visible;
+  }
+  /* 空态下会话清单里没有内容，但它带着 16px 上下内边距会占位、把 hero 顶下去，
+   于是 hero 跑出 shell 而整体偏离居中。空态时直接让位。 */
+  body:has(#empty-state:not([hidden])) #transcript {
+    display: none;
+  }
+  /* 下边那份 auto 必须挂在 main 的 flex 子项上：挂到 #composer 上会被 #composer-mount
+   挡住，块级上下文里的纵向 auto 外边距会算成 0，居中就只剩上面那一份。 */
+  body:has(#empty-state:not([hidden])) #composer-mount {
+    margin-bottom: auto;
+  }
+  /* 新会话时顶栏不成立：标题、状态都没有内容，页签也没有会话可切。容器降为不占流的
+   透明浮层，只留下左上角的侧栏开关——窄屏和折叠态下它是唤出导航的唯一入口，不能
+   跟着一起消失。连接异常由主区域顶部的连接状态条承担（见 .connection-bar）。 */
+  body:has(#empty-state:not([hidden])) main {
+    position: relative;
+  }
+  body:has(#empty-state:not([hidden])) .topbar-row {
+    position: absolute;
+    inset: 0 0 auto 0;
+    z-index: 6;
+    border-bottom: 0;
+    background: transparent;
+  }
+  /* The bar is out of flow here, so a notice would start at the very top and be drawn across its
+   controls. While one is showing, the notice region starts below the bar instead. */
+  body:has(#empty-state:not([hidden])) main:has(> #notice:not(:empty), > .agh-banner) {
+    padding-top: 2.75rem;
+  }
+  body:has(#empty-state:not([hidden])) .topbar .task-heading,
+  body:has(#empty-state:not([hidden])) .session-tabs-bar {
+    display: none;
+  }
+  /* 切换会话的加载态：上一会话画面降不透明度（含会话区外的审批卡），提示内容
+   正在被替换；新投影就绪后由 body.session-switching 移除而平滑恢复。
+   空态时 #transcript 不显示，这条自然落空，不影响新建草稿的 hero。 */
+  body.session-switching #transcript,
+  body.session-switching #approval {
+    opacity: 0.55;
+  }
+  #composer,
+  .application-work-actions {
+    width: min(calc(100% - 2rem), var(--composer-card-max-width));
+    margin: 0 auto;
+  }
+  #composer {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    transition: box-shadow var(--transition);
+    position: relative;
+    z-index: 7;
+  }
+  [data-agnes-region="composer"] {
+    /* 输入卡的 backdrop-filter 必须声明在区域钩子上，供皮肤覆盖（R1 不变量）。 */
+    border: 0;
+    border-radius: var(--radius-composer);
+    background: var(--agnes-bg-surface);
+    /* A hairline edge and a soft, diffuse lift: the card is the calm centre of the page. */
+    box-shadow:
+      0 0 0 1px var(--agnes-line-primary),
+      var(--shadow-elevation-soft);
+    backdrop-filter: none;
+  }
+  /* Focus is quiet: the edge firms up and nothing else moves. The caret shows where typing goes. */
+  #composer:focus-within {
+    box-shadow:
+      0 0 0 1px var(--agnes-line-emphasis),
+      var(--shadow-elevation-soft);
+  }
+  /* File chips in the draft: a layer over the textarea repeats its text with the same metrics and
+   paints each `@name` as a chip, so the chip sits exactly where its text is. Only the chips take the
+   pointer; typing, selection and the caret stay the textarea's. */
+  .composer-mention-layer {
+    position: absolute;
+    z-index: 2;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .composer-mention-text {
+    border-style: solid;
+    border-color: transparent;
+    color: transparent;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+  .composer-mention {
+    position: relative;
+    border-radius: var(--radius-sm);
+    color: var(--agnes-brand-primary);
+    /* Opaque, so the textarea's own letters underneath do not show through. */
+    background: color-mix(in srgb, var(--agnes-brand-primary) 10%, var(--agnes-bg-surface));
+    box-shadow: 0 0 0 0.125rem color-mix(in srgb, var(--agnes-brand-primary) 10%, var(--agnes-bg-surface));
+    pointer-events: auto;
+    cursor: default;
+  }
+  .composer-mention-at {
+    position: relative;
+    color: transparent;
+  }
+  .composer-mention-icon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0.875rem;
+    height: 0.875rem;
+    color: var(--agnes-brand-primary);
+    transform: translate(-50%, -50%);
+  }
+  .composer-mention > .composer-mention-remove.agh-btn.agh-btn--sm {
+    position: absolute;
+    top: -0.5rem;
+    right: -0.5rem;
+    display: none;
+    width: 1rem;
+    min-width: 1rem;
+    height: 1rem;
+    min-height: 1rem;
+    padding: 0;
+    border-radius: var(--radius-full);
+    color: var(--agnes-text-inverse);
+    background: var(--agnes-text-secondary);
+  }
+  .composer-mention-remove.agh-btn svg {
+    width: 0.625rem;
+    height: 0.625rem;
+  }
+  .composer-mention:hover .composer-mention-remove.agh-btn {
+    display: inline-grid;
+    place-items: center;
+  }
+  /* The @ picker lists workspace files and folders by their type icon and path. */
+  .reference-file {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+    min-width: 0;
+  }
+  .reference-file > svg {
+    flex: none;
+    color: var(--agnes-text-tertiary);
+  }
+  /* A folder's mention action shows on its row while the row is pointed at or focused. */
+  .workbench-file-tree > li {
+    position: relative;
+  }
+  .workbench-file-tree > li > .agh-tooltip-anchor:has(> .workbench-folder-mention) {
+    position: absolute;
+    top: 0.125rem;
+    right: 0.25rem;
+    opacity: 0;
+  }
+  /* Only the folder's own row shows it, not the rows of its open children. */
+  .workbench-file-tree
+    > li
+    > .workbench-file-entry:hover
+    + .agh-tooltip-anchor:has(> .workbench-folder-mention),
+  .workbench-file-tree > li > .agh-tooltip-anchor:has(> .workbench-folder-mention):is(:hover, :focus-within) {
+    opacity: 1;
+  }
+  /* Files a message names but whose `@name` is not in its text show above it. */
+  .user-message-mentions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s4);
+    margin: 0 0 var(--s4);
+  }
+
+  /* Strips joined to the card's top edge: the child tree, the paused notice and the queue of
+   messages written while the agent works. All three sit inset from the card's corners and drop
+   their bottom edge, so they read as the card's lip, not as another card above it. */
+  .composer-children,
+  .composer-queue,
+  .composer-paused {
+    width: min(calc(100% - 2rem - 1.75rem), calc(var(--composer-card-max-width) - 1.75rem));
+    margin: 0 auto;
+    border: 1px solid var(--agnes-line-primary);
+    border-bottom: 0;
+    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+    font-size: var(--font-size-sm);
+  }
+  .composer-queue {
+    padding: 0.375rem 0.375rem var(--s4);
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-subtle);
+  }
+  /* Two strips in a row: the upper one keeps the corners, the lower one squares off to meet it. */
+  .composer-children + .composer-paused,
+  .composer-children + .composer-queue,
+  .composer-paused + .composer-queue {
+    border-radius: 0;
+  }
+  /* The child tree: one quiet header line, then the children the session started. A row is a card
+   inside the tray, so a workflow and the subagents under it stay readable as separate sessions. */
+  .composer-children {
+    background: var(--agnes-bg-subtle);
+  }
+  .composer-children > .agh-disclosure-summary {
+    min-height: 2.5rem;
+    padding: var(--s4) var(--s8) var(--s4) var(--s4);
+    color: var(--agnes-text-secondary);
+    font-weight: var(--font-weight-medium);
+  }
+  .composer-children > .agh-disclosure-body {
+    padding: 0 var(--s4) var(--s4);
+  }
+  .composer-children .agh-disclosure-meta {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .composer-children-list,
+  .composer-children-sublist {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s4);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    min-width: 0;
+  }
+  /* A nested child indents under its parent; the rail keeps the nesting legible without a second box. */
+  .composer-children-sublist {
+    margin: var(--s4) 0 0 var(--s12);
+    padding-inline-start: var(--s8);
+    border-inline-start: 1px solid var(--agnes-line-hairline);
+  }
+  .composer-child {
+    min-width: 0;
+    border: 1px solid var(--agnes-line-hairline);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-surface);
+  }
+  .composer-child-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s4) var(--s8);
+    min-width: 0;
+    padding: var(--s4) var(--s8) var(--s4) var(--s12);
+  }
+  /* The name is a button that opens the child's terminal tab, so it carries no control chrome. */
+  .composer-child-name {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--agnes-text-primary);
+    font: inherit;
+    font-weight: var(--font-weight-medium);
+    text-align: start;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .composer-child-name:is(:hover, :focus-visible) {
+    text-decoration: underline;
+  }
+  /* The child's state in words; the tag colour only backs the word. */
+  .composer-child-state {
+    flex: none;
+    padding: var(--s2) var(--s8);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-sm);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-fill);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-sm);
+    white-space: nowrap;
+  }
+  .composer-child-state[data-tone="info"] {
+    border-color: var(--agnes-status-info-border);
+    color: var(--agnes-status-info-text);
+    background: var(--agnes-status-info-bg);
+  }
+  .composer-child-state[data-tone="ok"] {
+    border-color: var(--agnes-status-success-border);
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
+  }
+  .composer-child-state[data-tone="warn"] {
+    border-color: var(--agnes-status-warning-border);
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+  }
+  .composer-child-state[data-tone="bad"] {
+    border-color: var(--agnes-status-danger-border);
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+  }
+  .composer-child-metrics {
+    flex: 1 1 10rem;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .composer-child-stop.agh-btn {
+    flex: none;
+    /* Keeps the action at the row's end when the numbers wrap to their own line. */
+    margin-inline-start: auto;
+  }
+  .composer-child-reply {
+    display: flex;
+    align-items: center;
+    gap: var(--s4);
+    padding: 0 var(--s8) var(--s8) var(--s12);
+  }
+  .composer-child-reply > .agnes-settings-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: var(--font-size-sm);
+  }
+  .composer-child-error {
+    margin: 0 var(--s8) var(--s8) var(--s12);
+  }
+  /* A narrow card stacks the numbers under the name instead of squeezing the row. */
+  @media (max-width: 540px) {
+    .composer-child-metrics {
+      flex-basis: 100%;
+      order: 1;
+      text-align: start;
+    }
+    .composer-children-sublist {
+      margin-inline-start: var(--s4);
+    }
+  }
+  .composer-queue-count {
+    margin: 0;
+    padding: var(--s2) var(--s8) var(--s4);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+    font-variant-numeric: tabular-nums;
+  }
+  .composer-queue-total {
+    color: var(--agnes-text-secondary);
+    font-weight: var(--font-weight-semibold);
+  }
+  /* Three rows show; more scroll inside the tray, so the conversation is not pushed up. */
+  .composer-queue-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    max-height: calc(3 * 2rem + 2 * 0.125rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--agnes-line-emphasis) transparent;
+  }
+  .composer-queue-list > li {
+    border-radius: var(--radius-md);
+    outline: 0;
+  }
+  .composer-queue-list > li + li {
+    margin-top: 0.125rem;
+  }
+  .composer-queue-list > li:focus-visible {
+    box-shadow: var(--focus-line);
+  }
+  .composer-queue-row {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-width: 0;
+    height: 2rem;
+    padding: 0 0.375rem 0 var(--s8);
+    border-radius: var(--radius-md);
+  }
+  .composer-queue-list > li:is(:hover, :focus-within) .composer-queue-row {
+    background: var(--agnes-bg-surface);
+  }
+  .composer-queue-icon {
+    flex: none;
+    color: var(--agnes-text-tertiary);
+  }
+  .composer-queue-preview {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* A line already queued as guidance says it joins at the next step. */
+  .composer-queue-kind {
+    flex: none;
+    padding: 0 var(--s4);
+    border-radius: var(--radius-sm);
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+    font-size: var(--font-size-xs);
+    line-height: 1.125rem;
+  }
+  /* The actions show while the row is pointed at or focused; they stay in the layout, so the text
+   does not jump, and stay reachable by keyboard. */
+  .composer-queue-actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--s2);
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+  }
+  .composer-queue-list > li:is(:hover, :focus-within) .composer-queue-actions,
+  .composer-queue-actions:has([aria-busy="true"]) {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    .composer-queue-actions {
+      opacity: 1;
+    }
+  }
+  .composer-queue-tool.agh-btn {
+    width: 1.625rem;
+    min-width: 1.625rem;
+    height: 1.625rem;
+    min-height: 1.625rem;
+    padding: 0;
+    color: var(--agnes-text-secondary);
+  }
+  .composer-queue-actions .composer-queue-remove:hover:not(:disabled) {
+    color: var(--agnes-status-danger-text);
+  }
+  .composer-queue-send.agh-btn {
+    height: 1.5rem;
+    min-height: 1.5rem;
+    gap: var(--s4);
+    padding: 0 0.5625rem;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-control);
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-bg-surface);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+  }
+  .composer-queue-send.agh-btn:hover:not(:disabled) {
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .composer-queue-send.agh-btn:disabled {
+    color: var(--agnes-text-tertiary);
+    background: transparent;
+  }
+  /* Wide cards say "send now" in words; a narrow one keeps the icon (the tooltip still says it). */
+  .composer-queue-send-icon {
+    display: none;
+  }
+  @media (max-width: 540px) {
+    .composer-queue-send.agh-btn {
+      width: 1.625rem;
+      padding: 0;
+      justify-content: center;
+    }
+    .composer-queue-send-icon {
+      display: inline-flex;
+    }
+    .composer-queue-send-label {
+      display: none;
+    }
+  }
+  /* A send or delete in flight spins in place of its icon or label. */
+  .composer-queue-actions [aria-busy="true"] > :is(.agh-btn-icon, .ant-btn-icon, svg, span) {
+    visibility: hidden;
+  }
+  .composer-queue-actions [aria-busy="true"] {
+    position: relative;
+  }
+  .composer-queue-actions [aria-busy="true"]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 0.625rem;
+    height: 0.625rem;
+    border: 1.5px solid var(--agnes-line-emphasis);
+    border-top-color: var(--agnes-brand-primary);
+    border-radius: var(--radius-full);
+    animation: composer-queue-spin 700ms linear infinite;
+  }
+  @keyframes composer-queue-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .composer-queue-actions [aria-busy="true"]::after {
+      animation: none;
+    }
+  }
+  /* Editing turns the line into a text box with its two actions under it. */
+  .composer-queue-edit {
+    display: grid;
+    gap: var(--s4);
+    padding: var(--s4);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-surface);
+  }
+  .composer-queue-edit [data-testid="queued-steer-editor"] {
+    width: 100%;
+    min-width: 0;
+  }
+  .composer-queue-edit-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--s4);
+  }
+  .composer-queue-error {
+    margin: var(--s4) 0 0;
+    padding: 0.375rem var(--s8);
+    border-radius: var(--radius-md);
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+    font-size: var(--font-size-xs);
+    overflow-wrap: anywhere;
+  }
+  /* Paused: a pale yellow strip on the card's top edge says so and when queued messages arrive. */
+  .composer-paused {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    padding: 0.4375rem var(--s12);
+    border-color: var(--agnes-status-warning-border);
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+  }
+  .composer-paused > svg {
+    flex: none;
+  }
+  /* Pause sits beside stop at the same size; paused, it is the accent "continue". */
+  #composer-pause {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 2.25rem;
+    min-width: 2.25rem;
+    height: 2.25rem;
+    min-height: 2.25rem;
+    padding: 0;
+    border: 1px solid var(--agnes-line-emphasis);
+    border-radius: var(--radius-full);
+    color: var(--agnes-text-primary);
+    background: transparent;
+  }
+  #composer-pause[hidden] {
+    display: none;
+  }
+  #composer-pause[aria-pressed="true"]:not(:disabled) {
+    border-color: transparent;
+    color: var(--agnes-button-primary-content);
+    background: var(--agnes-button-primary-bg);
+  }
+  #composer-pause[aria-pressed="true"]:hover:not(:disabled) {
+    background: var(--agnes-button-primary-bg-hover);
+  }
+  /* Attachments sit above the draft inside the card. */
+  .composer-writing {
+    min-height: 0;
+  }
+  /* Insets follow the card's larger radius, so text and controls clear its corners. */
+  .composer-content {
+    position: relative;
+    padding: var(--s16) var(--s20) var(--s4);
+  }
+  .composer-footer {
+    padding: var(--s4) var(--s10) var(--s10);
+  }
+  /* The ghost is out of flow; its slot must not take space or a flex gap beside the textarea. */
+  .composer-hint-slot {
+    display: contents;
+  }
+  .composer-example-hint {
+    display: flex;
+    align-items: start;
+    position: absolute;
+    top: var(--s16);
+    inset-inline: var(--s20);
+    z-index: 2;
+    max-height: 3.2em;
+    overflow: hidden;
+    pointer-events: none;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-body);
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  #composer[data-example-hint] #prompt::placeholder {
+    color: transparent;
+  }
+  .composer-example-text {
+    min-width: 0;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+  }
+  .composer-example-caret {
+    display: inline-block;
+    width: 1.5px;
+    height: 1em;
+    margin-inline-start: 1px;
+    vertical-align: -0.15em;
+    background: var(--agnes-brand-primary);
+    animation: home-example-blink 1s steps(1) infinite;
+  }
+  /* The drawn caret stands in for the native one while the composer is not focused. Once focus is
+     inside the form the native caret blinks too, so the drawn copy would show two cursors at once. */
+  #composer:focus-within .composer-example-caret {
+    display: none;
+  }
+  .composer-example-adopt {
+    flex: none;
+    display: inline-flex;
+    gap: var(--s4);
+    margin-inline-start: var(--s8);
+    padding: 0 var(--s4);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+  }
+  .composer-example-adopt kbd {
+    font: inherit;
+  }
+  @keyframes home-example-blink {
+    50% {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .composer-example-hint {
+      display: none;
+    }
+    #composer[data-example-hint] #prompt::placeholder {
+      color: var(--agnes-text-tertiary);
+    }
+  }
+  #prompt {
+    min-height: 0;
+    padding: 0;
+    font-size: var(--font-size-body);
+    line-height: 1.6;
+    resize: none;
+  }
+  [data-agnes-region="composer-input"] {
+    border: 0;
+    border-radius: 0;
+    color: var(--agnes-text-primary);
+    background: transparent;
+    box-shadow: none;
+  }
+  #prompt:focus-visible {
+    outline: none;
+    border-color: transparent;
+    box-shadow: none;
+  }
+  /* 附件在输入文字之上，所以顶边距归它。 */
+  .composer-image-attachments {
+    display: grid;
+    gap: var(--s8);
+    padding: var(--s16) var(--s20) 0;
+  }
+  /* 没有待发图片（也没有正在读取的）时整块不占位：容器常驻 DOM，靠这条把空态收掉，
+   否则这段上边距会把输入框整体顶下去。 */
+  .composer-image-attachments:not(
+    :has(.composer-image-preview, .composer-file-preview, .composer-image-pending)
+  ) {
+    display: none;
+  }
+  .composer-image-preview-list {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .composer-image-preview {
+    position: relative;
+    width: 4.5rem;
+    height: 3.5rem;
+    margin: 0;
+  }
+  .composer-image-preview img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    object-fit: cover;
+  }
+  /* 缩略图的预览覆盖层只是悬停提示，不接管指针：打开预览由图片根节点自己完成，
+   这样覆盖层无论落在哪一层，都挡不住右上角的删除按钮。 */
+  .composer-image-preview .ant-image-cover {
+    pointer-events: none;
+  }
+  .composer-image-preview .ant-image {
+    cursor: pointer;
+  }
+  .composer-file-preview {
+    position: relative;
+    display: grid;
+    gap: var(--s4);
+    min-width: 0;
+    max-width: min(16rem, 100%);
+    margin: 0;
+    padding: var(--s8) var(--s16) var(--s8) var(--s12);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+  }
+  .composer-upload {
+    max-width: min(24rem, 100%);
+  }
+  .composer-upload progress {
+    width: 100%;
+    accent-color: var(--agnes-text-primary);
+  }
+  .composer-upload button {
+    justify-self: start;
+  }
+  .composer-file-preview span {
+    overflow-wrap: anywhere;
+  }
+  .composer-file-preview small {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+  }
+  .composer-image-preview [data-remove-image],
+  .composer-file-preview [data-remove-image] {
+    position: absolute;
+    top: -0.375rem;
+    right: -0.375rem;
+    /* 与上面的 pointer-events 配套：按钮显式高于缩略图自身，命中不依赖元素顺序。 */
+    z-index: 1;
+    display: grid;
+    width: 1.25rem;
+    min-height: 1.25rem;
+    height: 1.25rem;
+    place-items: center;
+    padding: 0;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 50%;
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-page);
+    line-height: 1;
+  }
+  .composer-image-pending {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+
+  /* Card footer: add and the approval mode on the left, the model and the send/stop action on
+   the right. */
+  .composer-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-width: 0;
+    container-type: inline-size;
+  }
+  #composer-attach {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 2rem;
+    min-height: 2rem;
+    padding: 0;
+    border-radius: 50%;
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-subtle);
+  }
+  #composer-attach:hover {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-hover);
+  }
+  #composer-attach[aria-disabled="true"] {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  /* Why sending is unavailable (offline, read-only, syncing…) stays in the card, next to the action. */
+  #composer-hint {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0 var(--s4);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  /* A hint that comes with its way out keeps to its text, so the action sits right beside it. */
+  #composer-hint:has(+ .composer-hint-action) {
+    flex: 0 1 auto;
+  }
+  .composer-hint-action.agnes-ui-button {
+    flex: 0 1 auto;
+    min-width: 0;
+    height: 1.75rem;
+    min-height: 1.75rem;
+    margin-right: auto;
+    padding: 0 var(--s8);
+    overflow: hidden;
+    border-radius: var(--radius-pill);
+    font-size: var(--font-size-xs);
+  }
+  /* The label is the button's only flex child: it shrinks and ends in an ellipsis, so the start stays readable. */
+  .composer-hint-action.agnes-ui-button > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #composer-hint:empty,
+  #composer-hint:not([data-kind="state"]) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    clip-path: inset(50%);
+  }
+  [data-testid="composer-paused"] {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+  }
+  #send,
+  #cancel {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 2.25rem;
+    min-width: 2.25rem;
+    height: 2.25rem;
+    min-height: 2.25rem;
+    padding: 0;
+    border-radius: var(--radius-full);
+    box-shadow: none;
+  }
+  /* The one filled action on the card, in the accent: full strength when there is something to
+   send, a soft tint of the same colour while there is not. */
+  #send {
+    border-color: transparent;
+    color: var(--agnes-button-primary-content);
+    background: var(--agnes-button-primary-bg);
+    transition: background-color var(--transition-fast);
+  }
+  #send:hover:not(:disabled) {
+    border-color: transparent;
+    color: var(--agnes-button-primary-content);
+    background: var(--agnes-button-primary-bg-hover);
+  }
+  #send:disabled {
+    border-color: transparent;
+    color: var(--agnes-button-primary-content);
+    background: color-mix(in srgb, var(--agnes-button-primary-bg) 38%, var(--agnes-bg-surface));
+  }
+  /* Submitting: the arrow gives way to a small ring until the host confirms. */
+  #send[data-mode="pending"] .icon {
+    display: none;
+  }
+  #send[data-mode="pending"]::before {
+    content: "";
+    width: 0.875rem;
+    height: 0.875rem;
+    border: 1.5px solid color-mix(in srgb, currentColor 35%, transparent);
+    border-top-color: currentColor;
+    border-radius: var(--radius-full);
+    animation: composer-queue-spin 700ms linear infinite;
+  }
+  #cancel {
+    border: 1px solid var(--agnes-line-emphasis);
+    color: var(--agnes-text-primary);
+    background: transparent;
+  }
+  /* Stop is a filled square in the button's own colour; the name is in aria-label and the hidden text. */
+  #cancel::before {
+    content: "";
+    width: 0.625rem;
+    height: 0.625rem;
+    border-radius: 2px;
+    background: currentColor;
+  }
+  #cancel:hover:not(:disabled) {
+    border-color: var(--agnes-line-emphasis);
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-hover);
+  }
+  /* While the agent runs and there is nothing to send, Stop is a dark filled square: the accent is
+   kept for "continue", which sits beside it once the session is paused. */
+  #composer[data-busy="true"] #cancel:not([hidden]):has(~ #send:disabled) {
+    border-color: transparent;
+    color: var(--agnes-text-inverse);
+    background: var(--agnes-text-primary);
+  }
+  #composer[data-busy="true"] #cancel:not([hidden]):has(~ #send:disabled):hover:not(:disabled) {
+    color: var(--agnes-text-inverse);
+    background: color-mix(in srgb, var(--agnes-text-primary) 85%, var(--agnes-bg-surface));
+  }
+  #composer[data-busy="true"] #cancel:not([hidden]) ~ #send:disabled {
+    display: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #send[data-mode="pending"]::before {
+      animation: none;
+    }
+  }
+
+  /* Quiet row under the card: what applies to the whole session rather than to this message. */
+  .composer-meta {
+    width: min(calc(100% - 2rem), var(--composer-card-max-width));
+    margin: var(--s4) auto var(--s12);
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    min-height: 1.75rem;
+    position: relative;
+    z-index: 7;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+  }
+  .composer-meta-start,
+  .composer-meta-end {
+    display: flex;
+    align-items: center;
+    gap: var(--s4);
+    min-width: 0;
+  }
+  .composer-meta-start {
+    flex: 0 1 auto;
+  }
+  .composer-meta-end {
+    flex: none;
+    margin-inline-start: auto;
+  }
+  :is(.composer-meta, .composer-controls)
+    :is(.composer-workspace, .composer-permission, .composer-agent.agnes-ui-button) {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+    min-width: 0;
+    max-width: min(16rem, 100%);
+    height: 1.75rem;
+    min-height: 1.75rem;
+    padding: 0 var(--s8);
+    overflow: hidden;
+    border: 0;
+    border-radius: var(--radius-pill);
+    color: var(--agnes-text-secondary);
+    background: transparent;
+    box-shadow: none;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-regular);
+  }
+  :is(.composer-meta, .composer-controls)
+    :is(.composer-workspace, .composer-permission, .composer-agent.agnes-ui-button):hover:not(:disabled),
+  :is(.composer-meta, .composer-controls)
+    :is(.composer-workspace, .composer-permission, .composer-agent)[aria-expanded="true"] {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-hover);
+  }
+  .composer-workspace [data-workspace-label],
+  .composer-permission [data-permission-label] {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Full access skips approvals; the chip says so in words and in the danger colour. */
+  #composer-permission[data-permission="full"] {
+    color: var(--agnes-status-danger-text);
+  }
+  #composer-workspace[hidden],
+  #session-usage[hidden] {
+    display: none;
+  }
+  #session-usage {
+    z-index: 15;
+  }
+  /* Context use sits in the card's control row, right before the model picker it measures. */
+  .composer-controls > #session-usage {
+    flex: none;
+    margin-inline-start: auto;
+  }
+  .composer-controls > #session-usage:not([hidden]) + .model-field {
+    margin-inline-start: 0;
+  }
+  /* The row under the card shows only while it holds something: the new-session workspace or a
+   plugin control. Otherwise it takes no room below the card. */
+  .composer-meta:not(:has(#composer-workspace:not([hidden]), [data-slot]:not([data-slot-state="empty"]))) {
+    display: none;
+  }
+  /* With the row gone the card keeps the row's distance from the window's edge. */
+  #composer-mount:not(
+    :has(
+      .composer-meta #composer-workspace:not([hidden]),
+      .composer-meta [data-slot]:not([data-slot-state="empty"])
+    )
+  ) {
+    padding-bottom: max(var(--s12), env(safe-area-inset-bottom));
+  }
+  .session-usage {
+    position: relative;
+  }
+  .session-usage > .agh-disclosure-summary {
+    height: 1.75rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0 var(--s8);
+    border-radius: var(--radius-control);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+    width: auto;
+    cursor: pointer;
+  }
+  .session-usage > .agh-disclosure-summary:hover,
+  .session-usage[data-open="true"] > .agh-disclosure-summary {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-hover);
+  }
+  .session-usage > .agh-disclosure-summary > .agh-disclosure-marker {
+    display: none;
+  }
+  /* The ring takes the status colour through currentColor; the percentage keeps the text colour. */
+  .session-usage .usage-ring {
+    color: var(--agnes-status-success-solid);
+  }
+  .session-usage[data-pressure="medium"] .usage-ring {
+    color: var(--agnes-status-warning-solid);
+  }
+  .session-usage[data-pressure="high"] .usage-ring {
+    color: var(--agnes-status-danger-solid);
+  }
+  .usage-summary-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  /* Approval mode list, inside the shared popover surface. */
+  :is(.model-picker-surface, .permission-picker-surface) :is(.ant-popover-container, .ant-popover-inner) {
+    padding: 0.375rem;
+  }
+  .permission-picker {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    min-width: min(15rem, calc(100vw - 32px));
+    max-width: min(20rem, calc(100vw - 32px));
+    max-height: min(24rem, calc(100vh - 96px));
+  }
+  .permission-picker-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s2);
+    outline: 0;
+  }
+  /* A row: the mode's own glyph, its name over one short line, and a check when it is current. */
+  .permission-picker-option {
+    display: grid;
+    grid-template-columns: 1.125rem minmax(0, 1fr) 1rem;
+    gap: var(--s8);
+    align-items: center;
+    padding: var(--s8);
+    border-radius: var(--radius-menu-item);
+    color: var(--agnes-text-primary);
+    cursor: pointer;
+  }
+  .permission-picker-option[data-active="true"] {
+    background: var(--agnes-bg-hover);
+  }
+  .permission-picker-option[aria-disabled="true"] {
+    cursor: progress;
+    opacity: 0.6;
+  }
+  .permission-picker-icon {
+    color: var(--agnes-text-secondary);
+  }
+  .permission-picker-check {
+    display: grid;
+    place-items: center;
+    color: var(--agnes-text-primary);
+  }
+  .permission-picker-copy {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+  }
+  .permission-picker-label {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.25rem;
+  }
+  .permission-picker-hint {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.125rem;
+  }
+  /* Full access skips approvals: its row says so in the danger colour, glyph and words alike. */
+  .permission-picker-option[data-permission="full"]
+  :is(.permission-picker-icon, .permission-picker-label, .permission-picker-hint) {
+    color: var(--agnes-status-danger-text);
+  }
+
+  .composer-dsh-control,
+  .composer-extras,
+  .composer-extras[data-overflow="false"] .agh-disclosure,
+  .composer-extras[data-overflow="false"] .agh-disclosure > .agh-disclosure-content {
+    display: contents;
+  }
+  .composer-extras[data-overflow="false"] .agh-disclosure-summary {
+    display: none;
+  }
+  .composer-extras[data-overflow="true"] .agh-disclosure {
+    position: relative;
+  }
+  .composer-extras[data-overflow="true"] .agh-disclosure > .agh-disclosure-content {
+    position: absolute;
+    bottom: calc(100% + var(--s8));
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s8);
+    padding: var(--s12);
+    background: var(--agnes-bg-popover);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    min-width: 12rem;
+  }
+  @media (min-width: 768px) and (max-width: 900px) {
+    :is(.composer-meta, .composer-controls) .composer-agent.agnes-ui-button {
+      height: var(--control-height);
+      min-height: var(--control-height);
+    }
+  }
+}

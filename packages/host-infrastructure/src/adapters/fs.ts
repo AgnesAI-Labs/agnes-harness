@@ -1,0 +1,382 @@
+import { basename, dirname, isAbsolute, join, parse, resolve, sep } from 'node:path'
+import { decideFsPath, FS_DENIED, type FsPolicy } from '@agnes/core'
+import type { FsEntry, FsStat } from '@agnes/extension-api'
+import { sessionHasFullFileAccess } from '@agnes/host-common/session-file-access'
+import { AGH_DIR } from '@agnes/protocol'
+import type { FsIo } from './fs-io.js'
+import { localFsIo } from './fs-io-local.js'
+
+/** The consumption contract the seam packages are written against. */
+export type HostFs = {
+  realpath(p: string): Promise<string>
+  read(p: string, opts?: { unit?: 'lines' | 'bytes'; offset?: number; limit?: number }): Promise<Uint8Array>
+  write(p: string, data: Uint8Array): Promise<void>
+  create?(p: string, data: Uint8Array): Promise<{ size: number; sha256: string }>
+  stat(p: string): Promise<FsStat>
+  list(p: string): Promise<FsEntry[]>
+  mkdir(p: string): Promise<void>
+  rm(p: string, opts?: { recursive?: boolean }): Promise<void>
+}
+
+/**
+ * What the fence is enforcing right now: the full sandbox policy - allow roots beyond the
+ * workspace, the data directory's narrow exceptions, the hard denies - and the case semantics of
+ * the volume it runs on. Re-read on every call; nothing here is cached. The digest on the policy
+ * is the identity the host pinned when it bound the seam's policy; it is how a caller verifies
+ * the fence is still the policy the seam declared.
+ */
+export type FsBinding = { policy: FsPolicy; caseSensitive: boolean; readOnly?: boolean; fullAccess?: boolean }
+
+/** The fenced handle: HostFs plus what session assembly and the sandbox seam ask the fence directly. */
+export type FencedFs = HostFs & {
+  /** Check current write policy without truncating or allocating file bytes. */
+  authorizeWrite?(path: string): Promise<void>
+  /** Check the same target, parent and descendant policy enforced by rm. */
+  authorizeRemove?(path: string, opts?: { recursive?: boolean }): Promise<void>
+  preflight(path: string, mode: 'read' | 'write'): Promise<void>
+  /** See `FsOps.isConfigPath`; never throws. */
+  isConfigPath(path: string): Promise<boolean>
+  resolveInside(path: string): Promise<string>
+  /** Symlink resolution only - no policy decision. What the sandbox seam's compiler and session open ask for. */
+  canonicalize(path: string, opts?: { base?: string }): Promise<string>
+  fence(): FsPolicy
+}
+
+const refuse = (requested: string, why: string): never => {
+  throw Object.assign(new Error(`${FS_DENIED}: ${requested} ${why}`), { code: FS_DENIED })
+}
+
+const usable = (p: unknown): void => {
+  if (typeof p !== 'string' || p.length === 0 || p.includes('\0')) refuse(String(p), 'is not a usable path')
+}
+
+// `Buffer.toString('utf8')` - what the windowed read used before the io split - keeps a leading
+// BOM. The default `TextDecoder` strips it, which would silently change the bytes a windowed read
+// returns; `ignoreBOM: true` keeps the old behaviour instead of stripping it.
+const windowDecoder = new TextDecoder('utf-8', { ignoreBOM: true })
+
+/**
+ * Resolves every symlink component, including a final dangling symlink.
+ *
+ * A stat that follows links reports a dangling link as absent. Treating that spelling as an
+ * ordinary missing leaf authorises the lexical path inside an allow root, after which the write
+ * follows the link and creates its target outside. Walking with lstat keeps the link itself
+ * observable; its target is then resolved even when the target does not exist yet.
+ *
+ * This is called at operation time, never cached: a directory traded for a symlink after the
+ * policy was compiled resolves to where it points now, not where it pointed then. The production I/O opens every component without following links and holds the resulting
+ * handles for the operation. A changed component is refused rather than reopened through a link.
+ *
+ * Where the io reports final paths, the link-free prefix the walk reached is respelled by it, so a
+ * short-name alias of a directory decides exactly as its long name does, and a root pinned in one
+ * spelling still contains a path asked for in the other.
+ */
+async function canonicalNames(
+  io: FsIo,
+  abs: string,
+  requested: string = abs,
+): Promise<{ real: string; named: string }> {
+  const seen = new Set<string>()
+  const settle = async (prefix: string, rest: readonly string[], named?: string) => {
+    const prefixName = io.finalPath ? await io.finalPath(prefix) : prefix
+    const real = rest.length === 0 ? prefixName : resolve(prefixName, ...rest)
+    return { real, named: named ?? real }
+  }
+  const walk = async (candidate: string, named?: string): Promise<{ real: string; named: string }> => {
+    const normalized = resolve(candidate)
+    if (seen.has(normalized) || seen.size >= 40) refuse(requested, 'contains a symlink cycle')
+    seen.add(normalized)
+    const volumeRoot = parse(normalized).root
+    const parts = normalized.slice(volumeRoot.length).split(sep).filter(Boolean)
+    let current = volumeRoot
+    for (let index = 0; index < parts.length; index++) {
+      const next = join(current, parts[index] as string)
+      const stat = await io.lstat(next)
+      if (stat === undefined) return settle(current, parts.slice(index), named)
+      if (stat.kind !== 'symlink') {
+        current = next
+        continue
+      }
+      const target = stat.linkTarget ?? (await io.readlink(next))
+      const targetPath = isAbsolute(target) ? target : resolve(dirname(next), target)
+      // Preserve the final link's name from this same walk. Rewalking its parent after the policy
+      // decision could authorize one directory and stat a different directory after replacement.
+      return walk(
+        resolve(targetPath, ...parts.slice(index + 1)),
+        named ?? (index === parts.length - 1 ? next : undefined),
+      )
+    }
+    return settle(current, [], named)
+  }
+  return walk(abs)
+}
+async function canonicalize(io: FsIo, abs: string, requested: string = abs): Promise<string> {
+  return (await canonicalNames(io, abs, requested)).real
+}
+
+/** A one-rule policy, so segment matching and case folding stay the one rule decideFsPath states. */
+const overlay = (root: string): FsPolicy => ({
+  workspaceRoot: root,
+  rules: [{ effect: 'allow', path: root, source: 'extra', hard: false }],
+  networkAllow: [],
+  digest: '',
+})
+
+const missing = (requested: string): Error =>
+  Object.assign(new Error(`ENOENT: no such file or directory, lstat '${requested}'`), { code: 'ENOENT' })
+
+/**
+ * `readRoots` names directories outside the policy that read, list and stat may still reach - the
+ * real directories of the Skills a session can use. It never widens a write, never overrides a
+ * rule that matched (a deny, hard or not, still refuses), and is asked on every call so a Skill
+ * that stops being usable closes at once. The policy and its digest are untouched.
+ *
+ * `fullAccessReadOnlyRoots` names the installation's own state - credentials and profiles. Under
+ * full file access those paths stay readable like any other, but write, mkdir and rm refuse them
+ * even where the policy allows them (an unmatched path widened by full access, or a workspace that
+ * happens to cover them). It is a refusal layered on the policy's answer, never a widening, and it
+ * is asked on every call. The policy and its digest are untouched.
+ */
+export function createFs(
+  binding: () => FsBinding,
+  io: FsIo = localFsIo,
+  readRoots?: () => readonly string[],
+  fullAccessReadOnlyRoots?: () => readonly string[],
+  configHomes?: () => readonly string[],
+): FencedFs {
+  /**
+   * The one choke point every method goes through: resolve the caller's spelling against the
+   * workspace root, canonicalize it against the live filesystem, and apply the bound policy to the
+   * canonical name. The decision is segment-wise, not a string prefix - `/work/a` does not contain
+   * `/work/ab` - and case folds only where the volume does. Nothing is authorised at init; this
+   * runs again on every operation.
+   */
+  async function authorize(
+    p: string,
+    mode: 'read' | 'write' | 'remove' = 'read',
+    resolved?: (path: { real: string; named: string }) => void,
+  ): Promise<{ real: string; named: string }> {
+    const { policy, caseSensitive, readOnly } = binding()
+    if (readOnly && mode !== 'read') refuse(p, 'workspace is read-only')
+    usable(p)
+    const abs = isAbsolute(p) ? p : resolve(policy.workspaceRoot, p)
+    const { real, named } = await canonicalNames(io, abs, p)
+    resolved?.({ real, named })
+    const decision = decideFsPath(policy, real, { caseSensitive })
+    // Full session access widens unmatched paths; matching denies remain authoritative.
+    if (decision.effect !== 'allow' && !(decision.reason === 'no-match' && sessionHasFullFileAccess(fs)))
+      refuse(
+        p,
+        decision.reason === 'no-match'
+          ? 'is outside every allow rule; 请选择“完全权限”或将目标所在目录设为工作区。'
+          : 'is denied by policy',
+      )
+    if (
+      mode !== 'read' &&
+      fullAccessReadOnlyRoots &&
+      (sessionHasFullFileAccess(fs) || binding().fullAccess)
+    ) {
+      // Each root is canonicalized the way the path was, so a symlink on either side and the
+      // volume's own spelling cannot make two names for one directory compare apart. A root that
+      // cannot be canonicalized is compared as spelled: failing open here would drop the guard.
+      const roots = await Promise.all(
+        fullAccessReadOnlyRoots().map((root) => canonicalize(io, resolve(root)).catch(() => resolve(root))),
+      )
+      const inside = (outer: string, inner: string): boolean =>
+        decideFsPath(overlay(outer), inner, { caseSensitive }).effect === 'allow'
+      // Removing the directory that holds a protected root removes the root with it.
+      if (roots.some((root) => inside(root, real) || (mode === 'remove' && inside(real, root))))
+        refuse(p, 'is denied by policy')
+    }
+    return { real, named }
+  }
+
+  // A read that matched no rule may still land inside a Skill directory. A root that is the
+  // workspace or above it is ignored: it would turn the overlay into a way around the policy.
+  async function authorizeRead(p: string): Promise<{ real: string; named: string }> {
+    if (!readRoots) return authorize(p)
+    usable(p)
+    let resolved: { real: string; named: string } | undefined
+    try {
+      // Only final-name IO (Windows) reuses this operation's completed path walk. There is no
+      // cross-call cache; POSIX/remote IO retains its existing recheck after a refusal.
+      return await authorize(
+        p,
+        'read',
+        io.finalPath
+          ? (path) => {
+              resolved = path
+            }
+          : undefined,
+      )
+    } catch (err) {
+      const { policy, caseSensitive } = binding()
+      const abs = isAbsolute(p) ? p : resolve(policy.workspaceRoot, p)
+      const { real, named } = resolved ?? (await canonicalNames(io, abs, p))
+      if (decideFsPath(policy, real, { caseSensitive }).reason !== 'no-match') throw err
+      const inside = (outer: string, inner: string): boolean =>
+        decideFsPath(overlay(outer), inner, { caseSensitive }).effect === 'allow'
+      // Each root is canonicalized the way the path was, so both are compared in one spelling; a
+      // root that cannot be canonicalized opens nothing.
+      const roots = await Promise.all(
+        readRoots().map((root) => canonicalize(io, resolve(root)).catch(() => undefined)),
+      )
+      const open = roots.some(
+        (root) => root !== undefined && !inside(root, policy.workspaceRoot) && inside(root, real),
+      )
+      if (!open) throw err
+      return { real, named }
+    }
+  }
+
+  // Kept under the old name: it is how session assembly asks "is this cwd inside the fence".
+  async function resolveInside(p: string): Promise<string> {
+    return (await authorize(p)).real
+  }
+
+  async function authorizeRemoval(p: string, opts: { recursive?: boolean } = {}): Promise<string> {
+    // Removing is answered twice: the target, and the resolved parent it is removed from. A
+    // policy that allows a leaf but not its directory is not a licence to unlink there.
+    const { real } = await authorize(p, 'remove')
+    const { policy, caseSensitive } = binding()
+    if (
+      opts.recursive &&
+      policy.rules.some(
+        (rule) => rule.hard && decideFsPath(overlay(real), rule.path, { caseSensitive }).effect === 'allow',
+      )
+    )
+      refuse(p, 'contains a hard-denied descendant')
+    const parent = decideFsPath(policy, dirname(real), { caseSensitive })
+    if (parent.effect !== 'allow' && !(parent.reason === 'no-match' && sessionHasFullFileAccess(fs)))
+      refuse(p, 'is denied by policy at its parent')
+    return real
+  }
+
+  const fs: FencedFs = {
+    async authorizeWrite(path) {
+      await authorize(path, 'write')
+    },
+    async authorizeRemove(path, opts) {
+      await authorizeRemoval(path, opts)
+    },
+    async preflight(path, mode) {
+      if (mode === 'read') await authorizeRead(path)
+      else await authorize(path, mode)
+    },
+    async isConfigPath(p) {
+      // Fail closed: whatever cannot be resolved or compared is treated as configuration.
+      try {
+        usable(p)
+        const { policy, caseSensitive } = binding()
+        const abs = isAbsolute(p) ? p : resolve(policy.workspaceRoot, p)
+        const { real, named } = await canonicalNames(io, abs, p)
+        // NFKC first: a case-insensitive volume also folds compatibility forms (`AGENTſ.md` is
+        // `AGENTS.md` there), and matching more names only takes always-allow away.
+        const fold = (text: string) => {
+          const normal = text.normalize('NFKC')
+          return caseSensitive ? normal : normal.toLocaleLowerCase('en-US')
+        }
+        const homes = await Promise.all(
+          (configHomes?.() ?? []).map((home) => canonicalize(io, resolve(home)).catch(() => resolve(home))),
+        )
+        // Every spelling counts: the resolved path, the final link's own name and the path as asked
+        // (a `.agh` that is itself a symlink resolves away from its name). A link called AGENTS.md is
+        // an instruction file whatever it points at.
+        // Names the context-rules default loads; user-configured extra names are that extension's
+        // config, which this layer cannot see, so they are not covered.
+        const names = ['AGENTS.md', 'CLAUDE.md', 'AGENTS.local.md', 'CLAUDE.local.md'].map(fold)
+        // Win32 drops trailing dots and spaces from a name and reads `name:stream` as the same file, so
+        // a segment spelled that way is config, and names are compared with that stripped. This is
+        // platform-agnostic: on POSIX it only removes always-allow from an odd spelling.
+        const plain = (segment: string) => fold(segment.replace(/[. ]+$/, '').split(':')[0] as string)
+        return [real, named, resolve(abs)].some((candidate) => {
+          const segments = candidate.slice(parse(candidate).root.length).split(sep).filter(Boolean)
+          return (
+            segments.some((segment) => /[. ]$|:/.test(segment) || plain(segment) === fold(AGH_DIR)) ||
+            names.includes(plain(basename(candidate))) ||
+            homes.some((home) => decideFsPath(overlay(home), candidate, { caseSensitive }).effect === 'allow')
+          )
+        })
+      } catch {
+        return true
+      }
+    },
+    resolveInside,
+    async canonicalize(p, opts) {
+      usable(p)
+      const abs = isAbsolute(p) ? p : resolve(opts?.base ?? binding().policy.workspaceRoot, p)
+      return canonicalize(io, abs, p)
+    },
+    // The policy this handle is enforcing right now, readable from outside - including its digest,
+    // which is what a session re-checks the sandbox seam's answer against. A floor that cannot be
+    // read is a floor nothing can be held to.
+    fence: () => binding().policy,
+    async realpath(p) {
+      return resolveInside(p)
+    },
+    async read(p, opts = {}) {
+      if (opts.unit === 'bytes') {
+        const offset = opts.offset ?? 0
+        if (
+          !Number.isSafeInteger(offset) ||
+          offset < 0 ||
+          (opts.limit !== undefined && (!Number.isSafeInteger(opts.limit) || opts.limit < 0))
+        )
+          throw Object.assign(new Error('Invalid byte range'), { code: 'EINVAL' })
+        const { real } = await authorizeRead(p)
+        if (!io.readRange)
+          throw Object.assign(new Error('Bounded byte reads are unavailable'), { code: 'ENOTSUP' })
+        return io.readRange(real, { offset, ...(opts.limit === undefined ? {} : { limit: opts.limit }) })
+      }
+      const buf = await io.readFile((await authorizeRead(p)).real)
+      if (opts.offset === undefined && opts.limit === undefined) return new Uint8Array(buf)
+      const lines = windowDecoder.decode(buf).split(/(?<=\n)/)
+      const start = Math.max((opts.offset ?? 1) - 1, 0)
+      return new TextEncoder().encode(
+        lines.slice(start, opts.limit === undefined ? undefined : start + opts.limit).join(''),
+      )
+    },
+    ...(io.createFile
+      ? {
+          async create(p: string, data: Uint8Array) {
+            const { real, named } = await authorize(p, 'write')
+            const requested = isAbsolute(p) ? resolve(p) : resolve(binding().policy.workspaceRoot, p)
+            if (real !== requested || named !== requested)
+              return refuse(p, 'contains a symbolic link or alias')
+            await io.mkdir(dirname(real))
+            return io.createFile!(real, data)
+          },
+        }
+      : {}),
+    async write(p, data) {
+      const { real } = await authorize(p, 'write')
+      await io.mkdir(dirname(real))
+      await io.writeFile(real, data)
+    },
+    async list(p) {
+      const ents = await io.readdir((await authorizeRead(p)).real)
+      return ents.map((e) => ({ name: e.name, kind: e.kind }))
+    },
+    // Describes the name that was asked about, not what it points at. list() reports a symlink as a
+    // symlink, and a caller that lists a directory and stats each entry has to get the same answer
+    // from both - statting the resolved target can only ever say `file` or `dir`, so the two never
+    // agreed. The fence still runs on the whole path first, so a name resolving outside every allow
+    // root is refused here exactly as it is on the read path; only the final component is then
+    // stat'ed unresolved.
+    async stat(p) {
+      const { named } = await authorizeRead(p)
+      const st = await io.lstat(named)
+      if (st === undefined) throw missing(p)
+      return { kind: st.kind, size: st.size, mtimeMs: st.mtimeMs }
+    },
+    async mkdir(p) {
+      const { real } = await authorize(p, 'write')
+      await io.mkdir(real)
+    },
+    async rm(p, opts = {}) {
+      const real = await authorizeRemoval(p, opts)
+      await io.rm(real, { recursive: opts.recursive ?? false })
+    },
+  }
+  return fs
+}

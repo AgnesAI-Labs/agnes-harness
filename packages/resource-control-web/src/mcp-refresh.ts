@@ -1,42 +1,37 @@
-/** Refresh while the MCP panel is visible, with a finite window and no overlapping requests. */
+import type { ResourceOperation } from '@agnes/protocol'
+/** Revalidate visible MCP panels on real invalidations or return to the panel, without a timer. */
 export function watchMcpPanel(options: {
   root: HTMLElement
   visible(): boolean
   refresh(): Promise<void>
 }): () => void {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  let active = false
-  let remaining = 0
   let disposed = false
   let busy = false
-  const schedule = () => {
-    if (disposed || !active || busy || timer || remaining <= 0) return
-    timer = setTimeout(async () => {
-      timer = undefined
-      if (disposed || !options.visible() || document.hidden) {
-        update()
-        return
-      }
-      remaining--
-      busy = true
-      try {
+  let dirty = false
+  const visible = () => !disposed && options.root.isConnected && !document.hidden && options.visible()
+  let active = visible()
+  const refresh = async () => {
+    if (!visible() || busy) return
+    busy = true
+    try {
+      do {
+        dirty = false
         await options.refresh()
-      } catch {
-        /* Opening the pane still exposes explicit load failures. */
-      } finally {
-        busy = false
-        schedule()
-      }
-    }, 2_000)
+      } while (dirty && visible())
+    } catch {
+      /* The panel owns its explicit load failures. */
+    } finally {
+      busy = false
+    }
+  }
+  const invalidate = () => {
+    dirty = true
+    void refresh()
   }
   const update = () => {
-    const next = !disposed && options.root.isConnected && !document.hidden && options.visible()
-    if (next && !active) remaining = 60
+    const next = visible()
+    if (next && !active) invalidate()
     active = next
-    if (!active) {
-      clearTimeout(timer)
-      timer = undefined
-    } else schedule()
   }
   const observer = new MutationObserver(update)
   observer.observe(document.documentElement, {
@@ -44,15 +39,59 @@ export function watchMcpPanel(options: {
     subtree: true,
     attributeFilter: ['hidden', 'aria-selected'],
   })
+  const events = ['agnes:plugins-invalidated', 'agnes:packages-changed', 'agnes:resources-changed', 'online']
+  for (const event of events) window.addEventListener(event, invalidate)
   document.addEventListener('visibilitychange', update)
   const dispose = () => {
     disposed = true
-    clearTimeout(timer)
     observer.disconnect()
+    for (const event of events) window.removeEventListener(event, invalidate)
     document.removeEventListener('visibilitychange', update)
     window.removeEventListener('pagehide', dispose)
   }
   window.addEventListener('pagehide', dispose)
-  update()
   return dispose
+}
+
+/** Active resource operations back off, pause while hidden, and release waits on disposal. */
+export function resourcePollDelay(attempt: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve()
+  return new Promise((resolve) => {
+    let elapsed = false
+    const finish = () => {
+      clearTimeout(timer)
+      document.removeEventListener('visibilitychange', wake)
+      signal.removeEventListener('abort', finish)
+      resolve()
+    }
+    const wake = () => {
+      if (elapsed && !document.hidden) finish()
+    }
+    const timer = setTimeout(
+      () => {
+        elapsed = true
+        wake()
+      },
+      // Local state changes usually finish before a 500ms poll; slow operations still back off.
+      attempt < 3 ? 50 * 2 ** attempt : Math.min(30_000, 500 * 2 ** Math.min(6, attempt - 3)),
+    )
+    document.addEventListener('visibilitychange', wake)
+    signal.addEventListener('abort', finish, { once: true })
+  })
+}
+
+/** The operation's authoritative terminal state, with the same bounded, abortable poll policy. */
+export async function pollResourceOperation(
+  read: () => Promise<ResourceOperation>,
+  signal: AbortSignal,
+  progress: (operation: ResourceOperation) => void,
+): Promise<ResourceOperation | undefined> {
+  for (let attempt = 0; attempt < 120 && !signal.aborted; attempt += 1) {
+    const operation = await read()
+    if (signal.aborted) return undefined
+    if (['succeeded', 'failed', 'cancelled'].includes(operation.state)) return operation
+    progress(operation)
+    await resourcePollDelay(attempt, signal)
+  }
+  return undefined
 }

@@ -21,7 +21,7 @@ export type DiagnosticsArtifact = {
   mime: string
   lane: string
   seq: number
-  source: 'request-media' | 'tool-result'
+  source: 'request-media' | 'tool-result' | 'user-attachment' | 'inbox-attachment' | 'attachment-thumbnail'
   uri?: string
 }
 
@@ -37,11 +37,14 @@ export type DiagnosticsBundle = {
   trace?: UITimeline
   events?: { file: 'events.jsonl'; count: number; lastSeq: number; truncated: boolean }
   artifacts: DiagnosticsArtifact[]
-  /**
-   * `runtime` is the daemon runtime log (worker exits, session interruptions, daemon errors).
-   * `requestAudit` holds failed requests only, so an empty one is not an empty daemon log.
-   */
-  logs?: { runtime?: LogTail; requestAudit?: LogTail; host?: LogTail; browser?: BrowserLog }
+  logs?: {
+    requestAudit?: LogTail
+    /** Earlier version-1 callers used this name for request audit. */
+    daemon?: LogTail
+    host?: LogTail
+    runtime?: LogTail
+    browser?: BrowserLog
+  }
   system?: {
     agh?: unknown
     runtime?: unknown

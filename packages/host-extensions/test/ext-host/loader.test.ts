@@ -1,0 +1,376 @@
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { bindProvidedContractModules } from '@agnes/base/provided-contracts'
+import { ToolRegistry } from '@agnes/core'
+import { HOOK_EVENTS } from '@agnes/extension-api'
+import * as gitWorktreeContract from '@agnes/git-worktree-contract'
+import { gitWorktreeKind } from '@agnes/git-worktree-contract'
+import * as intelligentUiContract from '@agnes/intelligent-ui-contract'
+import { intelligentUiKind } from '@agnes/intelligent-ui-contract'
+import { defineTool } from '@agnes/plugin-runtime'
+import { providedExternalModules, registerProvidedExternal } from '@agnes/plugin-runtime/provided-externals'
+import * as protocol from '@agnes/protocol'
+import { inspectJsonData } from '@agnes/protocol'
+import { Type } from '@sinclair/typebox'
+import { Value } from '@sinclair/typebox/value'
+import { afterEach, expect, it } from 'vitest'
+import { buildExtensionApi } from '../../src/ext-host/api.js'
+import { loadError } from '../../src/ext-host/diagnostics.js'
+import { createLoader, runtimeForm } from '../../src/ext-host/loader.js'
+
+const roots: string[] = []
+const setup = () => {
+  const root = mkdtempSync(join(tmpdir(), 'agnes-loader-'))
+  roots.push(root)
+  return {
+    root,
+    loader: createLoader({ cacheDir: join(root, 'cache'), hostRoot: root, agnesVersion: '0.0.0' }),
+    write(name: string, source: string) {
+      const path = join(root, name)
+      mkdirSync(join(path, '..'), { recursive: true })
+      writeFileSync(path, source)
+      return path
+    },
+  }
+}
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
+it('identifies the actual source runtime without a fake SEA flag', () => {
+  expect(runtimeForm()).toBe('source')
+})
+
+it('requires compatible ordinary plugin apiRange before evaluating any source', async () => {
+  const f = setup()
+  const marker = join(f.root, 'evaluated')
+  const entry = f.write(
+    'index.ts',
+    `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'yes'); export const main = () => {}`,
+  )
+  for (const [apiRange, code] of [
+    [undefined, 'E_PROVIDER_INVALID'],
+    ['^99.0.0', 'E_PROVIDER_INCOMPATIBLE'],
+  ] as const) {
+    f.write(
+      'package.json',
+      JSON.stringify({ name: '@test/provider', agnes: { plugins: [{ export: 'main', apiRange }] } }),
+    )
+    await expect(f.loader.import(entry)).rejects.toMatchObject({
+      code,
+      kind: 'plugin',
+      operation: 'admit',
+      retryable: false,
+    })
+    expect(readdirSync(f.root)).not.toContain('evaluated')
+  }
+  f.write(
+    'package.json',
+    JSON.stringify({ name: '@test/provider', agnes: { plugins: [{ export: 'main', apiRange: '^5.0.0' }] } }),
+  )
+  expect(await f.loader.import(entry)).toHaveProperty('main')
+  expect(readFileSync(marker, 'utf8')).toBe('yes')
+})
+
+it('keeps contract token identity on the one provided-externals table', () => {
+  bindProvidedContractModules()
+  setup()
+  expect(providedExternalModules['@agnes/protocol']).toBe(protocol)
+  expect({ ...providedExternalModules }['@agnes/git-worktree-contract']).toBe(gitWorktreeContract)
+  expect(
+    Object.entries(providedExternalModules).find(([name]) => name === '@agnes/intelligent-ui-contract')?.[1],
+  ).toBe(intelligentUiContract)
+  expect(() => registerProvidedExternal('@agnes/protocol', {})).toThrow(TypeError)
+  registerProvidedExternal('@agnes/protocol', protocol)
+  expect(providedExternalModules['@agnes/protocol']).toBe(protocol)
+})
+
+it('shares host modules even when the extension carries decoy copies', async () => {
+  const f = setup()
+  for (const name of [
+    '@agnes/extension-api',
+    '@agnes/protocol',
+    '@agnes/git-worktree-contract',
+    '@agnes/intelligent-ui-contract',
+    '@sinclair/typebox',
+  ]) {
+    f.write(`node_modules/${name}/package.json`, JSON.stringify({ name, main: './index.js' }))
+    f.write(`node_modules/${name}/index.js`, 'throw new Error("extension copy executed")')
+  }
+  const entry = f.write(
+    'index.ts',
+    `
+    import { HOOK_EVENTS } from '@agnes/extension-api'
+    import { gitWorktreeKind } from '@agnes/git-worktree-contract'
+    import { intelligentUiKind } from '@agnes/intelligent-ui-contract'
+    import { inspectJsonData } from '@agnes/protocol'
+    import { Type } from '@sinclair/typebox'
+    import { Value } from '@sinclair/typebox/value'
+    import { prepareValidationSchemas, validateAgainst } from ${JSON.stringify(fileURLToPath(new URL('../../../protocol-validation/src/index.ts', import.meta.url)))}
+    const schema = Type.Module({ Input: Type.Object({ value: Type.String() }) }).Import('Input')
+    prepareValidationSchemas([schema])
+    export const valid = validateAgainst(schema, { value: 'shared validation' })
+    export const invalid = validateAgainst(schema, { value: 42 })
+    export const shared = { HOOK_EVENTS, gitWorktreeKind, intelligentUiKind, inspectJsonData, Type, Value }
+    export default () => undefined
+  `,
+  )
+  const mod = await f.loader.import(entry)
+  expect(mod.valid).toEqual({ ok: true, value: { value: 'shared validation' } })
+  expect(mod.invalid).toMatchObject({ ok: false, errors: [{ path: '/value', code: 'TYPE' }] })
+  expect(mod.shared).toEqual({
+    HOOK_EVENTS,
+    gitWorktreeKind,
+    intelligentUiKind,
+    inspectJsonData,
+    Type,
+    Value,
+  })
+  const shared = mod.shared as Record<string, unknown>
+  expect(shared.HOOK_EVENTS).toBe(HOOK_EVENTS)
+  expect(shared.gitWorktreeKind).toBe(gitWorktreeKind)
+  expect(shared.intelligentUiKind).toBe(intelligentUiKind)
+  expect(shared.inspectJsonData).toBe(inspectJsonData)
+  expect(shared.Type).toBe(Type)
+  expect(shared.Value).toBe(Value)
+  expect(typeof (mod.default as { apply?: unknown }).apply).toBe('function')
+})
+
+it.each(['ts', 'mjs', 'js'])(
+  're-evaluates a %s entry and observes edits with the versioned cache path',
+  async (ext) => {
+    const f = setup()
+    f.write('package.json', '{"type":"module"}')
+    const entry = f.write(
+      `index.${ext}`,
+      'export const fresh = {}; export const value = 1; export default () => {}',
+    )
+    const first = await f.loader.import(entry)
+    const second = await f.loader.import(entry)
+    expect(first.fresh).not.toBe(second.fresh)
+    f.write(`index.${ext}`, 'export const fresh = {}; export const value = 2; export default () => {}')
+    expect((await f.loader.import(entry)).value).toBe(2)
+    expect(readdirSync(join(f.root, 'cache', 'jiti', '0.0.0')).length).toBeGreaterThan(0)
+  },
+)
+
+it('reloads a nested TS dependency and keeps its imports on host namespaces', async () => {
+  const f = setup()
+  const source = (n: number) =>
+    `import { Type } from '@sinclair/typebox'; export const value: number = ${n}; export { Type }`
+  f.write('child.ts', source(1))
+  const entry = f.write('index.ts', 'export { value, Type } from "./child.ts"; export default () => {}')
+  expect((await f.loader.import(entry)).value).toBe(1)
+  f.write('child.ts', source(2))
+  const second = await f.loader.import(entry)
+  expect(second.value).toBe(2)
+  expect(second.Type).toBe(Type)
+})
+
+it('loads the real author example module through jiti', async () => {
+  const f = setup()
+  const mod = await f.loader.import(
+    fileURLToPath(new URL('../../../plugin-runtime/examples/minimal/index.ts', import.meta.url)),
+  )
+  expect(typeof (mod.default as { apply?: unknown }).apply).toBe('function')
+})
+
+it.each(['mjs', 'js', 'cjs'])(
+  'reloads a nested %s dependency instead of retaining the native cache',
+  async (ext) => {
+    const f = setup()
+    f.write('package.json', '{"type":"module"}')
+    const source = (value: number) =>
+      ext === 'cjs'
+        ? `const { Type } = require('@sinclair/typebox'); module.exports = { value: ${value}, Type }`
+        : `import { Type } from '@sinclair/typebox'; export const value = ${value}; export { Type }`
+    f.write(`child.${ext}`, source(1))
+    const entry = f.write(
+      'index.ts',
+      ext === 'cjs'
+        ? `import child from './child.${ext}'; export const value = child.value; export const Type = child.Type`
+        : `export { value, Type } from './child.${ext}'`,
+    )
+    expect((await f.loader.import(entry)).value).toBe(1)
+    f.write(`child.${ext}`, source(2))
+    const result = await f.loader.import(entry)
+    expect(result.value).toBe(2)
+    expect(result.Type).toBe(Type)
+  },
+)
+
+it.each(['config.json', '中文 空格/config.json'])(
+  'reloads JSON dependency %s along with its code',
+  async (name) => {
+    const f = setup()
+    f.write(name, '{"value":1}')
+    const entry = f.write(
+      'index.ts',
+      `import config from ${JSON.stringify(`./${name}`)}; export const value = config.value`,
+    )
+    expect((await f.loader.import(entry)).value).toBe(1)
+    f.write(name, '{"value":2}')
+    expect((await f.loader.import(entry)).value).toBe(2)
+  },
+)
+
+it('reloads a plain nested ESM module whose native import would succeed without fallback', async () => {
+  const f = setup()
+  f.write('child.mjs', 'export const value = 1')
+  const entry = f.write('index.ts', 'export { value } from "./child.mjs"')
+  expect((await f.loader.import(entry)).value).toBe(1)
+  f.write('child.mjs', 'export const value = 2')
+  expect((await f.loader.import(entry)).value).toBe(2)
+})
+
+it('does not let the legacy loader mint classified-tool provenance or a Host domain', () => {
+  const tools = new ToolRegistry()
+  const api = buildExtensionApi(
+    {
+      id: 'agnes/computer-use',
+      version: '1.0.0',
+      apiRange: '*',
+      entry: './index.js',
+      tools: { prefix: '', names: null },
+    },
+    tools,
+    (_name, dispose) => dispose,
+    () => true,
+  )
+  expect(() =>
+    api.registerTool({
+      name: 'computer',
+      description: 'classified legacy tool',
+      parameters: Type.Object({}),
+      meta: {
+        isReadOnly: false,
+        isDestructive: true,
+        isConcurrencySafe: false,
+        isOpenWorld: true,
+        requiresApproval: 'always',
+        replay: 'never',
+        costHint: undefined,
+        deferLoading: undefined,
+      },
+      policyVersion: 'v1',
+      classify: () => ({
+        isReadOnly: false,
+        isDestructive: true,
+        replay: 'never',
+        requiresApproval: 'always',
+        approvalScopes: [],
+      }),
+      execute: async () => ({ content: [{ type: 'text', text: 'never runs' }] }),
+    }),
+  ).toThrow(/Host-attested package identity and version/)
+  expect(tools.size).toBe(0)
+})
+
+it('supports top-level await and dynamic TS imports without sharing successive module state', async () => {
+  const f = setup()
+  f.write('child.ts', 'export const state = { value: 1 }')
+  const entry = f.write(
+    'index.ts',
+    'await Promise.resolve(); export const state = (await import("./child.ts")).state',
+  )
+  const [first, second] = await Promise.all([f.loader.import(entry), f.loader.import(entry)])
+  expect(first.state).toEqual({ value: 1 })
+  expect(second.state).toEqual({ value: 1 })
+  expect(first.state).not.toBe(second.state)
+})
+
+it('does not include thrown extension text in a load error and can retry a repaired entry', async () => {
+  const f = setup()
+  const entry = f.write('index.ts', 'throw new Error("credential-test-marker"); export default () => {}')
+  await expect(f.loader.import(entry)).rejects.toThrow('E_EXT_LOAD: extension module evaluation failed')
+  try {
+    await f.loader.import(entry)
+  } catch (error) {
+    expect(String(error)).not.toContain('credential-test-marker')
+  }
+  f.write('index.ts', 'export default () => {}')
+  expect(typeof (await f.loader.import(entry)).default).toBe('function')
+})
+
+it('refuses a cache version that could escape its version directory', () => {
+  const f = setup()
+  expect(() => createLoader({ cacheDir: f.root, hostRoot: f.root, agnesVersion: '../elsewhere' })).toThrow(
+    /E_EXT_LOAD/,
+  )
+})
+
+it('accepts prerelease cache versions and captures validated loader options', async () => {
+  const f = setup()
+  const options = {
+    cacheDir: join(f.root, 'cache'),
+    hostRoot: f.root,
+    agnesVersion: '0.1.0-dev+abc',
+  }
+  const loader = createLoader(options)
+  options.agnesVersion = '../elsewhere'
+  options.cacheDir = join(f.root, 'changed-cache')
+  options.hostRoot = join(f.root, 'changed-root')
+  const entry = f.write('index.ts', 'export default () => {}')
+  expect(typeof (await loader.import(entry)).default).toBe('function')
+  expect(readdirSync(join(f.root, 'cache', 'jiti', '0.1.0-dev+abc')).length).toBeGreaterThan(0)
+  expect(readdirSync(f.root)).not.toContain('changed-cache')
+})
+
+it.each(['ts', 'js'])(
+  'loads an external %s SDK graph without node_modules and resolves package-owned dependencies',
+  async (ext) => {
+    const f = setup()
+    f.write(
+      'package.json',
+      JSON.stringify({
+        type: 'module',
+        agnes: {
+          hostProvidedExternals: {
+            '@agnes/plugin-runtime': '0.0.0',
+            '@agnes/extension-api': '^5.0.0',
+            '@sinclair/typebox': '~0.34.0',
+          },
+        },
+      }),
+    )
+    f.write(
+      'node_modules/own-dependency/package.json',
+      JSON.stringify({ name: 'own-dependency', main: './index.js' }),
+    )
+    f.write('node_modules/own-dependency/index.js', 'exports.value = 42')
+    const entry = f.write(
+      `index.${ext}`,
+      `
+    import { defineTool } from '@agnes/plugin-runtime'
+    import { Type } from '@sinclair/typebox'
+    import { value } from 'own-dependency'
+    export { defineTool, Type, value }
+  `,
+    )
+    expect(await f.loader.import(entry)).toMatchObject({ defineTool, Type, value: 42 })
+    f.write(
+      'package.json',
+      JSON.stringify({ agnes: { hostProvidedExternals: { '@agnes/extension-api': '^99.0.0' } } }),
+    )
+    await expect(f.loader.import(entry)).rejects.toThrow(/@agnes\/extension-api.*incompatible.*upgrade AGH/)
+  },
+)
+
+it('names missing modules and fixes while withholding arbitrary evaluation errors', async () => {
+  const f = setup()
+  const entry = f.write('index.ts', "import 'missing-dependency'; export default () => {}")
+  await f.loader.import(entry).catch((error) => {
+    expect(loadError(error, 'import').message).toContain('missing-dependency')
+    expect(loadError(error, 'import').message).toContain('bundle/install')
+  })
+  await expect(f.loader.import(entry)).rejects.toThrow(
+    /Missing plugin module "missing-dependency".*bundle\/install/,
+  )
+  f.write(
+    'package.json',
+    JSON.stringify({ agnes: { hostProvidedExternals: { '@agnes/plugin-runtime/host': '*' } } }),
+  )
+  await expect(f.loader.import(entry)).rejects.toThrow(/Host does not provide module.*plugin-runtime\/host/)
+})

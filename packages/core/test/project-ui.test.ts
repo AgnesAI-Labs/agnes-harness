@@ -1,11 +1,14 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import type { Event, EventInput } from '@agnes/core-common/types'
+import { projectUI, type SlotFillRunner, UIProjectionCell } from '@agnes/core-ledger/project/ui'
 import type { ApprovalVerdict, UINode } from '@agnes/protocol'
 import { validateAgainst, validateSlotPayload } from '@agnes/protocol'
 import { UITimeline } from '@agnes/protocol/gen/agnes-v1'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { projectUI, type SlotFillRunner, UIProjectionCell } from '../src/project/ui.js'
+import { approvalFactsOf } from '../../core-ledger/src/project/approval-subject.js'
+import { answeredDecision, pendingDecision } from '../../core-ledger/testkit/decision.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import type { SessionImpl } from '../src/step/session.js'
-import type { Event, EventInput } from '../src/types.js'
 import { fakeProvider, sentFor, textTurn, toolTurn, usage } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession, readTool, shellTool } from './helpers/open-session.js'
@@ -57,7 +60,8 @@ it('projects empty defaults without invented generation, state or budget', async
     turns: [],
     usage: {
       totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
-      context: { tokens: 0, window: 128000, autoCompact: true },
+      // The gauge's compaction mark sits where threshold compaction fires: window minus reserve.
+      context: { tokens: 0, window: 128000, autoCompact: true, compactAt: 128000 - 16384 },
       model: { route: 'default', id: 'default', thinking: 'off' },
     },
   })
@@ -68,9 +72,19 @@ it('projects empty defaults without invented generation, state or budget', async
     opState: null,
     nodes: [],
     turns: [],
-    usage: { context: { tokens: 0, window: 128000, autoCompact: true } },
+    usage: { context: { tokens: 0, window: 128000, autoCompact: true, compactAt: 128000 - 16384 } },
   })
   expect(validateAgainst(UITimeline, { ...timeline, generation: 7 }).ok).toBe(true)
+  const defaults = presetDefaults()
+  const { session: manual } = await open({
+    provider: fakeProvider([]),
+    preset: { ...defaults, compaction: { ...defaults.compaction, enabled: false } },
+  })
+  for (const cut of [undefined, 0]) {
+    const context = (await manual.projectUI(cut)).usage?.context
+    expect(context).toMatchObject({ autoCompact: false })
+    expect(context).not.toHaveProperty('compactAt')
+  }
 })
 
 it('pages through adapter scan caps instead of silently truncating a long session', async () => {
@@ -331,14 +345,8 @@ it('groups approval continuation into one lane-isolated turn with measured cost 
     event('user/message', { content: [{ type: 'text', text: 'do it' }] }),
     event('turn/start', { turn: 1, trigger: 'prompt' }),
     event('tool/call', { toolUseId: 'tool-1', name: 'shell', args: {}, ordinal: 0 }),
-    event('approval/asked', {
-      requestId: 'approval-1',
-      kind: 'tool',
-      summary: 'run',
-      risk: 'always',
-      bindingHash: 'a'.repeat(64),
-      options: ['allowed-once', 'allowed-session', 'allowed-permanent', 'rejected'],
-      pending: { ticket: 'ticket-1', expiresAt: '2026-09-13T00:10:00.000Z' },
+    event('decision/state', pendingDecision('approval-1', { operationId: 'tool-1' }), {
+      register: 'decision/state',
     }),
     event('turn/end', {
       reason: 'parked',
@@ -346,7 +354,9 @@ it('groups approval continuation into one lane-isolated turn with measured cost 
       error: { code: 'APPROVAL_PENDING', message: 'Waiting for approval' },
     }),
     event('turn/start', { turn: 1, trigger: 'prompt' }, { lane: 'side' }),
-    event('approval/decided', { requestId: 'approval-1', verdict: 'allowed-once', via: 'callback' }),
+    event('decision/state', answeredDecision(pendingDecision('approval-1', { operationId: 'tool-1' }), 7), {
+      register: 'decision/state',
+    }),
     event('turn/start', {
       turn: 2,
       trigger: 'approval-resume',
@@ -378,12 +388,7 @@ it('groups approval continuation into one lane-isolated turn with measured cost 
   ]
 
   const timeline = await projectUI(events, { sessionKey: 'approval-chain', lane: 'main' })
-  expect(kind(timeline.nodes, 'approval')[0]?.options).toEqual([
-    'allow_once',
-    'allow_always',
-    'allow_permanent',
-    'reject_once',
-  ])
+  expect(kind(timeline.nodes, 'approval')[0]?.options).toEqual(['allow_once', 'allow_always', 'reject_once'])
   expect(timeline.turns).toHaveLength(1)
   expect(timeline.turns?.[0]?.error).toBeUndefined()
   expect(timeline.turns[0]).toMatchObject({
@@ -472,10 +477,12 @@ it('shows a live partial stream and finalizes it without duplicate assistant con
     if ((await session.scan({ type: 'assistant/output', toSeq: session.lastSeq })).length) break
     await new Promise<void>((resolve) => setImmediate(resolve))
   }
+  let streamingId: string | undefined
   try {
     const timeline = await session.projectUI()
     // The node exists while streaming, but its text lives only in the previews a viewer merges in.
     const [streaming] = kind(timeline.nodes, 'assistant')
+    streamingId = streaming?.id
     expect(streaming).toMatchObject({ text: '', streaming: true })
     expect(typeof streaming?.effectId).toBe('string')
     expect(seen).toContain('text:partial')
@@ -484,8 +491,11 @@ it('shows a live partial stream and finalizes it without duplicate assistant con
     await pending
   }
   const after = await session.projectUI()
+  const [settled] = await session.scan({ type: 'assistant/message', toSeq: session.lastSeq })
   expect(kind(after.nodes, 'assistant')).toHaveLength(1)
   expect(kind(after.nodes, 'assistant')[0]).toMatchObject({
+    id: streamingId,
+    seq: settled?.seq,
     text: 'partial',
     thinking: 'reason',
     streaming: false,
@@ -546,42 +556,47 @@ it('flushes a short first delta immediately and later short deltas while the pro
   })
 })
 
-it('wakes a paused provider when a bounded stream flush fails', async () => {
-  let release = () => {}
-  const paused = new Promise<void>((resolve) => {
-    release = resolve
-  })
-  const provider = fakeProvider([])
-  provider.infer = async function* (req) {
-    yield sentFor(req)
-    yield { type: 'text_delta', delta: 'first' }
-    yield { type: 'text_delta', delta: 'second' }
-    // Deliberately ignore the inference signal. The flush failure must still settle the owner.
-    await paused
-    yield usage()
-    yield { type: 'done', reason: 'stop' }
-  }
-  // Each clock read is ten seconds on, so the flush that follows the start writes a count row.
-  let now = 1_757_203_200_000
-  const { session, storage } = await open({ provider, clock: () => (now += 10_000) })
-  const commit = storage.commit.bind(storage)
-  let outputAppends = 0
-  vi.spyOn(storage, 'commit').mockImplementation(async (key, tx) => {
-    if (tx.events.some((event) => event.type === 'assistant/output')) {
-      outputAppends += 1
-      if (outputAppends === 2) throw new Error('output disk unavailable')
+it.each([false, true])(
+  'wakes a paused provider when a bounded stream flush fails (receipt failure: %s)',
+  async (failReceipt) => {
+    let release = () => {}
+    const paused = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const provider = fakeProvider([])
+    provider.infer = async function* (req) {
+      yield sentFor(req)
+      yield { type: 'text_delta', delta: 'first' }
+      yield { type: 'text_delta', delta: 'second' }
+      // Deliberately ignore the inference signal. The flush failure must still settle the owner.
+      await paused
+      yield usage()
+      yield { type: 'done', reason: 'stop' }
     }
-    return commit(key, tx)
-  })
-  await input(session)
-  const pending = session.runInference()
-  try {
-    await expect(pending).rejects.toThrow('output disk unavailable')
-  } finally {
-    release()
-  }
-  expect(outputAppends).toBe(2)
-})
+    // Each clock read is ten seconds on, so the flush that follows the start writes a count row.
+    let now = 1_757_203_200_000
+    const { session, storage } = await open({ provider, clock: () => (now += 10_000) })
+    const commit = storage.commit.bind(storage)
+    let outputAppends = 0
+    vi.spyOn(storage, 'commit').mockImplementation(async (key, tx) => {
+      if (failReceipt && tx.events.some((event) => event.type === 'cost/ledger'))
+        throw new Error('receipt disk unavailable')
+      if (tx.events.some((event) => event.type === 'assistant/output')) {
+        outputAppends += 1
+        if (outputAppends === 2) throw new Error('output disk unavailable')
+      }
+      return commit(key, tx)
+    })
+    await input(session)
+    const pending = session.runInference()
+    try {
+      await expect(pending).rejects.toThrow('output disk unavailable')
+    } finally {
+      release()
+    }
+    expect(outputAppends).toBe(2)
+  },
+)
 
 it('settles an inference whose provider ignores cancellation while waiting for its next event', async () => {
   let release = () => {}
@@ -647,6 +662,32 @@ it('tool cards follow planned, running and result states at the requested sequen
   await running
   try {
     expect(kind((await session.projectUI()).nodes, 'tool')[0]?.status).toBe('running')
+    const active = kind((await session.projectUI()).nodes, 'tool')[0]
+    if (!active) throw new Error('running tool was not projected')
+    const beforeCard = session.lastSeq
+    await session.append([
+      row('x/test/question-opened', { toolUseId: active.toolUseId }, { ignorable: true }),
+    ])
+    const inlineFills: SlotFillRunner = async (_surface, trigger) =>
+      trigger.kind === 'tool_call'
+        ? [{ slot: 'tool.card.inline', extId: 'test', payload: { title: 'Waiting for answer' } }]
+        : []
+    expect(
+      kind((await session.projectUI(undefined, { surface: 'web', inlineFills })).nodes, 'tool')[0]?.slots?.[0]
+        ?.payload,
+    ).toEqual({ title: 'Waiting for answer' })
+    const update = await session.projectUIPatch(beforeCard, undefined, { surface: 'web', inlineFills })
+    expect(update.kind).toBe('patch')
+    if (update.kind === 'patch')
+      expect(
+        update.patch.changes.some(
+          (change) =>
+            change.op === 'upsert' &&
+            change.node.kind === 'tool' &&
+            JSON.stringify(change.node.slots?.[0]?.payload) ===
+              JSON.stringify({ title: 'Waiting for answer' }),
+        ),
+      ).toBe(true)
   } finally {
     release()
     await phase
@@ -668,6 +709,33 @@ it('tool cards follow planned, running and result states at the requested sequen
   expect(kind(stableHistory.nodes, 'tool')[0]?.resultSeq).toBeUndefined()
   expect(JSON.stringify(stableHistory.nodes)).not.toContain('"status":"completed"')
   expect(kind((await session.projectUI(planned)).nodes, 'tool')[0]?.status).toBe('planned')
+})
+
+it('shows every call of one response as its own card, in call order, even when they finish out of order', async () => {
+  const registry = new ToolRegistry()
+  registry.add(
+    readTool(async (args) => {
+      // The first call finishes last, so the ledger holds the results in reverse order.
+      if ((args as { path: string }).path === 'a') await new Promise((resolve) => setTimeout(resolve, 10))
+      return { content: [{ type: 'text', text: `file ${(args as { path: string }).path}` }] }
+    }),
+    { source: 'test', trust: 'builtin' },
+  )
+  const batch = toolTurn('read', { path: 'a' })
+  batch.splice(batch.length - 2, 0, {
+    type: 'toolcall_end',
+    call: { toolUseId: '', name: 'read', args: { path: 'b' }, ordinal: 1 },
+    via: 'native',
+  })
+  const { session } = await open({ provider: fakeProvider([batch, textTurn('done')]), registry })
+  await input(session)
+  await run(session)
+  const cards = kind((await session.projectUI()).nodes, 'tool')
+  expect(cards.map((card) => [card.argsPreview, card.status, card.resultPreview])).toEqual([
+    ['{"path":"a"}', 'completed', 'file a'],
+    ['{"path":"b"}', 'completed', 'file b'],
+  ])
+  expect(new Set(cards.map((card) => card.toolUseId)).size).toBe(2)
 })
 
 it('cancelled planned tools remain cancelled after close, reopen and resume', async () => {
@@ -772,7 +840,7 @@ describe('approval cards', () => {
   it.each([
     ['allowed-once', undefined],
     ['rejected', undefined],
-    ['unavailable', 'no_approver'],
+    ['unavailable', 'no-approver'],
   ] as [ApprovalVerdict, string | undefined][])(
     'shows real %s decision and result, with its reason when it has one',
     async (verdict, reason) => {
@@ -781,28 +849,28 @@ describe('approval cards', () => {
       const { session } = await open({
         provider: fakeProvider([toolTurn('shell', {}), textTurn('done')]),
         registry,
-        seams: fakeSeams({ approval: { ask: async () => verdict } }),
+        seams: fakeSeams({ approval: { ask: async () => ({ verdict, answeredBy: actor }) } }),
       })
       await input(session)
       await run(session)
       const timeline = await session.projectUI()
       const card = kind(timeline.nodes, 'approval')[0]
-      expect(card).toMatchObject({
-        state: 'decided',
-        decision: { verdict, via: 'sync', ...(reason ? { reason } : {}) },
-      })
-      // A decision with no reason on the ledger, which is every one written before reasons existed,
-      // shows none rather than a guess.
-      if (!reason) expect(card?.decision).not.toHaveProperty('reason')
+      expect(card).toMatchObject(
+        verdict === 'unavailable'
+          ? { state: 'pending', decisionRef: { sessionId: 'k', revision: 1 } }
+          : { state: 'decided', decision: { verdict, via: 'human', byLabel: actor.id } },
+      )
       expect(kind(timeline.nodes, 'tool')[0]?.status).toBe(
-        verdict === 'allowed-once' ? 'completed' : 'failed',
+        verdict === 'unavailable' ? 'awaiting_approval' : verdict === 'allowed-once' ? 'completed' : 'failed',
       )
     },
   )
   it('reconstructs parked state despite the op tombstone, then honors only ledger timeout decisions', async () => {
     const registry = new ToolRegistry()
     registry.add(shellTool(), { source: 'test', trust: 'builtin' })
+    let now = 1_757_203_200_000
     const { session } = await open({
+      clock: () => now,
       provider: fakeProvider([toolTurn('shell', {})]),
       registry,
       seams: fakeSeams({
@@ -817,16 +885,12 @@ describe('approval cards', () => {
       phase: 'parked',
       turn: 1,
       step: 1,
-      parked: { ticket: 'ticket' },
+      parked: { decisionRef: { sessionId: 'k', id: expect.any(String), revision: 1 } },
     })
     expect(kind(timeline.nodes, 'tool')[0]?.status).toBe('awaiting_approval')
     expect(kind(timeline.nodes, 'approval')[0]?.state).toBe('pending')
-    const asked = (await session.scan({ type: 'approval/asked', toSeq: session.lastSeq }))[0]
-    if (!asked) throw new Error('missing approval request')
-    const requestId = (asked.data as { requestId: string }).requestId
-    await session.append([
-      row('approval/decided', { requestId, verdict: 'rejected', via: 'timeout', ticket: 'ticket' }),
-    ])
+    now += session.preset.approval.pendingTtlMs
+    await session.decisions.list()
     expect(kind((await session.projectUI()).nodes, 'approval')[0]?.state).toBe('expired')
     expect((await session.projectUI()).opState).toBeNull()
     expect(kind((await session.projectUI(parkedAt)).nodes, 'approval')[0]?.state).toBe('pending')
@@ -912,12 +976,68 @@ it('fills only supported surface triggers after real results, never pending tool
   expect(calls).toEqual([])
   await session.projectUI(undefined, { surface: 'tui', fills })
   expect(calls).toEqual(['tick'])
+  const baseline = session.lastSeq
   await run(session)
+  session.d.slotFills = () => fills
+  const update = await session.projectUIPatch(baseline, undefined, { surface: 'tui' })
+  expect(update.kind).toBe('patch')
+  if (update.kind !== 'patch') throw new Error('expected incremental inline cards')
+  const tools = update.patch.changes.flatMap((change) =>
+    change.op === 'upsert' && change.node.kind === 'tool' ? [change.node] : [],
+  )
+  expect(tools[0]?.slots?.map((fill) => fill.payload)).toEqual([{ title: 'card' }])
+  expect(update.patch.slots?.map((fill) => fill.payload)).toEqual([{ text: 'status', level: 'info' }])
+  const fullView = vi.spyOn(session.d.ui, 'view').mockRejectedValue(new Error('unexpected full view'))
+  const opening = await session.projectUIOpening({ surface: 'tui', maxNodes: 1 })
+  expect(opening.timeline.nodes).toHaveLength(1)
+  expect(opening.timeline.slots?.map((fill) => fill.payload)).toEqual([{ text: 'status', level: 'info' }])
+  const webOpening = await session.projectUIOpening({ surface: 'web', maxNodes: 1 })
+  expect(webOpening.timeline.slots?.map((fill) => fill.payload)).toEqual([{ text: 'status', level: 'info' }])
+  const page = await session.projectUIHistory(opening.timeline.upto, opening.startIndex, {
+    surface: 'tui',
+    limit: 100,
+  })
+  expect(kind(page.nodes, 'tool')[0]?.slots?.map((fill) => fill.payload)).toEqual([{ title: 'card' }])
+  fullView.mockRestore()
+  session.d.slotFills = () => async () => []
+  for (const surface of ['tui', 'channel'] as const)
+    expect((await session.projectUIOpening({ surface })).timeline).not.toHaveProperty('slots')
+  expect((await session.projectUIOpening({ surface: 'web' })).timeline.slots).toEqual([])
+  const cleared = await session.projectUIPatch(session.lastSeq, undefined, { surface: 'web' })
+  expect(cleared.kind).toBe('patch')
+  if (cleared.kind !== 'patch') throw new Error('expected a live slots patch')
+  expect(cleared.patch.slots).toEqual([])
   calls.length = 0
   const timeline = await session.projectUI(undefined, { surface: 'tui', fills })
   expect(calls).toEqual(['tool_result', 'turn_end', 'tick'])
   expect(kind(timeline.nodes, 'tool')[0]?.slots?.[0]?.payload).toEqual({ title: 'card' })
   expect(kind(timeline.nodes, 'slot')).toHaveLength(1)
+
+  session.d.slotFills = () => async () => [
+    {
+      slot: 'tool.card.inline',
+      extId: 'test/ext',
+      payload: {
+        title: 'large card',
+        chart: {
+          kind: 'bar',
+          series: [{ name: 'x', points: Array.from({ length: 16 }, () => ({ x: 'x'.repeat(64), y: 1 })) }],
+        },
+      },
+    },
+  ]
+  const bounded = await session.projectUIOpening({ surface: 'tui', maxNodes: 100, maxBytes: 900 })
+  expect(kind(bounded.timeline.nodes, 'tool')).toHaveLength(0)
+  expect(bounded.hasEarlier).toBe(true)
+  expect(new TextEncoder().encode(JSON.stringify(bounded.timeline.nodes)).byteLength).toBeLessThanOrEqual(900)
+  const oversized = await session.projectUIHistory(bounded.timeline.upto, bounded.startIndex, {
+    surface: 'tui',
+    limit: 100,
+    maxBytes: 900,
+  })
+  expect(oversized.nodes).toHaveLength(1)
+  expect(kind(oversized.nodes, 'tool')[0]?.slots?.[0]?.payload).toMatchObject({ title: 'large card' })
+  expect(oversized.startIndex).toBe(bounded.startIndex - 1)
 })
 
 it('isolates lane state and does not let later rows influence an earlier cut', async () => {
@@ -968,7 +1088,10 @@ it('enforces the slot byte cap after schema validation with a valid payload cont
   await run(session)
   const large = {
     title: 'large',
-    table: { columns: ['x'], rows: Array.from({ length: 64 }, () => ['界'.repeat(400)]) },
+    chart: {
+      kind: 'bar',
+      series: [{ name: 'x', points: Array.from({ length: 1000 }, () => ({ x: '\u754c'.repeat(64), y: 1 })) }],
+    },
   }
   expect(validateSlotPayload('tool.card.inline', large).ok).toBe(true)
   expect(new TextEncoder().encode(JSON.stringify(large)).byteLength).toBeGreaterThan(65536)
@@ -1101,6 +1224,8 @@ describe('cache health on the live projection cell', () => {
     ['media', 2048, 0.75, { input: 2058 }],
     // The summary request's usage is not what the next request carries.
     ['compaction', 9000, 0.5, { input: 9010 }],
+    // A loop's own model call is not part of the conversation.
+    ['side-call', 4096, 0.25, { input: 4106 }],
   ] as const)(
     'keeps %s cost in totals without replacing the live context anchor',
     (purpose, input, credits, totals) => {
@@ -1115,6 +1240,30 @@ describe('cache health on the live projection cell', () => {
       })
     },
   )
+
+  it('keeps the conversation context and cache health steady across side calls', () => {
+    const cell = new UIProjectionCell('k', 'main', { maxEvents: 2, maxBytes: 1024 * 1024 })
+    const sideCall = (seq: number, effectId: string, input: number) => {
+      const base = inferenceRow(seq, effectId, { input, cacheRead: 0, cacheWrite: 0 })
+      base.data = { ...(base.data as object), purpose: 'side-call', credits: 0.5 }
+      return base
+    }
+    cell.apply([
+      header(1, 'h1'),
+      inferenceRow(2, 'inference-1', { input: 180_000, cacheRead: 0, cacheWrite: 0 }),
+      header(3, 'h1'),
+      inferenceRow(4, 'inference-2', { input: 400, cacheRead: 180_000, cacheWrite: 0 }),
+    ])
+    const before = cell.usage(usageOpts)
+    expect(before.context.tokens).toBe(180_401)
+    cell.apply([sideCall(5, 'side:1', 189), sideCall(6, 'side:2', 9000)])
+    const after = cell.usage(usageOpts)
+    expect(after.context.tokens).toBe(180_401)
+    expect(after.cache).toEqual(before.cache)
+    expect(after.cache?.lastInvalidation).toBeUndefined()
+    expect(after.totals.input).toBe(before.totals.input + 189 + 9000)
+    expect(after.credits?.amount).toBe(1)
+  })
 
   it('reads the context from the estimate a compaction leaves behind, until the next request', () => {
     const cell = new UIProjectionCell('k', 'main', { maxEvents: 2, maxBytes: 1024 * 1024 })
@@ -1159,6 +1308,71 @@ describe('context-sections and contribute-conflict projection', () => {
       seq: 1,
       sections: [{ id: 'core:untrusted-envelope', order: 0, source: 'core', tokens: 378 }],
     })
+  })
+
+  it('projects tool-source-pending and memory-external-change diagnostics into notices and drops empty ones', async () => {
+    const row = (seq: number, data: unknown, type = 'x/core/tool-source-pending') =>
+      ({
+        seq,
+        ts: '2026-10-14T00:00:00.000Z',
+        id: `01K00000000000000000000${seq}`,
+        type,
+        data,
+        actor: { id: 'system', org: 'local', role: 'system', deptPath: [], attrs: {} },
+        origin: 'system',
+        trust: 'trusted',
+        lane: 'main',
+        v: 1,
+        ignorable: true,
+      }) as Event
+    const cell = new UIProjectionCell('k', 'main')
+    cell.apply([
+      row(1, { kind: 'mcp', sources: ['Tracker', 7] }),
+      row(2, { sources: [] }),
+      row(3, { paths: ['MEMORY.md', 9, ''] }, 'x/core/memory-external-change'),
+      row(4, { paths: [] }, 'x/core/memory-external-change'),
+    ])
+    const { nodes } = await cell.view()
+    expect(nodes.filter((node) => node.kind === 'tool-source-pending')).toEqual([
+      { kind: 'tool-source-pending', id: '01K000000000000000000001', seq: 1, sources: ['Tracker'] },
+    ])
+    expect(nodes.filter((node) => node.kind === 'memory-external-change')).toEqual([
+      { kind: 'memory-external-change', id: '01K000000000000000000003', seq: 3, paths: ['MEMORY.md'] },
+    ])
+  })
+
+  it('projects a workspace undo fact into a count-only node and drops a malformed one', async () => {
+    const row = (seq: number, data: unknown) =>
+      ({
+        seq,
+        ts: '2026-10-22T00:00:00.000Z',
+        id: `01K00000000000000000000${seq}`,
+        type: 'x/core/workspace-undo',
+        data,
+        actor: { id: 'local', org: 'local', role: 'user', deptPath: [], attrs: {} },
+        origin: 'principal',
+        trust: 'trusted',
+        lane: 'main',
+        v: 1,
+        ignorable: true,
+      }) as Event
+    const cell = new UIProjectionCell('k', 'main')
+    cell.apply([
+      row(1, { turn: 2, restored: ['a', 'b'], failed: [{ path: 'c', reason: 'EIO' }], conflicts: [] }),
+      row(2, { turn: 0, restored: [], failed: [], conflicts: [] }),
+    ])
+    const { nodes } = await cell.view()
+    expect(nodes.filter((node) => node.kind === 'workspace-undo')).toEqual([
+      {
+        kind: 'workspace-undo',
+        id: '01K000000000000000000001',
+        seq: 1,
+        turn: 2,
+        restored: 2,
+        failed: 1,
+        conflicts: 0,
+      },
+    ])
   })
 
   it('projects a contribute-conflict diagnostic into a contribute-conflict node', async () => {
@@ -1215,6 +1429,39 @@ describe('runtime-context user/message projection', () => {
     expect(kind(nodes, 'user')).toHaveLength(0)
   })
 
+  it('projects a [nested result] note to a context node', async () => {
+    const cell = new UIProjectionCell('k', 'main')
+    const header = '[nested result]\nThe nested call shell inside outer finished later (status: ok). Preview:'
+    const event: Event = {
+      seq: 1,
+      ts: '2026-09-14T00:00:00.000Z',
+      id: '01K000000000000000000006',
+      type: 'user/message',
+      data: {
+        content: [
+          { type: 'text', text: header },
+          { type: 'text', text: 'ran' },
+        ],
+        kind: 'runtime_context',
+      },
+      actor: { id: 'system', org: 'local', role: 'system', deptPath: [], attrs: {} },
+      origin: 'system',
+      trust: 'untrusted',
+      lane: 'main',
+      v: 1,
+      ignorable: true,
+    } as Event
+    cell.apply([event])
+    const { nodes } = await cell.view()
+    expect(nodes).toContainEqual({
+      kind: 'context',
+      id: '01K000000000000000000006',
+      seq: 1,
+      text: `${header}ran`,
+    })
+    expect(kind(nodes, 'user')).toHaveLength(0)
+  })
+
   it('still projects a genuine user message (no data.kind) to a user node', async () => {
     const cell = new UIProjectionCell('k', 'main')
     const event: Event = {
@@ -1224,7 +1471,7 @@ describe('runtime-context user/message projection', () => {
       type: 'user/message',
       data: { content: [{ type: 'text', text: 'hello' }] },
       actor: { id: 'operator', org: 'local', role: 'user', deptPath: [], attrs: {} },
-      origin: 'system',
+      origin: 'principal',
       trust: 'trusted',
       lane: 'main',
       v: 1,
@@ -1238,6 +1485,7 @@ describe('runtime-context user/message projection', () => {
       seq: 1,
       content: [{ type: 'text', text: 'hello' }],
       actorLabel: 'operator',
+      origin: 'principal',
     })
     expect(kind(nodes, 'context')).toHaveLength(0)
   })
@@ -1251,7 +1499,7 @@ describe('runtime-context user/message projection', () => {
       type: 'user/message',
       data: { content: [{ type: 'text', text: 'hello again' }], kind: 'prompt' },
       actor: { id: 'operator', org: 'local', role: 'user', deptPath: [], attrs: {} },
-      origin: 'system',
+      origin: 'principal',
       trust: 'trusted',
       lane: 'main',
       v: 1,
@@ -1265,7 +1513,118 @@ describe('runtime-context user/message projection', () => {
       seq: 1,
       content: [{ type: 'text', text: 'hello again' }],
       actorLabel: 'operator',
+      origin: 'principal',
     })
     expect(kind(nodes, 'context')).toHaveLength(0)
+  })
+})
+
+it('marks a core/unknown-outcome decision as a reconciliation of the tool it asks about', async () => {
+  let seq = 0
+  const event = (type: string, data: Event['data'], extra: Partial<Event> = {}): Event => {
+    seq += 1
+    return {
+      seq,
+      ts: new Date(Date.UTC(2026, 8, 13, 0, 0, seq)).toISOString(),
+      id: `01K0000000000000000001${String(seq).padStart(4, '0')}`,
+      type,
+      data,
+      actor,
+      origin: 'system',
+      trust: 'trusted',
+      ...extra,
+    }
+  }
+  const reconcile = pendingDecision('reconcile-1', {
+    operationId: 'tool-1',
+    owner: 'core/unknown-outcome',
+    subject: { toolUseId: 'tool-1', name: 'mcp_manage', turn: 1, step: 1, risk: 'unknown' },
+  })
+  const permission = pendingDecision('approval-2', { operationId: 'tool-2' })
+  const timeline = await projectUI(
+    [
+      event('turn/start', { turn: 1, trigger: 'prompt' }),
+      event('tool/call', { toolUseId: 'tool-1', name: 'mcp_manage', args: {}, ordinal: 0 }),
+      event('decision/state', reconcile, { register: 'decision/state' }),
+      event('tool/call', { toolUseId: 'tool-2', name: 'shell', args: {}, ordinal: 1 }),
+      event('decision/state', permission, { register: 'decision/state' }),
+    ],
+    { sessionKey: 'reconcile', lane: 'main' },
+  )
+  const [asked, permitted] = kind(timeline.nodes, 'approval')
+  expect(asked).toMatchObject({ state: 'pending', reconcile: { tool: 'mcp_manage' } })
+  expect(permitted?.reconcile).toBeUndefined()
+  expect(validateAgainst(UITimeline, { ...timeline, generation: 1 }).ok).toBe(true)
+})
+
+it('reconstructs role attribution from persisted delegation results', async () => {
+  let seq = 0
+  const event = (type: string, data: Event['data']): Event =>
+    ({ ...row(type, data), sessionKey: 'roles', lane: 'main', seq: ++seq, time: 1, id: `e${seq}` }) as Event
+  const delegatedRole = { ref: '@fixture/roles#reader', title: { en: 'Reader', 'zh-CN': '读者' } }
+  const events = [
+    event('tool/call', {
+      toolUseId: 'spawn',
+      name: 'subagent_spawn',
+      args: { role: delegatedRole.ref, task: 'read' },
+      ordinal: 0,
+    }),
+    event('tool/result', {
+      toolUseId: 'spawn',
+      isError: false,
+      content: [{ type: 'text', text: 'started' }],
+      structured: { childKey: 'child', role: delegatedRole, task: 'Read the evidence', status: 'running' },
+    }),
+  ]
+  const projected = await projectUI(JSON.parse(JSON.stringify(events)), { sessionKey: 'roles' })
+  expect(kind(projected.nodes, 'tool')[0]?.delegatedRole).toEqual(delegatedRole)
+  expect(kind(projected.nodes, 'tool')[0]?.delegatedTask).toEqual({
+    childKey: 'child',
+    task: 'Read the evidence',
+    status: 'running',
+  })
+  const legacy = structuredClone(events)
+  const legacyResult = legacy[1]
+  if (!legacyResult) throw new Error('Missing fixture result')
+  ;(legacyResult.data as { structured: unknown }).structured = { childKey: 'child', role: delegatedRole }
+  expect(
+    kind((await projectUI(legacy, { sessionKey: 'roles' })).nodes, 'tool')[0]?.delegatedTask,
+  ).toMatchObject({ childKey: 'child', status: 'running' })
+  const failed = structuredClone(events)
+  ;(failed[1]!.data as { isError: boolean }).isError = true
+  expect(
+    kind((await projectUI(failed, { sessionKey: 'roles' })).nodes, 'tool')[0]?.delegatedRole,
+  ).toBeUndefined()
+})
+
+describe('approval card facts', () => {
+  const long = 'x'.repeat(400)
+  it.each([
+    { name: 'none', subject: {}, expected: {} },
+    {
+      name: 'scopes and origin',
+      subject: {
+        grantScopes: ['tool:a:execute'],
+        origin: { package: '@agnes/browser', role: 'reviewer', mcpServer: 'files' },
+      },
+      expected: {
+        grantScopes: ['tool:a:execute'],
+        origin: { package: '@agnes/browser', role: 'reviewer', mcpServer: 'files' },
+      },
+    },
+    {
+      name: 'bounded and sanitized',
+      subject: {
+        grantScopes: Array.from({ length: 12 }, (_, i) => (i === 0 ? long : `s${i}`)),
+        origin: { package: `a\u001b[31mb${long}`, role: 7, extra: 'x' },
+      },
+      expected: {
+        grantScopes: [long.slice(0, 256), 's1', 's2', 's3', 's4', 's5', 's6', 's7'],
+        origin: { package: `a [31mb${long}`.slice(0, 128) },
+      },
+    },
+    { name: 'malformed', subject: { grantScopes: 'x', origin: 'y' }, expected: {} },
+  ])('reads $name from the recorded subject', ({ subject, expected }) => {
+    expect(approvalFactsOf(subject)).toEqual(expected)
   })
 })

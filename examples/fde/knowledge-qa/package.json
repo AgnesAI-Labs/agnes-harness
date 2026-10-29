@@ -1,0 +1,139 @@
+{
+  "name": "@agnes-fde/knowledge-qa",
+  "version": "1.1.1",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": "./index.mjs",
+  "files": [
+    "*.mjs",
+    "fixtures",
+    "skills",
+    "client",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE",
+    "real-model.bundle.json"
+  ],
+  "scripts": {
+    "build": "node --check index.mjs",
+    "test": "vitest run test/workflow.test.mjs --maxWorkers=1"
+  },
+  "dependencies": {
+    "@agnes/extension-api": "^5.0.0",
+    "@agnes/plugin-runtime": "0.0.0",
+    "@sinclair/typebox": "0.34.33",
+    "@agnes/protocol": "0.0.0"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "export": "main",
+        "id": "ext:@agnes-fde/knowledge-qa/main",
+        "inject": [
+          "tools",
+          "providers",
+          "skills"
+        ],
+        "apiRange": "^5.0.0",
+        "metadata": {
+          "displayName": "Knowledge answer example",
+          "summary": "Searches local sample documents and drafts an answer with source citations.",
+          "description": "Searches local sample documents and drafts an answer with source citations.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "知识问答示例",
+              "summary": "检索本地样例文档，并起草带来源引用的回答。",
+              "description": "检索本地样例文档，并起草带来源引用的回答。"
+            }
+          }
+        },
+        "capabilities": {
+          "model": true,
+          "filesystem": {
+            "read": [
+              "fixtures/**",
+              "skills/playbook/SKILL.md",
+              "fde-output/knowledge-qa/**"
+            ],
+            "write": [
+              "fde-output/knowledge-qa/**"
+            ]
+          }
+        }
+      }
+    ],
+    "bundles": {
+      "knowledge-qa": {
+        "profile": {
+          "skills": [
+            "knowledge-qa"
+          ],
+          "providers": {
+            "loop": {
+              "version": "5.0.0",
+              "provider": "fde.knowledge-qa"
+            }
+          }
+        },
+        "presets": {
+          "knowledge-qa": {
+            "name": "knowledge-qa",
+            "extends": "standard",
+            "providers": {
+              "tool-policy": {
+                "provider": "fde.knowledge-qa"
+              }
+            }
+          }
+        },
+        "launch": {
+          "title": {
+            "en": "Knowledge answer example",
+            "zh-CN": "知识问答示例"
+          },
+          "description": {
+            "en": "Searches local sample documents and drafts an answer with source citations."
+          },
+          "preset": "knowledge-qa",
+          "prompt": {
+            "text": {
+              "en": "What is the refund window and who reviews refund requests?",
+              "zh-CN": "退款期限（refund window）是多久？退款申请由谁审核（who reviews refund requests）？"
+            },
+            "mode": "draft"
+          }
+        }
+      }
+    },
+    "metadata": {
+      "displayName": "Knowledge answer example",
+      "summary": "Searches local sample documents and drafts an answer with source citations.",
+      "description": "Searches local sample documents and drafts an answer with source citations.",
+      "samplePrompt": {
+        "en": "What is the refund window and who reviews refund requests?",
+        "zh-CN": "退款期限（refund window）是多久？退款申请由谁审核（who reviews refund requests）？"
+      },
+      "locales": {
+        "zh-CN": {
+          "displayName": "知识问答示例",
+          "summary": "检索本地样例文档，并起草带来源引用的回答。",
+          "description": "检索本地样例文档，并起草带来源引用的回答。"
+        }
+      }
+    },
+    "provides": [
+      "bundle",
+      "loop",
+      "tool",
+      "skills"
+    ]
+  },
+  "devDependencies": {
+    "@agnes/host": "0.0.0",
+    "@agnes/resource-control-runtime": "0.0.0",
+    "vitest": "5.0.0"
+  }
+}

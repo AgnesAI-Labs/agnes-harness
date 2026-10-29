@@ -1,10 +1,12 @@
+import { fileURLToPath } from 'node:url'
 import type { Host, HostSession } from '@agnes/host'
 import type { Actor } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
+import { openTestHost, say } from '../../daemon-rpc/test/host.js'
 import type { WorkerHello } from '../src/supervisor/frames.js'
 import { encodeFrame, FrameTooLarge, InvalidFrame, JsonlDecoder } from '../src/supervisor/framing.js'
+import { RemoteSession } from '../src/supervisor/remote-session.js'
 import { handleCommand } from '../src/worker/commands.js'
-import { openTestHost, say } from './host.js'
 
 const actor: Actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 type CommandFrame = Parameters<typeof handleCommand>[1]
@@ -59,6 +61,75 @@ describe('worker command dispatch against a real host+session', () => {
     }
   })
 
+  it('reads deliverable sources in the worker and hands the page across the frame unchanged', async () => {
+    const t = await openTestHost()
+    try {
+      const session = await t.host.createSession({ cwd: t.dataDir })
+      const structured = {
+        deliverables: [],
+        laneId: 'main',
+        owner: 'agnes/deliverables',
+        surfaceId: 'card-p',
+      }
+      const presented = (toolUseId: string) =>
+        session.ev('tool/result', {
+          toolUseId,
+          content: [{ type: 'text', text: 'Presented' }],
+          structured,
+          isError: false,
+          enforcement: { level: 'full', scope: [] },
+          authz: { decisionId: `d-${toolUseId}` },
+        })
+      const { seqs } = await session.append([
+        session.ev('turn/start', { turn: 1, trigger: 'prompt' }),
+        session.ev('step/start', { turn: 1, step: 1 }),
+        session.ev('tool/call', { toolUseId: 'p', name: 'present', args: { files: [] }, ordinal: 0 }),
+        session.ev('tool/call', { toolUseId: 'q', name: 'present', args: { files: [] }, ordinal: 1 }),
+        presented('p'),
+        presented('q'),
+        session.ev('step/end', { turn: 1, step: 1 }),
+        session.ev('turn/end', { reason: 'completed', lastAssistantSeq: null }),
+      ])
+      const link = {
+        alive: true,
+        async command(method: string, params: Record<string, unknown>) {
+          const result = await handleCommand(
+            session,
+            { kind: 'command', requestId: '1', method: method as 'readDeliverables', params },
+            { host: t.host, aborts: new Map() },
+          )
+          return JSON.parse(encodeFrame({ kind: 'reply', requestId: '1', result }).toString()).result
+        },
+      }
+      const remote = new RemoteSession(session.key, 'writer', 1, link as never, t.dataDir)
+      const item = (toolUseId: string, callSeq?: number, resultSeq?: number) => ({
+        callSeq,
+        resultSeq,
+        toolUseId,
+        turnId: 'turn:1',
+        structured,
+      })
+      await expect(remote.readDeliverablesPage({ afterSeq: 0, limit: 1 })).resolves.toEqual({
+        ok: true,
+        page: { upto: seqs[4], items: [item('p', seqs[2], seqs[4])], nextAfterSeq: seqs[4] },
+      })
+      await expect(remote.readDeliverablesPage({ afterSeq: seqs[4] as number, limit: 100 })).resolves.toEqual(
+        {
+          ok: true,
+          page: { upto: session.lastSeq, items: [item('q', seqs[3], seqs[5])] },
+        },
+      )
+      await expect(remote.readDeliverablesPage({ afterSeq: session.lastSeq + 1, limit: 1 })).resolves.toEqual(
+        {
+          ok: false,
+          reason: 'after-seq-out-of-range',
+        },
+      )
+    } finally {
+      await t.close()
+    }
+  })
+
   it('maps enqueue/run/latest/scan and aborts a run by runId', async () => {
     const t = await openTestHost({ script: [say('hi')] })
     const session = await t.host.createSession({ cwd: t.dataDir })
@@ -105,8 +176,8 @@ describe('worker command dispatch against a real host+session', () => {
       session,
       { kind: 'command', requestId: '3', method: 'scan', params: { fromSeq: 1, limit: 10 } },
       { host: t.host, aborts },
-    )) as { rows: unknown[] }
-    expect(rows.rows.length).toBeGreaterThan(0)
+    )) as unknown[]
+    expect(rows.length).toBeGreaterThan(0)
     await expect(
       handleCommand(
         session,
@@ -195,6 +266,8 @@ describe('worker command dispatch against a real host+session', () => {
   it('ping reports lastSeq and projectUI/projectUIPatch cross the worker command boundary', async () => {
     const t = await openTestHost({ script: [say('hi')] })
     const session = await t.host.createSession({ cwd: t.dataDir })
+    // Stands in for a level the Host resolved; this test Host ships no permission overlays.
+    Object.assign(session, { preset: { ...session.preset, permission: 'read-only' } })
     const aborts = new Map<string, AbortController>()
     const ping = (await handleCommand(
       session,
@@ -203,11 +276,13 @@ describe('worker command dispatch against a real host+session', () => {
     )) as {
       ok: boolean
       lastSeq: number
+      permission?: string
     }
     expect(ping).toEqual({
       ok: true,
       lastSeq: session.lastSeq,
       preset: session.preset.name,
+      permission: 'read-only',
       parent: null,
     })
     const timeline = (await handleCommand(
@@ -267,48 +342,50 @@ describe('worker command dispatch against a real host+session', () => {
     await t.close()
   })
 
-  it('expires a durable ticket before worker decideApproval can consume it', async () => {
+  it('expires the original decision before worker answer can commit', async () => {
     const t = await openTestHost()
-    const session = await t.host.createSession({ cwd: t.dataDir })
-    const ticket = 'daemon-expiry-ticket'
-    const expiresAt = new Date(Date.now() + 30).toISOString()
     try {
-      // This is a real Host session used by the daemon worker command path. The asked row is
-      // durable and deliberately outlives no in-memory endpoint, so the Host scheduler must be the
-      // component that settles it before the command arrives.
-      await session.append([
-        session.ev('approval/asked', {
-          requestId: 'daemon-expiry-request',
-          kind: 'tool',
-          summary: 'shell touch marker',
-          risk: 'destructive',
-          bindingHash: '0'.repeat(64),
-          pending: { ticket, expiresAt },
-        }),
-      ])
-      await vi.waitFor(
-        async () => {
-          const rows = await session.scan({ type: 'approval/decided', toSeq: session.lastSeq })
-          expect(rows).toHaveLength(1)
-          expect(rows[0]?.data).toMatchObject({ ticket, via: 'timeout', verdict: 'rejected' })
-          expect(session.state.pendingApprovals.size).toBe(0)
-        },
-        { timeout: 2_000, interval: 20 },
-      )
-      const aborts = new Map<string, AbortController>()
+      const session = await t.host.createSession({ cwd: t.dataDir })
+      let now = Date.now()
+      session.d.clock = () => now
+      const handle = await session.decisions
+        .port({
+          owner: 'fixture',
+          sourcePackage: '@fixture/plugin',
+          packageVersion: '1.0.0',
+          operationId: 'phase',
+          alive() {},
+        })
+        .request({
+          key: 'review',
+          purpose: 'business.confirm',
+          subject: 'original',
+          prompt: 'Continue?',
+          options: ['allow'],
+        })
+      now += session.preset.approval.pendingTtlMs
       await expect(
         handleCommand(
           session,
           {
             kind: 'command',
-            requestId: 'daemon-expiry-decide',
+            requestId: 'answer',
             method: 'decideApproval',
-            params: { ticket, verdict: 'allowed-once', decidedBy: { ...actor, id: 'approver' } },
+            params: {
+              command: {
+                handle,
+                revision: 1,
+                commandId: 'answer',
+                response: { option: 'allow', value: null },
+              },
+              context: { actor, category: 'human', credential: { kind: 'local' }, sourceVerified: false },
+            },
           },
-          { host: t.host, aborts },
+          { host: t.host, aborts: new Map() },
         ),
-      ).rejects.toThrow(/ticket unavailable|ticket expired/)
-      expect(await session.scan({ type: 'approval/decided', toSeq: session.lastSeq })).toHaveLength(1)
+      ).rejects.toThrow('DECISION_NOT_PENDING')
+      expect((await session.decisions.get(handle)).result?.reason).toBe('expired')
+      expect(await session.scan({ type: 'decision/state', toSeq: session.lastSeq })).toHaveLength(2)
     } finally {
       await t.close()
     }
@@ -319,9 +396,9 @@ describe('worker command dispatch against a real host+session', () => {
  * These isolate `handleCommand`'s dispatch against tiny fakes, on purpose: `setPreset`/`setModel`
  * must route through `Host.validatePresetSwitch`/`validateModelSwitch` before ever calling
  * `HostSession.setPreset`/`setModel` - the plan's own illustrative sample called a `host.presetView`
- * method that `@agnes/host`'s real `Host` interface does not have (packages/host/src/host.ts has no
- * such member) - and `decideApproval` must resolve through `HostSession.resumeApproval`, since core's
- * `SessionImpl` has no method literally named `decideApproval` (packages/core/src/step/session.ts).
+ * method that `@agnes/host`'s real `Host` interface does not have (packages/host/src/runtime/lifecycle/host.ts has no
+ * such member). `decideApproval` forwards the authenticated human command to the session's decision
+ * authority through `HostSession.decideApproval`.
  * A fake proves the *call shape* handleCommand makes without needing a real assembled preset table.
  */
 describe('handleCommand dispatch against the real Host/HostSession shapes', () => {
@@ -343,6 +420,53 @@ describe('handleCommand dispatch against the real Host/HostSession shapes', () =
     const out = await handleCommand(session, cmd, { host, aborts: new Map() })
     expect(out).toEqual({ effectiveFromSeq: 5 })
     expect(calls).toEqual(['set:sess-1:standard'])
+  })
+
+  it('setToolFilter narrows a real worker session and refuses an unknown name as the public rejection', async () => {
+    const t = await openTestHost({
+      packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
+    })
+    try {
+      const session = await t.host.createSession({ cwd: t.dataDir })
+      const [first, second] = session
+        .currentTools()
+        .list()
+        .map((tool) => tool.name)
+      expect(first && second).toBeTruthy()
+      const send = (filter: unknown) =>
+        handleCommand(
+          session,
+          { kind: 'command', requestId: 'tf', method: 'setToolFilter', params: { filter } },
+          { host: t.host, aborts: new Map() },
+        )
+      await expect(send({ deny: [first] })).resolves.toEqual({
+        effectiveFromSeq: expect.any(Number),
+        filter: { deny: [first] },
+      })
+      expect(
+        session
+          .currentTools()
+          .list()
+          .map((tool) => tool.name),
+      ).not.toContain(first)
+      await expect(send({ deny: ['no_such_tool'] })).rejects.toMatchObject({
+        code: -32011,
+        data: { code: 'TOOL_FILTER_REJECTED', reason: 'unknown-tool', names: ['no_such_tool'] },
+      })
+      await expect(send({})).rejects.toMatchObject({ code: -32602 })
+      await session.close()
+      // The ledger carries the filter: a fresh open of the same session starts narrowed.
+      const reopened = await t.host.createSession({ key: session.key, cwd: t.dataDir })
+      expect(
+        reopened
+          .currentTools()
+          .list()
+          .map((tool) => tool.name),
+      ).not.toContain(first)
+      expect(reopened.toolFilter).toEqual({ deny: [first] })
+    } finally {
+      await t.close()
+    }
   })
 
   it('setModel calls host.validateModelSwitch before session.setModel', async () => {
@@ -404,23 +528,52 @@ describe('handleCommand dispatch against the real Host/HostSession shapes', () =
     expect(setYolo).not.toHaveBeenCalled()
   })
 
-  it('decideApproval resolves through session.resumeApproval(ticket, verdict, decidedBy)', async () => {
-    let seen: unknown
+  it('decideApproval uses the session writer and rechecks current worker authority', async () => {
+    const command = {
+      handle: { sessionId: 's', id: 'd' },
+      revision: 1,
+      commandId: 'answer',
+      response: { option: 'allow', value: null },
+    }
+    const authorize = vi.fn(async () => actor)
     const session = {
-      resumeApproval: async (ticket: string, verdict: string, decidedBy: Actor) => {
-        seen = { ticket, verdict, decidedBy }
-        return { seq: 9 }
+      decideApproval: async ({
+        command: got,
+        context,
+      }: {
+        command: unknown
+        context: { actor: Actor; category: string; authorize(): Promise<void> }
+      }) => {
+        expect(got).toEqual(command)
+        expect(context.actor).toEqual(actor)
+        expect(context.category).toBe('human')
+        await context.authorize()
+        return { commandId: 'answer', digest: '0'.repeat(64), revision: 2, seq: 9 }
       },
     } as unknown as HostSession
     const cmd: CommandFrame = {
       kind: 'command',
       requestId: '1',
       method: 'decideApproval',
-      params: { ticket: 't1', verdict: 'allowed-once', decidedBy: actor },
+      params: {
+        command,
+        context: { actor, category: 'human', credential: { kind: 'local' }, sourceVerified: false },
+      },
     }
-    const out = await handleCommand(session, cmd, { host: {} as Host, aborts: new Map() })
-    expect(out).toEqual({ seq: 9 })
-    expect(seen).toEqual({ ticket: 't1', verdict: 'allowed-once', decidedBy: actor })
+    await expect(
+      handleCommand(session, cmd, {
+        host: { resolveActor: authorize } as unknown as Host,
+        aborts: new Map(),
+      }),
+    ).resolves.toMatchObject({ seq: 9, revision: 2 })
+    expect(authorize).toHaveBeenCalledWith({ kind: 'local' }, 'approval')
+    authorize.mockResolvedValue({ ...actor, id: 'changed' })
+    await expect(
+      handleCommand(session, cmd, {
+        host: { resolveActor: authorize } as unknown as Host,
+        aborts: new Map(),
+      }),
+    ).rejects.toThrow('AUTHORITY_CHANGED')
   })
 
   it('resolveActor delegates to the worker Host principals seam', async () => {

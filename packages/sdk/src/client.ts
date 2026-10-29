@@ -1,12 +1,17 @@
+import type { AppServerClientMethod, AppServerParams, AppServerResult } from '@agnes/protocol'
 // The client object: one connection, one handshake, one validated call path.
 // Everything above it (sessions, jobs, approvals) is built out of `call` / `notify`,
 // so schema checking and the lazy handshake happen in exactly one place.
-
 import {
+  type AdminLoop,
+  type AdminModelAdapter,
   type ApisListResult,
   type ApprovalGrantListResult,
   type ApprovalGrantRecord,
+  type ApprovalGrantSessionResult,
   type AttachFilter,
+  type ChildEnginesSaveParams,
+  type ChildEnginesState,
   type ClientModuleEffectCallParams,
   type ClientModuleListResult,
   type ClientModuleReadResult,
@@ -20,7 +25,6 @@ import {
   type ConfigSnapshot,
   type ConfigTestInput,
   type ConfigTestResult,
-  type ContentBlock,
   type Credential,
   type Cursor,
   describeValidationErrors,
@@ -29,12 +33,17 @@ import {
   type MethodName,
   type MethodSpec,
   type PageSessionMeta,
+  parseAgentRef,
+  parseLoopSelection,
+  parseSessionBundles,
+  parseSystemPromptAppend,
   projectClientModuleRows,
   rpcError,
-  type SessionExportRawResult,
+  type SessionApprovalGrant,
+  type SessionDefaultsSnapshot,
   type SessionListParams,
   type SessionPreferences,
-  type SessionStoredOpeningResult,
+  type SessionRuntimeDescriptor,
   type SkinListResult,
   type SkinReadResult,
   type SurfacesMountsResult,
@@ -47,144 +56,52 @@ import type {
   ClientModuleEffectCallResult,
   ClientModuleServiceCallResult,
 } from '@agnes/protocol/gen/package-admin'
-import {
-  type AttachmentUploadInput,
-  type AttachmentUploadOptions,
-  cancelAttachmentUpload,
-  type UploadedThumbnail,
-  uploadAttachment,
-} from './attachment-upload.js'
 import { type AuthOption, type AuthProvider, jwtAuth, localAuth, portalIdentityAuth } from './auth.js'
 import { BrandingCache } from './branding.js'
 import { type Claim, makeClaim } from './claim.js'
-import {
-  JsonRpcError,
-  LoadStalled,
-  ProtocolViolation,
-  RequestTimeout,
-  TransportClosed,
-  Unsupported,
-} from './errors.js'
+import type {
+  CallOptions,
+  ClientEvent,
+  ConnectionState,
+  CreateClientOptions,
+  InitializeInfo,
+  NewSessionOptions,
+  SessionLoadOptions,
+  TransportOption,
+} from './client-types.js'
+import { JsonRpcError, ProtocolViolation, RequestTimeout, TransportClosed, Unsupported } from './errors.js'
 import { type Disposer, Emitter } from './events.js'
 import { untilAborted } from './initialize-wait.js'
 import { type JournalStore, memoryJournal } from './journal.js'
-import { type PermissionHandler, type PermissionRequest, rejectPermission } from './permission.js'
-import { type ReconnectOptions, Reconnector } from './reattach.js'
+import { loadHistory } from './load-history.js'
+import { type PermissionRequest, unansweredPermission } from './permission.js'
+import { Reconnector } from './reattach.js'
 import { RpcConnection } from './rpc.js'
-import { Session, type SessionLoadingNotice } from './session.js'
+import { Session } from './session.js'
+import { requireAdditionalDirectories, requireForkAdditionalDirectories } from './session-directories.js'
 import { resendPending, submitForkCommand } from './submit.js'
 import { textFor } from './text.js'
 import { inprocTransport, type RpcEndpoint } from './transport/inproc.js'
 import type { CloseInfo, TransportFactory } from './transport/types.js'
 
-export type TransportOption =
-  | { kind: 'inproc'; endpoint: RpcEndpoint }
-  | {
-      kind: 'stdio'
-      cmd: string[]
-      env?: Record<string, string>
-      cwd?: string
-      nodeExecutable?: string
-      windowsBatch?: 'script' | 'argv-proxy'
-    }
-  // Windows requires a verified identity, or a custom unix factory with trusted discovery.
-  | { kind: 'unix'; path: string; serverIdentity?: { pid: number; processStartId: string } }
-  | {
-      kind: 'ws'
-      url: string
-      tls?: { ca?: string; rejectUnauthorized?: boolean }
-      protocols?: string[]
-    }
-
-// `reconnected` fires once the connection and every attached session are recovered after
-// an unexpected drop. `generationChanged` and `gap` are per-session recovery outcomes
-// (a stale generation re-attached under the server's new one; a resumed cursor the server
-// no longer has, re-attached from its earliest available row) - both can also fire outside
-// a reconnect, but in practice today only recovery produces them.
-export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'closed'
-export type ClientEvent =
-  | 'closed'
-  | 'notice'
-  | 'reconnecting'
-  | 'reconnected'
-  | 'connectionStateChanged'
-  | 'generationChanged'
-  | 'gap'
-
-export type ReconnectedEvent = { attempts: number }
-export type GenerationChangedEvent = { sessionId: string; generation: number }
-export type GapEvent = { sessionId: string; earliestSeq: number }
-
-export type CreateClientOptions = {
-  transport: TransportOption
-  auth?: AuthOption
-  clientId?: string
-  journal?: JournalStore
-  timeouts?: { request?: number; initialize?: number; claim?: number }
-  locale?: string
-  bufferLimit?: number
-  claimStrict?: boolean
-  // Backoff tuning for the reconnect loop. Tests shrink these to make retries instant;
-  // production takes the defaults (100ms, doubling, capped at 5s, ±20% jitter).
-  reconnect?: ReconnectOptions
-  // Providers and transport factories are injected by the build entry point rather
-  // than imported here, so the browser bundle cannot pull in node-only code paths
-  // just because a type union mentions them.
-  authProviders?: Record<string, (opt: AuthOption) => AuthProvider>
-  transportFactories?: Partial<Record<TransportOption['kind'], (opt: TransportOption) => TransportFactory>>
-}
-
-export type InitializeInfo = { agnesVersion: string; capabilities: Record<string, unknown> }
-
-export type CallOptions = {
-  // null means no deadline at all; a turn is bounded by liveness, not by a stopwatch.
-  timeoutMs?: number | null
-  // Set only by the handshake itself, which would otherwise wait on its own result.
-  skipInit?: boolean
-  // Gives up on the request: it is dropped and rejects with the signal's reason.
-  signal?: AbortSignal
-  // Called once the request goes on the wire, after the handshake (and any reconnect it waited on).
-  onSent?: () => void
-}
-
-export type SessionLoadOptions = {
-  cwd?: string
-  onPermissionRequest?: PermissionHandler
-  /** Receives the disposer for the load-time handler before the RPC is sent. */
-  onPermissionRequestRegistered?: (off: () => void) => void
-  /** Told each time the daemon reports how far the load has got. */
-  onLoading?: (p: SessionLoadingNotice) => void
-  /**
-   * Fails the load with `LoadStalled` after this long with no word from the daemon. Default 30 s.
-   * Both limits count from when the request is sent, not from while the client still connects; they
-   * replace `timeouts.request`, which does not apply to session/load.
-   */
-  idleTimeoutMs?: number
-  /** Fails the load with `LoadStalled` after this long whatever the progress. Default 10 min. */
-  hardTimeoutMs?: number
-}
-
-/** Call options for a request bounded by the connection's liveness and the caller's signal only. */
-function longCall(signal: AbortSignal | undefined): CallOptions {
-  return { timeoutMs: null, ...(signal ? { signal } : {}) }
-}
-
-const LOAD_IDLE_TIMEOUT_MS = 30_000
-const LOAD_HARD_TIMEOUT_MS = 600_000
-const LOADING_METHOD = '_agnes/v1/session.loading'
-
-/** The figures of a loading notice; a malformed one still counts as a sign of life, with none. */
-function loadingNotice(params: Record<string, unknown>): SessionLoadingNotice | undefined {
-  const { phase, done, total } = params
-  if (phase !== 'open' && phase !== 'verify' && phase !== 'fold' && phase !== 'replay') return undefined
-  if (typeof done !== 'number' || typeof total !== 'number') return undefined
-  return { phase, done, total }
-}
+export type {
+  CallOptions,
+  ClientEvent,
+  ConnectionState,
+  CreateClientOptions,
+  GapEvent,
+  GenerationChangedEvent,
+  InitializeInfo,
+  NewSessionOptions,
+  ReconnectedEvent,
+  SessionLoadOptions,
+  TransportOption,
+} from './client-types.js'
 
 type InitializeResponseBody = {
   protocolVersion: number
   agentCapabilities?: Record<string, unknown>
-  _meta?: { agnes?: { agnesVersion?: string; attachmentRefs?: unknown } }
+  _meta?: { agnes?: { agnesVersion?: string; platform?: string } }
 }
 
 function knownMethod(method: string): method is MethodName {
@@ -198,11 +115,38 @@ type Schema = Parameters<typeof validateAgainst>[0]
 // Reserved for generated-but-unlisted methods; empty means no call bypasses METHODS validation.
 const UNLISTED: Record<string, { params?: Schema; result?: Schema }> = {}
 
+/**
+ * Calls that wait on slow work the daemon keeps doing after a client gives up: OAuth commits, provider
+ * tests and saves that reach the network, and session creation, which waits for the shared worker to
+ * start and assemble its Host.
+ */
+const SLOW_CALL_MS = 90_000
+function slowCall(requestMs: number): { timeoutMs: number } {
+  return { timeoutMs: Math.max(requestMs, SLOW_CALL_MS) }
+}
+
+/**
+ * Reviewing an application resolves every agent it declares, one serial Host build each, so the wait
+ * grows with the agent count and the machine (12 agents took 55 s on an older Intel Mac). The daemon
+ * keeps working after a client gives up, so a short budget only turns a late success into an
+ * unconfirmed operation.
+ */
+const APPLICATION_REVIEW_MS = 300_000
+const APPLICATION_REVIEW_METHODS = new Set(['_agnes/v1/applications.preview', '_agnes/v1/applications.adopt'])
+
 export class Client {
+  private readonly sessionHistory = new Map<string, 'full' | 'none'>()
+  private readonly restoreHistory: 'full' | 'none'
   // Connection/options stay private so consumers cannot bypass client bookkeeping or expose auth.
   private readonly conn: RpcConnection
   readonly journal: JournalStore
-  readonly timeouts: { request: number; initialize: number; claim: number }
+  readonly timeouts: {
+    request: number
+    initialize: number
+    claim: number
+    loadIdle: number
+    loadHard: number
+  }
   readonly locale: string
   readonly bufferLimit: number
   readonly claim: Claim
@@ -220,18 +164,14 @@ export class Client {
   private closedPromise: Promise<void> | null = null
   private clientIdCache: string | null = null
   private readonly sessionTable = new Map<string, Session>()
-  // Who is waiting on a session/load, by session: told of every loading notice, and of every
-  // replayed update (with nothing) since that too shows the daemon is still working. Kept apart from
-  // the session table because a restore must not create a session handle.
-  private readonly loadWatchers = new Map<string, Set<(p: SessionLoadingNotice | undefined) => void>>()
   private readonly reconnector: Reconnector
   private brandingCache: BrandingCache | null = null
-  private serverAttachmentRefs = false
   // Latched by a `daemon.notice{kind:'shutting_down'}`: the next transport close is the
   // daemon going away on purpose, not a drop to retry through.
   shuttingDown = false
 
   constructor(opts: CreateClientOptions) {
+    this.restoreHistory = opts.sessionRestoreHistory ?? 'full'
     const providers = {
       local: () => localAuth(),
       jwt: (o: AuthOption) => {
@@ -251,6 +191,8 @@ export class Client {
     this.journal = opts.journal ?? memoryJournal(opts.clientId)
     this.timeouts = {
       request: opts.timeouts?.request ?? 30_000,
+      loadIdle: opts.timeouts?.loadIdle ?? 30_000,
+      loadHard: opts.timeouts?.loadHard ?? 600_000,
       initialize: opts.timeouts?.initialize ?? 10_000,
       claim: opts.timeouts?.claim ?? 4_000,
     }
@@ -278,16 +220,23 @@ export class Client {
       if (method !== 'session/request_permission') throw new JsonRpcError(rpcError('METHOD_NOT_FOUND'))
       if (!validateMethod('session/request_permission', 'params', params).ok)
         throw new JsonRpcError(rpcError('INVALID_PARAMS'))
-      const request = params as PermissionRequest & { _meta?: Record<string, { deadline?: string }> }
+      const request = params as PermissionRequest & {
+        _meta?: Record<string, { deadline?: string; requestId?: string }>
+      }
       const deadline = request._meta?.[META_KEY]?.deadline
+      const requestId = request._meta?.[META_KEY]?.requestId
       const clean: PermissionRequest = {
         sessionId: request.sessionId,
+        ...(requestId ? { requestId } : {}),
         toolCall: request.toolCall,
         options: request.options,
         ...(deadline !== undefined ? { deadlineMs: Date.parse(deadline) } : {}),
       }
-      if (clean.deadlineMs !== undefined && !Number.isFinite(clean.deadlineMs)) return rejectPermission(clean)
-      return this.sessionTable.get(clean.sessionId)?.answerPermission(clean) ?? rejectPermission(clean)
+      if (clean.deadlineMs !== undefined && !Number.isFinite(clean.deadlineMs))
+        return unansweredPermission('invalid-answer')
+      return (
+        this.sessionTable.get(clean.sessionId)?.answerPermission(clean) ?? unansweredPermission('no-handler')
+      )
     })
     this.claim = makeClaim(this, opts.claimStrict ?? false)
   }
@@ -322,13 +271,79 @@ export class Client {
     this.emitter.emit('connectionStateChanged', next)
   }
 
+  /** Deployment catalogs/defaults; writes require the private package-admin authority. */
+  readonly sessionSelection = {
+    loops: async (): Promise<readonly AdminLoop[]> =>
+      (await this.call<{ loops: AdminLoop[] }>('_agnes/v1/sessionSelection.loops', {})).loops,
+    modelAdapters: async (): Promise<readonly AdminModelAdapter[]> =>
+      (
+        await this.call<{ modelAdapters: AdminModelAdapter[] }>(
+          '_agnes/v1/sessionSelection.modelAdapters',
+          {},
+        )
+      ).modelAdapters,
+    getDefaults: (): Promise<SessionDefaultsSnapshot> =>
+      this.call('_agnes/v1/sessionSelection.defaults.get', {}),
+    saveDefaults: (input: SessionDefaultsSnapshot): Promise<SessionDefaultsSnapshot> =>
+      this.call('_agnes/v1/sessionSelection.defaults.save', input),
+  }
+
+  /** Local profile defaults and owner-checked pinned session previews. */
+  readonly autoReview = {
+    get: (): Promise<import('@agnes/protocol').AutoReviewConfig> => this.call('_agnes/v1/autoReview.get', {}),
+    save: (
+      config: import('@agnes/protocol').AutoReviewConfig,
+    ): Promise<import('@agnes/protocol').AutoReviewConfig> => this.call('_agnes/v1/autoReview.save', config),
+  }
+  readonly systemPrompt = {
+    get: (
+      input: import('@agnes/protocol').SystemPromptGetParams = {},
+    ): Promise<import('@agnes/protocol').SystemPromptSnapshot> =>
+      this.call('_agnes/v1/systemPrompt.get', input),
+    save: (
+      input: import('@agnes/protocol').SystemPromptSaveParams,
+    ): Promise<import('@agnes/protocol').SystemPromptSnapshot> =>
+      this.call('_agnes/v1/systemPrompt.save', input),
+  }
+  /** Owner-checked, bounded execution evidence; missing external receipts remain unknown. */
+  readonly factChain = (
+    input: import('@agnes/protocol').FactChainParams,
+    options: CallOptions = {},
+  ): Promise<import('@agnes/protocol').FactChainResult> =>
+    this.call('_agnes/v1/session.factChain', input, options)
+  readonly requestTrace = {
+    clear: (
+      input: import('@agnes/protocol').ModelRequestClearParams,
+    ): Promise<import('@agnes/protocol').ModelRequestClearResult> =>
+      this.call('_agnes/v1/trace.clear', input),
+    list: (sessionId: string): Promise<import('@agnes/protocol').ModelRequestResult> =>
+      this.call('_agnes/v1/trace.request', { sessionId }),
+    get: (
+      input: import('@agnes/protocol').ModelRequestParams,
+      options: CallOptions = {},
+    ): Promise<import('@agnes/protocol').ModelRequestResult> =>
+      this.call('_agnes/v1/trace.request', input, options),
+  }
+  /** Local admin generic credentials. Values are write-only and never enter the replay journal. */
+  readonly credentials = {
+    list: () => this.request('_agnes/v1/admin.credentials.list', {}),
+    create: (input: import('@agnes/protocol/gen/app-server').AdminCredentialCreate) =>
+      this.request('_agnes/v1/admin.credentials.create', input),
+    set: (input: import('@agnes/protocol/gen/app-server').AdminCredentialSet) =>
+      this.request('_agnes/v1/admin.credentials.set', input),
+    rename: (input: import('@agnes/protocol/gen/app-server').AdminCredentialRename) =>
+      this.request('_agnes/v1/admin.credentials.rename', input),
+    delete: (input: import('@agnes/protocol/gen/app-server').AdminCredentialDelete) =>
+      this.request('_agnes/v1/admin.credentials.delete', input),
+  }
+
   /** Shared deployment configuration. Secrets are submitted only, never returned or journaled. */
   readonly config = {
     oauth: (input: ConfigOAuthInput): Promise<ConfigOAuthResult> =>
       this.call(
         '_agnes/v1/config.oauth',
         input,
-        input.action === 'commit' ? { timeoutMs: Math.max(this.timeouts.request, 90_000) } : {},
+        input.action === 'commit' ? slowCall(this.timeouts.request) : {},
       ),
     account: (input: ConfigAccountInput): Promise<ConfigSnapshot> =>
       this.call('_agnes/v1/config.account', input),
@@ -339,7 +354,7 @@ export class Client {
         '_agnes/v1/config.test',
         input,
         ['anthropic', 'github-copilot', 'kimi-coding', 'openai-codex', 'xai'].includes(input.providerId)
-          ? { timeoutMs: Math.max(this.timeouts.request, 90_000) }
+          ? slowCall(this.timeouts.request)
           : {},
       ),
     save: (input: ConfigSaveInput): Promise<ConfigSnapshot> =>
@@ -347,22 +362,22 @@ export class Client {
         '_agnes/v1/config.save',
         input,
         ['anthropic', 'github-copilot', 'kimi-coding', 'openai-codex', 'xai'].includes(input.providerId)
-          ? { timeoutMs: Math.max(this.timeouts.request, 90_000) }
+          ? slowCall(this.timeouts.request)
           : {},
       ),
-  }
-
-  /** Attachments uploaded by reference: the returned block is what a prompt, steer or follow-up then carries. */
-  readonly attachments = {
-    upload: (
-      sessionId: string,
-      input: AttachmentUploadInput,
-      o?: AttachmentUploadOptions,
-    ): Promise<ContentBlock | UploadedThumbnail> =>
-      uploadAttachment((method, params, c) => this.call(method, params, c), sessionId, input, o),
-    /** Drops an upload the daemon still holds, such as a failed one the user removed. */
-    cancel: (sessionId: string, uploadId: string): Promise<void> =>
-      cancelAttachmentUpload((method, params, c) => this.call(method, params, c), sessionId, uploadId),
+    modelSlots: {
+      get: (): Promise<import('@agnes/protocol').ModelSlotsSnapshot> =>
+        this.call('_agnes/v1/config.modelSlots.get', {}),
+      save: (
+        input: import('@agnes/protocol').ModelSlotsSnapshot,
+      ): Promise<import('@agnes/protocol').ModelSlotsSnapshot> =>
+        this.call('_agnes/v1/config.modelSlots.save', input),
+    },
+    childEngines: {
+      get: (): Promise<ChildEnginesState> => this.call('_agnes/v1/config.childEngines.get', {}),
+      save: (input: ChildEnginesSaveParams): Promise<ChildEnginesState> =>
+        this.call('_agnes/v1/config.childEngines.save', input),
+    },
   }
 
   readonly workspace = {
@@ -394,7 +409,7 @@ export class Client {
   }
 
   /**
-   * Web client modules contributed by installed packages (design WC2/WC3). The page calls `list`
+   * Web client modules contributed by installed packages. The page calls `list`
    * directly; `read` is for the launcher's asset proxy — the path stays in the `/plugins/` URL
    * space and the daemon answers only from its immutable snapshots.
    */
@@ -404,9 +419,12 @@ export class Client {
      * modules/statuses fields; normalize that response locally so callers get the same `rows`
      * contract without ever exposing config, credentials, or raw runtime artifacts.
      */
-    list: async (profile: string): Promise<ClientModuleListResult & { rows: ClientModuleRosterRow[] }> =>
+    list: async (
+      profile: string,
+      sessionId?: string,
+    ): Promise<ClientModuleListResult & { rows: ClientModuleRosterRow[] }> =>
       projectClientModuleRows(
-        await this.call('_agnes/v1/clientModules.list', { profile }),
+        await this.call('_agnes/v1/clientModules.list', { profile, ...(sessionId ? { sessionId } : {}) }),
       ) as ClientModuleListResult & { rows: ClientModuleRosterRow[] },
     read: (profile: string, path: string): Promise<ClientModuleReadResult> =>
       this.call('_agnes/v1/clientModules.read', { profile, path }),
@@ -418,16 +436,59 @@ export class Client {
       this.call('_agnes/v1/clientModules.callEffect', input),
   }
 
+  createSession(options: NewSessionOptions): Promise<Session> {
+    return this.session.new(options)
+  }
+
+  readonly agents = {
+    resolve: (ref: string): Promise<import('@agnes/protocol').AgentPlan> =>
+      this.call('_agnes/v1/agents.resolve', { ref: parseAgentRef(ref) }),
+  }
+
   readonly session = {
-    new: async (o: { cwd: string; preset?: string; sessionKey?: string }): Promise<Session> => {
+    integrity: (id: string, verify = false): Promise<import('@agnes/protocol').SessionIntegrityStatus> =>
+      this.call(
+        '_agnes/v1/session.integrity',
+        { sessionId: id, verify },
+        { timeoutMs: verify ? 600_000 : this.timeouts.request },
+      ),
+    runtime: (id: string): Promise<SessionRuntimeDescriptor> =>
+      this.call('_agnes/v1/session.runtime', { sessionId: id }),
+    new: async (o: NewSessionOptions): Promise<Session> => {
+      const extra = o.additionalDirectories ?? []
+      if (extra.length) requireAdditionalDirectories((await this.initialize()).capabilities)
       const meta: Record<string, unknown> = {}
+      if (o.agent !== undefined) {
+        meta.agent = parseAgentRef(o.agent)
+        if (
+          o.loop ||
+          o.bundles !== undefined ||
+          o.preset ||
+          o.permission !== undefined ||
+          o.systemPromptAppend !== undefined
+        )
+          throw new TypeError('agent cannot be combined with execution overrides')
+      }
+      if (o.agentDigest !== undefined) meta.agentDigest = o.agentDigest
+      if (o.loop) meta.loop = parseLoopSelection(o.loop)
       if (o.preset) meta.preset = o.preset
+      if (o.agent === undefined) meta.permission = o.permission ?? 'default'
+      if (o.bundles !== undefined) meta.bundles = parseSessionBundles(o.bundles)
+      if (o.systemPromptAppend !== undefined)
+        meta.systemPromptAppend = parseSystemPromptAppend(o.systemPromptAppend)
       if (o.sessionKey) meta.sessionKey = o.sessionKey
-      const r = await this.call<{ sessionId: string }>('session/new', {
-        cwd: o.cwd,
-        mcpServers: [],
-        _meta: { [META_KEY]: meta },
-      })
+      // Creating a session can wait for the shared worker to start (see slowCall); a short budget only
+      // turns a late success into a failure the caller has to retry.
+      const r = await this.call<{ sessionId: string }>(
+        'session/new',
+        {
+          cwd: o.cwd,
+          ...(extra.length ? { additionalDirectories: [...extra] } : {}),
+          mcpServers: [],
+          _meta: { [META_KEY]: meta },
+        },
+        slowCall(this.timeouts.request),
+      )
       return this.sessionHandle(r.sessionId, o.cwd)
     },
     // The vendored request shape makes cwd and mcpServers mandatory. An omitted cwd means the
@@ -451,7 +512,8 @@ export class Client {
         }
       }
       try {
-        await this.loadWithProgress(id, o.cwd ?? '', o)
+        await this.loadSessionHistory(id, o.cwd ?? '', o.onProgress, o.history === 'none', o.signal)
+        this.sessionHistory.set(id, o.history ?? 'full')
         if (o.cwd) session.rememberWorkspace(o.cwd)
         return session
       } catch (error) {
@@ -461,6 +523,9 @@ export class Client {
         throw error
       }
     },
+    /** Verifies and restores execution without an ACP transcript replay. */
+    open: (id: string, o: Omit<SessionLoadOptions, 'history'> = {}): Promise<Session> =>
+      this.session.load(id, { ...o, history: 'none' }),
     attach: async (id: string, o: { cursor?: Cursor; filter?: AttachFilter } = {}): Promise<Session> => {
       const s = this.sessionHandle(id)
       await s.attach(o)
@@ -468,102 +533,69 @@ export class Client {
     },
     list: (o: SessionListParams = {}): Promise<PageSessionMeta> =>
       this.call<PageSessionMeta>('_agnes/v1/session.list', o),
+    groups: (): Promise<import('@agnes/protocol').SessionGroupsResult> =>
+      this.call('_agnes/v1/session.groups', {}),
+    /** Running and waiting sessions this client owns; `session_activity` notices report changes. */
+    activity: (): Promise<import('@agnes/protocol').SessionActivityResult> =>
+      this.call('_agnes/v1/session.activity', {}),
+    /** The recorded conversation, read without opening the session; works when it cannot be resumed. */
+    view: (
+      sessionId: string,
+      o: { maxNodes?: number } = {},
+      options: CallOptions = {},
+    ): Promise<import('@agnes/protocol').SessionViewResult> =>
+      this.call('_agnes/v1/session.view', { sessionId, ...o }, options),
     rename: (sessionId: string, title: string): Promise<SessionPreferences> =>
       this.call('_agnes/v1/session.rename', { sessionId, title }),
     archive: (sessionId: string, archived: boolean): Promise<SessionPreferences> =>
       this.call('_agnes/v1/session.archive', { sessionId, archived }),
-    fork: async (id: string, at: number): Promise<Session> => {
-      const childId = await submitForkCommand(this, id, at)
-      return this.sessionHandle(childId)
-    },
-    /**
-     * The session's latest history read straight from storage, without opening it: for showing
-     * something read-only while a full load is slow or after it failed. Never verified.
-     */
-    storedOpening: (id: string, o: { maxNodes?: number } = {}): Promise<SessionStoredOpeningResult> =>
-      this.call('_agnes/v1/session.storedOpening', { sessionId: id, ...o }),
-    /**
-     * Settles once the daemon has verified every stored row of the session; rejects when the history
-     * failed its integrity check. No fixed deadline (`timeouts.request` does not apply): a long history
-     * opened from a checkpoint can take minutes to verify. `signal` gives up waiting.
-     */
-    verifyHistory: (id: string, o: { signal?: AbortSignal } = {}): Promise<Record<string, never>> =>
-      this.call('_agnes/v1/session.verifyHistory', { sessionId: id }, longCall(o.signal)),
-    /**
-     * One piece of one stored row, byte for byte, for a raw export. Like `verifyHistory` it has no fixed
-     * deadline, since every piece waits for the history to be verified; `signal` gives up waiting.
-     */
-    exportRaw: (
+    /** Pins a session to the top of the sidebar; pinning again keeps the original time. */
+    pin: (sessionId: string, pinned: boolean): Promise<SessionPreferences> =>
+      this.call('_agnes/v1/session.pin', { sessionId, pinned }),
+    /** Replaces the bookmarked user prompts: UINode ids of kind 'user', kept in the order given. */
+    setBookmarks: (sessionId: string, bookmarks: readonly string[]): Promise<SessionPreferences> =>
+      this.call('_agnes/v1/session.bookmarks.set', { sessionId, bookmarks: [...bookmarks] }),
+    /** Answers a side question about the conversation without writing to it; billed as a side call. */
+    btw: (
+      sessionId: string,
+      question: string,
+      options: CallOptions = {},
+    ): Promise<import('@agnes/protocol').SessionBtwResult> =>
+      this.call(
+        '_agnes/v1/session.btw',
+        { sessionId, question },
+        { timeoutMs: Math.max(this.timeouts.request, 75_000), ...options },
+      ),
+    /** `additionalDirectories` are added to the parent's own for the child; the parent is unchanged. */
+    fork: async (
       id: string,
-      seq: number,
-      offset: number,
-      o: { signal?: AbortSignal } = {},
-    ): Promise<SessionExportRawResult> =>
-      this.call('_agnes/v1/session.exportRaw', { sessionId: id, seq, offset }, longCall(o.signal)),
+      at: number,
+      o: { cwd?: string; additionalDirectories?: readonly string[] } = {},
+    ): Promise<Session> => {
+      const extra = o.additionalDirectories ?? []
+      if (extra.length) requireForkAdditionalDirectories((await this.initialize()).capabilities)
+      const childId = await submitForkCommand(this, id, at, undefined, extra)
+      return this.sessionHandle(childId, o.cwd)
+    },
   }
 
-  /**
-   * `session/load` with no fixed deadline: a large session can take minutes to open, so the load
-   * fails only when the daemon goes quiet for `idleTimeoutMs`, or at the hard limit. Every loading
-   * notice, and every replayed row, counts as the daemon still working.
-   */
-  private async loadWithProgress(
-    id: string,
-    cwd: string,
-    o: Pick<SessionLoadOptions, 'onLoading' | 'idleTimeoutMs' | 'hardTimeoutMs'>,
-  ): Promise<void> {
-    const idleMs = o.idleTimeoutMs ?? LOAD_IDLE_TIMEOUT_MS
-    const hardMs = o.hardTimeoutMs ?? LOAD_HARD_TIMEOUT_MS
-    const abort = new AbortController()
-    let idle: ReturnType<typeof setTimeout> | undefined
-    let hard: ReturnType<typeof setTimeout> | undefined
-    const arm = () => {
-      if (idle !== undefined) clearTimeout(idle)
-      idle = setTimeout(() => abort.abort(new LoadStalled(id, idleMs)), idleMs)
-    }
-    const watcher = (p: SessionLoadingNotice | undefined) => {
-      arm()
-      if (p) o.onLoading?.(p)
-    }
-    const watchers = this.loadWatchers.get(id) ?? new Set()
-    watchers.add(watcher)
-    this.loadWatchers.set(id, watchers)
-    try {
-      // `timeoutMs: null`: the load's own clocks below stand in for `timeouts.request`. They start
-      // when the request is sent, so time spent connecting or reconnecting first is not silence.
-      await this.call(
-        'session/load',
-        { sessionId: id, cwd, mcpServers: [] },
-        {
-          timeoutMs: null,
-          signal: abort.signal,
-          onSent: () => {
-            arm()
-            hard = setTimeout(() => abort.abort(new LoadStalled(id, hardMs)), hardMs)
-          },
-        },
-      )
-    } finally {
-      if (idle !== undefined) clearTimeout(idle)
-      if (hard !== undefined) clearTimeout(hard)
-      watchers.delete(watcher)
-      if (watchers.size === 0 && this.loadWatchers.get(id) === watchers) this.loadWatchers.delete(id)
-    }
-  }
-
-  /** A parked approval is resumed by an opaque ticket and an approver credential. The server,
-   *  never this client, resolves that credential to the Actor written to the ledger. */
+  /** Answers one durable request. Human identity is derived from the authenticated connection. */
   readonly approval = {
     decide: (
-      ticket: string,
-      verdict: 'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'rejected',
-      approverCredential: Credential,
-    ): Promise<{ seq: number }> =>
-      this.call<{ seq: number }>('_agnes/v1/approval.decide', {
-        ticket,
-        verdict,
-        approverCredential,
-      }),
+      command: import('@agnes/protocol').ApprovalDecideParams,
+      bridge?: { sourceCredential: Credential },
+    ): Promise<import('@agnes/protocol').DecisionCommandReceipt> =>
+      this.call(
+        '_agnes/v1/approval.decide',
+        command,
+        bridge
+          ? {
+              metadata: { [META_KEY]: { sourceCredential: bridge.sourceCredential } },
+            }
+          : {},
+      ),
+    list: (sessionId: string): Promise<import('@agnes/protocol').DecisionListResult> =>
+      this.call('_agnes/v1/decision.list', { sessionId }),
     listGrants: (
       sessionId: string,
       binding: { toolId: string; scope: string; policyVersion: string },
@@ -575,6 +607,11 @@ export class Client {
       grantId: string,
     ): Promise<ApprovalGrantRecord> =>
       this.call('_agnes/v1/approvalGrants.revoke', { sessionId, ...binding, grantId }),
+    /** Every grant in force for the session: "this session" answers and the actor's "always" grants. */
+    sessionGrants: (sessionId: string): Promise<ApprovalGrantSessionResult> =>
+      this.call('_agnes/v1/approvalGrants.forSession', { sessionId }),
+    revokeSessionGrant: (sessionId: string, grantId: string): Promise<SessionApprovalGrant> =>
+      this.call('_agnes/v1/approvalGrants.revokeForSession', { sessionId, grantId }),
   }
 
   /**
@@ -583,7 +620,50 @@ export class Client {
    * wire call in the same place as an explicit session.load.
    */
   restoreSession(id: string, cwd: string): Promise<unknown> {
-    return this.loadWithProgress(id, cwd, {})
+    return this.loadSessionHistory(
+      id,
+      cwd,
+      undefined,
+      (this.sessionHistory.get(id) ?? this.restoreHistory) === 'none',
+    )
+  }
+
+  private async loadSessionHistory(
+    id: string,
+    cwd: string,
+    onProgress?: (progress: import('@agnes/protocol').SessionLoadingParams) => void,
+    admissionOnly = false,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    const info = signal ? await untilAborted(() => this.initialize(), signal) : await this.initialize()
+    signal?.throwIfAborted()
+    const meta = info.capabilities._meta as Record<string, { sessionOpen?: boolean }> | undefined
+    const open = admissionOnly && meta?.[META_KEY]?.sessionOpen === true
+    const requestId = open ? crypto.randomUUID() : undefined
+    return loadHistory({
+      ...(signal ? { signal } : {}),
+      sessionId: id,
+      idleMs: this.timeouts.loadIdle,
+      hardMs: this.timeouts.loadHard,
+      subscribe: (fn) => this.conn.onNotification(fn),
+      request: async (signal) => {
+        try {
+          return await this.call(
+            open ? '_agnes/v1/session.open' : 'session/load',
+            open ? { sessionId: id, cwd, requestId } : { sessionId: id, cwd, mcpServers: [] },
+            { timeoutMs: null, signal },
+          )
+        } catch (error) {
+          if (signal.aborted && (!admissionOnly || requestId))
+            await this.notify('_agnes/v1/session.loadingCancel', {
+              sessionId: id,
+              ...(requestId ? { requestId } : {}),
+            }).catch(() => undefined)
+          throw error
+        }
+      },
+      ...(onProgress ? { onProgress } : {}),
+    })
   }
 
   private sessionHandle(id: string, cwd?: string): Session {
@@ -599,6 +679,13 @@ export class Client {
   // addressed to nobody in particular is a client-level event.
   private dispatchNotification(method: string, params: unknown): void {
     const p = (params ?? {}) as Record<string, unknown>
+    if (method === '_agnes/v1/approval.withdraw') {
+      if (validateMethod('_agnes/v1/approval.withdraw', 'params', params).ok)
+        this.sessionTable
+          .get(p.sessionId as string)
+          ?.withdrawPermission(p.requestId as string, p.reason as 'stopped' | 'deadline' | 'detached')
+      return
+    }
     if (method === '_agnes/v1/daemon.notice') {
       // Latched, never cleared: once the daemon says it is going away, the next drop is
       // that shutdown arriving, not a fault to reconnect through. A loop already running
@@ -611,27 +698,11 @@ export class Client {
       }
       if (p.kind === 'overloaded' && typeof p.sessionId === 'string')
         this.sessionTable.get(p.sessionId)?.onStreamOverloaded()
-      // Final: the daemon closed the session and refuses every reopen, so no reconnect recovers it.
-      // The notice itself is what listeners hear, so the session does not announce it again.
-      if (p.kind === 'integrity_failed' && typeof p.sessionId === 'string')
-        this.sessionTable.get(p.sessionId)?.onRefused('E_LEDGER_INTEGRITY', { announce: false })
       this.emit('notice', p)
       return
     }
     const sessionId = typeof p.sessionId === 'string' ? p.sessionId : null
-    if (!sessionId) return
-    if (method === LOADING_METHOD || method === 'session/update') {
-      const notice = method === LOADING_METHOD ? loadingNotice(p) : undefined
-      for (const watcher of [...(this.loadWatchers.get(sessionId) ?? [])]) watcher(notice)
-      // Progress is for whoever is loading; it is not a session event.
-      if (method === LOADING_METHOD) return
-    }
-    this.sessionTable.get(sessionId)?.onNotification(method, p)
-  }
-
-  /** What the server said it supports at the last `initialize`; all false before one completes. */
-  get serverCapabilities(): Readonly<{ attachmentRefs: boolean }> {
-    return { attachmentRefs: this.serverAttachmentRefs }
+    if (sessionId) this.sessionTable.get(sessionId)?.onNotification(method, p)
   }
 
   async clientId(): Promise<string> {
@@ -675,8 +746,7 @@ export class Client {
         protocolVersion: 1,
         clientCapabilities: {
           fs: { readTextFile: false, writeTextFile: false },
-          // attachmentRefs: this client reads attachment reference blocks as they are stored.
-          _meta: { [META_KEY]: { capabilities: { permission: true, attachmentRefs: 1 } } },
+          _meta: { [META_KEY]: { capabilities: { permission: true } } },
         },
       }
       const metadata: Record<string, unknown> = { clientId }
@@ -696,15 +766,23 @@ export class Client {
         abort.signal,
       )
       if (r.protocolVersion !== 1) throw new ProtocolViolation('unsupported negotiated protocol version')
-      this.serverAttachmentRefs = r._meta?.agnes?.attachmentRefs === 1
       return {
         agnesVersion: r._meta?.agnes?.agnesVersion ?? 'unknown',
+        ...(typeof r._meta?.agnes?.platform === 'string' ? { platform: r._meta.agnes.platform } : {}),
         capabilities: r.agentCapabilities ?? {},
       }
     } finally {
       clearTimeout(timer)
       if (this.initAbort === abort) this.initAbort = undefined
     }
+  }
+
+  request<M extends AppServerClientMethod>(
+    method: M,
+    params: AppServerParams<M>,
+    options: CallOptions = {},
+  ): Promise<AppServerResult<M>> {
+    return this.call<AppServerResult<M>>(method, params, options)
   }
 
   async call<T>(method: string, params: unknown, o: CallOptions = {}): Promise<T> {
@@ -715,12 +793,14 @@ export class Client {
     if (this.isClosed) throw new TransportClosed({ reason: 'closed' })
     if (!o.skipInit) await this.initialize()
     this.checkParams(method, params)
-    o.onSent?.()
+    if (o.timeoutMs === undefined && APPLICATION_REVIEW_METHODS.has(method))
+      o = { ...o, timeoutMs: Math.max(this.timeouts.request, APPLICATION_REVIEW_MS) }
     const result = await this.conn.request<T>(method, params, {
       // Omitted, not undefined: leaving the key off is what lets the connection apply
       // its own default deadline, while an explicit null means "no deadline".
       ...(o.timeoutMs !== undefined ? { timeoutMs: o.timeoutMs } : {}),
       ...(o.signal ? { signal: o.signal } : {}),
+      ...(o.metadata === undefined ? {} : { metadata: o.metadata }),
     })
     this.checkResult(method, result)
     return result

@@ -10,12 +10,11 @@ export type {
   SettingsPaneChange,
   SettingsRegionHandle,
   SettingsRegionOptions,
-  SettingsResourceTab,
-} from '@agnes/web-units'
+} from '@agnes/web-units/shell'
 export {
   PANE_IDS,
   renderSettingsMarkup,
   SettingsBuiltin,
   SettingsPaneBuiltin,
   settingsPaneSlotHostId,
-} from '@agnes/web-units'
+} from '@agnes/web-units/shell'

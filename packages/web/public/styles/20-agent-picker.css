@@ -1,0 +1,153 @@
+@layer app {
+  /* Agent picker matches the existing workspace, permissions and model chips. */
+  .composer-agent.agnes-ui-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 2rem;
+    padding: 0 calc(0.5rem - 1px);
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    box-shadow: none;
+  }
+  .agent-chip-value {
+    max-width: 10rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-picker-panel {
+    width: min(22rem, calc(100vw - 3rem));
+    display: grid;
+    gap: var(--s16);
+  }
+  .agent-picker-panel .agnes-ui-field {
+    display: grid;
+    gap: 0.375rem;
+  }
+  .agent-picker-select {
+    width: 100%;
+  }
+  .agent-choice {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    align-items: baseline;
+  }
+  .agent-choice small {
+    color: var(--agnes-text-tertiary);
+  }
+  /* The id beside a choice name is tertiary grey at rest, which disappears on the accent fill of
+     the hovered or picked row; there it follows the row colour. This lives in the app layer
+     because that is where the rest colour above is set, and a later layer wins over an earlier
+     one regardless of specificity. */
+  .ant-select-dropdown
+    .ant-select-item-option-active:not(.ant-select-item-option-disabled)
+    .agent-choice
+    small,
+  .ant-select-dropdown
+    .ant-select-item-option-selected:not(.ant-select-item-option-disabled)
+    .agent-choice
+    small {
+    color: inherit;
+  }
+  .session-goal-host {
+    width: min(100%, var(--chat-content-width, 48rem));
+    margin-inline: auto;
+  }
+  .goal-card {
+    margin: var(--s8) var(--s16);
+    padding: var(--s8) var(--s12);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-surface);
+  }
+  .goal-card > .agnes-ui-button {
+    width: auto;
+    max-width: 100%;
+  }
+  .goal-card form {
+    display: grid;
+    gap: var(--s12);
+    padding-block: var(--s12);
+  }
+  .goal-card .agnes-ui-field {
+    display: grid;
+    gap: 0.375rem;
+  }
+
+  .runtime-settings [data-testid="settings-refresh"] {
+    margin: 0;
+  }
+  .runtime-settings .runtime-card {
+    margin: 0;
+  }
+  .runtime-settings > section > .agnes-ui-tabs {
+    margin-bottom: var(--s16);
+  }
+  .runtime-settings .config-heading {
+    padding: 0;
+  }
+  .runtime-settings .config-heading h2 {
+    margin-bottom: 0;
+  }
+  .runtime-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  }
+  .session-goal-host {
+    width: min(100%, 52rem);
+    margin-inline: auto;
+    padding: var(--s8) var(--s24) 0;
+  }
+
+  #plugin-settings-pane:has(.runtime-settings) > .config-heading {
+    display: none;
+  }
+  #plugin-settings-pane .admin-pane-body {
+    padding-top: var(--s16);
+  }
+
+  #config-form[data-runtime-page]:not([data-runtime-page="plugins"]) #plugin-settings-pane .plugin-toolbar {
+    display: none;
+  }
+  #plugin-settings-pane:has(.runtime-settings) .plugin-layout {
+    margin-top: 0;
+  }
+
+  /* The shared card stack owns spacing; legacy runtime margins must not accumulate. */
+  .runtime-settings .agnes-settings-card .agh-disclosure {
+    margin-block: 0;
+  }
+  #plugin-settings-pane:has(.runtime-settings) #admin-notice:empty,
+  #plugin-settings-pane:has(.runtime-settings) #plugin-tree-status:empty {
+    display: none;
+  }
+
+  .session-tabs-bar .session-goal-host {
+    min-width: 0;
+    width: auto;
+    margin: 0;
+    padding: 0;
+    flex: 0 1 auto;
+  }
+  .session-goal-host .agnes-ui-button {
+    max-width: min(100%, 14rem);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .goal-card {
+    width: min(24rem, calc(100vw - 3rem));
+    margin: 0;
+    padding: var(--s8);
+    background: transparent;
+  }
+  .goal-card button {
+    margin: 0;
+  }
+
+  .transcript-node-host {
+    display: contents;
+  }
+}

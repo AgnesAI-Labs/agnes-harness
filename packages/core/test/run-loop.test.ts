@@ -1,8 +1,10 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import { defaultLoopFactory } from '@agnes/loop-default'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
-import { MemoryStorage } from '../src/log/memory-storage.js'
 import { ToolRegistry } from '../src/registry/tools.js'
-import { presetDefaults } from '../src/step/preset.js'
+import { turnMaxSteps } from '../src/step/step-cap.js'
 import { fakeProvider, sent, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession, readTool } from './helpers/open-session.js'
@@ -58,6 +60,46 @@ describe('run loop', () => {
     expect(out).toMatchObject({ reason: 'completed', lastSeq: 1 })
     expect(await log.scan({ fromSeq: 1, limit: 10 })).toHaveLength(1)
   })
+
+  it.each([false, true])(
+    'settles only the first queued prompt on a pre-aborted run (signal-first loop: %s)',
+    async (signalFirst) => {
+      const factory = {
+        ...defaultLoopFactory,
+        create: async (ctx: Parameters<typeof defaultLoopFactory.create>[0]) => {
+          const driver = await defaultLoopFactory.create(ctx)
+          return {
+            ...driver,
+            step: (signal: AbortSignal) => {
+              if (signalFirst) signal.throwIfAborted()
+              return driver.step(signal)
+            },
+          }
+        },
+      }
+      const { session, log } = await openSession({
+        provider: fakeProvider([textTurn('answer B')]),
+        loopFactory: factory,
+      })
+      try {
+        await session.enqueue('next-turn', { content: [{ type: 'text', text: 'A' }], actor })
+        await session.enqueue('next-turn', { content: [{ type: 'text', text: 'B' }], actor })
+        const abort = new AbortController()
+        abort.abort()
+        expect((await session.run({ until: 'turn-end', signal: abort.signal })).reason).toBe('aborted')
+        expect((await log.scan({ type: 'turn/end', limit: 5 })).map((row) => row.data)).toEqual([
+          expect.objectContaining({ reason: 'aborted' }),
+        ])
+        expect(await log.scan({ type: 'request/sent', limit: 5 })).toEqual([])
+        expect(session.latest('inbox')).toMatchObject({ items: [{ content: [{ text: 'B' }] }] })
+        expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
+        expect(session.latest('inbox')).toMatchObject({ items: [] })
+        expect(session.surface().map((node) => node.kind)).toEqual(['user', 'user', 'assistant'])
+      } finally {
+        await session.close()
+      }
+    },
+  )
 
   it.each(['complete', 'cancel', 'fail', 'stop-active'] as const)(
     'serializes concurrent turns and preserves queued input on %s',
@@ -142,18 +184,85 @@ describe('run loop', () => {
     },
   )
 
+  // The prompt's own cap only lowers the preset's ceiling: a larger one never raises it.
+  it.each([
+    { preset: null, cap: 2, steps: 2 },
+    { preset: 5, cap: 1, steps: 1 },
+    { preset: 1, cap: 9, steps: 1 },
+    { preset: 2, cap: 1000, steps: 2 },
+  ])('a prompt step cap of $cap under a preset ceiling of $preset ends after $steps steps', async (row) => {
+    const presetBase = presetDefaults()
+    const preset = { ...presetBase, budget: { ...presetBase.budget, maxSteps: row.preset } }
+    const { session, log } = await openSession({
+      provider: fakeProvider([
+        ...Array.from({ length: 12 }, (_, i) => toolTurn('read', { path: `f${i}` })),
+        textTurn('done'),
+      ]),
+      registry: withRead(),
+      preset,
+    })
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor, maxSteps: row.cap })
+    expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('max_steps')
+    expect(await log.scan({ type: 'step/start', limit: 100 })).toHaveLength(row.steps)
+    // The cap belongs to that turn alone: the next prompt runs to its own end.
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'again' }], actor })
+    expect(turnMaxSteps(session)).toBe(row.preset)
+    expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe(
+      row.preset === null ? 'completed' : 'max_steps',
+    )
+  })
+
+  it('keeps a prompt step cap across a restart of the open turn', async () => {
+    const storage = new MemoryStorage()
+    const provider = () =>
+      Object.assign(
+        fakeProvider([
+          ...Array.from({ length: 6 }, (_, i) => toolTurn('read', { path: `f${i}` })),
+          textTurn('done'),
+        ]),
+        { models: () => [modelRecord('default', 'm')] },
+      )
+    const first = await openSession({ provider: provider(), registry: withRead(), storage, key: 'step-cap' })
+    await first.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor, maxSteps: 2 })
+    expect(await first.session.step()).toMatchObject({ outcome: 'running' })
+    expect(turnMaxSteps(first.session)).toBe(2)
+    await first.log.close()
+    const reopened = await openSession({
+      provider: provider(),
+      registry: withRead(),
+      storage,
+      key: 'step-cap',
+      writerRunId: 'r2',
+    })
+    expect((await reopened.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('max_steps')
+    expect(await reopened.log.scan({ type: 'step/start', limit: 100 })).toHaveLength(2)
+  })
+
+  it.each([0, -1, 1001, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+    'rejects the step cap %s before changing the inbox',
+    async (maxSteps) => {
+      const { session } = await openSession({ provider: fakeProvider([]) })
+      await expect(session.enqueue('next-turn', { content: [], actor, maxSteps })).rejects.toMatchObject({
+        code: 'E_ENVELOPE',
+      })
+      await expect(session.enqueue('next-step', { content: [], actor, maxSteps: 2 })).rejects.toMatchObject({
+        code: 'E_ENVELOPE',
+      })
+      expect(session.latest('inbox')).toBeUndefined()
+    },
+  )
+
   it('budget quote: a rejected quote ends with budget; the deny policy ends without asking', async () => {
     const preset = { ...presetDefaults(), budget: { ...presetDefaults().budget, perRequestCap: 1 } }
     const seams = fakeSeams({
-      ledger: { projected: async () => ({ credits: 5, creditSource: 'estimated' }) },
-      approval: { ask: async () => 'rejected', resume: async () => null },
+      billing: { projected: async () => ({ credits: 5, creditSource: 'estimated' }) },
+      approval: { ask: async () => 'rejected' },
     })
     const { session, log } = await openSession({ provider: fakeProvider([textTurn('x')]), preset, seams })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
     expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('budget')
-    expect((await log.scan({ type: 'approval/asked', limit: 5 }))[0]?.data).toMatchObject({
-      kind: 'budget',
-      risk: 'budget',
+    expect((await log.scan({ type: 'decision/state', limit: 5 }))[0]?.data).toMatchObject({
+      request: { spec: { purpose: 'budget', subject: { risk: 'budget' } } },
     })
     // The preflight is recorded whether or not the request went out.
     expect((await log.scan({ type: 'budget.state', limit: 5 }))[0]?.data).toMatchObject({
@@ -168,70 +277,84 @@ describe('run loop', () => {
     })
     await deny.session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
     expect((await deny.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('budget')
-    expect(await deny.log.scan({ type: 'approval/asked', limit: 5 })).toHaveLength(0)
+    expect(await deny.log.scan({ type: 'decision/state', limit: 5 })).toHaveLength(0)
   })
 
   it('a quote under the cap does not ask, and an allowed quote lets the turn proceed', async () => {
     const under = fakeSeams({
-      ledger: { projected: async () => ({ credits: 1, creditSource: 'estimated' }) },
+      billing: { projected: async () => ({ credits: 1, creditSource: 'estimated' }) },
     })
     const preset = { ...presetDefaults(), budget: { ...presetDefaults().budget, perRequestCap: 5 } }
     const a = await openSession({ provider: fakeProvider([textTurn('x')]), preset, seams: under })
     await a.session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
     expect((await a.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
-    expect(await a.log.scan({ type: 'approval/asked', limit: 5 })).toHaveLength(0)
-    const over = fakeSeams({ ledger: { projected: async () => ({ credits: 9, creditSource: 'estimated' }) } })
+    expect(await a.log.scan({ type: 'decision/state', limit: 5 })).toHaveLength(0)
+    const over = fakeSeams({
+      billing: { projected: async () => ({ credits: 9, creditSource: 'estimated' }) },
+    })
     const b = await openSession({ provider: fakeProvider([textTurn('x')]), preset, seams: over })
     await b.session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
     expect((await b.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
-    expect(await b.log.scan({ type: 'approval/asked', limit: 5 })).toHaveLength(1)
+    expect(
+      (await b.session.decisions.list()).filter((value) => value.request.spec.purpose === 'budget'),
+    ).toHaveLength(1)
   })
 
-  it('binds a one-turn budget override durably and does not leak it into the next turn', async () => {
-    const preset = {
-      ...presetDefaults(),
-      budget: { ...presetDefaults().budget, perRequestCap: 5, onExceed: 'deny' as const },
-    }
-    const seams = fakeSeams({
-      ledger: { projected: async () => ({ credits: 9, creditSource: 'estimated' }) },
-    })
-    const storage = new MemoryStorage()
-    const first = await openSession({
-      provider: fakeProvider([]),
-      preset,
-      seams,
-      storage,
-      key: 'budget-recovery',
-    })
-    await first.session.enqueue('next-turn', {
-      content: [{ type: 'text', text: 'budgeted' }],
-      actor,
-      budget: 10,
-    })
-    expect(await first.session.step()).toMatchObject({ phase: 'checkpoint' })
-    expect(first.session.turnBudgetCap()).toBe(10)
-    await first.log.close()
+  it.each([false, true])(
+    'binds a one-turn budget override durably and does not leak it into the next turn (hard=%s)',
+    async (hard) => {
+      const preset = {
+        ...presetDefaults(),
+        budget: { ...presetDefaults().budget, perRequestCap: hard ? 20 : 5, onExceed: 'deny' as const },
+      }
+      let projected = 9
+      const seams = fakeSeams({
+        billing: { projected: async () => ({ credits: projected, creditSource: 'estimated' }) },
+      })
+      const storage = new MemoryStorage()
+      const first = await openSession({
+        provider: fakeProvider([]),
+        preset,
+        seams,
+        storage,
+        key: 'budget-recovery',
+      })
+      await first.session.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'budgeted' }],
+        actor,
+        budget: 10,
+        ...(hard ? { hardBudget: true } : {}),
+      })
+      expect(await first.session.step()).toMatchObject({ outcome: 'running', phase: 'checkpoint' })
+      expect(first.session.turnBudgetCap()).toBe(10)
+      expect(first.session.turn?.hardBudgetCap).toBe(hard ? 10 : undefined)
+      await first.log.close()
 
-    const reopened = await openSession({
-      provider: fakeProvider([textTurn('ok')]),
-      preset,
-      seams,
-      storage,
-      key: 'budget-recovery',
-      writerRunId: 'r2',
-    })
-    expect((await reopened.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
+      const reopened = await openSession({
+        provider: Object.assign(fakeProvider([textTurn('ok')]), {
+          models: () => [modelRecord('default', 'm')],
+        }),
+        preset,
+        seams,
+        storage,
+        key: 'budget-recovery',
+        writerRunId: 'r2',
+      })
+      expect((await reopened.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
 
-    await reopened.session.enqueue('next-turn', {
-      content: [{ type: 'text', text: 'preset budget again' }],
-      actor,
-    })
-    expect((await reopened.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('budget')
-    const caps = (await reopened.log.scan({ type: 'budget.state', order: 'asc', limit: 10 })).map(
-      (event) => (event.data as { creditsCap: number | null }).creditsCap,
-    )
-    expect(caps).toEqual([10, 5])
-  })
+      projected = 25
+      await reopened.session.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'preset budget again' }],
+        actor,
+      })
+      expect((await reopened.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('budget')
+      const caps = (await reopened.log.scan({ type: 'budget.state', order: 'asc', limit: 10 })).map(
+        (event) => (event.data as { creditsCap: number | null }).creditsCap,
+      )
+      expect(caps).toEqual([10, hard ? 20 : 5])
+      expect(reopened.session.turn?.hardBudgetCap).toBeUndefined()
+    },
+  )
 
   it('rejects an invalid or mid-turn budget override before changing the inbox', async () => {
     const { session } = await openSession({ provider: fakeProvider([]) })
@@ -257,7 +380,7 @@ describe('run loop', () => {
       const provider = fakeProvider([textTurn('answer')])
       const priced: string[] = []
       const seams = fakeSeams({
-        ledger: {
+        billing: {
           projected: async ({ model: id }) => {
             priced.push(id)
             return { credits: id === (model ?? 'default') ? credits : 100, creditSource: 'estimated' }
@@ -284,7 +407,7 @@ describe('run loop', () => {
     Object.assign(provider, { models: () => [modelRecord('default', 'cheap')] })
     const priced: string[] = []
     const seams = fakeSeams({
-      ledger: {
+      billing: {
         projected: async ({ model: id }) => {
           priced.push(id)
           return { credits: id === 'cheap' ? 1 : 100, creditSource: 'estimated' }
@@ -305,7 +428,7 @@ describe('run loop', () => {
       budget: { ...presetDefaults().budget, perRequestCap: 1_000_000, onExceed: 'deny' as const },
     }
     const seams = fakeSeams({
-      ledger: {
+      billing: {
         projected: async () => {
           throw new Error('gateway down')
         },
@@ -316,7 +439,7 @@ describe('run loop', () => {
     expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('budget')
   })
 
-  it('StopGate: a failed verifier plus repair buys one more step; a park verdict parks', async () => {
+  it('StopGate: a failed verifier plus repair buys one more step; a park verdict repairs then blocks', async () => {
     let verifies = 0
     const seams = fakeSeams({
       verifier: {
@@ -343,34 +466,27 @@ describe('run loop', () => {
       repair: { decide: async () => 'park' },
       approval: {
         ask: async () => ({ ticket: 'T', expiresAt: '2026-09-08T00:00:00Z' }),
-        resume: async () => null,
       },
     })
     const p = await openSession({ provider: fakeProvider([textTurn('draft')]), seams: parkSeams })
     await p.session.enqueue('next-turn', { content: [{ type: 'text', text: 'do' }], actor })
-    expect((await p.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('parked')
-    expect((await p.log.scan({ type: 'approval/asked', limit: 5 }))[0]?.data).toMatchObject({
-      kind: 'unknown-outcome',
-    })
+    expect((await p.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('blocked')
+    expect(await p.session.decisions.list()).toEqual([])
   })
 
-  it('StopGate: a park question nobody could be asked is recorded as unavailable and blocks the turn', async () => {
+  it('StopGate: verifier failures block automatically even when no approver is available', async () => {
     const seams = fakeSeams({
       verifier: {
         verify: async (scope) =>
           scope === 'turn' ? { verdict: 'fail', reasons: ['x'] } : { verdict: 'pass', reasons: [] },
       },
       repair: { decide: async () => 'park' },
-      approval: { ask: async () => 'unavailable', resume: async () => null },
+      approval: { ask: async () => 'unavailable' },
     })
     const p = await openSession({ provider: fakeProvider([textTurn('draft')]), seams })
     await p.session.enqueue('next-turn', { content: [{ type: 'text', text: 'do' }], actor })
     expect((await p.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('blocked')
-    expect((await p.log.scan({ type: 'approval/decided', limit: 5 }))[0]?.data).toMatchObject({
-      verdict: 'unavailable',
-      via: 'sync',
-      reason: 'no_approver',
-    })
+    expect(await p.session.decisions.list()).toEqual([])
   })
 
   it('StopGate: repair rounds are numbered from the decisions already on the ledger', async () => {
@@ -389,14 +505,14 @@ describe('run loop', () => {
       seams,
     })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'do' }], actor })
-    expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
+    expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('blocked')
     const rounds = (await log.scan({ type: 'repair/decision', limit: 10 })).map(
       (e) => (e.data as { round: number }).round,
     )
     expect(rounds).toEqual([1, 2])
   })
 
-  it('StopGate: a repair verdict of complete finishes despite the failed check', async () => {
+  it('StopGate: a repair verdict of complete ends the turn while preserving a failed check', async () => {
     const seams = fakeSeams({
       verifier: {
         verify: async (scope) =>
@@ -411,6 +527,9 @@ describe('run loop', () => {
     expect((await log.scan({ type: 'repair/decision', limit: 5 }))[0]?.data).toMatchObject({
       decision: 'complete',
       round: 1,
+    })
+    expect((await log.scan({ type: 'verifier/signal', limit: 5 })).at(-1)?.data).toMatchObject({
+      verdict: 'fail',
     })
   })
 
@@ -486,13 +605,13 @@ describe('run loop', () => {
     await session.enqueue('next-step', { content: [{ type: 'text', text: 'second' }], actor, kind: 'steer' })
     // One checkpoint edge: it takes one item and hands the turn back to the model rather than
     // draining the queue before the model has seen any of it.
-    expect(await session.step()).toEqual({ phase: 'checkpoint' })
+    expect(await session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
     expect(
       (await log.scan({ type: 'user/message', limit: 10 })).map((e) => (e.data as { kind?: string }).kind),
     ).toEqual(['prompt', 'steer'])
     expect((session.latest('inbox') as { items: unknown[] }).items).toHaveLength(1)
     // And the next edge goes to the model rather than taking the second item too.
-    expect(await session.step()).toEqual({ phase: 'inference' })
+    expect(await session.step()).toEqual({ outcome: 'running', phase: 'inference' })
     expect((session.latest('inbox') as { items: unknown[] }).items).toHaveLength(1)
   })
 
@@ -576,7 +695,7 @@ describe('run loop safety', () => {
     let calls = 0
     session.step = async () => {
       calls++
-      return calls === 1 ? real() : { phase: 'inference' }
+      return calls === 1 ? real() : { outcome: 'running', phase: 'inference' }
     }
     // The bound is a terminal outcome, not a throw: a caller that gets an exception off the
     // declared contract is a caller left with a turn still open and no turn/end to resume from.
@@ -594,7 +713,7 @@ describe('run loop safety', () => {
 
   it('a run that hits the bound with no open turn still ends on the outcome contract', async () => {
     const { session } = await openSession({ provider: fakeProvider([textTurn('a')]) })
-    session.step = async () => ({ phase: 'checkpoint' })
+    session.step = async () => ({ outcome: 'running', phase: 'checkpoint' })
     const out = await session.run({ until: 'turn-end', signal: sig() })
     expect(out).toMatchObject({ reason: 'error', error: { code: 'E_RELATION' } })
   })
@@ -605,7 +724,7 @@ describe('turn-end reasons (fix round 1)', () => {
     const preset = { ...presetDefaults(), budget: { ...presetDefaults().budget, perRequestCap: 1 } }
     const ac = new AbortController()
     const seams = fakeSeams({
-      ledger: { projected: async () => ({ credits: 5, creditSource: 'estimated' }) },
+      billing: { projected: async () => ({ credits: 5, creditSource: 'estimated' }) },
       approval: {
         // The interrupt reaches the seam, which fails closed to a refusal — the same answer a real
         // rejection gives, which is why the reason has to come from somewhere else.
@@ -613,7 +732,6 @@ describe('turn-end reasons (fix round 1)', () => {
           ac.abort()
           return 'rejected'
         },
-        resume: async () => null,
       },
     })
     const { session, log } = await openSession({ provider: fakeProvider([textTurn('x')]), preset, seams })

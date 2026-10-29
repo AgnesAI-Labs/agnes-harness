@@ -1,14 +1,15 @@
 import { readFileSync } from 'node:fs'
 import type { HookHandler } from '@agnes/extension-api'
-import { checkToolDef, type ToolDef } from '@agnes/extension-api'
+import { bundledExtensionManifest, checkToolDef, type ToolDef } from '@agnes/extension-api'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import blockedComputerUseExtension, { createComputerUseExtension } from '../src/index.js'
 
 describe('computer-use extension boundary', () => {
   it('declares and registers only the consolidated computer_use wrapper', () => {
-    const manifest = JSON.parse(
-      readFileSync(new URL('../agnes.extension.json', import.meta.url), 'utf8'),
+    const manifest = bundledExtensionManifest(
+      JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')),
     ) as { capabilities: { tools: { names: string[] } } }
     expect(manifest.capabilities.tools.names).toEqual(['computer_use'])
 
@@ -23,7 +24,7 @@ describe('computer-use extension boundary', () => {
         throw new Error('not called during registration')
       },
     })
-    const dispose = factory({
+    const dispose = extensionFactoryOf(factory)({
       registerTool(tool: ToolDef) {
         registered.push(tool)
         return () => disposed.push(tool.name)
@@ -38,6 +39,7 @@ describe('computer-use extension boundary', () => {
 
     expect(registered.map((tool) => tool.name)).toEqual(['computer_use'])
     expect(checkToolDef(registered[0] as ToolDef)).toEqual({ ok: true })
+    expect(registered[0]?.meta).toMatchObject({ deferLoading: true, requiresImageInput: true })
     expect(registered.map((tool) => tool.name)).not.toContain('capture')
     expect(compact).toBeTypeOf('function')
     expect(shutdown).toBeTypeOf('function')
@@ -58,7 +60,7 @@ describe('computer-use extension boundary', () => {
       release,
       dispose: disposeProvider,
     })
-    const dispose = factory({
+    const dispose = extensionFactoryOf(factory)({
       registerTool: () => () => undefined,
       registerHook(event: string, handler: HookHandler<'shutdown'>) {
         if (event === 'shutdown') shutdown = handler
@@ -77,7 +79,9 @@ describe('computer-use extension boundary', () => {
       agnes?: { extensions?: string[] }
     }
     expect(pkg.agnes?.extensions ?? []).toContain('./extensions/computer-use')
-    expect(() => blockedComputerUseExtension({} as never)).toThrow('Host-owned backend provider')
+    expect(() => extensionFactoryOf(blockedComputerUseExtension)({} as never)).toThrow(
+      'Host-owned backend provider',
+    )
   })
 
   it('resets screenshot dedup for the compacted session', async () => {
@@ -110,7 +114,7 @@ describe('computer-use extension boundary', () => {
         }),
       }),
     })
-    const dispose = factory({
+    const dispose = extensionFactoryOf(factory)({
       registerTool(tool: ToolDef) {
         registered.push(tool)
         return () => undefined
@@ -179,7 +183,7 @@ describe('computer-use extension boundary', () => {
         }),
       }),
     })
-    const dispose = factory({
+    const dispose = extensionFactoryOf(factory)({
       registerTool(tool: ToolDef) {
         registered.push(tool)
         return () => undefined

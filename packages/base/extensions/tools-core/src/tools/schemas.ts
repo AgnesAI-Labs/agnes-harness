@@ -8,11 +8,10 @@ const Path = Type.String({ minLength: 1, maxLength: 4096 })
 export const ReadParams = Type.Object(
   {
     path: Path,
+    save_to: Type.Optional(Path),
+    max_edge: Type.Optional(Type.Integer({ minimum: 8, maximum: 1456 })),
     offset: Type.Optional(Type.Integer({ minimum: 1 })),
     limit: Type.Optional(Type.Integer({ minimum: 1 })),
-    saveTo: Type.Optional(Path),
-    // Only ever lowers the image edge; 1456 is the fixed product limit for model images.
-    max_edge: Type.Optional(Type.Integer({ minimum: 64, maximum: 1456 })),
   },
   { additionalProperties: false },
 )
@@ -20,15 +19,39 @@ export const ReadParams = Type.Object(
 export const ShellParams = Type.Object(
   {
     command: Type.String({ minLength: 1 }),
+    description: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 1024,
+        description:
+          'Brief human-readable action, affected files or scope, and purpose. Shown before approval; the command remains in technical details.',
+      }),
+    ),
     timeoutMs: Type.Optional(Type.Integer({ minimum: 1 })),
     cwd: Type.Optional(Path),
     background: Type.Optional(Type.Boolean()),
+    timeoutToBackground: Type.Optional(Type.Boolean()),
+    persistent: Type.Optional(Type.Boolean()),
+    shell: Type.Optional(Type.Union([Type.Literal('bash'), Type.Literal('zsh'), Type.Literal('pwsh')])),
+    sessionId: Type.Optional(Type.String({ minLength: 1 })),
   },
   { additionalProperties: false },
 )
 
+// `allowShrink` is the one way to confirm that an overwrite is meant to leave the file much
+// smaller. It only reaches the size check: read-first and stale-read refusals come before it, so it
+// can only apply to the version of the file the model actually read.
 export const WriteParams = Type.Object(
-  { path: Path, content: Type.String() },
+  {
+    path: Path,
+    content: Type.String(),
+    allowShrink: Type.Optional(
+      Type.Boolean({
+        description:
+          'Set true only to confirm that content is intentionally much shorter than the existing file (for example, a section deleted or a merge conflict resolved), after a truncation guard refusal or when you know the file shrinks by more than half. Leave unset otherwise.',
+      }),
+    ),
+  },
   { additionalProperties: false },
 )
 
@@ -93,17 +116,6 @@ export const TodoParams = Type.Object(
       ),
       { minItems: 1 },
     ),
-  },
-  { additionalProperties: false },
-)
-
-// One tool for the three things a background job needs after it is started; `id` names the job for
-// output and stop, and `waitMs` lets one output call wait for a server to say it is ready.
-export const JobParams = Type.Object(
-  {
-    action: Type.Union([Type.Literal('list'), Type.Literal('output'), Type.Literal('stop')]),
-    id: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
-    waitMs: Type.Optional(Type.Integer({ minimum: 1 })),
   },
   { additionalProperties: false },
 )

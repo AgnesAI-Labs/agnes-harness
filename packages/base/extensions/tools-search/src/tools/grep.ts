@@ -1,14 +1,18 @@
-import { defineTool, type ToolResult } from '@agnes/extension-api'
-import { guardedResult } from '../../../tools-core/src/guards/output.js'
+import { isAbsolute, join } from 'node:path'
+import type { ToolResult } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
+import { scrubFeedback } from '../../../tools-core/src/guards/feedback.js'
+import { cutHead, guardedResult } from '../../../tools-core/src/guards/output.js'
 import { isBinary, loadSpilledLines, MAX_READ_BYTES } from '../../../tools-core/src/tools/read.js'
 import { GrepParams } from '../../../tools-core/src/tools/schemas.js'
+import { type FoundPath, referencedResult } from './references.js'
 import {
   globToRegExp,
   newWalkReport,
   SEARCH_META,
   searchPathError,
   toolError,
-  unreadableReason,
+  unreadable,
   walk,
   walkNotes,
 } from './walk.js'
@@ -28,7 +32,7 @@ function clip(s: string): string {
 export const grepTool = defineTool({
   name: 'grep',
   description:
-    'Search one file, or the files under a directory, with a regular expression, or with a literal string when literal is true. Returns path:line:text, with context lines marked path-line-text. Build and dependency directories, binary files, paths policy denies and paths that cannot be read are passed over, and the result says which. The path may also be an artifact:// path from a truncated output note, to search that output; the line numbers match what read shows.',
+    'Search file contents under a directory with a regular expression, or with a literal string when literal is true. Returns path:line:text, with context lines marked path-line-text. Build and dependency directories, binary files and paths policy denies are passed over, and the result says which. The path may also be an artifact:// path from a truncated output note, to search that output; the line numbers match what read shows.',
   parameters: GrepParams,
   meta: SEARCH_META,
   async execute(args, ctx): Promise<ToolResult> {
@@ -40,13 +44,18 @@ export const grepTool = defineTool({
         args.literal ? args.pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : args.pattern,
         args.ignoreCase ? 'i' : '',
       )
-    } catch (e) {
-      return toolError(`invalid pattern: ${(e as Error).message}`)
+    } catch {
+      return toolError(
+        `invalid pattern ${cutHead(scrubFeedback(JSON.stringify(args.pattern)), 160)}; correct the regular expression or set literal=true for exact text.`,
+        'FS_INVALID_PATTERN',
+      )
     }
     const glob = args.glob ? globToRegExp(args.glob) : undefined
     const report = newWalkReport()
     const out: string[] = []
     let matches = 0
+    // The rows of `out` that hold a match rather than context.
+    const matchRows: number[] = []
     let atLimit = false
     const context = args.context ?? 0
     // Matches one file's lines, as `label` and a 1-based line number. Shared by a file in the tree
@@ -61,6 +70,7 @@ export const grepTool = defineTool({
         matches++
         for (let j = Math.max(0, i - context); j < i; j++)
           out.push(`${label}-${numberOf(j)}-${clip(lines[j] as string)}`)
+        matchRows.push(out.length)
         out.push(`${label}:${numberOf(i)}:${clip(lines[i] as string)}`)
         for (let j = i + 1; j <= Math.min(lines.length - 1, i + context); j++)
           out.push(`${label}-${numberOf(j)}-${clip(lines[j] as string)}`)
@@ -70,7 +80,7 @@ export const grepTool = defineTool({
       // A stored output is one file, whatever glob says. Whole lines are searched, so a match is not
       // lost to a fold, and each is reported at the row where its line begins: the offset to read from.
       const spilled = await loadSpilledLines(ctx, args.path)
-      if (!spilled.ok) return toolError(spilled.message)
+      if (!spilled.ok) return toolError(spilled.message, 'FS_ARTIFACT_READ')
       searchLines(
         `artifact://${args.path.slice('artifact://'.length, 'artifact://'.length + 12)}`,
         spilled.logical,
@@ -78,18 +88,18 @@ export const grepTool = defineTool({
       )
       // Past the byte ceiling only the start was searched, which "no matches" must not hide.
       const notes = [...(spilled.notes ? [spilled.notes.trimEnd()] : [])]
-      if (atLimit) notes.push(`[limit ${limit} reached; there may be more matches]`)
+      if (atLimit)
+        notes.push(
+          `[limit ${limit} reached; there may be more matches; narrow path/pattern or increase limit]`,
+        )
       return guardedResult(ctx, [out.length > 0 ? out.join('\n') : 'no matches', ...notes].join('\n'))
     }
     const denied = searchPathError(ctx, 'grep', root)
     if (denied) return denied
-    let searched = 0
+    const found: FoundPath[] = []
     for await (const f of walk(ctx, root, report, { maxEntries: MAX_ENTRIES })) {
       if (atLimit) break
-      // The path itself, when it names a file: searched whatever glob says, as a stored output is,
-      // and reported under the path it was given if it cannot be read.
-      const named = f.abs === root
-      if (f.kind !== 'file' || (glob && !named && !glob.test(f.rel))) continue
+      if (f.kind !== 'file' || (f.abs !== root && glob && !glob.test(f.rel))) continue
       let bytes: Uint8Array
       try {
         // The size is asked about before the bytes are wanted, so one large file in the tree costs
@@ -101,31 +111,39 @@ export const grepTool = defineTool({
           continue
         }
         bytes = await ctx.fs.read(f.abs)
-      } catch (e) {
+      } catch (error) {
         // One unreadable file must not end the turn: a permission error somewhere in a tree is
         // ordinary, and the search over the rest of it is still worth having.
-        report.unreadable.push({ path: named ? root : f.rel, reason: unreadableReason(e) })
+        unreadable(report, f.rel, error)
         continue
       }
       if (isBinary(bytes)) {
         report.binary++
         continue
       }
-      searched++
+      report.searched++
+      const before = matchRows.length
       searchLines(f.rel, dec.decode(bytes).split('\n'))
+      if (matchRows.length > before)
+        found.push({
+          // Resolved without the workspace fold, which would read a backslash in a name as a separator.
+          abs: isAbsolute(f.abs) ? f.abs : join(ctx.cwd, f.abs),
+          kind: 'file',
+          rows: matchRows.slice(before).map((row) => ({ row, label: f.rel.length + 1 })),
+        })
     }
     const notes = walkNotes(report, MAX_ENTRIES)
-    if (atLimit) notes.push(`[limit ${limit} reached; there may be more matches]`)
-    // Not one file searched, and some passed over: "no matches" would say they were looked at. An
-    // empty tree, or one whose files policy keeps out, is still an ordinary "no matches".
-    const failed =
-      searched === 0 && (report.unreadable.length > 0 || report.oversize > 0 || report.binary > 0)
+    if (atLimit)
+      notes.push(`[limit ${limit} reached; there may be more matches; narrow path/pattern or increase limit]`)
+    const failed = report.searched === 0 && (report.unreadable > 0 || report.binary > 0)
+    const partial =
+      atLimit || report.truncated || report.unreadable > 0 || report.oversize > 0 || report.binary > 0
     const text = [
       out.length > 0 ? out.join('\n') : failed ? 'nothing could be searched' : 'no matches',
       ...notes,
-    ]
-    return failed
-      ? { ...(await guardedResult(ctx, text.join('\n'))), isError: true }
-      : guardedResult(ctx, text.join('\n'))
+    ].join('\n')
+    if (failed)
+      return { ...(await guardedResult(ctx, text)), isError: true, details: { code: 'FS_SEARCH_UNREADABLE' } }
+    return referencedResult(ctx, text, out, found, found.length, partial)
   },
 })

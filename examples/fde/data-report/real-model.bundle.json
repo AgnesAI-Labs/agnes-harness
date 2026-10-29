@@ -1,0 +1,22 @@
+{
+  "extends": ["@agnes-fde/data-report#data-report"],
+  "presets": {
+    "data-report": {
+      "name": "data-report",
+      "extends": "standard",
+      "model": {
+        "route": {
+          "primary": {
+            "route": "customer",
+            "model": "customer-model"
+          }
+        }
+      },
+      "providers": {
+        "tool-policy": {
+          "provider": "fde.data-report"
+        }
+      }
+    }
+  }
+}

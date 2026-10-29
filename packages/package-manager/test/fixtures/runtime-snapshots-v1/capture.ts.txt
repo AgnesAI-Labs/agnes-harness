@@ -1,0 +1,27 @@
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { createPackageManager, emptyLock, writeLock, parseSource, activeRuntimePinId } from './packages/package-manager/src/index.js'
+const root = process.argv[2]
+if (!root) throw new Error('pass an empty absolute fixture-home path')
+const profile = join(root, 'profiles/local-dev')
+mkdirSync(profile, { recursive: true })
+writeLock(profile, { ...emptyLock('local-dev', '0.1.0'), resolvedProfileHash: `sha256-${'0'.repeat(64)}`, seams: Object.fromEntries(['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map(name => [name, { provider: 'local' }])), policySnapshot: { capabilityCeiling: [], workspacePackages: 'require-project-trust' } })
+const manager = createPackageManager({ dataDir: root, cwd: root, agnesVersion: '0.1.0', now: () => '2026-10-01T00:00:00Z', references: async () => [] })
+for (const name of ['parent', 'legacy']) {
+ const dir = join(root, name)
+ mkdirSync(dir)
+ const metadata = { displayName: 'Upgrade fixture', summary: 'Synthetic legacy snapshot', description: 'Synthetic plugin-core upgrade fixture', category: name === 'legacy' ? 'example' : 'tools', ...(name === 'legacy' ? { exampleOf: 'acme/parent', launches: [{ id: 'work', kind: 'business-agent', title: 'Work', bundle: 'acme/legacy#work', preset: 'safe', prompt: 'Synthetic draft' }] } : {}) }
+ writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: `acme/${name}`, version: '1.0.0', license: 'MIT', dependencies: name === 'legacy' ? { 'acme/parent': '^1.0.0' } : {}, exports: './index.mjs', agnes: { metadata, kinds: ['bundle'], plugins: [{ apiRange: '^4.0.0', export: 'runtime', id: `ext:acme/${name}`, runtime: 'in-process', metadata }], bundles: { work: { presets: { safe: { name: 'safe' } } } } } }))
+ writeFileSync(join(dir, 'index.mjs'), "export const runtime = { apply() {} }; export default () => 'original-v1-bytes'\n")
+ const source = parseSource(`file:./${name}`)
+ const preview = await manager.inspect(profile, source)
+ await manager.install(profile, source, { expectedIntegrity: preview.integrity })
+ const row = (await manager.inventory(profile)).packages.find(row => row.id === `acme/${name}`)!
+ await manager.trust(profile, row.id, { integrity: row.entry.integrity, capabilityHash: row.capabilityHash })
+ if (name === 'parent') await manager.enable(profile, row.id, true)
+ const selector = { kind: 'installed' as const, expectedIntegrity: row.entry.integrity, expectedTreeIntegrity: row.entry.treeIntegrity! }
+ const pinId = activeRuntimePinId({ packageId: row.id, integrity: row.entry.integrity })
+ await manager.pinRuntimeSnapshot(profile, { pinId, operationId: pinId, packageId: row.id, purpose: 'active', selector })
+ if (name === 'legacy') await manager.pinRuntimeSnapshot(profile, { pinId: 'session-original', operationId: 'session-original', purpose: 'turn', packageId: row.id, selector })
+}
+console.log(JSON.stringify(await manager.listRuntimePins(profile)))

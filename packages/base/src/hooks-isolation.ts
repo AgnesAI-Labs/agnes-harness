@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import type { WorkspaceHookSandbox } from '@agnes/core'
-import type { ExtensionAPI, HookEvent, HookInvocationSnapshot } from '@agnes/extension-api'
+import type { HookEvent, HookInvocationSnapshot } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
 import {
   type CcHookGroup,
   hookGroupsFromSnapshot,
@@ -195,7 +196,7 @@ function principal(payload: unknown): string {
   return typeof actor?.id === 'string' && actor.id.length > 0 ? actor.id : 'unknown'
 }
 
-/** Host-side half of the fixed hooks-runner adapter used by T6.3. */
+/** Host-side half of the fixed hooks-runner adapter for isolated hook execution. */
 async function prepareHooksRunner(init: SeamInitContext): Promise<Preparation> {
   const groups: CcHookGroup[] = [
     ...(await readHooksConfig(init.adapters.dataFs, [`${init.profile.dataDir}/hooks.json`])),

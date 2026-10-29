@@ -51,15 +51,15 @@ beforeAll(async () => {
     effect: (factory: () => () => Promise<void>) => {
       dispose = factory()
     },
-    extension: () => ({
-      registerTool: (registered: Tool) => {
+    tools: {
+      register: (registered: Tool) => {
         tool = registered
       },
-    }),
+    },
   })
   const require = createRequire(join(documentReaderSource, 'package.json'))
   const { PDFiumLibrary } = await import(pathToFileURL(require.resolve('@hyzyla/pdfium')).href)
-  const wasm = await readFile(join(relocated, 'src/runtime/assets/pdfium.wasm'))
+  const wasm = await readFile(join(relocated, 'dist/runtime/assets/pdfium.wasm'))
   const library = await PDFiumLibrary.init({ wasmBinary: Uint8Array.from(wasm).buffer })
   const source = await library.loadDocument(pdf([{ text: 'HELLO DOCUMENT' }]))
   try {
@@ -220,10 +220,10 @@ it.each(['auto', 'image'])(
 )
 
 it('reads with the shipped fallback OCR binary', async () => {
-  const fast = join(runtimeDirectory, 'src/runtime/assets/tesseract-core.wasm')
+  const fast = join(runtimeDirectory, 'dist/runtime/assets/tesseract-core.wasm')
   const original = await readFile(fast)
   try {
-    await copyFile(join(runtimeDirectory, 'src/runtime/assets/tesseract-core-fallback.wasm'), fast)
+    await copyFile(join(runtimeDirectory, 'dist/runtime/assets/tesseract-core-fallback.wasm'), fast)
     const result = await call(scanned, { page: 2, language: 'eng' })
     expect(result.isError, text(result)).not.toBe(true)
     expect(text(result)).toMatch(/HELLO\s+DOCUMENT/u)

@@ -2,6 +2,8 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { Context } from '@agnes/cordis'
+import { SlotRegistry } from '@agnes/web-client'
 import { build } from 'esbuild'
 import { expect, it } from 'vitest'
 
@@ -22,9 +24,15 @@ type Registration = {
   component: (props: { owner: { toolName: string; callId: string } }) => ViewElement
 }
 
-it.each(['v1', 'v2', 'broken'] as const)(
-  '%s tool-view fixture registers for both shell and bash calls',
-  async (release) => {
+it.each(
+  ['dsh-tool-view', 'dsh-model-picker-a', 'dsh-model-picker-b', 'dsh-input-controls'].flatMap((fixture) =>
+    (fixture === 'dsh-input-controls' ? ['v1', 'v2'] : ['v1', 'v2', 'broken']).flatMap((release) =>
+      ['before', 'after'].map((parent) => ({ fixture, release, parent })),
+    ),
+  ),
+)(
+  '$fixture $release follows parent $parent without reviving disposed entries',
+  async ({ fixture, release, parent }) => {
     const outputDirectory = await mkdtemp(join(tmpdir(), 'agnes-dsh-tool-view-'))
     try {
       const output = join(outputDirectory, 'plugin.mjs')
@@ -34,7 +42,7 @@ it.each(['v1', 'v2', 'broken'] as const)(
             repoRoot,
             'examples',
             'packages',
-            'dsh-tool-view',
+            fixture,
             release,
             'extensions',
             'main',
@@ -50,16 +58,52 @@ it.each(['v1', 'v2', 'broken'] as const)(
         nodePaths: [join(repoRoot, 'packages', 'web', 'node_modules')],
       })
       const { apply } = await import(pathToFileURL(output).href)
-      const registrations: Registration[] = []
-
-      apply({
-        slots: {
-          register(options: { name: string; key: string; id: string }, component: Registration['component']) {
-            registrations.push({ ...options, component })
+      const name =
+        fixture === 'dsh-tool-view'
+          ? 'tool.call.toolview'
+          : fixture === 'dsh-input-controls'
+            ? 'conversation.input.right'
+            : 'conversation.input.model'
+      const count = fixture === 'dsh-tool-view' ? 2 : 1
+      const slots = new SlotRegistry(new Context())
+      slots.declare('fixture-parent', { kind: 'single', scope: 'session' })
+      const mountParent = () =>
+        slots.register(
+          {
+            name: 'fixture-parent',
+            children: {
+              [name]: {
+                kind:
+                  fixture === 'dsh-tool-view'
+                    ? 'keyed'
+                    : fixture === 'dsh-input-controls'
+                      ? 'list'
+                      : 'single',
+                scope: 'session',
+              },
+            },
           },
-        },
-      })
+          () => null,
+        )
+      let stopParent = parent === 'before' ? mountParent() : undefined
+      const stop = apply({ slots })
+      if (parent === 'after') {
+        expect(slots.entriesOfSlot(name)).toHaveLength(0)
+        stopParent = mountParent()
+      }
+      const registrations = slots
+        .entriesOfSlot(name)
+        .map((entry) => ({ ...entry, key: entry.options.key })) as unknown as Registration[]
+      stopParent?.()
+      stopParent = mountParent()
+      expect(slots.entriesOfSlot(name)).toHaveLength(count)
+      stop()
+      stopParent()
+      stopParent = mountParent()
+      expect(slots.entriesOfSlot(name)).toHaveLength(0)
+      stopParent()
 
+      if (fixture !== 'dsh-tool-view') return
       expect(registrations.map(({ name, key, id }) => ({ name, key, id }))).toEqual([
         { name: 'tool.call.toolview', key: 'bash', id: 'dsh-tool-view-bash' },
         { name: 'tool.call.toolview', key: 'shell', id: 'dsh-tool-view-shell' },

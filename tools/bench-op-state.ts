@@ -8,7 +8,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { DatabaseSync } from 'node:sqlite'
-import { defaultIds, openTracked, type StorageAdapter, verifyLedger } from '../packages/core/src/index.js'
+import { defaultIds, openTracked, type StorageAdapter, verifyLedger } from '@agnes/core'
+import { createSqliteStorage } from '@agnes/host'
 import { ToolRegistry } from '../packages/core/src/registry/tools.js'
 import {
   actor,
@@ -22,7 +23,6 @@ import {
   toolTurn,
   usage,
 } from '../packages/core/testkit/index.js'
-import { createSqliteStorage } from '../packages/host/src/index.js'
 
 const say = (text: string) => ({ content: [{ type: 'text' as const, text }], actor })
 const turnEnd = () => ({ until: 'turn-end' as const, signal: new AbortController().signal })

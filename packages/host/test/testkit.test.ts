@@ -2,10 +2,16 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
+import type { Prompter } from '@agnes/host'
 import type { InferenceEvent, ModelRecord } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { Prompter } from '../src/index.js'
-import { ASSEMBLY_STEPS, crashAtEveryStep, createTestHost, runOnce } from '../testkit/index.js'
+import {
+  ASSEMBLY_STEPS,
+  baseSeamFactories,
+  crashAtEveryStep,
+  createTestHost,
+  runOnce,
+} from '../testkit/index.js'
 
 /** One scripted turn: ScriptedProvider prepends `sent`, so an answer and a stop are all it needs. */
 const say = (text: string): InferenceEvent[] => [
@@ -24,13 +30,18 @@ describe('testkit', () => {
     for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
   })
 
-  it('boots a host with faux seams and a scripted provider', async () => {
-    const { host, profile } = await createTestHost({ dataDir: tmp() })
+  it.each([false, true])('boots a scripted host with a real checkpoint=%s', async (realCheckpoint) => {
+    const { host, profile } = await createTestHost({
+      dataDir: tmp(),
+      ...(realCheckpoint
+        ? { packages: { '@agnes/base': { seams: { checkpoint: baseSeamFactories.checkpoint } } } }
+        : {}),
+    })
     expect(profile.hash).toMatch(/^sha256-/)
     expect(host.extensions()).toEqual([])
     await host.close()
   })
-  it('loads the default template and enforces its allowed presets on real session creation', async () => {
+  it('loads the default template with an explicit synthetic standard recipe and enforces its allowed list', async () => {
     const dataDir = tmp()
     const { host, profile } = await createTestHost({
       dataDir,
@@ -39,7 +50,10 @@ describe('testkit', () => {
     })
     try {
       expect(profile.chain).toEqual(['builtin:local-dev', 'user:local-dev'])
-      expect(profile.presets).toEqual({ default: 'standard', allowed: ['standard'] })
+      expect(profile.presets).toEqual({
+        default: 'standard',
+        allowed: ['standard'],
+      })
       expect(await runOnce(host, { prompt: 'hi', cwd: dataDir })).toMatchObject({
         reason: 'completed',
         finalText: 'default-template',
@@ -77,6 +91,7 @@ describe('testkit', () => {
         p.id,
         {
           version: p.version,
+          source: { type: 'builtin' as const, ref: 'builtin' },
           integrity: p.integrity,
           trust: p.trust,
           enabled: p.enabled,
@@ -107,8 +122,8 @@ describe('testkit', () => {
     if (!base) throw new Error('default lock is missing base')
     base.enabled = false
     await expect(createTestHost({ dataDir, lock: { packages } })).rejects.toMatchObject({
-      code: 'E_DEP_MISSING',
-      detail: { package: '@agnes/base' },
+      code: 'E_PRESET_UNSUPPORTED',
+      detail: { source: 'standard', capability: 'preset:base' },
     })
   })
   it('resolves explicit user inputs and applies them to real session selection', async () => {

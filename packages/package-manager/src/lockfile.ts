@@ -1,9 +1,19 @@
-import { closeSync, existsSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import {
+  closeSync,
+  existsSync,
+  linkSync,
+  openSync,
+  readFileSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { join, resolve } from 'node:path'
-import type { SeamName } from '@agnes/protocol'
 import { type PackageLock, type Lockfile as ValidatedLockfile, validateLockfile } from '@agnes/protocol'
 import { renameWriteThroughSync, syncFileSync } from '@agnes/system-node'
 import { PackageError } from './errors.js'
+import { assertCurrentPackageFormat } from './package-format.js'
 import { checkCancelled } from './ports.js'
 
 export type LockEntry = PackageLock
@@ -17,21 +27,25 @@ export type LockEntry = PackageLock
  */
 export type Lockfile = Omit<ValidatedLockfile, 'resolvedProfileHash' | 'seams'> & {
   resolvedProfileHash: string | null
-  seams: Partial<Record<SeamName, string>>
+  seams: Partial<ValidatedLockfile['seams']>
 }
 
 export const lockPath = (profileDir: string): string => join(profileDir, 'agnes-lock.json')
 const STALE_LOCK_MS = 30_000
+/**
+ * A valid, dead owner can be reclaimed immediately: publication already includes its PID, so no
+ * live acquirer is still filling it in. Keep the stale grace for malformed/legacy owner records.
+ */
 function ownerIsDead(file: string): boolean {
   try {
     const pid = Number(readFileSync(file, 'utf8'))
-    if (!Number.isSafeInteger(pid) || pid <= 0) return false
+    if (!Number.isSafeInteger(pid) || pid <= 0) return Date.now() - statSync(file).mtimeMs > STALE_LOCK_MS
     try {
       process.kill(pid, 0)
       return false
     } catch (error) {
-      // POSIX 用 ESRCH 表示进程不存在；Windows 上 libuv 对已退出/无效 pid 可能直接报 EPERM，
-      // 只认 ESRCH 会让 Windows 的陈旧锁永远无法回收，reclaim 标记残留后彻底死锁。
+      // POSIX uses ESRCH for a missing process; Windows libuv may return EPERM for an exited/invalid pid.
+      // Accepting only ESRCH would prevent stale Windows locks from being reclaimed and leave reclaim markers deadlocked.
       const code = (error as NodeJS.ErrnoException).code
       return code === 'ESRCH' || code === 'EPERM'
     }
@@ -82,6 +96,7 @@ export function readLock(profileDir: string, opts: { profile: string; agnesVersi
       detail: { reason: 'invalid' },
     })
   }
+  assertCurrentPackageFormat(parsed)
   const r = validateLockfile(parsed)
   if (!r.ok)
     throw new PackageError(
@@ -92,14 +107,25 @@ export function readLock(profileDir: string, opts: { profile: string; agnesVersi
         detail: { reason: 'invalid', path: r.errors[0]?.path },
       },
     )
-  return r.value
+  return parsed as Lockfile
 }
 
 export function writeLock(profileDir: string, lock: Lockfile): void {
+  const pending = prepareLockPublication(profileDir, lock)
+  try {
+    pending.publish()
+  } finally {
+    pending.discard()
+  }
+}
+
+/** Private staged publication lets an admitted transaction re-verify after the real flush. */
+export function prepareLockPublication(profileDir: string, lock: Lockfile) {
   const out = { ...lock, generatedAt: new Date().toISOString() }
   // Validated before the tmp file is even opened: the contract is that anything on disk reads back,
   // and checking after rename would make that contract a hope. A draft (null resolvedProfileHash,
   // partial seams) fails here, which is what keeps an unresolved profile's lock off disk.
+  assertCurrentPackageFormat(out)
   const r = validateLockfile(out)
   if (!r.ok)
     throw new PackageError('E_LOCK_MISMATCH', 'refusing to write a lockfile that would not read back', {
@@ -108,9 +134,19 @@ export function writeLock(profileDir: string, lock: Lockfile): void {
     })
   const file = resolve(lockPath(profileDir))
   const tmp = `${file}.tmp`
-  writeFileSync(tmp, `${JSON.stringify(out, null, 2)}\n`)
-  syncFileSync(tmp)
-  renameWriteThroughSync(tmp, file)
+  try {
+    writeFileSync(tmp, `${JSON.stringify(out, null, 2)}\n`)
+    syncFileSync(tmp)
+  } catch (error) {
+    if (existsSync(tmp)) unlinkSync(tmp)
+    throw error
+  }
+  return {
+    publish: () => renameWriteThroughSync(tmp, file),
+    discard: () => {
+      if (existsSync(tmp)) unlinkSync(tmp)
+    },
+  }
 }
 
 export async function withLock<T>(
@@ -122,20 +158,24 @@ export async function withLock<T>(
   const deadline = Date.now() + 10_000
   for (;;) {
     checkCancelled(opts.signal)
+    // The owner is written to a private file first and linked into place, so the lock never exists
+    // without its owner: a crash can leave only an inert temporary, never an unreclaimable empty lock.
+    const pending = `${lockFile}.${randomUUID()}.tmp`
     try {
-      const fd = openSync(lockFile, 'wx')
+      // A live holder cannot be acquired yet. Avoid creating and flushing a temporary
+      // owner file on every poll; linkSync still arbitrates the race after this hint.
+      if (existsSync(lockFile)) throw Object.assign(new Error('package lock held'), { code: 'EEXIST' })
       try {
-        writeFileSync(fd, String(process.pid))
+        writeFileSync(pending, String(process.pid), { flag: 'wx', mode: 0o600, flush: true })
+        linkSync(pending, lockFile)
       } finally {
-        closeSync(fd)
+        removeLockArtifact(pending)
       }
       break
-    } catch {
-      if (
-        existsSync(lockFile) &&
-        Date.now() - statSync(lockFile).mtimeMs > STALE_LOCK_MS &&
-        ownerIsDead(lockFile)
-      ) {
+    } catch (error) {
+      // Only an existing lock is contention; an unsupported link, a permission or an I/O failure is not busy.
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      if (existsSync(lockFile) && ownerIsDead(lockFile)) {
         // Serialize reclaimers so two contenders cannot both unlink a newly acquired lock.
         const reclaim = `${lockFile}.reclaim`
         let fd: number | undefined
@@ -143,8 +183,8 @@ export async function withLock<T>(
           fd = openSync(reclaim, 'wx')
           if (existsSync(lockFile) && ownerIsDead(lockFile)) removeLockArtifact(lockFile)
         } catch {
-          // 抢标记失败即代表有竞争者，但竞争者可能已经被 Kill 或崩溃，标记会永久残留。
-          // 超过陈旧阈值就视为滞留标记，强制回收，否则这条路径会死锁到永久。
+          // Failure to claim the marker means a competitor exists, but it may have been killed or crashed, leaving the marker.
+          // Reclaim markers beyond the stale threshold to prevent this path from deadlocking permanently.
           if (
             existsSync(reclaim) &&
             Date.now() - statSync(reclaim).mtimeMs > STALE_LOCK_MS &&
@@ -162,10 +202,20 @@ export async function withLock<T>(
         }
       }
       if (Date.now() > deadline)
-        throw new PackageError('E_LOCK_MISMATCH', 'could not acquire the lockfile lock', {
-          source: { file: 'agnes-lock.json' },
-          detail: { reason: 'busy' },
-        })
+        throw new PackageError(
+          'E_LOCK_MISMATCH',
+          `could not acquire the package lock ${lockFile}; if no AGH process is running, remove that file and retry`,
+          {
+            // Another holder is alive; this is contention, not an integrity failure.
+            code: 'E_PACKAGE_BUSY',
+            source: { file: 'agnes-lock.json' },
+            detail: {
+              reason: 'busy',
+              lockPath: lockFile,
+              recovery: 'Stop other AGH processes; if none run, delete the lock file and retry.',
+            },
+          },
+        )
       await new Promise((r) => setTimeout(r, 20))
     }
   }

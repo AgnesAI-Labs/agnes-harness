@@ -153,7 +153,7 @@ function auditProvenance(
       continue
     }
     const versions = [...dependency.versions].sort()
-    if (versions.length !== 1 || versions[0] !== entry.version) {
+    if (versions.join(',') !== entry.version) {
       errors.push(`${name}: locked ${versions.join(',')} but provenance records ${entry.version}`)
     }
     const consumers = [...dependency.consumers].sort()

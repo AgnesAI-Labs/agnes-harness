@@ -1,0 +1,4318 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/app-server-v1",
+  "title": "AGH App Server v1",
+  "$defs": {
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        }
+      ]
+    },
+    "AppServerErrorCause": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "anyOf": [
+            {
+              "const": "CONFIG_AUTH_BUSY",
+              "x-public-error": {
+                "rpc": "AUTH_INVALID",
+                "messageKey": "appServer.errors.auth",
+                "copy": "auth"
+              }
+            },
+            {
+              "const": "CONFIG_AUTH_CANCELLED",
+              "x-public-error": {
+                "rpc": "AUTH_INVALID",
+                "messageKey": "appServer.errors.auth",
+                "copy": "auth"
+              }
+            },
+            {
+              "const": "CONFIG_AUTH_EXPIRED",
+              "x-public-error": {
+                "rpc": "AUTH_INVALID",
+                "messageKey": "appServer.errors.auth",
+                "copy": "auth"
+              }
+            },
+            {
+              "const": "CONFIG_AUTH_FAILED",
+              "x-public-error": {
+                "rpc": "AUTH_INVALID",
+                "messageKey": "appServer.errors.auth",
+                "copy": "auth"
+              }
+            },
+            {
+              "const": "CONFIG_AUTH_UNAVAILABLE",
+              "x-public-error": {
+                "rpc": "AUTH_INVALID",
+                "messageKey": "appServer.errors.auth",
+                "copy": "auth"
+              }
+            },
+            {
+              "const": "CONFIG_CREDENTIAL_INVALID",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.credentialStore",
+                "copy": "credentialStore"
+              }
+            },
+            {
+              "const": "CONFIG_CREDENTIAL_NOT_FOUND",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.credentialStore",
+                "copy": "credentialStore"
+              }
+            },
+            {
+              "const": "CONFIG_CREDENTIAL_REFERENCED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.credentialStore",
+                "copy": "credentialStore"
+              }
+            },
+            {
+              "const": "CONFIG_CREDENTIAL_CONFIRMATION_REQUIRED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.credentialStore",
+                "copy": "credentialStore"
+              }
+            },
+            {
+              "const": "CONFIG_CREDENTIAL_UNAVAILABLE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.credentialStore",
+                "copy": "credentialStore"
+              }
+            },
+            {
+              "const": "CONFIG_CREDENTIAL_NO_SPACE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.credentialStore",
+                "copy": "credentialStore"
+              }
+            },
+            {
+              "const": "CONFIG_CREDENTIAL_PERMISSIONS",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.credentialStore",
+                "copy": "credentialStore"
+              }
+            },
+            {
+              "const": "CONFIG_CREDENTIAL_READ_ONLY",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.credentialStore",
+                "copy": "credentialStore"
+              }
+            },
+            {
+              "const": "CONFIG_CREDENTIAL_REJECTED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.credentialRejected",
+                "copy": "credentialRejected"
+              }
+            },
+            {
+              "const": "CONFIG_CREDENTIAL_REQUIRED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.credentialRequired",
+                "copy": "credentialRequired"
+              }
+            },
+            {
+              "const": "CONFIG_CREDENTIAL_STORE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.credentialStore",
+                "copy": "credentialStore"
+              }
+            },
+            {
+              "const": "CONFIG_ENDPOINT_OVERRIDE_UNSUPPORTED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "CONFIG_FAILED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected"
+              }
+            },
+            {
+              "const": "CONFIG_INVALID_INPUT",
+              "x-public-error": {
+                "rpc": "INVALID_PARAMS",
+                "messageKey": "appServer.errors.invalidParams",
+                "copy": "invalidParams"
+              }
+            },
+            {
+              "const": "CONFIG_INVALID_STATE",
+              "x-public-error": {
+                "rpc": "INVALID_PARAMS",
+                "messageKey": "appServer.errors.invalidParams",
+                "copy": "invalidParams"
+              }
+            },
+            {
+              "const": "CONFIG_CHAT_MODEL_REQUIRED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.chatModelRequired",
+                "copy": "chatModelRequired"
+              }
+            },
+            {
+              "const": "CONFIG_MODEL_UNAVAILABLE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "CONFIG_PERSIST_FAILED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected"
+              }
+            },
+            {
+              "const": "CONFIG_PROVIDER_UNAVAILABLE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "CONFIG_REVISION_CONFLICT",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.conflict",
+                "copy": "conflict"
+              }
+            },
+            {
+              "const": "CONFIG_SUBSCRIPTION_AUTH",
+              "x-public-error": {
+                "rpc": "AUTH_INVALID",
+                "messageKey": "appServer.errors.auth",
+                "copy": "auth"
+              }
+            },
+            {
+              "const": "CONFIG_SUBSCRIPTION_FAILED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected"
+              }
+            },
+            {
+              "const": "CONFIG_SUBSCRIPTION_MODEL",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected"
+              }
+            },
+            {
+              "const": "CONFIG_SUBSCRIPTION_QUOTA",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected"
+              }
+            },
+            {
+              "const": "CONFIG_SUBSCRIPTION_RATE_LIMIT",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected"
+              }
+            },
+            {
+              "const": "CONFIG_SUBSCRIPTION_TIMEOUT",
+              "x-public-error": {
+                "rpc": "REQUEST_TIMEOUT",
+                "messageKey": "appServer.errors.timeout",
+                "copy": "timeout"
+              }
+            },
+            {
+              "const": "CONFIG_TEST_FAILED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected"
+              }
+            },
+            {
+              "const": "CONFIG_UNKNOWN_PROVIDER",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected"
+              }
+            },
+            {
+              "const": "E_SEAM_PIN_CHANGE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.sessionOlder",
+                "copy": "sessionOlder"
+              }
+            },
+            {
+              "const": "E_SEAM_PIN_MISMATCH",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.sessionOlder",
+                "copy": "sessionOlder"
+              }
+            },
+            {
+              "const": "E_SESSION_CORRUPT",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.sessionCorrupt",
+                "copy": "sessionCorrupt"
+              }
+            },
+            {
+              "const": "E_SESSION_VERSION_NEWER",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.sessionNewer",
+                "copy": "sessionNewer"
+              }
+            },
+            {
+              "const": "E_SESSION_VERSION_OLDER",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.sessionOlder",
+                "copy": "sessionOlder"
+              }
+            },
+            {
+              "const": "E_GENERATION_BINDING_CONFLICT",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.generation",
+                "copy": "generation"
+              }
+            },
+            {
+              "const": "E_GENERATION_DISPOSE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.generation",
+                "copy": "generation"
+              }
+            },
+            {
+              "const": "E_GENERATION_FACTORY_INCOMPATIBLE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.generation",
+                "copy": "generation"
+              }
+            },
+            {
+              "const": "E_GENERATION_FACTORY_UNAVAILABLE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.generation",
+                "copy": "generation"
+              }
+            },
+            {
+              "const": "E_GENERATION_INCOMPATIBLE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.generation",
+                "copy": "generation"
+              }
+            },
+            {
+              "const": "E_GENERATION_LOOP_INCOMPATIBLE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.generation",
+                "copy": "generation"
+              }
+            },
+            {
+              "const": "E_GENERATION_MIGRATION_UNAVAILABLE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.generation",
+                "copy": "generation"
+              }
+            },
+            {
+              "const": "E_GENERATION_PIN_MISSING",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.generation",
+                "copy": "generation"
+              }
+            },
+            {
+              "const": "E_GENERATION_RESOURCE_INTEGRITY",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.generation",
+                "copy": "generation"
+              }
+            },
+            {
+              "const": "E_GENERATION_RESTART_REQUIRED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.generation",
+                "copy": "generation"
+              }
+            },
+            {
+              "const": "E_GENERATION_SESSION_OPEN",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.generation",
+                "copy": "generation"
+              }
+            },
+            {
+              "const": "E_GENERATION_SKILLS",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.generation",
+                "copy": "generation"
+              }
+            },
+            {
+              "const": "E_GENERATION_TARGET_MISSING",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.generation",
+                "copy": "generation"
+              }
+            },
+            {
+              "const": "E_MCP_SANDBOX_UNAVAILABLE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "E_PACKAGE_INTEGRITY",
+              "x-public-error": {
+                "boot": true,
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "reasons": {
+                  "clean-home-required": "cleanHome"
+                }
+              }
+            },
+            {
+              "const": "E_PACKAGE_PROVENANCE",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "publication"
+              }
+            },
+            {
+              "const": "E_PACKAGE_SOURCE_POLICY",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "publication"
+              }
+            },
+            {
+              "const": "E_PROVIDER_DUPLICATE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.provider",
+                "copy": "provider"
+              }
+            },
+            {
+              "const": "E_PROVIDER_INCOMPATIBLE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.provider",
+                "copy": "provider"
+              }
+            },
+            {
+              "const": "E_PROVIDER_INVALID",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.provider",
+                "copy": "provider",
+                "boot": true
+              }
+            },
+            {
+              "const": "E_PROVIDER_UNAVAILABLE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.provider",
+                "copy": "provider"
+              }
+            },
+            {
+              "const": "E_PROVIDER_UNKNOWN",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.provider",
+                "copy": "provider"
+              }
+            },
+            {
+              "const": "E_SANDBOX_WORKSPACE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable",
+                "reasons": {
+                  "session-execution-record-invalid": "sessionSandbox",
+                  "workspace-ancestor-not-directory": "unavailable",
+                  "workspace-ancestor-unavailable": "unavailable"
+                }
+              }
+            },
+            {
+              "const": "MEMORY_APPROVAL_REJECTED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected"
+              }
+            },
+            {
+              "const": "MEMORY_BUSY",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.busy",
+                "copy": "busy"
+              }
+            },
+            {
+              "const": "MEMORY_COMMITTED_METADATA_FAILED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.memoryPartial",
+                "copy": "memoryPartial"
+              }
+            },
+            {
+              "const": "MEMORY_CONFLICT",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.conflict",
+                "copy": "conflict"
+              }
+            },
+            {
+              "const": "MEMORY_CONSOLIDATION_REQUIRED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.memoryCap",
+                "copy": "memoryCap"
+              }
+            },
+            {
+              "const": "MEMORY_DISABLED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.memoryDisabled",
+                "copy": "memoryDisabled"
+              }
+            },
+            {
+              "const": "MEMORY_INVALID_METADATA",
+              "x-public-error": {
+                "rpc": "INVALID_PARAMS",
+                "messageKey": "appServer.errors.invalidParams",
+                "copy": "invalidParams"
+              }
+            },
+            {
+              "const": "MEMORY_INVALID_REQUEST",
+              "x-public-error": {
+                "rpc": "INVALID_PARAMS",
+                "messageKey": "appServer.errors.invalidParams",
+                "copy": "invalidParams"
+              }
+            },
+            {
+              "const": "MEMORY_INVALID_SETTINGS",
+              "x-public-error": {
+                "rpc": "INVALID_PARAMS",
+                "messageKey": "appServer.errors.invalidParams",
+                "copy": "invalidParams"
+              }
+            },
+            {
+              "const": "MEMORY_MISSING_TOPIC",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected"
+              }
+            },
+            {
+              "const": "MEMORY_POLICY_CHANGED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.conflict",
+                "copy": "conflict"
+              }
+            },
+            {
+              "const": "MEMORY_PROVIDER_UNAVAILABLE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "MEMORY_SCOPE_DENIED",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "forbidden"
+              }
+            },
+            {
+              "const": "MEMORY_SECRET_LIKE_CONTENT",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.memorySecret",
+                "copy": "memorySecret"
+              }
+            },
+            {
+              "const": "SEARCH_FAILED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected"
+              }
+            },
+            {
+              "const": "SEARCH_INVALID",
+              "x-public-error": {
+                "rpc": "INVALID_PARAMS",
+                "messageKey": "appServer.errors.invalidParams",
+                "copy": "invalidParams"
+              }
+            },
+            {
+              "const": "SEARCH_NOT_CONFIGURED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "SEARCH_RATE_LIMITED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected"
+              }
+            },
+            {
+              "const": "SEARCH_ROUTE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected"
+              }
+            },
+            {
+              "const": "SEARCH_TIMEOUT",
+              "x-public-error": {
+                "rpc": "REQUEST_TIMEOUT",
+                "messageKey": "appServer.errors.timeout",
+                "copy": "timeout"
+              }
+            },
+            {
+              "const": "E_PRESET_UNSUPPORTED",
+              "x-public-error": {
+                "rpc": "PRESET_SWITCH_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "preset",
+                "reasons": {
+                  "permission-axis": "permissionAxis",
+                  "bundle-unavailable": "unavailable",
+                  "preset-not-allowed": "preset",
+                  "clean-home-required": "cleanHome"
+                }
+              }
+            },
+            {
+              "const": "E_PRESET_UNRESOLVED",
+              "x-public-error": {
+                "rpc": "PRESET_SWITCH_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable",
+                "reasons": {
+                  "no-routes": "unavailable",
+                  "no-models": "unavailable",
+                  "pin-without-route": "unavailable",
+                  "unknown-slot": "unavailable",
+                  "unknown-route": "unavailable",
+                  "model-undeclared": "unavailable",
+                  "no-primary": "unavailable",
+                  "route-unserved": "unavailable",
+                  "model-unserved": "unavailable",
+                  "route-not-assembled": "unavailable",
+                  "route-duplicate": "unavailable",
+                  "reserved-route-name": "unavailable",
+                  "bedrock-region-conflict": "unavailable"
+                }
+              }
+            },
+            {
+              "const": "E_MODEL_UNSUPPORTED",
+              "x-public-error": {
+                "rpc": "PRESET_SWITCH_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "model",
+                "reasons": {
+                  "restart-required": "modelRestart"
+                }
+              }
+            },
+            {
+              "const": "E_MODEL_UNKNOWN",
+              "x-public-error": {
+                "rpc": "PRESET_SWITCH_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "modelUnknown"
+              }
+            },
+            {
+              "const": "E_SEAM_INIT",
+              "x-public-error": {
+                "rpc": "INTERNAL_ERROR",
+                "messageKey": "appServer.errors.internal",
+                "copy": "internal",
+                "boot": true,
+                "reasons": {
+                  "provider-unknown": "provider",
+                  "provider-invalid": "provider",
+                  "provider-incompatible": "provider",
+                  "provider-unavailable": "provider",
+                  "provider-duplicate": "provider"
+                }
+              }
+            },
+            {
+              "const": "E_PERMISSION_REVOKED",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "permissionRevoked"
+              }
+            },
+            {
+              "const": "E_PERMISSION_GRANT_UNAVAILABLE",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "permissionGrant"
+              }
+            },
+            {
+              "const": "E_BUDGET",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "budget"
+              }
+            },
+            {
+              "const": "BUDGET_EXCEEDED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "budget"
+              }
+            },
+            {
+              "const": "APPROVAL_REJECTED",
+              "x-public-error": {
+                "rpc": "APPROVAL_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "approval"
+              }
+            },
+            {
+              "const": "APPROVAL_UNAVAILABLE",
+              "x-public-error": {
+                "rpc": "APPROVAL_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "approval"
+              }
+            },
+            {
+              "const": "APPROVAL_STATE_INVALID",
+              "x-public-error": {
+                "rpc": "APPROVAL_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "approval"
+              }
+            },
+            {
+              "const": "APPROVAL_GRANT_UNAVAILABLE",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "permissionGrant"
+              }
+            },
+            {
+              "const": "UNATTENDED_APPROVAL_REFUSED",
+              "x-public-error": {
+                "rpc": "APPROVAL_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "approval"
+              }
+            },
+            {
+              "const": "E_FS_DENIED",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "forbidden"
+              }
+            },
+            {
+              "const": "E_CAPABILITY_UNDECLARED",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "publication"
+              }
+            },
+            {
+              "const": "E_WORKSPACE_UNTRUSTED",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "forbidden"
+              }
+            },
+            {
+              "const": "E_LEASE_EXPIRED",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "forbidden"
+              }
+            },
+            {
+              "const": "PLUGIN_CANDIDATE_STALE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.conflict",
+                "copy": "conflict"
+              }
+            },
+            {
+              "const": "PLUGIN_MANAGEMENT_UNAVAILABLE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "PLUGIN_PORT_UNAVAILABLE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "PLUGIN_PERMISSION_REQUIRED",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "publication"
+              }
+            },
+            {
+              "const": "PLUGIN_LOCAL_OWNER_REQUIRED",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "publication"
+              }
+            },
+            {
+              "const": "PLUGIN_TEST_REJECTED",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "pluginTest"
+              }
+            },
+            {
+              "const": "PLUGIN_TEST_UNANSWERED",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "pluginTest"
+              }
+            },
+            {
+              "const": "PLUGIN_TEST_SANDBOX_REQUIRED",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "pluginTest"
+              }
+            },
+            {
+              "const": "PLUGIN_FILES_INVALID",
+              "x-public-error": {
+                "rpc": "INVALID_PARAMS",
+                "messageKey": "appServer.errors.invalidParams",
+                "copy": "invalidParams"
+              }
+            },
+            {
+              "const": "E_PACKAGE_UNTRUSTED",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "publication"
+              }
+            },
+            {
+              "const": "E_PACKAGE_CAPABILITY",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected"
+              }
+            },
+            {
+              "const": "E_PACKAGE_MANIFEST",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected"
+              }
+            },
+            {
+              "const": "E_PACKAGE_API_RANGE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected"
+              }
+            },
+            {
+              "const": "E_PACKAGE_SOURCE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected"
+              }
+            },
+            {
+              "const": "E_PACKAGE_TRUST",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "publication"
+              }
+            },
+            {
+              "const": "E_PACKAGE_STATE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected"
+              }
+            },
+            {
+              "const": "E_PACKAGE_BLOCKED",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "publication"
+              }
+            },
+            {
+              "const": "E_PACKAGE_PREVIEW_STALE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.conflict",
+                "copy": "conflict"
+              }
+            },
+            {
+              "const": "E_PACKAGE_CANCELLED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected"
+              }
+            },
+            {
+              "const": "E_PACKAGE_BUSY",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.busy",
+                "copy": "busy"
+              }
+            },
+            {
+              "const": "SKILL_ATOMIC_PUBLISH_UNAVAILABLE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_DOCUMENT_INVALID",
+              "x-public-error": {
+                "rpc": "INVALID_PARAMS",
+                "messageKey": "appServer.errors.invalidParams",
+                "copy": "invalidParams",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_FILE_MISSING",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_FILE_REFUSED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_INSTALL_BAD_RECEIPT",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_INSTALL_BUSY",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.busy",
+                "copy": "busy",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_INSTALL_CANCELLED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_INSTALL_CAPABILITY_DENIED",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "forbidden",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_INSTALL_EXPIRED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_INSTALL_FAILED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_INSTALL_INTERRUPTED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_INSTALL_INVALID",
+              "x-public-error": {
+                "rpc": "INVALID_PARAMS",
+                "messageKey": "appServer.errors.invalidParams",
+                "copy": "invalidParams",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_INSTALL_LEASE_CHANGED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_INSTALL_LOCAL_OWNER_REQUIRED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_INSTALL_PERMISSION_INVALID",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "forbidden",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_INSTALL_PERMISSION_TIMEOUT",
+              "x-public-error": {
+                "rpc": "REQUEST_TIMEOUT",
+                "messageKey": "appServer.errors.timeout",
+                "copy": "timeout",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_INSTALL_PERMISSION_UNAVAILABLE",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "forbidden",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_INSTALL_REJECTED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_INSTALL_SESSION_CLOSED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_LINK_REFUSED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_NAME_INVALID",
+              "x-public-error": {
+                "rpc": "INVALID_PARAMS",
+                "messageKey": "appServer.errors.invalidParams",
+                "copy": "invalidParams",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_NOT_READY",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_PATH_DENIED",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "forbidden",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_PATH_INVALID",
+              "x-public-error": {
+                "rpc": "INVALID_PARAMS",
+                "messageKey": "appServer.errors.invalidParams",
+                "copy": "invalidParams",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_PROPOSAL_TERMINAL",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_PROPOSAL_UNAVAILABLE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_READ_REJECTED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_RECEIPT_DIRECTORY_UNSAFE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_RESOURCE_CHANGED_OR_SHADOWED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_RESOURCE_OPERATION_FAILED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_RESOURCE_OPERATION_PENDING",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_SIZE_LIMIT",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_SOURCE_CHANGED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_SOURCE_NOT_DIRECTORY",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_SOURCE_TARGET_OVERLAP",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_STAGE_INVALID",
+              "x-public-error": {
+                "rpc": "INVALID_PARAMS",
+                "messageKey": "appServer.errors.invalidParams",
+                "copy": "invalidParams",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_TARGET_BUSY",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.busy",
+                "copy": "busy",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "SKILL_TARGET_CONFLICT",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "skillInstall": true
+              }
+            },
+            {
+              "const": "OVERLOADED",
+              "x-public-error": {
+                "rpc": "OVERLOADED",
+                "messageKey": "appServer.errors.busy",
+                "copy": "busy"
+              }
+            },
+            {
+              "const": "SESSION_BUSY",
+              "x-public-error": {
+                "rpc": "SESSION_BUSY",
+                "messageKey": "appServer.errors.busy",
+                "copy": "busy"
+              }
+            },
+            {
+              "const": "SESSION_NOT_FOUND",
+              "x-public-error": {
+                "rpc": "SESSION_NOT_FOUND",
+                "messageKey": "appServer.errors.notFound",
+                "copy": "notFound"
+              }
+            },
+            {
+              "const": "GENERATION_STALE",
+              "x-public-error": {
+                "rpc": "GENERATION_STALE",
+                "messageKey": "appServer.errors.conflict",
+                "copy": "conflict"
+              }
+            },
+            {
+              "const": "CURSOR_OUT_OF_RANGE",
+              "x-public-error": {
+                "rpc": "CURSOR_OUT_OF_RANGE",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected"
+              }
+            },
+            {
+              "const": "CAPABILITY_DENIED",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "forbidden"
+              }
+            },
+            {
+              "const": "AUTH_INVALID",
+              "x-public-error": {
+                "rpc": "AUTH_INVALID",
+                "messageKey": "appServer.errors.auth",
+                "copy": "auth"
+              }
+            },
+            {
+              "const": "PRESET_SWITCH_REJECTED",
+              "x-public-error": {
+                "rpc": "PRESET_SWITCH_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "preset"
+              }
+            },
+            {
+              "const": "CLAIM_DENIED",
+              "x-public-error": {
+                "rpc": "CLAIM_DENIED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "forbidden"
+              }
+            },
+            {
+              "const": "SEMANTIC_REJECTED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "reasons": {
+                  "fork boundary must be a completed turn/end": "forkBoundary"
+                }
+              }
+            },
+            {
+              "const": "REQUEST_TIMEOUT",
+              "x-public-error": {
+                "rpc": "REQUEST_TIMEOUT",
+                "messageKey": "appServer.errors.timeout",
+                "copy": "timeout"
+              }
+            },
+            {
+              "const": "OUTCOME_UNKNOWN",
+              "x-public-error": {
+                "rpc": "OUTCOME_UNKNOWN",
+                "messageKey": "appServer.errors.internal",
+                "copy": "internal"
+              }
+            },
+            {
+              "const": "PARSE_ERROR",
+              "x-public-error": {
+                "rpc": "PARSE_ERROR",
+                "messageKey": "appServer.errors.invalidRequest",
+                "copy": "invalidRequest"
+              }
+            },
+            {
+              "const": "INVALID_REQUEST",
+              "x-public-error": {
+                "rpc": "INVALID_REQUEST",
+                "messageKey": "appServer.errors.invalidRequest",
+                "copy": "invalidRequest"
+              }
+            },
+            {
+              "const": "METHOD_NOT_FOUND",
+              "x-public-error": {
+                "rpc": "METHOD_NOT_FOUND",
+                "messageKey": "appServer.errors.methodNotFound",
+                "copy": "methodNotFound"
+              }
+            },
+            {
+              "const": "INVALID_PARAMS",
+              "x-public-error": {
+                "rpc": "INVALID_PARAMS",
+                "messageKey": "appServer.errors.invalidParams",
+                "copy": "invalidParams"
+              }
+            },
+            {
+              "const": "INTERNAL_ERROR",
+              "x-public-error": {
+                "rpc": "INTERNAL_ERROR",
+                "messageKey": "appServer.errors.internal",
+                "copy": "internal"
+              }
+            },
+            {
+              "const": "E_RELATION",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected",
+                "reasons": {
+                  "authority-revoked": "permissionRevoked",
+                  "not-consumable": "permissionGrant",
+                  "human-required": "approval",
+                  "clean-home-required": "cleanHome"
+                }
+              }
+            },
+            {
+              "const": "E_CAS",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.conflict",
+                "copy": "conflict"
+              }
+            },
+            {
+              "const": "AUTH",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.auth",
+                "copy": "providerAuth"
+              }
+            },
+            {
+              "const": "RATE_LIMIT",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.busy",
+                "copy": "rateLimit"
+              }
+            },
+            {
+              "const": "OUTPUT_LIMIT",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "outputLimit"
+              }
+            },
+            {
+              "const": "PLUGIN_LEGACY_PROPOSAL_REVIEW_REQUIRED",
+              "x-public-error": {
+                "rpc": "CAPABILITY_DENIED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "pluginReview"
+              }
+            },
+            {
+              "const": "PLUGIN_REJECT_IN_REVIEW_UI",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "pluginReview"
+              }
+            },
+            {
+              "const": "PLUGIN_PUBLICATION_UNANSWERED",
+              "x-public-error": {
+                "rpc": "APPROVAL_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "pluginReview"
+              }
+            },
+            {
+              "const": "PLUGIN_REQUEST_LIMIT",
+              "x-public-error": {
+                "rpc": "OVERLOADED",
+                "messageKey": "appServer.errors.busy",
+                "copy": "busy"
+              }
+            },
+            {
+              "const": "HELPER_MANAGEMENT_FAILED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "QUOTA",
+              "x-public-error": {
+                "rpc": "INTERNAL_ERROR",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "budget"
+              }
+            },
+            {
+              "const": "OVERFLOW",
+              "x-public-error": {
+                "rpc": "INTERNAL_ERROR",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "budget"
+              }
+            },
+            {
+              "const": "TIMEOUT",
+              "x-public-error": {
+                "rpc": "INTERNAL_ERROR",
+                "messageKey": "appServer.errors.timeout",
+                "copy": "timeout"
+              }
+            },
+            {
+              "const": "NO_MODEL",
+              "x-public-error": {
+                "rpc": "INTERNAL_ERROR",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "NO_ADAPTER",
+              "x-public-error": {
+                "rpc": "INTERNAL_ERROR",
+                "messageKey": "appServer.errors.provider",
+                "copy": "provider"
+              }
+            },
+            {
+              "const": "FORMAT",
+              "x-public-error": {
+                "rpc": "INTERNAL_ERROR",
+                "messageKey": "appServer.errors.provider",
+                "copy": "provider"
+              }
+            },
+            {
+              "const": "TRANSPORT",
+              "x-public-error": {
+                "rpc": "INTERNAL_ERROR",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "transport"
+              }
+            },
+            {
+              "const": "CONTRACT_MISMATCH",
+              "x-public-error": {
+                "rpc": "INTERNAL_ERROR",
+                "messageKey": "appServer.errors.provider",
+                "copy": "provider"
+              }
+            },
+            {
+              "const": "ABORTED",
+              "x-public-error": {
+                "rpc": "INTERNAL_ERROR",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "rejected"
+              }
+            },
+            {
+              "const": "E_PROFILE_FRAGMENT_KEY",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.invalidParams",
+                "copy": "invalidParams"
+              }
+            },
+            {
+              "const": "E_PROFILE_CYCLE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.invalidParams",
+                "copy": "invalidParams"
+              }
+            },
+            {
+              "const": "E_PACKAGE_DUPLICATE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "E_PACKAGE_QUARANTINED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "E_DEP_MISSING",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable",
+                "boot": true
+              }
+            },
+            {
+              "const": "E_SEAM_MISSING",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable",
+                "boot": true
+              }
+            },
+            {
+              "const": "E_CEILING_EXCEEDED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "E_SEAM_IMMUTABLE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "E_STATIC_COMPONENT",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "E_LOCK_MISMATCH",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable",
+                "boot": true
+              }
+            },
+            {
+              "const": "E_WORKSPACE_REQUIRED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "E_WORKSPACE_CLOSED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "E_REMOTE_WORKSPACE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "E_MANAGED_POLICY_CORRUPT",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "E_SECRET_UNRESOLVED",
+              "x-public-error": {
+                "boot": true,
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "credentialRequired"
+              }
+            },
+            {
+              "const": "E_API_RANGE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable",
+                "boot": true
+              }
+            },
+            {
+              "const": "E_SEAM_EXPORT_MISSING",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable",
+                "boot": true
+              }
+            },
+            {
+              "const": "E_EXT_LOAD",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable",
+                "boot": true
+              }
+            },
+            {
+              "const": "E_EXT_ISOLATION_UNAVAILABLE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "E_HOST_CLOSED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "E_GENERATION_EXECUTION_UNSETTLED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "E_HOME_INVALID",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.invalidParams",
+                "copy": "invalidParams",
+                "reasons": {
+                  "clean-home-required": "cleanHome"
+                }
+              }
+            },
+            {
+              "const": "E_WRITER_LEASE",
+              "x-public-error": {
+                "rpc": "INTERNAL_ERROR",
+                "messageKey": "appServer.errors.internal",
+                "copy": "internal"
+              }
+            },
+            {
+              "const": "E_STORAGE_FAULT",
+              "x-public-error": {
+                "rpc": "INTERNAL_ERROR",
+                "messageKey": "appServer.errors.internal",
+                "copy": "internal"
+              }
+            },
+            {
+              "const": "E_LEDGER_INTEGRITY",
+              "x-public-error": {
+                "rpc": "INTERNAL_ERROR",
+                "messageKey": "appServer.errors.internal",
+                "copy": "internal"
+              }
+            },
+            {
+              "const": "BUNDLE_UNAVAILABLE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "bundleUnavailable"
+              }
+            },
+            {
+              "const": "PROVIDER_UNCONFIGURED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "providerUnconfigured"
+              }
+            },
+            {
+              "const": "LOOP_MISSING",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "loopMissing"
+              }
+            },
+            {
+              "const": "SANDBOX_UNAVAILABLE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "sandboxUnavailable"
+              }
+            },
+            {
+              "const": "E_RESOURCE_UNSUPPORTED",
+              "x-public-error": {
+                "rpc": "INTERNAL_ERROR",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "REVISION_CONFLICT",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.conflict",
+                "copy": "conflict"
+              }
+            },
+            {
+              "const": "WORKSPACE_PATH_DENIED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "forbidden"
+              }
+            }
+          ]
+        }
+      },
+      "required": ["code"],
+      "additionalProperties": false
+    },
+    "AppServerError": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "messageKey": {
+              "enum": [
+                "appServer.errors.internal",
+                "appServer.errors.invalidRequest",
+                "appServer.errors.invalidParams",
+                "appServer.errors.methodNotFound",
+                "appServer.errors.forbidden",
+                "appServer.errors.auth",
+                "appServer.errors.busy",
+                "appServer.errors.notFound",
+                "appServer.errors.conflict",
+                "appServer.errors.timeout",
+                "appServer.errors.unavailable",
+                "appServer.errors.chatModelRequired",
+                "appServer.errors.credentialRequired",
+                "appServer.errors.credentialRejected",
+                "appServer.errors.credentialStore",
+                "appServer.errors.provider",
+                "appServer.errors.generation",
+                "appServer.errors.sessionNewer",
+                "appServer.errors.sessionOlder",
+                "appServer.errors.sessionCorrupt",
+                "appServer.errors.sessionSandbox",
+                "appServer.errors.rejected",
+                "appServer.errors.memoryCap",
+                "appServer.errors.memorySecret",
+                "appServer.errors.memoryDisabled",
+                "appServer.errors.memoryPartial"
+              ]
+            },
+            "diagnosticId": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+            },
+            "cause": {
+              "$ref": "#/$defs/AppServerErrorCause"
+            },
+            "publicReason": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "userAction": {
+              "type": "string",
+              "maxLength": 512
+            }
+          },
+          "required": ["code", "messageKey", "diagnosticId"],
+          "additionalProperties": true
+        }
+      },
+      "required": ["code", "message", "data"],
+      "additionalProperties": false
+    },
+    "AdminCredentialReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": ["mcp", "plugin", "trigger", "profile"]
+        },
+        "profile": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "configId": {
+          "type": "string",
+          "maxLength": 512
+        }
+      },
+      "required": ["kind", "profile", "configId"]
+    },
+    "AdminCredentialMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^secret://generic/[a-f0-9-]{36}$",
+          "maxLength": 64
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "kind": {
+          "const": "api-key"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AdminCredentialReference"
+          },
+          "maxItems": 4096
+        }
+      },
+      "required": ["id", "label", "kind", "createdAt", "references"]
+    },
+    "AdminCredentialsList": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AdminCredentialMetadata"
+          },
+          "maxItems": 4096
+        }
+      },
+      "required": ["items"]
+    },
+    "AdminCredentialCreate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "description": "Write-only secret value. Never included in responses or diagnostics."
+        }
+      },
+      "required": ["label", "value"]
+    },
+    "AdminCredentialSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^secret://generic/[a-f0-9-]{36}$",
+          "maxLength": 64
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "description": "Write-only secret value. Never included in responses or diagnostics."
+        }
+      },
+      "required": ["id", "value"]
+    },
+    "AdminCredentialRename": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^secret://generic/[a-f0-9-]{36}$",
+          "maxLength": 64
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        }
+      },
+      "required": ["id", "label"]
+    },
+    "AdminCredentialDelete": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^secret://generic/[a-f0-9-]{36}$",
+          "maxLength": 64
+        },
+        "force": {
+          "type": "boolean"
+        },
+        "confirm": {
+          "type": "boolean"
+        }
+      },
+      "required": ["id"]
+    },
+    "AdminEmpty": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "AdminBundlesSave": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bundles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "maxItems": 64
+        }
+      },
+      "required": ["revision", "bundles"],
+      "additionalProperties": false
+    },
+    "AdminBundlesResult": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bundles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "maxItems": 64
+        },
+        "effect": {
+          "const": "restart-required"
+        },
+        "catalog": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 512
+              },
+              "sourcePackage": {
+                "type": "string",
+                "maxLength": 256
+              }
+            },
+            "required": ["id", "sourcePackage"],
+            "additionalProperties": false
+          },
+          "maxItems": 4096
+        }
+      },
+      "required": ["revision", "bundles", "effect"],
+      "additionalProperties": false
+    },
+    "AdminCompositionParams": {
+      "type": "object",
+      "properties": {
+        "preset": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "AdminCompositionResult": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": ["live", "desired"]
+        },
+        "validation": {
+          "const": "static"
+        },
+        "selection": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "maxItems": 4096
+        },
+        "sessions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "maxItems": 4096
+        },
+        "profile": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "preset": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "hash": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "bundles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "maxItems": 64
+        },
+        "sessionBundles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "maxItems": 64
+        },
+        "sources": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        "toolScope": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        "capabilities": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        "packages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "maxItems": 4096
+        },
+        "pluginOverrides": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "maxItems": 4096
+        }
+      },
+      "required": ["status", "validation", "selection", "rows", "sessions"],
+      "additionalProperties": false
+    },
+    "AdminSearchSave": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        "defaultProvider": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "apiKey": {
+          "type": "string",
+          "maxLength": 65536
+        }
+      },
+      "required": ["provider"],
+      "additionalProperties": false
+    },
+    "AdminSearchTest": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "query": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": ["provider", "query"],
+      "additionalProperties": false
+    },
+    "AdminSearchResult": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      }
+    },
+    "AdminContextConfig": {
+      "type": "object",
+      "properties": {
+        "rulesEnabled": {
+          "type": "boolean"
+        },
+        "instructionFiles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "maxItems": 128
+        },
+        "localInstructionFiles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "maxItems": 128
+        },
+        "maxBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 60000
+        },
+        "maxSourceBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        },
+        "timeEnabled": {
+          "type": "boolean"
+        },
+        "timeZone": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "refreshIntervalMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400000
+        },
+        "customSkillRoots": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "maxItems": 128
+        }
+      },
+      "required": [
+        "rulesEnabled",
+        "instructionFiles",
+        "localInstructionFiles",
+        "maxBytes",
+        "maxSourceBytes",
+        "timeEnabled",
+        "timeZone",
+        "refreshIntervalMs",
+        "customSkillRoots"
+      ],
+      "additionalProperties": false
+    },
+    "AdminContextParams": {
+      "type": "object",
+      "properties": {
+        "cwd": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "config": {
+          "type": "object",
+          "properties": {
+            "rulesEnabled": {
+              "type": "boolean"
+            },
+            "instructionFiles": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 1024
+              },
+              "maxItems": 128
+            },
+            "localInstructionFiles": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 1024
+              },
+              "maxItems": 128
+            },
+            "maxBytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 60000
+            },
+            "maxSourceBytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1048576
+            },
+            "timeEnabled": {
+              "type": "boolean"
+            },
+            "timeZone": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "refreshIntervalMs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 86400000
+            },
+            "customSkillRoots": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 4096
+              },
+              "maxItems": 128
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "AdminContextResult": {
+      "type": "object",
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/AdminContextConfig"
+        },
+        "workspaces": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "maxLength": 4096
+              },
+              "available": {
+                "type": "boolean"
+              }
+            },
+            "required": ["path", "available"],
+            "additionalProperties": false
+          },
+          "maxItems": 4096
+        },
+        "rules": {
+          "type": "object",
+          "properties": {
+            "root": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "files": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "maxLength": 4096
+                  },
+                  "scope": {
+                    "type": "string",
+                    "maxLength": 4096
+                  },
+                  "content": {
+                    "type": "string",
+                    "maxLength": 60000
+                  },
+                  "trust": {
+                    "enum": ["user", "repository"]
+                  }
+                },
+                "required": ["path", "scope", "content", "trust"],
+                "additionalProperties": false
+              },
+              "maxItems": 4096
+            },
+            "skipped": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 4096
+              },
+              "maxItems": 4096
+            },
+            "content": {
+              "type": "string",
+              "maxLength": 60000
+            }
+          },
+          "required": ["root", "files", "skipped", "content"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["config", "workspaces"],
+      "additionalProperties": false
+    },
+    "AdminHistoryParams": {
+      "type": "object",
+      "properties": {
+        "workspaceMatch": {
+          "type": "string",
+          "enum": ["exact", "contains"]
+        },
+        "query": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "workspace": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "cursor": {
+          "type": "string",
+          "maxLength": 65536
+        }
+      },
+      "required": ["query", "title", "workspace"],
+      "additionalProperties": false
+    },
+    "AdminHistoryResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "type": "object",
+            "properties": {
+              "sessionId": {
+                "type": "string",
+                "maxLength": 4096
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 65536
+              },
+              "workspace": {
+                "type": "string",
+                "maxLength": 4096
+              },
+              "snippet": {
+                "type": "string",
+                "maxLength": 65536
+              },
+              "ts": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "maxLength": 128
+              }
+            },
+            "required": ["sessionId", "title", "workspace", "snippet", "ts"],
+            "additionalProperties": false
+          }
+        },
+        "next": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": ["items", "truncated"],
+      "additionalProperties": false
+    },
+    "AdminPlanParams": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cwd": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "line": {
+          "type": "string",
+          "maxLength": 8192,
+          "pattern": "^\\s*/plan(?:\\s|$)"
+        }
+      },
+      "required": ["cwd", "line"],
+      "additionalProperties": false
+    },
+    "AdminPlanResult": {
+      "type": "object",
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 8192
+        }
+      },
+      "required": ["active", "text"],
+      "additionalProperties": false
+    },
+    "AdminMcpOAuthSave": {
+      "type": "object",
+      "properties": {
+        "serverId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9._-]{0,127}$"
+        },
+        "credential": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "accessToken": {
+              "type": "string",
+              "maxLength": 65536
+            },
+            "refreshToken": {
+              "type": "string",
+              "maxLength": 65536
+            },
+            "expiresAt": {
+              "type": "number",
+              "minimum": 0
+            },
+            "scope": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 1024
+              },
+              "maxItems": 128
+            },
+            "grantId": {
+              "type": "string",
+              "maxLength": 512
+            }
+          },
+          "required": ["provider", "accessToken", "refreshToken", "expiresAt", "scope", "grantId"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["serverId", "credential"],
+      "additionalProperties": false
+    },
+    "DoctorParams": {
+      "type": "object",
+      "properties": {
+        "probeAccounts": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "DoctorCheck": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "enum": [
+            "node",
+            "native",
+            "home",
+            "permissions",
+            "credentials",
+            "sandbox",
+            "connection",
+            "disk",
+            "accounts",
+            "plugins",
+            "mcp"
+          ]
+        },
+        "status": {
+          "enum": ["ok", "warn", "fail"]
+        },
+        "fixHintKey": {
+          "enum": [
+            "doctor.fix.node",
+            "doctor.fix.native",
+            "doctor.fix.home",
+            "doctor.fix.permissions",
+            "doctor.fix.credentials",
+            "doctor.fix.sandbox",
+            "doctor.fix.connection",
+            "doctor.fix.disk",
+            "doctor.fix.accounts",
+            "doctor.fix.plugins",
+            "doctor.fix.mcp"
+          ]
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "availableBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "probed": {
+          "type": "boolean"
+        }
+      },
+      "required": ["id", "status", "fixHintKey"],
+      "additionalProperties": false
+    },
+    "DoctorResult": {
+      "type": "object",
+      "properties": {
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DoctorCheck"
+          },
+          "maxItems": 32
+        },
+        "status": {
+          "enum": ["ok", "warn", "fail"]
+        },
+        "homeId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        }
+      },
+      "required": ["checks", "status"],
+      "additionalProperties": false
+    },
+    "MemorySettings": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": ["off", "ask", "auto"]
+        },
+        "indexMaxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "indexMaxLines": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "topicMaxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "totalMaxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "tokenBudget": {
+          "type": "integer",
+          "minimum": 128,
+          "maximum": 1048576
+        },
+        "userTokenBudget": {
+          "type": "integer",
+          "minimum": 128,
+          "maximum": 1048576
+        },
+        "userEnabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mode",
+        "indexMaxBytes",
+        "indexMaxLines",
+        "topicMaxBytes",
+        "totalMaxBytes",
+        "tokenBudget",
+        "userTokenBudget",
+        "userEnabled"
+      ],
+      "additionalProperties": false
+    },
+    "MemorySettingsPatch": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": ["off", "ask", "auto"]
+        },
+        "indexMaxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "indexMaxLines": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "topicMaxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "totalMaxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "tokenBudget": {
+          "type": "integer",
+          "minimum": 128,
+          "maximum": 1048576
+        },
+        "userTokenBudget": {
+          "type": "integer",
+          "minimum": 128,
+          "maximum": 1048576
+        },
+        "userEnabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "MemorySource": {
+      "type": "object",
+      "properties": {
+        "sessionKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "turn": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "toolUseId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": ["sessionKey", "turn"],
+      "additionalProperties": false
+    },
+    "MemoryFileInfo": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\.md$"
+        },
+        "hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lines": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": ["path", "hash", "bytes", "lines"],
+      "additionalProperties": false
+    },
+    "MemoryFile": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\.md$"
+        },
+        "hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lines": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 1048576
+        }
+      },
+      "required": ["path", "hash", "bytes", "lines", "content"],
+      "additionalProperties": false
+    },
+    "MemoryInspection": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "settings": {
+          "$ref": "#/$defs/MemorySettings"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MemoryFileInfo"
+          },
+          "maxItems": 128
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lastWriter": {
+          "$ref": "#/$defs/MemorySource"
+        }
+      },
+      "required": ["root", "settings", "files", "bytes"],
+      "additionalProperties": false
+    },
+    "AdminMemoryParams": {
+      "type": "object",
+      "properties": {
+        "cwd": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "settings": {
+          "$ref": "#/$defs/MemorySettingsPatch"
+        },
+        "file": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\.md$"
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 1048576
+        },
+        "baseHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": ["cwd"],
+      "additionalProperties": false
+    },
+    "AdminMemoryResult": {
+      "type": "object",
+      "properties": {
+        "workspaces": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "available": {
+                "type": "boolean"
+              }
+            },
+            "required": ["path", "available"],
+            "additionalProperties": false
+          }
+        },
+        "inspection": {
+          "$ref": "#/$defs/MemoryInspection"
+        },
+        "file": {
+          "$ref": "#/$defs/MemoryFile"
+        }
+      },
+      "required": ["workspaces", "inspection"],
+      "additionalProperties": false
+    },
+    "ObservabilitySettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "endpoint": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "tracesEndpoint": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "metricsEndpoint": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "logsEndpoint": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["secretRef"],
+            "properties": {
+              "secretRef": {
+                "type": "string",
+                "pattern": "^env:[A-Z_][A-Z0-9_]*$"
+              }
+            }
+          }
+        },
+        "redaction": {
+          "enum": ["metadata", "content"]
+        },
+        "shutdownPolicy": {
+          "enum": ["flush", "discard"]
+        },
+        "batchSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16384
+        },
+        "queueSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16384
+        },
+        "batchMs": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 30000
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 30000
+        }
+      }
+    },
+    "ObservabilityHealth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "queued", "dropped", "failures"],
+      "properties": {
+        "status": {
+          "enum": ["disabled", "idle", "ok", "backoff", "rejected", "closed"]
+        },
+        "queued": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dropped": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lastExportAt": {
+          "type": "string"
+        }
+      }
+    },
+    "AdminObservabilityParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "settings": {
+          "$ref": "#/$defs/ObservabilitySettings"
+        },
+        "test": {
+          "type": "boolean"
+        }
+      }
+    },
+    "AdminObservabilityResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["settings", "health"],
+      "properties": {
+        "settings": {
+          "$ref": "#/$defs/ObservabilitySettings"
+        },
+        "health": {
+          "$ref": "#/$defs/ObservabilityHealth"
+        },
+        "connection": {
+          "enum": ["ok", "failed"]
+        },
+        "workerHealth": {
+          "$ref": "#/$defs/ObservabilityHealth"
+        },
+        "workerState": {
+          "enum": ["available", "idle", "unavailable"]
+        }
+      }
+    },
+    "WebhookRule": {
+      "type": "object",
+      "properties": {
+        "unattendedApproval": {
+          "enum": ["notify", "refuse"]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "provider": {
+          "enum": ["github", "generic"]
+        },
+        "auth": {
+          "enum": ["hmac", "bearer"]
+        },
+        "secretRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^secret://[a-z0-9-]+/[a-z0-9._-]+$"
+        },
+        "event": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "filters": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        "workspace": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "agent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "bundles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "maxItems": 64
+        },
+        "template": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "timestampPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "windowSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        },
+        "ratePerMinute": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "required": [
+        "id",
+        "enabled",
+        "provider",
+        "auth",
+        "secretRef",
+        "event",
+        "filters",
+        "workspace",
+        "agent",
+        "bundles",
+        "template",
+        "timestampPath",
+        "windowSeconds",
+        "ratePerMinute"
+      ],
+      "additionalProperties": false
+    },
+    "WebhookConfig": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^/hooks/[a-z0-9][a-z0-9/-]{0,200}$"
+        },
+        "maxPayloadBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        }
+      },
+      "required": ["enabled", "path", "maxPayloadBytes"],
+      "additionalProperties": false
+    },
+    "WebhookDelivery": {
+      "type": "object",
+      "properties": {
+        "needsAttention": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "accepted",
+            "bad-signature",
+            "no-rule",
+            "duplicate",
+            "rate-limited",
+            "replay",
+            "disabled",
+            "invalid-payload",
+            "too-large",
+            "capacity",
+            "failed",
+            "unknown",
+            "waiting_approval",
+            "needs_attention",
+            "ran"
+          ]
+        },
+        "ruleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": ["id", "at", "status"],
+      "additionalProperties": false
+    },
+    "WebhookSnapshot": {
+      "type": "object",
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/WebhookConfig"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WebhookRule"
+          },
+          "maxItems": 128
+        },
+        "deliveries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WebhookDelivery"
+          },
+          "maxItems": 200
+        },
+        "secretRefs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^secret://[a-z0-9-]+/[a-z0-9._-]+$"
+          },
+          "maxItems": 4096
+        }
+      },
+      "required": ["config", "rules", "deliveries", "secretRefs"],
+      "additionalProperties": false
+    },
+    "WebhookRequest": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "enum": ["list", "configure", "upsert", "delete", "test", "deliver"]
+        },
+        "config": {
+          "$ref": "#/$defs/WebhookConfig"
+        },
+        "rule": {
+          "$ref": "#/$defs/WebhookRule"
+        },
+        "ruleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "payload": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 1400000
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "tooLarge": {
+          "type": "boolean"
+        }
+      },
+      "required": ["action"],
+      "additionalProperties": false
+    },
+    "WebhookResult": {
+      "type": "object",
+      "properties": {
+        "snapshot": {
+          "$ref": "#/$defs/WebhookSnapshot"
+        },
+        "delivery": {
+          "$ref": "#/$defs/WebhookDelivery"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "FeedbackTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "messageSeq": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": ["messageSeq", "turn"]
+    },
+    "FeedbackItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "target": {
+          "$ref": "#/$defs/FeedbackTarget"
+        },
+        "rating": {
+          "enum": ["up", "down"]
+        },
+        "category": {
+          "enum": ["", "accuracy", "instruction", "style", "tools", "do-again", "other"]
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "actor": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "createdAt": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "updatedAt": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "withdrawn": {
+          "type": "boolean"
+        },
+        "candidateId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 512
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "candidateHash": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 512
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "sessionId",
+        "target",
+        "rating",
+        "category",
+        "note",
+        "actor",
+        "createdAt",
+        "updatedAt",
+        "revision",
+        "withdrawn",
+        "candidateId",
+        "candidateHash"
+      ]
+    },
+    "FeedbackGrowth": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "feedbackId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "feedbackRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "messageSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "candidateId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "candidateHash": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "reviewHash": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 512
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "reviewer": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 512
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "packageId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 512
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "feedbackId",
+        "feedbackRevision",
+        "messageSeq",
+        "candidateId",
+        "candidateHash",
+        "reviewHash",
+        "state",
+        "reviewer",
+        "packageId",
+        "version"
+      ]
+    },
+    "AdminFeedbackParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": ["list", "put", "withdraw", "generate"]
+        },
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "target": {
+          "$ref": "#/$defs/FeedbackTarget"
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "expectedRevision": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rating": {
+          "enum": ["up", "down"]
+        },
+        "category": {
+          "enum": ["", "accuracy", "instruction", "style", "tools", "do-again", "other"]
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "hasCandidate": {
+          "type": "boolean"
+        }
+      },
+      "required": ["action"]
+    },
+    "AdminFeedbackResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FeedbackItem"
+          },
+          "maxItems": 4096
+        },
+        "growth": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FeedbackGrowth"
+          },
+          "maxItems": 4096
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "up": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "down": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "withdrawn": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "withCandidate": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": ["up", "down", "withdrawn", "withCandidate"]
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": ["items", "growth", "counts", "truncated"]
+    }
+  },
+  "x-methods": {
+    "_agnes/v1/admin.feedback": {
+      "params": "AdminFeedbackParams",
+      "result": "AdminFeedbackResult"
+    },
+    "_agnes/v1/admin.credentials.list": {
+      "params": "AdminEmpty",
+      "result": "AdminCredentialsList"
+    },
+    "_agnes/v1/admin.credentials.create": {
+      "params": "AdminCredentialCreate",
+      "result": "AdminCredentialMetadata"
+    },
+    "_agnes/v1/admin.credentials.set": {
+      "params": "AdminCredentialSet",
+      "result": "AdminCredentialMetadata"
+    },
+    "_agnes/v1/admin.credentials.rename": {
+      "params": "AdminCredentialRename",
+      "result": "AdminCredentialMetadata"
+    },
+    "_agnes/v1/admin.credentials.delete": {
+      "params": "AdminCredentialDelete",
+      "result": "AdminEmpty"
+    },
+    "_agnes/v1/admin.bundles.get": {
+      "params": "AdminEmpty",
+      "result": "AdminBundlesResult"
+    },
+    "_agnes/v1/admin.bundles.save": {
+      "params": "AdminBundlesSave",
+      "result": "AdminBundlesResult"
+    },
+    "_agnes/v1/admin.composition.get": {
+      "params": "AdminCompositionParams",
+      "result": "AdminCompositionResult"
+    },
+    "_agnes/v1/admin.search.get": {
+      "params": "AdminEmpty",
+      "result": "AdminSearchResult"
+    },
+    "_agnes/v1/admin.search.save": {
+      "params": "AdminSearchSave",
+      "result": "AdminSearchResult"
+    },
+    "_agnes/v1/admin.search.test": {
+      "params": "AdminSearchTest",
+      "result": "AdminSearchResult"
+    },
+    "_agnes/v1/admin.context": {
+      "params": "AdminContextParams",
+      "result": "AdminContextResult"
+    },
+    "_agnes/v1/admin.history.search": {
+      "params": "AdminHistoryParams",
+      "result": "AdminHistoryResult"
+    },
+    "_agnes/v1/admin.plan": {
+      "params": "AdminPlanParams",
+      "result": "AdminPlanResult"
+    },
+    "_agnes/v1/admin.mcp.oauth.save": {
+      "params": "AdminMcpOAuthSave",
+      "result": "AdminEmpty"
+    },
+    "_agnes/v1/doctor.run": {
+      "params": "DoctorParams",
+      "result": "DoctorResult"
+    },
+    "_agnes/v1/admin.memory": {
+      "params": "AdminMemoryParams",
+      "result": "AdminMemoryResult"
+    },
+    "_agnes/v1/admin.observability": {
+      "params": "AdminObservabilityParams",
+      "result": "AdminObservabilityResult"
+    },
+    "_agnes/v1/admin.triggers": {
+      "params": "WebhookRequest",
+      "result": "WebhookResult"
+    }
+  },
+  "x-public-error-copy": {
+    "internal": {
+      "en": {
+        "reason": "The operation could not be confirmed.",
+        "action": "Inspect its status using the diagnostic ID."
+      },
+      "zh-CN": {
+        "reason": "无法确认操作结果。",
+        "action": "请使用诊断 ID 检查状态。"
+      }
+    },
+    "rejected": {
+      "en": {
+        "reason": "The operation was refused.",
+        "action": "Check its configuration and current state."
+      },
+      "zh-CN": {
+        "reason": "操作被拒绝。",
+        "action": "请检查配置和当前状态。"
+      }
+    },
+    "forbidden": {
+      "en": {
+        "reason": "Permission for this operation was denied.",
+        "action": "Ask an administrator to review the applicable policy before retrying."
+      },
+      "zh-CN": {
+        "reason": "此操作的权限被拒绝。",
+        "action": "请管理员复核适用策略后再重试。"
+      }
+    },
+    "permissionRevoked": {
+      "en": {
+        "reason": "The full-access authority was revoked.",
+        "action": "Refresh the session permission and request a new approval."
+      },
+      "zh-CN": {
+        "reason": "完全访问授权已撤销。",
+        "action": "请刷新会话权限并重新请求审批。"
+      }
+    },
+    "permissionGrant": {
+      "en": {
+        "reason": "The permission grant is missing, expired or already consumed.",
+        "action": "Request a new approval for this action."
+      },
+      "zh-CN": {
+        "reason": "权限授权缺失、已过期或已使用。",
+        "action": "请为此操作重新请求审批。"
+      }
+    },
+    "preset": {
+      "en": {
+        "reason": "The preset or permission selection was refused.",
+        "action": "Choose a supported preset and a compatible permission level."
+      },
+      "zh-CN": {
+        "reason": "预设或权限选择被拒绝。",
+        "action": "请选择受支持的预设及兼容的权限级别。"
+      }
+    },
+    "model": {
+      "en": {
+        "reason": "The requested model is not available in this profile.",
+        "action": "Run `agh doctor provider` to list the configured routes and choose one of them."
+      },
+      "zh-CN": {
+        "reason": "当前配置中没有所请求的模型。",
+        "action": "运行 `agh doctor provider` 查看已配置的路由，并从中选择。"
+      }
+    },
+    "modelUnknown": {
+      "en": {
+        "reason": "The requested model or route is not in the configured model catalogue.",
+        "action": "Run `agh doctor provider` to list the configured routes and their models, and choose one of them."
+      },
+      "zh-CN": {
+        "reason": "所请求的模型或路由不在已配置的模型目录中。",
+        "action": "运行 `agh doctor provider` 查看已配置的路由及其模型，并从中选择。"
+      }
+    },
+    "modelRestart": {
+      "en": {
+        "reason": "A saved account or model change is not active until the daemon restarts, so the requested model is not loaded yet.",
+        "action": "Restart the daemon with `agh daemon stop`; the next agh command starts it with the saved configuration. If the model is still refused, run `agh doctor provider` to list the configured routes."
+      },
+      "zh-CN": {
+        "reason": "已保存的账户或模型改动需重启后台才生效，所请求的模型尚未加载。",
+        "action": "运行 `agh daemon stop` 重启后台；下一条 agh 命令会以已保存的配置启动它。若仍被拒绝，运行 `agh doctor provider` 查看已配置的路由。"
+      }
+    },
+    "permissionAxis": {
+      "en": {
+        "reason": "The preset cannot accept the requested permission overlay.",
+        "action": "Choose a compatible preset and permission level; required isolation must remain enabled."
+      },
+      "zh-CN": {
+        "reason": "预设无法接受请求的权限叠加。",
+        "action": "请选择兼容的预设和权限级别，并保留必需的隔离。"
+      }
+    },
+    "approval": {
+      "en": {
+        "reason": "The action was rejected during approval.",
+        "action": "Ask the reviewer before submitting the action again."
+      },
+      "zh-CN": {
+        "reason": "此操作在审批时被拒绝。",
+        "action": "再次提交前请先询问审核人。"
+      }
+    },
+    "budget": {
+      "en": {
+        "reason": "The operation was refused by the budget limit.",
+        "action": "Review the remaining budget and limits before trying again."
+      },
+      "zh-CN": {
+        "reason": "操作因预算限制被拒绝。",
+        "action": "请检查剩余预算和上限后再重试。"
+      }
+    },
+    "publication": {
+      "en": {
+        "reason": "Plugin publication was refused by trust or capability policy.",
+        "action": "Review the candidate, declared capabilities and publication approval."
+      },
+      "zh-CN": {
+        "reason": "插件发布被信任或能力策略拒绝。",
+        "action": "请复核候选、声明的能力及发布审批。"
+      }
+    },
+    "pluginTest": {
+      "en": {
+        "reason": "The plugin test was refused.",
+        "action": "Review the test approval and sandbox requirements before retrying."
+      },
+      "zh-CN": {
+        "reason": "插件测试被拒绝。",
+        "action": "请复核测试审批和沙箱要求后再重试。"
+      }
+    },
+    "unavailable": {
+      "en": {
+        "reason": "The required backend is unavailable.",
+        "action": "Check its configuration and compatibility."
+      },
+      "zh-CN": {
+        "reason": "所需后端不可用。",
+        "action": "请检查配置和兼容性。"
+      }
+    },
+    "conflict": {
+      "en": {
+        "reason": "The resource changed.",
+        "action": "Reload the latest state before retrying."
+      },
+      "zh-CN": {
+        "reason": "资源已变更。",
+        "action": "请重新载入最新状态后重试。"
+      }
+    },
+    "busy": {
+      "en": {
+        "reason": "The resource is busy.",
+        "action": "Wait for the current operation to finish."
+      },
+      "zh-CN": {
+        "reason": "资源正在使用中。",
+        "action": "请等待当前操作结束。"
+      }
+    },
+    "auth": {
+      "en": {
+        "reason": "Authentication was refused.",
+        "action": "Reconnect and authenticate again."
+      },
+      "zh-CN": {
+        "reason": "认证被拒绝。",
+        "action": "请重新连接并认证。"
+      }
+    },
+    "invalidParams": {
+      "en": {
+        "reason": "The request parameters were refused.",
+        "action": "Check the parameters and submit a valid request."
+      },
+      "zh-CN": {
+        "reason": "请求参数被拒绝。",
+        "action": "请检查参数并提交有效请求。"
+      }
+    },
+    "invalidRequest": {
+      "en": {
+        "reason": "The request is not valid.",
+        "action": "Check the request format."
+      },
+      "zh-CN": {
+        "reason": "请求无效。",
+        "action": "请检查请求格式。"
+      }
+    },
+    "methodNotFound": {
+      "en": {
+        "reason": "This operation is unavailable.",
+        "action": "Use a supported operation."
+      },
+      "zh-CN": {
+        "reason": "此操作不可用。",
+        "action": "请使用受支持的操作。"
+      }
+    },
+    "notFound": {
+      "en": {
+        "reason": "The session or resource is unavailable.",
+        "action": "Refresh the resource list."
+      },
+      "zh-CN": {
+        "reason": "会话或资源不可用。",
+        "action": "请刷新资源列表。"
+      }
+    },
+    "chatModelRequired": {
+      "en": {
+        "reason": "Image and video generation models cannot be used for chat.",
+        "action": "Choose a chat-capable model in model settings."
+      },
+      "zh-CN": {
+        "reason": "图片或视频生成模型不能用于对话。",
+        "action": "请在模型设置中选择支持对话的模型。"
+      }
+    },
+    "credentialRequired": {
+      "en": {
+        "reason": "A provider credential is required.",
+        "action": "Add a credential for this provider."
+      },
+      "zh-CN": {
+        "reason": "缺少提供方凭据。",
+        "action": "请为此提供方添加凭据。"
+      }
+    },
+    "credentialRejected": {
+      "en": {
+        "reason": "The credential was rejected.",
+        "action": "Check it and try again."
+      },
+      "zh-CN": {
+        "reason": "凭据被拒绝。",
+        "action": "请检查后重试。"
+      }
+    },
+    "credentialStore": {
+      "en": {
+        "reason": "The credential could not be stored.",
+        "action": "Check storage access."
+      },
+      "zh-CN": {
+        "reason": "无法保存凭据。",
+        "action": "请检查存储权限。"
+      }
+    },
+    "provider": {
+      "en": {
+        "reason": "The selected provider cannot serve this request.",
+        "action": "Check plugin state and compatibility."
+      },
+      "zh-CN": {
+        "reason": "所选提供方无法处理请求。",
+        "action": "请检查插件状态和兼容性。"
+      }
+    },
+    "generation": {
+      "en": {
+        "reason": "The pinned plugin generation is unavailable or incompatible.",
+        "action": "Review the plugin generation and session recovery options."
+      },
+      "zh-CN": {
+        "reason": "固定的插件代际不可用或不兼容。",
+        "action": "请检查插件代际和会话恢复选项。"
+      }
+    },
+    "sessionNewer": {
+      "en": {
+        "reason": "This session was written by a newer AGH version.",
+        "action": "Upgrade AGH to continue; history remains readable."
+      },
+      "zh-CN": {
+        "reason": "此会话由更新版本的 AGH 写入。",
+        "action": "请升级 AGH 后再继续；仍可查看历史。"
+      }
+    },
+    "sessionOlder": {
+      "en": {
+        "reason": "This session needs an older plugin version.",
+        "action": "Read its history or start a new session; an administrator can migrate it."
+      },
+      "zh-CN": {
+        "reason": "此会话需要旧版插件。",
+        "action": "可查看历史或新开会话；管理员可以迁移会话。"
+      }
+    },
+    "sessionCorrupt": {
+      "en": {
+        "reason": "This session failed an integrity check.",
+        "action": "Keep its history for diagnosis and start a new session."
+      },
+      "zh-CN": {
+        "reason": "此会话未通过完整性检查。",
+        "action": "请保留历史用于诊断，并新开会话。"
+      }
+    },
+    "memoryCap": {
+      "en": {
+        "reason": "The memory file exceeds its limits.",
+        "action": "Consolidate it within the file size and line limits; the previous file was kept."
+      },
+      "zh-CN": {
+        "reason": "记忆文件超出限制。",
+        "action": "请整理至文件大小和行数上限内；原文件已保留。"
+      }
+    },
+    "memorySecret": {
+      "en": {
+        "reason": "Secret-like content cannot be saved as memory.",
+        "action": "Remove credentials before saving."
+      },
+      "zh-CN": {
+        "reason": "疑似凭据的内容不能保存到记忆。",
+        "action": "请移除凭据后再保存。"
+      }
+    },
+    "memoryDisabled": {
+      "en": {
+        "reason": "Memory is disabled.",
+        "action": "Review the memory setting before requesting access."
+      },
+      "zh-CN": {
+        "reason": "记忆已关闭。",
+        "action": "请复核记忆设置后再请求访问。"
+      }
+    },
+    "memoryPartial": {
+      "en": {
+        "reason": "The file was saved, but writer metadata failed.",
+        "action": "Reload to inspect the saved file."
+      },
+      "zh-CN": {
+        "reason": "文件已保存，但写入来源记录失败。",
+        "action": "请重新载入检查已保存的文件。"
+      }
+    },
+    "timeout": {
+      "en": {
+        "reason": "The operation timed out.",
+        "action": "Inspect its status before retrying."
+      },
+      "zh-CN": {
+        "reason": "操作超时。",
+        "action": "请检查状态后再重试。"
+      }
+    },
+    "sessionSandbox": {
+      "en": {
+        "reason": "This session has missing or incompatible execution isolation records.",
+        "action": "Read its history and start a new session to continue working."
+      },
+      "zh-CN": {
+        "reason": "此会话的执行隔离记录缺失或不匹配。",
+        "action": "可以查看历史；请新建会话以继续工作。"
+      }
+    },
+    "rateLimit": {
+      "en": {
+        "reason": "The provider rate limit was reached.",
+        "action": "Wait before submitting another request."
+      },
+      "zh-CN": {
+        "reason": "已达到提供方速率限制。",
+        "action": "请稍后再提交请求。"
+      }
+    },
+    "outputLimit": {
+      "en": {
+        "reason": "The model output limit was reached.",
+        "action": "Reduce the requested output or review the model limits."
+      },
+      "zh-CN": {
+        "reason": "已达到模型输出限制。",
+        "action": "请减少请求的输出或复核模型上限。"
+      }
+    },
+    "pluginReview": {
+      "en": {
+        "reason": "Plugin publication requires a current human review.",
+        "action": "Open the candidate review, inspect its tests and permissions, then approve or reject it there."
+      },
+      "zh-CN": {
+        "reason": "插件发布需要当前有效的人工审核。",
+        "action": "请打开候选审核，检查测试和权限，并在那里批准或拒绝。"
+      }
+    },
+    "transport": {
+      "en": {
+        "reason": "The provider could not be reached, or it answered with a server error.",
+        "action": "Check connectivity and try again later. If it keeps happening, the provider may be down."
+      },
+      "zh-CN": {
+        "reason": "无法连接提供方，或提供方返回了服务器错误。",
+        "action": "请检查网络后稍后再试；如果持续出现，可能是提供方暂时不可用。"
+      }
+    },
+    "providerAuth": {
+      "en": {
+        "reason": "The provider refused this model or its credentials.",
+        "action": "Pick another model or sign in again."
+      },
+      "zh-CN": {
+        "reason": "提供方拒绝了所选模型或凭据。",
+        "action": "请选择其他模型或重新登录。"
+      }
+    },
+    "forkBoundary": {
+      "en": {
+        "reason": "The fork boundary must be a completed turn.",
+        "action": "Choose a completed turn/end sequence."
+      },
+      "zh-CN": {
+        "reason": "分支起点必须是已完成的轮次。",
+        "action": "请选择已完成的 turn/end 序号。"
+      }
+    },
+    "bundleUnavailable": {
+      "en": {
+        "reason": "The selected agent bundle is unavailable.",
+        "action": "Install, enable and trust the bundle, or choose another agent."
+      },
+      "zh-CN": {
+        "reason": "所选 Agent 组合不可用。",
+        "action": "请安装、启用并信任该组合，或选择其他 Agent。"
+      }
+    },
+    "providerUnconfigured": {
+      "en": {
+        "reason": "No model provider is configured for this profile.",
+        "action": "Run agh config to add a provider."
+      },
+      "zh-CN": {
+        "reason": "当前配置尚未设置模型提供方。",
+        "action": "请运行 agh config 添加提供方。"
+      }
+    },
+    "loopMissing": {
+      "en": {
+        "reason": "The selected Loop is not installed.",
+        "action": "Install its pinned ID and version before retrying."
+      },
+      "zh-CN": {
+        "reason": "所选 Loop 尚未安装。",
+        "action": "请安装其固定的 ID 和版本后再重试。"
+      }
+    },
+    "sandboxUnavailable": {
+      "en": {
+        "reason": "Required execution isolation is unavailable.",
+        "action": "Choose an available sandbox or review the required isolation settings."
+      },
+      "zh-CN": {
+        "reason": "必需的执行隔离不可用。",
+        "action": "请选择可用的沙箱，或复核必需隔离设置。"
+      }
+    },
+    "cleanHome": {
+      "en": {
+        "reason": "This home or request uses a retired preview format.",
+        "action": "Select a new, empty private AGH_HOME, configure it again, and use explicit recipe and permission fields. No data conversion or old trust is carried over."
+      },
+      "zh-CN": {
+        "reason": "该 home 或请求使用了已退役的预览格式。",
+        "action": "请使用新的空私有 AGH_HOME，重新配置，并分别指定配方与权限。不会转换旧数据或沿用旧信任。"
+      }
+    }
+  }
+}

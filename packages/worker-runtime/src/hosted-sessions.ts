@@ -1,20 +1,24 @@
-import { type Host, type HostSession, leanEvent, type WorkspaceBinding } from '@agnes/host'
-import type { WorkerGeneration } from '@agnes/protocol'
-import { assertBatchItemConfinement } from './batch-confinement.js'
+import {
+  type Host,
+  type HostSession,
+  sameWorkspaceBindingAuthority,
+  type WorkspaceBinding,
+} from '@agnes/host'
+import { rpcError, type WorkerGeneration } from '@agnes/protocol'
 import { handleCommand, type WorkerResourceSlot } from './commands.js'
-import { releaseRawExport } from './export-raw.js'
+import { closeSessionFileUploads } from './file-upload.js'
 import {
   type EventFrame,
   type PreviewFrame,
-  type ProgressFrame,
   parseWorkspaceBinding,
   type SessionCommandFrame,
   type SessionOpenFrame,
   type SessionOpenResult,
-  sessionHash,
 } from './frames.js'
 import type { SharedSessionChannel } from './shared-session-channel.js'
 import { type TailHandle, tailSession } from './tail.js'
+
+type HistoryOpening = Pick<Parameters<Host['createSession']>[0], 'historySignal' | 'onHistoryProgress'>
 
 type HostedSession = {
   readonly session: HostSession
@@ -26,13 +30,14 @@ type HostedSession = {
   lastActivityAt: number
 }
 
-const ERROR_CODE = /^E_[A-Z0-9_]{1,64}$/
-
 /** What a hibernated session keeps: enough to reopen it, and nothing that grants authority. */
 type HibernatedStub = {
+  pluginGenerationId?: string
   binding: WorkspaceBinding
   parent?: { key: string; boundarySeq: number }
   preset: string
+  /** Kept so a woken session reopens under the level it slept with, not the legacy default. */
+  permission?: string
   lastSeq: number
   /** The ledger head read from storage: another writer may append while the session sleeps. */
   head(): Promise<number>
@@ -56,14 +61,20 @@ export function sessionScopedKey(params: Readonly<Record<string, unknown>>): str
 }
 
 /** Worker-level commands whose parameters name a session; each wakes that session first. */
-export const SESSION_SCOPED_WORKER_METHODS: readonly string[] = ['callService', 'inspectService']
+export const SESSION_SCOPED_WORKER_METHODS: readonly string[] = [
+  'callService',
+  'inspectService',
+  'resolveService',
+]
 
 // Commands that change or run a session count as activity; reads, `ping` and a run-less `abort` do not.
 const ACTIVE_METHODS = new Set([
+  'deliverSystemInput',
   'enqueue',
   'run',
   'append',
   'setPreset',
+  'setToolFilter',
   'setModel',
   'setYolo',
   'manualCompact',
@@ -71,18 +82,6 @@ const ACTIVE_METHODS = new Set([
   'fork',
   'resume',
   'callService',
-])
-
-/** Commands that start or continue a turn: a batch item session runs none without its hook. */
-const TURN_METHODS = new Set([
-  'enqueue',
-  'sendQueuedNow',
-  'run',
-  'append',
-  'resume',
-  'fork',
-  'manualCompact',
-  'decideApproval',
 ])
 
 /** Owns every HostSession in the single shared business worker. */
@@ -93,6 +92,8 @@ export class HostedSessions {
   private readonly stubs = new Map<string, HibernatedStub>()
   private readonly hibernating = new Map<string, Promise<void>>()
   private readonly waking = new Map<string, Promise<HostedSession>>()
+  private readonly cancelledOpens = new Set<string>()
+  private readonly openingAborts = new Map<string, { key: string; controller: AbortController }>()
   private closingAll = false
   private readonly clock: () => number
   private readonly sweeper: ReturnType<typeof setInterval> | undefined
@@ -125,7 +126,6 @@ export class HostedSessions {
 
   async open(frame: SessionOpenFrame): Promise<SessionOpenResult> {
     if (this.closingAll) throw new Error('shared worker is closing')
-    assertBatchItemConfinement(this.options.host, frame.sessionKey)
     const envelope = parseWorkspaceBinding(frame.params.binding, frame.sessionKey)
     const binding = this.options.host.acceptWorkspaceBinding(envelope, frame.sessionKey)
     const parent = frame.params.parent
@@ -140,47 +140,84 @@ export class HostedSessions {
     const closing = this.closing.get(frame.sessionKey)
     if (closing) await closing
     if (this.closingAll) throw new Error('shared worker is closing')
-    if (this.dormant(frame.sessionKey)) {
-      const woken = await this.acquire(frame.sessionKey)
-      this.assertAuthority(woken.session, binding, parent)
-      return this.describe(woken.session)
+    const controller = new AbortController()
+    if (this.cancelledOpens.delete(`${frame.sessionKey}\0${frame.requestId}`)) controller.abort()
+    this.openingAborts.set(frame.requestId, { key: frame.sessionKey, controller })
+    const history: HistoryOpening = {
+      historySignal: controller.signal,
+      onHistoryProgress: (progress) =>
+        this.options.send({
+          kind: 'session.loading',
+          requestId: frame.requestId,
+          sessionKey: frame.sessionKey,
+          ...progress,
+        }),
     }
-    const existing = this.sessions.get(frame.sessionKey)
-    if (existing) {
-      this.assertAuthority(existing.session, binding, parent)
-      return this.describe(existing.session)
-    }
-    const pending = this.opening.get(frame.sessionKey)
-    if (pending) {
-      const hosted = await pending
-      this.assertAuthority(hosted.session, binding, parent)
-      return this.describe(hosted.session)
-    }
-    const openedAt = this.clock()
-    const opening = this.options.channel.run(frame.sessionKey, async () => {
-      const session = await this.options.host
-        .createSession({
-          key: frame.sessionKey,
-          binding,
-          ...(frame.params.preset ? { preset: frame.params.preset } : {}),
-          ...(parent ? { parent } : {}),
-          onOpenProgress: this.progressSender(frame.sessionKey),
-          onFullVerify: this.fullVerifyRecorder(frame.sessionKey),
-        })
-        .catch((error: unknown) => {
-          this.recordOpenFailed(frame.sessionKey, error, openedAt)
-          throw error
-        })
-      const hosted = this.adopt(frame.sessionKey, session)
-      this.recordOpen(frame.sessionKey, session, openedAt)
-      return hosted
-    })
-    this.opening.set(frame.sessionKey, opening)
     try {
-      return this.describe((await opening).session)
+      controller.signal.throwIfAborted()
+      if (this.dormant(frame.sessionKey)) {
+        const woken = await this.acquire(frame.sessionKey, history)
+        this.assertAuthority(woken.session, binding, parent)
+        return this.describe(woken.session)
+      }
+      const existing = this.sessions.get(frame.sessionKey)
+      if (existing) {
+        this.assertAuthority(existing.session, binding, parent)
+        return this.describe(existing.session)
+      }
+      const pending = this.opening.get(frame.sessionKey)
+      if (pending) {
+        const hosted = await pending
+        this.assertAuthority(hosted.session, binding, parent)
+        return this.describe(hosted.session)
+      }
+      const opening = this.options.channel.run(frame.sessionKey, async () => {
+        const session = await this.options.host
+          .createSession({
+            key: frame.sessionKey,
+            ...history,
+            binding,
+            ...(frame.params.preset ? { preset: frame.params.preset } : {}),
+            ...(frame.params.permission ? { permission: frame.params.permission } : {}),
+            ...(!frame.params.resume && frame.params.agent !== undefined
+              ? { agent: frame.params.agent }
+              : {}),
+            ...(!frame.params.resume && frame.params.agentDigest !== undefined
+              ? { agentDigest: frame.params.agentDigest }
+              : {}),
+            ...(frame.params.bundles !== undefined ? { bundles: frame.params.bundles } : {}),
+            ...(!frame.params.resume && frame.params.systemPromptAppend !== undefined
+              ? { systemPromptAppend: frame.params.systemPromptAppend }
+              : {}),
+            ...(frame.params.loop ? { loop: frame.params.loop } : {}),
+            ...(parent ? { parent } : {}),
+          })
+          .catch((error: unknown) => {
+            if ((error as { code?: string })?.code === 'E_LOOP_MISSING')
+              throw rpcError('SEMANTIC_REJECTED', {
+                code: 'LOOP_MISSING',
+                reason: 'selected loop is not installed; install its pinned id and version',
+              })
+            throw error
+          })
+        const hosted = this.adopt(frame.sessionKey, session)
+        return hosted
+      })
+      this.opening.set(frame.sessionKey, opening)
+      try {
+        return this.describe((await opening).session)
+      } finally {
+        if (this.opening.get(frame.sessionKey) === opening) this.opening.delete(frame.sessionKey)
+      }
     } finally {
-      if (this.opening.get(frame.sessionKey) === opening) this.opening.delete(frame.sessionKey)
+      this.openingAborts.delete(frame.requestId)
     }
+  }
+
+  cancelOpen(requestId: string, key: string): void {
+    const pending = this.openingAborts.get(requestId)
+    if (pending?.key === key) pending.controller.abort(new Error('session opening cancelled'))
+    else if (this.cancelledOpens.size < 512) this.cancelledOpens.add(`${key}\0${requestId}`)
   }
 
   private describe(session: HostSession): SessionOpenResult {
@@ -217,28 +254,50 @@ export class HostedSessions {
             kind: 'event',
             sessionKey,
             seq: event.seq,
-            // Lean, like scan replies: a large inline attachment stays in this process's ledger.
-            event: leanEvent(event as never) as typeof event,
+            event,
           } satisfies EventFrame)
       },
       onError: (error) => {
-        const code = (error as { code?: unknown } | null)?.code
         this.options.send({
           kind: 'session.interrupted',
           sessionKey,
           reason: error instanceof Error ? error.message : String(error),
-          ...(typeof code === 'string' && ERROR_CODE.test(code) ? { code } : {}),
         })
       },
     })
   }
 
   async dispatch(frame: SessionCommandFrame): Promise<unknown> {
-    if (TURN_METHODS.has(frame.method)) assertBatchItemConfinement(this.options.host, frame.sessionKey)
+    if (frame.method === 'verifyHistory')
+      return this.enter(frame.sessionKey, frame.method, async (hosted) => {
+        const controller = new AbortController()
+        if (this.cancelledOpens.delete(`${frame.sessionKey}\0${frame.requestId}`)) controller.abort()
+        this.openingAborts.set(frame.requestId, { key: frame.sessionKey, controller })
+        try {
+          return await hosted.session.verifyHistory({
+            signal: controller.signal,
+            onProgress: (progress) =>
+              this.options.send({
+                kind: 'session.loading',
+                requestId: frame.requestId,
+                sessionKey: frame.sessionKey,
+                ...progress,
+              }),
+          })
+        } finally {
+          this.openingAborts.delete(frame.requestId)
+        }
+      })
     const stub = this.stubs.get(frame.sessionKey)
     // A stub answers these itself: a listing or a stray cancel must not wake a session.
     if (stub && frame.method === 'ping')
-      return { ok: true, lastSeq: await stub.head(), preset: stub.preset, parent: stub.parent ?? null }
+      return {
+        ok: true,
+        lastSeq: await stub.head(),
+        preset: stub.preset,
+        ...(stub.permission ? { permission: stub.permission } : {}),
+        parent: stub.parent ?? null,
+      }
     if (stub && frame.method === 'abort') return {}
     if (stub && frame.method === 'previewSnapshot') return []
     return this.enter(frame.sessionKey, frame.method, (hosted) =>
@@ -308,13 +367,13 @@ export class HostedSessions {
 
   private quiet(key: string, hosted: HostedSession): boolean {
     const { session } = hosted
+    if (session.hasActiveProcesses?.()) return false
     if (hosted.inflight > 0 || hosted.aborts.size > 0 || this.options.channel.hasPending(key)) return false
     if (session.turn !== null || session.op() !== null || session.d.log.faulted) return false
+    for (const { value } of session.state.registers.decisionStates.values())
+      if (!value.consumption && !value.invalidation && (!value.result || value.result.reason === 'answered'))
+        return false
     if (((session.latest('inbox') as { items?: unknown[] } | undefined)?.items?.length ?? 0) > 0) return false
-    if (session.state.pendingApprovals.size > 0) return false
-    // Hibernating closes the session, and closing it stops its background jobs: a server the model
-    // started keeps the session awake for as long as it runs.
-    if (session.jobs.running() > 0) return false
     // A child still open keeps its parent open; children hibernate first.
     for (const other of this.options.host.kernel.sessions.values())
       if (other !== session && other.d.log.parent?.key === key) return false
@@ -328,27 +387,25 @@ export class HostedSessions {
     // Resume the stream from what was pushed, not from lastSeq: rows committed while the log drains
     // on close were never pushed and are sent after waking.
     const delivered = hosted.following?.deliveredThrough()
-    const ledger = session.d.log.storage
     const lastSeq = session.lastSeq
     this.stubs.set(key, {
+      ...(session.pluginGenerationId ? { pluginGenerationId: session.pluginGenerationId } : {}),
       binding: session.d.workspaceIdentity as WorkspaceBinding,
       ...(session.d.log.parent ? { parent: session.d.log.parent } : {}),
       preset: session.preset.name,
+      ...(session.preset.permission ? { permission: session.preset.permission } : {}),
       lastSeq,
-      head: async () => {
-        try {
-          return (await ledger.scan(key, { order: 'desc', limit: 1 }))[0]?.seq ?? lastSeq
-        } catch {
-          return lastSeq
-        }
-      },
+      head: this.headReader(key, lastSeq),
       ...(delivered !== undefined ? { tailFrom: delivered + 1 } : {}),
     })
     hosted.tail?.abort()
-    releaseRawExport(session)
     const done = (async () => {
       try {
-        await session.close()
+        try {
+          await closeSessionFileUploads(session)
+        } finally {
+          await session.close()
+        }
       } catch (error) {
         this.log(
           key,
@@ -358,6 +415,7 @@ export class HostedSessions {
       } finally {
         this.options.host.kernel.sessions.delete(key)
         this.options.channel.closeSession(key)
+        this.options.channel.releaseSession(key)
       }
       this.log(key, 'info', `session hibernated in ${this.clock() - started} ms`)
     })().finally(() => this.hibernating.delete(key))
@@ -365,12 +423,25 @@ export class HostedSessions {
     return done
   }
 
+  private headReader(key: string, lastSeq: number): () => Promise<number> {
+    // A stub must not capture hibernate's scope: its closing task still refers to the full session.
+    return async () => {
+      try {
+        return (
+          (await this.options.host.kernel.o.storage.scan(key, { order: 'desc', limit: 1 }))[0]?.seq ?? lastSeq
+        )
+      } catch {
+        return lastSeq
+      }
+    }
+  }
+
   private dormant(key: string): boolean {
     return this.stubs.has(key) || this.hibernating.has(key) || this.waking.has(key)
   }
 
   /** The open session for `key`, waking it from its stub if it hibernated. */
-  private async acquire(key: string): Promise<HostedSession> {
+  private async acquire(key: string, history: HistoryOpening = {}): Promise<HostedSession> {
     for (;;) {
       const hibernating = this.hibernating.get(key)
       if (hibernating) {
@@ -384,30 +455,31 @@ export class HostedSessions {
       const stub = this.stubs.get(key)
       // A session being closed is not woken: close would not see a wake that starts after it looked.
       if (!stub || this.closingAll || this.closing.has(key)) throw new Error(`session ${key} is not open`)
-      return this.wake(key, stub)
+      return this.wake(key, stub, history)
     }
   }
 
-  private wake(key: string, stub: HibernatedStub): Promise<HostedSession> {
+  private wake(key: string, stub: HibernatedStub, history: HistoryOpening = {}): Promise<HostedSession> {
     const started = this.clock()
     // No parent: the ledger records it, and this is the shape a reopen after restart takes.
     const woken = this.options.channel.run(key, async () => {
-      assertBatchItemConfinement(this.options.host, key)
-      const session = await this.options.host
-        .createSession({
-          key,
-          binding: stub.binding,
-          preset: stub.preset,
-          onOpenProgress: this.progressSender(key),
-          onFullVerify: this.fullVerifyRecorder(key),
-        })
-        .catch((error: unknown) => {
-          this.recordOpenFailed(key, error, started)
-          throw error
-        })
+      const session = await this.options.host.createSession({
+        key,
+        binding: stub.binding,
+        preset: stub.preset,
+        ...(stub.permission ? { permission: stub.permission } : {}),
+        ...history,
+      })
+      if (stub.pluginGenerationId && session.pluginGenerationId !== stub.pluginGenerationId) {
+        try {
+          await closeSessionFileUploads(session)
+        } finally {
+          await session.close()
+        }
+        throw new Error('E_GENERATION_RESUME_MISMATCH: hibernated session changed plugin generation')
+      }
       this.stubs.delete(key)
       const hosted = this.adopt(key, session)
-      this.recordOpen(key, session, started)
       if (stub.tailFrom !== undefined) this.follow(key, hosted, stub.tailFrom)
       return hosted
     })
@@ -431,77 +503,6 @@ export class HostedSessions {
     return hosted
   }
 
-  private recordOpen(sessionKey: string, session: HostSession, startedAt: number): void {
-    try {
-      // A verified head past the stored head is the only trace rows were removed from the end of the
-      // ledger (the chain cannot show it); the open replaces that checkpoint, so say so here.
-      if (session.d.log.openStats.checkpoint.reason === 'beyond-head')
-        this.log(
-          sessionKey,
-          'warn',
-          `ledger ends at seq ${session.lastSeq}, before its verified checkpoint: rows after it may have been removed`,
-        )
-      this.record(sessionKey, {
-        ...session.d.log.openStats,
-        wallMs: this.clock() - startedAt,
-        outcome: 'ok',
-      })
-    } catch {
-      /* diagnostics must not change the outcome */
-    }
-  }
-
-  private recordOpenFailed(sessionKey: string, error: unknown, startedAt: number): void {
-    const code = (error as { code?: unknown } | null)?.code
-    this.record(sessionKey, {
-      wallMs: this.clock() - startedAt,
-      outcome: 'failed',
-      ...(typeof code === 'string' ? { code } : {}),
-    })
-  }
-
-  private record(
-    sessionKey: string,
-    detail: Record<string, unknown>,
-    kind: 'session.open' | 'session.verify_full' = 'session.open',
-  ): void {
-    try {
-      this.options.send({
-        kind: 'record',
-        sessionKey,
-        record: { kind, detail: { session: sessionHash(sessionKey), ...detail } },
-      })
-    } catch {
-      /* diagnostics must not change the outcome */
-    }
-  }
-
-  /** At most one progress frame a second per open, plus the one that finishes a phase. */
-  private progressSender(
-    sessionKey: string,
-  ): (p: { phase: 'verify' | 'fold'; done: number; total: number }) => void {
-    let last: number | undefined
-    return (p) => {
-      const now = this.clock()
-      if (last !== undefined && now - last < 1_000 && p.done < p.total) return
-      last = now
-      try {
-        this.options.send({ kind: 'progress', sessionKey, ...p } satisfies ProgressFrame)
-      } catch {
-        /* progress must not change the open */
-      }
-    }
-  }
-
-  /**
-   * Records how the background verification of a session opened from a checkpoint ended. A failure
-   * also seals the session, which a tail following it reports to the client as `session.interrupted`.
-   */
-  private fullVerifyRecorder(sessionKey: string) {
-    return (r: { ms: number; rows: number; bytes: number; outcome: 'ok' | 'failed'; seq?: number }): void =>
-      this.record(sessionKey, { ...r }, 'session.verify_full')
-  }
-
   private log(sessionKey: string, level: 'info' | 'warn', message: string): void {
     try {
       this.options.send({ kind: 'log', sessionKey, level, message })
@@ -521,7 +522,6 @@ export class HostedSessions {
       input.childKey === parentSession.key
     )
       throw new Error('invalid fork command')
-    assertBatchItemConfinement(this.options.host, input.childKey)
     const envelope = parseWorkspaceBinding(input.binding, input.childKey)
     const binding = this.options.host.acceptWorkspaceBinding(envelope, input.childKey)
     const parent = { key: parentSession.key, boundarySeq: input.at }
@@ -569,10 +569,7 @@ export class HostedSessions {
     const actualParent = session.d.log.parent
     if (
       !actualBinding ||
-      actualBinding.sessionKey !== binding.sessionKey ||
-      actualBinding.workspaceId !== binding.workspaceId ||
-      actualBinding.authorityRevision !== binding.authorityRevision ||
-      actualBinding.canonicalRoot !== binding.canonicalRoot ||
+      !sameWorkspaceBindingAuthority(actualBinding, binding) ||
       actualParent?.key !== parent?.key ||
       actualParent?.boundarySeq !== parent?.boundarySeq
     )
@@ -583,6 +580,8 @@ export class HostedSessions {
     const active = this.closing.get(sessionKey)
     if (active) return active
     const closing = (async () => {
+      for (const pending of this.openingAborts.values())
+        if (pending.key === sessionKey) pending.controller.abort()
       await this.opening.get(sessionKey)?.catch(() => undefined)
       while (this.hibernating.has(sessionKey) || this.waking.has(sessionKey)) {
         await this.hibernating.get(sessionKey)
@@ -593,16 +592,20 @@ export class HostedSessions {
       if (!hosted) return
       this.sessions.delete(sessionKey)
       hosted.tail?.abort()
-      releaseRawExport(hosted.session)
       for (const abort of hosted.aborts.values()) abort.abort()
       this.options.channel.closeSession(sessionKey)
       try {
-        await hosted.session.close()
+        try {
+          await closeSessionFileUploads(hosted.session)
+        } finally {
+          await hosted.session.close()
+        }
       } finally {
         // HostSession.close() can fail after the session has already been removed from this owner's
         // map. Always release the kernel registration as well, otherwise no owner remains that can
         // clean the stale key and a later session.open for the same key fails with E_LANE_BUSY.
         this.options.host.kernel.sessions.delete(sessionKey)
+        this.options.channel.releaseSession(sessionKey)
       }
     })().finally(() => {
       if (this.closing.get(sessionKey) === closing) this.closing.delete(sessionKey)
@@ -613,6 +616,7 @@ export class HostedSessions {
 
   async closeAll(): Promise<void> {
     this.closingAll = true
+    for (const { controller } of this.openingAborts.values()) controller.abort()
     if (this.sweeper) clearInterval(this.sweeper)
     await Promise.allSettled(this.opening.values())
     await Promise.allSettled([...this.hibernating.values(), ...this.waking.values()])

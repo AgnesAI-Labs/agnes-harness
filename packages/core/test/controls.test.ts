@@ -1,0 +1,598 @@
+import { trackExternalChild } from '@agnes/core-child-control/child/directory'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import { scanAll } from '@agnes/core-ledger/log/scan-pages'
+import type { ChildAgentListing, ChildAgentSessionService } from '@agnes/extension-api'
+import { defaultLoopFactory } from '@agnes/loop-default'
+import type { Provider } from '@agnes/protocol'
+import { describe, expect, it, vi } from 'vitest'
+import { Kernel } from '../src/kernel.js'
+import { createLoopContext } from '../src/loop/ports.js'
+import { ToolRegistry } from '../src/registry/tools.js'
+import { model, setupWith } from './helpers/child-traces.js'
+import { fakeProvider, sentFor, textTurn, toolTurn } from './helpers/fake-provider.js'
+import { actor, openSession, readTool, testWorkspaceInvocation } from './helpers/open-session.js'
+
+const content = (text: string) => [{ type: 'text' as const, text }]
+const run = (session: Awaited<ReturnType<typeof openSession>>['session']) =>
+  session.run({ until: 'turn-end', signal: new AbortController().signal })
+const facts = async (log: Awaited<ReturnType<typeof openSession>>['log']) =>
+  (await scanAll((query) => log.scan(query), { type: 'x/core/control', toSeq: log.lastSeq })).map(
+    (row) => row.data,
+  )
+
+function gate() {
+  let release!: () => void
+  const wait = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  return { wait, release }
+}
+
+describe('human Loop controls', () => {
+  it('queues, edits and withdraws steers while a tool runs, delivers after its receipt', async () => {
+    const entered = gate(),
+      done = gate()
+    const registry = new ToolRegistry()
+    registry.add(
+      readTool(async () => {
+        entered.release()
+        await done.wait
+        return { content: content('committed result') }
+      }),
+      { source: 'test', trust: 'builtin' },
+    )
+    const { session, log } = await openSession({
+      registry,
+      provider: fakeProvider([toolTurn('read', {}), textTurn('answer')]),
+    })
+    await session.enqueue('next-turn', { content: content('go'), actor })
+    const running = run(session)
+    await entered.wait
+    await session.enqueue('next-step', { content: content('change direction'), actor })
+    await session.enqueue('next-step', { content: content('withdraw me'), actor })
+    const port = await createLoopContext(session)
+    expect(await port.input.claim('next-step')).toBeNull()
+    const state = await session.controls.state()
+    const first = state.pending[0]!,
+      second = state.pending[1]!
+    await session.controls.edit(first.itemId, content('edited direction'), actor, 'edit')
+    await session.removeQueuedInput(second.itemId, actor, 'withdraw')
+    expect(await log.scan({ type: 'user/message', limit: 10 })).toHaveLength(1)
+    done.release()
+    expect((await running).reason).toBe('completed')
+    const rows = await log.scan({ fromSeq: 1, limit: 200 })
+    const delivered = rows.find(
+      (row) => row.type === 'x/core/control' && (row.data as { outcome?: string }).outcome === 'delivered',
+    )!
+    expect(delivered.seq).toBeGreaterThan(rows.find((row) => row.type === 'tool/result')!.seq)
+    expect(await facts(log)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ outcome: 'edited' }),
+        expect.objectContaining({ outcome: 'withdrawn' }),
+        expect.objectContaining({ outcome: 'delivered', itemId: first.itemId }),
+      ]),
+    )
+    expect((await session.controls.state()).pending).toEqual([])
+    await expect(
+      session.controls.edit(first.itemId, content('too late'), actor, 'late-edit'),
+    ).rejects.toMatchObject({ code: 'E_RELATION' })
+    await expect(session.removeQueuedInput(first.itemId, actor, 'late-withdraw')).rejects.toMatchObject({
+      code: 'E_RELATION',
+    })
+    expect(await facts(log)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ outcome: 'refused', operation: 'edit', reason: 'QUEUED_INPUT_GONE' }),
+        expect.objectContaining({ outcome: 'refused', operation: 'withdraw', reason: 'QUEUED_INPUT_GONE' }),
+      ]),
+    )
+    expect(
+      session.surface().some((node) => JSON.stringify(node.event.data).includes('edited direction')),
+    ).toBe(true)
+    await session.close()
+  })
+
+  it.each(['active', 'completed'] as const)(
+    'promotes one queue item atomically during %s, preserving content on failure',
+    async (mode) => {
+      const { session, log } = await openSession({ provider: fakeProvider([textTurn('answer')]) })
+      try {
+        await session.enqueue('next-turn', { content: content('go'), actor })
+        await session.acceptInput()
+        await session.enqueue('next-turn', {
+          content: [
+            ...content('one action'),
+            { type: 'file', name: 'note.txt', mimeType: 'text/plain', data: 'eA==' },
+          ],
+          actor,
+          kind: 'follow_up',
+        })
+        const [item] = (await session.controls.state()).pending
+        if (!item) throw new Error('missing queued item')
+        const before = (await session.controls.state()).pending
+        const append = vi.spyOn(log, 'append')
+        append.mockRejectedValueOnce(new Error('synthetic storage failure'))
+        await expect(session.controls.apply('promote', actor, 'promote', item.itemId)).rejects.toThrow(
+          'synthetic storage failure',
+        )
+        expect((await session.controls.state()).pending).toEqual(before)
+        expect(await facts(log)).not.toContainEqual(
+          expect.objectContaining({ action: 'promote', outcome: 'applied' }),
+        )
+        append.mockRestore()
+        if (mode === 'completed') {
+          await session.endTurn('completed')
+          await expect(session.controls.apply('promote', actor, 'late', item.itemId)).rejects.toMatchObject({
+            detail: { reason: 'CONTROL_NOT_RUNNING' },
+          })
+          expect((await session.controls.state()).pending).toEqual(before)
+          return
+        }
+        await session.controls.apply('promote', actor, 'promote', item.itemId)
+        expect((await session.controls.state()).pending).toEqual([
+          { ...item, kind: 'steer', target: 'next-step' },
+        ])
+        await expect(session.controls.apply('promote', actor, 'gone', 'missing')).rejects.toMatchObject({
+          code: 'E_RELATION',
+        })
+        expect((await session.controls.state()).pending).toHaveLength(1)
+        expect((await session.projectUI()).pendingInputs).toMatchObject([{ itemId: item.itemId }])
+      } finally {
+        await session.close()
+      }
+    },
+  )
+
+  it('interrupt cooperatively drains a running tool and retains its committed result', async () => {
+    const entered = gate()
+    const registry = new ToolRegistry()
+    registry.add(
+      readTool(async (_args, ctx) => {
+        entered.release()
+        await new Promise<void>((resolve) =>
+          ctx.signal.addEventListener('abort', () => resolve(), { once: true }),
+        )
+        return { content: content('effect already committed') }
+      }),
+      { source: 'test', trust: 'builtin' },
+    )
+    const { session, log } = await openSession({
+      registry,
+      provider: fakeProvider([toolTurn('read', {}), textTurn('next answer')]),
+    })
+    await session.enqueue('next-turn', { content: content('go'), actor })
+    const running = run(session)
+    await entered.wait
+    await session.enqueue('next-step', { content: content('new direction'), actor })
+    const item = (await session.controls.state()).pending[0]!
+    await log.append([
+      session.controls.fact('interrupt', 'requested', actor, {
+        admissionId: 'interrupt',
+        itemId: item.itemId,
+      }),
+      ...Array.from({ length: 500 }, () => session.controls.fact('steer', 'delivered', actor)),
+    ])
+    expect(await session.controls.ending()).toMatchObject({ reason: 'interrupted' })
+    await session.controls.apply('interrupt', actor, 'interrupt', item.itemId)
+    expect((await running).reason).toBe('interrupted')
+    expect(JSON.stringify(await log.scan({ type: 'tool/result', limit: 10 }))).toContain(
+      'effect already committed',
+    )
+    expect((await run(session)).reason).toBe('completed')
+    expect(await facts(log)).toContainEqual(
+      expect.objectContaining({ action: 'interrupt', outcome: 'applied' }),
+    )
+    await session.close()
+  })
+
+  it.each(['open', 'settled'] as const)(
+    'keeps a %s paused turn resumable through cold reopen',
+    async (mode) => {
+      const storage = new MemoryStorage()
+      const a = await openSession({ storage, provider: fakeProvider([textTurn('answer')]) })
+      for (const action of ['pause', 'resume'] as const)
+        await expect(a.session.controls.apply(action, actor, `idle-${action}`)).rejects.toMatchObject({
+          code: 'E_RELATION',
+          detail: { reason: 'CONTROL_NOT_RUNNING' },
+        })
+      await a.session.enqueue('next-turn', { content: content('go'), actor })
+      await a.session.step()
+      const turn = a.session.op()!.meta.turn
+      await a.session.controls.apply('pause', actor, 'pause')
+      expect(await a.session.step()).toMatchObject({ phase: 'paused', outcome: 'parked' })
+      expect((await a.session.projectUI()).opState).not.toBeNull()
+      if (mode === 'settled') {
+        await a.session.enqueue('next-turn', { content: content('queued after shutdown'), actor })
+        await a.session.resume({ mode: 'close' })
+        expect(a.session.op()).toBeNull()
+      }
+      await a.log.close()
+      const provider = fakeProvider([textTurn('answer')])
+      const b = await openSession({ storage, writerRunId: 'r2', provider })
+      await b.session.resume()
+      expect(await b.session.step()).toMatchObject({ phase: 'paused' })
+      if (mode === 'open') expect(b.session.op()!.meta.turn).toBe(turn)
+      else expect(b.session.op()).toBeNull()
+      expect(provider.requests).toEqual([])
+      await b.session.controls.apply('resume', actor, 'resume')
+      expect((await run(b.session)).reason).toBe('completed')
+      expect((await b.session.controls.state()).paused).toBe(false)
+      expect((await b.session.controls.state()).pending).toEqual([])
+      expect(await facts(b.log)).toContainEqual(
+        expect.objectContaining({ action: 'pause', outcome: 'applied' }),
+      )
+      await b.session.close()
+    },
+  )
+
+  it('pages all control facts so reload recovery cannot lose old returned steers', async () => {
+    const { session, log } = await openSession({ provider: fakeProvider([textTurn('unused')]) })
+    const rows = [
+      session.controls.fact('cancel', 'requested', actor, { returned: [{ content: content('old draft') }] }),
+      ...Array.from({ length: 205 }, () => session.controls.fact('steer', 'withdrawn', actor)),
+    ]
+    await log.append(rows)
+    const first = await session.controls.state(0)
+    expect(first.factsMore).toBe(true)
+    expect(first.facts[0]?.details).toMatchObject({ returned: [{ content: content('old draft') }] })
+    const second = await session.controls.state(first.factsThrough)
+    expect(second.factsMore).toBe(false)
+    expect([...first.facts, ...second.facts]).toHaveLength(206)
+    expect(new Set([...first.facts, ...second.facts].map((fact) => fact.seq)).size).toBe(206)
+    await session.close()
+  })
+
+  it('reports the latest control window as truncated when older facts exist', async () => {
+    const { session, log } = await openSession({ provider: fakeProvider([textTurn('unused')]) })
+    await log.append(
+      Array.from({ length: 201 }, (_, index) =>
+        session.controls.fact('steer', 'withdrawn', actor, { index }),
+      ),
+    )
+    const latest = await session.controls.state()
+    expect(latest.facts).toHaveLength(200)
+    expect(latest.factsMore).toBe(true)
+    expect(latest.facts[0]?.details).toMatchObject({ index: 1 })
+    expect(latest.facts.at(-1)?.details).toMatchObject({ index: 200 })
+    expect(latest.factsThrough).toBe(session.lastSeq)
+    const history = await session.controls.state(0)
+    expect(history.factsMore).toBe(true)
+    expect(history.facts[0]?.details).toMatchObject({ index: 0 })
+    await session.close()
+  })
+
+  it('cancel returns pending steers as durable content and ends the turn', async () => {
+    const { session, log } = await openSession({ provider: fakeProvider([textTurn('answer')]) })
+    await session.enqueue('next-turn', { content: content('go'), actor })
+    await session.step()
+    await session.enqueue('next-step', { content: content('return this'), actor })
+    await session.enqueue('next-step', {
+      content: content('UI action succeeded'),
+      actor,
+      kind: 'follow_up',
+      trust: 'untrusted',
+      origin: 'system',
+      commandId: 'ui-result:one',
+    })
+    await session.controls.apply('cancel', actor, 'cancel')
+    expect(session.op()).toBeNull()
+    expect((await log.scan({ type: 'turn/end', limit: 1 }))[0]?.data).toMatchObject({ reason: 'aborted' })
+    expect((await session.controls.state()).pending).toEqual([
+      expect.objectContaining({
+        target: 'next-turn',
+        kind: 'follow_up',
+        content: content('UI action succeeded'),
+      }),
+    ])
+    expect(await facts(log)).toContainEqual(
+      expect.objectContaining({
+        action: 'cancel',
+        returned: [expect.objectContaining({ content: content('return this') })],
+      }),
+    )
+    await session.acceptInput()
+    expect(session.laneTaint()).toBe(true)
+    await run(session)
+    expect((await session.controls.state()).pending).toEqual([])
+    const messages = await log.scan({ type: 'user/message', limit: 100 })
+    expect(messages.filter((row) => JSON.stringify(row.data).includes('UI action succeeded'))).toHaveLength(1)
+    await session.close()
+  })
+
+  it('pauses while a model reply drains and resumes the same turn after its boundary', async () => {
+    const entered = gate(),
+      done = gate()
+    const base = fakeProvider([textTurn('answer')])
+    const provider: Provider = {
+      ...base,
+      async *infer(request, options) {
+        entered.release()
+        await done.wait
+        yield* base.infer(request, options)
+      },
+    }
+    const { session, log } = await openSession({ provider })
+    await session.enqueue('next-turn', { content: content('go'), actor })
+    const running = run(session)
+    await entered.wait
+    const turn = session.op()!.meta.turn
+    await session.controls.apply('pause', actor, 'pause-model')
+    done.release()
+    expect((await running).reason).toBe('parked')
+    expect(session.op()!.meta.turn).toBe(turn)
+    expect(await log.scan({ type: 'turn/end', limit: 1 })).toEqual([])
+    await session.controls.apply('resume', actor, 'resume-model')
+    expect((await run(session)).reason).toBe('completed')
+    expect(base.requests).toHaveLength(1)
+    await session.close()
+  })
+
+  it.each([
+    { resident: false, phase: 'model' },
+    { resident: true, phase: 'model' },
+    { resident: true, phase: 'tool' },
+  ])(
+    'stops and continues a child with a recorded message ($resident/$phase)',
+    async ({ resident, phase }) => {
+      const entered = gate()
+      let calls = 0
+      const base = fakeProvider([textTurn('continued child')])
+      const provider: Provider = {
+        ...base,
+        models: () => [model()],
+        async *infer(request, options) {
+          if (calls++ === 0) {
+            if (phase === 'tool') {
+              for (const event of toolTurn('read', {})) yield event.type === 'sent' ? sentFor(request) : event
+              return
+            }
+            yield sentFor(request)
+            entered.release()
+            await new Promise<void>((resolve) =>
+              options.signal.addEventListener('abort', () => resolve(), { once: true }),
+            )
+            throw new Error('cooperative model stop')
+          }
+          yield* base.infer(request, options)
+        },
+      }
+      const { k, parent } = await setupWith(provider, Kernel.create)
+      k.tools.add(
+        readTool(async (_args, ctx) => {
+          entered.release()
+          return new Promise<never>((_resolve, reject) =>
+            ctx.signal.addEventListener('abort', () => reject(ctx.signal.reason), { once: true }),
+          )
+        }),
+        { source: 'test', trust: 'builtin' },
+      )
+      const handle = await parent.d.children.createWithKind!('spawn', {
+        parent: parent.key,
+        cwd: '/w',
+        input: 'task',
+        resident,
+      })
+      const child = k.get(handle.key)!
+      child.d.workspaceInvocation = testWorkspaceInvocation()
+      if (resident) {
+        // Rebuilding a pinned driver can outlast the stopped run's final ledger writes.
+        const restart = child.restartLoopDriver.bind(child)
+        vi.spyOn(child, 'restartLoopDriver').mockImplementation(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10))
+          await restart()
+        })
+      }
+      let completed = false
+      const waiting = handle.run('task').then((result) => {
+        completed = true
+        return result
+      })
+      await entered.wait
+      await parent.controls.apply('child-stop', actor, 'stop-child', undefined, { id: handle.key })
+      if (!resident) expect(completed).toBe(false)
+      expect((await parent.controls.state()).children.find((child) => child.id === handle.key)).toMatchObject(
+        {
+          status: 'interrupted',
+          controls: { continue: true },
+        },
+      )
+      await expect(
+        parent.controls.apply('child-stop', actor, 'foreign', undefined, { id: 'unowned' }),
+      ).rejects.toMatchObject({ code: 'E_UNSUPPORTED' })
+      await parent.controls.apply('child-continue', actor, 'continue-child', undefined, {
+        id: handle.key,
+        text: 'new task',
+      })
+      if (resident) {
+        await waiting
+        await expect
+          .poll(
+            async () =>
+              (await parent.controls.state()).children.find((child) => child.id === handle.key)?.status,
+          )
+          .toBe('idle')
+        expect(
+          JSON.stringify(await k.get(handle.key)!.scan({ type: 'assistant/message', limit: 10 })),
+        ).toContain('continued child')
+      } else expect((await waiting).text).toBe('continued child')
+      const rows = await parent.scan({ type: 'x/core/control', limit: 20 })
+      expect(
+        rows
+          .filter((row) => (row.data as { outcome?: string }).outcome === 'applied')
+          .map((row) => row.actor),
+      ).toEqual([actor, actor])
+      await k.close()
+    },
+  )
+
+  it.each(['steer', 'pause', 'interrupt', 'promote'] as const)(
+    'refuses unsupported %s on the pinned factory',
+    async (action) => {
+      const { session, log } = await openSession({
+        provider: fakeProvider([textTurn('answer')]),
+        loopFactory: { ...defaultLoopFactory, controls: {} },
+      })
+      await session.enqueue('next-turn', { content: content('go'), actor })
+      await session.step()
+      const operation =
+        action === 'steer'
+          ? session.enqueue('next-step', { content: content('change'), actor })
+          : session.controls.apply(action, actor, 'unsupported', 'missing')
+      await expect(operation).rejects.toMatchObject({
+        code: 'E_UNSUPPORTED',
+        detail: { reason: 'LOOP_CONTROL_UNSUPPORTED', control: action === 'promote' ? 'steer' : action },
+      })
+      expect(await facts(log)).toContainEqual(
+        expect.objectContaining({ action: action === 'promote' ? 'steer' : action, outcome: 'refused' }),
+      )
+      await session.close()
+    },
+  )
+
+  it('stops and continues an external child through the loop port', async () => {
+    const listing: ChildAgentListing = {
+      id: 'ext-1',
+      providerId: 'codex',
+      status: 'running',
+      continuable: true,
+      interrupt: true,
+    }
+    const { parent, k, calls, untrack } = await externalControlSession(listing)
+    try {
+      await parent.controls.apply('child-stop', actor, 'stop-ext', undefined, { id: listing.id })
+      await parent.controls.apply('child-continue', actor, 'continue-ext', undefined, {
+        id: listing.id,
+        text: 'keep going',
+      })
+      expect(calls).toEqual([
+        { op: 'interrupt', id: 'ext-1' },
+        { op: 'send', id: 'ext-1', text: 'keep going' },
+      ])
+      const applied = (await parent.scan({ type: 'x/core/control', limit: 20 }))
+        .map((row) => row.data as { action?: string; outcome?: string })
+        .filter((row) => row.outcome === 'applied')
+        .map((row) => row.action)
+      expect(applied).toEqual(['child-stop', 'child-continue'])
+    } finally {
+      untrack()
+      await k.close()
+    }
+  })
+
+  it.each(['completed', 'failed', 'cancelled'] as const)(
+    'refuses a finished external child (%s)',
+    async (status) => {
+      const listing: ChildAgentListing = {
+        id: 'ext-done',
+        providerId: 'codex',
+        status,
+        continuable: true,
+        interrupt: true,
+      }
+      const { parent, k, calls, untrack } = await externalControlSession(listing)
+      try {
+        expect(
+          (await parent.controls.state()).children.find((row) => row.id === listing.id)?.controls,
+        ).toEqual({ stop: false, continue: false })
+        await expect(
+          parent.controls.apply('child-stop', actor, 'stop-done', undefined, { id: listing.id }),
+        ).rejects.toMatchObject({ code: 'E_RELATION', detail: { reason: 'CONTROL_NOT_RUNNING' } })
+        expect(calls).toEqual([])
+      } finally {
+        untrack()
+        await k.close()
+      }
+    },
+  )
+
+  it('refuses a child id that is in both the core store and the external directory', async () => {
+    const calls: string[] = []
+    let listing: ChildAgentListing = {
+      id: 'pending',
+      providerId: 'codex',
+      status: 'running',
+      continuable: true,
+      interrupt: true,
+    }
+    const port: ChildAgentSessionService = {
+      start: async () => handleFor(listing),
+      list: async () => [listing],
+      sendMessage: async () => ({ messageId: 'm1' }),
+      interrupt: async (id) => {
+        calls.push(id)
+        return { accepted: true }
+      },
+      result: async () => ({ status: 'completed', text: '' }),
+      events: async function* () {},
+      dispose: async () => {},
+    }
+    const { k, parent } = await setupWith(fakeProvider([textTurn('ok')]), (options) =>
+      Kernel.create({ ...options, loopChildren: () => port }),
+    )
+    let untrack = () => {}
+    try {
+      await parent.loopChildrenPort()!.start('bind')
+      const handle = await parent.d.children.createWithKind!('spawn', {
+        parent: parent.key,
+        cwd: '/w',
+        input: 'task',
+        start: false,
+      })
+      listing = { ...listing, id: handle.key }
+      untrack = trackExternalChild(parent.key, { listing })
+      await expect(
+        parent.controls.apply('child-stop', actor, 'dup', undefined, { id: handle.key }),
+      ).rejects.toMatchObject({
+        code: 'E_CHILD_CONFLICT',
+        detail: { reason: 'CHILD_OWNERSHIP_AMBIGUOUS' },
+      })
+      expect(calls).toEqual([])
+    } finally {
+      untrack()
+      await k.close()
+    }
+  })
+})
+
+function handleFor(listing: ChildAgentListing): Awaited<ReturnType<ChildAgentSessionService['start']>> {
+  return {
+    id: listing.id,
+    providerId: listing.providerId,
+    capabilities: {
+      continuable: true,
+      interrupt: true,
+      modelSelection: false,
+      inheritsParentContext: false,
+      worktree: false,
+    },
+    sendMessage: async (text) => ({ messageId: text }),
+    interrupt: async () => ({ accepted: true }),
+    result: async () => ({ status: 'completed', text: '' }),
+    events: async function* () {},
+    dispose: async () => {},
+  }
+}
+
+async function externalControlSession(listing: ChildAgentListing) {
+  const calls: Array<{ op: 'interrupt' | 'send'; id: string; text?: string }> = []
+  const port: ChildAgentSessionService = {
+    start: async () => handleFor(listing),
+    list: async () => [listing],
+    sendMessage: async (id, text) => {
+      calls.push({ op: 'send', id, text })
+      return { messageId: 'm1' }
+    },
+    interrupt: async (id) => {
+      calls.push({ op: 'interrupt', id })
+      return { accepted: true }
+    },
+    result: async () => ({ status: 'completed', text: '' }),
+    events: async function* () {},
+    dispose: async () => {},
+  }
+  const { k, parent } = await setupWith(fakeProvider([textTurn('ok')]), (options) =>
+    Kernel.create({ ...options, loopChildren: () => port }),
+  )
+  const untrack = trackExternalChild(parent.key, { listing })
+  await parent.loopChildrenPort()!.start('bind')
+  return { k, parent, calls, untrack }
+}

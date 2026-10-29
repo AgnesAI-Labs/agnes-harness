@@ -1,0 +1,50 @@
+{
+  "name": "@example/ui-interactions",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:example/interaction-renderer",
+        "export": "main",
+        "apiRange": "^5.0.0",
+        "runtime": "in-process",
+        "capabilities": {
+          "ui": true
+        }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:example/interaction-renderer",
+        "path": "./src/agnes.client.json"
+      }
+    ],
+    "provides": [
+      "ui"
+    ],
+    "application": {
+      "id": "interaction-renderer",
+      "presentation": {
+        "roles": {
+          "interaction": {
+            "packageId": "@example/ui-interactions",
+            "clientId": "interaction-renderer"
+          }
+        }
+      }
+    }
+  },
+  "peerDependencies": {
+    "@agnes/web-client": "0.0.0",
+    "@agnes/web-ui": "0.0.0",
+    "react": "18.3.1"
+  },
+  "devDependencies": {
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "react": "18.3.1"
+  }
+}

@@ -1,11 +1,14 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import type { Disposer, ExtensionAPI, ToolDef } from '@agnes/extension-api'
+import type { Disposer, ToolDef } from '@agnes/extension-api'
+import { bundledExtensionManifest } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it } from 'vitest'
 import factory, { TOOLS_CORE } from '../src/index.js'
 
-const manifest = JSON.parse(
-  readFileSync(fileURLToPath(new URL('../agnes.extension.json', import.meta.url)), 'utf8'),
+const manifest = bundledExtensionManifest(
+  JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')),
 ) as {
   id: string
   version: string
@@ -23,22 +26,21 @@ const manifest = JSON.parse(
 }
 
 describe('tools-core manifest', () => {
-  it('declares the six core tool names with no prefix', () => {
+  it('declares the five core tool names with no prefix', () => {
     expect(manifest.id).toBe('agnes/tools-core')
     expect(manifest.capabilities.tools.prefix).toBe('')
-    expect(manifest.capabilities.tools.names).toEqual(['read', 'write', 'edit', 'shell', 'job', 'todo'])
+    expect(manifest.capabilities.tools.names).toEqual(['read', 'write', 'edit', 'shell', 'todo'])
   })
 
   it('claims only the capabilities these tools use', () => {
     // Every entry here is an authority the host grants on the strength of this file, so an empty
-    // list is a claim in its own right: no hooks, no slots, no resources, and no network of its
+    // list is a claim in its own right: shutdown cleans jobs; no slots, resources or network of its
     // own — the tools reach the network only through a command the model runs.
-    expect(manifest.capabilities.hooks).toEqual([])
+    expect(manifest.capabilities.hooks).toEqual(['shutdown'])
     expect(manifest.capabilities.slots).toEqual([])
     expect(manifest.capabilities.resources).toEqual([])
     expect(manifest.capabilities.network).toEqual([])
-    // Output larger than the guard allows is stored as an artifact, and background commands are
-    // submitted as jobs; both need the artifacts capability.
+    // Output larger than the guard allows is stored as an artifact.
     expect(manifest.capabilities.artifacts).toBe(true)
     expect(manifest.capabilities.events).toBe(true)
   })
@@ -49,14 +51,19 @@ describe('tools-core manifest', () => {
     // path, so the file has to be there for the declaration to mean anything.
     const entry = fileURLToPath(new URL(`../${manifest.entry.replace(/^\.\//, '')}`, import.meta.url))
     expect(existsSync(entry), entry).toBe(true)
-    expect(manifest.apiRange).toBe('^1.0')
+    expect(manifest.apiRange).toBe('^5.0.0')
     expect(manifest.version).toMatch(/^\d+\.\d+\.\d+$/)
   })
 
   it('registers only tool names the manifest declares, and disposes every one', async () => {
     const registered: string[] = []
     const disposed: string[] = []
+    const hooks: string[] = []
     const api = {
+      registerHook: (name: string) => {
+        hooks.push(name)
+        return () => {}
+      },
       registerTool: (d: ToolDef): Disposer => {
         registered.push(d.name)
         return () => {
@@ -64,13 +71,14 @@ describe('tools-core manifest', () => {
         }
       },
     } as unknown as ExtensionAPI
-    const dispose = (await factory(api)) as Disposer
+    const dispose = (await extensionFactoryOf(factory)(api)) as Disposer
     expect(registered).toEqual(TOOLS_CORE.map((t) => t.name))
     // The manifest is what the host grants authority on, and the code is what claims it. Comparing
     // the two lists whole, in order, is what makes a name declared and never registered - or worse,
     // registered under a name the manifest does not carry - fail here rather than at assembly.
     expect(registered).toEqual(manifest.capabilities.tools.names)
-    dispose()
+    expect(hooks).toEqual(manifest.capabilities.hooks)
+    await dispose()
     expect(disposed).toEqual(registered)
   })
 })

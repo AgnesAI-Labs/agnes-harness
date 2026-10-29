@@ -27,11 +27,106 @@ describe('S1 Extension Service contract', () => {
     expect(result.total).toBe(35)
     expect(result.skipped).toBe(0)
   })
+  it('validates pending and consumed native profile decisions at the RPC boundary', () => {
+    const decision = {
+      handle: { id: 'recovery', sessionId: null, profileId: 'local-dev' },
+      revision: 1,
+      request: {
+        spec: {
+          key: 'recover',
+          purpose: 'service.effect',
+          subject: {},
+          prompt: 'Confirm recovery',
+          options: ['allowed-once', 'rejected'],
+        },
+        subjectDigest: 'a'.repeat(64),
+        owner: 'plugin/server',
+        operationId: 'reconcile',
+        sourcePackage: '@sample/server',
+        packageVersion: '1.0.0',
+        requestedBy: { id: 'operator', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+        lane: 'main',
+        createdAt: '2026-10-16T00:00:00Z',
+        expiresAt: null,
+      },
+      result: null,
+      answerCommand: null,
+      consumption: null,
+      invalidation: null,
+    }
+    for (const consumption of [
+      null,
+      { at: '2026-10-16T00:00:01Z', operationId: 'reconcile', effectId: null },
+    ])
+      expect(
+        validateMethod('_agnes/v1/profile.decisions.list', 'result', {
+          decisions: [{ ...decision, consumption }],
+        }).ok,
+      ).toBe(true)
+    expect(
+      validateMethod('_agnes/v1/profile.decisions.list', 'result', {
+        decisions: [{ ...decision, consumption: { operationId: 'reconcile' } }],
+      }).ok,
+    ).toBe(false)
+  })
+  it('requires reviewed profile effect policy and refuses caller authority fields', () => {
+    const effect = { ...capability, scope: 'profile', kind: 'effect' }
+    expect(validateServiceCapability(effect).ok).toBe(false)
+    const control = {
+      ...effect,
+      scope: 'session',
+      controlLeaseMs: 30_000,
+      controlSessionMs: 300_000,
+      effectPolicy: {
+        isDestructive: false,
+        isOpenWorld: false,
+        replay: 'never',
+        requiresApproval: 'never',
+        approvalScopes: [],
+      },
+    }
+    expect(validateServiceCapability(control).ok).toBe(true)
+    for (const patch of [
+      { scope: 'profile' },
+      { controlSessionMs: 29_999 },
+      { controlSessionMs: 300_001 },
+      { controlLeaseMs: undefined },
+    ])
+      expect(validateServiceCapability({ ...control, ...patch }).ok).toBe(false)
+    expect(
+      validateServiceCapability({
+        ...effect,
+        effectPolicy: {
+          isDestructive: true,
+          isOpenWorld: true,
+          replay: 'never',
+          requiresApproval: 'always',
+          approvalScopes: [],
+        },
+      }).ok,
+    ).toBe(true)
+    for (const field of ['actor', 'role', 'profileId', 'owner', 'approval', 'approved'])
+      expect(
+        validateMethod('_agnes/v1/extension.callScoped', 'params', {
+          extension: 'acme/dashboard',
+          service: 'report.query',
+          input: {},
+          [field]: true,
+        }).ok,
+      ).toBe(false)
+    expect(
+      validateMethod('_agnes/v1/extension.callScoped', 'params', {
+        extension: 'acme/dashboard',
+        service: 'report.query',
+        input: {},
+      }).ok,
+    ).toBe(true)
+  })
   it('rejects duplicate names even when kind or limits differ', () => {
     const manifest = {
       id: 'acme/dashboard',
       version: '1.0.0',
-      apiRange: '^1.0.0',
+      apiRange: '^5.0.0',
       entry: './index.js',
       capabilities: { services: [capability] },
     }

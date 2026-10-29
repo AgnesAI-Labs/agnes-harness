@@ -113,7 +113,13 @@ describe('renderDiagnosticsViewer', () => {
   })
 
   it('executes the viewer script', () => {
-    const bundle = makeBundle({ trace: twoLevelTimeline() })
+    const bundle = makeBundle({
+      trace: twoLevelTimeline(),
+      logs: {
+        daemon: { size: 10, text: 'request audit', missing: false, truncated: false },
+        runtime: { size: 20, text: 'worker runtime output', missing: false, truncated: true },
+      },
+    })
     const html = renderDiagnosticsViewer(bundle)
     document.documentElement.innerHTML = html
     const scripts = Array.from(document.querySelectorAll('script'))
@@ -124,39 +130,28 @@ describe('renderDiagnosticsViewer', () => {
     const tabLabels = Array.from(document.querySelectorAll('#agh-tabs button')).map((b) => b.textContent)
     expect(tabLabels).toEqual(['Overview', 'Conversation', 'Trace', 'Logs', 'System', 'Artifacts'])
 
-    expect(document.getElementById('tab-logs')?.textContent).toContain('Not included')
+    expect(document.getElementById('tab-logs')?.textContent).toContain('worker runtime output')
+    expect(document.getElementById('tab-logs')?.textContent).toContain('request audit')
+    expect(document.getElementById('tab-logs')?.textContent).toContain('Daemon request audit')
+    expect(document.getElementById('tab-logs')?.textContent).toContain('Daemon runtime')
 
     const traceText = document.getElementById('tab-trace')?.textContent ?? ''
     expect(traceText).toContain('root-call')
     expect(traceText).toContain('child-tool')
     expect(traceText).toMatch(/1\.5 s|1500 ms/)
     expect(traceText).toContain('250 ms')
-  })
 
-  it('names each log for what it holds, so an empty request audit is not read as an empty daemon log', () => {
-    const tail = (text: string) => ({ size: text.length, text, truncated: false, missing: false })
-    const bundle = makeBundle({
-      logs: {
-        runtime: tail('{"kind":"worker.exited","detail":{"code":134}}'),
-        requestAudit: tail(''),
-        host: tail('{"kind":"host.ready"}'),
-        browser: { collectedAt: '2026-09-24T01:02:03.000Z', entries: [], dropped: 0, limit: 1000 },
-      },
-    })
-    document.documentElement.innerHTML = renderDiagnosticsViewer(bundle)
-    const runtime = Array.from(document.querySelectorAll('script')).find(
-      (s) => s.getAttribute('type') !== 'application/json',
-    )
-    new Function(runtime?.textContent ?? '')()
-    const logs = document.getElementById('tab-logs')
-    expect(Array.from(logs?.querySelectorAll('h3') ?? []).map((h) => h.textContent)).toEqual([
-      'Daemon runtime log',
-      'Daemon request audit',
-      'Host audit',
-      'Browser console',
-    ])
-    expect(logs?.textContent).toContain('Failed requests only. An empty audit means no request failed')
-    expect(logs?.textContent).toContain('"code":134')
+    const traceTab = document.querySelector<HTMLButtonElement>('[data-tab="trace"]')
+    traceTab?.click()
+    expect(document.getElementById('tab-trace')?.hidden).toBe(false)
+    expect(document.getElementById('tab-overview')?.hidden).toBe(true)
+    traceTab?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    const logsTab = document.querySelector<HTMLButtonElement>('[data-tab="logs"]')
+    expect(document.activeElement).toBe(logsTab)
+    expect(logsTab?.getAttribute('aria-selected')).toBe('true')
+    expect(traceTab?.tabIndex).toBe(-1)
+    expect(document.getElementById('tab-logs')?.hidden).toBe(false)
+    expect(document.querySelector('script[src], link[rel="stylesheet"]')).toBeNull()
   })
 
   it('lists artifacts metadata', () => {

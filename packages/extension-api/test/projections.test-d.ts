@@ -1,7 +1,7 @@
 import type { JsonValue } from '@agnes/protocol'
 import { expectTypeOf, it } from 'vitest'
+import type { ExtensionAPI } from '../src/host.js'
 import type {
-  ExtensionAPI,
   ProjectionDef,
   ProjectionEvent,
   ProjectionReader,

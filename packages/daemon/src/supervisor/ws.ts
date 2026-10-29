@@ -2,14 +2,15 @@ import { createHash, timingSafeEqual } from 'node:crypto'
 import { createServer as createHttpServer } from 'node:http'
 import { createServer } from 'node:https'
 import type { AddressInfo, Socket } from 'node:net'
+import type { RpcEndpoint } from '@agnes/daemon-foundation/local/endpoint'
+import type { JsonRpcMessage } from '@agnes/daemon-foundation/rpc'
 import { MAX_FRAME_BYTES } from '@agnes/protocol'
 import { type WebSocket, WebSocketServer } from 'ws'
-import type { RpcEndpoint } from '../local/endpoint.js'
-import type { JsonRpcMessage } from '../rpc.js'
 
 export const WS_MAX_MESSAGE_BYTES = MAX_FRAME_BYTES
 const MAX_PENDING = 1_000
 const MAX_BUFFERED_BYTES = MAX_FRAME_BYTES
+const WS_HIGH_WATER_BYTES = 1024 * 1024
 
 function authorized(header: string | undefined, token: string): boolean {
   const given = header?.startsWith('Bearer ') ? header.slice(7) : ''
@@ -25,6 +26,20 @@ function protocolBearer(header: string | undefined): string | undefined {
     .map((value) => value.trim())
     .find((value) => value.startsWith('agnes-bearer.'))
     ?.slice('agnes-bearer.'.length)
+}
+
+const LOOPBACK_NAMES = ['127.0.0.1', 'localhost', '[::1]']
+
+/** `name:port` where name is a loopback name; anything else (a rebinding domain) is refused. */
+function loopbackAuthority(value: string | undefined, port: string): boolean {
+  if (!value) return false
+  let url: URL
+  try {
+    url = new URL(`http://${value}`)
+  } catch {
+    return false
+  }
+  return LOOPBACK_NAMES.includes(url.hostname) && url.port === port && url.host === value.toLowerCase()
 }
 
 function target(addr: string): { host: string; port: number } {
@@ -50,12 +65,19 @@ function bind(socket: WebSocket, endpoint: RpcEndpoint, onClose: () => void): vo
     socket.close(code)
     void endpoint.close().catch(() => undefined)
   }
-  const send = (message: JsonRpcMessage) => {
-    if (stopped) return
+  /** Resolves once the frame has been handed to the socket (or the connection has stopped). */
+  const send = (message: JsonRpcMessage): Promise<void> => {
+    if (stopped) return Promise.resolve()
     const text = JSON.stringify(message)
-    if (socket.bufferedAmount + Buffer.byteLength(text, 'utf8') > MAX_BUFFERED_BYTES) return stop(1013)
-    socket.send(text, (error) => {
-      if (error) stop(1011)
+    if (socket.bufferedAmount + Buffer.byteLength(text, 'utf8') > MAX_BUFFERED_BYTES) {
+      stop(1013)
+      return Promise.resolve()
+    }
+    return new Promise((resolve) => {
+      socket.send(text, (error) => {
+        if (error) stop(1011)
+        resolve()
+      })
     })
   }
   socket.on('message', (data, binary) => {
@@ -74,7 +96,7 @@ function bind(socket: WebSocket, endpoint: RpcEndpoint, onClose: () => void): vo
     void endpoint
       .handle(message)
       .then((reply) => {
-        if (reply) send(reply)
+        if (reply) void send(reply)
       })
       .catch(() => stop(1011))
       .finally(() => {
@@ -89,7 +111,12 @@ function bind(socket: WebSocket, endpoint: RpcEndpoint, onClose: () => void): vo
   socket.on('error', () => stop(1011))
   void (async () => {
     try {
-      for await (const notification of endpoint.notifications) send(notification)
+      // Same backpressure as the local socket: past the high-water mark the pump waits for the
+      // frame to be written, so the backlog stays in the endpoint queue where feeds measure it.
+      for await (const notification of endpoint.notifications) {
+        const written = send(notification)
+        if (socket.bufferedAmount > WS_HIGH_WATER_BYTES) await written
+      }
     } catch {
       stop(1011)
     }
@@ -100,7 +127,12 @@ export async function listenWebSocket(options: {
   addr: string
   cert?: string
   key?: string
-  /** Explicit local mode: validated upgrade grants local single-user authority. */
+  /**
+   * Explicit local mode: an upgrade grants local single-user authority when its Host is a loopback
+   * name with this listener's port (no DNS rebinding) and its Origin, if any, is the Web page's own
+   * origin under a loopback name (no cross-site page). Other local processes are the user's own and
+   * send no Origin; they are not refused.
+   */
   localOrigin?: string
   token: string
   endpoint(): { endpoint: RpcEndpoint; onClose(): void }
@@ -136,13 +168,22 @@ export async function listenWebSocket(options: {
     perMessageDeflate: false,
     handleProtocols: (protocols) => (protocols.has('agnes-v1') ? 'agnes-v1' : false),
   })
-  let expectedHost = ''
+  let listenPort = ''
+  const pagePort = local ? new URL(options.localOrigin as string).port : ''
+  const pageOrigin = (origin: string | undefined): boolean => {
+    if (origin === undefined) return true
+    const url = /^http:\/\/[^/]+$/.test(origin) ? origin.slice('http://'.length) : undefined
+    return loopbackAuthority(url, pagePort)
+  }
   server.on('upgrade', (request, socket, head) => {
     if (stopping) {
       socket.destroy()
       return
     }
-    if (local && (request.headers.origin !== options.localOrigin || request.headers.host !== expectedHost)) {
+    if (
+      local &&
+      (!loopbackAuthority(request.headers.host, listenPort) || !pageOrigin(request.headers.origin))
+    ) {
       socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n')
       return
     }
@@ -172,7 +213,7 @@ export async function listenWebSocket(options: {
   })
   const actual = server.address() as AddressInfo
   const printableHost = actual.family === 'IPv6' ? `[${actual.address}]` : actual.address
-  expectedHost = `${printableHost}:${actual.port}`
+  listenPort = String(actual.port)
   let closing: Promise<void> | undefined
   let serverClosed: Promise<void> | undefined
   const stopAccepting = (): Promise<void> => {

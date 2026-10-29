@@ -6,11 +6,15 @@
   "description": "Stable built-in web unit identities and contributes.client contracts for the Agnes web shell",
   "exports": {
     ".": "./src/index.ts",
+    "./shell": "./src/shell.ts",
+    "./admin-pane-store": "./src/admin-pane-store.ts",
+    "./locales/settings-shell": "./src/locales/settings-shell.ts",
     "./diagnostics-types": "./src/diagnostics-types.ts",
     "./diagnostics-zip": "./src/diagnostics-zip.ts",
-    "./diagnostics-viewer": "./src/diagnostics-viewer.ts",
+    "./diagnostics-viewer": "./src/diagnostics-viewer.tsx",
     "./diagnostics-locale": "./src/diagnostics-locale.ts",
-    "./trace-locale": "./src/trace-locale.ts"
+    "./trace-locale": "./src/trace-locale.ts",
+    "./message-feedback": "./src/message-feedback/index.ts"
   },
   "scripts": {
     "test": "vitest run",

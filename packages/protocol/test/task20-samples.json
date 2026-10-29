@@ -1,6 +1,8 @@
 {
   "Capability": "tools.invoke",
   "SeamName": "approval",
+  "SeamSelection": { "provider": "local-prompt", "version": "1.0.0" },
+  "ProviderSelection": { "provider": "agnes.default", "version": "1.0.0" },
   "PackageRef": {
     "id": "@agnes/base",
     "source": "builtin",
@@ -59,9 +61,7 @@
       "hooks": ["tool_call"],
       "slots": ["status.line"],
       "resources": ["skill", "mcp", "kb", "datasource", "model"],
-      "network": {
-        "hosts": ["127.0.0.1:443"]
-      },
+      "network": ["127.0.0.1:443"],
       "artifacts": true,
       "subagent": true
     }
@@ -76,9 +76,7 @@
     "hooks": ["tool_call"],
     "slots": ["status.line"],
     "resources": ["skill", "mcp", "kb", "datasource", "model"],
-    "network": {
-      "hosts": ["127.0.0.1:443"]
-    },
+    "network": ["127.0.0.1:443"],
     "artifacts": true,
     "subagent": true
   },

@@ -19,11 +19,20 @@ export type HookSpec = {
   replayOnResume: boolean
 }
 
-export type PromptSection = { id: string; order: number; content: string; source?: string }
+export type PromptSection = {
+  id: string
+  order: number
+  content: string
+  source?: string
+  /** Default: stable-section. Live notes append only on change and restore after compaction. */
+  delivery?: 'stable-section' | 'live-note'
+}
 export type SurfaceNode = {
   seq: Seq
   type: 'user/message' | 'assistant/message' | 'tool/result' | 'summary'
   pinned?: boolean
+  /** Distinguishes actual input from automatic runtime notes on user/message nodes. */
+  messageKind?: 'prompt' | 'steer' | 'follow_up' | 'runtime_context'
   tokensEstimate?: number
 }
 export type ReadonlyRequestView = {
@@ -101,8 +110,14 @@ export interface HookReturnMap {
   // biome-ignore lint/suspicious/noConfusingVoidType: synchronous and async observe handlers return void
   session_start: void
   resources_discover: { resources?: ResourceEntry[]; additionalContext?: string }
-  before_step: { block?: boolean; reason?: string }
-  context: { sections?: PromptSection[]; additionalContext?: string }
+  /** Park releases the turn until new input arrives; block reports a policy refusal. */
+  before_step: { block?: boolean; park?: boolean; reason?: string }
+  context: {
+    sections?: PromptSection[]
+    additionalContext?: string
+    untrustedContext?: string
+    refreshOnRequest?: boolean
+  }
   before_request: {
     patch?: {
       samplingParams?: Record<string, JsonValue>
@@ -115,6 +130,11 @@ export interface HookReturnMap {
   tool_call: { allow: true } | { allow: false; reason: string }
   tool_result: { result?: ToolResult }
   turn_stopping: { action: 'stop' } | { action: 'continue'; note: string }
+  /**
+   * A returned `risk` only raises what the person is shown (`budget` < `destructive` < `always`); a
+   * lower one is ignored. A returned `summary` or `context` is shown with the platform's own summary
+   * and the source that rewrote it.
+   */
   approval_request: { request?: Partial<Pick<ApprovalRequest, 'risk' | 'context' | 'summary'>> }
   before_compact: CompactionPlan | null
   // biome-ignore lint/suspicious/noConfusingVoidType: observe handler return type
@@ -130,9 +150,16 @@ export interface HookReturnMap {
 }
 
 export interface HookContext {
+  /** Only available at turn_stopping. Competing input wins; false means nothing was queued.
+   * The owner-bound input starts a separate turn after this run finishes. */
+  readonly input?: {
+    enqueueNextTurn(text: string, key: string, signal: AbortSignal): Promise<boolean>
+  }
   readonly projections: ProjectionReader
   readonly session: SessionRef
-  readonly replayed: boolean // replayOnResume 重发时 true；handler 必须幂等
+  readonly replayed: boolean // True when replayOnResume resends; handlers must be idempotent.
+  /** The current turn has nobody attending it (`agh -p`, scheduled runs): no one can answer or act. */
+  readonly unattended?: boolean
   readonly signal: AbortSignal
   readonly lease: LeaseView
   readonly log: Logger

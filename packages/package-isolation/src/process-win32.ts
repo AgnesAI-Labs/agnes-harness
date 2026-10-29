@@ -1,5 +1,6 @@
 import { startWindowsJobProcess } from '@agnes/system-node/process-spawn'
 import type { runIsolatedCommand } from './process.js'
+import { withCommandOutput } from './process-output.js'
 
 export async function runWindowsIsolatedCommand(
   command: string,
@@ -8,6 +9,7 @@ export async function runWindowsIsolatedCommand(
 ): Promise<{ stdout: string }> {
   const controller = new AbortController()
   let failure: Error | undefined
+  const chunks: Buffer[] = []
   const stop = (message: string) => {
     failure ??= new Error(message)
     controller.abort()
@@ -26,7 +28,6 @@ export async function runWindowsIsolatedCommand(
       windowsBatch: options.windowsBatch ?? 'script',
       signal: controller.signal,
     })
-    const chunks: Buffer[] = []
     let bytes = 0
     child.stdout.on('data', (chunk: Buffer) => {
       bytes += chunk.length
@@ -46,8 +47,8 @@ export async function runWindowsIsolatedCommand(
       cause instanceof Error &&
       (cause.name === 'AbortError' || ('code' in cause && cause.code === 'ABORT_ERR'))
     )
-      throw failure
-    throw cause
+      throw withCommandOutput(failure, chunks)
+    throw cause instanceof Error ? withCommandOutput(cause, chunks) : cause
   } finally {
     clearTimeout(timeout)
     options.signal?.removeEventListener('abort', abort)

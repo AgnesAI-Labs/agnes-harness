@@ -1,12 +1,13 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { listPackages, repoRoot } from './repo.js'
+import { listPackages, PRESENTATION_NAMES, presentationSourceFiles, repoRoot } from './repo.js'
 
 const root = repoRoot()
+const presentationSources = presentationSourceFiles(root)
 
 /**
- * External UI libraries (antd, @assistant-ui/*) may only be imported inside packages/web-ui.
+ * External UI libraries (antd, @ant-design/*) may only be imported inside packages/web-ui.
  *
  * The component boundary makes web-ui the sole owner of those dependencies: every other package consumes components
  * through the @agnes/web-ui export surface. Without this fence the import map and vendor pipeline
@@ -22,8 +23,8 @@ const root = repoRoot()
  * suite must go red; removing it must go green again.
  */
 
-const FORBIDDEN_PREFIXES = ['@assistant-ui/', '@ant-design/']
-const FORBIDDEN_EXACT = new Set(['antd'])
+const FORBIDDEN_PREFIXES = ['antd/', 'recharts/', '@ant-design/']
+const FORBIDDEN_EXACT = new Set(['antd', 'recharts'])
 const ALLOWED_PKG = '@agnes/web-ui'
 const ALLOWED_DEP_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']
 
@@ -38,19 +39,21 @@ function* sourceFiles(dir: string): Generator<string> {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name)
     if (entry.isDirectory()) yield* sourceFiles(full)
-    else if (/\.(ts|tsx)$/.test(entry.name)) yield full
+    else if (/\.(ts|tsx|mjs)$/.test(entry.name)) yield full
   }
 }
 
 function violationsFor(pkgDir: string): string[] {
   const src = join(pkgDir, 'src')
   const out: string[] = []
-  if (statSync(src, { throwIfNoEntry: false })?.isDirectory()) {
-    for (const file of sourceFiles(src)) {
-      const text = readFileSync(file, 'utf8')
-      for (const m of text.matchAll(IMPORT_RE)) {
-        if (m[1] !== undefined && isExternalUI(m[1])) out.push(`${file}: imports ${m[1]}`)
-      }
+  const files = new Set([
+    ...(statSync(src, { throwIfNoEntry: false })?.isDirectory() ? sourceFiles(src) : []),
+    ...presentationSources.filter((file) => file.startsWith(`${pkgDir}${sep}`)),
+  ])
+  for (const file of files) {
+    const text = readFileSync(file, 'utf8')
+    for (const m of text.matchAll(IMPORT_RE)) {
+      if (m[1] !== undefined && isExternalUI(m[1])) out.push(`${file}: imports ${m[1]}`)
     }
   }
   const json = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8')) as Record<string, unknown>
@@ -63,10 +66,29 @@ function violationsFor(pkgDir: string): string[] {
   return out
 }
 
+it('also fences private library entry points and dynamic imports', () => {
+  for (const name of [
+    'antd',
+    'antd/es/button',
+    'recharts',
+    'recharts/lib/chart',
+    '@ant-design/x',
+    '@ant-design/icons',
+  ])
+    expect(isExternalUI(name)).toBe(true)
+  expect(isExternalUI('@agnes/web-ui')).toBe(false)
+})
+
 describe('external UI libraries are only imported by the web-ui component layer', () => {
-  it('antd / @assistant-ui imports appear only in packages/web-ui', () => {
+  it('antd / @ant-design imports appear only in packages/web-ui', () => {
     const offenders: string[] = []
-    for (const pkg of listPackages(root)) {
+    for (const pkg of [
+      ...listPackages(root),
+      ...PRESENTATION_NAMES.map((name) => ({
+        name: `@agnes/${name}`,
+        dir: join(root, 'packages/package-manager/bundled-plugins', name),
+      })),
+    ]) {
       if (pkg.name === ALLOWED_PKG) continue
       offenders.push(...violationsFor(pkg.dir).map((v) => `${pkg.name}: ${v}`))
     }

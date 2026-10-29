@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -24,16 +25,13 @@ function prepare(root: string, dataDir: string = root) {
     ...emptyLock('local-dev', '0.0.0'),
     resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
     seams: {
-      approval: '@agnes/base',
-      checkpoint: '@agnes/base',
-      ledger: '@agnes/base',
-      sandbox: '@agnes/base',
-      verifier: '@agnes/base',
-      repair: '@agnes/base',
-      artifacts: '@agnes/base',
-      principals: '@agnes/base',
-      platform: '@agnes/base',
-      harness: '@agnes/base',
+      approval: { provider: 'local-prompt' },
+      checkpoint: { provider: 'fs' },
+      billing: { provider: 'budget' },
+      verifier: { provider: 't0' },
+      repair: { provider: 'default' },
+      artifacts: { provider: 'local' },
+      principals: { provider: 'local' },
     },
     policySnapshot: { capabilityCeiling: ['tools'], workspacePackages: 'require-project-trust' },
   })
@@ -126,6 +124,43 @@ describe('verified PackageManager Skill inventory', () => {
         source: expect.stringContaining('verified body'),
       },
     ])
+    const attachment = {
+      relativePath: 'references/example.md',
+      kind: 'text' as const,
+      mime: 'text/markdown',
+      content: Buffer.from('reference').toString('base64'),
+      sha256: createHash('sha256').update('reference').digest('hex'),
+    }
+    await writePackageSkillInventory(identity, profile, target, async (directory) => {
+      expect(directory).toBe(installed.directory)
+      return [attachment]
+    })
+    expect(JSON.parse(readFileSync(target, 'utf8')).skills[0]).toMatchObject({
+      directory: installed.directory,
+      files: [attachment],
+    })
+    await writePackageSkillInventory(identity, profile, target, async () => {
+      throw Object.assign(new Error('private path must not escape'), { code: 'SKILL_ATTACHMENTS_LIMIT' })
+    })
+    expect(JSON.parse(readFileSync(target, 'utf8'))).toMatchObject({
+      skills: [],
+      failures: [{ packageId, contributionId: 'acme/review', code: 'SKILL_ATTACHMENTS_LIMIT' }],
+    })
+    expect(readFileSync(target, 'utf8')).not.toContain('private path')
+    const incomplete = readFileSync(target, 'utf8')
+    await expect(
+      writePackageSkillInventory(identity, profile, target, async () => {
+        await manager.setEnabled(profile, packageId, false)
+        return [attachment]
+      }),
+    ).rejects.toThrow('inventory changed')
+    expect(readFileSync(target, 'utf8')).toBe(incomplete)
+    await manager.setEnabled(profile, packageId, true)
+    await writePackageSkillInventory(identity, profile, target, async () => [attachment])
+    expect(JSON.parse(readFileSync(target, 'utf8'))).toMatchObject({
+      skills: [{ files: [attachment] }],
+      failures: [],
+    })
     if (process.platform === 'win32') {
       expect(hasPrivateDaclSync(target)).toBe(true)
       expect(hasPrivateDaclSync(join(root, 'worker'))).toBe(true)

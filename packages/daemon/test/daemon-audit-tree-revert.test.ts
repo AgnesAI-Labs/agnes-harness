@@ -31,7 +31,7 @@ vi.mock('@agnes/host', async (original) => {
   }
 })
 
-it('writes a target that was put back and a started batch to the daemon audit file, and nothing else', async () => {
+it('writes the record of a target that was put back to the daemon audit file, and nothing else', async () => {
   const temporary = mkdtempSync(join(tmpdir(), 'agnes-audit-revert-'))
   const root = join(temporary, 'home')
   createPrivateDirectorySync(root)
@@ -56,22 +56,12 @@ it('writes a target that was put back and a started batch to the daemon audit fi
       kind: 'plugin.tree.reverted',
       detail: { digest: 'd1', level: 'previous', packages: ['pkg-b'] },
     })
-    audit?.({
-      kind: 'batch.started',
-      detail: { batchId: 'b0123456789ab', principal: 'local', items: 3, concurrency: 4, approval: 'none' },
-    })
     audit?.({ kind: 'worker.log', message: 'not for this file' })
     const file = state.file
     if (!file) throw new Error('audit file was not created')
     const lines = readFileSync(file, 'utf8').trim().split('\n').filter(Boolean)
-    expect(lines.map((line) => JSON.parse(line).kind)).toEqual(['plugin.tree.reverted', 'batch.started'])
+    expect(lines.map((line) => JSON.parse(line).kind)).toEqual(['plugin.tree.reverted'])
     expect(JSON.parse(lines[0] ?? '{}').detail).toMatchObject({ level: 'previous', packages: ['pkg-b'] })
-    expect(JSON.parse(lines[1] ?? '{}').detail).toMatchObject({
-      batchId: 'b0123456789ab',
-      principal: 'local',
-      items: 3,
-      approval: 'none',
-    })
     await state.close?.()
   } finally {
     rmSync(temporary, { recursive: true, force: true })

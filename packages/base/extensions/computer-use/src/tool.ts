@@ -1,12 +1,7 @@
 import { createHash } from 'node:crypto'
 import { isProxy } from 'node:util/types'
-import {
-  defineTool,
-  type SessionRef,
-  type ToolContext,
-  type ToolDef,
-  type ToolResult,
-} from '@agnes/extension-api'
+import type { SessionRef, ToolContext, ToolDef, ToolResult } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
 import {
   createRecentArtifactMetadataIndex,
   type RecentArtifactMetadataIndex,
@@ -431,13 +426,15 @@ export class ComputerUseToolRuntime {
       description: COMPUTER_USE_DESCRIPTION,
       parameters: ComputerUseParams,
       meta: {
+        requiresImageInput: true,
+        deferLoading: true,
+        discoveryGroup: 'Computer Use',
         isReadOnly: false,
         isDestructive: true,
         isConcurrencySafe: false,
         isOpenWorld: true,
         replay: 'never',
-        costHint: undefined,
-        deferLoading: undefined,
+
         requiresApproval: 'destructive',
       },
       policyVersion: 'computer-use-v1',

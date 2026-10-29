@@ -118,7 +118,7 @@ describe('createClient', () => {
       protocolVersion: 1,
       clientCapabilities: {
         fs: { readTextFile: false, writeTextFile: false },
-        _meta: { [META_KEY]: { capabilities: { permission: true, attachmentRefs: 1 } } },
+        _meta: { [META_KEY]: { capabilities: { permission: true } } },
       },
       _meta: { [META_KEY]: { auth: { kind: 'local' }, clientId: 'cid-1' } },
     })
@@ -131,7 +131,7 @@ describe('createClient', () => {
       initialize: () => ({
         protocolVersion: 1,
         agentCapabilities: { loadSession: true },
-        _meta: { agnes: { agnesVersion: '9.9.9' } },
+        _meta: { agnes: { agnesVersion: '9.9.9', platform: 'linux' } },
       }),
     })
     const c = createClient({
@@ -139,29 +139,11 @@ describe('createClient', () => {
       journal: memoryJournal(),
       authProviders: providers,
     })
-    expect(await c.initialize()).toEqual({ agnesVersion: '9.9.9', capabilities: { loadSession: true } })
-  })
-
-  it('records whether the server reads attachment references', async () => {
-    for (const [meta, expected] of [
-      [{ agnes: { agnesVersion: '9.9.9', attachmentRefs: 1 } }, true],
-      [{ agnes: { agnesVersion: '9.9.9', attachmentRefs: true } }, false],
-      [{ agnes: { agnesVersion: '9.9.9' } }, false],
-      [undefined, false],
-    ] as const) {
-      const f = fakeEndpoint({
-        initialize: () => ({ protocolVersion: 1, ...(meta ? { _meta: meta } : {}) }),
-      })
-      const c = createClient({
-        transport: { kind: 'inproc', endpoint: f.endpoint },
-        journal: memoryJournal(),
-        authProviders: providers,
-      })
-      expect(c.serverCapabilities).toEqual({ attachmentRefs: false })
-      await c.initialize()
-      expect(c.serverCapabilities, JSON.stringify(meta)).toEqual({ attachmentRefs: expected })
-      await c.close()
-    }
+    expect(await c.initialize()).toEqual({
+      agnesVersion: '9.9.9',
+      capabilities: { loadSession: true },
+      platform: 'linux',
+    })
   })
 
   it('rejects an unsupported negotiated protocol before sending business requests', async () => {
@@ -529,6 +511,49 @@ describe('createClient', () => {
     await assertion
   })
 
+  // Reviewing an application resolves every declared agent, one Host build each, so the time grows with
+  // the agent count (DevBoard: 12). A 30 s budget reported a late success as an unconfirmed operation.
+  it.each(['preview', 'adopt'] as const)(
+    'gives application %s a review-sized request deadline',
+    async (verb) => {
+      vi.useFakeTimers()
+      const method = `_agnes/v1/applications.${verb}` as const
+      const f = fakeEndpoint({
+        initialize: fakeEndpoint({}).initialize,
+        [method]: () => new Promise(() => {}),
+      })
+      const c = createClient({
+        transport: { kind: 'inproc', endpoint: f.endpoint },
+        journal: memoryJournal(),
+        authProviders: providers,
+      })
+      const params =
+        verb === 'preview'
+          ? { profile: 'p', packageId: 'a' }
+          : {
+              profile: 'p',
+              packageId: 'a',
+              expectedRevision: 0,
+              consentDigest: 'sha256-x',
+              clientId: 'c',
+              commandId: 'k',
+            }
+      let settled = false
+      const pending = c.request(method, params as never).finally(() => {
+        settled = true
+      })
+      const assertion = expect(pending).rejects.toMatchObject({
+        kind: 'request-timeout',
+        method,
+        timeoutMs: 300_000,
+      })
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(180_000)
+      await assertion
+    },
+  )
+
   it('stops calling a handler once its disposer runs', async () => {
     const f = fakeEndpoint({ initialize: fakeEndpoint({}).initialize })
     const c = createClient({
@@ -737,4 +762,183 @@ it('gives auth.build an isolated snapshot of the completed handshake fields', as
   } finally {
     await client.close()
   }
+})
+
+it('gives session creation a longer budget than an ordinary request', async () => {
+  vi.useFakeTimers()
+  try {
+    const f = fakeEndpoint({
+      initialize: () => ({ protocolVersion: 1, agentCapabilities: {} }),
+      // A loaded machine assembling the session host: past the 30 s ordinary request budget.
+      'session/new': () =>
+        new Promise((resolve) => setTimeout(() => resolve({ sessionId: 'slow-session' }), 45_000)),
+    })
+    const c = createClient({
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      journal: memoryJournal(),
+      authProviders: providers,
+    })
+    const created = c.session.new({ cwd: '/w' })
+    await vi.advanceTimersByTimeAsync(45_000)
+    expect((await created).id).toBe('slow-session')
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('carries validated loop, preset, permission and ordered bundles on new-session metadata', async () => {
+  const f = fakeEndpoint({
+    initialize: () => ({ protocolVersion: 1, agentCapabilities: {} }),
+    'session/new': () => ({ sessionId: 'loop-session' }),
+  })
+  const c = createClient({
+    transport: { kind: 'inproc', endpoint: f.endpoint },
+    journal: memoryJournal(),
+    authProviders: providers,
+  })
+  const loop = { id: 'example.dag', version: '1.0.0' }
+  try {
+    await c.createSession({ cwd: '/w', loop })
+    await c.session.new({ cwd: '/w', agent: 'acme/kit#work' })
+    await c.session.new({ cwd: '/w', loop, preset: 'standard', bundles: ['acme#one', 'acme#two'] })
+    await c.createSession({ cwd: '/w', preset: 'standard', permission: 'full-access' })
+    expect(f.calls.filter((call) => call.method === 'session/new').map((call) => call.params)).toEqual([
+      { cwd: '/w', mcpServers: [], _meta: { [META_KEY]: { loop, permission: 'default' } } },
+      { cwd: '/w', mcpServers: [], _meta: { [META_KEY]: { agent: 'acme/kit#work' } } },
+      {
+        cwd: '/w',
+        mcpServers: [],
+        _meta: {
+          [META_KEY]: { loop, preset: 'standard', permission: 'default', bundles: ['acme#one', 'acme#two'] },
+        },
+      },
+      { cwd: '/w', mcpServers: [], _meta: { [META_KEY]: { preset: 'standard', permission: 'full-access' } } },
+    ])
+    await expect(c.createSession({ cwd: '/w', loop: { id: '', version: '1' } })).rejects.toThrow('nonempty')
+    await expect(c.session.new({ cwd: '/w', bundles: ['same', 'same'] })).rejects.toThrow('unique')
+    await expect(c.session.new({ cwd: '/w', bundles: [''] })).rejects.toThrow('nonempty')
+    await expect(c.session.new({ cwd: '/w', agent: 'missing-ref' })).rejects.toThrow('package#bundle')
+    await expect(c.session.new({ cwd: '/w', agent: '' })).rejects.toThrow('package#bundle')
+    await expect(c.session.new({ cwd: '/w', agent: 'acme/kit#work', loop })).rejects.toThrow('overrides')
+    await expect(
+      c.session.new({ cwd: '/w', agent: 'acme/kit#work', permission: 'read-only' }),
+    ).rejects.toThrow('overrides')
+  } finally {
+    await c.close()
+  }
+})
+
+it('sends additionalDirectories only to a daemon that advertises them, and otherwise sends nothing', async () => {
+  for (const advertised of [false, true]) {
+    const f = fakeEndpoint({
+      initialize: () => ({
+        protocolVersion: 1,
+        agentCapabilities: advertised ? { sessionCapabilities: { additionalDirectories: {} } } : {},
+      }),
+      'session/new': () => ({ sessionId: 'dirs-session' }),
+    })
+    const c = createClient({
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      journal: memoryJournal(),
+      authProviders: providers,
+    })
+    try {
+      const created = c.createSession({ cwd: '/w', additionalDirectories: ['/lib/a', '/lib/b'] })
+      if (advertised) {
+        await created
+        expect(f.calls.find((call) => call.method === 'session/new')?.params).toMatchObject({
+          cwd: '/w',
+          additionalDirectories: ['/lib/a', '/lib/b'],
+        })
+      } else {
+        await expect(created).rejects.toThrow('does not support adding directories')
+        expect(f.calls.some((call) => call.method === 'session/new')).toBe(false)
+      }
+      await c.createSession({ cwd: '/w' })
+      expect(f.calls.filter((call) => call.method === 'session/new').at(-1)?.params).not.toHaveProperty(
+        'additionalDirectories',
+      )
+    } finally {
+      await c.close()
+    }
+  }
+})
+
+it('forks with extra directories only against a daemon that advertises them, and otherwise sends no fork', async () => {
+  for (const advertised of [false, true]) {
+    const f = fakeEndpoint({
+      initialize: () => ({
+        protocolVersion: 1,
+        agentCapabilities: advertised
+          ? { _meta: { 'ai.agnes.harness': { forkAdditionalDirectories: true } } }
+          : {},
+      }),
+      '_agnes/v1/submit': () => ({ replayed: false, result: { sessionId: 'child' } }),
+      '_agnes/v1/submit.ack': () => ({}),
+    })
+    const c = createClient({
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      journal: memoryJournal(),
+      authProviders: providers,
+    })
+    const submits = () => f.calls.filter((call) => call.method === '_agnes/v1/submit')
+    try {
+      const forked = c.session.fork('parent', 3, { additionalDirectories: ['/lib/a'] })
+      if (advertised) {
+        await forked
+        expect(submits().at(-1)?.params).toMatchObject({
+          kind: 'fork',
+          payload: { sessionId: 'parent', at: 3, additionalDirectories: ['/lib/a'] },
+        })
+      } else {
+        await expect(forked).rejects.toThrow('does not support adding directories when forking')
+        expect(submits()).toHaveLength(0)
+      }
+      await c.session.fork('parent', 3)
+      expect(submits().at(-1)?.params).not.toHaveProperty('payload.additionalDirectories')
+    } finally {
+      await c.close()
+    }
+  }
+})
+
+it('starts the load idle clock after initialization and cancels a stalled restore without creating a handle', async () => {
+  vi.useFakeTimers()
+  let finish!: () => void
+  const server = fakeEndpoint({
+    initialize: () =>
+      new Promise((resolve) =>
+        setTimeout(
+          () =>
+            resolve({
+              protocolVersion: 1,
+              agentCapabilities: {},
+              _meta: { agnes: { agnesVersion: 'test' } },
+            }),
+          25,
+        ),
+      ),
+    'session/load': () =>
+      new Promise<void>((resolve) => {
+        finish = resolve
+      }),
+  })
+  const client = createClient({
+    transport: { kind: 'inproc', endpoint: server.endpoint },
+    authProviders: providers,
+    timeouts: { initialize: 100, request: 5, loadIdle: 20, loadHard: 50 },
+  })
+  const restoring = client.restoreSession('s', '')
+  const result = restoring.catch((error: Error) => error.message)
+  await vi.advanceTimersByTimeAsync(25)
+  expect(server.calls.some((call) => call.method === 'session/load')).toBe(true)
+  await vi.advanceTimersByTimeAsync(21)
+  expect(await result).toContain('idle')
+  expect(server.calls).toContainEqual({
+    method: '_agnes/v1/session.loadingCancel',
+    params: { sessionId: 's' },
+  })
+  expect(client.sessions.has('s')).toBe(false)
+  finish()
+  await client.close()
 })

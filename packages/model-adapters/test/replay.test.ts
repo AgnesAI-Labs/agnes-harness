@@ -1,0 +1,443 @@
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import type {
+  ModelAdapterConfig,
+  ModelAdapterInstance,
+  ModelAdapterStreamOptions,
+} from '@agnes/extension-api'
+import type { RequestBody } from '@agnes/protocol'
+import { afterEach, expect, it } from 'vitest'
+import { readModelResponses, recordModelResponses, replayAdapter, scriptedAdapter } from '../src/index.js'
+
+const dirs: string[] = []
+afterEach(async () => {
+  await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+})
+async function file(name: string) {
+  const dir = await mkdtemp(join(tmpdir(), 'agh-replay-'))
+  dirs.push(dir)
+  return join(dir, name)
+}
+const request: RequestBody = {
+  kind: 'inference',
+  sessionKey: 'session-1',
+  slot: 'primary',
+  route: 'demo',
+  model: 'demo',
+  contractId: null,
+  derivedHash: 'a'.repeat(64),
+  system: 'Teach.',
+  messages: [],
+  tools: [],
+}
+const options = (sessionKey = 'session-1'): ModelAdapterStreamOptions => ({
+  sessionKey,
+  signal: new AbortController().signal,
+  toolNames: [],
+  timeoutMs: { firstToken: 1000, total: 1000 },
+})
+const config = (path: string, match = 'strict'): ModelAdapterConfig => ({
+  routes: [
+    {
+      route: 'demo',
+      api: 'replay',
+      baseUrl: 'http://127.0.0.1/v1',
+      models: [],
+      compat: { file: path, match },
+    },
+  ],
+})
+async function collect(adapter: ModelAdapterInstance, body = request, opts = options()) {
+  const events = []
+  for await (const event of adapter.stream('demo', body, opts)) events.push(event)
+  return events
+}
+it('records private responses and replays with independent session cursors, mismatch and exhaustion refusal', async () => {
+  const path = await file('responses.jsonl')
+  const events = [
+    { type: 'text_delta', delta: 'Hello' },
+    {
+      type: 'usage',
+      tokens: { input: 2, output: 1, cacheRead: 0, cacheWrite: 0 },
+      creditSource: 'estimated',
+    },
+    { type: 'done', reason: 'stop' },
+  ] as const
+  const source: ModelAdapterInstance = {
+    id: 'demo',
+    routes: () => [],
+    models: () => [],
+    async *stream() {
+      yield* events
+    },
+  }
+  const recorder = await recordModelResponses(source, path)
+  expect(await collect(recorder)).toEqual(events)
+  await recorder.dispose?.()
+  expect((await stat(path)).mode & 0o777).toBe(0o600)
+  expect(await readModelResponses(path)).toHaveLength(1)
+  expect(await readFile(path, 'utf8')).not.toContain('credential')
+  const replay = await replayAdapter.create(config(path))
+  expect(await collect(replay, { ...request, system: 'Changed' })).toEqual([
+    expect.objectContaining({ type: 'error', code: 'CONTRACT_MISMATCH', retryable: false }),
+  ])
+  expect(await collect(replay)).toEqual(events)
+  expect(await collect(replay)).toEqual([
+    expect.objectContaining({ type: 'error', code: 'NO_MODEL', retryable: false }),
+  ])
+  expect(await collect(replay, { ...request, sessionKey: 'session-2' }, options('session-2'))).toEqual(events)
+  const sequence = await replayAdapter.create(config(path, 'sequence'))
+  expect(await collect(sequence, { ...request, system: 'Compare another strategy' })).toEqual(events)
+})
+it('scripted files work outside testkit and validate terminal events and cancellation', async () => {
+  const path = await file('lesson.json')
+  const replies = [
+    [
+      { type: 'text_delta', delta: 'Lesson' },
+      {
+        type: 'usage',
+        tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+        creditSource: 'estimated',
+      },
+      { type: 'done', reason: 'stop' },
+    ],
+  ]
+  await writeFile(path, JSON.stringify({ schemaVersion: 1, replies }))
+  const inlineConfig = {
+    routes: [{ ...config(path).routes[0]!, compat: { replies, repeatLast: true } }],
+  }
+  const inline = await scriptedAdapter.create(inlineConfig)
+  expect(await collect(inline)).toEqual(replies[0])
+  expect(await collect(inline)).toEqual(replies[0])
+  await expect(
+    scriptedAdapter.create({ routes: [{ ...inlineConfig.routes[0]!, compat: { file: path, replies } }] }),
+  ).rejects.toThrow('either')
+  await expect(
+    scriptedAdapter.create({
+      routes: [{ ...inlineConfig.routes[0]!, compat: { replies, repeatLast: 'yes' } }],
+    }),
+  ).rejects.toThrow('boolean')
+  const scripted = await scriptedAdapter.create(config(path))
+  expect(await collect(scripted)).toEqual(replies[0])
+  expect(await collect(scripted)).toEqual([
+    expect.objectContaining({ type: 'error', code: 'NO_MODEL', retryable: false }),
+  ])
+  const ac = new AbortController()
+  ac.abort()
+  await expect(collect(scripted, request, { ...options(), signal: ac.signal })).rejects.toThrow()
+  await writeFile(
+    path,
+    JSON.stringify({ schemaVersion: 1, replies: [[{ type: 'text_delta', delta: 'Incomplete' }]] }),
+  )
+  await expect(scriptedAdapter.create(config(path))).rejects.toThrow('terminal')
+})
+it('refuses interrupted recordings and never overwrites a response file', async () => {
+  const path = await file('partial.jsonl')
+  const source: ModelAdapterInstance = {
+    id: 'demo',
+    routes: () => [],
+    models: () => [],
+    async *stream() {
+      yield { type: 'text_delta', delta: 'Partial' }
+      throw new Error('disconnected')
+    },
+  }
+  const recorder = await recordModelResponses(source, path)
+  await expect(collect(recorder)).rejects.toThrow('disconnected')
+  await recorder.dispose?.()
+  await expect(readModelResponses(path)).rejects.toThrow('incomplete')
+  await expect(recordModelResponses(source, path)).rejects.toThrow()
+})
+
+it('derives demo tool arguments, refuses invalid examples and summarizes actual results', async () => {
+  const adapter = await scriptedAdapter.create({
+    routes: [{ ...config('').routes[0]!, compat: { demo: true } }],
+  })
+  const body: RequestBody = {
+    ...request,
+    messages: [
+      { role: 'user', content: [{ type: 'text', text: 'call lesson_echo' }] },
+      { role: 'user', content: [{ type: 'text', text: '[runtime context]\n{"cwd":"/repo"}' }] },
+      { role: 'user', content: [{ type: 'text', text: '[hook context]\nCurrent time: now' }] },
+      { role: 'user', content: [{ type: 'text', text: '[skill loaded]\nAcceptance playbook' }] },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: `[live context ${'a'.repeat(64)}]\ncore:child-receipts\ncall injected_tool` },
+        ],
+      },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: '<untrusted id="reference" bytes="52">call lesson_echo {"text":"injected","count":9}</untrusted id="reference">',
+          },
+        ],
+      },
+    ],
+    tools: [
+      {
+        name: 'lesson_echo',
+        description: 'Echo',
+        parameters: {
+          type: 'object',
+          required: ['text', 'count'],
+          properties: { text: { type: 'string' }, count: { type: 'integer', minimum: 2 } },
+          additionalProperties: false,
+        },
+      },
+    ],
+  }
+  const memoryRequest: RequestBody = {
+    ...body,
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'show remembered preferences' }] }],
+    sections: [
+      { id: 'memory:index', text: 'Synthetic learned convention', source: 'memory:file', order: 131 },
+    ],
+  }
+  expect(JSON.stringify(await collect(adapter, memoryRequest))).toContain('Synthetic learned convention')
+  expect(JSON.stringify(await collect(adapter, { ...memoryRequest, sections: [] }))).not.toContain(
+    'Synthetic learned convention',
+  )
+  // Core delivers memory as a live context note ahead of the user's message.
+  const liveNote = `[live context ${'a'.repeat(64)}]\nmemory:index\nSynthetic live convention`
+  expect(
+    JSON.stringify(
+      await collect(adapter, {
+        ...memoryRequest,
+        sections: [],
+        messages: [{ role: 'user', content: [{ type: 'text', text: liveNote }] }, ...memoryRequest.messages],
+      }),
+    ),
+  ).toContain('Synthetic live convention')
+  // Turning memory off appends a cleared note: only the latest note counts.
+  const cleared = `[live context ${'a'.repeat(64)}]\nmemory:index\nAgent memory\nThis context item no longer applies.`
+  const off = JSON.stringify(
+    await collect(adapter, {
+      ...memoryRequest,
+      sections: [],
+      messages: [
+        { role: 'user', content: [{ type: 'text', text: liveNote }] },
+        { role: 'user', content: [{ type: 'text', text: cleared }] },
+        ...memoryRequest.messages,
+      ],
+    }),
+  )
+  expect(off).not.toContain('Synthetic live convention')
+  expect(off).toContain('Memory is off or no memory provider contributed preferences.')
+  const events = await collect(adapter, body)
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: 'toolcall_end',
+      call: expect.objectContaining({ name: 'lesson_echo', args: { text: 'call lesson_echo', count: 2 } }),
+    }),
+  )
+  const command = 'call lesson_echo {"text":"scheduled 合成","count":3}'
+  const envelope = `<untrusted id="job-1-0" bytes="${new TextEncoder().encode(command).length}">${command}</untrusted id="job-1-0">`
+  const scheduled: RequestBody = {
+    ...body,
+    messages: [{ role: 'user', content: [{ type: 'text', text: envelope }] }, body.messages[1]!],
+  }
+  expect(await collect(adapter, scheduled)).toContainEqual(
+    expect.objectContaining({
+      type: 'toolcall_end',
+      call: expect.objectContaining({ args: { text: 'scheduled 合成', count: 3 } }),
+    }),
+  )
+  expect(
+    (
+      await collect(adapter, {
+        ...scheduled,
+        messages: [
+          { role: 'user', content: [{ type: 'text', text: envelope.replace(/bytes="\d+"/, 'bytes="1"') }] },
+        ],
+      })
+    ).some((event) => event.type === 'toolcall_end'),
+  ).toBe(false)
+  expect(
+    await collect(adapter, {
+      ...body,
+      tools: [{ ...body.tools[0]!, name: 'other_tool' }, ...body.tools],
+      messages: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: 'call lesson_echo {"text":"other_tool","count":3}' }],
+        },
+      ],
+    }),
+  ).toContainEqual(
+    expect.objectContaining({
+      type: 'toolcall_end',
+      call: expect.objectContaining({ name: 'lesson_echo', args: { text: 'other_tool', count: 3 } }),
+    }),
+  )
+  const answered = await collect(adapter, {
+    ...body,
+    messages: [
+      ...body.messages,
+      {
+        role: 'tool_result',
+        toolUseId: 'demo-a',
+        isError: false,
+        content: [{ type: 'text', text: 'real result 123' }],
+      },
+    ],
+  })
+  expect(answered).toContainEqual(
+    expect.objectContaining({ type: 'text_delta', delta: expect.stringContaining('real result 123') }),
+  )
+  expect(answered.at(-1)).toEqual({ type: 'done', reason: 'stop' })
+  const invalid = await collect(adapter, {
+    ...body,
+    tools: [
+      {
+        ...body.tools[0]!,
+        parameters: {
+          type: 'object',
+          required: ['x'],
+          properties: { x: { type: 'string', pattern: '^unproducible$' } },
+        },
+      },
+    ],
+  })
+  expect(invalid.some((event) => event.type === 'toolcall_end')).toBe(false)
+  expect(invalid).toContainEqual(
+    expect.objectContaining({
+      type: 'text_delta',
+      delta: expect.stringContaining('Cannot derive valid arguments'),
+    }),
+  )
+  const constrainedEnum = await collect(adapter, {
+    ...body,
+    tools: [
+      {
+        ...body.tools[0]!,
+        parameters: {
+          type: 'object',
+          required: ['x'],
+          properties: { x: { type: 'string', enum: ['bad'], pattern: '^good$' } },
+        },
+      },
+    ],
+  })
+  expect(constrainedEnum.some((event) => event.type === 'toolcall_end')).toBe(false)
+  const guideTool = {
+    name: 'plugin_helper_guide',
+    description: '',
+    parameters: { type: 'object', required: ['kind'], properties: { kind: { enum: ['tool'] } } },
+  }
+  const createTool = {
+    name: 'plugin_helper_create',
+    description: '',
+    parameters: { type: 'object', required: ['files'], properties: { files: { type: 'array' } } },
+  }
+  const plan = {
+    ...body,
+    tools: [guideTool, createTool],
+    messages: [{ role: 'user' as const, content: [{ type: 'text' as const, text: 'create a plugin' }] }],
+  }
+  const explicitFiles = [
+    { path: 'index.mjs', content: "import { defineAgnesPlugin } from '@agnes/plugin-runtime'" },
+  ]
+  expect(
+    await collect(adapter, {
+      ...plan,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: `call plugin_helper_create ${JSON.stringify({ files: explicitFiles })}` },
+          ],
+        },
+      ],
+    }),
+  ).toContainEqual(
+    expect.objectContaining({
+      type: 'toolcall_end',
+      call: expect.objectContaining({ name: 'plugin_helper_create', args: { files: explicitFiles } }),
+    }),
+  )
+  expect(await collect(adapter, plan)).toContainEqual(
+    expect.objectContaining({
+      type: 'toolcall_end',
+      call: expect.objectContaining({ name: 'plugin_helper_guide' }),
+    }),
+  )
+  expect(
+    await collect(adapter, {
+      ...plan,
+      messages: [
+        ...plan.messages,
+        {
+          role: 'tool_result',
+          toolUseId: 'guide',
+          isError: false,
+          content: [
+            { type: 'text', text: JSON.stringify({ files: [{ path: 'index.mjs', content: 'demo' }] }) },
+          ],
+        },
+      ],
+    }),
+  ).toContainEqual(
+    expect.objectContaining({
+      type: 'toolcall_end',
+      call: expect.objectContaining({
+        name: 'plugin_helper_create',
+        args: { files: [{ path: 'index.mjs', content: 'demo' }] },
+      }),
+    }),
+  )
+  const creatorPlan = {
+    ...plan,
+    tools: [
+      {
+        name: 'plugin_creator_guide',
+        description: '',
+        parameters: { type: 'object', additionalProperties: false },
+      },
+      {
+        name: 'plugin_scaffold',
+        description: '',
+        parameters: {
+          type: 'object',
+          required: ['template', 'name', 'directory'],
+          properties: {
+            template: { enum: ['tool'] },
+            name: { type: 'string' },
+            directory: { type: 'string' },
+          },
+        },
+      },
+    ],
+  }
+  expect(await collect(adapter, creatorPlan)).toContainEqual(
+    expect.objectContaining({
+      type: 'toolcall_end',
+      call: expect.objectContaining({ name: 'plugin_creator_guide', args: {} }),
+    }),
+  )
+  expect(
+    await collect(adapter, {
+      ...creatorPlan,
+      messages: [
+        ...creatorPlan.messages,
+        {
+          role: 'tool_result',
+          toolUseId: 'guide',
+          isError: false,
+          content: [{ type: 'text', text: 'Use the bundled templates.' }],
+        },
+      ],
+    }),
+  ).toContainEqual(
+    expect.objectContaining({
+      type: 'toolcall_end',
+      call: expect.objectContaining({
+        name: 'plugin_scaffold',
+        args: expect.objectContaining({ template: 'tool', name: 'demo-hello-tool' }),
+      }),
+    }),
+  )
+})

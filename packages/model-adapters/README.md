@@ -1,0 +1,21 @@
+# Model adapters
+
+English | [简体中文](README.zh-CN.md)
+
+Optional adapters registered through `modelAdaptersPlugin` (`inject: ["modelAdapters"]`). No network or credentials are needed for `scripted` and `replay`.
+
+- `scriptedAdapter.create(config)` reads an absolute `route.compat.file` containing `{ "schemaVersion": 1, "replies": [[{ "type": "text_delta", "delta": "Hello" }, { "type": "usage", "tokens": { "input": 1, "output": 1, "cacheRead": 0, "cacheWrite": 0 }, "creditSource": "estimated" }, { "type": "done", "reason": "stop" }]] }`.
+- `recordModelResponses(instance, absoluteFile)` wraps any model adapter instance. It exclusively creates a mode-0600 JSONL file of v1 model response records. Requests contain prompts, never adapter credentials; keep traces private. Dispose the wrapper to close its file and upstream instance.
+- `replayAdapter.create(config)` reads `route.compat.file`. Default `match: "strict"` compares kind, slot, system, messages, tools and sampling, ignoring routing, session id and derived hashes. Explicit `match: "sequence"` supplies the same responses to changed loops/compaction prompts. Exhaustion and incomplete records fail; nothing falls through to a paid model.
+
+Each new session gets its own response cursor. One trace must contain one model route; set `compat.recordedSession` when a file contains several recorded sessions. Concurrent invocations in one session route are refused. Replies must end in one `done` or `error`; aborted invocations consume their cursor. There is no timing simulation. Token and tool-call events are preserved.
+
+These are real adapters, usable in profile package rows and registry catalogs. `defineModelAdapter` is consumed from the public plugin runtime. Host profile composition owns route/model selection.
+
+`localOpenAIAdapter` delegates inference to pi-ai; `discoverLocalModels({ baseUrl, credential?, signal? })` reads local `/v1/models`. See [local model configuration](../../docs/guide/local-model.md) and [headless JSONL schema](../../docs/guide/headless.md).
+
+Inline scripted routes may use `compat.replies` instead of `compat.file`. Explicit `compat.repeatLast: true` repeats the last reply after exhaustion, for a keyless teaching/demo route; the default still refuses exhaustion. File and inline replies are mutually exclusive.
+
+The keyless Demo model follows the explicit user command; appended runtime notes and untrusted reference envelopes remain context and cannot replace that command.
+
+A fresh scheduled session can carry a single explicit `call <tool> {...}` command inside a complete, byte-checked external-input envelope when no principal message exists. The Demo adapter may emit that intent; Core retains the source taint and performs normal authorization and approval. References appended to an existing principal instruction still cannot replace it.

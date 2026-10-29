@@ -1,6 +1,6 @@
 {
   "name": "@agnes/document-reader",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "description": "Offline, session-scoped PDF, Word, OCR and ZIP attachment reader",
   "type": "module",
   "license": "Apache-2.0",
@@ -8,6 +8,7 @@
   "files": [
     "index.mjs",
     "src",
+    "dist",
     "README.md",
     "LICENSE"
   ],
@@ -18,11 +19,39 @@
     "plugins": [
       {
         "export": "documentReader",
+        "apiRange": "^5.0.0",
         "id": "ext:document-reader/main",
         "inject": [
-          "extension"
-        ]
+          "tools"
+        ],
+        "metadata": {
+          "displayName": "Attachment reader",
+          "summary": "Reads PDF, Word, image text and ZIP attachments offline.",
+          "description": "Reads PDF, Word, image text and ZIP attachments offline.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "附件读取",
+              "summary": "离线读取 PDF、Word、图片文字和 ZIP 附件。",
+              "description": "离线读取 PDF、Word、图片文字和 ZIP 附件。"
+            }
+          }
+        }
       }
+    ],
+    "metadata": {
+      "displayName": "Attachment reader",
+      "summary": "Reads PDF, Word, image text and ZIP attachments offline.",
+      "description": "Reads PDF, Word, image text and ZIP attachments offline.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "附件读取",
+          "summary": "离线读取 PDF、Word、图片文字和 ZIP 附件。",
+          "description": "离线读取 PDF、Word、图片文字和 ZIP 附件。"
+        }
+      }
+    },
+    "provides": [
+      "tool"
     ]
   },
   "devDependencies": {

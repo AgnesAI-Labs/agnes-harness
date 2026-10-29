@@ -1,21 +1,22 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import { CoreError } from '@agnes/core-common/types'
+import { platformFacts } from '@agnes/core-effects/effects/platform-facts'
+import type { WorkspaceInvocationPort } from '@agnes/core-effects/workspace/runtime'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ToolDef } from '@agnes/extension-api'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
-import { platformFacts } from '../src/effects/platform-facts.js'
 import { HookEngine } from '../src/hooks/engine.js'
 import { SessionHookPort } from '../src/hooks/port.js'
 import { CORE_DIAG_NAMES, Kernel } from '../src/kernel.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
 import { HookRegistry } from '../src/registry/hooks.js'
 import { ResourceRegistry } from '../src/registry/resources.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { CompactionRunner } from '../src/step/compaction.js'
 import { contextTokens } from '../src/step/gate.js'
-import { presetDefaults } from '../src/step/preset.js'
 import { noopHooks } from '../src/step/session.js'
-import { CoreError } from '../src/types.js'
-import type { WorkspaceInvocationPort } from '../src/workspace/runtime.js'
 import { testFsPolicy } from '../testkit/fenced-fs.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { opHistory } from './helpers/op-history.js'
@@ -38,6 +39,7 @@ const logger = {
 }
 const base = (over: Partial<Parameters<typeof Kernel.create>[0]> = {}) =>
   Kernel.create({
+    loops: defaultLoops(),
     storage: new MemoryStorage(),
     seams: fakeSeams(),
     provider: fakeProvider([]),
@@ -53,6 +55,7 @@ const base = (over: Partial<Parameters<typeof Kernel.create>[0]> = {}) =>
 const sessionOpts = {
   actor,
   resolvedProfileHash: 'h1',
+  resolvedPresetHash: 'sha256-' + 'a'.repeat(64),
   cwd: '/w',
   writerRunId: 'r1',
 }
@@ -76,7 +79,7 @@ const modelRecord = (route: string, id: string, slot?: NonNullable<ModelRecord['
 
 describe('Kernel (I1 assembly)', () => {
   it('refuses to create without every seam, and names the one that is missing', () => {
-    for (const name of ['repair', 'ledger', 'principals'] as const) {
+    for (const name of ['repair', 'billing', 'principals'] as const) {
       const seams = fakeSeams()
       delete (seams as Record<string, unknown>)[name]
       const err = (() => {
@@ -101,8 +104,29 @@ describe('Kernel (I1 assembly)', () => {
     // One storage instance across two kernels: SessionLogImpl does not expose the adapter it holds,
     // so a test that wants the same ledger back has to keep hold of the storage itself.
     const storage = new MemoryStorage()
-    const k = base({ storage })
+    let config = { personaPrefix: 'first persona' }
+    const promptProvider = {
+      id: 'test.prompt',
+      version: '1.0.0',
+      defaults: () => [],
+      compose: (
+        cfg: import('@agnes/protocol').SystemPromptConfig,
+        sections: readonly import('@agnes/protocol').SystemPromptSection[],
+      ) => [
+        { id: 'profile:prefix', order: 1, source: 'profile:system-prompt', text: cfg.personaPrefix ?? '' },
+        ...(cfg.personaPrefix === 'duplicate'
+          ? [{ id: 'profile:prefix', order: 2, source: 'profile:system-prompt', text: 'conflict' }]
+          : []),
+        ...sections,
+      ],
+    }
+    const systemPrompt = { config: async () => config, resolve: () => promptProvider }
+    const k = base({ storage, systemPrompt })
+    await expect(k.session('@profile/default', sessionOpts)).rejects.toThrow('E_ENVELOPE')
+    expect(k.sessions.size).toBe(0)
     const s = await k.session('k1', sessionOpts)
+    config.personaPrefix = 'changed in place'
+    expect((await s.systemPromptPreview()).config.personaPrefix).toBe('first persona')
     expect(await k.session('k1', sessionOpts)).toBe(s)
     expect(k.get('k1')).toBe(s)
     expect(k.get('nope')).toBeUndefined()
@@ -116,12 +140,145 @@ describe('Kernel (I1 assembly)', () => {
     await expect(
       s.enqueue('next-turn', { content: [{ type: 'text', text: 'late' }], actor }),
     ).rejects.toThrow('E_CLOSED')
-    const k2 = base({ storage })
+    config = { personaPrefix: 'new persona' }
+    const k2 = base({ storage, systemPrompt })
     const again = await k2.session('k1', { ...sessionOpts, writerRunId: 'r2' })
     expect((await again.scan({ fromSeq: 1, limit: 5 })).map((e) => e.type)).toEqual(['session/start'])
     expect(again.lastSeq).toBe(1)
+    const pinned = await again.systemPromptPreview()
+    expect(pinned.config.personaPrefix).toBe('first persona')
+    expect((await again.scan({ fromSeq: 1, limit: 1 }))[0]?.data).toMatchObject({
+      systemPrompt: { hash: pinned.hash, provider: { id: 'test.prompt', version: '1.0.0' } },
+    })
+    config = { personaPrefix: 'duplicate' }
+    await expect(k2.session('refused', sessionOpts)).rejects.toThrow('invalid sections')
+    config = { personaPrefix: 'new persona' }
+    const fresh = await k2.session('new', sessionOpts)
+    expect((await fresh.systemPromptPreview()).config.personaPrefix).toBe('new persona')
     await k2.close()
+    const missing = base({ storage })
+    await expect(missing.session('k1', sessionOpts)).rejects.toThrow('pinned system prompt')
+    await missing.close()
   })
+
+  it('appends owner text to a new session pinned prompt, keeps it on resume, and refuses what it cannot honour', async () => {
+    const storage = new MemoryStorage()
+    let config: import('@agnes/protocol').SystemPromptConfig = { personaSuffix: 'house rules' }
+    const promptProvider = {
+      id: 'test.prompt',
+      version: '1.0.0',
+      defaults: () => [],
+      compose: (cfg: import('@agnes/protocol').SystemPromptConfig) => [
+        { id: 'profile:suffix', order: 1, source: 'profile:system-prompt', text: cfg.personaSuffix ?? '' },
+      ],
+    }
+    const systemPrompt = { config: async () => config, resolve: () => promptProvider }
+    const k = base({ storage, systemPrompt })
+    const plain = await k.session('plain', sessionOpts)
+    const appended = await k.session('appended', { ...sessionOpts, systemPromptAppend: 'Answer in French.' })
+    const pinned = await appended.systemPromptPreview()
+    expect(pinned.config.personaSuffix).toBe('house rules\n\nAnswer in French.')
+    expect(pinned.hash).not.toBe((await plain.systemPromptPreview()).hash)
+    expect((await appended.scan({ fromSeq: 1, limit: 1 }))[0]?.data).toMatchObject({
+      systemPrompt: { hash: pinned.hash, config: { personaSuffix: 'house rules\n\nAnswer in French.' } },
+    })
+    config = {}
+    expect(
+      (
+        await (
+          await k.session('alone', { ...sessionOpts, systemPromptAppend: 'Only me.' })
+        ).systemPromptPreview()
+      ).config.personaSuffix,
+    ).toBe('Only me.')
+    await k.close()
+    // Resume reads the persisted config back; a stale append option is refused rather than ignored.
+    const k2 = base({ storage, systemPrompt })
+    const again = await k2.session('appended', { ...sessionOpts, writerRunId: 'r2' })
+    expect((await again.systemPromptPreview()).config.personaSuffix).toBe('house rules\n\nAnswer in French.')
+    await k2.close()
+    const k3 = base({ storage, systemPrompt })
+    await expect(
+      k3.session('appended', { ...sessionOpts, writerRunId: 'r3', systemPromptAppend: 'late' }),
+    ).rejects.toThrow('only to a new session')
+    config = { fullOverride: 'replace everything' }
+    await expect(k3.session('full', { ...sessionOpts, systemPromptAppend: 'x' })).rejects.toThrow(
+      'full replacement',
+    )
+    config = { personaSuffix: 'y'.repeat(8000) }
+    await expect(
+      k3.session('merged-over', { ...sessionOpts, systemPromptAppend: 'x'.repeat(200) }),
+    ).rejects.toThrow('exceeds')
+    config = {}
+    await expect(
+      k3.session('over', { ...sessionOpts, systemPromptAppend: 'x'.repeat(8193) }),
+    ).rejects.toThrow('invalid')
+    await expect(k3.session('nul', { ...sessionOpts, systemPromptAppend: 'a\0b' })).rejects.toThrow('invalid')
+    await k3.close()
+    const noPrompt = base({ storage })
+    await expect(noPrompt.session('np', { ...sessionOpts, systemPromptAppend: 'x' })).rejects.toThrow(
+      'only to a new session',
+    )
+    await noPrompt.close()
+  })
+
+  it.each(['new', 'resume'] as const)(
+    'releases the writer and renewal timer after memory open fails on %s',
+    async (mode) => {
+      const storage = new MemoryStorage()
+      const pending = new Map<object, () => void>()
+      const timers = {
+        setTimeout: (fn: () => void) => {
+          const handle = {}
+          pending.set(handle, fn)
+          return handle
+        },
+        clearTimeout: (handle: unknown) => {
+          pending.delete(handle as object)
+        },
+      }
+      const first = base({
+        storage,
+        provider: fakeProvider([toolTurn('read', {}), textTurn('first')]),
+        timers,
+      })
+      first.tools.add(readTool(), { source: 'agnes/tools-core', trust: 'builtin' })
+      if (mode === 'resume') {
+        const session = await first.session('memory-failure', sessionOpts)
+        await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'synthetic' }] })
+        await session.step()
+        await session.step()
+        await session.step()
+        expect(session.op()?.phase.kind).toBe('tools')
+        expect(pending.size).toBeGreaterThan(0)
+        await session.close()
+        expect(pending.size).toBe(0)
+      }
+      let unavailable = true
+      const kernel = base({
+        storage,
+        timers,
+        memoryFor: () => {
+          if (unavailable) throw new Error('synthetic memory unavailable')
+          return undefined
+        },
+      })
+      try {
+        await expect(
+          kernel.session('memory-failure', { ...sessionOpts, writerRunId: 'failed' }),
+        ).rejects.toThrow('synthetic memory unavailable')
+        expect(kernel.get('memory-failure')).toBeUndefined()
+        expect(pending.size).toBe(0)
+        unavailable = false
+        const recovered = await kernel.session('memory-failure', { ...sessionOpts, writerRunId: 'recovered' })
+        expect(recovered.key).toBe('memory-failure')
+        await recovered.close()
+        expect(pending.size).toBe(0)
+      } finally {
+        await kernel.close()
+        await first.close()
+      }
+    },
+  )
 
   it('two keys get two ledgers, and the tool registry is shared across them', async () => {
     const k = base()
@@ -238,15 +395,17 @@ describe('Kernel (I1 assembly)', () => {
 
   it('the diagnostic name set is closed and holds the names written outside the kernel', () => {
     expect(new Set(CORE_DIAG_NAMES).size).toBe(CORE_DIAG_NAMES.length)
-    expect(CORE_DIAG_NAMES).toHaveLength(23)
+    expect(CORE_DIAG_NAMES).toHaveLength(25)
+    expect(CORE_DIAG_NAMES).toContain('ledger-tail-recovered')
     expect(CORE_DIAG_NAMES).toContain('request-media-window')
-    expect(CORE_DIAG_NAMES).toContain('inference-retry')
     expect(CORE_DIAG_NAMES).toContain('registers-rebuilt')
     expect(CORE_DIAG_NAMES).toContain('contribute-conflict')
     expect(CORE_DIAG_NAMES).toContain('manual-compaction')
     expect(CORE_DIAG_NAMES).toContain('context-breakdown')
     expect(CORE_DIAG_NAMES).toContain('tool-policy-refused-on-resume')
     expect(CORE_DIAG_NAMES).toContain('hook-compact-plan-ignored')
+    expect(CORE_DIAG_NAMES).toContain('tool-source-pending')
+    expect(CORE_DIAG_NAMES).toContain('memory-external-change')
   })
 })
 
@@ -318,79 +477,12 @@ describe('Kernel default children', () => {
     expect(types).toContain('turn/end')
     expect(parent.surface()).toEqual([])
     expect(starts).toEqual([{ childKey: child.key, kind: 'fork', budget: null }])
+    const childStart = await storage.scan(child.key, { type: 'session/start', order: 'desc', limit: 1 })
+    expect(childStart[0]?.data).toMatchObject({ resolvedPresetHash: sessionOpts.resolvedPresetHash })
     expect(ends).toEqual([{ childKey: child.key, outcome: 'completed', credits: 1 }])
 
     await child.close()
     expect(parent.d.children.get?.(child.key)).toBeUndefined()
-    await k.close()
-  })
-
-  it('records the resolved preset hash on session/start and hands it to fork and spawn children', async () => {
-    const storage = new MemoryStorage()
-    const hash = `sha256-${'a'.repeat(64)}`
-    const startOf = async (key: string) =>
-      (await storage.scan(key, { type: 'session/start', limit: 20 })).find(
-        (row) => (row.data as { key?: string }).key === key,
-      )?.data
-    const k = base({ storage, preset: childPreset })
-    const parent = await k.session('parent', {
-      ...sessionOpts,
-      preset: childPreset,
-      resolvedPresetHash: hash,
-    })
-    expect(await startOf('parent')).toMatchObject({ resolvedProfileHash: 'h1', resolvedPresetHash: hash })
-    for (const kind of ['fork', 'spawn'] as const) {
-      const create = parent.d.children.createWithKind
-      if (!create) throw new Error('child factory has no kind selector')
-      const child = await create.call(parent.d.children, kind, {
-        parent: parent.key,
-        cwd: '/w',
-        input: `${kind} task`,
-      })
-      expect(await startOf(child.key)).toMatchObject({ resolvedPresetHash: hash })
-    }
-    await k.close()
-  })
-
-  it('leaves the preset hash off session/start when the caller has none', async () => {
-    const storage = new MemoryStorage()
-    const k = base({ storage })
-    await k.session('plain', sessionOpts)
-    const start = (await storage.scan('plain', { type: 'session/start', limit: 1 }))[0]
-    expect(start?.data).not.toHaveProperty('resolvedPresetHash')
-    await k.close()
-  })
-
-  it('does not hand the parent preset hash to a child that runs another model', async () => {
-    const storage = new MemoryStorage()
-    const hash = `sha256-${'b'.repeat(64)}`
-    const provider = fakeProvider([textTurn('done')])
-    Object.assign(provider, {
-      models: () => [modelRecord('ds', 'deepseek-v4-pro', 'fast'), modelRecord('anthropic', 'claude/sonnet')],
-    })
-    const k = base({ storage, provider, preset: childPreset })
-    const parent = await k.session('parent', {
-      ...sessionOpts,
-      resolvedPresetHash: hash,
-      preset: {
-        ...childPreset,
-        model: {
-          ...presetDefaults().model,
-          route: { primary: 'ds', fast: 'ds' },
-          id: { primary: 'deepseek-v4-pro', fast: 'deepseek-v4-pro' },
-        },
-      },
-    })
-    const child = await parent.d.children.create({
-      parent: parent.key,
-      cwd: '/w',
-      model: 'anthropic/claude/sonnet',
-      input: 'other model',
-    })
-    const start = (await storage.scan(child.key, { type: 'session/start', limit: 20 })).find(
-      (row) => (row.data as { key?: string }).key === child.key,
-    )
-    expect(start?.data).not.toHaveProperty('resolvedPresetHash')
     await k.close()
   })
 
@@ -399,7 +491,8 @@ describe('Kernel default children', () => {
     Object.assign(provider, {
       models: () => [modelRecord('ds', 'deepseek-v4-pro', 'fast'), modelRecord('anthropic', 'claude/sonnet')],
     })
-    const k = base({ provider, preset: childPreset })
+    const storage = new MemoryStorage()
+    const k = base({ provider, preset: childPreset, storage })
     const parent = await k.session('parent', {
       ...sessionOpts,
       preset: {
@@ -425,6 +518,8 @@ describe('Kernel default children', () => {
       })
       await child.run(`use ${selector}`)
       expect(provider.requests.at(-1)).toMatchObject(expected)
+      const rows = await storage.scan(child.key, { type: 'session/start', order: 'desc', limit: 1 })
+      expect(rows[0]?.data).not.toHaveProperty('resolvedPresetHash')
       await child.close()
     }
     await k.close()
@@ -541,31 +636,43 @@ describe('Kernel (fix round 1)', () => {
    */
   it('drives an open-world result into an escalated approval for the next write', async () => {
     const asked: Array<{ tool: string | undefined; taint: boolean }> = []
+    const seams = fakeSeams({
+      approval: {
+        ask: async (req) => {
+          asked.push({ tool: req.tool?.name, taint: req.taint })
+          expect(req.summary).toContain('This turn contains untrusted tool output; changes require approval')
+          return { verdict: 'allowed-once' as const, answeredBy: actor }
+        },
+      },
+    })
     const k = base({
       provider: fakeProvider([
         toolTurn('fetch_page', {}),
         toolTurn('write_note', { text: 'from the page' }),
         textTurn('done'),
       ]),
-      seams: fakeSeams({
-        approval: {
-          ask: async (req) => {
-            asked.push({ tool: req.tool?.name, taint: req.taint })
-            return 'allowed-once'
-          },
-          resume: async () => null,
-        },
-      }),
+      seams,
     })
     k.tools.add(openWorldTool(), { source: 's', trust: 'builtin' })
-    k.tools.add(writeTool(), { source: 's', trust: 'builtin' })
-    const s = await k.session('taint', sessionOpts)
+    let writes = 0
+    k.tools.add(
+      writeTool(async () => {
+        writes++
+        return { content: [{ type: 'text', text: 'written' }] }
+      }),
+      { source: 's', trust: 'builtin' },
+    )
+    const s = await k.session('taint', {
+      ...sessionOpts,
+      workspaceInvocation: testWorkspaceInvocation(testFsOps(), seams),
+    })
     const ops = opHistory(s.d.log)
     await s.enqueue('next-turn', { content: [{ type: 'text', text: 'read the page and note it' }], actor })
     const out = await s.run({ until: 'turn-end', signal: new AbortController().signal })
     expect(out.reason).toBe('completed')
     // Exactly one question, and it is the one the untrusted text made necessary.
     expect(asked).toEqual([{ tool: 'write_note', taint: true }])
+    expect(writes).toBe(1)
     const rows = await s.scan({ fromSeq: 1, limit: 300 })
     const untrusted = rows.filter((e) => e.type === 'tool/result' && e.trust === 'untrusted')
     expect(untrusted).toHaveLength(1)
@@ -577,8 +684,8 @@ describe('Kernel (fix round 1)', () => {
     expect(counters[0]).toBe(false)
     expect(counters.at(-1)).toBe(true)
     expect(counters.indexOf(true)).toBeGreaterThan(0)
-    const ask = rows.find((e) => e.type === 'approval/asked')
-    expect(ask?.data).toMatchObject({ kind: 'tool', risk: 'destructive' })
+    const ask = rows.find((e) => e.type === 'decision/state')
+    expect(ask?.data).toMatchObject({ request: { spec: { subject: { risk: 'unknown' } } } })
     await k.close()
   })
 })
@@ -627,14 +734,36 @@ describe('Kernel per-session hook factory', () => {
     'releases the writer lease when hook initialization is %s',
     async (kind) => {
       const storage = new MemoryStorage()
+      let memoryOpen = true
       const k = base({
         storage,
+        memoryFor: () => ({
+          root: '/memory',
+          snapshot: async () => undefined,
+          files: (fallback) => fallback,
+          inspect: async () => {
+            throw new Error('unused')
+          },
+          configure: async () => {
+            throw new Error('unused')
+          },
+          readFile: async () => {
+            throw new Error('unused')
+          },
+          editFile: async () => {
+            throw new Error('unused')
+          },
+          close: () => {
+            memoryOpen = false
+          },
+        }),
         hooksFactory: () => {
           if (kind === 'throw') throw new Error('factory failure')
           return {} as never
         },
       })
       await expect(k.session('failed', sessionOpts)).rejects.toThrow()
+      expect(memoryOpen).toBe(false)
       expect(k.get('failed')).toBeUndefined()
       const recovery = base({ storage })
       await expect(
@@ -644,6 +773,42 @@ describe('Kernel per-session hook factory', () => {
       await k.close()
     },
   )
+
+  it('injects memory changed outside its provider and records a notice naming the files', async () => {
+    const provider = fakeProvider([textTurn('done')])
+    const k = base({
+      provider,
+      memoryFor: () => ({
+        root: '/memory',
+        snapshot: async () => ({
+          revision: 'r1',
+          content: 'Prefer tabs.',
+          omitted: false,
+          externalChanges: ['MEMORY.md'],
+        }),
+        files: (fallback) => fallback,
+        inspect: async () => {
+          throw new Error('unused')
+        },
+        configure: async () => {
+          throw new Error('unused')
+        },
+        readFile: async () => {
+          throw new Error('unused')
+        },
+        editFile: async () => {
+          throw new Error('unused')
+        },
+      }),
+    })
+    const s = await k.session('memory-changed', sessionOpts)
+    await s.enqueue('next-turn', { content: [{ type: 'text', text: 'hello' }], actor })
+    await s.run({ until: 'turn-end', signal: new AbortController().signal })
+    expect(JSON.stringify(provider.requests[0]?.messages)).toContain('Prefer tabs.')
+    const notices = await s.scan({ type: 'x/core/memory-external-change', limit: 10 })
+    expect(notices.map((row) => row.data)).toEqual([{ paths: ['MEMORY.md'] }])
+    await k.close()
+  })
 
   it('resets only on accepted new turns, not on idle runs', async () => {
     let resets = 0
@@ -1480,6 +1645,40 @@ describe('Kernel (registries wiring — Task 37b)', () => {
       },
       meta('t'),
     )
+    await expect(
+      k2.session('k1', { ...sessionOpts, writerRunId: 'fresh-only', requireNew: true }),
+    ).rejects.toThrow('not fresh')
+    expect(replayed).toEqual([])
+    const cancellation = new AbortController()
+    await expect(
+      k2.session('k1', {
+        ...sessionOpts,
+        writerRunId: 'cancelled-open',
+        historySignal: cancellation.signal,
+        onHistoryProgress: () => cancellation.abort(),
+      }),
+    ).rejects.toMatchObject({ code: 'E_CLOSED' })
+    expect(replayed).toEqual([])
+    const lateCancellation = new AbortController()
+    let abortOnStart = true
+    k2.hooks.on(
+      'session_start',
+      async (_payload, ctx) => {
+        if (!abortOnStart) return
+        lateCancellation.abort(new Error('history loading cancelled during lifecycle'))
+        expect(ctx.signal.aborted).toBe(true)
+      },
+      meta('cancel-lifecycle'),
+    )
+    await expect(
+      k2.session('k1', {
+        ...sessionOpts,
+        writerRunId: 'cancelled-lifecycle',
+        historySignal: lateCancellation.signal,
+      }),
+    ).rejects.toThrow('history loading cancelled during lifecycle')
+    abortOnStart = false
+    replayed.length = 0
     const again = await k2.session('k1', { ...sessionOpts, writerRunId: 'r2' })
     expect(replayed).toEqual([
       { reason: 'resume', preset: again.preset.name, cwd: '/w', key: 'k1', replayed: true },

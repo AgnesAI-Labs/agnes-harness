@@ -1,0 +1,29 @@
+{
+  "name": "@examples/skin-example-broken",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": "./index.mjs",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:examples/skin-example-broken",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "runtimeSupports": [
+          "in-process"
+        ],
+        "capabilities": {},
+        "contributes": {
+          "skins": [
+            {
+              "id": "midnight",
+              "name": "午夜",
+              "css": "./skins/midnight/skin.css"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

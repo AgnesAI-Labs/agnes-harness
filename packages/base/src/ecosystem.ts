@@ -1,28 +1,48 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
-import type { ExtensionFactory } from '@agnes/extension-api'
-import { createBatchExtension } from '../extensions/batch/src/index.js'
+import { readFileSync } from 'node:fs'
+import { basename } from 'node:path'
+import type { ExtensionFactory } from '@agnes/extension-api/host'
+import { gitWorktreeKind } from '@agnes/git-worktree-contract'
+import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
+import { type BundledPlugin, extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import compactionExtension from '../extensions/compaction/src/index.js'
 import { createComputerUseExtension } from '../extensions/computer-use/src/index.js'
+import contextRulesExtension from '../extensions/context-rules/src/index.js'
+import deliverablesExtension from '../extensions/deliverables/src/index.js'
+import { createFollowUpHintExtension } from '../extensions/follow-up-hint/src/index.js'
+import goalExtension from '../extensions/goal/src/index.js'
+import { createHeadsUpExtension } from '../extensions/heads-up/src/index.js'
 import {
   type CcHookMap,
   type HooksRunnerExtensionDeps,
   hooksRunnerExtension,
 } from '../extensions/hooks-runner/src/index.js'
+import intelligentUiExtension from '../extensions/intelligent-ui/src/index.js'
+import interactionExtension from '../extensions/interaction/src/index.js'
+import { createJobsExtension } from '../extensions/jobs/src/index.js'
+import { shellJobsFor } from '../extensions/jobs/src/registry.js'
+import { createJobsWebExtension } from '../extensions/jobs-web/src/index.js'
+import { createLspExtension, lspFor } from '../extensions/lsp/src/index.js'
+import mcpResourcesExtension from '../extensions/mcp-resources/src/index.js'
 import { mcpSearchExtension } from '../extensions/mcp-search/src/index.js'
 import { mcpCatalogHubFor } from '../extensions/mcp-server/src/catalog-hub.js'
+import planModeExtension from '../extensions/plan-mode/src/index.js'
+import pluginCreatorExtension from '../extensions/plugin-creator/src/index.js'
 import { createPrivacyExtension, sessionEgressAuthority } from '../extensions/privacy/src/index.js'
 import { createRefineExtension } from '../extensions/refine/src/index.js'
 import { RefineQueue } from '../extensions/refine/src/queue.js'
 import { createRefineHarness } from '../extensions/refine/src/seam.js'
+import { createScheduleExtension } from '../extensions/schedule/src/index.js'
+import { createSessionQueryExtension } from '../extensions/session-query/src/index.js'
 import { skillsExtension } from '../extensions/skills/src/runtime.js'
 import { createSubagentExtension, type SubagentLimits } from '../extensions/subagent/src/index.js'
 import { gitWorktrees, type WorktreeEntry } from '../extensions/subagent/src/worktree.js'
-import toolsCoreExtension from '../extensions/tools-core/src/index.js'
+import timeContextExtension from '../extensions/time-context/src/index.js'
+import { createToolsCoreExtension } from '../extensions/tools-core/src/index.js'
 import toolsSearchExtension from '../extensions/tools-search/src/index.js'
-import toolsWebExtension from '../extensions/tools-web/src/index.js'
-import type { SeamInitContext } from './seam-init.js'
+import { createToolsWebExtension } from '../extensions/tools-web/src/index.js'
+import { createOfficialSearchProvider } from '../extensions/tools-web/src/search/index.js'
+import workflowExtension from '../extensions/workflow/src/index.js'
+import type { ChildWorktreePort, SeamInitContext } from './seam-init.js'
 
 /** Replaced with the reviewed generated asset by the CLI SEA build. */
 declare const AGNES_CC_HOOK_MAP_TEXT: string | undefined
@@ -35,7 +55,7 @@ const generatedHookMap = JSON.parse(
 
 export type HooksRunnerEcosystemDeps = Partial<HooksRunnerExtensionDeps>
 
-function privacyFactory(init: SeamInitContext): ExtensionFactory {
+function privacyFactory(init: SeamInitContext): BundledPlugin {
   const trajectory = init.privacyTrajectory
   return createPrivacyExtension({
     rules: {
@@ -78,10 +98,10 @@ export function readSubagentLimits(preset: Record<string, unknown>): SubagentLim
 
 /** Factories that need the trusted assembly context, kept separate from the static extension host. */
 export function createEcosystemExtensions(init: SeamInitContext): {
-  hooksRunner(deps?: HooksRunnerEcosystemDeps): ExtensionFactory
-  refine(): ExtensionFactory
-  subagent(): ExtensionFactory
-  skills(): ExtensionFactory
+  hooksRunner(deps?: HooksRunnerEcosystemDeps): BundledPlugin
+  refine(): BundledPlugin
+  subagent(): BundledPlugin
+  skills(): BundledPlugin
 } {
   return {
     hooksRunner: (deps = {}) =>
@@ -92,7 +112,7 @@ export function createEcosystemExtensions(init: SeamInitContext): {
         ...(deps.http === undefined ? {} : { http: deps.http }),
       }),
     refine: () => {
-      const queue = new RefineQueue(init.adapters.storage.table('refine_queue'))
+      const queue = new RefineQueue(init.adapters.storage.namespace('refine_queue'))
       const rawMax = (init.profile.preset.harness as { queue_max?: unknown } | undefined)?.queue_max ?? 20
       if (!Number.isSafeInteger(rawMax) || (rawMax as number) < 0)
         throw new Error('harness.queue_max must be a non-negative safe integer')
@@ -103,96 +123,138 @@ export function createEcosystemExtensions(init: SeamInitContext): {
   }
 }
 
-const darwin = process.platform === 'darwin' // guards-allow-platform: F_FULLFSYNC is darwin-only.
-
-function sqliteWorktreePersist(dataDir: string): {
+/**
+ * Subagent worktree binding through the Host child-control port. Nothing is loaded back: `bind`
+ * follows `create` in the same tool call, and `finish` goes through the Host git registry.
+ */
+export function childControlWorktreePersist(port: ChildWorktreePort | undefined): {
   load(): Map<string, WorktreeEntry>
   save(entries: Map<string, WorktreeEntry>): void
-  bind(childKey: string, entry: WorktreeEntry): void
+  bind(childKey: string, entry: WorktreeEntry): Promise<void>
 } {
-  const dbPath = join(dataDir, 'sessions.db')
-  const open = (): DatabaseSync | null => {
-    if (!existsSync(dbPath)) return null
-    const db = new DatabaseSync(dbPath)
-    // A write here can checkpoint the WAL ledger; on darwin only F_FULLFSYNC makes that durable.
-    if (darwin) db.exec('PRAGMA checkpoint_fullfsync = ON')
-    return db
-  }
   return {
-    load() {
-      const db = open()
-      const out = new Map<string, WorktreeEntry>()
-      if (!db) return out
-      try {
-        const rows = db
-          .prepare(
-            `SELECT path, root, branch, phase FROM child_workspaces WHERE isolation = 'worktree' AND path IS NOT NULL`,
-          )
-          .all() as Array<{ path: string; root: string | null; branch: string | null; phase: string }>
-        for (const row of rows) {
-          if (!row.root || !row.branch) continue
-          out.set(row.path, {
-            root: row.root,
-            path: row.path,
-            branch: row.branch,
-            stage: row.phase === 'worktree_removed' ? 'worktree-removed' : 'attached',
-          })
-        }
-      } finally {
-        db.close()
-      }
-      return out
-    },
-    save() {
-      // bind() is the durable write; save keeps the in-memory map consistent for finish.
-    },
-    bind(childKey, entry) {
-      const db = open()
-      if (!db) return
-      try {
-        db.prepare(
-          `UPDATE child_workspaces SET path = ?, phase = 'attached', root = ?, branch = ? WHERE child_key = ?`,
-        ).run(entry.path, entry.root, entry.branch, childKey)
-        db.prepare(`UPDATE child_tasks SET cwd = ? WHERE child_key = ?`).run(entry.path, childKey)
-      } finally {
-        db.close()
-      }
+    load: () => new Map(),
+    save: () => undefined,
+    async bind(childKey, entry) {
+      if (!port) throw new Error('worktree isolation requires the Host child-control port')
+      const task = await port.lookupByKey(childKey)
+      if (!task?.workspaceId) throw new Error('worktree binding requires a child workspace')
+      await port.updateWorkspace(task.workspaceId, {
+        phase: 'attached',
+        path: entry.path,
+        root: entry.root,
+        branch: entry.branch,
+      })
     },
   }
 }
 
-function defineSubagentExtension(init: SeamInitContext): ExtensionFactory {
-  const limits = readSubagentLimits(init.profile.preset)
-  return (agnes) =>
-    createSubagentExtension({
-      limits,
-      worktrees: gitWorktrees({ events: agnes.events, persist: sqliteWorktreePersist(init.profile.dataDir) }),
-    })(agnes)
+function officialSearchProvider(init: SeamInitContext) {
+  return createOfficialSearchProvider({
+    dataDir: init.profile.dataDir,
+    resolveSecret(ref) {
+      try {
+        const value = init.secrets(ref)
+        return value.length > 0 ? value : undefined
+      } catch {
+        return undefined
+      }
+    },
+  })
 }
 
-/** Trusted factories keyed by the manifest id the host is about to admit. */
-export const ecosystem = {
-  'agnes/tools-core': (): ExtensionFactory => toolsCoreExtension,
-  'agnes/tools-search': (): ExtensionFactory => toolsSearchExtension,
-  'agnes/tools-web': (): ExtensionFactory => toolsWebExtension,
-  'agnes/compaction': (): ExtensionFactory => compactionExtension,
-  'agnes/privacy': (init: SeamInitContext): ExtensionFactory => privacyFactory(init),
-  // Cross-server deferred-tool search plus the ready-Skill listing (design §3.9, D123). Host hands it
+function defineSubagentExtension(init: SeamInitContext): BundledPlugin {
+  const limits = readSubagentLimits(init.profile.preset)
+  return defineAgnesPlugin({
+    inject: ['tools', 'eventLog', 'providers'],
+    apply(ctx: Context) {
+      return createSubagentExtension({
+        limits,
+        worktrees: gitWorktrees({
+          events: ctx.eventLog,
+          persist: childControlWorktreePersist(init.childControl),
+          open: () => ctx.providers.bindOwn(gitWorktreeKind),
+        }),
+      }).apply(ctx)
+    },
+  })
+}
+
+/** Bundled extensions as plugins; `ecosystem` mounts each one over the backend API. */
+
+const bundled = {
+  'agnes/intelligent-ui': (): BundledPlugin => intelligentUiExtension,
+  'agnes/workflow': (): BundledPlugin => workflowExtension,
+  'agnes/context-rules': (): BundledPlugin => contextRulesExtension,
+  'agnes/follow-up-hint': (init: SeamInitContext): BundledPlugin =>
+    createFollowUpHintExtension(init.sessionTasks),
+  'agnes/heads-up': (init: SeamInitContext): BundledPlugin => createHeadsUpExtension(init.sessionTasks),
+  'agnes/time-context': (): BundledPlugin => timeContextExtension,
+
+  'agnes/goal': (): BundledPlugin => goalExtension,
+  'agnes/interaction': (): BundledPlugin => interactionExtension,
+  'agnes/deliverables': (): BundledPlugin => deliverablesExtension,
+  'agnes/plugin-creator': (): BundledPlugin => pluginCreatorExtension,
+  'agnes/tools-core': (init: SeamInitContext): BundledPlugin =>
+    createToolsCoreExtension(shellJobsFor(init.signal), lspFor(init.signal)),
+  // Shares one registry with tools-core (as jobs does): applying this extension is what turns the
+  // language servers on for the write/edit results too.
+  'agnes/lsp': (init: SeamInitContext): BundledPlugin => createLspExtension(lspFor(init.signal)),
+  'agnes/jobs-web': (init: SeamInitContext): BundledPlugin =>
+    createJobsWebExtension(shellJobsFor(init.signal)),
+  'agnes/jobs': (init: SeamInitContext): BundledPlugin => createJobsExtension(shellJobsFor(init.signal)),
+  'agnes/tools-search': (): BundledPlugin => toolsSearchExtension,
+  'agnes/tools-web': (init: SeamInitContext): BundledPlugin =>
+    createToolsWebExtension(init.searchProvider ?? officialSearchProvider(init)),
+  'agnes/compaction': (): BundledPlugin => compactionExtension,
+  'agnes/privacy': (init: SeamInitContext): BundledPlugin => privacyFactory(init),
+  // Cross-server deferred-tool search plus the ready-Skill listing. Host hands it
   // a live Skill view; MCP servers themselves are per-server rows, never an ecosystem extension.
-  'agnes/mcp-search': (init: SeamInitContext): ExtensionFactory =>
+  'agnes/mcp-search': (init: SeamInitContext): BundledPlugin =>
     mcpSearchExtension({
       catalogHub: mcpCatalogHubFor(init),
       ...(init.skillDiscovery ? { skillDiscovery: init.skillDiscovery } : {}),
     }),
-  'agnes/hooks-runner': (init: SeamInitContext): ExtensionFactory =>
+  'agnes/hooks-runner': (init: SeamInitContext): BundledPlugin =>
     createEcosystemExtensions(init).hooksRunner(),
-  'agnes/refine': (init: SeamInitContext): ExtensionFactory => createEcosystemExtensions(init).refine(),
-  'agnes/subagent': (init: SeamInitContext): ExtensionFactory => createEcosystemExtensions(init).subagent(),
-  'agnes/skills': (init: SeamInitContext): ExtensionFactory => createEcosystemExtensions(init).skills(),
-  'agnes/computer-use': (init: SeamInitContext): ExtensionFactory => {
+  'agnes/refine': (init: SeamInitContext): BundledPlugin => createEcosystemExtensions(init).refine(),
+  'agnes/subagent': (init: SeamInitContext): BundledPlugin => createEcosystemExtensions(init).subagent(),
+  'agnes/skills': (init: SeamInitContext): BundledPlugin => createEcosystemExtensions(init).skills(),
+  'agnes/plan-mode': (): BundledPlugin => planModeExtension,
+  'agnes/mcp-resources': (): BundledPlugin => mcpResourcesExtension,
+  'agnes/schedule': (): BundledPlugin => createScheduleExtension(),
+  'agnes/computer-use': (init: SeamInitContext): BundledPlugin => {
     if (!init.computerUseBackendProvider)
       throw new Error('computer-use extension requires the Host-owned backend provider')
     return createComputerUseExtension(init.computerUseBackendProvider, init.computerUseOptions)
   },
-  'agnes/batch': (init: SeamInitContext): ExtensionFactory => createBatchExtension(init.batch),
+  'agnes/session-query': (init: SeamInitContext): BundledPlugin =>
+    createSessionQueryExtension({ dataDir: init.profile.dataDir }),
 } as const
+
+/**
+ * Host grants the child-control port to every `@agnes/base`-owned context. For factories mounted
+ * through `mountEcosystem` (the `ecosystem` map), only agnes/subagent (worktree binding) keeps it;
+ * every other factory gets the context without it.
+ */
+export function ecosystemInitFor(id: string, init: SeamInitContext): SeamInitContext {
+  if (id === 'agnes/subagent' || !('childControl' in init)) return init
+  const { childControl: _port, ...rest } = init
+  return rest
+}
+
+/** Mounts each bundled factory as an extension factory, narrowing its context by id first. */
+export function mountEcosystem<T extends Record<string, (init: SeamInitContext) => BundledPlugin>>(
+  table: T,
+): { [K in keyof T]: (init: SeamInitContext) => ExtensionFactory } {
+  return Object.fromEntries(
+    Object.entries(table).map(([id, make]) => [
+      id,
+      (init: SeamInitContext) => extensionFactoryOf(make(ecosystemInitFor(id, init))),
+    ]),
+  ) as never
+}
+
+/** Trusted factories keyed by the manifest id the host is about to admit. */
+export const ecosystem: { [K in keyof typeof bundled]: (init: SeamInitContext) => ExtensionFactory } =
+  mountEcosystem(bundled)

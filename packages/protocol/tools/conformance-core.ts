@@ -81,7 +81,7 @@ export type Fixture = {
   name?: MethodName | HookEvent | UiSlotName | string
   side?: 'params' | 'result' | 'payload' | 'return'
   payload?: unknown
-  expect?: { errorCode?: number; dataCode?: string; key?: string }
+  expect?: { errorCode?: number; dataCode?: string; key?: string; path?: string }
   // Sequence rows only: the recorded frames and which invariants the recording is meant to satisfy.
   frames?: Frame[]
   invariants?: SequenceInvariant[]
@@ -103,6 +103,61 @@ const MODEL_VALIDATORS: Record<string, (x: unknown) => ValidationResult<unknown>
 }
 
 const CONFIG_VALIDATORS: Record<string, (x: unknown) => ValidationResult<unknown>> = {
+  PresentationRoleSelection: (x) => validatePackageAdminData('PresentationRoleSelection', x),
+  PresentationRoleSelections: (x) => validatePackageAdminData('PresentationRoleSelections', x),
+  PresentationRoleState: (x) => validatePackageAdminData('PresentationRoleState', x),
+  ApplicationSelection: (x) =>
+    validatePackageAdminData('ApplicationSelection' satisfies PackageAdminDataName, x),
+  ApplicationConfigSnapshot: (x) =>
+    validatePackageAdminData('ApplicationConfigSnapshot' satisfies PackageAdminDataName, x),
+  ApplicationPreviewParams: (x) =>
+    validatePackageAdminData('ApplicationPreviewParams' satisfies PackageAdminDataName, x),
+  ApplicationPreview: (x) => validatePackageAdminData('ApplicationPreview' satisfies PackageAdminDataName, x),
+  ApplicationState: (x) => validatePackageAdminData('ApplicationState' satisfies PackageAdminDataName, x),
+  ApplicationAdoptParams: (x) =>
+    validatePackageAdminData('ApplicationAdoptParams' satisfies PackageAdminDataName, x),
+  ApplicationClearParams: (x) =>
+    validatePackageAdminData('ApplicationClearParams' satisfies PackageAdminDataName, x),
+
+  PluginConfigGetParams: (x) =>
+    validatePackageAdminData('PluginConfigGetParams' satisfies PackageAdminDataName, x),
+  PluginConfigValidateParams: (x) =>
+    validatePackageAdminData('PluginConfigValidateParams' satisfies PackageAdminDataName, x),
+  PluginConfigSaveParams: (x) =>
+    validatePackageAdminData('PluginConfigSaveParams' satisfies PackageAdminDataName, x),
+  PluginConfigEntry: (x) => validatePackageAdminData('PluginConfigEntry' satisfies PackageAdminDataName, x),
+  PluginConfigAudit: (x) => validatePackageAdminData('PluginConfigAudit' satisfies PackageAdminDataName, x),
+  PluginConfigSnapshot: (x) =>
+    validatePackageAdminData('PluginConfigSnapshot' satisfies PackageAdminDataName, x),
+  PluginConfigValidation: (x) =>
+    validatePackageAdminData('PluginConfigValidation' satisfies PackageAdminDataName, x),
+  PluginConfigSaveResult: (x) =>
+    validatePackageAdminData('PluginConfigSaveResult' satisfies PackageAdminDataName, x),
+  AuthoringFile: (x) => validatePackageAdminData('AuthoringFile' satisfies PackageAdminDataName, x),
+  AuthoringOrigin: (x) => validatePackageAdminData('AuthoringOrigin' satisfies PackageAdminDataName, x),
+  AuthoringTests: (x) => validatePackageAdminData('AuthoringTests' satisfies PackageAdminDataName, x),
+  AuthoringCandidate: (x) => validatePackageAdminData('AuthoringCandidate' satisfies PackageAdminDataName, x),
+  AuthoringCandidateList: (x) =>
+    validatePackageAdminData('AuthoringCandidateList' satisfies PackageAdminDataName, x),
+  AuthoringCreateParams: (x) =>
+    validatePackageAdminData('AuthoringCreateParams' satisfies PackageAdminDataName, x),
+  AuthoringWriteParams: (x) =>
+    validatePackageAdminData('AuthoringWriteParams' satisfies PackageAdminDataName, x),
+  AuthoringTestParams: (x) =>
+    validatePackageAdminData('AuthoringTestParams' satisfies PackageAdminDataName, x),
+  AuthoringSubmitParams: (x) =>
+    validatePackageAdminData('AuthoringSubmitParams' satisfies PackageAdminDataName, x),
+  AuthoringApproveParams: (x) =>
+    validatePackageAdminData('AuthoringApproveParams' satisfies PackageAdminDataName, x),
+  AuthoringRejectParams: (x) =>
+    validatePackageAdminData('AuthoringRejectParams' satisfies PackageAdminDataName, x),
+  AuthoringShowParams: (x) =>
+    validatePackageAdminData('AuthoringShowParams' satisfies PackageAdminDataName, x),
+  AuthoringProvenance: (x) =>
+    validatePackageAdminData('AuthoringProvenance' satisfies PackageAdminDataName, x),
+  AuthoringCandidateSummary: (x) =>
+    validatePackageAdminData('AuthoringCandidateSummary' satisfies PackageAdminDataName, x),
+
   PackageAdminPermission: (x) =>
     validatePackageAdminData('PackageAdminPermission' satisfies PackageAdminDataName, x),
   PackageActivationTrust: (x) =>
@@ -114,14 +169,22 @@ const CONFIG_VALIDATORS: Record<string, (x: unknown) => ValidationResult<unknown
   PackageAdminContext: (x) =>
     validatePackageAdminData('PackageAdminContext' satisfies PackageAdminDataName, x),
   PackageSource: (x) => validatePackageAdminData('PackageSource' satisfies PackageAdminDataName, x),
+  PluginCapabilities: (x) => validatePackageAdminData('PluginCapabilities' satisfies PackageAdminDataName, x),
+  ClientModuleListParams: (x) => validateMethod('_agnes/v1/clientModules.list', 'params', x),
   PackageContributionSummary: (x) =>
     validatePackageAdminData('PackageContributionSummary' satisfies PackageAdminDataName, x),
   PackageCapabilityDiff: (x) =>
     validatePackageAdminData('PackageCapabilityDiff' satisfies PackageAdminDataName, x),
   PackageBlocker: (x) => validatePackageAdminData('PackageBlocker' satisfies PackageAdminDataName, x),
   PackageWarning: (x) => validatePackageAdminData('PackageWarning' satisfies PackageAdminDataName, x),
+  PackageProvenanceParams: (x) => validatePackageAdminData('PackageProvenanceParams', x),
+  PackageSourcePolicy: (x) => validatePackageAdminData('PackageSourcePolicy', x),
   PackageProvenance: (x) => validatePackageAdminData('PackageProvenance' satisfies PackageAdminDataName, x),
   PackagePreview: (x) => validatePackageAdminData('PackagePreview' satisfies PackageAdminDataName, x),
+  PackagePresentation: (x) =>
+    validatePackageAdminData('PackagePresentation' satisfies PackageAdminDataName, x),
+  ContributionBinding: (x) =>
+    validatePackageAdminData('ContributionBinding' satisfies PackageAdminDataName, x),
   PackageTrustDecision: (x) =>
     validatePackageAdminData('PackageTrustDecision' satisfies PackageAdminDataName, x),
   PackageInstalledDescriptor: (x) =>
@@ -133,6 +196,16 @@ const CONFIG_VALIDATORS: Record<string, (x: unknown) => ValidationResult<unknown
     validatePackageAdminData('PackageOperationReceipt' satisfies PackageAdminDataName, x),
   PackageOperation: (x) => validatePackageAdminData('PackageOperation' satisfies PackageAdminDataName, x),
   PackageCatalogPage: (x) => validatePackageAdminData('PackageCatalogPage' satisfies PackageAdminDataName, x),
+  PluginGenerationStatus: (x) =>
+    validatePackageAdminData('PluginGenerationStatus' satisfies PackageAdminDataName, x),
+  PluginPublicationReport: (x) =>
+    validatePackageAdminData('PluginPublicationReport' satisfies PackageAdminDataName, x),
+  PluginPublicationStatusResult: (x) =>
+    validatePackageAdminData('PluginPublicationStatusResult' satisfies PackageAdminDataName, x),
+  SessionGenerationMigrationParams: (x) =>
+    validatePackageAdminData('SessionGenerationMigrationParams' satisfies PackageAdminDataName, x),
+  SessionGenerationMigrationResult: (x) =>
+    validatePackageAdminData('SessionGenerationMigrationResult' satisfies PackageAdminDataName, x),
   PackageListResult: (x) => validatePackageAdminData('PackageListResult' satisfies PackageAdminDataName, x),
   PackageCatalogListParams: (x) =>
     validatePackageAdminData('PackageCatalogListParams' satisfies PackageAdminDataName, x),
@@ -340,6 +413,8 @@ export function runFixtureLine(f: Fixture): {
     return { id: f.id, pass: false, detail: `data.code ${String(err.data.code)} ≠ ${e.dataCode}` }
   if (e.key !== undefined && err.data.key !== e.key)
     return { id: f.id, pass: false, detail: `key ${String(err.data.key)} ≠ ${e.key}` }
+  if (e.path !== undefined && err.data.path !== e.path)
+    return { id: f.id, pass: false, detail: `path ${String(err.data.path)} ≠ ${e.path}` }
   return { id: f.id, pass: true }
 }
 

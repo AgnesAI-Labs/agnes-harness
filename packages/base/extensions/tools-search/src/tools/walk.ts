@@ -1,5 +1,6 @@
 import type { FsEntry, ToolContext, ToolMeta, ToolResult } from '@agnes/extension-api'
 import { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
+import { displayPath } from '../../../tools-core/src/guards/feedback.js'
 import { normalizeWorkspacePath } from '../../../tools-core/src/paths.js'
 import { MAX_READ_BYTES } from '../../../tools-core/src/tools/read.js'
 
@@ -20,6 +21,7 @@ export const DENIED_PATHS = ['.git', ...WORKSPACE_SECRET_DIRS, 'secrets', 'table
 // tool, because they genuinely are the same answer: reading a tree changes nothing, costs nothing
 // worth quoting, and accesses local files through the Host's filesystem port.
 export const SEARCH_META: ToolMeta = {
+  paths: [{ arg: 'path', access: 'read', default: '.', nonWorkspaceSchemes: ['artifact'] }],
   isReadOnly: true,
   isDestructive: false,
   isConcurrencySafe: true,
@@ -30,24 +32,28 @@ export const SEARCH_META: ToolMeta = {
   requiresApproval: 'never',
 }
 
-export function toolError(text: string): ToolResult {
-  return { content: [{ type: 'text', text }], isError: true }
+export function toolError(text: string, code = 'FS_SEARCH_FAILED'): ToolResult {
+  return { content: [{ type: 'text', text }], isError: true, details: { code } }
 }
 
 /** Lexical precheck only; the filesystem port independently enforces the session's access scope. */
 export function allowed(ctx: ToolContext, abs: string): boolean {
-  const w = normalizeWorkspacePath(abs, ctx.cwd)
+  const w = normalizeWorkspacePath(abs, ctx.session.workspaceRoot)
   if (!w.inside) return ctx.session.fullAccess === true
   return !DENIED_PATHS.some((d) => w.rel === d || w.rel.startsWith(`${d}/`))
 }
 
 export function searchPathError(ctx: ToolContext, tool: string, path: string): ToolResult | undefined {
   if (allowed(ctx, path)) return undefined
-  if (!normalizeWorkspacePath(path, ctx.cwd).inside)
+  if (!normalizeWorkspacePath(path, ctx.session.workspaceRoot).inside)
     return toolError(
-      `${tool} refused: ${path} is outside the workspace. Switch to Full permissions (完全权限) or select the target directory as the workspace (选择目标目录作为工作区).`,
+      `${tool} refused: path is outside the workspace. Select the target directory as the workspace (选择目标目录作为工作区) or ask the user to switch to Full permissions (完全权限).`,
+      'FS_OUTSIDE_WORKSPACE',
     )
-  return toolError(`${tool} refused: ${path} is denied by policy`)
+  return toolError(
+    `${tool} refused: ${displayPath(ctx, path)} is denied by policy; choose an allowed path or ask the user to adjust access.`,
+    'E_FS_DENIED',
+  )
 }
 
 export type WalkEntry = { rel: string; abs: string; kind: FsEntry['kind'] }
@@ -57,12 +63,11 @@ export type WalkReport = {
   truncated: boolean
   skipped: Set<string>
   denied: number
-  /** Each path that could not be opened and why, so the result can name it rather than count it. */
-  unreadable: { path: string; reason: string }[]
-  /** The path the search was given could not be opened, so nothing under it was looked at. */
-  rootUnreadable: boolean
+  unreadable: number
   oversize: number
   binary: number
+  searched: number
+  failures: string[]
 }
 
 export function newWalkReport(): WalkReport {
@@ -70,51 +75,40 @@ export function newWalkReport(): WalkReport {
     truncated: false,
     skipped: new Set(),
     denied: 0,
-    unreadable: [],
-    rootUnreadable: false,
+    unreadable: 0,
     oversize: 0,
     binary: 0,
+    searched: 0,
+    failures: [],
   }
 }
 
-// What the codes a walk meets mean to the caller. The message they come with repeats the path the
-// note already names, and an unknown one is shown as its first line.
-const REASONS: Record<string, string> = {
-  ENOENT: 'not found',
-  ENOTDIR: 'not a directory',
-  EISDIR: 'a directory',
-  EACCES: 'permission denied',
-  EPERM: 'permission denied',
-  EBUSY: 'in use by another process',
-  ELOOP: 'too many symbolic links',
-  E_FS_DENIED: 'outside the workspace or denied by policy',
+export function unreadable(report: WalkReport, path: string, error: unknown): void {
+  report.unreadable++
+  const code = (error as { code?: unknown })?.code
+  if (report.failures.length < 10)
+    report.failures.push(
+      `${path}: ${typeof code === 'string' && /^[A-Z0-9_]+$/.test(code) ? code : 'read failed'}`,
+    )
 }
-
-export function unreadableReason(e: unknown): string {
-  const code = (e as { code?: unknown } | undefined)?.code
-  if (typeof code === 'string' && REASONS[code] !== undefined) return REASONS[code]
-  const first = String((e as Error | undefined)?.message ?? e).split('\n')[0] || 'unknown error'
-  return first.length > 80 ? `${first.slice(0, 77)}...` : first
-}
-
-// A tree with a locked directory in every package would otherwise turn the note into the result.
-const MAX_NAMED_UNREADABLE = 10
 
 export function walkNotes(report: WalkReport, maxEntries: number): string[] {
   const out: string[] = []
   if (report.skipped.size > 0) out.push(`[not searched: ${[...report.skipped].sort().join(', ')}]`)
   if (report.denied > 0)
     out.push(`[${report.denied} path(s) skipped: outside the workspace or denied by policy]`)
-  if (report.unreadable.length > 0) {
-    const named = report.unreadable.slice(0, MAX_NAMED_UNREADABLE).map((u) => `${u.path} (${u.reason})`)
-    const more = report.unreadable.length - named.length
-    if (more > 0) named.push(`and ${more} more`)
-    out.push(`[${report.unreadable.length} path(s) could not be read: ${named.join('; ')}]`)
-  }
+  if (report.unreadable > 0)
+    out.push(
+      `[${report.unreadable} path(s) could not be read; use ls on an accessible parent and correct the path/access]`,
+    )
+  out.push(...report.failures.map((failure) => `[${failure}]`))
+  if (report.binary) out.push(`[${report.binary} binary file(s) not searched; use a format-aware tool]`)
   if (report.oversize > 0)
-    out.push(`[${report.oversize} file(s) skipped: larger than ${MAX_READ_BYTES} bytes]`)
-  if (report.binary > 0) out.push(`[${report.binary} binary file(s) not searched]`)
-  if (report.truncated) out.push(`[stopped after ${maxEntries} entries; the tree was not fully walked]`)
+    out.push(
+      `[${report.oversize} file(s) skipped: larger than ${MAX_READ_BYTES} bytes; narrow to a smaller file or use a bounded shell search]`,
+    )
+  if (report.truncated)
+    out.push(`[stopped after ${maxEntries} entries; the tree was not fully walked; narrow path or pattern]`)
   return out
 }
 
@@ -142,11 +136,6 @@ export function globToRegExp(glob: string): RegExp {
  *
  * Symlinks are yielded but never descended: a link is the ordinary way out of a workspace, and
  * following one by name would walk a tree the fence never cleared.
- *
- * A root that names a file is yielded as that one file, under its own name: the file `read` opens
- * for the same path. A listing refuses a file, and a search that took the refusal for an empty tree
- * would answer "no matches" about a file it never opened. A root that cannot be listed at all is
- * named with the reason.
  */
 export async function* walk(
   ctx: ToolContext,
@@ -154,18 +143,19 @@ export async function* walk(
   report: WalkReport,
   opts: { maxEntries: number },
 ): AsyncGenerator<WalkEntry> {
-  const base = root.replace(/\/+$/, '')
-  const asFile: WalkEntry = { rel: base.split(/[\\/]/).at(-1) || root, abs: root, kind: 'file' }
-  // Only asked whether the root is a file. A root this cannot describe is still listed, and a
-  // listing that fails says why.
-  const top = await ctx.fs.stat(root).then(
-    (s) => s.kind,
-    () => undefined,
-  )
-  if (top === 'file') {
-    yield asFile
+  try {
+    const kind = (await ctx.fs.stat(root)).kind
+    if (kind === 'symlink') await ctx.fs.read(root, { limit: 1 })
+    if (kind === 'file' || kind === 'symlink') {
+      const label = ctx.platform.fs.pathSep === '\\' ? root.replaceAll('\\', '/') : root
+      yield { rel: label.split('/').pop() || root, abs: root, kind: 'file' }
+      return
+    }
+  } catch (error) {
+    unreadable(report, root, error)
     return
   }
+  const base = root.replace(/\/+$/, '')
   const queue: string[] = ['']
   let seen = 0
   while (queue.length > 0) {
@@ -173,15 +163,8 @@ export async function* walk(
     let entries: FsEntry[]
     try {
       entries = await ctx.fs.list(rel === '' ? root : `${base}/${rel}`)
-    } catch (e) {
-      // A link given as the root is listed through, as one to a directory always was; one that
-      // leads to a file is that file.
-      if (rel === '' && top === 'symlink' && (e as { code?: string }).code === 'ENOTDIR') {
-        yield asFile
-        return
-      }
-      report.unreadable.push({ path: rel === '' ? root : rel, reason: unreadableReason(e) })
-      if (rel === '') report.rootUnreadable = true
+    } catch (error) {
+      unreadable(report, rel === '' ? root : `${base}/${rel}`, error)
       continue
     }
     // Code points, not the machine's collation: a listing whose order moves with the host's locale

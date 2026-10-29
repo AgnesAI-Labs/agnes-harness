@@ -1,7 +1,0 @@
-{
-  "id": "fixture/escape",
-  "version": "1.0.0",
-  "apiRange": "^1.0",
-  "entry": "../ok/index.ts",
-  "capabilities": { "tools": { "prefix": "fx_" } }
-}

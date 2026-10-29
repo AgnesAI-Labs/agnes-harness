@@ -1,5 +1,5 @@
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import type { InferenceEvent, Provider, RequestBody } from '@agnes/protocol'
-import { canonicalJson, sha256Hex } from '../../src/request/hash.js'
 
 export type Script = InferenceEvent[]
 export type FakeProvider = Provider & { calls: number; requests: RequestBody[] }

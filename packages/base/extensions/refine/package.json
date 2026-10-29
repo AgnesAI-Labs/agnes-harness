@@ -1,0 +1,51 @@
+{
+  "name": "@agnes/refine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/refine",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "inject": [
+          "tools",
+          "hooks",
+          "eventLog"
+        ],
+        "capabilities": {
+          "tools": {
+            "prefix": "",
+            "names": [
+              "harness_propose"
+            ]
+          },
+          "hooks": [
+            "compact"
+          ],
+          "slots": [],
+          "events": true,
+          "resources": [],
+          "network": []
+        },
+        "metadata": {
+          "displayName": "Reviewed improvements",
+          "summary": "Lets the agent propose evidence-backed changes to prompts, memory, Skills and child-agent definitions.",
+          "description": "Lets the agent propose evidence-backed changes to prompts, memory, Skills and child-agent definitions.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "改进提案",
+              "summary": "让 Agent 根据执行证据提出提示、记忆、技能和子 Agent 定义的改进建议。",
+              "description": "让 Agent 根据执行证据提出提示、记忆、技能和子 Agent 定义的改进建议。"
+            }
+          }
+        }
+      }
+    ],
+    "provides": [
+      "tool"
+    ]
+  }
+}

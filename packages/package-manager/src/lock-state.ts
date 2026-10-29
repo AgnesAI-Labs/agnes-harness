@@ -1,11 +1,12 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type { ProfileFragment } from '@agnes/protocol'
+import { collectRead, collectReadAsync, directoryDigestSteps, type ReadSteps } from './cooperative-read.js'
 import { PackageError } from './errors.js'
-import { capabilityHash } from './integrity.js'
+import { capabilityHash, own } from './integrity.js'
 import type { LockState, PolicySnapshotInput } from './inventory-types.js'
 import { type LockEntry, type Lockfile, readLock, withLock, writeLock } from './lockfile.js'
-import { hashDirectory, packageDir } from './sources.js'
+import { packageDir } from './sources.js'
 import { readDeployManifest, readProfileFragment, verifyWorkspace } from './workspace.js'
 
 export type LockAudit = {
@@ -24,31 +25,61 @@ export function defaultVerifyIntegrity(
   dataDir: string,
   profile: string,
 ): (id: string, entry: LockEntry) => void {
-  return (id, entry) => {
-    if (entry.trust === 'builtin' || entry.source.type === 'workspace') return
-    const dir = packageDir(dataDir, profile, id)
-    try {
-      if (!existsSync(dir)) throw new Error('package directory missing')
-      if (entry.treeIntegrity !== undefined && hashDirectory(dir, { exclude: [] }) !== entry.treeIntegrity)
-        throw new Error('package tree changed')
-      if (entry.source.type === 'npm' || entry.source.type === 'market') {
-        const value: unknown = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
-        if (
-          value === null ||
-          typeof value !== 'object' ||
-          Array.isArray(value) ||
-          (value as { name?: unknown }).name !== id ||
-          (value as { version?: unknown }).version !== entry.version
-        )
-          throw new Error('package identity changed')
-        return
-      }
-      if (hashDirectory(dir) !== entry.integrity) throw new Error('package tree changed')
-    } catch {
-      throw new PackageError('E_LOCK_MISMATCH', `${id} installed package differs from agnes-lock.json`, {
-        detail: { id, reason: 'integrity' },
-      })
+  return (id, entry) => collectRead(verifyIntegritySteps(dataDir, profile, id, entry))
+}
+
+/** Identical refusal rules, with cooperative hashing for interactive profile reads. */
+export function defaultVerifyIntegrityAsync(
+  dataDir: string,
+  profile: string,
+): (id: string, entry: LockEntry) => Promise<void> {
+  return (id, entry) => collectReadAsync(verifyIntegritySteps(dataDir, profile, id, entry))
+}
+
+function* verifyIntegritySteps(
+  dataDir: string,
+  profile: string,
+  id: string,
+  entry: LockEntry,
+): ReadSteps<void> {
+  if (entry.trust === 'builtin' || entry.source.type === 'workspace') return
+  const dir = packageDir(dataDir, profile, id)
+  try {
+    if (!existsSync(dir)) throw new Error('package directory missing')
+    if (
+      entry.treeIntegrity !== undefined &&
+      (yield* directoryDigestSteps(dir, {
+        version: entry.version,
+        integrity: entry.integrity,
+        treeIntegrity: entry.treeIntegrity,
+        capabilityHash: capabilityHash(entry),
+      })) !== entry.treeIntegrity
+    )
+      throw new Error('package tree changed')
+    if (entry.source.type === 'npm' || entry.source.type === 'market') {
+      const value: unknown = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+      if (
+        value === null ||
+        typeof value !== 'object' ||
+        Array.isArray(value) ||
+        (value as { name?: unknown }).name !== id ||
+        (value as { version?: unknown }).version !== entry.version
+      )
+        throw new Error('package identity changed')
+      return
     }
+    if (
+      (yield* directoryDigestSteps(
+        dir,
+        { version: entry.version, integrity: entry.integrity, capabilityHash: '' },
+        true,
+      )) !== entry.integrity
+    )
+      throw new Error('package tree changed')
+  } catch {
+    throw new PackageError('E_LOCK_MISMATCH', `${id} installed package differs from agnes-lock.json`, {
+      detail: { id, reason: 'integrity' },
+    })
   }
 }
 
@@ -83,6 +114,7 @@ export function lockState(
         detail: { id },
       })
     packages[id] = {
+      source: structuredClone(e.source),
       version: e.version,
       integrity: e.integrity,
       trust: e.trust,
@@ -155,4 +187,20 @@ export async function snapshotPolicy(
     lock.provider = { package: profile.provider.package, adapters: [...profile.provider.adapters] }
     writeLock(profileDir, lock)
   })
+}
+
+export function entryOf(lock: Lockfile, id: string): LockEntry {
+  const entry = own(lock.packages, id)
+  if (!entry)
+    throw new PackageError('E_DEP_MISSING', `${id} is not installed`, {
+      detail: { id, reason: 'not-installed' },
+    })
+  return entry
+}
+
+export function writable(lock: Lockfile): void {
+  if (lock.resolvedProfileHash === null)
+    throw new PackageError('E_LOCK_MISMATCH', 'profile must be resolved before packages can be changed', {
+      detail: { reason: 'unresolved-lock' },
+    })
 }

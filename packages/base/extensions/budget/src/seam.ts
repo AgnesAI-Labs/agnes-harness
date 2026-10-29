@@ -1,6 +1,5 @@
-import type { LedgerSeam } from '@agnes/core'
+import type { BillingSeam } from '@agnes/core'
 import type { SeamFactory } from '../../../src/seam-init.js'
-import { openLedger } from './ledger-table.js'
 
 type HistRow = {
   credits: number | null
@@ -12,52 +11,65 @@ type HistRow = {
 }
 type Hist = { credits: number; tokens: number; creditSource: string }
 
+/** Rows kept per (model, credit source): exactly the window `projected` reads. */
+export const USAGE_LEDGER_KEEP = 20
+
 /**
- * The `ledger` seam's default implementation: one sqlite-shaped table (`usage_ledger`) recording
+ * The `ledger` seam's default implementation: one durable metadata namespace recording
  * every billed effect, and a same-model moving average for `projected`'s pre-flight estimate.
  *
  * `record` and `projected` never catch what the table throws - a write failure on the ledger is
  * core's cue to refuse the inference it was about to bill (regulated §4.3.1: a seam that fails is
  * a seam that is absent), so surfacing the table's own error message is the correct behavior, not
  * a gap to paper over.
+ *
+ * Each (model, credit source) keeps its newest USAGE_LEDGER_KEEP rows: exactly the window
+ * `projected` reads, so the estimate is unchanged. A replay older than the window records again;
+ * billing truth is the `cost/ledger` event.
  */
-export const budgetLedger: SeamFactory<LedgerSeam> = async (ctx) => {
-  const t = openLedger(ctx.adapters.storage.table('usage_ledger'))
+export const budgetBilling: SeamFactory<BillingSeam> = async (ctx) => {
+  const storage = ctx.adapters.storage.namespace('usage_ledger')
   return {
     async record(r) {
-      // Manual check-then-insert rather than `INSERT OR IGNORE`: a resumed session replays the
-      // event log and re-runs the effect that produced this row, so the second `record()` for the
-      // same `effectId` must be a no-op, not a second row - `effect_id`'s UNIQUE constraint states
-      // the intent, but nothing here relies on the underlying engine enforcing it.
-      const exists = t.get('SELECT id FROM usage_ledger WHERE effect_id = ?', [r.effectId])
-      if (exists) return
-      t.run(
-        'INSERT INTO usage_ledger (session_key, lane, turn, step, purpose, effect_id, model, tokens_input, tokens_output, tokens_cache_read, tokens_cache_write, credits, credit_source, timing_json, interrupted, adjustment, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [
-          r.sessionKey,
-          r.lane,
-          r.turn,
-          r.step,
-          r.purpose,
-          r.effectId,
-          r.model,
-          r.tokens.input,
-          r.tokens.output,
-          r.tokens.cacheRead,
-          r.tokens.cacheWrite,
-          r.credits ?? null,
-          r.creditSource,
-          r.timing ? JSON.stringify(r.timing) : null,
-          r.interrupted ? 1 : 0,
-          r.adjustment ? 1 : 0,
-          new Date().toISOString(),
-        ],
-      )
+      // Manual check-then-insert: a resumed session replays the event log and re-runs the effect
+      // that produced this row, so the second `record()` for the same `effectId` must be a no-op,
+      // not a second row.
+      storage.transaction(() => {
+        if (storage.get(`row:${r.effectId}`) !== undefined) return
+        const n =
+          storage
+            .entries()
+            .filter(({ key }) => key.startsWith('row:'))
+            .reduce((max, { value }) => Math.max(max, (value as { id: number }).id), 0) + 1
+        storage.set(`row:${r.effectId}`, {
+          id: n,
+          ...r,
+          credits: r.credits ?? null,
+          tokens_input: r.tokens.input,
+          tokens_output: r.tokens.output,
+          tokens_cache_read: r.tokens.cacheRead,
+          tokens_cache_write: r.tokens.cacheWrite,
+          credit_source: r.creditSource,
+          recorded_at: new Date().toISOString(),
+        })
+        const same = storage
+          .entries()
+          .filter(({ key, value }) => {
+            const v = value as { model: string; credit_source: string }
+            return key.startsWith('row:') && v.model === r.model && v.credit_source === r.creditSource
+          })
+          .sort((a, b) => (b.value as { id: number }).id - (a.value as { id: number }).id)
+        for (const { key } of same.slice(USAGE_LEDGER_KEEP)) storage.delete(key)
+      })
     },
     async projected(next) {
-      const rows = t.all<HistRow>('SELECT * FROM usage_ledger WHERE model = ? ORDER BY id DESC LIMIT 20', [
-        next.model,
-      ])
+      const rows = storage
+        .entries()
+        .filter(({ key }) => key.startsWith('row:'))
+        .map(({ value }) => value as HistRow & { id: number; model: string })
+        .filter((r) => r.model === next.model)
+        .sort((a, b) => b.id - a.id)
+        .slice(0, USAGE_LEDGER_KEEP)
       const hist: Hist[] = rows
         .filter((r) => r.credits !== null)
         .map((r) => ({

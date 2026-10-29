@@ -8,7 +8,9 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./testkit": "./testkit/index.ts"
+    "./testkit": "./testkit/index.ts",
+    "./testkit/plugin-registration": "./testkit/plugin-registration.ts",
+    "./author-testkit": "./testkit/author/index.ts"
   },
   "scripts": {
     "test": "vitest run",
@@ -17,6 +19,7 @@
   },
   "dependencies": {
     "@agnes/ai": "workspace:*",
+    "@agnes/model-adapters": "workspace:*",
     "@agnes/cordis": "workspace:*",
     "@agnes/core": "workspace:*",
     "@agnes/extension-api": "workspace:*",
@@ -27,16 +30,24 @@
     "@agnes/resource-control-runtime": "workspace:*",
     "@agnes/sandbox-remote": "workspace:*",
     "@agnes/system-node": "workspace:*",
-    "@sinclair/typebox": "0.34.33",
     "ajv": "8.20.0",
-    "ipaddr.js": "2.5.0",
-    "jiti": "2.7.0",
-    "undici": "8.10.2",
-    "yaml": "2.9.0"
+    "yaml": "2.9.0",
+    "@agnes/host-common": "workspace:*",
+    "@agnes/host-infrastructure": "workspace:*",
+    "@agnes/host-computer-use": "workspace:*",
+    "@agnes/host-artifacts": "workspace:*",
+    "@agnes/host-extensions": "workspace:*",
+    "@agnes/host-providers": "workspace:*",
+    "@agnes/git-worktree-contract": "workspace:*",
+    "@agnes/intelligent-ui-contract": "workspace:*",
+    "@agnes/observability": "workspace:*",
+    "@agnes/distribution": "workspace:*"
   },
   "devDependencies": {
     "@agnes/base": "workspace:*",
-    "@agnes/code": "workspace:*"
+    "@agnes/code": "workspace:*",
+    "@agnes/loop-default": "workspace:*",
+    "@sinclair/typebox": "0.34.33"
   },
   "license": "Apache-2.0 AND MIT"
 }

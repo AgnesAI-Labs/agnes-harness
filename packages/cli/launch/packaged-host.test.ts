@@ -3,8 +3,14 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { HostOptions, Prompter, ResolvedProfile } from '@agnes/host'
+import {
+  createConfigurationService,
+  type HostOptions,
+  type Prompter,
+  type ResolvedProfile,
+} from '@agnes/host'
 import { parseAgnesPluginEntries } from '@agnes/package-manager'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 const createHost = vi.hoisted(() =>
@@ -20,6 +26,7 @@ vi.mock('@agnes/host', async () => {
 
 import {
   AGNES_BASE_PLUGIN_DECLARATIONS,
+  AGNES_CODE_PLUGIN_DECLARATIONS,
   createPackagedHost,
   type packagedPackages,
   readPackagedBuiltinExports,
@@ -35,8 +42,10 @@ afterEach(async () => {
 const prompter: Prompter = { ask: async () => 'allowed-once' }
 
 async function packagedHome(): Promise<{ home: string; profile: ResolvedProfile; entryFile: string }> {
-  const home = await mkdtemp(join(tmpdir(), 'agnes-packaged-host-'))
-  temporary.push(home)
+  const root = await mkdtemp(join(tmpdir(), 'agnes-packaged-host-'))
+  temporary.push(root)
+  const home = join(root, 'home')
+  createPrivateDirectorySync(home)
   await mkdir(join(home, 'cache'), { recursive: true })
   await mkdir(join(home, 'profiles', 'local-dev'), { recursive: true })
   const profile = {
@@ -65,21 +74,33 @@ describe('packaged host wiring', () => {
     )
   })
 
-  it('discovers all eight base seam plugins in a packaged worker', async () => {
+  it('discovers the default loop, tool policy and shipped base seam plugins in a packaged worker', async () => {
     const module = readPackagedBuiltinExports('@agnes/base', 'worker.mjs', await import('@agnes/base'))
 
     expect(module.plugins?.map(({ declaration }) => declaration)).toEqual(AGNES_BASE_PLUGIN_DECLARATIONS)
-    expect(module.plugins).toHaveLength(8)
+    expect(module.plugins?.map(({ declaration }) => declaration.id)).toEqual([
+      'tool-policy:default',
+      'observability:otel',
+      'seam-providers:default',
+      'loop:agnes.default',
+      'child-agent:codex',
+      'child-agent:claude-code',
+      'child-agent:sdk',
+      'memory:file',
+      'skills:remembering',
+      'reference-resolvers:default',
+      'service:plan-mode',
+    ])
     expect(module.plugins?.every(({ entry }) => typeof entry.prepared === 'object')).toBe(true)
   })
 
-  it('does not synthesize plugin declarations for packaged ai or code modules', async () => {
+  it('keeps ai undeclared and code limited to its shipped prompt plugin', async () => {
     const [aiExports, codeExports] = await Promise.all([import('@agnes/ai'), import('@agnes/code')])
     const ai = readPackagedBuiltinExports('@agnes/ai', 'worker.mjs', aiExports)
     const code = readPackagedBuiltinExports('@agnes/code', 'worker.mjs', codeExports)
 
     expect(ai.plugins).toBeUndefined()
-    expect(code.plugins).toBeUndefined()
+    expect(code.plugins?.map((row) => row.declaration.id)).toEqual(['system-prompt:default'])
   })
 
   it('forwards the bootstrapped Skill runtime to createHost without recreating it', async () => {
@@ -123,10 +144,29 @@ describe('packaged host wiring', () => {
 
   it('assembles a packaged Host when no Skill runtime is present', async () => {
     const { home, profile, entryFile } = await packagedHome()
+    const configuration = createConfigurationService({ home, profile: profile.name })
+    const engines = await configuration.childEngines()
+    await configuration.saveChildEngines({
+      ...engines,
+      engines: {
+        ...engines.engines,
+        codex: {
+          ...engines.engines.codex,
+          enabled: true,
+          command: process.execPath,
+          args: ['fake-codex.mjs'],
+          allow: [process.execPath],
+        },
+      },
+    })
     await createPackagedHost(profile, prompter, { home, cwd: home, entryFile })
     expect(createHost).toHaveBeenCalledOnce()
     const options = createHost.mock.calls[0]?.[1]
     expect(options).not.toHaveProperty('skillResources')
+    expect(options?.ordinaryPluginLayers?.deployment?.['child-agent:codex']).toMatchObject({
+      enabled: true,
+      config: { command: process.execPath, args: ['fake-codex.mjs'], allow: [process.execPath] },
+    })
   })
 
   it('forwards the verified ordinary-plugin snapshot selection without rebuilding it', async () => {
@@ -181,4 +221,11 @@ describe('packaged host wiring', () => {
     expect(source).not.toContain('process.env.AGNES_HOME')
     expect(source).not.toContain('process.env.AGH_HOME')
   })
+})
+
+it('discovers the replaceable prompt composer in a packaged worker using the source declaration', async () => {
+  const pkg = JSON.parse(readFileSync(new URL('../../code/package.json', import.meta.url), 'utf8'))
+  expect(AGNES_CODE_PLUGIN_DECLARATIONS).toEqual(parseAgnesPluginEntries('@agnes/code', pkg.agnes.plugins))
+  const module = readPackagedBuiltinExports('@agnes/code', 'worker.mjs', await import('@agnes/code'))
+  expect(module.plugins?.map((row) => row.declaration.id)).toContain('system-prompt:default')
 })

@@ -35,6 +35,20 @@ it('persists all fields and interleaves instances without rolling counters back'
   expect(pending).toEqual([{ commandId: 'c', method: 'submit', params: { text: 'original' } }])
   pending.splice(0)
   expect(await a.pending('s')).toHaveLength(1)
+  await b.markPending('s', {
+    commandId: 'c',
+    method: 'submit',
+    params: { text: 'original' },
+    state: 'needs-confirmation',
+  })
+  const reopened = localStorageJournal(disk)
+  expect(await reopened.pending('s')).toEqual([
+    { commandId: 'c', method: 'submit', params: { text: 'original' }, state: 'needs-confirmation' },
+  ])
+  await expect(
+    reopened.markPending('s', { commandId: 'c', method: 'submit', params: { text: 'different' } }),
+  ).rejects.toThrow('identity conflict')
+  expect(await reopened.pending('s')).toHaveLength(1)
   await b.clearPending('s', 'c')
   expect(await a.pending('s')).toEqual([])
 })

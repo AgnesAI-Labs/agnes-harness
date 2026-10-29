@@ -1,5 +1,6 @@
 export type BackendAvailabilityInput = Readonly<{
   available: boolean
+  implementation?: 'implemented' | 'unimplemented' | 'unknown'
   required?: unknown
   onUnavailable?: unknown
 }>
@@ -35,6 +36,10 @@ export function decideBackendAvailability(input: BackendAvailabilityInput): Back
       code: 'E_SEAM_INIT',
       reason: 'required-unavailable',
     })
+  if (input.onUnavailable === 'allow-if-unimplemented')
+    return input.implementation === 'unimplemented'
+      ? Object.freeze({ action: 'allow-unconfined' })
+      : Object.freeze({ action: 'refuse-init', code: 'E_SEAM_INIT', reason: 'required-unavailable' })
   if (input.onUnavailable === 'allow') return Object.freeze({ action: 'allow-unconfined' })
   return Object.freeze({
     action: 'deny-operation',

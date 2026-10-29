@@ -1,6 +1,6 @@
-import type { Host, HostSession } from '@agnes/host'
+import { type Host, type HostSession, resolveSessionCapabilities, ToolFilterError } from '@agnes/host'
 import { describe, expect, it, vi } from 'vitest'
-import { handleCommand } from '../src/commands.js'
+import { handleCommand, handleServiceCommand } from '../src/commands.js'
 
 describe('setPreset command', () => {
   it('routes a worker preset switch through Host instead of calling Core session directly', async () => {
@@ -26,4 +26,375 @@ describe('setPreset command', () => {
     expect(session.setPreset).not.toHaveBeenCalled()
     expect(result).toEqual({ effectiveFromSeq: 42 })
   })
+})
+
+describe('setToolFilter command', () => {
+  const run = (setToolFilter: HostSession['setToolFilter']) =>
+    handleCommand(
+      { key: 'session-a', setToolFilter } as unknown as HostSession,
+      {
+        kind: 'command',
+        requestId: 'request-b',
+        method: 'setToolFilter',
+        params: { filter: { deny: ['bash'] } },
+      } as never,
+      { host: {} as Host, aborts: new Map() },
+    )
+
+  it('hands the request to the session that owns the ledger and answers with the merged filter', async () => {
+    const setToolFilter = vi.fn(async () => ({ seq: 9, filter: { deny: ['bash'] } }))
+    await expect(run(setToolFilter)).resolves.toEqual({ effectiveFromSeq: 9, filter: { deny: ['bash'] } })
+    expect(setToolFilter).toHaveBeenCalledWith({ deny: ['bash'] })
+  })
+
+  it('reports a refused request as the public rejection and lets any other failure through unchanged', async () => {
+    const refused = new ToolFilterError('unknown-tool', 'no such tool', ['nope'])
+    await expect(run(async () => Promise.reject(refused))).rejects.toMatchObject({
+      code: -32011,
+      data: { code: 'TOOL_FILTER_REJECTED', reason: 'unknown-tool', names: ['nope'] },
+    })
+    const invalid = new ToolFilterError('invalid-request', 'bad')
+    await expect(run(async () => Promise.reject(invalid))).rejects.toMatchObject({ code: -32602 })
+    const fault = new Error('disk')
+    await expect(run(async () => Promise.reject(fault))).rejects.toBe(fault)
+  })
+})
+
+it.each(['verified', 'E_LEDGER_INTEGRITY', 'E_STORAGE_FAULT'] as const)(
+  'preserves audit results and failure sequences across the worker command boundary (%s)',
+  async (outcome) => {
+    const status =
+      outcome === 'verified'
+        ? { state: 'verified', verifiedThroughSeq: 20, lastSeq: 20, legacyThroughSeq: 0, verifiedAtMs: 1000 }
+        : {
+            state: 'failed',
+            verifiedThroughSeq: 0,
+            lastSeq: 20,
+            legacyThroughSeq: 0,
+            ...(outcome === 'E_LEDGER_INTEGRITY' ? { failureSeq: 7 } : {}),
+          }
+    const failure = Object.assign(new Error(outcome), { code: outcome })
+    const session = {
+      integrityStatus: () => status,
+      auditHistory: async () => {
+        if (outcome !== 'verified') throw failure
+        return status
+      },
+      requireVerifiedHistory: async () => {
+        if (outcome !== 'verified') throw failure
+      },
+    } as unknown as HostSession
+    const command = (method: 'integrityStatus' | 'auditHistory' | 'requireVerifiedHistory') =>
+      handleCommand(
+        session,
+        { kind: 'command', requestId: 'audit', method, params: {} },
+        {
+          host: {} as Host,
+          aborts: new Map(),
+        },
+      )
+    await expect(command('integrityStatus')).resolves.toEqual(status)
+    if (outcome === 'E_STORAGE_FAULT') await expect(command('auditHistory')).rejects.toBe(failure)
+    else await expect(command('auditHistory')).resolves.toEqual(status)
+    if (outcome === 'verified') await expect(command('requireVerifiedHistory')).resolves.toEqual({})
+    else await expect(command('requireVerifiedHistory')).rejects.toBe(failure)
+  },
+)
+
+it('exposes publication status and migration only through an assembled Host', async () => {
+  const publication = {
+    operation: 'models' as const,
+    ok: false,
+    recovery: 'retry-same-input' as const,
+    containers: [{ compositionHash: 'writer', status: 'failed' as const }],
+  }
+  const result = { previousGenerationId: 'old', generationId: 'current', changed: true }
+  const host = {
+    compositionPublicationStatus: () => publication,
+    migrateSessionGeneration: async (key: string) => {
+      if (key !== 'closed') throw new Error('E_GENERATION_SESSION_OPEN')
+      return result
+    },
+  } as unknown as Host
+  const frame = (
+    method: 'pluginGenerations.publicationStatus' | 'pluginGenerations.migrate',
+    params = {},
+  ) => ({ kind: 'command' as const, requestId: 'request', method, params })
+  await expect(
+    handleServiceCommand(host, frame('pluginGenerations.publicationStatus'), new Map()),
+  ).resolves.toEqual({ publication })
+  await expect(
+    handleServiceCommand(host, frame('pluginGenerations.migrate', { sessionId: 'closed' }), new Map()),
+  ).resolves.toEqual(result)
+  await expect(
+    handleServiceCommand(host, frame('pluginGenerations.migrate', { sessionId: 'open' }), new Map()),
+  ).rejects.toThrow('E_GENERATION_SESSION_OPEN')
+  await expect(
+    handleServiceCommand(undefined, frame('pluginGenerations.migrate', { sessionId: 'closed' }), new Map()),
+  ).rejects.toThrow('unavailable')
+  await expect(
+    handleServiceCommand({} as Host, frame('pluginGenerations.publicationStatus'), new Map()),
+  ).resolves.toEqual({ publication: null })
+})
+
+it('reads generation status cooperatively when supported and preserves older Host fallback', async () => {
+  const status = { generations: [], plugins: [] }
+  const frame = {
+    kind: 'command' as const,
+    requestId: 'status',
+    method: 'pluginGenerations.status' as const,
+    params: {},
+  }
+  await expect(
+    handleServiceCommand(
+      {
+        pluginGenerationStatusAsync: async () => status,
+        pluginGenerationStatus: () => {
+          throw new Error('synchronous status must not run')
+        },
+      } as unknown as Host,
+      frame,
+      new Map(),
+    ),
+  ).resolves.toEqual(status)
+  await expect(
+    handleServiceCommand({ pluginGenerationStatus: () => status } as unknown as Host, frame, new Map()),
+  ).resolves.toEqual(status)
+  await expect(handleServiceCommand({} as Host, frame, new Map())).rejects.toThrow('unavailable')
+})
+
+it('returns the Host capability set with the tool catalog and accepts older Hosts', async () => {
+  const catalog = { sessionId: 'inspect', tools: [], resources: [] }
+  const session = { key: 'inspect', toolCatalog: () => catalog } as unknown as HostSession
+  const frame = { kind: 'command' as const, requestId: 'inspect', method: 'toolCatalog' as const, params: {} }
+  const capabilities = resolveSessionCapabilities({})
+  await expect(
+    handleCommand(session, frame, {
+      aborts: new Map(),
+      host: { sessionCapabilities: () => capabilities } as unknown as Host,
+    }),
+  ).resolves.toEqual({ ...catalog, capabilities })
+  await expect(handleCommand(session, frame, { aborts: new Map(), host: {} as Host })).resolves.toEqual(
+    catalog,
+  )
+})
+
+it('reads recorded sessions and runtime descriptors without creating a session', async () => {
+  const view = { sessionId: 'saved', readOnly: true, lastSeq: 7 }
+  const runtime = { sessionKey: 'saved' }
+  const host = {
+    kernel: { get: () => undefined },
+    sessionGeneration: (key: string) => (key === 'saved' ? 'pinned' : undefined),
+    sessionRuntime: () => runtime,
+    readSessionView: async (key: string) => {
+      if (key !== 'saved') throw Object.assign(new Error('missing'), { code: 'E_SESSION_NOT_FOUND' })
+      return view
+    },
+    createSession() {
+      throw new Error('A read must not open the writer')
+    },
+  } as unknown as Host
+  for (const [method, result] of [
+    ['session.runtime', runtime],
+    ['session.view', view],
+  ] as const) {
+    const frame = (sessionId: string) => ({
+      kind: 'command' as const,
+      requestId: 'read',
+      method,
+      params: { sessionId },
+    })
+    await expect(handleServiceCommand(host, frame('saved'), new Map())).resolves.toEqual(result)
+    await expect(handleServiceCommand(host, frame('missing'), new Map())).rejects.toMatchObject({
+      data: { code: 'SESSION_NOT_FOUND' },
+    })
+    await expect(handleServiceCommand(undefined, frame('saved'), new Map())).rejects.toThrow('assembled Host')
+  }
+})
+
+it.each([true, false])(
+  'acknowledges model deployment input only after publication succeeds: %s',
+  async (ok) => {
+    const profile = { hash: 'deployment-profile' }
+    const host = {
+      profile: { hash: 'derived-composition-profile' },
+      applyModelProfile: async () => ({
+        operation: 'models',
+        ok,
+        recovery: 'retry-same-input',
+        containers: [{ compositionHash: 'reader', status: ok ? 'applied' : 'failed' }],
+      }),
+    } as unknown as Host
+    const application = handleServiceCommand(
+      host,
+      {
+        kind: 'command',
+        requestId: 'models',
+        method: 'configuration.apply',
+        params: { profile },
+      },
+      new Map(),
+    )
+    if (ok) await expect(application).resolves.toEqual({ profileHash: 'deployment-profile' })
+    else await expect(application).rejects.toThrow('applied to 0/1 containers')
+  },
+)
+
+it('routes controls to the pinned session while Host publication changes', async () => {
+  const apply = vi.fn(async () => 99)
+  const state = { controls: { pause: true }, paused: true, pending: [] }
+  const session = { controls: { apply, state: async () => state } } as unknown as HostSession
+  const host = { controls: { apply: vi.fn() } } as unknown as Host
+  const opts = { aborts: new Map(), host }
+  await expect(
+    handleCommand(
+      session,
+      {
+        kind: 'command',
+        requestId: 'pause',
+        method: 'control',
+        params: { action: 'pause', actor: { kind: 'principal', id: 'human' }, admissionId: 'pause-1' },
+      } as never,
+      opts,
+    ),
+  ).resolves.toBe(99)
+  expect(apply).toHaveBeenCalledWith(
+    'pause',
+    { kind: 'principal', id: 'human' },
+    'pause-1',
+    undefined,
+    undefined,
+  )
+  await expect(
+    handleCommand(
+      session,
+      {
+        kind: 'command',
+        requestId: 'promote',
+        method: 'control',
+        params: {
+          action: 'promote',
+          itemId: 'queued',
+          actor: { kind: 'principal', id: 'human' },
+          admissionId: 'promote-1',
+        },
+      } as never,
+      opts,
+    ),
+  ).resolves.toBe(99)
+  expect(apply).toHaveBeenLastCalledWith(
+    'promote',
+    { kind: 'principal', id: 'human' },
+    'promote-1',
+    'queued',
+    undefined,
+  )
+  await expect(
+    handleCommand(
+      session,
+      { kind: 'command', requestId: 'state', method: 'controlState', params: {} } as never,
+      opts,
+    ),
+  ).resolves.toEqual(state)
+  apply.mockRejectedValueOnce(
+    Object.assign(new Error('unsupported'), { code: 'E_UNSUPPORTED', detail: { control: 'pause' } }),
+  )
+  await expect(
+    handleCommand(
+      session,
+      {
+        kind: 'command',
+        requestId: 'refusal',
+        method: 'control',
+        params: { action: 'pause', admissionId: 'refusal' },
+      } as never,
+      opts,
+    ),
+  ).rejects.toMatchObject({ data: { code: 'LOOP_CONTROL_UNSUPPORTED', control: 'pause' } })
+})
+
+it('leaves the models of a payload-only adapter out of the session catalog', async () => {
+  const adapter = (id: string, capabilities: Record<string, boolean>) => ({
+    id,
+    version: '1.0.0',
+    wireApi: id,
+    sourcePackage: '@acme/adapter',
+    capabilities: { imageInput: false, tools: false, streaming: false, ...capabilities },
+  })
+  let currentBundles = {}
+  let forbidAdmission = false
+  const host = {
+    sessionBundleCatalog: async () => {
+      if (forbidAdmission) throw new Error('metadata queries cannot prepare sessions')
+      return currentBundles
+    },
+    profile: {
+      presets: { default: 'standard', allowed: ['standard'] },
+      bundleCatalog: {},
+      provider: {
+        routes: [
+          { route: 'jev', api: 'typesafe-systemone' },
+          { route: 'mixed-route', api: 'mixed' },
+        ],
+      },
+    },
+    providers: { catalog: () => [] },
+    kernel: { loops: { catalog: () => [] } },
+    modelAdapterCatalog: () => [
+      adapter('typesafe-systemone', { payload: true, payloadOnly: true }),
+      adapter('mixed', { payload: true }),
+    ],
+    provider: {
+      models: () => [
+        { id: 'jev-1', route: 'jev', api: 'typesafe-systemone' },
+        { id: 'mixed-1', route: 'mixed-route', api: 'mixed' },
+      ],
+    },
+  } as unknown as Host
+  const catalog = (await handleServiceCommand(
+    host,
+    { kind: 'command' as const, requestId: 'request', method: 'session.catalog', params: {} },
+    new Map(),
+  )) as { modelAdapters: { id: string; models: unknown[] }[] }
+  expect(catalog.modelAdapters.map(({ id, models }) => [id, models])).toEqual([
+    ['typesafe-systemone', []],
+    ['mixed', [{ id: 'mixed-1', route: 'mixed-route' }]],
+  ])
+  forbidAdmission = true
+  await expect(
+    handleServiceCommand(
+      host,
+      {
+        kind: 'command',
+        requestId: 'models-only',
+        method: 'session.catalog',
+        params: { modelsOnly: true },
+      },
+      new Map(),
+    ),
+  ).resolves.toMatchObject({ modelAdapters: catalog.modelAdapters, sources: [] })
+  await expect(
+    handleServiceCommand(
+      host,
+      {
+        kind: 'command',
+        requestId: 'selection-only',
+        method: 'session.catalog',
+        params: { selectionOnly: true },
+      },
+      new Map(),
+    ),
+  ).resolves.toMatchObject({
+    modelAdapters: catalog.modelAdapters,
+    loops: [],
+    presets: [{ id: 'standard', isDefault: true }],
+  })
+  forbidAdmission = false
+  currentBundles = { 'hot#work': { id: 'hot#work', sourcePackage: 'hot' } }
+  const frame = { kind: 'command' as const, requestId: 'hot', method: 'session.catalog' as const, params: {} }
+  expect(await handleServiceCommand(host, frame, new Map())).toMatchObject({
+    bundles: [{ id: 'hot#work', sourcePackage: 'hot' }],
+  })
+  currentBundles = {}
+  expect(await handleServiceCommand(host, frame, new Map())).toMatchObject({ bundles: [] })
 })

@@ -1,0 +1,542 @@
+{
+  "suite": "read-heavy",
+  "description": "Long sessions that mostly navigate and read a seeded workspace and answer questions, go back to files read turns earlier, and make one small write each. Written for this bench, not ported.",
+  "scenarios": [
+    {
+      "id": "read-heavy-code",
+      "category": "read_heavy",
+      "favor": "jev",
+      "description": "A small Python package: definitions, a configuration chain, module comparisons, counts, re-reads and a changed profile.",
+      "max_steps": 20,
+      "turns": [
+        {
+          "goal": "Give me an overview of this repository: name its top-level directories and say what each holds. Also count the Python modules under src/tallyhouse, including modules inside subpackages but not __init__.py files. End your answer with the line `MODULES=<n>`, with no spaces around the `=`. Do not change any file.",
+          "answer_contains": ["config", "src", "tests", "docs", "MODULES=16"],
+          "inject_files": [
+            {
+              "name": "README.md",
+              "content": "# tallyhouse\n\nLedger jobs that run on a schedule. The entry point is configured in `config/app.toml`;\neach profile under `config/profiles/` chooses a pipeline and a queue.\n\n- `src/tallyhouse/`: the package\n- `tests/`: unit tests\n- `docs/`: architecture notes and a glossary\n"
+            },
+            {
+              "name": "pyproject.toml",
+              "content": "[project]\nname = \"tallyhouse\"\nversion = \"2.4.1\"\nrequires-python = \">=3.11\"\n"
+            },
+            {
+              "name": "config/app.toml",
+              "content": "# The entry point and profile the scheduler starts.\nentry = \"tallyhouse.cli:main\"\nprofile = \"nightly\"\n"
+            },
+            {
+              "name": "config/profiles/nightly.toml",
+              "content": "pipeline = \"batch\"\nqueue = \"q-ember-lark\"\n"
+            },
+            {
+              "name": "config/profiles/hourly.toml",
+              "content": "pipeline = \"stream\"\nqueue = \"q-slate-wren\"\n"
+            },
+            {
+              "name": "src/tallyhouse/__init__.py",
+              "content": "\"\"\"tallyhouse: scheduled ledger jobs.\"\"\"\n\n__version__ = \"2.4.1\"\n"
+            },
+            {
+              "name": "src/tallyhouse/cli.py",
+              "content": "\"\"\"Command-line entry point.\"\"\"\nimport tomllib\nfrom pathlib import Path\n\nfrom tallyhouse import pipeline\n\n\ndef load_profile():\n    app = tomllib.loads(Path(\"config/app.toml\").read_text())\n    name = app[\"profile\"]\n    return tomllib.loads(Path(f\"config/profiles/{name}.toml\").read_text())\n\n\ndef main():\n    return pipeline.run(load_profile())\n"
+            },
+            {
+              "name": "src/tallyhouse/pipeline.py",
+              "content": "\"\"\"Chooses the job for a profile.\"\"\"\nfrom tallyhouse import batch, stream\n\n\ndef run(profile):\n    if profile[\"pipeline\"] == \"batch\":\n        return batch.run_batch(profile[\"queue\"])\n    return stream.run_stream(profile[\"queue\"])\n"
+            },
+            {
+              "name": "src/tallyhouse/batch.py",
+              "content": "\"\"\"The nightly batch job.\"\"\"\nfrom tallyhouse import audit, money, settings, storage\n\n\ndef run_batch(queue):\n    audit.audit_log(\"batch \" + queue)\n    for attempt in range(settings.BATCH_RETRY_LIMIT):\n        rows = storage.fetch_rows(queue, limit=500)\n        if rows:\n            return [money.normalize_amount(row) for row in rows]\n    return []\n"
+            },
+            {
+              "name": "src/tallyhouse/stream.py",
+              "content": "\"\"\"The hourly stream job.\"\"\"\nfrom tallyhouse import fx, settings, storage\n\n\ndef run_stream(queue):\n    for attempt in range(settings.STREAM_RETRY_LIMIT):\n        rows = storage.fetch_rows(queue, limit=1)\n        if rows:\n            return [fx.convert(row, \"EUR\") for row in rows]\n    return []\n"
+            },
+            {
+              "name": "src/tallyhouse/settings.py",
+              "content": "\"\"\"Settings shared by the jobs.\"\"\"\n\nBATCH_RETRY_LIMIT = 11\nSTREAM_RETRY_LIMIT = 17\nDEFAULT_CURRENCY = \"NOK\"\n"
+            },
+            {
+              "name": "src/tallyhouse/money.py",
+              "content": "\"\"\"Amounts and rounding.\"\"\"\n\n\ndef normalize_amount(row):\n    return round_cents(float(row[\"amount\"]))\n\n\ndef round_cents(value):\n    return round(value, 2)\n"
+            },
+            {
+              "name": "src/tallyhouse/audit.py",
+              "content": "\"\"\"The audit trail.\"\"\"\nimport logging\n\n_log = logging.getLogger(\"tallyhouse.audit\")\n\n\ndef audit_log(message):\n    _log.info(\"audit: %s\", message)\n"
+            },
+            {
+              "name": "src/tallyhouse/accounts.py",
+              "content": "\"\"\"Customer accounts.\"\"\"\nfrom tallyhouse import audit, ledger\n\n\ndef open_account(account_id):\n    audit.audit_log(\"open \" + account_id)\n    return ledger.post_entry(account_id, 0)\n\n\ndef close_account(account_id):\n    audit.audit_log(\"close \" + account_id)\n    return ledger.reverse_entry(account_id)\n\n\ndef account_balance(account_id):\n    return ledger.balance(account_id)\n"
+            },
+            {
+              "name": "src/tallyhouse/ledger.py",
+              "content": "\"\"\"Ledger entries.\"\"\"\nfrom tallyhouse import audit, storage\n\n\ndef post_entry(account_id, amount):\n    audit.audit_log(\"post \" + account_id)\n    storage.save_rows([{\"account\": account_id, \"amount\": amount}])\n\n\ndef reverse_entry(account_id):\n    audit.audit_log(\"reverse \" + account_id)\n    storage.save_rows([{\"account\": account_id, \"amount\": 0, \"reversal\": True}])\n\n\ndef balance(account_id):\n    return sum(row[\"amount\"] for row in storage.fetch_rows(account_id, limit=1000))\n"
+            },
+            {
+              "name": "src/tallyhouse/reconcile.py",
+              "content": "\"\"\"Matching ledger entries against bank statements.\"\"\"\nfrom tallyhouse import audit, ledger\n\n\ndef match_entries(statement):\n    audit.audit_log(\"reconcile \" + statement[\"id\"])\n    return [ledger.balance(line[\"account\"]) for line in statement[\"lines\"]]\n\n\ndef report_mismatch(entry):\n    return \"mismatch: \" + str(entry)\n"
+            },
+            {
+              "name": "src/tallyhouse/fx.py",
+              "content": "\"\"\"Currency conversion.\"\"\"\nfrom tallyhouse import settings\n\nRATES = {\"EUR\": 0.086, \"USD\": 0.093}\n\n\ndef rate_for(currency):\n    return RATES.get(currency, 1.0)\n\n\ndef convert(row, currency=settings.DEFAULT_CURRENCY):\n    return {**row, \"amount\": row[\"amount\"] * rate_for(currency)}\n"
+            },
+            {
+              "name": "src/tallyhouse/report.py",
+              "content": "\"\"\"Periodic reports.\"\"\"\nfrom tallyhouse import ledger\n\n\ndef monthly_report(accounts):\n    return {account: ledger.balance(account) for account in accounts}\n\n\ndef yearly_report(accounts):\n    return monthly_report(accounts)\n"
+            },
+            {
+              "name": "src/tallyhouse/storage.py",
+              "content": "\"\"\"Row storage.\"\"\"\n\n_ROWS = {}\n\n\ndef fetch_rows(queue, limit):\n    return _ROWS.get(queue, [])[:limit]\n\n\ndef save_rows(rows):\n    for row in rows:\n        _ROWS.setdefault(row[\"account\"], []).append(row)\n"
+            },
+            {
+              "name": "src/tallyhouse/exporters/__init__.py",
+              "content": "\"\"\"Exporters for ledger rows.\"\"\"\n"
+            },
+            {
+              "name": "src/tallyhouse/exporters/csv_export.py",
+              "content": "\"\"\"CSV export.\"\"\"\n\n\ndef export_header():\n    return \"account,amount\"\n\n\ndef export_rows(rows):\n    return [str(row[\"account\"]) + \",\" + str(row[\"amount\"]) for row in rows]\n\n\ndef export_totals(rows):\n    return sum(row[\"amount\"] for row in rows)\n"
+            },
+            {
+              "name": "src/tallyhouse/exporters/json_export.py",
+              "content": "\"\"\"JSON export.\"\"\"\nimport json\n\n\ndef export_schema():\n    return {\"account\": \"string\", \"amount\": \"number\"}\n\n\ndef export_rows(rows):\n    return json.dumps(rows)\n\n\ndef export_totals(rows):\n    return json.dumps({\"total\": sum(row[\"amount\"] for row in rows)})\n"
+            },
+            {
+              "name": "src/tallyhouse/exporters/xlsx_export.py",
+              "content": "\"\"\"Spreadsheet export, not finished.\"\"\"\n\n\ndef export_rows(rows):\n    raise NotImplementedError(\"xlsx export\")\n\n\ndef export_sheet(name):\n    raise NotImplementedError(name)\n"
+            },
+            {
+              "name": "tests/test_money.py",
+              "content": "from tallyhouse.money import normalize_amount, round_cents\n\n\ndef test_round_cents():\n    assert round_cents(2.5) == 2.5\n\n\ndef test_normalize_amount():\n    assert normalize_amount({\"amount\": \"3\"}) == 3.0\n"
+            },
+            {
+              "name": "tests/test_batch.py",
+              "content": "from unittest import mock\n\nfrom tallyhouse import batch\n\n\ndef test_run_batch_writes_the_audit_trail():\n    with mock.patch(\"tallyhouse.audit.audit_log\") as audit_log:\n        batch.run_batch(\"q-test\")\n    audit_log.assert_called()\n"
+            },
+            {
+              "name": "tests/test_exporters.py",
+              "content": "from tallyhouse.exporters import csv_export, json_export\n\n\ndef test_totals_agree():\n    assert json_export.export_totals([]) == '{\"total\": 0}'\n    assert csv_export.export_totals([]) == 0\n"
+            },
+            {
+              "name": "docs/architecture.md",
+              "content": "# Architecture\n\nThe scheduler starts the entry point named in `config/app.toml`. The CLI loads the active\nprofile and hands it to `pipeline.run`, which picks the batch or the stream job.\nEvery write to the ledger goes through `audit_log`.\n"
+            },
+            {
+              "name": "docs/glossary.md",
+              "content": "# Glossary\n\n- **profile**: a file under `config/profiles/` that names a pipeline and a queue.\n- **queue**: the source a job reads rows from.\n- **retry limit**: how many times a job polls its queue before it gives up.\n"
+            }
+          ],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md pyproject.toml config/app.toml config/profiles/nightly.toml config/profiles/hourly.toml src/tallyhouse/__init__.py src/tallyhouse/cli.py src/tallyhouse/pipeline.py src/tallyhouse/batch.py src/tallyhouse/stream.py src/tallyhouse/settings.py src/tallyhouse/money.py src/tallyhouse/audit.py src/tallyhouse/accounts.py src/tallyhouse/ledger.py src/tallyhouse/reconcile.py src/tallyhouse/fx.py src/tallyhouse/report.py src/tallyhouse/storage.py src/tallyhouse/exporters/__init__.py src/tallyhouse/exporters/csv_export.py src/tallyhouse/exporters/json_export.py src/tallyhouse/exporters/xlsx_export.py tests/test_money.py tests/test_batch.py tests/test_exporters.py docs/architecture.md docs/glossary.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"63ff31c8472e806d10b5e022d81b8b1730d95f43c6478e872cde118dbf24dba4\", \"a seed file changed\"\nprint(\"READ_HEAVY_CODE_T1_OK\")'",
+              "contains": "READ_HEAVY_CODE_T1_OK"
+            }
+          ]
+        },
+        {
+          "goal": "In which file is the function normalize_amount defined (give its path from the repository root), and which other function is defined in the same file? Do not change any file.",
+          "answer_contains": ["src/tallyhouse/money.py", "round_cents"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md pyproject.toml config/app.toml config/profiles/nightly.toml config/profiles/hourly.toml src/tallyhouse/__init__.py src/tallyhouse/cli.py src/tallyhouse/pipeline.py src/tallyhouse/batch.py src/tallyhouse/stream.py src/tallyhouse/settings.py src/tallyhouse/money.py src/tallyhouse/audit.py src/tallyhouse/accounts.py src/tallyhouse/ledger.py src/tallyhouse/reconcile.py src/tallyhouse/fx.py src/tallyhouse/report.py src/tallyhouse/storage.py src/tallyhouse/exporters/__init__.py src/tallyhouse/exporters/csv_export.py src/tallyhouse/exporters/json_export.py src/tallyhouse/exporters/xlsx_export.py tests/test_money.py tests/test_batch.py tests/test_exporters.py docs/architecture.md docs/glossary.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"63ff31c8472e806d10b5e022d81b8b1730d95f43c6478e872cde118dbf24dba4\", \"a seed file changed\"\nprint(\"READ_HEAVY_CODE_T2_OK\")'",
+              "contains": "READ_HEAVY_CODE_T2_OK"
+            }
+          ]
+        },
+        {
+          "goal": "The scheduler starts the entry point named in config/app.toml. Follow the configuration and the code from there: which job function runs, and which queue does it read? Do not change any file.",
+          "answer_contains": ["run_batch", "q-ember-lark"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md pyproject.toml config/app.toml config/profiles/nightly.toml config/profiles/hourly.toml src/tallyhouse/__init__.py src/tallyhouse/cli.py src/tallyhouse/pipeline.py src/tallyhouse/batch.py src/tallyhouse/stream.py src/tallyhouse/settings.py src/tallyhouse/money.py src/tallyhouse/audit.py src/tallyhouse/accounts.py src/tallyhouse/ledger.py src/tallyhouse/reconcile.py src/tallyhouse/fx.py src/tallyhouse/report.py src/tallyhouse/storage.py src/tallyhouse/exporters/__init__.py src/tallyhouse/exporters/csv_export.py src/tallyhouse/exporters/json_export.py src/tallyhouse/exporters/xlsx_export.py tests/test_money.py tests/test_batch.py tests/test_exporters.py docs/architecture.md docs/glossary.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"63ff31c8472e806d10b5e022d81b8b1730d95f43c6478e872cde118dbf24dba4\", \"a seed file changed\"\nprint(\"READ_HEAVY_CODE_T3_OK\")'",
+              "contains": "READ_HEAVY_CODE_T3_OK"
+            }
+          ]
+        },
+        {
+          "goal": "Compare src/tallyhouse/exporters/csv_export.py with src/tallyhouse/exporters/json_export.py. Which functions do both define, and which function does each define that the other lacks? End your answer with the lines `ONLY_CSV=<function>`, `ONLY_JSON=<function>`, with no spaces around the `=`. Do not change any file.",
+          "answer_contains": [
+            "export_rows",
+            "export_totals",
+            "ONLY_CSV=export_header",
+            "ONLY_JSON=export_schema"
+          ],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md pyproject.toml config/app.toml config/profiles/nightly.toml config/profiles/hourly.toml src/tallyhouse/__init__.py src/tallyhouse/cli.py src/tallyhouse/pipeline.py src/tallyhouse/batch.py src/tallyhouse/stream.py src/tallyhouse/settings.py src/tallyhouse/money.py src/tallyhouse/audit.py src/tallyhouse/accounts.py src/tallyhouse/ledger.py src/tallyhouse/reconcile.py src/tallyhouse/fx.py src/tallyhouse/report.py src/tallyhouse/storage.py src/tallyhouse/exporters/__init__.py src/tallyhouse/exporters/csv_export.py src/tallyhouse/exporters/json_export.py src/tallyhouse/exporters/xlsx_export.py tests/test_money.py tests/test_batch.py tests/test_exporters.py docs/architecture.md docs/glossary.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"63ff31c8472e806d10b5e022d81b8b1730d95f43c6478e872cde118dbf24dba4\", \"a seed file changed\"\nprint(\"READ_HEAVY_CODE_T4_OK\")'",
+              "contains": "READ_HEAVY_CODE_T4_OK"
+            }
+          ]
+        },
+        {
+          "goal": "How many times is audit_log called in the code under src/ (call sites only, not its definition), and in which modules? End your answer with the line `CALLS=<n>`, with no spaces around the `=`. Do not change any file.",
+          "answer_contains": ["CALLS=6", "accounts", "batch", "ledger", "reconcile"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md pyproject.toml config/app.toml config/profiles/nightly.toml config/profiles/hourly.toml src/tallyhouse/__init__.py src/tallyhouse/cli.py src/tallyhouse/pipeline.py src/tallyhouse/batch.py src/tallyhouse/stream.py src/tallyhouse/settings.py src/tallyhouse/money.py src/tallyhouse/audit.py src/tallyhouse/accounts.py src/tallyhouse/ledger.py src/tallyhouse/reconcile.py src/tallyhouse/fx.py src/tallyhouse/report.py src/tallyhouse/storage.py src/tallyhouse/exporters/__init__.py src/tallyhouse/exporters/csv_export.py src/tallyhouse/exporters/json_export.py src/tallyhouse/exporters/xlsx_export.py tests/test_money.py tests/test_batch.py tests/test_exporters.py docs/architecture.md docs/glossary.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"63ff31c8472e806d10b5e022d81b8b1730d95f43c6478e872cde118dbf24dba4\", \"a seed file changed\"\nprint(\"READ_HEAVY_CODE_T5_OK\")'",
+              "contains": "READ_HEAVY_CODE_T5_OK"
+            }
+          ]
+        },
+        {
+          "goal": "Write notes/audit-sites.md with one line per module under src/ that calls audit_log: the module name only, and no heading or other lines. Do not change any other file.",
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md pyproject.toml config/app.toml config/profiles/nightly.toml config/profiles/hourly.toml src/tallyhouse/__init__.py src/tallyhouse/cli.py src/tallyhouse/pipeline.py src/tallyhouse/batch.py src/tallyhouse/stream.py src/tallyhouse/settings.py src/tallyhouse/money.py src/tallyhouse/audit.py src/tallyhouse/accounts.py src/tallyhouse/ledger.py src/tallyhouse/reconcile.py src/tallyhouse/fx.py src/tallyhouse/report.py src/tallyhouse/storage.py src/tallyhouse/exporters/__init__.py src/tallyhouse/exporters/csv_export.py src/tallyhouse/exporters/json_export.py src/tallyhouse/exporters/xlsx_export.py tests/test_money.py tests/test_batch.py tests/test_exporters.py docs/architecture.md docs/glossary.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"63ff31c8472e806d10b5e022d81b8b1730d95f43c6478e872cde118dbf24dba4\", \"a seed file changed\"\nwant = set([\"accounts\",\"batch\",\"ledger\",\"reconcile\"])\ngot = set()\nfor line in Path(\"notes/audit-sites.md\").read_text(encoding=\"utf-8\").lower().splitlines():\n    entry = line.strip().lstrip(\"-*\").strip().strip(\"`\").strip()\n    entry = entry.split(\"/\")[-1].removesuffix(\".py\").removesuffix(\".md\")\n    if entry:\n        got.add(entry)\nassert got == want, \"the note lists \" + str(sorted(got))\nprint(\"READ_HEAVY_CODE_T6_OK\")'",
+              "contains": "READ_HEAVY_CODE_T6_OK"
+            }
+          ]
+        },
+        {
+          "goal": "If config/app.toml selected the hourly profile instead, which job function would run, and which retry-limit setting would it use, with what value? End your answer with the line `LIMIT=<value>`, with no spaces around the `=`. Do not change any file.",
+          "answer_contains": ["run_stream", "STREAM_RETRY_LIMIT", "LIMIT=17"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md pyproject.toml config/app.toml config/profiles/nightly.toml config/profiles/hourly.toml src/tallyhouse/__init__.py src/tallyhouse/cli.py src/tallyhouse/pipeline.py src/tallyhouse/batch.py src/tallyhouse/stream.py src/tallyhouse/settings.py src/tallyhouse/money.py src/tallyhouse/audit.py src/tallyhouse/accounts.py src/tallyhouse/ledger.py src/tallyhouse/reconcile.py src/tallyhouse/fx.py src/tallyhouse/report.py src/tallyhouse/storage.py src/tallyhouse/exporters/__init__.py src/tallyhouse/exporters/csv_export.py src/tallyhouse/exporters/json_export.py src/tallyhouse/exporters/xlsx_export.py tests/test_money.py tests/test_batch.py tests/test_exporters.py docs/architecture.md docs/glossary.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"63ff31c8472e806d10b5e022d81b8b1730d95f43c6478e872cde118dbf24dba4\", \"a seed file changed\"\nprint(\"READ_HEAVY_CODE_T7_OK\")'",
+              "contains": "READ_HEAVY_CODE_T7_OK"
+            }
+          ]
+        },
+        {
+          "goal": "Open src/tallyhouse/batch.py again: how many rows does run_batch ask storage.fetch_rows for, and which setting bounds the number of attempts its loop makes, with what value? End your answer with the lines `BATCH_ROWS=<n>`, `BATCH_ATTEMPTS=<n>`, with no spaces around the `=`. Do not change any file.",
+          "answer_contains": ["BATCH_RETRY_LIMIT", "BATCH_ROWS=500", "BATCH_ATTEMPTS=11"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md pyproject.toml config/app.toml config/profiles/nightly.toml config/profiles/hourly.toml src/tallyhouse/__init__.py src/tallyhouse/cli.py src/tallyhouse/pipeline.py src/tallyhouse/batch.py src/tallyhouse/stream.py src/tallyhouse/settings.py src/tallyhouse/money.py src/tallyhouse/audit.py src/tallyhouse/accounts.py src/tallyhouse/ledger.py src/tallyhouse/reconcile.py src/tallyhouse/fx.py src/tallyhouse/report.py src/tallyhouse/storage.py src/tallyhouse/exporters/__init__.py src/tallyhouse/exporters/csv_export.py src/tallyhouse/exporters/json_export.py src/tallyhouse/exporters/xlsx_export.py tests/test_money.py tests/test_batch.py tests/test_exporters.py docs/architecture.md docs/glossary.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"63ff31c8472e806d10b5e022d81b8b1730d95f43c6478e872cde118dbf24dba4\", \"a seed file changed\"\nprint(\"READ_HEAVY_CODE_T8_OK\")'",
+              "contains": "READ_HEAVY_CODE_T8_OK"
+            }
+          ]
+        },
+        {
+          "goal": "Go back to the modules on the path from the entry point to the job, cli.py, pipeline.py, batch.py under src/tallyhouse, and quote the module docstring of each. Do not change any file.",
+          "answer_contains": [
+            "Command-line entry point",
+            "Chooses the job for a profile",
+            "The nightly batch job"
+          ],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md pyproject.toml config/app.toml config/profiles/nightly.toml config/profiles/hourly.toml src/tallyhouse/__init__.py src/tallyhouse/cli.py src/tallyhouse/pipeline.py src/tallyhouse/batch.py src/tallyhouse/stream.py src/tallyhouse/settings.py src/tallyhouse/money.py src/tallyhouse/audit.py src/tallyhouse/accounts.py src/tallyhouse/ledger.py src/tallyhouse/reconcile.py src/tallyhouse/fx.py src/tallyhouse/report.py src/tallyhouse/storage.py src/tallyhouse/exporters/__init__.py src/tallyhouse/exporters/csv_export.py src/tallyhouse/exporters/json_export.py src/tallyhouse/exporters/xlsx_export.py tests/test_money.py tests/test_batch.py tests/test_exporters.py docs/architecture.md docs/glossary.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"63ff31c8472e806d10b5e022d81b8b1730d95f43c6478e872cde118dbf24dba4\", \"a seed file changed\"\nprint(\"READ_HEAVY_CODE_T9_OK\")'",
+              "contains": "READ_HEAVY_CODE_T9_OK"
+            }
+          ]
+        },
+        {
+          "goal": "Compare src/tallyhouse/stream.py with src/tallyhouse/batch.py: which currency does the stream job convert rows to, how many rows does it ask fetch_rows for, and which of the two jobs writes the audit trail? End your answer with the lines `STREAM_CURRENCY=<code>`, `STREAM_ROWS=<n>`, `AUDITED=<module>`, with no spaces around the `=`. Do not change any file.",
+          "answer_contains": ["STREAM_CURRENCY=EUR", "STREAM_ROWS=1", "AUDITED=batch"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md pyproject.toml config/app.toml config/profiles/nightly.toml config/profiles/hourly.toml src/tallyhouse/__init__.py src/tallyhouse/cli.py src/tallyhouse/pipeline.py src/tallyhouse/batch.py src/tallyhouse/stream.py src/tallyhouse/settings.py src/tallyhouse/money.py src/tallyhouse/audit.py src/tallyhouse/accounts.py src/tallyhouse/ledger.py src/tallyhouse/reconcile.py src/tallyhouse/fx.py src/tallyhouse/report.py src/tallyhouse/storage.py src/tallyhouse/exporters/__init__.py src/tallyhouse/exporters/csv_export.py src/tallyhouse/exporters/json_export.py src/tallyhouse/exporters/xlsx_export.py tests/test_money.py tests/test_batch.py tests/test_exporters.py docs/architecture.md docs/glossary.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"63ff31c8472e806d10b5e022d81b8b1730d95f43c6478e872cde118dbf24dba4\", \"a seed file changed\"\nprint(\"READ_HEAVY_CODE_T10_OK\")'",
+              "contains": "READ_HEAVY_CODE_T10_OK"
+            }
+          ]
+        },
+        {
+          "goal": "A teammate has just changed config/profiles/nightly.toml. Read the configuration again: which job function does the configured entry point run now, and which queue does it read? End your answer with the lines `JOB=<function>`, `QUEUE=<queue>`, with no spaces around the `=`. Do not change any file.",
+          "answer_contains": ["JOB=run_batch", "QUEUE=q-amber-finch"],
+          "inject_files": [
+            {
+              "name": "config/profiles/nightly.toml",
+              "content": "pipeline = \"batch\"\nqueue = \"q-amber-finch\"\n"
+            }
+          ],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md pyproject.toml config/app.toml config/profiles/nightly.toml config/profiles/hourly.toml src/tallyhouse/__init__.py src/tallyhouse/cli.py src/tallyhouse/pipeline.py src/tallyhouse/batch.py src/tallyhouse/stream.py src/tallyhouse/settings.py src/tallyhouse/money.py src/tallyhouse/audit.py src/tallyhouse/accounts.py src/tallyhouse/ledger.py src/tallyhouse/reconcile.py src/tallyhouse/fx.py src/tallyhouse/report.py src/tallyhouse/storage.py src/tallyhouse/exporters/__init__.py src/tallyhouse/exporters/csv_export.py src/tallyhouse/exporters/json_export.py src/tallyhouse/exporters/xlsx_export.py tests/test_money.py tests/test_batch.py tests/test_exporters.py docs/architecture.md docs/glossary.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"f6c589de17b572158cd566d8dff21a58353711a7ccfebef1433285f5cbe79697\", \"a seed file changed\"\nprint(\"READ_HEAVY_CODE_T11_OK\")'",
+              "contains": "READ_HEAVY_CODE_T11_OK"
+            }
+          ]
+        },
+        {
+          "goal": "Open notes/audit-sites.md, which you wrote earlier. For each module it lists, how many times does that module call audit_log? End your answer with one line `<module>=<n>` per module, with no spaces around the `=`. Do not change any file.",
+          "answer_contains": ["accounts=2", "batch=1", "ledger=2", "reconcile=1"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md pyproject.toml config/app.toml config/profiles/nightly.toml config/profiles/hourly.toml src/tallyhouse/__init__.py src/tallyhouse/cli.py src/tallyhouse/pipeline.py src/tallyhouse/batch.py src/tallyhouse/stream.py src/tallyhouse/settings.py src/tallyhouse/money.py src/tallyhouse/audit.py src/tallyhouse/accounts.py src/tallyhouse/ledger.py src/tallyhouse/reconcile.py src/tallyhouse/fx.py src/tallyhouse/report.py src/tallyhouse/storage.py src/tallyhouse/exporters/__init__.py src/tallyhouse/exporters/csv_export.py src/tallyhouse/exporters/json_export.py src/tallyhouse/exporters/xlsx_export.py tests/test_money.py tests/test_batch.py tests/test_exporters.py docs/architecture.md docs/glossary.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"f6c589de17b572158cd566d8dff21a58353711a7ccfebef1433285f5cbe79697\", \"a seed file changed\"\nprint(\"READ_HEAVY_CODE_T12_OK\")'",
+              "contains": "READ_HEAVY_CODE_T12_OK"
+            }
+          ]
+        },
+        {
+          "goal": "Remind me of three things from earlier: the path of the file that defines normalize_amount, the number of audit_log call sites under src/, and the queue the configured entry point reads now. End your answer with the lines `CALLS=<n>`, `QUEUE=<queue>`, with no spaces around the `=`. Do not change any file.",
+          "answer_contains": ["src/tallyhouse/money.py", "CALLS=6", "QUEUE=q-amber-finch"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md pyproject.toml config/app.toml config/profiles/nightly.toml config/profiles/hourly.toml src/tallyhouse/__init__.py src/tallyhouse/cli.py src/tallyhouse/pipeline.py src/tallyhouse/batch.py src/tallyhouse/stream.py src/tallyhouse/settings.py src/tallyhouse/money.py src/tallyhouse/audit.py src/tallyhouse/accounts.py src/tallyhouse/ledger.py src/tallyhouse/reconcile.py src/tallyhouse/fx.py src/tallyhouse/report.py src/tallyhouse/storage.py src/tallyhouse/exporters/__init__.py src/tallyhouse/exporters/csv_export.py src/tallyhouse/exporters/json_export.py src/tallyhouse/exporters/xlsx_export.py tests/test_money.py tests/test_batch.py tests/test_exporters.py docs/architecture.md docs/glossary.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"f6c589de17b572158cd566d8dff21a58353711a7ccfebef1433285f5cbe79697\", \"a seed file changed\"\nprint(\"READ_HEAVY_CODE_T13_OK\")'",
+              "contains": "READ_HEAVY_CODE_T13_OK"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "read-heavy-docs",
+      "category": "read_heavy",
+      "favor": "jev",
+      "description": "An operations handbook: symptom lookup, an escalation hop across pages, ownership counts, re-reads and a changed team page.",
+      "max_steps": 20,
+      "turns": [
+        {
+          "goal": "Give me an overview of this handbook: name its top-level sections and say what each holds. How many runbooks are there? End your answer with the line `RUNBOOKS=<n>`, with no spaces around the `=`. Do not change any file.",
+          "answer_contains": ["services", "runbooks", "policies", "teams", "RUNBOOKS=11"],
+          "inject_files": [
+            {
+              "name": "README.md",
+              "content": "# Operations handbook\n\n- `services/`: one page per service with its tier, owner, runbook and dependencies; `services/index.md` lists them.\n- `runbooks/`: what to do when something breaks.\n- `policies/`: retention, access and on-call rules.\n- `teams/`: who to page.\n"
+            },
+            {
+              "name": "services/index.md",
+              "content": "# Services\n\n| Service | Tier | Page |\n| --- | --- | --- |\n| beacon | 1 | [beacon](beacon.md) |\n| ingestor | 2 | [ingestor](ingestor.md) |\n| lantern | 3 | [lantern](lantern.md) |\n| ledgerd | 1 | [ledgerd](ledgerd.md) |\n| mosaic | 2 | [mosaic](mosaic.md) |\n| quarry | 2 | [quarry](quarry.md) |\n| relay | 1 | [relay](relay.md) |\n| vault-proxy | 0 | [vault-proxy](vault-proxy.md) |\n"
+            },
+            {
+              "name": "policies/access.md",
+              "content": "# Access policy\n\n- Access reviews are held every 90 days.\n- Break-glass accounts expire after 4 hours.\n- Production access needs a ticket.\n"
+            },
+            {
+              "name": "policies/oncall.md",
+              "content": "# On-call policy\n\n- Handover happens at 09:30 UTC.\n- A page must be acknowledged within 15 minutes.\n- Escalations follow the escalation link of the runbook.\n"
+            },
+            {
+              "name": "policies/retention.md",
+              "content": "# Retention policy\n\n- Application logs are kept for 30 days.\n- Audit logs are kept for 400 days.\n- Metrics are kept for 13 months.\n"
+            },
+            {
+              "name": "services/beacon.md",
+              "content": "# beacon\n\nTier: 1\nOwner: osprey\nRunbook: [Login Outage](../runbooks/auth-outage.md)\nDepends on: ledgerd, vault-proxy\n"
+            },
+            {
+              "name": "services/ingestor.md",
+              "content": "# ingestor\n\nTier: 2\nOwner: harbor\nRunbook: [Disk Pressure on Ingest Nodes](../runbooks/disk-pressure.md)\nDepends on: ledgerd, quarry\n"
+            },
+            {
+              "name": "services/lantern.md",
+              "content": "# lantern\n\nTier: 3\nOwner: juniper\nRunbook: [Cache Stampede](../runbooks/cache-stampede.md)\nDepends on: ledgerd\n"
+            },
+            {
+              "name": "services/ledgerd.md",
+              "content": "# ledgerd\n\nTier: 1\nOwner: harbor\nRunbook: [Replica Lag](../runbooks/replica-lag.md)\nDepends on: vault-proxy\n"
+            },
+            {
+              "name": "services/mosaic.md",
+              "content": "# mosaic\n\nTier: 2\nOwner: osprey\nRunbook: [Memory Growth in Workers](../runbooks/memory-leak.md)\nDepends on: relay, lantern\n"
+            },
+            {
+              "name": "services/quarry.md",
+              "content": "# quarry\n\nTier: 2\nOwner: juniper\nRunbook: [Cold Storage Recovery](../runbooks/cold-storage.md)\nDepends on: none\n"
+            },
+            {
+              "name": "services/relay.md",
+              "content": "# relay\n\nTier: 1\nOwner: kestrel\nRunbook: [Queue Backlog](../runbooks/queue-backlog.md)\nDepends on: ingestor\n"
+            },
+            {
+              "name": "services/vault-proxy.md",
+              "content": "# vault-proxy\n\nTier: 0\nOwner: kestrel\nRunbook: [Certificate Expiry](../runbooks/cert-expiry.md)\nDepends on: none\n"
+            },
+            {
+              "name": "runbooks/auth-outage.md",
+              "content": "# Login Outage\n\nOwner: kestrel\n\n## Symptoms\n\nUsers cannot sign in and the login page shows error 503.\n\n## Steps\n\n1. Check the service dashboard and note when the problem started.\n2. Post a short status in the owning team channel.\n\n## Escalation\n\nIf this does not resolve it, continue with [Certificate Expiry](cert-expiry.md).\n"
+            },
+            {
+              "name": "runbooks/backup-restore.md",
+              "content": "# Backup Restore Drill\n\nOwner: juniper\n\n## Symptoms\n\nThe weekly restore drill is due, or a restore was requested.\n\n## Steps\n\n1. Check the service dashboard and note when the problem started.\n2. Post a short status in the owning team channel.\n\n## Escalation\n\nNo further runbook: page the owning team.\n"
+            },
+            {
+              "name": "runbooks/cache-stampede.md",
+              "content": "# Cache Stampede\n\nOwner: juniper\n\n## Symptoms\n\nThe cache hit rate drops to near zero right after a deploy.\n\n## Steps\n\n1. Check the service dashboard and note when the problem started.\n2. Post a short status in the owning team channel.\n\n## Escalation\n\nIf this does not resolve it, continue with [Queue Backlog](queue-backlog.md).\n"
+            },
+            {
+              "name": "runbooks/cert-expiry.md",
+              "content": "# Certificate Expiry\n\nOwner: kestrel\n\n## Symptoms\n\nClients report TLS handshake failures shortly after midnight UTC.\n\n## Steps\n\n1. Check the service dashboard and note when the problem started.\n2. Post a short status in the owning team channel.\n\n## Escalation\n\nIf this does not resolve it, continue with [DNS Failover](dns-failover.md).\n"
+            },
+            {
+              "name": "runbooks/cold-storage.md",
+              "content": "# Cold Storage Recovery\n\nOwner: juniper\n\n## Symptoms\n\nArchived objects return 404 or take minutes to restore.\n\n## Steps\n\n1. Check the service dashboard and note when the problem started.\n2. Post a short status in the owning team channel.\n\n## Escalation\n\nNo further runbook: page the owning team.\n"
+            },
+            {
+              "name": "runbooks/disk-pressure.md",
+              "content": "# Disk Pressure on Ingest Nodes\n\nOwner: harbor\n\n## Symptoms\n\nWrite latency climbs while /var/spool/ingest fills up.\n\n## Steps\n\n1. Check the service dashboard and note when the problem started.\n2. Post a short status in the owning team channel.\n\n## Escalation\n\nIf this does not resolve it, continue with [Cold Storage Recovery](cold-storage.md).\n"
+            },
+            {
+              "name": "runbooks/dns-failover.md",
+              "content": "# DNS Failover\n\nOwner: osprey\n\n## Symptoms\n\nInternal names still resolve to the old region after a failover.\n\n## Steps\n\n1. Check the service dashboard and note when the problem started.\n2. Post a short status in the owning team channel.\n\n## Escalation\n\nNo further runbook: page the owning team.\n"
+            },
+            {
+              "name": "runbooks/memory-leak.md",
+              "content": "# Memory Growth in Workers\n\nOwner: osprey\n\n## Symptoms\n\nWorker memory grows steadily until the process is restarted.\n\n## Steps\n\n1. Check the service dashboard and note when the problem started.\n2. Post a short status in the owning team channel.\n\n## Escalation\n\nIf this does not resolve it, continue with [Replica Lag](replica-lag.md).\n"
+            },
+            {
+              "name": "runbooks/queue-backlog.md",
+              "content": "# Queue Backlog\n\nOwner: kestrel\n\n## Symptoms\n\nConsumers fall behind and the oldest message is older than ten minutes.\n\n## Steps\n\n1. Check the service dashboard and note when the problem started.\n2. Post a short status in the owning team channel.\n\n## Escalation\n\nIf this does not resolve it, continue with [Disk Pressure on Ingest Nodes](disk-pressure.md).\n"
+            },
+            {
+              "name": "runbooks/rate-limit.md",
+              "content": "# Upstream Rate Limiting\n\nOwner: kestrel\n\n## Symptoms\n\nCalls to the payment partner fail with status 429.\n\n## Steps\n\n1. Check the service dashboard and note when the problem started.\n2. Post a short status in the owning team channel.\n\n## Escalation\n\nIf this does not resolve it, continue with [DNS Failover](dns-failover.md).\n"
+            },
+            {
+              "name": "runbooks/replica-lag.md",
+              "content": "# Replica Lag\n\nOwner: harbor\n\n## Symptoms\n\nRead replicas trail the primary by more than thirty seconds.\n\n## Steps\n\n1. Check the service dashboard and note when the problem started.\n2. Post a short status in the owning team channel.\n\n## Escalation\n\nIf this does not resolve it, continue with [Cold Storage Recovery](cold-storage.md).\n"
+            },
+            {
+              "name": "teams/harbor.md",
+              "content": "# Team harbor\n\nLead: Mirela Voss\nPages: #harbor-oncall\n"
+            },
+            {
+              "name": "teams/juniper.md",
+              "content": "# Team juniper\n\nLead: Anika Brandt\nPages: #juniper-ops\n"
+            },
+            {
+              "name": "teams/kestrel.md",
+              "content": "# Team kestrel\n\nLead: Tomas Arkwright\nPages: #kestrel-pager\n"
+            },
+            {
+              "name": "teams/osprey.md",
+              "content": "# Team osprey\n\nLead: Felix Mori\nPages: #osprey-desk\n"
+            }
+          ],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md services/index.md policies/access.md policies/oncall.md policies/retention.md services/beacon.md services/ingestor.md services/lantern.md services/ledgerd.md services/mosaic.md services/quarry.md services/relay.md services/vault-proxy.md runbooks/auth-outage.md runbooks/backup-restore.md runbooks/cache-stampede.md runbooks/cert-expiry.md runbooks/cold-storage.md runbooks/disk-pressure.md runbooks/dns-failover.md runbooks/memory-leak.md runbooks/queue-backlog.md runbooks/rate-limit.md runbooks/replica-lag.md teams/harbor.md teams/juniper.md teams/kestrel.md teams/osprey.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"1b50f57ae2c95bca4b42f27344871e7a71c5a45251519ed4d85cf59aa819a75c\", \"a seed file changed\"\nprint(\"READ_HEAVY_DOCS_T1_OK\")'",
+              "contains": "READ_HEAVY_DOCS_T1_OK"
+            }
+          ]
+        },
+        {
+          "goal": "Which runbook should I open when write latency climbs while /var/spool/ingest fills up? Give its file name and the team that owns it. Do not change any file.",
+          "answer_contains": ["disk-pressure.md", "harbor"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md services/index.md policies/access.md policies/oncall.md policies/retention.md services/beacon.md services/ingestor.md services/lantern.md services/ledgerd.md services/mosaic.md services/quarry.md services/relay.md services/vault-proxy.md runbooks/auth-outage.md runbooks/backup-restore.md runbooks/cache-stampede.md runbooks/cert-expiry.md runbooks/cold-storage.md runbooks/disk-pressure.md runbooks/dns-failover.md runbooks/memory-leak.md runbooks/queue-backlog.md runbooks/rate-limit.md runbooks/replica-lag.md teams/harbor.md teams/juniper.md teams/kestrel.md teams/osprey.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"1b50f57ae2c95bca4b42f27344871e7a71c5a45251519ed4d85cf59aa819a75c\", \"a seed file changed\"\nprint(\"READ_HEAVY_DOCS_T2_OK\")'",
+              "contains": "READ_HEAVY_DOCS_T2_OK"
+            }
+          ]
+        },
+        {
+          "goal": "Start from the service page of beacon and open its runbook, then follow that runbook's escalation link once (one hop) and stop there. What is the title of the runbook you reach, and in which chat channel does the team that owns that runbook take pages? Do not change any file.",
+          "answer_contains": ["Certificate Expiry", "kestrel-pager"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md services/index.md policies/access.md policies/oncall.md policies/retention.md services/beacon.md services/ingestor.md services/lantern.md services/ledgerd.md services/mosaic.md services/quarry.md services/relay.md services/vault-proxy.md runbooks/auth-outage.md runbooks/backup-restore.md runbooks/cache-stampede.md runbooks/cert-expiry.md runbooks/cold-storage.md runbooks/disk-pressure.md runbooks/dns-failover.md runbooks/memory-leak.md runbooks/queue-backlog.md runbooks/rate-limit.md runbooks/replica-lag.md teams/harbor.md teams/juniper.md teams/kestrel.md teams/osprey.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"1b50f57ae2c95bca4b42f27344871e7a71c5a45251519ed4d85cf59aa819a75c\", \"a seed file changed\"\nprint(\"READ_HEAVY_DOCS_T3_OK\")'",
+              "contains": "READ_HEAVY_DOCS_T3_OK"
+            }
+          ]
+        },
+        {
+          "goal": "How many runbooks does the kestrel team own, and which are they? Give the file names. End your answer with the line `COUNT=<n>`, with no spaces around the `=`. Do not change any file.",
+          "answer_contains": [
+            "COUNT=4",
+            "auth-outage.md",
+            "cert-expiry.md",
+            "queue-backlog.md",
+            "rate-limit.md"
+          ],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md services/index.md policies/access.md policies/oncall.md policies/retention.md services/beacon.md services/ingestor.md services/lantern.md services/ledgerd.md services/mosaic.md services/quarry.md services/relay.md services/vault-proxy.md runbooks/auth-outage.md runbooks/backup-restore.md runbooks/cache-stampede.md runbooks/cert-expiry.md runbooks/cold-storage.md runbooks/disk-pressure.md runbooks/dns-failover.md runbooks/memory-leak.md runbooks/queue-backlog.md runbooks/rate-limit.md runbooks/replica-lag.md teams/harbor.md teams/juniper.md teams/kestrel.md teams/osprey.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"1b50f57ae2c95bca4b42f27344871e7a71c5a45251519ed4d85cf59aa819a75c\", \"a seed file changed\"\nprint(\"READ_HEAVY_DOCS_T4_OK\")'",
+              "contains": "READ_HEAVY_DOCS_T4_OK"
+            }
+          ]
+        },
+        {
+          "goal": "Compare policies/retention.md with policies/access.md: for how many days are audit logs kept, and every how many days are access reviews held? End your answer with the lines `AUDIT_DAYS=<n>`, `REVIEW_DAYS=<n>`, with no spaces around the `=`. Do not change any file.",
+          "answer_contains": ["AUDIT_DAYS=400", "REVIEW_DAYS=90"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md services/index.md policies/access.md policies/oncall.md policies/retention.md services/beacon.md services/ingestor.md services/lantern.md services/ledgerd.md services/mosaic.md services/quarry.md services/relay.md services/vault-proxy.md runbooks/auth-outage.md runbooks/backup-restore.md runbooks/cache-stampede.md runbooks/cert-expiry.md runbooks/cold-storage.md runbooks/disk-pressure.md runbooks/dns-failover.md runbooks/memory-leak.md runbooks/queue-backlog.md runbooks/rate-limit.md runbooks/replica-lag.md teams/harbor.md teams/juniper.md teams/kestrel.md teams/osprey.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"1b50f57ae2c95bca4b42f27344871e7a71c5a45251519ed4d85cf59aa819a75c\", \"a seed file changed\"\nprint(\"READ_HEAVY_DOCS_T5_OK\")'",
+              "contains": "READ_HEAVY_DOCS_T5_OK"
+            }
+          ]
+        },
+        {
+          "goal": "Write notes/kestrel.md with one line per runbook that the kestrel team owns: the file name only, and no heading or other lines. Do not change any other file.",
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md services/index.md policies/access.md policies/oncall.md policies/retention.md services/beacon.md services/ingestor.md services/lantern.md services/ledgerd.md services/mosaic.md services/quarry.md services/relay.md services/vault-proxy.md runbooks/auth-outage.md runbooks/backup-restore.md runbooks/cache-stampede.md runbooks/cert-expiry.md runbooks/cold-storage.md runbooks/disk-pressure.md runbooks/dns-failover.md runbooks/memory-leak.md runbooks/queue-backlog.md runbooks/rate-limit.md runbooks/replica-lag.md teams/harbor.md teams/juniper.md teams/kestrel.md teams/osprey.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"1b50f57ae2c95bca4b42f27344871e7a71c5a45251519ed4d85cf59aa819a75c\", \"a seed file changed\"\nwant = set([\"auth-outage\",\"cert-expiry\",\"queue-backlog\",\"rate-limit\"])\ngot = set()\nfor line in Path(\"notes/kestrel.md\").read_text(encoding=\"utf-8\").lower().splitlines():\n    entry = line.strip().lstrip(\"-*\").strip().strip(\"`\").strip()\n    entry = entry.split(\"/\")[-1].removesuffix(\".py\").removesuffix(\".md\")\n    if entry:\n        got.add(entry)\nassert got == want, \"the note lists \" + str(sorted(got))\nprint(\"READ_HEAVY_DOCS_T6_OK\")'",
+              "contains": "READ_HEAVY_DOCS_T6_OK"
+            }
+          ]
+        },
+        {
+          "goal": "Which services depend directly on ledgerd (its name is on their own \"Depends on\" line)? List them. End your answer with the line `DIRECT_COUNT=<n>`, with no spaces around the `=`. Do not change any file.",
+          "answer_contains": ["beacon", "ingestor", "lantern", "DIRECT_COUNT=3"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md services/index.md policies/access.md policies/oncall.md policies/retention.md services/beacon.md services/ingestor.md services/lantern.md services/ledgerd.md services/mosaic.md services/quarry.md services/relay.md services/vault-proxy.md runbooks/auth-outage.md runbooks/backup-restore.md runbooks/cache-stampede.md runbooks/cert-expiry.md runbooks/cold-storage.md runbooks/disk-pressure.md runbooks/dns-failover.md runbooks/memory-leak.md runbooks/queue-backlog.md runbooks/rate-limit.md runbooks/replica-lag.md teams/harbor.md teams/juniper.md teams/kestrel.md teams/osprey.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"1b50f57ae2c95bca4b42f27344871e7a71c5a45251519ed4d85cf59aa819a75c\", \"a seed file changed\"\nprint(\"READ_HEAVY_DOCS_T7_OK\")'",
+              "contains": "READ_HEAVY_DOCS_T7_OK"
+            }
+          ]
+        },
+        {
+          "goal": "For each service that depends directly on ledgerd, open its service page again and give its tier and its owner team. End your answer with one line `<service>=<tier>,<team>` per service, with no spaces. Do not change any file.",
+          "answer_contains": ["beacon=1,osprey", "ingestor=2,harbor", "lantern=3,juniper"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md services/index.md policies/access.md policies/oncall.md policies/retention.md services/beacon.md services/ingestor.md services/lantern.md services/ledgerd.md services/mosaic.md services/quarry.md services/relay.md services/vault-proxy.md runbooks/auth-outage.md runbooks/backup-restore.md runbooks/cache-stampede.md runbooks/cert-expiry.md runbooks/cold-storage.md runbooks/disk-pressure.md runbooks/dns-failover.md runbooks/memory-leak.md runbooks/queue-backlog.md runbooks/rate-limit.md runbooks/replica-lag.md teams/harbor.md teams/juniper.md teams/kestrel.md teams/osprey.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"1b50f57ae2c95bca4b42f27344871e7a71c5a45251519ed4d85cf59aa819a75c\", \"a seed file changed\"\nprint(\"READ_HEAVY_DOCS_T8_OK\")'",
+              "contains": "READ_HEAVY_DOCS_T8_OK"
+            }
+          ]
+        },
+        {
+          "goal": "Open runbooks/disk-pressure.md again: which runbook does its escalation link point to, and which team owns that runbook? End your answer with the lines `NEXT=<file name>`, `NEXT_OWNER=<team>`, with no spaces around the `=`. Do not change any file.",
+          "answer_contains": ["NEXT=cold-storage.md", "NEXT_OWNER=juniper"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md services/index.md policies/access.md policies/oncall.md policies/retention.md services/beacon.md services/ingestor.md services/lantern.md services/ledgerd.md services/mosaic.md services/quarry.md services/relay.md services/vault-proxy.md runbooks/auth-outage.md runbooks/backup-restore.md runbooks/cache-stampede.md runbooks/cert-expiry.md runbooks/cold-storage.md runbooks/disk-pressure.md runbooks/dns-failover.md runbooks/memory-leak.md runbooks/queue-backlog.md runbooks/rate-limit.md runbooks/replica-lag.md teams/harbor.md teams/juniper.md teams/kestrel.md teams/osprey.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"1b50f57ae2c95bca4b42f27344871e7a71c5a45251519ed4d85cf59aa819a75c\", \"a seed file changed\"\nprint(\"READ_HEAVY_DOCS_T9_OK\")'",
+              "contains": "READ_HEAVY_DOCS_T9_OK"
+            }
+          ]
+        },
+        {
+          "goal": "Compare services/ledgerd.md with services/relay.md: which team owns each, and who leads that team? End your answer with the lines `LEDGERD_LEAD=<name>`, `RELAY_LEAD=<name>`, with no spaces around the `=`. Do not change any file.",
+          "answer_contains": ["LEDGERD_LEAD=Mirela Voss", "RELAY_LEAD=Tomas Arkwright"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md services/index.md policies/access.md policies/oncall.md policies/retention.md services/beacon.md services/ingestor.md services/lantern.md services/ledgerd.md services/mosaic.md services/quarry.md services/relay.md services/vault-proxy.md runbooks/auth-outage.md runbooks/backup-restore.md runbooks/cache-stampede.md runbooks/cert-expiry.md runbooks/cold-storage.md runbooks/disk-pressure.md runbooks/dns-failover.md runbooks/memory-leak.md runbooks/queue-backlog.md runbooks/rate-limit.md runbooks/replica-lag.md teams/harbor.md teams/juniper.md teams/kestrel.md teams/osprey.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"1b50f57ae2c95bca4b42f27344871e7a71c5a45251519ed4d85cf59aa819a75c\", \"a seed file changed\"\nprint(\"READ_HEAVY_DOCS_T10_OK\")'",
+              "contains": "READ_HEAVY_DOCS_T10_OK"
+            }
+          ]
+        },
+        {
+          "goal": "The kestrel team has just updated its team page. Read teams/kestrel.md again: in which chat channel does the team take pages now? End your answer with the line `CHANNEL=<channel, without the #>`, with no spaces around the `=`. Do not change any file.",
+          "answer_contains": ["CHANNEL=kestrel-oncall"],
+          "inject_files": [
+            {
+              "name": "teams/kestrel.md",
+              "content": "# Team kestrel\n\nLead: Tomas Arkwright\nPages: #kestrel-oncall\n"
+            }
+          ],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md services/index.md policies/access.md policies/oncall.md policies/retention.md services/beacon.md services/ingestor.md services/lantern.md services/ledgerd.md services/mosaic.md services/quarry.md services/relay.md services/vault-proxy.md runbooks/auth-outage.md runbooks/backup-restore.md runbooks/cache-stampede.md runbooks/cert-expiry.md runbooks/cold-storage.md runbooks/disk-pressure.md runbooks/dns-failover.md runbooks/memory-leak.md runbooks/queue-backlog.md runbooks/rate-limit.md runbooks/replica-lag.md teams/harbor.md teams/juniper.md teams/kestrel.md teams/osprey.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"28c53506a643587715924e418a8365348a0fa8ed29d41aa4b1e8198da8e6a5f8\", \"a seed file changed\"\nprint(\"READ_HEAVY_DOCS_T11_OK\")'",
+              "contains": "READ_HEAVY_DOCS_T11_OK"
+            }
+          ]
+        },
+        {
+          "goal": "Open notes/kestrel.md, which you wrote earlier. For each runbook it lists, give the title of that runbook. End your answer with one line `<file name>=<title>` per runbook, with no spaces around the `=`. Do not change any file.",
+          "answer_contains": [
+            "auth-outage.md=Login Outage",
+            "cert-expiry.md=Certificate Expiry",
+            "queue-backlog.md=Queue Backlog",
+            "rate-limit.md=Upstream Rate Limiting"
+          ],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md services/index.md policies/access.md policies/oncall.md policies/retention.md services/beacon.md services/ingestor.md services/lantern.md services/ledgerd.md services/mosaic.md services/quarry.md services/relay.md services/vault-proxy.md runbooks/auth-outage.md runbooks/backup-restore.md runbooks/cache-stampede.md runbooks/cert-expiry.md runbooks/cold-storage.md runbooks/disk-pressure.md runbooks/dns-failover.md runbooks/memory-leak.md runbooks/queue-backlog.md runbooks/rate-limit.md runbooks/replica-lag.md teams/harbor.md teams/juniper.md teams/kestrel.md teams/osprey.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"28c53506a643587715924e418a8365348a0fa8ed29d41aa4b1e8198da8e6a5f8\", \"a seed file changed\"\nprint(\"READ_HEAVY_DOCS_T12_OK\")'",
+              "contains": "READ_HEAVY_DOCS_T12_OK"
+            }
+          ]
+        },
+        {
+          "goal": "Remind me of three things from earlier: the runbook that covers write latency while /var/spool/ingest fills up, the chat channel where the team that owns the runbook one escalation hop after beacon's runbook takes pages now, and how many runbooks the kestrel team owns. End your answer with the lines `CHANNEL=<channel, without the #>`, `COUNT=<n>`, with no spaces around the `=`. Do not change any file.",
+          "answer_contains": ["disk-pressure.md", "CHANNEL=kestrel-oncall", "COUNT=4"],
+          "bash": [
+            {
+              "command": "python -B -c 'import hashlib\nfrom pathlib import Path\nnames = \"README.md services/index.md policies/access.md policies/oncall.md policies/retention.md services/beacon.md services/ingestor.md services/lantern.md services/ledgerd.md services/mosaic.md services/quarry.md services/relay.md services/vault-proxy.md runbooks/auth-outage.md runbooks/backup-restore.md runbooks/cache-stampede.md runbooks/cert-expiry.md runbooks/cold-storage.md runbooks/disk-pressure.md runbooks/dns-failover.md runbooks/memory-leak.md runbooks/queue-backlog.md runbooks/rate-limit.md runbooks/replica-lag.md teams/harbor.md teams/juniper.md teams/kestrel.md teams/osprey.md\".split()\nfound = [str(p) for p in Path(\".\").rglob(\"*\") if p.is_file() and p.parts[0] != \"notes\" and not any(part.startswith(\".\") or part == \"__pycache__\" for part in p.parts)]\nassert sorted(found) == sorted(names), \"a file was added or removed outside notes/: \" + str(sorted(set(found) ^ set(names)))\nh = hashlib.sha256()\nfor n in names:\n    h.update(n.encode() + b\"\\0\" + Path(n).read_bytes() + b\"\\0\")\nassert h.hexdigest() == \"28c53506a643587715924e418a8365348a0fa8ed29d41aa4b1e8198da8e6a5f8\", \"a seed file changed\"\nprint(\"READ_HEAVY_DOCS_T13_OK\")'",
+              "contains": "READ_HEAVY_DOCS_T13_OK"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

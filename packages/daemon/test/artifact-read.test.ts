@@ -66,6 +66,7 @@ describe('authenticated artifact read primitive', () => {
       'lane-a',
       ref.sha256,
       expect.any(AbortSignal),
+      ref.mime,
     )
     expect(fixture.artifacts.get).toHaveBeenCalledWith(ref, expect.any(AbortSignal))
   })

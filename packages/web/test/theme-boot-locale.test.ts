@@ -1,10 +1,14 @@
 /** @vitest-environment happy-dom */
-import { afterEach, expect, it, vi } from 'vitest'
-import { LOCALE_STORAGE_KEY, writeLocalePreference } from '../src/locale-preference.js'
-import { indexShellLocaleCatalog } from '../src/locales/index-shell.js'
-import { safeThemeStorage } from '../src/theme.js'
 
+import { LOCALE_STORAGE_KEY, writeLocalePreference } from '@agnes/web-foundation/locale-preference'
+import { indexShellLocaleCatalog } from '@agnes/web-foundation/locales/index-shell'
+import { safeThemeStorage } from '@agnes/web-foundation/theme'
+import { afterEach, expect, it, vi } from 'vitest'
+
+let disposeShell: (() => void) | undefined
 afterEach(() => {
+  disposeShell?.()
+  disposeShell = undefined
   vi.restoreAllMocks()
   localStorage.clear()
   document.documentElement.removeAttribute('data-agnes-shell')
@@ -14,11 +18,13 @@ afterEach(() => {
 it('keeps the selected locale through theme repaint after a failed storage write', async () => {
   localStorage.setItem(LOCALE_STORAGE_KEY, 'en')
   document.documentElement.dataset.agnesShell = 'workbench'
-  document.body.innerHTML = '<button data-i18n="index-shell.skip">Skip to main content</button>'
+  document.body.innerHTML = '<div id="app-root"></div>'
   vi.resetModules()
   await import('../src/theme-boot.js')
+  const { mountAppShell } = await import('../src/app-shell.js')
+  disposeShell = mountAppShell().dispose
 
-  const skipLink = document.querySelector<HTMLButtonElement>('[data-i18n="index-shell.skip"]')
+  const skipLink = document.querySelector<HTMLAnchorElement>('.skip-link')
   expect(skipLink?.textContent).toBe(indexShellLocaleCatalog.en?.['index-shell.skip'])
 
   const originalSetItem = localStorage.setItem.bind(localStorage)
@@ -30,9 +36,13 @@ it('keeps the selected locale through theme repaint after a failed storage write
   window.dispatchEvent(new CustomEvent('agnes:locale-changed', { detail: 'zh-CN' }))
 
   expect(document.documentElement.lang).toBe('zh-CN')
-  expect(skipLink?.textContent).toBe(indexShellLocaleCatalog['zh-CN']?.['index-shell.skip'])
+  await vi.waitFor(() =>
+    expect(skipLink?.textContent).toBe(indexShellLocaleCatalog['zh-CN']?.['index-shell.skip']),
+  )
 
   window.dispatchEvent(new CustomEvent('agnes:theme-changed'))
   expect(document.documentElement.lang).toBe('zh-CN')
-  expect(skipLink?.textContent).toBe(indexShellLocaleCatalog['zh-CN']?.['index-shell.skip'])
+  await vi.waitFor(() =>
+    expect(skipLink?.textContent).toBe(indexShellLocaleCatalog['zh-CN']?.['index-shell.skip']),
+  )
 })

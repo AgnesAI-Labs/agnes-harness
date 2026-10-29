@@ -190,6 +190,90 @@ describe('the provider completes the usage event', () => {
     expect(usageOf(events).billing).toEqual({ usdMicros: 7, source: 'gateway', subscription: true })
   })
 
+  // A gateway that billed the request but sent no credit figure is still the authority on the price:
+  // the figure is derived from its dollars rather than from the catalogue, and it is labelled with
+  // where it came from. The unit is the deployment's own, so 420 micro-dollars at 100 credits per
+  // dollar is 0.042 - not the catalogue's 9 per million tokens, which would be 900.
+  it('derives credits from gateway billing when the adapter sent none, and says the gateway priced it', async () => {
+    const events = await run({
+      models: priced({ input: 9, output: 9, cacheRead: 0, cacheWrite: 0 }),
+      pricing: { creditsPerUsd: 100 },
+      script: () => [
+        {
+          type: 'usage',
+          tokens: tokens(1_000_000, 0),
+          creditSource: 'estimated',
+          billing: { usdMicros: 420, source: 'gateway', subscription: false },
+        },
+        { type: 'done', reason: 'stop' },
+      ],
+    })
+    expect(usageOf(events)).toMatchObject({
+      credits: 0.042,
+      creditSource: 'gateway',
+      billing: { usdMicros: 420, source: 'gateway', subscription: false },
+    })
+  })
+
+  it('treats gateway billing of zero dollars as a free call rather than falling back to the catalogue', async () => {
+    const events = await run({
+      models: priced({ input: 9, output: 9, cacheRead: 0, cacheWrite: 0 }),
+      pricing: { creditsPerUsd: 100 },
+      script: () => [
+        {
+          type: 'usage',
+          tokens: tokens(1_000_000, 0),
+          creditSource: 'estimated',
+          billing: { usdMicros: 0, source: 'gateway', subscription: false },
+        },
+        { type: 'done', reason: 'stop' },
+      ],
+    })
+    expect(usageOf(events)).toMatchObject({ credits: 0, creditSource: 'gateway' })
+  })
+
+  // `gateway` with nothing behind it is a label without a figure. The credits then come from the
+  // catalogue, and the source says so instead of repeating a claim nothing supports.
+  it('marks credits estimated when the adapter claims gateway but sent neither credits nor gateway billing', async () => {
+    const events = await run({
+      models: priced({ input: 1, output: 1, cacheRead: 0, cacheWrite: 0 }),
+      pricing: { creditsPerUsd: 10 },
+      script: () => [
+        { type: 'usage', tokens: tokens(500_000, 500_000), creditSource: 'gateway' },
+        { type: 'done', reason: 'stop' },
+      ],
+    })
+    expect(usageOf(events)).toMatchObject({ credits: 10, creditSource: 'estimated' })
+    expect(usageOf(events).billing).toEqual({
+      usdMicros: 1_000_000,
+      source: 'estimated',
+      subscription: false,
+    })
+  })
+
+  // A subscription bills a flat fee, so a single request has no dollar price of its own to derive
+  // credits from. Its billing record is kept for the ledger and the credits stay on the estimate.
+  it('keeps subscription gateway billing on the estimate path', async () => {
+    const events = await run({
+      models: priced({ input: 1, output: 0, cacheRead: 0, cacheWrite: 0 }),
+      pricing: { creditsPerUsd: 100 },
+      script: () => [
+        {
+          type: 'usage',
+          tokens: tokens(1_000_000, 0),
+          creditSource: 'gateway',
+          billing: { usdMicros: 7, source: 'gateway', subscription: true },
+        },
+        { type: 'done', reason: 'stop' },
+      ],
+    })
+    expect(usageOf(events)).toMatchObject({
+      credits: 100,
+      creditSource: 'estimated',
+      billing: { usdMicros: 7, source: 'gateway', subscription: true },
+    })
+  })
+
   it('replaces an invalid runtime billing object with a safe catalogue estimate and drops invalid response metadata', async () => {
     const events = await run({
       models: priced({ input: 1, output: 0, cacheRead: 0, cacheWrite: 0 }),

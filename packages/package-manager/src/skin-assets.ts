@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto'
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ExtensionManifest } from '@agnes/extension-api'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { containedEntry } from './entry-path.js'
 import { PackageError } from './errors.js'
 import type { InstalledInventory } from './inventory.js'
-import { readManifestIn } from './manifest.js'
+import { readBundledManifest } from './manifest.js'
 
 /**
  * Install-time skin limits. These are security and cost invariants rather than deployment tunables,
@@ -62,7 +63,7 @@ function collectFiles(dir: string, prefix = ''): string[] {
 export function resolveSkins(dir: string, manifest: ExtensionManifest): ResolvedSkin[] {
   const skins = manifest.contributes?.skins ?? []
   if (skins.length === 0) return []
-  const file = join(dir, 'agnes.extension.json')
+  const file = join(dir, 'package.json')
   return skins.map((skin) => {
     const cssPath = containedEntry(dir, skin.css, 'file', file)
     const cssBytes = statSync(cssPath).size
@@ -219,7 +220,7 @@ export function collectSkinRoster(
     if (pkg.directory !== null && !read.has(pkg.directory)) {
       read.add(pkg.directory)
       // The package root first, then each bundled extension directory: both patterns are in use, and
-      // a skin is contributed by whichever directory carries the manifest that declares it.
+      // a skin is contributed by whichever directory carries the plugin entry that declares it.
       const directories =
         pkg.entry.trust === 'builtin'
           ? [
@@ -230,7 +231,7 @@ export function collectSkinRoster(
             ]
           : []
       for (const directory of directories) {
-        const manifest = readManifestIn(directory)
+        const manifest = readBundledManifest(directory)
         if (manifest === undefined) continue
         for (const skin of resolveSkins(directory, manifest)) {
           fromDisk += 1
@@ -321,7 +322,8 @@ export function resolveSkinAsset(roster: SkinRoster, pathname: string): string |
 function canonicalFile(target: string, root: string | undefined): string | null {
   let canonical: string
   try {
-    canonical = realpathSync(target)
+    canonical = nativeRealpathSync(target)
+    if (root !== undefined) root = nativeRealpathSync(root)
     if (!statSync(canonical).isFile()) return null
   } catch {
     return null

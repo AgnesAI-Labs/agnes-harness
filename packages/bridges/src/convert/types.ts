@@ -24,7 +24,7 @@ export type ImportResult = { events: EventEnvelope[]; report: ImportReport }
 
 export class ImportError extends Error {
   constructor(
-    public readonly code: 'E_IMPORT_NO_HEADER' | 'E_IMPORT_UNKNOWN_FORMAT',
+    public readonly code: 'E_IMPORT_NO_HEADER' | 'E_IMPORT_UNKNOWN_FORMAT' | 'E_IMPORT_TOO_LARGE',
     message: string,
   ) {
     super(`${code}: ${message}`)

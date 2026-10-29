@@ -3,11 +3,10 @@
 // it along with the product code; change it only when the ledger format itself changes, so it keeps
 // describing the fold the product must still produce. (Changed once for that reason: the program
 // counter left the ledger rows and the fold.)
-import { isEventType, normalize, type SessionStart } from '@agnes/protocol'
-import { isRegisterTombstone, registerKey } from '../../src/log/storage.js'
+
+import { CoreError, type Event, type Seq } from '@agnes/core-common/types'
+import { isRegisterTombstone, registerKey } from '@agnes/core-ledger/log/storage'
 import type {
-  ApprovalAsked,
-  ApprovalDecided,
   ArtifactJob,
   BudgetState,
   CostLedger,
@@ -15,15 +14,16 @@ import type {
   HarnessEntry,
   Inbox,
   PlanItems,
-} from '../../src/reduce/shapes.js'
-import type { EffectNode, RegisterCell } from '../../src/reduce/state.js'
-import { CoreError, type Event, type Seq } from '../../src/types.js'
+} from '@agnes/core-ledger/reduce/shapes'
+import type { EffectNode, RegisterCell } from '@agnes/core-ledger/reduce/state'
+import { type DecisionSnapshot, isEventType, normalize, type SessionStart } from '@agnes/protocol'
 
 /** The ledger state as the reference folds it: every table a plain, writable Map or Set. */
 export type LedgerState = {
   lastSeq: Seq
   session: SessionStart | null
   registers: {
+    decisionStates: Map<string, RegisterCell<DecisionSnapshot>>
     planItems: Map<string, RegisterCell<PlanItems>>
     budgetState: Map<string, RegisterCell<BudgetState>>
     artifactJobs: Map<string, RegisterCell<ArtifactJob>>
@@ -39,8 +39,6 @@ export type LedgerState = {
   lastTurn: Map<string, number>
   lastStep: Map<string, number>
   pendingEffects: Map<string, Omit<EffectNode, 'children'>>
-  pendingApprovals: Map<string, ApprovalAsked & { seq: Seq; lane: string }>
-  decisions: Map<string, ApprovalDecided & { seq: Seq; lane: string; askedSeq?: Seq }>
   resumedRequests: Set<string>
   taint: Map<string, boolean>
   toolCalls: Map<string, { seq: Seq; name: string; turn: number; step: number; lane: string }>
@@ -62,6 +60,7 @@ function cloneMaps(s: LedgerState): LedgerState {
   return {
     ...s,
     registers: {
+      decisionStates: new Map(s.registers.decisionStates),
       planItems: new Map(s.registers.planItems),
       budgetState: new Map(s.registers.budgetState),
       artifactJobs: new Map(s.registers.artifactJobs),
@@ -73,8 +72,6 @@ function cloneMaps(s: LedgerState): LedgerState {
     lastTurn: new Map(s.lastTurn),
     lastStep: new Map(s.lastStep),
     pendingEffects: new Map(s.pendingEffects),
-    pendingApprovals: new Map(s.pendingApprovals),
-    decisions: new Map(s.decisions),
     resumedRequests: new Set(s.resumedRequests),
     taint: new Map(s.taint),
     toolCalls: new Map(s.toolCalls),
@@ -145,6 +142,9 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
     const key = registerKey(e)
     const reg = e.register
     switch (reg) {
+      case 'decision/state':
+        setRegister<DecisionSnapshot>(s.registers.decisionStates, reg, key, e.seq, d)
+        break
       case 'plan.items':
         setRegister<PlanItems>(s.registers.planItems, reg, key, e.seq, d)
         break
@@ -167,13 +167,12 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
       const start = d as unknown as SessionStart
       if (start.parent) {
         s.registers.budgetState.clear()
+        s.registers.decisionStates.clear()
         s.registers.inbox.clear()
         s.openTurn.clear()
         s.openStep.clear()
         s.lastStep.clear()
         s.pendingEffects.clear()
-        s.pendingApprovals.clear()
-        s.decisions.clear()
         s.resumedRequests.clear()
         s.taint.clear()
         s.toolCalls.clear()
@@ -188,20 +187,15 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
       if (s.openTurn.has(lane)) throw new CoreError('E_RELATION', 'turn already open', { seq: e.seq, lane })
       const requestId = (d?.continues as { requestId?: unknown } | undefined)?.requestId
       if (requestId !== undefined) {
-        const decision = typeof requestId === 'string' ? s.decisions.get(requestId) : undefined
-        if (
-          d?.trigger !== 'approval-resume' ||
-          !decision ||
-          decision.via === 'sync' ||
-          decision.lane !== lane
-        )
-          throw new CoreError('E_RELATION', 'continuation requires a decision on this lane', {
-            seq: e.seq,
-            lane,
-          })
-        if (s.resumedRequests.has(requestId as string))
-          throw new CoreError('E_RELATION', 'approval decision already consumed', { seq: e.seq, lane })
-        s.resumedRequests.add(requestId as string)
+        const value =
+          typeof requestId === 'string' ? s.registers.decisionStates.get(requestId)?.value : undefined
+        if (d?.trigger !== 'approval-resume' || !value || value.request.lane !== lane || value.consumption)
+          throw new CoreError('E_RELATION', 'continuation requires a decision on this lane')
+        if (value.request.owner === 'core/gate') {
+          if (s.resumedRequests.has(requestId as string))
+            throw new CoreError('E_RELATION', 'approval decision already consumed')
+          s.resumedRequests.add(requestId as string)
+        }
       }
       s.openTurn.set(lane, { turn: Number(d?.turn), startSeq: e.seq, trigger: String(d?.trigger) })
       s.lastTurn.set(lane, Number(d?.turn))
@@ -285,26 +279,6 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
     case 'effect/settled':
       s.pendingEffects.delete(lifecycleId(d, 'effectId', e.type, e.seq))
       break
-    case 'approval/asked': {
-      const requestId = lifecycleId(d, 'requestId', e.type, e.seq)
-      const a = d as unknown as ApprovalAsked
-      s.pendingApprovals.set(requestId, { ...a, requestId, seq: e.seq, lane })
-      break
-    }
-    case 'approval/decided': {
-      const requestId = lifecycleId(d, 'requestId', e.type, e.seq)
-      const a = d as unknown as ApprovalDecided
-      const askedSeq = s.pendingApprovals.get(requestId)?.seq
-      s.pendingApprovals.delete(requestId)
-      s.decisions.set(requestId, {
-        ...a,
-        requestId,
-        seq: e.seq,
-        lane,
-        ...(askedSeq === undefined ? {} : { askedSeq }),
-      })
-      break
-    }
     case 'tool/call': {
       const step = s.openStep.get(lane)
       const turn = s.openTurn.get(lane)
@@ -328,6 +302,7 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
         c.purpose !== 'title' &&
         c.purpose !== 'approval-guardian' &&
         c.purpose !== 'media' &&
+        c.purpose !== 'side-call' &&
         !c.interrupted &&
         !c.adjustment
       )
@@ -368,6 +343,7 @@ export function initialState(): LedgerState {
     lastSeq: 0,
     session: null,
     registers: {
+      decisionStates: new Map(),
       planItems: new Map(),
       budgetState: new Map(),
       artifactJobs: new Map(),
@@ -379,8 +355,6 @@ export function initialState(): LedgerState {
     lastTurn: new Map(),
     lastStep: new Map(),
     pendingEffects: new Map(),
-    pendingApprovals: new Map(),
-    decisions: new Map(),
     resumedRequests: new Set(),
     taint: new Map(),
     toolCalls: new Map(),

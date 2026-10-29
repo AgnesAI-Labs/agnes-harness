@@ -84,6 +84,8 @@ async function scenario(opts: {
   draft?: string
   rawInput?: unknown
   key?: string
+  /** Press the key at once, before the card has settled. */
+  early?: boolean
 }) {
   const ROWS = opts.rows ?? 24
   const { endpoint, responses } = endpointFor(opts)
@@ -113,12 +115,12 @@ async function scenario(opts: {
     } as JsonRpcNotification) // a server-initiated request; push delivers any message
     const modal = (app as unknown as { modal: { questions: unknown[] } }).modal
     await vi.waitFor(() => expect(modal.questions).toHaveLength(1))
-    await sleep(50)
+    await sleep(opts.early ? 50 : 700) // 700 outlasts the settle period of the approval's single keys
     const before = await screen()
     term.feed(opts.key ?? '1')
     await sleep(150)
     return {
-      allowOnceOnScreen: before.includes('1. Allow once'),
+      allowOnceOnScreen: before.includes('[1] Allow once'),
       pickerOnScreen: before.includes('Select Session'),
       responses: structuredClone(responses),
       screen: before,
@@ -148,7 +150,7 @@ it('[boundary] picker open, no usage row: Allow once is on screen and digit 1 se
 
 it('[M-11] picker open with usage row: digit 1 approves only an Allow once that is on screen', async () => {
   const seen = await scenario({ usage: true, picker: true })
-  // Before the fix the frame clipped "1. Allow once" off the top while digit 1 still selected it.
+  // Before the fix the frame clipped "[1] Allow once" off the top while digit 1 still selected it.
   expect(selected(seen.responses), `${JSON.stringify(seen.responses)}\n${seen.screen}`).toEqual(
     seen.allowOnceOnScreen ? ['allow-once'] : [],
   )
@@ -175,4 +177,10 @@ it('[M-11] slash menu open on a 14-row terminal: digit 2 approves only an Allow 
   expect(selected(seen.responses), `${JSON.stringify(seen.responses)}\n${seen.screen}`).toEqual(
     seen.screen.includes('2. Allow always') ? ['allow-always'] : [],
   )
+})
+
+it('[misclick guard] a key typed as the card pops decides nothing and stays in the draft', async () => {
+  const seen = await scenario({ usage: true, picker: false, draft: 'hello', key: 'y', early: true })
+  expect(selected(seen.responses)).toEqual([])
+  expect(seen.after).toContain('helloy')
 })

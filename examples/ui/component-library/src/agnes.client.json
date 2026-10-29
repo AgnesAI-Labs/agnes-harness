@@ -1,0 +1,52 @@
+{
+  "client": {
+    "id": "component-library",
+    "entry": "./components.js",
+    "lifetime": "session",
+    "slots": [],
+    "slotCatalogVersion": "dsh-client-slots/v1",
+    "intelligentComponents": [
+      {
+        "kind": "@example/ui-components/gauge@1",
+        "propsSchema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["value"],
+          "properties": {
+            "value": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            }
+          }
+        },
+        "maxPropsBytes": 1024,
+        "fallback": "Completion: 42%",
+        "accessibility": {
+          "label": "Completion",
+          "keyboard": true
+        }
+      },
+      {
+        "kind": "@example/ui-components/note@1",
+        "propsSchema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["text"],
+          "properties": {
+            "text": {
+              "type": "string",
+              "maxLength": 256
+            }
+          }
+        },
+        "maxPropsBytes": 1024,
+        "fallback": "Read the review note.",
+        "accessibility": {
+          "label": "Review note",
+          "keyboard": true
+        }
+      }
+    ]
+  }
+}

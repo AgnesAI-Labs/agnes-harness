@@ -69,7 +69,7 @@ describe('parked approval, text protocol, and slot actions', () => {
     const client = createFakeClient()
     const adapter = new FakeChannel()
     adapter.onApprovalAction = () => ({
-      ticket: 'abcdef123456',
+      decisionKey: 's/abcdef123456/1',
       requestSeq: 7,
       verdict: 'allowed-once',
       approverCredential: { kind: 'local' },
@@ -84,14 +84,24 @@ describe('parked approval, text protocol, and slot actions', () => {
 
     await expect(approval.handleAction(action('ignored'))).resolves.toBe(true)
     const call = client.calls.find((entry) => entry.method === 'approval.decide')
-    expect(call?.args.slice(0, 2)).toEqual(['abcdef123456', 'allowed-once'])
-    expect(call?.args[2]).toEqual(expect.objectContaining({ kind: 'channel', userId: 'reviewer' }))
-    expect(call?.args[2]).not.toHaveProperty('actor')
-    expect(call?.args[2]).toHaveProperty('raw', { staffId: 'reviewer' })
+    expect(call?.args[0]).toMatchObject({
+      sessionId: 's',
+      id: 'abcdef123456',
+      revision: 1,
+      commandId: expect.any(String),
+      response: { option: 'allowed-once', value: null },
+    })
+    expect((call?.args[1] as { sourceCredential: unknown })?.sourceCredential).toEqual(
+      expect.objectContaining({ kind: 'channel', userId: 'reviewer' }),
+    )
+    expect((call?.args[1] as { sourceCredential: unknown })?.sourceCredential).not.toHaveProperty('actor')
+    expect((call?.args[1] as { sourceCredential: unknown })?.sourceCredential).toHaveProperty('raw', {
+      staffId: 'reviewer',
+    })
     expect(adapter.sent.at(-1)?.msg.blocks).toEqual([{ kind: 'text', markdown: '已提交审批' }])
   })
 
-  it('denies a durable-grant verdict on the ticket path instead of forwarding it', async () => {
+  it('denies a durable-grant verdict on the decisionKey path instead of forwarding it', async () => {
     // ApprovalAction's wire type carries the full protocol verdict set, including
     // 'allowed-permanent' for the durable-grant flow other surfaces support. Channels never
     // renders a button for it (OFFERED_OPTION_KINDS has no counterpart), so a card action
@@ -100,7 +110,7 @@ describe('parked approval, text protocol, and slot actions', () => {
     const client = createFakeClient()
     const adapter = new FakeChannel()
     adapter.onApprovalAction = () => ({
-      ticket: 'abcdef123456',
+      decisionKey: 's/abcdef123456/1',
       verdict: 'allowed-permanent',
       approverCredential: { kind: 'local' },
     })
@@ -116,7 +126,7 @@ describe('parked approval, text protocol, and slot actions', () => {
     const adapter = new FakeChannel()
     const approval = new Approval({ adapter, client, cfg: { allowFrom: ['reviewer'] }, log })
 
-    await approval.handleAction(action('appr:abcdef123456:allow_once', 'outsider'))
+    await approval.handleAction(action('appr:s/abcdef123456/1:allow_once', 'outsider'))
     expect(client.calls.filter((entry) => entry.method === 'approval.decide')).toHaveLength(0)
     expect(adapter.sent.at(-1)?.msg).toMatchObject({ ephemeral: true })
   })
@@ -129,12 +139,12 @@ describe('parked approval, text protocol, and slot actions', () => {
     })
     const decide = vi.fn(async () => {
       await gate
-      return { seq: 1 }
+      return { seq: 1, revision: 2, commandId: 'c', digest: '0'.repeat(64) }
     })
     client.approval.decide = decide
     const adapter = new FakeChannel()
     const approval = new Approval({ adapter, client, cfg: { allowFrom: [] }, log })
-    const callback = action('appr:abcdef123456:allow_once')
+    const callback = action('appr:s/abcdef123456/1:allow_once')
 
     const first = approval.handleAction(callback)
     const repeated = approval.handleAction(callback)
@@ -148,7 +158,7 @@ describe('parked approval, text protocol, and slot actions', () => {
     retryClient.approval.decide = vi
       .fn()
       .mockRejectedValueOnce(new Error('offline'))
-      .mockResolvedValueOnce({ seq: 2 })
+      .mockResolvedValueOnce({ seq: 2, revision: 2, commandId: 'c', digest: '0'.repeat(64) })
     retryClient.claim.once = vi.fn(async () => true)
     const retryAdapter = new FakeChannel()
     const retry = new Approval({ adapter: retryAdapter, client: retryClient, cfg: { allowFrom: [] }, log })
@@ -161,15 +171,20 @@ describe('parked approval, text protocol, and slot actions', () => {
     retryClient.claim.once = vi.fn(async () => {
       throw new Error('claim unavailable')
     })
-    vi.mocked(retryClient.approval.decide).mockResolvedValue({ seq: 3 })
-    await expect(retry.handleAction(action('appr:second-ticket:allow_once'))).resolves.toBe(true)
+    vi.mocked(retryClient.approval.decide).mockResolvedValue({
+      seq: 3,
+      revision: 2,
+      commandId: 'c',
+      digest: '0'.repeat(64),
+    })
+    await expect(retry.handleAction(action('appr:s/second-decisionKey/1:allow_once'))).resolves.toBe(true)
     expect(retryAdapter.sent.at(-1)?.msg.blocks).toEqual([{ kind: 'text', markdown: '已提交审批' }])
   })
 
   it.each([
     ['self-approval', '不能自批'],
-    ['ticket expired', '审批已过期'],
-    ['unknown ticket', '审批无效'],
+    ['decisionKey expired', '审批已过期'],
+    ['unknown decisionKey', '审批无效'],
   ])('maps -32009 reason %s to stable channel copy', async (reason, expected) => {
     const client = createFakeClient()
     client.approval.decide = vi.fn(async () => {
@@ -178,11 +193,11 @@ describe('parked approval, text protocol, and slot actions', () => {
     const adapter = new FakeChannel()
     const approval = new Approval({ adapter, client, cfg: { allowFrom: [] }, log })
 
-    await expect(approval.handleAction(action('appr:abcdef123456:reject_once'))).resolves.toBe(true)
+    await expect(approval.handleAction(action('appr:s/abcdef123456/1:reject_once'))).resolves.toBe(true)
     expect(adapter.sent.at(-1)?.msg.blocks).toEqual([{ kind: 'text', markdown: expected }])
   })
 
-  it('resolves a unique pending ticket prefix and leaves unmatched text as ordinary input', async () => {
+  it('resolves a unique pending decisionKey prefix and leaves unmatched text as ordinary input', async () => {
     const client = createFakeClient()
     const adapter = new FakeChannel()
     const session = await client.session.attach('session')
@@ -204,18 +219,19 @@ describe('parked approval, text protocol, and slot actions', () => {
           summary: 'Export',
           risk: 'always',
           options: ['allow_once', 'reject_once'],
-          ticket: 'abcdef999',
+          decisionRef: { sessionId: 's', id: 'abcdef999', revision: 1 },
         },
       ],
     })
     await expect(approval.handleText('session', session, text('拒绝 abcdef'))).resolves.toBe(true)
-    expect(client.calls.find((entry) => entry.method === 'approval.decide')?.args.slice(0, 2)).toEqual([
-      'abcdef999',
-      'rejected',
-    ])
+    expect(client.calls.find((entry) => entry.method === 'approval.decide')?.args[0]).toMatchObject({
+      sessionId: 's',
+      id: 'abcdef999',
+      response: { option: 'rejected', value: null },
+    })
   })
 
-  it('requires a full ticket when a six-character prefix is ambiguous', async () => {
+  it('requires a full request ID when a six-character prefix is ambiguous', async () => {
     const client = createFakeClient()
     const adapter = new FakeChannel()
     const session = await client.session.attach('session')
@@ -233,19 +249,21 @@ describe('parked approval, text protocol, and slot actions', () => {
         summary: 'Export',
         risk: 'always' as const,
         options: ['allow_once' as const],
-        ticket: `abcdef${suffix}`,
+        decisionRef: { sessionId: 's', id: `abcdef${suffix}`, revision: 1 },
       })),
     })
     const approval = new Approval({ adapter, client, cfg: { allowFrom: [] }, log })
 
     await expect(approval.handleText('session', session, text('同意 abcdef'))).resolves.toBe(true)
     expect(adapter.sent.at(-1)?.msg.blocks).toEqual([
-      { kind: 'text', markdown: '匹配到多条审批，请提供完整 ticket' },
+      { kind: 'text', markdown: '匹配到多条审批，请提供完整请求 ID' },
     ])
     expect(client.calls.filter((entry) => entry.method === 'approval.decide')).toHaveLength(0)
 
     await expect(approval.handleText('session', session, text('同意 abcdef1'))).resolves.toBe(true)
-    expect(client.calls.find((entry) => entry.method === 'approval.decide')?.args[0]).toBe('abcdef1')
+    expect(client.calls.find((entry) => entry.method === 'approval.decide')?.args[0]).toMatchObject({
+      id: 'abcdef1',
+    })
   })
 
   it('coalesces concurrent slot repeats and retries after a failed submission', async () => {
@@ -441,7 +459,7 @@ describe('parked approval, text protocol, and slot actions', () => {
             summary: 'Export',
             risk: 'always',
             options: ['allow_once'],
-            ticket: 'abcdef-ticket',
+            decisionRef: { sessionId: 's', id: 'abcdef-decisionKey', revision: 1 },
           },
           {
             kind: 'slot',

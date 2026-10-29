@@ -1,7 +1,7 @@
+import { createMemoryAudit } from '@agnes/host-infrastructure/audit'
 import { describe, expect, it } from 'vitest'
-import type { Assembled } from '../src/assemble.js'
-import { createMemoryAudit } from '../src/audit.js'
-import { closeHost, Rollback } from '../src/lifecycle.js'
+import type { Assembled } from '../src/runtime/assemble/assemble.js'
+import { closeHost, Rollback } from '../src/runtime/lifecycle/lifecycle.js'
 
 describe('Rollback', () => {
   // The close order is the one claim the audit trail cannot make: `host.closed` being the last line

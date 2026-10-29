@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { PermissionGate, type PermissionRequest } from '../src/permission.js'
+import { PermissionGate, type PermissionRequest, unansweredPermission } from '../src/permission.js'
 
 const allowOption = { optionId: 'a', name: 'allow', kind: 'allow_once' as const }
 const request: PermissionRequest = {
@@ -12,12 +12,12 @@ const request: PermissionRequest = {
 }
 const rejected = { outcome: { outcome: 'selected', optionId: 'r' } }
 afterEach(() => vi.useRealTimers())
-it('defaults to rejection, or cancellation when no reject option is offered', async () => {
+it('reports no-handler independently of offered reject options', async () => {
   const gate = new PermissionGate()
-  expect(await gate.answer(request)).toEqual(rejected)
-  expect(await gate.answer({ ...request, options: [allowOption] })).toEqual({
-    outcome: { outcome: 'cancelled' },
-  })
+  expect(await gate.answer(request)).toEqual(unansweredPermission('no-handler'))
+  expect(await gate.answer({ ...request, options: [allowOption] })).toEqual(
+    unansweredPermission('no-handler'),
+  )
 })
 it('maps valid outcomes against an immutable option snapshot', async () => {
   const gate = new PermissionGate()
@@ -25,7 +25,7 @@ it('maps valid outcomes against an immutable option snapshot', async () => {
     if (req.options[0]) req.options[0].optionId = 'forged'
     return { optionId: 'forged' }
   })
-  expect(await gate.answer(request)).toEqual(rejected)
+  expect(await gate.answer(request)).toEqual(unansweredPermission('invalid-answer'))
   gate.register(async () => ({ verdict: 'allowed-once' }))
   expect(await gate.answer(request)).toEqual({ outcome: { outcome: 'selected', optionId: 'a' } })
 })
@@ -37,18 +37,18 @@ it('keeps an explicit reject option distinct from a dismissed approval', async (
 it('accepts the Agnes permanent verdict type without mapping it onto an ACP option', async () => {
   const gate = new PermissionGate()
   gate.register(async () => ({ verdict: 'allowed-permanent' }))
-  expect(await gate.answer(request)).toEqual(rejected)
+  expect(await gate.answer(request)).toEqual(unansweredPermission('invalid-answer'))
 })
 it('refuses duplicate option identities and exceptions', async () => {
   const gate = new PermissionGate()
   gate.register(async () => ({ optionId: 'a' }))
-  expect(await gate.answer({ ...request, options: [allowOption, allowOption] })).toEqual({
-    outcome: { outcome: 'cancelled' },
-  })
+  expect(await gate.answer({ ...request, options: [allowOption, allowOption] })).toEqual(
+    unansweredPermission('invalid-answer'),
+  )
   gate.register(async () => {
     throw new Error('PRIVATE')
   })
-  expect(await gate.answer(request)).toEqual(rejected)
+  expect(await gate.answer(request)).toEqual(unansweredPermission('transport'))
 })
 it.each(['dispose', 'close'])('ends an unanswered request on %s and ignores a late allow', async (action) => {
   const gate = new PermissionGate()
@@ -63,9 +63,9 @@ it.each(['dispose', 'close'])('ends an unanswered request on %s and ignores a la
   await Promise.resolve()
   if (action === 'dispose') off()
   else gate.close()
-  expect(await pending).toEqual({ outcome: { outcome: 'cancelled' } })
+  expect(await pending).toEqual(unansweredPermission('detached'))
   allow({ optionId: 'a' })
-  expect(await pending).toEqual({ outcome: { outcome: 'cancelled' } })
+  expect(await pending).toEqual(unansweredPermission('detached'))
 })
 it('honors the supplied absolute deadline and leaves no timer after refusal', async () => {
   vi.useFakeTimers()
@@ -81,7 +81,7 @@ it('honors the supplied absolute deadline and leaves no timer after refusal', as
   expect(settled).toBe(false)
   await vi.advanceTimersByTimeAsync(1)
   expect(settled).toBe(true)
-  expect(await pending).toEqual({ outcome: { outcome: 'cancelled' } })
+  expect(await pending).toEqual(unansweredPermission('deadline'))
   expect(vi.getTimerCount()).toBe(0)
 })
 
@@ -97,7 +97,7 @@ it.each(['dispose', 'close'])('signals the UI to close when the permission handl
   expect(signal?.aborted).toBe(false)
   if (action === 'dispose') off()
   else gate.close()
-  expect(await pending).toEqual({ outcome: { outcome: 'cancelled' } })
+  expect(await pending).toEqual(unansweredPermission('detached'))
   expect(signal?.aborted).toBe(true)
 })
 
@@ -112,7 +112,7 @@ it('does not turn a UI rejection emitted during session switch into a user rejec
   const pending = gate.answer(request)
   await Promise.resolve()
   off()
-  expect(await pending).toEqual({ outcome: { outcome: 'cancelled' } })
+  expect(await pending).toEqual(unansweredPermission('detached'))
 })
 
 it('uses independent request signals: a deadline closes one UI without cancelling its sibling', async () => {
@@ -130,7 +130,7 @@ it('uses independent request signals: a deadline closes one UI without cancellin
   const first = gate.answer({ ...request, deadlineMs: 1100 })
   const second = gate.answer(request)
   await vi.advanceTimersByTimeAsync(100)
-  expect(await first).toEqual({ outcome: { outcome: 'cancelled' } })
+  expect(await first).toEqual(unansweredPermission('deadline'))
   expect(signals[0]?.aborted).toBe(true)
   expect(signals[1]?.aborted).toBe(false)
   expect(signals[0]).not.toBe(signals[1])
@@ -138,4 +138,23 @@ it('uses independent request signals: a deadline closes one UI without cancellin
   expect(await second).toEqual({ outcome: { outcome: 'selected', optionId: 'a' } })
   expect(signals[1]?.aborted).toBe(true)
   expect(vi.getTimerCount()).toBe(0)
+})
+
+it('withdraws exactly one offer on server stop and ignores its late allow', async () => {
+  const gate = new PermissionGate()
+  const signals: AbortSignal[] = []
+  const answers: Array<(value: { optionId: string }) => void> = []
+  gate.register((_req, context) => {
+    signals.push(context.signal)
+    return new Promise((resolve) => answers.push(resolve))
+  })
+  const first = gate.answer({ ...request, requestId: 'first' })
+  const second = gate.answer({ ...request, requestId: 'second' })
+  await Promise.resolve()
+  gate.withdraw('first', 'stopped')
+  expect(await first).toEqual(unansweredPermission('stopped'))
+  expect(signals.map((signal) => signal.aborted)).toEqual([true, false])
+  answers[0]?.({ optionId: 'a' })
+  answers[1]?.({ optionId: 'a' })
+  expect(await second).toEqual({ outcome: { outcome: 'selected', optionId: 'a' } })
 })

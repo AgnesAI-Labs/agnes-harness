@@ -1,8 +1,11 @@
 import type { PackageOperation } from '@agnes/protocol'
-import type { JSX } from 'react'
+import type { JSX, ReactNode } from 'react'
 import { ADMIN_LOCALE_NAMESPACE, operationLabel } from './admin-text.js'
 import { adminLocaleCatalog } from './locales/admin.js'
 import { ADMIN_DETAIL_LOCALE_NAMESPACE, adminDetailLocaleCatalog } from './locales/admin-detail.js'
+import { Button } from './ui/button.js'
+import { IconButton } from './ui/icon-button.js'
+import { Menu } from './ui/menu.js'
 import { useUiText } from './ui-locale.js'
 
 export type DetailActionSpec = Readonly<{
@@ -11,8 +14,11 @@ export type DetailActionSpec = Readonly<{
   disabled?: boolean
   title?: string
   ariaLabel?: string
-  /** 链接型动作渲染为 `<a target="_blank" rel="noopener">`，保留既有 `.plugin-surface-link` 契约。 */
+  /** Render link actions as `<a target="_blank" rel="noopener">`, preserving the `.plugin-surface-link` contract. */
   href?: string
+  /** The detail tab this action belongs to; ungrouped actions stay in the footer. */
+  group?: 'overview' | 'trust' | 'versions'
+  danger?: boolean
   onClick(): void
 }>
 
@@ -42,25 +48,32 @@ function BlockersSection({
 }
 
 /**
- * 详情/操作模态的内容体。`<dialog>` 元素留在宿主骨架里（showModal、Escape、焦点归还
- * 由壳管理）；React 只替换 dialog 的子节点，所以这里没有 dialog 元素本身。
+ * Detail/action modal body. The host skeleton retains `<dialog>` and manages showModal, Escape
+ * and focus restoration. React replaces only its children, so this component has no dialog element.
  */
 export function DetailContent({
   heading,
   intro,
   version,
   stateText,
+  metadata,
+  content,
   facts,
   blockerSections,
   operations,
   lastOperationLabel,
   actions,
+  headAction,
   onClose,
   onCancelOperation,
 }: {
+  /** The main control of the thing shown, e.g. a plugin's on/off switch. */
+  headAction?: ReactNode
   heading: string
   intro: string
   version: string | undefined
+  content?: ReactNode
+  metadata?: ReactNode
   stateText: string | undefined
   facts: readonly (readonly [label: string, value: string])[]
   blockerSections: readonly { title: string; items: readonly string[] }[]
@@ -77,27 +90,21 @@ export function DetailContent({
       <div className="admin-detail-head">
         <div className="plugin-detail-heading">
           <h2>{heading}</h2>
-          <button
-            type="button"
-            className="secondary-button compact plugin-detail-close"
+          {headAction}
+          <IconButton
+            name="x"
+            className="plugin-detail-close"
             onClick={onClose}
-            aria-label={t('close.aria', { heading })}
-          >
-            {t('close.label')}
-          </button>
+            label={t('close.aria', { heading })}
+          />
         </div>
         {version && <p className="plugin-detail-version">{version}</p>}
+        {metadata}
         {stateText && <p className="plugin-detail-state">{stateText}</p>}
         <p>{intro}</p>
       </div>
       <div className="admin-detail-scroll">
-        {facts.length > 0 && (
-          <dl className="plugin-facts">
-            {facts.map(([label, value]) => (
-              <FragmentedFact key={`${label}:${value}`} label={label} value={value} />
-            ))}
-          </dl>
-        )}
+        {/* What blocks the plugin or is still running comes first; it is why the user is here. */}
         {blockerSections.map((section) => (
           <BlockersSection key={section.title} title={section.title} items={section.items} />
         ))}
@@ -118,50 +125,104 @@ export function DetailContent({
                   {operation.retryable ? ` · ${t('operations.retry')}` : ''}
                 </p>
                 {canCancel && (
-                  <button
-                    type="button"
-                    className="secondary-button compact"
-                    onClick={(event) => onCancelOperation(operation.operationId, event.currentTarget)}
+                  <Button
+                    htmlType="button"
+                    size="small"
+                    onClick={(event) =>
+                      event.currentTarget instanceof HTMLButtonElement &&
+                      onCancelOperation(operation.operationId, event.currentTarget)
+                    }
                   >
                     {t('operations.cancel')}
-                  </button>
+                  </Button>
                 )}
               </div>
             ))}
           </section>
         )}
+        {content}
+        {facts.length > 0 && (
+          <dl className="plugin-facts">
+            {facts.map(([label, value]) => (
+              <FragmentedFact key={`${label}:${value}`} label={label} value={value} />
+            ))}
+          </dl>
+        )}
       </div>
-      <div className="admin-detail-actions">
-        {actions.map((action) =>
-          action.href ? (
-            <a
+      <div className="admin-detail-actions" hidden={actions.length === 0}>
+        {actions
+          .filter(
+            (action) =>
+              !action.href &&
+              (action.className.includes('--primary') || action.className.includes('primary-button')),
+          )
+          .map((action) => (
+            <Button
               key={action.label}
-              className={action.className}
-              href={action.href}
+              appearance="primary"
+              className={actionClasses(action.className)}
+              title={action.title}
+              aria-label={action.ariaLabel}
+              disabled={action.disabled ?? false}
+              onClick={action.onClick}
+            >
+              {action.label}
+            </Button>
+          ))}
+        {actions
+          .filter((action) => action.href)
+          .map((action) => (
+            <Button
+              key={action.label}
+              className={['plugin-surface-link', actionClasses(action.className)].filter(Boolean).join(' ')}
+              {...(action.href ? { href: action.href } : {})}
               target="_blank"
               rel="noopener"
               aria-label={action.ariaLabel}
               onClick={action.onClick}
             >
               {action.label}
-            </a>
-          ) : (
-            <button
-              key={action.label}
-              type="button"
-              className={action.className}
-              disabled={action.disabled}
-              title={action.title}
-              aria-label={action.ariaLabel}
-              onClick={action.onClick}
-            >
-              {action.label}
-            </button>
-          ),
+            </Button>
+          ))}
+        {actions.filter(
+          (action) =>
+            !action.href &&
+            !(action.className.includes('--primary') || action.className.includes('primary-button')),
+        ).length > 0 && (
+          <Menu
+            label={t('actions')}
+            trigger={<Button>{t('actions')}</Button>}
+            items={actions
+              .filter(
+                (action) =>
+                  !action.href &&
+                  !(action.className.includes('--primary') || action.className.includes('primary-button')),
+              )
+              .map((action, index) => ({
+                id: `detail-${index}`,
+                label: action.label,
+                className: actionClasses(action.className),
+                ...(action.ariaLabel ? { ariaLabel: action.ariaLabel } : {}),
+                ...(action.title ? { title: action.title } : {}),
+                disabled: action.disabled ?? false,
+                ...(action.title ? { disabledReason: action.title } : {}),
+                danger: action.className.includes('danger'),
+                onSelect: action.onClick,
+              }))}
+          />
         )}
       </div>
     </>
   )
+}
+
+/** Retain caller skin hooks while replacing legacy control classes with primitives. */
+function actionClasses(value: string): string {
+  const legacy = new Set(['primary-button', 'secondary-button', 'danger-button', 'compact'])
+  return value
+    .split(/\s+/)
+    .filter((name) => !legacy.has(name) && !name.startsWith('agh-btn'))
+    .join(' ')
 }
 
 function FragmentedFact({ label, value }: { label: string; value: string }): JSX.Element {

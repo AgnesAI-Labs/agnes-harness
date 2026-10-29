@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { matchesRatchetKey } from './ratchet-key.js'
 import { isTestFile, LITERAL_SCAN_EXCLUDE_DIRS, listSourceFiles, repoRoot } from './repo.js'
+import { matchesScopeKey } from './scope-key.js'
 
 const root = repoRoot()
 
@@ -28,9 +28,9 @@ const root = repoRoot()
 
 // The one place in the repo allowed to contain either banned shape, because it *is* the shape: this
 // module's whole job is to be the layout. Matched the same way kernel-create.test.ts blesses
-// packages/host/src/assemble -- by path-boundary, not by name -- so a future split into a paths/
+// packages/host/src/runtime/assemble -- by path-boundary, not by name -- so a future split into a paths/
 // directory (as assemble.ts was later split) stays exempt without editing this file.
-const PATHS_MODULE_ABS = join(root, 'packages/host/src/paths')
+const PATHS_MODULE_ABS = join(root, 'packages/host-common/src/paths')
 // Rule B's one owner. The directory name lives in @agnes/protocol rather than paths.ts because it is
 // needed by packages that cannot depend on @agnes/host (base, sdk, resource-control-worker, and
 // sandbox-remote through core's re-export); protocol is the one layer all of them already sit above.
@@ -137,9 +137,9 @@ const HARNESS_DIR_LITERAL_EXEMPTIONS: readonly HarnessDirLiteralExemption[] = []
 // Rule A's own exemption list, kept separate from Rule B's rather than merged into one shape: the two
 // rules match different things (a call shape vs. a string literal) and a merged type would need an
 // optional-or-union field to tell them apart, which is more confusing than two small parallel lists.
-// Exactly one entry. It is not an architectural boundary at all -- it is the precise DRY gap PATH-01's own report named and chose not to migrate,
-// re-verified here rather than taken on faith, with an attempted fix that ran into a wall this task
-// cannot move. See the entry's `reason` for the full account.
+// Two reviewed entries. The history-search route cannot import host's dataDir() across the layer
+// boundary. The daemon line is the DRY gap PATH-01 named and chose not to migrate, re-verified
+// here rather than taken on faith. See each entry's `reason`.
 type JoinDataCacheExemption = {
   readonly path: string
   readonly line: string
@@ -148,30 +148,22 @@ type JoinDataCacheExemption = {
 
 const JOIN_DATA_CACHE_EXEMPTIONS: readonly JoinDataCacheExemption[] = [
   {
+    path: 'packages/web-server/src/history-route.ts',
+    line: "return join(home, 'data')",
+    reason:
+      'web-server is layer 1 and cannot import dataDir() from @agnes/host (layer 7). The history ' +
+      'search route still has to find the ledger directory when the launcher cannot pass historyDataDir. ' +
+      "This one join matches packages/host-common/src/paths.ts dataDir: the home root plus 'data'. The harness " +
+      'directory name comes from AGH_DIR, not a second literal.',
+  },
+  {
     path: 'packages/daemon/src/supervisor/scope.ts',
     line: "expandHome(inputs.user?.cacheDir ?? join(home, 'cache'), input.osHome),",
     reason:
       "join(home, 'cache') here computes byte-for-byte the value importing and calling cacheDir(home) " +
       'from @agnes/host would -- read both implementations side by side to confirm this, not assumed. ' +
-      "PATH-01's own report named this exact line as a deliberate non-migration: the value is already " +
-      "correct (unlike dataDir's two call sites, which actively disagreed), so this is a DRY gap, not " +
-      'a live bug. This session tried to close it anyway. Migrating costs exactly one line: adding ' +
-      "cacheDir to this file's existing @agnes/host import forces one new line, because that import " +
-      "is already multi-line and biome's formatter always places one named import per line once a " +
-      'block is multi-line (verified by attempting the one-line form and reading the exact diagnostic ' +
-      "biome check produced). This file's own line-count ratchet has zero spare for that line: as " +
-      'committed on main, tools/guards/ratchet.json caps this file at 215 and the file itself measures ' +
-      '214, but a *different*, already in-flight, uncommitted change elsewhere in this working tree ' +
-      'has independently tightened both the ratchet.json entry and its INITIAL_CEILING pin in ' +
-      "tools/guards/src/ratchet.test.ts to 214 -- and INITIAL_CEILING's entire purpose is refusing to " +
-      "let a ratchet.json entry rise again once recorded, which is exactly the 'raise the ceiling to " +
-      "fit' move this migration would otherwise reach for. Raising either file here would both fight " +
-      'a guard built to prevent that and risk colliding with a concurrent, uncommitted change this ' +
-      'task was told to stay out of. No line elsewhere in the file could be freed without cosmetically ' +
-      'restructuring already-reviewed code; comments do not even count toward the ratchet (see ' +
-      'count-lines.ts), so trimming one would not have helped either. Left exactly as PATH-01 left ' +
-      'it. Recommended follow-up: once the in-flight ratchet change lands, re-attempt this migration ' +
-      'against whatever ceiling it leaves behind.',
+      'The value matches the canonical helper; this allowance documents the remaining duplicate ' +
+      'layout calculation. Scope line counts are report-only; file and function ceilings are separate gates.',
   },
 ]
 
@@ -181,13 +173,13 @@ describe('the Agnes home directory layout is reconstructed in exactly one place'
     expect(total).toBeGreaterThan(100)
   })
 
-  it("no join(<path>, 'data' | 'cache') outside packages/host/src/paths, unless named and reasoned above", () => {
+  it("no join(<path>, 'data' | 'cache') outside packages/host-common/src/paths, unless named and reasoned above", () => {
     const offenders: string[] = []
     for (const scanDir of SCAN_DIRS) {
       for (const f of listSourceFiles(scanDir, { excludeDirs: EXCLUDE_DIRS })) {
         const rel = relative(root, f).split(sep).join('/')
         if (isTestFile(rel)) continue
-        if (matchesRatchetKey(f, PATHS_MODULE_ABS)) continue
+        if (matchesScopeKey(f, PATHS_MODULE_ABS)) continue
         const text = readFileSync(f, 'utf8')
         const lines = text.split('\n')
         for (const m of text.matchAll(JOIN_DATA_CACHE_RE)) {
@@ -206,7 +198,7 @@ describe('the Agnes home directory layout is reconstructed in exactly one place'
     ).toEqual([])
   })
 
-  it("packages/host/src/paths still spells out 'data' and 'cache' exactly where expected", () => {
+  it("packages/host-common/src/paths still spells out 'data' and 'cache' exactly where expected", () => {
     // Pins the exempt module's own shape, the same way kernel-create.test.ts pins Kernel.create to
     // "zero or exactly one" rather than merely excluding the assemble directory from the count. An
     // exemption that only checks *where* a literal is, never *how many* are there, would not notice
@@ -227,7 +219,7 @@ describe('the Agnes home directory layout is reconstructed in exactly one place'
       for (const f of listSourceFiles(scanDir, { excludeDirs: EXCLUDE_DIRS })) {
         const rel = relative(root, f).split(sep).join('/')
         if (isTestFile(rel)) continue
-        if (matchesRatchetKey(f, NAMESPACE_MODULE_ABS)) continue
+        if (matchesScopeKey(f, NAMESPACE_MODULE_ABS)) continue
         const text = readFileSync(f, 'utf8')
         const lines = text.split('\n')
         for (const m of text.matchAll(HARNESS_DIR_LITERAL_RE)) {
@@ -250,11 +242,7 @@ describe('the Agnes home directory layout is reconstructed in exactly one place'
     // The same "exactly one place" pin as the paths.ts check above: excluding the owner from the scan
     // must not let the owner itself grow a second spelling unnoticed.
     const text = readFileSync(`${NAMESPACE_MODULE_ABS}.ts`, 'utf8')
-    expect([...text.matchAll(HARNESS_DIR_LITERAL_RE)].map((m) => m[0])).toEqual([
-      "'.agh'",
-      "'.agh/secrets'",
-      "'.agnes/secrets'",
-    ])
+    expect([...text.matchAll(HARNESS_DIR_LITERAL_RE)].map((m) => m[0])).toEqual(["'.agh'", "'.agh/secrets'"])
   })
 
   it('every HARNESS_DIR_LITERAL_EXEMPTIONS entry is still consumed by real source', () => {
@@ -302,8 +290,8 @@ describe('the Agnes home directory layout is reconstructed in exactly one place'
     }
   })
 
-  it('exactly the one known JOIN_DATA_CACHE_EXEMPTIONS entry, no more, no fewer', () => {
-    expect(JOIN_DATA_CACHE_EXEMPTIONS.length).toBe(1)
+  it('exactly the two reviewed JOIN_DATA_CACHE_EXEMPTIONS entries, no more, no fewer', () => {
+    expect(JOIN_DATA_CACHE_EXEMPTIONS.length).toBe(2)
   })
 })
 

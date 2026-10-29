@@ -1,4 +1,6 @@
+import { createAnsi } from '../ansi.js'
 import { type Component, escapeControl } from '../component.js'
+import { type ThemedAnsi, TuiTheme } from '../theme.js'
 import { fitLine } from './line.js'
 
 const FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
@@ -12,7 +14,10 @@ export class Loader implements Component {
   private i = 0
   private stopped = false
   private hidden = false
-  constructor(private label: string) {}
+  constructor(
+    private label: string,
+    private readonly ansi: ThemedAnsi = new TuiTheme('mono').ansi(createAnsi('none')),
+  ) {}
   tick(): void {
     if (!this.stopped) this.i = (this.i + 1) % FRAMES.length
   }
@@ -41,6 +46,14 @@ export class Loader implements Component {
   invalidate(): void {}
   render(width: number): string[] {
     if (this.hidden) return []
-    return [fitLine(`${this.stopped ? '✓' : FRAMES[this.i]} ${escapeControl(this.label)}`, width)]
+    const label = escapeControl(this.label)
+    return [
+      fitLine(
+        this.stopped
+          ? `${this.ansi.fg('success', '✓')} ${this.ansi.fg('faint', label)}`
+          : `${this.ansi.fg('accent', FRAMES[this.i] ?? '')} ${this.ansi.dim(label)}`,
+        width,
+      ),
+    ]
   }
 }

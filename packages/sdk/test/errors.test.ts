@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   ClaimDenied,
   JsonRpcError,
-  LoadStalled,
   ProtocolViolation,
   RequestTimeout,
   SdkError,
@@ -41,11 +40,5 @@ describe('SdkError family', () => {
       detail: 'too large',
     })
     expect(new ClaimDenied('timeout').kind).toBe('claim-denied')
-    expect(new LoadStalled('s1', 30_000)).toMatchObject({
-      kind: 'load-stalled',
-      code: 'LOAD_STALLED',
-      sessionId: 's1',
-      ms: 30_000,
-    })
   })
 })

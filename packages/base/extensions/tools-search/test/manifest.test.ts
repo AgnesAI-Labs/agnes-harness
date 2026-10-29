@@ -1,11 +1,14 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import type { Disposer, ExtensionAPI, ToolDef } from '@agnes/extension-api'
+import type { Disposer, ToolDef } from '@agnes/extension-api'
+import { bundledExtensionManifest } from '@agnes/extension-api'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it } from 'vitest'
 import factory, { TOOLS_SEARCH } from '../src/index.js'
 
-const manifest = JSON.parse(
-  readFileSync(fileURLToPath(new URL('../agnes.extension.json', import.meta.url)), 'utf8'),
+const manifest = bundledExtensionManifest(
+  JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')),
 ) as {
   id: string
   version: string
@@ -50,7 +53,7 @@ describe('tools-search manifest', () => {
     // path, so the file has to be there for the declaration to mean anything.
     const entry = fileURLToPath(new URL(`../${manifest.entry.replace(/^\.\//, '')}`, import.meta.url))
     expect(existsSync(entry), entry).toBe(true)
-    expect(manifest.apiRange).toBe('^1.0')
+    expect(manifest.apiRange).toBe('^5.0.0')
     expect(manifest.version).toMatch(/^\d+\.\d+\.\d+$/)
   })
 
@@ -65,7 +68,7 @@ describe('tools-search manifest', () => {
         }
       },
     } as unknown as ExtensionAPI
-    const dispose = (await factory(api)) as Disposer
+    const dispose = (await extensionFactoryOf(factory)(api)) as Disposer
     expect(registered).toEqual(TOOLS_SEARCH.map((t) => t.name))
     // The manifest is what the host grants authority on, and the code is what claims it. Comparing
     // the two lists whole, in order, is what makes a name declared and never registered - or worse,

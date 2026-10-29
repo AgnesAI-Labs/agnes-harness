@@ -1,0 +1,73 @@
+{
+  "name": "@agnes/follow-up-hint",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/follow-up-hint",
+        "export": "default",
+        "default": true,
+        "apiRange": "^5.0.0",
+        "inject": [
+          "hooks",
+          "services"
+        ],
+        "capabilities": {
+          "hooks": [
+            "session_start",
+            "shutdown"
+          ],
+          "services": [
+            {
+              "name": "replies.read",
+              "kind": "query",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "turn": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "turn"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {
+                "type": "object",
+                "properties": {
+                  "turn": {
+                    "type": "integer"
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 160
+                  }
+                },
+                "additionalProperties": false
+              },
+              "timeoutMs": 1000,
+              "maxResultBytes": 1024
+            }
+          ]
+        },
+        "metadata": {
+          "displayName": "Reply suggestions",
+          "summary": "Suggests one editable next question after a successful reply using the auxiliary model.",
+          "description": "Suggests one editable next question after a successful reply using the auxiliary model.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "回复建议",
+              "summary": "使用辅助模型，在回复成功完成后建议一个可编辑的后续问题。",
+              "description": "使用辅助模型，在回复成功完成后建议一个可编辑的后续问题。"
+            }
+          }
+        }
+      }
+    ]
+  }
+}

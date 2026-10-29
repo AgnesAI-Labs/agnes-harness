@@ -1,0 +1,32 @@
+{
+  "name": "@agnes-examples/demos",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "test": "vitest run test/demos.e2e.test.ts",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@agnes/protocol": "workspace:*",
+    "@agnes/sdk": "workspace:*"
+  },
+  "agnes": {
+    "metadata": {
+      "displayName": "Product demonstrations",
+      "summary": "Runs isolated examples of business agents, retained versions and human-reviewed plugin growth.",
+      "description": "Runs isolated examples of business agents, retained versions and human-reviewed plugin growth.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "产品演示",
+          "summary": "运行隔离的业务 Agent、旧版本保留和人工审核插件成长示例。",
+          "description": "运行隔离的业务 Agent、旧版本保留和人工审核插件成长示例。"
+        }
+      }
+    },
+    "provides": [
+      "service"
+    ]
+  }
+}

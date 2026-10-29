@@ -1,9 +1,9 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
 import { afterEach, expect, it } from 'vitest'
-import { createPlatform } from '../src/adapters/platform.js'
-import { trustedHookCommands } from '../src/assemble/trusted-hooks.js'
+import { trustedHookCommands } from '../src/runtime/assemble/trusted-hooks.js'
 
 const dirs: string[] = []
 const fixture = () => {
@@ -37,6 +37,11 @@ it('matches source, digest and exact workspace, keeps a private copy and exposes
   expect(capability?.allowsUnconfined('workspace', digest)).toBe(true)
   expect(Object.isFrozen(capability)).toBe(true)
   expect(Object.keys(capability)).toEqual(['allowsUnconfined'])
+  const across = trustedHookCommands(policy(other), workspace, semantics)
+  expect(across?.allowsUnconfined('workspace', digest)).toBe(false)
+  expect(across?.allowsUnconfined('workspace', digest, other)).toBe(true)
+  expect(across?.allowsUnconfined('workspace', digest, workspace)).toBe(false)
+  expect(across?.allowsUnconfined('workspace', digest, join(other, 'missing'))).toBe(false)
 })
 it('preserves no-grant defaults and rejects malformed policy or unknown path semantics', () => {
   const { workspace } = fixture()

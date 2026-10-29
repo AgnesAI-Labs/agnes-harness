@@ -1,89 +1,64 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
-import { setTimeout as delay } from 'node:timers/promises'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
-  type PackageAdminMethodName,
-  type PackageInstalledDescriptor,
-  type PackageOperation,
-  type PackageOperationReceipt,
-  type PackagePreview,
-  rpcError,
-} from '@agnes/protocol'
-import { type ConnectionState, connActor, type LocalEndpoint } from '../local/endpoint.js'
-import { PrompterRouter } from '../local/prompter.js'
-import {
+  type AuthoringSandboxContext,
+  authoringSandbox,
+  createAuthoringTestRunner,
   localPackageAdminAuthority,
   type PackageAdminService,
-  packageOperationTerminal,
-} from '../packages/index.js'
+} from '@agnes/daemon-admin/packages/index'
+import { type ConnectionState, connActor, type LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
+import {
+  acquirePermissionLease,
+  assertCurrentPermission,
+  assertPermissionBinding,
+  currentPermissionContext,
+  PrompterRouter,
+} from '@agnes/daemon-rpc/local/prompter'
+import { createFileAudit } from '@agnes/host'
+import {
+  type AuthoringCandidate,
+  automaticPermissionDecision,
+  type PackageAdminMethodName,
+  rpcError,
+} from '@agnes/protocol'
+import { managementConnection } from './management-connection.js'
 import { checkedPluginFiles } from './plugin-files.js'
 
-type Receipt = {
-  proposalId: string
-  owner: string
-  sessionKey: string
-  clientId: string
-  packageId: string
-  integrity: string
-  capabilityHash: string
-  state: 'prepared' | 'installing' | 'submitted' | 'cancelled' | 'failed'
-  operationId?: string
-}
-type Proposal = {
-  receipt: Receipt
-  source: { type: 'file'; ref: string }
-  preview: PackagePreview
-  expires: number
-  busy: boolean
-  cancel?: () => void
-}
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
-function fail(code: string): never {
-  throw rpcError('SEMANTIC_REJECTED', { code })
-}
-/** Narrow host-owned authoring lane. It grants no generic package RPC or arbitrary file reads. */
+/** Agent authoring uses the effective session permission decision for tests and publication. */
 export function createPluginManageRequests(options: {
   directory: string
+  home?: string
   profile: string
   service(): PackageAdminService | undefined
+  connections?(): ConnectionState[]
   current(key: string): ConnectionState | undefined
   endpoint(conn: ConnectionState): LocalEndpoint | undefined
   owner(key: string): { principalId: string; active: boolean } | undefined
 }) {
-  const directory = join(options.directory, 'plugin-onboarding')
-  const proposals = new Map<string, Proposal>()
   const pending = new Map<string, AbortController>()
-  const receiptPath = (id: string) => join(directory, `${id}.json`)
-  const save = async (receipt: Receipt) => {
-    await mkdir(directory, { recursive: true, mode: 0o700 })
-    const temp = `${receiptPath(receipt.proposalId)}.${randomUUID()}.tmp`
-    await writeFile(temp, JSON.stringify(receipt), { mode: 0o600, flush: true })
-    await rename(temp, receiptPath(receipt.proposalId))
-  }
-  return async (sessionKey: string, requestId: string, method: string, raw: unknown): Promise<unknown> => {
+  return async (
+    sessionKey: string,
+    requestId: string,
+    method: string,
+    raw: unknown,
+    workerSignal?: AbortSignal,
+  ): Promise<unknown> => {
     const key = `${sessionKey}\0${requestId}`
     if (method === 'plugin-manage-abort') {
       if (object(raw) && typeof raw.requestId === 'string')
         pending.get(`${sessionKey}\0${raw.requestId}`)?.abort()
       return undefined
     }
-    const conn = options.current(sessionKey)
+    const live = managementConnection(options, sessionKey, 'PLUGIN_LOCAL_OWNER_REQUIRED', {
+      permission: 'PLUGIN_PERMISSION_REQUIRED',
+    })
+    const conn = live.get()
     const assertActive = () => {
-      const owner = options.owner(sessionKey)
-      if (!conn || options.current(sessionKey) !== conn || !options.endpoint(conn))
-        throw rpcError('CAPABILITY_DENIED', { code: 'PLUGIN_CONNECTION_CLOSED' })
-      if (
-        conn.authKind !== 'local' ||
-        conn.credentialKind !== 'local' ||
-        !owner?.active ||
-        owner.principalId !== conn.principalId
-      )
-        throw rpcError('CAPABILITY_DENIED', { code: 'PLUGIN_LOCAL_OWNER_REQUIRED' })
-      if (!conn.capabilities.permission)
-        throw rpcError('CAPABILITY_DENIED', { code: 'PLUGIN_PERMISSION_REQUIRED' })
-      if (!conn.attached.has(sessionKey))
-        throw rpcError('CAPABILITY_DENIED', { code: 'PLUGIN_SESSION_NOT_ATTACHED' })
+      live.get()
     }
     assertActive()
     if (
@@ -91,9 +66,21 @@ export function createPluginManageRequests(options: {
       !object(raw) ||
       Object.keys(raw).some(
         (k) =>
-          !['input', 'sessionKey', 'toolUseId', 'leaseId', 'packageId', 'snapshotId', 'rowId'].includes(k),
+          ![
+            'input',
+            'candidateTestSandbox',
+            'turn',
+            'sessionKey',
+            'toolUseId',
+            'leaseId',
+            'packageId',
+            'snapshotId',
+            'rowId',
+          ].includes(k),
       ) ||
       raw.sessionKey !== sessionKey ||
+      !Number.isSafeInteger(raw.turn) ||
+      Number(raw.turn) < 0 ||
       !['toolUseId', 'leaseId', 'packageId', 'snapshotId', 'rowId'].every(
         (k) =>
           typeof raw[k] === 'string' && (raw[k] as string).length > 0 && (raw[k] as string).length <= 512,
@@ -101,17 +88,46 @@ export function createPluginManageRequests(options: {
       !object(raw.input)
     )
       throw rpcError('INVALID_PARAMS')
-    const input = raw.input
+    const candidateTestSandbox = raw.candidateTestSandbox as AuthoringSandboxContext['session']
     if (
-      !['prepare', 'commit', 'status', 'cancel'].includes(String(input.action)) ||
-      Object.keys(input).some((k) => !['action', 'files', 'proposalId'].includes(k))
+      candidateTestSandbox !== undefined &&
+      (!object(candidateTestSandbox) ||
+        !object(candidateTestSandbox.policy) ||
+        !Array.isArray(candidateTestSandbox.policy.rules) ||
+        !['allow', 'deny'].includes(candidateTestSandbox.network) ||
+        typeof candidateTestSandbox.local !== 'boolean')
     )
       throw rpcError('INVALID_PARAMS')
-    if (pending.size >= 32 || pending.has(key)) fail('PLUGIN_REQUEST_LIMIT')
+    const input = raw.input,
+      legacy =
+        input.action === 'prepare' ||
+        input.action === 'commit' ||
+        input.action === 'status' ||
+        input.action === 'cancel' ||
+        input.action === 'test'
+    const action = String(input.action).replace(/^candidate\./, '')
+    if (
+      !['create', 'write', 'test', 'submit', 'show', 'prepare', 'commit', 'status', 'cancel'].includes(
+        action,
+      ) ||
+      Object.keys(input).some(
+        (k) =>
+          !['action', 'files', 'proposalId', 'candidateId', 'expectedHash', 'mode', 'remove'].includes(k),
+      )
+    )
+      throw rpcError('INVALID_PARAMS')
+    if (pending.size >= 32 || pending.has(key))
+      throw rpcError('SEMANTIC_REJECTED', { code: 'PLUGIN_REQUEST_LIMIT' })
     const controller = new AbortController()
     pending.set(key, controller)
-    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)])
-    const authority = () => {
+    const signal = AbortSignal.any([
+      controller.signal,
+      AbortSignal.timeout(120_000),
+      ...(workerSignal ? [workerSignal] : []),
+    ])
+    let testContext: AuthoringSandboxContext | undefined
+    const call = async (suffix: string, params: Record<string, unknown>) => {
+      await assertCurrentPermission()
       assertActive()
       signal.throwIfAborted()
       const auth = localPackageAdminAuthority([
@@ -119,253 +135,221 @@ export function createPluginManageRequests(options: {
         'packages.install',
         'packages.trust',
         'packages.activate',
-      ])({ conn, clock: Date.now, signal })
+        'extensions.execute',
+      ])({
+        conn: live.get(),
+        clock: Date.now,
+        signal,
+      })
       if (!auth) throw rpcError('CAPABILITY_DENIED')
-      return auth
-    }
-    const call = (method: PackageAdminMethodName, params: Record<string, unknown>) => {
-      const auth = authority()
       const service = options.service()
-      if (!service) return fail('PLUGIN_MANAGEMENT_UNAVAILABLE')
-      return service.call(method, { ...params, profile: options.profile }, auth)
-    }
-    const effect = async (
-      method: PackageAdminMethodName,
-      params: Record<string, unknown>,
-      commandId: string,
-    ) => (await call(method, { ...params, clientId: conn.clientId, commandId })) as PackageOperationReceipt
-    const list = async () =>
-      ((await call('_agnes/v1/packages.list', {})) as { packages: PackageInstalledDescriptor[] }).packages
-    const wait = async (operationId: string) => {
-      while (true) {
-        const op = (await call('_agnes/v1/packages.operation.get', { operationId })) as PackageOperation
-        if (packageOperationTerminal(op.state)) {
-          if (op.state !== 'completed') fail('PLUGIN_PACKAGE_OPERATION_FAILED')
-          return op
-        }
-        await delay(20, undefined, { signal })
-      }
-    }
-    const status = async (r: Receipt) => {
-      const pkg = (await list()).find((p) => p.id === r.packageId)
-      const op = r.operationId
-        ? ((await call('_agnes/v1/packages.operation.get', {
-            operationId: r.operationId,
-          })) as PackageOperation)
-        : undefined
-      const matches = pkg?.integrity === r.integrity
-      const ready =
-        matches &&
-        pkg?.trusted &&
-        pkg.desired === 'enabled' &&
-        pkg.actual === 'running' &&
-        pkg.actualIntegrity === r.integrity
-      return {
-        proposalId: r.proposalId,
-        packageId: r.packageId,
-        state: ready
-          ? 'ready'
-          : pkg && !matches
-            ? 'changed'
-            : r.state === 'installing' && !proposals.get(r.proposalId)?.busy
-              ? 'interrupted'
-              : op?.state === 'failed'
-                ? 'failed'
-                : r.state,
-        installed: !!pkg,
-        trusted: pkg?.trusted ?? false,
-        desired: pkg?.desired,
-        actual: pkg?.actual,
-        operationState: op?.state,
-        effective: 'next-turn',
-        message: ready
-          ? 'The plugin is running in AGH. Check this turn’s actual tool list to confirm what it contributes. Verify the UI separately.'
-          : 'See AGH Settings → Plugins. Submitted only means enablement was requested. End this turn and check the actual status on the next turn.',
-      }
-    }
-    let active: Receipt | undefined
-    try {
-      if (input.action === 'prepare') {
-        let files: ReturnType<typeof checkedPluginFiles>
-        try {
-          files = checkedPluginFiles(input.files)
-        } catch {
-          return fail('PLUGIN_FILES_INVALID')
-        }
-        for (const [id, p] of proposals) if (!p.busy && p.expires < Date.now()) proposals.delete(id)
-        if (proposals.size >= 32) fail('PLUGIN_PROPOSAL_LIMIT')
-        const proposalId = `plugin-${randomUUID()}`
-        const stage = join(directory, 'sources', proposalId)
-        for (const file of files) {
-          authority()
-          const path = join(stage, file.path)
-          await mkdir(dirname(path), { recursive: true, mode: 0o700 })
-          await writeFile(path, file.content, { flag: 'wx', mode: 0o600 })
-        }
-        const source = { type: 'file' as const, ref: `file:./plugin-onboarding/sources/${proposalId}` }
-        const inspected = await effect('_agnes/v1/packages.inspect', { source }, `${proposalId}-inspect`)
-        const preview = (await wait(inspected.operationId)).preview
-        if (!preview || preview.blockers.length || !preview.capabilityHash) fail('PLUGIN_PACKAGE_INVALID')
-        if ((await list()).some((p) => p.id === preview.id)) fail('PLUGIN_PACKAGE_EXISTS')
-        const receipt: Receipt = {
-          proposalId,
-          owner: authority().principalId,
-          sessionKey,
-          clientId: conn.clientId,
-          packageId: preview.id,
-          integrity: preview.integrity,
-          capabilityHash: preview.capabilityHash,
-          state: 'prepared',
-        }
-        await save(receipt)
-        proposals.set(proposalId, { receipt, source, preview, expires: Date.now() + 600_000, busy: false })
-        return {
-          proposalId,
-          state: 'prepared',
-          target: 'Agnes Harness',
-          preview,
-          next: 'Review source and requested capabilities. commit asks the local user to approve this exact package for the current shared AGH profile.',
-        }
-      }
-      if (typeof input.proposalId !== 'string' || !/^plugin-[a-f0-9-]{36}$/.test(input.proposalId))
-        throw rpcError('INVALID_PARAMS')
-      const proposal = proposals.get(input.proposalId)
-      let receipt = proposal?.receipt
-      if (!receipt) {
-        try {
-          receipt = JSON.parse(await readFile(receiptPath(input.proposalId), 'utf8')) as Receipt
-        } catch {
-          return fail('PLUGIN_PROPOSAL_NOT_FOUND')
-        }
-      }
-      if (receipt.owner !== authority().principalId || receipt.sessionKey !== sessionKey)
-        throw rpcError('CAPABILITY_DENIED')
-      if (input.action === 'status') return status(receipt)
-      if (proposal?.busy) {
-        if (input.action !== 'cancel') fail('PLUGIN_REQUEST_BUSY')
-        proposal.cancel?.()
-        return {
-          proposalId: receipt.proposalId,
-          packageId: receipt.packageId,
-          state: 'cancelling',
-          message:
-            'Cancellation was requested. An install that already happened is not rolled back. Check the actual status later.',
-        }
-      }
-      if (input.action === 'cancel') {
-        if (receipt.operationId && receipt.clientId === conn.clientId)
-          await effect(
-            '_agnes/v1/packages.operation.cancel',
-            { operationId: receipt.operationId },
-            `${receipt.proposalId}-cancel`,
+      if (!service) throw rpcError('SEMANTIC_REJECTED', { code: 'PLUGIN_MANAGEMENT_UNAVAILABLE' })
+      const automaticPublication =
+        suffix === 'submit' && automaticPermissionDecision(currentPermissionContext())
+      const authoringAdmission = automaticPublication
+        ? await acquirePermissionLease(
+            { sessionKey, scope: 'plugin.publish', bindingHash: String(params.expectedHash) },
+            signal,
           )
-        receipt.state = 'cancelled'
-        await save(receipt)
-        return status(receipt)
+        : undefined
+      return service.call(
+        `_agnes/v1/plugins.candidates.${suffix}` as PackageAdminMethodName,
+        { profile: options.profile, ...params },
+        {
+          ...auth,
+          installer: 'agent',
+          permissionContext: currentPermissionContext(),
+          ...(automaticPublication
+            ? {
+                ...(authoringAdmission ? { authoringAdmission } : {}),
+                authoringPermission: async (binding: { sessionKey: string; bindingHash: string }) => {
+                  signal.throwIfAborted()
+                  await assertPermissionBinding({ ...binding, scope: 'plugin.publish' })
+                  signal.throwIfAborted()
+                },
+              }
+            : {}),
+          authoringSignal: signal,
+          ...(testContext ? { authoringTestRunner: createAuthoringTestRunner(testContext) } : {}),
+          authoringOrigin: {
+            sessionKey,
+            turn: raw.turn as number,
+            toolUseId: raw.toolUseId as string,
+            packageId: raw.packageId as string,
+            snapshotId: raw.snapshotId as string,
+            rowId: raw.rowId as string,
+          },
+        },
+      )
+    }
+    try {
+      const command = () => ({ clientId: live.get().clientId, commandId: `author-${requestId}` })
+      if (action === 'create' || action === 'prepare') {
+        const files = legacy ? checkedPluginFiles(input.files) : input.files
+        const value = (await call('create', { ...command(), files })) as AuthoringCandidate
+        return legacy ? { ...value, proposalId: value.candidateId } : value
       }
-      if (receipt.state !== 'prepared') return status(receipt)
-      if (!proposal || proposal.expires < Date.now()) fail('PLUGIN_PROPOSAL_EXPIRED')
-      if (receipt.clientId !== conn.clientId) fail('PLUGIN_CONNECTION_CHANGED')
-      proposal.busy = true
-      proposal.cancel = () => controller.abort()
-      active = receipt
-      try {
-        if ((await list()).some((p) => p.id === receipt.packageId)) fail('PLUGIN_PACKAGE_EXISTS')
+      const id = input.candidateId ?? input.proposalId
+      if (typeof id !== 'string' || !/^candidate-[a-f0-9]{32}$/.test(id))
+        throw rpcError('INVALID_PARAMS', { code: 'PLUGIN_LEGACY_PROPOSAL_REVIEW_REQUIRED' })
+      const value = (await call('show', { candidateId: id })) as AuthoringCandidate
+      if (action === 'show' || action === 'status') return legacy ? { ...value, proposalId: id } : value
+      if (action === 'cancel') throw rpcError('SEMANTIC_REJECTED', { code: 'PLUGIN_REJECT_IN_REVIEW_UI' })
+      const expectedHash = input.expectedHash ?? (legacy ? value.candidateHash : undefined)
+      if (expectedHash !== value.candidateHash)
+        throw rpcError('SEMANTIC_REJECTED', { code: 'PLUGIN_CANDIDATE_STALE' })
+      if (action === 'test') {
+        if (!candidateTestSandbox)
+          throw rpcError('CAPABILITY_DENIED', { code: 'PLUGIN_TEST_SANDBOX_REQUIRED' })
+        testContext = {
+          home: options.home ?? options.directory,
+          ...(candidateTestSandbox ? { session: candidateTestSandbox } : {}),
+        }
+        const probe = mkdtempSync(join(tmpdir(), 'agh-candidate-probe-'))
+        let isolated: boolean
+        try {
+          isolated = (await authoringSandbox(testContext, probe, signal)).isolated
+        } finally {
+          rmSync(probe, { recursive: true, force: true })
+        }
+        {
+          const prompt = new PrompterRouter({
+            record: (outcome) =>
+              createFileAudit(join(options.directory, 'candidate-test-audit.jsonl')).write({
+                kind: 'extension.service-call',
+                detail: {
+                  action: 'candidate.test',
+                  session: sessionKey,
+                  candidateId: id,
+                  packageId: value.packageId,
+                  bindingHash: value.candidateHash,
+                  isolation: isolated ? 'sandbox' : 'unisolated',
+                  ...outcome,
+                },
+              }),
+            connections: live.candidates,
+            originOf: () => live.candidates()[0],
+            clock: Date.now,
+            endpointFor: (target) => {
+              const ep = options.endpoint(target)
+              if (!ep) throw new Error('closed')
+              return ep
+            },
+          })
+          const answer = await prompt.ask(
+            {
+              requestId: `candidate-${randomUUID()}`,
+              kind: 'tool',
+              sessionKey,
+              stepId: 'candidate-test',
+              toolUseId: raw.toolUseId as string,
+              summary: `${value.packageId} (${value.candidateHash.slice(7, 19)}) — ${isolated ? '在沙箱中运行作者测试 / Run author tests in sandbox' : '此平台未隔离，将在本机直接运行候选代码 / This platform is unisolated; candidate code runs directly on this machine'}. ${isolated ? '风险：候选代码可修改副本；保护路径和 AGH 私有目录拒绝访问 / Risk: candidate code can modify its copy; protected paths and AGH private directories are denied' : '风险：代码可按本机用户权限访问文件和网络 / Risk: code can access files and network with local user privileges'}. 仅此哈希一次 / This hash, once.`,
+              tool: {
+                name: 'plugin_candidate_test',
+                args: {
+                  packageId: value.packageId,
+                  candidateHash: value.candidateHash,
+                  execution: isolated ? 'sandbox' : 'unisolated',
+                  runs: 'Node author tests',
+                  scope: isolated ? 'candidate-directory' : 'local-user',
+                  network: isolated ? candidateTestSandbox.network : 'unrestricted',
+                },
+                meta: {
+                  isReadOnly: false,
+                  isDestructive: false,
+                  isConcurrencySafe: false,
+                  isOpenWorld: true,
+                  replay: 'never',
+                  costHint: {},
+                  deferLoading: false,
+                  requiresApproval: 'always',
+                },
+              },
+              risk: 'always',
+              actor: connActor(conn),
+              taint: false,
+              bindingHash: value.candidateHash,
+              deadline: new Date(Date.now() + 110_000).toISOString(),
+              scope: 'plugin.test',
+              options: ['allowed-once', 'rejected'],
+            },
+            { signal },
+          )
+          assertActive()
+          signal.throwIfAborted()
+          const verdict = typeof answer === 'string' ? answer : answer.verdict
+          if (verdict !== 'allowed-once')
+            throw rpcError('CAPABILITY_DENIED', {
+              code: verdict === 'rejected' ? 'PLUGIN_TEST_REJECTED' : 'PLUGIN_TEST_UNANSWERED',
+              reason: typeof answer === 'string' ? 'invalid-answer' : (answer.reason ?? 'invalid-answer'),
+            })
+          const admission = await acquirePermissionLease(
+            { sessionKey, scope: 'plugin.test', bindingHash: value.candidateHash },
+            signal,
+          )
+          if (admission) testContext = { ...testContext!, admission }
+        }
+      }
+      if (
+        (action === 'submit' || action === 'commit') &&
+        automaticPermissionDecision(currentPermissionContext())
+      ) {
         const prompt = new PrompterRouter({
-          record: () => {},
-          connections: () => [conn],
-          originOf: () => conn,
+          connections: live.candidates,
+          originOf: () => live.candidates()[0],
           clock: Date.now,
-          endpointFor: () => {
-            const ep = options.endpoint(conn)
-            if (!ep) throw new Error('closed')
-            return ep
+          endpointFor: (target) => {
+            const endpoint = options.endpoint(target)
+            if (!endpoint) throw new Error('closed')
+            return endpoint
           },
         })
-        const verdict = await prompt.askVerdict(
+        const answer = await prompt.ask(
           {
-            requestId: `plugin-${randomUUID()}`,
+            requestId: `publish-${randomUUID()}`,
             kind: 'tool',
             sessionKey,
-            stepId: 'plugin-manage',
+            stepId: 'candidate-publish',
             toolUseId: raw.toolUseId as string,
-            summary: `Install into Agnes Harness: ${receipt.packageId}@${proposal.preview.version}\nDigest: ${receipt.integrity}\nCapabilities: ${JSON.stringify(proposal.preview)}\nThis installs, trusts, and enables the generated code for sessions in the current AGH profile. Enabling runs JavaScript with this machine’s process permissions. A structural check does not mean the code is safe or that its behavior has been verified.`,
+            summary: `Install, trust and enable ${value.packageId}`,
             risk: 'always',
             actor: connActor(conn),
             taint: false,
-            bindingHash: receipt.integrity,
+            bindingHash: value.candidateHash,
             deadline: new Date(Date.now() + 110_000).toISOString(),
-            scope: 'plugin.install',
+            scope: 'plugin.publish',
+            options: ['allowed-once', 'rejected'],
           },
           { signal },
         )
-        authority()
-        if (!['allowed-once', 'allowed-session', 'allowed-permanent'].includes(verdict)) {
-          receipt.state = 'cancelled'
-          await save(receipt)
-          return status(receipt)
-        }
-        if ((await list()).some((p) => p.id === receipt.packageId)) fail('PLUGIN_PACKAGE_EXISTS')
-        receipt.state = 'installing'
-        await save(receipt)
-        const installed = await effect(
-          '_agnes/v1/packages.install',
-          { source: proposal.source, expectedIntegrity: receipt.integrity },
-          `${receipt.proposalId}-install`,
+        if (
+          typeof answer === 'string' ||
+          !('verdict' in answer) ||
+          answer.verdict !== 'allowed-once' ||
+          answer.reason !== 'full-access'
         )
-        receipt.operationId = installed.operationId
-        await save(receipt)
-        await wait(installed.operationId)
-        const trusted = await effect(
-          '_agnes/v1/packages.trust',
-          {
-            id: receipt.packageId,
-            expectedIntegrity: receipt.integrity,
-            capabilityHash: receipt.capabilityHash,
-          },
-          `${receipt.proposalId}-trust`,
-        )
-        receipt.operationId = trusted.operationId
-        await save(receipt)
-        await wait(trusted.operationId)
-        const enabled = await effect(
-          '_agnes/v1/packages.enable',
-          { id: receipt.packageId, expectedInstalledIntegrity: receipt.integrity },
-          `${receipt.proposalId}-enable`,
-        )
-        receipt.operationId = enabled.operationId
-        receipt.state = 'submitted'
-        await save(receipt)
-        return status(receipt)
-      } catch (error) {
-        // Recovery only reports effects; it never resumes a previously approved pipeline.
-        if (receipt.state !== 'submitted' && receipt.state !== 'cancelled') {
-          receipt.state = signal.aborted ? 'cancelled' : 'failed'
-          await save(receipt)
-        }
-        throw error
-      } finally {
-        proposal.busy = false
-        delete proposal.cancel
+          throw rpcError('CAPABILITY_DENIED', { code: 'PLUGIN_PUBLICATION_UNANSWERED' })
+        await assertPermissionBinding({
+          scope: 'plugin.publish',
+          bindingHash: value.candidateHash,
+          sessionKey,
+        })
+        signal.throwIfAborted()
       }
+      const result = (await call(action === 'commit' ? 'submit' : action, {
+        ...command(),
+        candidateId: id,
+        expectedHash,
+        ...(action === 'write'
+          ? {
+              files: input.files,
+              ...(input.mode !== undefined ? { mode: input.mode } : {}),
+              ...(input.remove !== undefined ? { remove: input.remove } : {}),
+            }
+          : {}),
+      })) as AuthoringCandidate
+      return legacy ? { ...result, proposalId: id } : result
     } finally {
-      if (signal.aborted && active?.operationId && active.state !== 'submitted') {
-        // Cancellation admission uses the previously verified connection, never continues the pipeline.
-        const auth = localPackageAdminAuthority(['packages.install'])({ conn, clock: Date.now, signal })
-        await options
-          .service()
-          ?.call(
-            '_agnes/v1/packages.operation.cancel',
-            {
-              profile: options.profile,
-              clientId: conn.clientId,
-              commandId: `${active.proposalId}-abort`,
-              operationId: active.operationId,
-            },
-            auth,
-          )
-          .catch(() => {})
-      }
       pending.delete(key)
     }
   }

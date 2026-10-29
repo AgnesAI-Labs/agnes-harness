@@ -1,7 +1,7 @@
 import { win32 } from 'node:path'
+import { decideFsPath, FS_DENIED, type FsPolicy, type FsRule } from '@agnes/core-effects/effects/fs-guard'
+import type { FsOps } from '@agnes/core-effects/effects/tool-context'
 import { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
-import { decideFsPath, FS_DENIED, type FsPolicy, type FsRule } from '../src/effects/fs-guard.js'
-import type { FsOps } from '../src/effects/tool-context.js'
 
 /**
  * A policy fence around an in-memory FsOps, so a test double is not laxer than the file system it
@@ -35,6 +35,9 @@ export function fencedFs(inner: FsOps, policy: FsPolicy): FsOps {
   return {
     read: async (path, opts) => inner.read(check(path), opts),
     write: async (path, data) => inner.write(check(path), data),
+    ...(inner.create
+      ? { create: async (path: string, data: Uint8Array) => inner.create!(check(path), data) }
+      : {}),
     list: async (path) => inner.list(check(path)),
     stat: async (path) => inner.stat(check(path)),
   }

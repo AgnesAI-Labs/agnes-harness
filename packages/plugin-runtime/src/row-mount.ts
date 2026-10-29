@@ -12,6 +12,7 @@ import {
   type EntryMountAdapter,
   type EntryRow,
 } from '@agnes/cordis-loader'
+import { canonicalRowRevision, pluginConfigDigest } from './convergence.js'
 import { createBuiltinRowMountFactory } from './internal/host-mount.js'
 import { InternalMountGate } from './internal-gate.js'
 import { type FiberLease, FiberLeases } from './lease.js'
@@ -80,6 +81,7 @@ export interface ThirdPartyRowDescriptor {
   readonly row: Readonly<EntryRow>
   readonly entry: VerifiedRowEntry
   readonly extras?: VerifiedExtrasEnvelope
+  readonly ownerPackage?: string
   readonly preboundLease?: FiberLease
   readonly cleanup?: () => void | Promise<void>
 }
@@ -103,6 +105,7 @@ export interface BuiltinRowMountFactory {
       row: Readonly<EntryRow>
       entry: VerifiedRowEntry
       extras?: VerifiedExtrasEnvelope
+      ownerPackage?: string
     }>,
   ): Promise<VerifiedRowMount>
 }
@@ -127,6 +130,7 @@ interface DescriptorSnapshot {
   readonly entry: VerifiedRowEntry
   readonly normalizedConfig: unknown
   readonly extras?: VerifiedExtrasEnvelope
+  readonly ownerPackage?: string
   readonly preboundLease?: FiberLease
   readonly cleanup?: () => void | Promise<void>
 }
@@ -228,15 +232,46 @@ function sameRow(left: Readonly<EntryRow>, right: Readonly<EntryRow>): boolean {
     sameStrings(left.provides, right.provides) &&
     left.runtime === right.runtime &&
     left.mountIdentity === right.mountIdentity &&
+    left.codeMountIdentity === right.codeMountIdentity &&
     left.mountRevision === right.mountRevision &&
     left.entryRevision === right.entryRevision &&
     left.extrasRevision === right.extrasRevision &&
+    sameValue(left.liveResources, right.liveResources) &&
+    left.liveResourceRevision === right.liveResourceRevision &&
     sameValue(left.config, right.config)
   )
 }
 
-export function normalizePluginExport(exported: Plugin<unknown>): VerifiedRowEntry {
-  const inject = deepFreeze(cloneValue(ownRecord(Inject.resolve(exported.inject))))
+/** The injected services a plugin's `agnes.plugins` entry declares: every name, and the optional subset. */
+export type PluginInjectDeclaration = Readonly<{
+  inject?: readonly string[]
+  optionalInject?: readonly string[]
+}>
+
+const sortedEntries = (record: Record<string, unknown>) =>
+  Object.entries(record).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+
+function declaredInjectRecord(declared: PluginInjectDeclaration): Record<string, unknown> {
+  const optional = new Set(declared.optionalInject)
+  return Object.fromEntries(
+    (declared.inject ?? []).map((name) => [name, optional.has(name) ? { required: false } : null]),
+  )
+}
+
+/**
+ * The manifest entry (`declared`) is where a plugin states what it injects, required or optional; the
+ * export carries no list of its own. An in-process export that repeats one must say the same thing.
+ */
+export function normalizePluginExport(
+  exported: Plugin<unknown>,
+  declared?: PluginInjectDeclaration,
+): VerifiedRowEntry {
+  const own = exported.inject === undefined ? undefined : ownRecord(Inject.resolve(exported.inject))
+  const listed =
+    declared?.inject === undefined ? undefined : ownRecord(Inject.resolve(declaredInjectRecord(declared)))
+  if (own && listed && JSON.stringify(sortedEntries(own)) !== JSON.stringify(sortedEntries(listed)))
+    throw new TypeError('plugin export inject differs from its agnes.plugins entry')
+  const inject = deepFreeze(cloneValue(listed ?? own ?? {}))
   const provides = normalizeProvides(exported.provide)
   const prepared = preparePluginInvocation(exported, inject)
   return Object.freeze({ prepared, inject, provides })
@@ -269,9 +304,12 @@ function snapshotRow(row: Readonly<EntryRow>, normalizedConfig: unknown): Readon
     provides: Object.freeze([...row.provides]),
     runtime: row.runtime,
     mountIdentity: row.mountIdentity,
+    ...(row.codeMountIdentity === undefined ? {} : { codeMountIdentity: row.codeMountIdentity }),
     mountRevision: row.mountRevision,
     entryRevision: row.entryRevision,
     extrasRevision: row.extrasRevision,
+    ...(row.liveResources === undefined ? {} : { liveResources: Object.freeze([...row.liveResources]) }),
+    ...(row.liveResourceRevision === undefined ? {} : { liveResourceRevision: row.liveResourceRevision }),
     ...(row.config === undefined ? {} : { config: normalizedConfig }),
   })
 }
@@ -333,19 +371,29 @@ function expectedPlugin(candidate: PackageSnapshotCandidateRef): string {
 }
 
 function assertIdentity(snapshot: DescriptorSnapshot): void {
-  const expected = buildMountIdentity({
+  const identity = {
     snapshotDigest: snapshot.digest,
     exportName: snapshot.snapshot.exportName,
     entryRevision: snapshot.row.entryRevision,
     extrasRevision: snapshot.row.extrasRevision,
+    ...(snapshot.row.liveResources === undefined ? {} : { liveResources: snapshot.row.liveResources }),
+    ...(snapshot.row.liveResourceRevision === undefined
+      ? {}
+      : { liveResourceRevision: snapshot.row.liveResourceRevision }),
     plugin: snapshot.row.plugin,
     inject: snapshot.row.inject,
     isolate: snapshot.row.isolate,
     provides: snapshot.row.provides,
     runtime: snapshot.row.runtime,
     mountRevision: snapshot.row.mountRevision,
-  })
-  if (expected !== snapshot.row.mountIdentity) {
+  }
+  const { liveResourceRevision: _live, ...codeIdentity } = identity
+  const expected = buildMountIdentity(identity)
+  if (
+    expected !== snapshot.row.mountIdentity ||
+    (snapshot.row.codeMountIdentity !== undefined &&
+      snapshot.row.codeMountIdentity !== buildMountIdentity(codeIdentity))
+  ) {
     throw new VerifiedRowError('E_MOUNT_IDENTITY', `row ${snapshot.row.id} has an invalid mount identity`)
   }
 }
@@ -439,6 +487,7 @@ function createVerifiedRowRuntime(
       row: Readonly<EntryRow>
       entry: VerifiedRowEntry
       extras?: VerifiedExtrasEnvelope
+      ownerPackage?: string
       preboundLease?: FiberLease
       cleanup?: () => void | Promise<void>
     }>,
@@ -486,6 +535,7 @@ function createVerifiedRowRuntime(
       entry,
       normalizedConfig,
       ...(checkedExtras ? { extras: checkedExtras } : {}),
+      ...(input.ownerPackage ? { ownerPackage: input.ownerPackage } : {}),
       ...(input.preboundLease ? { preboundLease: input.preboundLease } : {}),
       ...(input.cleanup ? { cleanup: input.cleanup } : {}),
     })
@@ -587,7 +637,7 @@ function createVerifiedRowRuntime(
         generation: 1,
       })
       const frozen = freezeCommon('builtin', input, snapshot, '')
-      // D74 deliberately trusts the single desired-row builder identity for builtins.
+      // Builtin mounting deliberately trusts the single desired-row builder identity for builtins.
       return createMount(frozen)
     },
   })
@@ -603,9 +653,12 @@ function originOf(mount: DescriptorSnapshot): Readonly<RowOrigin> {
     trustTier: mount.trustTier,
     packageId: mount.snapshot.packageId,
     snapshotId: mount.snapshot.snapshotId,
+    rowRevision: canonicalRowRevision(mount.boundRow),
+    configDigest: pluginConfigDigest(mount.boundRow.config),
     rowId: mount.row.id,
     exportName: mount.snapshot.exportName,
     declaredProvides: Object.freeze([...mount.row.provides]),
+    ...(mount.ownerPackage ? { ownerPackage: mount.ownerPackage } : {}),
   })
 }
 
@@ -614,7 +667,7 @@ function createVerifiedRowAdapter(
   leases: FiberLeases,
 ): EntryMountAdapter<VerifiedRowMount, VerifiedRowInstallation> {
   const adapter: EntryMountAdapter<VerifiedRowMount, VerifiedRowInstallation> = {
-    async mount(parent, row, imported) {
+    async mount(parent, row, imported, signal) {
       const ticket = mounts.get(imported)
       if (!ticket || ticket.consumed) {
         throw new VerifiedRowError('E_VERIFIED_MOUNT', `row ${row.id} was not verified for this mount`)
@@ -648,6 +701,7 @@ function createVerifiedRowAdapter(
       let wrapper!: Fiber
       let fiber!: Fiber
       try {
+        signal?.throwIfAborted()
         let wrapperParent = parent
         for (const name of Object.keys(mount.extras?.values ?? {}).sort()) {
           wrapperParent = wrapperParent.isolate(name)
@@ -668,8 +722,18 @@ function createVerifiedRowAdapter(
             leases.bind(candidate, mount.preboundLease.capability)
           }
         })
+        const cancel = () => {
+          // Revoke synchronously, before waiting for arbitrary async startup.
+          // Both child and wrapper must stop accepting effects immediately.
+          void fiber.dispose().catch((error) => parent.logger.error(error))
+          void wrapper.dispose().catch((error) => parent.logger.error(error))
+        }
+        signal?.addEventListener('abort', cancel, { once: true })
+        cleanup.push(() => signal?.removeEventListener('abort', cancel))
+        signal?.throwIfAborted()
         const published = batch.publish()
         await Promise.all(published)
+        signal?.throwIfAborted()
         // Publication makes the fibers visible atomically; readiness still requires the actual
         // plugin callback to settle. Surface startup failures here instead of letting Host's later
         // required-service audit replace the author's error with a generic missing-row message.

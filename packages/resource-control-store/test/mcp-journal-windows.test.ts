@@ -7,6 +7,7 @@ import { McpResourceStore } from '../src/mcp.js'
 const windows = process.platform === 'win32' // guards-allow-platform: real Windows journal sharing conflicts.
 const heldRead = vi.hoisted(() => ({
   path: '',
+  refusedDestination: '',
   entered: undefined as (() => void) | undefined,
   release: undefined as Promise<void> | undefined,
 }))
@@ -31,6 +32,20 @@ vi.mock('node:fs/promises', async (original) => {
   }
 })
 
+vi.mock('@agnes/system-node', async (original) => {
+  const system = await original<typeof import('@agnes/system-node')>()
+  return {
+    ...system,
+    renameWriteThrough: async (...args: Parameters<typeof system.renameWriteThrough>) => {
+      // An ordinary Node read handle need not deny replacement on every Windows/Node version.
+      // Inject the refusal itself; the other cases retain real concurrent file operations.
+      if (heldRead.refusedDestination && args[1] === heldRead.refusedDestination)
+        throw Object.assign(new Error('Injected sharing violation'), { code: 'EACCES' })
+      return system.renameWriteThrough(...args)
+    },
+  }
+})
+
 describe.skipIf(!windows)('MCP journal concurrent reads and commits', () => {
   it('preserves prior data on persistent external sharing failure and recovers the queue', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'agnes-mcp-external-reader-'))
@@ -42,14 +57,17 @@ describe.skipIf(!windows)('MCP journal concurrent reads and commits', () => {
       const path = join(directory, `${profile}.mcp.json`)
       const previous = await readFile(path, 'utf8')
       reader = await open(path, 'r')
-      await expect(store.observeWorker(profile, [])).rejects.toMatchObject({ code: 'EACCES' })
+      heldRead.refusedDestination = path
+      await expect(store.seedLegacyPreset(profile, [])).rejects.toMatchObject({ code: 'EACCES' })
       expect(await readFile(path, 'utf8')).toBe(previous)
       expect(await readdir(directory)).toEqual([`${profile}.mcp.json`])
       await reader.close()
       reader = undefined
-      await expect(store.observeWorker(profile, [])).resolves.toBeUndefined()
+      heldRead.refusedDestination = ''
+      await expect(store.seedLegacyPreset(profile, [])).resolves.toBeUndefined()
       expect(await store.workerManaged(profile)).toEqual([])
     } finally {
+      heldRead.refusedDestination = ''
       await reader?.close()
       await rm(directory, { recursive: true, force: true })
     }
@@ -72,7 +90,7 @@ describe.skipIf(!windows)('MCP journal concurrent reads and commits', () => {
       heldRead.path = join(directory, `${profile}.mcp.json`)
       reading = store.workerManaged(profile)
       await entered
-      writing = store.observeWorker(profile, [])
+      writing = store.seedLegacyPreset(profile, [])
       const outcome = writing.then(
         () => undefined,
         (error: unknown) => error,
@@ -107,7 +125,16 @@ describe.skipIf(!windows)('MCP journal concurrent reads and commits', () => {
       for (let round = 0; round < 60; round++) {
         const outcomes = await Promise.allSettled([
           ...Array.from({ length: 12 }, () => store.workerManaged(profile)),
-          store.observeWorker(profile, []),
+          store.observeWorker(profile, [
+            {
+              serverId: definition.serverId,
+              connectionState: 'ready',
+              observedRevision: 'a'.repeat(64),
+              catalogRevision: 'b'.repeat(64),
+              toolCount: round,
+              observedAt: new Date().toISOString(),
+            },
+          ]),
         ])
         for (const outcome of outcomes) {
           if (outcome.status === 'rejected') failures.push(outcome.reason)
@@ -117,6 +144,7 @@ describe.skipIf(!windows)('MCP journal concurrent reads and commits', () => {
       expect(failures).toEqual([])
       const persisted = JSON.parse(await readFile(join(directory, `${profile}.mcp.json`), 'utf8'))
       expect(persisted.servers.example.definition).toEqual(definition)
+      expect(persisted.servers.example.status).toMatchObject({ connectionState: 'ready', toolCount: 59 })
       expect(
         await new McpResourceStore(directory, { allowedProfiles: [profile] }).workerManaged(profile),
       ).toHaveLength(1)

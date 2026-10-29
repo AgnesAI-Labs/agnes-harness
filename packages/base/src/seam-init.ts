@@ -6,8 +6,14 @@ import type {
   SandboxSeam,
   Verdict,
 } from '@agnes/core'
-import type { FsEntry, FsStat, Logger, SessionRef } from '@agnes/extension-api'
-import type { BatchRequest, BatchStatus } from '@agnes/protocol'
+import type {
+  ChildControlStore,
+  FsEntry,
+  FsStat,
+  Logger,
+  PersistenceMetadataNamespace,
+  SessionRef,
+} from '@agnes/extension-api'
 import type { ComputerUseBackendProvider } from '../extensions/computer-use/src/backend.js'
 import type { ComputerUseToolOptions } from '../extensions/computer-use/src/tool.js'
 import type { EgressGate } from '../extensions/privacy/src/index.js'
@@ -49,7 +55,7 @@ export type TableHandle = {
  */
 export type HostFs = {
   realpath(p: string): Promise<string>
-  read(p: string, opts?: { offset?: number; limit?: number }): Promise<Uint8Array>
+  read(p: string, opts?: { unit?: 'lines' | 'bytes'; offset?: number; limit?: number }): Promise<Uint8Array>
   write(p: string, data: Uint8Array): Promise<void>
   stat(p: string): Promise<FsStat>
   list(p: string): Promise<FsEntry[]>
@@ -63,9 +69,8 @@ export type HostExecResult = {
   stderr: string
   truncated: boolean
   timedOut: boolean
-  signal?: string
-  /** Processes the command left running that were stopped when it returned (owned executors only). */
   stoppedProcesses?: number
+  signal?: string
 }
 
 /**
@@ -95,26 +100,6 @@ export type SandboxBackendReport = Readonly<{
   enforcement: Enforcement
 }>
 
-/**
- * The services only the sandbox factory is ever handed. `pathPolicy.canonicalize` is the host's
- * own filesystem canonicalizer - the same path flavor, case semantics and deepest-existing-parent
- * walk the FsOps fence runs - narrowed to producing a canonical name; it executes and authorizes
- * nothing. `probeExec` is a raw spawner whose lifetime ends when the factory returns; it exists so
- * backend detection never requires keeping a raw exec in the seam. `declareExecGate` is how the
- * seam states its process-isolation posture, and `binding` is how it learns whether the host has
- * actually bound the policy it compiled - enforcement() may not claim what this says has not
- * happened.
- */
-export type SandboxHostServices = {
-  shellCommand?: (command: string) => string[]
-  pathPolicy: { canonicalize(path: string, opts?: { base?: string }): Promise<string> }
-
-  probeExec: HostExec
-  declareExecGate(state: SandboxGateState): void
-  reportBackend(report: SandboxBackendReport): void
-  binding(): { policyDigest: string | null }
-}
-
 /** The way to put a question to whoever is connected. The deadline travels on the signal. */
 export type Prompter = {
   ask(req: ApprovalRequest, opts: { signal: AbortSignal }): Promise<Verdict | ApprovalAnswer>
@@ -132,7 +117,11 @@ export type SeamAdaptersView = {
   dataFs: HostFs
   exec: HostExec
   platform: PlatformSeam
-  storage: { table(name: string): TableHandle }
+  storage: {
+    table(name: string): TableHandle
+    /** Owner-scoped metadata. */
+    namespace(name: string): PersistenceMetadataNamespace
+  }
   prompter?: Prompter
 }
 
@@ -147,10 +136,50 @@ export type SeamProfileView = {
   preset: Record<string, unknown>
 }
 
+export interface SessionTasks {
+  watch(
+    session: SessionRef,
+    listener: (event: {
+      turn: number
+      reason: string
+      messages: Array<{ role: 'user' | 'assistant'; content: Array<{ type: 'text'; text: string }> }>
+    }) => void,
+  ): () => void
+  generate(
+    session: SessionRef,
+    input: {
+      turn: number
+      label: string
+      system: string
+      messages: Array<{ role: 'user' | 'assistant'; content: Array<{ type: 'text'; text: string }> }>
+    },
+    signal: AbortSignal,
+  ): Promise<string | undefined>
+  /**
+   * Bounded read-only review of the live conversation, allowed while a turn is running (unlike
+   * `generate`). Uses the verifier slot, else fast, never the primary model; about 300 output
+   * tokens; resolves `undefined` when no auxiliary model is configured, the session is closed, the
+   * budget refuses it or the deadline passes. `data` is untrusted text appended to the request.
+   */
+  review(
+    session: SessionRef,
+    input: { label: string; system: string; data: string; timeoutMs?: number },
+    signal: AbortSignal,
+  ): Promise<string | undefined>
+}
+
+/** The two primary-key child-control calls a subagent worktree binding needs, and nothing else. */
+export type ChildWorktreePort = Readonly<{
+  lookupByKey: ChildControlStore['lookupByKey']
+  updateWorkspace: NonNullable<ChildControlStore['updateWorkspace']>
+}>
+
 export type SeamInitContext = {
+  sessionTasks?: SessionTasks
+  searchProvider?: import('@agnes/extension-api').SearchProvider
   /** Deployment grants, supplied only to the exact bundled hooks-runner factory. */
   trustedHookCommands?: Readonly<{
-    allowsUnconfined(source: 'data' | 'workspace', configDigest: string): boolean
+    allowsUnconfined(source: 'data' | 'workspace', configDigest: string, workspaceRoot?: string): boolean
   }>
   secrets(ref: string): string
   adapters: SeamAdaptersView
@@ -160,6 +189,12 @@ export type SeamInitContext = {
   /** Exact bundled artifacts seam only: creates immutable CU bytes with native private permissions. */
   privateArtifactStore?: Readonly<{
     put(sha256: string, bytes: Uint8Array): Promise<void>
+    putStream?(
+      sha256: string,
+      size: number,
+      source: AsyncIterable<Uint8Array>,
+      signal: AbortSignal,
+    ): Promise<void>
     putComputerUseMetadata(sha256: string, bytes: Uint8Array): Promise<void>
   }>
   /** Host startup bound for a package seam factory. */
@@ -179,17 +214,16 @@ export type SeamInitContext = {
       signal: AbortSignal,
     ): Promise<void>
   }
-  /** Supplied only to the bundled agnes/batch extension: forwards its tool requests to the daemon. */
-  batch?: Readonly<{ request(input: BatchRequest, signal: AbortSignal): Promise<BatchStatus> }>
   /** Supplied only to the exact trusted computer-use extension after platform driver admission. */
   computerUseBackendProvider?: ComputerUseBackendProvider
   computerUseOptions?: ComputerUseToolOptions
+  /** Host-owned child-control port, supplied to every `@agnes/base`-owned context. Base strips it
+   *  from every factory mounted through its `ecosystem` map except agnes/subagent (see
+   *  `mountEcosystem`). The MCP server row context and the isolated hooks-runner preparation are
+   *  Base-owned contexts that receive it unnarrowed and do not read it. */
+  childControl?: ChildWorktreePort
   /** Present only after seam assembly; ecosystem extensions must not substitute adapters.exec. */
   sandbox?: SandboxSeam
-  /** Present only in the context handed to the sandbox factory. A seam that is not sandbox never
-   * sees it, and a sandbox seam initialised without it must refuse: the host cannot bind what it
-   * cannot canonicalize. */
-  sandboxHost?: SandboxHostServices
 }
 
 export type SeamFactory<S = unknown> = (ctx: SeamInitContext) => Promise<S>

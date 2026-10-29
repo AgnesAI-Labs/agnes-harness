@@ -58,6 +58,7 @@ describe('resolved tool-call policy envelope', () => {
       resolvedPolicy: {
         isReadOnly: false,
         isDestructive: true,
+        isPresentational: false,
         isConcurrencySafe: false,
         isOpenWorld: false,
         replay: 'never',
@@ -99,6 +100,7 @@ describe('resolved tool-call policy envelope', () => {
     expect(envelope.resolvedPolicy).toEqual({
       isReadOnly: false,
       isDestructive: true,
+      isPresentational: false,
       isConcurrencySafe: false,
       isOpenWorld: false,
       replay: 'never',
@@ -106,31 +108,6 @@ describe('resolved tool-call policy envelope', () => {
       approvalScopes: [],
       policyVersion: 'static-v1',
     })
-  })
-
-  it('records returnsImages in the call policy only when the tool declares it', () => {
-    const registry = new ToolRegistry()
-    for (const [name, returnsImages] of [
-      ['plain', undefined],
-      ['pictures', true],
-    ] as const)
-      registry.add(
-        {
-          name,
-          description: 'd',
-          parameters: { type: 'object', properties: {} } as never,
-          meta: returnsImages ? { ...meta, returnsImages } : meta,
-          execute: async () => ({ content: [] }),
-        },
-        { source: 'example/plugin', trust: 'trusted' },
-      )
-    const plain = registry.resolve('plain')
-    const pictures = registry.resolve('pictures')
-    if (!plain || !pictures) throw new Error('missing tool')
-    expect(resolveValidatedToolCallPolicy(plain, {}).resolvedPolicy).not.toHaveProperty('returnsImages')
-    const envelope = resolveValidatedToolCallPolicy(pictures, {})
-    expect(envelope.resolvedPolicy.returnsImages).toBe(true)
-    expect(hasAuthenticToolPolicyHash(envelope)).toBe(true)
   })
 
   it.each(['isConcurrencySafe', 'isOpenWorld'] as const)(
@@ -230,7 +207,11 @@ describe('resolved tool-call policy envelope', () => {
     const dynamicDefinition = dynamic(classify)
     const definition = {
       ...dynamicDefinition,
-      meta: { ...dynamicDefinition.meta, costHint: { credits: 1 } },
+      meta: {
+        ...dynamicDefinition.meta,
+        costHint: { credits: 1 },
+        paths: [{ arg: 'action', access: 'read' as const, nonWorkspaceSchemes: ['artifact'] }],
+      },
     }
     const registry = new ToolRegistry()
     registry.add(definition, provenance)
@@ -240,6 +221,8 @@ describe('resolved tool-call policy envelope', () => {
     definition.meta.isConcurrencySafe = true
     definition.meta.isOpenWorld = true
     definition.meta.costHint.credits = 999
+    definition.meta.paths[0]!.arg = 'other'
+    definition.meta.paths[0]!.nonWorkspaceSchemes.push('private')
     const afterMutation = registry.resolve('computer_use')
     if (!afterMutation) throw new Error('missing tool')
     const envelope = resolveValidatedToolCallPolicy(afterMutation, {})
@@ -247,6 +230,13 @@ describe('resolved tool-call policy envelope', () => {
     expect(envelope.definitionFingerprint).toBe(fingerprint)
     expect(envelope.resolvedPolicy).toMatchObject({ isConcurrencySafe: false, isOpenWorld: false })
     expect(afterMutation.meta.costHint).toEqual({ credits: 1 })
+    expect(afterMutation.meta.paths).toEqual([
+      { arg: 'action', access: 'read', nonWorkspaceSchemes: ['artifact'] },
+    ])
+    expect(Object.isFrozen(afterMutation.meta.paths?.[0])).toBe(true)
+    const changed = new ToolRegistry()
+    changed.add(definition, provenance)
+    expect(changed.resolve('computer_use')?.definitionFingerprint).not.toBe(fingerprint)
     expect(Object.isFrozen(afterMutation.meta)).toBe(true)
     expect(Object.isFrozen(afterMutation.meta.costHint)).toBe(true)
   })

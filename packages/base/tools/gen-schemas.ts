@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BATCH_TOOLS } from '../extensions/batch/src/index.js'
 import { TOOLS_CORE } from '../extensions/tools-core/src/index.js'
 import { TOOLS_SEARCH } from '../extensions/tools-search/src/index.js'
 import { TOOLS_WEB } from '../extensions/tools-web/src/index.js'
@@ -41,10 +40,7 @@ function emit(file: string, content: string): void {
 // what a provider hashes. The canonical form is the array in registration order, so a reordering is
 // a change too - the order is what the model is shown. One hash per bundled extension, each in its
 // own file, so a change to one extension's tools cannot silently move past the other's fixture.
-function emitExtension(
-  hashFile: string,
-  tools: readonly { name: string; description: string; parameters: unknown }[],
-): void {
+function emitExtension(hashFile: string, tools: typeof TOOLS_CORE): void {
   for (const t of tools) emit(`${t.name}.json`, `${JSON.stringify(t.parameters, null, 2)}\n`)
   const canonical = JSON.stringify(
     tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })),
@@ -55,7 +51,6 @@ function emitExtension(
 emitExtension('HASH', TOOLS_CORE)
 emitExtension('HASH-tools-search', TOOLS_SEARCH)
 emitExtension('HASH-tools-web', TOOLS_WEB)
-emitExtension('HASH-batch', BATCH_TOOLS)
 
 if (stale > 0) {
   console.error(`${stale} tool schema snapshot(s) out of date; run: pnpm --filter @agnes/base gen`)

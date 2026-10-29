@@ -8,6 +8,8 @@ export function buildMountIdentity(input: MountIdentityInput): MountIdentity {
   }
   const encoded = encodeCanonicalRecord({
     snapshotDigest: input.snapshotDigest,
+    ...(input.liveResources === undefined ? {} : { liveResources: canonicalStringSet(input.liveResources) }),
+    ...(input.liveResourceRevision === undefined ? {} : { liveResourceRevision: input.liveResourceRevision }),
     exportName: input.exportName,
     entryRevision: input.entryRevision,
     extrasRevision: input.extrasRevision,

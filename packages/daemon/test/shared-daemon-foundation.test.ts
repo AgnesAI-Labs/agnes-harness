@@ -1,7 +1,21 @@
 import { chmod, link, mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { createPlatform, isHostError, readConfigurationProfileInputs, resolveProfile } from '@agnes/host'
+import { join, sep } from 'node:path'
+import * as host from '@agnes/host'
+import {
+  createPlatform,
+  fileSecretsDir,
+  isHostError,
+  readConfigurationProfileInputs,
+  resolveProfile,
+} from '@agnes/host'
+import {
+  activeRuntimePinId,
+  createPackageManager,
+  emptyLock,
+  parseSource,
+  writeLock,
+} from '@agnes/package-manager'
 import { hasPrivateDaclSync } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -14,6 +28,7 @@ import {
   readDaemonDiscovery,
   readDaemonWebCredential,
   removeDaemonDiscovery,
+  resolveDaemonProfile,
   resolveDaemonScope,
   runDaemonControl,
 } from '../src/index.js'
@@ -113,6 +128,120 @@ describe('shared daemon scope', () => {
     expect(await readFile(lock, 'utf8')).toBe('{ corrupt-lock')
   })
 
+  it('pins a fresh file store to the home secrets directory and keeps an explicit path', async () => {
+    const home = await root('agnes-secrets-pin-')
+    const workspace = await root('agnes-secrets-pin-work-')
+    const localScope = await resolveDaemonScope({ home, workspace, profile: 'local-dev' })
+    const local = await resolveDaemonProfile(localScope)
+    await mkdir(localScope.profileDir, { recursive: true })
+    await writeFile(
+      join(localScope.profileDir, 'bundle-selection.json'),
+      JSON.stringify({ revision: 1, bundles: ['@agnes/missing#main'] }),
+    )
+    await expect(resolveDaemonProfile(localScope)).rejects.toThrow()
+    expect((await resolveDaemonProfile(localScope, { adminBundles: [] })).profile.hash).toBe(
+      local.profile.hash,
+    )
+    expect(local.profile.adapters.secrets).toEqual({
+      kind: 'file',
+      path: fileSecretsDir(localScope.home),
+    })
+    const enterpriseScope = await resolveDaemonScope({ home, workspace, profile: 'enterprise' })
+    const enterprise = await resolveDaemonProfile(enterpriseScope)
+    expect(enterprise.profile.adapters.secrets).toEqual({ kind: 'file', path: '/etc/agnes/secrets' })
+  })
+
+  it('boots with trusted admin-enabled code while respecting disabled and untrusted packages', async () => {
+    const home = await root('agnes-admin-code-')
+    const workspace = await root('agnes-admin-code-work-')
+    const scope = await resolveDaemonScope({ home, workspace, profile: 'local-dev' })
+    const initial = (await resolveDaemonProfile(scope)).profile
+    await mkdir(scope.profileDir, { recursive: true })
+    const now = '2026-10-08T00:00:00.000Z'
+    writeLock(scope.profileDir, {
+      ...emptyLock('local-dev', '0.0.0'),
+      resolvedProfileHash: initial.hash,
+      seams: initial.seams,
+      packages: Object.fromEntries(
+        ['disabled', 'untrusted', 'explicit'].map((name) => [
+          `@example/${name}`,
+          {
+            version: '1.2.3',
+            source: { type: 'npm', ref: `@example/${name}@1.2.3` },
+            integrity: `sha256-${'a'.repeat(64)}`,
+            trust: 'trusted',
+            license: 'MIT',
+            state: {
+              installed: now,
+              trusted: name === 'untrusted' ? null : now,
+              enabled: name !== 'disabled',
+            },
+            releasedAt: now,
+            dependencies: {},
+            previous: null,
+          },
+        ]),
+      ),
+    })
+    const sourceDir = join(workspace, 'enabled')
+    await mkdir(sourceDir)
+    await writeFile(
+      join(sourceDir, 'package.json'),
+      JSON.stringify({
+        name: '@example/enabled',
+        version: '1.2.3',
+        license: 'MIT',
+        exports: './index.mjs',
+        agnes: { plugins: [{ apiRange: '^5.0.0', export: 'main', id: 'ext:example/enabled' }] },
+      }),
+    )
+    await writeFile(join(sourceDir, 'index.mjs'), 'export const main = { apply() {} }')
+    const manager = createPackageManager({ dataDir: scope.dataDir, cwd: workspace, agnesVersion: '0.0.0' })
+    const source = parseSource(`file:${sourceDir.split(sep).join('/')}`)
+    const preview = await manager.inspect(scope.profileDir, source)
+    await manager.install(scope.profileDir, source, { expectedIntegrity: preview.integrity })
+    const installed = (await manager.inventory(scope.profileDir)).packages.find(
+      (pkg) => pkg.id === '@example/enabled',
+    )
+    if (!installed?.entry.treeIntegrity) throw new Error('missing installed snapshot')
+    await manager.trust(scope.profileDir, installed.id, {
+      integrity: installed.entry.integrity,
+      capabilityHash: installed.capabilityHash,
+    })
+    await manager.setEnabled(scope.profileDir, installed.id, true)
+    // Enabled inventory alone must not become executable before target publication has pinned it.
+    expect((await resolveDaemonProfile(scope)).profile.packages.some((pkg) => pkg.id === installed.id)).toBe(
+      false,
+    )
+    const pinId = activeRuntimePinId({ packageId: installed.id, integrity: installed.entry.integrity })
+    await manager.pinRuntimeSnapshot(scope.profileDir, {
+      pinId,
+      operationId: pinId,
+      packageId: installed.id,
+      purpose: 'active',
+      selector: {
+        kind: 'installed',
+        expectedIntegrity: installed.entry.integrity,
+        expectedTreeIntegrity: installed.entry.treeIntegrity,
+      },
+    })
+    await writeFile(
+      join(scope.profileDir, 'profile.yaml'),
+      'packages:\n  - id: "@example/explicit"\n    source: installed\n    enabled: false\n',
+    )
+    const resolved = (await resolveDaemonProfile(scope)).profile
+    expect(resolved.packages.filter((pkg) => pkg.id.startsWith('@example/'))).toEqual([
+      expect.objectContaining({
+        id: '@example/enabled',
+        version: '1.2.3',
+        integrity: installed.entry.integrity,
+        enabled: true,
+      }),
+      expect.objectContaining({ id: '@example/explicit', enabled: false }),
+    ])
+    expect((await resolveDaemonScope({ home, workspace, profile: 'local-dev' })).scopeID).toBe(scope.scopeID)
+  })
+
   // The actual bug this pair of packages used to have: daemon's own default (home/data) and Host's
   // own default, taken independently for the same home the way `agnes doctor` or a plain `bootLocal`
   // run would, used to land in two different directories with nothing to say so. Naming the
@@ -124,7 +253,7 @@ describe('shared daemon scope', () => {
 
     const inputs = await readConfigurationProfileInputs({
       home,
-      cwd: workspace,
+      workspaceRoot: workspace,
       profile: 'local-dev',
       agnesVersion: '0.0.0',
     })
@@ -143,7 +272,7 @@ describe('shared daemon scope', () => {
     expect(scope.dataDir).toBe(join(await canonicalPath(home), 'data'))
   })
 
-  it.each(['AGH_HOME', 'AGNES_HOME'])(
+  it.each(['AGH_HOME'])(
     'refuses a relative %s from the environment instead of resolving it against process.cwd()',
     async (variable) => {
       const workspace = await root('agnes-scope-relative-home-')
@@ -158,26 +287,30 @@ describe('shared daemon scope', () => {
     },
   )
 
-  it.each([
-    { set: 'only AGH_HOME', env: (a: string, _b: string) => ({ AGH_HOME: a }), winner: 'a' },
-    { set: 'only the legacy AGNES_HOME', env: (_a: string, b: string) => ({ AGNES_HOME: b }), winner: 'b' },
-    {
-      set: 'both set, where AGH_HOME wins',
-      env: (a: string, b: string) => ({ AGH_HOME: a, AGNES_HOME: b }),
-      winner: 'a',
-    },
-  ])('resolves the home from the environment with $set', async ({ env, winner }) => {
-    const a = await root('agh-scope-env-a-')
-    const b = await root('agh-scope-env-b-')
+  it('resolves the home from the current AGH_HOME setting', async () => {
+    const home = await root('agh-scope-env-')
     const workspace = await root('agh-scope-env-work-')
     const osHome = await root('agh-scope-env-os-')
     const scope = await resolveDaemonScope({
-      env: { ...env(a, b), HOME: osHome },
+      env: { AGH_HOME: home, HOME: osHome },
       workspace,
       profile: 'local-dev',
       dataDir: join(workspace, 'state'),
     })
-    expect(scope.home).toBe(await canonicalPath(winner === 'a' ? a : b))
+    expect(scope.home).toBe(await canonicalPath(home))
+  })
+
+  it.each([false, true])('refuses retired AGNES_HOME, including alongside AGH_HOME (%s)', async (current) => {
+    const workspace = await root('agh-scope-retired-home-')
+    await expect(
+      resolveDaemonScope({
+        env: { AGNES_HOME: 'relative/agnes', ...(current ? { AGH_HOME: workspace } : {}), HOME: workspace },
+        workspace,
+      }),
+    ).rejects.toMatchObject({
+      code: 'E_HOME_INVALID',
+      detail: { variable: 'AGNES_HOME', reason: 'clean-home-required' },
+    })
   })
 
   it('defaults the home to <HOME>/.agh when neither AGH_HOME nor AGNES_HOME is set', async () => {
@@ -291,6 +424,63 @@ describe('generation-bound discovery and Web credential', () => {
     }
   })
 
+  it('keeps legacy discovery usable after verified migration and calendar drift', async () => {
+    const dataDir = await root('agnes-discovery-legacy-')
+    const scope = await resolveDaemonScope({ home: dataDir, profile: 'local-dev', dataDir })
+    const oldId = `darwin:1000.000000:${process.pid}:2000.000002`
+    const newId = `darwin:11111111-2222-3333-4444-555555555555:${process.pid}:2000.000002`
+    const lock = await acquireOwnerLock(dataDir, {
+      socketPath: join(dataDir, 'daemon', 'agnesd.sock'),
+      processIdentity: async () => ({ state: 'alive', startId: oldId }),
+    })
+    const descriptor = await publishDaemonDiscovery(scope, {
+      owner: lock.owner,
+      socketPath: lock.owner.socketPath,
+      profileHash: 'sha256-profile',
+    })
+    const probe = vi.spyOn(host, 'legacyMacosProcessIdentity')
+    const processIdentity = async () => ({ state: 'alive' as const, startId: newId })
+    try {
+      probe.mockResolvedValue({
+        identity: { state: 'alive', startId: newId },
+        legacyStartId: oldId.replace('1000.000000', '999.925027'),
+      })
+      await expect(readDaemonDiscovery(scope, { processIdentity })).rejects.toThrow('identity is unavailable')
+      const output: string[] = []
+      expect(
+        await runDaemonControl(
+          { command: 'status', home: scope.home, profile: 'local-dev', dataDir },
+          {
+            processIdentity,
+            write: (text) => output.push(text),
+          },
+        ),
+      ).toBe(0)
+      expect(JSON.parse(output.join('')).running).toBe(true)
+      await expect(
+        runDaemonControl(
+          { command: 'stop', home: scope.home, profile: 'local-dev', dataDir },
+          { processIdentity },
+        ),
+      ).rejects.toThrow('identity is unavailable')
+      probe.mockResolvedValue({ identity: { state: 'alive', startId: newId }, legacyStartId: oldId })
+      expect(await readDaemonDiscovery(scope, { processIdentity })).toEqual(descriptor)
+      probe.mockResolvedValue({
+        identity: { state: 'alive', startId: newId },
+        legacyStartId: oldId.replace('1000.000000', '999.925027'),
+      })
+      expect(await readDaemonDiscovery(scope, { processIdentity })).toEqual(descriptor)
+      expect(
+        await readDaemonDiscovery(scope, {
+          processIdentity: async () => ({ state: 'alive', startId: newId.replace('11111111', 'aaaaaaaa') }),
+        }),
+      ).toBeNull()
+    } finally {
+      probe.mockRestore()
+      await lock.release() // Old-format owner bytes still let the old daemon release normally.
+    }
+  })
+
   it('treats a proven dead/reused owner as absent but refuses unknown identity', async () => {
     const dataDir = await root('agnes-discovery-identity-')
     const scope = await resolveDaemonScope({ home: dataDir, profile: 'local-dev', dataDir })
@@ -306,11 +496,26 @@ describe('generation-bound discovery and Web credential', () => {
     await expect(
       readDaemonDiscovery(scope, { processIdentity: async () => ({ state: 'dead' as const }) }),
     ).resolves.toBeNull()
+    const changed = await resolveDaemonScope({
+      home: dataDir,
+      profile: 'enterprise',
+      dataDir: join(dataDir, 'new-data'),
+    })
+    await expect(
+      readDaemonDiscovery(changed, { processIdentity: async () => ({ state: 'dead' as const }) }),
+    ).resolves.toBeNull()
+
     await expect(
       readDaemonDiscovery(scope, {
         processIdentity: async () => ({ state: 'unknown' as const, reason: 'EPERM' }),
       }),
     ).rejects.toThrow('identity is unavailable')
+    // The refusal says why, so a launcher can tell a missing native helper from a permission fault.
+    await expect(
+      readDaemonDiscovery(scope, {
+        processIdentity: async () => ({ state: 'unknown' as const, reason: 'helper unavailable' }),
+      }),
+    ).rejects.toMatchObject({ code: 'E_DAEMON_DISCOVERY', reason: 'helper unavailable' })
     await lock.release()
 
     // A newly acquired owner may briefly see the previous generation's descriptor before it
@@ -329,6 +534,25 @@ describe('generation-bound discovery and Web credential', () => {
 })
 
 describe('startup coordination', () => {
+  it('serializes one canonical home across data directories, profiles and aliases', async () => {
+    const home = await root('agh-home-owner-')
+    const alias = await root('agh-home-alias-')
+    await symlink(home, join(alias, 'home'), process.platform === 'win32' ? 'junction' : 'dir')
+    const firstScope = await resolveDaemonScope({ home, profile: 'local-dev', dataDir: join(home, 'a') })
+    const secondScope = await resolveDaemonScope({
+      home: join(alias, 'home'),
+      profile: 'enterprise',
+      dataDir: join(home, 'b'),
+    })
+    expect(secondScope.discoveryPath).toBe(firstScope.discoveryPath)
+    const first = acquireDaemonStartup(firstScope)
+    try {
+      expect(() => acquireDaemonStartup(secondScope)).toThrow(DaemonStartupBusyError)
+    } finally {
+      first.release()
+    }
+  })
+
   it('has a recognizable busy failure and an idempotent release', async () => {
     const dataDir = await root('agnes-startup-lock-')
     const scope = await resolveDaemonScope({ home: dataDir, profile: 'local-dev', dataDir })
@@ -414,10 +638,10 @@ describe('maintenance target resolution', () => {
 
   it('refuses maintenance for a profile or home that conflicts with a live discovery record', async () => {
     const home = await root('agnes-control-scope-home-')
-    const otherHome = await root('agnes-control-scope-other-home-')
+    const otherDataDir = await root('agnes-control-scope-other-data-')
     const dataDir = await root('agnes-control-scope-data-')
     const processIdentity = async () => ({ state: 'alive' as const, startId: 'control-scope-test' })
-    const ownerLock = await acquireOwnerLock(dataDir, {
+    const ownerLock = await acquireOwnerLock(await canonicalPath(home), {
       socketPath: join(dataDir, 'daemon', 'agnesd.sock'),
       processIdentity,
     })
@@ -438,7 +662,7 @@ describe('maintenance target resolution', () => {
       ).rejects.toThrow(/discovery does not match/)
       await expect(
         runDaemonControl(
-          { command: 'status', home: otherHome, profile: 'local-dev', dataDir },
+          { command: 'status', home, profile: 'local-dev', dataDir: otherDataDir },
           { status, processIdentity },
         ),
       ).rejects.toThrow(/discovery does not match/)

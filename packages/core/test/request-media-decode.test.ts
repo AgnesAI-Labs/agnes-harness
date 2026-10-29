@@ -1,4 +1,7 @@
 import { deflateSync } from 'node:zlib'
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
+import type { Event } from '@agnes/core-common/types'
+import type { SurfaceNode } from '@agnes/core-ledger/project/surface'
 import { decodeSafeImageBytes } from '@agnes/protocol-validation'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -13,9 +16,6 @@ import {
   requestMediaCandidatesFromSurface,
   restoreRequestMediaFromLedger,
 } from '../src/orchestrator/request-media-surface.js'
-import type { SurfaceNode } from '../src/project/surface.js'
-import { canonicalJson, sha256Hex } from '../src/request/hash.js'
-import type { Event } from '../src/types.js'
 import { toolCallLookup } from './helpers/request-media-lookup.js'
 
 const decodes = vi.hoisted(() => ({ count: 0 }))

@@ -1,7 +1,7 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { InferenceEvent, Provider } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import { presetDefaults } from '../src/step/preset.js'
 import { fakeProvider, sent, sentFor, textTurn, usage } from './helpers/fake-provider.js'
 import { actor, immediateTimers, openSession } from './helpers/open-session.js'
 
@@ -80,8 +80,8 @@ describe('interrupted output is recorded while the process is alive', () => {
     const storage = new MemoryStorage()
     const first = await openSession({ provider: streamThenHang(), storage })
     await first.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
-    expect(await first.session.step()).toEqual({ phase: 'checkpoint' })
-    expect(await first.session.step()).toEqual({ phase: 'inference' })
+    expect(await first.session.step()).toEqual({ outcome: 'running', phase: 'checkpoint' })
+    expect(await first.session.step()).toEqual({ outcome: 'running', phase: 'inference' })
     const inference = first.session.step().catch(() => undefined)
     await wait(30)
     // A worker shutting down closes every session it hosts; this is that close, not a kill.
@@ -93,12 +93,13 @@ describe('interrupted output is recorded while the process is alive', () => {
     const interrupted = rows.filter((row) => row.data.state === 'interrupted')
     expect(interrupted).toHaveLength(1)
     expect(interruptedText(rows)).toBe('partial answer')
-    // The close wrote what was said, not how the effect ended: settling it is the next process's job.
+    // Graceful close drains the stream and settles its aborted effect before releasing the writer.
     const effectId = interrupted[0]?.data.effectId
     const settled = (await second.log.scan({ type: 'effect/settled', limit: 50 })).filter(
       (row) => (row.data as { effectId?: string }).effectId === effectId,
     )
-    expect(settled).toHaveLength(0)
+    expect(settled).toHaveLength(1)
+    expect(settled[0]?.data).toMatchObject({ outcome: 'aborted' })
   })
 })
 
@@ -131,21 +132,22 @@ describe('a close after the stream has ended keeps the text', () => {
     const recording = latch()
     const reached = latch()
     const runtime = (
-      first.session as unknown as { d: { runtime: { ledgerRecord: (x: never) => Promise<boolean> } } }
+      first.session as unknown as { d: { runtime: { billingRecord: (x: never) => Promise<boolean> } } }
     ).d.runtime
-    const ledgerRecord = runtime.ledgerRecord.bind(runtime)
-    runtime.ledgerRecord = async (entry: never) => {
+    const billingRecord = runtime.billingRecord.bind(runtime)
+    runtime.billingRecord = async (entry: never) => {
       reached.open()
       await recording.shut
-      return ledgerRecord(entry)
+      return billingRecord(entry)
     }
     await first.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
     await first.session.step()
     await first.session.step()
     const inference = first.session.step().catch(() => undefined)
     await reached.shut
-    await first.session.close()
+    const closing = first.session.close()
     recording.open()
+    await closing
     await inference
 
     const { rows } = await reopened(storage)
@@ -296,15 +298,19 @@ describe('the ledger keeps counts, not streamed text', () => {
       { type: 'text_delta', delta: 'first try' },
       { type: 'error', reason: 'error', code: 'TRANSPORT', message: 'reset', retryable: true },
     ]
-    // Timers that fire at once, and a clock that moves on every read: the backoff is a wall-clock
-    // deadline the run loop re-checks, so a clock that barely moves keeps it spinning until the
-    // no-progress guard ends the turn.
     let now = 1_757_203_200_000
     const { session, log } = await openSession({
       provider: fakeProvider([flaky, textTurn('second')]),
       preset,
-      clock: () => (now += 400),
-      timers: immediateTimers,
+      // Advance logical time with each immediate timer so retry backoff cannot spin on wall time.
+      clock: () => now,
+      timers: {
+        ...immediateTimers,
+        setTimeout(fn, ms) {
+          now += ms
+          return immediateTimers.setTimeout(fn)
+        },
+      },
     })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
     expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(

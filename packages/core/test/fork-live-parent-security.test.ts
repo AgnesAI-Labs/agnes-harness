@@ -1,13 +1,14 @@
+import { requireChildControl } from '@agnes/core-child-control/child/store'
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import type { Event, IdMinter, Seq } from '@agnes/core-common/types'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import { SessionLogImpl } from '@agnes/core-ledger/log/session-log'
+import type { ScanQuery, StorageAdapter } from '@agnes/core-ledger/log/storage'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
-import { requireChildControl } from '../src/child/store.js'
 import { Kernel } from '../src/kernel.js'
-import { forkBaseProviders } from '../src/log/fork-seed.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import type { ScanQuery, StorageAdapter } from '../src/log/storage.js'
-import { presetDefaults } from '../src/step/preset.js'
 import { SessionImpl } from '../src/step/session.js'
-import type { Event, IdMinter, Seq } from '../src/types.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { type FakeProvider, fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, readTool, testFsOps } from './helpers/open-session.js'
@@ -59,6 +60,7 @@ function createChild(from: SessionImpl, kind: 'fork' | 'spawn', opts: CreateOpts
 function kernel(storage: StorageAdapter, provider: FakeProvider) {
   Object.assign(provider, { models: () => [model()] })
   const k = Kernel.create({
+    loops: defaultLoops(),
     storage,
     seams: fakeSeams(),
     provider,
@@ -147,82 +149,39 @@ describe('what creating a delegated child still detects', () => {
   })
 })
 
-describe('a delegated child in a newer ledger format', () => {
-  it('is refused on the live-parent path before any of its rows are read', async () => {
+describe('independent verification of a delegated child', () => {
+  it('a child independently detects a rewritten parent prefix and retains its seal on reload', async () => {
     const storage = new MemoryStorage({ clock: () => CLOCK })
-    const childReads: string[] = []
-    const newer: StorageAdapter = Object.create(storage, {
-      open: {
-        value: async (key: string, claim: { writerRunId: string; ttlMs: number }) => {
-          const opened = await storage.open(key, claim)
-          return opened.parent ? { ...opened, formatVersion: 3 } : opened
-        },
-      },
-      scanIntegrity: {
-        value: async (key: string, q: { fromSeq: Seq; toSeq: Seq; limit: number }) => {
-          if (key !== 'parent') childReads.push(key)
-          return storage.scanIntegrity(key, q)
-        },
-      },
-    })
-    const { k, parent } = await parentReady(newer, script())
-    // The parent's fork point is in hand, so the child opens from the live parent, not cold.
-    expect(forkBaseProviders.has(parent.d.log)).toBe(true)
-    await expect(
-      createChild(parent, 'fork', { parent: parent.key, cwd: '/w', input: 'x' }),
-    ).rejects.toMatchObject({ code: 'E_FORMAT', detail: { reason: 'newer-ledger-format', formatVersion: 3 } })
-    expect(childReads).toEqual([])
-    await k.close()
-  })
-})
-
-describe('what creating a delegated child no longer detects (approved)', () => {
-  it('a rewritten tool call at or before the fork point: the child starts, reads it like its parent, and a cold open refuses it once the history is verified', async () => {
-    const storage = new MemoryStorage({ clock: () => CLOCK })
-    const provider = script()
-    const { k, parent, c } = await parentReady(storage, provider)
+    const { k, parent, c } = await parentReady(storage, script())
     const call = (await storage.scan('parent', { type: 'tool/call', toSeq: c, limit: 1 }))[0] as Event
     tamper(storage, 'parent', call.seq, (e) => ({
       ...e,
       data: { ...(e.data as object), args: { path: 'tampered' } },
     }))
-    const handle = await createChild(parent, 'fork', {
-      parent: parent.key,
-      cwd: '/w',
-      input: 'x',
-    })
-    const child = k.get(handle.key) as SessionImpl
-    // The seeded, in-memory surface is the parent's own and still says what was written.
-    const seededCall: ReadonlyMap<string, unknown> | undefined = child.d.tracker.state.toolCalls
-    expect(JSON.stringify([...(seededCall?.values() ?? [])])).not.toContain('tampered')
-    const before = provider.requests.length
-    await handle.run('x')
-    expect(JSON.stringify(provider.requests.slice(before))).toContain('tampered')
-    // The parent's own next request reads the same stored row.
-    expect((await parent.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
-    expect(JSON.stringify(provider.requests.at(-1))).toContain('tampered')
-    const childKey = child.key
+    const creation = await createChild(parent, 'fork', { parent: parent.key, cwd: '/w', input: 'x' }).then(
+      (handle) => ({ handle }),
+      (error) => ({ error }),
+    )
+    const childKey = (await requireChildControl(storage).listByParent('parent'))[0]!.childKey
+    if ('handle' in creation) {
+      const child = k.get(creation.handle.key) as SessionImpl
+      await expect(child.d.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+      await expect(
+        child.enqueue('next-turn', { content: [{ type: 'text', text: 'refused' }], actor }),
+      ).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    } else expect(creation.error).toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    // A child's own scan seals that child. A fresh parent audit independently finds the same bytes.
+    await expect(parent.auditHistory()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     await k.close()
-    // Closing wrote each session's verified-head checkpoint, so a cold open starts before the prefix
-    // is hashed again; the background verification refuses the row and seals the session.
     const again = kernel(storage, fakeProvider([]))
     for (const [key, writerRunId] of [
       ['parent', 'r3'],
       [childKey, 'r4'],
-    ] as const) {
-      const reopened = await again.session(key, { ...sessionOpts, writerRunId })
-      await expect(reopened.d.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
-    }
+    ] as const)
+      await expect(again.session(key, { ...sessionOpts, writerRunId })).rejects.toMatchObject({
+        code: 'E_LEDGER_INTEGRITY',
+      })
     await again.close()
-    // The failure dropped both checkpoints: every later open verifies from the first row and fails.
-    const third = kernel(storage, fakeProvider([]))
-    await expect(third.session('parent', { ...sessionOpts, writerRunId: 'r5' })).rejects.toMatchObject({
-      code: 'E_LEDGER_INTEGRITY',
-    })
-    await expect(third.session(childKey, { ...sessionOpts, writerRunId: 'r6' })).rejects.toMatchObject({
-      code: 'E_LEDGER_INTEGRITY',
-    })
-    await third.close()
   })
 
   it('a rewritten parent row after the boundary: outside the child, as before', async () => {
@@ -404,7 +363,7 @@ describe('a partial UI cell', () => {
 })
 
 describe('shared parent objects', () => {
-  it('are not modified by a child that starts from them', async () => {
+  it('are not modified by a published child, including after a parent recheck', async () => {
     const storage = new MemoryStorage({ clock: () => CLOCK })
     const { k, parent } = await parentReady(storage, script())
     const freeze = (value: unknown): void => {
@@ -418,7 +377,215 @@ describe('shared parent objects', () => {
       cwd: '/w',
       input: 'x',
     })
+    await parent.verifyHistory()
+    await parent.d.log.fullVerified()
     await expect(handle.run('x')).resolves.toBeDefined()
     await k.close()
   })
 })
+
+it('perf3-review: a delegated fork admitted before a recheck cannot publish child rows after the parent seals', async () => {
+  const storage = new MemoryStorage({ clock: () => CLOCK })
+  let entered!: () => void, release!: () => void
+  const reached = new Promise<void>((resolve) => {
+      entered = resolve
+    }),
+    gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+  const wrapped: StorageAdapter = Object.create(storage)
+  wrapped.createChild = async (parent, boundary, child) => {
+    entered()
+    await gate
+    return storage.createChild(parent, boundary, child)
+  }
+  const provider = script(),
+    { k, parent } = await parentReady(wrapped, provider)
+  try {
+    const pending = createChild(parent, 'fork', {
+      parent: parent.key,
+      cwd: '/w',
+      input: 'must not execute',
+    }).then(
+      (value) => ({ value }),
+      (error) => ({ error }),
+    )
+    await reached
+    const before = provider.calls
+    const call = (await storage.scan('parent', { type: 'tool/call', limit: 1 }))[0] as Event
+    tamper(storage, 'parent', call.seq, (event) => ({
+      ...event,
+      data: { ...(event.data as object), args: { path: 'tampered-under-live-parent' } },
+    }))
+    // A changed prefix of a live parent is found by a full recheck.
+    await parent.verifyHistory({ rehashPrefix: true }).catch(() => undefined)
+    await expect(parent.d.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    expect(parent.d.log.faulted).toBe(true)
+    release()
+    const result = await pending
+    if ('value' in result) await result.value.run('must not execute')
+    const children = await requireChildControl(storage).listByParent('parent')
+    const ownRows = await Promise.all(
+      children.map((row) => storage.scan(row.childKey, { fromSeq: row.boundarySeq + 1, limit: 100 })),
+    )
+    expect({
+      modelCallsAfterSeal: provider.calls - before,
+      childOwnRows: ownRows.flat().length,
+      childAdmitted: 'value' in result,
+      modelSawChangedBytes: JSON.stringify(provider.requests.slice(before)).includes(
+        'tampered-under-live-parent',
+      ),
+    }).toEqual({ modelCallsAfterSeal: 0, childOwnRows: 0, childAdmitted: false, modelSawChangedBytes: false })
+  } finally {
+    release()
+    await k.close()
+  }
+})
+
+const creationWindows = ['create-child', 'child-open', 'registers', 'first-append', 'publish'] as const
+const parentChanges = ['seal', 'close', 'pending', 'repeated'] as const
+it.each(
+  (['head', 'trigger'] as const).flatMap((path) =>
+    [...creationWindows, ...(path === 'trigger' ? ['range' as const] : [])].flatMap((stage) =>
+      parentChanges.map((change) => ({ path, stage, change })),
+    ),
+  ),
+)(
+  'fences a $path fork at $stage for parent $change, allowing verification alone',
+  async ({ path, stage, change }) => {
+    const storage = new MemoryStorage({ clock: () => CLOCK })
+    const wrapped: StorageAdapter = Object.create(storage)
+    let armed = false,
+      paused = false,
+      holdVerify = false,
+      verificationPaused = false
+    let release!: () => void, finishVerify!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const verifyGate = new Promise<void>((resolve) => {
+      finishVerify = resolve
+    })
+    const pause = async () => {
+      if (!armed || paused) return
+      paused = true
+      await gate
+    }
+    wrapped.createChild = async (...args) => {
+      if (stage === 'create-child') await pause()
+      return storage.createChild(...args)
+    }
+    wrapped.open = async (key, options) => {
+      const result = await storage.open(key, options)
+      if (key !== 'parent' && stage === 'child-open') await pause()
+      return result
+    }
+    wrapped.registers = async (key) => {
+      const result = await storage.registers(key)
+      if (key !== 'parent' && stage === 'registers') await pause()
+      return result
+    }
+    wrapped.scanIntegrity = async (key, query) => {
+      if (key === 'parent' && stage === 'range') await pause()
+      if (key === 'parent' && holdVerify && query.fromSeq === 1) {
+        verificationPaused = true
+        await verifyGate
+      }
+      return storage.scanIntegrity(key, query)
+    }
+    const store = requireChildControl(wrapped)
+    store.commitCreatingChild = async (options) => {
+      const result = await requireChildControl(storage).commitCreatingChild(options)
+      if (stage === 'publish') await pause()
+      return result
+    }
+    const append = SessionLogImpl.prototype.append
+    const spy = vi.spyOn(SessionLogImpl.prototype, 'append').mockImplementation(function (
+      this: SessionLogImpl,
+      tx,
+      options = {},
+    ) {
+      return append.call(
+        this,
+        tx,
+        this.key !== 'parent' && stage === 'first-append'
+          ? {
+              ...options,
+              beforeCommit: async () => {
+                await pause()
+                await options.beforeCommit?.()
+              },
+            }
+          : options,
+      )
+    })
+    const provider = script()
+    let k: Kernel | undefined
+    let closing: Promise<void> | undefined
+    try {
+      const ready = await parentReady(wrapped, provider, path === 'trigger')
+      k = ready.k
+      const parent = ready.parent
+      if (path === 'trigger') await parent.diag('contribute-conflict', {})
+      const boundary = path === 'head' ? parent.lastSeq : parent.lastSeq - 1
+      armed = true
+      const pending = createChild(parent, 'fork', {
+        parent: parent.key,
+        cwd: '/w',
+        input: 'must not execute',
+        forkAt: boundary,
+      }).then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      )
+      await vi.waitFor(() => expect(paused).toBe(true))
+      const [record] = await requireChildControl(storage).listByParent('parent')
+      if (!record) throw new Error('missing creating child')
+      const ownRows = () => storage.scan(record.childKey, { fromSeq: boundary + 1, limit: 100 })
+      const before = (await ownRows()).length
+      const calls = provider.calls
+      if (change === 'seal') {
+        const [call] = await storage.scan('parent', { type: 'tool/call', limit: 1 })
+        if (!call) throw new Error('missing tool call')
+        tamper(storage, 'parent', call.seq, (event) => ({ ...event, data: { changed: true } }))
+        await parent.verifyHistory({ rehashPrefix: true }).catch(() => undefined)
+        await expect(parent.d.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+      } else if (change === 'close') {
+        closing = parent.close()
+        expect(parent.closingOrClosed).toBe(true)
+      } else if (change === 'pending') {
+        holdVerify = true
+        await parent.verifyHistory({ rehashPrefix: true })
+        await vi.waitFor(() => expect(verificationPaused).toBe(true))
+        expect(parent.d.log.historyVerified).toBe(false)
+      } else {
+        for (let i = 0; i < 2; i++) {
+          await parent.verifyHistory()
+          await parent.d.log.fullVerified()
+        }
+        expect(parent.d.log.historyVerified).toBe(true)
+      }
+      release()
+      const result = await pending
+      if (change === 'seal' || change === 'close') {
+        expect(result).toHaveProperty('error')
+        expect((await ownRows()).length).toBe(before)
+        expect(k.get(record.childKey)).toBeUndefined()
+      } else {
+        expect(result).toHaveProperty('value')
+        expect((await ownRows()).length).toBeGreaterThanOrEqual(before)
+        expect(k.get(record.childKey)).toBeDefined()
+      }
+      expect(provider.calls).toBe(calls)
+      finishVerify()
+      if (change === 'pending') await parent.d.log.fullVerified()
+      await closing
+    } finally {
+      release()
+      finishVerify()
+      spy.mockRestore()
+      await closing?.catch(() => undefined)
+      await k?.close()
+    }
+  },
+)

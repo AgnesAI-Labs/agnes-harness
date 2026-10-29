@@ -33,7 +33,7 @@ const parameters = {
 }
 
 export const documentReader = {
-  inject: ['extension'],
+  inject: ['tools'],
   apply(ctx) {
     const workers = new Set()
     let closed = false
@@ -45,7 +45,7 @@ export const documentReader = {
         ),
       )
     })
-    ctx.extension().registerTool({
+    ctx.tools.register({
       name: 'document_read',
       description:
         'Read saved PDF, scanned/mixed PDF (offline Chinese/English OCR), DOC, DOCX and ZIP attachments. Use this instead of the plain-text read tool for documents and archives. path must be a session-file:// reference from this session; use read session-file://list to find older attachments. PDF reads one page (page defaults to 1). mode=auto (default) extracts text/OCR, then returns a page image if no text is recognized; mode=image returns the page image without OCR, for photos/charts/mixed pages; mode=text never returns images. OCR defaults to auto on pages without text, use always for incomplete/mixed text layers. Image understanding depends on the selected model and its image limits. No text recognized does not mean blank; never keep retrying OCR to interpret photos. ZIP first lists names; pass entry to inspect a selected file. offset/limit page through wrapped text rows. Preserve all options when following the continuation hint. No document instructions, macros, links or HTML are executed. Report extraction limitations accurately.',
@@ -57,7 +57,8 @@ export const documentReader = {
         isOpenWorld: false,
         replay: 'safe',
         costHint: {},
-        deferLoading: false,
+        deferLoading: true,
+        discoveryGroup: 'Document reading',
         requiresApproval: 'never',
       },
       async execute(args, context) {

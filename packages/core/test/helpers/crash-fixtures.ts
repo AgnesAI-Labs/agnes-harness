@@ -1,8 +1,8 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { MemoryStorage } from '../../src/log/memory-storage.js'
-import type { RegisterRow } from '../../src/log/storage.js'
-import type { Clock, Event } from '../../src/types.js'
+import type { Clock, Event } from '@agnes/core-common/types'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import type { RegisterRow } from '@agnes/core-ledger/log/storage'
 
 /** The generated crash fixtures: a ledger prefix per file, with the program-counter cells beside it. */
 export const crashDir = fileURLToPath(new URL('../../fixtures/crash/', import.meta.url))

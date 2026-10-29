@@ -1,8 +1,10 @@
-import { defineTool, type FsEntry, type ToolResult } from '@agnes/extension-api'
-import { guardedResult } from '../../../tools-core/src/guards/output.js'
+import type { FsEntry, ToolResult } from '@agnes/extension-api'
+import { defineTool } from '@agnes/plugin-runtime'
+import { fsFailure } from '../../../tools-core/src/guards/feedback.js'
 import { normalizeWorkspacePath } from '../../../tools-core/src/paths.js'
 import { LsParams } from '../../../tools-core/src/tools/schemas.js'
-import { allowed, SEARCH_META, searchPathError, toolError } from './walk.js'
+import { type FoundPath, referencedResult } from './references.js'
+import { allowed, SEARCH_META, searchPathError } from './walk.js'
 
 const DEFAULT_LIMIT = 500
 
@@ -26,17 +28,33 @@ export const lsTool = defineTool({
     try {
       entries = await ctx.fs.list(dir)
     } catch (e) {
-      return toolError(`ls failed: ${(e as Error).message}`)
+      return fsFailure(ctx, 'ls', dir, e)
     }
     const kept = entries
       .filter((e) => allowed(ctx, `${abs}/${e.name}`))
       // Code points, not the machine's collation, so the same directory always lists the same way.
       .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     const lines = kept.slice(0, args.limit ?? DEFAULT_LIMIT).map((e) => `${e.name}${MARK[e.kind]}`)
-    if (kept.length > lines.length) lines.push(`[${kept.length - lines.length} more]`)
+    const shown = lines.length
+    if (kept.length > shown) lines.push(`[${kept.length - shown} more; increase limit or narrow path]`)
     const hidden = entries.length - kept.length
     if (hidden > 0) lines.push(`[${hidden} entries not listed: denied by policy]`)
+    const rows = lines.slice(0, shown)
+    const found = kept.map(
+      (e, i): FoundPath => ({
+        abs: `${abs}/${e.name}`,
+        kind: e.kind === 'dir' ? 'directory' : e.kind,
+        ...(i < shown ? { rows: [{ row: i, label: (rows[i] as string).length }] } : {}),
+      }),
+    )
     // An empty answer is indistinguishable from a broken tool, so an empty directory says so.
-    return guardedResult(ctx, lines.length > 0 ? lines.join('\n') : '(no entries)')
+    return referencedResult(
+      ctx,
+      lines.length > 0 ? lines.join('\n') : '(no entries)',
+      rows,
+      found,
+      shown,
+      false,
+    )
   },
 })

@@ -1,90 +1,123 @@
-import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
-import { DYNAMIC_SEAM_NAMES, normalizePluginExport } from '@agnes/plugin-runtime/host'
-import type { PackageModule } from '../src/assemble/packages.js'
+import { BASE_SEAM_PROVIDERS, defaultLoopPlugin, planModePlugin, toolPolicyPlugin } from '@agnes/base'
+import type { ProviderPluginContext } from '@agnes/extension-api'
+import { SEAM_KIND_TOKENS, SEAM_KINDS } from '@agnes/extension-api/seams'
+import type { PackageModule, SeamInitContext } from '@agnes/host-extensions/assemble/packages'
+import type {} from '@agnes/host-providers/assemble/loops'
+import type {} from '@agnes/host-providers/assemble/tool-providers'
+import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 
-const TEST_PRESET_CONFIG = Object.freeze({
-  '~standard': Object.freeze({
-    version: 1 as const,
-    vendor: 'host-test',
-    validate(value: unknown) {
-      return value && typeof value === 'object' && !Array.isArray(value)
-        ? { value: value as Record<string, unknown> }
-        : { issues: [{ message: 'expected object' }] }
-    },
-  }),
-})
+export type TestSeamFactory = (init: SeamInitContext) => Promise<object>
+/** Factories for the seam kinds a fixture module "provides"; registered as providers at apply. */
+export type TestSeamFactories = Partial<Record<(typeof SEAM_KINDS)[number], TestSeamFactory>>
 
-function testSeamPlugin(name: (typeof DYNAMIC_SEAM_NAMES)[number], factory: (ctx: never) => unknown) {
-  const service = `seam:${name}`
-  return defineAgnesPlugin({
-    Config: TEST_PRESET_CONFIG,
-    inject: ['host:seam-init'],
-    provide: service,
-    async apply(ctx: Context, config: Readonly<Record<string, unknown>>) {
-      const values = ctx as unknown as Record<string, unknown>
-      const rawInit = (
-        values['host:seam-init'] as () => {
-          seamTimeoutMs?: number
-          profile: Readonly<Record<string, unknown>> & { preset: Record<string, unknown> }
+const TEST_SEAMS = Symbol('test seam factories')
+const tables = new WeakMap<PackageModule, TestSeamFactories>()
+
+/** Spread into a module literal to give the fixture seam factories without a `seams` table. */
+export function seamFactories(table: TestSeamFactories): { [TEST_SEAMS]: TestSeamFactories } {
+  return { [TEST_SEAMS]: table }
+}
+
+/** The fixture's seam factory table; mutate it to swap an implementation before the host assembles. */
+export function testSeams(module: PackageModule): TestSeamFactories {
+  const carried = (module as { [TEST_SEAMS]?: TestSeamFactories })[TEST_SEAMS]
+  if (carried) return carried
+  const existing = tables.get(module)
+  if (existing) return existing
+  const table: TestSeamFactories = {}
+  tables.set(module, table)
+  return table
+}
+
+/** Base's own implementations as init-taking factories, for fixtures that reuse one of them. */
+export const baseSeamFactories = Object.freeze(
+  Object.fromEntries(
+    SEAM_KINDS.map((kind) => [
+      kind,
+      (init: SeamInitContext) =>
+        Promise.resolve(BASE_SEAM_PROVIDERS[kind].create(init, new AbortController().signal)),
+    ]),
+  ),
+) as Readonly<Record<(typeof SEAM_KINDS)[number], TestSeamFactory>>
+
+/**
+ * A legacy fixture's `seams` factory table, registered as the providers the built-in templates
+ * select. The table is read at apply time, so a test that swaps a factory after attaching sees it.
+ */
+function seamProvidersRow(module: PackageModule) {
+  return Object.freeze({
+    declaration: Object.freeze({
+      export: 'seamProvidersPlugin',
+      apiRange: '^5.0.0',
+      id: 'seam-providers:test',
+      inject: ['providers'],
+      runtime: 'in-process' as const,
+      default: true,
+    }),
+    entry: normalizePluginExport({
+      inject: ['providers'],
+      apply(ctx: ProviderPluginContext) {
+        const table = testSeams(module) as Record<string, TestSeamFactory | undefined>
+        for (const kind of SEAM_KINDS) {
+          const factory = table[kind]
+          if (!factory) continue
+          ctx.providers.register(
+            SEAM_KIND_TOKENS[kind] as never,
+            {
+              id: BASE_SEAM_PROVIDERS[kind].id,
+              version: BASE_SEAM_PROVIDERS[kind].version,
+              create: (init: unknown) => factory(init as SeamInitContext),
+            } as never,
+          )
         }
-      )()
-      const init = {
-        ...rawInit,
-        profile: Object.freeze({ ...rawInit.profile, preset: config }),
-      }
-      let implementation: unknown
-      let timer: ReturnType<typeof setTimeout> | undefined
-      try {
-        implementation = await Promise.race([
-          factory(init as never),
-          new Promise<never>((_, reject) => {
-            timer = setTimeout(
-              () => reject(new Error(`seam ${name} timed out after ${init.seamTimeoutMs ?? 30_000} ms`)),
-              init.seamTimeoutMs ?? 30_000,
-            )
-          }),
-        ])
-      } catch (error) {
-        throw new Error(
-          `seam ${name} factory failed: ${error instanceof Error ? error.message : String(error)}`,
-        )
-      } finally {
-        clearTimeout(timer)
-      }
-      if (!implementation || typeof implementation !== 'object') {
-        throw new Error(`seam ${name} factory returned a non-object`)
-      }
-      const closeable = implementation as { close?: () => void | Promise<void> }
-      const disposeService = ctx.provide(service, Object.freeze(implementation))
-      return async () => {
-        disposeService()
-        await closeable.close?.()
-      }
-    },
+      },
+    }),
   })
 }
 
 /** Give mutable legacy seam fixtures the same ordinary-row shape as real package exports. */
 export function attachTestSeamPlugins(module: PackageModule): PackageModule {
+  const ordinary = [...(module.plugins ?? [])]
+  // Synthetic Base modules must declare the same loop and permission policies as shipped Base.
+  if (module.id === '@agnes/base')
+    for (const [id, exportName, service, plugin] of [
+      ['loop:agnes.default', 'defaultLoopPlugin', 'loops', defaultLoopPlugin],
+      ['tool-policy:default', 'toolPolicyPlugin', 'providers', toolPolicyPlugin],
+    ] as const) {
+      if (ordinary.some((row) => row.declaration.id === id)) continue
+      ordinary.push({
+        declaration: {
+          id,
+          export: exportName,
+          apiRange: '^5.0.0',
+          default: true,
+          inject: [service],
+          runtime: 'in-process',
+        },
+        entry: normalizePluginExport(plugin),
+      })
+    }
+  if (module.id === '@agnes/base' && !ordinary.some((row) => row.declaration.id === 'service:plan-mode'))
+    ordinary.push({
+      declaration: {
+        id: 'service:plan-mode',
+        export: 'planModePlugin',
+        apiRange: '^5.0.0',
+        default: true,
+        inject: ['providers', 'services'],
+        provide: ['planMode'],
+        runtime: 'in-process',
+      },
+      entry: normalizePluginExport(planModePlugin),
+    })
   Object.defineProperty(module, 'plugins', {
     configurable: true,
     enumerable: true,
     get() {
-      return DYNAMIC_SEAM_NAMES.flatMap((name) => {
-        const factory = module.seams?.[name]
-        if (!factory) return []
-        return [
-          Object.freeze({
-            declaration: Object.freeze({
-              export: `${name}Plugin`,
-              id: `seam:${name}`,
-              runtime: 'in-process' as const,
-              default: true,
-            }),
-            entry: normalizePluginExport(testSeamPlugin(name, factory as never)),
-          }),
-        ]
-      })
+      return [
+        ...ordinary,
+        ...(SEAM_KINDS.some((kind) => testSeams(module)[kind]) ? [seamProvidersRow(module)] : []),
+      ]
     },
   })
   return module

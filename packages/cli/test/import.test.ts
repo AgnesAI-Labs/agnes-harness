@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, truncateSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
@@ -8,9 +8,9 @@ import type { EventEnvelope } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { parseArgs } from '../src/args.js'
 import { type MainIO, main } from '../src/bin.js'
-import { importBatches, importFile } from '../src/commands/import.js'
+import { importBatches, importFile, importInto } from '../src/commands/import.js'
 import { UsageError } from '../src/errors.js'
-import { TEST_LOCK } from './boot-host.js'
+import { TEST_LOCK, testDeps } from './boot-host.js'
 import { memoryAdmission, openAdmittedSession } from './import-admission.js'
 
 const source = (id = 'pi-cli') =>
@@ -47,7 +47,48 @@ const sink = () => {
   }
 }
 
+describe('importInto (the TUI /import path)', () => {
+  it('imports through a local Host, returns the new key, and refuses an unknown --from', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'agnes-import-tui-'))
+    const file = join(home, 'pi.jsonl')
+    writeFileSync(file, source('from-tui'))
+    const deps = testDeps(home, {
+      createHostImpl: async () => (await createTestHost({ dataDir: home })).host,
+    })
+    try {
+      await expect(importInto(parseArgs([]), deps, { cwd: home, env: {} }, file, 'pi')).resolves.toEqual({
+        key: 'agnes:local:default:import:dm:from-tui',
+      })
+      await expect(importInto(parseArgs([]), deps, { cwd: home, env: {} }, file, 'vim')).rejects.toThrow(
+        UsageError,
+      )
+      await expect(
+        importInto(parseArgs([]), deps, { cwd: home, env: {} }, join(home, 'missing.jsonl')),
+      ).rejects.toThrow()
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('import command', () => {
+  it('refuses oversized sources and non-files before reserving a target', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agnes-import-limits-'))
+    try {
+      const file = join(root, 'oversized.jsonl')
+      writeFileSync(file, '')
+      truncateSync(file, 64 * 1024 * 1024 + 1)
+      const parsed = parseArgs(['import', file])
+      const deps = { cwd: root, env: {}, host: {}, admission: {}, io: sink().io } as Parameters<
+        typeof importFile
+      >[1]
+      await expect(importFile(parsed, deps)).rejects.toThrow(/E_IMPORT_TOO_LARGE/)
+      await expect(importFile(parseArgs(['import', root]), deps)).rejects.toThrow(/regular file/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('is dispatched by the executable through a local Host', async () => {
     const home = mkdtempSync(join(tmpdir(), 'agnes-import-main-'))
     const file = join(home, 'pi.jsonl')
@@ -184,7 +225,7 @@ describe('import command', () => {
     expect(reads).toBe(0)
   })
 
-  it('packs at closed-turn boundaries and refuses a single oversized turn', () => {
+  it('packs at closed-turn boundaries and appends an oversized turn as a batch of its own', () => {
     const row = (type: string): Omit<EventEnvelope, 'seq'> =>
       ({
         ts: new Date(0).toISOString(),
@@ -202,13 +243,15 @@ describe('import command', () => {
       row('turn/end'),
     ]
     expect(importBatches(events).map((batch) => batch.length)).toEqual([499, 3])
-    expect(() =>
+    expect(
       importBatches([
+        row('x/agnes/import/unmapped'),
         row('turn/start'),
         ...Array.from({ length: 499 }, () => row('user/message')),
         row('turn/end'),
-      ]),
-    ).toThrow(/exceeding batch limit/)
+        row('x/agnes/import/unmapped'),
+      ]).map((batch) => batch.length),
+    ).toEqual([1, 501, 1])
   })
 
   it('refuses to append an import to a target that already holds a conversation', async () => {

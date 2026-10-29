@@ -2,7 +2,9 @@
 
 # Tool metadata
 
-All eight keys must be explicitly present. Authors may explicitly set costHint, deferLoading and requiresApproval to undefined; wire metadata normalizes these to null. A missing key is E_TOOLDEF_META. returnsImages is the one optional key; absent means false.
+The five safety keys (isReadOnly, isDestructive, isConcurrencySafe, isOpenWorld, replay) must be present. Optional costHint, deferLoading and requiresApproval default to no estimate, initial discovery and approval inferred from isDestructive. Import readOnlyTool / writeTool presets from @agnes/plugin-runtime and override fields for your contract.
+
+`isPresentational` is optional. Omitting it means the tool is not presentational.
 
 | Key | Meaning |
 |---|---|
@@ -11,7 +13,15 @@ All eight keys must be explicitly present. Authors may explicitly set costHint, 
 | `isConcurrencySafe` | The tool may run alongside other calls. The inner batch scheduler and the code runtime's sub-calls read this same judgement. |
 | `isOpenWorld` | The result comes from outside. The row carrying it is written untrusted, injection defence trims it, and surface projection reads this. |
 | `replay` | How crash recovery treats an unsettled call: safe reruns it verbatim, idempotent reruns it under the same effectId, never synthesises an unknown outcome. Consumed by the effect sandwich. |
-| `costHint` | An estimate for the budget preflight; null means the author declared no hint. Consumed by the budget stage. |
-| `deferLoading` | true keeps the tool out of the default disclosure until a search loads it. null defers to the package default, which the MCP importer reads as true; until that importer lands, null behaves as false. Consumed by disclosure. |
-| `requiresApproval` | The approval band. always asks about every call; destructive asks when the call is destructive or the turn is tainted; never asks about no call, a tainted turn included. null resolves to destructive for a tool that may write and to never for a read-only one, and the command policy table may still decide. Consumed by the approval stage. |
-| `returnsImages` | Optional; true declares that the tool's results carry pictures for the model. The call records it in its resolved policy, and request media sends a result's images only when the result is closed-world (trusted) and its call declared this. Absent means false: other tools' images, apart from read, computer_use and document_read, stay out of model requests. |
+| `costHint` | Optional estimate for budget preflight. Omission or null means no estimate. |
+| `deferLoading` | Optional. true defers model discovery until loaded by search; omission, false or null means initial discovery; auto lets the runtime defer the turn's auto tools together once there are more than 15 of them or their schemas exceed about 4000 tokens. |
+| `discoveryGroup` | Optional one-line label, such as an MCP server name. Deferred tools sharing a label are listed to the model as one line with their count. |
+| `requiresApproval` | Optional approval band. Omission or null means destructive for destructive tools, otherwise never; command policy still applies. |
+| `isPresentational` | Optional. The effect only publishes display state to the user and has no external side effect. It cannot be combined with isDestructive or isOpenWorld. Tainted-call policy does not escalate this flag; requiresApproval always and a destructive band still ask. |
+| `attestsHistory` | Optional. Evidence exports and reports wait for full session history verification before dispatch. Omission means ordinary execution; it does not attest ledger integrity. |
+| `invalidArgumentLimit` | Consecutive invalid argument failures before disabling this tool for the rest of the turn. Default 2. Valid arguments reset the count before exhaustion; exhausted tools cannot be re-enabled within the turn. |
+| `modelVisible` | Optional, defaults to true. false hides the tool from model schemas and discovery; internal invocation and authorization remain available. |
+| `requiresImageInput` | Optional, defaults to false. Only a model with native image input can discover or execute this tool. |
+| `requiresUser` | Optional, defaults to false. The tool asks a person who is present, or shows them something to look at or act on now (a question, a form, a live UI surface). A turn whose input declares that nobody is attending (agh -p, agh run, runHeadless) does not offer it to the model or execute a model call to it. |
+| `paths` | Optional declarations of top-level workspace path arguments. The runtime preflights access before every approval mode; URI schemes delegated to resource services never widen the filesystem fence. |
+| `commandArg` | Optional. Names the top-level string argument that carries the command text this tool runs. The command table matches its rules against that text, whitespace-folded, instead of the canonical JSON of all arguments. |

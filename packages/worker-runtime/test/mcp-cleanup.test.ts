@@ -42,6 +42,7 @@ beforeEach(() => {
     mcpResources: { list: () => [] },
     skills: [],
     mcp: [],
+    mcpEntries: [],
     revision: 'a'.repeat(64),
     discovery: { candidates: [], failedRoots: [], roots: [] },
     runtime: { mcp: { close: mocks.managerClose } },
@@ -140,11 +141,6 @@ it('does not pin a shared session worker runtime to AGNES_WORKER_ROOT', async ()
 // a profileDir derived from dataDir instead of agnesHome(env) cannot pass by coincidence.
 it.each([
   { source: 'AGH_HOME', env: (home: string) => ({ AGH_HOME: home }), root: (home: string) => home },
-  {
-    source: 'legacy AGNES_HOME',
-    env: (home: string) => ({ AGNES_HOME: home }),
-    root: (home: string) => home,
-  },
   {
     source: 'HOME default',
     env: (home: string) => ({ HOME: home }),
@@ -391,4 +387,11 @@ it('does not repeat cleanup or exit successfully when publishing hello fails aft
   expect(mocks.sessionClose).not.toHaveBeenCalled()
   expect(exit).not.toHaveBeenCalled()
   expect(f.link.destroyed).toBe(true)
+})
+
+it('refuses AGNES_HOME before assembling a worker', async () => {
+  const f = await fixture('session')
+  await expect(runWorker({ ...f.env, AGNES_HOME: f.env.AGH_HOME }, f.io)).rejects.toThrow(
+    /AGNES_HOME.*clean home/,
+  )
 })

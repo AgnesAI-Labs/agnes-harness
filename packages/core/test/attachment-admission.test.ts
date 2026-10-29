@@ -1,432 +1,448 @@
-import { crc32, deflateSync } from 'node:zlib'
-import { USER_IMAGE_SEND_BUDGET } from '@agnes/protocol-validation'
-import { describe, expect, it } from 'vitest'
-import { USER_IMAGE_BUDGET } from '../src/request/user-images.js'
-import { validateUserMessageImages } from '../src/request/user-message-images.js'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import type { AttachmentReceipt, AttachmentScope, AttachmentStore } from '@agnes/extension-api'
 import {
-  admitAttachments,
-  checkUserImageBudget,
-  MAX_ATTACHMENT_ROW_BYTES,
-  type UserAttachmentPort,
-} from '../src/step/attachment-admission.js'
+  AttachmentError,
+  attachmentLink,
+  type ContentBlock,
+  IncrementalSha256,
+  storedAttachment,
+} from '@agnes/protocol'
+import { describe, expect, it, vi } from 'vitest'
+import { visibleAttachmentRefs } from '../src/request/attachment-admission.js'
+import { attachmentIndex } from '../src/request/attachment-index.js'
+import { attachmentSurface } from '../src/request/attachment-surface.js'
+import { readSessionAttachment } from '../src/request/session-files.js'
+import { readSessionImages } from '../src/request/session-images.js'
+import { fakeProvider, textTurn } from './helpers/fake-provider.js'
+import { fakeSeams } from './helpers/fake-seams.js'
+import { actor, openSession } from './helpers/open-session.js'
 
-const PNG_1X1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
-const signal = new AbortController().signal
-const u32 = (n: number) => {
-  const b = Buffer.alloc(4)
-  b.writeUInt32BE(n)
-  return b
-}
-const chunk = (type: string, data: Buffer) => {
-  const typed = Buffer.concat([Buffer.from(type, 'ascii'), data])
-  return Buffer.concat([u32(data.length), typed, u32(crc32(typed))])
-}
-/** A valid 1-bit PNG of the given size. */
-const blankPng = (width: number, height: number) =>
-  Buffer.concat([
-    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
-    chunk('IHDR', Buffer.concat([u32(width), u32(height), Buffer.from([1, 0, 0, 0, 0])])),
-    chunk('IDAT', deflateSync(Buffer.alloc(height * (Math.ceil(width / 8) + 1)))),
-    chunk('IEND', Buffer.alloc(0)),
-  ])
-function port(over: Partial<UserAttachmentPort> = {}): UserAttachmentPort & { stored: number } {
-  const p = {
-    stored: 0,
-    storeByReference: true,
-    async store({ bytes }: { bytes: Uint8Array }) {
-      p.stored++
-      return { sha256: 'b'.repeat(64), bytes: bytes.byteLength }
-    },
-    async authorize() {
-      return 'ok' as const
-    },
-    async isUserAttachment() {
-      return true
-    },
-    async read() {
-      return new Uint8Array()
-    },
-    ...over,
+function fixture() {
+  const objects = new Map<string, Uint8Array>()
+  const pending = new Map<string, { scope: AttachmentScope; receipt: AttachmentReceipt }>()
+  let ordinal = 0
+  const put = async (bytes: Uint8Array, meta?: { mime?: string }) => {
+    const ref = {
+      sha256: new IncrementalSha256().update(bytes).digest(),
+      size: bytes.length,
+      mime: meta?.mime ?? 'application/octet-stream',
+    }
+    objects.set(ref.sha256, bytes.slice())
+    return ref
   }
-  return p
+  const attachments: AttachmentStore = {
+    async store(scope, bytes, mime, signal) {
+      signal.throwIfAborted()
+      const receipt = {
+        id: `00000000-0000-4000-8000-${String(++ordinal).padStart(12, '0')}`,
+        artifact: await put(bytes, { mime }),
+      }
+      pending.set(receipt.id, { scope, receipt })
+      return receipt
+    },
+    async authorize(scope, receipt) {
+      const found = pending.get(receipt.id)
+      return (
+        !!found &&
+        JSON.stringify(found.scope) === JSON.stringify(scope) &&
+        JSON.stringify(found.receipt) === JSON.stringify(receipt)
+      )
+    },
+    async confirm(_scope, id) {
+      pending.delete(id)
+    },
+    async discard(_scope, id) {
+      pending.delete(id)
+    },
+    async pendingRoots() {
+      return { complete: true, roots: [...pending.values()].map((row) => row.receipt.artifact) }
+    },
+  }
+  const seams = fakeSeams({
+    artifacts: {
+      put,
+      get: async (ref) => {
+        const bytes = objects.get(ref.sha256)
+        if (!bytes) throw new AttachmentError('ATTACHMENT_MISSING')
+        return bytes.slice()
+      },
+      attachments,
+    },
+  })
+  const provider = fakeProvider([textTurn('saved')])
+  provider.models = () => [
+    {
+      id: 'default',
+      route: 'default',
+      name: 'Synthetic vision',
+      api: 'openai-completions',
+      baseUrl: 'https://test.invalid',
+      input: ['text', 'image'],
+      reasoning: false,
+      contextWindow: 10000,
+      maxTokens: 1000,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      toolCallFormats: ['native'],
+      thinkingReplay: 'native',
+      contract_id: null,
+    },
+  ]
+  return {
+    objects,
+    pending,
+    seams,
+    provider,
+    attachments,
+    imageInputTokenFallback: ({ imageCount }: { imageCount: number }) => ({ tokens: 128, imageCount }),
+  }
 }
-const base = { sessionKey: 'k', referenced: () => false, sessionBytes: () => 0, signal }
+const inline = (text: string): ContentBlock => ({
+  type: 'file',
+  name: 'report.txt',
+  mimeType: 'text/plain',
+  data: btoa(text),
+})
+const queued = (session: Awaited<ReturnType<typeof openSession>>['session']): ContentBlock[] =>
+  (session.latest('inbox') as { items: { content: ContentBlock[] }[] }).items.at(-1)?.content ?? []
 
-describe('admitAttachments', () => {
-  it('stores inline images and files and replaces them with references', async () => {
-    const p = port()
-    const out = await admitAttachments({
-      ...base,
-      port: p,
-      content: [
-        { type: 'text', text: 'see' },
-        { type: 'image', mimeType: 'image/png', data: PNG_1X1 },
-        { type: 'file', mimeType: 'application/zip', name: 'a.zip', data: 'UEsDBA==' },
-      ],
+describe('artifact-backed input admission', () => {
+  it('persists references in inbox and messages, reads exact originals and never exposes raw files in the prompt', async () => {
+    const f = fixture()
+    const { session, log } = await openSession(f)
+    await session.enqueue('next-turn', { actor, content: [inline('private-original')] })
+    const content = queued(session)
+    expect(content).toHaveLength(1)
+    expect(storedAttachment(content[0]!)).toBe(true)
+    expect(JSON.stringify(content)).not.toContain(btoa('private-original'))
+    expect(f.pending.size).toBe(0)
+    await session.acceptInput()
+    const [row] = await log.scan({ type: 'user/message', lane: 'main', limit: 1 })
+    const original = await readSessionAttachment(
+      session,
+      { path: `session-file://${row!.seq}/1` },
+      new AbortController().signal,
+    )
+    expect(new TextDecoder().decode(original?.bytes)).toBe('private-original')
+    await expect(
+      readSessionAttachment(
+        session,
+        { path: `session-file://${row!.seq}/1`, maxBytes: 2 },
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({ code: 'ATTACHMENT_TOO_LARGE' })
+    expect(
+      await readSessionAttachment(
+        session,
+        { path: `session-file://${session.lastSeq + 1}/1` },
+        new AbortController().signal,
+      ),
+    ).toBeUndefined()
+    await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    expect(JSON.stringify(f.provider.requests)).not.toContain(btoa('private-original'))
+    expect(JSON.stringify(f.provider.requests)).toContain('session-file://')
+  })
+
+  it('refuses forged scope/size/MIME/hash and leaves the inbox unchanged on failure', async () => {
+    const f = fixture()
+    const { session, log } = await openSession(f)
+    const receipt = await f.attachments.store(
+      { sessionKey: 'foreign', lane: 'main' },
+      new Uint8Array([1, 2]),
+      'text/plain',
+      new AbortController().signal,
+    )
+    const link = attachmentLink(receipt.artifact, 'foreign', { receiptId: receipt.id })
+    await expect(session.enqueue('next-turn', { actor, content: [link] })).rejects.toMatchObject({
+      detail: { code: 'ATTACHMENT_NOT_AUTHORIZED' },
     })
-    expect(out).toEqual([
-      { type: 'text', text: 'see' },
-      {
-        type: 'image',
-        mimeType: 'image/png',
-        // The fixture decodes to 68 bytes.
-        attachment: { sha256: 'b'.repeat(64), bytes: 68 },
-        width: 1,
-        height: 1,
-      },
-      {
-        type: 'file',
-        mimeType: 'application/zip',
-        name: 'a.zip',
-        attachment: { sha256: 'b'.repeat(64), bytes: 4 },
-      },
+    expect(f.pending.has(receipt.id)).toBe(true)
+    const own = await f.attachments.store(
+      { sessionKey: session.key, lane: session.lane },
+      new Uint8Array([3]),
+      'text/plain',
+      new AbortController().signal,
+    )
+    for (const artifact of [
+      { ...own.artifact, size: 2 },
+      { ...own.artifact, mime: 'application/pdf' },
     ])
-    expect(p.stored).toBe(2)
-  })
-
-  it('keeps everything inline when the switch is off or no port exists', async () => {
-    const content = [{ type: 'image' as const, mimeType: 'image/png', data: PNG_1X1 }]
-    expect(await admitAttachments({ ...base, port: port({ storeByReference: false }), content })).toEqual(
-      content,
-    )
-    expect(await admitAttachments({ ...base, port: undefined, content })).toEqual(content)
-  })
-
-  it('refuses a client reference it cannot authorize, or whose object is missing', async () => {
-    const ref = {
-      type: 'file' as const,
-      mimeType: 'application/zip',
-      name: 'a.zip',
-      attachment: { sha256: 'c'.repeat(64), bytes: 9 },
-    }
-    await expect(
-      admitAttachments({ ...base, port: port({ authorize: async () => 'unauthorized' }), content: [ref] }),
-    ).rejects.toMatchObject({ code: 'E_ENVELOPE', detail: { code: 'ATTACHMENT_NOT_AUTHORIZED' } })
-    await expect(
-      admitAttachments({ ...base, port: port({ authorize: async () => 'missing' }), content: [ref] }),
-    ).rejects.toMatchObject({ detail: { code: 'ATTACHMENT_MISSING' } })
-    await expect(admitAttachments({ ...base, port: undefined, content: [ref] })).rejects.toMatchObject({
-      detail: { code: 'ATTACHMENT_NOT_AUTHORIZED' },
-    })
-  })
-
-  it('refuses an image reference whose stored header disagrees with its declared size', async () => {
-    const bytes = Uint8Array.from(Buffer.from(PNG_1X1, 'base64'))
-    const ref = {
-      type: 'image' as const,
-      mimeType: 'image/png' as const,
-      attachment: { sha256: 'd'.repeat(64), bytes: bytes.byteLength },
-      width: 2,
-      height: 1,
-    }
-    await expect(
-      admitAttachments({ ...base, port: port({ read: async () => bytes }), content: [ref] }),
-    ).rejects.toMatchObject({ code: 'E_ENVELOPE' })
-  })
-
-  it('keeps the attachment part of a row within 64 KiB', async () => {
-    const refs = Array.from({ length: 50 }, (_, i) => ({
-      type: 'file' as const,
-      mimeType: 'application/octet-stream',
-      name: `${'n'.repeat(250)}${i}`,
-      attachment: { sha256: 'e'.repeat(64), bytes: 1 },
-    }))
-    await expect(admitAttachments({ ...base, port: port(), content: refs })).resolves.toHaveLength(50)
-    expect(MAX_ATTACHMENT_ROW_BYTES).toBe(65_536)
-  })
-
-  it('surfaces a store failure without writing anything', async () => {
-    await expect(
-      admitAttachments({
-        ...base,
-        port: port({
-          store: async () =>
-            Promise.reject(Object.assign(new Error('UPLOAD_QUOTA'), { code: 'UPLOAD_QUOTA' })),
+      await expect(
+        session.enqueue('next-turn', {
+          actor,
+          content: [attachmentLink(artifact, 'forged', { receiptId: own.id })],
         }),
-        content: [{ type: 'file', mimeType: 'a/b', name: 'n', data: 'QUJD' }],
-      }),
-    ).rejects.toMatchObject({ code: 'E_ENVELOPE', detail: { code: 'UPLOAD_QUOTA' } })
-  })
-
-  it('passes the running byte total to each store so a session quota sees the whole message', async () => {
-    const seen: number[] = []
-    const p = port({
-      async store({ bytes, sessionBytes }) {
-        seen.push(sessionBytes)
-        return { sha256: 'b'.repeat(64), bytes: bytes.byteLength }
-      },
-    })
-    const file = { type: 'file' as const, mimeType: 'a/b', name: 'n', data: 'QUJD' }
-    await admitAttachments({ ...base, sessionBytes: () => 100, port: p, content: [file, file, file] })
-    expect(seen).toEqual([100, 103, 106])
-  })
-
-  it('checks a reference against what this session already references', async () => {
-    const asked: boolean[] = []
-    const p = port({
-      async authorize({ referenced }) {
-        asked.push(referenced)
-        return referenced ? 'ok' : 'unauthorized'
-      },
-    })
-    const ref = {
-      type: 'file' as const,
-      mimeType: 'a/b',
-      name: 'n',
-      attachment: { sha256: 'f'.repeat(64), bytes: 3 },
-    }
+      ).rejects.toMatchObject({ detail: { code: 'ATTACHMENT_NOT_AUTHORIZED' } })
+    f.objects.set(own.artifact.sha256, new Uint8Array([9]))
     await expect(
-      admitAttachments({ ...base, referenced: (sha) => sha === 'f'.repeat(64), port: p, content: [ref] }),
-    ).resolves.toEqual([ref])
-    expect(asked).toEqual([true])
-  })
-
-  it('keeps a large attachment inline when the switch is off: the 64 KiB bound is for references', async () => {
-    const content = [{ type: 'file' as const, mimeType: 'a/b', name: 'n', data: 'QUJD'.repeat(40_000) }]
-    expect(await admitAttachments({ ...base, port: port({ storeByReference: false }), content })).toEqual(
-      content,
+      session.enqueue('next-turn', {
+        actor,
+        content: [attachmentLink(own.artifact, 'tampered', { receiptId: own.id })],
+      }),
+    ).rejects.toMatchObject({ detail: { code: 'ATTACHMENT_HASH_MISMATCH' } })
+    expect(await log.scan({ type: 'inbox', limit: 10 })).toEqual([])
+    const append = vi.spyOn(log, 'append').mockRejectedValueOnce(new Error('synthetic append failure'))
+    await expect(session.enqueue('next-turn', { actor, content: [inline('rollback')] })).rejects.toThrow(
+      'synthetic append failure',
     )
-    expect(await admitAttachments({ ...base, port: undefined, content })).toEqual(content)
+    append.mockRestore()
+    expect([...f.pending.values()].map((entry) => entry.receipt.id).sort()).toEqual(
+      [own.id, receipt.id].sort(),
+    )
   })
 
-  it('authorizes the thumbnail of an image reference as well', async () => {
-    const bytes = Uint8Array.from(Buffer.from(PNG_1X1, 'base64'))
-    const thumbnail = { sha256: '9'.repeat(64), bytes: 10, width: 1, height: 1 }
-    const ref = {
-      type: 'image' as const,
-      mimeType: 'image/png' as const,
-      attachment: { sha256: 'd'.repeat(64), bytes: bytes.byteLength },
-      width: 1,
-      height: 1,
-      thumbnail,
-    }
-    const asked: string[] = []
-    const p = port({
-      read: async () => bytes,
-      async authorize({ sha256 }) {
-        asked.push(sha256)
-        return sha256 === thumbnail.sha256 ? 'unauthorized' : 'ok'
-      },
-    })
-    await expect(admitAttachments({ ...base, port: p, content: [ref] })).rejects.toMatchObject({
+  it('inherits only visible fork prefixes and rejects another lane or a later parent reference', async () => {
+    const f = fixture(),
+      storage = new MemoryStorage()
+    const parent = await openSession({ ...f, storage, key: 'parent' })
+    await parent.session.enqueue('next-turn', { actor, content: [inline('prefix')] })
+    await parent.session.acceptInput()
+    const first = queued(parent.session) // Claimed input is empty; use the immutable message instead.
+    expect(first).toEqual([])
+    const [message] = await parent.log.scan({ type: 'user/message', limit: 1 })
+    const prefix = (message!.data as { content: ContentBlock[] }).content
+    await parent.session.run({ until: 'turn-end', signal: new AbortController().signal })
+    const cut = parent.session.lastSeq
+    await storage.createChild('parent', cut, 'child')
+    await parent.session.enqueue('next-turn', { actor, content: [inline('after-boundary')] })
+    const late = queued(parent.session)
+    const child = await openSession({ ...f, storage, key: 'child', writerRunId: 'child-writer' })
+    await expect(child.session.enqueue('next-turn', { actor, content: prefix })).resolves.toBeGreaterThan(cut)
+    await expect(child.session.enqueue('next-turn', { actor, content: late })).rejects.toMatchObject({
       detail: { code: 'ATTACHMENT_NOT_AUTHORIZED' },
     })
-    expect(asked).toEqual(['d'.repeat(64), thumbnail.sha256])
-    await expect(
-      admitAttachments({ ...base, port: port({ read: async () => bytes }), content: [ref] }),
-    ).resolves.toEqual([ref])
-  })
-
-  it('refuses an image reference larger than an image may be without reading it', async () => {
-    let reads = 0
-    const ref = {
-      type: 'image' as const,
-      mimeType: 'image/png' as const,
-      attachment: { sha256: 'd'.repeat(64), bytes: 100 * 1024 * 1024 + 1 },
-      width: 1,
-      height: 1,
-    }
-    const p = port({
-      async read() {
-        reads++
-        return new Uint8Array()
-      },
+    await parent.log.close()
+    const other = await openSession({
+      ...f,
+      storage,
+      key: 'parent',
+      writerRunId: 'lane-writer',
+      lane: 'other',
     })
-    await expect(admitAttachments({ ...base, port: p, content: [ref] })).rejects.toMatchObject({
-      code: 'E_ENVELOPE',
-      detail: { code: 'ATTACHMENT_BYTES' },
+    await expect(other.session.enqueue('next-turn', { actor, content: prefix })).rejects.toMatchObject({
+      detail: { code: 'ATTACHMENT_NOT_AUTHORIZED' },
     })
-    expect(reads).toBe(0)
-  })
-
-  it('refuses a thumbnail that is too large or not an image of its declared size', async () => {
-    const png = Uint8Array.from(Buffer.from(PNG_1X1, 'base64'))
-    const zip = Uint8Array.from(Buffer.from('PK\u0003\u0004 not an image'))
-    const image = (thumbnail: Record<string, unknown>) => ({
-      type: 'image' as const,
-      mimeType: 'image/png' as const,
-      attachment: { sha256: 'd'.repeat(64), bytes: png.byteLength },
-      width: 1,
-      height: 1,
-      thumbnail,
-    })
-    const reads: string[] = []
-    const p = port({
-      async read(sha256) {
-        reads.push(sha256)
-        return sha256 === '9'.repeat(64) ? zip : png
-      },
-    })
-    const large = { sha256: '8'.repeat(64), bytes: 256 * 1024 + 1, width: 1, height: 1 }
-    await expect(
-      admitAttachments({ ...base, port: p, content: [image(large) as never] }),
-    ).rejects.toMatchObject({ detail: { code: 'ATTACHMENT_DATA' } })
-    expect(reads).toEqual([])
-    const notImage = { sha256: '9'.repeat(64), bytes: zip.byteLength, width: 1, height: 1 }
-    await expect(
-      admitAttachments({ ...base, port: p, content: [image(notImage) as never] }),
-    ).rejects.toMatchObject({ detail: { code: 'ATTACHMENT_DATA' } })
-    const wrongSize = { sha256: '7'.repeat(64), bytes: png.byteLength, width: 2, height: 1 }
-    await expect(
-      admitAttachments({ ...base, port: p, content: [image(wrongSize) as never] }),
-    ).rejects.toMatchObject({ detail: { code: 'ATTACHMENT_DATA' } })
-  })
-
-  it('reports a file system failure as unavailable without its message', async () => {
-    const leak = Object.assign(new Error('ENOSPC: no space left, open /srv/agh/data/artifacts/staging/x'), {
-      code: 'ENOSPC',
-    })
-    const failure = await admitAttachments({
-      ...base,
-      port: port({ store: async () => Promise.reject(leak) }),
-      content: [{ type: 'file', mimeType: 'a/b', name: 'n', data: 'QUJD' }],
-    }).then(
-      () => new Error('admitted'),
-      (error: unknown) => error as Error,
+    const read = await readSessionAttachment(
+      child.session,
+      { path: `session-file://${message!.seq}/1` },
+      new AbortController().signal,
     )
-    expect(failure).toMatchObject({ code: 'E_ENVELOPE', detail: { code: 'UPLOAD_UNAVAILABLE' } })
-    expect(failure.message).not.toMatch(/srv|ENOSPC|artifacts/)
-    const read = await admitAttachments({
-      ...base,
-      port: port({ read: async () => Promise.reject(leak) }),
-      content: [
-        {
-          type: 'image',
-          mimeType: 'image/png',
-          attachment: { sha256: 'd'.repeat(64), bytes: 68 },
-          width: 1,
-          height: 1,
-        },
-      ],
-    }).then(
-      () => new Error('admitted'),
-      (error: unknown) => error as Error,
-    )
-    expect(read).toMatchObject({ detail: { code: 'ATTACHMENT_UNAVAILABLE' } })
-    expect(read.message).not.toMatch(/srv|ENOSPC|artifacts/)
+    expect(new TextDecoder().decode(read?.bytes)).toBe('prefix')
   })
 
-  it('reports a store that outran its deadline as a timeout, not as unavailable', async () => {
-    const late = new DOMException('The operation timed out.', 'TimeoutError')
-    const stored = await admitAttachments({
-      ...base,
-      port: port({ store: async () => Promise.reject(late) }),
-      content: [{ type: 'file', mimeType: 'a/b', name: 'n', data: 'QUJD' }],
-    }).then(
-      () => new Error('admitted'),
-      (error: unknown) => error as Error,
-    )
-    expect(stored).toMatchObject({
-      code: 'E_ENVELOPE',
-      detail: { code: 'ATTACHMENT_TIMEOUT', reason: 'attachment-timeout' },
+  it('hydrates only a transient image surface and can copy the image original without a model read', async () => {
+    const f = fixture(),
+      { session } = await openSession(f)
+    const data =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+    await session.enqueue('next-turn', { actor, content: [{ type: 'image', data, mimeType: 'image/png' }] })
+    expect(queued(session)[0]).toMatchObject({
+      type: 'resource_link',
+      attachment: { image: { width: 1, height: 1 } },
     })
-    // A read cut off by the deadline rejects with the signal's reason.
-    const expired = AbortSignal.timeout(1)
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    const read = await admitAttachments({
-      ...base,
-      signal: expired,
-      port: port({ read: async (_sha, _range, s) => Promise.reject(s?.reason) }),
-      content: [
-        {
-          type: 'image',
-          mimeType: 'image/png',
-          attachment: { sha256: 'd'.repeat(64), bytes: 68 },
-          width: 1,
-          height: 1,
-        },
-      ],
-    }).then(
-      () => new Error('admitted'),
-      (error: unknown) => error as Error,
+    await session.acceptInput()
+    const surface = session.surface()
+    const { surface: transient } = await attachmentSurface(session, surface)
+    expect(JSON.stringify(transient)).toContain(data)
+    expect(JSON.stringify(surface)).not.toContain(data)
+    const forged = structuredClone(surface)
+    const forgedUser = forged.find((node) => node.kind === 'user')!
+    const forgedContent = (forgedUser.event.data as { content: ContentBlock[] }).content
+    forgedContent[0] = attachmentLink(
+      { sha256: 'f'.repeat(64), size: 68, mime: 'image/png' },
+      'foreign.png',
+      { image: { width: 1, height: 1 } },
     )
-    expect(read).toMatchObject({ detail: { code: 'ATTACHMENT_TIMEOUT' } })
-  })
-
-  it('refuses a message whose attachment part would exceed 64 KiB', async () => {
-    const refs = Array.from({ length: 200 }, (_, i) => ({
-      type: 'file' as const,
-      mimeType: 'application/octet-stream',
-      name: `${'n'.repeat(250)}${i}`,
-      attachment: { sha256: 'e'.repeat(64), bytes: 1 },
-    }))
-    await expect(admitAttachments({ ...base, port: port(), content: refs })).rejects.toMatchObject({
-      code: 'E_ENVELOPE',
-      detail: { code: 'ATTACHMENT_COUNT' },
+    await expect(attachmentSurface(session, forged)).rejects.toMatchObject({
+      code: 'ATTACHMENT_NOT_AUTHORIZED',
     })
+    const seq = surface.find((node) => node.kind === 'user')!.seq
+    const original = await readSessionAttachment(
+      session,
+      { path: `session-image://${seq}/1` },
+      new AbortController().signal,
+    )
+    expect(Buffer.from(original!.bytes).toString('base64')).toBe(data)
   })
 })
 
-describe('checkUserImageBudget', () => {
-  const MIB = 1024 * 1024
-  const ref = (bytes: number, edge = 8, name = 'shot.png') => ({
-    type: 'image' as const,
-    mimeType: 'image/png',
-    name,
-    attachment: { sha256: 'a'.repeat(64), bytes },
-    width: edge,
-    height: edge,
+it('cancels a provider that ignores its signal without persisting input, and rejects a forged thumbnail', async () => {
+  const f = fixture()
+  const { session, log } = await openSession(f)
+  const receipt = await f.attachments.store(
+    { sessionKey: session.key, lane: 'main' },
+    new Uint8Array([1]),
+    'text/plain',
+    new AbortController().signal,
+  )
+  const thumbnail = { sha256: 'f'.repeat(64), size: 10, mime: 'image/png' }
+  const ref = attachmentLink(receipt.artifact, 'original', { receiptId: receipt.id, thumbnail })
+  await expect(session.enqueue('next-turn', { actor, content: [ref] })).rejects.toMatchObject({
+    detail: { code: 'ATTACHMENT_NOT_AUTHORIZED' },
   })
-  const refusal = (content: unknown[]) => {
-    try {
-      checkUserImageBudget(content as never)
-      return undefined
-    } catch (error) {
-      return (error as { detail?: { code?: string; reason?: string } }).detail
-    }
-  }
-
-  it('refuses one image over 16 MiB with its own code', () => {
-    expect(refusal([ref(16 * MIB + 1)])).toEqual({
-      code: 'ATTACHMENT_IMAGE_TOO_LARGE',
-      reason: 'attachment-image-too-large',
-    })
-    expect(refusal([ref(16 * MIB)])).toBeUndefined()
+  f.attachments.store = async () => new Promise(() => {})
+  const cancelled = new AbortController()
+  const pending = session.enqueue('next-turn', {
+    actor,
+    content: [inline('cancel me')],
+    signal: cancelled.signal,
   })
+  cancelled.abort()
+  await expect(pending).rejects.toMatchObject({ detail: { code: 'ATTACHMENT_CANCELLED' } })
+  expect(await log.scan({ type: 'inbox', limit: 10 })).toEqual([])
+})
 
-  it('refuses images over 16 MiB or 8 million pixels together', () => {
-    expect(refusal([ref(9 * MIB), ref(8 * MIB)])?.code).toBe('ATTACHMENT_IMAGE_TOO_LARGE')
-    // Four 1456-pixel squares are 8.48 million pixels; three are 6.36 million.
-    expect(refusal([1, 2, 3, 4].map(() => ref(MIB, 1456)))?.code).toBe('ATTACHMENT_IMAGE_TOO_LARGE')
-    expect(refusal([1, 2, 3].map(() => ref(MIB, 1456)))).toBeUndefined()
-    // Inline images count with references.
-    const inline = { type: 'image', mimeType: 'image/png', data: PNG_1X1 }
-    expect(refusal([...[1, 2, 3].map(() => ref(MIB, 1456)), inline])).toBeUndefined()
-    // Exactly 8 million pixels by reference leaves no room for the inline image.
-    const full = { ...ref(MIB), width: 4000, height: 2000 }
-    expect(refusal([full])).toBeUndefined()
-    expect(refusal([full, inline])?.code).toBe('ATTACHMENT_IMAGE_TOO_LARGE')
-  })
-
-  it('leaves one image over the per-image pixel limit to the per-image check, not the aggregate message', () => {
-    const wide = {
-      type: 'image' as const,
-      mimeType: 'image/png',
-      data: blankPng(1600, 1600).toString('base64'),
-    }
-    // 2.56 million pixels is over one image's 2.1 million but far under the 8 million together.
-    expect(refusal([wide])).toBeUndefined()
-    expect(() => validateUserMessageImages([wide])).toThrow(/PIXEL_LIMIT/)
-    // The aggregate still trips on its own limit.
-    const full = { ...ref(MIB), width: 4000, height: 1700 }
-    expect(refusal([full, { ...wide, data: PNG_1X1 }])).toBeUndefined()
-    expect(refusal([{ ...ref(MIB), width: 4000, height: 2000 }, wide])?.code).toBe(
-      'ATTACHMENT_IMAGE_TOO_LARGE',
+it('reuses bounded verified attachment metadata across long text history and only scans appended ranges', async () => {
+  const f = fixture()
+  const { session, log } = await openSession(f)
+  await session.enqueue('next-turn', { actor, content: [inline('indexed')] })
+  await session.acceptInput()
+  for (let page = 0; page < 4; page++)
+    await session.append(
+      Array.from({ length: 100 }, (_, index) =>
+        session.ev('user/message', {
+          kind: 'prompt',
+          content: [{ type: 'text', text: `text-${page}-${index}` }],
+        }),
+      ),
     )
+  const snapshot = await attachmentIndex(session)
+  // A caller cannot mutate the cache's authority through a returned projection snapshot.
+  ;(snapshot.refs as Map<string, unknown>).clear()
+  const through = session.lastSeq
+  const scan = log.scan.bind(log)
+  // A storage adapter may enforce an I/O window after indexing. Repeated list/authority reads
+  // must work without requesting that historical range (no private-helper or call-count assertion).
+  const bounded = vi.spyOn(log, 'scan').mockImplementation((query = {}) => {
+    if ((query.fromSeq ?? 0) <= through && query.fromSeq !== query.toSeq)
+      throw new Error('historical storage window is closed')
+    return scan(query)
   })
-
-  it('uses the request budget: a message admitted at send fits one model request', () => {
-    expect(USER_IMAGE_BUDGET.bytes).toBe(USER_IMAGE_SEND_BUDGET.maxAggregateBytes)
-    expect(USER_IMAGE_BUDGET.pixels).toBe(USER_IMAGE_SEND_BUDGET.maxAggregatePixels)
-  })
-
-  it('does not count files: a 90 MB zip goes through', () => {
-    const zip = {
-      type: 'file',
-      mimeType: 'application/zip',
-      name: 'insects.zip',
-      attachment: { sha256: 'b'.repeat(64), bytes: 90_000_000 },
+  try {
+    for (let index = 0; index < 3; index++) {
+      expect((await visibleAttachmentRefs(session)).size).toBe(1)
+      const list = await readSessionAttachment(
+        session,
+        { path: 'session-file://list' },
+        new AbortController().signal,
+      )
+      expect(new TextDecoder().decode(list?.bytes)).toContain('report.txt')
+      expect(
+        await readSessionImages(session, { path: 'session-image://list' }, new AbortController().signal),
+      ).toMatchObject({ content: [{ type: 'text', text: 'No images at this offset in this session.' }] })
     }
-    expect(refusal([zip, ref(MIB)])).toBeUndefined()
+    await session.enqueue('next-turn', { actor, content: [inline('incremental')] })
+    await session.append([session.ev('user/message', { kind: 'prompt', content: queued(session) })])
+    expect((await attachmentIndex(session)).files).toHaveLength(snapshot.files.length + 1)
+    expect((await visibleAttachmentRefs(session)).size).toBe(2)
+  } finally {
+    bounded.mockRestore()
+  }
+})
+
+it('keeps an omitted image prefix across model changes and verified reopen, preserving fresh originals', async () => {
+  const f = fixture(),
+    storage = new MemoryStorage()
+  const baseModels = f.provider.models
+  f.provider = fakeProvider(Array.from({ length: 5 }, () => textTurn('saved')))
+  f.provider.models = () => baseModels().map((m) => ({ ...m, inputLimits: { images: { maxPerRequest: 4 } } }))
+  const { session, log } = await openSession({ ...f, storage, key: 'image-prefix' })
+  const data = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+  for (let turn = 0; turn < 5; turn++) {
+    await session.enqueue('next-turn', { actor, content: [{ type: 'image', data, mimeType: 'image/png' }] })
+    await session.acceptInput()
+    expect(await session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
+      reason: 'completed',
+    })
+  }
+  const headers = await log.scan({ type: 'request/header', order: 'desc', limit: 1 })
+  expect(headers[0]?.data).toMatchObject({ attachmentImagesOmittedThrough: expect.any(Number) })
+  await log.close()
+  f.provider.models = baseModels
+  const reopened = await openSession({ ...f, storage, key: 'image-prefix', writerRunId: 'reopened' })
+  const { surface: transient } = await attachmentSurface(reopened.session, reopened.session.surface())
+  const images = transient.filter(
+    (n) => n.kind === 'user' && JSON.stringify(n.event.data).includes('session-image://'),
+  )
+  expect(images.length).toBeGreaterThanOrEqual(2)
+  expect(JSON.stringify(images.slice(0, 2))).toContain('original not included')
+  const [original] = [...f.objects.values()]
+  expect(Buffer.from(original!).toString('base64')).toBe(data)
+  f.objects.clear()
+  await expect(attachmentSurface(reopened.session, reopened.session.surface())).rejects.toBeDefined()
+  await reopened.log.close()
+})
+
+it('degrades a missing historical original while retaining the current image and refusing corrupt history', async () => {
+  const f = fixture()
+  const { session } = await openSession(f)
+  const jpeg = Uint8Array.of(
+    255,
+    216,
+    255,
+    192,
+    0,
+    11,
+    8,
+    0,
+    1,
+    0,
+    1,
+    1,
+    1,
+    17,
+    0,
+    255,
+    218,
+    0,
+    8,
+    1,
+    1,
+    0,
+    0,
+    63,
+    0,
+    1,
+    2,
+    3,
+    255,
+    217,
+  )
+  await session.enqueue('next-turn', {
+    actor,
+    content: [
+      { type: 'image', data: Buffer.from(jpeg).toString('base64'), mimeType: 'image/jpeg' },
+      {
+        type: 'image',
+        data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        mimeType: 'image/png',
+      },
+    ],
+  })
+  await session.acceptInput()
+  await session.run({ until: 'turn-end', signal: new AbortController().signal })
+  const oldSha = new IncrementalSha256().update(jpeg).digest()
+  const data = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+  await session.enqueue('next-turn', { actor, content: [{ type: 'image', data, mimeType: 'image/png' }] })
+  await session.acceptInput()
+  f.objects.delete(oldSha)
+  const projected = await attachmentSurface(session, session.surface())
+  const oldSeq = session.surface().find((node) => node.kind === 'user')!.seq
+  const transient = JSON.stringify(projected.surface)
+  expect(transient).toContain('original missing')
+  expect(transient).toContain(data)
+  expect(await session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
+    reason: 'completed',
+  })
+  const shown = f.provider.requests
+    .at(-1)
+    ?.messages.find((message) =>
+      JSON.stringify(message).includes(`session-image://${oldSeq}/1; original missing`),
+    )
+  expect(JSON.stringify(shown)).toContain(`session-image://${oldSeq}/1; original missing`)
+  expect(JSON.stringify(shown)).toContain(`session-image://${oldSeq}/2; pixels`)
+  expect(shown?.content.filter((block) => block.type === 'image')).toHaveLength(1)
+  f.objects.set(oldSha, new Uint8Array([9]))
+  await expect(attachmentSurface(session, session.surface())).rejects.toMatchObject({
+    code: 'ATTACHMENT_HASH_MISMATCH',
   })
 })

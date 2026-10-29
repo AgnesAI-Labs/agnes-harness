@@ -1,23 +1,25 @@
-import { closeSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { fakeModel } from '@agnes/ai/testkit'
 import { canonicalJson, DEFAULT_COMPUTER_USE, hashInput, type ResolvedProfile, sha256hex } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
-import { createClient, memoryJournal, wsTransport } from '@agnes/sdk'
+import { DEFAULT_VOICE_SETTINGS } from '@agnes/protocol'
+import { createClient, type LedgerEvent, memoryJournal, wsTransport } from '@agnes/sdk'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WebSocket } from 'ws'
-import { type DaemonConfig, DEFAULT_LIMITS } from '../src/config.js'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { signSourceAuth, sourceAuthCanonical } from '../src/local/auth.js'
 import { SessionPrincipalOwnershipIndex } from '../src/storage/session-ownership.js'
-import { ensure } from '../src/storage/table.js'
+import { type DaemonConfig, DEFAULT_LIMITS } from '../src/supervisor/config.js'
 import { encodeFrame, JsonlDecoder } from '../src/supervisor/framing.js'
 import { DaemonMutationLockError } from '../src/supervisor/mutation-lock.js'
 import { daemonSocketPaths } from '../src/supervisor/socket-paths.js'
 import { startSupervisor } from '../src/supervisor/supervisor.js'
 import { localSdkTransport } from './local-socket-path.js'
-import { sqliteTables } from './sqlite-tables.js'
 
 // A `WorkerPool.workerEntry` override that runs a real worker (`runWorker`, src/worker/main.ts) over
 // a fixture Host built with `@agnes/host/testkit`'s `createTestHost` instead of a real package-loader
@@ -80,7 +82,8 @@ function buildProfile(dataDir: string): ResolvedProfile {
   const body = {
     name: 'local-dev',
     dataDir,
-    seams: { principals: '@agnes/base' },
+    seams: { principals: { provider: 'local' } },
+    approvals: { mode: 'manual' },
     computerUse: DEFAULT_COMPUTER_USE,
     presets: { default: 'standard', allowed: ['standard'] },
     provider: {
@@ -450,7 +453,27 @@ describe('agnesd supervisor: real end-to-end', () => {
       writeFileSync(profileFile, JSON.stringify(profile))
       const config = { ...buildConfigFor(dir), ws: { addr: '127.0.0.1:0', ...tls() } }
       const artifactSessionId = 'agnes:local:default:daemon:dm:artifact-status-e2e'
-      const seededHost = await createTestHost({ dataDir: dir, script: [] })
+      // A durable generation must be reopened under the same declared model configuration.
+      const seededHost = await createTestHost({
+        dataDir: dir,
+        script: [],
+        profileInputs: {
+          user: {
+            name: 'local-dev',
+            provider: {
+              package: '@agnes/ai',
+              routes: [
+                {
+                  route: 'faux',
+                  api: 'faux',
+                  baseUrl: 'https://invalid.test',
+                  models: [fakeModel({ route: 'faux', id: 'faux-1' })],
+                },
+              ],
+            },
+          },
+        },
+      })
       const seededSession = await seededHost.host.createSession({ key: artifactSessionId, cwd: dir })
       await seededSession.append([
         seededSession.ev(
@@ -465,14 +488,6 @@ describe('agnesd supervisor: real end-to-end', () => {
       const ownership = new SessionPrincipalOwnershipIndex(tables.table('session_principal_ownership'))
       expect(ownership.bindNew(artifactSessionId, 'local')).toBe(true)
       expect(ownership.activateNew(artifactSessionId, 'local')).toBe(true)
-      ensure(
-        tables.table('writer_claims'),
-        'CREATE TABLE IF NOT EXISTS writer_claims (session_key TEXT PRIMARY KEY, run_id TEXT NOT NULL, until INTEGER NOT NULL, generation INTEGER NOT NULL)',
-      )
-      ensure(
-        tables.table('registers'),
-        'CREATE TABLE IF NOT EXISTS registers (session_key TEXT, register TEXT, key TEXT, seq INTEGER, data TEXT, PRIMARY KEY (session_key, register, key))',
-      )
 
       const sup = await startSupervisor({
         config,
@@ -480,7 +495,7 @@ describe('agnesd supervisor: real end-to-end', () => {
         profileDir: join(dir, 'profiles', 'local-dev'),
         profileFile,
         workspaceRoot: dir,
-        tables,
+        jobTables: tables,
         remoteAuth: {
           sourceAuthCredentials: [{ credentialId: 'secret://test/supervisor-e2e', secret: SOURCE_AUTH_KEY }],
         },
@@ -525,7 +540,7 @@ describe('agnesd supervisor: real end-to-end', () => {
             profileDir: join(dir, 'profiles', 'local-dev'),
             profileFile,
             workspaceRoot: dir,
-            tables,
+            jobTables: tables,
             processIdentity,
             ...workerSpawnOpts,
           }),
@@ -562,6 +577,28 @@ describe('agnesd supervisor: real end-to-end', () => {
           expect(made.error).toBeUndefined()
           const sessionId = (made.result as { sessionId: string }).sessionId
           expect(typeof sessionId).toBe('string')
+
+          expect(await c.call(60, '_agnes/v1/session.runtime', { sessionId })).toMatchObject({
+            result: { sessionKey: sessionId, loop: { id: expect.any(String) } },
+          })
+          const beforeView = await c.call(61, '_agnes/v1/session.view', { sessionId, maxNodes: 20 })
+          expect(beforeView).toMatchObject({
+            result: { sessionId, readOnly: true, lastSeq: expect.any(Number) },
+          })
+          expect(await c.call(62, '_agnes/v1/session.view', { sessionId, maxNodes: 20 })).toEqual({
+            ...beforeView,
+            id: 62,
+          })
+          expect(ownership.bindNew('foreign-session', 'other-principal')).toBe(true)
+          expect(ownership.activateNew('foreign-session', 'other-principal')).toBe(true)
+          for (const method of ['session.runtime', 'session.view']) {
+            expect(await c.call(63, `_agnes/v1/${method}`, { sessionId: 'foreign-session' })).toMatchObject({
+              error: { data: { code: 'CAPABILITY_DENIED' } },
+            })
+            expect(await c.call(64, `_agnes/v1/${method}`, { sessionId: 'unknown-session' })).toMatchObject({
+              error: { data: { code: 'SESSION_NOT_FOUND' } },
+            })
+          }
 
           expect(
             await c.call(4, '_agnes/v1/session.setModel', {
@@ -622,21 +659,23 @@ describe('agnesd supervisor: real end-to-end', () => {
             expect((otherUi.result as { seq: number }).seq).not.toBe((firstUi.result as { seq: number }).seq)
 
             const [queuedA, queuedB] = await Promise.all([
-              c.call(50, '_agnes/v1/session.followUp', {
-                sessionId,
-                content: [{ type: 'text', text: 'from client one' }],
+              c.call(50, '_agnes/v1/submit', {
+                clientId: 'dual-client-one',
+                kind: 'followUp',
                 commandId: 'dual-client-a',
                 generation: 1,
+                payload: { sessionId, content: [{ type: 'text', text: 'from client one' }] },
               }),
-              c2.call(50, '_agnes/v1/session.followUp', {
-                sessionId,
-                content: [{ type: 'text', text: 'from client two' }],
+              c2.call(50, '_agnes/v1/submit', {
+                clientId: 'dual-client-two',
+                kind: 'followUp',
                 commandId: 'dual-client-b',
                 generation: 1,
+                payload: { sessionId, content: [{ type: 'text', text: 'from client two' }] },
               }),
             ])
-            expect(queuedA).toMatchObject({ result: { seq: expect.any(Number) } })
-            expect(queuedB).toMatchObject({ result: { seq: expect.any(Number) } })
+            expect(queuedA).toMatchObject({ result: { seq: expect.any(Number), replayed: false } })
+            expect(queuedB).toMatchObject({ result: { seq: expect.any(Number), replayed: false } })
             expect((queuedA.result as { seq: number }).seq).not.toBe((queuedB.result as { seq: number }).seq)
             // Accepted follow-ups now execute without a new prompt, including through a real worker.
             await vi.waitFor(
@@ -945,7 +984,7 @@ describe('agnesd supervisor: ACP subscriptions follow the connection', () => {
       const selected = queue.find((item) => item.preview === 'queue-C')
       if (!selected) throw new Error('missing selected input')
       await session.sendNow(selected.itemId, { commandId: 'send-C' })
-      await expect(active).resolves.toMatchObject({ reason: 'aborted' })
+      await expect(active).resolves.toMatchObject({ reason: 'interrupted' })
       await vi.waitFor(
         async () => {
           const timeline = await session.projectUI()
@@ -999,6 +1038,50 @@ describe('agnesd supervisor: ACP subscriptions follow the connection', () => {
       // Worker log frames reach the daemon audit as worker.log; whatever was audited on this turn,
       // none of it carries the streamed text.
       expect(JSON.stringify(audited)).not.toContain(sentinel)
+    } finally {
+      c.socket.destroy()
+      await sup.close()
+      await tables.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
+
+  it('answers a side question from the conversation through the worker that owns the session', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-btw-'))
+    const { sup, tables } = await supervisorFor(dir)
+    const c = await client(sup.socketPath)
+    try {
+      expect((await c.call(1, 'initialize', initialize)).error).toBeUndefined()
+      const made = await c.call(2, 'session/new', { cwd: dir, mcpServers: [] })
+      const sessionId = (made.result as { sessionId: string }).sessionId
+      expect(
+        (await c.call(3, 'session/prompt', { sessionId, prompt: [{ type: 'text', text: 'go' }] })).error,
+      ).toBeUndefined()
+      const answer = await c.call(4, '_agnes/v1/session.btw', { sessionId, question: 'what happened?' })
+      expect(answer.error).toBeUndefined()
+      expect(answer.result).toMatchObject({ text: 'hello world', model: 'faux-1' })
+    } finally {
+      c.socket.destroy()
+      await sup.close()
+      await tables.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
+
+  it('answers voice.status without a session and greys voice out with no voice account', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-voice-status-'))
+    const { sup, tables } = await supervisorFor(dir)
+    const c = await client(sup.socketPath)
+    try {
+      expect((await c.call(1, 'initialize', initialize)).error).toBeUndefined()
+      const status = await c.call(2, '_agnes/v1/voice.status', {})
+      expect(status.error).toBeUndefined()
+      expect(status.result).toEqual({
+        transcribe: 'unconfigured',
+        speech: 'unconfigured',
+        reason: 'no-account',
+        settings: DEFAULT_VOICE_SETTINGS,
+      })
     } finally {
       c.socket.destroy()
       await sup.close()
@@ -1119,3 +1202,268 @@ describe('agnesd supervisor: ACP subscriptions follow the connection', () => {
     }
   }, 150_000)
 })
+
+it.each(['session', 'worker'])(
+  'withdraws a real cross-process permission when the %s stops; late allow cannot dispatch',
+  async (way) => {
+    vi.stubEnv('AGNES_FAKE_WORKER_PERMISSION', '1')
+    const dir = mkdtempSync(join(tmpdir(), 'agh-stop-'))
+    const profile = buildProfile(dir)
+    const profileFile = join(dir, 'profile.json')
+    writeFileSync(profileFile, JSON.stringify(profile))
+    const tables = sqliteTables()
+    const sup = await startSupervisor({
+      config: buildConfigFor(dir),
+      profile,
+      profileDir: join(dir, 'profiles', 'local-dev'),
+      profileFile,
+      workspaceRoot: dir,
+      jobTables: tables,
+      processIdentity,
+      ...workerSpawnOpts,
+    })
+    const sdk = createClient({ journal: memoryJournal(), transport: localSdkTransport(sup.socketPath) })
+    try {
+      const session = await sdk.session.new({ cwd: dir })
+      let promptSignal: AbortSignal | undefined
+      let late!: (answer: { verdict: 'allowed-once' }) => void
+      session.onPermissionRequest((_request, { signal }) => {
+        promptSignal = signal
+        return new Promise((resolve) => {
+          late = resolve
+        })
+      })
+      const running = session.prompt('review').catch((error) => error)
+      await vi.waitFor(() => expect(promptSignal).toBeDefined(), { timeout: 15_000 })
+      if (way === 'session') await session.cancel()
+      else expect(sup.retireSharedWorkerNow()).toBe(true)
+      await vi.waitFor(() => expect(promptSignal?.aborted).toBe(true))
+      late({ verdict: 'allowed-once' })
+      await running
+      expect(existsSync(join(dir, 'permission-dispatched'))).toBe(false)
+      {
+        if (way === 'worker') await sdk.session.load(session.id)
+        const timeline = await session.projectUI()
+        expect(timeline.nodes.filter((node) => node.kind === 'approval')).toEqual([
+          expect.objectContaining({
+            state: 'expired',
+            decision: expect.objectContaining({ verdict: 'stopped' }),
+          }),
+        ])
+      }
+    } finally {
+      await sdk.close()
+      await sup.close()
+      await tables.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  },
+  30_000,
+)
+
+it('retains the original request across worker and daemon crashes, then consumes once', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agh-decision-cold-'))
+  writeFileSync(join(dir, 'profile.json'), JSON.stringify(buildProfile(dir)))
+  writeFileSync(join(dir, 'daemon-config.json'), JSON.stringify(buildConfigFor(dir)))
+  const open = async () => {
+    const child = spawn(
+      process.execPath,
+      ['--import', 'tsx', fileURLToPath(new URL('./fake-supervisor-entry.ts', import.meta.url)), dir],
+      {
+        env: {
+          PATH: process.env.PATH,
+          TMPDIR: tmpdir(),
+          AGNES_FAKE_WORKER_PERMISSION: '1',
+          AGNES_FAKE_WORKER_RECOVERY: '1',
+          AGNES_FAKE_WORKER_TURNS: '4',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    )
+    const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()))
+    let stdout = '',
+      stderr = ''
+    child.stdout.on('data', (data) => {
+      stdout += String(data)
+    })
+    child.stderr.on('data', (data) => {
+      stderr += String(data)
+    })
+    try {
+      await vi.waitFor(
+        () => {
+          if (child.exitCode !== null || child.signalCode !== null) throw new Error(stderr)
+          expect(stdout).toContain('READY_SOCKET ')
+        },
+        { timeout: 20000, interval: 100 },
+      )
+    } catch (error) {
+      child.kill('SIGKILL')
+      await exited
+      throw error
+    }
+    return {
+      socketPath: stdout.split('READY_SOCKET ')[1]!.split('\n')[0]!,
+      diagnostics: () => stderr,
+      async crash() {
+        child.kill('SIGKILL')
+        await exited
+      },
+      async close() {
+        if (child.exitCode !== null || child.signalCode !== null) return
+        child.kill('SIGTERM')
+        try {
+          await vi.waitFor(() => expect(child.exitCode).toBe(0), { timeout: 20000, interval: 100 })
+        } finally {
+          if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+          await exited
+        }
+      },
+    }
+  }
+  let sup = await open()
+  let sdk = createClient({ journal: memoryJournal(), transport: localSdkTransport(sup.socketPath) })
+  try {
+    const session = await sdk.session.new({ cwd: dir })
+    expect(await session.prompt('review exact call')).toMatchObject({ reason: 'parked' })
+    const [original] = (await sdk.approval.list(session.id)).decisions
+    expect(original).toMatchObject({
+      revision: 1,
+      result: null,
+      consumption: null,
+      request: { spec: { subject: { call: { name: 'permission_probe' } } } },
+    })
+    expect(existsSync(join(dir, 'permission-dispatched'))).toBe(false)
+    const pid = Number(readFileSync(join(dir, 'fixture-worker-pid'), 'utf8'))
+    expect(Number.isSafeInteger(pid) && pid > 0 && pid !== process.pid).toBe(true)
+    process.kill(pid, 'SIGKILL')
+    // The existing writer lease must lapse; a killed process cannot voluntarily release it.
+    await vi.waitFor(
+      async () => {
+        expect((await sdk.approval.list(session.id)).decisions).toEqual([original])
+        expect(Number(readFileSync(join(dir, 'fixture-worker-pid'), 'utf8'))).not.toBe(pid)
+      },
+      { timeout: 50_000, interval: 500 },
+    )
+    await sdk.close()
+    const remainingWorker = Number(readFileSync(join(dir, 'fixture-worker-pid'), 'utf8'))
+    await sup.crash()
+    process.kill(remainingWorker, 'SIGKILL')
+    sup = await open()
+    sdk = createClient({ journal: memoryJournal(), transport: localSdkTransport(sup.socketPath) })
+    await vi.waitFor(
+      async () => expect((await sdk.approval.list(session.id)).decisions).toEqual([original]),
+      { timeout: 50000, interval: 500 },
+    )
+    expect(original?.handle.sessionId).toBe(session.id)
+    const command = {
+      id: original!.handle.id,
+      sessionId: session.id,
+      revision: original!.revision,
+      commandId: 'cold-human-answer',
+      response: { option: 'allowed-once', value: null },
+    }
+    const receipt = await sdk.approval.decide(command)
+    try {
+      await vi.waitFor(() => expect(readFileSync(join(dir, 'permission-dispatched'), 'utf8')).toBe('yes\n'), {
+        timeout: 15_000,
+      })
+    } catch (error) {
+      const projection = await sdk.call('_agnes/v1/session.projectUI', { sessionId: session.id })
+      throw new Error(`cold execution: ${JSON.stringify(projection)} ${sup.diagnostics()}`, { cause: error })
+    }
+    await expect(sdk.approval.decide(command)).resolves.toEqual(receipt)
+    await expect(sdk.approval.decide({ ...command, commandId: 'second-answer' })).rejects.toMatchObject({
+      data: { code: 'APPROVAL_REJECTED' },
+    })
+    const resumed = await sdk.session.load(session.id, { cwd: dir })
+    const timeline = await resumed.projectUI()
+    const rows: LedgerEvent[] = []
+    for await (const row of resumed.events({ cursor: { fromSeq: 0, generation: timeline.generation } })) {
+      rows.push(row)
+      if (row.seq >= timeline.upto) break
+    }
+    expect(rows.filter((row) => row.type === 'tool/call')).toHaveLength(1)
+    const consumed = rows.find(
+      (row) => row.type === 'decision/state' && (row.data as { consumption?: unknown }).consumption,
+    )
+    expect(consumed).toBeDefined()
+    expect(readFileSync(join(dir, 'permission-dispatched'), 'utf8')).toBe('yes\n')
+  } finally {
+    await sdk.close()
+    await sup.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+}, 160_000)
+
+it('revokes a session grant through the worker and keeps it revoked after a cold reopen', async () => {
+  vi.stubEnv('AGNES_FAKE_WORKER_PERMISSION', '1')
+  vi.stubEnv('AGNES_FAKE_WORKER_REPEAT_PERMISSION', '1')
+  vi.stubEnv('AGNES_FAKE_WORKER_TURNS', '12')
+  const dir = mkdtempSync(join(tmpdir(), 'agh-session-grants-'))
+  const profile = buildProfile(dir)
+  const profileFile = join(dir, 'profile.json')
+  writeFileSync(profileFile, JSON.stringify(profile))
+  const tables = sqliteTables(join(dir, 'daemon.sqlite'))
+  const start = () =>
+    startSupervisor({
+      config: buildConfigFor(dir),
+      profile,
+      profileDir: join(dir, 'profiles', 'local-dev'),
+      profileFile,
+      workspaceRoot: dir,
+      jobTables: tables,
+      processIdentity,
+      ...workerSpawnOpts,
+    })
+  let sup = await start()
+  const connectSdk = () =>
+    createClient({ journal: memoryJournal(), transport: localSdkTransport(sup.socketPath) })
+  let sdk = connectSdk()
+  try {
+    const session = await sdk.session.new({ cwd: dir })
+    expect(await sdk.approval.sessionGrants(session.id)).toEqual({ grants: [] })
+    let asked = 0
+    session.onPermissionRequest(async () => {
+      asked++
+      return { verdict: 'allowed-session' }
+    })
+    expect((await session.prompt('approve the first operation')).reason).toBe('completed')
+    expect(asked).toBe(1)
+    const { grants } = await sdk.approval.sessionGrants(session.id)
+    expect(grants).toEqual([expect.objectContaining({ lifetime: 'session', toolId: 'permission_probe' })])
+    const grant = grants[0]!
+    expect((await session.prompt('reuse this session grant')).reason).toBe('completed')
+    expect(asked).toBe(1)
+    await expect(sdk.approval.revokeSessionGrant(session.id, 'unknown-grant')).rejects.toMatchObject({
+      data: { code: 'APPROVAL_REJECTED' },
+    })
+    const revoked = await sdk.approval.revokeSessionGrant(session.id, grant.grantId)
+    expect(revoked).toMatchObject({ ...grant, revokedAt: expect.any(String) })
+    expect(await sdk.approval.sessionGrants(session.id)).toEqual({ grants: [] })
+    await expect(sdk.approval.revokeSessionGrant(session.id, grant.grantId)).rejects.toMatchObject({
+      data: { code: 'APPROVAL_REJECTED' },
+    })
+    await sdk.close()
+    await sup.close()
+    sup = await start()
+    sdk = connectSdk()
+    const reopened = await sdk.session.load(session.id, { cwd: dir })
+    expect(await sdk.approval.sessionGrants(session.id)).toEqual({ grants: [] })
+    reopened.onPermissionRequest(async () => {
+      asked++
+      return { verdict: 'rejected' }
+    })
+    rmSync(join(dir, 'permission-dispatched'))
+    await reopened.prompt('require fresh permission after reopening')
+    expect(asked).toBe(2)
+    expect(existsSync(join(dir, 'permission-dispatched'))).toBe(false)
+    expect(await sdk.approval.sessionGrants(session.id)).toEqual({ grants: [] })
+  } finally {
+    await sdk.close()
+    await sup.close()
+    await tables.close()
+    rmSync(dir, { recursive: true, force: true })
+    vi.unstubAllEnvs()
+  }
+}, 90_000)

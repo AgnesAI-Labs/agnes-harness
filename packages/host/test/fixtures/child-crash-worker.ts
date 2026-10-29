@@ -1,7 +1,15 @@
 import { writeFileSync } from 'node:fs'
 import { Kernel, presetDefaults } from '@agnes/core'
-import { fakeProvider, fakeSeams, fencedFs, noTimers, testFsPolicy, textTurn } from '@agnes/core/testkit'
-import { createSqliteStorage } from '../../src/adapters/storage-sqlite.js'
+import {
+  defaultLoops,
+  fakeProvider,
+  fakeSeams,
+  fencedFs,
+  noTimers,
+  testFsPolicy,
+  textTurn,
+} from '@agnes/core/testkit'
+import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
 
 const dbFile = process.argv[2]
 const readyFile = process.argv[3]
@@ -35,6 +43,7 @@ Object.assign(provider, {
 })
 const storage = createSqliteStorage({ file: dbFile })
 const k = Kernel.create({
+  loops: defaultLoops(),
   storage,
   seams: fakeSeams(),
   provider,

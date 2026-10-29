@@ -69,7 +69,7 @@ describe('degrade', () => {
           summary: 'rm -rf tmp',
           risk: 'destructive',
           options: ['allow_once', 'reject_once'],
-          ticket: 'a1b2c3d4e5f6',
+          decisionKey: 's/a1b2c3d4e5f6/1',
         },
       ],
     }
@@ -159,21 +159,21 @@ describe('escapeText and markdownSubset', () => {
 })
 
 describe('approvalAsText', () => {
-  it('uses the first six ticket characters in the approval reply protocol', () => {
+  it('uses the first six decisionKey characters in the approval reply protocol', () => {
     const text = approvalAsText({
       kind: 'approval',
       title: 'A',
       summary: 's',
       risk: 'always',
       options: ['allow_once', 'reject_once'],
-      ticket: 'a1b2c3d4',
+      decisionKey: 's/a1b2c3d4/1',
     })
 
     expect(text).toContain('同意 a1b2c3')
     expect(text).toContain('拒绝 a1b2c3')
   })
 
-  it('falls back to requestSeq without a ticket', () => {
+  it('falls back to requestSeq without a decisionKey', () => {
     const text = approvalAsText({
       kind: 'approval',
       title: 'A',

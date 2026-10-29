@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
-import { DEFAULT_LIMITS } from '../src/config.js'
+import { DEFAULT_LIMITS } from '../src/supervisor/config.js'
 import { startProductionSupervisor, startSupervisor } from '../src/supervisor/supervisor.js'
 
 it.skipIf(process.platform === 'win32')(

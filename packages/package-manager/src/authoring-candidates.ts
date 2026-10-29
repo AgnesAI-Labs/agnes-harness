@@ -1,0 +1,497 @@
+import { randomUUID } from 'node:crypto'
+import { existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, rmdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve, sep } from 'node:path'
+import { safeAuthoringDiagnostics, safeAuthoringOutput } from '@agnes/error-sanitization'
+import {
+  type AuthoringCandidate,
+  type AuthoringCandidateSummary,
+  type AuthoringFile,
+  type AuthoringOrigin,
+  type AuthoringTests,
+  type AuthoringWriteParams,
+  jcs,
+  validatePackageAdminData,
+} from '@agnes/protocol'
+import {
+  candidateTreeStatus,
+  candidateWriteSummary,
+  requireCompleteCandidate,
+} from './authoring-diagnostics.js'
+import {
+  authoringDirectory,
+  authoringError,
+  authoringFiles,
+  authoringHash,
+  authoringWriteFiles,
+  readAuthoringFiles,
+  saveAuthoringRecord,
+  writeAuthoringFiles,
+} from './authoring-files.js'
+import { PackageError } from './errors.js'
+import type { PackageManager } from './manager.js'
+import { hashDirectory } from './sources.js'
+
+type Record = {
+  owner: string
+  createHash: string
+  value: AuthoringCandidate
+  tree: string
+  snapshot?: string
+}
+export type AuthoringTestRunner = (
+  directory: string,
+  files: readonly AuthoringFile[],
+  signal: AbortSignal,
+) => Promise<Omit<AuthoringTests, 'hash' | 'completedAt'>>
+const commandCandidateId = (key: string) => 'candidate-' + authoringHash(key).slice(7, 39)
+// PackageSource uses raw paths, not file URLs. Preserve %, # and native POSIX names.
+const candidateSource = (path: string) => ({
+  type: 'file' as const,
+  ref: 'file:' + path.split(sep).join('/'),
+})
+export class AuthoringCandidates {
+  private readonly rejections = new Map<string, string>()
+  private readonly publications = new Set<string>()
+  private readonly tails = new Map<string, Promise<unknown>>()
+  constructor(
+    private readonly manager: PackageManager,
+    private readonly testRunner: AuthoringTestRunner,
+  ) {}
+  private root(profileDir: string) {
+    return join(profileDir, '.authoring-candidates')
+  }
+  private path(profileDir: string, id: string) {
+    if (!/^candidate-[a-f0-9]{32}$/.test(id)) authoringError('Candidate id is invalid')
+    return join(this.root(profileDir), id, 'record.json')
+  }
+  private save(profileDir: string, record: Record) {
+    saveAuthoringRecord(this.path(profileDir, record.value.candidateId), record)
+  }
+  private load(profileDir: string, id: string, owner?: string, readOnly = false): Record {
+    const file = this.path(profileDir, id)
+    if (!existsSync(file) || lstatSync(file).isSymbolicLink() || lstatSync(file).size > 8388608)
+      authoringError('Candidate is unavailable')
+    const record = JSON.parse(readFileSync(file, 'utf8')) as Record
+    if (
+      typeof record.owner !== 'string' ||
+      (owner !== undefined && record.owner !== owner) ||
+      record.value.candidateId !== id ||
+      !validatePackageAdminData('AuthoringCandidate', record.value).ok
+    )
+      authoringError('Candidate is unavailable')
+    if (
+      typeof record.tree !== 'string' ||
+      resolve(record.tree) !== record.tree ||
+      !record.tree.startsWith(join(this.root(profileDir), id, 'trees') + sep) ||
+      (record.snapshot !== undefined &&
+        (resolve(record.snapshot) !== record.snapshot ||
+          !record.snapshot.startsWith(join(this.root(profileDir), id, 'reviews') + sep)))
+    )
+      authoringError('Candidate storage is invalid')
+    for (const directory of [record.tree, record.snapshot].filter((p): p is string => p !== undefined)) {
+      for (let cursor = directory; cursor !== profileDir; cursor = dirname(cursor)) {
+        authoringDirectory(cursor)
+      }
+    }
+    // Quota scans do not recover another owner's publication.
+    if (owner !== undefined && record.value.state === 'publishing' && !this.publications.has(id)) {
+      record.value.state = 'interrupted'
+      record.value.message = 'Publication interrupted; inspect actual package state before retrying'
+      if (!readOnly) this.save(profileDir, record)
+    }
+    return record
+  }
+  private verify(record: Record, expected: string) {
+    if (record.value.candidateHash !== expected || hashDirectory(record.tree, { exclude: [] }) !== expected)
+      authoringError('Candidate changed; test and request a new review')
+  }
+  async serialized<T>(key: string, run: () => Promise<T>): Promise<T> {
+    const prior = this.tails.get(key) ?? Promise.resolve(),
+      task = prior.catch(() => undefined).then(run)
+    this.tails.set(key, task)
+    try {
+      return await task
+    } finally {
+      if (this.tails.get(key) === task) this.tails.delete(key)
+    }
+  }
+  private records(profileDir: string, owner?: string): Record[] {
+    const root = this.root(profileDir)
+    if (!existsSync(root)) return []
+    authoringDirectory(root)
+    return readdirSync(root)
+      .filter((id) => /^candidate-[a-f0-9]{32}$/.test(id))
+      .flatMap((id) => {
+        try {
+          return [this.load(profileDir, id, owner)]
+        } catch {
+          return []
+        }
+      })
+  }
+  list(profileDir: string, owner: string): AuthoringCandidateSummary[] {
+    return this.records(profileDir, owner)
+      .slice(0, 128)
+      .flatMap((record) => {
+        try {
+          const { candidateId, packageId, candidateHash, state } = this.project(record, profileDir)
+          return [{ candidateId, packageId, candidateHash, state }]
+        } catch {
+          return []
+        }
+      })
+  }
+  private project(record: Record, profileDir: string): AuthoringCandidate {
+    const actual = hashDirectory(record.tree, { exclude: [] })
+    if (
+      actual !== record.value.candidateHash &&
+      !['published', 'rejected', 'publishing', 'interrupted'].includes(record.value.state)
+    ) {
+      record.value = {
+        ...record.value,
+        candidateHash: actual,
+        state: 'draft',
+        reviewHash: null,
+        tests: null,
+        preview: null,
+        reviewer: null,
+        message: 'Candidate changed; test and request a new review',
+        diagnostics: candidateTreeStatus(readAuthoringFiles(record.tree)).diagnostics,
+        writeSummary: candidateWriteSummary(record.value.sourceFiles, readAuthoringFiles(record.tree)),
+        sourceFiles: readAuthoringFiles(record.tree),
+        files: readAuthoringFiles(record.tree).map((f) => ({ path: f.path, before: null, after: f.content })),
+      }
+      delete record.snapshot
+      this.save(profileDir, record)
+    }
+    const value = structuredClone(record.value)
+    return value
+  }
+  /** Fact-chain reads never reset drafts or persist interrupted-publication recovery. */
+  evidence(profileDir: string, id: string, owner: string): AuthoringCandidate {
+    const record = this.load(profileDir, id, owner, true)
+    const value = record.value
+    const tree = ['published', 'rejected', 'publishing', 'interrupted'].includes(value.state)
+      ? (record.snapshot ?? record.tree)
+      : record.tree
+    if (
+      hashDirectory(tree, { exclude: [] }) !== value.candidateHash ||
+      (value.reviewHash !== null && this.reviewDigest(value) !== value.reviewHash)
+    )
+      authoringError('Candidate evidence is unavailable')
+    return structuredClone(value)
+  }
+  /** Exact server-bound command lookup, without regenerating candidate content. */
+  forCommand(profileDir: string, commandKey: string, owner: string): AuthoringCandidate | null {
+    const id = commandCandidateId(commandKey)
+    return existsSync(this.path(profileDir, id)) ? this.evidence(profileDir, id, owner) : null
+  }
+  show(profileDir: string, id: string, owner: string) {
+    return this.project(this.load(profileDir, id, owner), profileDir)
+  }
+  async create(
+    profileDir: string,
+    files: readonly AuthoringFile[],
+    owner: string,
+    commandKey: string,
+    origin: AuthoringOrigin,
+  ): Promise<AuthoringCandidate> {
+    const checked = authoringFiles(files),
+      createHash = authoringHash(jcs({ files: checked, origin }))
+    const id = commandCandidateId(commandKey),
+      file = this.path(profileDir, id)
+    if (existsSync(file)) {
+      const old = this.load(profileDir, id, owner)
+      if (old.createHash !== createHash) authoringError('Candidate command id conflicts')
+      return this.project(old, profileDir)
+    }
+    if (this.records(profileDir).length >= 128) authoringError('Candidate limit reached')
+    const tree = join(this.root(profileDir), id, 'trees', randomUUID())
+    let published = false
+    try {
+      writeAuthoringFiles(tree, checked)
+      const source = candidateSource(tree),
+        preview = await this.manager.inspect(profileDir, source)
+      const installed = (await this.manager.inventory(profileDir)).packages.find((p) => p.id === preview.id)
+      const candidateHash = hashDirectory(tree, { exclude: [] })
+      if (preview.integrity !== candidateHash) authoringError('Candidate source changed during inspection')
+      const record: Record = {
+        owner,
+        createHash,
+        tree,
+        value: {
+          candidateId: id,
+          packageId: preview.id,
+          candidateHash,
+          baseHash: installed?.entry.integrity ?? null,
+          reviewHash: null,
+          state: 'draft',
+          sourceFiles: checked,
+          files: checked.map((f) => ({ path: f.path, before: null, after: f.content })),
+          preview: null,
+          tests: null,
+          origin,
+          installer: 'agent',
+          reviewer: null,
+          message: '',
+        },
+      }
+      this.save(profileDir, record)
+      published = true
+      return this.project(record, profileDir)
+    } finally {
+      if (!published) {
+        rmSync(tree, { recursive: true, force: true })
+        // Only remove empty ancestors; a concurrent successful candidate is never removed.
+        for (const directory of [dirname(tree), dirname(dirname(tree))])
+          try {
+            rmdirSync(directory)
+          } catch {
+            /* another tree/record may exist */
+          }
+      }
+    }
+  }
+  /** Typed adapter for the validated admin write contract; legacy internal callers retain replace. */
+  writeRequest(profileDir: string, id: string, owner: string, input: AuthoringWriteParams) {
+    return this.write(profileDir, id, owner, input.expectedHash, input.files, input.mode, input.remove)
+  }
+  async write(
+    profileDir: string,
+    id: string,
+    owner: string,
+    expected: string,
+    files: readonly AuthoringFile[],
+    mode: 'replace' | 'merge' = 'replace',
+    remove: readonly string[] = [],
+  ) {
+    const record = this.load(profileDir, id, owner)
+    this.verify(record, expected)
+    if (['published', 'rejected', 'publishing', 'interrupted'].includes(record.value.state))
+      authoringError('Candidate is terminal; create another candidate')
+    const tree = join(this.root(profileDir), id, 'trees', randomUUID())
+    let saved = false
+    try {
+      const checked = authoringWriteFiles(readAuthoringFiles(record.tree), files, mode, remove)
+      const summary = candidateWriteSummary(readAuthoringFiles(record.tree), checked)
+      const status = candidateTreeStatus(checked)
+      writeAuthoringFiles(tree, checked)
+      if (checked.some((f) => f.path === 'package.json')) {
+        try {
+          const preview = await this.manager.inspect(profileDir, candidateSource(tree))
+          if (preview.id !== record.value.packageId)
+            authoringError('Candidate package identity cannot change')
+        } catch (error) {
+          if (
+            !(error instanceof PackageError) ||
+            !status.diagnostics.length ||
+            !safeAuthoringDiagnostics(error.detail.diagnostics).every(
+              (d) => d.code === 'missing-required-file',
+            ) ||
+            !safeAuthoringDiagnostics(error.detail.diagnostics).length
+          )
+            throw error
+        }
+      }
+      record.tree = tree
+      record.value = {
+        ...record.value,
+        candidateHash: hashDirectory(tree, { exclude: [] }),
+        state: 'draft',
+        reviewHash: null,
+        preview: null,
+        tests: null,
+        reviewer: null,
+        message: summary.unchanged
+          ? 'No progress: read the diagnostics or read the candidate before editing again. / 无进展：请先阅读诊断或重新读取候选。'
+          : '',
+        writeSummary: summary,
+        diagnostics: status.diagnostics,
+        sourceFiles: checked,
+        files: checked.map((f) => ({ path: f.path, before: null, after: f.content })),
+      }
+      delete record.snapshot
+      this.save(profileDir, record)
+      saved = true
+      this.rejections.delete(profileDir + id + owner)
+      return this.project(record, profileDir)
+    } catch (error) {
+      if (
+        error instanceof PackageError &&
+        ['E_PACKAGE_SOURCE', 'E_PACKAGE_STATE', 'E_PACKAGE_BLOCKED'].includes(error.code)
+      ) {
+        const key = profileDir + id + owner
+        const fingerprint = authoringHash(jcs([error.code, error.detail]))
+        const repeated = this.rejections.get(key) === fingerprint
+        this.rejections.delete(key)
+        this.rejections.set(key, fingerprint)
+        if (this.rejections.size > 128) this.rejections.delete(this.rejections.keys().next().value!)
+        if (repeated)
+          throw new PackageError(error.legacyCode, error.reason, {
+            detail: {
+              ...error.detail,
+              diagnostics: safeAuthoringDiagnostics([
+                ...safeAuthoringDiagnostics(error.detail.diagnostics).slice(0, 15),
+                { code: 'no-progress', path: 'package.json', field: '', name: '' },
+              ]),
+            },
+          })
+      }
+      throw error
+    } finally {
+      if (!saved) rmSync(tree, { recursive: true, force: true })
+    }
+  }
+  async test(
+    profileDir: string,
+    id: string,
+    owner: string,
+    expected: string,
+    signal: AbortSignal,
+    runner: AuthoringTestRunner = this.testRunner,
+  ) {
+    const record = this.load(profileDir, id, owner)
+    this.verify(record, expected)
+    if (['published', 'rejected', 'publishing', 'interrupted'].includes(record.value.state))
+      authoringError('Candidate is terminal')
+    requireCompleteCandidate(readAuthoringFiles(record.tree))
+    await this.manager.inspect(profileDir, candidateSource(record.tree))
+    const files = readAuthoringFiles(record.tree),
+      work = mkdtempSync(join(tmpdir(), 'agh-candidate-test-'))
+    try {
+      writeAuthoringFiles(work, files)
+      // Revoke an older review before any test code runs.
+      record.value.reviewHash = null
+      record.value.state = 'draft'
+      record.value.tests = null
+      this.save(profileDir, record)
+      const result = await runner(work, files, signal)
+      this.verify(record, expected)
+      if (hashDirectory(work) !== expected)
+        authoringError('Tests changed their source; passing results cannot be retained')
+      record.value.tests = {
+        ...result,
+        output: safeAuthoringOutput(result.output, 16384, work),
+        hash: expected,
+        completedAt: new Date().toISOString(),
+      }
+      record.value.state = result.state === 'passed' ? 'tested' : 'failed'
+      this.save(profileDir, record)
+      return this.project(record, profileDir)
+    } finally {
+      rmSync(work, { recursive: true, force: true })
+    }
+  }
+  async submit(profileDir: string, id: string, owner: string, expected: string) {
+    const record = this.load(profileDir, id, owner)
+    this.verify(record, expected)
+    requireCompleteCandidate(readAuthoringFiles(record.tree))
+    if (
+      !['tested', 'review'].includes(record.value.state) ||
+      record.value.tests?.state !== 'passed' ||
+      record.value.tests.hash !== expected
+    )
+      throw new PackageError('E_EXT_LOAD', 'Passing tests for this exact candidate are required')
+    const installed = (await this.manager.inventory(profileDir)).packages.find(
+      (p) => p.id === record.value.packageId,
+    )
+    if ((installed?.entry.integrity ?? null) !== record.value.baseHash)
+      authoringError('Installed version changed; draft a new candidate')
+    const next = readAuthoringFiles(record.tree),
+      before = installed?.directory ? readAuthoringFiles(installed.directory) : []
+    const paths = [...new Set([...next, ...before].map((f) => f.path))].sort()
+    const snapshot = join(this.root(profileDir), id, 'reviews', randomUUID())
+    writeAuthoringFiles(snapshot, next)
+    const preview = await this.manager.inspect(profileDir, candidateSource(snapshot))
+    if (preview.integrity !== expected || preview.blockers.length || !preview.capabilityHash)
+      authoringError('Candidate inspection is blocked or changed')
+    record.snapshot = snapshot
+    record.value.files = paths.flatMap((path) => {
+      const a = before.find((f) => f.path === path)?.content ?? null,
+        b = next.find((f) => f.path === path)?.content ?? null
+      return a === b ? [] : [{ path, before: a, after: b }]
+    })
+    record.value.preview = {
+      ...preview,
+      source: { type: 'file', ref: 'file:./reviewed-candidate' },
+      provenance: {
+        ...preview.provenance,
+        installer: 'agent',
+        source: { type: 'file', ref: 'file:./reviewed-candidate' },
+        resolvedLocation: 'reviewed candidate',
+      },
+    }
+    record.value.reviewHash = this.reviewDigest(record.value)
+    record.value.state = 'review'
+    this.save(profileDir, record)
+    return this.project(record, profileDir)
+  }
+  private reviewDigest(value: AuthoringCandidate) {
+    return authoringHash(
+      jcs({
+        baseHash: value.baseHash,
+        candidateHash: value.candidateHash,
+        files: value.files,
+        preview: value.preview,
+        tests: value.tests,
+        origin: value.origin,
+      }),
+    )
+  }
+  async decide(
+    profileDir: string,
+    id: string,
+    owner: string,
+    expected: string,
+    reviewHash: string,
+    approve: boolean,
+    publish: (source: { type: 'file'; ref: string }, value: AuthoringCandidate) => Promise<void>,
+    reviewer = owner,
+  ) {
+    const record = this.load(profileDir, id, owner)
+    this.verify(record, expected)
+    if (record.value.state === 'published' && record.value.reviewHash === reviewHash)
+      return this.project(record, profileDir)
+    if (
+      record.value.state !== 'review' ||
+      record.value.reviewHash !== reviewHash ||
+      this.reviewDigest(record.value) !== reviewHash ||
+      record.value.tests?.state !== 'passed' ||
+      record.value.tests.hash !== expected ||
+      !record.snapshot ||
+      hashDirectory(record.snapshot, { exclude: [] }) !== expected
+    )
+      authoringError('Review is stale; test and request a new review')
+    const installed = (await this.manager.inventory(profileDir)).packages.find(
+      (p) => p.id === record.value.packageId,
+    )
+    if ((installed?.entry.integrity ?? null) !== record.value.baseHash)
+      authoringError('Installed version changed since review')
+    if (!approve) {
+      record.value.state = 'rejected'
+      record.value.reviewer = reviewer
+      this.save(profileDir, record)
+      return this.project(record, profileDir)
+    }
+    record.value.state = 'publishing'
+    record.value.reviewer = reviewer
+    this.save(profileDir, record)
+    this.publications.add(id)
+    try {
+      await publish(candidateSource(record.snapshot), record.value)
+      record.value.state = 'published'
+      record.value.message =
+        'Published. Executable tools and plugin code are available in new sessions; existing sessions keep their pins. Approved live resources refresh at turn boundaries.'
+    } catch (error) {
+      record.value.state = 'failed'
+      record.value.message = 'Publication failed; inspect actual package state'
+      this.save(profileDir, record)
+      this.publications.delete(id)
+      throw error
+    }
+    this.publications.delete(id)
+    this.save(profileDir, record)
+    return this.project(record, profileDir)
+  }
+}

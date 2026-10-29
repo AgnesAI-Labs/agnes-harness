@@ -1,13 +1,14 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import type { Event, IdMinter, PreparedEvent, Seq } from '@agnes/core-common/types'
+import { forkBaseProviders } from '@agnes/core-ledger/log/fork-seed'
+import { verifyLedger } from '@agnes/core-ledger/log/integrity'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import type { StorageAdapter } from '@agnes/core-ledger/log/storage'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { Kernel } from '../src/kernel.js'
-import { forkBaseProviders } from '../src/log/fork-seed.js'
-import { verifyLedger } from '../src/log/integrity.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import type { StorageAdapter } from '../src/log/storage.js'
-import { presetDefaults } from '../src/step/preset.js'
 import type { SessionImpl } from '../src/step/session.js'
-import type { Event, IdMinter, PreparedEvent, Seq } from '../src/types.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { type FakeProvider, fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, readTool, testFsOps } from './helpers/open-session.js'
@@ -58,6 +59,7 @@ function createChild(from: SessionImpl, kind: 'fork' | 'spawn', opts: CreateOpts
 function kernel(storage: StorageAdapter, provider: FakeProvider) {
   Object.assign(provider, { models: () => [model()] })
   const k = Kernel.create({
+    loops: defaultLoops(),
     storage,
     seams: fakeSeams(),
     provider,
@@ -197,6 +199,8 @@ describe('reopening a delegated child on its live parent', () => {
         delegation,
       })
     const again = await reopen('r2')
+    // Opening appends nothing, not even a late fire-and-forget notice.
+    await new Promise((resolve) => setTimeout(resolve, 20))
     expect(again.lastSeq).toBe(lastSeq)
     expect(JSON.stringify(again.surface().map((n) => n.seq))).toBe(state)
     await again.close()

@@ -1,12 +1,28 @@
+import { CoreError } from '@agnes/core-common/types'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import type { CommitTx } from '@agnes/core-ledger/log/storage'
 import { describe, expect, it, vi } from 'vitest'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import type { CommitTx } from '../src/log/storage.js'
 import { INBOX_BUDGET_EVENT } from '../src/step/inbox.js'
-import { CoreError } from '../src/types.js'
 import { fakeProvider } from './helpers/fake-provider.js'
 import { actor, openSession } from './helpers/open-session.js'
 
 describe('Inbox segment', () => {
+  it('atomically refuses automatic continuation behind pending input', async () => {
+    const { session } = await openSession({ provider: fakeProvider([]) })
+    const content = [{ type: 'text' as const, text: 'continuation' }]
+    const admissions = await Promise.allSettled([
+      session.enqueue('next-turn', { actor, content, ifEmpty: true }),
+      session.enqueue('next-turn', { actor, content, ifEmpty: true }),
+    ])
+    expect(admissions.map((result) => result.status)).toEqual(['fulfilled', 'rejected'])
+    const before = session.lastSeq
+    await expect(session.enqueue('next-turn', { actor, content, ifEmpty: true })).rejects.toMatchObject({
+      code: 'E_RELATION',
+    })
+    expect(session.lastSeq).toBe(before)
+    expect((await session.projectUI()).pendingInputs).toHaveLength(1)
+  })
+
   it('removes only the selected pending input durably without changing the active turn', async () => {
     const { session, log } = await openSession({ provider: fakeProvider([]) })
     await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'active' }] })
@@ -29,7 +45,7 @@ describe('Inbox segment', () => {
     expect((await session.projectUI()).pendingInputs).toEqual(queued)
     expect(session.op()).toEqual(op)
     await session.removeQueuedInput(selected.itemId, actor, 'remove-same')
-    const remaining = [queued[0], queued[2]]
+    let remaining = [queued[0], queued[2], queued[3]]
     expect((await session.projectUI()).pendingInputs).toEqual(remaining)
     expect((await session.projectUI(cut)).pendingInputs).toEqual(queued)
     expect(await session.projectUIPatch(cut)).toMatchObject({
@@ -40,14 +56,27 @@ describe('Inbox segment', () => {
     const inbox = session.latest('inbox') as { items: Array<{ itemId: string; target: string }> }
     const steer = inbox.items.find((item) => item.target === 'next-step')
     if (!steer) throw new Error('missing steer input')
+    await session.removeQueuedInput(steer.itemId, actor, 'withdraw-steer')
+    expect(
+      (session.latest('inbox') as { items: Array<{ itemId: string }> }).items.some(
+        (item) => item.itemId === steer.itemId,
+      ),
+    ).toBe(false)
+    remaining = remaining.filter((item) => item?.itemId !== steer.itemId)
+    expect(session.op()).toEqual(op)
     const before = session.lastSeq
     for (const itemId of [selected.itemId, activeId, steer.itemId, 'missing'])
       await expect(session.removeQueuedInput(itemId, actor, 'refused')).rejects.toMatchObject({
         code: 'E_RELATION',
       })
-    expect(session.lastSeq).toBe(before)
+    expect(await log.scan({ fromSeq: before + 1, limit: 10 })).toMatchObject(
+      [selected.itemId, activeId, steer.itemId, 'missing'].map((itemId) => ({
+        type: 'x/core/control',
+        data: { outcome: 'refused', operation: 'withdraw', reason: 'QUEUED_INPUT_GONE', itemId },
+      })),
+    )
     expect((await session.projectUI()).pendingInputs).toEqual(remaining)
-    const { projectUI } = await import('../src/project/ui.js')
+    const { projectUI } = await import('@agnes/core-ledger/project/ui')
     expect(
       (await projectUI(await log.scan({ fromSeq: 1, limit: 100 }), { sessionKey: session.key }))
         .pendingInputs,
@@ -103,7 +132,7 @@ describe('Inbox segment', () => {
       await session.enqueue('next-turn', { actor, kind: 'follow_up', content: [{ type: 'text', text }] })
     await session.enqueue('next-step', { actor, content: [{ type: 'text', text: 'steer' }] })
     const queued = (await session.projectUI()).pendingInputs ?? []
-    expect(queued.map((item) => item.preview)).toEqual(['B', 'C', 'D'])
+    expect(queued.map((item) => item.preview)).toEqual(['B', 'C', 'D', 'steer'])
     expect((await session.projectUI(baseline)).pendingInputs).toEqual([])
     const update = await session.projectUIPatch(baseline)
     expect(update).toMatchObject({ kind: 'patch', patch: { pendingInputs: queued } })
@@ -114,19 +143,29 @@ describe('Inbox segment', () => {
       selected.itemId,
       queued[0]?.itemId,
       queued[2]?.itemId,
+      queued[3]?.itemId,
     ])
     const before = session.lastSeq
     await expect(session.sendQueuedNow('missing', actor, 'missing')).rejects.toMatchObject({
       code: 'E_RELATION',
     })
-    expect(session.lastSeq).toBe(before)
+    expect(await log.scan({ fromSeq: before + 1, limit: 10 })).toMatchObject([
+      {
+        type: 'x/core/control',
+        data: { outcome: 'refused', reason: 'QUEUED_INPUT_GONE', itemId: 'missing' },
+      },
+    ])
     await session.acceptInput()
     expect((await log.scan({ type: 'user/message', limit: 5 }))[0]?.data).toMatchObject({
       content: [{ type: 'text', text: 'C' }],
       kind: 'follow_up',
     })
-    expect((await session.projectUI()).pendingInputs?.map((item) => item.preview)).toEqual(['B', 'D'])
-    const replay = await import('../src/project/ui.js')
+    expect((await session.projectUI()).pendingInputs?.map((item) => item.preview)).toEqual([
+      'B',
+      'D',
+      'steer',
+    ])
+    const replay = await import('@agnes/core-ledger/project/ui')
     expect(
       (await replay.projectUI(await log.scan({ fromSeq: 1, limit: 100 }), { sessionKey: session.key }))
         .pendingInputs,
@@ -188,35 +227,107 @@ describe('Inbox segment', () => {
     expect(session.op()).toBeNull()
   })
 
-  it('carries the enqueued trust and kind onto the user/message it becomes', async () => {
+  it('carries backend system input to messages and UI, refusing ordinary input forgery', async () => {
     const { session, log } = await openSession({ provider: fakeProvider([]) })
-    await session.enqueue('next-turn', {
-      content: [{ type: 'text', text: 'from a channel' }],
+    const system = {
+      source: 'agnes/intelligent-ui',
+      type: 'action-result',
+      summary: 'Submitted',
+      data: { answers: { name: 'Fixture' } },
+      presentation: {
+        kind: 'ui-action' as const,
+        operation: 'submit' as const,
+        status: 'succeeded' as const,
+        label: 'Submit',
+        fields: ['name'],
+      },
+    }
+    const delivery = session.enqueue('next-turn', {
+      content: [{ type: 'text', text: system.summary }],
       actor: { ...actor, id: 'bot' },
       kind: 'follow_up',
       titleLocale: 'en',
-      trust: 'untrusted',
+      trust: 'trusted',
+      origin: 'system',
+      system,
     })
+    system.data.answers.name = 'mutated after delivery'
+    await delivery
+    expect((await session.projectUI()).pendingInputs).toEqual([])
     await session.acceptInput()
     const msg = (await log.scan({ type: 'user/message', limit: 5 }))[0]
-    expect(msg).toMatchObject({ trust: 'untrusted', origin: 'principal', actor: { id: 'bot' } })
-    expect(msg?.data).toMatchObject({ kind: 'follow_up', titleLocale: 'en' })
+    expect(msg).toMatchObject({
+      trust: 'untrusted',
+      origin: 'system',
+      actor: { id: 'bot' },
+      data: { kind: 'follow_up', titleLocale: 'en', system: { data: { answers: { name: 'Fixture' } } } },
+    })
+    expect((await session.projectUI()).nodes.find((node) => node.kind === 'user')).toMatchObject({
+      origin: 'system',
+      system: { presentation: { kind: 'ui-action', fields: ['name'] } },
+    })
+    await expect(
+      session.enqueue('next-turn', {
+        actor,
+        content: [{ type: 'text', text: 'ordinary prompt' }],
+        system,
+      }),
+    ).rejects.toMatchObject({ code: 'E_ENVELOPE' })
     const started = (await log.scan({ type: 'turn/start', limit: 5 }))[0]
     expect(started?.data).toMatchObject({ trigger: 'follow_up' })
   })
 
-  it('a second turn gets turn number 2, and endTurn clears the program counter', async () => {
+  it('deduplicates concurrent command deliveries atomically, including claimed historical inputs', async () => {
     const { session, log } = await openSession({ provider: fakeProvider([]) })
-    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'a' }], actor })
+    const message = {
+      actor,
+      commandId: 'notification:1',
+      origin: 'system' as const,
+      content: [{ type: 'text' as const, text: 'Delivered' }],
+    }
+    const seqs = await Promise.all([
+      session.enqueue('next-turn', message, { dedupeByCommandId: true }),
+      session.enqueue('next-turn', message, { dedupeByCommandId: true }),
+    ])
+    expect(seqs[0]).toBe(seqs[1])
+    expect((session.latest('inbox') as { items: unknown[] }).items).toHaveLength(1)
     await session.acceptInput()
-    await session.endTurn('completed')
-    expect(session.op()).toBeNull()
-    expect(session.turn).toBeNull()
-    expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'completed' })
-    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'b' }], actor })
-    await session.acceptInput()
-    expect(session.op()?.meta.turn).toBe(2)
+    expect(await session.enqueue('next-turn', message, { dedupeByCommandId: true })).toBe(seqs[0])
+    expect((session.latest('inbox') as { items: unknown[] }).items).toHaveLength(0)
+    expect(await log.scan({ type: 'user/message', toSeq: session.lastSeq })).toHaveLength(1)
+    await session.enqueue('next-turn', message)
+    expect((session.latest('inbox') as { items: unknown[] }).items).toHaveLength(1)
+    const { commandId: _commandId, ...withoutCommand } = message
+    await expect(
+      session.enqueue('next-turn', withoutCommand, { dedupeByCommandId: true }),
+    ).rejects.toMatchObject({ code: 'E_ENVELOPE' })
   })
+
+  it.each(['completed', 'aborted', 'error', 'blocked', 'parked'] as const)(
+    'endTurn clears the program counter and promotes late steers only after completion: %s',
+    async (reason) => {
+      const { session, log } = await openSession({ provider: fakeProvider([]) })
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'a' }], actor })
+      await session.acceptInput()
+      await session.endTurn(reason)
+      expect(session.op()).toBeNull()
+      expect(session.turn).toBeNull()
+      expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason })
+      await session.enqueue('next-step', {
+        content: [{ type: 'text', text: 'late steer' }],
+        actor,
+        kind: 'steer',
+      })
+      expect(session.latest('inbox')).toMatchObject({
+        items: [{ kind: 'steer', target: reason === 'completed' ? 'next-turn' : 'next-step' }],
+      })
+      expect(await session.acceptInput()).toBe(reason === 'completed')
+      if (reason === 'completed') await session.endTurn('completed')
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'b' }], actor })
+      await session.acceptInput()
+      expect(session.op()?.meta.turn).toBe(reason === 'completed' ? 3 : 2)
+    },
+  )
 
   it('transition guards the op.state cell it read: a stale CAS is refused', async () => {
     const { session } = await openSession({ provider: fakeProvider([]) })

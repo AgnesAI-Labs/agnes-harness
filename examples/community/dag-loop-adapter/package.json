@@ -1,0 +1,111 @@
+{
+  "name": "@community/dag-loop-adapter",
+  "version": "0.1.1",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": "./dist/index.js",
+  "files": [
+    "dist",
+    "dag",
+    "provider.example.json"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@agnes/plugin-runtime": "0.0.0",
+    "@agnes/extension-api": "^5.0.0",
+    "@agnes/protocol": "0.0.0",
+    "@sinclair/typebox": "0.34.33"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "@types/node": "26.4.1",
+    "@agnes/host": "0.0.0"
+  },
+  "agnes": {
+    "plugins": [
+      {
+        "export": "toolPlugin",
+        "apiRange": "^5.0.0",
+        "id": "ext:@community/dag-loop-adapter/tools",
+        "inject": [
+          "tools"
+        ],
+        "metadata": {
+          "displayName": "Task graph and model adapter",
+          "summary": "Demonstrates a task-graph agent paired with a deterministic local model adapter.",
+          "description": "Demonstrates a task-graph agent paired with a deterministic local model adapter.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "任务图与模型适配器",
+              "summary": "演示任务图 Agent 如何搭配确定性的本地模型适配器。",
+              "description": "演示任务图 Agent 如何搭配确定性的本地模型适配器。"
+            }
+          }
+        }
+      },
+      {
+        "export": "adapterPlugin",
+        "apiRange": "^5.0.0",
+        "id": "ext:@community/dag-loop-adapter/adapter",
+        "inject": [
+          "providers"
+        ],
+        "metadata": {
+          "displayName": "Task graph and model adapter",
+          "summary": "Demonstrates a task-graph agent paired with a deterministic local model adapter.",
+          "description": "Demonstrates a task-graph agent paired with a deterministic local model adapter.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "任务图与模型适配器",
+              "summary": "演示任务图 Agent 如何搭配确定性的本地模型适配器。",
+              "description": "演示任务图 Agent 如何搭配确定性的本地模型适配器。"
+            }
+          }
+        }
+      },
+      {
+        "export": "loopPlugin",
+        "apiRange": "^5.0.0",
+        "id": "ext:@community/dag-loop-adapter/loop",
+        "inject": [
+          "providers"
+        ],
+        "metadata": {
+          "displayName": "Task graph and model adapter",
+          "summary": "Demonstrates a task-graph agent paired with a deterministic local model adapter.",
+          "description": "Demonstrates a task-graph agent paired with a deterministic local model adapter.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "任务图与模型适配器",
+              "summary": "演示任务图 Agent 如何搭配确定性的本地模型适配器。",
+              "description": "演示任务图 Agent 如何搭配确定性的本地模型适配器。"
+            }
+          }
+        }
+      }
+    ],
+    "metadata": {
+      "displayName": "Task graph and model adapter",
+      "summary": "Demonstrates a task-graph agent paired with a deterministic local model adapter.",
+      "description": "Demonstrates a task-graph agent paired with a deterministic local model adapter.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "任务图与模型适配器",
+          "summary": "演示任务图 Agent 如何搭配确定性的本地模型适配器。",
+          "description": "演示任务图 Agent 如何搭配确定性的本地模型适配器。"
+        }
+      }
+    },
+    "provides": [
+      "tool",
+      "loop",
+      "model-adapter"
+    ]
+  }
+}

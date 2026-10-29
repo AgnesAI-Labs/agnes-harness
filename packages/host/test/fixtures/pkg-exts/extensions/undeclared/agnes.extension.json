@@ -1,7 +1,0 @@
-{
-  "id": "fixture/undeclared",
-  "version": "1.0.0",
-  "apiRange": "^1.0",
-  "entry": "./index.ts",
-  "capabilities": { "tools": { "prefix": "fx_", "names": ["fx_declared"] } }
-}

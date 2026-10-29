@@ -1,0 +1,1218 @@
+{
+  "base": {
+    "hash": "sha256-95aeb6aa699280e88e90c43ec14548a17ec3a47ca7d6751283e85b30ecccc210",
+    "doc": {
+      "name": "base",
+      "tools": {
+        "core": ["read", "write", "edit", "shell", "grep", "find", "ls", "todo", "web_fetch"],
+        "timeout_ms": 120000,
+        "output_max_bytes": 32768,
+        "timeouts": {
+          "web_fetch": 30000,
+          "skill_helper_import": 240000,
+          "shell": 600000
+        }
+      },
+      "mcp": {
+        "servers": [],
+        "defer": true
+      },
+      "skills_roots": ["~/.agh/skills", "~/.agents/skills", "~/.claude/skills", "~/.codex/skills"],
+      "compaction": {
+        "enabled": true,
+        "reserve_tokens": 16384,
+        "keep_recent_tokens": 20000,
+        "agent_callable": true
+      },
+      "checkpoint": {
+        "keep": 200,
+        "max_file_bytes": 10485760
+      },
+      "budget": {
+        "preflight": "estimate",
+        "per_request_cap": null,
+        "on_exceed": "quote",
+        "max_steps": null,
+        "attribution": "aggregate"
+      },
+      "approval": {
+        "on_unavailable": "deny",
+        "on_timeout": "rejected",
+        "timeout_ms": 60000,
+        "pending_ttl_ms": 86400000,
+        "command_policy": []
+      },
+      "sandbox": {
+        "level": "L1",
+        "required": false,
+        "on_unavailable": "deny",
+        "extra_paths": [],
+        "deny_paths": [],
+        "network_allow": []
+      },
+      "loop": {
+        "repeat_threshold": 3,
+        "no_progress_steps": 4
+      },
+      "repair": {
+        "max_rounds": 5,
+        "escalate_after": 3,
+        "timeout_ms": 10000
+      },
+      "verifier": {
+        "timeout_ms": 30000,
+        "default_tier": 0
+      },
+      "completion_gate": {
+        "enabled": true,
+        "min_items": 3,
+        "allow_override": true
+      },
+      "subagent": {
+        "max_depth": 1,
+        "max_fan_out": 4,
+        "isolation": "worktree",
+        "budget_inherit": "aggregate"
+      },
+      "harness": {
+        "max_entries": {
+          "prompt": 10,
+          "memory": 50,
+          "skill": 30,
+          "subagent": 10
+        },
+        "max_chars_per_entry": 2000,
+        "queue_max": 20,
+        "auto_refine": {
+          "enabled": true,
+          "gate": "verifier",
+          "global_needs_human": true,
+          "cooldown_turns": 5
+        }
+      },
+      "telemetry": {
+        "consent": "DISABLED",
+        "invariants": false,
+        "timing": false
+      },
+      "recovery": {
+        "unknown_child": "model"
+      },
+      "ext": {
+        "events_per_turn": 200
+      },
+      "locale": "en"
+    }
+  },
+  "channel": {
+    "hash": "sha256-548df1c7af095cde781c5319fb5baed28b5dcd51d239ccb8ed0b03c81e0becb5",
+    "doc": {
+      "name": "channel",
+      "tools": {
+        "core": [
+          "read",
+          "write",
+          "edit",
+          "shell",
+          "grep",
+          "find",
+          "ls",
+          "todo",
+          "web_fetch",
+          "web_search",
+          "ask_user_question",
+          "ui_render",
+          "ui_update",
+          "ui_close",
+          "ui_submit",
+          "present",
+          "job_output",
+          "job_list",
+          "job_kill",
+          "schedule_create",
+          "schedule_list",
+          "schedule_update",
+          "schedule_delete"
+        ],
+        "timeout_ms": 120000,
+        "output_max_bytes": 32768,
+        "timeouts": {
+          "web_fetch": 30000,
+          "skill_helper_import": 240000,
+          "shell": 600000
+        }
+      },
+      "mcp": {
+        "servers": [],
+        "defer": true
+      },
+      "skills_roots": ["~/.agh/skills", "~/.agents/skills", "~/.claude/skills", "~/.codex/skills"],
+      "compaction": {
+        "enabled": true,
+        "reserve_tokens": 16384,
+        "keep_recent_tokens": 20000,
+        "agent_callable": true
+      },
+      "checkpoint": {
+        "keep": 200,
+        "max_file_bytes": 10485760
+      },
+      "budget": {
+        "preflight": "estimate",
+        "per_request_cap": 4000,
+        "on_exceed": "quote",
+        "max_steps": null,
+        "attribution": "aggregate"
+      },
+      "approval": {
+        "on_unavailable": "park",
+        "on_timeout": "rejected",
+        "timeout_ms": 60000,
+        "pending_ttl_ms": 86400000,
+        "command_policy": [
+          {
+            "tool": "edit|write",
+            "argv": "^/(?!(?:[\\s\\S]*/)?\\.\\.(?:/|$))(?:[^/\\\\\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/)*[^/\\\\\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+$",
+            "action": "allow"
+          },
+          {
+            "tool": "edit|write",
+            "argv": "^[A-Z]:/(?!(?:[\\s\\S]*/)?\\.\\.(?:/|$))(?:[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/)*[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+$",
+            "action": "allow"
+          },
+          {
+            "tool": "edit|write",
+            "argv": "^//(?!(?:[\\s\\S]*/)?\\.\\.(?:/|$))[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/(?:[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/)*[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+$",
+            "action": "allow"
+          }
+        ]
+      },
+      "sandbox": {
+        "level": "L1",
+        "required": false,
+        "on_unavailable": "allow-if-unimplemented",
+        "extra_paths": [],
+        "deny_paths": [],
+        "network_allow": []
+      },
+      "loop": {
+        "repeat_threshold": 3,
+        "no_progress_steps": 4
+      },
+      "repair": {
+        "max_rounds": 5,
+        "escalate_after": 3,
+        "timeout_ms": 10000
+      },
+      "verifier": {
+        "timeout_ms": 30000,
+        "default_tier": 0
+      },
+      "completion_gate": {
+        "enabled": true,
+        "min_items": 3,
+        "allow_override": true
+      },
+      "subagent": {
+        "max_depth": 1,
+        "max_fan_out": 2,
+        "isolation": "worktree",
+        "budget_inherit": "aggregate"
+      },
+      "harness": {
+        "max_entries": {
+          "prompt": 10,
+          "memory": 50,
+          "skill": 30,
+          "subagent": 10
+        },
+        "max_chars_per_entry": 2000,
+        "queue_max": 20,
+        "auto_refine": {
+          "enabled": true,
+          "gate": "verifier",
+          "global_needs_human": true,
+          "cooldown_turns": 5
+        }
+      },
+      "telemetry": {
+        "consent": "DISABLED",
+        "invariants": false,
+        "timing": false
+      },
+      "recovery": {
+        "unknown_child": "model"
+      },
+      "ext": {
+        "events_per_turn": 200
+      },
+      "locale": "en",
+      "surfaces": ["daemon"],
+      "model": {
+        "contract_id": "agnes-model-contract@v1",
+        "route": {
+          "primary": {
+            "route": "default",
+            "model": "default"
+          },
+          "escalation": {
+            "route": "default",
+            "model": "default"
+          },
+          "fast": {
+            "route": "default",
+            "model": "default"
+          },
+          "compaction": {
+            "route": "default",
+            "model": "default"
+          },
+          "verifier": {
+            "route": "default",
+            "model": "default"
+          }
+        },
+        "prompt_sections": ["persona", "environment", "coding-doctrine", "channel-style"]
+      },
+      "disclosure": "standard",
+      "ext_ui": {
+        "input": "prompt",
+        "unattended": "decline"
+      },
+      "hooks": ["session_start", "tool_call", "tool_result", "format_deviation"]
+    }
+  },
+  "claw": {
+    "hash": "sha256-78df2ae95a3ec8b1bf97ea0071e99003033d79d2d8a5c039f6bf5573dfaa6fb0",
+    "doc": {
+      "name": "claw",
+      "tools": {
+        "core": [
+          "read",
+          "write",
+          "edit",
+          "shell",
+          "grep",
+          "find",
+          "ls",
+          "todo",
+          "web_fetch",
+          "web_search",
+          "ask_user_question",
+          "ui_render",
+          "ui_update",
+          "ui_close",
+          "ui_submit",
+          "present",
+          "job_output",
+          "job_list",
+          "job_kill",
+          "schedule_create",
+          "schedule_list",
+          "schedule_update",
+          "schedule_delete"
+        ],
+        "timeout_ms": 120000,
+        "output_max_bytes": 32768,
+        "timeouts": {
+          "web_fetch": 30000,
+          "skill_helper_import": 240000,
+          "shell": 600000
+        }
+      },
+      "mcp": {
+        "servers": [],
+        "defer": true
+      },
+      "skills_roots": ["~/.agh/skills", "~/.agents/skills", "~/.claude/skills", "~/.codex/skills"],
+      "compaction": {
+        "enabled": true,
+        "reserve_tokens": 16384,
+        "keep_recent_tokens": 20000,
+        "agent_callable": true
+      },
+      "checkpoint": {
+        "keep": 200,
+        "max_file_bytes": 10485760
+      },
+      "budget": {
+        "preflight": "estimate",
+        "per_request_cap": 4000,
+        "on_exceed": "quote",
+        "max_steps": null,
+        "attribution": "aggregate"
+      },
+      "approval": {
+        "on_unavailable": "park",
+        "on_timeout": "rejected",
+        "timeout_ms": 60000,
+        "pending_ttl_ms": 86400000,
+        "command_policy": [
+          {
+            "tool": "edit|write",
+            "argv": "^/(?!(?:[\\s\\S]*/)?\\.\\.(?:/|$))(?:[^/\\\\\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/)*[^/\\\\\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+$",
+            "action": "allow"
+          },
+          {
+            "tool": "edit|write",
+            "argv": "^[A-Z]:/(?!(?:[\\s\\S]*/)?\\.\\.(?:/|$))(?:[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/)*[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+$",
+            "action": "allow"
+          },
+          {
+            "tool": "edit|write",
+            "argv": "^//(?!(?:[\\s\\S]*/)?\\.\\.(?:/|$))[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/(?:[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/)*[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+$",
+            "action": "allow"
+          }
+        ]
+      },
+      "sandbox": {
+        "level": "L1",
+        "required": true,
+        "on_unavailable": "allow-if-unimplemented",
+        "extra_paths": [],
+        "deny_paths": [],
+        "network_allow": []
+      },
+      "loop": {
+        "repeat_threshold": 3,
+        "no_progress_steps": 4
+      },
+      "repair": {
+        "max_rounds": 5,
+        "escalate_after": 3,
+        "timeout_ms": 10000
+      },
+      "verifier": {
+        "timeout_ms": 30000,
+        "default_tier": 0
+      },
+      "completion_gate": {
+        "enabled": true,
+        "min_items": 3,
+        "allow_override": true
+      },
+      "subagent": {
+        "max_depth": 2,
+        "max_fan_out": 4,
+        "isolation": "worktree",
+        "budget_inherit": "aggregate"
+      },
+      "harness": {
+        "max_entries": {
+          "prompt": 10,
+          "memory": 50,
+          "skill": 30,
+          "subagent": 10
+        },
+        "max_chars_per_entry": 2000,
+        "queue_max": 20,
+        "auto_refine": {
+          "enabled": true,
+          "gate": "verifier",
+          "global_needs_human": true,
+          "cooldown_turns": 5
+        }
+      },
+      "telemetry": {
+        "consent": "DISABLED",
+        "invariants": false,
+        "timing": false
+      },
+      "recovery": {
+        "unknown_child": "model"
+      },
+      "ext": {
+        "events_per_turn": 200
+      },
+      "locale": "en",
+      "surfaces": ["daemon", "sdk"],
+      "model": {
+        "contract_id": "agnes-model-contract@v1",
+        "route": {
+          "primary": {
+            "route": "default",
+            "model": "default"
+          },
+          "escalation": {
+            "route": "default",
+            "model": "default"
+          },
+          "fast": {
+            "route": "default",
+            "model": "default"
+          },
+          "compaction": {
+            "route": "default",
+            "model": "default"
+          },
+          "verifier": {
+            "route": "default",
+            "model": "default"
+          }
+        },
+        "prompt_sections": ["persona", "environment", "coding-doctrine"]
+      },
+      "disclosure": "standard",
+      "ext_ui": {
+        "input": "prompt",
+        "unattended": "decline"
+      },
+      "hooks": ["session_start", "tool_call", "tool_result", "format_deviation"]
+    }
+  },
+  "minimal-rl": {
+    "hash": "sha256-1d42e12410ddbe571bb9ceb400380b6b29d61062beb955835baab9cea0986655",
+    "doc": {
+      "name": "minimal-rl",
+      "surfaces": ["cli", "acp"],
+      "model": {
+        "contract_id": "agnes-model-contract@v1",
+        "route": {
+          "primary": {
+            "route": "default",
+            "model": "default"
+          }
+        },
+        "prompt_sections": []
+      },
+      "disclosure": "standard",
+      "tools": {
+        "core": ["shell", "edit"],
+        "timeout_ms": 120000
+      },
+      "mcp": {
+        "servers": [],
+        "defer": false
+      },
+      "skills_roots": [],
+      "compaction": {
+        "enabled": true,
+        "reserve_tokens": 16384,
+        "keep_recent_tokens": 20000,
+        "agent_callable": false
+      },
+      "budget": {
+        "preflight": "estimate",
+        "per_request_cap": null,
+        "on_exceed": "quote",
+        "max_steps": 100,
+        "attribution": "own"
+      },
+      "approval": {
+        "on_unavailable": "deny",
+        "timeout_ms": 60000,
+        "command_policy": []
+      },
+      "sandbox": {
+        "level": "L1",
+        "required": false,
+        "on_unavailable": "deny"
+      },
+      "subagent": {
+        "max_depth": 0
+      },
+      "verifier": {
+        "default_tier": 0
+      },
+      "completion_gate": {
+        "enabled": false
+      },
+      "harness": {
+        "auto_refine": {
+          "enabled": false
+        }
+      },
+      "telemetry": {
+        "consent": "DISABLED"
+      },
+      "hooks": [],
+      "locale": "en"
+    }
+  },
+  "minimal": {
+    "hash": "sha256-81086f697f1c96aa04e5b062753946343b4c4b0c0f8cf0ac03629a490761ae62",
+    "doc": {
+      "name": "minimal",
+      "tools": {
+        "core": ["read", "grep", "find", "ls"],
+        "timeout_ms": 120000,
+        "output_max_bytes": 32768,
+        "timeouts": {
+          "web_fetch": 30000,
+          "skill_helper_import": 240000,
+          "shell": 600000
+        }
+      },
+      "mcp": {
+        "servers": [],
+        "defer": true
+      },
+      "skills_roots": ["~/.agh/skills", "~/.agents/skills", "~/.claude/skills", "~/.codex/skills"],
+      "compaction": {
+        "enabled": true,
+        "reserve_tokens": 16384,
+        "keep_recent_tokens": 20000,
+        "agent_callable": true
+      },
+      "checkpoint": {
+        "keep": 200,
+        "max_file_bytes": 10485760
+      },
+      "budget": {
+        "preflight": "estimate",
+        "per_request_cap": 4000,
+        "on_exceed": "quote",
+        "max_steps": null,
+        "attribution": "aggregate"
+      },
+      "approval": {
+        "on_unavailable": "deny",
+        "on_timeout": "rejected",
+        "timeout_ms": 60000,
+        "pending_ttl_ms": 86400000,
+        "command_policy": []
+      },
+      "sandbox": {
+        "level": "L0",
+        "required": false,
+        "on_unavailable": "allow",
+        "extra_paths": [],
+        "deny_paths": [],
+        "network_allow": []
+      },
+      "loop": {
+        "repeat_threshold": 3,
+        "no_progress_steps": 4
+      },
+      "repair": {
+        "max_rounds": 5,
+        "escalate_after": 3,
+        "timeout_ms": 10000
+      },
+      "verifier": {
+        "timeout_ms": 30000,
+        "default_tier": 0
+      },
+      "completion_gate": {
+        "enabled": true,
+        "min_items": 3,
+        "allow_override": true
+      },
+      "subagent": {
+        "max_depth": 1,
+        "max_fan_out": 1,
+        "isolation": "worktree",
+        "budget_inherit": "aggregate"
+      },
+      "harness": {
+        "max_entries": {
+          "prompt": 10,
+          "memory": 50,
+          "skill": 30,
+          "subagent": 10
+        },
+        "max_chars_per_entry": 2000,
+        "queue_max": 20,
+        "auto_refine": {
+          "enabled": true,
+          "gate": "verifier",
+          "global_needs_human": true,
+          "cooldown_turns": 5
+        }
+      },
+      "telemetry": {
+        "consent": "DISABLED",
+        "invariants": false,
+        "timing": false
+      },
+      "recovery": {
+        "unknown_child": "model"
+      },
+      "ext": {
+        "events_per_turn": 200
+      },
+      "locale": "en",
+      "surfaces": ["cli", "sdk", "acp", "daemon"],
+      "model": {
+        "contract_id": "agnes-model-contract@v1",
+        "route": {
+          "primary": {
+            "route": "default",
+            "model": "default"
+          },
+          "escalation": {
+            "route": "default",
+            "model": "default"
+          },
+          "fast": {
+            "route": "default",
+            "model": "default"
+          },
+          "compaction": {
+            "route": "default",
+            "model": "default"
+          },
+          "verifier": {
+            "route": "default",
+            "model": "default"
+          }
+        },
+        "prompt_sections": ["persona", "environment"]
+      },
+      "disclosure": "standard",
+      "composition": {
+        "toolPolicy": {
+          "allow": ["read", "grep", "find", "ls"]
+        }
+      },
+      "ext_ui": {
+        "input": "prompt",
+        "unattended": "decline"
+      },
+      "hooks": ["session_start", "tool_call", "tool_result"]
+    }
+  },
+  "ptc": {
+    "hash": "sha256-84fb870cef280470fb47dd3c427b6aa829d04bc0ffd84157f1da8dd0468f5b59",
+    "doc": {
+      "name": "ptc",
+      "tools": {
+        "core": [
+          "run_code",
+          "workflow",
+          "workflow_status",
+          "subagent_spawn",
+          "read",
+          "write",
+          "edit",
+          "shell",
+          "grep",
+          "find",
+          "ls",
+          "todo",
+          "web_fetch",
+          "web_search",
+          "ask_user_question",
+          "ui_render",
+          "ui_update",
+          "ui_close",
+          "ui_submit",
+          "present",
+          "job_output",
+          "job_list",
+          "job_kill"
+        ],
+        "timeout_ms": 120000,
+        "output_max_bytes": 32768,
+        "timeouts": {
+          "web_fetch": 30000,
+          "skill_helper_import": 240000,
+          "shell": 600000
+        }
+      },
+      "mcp": {
+        "servers": [],
+        "defer": true
+      },
+      "skills_roots": ["~/.agh/skills", "~/.agents/skills", "~/.claude/skills", "~/.codex/skills"],
+      "compaction": {
+        "enabled": true,
+        "reserve_tokens": 16384,
+        "keep_recent_tokens": 20000,
+        "agent_callable": true
+      },
+      "checkpoint": {
+        "keep": 200,
+        "max_file_bytes": 10485760
+      },
+      "budget": {
+        "preflight": "estimate",
+        "per_request_cap": 4000,
+        "on_exceed": "quote",
+        "max_steps": null,
+        "attribution": "aggregate"
+      },
+      "approval": {
+        "on_unavailable": "deny",
+        "on_timeout": "rejected",
+        "timeout_ms": 60000,
+        "pending_ttl_ms": 86400000,
+        "command_policy": [
+          {
+            "tool": "edit|write",
+            "argv": "^/(?!(?:[\\s\\S]*/)?\\.\\.(?:/|$))(?:[^/\\\\\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/)*[^/\\\\\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+$",
+            "action": "allow"
+          },
+          {
+            "tool": "edit|write",
+            "argv": "^[A-Z]:/(?!(?:[\\s\\S]*/)?\\.\\.(?:/|$))(?:[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/)*[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+$",
+            "action": "allow"
+          },
+          {
+            "tool": "edit|write",
+            "argv": "^//(?!(?:[\\s\\S]*/)?\\.\\.(?:/|$))[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/(?:[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/)*[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+$",
+            "action": "allow"
+          }
+        ]
+      },
+      "sandbox": {
+        "level": "L1",
+        "required": false,
+        "on_unavailable": "allow-if-unimplemented",
+        "extra_paths": [],
+        "deny_paths": [],
+        "network_allow": []
+      },
+      "loop": {
+        "repeat_threshold": 3,
+        "no_progress_steps": 4
+      },
+      "repair": {
+        "max_rounds": 5,
+        "escalate_after": 3,
+        "timeout_ms": 10000
+      },
+      "verifier": {
+        "timeout_ms": 30000,
+        "default_tier": 0
+      },
+      "completion_gate": {
+        "enabled": true,
+        "min_items": 3,
+        "allow_override": true
+      },
+      "subagent": {
+        "max_depth": 1,
+        "max_fan_out": 4,
+        "isolation": "worktree",
+        "budget_inherit": "aggregate"
+      },
+      "harness": {
+        "max_entries": {
+          "prompt": 10,
+          "memory": 50,
+          "skill": 30,
+          "subagent": 10
+        },
+        "max_chars_per_entry": 2000,
+        "queue_max": 20,
+        "auto_refine": {
+          "enabled": true,
+          "gate": "verifier",
+          "global_needs_human": true,
+          "cooldown_turns": 5
+        }
+      },
+      "telemetry": {
+        "consent": "DISABLED",
+        "invariants": false,
+        "timing": false
+      },
+      "recovery": {
+        "unknown_child": "model"
+      },
+      "ext": {
+        "events_per_turn": 200
+      },
+      "locale": "en",
+      "surfaces": ["cli", "sdk", "acp", "daemon"],
+      "model": {
+        "contract_id": "agnes-model-contract@v1",
+        "route": {
+          "primary": {
+            "route": "default",
+            "model": "default"
+          },
+          "escalation": {
+            "route": "default",
+            "model": "default"
+          },
+          "fast": {
+            "route": "default",
+            "model": "default"
+          },
+          "compaction": {
+            "route": "default",
+            "model": "default"
+          },
+          "verifier": {
+            "route": "default",
+            "model": "default"
+          }
+        },
+        "prompt_sections": ["persona", "environment", "code-doctrine"]
+      },
+      "disclosure": "code",
+      "ext_ui": {
+        "input": "prompt",
+        "unattended": "decline"
+      },
+      "hooks": ["session_start", "tool_call", "tool_result", "format_deviation"],
+      "providers": {
+        "tool-policy": {
+          "provider": "default"
+        }
+      },
+      "code_runtime": {
+        "language": "typescript",
+        "state": "stateless",
+        "isolation": "process",
+        "raw_io": false,
+        "max_parallel_sub_calls": 4,
+        "cell_timeout_ms": 120000,
+        "max_output_chars": 65536
+      }
+    }
+  },
+  "standard-windows": {
+    "hash": "sha256-adfd6efba4d2e982636b5e73ab2166097a3399560359b0be15c4e4b35b4139a8",
+    "doc": {
+      "name": "standard-windows",
+      "tools": {
+        "core": [
+          "read",
+          "write",
+          "edit",
+          "shell",
+          "grep",
+          "find",
+          "ls",
+          "todo",
+          "web_fetch",
+          "web_search",
+          "ask_user_question",
+          "ui_render",
+          "ui_update",
+          "ui_close",
+          "ui_submit",
+          "present",
+          "job_output",
+          "job_list",
+          "job_kill",
+          "schedule_create",
+          "schedule_list",
+          "schedule_update",
+          "schedule_delete"
+        ],
+        "timeout_ms": 120000,
+        "output_max_bytes": 32768,
+        "timeouts": {
+          "web_fetch": 30000,
+          "skill_helper_import": 240000,
+          "shell": 600000
+        }
+      },
+      "mcp": {
+        "servers": [],
+        "defer": true
+      },
+      "skills_roots": ["~/.agh/skills", "~/.agents/skills", "~/.claude/skills", "~/.codex/skills"],
+      "compaction": {
+        "enabled": true,
+        "reserve_tokens": 16384,
+        "keep_recent_tokens": 20000,
+        "agent_callable": true
+      },
+      "checkpoint": {
+        "keep": 200,
+        "max_file_bytes": 10485760
+      },
+      "budget": {
+        "preflight": "estimate",
+        "per_request_cap": 4000,
+        "on_exceed": "quote",
+        "max_steps": null,
+        "attribution": "aggregate"
+      },
+      "approval": {
+        "on_unavailable": "deny",
+        "on_timeout": "rejected",
+        "timeout_ms": 60000,
+        "pending_ttl_ms": 86400000,
+        "command_policy": [
+          {
+            "tool": "edit|write",
+            "argv": "^[A-Z]:/(?!(?:[\\s\\S]*/)?\\.\\.(?:/|$))(?:[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/)*[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+$",
+            "action": "allow"
+          },
+          {
+            "tool": "edit|write",
+            "argv": "^//(?!(?:[\\s\\S]*/)?\\.\\.(?:/|$))[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/(?:[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/)*[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+$",
+            "action": "allow"
+          }
+        ]
+      },
+      "sandbox": {
+        "level": "L1",
+        "required": false,
+        "on_unavailable": "allow-if-unimplemented",
+        "extra_paths": [],
+        "deny_paths": [],
+        "network_allow": []
+      },
+      "loop": {
+        "repeat_threshold": 3,
+        "no_progress_steps": 4
+      },
+      "repair": {
+        "max_rounds": 5,
+        "escalate_after": 3,
+        "timeout_ms": 10000
+      },
+      "verifier": {
+        "timeout_ms": 30000,
+        "default_tier": 0
+      },
+      "completion_gate": {
+        "enabled": true,
+        "min_items": 3,
+        "allow_override": true
+      },
+      "subagent": {
+        "max_depth": 1,
+        "max_fan_out": 4,
+        "isolation": "worktree",
+        "budget_inherit": "aggregate"
+      },
+      "harness": {
+        "max_entries": {
+          "prompt": 10,
+          "memory": 50,
+          "skill": 30,
+          "subagent": 10
+        },
+        "max_chars_per_entry": 2000,
+        "queue_max": 20,
+        "auto_refine": {
+          "enabled": true,
+          "gate": "verifier",
+          "global_needs_human": true,
+          "cooldown_turns": 5
+        }
+      },
+      "telemetry": {
+        "consent": "DISABLED",
+        "invariants": false,
+        "timing": false
+      },
+      "recovery": {
+        "unknown_child": "model"
+      },
+      "ext": {
+        "events_per_turn": 200
+      },
+      "locale": "en",
+      "surfaces": ["cli", "sdk", "acp", "daemon"],
+      "model": {
+        "contract_id": "agnes-model-contract@v1",
+        "route": {
+          "primary": {
+            "route": "default",
+            "model": "default"
+          },
+          "escalation": {
+            "route": "default",
+            "model": "default"
+          },
+          "fast": {
+            "route": "default",
+            "model": "default"
+          },
+          "compaction": {
+            "route": "default",
+            "model": "default"
+          },
+          "verifier": {
+            "route": "default",
+            "model": "default"
+          }
+        },
+        "prompt_sections": ["persona", "environment", "coding-doctrine"]
+      },
+      "disclosure": "standard",
+      "ext_ui": {
+        "input": "prompt",
+        "unattended": "decline"
+      },
+      "hooks": ["session_start", "tool_call", "tool_result", "format_deviation"]
+    }
+  },
+  "standard": {
+    "hash": "sha256-58bdefc9c3372e1eac710628693749e8bec06c2a3544562a072dbd67e41d7474",
+    "doc": {
+      "name": "standard",
+      "tools": {
+        "core": [
+          "read",
+          "write",
+          "edit",
+          "shell",
+          "grep",
+          "find",
+          "ls",
+          "todo",
+          "web_fetch",
+          "web_search",
+          "ask_user_question",
+          "ui_render",
+          "ui_update",
+          "ui_close",
+          "ui_submit",
+          "present",
+          "job_output",
+          "job_list",
+          "job_kill",
+          "schedule_create",
+          "schedule_list",
+          "schedule_update",
+          "schedule_delete"
+        ],
+        "timeout_ms": 120000,
+        "output_max_bytes": 32768,
+        "timeouts": {
+          "web_fetch": 30000,
+          "skill_helper_import": 240000,
+          "shell": 600000
+        }
+      },
+      "mcp": {
+        "servers": [],
+        "defer": true
+      },
+      "skills_roots": ["~/.agh/skills", "~/.agents/skills", "~/.claude/skills", "~/.codex/skills"],
+      "compaction": {
+        "enabled": true,
+        "reserve_tokens": 16384,
+        "keep_recent_tokens": 20000,
+        "agent_callable": true
+      },
+      "checkpoint": {
+        "keep": 200,
+        "max_file_bytes": 10485760
+      },
+      "budget": {
+        "preflight": "estimate",
+        "per_request_cap": 4000,
+        "on_exceed": "quote",
+        "max_steps": null,
+        "attribution": "aggregate"
+      },
+      "approval": {
+        "on_unavailable": "deny",
+        "on_timeout": "rejected",
+        "timeout_ms": 60000,
+        "pending_ttl_ms": 86400000,
+        "command_policy": [
+          {
+            "tool": "edit|write",
+            "argv": "^/(?!(?:[\\s\\S]*/)?\\.\\.(?:/|$))(?:[^/\\\\\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/)*[^/\\\\\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+$",
+            "action": "allow"
+          },
+          {
+            "tool": "edit|write",
+            "argv": "^[A-Z]:/(?!(?:[\\s\\S]*/)?\\.\\.(?:/|$))(?:[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/)*[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+$",
+            "action": "allow"
+          },
+          {
+            "tool": "edit|write",
+            "argv": "^//(?!(?:[\\s\\S]*/)?\\.\\.(?:/|$))[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/(?:[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+/)*[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F\\u2028\\u2029]+$",
+            "action": "allow"
+          }
+        ]
+      },
+      "sandbox": {
+        "level": "L1",
+        "required": false,
+        "on_unavailable": "allow-if-unimplemented",
+        "extra_paths": [],
+        "deny_paths": [],
+        "network_allow": []
+      },
+      "loop": {
+        "repeat_threshold": 3,
+        "no_progress_steps": 4
+      },
+      "repair": {
+        "max_rounds": 5,
+        "escalate_after": 3,
+        "timeout_ms": 10000
+      },
+      "verifier": {
+        "timeout_ms": 30000,
+        "default_tier": 0
+      },
+      "completion_gate": {
+        "enabled": true,
+        "min_items": 3,
+        "allow_override": true
+      },
+      "subagent": {
+        "max_depth": 1,
+        "max_fan_out": 4,
+        "isolation": "worktree",
+        "budget_inherit": "aggregate"
+      },
+      "harness": {
+        "max_entries": {
+          "prompt": 10,
+          "memory": 50,
+          "skill": 30,
+          "subagent": 10
+        },
+        "max_chars_per_entry": 2000,
+        "queue_max": 20,
+        "auto_refine": {
+          "enabled": true,
+          "gate": "verifier",
+          "global_needs_human": true,
+          "cooldown_turns": 5
+        }
+      },
+      "telemetry": {
+        "consent": "DISABLED",
+        "invariants": false,
+        "timing": false
+      },
+      "recovery": {
+        "unknown_child": "model"
+      },
+      "ext": {
+        "events_per_turn": 200
+      },
+      "locale": "en",
+      "surfaces": ["cli", "sdk", "acp", "daemon"],
+      "model": {
+        "contract_id": "agnes-model-contract@v1",
+        "route": {
+          "primary": {
+            "route": "default",
+            "model": "default"
+          },
+          "escalation": {
+            "route": "default",
+            "model": "default"
+          },
+          "fast": {
+            "route": "default",
+            "model": "default"
+          },
+          "compaction": {
+            "route": "default",
+            "model": "default"
+          },
+          "verifier": {
+            "route": "default",
+            "model": "default"
+          }
+        },
+        "prompt_sections": ["persona", "environment", "coding-doctrine"]
+      },
+      "disclosure": "standard",
+      "ext_ui": {
+        "input": "prompt",
+        "unattended": "decline"
+      },
+      "hooks": ["session_start", "tool_call", "tool_result", "format_deviation"]
+    }
+  }
+}

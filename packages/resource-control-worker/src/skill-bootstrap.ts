@@ -1,18 +1,23 @@
 import { existsSync } from 'node:fs'
 import { readdir, readFile, realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import {
   skillRoots as baseSkillRoots,
   type DiscoveredSkillCandidate,
+  decodePackageSkillFiles,
   discoverPackageSkill,
   discoverSkillRoot,
+  packageSkillLoadError,
+  readContextConfig,
   type SkillRootFailure,
+  skillResourceIdAt,
   workspaceSkillKey,
 } from '@agnes/base'
-import { AGH_DIR, validateResourceControlData } from '@agnes/protocol'
+import { AGH_DIR, type SkillScanObservation, validateResourceControlData } from '@agnes/protocol'
 import { MAX_DESCRIPTION_LENGTH, MAX_NAME_LENGTH } from '@agnes/resource-control-runtime'
 import { readSkillCache, writeSkillCache } from './skill-lkg-storage.js'
+import { createSkillScanObservation } from './skill-scan-observation.js'
 
 export { discoverSkillRoot, skillRoots } from '@agnes/base'
 
@@ -194,6 +199,8 @@ export async function scanSkills(
   // OS-home-relative default the parameter always had. That default is only correct when AGH_HOME
   // is unset, which is the case it existed to cover before this parameter split in two.
   agnesHomeDir = join(osHomeDir, AGH_DIR),
+  importUserSkills = process.env.AGNES_SKILLS_IMPORT_USER === '1',
+  resourceIds?: readonly string[],
 ) {
   const fs = {
     async list(path: string) {
@@ -223,12 +230,30 @@ export async function scanSkills(
     realpath,
   }
   const workspaceKey = cwd ? workspaceSkillKey(cwd) : undefined
+  const customRoots = readContextConfig(agnesHomeDir).customSkillRoots
   // A shared worker has no workspace of its own. Supplying no cwd deliberately omits the
   // workspace root instead of scanning whichever directory launched the worker process.
-  const roots = baseSkillRoots({ workspaceRoot: cwd ?? agnesHomeDir, osHomeDir, agnesHomeDir }).filter(
-    (root) => cwd !== undefined || root.rootKey !== 'workspace-agnes',
+  const roots = baseSkillRoots({
+    workspaceRoot: cwd ?? agnesHomeDir,
+    osHomeDir,
+    agnesHomeDir,
+    importUserSkills,
+    customRoots,
+  }).filter((root) => cwd !== undefined || root.rootKey !== 'workspace-agnes')
+  const selected = resourceIds && new Set(resourceIds)
+  const scans = await Promise.all(
+    roots
+      .filter((root) => !selected || resourceIds?.some((id) => id.split('/')[2] === root.rootKey))
+      .map((root) => discoverSkillRoot(fs, root, selected)),
   )
-  const scans = await Promise.all(roots.map((root) => discoverSkillRoot(fs, root)))
+  const observation: { skillScanObservation?: SkillScanObservation } = selected
+    ? {}
+    : {
+        skillScanObservation: createSkillScanObservation(
+          customRoots,
+          scans.flatMap((scan) => scan.directoryScans ?? []),
+        ),
+      }
   const filesystem: Array<{ rootKey: FilesystemSkillRoot; candidates: SkillCandidate[] }> = []
   const rootStatuses: Array<{
     rootKey: FilesystemSkillRoot | 'package'
@@ -244,11 +269,12 @@ export async function scanSkills(
     const scope = scan.root === 'workspace-agnes' ? ('workspace' as const) : ('user' as const)
     if (scan.ok) {
       const candidates = scan.candidates.map(({ normalizedName: _normalizedName, ...candidate }) => candidate)
-      if (lkgDirectory) await writeSkillLkg(lkgDirectory, scan.root, candidates, key)
+      // Targeted observations cannot replace a complete root cache.
+      if (lkgDirectory && !selected) await writeSkillLkg(lkgDirectory, scan.root, candidates, key)
       filesystem.push({ rootKey: scan.root, candidates })
       for (const entry of scan.skipped ?? []) {
         skippedResourceIds.push(entry.resourceId)
-        console.warn(`agnes: Skill ${scan.root}:${entry.location} skipped (${entry.code})`)
+        console.warn(`agnes: Skill ${entry.resourceId} skipped (${entry.code})`)
       }
       rootStatuses.push({
         rootKey: scan.root,
@@ -258,22 +284,28 @@ export async function scanSkills(
         ...(key ? { workspaceId: key } : {}),
       })
     } else {
-      const candidates = lkgDirectory ? await readSkillLkg(lkgDirectory, scan.root, key) : undefined
+      const cached = lkgDirectory ? await readSkillLkg(lkgDirectory, scan.root, key) : undefined
+      const candidates = selected ? cached?.filter((item) => selected.has(item.resourceId)) : cached
       if (candidates) filesystem.push({ rootKey: scan.root, candidates })
       rootStatuses.push({
         rootKey: scan.root,
         scope,
         state: candidates ? 'stale' : 'unavailable',
-        // 失败时带上原因码（只含原因，不含路径/目录名）：页面因此能说清"为什么这个来源没有结果"，
-        // 而不只是"刷新失败"。用户在 2026-09-15 遇到过 38 个技能集体消失却毫无线索。
+        // Include a reason code on failure (no paths/directory names), so the page explains why a source has no results
+        // instead of only Refresh failed. On 2026-09-15, a user lost all 38 skills without any clue to the cause.
         diagnostic: { code: scan.diagnostic.code },
         ...(key ? { workspaceId: key } : {}),
       })
     }
   }
   const failedRoots = scans.filter((scan) => !scan.ok).map((scan) => scan.root)
-  if (!packageSnapshot || !existsSync(packageSnapshot))
+  if (
+    (selected && !resourceIds?.some((id) => id.startsWith('skill/package/'))) ||
+    !packageSnapshot ||
+    !existsSync(packageSnapshot)
+  )
     return {
+      ...observation,
       roots: filesystem,
       failedRoots,
       skippedResourceIds,
@@ -282,30 +314,105 @@ export async function scanSkills(
         { rootKey: 'package' as const, scope: 'package' as const, state: 'empty' as const },
       ],
     }
-  const raw = JSON.parse(await readFile(packageSnapshot, 'utf8')) as { version?: unknown; skills?: unknown }
-  if (raw.version !== 1 || !Array.isArray(raw.skills) || raw.skills.length > 128)
+  if ((await stat(packageSnapshot)).size > 32 * 1024 * 1024)
+    throw new Error('package Skill inventory exceeds snapshot budget')
+  const snapshotBytes = await readFile(packageSnapshot)
+  if (snapshotBytes.byteLength > 32 * 1024 * 1024)
+    throw new Error('package Skill inventory exceeds snapshot budget')
+  const raw = JSON.parse(snapshotBytes.toString('utf8')) as {
+    version?: unknown
+    skills?: unknown
+    failures?: unknown
+  }
+  if (
+    raw.version !== 1 ||
+    !Array.isArray(raw.skills) ||
+    (raw.failures !== undefined && !Array.isArray(raw.failures)) ||
+    raw.skills.length + (Array.isArray(raw.failures) ? raw.failures.length : 0) > 128
+  )
     throw new Error('invalid package skill inventory snapshot')
-  const packageCandidates = raw.skills.map((entry) => {
+  const entries = [
+    ...raw.skills.map((entry) => ({ entry, failed: false })),
+    ...(Array.isArray(raw.failures) ? raw.failures.map((entry) => ({ entry, failed: true })) : []),
+  ]
+  const selectedEntries = entries.filter(({ entry }) => {
+    if (!selected) return true
     if (!entry || typeof entry !== 'object') throw new Error('invalid package skill inventory snapshot')
     const row = entry as Record<string, unknown>
     if (
       typeof row.packageId !== 'string' ||
       typeof row.contributionId !== 'string' ||
-      typeof row.relativeLocation !== 'string' ||
-      typeof row.source !== 'string'
+      typeof row.relativeLocation !== 'string'
+    )
+      throw new Error('invalid package skill inventory identity')
+    return selected.has(
+      skillResourceIdAt(
+        { scope: 'package', rootKey: 'package', priority: 50, path: '' },
+        `${row.packageId}\u0000${row.contributionId}\u0000${row.relativeLocation}`,
+      ),
+    )
+  })
+  const packageCandidates = selectedEntries.map(({ entry, failed }) => {
+    if (!entry || typeof entry !== 'object') throw new Error('invalid package skill inventory snapshot')
+    const row = entry as Record<string, unknown>
+    if (
+      typeof row.packageId !== 'string' ||
+      typeof row.contributionId !== 'string' ||
+      typeof row.relativeLocation !== 'string'
     )
       throw new Error('invalid package skill inventory snapshot')
-    const candidate = discoverPackageSkill({
+    const identity = {
       packageId: row.packageId,
       contributionId: row.contributionId,
       relativeLocation: row.relativeLocation,
-      source: row.source,
+    }
+    // Validate identity independently. A corrupt envelope must not acquire package authority.
+    const fallback = discoverPackageSkill({
+      ...identity,
+      source: `---\nname: ${JSON.stringify(row.contributionId.slice(0, MAX_NAME_LENGTH))}\ndescription: Skill failed to load.\n---\nUnavailable.`,
     })
-    if (!candidate) throw new Error('invalid attested package skill contribution')
-    const { normalizedName: _normalizedName, ...hostCandidate } = candidate
-    return hostCandidate
+    if (!fallback) throw new Error('invalid package skill inventory identity')
+    let document: ReturnType<typeof discoverPackageSkill>
+    try {
+      document =
+        typeof row.source === 'string' && Buffer.byteLength(row.source) <= 256 * 1024
+          ? discoverPackageSkill({ ...identity, source: row.source })
+          : undefined
+      if (failed) throw Object.assign(new Error('Skill load failed'), { code: row.code })
+      if (!document)
+        throw Object.assign(new Error('invalid Skill document'), { code: 'SKILL_DOCUMENT_INVALID' })
+      if (
+        row.directory !== undefined &&
+        (typeof row.directory !== 'string' || !isAbsolute(row.directory) || row.directory.includes('\0'))
+      )
+        throw Object.assign(new Error('invalid Skill directory'), { code: 'SKILL_LOAD_FAILED' })
+      let files: ReturnType<typeof decodePackageSkillFiles>
+      try {
+        files = decodePackageSkillFiles(row.files)
+      } catch {
+        throw Object.assign(new Error('invalid Skill attachments'), {
+          code: 'SKILL_ATTACHMENTS_UNREADABLE',
+        })
+      }
+      document = discoverPackageSkill({
+        ...identity,
+        source: row.source as string,
+        ...(files ? { files } : {}),
+        ...(typeof row.directory === 'string' ? { directory: row.directory } : {}),
+      })
+      if (!document)
+        throw Object.assign(new Error('invalid Skill document'), { code: 'SKILL_DOCUMENT_INVALID' })
+      const { normalizedName: _normalizedName, ...candidate } = document
+      return candidate
+    } catch (error) {
+      const loadError = packageSkillLoadError((error as { code?: unknown })?.code)
+      const { normalizedName: _normalizedName, ...candidate } = document ?? fallback
+      console.warn(`agnes: Skill ${candidate.resourceId} unavailable (${loadError.code})`)
+      return { ...candidate, body: '', loadError }
+    }
   })
   return {
+    ...observation,
     roots: packageCandidates.length
       ? [...filesystem, { rootKey: 'package' as const, candidates: packageCandidates }]
       : filesystem,

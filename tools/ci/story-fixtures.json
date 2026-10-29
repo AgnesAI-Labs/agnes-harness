@@ -1,0 +1,49 @@
+[
+  {
+    "id": "reviewed-candidate",
+    "highlights": [3],
+    "file": "packages/package-manager/test/authoring-candidates.test.ts",
+    "testNames": [
+      "publishes only the approved bytes and never replays failure or interrupted publication: trust failed",
+      "publishes only the approved bytes and never replays failure or interrupted publication: reviewed bytes changed"
+    ]
+  },
+  {
+    "id": "upgrade-in-flight",
+    "highlights": [1, 2],
+    "file": "packages/host/test/runtime-generation-host.slow.test.ts",
+    "testNames": [
+      "keeps an in-flight turn on old plugin code across update, close and cold resume, and drains on deletion"
+    ]
+  },
+  {
+    "id": "unknown-effect",
+    "highlights": [2],
+    "file": "packages/core/test/resume.test.ts",
+    "testNames": [
+      "a tool that must not be replayed becomes TOOL_OUTCOME_UNKNOWN and parks the turn while the question is open"
+    ]
+  },
+  {
+    "id": "incomplete-summary",
+    "highlights": [2],
+    "file": "packages/core/test/compaction.test.ts",
+    "testNames": ["does not commit a summary that was truncated at the cap"]
+  },
+  {
+    "id": "child-receipts",
+    "highlights": [1, 2],
+    "file": "packages/core/test/child-compaction.test.ts",
+    "testNames": [
+      "counts only committed child creations after three proposals, compaction and ledger recovery"
+    ]
+  },
+  {
+    "id": "memory-turn-revision",
+    "highlights": [3],
+    "file": "packages/host/test/memory.test.ts",
+    "testNames": [
+      "pins index and topic revisions across tool requests and a model retry, then refreshes next turn"
+    ]
+  }
+]

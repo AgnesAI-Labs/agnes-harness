@@ -1,0 +1,22 @@
+{
+  "extends": ["@agnes-fde/ops-runbook#ops-runbook"],
+  "presets": {
+    "ops-runbook": {
+      "name": "ops-runbook",
+      "extends": "standard",
+      "model": {
+        "route": {
+          "primary": {
+            "route": "customer",
+            "model": "customer-model"
+          }
+        }
+      },
+      "providers": {
+        "tool-policy": {
+          "provider": "fde.ops-runbook"
+        }
+      }
+    }
+  }
+}

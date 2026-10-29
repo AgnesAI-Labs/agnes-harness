@@ -168,13 +168,16 @@ it('still calls buildHost when bootstrap produced no Skill resources', async () 
     ),
   ).rejects.toThrow('stop-after-empty')
   expect(received).toEqual({
+    decisionsChanged: expect.any(Function),
+    restoreGenerationExtension: expect.any(Function),
+    boundWakes: expect.any(Function),
+    scheduling: expect.any(Function),
     skillInstall: expect.any(Function),
     requestMedia: expect.any(Object),
     runtimePluginSources: expect.any(Function),
     serviceAuthority: expect.objectContaining({ resolve: expect.any(Function) }),
     mcpManage: expect.any(Function),
     pluginManage: expect.any(Function),
-    batch: expect.any(Function),
   })
 })
 

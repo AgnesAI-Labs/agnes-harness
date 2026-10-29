@@ -1,9 +1,9 @@
+import { CoreError, type Event, type Seq } from '@agnes/core-common/types'
+import { scanPages } from '@agnes/core-ledger/log/scan-pages'
+import type { ScanQuery } from '@agnes/core-ledger/log/storage'
 import { extEventType } from '@agnes/extension-api'
 import { inspectJsonData } from '@agnes/protocol'
-import { scanPages } from '../log/scan-pages.js'
-import type { ScanQuery } from '../log/storage.js'
 import type { ToolSource } from '../registry/tools.js'
-import { CoreError, type Event, type Seq } from '../types.js'
 import type { SessionImpl } from './session.js'
 
 function invalid(message = 'invalid extension event'): never {
@@ -26,11 +26,31 @@ export function prepareExtensionEvent(type: string, data: unknown, meta: ToolSou
   return { type, data: checked.value, source }
 }
 
+const LOOP_OWNER = /^(?!(?:core|plugin)(?:\/|$))[a-z0-9._-]+(?:\/[a-z0-9._-]+)?$/
+const LOOP_EVENT_NAME = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*$/
+
+/**
+ * A loop writes under the namespace of the package that owns it, `x/<package without @>/<name>`,
+ * the way a plugin writes under its own row. The name has no separator of its own, so one package's
+ * events can never spell another owner's type; `core` and `plugin` stay with the platform.
+ */
+export function prepareLoopEvent(owner: string, name: unknown, data: unknown) {
+  const source = owner.replace(/^@/, '')
+  if (typeof name !== 'string' || !LOOP_EVENT_NAME.test(name) || !LOOP_OWNER.test(source))
+    invalid("Loop emit takes an event name inside the namespace of the loop's own package")
+  const checked = inspectJsonData(data)
+  if (!checked.ok) invalid('Invalid Loop event data')
+  return { type: `x/${source}/${name}`, data: checked.value, source }
+}
+
 /** Called under SessionImpl's phase lock; counted history and append share the same turn boundary. */
 export async function appendExtensionEvent(
   session: SessionImpl,
   event: ReturnType<typeof prepareExtensionEvent>,
+  options: { loopTrigger?: boolean; sourceSeq?: number } = {},
 ): Promise<Seq> {
+  if (options.sourceSeq !== undefined && (!Number.isSafeInteger(options.sourceSeq) || options.sourceSeq <= 0))
+    invalid('invalid extension event source')
   const op = session.op()
   let trigger: Event | undefined
   if (op) {
@@ -59,7 +79,13 @@ export async function appendExtensionEvent(
     }
     if (tally.count >= quota) invalid('extension event quota exceeded')
     ;[trigger] = await read({ fromSeq: from, toSeq: from, lane: session.lane, limit: 1 })
-    if (trigger?.type !== 'user/message') invalid('extension event trigger unavailable')
+    const approvalResume =
+      trigger?.type === 'turn/start' &&
+      trigger.origin === 'system' &&
+      trigger.trust === 'trusted' &&
+      (trigger.data as { trigger?: string }).trigger === 'approval-resume'
+    if (!trigger || (!options.loopTrigger && trigger.type !== 'user/message' && !approvalResume))
+      invalid('extension event trigger unavailable')
   }
   const actor = trigger?.actor ?? { id: 'system', org: 'local', role: 'system', deptPath: [], attrs: {} }
   const result = await session.d.log.append([
@@ -71,6 +97,7 @@ export async function appendExtensionEvent(
       trust: 'untrusted',
       lane: session.lane,
       ignorable: true,
+      ...(options.sourceSeq === undefined ? {} : { sourceEventSeqs: [options.sourceSeq] }),
     },
   ])
   return result.firstSeq

@@ -1,0 +1,49 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist/test"
+  },
+  "include": ["test/**/*.ts"],
+  "references": [
+    {
+      "path": "../sdk"
+    },
+    {
+      "path": "."
+    },
+    {
+      "path": "../base"
+    },
+    {
+      "path": "../base/tsconfig.testkit.json"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../core/tsconfig.testkit.json"
+    },
+    {
+      "path": "../host-extensions"
+    },
+    {
+      "path": "../host"
+    },
+    {
+      "path": "../daemon-rpc"
+    },
+    {
+      "path": "../daemon-foundation"
+    },
+    {
+      "path": "../host-infrastructure"
+    },
+    {
+      "path": "../ai"
+    },
+    {
+      "path": "../host/tsconfig.testkit.json"
+    }
+  ]
+}

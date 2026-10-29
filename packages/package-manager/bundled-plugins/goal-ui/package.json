@@ -1,0 +1,78 @@
+{
+  "name": "@agnes/goal-ui",
+  "version": "0.1.2",
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "src",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "client-build.json"
+  ],
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:goal-ui/main",
+        "export": "main",
+        "apiRange": "^5.0.0",
+        "runtime": "in-process",
+        "capabilities": {
+          "ui": true
+        },
+        "metadata": {
+          "displayName": "Goals and progress",
+          "summary": "Set a task goal, follow progress and control the task.",
+          "description": "Set a task goal, follow progress and control the task.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "目标与进度",
+              "summary": "设定任务目标、查看进度并控制任务。",
+              "description": "设定任务目标、查看进度并控制任务。"
+            }
+          }
+        }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:goal-ui/main",
+        "path": "./src/agnes.client.json"
+      }
+    ],
+    "metadata": {
+      "displayName": "Goals and progress",
+      "summary": "Set a task goal, follow progress and control the task.",
+      "description": "Set a task goal, follow progress and control the task.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "目标与进度",
+          "summary": "设定任务目标、查看进度并控制任务。",
+          "description": "设定任务目标、查看进度并控制任务。"
+        }
+      }
+    },
+    "provides": [
+      "ui"
+    ]
+  },
+  "peerDependencies": {
+    "@agnes/web-client": "0.0.0",
+    "@agnes/web-ui": "0.0.0",
+    "react": "18.3.1",
+    "@agnes/protocol": "0.0.0",
+    "@agnes/web-foundation": "0.0.0",
+    "@agnes/web-conversation": "0.0.0"
+  },
+  "devDependencies": {
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "react": "18.3.1",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/web-foundation": "workspace:*",
+    "@agnes/web-conversation": "workspace:*",
+    "@types/react": "18.3.12"
+  }
+}

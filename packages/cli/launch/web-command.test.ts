@@ -1,5 +1,9 @@
 import { EventEmitter } from 'node:events'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EnsureLocalBackendOptions, LocalBackend } from './backend.js'
 import { parseWebCommand, runWebCommand, type WebCommandIO } from './web-command.js'
 
@@ -17,6 +21,7 @@ vi.mock('./surface-mounts.js', async (importActual) => {
     ...actual,
     fetchSurfaceMountProxy: vi.fn(async () => ({
       proxy: () => false,
+      ready: () => true,
       close: async () => {
         mountCloseCalls++
       },
@@ -37,7 +42,80 @@ const resources = {
   webRoot: '/tmp/local-runtime/web',
 }
 
+let daemonDir: string
+beforeEach(() => {
+  daemonDir = mkdtempSync(join(tmpdir(), 'agh-web-command-'))
+})
+afterEach(() => rmSync(daemonDir, { recursive: true, force: true }))
+
 describe('Web command launch contract', () => {
+  it.each(['en', 'zh-CN'])(
+    'refuses an occupied --home before a backend or server starts in %s',
+    async (locale) => {
+      const home = mkdtempSync(join(tmpdir(), 'agh-old-web-home-'))
+      const file = join(home, 'old.txt')
+      writeFileSync(file, 'synthetic old state')
+      const createServer = vi.fn()
+      try {
+        const failure = await runWebCommand(['--home', home], {
+          env: { AGH_HOME: join(home, 'ignored'), AGNES_LOCALE: locale },
+          resources,
+          createServer,
+        }).catch((error) => error)
+        expect(failure).toMatchObject({ code: 'E_HOME_VERSION' })
+        expect(failure.message).toContain(home)
+        expect(failure.message).toContain('#new-product-clean-home')
+        expect(createServer).not.toHaveBeenCalled()
+        expect(readFileSync(file, 'utf8')).toBe('synthetic old state')
+      } finally {
+        rmSync(home, { recursive: true, force: true })
+      }
+    },
+  )
+
+  it.each(['en', 'zh-CN'])('keeps startup refusal codes for localized CLI output in %s', async (locale) => {
+    for (const code of ['EADDRINUSE', 'EACCES', 'CONFIG_CREDENTIAL_STORE']) {
+      const failure = await runWebCommand([], {
+        resources,
+        env: { AGNES_LOCALE: locale },
+        ensureBackend: async () => {
+          throw Object.assign(new Error('PRIVATE UPSTREAM BODY'), { code })
+        },
+      }).catch((error: Error & { code: string }) => error)
+      expect(failure).toMatchObject({ code })
+      expect(failure).toBeInstanceOf(Error)
+      if (!(failure instanceof Error)) throw new Error('Expected a launch refusal')
+      expect(failure.message).not.toContain('PRIVATE UPSTREAM BODY')
+      expect(failure.message).toMatch(locale === 'zh-CN' ? /[\u4e00-\u9fff]/ : /[a-z]/)
+    }
+  })
+  it('starts a headless composition without requesting or creating a Web listener', async () => {
+    const signals = new EventEmitter()
+    const createServer = vi.fn()
+    const closeClient = vi.fn(async () => undefined)
+    const ensureBackend = vi.fn(async (options: EnsureLocalBackendOptions) => {
+      expect(options.exposeWeb).toBe(false)
+      return {
+        scope: { daemonDir } as LocalBackend['scope'],
+        discovery: {} as LocalBackend['discovery'],
+        socketPath: unreachableSocket,
+        closeClient,
+        close: async () => undefined,
+      } as LocalBackend
+    })
+    await runWebCommand([], {
+      resources,
+      signals,
+      composition: { surfaces: [] },
+      ensureBackend,
+      createServer,
+      write() {
+        queueMicrotask(() => signals.emit('SIGTERM'))
+      },
+    })
+    expect(createServer).not.toHaveBeenCalled()
+    expect(closeClient).toHaveBeenCalled()
+  })
   beforeEach(() => {
     mountCloseCalls = 0
   })
@@ -48,8 +126,8 @@ describe('Web command launch contract', () => {
   })
 
   // Only `--home` is an explicit home. A home variable stays in the environment handed to the
-  // backend, whose agnesHome(env) applies AGH_HOME > AGNES_HOME and the deprecation notice; lifting
-  // one out here would let the legacy name beat AGH_HOME and skip the notice.
+  // backend, whose agnesHome(env) refuses AGNES_HOME; lifting
+  // one out here would hide that backend refusal.
   it('takes an explicit home only from --home, never from a home variable', () => {
     expect(Object.hasOwn(parseWebCommand([], { AGNES_HOME: '/tmp/legacy-home' }), 'home')).toBe(false)
     expect(Object.hasOwn(parseWebCommand([], { AGH_HOME: '/tmp/agh-home' }), 'home')).toBe(false)
@@ -76,7 +154,12 @@ describe('Web command launch contract', () => {
     const ensureBackend = async (options: EnsureLocalBackendOptions): Promise<LocalBackend> => {
       received = options
       return {
-        scope: { profile: 'local-dev', scopeID: 'test-scope' } as LocalBackend['scope'],
+        scope: {
+          daemonDir,
+          home: '/tmp/agnes-launch-fixture',
+          profile: 'local-dev',
+          scopeID: 'test-scope',
+        } as LocalBackend['scope'],
         discovery: {} as LocalBackend['discovery'],
         socketPath: '\\\\.\\pipe\\agnes-web-command-fixture',
         web: {
@@ -107,6 +190,7 @@ describe('Web command launch contract', () => {
       // mount proxy built from the daemon's own `_agnes/v1/surfaces.mounts` answer, not omit the
       // option and silently fall back to "no Surface is ever reachable".
       expect(options.mountProxy).toBeTypeOf('function')
+      expect(options.surfaceMountsReady).toBeTypeOf('function')
       setTimeout(() => signals.emit('SIGTERM'), 0)
       return {
         url: 'http://127.0.0.1:4181',
@@ -117,7 +201,7 @@ describe('Web command launch contract', () => {
     }
 
     await runWebCommand(['--port', '4181', '--data-dir', '/tmp/agnes-data'], {
-      env: { AGH_HOME: '/tmp/agnes-home', AGNES_WEB_ORIGIN: 'http://127.0.0.1:4180' },
+      env: { AGH_HOME: join(daemonDir, 'home'), AGNES_WEB_ORIGIN: 'http://127.0.0.1:4180' },
       cwd: '/tmp/foreign-workspace',
       resources,
       signals,
@@ -128,7 +212,7 @@ describe('Web command launch contract', () => {
       },
     })
     expect(received).toMatchObject({
-      env: { AGH_HOME: '/tmp/agnes-home', AGNES_WEB_ORIGIN: 'http://127.0.0.1:4180' },
+      env: { AGH_HOME: join(daemonDir, 'home'), AGNES_WEB_ORIGIN: 'http://127.0.0.1:4180' },
       cwd: '/tmp/foreign-workspace',
       dataDir: '/tmp/agnes-data',
       workspace: '/tmp/foreign-workspace',
@@ -138,7 +222,9 @@ describe('Web command launch contract', () => {
     })
     // The home rides in env; the backend resolves it, so no separate `home` is lifted out of it.
     expect(received).not.toHaveProperty('home')
-    expect(output).toBe('http://127.0.0.1:4181/\n')
+    expect(output).toBe(
+      'http://127.0.0.1:4181/\nHome: /tmp/agnes-launch-fixture\nProfile: local-dev\nDoctor: ready — agh doctor\n',
+    )
     expect(output).not.toContain('#')
     expect(output).not.toContain('test-token-with-enough-entropy')
     expect(webClosed).toBe(true)
@@ -150,7 +236,7 @@ describe('Web command launch contract', () => {
     let resolveAsset: ((pathname: string) => Promise<Uint8Array | null>) | undefined
     const ensureBackend = async (): Promise<LocalBackend> =>
       ({
-        scope: { profile: 'local-dev', scopeID: 'test-scope' },
+        scope: { daemonDir, home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'test-scope' },
         discovery: {},
         // No listener here: the launcher's private connection cannot be established.
         socketPath: unreachableSocket,
@@ -185,7 +271,7 @@ describe('Web command launch contract', () => {
     let resolveAsset: ((pathname: string) => Promise<Uint8Array | null>) | undefined
     const ensureBackend = async (): Promise<LocalBackend> =>
       ({
-        scope: { profile: 'local-dev', scopeID: 'test-scope' },
+        scope: { daemonDir, home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'test-scope' },
         discovery: {},
         // No listener here: the launcher's private connection cannot be established.
         socketPath: unreachableSocket,
@@ -219,7 +305,7 @@ describe('Web command launch contract', () => {
     const signals = new EventEmitter()
     const ensureBackend = async (): Promise<LocalBackend> =>
       ({
-        scope: { profile: 'local-dev', scopeID: 'test-scope' },
+        scope: { daemonDir, home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'test-scope' },
         discovery: {},
         socketPath: unreachableSocket,
         web: {
@@ -243,4 +329,62 @@ describe('Web command launch contract', () => {
     })
     expect(mountCloseCalls).toBe(1)
   })
+
+  it('answers /healthz from the launch handler before any admin route', async () => {
+    const signals = new EventEmitter()
+    let handleAdmin: ((request: IncomingMessage, response: ServerResponse) => Promise<boolean>) | undefined
+    const ensureBackend = async (): Promise<LocalBackend> =>
+      ({
+        scope: { daemonDir, home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'test-scope' },
+        discovery: {},
+        socketPath: unreachableSocket,
+        web: {
+          url: 'ws://127.0.0.1:52000',
+          origin: 'http://127.0.0.1:4181',
+          token: 'test-token-with-enough-entropy',
+        },
+        closeClient: async () => undefined,
+        close: async () => undefined,
+      }) as unknown as LocalBackend
+    const createServer: NonNullable<WebCommandIO['createServer']> = async (options) => {
+      handleAdmin = options.handleAdmin
+      setTimeout(() => signals.emit('SIGTERM'), 0)
+      return { url: 'http://127.0.0.1:4181', close: async () => undefined }
+    }
+    await runWebCommand(['--port', '4181'], {
+      resources,
+      signals,
+      ensureBackend,
+      createServer,
+      write: () => undefined,
+    })
+    if (!handleAdmin) throw new Error('the launcher did not pass handleAdmin')
+    const get = await callHealth(handleAdmin, 'GET', '/healthz')
+    expect(get.handled).toBe(true)
+    expect(get.status).toBe(200)
+    expect(JSON.parse(get.body)).toEqual({ status: 'ok' })
+    const post = await callHealth(handleAdmin, 'POST', '/healthz')
+    expect(post.handled).toBe(true)
+    expect(post.status).toBe(405)
+    expect(post.body).toBe('')
+  })
 })
+
+async function callHealth(
+  handleAdmin: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>,
+  method: string,
+  url: string,
+): Promise<{ handled: boolean; status: number; body: string }> {
+  let status = 0
+  let body = ''
+  const response = {
+    writeHead(code: number) {
+      status = code
+    },
+    end(chunk?: string) {
+      body = chunk ?? ''
+    },
+  }
+  const handled = await handleAdmin({ method, url } as IncomingMessage, response as unknown as ServerResponse)
+  return { handled, status, body }
+}

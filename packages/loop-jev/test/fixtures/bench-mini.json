@@ -1,0 +1,20 @@
+{
+  "suite": "bench-mini",
+  "description": "One-turn plumbing check for the bench runner.",
+  "scenarios": [
+    {
+      "id": "mini",
+      "category": "plumbing",
+      "favor": "either",
+      "description": "plumbing",
+      "max_steps": 20,
+      "turns": [
+        {
+          "goal": "Say ok.",
+          "answer_contains": ["ok"],
+          "bash": [{ "command": "node -e \"console.log('MINI_OK')\"", "contains": "MINI_OK" }]
+        }
+      ]
+    }
+  ]
+}

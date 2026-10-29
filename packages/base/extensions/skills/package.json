@@ -1,0 +1,50 @@
+{
+  "name": "@agnes/skills",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/skills",
+        "export": "default",
+        "apiRange": "^5.0.0",
+        "capabilities": {
+          "tools": {
+            "prefix": "skill_",
+            "names": [
+              "skill_read",
+              "skill_read_file"
+            ]
+          },
+          "hooks": [
+            "context"
+          ],
+          "slots": [],
+          "events": false,
+          "resources": [],
+          "network": []
+        },
+        "liveResources": [
+          "skills"
+        ],
+        "metadata": {
+          "displayName": "Reusable playbooks",
+          "summary": "Lets the agent discover and read reusable Skills and their supporting files.",
+          "description": "Lets the agent discover and read reusable Skills and their supporting files.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "可复用操作手册",
+              "summary": "让 Agent 发现和读取可复用技能及其配套文件。",
+              "description": "让 Agent 发现和读取可复用技能及其配套文件。"
+            }
+          }
+        }
+      }
+    ],
+    "provides": [
+      "tool"
+    ]
+  }
+}

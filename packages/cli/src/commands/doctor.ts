@@ -1,26 +1,32 @@
-import { daemonDoctor, daemonStatus } from '@agnes/daemon'
+import { daemonDoctor, daemonStatus, runtimeDoctor } from '@agnes/daemon'
 import { createPrompterBridge } from '@agnes/daemon/local'
 import {
+  CONFIGURATION_ERROR_CODES,
   createConfigurationService,
+  HOST_ERROR_CODES,
   type Host,
   dataDir as hostDataDir,
   type ResolvedProfile,
 } from '@agnes/host'
+import { deploymentProxyHosts } from '@agnes/system-node/deployment-network'
 import type { ParsedArgs } from '../args.js'
 import { profileNameFrom } from '../boot/inputs.js'
 import { assembleLocalHost, type LocalBootDeps } from '../boot/local.js'
 import { doctorCodeRuntime } from './doctor-code-runtime.js'
+import { doctorCredentials } from './doctor-credentials.js'
 import { doctorExtensions } from './doctor-extensions.js'
-import { doctorBinary, doctorCredentials, doctorStorage, type Section } from './doctor-local.js'
+import { doctorBinary, doctorStorage, type Section } from './doctor-local.js'
 import { doctorPlatform, doctorResolvedProfile, resolveDoctorProfile } from './doctor-profile.js'
 import { doctorProvider } from './doctor-provider.js'
 import { doctorSubagents } from './doctor-subagents.js'
+import { doctorText } from './first-run-locales.js'
 
 export type { Section } from './doctor-local.js'
 export type DoctorCommandDeps = LocalBootDeps
 
 export const DOCTOR_SECTIONS = [
   'platform',
+  'network',
   'provider',
   'storage',
   'credentials',
@@ -41,33 +47,30 @@ const failed = (name: DoctorSectionName, detail: string): Section => ({
   detail: [detail],
 })
 
-const PROVIDER_UNCONFIGURED =
-  'no model provider is configured for this profile, so the host was not assembled and this check was not run; run `agh config` to add one'
+function assemblyFailure(name: DoctorSectionName, error: unknown): Section {
+  const value =
+    error && typeof error === 'object' ? (error as { code?: unknown; detail?: { reason?: unknown } }) : {}
+  if (value.code === 'E_PRESET_UNRESOLVED' && value.detail?.reason === 'no-routes')
+    return {
+      name,
+      status: 'warn',
+      detail: ['No model provider is configured. Run agh config to complete setup.'],
+    }
 
-/**
- * Why a host-backed section could not run. A profile with no provider is a setup step, reported
- * the way the provider section reports it. Any other failure stays a failure and names its stable
- * error code; the error message is never copied, since it can carry paths.
- */
-function hostSectionFailure(name: DoctorSectionName, label: string, error: unknown): Section {
-  const { code, detail } = (error !== null && typeof error === 'object' ? error : {}) as {
-    code?: unknown
-    detail?: { reason?: unknown } | null
-  }
-  if (code === 'E_PRESET_UNRESOLVED' && detail?.reason === 'no-routes')
-    return { name, status: 'warn', detail: [PROVIDER_UNCONFIGURED] }
-  const suffix = typeof code === 'string' && /^E_[A-Z0-9_]{1,48}$/.test(code) ? ` (${code})` : ''
-  return failed(name, `${label} host assembly failed${suffix}`)
+  return failed(
+    name,
+    `${name} host assembly failed${[...HOST_ERROR_CODES, ...CONFIGURATION_ERROR_CODES].some((code) => code === value.code) ? ` (${value.code})` : ''}`,
+  )
 }
 
-/** Read-only daemon health through the package-owned owner/process/socket probes (ERRATA B23). */
+/** Read-only daemon health through the package-owned owner/process/socket probes. */
 export async function doctorDaemon(deps: Pick<DoctorCommandDeps, 'home'>): Promise<Section> {
   const dataDir = hostDataDir(deps.home)
   try {
-    const state = await daemonStatus(dataDir)
+    const state = await daemonStatus(deps.home)
     if (!state.running) return { name: 'daemon', status: 'warn', detail: ['not running'] }
 
-    const report = await daemonDoctor({ dataDir, clock: Date.now })
+    const report = await daemonDoctor({ dataDir, home: deps.home, clock: Date.now })
     const status = report.sections.some((section) => section.status === 'fail')
       ? 'fail'
       : report.sections.some((section) => section.status === 'warn')
@@ -90,7 +93,7 @@ export function renderSections(sections: Section[]): string {
   return sections
     .map(
       (section) =>
-        `${mark[section.status]} ${section.name}\n${section.detail.map((line) => `    ${line}`).join('\n')}`,
+        `${mark[section.status]} ${section.title ?? section.name}\n${section.detail.map((line) => `    ${line}`).join('\n')}`,
     )
     .join('\n')
 }
@@ -108,6 +111,28 @@ export async function doctorCommand(
   if (parsed.positional[0] === 'subagents') {
     const result = await doctorSubagents(deps, { repair: parsed.repair, json: parsed.json })
     return { text: result.text, json: [result.section], exitCode: result.exitCode }
+  }
+  if (parsed.positional.length === 0) {
+    const report = await runtimeDoctor({
+      home: deps.home,
+      profile: profileNameFrom(parsed, deps.env),
+      probeAccounts: parsed.probe,
+      ...(deps.configuration ? { configuration: deps.configuration } : {}),
+      ...(deps.signal ? { signal: deps.signal } : {}),
+      connection: async () => (await daemonStatus(deps.home)).socketReachable === true,
+    })
+    const sections = report.checks.map((check) => ({
+      name: check.id,
+      title: doctorText(deps.env, `doctor.check.${check.id}`),
+      status: check.status,
+      fixHintKey: check.fixHintKey,
+      detail: check.status === 'ok' ? [] : [doctorText(deps.env, check.fixHintKey)],
+    }))
+    return {
+      text: parsed.json ? JSON.stringify(sections, null, 2) : renderSections(sections),
+      json: sections,
+      exitCode: report.status === 'fail' ? 1 : 0,
+    }
   }
   const selected = selectSections(parsed.positional)
   if (selected === undefined) return { text: 'unknown or extra doctor section', json: [], exitCode: 2 }
@@ -136,11 +161,24 @@ export async function doctorCommand(
         case 'platform':
           sections.push(await doctorPlatform(commandDeps))
           break
-        case 'storage':
-          sections.push(await doctorStorage(commandDeps))
+        case 'network': {
+          const proxies = deploymentProxyHosts()
+          sections.push({
+            name: 'network',
+            status: proxies.http === 'invalid' || proxies.https === 'invalid' ? 'fail' : 'ok',
+            detail: [
+              `HTTP proxy: ${proxies.http}`,
+              `HTTPS proxy: ${proxies.https}`,
+              `NO_PROXY exclusions: ${proxies.exclusionsConfigured ? 'configured' : 'none'}`,
+            ],
+          })
           break
+        }
         case 'credentials':
           sections.push(await doctorCredentials(commandDeps))
+          break
+        case 'storage':
+          sections.push(await doctorStorage(commandDeps))
           break
         case 'daemon':
           sections.push(await doctorDaemon(commandDeps))
@@ -148,8 +186,8 @@ export async function doctorCommand(
         case 'profile':
           try {
             sections.push(doctorResolvedProfile(await resolvedProfile()))
-          } catch {
-            sections.push(failed('profile', 'profile resolution failed'))
+          } catch (error) {
+            sections.push(assemblyFailure('profile', error))
           }
           break
         case 'binary':
@@ -169,9 +207,7 @@ export async function doctorCommand(
               })
             const snapshot = await configuration.get()
             const accounts = snapshot.accounts ?? []
-            // Routes can also be declared by the profile itself; only a profile with neither has no
-            // provider to report on.
-            if (accounts.length === 0 && !((await resolvedProfile()).provider.routes?.length ?? 0)) {
+            if (!accounts.some((account) => account.enabled && account.credentialConfigured)) {
               sections.push(
                 await doctorProvider(undefined, {
                   signal: commandDeps.signal ?? new AbortController().signal,
@@ -190,14 +226,14 @@ export async function doctorCommand(
               }),
             )
           } catch (error) {
-            sections.push(hostSectionFailure('provider', 'provider', error))
+            sections.push(assemblyFailure('provider', error))
           }
           break
         case 'extensions':
           try {
             sections.push(await doctorExtensions(await assembledHost()))
           } catch (error) {
-            sections.push(hostSectionFailure('extensions', 'extension', error))
+            sections.push(assemblyFailure('extensions', error))
           }
           break
         case 'code-runtime':
@@ -208,7 +244,7 @@ export async function doctorCommand(
               }),
             )
           } catch (error) {
-            sections.push(hostSectionFailure('code-runtime', 'code runtime', error))
+            sections.push(assemblyFailure('code-runtime', error))
           }
           break
       }

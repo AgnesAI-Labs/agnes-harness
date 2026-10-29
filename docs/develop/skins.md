@@ -27,7 +27,7 @@ The current package format registers a plugin row through `package.json` and bin
   "type": "module",
   "exports": "./index.mjs",
   "agnes": {
-    "plugins": [{ "id": "ext:my-agh-skin/main", "export": "main" }],
+    "plugins": [{ "apiRange": "^5.0.0", "id": "ext:my-agh-skin/main", "export": "main" }],
     "clientDescriptors": [{ "rowId": "ext:my-agh-skin/main", "path": "./extensions/main/agnes.client.json" }]
   }
 }
@@ -60,7 +60,7 @@ The current package format registers a plugin row through `package.json` and bin
 
 Key rules:
 
-- `clientDescriptors.rowId` must match the plugin row ID. The descriptor's `skins` field registers skins. The legacy `agnes.extension.json` format is not the entry point for new packages.
+- `clientDescriptors.rowId` must match the plugin row ID. The descriptor's `skins` field registers skins. There is no separate extension manifest file; a plugin entry carries its own `capabilities` and `contributes`.
 - `css` must be a **package-relative path**, starting with `./` and containing no `..`, drive letters, or backslashes.
 - Skin IDs cannot be `light`, `dark`, `system`, or `none`, which are reserved for built-in themes. IDs must be **unique across installed skins**.
 
@@ -74,18 +74,21 @@ Key rules:
 | --- | --- | --- |
 | `app` | `body` | All three |
 | `topbar` | Page `header` | All three |
-| `dialog` | `dialog` (9 in workbench / 4 in plugin management / 3 in Skills and MCP) | All three |
+| `dialog` | `dialog` | All three |
 | `sidebar` | `aside.sidebar` | Workbench |
 | `conversation` | Conversation wrapper | Workbench |
 | `trace` | Execution trace `aside` | Workbench |
 | `rightbar` | Right extension panel `aside` | Workbench |
+| `workbench-right` | Right session dock `aside` | Workbench |
+| `workbench-bottom` | Bottom session dock `aside` | Workbench |
 | `transcript` | Conversation list container | Workbench |
 | `empty-state` | Empty state | Workbench |
+| `home-page` | Full page opened from a home sidebar entry `section` | Workbench |
 | `approval` | Approval area | Workbench |
 | `composer` | Input wrapper `form` | Workbench |
 | `composer-input` | Input `textarea` | Workbench |
-| `icon` | Interface icon `svg` (26 in workbench) | Workbench |
-| `settings-pane` | Settings section (6 in workbench) | Workbench |
+| `icon` | Interface icon `svg` | Workbench |
+| `settings-pane` | Settings section | Workbench |
 
 - Skins apply on **three pages**: workbench `/`, plugin management `/admin/plugins`, and Skills/MCP `/admin/resources`. Rules on `app`, `topbar`, and `dialog` therefore apply across these pages.
 - **Message-level internals are not part of the contract.** Renderers generate `turn-*`, `node-*`, and similar structures dynamically; their current availability does not guarantee stability.
@@ -135,36 +138,39 @@ You can also use a system font stack without distributing assets, for example `f
 
 <a id="23-特异性为什么用钩子选择器就够不需要-important"></a>
 
-### 2.3 Specificity and stylesheet order
+### 2.3 Cascade layers and skin precedence
 
-Skin stylesheets are inserted through `adoptedStyleSheets`, after document stylesheets in cascade order. Order resolves a conflict only when specificity is equal. Base styles therefore place skin-facing surface properties on `data-agnes-region` selectors with specificity (0,1,0), rather than element IDs with specificity (1,0,0). With the same specificity, the later skin rule wins, so `!important` is unnecessary for those surfaces.
+The canonical order is declared in `@agnes/web-ui/layers.css`:
 
 ```css
-/* Override the composer background using its region hook. */
+@layer tokens, base, vendor, ui, app, skin;
+```
+
+Platform theme variables belong to `tokens`, native control defaults to `base`, Ant Design and Markdown vendor styles to `vendor`, shared components and the Ant Design theme bridge to `ui`, and application rules to `app`. The Web build emits the order once, before the rules, on all three entry pages. Shared component CSS exports import this same order for other Web UI consumers.
+
+The host wraps a skin's authored stylesheet in `skin` when adopting it. Write ordinary CSS using the public region hooks; no layer declaration is required in the skin file. Normal skin declarations win over the earlier layers, including application ID selectors, so settings dialog surface overrides do not need `!important`. Token overrides retain their existing inline application and light/dark behavior. CSS importance still takes priority over normal declarations; hidden elements and reduced-motion safeguards retain their important rules.
+
+```css
 [data-agnes-region="composer"] {
   background-image: linear-gradient(160deg, #101820, #1d2b3a);
 }
 ```
 
-The guard in `packages/web/test/skin-regions.test.ts` checks this invariant and fails if those surface properties move back to ID selectors.
-
-**Exception: the workbench settings dialog.** Workbench dialogs share the `dialog` hook, but settings (`#config`) has a distinct surface declared through an ID selector. To override that surface:
-
-- Prefer **tokens**, such as allowlisted `--agnes-bg-surface` and `--agnes-bg-page`.
-- Use `!important` only when an arbitrary CSS surface rule, such as a background image, needs to override that ID rule.
-
-Other dialogs, `settings-pane`, and the listed hook surfaces do not require `!important` for these overrides.
+Region hooks remain the stable contract. The guard in `packages/web/test/skin-regions.test.ts` continues to check their surface declarations. Client-module styles are loaded through a native CSS `@import` in `app`; relative imports and asset URLs resolve from the original package stylesheet. Client modules own their component styling, while a skin owns appearance overrides across the host.
 
 <a id="3-语义-token-清单"></a>
 
 ## 3. Semantic tokens
 
-The following variable names can appear in `tokens`. The allowlist is generated from `packages/web/public/style.css`, which is the authoritative theme color source. Adding/removing tokens without updating generated output fails `gen:check`; documentation tests compare this list with the generated allowlist.
+The following variable names can appear in `tokens`. The allowlist is generated from `packages/web/public/style.css`, whose ordered source fragments in `public/styles/` are the authoritative theme color source. Adding/removing tokens without updating generated output fails `gen:check`; documentation tests compare this list with the generated allowlist.
 
 <!-- theme-tokens:begin -->
 --agnes-brand-primary
+--agnes-brand-mark
 --agnes-brand-focus-ring
 --agnes-brand-emphasis-soft
+--agnes-focus-ring-soft
+--agnes-scrollbar-thumb
 --agnes-text-primary
 --agnes-text-secondary
 --agnes-text-tertiary
@@ -179,10 +185,14 @@ The following variable names can appear in `tokens`. The allowlist is generated 
 --agnes-bg-code
 --agnes-bg-selected
 --agnes-bg-hover
+--agnes-bg-fill
+--agnes-bg-fill-hover
+--agnes-bg-group
 --agnes-bg-scrim
 --agnes-bg-lightbox
 --agnes-surface-glass-soft
 --agnes-surface-glass-hover
+--agnes-bg-user-bubble
 --agnes-input-surface
 --agnes-input-content-strong
 --agnes-input-placeholder
@@ -202,16 +212,48 @@ The following variable names can appear in `tokens`. The allowlist is generated 
 --agnes-status-danger-text
 --agnes-status-danger-bg
 --agnes-status-info-text
+--agnes-status-info-bg
+--agnes-bg-subtle
+--agnes-status-success-border
+--agnes-status-warning-border
+--agnes-status-danger-border
+--agnes-status-info-border
+--agnes-status-success-solid
+--agnes-status-warning-solid
+--agnes-status-danger-solid
+--agnes-status-info-solid
 --shadow-elevation
+--focus-outline
+--focus-line
+--focus-line-inset
+--shadow-raised
 --shadow-hairline
 --shadow-dialog
 --shadow-elevation-soft
 --shadow-elevation-prominent
+--elevation-0
+--elevation-1
+--elevation-2
+--agnes-line-hairline
+--agnes-bg-popover-material
+--agnes-menu-active-bg
+--agnes-menu-active-text
+--agnes-switch-track
+--agnes-switch-knob
+--agnes-segment-track
+--agnes-bg-control
+--shadow-control
+--shadow-control-primary
+--shadow-knob
+--shadow-popover
 --agnes-bg-app-sidebar
 --agnes-bg-app-content
 --agnes-trace-track
 --agnes-trace-row-current
 --agnes-trace-row-hover
+--agnes-trace-mark-bg
+--agnes-trace-mark-text
+--agnes-trace-row-hit
 --agnes-trace-lane-input
 --agnes-trace-lane-user
 --agnes-trace-lane-context
@@ -229,7 +271,56 @@ The following variable names can appear in `tokens`. The allowlist is generated 
 --agnes-trace-badge-approval-bg
 --agnes-trace-badge-compaction-text
 --agnes-trace-badge-compaction-bg
+--agnes-file-type-text
+--agnes-file-type-html
+--agnes-file-type-css
+--agnes-file-type-js
+--agnes-file-type-ts
+--agnes-file-type-json
+--agnes-file-type-md
+--agnes-file-type-svg
+--agnes-file-type-image
+--agnes-file-type-code
+--agnes-file-type-other
+--agnes-document-page-bg
+--agnes-terminal-bg
+--agnes-terminal-bar
+--agnes-terminal-line
+--agnes-terminal-text
+--agnes-terminal-muted
 <!-- theme-tokens:end -->
+
+Status surfaces and elevation levels added to the theme contract:
+
+| Token | Purpose |
+| --- | --- |
+| `--agnes-status-info-bg` | Background for informational notices. |
+| `--agnes-bg-subtle` | Muted background for secondary surfaces. |
+| `--agnes-status-success-border` | Border for success states. |
+| `--agnes-status-warning-border` | Border for warning states. |
+| `--agnes-status-danger-border` | Border for error or danger states. |
+| `--agnes-status-info-border` | Border for informational states. |
+| `--elevation-0` | Flat surfaces without a shadow. |
+| `--elevation-1` | Shadow for small floating surfaces. |
+| `--elevation-2` | Shadow for dialogs and raised surfaces. |
+| `--agnes-bg-user-bubble` | Bubble surface of the user's own message; neutral, never the accent. |
+| `--agnes-status-success-solid` | Non-text success marks such as dots and icons (at least 3:1). |
+| `--agnes-status-warning-solid` | Non-text warning marks. |
+| `--agnes-status-danger-solid` | Non-text error or danger marks. |
+| `--agnes-status-info-solid` | Non-text informational marks. |
+| `--agnes-line-hairline` | Dividers and control outlines; a tint of the text colour, drawn one device pixel wide on dense screens. |
+| `--agnes-bg-popover-material` | Surface of menus and option lists: the popover colour at 94% over a backdrop blur. Keep it at least 94% opaque so text contrast holds. |
+| `--agnes-menu-active-bg`, `--agnes-menu-active-text` | Fill and content colour of the pointed or keyboard-current row of a menu or picker; the pair must keep 4.5:1. |
+| `--agnes-switch-track`, `--agnes-switch-knob` | Track and knob of a switch that is off; the on state uses `--agnes-brand-primary` and `--agnes-button-primary-content`. |
+| `--agnes-segment-track` | Track of a segmented control. |
+| `--agnes-bg-control` | Raised control surface: secondary buttons, popup buttons and the picked segment. |
+| `--shadow-control`, `--shadow-control-primary` | Hairline ring and 1px lift of a raised control; lit top edge of a primary button. |
+| `--shadow-knob` | Shadow of a switch knob. |
+| `--shadow-popover` | Shadow of menus and option lists. |
+
+Scales are not part of the `tokens` allowlist, but a skin stylesheet may set them on `:root` like any other CSS: the type scale (`--font-size-title`, `--font-size-caption`), radii (`--radius-sm` … `--radius-xl`), control sizes (`--control-height`, `--switch-width`, `--switch-height`), the icon line weight (`--icon-stroke`, `--icon-stroke-strong`), the hairline width (`--hairline`), continuous corners (`--corner-shape`, `--corner-scale`) and motion (`--motion-short`, `--motion-medium`, `--motion-long`, `--motion-spring`). Shared controls read these values, so one declaration reaches every button, switch, menu and dialog. Motion you add must stay inside `@media (prefers-reduced-motion: no-preference)`.
+
+The built-in theme's values, its type and radius scales, and how these tokens reach Ant Design and Ant Design X are described in the [theme guide](ui-theme.md).
 
 Every token must provide **both** `light` and `dark` values:
 
@@ -316,3 +407,7 @@ Rules:
 - **Temporarily disable a skin:** Add `?skin=none` to the page URL to force the built-in appearance, or `?skin=<id>` to select a specific skin. These are one-time overrides without a cached preference change. Reopen the URL without the parameter to return to your saved selection. Use this if a skin makes settings inaccessible.
 - **CSS changes do not appear:** Stylesheets are cached by manifest `revision`. Disable/re-enable the package or reselect the skin to load current content.
 - **Inspect available skins:** Open Settings → General → Appearance → Skin. The list includes skins declared by **enabled and trusted** packages.
+
+## Shared controls and readability
+
+Follow the [UI author guide](ui-author-guide.md) token rules. Shared `.agh-btn*` controls, states, forms, skeletons and drawers consume semantic tokens. Do not target private antd classes or remove focus rings and 44px narrow hit targets. Body/icon/status text needs 4.5:1 contrast; control boundaries and focus need 3:1 in both themes. Start with the [token contrast table](../../packages/web-ui/test/token-contrast.test.ts); validate a custom skin’s actual overridden colors separately. Respect reduced motion.

@@ -1,141 +1,89 @@
 import { randomUUID } from 'node:crypto'
-import { lstatSync, mkdirSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { lstatSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import {
-  type PackageBlocker,
-  type PackageContributionSummary,
-  validatePackageAdminData,
-} from '@agnes/protocol'
-import { renameWriteThroughSync } from '@agnes/system-node'
+import type { PackageBlocker } from '@agnes/protocol'
+import { renameWriteThroughSync, syncTreeBatchedSync } from '@agnes/system-node'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
+import { collectRead, collectReadAsync, directoryDigestSteps, type ReadSteps } from './cooperative-read.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
+import { mapFileChecks } from './file-read-pool.js'
+import { canonical, freezeData, own, readStaticJson, snapshotHash, syncDirectory } from './integrity.js'
 import {
-  canonical,
-  capabilityHash,
-  freezeData,
-  readStaticJson,
-  rememberVerified,
-  snapshotHash,
-  syncDirectory,
-  type VerificationCache,
-} from './integrity.js'
-import { type InstalledPackage, isSnapshotPackageEligible, verifyPackageDirectory } from './inventory.js'
+  type InstalledPackage,
+  type InventoryVerificationCache,
+  isSnapshotPackageEligible,
+  verifyHashedPackageDirectory,
+  verifyPackageDirectory,
+} from './inventory.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
+import { assertCurrentBinding, hasSnapshotTrust } from './runtime-snapshot-binding.js'
+import { contributionCeiling, recordEntry, recordFromEntry } from './runtime-snapshot-entry.js'
+import type {
+  CreateJournal,
+  GcJournal,
+  PinRecord,
+  RuntimeJournal,
+  RuntimePin,
+  RuntimePinRecords,
+  RuntimeSnapshot,
+  RuntimeSnapshotCollection,
+  RuntimeSnapshotPinRequest,
+  RuntimeSnapshotStore,
+  RuntimeState,
+  SnapshotRecord,
+} from './runtime-snapshot-types.js'
+import {
+  exactKeys,
+  INTEGRITY,
+  integrityFailure,
+  PURPOSES,
+  SHA256,
+  validatePin,
+  validateRecord,
+  validateToken,
+} from './runtime-snapshot-validation.js'
 import { hashDirectory, packageDir, parseSource } from './sources.js'
-import { type PackageStore, previousPackageDir } from './store.js'
+import { previousPackageDir } from './store.js'
+import { dropPackageObservations, invalidatePackageVerification } from './verification-operation.js'
 
-export type RuntimePinPurpose = 'active' | 'candidate' | 'recovery' | 'rollback' | 'turn'
+export type {
+  RuntimePin,
+  RuntimePinPurpose,
+  RuntimePinRecords,
+  RuntimeSnapshot,
+  RuntimeSnapshotCollection,
+  RuntimeSnapshotPinRequest,
+  RuntimeSnapshotSelector,
+  RuntimeSnapshotStore,
+} from './runtime-snapshot-types.js'
 
-export type RuntimeSnapshotSelector =
-  | Readonly<{ kind: 'installed'; expectedIntegrity: string; expectedTreeIntegrity: string }>
-  | Readonly<{ kind: 'previous'; expectedIntegrity: string; expectedTreeIntegrity: string }>
-  | Readonly<{
-      kind: 'snapshot'
-      snapshotId: string
-      expectedIntegrity: string
-      expectedTreeIntegrity: string
-    }>
-
-export type RuntimeSnapshot = Readonly<{
-  snapshotId: string
-  profile: string
-  packageId: string
-  version: string
-  integrity: string
-  treeIntegrity: string
-  capabilityHash: string
-  directory: string
-  contributions: readonly PackageContributionSummary[]
-}>
-
-export type RuntimePin = Readonly<{
-  pinId: string
-  operationId: string
-  purpose: RuntimePinPurpose
-  snapshot: RuntimeSnapshot
-}>
-
-export type RuntimeSnapshotPinRequest = Readonly<{
-  pinId: string
-  operationId: string
-  packageId: string
-  purpose: RuntimePinPurpose
-  selector: RuntimeSnapshotSelector
-}>
-
-export type RuntimeSnapshotCollection = Readonly<{
-  removed: readonly string[]
-  retained: readonly string[]
-}>
-
-export type RuntimeSnapshotStore = PackageStore
-
-type SnapshotRecord = {
-  version: 1
-  snapshotId: string
-  packageId: string
-  packageVersion: string
-  integrity: string
-  treeIntegrity: string
-  capabilityHash: string
-  source: LockEntry['source']
-  license: string
-  releasedAt: string | null
-  dependencies: Record<string, string>
-  contributions: PackageContributionSummary[]
+/** Pin bookkeeping without hashing any tree; see RuntimePinRecords. */
+export function readRuntimePinRecords(s: RuntimeSnapshotStore): RuntimePinRecords {
+  const state = readState(s)
+  return freezeData({
+    pins: Object.values(state.pins).map(({ pinId, purpose, packageId, snapshotId }) => {
+      const { integrity, treeIntegrity } = state.snapshots[snapshotId] as SnapshotRecord
+      return { pinId, purpose, packageId, snapshotId, integrity, treeIntegrity }
+    }),
+    snapshotIds: Object.keys(state.snapshots),
+  })
 }
-type PinRecord = {
-  pinId: string
-  operationId: string
-  purpose: RuntimePinPurpose
-  packageId: string
-  snapshotId: string
-  requestHash: string
-}
-type RuntimeState = {
-  version: 1
-  snapshots: Record<string, SnapshotRecord>
-  pins: Record<string, PinRecord>
-}
-type CreateJournal = {
-  version: 1
-  kind: 'create'
-  transactionId: string
-  stage: string
-  snapshot: SnapshotRecord
-  pin: PinRecord
-}
-type GcJournal = {
-  version: 1
-  kind: 'gc'
-  transactionId: string
-  trash: string
-  snapshot: SnapshotRecord
-}
-type RuntimeJournal = CreateJournal | GcJournal
 
-const SHA256 = /^sha256-[a-f0-9]{64}$/
-const INTEGRITY = /^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$/
-const TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
-const PURPOSES = new Set<RuntimePinPurpose>(['active', 'candidate', 'recovery', 'rollback', 'turn'])
 const MAX_RECORDS = 4096
+// Parsing/shape/identity validation is pure for this complete JSON value. Disk, directory trees and
+// current trust are still read every time; callers receive a clone so writers cannot poison reuse.
+const decodedStates = new Map<string, RuntimeState>()
+let decodedStateBytes = 0
 const statePath = (s: RuntimeSnapshotStore) => join(s.profileDir, '.agnes-runtime-snapshots.json')
 const journalPath = (s: RuntimeSnapshotStore) => join(s.profileDir, '.agnes-runtime-transaction.json')
 const runtimeRoot = (s: RuntimeSnapshotStore) =>
   join(dirname(packageDir(s.dataDir, s.profile, 'runtime-root')), '.runtime-snapshots')
 const snapshotDir = (s: RuntimeSnapshotStore, snapshotId: string) => join(runtimeRoot(s), snapshotId)
 
-function integrityFailure(reason: string): never {
-  throw new PackageError('E_LOCK_MISMATCH', 'runtime snapshot store requires recovery', {
-    detail: { reason },
-  })
-}
 function stateFailure(reason: string): never {
   throw new PackageError('E_EXT_LOAD', 'runtime snapshot state is unavailable', { detail: { reason } })
-}
-function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
-  return canonical(Object.keys(value).sort()) === canonical([...keys].sort())
 }
 function present(path: string): boolean {
   try {
@@ -150,102 +98,14 @@ function contained(root: string, target: string): boolean {
   const rel = relative(root, target)
   return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
 }
-function validateToken(value: unknown, reason: string): asserts value is string {
-  if (
-    typeof value !== 'string' ||
-    !TOKEN.test(value) ||
-    ['__proto__', 'prototype', 'constructor'].includes(value)
-  )
-    integrityFailure(reason)
-}
-function validateRecord(raw: unknown): SnapshotRecord {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) integrityFailure('snapshot-shape')
-  const value = raw as Record<string, unknown>
-  if (
-    !exactKeys(value, [
-      'version',
-      'snapshotId',
-      'packageId',
-      'packageVersion',
-      'integrity',
-      'treeIntegrity',
-      'capabilityHash',
-      'source',
-      'license',
-      'releasedAt',
-      'dependencies',
-      'contributions',
-    ]) ||
-    value.version !== 1 ||
-    typeof value.snapshotId !== 'string' ||
-    !SHA256.test(value.snapshotId) ||
-    typeof value.packageId !== 'string' ||
-    typeof value.packageVersion !== 'string' ||
-    value.packageVersion.length > 64 ||
-    typeof value.integrity !== 'string' ||
-    !INTEGRITY.test(value.integrity) ||
-    typeof value.treeIntegrity !== 'string' ||
-    !SHA256.test(value.treeIntegrity) ||
-    typeof value.capabilityHash !== 'string' ||
-    !/^[a-f0-9]{64}$/.test(value.capabilityHash) ||
-    typeof value.license !== 'string' ||
-    value.license.length > 64 ||
-    (value.releasedAt !== null &&
-      (typeof value.releasedAt !== 'string' || !Number.isFinite(Date.parse(value.releasedAt)))) ||
-    !validatePackageAdminData('PackageSource', value.source).ok ||
-    !value.dependencies ||
-    typeof value.dependencies !== 'object' ||
-    Array.isArray(value.dependencies) ||
-    !Array.isArray(value.contributions) ||
-    value.contributions.length > 128
-  )
-    integrityFailure('snapshot-shape')
-  for (const [id, range] of Object.entries(value.dependencies as Record<string, unknown>))
-    if (!id || id.length > 256 || typeof range !== 'string' || range.length > 1024)
-      integrityFailure('snapshot-dependencies')
-  for (const contribution of value.contributions)
-    if (!validatePackageAdminData('PackageContributionSummary', contribution).ok)
-      integrityFailure('snapshot-contribution')
-  const record = value as unknown as SnapshotRecord
-  if (
-    record.snapshotId !==
-      runtimeSnapshotId({
-        packageId: record.packageId,
-        version: record.packageVersion,
-        integrity: record.integrity,
-        treeIntegrity: record.treeIntegrity,
-        capabilityHash: record.capabilityHash,
-      }) ||
-    capabilityHash({ contributions: record.contributions, dependencies: record.dependencies }) !==
-      record.capabilityHash
-  )
-    integrityFailure('snapshot-identity')
-  return structuredClone(record)
-}
-function validatePin(raw: unknown): PinRecord {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) integrityFailure('pin-shape')
-  const value = raw as Record<string, unknown>
-  if (!exactKeys(value, ['pinId', 'operationId', 'purpose', 'packageId', 'snapshotId', 'requestHash']))
-    integrityFailure('pin-shape')
-  validateToken(value.pinId, 'pin-id')
-  validateToken(value.operationId, 'operation-id')
-  if (typeof value.purpose !== 'string' || !PURPOSES.has(value.purpose as RuntimePinPurpose))
-    integrityFailure('pin-purpose')
-  if (
-    typeof value.packageId !== 'string' ||
-    typeof value.snapshotId !== 'string' ||
-    !SHA256.test(value.snapshotId) ||
-    typeof value.requestHash !== 'string' ||
-    !/^[a-f0-9]{64}$/.test(value.requestHash)
-  )
-    integrityFailure('pin-shape')
-  return structuredClone(value as unknown as PinRecord)
-}
 function readState(s: RuntimeSnapshotStore): RuntimeState {
   const file = statePath(s)
   if (!present(file)) return { version: 1, snapshots: {}, pins: {} }
   if (lstatSync(file).isSymbolicLink()) integrityFailure('runtime-state-symlink')
   const raw = readStaticJson(file)
+  const key = JSON.stringify(raw)
+  const cached = decodedStates.get(key)
+  if (cached) return structuredClone(cached)
   if (!exactKeys(raw, ['version', 'snapshots', 'pins']) || raw.version !== 1)
     integrityFailure('runtime-state-shape')
   if (
@@ -275,7 +135,16 @@ function readState(s: RuntimeSnapshotStore): RuntimeState {
       integrityFailure('pin-key')
     pins[key] = checked
   }
-  return { version: 1, snapshots, pins }
+  const state: RuntimeState = { version: 1, snapshots, pins }
+  while (decodedStates.size >= 4 || decodedStateBytes + key.length * 2 > 4 * 1024 * 1024) {
+    const oldest = decodedStates.keys().next().value
+    if (oldest === undefined) break
+    decodedStates.delete(oldest)
+    decodedStateBytes -= oldest.length * 2
+  }
+  decodedStates.set(key, freezeData(structuredClone(state)))
+  decodedStateBytes += key.length * 2
+  return state
 }
 function writeState(s: RuntimeSnapshotStore, state: RuntimeState): void {
   const file = statePath(s),
@@ -286,79 +155,45 @@ function writeState(s: RuntimeSnapshotStore, state: RuntimeState): void {
   writeFileSync(tmp, serialized, { mode: 0o600, flush: true })
   renameWriteThroughSync(resolve(tmp), resolve(file))
 }
-function runtimeSnapshotId(value: {
-  packageId: string
-  version: string
-  integrity: string
-  treeIntegrity: string
-  capabilityHash: string
-}): string {
-  return `sha256-${snapshotHash(value)}`
-}
-function recordFromEntry(packageId: string, entry: LockEntry): SnapshotRecord {
-  if (!entry.treeIntegrity || !entry.contributions) integrityFailure('snapshot-migration-required')
-  const hash = capabilityHash(entry)
-  return {
-    version: 1,
-    snapshotId: runtimeSnapshotId({
-      packageId,
-      version: entry.version,
-      integrity: entry.integrity,
-      treeIntegrity: entry.treeIntegrity,
-      capabilityHash: hash,
-    }),
-    packageId,
-    packageVersion: entry.version,
-    integrity: entry.integrity,
-    treeIntegrity: entry.treeIntegrity,
-    capabilityHash: hash,
-    source: structuredClone(entry.source),
-    license: entry.license,
-    releasedAt: entry.releasedAt ?? null,
-    dependencies: structuredClone(entry.dependencies),
-    contributions: structuredClone(entry.contributions),
-  }
-}
-function trusted(entry: LockEntry, record: SnapshotRecord): boolean {
-  return (
-    entry.trust === 'builtin' ||
-    (entry.state.trusted !== null &&
-      entry.trustDecision?.integrity === entry.integrity &&
-      entry.trustDecision.capabilityHash === record.capabilityHash)
-  )
-}
-/** Whether a snapshot directory matches its recorded digest, reusing an earlier match from `cache`. */
-function snapshotTreeMatches(directory: string, treeIntegrity: string, cache?: VerificationCache): boolean {
-  if (cache?.trees.get(directory) === treeIntegrity) return true
-  if (hashDirectory(directory, { exclude: [] }) !== treeIntegrity) return false
-  if (cache) rememberVerified(cache.trees, directory, treeIntegrity)
-  return true
-}
-
-function verifyRecord(s: RuntimeSnapshotStore, record: SnapshotRecord, directory: string): RuntimeSnapshot {
+function* verifyRecordSteps(
+  s: RuntimeSnapshotStore,
+  record: SnapshotRecord,
+  directory: string,
+  verificationCache?: InventoryVerificationCache,
+): ReadSteps<RuntimeSnapshot> {
   const checkedRecord = validateRecord(record)
   let root: string, actual: string
   try {
-    root = realpathSync(runtimeRoot(s))
-    actual = realpathSync(directory)
+    root = nativeRealpathSync(runtimeRoot(s))
+    actual = nativeRealpathSync(directory)
     if (lstatSync(runtimeRoot(s)).isSymbolicLink() || lstatSync(directory).isSymbolicLink())
-      integrityFailure('runtime-path-symlink')
+      integrityFailure('runtime-path-symlink', directory)
   } catch (error) {
     if (error instanceof PackageError) throw error
-    integrityFailure('runtime-path-missing')
+    integrityFailure('runtime-path-missing', directory)
   }
   if (!contained(root, actual) || actual === root || basename(actual) !== checkedRecord.snapshotId)
-    integrityFailure('runtime-path-escape')
-  if (!snapshotTreeMatches(actual, checkedRecord.treeIntegrity, s.verified))
-    integrityFailure('runtime-tree-mismatch')
+    integrityFailure('runtime-path-escape', directory)
+  // Snapshots are immutable AGH-stored trees: hashed in full once per process, then reused while the
+  // directory is not replaced. Path, link and record checks above still run on every read.
+  const treeIntegrity = yield* directoryDigestSteps(
+    actual,
+    { ...checkedRecord, version: checkedRecord.packageVersion },
+    false,
+    true,
+  )
+  if (treeIntegrity !== checkedRecord.treeIntegrity) integrityFailure('runtime-tree-mismatch', actual)
   const source = parseSource(checkedRecord.source.ref)
   if (canonical(source) !== canonical(checkedRecord.source)) integrityFailure('runtime-source-mismatch')
-  verifyPackageDirectory(
+  // Reuse only static interpretation after this read has verified every byte. The cache key
+  // includes the record, canonical directory, digest and ceiling; execution/recovery omit it.
+  verifyHashedPackageDirectory(
     checkedRecord.packageId,
     recordEntry(checkedRecord),
     actual,
     contributionCeiling(checkedRecord),
-    s.verified,
+    treeIntegrity,
+    verificationCache,
   )
   return freezeData({
     snapshotId: checkedRecord.snapshotId,
@@ -370,38 +205,29 @@ function verifyRecord(s: RuntimeSnapshotStore, record: SnapshotRecord, directory
     capabilityHash: checkedRecord.capabilityHash,
     directory: actual,
     contributions: structuredClone(checkedRecord.contributions),
+    ...(checkedRecord.metadata ? { metadata: structuredClone(checkedRecord.metadata) } : {}),
+    ...(checkedRecord.agents ? { agents: structuredClone(checkedRecord.agents) } : {}),
+    ...(checkedRecord.application ? { application: structuredClone(checkedRecord.application) } : {}),
   })
 }
-function contributionCeiling(record: SnapshotRecord): string[] {
-  return [
-    ...new Set(
-      record.contributions.flatMap((c) => (c.kind === 'extension' ? Object.keys(c.capabilities ?? {}) : [])),
-    ),
-  ]
+function verifyRecord(s: RuntimeSnapshotStore, record: SnapshotRecord, directory: string): RuntimeSnapshot {
+  return collectRead(verifyRecordSteps(s, record, directory))
 }
-function recordEntry(record: SnapshotRecord): LockEntry {
-  return {
-    version: record.packageVersion,
-    source: structuredClone(record.source),
-    integrity: record.integrity,
-    trust: 'trusted',
-    license: record.license,
-    state: { installed: new Date(0).toISOString(), trusted: null, enabled: false },
-    dependencies: structuredClone(record.dependencies),
-    previous: null,
-    contributions: structuredClone(record.contributions),
-    treeIntegrity: record.treeIntegrity,
-    ...(record.releasedAt ? { releasedAt: record.releasedAt } : {}),
-  } as LockEntry
-}
-function pinView(s: RuntimeSnapshotStore, state: RuntimeState, pin: PinRecord): RuntimePin {
+function pinView(
+  s: RuntimeSnapshotStore,
+  state: RuntimeState,
+  pin: PinRecord,
+  verified?: RuntimeSnapshot,
+  current?: LockEntry,
+): RuntimePin {
   const record = state.snapshots[pin.snapshotId]
   if (!record) integrityFailure('pin-snapshot-missing')
+  assertCurrentBinding(record, current)
   return freezeData({
     pinId: pin.pinId,
     operationId: pin.operationId,
     purpose: pin.purpose,
-    snapshot: verifyRecord(s, record, snapshotDir(s, record.snapshotId)),
+    snapshot: verified ?? verifyRecord(s, record, snapshotDir(s, record.snapshotId)),
   })
 }
 function validateRequest(s: RuntimeSnapshotStore, request: RuntimeSnapshotPinRequest): string {
@@ -461,6 +287,7 @@ function select(
   if (request.selector.kind === 'snapshot') {
     const record = state.snapshots[request.selector.snapshotId]
     if (!record || record.packageId !== request.packageId) stateFailure('snapshot-not-found')
+    assertCurrentBinding(record, live.entry)
     if (
       record.integrity !== request.selector.expectedIntegrity ||
       record.treeIntegrity !== request.selector.expectedTreeIntegrity
@@ -479,20 +306,21 @@ function select(
   let entry: LockEntry | undefined
   let directory: string
   if (request.selector.kind === 'installed') {
-    const row = installedPackage(request.packageId)
-    if (!row.directory) stateFailure('installed-directory-missing')
-    if (row.blockers.length) throw blocked(row.blockers)
-    entry = row.entry
-    directory = row.directory
+    // `live` came from this same synchronous call; asking again would re-hash every installed
+    // package for an identical answer.
+    if (!live.directory) stateFailure('installed-directory-missing')
+    if (live.blockers.length) throw blocked(live.blockers)
+    entry = live.entry
+    directory = live.directory
   } else {
-    const current = lock.packages[request.packageId]
+    const current = own(lock.packages, request.packageId)
     if (!current?.previous?.treeIntegrity || !current.previous.source)
       stateFailure('previous-snapshot-missing')
     entry = { ...structuredClone(current.previous), previous: null } as LockEntry
     directory = previousPackageDir(s, request.packageId)
   }
   const record = recordFromEntry(request.packageId, entry)
-  if (!trusted(entry, record))
+  if (!hasSnapshotTrust(entry, record))
     throw new PackageError('E_WORKSPACE_UNTRUSTED', 'runtime snapshot has no valid trust decision')
   if (
     record.integrity !== request.selector.expectedIntegrity ||
@@ -572,28 +400,27 @@ function clearJournal(s: RuntimeSnapshotStore): void {
   rmSync(journalPath(s))
   rmSync(`${journalPath(s)}.tmp`, { force: true })
   syncDirectory(s.profileDir)
+  dropPackageObservations()
   s.runtimeCheckpoint?.('runtime-finished')
 }
 
 /** Caller holds the PackageManager Profile lock. Runtime state never decides the active revision. */
-export function recoverRuntimeSnapshotStore(s: RuntimeSnapshotStore): void {
+function* runtimeRecoverySteps(s: RuntimeSnapshotStore): ReadSteps<void> {
+  const root = runtimeRoot(s)
   rmSync(`${statePath(s)}.tmp`, { force: true })
   if (!present(journalPath(s))) {
     rmSync(`${journalPath(s)}.tmp`, { force: true })
-    assertKnownRuntimeDirectories(s, readState(s))
+    yield* knownRuntimeDirectoryReadSteps(s, readState(s))
     return
   }
-  // An interrupted transaction is always checked against the disk, never against earlier results.
-  const { verified: _earlier, ...strict } = s
-  recoverRuntimeJournal(strict)
-}
-
-function recoverRuntimeJournal(s: RuntimeSnapshotStore): void {
-  const root = runtimeRoot(s)
+  invalidatePackageVerification()
   const state = readState(s),
-    journal = readJournal(s)
+    journal = readJournal(s),
+    trash = join(root, `.trash-${journal.transactionId}`)
   mkdirSync(root, { recursive: true })
   if (journal.kind === 'create') {
+    // Only a verified abandoned copy enters this journal's trash; a partial delete of it is expected.
+    rmSync(trash, { recursive: true, force: true })
     const destination = snapshotDir(s, journal.snapshot.snapshotId),
       stage = join(root, journal.stage),
       committed = state.pins[journal.pin.pinId]
@@ -609,7 +436,8 @@ function recoverRuntimeJournal(s: RuntimeSnapshotStore): void {
       if (state.snapshots[journal.snapshot.snapshotId]) integrityFailure('runtime-journal-state-mismatch')
       if (present(destination)) {
         exactTree(destination, journal.snapshot.treeIntegrity)
-        rmSync(destination, { recursive: true })
+        renameSync(destination, trash)
+        rmSync(trash, { recursive: true })
       }
       // The journal owns this UUID stage before copying starts, so a partial copy is safe to remove.
       if (present(stage)) rmSync(stage, { recursive: true })
@@ -618,14 +446,11 @@ function recoverRuntimeJournal(s: RuntimeSnapshotStore): void {
     return
   }
   const destination = snapshotDir(s, journal.snapshot.snapshotId),
-    trash = join(root, journal.trash),
     committed = !state.snapshots[journal.snapshot.snapshotId]
   if (committed) {
     if (present(destination)) integrityFailure('runtime-gc-destination-after-commit')
-    if (present(trash)) {
-      exactTree(trash, journal.snapshot.treeIntegrity)
-      rmSync(trash, { recursive: true })
-    }
+    // Collected and verified before the state commit; a crash part-way through its delete is expected.
+    rmSync(trash, { recursive: true, force: true })
   } else if (present(trash)) {
     if (present(destination)) integrityFailure('runtime-gc-path-collision')
     exactTree(trash, journal.snapshot.treeIntegrity)
@@ -634,95 +459,123 @@ function recoverRuntimeJournal(s: RuntimeSnapshotStore): void {
   clearJournal(s)
 }
 
-function assertKnownRuntimeDirectories(s: RuntimeSnapshotStore, state: RuntimeState): void {
+export function recoverRuntimeSnapshotStore(s: RuntimeSnapshotStore): void {
+  collectRead(runtimeRecoverySteps(s))
+}
+export function recoverRuntimeSnapshotStoreAsync(s: RuntimeSnapshotStore): Promise<void> {
+  return collectReadAsync(runtimeRecoverySteps(s), false)
+}
+
+function readVerifiedState(s: RuntimeSnapshotStore) {
+  const state = readState(s)
+  return { state, verified: collectRead(knownRuntimeDirectoryReadSteps(s, state)) }
+}
+function* knownRuntimeDirectoryReadSteps(
+  s: RuntimeSnapshotStore,
+  state: RuntimeState,
+): ReadSteps<Map<string, RuntimeSnapshot>> {
+  const verified = new Map<string, RuntimeSnapshot>()
+  assertRuntimeDirectoryEntries(s, state)
+  for (const record of Object.values(state.snapshots))
+    verified.set(record.snapshotId, yield* verifyRecordSteps(s, record, snapshotDir(s, record.snapshotId)))
+  return verified
+}
+
+function assertRuntimeDirectoryEntries(s: RuntimeSnapshotStore, state: RuntimeState): void {
   const root = runtimeRoot(s)
   if (!present(root)) {
     if (Object.keys(state.snapshots).length) integrityFailure('runtime-root-missing')
     return
   }
   if (lstatSync(root).isSymbolicLink()) integrityFailure('runtime-root-symlink')
-  const allowed = new Set(Object.keys(state.snapshots))
   for (const entry of readdirSync(root))
-    if (!allowed.has(entry)) integrityFailure('unknown-runtime-directory')
-  for (const record of Object.values(state.snapshots))
-    verifyRecord(s, record, snapshotDir(s, record.snapshotId))
+    if (!Object.hasOwn(state.snapshots, entry)) integrityFailure('unknown-runtime-directory')
 }
 
-export function pinRuntimeSnapshotStore(
+/**
+ * Pin several requests in order: one state read and one full snapshot verification, then each pin
+ * is its own journal transaction against the shared in-memory state, which every commit updates
+ * and persists. A failure stops the batch; earlier pins stay committed, as with sequential calls.
+ */
+export function pinRuntimeSnapshotsStore(
   s: RuntimeSnapshotStore,
   lock: Lockfile,
-  request: RuntimeSnapshotPinRequest,
+  requests: readonly RuntimeSnapshotPinRequest[],
   installedPackage: (id: string) => InstalledPackage,
   ceiling: readonly string[],
-): RuntimePin {
-  const requestHash = validateRequest(s, request),
-    state = readState(s)
-  assertKnownRuntimeDirectories(s, state)
-  if (!lock.packages[request.packageId]) stateFailure('package-not-installed')
-  const prior = state.pins[request.pinId]
-  if (prior) {
-    if (
-      prior.requestHash !== requestHash ||
-      prior.operationId !== request.operationId ||
-      prior.packageId !== request.packageId ||
-      prior.purpose !== request.purpose
-    )
-      integrityFailure('pin-id-reused')
-    return pinView(s, state, prior)
-  }
-  if (Object.keys(state.pins).length >= MAX_RECORDS) integrityFailure('runtime-state-size')
-  const selected = select(s, lock, state, request, installedPackage, ceiling),
-    pin: PinRecord = {
-      pinId: request.pinId,
-      operationId: request.operationId,
-      purpose: request.purpose,
-      packageId: request.packageId,
-      snapshotId: selected.record.snapshotId,
-      requestHash,
+): RuntimePin[] {
+  const { state } = readVerifiedState(s)
+  return requests.map((request): RuntimePin => {
+    const requestHash = validateRequest(s, request)
+    if (!own(lock.packages, request.packageId)) stateFailure('package-not-installed')
+    const prior = state.pins[request.pinId]
+    if (prior) {
+      if (
+        prior.requestHash !== requestHash ||
+        prior.operationId !== request.operationId ||
+        prior.packageId !== request.packageId ||
+        prior.purpose !== request.purpose
+      )
+        integrityFailure('pin-id-reused')
+      return pinView(s, state, prior, undefined, own(lock.packages, prior.packageId))
     }
-  const existing = state.snapshots[selected.record.snapshotId]
-  if (existing) {
-    if (canonical(existing) !== canonical(selected.record)) integrityFailure('snapshot-id-collision')
+    if (Object.keys(state.pins).length >= MAX_RECORDS) integrityFailure('runtime-state-size')
+    const selected = select(s, lock, state, request, installedPackage, ceiling),
+      pin: PinRecord = {
+        pinId: request.pinId,
+        operationId: request.operationId,
+        purpose: request.purpose,
+        packageId: request.packageId,
+        snapshotId: selected.record.snapshotId,
+        requestHash,
+      }
+    const existing = state.snapshots[selected.record.snapshotId]
+    if (existing) {
+      if (canonical(existing) !== canonical(selected.record)) integrityFailure('snapshot-id-collision')
+      state.pins[pin.pinId] = pin
+      writeState(s, state)
+      return pinView(s, state, pin)
+    }
+    if (selected.existing) integrityFailure('snapshot-state-missing')
+    if (Object.keys(state.snapshots).length >= MAX_RECORDS) integrityFailure('runtime-state-size')
+    const root = runtimeRoot(s),
+      transactionId = randomUUID(),
+      stageName = `.stage-${transactionId}`,
+      stage = join(root, stageName),
+      destination = snapshotDir(s, selected.record.snapshotId),
+      journal: CreateJournal = {
+        version: 1,
+        kind: 'create',
+        transactionId,
+        stage: stageName,
+        snapshot: selected.record,
+        pin,
+      }
+    mkdirSync(root, { recursive: true })
+    if (present(stage) || present(destination) || present(journalPath(s)))
+      integrityFailure('runtime-path-collision')
+    writeJournal(s, journal)
+    s.runtimeCheckpoint?.('runtime-prepared')
+    copyPackageTreeSync(selected.directory, stage)
+    verifyPackageDirectory(
+      selected.record.packageId,
+      recordEntry(selected.record),
+      stage,
+      contributionCeiling(selected.record),
+    )
+    // The copy reaches the disk before the rename publishes it, so a power cut cannot leave a snapshot
+    // whose bytes differ from its recorded tree digest.
+    syncTreeBatchedSync(stage)
+    renameSync(stage, destination)
+    syncDirectory(root)
+    s.runtimeCheckpoint?.('runtime-snapshot-moved')
+    state.snapshots[selected.record.snapshotId] = selected.record
     state.pins[pin.pinId] = pin
     writeState(s, state)
+    s.runtimeCheckpoint?.('runtime-state-written')
+    clearJournal(s)
     return pinView(s, state, pin)
-  }
-  if (selected.existing) integrityFailure('snapshot-state-missing')
-  if (Object.keys(state.snapshots).length >= MAX_RECORDS) integrityFailure('runtime-state-size')
-  const root = runtimeRoot(s),
-    transactionId = randomUUID(),
-    stageName = `.stage-${transactionId}`,
-    stage = join(root, stageName),
-    destination = snapshotDir(s, selected.record.snapshotId),
-    journal: CreateJournal = {
-      version: 1,
-      kind: 'create',
-      transactionId,
-      stage: stageName,
-      snapshot: selected.record,
-      pin,
-    }
-  mkdirSync(root, { recursive: true })
-  if (present(stage) || present(destination) || present(journalPath(s)))
-    integrityFailure('runtime-path-collision')
-  writeJournal(s, journal)
-  s.runtimeCheckpoint?.('runtime-prepared')
-  copyPackageTreeSync(selected.directory, stage)
-  verifyPackageDirectory(
-    selected.record.packageId,
-    recordEntry(selected.record),
-    stage,
-    contributionCeiling(selected.record),
-  )
-  renameSync(stage, destination)
-  syncDirectory(root)
-  s.runtimeCheckpoint?.('runtime-snapshot-moved')
-  state.snapshots[selected.record.snapshotId] = selected.record
-  state.pins[pin.pinId] = pin
-  writeState(s, state)
-  s.runtimeCheckpoint?.('runtime-state-written')
-  clearJournal(s)
-  return pinView(s, state, pin)
+  })
 }
 
 export function resolveRuntimePinStore(
@@ -734,39 +587,57 @@ export function resolveRuntimePinStore(
   validateToken(request.pinId, 'pin-id')
   if (request.expectedSnapshotId !== undefined && !SHA256.test(request.expectedSnapshotId))
     integrityFailure('snapshot-id')
-  const state = readState(s)
-  assertKnownRuntimeDirectories(s, state)
+  const { state } = readVerifiedState(s)
   const pin = state.pins[request.pinId]
   if (!pin) stateFailure('pin-not-found')
   if (request.expectedSnapshotId !== undefined && pin.snapshotId !== request.expectedSnapshotId)
     integrityFailure('pin-snapshot-stale')
   if (lock) {
-    const current = lock.packages[pin.packageId]
+    const current = own(lock.packages, pin.packageId)
     if (!current) stateFailure('package-not-found')
     if (current.state.trusted === null || (packageEligible && !packageEligible(pin.packageId)))
       stateFailure('package-not-eligible')
   }
-  return pinView(s, state, pin)
+  return pinView(s, state, pin, undefined, lock && own(lock.packages, pin.packageId))
 }
 
 export function releaseRuntimePinStore(
   s: RuntimeSnapshotStore,
   request: Readonly<{ pinId: string; expectedSnapshotId: string }>,
 ): void {
-  validateToken(request.pinId, 'pin-id')
-  if (!SHA256.test(request.expectedSnapshotId)) integrityFailure('snapshot-id')
-  const state = readState(s)
-  assertKnownRuntimeDirectories(s, state)
-  const pin = state.pins[request.pinId]
-  if (!pin) return
-  if (pin.snapshotId !== request.expectedSnapshotId) integrityFailure('pin-snapshot-stale')
-  delete state.pins[request.pinId]
-  writeState(s, state)
+  releaseRuntimePinsStore(s, [request])
+}
+
+/**
+ * Release several pins with one verified state read and one state write. Workers read the state
+ * without the lock and give up after a few changed reads, so releasing a backlog one write at a
+ * time can fail the target a worker is applying. A stale pin stops the batch; earlier releases stay.
+ */
+export function releaseRuntimePinsStore(
+  s: RuntimeSnapshotStore,
+  requests: readonly Readonly<{ pinId: string; expectedSnapshotId: string }>[],
+): void {
+  for (const request of requests) {
+    validateToken(request.pinId, 'pin-id')
+    if (!SHA256.test(request.expectedSnapshotId)) integrityFailure('snapshot-id')
+  }
+  const { state } = readVerifiedState(s)
+  let changed = false
+  try {
+    for (const request of requests) {
+      const pin = state.pins[request.pinId]
+      if (!pin) continue
+      if (pin.snapshotId !== request.expectedSnapshotId) integrityFailure('pin-snapshot-stale')
+      delete state.pins[request.pinId]
+      changed = true
+    }
+  } finally {
+    if (changed) writeState(s, state)
+  }
 }
 
 export function runtimePinBlockers(s: RuntimeSnapshotStore, packageId: string): PackageBlocker[] {
-  const state = readState(s)
-  assertKnownRuntimeDirectories(s, state)
+  const { state } = readVerifiedState(s)
   const all = Object.values(state.pins)
     .filter((pin) => pin.packageId === packageId)
     .map((pin) => `runtime-pin:${pin.purpose}:${pin.pinId}`)
@@ -776,17 +647,32 @@ export function runtimePinBlockers(s: RuntimeSnapshotStore, packageId: string): 
 }
 
 export function listRuntimePinsStore(s: RuntimeSnapshotStore): RuntimePin[] {
+  const { state, verified } = readVerifiedState(s)
+  return Object.values(state.pins).map((pin) => pinView(s, state, pin, verified.get(pin.snapshotId)))
+}
+export async function listRuntimePinsStoreAsync(
+  s: RuntimeSnapshotStore,
+  lock?: Lockfile,
+  verificationCache?: InventoryVerificationCache,
+): Promise<RuntimePin[]> {
   const state = readState(s)
-  assertKnownRuntimeDirectories(s, state)
-  return Object.values(state.pins).map((pin) => pinView(s, state, pin))
+  assertRuntimeDirectoryEntries(s, state)
+  // Independent immutable trees may overlap IO. The existing pool bounds work and settles every
+  // started validator on failure; all paths, bytes, identities and bindings are still verified.
+  const snapshots = await mapFileChecks(Object.values(state.snapshots), (record) =>
+    collectReadAsync(verifyRecordSteps(s, record, snapshotDir(s, record.snapshotId), verificationCache)),
+  )
+  const verified = new Map(snapshots.map((snapshot) => [snapshot.snapshotId, snapshot]))
+  return Object.values(state.pins).map((pin) =>
+    pinView(s, state, pin, verified.get(pin.snapshotId), lock && own(lock.packages, pin.packageId)),
+  )
 }
 
 export function collectRuntimeSnapshotsStore(
   s: RuntimeSnapshotStore,
   packageId?: string,
 ): RuntimeSnapshotCollection {
-  const state = readState(s)
-  assertKnownRuntimeDirectories(s, state)
+  const { state } = readVerifiedState(s)
   const pinned = new Set(Object.values(state.pins).map((pin) => pin.snapshotId)),
     removed: string[] = [],
     retained: string[] = []
@@ -799,19 +685,27 @@ export function collectRuntimeSnapshotsStore(
       continue
     }
     const transactionId = randomUUID(),
-      trashName = `.trash-${transactionId}`,
-      trash = join(runtimeRoot(s), trashName),
-      destination = snapshotDir(s, record.snapshotId),
       journal: GcJournal = {
         version: 1,
         kind: 'gc',
         transactionId,
-        trash: trashName,
+        trash: `.trash-${transactionId}`,
         snapshot: record,
-      }
+      },
+      trash = join(runtimeRoot(s), journal.trash)
     writeJournal(s, journal)
     s.runtimeCheckpoint?.('runtime-gc-prepared')
-    renameSync(destination, trash)
+    try {
+      renameSync(snapshotDir(s, record.snapshotId), trash)
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (sep !== '\\' || (code !== 'EPERM' && code !== 'EBUSY')) throw error
+      // Windows may still hold an unused tree. Verify and unwind the uncommitted journal;
+      // retain its tracked directory for the next collection instead of failing publication.
+      recoverRuntimeSnapshotStore(s)
+      retained.push(record.snapshotId)
+      continue
+    }
     syncDirectory(runtimeRoot(s))
     s.runtimeCheckpoint?.('runtime-gc-moved')
     delete state.snapshots[record.snapshotId]

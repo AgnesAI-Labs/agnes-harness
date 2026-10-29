@@ -1,17 +1,18 @@
-import type { ToolContext } from '@agnes/extension-api'
+import { defaultIds } from '@agnes/core-common/ids'
+import { type PresetView, presetDefaults } from '@agnes/core-common/step/preset'
+import type { FsPolicy } from '@agnes/core-effects/effects/fs-guard'
+import type { ApprovalGrantsPort, SeamImplementations } from '@agnes/core-effects/effects/seams'
+import type { FsOps } from '@agnes/core-effects/effects/tool-context'
+import { SeamRuntime } from '@agnes/core-effects/effects/wrap'
+import { createWorkspaceInvocationPort } from '@agnes/core-effects/workspace/runtime'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import { openTracked } from '@agnes/core-ledger/reduce/tracker'
+import type { ToolContext, ToolResult } from '@agnes/extension-api'
+import { defaultLoopFactory } from '@agnes/loop-default'
 import type { Provider } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
-import type { FsPolicy } from '../../src/effects/fs-guard.js'
-import type { SeamImplementations } from '../../src/effects/seams.js'
-import type { FsOps } from '../../src/effects/tool-context.js'
-import { SeamRuntime } from '../../src/effects/wrap.js'
-import { defaultIds } from '../../src/ids.js'
-import { MemoryStorage } from '../../src/log/memory-storage.js'
-import { openTracked } from '../../src/reduce/tracker.js'
 import { ToolRegistry } from '../../src/registry/tools.js'
-import { type PresetView, presetDefaults } from '../../src/step/preset.js'
 import { type SessionDeps, SessionImpl } from '../../src/step/session.js'
-import { createWorkspaceInvocationPort } from '../../src/workspace/runtime.js'
 import { fencedFs, testFsPolicy } from '../../testkit/fenced-fs.js'
 import { fakeSeams } from './fake-seams.js'
 import { opHistory } from './op-history.js'
@@ -66,10 +67,7 @@ const meta = {
 }
 
 export const readTool = (
-  fn: (
-    args: unknown,
-    ctx: ToolContext,
-  ) => Promise<{ content: Array<{ type: 'text'; text: string }> }> = async (args) => ({
+  fn: (args: unknown, ctx: ToolContext) => Promise<ToolResult> = async (args) => ({
     content: [{ type: 'text' as const, text: `read:${JSON.stringify(args)}` }],
   }),
 ) =>
@@ -154,6 +152,7 @@ export async function openSession(
     writerRunId?: string
     clock?: () => number
     fsOps?: FsOps
+    approvalGrants?: ApprovalGrantsPort
   },
 ) {
   const storage = over.storage ?? new MemoryStorage()
@@ -161,7 +160,7 @@ export async function openSession(
   const ids = over.ids ?? defaultIds(clock)
   // openTracked owns the SurfaceCache and feeds it from onAppended. Building a second one here
   // would leave session.surface() empty and the model would never see the user's question.
-  const { log, tracker, surface, ui, attachments } = await openTracked({
+  const { log, tracker, surface, ui } = await openTracked({
     storage,
     key: over.key ?? 'k',
     writerRunId: over.writerRunId ?? 'r1',
@@ -181,16 +180,17 @@ export async function openSession(
     clock,
     onFailure: () => undefined,
     workspaceInvocation,
+    ...(over.approvalGrants ? { approvalGrants: over.approvalGrants } : {}),
   })
-  const { fsOps: _fsOps, ...sessionOver } = over
+  const { fsOps: _fsOps, approvalGrants: _grants, ...sessionOver } = over
   const registry = over.registry ?? new ToolRegistry()
   const session = new SessionImpl({
+    loopFactory: defaultLoopFactory,
     log,
     tracker,
     surface,
     ui,
     lane: 'main',
-    attachmentIndex: attachments,
     runtime,
     registry,
     operations: [],

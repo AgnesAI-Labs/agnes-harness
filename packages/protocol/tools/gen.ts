@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { generateModule, type JsonSchemaDoc } from './gen-core.js'
 import { writeDocs } from './gen-docs.js'
+import { writePublicErrors } from './gen-public-errors.js'
 
 const pkg = join(dirname(fileURLToPath(import.meta.url)), '..')
 type ImportSpec = { from: string; defs: string[] }
@@ -12,6 +13,7 @@ const TARGETS: Array<{
   module: string
   imports?: ImportSpec[]
 }> = [
+  { schema: 'schema/app-server.json', out: 'gen/ts/app-server.ts', module: 'AppServerV1' },
   { schema: 'schema/worker.json', out: 'gen/ts/worker.ts', module: 'WorkerSchema' },
   {
     schema: 'schema/resource-control.json',
@@ -30,7 +32,33 @@ const TARGETS: Array<{
       { from: 'schema/surface.json', defs: ['SurfaceDescriptor', 'SurfaceArtifact', 'SurfaceServiceGrant'] },
       {
         from: 'schema/extension-manifest.json',
-        defs: ['Capabilities', 'ClientContribution', 'SkinContribution', 'SkinTokenValue'],
+        defs: [
+          'Capabilities',
+          'ClientContribution',
+          'HomeContributionDeclaration',
+          'UiComponentDeclaration',
+          'PluginMetadata',
+          'PluginMetadataLocale',
+          'PluginProvide',
+          'PluginLocalizedText',
+          'AgentRef',
+          'BundleLaunch',
+          'DeclaredAgent',
+          'ApplicationTemplate',
+          'ApplicationWorkbench',
+          'ApplicationWorkbenchText',
+          'ApplicationPanelTab',
+          'ApplicationWorkAction',
+          'ApplicationWorkObject',
+          'ApplicationBrand',
+          'ApplicationAsset',
+          'ApplicationPresentation',
+          'ApplicationPageRef',
+          'ApplicationRoleTarget',
+          'PresentationRole',
+          'SkinContribution',
+          'SkinTokenValue',
+        ],
       },
       { from: 'schema/hooks.json', defs: ['HookEvent'] },
       { from: 'schema/slots.json', defs: ['UiSlotName'] },
@@ -41,14 +69,14 @@ const TARGETS: Array<{
       { from: 'schema/session-v1.json', defs: ['JsonValue'] },
     ],
   },
-  // Agnes MHS keeps its schema with its own package; it shares this generator so its types follow
-  // the same rules as every other protocol here.
-  { schema: '../mhs/schema/mhs-v1.json', out: '../mhs/gen/ts/mhs-v1.ts', module: 'MhsV1' },
   {
     schema: 'schema/session-v1.json',
     out: 'gen/ts/session-v1.ts',
     module: 'SessionV1',
-    imports: [{ from: 'schema/model.json', defs: ['ModelSettings', 'ThinkingLevel'] }],
+    imports: [
+      { from: 'schema/model.json', defs: ['ModelSettings', 'ThinkingLevel'] },
+      { from: 'schema/agnes-v1.json', defs: ['SystemPromptConfig'] },
+    ],
   },
   {
     schema: 'schema/agnes-v1.json',
@@ -68,6 +96,21 @@ const TARGETS: Array<{
           'PackageBlocker',
           'PackageWarning',
           'PackageProvenance',
+          'AuthoringFile',
+          'AuthoringOrigin',
+          'AuthoringTests',
+          'AuthoringCandidate',
+          'AuthoringCandidateList',
+          'AuthoringCandidateSummary',
+          'AuthoringCreateParams',
+          'AuthoringWriteParams',
+          'AuthoringTestParams',
+          'AuthoringSubmitParams',
+          'AuthoringApproveParams',
+          'AuthoringRejectParams',
+          'AuthoringShowParams',
+          'AuthoringProvenance',
+          'PackagePresentation',
           'PackagePreview',
           'PackageTrustDecision',
           'PackageActivationTrust',
@@ -80,6 +123,11 @@ const TARGETS: Array<{
           'PackageOperationReceipt',
           'PackageOperation',
           'PackageCatalogPage',
+          'PluginGenerationStatus',
+          'PluginPublicationReport',
+          'PluginPublicationStatusResult',
+          'SessionGenerationMigrationParams',
+          'SessionGenerationMigrationResult',
           'PackageListResult',
           'PackageCatalogListParams',
           'PackageCatalogGetParams',
@@ -116,7 +164,33 @@ const TARGETS: Array<{
       { from: 'schema/surface.json', defs: ['SurfaceDescriptor', 'SurfaceArtifact', 'SurfaceServiceGrant'] },
       {
         from: 'schema/extension-manifest.json',
-        defs: ['Capabilities', 'ClientContribution', 'SkinContribution', 'SkinTokenValue'],
+        defs: [
+          'Capabilities',
+          'ClientContribution',
+          'HomeContributionDeclaration',
+          'UiComponentDeclaration',
+          'PluginMetadata',
+          'PluginMetadataLocale',
+          'PluginProvide',
+          'PluginLocalizedText',
+          'AgentRef',
+          'BundleLaunch',
+          'DeclaredAgent',
+          'ApplicationTemplate',
+          'ApplicationWorkbench',
+          'ApplicationWorkbenchText',
+          'ApplicationPanelTab',
+          'ApplicationWorkAction',
+          'ApplicationWorkObject',
+          'ApplicationBrand',
+          'ApplicationAsset',
+          'ApplicationPresentation',
+          'ApplicationPageRef',
+          'ApplicationRoleTarget',
+          'PresentationRole',
+          'SkinContribution',
+          'SkinTokenValue',
+        ],
       },
       { from: 'schema/hooks.json', defs: ['HookEvent'] },
       { from: 'schema/slots.json', defs: ['UiSlotName'] },
@@ -141,15 +215,25 @@ const TARGETS: Array<{
       {
         from: 'schema/session-v1.json',
         defs: [
+          'DecisionHandle',
+          'DecisionSpec',
+          'DecisionPresentation',
+          'ToolPresentation',
+          'DecisionRequest',
+          'DecisionResponse',
+          'DecisionResult',
+          'DecisionCommandReceipt',
+          'DecisionConsumption',
+          'DecisionSnapshot',
           'JsonValue',
           'ContentBlock',
-          'OmittedData',
-          'AttachmentRef',
-          'AttachmentThumbnail',
           'Actor',
           'SurfaceOp',
           'EventEnvelope',
+          'ExtensionEventType',
           'BudgetState',
+          'SystemInput',
+          'SystemInputPresentation',
           'ArtifactRef',
           'ArtifactJob',
           'Billing',
@@ -170,7 +254,7 @@ const TARGETS: Array<{
       // retyping the seven-value set a second time.
       {
         from: 'schema/model.json',
-        defs: ['SlotName', 'ThinkingLevel', 'ModelSettings', 'ModelInputLimits', 'TokenCounts'],
+        defs: ['SlotName', 'ThinkingLevel', 'ModelSettings', 'ModelInputLimits', 'ModelCost', 'TokenCounts'],
       },
     ],
   },
@@ -180,17 +264,16 @@ const TARGETS: Array<{
     out: 'gen/ts/model.ts',
     module: 'ModelV1',
     imports: [
+      { from: 'schema/agnes-v1.json', defs: ['SystemPromptSection'] },
       {
         from: 'schema/session-v1.json',
         defs: [
           'JsonValue',
           'ContentBlock',
-          'OmittedData',
-          'AttachmentRef',
-          'AttachmentThumbnail',
           'ResolvedToolCallPolicy',
           'ExecutionDomain',
           'ToolCall',
+          'ToolPresentation',
           'Billing',
           'ResponseMeta',
         ],
@@ -201,7 +284,7 @@ const TARGETS: Array<{
     schema: 'schema/tooldef.json',
     out: 'gen/ts/tooldef.ts',
     module: 'ToolDefSchema',
-    imports: [{ from: 'schema/session-v1.json', defs: ['JsonValue'] }],
+    imports: [{ from: 'schema/session-v1.json', defs: ['JsonValue', 'ToolPresentation'] }],
   },
   {
     schema: 'schema/hooks.json',
@@ -214,10 +297,8 @@ const TARGETS: Array<{
           'JsonValue',
           'Actor',
           'ContentBlock',
-          'OmittedData',
-          'AttachmentRef',
-          'AttachmentThumbnail',
           'ToolResult',
+          'ToolPresentation',
           'PlanItems',
           'Verdict',
           'ResolvedToolCallPolicy',
@@ -232,6 +313,9 @@ const TARGETS: Array<{
     out: 'gen/ts/preset.ts',
     module: 'PresetSchema',
     imports: [
+      { from: 'schema/agnes-v1.json', defs: ['SystemPromptConfig'] },
+      { from: 'schema/session-v1.json', defs: ['JsonValue'] },
+      { from: 'schema/profile.json', defs: ['CompositionPatch', 'PackageRef'] },
       { from: 'schema/model.json', defs: ['RouteTable', 'RouteTarget', 'ThinkingLevel'] },
       { from: 'schema/hooks.json', defs: ['HookEvent'] },
     ],
@@ -247,11 +331,32 @@ const TARGETS: Array<{
     out: 'gen/ts/extension-service.ts',
     module: 'ExtensionServiceSchema',
     imports: [
-      { from: 'schema/session-v1.json', defs: ['JsonValue'] },
+      {
+        from: 'schema/session-v1.json',
+        defs: [
+          'JsonValue',
+          'DecisionHandle',
+          'DecisionSnapshot',
+          'DecisionConsumption',
+          'DecisionResponse',
+          'DecisionSpec',
+          'DecisionPresentation',
+          'DecisionRequest',
+          'DecisionResult',
+          'DecisionCommandReceipt',
+          'Actor',
+        ],
+      },
       { from: 'schema/tooldef.json', defs: ['ParametersSchema'] },
     ],
   },
   { schema: 'schema/slots.json', out: 'gen/ts/slots.ts', module: 'SlotsSchema' },
+  {
+    schema: 'schema/intelligent-ui.json',
+    out: 'gen/ts/intelligent-ui.ts',
+    module: 'IntelligentUiSchema',
+    imports: [{ from: 'schema/session-v1.json', defs: ['JsonValue'] }],
+  },
   {
     schema: 'schema/surface.json',
     out: 'gen/ts/surface.ts',
@@ -298,15 +403,52 @@ const TARGETS: Array<{
     out: 'gen/ts/lockfile.ts',
     module: 'LockfileSchema',
     imports: [
-      { from: 'schema/package-admin.json', defs: ['PackageContributionSummary', 'PackageTrustDecision'] },
+      {
+        from: 'schema/package-admin.json',
+        defs: [
+          'PackageContributionSummary',
+          'PackageTrustDecision',
+          'PluginCapabilities',
+          'PackageProvenance',
+          'AuthoringProvenance',
+          'AuthoringOrigin',
+          'PackageSource',
+        ],
+      },
       { from: 'schema/surface.json', defs: ['SurfaceDescriptor', 'SurfaceArtifact', 'SurfaceServiceGrant'] },
       {
         from: 'schema/extension-manifest.json',
-        defs: ['Capabilities', 'ClientContribution', 'SkinContribution', 'SkinTokenValue'],
+        defs: [
+          'Capabilities',
+          'ClientContribution',
+          'HomeContributionDeclaration',
+          'UiComponentDeclaration',
+          'PluginMetadata',
+          'PluginMetadataLocale',
+          'PluginProvide',
+          'PluginLocalizedText',
+          'AgentRef',
+          'BundleLaunch',
+          'DeclaredAgent',
+          'ApplicationTemplate',
+          'ApplicationWorkbench',
+          'ApplicationWorkbenchText',
+          'ApplicationPanelTab',
+          'ApplicationWorkAction',
+          'ApplicationWorkObject',
+          'ApplicationBrand',
+          'ApplicationAsset',
+          'ApplicationPresentation',
+          'ApplicationPageRef',
+          'ApplicationRoleTarget',
+          'PresentationRole',
+          'SkinContribution',
+          'SkinTokenValue',
+        ],
       },
       { from: 'schema/hooks.json', defs: ['HookEvent'] },
       { from: 'schema/slots.json', defs: ['UiSlotName'] },
-      { from: 'schema/profile.json', defs: ['SeamName', 'Capability'] },
+      { from: 'schema/profile.json', defs: ['SeamName', 'SeamSelection', 'Capability'] },
       { from: 'schema/projection.json', defs: ['ProjectionCapability'] },
       { from: 'schema/extension-service.json', defs: ['ServiceCapability'] },
       { from: 'schema/tooldef.json', defs: ['ParametersSchema'] },
@@ -318,12 +460,7 @@ const TARGETS: Array<{
     schema: 'schema/jobs.json',
     out: 'gen/ts/jobs.ts',
     module: 'JobsSchema',
-    imports: [
-      {
-        from: 'schema/session-v1.json',
-        defs: ['JsonValue', 'ContentBlock', 'OmittedData', 'AttachmentRef', 'AttachmentThumbnail'],
-      },
-    ],
+    imports: [{ from: 'schema/session-v1.json', defs: ['JsonValue', 'ContentBlock'] }],
   },
   {
     schema: 'schema/authz.json',
@@ -377,6 +514,39 @@ function inlineImports(doc: JsonSchemaDoc, imports: ImportSpec[] | undefined): J
   return merged
 }
 
+// Imported declarations must also reach every generated manifest snapshot.
+for (const target of TARGETS) {
+  if (
+    target.schema === 'schema/extension-manifest.json' ||
+    target.imports?.some((entry) => entry.from === 'schema/extension-manifest.json')
+  ) {
+    target.imports ??= []
+    target.imports.push(
+      { from: 'schema/plugin-stream.json', defs: ['StreamDeclaration', 'StreamScope'] },
+      { from: 'schema/managed-service.json', defs: ['ManagedServiceDescriptor'] },
+    )
+    if (!target.imports.some((entry) => entry.from === 'schema/surface.json'))
+      target.imports.push({ from: 'schema/surface.json', defs: ['SurfaceArtifact', 'SurfaceServiceGrant'] })
+  }
+}
+TARGETS.push(
+  {
+    schema: 'schema/plugin-stream.json',
+    out: 'gen/ts/plugin-stream.ts',
+    module: 'PluginStreamSchema',
+    imports: [
+      { from: 'schema/tooldef.json', defs: ['ParametersSchema'] },
+      { from: 'schema/session-v1.json', defs: ['JsonValue'] },
+    ],
+  },
+  {
+    schema: 'schema/managed-service.json',
+    out: 'gen/ts/managed-service.ts',
+    module: 'ManagedServiceSchema',
+    imports: [{ from: 'schema/surface.json', defs: ['SurfaceArtifact', 'SurfaceServiceGrant'] }],
+  },
+)
+
 const check = process.argv.includes('--check')
 let dirty = 0
 for (const t of TARGETS) {
@@ -386,7 +556,26 @@ for (const t of TARGETS) {
   // UNSUPPORTED_NODES keys are repo-root-relative paths (the same granularity as the exemption lists
   // in tools/guards). `pkg` is the absolute path to packages/protocol, so prefixing the fixed segment
   // is enough — no need to resolve the repo root a second time.
-  const src = generateModule(doc, t.module, `packages/protocol/${t.schema}`)
+  let src = generateModule(doc, t.module, `packages/protocol/${t.schema}`)
+  if (t.module === 'AppServerV1') {
+    const methods = doc['x-methods'] as Record<string, { params: string; result: string }>
+    src +=
+      '\nexport const ADMIN_METHODS: {\n' +
+      Object.entries(methods)
+        .map(
+          ([name, spec]) =>
+            `  readonly ${JSON.stringify(name)}: {readonly kind:'request';readonly direction:'c2s';readonly params:typeof ${spec.params};readonly result:typeof ${spec.result}};`,
+        )
+        .join('\n') +
+      '\n} = {\n' +
+      Object.entries(methods)
+        .map(
+          ([name, spec]) =>
+            `  ${JSON.stringify(name)}: {kind:'request',direction:'c2s',params:${spec.params},result:${spec.result}},`,
+        )
+        .join('\n') +
+      '\n} as const\n'
+  }
   const outPath = join(pkg, t.out)
   const current = existsSync(outPath) ? readFileSync(outPath, 'utf8') : ''
   if (current === src) continue
@@ -402,5 +591,10 @@ for (const t of TARGETS) {
 // The three generated Markdown pages are part of the same contract as the generated modules: a
 // stale page is as wrong as a stale module, and it is the only place the declaration tables are
 // readable as prose.
-dirty += writeDocs(check)
+const { writeAppServerArtifacts } = await import('./gen-app-server.js')
+dirty += writeAppServerArtifacts(pkg, check)
+dirty += writePublicErrors(pkg, check)
+// Load extension author documentation only after schema artifacts are emitted.
+// Its protocol imports must not influence schema registration/identity ordering.
+dirty += await writeDocs(check)
 if (check && dirty) process.exit(1)
