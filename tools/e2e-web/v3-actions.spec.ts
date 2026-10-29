@@ -1,4 +1,4 @@
-import { realpath } from 'node:fs/promises'
+import { readFile, realpath, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { installDeveloperExample } from './developer-example.js'
@@ -24,6 +24,42 @@ async function open(page: import('@playwright/test').Page, runtime: import('./ru
   await page.goto(runtime.url)
   await chooseWorkspace(page, runtime)
 }
+
+test('forking a recovered conversation preserves earlier file deliveries', async ({ page, runtime }) => {
+  const client = await runtime.connect()
+  const parent = await client.session.new({ cwd: runtime.workspace, permission: 'full-access' })
+  await parent.attach()
+  const bytes = Buffer.from([0, 1, 2, 255])
+  await writeFile(resolve(runtime.workspace, 'fork-evidence.bin'), bytes)
+  await prompt(parent, 'call present {"files":[{"path":"fork-evidence.bin"}]}')
+  expect((await toolResult(parent, 'present'))?.artifactRefs).toHaveLength(1)
+  await prompt(parent, 'Continue with a plain text reply')
+  await runtime.restart()
+  await preferences(page)
+  await page.goto(`${runtime.url}/?session=${encodeURIComponent(parent.id)}`)
+  await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeVisible()
+  const fork = page.getByRole('button', { name: 'Fork into a new chat', exact: true }).last()
+  await fork.focus()
+  await page.keyboard.press('Enter')
+  await expect
+    .poll(() => {
+      const id = new URL(page.url()).searchParams.get('session')
+      return Boolean(id && id !== parent.id)
+    })
+    .toBe(true)
+  const child = new URL(page.url()).searchParams.get('session')
+  if (!child) throw new Error('Fork must open a child conversation')
+  await page.reload()
+  const delivery = page.getByTestId('turn-deliverables').filter({ hasText: 'fork-evidence.bin' })
+  await expect(delivery).toBeVisible()
+  const downloaded = page.waitForEvent('download')
+  await delivery.locator('.agh-list-row-title').click()
+  const download = await downloaded
+  expect(download.suggestedFilename()).toBe('fork-evidence.bin')
+  const path = await download.path()
+  if (!path) throw new Error('Inherited file must remain downloadable')
+  expect(await readFile(path)).toEqual(bytes)
+})
 
 test('v3 account dialog automatically tests a scripted provider before saving', async ({ page, runtime }) => {
   await open(page, runtime)
