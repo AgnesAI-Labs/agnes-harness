@@ -156,6 +156,36 @@ it('names a built-in child agent as a subagent and keeps a provider name that me
   expect(tabs[1]).toContain('acp')
 })
 
+it('reads a child agent job as the messages it reported, not as a fixed-width screen', async () => {
+  const child = job({
+    id: 'child:agent:192f05',
+    kind: 'child',
+    command: 'in-process',
+    stdout: '## 结论\n\n- 读了 `registry.ts` 里的 **syncChildren**\n',
+  })
+  const { host } = mount([child])
+  await vi.waitFor(() => expect(host.querySelectorAll('[data-testid=terminal-tab]')).toHaveLength(1))
+  await vi.waitFor(() => expect(host.querySelector('.workbench-child-report')?.textContent).toContain('结论'))
+  const report = host.querySelector('.workbench-child-report') as HTMLElement
+  expect(report.getAttribute('aria-label')).toBe('子智能体消息')
+  expect(report.querySelector('h2')?.textContent).toBe('结论')
+  expect(report.querySelector('strong')?.textContent).toBe('syncChildren')
+  expect(report.querySelector('code')?.textContent).toBe('registry.ts')
+  // A terminal screen would break these lines at its own column count instead of the pane's width.
+  expect(host.querySelector('.agh-terminal-screen')).toBeNull()
+  expect(host.textContent).toContain('子智能体消息 · 只读')
+})
+
+it('closes a finished child report with the state it ended in', async () => {
+  const child = job({ id: 'child:agent:7f21', kind: 'child', command: 'in-process', stdout: 'done' })
+  const { host } = mount([child])
+  await vi.waitFor(() => expect(host.querySelectorAll('[data-testid=terminal-tab]')).toHaveLength(1))
+  child.status = 'failed'
+  child.code = -1
+  await vi.waitFor(() => expect(host.querySelector('.workbench-child-report-foot')?.textContent).toBe('失败'))
+  expect(host.querySelector('.workbench-child-report-foot')?.getAttribute('data-tone')).toBe('danger')
+})
+
 it('opens no terminal on mount or remount, and starts one from the minimal new button', async () => {
   const { host, jobsControl, session } = mount([])
   await vi.waitFor(() => expect(host.querySelector('[data-testid=terminal-empty]')).not.toBeNull())

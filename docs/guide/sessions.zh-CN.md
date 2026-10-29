@@ -115,7 +115,7 @@ Agent 工作时发送消息，默认排队为指引，在当前模型调用或�
 
 SDK：`session.controls()` 读取能力与状态；`steer(content)`、`editQueued(itemId, content)`、`removeQueued(itemId)`、`interrupt(itemId)`、`pause()`、`resume()` 和 `cancel()` 都走持久命令路径。Loop 通过 `LoopFactory.controls` 声明支持能力，省略即拒绝指引、打断和暂停。不带 `afterSeq` 时，`controls()` 只返回最新的至多 200 条事实（`facts[0].seq` 是该窗口中最早的 seq），窗口已满时 `factsMore` 为 true。读取历史请从 `afterSeq: 0` 开始。
 
-输入框上方的子代理树显示所属 workflow 和子代理会话的时长、Token 用量；未知值明确显示为未知。**停止子代理**协作式结束子代理当前轮，workflow 继续等待；发送继续消息后，同一子会话保留原有约束继续工作。SDK 使用 `stopChild(childId)` 和 `continueChild(childId, text)`。父、子控制事实保留人工操作者。外部子代理提供者声明自己的打断/继续能力，不支持的子代理动作隐藏。只有当前轮仍在执行时才提供停止按钮；仅可继续的子代理显示带提示的后续消息输入框。执行前即取消的子代理显示 0 Token 和 0 耗时。`controls({ afterSeq })` 通过 `factsThrough` 和 `factsMore` 分页读取完整控制历史。
+输入框上方的子代理树显示所属 workflow 和子代理会话的时长、Token 用量；未知值明确显示为未知。树默认收起，标题行说明当前有多少个正在工作；每一行按终端页签的同一规则命名子代理，并可打开对应会话。**停止子代理**协作式结束子代理当前轮，workflow 继续等待；发送继续消息后，同一子会话保留原有约束继续工作。SDK 使用 `stopChild(childId)` 和 `continueChild(childId, text)`。父、子控制事实保留人工操作者。外部子代理提供者声明自己的打断/继续能力，不支持的子代理动作隐藏。只有当前轮仍在执行时才提供停止按钮；仅可继续的子代理显示带提示的后续消息输入框。执行前即取消的子代理显示 0 Token 和 0 耗时。`controls({ afterSeq })` 通过 `factsThrough` 和 `factsMore` 分页读取完整控制历史。
 
 原件无损导出使用 `node agnes.mjs export SESSION_ID --raw -o session.agnes`，并将 `session.agnes` 与 `session.agnes.artifacts/` 一起保存。清单以 size 和 SHA-256 绑定完整事件流及每个声明原件；导出通过已认证的 session/lane 权限读取并核验原件。缺失、摘要不符或权限拒绝时不发布 bundle，已有 bundle 不会被覆盖。脱敏导出用于分享，不包含原件。
 

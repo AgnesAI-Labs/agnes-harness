@@ -215,6 +215,43 @@
   .agh-terminal-screen .xterm {
     height: 100%;
   }
+  /* A child agent's pane carries the messages it wrote, not a command's output: the same snapshot
+   reads as prose at a bounded measure, and its grammar (headings, lists, code) is preserved. */
+  .workbench-child-report {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding: var(--s16) var(--s16) var(--s24);
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-app-content);
+    scrollbar-width: thin;
+  }
+  .workbench-child-report-body {
+    width: 100%;
+    max-width: 46rem;
+    margin: 0 auto;
+    padding-inline: var(--s4);
+  }
+  .workbench-child-report-waiting {
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: var(--s4);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+  }
+  /* The end state closes the report in words, so a stopped or failed child is not left to a dot. */
+  .workbench-child-report-foot {
+    max-width: 46rem;
+    margin: var(--s12) auto 0;
+    padding: var(--s4) var(--s4) 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .workbench-child-report-foot[data-tone="danger"] {
+    color: var(--agnes-status-danger-text);
+  }
   .workbench-terminal-note,
   .workbench-terminal-readonly {
     display: flex;

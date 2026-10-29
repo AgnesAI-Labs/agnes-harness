@@ -667,6 +667,30 @@ it.each(['running', 'idle', 'interrupted', 'completed', 'failed', 'cancelled'] a
     const metrics = host.querySelector('[data-testid="child-control-metrics"]')?.textContent
     expect(metrics).toContain('15')
     expect(metrics).toContain('1.2')
+    // The built-in provider reads as a subagent; the end of the id keeps two children apart.
+    const name = host.querySelector('.composer-child-name')
+    expect(name?.textContent).toBe('子智能体 · child')
+    expect(name?.getAttribute('title')).toBe('child')
+    // Status is stated in words first; the tag tone only backs it.
+    const state = host.querySelector('[data-testid="child-control-row"] [role="status"]')
+    expect(state?.textContent).toBe(
+      {
+        running: '运行中',
+        idle: '空闲',
+        interrupted: '已停止',
+        completed: '已完成',
+        failed: '失败',
+        cancelled: '已取消',
+      }[status as 'running'],
+    )
+    expect(state?.getAttribute('data-tone')).toBe(
+      { running: 'info', idle: null, interrupted: 'warn', completed: 'ok', failed: 'bad', cancelled: null }[
+        status as 'running'
+      ],
+    )
+    // The collapsed header still states how much of the tree is working.
+    const header = host.querySelector('[data-testid="child-control-tree"] .agh-disclosure-meta')
+    expect(header?.textContent ?? null).toBe(status === 'running' ? '1 个运行中' : null)
     const input = host.querySelector('[data-testid="child-continue-message"]')
     expect(input !== null).toBe(active)
     if (active) {

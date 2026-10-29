@@ -4,6 +4,8 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 export const composerLocaleCatalog: LocaleCatalog = {
   en: {
     'composer.child.title': 'Sub-agents / workflows',
+    'composer.child.name': 'Subagent',
+    'composer.child.workingCount': '{count} working',
     'composer.child.metrics': 'Usage: {tokens} tokens · duration: {seconds} s',
     'composer.child.unknown': 'Unknown',
     'composer.child.stop': 'Stop child',
@@ -152,6 +154,8 @@ export const composerLocaleCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     'composer.child.title': '子代理 / 工作流',
+    'composer.child.name': '子智能体',
+    'composer.child.workingCount': '{count} 个运行中',
     'composer.child.metrics': '用量：{tokens} tokens · 耗时：{seconds} 秒',
     'composer.child.unknown': '未知',
     'composer.child.stop': '停止子代理',

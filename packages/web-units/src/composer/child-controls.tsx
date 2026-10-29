@@ -1,8 +1,44 @@
 import type { SessionControlledChild } from '@agnes/protocol/gen/agnes-v1'
-import { Button, Disclosure, SettingsInput, SettingsState } from '@agnes/web-ui'
+import {
+  Button,
+  Disclosure,
+  formatTokens,
+  Icon,
+  SettingsInput,
+  SettingsState,
+  StatusDot,
+  type StatusDotTone,
+} from '@agnes/web-ui'
 import { type ChangeEvent, type ReactNode, useState } from 'react'
 import type { ComposerDependencies } from './contracts.js'
 
+type ChildStatus = SessionControlledChild['status']
+/** The status mark a child takes. Words in the row stay the signal; colour only backs them. */
+const CHILD_MARK: Record<ChildStatus, { dot: StatusDotTone; tag?: 'ok' | 'warn' | 'bad' | 'info' }> = {
+  starting: { dot: 'accent', tag: 'info' },
+  running: { dot: 'accent', tag: 'info' },
+  idle: { dot: 'neutral' },
+  completed: { dot: 'success', tag: 'ok' },
+  failed: { dot: 'danger', tag: 'bad' },
+  cancelled: { dot: 'neutral' },
+  interrupted: { dot: 'warning', tag: 'warn' },
+}
+const WORKING = new Set<ChildStatus>(['starting', 'running'])
+
+/**
+ * A child is named the way its terminal tab names it: the built-in provider has no name a person
+ * can use, so it reads as a subagent, and the end of the id keeps two of them apart.
+ */
+function childName(child: SessionControlledChild, t: ComposerDependencies['translate']): string {
+  const name = child.providerId === 'in-process' ? t('composer.child.name') : child.providerId
+  return `${name} · ${child.id.slice(-6)}`
+}
+
+/**
+ * The children a session started, above the composer: one row per workflow or subagent session,
+ * nested under its parent. Header, state and follow-up share the tray with the queue and pause
+ * strips, so the block reads as the composer card's top edge rather than a separate card.
+ */
 export function ChildControlTree({
   nodes,
   disabled = false,
@@ -15,19 +51,38 @@ export function ChildControlTree({
   t: ComposerDependencies['translate']
 }) {
   const ids = new Set(nodes.map((child) => child.id))
+  const working = nodes.filter((child) => WORKING.has(child.status)).length
   const renderChild = (child: SessionControlledChild, seen = new Set<string>()): ReactNode => {
     if (seen.has(child.id)) return null
     const next = new Set([...seen, child.id])
+    const children = nodes.filter((row) => row.parentId === child.id)
     return (
-      <li key={child.id}>
+      <li
+        key={child.id}
+        className="composer-child"
+        data-testid="child-control-row"
+        data-child-id={child.id}
+        data-status={child.status}
+      >
         <ChildControlRow child={child} disabled={disabled} control={control} t={t} />
-        <ul>{nodes.filter((row) => row.parentId === child.id).map((row) => renderChild(row, next))}</ul>
+        {children.length ? (
+          <ul className="composer-children-sublist">{children.map((row) => renderChild(row, next))}</ul>
+        ) : null}
       </li>
     )
   }
   return (
-    <Disclosure variant="plain" data-testid="child-control-tree" summary={t('composer.child.title')}>
-      <ul>{nodes.filter((child) => !ids.has(child.parentId)).map((child) => renderChild(child))}</ul>
+    <Disclosure
+      variant="row"
+      className="composer-children"
+      data-testid="child-control-tree"
+      icon={<Icon name="route" size={16} />}
+      summary={t('composer.child.title')}
+      meta={working ? t('composer.child.workingCount', { count: working }) : undefined}
+    >
+      <ul className="composer-children-list">
+        {nodes.filter((child) => !ids.has(child.parentId)).map((child) => renderChild(child))}
+      </ul>
     </Disclosure>
   )
 }
@@ -46,6 +101,7 @@ export function ChildControlRow({
   const [text, setText] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
+  const mark = CHILD_MARK[child.status]
   const submit = (action: 'stop' | 'continue') => {
     if (pending) return
     setPending(true)
@@ -64,29 +120,40 @@ export function ChildControlRow({
       .finally(() => setPending(false))
   }
   return (
-    <div data-testid="child-control-row" data-child-id={child.id}>
-      <a href={'?session=' + encodeURIComponent(child.id)}>{child.id}</a>
-      <span role="status">{t('composer.child.' + child.status)}</span>
-      <p data-testid="child-control-metrics">
-        {t('composer.child.metrics', {
-          tokens: child.totalTokens ?? t('composer.child.unknown'),
-          seconds:
-            child.durationMs === null ? t('composer.child.unknown') : (child.durationMs / 1000).toFixed(1),
-        })}
-      </p>
-      {child.controls.stop ? (
-        <Button
-          htmlType="button"
-          data-testid="child-stop"
-          disabled={disabled || pending}
-          title={t('composer.child.stop')}
-          onClick={() => submit('stop')}
-        >
-          {t('composer.child.stop')}
-        </Button>
-      ) : null}
+    <>
+      <div className="composer-child-head">
+        <StatusDot tone={mark.dot} running={WORKING.has(child.status)} />
+        <a className="composer-child-name" href={'?session=' + encodeURIComponent(child.id)} title={child.id}>
+          {childName(child, t)}
+        </a>
+        <span role="status" className="composer-child-state" data-tone={mark.tag}>
+          {t('composer.child.' + child.status)}
+        </span>
+        <p className="composer-child-metrics" data-testid="child-control-metrics">
+          {t('composer.child.metrics', {
+            tokens:
+              child.totalTokens === null ? t('composer.child.unknown') : formatTokens(child.totalTokens),
+            seconds:
+              child.durationMs === null ? t('composer.child.unknown') : (child.durationMs / 1000).toFixed(1),
+          })}
+        </p>
+        {child.controls.stop ? (
+          <Button
+            htmlType="button"
+            size="small"
+            appearance="ghost"
+            className="composer-child-stop"
+            data-testid="child-stop"
+            disabled={disabled || pending}
+            title={t('composer.child.stop')}
+            onClick={() => submit('stop')}
+          >
+            {t('composer.child.stop')}
+          </Button>
+        ) : null}
+      </div>
       {child.controls.continue ? (
-        <>
+        <div className="composer-child-reply">
           <SettingsInput
             data-testid="child-continue-message"
             aria-label={t('composer.child.message')}
@@ -94,9 +161,16 @@ export function ChildControlRow({
             value={text}
             disabled={disabled || pending}
             onChange={(event: ChangeEvent<HTMLInputElement>) => setText(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
+              event.preventDefault()
+              if (text.trim()) submit('continue')
+            }}
           />
           <Button
             htmlType="button"
+            size="small"
+            appearance="primary"
             data-testid="child-continue"
             disabled={disabled || pending || !text.trim()}
             title={text.trim() ? t('composer.child.continue') : t('composer.child.messageRequired')}
@@ -104,9 +178,13 @@ export function ChildControlRow({
           >
             {t('composer.child.continue')}
           </Button>
-        </>
+        </div>
       ) : null}
-      {error ? <SettingsState tone="error">{error}</SettingsState> : null}
-    </div>
+      {error ? (
+        <SettingsState tone="error" className="composer-child-error">
+          {error}
+        </SettingsState>
+      ) : null}
+    </>
   )
 }

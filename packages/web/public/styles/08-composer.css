@@ -186,8 +186,10 @@
     margin: 0 0 var(--s4);
   }
 
-  /* Messages written while the agent works wait in a small tray joined to the card's top edge:
-   inset from the card's corners, no bottom edge, so it reads as the card's lip, not another card. */
+  /* Strips joined to the card's top edge: the child tree, the paused notice and the queue of
+   messages written while the agent works. All three sit inset from the card's corners and drop
+   their bottom edge, so they read as the card's lip, not as another card above it. */
+  .composer-children,
   .composer-queue,
   .composer-paused {
     width: min(calc(100% - 2rem - 1.75rem), calc(var(--composer-card-max-width) - 1.75rem));
@@ -202,9 +204,147 @@
     color: var(--agnes-text-primary);
     background: var(--agnes-bg-subtle);
   }
-  /* Paused and a tray: the strip sits on top and the tray loses its own top corners. */
+  /* Two strips in a row: the upper one keeps the corners, the lower one squares off to meet it. */
+  .composer-children + .composer-paused,
+  .composer-children + .composer-queue,
   .composer-paused + .composer-queue {
     border-radius: 0;
+  }
+  /* The child tree: one quiet header line, then the children the session started. A row is a card
+   inside the tray, so a workflow and the subagents under it stay readable as separate sessions. */
+  .composer-children {
+    background: var(--agnes-bg-subtle);
+  }
+  .composer-children > .agh-disclosure-summary {
+    min-height: 2.5rem;
+    padding: var(--s4) var(--s8) var(--s4) var(--s4);
+    color: var(--agnes-text-secondary);
+    font-weight: var(--font-weight-medium);
+  }
+  .composer-children > .agh-disclosure-body {
+    padding: 0 var(--s4) var(--s4);
+  }
+  .composer-children .agh-disclosure-meta {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .composer-children-list,
+  .composer-children-sublist {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s4);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    min-width: 0;
+  }
+  /* A nested child indents under its parent; the rail keeps the nesting legible without a second box. */
+  .composer-children-sublist {
+    margin: var(--s4) 0 0 var(--s12);
+    padding-inline-start: var(--s8);
+    border-inline-start: 1px solid var(--agnes-line-hairline);
+  }
+  .composer-child {
+    min-width: 0;
+    border: 1px solid var(--agnes-line-hairline);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-surface);
+  }
+  .composer-child-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s4) var(--s8);
+    min-width: 0;
+    padding: var(--s4) var(--s8) var(--s4) var(--s12);
+  }
+  .composer-child-name {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--agnes-text-primary);
+    font-weight: var(--font-weight-medium);
+    text-decoration: none;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .composer-child-name:is(:hover, :focus-visible) {
+    text-decoration: underline;
+  }
+  /* The child's state in words; the tag colour only backs the word. */
+  .composer-child-state {
+    flex: none;
+    padding: var(--s2) var(--s8);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-sm);
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-fill);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-sm);
+    white-space: nowrap;
+  }
+  .composer-child-state[data-tone="info"] {
+    border-color: var(--agnes-status-info-border);
+    color: var(--agnes-status-info-text);
+    background: var(--agnes-status-info-bg);
+  }
+  .composer-child-state[data-tone="ok"] {
+    border-color: var(--agnes-status-success-border);
+    color: var(--agnes-status-success-text);
+    background: var(--agnes-status-success-bg);
+  }
+  .composer-child-state[data-tone="warn"] {
+    border-color: var(--agnes-status-warning-border);
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+  }
+  .composer-child-state[data-tone="bad"] {
+    border-color: var(--agnes-status-danger-border);
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
+  }
+  .composer-child-metrics {
+    flex: 1 1 10rem;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .composer-child-stop.agh-btn {
+    flex: none;
+    /* Keeps the action at the row's end when the numbers wrap to their own line. */
+    margin-inline-start: auto;
+  }
+  .composer-child-reply {
+    display: flex;
+    align-items: center;
+    gap: var(--s4);
+    padding: 0 var(--s8) var(--s8) var(--s12);
+  }
+  .composer-child-reply > .agnes-settings-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: var(--font-size-sm);
+  }
+  .composer-child-error {
+    margin: 0 var(--s8) var(--s8) var(--s12);
+  }
+  /* A narrow card stacks the numbers under the name instead of squeezing the row. */
+  @media (max-width: 540px) {
+    .composer-child-metrics {
+      flex-basis: 100%;
+      order: 1;
+      text-align: start;
+    }
+    .composer-children-sublist {
+      margin-inline-start: var(--s4);
+    }
   }
   .composer-queue-count {
     margin: 0;

@@ -23,8 +23,14 @@ describe('composer rows', () => {
   })
 
   it('joins the queue tray to the card, shows three lines and reveals actions on hover or focus', () => {
-    // The tray and the paused strip share the card's top edge: no bottom border, top corners only.
-    expect(rule('.composer-queue,\n  .composer-paused')).toMatch(/border-bottom: 0;/)
+    // The child tree, the paused strip and the tray share the card's top edge: no bottom border.
+    expect(rule('.composer-children,\n  .composer-queue,\n  .composer-paused')).toMatch(/border-bottom: 0;/)
+    // Two strips stacked: only the upper one keeps the card's top corners.
+    expect(
+      rule(
+        '.composer-children + .composer-paused,\n  .composer-children + .composer-queue,\n  .composer-paused + .composer-queue',
+      ),
+    ).toMatch(/border-radius: 0;/)
     expect(rule('.composer-queue-list')).toMatch(/max-height: calc\(3 \* 2rem/)
     expect(rule('.composer-queue-list')).toMatch(/overflow-y: auto;/)
     expect(rule('.composer-queue-actions')).toMatch(/opacity: 0;/)

@@ -3,6 +3,7 @@ import type { Session } from '@agnes/sdk/browser'
 import type { UiExtensionContext } from '@agnes/web-client'
 import { appServerErrorMessage, Button, ConfirmDialog, IconButton, Menu, SettingsState } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
+import { ChildAgentReport } from './child-report.js'
 import { panelContext } from './context.js'
 import { terminalCount } from './tab-counts.js'
 import {
@@ -381,34 +382,42 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
                 />
               </div>
             )}
-            <TerminalView
-              loading={t('workbench.terminal.loading')}
-              failure={t('workbench.terminal.loadFailed')}
-              key={`${session.id}:${job.id}`}
-              stdout={job.stdout ?? ''}
-              stderr={job.stderr ?? ''}
-              label={t('workbench.terminal.output')}
-              writable={human && running && !inputBlocked}
-              exitLine={
-                !running && job.code !== null ? t('workbench.terminal.exited', { code: job.code }) : undefined
-              }
-              exitTone={job.code === 0 ? 'neutral' : 'danger'}
-              onData={(text) => sendInput(job.id, text)}
-              onResize={(columns, rows) => {
-                const id = session.id
-                void session
-                  .jobsControl({ operation: 'resize', jobId: job.id, columns, rows })
-                  .catch((cause) => {
-                    if (scope.current === id)
-                      setError(
-                        appServerErrorMessage(cause, document.documentElement.lang) ?? t('workbench.error'),
-                      )
-                  })
-              }}
-            />
+            {job.kind === 'child' ? (
+              <ChildAgentReport job={job} t={t} />
+            ) : (
+              <TerminalView
+                loading={t('workbench.terminal.loading')}
+                failure={t('workbench.terminal.loadFailed')}
+                key={`${session.id}:${job.id}`}
+                stdout={job.stdout ?? ''}
+                stderr={job.stderr ?? ''}
+                label={t('workbench.terminal.output')}
+                writable={human && running && !inputBlocked}
+                exitLine={
+                  !running && job.code !== null
+                    ? t('workbench.terminal.exited', { code: job.code })
+                    : undefined
+                }
+                exitTone={job.code === 0 ? 'neutral' : 'danger'}
+                onData={(text) => sendInput(job.id, text)}
+                onResize={(columns, rows) => {
+                  const id = session.id
+                  void session
+                    .jobsControl({ operation: 'resize', jobId: job.id, columns, rows })
+                    .catch((cause) => {
+                      if (scope.current === id)
+                        setError(
+                          appServerErrorMessage(cause, document.documentElement.lang) ?? t('workbench.error'),
+                        )
+                    })
+                }}
+              />
+            )}
             {!human && (
               <div className="workbench-terminal-readonly">
-                {t('workbench.terminal.readonly')}
+                {job.kind === 'child'
+                  ? t('workbench.terminal.childReadonly')
+                  : t('workbench.terminal.readonly')}
                 <Button type="text" size="small" onClick={() => detach(job.id)}>
                   {t('workbench.terminal.remove')}
                 </Button>
