@@ -7,6 +7,7 @@ import {
   type McpStatus,
   type SkillDescriptor,
   type SkillRootStatus,
+  type SkillScanObservation,
   validateResourceControlData,
 } from '@agnes/protocol'
 import {
@@ -53,6 +54,7 @@ export type WorkerResourceState = Readonly<{
     /** Entries that looked like Skills but were skipped; the store keeps their prior records. */
     skippedResourceIds: readonly string[]
     roots: readonly SkillRootStatus[]
+    skillScanObservation?: SkillScanObservation
   }>
   runtime: ReturnType<typeof createWorkerResourceRuntime>
   /** Starts forwarding safe live MCP health only after the worker hello handshake. */
@@ -360,6 +362,9 @@ export async function bootstrapWorkerResources(
       failedRoots: scanned.failedRoots,
       skippedResourceIds: scanned.skippedResourceIds,
       roots: scanned.rootStatuses,
+      ...(input.skillResourceIds === undefined && scanned.skillScanObservation
+        ? { skillScanObservation: scanned.skillScanObservation }
+        : {}),
     },
     runtime,
     reportMcpStatus(listener) {

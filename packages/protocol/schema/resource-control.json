@@ -97,6 +97,58 @@
         "diagnostic": { "$ref": "#/$defs/SkillRootDiagnostic" }
       }
     },
+    "SkillScanIssue": {
+      "type": "object", "additionalProperties": false, "required": ["code", "stage"],
+      "properties": {
+        "code": { "enum": ["root-unreadable", "root-unresolvable", "entry-limit", "root-bytes-limit", "entry-outside-root", "skill-file-unreadable", "skill-body-too-large", "invalid-frontmatter", "directory-missing", "not-directory", "permission-denied"] },
+        "stage": { "enum": ["list", "stat", "realpath", "read", "parse", "budget"] },
+        "osCode": { "enum": ["ENOENT", "ENOTDIR", "EACCES", "EPERM", "ELOOP", "OTHER"] }
+      }
+    },
+    "SkillDirectoryScan": {
+      "type": "object", "additionalProperties": false,
+      "required": ["directoryId", "rootKey", "state", "complete", "foundCount", "skippedCount", "unreadable", "truncated", "issues"],
+      "properties": {
+        "directoryId": { "$ref": "#/$defs/Revision" },
+        "rootKey": { "const": "user-agnes" },
+        "state": { "enum": ["ready", "empty", "partial", "unavailable"] },
+        "complete": { "type": "boolean" },
+        "foundCount": { "type": "integer", "minimum": 0 },
+        "skippedCount": { "type": "integer", "minimum": 0 },
+        "unreadable": { "type": "boolean" },
+        "truncated": { "type": "boolean" },
+        "issues": { "type": "array", "maxItems": 128, "items": { "$ref": "#/$defs/SkillScanIssue" } }
+      }
+    },
+    "SkillScanObservation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["configurationRevision", "complete", "foundCount", "skippedCount", "unreadableDirectoryCount", "truncated", "directories"],
+      "properties": {
+        "configurationRevision": { "$ref": "#/$defs/Revision" },
+        "complete": { "type": "boolean" },
+        "foundCount": { "type": "integer", "minimum": 0 },
+        "skippedCount": { "type": "integer", "minimum": 0 },
+        "unreadableDirectoryCount": { "type": "integer", "minimum": 0, "maximum": 16 },
+        "truncated": { "type": "boolean" },
+        "directories": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/SkillDirectoryScan" } }
+      }
+    },
+    "SkillScanReport": {
+      "type": "object", "additionalProperties": false,
+      "required": ["operationId", "generation", "observedAt", "configurationRevision", "complete", "foundCount", "skippedCount", "unreadableDirectoryCount", "truncated", "directories"],
+      "properties": {
+        "operationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "generation": { "type": "integer", "minimum": 1 },
+        "observedAt": { "type": "string", "format": "date-time" },
+        "configurationRevision": { "$ref": "#/$defs/Revision" },
+        "complete": { "type": "boolean" },
+        "foundCount": { "type": "integer", "minimum": 0 },
+        "skippedCount": { "type": "integer", "minimum": 0 },
+        "unreadableDirectoryCount": { "type": "integer", "minimum": 0, "maximum": 16 },
+        "truncated": { "type": "boolean" },
+        "directories": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/SkillDirectoryScan" } }
+      }
+    },
     "SkillSourceIdentity": {
       "type": "object",
       "additionalProperties": false,
@@ -586,6 +638,7 @@
       "properties": {
         "items": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/ResourceDescriptor" } },
         "nextCursor": { "type": "string", "maxLength": 256 },
+        "skillScanReport": { "$ref": "#/$defs/SkillScanReport" },
         "skillRoots": {
           "type": "array",
           "maxItems": 64,

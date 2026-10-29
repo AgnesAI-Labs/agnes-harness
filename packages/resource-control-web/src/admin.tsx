@@ -1,10 +1,10 @@
 import type {
-  McpServerDefinitionInput,
   McpServerDescriptor,
   ResourceOperation,
   ResourceOperationReceipt,
   SkillDescriptor,
   SkillRootStatus,
+  SkillScanReport,
 } from '@agnes/protocol'
 import {
   type ConfirmController,
@@ -22,7 +22,6 @@ import {
   type ResourceProgress,
   ResourceRoots,
   renderRegion,
-  resolveFeedback,
   resourceDesiredEnabled,
   resourceDetailLocaleCatalog,
   resourceFailureKey,
@@ -38,6 +37,7 @@ import {
 import { $, type ResourceNotice, renderNotice } from './admin-dom.js'
 import { resourceAdminError as errorOf, ResourceAdminApi, ResourceAdminApiError } from './api.js'
 import { RESOURCE_ADMIN_LOCALE_NAMESPACE, resourceAdminLocaleCatalog } from './locales/admin.js'
+import { writeMcpDefinition } from './mcp-definition-fields.js'
 import {
   createMcpForm,
   keepToolDisclosure,
@@ -50,6 +50,7 @@ import { pollResourceOperation, watchMcpPanel } from './mcp-refresh.js'
 import { mountMcpWizard } from './mcp-wizard.js'
 import { type ResourceCompletion, ResourcePageFeedback } from './operation-feedback.js'
 import { resourceActionMenu, skillDetailActions } from './skill-actions.js'
+import { isSkillScanScopeError, normalizeWorkspaceId, SkillScanController } from './skill-scan.js'
 import { SkillsPage } from './skills-page.js'
 
 export { registerSkillPagePanels, type SkillPagePanels } from './skills-page.js'
@@ -85,12 +86,10 @@ export type ResourceAdminOptions = {
   tab?: Tab
   locale?: UiLocaleSource
   surface?: ResourceAdminSurface
+  onSkillScanReport?(report: SkillScanReport | undefined): void
 }
 export type ResourceScope = Readonly<{ tab: Tab; workspaceId?: string }>
 
-function normalizeWorkspaceId(workspaceId?: string): string | undefined {
-  return workspaceId && /^[a-f0-9]{64}$/.test(workspaceId) ? workspaceId : undefined
-}
 const resourceAdminCatalogs = {
   [RESOURCE_ADMIN_LOCALE_NAMESPACE]: resourceAdminLocaleCatalog,
   [RESOURCE_LIST_LOCALE_NAMESPACE]: resourceListLocaleCatalog,
@@ -119,6 +118,7 @@ class ResourceAdminPage {
   readonly #localeCleanup?: () => void
   readonly #t: LocaleTranslator
   readonly #detailT: LocaleTranslator
+  readonly #scan: SkillScanController
   #api: ResourceAdminApi | undefined
   #context: ResourceAdminContext | undefined
   #tab: Tab = 'skills'
@@ -142,11 +142,12 @@ class ResourceAdminPage {
   #loadedWorkspace: string | undefined
   #notice: ResourceNotice = { raw: '', kind: '' }
 
-  constructor(workspaceId?: string, tab: Tab = 'skills', locale?: UiLocaleSource) {
-    this.#workspaceId = normalizeWorkspaceId(workspaceId)
-    this.#tab = tab
+  constructor(options: ResourceAdminOptions) {
+    this.#scan = new SkillScanController(options.onSkillScanReport)
+    this.#workspaceId = normalizeWorkspaceId(options.workspaceId)
+    this.#tab = options.tab ?? 'skills'
     this.#skillQuery = new URLSearchParams(location.search).get('skill')?.slice(0, 128) ?? ''
-    if (locale) this.#locale = locale
+    if (options.locale) this.#locale = options.locale
     else {
       const documentLocale = createDocumentLocaleSource(resourceAdminCatalogs)
       this.#locale = documentLocale.source
@@ -207,6 +208,7 @@ class ResourceAdminPage {
   }
   /** Re-scopes to the workbench's current workspace (or clears the scope) and reloads. */
   async setWorkspace(workspaceId?: string): Promise<void> {
+    if (this.#workspaceId !== normalizeWorkspaceId(workspaceId)) this.#clearScope()
     this.#workspaceId = normalizeWorkspaceId(workspaceId)
     await this.#ensureLoaded()
   }
@@ -214,7 +216,7 @@ class ResourceAdminPage {
     const nextWorkspace = normalizeWorkspaceId(scope.workspaceId)
     const tabChanged = this.#tab !== scope.tab
     const workspaceChanged = this.#workspaceId !== nextWorkspace
-    if (tabChanged || workspaceChanged) this.#feedback.clear()
+    if (tabChanged || workspaceChanged) this.#clearScope()
     this.#tab = scope.tab
     this.#workspaceId = nextWorkspace
     this.#selected = undefined
@@ -284,6 +286,8 @@ class ResourceAdminPage {
       if (requestTab !== this.#tab || requestWorkspace !== this.#workspaceId) return
       this.#items = result.items
       this.#skillRoots = requestTab === 'skills' && 'skillRoots' in result ? (result.skillRoots ?? []) : []
+      if (requestTab === 'skills')
+        this.#scan.observe('skillScanReport' in result ? result.skillScanReport : undefined)
       this.#nextCursor = result.nextCursor
       this.#cursorStale = false
       this.#loadedTab = this.#tab
@@ -350,7 +354,7 @@ class ResourceAdminPage {
   }
   setTab(tab: Tab): void {
     if (this.#tab === tab) return
-    this.#feedback.clear()
+    this.#clearScope()
     this.#tab = tab
     this.#selected = undefined
     void this.#ensureLoaded()
@@ -403,6 +407,7 @@ class ResourceAdminPage {
     receipt: { operationId: string },
     completion?: ResourceCompletion,
     skillId?: string,
+    deferSuccess = false,
   ): Promise<boolean> {
     const api = this.api()
     const generation = this.#generation
@@ -421,7 +426,8 @@ class ResourceAdminPage {
         },
       )
       if (!op) {
-        if (!this.lifetime.signal.aborted) this.setNotice('notice.running', 'warning')
+        if (!this.lifetime.signal.aborted && generation === this.#generation)
+          this.setNotice('notice.running', 'warning')
         return false
       }
       this.#operations.set(op.operationId, op)
@@ -438,7 +444,7 @@ class ResourceAdminPage {
         if (index >= 0) this.#items[index] = item
         this.#cursorStale = !!this.#nextCursor
       }
-      if (!publish(op, activeResourceText, completion)) return false
+      if (!publish(op, activeResourceText, completion, deferSuccess)) return false
       if (op.state === 'succeeded') {
         this.setNotice(undefined)
       } else if (op.lastSafeError?.message) this.setNotice(resourceFailureKey(op.lastSafeError.code), 'error')
@@ -446,12 +452,39 @@ class ResourceAdminPage {
       if (!skillId) await this.reload(true)
       return this.#loadState !== 'error' && op.state === 'succeeded'
     } finally {
-      this.#activeOperation = undefined
-      this.#activeSkillId = undefined
+      if (this.#activeOperation === receipt.operationId) {
+        this.#activeOperation = undefined
+        this.#activeSkillId = undefined
+      }
       this.render()
     }
   }
 
+  #clearScope(): void {
+    this.#generation++
+    this.#feedback.clear()
+    this.#scan.clear()
+    this.#activeOperation = undefined
+    this.#activeSkillId = undefined
+  }
+  scanSkills(): Promise<SkillScanReport | undefined> {
+    return this.#scan.run({
+      allowed:
+        this.#tab === 'skills' &&
+        this.writable() &&
+        this.#loadedTab === 'skills' &&
+        this.#loadedWorkspace === this.#workspaceId &&
+        ['ready', 'empty'].includes(this.#loadState) &&
+        !this.#reloadPromise &&
+        !this.#loadMorePromise &&
+        !this.#activeOperation,
+      refresh: () => this.api().refresh(),
+      cancelled: (id) => this.#operations.get(id)?.state === 'cancelled',
+      track: (receipt) => this.track(receipt, undefined, undefined, true),
+      completed: (id) =>
+        this.#feedback.completed(this.#operations.get(id), this.#t, this.#t('notice.scan-finished')),
+    })
+  }
   tab(): Tab {
     return this.#tab
   }
@@ -804,12 +837,12 @@ class ResourceAdminPage {
 
   dispose(): void {
     this.lifetime.abort()
+    this.#clearScope()
     this.#generation += 1
     this.#localeStop()
     this.#localeCleanup?.()
     // A later mount already took the shared form, dialogs and hosts over.
     if (activePage !== this) return
-    this.#feedback.clear()
     activePage = undefined
     stopMcpRefresh?.()
     stopMcpRefresh = undefined
@@ -825,44 +858,11 @@ class ResourceAdminPage {
 }
 
 let editing: McpServerDescriptor | undefined
-function writeDefinition(definition: McpServerDefinitionInput): void {
-  $('mcp-workspace', 'input').value =
-    ('workspacePath' in definition ? definition.workspacePath : undefined) ?? ''
-  $('mcp-id', 'input').value = definition.serverId
-  $('mcp-name', 'input').value = definition.displayName
-  mcpTransport.value = definition.transport.kind
-  $('mcp-sandbox', 'select').value = sandboxProfileOf(definition)
-  $('mcp-executable', 'input').value =
-    definition.transport.kind === 'stdio' ? definition.transport.executable : ''
-  $('mcp-args', 'textarea').value =
-    definition.transport.kind === 'stdio' ? definition.transport.args.join('\n') : ''
-  $('mcp-url', 'input').value =
-    definition.transport.kind === 'http' || definition.transport.kind === 'sse'
-      ? definition.transport.url
-      : ''
-  mcpSecretKind.value = definition.secretBinding.kind
-  // 'oauth' has no credentialRef (it carries an optional staticClientId instead); the OAuth admin
-  // flow itself is a separate task (see the dedicated MCP OAuth Web UI plan) — this just keeps the
-  // existing kind-by-kind rendering exhaustive now that the union has a fourth branch.
-  $('mcp-secret', 'textarea').value =
-    definition.secretBinding.kind === 'stdio-env'
-      ? Object.entries(definition.secretBinding.env)
-          .map(([name, reference]) => `${name}=${reference}`)
-          .join('\n')
-      : definition.secretBinding.kind === 'none'
-        ? ''
-        : definition.secretBinding.kind === 'oauth'
-          ? (definition.secretBinding.staticClientId ?? '')
-          : definition.secretBinding.credentialRef
-  if (definition.secretBinding.kind === 'http-header')
-    $('mcp-header-name', 'select').value = definition.secretBinding.headerName
-  $('mcp-tools', 'textarea').value = definition.toolPolicy?.allow?.join('\n') ?? ''
-}
 function openMcpDialog(server?: McpServerDescriptor, t: LocaleTranslator = activeResourceText): void {
   editing = server
   form.reset()
   mcpPresets?.reset()
-  if (server) writeDefinition(server.definition)
+  if (server) writeMcpDefinition(server.definition)
   mcpWizard?.reset(!!server)
   syncTransport(t)
   $('mcp-dialog-title', 'h2').textContent = server
@@ -907,6 +907,7 @@ function syncTransport(t: LocaleTranslator = activeResourceText): void {
 export type ResourceAdminMount = Readonly<{
   ready: Promise<void>
   reload(): Promise<void>
+  scanSkills(): Promise<SkillScanReport | undefined>
   dispose(): void
   /** Re-scopes to the workbench's current workspace, or clears the scope when none is selected. */
   setWorkspace(workspaceId?: string): Promise<void>
@@ -939,7 +940,7 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
     secretKind: mcpSecretKind,
     text: () => activeResourceText,
   })
-  const page = new ResourceAdminPage(options.workspaceId, options.tab, options.locale)
+  const page = new ResourceAdminPage(options)
   activePage = page
   mcpWizard?.dispose()
   mcpWizard = mountMcpWizard(
@@ -954,7 +955,7 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
     toolbar: createButton.parentElement as HTMLElement,
     open: () => openMcpDialog(),
     fill: (definition) => {
-      writeDefinition(definition)
+      writeMcpDefinition(definition)
       mcpWizard?.filled()
       syncTransport()
     },
@@ -996,9 +997,11 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
     () =>
       void (async () => {
         if (await page.confirm(activeResourceText('action.refresh-skills'))) {
-          if (await page.track(await page.api().refresh())) resolveFeedback('skill-folders')
+          await page.scanSkills()
         }
-      })().catch((error) => page.showError(error)),
+      })().catch((error) => {
+        if (!isSkillScanScopeError(error)) page.showError(error)
+      }),
     bound,
   )
   createButton.addEventListener('click', () => openMcpDialog(undefined, activeResourceText), bound)
@@ -1090,6 +1093,7 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
   return {
     ready,
     reload: () => page.reload(),
+    scanSkills: () => page.scanSkills(),
     dispose: () => {
       stop.abort()
       page.dispose()

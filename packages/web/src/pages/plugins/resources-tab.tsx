@@ -1,5 +1,5 @@
+import type { SkillScanReport } from '@agnes/protocol'
 import type { ResourceAdminMount } from '@agnes/resource-control-web/admin'
-import { homeNavigation } from '@agnes/web-client'
 import {
   Banner,
   Button,
@@ -15,13 +15,6 @@ import { pluginPage, pluginPageId } from './route.js'
 import { SkillFolders } from './skill-folders.js'
 import { SkillRunPage } from './skill-run.js'
 
-let pendingSkillRescan = false
-/** A persistent notice can bring the owning page back before opening its real scan confirmation. */
-function requestSkillRescan() {
-  pendingSkillRescan = true
-  homeNavigation.open('plugins', { tab: 'skills' })
-  window.dispatchEvent(new Event('agnes:request-skill-rescan'))
-}
 type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => string
 
 /**
@@ -62,10 +55,13 @@ export function ResourcesTab({
   const create = useRef<HTMLButtonElement>(null)
   const mounted = useRef<ResourceAdminMount>()
   const scope = useRef({ tab, workspaceId })
-  scope.current = { tab, workspaceId }
+  if (scope.current.tab !== tab || scope.current.workspaceId !== workspaceId)
+    scope.current = { tab, workspaceId }
+  const [scanReport, setScanReport] = useState<SkillScanReport>()
   const [failed, setFailed] = useState(false)
   // The controller's first read has finished: a link to one resource can be followed from here.
-  const [loaded, setLoaded] = useState(false)
+  const [loadedScope, setLoadedScope] = useState<typeof scope.current>()
+  const loaded = loadedScope === scope.current
   usePageProgress(!loaded && !failed)
   useEffect(() => {
     let alive = true
@@ -75,6 +71,9 @@ export function ResourcesTab({
         const current = scope.current
         mounted.current = mountResourceAdmin({
           tab: current.tab,
+          onSkillScanReport: (report) => {
+            if (alive) setScanReport(report)
+          },
           ...(current.workspaceId ? { workspaceId: current.workspaceId } : {}),
           surface: {
             list: list.current,
@@ -84,7 +83,7 @@ export function ResourcesTab({
           },
         })
         void mounted.current.ready.finally(() => {
-          if (alive) setLoaded(true)
+          if (alive) setLoadedScope(current)
         })
       },
       () => {
@@ -100,20 +99,15 @@ export function ResourcesTab({
     }
   }, [])
   useEffect(() => {
-    const scan = () => {
-      if (!pendingSkillRescan || !loaded || tab !== 'skills' || !refresh.current) return
-      pendingSkillRescan = false
-      refresh.current.click()
-    }
-    window.addEventListener('agnes:request-skill-rescan', scan)
-    scan()
-    return () => window.removeEventListener('agnes:request-skill-rescan', scan)
-  }, [loaded, tab])
-  useEffect(() => {
     let current = true
+    const requestedScope = scope.current
     // Resource sync renders its regions synchronously; begin after this React commit.
     queueMicrotask(() => {
-      if (current) void mounted.current?.sync(workspaceId ? { tab, workspaceId } : { tab })
+      const controller = mounted.current
+      if (current && controller)
+        void controller.sync(workspaceId ? { tab, workspaceId } : { tab }).then(() => {
+          if (current) setLoadedScope(requestedScope)
+        })
     })
     return () => {
       current = false
@@ -184,8 +178,18 @@ export function ResourcesTab({
       </div>
       <p ref={notice} className="admin-notice" role="status" aria-live="polite" hidden />
       <section ref={list} className="plugin-list" aria-live="polite" />
-      {/* Saving the folder list asks for a rescan through the controller's own confirmed refresh. */}
-      {tab === 'skills' && <SkillFolders t={t} canSave={canSave} onSaved={requestSkillRescan} />}
+      {tab === 'skills' && (
+        <SkillFolders
+          key={workspaceId ?? 'user'}
+          t={t}
+          canSave={canSave && loaded}
+          scanReport={scanReport}
+          onSaved={async () => {
+            if (!mounted.current) throw new Error('Resource admin is not connected.')
+            return mounted.current.scanSkills()
+          }}
+        />
+      )}
       {pages.stack.map((segment) => {
         const page = pluginPage(segment)
         return page?.kind === 'run' ? <SkillRunPage key={segment} name={page.id} t={t} /> : null

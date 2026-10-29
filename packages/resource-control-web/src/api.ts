@@ -7,6 +7,7 @@ import type {
   ResourceOperationReceipt,
   SkillDescriptor,
   SkillRootStatus,
+  SkillScanReport,
   TrustState,
 } from '@agnes/protocol'
 import { appServerErrorMessage } from '@agnes/web-ui'
@@ -109,6 +110,7 @@ export class ResourceAdminApi {
     items: SkillDescriptor[]
     nextCursor?: string
     skillRoots?: SkillRootStatus[]
+    skillScanReport?: SkillScanReport
   }> {
     return this.#post('skills/list', {
       profile: this.#context.profile,

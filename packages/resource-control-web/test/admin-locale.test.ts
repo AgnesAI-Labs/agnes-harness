@@ -19,3 +19,10 @@ it('keeps resource catalogs paired and every translated value non-empty', () => 
   expect(resourceAdminLocaleCatalog.en['shell.confirm.kicker']).toBe('Confirmation required')
   expect(resourceAdminLocaleCatalog['zh-CN']['shell.confirm.kicker']).toBe('需要确认')
 })
+
+it('discloses the existing enablement behavior in both scan confirmations', () => {
+  expect(resourceAdminLocaleCatalog.en['action.refresh-skills']).toContain(
+    'Newly discovered skills will be enabled.',
+  )
+  expect(resourceAdminLocaleCatalog['zh-CN']['action.refresh-skills']).toContain('新发现的技能会启用。')
+})

@@ -1,4 +1,4 @@
-import type { SkillDescriptor, SkillRootStatus } from '@agnes/protocol'
+import type { SkillDescriptor, SkillRootStatus, SkillScanObservation } from '@agnes/protocol'
 import {
   bootstrapWorkerResources,
   type WorkerResourceBootstrapInput,
@@ -12,8 +12,11 @@ async function buildWorkspaceSkillScan(
   workspaceRoot: string,
   skillResourceIds?: readonly string[],
 ): Promise<WorkerResourceState> {
+  // Full refresh observes disk; targeted control observations retain their existing reuse policy.
+  const { reuseSkillsAt: _reuseSkillsAt, ...freshInput } = workerResourcesInput
+  const scanInput = skillResourceIds === undefined ? freshInput : workerResourcesInput
   const temp = await bootstrapWorkerResources({
-    ...workerResourcesInput,
+    ...scanInput,
     cwd: workspaceRoot,
     mcpRows: true,
     ...(skillResourceIds ? { skillResourceIds } : {}),
@@ -39,6 +42,7 @@ export async function scanWorkspaceSkills(
   failedRoots: readonly string[]
   skippedResourceIds: readonly string[]
   roots: readonly SkillRootStatus[]
+  skillScanObservation?: SkillScanObservation
 }> {
   const temp = await buildWorkspaceSkillScan(workerResourcesInput, params.workspaceRoot, params.resourceIds)
   try {
@@ -55,6 +59,11 @@ export async function scanWorkspaceSkills(
         ? temp.discovery.skippedResourceIds.filter((id) => id.split('/')[2] === rootKey)
         : temp.discovery.skippedResourceIds,
       roots: temp.discovery.roots,
+      ...(params.resourceIds === undefined &&
+      (!rootKey || rootKey === 'user-agnes') &&
+      temp.discovery.skillScanObservation
+        ? { skillScanObservation: temp.discovery.skillScanObservation }
+        : {}),
     }
   } finally {
     await temp.runtime.mcp.close().catch(() => undefined)

@@ -20,6 +20,38 @@ afterEach(() => {
 
 const REVISION = 'f'.repeat(64)
 
+it('passes only validated path-free observations from an actual worker scan', async () => {
+  const { store, capturedAdapters } = fakeStoreWith()
+  const observation = {
+    configurationRevision: 'a'.repeat(64),
+    complete: true,
+    foundCount: 0,
+    skippedCount: 0,
+    unreadableDirectoryCount: 0,
+    truncated: false,
+    directories: [],
+  }
+  let scan: unknown = observation
+  const link = {
+    hello: Promise.resolve({}),
+    alive: true,
+    close() {},
+    command: async () => ({ ...fakeSkillScanReply({}), skillScanObservation: scan }),
+  }
+  installResourceServiceAdapters({
+    store,
+    pool: { acquire: vi.fn(), acquireSharedWorker: async () => link } as unknown as FakePool,
+    profile: { name: 'local-dev', hash: REVISION },
+    workspaceRoot: '/workspace',
+    refreshPackageSkills: async () => undefined,
+  })
+  const refresh = () =>
+    capturedAdapters().skills.refresh({ profile: 'local-dev', signal: new AbortController().signal })
+  expect(await refresh()).toMatchObject({ skillScanObservation: observation })
+  scan = { ...observation, path: '/private/secret' }
+  await expect(refresh()).rejects.toThrow('invalid private skill scan reply')
+})
+
 function fakeMcpStatus(serverId: string, connectionState: 'ready' | 'connecting' | 'unavailable' = 'ready') {
   return {
     serverId,

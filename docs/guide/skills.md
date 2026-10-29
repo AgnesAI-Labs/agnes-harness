@@ -80,7 +80,11 @@ Full-access tool requests also automatically allow Skill import/install, capabil
 
 Open **Plugins → Skills** for the skill list; **Plugins → To review** contains **Drafts** and **Feedback**. New skill opens a menu to ask the agent to draft a skill or learn how to import existing folders. Plugin candidate proposals appear in To review → Drafts; instruction-only Helper drafts use the install confirmation above. Open a candidate review to inspect content changes and test evidence before approving publication or rejecting it. The pending count appears only when a review needs attention.
 
-Search My skills by name or description. The row switch and menu keep the existing enable, trust and removal confirmation flows. Where are skill folders? lists the sources reported by the daemon. Import help links to deployment instructions for other agents; it does not change the daemon's startup import setting. Refresh skills and Scan folders use the existing confirmed rescan operation.
+Search My skills by name or description. The row switch and menu keep the existing enable, trust and removal confirmation flows. Where are skill folders? lists the sources reported by the daemon. Import help links to deployment instructions for other agents; it does not change the daemon's startup import setting. Refresh skills keeps its confirmation.
+
+Expand **Skill folders**, add absolute paths, and choose **Save and scan**. Saving starts a scan automatically; newly discovered skills are enabled under the existing discovery rules. Each added folder shows its result and any access, location or metadata problem. Valid files are counted before same-name selection; the count does not mean new or enabled skills. Unreadable folders have unknown file counts, and incomplete scans show observed lower bounds.
+
+After correcting a folder or file, choose **Rescan**. **Copy diagnostics** copies identifiers, counts, time and safe error codes without folder paths, filenames or skill contents. Reports are temporary and clear when the daemon restarts. For access errors, check directory access for the application that starts the AGH background process, or use another readable folder; the error alone does not prove a macOS privacy restriction. A host that does not return scan details shows no invented counts.
 
 <a id="调整同名候选优先级"></a>
 

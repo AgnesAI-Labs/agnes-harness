@@ -20,6 +20,7 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'notice.read-only':
       'The host is in read-only recovery mode. You can review status, but cannot change resources.',
     'notice.load-more-failed': 'Could not read more resources. Try again.',
+    'notice.scan-finished': 'Folder scan finished. Review the folder results for warnings and counts.',
     'notice.submitted': 'Operation submitted. Waiting for the host to confirm…',
     'notice.succeeded':
       'The control plane has been updated. Idle sessions will use the new snapshot on their next request. Active turns switch after they finish; a successful refresh does not mean every session has switched.',
@@ -61,7 +62,7 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'action.remove-mcp-summary':
       'Remove MCP “{name}”\n{revision}\nThe host blocks removal while the definition is in use or has not been safely retired.',
     'action.refresh-skills':
-      'Refresh the Skill catalog\nThe host rescans controlled roots and keeps the last safe catalog until the new result passes validation.',
+      'Refresh the Skill catalog\nThe host scans configured folders and updates skills using the existing rules. Newly discovered skills will be enabled.',
     'action.edit-mcp': 'Edit {name}',
     'action.create-mcp': 'Add MCP service',
     'action.update-mcp-summary':
@@ -125,6 +126,7 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'confirmation.description': '{summary}\n\n确认后将提交到本地后台，并按当前版本和策略完成安全校验。',
     'notice.read-only': '后台处于只读恢复模式；可以查看状态，不能更改资源。',
     'notice.load-more-failed': '读取更多资源失败，可重试。',
+    'notice.scan-finished': '目录扫描已结束，请查看目录结果中的警告和数量。',
     'notice.submitted': '操作已提交，正在等待后台确认…',
     'notice.succeeded':
       '控制面已更新。空闲会话的下一次请求会使用新快照；正在进行的回合会等到本回合结束后再切换，刷新成功不等于所有会话已经切换。',
@@ -161,8 +163,7 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'action.reconnect-summary': '重连 MCP「{name}」\n{revision}\n失败会保留已生效的旧连接。',
     'action.remove-mcp': '移除',
     'action.remove-mcp-summary': '移除 MCP「{name}」\n{revision}\n后台会阻断仍被使用或尚未安全退役的定义。',
-    'action.refresh-skills':
-      '刷新技能目录\n后台将重新扫描受控根目录，并保留最近一次安全目录直到新结果通过校验。',
+    'action.refresh-skills': '刷新技能目录\n后台将扫描已配置目录并按现有规则更新技能；新发现的技能会启用。',
     'action.edit-mcp': '编辑 {name}',
     'action.create-mcp': '添加 MCP 服务',
     'action.update-mcp-summary': '更新 MCP「{name}」\n版本：{revision}\n更新后需要重新启用。',

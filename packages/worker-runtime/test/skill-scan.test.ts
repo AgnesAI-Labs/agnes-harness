@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { writeContextConfig } from '@agnes/base'
 import type { WorkerResourceBootstrapInput } from '@agnes/resource-control-worker'
 import { bootstrapWorkerResources, SkillScanCache, scanSkills } from '@agnes/resource-control-worker'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -85,6 +86,67 @@ async function deployment(): Promise<{
 }
 
 describe('scanWorkspaceSkills (worker side of resourceSkillScan)', () => {
+  it('observes current custom directories during refresh even when control reuse is offered', async () => {
+    const { root, agnesHomeDir, input, writeSnapshot } = await deployment()
+    const workspace = join(root, 'workspace')
+    const custom = join(root, 'custom')
+    await mkdir(custom)
+    writeContextConfig({ customSkillRoots: [custom] }, agnesHomeDir)
+    const revision = await writeSnapshot({ desired: [], trust: [] })
+    const skillScanCache = new SkillScanCache()
+    const previous = await bootstrapWorkerResources({
+      ...input,
+      cwd: workspace,
+      mcpRows: true,
+      skillScanCache,
+    })
+    await previous?.runtime.mcp.close()
+    await writeFile(join(custom, 'new.md'), '---\nname: new-skill\ndescription: Useful\n---\nprivate body')
+    const result = await scanWorkspaceSkills(
+      { ...input, skillScanCache, reuseSkillsAt: revision },
+      { workspaceRoot: workspace, snapshotRevision: revision },
+    )
+    expect(result.skillScanObservation).toMatchObject({ complete: true, foundCount: 1 })
+    expect(result.candidates).toHaveLength(1)
+    const resourceId = result.candidates[0]?.descriptor.resourceId
+    if (!resourceId) throw new Error('missing test Skill')
+    reads.length = 0
+    const targeted = await scanWorkspaceSkills(
+      { ...input, skillScanCache, reuseSkillsAt: revision },
+      { workspaceRoot: workspace, snapshotRevision: revision, resourceIds: [resourceId] },
+    )
+    expect(targeted).not.toHaveProperty('skillScanObservation')
+    expect(reads.filter((path) => path.endsWith('.md'))).toEqual([])
+  })
+
+  it('returns full custom directory observation only for root refreshes that include user-agnes', async () => {
+    const { root, agnesHomeDir, input, writeSnapshot } = await deployment()
+    const custom = join(root, 'custom')
+    await mkdir(custom)
+    await writeFile(join(custom, 'review.md'), '---\nname: review\ndescription: Useful\n---\nprivate body')
+    writeContextConfig({ customSkillRoots: [custom] }, agnesHomeDir)
+    const revision = await writeSnapshot({ desired: [], trust: [] })
+    const params = { workspaceRoot: join(root, 'workspace'), snapshotRevision: revision }
+    const full = await scanWorkspaceSkills(input, params)
+    expect(full.skillScanObservation).toMatchObject({ complete: true, foundCount: 1 })
+    expect(await scanWorkspaceSkills(input, { ...params, rootKey: 'user-agnes' })).toHaveProperty(
+      'skillScanObservation',
+    )
+    expect(await scanWorkspaceSkills(input, { ...params, rootKey: 'workspace-agnes' })).not.toHaveProperty(
+      'skillScanObservation',
+    )
+    const id = full.candidates[0]?.descriptor.resourceId
+    if (!id) throw new Error('missing test Skill')
+    expect(await scanWorkspaceSkills(input, { ...params, resourceIds: [id] })).not.toHaveProperty(
+      'skillScanObservation',
+    )
+    expect(await scanWorkspaceSkills(input, { ...params, resourceIds: [] })).not.toHaveProperty(
+      'skillScanObservation',
+    )
+    expect(JSON.stringify(full.skillScanObservation)).not.toMatch(/private body|review\.md/)
+    expect(JSON.stringify(full.skillScanObservation)).not.toContain(root)
+  })
+
   it('discovers a workspace-agnes Skill scoped to the given workspace root, matching the current snapshot revision', async () => {
     const { input, writeSnapshot, addWorkspaceSkill } = await deployment()
     const workspace = await mkdtemp(join(tmpdir(), 'agnes-workspace-'))

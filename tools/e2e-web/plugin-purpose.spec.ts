@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { expect, test } from './fixtures.js'
 import { install } from './sdk.js'
 import { chooseWorkspace, pluginTab, preferences, section, settings } from './ui.js'
@@ -72,6 +74,60 @@ for (const locale of ['en', 'zh-CN'] as const) {
     await pluginTab(page, 'details').press('Enter')
     await pluginTab(page, 'config').click()
     await expect(page.getByTestId('plugin-config-field/name')).toHaveValue('Unsaved purpose draft')
+  })
+}
+
+for (const locale of ['en', 'zh-CN'] as const) {
+  test(`skill folders scan real files and retry safely (${locale})`, async ({ page, context, runtime }) => {
+    const team = join(runtime.workspace, 'team-skills')
+    const missing = join(runtime.workspace, 'missing-skills')
+    const valid = (name: string) =>
+      `---\nname: ${name}\ndescription: Offline scan fixture\n---\nPRIVATE_SKILL_BODY\n`
+    await mkdir(team)
+    await writeFile(join(team, 'valid.md'), valid('scan-readable'))
+    await writeFile(
+      join(team, 'invalid.md'),
+      '---\nname: scan-broken\ndescription: []\n---\nPRIVATE_SKILL_BODY\n',
+    )
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: runtime.url })
+    await preferences(page, locale)
+    await page.goto(runtime.url)
+    await chooseWorkspace(page, runtime, locale)
+    await settings(page, locale)
+    await section(page, 'skills')
+    const folders = page.getByTestId('skill-folders')
+    await page.getByTestId('skill-folders-toggle').click()
+    await folders.getByTestId('context-skill-roots').fill(`${team}\n${missing}`)
+    await folders.getByTestId('skill-folders-save').click()
+    const feedback = folders.getByTestId('skill-scan-feedback')
+    await expect(feedback).toContainText(
+      locale === 'en' ? 'Found 1 valid skill files; skipped 1.' : '发现 1 项有效技能文件，跳过 1 项。',
+    )
+    await expect(feedback).toContainText(locale === 'en' ? 'The folder does not exist' : '目录不存在')
+    await expect(feedback).toContainText(locale === 'en' ? 'invalid metadata' : '元数据格式无效')
+    await folders.getByTestId('skill-scan-copy').click()
+    const copied = await page.evaluate(() => navigator.clipboard.readText())
+    expect(JSON.parse(copied)).toMatchObject({
+      complete: false,
+      foundCount: 1,
+      skippedCount: 1,
+      unreadableDirectoryCount: 1,
+      directories: expect.arrayContaining([
+        expect.objectContaining({ issues: [{ code: 'directory-missing', stage: 'list', osCode: 'ENOENT' }] }),
+      ]),
+    })
+    for (const secret of [team, missing, 'valid.md', 'invalid.md', 'PRIVATE_SKILL_BODY'])
+      expect(copied).not.toContain(secret)
+    // The retry must read changed files, rather than reuse the preceding scan's cached observation.
+    await mkdir(missing)
+    await writeFile(join(team, 'invalid.md'), valid('scan-repaired'))
+    await writeFile(join(team, 'new.md'), valid('scan-new'))
+    await folders.getByTestId('skill-scan-retry').click()
+    await expect(feedback).toContainText(locale === 'en' ? 'Folder scan complete.' : '目录扫描完成。')
+    await expect(feedback).toContainText(
+      locale === 'en' ? 'Found 3 valid skill files; skipped 0.' : '发现 3 项有效技能文件，跳过 0 项。',
+    )
+    await expect(feedback).not.toContainText(locale === 'en' ? 'The folder does not exist' : '目录不存在')
   })
 }
 

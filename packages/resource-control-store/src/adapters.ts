@@ -7,6 +7,7 @@ import type {
   SafeError,
   SkillDescriptor,
   SkillRootStatus,
+  SkillScanObservation,
   TrustState,
 } from '@agnes/protocol'
 
@@ -18,6 +19,8 @@ export type SkillCatalogRefresh = Readonly<{
   /** Entries that looked like Skills but were skipped; their prior records are kept as stale. */
   skippedResourceIds?: readonly string[]
   roots?: readonly SkillRootStatus[]
+  /** Ephemeral scan diagnostics; deliberately excluded from journals and runtime snapshots. */
+  skillScanObservation?: SkillScanObservation
 }>
 export type SkillActualObservation = Readonly<{
   resourceId: string
