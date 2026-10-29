@@ -42,6 +42,8 @@ export type ConversationNode = Exclude<UINode, { kind: 'context' | 'context-sect
 
 function isConversationNode(node: UINode): node is ConversationNode {
   if (node.kind === 'context' || node.kind === 'context-sections') return false
+  // A side call (voice, /btw) is outside the conversation: the usage views count its cost row.
+  if (node.kind === 'cost' && node.purpose === 'side-call') return false
   if (node.kind === 'assistant')
     return Boolean(
       node.streaming || node.text.trim() || node.thinking?.trim() || node.lostChars !== undefined,

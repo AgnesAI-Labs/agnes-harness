@@ -187,6 +187,27 @@ describe('W3b projected message DOM', () => {
     ])
   })
 
+  it('keeps side-call cost rows out of the transcript, even with no turn', async () => {
+    // A failed voice call on a new chat writes only its side-call cost row; the session usage counts it.
+    const voice = {
+      kind: 'cost',
+      seq: 1,
+      source: 'gateway',
+      purpose: 'side-call',
+      interrupted: true,
+    } as const
+    const store = createConversationProjectionStore({
+      sessionId: 'session',
+      nodes: [
+        { ...voice, id: 'voice-1', tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
+        { ...voice, id: 'voice-2', seq: 2 },
+        { kind: 'cost', id: 'compaction', seq: 3, source: 'estimated', purpose: 'compaction' },
+      ],
+    })
+    await mount(store)
+    expect(ids()).toEqual(['compaction'])
+  })
+
   it('renders ordinary message content once, in the node article', async () => {
     const store = createConversationProjectionStore({
       sessionId: 'session',

@@ -159,9 +159,9 @@ it('uses credit-only zero and interrupted values without inventing dollar or tok
   expect(rows()).not.toContainEqual(['美元费用', expect.anything()])
 })
 
-it('names a side model call in the record range, in both languages', async () => {
-  await mount({ ...call, purpose: 'side-call' })
-  expect(rows()[0]).toEqual(['记录范围', '旁路模型调用'])
+it('names a side model call in the record range, in both languages', () => {
+  // A side-call row is never a transcript row; the turn usage details show it with this range.
+  expect(costDetails({ ...call, purpose: 'side-call' }, zhT)[0]).toEqual(['记录范围', '旁路模型调用'])
   expect(costDetails({ ...call, purpose: 'side-call' }, fallbackT)[0]).toEqual([
     'Record range',
     'Side model call',
