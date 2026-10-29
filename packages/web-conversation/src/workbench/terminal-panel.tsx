@@ -19,6 +19,9 @@ import { TerminalTabs } from './terminal-tabs.js'
 import { TerminalView } from './terminal-view.js'
 import { visiblePoll } from './visible-poll.js'
 
+/** The jobs registry names a child agent's job `child:<childKey>`; the composer asks for it by child key. */
+const CHILD_JOB_PREFIX = 'child:'
+
 const closedSessions = new Set<string>()
 function wasClosed(id: string) {
   try {
@@ -91,9 +94,14 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
   const [dismissed, setDismissed] = useState('')
   const scope = useRef(session?.id),
     restored = useRef(false)
+  // A tab the composer asked for, held until a jobs read names it, and the selection already applied.
+  const requestedJob = useRef(''),
+    handledSelection = useRef<unknown>()
   scope.current = session?.id
   useEffect(() => {
     restored.current = false
+    requestedJob.current = ''
+    handledSelection.current = undefined
     try {
       removed.current = new Set(
         JSON.parse(localStorage.getItem(`${storageKey(sessionId ?? '')}.removed`) ?? '[]'),
@@ -111,6 +119,16 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
     setError('')
     setNames(sessionId ? terminalNames(sessionId) : {})
   }, [sessionId])
+  // A child agent named in the composer tray is a job of this session, so its tab opens here.
+  useEffect(() => {
+    const childId = (context.selection as { childId?: unknown } | null | undefined)?.childId
+    if (typeof childId !== 'string' || !childId || handledSelection.current === context.selection) return
+    handledSelection.current = context.selection
+    const wanted = `${CHILD_JOB_PREFIX}${childId}`
+    requestedJob.current = wanted
+    setIds((values) => (values.includes(wanted) ? values : [...values, wanted]))
+    setActive(wanted)
+  }, [context.selection])
   // biome-ignore lint/correctness/useExhaustiveDependencies: a completed control receipt restarts polling immediately.
   useEffect(() => {
     if (!session) return
@@ -177,6 +195,14 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
               .filter((row) => !known.includes(row.id) && !removed.current.has(row.id))
               .map((row) => row.id),
           ])
+        }
+        // A tab asked for from the composer may arrive with a later jobs read.
+        const wanted = requestedJob.current
+        if (wanted && value.jobs.some((row) => row.id === wanted)) {
+          requestedJob.current = ''
+          removed.current.delete(wanted)
+          setIds((known) => (known.includes(wanted) ? known : [...known, wanted]))
+          setActive(wanted)
         }
       } catch (cause) {
         if (alive)

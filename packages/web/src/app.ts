@@ -997,6 +997,16 @@ const openSettingsTerminal = (event: Event) => {
   if (workbenchNavigation.open('terminal')) event.preventDefault()
 }
 const stopSettingsTerminal = onSurfaceEvent('agnes:settings-terminal', openSettingsTerminal)
+// A child agent's name in the composer tray asks for its tab in the session's terminal panel. The
+// child is a job of this session, so the request never becomes a session URL of its own.
+const openTerminalJob = (event: Event) => {
+  const childId =
+    event instanceof CustomEvent ? (event.detail as { childId?: unknown } | null)?.childId : undefined
+  if (typeof childId !== 'string' || !childId) return
+  settings.close()
+  workbenchNavigation.open('terminal', { childId })
+}
+const stopTerminalJob = onSurfaceEvent('agnes:open-terminal-job', openTerminalJob)
 const statusCheck = mountStatusCheck({
   details: () =>
     run(async () => {
@@ -2301,6 +2311,7 @@ onPageHide(() => {
   intentionalClose = true
   stopConnectionEvents()
   stopSettingsTerminal()
+  stopTerminalJob()
   stopSurfaceSettings()
   stopSettingsRouting()
   statusCheck.dispose()

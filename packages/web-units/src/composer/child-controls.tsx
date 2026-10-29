@@ -35,6 +35,14 @@ function childName(child: SessionControlledChild, t: ComposerDependencies['trans
 }
 
 /**
+ * A child agent is a job of this session, not a session of its own: its name asks the terminal
+ * panel for that job's tab instead of navigating to a session URL nobody can resolve.
+ */
+function openChildJob(target: EventTarget, childId: string): void {
+  target.dispatchEvent(new CustomEvent('agnes:open-terminal-job', { bubbles: true, detail: { childId } }))
+}
+
+/**
  * The children a session started, above the composer: one row per workflow or subagent session,
  * nested under its parent. Header, state and follow-up share the tray with the queue and pause
  * strips, so the block reads as the composer card's top edge rather than a separate card.
@@ -123,9 +131,15 @@ export function ChildControlRow({
     <>
       <div className="composer-child-head">
         <StatusDot tone={mark.dot} running={WORKING.has(child.status)} />
-        <a className="composer-child-name" href={'?session=' + encodeURIComponent(child.id)} title={child.id}>
+        <button
+          type="button"
+          className="composer-child-name"
+          data-testid="child-open"
+          title={child.id}
+          onClick={(event) => openChildJob(event.currentTarget, child.id)}
+        >
           {childName(child, t)}
-        </a>
+        </button>
         <span role="status" className="composer-child-state" data-tone={mark.tag}>
           {t('composer.child.' + child.status)}
         </span>

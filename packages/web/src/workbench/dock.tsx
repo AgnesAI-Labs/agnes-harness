@@ -264,10 +264,12 @@ export function Dock({ context }: { context: UiExtensionContext }) {
     return () => sheet.removeEventListener('change', reconcile)
   }, [surfaces])
   useEffect(() => {
-    const openPanel = (id: string) => {
+    const openPanel = (id: string, selection?: unknown) => {
       const panel = getPanel(id)
       if (!panel || (panel.visibility === 'contextual' && !panel.when?.(context))) return false
       rememberFocus(panel.edge)
+      // A link may name the tab to show, such as a child agent's job in the terminal panel.
+      setSelection(selection)
       setSelected((value) => ({ ...value, [panel.edge]: id }))
       setLayout((value) => ({
         ...value,

@@ -259,15 +259,21 @@
     min-width: 0;
     padding: var(--s4) var(--s8) var(--s4) var(--s12);
   }
+  /* The name is a button that opens the child's terminal tab, so it carries no control chrome. */
   .composer-child-name {
     flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
+    padding: 0;
+    border: 0;
+    background: none;
     color: var(--agnes-text-primary);
+    font: inherit;
     font-weight: var(--font-weight-medium);
-    text-decoration: none;
+    text-align: start;
     text-overflow: ellipsis;
     white-space: nowrap;
+    cursor: pointer;
   }
   .composer-child-name:is(:hover, :focus-visible) {
     text-decoration: underline;
