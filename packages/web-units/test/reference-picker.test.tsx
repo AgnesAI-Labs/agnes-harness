@@ -52,7 +52,8 @@ it('navigates a combobox, selects locators without submitting', async () => {
       ),
     )
   await act(async () => render(false))
-  const input = textarea.current!
+  const input = textarea.current
+  if (!input) throw new Error('Missing textarea')
   const query = async (value: string) => {
     await act(async () => {
       input.value = value
@@ -73,7 +74,30 @@ it('navigates a combobox, selects locators without submitting', async () => {
   await query('@')
   expect(input.getAttribute('role')).toBe('combobox')
   expect(input.getAttribute('aria-expanded')).toBe('true')
-  expect(document.getElementById(input.getAttribute('aria-controls')!)?.getAttribute('role')).toBe('listbox')
+  expect(document.getElementById(input.getAttribute('aria-controls') ?? '')?.getAttribute('role')).toBe(
+    'listbox',
+  )
+  expect(host.querySelector('.reference-popup')?.getAttribute('data-layout')).toBe('overview')
+  expect(host.querySelectorAll('[data-testid="reference-option"]')).toHaveLength(2)
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('.reference-layout-switch button:nth-child(2)')?.click()
+  })
+  expect(host.querySelector('.reference-popup')?.getAttribute('data-layout')).toBe('tabs')
+  expect(host.querySelectorAll('[data-testid="reference-option"]')).toHaveLength(1)
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('.reference-source-tabs button:nth-child(2)')?.click()
+  })
+  expect(host.querySelector('[data-testid="reference-option"]')?.textContent).toContain('Previous')
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('.reference-layout-switch button:nth-child(3)')?.click()
+  })
+  expect(host.querySelectorAll('.reference-source-choice')).toHaveLength(3)
+  await key('ArrowDown')
+  await key('Enter')
+  expect(host.querySelector('[data-testid="reference-option"]')?.textContent).toContain('Previous')
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('.reference-layout-switch button:first-child')?.click()
+  })
   await key('ArrowDown')
   expect(host.querySelector('[aria-selected="true"]')?.textContent).toContain('Previous')
   expect((await key('Enter')).defaultPrevented).toBe(true)
@@ -125,6 +149,59 @@ it('bounds and deduplicates draft references and refuses stale search results af
     { source: 'file', id: 'same', label: 'Same' },
   ])
   expect(adapter.getSnapshot()).toHaveLength(1)
+})
+
+it('previews bounded groups and expands the current results without another search', async () => {
+  const search = vi.fn(async () => ({
+    items: [
+      ...['a', 'b', 'c', 'd'].map((id) => ({ source: 'file', id, label: id })),
+      ...['one', 'two', 'three'].map((id) => ({ source: 'session', id, label: id })),
+      { source: 'kb', id: 'article', label: 'Article' },
+    ],
+    truncated: false,
+  }))
+  const textarea = createRef<HTMLTextAreaElement>()
+  await act(async () =>
+    root.render(
+      createElement(
+        'div',
+        null,
+        createElement(ReferencePicker, {
+          textarea,
+          edit: vi.fn(),
+          adapter: createComposerReferences(search),
+          t: (key: string) => composerLocaleCatalog.en[key] ?? key,
+          disabled: false,
+        }),
+        createElement(SettingsTextArea, { ref: textarea }),
+      ),
+    ),
+  )
+  const input = textarea.current
+  if (!input) throw new Error('Missing textarea')
+  await act(async () => {
+    input.value = '@'
+    input.setSelectionRange(1, 1)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await vi.advanceTimersByTimeAsync(120)
+  })
+  expect(host.querySelectorAll('[data-testid="reference-option"]')).toHaveLength(6)
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('.reference-group-heading button')?.click()
+  })
+  expect(host.querySelectorAll('[data-testid="reference-option"]')).toHaveLength(7)
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('.reference-layout-switch button:nth-child(2)')?.click()
+  })
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('.reference-source-tabs button:nth-child(3)')?.click()
+  })
+  expect(host.querySelectorAll('[data-testid="reference-option"]')).toHaveLength(5)
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('.reference-group-heading button')?.click()
+  })
+  expect(host.querySelectorAll('[data-testid="reference-option"]')).toHaveLength(8)
+  expect(search).toHaveBeenCalledTimes(1)
 })
 
 it('starts the latest search without waiting for an older request to settle', async () => {

@@ -6,6 +6,7 @@ import {
 import { Button, fileMentionIcon, Icon } from '@agnes/web-ui'
 import {
   type RefObject,
+  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
@@ -140,6 +141,13 @@ export function withFolders(result: ReferenceSearchResult, query: string): Refer
 }
 
 const FILE_SOURCES = new Set(['file', 'folder'])
+type ReferenceLayout = 'overview' | 'tabs' | 'sources'
+type ReferenceSourceView = 'file' | 'session' | 'all'
+
+const sourceItems = (items: readonly ReferenceCandidate[], source: ReferenceSourceView) =>
+  source === 'all'
+    ? items
+    : items.filter((item) => (source === 'file' ? FILE_SOURCES.has(item.source) : item.source === 'session'))
 
 /** One composer mount point; keyboard capture keeps Enter from submitting while choosing. */
 export function ReferencePicker({
@@ -182,9 +190,62 @@ export function ReferencePicker({
   const [opened, setOpened] = useState(false)
   const [active, setActive] = useState(0)
   const [status, setStatus] = useState<'loading' | 'ready' | 'failed' | 'limit'>('ready')
-  const state = useRef({ page, opened, active })
-  state.current = { page, opened, active }
+  const [queryText, setQueryText] = useState('')
+  const [layout, setLayout] = useState<ReferenceLayout>('overview')
+  const [sourceView, setSourceView] = useState<ReferenceSourceView>('file')
+  const [sourceChosen, setSourceChosen] = useState(false)
+  const [expanded, setExpanded] = useState<string[]>([])
+  const emptyBrowse = queryText === ''
+  const fileItems = page.items.filter((item) => FILE_SOURCES.has(item.source))
+  const sessionItems = page.items.filter((item) => item.source === 'session')
+  const otherItems = page.items.filter((item) => !FILE_SOURCES.has(item.source) && item.source !== 'session')
+  const focusedItems = sourceItems(page.items, sourceView)
+  const groups = !emptyBrowse
+    ? [{ key: 'all', items: page.items, total: page.items.length }]
+    : layout === 'overview'
+      ? [
+          {
+            key: 'file',
+            items: expanded.includes('file') ? fileItems : fileItems.slice(0, 3),
+            total: fileItems.length,
+          },
+          {
+            key: 'session',
+            items: expanded.includes('session') ? sessionItems : sessionItems.slice(0, 2),
+            total: sessionItems.length,
+          },
+          {
+            key: 'other',
+            items: expanded.includes('other') ? otherItems : otherItems.slice(0, 2),
+            total: otherItems.length,
+          },
+        ].filter((group) => group.total > 0)
+      : [
+          {
+            key: sourceView,
+            items: expanded.includes(`${layout}:${sourceView}`) ? focusedItems : focusedItems.slice(0, 5),
+            total: focusedItems.length,
+          },
+        ]
+  const visibleItems =
+    layout === 'sources' && emptyBrowse && !sourceChosen ? [] : groups.flatMap((group) => group.items)
+  const choosingSource = emptyBrowse && layout === 'sources' && !sourceChosen
+  const state = useRef({ opened, active, visibleItems, choosingSource })
+  state.current = { opened, active, visibleItems, choosingSource }
   const choose = useRef<(candidate: ReferenceCandidate, selectDirectory?: boolean) => void>(() => {})
+
+  const changeLayout = (next: ReferenceLayout) => {
+    setLayout(next)
+    setSourceView('file')
+    setSourceChosen(false)
+    setExpanded([])
+    setActive(0)
+  }
+  const changeSource = useCallback((next: ReferenceSourceView) => {
+    setSourceView(next)
+    setSourceChosen(true)
+    setActive(0)
+  }, [])
 
   useLayoutEffect(() => {
     void selected
@@ -214,6 +275,7 @@ export function ReferencePicker({
         return
       }
       const request = ++epoch
+      setQueryText(token.query)
       setOpened(true)
       setActive(0)
       setStatus('loading')
@@ -270,7 +332,7 @@ export function ReferencePicker({
           return
         }
       }
-      const { page: current, active: index } = state.current
+      const { visibleItems: current, active: index, choosingSource: sourceMenu } = state.current
       if (event.key === 'Escape') {
         event.preventDefault()
         event.stopPropagation()
@@ -280,20 +342,24 @@ export function ReferencePicker({
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault()
         event.stopPropagation()
-        setActive(
-          current.items.length
-            ? (index + (event.key === 'ArrowDown' ? 1 : current.items.length - 1)) % current.items.length
-            : 0,
-        )
+        const length = sourceMenu ? 3 : current.length
+        setActive(length ? (index + (event.key === 'ArrowDown' ? 1 : length - 1)) % length : 0)
       }
       if (event.key === 'Enter' || event.key === 'Tab') {
-        if (event.key === 'Tab' && !current.items[index]) {
+        if (event.key === 'Tab' && event.shiftKey) return
+        if (sourceMenu) {
+          event.preventDefault()
+          event.stopPropagation()
+          changeSource((['file', 'session', 'all'] as const)[index] ?? 'file')
+          return
+        }
+        if (event.key === 'Tab' && !current[index]) {
           close()
           return
         }
         event.preventDefault()
         event.stopPropagation()
-        const item = current.items[index]
+        const item = current[index]
         if (item) choose.current(item, event.key === 'Tab' && item.source === 'folder')
       }
     }
@@ -331,7 +397,7 @@ export function ReferencePicker({
       input.removeEventListener('blur', blur)
       input.removeEventListener('keyup', caret)
     }
-  }, [adapter, textarea])
+  }, [adapter, textarea, changeSource])
 
   useLayoutEffect(() => {
     const input = textarea.current
@@ -347,11 +413,11 @@ export function ReferencePicker({
     }
     if (opened && !disabled) input.setAttribute('aria-controls', listId)
     else input.removeAttribute('aria-controls')
-    if (opened && !disabled && page.items[active]) {
+    if (opened && !disabled && (visibleItems[active] || choosingSource)) {
       input.setAttribute('aria-activedescendant', `${listId}-${active}`)
       document.getElementById(`${listId}-${active}`)?.scrollIntoView?.({ block: 'nearest' })
     } else input.removeAttribute('aria-activedescendant')
-  }, [adapter, textarea, opened, disabled, active, page, listId])
+  }, [adapter, textarea, opened, disabled, active, visibleItems, choosingSource, listId])
   if (!adapter) return null
   return (
     <section
@@ -380,8 +446,45 @@ export function ReferencePicker({
         </ul>
       )}
       {opened && !disabled && (
-        <div className="reference-popup">
-          <p className="reference-help">{t('composer.reference.help')}</p>
+        <div className="reference-popup" data-layout={emptyBrowse ? layout : 'search'}>
+          {emptyBrowse ? (
+            <div className="reference-popup-header">
+              <div>
+                <strong>{t('composer.reference.title')}</strong>
+                <p>{t('composer.reference.subtitle')}</p>
+              </div>
+              <fieldset className="reference-layout-switch" aria-label={t('composer.reference.layout')}>
+                {(['overview', 'tabs', 'sources'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    aria-pressed={layout === mode}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => changeLayout(mode)}
+                  >
+                    {t(`composer.reference.layout.${mode}`)}
+                  </button>
+                ))}
+              </fieldset>
+            </div>
+          ) : (
+            <p className="reference-help">{t('composer.reference.help')}</p>
+          )}
+          {emptyBrowse && layout === 'tabs' && (
+            <fieldset className="reference-source-tabs" aria-label={t('composer.reference.source')}>
+              {(['file', 'session', 'all'] as const).map((source) => (
+                <button
+                  key={source}
+                  type="button"
+                  aria-pressed={sourceView === source}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => changeSource(source)}
+                >
+                  {t(`composer.reference.source.${source}`)}
+                </button>
+              ))}
+            </fieldset>
+          )}
           <ul
             id={listId}
             // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: keyboard focus is owned by the textarea.
@@ -389,34 +492,99 @@ export function ReferencePicker({
             aria-label={t('composer.reference.label')}
             data-testid="reference-options"
           >
-            {page.items.map((item, index) => (
-              <li
-                tabIndex={-1}
-                id={`${listId}-${index}`}
-                // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: options use the focused textarea for keyboard navigation.
-                role="option"
-                aria-selected={active === index}
-                data-testid="reference-option"
-                key={`${item.source}:${item.id}`}
-                onMouseDown={(event) => {
-                  if (event.button !== 0) return
-                  event.preventDefault()
-                  choose.current(item)
-                }}
-              >
-                {FILE_SOURCES.has(item.source) && chooseFile ? (
-                  <span className="reference-file">
-                    <Icon name={fileMentionIcon(item.label, item.source === 'folder')} size={16} />
-                    {item.label}
-                  </span>
-                ) : (
-                  <span>
-                    @{item.source} {item.label}
-                  </span>
-                )}
-                {item.description && <small>{item.description}</small>}
-              </li>
-            ))}
+            {choosingSource
+              ? (['file', 'session', 'all'] as const).map((source, index) => (
+                  <li
+                    key={source}
+                    id={`${listId}-${index}`}
+                    tabIndex={-1}
+                    // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: options use the focused textarea for keyboard navigation.
+                    role="option"
+                    aria-selected={active === index}
+                    className={`reference-source-choice${source === 'all' ? ' reference-source-all' : ''}`}
+                    onMouseDown={(event) => {
+                      if (event.button !== 0) return
+                      event.preventDefault()
+                      changeSource(source)
+                    }}
+                  >
+                    <span className="reference-source-icon" aria-hidden="true">
+                      {source === 'session' ? '◷' : source === 'file' ? '▣' : '⌕'}
+                    </span>
+                    <span>
+                      <strong>{t(`composer.reference.choice.${source}`)}</strong>
+                      <small>{t(`composer.reference.choice.${source}.description`)}</small>
+                    </span>
+                    <span className="reference-source-arrow" aria-hidden="true">
+                      →
+                    </span>
+                  </li>
+                ))
+              : groups.map((group) => (
+                  <li key={group.key} className="reference-group" role="presentation">
+                    {emptyBrowse && (
+                      <div className="reference-group-heading">
+                        <span>{t(`composer.reference.group.${group.key}`)}</span>
+                        {group.total > group.items.length && (
+                          <button
+                            type="button"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => {
+                              setExpanded((current) => [
+                                ...current,
+                                layout === 'overview' ? group.key : `${layout}:${group.key}`,
+                              ])
+                              setActive(0)
+                            }}
+                          >
+                            {t('composer.reference.viewAll')} →
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    <ul role="presentation">
+                      {group.items.map((item) => {
+                        const index = visibleItems.indexOf(item)
+                        return (
+                          <li
+                            tabIndex={-1}
+                            id={`${listId}-${index}`}
+                            // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: options use the focused textarea for keyboard navigation.
+                            role="option"
+                            aria-selected={active === index}
+                            data-testid="reference-option"
+                            key={`${item.source}:${item.id}`}
+                            onMouseDown={(event) => {
+                              if (event.button !== 0) return
+                              event.preventDefault()
+                              choose.current(item)
+                            }}
+                          >
+                            <span className="reference-option-main">
+                              {FILE_SOURCES.has(item.source) && chooseFile ? (
+                                <span className="reference-file">
+                                  <Icon
+                                    name={fileMentionIcon(item.label, item.source === 'folder')}
+                                    size={16}
+                                  />
+                                  {item.label}
+                                </span>
+                              ) : (
+                                <span>
+                                  @{item.source} {item.label}
+                                </span>
+                              )}
+                              {item.source === 'folder' && (
+                                <span className="reference-enter">{t('composer.reference.enter')}</span>
+                              )}
+                            </span>
+                            {item.description && <small>{item.description}</small>}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </li>
+                ))}
           </ul>
           <p role="status" data-testid="reference-status">
             {status === 'loading'
@@ -425,11 +593,15 @@ export function ReferencePicker({
                 ? t('composer.reference.failed')
                 : status === 'limit'
                   ? t('composer.reference.limit')
-                  : page.truncated
-                    ? t('composer.reference.truncated')
-                    : !page.items.length
-                      ? t('composer.reference.empty')
-                      : t('composer.reference.keyboard')}
+                  : choosingSource
+                    ? t('composer.reference.chooseSource')
+                    : emptyBrowse && layout !== 'overview' && !visibleItems.length
+                      ? t('composer.reference.emptySource')
+                      : page.truncated
+                        ? t('composer.reference.truncated')
+                        : !visibleItems.length
+                          ? t('composer.reference.empty')
+                          : t('composer.reference.keyboard')}
           </p>
         </div>
       )}
