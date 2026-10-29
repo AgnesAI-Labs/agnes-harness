@@ -153,6 +153,10 @@ describe('PackageManager lifecycle', () => {
     writeLock(profileDir, lock)
     const residue = await errorFrom(() => manager.remove(profileDir, 'acme/pkg-a'))
     expect(isPackageError(residue, 'E_EXT_LOAD')).toBe(true)
+    expect(residue).toMatchObject({
+      code: 'E_PACKAGE_STATE',
+      detail: { reason: 'residue', residue: ['hook:tool_result'] },
+    })
     expect(existsSync(packageDir(dataDir, 'local-dev', 'acme/pkg-a'))).toBe(true)
     residueCheck.mockResolvedValue([])
     await manager.remove(profileDir, 'acme/pkg-a')

@@ -155,6 +155,27 @@ function writeState(s: RuntimeSnapshotStore, state: RuntimeState): void {
   writeFileSync(tmp, serialized, { mode: 0o600, flush: true })
   renameWriteThroughSync(resolve(tmp), resolve(file))
 }
+
+/** Roll forward source metadata only after the package journal has published the reviewed entry.
+ * The journal retains both entries until this succeeds, so replay accepts exactly old or next.
+ * Snapshot identity, archive bytes and pins are unchanged; binding checks remain strict. */
+export function rebindRuntimeSnapshotSource(
+  s: RuntimeSnapshotStore,
+  id: string,
+  old: LockEntry | null,
+  next: LockEntry | null,
+): void {
+  if (!old?.contributions || !next?.contributions || canonical(old.source) === canonical(next.source)) return
+  const before = recordFromEntry(id, old),
+    after = recordFromEntry(id, next)
+  if (before.snapshotId !== after.snapshotId) return
+  const { state } = readVerifiedState(s)
+  const existing = state.snapshots[before.snapshotId]
+  if (!existing || canonical(existing) === canonical(after)) return
+  if (canonical(existing) !== canonical(before)) integrityFailure('snapshot-installed-binding')
+  state.snapshots[after.snapshotId] = after
+  writeState(s, state)
+}
 function* verifyRecordSteps(
   s: RuntimeSnapshotStore,
   record: SnapshotRecord,
@@ -531,7 +552,16 @@ export function pinRuntimeSnapshotsStore(
       }
     const existing = state.snapshots[selected.record.snapshotId]
     if (existing) {
-      if (canonical(existing) !== canonical(selected.record)) integrityFailure('snapshot-id-collision')
+      if (canonical(existing) !== canonical(selected.record)) {
+        // A verified previous entry may name the same reviewed bytes at their old source. The
+        // archive now binds the current source after relocation; never accept arbitrary sources.
+        const current = own(lock.packages, request.packageId)
+        if (request.selector.kind !== 'previous' || current?.integrity !== existing.integrity)
+          integrityFailure('snapshot-id-collision')
+        assertCurrentBinding(existing, current)
+        if (canonical(existing) !== canonical({ ...selected.record, source: existing.source }))
+          integrityFailure('snapshot-id-collision')
+      }
       state.pins[pin.pinId] = pin
       writeState(s, state)
       return pinView(s, state, pin)

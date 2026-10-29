@@ -25,7 +25,7 @@ export type PackageCommandIO = {
   write(text: string): void
   confirm(
     preview: Pick<PackagePreview, 'id' | 'version' | 'integrity'>,
-    action?: 'install' | 'trust' | 'enable',
+    action?: 'install' | 'trust' | 'enable' | 'update source and enable',
   ): Promise<boolean>
   confirmEnable?(installed: PackageInstalledDescriptor, action?: 'trust' | 'enable'): Promise<boolean>
 }
@@ -34,7 +34,7 @@ async function confirmPreview(
   p: ParsedArgs,
   io: PackageCommandIO,
   preview: Pick<PackagePreview, 'id' | 'version' | 'integrity'>,
-  action: 'install' | 'trust' | 'enable' = 'install',
+  action: 'install' | 'trust' | 'enable' | 'update source and enable' = 'install',
 ): Promise<boolean> {
   return p.yes === true || io.confirm(preview, action)
 }
@@ -95,18 +95,32 @@ async function updateInstalled(
   if (current.actual === 'restart-required')
     throw new Error('E_GENERATION_RESTART_REQUIRED: this plugin requires a restart')
   const same = current.integrity === preview.integrity
-  if (same && current.trusted && current.actual === 'running') {
+  const sourceChanged =
+    current.source.type !== preview.source.type ||
+    current.source.ref !== preview.source.ref ||
+    current.provenance?.resolvedLocation !== preview.provenance.resolvedLocation
+  const sameGrant = same && current.capabilityHash === preview.capabilityHash && current.trusted
+  if (sameGrant && !sourceChanged && current.actual === 'running') {
     io.write(`${current.id}@${current.version} is already installed, trusted and running; nothing to do.\n`)
     return
   }
   io.write(
-    same
-      ? `${formatPreview(preview, { activate: true, repair: true })}\n`
-      : `${formatPreview(preview, { activate: true, installedVersion: current.version })}\n`,
+    sameGrant && sourceChanged
+      ? `Source change: ${current.provenance?.resolvedLocation ?? current.source.ref} → ${preview.provenance.resolvedLocation ?? preview.source.ref}\nintegrity ${preview.integrity}\ncapabilityHash ${preview.capabilityHash}\nblockers ${preview.blockers.map((b) => b.references.join(', ')).join('; ') || 'none'}\nContent and capabilities unchanged; existing trust applies. Confirmation will update the source and enable this reviewed version.\n`
+      : same
+        ? `${formatPreview(preview, { activate: true, repair: true })}\n`
+        : `${formatPreview(preview, { activate: true, installedVersion: current.version })}\n`,
   )
   if (preview.blockers.length > 0)
     throw new UsageError('package preview has blockers; resolve the blockers above and inspect again')
-  if (!(await confirmPreview(p, io, preview))) {
+  if (
+    !(await confirmPreview(
+      p,
+      io,
+      preview,
+      sameGrant && sourceChanged ? 'update source and enable' : 'install',
+    ))
+  ) {
     io.write('Update cancelled.\n')
     return
   }

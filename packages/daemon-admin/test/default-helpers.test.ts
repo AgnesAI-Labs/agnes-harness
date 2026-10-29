@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import { rebuildDesiredFromInventory } from '@agnes/daemon-foundation/composite-desired'
@@ -637,6 +637,67 @@ it.each([1, 2, 3, 4])(
     expect(after.find((pkg) => pkg.id === '@agnes/interaction-ui')?.enabled).toBe(false)
   },
 )
+
+it('refreshes an identical bundled source after a checkout move and preserves pins and prior provenance', async () => {
+  const s = setup()
+  await initializeDefaultHelpers(s)
+  const helper = DEFAULT_ENABLED_BUNDLED_PACKAGES[0]!
+  const before = (await s.manager.inventory(s.profileDir)).packages.find((pkg) => pkg.id === helper.id)!
+  const pin = await s.manager.pinRuntimeSnapshot(s.profileDir, {
+    pinId: 'source-move-session',
+    operationId: 'source-move-session',
+    purpose: 'turn',
+    packageId: helper.id,
+    selector: {
+      kind: 'installed',
+      expectedIntegrity: before.entry.integrity,
+      expectedTreeIntegrity: before.entry.treeIntegrity!,
+    },
+  })
+  const pins = await s.manager.runtimePinRecords(s.profileDir)
+  const bundled = bundledPluginSource(helper.ref)!
+  const payload = join(s.root, 'checkout-b', helper.name)
+  cpSync(join(bundled.root, bundled.path), payload, {
+    recursive: true,
+    filter: (path) => !path.split(sep).includes('node_modules'),
+  })
+  payloads.set(helper.ref, { root: s.root, path: `checkout-b/${helper.name}` })
+  let target: RuntimeTargetArtifact | undefined
+  const options = {
+    ...s,
+    previous: () => target,
+    publish: async (next: RuntimeTargetArtifact) => {
+      target = next
+    },
+  }
+  await refreshDefaultHelpers(options)
+  const after = (await s.manager.inventory(s.profileDir)).packages.find((pkg) => pkg.id === helper.id)!
+  expect(after).toMatchObject({
+    enabled: true,
+    trusted: true,
+    capabilityHash: before.capabilityHash,
+    entry: {
+      source: before.entry.source,
+      integrity: before.entry.integrity,
+      version: before.entry.version,
+      provenance: { resolvedLocation: realpathSync(payload) },
+      previous: before.entry.previous,
+    },
+  })
+  expect(await s.manager.runtimePinRecords(s.profileDir)).toEqual(pins)
+  expect(
+    (
+      await s.manager.resolveRuntimePin(s.profileDir, {
+        pinId: pin.pinId,
+        expectedSnapshotId: pin.snapshot.snapshotId,
+      })
+    ).snapshot,
+  ).toEqual(pin.snapshot)
+  await refreshDefaultHelpers(options)
+  expect(
+    (await s.manager.inventory(s.profileDir)).packages.find((pkg) => pkg.id === helper.id)?.entry,
+  ).toEqual(after.entry)
+})
 
 it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
   'refreshes $id across distribution upgrades with unchanged grants and durable target retry',

@@ -125,8 +125,8 @@ export async function installPreview(
 }
 
 /**
- * Brings the reviewed `preview` live over the installed `previous`: one atomic update with activation
- * when the bytes differ, otherwise only the missing trust/enable steps. `reenable` also retries enable
+ * Brings the reviewed `preview` live over the installed `previous`: update changed bytes or source,
+ * atomically activating trusted packages, then perform any missing trust/enable steps. `reenable` retries enable
  * for a package that is desired-enabled but not running. Returns the last operation, if any ran.
  */
 export async function activateReviewedPackage(
@@ -139,23 +139,34 @@ export async function activateReviewedPackage(
   if (!preview.capabilityHash)
     throw new Error('Preview has no capability hash; update the daemon and inspect again.')
   const base = { profile, clientId: await client.clientId(), id: preview.id }
-  if (previous.integrity !== preview.integrity)
-    return waitForPackageOperation(
+  let last: PackageOperation | undefined
+  if (
+    previous.integrity !== preview.integrity ||
+    previous.source.type !== preview.source.type ||
+    previous.source.ref !== preview.source.ref ||
+    previous.provenance?.resolvedLocation !== preview.provenance.resolvedLocation
+  ) {
+    last = await waitForPackageOperation(
       client,
       await client.packages.update({
         ...base,
         commandId: newPackageCommandId('update'),
         source: preview.source,
         expectedIntegrity: preview.integrity,
-        activation: {
-          expectedInstalledIntegrity: previous.integrity,
-          expectedActiveIntegrity:
-            previous.actual === 'running' ? (previous.actualIntegrity ?? previous.integrity) : null,
-          trust: { integrity: preview.integrity, capabilityHash: preview.capabilityHash },
-        },
+        ...(previous.trusted
+          ? {
+              activation: {
+                expectedInstalledIntegrity: previous.integrity,
+                expectedActiveIntegrity:
+                  previous.actual === 'running' ? (previous.actualIntegrity ?? previous.integrity) : null,
+                trust: { integrity: preview.integrity, capabilityHash: preview.capabilityHash },
+              },
+            }
+          : {}),
       }),
     )
-  let last: PackageOperation | undefined
+    if (previous.trusted) return last
+  }
   if (!previous.trusted)
     last = await waitForPackageOperation(
       client,

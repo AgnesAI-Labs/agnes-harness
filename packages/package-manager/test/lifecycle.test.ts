@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import {
@@ -158,6 +158,130 @@ it('revokes trust and blocks update or rollback activation from resurrecting the
   ).rejects.toMatchObject({ code: 'E_PACKAGE_TRUST' })
   expect(load().packages[id]).toMatchObject({ state: { trusted: null, enabled: false } })
 })
+it.each([
+  { sameRef: true, point: 'none', samePrevious: false },
+  { sameRef: false, point: 'none', samePrevious: true },
+  ...['none', 'lock-written', 'audit-written', 'previous-saved'].map((point) => ({
+    sameRef: false,
+    point,
+    samePrevious: false,
+  })),
+])(
+  'records a reviewed same-content source move without changing runtime pins (same ref: $sameRef, same previous: $samePrevious, crash: $point)',
+  async ({ sameRef, point, samePrevious }) => {
+    version(samePrevious ? '1.0.0' : '0.9.0')
+    const m = await install(manager({ references: emptyRefs }))
+    await m.trust(profile, id, await decision(m))
+    await m.setEnabled(profile, id, true)
+    version('1.0.0')
+    const current = await m.inspect(profile, source)
+    await m.update(profile, id, source, {
+      expectedIntegrity: current.integrity,
+      activation: {
+        expectedInstalledIntegrity: (await decision(m)).integrity,
+        trust: { integrity: current.integrity, capabilityHash: current.capabilityHash ?? '' },
+      },
+    })
+    const trust = await decision(m)
+    const before = load().packages[id]!
+    const pin = await m.pinRuntimeSnapshot(profile, {
+      pinId: 'source-move-session',
+      operationId: 'source-move-session',
+      purpose: 'turn',
+      packageId: id,
+      selector: {
+        kind: 'installed',
+        expectedIntegrity: before.integrity,
+        expectedTreeIntegrity: before.treeIntegrity!,
+      },
+    })
+    const pins = await m.runtimePinRecords(profile)
+    const checkoutB = join(root, 'checkout-b')
+    mkdirSync(checkoutB)
+    cpSync(sourceDir, join(checkoutB, 'source'), { recursive: true })
+    let crash = point !== 'none'
+    const moved = manager({
+      cwd: checkoutB,
+      references: emptyRefs,
+      checkpoint: (phase) => {
+        if (crash && phase === point) {
+          crash = false
+          throw new Error('source move crash')
+        }
+      },
+    })
+    const nextSource = sameRef
+      ? source
+      : parseSource(`file:${join(checkoutB, 'source').split(sep).join('/')}`)
+    const preview = await moved.inspect(profile, nextSource)
+    expect(preview.integrity).toBe(before.integrity)
+    expect(preview.capabilityHash).toBe(trust.capabilityHash)
+    const update = moved.update(profile, id, nextSource, {
+      expectedIntegrity: preview.integrity,
+      activation: { expectedInstalledIntegrity: before.integrity, trust },
+    })
+    if (point === 'none') await update
+    else {
+      await expect(update).rejects.toThrow('source move crash')
+      await manager({ cwd: checkoutB, references: emptyRefs }).recover(profile)
+    }
+    const after = load().packages[id]!
+    expect(after).toMatchObject({
+      version: before.version,
+      integrity: before.integrity,
+      treeIntegrity: before.treeIntegrity,
+      state: { enabled: true, trusted: before.state.trusted },
+      provenance: { resolvedLocation: realpathSync(join(checkoutB, 'source')) },
+      previous: before.previous,
+    })
+    expect(await moved.runtimePinRecords(profile)).toEqual(pins)
+    expect(
+      (
+        await moved.resolveRuntimePin(profile, {
+          pinId: pin.pinId,
+          expectedSnapshotId: pin.snapshot.snapshotId,
+        })
+      ).snapshot,
+    ).toEqual(pin.snapshot)
+    const nextPin = await moved.pinRuntimeSnapshot(profile, {
+      pinId: 'after-move-installed',
+      operationId: 'after-move-installed',
+      purpose: 'turn',
+      packageId: id,
+      selector: {
+        kind: 'installed',
+        expectedIntegrity: before.integrity,
+        expectedTreeIntegrity: before.treeIntegrity!,
+      },
+    })
+    expect(nextPin.snapshot).toEqual(pin.snapshot)
+    const previousPin = await moved.pinRuntimeSnapshot(profile, {
+      pinId: 'after-move-previous',
+      operationId: 'after-move-previous',
+      purpose: 'turn',
+      packageId: id,
+      selector: {
+        kind: 'previous',
+        expectedIntegrity: before.previous!.integrity,
+        expectedTreeIntegrity: before.previous!.treeIntegrity!,
+      },
+    })
+    expect(previousPin.snapshot.version).toBe(samePrevious ? '1.0.0' : '0.9.0')
+    // Another move must not strand the original session pin after the one-deep previous changes.
+    const checkoutC = join(root, 'checkout-c')
+    mkdirSync(checkoutC)
+    cpSync(sourceDir, join(checkoutC, 'source'), { recursive: true })
+    const again = manager({ cwd: checkoutC, references: emptyRefs })
+    const thirdSource = parseSource(`file:${join(checkoutC, 'source').split(sep).join('/')}`)
+    const review = await again.inspect(profile, thirdSource)
+    await again.update(profile, id, thirdSource, {
+      expectedIntegrity: review.integrity,
+      activation: { expectedInstalledIntegrity: before.integrity, trust },
+    })
+    expect(load().packages[id]?.previous).toEqual(before.previous)
+    expect((await again.resolveRuntimePin(profile, { pinId: pin.pinId })).snapshot).toEqual(pin.snapshot)
+  },
+)
 it('atomically binds installed and target digests when update or rollback also trusts and enables', async () => {
   const m = await install(manager({ references: emptyRefs }))
   const initial = (await m.inventory(profile)).packages[0]

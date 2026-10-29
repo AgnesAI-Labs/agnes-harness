@@ -646,7 +646,12 @@ function confirmPackageInstall(
   id: string,
   version: string,
   integrity: string,
-  action: 'install' | 'trust' | 'enable' | 'install, trust and enable' = 'install',
+  action:
+    | 'install'
+    | 'trust'
+    | 'enable'
+    | 'install, trust and enable'
+    | 'update source and enable' = 'install',
 ): Promise<boolean> {
   if (io.stdin.isTTY !== true || io.stdout.isTTY !== true)
     return Promise.reject(

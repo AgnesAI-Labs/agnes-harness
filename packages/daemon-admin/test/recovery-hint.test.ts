@@ -21,3 +21,15 @@ it('keeps the closed hint for a blocked capability and adds the file a refusal n
     failureHelp([], { reason: 'tree-mismatch', path: '/p/packages/a' }, 'E_PACKAGE_STATE').fixHint,
   ).toContain('File: /p/packages/a.')
 })
+
+it.each([
+  ['residue', /Disable the package first.*live extension resources/],
+  ['package-running', /Disable the package first.*stop/],
+  ['cleanup-pending', /Disable the package first.*cleanup/],
+  ['activation-unavailable', /runtime connection.*stopped state/],
+  ['dependents', /packages that depend/],
+] as const)('explains the controlled %s refusal without echoing raw details', (reason, hint) => {
+  const help = failureHelp([], { reason, residue: ['private fixture detail'] }, 'private exception detail')
+  expect(help.fixHint).toMatch(hint)
+  expect(JSON.stringify(help)).not.toContain('private')
+})

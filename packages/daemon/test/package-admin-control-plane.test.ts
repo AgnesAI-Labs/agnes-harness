@@ -972,63 +972,113 @@ it('refuses to remove a failed package when the adapter cannot say whether it is
   expect(remove).not.toHaveBeenCalled()
 })
 
-it('requires actual stopped state and cleared candidate references before remove', async () => {
-  const preview = await manager.inspect(profileDir, source)
-  await manager.install(profileDir, source, { expectedIntegrity: preview.integrity })
-  const row = (await manager.inventory(profileDir)).packages[0]
-  if (!row) throw new Error('setup install is missing')
-  const remove = vi.fn(manager.remove.bind(manager))
-  const running = service({
-    manager: { ...manager, remove } as PackageManager,
-    activation: {
-      actual: async () => ({ actual: 'running', actualIntegrity: row.entry.integrity }),
-      reconcile: async () => ({ actual: 'running' }),
-    },
-  })
-  const unsafe = (await running.call(
-    '_agnes/v1/packages.remove',
-    { profile, clientId, commandId: 'remove-running', id: row.id },
-    authority,
-  )) as { operationId: string }
-  expect(await operation(running, profile, unsafe.operationId)).toMatchObject({
-    state: 'failed',
-    error: { code: 'E_PACKAGE_STATE' },
-  })
-  expect(remove).not.toHaveBeenCalled()
+it.each([false, true])(
+  'requires actual stopped state and cleared candidate references before remove (cleanup: %s)',
+  async (cleanupPending) => {
+    const preview = await manager.inspect(profileDir, source)
+    await manager.install(profileDir, source, { expectedIntegrity: preview.integrity })
+    const row = (await manager.inventory(profileDir)).packages[0]
+    if (!row) throw new Error('setup install is missing')
+    const remove = vi.fn(manager.remove.bind(manager))
+    await manager.trust(profileDir, row.id, {
+      integrity: row.entry.integrity,
+      capabilityHash: row.capabilityHash,
+    })
+    await manager.setEnabled(profileDir, row.id, true)
+    const running = service({
+      manager: { ...manager, remove } as PackageManager,
+      activation: {
+        actual: async () => ({
+          actual: cleanupPending ? 'not-running' : 'running',
+          actualIntegrity: row.entry.integrity,
+          cleanupPending,
+        }),
+        reconcile: async () => ({ actual: 'running' }),
+      },
+    })
+    const unsafe = (await running.call(
+      '_agnes/v1/packages.remove',
+      { profile, clientId, commandId: 'remove-running', id: row.id },
+      authority,
+    )) as { operationId: string }
+    expect(await operation(running, profile, unsafe.operationId)).toMatchObject({
+      state: 'failed',
+      error: {
+        code: 'E_PACKAGE_STATE',
+        blockers: [
+          {
+            code: 'generation',
+            references: [row.id, cleanupPending ? 'cleanup-pending' : 'package-running'],
+          },
+        ],
+        fixHint: expect.stringMatching(/Disable the package first/),
+      },
+    })
+    expect(remove).not.toHaveBeenCalled()
 
-  const candidateManager = createPackageManager({
-    dataDir: root,
-    cwd: root,
-    agnesVersion: '0.1.0',
-    now: () => now,
-    references: createPackageReferences(async () => ({
-      dependencies: [],
-      profile: [],
-      deployments: [],
-      runtime: [{ kind: 'candidate', reference: 'candidate:pending' }],
-    })),
-  })
-  const candidate = service({
-    manager: candidateManager,
-    activation: {
-      actual: async () => 'not-running',
-      reconcile: async () => ({ actual: 'not-running' }),
-    },
-  })
-  const blocked = (await candidate.call(
-    '_agnes/v1/packages.remove',
-    { profile, clientId, commandId: 'remove-candidate', id: row.id },
-    authority,
-  )) as { operationId: string }
-  expect(await operation(candidate, profile, blocked.operationId)).toMatchObject({
-    state: 'failed',
-    error: {
-      code: 'E_PACKAGE_BLOCKED',
-      blockers: [{ code: 'generation', references: ['candidate:pending'] }],
-    },
-  })
-  expect((await candidateManager.inventory(profileDir)).packages[0]?.id).toBe(row.id)
-})
+    expect((await manager.inventory(profileDir)).packages[0]?.enabled).toBe(true)
+
+    const candidateManager = createPackageManager({
+      dataDir: root,
+      cwd: root,
+      agnesVersion: '0.1.0',
+      now: () => now,
+      references: createPackageReferences(async () => ({
+        dependencies: [],
+        profile: [],
+        deployments: [],
+        runtime: [{ kind: 'candidate', reference: 'candidate:pending' }],
+      })),
+    })
+    const candidate = service({
+      manager: candidateManager,
+      activation: {
+        actual: async () => 'not-running',
+        reconcile: async () => ({ actual: 'not-running' }),
+      },
+    })
+    const blocked = (await candidate.call(
+      '_agnes/v1/packages.remove',
+      { profile, clientId, commandId: 'remove-candidate', id: row.id },
+      authority,
+    )) as { operationId: string }
+    expect(await operation(candidate, profile, blocked.operationId)).toMatchObject({
+      state: 'failed',
+      error: {
+        code: 'E_PACKAGE_BLOCKED',
+        blockers: [{ code: 'generation', references: ['candidate:pending'] }],
+      },
+    })
+    expect((await candidateManager.inventory(profileDir)).packages[0]?.id).toBe(row.id)
+
+    const residue = service({
+      manager: {
+        ...manager,
+        remove: async () => {
+          throw new PackageError('E_EXT_LOAD', 'private resource detail', {
+            detail: { reason: 'residue', residue: ['private resource detail'] },
+          })
+        },
+      },
+      activation: { actual: async () => 'not-running', reconcile: async () => ({ actual: 'not-running' }) },
+    })
+    const retained = (await residue.call(
+      '_agnes/v1/packages.remove',
+      { profile, clientId, commandId: 'remove-residue', id: row.id },
+      authority,
+    )) as { operationId: string }
+    const refusal = await operation(residue, profile, retained.operationId)
+    expect(refusal).toMatchObject({
+      state: 'failed',
+      error: {
+        code: 'E_PACKAGE_STATE',
+        blockers: [{ code: 'generation', references: ['live-extension-resources'] }],
+        fixHint: expect.stringMatching(/Disable the package first.*live extension resources/),
+      },
+    })
+    expect(JSON.stringify(refusal.error)).not.toContain('private resource detail')
+  },
+)
 
 it('projects only the rollback target whose retained bytes were verified by inventory', async () => {
   const first = await manager.inspect(profileDir, source)

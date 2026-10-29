@@ -74,7 +74,7 @@ import {
   reviewedUpdateOptions,
 } from './dependent-updates.js'
 import { metadataView } from './metadata-view.js'
-import { failureHelp, operationError } from './operation-error.js'
+import { failureHelp, operationError, removalRefusal } from './operation-error.js'
 import {
   type PackageOperationKind,
   type PackageOperationRecovery,
@@ -274,7 +274,12 @@ function packageError(error: unknown): PackageAdminError {
       : 'E_PACKAGE_STATE'
   const detail =
     raw.detail && typeof raw.detail === 'object' ? (raw.detail as Record<string, unknown>) : undefined
-  const blockers = safeBlockers(detail?.blockers)
+  const blockers = safeBlockers(
+    detail?.blockers ??
+      (detail?.reason === 'residue'
+        ? [{ code: 'generation', references: ['live-extension-resources'] }]
+        : []),
+  )
   const sourceFailure = packageSourceFailure(code, detail?.reason)
   return {
     code,
@@ -1791,7 +1796,7 @@ class Service implements PackageAdminService {
   }
 
   private async assertRemovalReady(profile: string, packageId: string): Promise<void> {
-    if (!this.options.activation) throw { code: 'E_PACKAGE_STATE' }
+    if (!this.options.activation) throw removalRefusal('activation-unavailable', packageId)
     const observed = normalizeObservation(await this.options.activation.actual(profile, packageId))
     // `stopped()` is the adapter's precise assertion that nothing is running *or about to run*.
     // Client-only modules can remain visually `starting` while their roster settles, even after
@@ -1799,7 +1804,7 @@ class Service implements PackageAdminService {
     // removal instead of retaining an inert package forever on its presentation state alone.
     const stopped = (await this.options.activation.stopped?.(profile, packageId)) === true
     if ((observed?.actual !== 'not-running' && !stopped) || observed?.cleanupPending === true)
-      throw { code: 'E_PACKAGE_STATE' }
+      throw removalRefusal(observed?.cleanupPending ? 'cleanup-pending' : 'package-running', packageId)
   }
 
   private startState(kind: PackageOperationKind): PackageOperation['state'] {

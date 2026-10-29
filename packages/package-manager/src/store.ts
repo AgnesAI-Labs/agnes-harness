@@ -8,6 +8,7 @@ import { PackageError } from './errors.js'
 import { canonical, own, readStaticJson, snapshotHash, syncDirectory } from './integrity.js'
 import { type LockEntry, type Lockfile, prepareLockPublication, readLock } from './lockfile.js'
 import { assertCurrentPackageFormat } from './package-format.js'
+import { rebindRuntimeSnapshotSource } from './runtime-snapshots.js'
 import { hashDirectory, packageDir } from './sources.js'
 
 export type PackageCommitPoint =
@@ -163,6 +164,7 @@ function finish(s: PackageStore, j: Journal): void {
   const p = paths(s, j),
     moves = j.stage !== null || j.next === null
   exact(p.dest, j.nextTree)
+  rebindRuntimeSnapshotSource(s, j.id, j.old, j.next)
   appendPackageAudit(
     s.profileDir,
     {
