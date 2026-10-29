@@ -428,9 +428,12 @@ export function ReferencePicker({
       {selected.length > 0 && (
         <ul className="reference-chips" data-testid="reference-draft-chips">
           {selected.map((item) => (
-            <li key={`${item.source}:${item.id}`}>
-              <span title={item.id}>
-                @{item.source} {item.label}
+            <li key={`${item.source}:${item.id}`} data-source={item.source}>
+              <span className="reference-draft-chip" title={item.id}>
+                <span className="reference-draft-chip-icon" aria-hidden="true">
+                  <Icon name={item.source === 'session' ? 'message-square' : 'link'} size={16} />
+                </span>
+                <span className="reference-draft-chip-label">{item.label}</span>
               </span>
               <Button
                 htmlType="button"
@@ -439,7 +442,7 @@ export function ReferencePicker({
                 aria-label={t('composer.reference.remove', { label: item.label })}
                 onClick={() => adapter.remove(item.source, item.id)}
               >
-                ×
+                <Icon name="x" size={16} />
               </Button>
             </li>
           ))}

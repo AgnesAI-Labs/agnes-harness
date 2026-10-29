@@ -102,6 +102,11 @@ it('navigates a combobox, selects locators without submitting', async () => {
   expect(host.querySelector('[aria-selected="true"]')?.textContent).toContain('Previous')
   expect((await key('Enter')).defaultPrevented).toBe(true)
   expect(adapter.getSnapshot()).toEqual([candidates[1]])
+  const selectedSession = host.querySelector<HTMLElement>('[data-testid="reference-draft-chips"] li')
+  expect(selectedSession?.getAttribute('data-source')).toBe('session')
+  expect(selectedSession?.textContent).toContain('Previous')
+  expect(selectedSession?.textContent).not.toContain('@session')
+  expect(selectedSession?.querySelector('svg')).toBeTruthy()
   // The consumed `@query` is handed back to the owner as one edit.
   expect(edit).toHaveBeenLastCalledWith(0, 1, '')
   expect(input.value).toBe('')
