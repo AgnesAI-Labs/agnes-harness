@@ -15,6 +15,48 @@ import {
   turn,
 } from './ui.js'
 
+test('permissions never flash a fallback selection when returning from application settings', async ({
+  page,
+  runtime,
+}) => {
+  const client = await runtime.connect()
+  const saved = await client.sessionSelection.getDefaults()
+  await client.sessionSelection.saveDefaults({
+    ...saved,
+    defaults: { ...saved.defaults, permission: 'full-access' },
+  })
+  await preferences(page)
+  await page.goto(runtime.url)
+  await chooseWorkspace(page, runtime)
+  await settings(page)
+  await section(page, 'application')
+  for (let visit = 0; visit < 2; visit++) {
+    const requested = page.waitForRequest('**/admin/api/defaults')
+    let release: () => void = () => undefined
+    const pending = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    await page.route('**/admin/api/defaults', async (route) => {
+      await pending
+      await route.continue()
+    })
+    try {
+      await section(page, 'security')
+      await requested
+      const cards = page.getByTestId('security-default-permissions')
+      await expect(cards.locator('input[type="radio"]')).toHaveCount(3)
+      await expect(cards.locator('input[type="radio"]:checked')).toHaveCount(0)
+      await expect(cards.locator('input[type="radio"]:enabled')).toHaveCount(0)
+      release()
+      await expect(page.getByTestId('security-full-access').getByRole('radio')).toBeChecked()
+    } finally {
+      release()
+      await page.unroute('**/admin/api/defaults')
+    }
+    await section(page, 'application')
+  }
+})
+
 test('v3 home entries, deep links and browser back/forward retain the selected page', async ({
   page,
   runtime,
