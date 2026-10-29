@@ -48,7 +48,7 @@ mise exec -- node tools/toolchain/run.mjs gen:check
 
 ## 架构图维护
 
-[生成脚本](../../tools/public-docs/render-architecture.mjs)维护[英文](../assets/architecture.svg)和[中文](../assets/architecture.zh-CN.svg) SVG 的共享布局与双语文案。修改图源后通过工具链入口运行；`--check` 校验两份输出是否一致。检查两种语言的实际渲染、文字适配和可读性，包括减少动态效果的情况。这些保留插图目前未嵌入 README 或架构指南，不能把文件存在当成当前产品行为的依据。
+[生成脚本](../../tools/public-docs/render-architecture.mjs)维护[英文](../assets/architecture.svg)和[中文](../assets/architecture.zh-CN.svg) SVG 的共享布局与双语文案。修改图源后通过工具链入口运行；`--check` 校验两份输出是否一致。检查两种语言的实际渲染、文字适配和可读性，包括减少动态效果的情况。README 把它们作为产品愿景嵌入，各角色当前交付什么以 README 的角色表为准，两者须保持一致。
 
 实现声明以当前[架构指南](../develop/architecture.zh-CN.md)和源码为准，图示、说明与链接应和所描述 revision 一致。
 

@@ -56,7 +56,7 @@ Check the actual source when changing steps or failure semantics. Report tests, 
 
 ## Architecture illustrations
 
-[The renderer](../../tools/public-docs/render-architecture.mjs) owns the shared layout and both language dictionaries for [English](../assets/architecture.svg) and [Chinese](../assets/architecture.zh-CN.svg) SVG illustrations. Run it through the toolchain entry after changing its source; `--check` verifies that both outputs match. Inspect both rendered languages for text fit and readability, including reduced motion. These retained illustrations are not currently embedded by the README or architecture guide; do not treat their existence as evidence for current product behavior.
+[The renderer](../../tools/public-docs/render-architecture.mjs) owns the shared layout and both language dictionaries for [English](../assets/architecture.svg) and [Chinese](../assets/architecture.zh-CN.svg) SVG illustrations. Run it through the toolchain entry after changing its source; `--check` verifies that both outputs match. Inspect both rendered languages for text fit and readability, including reduced motion. The README embeds them as the product vision; its role table states what each role ships today, so keep the two consistent.
 
 Use the current [architecture guide](../develop/architecture.md) and source to verify implementation claims. Keep diagrams, captions and links aligned with the revision being documented.
 
