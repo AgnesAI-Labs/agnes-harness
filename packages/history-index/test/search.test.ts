@@ -144,6 +144,41 @@ function openSeed(before?: (dir: string) => void): {
 }
 
 describe('history index', () => {
+  it('defaults local filters to exact and refuses cursors from a different match mode', () => {
+    const { index } = openSeed()
+    const base = {
+      access: { kind: 'local' as const, principal: 'owner-a' },
+      kind: 'list' as const,
+      query: '',
+      title: '',
+      workspace: '/work',
+      sessionId: '',
+      omitSelf: false,
+      limit: 1,
+    }
+    expect(index.query(base).items).toEqual([])
+    const page = index.query({ ...base, workspaceMatch: 'contains' })
+    expect(page.items).toHaveLength(1)
+    expect(page.next).toBeDefined()
+    if (!page.next) throw new Error('Expected a second page')
+    expect(() => index.query({ ...base, cursor: page.next as string })).toThrow()
+    expect(index.query({ ...base, workspaceMatch: 'contains', cursor: page.next }).items).toHaveLength(1)
+  })
+  it('keeps caller workspace filters exact even when a fragment matches an authorized workspace', () => {
+    const { index, access } = openSeed()
+    for (const kind of ['list', 'search'] as const) {
+      const result = index.query({
+        access,
+        kind,
+        query: kind === 'search' ? 'alpha' : '',
+        title: '',
+        workspace: '/work',
+        sessionId: '',
+        omitSelf: false,
+      })
+      expect(result.items).toEqual([])
+    }
+  })
   it('creates the v4 schema: indexed tails, parent index and external-content FTS', () => {
     const { dir, index } = openSeed()
     index.close()

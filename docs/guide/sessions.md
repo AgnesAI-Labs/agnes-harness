@@ -52,7 +52,7 @@ A model-account change does not replace a saved session’s plugin code or permi
 
 ## Search history
 
-Search sessions matches literal substrings in session titles (including Chinese) and phrases in message text, filters by an exact workspace path, and pages the results. The index is a separate SQLite file rebuilt from the ledger. It does not modify the ledger. The read-only tools `session_search`, `session_event_search`, `session_trace`, `session_event_trace`, and `session_event_read` stay inside the caller's workspace and recorded owner.
+Search sessions matches literal substrings in session titles (including Chinese) and phrases in message text, filters by literal workspace path fragments (ignoring ASCII case), and pages the results. Windows backslashes, `%` and `_` are literal characters. CLI workspace filters remain exact. The index is a separate SQLite file rebuilt from the ledger. It does not modify the ledger. The read-only tools `session_search`, `session_event_search`, `session_trace`, `session_event_trace`, and `session_event_read` stay inside the caller's workspace and recorded owner.
 
 <a id="导出与导入"></a>
 

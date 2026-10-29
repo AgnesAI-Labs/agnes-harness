@@ -41,6 +41,7 @@ export type HistoryPage = {
 }
 
 export type HistoryQuery = {
+  workspaceMatch?: 'exact' | 'contains'
   access: HistoryAccess
   kind: 'search' | 'list'
   query: string
@@ -475,7 +476,11 @@ export class HistoryIndex {
   private filters(request: HistoryQuery, params: Array<string | number>): string {
     let sql = ''
     if (request.workspace) {
-      sql += ' AND s.workspace = ?'
+      // Local administration exposes a path-contains filter; caller tools keep exact workspace selection.
+      sql +=
+        request.access.kind === 'local' && request.workspaceMatch === 'contains'
+          ? ' AND instr(lower(s.workspace), lower(?)) > 0'
+          : ' AND s.workspace = ?'
       params.push(request.workspace)
     }
     if (request.title) {
@@ -637,6 +642,7 @@ function cursorFilters(request: HistoryQuery): Omit<HistoryCursor, 'g' | 'o' | '
     q: request.query,
     title: request.title,
     workspace: request.workspace,
+    ...(request.workspaceMatch === 'contains' ? { workspaceMatch: 'contains' as const } : {}),
     sessionId: request.sessionId,
   }
 }
@@ -654,6 +660,7 @@ function cursorMatches(
     cursor.q === filters.q &&
     cursor.title === filters.title &&
     cursor.workspace === filters.workspace &&
+    (cursor.workspaceMatch ?? 'exact') === (filters.workspaceMatch ?? 'exact') &&
     cursor.sessionId === filters.sessionId
   )
 }

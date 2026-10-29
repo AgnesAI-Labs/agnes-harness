@@ -55,6 +55,7 @@ export function eventBody(raw: string): { body: string; truncated: boolean } {
 }
 
 export type HistoryCursor = {
+  workspaceMatch?: 'exact' | 'contains'
   g: number
   o: number
   n: number
@@ -86,6 +87,8 @@ export function decodeCursor(value: string): HistoryCursor | undefined {
     return undefined
   if (typeof row.q !== 'string' || typeof row.title !== 'string') return undefined
   if (typeof row.workspace !== 'string' || typeof row.sessionId !== 'string') return undefined
+  if (row.workspaceMatch !== undefined && row.workspaceMatch !== 'exact' && row.workspaceMatch !== 'contains')
+    return undefined
   return {
     g: row.g,
     o: row.o,
@@ -94,6 +97,7 @@ export function decodeCursor(value: string): HistoryCursor | undefined {
     q: row.q,
     title: row.title,
     workspace: row.workspace,
+    ...(row.workspaceMatch ? { workspaceMatch: row.workspaceMatch as 'exact' | 'contains' } : {}),
     sessionId: row.sessionId,
   }
 }

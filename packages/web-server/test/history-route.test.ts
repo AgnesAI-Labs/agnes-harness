@@ -12,7 +12,7 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-function seed(): string {
+function seed(workspace = '/work/a'): string {
   const dir = mkdtempSync(join(tmpdir(), 'agh-history-route-'))
   dirs.push(dir)
   const ledger = new DatabaseSync(join(dir, 'sessions.db'))
@@ -36,7 +36,7 @@ function seed(): string {
   )
   side
     .prepare(`INSERT INTO session_workspaces (session_key, cwd, title) VALUES (?, ?, ?)`)
-    .run('mine', '/work/a', 'Bridge notes')
+    .run('mine', workspace, 'Bridge notes')
   side
     .prepare(`INSERT INTO session_principal_ownership (session_id, principal_id) VALUES (?, ?)`)
     .run('mine', 'owner-a')
@@ -72,6 +72,22 @@ function call(dir: string, search: string, extra: { method?: string; origin?: st
 }
 
 describe('history search route', () => {
+  it.each([
+    ['/work/Alpha App', 'A'],
+    ['C:\\Users\\tester\\Alpha_App', 'users\\tester'],
+    ['/work/100%_real', '%_'],
+  ])('filters workspace paths by literal contained text (%s)', async (workspace, fragment) => {
+    const dir = seed(workspace)
+    for (const q of ['', 'alpha']) {
+      const params = new URLSearchParams({ q, workspace: fragment })
+      const result = await call(dir, `?${params}`)
+      expect(result.status).toBe(200)
+      expect(result.body).toMatchObject({ items: [{ sessionId: 'mine', workspace }] })
+    }
+    const absent = await call(dir, `?${new URLSearchParams({ workspace: '%missing_' })}`)
+    expect(absent.status).toBe(200)
+    expect(absent.body).toMatchObject({ items: [] })
+  })
   it('searches the ledger for the sole owner and pages the list', async () => {
     const dir = seed()
     const found = await call(dir, '?q=alpha+bridge&title=Bridge&workspace=/work/a')

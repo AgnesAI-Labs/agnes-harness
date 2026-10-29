@@ -10,6 +10,7 @@ export type DirectoryQuery = {
   query: string
   title: string
   workspace: string
+  workspaceMatch?: 'exact' | 'contains'
   cursor?: string
   limit?: number
 }
@@ -25,7 +26,7 @@ export function searchHistoryDirectory(dataDir: string, request: DirectoryQuery)
     request.workspace &&
     (request.workspace.includes('\u0000') ||
       request.workspace.length > 4096 ||
-      !isAbsolute(request.workspace))
+      (request.workspaceMatch !== 'contains' && !isAbsolute(request.workspace)))
   )
     throw new HistoryIndexError('INVALID_REQUEST')
   const index = openHistoryIndex(historyIndexPath(dataDir))
@@ -40,6 +41,7 @@ export function searchHistoryDirectory(dataDir: string, request: DirectoryQuery)
       query: request.query,
       title: request.title,
       workspace: request.workspace,
+      ...(request.workspaceMatch ? { workspaceMatch: request.workspaceMatch } : {}),
       sessionId: '',
       omitSelf: false,
       ...(request.cursor === undefined ? {} : { cursor: request.cursor }),
