@@ -46,7 +46,7 @@ node agnes.mjs -p --continue "继续"
 
 ## 搜索历史
 
-侧栏的「搜索会话」按字面子串匹配会话标题（包括中文），按短语搜索消息文本，按工作区路径精确过滤，并分页查看结果。索引是根据账本重建的独立 SQLite 文件，不会修改账本。只读工具 `session_search`、`session_event_search`、`session_trace`、`session_event_trace` 和 `session_event_read` 只查看调用者所在工作区及其已记录的所有者。
+侧栏的「搜索会话」按字面子串匹配会话标题（包括中文），按短语搜索消息文本，按工作区路径片段筛选（忽略 ASCII 大小写），并分页查看结果。Windows 反斜杠、`%` 和 `_` 均按普通字符匹配；命令行的工作区过滤仍为精确匹配。索引是根据账本重建的独立 SQLite 文件，不会修改账本。只读工具 `session_search`、`session_event_search`、`session_trace`、`session_event_trace` 和 `session_event_read` 只查看调用者所在工作区及其已记录的所有者。
 
 ## 导出与导入
 

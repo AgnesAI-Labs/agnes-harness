@@ -2582,6 +2582,10 @@
     "AdminHistoryParams": {
       "type": "object",
       "properties": {
+        "workspaceMatch": {
+          "type": "string",
+          "enum": ["exact", "contains"]
+        },
         "query": {
           "type": "string",
           "maxLength": 256

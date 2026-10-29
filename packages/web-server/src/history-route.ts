@@ -65,6 +65,7 @@ export async function handleHistorySearch(input: {
     query: query.get('q') ?? '',
     title: query.get('title') ?? '',
     workspace: query.get('workspace') ?? '',
+    workspaceMatch: 'contains' as const,
     ...(query.has('cursor') ? { cursor: query.get('cursor')! } : {}),
   }
   if (!validateMethod('_agnes/v1/admin.history.search', 'params', params).ok)
