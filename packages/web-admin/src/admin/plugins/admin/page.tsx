@@ -532,9 +532,16 @@ export class PluginAdminPage {
     () => (this.#surface ? INVENTORY_FRESH_MS : 0),
   )
 
-  refresh(options: { preserveError?: boolean } = {}): Promise<void> {
+  /**
+   * `settled`: an operation has just finished. A read already in flight was answered before that, so
+   * it is dropped (as is an overview another view has in flight) and the inventory is read again.
+   */
+  refresh(options: { preserveError?: boolean; settled?: boolean } = {}): Promise<void> {
     this.#refreshOptions = options
-    return this.#refresh.request()
+    if (!options.settled) return this.#refresh.request()
+    this.#inventoryGeneration++
+    PluginAdminApi.forgetPendingOverview()
+    return this.#refresh.reread()
   }
 
   private async readInventory(): Promise<boolean> {
@@ -1047,7 +1054,9 @@ export class PluginAdminPage {
         error: undefined,
       }
     }
-    await this.refresh({ preserveError: operation.state === 'failed' })
+    // Draw the result now; a read already in flight must not hold it back.
+    this.render()
+    await this.refresh({ preserveError: operation.state === 'failed', settled: true })
     if (this.#lifetime.signal.aborted) return
     window.dispatchEvent(new CustomEvent('agnes:packages-changed'))
     if (operation.state === 'completed' && packageId) {
