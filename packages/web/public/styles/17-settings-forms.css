@@ -1449,7 +1449,7 @@
     padding-top: 0;
     border-top: 0;
   }
-  :is(#account-dialog, .account-page-host) .account-connection-step {
+  :where(#account-dialog, .account-page-host) .account-connection-step {
     display: grid;
     gap: var(--s20);
   }
