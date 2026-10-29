@@ -2,7 +2,7 @@
 import type { UINode } from '@agnes/protocol'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { UserMessage, withFileMentions } from '../src/conversation/messages/user-message.js'
+import { UserMessage, withFileMentions, withSkillMentions } from '../src/conversation/messages/user-message.js'
 import {
   fileMentionBlock,
   fileMentionIcon,
@@ -92,5 +92,27 @@ describe('file chips in a sent message', () => {
     expect(chip?.querySelector('svg')).toBeTruthy()
     chip?.click()
     expect(opened).toHaveBeenCalledWith(index)
+  })
+})
+
+describe('skill chips in a sent message', () => {
+  it('keeps the explicit skill text in the copy while rendering its sparkle marker', () => {
+    expect(withSkillMentions('请用 $review-notes，然后继续。')).toEqual([
+      '请用 ',
+      { kind: 'skill', name: 'review-notes' },
+      '，然后继续。',
+    ])
+    const node = {
+      kind: 'user',
+      id: 'u1',
+      content: [{ type: 'text', text: '$想法可行性速评' }],
+    } as unknown as Extract<UINode, { kind: 'user' }>
+    const host = document.createElement('div')
+    document.body.append(host)
+    cleanups.push(mountRegion(host, createElement(UserMessage, { node, t: (key) => key })))
+    const chip = host.querySelector<HTMLElement>('[data-testid="skill-mention-chip"]')
+    expect(chip?.textContent).toContain('想法可行性速评')
+    expect(chip?.textContent).not.toContain('$想法可行性速评')
+    expect(chip?.querySelector('svg')).toBeTruthy()
   })
 })

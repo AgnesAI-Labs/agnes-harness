@@ -4,6 +4,7 @@ import { act, createElement, createRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ComposerProps } from '../src/composer/contracts.js'
 import { type DraftMention, mentionTokens } from '../src/composer/file-mentions.js'
+import { skillMentionTokens } from '../src/composer/skill-mentions.js'
 import {
   Composer,
   type ComposerDependencies,
@@ -199,6 +200,37 @@ describe('file chips in the draft', () => {
     ).toEqual([one.path, two.path])
     // `@3-report.md.bak` is not a chip.
     expect(mentionTokens('@3-report.md.bak', [one])).toEqual([])
+  })
+})
+
+describe('skill chips in the draft', () => {
+  it('only decorates complete selected skill names', () => {
+    expect(skillMentionTokens('用 $review-notes 和 $review-notes.bak', ['review-notes'])).toEqual([
+      { start: 2, end: 15, name: 'review-notes' },
+    ])
+  })
+
+  it('renders a selected skill as a sparkle marker while preserving its explicit draft text', async () => {
+    const { host, handle, prompt } = mount({
+      skills: { list: async () => [{ name: 'review-notes', description: 'Review project notes' }] },
+    })
+    type(prompt, '$review')
+    const option = await vi.waitFor(() => {
+      const found = host.querySelector<HTMLButtonElement>('[data-testid="skill-option"]')
+      expect(found).toBeTruthy()
+      return found as HTMLButtonElement
+    })
+    expect(option.textContent).toContain('review-notes')
+    expect(option.textContent).not.toContain('$review-notes')
+    act(() => option.click())
+    await vi.waitFor(() => expect(handle.getDraft()).toBe('$review-notes '))
+    const chip = await vi.waitFor(() => {
+      const found = host.querySelector<HTMLElement>('[data-testid="composer-skill-mention"]')
+      expect(found).toBeTruthy()
+      return found as HTMLElement
+    })
+    expect(chip.textContent).toContain('review-notes')
+    expect(chip.querySelector('svg')).toBeTruthy()
   })
 })
 

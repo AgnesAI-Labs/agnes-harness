@@ -26,8 +26,10 @@ import {
   INITIAL_VIEW,
   pickerState,
 } from './composer/contracts.js'
+import { SkillPicker } from './skill-picker.js'
 import { ComposerExtras } from './composer/extras.js'
 import { FileMentionLayer, mentionTokens, useFileMentions } from './composer/file-mentions.js'
+import { SkillMentionLayer, skillMentionTokens } from './composer/skill-mentions.js'
 import { useComposerHint } from './composer/hint.js'
 import type { ComposerAttachment } from './composer/image-files.js'
 import { renderComposerQueue } from './composer/queue.js'
@@ -64,6 +66,7 @@ const SENDER_CLASSES = {
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
   {
     references,
+    skills,
     initialDraft = '',
     examplePrompts = [],
     initialView = INITIAL_VIEW,
@@ -190,6 +193,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   }, [example.visible])
   const mentions = useFileMentions({ prompt, draftRef, editDraft })
   const mentionTokensInDraft = mentionTokens(draft, mentions.mentions)
+  const [selectedSkillNames, setSelectedSkillNames] = useState<readonly string[]>([])
+  const skillTokensInDraft = skillMentionTokens(draft, selectedSkillNames)
   const currentDraft = () =>
     draftRef.current !== renderedDraft.current
       ? draftRef.current
@@ -401,6 +406,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           onSubmit(steer ? { steer } : undefined)
         }}
       >
+        <SkillPicker
+          textarea={prompt}
+          edit={editDraft}
+          {...(skills ? { skills } : {})}
+          onChoose={(skill) =>
+            setSelectedSkillNames((current) =>
+              current.includes(skill.name) ? current : [...current, skill.name],
+            )
+          }
+          t={t}
+          disabled={imageDisabled}
+        />
         <ReferencePicker
           textarea={prompt}
           edit={editDraft}
@@ -626,6 +643,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           remove={mentions.remove}
           t={t}
         />
+        <SkillMentionLayer prompt={prompt} draft={draft} tokens={skillTokensInDraft} />
         <SettingsInput
           ref={fileInput}
           type="file"

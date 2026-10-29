@@ -67,6 +67,23 @@
     white-space: pre-wrap;
   }
 
+  /* Explicit skill invocations remain plain `$name` text on the wire, but are recognisable in a
+     sent message just as they are while being composed. */
+  [data-agnes-conversation-messages] .agh-skill-mention {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
+    padding: 0.125rem var(--s8);
+    border-radius: var(--radius-sm);
+    color: var(--agnes-brand-primary);
+    background: color-mix(in srgb, var(--agnes-brand-primary) 8%, var(--agnes-bg-surface));
+    font-weight: var(--font-weight-medium);
+    vertical-align: text-bottom;
+  }
+  [data-agnes-conversation-messages] .agh-skill-mention > svg {
+    flex: none;
+  }
+
   [data-agnes-conversation-messages] .tool-detail-body[hidden] {
     display: none;
   }

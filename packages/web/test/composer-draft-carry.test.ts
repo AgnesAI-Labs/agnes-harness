@@ -113,6 +113,19 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
+it('can clear the currently selected saved draft', () => {
+  const storage = new Map<string, string>()
+  const persistent = {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value),
+  }
+  const drafts = new ComposerDrafts(persistent, 'http://synthetic')
+  drafts.select('profile', undefined, '')
+  expect(drafts.select('profile', undefined, '@', { preserve: true })).toBe('@')
+  drafts.clear()
+  expect(new ComposerDrafts(persistent, 'http://synthetic').select('profile', undefined, '')).toBe('')
+})
+
 it('keeps typed text when an upload opens the session and persists it under the new key', async () => {
   const handle = createRef<ComposerHandle>()
   const storage = new Map<string, string>()

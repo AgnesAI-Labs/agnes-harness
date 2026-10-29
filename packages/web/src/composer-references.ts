@@ -2,6 +2,8 @@ import { fileReferenceBrowse } from '@agnes/protocol'
 import type { Session } from '@agnes/sdk/browser'
 import { createComposerReferences } from '@agnes/web-units/shell'
 
+export { composerSkills } from './composer-skills.js'
+
 /** Lazy session admission gives a new draft the same backend authority as a sent message. */
 export function composerReferences(session: () => Promise<Session>, changed: () => void) {
   return createComposerReferences(async (query, signal) => {

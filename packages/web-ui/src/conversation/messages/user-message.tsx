@@ -7,6 +7,7 @@ import type { Translate } from '../../locales/index.js'
 import { Button } from '../../ui/button.js'
 import { Disclosure } from '../../ui/disclosure.js'
 import { type FileMention, FileMentionChip, fileMentionLinks, fileMentionOf } from '../../ui/file-mention.js'
+import { Icon } from '../../ui/icon.js'
 import { UserMessageReferences } from '../reference-chips.js'
 import { systemInputText } from '../user-presentation.js'
 import { AttachmentImage, type AttachmentReader } from './attachment-image.js'
@@ -112,6 +113,34 @@ export function UserMessageImages({ node, t }: { node: Extract<UINode, { kind: '
 }
 
 const NAME_CHAR = /[\p{L}\p{N}_.\-/\\]/u
+const SKILL_NAME = /(^|\s)\$([\p{L}_][\p{L}\p{N}_.\-/]*)/gu
+
+type SkillMention = Readonly<{ kind: 'skill'; name: string }>
+
+/** Split explicit `$skill` mentions into presentational tokens without changing the submitted text. */
+export function withSkillMentions(text: string): Array<string | SkillMention> {
+  const parts: Array<string | SkillMention> = []
+  let at = 0
+  for (const match of text.matchAll(SKILL_NAME)) {
+    const prefix = match[1] ?? ''
+    const name = match[2] ?? ''
+    const start = (match.index ?? 0) + prefix.length
+    if (start > at) parts.push(text.slice(at, start))
+    parts.push({ kind: 'skill', name })
+    at = start + name.length + 1
+  }
+  if (at < text.length) parts.push(text.slice(at))
+  return parts
+}
+
+function SkillMentionChip({ name }: { name: string }) {
+  return (
+    <span className="agh-skill-mention" data-testid="skill-mention-chip">
+      <Icon name="sparkles" size={16} />
+      <span className="agh-skill-mention-name">{name}</span>
+    </span>
+  )
+}
 
 /**
  * The text with each file it names as a chip. A message names a file as `@name` (or as much of its
@@ -173,7 +202,17 @@ function MentionedText({ text, mentions, t }: { text: string; mentions: FileMent
         {parts.map((part) => {
           const key = offset
           offset += typeof part === 'string' ? part.length : 1
-          return typeof part === 'string' ? part : chip(part, `mention:${key}`)
+          if (typeof part !== 'string') return chip(part, `mention:${key}`)
+          let textOffset = 0
+          return withSkillMentions(part).map((skillPart) => {
+            const skillKey = key + textOffset
+            textOffset += typeof skillPart === 'string' ? skillPart.length : skillPart.name.length + 1
+            return typeof skillPart === 'string' ? (
+              skillPart
+            ) : (
+              <SkillMentionChip key={`skill:${skillKey}`} name={skillPart.name} />
+            )
+          })
         })}
       </div>
     </>

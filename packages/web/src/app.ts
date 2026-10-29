@@ -55,7 +55,6 @@ import {
   type PermissionRequest,
   type Session,
 } from '@agnes/sdk/browser'
-
 import { type PermissionMode, permissionLabel, yoloEnabled } from '@agnes/web-admin/permission-picker'
 import { createSettingsController } from '@agnes/web-admin/settings'
 import { loadAuxiliaryModelDefaults, loadRuntimeCatalog } from '@agnes/web-admin/settings/api'
@@ -77,7 +76,7 @@ import { startPluginHotReload } from './client-modules/hot-reload.js'
 import { bindJobsClient } from './client-modules/jobs.js'
 import type { RosterSource } from './client-modules/reconcile.js'
 import { readWebComposerMemory, rememberWebComposer, selectionFromMemory } from './composer-memory.js'
-import { composerReferences } from './composer-references.js'
+import { composerReferences, composerSkills } from './composer-references.js'
 import { createDiagnosticsDialog } from './diagnostics-dialog.js'
 import {
   type LoopSelection,
@@ -740,7 +739,7 @@ const rosterSource: RosterSource = {
 const claimSlotCard: ClaimResolver = (entry, extId) =>
   entry.owner !== undefined && (moduleExtIds.get(entry.owner)?.includes(extId) ?? false)
 const references = composerReferences(prepareComposerSession, renderControls)
-
+const skills = composerSkills(() => selectedWorkspace?.workspaceId)
 // Reserve host entries before installed modules can register their reviewed declarations.
 const removeHomeEntries = registerBuiltinHomeEntries()
 homeEntries.subscribe(openApplicationHome)
@@ -900,7 +899,7 @@ const clientModules = await startClientModules({
   approvalContainer: hosts.approval,
   composerContainer: hosts.composer,
   composer: {
-    references,
+    references, skills,
     initialDraft: savedComposerDraft ?? '',
     onAttachmentsChange: renderControls,
     prepareUploadSession: prepareAttachmentSession,
@@ -1846,7 +1845,11 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   if (cleanupError) throw cleanupError
 }
 function selectComposerDraft(id?: string, options: { preserve?: boolean; carry?: boolean } = {}): void {
-  composerRuntime.setDraft(composerDrafts.select(profileName, id, composerRuntime.getDraft(), options))
+  const draft = composerDrafts.select(profileName, id, composerRuntime.getDraft(), options)
+  // A lone `@` only opens the reference picker; it is not meaningful draft content to carry into
+  // a later new session when the picker was dismissed before any reference was selected.
+  if (draft === '@') composerDrafts.clear()
+  composerRuntime.setDraft(draft === '@' ? '' : draft)
   if (!options.preserve) composerRuntime.clearImageBlocks()
 }
 let modelReadGeneration = 0

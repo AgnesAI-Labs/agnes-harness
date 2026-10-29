@@ -455,15 +455,15 @@ export function ReferencePicker({
               </div>
               <fieldset className="reference-layout-switch" aria-label={t('composer.reference.layout')}>
                 {(['overview', 'tabs', 'sources'] as const).map((mode) => (
-                  <button
+                  <Button
                     key={mode}
-                    type="button"
+                    htmlType="button"
                     aria-pressed={layout === mode}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => changeLayout(mode)}
                   >
                     {t(`composer.reference.layout.${mode}`)}
-                  </button>
+                  </Button>
                 ))}
               </fieldset>
             </div>
@@ -473,15 +473,15 @@ export function ReferencePicker({
           {emptyBrowse && layout === 'tabs' && (
             <fieldset className="reference-source-tabs" aria-label={t('composer.reference.source')}>
               {(['file', 'session', 'all'] as const).map((source) => (
-                <button
+                <Button
                   key={source}
-                  type="button"
+                  htmlType="button"
                   aria-pressed={sourceView === source}
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => changeSource(source)}
                 >
                   {t(`composer.reference.source.${source}`)}
-                </button>
+                </Button>
               ))}
             </fieldset>
           )}
@@ -526,8 +526,8 @@ export function ReferencePicker({
                       <div className="reference-group-heading">
                         <span>{t(`composer.reference.group.${group.key}`)}</span>
                         {group.total > group.items.length && (
-                          <button
-                            type="button"
+                          <Button
+                            htmlType="button"
                             onMouseDown={(event) => event.preventDefault()}
                             onClick={() => {
                               setExpanded((current) => [
@@ -538,7 +538,7 @@ export function ReferencePicker({
                             }}
                           >
                             {t('composer.reference.viewAll')} →
-                          </button>
+                          </Button>
                         )}
                       </div>
                     )}

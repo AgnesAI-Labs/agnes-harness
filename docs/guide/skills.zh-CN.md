@@ -131,6 +131,6 @@ ctx.skills.register({
 
 实现依据：[发现根](../../packages/base/extensions/skills/src/discover.ts)、[候选注册表](../../packages/resource-control-runtime/src/skills.ts)、[Cordis service](../../packages/resource-control-runtime/src/skills-cordis.ts)、[会话预加载](../../packages/host-extensions/src/resources/skill-preload.ts)、[Skill Helper](../../packages/package-manager/bundled-plugins/skill-helper/README.md)。
 
-在 Web 或 TUI 中使用 `/skill invoke NAME ARGUMENTS` 调用允许用户调用的 Skill；上下文页面也提供调用表单。Host 只加载唯一、可信且启用的胜出项；未知、停用或禁止用户调用的 Skill 会被拒绝。参数保留在用户消息中。
+在 Web 或 TUI 中使用 `/skill invoke NAME ARGUMENTS` 调用允许用户调用的 Skill；Web 输入框中输入 `$` 会打开已安装技能菜单，可点击条目（或用方向键与 Enter）把 `$NAME` 插入草稿。该菜单只帮助插入，发送时仍由 Host 复核：只加载唯一、可信且启用的胜出项；未知、停用或禁止用户调用的 Skill 会被拒绝。参数保留在用户消息中。
 
 包内 Skill 的附件会随获准的运行快照保存。现有规则不支持的文件类型仍会忽略。创作测试在提交审核前，按实际加载器的限制检查支持的附件。已安装的某个 Skill 文档无效、附件无法读取或超过预算时，只将该 Skill 标记为不可用：插件 → 技能页显示原因，不开放残缺正文或附件，服务启动时其他正常 Skill 继续加载。请通过原有审核流程修复并更新包，再重新加载。包完整性校验和快照发布失败仍按原有安全规则拒绝。插件 → 技能页里的运行时 Skill 先按当前插件组合和注册实例筛选，再处理同名竞争。它们由所属插件管理，不能在 Skill 页单独编辑或开关；旧会话仍保留自己固定的插件版本。

@@ -41,6 +41,10 @@ export class ComposerDrafts {
     }
     return options.preserve ? text : this.read()
   }
+  /** Replace the currently selected draft without changing which session it belongs to. */
+  clear(): void {
+    this.persist(this.selected, '')
+  }
   private persist(key: string, text: string): void {
     this.memory.set(key, text)
     try {

@@ -129,6 +129,28 @@
     color: var(--agnes-brand-primary);
     transform: translate(-50%, -50%);
   }
+  /* A selected skill keeps its literal `$name` in the draft, while the overlay gives it the same
+     visual language as the skill picker: a small sparkle followed by a brand-coloured name. */
+  .composer-skill-mention {
+    position: relative;
+    border-radius: var(--radius-sm);
+    color: var(--agnes-brand-primary);
+    background: color-mix(in srgb, var(--agnes-brand-primary) 8%, var(--agnes-bg-surface));
+    box-shadow: 0 0 0 0.125rem color-mix(in srgb, var(--agnes-brand-primary) 8%, var(--agnes-bg-surface));
+  }
+  .composer-skill-mention-prefix {
+    position: relative;
+    color: transparent;
+  }
+  .composer-skill-mention-icon {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    width: 0.875rem;
+    height: 0.875rem;
+    color: var(--agnes-brand-primary);
+    transform: translateY(-50%);
+  }
   .composer-mention > .composer-mention-remove.agh-btn.agh-btn--sm {
     position: absolute;
     top: -0.5rem;
