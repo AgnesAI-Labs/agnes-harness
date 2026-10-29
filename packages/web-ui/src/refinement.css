@@ -354,6 +354,9 @@
     color: var(--agnes-input-content-strong);
     background: var(--agnes-bg-control);
     font-size: var(--font-size-sm);
+    /* The value clips its overflow for the ellipsis, so its line box must hold the font's full
+     ascent and descent; the browser's 1.2 button default cuts descenders in Windows UI fonts. */
+    line-height: var(--line-sm);
     font-weight: 400;
     text-align: start;
     box-shadow: var(--shadow-control);
