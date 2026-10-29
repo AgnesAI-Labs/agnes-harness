@@ -74,6 +74,41 @@ it('shares a bundled third-party dependency into an isolated receiving folder', 
     expect(browser).toContain(specifier)
 })
 
+it('keeps the packed entry beside a nested original entry so import.meta.url reads still resolve', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agh-nested-pack-'))
+  roots.push(root)
+  const source = join(root, 'nested'),
+    receiver = join(root, 'friend')
+  mkdirSync(join(source, 'dist'), { recursive: true })
+  mkdirSync(join(source, 'skills'))
+  writeFileSync(join(source, 'skills', 'x.md'), 'skill body')
+  writeFileSync(
+    join(source, 'package.json'),
+    JSON.stringify({
+      name: 'nested-tool',
+      version: '1.0.0',
+      license: 'MIT',
+      type: 'module',
+      exports: './dist/index.js',
+      agnes: {
+        plugins: [{ id: 'ext:nested/main', apiRange: '^5.0.0', export: 'main', capabilities: { ui: true } }],
+      },
+    }),
+  )
+  writeFileSync(
+    join(source, 'dist', 'index.js'),
+    "import { readFileSync } from 'node:fs'; export const main = () => readFileSync(new URL('../skills/x.md', import.meta.url), 'utf8');",
+  )
+  const archive = await packPlugin(source, join(root, 'nested.tgz'))
+  rmSync(source, { recursive: true, force: true })
+  await fetchSource(parseSource('file:' + archive.split(sep).join('/')), receiver, { cwd: root })
+  const manifest = JSON.parse(readFileSync(join(receiver, 'package.json'), 'utf8'))
+  expect(manifest.exports).toBe('./dist/.agnes-packed-entry.mjs')
+  expect(manifest.main).toBe('./dist/.agnes-packed-entry.mjs')
+  const loaded = await import(pathToFileURL(join(receiver, 'dist', '.agnes-packed-entry.mjs')).href)
+  expect(loaded.main()).toBe('skill body')
+})
+
 it('packs a complete skin candidate for download, retaining entry, descriptor and relative assets', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agh-skin-sharing-'))
   roots.push(root)
