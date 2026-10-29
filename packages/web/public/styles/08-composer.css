@@ -832,6 +832,11 @@
     overflow: hidden;
     border-radius: var(--radius-pill);
     font-size: var(--font-size-xs);
+  }
+  /* The label is the button's only flex child: it shrinks and ends in an ellipsis, so the start stays readable. */
+  .composer-hint-action.agnes-ui-button > span {
+    min-width: 0;
+    overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }

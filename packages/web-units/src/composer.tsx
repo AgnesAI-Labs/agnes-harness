@@ -532,6 +532,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                   <Button
                     className="composer-hint-action"
                     data-testid="composer-use-model"
+                    // The pill truncates a long suggestion; the title keeps the whole of it readable.
+                    title={view.hint.action.label}
                     disabled={view.model.pending}
                     onClick={() => {
                       const model = view.hint.action?.model

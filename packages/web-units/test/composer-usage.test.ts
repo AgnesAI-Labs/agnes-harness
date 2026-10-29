@@ -139,6 +139,8 @@ it('renders the injected pickers and usage gauge in its own tree and feeds them 
     )
     const use = host.querySelector<HTMLButtonElement>('[data-testid="composer-use-model"]')
     expect(use?.textContent).toBe('Use next')
+    // The pill truncates a long suggestion; the full text stays available as its title.
+    expect(use?.title).toBe('Use next')
     expect(use?.previousElementSibling?.id).toBe('composer-hint')
     await act(async () => use?.click())
     expect(onModelSelect).toHaveBeenLastCalledWith(next)
