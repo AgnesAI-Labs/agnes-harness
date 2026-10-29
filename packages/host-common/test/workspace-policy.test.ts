@@ -252,6 +252,11 @@ describe('Host workspace policy compiler', () => {
 it('binds loopback serving to policy identity and intersects the captured parent authority', async () => {
   const plan = await compile('/work', { sandbox: { level: 'L1', loopback_serve: true } })
   const closed = await compile('/work', { sandbox: { level: 'L1' } })
+  const conditional = await compile('/work', {
+    sandbox: { level: 'L1', loopback_serve: true, on_unavailable: 'allow-if-unimplemented' },
+  })
+  expect(conditional.staticConfig.onUnavailable).toBe('allow-if-unimplemented')
+  expect(conditional.policy.loopbackServe).toBe(true)
   expect(plan.policy.loopbackServe).toBe(true)
   expect(plan.backendOptions.loopbackServe).toBe(true)
   expect(plan.policy.digest).not.toBe(closed.policy.digest)

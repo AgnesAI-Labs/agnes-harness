@@ -385,12 +385,22 @@ async function assembleWithSandbox(opts: {
 }
 
 describe('conditional native execution', () => {
-  it.runIf(process.platform === 'win32').each([false, true])(
-    'memory=%s keeps the file fence and executes an authorized Windows command without OS isolation',
-    async (memory) => {
+  it.runIf(process.platform === 'win32').each([
+    [false, false],
+    [false, true],
+    [true, false],
+    [true, true],
+  ])(
+    'memory=%s loopback=%s keeps the file fence and executes an authorized Windows command without OS isolation',
+    async (memory, loopbackServe) => {
       const f = await assembleWithSandbox({
         memory,
-        sandboxPreset: { level: 'L1', required: false, on_unavailable: 'allow-if-unimplemented' },
+        sandboxPreset: {
+          level: 'L1',
+          required: false,
+          on_unavailable: 'allow-if-unimplemented',
+          loopback_serve: loopbackServe,
+        },
       })
       let session: Awaited<ReturnType<typeof createSession>> | undefined
       try {
@@ -422,6 +432,7 @@ describe('conditional native execution', () => {
         expect(result.code).toBe(0)
         expect(result.stdout).toBe('windows-ok')
         expect(f.seam.enforcement()).toEqual({ level: 'partial', scope: ['file'] })
+        expect(f.runtime.policy.loopbackServe).not.toBe(true)
         await f.runtime.verifySession?.('session-a')
         await f.runtime.verifySession?.('session-a')
       } finally {
