@@ -17,7 +17,7 @@ agh plugins add https://example.com/team/hello-tool.git
 agh plugins add https://example.com/hello-tool.zip
 ```
 
-命令显示来源、内容摘要、能力哈希、能力范围、警告与阻断项。确认 `plugins add` 后安装、信任并启用核对过的确切版本。已明确授权的脚本可用 `--yes`；未确认的非交互调用会报出原因，并提示使用 `--yes`。旧的 `agh install` 仍保持未信任、停用。`agh plugins trust <id>` 自动读取已安装版本的哈希供确认，`agh plugins enable <id>` 启用前再次展示能力。
+命令显示来源、内容摘要、能力哈希、能力范围、警告与阻断项。确认 `plugins add` 后安装、信任并启用核对过的确切版本。已明确授权的脚本可用 `--yes`；未确认的非交互调用会报出原因，并提示使用 `--yes`。旧的 `agh install` 仍保持未信任、停用，遇到已安装的包会拒绝（请改用 `agh plugins add` 或 Web 更新）。包 ID 已安装时，`plugins add` 会显示版本变化（版本更低时标注 `(downgrade)`）和能力增删，确认后更新、信任并启用核对过的版本。相同版本已在运行则无需操作；相同版本但未信任、已停用或启动失败时，补做信任与启用（重试）。`agh plugins trust <id>` 自动读取已安装版本的哈希供确认，`agh plugins enable <id>` 启用前再次展示能力。
 
 “插件 → 添加插件”支持本地路径、Git URL 和归档 HTTPS 地址。本地路径指向 daemon 所在机器。`file:` 接受绝对路径、daemon 工作区外的文件夹、相对文件夹、`.tgz`/`.tar.gz`/`.tar` 与 ZIP。显式的相对 `file:` 仍从 daemon 工作区解析；CLI 裸路径从 CLI 当前目录解析。来源不能是符号链接。归档可直接包含包，或用单个目录包住它；越界路径、链接、特殊文件与过大的归档会被拒绝。只有 npm 包可以包含 `node_modules`、`.git` 或 `fixtures/out`；含有这些目录的归档、URL 或 Git 内容会以原因 `excluded-directory` 被拒绝（文件夹来源会跳过它们），依赖请用 `agh plugins pack` 打包分享。HTTPS 下载不跟随重定向、不接受 URL 凭据。
 
@@ -197,7 +197,7 @@ Web 对应“插件 → 添加插件 → 检查/安装 → 启用”。确认启
 
 能力变化或常规依赖、引用检查阻止刷新时，**插件 → 内置 → 版本**会显示**有可用更新**、已安装 → 随附版本与**审核更新**操作。该操作先进入既有的内容与能力审核，确认后才更新。复制出的发行载荷保留各包已声明的版本号。仅 `0.0.0` 占位版本使用发行版版本号（私有工作区构建使用已声明的公开候选版本号）。显式指定的发行版本可以提高包版本，但不能降低；复制出的示例精确依赖最终的所属插件版本。版本标签相同时仍比较完整性。
 
-当前 shell `package` 没有 `update` 子命令；请在 Web 插件页选已安装包的“从新来源更新”，或先检查来源后用 TUI `/package update <id> <source> <integrity>` 提交操作（该命令不提供安装式交互确认），程序调用则用 Node SDK `client.packages.update`。
+`agh plugins add <source>` 可用任意来源（含压缩包）更新已安装的包，见“分享与安装”。需要重启的插件会被拒绝；新版本启动失败时命令带原因退出，新版本仍保持已安装，请用 `agh plugins status` 查看并用 `agh package rollback <id>` 回滚。shell `package` 本身没有 `update` 子命令；请在 Web 插件页选已安装包的“从新来源更新”，或先检查来源后用 TUI `/package update <id> <source> <integrity>` 提交操作（该命令不提供安装式交互确认），程序调用则用 Node SDK `client.packages.update`。
 
 可以用 `hot-service/v1` 与 `v2`，或 `client-panel/v1` 与 `v2` 演练。先安装并启用 v1；更新时选择同 ID 的 v2 来源，核对新摘要和能力变化，按界面提示完成审核与激活。观察 actual 和界面/服务值，而不只看操作进度为 100%。
 

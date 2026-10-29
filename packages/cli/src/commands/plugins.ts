@@ -4,6 +4,7 @@ import type { PackageInstalledDescriptor } from '@agnes/protocol'
 import type { NodeClient } from '@agnes/sdk'
 import { CommandError, UsageError } from '../errors.js'
 import {
+  activateReviewedPackage,
   inspectPackage,
   installPreview,
   newPackageCommandId,
@@ -149,49 +150,12 @@ export async function runPluginDevelopmentCommand(
     let previous = entry.previous ?? installed.find((row) => row.id === preview.id)
     if (previous?.actual === 'restart-required')
       throw new Error('E_GENERATION_RESTART_REQUIRED: this plugin requires a restart')
-    const base = { profile, clientId: await client.clientId(), id: preview.id }
     if (!previous) {
       const result = await installPreview(client, profile, preview)
       previous = result.installed
       if (!previous) throw new Error('E_PLUGIN_RELOAD_INSTALL: installation returned no package')
     }
-    if (previous.integrity !== preview.integrity) {
-      await waitForPackageOperation(
-        client,
-        await client.packages.update({
-          ...base,
-          commandId: newPackageCommandId('reload'),
-          source: preview.source,
-          expectedIntegrity: preview.integrity,
-          activation: {
-            expectedInstalledIntegrity: previous.integrity,
-            expectedActiveIntegrity:
-              previous.actual === 'running' ? (previous.actualIntegrity ?? previous.integrity) : null,
-            trust: { integrity: preview.integrity, capabilityHash: preview.capabilityHash },
-          },
-        }),
-      )
-    } else {
-      if (!previous.trusted)
-        await waitForPackageOperation(
-          client,
-          await client.packages.trust({
-            ...base,
-            commandId: newPackageCommandId('dev-trust'),
-            expectedIntegrity: preview.integrity,
-            capabilityHash: preview.capabilityHash,
-          }),
-        )
-      if (previous.desired !== 'enabled')
-        await waitForPackageOperation(
-          client,
-          await client.packages.enable({
-            ...base,
-            commandId: newPackageCommandId('dev-enable'),
-            expectedInstalledIntegrity: preview.integrity,
-          }),
-        )
-    }
+    await activateReviewedPackage(client, profile, preview, previous)
     write(
       `${preview.id}@${preview.version} ready for new sessions; existing sessions keep their generation.\n`,
     )

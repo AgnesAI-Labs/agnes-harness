@@ -2,6 +2,7 @@ import type { PackageInstalledDescriptor, PackageOperation, PackagePreview } fro
 import type { NodeClient } from '@agnes/sdk'
 import { UsageError } from '../errors.js'
 import {
+  activateReviewedPackage,
   formatPreview,
   inspectPackage,
   installPreview,
@@ -82,6 +83,42 @@ async function directOperation(
   return waitForPackageOperation(client, receipt)
 }
 
+/** `agh plugins add` over an installed id: update (or repair) to the reviewed bytes and activate them. */
+async function updateInstalled(
+  p: ParsedArgs,
+  client: NodeClient,
+  io: PackageCommandIO,
+  profile: string,
+  preview: PackagePreview,
+  current: PackageInstalledDescriptor,
+): Promise<void> {
+  if (current.actual === 'restart-required')
+    throw new Error('E_GENERATION_RESTART_REQUIRED: this plugin requires a restart')
+  const same = current.integrity === preview.integrity
+  if (same && current.trusted && current.actual === 'running') {
+    io.write(`${current.id}@${current.version} is already installed, trusted and running; nothing to do.\n`)
+    return
+  }
+  io.write(
+    same
+      ? `${formatPreview(preview, { activate: true, repair: true })}\n`
+      : `${formatPreview(preview, { activate: true, installedVersion: current.version })}\n`,
+  )
+  if (preview.blockers.length > 0)
+    throw new UsageError('package preview has blockers; resolve the blockers above and inspect again')
+  if (!(await confirmPreview(p, io, preview))) {
+    io.write('Update cancelled.\n')
+    return
+  }
+  const operation = await activateReviewedPackage(client, profile, preview, current, { reenable: true })
+  if (operation) io.write(`${formatOperation(operation)}\n`)
+  const after = operation?.installed
+  if (after?.actual === 'failed')
+    throw new Error(
+      `${after.id}@${after.version} is installed but did not start: ${after.actualReason ?? after.failureHint ?? 'activation failed'}. Inspect it with agh plugins status; roll back with agh package rollback ${after.id}`,
+    )
+}
+
 export async function runPackageCommand(
   p: ParsedArgs,
   client: NodeClient,
@@ -137,6 +174,17 @@ export async function runPackageCommand(
         profile,
         parsePackageSource(requireArg(args, 1, 'agh install <source>')),
       )
+      const current = (await client.packages.list({ profile })).packages.find(
+        (entry) => entry.id === preview.id,
+      )
+      if (current) {
+        if (p.command !== 'plugins')
+          throw new UsageError(
+            `${current.id}@${current.version} is already installed; agh ${p.command} keeps packages untrusted and disabled. Use agh plugins add <source> to update, trust and enable it, or update it in the Web admin`,
+          )
+        await updateInstalled(p, client, io, profile, preview, current)
+        return
+      }
       io.write(`${formatPreview(preview, { activate: p.command === 'plugins' })}\n`)
       if (preview.blockers.length > 0)
         throw new UsageError('package preview has blockers; resolve the blockers above and inspect again')
