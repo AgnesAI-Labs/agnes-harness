@@ -143,7 +143,7 @@ URL 不授予权限，写操作仍经认证 BFF 与 admin 校验。**`agh app cl
 
 `/?admin` 的清除操作和 `agh app clear [--profile NAME] [--json]` **同时清除当前应用与全部界面实现选择**。恢复启动不运行第三方代码，保留执行配置和其他用户偏好。
 
-开发者示例见[五个机制教学包](../../examples/fde/README.zh-CN.md)。已随源码提供的产品演示包括 DevBoard、Pharma 与 Aerospace [showcase 应用](../guide/demos.zh-CN.md)。
+开发者示例见[五个机制教学包](../../examples/fde/README.zh-CN.md)。本仓库不提供产品应用，平台机制见[演示脚本](../guide/demos.zh-CN.md)。
 
 ## 会话业务工作台
 

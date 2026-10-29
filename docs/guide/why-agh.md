@@ -38,7 +38,7 @@ AGH is built for Forward Deployed Engineering (FDE): working in users' environme
 | Ongoing work | Shared daemon, session history, and recovery entry points | Find and continue tasks through CLI, Web, and SDK |
 | Execution control | Package trust, tool approvals, and execution constraints | Decide which code loads, which actions are allowed, and how to inspect results |
 
-Start with the [product demos](demos.md): DevBoard, Pharma GMP and Aerospace quality are shipped showcase applications. Developers can use the [five teaching examples](../../examples/fde/README.md) to learn tools, panels, approvals, reports and scheduling.
+Start with the [demo scripts](demos.md): business agents as plugins, upgrades that preserve work, and an agent that builds a reusable capability. Developers can use the [five teaching examples](../../examples/fde/README.md) to learn tools, panels, approvals, reports and scheduling.
 
 Each part has its own entry points and examples. Start with one query tool, add a Skill and a business panel, and grow the application around the needs of the deployment.
 

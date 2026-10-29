@@ -169,7 +169,7 @@ The [Acme reference application](../../examples/acme/README.md) supplies a tool,
 
 With the same home and profile, start Web at the selected origin before installing the application, or run `node agnes.mjs daemon stop` after installation and before starting Web. `plugins add` may itself start a daemon. If its origin differs, `serve --port 4198` refuses with `local daemon Web origin does not match the selected origin`. Stop this home’s daemon and retry the same `serve` command. See the complete [Acme deployment steps](../../examples/acme/README.md#deployer-adoption).
 
-Developer examples are the [five mechanism teaching packages](../../examples/fde/README.md). The shipped product demos are the DevBoard, Pharma and Aerospace [showcase applications](../guide/demos.md).
+Developer examples are the [five mechanism teaching packages](../../examples/fde/README.md). This repository ships no product applications; the [demo scripts](../guide/demos.md) show the platform mechanisms.
 
 ## Conversation workbench
 
