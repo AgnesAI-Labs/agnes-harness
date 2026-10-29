@@ -114,21 +114,37 @@ describe('sandboxWorkspaceProbe', () => {
     expect(request.probeExec).not.toHaveBeenCalled()
   })
 
-  it.each(['darwin', 'linux', 'unknown'])(
-    'refuses failed or unknown implementation on %s',
-    async (platform) => {
+  it.each([
+    ['darwin', false],
+    ['darwin', true],
+    ['linux', false],
+    ['unknown', false],
+    ['win32', true],
+  ])(
+    'refuses failed, unknown or unsupported serving on %s (loopback=%s)',
+    async (platform, loopbackServe) => {
       await expect(
-        sandboxWorkspaceProbe(input({ level: 'L1', platform, onUnavailable: 'allow-if-unimplemented' })),
-      ).rejects.toMatchObject({ code: 'E_SANDBOX_WORKSPACE' })
+        sandboxWorkspaceProbe(
+          input({
+            level: 'L1',
+            platform,
+            onUnavailable: 'allow-if-unimplemented',
+            options: { ...input().options, loopbackServe },
+          }),
+        ),
+      ).rejects.toMatchObject({
+        code: platform === 'win32' && loopbackServe ? 'E_SANDBOX_BACKEND_POLICY' : 'E_SANDBOX_WORKSPACE',
+      })
     },
   )
 
   it.each([
-    ['darwin', '/usr/bin/sandbox-exec', 'seatbelt'],
-    ['linux', 'bwrap', 'bwrap'],
+    ['darwin', '/usr/bin/sandbox-exec', 'seatbelt', false],
+    ['darwin', '/usr/bin/sandbox-exec', 'seatbelt', true],
+    ['linux', 'bwrap', 'bwrap', false],
   ])(
-    'keeps implemented %s isolation when its real probe succeeds',
-    async (platform, executable, backendName) => {
+    'keeps %s %s backend %s after a successful probe (loopback=%s)',
+    async (platform, executable, backendName, loopbackServe) => {
       const probeExec = vi.fn(async (argv: string[]) => ({
         code: argv[0] === executable ? 0 : 127,
         stdout: argv[0] === executable ? 'agnes-sandbox-probe-v1' : '',
@@ -137,7 +153,13 @@ describe('sandboxWorkspaceProbe', () => {
         timedOut: false,
       }))
       const backend = await sandboxWorkspaceProbe(
-        input({ level: 'L1', platform, onUnavailable: 'allow-if-unimplemented', probeExec }),
+        input({
+          level: 'L1',
+          platform,
+          onUnavailable: 'allow-if-unimplemented',
+          probeExec,
+          options: { ...input().options, loopbackServe },
+        }),
       )
       expect(backend).toMatchObject({
         name: backendName,

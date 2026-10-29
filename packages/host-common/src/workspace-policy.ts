@@ -92,11 +92,13 @@ export function normalizeSandboxStaticConfig(preset: Readonly<Record<string, unk
   if (
     loopbackServe &&
     (level !== 'L1' ||
-      onUnavailable !== 'deny' ||
+      onUnavailable === 'allow' ||
       access === 'full-access' ||
       stringList(input.network_allow, 'network_allow').length)
   )
-    throw fault('loopback_serve requires L1, on_unavailable deny, restricted access and no network_allow')
+    throw fault(
+      'loopback_serve requires L1, deny or allow-if-unimplemented, restricted access and no network_allow',
+    )
   return Object.freeze({
     level,
     access,

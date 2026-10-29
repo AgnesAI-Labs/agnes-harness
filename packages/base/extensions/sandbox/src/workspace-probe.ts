@@ -48,7 +48,11 @@ export async function sandboxWorkspaceProbe(
       'E_SANDBOX_WORKSPACE',
       'conditional isolation requires an L1 request and known implementation',
     )
-  if (input.options.loopbackServe && input.onUnavailable !== 'deny')
+  if (
+    input.options.loopbackServe &&
+    input.onUnavailable !== 'deny' &&
+    input.onUnavailable !== 'allow-if-unimplemented'
+  )
     throw fault('E_SANDBOX_WORKSPACE', 'loopback serving cannot fall back to unconfined execution')
   const backend = await detectBackend(input)
   const available = backend.name !== 'none'

@@ -43,6 +43,8 @@ export type SessionWorkspaceRuntime = Readonly<{
   policy: FsPolicy
   sandbox: SandboxReadinessCapability
   sandboxBackend: SandboxWorkspaceBackend
+  /** Host-approved local fallback; absence never authorizes unconfined delegation. */
+  allowsUnconfined?: boolean
   /** The table attaches the one session-bound invocation owner before publishing the runtime. */
   invocation?: WorkspaceInvocationPort
   /** Per-workspace fitted seam. Production factories always provide it before publication. */
@@ -69,6 +71,7 @@ export type WorkspaceRuntimeFence = WorkspaceRuntimeResource &
 
 export type SessionWorkspaceRuntimeFactoryInput = Readonly<{
   binding: WorkspaceBinding
+  allowsUnconfined?: boolean
   /** Production callback verifies durable execution evidence before opening a session. */
   verifySession?(key: string): Promise<void>
   invocation?: WorkspaceInvocationPort
@@ -141,6 +144,7 @@ export async function createSessionWorkspaceRuntime(
     const sandboxBackend = await readiness.capability.ready(input.signal)
     const base = Object.freeze({
       binding: input.binding,
+      ...(input.allowsUnconfined === undefined ? {} : { allowsUnconfined: input.allowsUnconfined }),
       ...(input.verifySession ? { verifySession: input.verifySession } : {}),
       root: fence.root,
       fs: fence.fs,

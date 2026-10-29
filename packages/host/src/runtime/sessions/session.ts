@@ -650,6 +650,7 @@ export async function createSession(
       policy: structuredClone(guardedSandbox.fsPolicy()),
       network: session.preset.approval.policy === 'full-access' ? 'allow' : 'deny',
       local: !a.adapters.transport && (profile.sandbox?.provider ?? 'local') === 'local',
+      allowsUnconfined: workspace?.runtime.allowsUnconfined === true,
     }),
     hasActiveProcesses: () => workspace?.runtime.hasActiveProcesses?.() ?? false,
     referenceResolvers: a.pluginTree.root.referenceResolvers,

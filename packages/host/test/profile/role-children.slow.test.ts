@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join, sep } from 'node:path'
 import { ScriptedProvider } from '@agnes/ai/testkit'
+import { sandboxWorkspaceProbe } from '@agnes/base'
 import { systemPromptPlugin } from '@agnes/code'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
 import { SystemPromptSettingsStore } from '@agnes/host-infrastructure/system-prompt-settings'
@@ -36,14 +37,21 @@ function typedToolSource(directory: string): void {
   )
 }
 
-it.each([false, true])(
-  'opens adopted roles fresh with their own requests, captured authority, absent-human refusal and signature refusal (delegatedFullAccess: %s)',
-  async (optIn) => {
+it.each([
+  ['confined', false],
+  ['confined', true],
+  ['unconfined', false],
+  ['unconfined', true],
+  ['file-only-denied', false],
+  ['file-only-denied', true],
+] as const)(
+  'opens roles with captured authority and sandbox constraints (%s, delegatedFullAccess: %s)',
+  async (mode, optIn) => {
     const declaration = {
       id: 'role-fixture',
       defaultAgent: ref('assistant'),
-      agents: ['assistant', 'reader', 'writer'].map(ref),
-      delegableAgents: ['reader', 'writer'].map(ref),
+      agents: ['assistant', 'reader', 'writer', 'strict'].map(ref),
+      delegableAgents: ['reader', 'writer', 'strict'].map(ref),
       ...(optIn ? { delegatedFullAccess: true as const } : {}),
     }
     const initial = pluginSourceWith(
@@ -97,6 +105,13 @@ ctx.tools.register({ ...tool('writer_signature'), execute: async (_args, ctx) =>
       reader: own('reader', ['reader_marker']),
       writer: own('writer', ['writer_approval', 'writer_signature', 'role_only']),
     }
+    const strict = own('strict', ['reader_marker'])
+    manifest.agnes.bundles.strict = {
+      ...strict,
+      presets: {
+        role: { ...strict.presets.role, sandbox: { level: 'L1', required: true, on_unavailable: 'deny' } },
+      },
+    }
     manifest.agnes.application = declaration
     writeFileSync(file, JSON.stringify(manifest))
     typedToolSource(initial.snapshot.directory)
@@ -137,6 +152,14 @@ ctx.tools.register({ ...tool('writer_signature'), execute: async (_args, ctx) =>
     const requests: RequestBody[] = []
     const fixture = await pluginHost([source, otherSource], {
       packages: {
+        ...(mode === 'confined'
+          ? {}
+          : {
+              '@agnes/base': {
+                sandboxImplementation: () => 'unimplemented',
+                sandboxWorkspaceProbe: (input) => sandboxWorkspaceProbe({ ...input, platform: 'win32' }),
+              },
+            }),
         '@agnes/code': {
           plugins: [
             {
@@ -158,6 +181,15 @@ ctx.tools.register({ ...tool('writer_signature'), execute: async (_args, ctx) =>
       treeBudgetCredits: 100,
       allowed: ['standard', 'inspect'],
       presets: {
+        ...(mode === 'unconfined'
+          ? {
+              standard: {
+                name: 'standard',
+                extends: 'base',
+                sandbox: { level: 'L1', required: false, on_unavailable: 'allow-if-unimplemented' },
+              },
+            }
+          : {}),
         inspect: {
           name: 'inspect',
           extends: 'standard',
@@ -268,6 +300,17 @@ ctx.tools.register({ ...tool('writer_signature'), execute: async (_args, ctx) =>
         }),
       ).rejects.toThrow('cannot be combined')
       expect(await parent.d.children.list?.()).toEqual([])
+      if (mode === 'file-only-denied') {
+        expect(parent.d.runtime.enforcement()).toEqual({ level: 'partial', scope: ['file'] })
+        await expect(create(ref('reader'))).rejects.toThrow('E_SANDBOX_WORKSPACE')
+        await parent.close()
+        return
+      }
+      expect(parent.d.runtime.enforcement()).toEqual(
+        mode === 'unconfined'
+          ? { level: 'partial', scope: ['file'] }
+          : { level: 'full', scope: ['file', 'network', 'process'] },
+      )
       await parent.enqueue('next-turn', {
         content: [{ type: 'text', text: 'PARENT_CONVERSATION_SECRET subagent_spawn' }],
         actor: parent.d.actor,
@@ -320,6 +363,9 @@ ctx.tools.register({ ...tool('writer_signature'), execute: async (_args, ctx) =>
         1,
       )
       expect(fixture.host.kernel.get(reader.key)?.d.log.parent).toBeUndefined()
+      expect(
+        (await parent.d.log.storage.scan(reader.key, { type: 'x/core/role-delegation', limit: 1 }))[0]?.data,
+      ).toMatchObject({ sandboxRequired: mode === 'confined' })
       const writer = await create(ref('writer'))
       expect((await parent.scan({ type: 'x/host/role-tool-intersection', limit: 100 })).at(-1)).toMatchObject(
         {
@@ -397,6 +443,13 @@ ctx.tools.register({ ...tool('writer_signature'), execute: async (_args, ctx) =>
       await readOnly.cancel!()
       await reader.cancel!()
       await writer.cancel!()
+      if (mode === 'unconfined') {
+        await expect(create(ref('strict'))).rejects.toThrow('E_SANDBOX_WORKSPACE')
+      } else {
+        const strictChild = await create(ref('strict'))
+        await strictChild.run('Inspect the evidence')
+        await strictChild.cancel!()
+      }
       await parent.close()
     } finally {
       await fixture.host.close()

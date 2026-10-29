@@ -332,6 +332,7 @@ export function createWorkspaceRuntimeFactory(
     let posture: Readonly<{ execBackend: SandboxExecBackend; enforcement: Enforcement }> | undefined
     return createSessionWorkspaceRuntime({
       binding,
+      allowsUnconfined: unconfined && !requiresFileIsolation,
       ...(invocation ? { invocation } : {}),
       verifySession: async (key) => {
         if (!savedPlan || !posture)
