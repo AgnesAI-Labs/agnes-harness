@@ -55,6 +55,7 @@ import {
   type Workspace,
   workspacesOf,
 } from './schedule-model.js'
+import { useScheduleOrder } from './schedule-order.js'
 import { ScheduleHistory, ScheduleRecords, type ScheduleRecordsApi } from './schedule-records.js'
 import { useScheduleRefresh } from './schedule-refresh.js'
 import {
@@ -221,7 +222,8 @@ export function SchedulesPage({
   const list = useResource(listKey, () => (api as SchedulesApi).list(query), {
     revalidateOnFocus: false,
   })
-  const rows = useMemo(() => (list.data === undefined ? [] : rowsOf(list.data)), [list.data])
+  const observedRows = useMemo(() => (list.data === undefined ? [] : rowsOf(list.data)), [list.data])
+  const rows = useScheduleOrder(listKey, observedRows)
   const loading = list.loading
   // Failures of an action the reader took; a failed read shows where the list is.
   const [error, setError] = useState<unknown>()
