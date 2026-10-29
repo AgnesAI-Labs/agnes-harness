@@ -82,6 +82,18 @@ const missingMethod = (error: unknown): boolean =>
   (error as { code?: unknown } | null)?.code === -32601 || errorData(error).code === 'METHOD_NOT_FOUND'
 const micDenied = (error: unknown): boolean =>
   (error as { name?: unknown } | null)?.name === 'NotAllowedError'
+/** Provider codes that blame the voice account (key, quota, models), not the moment. */
+const ACCOUNT_CODES = new Set(['AUTH', 'QUOTA', 'NO_MODEL', 'NO_ADAPTER', 'CONTRACT_MISMATCH'])
+/** The notice for a refusal retrying cannot fix; undefined for a failure that may pass. */
+const finalNotice = (error: unknown): VoiceNoticeKey | undefined => {
+  const data = errorData(error)
+  if (data.reason === 'VOICE_UNAVAILABLE') return 'unavailable'
+  if (data.reason === 'BUDGET') return 'budget'
+  if (data.code === 'CONFIG_CREDENTIAL_REJECTED') return 'account-rejected'
+  return data.reason === 'VOICE_PROVIDER' && ACCOUNT_CODES.has(String(data.code))
+    ? 'account-rejected'
+    : undefined
+}
 const seconds = (audio: HeardAudio): number => (audio.channels[0]?.length ?? 0) / audio.sampleRate
 const wait = (ms: number, signal: AbortSignal): Promise<void> =>
   new Promise((resolve, reject) => {
@@ -145,8 +157,14 @@ export function createVoiceController(deps: VoiceControllerDeps): VoiceControlle
     }, NOTICE_MS)
     emit()
   }
-  const failed = (error: unknown): void =>
-    showNotice(error instanceof SessionFailed ? 'session-failed' : micDenied(error) ? 'mic-denied' : 'failed')
+  /** Says why a step failed; true when retrying cannot help. */
+  const failed = (error: unknown): boolean => {
+    const final = finalNotice(error)
+    const passing =
+      error instanceof SessionFailed ? 'session-failed' : micDenied(error) ? 'mic-denied' : 'failed'
+    showNotice(final ?? passing)
+    return final !== undefined
+  }
 
   // Status: one call in flight; a request made meanwhile runs once more afterwards.
   let statusRunning = false

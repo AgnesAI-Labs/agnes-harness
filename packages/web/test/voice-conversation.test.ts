@@ -136,11 +136,63 @@ describe('voice conversation', () => {
     expect(deps.listen).not.toHaveBeenCalled()
   })
 
+  it('ends the conversation on a failed turn, leaving its text to the composer', async () => {
+    const { conversation, deps, phases } = setup({
+      listen: [audio, audio],
+      transcribe: ['在吗', '还在吗'],
+      turns: [{ kind: 'no-reply', turnId: 't1', status: 'failed' }],
+    })
+    conversation.start()
+    await vi.waitFor(() => expect(phases).toEqual(['listening', 'transcribing', 'thinking', 'idle']))
+    expect(deps.notice).toHaveBeenCalledWith('turn-failed')
+    expect(deps.send).toHaveBeenCalledTimes(1)
+    expect(deps.listen).toHaveBeenCalledTimes(1)
+  })
+
+  it('ends the conversation on a failure retrying cannot fix', async () => {
+    const { conversation, deps, phases, lock } = setup({ listen: [audio, audio] })
+    const error = new Error('rejected')
+    deps.transcribe.mockRejectedValue(error)
+    deps.fail.mockReturnValue(true)
+    conversation.start()
+    await vi.waitFor(() => expect(phases).toEqual(['listening', 'transcribing', 'idle']))
+    expect(deps.fail).toHaveBeenCalledWith(error)
+    expect(deps.transcribe).toHaveBeenCalledTimes(1)
+    expect(deps.notice).not.toHaveBeenCalled()
+    expect(lock.setConversation).toHaveBeenLastCalledWith(false)
+  })
+
+  it('ends the conversation after two failed rounds in a row', async () => {
+    const { conversation, deps, phases } = setup({ listen: [audio, audio, audio] })
+    deps.transcribe.mockRejectedValue(new Error('provider'))
+    conversation.start()
+    await vi.waitFor(() =>
+      expect(phases).toEqual(['listening', 'transcribing', 'listening', 'transcribing', 'idle']),
+    )
+    expect(deps.fail).toHaveBeenCalledTimes(2)
+    expect(deps.notice).toHaveBeenLastCalledWith('stopped')
+    expect(deps.listen).toHaveBeenCalledTimes(2)
+  })
+
+  it('counts a failed reading, and a good round starts the count again', async () => {
+    const reads: ReadOutcome[] = ['failed', 'ended', 'failed', 'failed']
+    const { conversation, deps } = setup({
+      listen: [audio, audio, audio, audio, audio],
+      transcribe: ['一', '二', '三', '四', '五'],
+      turns: [reply, reply, reply, reply, reply],
+      read: async () => reads.shift() ?? 'ended',
+    })
+    conversation.start()
+    await vi.waitFor(() => expect(conversation.phase.getSnapshot()).toBe('idle'))
+    expect(deps.read).toHaveBeenCalledTimes(4)
+    expect(deps.notice).toHaveBeenLastCalledWith('stopped')
+  })
+
   it('tells the user and listens again when the turn has no reply', async () => {
     const { conversation, deps, phases } = setup({
       listen: [audio],
       transcribe: ['在吗'],
-      turns: [{ kind: 'no-reply', turnId: 't1', status: 'failed' }],
+      turns: [{ kind: 'no-reply', turnId: 't1', status: 'cancelled' }],
     })
     conversation.start()
     await vi.waitFor(() => expect(phases).toEqual(['listening', 'transcribing', 'thinking', 'listening']))

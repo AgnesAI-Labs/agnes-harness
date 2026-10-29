@@ -15,7 +15,17 @@ export type VoiceUnavailable =
   | 'offline'
 export type VoiceLevel = 0 | 1 | 2 | 3 | 4
 export type ConversationPhase = 'idle' | 'listening' | 'transcribing' | 'thinking' | 'reading'
-export type VoiceNoticeKey = 'empty' | 'turn-ended' | 'failed' | 'mic-denied' | 'session-failed'
+export type VoiceNoticeKey =
+  | 'empty'
+  | 'turn-ended'
+  | 'turn-failed'
+  | 'failed'
+  | 'stopped'
+  | 'mic-denied'
+  | 'session-failed'
+  | 'account-rejected'
+  | 'unavailable'
+  | 'budget'
 export type VoiceViewState = Readonly<{
   dictation: Readonly<{
     visible: boolean
