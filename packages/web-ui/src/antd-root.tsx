@@ -9,6 +9,7 @@ import { useDocumentLanguage } from './document-language.js'
 import { createExternalStore, type StoreOptions, useStoreSelector } from './external-store.js'
 import { getOverlayContainer, overlayLayers } from './overlay-policy.js'
 import { RegionErrorBoundary } from './region-error-boundary.js'
+import { createDocumentLocaleSource, UiLocaleProvider } from './ui-locale.js'
 
 export { useDocumentLanguage } from './document-language.js'
 
@@ -66,6 +67,8 @@ function LocalizedProvider({
 function createApplicationRoot(container: Element | DocumentFragment): AntdRoot {
   const releaseStyles = retainAntdStyles(container.ownerDocument)
   const root = createRoot(container)
+  // One source for every region of this application, so `useUiText` follows the document language.
+  const locale = createDocumentLocaleSource({})
   const nonce = container.ownerDocument.querySelector<HTMLMetaElement>(
     'meta[name="agnes-csp-nonce"]',
   )?.content
@@ -73,12 +76,13 @@ function createApplicationRoot(container: Element | DocumentFragment): AntdRoot 
     render(children: ReactNode) {
       root.render(
         <LocalizedProvider nonce={nonce} owner={container.ownerDocument}>
-          {children}
+          <UiLocaleProvider source={locale.source}>{children}</UiLocaleProvider>
         </LocalizedProvider>,
       )
     },
     unmount() {
       root.unmount()
+      locale.dispose()
       releaseStyles()
     },
   }

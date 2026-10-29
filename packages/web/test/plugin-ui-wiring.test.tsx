@@ -2,9 +2,11 @@
 import { defaultLoop, type PackageInstalledDescriptor } from '@agnes/protocol'
 import { pluginStates } from '@agnes/web-admin/admin/plugins/control-panel'
 import * as businessAgents from '@agnes/web-admin/agents'
+import { AGENTS_NAMESPACE, agentsCatalog, businessAgentView } from '@agnes/web-admin/agents'
 import { type ClientContext, homeNavigation } from '@agnes/web-client'
 import { LOCALE_STORAGE_KEY } from '@agnes/web-foundation/locale-preference'
 import { THEME_STORAGE_KEY } from '@agnes/web-foundation/theme'
+import { useUiText } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
@@ -104,30 +106,55 @@ it('loads exact new-session defaults and renders the selected/stale Loop accessi
 })
 
 it('offers backend-ready AgentRefs in a new draft and opens the exact agent review', async () => {
-  const agent = {
-    ref: 'acme/kit#second',
-    entry: { id: 'acme/kit' },
-    name: 'Second agent',
-  } as businessAgents.BusinessAgent
-  const source = vi.spyOn(businessAgents, 'useBusinessAgents').mockReturnValue({
-    agents: [agent, { ...agent, ref: 'acme/kit#unavailable', name: 'Unavailable agent' }],
-    readyAgents: [agent.ref],
-    catalogError: undefined,
-    api: undefined,
-    features: undefined,
-    installed: [],
-    denied: undefined,
-    busy: false,
-    failed: false,
-    error: undefined,
-    loaded: true,
-    reload() {},
-    refreshInstalled() {},
+  const row = (bundle: string, title: { en: string; 'zh-CN': string }) =>
+    ({
+      id: 'acme/kit',
+      agents: [{ ref: `acme/kit#${bundle}`, launch: { title, description: { en: 'Does the work' } } }],
+    }) as never
+  const previousLanguage = document.documentElement.lang
+  const source = vi.spyOn(businessAgents, 'useBusinessAgents').mockImplementation(() => {
+    // The locale the picker's data hook sees is the one a real caller gets from the application tree.
+    const { locale } = useUiText(AGENTS_NAMESPACE, agentsCatalog)
+    return {
+      agents: [
+        businessAgentView(row('second', { en: 'Second agent', 'zh-CN': '第二个智能体' }), locale),
+        businessAgentView(row('unavailable', { en: 'Unavailable agent', 'zh-CN': '不可用智能体' }), locale),
+      ],
+      readyAgents: ['acme/kit#second'],
+      catalogError: undefined,
+      api: undefined,
+      features: undefined,
+      installed: [],
+      denied: undefined,
+      busy: false,
+      failed: false,
+      error: undefined,
+      loaded: true,
+      reload() {},
+      refreshInstalled() {},
+    }
   })
   const host = document.createElement('div')
   document.body.append(host)
-  const root = createRoot(host)
+  let runtime!: Awaited<ReturnType<typeof startClientModules>>
   try {
+    // The composer region mounts under the application root, as in the product.
+    const conversationUi = await bundledPresentation('conversation')
+    const { clientModule } = await import('@agnes/web-client')
+    await act(async () => {
+      runtime = await startClientModules({
+        agnes: { sessions: { get: () => undefined } } as never,
+        composerContainer: host,
+      })
+      await runtime.ctx.plugin(clientModule(conversationUi), {
+        packageId: '@agnes/conversation-ui',
+        revision: 'agents-locale',
+        clientId: 'conversation-ui',
+        presentationRoles: ['conversation', 'composer'],
+        slotCatalogVersion: 'dsh-client-slots/v1',
+        binding: { owner: 'agents-locale', lifetime: 'profile', availability: 'active' },
+      } as never)
+    })
     localStorage.setItem('agnes.settings.advanced', '0')
     await act(async () => {
       updateLoopPicker({
@@ -139,7 +166,6 @@ it('offers backend-ready AgentRefs in a new draft and opens the exact agent revi
         unavailable: '',
         onSelect() {},
       })
-      root.render(createElement(LoopPicker))
     })
     expect(source).toHaveBeenLastCalledWith({}, { enabled: false })
     await act(async () => {
@@ -163,10 +189,20 @@ it('offers backend-ready AgentRefs in a new draft and opens the exact agent revi
     )
     const choices = [...document.querySelectorAll<HTMLElement>('.ant-select-item-option')]
     expect(choices.map((choice) => choice.textContent)).toEqual(['Second agent'])
-    await act(async () => choices[0]!.click())
+    // The user's language reaches the picker through the real locale event, not a hand-set attribute.
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('agnes:locale-changed', { detail: 'zh-CN' }))
+    })
+    expect(document.documentElement.lang).toBe('zh-CN')
+    await vi.waitFor(() =>
+      expect(
+        [...document.querySelectorAll<HTMLElement>('.ant-select-item-option')].map((c) => c.textContent),
+      ).toEqual(['第二个智能体']),
+    )
+    await act(async () => document.querySelector<HTMLElement>('.ant-select-item-option')!.click())
     expect(homeNavigation.getSnapshot()).toEqual({
       id: 'agents',
-      selection: { focus: 'acme/kit', agent: agent.ref, start: true },
+      selection: { focus: 'acme/kit', agent: 'acme/kit#second', start: true },
     })
     await act(async () =>
       updateLoopPicker({
@@ -184,7 +220,10 @@ it('offers backend-ready AgentRefs in a new draft and opens the exact agent revi
     source.mockRestore()
     localStorage.removeItem('agnes.settings.advanced')
     homeNavigation.close()
-    await act(async () => root.unmount())
+    await act(async () => {
+      await runtime?.dispose()
+    })
+    document.documentElement.lang = previousLanguage
     host.remove()
   }
 })

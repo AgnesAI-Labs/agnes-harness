@@ -50,6 +50,9 @@ export function createDocumentLocaleSource(
   }
   window.addEventListener('agnes:locale-changed', refresh)
   window.addEventListener('storage', onStorage)
+  // The host writes `lang` after its own listeners run, so the event alone can arrive before the write.
+  const observer = new MutationObserver(refresh)
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] })
 
   const source: UiLocaleSource = {
     getSnapshot: () => locale,
@@ -73,6 +76,7 @@ export function createDocumentLocaleSource(
     dispose: () => {
       window.removeEventListener('agnes:locale-changed', refresh)
       window.removeEventListener('storage', onStorage)
+      observer.disconnect()
       listeners.clear()
     },
   }
