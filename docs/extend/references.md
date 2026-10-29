@@ -10,6 +10,8 @@ The empty `@` menu defaults to **Overview**, a compact view of files and session
 
 `Session.workspaceBrowse(path, { signal })` provides the same one-level, strictly checked listing without Git status work. `Session.searchReferences(query, { signal })` can cancel an in-flight search. Search cancellation is scoped to the request and does not cancel the session or a prompt. Older clients can continue using the original search result shape and `workspaceList(path)` behavior.
 
+Plain file keyword search enumerates path candidates on demand with the bundled ripgrep binary; it does not maintain a resident index or file watcher. Before displaying a candidate, the worker applies the current ignore rules, private-path restrictions, symlink checks and workspace authority. Enumeration has a bounded output budget and reports partial results when that budget is reached. Selection remains a locator and is checked again at send time.
+
 Register a provider from an in-process plugin row through the public author API:
 
 ```ts

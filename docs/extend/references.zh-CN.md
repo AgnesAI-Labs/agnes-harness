@@ -10,6 +10,8 @@
 
 `Session.workspaceBrowse(path, { signal })` 复用严格检查的一层目录列举，并跳过 Git 状态读取。`Session.searchReferences(query, { signal })` 可取消单次在途搜索，不会取消会话或提示词。旧客户端仍使用原有搜索结果形状和 `workspaceList(path)` 行为。
 
+普通文件关键词搜索按需使用内置 ripgrep 枚举候选路径，不维护常驻索引或文件监听。worker 在展示候选项前检查当前忽略规则、私有路径、软链接和工作区读取权限。枚举输出有上限，达到上限时返回部分结果标记。选择结果仍只是定位符，发送时会再次校验。
+
 普通插件通过公开 `reference-resolver` kind 注册解析器。`ReferenceContext` 提供可撤销的工作区文件端口、按权限过滤的会话端口、取消信号与部署限制；官方 file/session 解析器使用相同端口。自定义来源须自行检查后端数据权限，搜索结果只含定位符和显示标签，不授予权限。
 
 ```ts

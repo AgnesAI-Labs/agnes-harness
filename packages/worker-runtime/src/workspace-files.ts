@@ -381,6 +381,83 @@ export async function listWorkspace(
   }
 }
 
+/** Validate name-only search candidates with the same ignore and workspace authority as exact reads. */
+export async function authorizeWorkspaceReferenceCandidates(
+  cwd: string,
+  authority: WorkspaceAuthority,
+  signal: AbortSignal,
+  candidates: readonly string[],
+  limit: number,
+): Promise<{ paths: string[]; truncated: boolean }> {
+  const root = await canonicalRoot(cwd)
+  await resolveInside(root, '', authority)
+  const cached = new Map<string, IgnoreFile[] | null>()
+  let truncated = false
+  const rulesFor = async (dir: string): Promise<IgnoreFile[] | null> => {
+    if (cached.has(dir)) return cached.get(dir) ?? null
+    const parent = dir ? dir.split('/').slice(0, -1).join('/') : ''
+    const inherited = dir ? await rulesFor(parent) : []
+    if (inherited === null || (dir && ignoredBy(dir, true, inherited))) {
+      cached.set(dir, null)
+      return null
+    }
+    if (dir) {
+      try {
+        await resolveInside(root, dir, authority)
+      } catch {
+        signal.throwIfAborted()
+        cached.set(dir, null)
+        return null
+      }
+    }
+    try {
+      const local: IgnoreFile[] = []
+      for (const name of ['.gitignore', '.aghignore']) {
+        signal.throwIfAborted()
+        const content = await readInsideText(root, dir, name, authority, true)
+        if (content !== undefined) local.push(compileIgnore(dir, content))
+      }
+      const rules = [...inherited, ...local]
+      cached.set(dir, rules)
+      return rules
+    } catch (error) {
+      signal.throwIfAborted()
+      if (!dir) throw error
+      cached.set(dir, null)
+      truncated = true
+      return null
+    }
+  }
+  const paths: string[] = []
+  for (const candidate of candidates) {
+    signal.throwIfAborted()
+    let rel: string
+    try {
+      rel = normalizeWorkspacePath(candidate)
+    } catch {
+      truncated = true
+      continue
+    }
+    if (!rel || rel !== candidate) {
+      truncated = true
+      continue
+    }
+    const parent = rel.split('/').slice(0, -1).join('/')
+    const rules = await rulesFor(parent)
+    if (rules === null || ignoredBy(rel, false, rules)) continue
+    try {
+      const abs = await resolveInside(root, rel, authority)
+      if (!(await lstat(abs)).isFile()) continue
+      signal.throwIfAborted()
+      paths.push(rel)
+      if (paths.length >= limit) break
+    } catch {
+      signal.throwIfAborted()
+    }
+  }
+  return { paths, truncated }
+}
+
 export async function readWorkspace(
   cwd: string,
   requested: string,

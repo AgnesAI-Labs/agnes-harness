@@ -112,6 +112,28 @@ it('searches the ignored workspace tree fuzzily and re-reads exact source versio
     expect(
       (await searchReferenceFiles(root, authority, 'smts', signal)).items.map((item) => item.id),
     ).toEqual(['src/main.ts'])
+    await writeFile(join(root, 'src', 'fresh.ts'), 'new')
+    expect(
+      (await searchReferenceFiles(root, authority, 'fresh', signal)).items.map((item) => item.id),
+    ).toEqual(['src/fresh.ts'])
+    const cancelled = new AbortController()
+    cancelled.abort()
+    await expect(searchReferenceFiles(root, authority, 'smts', cancelled.signal)).rejects.toBeDefined()
+    const unreadableNestedIgnore = {
+      stat: async (path: string) => {
+        if (path.endsWith('src\\.gitignore') || path.endsWith('src/.gitignore'))
+          throw new Error('Permission denied')
+      },
+    }
+    const partial = await searchReferenceFiles(root, unreadableNestedIgnore, 'smts', signal)
+    expect(partial.items).toEqual([])
+    expect(partial.truncated).toBe(true)
+    const deniedDirectory = {
+      stat: async (path: string) => {
+        if (path === join(root, 'src')) throw new Error('Permission denied')
+      },
+    }
+    expect((await searchReferenceFiles(root, deniedDirectory, 'smts', signal)).items).toEqual([])
     expect(fuzzyRank('src/main.ts', 'missing')).toBeUndefined()
     await writeFile(join(root, 'src/main.ts'), 'after')
     const read = await readWorkspaceReference(root, 'src/main.ts', authority, 1024)

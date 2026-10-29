@@ -93,7 +93,9 @@
   .composer-mention-layer {
     position: absolute;
     z-index: 2;
-    overflow: hidden;
+    /* Keep scrolled text clipped while allowing the mention's close badge above the first line. */
+    overflow: clip;
+    overflow-clip-margin: 0.625rem;
     pointer-events: none;
   }
   .composer-mention-text {
