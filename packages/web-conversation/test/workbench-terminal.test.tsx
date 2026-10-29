@@ -177,6 +177,12 @@ it('reads a child agent job as the messages it reported, not as a fixed-width sc
   // A terminal screen would break these lines at its own column count instead of the pane's width.
   expect(host.querySelector('.agh-terminal-screen')).toBeNull()
   expect(host.textContent).toContain('子智能体消息 · 只读')
+  child.stdout += '\n\n[Demo model] Hello! Say "call <tool>" to try it. All messages received.'
+  window.dispatchEvent(new Event('focus'))
+  await vi.waitFor(() => expect(report.textContent).toContain('All messages received.'))
+  expect(report.textContent).toContain('call <tool>')
+  expect(report.querySelector('tool')).toBeNull()
+  expect(report.querySelector('code')?.textContent).toBe('registry.ts')
 })
 
 it('closes a finished child report with the state it ended in', async () => {

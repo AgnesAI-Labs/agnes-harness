@@ -6,7 +6,7 @@ import { chooseWorkspace, fresh, preferences, send, turn } from './ui.js'
 test('human controls queue, interrupt, persist pause and stop/continue a child', async ({
   page,
   runtime,
-}) => {
+}, info) => {
   test.setTimeout(120_000)
   await preferences(page)
   await page.goto(runtime.url)
@@ -69,11 +69,30 @@ test('human controls queue, interrupt, persist pause and stop/continue a child',
   const child = tree.getByTestId('child-control-row').first()
   await expect(child.getByTestId('child-stop')).toBeEnabled()
   await expect(child.getByTestId('child-control-metrics')).toBeVisible()
+  const sessionUrl = page.url()
+  await child.getByTestId('child-open').click()
+  const report = page.getByRole('region', { name: 'Subagent messages', exact: true })
+  await expect(report).toBeVisible()
+  await expect(page.getByTestId('terminal-tab').filter({ hasText: 'Subagent' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  expect(page.url()).toBe(sessionUrl)
+  await page.screenshot({ path: info.outputPath('subagent-tray-and-report.png'), animations: 'disabled' })
+  await page.getByTestId('workbench-right-toggle').click()
   await child.getByTestId('child-stop').click()
   await expect(child.getByTestId('child-continue-message')).toBeEnabled()
   await child.getByTestId('child-continue-message').fill('Finish with a synthetic answer')
   await child.getByTestId('child-continue').click()
   await expect.poll(async () => (await session.controls()).children?.[0]?.status).toBe('idle')
+  await child.getByTestId('child-open').click()
+  const job = (await session.jobsRead(`child:${await child.getAttribute('data-child-id')}`)).job
+  expect(job?.kind).toBe('child')
+  expect(job?.stdout).toContain('Calling e2e_wait_for_cancel with example arguments.')
+  await expect(report.locator('.workbench-child-report-body')).toHaveText(job?.stdout?.trim() ?? '')
+  await expect(report.locator('.xterm')).toHaveCount(0)
+  await page.screenshot({ path: info.outputPath('subagent-idle-report.png'), animations: 'disabled' })
+  await page.getByTestId('workbench-right-toggle').click()
   const facts = (await session.controls({ afterSeq: 0 })).facts ?? []
   for (const action of ['interrupt', 'resume', 'child-stop', 'child-continue'])
     expect(facts).toEqual(

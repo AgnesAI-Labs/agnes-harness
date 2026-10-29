@@ -6,6 +6,8 @@ import { ConversationMarkdown } from '@agnes/web-ui/conversation'
  * A child agent reports messages, not terminal output: its job text is the prose it wrote, so it
  * renders as a readable document instead of a fixed-width screen that breaks the lines at a column
  * count. The snapshot is the same bounded one the terminal screen receives.
+ * Parse each received snapshot in full: a live child's complete messages can contain literal
+ * examples such as `<tool>` whose closing tag will never arrive.
  */
 export function ChildAgentReport({ job, t }: { job: SessionJob; t: UiExtensionContext['t'] }) {
   const running = job.status === 'running'
@@ -14,7 +16,7 @@ export function ChildAgentReport({ job, t }: { job: SessionJob; t: UiExtensionCo
     <section className="workbench-child-report" aria-label={t('workbench.terminal.childOutput')}>
       {text ? (
         <div className="workbench-child-report-body">
-          <ConversationMarkdown source={text} part="body" streaming={running} t={t} />
+          <ConversationMarkdown source={text} part="body" t={t} />
         </div>
       ) : (
         <p className="workbench-child-report-waiting" role="status">
