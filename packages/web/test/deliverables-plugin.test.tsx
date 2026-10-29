@@ -541,11 +541,14 @@ it('opens inline-only historical snapshots locally, reveals selected earlier ver
       host.querySelectorAll<HTMLButtonElement>('[data-testid=deliverable-open]')[1]!.click(),
     )
     await act(async () => host.querySelector<HTMLButtonElement>('[data-testid=deliverables-source]')!.click())
-    expect(navigate).toHaveBeenLastCalledWith({
-      sessionId: 's',
-      laneId: 'main',
-      anchor: { kind: 'tool', toolUseId: 'old-call' },
-    })
+    expect(navigate).toHaveBeenLastCalledWith(
+      {
+        sessionId: 's',
+        laneId: 'main',
+        anchor: { kind: 'tool', toolUseId: 'old-call' },
+      },
+      undefined,
+    )
     // A late loader result after provider disposal must be released without reviving the card.
     let complete!: (value: unknown) => void
     load.mockImplementationOnce(

@@ -131,15 +131,17 @@ export function ChildControlRow({
     <>
       <div className="composer-child-head">
         <StatusDot tone={mark.dot} running={WORKING.has(child.status)} />
-        <button
-          type="button"
+        <Button
+          htmlType="button"
+          size="small"
+          appearance="ghost"
           className="composer-child-name"
           data-testid="child-open"
           title={child.id}
           onClick={(event) => openChildJob(event.currentTarget, child.id)}
         >
           {childName(child, t)}
-        </button>
+        </Button>
         <span role="status" className="composer-child-state" data-tone={mark.tag}>
           {t('composer.child.' + child.status)}
         </span>

@@ -408,11 +408,14 @@ it('navigates from file review, renders a read-only diff and ignores results det
     flushSync(() => (host.querySelector('[data-testid=changes-mention]') as HTMLButtonElement).click())
     expect(mention).toHaveBeenCalledWith(path)
     flushSync(() => (host.querySelector('[data-testid=changes-provenance]') as HTMLButtonElement).click())
-    expect(openFacts).toHaveBeenCalledWith({
-      sessionId: 's',
-      laneId: 'main',
-      anchor: { kind: 'tool', toolUseId: 'actual-use' },
-    })
+    expect(openFacts).toHaveBeenCalledWith(
+      {
+        sessionId: 's',
+        laneId: 'main',
+        anchor: { kind: 'tool', toolUseId: 'actual-use' },
+      },
+      undefined,
+    )
     expect(openRecord).not.toHaveBeenCalled()
     expect(host.textContent).toContain('could not be linked')
     openFacts.mockReturnValue(true)

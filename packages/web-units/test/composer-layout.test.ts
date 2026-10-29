@@ -722,7 +722,8 @@ it('asks the terminal panel for the child job when its name is clicked', () => {
   try {
     const name = host.querySelector<HTMLButtonElement>('[data-testid="child-open"]')
     // The child is a job of this session; a session URL would name a session that cannot exist.
-    expect(name?.className).toBe('composer-child-name')
+    expect(name?.classList.contains('composer-child-name')).toBe(true)
+    expect(name?.classList.contains('agnes-ui-button')).toBe(true)
     expect(name?.tagName).toBe('BUTTON')
     expect(name?.hasAttribute('href')).toBe(false)
     name?.click()

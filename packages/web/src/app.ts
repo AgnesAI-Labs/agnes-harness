@@ -2,7 +2,7 @@ import { defaultLoop, defaultModelAdapter } from '@agnes/protocol'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import type { StartedSession } from '@agnes/web-admin/agents'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
-import { factChainLinks, workbenchNavigation } from '@agnes/web-client'
+import { factChainLinks } from '@agnes/web-client'
 import {
   appServerErrorMessage,
   bindDialogSheets,
@@ -32,6 +32,7 @@ import { createSessionController } from './app/session-controller.js'
 import { SessionBindingOwner } from './app/session-owner.js'
 import { createSubmissionController } from './app/submission-controller.js'
 import { SubmissionOwner } from './app/submission-owner.js'
+import { bindTerminalNavigation } from './app/terminal-navigation.js'
 import { createTurnController } from './app/turn-controller.js'
 import { openApplicationHome, projectApplication, requestNewSession } from './application.js'
 import { readyRosterModules } from './client-modules/reconcile/roster.js'
@@ -992,21 +993,7 @@ const tracePanel = clientModules.trace as NonNullable<typeof clientModules.trace
 if (!tracePanel) throw new Error('missing trace region')
 // Every «View in trace» link (requests, tools, changes, deliverables, feedback) opens the trace.
 factChainLinks.register((target) => tracePanel.focusFact?.(target) ?? false)
-const openSettingsTerminal = (event: Event) => {
-  settings.close()
-  if (workbenchNavigation.open('terminal')) event.preventDefault()
-}
-const stopSettingsTerminal = onSurfaceEvent('agnes:settings-terminal', openSettingsTerminal)
-// A child agent's name in the composer tray asks for its tab in the session's terminal panel. The
-// child is a job of this session, so the request never becomes a session URL of its own.
-const openTerminalJob = (event: Event) => {
-  const childId =
-    event instanceof CustomEvent ? (event.detail as { childId?: unknown } | null)?.childId : undefined
-  if (typeof childId !== 'string' || !childId) return
-  settings.close()
-  workbenchNavigation.open('terminal', { childId })
-}
-const stopTerminalJob = onSurfaceEvent('agnes:open-terminal-job', openTerminalJob)
+const stopTerminalNavigation = bindTerminalNavigation(() => settings.close())
 const statusCheck = mountStatusCheck({
   details: () =>
     run(async () => {
@@ -2310,8 +2297,7 @@ onPageHide(() => {
   sidebarPages.reset()
   intentionalClose = true
   stopConnectionEvents()
-  stopSettingsTerminal()
-  stopTerminalJob()
+  stopTerminalNavigation()
   stopSurfaceSettings()
   stopSettingsRouting()
   statusCheck.dispose()

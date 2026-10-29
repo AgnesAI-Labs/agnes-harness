@@ -98,7 +98,7 @@ const submit = () =>
     )
   })
 
-const standup = {
+const standup: ScheduleRow = {
   id: 'sched_0123456789abcdef',
   title: 'Standup',
   prompt: 'Check mail',
@@ -117,7 +117,7 @@ const standup = {
     },
   ],
 }
-const report = {
+const report: ScheduleRow = {
   ...standup,
   id: 'sched_00000000000000aa',
   title: 'Daily report',
@@ -557,7 +557,7 @@ it.each([false, true])(
   'keeps the same task under a repeated switch click (same titles: %s)',
   async (sameTitles) => {
     const values: ScheduleRow[] = [standup, report, { ...standup, id: 'sched_1111111111111111' }].map(
-      (row, i) => ({
+      (row, i): ScheduleRow => ({
         ...row,
         title: sameTitles ? 'ddd' : `Task ${i}`,
         status: 'active',
