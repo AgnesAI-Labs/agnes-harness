@@ -29,12 +29,12 @@ const c = {
 const translations = {
   en: {
     title: 'Agnes Harness',
-    subtitle: 'One execution foundation for business agents and field delivery',
+    subtitle: 'One execution foundation for field delivery and the physical world',
     roles: [
       ['LLM', 'Brain', 'Reasoning and actions', 'Via AI providers'],
       ['Jev', 'Cerebellum', 'Decisions and routing', 'Works with the agent loop'],
       ['Harness', 'Memory', 'State, history, methods', 'Sessions, records, Skills'],
-      ['Plugins', 'Tools', 'Business capabilities', 'Public extension APIs'],
+      ['MHS', 'Body', 'Physical devices', 'Devices via AgnesHub'],
     ],
     server: 'APP SERVER',
     serverDetail: 'Shared sessions · task submission · event streaming · approval routing',
@@ -59,22 +59,23 @@ const translations = {
     fde: ['FDE · ENTERPRISE DELIVERY', 'Compose plugins into a customer-specific agent'],
     fdeItems: ['Knowledge base', 'Database', 'Business systems', 'Domain software'],
     fdeNote: 'Connectors are built and validated per site',
-    reports: ['REPORTS · REVIEWED WORK', 'Profile services and human approval'],
-    reportChain: ['Prepare report', 'Review and publish'],
-    outputs: ['Report', 'Receipt', 'History'],
-    reportNote: 'External effects require review and outcome verification',
-    footer: 'Compose business agents, review their effects and retain inspectable execution records.',
+    mhs: ['MHS · PHYSICAL WORLD', 'Devices speak MHS and MOS'],
+    mhsChain: ['AgnesHub', 'Controller'],
+    devices: ['Microscope', 'Robotic arm', 'Liquid handler'],
+    mhsNote: 'Illustrative devices · interlocks and e-stops stay on devices',
+    footer:
+      'FDE delivers at enterprise sites. MHS connects the physical world. Both run on the same foundation.',
     description:
-      'Animated AGH architecture. Clients reach the App Server; the Agent Runtime runs the agent loop with durable memory and controlled execution. Plugins extend the runtime for business agents, enterprise delivery and reviewed reporting workflows.',
+      'Animated AGH architecture. LLM is the brain, Jev the cerebellum, Harness the memory and MHS the body; devices connect through AgnesHub over MHS. Clients reach the App Server, the Agent Runtime runs the agent loop with Harness memory and controlled execution, plugins extend the runtime, and the same foundation serves enterprise FDE delivery and physical-world integration.',
   },
   'zh-CN': {
     title: 'Agnes Harness',
-    subtitle: '一套执行底座，构建业务 Agent 与企业交付',
+    subtitle: '一套执行底座，连接企业现场与物理世界',
     roles: [
       ['LLM', '大脑', '理解、推理与动作建议', '经 AI Provider 接入'],
       ['Jev', '小脑', '结构化决策与路由', '与 Agent 循环协同'],
       ['Harness', '记忆', '状态、历史与可复用方法', '会话、执行记录、Skills'],
-      ['Plugins', '工具', '可组合的业务能力', '通过公开扩展 API 接入'],
+      ['MHS', '身体', '连接物理设备的能力', '经 AgnesHub 接入设备'],
     ],
     server: 'APP SERVER · 统一接入',
     serverDetail: '共享会话 · 任务提交 · 事件推送 · 审批路由',
@@ -99,13 +100,13 @@ const translations = {
     fde: ['FDE · 企业现场交付', '组合插件，构建客户专属 Agent'],
     fdeItems: ['知识库', '数据库', '业务系统', '领域软件'],
     fdeNote: '具体连接器按现场开发与验证',
-    reports: ['报表 · 审核与执行', 'Profile 服务与人工审批'],
-    reportChain: ['准备报表', '审核并发布'],
-    outputs: ['报表', '回执', '历史'],
-    reportNote: '外部动作须经审核，并核验执行结果',
-    footer: '组合业务 Agent，审核外部动作，保留可检查的执行记录。',
+    mhs: ['MHS · 物理世界', '设备通过 MHS 与 MOS 接入'],
+    mhsChain: ['AgnesHub', '设备控制器'],
+    devices: ['显微镜', '机械臂', '移液工作站'],
+    mhsNote: '设备仅为示意 · 互锁与急停由设备负责',
+    footer: 'FDE 服务企业现场，MHS 连接物理世界；两者运行在同一套底座上。',
     description:
-      'AGH 架构动画：客户端经 App Server 接入，Agent Runtime 以耐久记忆和受控执行运行 Agent 循环；插件扩展运行时，支撑业务 Agent、企业交付与经审核的报表流程。',
+      'AGH 架构动画：LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体，设备经 AgnesHub 以 MHS 接入。客户端经 App Server 接入，Agent Runtime 以 Harness 记忆和受控执行运行 Agent 循环，插件扩展运行时，同一底座支撑企业 FDE 交付与物理世界接入。',
   },
 }
 
@@ -125,6 +126,9 @@ const icons = {
   stack:
     '<ellipse cx="12" cy="6" rx="7" ry="2.6"/><path d="M5 6v12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V6"/>' +
     '<path d="M5 12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6"/>',
+  arm:
+    '<path d="M4 20h9M8.5 20v-6l6-5 4 2"/><circle cx="8.5" cy="14" r="1.6"/><circle cx="14.5" cy="9" r="1.6"/>' +
+    '<path d="M18.5 11v2.5"/>',
   spark: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M18 16v4M16 18h4"/>',
   doc: '<rect x="5.5" y="3.5" width="13" height="17" rx="2"/><path d="M9 9h6M9 12.5h6M9 16h4"/>',
   wrench:
@@ -142,6 +146,14 @@ const icons = {
   layout: '<rect x="3.5" y="4" width="17" height="16" rx="2"/><path d="M9.5 4v16M9.5 10h11"/>',
   database: '<ellipse cx="12" cy="6" rx="7" ry="2.6"/><path d="M5 6v12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V6"/>',
   building: '<rect x="4" y="4" width="10" height="16" rx="1"/><path d="M14 10h6v10h-6M7 8h4M7 12h4M7 16h4"/>',
+  chip:
+    '<rect x="7" y="7" width="10" height="10" rx="1.6"/>' +
+    '<path d="M10 4v3M14 4v3M10 17v3M14 17v3M4 10h3M4 14h3M17 10h3M17 14h3"/>',
+  gauge: '<path d="M4.5 16a7.5 7.5 0 1 1 15 0"/><path d="M12 16l3.5-4.5"/><circle cx="12" cy="16" r="1.2"/>',
+  microscope: '<path d="M9.5 3.5h4l-1 8h-2zM11.5 11.5v3M5 20h14M15.5 17.5a5 5 0 0 0-3-6"/>',
+  flask:
+    '<path d="M9.5 3.5h5M10.5 3.5v6l-5 8.8a1.6 1.6 0 0 0 1.4 2.2h10.2a1.6 1.6 0 0 0 1.4-2.2l-5-8.8v-6"/>' +
+    '<path d="M7.6 15h8.8"/>',
 }
 
 const esc = (value) =>
@@ -247,8 +259,8 @@ function render(t, lang) {
   text(60, 76, t.title, { size: 38, weight: 800 })
   text(60, 110, t.subtitle, { size: 17, fill: c.muted })
 
-  // Four roles: reasoning, routing, memory and business tools.
-  const roleIcon = ['brain', 'nodes', 'stack', 'wrench']
+  // Four roles: brain, cerebellum, memory, body.
+  const roleIcon = ['brain', 'nodes', 'stack', 'arm']
   const roleColor = [c.violet, c.amber, c.cyan, c.amber]
   const roleTint = ['180,155,255', '251,191,36', '56,214,255', '251,191,36']
   t.roles.forEach(([name, role, line, status], i) => {
@@ -436,23 +448,23 @@ function render(t, lang) {
     text(84, 1336, t.fdeNote, { size: 12, fill: c.faint })
 
     panel(612, 1150, 528, 196, { fill: 'rgba(251,191,36,0.05)', stroke: 'rgba(251,191,36,0.6)' })
-    text(636, 1182, t.reports[0], { size: 14, weight: 800, fill: c.amber, ls: 1.4 })
-    text(636, 1204, t.reports[1], { size: 13, fill: c.muted })
+    text(636, 1182, t.mhs[0], { size: 14, weight: 800, fill: c.amber, ls: 1.4 })
+    text(636, 1204, t.mhs[1], { size: 13, fill: c.muted })
     const amber = {
       color: c.amber,
       fill: 'rgba(251,191,36,0.07)',
       stroke: 'rgba(251,191,36,0.45)',
     }
-    chip(636, 1222, 220, 44, 'doc', t.reportChain[0], amber)
-    chip(896, 1222, 220, 44, 'check', t.reportChain[1], amber)
+    chip(636, 1222, 220, 44, 'chip', t.mhsChain[0], amber)
+    chip(896, 1222, 220, 44, 'gauge', t.mhsChain[1], amber)
     push(
       `<path d="M 856 1244 H 892" stroke="${c.amber}" stroke-width="2" stroke-dasharray="4 4" class="march"/>`,
     )
-    const outputIcons = ['doc', 'check', 'stack']
-    t.outputs.forEach((label, i) => {
-      chip(636 + i * 164, 1276, 152, 44, outputIcons[i], label, { ...amber, size: 13.5 })
+    const deviceIcons = ['microscope', 'arm', 'flask']
+    t.devices.forEach((label, i) => {
+      chip(636 + i * 164, 1276, 152, 44, deviceIcons[i], label, { ...amber, size: 13.5 })
     })
-    text(636, 1336, t.reportNote, { size: 12, fill: c.faint })
+    text(636, 1336, t.mhsNote, { size: 12, fill: c.faint })
   }
   beat(60, 1150, 528, 196, c.green, 8, 18)
   beat(612, 1150, 528, 196, c.amber, 8.6, 18)
