@@ -85,7 +85,14 @@ export async function packPlugin(folder: string, output?: string): Promise<strin
         'Plugin export is missing; set package.json exports. See docs/guide/packages.md#troubleshooting',
       )
     const input = containedEntry(source, targetEntry, 'file', 'package.json')
-    const destination = join(tree, '.agnes-packed-entry.mjs')
+    // Emit beside the original entry so import.meta.url-relative reads keep resolving.
+    const packedEntry = [
+      ...relative(nativeRealpathSync(source), dirname(input)).split(sep),
+      '.agnes-packed-entry.mjs',
+    ]
+      .filter(Boolean)
+      .join('/')
+    const destination = join(tree, packedEntry)
     const requireBundler = createRequire(import.meta.url)
     let build: typeof Esbuild
     try {
@@ -115,9 +122,9 @@ export async function packPlugin(folder: string, output?: string): Promise<strin
     })
     manifest.exports =
       exports && typeof exports === 'object' && '.' in exports
-        ? { ...exports, '.': './.agnes-packed-entry.mjs' }
-        : './.agnes-packed-entry.mjs'
-    manifest.main = './.agnes-packed-entry.mjs'
+        ? { ...exports, '.': `./${packedEntry}` }
+        : `./${packedEntry}`
+    manifest.main = `./${packedEntry}`
     writeFileSync(join(tree, 'package.json'), JSON.stringify(manifest, null, 2) + '\n')
     if (
       bundled.warnings.some(
