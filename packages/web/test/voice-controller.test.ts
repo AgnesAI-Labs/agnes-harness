@@ -7,7 +7,12 @@ import {
   type VoiceSettings,
   type VoiceStatusResult,
 } from '@agnes/protocol'
-import { settingsSections, type VoiceComposer, type VoiceUnavailable } from '@agnes/web-client'
+import {
+  settingsSections,
+  type VoiceComposer,
+  type VoiceNoticeKey,
+  type VoiceUnavailable,
+} from '@agnes/web-client'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -754,8 +759,21 @@ describe('dictation', () => {
     controller.toggleDictation()
     await vi.advanceTimersByTimeAsync(400)
     controller.toggleDictation()
-    await vi.waitFor(() => expect(snapshot().notice?.key).toBe('failed'))
+    await vi.waitFor(() => expect(snapshot().notice?.key).toBe('unavailable'))
     expect(statusCalls(call)).toBe(2)
+  })
+
+  it('points to the account when the provider rejects it', async () => {
+    const { controller, snapshot } = setup({
+      transcribe: async () => {
+        throw rpcError({ code: 'AUTH', reason: 'VOICE_PROVIDER', retryable: false })
+      },
+    })
+    await flush()
+    controller.toggleDictation()
+    await vi.advanceTimersByTimeAsync(400)
+    controller.toggleDictation()
+    await vi.waitFor(() => expect(snapshot().notice?.key).toBe('account-rejected'))
   })
 
   it('stops playback when recording starts and when the session changes', async () => {
@@ -999,6 +1017,60 @@ describe('voice conversation in the controller', () => {
     expect(composer.submit).not.toHaveBeenCalled()
   })
 
+  it('leaves the conversation when the voice account is rejected, without calling again', async () => {
+    const { controller, snapshot, log } = setup({
+      media: fakeMedia({ levels: utterance, samples: noise(2) }).media,
+      transcribe: async () => {
+        throw rpcError({ code: 'AUTH', reason: 'VOICE_PROVIDER', retryable: false })
+      },
+    })
+    await flush()
+    controller.toggleConversation()
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(snapshot().conversation.phase).toBe('idle')
+    expect(snapshot().notice?.key).toBe('account-rejected')
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(log.filter((entry) => entry === 'transcribe')).toHaveLength(1)
+  })
+
+  it('leaves the conversation after two failed transcriptions in a row', async () => {
+    const { controller, snapshot, log } = setup({
+      media: fakeMedia({ levels: utterance, samples: noise(2) }).media,
+      transcribe: async () => {
+        throw rpcError({ code: 'REQUEST_TIMEOUT', reason: 'voice' })
+      },
+    })
+    await flush()
+    controller.toggleConversation()
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(snapshot().conversation.phase).toBe('listening')
+    expect(snapshot().notice?.key).toBe('failed')
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(snapshot().conversation.phase).toBe('idle')
+    expect(snapshot().notice?.key).toBe('stopped')
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(log.filter((entry) => entry === 'transcribe')).toHaveLength(2)
+  })
+
+  it('leaves the conversation on a failed turn, so the next utterance is not sent after its text', async () => {
+    const { controller, composer, snapshot, log } = setup({
+      media: fakeMedia({ levels: utterance, samples: noise(2) }).media,
+      texts: ['第一句', '第二句'],
+    })
+    await flush()
+    controller.toggleConversation()
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(snapshot().conversation.phase).toBe('thinking')
+    controller.observeTranscript([], [turn('t1', 'running')])
+    controller.observeTranscript([], [turn('t1', 'failed')])
+    await flush()
+    expect(snapshot().conversation.phase).toBe('idle')
+    expect(snapshot().notice?.key).toBe('turn-failed')
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(composer.insertText).toHaveBeenCalledTimes(1)
+    expect(log.filter((entry) => entry === 'transcribe')).toHaveLength(1)
+  })
+
   it('ignores the wave while a dictation is being transcribed', async () => {
     const { media } = fakeMedia()
     const { controller, snapshot } = setup({ media, transcribe: () => new Promise(() => {}) })
@@ -1048,7 +1120,18 @@ describe('voice copy', () => {
       'other-tab',
       'offline',
     ]
-    const notices = ['empty', 'turn-ended', 'failed', 'mic-denied', 'session-failed']
+    const notices: VoiceNoticeKey[] = [
+      'empty',
+      'turn-ended',
+      'turn-failed',
+      'failed',
+      'stopped',
+      'mic-denied',
+      'session-failed',
+      'account-rejected',
+      'unavailable',
+      'budget',
+    ]
     for (const key of [
       ...reasons.map((r) => `voice.reason.${r}`),
       ...notices.map((n) => `voice.notice.${n}`),

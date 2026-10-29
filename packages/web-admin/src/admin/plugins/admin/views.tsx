@@ -95,13 +95,19 @@ function notice(this: PluginAdminViewContext) {
       : connection === 'forbidden'
         ? this.t('connection.forbidden')
         : ''
+  // What blocked the operation (a session pin, a dependent plugin) is the reason the line gives.
+  const reasons = (error?.blockers ?? []).map((blocker) => blockerText(blocker, this.adminT))
+  const errorText = (message: string) =>
+    reasons.length
+      ? this.t('notice.error-reasons', { message, reasons: reasons.join(this.adminT('list.separator')) })
+      : message
   const noticeMessage = error
     ? this.state.lastOperation
       ? this.t('notice.operation-error', {
           operation: operationLabel(this.state.lastOperation, this.adminT),
-          message: this.errorMessage(error, this.state.lastOperation.operation),
+          message: errorText(this.errorMessage(error, this.state.lastOperation.operation)),
         })
-      : this.errorMessage(error)
+      : errorText(this.errorMessage(error))
     : this.state.loading
       ? ''
       : this.state.lastOperation

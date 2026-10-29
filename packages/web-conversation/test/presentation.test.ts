@@ -171,6 +171,13 @@ describe('web presentation controls', () => {
     expect(shouldShowEmptyState([{}])).toBe(false)
   })
 
+  it('keeps the empty state when only side calls (voice, /btw) were accounted', () => {
+    const sideCall = { kind: 'cost', id: 'c1', seq: 1, source: 'estimated', purpose: 'side-call' }
+    expect(shouldShowEmptyState({ nodes: [sideCall], turns: [] })).toBe(true)
+    expect(shouldShowEmptyState([sideCall])).toBe(true)
+    expect(shouldShowEmptyState([{ ...sideCall, purpose: 'inference' }])).toBe(false)
+  })
+
   it('keeps an existing navigation target out of launcher credential handling', () => {
     const hasNavigationTarget = (id: string) => id === 'main-content'
     expect(launcherCredential('#main-content', hasNavigationTarget)).toBeUndefined()
