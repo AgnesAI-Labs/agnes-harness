@@ -138,7 +138,17 @@ export function createRoleChildren(deps: {
         throw new HostError('E_PRESET_UNSUPPORTED', 'Parent workspace policy snapshot is unavailable')
       const filesystem = structuredClone(sandbox.policy)
       if (sandbox.network === 'allow') filesystem.networkAllow = ['*']
-      const enforced = parent.d.runtime.enforcement().level !== 'none'
+      const enforcement = parent.d.runtime.enforcement()
+      // A file fence is not an OS boundary. Preserve confinement unless Host already admitted
+      // this local file-only session through the existing explicit unconfined fallback.
+      const unconfined =
+        sandbox.local &&
+        sandbox.allowsUnconfined === true &&
+        enforcement.level === 'partial' &&
+        enforcement.scope.length === 1 &&
+        enforcement.scope[0] === 'file'
+      const enforced =
+        parentAuthority?.sandboxRequired === true || (enforcement.level !== 'none' && !unconfined)
       const [trigger] =
         triggerSeq === undefined
           ? []

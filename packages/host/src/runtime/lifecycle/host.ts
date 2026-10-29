@@ -82,6 +82,7 @@ export type HostSession = Awaited<ReturnType<Kernel['session']>> & {
     policy: import('@agnes/core').FsPolicy
     network: 'allow' | 'deny'
     local: boolean
+    allowsUnconfined?: boolean
   }
   readonly hasActiveProcesses?: () => boolean
   readonly intelligentUi?: Pick<
