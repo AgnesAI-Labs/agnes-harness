@@ -328,17 +328,22 @@ function publish(
   }
 }
 
-/** Times the phases for the host.ready audit row: `lap()` is the ms since the previous lap. */
+/**
+ * Times the phases for the host.ready audit row: `lap()` is the ms since the previous lap. Laps are
+ * differences of the rounded elapsed time, so they add up to at most the total; rounding each
+ * interval on its own could overshoot it by up to half a millisecond per phase.
+ */
 function phaseClock() {
   const started = performance.now()
-  let mark = started
+  const elapsed = () => Math.round(performance.now() - started)
+  let mark = 0
   const lap = () => {
-    const now = performance.now(),
-      ms = Math.round(now - mark)
+    const now = elapsed(),
+      ms = now - mark
     mark = now
     return ms
   }
-  return { lap, total: () => Math.round(performance.now() - started) }
+  return { lap, total: elapsed }
 }
 
 export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Promise<Assembled> {
