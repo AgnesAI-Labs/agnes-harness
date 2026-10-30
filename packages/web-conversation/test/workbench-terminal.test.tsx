@@ -191,6 +191,9 @@ it('closes a finished child report with the state it ended in', async () => {
   await vi.waitFor(() => expect(host.querySelectorAll('[data-testid=terminal-tab]')).toHaveLength(1))
   child.status = 'failed'
   child.code = -1
+  // The panel polls once a second after each read, as long as waitFor's own deadline; ask for the
+  // catch-up read a returning window gets instead of racing the next tick.
+  window.dispatchEvent(new Event('focus'))
   await vi.waitFor(() => expect(host.querySelector('.workbench-child-report-foot')?.textContent).toBe('失败'))
   expect(host.querySelector('.workbench-child-report-foot')?.getAttribute('data-tone')).toBe('danger')
 })
