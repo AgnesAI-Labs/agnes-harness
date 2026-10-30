@@ -731,6 +731,24 @@ describe('small info commands', () => {
       'Queued inputs': '2',
       YOLO: 'on',
     })
+    // A known account route reads as its label; the unknown one above stayed raw.
+    const labelled = appWith(
+      {
+        session: { list: async () => [] },
+        config: {
+          get: async () => ({
+            accounts: [{ accountId: 'acct-1', label: 'DeepSeek', route: 'account-acct-1' }],
+          }),
+        },
+      },
+      {
+        projectUIOpening: async () => ({
+          timeline: { usage: { ...usage, model: { route: 'account-acct-1', id: 'v4', thinking: 'high' } } },
+        }),
+        controls: async () => ({ pending: [] }),
+      },
+    )
+    expect((await runSlash(labelled, '/status')).text).toMatch(/Model\s+DeepSeek \/ v4 \(high\)$/m)
     // Over --connect the local home is not the daemon's, and a failing source does not hide the rest.
     const broken = appWith(
       { session: { list: async () => Promise.reject(new Error('x')) } },

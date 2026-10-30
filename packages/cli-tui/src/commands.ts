@@ -29,6 +29,7 @@ import { jobsSlash } from './job-commands.js'
 import { formatKeys } from './keybindings.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
 import { memorySlash } from './memory-command.js'
+import { accountLabels } from './model-label.js'
 import { parseNotifyMode } from './notify.js'
 import { permissionsSlash } from './permissions-command.js'
 import { providerSlash } from './provider-command.js'
@@ -231,25 +232,6 @@ export function opensSwitch(cmd: string, args: readonly string[]): boolean {
     (cmd === '/rewind' && args.length > 0) ||
     (cmd === '/resume' && args.length > 0 && args[0] !== 'all')
   )
-}
-
-/**
- * route -> account label for the /model picker. Two accounts sharing a label get a short accountId
- * suffix so they stay distinguishable. Best effort: a failed config read just leaves raw routes.
- */
-async function accountLabels(c: TuiApp['session']['client']): Promise<Map<string, string>> {
-  const out = new Map<string, string>()
-  try {
-    const accounts = (await c.config.get()).accounts ?? []
-    for (const a of accounts) {
-      if (!a.label) continue
-      const dup = accounts.some((o) => o !== a && o.label === a.label)
-      out.set(a.route, dup ? `${a.label} #${a.accountId.replace(/^acct-/, '').slice(0, 4)}` : a.label)
-    }
-  } catch {
-    // fall back to raw routes
-  }
-  return out
 }
 
 /** Dispatches one slash line against the session/client the app currently holds. */
@@ -611,7 +593,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
     case '/model': {
       if (args.length === 0) {
         const models = (await c.apis()).profile.models ?? []
-        const labels = await accountLabels(c)
+        const labels = await accountLabels(c, true)
         const unique = new Map<string, ModelChoice>()
         for (const item of models) {
           const key = `${item.route}/${item.id}`
