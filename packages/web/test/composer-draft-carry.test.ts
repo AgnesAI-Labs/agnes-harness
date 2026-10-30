@@ -147,6 +147,39 @@ it('restores saved file and skill references with their draft', () => {
   })
 })
 
+it('switches drafts with their references, carries them on request and drops a lone @', () => {
+  const storage = new Map<string, string>()
+  const drafts = new ComposerDrafts(
+    { getItem: (key: string) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
+    'http://synthetic',
+  )
+  const brief = {
+    files: [{ path: '/synthetic/brief.md', name: 'brief.md', directory: false }],
+    skills: [{ name: 'review-brief' }],
+  }
+  drafts.select('profile', 'one', '')
+  expect(drafts.selectWithReferences('profile', 'two', { text: '@brief.md', references: brief })).toEqual({
+    text: '',
+    references: { files: [], skills: [] },
+  })
+  expect(drafts.selectWithReferences('profile', 'one', { text: '', references: brief })).toEqual({
+    text: '@brief.md',
+    references: brief,
+  })
+  expect(
+    drafts.selectWithReferences(
+      'profile',
+      'three',
+      { text: '$review-brief', references: brief },
+      { carry: true },
+    ),
+  ).toEqual({ text: '$review-brief', references: brief })
+  expect(
+    drafts.selectWithReferences('profile', 'four', { text: '@', references: brief }, { carry: true }),
+  ).toEqual({ text: '', references: { files: [], skills: [] } })
+  expect(drafts.read()).toBe('')
+})
+
 it('keeps typed text when an upload opens the session and persists it under the new key', async () => {
   const handle = createRef<ComposerHandle>()
   const storage = new Map<string, string>()
