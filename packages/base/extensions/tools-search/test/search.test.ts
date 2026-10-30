@@ -317,16 +317,34 @@ describe('find', () => {
     expect(r.content.some((part) => part.type === 'ref')).toBe(true)
   })
 
-  it('defaults the result limit to 1000', async () => {
+  it('defaults the result limit to 100', async () => {
     const ctx = ctxOf({
       files: Object.fromEntries(
-        Array.from({ length: 1001 }, (_, i) => [`f${String(i).padStart(4, '0')}.ts`, '']),
+        Array.from({ length: 101 }, (_, i) => [`f${String(i).padStart(3, '0')}.ts`, '']),
       ),
     })
     const r = await findTool.execute({ pattern: '**/*.ts' }, ctx)
-    // A thousand paths is over the output guard's ceiling, so the listing itself arrives head and
-    // tail with the whole of it stored; the note that says where it stopped is what pins the value.
-    expect(textOf(r)).toContain('[limit 1000 reached')
+    expect(textOf(r)).toContain('[limit 100 reached')
+  })
+
+  it('samples a page across top-level entries, so one large directory does not hide the others', async () => {
+    const ctx = ctxOf({
+      files: {
+        ...Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`big/f${i}.ts`, ''])),
+        'small/one.ts': '',
+        'top.ts': '',
+      },
+    })
+    const r = await findTool.execute({ pattern: '**/*.ts', limit: 4 }, ctx)
+    const lines = textOf(r).split('\n')
+    expect(lines.slice(0, 4)).toEqual(['big/f0.ts', 'big/f1.ts', 'small/one.ts', 'top.ts'])
+    expect(lines).toContain(
+      '[shown: up to 4 paths sampled across 3 of 3 top-level entries, not the first 4 in order; narrow path to list one subtree]',
+    )
+    expect(r.structured).toMatchObject({ total: 12, truncated: true })
+    const flat = await findTool.execute({ pattern: 'big/*.ts', limit: 4 }, ctx)
+    expect(textOf(flat).split('\n').slice(0, 4)).toEqual(['big/f0.ts', 'big/f1.ts', 'big/f2.ts', 'big/f3.ts'])
+    expect(textOf(flat)).not.toContain('[shown:')
   })
 })
 
@@ -617,4 +635,100 @@ it('searches a directly named file symlink through the filesystem fence without 
   const result = await grepTool.execute({ path: 'link.txt', pattern: 'hit', glob: '*.ts' }, selected)
   expect(result.isError).not.toBe(true)
   expect(textOf(result)).toBe('link.txt:1:hit')
+})
+
+describe('primary ripgrep over a large or partly unreadable tree', () => {
+  const registeredGrep = () => {
+    const grep = TOOLS_SEARCH.find((tool) => tool.name === 'grep')
+    if (!grep) throw new Error('missing registered grep')
+    return grep
+  }
+  const match = (ctx: ToolContext, file: string) =>
+    JSON.stringify({
+      type: 'match',
+      data: { path: { text: `${ctx.cwd}/${file}` }, lines: { text: 'hit\n' }, line_number: 1 },
+    })
+
+  it('searches what it could list when a directory in the tree is unreadable', async () => {
+    const ctx = ctxOf({ files: { 'a.txt': 'hit', 'b.txt': 'hit' } })
+    ctx.exec = async (argv) =>
+      argv.includes('--json')
+        ? { code: 0, stdout: match(ctx, 'a.txt'), stderr: '', truncated: false }
+        : {
+            code: 2,
+            stdout: 'a.txt\0b.txt\0',
+            stderr: 'rg: ./Library: Permission denied (os error 13)',
+            truncated: false,
+          }
+    const found = await findTool.execute({ pattern: '*.txt' }, ctx)
+    expect(found.isError).toBeUndefined()
+    expect(textOf(found).split('\n').slice(0, 2)).toEqual(['a.txt', 'b.txt'])
+    expect(textOf(found)).toContain('[listing incomplete: rg: ./Library: Permission denied')
+    const grep = await registeredGrep().execute({ pattern: 'hit' }, ctx)
+    expect(grep.isError).toBeUndefined()
+    expect(textOf(grep).split('\n')[0]).toBe('a.txt:1:hit')
+    expect(textOf(grep)).toContain('Permission denied')
+  })
+
+  it('still fails when nothing could be listed at all', async () => {
+    const ctx = ctxOf({ files: { 'a.txt': 'hit' } })
+    ctx.exec = async () => ({ code: 2, stdout: '', stderr: 'rg: .: Permission denied', truncated: false })
+    const found = await findTool.execute({ pattern: '*.txt' }, ctx)
+    expect(found.isError).toBe(true)
+    expect(textOf(found)).toContain('find failed')
+  })
+
+  it('bounds the listing in time and depth, and keeps the complete paths a cut listing printed', async () => {
+    const ctx = ctxOf({ files: { 'a.txt': '', 'b.txt': '' } })
+    const asked: { argv: string[]; timeoutMs?: number }[] = []
+    ctx.exec = async (argv, opts) => {
+      asked.push({ argv, ...(opts?.timeoutMs === undefined ? {} : { timeoutMs: opts.timeoutMs }) })
+      return { code: -1, stdout: 'a.txt\0b.t', stderr: '', truncated: false, timedOut: true }
+    }
+    const found = await findTool.execute({ pattern: '*' }, ctx)
+    expect(found.isError).toBeUndefined()
+    expect(textOf(found).split('\n')[0]).toBe('a.txt')
+    expect(textOf(found)).not.toContain('b.t\n')
+    expect(textOf(found)).toContain('[file listing stopped after 30 s; search is partial; narrow path]')
+    expect(asked[0]?.timeoutMs).toBe(30_000)
+    expect(asked[0]?.argv.join(' ')).toContain('--max-depth 32')
+  })
+
+  it('says when the depth or count limit was reached', async () => {
+    const deep = `${Array.from({ length: 31 }, (_, i) => `d${i}`).join('/')}/deep.txt`
+    const ctx = ctxOf({ files: { [deep]: '' } })
+    ctx.exec = async () => ({ code: 0, stdout: `${deep}\0`, stderr: '', truncated: false })
+    expect(textOf(await findTool.execute({ pattern: '**' }, ctx))).toContain(
+      '[directories more than 32 levels below the search root were not searched]',
+    )
+    const many = ctxOf()
+    many.exec = async () => ({
+      code: 0,
+      stdout: `${Array.from({ length: 50_001 }, (_, i) => `f${i}.txt`).join('\0')}\0`,
+      stderr: '',
+      truncated: false,
+    })
+    many.fs.stat = async (path) => ({ kind: path === many.cwd ? 'dir' : 'file', size: 0, mtimeMs: 0 })
+    const listed = textOf(await findTool.execute({ pattern: '*.txt', limit: 1 }, many))
+    expect(listed).toContain('[file listing stopped at 50000 files; search is partial; narrow path]')
+  })
+
+  it('returns the matches found before grep ran out of time, instead of failing', async () => {
+    const ctx = ctxOf({ files: { 'a.txt': 'hit' } })
+    const listing = ctx.exec
+    ctx.exec = async (argv, opts) =>
+      argv.includes('--json')
+        ? {
+            code: -1,
+            stdout: `${match(ctx, 'a.txt')}\n{"type":"mat`,
+            stderr: '',
+            truncated: false,
+            timedOut: true,
+          }
+        : listing(argv, opts)
+    const grep = await registeredGrep().execute({ pattern: 'hit' }, ctx)
+    expect(grep.isError).toBeUndefined()
+    expect(textOf(grep).split('\n')[0]).toBe('a.txt:1:hit')
+    expect(textOf(grep)).toContain('[search stopped after 60 s with 1 of 1 file(s) not searched completely')
+  })
 })
