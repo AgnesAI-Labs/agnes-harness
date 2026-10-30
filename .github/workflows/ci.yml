@@ -85,6 +85,22 @@ jobs:
       # Hosted Windows runners keep the workspace and RUNNER_TEMP on the D: work disk, but TEMP
       # defaults to the C: system disk. Tests put their stores, ledgers, locks and flushes under
       # os.tmpdir(), so they share the system disk with everything else on the VM.
+      # One number per disk in the log, so a slow run can be told apart from a slow disk.
+      - name: measure flushed writes on the Windows system and work disks
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $script = @'
+          const fs = require('node:fs'), path = require('node:path')
+          for (const root of process.argv.slice(1)) {
+            const dir = fs.mkdtempSync(path.join(root, 'flush-'))
+            const started = performance.now()
+            for (let i = 0; i < 200; i++) fs.writeFileSync(path.join(dir, `f${i}`), 'x'.repeat(4096), { flush: true })
+            console.log(`${root}: ${((performance.now() - started) / 200).toFixed(2)} ms per flushed 4 KiB write`)
+            fs.rmSync(dir, { recursive: true, force: true })
+          }
+          '@
+          node -e $script -- $env:TEMP $env:RUNNER_TEMP
       - name: keep temporary files on the Windows work disk
         if: runner.os == 'Windows'
         shell: pwsh
