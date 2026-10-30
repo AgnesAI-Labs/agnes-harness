@@ -7,6 +7,7 @@ import {
   mkdirDurablySync,
   publishFileDurablySync,
   removeFileDurablySync,
+  replaceFileAtomicSync,
   syncTreeSync,
 } from '../src/index.js'
 
@@ -37,6 +38,17 @@ describe('durable file publication', () => {
     expect(publishFileDurablySync(file, 'new', { replace: true })).toBe(true)
     expect(readFileSync(file, 'utf8')).toBe('new')
     expect(readdirSync(root)).toEqual(['record.json'])
+  })
+
+  it('replaces a record atomically without a flush and leaves no temporary behind', () => {
+    const root = directory(),
+      file = join(root, 'owner')
+    replaceFileAtomicSync(file, 'first')
+    replaceFileAtomicSync(file, 'second')
+    expect(readFileSync(file, 'utf8')).toBe('second')
+    expect(readdirSync(root)).toEqual(['owner'])
+    expect(() => replaceFileAtomicSync(join(root, 'missing', 'owner'), 'x')).toThrow()
+    expect(readdirSync(root)).toEqual(['owner'])
   })
 
   it('removes a file durably and treats a missing file or directory as removed', () => {
