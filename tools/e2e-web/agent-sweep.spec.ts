@@ -60,8 +60,15 @@ async function answerControls(page: Page) {
     if (await choices.count()) await choices.first().check()
     const next = question.getByTestId('question-next')
     if (await next.isVisible()) await next.click()
-    else if (await question.getByTestId('question-submit').isEnabled())
+    else if (await question.getByTestId('question-submit').isEnabled()) {
+      // The card stays on screen while its answer is sent. Wait for it to leave, so the next pass
+      // never answers a submitted card that is about to be replaced.
+      const surface = await question.getAttribute('data-surface-id')
       await question.getByTestId('question-submit').click()
+      await expect(
+        surface ? page.locator(`[data-testid="question-card"][data-surface-id="${surface}"]`) : question,
+      ).toHaveCount(0)
+    }
     return
   }
   // Finance's declared interactive review has its own ordinary, permission-checked action.
