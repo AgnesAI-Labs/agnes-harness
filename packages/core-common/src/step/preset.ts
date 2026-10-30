@@ -61,10 +61,11 @@ export type PresetView = {
     timeoutMs: number
     timeouts: Record<string, number>
     outputMaxBytes: number
+    logicalChanges?: boolean
   }
   verifier: { timeoutMs: number; defaultTier: 0 | 1 | 2 }
   repair: { timeoutMs: number }
-  completionGate: { minItems: number }
+  completionGate: { enabled?: boolean; minItems: number }
   /**
    * Model steps between progress checks in a limited or unattended turn (preset
    * `loop.progress_check_steps`); 0, the default, turns them off.
@@ -99,10 +100,10 @@ export function presetDefaults(): PresetView {
     // be the path by which a destructive call proceeds.
     approval: { ...APPROVAL_DEFAULTS },
     sandbox: { onUnavailable: 'deny' },
-    tools: { timeoutMs: 120000, timeouts: {}, outputMaxBytes: 32768 },
+    tools: { timeoutMs: 120000, timeouts: {}, outputMaxBytes: 32768, logicalChanges: false },
     verifier: { timeoutMs: 30000, defaultTier: 0 },
     repair: { timeoutMs: 10000 },
-    completionGate: { minItems: 3 },
+    completionGate: { enabled: true, minItems: 3 },
     progressCheck: { everySteps: 0 },
     compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000, agentCallable: true },
     telemetry: { invariants: false, timing: false },
@@ -228,13 +229,17 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
       timeoutMs: pick(raw, 'tools.timeout_ms', d.tools.timeoutMs),
       timeouts: pick(raw, 'tools.timeouts', d.tools.timeouts),
       outputMaxBytes: pick(raw, 'tools.output_max_bytes', d.tools.outputMaxBytes),
+      logicalChanges: pick(raw, 'tools.logical_changes', false),
     },
     verifier: {
       timeoutMs: pick(raw, 'verifier.timeout_ms', d.verifier.timeoutMs),
       defaultTier: pick(raw, 'verifier.default_tier', d.verifier.defaultTier),
     },
     repair: { timeoutMs: pick(raw, 'repair.timeout_ms', d.repair.timeoutMs) },
-    completionGate: { minItems: pick(raw, 'completion_gate.min_items', d.completionGate.minItems) },
+    completionGate: {
+      enabled: pick(raw, 'completion_gate.enabled', true),
+      minItems: pick(raw, 'completion_gate.min_items', d.completionGate.minItems),
+    },
     progressCheck: { everySteps: pick(raw, 'loop.progress_check_steps', d.progressCheck.everySteps) },
     compaction: {
       enabled: pick(raw, 'compaction.enabled', d.compaction.enabled),

@@ -20,6 +20,8 @@ seam 是内核以单个类型化对象消费的必要运行时能力：审批投
 
 Checkpoint 的 `snapshot` 接收可选的会话标识 `owner`，包装层必须保留它，以保证按会话保留快照。经校验的 `list` 行可附带 `owner` 及该检查点恢复的完整规范化路径集合 `paths`。会话撤销除核对轮次外，还要求 owner 匹配，且只包含与收据一致的一条工作区相对路径。缺少元数据、工作区外路径或更大的恢复集合都会在修改文件前拒绝撤销；既有检查点存储格式不变。
 
+`RepairSeam.decide` 接收候选 turn、round、历史决策与可选的只读后台 `plan` 快照（`items` 使用规范的 `todo`、`doing`、`done`、`blocked` 状态，可带 `customInstructions`）。校验通过后，默认停止路径会在完成门开启且计划足够大、尚有未完成项时询问 repair；Core 将复核限制为额外一轮。已有 provider 可忽略新增的 plan 字段。
+
 ## 注册实现
 
 在注入 `providers` 的普通 Cordis 插件里注册，与其它 provider 完全一样：
