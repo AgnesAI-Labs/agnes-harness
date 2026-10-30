@@ -1,4 +1,5 @@
 import { type FSWatcher, mkdirSync, watch } from 'node:fs'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import type { LocalPluginRoots } from './local-source.js'
 
 /** Implemented by the generation owner; watcher never mutates Host registries. */
@@ -66,7 +67,10 @@ export function watchLocalPlugins(options: {
   try {
     for (const root of Object.values(options.roots)) {
       mkdirSync(root, { recursive: true })
-      const watcher = watch(root, { recursive: true, persistent: false }, schedule)
+      // Watch the native spelling: on Windows libuv reports changes under the long name of the
+      // watched directory and aborts the whole process (fs-event.c `!_wcsnicmp(filename, dir,
+      // dirlen)`) when the root was given with an 8.3 short name. See daemon skill-watcher.
+      const watcher = watch(nativeRealpathSync(root), { recursive: true, persistent: false }, schedule)
       watcher.on('error', () => options.onError?.(undefined))
       watchers.push(watcher)
     }
