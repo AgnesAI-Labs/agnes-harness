@@ -1,5 +1,15 @@
 // generated from schema/app-server.json by tools/gen.ts — do not edit
 const PUBLIC_ERROR_COPY = {
+  "nativeGlibc": {
+    "en": {
+      "reason": "The system-node native addon failed to load: a required GLIBC version is unavailable.",
+      "action": "Install a Linux build targeting glibc 2.28, or rebuild with the supported native builder."
+    },
+    "zh-CN": {
+      "reason": "system-node 原生模块加载失败：系统缺少所需的 GLIBC 版本。",
+      "action": "请安装以 glibc 2.28 为基线的 Linux 构建，或使用受支持的原生构建环境重新编译。"
+    }
+  },
   "internal": {
     "en": {
       "reason": "The operation could not be confirmed.",
@@ -567,7 +577,7 @@ export const PUBLIC_ERROR_CONTRACT = {
   "E_PRESET_UNRESOLVED": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: { "no-routes": PUBLIC_ERROR_COPY["unavailable"], "no-models": PUBLIC_ERROR_COPY["unavailable"], "pin-without-route": PUBLIC_ERROR_COPY["unavailable"], "unknown-slot": PUBLIC_ERROR_COPY["unavailable"], "unknown-route": PUBLIC_ERROR_COPY["unavailable"], "model-undeclared": PUBLIC_ERROR_COPY["unavailable"], "no-primary": PUBLIC_ERROR_COPY["unavailable"], "route-unserved": PUBLIC_ERROR_COPY["unavailable"], "model-unserved": PUBLIC_ERROR_COPY["unavailable"], "route-not-assembled": PUBLIC_ERROR_COPY["unavailable"], "route-duplicate": PUBLIC_ERROR_COPY["unavailable"], "reserved-route-name": PUBLIC_ERROR_COPY["unavailable"], "bedrock-region-conflict": PUBLIC_ERROR_COPY["unavailable"] } },
   "E_MODEL_UNSUPPORTED": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["model"], reasons: { "restart-required": PUBLIC_ERROR_COPY["modelRestart"] } },
   "E_MODEL_UNKNOWN": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["modelUnknown"], reasons: {  } },
-  "E_SEAM_INIT": { rpc: "INTERNAL_ERROR", messageKey: "appServer.errors.internal", boot: true, skillInstall: false, localized: PUBLIC_ERROR_COPY["internal"], reasons: { "provider-unknown": PUBLIC_ERROR_COPY["provider"], "provider-invalid": PUBLIC_ERROR_COPY["provider"], "provider-incompatible": PUBLIC_ERROR_COPY["provider"], "provider-unavailable": PUBLIC_ERROR_COPY["provider"], "provider-duplicate": PUBLIC_ERROR_COPY["provider"] } },
+  "E_SEAM_INIT": { rpc: "INTERNAL_ERROR", messageKey: "appServer.errors.internal", boot: true, skillInstall: false, localized: PUBLIC_ERROR_COPY["internal"], reasons: { "provider-unknown": PUBLIC_ERROR_COPY["provider"], "provider-invalid": PUBLIC_ERROR_COPY["provider"], "provider-incompatible": PUBLIC_ERROR_COPY["provider"], "provider-unavailable": PUBLIC_ERROR_COPY["provider"], "provider-duplicate": PUBLIC_ERROR_COPY["provider"], "native-glibc-incompatible": PUBLIC_ERROR_COPY["nativeGlibc"] } },
   "E_PERMISSION_REVOKED": { rpc: "CAPABILITY_DENIED", messageKey: "appServer.errors.forbidden", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["permissionRevoked"], reasons: {  } },
   "E_PERMISSION_GRANT_UNAVAILABLE": { rpc: "CAPABILITY_DENIED", messageKey: "appServer.errors.forbidden", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["permissionGrant"], reasons: {  } },
   "E_BUDGET": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["budget"], reasons: {  } },

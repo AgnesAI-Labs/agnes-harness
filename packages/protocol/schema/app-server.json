@@ -762,7 +762,8 @@
                   "provider-invalid": "provider",
                   "provider-incompatible": "provider",
                   "provider-unavailable": "provider",
-                  "provider-duplicate": "provider"
+                  "provider-duplicate": "provider",
+                  "native-glibc-incompatible": "nativeGlibc"
                 }
               }
             },
@@ -3834,6 +3835,16 @@
     }
   },
   "x-public-error-copy": {
+    "nativeGlibc": {
+      "en": {
+        "reason": "The system-node native addon failed to load: a required GLIBC version is unavailable.",
+        "action": "Install a Linux build targeting glibc 2.28, or rebuild with the supported native builder."
+      },
+      "zh-CN": {
+        "reason": "system-node 原生模块加载失败：系统缺少所需的 GLIBC 版本。",
+        "action": "请安装以 glibc 2.28 为基线的 Linux 构建，或使用受支持的原生构建环境重新编译。"
+      }
+    },
     "internal": {
       "en": {
         "reason": "The operation could not be confirmed.",

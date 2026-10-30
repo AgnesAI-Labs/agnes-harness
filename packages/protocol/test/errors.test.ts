@@ -225,3 +225,10 @@ it.each(['E_PRESET_UNSUPPORTED', 'E_PACKAGE_INTEGRITY', 'E_RELATION', 'E_HOME_IN
     expect(JSON.stringify(serialized)).not.toContain('private implementation log')
   },
 )
+
+it('exposes a fixed native GLIBC load cause without forwarding loader prose', () => {
+  const error = normalizeRpcError(rpcError('INTERNAL_ERROR', { code: 'E_SEAM_INIT', reason: 'native-glibc-incompatible' }))
+  expect(error.data.publicReason).toContain('system-node native addon failed to load')
+  expect(error.data.publicReason).toContain('GLIBC')
+  expect(publicErrorHelp(error, 'zh-CN')?.action).toContain('glibc 2.28')
+})
