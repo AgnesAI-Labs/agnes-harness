@@ -264,7 +264,37 @@ export async function isolatedRuntime(
     },
     restart: async () => {
       await stop()
+      const stopped = new Date().toISOString()
       await start()
+      // The page is served before the daemon has booted its Host; a page opened then waits for that
+      // boot inside its own deadlines. Return once the restarted daemon's boot Host is ready.
+      const client = await runtime.connect('local', false)
+      try {
+        // The same deadline as the first start's serve readiness.
+        const deadline = Date.now() + (sep === '\\' ? 120_000 : 25_000)
+        const booted = async () => {
+          const collected = await client.call<{ logs: Array<{ name: string; text: string }> }>(
+            '_agnes/v1/diagnostics.collect',
+            {},
+          )
+          const host = collected.logs.find((log) => log.name === 'host.jsonl')?.text ?? ''
+          return host.split('\n').some((line) => {
+            try {
+              const row = JSON.parse(line) as { at?: string; kind?: string; detail?: { reason?: string } }
+              return row.kind === 'host.ready' && row.detail?.reason === 'boot' && (row.at ?? '') >= stopped
+            } catch {
+              return false
+            }
+          })
+        }
+        while (!(await booted())) {
+          if (Date.now() > deadline) throw new Error(`restarted daemon Host readiness timeout: ${log}`)
+          await new Promise((done) => setTimeout(done, 100))
+        }
+      } finally {
+        clients.delete(client)
+        await client.close()
+      }
     },
     localTool: async (version: number) => {
       // Publish complete initial files; later editor-style saves replace only code atomically.
