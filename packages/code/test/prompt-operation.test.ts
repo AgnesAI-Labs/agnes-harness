@@ -1,4 +1,5 @@
-import type { OpContext } from '@agnes/core'
+import { type OpContext, readPreset } from '@agnes/core'
+import { actor, fakeProvider, openSession, textTurn } from '@agnes/core/testkit'
 import { describe, expect, it } from 'vitest'
 import { createPromptOperation, operations, PROMPT_SECTIONS } from '../src/index.js'
 
@@ -51,6 +52,39 @@ const contribute = (ctx: OpContext) => {
 }
 
 describe('the prompt operation', () => {
+  it.each([false, true])('selects logical-change wording on the wire (%s)', async (enabled) => {
+    const provider = fakeProvider([textTurn('answer')])
+    const preset = readPreset({ tools: { logical_changes: enabled } }, 'trial')
+    const h = await openSession({ provider, preset, operations: [createPromptOperation(deps)] })
+    try {
+      await h.session.enqueue('next-turn', {
+        actor,
+        content: [{ type: 'text', text: 'help with this file' }],
+      })
+      expect((await h.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'completed',
+      )
+      const line = provider.requests[0]?.system
+        .split('\n')
+        .find((line) => line.startsWith('- Make one logical') || line.startsWith('- Change one thing'))
+      if (enabled)
+        expect(line).toMatchInlineSnapshot(
+          `"- Make one logical change at a time; it may span several edits or files. Verify the change as a unit before moving on. Prefer the smallest change that works. Independent reads, searches and checks can be issued together in one reply."`,
+        )
+      else {
+        expect(line).toMatchInlineSnapshot(
+          `"- Change one thing at a time and verify it before moving on. Prefer the smallest edit that works."`,
+        )
+        const implicit = readPreset({}, 'trial')
+        const ctx = ctxFor({})
+        expect(createPromptOperation(deps).contribute?.({ ...ctx, preset })?.promptSections).toEqual(
+          createPromptOperation(deps).contribute?.({ ...ctx, preset: implicit })?.promptSections,
+        )
+      }
+    } finally {
+      await h.session.close()
+    }
+  })
   it('reports the actual Host-selected interpreter while preserving the dialect fallback', () => {
     const description = 'PowerShell 5.1.26100.9444 (Desktop); native argument mode: Legacy'
     const op = createPromptOperation({

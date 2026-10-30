@@ -196,7 +196,7 @@ const bundled = {
   'agnes/deliverables': (): BundledPlugin => deliverablesExtension,
   'agnes/plugin-creator': (): BundledPlugin => pluginCreatorExtension,
   'agnes/tools-core': (init: SeamInitContext): BundledPlugin =>
-    createToolsCoreExtension(shellJobsFor(init.signal), lspFor(init.signal)),
+    createToolsCoreExtension(shellJobsFor(init.signal), lspFor(init.signal), init.profile.preset),
   // Shares one registry with tools-core (as jobs does): applying this extension is what turns the
   // language servers on for the write/edit results too.
   'agnes/lsp': (init: SeamInitContext): BundledPlugin => createLspExtension(lspFor(init.signal)),

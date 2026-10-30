@@ -2,12 +2,12 @@ import type { ToolResult } from '@agnes/extension-api'
 import { defineTool } from '@agnes/plugin-runtime'
 import type { LspSessions } from '../../../lsp/src/registry.js'
 import type { FileChangeRecorder } from '../file-change.js'
-import { fsFailure, notObservedText, toolFailure } from '../guards/feedback.js'
+import { failureCode, fsFailure, notObservedText } from '../guards/feedback.js'
 import { withFileLock } from '../guards/mutation-queue.js'
 import { observe, observedVersion, UNKNOWN_VERSION, versionOf } from '../guards/observed.js'
 import { crlf, usesCrlf } from '../line-endings.js'
 import { normalizeWorkspacePath } from '../paths.js'
-import { matchLocations, mismatchFeedback } from './edit-feedback.js'
+import { editFailure, matchLocations, mismatchFeedback } from './edit-feedback.js'
 import { withLspNote } from './lsp-note.js'
 import { isBinary, MAX_READ_BYTES } from './read.js'
 import { EditParams } from './schemas.js'
@@ -16,11 +16,12 @@ import { EditParams } from './schemas.js'
 const dec = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
 const enc = new TextEncoder()
 
-export function createEditTool(record?: FileChangeRecorder, lsp?: LspSessions) {
+export function createEditTool(record?: FileChangeRecorder, lsp?: LspSessions, logicalChanges = false) {
   return defineTool({
     name: 'edit',
-    description:
-      'Apply exact text replacements to a file read in this session. Each oldText must occur exactly once in the current file content - include surrounding lines when a short string would match more than once - and the edits are applied in the order given. Build large generated files incrementally: aim for at most 8 KiB of new content per call, preserve the rest of the file, and split larger additions across multiple calls.',
+    description: logicalChanges
+      ? 'Apply exact text replacements to a file read in this session. Put several edits to one file in one call. Edits apply in sequence to the intermediate content: a later edit sees earlier replacements. Combine repeated changes to the same region where possible. Each oldText must match exactly once; include enough surrounding lines to make it unique. Build large generated files incrementally: aim for at most 8 KiB of new content per call, preserve the rest of the file, and split larger additions across multiple calls.'
+      : 'Apply exact text replacements to a file read in this session. Each oldText must occur exactly once in the current file content - include surrounding lines when a short string would match more than once - and the edits are applied in the order given. Build large generated files incrementally: aim for at most 8 KiB of new content per call, preserve the rest of the file, and split larger additions across multiple calls.',
     parameters: EditParams,
     meta: {
       paths: [{ arg: 'path', access: 'write' }],
@@ -43,23 +44,37 @@ export function createEditTool(record?: FileChangeRecorder, lsp?: LspSessions) {
         try {
           bytes = await ctx.fs.read(args.path)
         } catch (e) {
-          return fsFailure(ctx, 'edit', args.path, e)
+          return {
+            ...(await fsFailure(ctx, 'edit', args.path, e)),
+            structured: {
+              category: 'invalid_args',
+              index: null,
+              written: false,
+              hint: 'Check the requested path and read access before retrying.',
+            },
+          }
         }
         // Decoding bytes that are not text and writing the decoded form back replaces every invalid
         // sequence with U+FFFD, which destroys the file while reporting success.
         if (isBinary(bytes))
-          return toolFailure(
+          return editFailure(
             ctx,
             'FS_BINARY',
+            'invalid_args',
+            null,
+            false,
             `edit refused: binary file (${bytes.byteLength} bytes); use a format-aware tool or ask for a text version.`,
           )
         let original: string
         try {
           original = dec.decode(bytes)
         } catch {
-          return toolFailure(
+          return editFailure(
             ctx,
             'FS_ENCODING',
+            'invalid_args',
+            null,
+            false,
             'edit failed: file is not valid UTF-8; inspect its encoding with shell and convert a copy to UTF-8 before editing.',
           )
         }
@@ -67,7 +82,14 @@ export function createEditTool(record?: FileChangeRecorder, lsp?: LspSessions) {
         // `displayPath` does outside the workspace) left the model unable to tell which file to read.
         if (observedVersion(ctx.session.key, abs) === undefined)
           return {
-            ...(await toolFailure(ctx, 'FS_NOT_OBSERVED', notObservedText('edit', args.path))),
+            ...(await editFailure(
+              ctx,
+              'FS_NOT_OBSERVED',
+              'not_read',
+              null,
+              false,
+              notObservedText('edit', args.path),
+            )),
             details: { code: 'FS_NOT_OBSERVED', path: args.path },
           }
         let text = original
@@ -87,16 +109,22 @@ export function createEditTool(record?: FileChangeRecorder, lsp?: LspSessions) {
               i > 0 && original.includes(oldText)
                 ? ' Text already replaced by an earlier edit in this same call; later edits must target the intermediate content. Candidate excerpts below show that intermediate content, not the on-disk file.'
                 : ''
-            return toolFailure(
+            return editFailure(
               ctx,
               'FS_EDIT_NOT_FOUND',
+              'not_found',
+              i,
+              false,
               `edit ${i + 1}: oldText not found.${stale}${earlier} No edits from this call were written; correct and resend the whole batch.\n${mismatchFeedback(text, oldText)}`,
             )
           }
           if (n > 1)
-            return toolFailure(
+            return editFailure(
               ctx,
               'FS_AMBIGUOUS_EDIT',
+              'ambiguous',
+              i,
+              false,
               `edit ${i + 1}: ambiguous (${n} matches); match start lines: ${lines.join(', ')}${n > lines.length ? ' (first 20 shown)' : ''}. Include distinguishing surrounding lines in oldText. No edits from this call were written; resend the whole batch.`,
             )
           // A function replacement, so `$&` and the other replacement patterns in newText stay
@@ -114,9 +142,21 @@ export function createEditTool(record?: FileChangeRecorder, lsp?: LspSessions) {
         try {
           await ctx.fs.write(args.path, text)
         } catch (e) {
-          // See write: a read-only file is refused here, and the refusal has to stay a named one.
-          if ((e as { code?: string }).code !== 'E_FS_DENIED') throw e
-          return fsFailure(ctx, 'edit', args.path, e)
+          if (ctx.signal.aborted) throw e
+          const code = failureCode(e, 'FS_WRITE_FAILED')
+          const hint =
+            code === 'E_FS_DENIED'
+              ? 'edit denied by file policy; choose an allowed path or ask the user to change the workspace/access policy; read the file before retrying.'
+              : 'edit failed while writing the batch; inspect the file with read and check write access before retrying. A backend failure may have written partial content.'
+          // Unexpected I/O still propagates, with safe JSON feedback in the error result text.
+          if (code !== 'E_FS_DENIED')
+            throw Object.assign(
+              new Error(
+                `${code}: ${JSON.stringify({ category: 'write_failed', index: null, written: 'unknown', hint })}`,
+              ),
+              { code },
+            )
+          return editFailure(ctx, code, 'write_failed', null, false, hint)
         }
         if (record)
           try {

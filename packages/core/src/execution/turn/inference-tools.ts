@@ -1,6 +1,7 @@
 import type { ToolCallState } from '@agnes/core-common/step/op-state'
 import type { EventInput } from '@agnes/core-common/types'
 import type { SessionImpl, TurnMemory } from '../../step/session.js'
+import { toolArgumentFeedback } from '../../step/tool-args.js'
 import { toolCallPayload } from '../../step/tool-call.js'
 import { checkModelToolCall } from './tool-call-check.js'
 
@@ -41,6 +42,9 @@ export function planModelToolCalls(
             isError: true,
             code: refusal.code,
             content: [{ type: 'text', text: refusal.text }],
+            ...(refusal.code === 'TOOL_ARGS_INVALID'
+              ? { structured: toolArgumentFeedback(refusal.text) }
+              : {}),
             enforcement: s.d.runtime.enforcement(),
             authz: { decisionId: 'n/a' },
           }),

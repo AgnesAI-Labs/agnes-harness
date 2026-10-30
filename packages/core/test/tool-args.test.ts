@@ -108,6 +108,31 @@ async function check(
 }
 
 describe('tool argument boundary', () => {
+  it('returns structured failure feedback for a failing array item before any effect', async () => {
+    const out = await check(
+      {
+        edits: [
+          { oldText: 'a', newText: 'b' },
+          { oldText: '', newText: 'c' },
+        ],
+      },
+      Type.Object({
+        edits: Type.Array(Type.Object({ oldText: Type.String({ minLength: 1 }), newText: Type.String() })),
+      }),
+    )
+    expect(out.result).toMatchObject({
+      code: 'TOOL_ARGS_INVALID',
+      structured: {
+        category: 'invalid_args',
+        index: 1,
+        written: false,
+        hint: expect.stringContaining('/edits/1/oldText'),
+      },
+    })
+    expect(out.reached).toEqual([])
+    expect(out.toolEffects).toEqual([])
+    await out.session.close()
+  })
   it('identifies nested schema failures without echoing supplied values', () => {
     const schema = Type.Object({
       options: Type.Object(

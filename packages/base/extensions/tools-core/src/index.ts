@@ -24,7 +24,10 @@ export { SHELL_SENTINEL } from './tools/shell.js'
 export function createToolsCoreExtension(
   jobs: ShellJobs = standaloneShellJobs,
   lsp: LspSessions = standaloneLsp,
+  preset: Record<string, unknown> = {},
 ) {
+  const logicalChanges = (preset.tools as { logical_changes?: boolean } | undefined)?.logical_changes ?? false
+  const observationMs = (preset.tools as { shell_observation_ms?: number } | undefined)?.shell_observation_ms
   return defineAgnesPlugin({
     inject: ['tools', 'hooks', 'eventLog'],
     apply(plugin: Context) {
@@ -35,8 +38,8 @@ export function createToolsCoreExtension(
       const tools = [
         readTool,
         createWriteTool(record, lsp),
-        createEditTool(record, lsp),
-        createShellTool(jobs),
+        createEditTool(record, lsp, logicalChanges),
+        createShellTool(jobs, observationMs),
         todoTool,
       ]
       const disposers = tools.map((t) => plugin.tools.register(t))
