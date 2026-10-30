@@ -297,6 +297,8 @@ describe('bench runner', () => {
     expect(result.stdout.trim()).toBe('EXPECTED_PROFILE_FAILURE')
   }, 75_000)
 
+  // Six cold runner processes (node --import tsx) run one after another. The 5 s Vitest default
+  // that applies on Linux is a budget for one in-process test, not for six process starts.
   it('refuses setups whose numbers would not hold', () => {
     const plan = (extra: string[], env: Record<string, string> = {}) =>
       runSync(['--suite', suite, '--out', join(out, 'refuse'), '--fake', '--dry-run', ...extra], env)
@@ -323,7 +325,7 @@ describe('bench runner', () => {
     const noK = plan(['--reps', '2'])
     expect(noK.status, why(noK)).toBe(0)
     expect(noK.stderr).toContain('warning: no --k or --k-from given')
-  })
+  }, 60_000)
 
   it('runs both lanes end to end with the routes in the profile file, against a fake Jev and a scripted model', (ctx) => {
     // The output directory sits inside a git work tree; the sessions' workspaces must not.
