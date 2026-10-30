@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { HostSession } from '@agnes/host'
@@ -131,12 +131,20 @@ it('searches the ignored workspace tree fuzzily and re-reads exact source versio
     const partial = await searchReferenceFiles(root, unreadableNestedIgnore, 'smts', signal)
     expect(partial.items).toEqual([])
     expect(partial.truncated).toBe(true)
+    // Authority sees canonical paths: on macOS tmpdir() is under the /var -> /private/var symlink and
+    // on Windows it may be an 8.3 short name, so match the real directory, never the mkdtemp spelling.
+    const canonicalSrc = await realpath(join(root, 'src'))
+    const deniedChecks: string[] = []
     const deniedDirectory = {
       stat: async (path: string) => {
-        if (path === join(root, 'src')) throw new Error('Permission denied')
+        deniedChecks.push(path)
+        if (path === canonicalSrc) throw new Error('Permission denied')
       },
     }
     expect((await searchReferenceFiles(root, deniedDirectory, 'smts', signal)).items).toEqual([])
+    expect(deniedChecks).toContain(canonicalSrc)
+    expect(deniedChecks).not.toContain(await realpath(join(root, 'src', 'main.ts')))
+    await expect(searchReferenceFiles(root, deniedDirectory, 'src/', signal)).rejects.toBeDefined()
     expect(fuzzyRank('src/main.ts', 'missing')).toBeUndefined()
     await writeFile(join(root, 'src/main.ts'), 'after')
     const read = await readWorkspaceReference(root, 'src/main.ts', authority, 1024)
