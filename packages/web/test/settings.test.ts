@@ -4,7 +4,7 @@ import { afterEach as feedbackAfterEach, beforeEach as feedbackBeforeEach } from
 
 import type { ConfigSnapshot, ConfigTestResult } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
-import { createSettingsController } from '@agnes/web-admin/settings'
+import { createSettingsController as createController } from '@agnes/web-admin/settings'
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { unmountRegion } from '@agnes/web-ui'
 import { Window } from 'happy-dom'
@@ -23,6 +23,14 @@ vi.mock('@agnes/web-admin/provider-picker', () => ({
 
 let fixtureWindow: Window
 let disposeMarkup: (() => void) | undefined
+// A controller left open keeps its typed-key auto test (a one-second debounce) armed. Its form looks
+// its error line up in the global document, so a late timer would write into the next case's DOM.
+const controllers: { close(): void }[] = []
+const createSettingsController: typeof createController = (options) => {
+  const controller = createController(options)
+  controllers.push(controller)
+  return controller
+}
 
 function installDom(): void {
   fixtureWindow = new Window()
@@ -37,6 +45,7 @@ function installDom(): void {
 }
 
 afterEach(() => {
+  for (const controller of controllers.splice(0)) controller.close()
   for (const host of (fixtureWindow?.document.querySelectorAll(
     '#config-accounts, .agnes-ui-button-host, .agnes-ui-field-host',
   ) ?? []) as unknown as HTMLElement[])
