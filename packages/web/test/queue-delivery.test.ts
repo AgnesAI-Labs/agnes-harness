@@ -46,7 +46,11 @@ function runningSession() {
   }
 }
 
-function submission(session: ReturnType<typeof runningSession>, draft = '补充一条') {
+function submission(
+  session: ReturnType<typeof runningSession>,
+  draft = '补充一条',
+  references: readonly { source: string; id: string; label: string }[] = [],
+) {
   const sessionBinding = new SessionBindingOwner()
   const context = {
     current: session,
@@ -65,7 +69,7 @@ function submission(session: ReturnType<typeof runningSession>, draft = '补充�
       clearImageBlocks: vi.fn(),
       hasPendingImages: () => false,
     },
-    references: { getSnapshot: () => [], clear: vi.fn(), restore: vi.fn() },
+    references: { getSnapshot: () => references, clear: vi.fn(), restore: vi.fn() },
     configured: true,
     connected: true,
     selectedModelAvailable: () => true,
@@ -117,6 +121,15 @@ it('sends ⌘/Ctrl+Enter as guidance (a steer) while the agent runs', async () =
   await vi.waitFor(() => expect(session.steer).toHaveBeenCalledTimes(1))
   expect(session.steer).toHaveBeenCalledWith([{ type: 'text', text: '补充一条' }], { references: [] })
   expect(session.followUp).not.toHaveBeenCalled()
+})
+
+it('sends a reference-only follow-up without duplicating its internal locator as message text', async () => {
+  const session = runningSession()
+  submission(session, '', [{ source: 'session', id: 'agent:prior-turn', label: 'Earlier discussion' }]).submitComposer()
+  await vi.waitFor(() => expect(session.followUp).toHaveBeenCalledTimes(1))
+  expect(session.followUp).toHaveBeenCalledWith([], {
+    references: [{ source: 'session', id: 'agent:prior-turn' }],
+  })
 })
 
 function commands(session: ReturnType<typeof runningSession>) {
