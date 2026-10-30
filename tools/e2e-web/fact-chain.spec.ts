@@ -2,7 +2,15 @@ import { readFile } from 'node:fs/promises'
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, translated } from './quality.js'
-import { chooseWorkspace, expand, expandActivityGroups, fresh, preferences, traceSequence } from './ui.js'
+import {
+  chooseWorkspace,
+  expand,
+  expandActivityGroups,
+  fresh,
+  openMenu,
+  preferences,
+  traceSequence,
+} from './ui.js'
 
 for (const locale of ['en', 'zh-CN'])
   for (const theme of ['light', 'dark'])
@@ -212,7 +220,7 @@ for (const locale of ['en', 'zh-CN'])
       })
       await expect(composer).toBeEnabled()
       if (!(await inline.getByTestId('ui-expand').count())) {
-        await inline.locator('header .agh-menu-anchor button').click()
+        await openMenu(page, inline.locator('header .agh-menu-anchor button'), page.getByTestId('ui-expand'))
         await page.getByTestId('ui-expand').click()
       } else await inline.getByTestId('ui-expand').click()
       const card = page.getByTestId('intelligent-ui-panel')

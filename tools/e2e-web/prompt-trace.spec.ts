@@ -1,6 +1,15 @@
 import { expect, test } from './fixtures.js'
 import { accessible, screen, translated } from './quality.js'
-import { chooseWorkspace, closeSettings, expand, fresh, preferences, section, settings } from './ui.js'
+import {
+  chooseTraceSequence,
+  chooseWorkspace,
+  closeSettings,
+  expand,
+  fresh,
+  preferences,
+  section,
+  settings,
+} from './ui.js'
 
 for (const locale of ['en', 'zh-CN'])
   for (const theme of ['light', 'dark'])
@@ -116,8 +125,7 @@ for (const locale of ['en', 'zh-CN'])
       await expect(page.getByTestId('conversation-turn')).toBeVisible()
       await page.locator('#view-trace').click()
       await expect(page.getByTestId('request-trace')).toBeVisible()
-      await page.getByTestId('trace-toolbar-more').click()
-      await page.getByTestId('trace-timeline-sequence').click()
+      await chooseTraceSequence(page)
       await translated(page)
       await accessible(page, info, 'request-trace')
       await page.locator('.trace-tab[data-pane=usage]').click()

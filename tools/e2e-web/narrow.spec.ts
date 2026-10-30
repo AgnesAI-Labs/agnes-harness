@@ -7,6 +7,7 @@ import { accessible, screen, settled, translated } from './quality.js'
 import { describingFirst, prompt, toolResult } from './sdk.js'
 import {
   advanced,
+  chooseTraceSequence,
   closeSettings,
   expand,
   preferences,
@@ -420,8 +421,7 @@ for (const locale of ['en', 'zh-CN'])
             .getAttribute('data-trace-row-id')
           const sourceRow = page.locator(`.trace-row[data-trace-row-id="${selectedId}"]`)
           await inspector.locator('.trace-inspector-close').click()
-          await page.getByTestId('trace-toolbar-more').click()
-          await page.getByTestId('trace-timeline-sequence').click()
+          await chooseTraceSequence(page)
           await sourceRow.click()
           await expect(inspector).toBeInViewport()
           await usable(page, info, `facts-${viewport.width}`)
