@@ -1,5 +1,5 @@
 // generated from schema by tools/gen.ts — do not edit
-import { Type, type Static } from '@sinclair/typebox'
+import { Type, type Static, type TImport, type TModule, type TProperties } from '@sinclair/typebox'
 
 export const ManagedServiceSchema = Type.Module({
   "ManagedServiceDescriptor": Type.Object({ "id": Type.String({ minLength: 1, maxLength: 64, pattern: "^[a-z][a-z0-9-]{0,63}$" }), "scope": Type.Union([Type.Literal('profile'), Type.Literal('installation')]), "artifact": Type.Union([Type.Ref('SurfaceArtifact'), Type.Object({ "kind": Type.Literal('in-process') }, { additionalProperties: false })]), "healthPath": Type.String({ minLength: 1, maxLength: 256, pattern: "^/[A-Za-z0-9/_-]*$" }), "listeners": Type.Array(Type.Object({ "name": Type.String({ minLength: 1, maxLength: 64, pattern: "^[a-z][a-z0-9-]{0,63}$" }), "host": Type.Literal('127.0.0.1'), "port": Type.Union([Type.Integer({ minimum: 1, maximum: 65535 }), Type.Literal('auto')]) }, { additionalProperties: false }), { maxItems: 16, uniqueItems: true }), "startupTimeoutMs": Type.Integer({ minimum: 1, maximum: 30000 }), "shutdownTimeoutMs": Type.Integer({ minimum: 1, maximum: 5000 }), "apiVersion": Type.String({ minLength: 1, maxLength: 32, pattern: "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$" }), "requires": Type.Array(Type.Ref('SurfaceServiceGrant'), { maxItems: 64, uniqueItems: true }) }, { additionalProperties: false }),
@@ -9,15 +9,17 @@ export const ManagedServiceSchema = Type.Module({
   "SurfaceServiceGrant": Type.Object({ "extension": Type.String({ minLength: 1, maxLength: 256, pattern: "^[a-z0-9-]+/[a-z0-9-]+$" }), "name": Type.String({ minLength: 1, maxLength: 128, pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$" }), "range": Type.String({ minLength: 1, maxLength: 64, pattern: "^(?:(?:>=|<=|>|<|=|\\^|~)?(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)|\\^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)|(?:0|[1-9][0-9]*)(?:\\.(?:0|[1-9][0-9]*))?\\.(?:x|\\*)|\\*)(?: +(?:(?:>=|<=|>|<|=|\\^|~)?(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)|\\^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)|(?:0|[1-9][0-9]*)(?:\\.(?:0|[1-9][0-9]*))?\\.(?:x|\\*)|\\*))*$" }) }, { additionalProperties: false }),
 })
 
-export const ManagedServiceDescriptor = ManagedServiceSchema.Import('ManagedServiceDescriptor')
+export type ManagedServiceSchemaDefinitions = typeof ManagedServiceSchema extends TModule<TProperties, infer Definitions> ? Definitions : never
+
+export const ManagedServiceDescriptor: TImport<ManagedServiceSchemaDefinitions, 'ManagedServiceDescriptor'> = ManagedServiceSchema.Import('ManagedServiceDescriptor')
 export type ManagedServiceDescriptor = Static<typeof ManagedServiceDescriptor>
-export const ManagedServiceReady = ManagedServiceSchema.Import('ManagedServiceReady')
+export const ManagedServiceReady: TImport<ManagedServiceSchemaDefinitions, 'ManagedServiceReady'> = ManagedServiceSchema.Import('ManagedServiceReady')
 export type ManagedServiceReady = Static<typeof ManagedServiceReady>
-export const ManagedServiceStatus = ManagedServiceSchema.Import('ManagedServiceStatus')
+export const ManagedServiceStatus: TImport<ManagedServiceSchemaDefinitions, 'ManagedServiceStatus'> = ManagedServiceSchema.Import('ManagedServiceStatus')
 export type ManagedServiceStatus = Static<typeof ManagedServiceStatus>
-export const SurfaceArtifact = ManagedServiceSchema.Import('SurfaceArtifact')
+export const SurfaceArtifact: TImport<ManagedServiceSchemaDefinitions, 'SurfaceArtifact'> = ManagedServiceSchema.Import('SurfaceArtifact')
 export type SurfaceArtifact = Static<typeof SurfaceArtifact>
-export const SurfaceServiceGrant = ManagedServiceSchema.Import('SurfaceServiceGrant')
+export const SurfaceServiceGrant: TImport<ManagedServiceSchemaDefinitions, 'SurfaceServiceGrant'> = ManagedServiceSchema.Import('SurfaceServiceGrant')
 export type SurfaceServiceGrant = Static<typeof SurfaceServiceGrant>
 export const Root = ManagedServiceDescriptor
 export type Root = ManagedServiceDescriptor

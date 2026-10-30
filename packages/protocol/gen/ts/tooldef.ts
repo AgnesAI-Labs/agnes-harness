@@ -1,5 +1,5 @@
 // generated from schema by tools/gen.ts — do not edit
-import { Type, type Static } from '@sinclair/typebox'
+import { Type, type Static, type TImport, type TModule, type TProperties } from '@sinclair/typebox'
 
 export const JsonValue = Type.Recursive((This) => Type.Union([Type.Null(), Type.Boolean(), Type.Number(), Type.String(), Type.Array(This), Type.Record(Type.String(), This)]))
 export type JsonValue = Static<typeof JsonValue>
@@ -11,13 +11,15 @@ export const ToolDefSchema = Type.Module({
   "ToolPresentation": Type.Object({ "title": Type.String({ minLength: 1, maxLength: 256 }), "description": Type.String({ minLength: 1, maxLength: 4096 }), "summary": Type.Optional(Type.String({ minLength: 1, maxLength: 1024 })) }, { additionalProperties: false }),
 })
 
-export const ToolMeta = ToolDefSchema.Import('ToolMeta')
+export type ToolDefSchemaDefinitions = typeof ToolDefSchema extends TModule<TProperties, infer Definitions> ? Definitions : never
+
+export const ToolMeta: TImport<ToolDefSchemaDefinitions, 'ToolMeta'> = ToolDefSchema.Import('ToolMeta')
 export type ToolMeta = Static<typeof ToolMeta>
-export const ParametersSchema = ToolDefSchema.Import('ParametersSchema')
+export const ParametersSchema: TImport<ToolDefSchemaDefinitions, 'ParametersSchema'> = ToolDefSchema.Import('ParametersSchema')
 export type ParametersSchema = Static<typeof ParametersSchema>
-export const ToolDef = ToolDefSchema.Import('ToolDef')
+export const ToolDef: TImport<ToolDefSchemaDefinitions, 'ToolDef'> = ToolDefSchema.Import('ToolDef')
 export type ToolDef = Static<typeof ToolDef>
-export const ToolPresentation = ToolDefSchema.Import('ToolPresentation')
+export const ToolPresentation: TImport<ToolDefSchemaDefinitions, 'ToolPresentation'> = ToolDefSchema.Import('ToolPresentation')
 export type ToolPresentation = Static<typeof ToolPresentation>
 export const Root = ToolDef
 export type Root = ToolDef

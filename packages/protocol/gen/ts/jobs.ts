@@ -1,5 +1,5 @@
 // generated from schema by tools/gen.ts — do not edit
-import { Type, type Static } from '@sinclair/typebox'
+import { Type, type Static, type TImport, type TModule, type TProperties } from '@sinclair/typebox'
 import { FormatRegistry } from '@sinclair/typebox'
 
 if (!FormatRegistry.Has('date-time')) FormatRegistry.Set('date-time', (value) => { const parts = value.split(/t/i); if (parts.length !== 2) return false; const date = /^(\d{4})-(\d{2})-(\d{2})$/.exec(parts[0] ?? ''); const time = /^(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)(z|([+-])(\d{2}):(\d{2}))$/i.exec(parts[1] ?? ''); if (!date || !time) return false; const year = Number(date[1]), month = Number(date[2]), day = Number(date[3]); const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0); const days = [0, 31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]; if (month < 1 || month > 12 || day < 1 || day > (days[month] ?? 0)) return false; const hour = Number(time[1]), minute = Number(time[2]), second = Number(time[3]); const offsetHour = Number(time[6] || 0), offsetMinute = Number(time[7] || 0); if (hour > 23 || minute > 59 || offsetHour > 23 || offsetMinute > 59) return false; if (second < 60) return true; const sign = time[5] === '-' ? -1 : 1; const utcMinute = minute - offsetMinute * sign; const utcHour = hour - offsetHour * sign - (utcMinute < 0 ? 1 : 0); return (utcHour === 23 || utcHour === -1) && (utcMinute === 59 || utcMinute === -1) && second < 61; })
@@ -14,11 +14,13 @@ export const JobsSchema = Type.Module({
   "ContentBlock": Type.Union([Type.Object({ "type": Type.Literal('text'), "text": Type.String({ maxLength: 1048576 }), "reference": Type.Optional(Type.Object({ "source": Type.String({ minLength: 1, maxLength: 128 }), "id": Type.String({ minLength: 1, maxLength: 4096 }), "label": Type.String({ maxLength: 4096 }), "hash": Type.String({ pattern: "^[a-f0-9]{64}$" }), "truncated": Type.Boolean() }, { additionalProperties: false })) }, { additionalProperties: false }), Type.Object({ "type": Type.Literal('image'), "data": Type.String(), "mimeType": Type.String({ maxLength: 128 }) }, { additionalProperties: false }), Type.Object({ "type": Type.Literal('file'), "data": Type.String(), "mimeType": Type.String({ minLength: 1, maxLength: 128 }), "name": Type.String({ minLength: 1, maxLength: 256 }) }, { additionalProperties: false }), Type.Object({ "type": Type.Literal('resource_link'), "uri": Type.String({ maxLength: 4096 }), "name": Type.Optional(Type.String({ maxLength: 256 })), "mimeType": Type.Optional(Type.String({ maxLength: 128 })), "attachment": Type.Optional(Type.Object({ "artifact": Type.Object({ "sha256": Type.String({ pattern: "^[0-9a-f]{64}$" }), "size": Type.Integer({ minimum: 0, maximum: 9007199254740991 }), "mime": Type.String({ minLength: 1, maxLength: 128 }) }, { additionalProperties: false }), "image": Type.Optional(Type.Object({ "width": Type.Integer({ minimum: 1, maximum: 65535 }), "height": Type.Integer({ minimum: 1, maximum: 65535 }) }, { additionalProperties: false })), "thumbnail": Type.Optional(Type.Object({ "sha256": Type.String({ pattern: "^[0-9a-f]{64}$" }), "size": Type.Integer({ minimum: 0, maximum: 9007199254740991 }), "mime": Type.String({ minLength: 1, maxLength: 128 }) }, { additionalProperties: false })), "receiptId": Type.Optional(Type.String({ pattern: "^[a-f0-9-]{36}$" })) }, { additionalProperties: false })) }, { additionalProperties: false })]),
 })
 
-export const Schedule = JobsSchema.Import('Schedule')
+export type JobsSchemaDefinitions = typeof JobsSchema extends TModule<TProperties, infer Definitions> ? Definitions : never
+
+export const Schedule: TImport<JobsSchemaDefinitions, 'Schedule'> = JobsSchema.Import('Schedule')
 export type Schedule = Static<typeof Schedule>
-export const JobSpec = JobsSchema.Import('JobSpec')
+export const JobSpec: TImport<JobsSchemaDefinitions, 'JobSpec'> = JobsSchema.Import('JobSpec')
 export type JobSpec = Static<typeof JobSpec>
-export const JobStatus = JobsSchema.Import('JobStatus')
+export const JobStatus: TImport<JobsSchemaDefinitions, 'JobStatus'> = JobsSchema.Import('JobStatus')
 export type JobStatus = Static<typeof JobStatus>
-export const ContentBlock = JobsSchema.Import('ContentBlock')
+export const ContentBlock: TImport<JobsSchemaDefinitions, 'ContentBlock'> = JobsSchema.Import('ContentBlock')
 export type ContentBlock = Static<typeof ContentBlock>

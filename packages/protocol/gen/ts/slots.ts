@@ -1,5 +1,5 @@
 // generated from schema by tools/gen.ts — do not edit
-import { Type, type Static } from '@sinclair/typebox'
+import { Type, type Static, type TImport, type TModule, type TProperties } from '@sinclair/typebox'
 
 export const SlotsSchema = Type.Module({
   "UiSlotName": Type.Union([Type.Literal('tool.card.inline'), Type.Literal('sidebar.action'), Type.Literal('status.line'), Type.Literal('notification')]),
@@ -10,17 +10,19 @@ export const SlotsSchema = Type.Module({
   "NotificationPayload": Type.Object({ "title": Type.String({ maxLength: 256 }), "body": Type.String({ maxLength: 4096 }), "link": Type.Optional(Type.String({ maxLength: 2048 })) }, { additionalProperties: false }),
 })
 
-export const UiSlotName = SlotsSchema.Import('UiSlotName')
+export type SlotsSchemaDefinitions = typeof SlotsSchema extends TModule<TProperties, infer Definitions> ? Definitions : never
+
+export const UiSlotName: TImport<SlotsSchemaDefinitions, 'UiSlotName'> = SlotsSchema.Import('UiSlotName')
 export type UiSlotName = Static<typeof UiSlotName>
-export const GoalSnapshot = SlotsSchema.Import('GoalSnapshot')
+export const GoalSnapshot: TImport<SlotsSchemaDefinitions, 'GoalSnapshot'> = SlotsSchema.Import('GoalSnapshot')
 export type GoalSnapshot = Static<typeof GoalSnapshot>
-export const ToolCardInlinePayload = SlotsSchema.Import('ToolCardInlinePayload')
+export const ToolCardInlinePayload: TImport<SlotsSchemaDefinitions, 'ToolCardInlinePayload'> = SlotsSchema.Import('ToolCardInlinePayload')
 export type ToolCardInlinePayload = Static<typeof ToolCardInlinePayload>
-export const SidebarActionPayload = SlotsSchema.Import('SidebarActionPayload')
+export const SidebarActionPayload: TImport<SlotsSchemaDefinitions, 'SidebarActionPayload'> = SlotsSchema.Import('SidebarActionPayload')
 export type SidebarActionPayload = Static<typeof SidebarActionPayload>
-export const StatusLinePayload = SlotsSchema.Import('StatusLinePayload')
+export const StatusLinePayload: TImport<SlotsSchemaDefinitions, 'StatusLinePayload'> = SlotsSchema.Import('StatusLinePayload')
 export type StatusLinePayload = Static<typeof StatusLinePayload>
-export const NotificationPayload = SlotsSchema.Import('NotificationPayload')
+export const NotificationPayload: TImport<SlotsSchemaDefinitions, 'NotificationPayload'> = SlotsSchema.Import('NotificationPayload')
 export type NotificationPayload = Static<typeof NotificationPayload>
 export const X_AGNES_SLOT_TABLE = {
   "tool.card.inline": {

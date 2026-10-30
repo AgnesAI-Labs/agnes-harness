@@ -1,5 +1,5 @@
 // generated from schema by tools/gen.ts — do not edit
-import { Type, type Static } from '@sinclair/typebox'
+import { Type, type Static, type TImport, type TModule, type TProperties } from '@sinclair/typebox'
 import { FormatRegistry } from '@sinclair/typebox'
 
 if (!FormatRegistry.Has('date-time')) FormatRegistry.Set('date-time', (value) => { const parts = value.split(/t/i); if (parts.length !== 2) return false; const date = /^(\d{4})-(\d{2})-(\d{2})$/.exec(parts[0] ?? ''); const time = /^(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)(z|([+-])(\d{2}):(\d{2}))$/i.exec(parts[1] ?? ''); if (!date || !time) return false; const year = Number(date[1]), month = Number(date[2]), day = Number(date[3]); const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0); const days = [0, 31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]; if (month < 1 || month > 12 || day < 1 || day > (days[month] ?? 0)) return false; const hour = Number(time[1]), minute = Number(time[2]), second = Number(time[3]); const offsetHour = Number(time[6] || 0), offsetMinute = Number(time[7] || 0); if (hour > 23 || minute > 59 || offsetHour > 23 || offsetMinute > 59) return false; if (second < 60) return true; const sign = time[5] === '-' ? -1 : 1; const utcMinute = minute - offsetMinute * sign; const utcHour = hour - offsetHour * sign - (utcMinute < 0 ? 1 : 0); return (utcHour === 23 || utcHour === -1) && (utcMinute === 59 || utcMinute === -1) && second < 61; })
@@ -38,61 +38,63 @@ export const ExtensionServiceSchema = Type.Module({
   "ParametersSchema": Type.Object({ "type": Type.Literal('object'), "properties": Type.Record(Type.String(), JsonValue), "required": Type.Optional(Type.Array(Type.String())), "additionalProperties": Type.Literal(false), "description": Type.Optional(Type.String({ maxLength: 2048 })) }, { additionalProperties: false }),
 })
 
-export const ServiceCapability = ExtensionServiceSchema.Import('ServiceCapability')
+export type ExtensionServiceSchemaDefinitions = typeof ExtensionServiceSchema extends TModule<TProperties, infer Definitions> ? Definitions : never
+
+export const ServiceCapability: TImport<ExtensionServiceSchemaDefinitions, 'ServiceCapability'> = ExtensionServiceSchema.Import('ServiceCapability')
 export type ServiceCapability = Static<typeof ServiceCapability>
-export const ExtensionCallParams = ExtensionServiceSchema.Import('ExtensionCallParams')
+export const ExtensionCallParams: TImport<ExtensionServiceSchemaDefinitions, 'ExtensionCallParams'> = ExtensionServiceSchema.Import('ExtensionCallParams')
 export type ExtensionCallParams = Static<typeof ExtensionCallParams>
-export const ExtensionCallResult = ExtensionServiceSchema.Import('ExtensionCallResult')
+export const ExtensionCallResult: TImport<ExtensionServiceSchemaDefinitions, 'ExtensionCallResult'> = ExtensionServiceSchema.Import('ExtensionCallResult')
 export type ExtensionCallResult = Static<typeof ExtensionCallResult>
-export const ExtensionAckParams = ExtensionServiceSchema.Import('ExtensionAckParams')
+export const ExtensionAckParams: TImport<ExtensionServiceSchemaDefinitions, 'ExtensionAckParams'> = ExtensionServiceSchema.Import('ExtensionAckParams')
 export type ExtensionAckParams = Static<typeof ExtensionAckParams>
-export const ExtensionCallError = ExtensionServiceSchema.Import('ExtensionCallError')
+export const ExtensionCallError: TImport<ExtensionServiceSchemaDefinitions, 'ExtensionCallError'> = ExtensionServiceSchema.Import('ExtensionCallError')
 export type ExtensionCallError = Static<typeof ExtensionCallError>
-export const ServiceEffectPolicy = ExtensionServiceSchema.Import('ServiceEffectPolicy')
+export const ServiceEffectPolicy: TImport<ExtensionServiceSchemaDefinitions, 'ServiceEffectPolicy'> = ExtensionServiceSchema.Import('ServiceEffectPolicy')
 export type ServiceEffectPolicy = Static<typeof ServiceEffectPolicy>
-export const ProfileServiceCallParams = ExtensionServiceSchema.Import('ProfileServiceCallParams')
+export const ProfileServiceCallParams: TImport<ExtensionServiceSchemaDefinitions, 'ProfileServiceCallParams'> = ExtensionServiceSchema.Import('ProfileServiceCallParams')
 export type ProfileServiceCallParams = Static<typeof ProfileServiceCallParams>
-export const ProfileServiceOperationParams = ExtensionServiceSchema.Import('ProfileServiceOperationParams')
+export const ProfileServiceOperationParams: TImport<ExtensionServiceSchemaDefinitions, 'ProfileServiceOperationParams'> = ExtensionServiceSchema.Import('ProfileServiceOperationParams')
 export type ProfileServiceOperationParams = Static<typeof ProfileServiceOperationParams>
-export const ProfileServiceReceipt = ExtensionServiceSchema.Import('ProfileServiceReceipt')
+export const ProfileServiceReceipt: TImport<ExtensionServiceSchemaDefinitions, 'ProfileServiceReceipt'> = ExtensionServiceSchema.Import('ProfileServiceReceipt')
 export type ProfileServiceReceipt = Static<typeof ProfileServiceReceipt>
-export const ProfileServiceCallResult = ExtensionServiceSchema.Import('ProfileServiceCallResult')
+export const ProfileServiceCallResult: TImport<ExtensionServiceSchemaDefinitions, 'ProfileServiceCallResult'> = ExtensionServiceSchema.Import('ProfileServiceCallResult')
 export type ProfileServiceCallResult = Static<typeof ProfileServiceCallResult>
-export const ProfileDecisionsListParams = ExtensionServiceSchema.Import('ProfileDecisionsListParams')
+export const ProfileDecisionsListParams: TImport<ExtensionServiceSchemaDefinitions, 'ProfileDecisionsListParams'> = ExtensionServiceSchema.Import('ProfileDecisionsListParams')
 export type ProfileDecisionsListParams = Static<typeof ProfileDecisionsListParams>
-export const ProfileDecisionsListResult = ExtensionServiceSchema.Import('ProfileDecisionsListResult')
+export const ProfileDecisionsListResult: TImport<ExtensionServiceSchemaDefinitions, 'ProfileDecisionsListResult'> = ExtensionServiceSchema.Import('ProfileDecisionsListResult')
 export type ProfileDecisionsListResult = Static<typeof ProfileDecisionsListResult>
-export const ProfileDecisionAnswerParams = ExtensionServiceSchema.Import('ProfileDecisionAnswerParams')
+export const ProfileDecisionAnswerParams: TImport<ExtensionServiceSchemaDefinitions, 'ProfileDecisionAnswerParams'> = ExtensionServiceSchema.Import('ProfileDecisionAnswerParams')
 export type ProfileDecisionAnswerParams = Static<typeof ProfileDecisionAnswerParams>
-export const BoundWakeEnqueueParams = ExtensionServiceSchema.Import('BoundWakeEnqueueParams')
+export const BoundWakeEnqueueParams: TImport<ExtensionServiceSchemaDefinitions, 'BoundWakeEnqueueParams'> = ExtensionServiceSchema.Import('BoundWakeEnqueueParams')
 export type BoundWakeEnqueueParams = Static<typeof BoundWakeEnqueueParams>
-export const BoundWakeReadParams = ExtensionServiceSchema.Import('BoundWakeReadParams')
+export const BoundWakeReadParams: TImport<ExtensionServiceSchemaDefinitions, 'BoundWakeReadParams'> = ExtensionServiceSchema.Import('BoundWakeReadParams')
 export type BoundWakeReadParams = Static<typeof BoundWakeReadParams>
-export const BoundWakeReceipt = ExtensionServiceSchema.Import('BoundWakeReceipt')
+export const BoundWakeReceipt: TImport<ExtensionServiceSchemaDefinitions, 'BoundWakeReceipt'> = ExtensionServiceSchema.Import('BoundWakeReceipt')
 export type BoundWakeReceipt = Static<typeof BoundWakeReceipt>
-export const ProfileDecisionAnswerResult = ExtensionServiceSchema.Import('ProfileDecisionAnswerResult')
+export const ProfileDecisionAnswerResult: TImport<ExtensionServiceSchemaDefinitions, 'ProfileDecisionAnswerResult'> = ExtensionServiceSchema.Import('ProfileDecisionAnswerResult')
 export type ProfileDecisionAnswerResult = Static<typeof ProfileDecisionAnswerResult>
-export const DecisionHandle = ExtensionServiceSchema.Import('DecisionHandle')
+export const DecisionHandle: TImport<ExtensionServiceSchemaDefinitions, 'DecisionHandle'> = ExtensionServiceSchema.Import('DecisionHandle')
 export type DecisionHandle = Static<typeof DecisionHandle>
-export const DecisionSnapshot = ExtensionServiceSchema.Import('DecisionSnapshot')
+export const DecisionSnapshot: TImport<ExtensionServiceSchemaDefinitions, 'DecisionSnapshot'> = ExtensionServiceSchema.Import('DecisionSnapshot')
 export type DecisionSnapshot = Static<typeof DecisionSnapshot>
-export const DecisionConsumption = ExtensionServiceSchema.Import('DecisionConsumption')
+export const DecisionConsumption: TImport<ExtensionServiceSchemaDefinitions, 'DecisionConsumption'> = ExtensionServiceSchema.Import('DecisionConsumption')
 export type DecisionConsumption = Static<typeof DecisionConsumption>
-export const DecisionResponse = ExtensionServiceSchema.Import('DecisionResponse')
+export const DecisionResponse: TImport<ExtensionServiceSchemaDefinitions, 'DecisionResponse'> = ExtensionServiceSchema.Import('DecisionResponse')
 export type DecisionResponse = Static<typeof DecisionResponse>
-export const DecisionSpec = ExtensionServiceSchema.Import('DecisionSpec')
+export const DecisionSpec: TImport<ExtensionServiceSchemaDefinitions, 'DecisionSpec'> = ExtensionServiceSchema.Import('DecisionSpec')
 export type DecisionSpec = Static<typeof DecisionSpec>
-export const DecisionPresentation = ExtensionServiceSchema.Import('DecisionPresentation')
+export const DecisionPresentation: TImport<ExtensionServiceSchemaDefinitions, 'DecisionPresentation'> = ExtensionServiceSchema.Import('DecisionPresentation')
 export type DecisionPresentation = Static<typeof DecisionPresentation>
-export const DecisionRequest = ExtensionServiceSchema.Import('DecisionRequest')
+export const DecisionRequest: TImport<ExtensionServiceSchemaDefinitions, 'DecisionRequest'> = ExtensionServiceSchema.Import('DecisionRequest')
 export type DecisionRequest = Static<typeof DecisionRequest>
-export const DecisionResult = ExtensionServiceSchema.Import('DecisionResult')
+export const DecisionResult: TImport<ExtensionServiceSchemaDefinitions, 'DecisionResult'> = ExtensionServiceSchema.Import('DecisionResult')
 export type DecisionResult = Static<typeof DecisionResult>
-export const DecisionCommandReceipt = ExtensionServiceSchema.Import('DecisionCommandReceipt')
+export const DecisionCommandReceipt: TImport<ExtensionServiceSchemaDefinitions, 'DecisionCommandReceipt'> = ExtensionServiceSchema.Import('DecisionCommandReceipt')
 export type DecisionCommandReceipt = Static<typeof DecisionCommandReceipt>
-export const Actor = ExtensionServiceSchema.Import('Actor')
+export const Actor: TImport<ExtensionServiceSchemaDefinitions, 'Actor'> = ExtensionServiceSchema.Import('Actor')
 export type Actor = Static<typeof Actor>
-export const ParametersSchema = ExtensionServiceSchema.Import('ParametersSchema')
+export const ParametersSchema: TImport<ExtensionServiceSchemaDefinitions, 'ParametersSchema'> = ExtensionServiceSchema.Import('ParametersSchema')
 export type ParametersSchema = Static<typeof ParametersSchema>
 export const Root = ServiceCapability
 export type Root = ServiceCapability
