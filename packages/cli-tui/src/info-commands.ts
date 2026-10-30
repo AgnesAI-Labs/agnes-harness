@@ -6,6 +6,7 @@ import { escapeControl } from './component.js'
 import { formatCredits, formatUsdMicros } from './format-usage.js'
 import { tt } from './locale-extended.js'
 import { probeLanguageServers } from './lsp-probe.js'
+import { accountLabels, modelLabel } from './model-label.js'
 import { waitingIn } from './queue-commands.js'
 import { oneLine } from './session-commands.js'
 import { displayWidth } from './terminal.js'
@@ -33,13 +34,17 @@ async function statusSlash(app: TuiApp): Promise<SlashResult> {
   const context = usage
     ? `${usage.context.tokens} / ${usage.context.window} (${((usage.context.tokens / usage.context.window) * 100).toFixed(1)}%)`
     : NONE
+  const accounts = await accountLabels(s.client)
   const remote = app.o.remote ?? false
   // The personal commands directory is `<AGH_HOME>/commands`; no separate home option is passed.
   const home = app.o.commandsDir && dirname(app.o.commandsDir)
   const rows: Array<[Parameters<typeof tt>[0], string]> = [
     ['status.session', oneLine(mine?.title ? `${s.id} · ${mine.title}` : s.id)],
     ['status.preset', oneLine(mine?.preset ?? NONE)],
-    ['status.model', usage ? `${usage.model.route}/${usage.model.id} (${usage.model.thinking})` : NONE],
+    [
+      'status.model',
+      usage ? `${modelLabel(accounts, usage.model.route, usage.model.id)} (${usage.model.thinking})` : NONE,
+    ],
     ['status.cwd', oneLine(app.cwd)],
     // Over --connect this machine's home is not the daemon's: showing it would mislead.
     ['status.home', home && !remote ? oneLine(home) : NONE],

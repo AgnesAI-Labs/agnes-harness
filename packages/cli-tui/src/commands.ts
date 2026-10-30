@@ -29,6 +29,7 @@ import { jobsSlash } from './job-commands.js'
 import { formatKeys } from './keybindings.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
 import { memorySlash } from './memory-command.js'
+import { accountLabels } from './model-label.js'
 import { parseNotifyMode } from './notify.js'
 import { permissionsSlash } from './permissions-command.js'
 import { providerSlash } from './provider-command.js'
@@ -102,6 +103,8 @@ export function slashCommandFor(
 
 export type ModelChoice = {
   route: string
+  /** Account label shown instead of the raw route; absent when no account is known for it. */
+  label?: string
   model: string
   reasoning: boolean
   thinkingLevelMap?: Record<string, string>
@@ -590,12 +593,14 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
     case '/model': {
       if (args.length === 0) {
         const models = (await c.apis()).profile.models ?? []
+        const labels = await accountLabels(c, true)
         const unique = new Map<string, ModelChoice>()
         for (const item of models) {
           const key = `${item.route}/${item.id}`
           if (!unique.has(key))
             unique.set(key, {
               route: item.route,
+              ...(labels.get(item.route) ? { label: labels.get(item.route) as string } : {}),
               model: item.id,
               reasoning: item.reasoning ?? false,
               ...(item.thinkingLevelMap ? { thinkingLevelMap: item.thinkingLevelMap } : {}),

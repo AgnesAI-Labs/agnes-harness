@@ -27,6 +27,37 @@ function chooserWith(setModel: () => Promise<{ effectiveFromSeq: number }>) {
   }
 }
 
+describe('ModelChooser confirmation', () => {
+  const notice = async (config?: unknown) => {
+    const setNotice = vi.fn()
+    const app = {
+      locale: 'en',
+      composerSelectionPath: undefined,
+      showError: vi.fn(),
+      session: { setModel: async () => ({ effectiveFromSeq: 3 }), client: { config } },
+      statusBar: { setNotice },
+      renderer: { requestRender: vi.fn() },
+    } as unknown as TuiApp
+    await new ModelChooser(
+      app,
+      () => false,
+      () => false,
+    ).choose({ route: 'account-acct-1', model: 'flash' })
+    return setNotice.mock.calls[0]?.[0]
+  }
+
+  it('names the account label, and falls back to the raw route when none is known or the read fails', async () => {
+    const accounts = [{ accountId: 'acct-1', label: 'DeepSeek', route: 'account-acct-1' }]
+    expect(await notice({ get: async () => ({ accounts }) })).toBe('model DeepSeek / flash from seq 3')
+    expect(await notice({ get: async () => ({ accounts: [] }) })).toBe(
+      'model account-acct-1/flash from seq 3',
+    )
+    expect(await notice({ get: async () => Promise.reject(new Error('down')) })).toBe(
+      'model account-acct-1/flash from seq 3',
+    )
+  })
+})
+
 describe('ModelChooser', () => {
   it('keeps the model it last knew when switching fails, so the next cycle starts from there', async () => {
     const { chooser, showError } = chooserWith(async () => {
