@@ -113,7 +113,9 @@ it('reports Windows as unisolated and refuses missing POSIX isolation or a remot
   vi.mocked(detectBackend).mockResolvedValue(NONE_BACKEND)
   const result = await authoringSandbox({ home: join(root, 'private') }, root, new AbortController().signal)
   expect(result.isolated).toBe(false)
-  for (const os of ['darwin', 'linux'] as const) {
+  // The Linux read view walks the host's real '/' and is only simulated on a POSIX host: on Windows
+  // that is the current drive's root, whose system folders refuse even a realpath.
+  for (const os of posixHost ? (['darwin', 'linux'] as const) : (['darwin'] as const)) {
     setup(os)
     await expect(
       authoringSandbox({ home: join(root, 'private') }, root, new AbortController().signal),
