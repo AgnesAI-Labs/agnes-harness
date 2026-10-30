@@ -78,19 +78,22 @@ async function mount(
   const host = document.body.appendChild(document.createElement('div'))
   root = createRoot(host)
   const scan = options.scan ?? (async () => undefined)
-  await act(async () =>
-    root?.render(
-      createElement(SkillFolders, {
-        canSave: options.canSave ?? true,
-        onSaved: scan,
-        t: (key, vars) =>
-          Object.entries(vars ?? {}).reduce(
-            (text, [name, value]) => text.replace(`{${name}}`, String(value)),
-            pluginsPageCatalog[options.locale ?? 'en'][key] ?? key,
-          ),
-      }),
-    ),
-  )
+  const render = (scanReport?: SkillScanReport) =>
+    act(async () =>
+      root?.render(
+        createElement(SkillFolders, {
+          canSave: options.canSave ?? true,
+          onSaved: scan,
+          scanReport,
+          t: (key, vars) =>
+            Object.entries(vars ?? {}).reduce(
+              (text, [name, value]) => text.replace(`{${name}}`, String(value)),
+              pluginsPageCatalog[options.locale ?? 'en'][key] ?? key,
+            ),
+        }),
+      ),
+    )
+  await render()
   const fill = async (value: string) =>
     act(async () => {
       const textarea = required(host.querySelector('textarea'))
@@ -102,7 +105,7 @@ async function mount(
     })
   const save = () =>
     act(async () => host.querySelector<HTMLElement>('[data-testid="skill-folders-save"]')?.click())
-  return { host, results, writes, fill, save, config: () => config }
+  return { host, results, writes, fill, save, render, config: () => config }
 }
 afterEach(async () => {
   await act(async () => root?.unmount())
@@ -303,4 +306,38 @@ it('keeps a returned report pending while its folder hashes are still being chec
   expect(view.host.textContent).toContain('Scanning folders…')
   expect(view.host.textContent).not.toContain('Scan details were not returned')
   await act(async () => finish())
+})
+
+it('keeps the report of a retried scan when an older report arrives from a list read afterwards', async () => {
+  const roots = ['/preview/team-skills']
+  const older = report(roots)
+  const newer: SkillScanReport = {
+    ...older,
+    operationId: 'scan-2',
+    generation: 2,
+    observedAt: '2026-10-29T08:00:05.000Z',
+    complete: true,
+    foundCount: 3,
+    skippedCount: 0,
+    unreadableDirectoryCount: 0,
+    directories: older.directories.map((entry) => ({
+      ...entry,
+      state: 'complete',
+      complete: true,
+      foundCount: 3,
+      skippedCount: 0,
+      issues: [],
+    })),
+  }
+  const view = await mount({ roots, scan: async () => newer })
+  await view.render(older)
+  await vi.waitFor(() => expect(view.host.textContent).toContain('Found 2 valid skill files; skipped 1.'))
+  const retry = required(view.host.querySelector<HTMLButtonElement>('[data-testid="skill-scan-retry"]'))
+  await act(async () => retry.click())
+  await vi.waitFor(() => expect(view.host.textContent).toContain('Found 3 valid skill files; skipped 0.'))
+  // A list read that began before the retry reports the earlier scan once the retry is done.
+  await view.render({ ...older })
+  await act(async () => {})
+  await vi.waitFor(() => expect(view.host.textContent).toContain('Found 3 valid skill files; skipped 0.'))
+  expect(view.host.textContent).not.toContain('Found 2 valid skill files')
 })
