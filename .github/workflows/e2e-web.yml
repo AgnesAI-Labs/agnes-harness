@@ -154,6 +154,9 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        # The guards compare allowances with the protected merge-base and the bundled-version
+        # check with origin/<base branch>; both need full history, as in ci.yml.
+        with: { fetch-depth: 0 }
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version-file: .node-version, cache: pnpm }
@@ -199,11 +202,15 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        # The guards compare allowances with the protected merge-base and the bundled-version
+        # check with origin/<base branch>; both need full history, as in ci.yml.
+        with: { fetch-depth: 0 }
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version-file: .node-version, cache: pnpm }
-      - name: Native toolchain and bubblewrap
-        run: sudo apt-get update && sudo apt-get install -y build-essential python3 bubblewrap
+      # The completion tests load the generated script in real bash and zsh; the Ubuntu image has no zsh.
+      - name: Native toolchain, bubblewrap and zsh
+        run: sudo apt-get update && sudo apt-get install -y build-essential python3 bubblewrap zsh
       - name: Provision actual Linux sandbox namespaces
         run: bash tools/e2e-web/provision-linux-sandbox.sh
       - run: pnpm install --frozen-lockfile
