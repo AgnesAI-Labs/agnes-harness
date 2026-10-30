@@ -16,7 +16,9 @@ async function referenceFileNames(cwd: string, signal: AbortSignal) {
   signal.throwIfAborted()
   const binary = ripgrepPath()
   return new Promise<{ paths: string[]; truncated: boolean }>((resolve, reject) => {
-    const child = spawn(binary, ['--files', '--hidden', '--no-ignore', '--null', '--', '.'], {
+    // Keep ripgrep's ignore handling enabled: keyword completion must not enumerate dependency
+    // trees or other workspace-excluded paths before the authoritative AGH checks below.
+    const child = spawn(binary, ['--files', '--hidden', '--null', '--', '.'], {
       cwd,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],

@@ -67,15 +67,17 @@ it('searches the ignored workspace tree fuzzily and re-reads exact source versio
     vi.stubEnv('AGH_HOME', privateRoot)
     await mkdir(join(root, 'src'))
     await mkdir(join(root, 'build'))
+    await mkdir(join(root, 'node_modules'))
     await mkdir(join(root, '.agh/secrets'), { recursive: true })
     await writeFile(join(root, '.aghignore'), 'private.txt\n')
-    await writeFile(join(root, '.gitignore'), '*.log\nbuild/\n')
+    await writeFile(join(root, '.gitignore'), '*.log\nbuild/\nnode_modules/\n')
     await writeFile(join(root, 'src', '.gitignore'), 'hidden.txt\n')
     for (const path of [
       'private.txt',
       '.agh/secrets/key.txt',
       'a.log',
       'build/leak.txt',
+      'node_modules/dependency-leak.ts',
       'src/main.ts',
       'src/hidden.txt',
       'denied.txt',
@@ -103,6 +105,7 @@ it('searches the ignored workspace tree fuzzily and re-reads exact source versio
       '.agh/secrets/key.txt',
       'a.log',
       'build/leak.txt',
+      'node_modules/dependency-leak.ts',
       'src/hidden.txt',
       'denied.txt',
       'private-state/secret.txt',
@@ -145,6 +148,7 @@ it('searches the ignored workspace tree fuzzily and re-reads exact source versio
       '.agh/secrets/key.txt',
       'a.log',
       'build/leak.txt',
+      'node_modules/dependency-leak.ts',
       'src/hidden.txt',
       ...(linkCreated ? ['escape'] : []),
       'denied.txt',
