@@ -10,8 +10,9 @@ import {
   workspaceRefresher,
 } from '../src/workspace-info.js'
 
-// realpath: git reports /private/var/... on macOS, where tmpdir() says /var/...
-const home = realpathSync(mkdtempSync(join(tmpdir(), 'agh-workspace-info-')))
+// Native realpath: git reports /private/var/... on macOS, where tmpdir() says /var/..., and the
+// long name on Windows, where tmpdir() may carry an 8.3 short name (RUNNER~1).
+const home = realpathSync.native(mkdtempSync(join(tmpdir(), 'agh-workspace-info-')))
 const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }
 const git = (cwd: string, ...args: string[]) =>
   execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', ...args], {

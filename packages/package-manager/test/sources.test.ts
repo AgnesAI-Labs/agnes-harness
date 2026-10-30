@@ -275,7 +275,7 @@ describe('hashDirectory', () => {
   it.each(['failure', 'cancellation'] as const)(
     'bounds directory reads and drains started siblings before returning a %s',
     async (mode) => {
-      const canonicalRoot = realpathSync(root)
+      const canonicalRoot = realpathSync.native(root)
       for (let index = 0; index < 8; index++) {
         const directory = join(root, `branch-${index}`)
         mkdirSync(directory)
@@ -376,8 +376,8 @@ describe('hashDirectory', () => {
       writeFileSync(file, 'first')
       writeFileSync(tail, 'tail')
       const before = statSync(file)
-      const canonicalFile = realpathSync(file),
-        canonicalTail = realpathSync(tail)
+      const canonicalFile = realpathSync.native(file),
+        canonicalTail = realpathSync.native(tail)
       const change = () => {
         writeFileSync(file, 'other')
         utimesSync(file, before.atime, before.mtime)
@@ -412,7 +412,7 @@ describe('hashDirectory', () => {
     const expected = hashDirectory(root)
     // Walk the tree for real: a reused digest would never open the file this test links.
     forgetDirectoryDigests()
-    const canonicalFile = realpathSync(file)
+    const canonicalFile = realpathSync.native(file)
     const open = asyncFs.open
     let linked = false
     const spy = vi.spyOn(asyncFs, 'open').mockImplementation(async (...args) => {
@@ -581,7 +581,7 @@ describe('fetchSource', () => {
   it('names the resolution root when a file source is missing there, not the process cwd', async () => {
     const cwd = join(dir, 'daemon-workspace')
     mkdirSync(cwd)
-    const resolvedRoot = realpathSync(cwd)
+    const resolvedRoot = realpathSync.native(cwd)
     let caught: unknown
     try {
       await fetchSource(parseSource('file:./missing-pkg'), join(dir, 'installed'), { cwd })

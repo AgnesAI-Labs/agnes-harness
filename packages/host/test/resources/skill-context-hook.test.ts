@@ -56,7 +56,8 @@ function readyRuntime(
 
 it('captures readable Skill IDs only inside the owning session workspace', async () => {
   const dataDir = scratch()
-  const roots = [realpathSync(scratch()), realpathSync(scratch())]
+  // A binding names the canonical root, which is the native spelling (Windows expands 8.3 names).
+  const roots = [realpathSync.native(scratch()), realpathSync.native(scratch())]
   const calls = new AsyncLocalStorage<{ root: string; key: string }>()
   const views = new Map(
     roots.map((root, i) => [

@@ -53,7 +53,7 @@ it('preserves the complete admitted manifest and resolves a canonical entry usin
   const input = setup(),
     result = preflightExtension(input)
   expect(result.manifest).toEqual(manifest())
-  expect(result.entry).toBe(realpathSync(join(input.dir, 'index.ts')))
+  expect(result.entry).toBe(realpathSync.native(join(input.dir, 'index.ts')))
   expect(manifestCapabilities(result.manifest)).toEqual(all)
 })
 

@@ -899,7 +899,9 @@ describe('runSlash', () => {
         expect(ok.switchSession?.id).toBeDefined()
         expect(
           ep.calls.find(
-            (c) => c.method === '_agnes/v1/workspace.add' && JSON.stringify(c.params).includes(target),
+            (c) =>
+              c.method === '_agnes/v1/workspace.add' &&
+              JSON.stringify(c.params).includes(JSON.stringify(target)),
           ),
         ).toBeDefined()
         expect(ep.calls.filter((c) => c.method === 'session/new').at(-1)?.params).toMatchObject({
@@ -2608,7 +2610,9 @@ it('uploads a CLI path with spaces through bounded original intake and preserves
     const home = join(dir, 'home')
     await mkdir(home)
     await writeFile(join(home, 'h.txt'), bytes)
+    // os.homedir() reads HOME on POSIX and USERPROFILE on Windows.
     vi.stubEnv('HOME', home)
+    vi.stubEnv('USERPROFILE', home)
     calls.length = 0
     await runSlash(app, '/attach ~/h.txt')
     vi.unstubAllEnvs()

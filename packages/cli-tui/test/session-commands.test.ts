@@ -337,10 +337,12 @@ describe('session slash commands', () => {
     const app = appWith({ session: { new: created } })
     await expect(runSlash(app, '/new ../b')).rejects.toThrow('workspace not authorised')
     expect(created).toHaveBeenCalledWith(expect.objectContaining({ cwd: resolve(app.cwd, '../b') }))
+    // os.homedir() reads HOME on POSIX and USERPROFILE on Windows.
     vi.stubEnv('HOME', '/tmp/agh-home')
+    vi.stubEnv('USERPROFILE', '/tmp/agh-home')
     await expect(runSlash(app, '/new ~/b')).rejects.toThrow('workspace not authorised')
     vi.unstubAllEnvs()
-    expect(created).toHaveBeenLastCalledWith(expect.objectContaining({ cwd: '/tmp/agh-home/b' }))
+    expect(created).toHaveBeenLastCalledWith(expect.objectContaining({ cwd: resolve('/tmp/agh-home/b') }))
   })
 })
 
@@ -450,6 +452,7 @@ describe('/deliverables', () => {
       const home = join(dir, 'home')
       mkdirSync(home)
       vi.stubEnv('HOME', home)
+      vi.stubEnv('USERPROFILE', home)
       await runSlash(app, '/deliverables save 1 ~')
       expect(readFileSync(join(home, 'r[31m.txt'))).toEqual(body)
       await runSlash(app, '/deliverables save 1 ~/copy.txt')

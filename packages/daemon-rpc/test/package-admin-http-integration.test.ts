@@ -144,7 +144,7 @@ it('installs actual bytes through authenticated HTTP → Node SDK → shared han
     const provenance = await (await post('provenance', { profile: 'local-dev', id: 'acme/pkg-a' })).json()
     expect(provenance).toMatchObject({
       sourceKind: 'local-folder',
-      resolvedLocation: realpathSync(join(root, 'candidate')),
+      resolvedLocation: realpathSync.native(join(root, 'candidate')),
       version: preview.preview.version,
       installer: 'user',
       trustDecision: 'pending',

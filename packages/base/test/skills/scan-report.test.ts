@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   discoverSkillRoot,
@@ -10,7 +10,10 @@ import {
   skillRoots,
 } from '../../extensions/skills/src/discover.js'
 
-const custom = '/private/secret-custom'
+// Native spellings, as `skillRoots` resolves and `discoverSkillRoot` joins them on this platform.
+const custom = resolve('/private/secret-custom')
+const at = (...parts: string[]) => join(custom, ...parts)
+const agnesSkills = join('/agh', 'skills')
 const document = (name = 'review') => `---\nname: ${name}\ndescription: Useful\n---\nprivate body`
 const root = (paths = [custom]): SkillRoot => {
   const selected = skillRoots({
@@ -29,7 +32,7 @@ function filesystem(files: Record<string, string> = {}): SkillFs {
   return {
     async list(path) {
       return Object.keys(files)
-        .filter((key) => key.startsWith(`${path}/`) && !key.slice(path.length + 1).includes('/'))
+        .filter((key) => key.startsWith(`${path}${sep}`) && !key.slice(path.length + 1).includes(sep))
         .map((key) => ({ name: key.slice(path.length + 1), kind: 'file' as const }))
     },
     async stat(path) {
@@ -51,10 +54,10 @@ function filesystem(files: Record<string, string> = {}): SkillFs {
 describe('custom Skill directory scan reports', () => {
   it('counts valid files before same-name arbitration and rejects malformed files without rescanning', async () => {
     const fs = filesystem({
-      [`${custom}/a.md`]: document(),
-      [`${custom}/b.md`]: document(),
-      [`${custom}/bad.md`]: '---\nname: invalid\ndescription: []\n---\nprivate body',
-      [`${custom}/notes.txt`]: 'not a Skill',
+      [at('a.md')]: document(),
+      [at('b.md')]: document(),
+      [at('bad.md')]: '---\nname: invalid\ndescription: []\n---\nprivate body',
+      [at('notes.txt')]: 'not a Skill',
     })
     const calls: string[] = []
     const scan = await discoverSkillRoot(
@@ -84,7 +87,7 @@ describe('custom Skill directory scan reports', () => {
         },
       ],
     })
-    expect(calls).toEqual(['/agh/skills', custom])
+    expect(calls).toEqual([agnesSkills, custom])
     expect(JSON.stringify(scan.directoryScans)).not.toMatch(/secret-custom|private body|bad\.md/)
   })
 
@@ -129,14 +132,14 @@ describe('custom Skill directory scan reports', () => {
     'reports candidate %s permission failure without dropping healthy files',
     async (stage) => {
       const fs = filesystem({
-        [`${custom}/bad.md`]: document('bad'),
-        [`${custom}/good.md`]: document('good'),
+        [at('bad.md')]: document('bad'),
+        [at('good.md')]: document('good'),
       })
       const scan = await discoverSkillRoot(
         {
           ...fs,
           [stage]: async (path: string) => {
-            if (path === `${custom}/bad.md`) throw error('EPERM')
+            if (path === at('bad.md')) throw error('EPERM')
             return fs[stage]?.(path)
           },
         } as SkillFs,
@@ -190,7 +193,7 @@ describe('custom Skill directory scan reports', () => {
       {
         ...fs,
         list: async (path) => {
-          if (path === '/agh/skills') throw error('ENOENT')
+          if (path === agnesSkills) throw error('ENOENT')
           return [{ name: 'ordinary', kind: 'dir' }]
         },
       },
@@ -242,7 +245,7 @@ describe('custom Skill directory scan reports', () => {
   })
 
   it('caps issue detail while counting all rejected unreadable files', async () => {
-    const files = Object.fromEntries(Array.from({ length: 140 }, (_, i) => [`${custom}/${i}.md`, document()]))
+    const files = Object.fromEntries(Array.from({ length: 140 }, (_, i) => [at(`${i}.md`), document()]))
     const fs = filesystem(files)
     const scan = await discoverSkillRoot(
       {
@@ -265,7 +268,7 @@ describe('custom Skill directory scan reports', () => {
   it('marks entry budget counts as incomplete lower bounds', async () => {
     const files = Object.fromEntries(
       Array.from({ length: MAX_SKILL_ENTRIES_PER_ROOT + 1 }, (_, i) => [
-        `${custom}/${i}.md`,
+        at(`${i}.md`),
         document(`skill-${i}`),
       ]),
     )
@@ -280,7 +283,7 @@ describe('custom Skill directory scan reports', () => {
   })
 
   it('reports size rejection at stat and a changed file at read without claiming complete observation', async () => {
-    const fs = filesystem({ [`${custom}/changed.md`]: document() })
+    const fs = filesystem({ [at('changed.md')]: document() })
     const scan = await discoverSkillRoot(
       {
         ...fs,
@@ -292,7 +295,7 @@ describe('custom Skill directory scan reports', () => {
               ]
             : [],
         stat: async (path) =>
-          path.endsWith('/giant/SKILL.md')
+          path.endsWith(join(sep, 'giant', 'SKILL.md'))
             ? { kind: 'file', size: MAX_SKILL_FILE_BYTES + 1, mtimeMs: 0 }
             : fs.stat(path),
         read: async () => Buffer.from('short'),
@@ -311,7 +314,7 @@ describe('custom Skill directory scan reports', () => {
   })
 
   it('keeps exact counts complete when only issue detail truncates across two directories', async () => {
-    const paths = [custom, '/private/second-custom']
+    const paths = [custom, resolve('/private/second-custom')]
     const fs = filesystem()
     const scan = await discoverSkillRoot(
       {
@@ -321,7 +324,7 @@ describe('custom Skill directory scan reports', () => {
             ? Array.from({ length: 70 }, (_, i) => ({ name: `outside-${i}`, kind: 'dir' as const }))
             : [],
         stat: async () => ({ kind: 'file', size: 1, mtimeMs: 0 }),
-        realpath: async (path) => (path.endsWith('/SKILL.md') ? '/elsewhere/SKILL.md' : path),
+        realpath: async (path) => (path.endsWith(`${sep}SKILL.md`) ? '/elsewhere/SKILL.md' : path),
       },
       root(paths),
     )
@@ -365,7 +368,7 @@ describe('custom Skill directory scan reports', () => {
   ] as const)(
     'does not invent a skipped Skill when %s identification fails with %s',
     async (kind, osCode) => {
-      const fs = filesystem({ [`${custom}/known.md`]: document('known') })
+      const fs = filesystem({ [at('known.md')]: document('known') })
       const scan = await discoverSkillRoot(
         {
           ...fs,
@@ -377,7 +380,7 @@ describe('custom Skill directory scan reports', () => {
                 ]
               : [],
           stat: async (path) => {
-            if (path === `${custom}/ordinary` || path === `${custom}/ordinary/SKILL.md`) throw error(osCode)
+            if (path === at('ordinary') || path === at('ordinary', 'SKILL.md')) throw error(osCode)
             return fs.stat(path)
           },
         },
@@ -401,7 +404,7 @@ describe('custom Skill directory scan reports', () => {
   )
 
   it('reports an oversized flat Skill as a confirmed rejection without reading or changing legacy catalog skips', async () => {
-    const fs = filesystem({ [`${custom}/review.md`]: document('review') })
+    const fs = filesystem({ [at('review.md')]: document('review') })
     const reads: string[] = []
     const scan = await discoverSkillRoot(
       {
@@ -435,10 +438,7 @@ describe('custom Skill directory scan reports', () => {
 
   it('reports the existing root byte budget with incomplete counts', async () => {
     const files = Object.fromEntries(
-      Array.from({ length: 12 }, (_, i) => [
-        `${custom}/${i}.md`,
-        `${document(`skill-${i}`)}${'x'.repeat(190000)}`,
-      ]),
+      Array.from({ length: 12 }, (_, i) => [at(`${i}.md`), `${document(`skill-${i}`)}${'x'.repeat(190000)}`]),
     )
     const scan = await discoverSkillRoot(filesystem(files), root())
     expect(scan.directoryScans?.[0]).toMatchObject({

@@ -14,10 +14,16 @@ vi.mock('@agnes/base/sandbox', async (original) => ({
 }))
 vi.mock('@agnes/host', async (original) => {
   const host = await original<typeof import('@agnes/host')>()
+  const { sep } = await import('node:path')
   return {
     ...host,
+    // The simulated OS changes the backend, not the real temp paths: compile them in this
+    // machine's own path flavor (a Windows temp path is not an absolute POSIX path).
     compileWorkspacePolicy: (input: Parameters<typeof host.compileWorkspacePolicy>[0]) =>
-      host.compileWorkspacePolicy({ ...input, semantics: { flavor: 'posix', caseSensitive: true } }),
+      host.compileWorkspacePolicy({
+        ...input,
+        semantics: { flavor: sep === '\\' ? 'win32' : 'posix', caseSensitive: true },
+      }),
     createPlatform: vi.fn(),
     createFs: () => ({ canonicalize: async (path: string) => resolve(path) }),
     createExec: () => ({ run: vi.fn() }),
