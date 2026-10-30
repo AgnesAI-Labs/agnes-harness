@@ -109,7 +109,10 @@ async function setup(
         },
         { type: 'done', reason: 'toolUse' },
       ],
-      [{ type: 'text_delta', delta: 'done' }, { type: 'done', reason: 'stop' }],
+      [
+        { type: 'text_delta', delta: 'done' },
+        { type: 'done', reason: 'stop' },
+      ],
     ],
   })
   const session = await host.createSession({ key: 'managed', cwd: root })

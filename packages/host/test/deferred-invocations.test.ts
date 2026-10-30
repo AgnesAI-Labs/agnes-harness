@@ -1138,8 +1138,14 @@ it.each(['allowed-once', 'rejected'] as const)(
           },
           { type: 'done', reason: 'toolUse' },
         ],
-        [{ type: 'text_delta', delta: 'done' }, { type: 'done', reason: 'stop' }],
-        [{ type: 'text_delta', delta: 'done' }, { type: 'done', reason: 'stop' }],
+        [
+          { type: 'text_delta', delta: 'done' },
+          { type: 'done', reason: 'stop' },
+        ],
+        [
+          { type: 'text_delta', delta: 'done' },
+          { type: 'done', reason: 'stop' },
+        ],
       ],
     })
     try {

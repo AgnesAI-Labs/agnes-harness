@@ -38,7 +38,13 @@ describe('durable approval restart', () => {
           resolve: async (_credential, surface) => (surface === 'approval' ? APPROVER : REQUESTER),
         },
       },
-      script: [toolCall(), [{ type: 'text_delta', delta: 'done' }, { type: 'done', reason: 'stop' }]],
+      script: [
+        toolCall(),
+        [
+          { type: 'text_delta', delta: 'done' },
+          { type: 'done', reason: 'stop' },
+        ],
+      ],
     })
     const workspaces = await testWorkspaceCatalog(root)
     let client = createClient({
@@ -126,7 +132,13 @@ it('re-offers a real Host tool approval after its client disconnects without rec
       '@agnes/code': { operations },
     },
     prompter: (request, options) => router.ask(request, options),
-    script: [toolCall(), [{ type: 'text_delta', delta: 'done' }, { type: 'done', reason: 'stop' }]],
+    script: [
+      toolCall(),
+      [
+        { type: 'text_delta', delta: 'done' },
+        { type: 'done', reason: 'stop' },
+      ],
+    ],
   })
   try {
     const session = await host.createSession({ cwd: root })
