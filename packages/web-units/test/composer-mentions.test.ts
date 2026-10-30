@@ -262,9 +262,14 @@ describe('skill chips in the draft', () => {
     expect(chip.textContent).toContain('review-notes')
     expect(chip.textContent).not.toContain('$')
     expect(chip.querySelector('svg')).toBeTruthy()
+    // A real button: the keyboard can reach it and Enter / Space open the details like a click.
+    expect(chip.tagName).toBe('BUTTON')
+    expect(chip.getAttribute('aria-label')).toContain('review-notes')
     act(() => chip.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await vi.waitFor(() =>
-      expect(document.body.querySelector('[data-testid="composer-skill-detail"]')).toBeTruthy(),
+      expect(document.body.querySelector('[data-testid="composer-skill-detail"]')?.textContent).toContain(
+        'Review project notes',
+      ),
     )
     const token = skillMentionTokens(handle.getDraft(), ['review-notes'])[0]!
     prompt.setSelectionRange(token.start, token.start)

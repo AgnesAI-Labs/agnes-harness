@@ -132,14 +132,36 @@
   }
   /* A selected skill keeps its literal `$name` in the draft, while the overlay renders a light,
      link-like sparkle marker instead of a second opaque input chip. */
-  .composer-skill-mention {
+  .composer-skill-mention.agh-btn {
     position: relative;
+    display: inline-block;
+    gap: 0;
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    /* A button that keeps the copied text's metrics, so the marker covers exactly its `$name`. */
+    font: inherit;
+    letter-spacing: inherit;
+    word-spacing: inherit;
+    text-align: inherit;
+    text-transform: inherit;
+    white-space: inherit;
+    vertical-align: baseline;
     cursor: pointer;
     pointer-events: auto;
     color: var(--agnes-brand-primary);
     font-weight: var(--font-weight-semibold);
     /* Cover the literal `$name` in the textarea before drawing the marker over it. */
     background: var(--agnes-bg-surface);
+  }
+  .composer-skill-mention.agh-btn:focus-visible {
+    border-radius: var(--radius-sm);
+    outline: 2px solid var(--agnes-brand-focus-ring);
+    outline-offset: 1px;
   }
   .composer-skill-mention-prefix {
     display: inline-block;
@@ -159,6 +181,7 @@
   .composer-skill-detail {
     display: grid;
     gap: 1.25rem;
+    width: min(22rem, calc(100vw - 4rem));
   }
   .composer-skill-detail-mark {
     display: inline-grid;

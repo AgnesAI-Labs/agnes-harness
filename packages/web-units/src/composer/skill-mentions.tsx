@@ -1,4 +1,4 @@
-import { Drawer, Icon } from '@agnes/web-ui'
+import { Button, Icon, Popover } from '@agnes/web-ui'
 import { type RefObject, useLayoutEffect, useRef, useState } from 'react'
 import type { Translate } from '../locales/index.js'
 import type { ComposerSkill } from '../skill-picker.js'
@@ -66,7 +66,8 @@ export function SkillMentionLayer({
 }) {
   const layer = useRef<HTMLDivElement>(null)
   const text = useRef<HTMLDivElement>(null)
-  const [detail, setDetail] = useState<ComposerSkill>()
+  /** The draft offset of the marker whose details are open. */
+  const [detail, setDetail] = useState<number>()
   useLayoutEffect(() => {
     const input = prompt.current
     const box = layer.current
@@ -106,69 +107,98 @@ export function SkillMentionLayer({
   }
   pieces.push({ start: at, text: draft.slice(at) })
   return (
-    <div ref={layer} className="composer-mention-layer" aria-hidden="true" data-testid="skill-mention-layer">
+    <div ref={layer} className="composer-mention-layer" data-testid="skill-mention-layer">
       <div ref={text} className="composer-mention-text">
-        {pieces.map((piece) =>
-          'text' in piece ? (
-            <span key={`text:${piece.start}`}>{piece.text}</span>
-          ) : (
-            <span
-              key={`skill:${piece.start}`}
-              className="composer-skill-mention"
-              data-testid="composer-skill-mention"
-              title={t('composer.skill.details.open')}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                const skill = skills.find((candidate) => candidate.name === piece.name)
-                if (skill) setDetail(skill)
-              }}
-            >
-              <span className="composer-skill-mention-prefix">
-                <Icon name="sparkles" size={16} className="composer-skill-mention-icon" />
-              </span>
-              {piece.name}
+        {pieces.map((piece) => {
+          const skill =
+            'text' in piece ? undefined : skills.find((candidate) => candidate.name === piece.name)
+          return 'text' in piece || !skill ? (
+            // The copy of the draft only lines the markers up; the textarea already carries its text.
+            <span key={`text:${piece.start}`} aria-hidden="true">
+              {'text' in piece ? piece.text : `$${piece.name}`}
             </span>
-          ),
-        )}
-        {draft.endsWith('\n') ? ' ' : null}
+          ) : (
+            <SkillMarker
+              key={`skill:${piece.start}`}
+              skill={skill}
+              open={detail === piece.start}
+              onOpenChange={(open) => setDetail(open ? piece.start : undefined)}
+              t={t}
+            />
+          )
+        })}
+        {draft.endsWith('\n') ? <span aria-hidden="true"> </span> : null}
       </div>
-      <Drawer
-        open={detail !== undefined}
-        title={t('composer.skill.details.title')}
-        description={detail?.name}
-        onClose={() => setDetail(undefined)}
-      >
-        {detail && (
-          <section className="composer-skill-detail" data-testid="composer-skill-detail">
-            <div className="composer-skill-detail-mark" aria-hidden="true">
-              <Icon name="sparkles" size={20} />
-            </div>
-            <h3>{detail.name}</h3>
-            <dl>
-              <div>
-                <dt>{t('composer.skill.details.description')}</dt>
-                <dd>{detail.description || t('composer.skill.details.emptyDescription')}</dd>
-              </div>
-              {detail.source && (
-                <div>
-                  <dt>{t('composer.skill.details.source')}</dt>
-                  <dd>
-                    {detail.source.scope} · {detail.source.rootKey}
-                  </dd>
-                </div>
-              )}
-              {detail.priority !== undefined && (
-                <div>
-                  <dt>{t('composer.skill.details.priority')}</dt>
-                  <dd>{detail.priority}</dd>
-                </div>
-              )}
-            </dl>
-          </section>
-        )}
-      </Drawer>
     </div>
+  )
+}
+
+/** A selected skill: a real button over its `$name` that opens the skill's details beside it. */
+function SkillMarker({
+  skill,
+  open,
+  onOpenChange,
+  t,
+}: {
+  skill: ComposerSkill
+  open: boolean
+  onOpenChange(open: boolean): void
+  t: Translate
+}) {
+  return (
+    <Popover
+      trigger="click"
+      placement="top"
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('composer.skill.details.title')}
+      content={
+        <section
+          className="composer-skill-detail"
+          data-testid="composer-skill-detail"
+          aria-label={t('composer.skill.details.title')}
+        >
+          <div className="composer-skill-detail-mark" aria-hidden="true">
+            <Icon name="sparkles" size={20} />
+          </div>
+          <h3>{skill.name}</h3>
+          <dl>
+            <div>
+              <dt>{t('composer.skill.details.description')}</dt>
+              <dd>{skill.description || t('composer.skill.details.emptyDescription')}</dd>
+            </div>
+            {skill.source && (
+              <div>
+                <dt>{t('composer.skill.details.source')}</dt>
+                <dd>
+                  {skill.source.scope} · {skill.source.rootKey}
+                </dd>
+              </div>
+            )}
+            {skill.priority !== undefined && (
+              <div>
+                <dt>{t('composer.skill.details.priority')}</dt>
+                <dd>{skill.priority}</dd>
+              </div>
+            )}
+          </dl>
+        </section>
+      }
+    >
+      <Button
+        htmlType="button"
+        className="composer-skill-mention"
+        data-testid="composer-skill-mention"
+        title={t('composer.skill.details.open')}
+        aria-label={`${t('composer.skill.details.open')}: ${skill.name}`}
+        // A press keeps the caret in the textarea; the click (or Enter / Space) opens the details.
+        onMouseDown={(event) => event.preventDefault()}
+      >
+        <span className="composer-skill-mention-prefix">
+          <Icon name="sparkles" size={16} className="composer-skill-mention-icon" />
+        </span>
+        {skill.name}
+      </Button>
+    </Popover>
   )
 }
