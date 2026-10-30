@@ -14,6 +14,7 @@ concurrency:
 jobs:
   # Explicit file/flow lists use hosted-macOS timings, including build and quality prechecks.
   # Isolate narrow flows and candidate review; retain every scan and the ten-minute step budget.
+  # A spec too long for one job is split by title: a --grep list and its exact --grep-invert.
   e2e-web:
     name: macOS Web E2E (${{ matrix.id }})
     strategy:
@@ -26,12 +27,18 @@ jobs:
           - { id: main-4, args: "memory.spec.ts" }
           - { id: main-5, args: "prompt-trace.spec.ts" }
           - { id: main-6, args: "runtime.spec.ts" }
-          - { id: main-7, args: "ui-flows.spec.ts" }
-          - { id: main-8, args: "ui-gate.spec.ts" }
-          - { id: main-9, args: "workbench.spec.ts" }
+          - { id: main-7, args: "ui-flows.spec.ts --grep 'UI first run|UI MCP stdio|UI ask, plan|UI background jobs'" }
+          - { id: main-13, args: "ui-flows.spec.ts --grep-invert 'UI first run|UI MCP stdio|UI ask, plan|UI background jobs'" }
+          - { id: main-8, args: "ui-gate.spec.ts --grep 'section en/'" }
+          - { id: main-14, args: "ui-gate.spec.ts --grep-invert 'section en/'" }
+          - { id: main-9, args: "workbench.spec.ts --grep 'workspace dock|file tabs open|session terminal'" }
+          - { id: main-15, args: "workbench.spec.ts --grep-invert 'workspace dock|file tabs open|session terminal'" }
           - { id: main-10, args: "human-controls.spec.ts references.spec.ts intelligent-ui.spec.ts question-surfaces.spec.ts large-upload.spec.ts credentials.spec.ts observability.spec.ts" }
-          - { id: main-11, args: "auto-review.spec.ts feedback.spec.ts plugin-config.spec.ts plugin-purpose.spec.ts webhooks.spec.ts business-agents.spec.ts v3-actions.spec.ts" }
-          - { id: main-12, args: "v3-navigation.spec.ts" }
+          - { id: main-11, args: "auto-review.spec.ts feedback.spec.ts plugin-purpose.spec.ts webhooks.spec.ts business-agents.spec.ts" }
+          - { id: main-16, args: "plugin-config.spec.ts v3-actions.spec.ts --grep 'plugin-config.spec|forking a recovered|v3 account dialog|v3 plugin tabs|v3 local package|v3 MCP two-step'" }
+          - { id: main-17, args: "v3-actions.spec.ts --grep-invert 'forking a recovered|v3 account dialog|v3 plugin tabs|v3 local package|v3 MCP two-step'" }
+          - { id: main-12, args: "v3-navigation.spec.ts --grep 'permissions never flash|v3 home entries|v3 command-K|v3 archive filter|smoke en/'" }
+          - { id: main-18, args: "v3-navigation.spec.ts --grep-invert 'permissions never flash|v3 home entries|v3 command-K|v3 archive filter|smoke en/'" }
           - { id: candidate-review, args: "candidate-review.spec.ts" }
           - { id: narrow-en-light, args: "narrow.spec.ts --grep 'en/light$'" }
           - { id: narrow-en-dark, args: "narrow.spec.ts --grep 'en/dark$'" }
@@ -82,18 +89,27 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { id: main-1, args: "--grep-invert 'narrow screens' --shard=1/8" }
-          - { id: main-2, args: "--grep-invert 'narrow screens' --shard=2/8" }
-          - { id: main-3, args: "--grep-invert 'narrow screens' --shard=3/8" }
-          - { id: main-4, args: "--grep-invert 'narrow screens' --shard=4/8" }
-          - { id: main-5, args: "--grep-invert 'narrow screens' --shard=5/8" }
-          - { id: main-6, args: "--grep-invert 'narrow screens' --shard=6/8" }
-          - { id: main-7, args: "--grep-invert 'narrow screens' --shard=7/8" }
-          - { id: main-8, args: "--grep-invert 'narrow screens' --shard=8/8" }
+          - { id: main-1, args: "agent-sweep.spec.ts answer-tables.spec.ts auto-review.spec.ts base-conversation.spec.ts browser-layout.spec.ts browser.spec.ts business-agents.spec.ts" }
+          - { id: main-2, args: "candidate-review.spec.ts credentials.spec.ts diagnostics.spec.ts" }
+          - { id: main-3, args: "fact-chain.spec.ts feedback.spec.ts human-controls.spec.ts intelligent-ui.spec.ts large-upload.spec.ts question-surfaces.spec.ts references.spec.ts" }
+          - { id: main-4, args: "first-run.spec.ts mcp-management.spec.ts observability.spec.ts webhooks.spec.ts tool-recovery.spec.ts" }
+          - { id: main-5, args: "memory.spec.ts plugin-config.spec.ts session-create.spec.ts" }
+          - { id: main-6, args: "plugin-purpose.spec.ts prompt-trace.spec.ts session-activity.spec.ts" }
+          - { id: main-7, args: "runtime.spec.ts" }
+          - { id: main-8, args: "ui-flows.spec.ts --grep 'UI first run|UI MCP stdio|UI ask, plan|UI background jobs'" }
+          - { id: main-9, args: "ui-flows.spec.ts --grep-invert 'UI first run|UI MCP stdio|UI ask, plan|UI background jobs'" }
+          - { id: main-10, args: "ui-gate.spec.ts --grep 'section en/'" }
+          - { id: main-11, args: "ui-gate.spec.ts --grep-invert 'section en/'" }
+          - { id: main-12, args: "v3-actions.spec.ts" }
+          - { id: main-13, args: "v3-navigation.spec.ts" }
+          - { id: main-14, args: "workbench.spec.ts --grep 'workspace dock|file tabs open|session terminal'" }
+          - { id: main-15, args: "workbench.spec.ts --grep-invert 'workspace dock|file tabs open|session terminal'" }
           - { id: narrow-en-light, args: "narrow.spec.ts --grep 'en/light$'" }
           - { id: narrow-en-dark, args: "narrow.spec.ts --grep 'en/dark$'" }
           - { id: narrow-zh-CN-light, args: "narrow.spec.ts --grep 'zh-CN/light$'" }
           - { id: narrow-zh-CN-dark, args: "narrow.spec.ts --grep 'zh-CN/dark$'" }
+    # Explicit lists from hosted-Linux timings: count-based --shard cannot balance cases that take
+    # two seconds to three minutes. Every case appears in exactly one list (README: Gate).
     # Functional, accessibility and layout assertions without a pixel gate (macOS owns it); layout
     # still depends on this image and its explicitly provisioned font families.
     runs-on: ubuntu-24.04
