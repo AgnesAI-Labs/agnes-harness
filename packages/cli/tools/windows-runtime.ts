@@ -48,14 +48,6 @@ export async function copySystemRuntime(
       join(nativeOutput ?? join(source, 'dist', 'native'), 'agnes-system.node'),
       join(target, 'dist', 'native', 'agnes-system.node'),
     ),
-    ...(process.platform === 'linux' // guards-allow-platform: static OpenSSL notice follows the Linux addon.
-      ? [
-          copyFile(
-            join(packages, '..', 'third-party', 'openssl-LICENSE.txt'),
-            join(target, 'dist', 'native', 'openssl-LICENSE.txt'),
-          ),
-        ]
-      : []),
     ...(windows
       ? ['runtime/process-broker.mjs', 'runtime/windows-command.mjs'].map((file) =>
           copyFile(join(source, file), join(target, file)),

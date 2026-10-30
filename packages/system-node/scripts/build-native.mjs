@@ -1,9 +1,9 @@
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { checkGlibc } from '../../../tools/native/check-glibc.mjs'
+import { checkNativeGlibc } from '../../../tools/native/check-glibc.mjs'
 import { linuxBuild } from '../../../tools/native/linux-build.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -66,20 +66,16 @@ if (process.platform === 'linux') {
       '-Wextra',
       '-Werror',
       '-DNAPI_VERSION=8',
-      '-I/opt/openssl/include',
+      // Node exports EVP and supplies its OpenSSL headers. Leave those references unresolved in
+      // this addon so hashing uses the loading runtime, without another libcrypto dependency.
       `-I${include}`,
       join(root, 'native', 'linux.c'),
       '-o',
       join(output, 'agnes-system.node'),
-      '/opt/openssl/lib/libcrypto.a',
-      '-Wl,--exclude-libs,ALL',
-      '-ldl',
-      '-pthread',
     ],
     { cwd: output, stdio: 'inherit' },
   )
-  copyFileSync(join(root, '../../third-party/openssl-LICENSE.txt'), join(output, 'openssl-LICENSE.txt'))
-  checkGlibc(output)
+  checkNativeGlibc(output)
   process.exit(0)
 }
 

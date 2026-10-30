@@ -6,6 +6,8 @@ on:
   merge_group:
   workflow_dispatch:
 permissions: { contents: read }
+env:
+  AGNES_NATIVE_BUILDER: glibc228
 concurrency:
   group: web-e2e-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -96,7 +98,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version-file: .node-version, cache: pnpm }
       - name: Native toolchain and bubblewrap
-        run: sudo apt-get update && sudo apt-get install -y build-essential libssl-dev python3 bubblewrap fonts-dejavu-core fonts-dejavu-mono
+        run: sudo apt-get update && sudo apt-get install -y build-essential python3 bubblewrap fonts-dejavu-core fonts-dejavu-mono
       - name: Provision actual Linux sandbox namespaces
         run: bash tools/e2e-web/provision-linux-sandbox.sh
       - run: pnpm install --frozen-lockfile
@@ -150,7 +152,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version-file: .node-version, cache: pnpm }
       - name: Native toolchain and bubblewrap
-        run: sudo apt-get update && sudo apt-get install -y build-essential libssl-dev python3 bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y build-essential python3 bubblewrap
       - name: Provision actual Linux sandbox namespaces
         run: bash tools/e2e-web/provision-linux-sandbox.sh
       - run: pnpm install --frozen-lockfile
@@ -195,7 +197,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version-file: .node-version, cache: pnpm }
       - name: Native toolchain and bubblewrap
-        run: sudo apt-get update && sudo apt-get install -y build-essential libssl-dev python3 bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y build-essential python3 bubblewrap
       - name: Provision actual Linux sandbox namespaces
         run: bash tools/e2e-web/provision-linux-sandbox.sh
       - run: pnpm install --frozen-lockfile
@@ -242,7 +244,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version-file: .node-version, cache: pnpm }
       - name: Native toolchain and bubblewrap
-        run: sudo apt-get update && sudo apt-get install -y build-essential libssl-dev python3 bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y build-essential python3 bubblewrap
       - name: Provision actual Linux sandbox namespaces
         run: bash tools/e2e-web/provision-linux-sandbox.sh
       - run: pnpm install --frozen-lockfile

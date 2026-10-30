@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { checkGlibc } from '../../../tools/native/check-glibc.mjs'
+import { checkNativeGlibc } from '../../../tools/native/check-glibc.mjs'
 import { linuxBuild } from '../../../tools/native/linux-build.mjs'
 
 if (process.platform !== 'darwin' && process.platform !== 'linux') {
@@ -37,4 +37,4 @@ for (const [sourceName, outputName, libraries] of builds) {
     stdio: 'inherit',
   })
 }
-if (process.platform === 'linux') checkGlibc(outputDir)
+if (process.platform === 'linux') checkNativeGlibc(outputDir)

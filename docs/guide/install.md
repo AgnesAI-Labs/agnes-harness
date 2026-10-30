@@ -84,19 +84,28 @@ On Linux, install bubblewrap through your system package manager, for example `a
 
 ## Build and verify on Linux
 
-Use the pinned Node runtime, Docker, Python 3 and Git. Docker supplies the matching headers and native compiler. On Debian/Ubuntu, install Docker using its supported installation instructions, then:
+Use the pinned Node runtime with its matching headers, a host C/C++ compiler, Python 3 and Git. Docker is optional for development builds. On Debian/Ubuntu:
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y python3 git bubblewrap
+sudo apt-get install -y build-essential python3 git bubblewrap
 mise exec -- node tools/toolchain/run.mjs install --frozen-lockfile
 mise exec -- node tools/toolchain/run.mjs --filter @agnes/host build:native
 mise exec -- node tools/toolchain/run.mjs --filter @agnes/system-node build:native
-mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local
-node agnes.mjs doctor
+# Native outputs are ready for source tests.
 ```
 
-Linux native builds require Docker. The build scripts compile addons and PTY helpers in the glibc 2.28 builder (`tools/native/Dockerfile`), independently of the host libc, and reject newer GLIBC imports. OpenSSL is linked privately into the addon; see [native dependency provenance](../../third-party/native-system-dependencies.md). Linux distributions require glibc 2.28 or later. Rebuild helpers after changing Node or architecture. An npm dependency install is not a substitute for these builds.
+Plain `build:native` uses the host compiler and matching Node headers without Docker. The addon resolves EVP SHA-256 from the loading Node runtime; no system OpenSSL development package or separate libcrypto is needed (see [native runtime dependencies](../../third-party/native-system-dependencies.md)). Above-baseline development output produces a warning and remains usable on its own host.
+
+For CI, release, SEA or eval distribution builds, install Docker and explicitly select the glibc 2.28 builder:
+
+```sh
+AGNES_NATIVE_BUILDER=glibc228 mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local
+node packages/cli/dist/local/agnes.mjs doctor
+# Use the same environment option with build:native, build:sea or release:pack.
+```
+
+The Docker sysroot builds addons and PTY helpers independently of the host libc. Distribution staging always rejects GLIBC imports above 2.28, including host-built objects, and names `AGNES_NATIVE_BUILDER=glibc228` in the refusal. CI selects this option explicitly. Linux distributions require glibc 2.28 or later. Rebuild helpers after changing Node or architecture; an npm dependency install does not replace a native build.
 
 Linux L1 command isolation uses bubblewrap with a verified filesystem, process and network boundary. A version check or an available Landlock ABI does not prove that boundary: Landlock is currently diagnostic only, not an AGH command backend. Restricted user namespaces (including container seccomp or distribution security policies) may prevent bubblewrap from working. The default refuses commands when L1 is unavailable. Choosing **full-access** explicitly runs commands without OS confinement. Do not bypass locks or change system security policy merely to suppress a diagnostic.
 

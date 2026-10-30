@@ -37,7 +37,9 @@ export function checkGlibc(root) {
       if (!/\bUND\b/.test(line)) continue
       for (const match of line.matchAll(/@GLIBC_([A-Za-z0-9_.]+)/g))
         if (!/^\d+(?:\.\d+)+$/.test(match[1]) || aboveBaseline(match[1]))
-          throw new Error(`${path}: imports GLIBC_${match[1]} above baseline GLIBC_2.28`)
+          throw new Error(
+            `${path}: imports GLIBC_${match[1]} above baseline GLIBC_2.28; rebuild with AGNES_NATIVE_BUILDER=glibc228`,
+          )
     }
     checked++
   }
@@ -45,6 +47,17 @@ export function checkGlibc(root) {
   if (!checked) throw new Error(`No ELF artifacts checked in ${root}`)
   process.stdout.write(`GLIBC_2.28 check passed: ${checked} ELF artifacts in ${root}\n`)
   return checked
+}
+
+/** Dev outputs are for their own host; only compatibility builds promise portable artifacts. */
+export function checkNativeGlibc(root) {
+  try {
+    return checkGlibc(root)
+  } catch (error) {
+    if (process.env.AGNES_NATIVE_BUILDER === 'glibc228') throw error
+    process.stderr.write(`Native development build warning: ${error.message}\n`)
+    return 0
+  }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

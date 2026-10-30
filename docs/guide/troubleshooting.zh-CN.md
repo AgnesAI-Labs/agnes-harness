@@ -29,7 +29,7 @@ Web 诊断 ZIP 勾选日志后，`logs/daemon-runtime.jsonl` 包含当前及上�
 | `E_DATA_DIR_STALE` | 停止 AGH，备份错误指出的数据目录，只删除 `sessions.db`、其 `-wal`/`-shm` 文件及 `tables/`，保留 `profiles/`。会丢失会话、日程、工作区绑定和插件设置，自装插件须重装；不迁移数据，见[恢复步骤](install.zh-CN.md#数据格式与升级) |
 | `E_DATA_DIR_NEWER` | 升级 AGH 以支持该格式；拒绝不会修改数据 |
 | 缺少 `dist/local/agnes.mjs` | 在仓库根运行完整 `build:local`；不是 daemon stop 能修复的问题 |
-| native helper 缺失/不兼容 | 保留完整分发，按当前 OS/架构/Node 重建；Linux 使用 Docker 中的 glibc 2.28 构建环境，参见 [Linux 构建](install.zh-CN.md#linux-build)；system-node 的 GLIBC 加载失败会指出原生模块原因，应安装兼容构建 |
+| native helper 缺失/不兼容 | 保留完整分发，按当前 OS/架构/Node 重建；Linux 开发构建使用宿主编译器，便携分发须显式设置 `AGNES_NATIVE_BUILDER=glibc228` 并准备 Docker，参见 [Linux 构建](install.zh-CN.md#linux-build)；system-node 的 GLIBC 加载失败会指出原生模块原因，应安装兼容构建 |
 | `listen EPERM` | 执行环境禁止 socket/回环监听；测试需允许相应权限，不通过修改产品安全策略绕过 |
 | daemon 启动后马上退出 / `E_DAEMON_SOCKET_PATH` | 核对 helper、版本及 home/profile。可用短 `/tmp/agh-*` 实验 home 排除路径因素；当前源码对过长默认 socket 路径有短目录回退，但过长显式路径、目录身份或权限不合格仍会拒绝 |
 | 端口占用 | 先确认哪个实验 Web listener 持有它，再结束自己启动的服务或换端口 |

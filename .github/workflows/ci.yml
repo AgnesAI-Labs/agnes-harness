@@ -7,6 +7,8 @@ on:
   schedule:
     - cron: '0 18 * * *'
 permissions: { contents: read }
+env:
+  AGNES_NATIVE_BUILDER: glibc228
 # The event name keeps a nightly run on main and a push to main from cancelling each other. Only a
 # newer push to the same pull request cancels its older run; runs on main always finish, because
 # they carry the only macOS and Windows heavy-tier results.
@@ -276,11 +278,13 @@ jobs:
         shell: pwsh
         run: ./.github/scripts/prepare-windows-native.ps1 -CacheRoot "$env:RUNNER_TEMP/agnes-node-headers"
       - run: pnpm --filter @agnes/cli build:sea
-      - name: verify Linux ABI check and load the addon on Debian 11
+      - name: verify Linux ABI and SHA-256 in Node, workers and SEA on Debian 11
         if: runner.os == 'Linux'
         run: |
           node --test tools/native/check-glibc.test.mjs
-          docker run --rm --network=none -v "$PWD/packages/cli/dist/sea:/dist:ro" debian:bullseye-slim /dist/runtime/node -e "const a=require('/dist/node_modules/@agnes/system-node/dist/native/agnes-system.node'); if(a.abiVersion!==1) process.exit(1)"
+          node packages/cli/sea/build-native-smoke.mjs "$RUNNER_TEMP/agnes-native-smoke"
+          docker run --rm --network=none -v "$PWD/packages/cli/dist/sea:/dist:ro" -v "$PWD/tools/native:/probe:ro" debian:bullseye-slim /dist/runtime/node /probe/crypto-smoke.cjs /dist/node_modules/@agnes/system-node/dist/native/agnes-system.node
+          docker run --rm --network=none -v "$PWD/packages/cli/dist/sea:/dist:ro" -v "$RUNNER_TEMP/agnes-native-smoke:/probe:ro" debian:bullseye-slim /probe/crypto-smoke /dist/node_modules/@agnes/system-node/dist/native/agnes-system.node
       - name: smoke production commands, extensions and native runtime
         run: pnpm --filter @agnes/cli exec vitest run sea/smoke.e2e.test.ts sea/windows-runtime.test.ts
         env:
