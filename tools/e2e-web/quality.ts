@@ -290,6 +290,15 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
       return
     }
     expect(manifest.ready, 'Every visual screen must be declared ready or explicitly pending').toContain(name)
+    // Linux renders come only from the CI image and cannot be reviewed locally: no pixel gate there.
+    const linux = process.platform === 'linux' // guards-allow-platform: the pixel gate is macOS only.
+    if (linux) {
+      info.annotations.push({
+        type: 'pixel-snapshot-skipped',
+        description: `${name}: Linux runs functional assertions only; pixel gate is macOS`,
+      })
+      return
+    }
     await expect(target).toHaveScreenshot(`${name}.png`, options)
   } finally {
     if (reportFrame) await scrollConversation(page)

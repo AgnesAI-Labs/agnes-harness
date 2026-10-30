@@ -118,7 +118,7 @@ mise exec -- node tools/toolchain/run.mjs exec playwright install --with-deps ch
 mise exec -- node tools/toolchain/run.mjs e2e:web
 ```
 
-Provisioning uses the network; the gate uses cached Chromium, a fresh isolated home and local synthetic services. Reviewed Linux baselines are separate from macOS baselines. See the [maintained gate](../../tools/e2e-web/README.md).
+Provisioning uses the network; the gate uses cached Chromium, a fresh isolated home and local synthetic services. Linux runs functional, accessibility and layout assertions without a pixel gate; reviewed screenshot baselines are macOS only, because Linux renders must come from the CI image. See the [maintained gate](../../tools/e2e-web/README.md).
 
 <a id="windows-构建"></a>
 

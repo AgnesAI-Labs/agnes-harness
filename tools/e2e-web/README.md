@@ -65,7 +65,9 @@ cases, plus one candidate-review job and four single-case narrow locale/theme jo
 balance observed hosted-runner durations, including build and quality prechecks: multi-minute
 candidate review and narrow flows need separate budgets, and first-run checks split by locale.
 Linux retains eight regular shards plus four single-case narrow jobs. Every job retains one
-worker, all checks, and the existing deadlines. The v3 specs cover full-page navigation, session
+worker, all checks, and the existing deadlines. Linux Web jobs run the functional, accessibility
+and layout assertions without a pixel gate: Linux renders must come from the CI image and cannot
+be reviewed locally, so the pixel gate is macOS only. The v3 specs cover full-page navigation, session
 search and archive restoration, everyday and advanced settings, provider auto-testing, plugin and
 MCP installation, business-agent start, scheduled tasks and session-grant revocation on isolated
 Demo homes. Their page matrix checks both locales/themes and 390-pixel layouts. After adding specs or changing these lists,
@@ -77,8 +79,8 @@ workflow alone does not change GitHub branch protection. The workflow runs on pu
 merge groups, integration/main pushes and manual dispatch, without path-based skips.
 Run the same gate on an unmerged branch with `gh workflow run e2e-web.yml --ref BRANCH`, then
 watch the returned run with `gh run watch RUN_ID --exit-status`. Dispatch checks that branch's
-specs and baselines. Every ready screen needs both platform PNGs captured with the pinned
-Chromium and CI fonts; dispatch does not generate or approve missing baselines.
+specs and baselines. Every ready screen needs a macOS PNG captured with the pinned Chromium;
+dispatch does not generate or approve missing baselines.
 
 The local command shares two workers with per-test scheduling. CI runs the platform partitions
 listed above with one worker per runner, so concurrent daemon/worker/Chromium trees do not
@@ -136,8 +138,9 @@ workflow through restart. Backend assertions use CLI or SDK, never raw admin HTT
 history and diff workflow formerly in `ui-flows.spec.ts`. Its CI partition remains required.
 Selectors use roles and stable test IDs; disclosures are checked before toggling.
 
-`baselines/ready.json` declares the reviewed screens on both macOS and Linux, with no pending
-screens. The gate checks compact provider row spacing, one card per discovered package and
+`baselines/ready.json` declares the reviewed screens, with no pending screens. Linux still
+requires every screen to be declared, captures its normalized PNG as run evidence and annotates
+the skipped comparison as `pixel-snapshot-skipped`. The gate checks compact provider row spacing, one card per discovered package and
 selection through the shared version picker. The Discover search baseline filters to a
 single-version entry.
 Ready PNGs cover key screens in both locales and themes, including installed plugin cards,
@@ -146,7 +149,7 @@ The additional installed-folder card screen is en/light.
 
 `workbench.spec.ts` always checks Files, Terminal, Goal and Changes in en/zh-CN,
 light/dark and 1440/1280 widths, with the dock both open and closed: 64 ready
-screens per platform. The real session flows also assert process detachment,
+screens. The real session flows also assert process detachment,
 permission/sandbox refusals, durable goal controls, read-only historical diffs,
 freshness and ledger navigation. `AGH_WORKBENCH_REPORT` optionally copies those
 same screenshots to a private report directory; it does not enable or disable
@@ -174,7 +177,7 @@ run's output directory and annotates each deferred comparison. Inspect those ima
 updating a baseline; a capture-only run is not a passing visual gate. Rerun without that flag
 and without update mode to verify the reviewed images.
 
-Review PNG changes and the manifest together with the pinned Chromium on the target platform.
+Review PNG changes and the manifest together with the pinned Chromium on macOS.
 Linux provisions real bwrap filesystem/process/network namespaces. On Ubuntu CI, a dedicated
 AppArmor profile grants user namespaces only to `/usr/bin/bwrap`; global sysctls and AppArmor
 enforcement remain unchanged. Provisioning fails if the actual namespace probe fails, so job and
@@ -182,8 +185,8 @@ terminal coverage exercises confinement rather than depending on an unconfined f
 Linux uses the pinned Ubuntu 24.04 runner with Playwright-installed system libraries and
 `fonts-dejavu-core` / `fonts-dejavu-mono`. Install both font packages when reproducing the gate
 in a minimal container: without them Chromium falls back to WenQuanYi for monospace text,
-changing diagnostic IDs' layout even with identical CSS. PNGs live in
-`baselines/linux/`, separately from `baselines/darwin/`. The Linux CI job also runs
+changing diagnostic IDs' layout even with identical CSS. PNGs live in `baselines/darwin/`;
+there are no Linux baselines. The Linux CI job also runs
 production/fixture typechecks, fast tests, guards and kernel identity integration.
 Each failed check remains a failed job even when later steps collect Web evidence. Tolerance is
 0.2% changed pixels with a per-pixel threshold of 0.2; do not enlarge it to hide a regression.

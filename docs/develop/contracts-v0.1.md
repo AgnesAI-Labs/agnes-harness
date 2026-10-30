@@ -239,7 +239,7 @@ Before release, qualify the target backends and artifacts below; implementation 
 
 ## Known limits and verification scope
 
-macOS and Linux have maintained native/process/browser gates and separate visual baselines. Windows end-to-end, signed installers, automatic upgrades and physical devices remain unqualified. Provider cancellation is cooperative; non-settling work and store I/O need backend-specific shutdown and durability acceptance. A declared sandbox capability is not proof of enforcement.
+macOS and Linux have maintained native/process/browser gates; the visual pixel gate is macOS only. Windows end-to-end, signed installers, automatic upgrades and physical devices remain unqualified. Provider cancellation is cooperative; non-settling work and store I/O need backend-specific shutdown and durability acceptance. A declared sandbox capability is not proof of enforcement.
 
 The JSONL example supplies the full Host ports, contract tests and fresh-process recovery cases. It targets small local deployments with an in-memory index; network-filesystem, Windows durability and production scale need separate qualification. The [MCP/Skills matrix](../guide/mcp-skills-support.md) owns current resource limits, including session OAuth and prompt-template exclusions. Programmatic Python is experimental. Memory, request capture and telemetry have separate privacy/retention rules.
 

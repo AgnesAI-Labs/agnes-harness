@@ -325,13 +325,7 @@
     "setup-workspace-zh-CN-dark-1280"
   ],
   "pending": {},
-  "platforms": ["darwin", "linux"],
-  "linuxEnvironment": {
-    "distribution": "Ubuntu 24.04",
-    "browserDependencies": "Playwright install --with-deps chromium",
-    "localArchitecture": "arm64",
-    "ciArchitecture": "x64"
-  },
+  "platforms": ["darwin"],
   "lastRefresh": {
     "sourceCommit": "9d1e83fa6fabd6d006ce841f4df1d3a102e719f8",
     "platform": "darwin",
@@ -346,7 +340,7 @@
       "prompt-trace",
       "first-run"
     ],
-    "scope": "Selected manually reviewed Darwin frames captured across focused runs. The latest four tablet file-workbench frames show the original report-reading turn beside the file pane. Native Composer sizing and authoring inspector frames retain their documented earlier captures. Linux and unrelated baselines retain their earlier capture.",
+    "scope": "Selected manually reviewed Darwin frames captured across focused runs. The latest four tablet file-workbench frames show the original report-reading turn beside the file pane. Native Composer sizing and authoring inspector frames retain their documented earlier captures. Unrelated baselines retain their earlier capture.",
     "previousBatch": {
       "uiCommit": "dea76adfc471ee4e6b6c28acd43027e2ac063178",
       "sourceCommit": "9da74c15465782e2965797a24aa8a3049fcdcf7c",
@@ -357,7 +351,7 @@
         "specs": ["ui-quality", "ui-gate", "narrow", "fact-chain", "first-run"]
       },
       "verifiedSpecs": ["ui-quality", "ui-gate", "narrow", "fact-chain", "first-run", "ui-flows"],
-      "scope": "Selected specifications only; other specification and Linux baselines retain their earlier capture. Source commits record the capture before the final integration rebase."
+      "scope": "Selected specifications only; other specification baselines retain their earlier capture. Source commits record the capture before the final integration rebase."
     }
   },
   "capturePreferences": {

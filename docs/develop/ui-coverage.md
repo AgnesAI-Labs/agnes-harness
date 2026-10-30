@@ -49,7 +49,7 @@ cached Chromium. The UI matrix covers every settings section in en/zh-CN and lig
 flows verify persisted results through public SDK/CLI. Translation keys, axe violations, console
 errors and page errors fail. Reviewed screenshot comparisons use the declared ready manifest,
 0.2% pixel tolerance and no automatic baseline blessing. The current ready-screen manifest, including
-plugin-kind rows and grouped version selection, declares reviewed macOS and Linux baselines. See the [gate instructions](../../tools/e2e-web/README.md)
+plugin-kind rows and grouped version selection, declares reviewed macOS baselines. Linux runs the same functional, accessibility and layout assertions without a pixel gate, because Linux renders must come from the CI image and cannot be reviewed locally. See the [gate instructions](../../tools/e2e-web/README.md)
 for coverage, artifact paths, the required CI check and local baseline review.
 
 ## Admin glue

@@ -239,7 +239,7 @@ AI 根出口另新增 experimental `createApiKeyProviderConfigs(): Promise<reado
 
 ## 已知限制与验证范围
 
-macOS 与 Linux 已有持续维护的原生、进程、浏览器检查与独立视觉基线。Windows 完整端到端、签名安装包、自动升级与物理设备仍未验证。Provider 取消需协作，无法结束的操作与存储 I/O 需要按后端验收关闭及持久性。沙箱能力声明不证明实际约束成立。
+macOS 与 Linux 已有持续维护的原生、进程、浏览器检查；像素视觉门禁只在 macOS 运行。Windows 完整端到端、签名安装包、自动升级与物理设备仍未验证。Provider 取消需协作，无法结束的操作与存储 I/O 需要按后端验收关闭及持久性。沙箱能力声明不证明实际约束成立。
 
 JSONL 示例提供完整 Host 端口、合同测试与新进程恢复用例，面向采用内存索引的小规模本地部署；网络文件系统、Windows 持久性和生产规模需另验。[MCP/Skills 矩阵](../guide/mcp-skills-support.zh-CN.md)维护资源边界，包括会话 OAuth 与提示模板不支持项。程序化 Python 是实验能力；记忆、请求捕获和遥测各有隐私及保留规则。
 
