@@ -900,7 +900,8 @@ const clientModules = await startClientModules({
   approvalContainer: hosts.approval,
   composerContainer: hosts.composer,
   composer: {
-    references, skills,
+    references,
+    skills,
     initialDraft: savedComposerDraft ?? '',
     initialDraftReferences: savedComposerReferences,
     onAttachmentsChange: renderControls,

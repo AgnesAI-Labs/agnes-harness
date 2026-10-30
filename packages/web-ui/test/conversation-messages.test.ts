@@ -254,7 +254,9 @@ describe('W3b projected message DOM', () => {
     expect(user?.querySelector('[data-testid="reference-session-link"]')?.getAttribute('href')).toBe(
       '?session=previous%2Fsession',
     )
-    expect(user?.querySelector('[data-testid="reference-session-link"]')?.textContent).not.toContain('@session')
+    expect(user?.querySelector('[data-testid="reference-session-link"]')?.textContent).not.toContain(
+      '@session',
+    )
     expect(user?.querySelector('[data-testid="reference-session-link"] svg')).not.toBeNull()
     expect(user?.classList.contains('reference-only-user-message')).toBe(false)
     expect(user?.querySelector('[data-testid="reference-sent-chip"]')?.textContent).toContain('摘录已截断')

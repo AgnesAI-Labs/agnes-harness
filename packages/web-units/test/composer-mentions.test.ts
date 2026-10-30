@@ -263,7 +263,9 @@ describe('skill chips in the draft', () => {
     expect(chip.textContent).not.toContain('$')
     expect(chip.querySelector('svg')).toBeTruthy()
     act(() => chip.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    await vi.waitFor(() => expect(document.body.querySelector('[data-testid="composer-skill-detail"]')).toBeTruthy())
+    await vi.waitFor(() =>
+      expect(document.body.querySelector('[data-testid="composer-skill-detail"]')).toBeTruthy(),
+    )
     const token = skillMentionTokens(handle.getDraft(), ['review-notes'])[0]!
     prompt.setSelectionRange(token.start, token.start)
     press(prompt, 'ArrowRight')

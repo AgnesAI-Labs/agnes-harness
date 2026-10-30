@@ -2,7 +2,11 @@
 import type { UINode } from '@agnes/protocol'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { UserMessage, withFileMentions, withSkillMentions } from '../src/conversation/messages/user-message.js'
+import {
+  UserMessage,
+  withFileMentions,
+  withSkillMentions,
+} from '../src/conversation/messages/user-message.js'
 import {
   fileMentionBlock,
   fileMentionIcon,

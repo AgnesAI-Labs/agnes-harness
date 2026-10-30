@@ -1,12 +1,5 @@
 import { Button, Icon } from '@agnes/web-ui'
-import {
-  type RefObject,
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from 'react'
+import { type RefObject, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { Translate } from './locales/index.js'
 
 export type ComposerSkill = Readonly<{
@@ -142,7 +135,11 @@ export function SkillPicker({
       } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault()
         event.stopPropagation()
-        setActive(current.length ? (state.current.active + (event.key === 'ArrowDown' ? 1 : current.length - 1)) % current.length : 0)
+        setActive(
+          current.length
+            ? (state.current.active + (event.key === 'ArrowDown' ? 1 : current.length - 1)) % current.length
+            : 0,
+        )
       } else if (event.key === 'Enter' || event.key === 'Tab') {
         if (event.key === 'Tab' && event.shiftKey) return
         const skill = current[state.current.active]
@@ -153,7 +150,11 @@ export function SkillPicker({
       }
     }
     const blur = (event: FocusEvent) => {
-      if (!disabledRef.current && !(event.relatedTarget as Element | null)?.closest('[data-testid="skill-picker"]')) close()
+      if (
+        !disabledRef.current &&
+        !(event.relatedTarget as Element | null)?.closest('[data-testid="skill-picker"]')
+      )
+        close()
     }
     input.addEventListener('input', open)
     input.addEventListener('click', open)

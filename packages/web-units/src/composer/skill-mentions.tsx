@@ -154,7 +154,9 @@ export function SkillMentionLayer({
               {detail.source && (
                 <div>
                   <dt>{t('composer.skill.details.source')}</dt>
-                  <dd>{detail.source.scope} · {detail.source.rootKey}</dd>
+                  <dd>
+                    {detail.source.scope} · {detail.source.rootKey}
+                  </dd>
                 </div>
               )}
               {detail.priority !== undefined && (

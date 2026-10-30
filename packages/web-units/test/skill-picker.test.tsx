@@ -4,7 +4,7 @@ import { act, createElement, createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { composerLocaleCatalog } from '../src/locales/composer.js'
-import { SkillPicker, type ComposerSkills } from '../src/skill-picker.js'
+import { type ComposerSkills, SkillPicker } from '../src/skill-picker.js'
 
 let host: HTMLDivElement
 let root: Root
@@ -94,7 +94,9 @@ it('inserts a clicked skill into the current draft token', async () => {
     input.setSelectionRange(input.value.length, input.value.length)
     input.dispatchEvent(new Event('input', { bubbles: true }))
   })
-  await vi.waitFor(() => expect(host.querySelector<HTMLButtonElement>('[data-testid="skill-option"]')).toBeTruthy())
+  await vi.waitFor(() =>
+    expect(host.querySelector<HTMLButtonElement>('[data-testid="skill-option"]')).toBeTruthy(),
+  )
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="skill-option"]')?.click())
   expect(edit).toHaveBeenLastCalledWith('Please use '.length, 'Please use $'.length, ' $review-notes  ')
   expect(input.value).toBe('Please use  $review-notes  ')

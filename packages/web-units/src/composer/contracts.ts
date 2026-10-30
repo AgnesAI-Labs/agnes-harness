@@ -13,8 +13,7 @@ import type { ComponentType, ReactNode } from 'react'
 import { composerLocaleCatalog } from '../locales/composer.js'
 import type { Translate } from '../locales/index.js'
 import type { ComposerReferences } from '../reference-picker.js'
-import type { ComposerSkills } from '../skill-picker.js'
-import type { ComposerSkill } from '../skill-picker.js'
+import type { ComposerSkill, ComposerSkills } from '../skill-picker.js'
 
 export type ModelPickerOption = {
   id: string

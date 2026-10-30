@@ -12,8 +12,8 @@ import { createRegionRenderer, useDocumentLanguage } from '@agnes/web-ui'
 import { ConversationUsage } from '@agnes/web-ui/conversation'
 import {
   Composer,
-  type ComposerDraftReferences,
   type ComposerDependencies,
+  type ComposerDraftReferences,
   type ComposerHandle,
   type ComposerRegionOptions,
   type ComposerView,
