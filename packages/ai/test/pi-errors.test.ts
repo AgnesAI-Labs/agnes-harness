@@ -302,39 +302,44 @@ describe('timeouts and cancellation', () => {
   // Once a stream has spoken the first-token deadline is spent, and only the total one is left. A
   // model that emits one token and then stops is otherwise a turn that never ends. The timeout is
   // this adapter's own error, so it carries what the HTTP response already said about who answered.
-  it('a stream that speaks once and then stops fails on the total deadline', async () => {
-    vi.stubGlobal(
-      'fetch',
-      async () =>
-        new Response(null, { headers: { 'x-request-id': 'req-stall', 'set-cookie': 'sid=never-recorded' } }),
-    )
-    const stall: StreamImpl = (_model, _context, options) =>
-      (async function* () {
-        await options?.fetch?.('https://gw.invalid/chat/completions', { method: 'POST', body: '{}' })
-        yield { type: 'text_delta', contentIndex: 0, delta: 'a', partial: msg('') } as never
-        await new Promise<never>(() => {})
-      })()
-    try {
-      const out = await drain(adapter({ streamImpl: stall }), { timeoutMs: { firstToken: 20, total: 60 } })
-      expect(out).toEqual([
-        { type: 'text_delta', delta: 'a' },
-        {
-          type: 'error',
-          reason: 'error',
-          code: 'TIMEOUT',
-          message: 'total timeout',
-          retryable: true,
-          response: {
-            status: 200,
-            headers: { 'x-request-id': 'req-stall' },
-            headerNames: ['set-cookie', 'x-request-id'],
+  it.each(['text_delta', 'thinking_delta'] as const)(
+    'a stream with %s that stops fails on the total deadline',
+    async (type) => {
+      vi.stubGlobal(
+        'fetch',
+        async () =>
+          new Response(null, {
+            headers: { 'x-request-id': 'req-stall', 'set-cookie': 'sid=never-recorded' },
+          }),
+      )
+      const stall: StreamImpl = (_model, _context, options) =>
+        (async function* () {
+          await options?.fetch?.('https://gw.invalid/chat/completions', { method: 'POST', body: '{}' })
+          yield { type, contentIndex: 0, delta: 'a', partial: msg('') } as never
+          await new Promise<never>(() => {})
+        })()
+      try {
+        const out = await drain(adapter({ streamImpl: stall }), { timeoutMs: { firstToken: 20, total: 60 } })
+        expect(out).toEqual([
+          { type, delta: 'a' },
+          {
+            type: 'error',
+            reason: 'error',
+            code: 'TIMEOUT',
+            message: 'total timeout',
+            retryable: true,
+            response: {
+              status: 200,
+              headers: { 'x-request-id': 'req-stall' },
+              headerNames: ['set-cookie', 'x-request-id'],
+            },
           },
-        },
-      ])
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
+        ])
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    },
+  )
 
   it.each([
     [{ requestMs: 30 }, 'total timeout'],
@@ -367,6 +372,44 @@ describe('timeouts and cancellation', () => {
     expect(out).toEqual([
       { type: 'error', reason: 'aborted', code: 'ABORTED', message: 'aborted', retryable: false },
     ])
+  })
+
+  it.each(['error', 'throw'] as const)(
+    'returns a retryable mid-stream transport %s to its caller',
+    async (mode) => {
+      const stream: StreamImpl = () =>
+        (async function* () {
+          yield {
+            type: 'thinking_delta',
+            delta: 'partial reasoning',
+            contentIndex: 0,
+            partial: msg(''),
+          } as never
+          if (mode === 'throw') throw new Error('private unclassified failure')
+          yield { type: 'error', reason: 'error', error: msg('private unclassified failure') } as never
+        })()
+      const out = await drain(adapter({ streamImpl: stream }), { timeoutMs: slow })
+      expect(out[0]).toMatchObject({ type: 'thinking_delta', delta: 'partial reasoning' })
+      expect(out.at(-1)).toMatchObject({ type: 'error', code: 'TRANSPORT', retryable: true })
+      expect(JSON.stringify(out.at(-1))).not.toContain('private')
+    },
+  )
+
+  it.each([
+    ['401 Unauthorized', 'error', 'AUTH'],
+    ['Unexpected token in JSON', 'error', 'FORMAT'],
+    ['', 'aborted', 'ABORTED'],
+  ] as const)('does not retry a classified %s after model output', async (message, reason, code) => {
+    const out = await drain(
+      adapter({
+        streamImpl: scripted(
+          { type: 'thinking_delta', delta: 'partial', contentIndex: 0, partial: msg('') },
+          { type: 'error', reason, error: msg(message, reason) },
+        ),
+      }),
+      { timeoutMs: slow },
+    )
+    expect(out.at(-1)).toMatchObject({ type: 'error', code, retryable: false })
   })
 
   // The default nobody walks. maxRetries defaults to 5 extra attempts, so one retryable failure

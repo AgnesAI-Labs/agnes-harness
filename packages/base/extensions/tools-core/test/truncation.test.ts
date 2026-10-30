@@ -45,8 +45,17 @@ describe('looksTruncated', () => {
     'function* patterns() { yield /[)]/; }',
     'if (ok) /[(]/.test(s);',
     String.raw`escaped \( outside a literal`,
+    "Theorem plus : forall n' m, S (n' + m) = S n' + m. (* induction *)\nProof. intros n' m. reflexivity. Qed.",
+    `def insert(seq):\n    '''Insert at the 3' end (after checking).'''\n    return seq + 'A'`,
+    `def dimer_len(a, b):\n    """Run between the 3' end of a and anywhere in b."""\n    return len(a)`,
+    `fn borrow<'a>(s: &'a str) -> &'a str { s }`,
+    "let n' = List.map (fun x -> x + 1) xs (* primed *)",
+    "(define quoted '(a b c))",
+    "cat <<'EOF'\nThis isn't a shell ( expression.\nEOF\n",
+    "# Notes\nA primed n' and an example (with parentheses).",
   ])('accepts literal delimiters: %s', (text) => {
     expect(looksTruncated('original content', text)).toEqual({ truncated: false })
+    expect(looksTruncated('x'.repeat(text.length), text)).toEqual({ truncated: false })
   })
 
   it('rejects newly unbalanced brackets', () => {

@@ -1,7 +1,8 @@
 // The guard against the most expensive failure a writing tool has: a model that meant to rewrite a
 // file and emitted only part of it. The two signals are cheap and independent - the new content is
-// a small fraction of what it replaces, or it closes fewer brackets and quotes than the original
-// did - and both are refusals rather than repairs, because the tool cannot know what was dropped.
+// a small fraction of what it replaces, or a shorter rewrite closes fewer brackets than the
+// original did (an unfinished double-quoted literal also signals a cut at EOF). Both are refusals
+// rather than repairs, because the tool cannot know what was dropped.
 // It belongs to whole-file rewrites only: `edit` names every byte it removes, so nothing can go
 // missing there without the model having written it down.
 
@@ -127,7 +128,11 @@ export function looksTruncated(
       reason: `new content is ${Math.round((100 * newText.length) / oldText.length)}% of the original`,
     }
   const before = new Set(unbalanced(oldText))
+  // Brackets alone are weak evidence in a growing file: apostrophes, lifetimes, prose and
+  // heredocs can fool any language-agnostic lexer. Require actual loss of content. Keep the
+  // existing unfinished double-quote signal at EOF even when the rewrite grows.
   for (const ch of unbalanced(newText))
-    if (!before.has(ch)) return { truncated: true, kind: 'unbalanced', reason: `unbalanced ${ch}` }
+    if ((newText.length < oldText.length || ch === '"') && !before.has(ch))
+      return { truncated: true, kind: 'unbalanced', reason: `unbalanced ${ch}` }
   return { truncated: false }
 }

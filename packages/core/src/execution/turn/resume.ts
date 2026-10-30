@@ -13,6 +13,7 @@ import {
 import { closeTurn } from '../../step/control.js'
 import type { SessionImpl } from '../../step/session.js'
 import { classifyToolRecovery, type ToolRecoveryDecision } from '../../step/tool-recovery.js'
+import { interruptedRequestNote } from './inference-failure.js'
 import { failureNotes, recoveryNotes } from './nested-note.js'
 import { unknownOutcomeRows } from './unknown-outcome.js'
 
@@ -216,6 +217,36 @@ function actionForDecision(decision: ToolRecoveryDecision, replay?: string): Res
   return 'unknown'
 }
 
+/** Recover interrupted spend from the last durable output count, never the discarded text. */
+async function interruptedInferenceCost(
+  s: SessionImpl,
+  root: EffectNode,
+): Promise<{ cost: EventInput; output: number }> {
+  // The ledger holds counts, not the streamed text: the last output row for this effect is the
+  // best record of what the dead request had produced.
+  const outputs = await scanAll((q) => s.d.log.scan(q), {
+    fromSeq: root.intentSeq,
+    toSeq: s.lastSeq,
+    type: 'assistant/output',
+    lane: s.lane,
+  })
+  const last = outputs.findLast(
+    (row) => (row.data as { effectId?: unknown } | null)?.effectId === root.effectId,
+  )
+  const output = (last?.data as { estimatedTokens?: number } | undefined)?.estimatedTokens ?? 0
+  const cost = s.ev('cost/ledger', {
+    purpose: 'inference',
+    effectId: root.effectId,
+    tokens: { input: 0, output, cacheRead: 0, cacheWrite: 0 },
+    creditSource: 'estimated',
+    // 'unknown', not 'primary': an effect that named no slot cannot be attributed, and naming
+    // the primary slot writes a spend into that slot's account that nobody made there.
+    model: root.slot ?? 'unknown',
+    interrupted: true,
+  })
+  return { cost, output }
+}
+
 /**
  * Reconciles what the ledger says was in flight when the process died. It reads the program counter
  * and the effects that were announced and never settled; it never folds history back, because the
@@ -247,28 +278,7 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
     const cur = s.op()
     if (!cur) break
     if (root.kind === 'inference') {
-      // The ledger holds counts, not the streamed text: the last output row for this effect is the
-      // best record of what the dead request had produced.
-      const outputs = await scanAll((q) => s.d.log.scan(q), {
-        fromSeq: root.intentSeq,
-        toSeq: s.lastSeq,
-        type: 'assistant/output',
-        lane: s.lane,
-      })
-      const last = outputs.findLast(
-        (row) => (row.data as { effectId?: unknown } | null)?.effectId === root.effectId,
-      )
-      const output = (last?.data as { estimatedTokens?: number } | undefined)?.estimatedTokens ?? 0
-      const cost = s.ev('cost/ledger', {
-        purpose: 'inference',
-        effectId: root.effectId,
-        tokens: { input: 0, output, cacheRead: 0, cacheWrite: 0 },
-        creditSource: 'estimated',
-        // 'unknown', not 'primary': an effect that named no slot cannot be attributed, and naming
-        // the primary slot writes a spend into that slot's account that nobody made there.
-        model: root.slot ?? 'unknown',
-        interrupted: true,
-      })
+      const { cost, output } = await interruptedInferenceCost(s, root)
       if (cur.control.status === 'cancel_requested') {
         await s.transition(
           [cost, s.ev('effect/settled', { effectId: root.effectId, outcome: 'aborted' }), ...stepEnd()],
@@ -293,7 +303,12 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
         })
       if (attempt !== undefined && attempt + 1 < s.preset.model.retry.maxAttempts) {
         await s.transition(
-          [cost, s.ev('effect/settled', { effectId: root.effectId, outcome: 'error' }), ...stepEnd()],
+          [
+            cost,
+            s.ev('effect/settled', { effectId: root.effectId, outcome: 'error' }),
+            ...(output > 0 ? [interruptedRequestNote(s, 'INTERRUPTED')] : []),
+            ...stepEnd(),
+          ],
           withPhase(cur, { kind: 'inference', gen: { status: 'ready', attempt: attempt + 1 } }),
         )
         actions.push({ effectId: root.effectId, action: 'retry' })

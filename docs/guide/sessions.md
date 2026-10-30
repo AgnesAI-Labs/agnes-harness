@@ -162,3 +162,5 @@ saved data. Moving a home can separately change its path-bound sandbox execution
 mismatch remains a refusal, rather than silently changing the session’s isolation decision.
 
 A model reply that ends without visible text or a tool call (including thinking-only replies) does not complete a turn. Core records `x/core/empty-response`, asks the model to continue and uses the existing `model.retry.maxAttempts` budget. Each attempt is billed normally. Exhaustion ends the turn with an error rather than reporting completion. Normal cancellation, budget and turn limits still apply.
+
+Transient model request failures, including a timeout or a dropped stream after output starts, use the same bounded retry budget. A failed attempt's partial output remains recorded as interrupted and billed; its unfinished tool calls are discarded. Before retrying partial output, Core tells the model that the request was interrupted and asks it to continue in smaller steps, without replaying discarded reasoning. The hard request deadline and stream idle timeout remain active. Retry exhaustion reports the error and attempt count; a user abort is never retried.

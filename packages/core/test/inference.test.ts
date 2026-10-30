@@ -1297,19 +1297,109 @@ describe('Inference segment', () => {
     })
   })
 
-  it('a retryable error past maxAttempts drains instead of retrying forever', async () => {
-    const err: Script = [
-      sent(),
-      { type: 'error', reason: 'error', code: 'RATE_LIMIT', message: 'slow', retryable: true },
-    ]
-    let now = 1_757_203_200_000
-    const s = await openSession({ provider: fakeProvider([err]), clock: () => now })
-    await s.session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
-    await s.session.acceptInput()
-    await s.session.runInference()
-    now += 10_000
-    expect(await s.session.runInference()).toEqual({ phase: 'failure_drain' })
-  })
+  it.each([
+    ['TIMEOUT', false],
+    ['TIMEOUT', true],
+    ['TRANSPORT', false],
+    ['TRANSPORT', true],
+  ] as const)(
+    'recovers a mid-stream %s (visible output: %s) with feedback and no replay of partial work',
+    async (code, visible) => {
+      const partial: Script = [
+        sent(),
+        { type: 'thinking_delta', delta: 'discard this private reasoning' },
+        ...(visible
+          ? ([
+              { type: 'text_delta', delta: 'unfinished answer' },
+              {
+                type: 'toolcall_end',
+                call: { toolUseId: 'unfinished', name: 'read', args: { path: 'a' }, ordinal: 0 },
+                via: 'native',
+              },
+            ] satisfies Script)
+          : []),
+        {
+          type: 'error',
+          reason: 'error',
+          code,
+          message: code === 'TIMEOUT' ? 'total timeout' : 'status=?',
+          retryable: true,
+        },
+      ]
+      const { session, provider, log } = await primed([partial, textTurn('recovered')], readRegistry())
+      session.preset.model.retry.baseDelayMs = 0
+      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'completed',
+      )
+      expect(provider.requests).toHaveLength(2)
+      const retry = JSON.stringify(provider.requests[1]?.messages)
+      expect(retry).toContain('interrupted')
+      expect(retry).toContain(code)
+      expect(retry).not.toContain('discard this private reasoning')
+      expect(retry).not.toContain('unfinished answer')
+      expect(await log.scan({ type: 'tool/call', limit: 10 })).toEqual([])
+      expect((await log.scan({ type: 'assistant/output', limit: 10 })).map((e) => e.data)).toContainEqual(
+        expect.objectContaining({ state: 'interrupted' }),
+      )
+      expect(await log.scan({ type: 'cost/ledger', limit: 10 })).toHaveLength(2)
+      expect(session.pendingEffects()).toEqual([])
+    },
+  )
+
+  it.each(['RATE_LIMIT', 'TIMEOUT', 'TRANSPORT'] as const)(
+    'a retryable %s past maxAttempts drains instead of retrying forever',
+    async (code) => {
+      const err: Script = [
+        sent(),
+        { type: 'thinking_delta', delta: 'partial reasoning' },
+        { type: 'error', reason: 'error', code, message: 'slow', retryable: true },
+      ]
+      let now = 1_757_203_200_000
+      const provider = fakeProvider([err])
+      const s = await openSession({ provider, clock: () => now })
+      await s.session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
+      await s.session.acceptInput()
+      await s.session.runInference()
+      now += 10_000
+      expect(await s.session.runInference()).toEqual({ phase: 'failure_drain' })
+      expect((await s.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'error',
+      )
+      expect(provider.requests).toHaveLength(2)
+      expect((await s.log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({
+        reason: 'error',
+        error: { code, message: expect.stringContaining('retries exhausted after 2 attempts') },
+      })
+      expect(s.session.pendingEffects()).toEqual([])
+    },
+  )
+
+  it.each(['budget', 'max_steps', 'abort'] as const)(
+    'does not dispatch a scheduled retry after %s wins',
+    async (stop) => {
+      const { session, provider } = await primed([
+        [
+          sent(),
+          { type: 'thinking_delta', delta: 'partial' },
+          usage(),
+          { type: 'error', reason: 'error', code: 'TIMEOUT', message: 'total timeout', retryable: true },
+        ],
+        textTurn('must not run'),
+      ])
+      session.preset.model.retry.baseDelayMs = 0
+      expect(await session.runInference()).toEqual({ phase: 'inference' })
+      if (stop === 'budget') {
+        session.preset.budget.perRequestCap = 0
+        session.preset.budget.onExceed = 'deny'
+      } else if (stop === 'max_steps') session.preset.budget.maxSteps = 1
+      else await session.abort(actor)
+      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        stop === 'abort' ? 'aborted' : stop,
+      )
+      expect(provider.requests).toHaveLength(1)
+      expect(session.pendingEffects()).toEqual([])
+    },
+  )
 
   it('an overflow becomes a compaction only when the port asks for one', async () => {
     const over: Script = [

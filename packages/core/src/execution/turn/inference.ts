@@ -82,6 +82,7 @@ import { isUnattended } from '../../step/turn-restore.js'
 import { ModelExecution } from '../model-execution.js'
 import { beforeStepGate, builtinBudgetPreflight, contextBudgetError } from './gate.js'
 import { appendHookData } from './hook-data-note.js'
+import { settleInferenceFailure } from './inference-failure.js'
 import { planModelToolCalls } from './inference-tools.js'
 import { progressCheckNote } from './progress-check.js'
 import { bindToolAvailability, disclosureRestriction, prepareToolAvailability } from './tool-availability.js'
@@ -1258,73 +1259,15 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
       // can outlast a close, and close only drains what was admitted before it sealed the log.
       const cut = cutRow()
       if (cut.length > 0) void s.d.log.append(cut).catch(() => undefined)
-      // Observe category, mode 'parallel': HookDispatch already contains a failing handler internally
-      // (it reports and moves on rather than rejecting), so this cannot itself throw into the retry/
-      // drain/compaction decisions that follow. `attempt` is the same retry counter those decisions
-      // read below, not the request's own id — there is no request id to report here.
-      if (s.hooks.requestError)
-        await s.hooks.requestError({
-          code: error.code,
-          message: error.message,
-          attempt,
-          retryable: error.retryable,
-        })
-      if (error.reason === 'aborted') {
-        await execution.commit(
-          [...execution.rows('aborted', true), stepEnd()],
-          withPhase(cur, {
-            kind: 'failure_drain',
-            error: { code: 'ABORTED', message: error.message },
-            provenance: { kind: 'inference' },
-          }),
-        )
-        // The settlement and the step's close are already written; what is missing is the turn's own
-        // terminal row, and the drain phase is where `step()` writes it. Reporting `terminal` here
-        // ended the run with the turn still open, which is a ledger the next reader has to repair
-        // before it can do anything else.
-        return { phase: 'failure_drain' }
-      }
-      if (
-        error.code === 'OVERFLOW' &&
-        s.preset.compaction.enabled &&
-        s.compaction.onOverflow() === 'compaction'
-      ) {
-        await execution.commit(
-          [...execution.rows('error', true), stepEnd()],
-          withPhase(cur, {
-            kind: 'compaction',
-            reason: 'overflow',
-            resumeAfter: {
-              kind: 'checkpoint',
-              continuation: 'need_assistant',
-              triggerSeq: op.meta.triggerSeq,
-            },
-          }),
-        )
-        return { phase: 'compaction' }
-      }
-      if (error.retryable && attempt + 1 < s.preset.model.retry.maxAttempts) {
-        const notBefore = new Date(
-          s.d.clock() + s.preset.model.retry.baseDelayMs * 2 ** attempt,
-        ).toISOString()
-        await execution.commit(
-          [...execution.rows('error', true), stepEnd()],
-          withPhase(cur, {
-            kind: 'inference',
-            gen: { status: 'retry_wait', attempt: attempt + 1, notBefore, code: error.code },
-          }),
-        )
-        return { phase: 'inference' }
-      }
-      await execution.commit(
-        [...execution.rows('error', true), stepEnd()],
-        withPhase(cur, {
-          kind: 'failure_drain',
-          error: { code: error.code, message: error.message },
-          provenance: { kind: 'inference' },
-        }),
+      return settleInferenceFailure(
+        s,
+        execution,
+        cur,
+        error,
+        attempt,
+        stepEnd(),
+        outputStarted || calls.length > 0,
       )
-      return { phase: 'failure_drain' }
     }
 
     const events: EventInput[] = []

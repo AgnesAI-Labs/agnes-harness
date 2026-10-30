@@ -261,6 +261,7 @@ describe('abort during inference', () => {
       error: { code: 'ABORTED' },
     })
     expect(session.op()).toBeNull()
+    expect(await log.scan({ type: 'effect/intent', limit: 10 })).toHaveLength(1)
   })
 
   it('leaves a ledger a fresh process can carry on from', async () => {

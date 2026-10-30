@@ -684,6 +684,9 @@ describe('resume', () => {
       interrupted: true,
       tokens: { input: 0, output: 150, cacheRead: 0, cacheWrite: 0 },
     })
+    expect(
+      JSON.stringify((await log.scan({ type: 'user/message', limit: 10 })).map((e) => e.data)),
+    ).toContain('interrupted (INTERRUPTED)')
   })
 
   it('an interrupted compaction is settled as failed and the phase it was to resume into is kept', async () => {
