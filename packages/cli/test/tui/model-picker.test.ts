@@ -131,3 +131,25 @@ it('filters the model list as you type and still picks the original model', () =
   picker.handleInput('\r')
   expect(chosen).toHaveBeenCalledWith({ route: 'openai', model: 'GPT-5' })
 })
+
+it('shows the account label instead of the raw route, filters on it, and still submits the real route', () => {
+  const chosen = vi.fn()
+  const picker = new ModelPicker({
+    ansi: new TuiTheme().ansi(createAnsi('none')),
+    maxRows: () => 8,
+    onChoose: chosen,
+    changed: vi.fn(),
+  })
+  picker.show([
+    { route: 'account-acct-3a4e775a', label: 'DeepSeek', model: 'deepseek-flash', reasoning: false },
+    { route: 'legacy', model: 'old', reasoning: false },
+  ])
+  const text = picker.render(60).join('\n')
+  expect(text).toContain('DeepSeek / deepseek-flash')
+  expect(text).not.toContain('acct-3a4e775a')
+  expect(text).toContain('legacy/old')
+  for (const ch of 'deepseek') picker.handleInput(ch)
+  expect(picker.render(60).join('\n')).not.toContain('legacy/old')
+  picker.handleInput('\r')
+  expect(chosen).toHaveBeenCalledWith({ route: 'account-acct-3a4e775a', model: 'deepseek-flash' })
+})

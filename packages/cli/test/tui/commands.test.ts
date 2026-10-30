@@ -1931,6 +1931,59 @@ describe('runSlash', () => {
     }
   })
 
+  it('/model labels choices with the account label, disambiguating duplicates, and tolerates a failed config read', async () => {
+    const acct = (accountId: string, label: string) => ({
+      accountId,
+      providerId: 'deepseek',
+      route: `account-${accountId}`,
+      label,
+      baseUrl: 'https://api.deepseek.com/v1',
+      model: 'deepseek-flash',
+      models: [{ id: 'deepseek-flash', name: 'deepseek-flash' }],
+      enabled: true,
+      credentialConfigured: true,
+    })
+    const { app, ep, client } = await unstartedApp([
+      { route: 'account-acct-3a4e775a-1', id: 'deepseek-flash' },
+      { route: 'account-acct-9f00aaaa-2', id: 'deepseek-flash' },
+      { route: 'account-acct-bbbb0000-3', id: 'kimi' },
+      { route: 'legacy-route', id: 'x' },
+    ])
+    try {
+      ep.on('_agnes/v1/config.get', () => ({
+        profile: 'local-dev',
+        revision: 1,
+        configured: true,
+        effect: 'new-sessions',
+        provider: {
+          id: 'deepseek',
+          route: 'deepseek',
+          baseUrl: 'https://api.deepseek.com/v1',
+          model: 'deepseek-v4-flash',
+          credentialConfigured: true,
+        },
+        accounts: [
+          acct('acct-3a4e775a-1', 'DeepSeek'),
+          acct('acct-9f00aaaa-2', 'DeepSeek'),
+          acct('acct-bbbb0000-3', 'Kimi'),
+        ],
+      }))
+      const choices = (await runSlash(app, '/model')).modelChoices
+      expect(choices?.map((c) => [c.route, c.label])).toEqual([
+        ['account-acct-3a4e775a-1', 'DeepSeek #3a4e'],
+        ['account-acct-9f00aaaa-2', 'DeepSeek #9f00'],
+        ['account-acct-bbbb0000-3', 'Kimi'],
+        ['legacy-route', undefined],
+      ])
+      ep.on('_agnes/v1/config.get', () => {
+        throw new Error('down')
+      })
+      expect((await runSlash(app, '/model')).modelChoices).toHaveLength(4)
+    } finally {
+      await client.close()
+    }
+  })
+
   it('/model does not open an empty picker when the current profile publishes no models', async () => {
     const { app, client } = await unstartedApp([])
     try {
