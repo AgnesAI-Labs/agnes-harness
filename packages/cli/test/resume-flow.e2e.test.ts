@@ -127,10 +127,13 @@ describe('parked approval across the CLI one-shot boundary', () => {
         expect((await screenOf(term, 100, 30)).join('\n')).toContain('Allowed once'),
       )
 
-      // A decision row alone is not a resumed tool. Queueing a fresh prompt exercises the real
-      // SDK -> daemon -> reopened HostSession run path; Core must service the already-approved
-      // continuation first, settle its tool effect, and finish that turn without consuming the
-      // new prompt as if it were the approval continuation.
+      // A decision row alone is not a resumed tool. The reopened TUI resumes the parked turn once it
+      // decides: Core services the approved continuation, settles its tool effect and finishes that
+      // turn. A fresh prompt through the real SDK -> daemon -> reopened HostSession path is accepted
+      // only after that run ends (one run per session; earlier it is SESSION_BUSY), and must not be
+      // consumed as if it were the approval continuation.
+      const tui = app
+      await vi.waitFor(() => expect(tui.busy).toBe(false), { timeout: 10_000 })
       const resumed = await session.prompt([
         { type: 'text', text: 'queued only after the approved continuation' },
       ])
