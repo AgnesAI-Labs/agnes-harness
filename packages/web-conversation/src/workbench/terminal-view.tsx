@@ -3,7 +3,18 @@ import type { TerminalScreenProps } from '@agnes/web-ui/terminal'
 import { lazy, Suspense, useState } from 'react'
 
 type TerminalLoader = () => Promise<typeof import('@agnes/web-ui/terminal')>
-const loadTerminal: TerminalLoader = () => import('@agnes/web-ui/terminal')
+// Every terminal tab mounts its own lazy screen, and switching tabs mounts two at once, so they share
+// one import. A browser caches the module either way; Vitest 5 can hand a caller of a concurrent
+// dynamic import the real module in place of a vi.mock, which made the panel tests render xterm.
+// A failed load is dropped, so the boundary's retry starts a fresh import.
+let terminalModule: ReturnType<TerminalLoader> | undefined
+const loadTerminal: TerminalLoader = () => {
+  terminalModule ??= import('@agnes/web-ui/terminal').catch((error: unknown) => {
+    terminalModule = undefined
+    throw error
+  })
+  return terminalModule
+}
 
 export function TerminalView({
   failure,
