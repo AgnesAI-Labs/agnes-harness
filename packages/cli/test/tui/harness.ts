@@ -27,8 +27,11 @@ export async function emulate(
   opts: { from?: number; seed?: string } = {},
 ): Promise<Screen> {
   const x = new Xterm({ cols, rows, allowProposedApi: true })
-  if (opts.seed) await new Promise<void>((r) => x.write(opts.seed as string, r))
-  for (const w of term.writes.slice(opts.from ?? 0)) await new Promise<void>((r) => x.write(w, r))
+  // One write: the parser is streaming, so the result is the same as replaying each chunk, but
+  // xterm schedules a macrotask per write into an empty buffer. Awaiting every chunk made one read
+  // cost a timer tick per recorded write, which on Windows outlasted a waitFor's whole budget.
+  const replay = (opts.seed ?? '') + term.writes.slice(opts.from ?? 0).join('')
+  if (replay) await new Promise<void>((r) => x.write(replay, r))
   const lines: string[] = []
   for (let i = 0; i < rows; i++)
     lines.push(x.buffer.active.getLine(x.buffer.active.baseY + i)?.translateToString(true) ?? '')
