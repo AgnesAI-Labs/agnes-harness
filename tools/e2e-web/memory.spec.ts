@@ -52,6 +52,15 @@ for (const locale of ['en', 'zh-CN'])
       await expect(savedNotice).toBeHidden()
       await translated(page)
       await accessible(page, info, 'memory-settings')
+      // Choosing the workspace and mode scrolls General only as far as each control needs, which
+      // varies with when its rows load. Frame the reviewed view: General scrolled to its end.
+      await memorySection.evaluate((node) => {
+        for (let parent = node.parentElement; parent; parent = parent.parentElement)
+          if (parent.scrollHeight > parent.clientHeight && getComputedStyle(parent).overflowY !== 'visible') {
+            parent.scrollTo({ top: parent.scrollHeight, behavior: 'instant' })
+            return
+          }
+      })
       await screen(page, info, `memory-${locale}-${theme}`, [
         page.getByTestId('memory-root'),
         // The workspace picker shows the disposable path on its custom trigger, not the hidden native select.
