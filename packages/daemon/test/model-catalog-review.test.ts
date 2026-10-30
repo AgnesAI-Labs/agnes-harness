@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { builtinModelAdapterCatalog, builtinModelSelectionData, type ResolvedProfile } from '@agnes/host'
@@ -162,6 +162,18 @@ it('rejects an existing projection symlink and publishes by replacing it without
   publishModelAdapterCatalog(f.profileDir, f.profile.hash, [f.adapter], [f.source])
   expect(readFileSync(outside, 'utf8')).toBe('outside sentinel')
   expect(readPublishedModelAdapters(f.profileDir, f.profile.hash, [f.source])).toEqual([f.adapter])
+})
+
+it('leaves an unchanged projection in place and replaces a changed one', () => {
+  const f = fixture()
+  const file = join(f.profileDir, '.agnes-published-model-adapters.json')
+  publishModelAdapterCatalog(f.profileDir, f.profile.hash, [f.adapter], [f.source])
+  const first = statSync(file, { bigint: true })
+  publishModelAdapterCatalog(f.profileDir, f.profile.hash, [f.adapter], [f.source])
+  const again = statSync(file, { bigint: true })
+  expect([again.ino, again.mtimeNs]).toEqual([first.ino, first.mtimeNs])
+  publishModelAdapterCatalog(f.profileDir, f.profile.hash, [], [f.source])
+  expect(readPublishedModelAdapters(f.profileDir, f.profile.hash, [f.source])).toEqual([])
 })
 
 it('records that live display is bound to source rows but carries no profile admission token', async () => {
