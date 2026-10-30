@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { BWRAP_BACKEND, detectBackend, NONE_BACKEND, SEATBELT_BACKEND } from '@agnes/base/sandbox'
 import { createPlatform } from '@agnes/host'
 import { runIsolatedCommand } from '@agnes/package-isolation'
@@ -50,7 +50,10 @@ const setup = (os: 'darwin' | 'linux' | 'win32') => {
   } as never)
   return root
 }
-it.each(['darwin', 'linux'] as const)(
+// Seatbelt and bwrap compile host-canonical POSIX paths and only run on POSIX hosts; a Windows
+// temp directory cannot be expressed in their profiles, so these simulations need a POSIX host.
+const posixHost = sep === '/'
+it.runIf(posixHost).each(['darwin', 'linux'] as const)(
   'confines %s candidate execution with Host hard denies and session network rules',
   async (os) => {
     const root = setup(os),
@@ -123,8 +126,9 @@ it('reports Windows as unisolated and refuses missing POSIX isolation or a remot
 })
 
 it('rechecks the candidate test lease after sandbox setup before spawning the command', async () => {
-  const root = setup('darwin')
-  vi.mocked(detectBackend).mockResolvedValue(SEATBELT_BACKEND)
+  // The lease check precedes the spawn on every backend; use one this host can compile.
+  const root = setup(posixHost ? 'darwin' : 'win32')
+  vi.mocked(detectBackend).mockResolvedValue(posixHost ? SEATBELT_BACKEND : NONE_BACKEND)
   let live = true
   const assertActive = () => {
     if (!live) throw Error('permission unavailable')
