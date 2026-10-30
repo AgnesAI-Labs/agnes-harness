@@ -214,6 +214,14 @@ jobs:
       # The multi-tab transport and agent-sweep tests launch the pinned Playwright Chromium.
       - name: provision pinned Chromium
         run: pnpm exec playwright install ${{ runner.os == 'Linux' && '--with-deps' || '' }} chromium
+      # Source-worker tests share jiti's transpile cache (packages/daemon/test/source-transpile-cache.ts).
+      # jiti re-transpiles any file whose source hash changed, so an older cache is safe to restore.
+      - name: Restore source transpile cache
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
+        with:
+          path: node_modules/.cache/agnes-source-transpile
+          key: source-transpile-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: source-transpile-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'pnpm-lock.yaml') }}-
       # These tests start real processes and are the most sensitive to a loaded runner, so they
       # run with less file fan-out than the fast tier. The check job spreads Windows files over
       # three runners, but this job holds every heavy file on one; two at a time there starved each
@@ -224,6 +232,12 @@ jobs:
         env:
           AGNES_TEST_EXCLUDE: ${{ runner.os == 'Windows' && 'packages/cli/test/acp-concurrency.e2e.test.ts,packages/cli/test/dbh-m06-ephemeral-leak.e2e.test.ts,packages/daemon/test/service-worker.e2e.test.ts,packages/cli/test/built-resource-mcp.e2e.test.ts' || '' }}
         run: pnpm exec vitest run --project heavy --maxWorkers=${{ runner.os == 'macOS' && 2 || 1 }}
+      - name: Save source transpile cache
+        if: ${{ !cancelled() }}
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
+        with:
+          path: node_modules/.cache/agnes-source-transpile
+          key: source-transpile-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'pnpm-lock.yaml') }}-${{ github.sha }}
       # The ACP cold-start bound measures concurrent CLI processes. Run it without other Vitest
       # files competing for this runner's cores, while retaining its original assertion.
       - name: Windows ACP cold-start concurrency
