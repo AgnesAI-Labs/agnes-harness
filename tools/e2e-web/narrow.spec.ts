@@ -553,11 +553,14 @@ for (const locale of ['en', 'zh-CN'])
             "PS1='narrow$ '; printf '\\033[2J\\033[H'; printf 'NARROW_TERMINAL_OK\\n'",
           )
           await terminalInput.press('Enter')
+          // The output must start its own line; the echoed command never does. Readline (bash >= 5.1)
+          // leaves bracketed-paste mode with `ESC[?2004l` + CR before the command runs, so after VT
+          // stripping a line can begin at CR as well as at LF.
           await expect
             .poll(async () =>
               stripVTControlCharacters((await session.jobsRead(terminalId)).job?.stdout ?? ''),
             )
-            .toMatch(/\nNARROW_TERMINAL_OK\r?\n/)
+            .toMatch(/[\r\n]NARROW_TERMINAL_OK\r?\n/)
           await expect(terminalText).toContainText('NARROW_TERMINAL_OK')
           await usable(page, info, `terminal-running-${viewport.width}`)
           if (viewport.width === 375) await capture('workbench', viewport.width)
