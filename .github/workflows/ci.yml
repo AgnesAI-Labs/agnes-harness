@@ -101,12 +101,20 @@ jobs:
           }
           '@
           node -e $script -- $env:TEMP $env:RUNNER_TEMP
+      # Like the per-user Temp it replaces, the folder grants only this user, SYSTEM and
+      # Administrators, so the private homes and stores tests create under it pass validation.
+      # RUNNER_TEMP itself inherits the D: drive's broad grants.
       - name: keep temporary files on the Windows work disk
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
-          "TMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+          $temp = Join-Path $env:RUNNER_TEMP 'private-temp'
+          New-Item -ItemType Directory -Force -Path $temp | Out-Null
+          $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+          icacls $temp /inheritance:r /grant:r "*${user}:(OI)(CI)F" '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F'
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot make the temporary folder private' }
+          "TEMP=$temp" >> $env:GITHUB_ENV
+          "TMP=$temp" >> $env:GITHUB_ENV
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version-file: .node-version, cache: pnpm }
