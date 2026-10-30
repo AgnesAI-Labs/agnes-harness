@@ -142,6 +142,9 @@ export async function homePage(page: Page, id: string, tab?: string) {
   await sidebar(page)
   await page.getByTestId(`home-entry-${id}`).click()
   await expect(page.getByTestId(`home-page-${id}`)).toBeVisible()
+  // The page reopens where it was left; a pushed page (a candidate review) shows once its read
+  // returns. Settle before deciding whether there is a level to go back from.
+  await settled(page)
   const back = page.getByTestId('push-back')
   for (let level = 0; level < 8 && (await back.isVisible()); level++) {
     const previous = page.url()
