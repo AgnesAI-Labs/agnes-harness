@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -142,4 +143,67 @@ it('packs a complete skin candidate for download, retaining entry, descriptor an
   expect(typeof entry.main.apply).toBe('function')
   for (const file of files.filter((file) => file.path !== 'package.json'))
     expect(readFileSync(join(receiver, file.path), 'utf8')).toBe(file.content)
+})
+
+function plugin(root: string, extra: Record<string, unknown> = {}): string {
+  const source = join(root, 'plugin')
+  mkdirSync(join(source, 'dist'), { recursive: true })
+  writeFileSync(
+    join(source, 'package.json'),
+    JSON.stringify({
+      name: 'lean-tool',
+      version: '1.0.0',
+      license: 'MIT',
+      type: 'module',
+      exports: './dist/index.js',
+      agnes: {
+        plugins: [{ id: 'ext:lean/main', apiRange: '^5.0.0', export: 'main', capabilities: { ui: true } }],
+      },
+      ...extra,
+    }),
+  )
+  writeFileSync(join(source, 'dist', 'index.js'), 'export const main = () => 1')
+  return source
+}
+const listing = (archive: string) =>
+  execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' }).split('\n').filter(Boolean)
+
+it('ships only npm-packlist files: package.json "files" and .gitignore are honored', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agh-lean-pack-'))
+  roots.push(root)
+  const source = plugin(root, { files: ['dist'] })
+  mkdirSync(join(source, 'src'))
+  mkdirSync(join(source, 'test'))
+  writeFileSync(join(source, 'src', 'index.ts'), 'export const main = 1')
+  writeFileSync(join(source, 'test', 'x.test.ts'), '')
+  writeFileSync(join(source, 'NOTES.md'), 'private')
+  const archive = await packPlugin(source, join(root, 'lean.tgz'))
+  const names = listing(archive)
+  expect(names).toContain('package/package.json')
+  expect(names).toContain('package/dist/.agnes-packed-entry.mjs')
+  expect(names).toContain('package/dist/index.js')
+  expect(names.filter((name) => /\/(src|test)\/|NOTES/.test(name))).toEqual([])
+  const receiver = join(root, 'friend')
+  await fetchSource(parseSource('file:' + archive.split(sep).join('/')), receiver, { cwd: root })
+  expect((await import(pathToFileURL(join(receiver, 'dist', '.agnes-packed-entry.mjs')).href)).main()).toBe(1)
+})
+
+it('honors .gitignore when "files" is absent', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agh-lean-pack-'))
+  roots.push(root)
+  const source = plugin(root)
+  writeFileSync(join(source, '.gitignore'), 'private/\n')
+  mkdirSync(join(source, 'private'))
+  writeFileSync(join(source, 'private', 'notes.md'), 'private')
+  const names = listing(await packPlugin(source, join(root, 'lean.tgz')))
+  expect(names).toContain('package/dist/index.js')
+  expect(names.filter((name) => name.includes('private'))).toEqual([])
+})
+
+it('refuses to pack secret files that the packlist selects', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agh-lean-pack-'))
+  roots.push(root)
+  const source = plugin(root, { files: ['dist'] })
+  writeFileSync(join(source, 'dist', '.env'), 'TOKEN=1')
+  await expect(packPlugin(source, join(root, 'lean.tgz'))).rejects.toThrow('dist/.env')
 })
