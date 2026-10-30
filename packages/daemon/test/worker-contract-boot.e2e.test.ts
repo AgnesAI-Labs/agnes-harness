@@ -14,6 +14,7 @@ import { daemonSocketPaths } from '../src/supervisor/socket-paths.js'
 import { startSupervisor } from '../src/supervisor/supervisor.js'
 import { WorkerPool } from '../src/supervisor/worker-pool.js'
 import { localSdkTransport } from './local-socket-path.js'
+import { sourceTranspileCache } from './source-transpile-cache.js'
 
 // No testkit, buildHost, package loader or extension loader injection: the executable must load
 // the official plugins through the production jiti graph before it can announce hello.
@@ -139,7 +140,7 @@ async function sourceProfile(root: string): Promise<ResolvedProfile> {
       user: {
         name: 'local-dev',
         dataDir: join(root, 'data'),
-        cacheDir: join(root, 'cache'),
+        cacheDir: sourceTranspileCache(),
         computerUse: { enabled: false },
         provider: demoProvider(),
       },
