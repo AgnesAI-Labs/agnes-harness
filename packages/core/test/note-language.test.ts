@@ -142,6 +142,15 @@ describe('Core notes keep the model in the language of the task', () => {
         new Set(['core:turn-limits', 'core:unattended-run', 'turn time', 'progress check']),
       )
       for (const text of notes.keys()) expect(text.endsWith(ending), text).toBe(true)
+      const unattended = [...notes].find(([, kind]) => kind === 'core:unattended-run')?.[0]
+      for (const rule of [
+        'choose the least destructive reasonable interpretation',
+        'make reversible changes',
+        'state assumptions and any further steps in the final reply',
+        'Do not take irreversible actions the user did not explicitly request',
+        'rewriting or pruning version-control history, gc or reflog expiry, force-pushing, or deleting unnamed data',
+      ])
+        expect(unattended).toContain(rule)
       // The newest message of every request is the framed note, never a bare instruction.
       for (const request of provider.requests) {
         const last = request.messages.at(-1)?.content[0]

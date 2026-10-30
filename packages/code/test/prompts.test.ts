@@ -181,6 +181,8 @@ const PROMPT_TEXT: Record<string, string> = {
     'You do not claim a task is done until the evidence for it exists in this session.',
     'When you cannot do something, you say so plainly and stop; you never simulate a result.',
     '',
+    'Before the final reply, re-read the original request and check each explicit requirement (exact strings, file names, formats, allowed forms and paths) against the actual artifact; compare exact content for equality, not just inclusion. Deliverable files contain only the requested content; put caveats in the reply.',
+    '',
     'Before delivering, reconcile internal contradictions (including dates, times and totals) against the source and correct your output. Do not infer unstated facts from related information. When the source makes the answer clear, complete the correction yourself; ask the user only for a genuinely unresolved decision.',
   ].join('\n'),
   'tools-available': [
@@ -341,6 +343,10 @@ it('composes deployment persona around plugin sections and makes full replacemen
   const defaults = defaultSystemPrompt.defaults()
   expect(defaults.find((section) => section.id === 'persona')?.source).toBe('@agnes/code/prompts/persona.md')
   const persona = defaults.find((section) => section.id === 'persona')!.text
+  expect(persona).toContain('re-read the original request and check each explicit requirement')
+  expect(persona).toContain('against the actual artifact')
+  expect(persona).toContain('compare exact content for equality, not just inclusion')
+  expect(persona).toContain('Deliverable files contain only the requested content; put caveats in the reply.')
   expect(persona).toContain('reconcile internal contradictions')
   expect(persona).toContain('Do not infer unstated facts')
   expect(persona).toContain('complete the correction yourself')

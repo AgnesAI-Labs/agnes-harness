@@ -96,7 +96,7 @@ import { turnLimitSection, turnTimeNote } from './turn-limits.js'
  */
 export const unattendedNote = (language?: string): string =>
   withNoteLanguage(
-    'Unattended run\nThis run is unattended: nobody can answer questions, review a plan or look at a UI surface before it ends, and your final reply is all that is returned. Do not ask the user or wait for input. Finish the task end to end on your own best judgment: where it is ambiguous, choose the most reasonable interpretation, carry it out, and state the assumptions you made in the final reply.',
+    'Unattended run\nThis run is unattended: nobody can answer questions, review a plan or look at a UI surface before it ends, and your final reply is all that is returned. Do not ask the user or wait for input. Finish the task end to end on your own best judgment: where it is ambiguous, choose the least destructive reasonable interpretation, make reversible changes, and state assumptions and any further steps in the final reply. Do not take irreversible actions the user did not explicitly request (rewriting or pruning version-control history, gc or reflog expiry, force-pushing, or deleting unnamed data).',
     language,
   )
 
