@@ -289,7 +289,10 @@ export function createSubmissionController(
       })
       return
     }
-    const text = input || referenceSelections.map(({ source, id }) => `@${source} ${id}`).join('\n')
+    // References travel in their own structured field.  Do not manufacture a visible
+    // `@source id` body when the composer contains only references: the daemon records
+    // the resolved reference block as well, so doing both makes the transcript show it twice.
+    const text = input
     const sentText = encodeApplicationWork(text, applicationWorkDraft.read(session?.id))
     const content: ContentBlock[] = [
       ...(sentText ? [{ type: 'text' as const, text: sentText }] : []),

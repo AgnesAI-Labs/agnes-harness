@@ -741,6 +741,8 @@ export { validateProjectionCapability, validateProjectionReadResult } from './pr
 export * from './provider.js'
 export * from './public-errors.js'
 export {
+  fileReferenceBrowse,
+  parentFileReferenceBrowse,
   type ReferenceCandidate,
   type ReferenceSearchResult,
   type ReferenceSelection,

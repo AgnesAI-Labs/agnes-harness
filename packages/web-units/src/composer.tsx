@@ -26,8 +26,10 @@ import {
   INITIAL_VIEW,
   pickerState,
 } from './composer/contracts.js'
+import { SkillPicker, type ComposerSkill } from './skill-picker.js'
 import { ComposerExtras } from './composer/extras.js'
 import { FileMentionLayer, mentionTokens, useFileMentions } from './composer/file-mentions.js'
+import { SkillMentionLayer, skillMentionTokens } from './composer/skill-mentions.js'
 import { useComposerHint } from './composer/hint.js'
 import type { ComposerAttachment } from './composer/image-files.js'
 import { renderComposerQueue } from './composer/queue.js'
@@ -64,7 +66,9 @@ const SENDER_CLASSES = {
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
   {
     references,
+    skills,
     initialDraft = '',
+    initialDraftReferences = { files: [], skills: [] },
     examplePrompts = [],
     initialView = INITIAL_VIEW,
     dependencies,
@@ -188,8 +192,40 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [example.visible])
-  const mentions = useFileMentions({ prompt, draftRef, editDraft })
+  const mentions = useFileMentions({ prompt, draftRef, editDraft, initial: initialDraftReferences.files })
   const mentionTokensInDraft = mentionTokens(draft, mentions.mentions)
+  const [selectedSkills, setSelectedSkills] = useState<readonly ComposerSkill[]>(initialDraftReferences.skills)
+  const selectedSkillsRef = useRef(selectedSkills)
+  selectedSkillsRef.current = selectedSkills
+  const skillTokensInDraft = skillMentionTokens(
+    draft,
+    selectedSkills.map((skill) => skill.name),
+  )
+  const skillKeydown = (event: { key: string; preventDefault(): void; isComposing?: boolean }): void => {
+    const input = prompt.current
+    if (!input || event.isComposing || input.selectionStart !== input.selectionEnd) return
+    const caret = input.selectionStart
+    const token = skillMentionTokens(
+      draftRef.current,
+      selectedSkills.map((skill) => skill.name),
+    ).find((item) =>
+      event.key === 'ArrowLeft' || event.key === 'Backspace'
+        ? caret > item.start && caret <= item.end
+        : event.key === 'ArrowRight' || event.key === 'Delete'
+          ? caret >= item.start && caret < item.end
+          : false,
+    )
+    if (!token) return
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault()
+      const position = event.key === 'ArrowLeft' ? token.start : token.end
+      input.setSelectionRange(position, position)
+      return
+    }
+    if (event.key !== 'Backspace' && event.key !== 'Delete') return
+    event.preventDefault()
+    editDraft(token.start, token.end, '')
+  }
   const currentDraft = () =>
     draftRef.current !== renderedDraft.current
       ? draftRef.current
@@ -251,6 +287,20 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         if (draftRef.current !== renderedDraft.current) return draftRef.current
         return prompt.current?.value ?? draftRef.current
       },
+      getDraftReferences() {
+        const current = currentDraft()
+        const seenFiles = new Set<string>()
+        return {
+          files: mentionTokens(current, mentions.snapshot()).flatMap(({ mention: { path, name, directory } }) => {
+            if (seenFiles.has(path)) return []
+            seenFiles.add(path)
+            return [{ path, name, directory }]
+          }),
+          skills: selectedSkillsRef.current.filter((skill) =>
+            skillMentionTokens(current, [skill.name]).some((token) => token.name === skill.name),
+          ),
+        }
+      },
       getImageBlocks() {
         return attachmentsRef.current
           .filter((block): block is ComposerAttachment & ComposerImageBlock => block.type === 'image')
@@ -287,6 +337,23 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       },
       restoreImageBlocks(restored) {
         restoreAttachmentBlocks(mentions.restore(restored))
+      },
+      restoreDraftReferences(references) {
+        mentions.replace(references.files)
+        const current = selectedSkillsRef.current
+        const unchanged =
+          current.length === references.skills.length &&
+          current.every(
+            (skill, index) =>
+              skill.name === references.skills[index]?.name &&
+              skill.description === references.skills[index]?.description &&
+              skill.priority === references.skills[index]?.priority &&
+              skill.source?.scope === references.skills[index]?.source?.scope &&
+              skill.source?.rootKey === references.skills[index]?.source?.rootKey,
+          )
+        if (unchanged) return
+        selectedSkillsRef.current = references.skills
+        setSelectedSkills(references.skills)
       },
       insertText(text) {
         const input = prompt.current
@@ -401,6 +468,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           onSubmit(steer ? { steer } : undefined)
         }}
       >
+        <SkillPicker
+          textarea={prompt}
+          edit={editDraft}
+          {...(skills ? { skills } : {})}
+          onChoose={(skill) => {
+            const current = selectedSkillsRef.current
+            const next = current.some((item) => item.name === skill.name) ? current : [...current, skill]
+            selectedSkillsRef.current = next
+            setSelectedSkills(next)
+          }}
+          t={t}
+          disabled={imageDisabled}
+        />
         <ReferencePicker
           textarea={prompt}
           edit={editDraft}
@@ -469,8 +549,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 editDraft(0, 0, example.adoptText)
                 return false
               }
-              // A file chip is one piece of text: Backspace and Delete take it whole.
+              // File and skill references are atomic text: delete and arrow movement skip a whole token.
               mentions.keydown({
+                key: event.key,
+                isComposing: native.isComposing,
+                preventDefault: () => event.preventDefault(),
+              })
+              if (event.defaultPrevented) return false
+              skillKeydown({
                 key: event.key,
                 isComposing: native.isComposing,
                 preventDefault: () => event.preventDefault(),
@@ -626,6 +712,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           remove={mentions.remove}
           t={t}
         />
+          <SkillMentionLayer
+            prompt={prompt}
+            draft={draft}
+            tokens={skillTokensInDraft}
+            skills={selectedSkills}
+            t={t}
+          />
         <SettingsInput
           ref={fileInput}
           type="file"
@@ -692,6 +785,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
 export type {
   ComposerAttachmentBlock,
+  ComposerDraftReferences,
   ComposerDependencies,
   ComposerHandle,
   ComposerImageBlock,

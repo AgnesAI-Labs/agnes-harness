@@ -140,6 +140,7 @@ export {
 } from '../extensions/subagent/src/index.js'
 export { SHELL_SENTINEL, TOOLS_CORE } from '../extensions/tools-core/src/index.js'
 export { TOOLS_SEARCH } from '../extensions/tools-search/src/index.js'
+export { ripgrepPath } from '../extensions/tools-search/src/tools/rg-path.js'
 export { TOOLS_WEB } from '../extensions/tools-web/src/index.js'
 export {
   type ActivationRecord as ComputerUseActivationRecord,

@@ -411,6 +411,8 @@ const AGNES_DEFS: Record<string, TSchema> = {
   FileUploadParams: AgnesGen.FileUploadParams,
   FileUploadResultSchema: AgnesGen.FileUploadResultSchema,
   SessionReferenceSearchParams: AgnesGen.SessionReferenceSearchParams,
+  SessionReferenceSearchCancelableParams: AgnesGen.SessionReferenceSearchCancelableParams,
+  SessionReferenceCancelParams: AgnesGen.SessionReferenceCancelParams,
   SessionReferenceSearchResult: AgnesGen.SessionReferenceSearchResult,
   AutoReviewConfig: AgnesGen.AutoReviewConfig,
   ToolReviewFact: AgnesGen.ToolReviewFact,
@@ -2232,8 +2234,26 @@ const AGNES_SAMPLES: Record<string, Sample> = {
   },
   SessionReferenceSearchParams: {
     valid: { sessionId: 'owned', query: 'file a' },
-    invalid: [{ sessionId: 'owned' }, { sessionId: '', query: '' }, { sessionId: 'owned', query: rep(257) }],
+    invalid: [
+      { sessionId: 'owned' },
+      { sessionId: '', query: '' },
+      { sessionId: 'owned', query: rep(257) },
+      { sessionId: 'owned', query: 'x', requestId: 'new-only' },
+    ],
     note: 'Owned-session reference search is bounded',
+  },
+  SessionReferenceSearchCancelableParams: {
+    valid: { sessionId: 'owned', query: 'file a', requestId: 'request-1' },
+    invalid: [
+      { sessionId: 'owned', query: 'x' },
+      { sessionId: 'owned', query: 'x', requestId: '' },
+    ],
+    note: 'Cancelable search uses a separate protocol method',
+  },
+  SessionReferenceCancelParams: {
+    valid: { sessionId: 'owned', requestId: 'request-1' },
+    invalid: [{ sessionId: 'owned' }, { sessionId: 'owned', requestId: '' }],
+    note: 'One owner-scoped reference request cancellation',
   },
   SessionReferenceSearchResult: {
     valid: { items: [{ source: 'file', id: 'a', label: 'a' }], truncated: false },
@@ -8542,6 +8562,16 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'SessionReferenceSearchParams',
     result: 'SessionReferenceSearchResult',
   },
+  '_agnes/v1/session.references.searchCancelable': {
+    fileId: 'https://agnes.ai/schema/agnes-v1.json',
+    params: 'SessionReferenceSearchCancelableParams',
+    result: 'SessionReferenceSearchResult',
+  },
+  '_agnes/v1/session.references.cancel': {
+    fileId: 'https://agnes.ai/schema/agnes-v1.json',
+    params: 'SessionReferenceCancelParams',
+    result: 'Empty',
+  },
   '_agnes/v1/plugins.config.get': {
     fileId: 'https://agnes.ai/schema/package-admin.json',
     params: 'PluginConfigGetParams',
@@ -8730,6 +8760,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     result: 'SessionWorkspaceChangesResult',
   },
   '_agnes/v1/session.workspace.list': {
+    fileId: AGNES_ID,
+    params: 'SessionWorkspaceListParams',
+    result: 'SessionWorkspaceListResult',
+  },
+  '_agnes/v1/session.workspace.browse': {
     fileId: AGNES_ID,
     params: 'SessionWorkspaceListParams',
     result: 'SessionWorkspaceListResult',
@@ -9564,7 +9599,21 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/session.references.search': {
     note: 'Reference locators and bounded search results',
     valid: { sessionId: 'owned', query: 'file a' },
-    invalid: [{ sessionId: 'owned' }, { sessionId: 'owned', query: 'x'.repeat(257) }],
+    invalid: [
+      { sessionId: 'owned' },
+      { sessionId: 'owned', query: 'x'.repeat(257) },
+      { sessionId: 'owned', query: 'x', requestId: 'new-only' },
+    ],
+  },
+  '_agnes/v1/session.references.searchCancelable': {
+    note: 'Cancelable reference search',
+    valid: { sessionId: 'owned', query: 'file a', requestId: 'request-1' },
+    invalid: [{ sessionId: 'owned', query: 'file a' }],
+  },
+  '_agnes/v1/session.references.cancel': {
+    note: 'Cancel one scoped reference search',
+    valid: { sessionId: 'owned', requestId: 'request-1' },
+    invalid: [{ sessionId: 'owned' }, { sessionId: 'owned', requestId: '' }],
   },
   '_agnes/v1/plugins.config.get': {
     note: 'Plugin config read contract',
@@ -9889,6 +9938,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/session.undo': AGNES_SAMPLES.SessionUndoParams as Sample,
   '_agnes/v1/session.workspace.changes': AGNES_SAMPLES.SessionWorkspaceChangesParams as Sample,
   '_agnes/v1/session.workspace.list': AGNES_SAMPLES.SessionWorkspaceListParams as Sample,
+  '_agnes/v1/session.workspace.browse': AGNES_SAMPLES.SessionWorkspaceListParams as Sample,
   '_agnes/v1/session.workspace.read': AGNES_SAMPLES.SessionWorkspaceReadParams as Sample,
   '_agnes/v1/sessionSelection.loops': AGNES_SAMPLES.ConfigEmptyParams as Sample,
   '_agnes/v1/sessionSelection.modelAdapters': AGNES_SAMPLES.ConfigEmptyParams as Sample,
@@ -10652,11 +10702,14 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/session.undo': AGNES_SAMPLES.SessionUndoResult as Sample,
   '_agnes/v1/session.workspace.changes': AGNES_SAMPLES.SessionWorkspaceChangesResult as Sample,
   '_agnes/v1/session.workspace.list': AGNES_SAMPLES.SessionWorkspaceListResult as Sample,
+  '_agnes/v1/session.workspace.browse': AGNES_SAMPLES.SessionWorkspaceListResult as Sample,
   '_agnes/v1/session.references.search': {
     note: 'Reference locators and bounded search results',
     valid: { items: [{ source: 'file', id: 'a', label: 'a' }], truncated: false },
     invalid: [{ items: [], truncated: 'no' }],
   },
+  '_agnes/v1/session.references.searchCancelable': AGNES_SAMPLES.SessionReferenceSearchResult as Sample,
+  '_agnes/v1/session.references.cancel': AGNES_SAMPLES.Empty as Sample,
   '_agnes/v1/session.workspace.read': AGNES_SAMPLES.SessionWorkspaceReadResult as Sample,
 
   '_agnes/v1/session.rename': AGNES_SAMPLES.SessionPreferences as Sample,

@@ -4,6 +4,7 @@ import { act, createElement, createRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ComposerProps } from '../src/composer/contracts.js'
 import { type DraftMention, mentionTokens } from '../src/composer/file-mentions.js'
+import { skillMentionTokens } from '../src/composer/skill-mentions.js'
 import {
   Composer,
   type ComposerDependencies,
@@ -91,7 +92,7 @@ describe('file chips in the draft', () => {
       prompt.setSelectionRange(2, 2)
       handle.mention(portal)
     })
-    await vi.waitFor(() => expect(handle.getDraft()).toBe('看看 @boot portal.html 这个'))
+    await vi.waitFor(() => expect(handle.getDraft()).toBe('看看  @boot portal.html  这个'))
     const chip = await vi.waitFor(() => {
       const found = host.querySelector<HTMLElement>('[data-testid="composer-file-mention"]')
       expect(found).toBeTruthy()
@@ -99,6 +100,7 @@ describe('file chips in the draft', () => {
     })
     // The chip shows the type icon and name; the full local path shows on hover.
     expect(chip.textContent).toContain('boot portal.html')
+    expect(chip.textContent).not.toContain('@')
     expect(chip.title).toBe(portal.path)
     expect(chip.querySelector('svg')).toBeTruthy()
     expect(handle.getAttachmentBlocks()).toEqual([
@@ -113,7 +115,7 @@ describe('file chips in the draft', () => {
   it('names a folder with the folder MIME type and icon', async () => {
     const { host, handle } = mount()
     act(() => handle.mention(folder))
-    await vi.waitFor(() => expect(handle.getDraft()).toBe('@fde-output '))
+    await vi.waitFor(() => expect(handle.getDraft()).toBe('@fde-output  '))
     expect(host.querySelector('[data-testid="composer-file-mention"]')?.getAttribute('data-directory')).toBe(
       'true',
     )
@@ -130,11 +132,18 @@ describe('file chips in the draft', () => {
   it('takes a chip whole with Backspace or Delete, and with its remove button', async () => {
     const { host, handle, prompt } = mount()
     act(() => handle.mention(report))
-    await vi.waitFor(() => expect(handle.getDraft()).toBe('@3-report.md '))
+    await vi.waitFor(() => expect(handle.getDraft()).toBe('@3-report.md  '))
+    const token = mentionTokens(handle.getDraft(), [{ ...report, label: report.name }])[0]!
+    prompt.setSelectionRange(token.start, token.start)
+    press(prompt, 'ArrowRight')
+    expect(prompt.selectionStart).toBe(token.end)
+    prompt.setSelectionRange(token.end, token.end)
+    press(prompt, 'ArrowLeft')
+    expect(prompt.selectionStart).toBe(token.start)
     // Caret right after the chip's text: Backspace removes all of it.
     prompt.setSelectionRange(12, 12)
     press(prompt, 'Backspace')
-    await vi.waitFor(() => expect(handle.getDraft()).toBe(' '))
+    await vi.waitFor(() => expect(handle.getDraft()).toBe('  '))
     expect(handle.getAttachmentBlocks()).toEqual([])
 
     act(() => handle.mention(report))
@@ -155,11 +164,17 @@ describe('file chips in the draft', () => {
     expect(handle.getAttachmentBlocks()).toEqual([])
   })
 
+  it('reports a newly inserted file reference before React has rendered it', () => {
+    const { handle } = mount()
+    act(() => handle.mention(report))
+    expect(handle.getDraftReferences()).toEqual({ files: [report], skills: [] })
+  })
+
   it('drops a chip whose text was deleted, keeps one link per file and clears after sending', async () => {
     const { handle, prompt } = mount()
     act(() => handle.mention(report))
     act(() => handle.mention(portal))
-    await vi.waitFor(() => expect(handle.getDraft()).toBe('@3-report.md @boot portal.html '))
+    await vi.waitFor(() => expect(handle.getDraft()).toBe('@3-report.md  @boot portal.html  '))
     type(prompt, '只要 @boot portal.html 和 @boot portal.html')
     expect(handle.getAttachmentBlocks().map((block) => 'name' in block && block.name)).toEqual([
       'boot portal.html',
@@ -202,6 +217,65 @@ describe('file chips in the draft', () => {
   })
 })
 
+describe('skill chips in the draft', () => {
+  it('renders saved file and skill references when a draft is restored', async () => {
+    const { host, handle } = mount({
+      initialDraft: '@3-report.md  $review-notes  ',
+      initialDraftReferences: {
+        files: [report],
+        skills: [{ name: 'review-notes', description: 'Review project notes' }],
+      },
+    })
+    await vi.waitFor(() => expect(host.querySelector('[data-testid="composer-file-mention"]')).toBeTruthy())
+    expect(host.querySelector('[data-testid="composer-skill-mention"]')).toBeTruthy()
+    expect(handle.getDraftReferences()).toEqual({
+      files: [report],
+      skills: [{ name: 'review-notes', description: 'Review project notes' }],
+    })
+  })
+
+  it('only decorates complete selected skill names', () => {
+    expect(skillMentionTokens('用 $review-notes 和 $review-notes.bak', ['review-notes'])).toEqual([
+      { start: 2, end: 15, name: 'review-notes' },
+    ])
+  })
+
+  it('renders a selected skill as a sparkle marker while preserving its explicit draft text', async () => {
+    const { host, handle, prompt } = mount({
+      skills: { list: async () => [{ name: 'review-notes', description: 'Review project notes' }] },
+    })
+    type(prompt, '$review')
+    const option = await vi.waitFor(() => {
+      const found = host.querySelector<HTMLButtonElement>('[data-testid="skill-option"]')
+      expect(found).toBeTruthy()
+      return found as HTMLButtonElement
+    })
+    expect(option.textContent).toContain('review-notes')
+    expect(option.textContent).not.toContain('$review-notes')
+    act(() => option.click())
+    await vi.waitFor(() => expect(handle.getDraft()).toBe('$review-notes  '))
+    const chip = await vi.waitFor(() => {
+      const found = host.querySelector<HTMLElement>('[data-testid="composer-skill-mention"]')
+      expect(found).toBeTruthy()
+      return found as HTMLElement
+    })
+    expect(chip.textContent).toContain('review-notes')
+    expect(chip.textContent).not.toContain('$')
+    expect(chip.querySelector('svg')).toBeTruthy()
+    act(() => chip.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await vi.waitFor(() => expect(document.body.querySelector('[data-testid="composer-skill-detail"]')).toBeTruthy())
+    const token = skillMentionTokens(handle.getDraft(), ['review-notes'])[0]!
+    prompt.setSelectionRange(token.start, token.start)
+    press(prompt, 'ArrowRight')
+    expect(prompt.selectionStart).toBe(token.end)
+    prompt.setSelectionRange(token.end, token.end)
+    press(prompt, 'ArrowLeft')
+    expect(prompt.selectionStart).toBe(token.start)
+    press(prompt, 'Delete')
+    await vi.waitFor(() => expect(handle.getDraft()).toBe('  '))
+  })
+})
+
 describe('@ picker', () => {
   it('lists matching folders ahead of files', () => {
     expect(
@@ -240,7 +314,7 @@ describe('@ picker', () => {
       press(prompt, 'Enter')
       expect(props.onSubmit).toHaveBeenCalledTimes(1)
       expect(options).toHaveLength(1)
-      await vi.waitFor(() => expect(handle.getDraft()).toBe('总结 @3-report.md '))
+      await vi.waitFor(() => expect(handle.getDraft()).toBe('总结  @3-report.md  '))
       // A file is a chip and a link, not a content reference.
       expect(references.getSnapshot()).toEqual([])
       expect(handle.getAttachmentBlocks()).toEqual([

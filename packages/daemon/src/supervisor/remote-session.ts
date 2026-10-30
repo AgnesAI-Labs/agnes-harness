@@ -214,12 +214,23 @@ export class RemoteSession {
     return this.link.command('undo', input)
   }
 
-  references(operation: 'search' | 'resolve', input: unknown): Promise<unknown> {
-    return this.link.command('references', { operation, input })
+  async references(operation: 'search' | 'resolve', input: unknown, signal?: AbortSignal): Promise<unknown> {
+    signal?.throwIfAborted()
+    const runId = signal ? `reference:${randomUUID()}` : undefined
+    const abort = () => {
+      if (runId) void this.link.command('abort', { runId }).catch(() => undefined)
+    }
+    signal?.addEventListener('abort', abort, { once: true })
+    try {
+      return await this.link.command('references', { operation, input, ...(runId ? { runId } : {}) })
+    } finally {
+      signal?.removeEventListener('abort', abort)
+      abort()
+    }
   }
 
-  workspaceFiles(operation: 'list' | 'read', path: string): Promise<unknown> {
-    return this.link.command('workspaceFiles', { operation, path })
+  workspaceFiles(operation: 'list' | 'read', path: string, browse = false): Promise<unknown> {
+    return this.link.command('workspaceFiles', { operation, path, browse })
   }
 
   readonly controls = {

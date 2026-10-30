@@ -254,10 +254,42 @@ describe('W3b projected message DOM', () => {
     expect(user?.querySelector('[data-testid="reference-session-link"]')?.getAttribute('href')).toBe(
       '?session=previous%2Fsession',
     )
+    expect(user?.querySelector('[data-testid="reference-session-link"]')?.textContent).not.toContain('@session')
+    expect(user?.querySelector('[data-testid="reference-session-link"] svg')).not.toBeNull()
+    expect(user?.classList.contains('reference-only-user-message')).toBe(false)
     expect(user?.querySelector('[data-testid="reference-sent-chip"]')?.textContent).toContain('摘录已截断')
     expect(user?.querySelector('script')).toBeNull()
     expect(assistant?.querySelector('.thinking')?.textContent).toContain('Checking the result')
     expect(assistant?.querySelector('.node-body')?.textContent).toContain('Streaming answer')
+  })
+
+  it('leaves a reference-only user message without the redundant outer bubble', async () => {
+    const store = createConversationProjectionStore({
+      sessionId: 'session',
+      nodes: [
+        {
+          kind: 'user',
+          id: 'reference-only',
+          seq: 1,
+          content: [
+            {
+              type: 'text',
+              text: 'UNTRUSTED REFERENCE: excerpt',
+              reference: {
+                source: 'session',
+                id: 'previous/session',
+                label: 'Previous discussion',
+                hash: 'b'.repeat(64),
+                truncated: false,
+              },
+            },
+          ],
+        },
+      ],
+    })
+    await mount(store)
+
+    expect(item('reference-only')?.classList.contains('reference-only-user-message')).toBe(true)
   })
 
   it('draws the reader on the right in one bubble and leaves every other row without a bubble', async () => {

@@ -93,7 +93,9 @@
   .composer-mention-layer {
     position: absolute;
     z-index: 2;
-    overflow: hidden;
+    /* Keep scrolled text clipped while allowing the mention's close badge above the first line. */
+    overflow: clip;
+    overflow-clip-margin: 0.625rem;
     pointer-events: none;
   }
   .composer-mention-text {
@@ -106,27 +108,61 @@
   }
   .composer-mention {
     position: relative;
-    border-radius: var(--radius-sm);
     color: var(--agnes-brand-primary);
-    /* Opaque, so the textarea's own letters underneath do not show through. */
-    background: color-mix(in srgb, var(--agnes-brand-primary) 10%, var(--agnes-bg-surface));
-    box-shadow: 0 0 0 0.125rem color-mix(in srgb, var(--agnes-brand-primary) 10%, var(--agnes-bg-surface));
+      font-weight: var(--font-weight-semibold);
+      /* Cover the literal `@name` in the textarea before drawing its inline file marker. */
+      background: var(--agnes-bg-surface);
     pointer-events: auto;
     cursor: default;
   }
   .composer-mention-at {
-    position: relative;
-    color: transparent;
+      display: inline-block;
+      width: 0.625em;
+      height: 1em;
+      vertical-align: text-bottom;
   }
   .composer-mention-icon {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 0.875rem;
-    height: 0.875rem;
+      display: block;
+      width: 0.625em;
+      height: 0.625em;
+      margin-top: 0.1875em;
     color: var(--agnes-brand-primary);
-    transform: translate(-50%, -50%);
+      transform: scale(1.4);
+      transform-origin: right center;
   }
+  /* A selected skill keeps its literal `$name` in the draft, while the overlay renders a light,
+     link-like sparkle marker instead of a second opaque input chip. */
+  .composer-skill-mention {
+    position: relative;
+      cursor: pointer;
+      pointer-events: auto;
+    color: var(--agnes-brand-primary);
+    font-weight: var(--font-weight-semibold);
+      /* Cover the literal `$name` in the textarea before drawing the marker over it. */
+      background: var(--agnes-bg-surface);
+  }
+  .composer-skill-mention-prefix {
+      display: inline-block;
+      width: 0.625em;
+      height: 1em;
+      vertical-align: text-bottom;
+  }
+  .composer-skill-mention-icon {
+      display: block;
+      width: 0.625em;
+      height: 0.625em;
+      margin-top: 0.1875em;
+    color: var(--agnes-brand-primary);
+      transform: scale(1.4);
+      transform-origin: right center;
+  }
+    .composer-skill-detail { display: grid; gap: 1.25rem; }
+    .composer-skill-detail-mark { display: inline-grid; width: 3rem; height: 3rem; place-items: center; border-radius: 1rem; color: var(--agnes-brand-primary); background: var(--agnes-brand-emphasis-soft); }
+    .composer-skill-detail h3 { margin: -0.75rem 0 0; color: var(--agnes-text-primary); font-size: var(--font-size-xl); overflow-wrap: anywhere; }
+    .composer-skill-detail dl { display: grid; gap: 1rem; margin: 0; }
+    .composer-skill-detail dl > div { display: grid; gap: 0.375rem; padding: 0.875rem; border: 1px solid var(--agnes-line-primary); border-radius: var(--radius-md); background: var(--agnes-bg-subtle); }
+    .composer-skill-detail dt { color: var(--agnes-text-secondary); font-size: var(--font-size-xs); font-weight: var(--font-weight-semibold); }
+    .composer-skill-detail dd { margin: 0; color: var(--agnes-text-primary); overflow-wrap: anywhere; }
   .composer-mention > .composer-mention-remove.agh-btn.agh-btn--sm {
     position: absolute;
     top: -0.5rem;

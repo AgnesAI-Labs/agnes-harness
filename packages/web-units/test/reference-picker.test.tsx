@@ -52,7 +52,8 @@ it('navigates a combobox, selects locators without submitting', async () => {
       ),
     )
   await act(async () => render(false))
-  const input = textarea.current!
+  const input = textarea.current
+  if (!input) throw new Error('Missing textarea')
   const query = async (value: string) => {
     await act(async () => {
       input.value = value
@@ -73,11 +74,39 @@ it('navigates a combobox, selects locators without submitting', async () => {
   await query('@')
   expect(input.getAttribute('role')).toBe('combobox')
   expect(input.getAttribute('aria-expanded')).toBe('true')
-  expect(document.getElementById(input.getAttribute('aria-controls')!)?.getAttribute('role')).toBe('listbox')
+  expect(document.getElementById(input.getAttribute('aria-controls') ?? '')?.getAttribute('role')).toBe(
+    'listbox',
+  )
+  expect(host.querySelector('.reference-popup')?.getAttribute('data-layout')).toBe('overview')
+  expect(host.querySelectorAll('[data-testid="reference-option"]')).toHaveLength(2)
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('.reference-layout-switch button:nth-child(2)')?.click()
+  })
+  expect(host.querySelector('.reference-popup')?.getAttribute('data-layout')).toBe('tabs')
+  expect(host.querySelectorAll('[data-testid="reference-option"]')).toHaveLength(1)
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('.reference-source-tabs button:nth-child(2)')?.click()
+  })
+  expect(host.querySelector('[data-testid="reference-option"]')?.textContent).toContain('Previous')
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('.reference-layout-switch button:nth-child(3)')?.click()
+  })
+  expect(host.querySelectorAll('.reference-source-choice')).toHaveLength(3)
+  await key('ArrowDown')
+  await key('Enter')
+  expect(host.querySelector('[data-testid="reference-option"]')?.textContent).toContain('Previous')
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('.reference-layout-switch button:first-child')?.click()
+  })
   await key('ArrowDown')
   expect(host.querySelector('[aria-selected="true"]')?.textContent).toContain('Previous')
   expect((await key('Enter')).defaultPrevented).toBe(true)
   expect(adapter.getSnapshot()).toEqual([candidates[1]])
+  const selectedSession = host.querySelector<HTMLElement>('[data-testid="reference-draft-chips"] li')
+  expect(selectedSession?.getAttribute('data-source')).toBe('session')
+  expect(selectedSession?.textContent).toContain('Previous')
+  expect(selectedSession?.textContent).not.toContain('@session')
+  expect(selectedSession?.querySelector('svg')).toBeTruthy()
   // The consumed `@query` is handed back to the owner as one edit.
   expect(edit).toHaveBeenLastCalledWith(0, 1, '')
   expect(input.value).toBe('')
@@ -125,4 +154,135 @@ it('bounds and deduplicates draft references and refuses stale search results af
     { source: 'file', id: 'same', label: 'Same' },
   ])
   expect(adapter.getSnapshot()).toHaveLength(1)
+})
+
+it('previews bounded groups and expands the current results without another search', async () => {
+  const search = vi.fn(async () => ({
+    items: [
+      ...['a', 'b', 'c', 'd'].map((id) => ({ source: 'file', id, label: id })),
+      ...['one', 'two', 'three'].map((id) => ({ source: 'session', id, label: id })),
+      { source: 'kb', id: 'article', label: 'Article' },
+    ],
+    truncated: false,
+  }))
+  const textarea = createRef<HTMLTextAreaElement>()
+  await act(async () =>
+    root.render(
+      createElement(
+        'div',
+        null,
+        createElement(ReferencePicker, {
+          textarea,
+          edit: vi.fn(),
+          adapter: createComposerReferences(search),
+          t: (key: string) => composerLocaleCatalog.en[key] ?? key,
+          disabled: false,
+        }),
+        createElement(SettingsTextArea, { ref: textarea }),
+      ),
+    ),
+  )
+  const input = textarea.current
+  if (!input) throw new Error('Missing textarea')
+  await act(async () => {
+    input.value = '@'
+    input.setSelectionRange(1, 1)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await vi.advanceTimersByTimeAsync(120)
+  })
+  expect(host.querySelectorAll('[data-testid="reference-option"]')).toHaveLength(6)
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('.reference-group-heading button')?.click()
+  })
+  expect(host.querySelectorAll('[data-testid="reference-option"]')).toHaveLength(7)
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('.reference-layout-switch button:nth-child(2)')?.click()
+  })
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('.reference-source-tabs button:nth-child(3)')?.click()
+  })
+  expect(host.querySelectorAll('[data-testid="reference-option"]')).toHaveLength(5)
+  await act(async () => {
+    host.querySelector<HTMLButtonElement>('.reference-group-heading button')?.click()
+  })
+  expect(host.querySelectorAll('[data-testid="reference-option"]')).toHaveLength(8)
+  expect(search).toHaveBeenCalledTimes(1)
+})
+
+it('starts the latest search without waiting for an older request to settle', async () => {
+  let releaseFirst!: (value: { items: []; truncated: false }) => void
+  const signals: AbortSignal[] = []
+  const queries: string[] = []
+  const adapter = createComposerReferences((query, signal) => {
+    queries.push(query)
+    signals.push(signal)
+    return query === 'old'
+      ? new Promise((resolve) => {
+          releaseFirst = resolve
+        })
+      : Promise.resolve({ items: [], truncated: false })
+  })
+  const old = adapter.search('old')
+  const oldRejected = expect(old).rejects.toThrow('scope changed')
+  await vi.waitFor(() => expect(queries).toEqual(['old']))
+  await expect(adapter.search('new')).resolves.toEqual({ items: [], truncated: false })
+  expect(queries).toEqual(['old', 'new'])
+  expect(signals[0]?.aborted).toBe(true)
+  releaseFirst({ items: [], truncated: false })
+  await oldRejected
+})
+
+it('enters a folder, returns to its parent, and selects its location with Tab', async () => {
+  const search = vi.fn(async (query: string) => ({
+    items:
+      query === ''
+        ? [{ source: 'folder', id: 'src', label: 'src' }]
+        : query === 'packages/'
+          ? [{ source: 'folder', id: 'packages/@scope', label: 'packages/@scope' }]
+          : [{ source: 'file', id: 'src/main.ts', label: 'src/main.ts' }],
+    truncated: false,
+  }))
+  const adapter = createComposerReferences(search)
+  const textarea = createRef<HTMLTextAreaElement>()
+  const chooseFile = vi.fn(() => true)
+  const edit = (start: number, end: number, value: string) =>
+    textarea.current?.setRangeText(value, start, end, 'end')
+  const t = (key: string) => composerLocaleCatalog.en[key] ?? key
+  await act(async () =>
+    root.render(
+      createElement(
+        'div',
+        null,
+        createElement(ReferencePicker, { textarea, edit, adapter, chooseFile, t, disabled: false }),
+        createElement(SettingsTextArea, { ref: textarea }),
+      ),
+    ),
+  )
+  const input = textarea.current
+  if (!input) throw new Error('Missing textarea')
+  const type = async (value: string) => {
+    await act(async () => {
+      input.value = value
+      input.setSelectionRange(value.length, value.length)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      await vi.advanceTimersByTimeAsync(120)
+    })
+  }
+  const key = async (name: string) => {
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }))
+      await vi.advanceTimersByTimeAsync(120)
+    })
+  }
+  await type('@')
+  await key('Enter')
+  expect(input.value).toBe('@src/')
+  await key('Backspace')
+  expect(input.value).toBe('@')
+  await key('Tab')
+  expect(chooseFile).toHaveBeenCalledWith('src', true, { start: 0, end: 1, query: '' })
+  await type('@packages/')
+  await key('Enter')
+  expect(input.value).toBe('@"packages/@scope/')
+  expect(search).toHaveBeenCalledWith('"packages/@scope/', expect.any(AbortSignal))
 })

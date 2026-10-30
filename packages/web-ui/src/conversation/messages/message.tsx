@@ -223,9 +223,13 @@ function MessageView({
 }) {
   const content = nativeContent(node, props, hideThinking, turnStatus, thinkingHost)
   const systemInput = isSystemInput(node)
+  const referenceOnly =
+    node.kind === 'user' &&
+    node.content.length > 0 &&
+    node.content.every((block) => block.type === 'text' && block.reference !== undefined)
   return (
     <article
-      className={`timeline-node ${systemInput ? 'system-input' : node.kind}`}
+      className={`timeline-node ${systemInput ? 'system-input' : node.kind}${referenceOnly ? ' reference-only-user-message' : ''}`}
       data-node-id={node.id}
       data-node-kind={systemInput ? 'system-input' : node.kind}
       hidden={isEmptyStreamingAssistant(node)}

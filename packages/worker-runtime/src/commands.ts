@@ -36,7 +36,7 @@ import { GRANT_COMMANDS, grantCommand } from './grant-commands.js'
 import type { McpRowRuntime } from './mcp-row-runtime.js'
 import { noticeConnectingMcp } from './mcp-turn-notice.js'
 import { deliverBoundSystemInput, isProfileCommand, profileServiceCommand } from './profile-commands.js'
-import { sessionReferences } from './references.js'
+import { commandReferences } from './references.js'
 import { sessionServiceCommand } from './service-commands.js'
 import { auditSessionHistory } from './session-integrity.js'
 import { SIDE_CALL_COMMANDS, workerSideCall } from './side-question.js'
@@ -373,9 +373,7 @@ export async function handleCommand(
     case 'fileUpload':
       return sessionFileUpload(session, p as import('@agnes/protocol').FileUploadRequest)
     case 'references':
-      if (p.operation !== 'search' && p.operation !== 'resolve')
-        throw new Error('Invalid reference operation')
-      return sessionReferences(session, p.operation, p.input as never)
+      return commandReferences(session, p.operation, p.input, p.runId, o.aborts)
     case 'workspaceChanges':
       return sessionWorkspaceChanges(session, p as Parameters<typeof sessionWorkspaceChanges>[1])
     case 'undoPreview':
@@ -384,7 +382,7 @@ export async function handleCommand(
       return sessionUndo(session, p as Parameters<typeof sessionUndo>[1])
     case 'workspaceFiles':
       if (p.operation !== 'list' && p.operation !== 'read') throw new Error('Invalid workspace operation')
-      return sessionWorkspaceFiles(session, p.operation, String(p.path ?? ''))
+      return sessionWorkspaceFiles(session, p.operation, String(p.path ?? ''), p.browse === true)
     case 'permissionContext':
       return session.permissionContext
     case 'ping':

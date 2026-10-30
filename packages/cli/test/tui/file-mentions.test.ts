@@ -16,7 +16,11 @@ describe('mentionToken', () => {
   it('reads the mention before the cursor, quoted or bare, only at the start of a word', () => {
     expect(mentionToken('see @src/a')).toEqual({ start: 4, query: 'src/a' })
     expect(mentionToken('@')).toEqual({ start: 0, query: '' })
-    expect(mentionToken('@"my no')).toEqual({ start: 0, query: 'my no' })
+    expect(mentionToken('@file src/')).toEqual({ start: 0, query: 'file src/' })
+    expect(mentionToken('@file "my notes/')).toEqual({ start: 0, query: 'file "my notes/' })
+    expect(mentionToken('@"my no')).toEqual({ start: 0, query: '"my no' })
+    expect(mentionToken('@"my notes/@scope/')).toEqual({ start: 0, query: '"my notes/@scope/' })
+    expect(mentionToken('@packages/@scope/')).toEqual({ start: 0, query: 'packages/@scope/' })
     expect(mentionToken('a@b')).toBeUndefined()
     expect(mentionToken('@src ')).toBeUndefined()
     expect(mentionToken('@"my notes.md" ')).toBeUndefined()
@@ -125,7 +129,11 @@ describe('listWorkspaceFiles', () => {
       writeFileSync(join(dir, '.aghignore'), '*.log\nnotes/\n')
       writeFileSync(join(dir, 'sub', '.aghignore'), 'b.md\n')
       execFileSync('git', ['add', 'tracked.log'], { cwd: dir })
-      symlinkSync(join(dir, 'kept.ts'), join(dir, 'link.ts'))
+      try {
+        symlinkSync(join(dir, 'kept.ts'), join(dir, 'link.ts'))
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error
+      }
       vi.stubEnv('AGH_HOME', join(dir, 'home'))
       expect((await listWorkspaceFiles(dir)).sort()).toEqual([
         '.aghignore',
@@ -189,7 +197,7 @@ describe('createMentionSource', () => {
       changed,
     })
     await settle(source, 'a', changed)
-    expect(search).toHaveBeenCalledWith('a')
+    expect(search).toHaveBeenCalledWith('a', { signal: expect.any(AbortSignal) })
     expect(source.get('a')).toEqual({ status: 'ready', items: [{ id: 'srv/a.ts', directory: false }] })
     // A session switch resets the source: the cached answer is dropped and the next `get` asks again.
     source.reset()
@@ -215,6 +223,35 @@ describe('createMentionSource', () => {
     })
   })
 
+  it('remote: browses only the requested directory and includes its folders', async () => {
+    const changed = vi.fn()
+    const search = vi.fn(async () => found('src/main.ts'))
+    const browse = vi.fn(async (path: string) => ({
+      path,
+      observedAt: new Date().toISOString(),
+      revision: 'test',
+      gitStatus: 'unavailable' as const,
+      truncated: false,
+      entries: [
+        { name: 'models', kind: 'directory' as const },
+        { name: 'main.ts', kind: 'file' as const },
+      ],
+    }))
+    const source = createMentionSource({
+      session: { searchReferences: search, workspaceBrowse: browse },
+      cwd: '/nonexistent/remote',
+      remote: true,
+      locale: 'en',
+      changed,
+    })
+    await settle(source, 'src/', changed)
+    expect(browse).toHaveBeenCalledWith('src', { signal: expect.any(AbortSignal) })
+    expect(source.get('src/').items).toEqual([
+      { id: 'src/models', directory: true },
+      { id: 'src/main.ts', directory: false },
+    ])
+  })
+
   it('failure reason is sanitized to one line', async () => {
     const changed = vi.fn()
     const source = createMentionSource({
@@ -228,7 +265,7 @@ describe('createMentionSource', () => {
     expect(source.get('q').reason).toBe('Cannot search files: boom [31mred')
   })
 
-  it('embedded: shows the local index until the daemon answers, then the daemon answer', async () => {
+  it('embedded: waits for the daemon before consulting the local fallback', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agh-mention-warm-'))
     try {
       writeFileSync(join(dir, 'local-note.md'), 'x')
@@ -242,12 +279,8 @@ describe('createMentionSource', () => {
         locale: 'en',
         changed,
       })
-      await vi.waitFor(() =>
-        expect(source.get('note')).toEqual({
-          status: 'ready',
-          items: [{ id: 'local-note.md', directory: false }],
-        }),
-      )
+      expect(source.get('note')).toEqual({ status: 'loading', items: [] })
+      await vi.waitFor(() => expect(search).toHaveBeenCalledOnce())
       answer(found('srv/note.ts'))
       await vi.waitFor(() =>
         expect(source.get('note').items).toEqual([{ id: 'srv/note.ts', directory: false }]),
@@ -257,7 +290,7 @@ describe('createMentionSource', () => {
     }
   })
 
-  it('asks the daemon one query at a time and skips the ones typed meanwhile', async () => {
+  it('starts a new query without waiting for the previous request', async () => {
     const changed = vi.fn()
     const answers: Array<() => void> = []
     const search = vi.fn(
@@ -272,17 +305,44 @@ describe('createMentionSource', () => {
       changed,
     })
     source.get('a')
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(1))
     source.get('ab')
     source.get('abc')
-    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(1))
-    answers[0]?.()
     await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(2))
+    answers[0]?.()
     expect(search.mock.calls.map(([query]) => query)).toEqual(['a', 'abc'])
     // The answer for 'a' must not be offered as a choice for the query still in flight.
     expect(source.get('abc')).toEqual({ status: 'loading', items: [] })
     answers[1]?.()
     await vi.waitFor(() => expect(source.get('abc').items).toEqual([{ id: 'abc.ts', directory: false }]))
     expect(search).toHaveBeenCalledTimes(2)
+  })
+
+  it('cancels an in-flight request when switching to a cached query', async () => {
+    const changed = vi.fn()
+    const answers = new Map<string, (value: ReturnType<typeof found>) => void>()
+    const search = vi.fn(
+      (query: string, _options?: { signal?: AbortSignal }) =>
+        new Promise<ReturnType<typeof found>>((done) => answers.set(query, done)),
+    )
+    const source = createMentionSource({
+      session: { searchReferences: search },
+      cwd: '/nonexistent/agh-mention-cached',
+      remote: true,
+      locale: 'en',
+      changed,
+    })
+    source.get('cached')
+    await vi.waitFor(() => expect(answers.has('cached')).toBe(true))
+    answers.get('cached')?.(found('cached.ts'))
+    await vi.waitFor(() => expect(source.get('cached').status).toBe('ready'))
+    source.get('inflight')
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(2))
+    const signal = search.mock.calls[1]?.[1]?.signal
+    expect(signal?.aborted).toBe(false)
+    expect(source.get('cached').status).toBe('ready')
+    expect(signal?.aborted).toBe(true)
+    answers.get('inflight')?.(found('inflight.ts'))
   })
 
   it('embedded: falls back to the local workspace only when the daemon lacks the method', async () => {

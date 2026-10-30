@@ -12,6 +12,7 @@ import { createRegionRenderer, useDocumentLanguage } from '@agnes/web-ui'
 import { ConversationUsage } from '@agnes/web-ui/conversation'
 import {
   Composer,
+  type ComposerDraftReferences,
   type ComposerDependencies,
   type ComposerHandle,
   type ComposerRegionOptions,
@@ -178,10 +179,12 @@ export function mountComposerRegion(
   const handle = { current: null as ComposerHandle | null }
   let view: ComposerView | undefined
   let draft = options.initialDraft ?? ''
+  let draftReferences: ComposerDraftReferences = options.initialDraftReferences ?? { files: [], skills: [] }
   const setHandle = (value: ComposerHandle | null): void => {
     handle.current = value
     if (!value) return
     value.setDraft(draft)
+    value.restoreDraftReferences(draftReferences)
     const next = view
     if (next)
       queueMicrotask(() => {
@@ -192,6 +195,7 @@ export function mountComposerRegion(
     ...options,
     onDraftChange: (value) => {
       draft = value
+      draftReferences = handle.current?.getDraftReferences() ?? draftReferences
       options.onDraftChange(value)
     },
   }
@@ -265,6 +269,9 @@ export function mountComposerRegion(
     getDraft() {
       return handle.current?.getDraft() ?? draft
     },
+    getDraftReferences() {
+      return handle.current?.getDraftReferences() ?? draftReferences
+    },
     getImageBlocks() {
       return handle.current?.getImageBlocks() ?? []
     },
@@ -283,6 +290,10 @@ export function mountComposerRegion(
     },
     restoreImageBlocks(images) {
       handle.current?.restoreImageBlocks(images)
+    },
+    restoreDraftReferences(references) {
+      draftReferences = references
+      handle.current?.restoreDraftReferences(references)
     },
     restoreAttachmentBlocks(attachments) {
       handle.current?.restoreAttachmentBlocks(attachments)
