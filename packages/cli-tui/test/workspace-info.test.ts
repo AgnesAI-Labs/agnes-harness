@@ -125,4 +125,40 @@ describe('workspace info for the composer rail', () => {
     expect(seen).toEqual(['r1', 'r2'])
     expect(calls).toBe(2)
   })
+
+  it('dispose aborts the probe in flight, waits for it to end and starts no other', async () => {
+    const seen: string[] = []
+    let calls = 0
+    let ended = false
+    const refresh = workspaceRefresher(
+      '/w',
+      (_cwd, signal) => {
+        calls++
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () =>
+            setTimeout(() => {
+              ended = true
+              reject(signal.reason)
+            }, 10),
+          )
+        })
+      },
+      (info) => seen.push(info.root),
+    )
+    refresh()
+    refresh()
+    await refresh.dispose()
+    expect(ended).toBe(true)
+    refresh()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls).toBe(1)
+    expect(seen).toEqual([])
+  })
+
+  it('the real probe ends its git child when the asker stops', async () => {
+    const stop = new AbortController()
+    const pending = readWorkspaceInfo(repo, { home, signal: stop.signal })
+    stop.abort()
+    expect(await pending).toEqual({ root: '~/agnes-harness', subpath: '' })
+  })
 })

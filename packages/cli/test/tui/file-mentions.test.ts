@@ -347,6 +347,7 @@ describe('createMentionSource', () => {
 
   it('embedded: falls back to the local workspace only when the daemon lacks the method', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agh-b7-embedded-'))
+    const sources: Array<{ dispose(): Promise<void> }> = []
     try {
       writeFileSync(join(dir, 'local-note.md'), 'x')
       const changed = vi.fn()
@@ -358,6 +359,7 @@ describe('createMentionSource', () => {
         locale: 'en',
         changed,
       })
+      sources.push(source)
       await settle(source, 'local', changed)
       await vi.waitFor(() =>
         expect(source.get('local').items).toEqual([{ id: 'local-note.md', directory: false }]),
@@ -370,8 +372,11 @@ describe('createMentionSource', () => {
         locale: 'en',
         changed,
       })
+      sources.push(failing)
       await vi.waitFor(() => expect(failing.get('local').status).toBe('failed'))
     } finally {
+      // Disposing ends any git listing still running in `dir`; Windows cannot remove a folder a process runs in.
+      await Promise.all(sources.map((source) => source.dispose()))
       rmSync(dir, { recursive: true, force: true })
     }
   })

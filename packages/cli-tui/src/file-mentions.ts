@@ -1,4 +1,3 @@
-import { execFile } from 'node:child_process'
 import { type Dirent, statSync } from 'node:fs'
 import { lstat, readdir, realpath } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -12,7 +11,7 @@ import {
   type SessionWorkspaceListResult,
   WORKSPACE_SECRET_DIRS,
 } from '@agnes/protocol'
-import { gitCommand } from './git-command.js'
+import { execGit } from './git-command.js'
 import type { Locale } from './locale.js'
 import { tt } from './locale-extended.js'
 
@@ -54,19 +53,17 @@ const STALE_MS = 5_000
 // Never worth offering, and the reason a walk outside git would take forever.
 const SKIPPED = new Set(['node_modules'])
 
-/** One fixed-argument git call without a shell; any failure or timeout reads as no answer. */
-function gitFiles(cwd: string, args: string[]): Promise<string[] | undefined> {
+/**
+ * One fixed-argument git call without a shell; any failure or timeout reads as no answer. An abort
+ * kills it: the child runs in `cwd`, and Windows cannot remove a folder some process runs in.
+ */
+function gitFiles(cwd: string, args: string[], signal?: AbortSignal): Promise<string[] | undefined> {
   // A bare `git` on Windows would first run any git.exe in the folder being listed.
-  const program = gitCommand(cwd)
-  if (!program) return Promise.resolve(undefined)
-  return new Promise((done) => {
-    execFile(
-      program,
-      ['ls-files', '-z', ...args],
-      { cwd, encoding: 'utf8', windowsHide: true, timeout: 10_000, maxBuffer: 64 * 1024 * 1024 },
-      (error, out) => done(error ? undefined : out.split('\0').filter(Boolean)),
-    )
-  })
+  return execGit(cwd, ['ls-files', '-z', ...args], {
+    timeout: 10_000,
+    maxBuffer: 64 * 1024 * 1024,
+    ...(signal ? { signal } : {}),
+  }).then((out) => out?.split('\0').filter(Boolean))
 }
 
 const inside = (root: string, path: string): boolean => {
@@ -80,7 +77,7 @@ const inside = (root: string, path: string): boolean => {
  * folders or a symbolic link, and inside git nothing `.gitignore` or `.aghignore` hides. Git answers
  * inside a repository; elsewhere a bounded walk does, without ignore files. Runs without a shell.
  */
-export async function listWorkspaceFiles(cwd: string): Promise<string[]> {
+export async function listWorkspaceFiles(cwd: string, signal?: AbortSignal): Promise<string[]> {
   if (process.env.AGNES_HOME?.trim())
     throw new Error(
       'AGNES_HOME is no longer supported; unset it and select a new, empty AGH_HOME (clean home).',
@@ -96,21 +93,27 @@ export async function listWorkspaceFiles(cwd: string): Promise<string[]> {
   // tracked files either ignore file matches, and the untracked ones `.aghignore` matches (whole
   // folders as `dir/`), are taken out afterwards.
   const [listed, ignored, aghTracked] = await Promise.all([
-    gitFiles(root, ['--cached', '--others', '--exclude-standard']),
-    gitFiles(root, ['--cached', '--ignored', '--exclude-standard']),
-    gitFiles(root, ['--cached', '--ignored', '--exclude-per-directory=.aghignore']),
+    gitFiles(root, ['--cached', '--others', '--exclude-standard'], signal),
+    gitFiles(root, ['--cached', '--ignored', '--exclude-standard'], signal),
+    gitFiles(root, ['--cached', '--ignored', '--exclude-per-directory=.aghignore'], signal),
   ])
+  signal?.throwIfAborted()
   // Walking untracked files against `.aghignore` alone descends into everything `.gitignore` hides,
   // so it runs only where a `.aghignore` exists, and never into node_modules.
   const aghUntracked = listed?.some((rel) => rel === '.aghignore' || rel.endsWith('/.aghignore'))
-    ? await gitFiles(root, [
-        '--others',
-        '--ignored',
-        '--directory',
-        '--exclude-per-directory=.aghignore',
-        '--exclude=node_modules',
-      ])
+    ? await gitFiles(
+        root,
+        [
+          '--others',
+          '--ignored',
+          '--directory',
+          '--exclude-per-directory=.aghignore',
+          '--exclude=node_modules',
+        ],
+        signal,
+      )
     : []
+  signal?.throwIfAborted()
   if (listed) {
     const drop = new Set([...(ignored ?? []), ...(aghTracked ?? []), ...(aghUntracked ?? [])])
     const folders = [...drop].filter((rel) => rel.endsWith('/'))
@@ -226,9 +229,11 @@ export class FileMentionSource {
   private loadedAt = Number.NEGATIVE_INFINITY
   private disposed = false
   private ranked: { query: string; state: MentionState } | undefined
+  private readonly stopping = new AbortController()
+  private listing: Promise<void> | undefined
 
   constructor(
-    private readonly list: () => Promise<readonly string[]>,
+    private readonly list: (signal: AbortSignal) => Promise<readonly string[]>,
     private readonly changed: () => void,
     private readonly now: () => number = Date.now,
   ) {}
@@ -241,14 +246,18 @@ export class FileMentionSource {
     return this.ranked.state
   }
 
-  dispose(): void {
+  /** Stops a listing in flight and settles once it has (its git children have exited). */
+  dispose(): Promise<void> {
     this.disposed = true
+    this.stopping.abort()
+    return this.listing ?? Promise.resolve()
   }
 
   private refresh(): void {
+    if (this.disposed) return
     this.loading = true
-    Promise.resolve()
-      .then(() => this.list())
+    this.listing = Promise.resolve()
+      .then(() => this.list(this.stopping.signal))
       .then(
         (files) => {
           this.entries = indexOf(files)
@@ -306,7 +315,7 @@ export class ReferenceMentionSource {
     private readonly search: (query: string, signal: AbortSignal) => Promise<ReferenceSearchResult>,
     private readonly changed: () => void,
     private readonly describe: (error: unknown) => string,
-    private readonly fallback?: { get(query: string): MentionState; dispose(): void },
+    private readonly fallback?: { get(query: string): MentionState; dispose(): void | Promise<void> },
     private readonly now: () => number = Date.now,
     private readonly browse?: (path: string, signal: AbortSignal) => Promise<SessionWorkspaceListResult>,
   ) {}
@@ -330,10 +339,10 @@ export class ReferenceMentionSource {
     this.active = undefined
   }
 
-  dispose(): void {
+  dispose(): Promise<void> {
     this.disposed = true
     this.cancel()
-    this.fallback?.dispose()
+    return Promise.resolve(this.fallback?.dispose())
   }
 
   /** Forget what the previous session answered; the next `get` asks the current one. */
@@ -434,7 +443,7 @@ export function createMentionSource(o: {
     (query, signal) => current().searchReferences(query, { signal }),
     o.changed,
     describe,
-    o.remote ? undefined : new FileMentionSource(() => listWorkspaceFiles(o.cwd), o.changed),
+    o.remote ? undefined : new FileMentionSource((signal) => listWorkspaceFiles(o.cwd, signal), o.changed),
     Date.now,
     workspaceBrowse
       ? (path, signal) => {

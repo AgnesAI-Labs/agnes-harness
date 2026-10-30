@@ -75,7 +75,7 @@ import { UsagePanel } from './views/usage-panel.js'
 import { Vim } from './vim-mode.js'
 import { WelcomeController } from './welcome-controller.js'
 import { WindowTitle } from './window-title.js'
-import { readWorkspaceInfo, tildePath, workspaceRefresher } from './workspace-info.js'
+import { probeWorkspace, tildePath, workspaceRefresher } from './workspace-info.js'
 import { WorktreeKeeper } from './worktree.js'
 
 export { formatTuiErrorNotice } from './error-notice.js'
@@ -185,7 +185,7 @@ export class TuiApp {
   get cancelUnconfirmed(): boolean {
     return this.interrupts.unconfirmed
   }
-  readonly refreshWorkspace: () => void
+  readonly refreshWorkspace: (() => void) & { dispose(): Promise<void> }
   /** The worktrees this run made; a session in one of them shows its branch on the rail. */
   readonly worktrees = new WorktreeKeeper()
   private readonly shown = (): string => this.worktrees.current()?.path ?? this.cwd
@@ -411,7 +411,7 @@ export class TuiApp {
     this.composer = new Composer(this.editor, ansi, locale, this.statusLine.config)
     this.composer.setWorkspace({ root: tildePath(this.cwd), subpath: '' })
     // At startup and after every turn (the agent may have switched branch); never blocks a frame.
-    this.refreshWorkspace = workspaceRefresher(this.shown, o.probeWorkspace ?? readWorkspaceInfo, (info) => {
+    this.refreshWorkspace = workspaceRefresher(this.shown, o.probeWorkspace ?? probeWorkspace, (info) => {
       this.composer.setWorkspace(info)
       this.welcome.workspace(info)
       if (!this.stopped) this.renderer.requestRender()
@@ -914,7 +914,7 @@ export class TuiApp {
   async stop(): Promise<void> {
     if (this.stopped) return
     this.stopped = true
-    this.mentions.dispose()
+    const children = Promise.all([this.mentions.dispose(), this.refreshWorkspace.dispose()]) // git in the workspace
     this.attachmentController.abort()
     this.mouse.dispose()
     this.clock.stop()
@@ -932,7 +932,7 @@ export class TuiApp {
       this.signals.stop()
       this.renderer.stop()
     } finally {
-      await this.projection.stop()
+      await Promise.all([this.projection.stop(), children])
     }
   }
 }
