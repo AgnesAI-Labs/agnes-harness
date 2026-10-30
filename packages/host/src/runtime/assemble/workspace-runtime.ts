@@ -376,15 +376,20 @@ export function createWorkspaceRuntimeFactory(
           history !== undefined && !inheritedStart,
         )
       },
-      openWorkspace: adapters.openWorkspace,
+      openWorkspace: async (workspaceBinding) => {
+        // The Linux mount anchor exists before the workspace measures its case semantics. The probe
+        // needs an entry to respell: creating `.agh` later would turn a fresh, empty workspace from
+        // case-insensitive to case-sensitive between two opens and change its policy digest.
+        if (!adapters.transport && adapters.platform.os === 'linux')
+          await prepareSandboxWorkspaceAncestor(workspaceBinding.canonicalRoot)
+        return adapters.openWorkspace(workspaceBinding)
+      },
       openFence: async (workspace) => {
         fence = await adapters.openFence(workspace)
         return fence
       },
       compilePolicy: async (openedFence: WorkspaceRuntimeFence) => {
         const sessionFence = openedFence as SessionWorkspaceFence
-        if (!adapters.transport && adapters.platform.os === 'linux')
-          await prepareSandboxWorkspaceAncestor(sessionFence.root)
         const compiled = await compileWorkspacePolicy({
           canonicalRoot: sessionFence.root,
           dataDir,
