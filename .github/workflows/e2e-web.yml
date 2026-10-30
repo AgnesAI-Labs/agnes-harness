@@ -29,8 +29,9 @@ jobs:
           - { id: main-6, args: "runtime.spec.ts" }
           - { id: main-7, args: "ui-flows.spec.ts --grep 'UI first run|UI MCP stdio|UI ask, plan|UI background jobs'" }
           - { id: main-13, args: "ui-flows.spec.ts --grep-invert 'UI first run|UI MCP stdio|UI ask, plan|UI background jobs'" }
-          - { id: main-8, args: "ui-gate.spec.ts --grep 'section en/'" }
-          - { id: main-14, args: "ui-gate.spec.ts --grep-invert 'section en/'" }
+          - { id: main-8, args: "ui-gate.spec.ts --grep ' en/(light|dark)$'" }
+          - { id: main-14, args: "ui-gate.spec.ts --grep 'zh-CN/light$|live language switching'" }
+          - { id: main-19, args: "ui-gate.spec.ts --grep 'zh-CN/dark$'" }
           - { id: main-9, args: "workbench.spec.ts --grep 'workspace dock|file tabs open|session terminal'" }
           - { id: main-15, args: "workbench.spec.ts --grep-invert 'workspace dock|file tabs open|session terminal'" }
           - { id: main-10, args: "human-controls.spec.ts references.spec.ts intelligent-ui.spec.ts question-surfaces.spec.ts large-upload.spec.ts credentials.spec.ts observability.spec.ts" }
@@ -98,8 +99,9 @@ jobs:
           - { id: main-7, args: "runtime.spec.ts" }
           - { id: main-8, args: "ui-flows.spec.ts --grep 'UI first run|UI MCP stdio|UI ask, plan|UI background jobs'" }
           - { id: main-9, args: "ui-flows.spec.ts --grep-invert 'UI first run|UI MCP stdio|UI ask, plan|UI background jobs'" }
-          - { id: main-10, args: "ui-gate.spec.ts --grep 'section en/'" }
-          - { id: main-11, args: "ui-gate.spec.ts --grep-invert 'section en/'" }
+          - { id: main-10, args: "ui-gate.spec.ts --grep ' en/(light|dark)$'" }
+          - { id: main-11, args: "ui-gate.spec.ts --grep 'zh-CN/light$|live language switching'" }
+          - { id: main-16, args: "ui-gate.spec.ts --grep 'zh-CN/dark$'" }
           - { id: main-12, args: "v3-actions.spec.ts" }
           - { id: main-13, args: "v3-navigation.spec.ts" }
           - { id: main-14, args: "workbench.spec.ts --grep 'workspace dock|file tabs open|session terminal'" }

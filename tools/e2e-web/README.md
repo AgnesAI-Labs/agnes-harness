@@ -58,17 +58,19 @@ separate from this gate.
 ## Gate and failure evidence
 
 The required GitHub status is **Web E2E gate** from `.github/workflows/e2e-web.yml`. It aggregates
-all twenty-three macOS 14 and nineteen Linux Web jobs, all six Linux fast-test shards and the separate
+all twenty-four macOS 14 and twenty Linux Web jobs, all six Linux fast-test shards and the separate
 Linux contracts job (including `pnpm test:story`) and three migrated-heavy shards; a failed or
-cancelled dependency fails the aggregate. macOS uses eighteen explicit file/flow lists for regular
+cancelled dependency fails the aggregate. macOS uses nineteen explicit file/flow lists for regular
 cases, plus one candidate-review job and four single-case narrow locale/theme jobs. Linux uses
-fifteen explicit lists plus the same four narrow jobs; Playwright's count-based `--shard` cannot
+sixteen explicit lists plus the same four narrow jobs; Playwright's count-based `--shard` cannot
 balance cases that range from two seconds to three minutes. The lists balance observed
 hosted-runner durations, including build and quality prechecks (about two minutes on macOS, one
 on Linux), so each list's cases take at most about six and a half minutes: multi-minute candidate
 review and narrow flows need separate budgets, first-run checks split by locale, and a spec too
 long for one job (`ui-flows`, `ui-gate`, `workbench`, `v3-actions`, `v3-navigation`) is split by
-title with a `--grep` list and its exact `--grep-invert` complement. Every job retains one
+title with `--grep` lists that together select each case once. The `ui-gate` page matrix also
+checks its settings pages in two halves per locale/theme, because one pass took 130-165 s of its
+150 s deadline. Every job retains one
 worker, all checks, and the existing deadlines. Linux Web jobs run the functional, accessibility
 and layout assertions without a pixel gate: Linux renders must come from the CI image and cannot
 be reviewed locally, so the pixel gate is macOS only. The v3 specs cover full-page navigation, session
