@@ -133,7 +133,9 @@ CLI、Web 与 SDK 共享同一套后台会话。在终端用 `/resume <id>` 恢�
 
 请 Agent 起草 Skill 或插件、运行测试，再由人审阅文件与权限后发布。来源记录保留起草会话与人工审阅信息。文件记忆可以保存工作区偏好，Agent 的记忆访问默认关闭。
 
-![人工审阅 Agent 起草的插件候选](docs/assets/readme/candidate-review-zh-CN-light.png)
+<p align="center">
+  <img src="docs/assets/readme/candidate-review.zh-CN.webp" alt="Agent 起草 refund_window 插件、运行测试并提交；在插件的待审阅里，人查看文件与权限后批准发布" width="100%" />
+</p>
 
 [运行技能成长演示](examples/demos/growing-skills/README.zh-CN.md) · [候选审阅](docs/extend/agent-built-plugins.zh-CN.md) · [Skills](docs/guide/skills.zh-CN.md) · [记忆](docs/guide/memory.zh-CN.md)
 
@@ -263,7 +265,7 @@ AGH 当前为开发者预览。
 普通后端插件作为受信代码在进程内运行，所以只安装你信任的插件包。审批与命令沙箱作用于相应的受支持执行路径，并不隔离任意插件代码。
 
 **可以用哪些模型？**
-模型经模型账户与模型适配器插件接入，可用能力由各家的模型目录决定。本页演示使用 Agnes AI `agnes-3.0-flash` 录制；不同模型的质量与工具选择会有差异。
+模型经模型账户与模型适配器插件接入，可用能力由各家的模型目录决定。本页演示使用 Agnes AI `agnes-3.0-flash` 录制（“Agent 起草插件”一段使用 `agnes-2.5-pro`）；不同模型的质量与工具选择会有差异。
 
 **MHS 现在能控制设备吗？**
 本版本中 MHS 正以官方插件的形式接入。即使接入完成，在 AGH 中取消任务也不等于设备已安全停止；互锁与急停由设备控制器负责。
