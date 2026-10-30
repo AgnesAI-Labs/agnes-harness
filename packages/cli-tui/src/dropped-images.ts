@@ -14,6 +14,8 @@ const MAX_DROPPED = 10
  * The words of a pasted line the way a shell would split them: whitespace or newlines separate,
  * quotes group, and a backslash escapes the next character when that is not a letter or digit (so
  * the `\ ` and `\(` of a terminal's dropped file survive, and a Windows `C:\Users` is left alone).
+ * In a word that starts with a drive (`D:`) a backslash is the separator before any other name,
+ * as in `D:\a\_temp` or `C:\Users\me\.config`; only an escaped space is still read as one.
  */
 function words(raw: string): string[] | undefined {
   const out: string[] = []
@@ -22,7 +24,8 @@ function words(raw: string): string[] | undefined {
   for (let i = 0; i < raw.length; i++) {
     const c = raw.charAt(i)
     const next = raw.charAt(i + 1)
-    if (c === '\\' && quote !== "'" && next && !/[A-Za-z0-9]/.test(next)) {
+    const separator = /^[A-Za-z]:/.test(word ?? '') && !/\s/.test(next)
+    if (c === '\\' && quote !== "'" && next && !separator && !/[A-Za-z0-9]/.test(next)) {
       word = (word ?? '') + next
       i++
     } else if (quote) {
