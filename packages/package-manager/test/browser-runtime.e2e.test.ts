@@ -28,7 +28,7 @@ it.skipIf(process.env.AGH_BROWSER_TEST_CACHED !== '1')(
         .grid{display:grid;grid-template-columns:repeat(3,1fr)}
         @media(max-width:760px){.grid{grid-template-columns:1fr}}
         button{position:fixed;right:10px;bottom:10px;width:80px;height:50px;border:0;background:white}
-        p{height:48px;margin:0} </style><div class="grid"><div>一</div><div>二</div><div>三</div></div>
+        p{height:96px;margin:0} </style><div class="grid"><div>一</div><div>二</div><div>三</div></div>
         ${Array.from({ length: 150 }, (_, index) => `<p>清晰文字 Sharp scrolling ${index}</p>`).join('')}
         <button>0</button><script>let n=0;document.querySelector('button').onclick=e=>{e.target.textContent=++n;e.target.style.background=n%2?'rgb(0,128,0)':'white'}</script>`)
     })
