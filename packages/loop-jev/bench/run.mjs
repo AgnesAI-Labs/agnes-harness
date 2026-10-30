@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -368,6 +369,15 @@ const notRun = (cell, index, error, tools = []) => ({
 })
 
 /**
+ * On Linux, Host creates the `.agh` mount anchor before it confines a command, and bubblewrap leaves
+ * the mountpoints of masked paths (`.git`, `.agh/secrets`) behind as empty directories. They hold no
+ * files, so they do not make a fresh workspace non-empty; anything inside them still does.
+ */
+const SANDBOX_ANCHORS = ['.agh', '.git']
+const onlyEmptyDirectories = (path) =>
+  lstatSync(path).isDirectory() && readdirSync(path).every((name) => onlyEmptyDirectories(join(path, name)))
+
+/**
  * Runs every turn of one (scenario, lane, repetition) in a fresh session, in a fresh workspace under
  * the system temp directory. Afterwards the workspace is copied to `<out>/workspaces/<cell>` for
  * inspection and the temp one is removed.
@@ -417,7 +427,9 @@ async function runCellIn(ctx, cell, workspace, kept) {
     result.tools = listed.map((t) => t.name).sort()
     result.toolTokens = Math.ceil(Buffer.byteLength(JSON.stringify(listed)) / 3)
     const expected = generation ? ['.gitkeep'] : []
-    const present = readdirSync(workspace).sort()
+    const present = readdirSync(workspace)
+      .filter((name) => !(SANDBOX_ANCHORS.includes(name) && onlyEmptyDirectories(join(workspace, name))))
+      .sort()
     if (present.join('/') !== expected.join('/'))
       result.error = `workspace-not-empty: ${present.filter((n) => !expected.includes(n)).join(', ')}`
     for (const [index, turn] of scenario.turns.entries()) {
