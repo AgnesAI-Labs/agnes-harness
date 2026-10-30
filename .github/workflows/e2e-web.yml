@@ -46,6 +46,11 @@ jobs:
         with: { node-version-file: .node-version, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm run doctor:toolchain
+      # The gate's Vitest quality precheck needs the source native helpers; build:local builds its own.
+      - name: Native helpers
+        run: |
+          pnpm --filter @agnes/host build:native
+          pnpm --filter @agnes/system-node build:native
       - name: Restore Chromium cache
         id: browser-cache
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4

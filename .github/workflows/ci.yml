@@ -44,6 +44,10 @@ jobs:
       - run: pnpm run doctor:toolchain
       - run: pnpm lint
       - run: node tools/public-docs/verify.mjs
+      # Vitest's global setup refuses to collect any file until the native helpers are built for
+      # this runner (tools/native-test-setup.mjs), including the repository policy files below.
+      - run: pnpm --filter @agnes/host build:native
+      - run: pnpm --filter @agnes/system-node build:native
       # File/function ceilings and Host identity allowances are hard, compared with the protected base.
       # scope-line-count.test.ts only reports scope LOC deltas; growth is not a failure.
       - name: documentation examples and repository policy
@@ -238,10 +242,13 @@ jobs:
       - run: pnpm run doctor:toolchain
       - run: pnpm --filter @agnes/cli build:runtime
       - run: pnpm --filter @agnes/daemon build:runtime
-      # This source-level Host test loads native seams outside the packaged extension runner.
-      - name: build source native module for assembly acceptance
+      # This source-level Host test loads native seams outside the packaged extension runner, and
+      # Vitest's global setup requires both native products (tools/native-test-setup.mjs).
+      - name: build source native modules for assembly acceptance
         if: runner.os == 'macOS'
-        run: pnpm --filter @agnes/system-node build:native
+        run: |
+          pnpm --filter @agnes/host build:native
+          pnpm --filter @agnes/system-node build:native
       - name: exercise opt-in assembly with packaged runtime
         if: runner.os == 'macOS'
         run: pnpm exec vitest run packages/host/test/assemble/enabled-packages.test.ts
