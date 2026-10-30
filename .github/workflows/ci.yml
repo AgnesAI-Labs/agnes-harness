@@ -191,6 +191,24 @@ jobs:
         run: ./.github/scripts/prepare-windows-native.ps1 -CacheRoot "$env:RUNNER_TEMP/agnes-node-headers"
       - run: pnpm --filter @agnes/host build:native
       - run: pnpm --filter @agnes/system-node build:native
+      # Heavy tests confine real sessions, MCP children and candidate tests with bubblewrap, and
+      # drive a persistent zsh. The Ubuntu image ships neither, and its AppArmor policy blocks the
+      # unprivileged user namespaces bwrap needs; the script authorizes only /usr/bin/bwrap.
+      - name: Linux sandbox and shells
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update && sudo apt-get install -y bubblewrap zsh
+          bash tools/e2e-web/provision-linux-sandbox.sh
+      # The template scaffold tests link the preview SDK packages from their emitted declarations
+      # (docs/extend/quickstart.md, plus web-client for tool-with-panel). Only these projects
+      # are built, not the whole repository.
+      - name: build preview SDK declarations
+        run: pnpm exec tsc -b packages/plugin-runtime packages/protocol packages/resource-control-runtime packages/web-client
+      # The demo, agent-sweep and built-distribution gates start packages/cli/dist/local.
+      - run: pnpm --filter @agnes/cli build:local
+      # The multi-tab transport and agent-sweep tests launch the pinned Playwright Chromium.
+      - name: provision pinned Chromium
+        run: pnpm exec playwright install ${{ runner.os == 'Linux' && '--with-deps' || '' }} chromium
       # These tests start real processes and are the most sensitive to a loaded runner, so they
       # run with less file fan-out than the fast tier. The check job spreads Windows files over
       # three runners, but this job holds every heavy file on one; two at a time there starved each
