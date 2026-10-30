@@ -5,6 +5,10 @@ on:
     branches: [main, feat/agh-plugin-core, feat/agh-e2e-gate, feat/agh-e2e-ui-gate, fix/agh-linux, fix/agh-ci-green, fix/agh-ci-green-2]
   merge_group:
   workflow_dispatch:
+  # e2e-web-nightly.yml calls this file with suite: narrow-nightly to run only the full narrow matrix.
+  workflow_call:
+    inputs:
+      suite: { type: string, default: gate }
 permissions: { contents: read }
 env:
   AGNES_NATIVE_BUILDER: glibc228
@@ -41,13 +45,13 @@ jobs:
           - { id: main-12, args: "v3-navigation.spec.ts --grep 'permissions never flash|v3 home entries|v3 command-K|v3 archive filter|smoke en/'" }
           - { id: main-18, args: "v3-navigation.spec.ts --grep-invert 'permissions never flash|v3 home entries|v3 command-K|v3 archive filter|smoke en/'" }
           - { id: candidate-review, args: "candidate-review.spec.ts" }
-          - { id: narrow-en-light, args: "narrow.spec.ts --grep 'en/light$'" }
-          - { id: narrow-en-dark, args: "narrow.spec.ts --grep 'en/dark$'" }
-          - { id: narrow-zh-CN-light, args: "narrow.spec.ts --grep 'zh-CN/light$'" }
-          - { id: narrow-zh-CN-dark, args: "narrow.spec.ts --grep 'zh-CN/dark$'" }
+          # Per PR: en/light at the phone and tablet widths, which carry all twelve narrow captures.
+          # The nightly suite (e2e-web-nightly.yml) runs every locale/theme at all three widths.
+          - { id: narrow, args: "narrow.spec.ts --grep 'en/light$'", narrow-widths: "375,768" }
+    if: inputs.suite != 'narrow-nightly'
     runs-on: macos-14
     timeout-minutes: 15
-    steps:
+    steps: &macos-web-steps
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -70,7 +74,8 @@ jobs:
         if: steps.browser-cache.outputs.cache-hit != 'true'
         run: pnpm exec playwright install chromium
       - name: Real daemon and Web gate (zero retries)
-        timeout-minutes: 10
+        timeout-minutes: ${{ matrix.gate-minutes || 10 }}
+        env: { AGH_NARROW_WIDTHS: "${{ matrix.narrow-widths }}" }
         run: pnpm e2e:web ${{ matrix.args }} --workers=1
       - name: Upload report, screenshots, traces and process evidence
         if: always()
@@ -106,17 +111,15 @@ jobs:
           - { id: main-13, args: "v3-navigation.spec.ts" }
           - { id: main-14, args: "workbench.spec.ts --grep 'workspace dock|file tabs open|session terminal'" }
           - { id: main-15, args: "workbench.spec.ts --grep-invert 'workspace dock|file tabs open|session terminal'" }
-          - { id: narrow-en-light, args: "narrow.spec.ts --grep 'en/light$'" }
-          - { id: narrow-en-dark, args: "narrow.spec.ts --grep 'en/dark$'" }
-          - { id: narrow-zh-CN-light, args: "narrow.spec.ts --grep 'zh-CN/light$'" }
-          - { id: narrow-zh-CN-dark, args: "narrow.spec.ts --grep 'zh-CN/dark$'" }
+          - { id: narrow, args: "narrow.spec.ts --grep 'en/light$'", narrow-widths: "375,768" }
     # Explicit lists from hosted-Linux timings: count-based --shard cannot balance cases that take
     # two seconds to three minutes. Every case appears in exactly one list (README: Gate).
     # Functional, accessibility and layout assertions without a pixel gate (macOS owns it); layout
     # still depends on this image and its explicitly provisioned font families.
+    if: inputs.suite != 'narrow-nightly'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    steps:
+    steps: &linux-web-steps
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -152,7 +155,8 @@ jobs:
           node --input-type=module -e 'import { sourceHash, recordBuild } from "./tools/e2e-web/build-cache.mjs"; await recordBuild(await sourceHash())'
       - name: Real daemon and Web gate (zero retries)
         if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.chromium.outcome == 'success' }}
-        timeout-minutes: 10
+        timeout-minutes: ${{ matrix.gate-minutes || 10 }}
+        env: { AGH_NARROW_WIDTHS: "${{ matrix.narrow-widths }}" }
         run: pnpm e2e:web --reuse-build ${{ matrix.args }} --workers=1
       - name: Upload report, screenshots, traces and process evidence
         if: always()
@@ -168,6 +172,7 @@ jobs:
           retention-days: 14
   linux-contracts:
     name: Linux tests and structural guards
+    if: inputs.suite != 'narrow-nightly'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -213,6 +218,7 @@ jobs:
         run: pnpm exec vitest run packages/host-infrastructure/test/process-identity-linux.e2e.test.ts packages/base/extensions/sandbox/test/backend-linux.e2e.test.ts packages/host-infrastructure/test/sandbox-read-paths.e2e.test.ts packages/package-manager/test/local-watcher.slow.test.ts packages/host-infrastructure/test/adapters/storage-lock.e2e.test.ts --maxWorkers=1
   linux-fast:
     name: Linux fast tests (${{ matrix.shard }}/6)
+    if: inputs.suite != 'narrow-nightly'
     strategy:
       fail-fast: false
       matrix: { shard: [1, 2, 3, 4, 5, 6] }
@@ -264,6 +270,7 @@ jobs:
           if-no-files-found: error
   linux-migrated-heavy:
     name: Linux migrated heavy tests (${{ matrix.shard }}/3)
+    if: inputs.suite != 'narrow-nightly'
     strategy:
       fail-fast: false
       matrix: { shard: [1, 2, 3] }
@@ -291,7 +298,7 @@ jobs:
   web-e2e-gate:
     name: Web E2E gate
     needs: [e2e-web, e2e-web-linux, linux-contracts, linux-fast, linux-migrated-heavy]
-    if: always()
+    if: always() && inputs.suite != 'narrow-nightly'
     runs-on: ubuntu-latest
     timeout-minutes: 1
     steps:
@@ -308,3 +315,34 @@ jobs:
           test "$CONTRACTS_RESULT" = success
           test "$FAST_RESULT" = success
           test "$MIGRATED_HEAVY_RESULT" = success
+  # The full narrow matrix: every locale/theme at all three widths. Scheduled by e2e-web-nightly.yml,
+  # never a pull-request gate. One case takes 8-9 minutes on hosted runners, so the gate step gets
+  # 20 minutes here; the steps are the platform jobs' own (YAML anchors), not a copy.
+  e2e-web-narrow-nightly:
+    name: macOS Web E2E nightly (${{ matrix.id }})
+    if: inputs.suite == 'narrow-nightly'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: narrow-en-light, args: "narrow.spec.ts --grep 'en/light$'", gate-minutes: 20 }
+          - { id: narrow-en-dark, args: "narrow.spec.ts --grep 'en/dark$'", gate-minutes: 20 }
+          - { id: narrow-zh-CN-light, args: "narrow.spec.ts --grep 'zh-CN/light$'", gate-minutes: 20 }
+          - { id: narrow-zh-CN-dark, args: "narrow.spec.ts --grep 'zh-CN/dark$'", gate-minutes: 20 }
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps: *macos-web-steps
+  e2e-web-linux-narrow-nightly:
+    name: Linux Web E2E nightly (${{ matrix.id }})
+    if: inputs.suite == 'narrow-nightly'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: narrow-en-light, args: "narrow.spec.ts --grep 'en/light$'", gate-minutes: 20 }
+          - { id: narrow-en-dark, args: "narrow.spec.ts --grep 'en/dark$'", gate-minutes: 20 }
+          - { id: narrow-zh-CN-light, args: "narrow.spec.ts --grep 'zh-CN/light$'", gate-minutes: 20 }
+          - { id: narrow-zh-CN-dark, args: "narrow.spec.ts --grep 'zh-CN/dark$'", gate-minutes: 20 }
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps: *linux-web-steps

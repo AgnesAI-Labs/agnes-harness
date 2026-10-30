@@ -19,7 +19,22 @@ import {
 
 const phone = { width: 375, height: 812 }
 const tablet = { width: 768, height: 1024 }
-const viewports = [phone, { width: 390, height: 844 }, tablet]
+const allViewports = [phone, { width: 390, height: 844 }, tablet]
+/**
+ * AGH_NARROW_WIDTHS selects widths for the per-PR pass (`375,768`: the phone and tablet widths that
+ * carry every pixel capture). Unset, every width runs; the nightly workflow runs them all.
+ */
+const viewports = (() => {
+  const selected = process.env.AGH_NARROW_WIDTHS?.trim()
+  if (!selected) return allViewports
+  const widths = selected.split(',').map((width) => Number(width.trim()))
+  const unknown = widths.filter((width) => !allViewports.some((viewport) => viewport.width === width))
+  if (unknown.length || !widths.includes(phone.width) || !widths.includes(tablet.width))
+    throw new Error(
+      `AGH_NARROW_WIDTHS must list ${allViewports.map((v) => v.width).join('/')} and include 375 and 768`,
+    )
+  return allViewports.filter((viewport) => widths.includes(viewport.width))
+})()
 const sections = [
   'model',
   'models',

@@ -58,11 +58,11 @@ separate from this gate.
 ## Gate and failure evidence
 
 The required GitHub status is **Web E2E gate** from `.github/workflows/e2e-web.yml`. It aggregates
-all twenty-four macOS 14 and twenty Linux Web jobs, all six Linux fast-test shards and the separate
+all twenty-one macOS 14 and seventeen Linux Web jobs, all six Linux fast-test shards and the separate
 Linux contracts job (including `pnpm test:story`) and three migrated-heavy shards; a failed or
 cancelled dependency fails the aggregate. macOS uses nineteen explicit file/flow lists for regular
-cases, plus one candidate-review job and four single-case narrow locale/theme jobs. Linux uses
-sixteen explicit lists plus the same four narrow jobs; Playwright's count-based `--shard` cannot
+cases, plus one candidate-review job and one narrow job. Linux uses sixteen explicit lists plus the
+same narrow job; Playwright's count-based `--shard` cannot
 balance cases that range from two seconds to three minutes. The lists balance observed
 hosted-runner durations, including build and quality prechecks (about two minutes on macOS, one
 on Linux), so each list's cases take at most about six and a half minutes: multi-minute candidate
@@ -78,8 +78,23 @@ search and archive restoration, everyday and advanced settings, provider auto-te
 MCP installation, business-agent start, scheduled tasks and session-grant revocation on isolated
 Demo homes. Their page matrix checks both locales/themes and 390-pixel layouts. After adding specs or changing these lists,
 compare each platform's combined `pnpm e2e:web --list` selections with the full list: every case
-must appear exactly once. Uploads retain completed reports, screenshots and trace archives,
-excluding volatile Playwright scratch directories.
+must appear exactly once, counting the nightly narrow jobs below. Uploads retain completed reports,
+screenshots and trace archives, excluding volatile Playwright scratch directories.
+
+**Narrow screens: per PR and nightly.** One `narrow.spec.ts` case (a locale/theme at 375, 390 and
+768 pixels) takes eight to nine minutes on hosted runners, more than a gate step's ten. Each
+platform's gate therefore runs one narrow job: `narrow screens en/light` with
+`AGH_NARROW_WIDTHS=375,768`, the phone and tablet widths that carry all twelve narrow captures
+(the macOS pixel gate checks them), with every functional, tap-target, axe and translation check
+of those passes. `AGH_NARROW_WIDTHS` lists the widths to run; it must include 375 and 768, and
+unset it runs all three. `.github/workflows/e2e-web-nightly.yml` (daily, and on manual dispatch)
+calls this workflow with `suite: narrow-nightly`, which runs only the full narrow matrix: all four
+locale/theme cases at all three widths, on macOS and Linux, one job per case with a 20-minute gate
+step. Those jobs reuse the platform jobs' steps through YAML anchors and upload the same evidence.
+So per platform the PR gate's lists select every case exactly once except the three narrow cases
+`en/dark`, `zh-CN/light` and `zh-CN/dark`, which only the nightly jobs select, once each.
+`narrow screens en/light` is the one case both select: per PR at 375 and 768 pixels, nightly at
+all three widths. The en-dark and zh-CN narrow baselines are checked nightly. Run the nightly suite on a branch with `gh workflow run e2e-web-nightly.yml --ref BRANCH`.
 Maintainers must select that status in the target branch's required checks/ruleset; committing a
 workflow alone does not change GitHub branch protection. The workflow runs on pull requests,
 merge groups, integration/main pushes and manual dispatch, without path-based skips.

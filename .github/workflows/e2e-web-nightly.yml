@@ -1,0 +1,12 @@
+name: Web E2E nightly
+# The full narrow-screen matrix (every locale/theme at 375, 390 and 768 pixels) on macOS and Linux.
+# Pull requests run only its en/light phone and tablet pass; see tools/e2e-web/README.md (Gate).
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+permissions: { contents: read }
+jobs:
+  narrow:
+    uses: ./.github/workflows/e2e-web.yml
+    with: { suite: narrow-nightly }
