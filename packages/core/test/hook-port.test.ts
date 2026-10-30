@@ -2,12 +2,15 @@ import { platformFacts } from '@agnes/core-effects/effects/platform-facts'
 import type { HookContext, HookHandler } from '@agnes/extension-api'
 import { unavailableProjections } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
+import { HookBlockedError } from '../src/hooks/block.js'
 import { HOOK_UNHANDLED, HookEngine } from '../src/hooks/engine.js'
 import { type SessionHookInputs, SessionHookPort } from '../src/hooks/port.js'
 import { deriveRequest } from '../src/request/derive.js'
 import { createEnvelopeCache } from '../src/request/envelope-cache.js'
 import { isLedgerRequest } from '../src/request/mint.js'
+import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
+import { actor, openSession } from './helpers/open-session.js'
 
 const platform = platformFacts(fakeSeams().platform)
 const meta = { source: 'agnes/test', trust: 'trusted' as const }
@@ -20,8 +23,11 @@ const ctx = (): HookContext => ({
   log: { debug: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined },
   platform,
 })
-const setup = (overrides: Partial<SessionHookInputs> = {}) => {
-  const engine = new HookEngine({ diag: () => undefined, onFailure: () => undefined, platform })
+const setup = (
+  overrides: Partial<SessionHookInputs> = {},
+  diag: ConstructorParameters<typeof HookEngine>[0]['diag'] = () => undefined,
+) => {
+  const engine = new HookEngine({ diag, onFailure: () => undefined, platform })
   const overflow: unknown[] = []
   const ignoredPlans: unknown[] = []
   const port = new SessionHookPort(engine, {
@@ -83,6 +89,50 @@ const tool = {
 }
 
 describe('SessionHookPort', () => {
+  it('completes a turn after a context timeout and persists its diagnostic, then recovers on refresh', async () => {
+    vi.useFakeTimers()
+    try {
+      const { session, log } = await openSession({ provider: fakeProvider([textTurn('done')]) })
+      const { engine, port } = setup({}, (name, data) => session.diag(name, data))
+      let hang = true
+      engine.on(
+        'context',
+        async () => {
+          if (hang) await new Promise(() => {})
+          return { additionalContext: 'recovered' }
+        },
+        meta,
+      )
+      session.hooks = port
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
+      const running = session.run({ until: 'turn-end', signal: new AbortController().signal })
+      await vi.advanceTimersByTimeAsync(1501)
+      expect((await running).reason).toBe('completed')
+      expect((await log.scan({ type: 'x/core/hook-failed', limit: 10 })).map((e) => e.data)).toEqual([
+        { event: 'context', source: 'agnes/test', message: 'hook execution failed', failure: 'timeout' },
+      ])
+      hang = false
+      expect(await port.refreshContext([])).toMatchObject({ additionalContext: 'recovered' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('preserves deliberate blocked context policy decisions', async () => {
+    const { engine, port } = setup()
+    engine.on(
+      'context',
+      () => {
+        throw new HookBlockedError('policy denied')
+      },
+      {
+        source: 'agnes/prompt',
+        trust: 'builtin',
+        contextBlocking: true,
+      },
+    )
+    await expect(port.context([])).rejects.toThrow('policy denied')
+  })
   it('keeps no-extension defaults and the original minted request', async () => {
     const { port } = setup(),
       request = make()
@@ -319,7 +369,7 @@ describe('SessionHookPort', () => {
   })
 
   it.each(['agnes/test', 'agnes/live'])(
-    'refreshes opted-in context from %s while retaining frozen contributors and refusing a failed live refresh',
+    'refreshes opted-in context from %s while retaining frozen contributors and dropping a failed live refresh',
     async (source) => {
       const { engine, port } = setup()
       let frozen = 'frozen first',
@@ -349,17 +399,23 @@ describe('SessionHookPort', () => {
         sections: [{ id: 'rules', text: 'live changed' }],
       })
       fail = true
-      await expect(port.refreshContext([])).rejects.toMatchObject({
-        code: 'E_ENVELOPE',
-        message: `E_ENVELOPE: hook rejected transformation (context, ${source}, execution)`,
+      expect(await port.refreshContext([])).toMatchObject({
+        additionalContext: 'frozen first\ntail frozen first',
+        sections: [],
+      })
+      fail = false
+      expect(await port.refreshContext([])).toMatchObject({
+        additionalContext: 'frozen first\nlive changed\ntail frozen first',
+        sections: [{ id: 'rules', text: 'live changed' }],
       })
     },
   )
 
-  it('fails closed for context validation instead of silently dropping a bad return', async () => {
+  it('drops invalid context contributions while retaining later valid contributors', async () => {
     const { engine, port } = setup()
     engine.on('context', (() => ({ injected: true })) as unknown as HookHandler<'context'>, meta)
-    await expect(port.context([])).rejects.toThrow('hook rejected transformation')
+    engine.on('context', () => ({ additionalContext: 'valid' }), meta)
+    expect(await port.context([])).toMatchObject({ additionalContext: 'valid' })
   })
 
   it('remints each accepted request patch before the next author sees its view', async () => {

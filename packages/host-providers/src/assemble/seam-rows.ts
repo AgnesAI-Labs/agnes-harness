@@ -126,6 +126,8 @@ async function createWithin(
     refusal = controller.signal.aborted
       ? { reason: 'cancelled', why: `creation was cancelled: ${why}` }
       : { reason: 'reject', why: `factory failed: ${why}` }
+    if ((error as { detail?: { reason?: unknown } } | null)?.detail?.reason === 'native-glibc-incompatible')
+      refusal = { ...refusal, reason: 'native-glibc-incompatible' }
   } finally {
     clearTimeout(timer)
   }

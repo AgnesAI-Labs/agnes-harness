@@ -276,6 +276,11 @@ jobs:
         shell: pwsh
         run: ./.github/scripts/prepare-windows-native.ps1 -CacheRoot "$env:RUNNER_TEMP/agnes-node-headers"
       - run: pnpm --filter @agnes/cli build:sea
+      - name: verify Linux ABI check and load the addon on Debian 11
+        if: runner.os == 'Linux'
+        run: |
+          node --test tools/native/check-glibc.test.mjs
+          docker run --rm --network=none -v "$PWD/packages/cli/dist/sea:/dist:ro" debian:bullseye-slim /dist/runtime/node -e "const a=require('/dist/node_modules/@agnes/system-node/dist/native/agnes-system.node'); if(a.abiVersion!==1) process.exit(1)"
       - name: smoke production commands, extensions and native runtime
         run: pnpm --filter @agnes/cli exec vitest run sea/smoke.e2e.test.ts sea/windows-runtime.test.ts
         env:

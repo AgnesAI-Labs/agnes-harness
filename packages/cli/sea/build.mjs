@@ -14,6 +14,7 @@ import { basename, dirname, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import postject from 'postject'
+import { checkGlibc } from '../../../tools/native/check-glibc.mjs'
 import { presentationEntries, verifyPresentation } from '../../../tools/presentation-build.mjs'
 import { bundledManifests } from '../tools/bundled-manifests.mjs'
 
@@ -207,4 +208,5 @@ if (process.platform !== 'win32') chmodSync(runtimeNode, 0o755)
 
 await buildSea('agnes', 'entry.ts', executable)
 await buildSea('sea-loader-smoke', 'loader-harness.ts', harness)
+if (process.platform === 'linux') checkGlibc(out)
 process.stdout.write(`built ${executable}\n`)

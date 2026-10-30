@@ -5,13 +5,13 @@ export { estimateTokens } from '../model-tokens.js'
 
 import { conservativeSerializedTokens } from '@agnes/core-child-control/child/credits'
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
-import { type OpStateObj, type ToolCallState, withPhase } from '@agnes/core-common/step/op-state'
+import { type OpStateObj, withPhase } from '@agnes/core-common/step/op-state'
 import { CoreError, type Event, type EventInput, type Seq } from '@agnes/core-common/types'
 import { withTimeout } from '@agnes/core-effects/effects/wrap'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import { isNestedCall } from '@agnes/core-ledger/project/surface'
 import type { BudgetState } from '@agnes/core-ledger/reduce/shapes'
-import type { InferenceEvent, JsonValue, ModelRecord, RequestBody as WireBody } from '@agnes/protocol'
+import type { InferenceEvent, ModelRecord, RequestBody as WireBody } from '@agnes/protocol'
 import { childReceiptNarrative } from '../../child/receipts.js'
 import {
   releaseTreeReservation,
@@ -68,7 +68,6 @@ import {
   type ProviderCountAttempt,
   quoteBudget,
 } from '../../step/calibrate.js'
-import { finishAborted } from '../../step/control.js'
 import {
   modelVisibleTool,
   resolvedModelRecord,
@@ -79,14 +78,13 @@ import {
 import { runSlot } from '../../step/reentry.js'
 import type { OpContext, SessionImpl, StepOutcome, TurnMemory } from '../../step/session.js'
 import { restoreToolArgumentRecovery, toolArgumentsDisabled } from '../../step/tool-argument-recovery.js'
-import { toolCallPayload } from '../../step/tool-call.js'
 import { isUnattended } from '../../step/turn-restore.js'
 import { ModelExecution } from '../model-execution.js'
 import { beforeStepGate, builtinBudgetPreflight, contextBudgetError } from './gate.js'
 import { appendHookData } from './hook-data-note.js'
+import { planModelToolCalls } from './inference-tools.js'
 import { progressCheckNote } from './progress-check.js'
 import { bindToolAvailability, disclosureRestriction, prepareToolAvailability } from './tool-availability.js'
-import { checkModelToolCall } from './tool-call-check.js'
 import { loadedToolNames, restoreToolDisclosure } from './tool-disclosure.js'
 import { turnLimitSection, turnTimeNote } from './turn-limits.js'
 
@@ -1331,6 +1329,8 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
 
     const events: EventInput[] = []
     const truncated = done?.reason === 'length'
+    const empty = !truncated && !unparsed && !calls.length && !text.trim()
+    const exhausted = empty && attempt + 1 >= s.preset.model.retry.maxAttempts
     // An empty text block is not shipped. It is content the model never produced, it goes back to the
     // provider on the next request as part of the assistant turn, and a provider that rejects empty
     // text blocks refuses the whole request over a block core invented.
@@ -1347,55 +1347,23 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     events.push(
       s.ev('assistant/message', { content, stopReason, requestSeq: s.lastSeq }, { origin: 'model' }),
     )
-    const planned: ToolCallState[] = []
-    const refusedCalls: EventInput[] = []
-    // A truncated answer's tool calls are dropped rather than run: the arguments were cut off
-    // mid-serialisation, so what survives is a call the model did not finish asking for.
-    if (!truncated)
-      for (const c of calls) {
-        const ordinal = t.ordinal++
-        const toolUseId = s.d.ids.toolUseId(ordinal)
-        const { refusal, policy, events: validationEvents } = checkModelToolCall(s, c, offered, toolUseId)
-        refusedCalls.push(...validationEvents)
+    const planned = planModelToolCalls(s, t, calls, offered, truncated, events)
+    events.push(...deviations, ...execution.rows('ok', false))
+    if (empty) {
+      events.push(s.ev('x/core/empty-response', { attempt, exhausted }, { ignorable: true }))
+      if (!exhausted)
         events.push(
-          s.ev(
-            'tool/call',
-            toolCallPayload(
-              { toolUseId, name: c.name, args: c.args, ordinal },
-              t.snapshot.byName.get(c.name)?.meta.presentation,
-              policy,
-            ),
-            { origin: 'model' },
-          ),
+          s.ev('user/message', {
+            content: [
+              {
+                type: 'text',
+                text: 'No visible answer or tool call was returned. Continue the task with a visible answer or a tool call.',
+              },
+            ],
+            kind: 'runtime_context',
+          }),
         )
-        if (refusal)
-          refusedCalls.push(
-            s.ev('tool/result', {
-              toolUseId,
-              isError: true,
-              code: refusal.code,
-              content: [{ type: 'text', text: refusal.text }],
-              enforcement: s.d.runtime.enforcement(),
-              authz: { decisionId: 'n/a' },
-            }),
-          )
-        const baseCall = {
-          ordinal,
-          toolUseId,
-          name: c.name,
-          argsSeq: 1,
-          replay: policy?.resolvedPolicy.replay ?? 'never',
-        }
-        if (refusal) {
-          planned.push(
-            policy ? { ...baseCall, status: 'completed', ...policy } : { ...baseCall, status: 'completed' },
-          )
-        } else {
-          if (!policy) throw new Error('validated tool call lacks resolved policy')
-          planned.push({ ...baseCall, status: 'planned', ...policy })
-        }
-      }
-    events.push(...refusedCalls, ...deviations, ...execution.rows('ok', false))
+    }
     if (truncated || unparsed)
       events.push(
         s.ev('user/message', {
@@ -1434,25 +1402,44 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
           )
         : withPhase(
             base,
-            truncated
+            exhausted
               ? {
                   kind: 'failure_drain',
                   error: {
-                    code: 'OUTPUT_LIMIT',
-                    message:
-                      'Model output limit reached. Use smaller requests or increase model.max_tokens before continuing.',
+                    code: 'FORMAT',
+                    message: 'Model returned no visible answer or tool call; retries exhausted.',
                   },
                   provenance: { kind: 'inference' },
                 }
-              : {
-                  kind: 'checkpoint',
-                  continuation: unparsed ? 'need_assistant' : 'may_finish',
-                  triggerSeq: op.meta.triggerSeq,
-                },
+              : empty
+                ? { kind: 'inference', gen: { status: 'ready', attempt: attempt + 1 } }
+                : truncated
+                  ? {
+                      kind: 'failure_drain',
+                      error: {
+                        code: 'OUTPUT_LIMIT',
+                        message:
+                          'Model output limit reached. Use smaller requests or increase model.max_tokens before continuing.',
+                      },
+                      provenance: { kind: 'inference' },
+                    }
+                  : {
+                      kind: 'checkpoint',
+                      continuation: unparsed ? 'need_assistant' : 'may_finish',
+                      triggerSeq: op.meta.triggerSeq,
+                    },
             { latestAssistantSeq: assistantSeq },
           )
     })
-    return { phase: planned.length ? 'tools' : truncated ? 'failure_drain' : 'checkpoint' }
+    return {
+      phase: planned.length
+        ? 'tools'
+        : truncated || exhausted
+          ? 'failure_drain'
+          : empty
+            ? 'inference'
+            : 'checkpoint',
+    }
   }
   let settlement: { ok: true; result: StepOutcome } | { ok: false; error: unknown }
   try {

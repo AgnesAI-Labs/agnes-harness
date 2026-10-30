@@ -15,6 +15,7 @@ import {
 } from 'node:fs'
 import { open, rename } from 'node:fs/promises'
 import { createRequire } from 'node:module'
+import { nativeLoadError } from './native-error.js'
 
 export { nodeArtifactGcPreparationRuntime } from './artifact-gc-preparation.js'
 export { commandPath } from './command-path.js'
@@ -182,10 +183,8 @@ function native(): Native {
       throw new Error('ABI mismatch')
     loaded = candidate
     return candidate
-  } catch {
-    throw Object.assign(new Error('System module is missing or incompatible; rebuild the native artifact'), {
-      code: 'E_SYSTEM_NATIVE_UNAVAILABLE',
-    })
+  } catch (error) {
+    throw nativeLoadError(error)
   }
 }
 

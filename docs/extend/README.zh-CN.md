@@ -26,6 +26,12 @@
 
 MCP 包不会自动启动、安装或信任外部服务器。修改定义、启动目标服务器，再按 [MCP 管理](../guide/mcp.zh-CN.md)操作。Skills 提供方法说明而非工具实现，参阅 [Skills](../guide/skills.zh-CN.md)。适配器模板只产生确定性的开发回复，真实推理前必须替换实现。
 
+## Hook 失败
+
+会话 context adapter 将 `context` 贡献视为可选指导。贡献者超时、抛出异常或返回非法数据时，本次请求丢弃它的贡献，并通过 `x/core/hook-failed` 记录来源和失败类别。其他贡献者继续执行；下次刷新 context 时重试失败的注册项，同时丢弃该贡献者之前的旧指导。分发表仍拒绝非法变换，降级由会话 adapter 负责。受信任的内置 prompt adapter 明确给出的 block 仍保持阻断。
+
+授权指令（`before_step`、`tool_call`、`approval_request`）失败时仍关闭。`before_request` 的补丁可能约束输出花费和部署元数据，因此仍关闭；`before_compact` 的计划决定替换哪些历史，也保持关闭。观察 hook 及可选的 `tool_result` 变换保留原有开放行为。
+
 ## 公开 helper
 
 从 `@agnes/plugin-runtime` 导入：

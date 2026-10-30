@@ -206,11 +206,17 @@ export class SessionHookPort implements HookPort {
       )
       if (outcome.kind === 'rejected') {
         if (outcome.blocked) throw outcome.blocked
-        // Registration attribution is safe to publish; the extension's exception text is not.
-        throw new CoreError(
-          'E_ENVELOPE',
-          `hook rejected transformation (context, ${outcome.source}, ${outcome.failure})`,
-        )
+        // Dispatch already recorded hook-failed. Context is optional guidance, not authorization.
+        // Drop stale contributions too, and leave an empty refreshable slot so recovery is live.
+        const index = results.findIndex((item) => item.hook === hook)
+        const empty = { ext: outcome.source, hook, result: { refreshOnRequest: true } }
+        if (index >= 0) results[index] = empty
+        else results.push(empty)
+        const applied = applyContextResults(base, results)
+        sections = applied.sections
+        additionalContext = applied.additionalContext
+        untrustedContext = applied.untrustedContext
+        overflow = applied.overflow
       }
     }
     for (const item of overflow) {

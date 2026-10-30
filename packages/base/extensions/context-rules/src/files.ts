@@ -41,13 +41,12 @@ async function projectRoot(workspaceRoot: string): Promise<string> {
   }
 }
 async function boundedRead(
-  path: string,
+  canonical: string,
   root: string,
   limit: number,
   signal?: AbortSignal,
 ): Promise<string | undefined> {
   signal?.throwIfAborted()
-  const canonical = await realpath(path)
   if (!within(root, canonical)) throw new Error('instruction link outside scope')
   const file = await open(canonical, 'r')
   try {
@@ -99,38 +98,55 @@ export async function loadContextRules(
   result.content = header
   const dedup = new Map<string, Set<string>>()
   let readBytes = 0
-  for (const candidate of candidates) {
+  // Most scoped candidates do not exist. Resolve a bounded batch concurrently instead of paying
+  // hundreds of serial filesystem round trips on every request; fold/read in source order below.
+  for (let start = 0; start < candidates.length; start += 8) {
     signal?.throwIfAborted()
-    let content: string | undefined
-    try {
-      content = await boundedRead(
-        candidate.path,
-        candidate.boundary,
-        Math.min(config.maxSourceBytes, Math.max(0, 4 * 1048576 - readBytes)),
-        signal,
-      )
-    } catch (error) {
+    const batch = await Promise.all(
+      candidates.slice(start, start + 8).map(async (candidate) => {
+        try {
+          return { candidate, canonical: await realpath(candidate.path) }
+        } catch (error) {
+          return { candidate, error }
+        }
+      }),
+    )
+    for (const entry of batch) {
+      const { candidate } = entry
       signal?.throwIfAborted()
-      if (!['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? ''))
-        result.skipped.push(
-          candidate.trust === 'user' ? 'user-global/AGENTS.md' : relative(root, candidate.path),
+      let content: string | undefined
+      try {
+        if (entry.error) throw entry.error
+        if (entry.canonical === undefined) continue
+        content = await boundedRead(
+          entry.canonical,
+          candidate.boundary,
+          Math.min(config.maxSourceBytes, Math.max(0, 4 * 1048576 - readBytes)),
+          signal,
         )
-      continue
+      } catch (error) {
+        signal?.throwIfAborted()
+        if (!['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? ''))
+          result.skipped.push(
+            candidate.trust === 'user' ? 'user-global/AGENTS.md' : relative(root, candidate.path),
+          )
+        continue
+      }
+      if (!content?.trim()) continue
+      readBytes += Buffer.byteLength(content)
+      const seen = dedup.get(dirname(candidate.path)) ?? new Set<string>()
+      if (seen.has(content.trim())) continue
+      seen.add(content.trim())
+      dedup.set(dirname(candidate.path), seen)
+      const path = candidate.trust === 'user' ? 'user-global/AGENTS.md' : relative(root, candidate.path)
+      const text = `\n${renderRuleFile({ path, scope: candidate.scope, trust: candidate.trust, content })}`
+      if (Buffer.byteLength(result.content + text) > config.maxBytes) {
+        result.skipped.push(path)
+        continue
+      }
+      result.files.push({ path, scope: candidate.scope, content, trust: candidate.trust })
+      result.content += text
     }
-    if (!content?.trim()) continue
-    readBytes += Buffer.byteLength(content)
-    const seen = dedup.get(dirname(candidate.path)) ?? new Set<string>()
-    if (seen.has(content.trim())) continue
-    seen.add(content.trim())
-    dedup.set(dirname(candidate.path), seen)
-    const path = candidate.trust === 'user' ? 'user-global/AGENTS.md' : relative(root, candidate.path)
-    const text = `\n${renderRuleFile({ path, scope: candidate.scope, trust: candidate.trust, content })}`
-    if (Buffer.byteLength(result.content + text) > config.maxBytes) {
-      result.skipped.push(path)
-      continue
-    }
-    result.files.push({ path, scope: candidate.scope, content, trust: candidate.trust })
-    result.content += text
   }
   if (!result.files.length) result.content = ''
   return result

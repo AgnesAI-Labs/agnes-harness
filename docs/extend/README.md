@@ -26,6 +26,12 @@ Tools add operations to an existing loop. Loops own scheduling and state through
 
 An MCP bundle does not automatically start, install or trust an external server. Edit its definition, start the intended server and follow [MCP management](../guide/mcp.md). Skills provide instructions rather than tool implementation; see [Skills](../guide/skills.md). The adapter starter emits a deterministic development reply; replace it before real inference.
 
+## Hook failures
+
+The session context adapter treats `context` contributions as optional guidance. If a contributor times out, throws, or returns invalid data, its contribution is dropped for that request and `x/core/hook-failed` records the source and failure kind. Other contributors continue; the failed registration is retried on the next context refresh. Previous guidance from that contributor is dropped too. The dispatch table still rejects invalid transformations; the adapter owns this fallback. A deliberate block from the trusted bundled prompt adapter remains blocking.
+
+Authorization directives (`before_step`, `tool_call`, `approval_request`) remain closed on failure. `before_request` also stays closed because patches can constrain output spend and deployment metadata. `before_compact` stays closed because its plan determines the history being replaced. Observation hooks and optional `tool_result` transformations retain their existing open behavior.
+
 ## Public helpers
 
 Import these from `@agnes/plugin-runtime`:

@@ -28,3 +28,30 @@ it('fails closed with an older native artifact without directory publication', a
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+it('names the native GLIBC cause without leaking the loader path', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agnes-glibc-load-'))
+  const source = join(root, 'source')
+  createPrivateDirectorySync(source)
+  vi.resetModules()
+  vi.doMock('node:module', () => ({
+    createRequire: () => () => {
+      throw new Error("/private/secret-loader-path: version `GLIBC_2.33' not found")
+    },
+  }))
+  try {
+    const { renameDirectoryNoReplaceSync } = await import('../src/index.js')
+    expect(() => renameDirectoryNoReplaceSync(source, join(root, 'target'))).toThrow(
+      expect.objectContaining({
+        code: 'E_SYSTEM_NATIVE_UNAVAILABLE',
+        message: 'system-node native addon failed to load: GLIBC_2.33 not found',
+        detail: { reason: 'native-glibc-incompatible' },
+      }),
+    )
+    expect(existsSync(source)).toBe(true)
+  } finally {
+    vi.doUnmock('node:module')
+    vi.resetModules()
+    rmSync(root, { recursive: true, force: true })
+  }
+})

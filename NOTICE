@@ -4,6 +4,10 @@ The Agnes Harness project is licensed under Apache License 2.0 except where
 individual files, packages, or directories carry a different license. The
 following material retains its original notices and license terms:
 
+- Linux system-node native addon statically links OpenSSL 3.5.9 libcrypto.
+  Copyright 1998-2026 The OpenSSL Project Authors. Apache License 2.0.
+  See third-party/openssl-LICENSE.txt and third-party/native-system-dependencies.md.
+
 - Cordis and Cosmokit, vendored in packages/cordis and packages/cosmokit:
   Copyright (c) 2021-present Shigma. MIT License. The corresponding LICENSE
   and VENDORED.md files are retained in each package.

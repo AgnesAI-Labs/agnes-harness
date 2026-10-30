@@ -6,6 +6,8 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { checkGlibc } from '../../../tools/native/check-glibc.mjs'
+import { linuxBuild } from '../../../tools/native/linux-build.mjs'
 
 if (process.platform !== 'darwin' && process.platform !== 'linux') {
   process.exit(0)
@@ -19,6 +21,7 @@ if (args.length && (args.length !== 2 || args[0] !== '--output-dir' || !isAbsolu
   throw new Error('Expected --output-dir with an absolute directory')
 const outputDir = args[1] ? resolve(args[1]) : defaultOutputDir
 mkdirSync(outputDir, { recursive: true })
+if (process.platform === 'linux' && linuxBuild(fileURLToPath(import.meta.url), outputDir)) process.exit(0)
 const builds = [
   ['pty-relay.c', 'pty-relay', process.platform === 'linux' ? ['-lutil'] : []],
   ...(process.platform === 'darwin' ? [['macos-process-identity.c', 'macos-process-identity', []]] : []),
@@ -34,3 +37,4 @@ for (const [sourceName, outputName, libraries] of builds) {
     stdio: 'inherit',
   })
 }
+if (process.platform === 'linux') checkGlibc(outputDir)

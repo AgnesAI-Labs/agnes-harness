@@ -1,8 +1,10 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { checkGlibc } from '../../../tools/native/check-glibc.mjs'
+import { linuxBuild } from '../../../tools/native/linux-build.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2)
@@ -42,6 +44,7 @@ if (process.platform === 'darwin') {
 }
 
 if (process.platform === 'linux') {
+  if (linuxBuild(fileURLToPath(import.meta.url), output)) process.exit(0)
   const candidates = [
     process.env.AGNES_NODE_HEADERS,
     join(dirname(dirname(process.execPath)), 'include', 'node'),
@@ -63,14 +66,20 @@ if (process.platform === 'linux') {
       '-Wextra',
       '-Werror',
       '-DNAPI_VERSION=8',
+      '-I/opt/openssl/include',
       `-I${include}`,
       join(root, 'native', 'linux.c'),
       '-o',
       join(output, 'agnes-system.node'),
-      '-lcrypto',
+      '/opt/openssl/lib/libcrypto.a',
+      '-Wl,--exclude-libs,ALL',
+      '-ldl',
+      '-pthread',
     ],
     { cwd: output, stdio: 'inherit' },
   )
+  copyFileSync(join(root, '../../third-party/openssl-LICENSE.txt'), join(output, 'openssl-LICENSE.txt'))
+  checkGlibc(output)
   process.exit(0)
 }
 

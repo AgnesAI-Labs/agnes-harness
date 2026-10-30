@@ -162,6 +162,10 @@ export async function failAssembly(ctx: AssemblyContext, error: unknown): Promis
         : new HostError('E_SEAM_INIT', msg, {
             detail: {
               step: ctx.step,
+              ...((error as { detail?: { reason?: unknown } } | null)?.detail?.reason ===
+              'native-glibc-incompatible'
+                ? { reason: 'native-glibc-incompatible' }
+                : {}),
               ...(error instanceof ProviderError
                 ? { reason: error.code.slice(2).toLowerCase().replaceAll('_', '-') }
                 : {}),

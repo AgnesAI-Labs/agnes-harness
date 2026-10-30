@@ -78,11 +78,11 @@ Linux 可由系统包管理器安装 bubblewrap（例如 Debian/Ubuntu 的 `apt 
 
 ## 在 Linux 构建与验证
 
-准备 Node 及其对应的 `include/node/node_api.h` 头文件、C/C++ 工具链、Python 3 和 Git。Debian/Ubuntu 示例：
+准备固定版本的 Node、Docker、Python 3 和 Git。Docker 提供对应的头文件及原生编译器。在 Debian/Ubuntu 按 Docker 官方安装说明准备 Docker 后执行：
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y build-essential libssl-dev python3 git bubblewrap
+sudo apt-get install -y python3 git bubblewrap
 mise exec -- node tools/toolchain/run.mjs install --frozen-lockfile
 mise exec -- node tools/toolchain/run.mjs --filter @agnes/host build:native
 mise exec -- node tools/toolchain/run.mjs --filter @agnes/system-node build:native
@@ -90,7 +90,7 @@ mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local
 node agnes.mjs doctor
 ```
 
-PTY relay 链接 `libutil`，system helper 使用 Linux 内核接口与系统 OpenSSL 3 `libcrypto`，从同一已打开文件句柄计算 artifact 摘要。构建时安装 OpenSSL 开发头文件，搬运运行目录时仍须安装匹配的共享库。更换 Node 或架构后须重建 helper，安装 npm 依赖不能替代原生构建。
+Linux 原生构建需要 Docker。构建脚本在 glibc 2.28 环境（`tools/native/Dockerfile`）中编译原生模块及 PTY 辅助程序，不依赖宿主 libc，并拒绝导入更高版本的 GLIBC 符号。OpenSSL 私有静态链接到原生模块；参见[原生依赖来源](../../third-party/native-system-dependencies.md)。Linux 发行包要求 glibc 2.28 或更新版本。 更换 Node 或架构后须重建 helper，安装 npm 依赖不能替代原生构建。
 
 Linux L1 命令隔离使用 bubblewrap，并验证文件、进程与网络的完整边界。版本检查或可用的 Landlock ABI 不能证明隔离有效：目前 Landlock 仅用于诊断，并非 AGH 命令后端。用户命名空间限制（包括容器 seccomp 或发行版安全策略）可能阻止 bubblewrap 运行。默认在 L1 不可用时拒绝命令；明确选择 **full-access** 后，命令不受操作系统隔离。不要为消除诊断而绕过锁或修改系统安全策略。
 

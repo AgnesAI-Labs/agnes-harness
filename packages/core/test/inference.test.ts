@@ -2022,3 +2022,42 @@ it('persists reported request timing and restores the same usage details in UI p
     context: { source: 'estimated' },
   })
 })
+
+it.each(['', '   ', 'private reasoning'])(
+  're-prompts a reply without visible output: %s',
+  async (thinking) => {
+    const silent: Script = [
+      sent(),
+      { type: 'thinking_delta', delta: thinking },
+      usage(),
+      { type: 'done', reason: 'stop' },
+    ]
+    const { session, provider, log } = await primed([silent, textTurn('finished')])
+    expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+      'completed',
+    )
+    expect(provider.requests).toHaveLength(2)
+    expect(JSON.stringify(provider.requests[1]?.messages)).toContain('No visible answer or tool call')
+    expect((await log.scan({ type: 'x/core/empty-response', limit: 10 })).map((e) => e.data)).toEqual([
+      { attempt: 0, exhausted: false },
+    ])
+    expect(session.pendingEffects()).toEqual([])
+  },
+)
+
+it('exhausts the empty-output retry budget without claiming completion', async () => {
+  const { session, provider, log } = await primed([
+    [sent(), { type: 'thinking_delta', delta: 'reasoning' }, usage(), { type: 'done', reason: 'stop' }],
+  ])
+  session.preset.model.retry.maxAttempts = 2
+  expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+    'error',
+  )
+  expect(provider.requests).toHaveLength(2)
+  expect((await log.scan({ type: 'x/core/empty-response', limit: 10 })).map((e) => e.data)).toEqual([
+    { attempt: 0, exhausted: false },
+    { attempt: 1, exhausted: true },
+  ])
+  expect(session.pendingEffects()).toEqual([])
+  expect((await log.scan({ type: 'cost/ledger', limit: 10 })).length).toBe(2)
+})

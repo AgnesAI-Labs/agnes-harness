@@ -84,11 +84,11 @@ On Linux, install bubblewrap through your system package manager, for example `a
 
 ## Build and verify on Linux
 
-Use Node with its matching `include/node/node_api.h` headers, a C/C++ toolchain, Python 3 and Git. On Debian/Ubuntu:
+Use the pinned Node runtime, Docker, Python 3 and Git. Docker supplies the matching headers and native compiler. On Debian/Ubuntu, install Docker using its supported installation instructions, then:
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y build-essential libssl-dev python3 git bubblewrap
+sudo apt-get install -y python3 git bubblewrap
 mise exec -- node tools/toolchain/run.mjs install --frozen-lockfile
 mise exec -- node tools/toolchain/run.mjs --filter @agnes/host build:native
 mise exec -- node tools/toolchain/run.mjs --filter @agnes/system-node build:native
@@ -96,7 +96,7 @@ mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local
 node agnes.mjs doctor
 ```
 
-The PTY relay links `libutil`; the system helper uses Linux kernel interfaces and system OpenSSL 3 `libcrypto` for same-handle artifact hashing. Install OpenSSL development headers when building and keep the matching shared library installed when moving a runtime. Rebuild helpers after changing Node or architecture. An npm dependency install is not a substitute for these builds.
+Linux native builds require Docker. The build scripts compile addons and PTY helpers in the glibc 2.28 builder (`tools/native/Dockerfile`), independently of the host libc, and reject newer GLIBC imports. OpenSSL is linked privately into the addon; see [native dependency provenance](../../third-party/native-system-dependencies.md). Linux distributions require glibc 2.28 or later. Rebuild helpers after changing Node or architecture. An npm dependency install is not a substitute for these builds.
 
 Linux L1 command isolation uses bubblewrap with a verified filesystem, process and network boundary. A version check or an available Landlock ABI does not prove that boundary: Landlock is currently diagnostic only, not an AGH command backend. Restricted user namespaces (including container seccomp or distribution security policies) may prevent bubblewrap from working. The default refuses commands when L1 is unavailable. Choosing **full-access** explicitly runs commands without OS confinement. Do not bypass locks or change system security policy merely to suppress a diagnostic.
 

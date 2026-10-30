@@ -440,7 +440,7 @@ export function throwSessionOpenRpcError(error: unknown, sessionId = ''): never 
         : undefined
     throw rpcError('INTERNAL_ERROR', {
       code: cause ?? 'E_SEAM_INIT',
-      reason: cause ? reason : 'session-initialization-failed',
+      reason: cause || reason === 'native-glibc-incompatible' ? reason : 'session-initialization-failed',
     })
   }
   if (e?.code === 'E_SANDBOX_WORKSPACE') {

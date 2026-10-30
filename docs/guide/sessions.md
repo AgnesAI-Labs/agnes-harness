@@ -160,3 +160,5 @@ A worker that cannot start because a configured model credential is absent refus
 then retry. A retired plugin-core format returns the clean-home guidance. Neither refusal converts
 saved data. Moving a home can separately change its path-bound sandbox execution policy: a policy
 mismatch remains a refusal, rather than silently changing the session’s isolation decision.
+
+A model reply that ends without visible text or a tool call (including thinking-only replies) does not complete a turn. Core records `x/core/empty-response`, asks the model to continue and uses the existing `model.retry.maxAttempts` budget. Each attempt is billed normally. Exhaustion ends the turn with an error rather than reporting completion. Normal cancellation, budget and turn limits still apply.

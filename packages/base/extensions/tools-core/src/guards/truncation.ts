@@ -16,18 +16,86 @@ const PAIRS: Array<[string, string]> = [
 // only has to catch the case where most of the file is simply gone.
 const MIN_RATIO = 0.4
 
-function count(s: string, ch: string): number {
-  return s.split(ch).length - 1
-}
-
-// Which delimiters the text leaves open. Counting, rather than matching, is deliberate: the input
-// is any language at all, and a real parser would have to know which of them are string or comment
-// contents. Counts are compared against the original, so a file that was already unbalanced - a
-// template fragment, a snippet - is not held to a balance it never had.
+// A conservative lexical scan, not a language parser. Literal contents cannot establish missing
+// syntax. Compare with the original so templates/fragments retain their existing imbalance.
 function unbalanced(s: string): string[] {
+  let code = '',
+    quote = '',
+    comment = false,
+    blockComment = false
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i] ?? ''
+    if (comment) {
+      if (ch === '\n') comment = false
+      continue
+    }
+    if (blockComment) {
+      if (s.startsWith('*/', i)) {
+        blockComment = false
+        i++
+      }
+      continue
+    }
+    if (ch === '\\') {
+      i++
+      continue
+    }
+    if (quote) {
+      if (s.startsWith(quote, i)) {
+        i += quote.length - 1
+        quote = ''
+      }
+      continue
+    }
+    if (ch === '#' || s.startsWith('//', i)) {
+      comment = true
+      continue
+    }
+    if (s.startsWith('/*', i)) {
+      blockComment = true
+      i++
+      continue
+    }
+    if (ch === "'" && /\w/.test(s[i - 1] ?? '') && /\w/.test(s[i + 1] ?? '')) {
+      code += ch
+      continue
+    }
+    if (ch === '"' || ch === "'" || ch === '`') {
+      quote = s.startsWith(ch.repeat(3), i) ? ch.repeat(3) : ch
+      i += quote.length - 1
+      continue
+    }
+    // Slash literals can also start statements after a control condition. Do not guess the
+    // language/grammar from preceding tokens. Require a closed span with balanced regex groups
+    // and character classes, so an incomplete division expression is still checked as code.
+    if (ch === '/') {
+      let inClass = false,
+        groups = 0,
+        end = i + 1
+      for (; end < s.length && s[end] !== '\n'; end++) {
+        if (s[end] === '\\') {
+          end++
+          continue
+        }
+        if (s[end] === '[') inClass = true
+        if (s[end] === ']') inClass = false
+        if (!inClass && s[end] === '(') groups++
+        if (!inClass && s[end] === ')' && --groups < 0) break
+        if (s[end] === '/' && !inClass) break
+      }
+      if (s[end] === '/' && !inClass && groups === 0) {
+        i = end
+        code += 'x'
+        continue
+      }
+    }
+    code += ch
+  }
   const bad: string[] = []
-  for (const [open, close] of PAIRS) if (count(s, open) !== count(s, close)) bad.push(open)
-  if (count(s, '"') % 2 !== 0) bad.push('"')
+  for (const [open, close] of PAIRS) if (code.split(open).length !== code.split(close).length) bad.push(open)
+  // Single apostrophes and unmatched backticks are ordinary prose too. Preserve the original
+  // double-quote signal without introducing a new language-specific quote refusal.
+  if (quote.startsWith('"')) bad.push('"')
   return bad
 }
 
