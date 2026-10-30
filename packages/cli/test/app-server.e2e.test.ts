@@ -9,6 +9,9 @@ import { createConfigurationService, initializeHome } from '@agnes/host'
 import { expect, it } from 'vitest'
 
 const exec = promisify(execFile)
+const buildSelection = process.env.AGNES_NATIVE_BUILDER
+  ? { AGNES_NATIVE_BUILDER: process.env.AGNES_NATIVE_BUILDER }
+  : {}
 it('embeds JSONL on the shared daemon, streams a turn, answers approval, and leaves daemon alive on EOF', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agh-as-'))
   const distribution = join(root, 'distribution')
@@ -147,7 +150,8 @@ it('embeds JSONL on the shared daemon, streams a turn, answers approval, and lea
     await exec(
       process.execPath,
       ['--import', 'tsx', resolve('packages/cli/tools/build-local.ts'), '--output-dir', distribution],
-      { env, timeout: 90_000, maxBuffer: 16 * 1024 * 1024 },
+      // Linux distribution staging refuses host-built helpers; keep CI's portable builder selection.
+      { env: { ...env, ...buildSelection }, timeout: 90_000, maxBuffer: 16 * 1024 * 1024 },
     )
     await new Promise<void>((resolve, reject) => {
       provider.once('error', reject)
