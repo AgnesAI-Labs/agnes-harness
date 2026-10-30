@@ -3,7 +3,7 @@ import { type CheckpointPhase, type OpStateObj, withPhase } from '@agnes/core-co
 import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
 import type { VerifierVerdict } from '@agnes/core-effects/effects/seams'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
-import type { BudgetState, Inbox, RepairDecision } from '@agnes/core-ledger/reduce/shapes'
+import type { BudgetState, Inbox, PlanItems, RepairDecision } from '@agnes/core-ledger/reduce/shapes'
 import { minimumContextBudget } from '@agnes/protocol'
 import { quoteBudget } from '../../step/calibrate.js'
 import { finishAborted } from '../../step/control.js'
@@ -303,6 +303,8 @@ const REASON_TEXT: Record<string, (input: CoreVerifyInput, n?: string) => string
  * work it had already checked. Reasons from another verifier are quoted as they came.
  */
 function repairNote(verdict: VerifierVerdict, input: CoreVerifyInput): string {
+  if (verdict.verdict === 'pass')
+    return 'The automatic checks passed, but the task plan still has unfinished items. Review the requested result against the work and checks already completed. Update the plan accurately, finish any remaining requirement that fits the turn limits, then give the final answer. Preserve verified work. If the plan is stale or work remains blocked, explain that plainly; do not invent completion.'
   const checks = verdict.reasons.map((reason) => {
     const [code = reason, n] = reason.split(':', 2)
     const explain = REASON_TEXT[code]
@@ -379,7 +381,13 @@ async function builtinStopGate(s: SessionImpl, _resume: GateResume): Promise<Ste
     ])
   }
   if (verdict.unavailable) return finishUnavailable('verifier')
-  if (verdict.verdict === 'pass') {
+  const plan = s.latest('plan.items') as PlanItems | undefined
+  const openPlan =
+    s.preset.completionGate.enabled !== false &&
+    plan &&
+    plan.items.length >= s.preset.completionGate.minItems &&
+    plan.items.some((item) => item.status !== 'done')
+  if (verdict.verdict === 'pass' && !openPlan) {
     return finishCompleted([signal])
   }
   const history = (
@@ -391,19 +399,23 @@ async function builtinStopGate(s: SessionImpl, _resume: GateResume): Promise<Ste
     })
   ).map((e) => e.data as unknown as RepairDecision)
   const proposed = await s.d.runtime.repairDecide(
-    { turn: op.meta.turn, round: history.length + 1, history },
+    { turn: op.meta.turn, round: history.length + 1, history, ...(plan ? { plan } : {}) },
     verdict,
   )
   if (s.ac.signal.aborted) return finishAborted(s)
-  if (proposed === 'unavailable') return finishUnavailable('repair')
-  const decision =
-    proposed === 'complete'
-      ? 'complete'
-      : history.length >= 1
-        ? 'park'
-        : proposed === 'park'
-          ? 'repair'
-          : proposed
+  const stalePlan = verdict.verdict === 'pass' && openPlan && history.length >= 1
+  if (proposed === 'unavailable' && !stalePlan) return finishUnavailable('repair')
+  const decision = stalePlan
+    ? 'complete'
+    : verdict.verdict === 'pass' && proposed !== 'complete'
+      ? 'repair'
+      : proposed === 'complete'
+        ? 'complete'
+        : history.length >= 1
+          ? 'park'
+          : proposed === 'park'
+            ? 'repair'
+            : proposed
   const repairEvents = (verdictSeq: Seq): EventInput[] => [
     signal,
     s.ev('repair/decision', { round: history.length + 1, decision, verdictSeq }),
@@ -413,6 +425,12 @@ async function builtinStopGate(s: SessionImpl, _resume: GateResume): Promise<Ste
         verdict,
         proposed,
         handling: decision === 'park' ? 'blocked' : decision === 'complete' ? 'complete' : 'repair',
+        ...(stalePlan
+          ? {
+              diagnostic: 'completion_gate_stale_plan',
+              openItems: plan?.items.filter((item) => item.status !== 'done').length,
+            }
+          : {}),
       },
       { ignorable: true },
     ),
