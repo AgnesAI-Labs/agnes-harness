@@ -55,6 +55,16 @@ const PROBE_TIMEOUT_MS = 60_000
 const DRAIN_MS = 1_000
 /** After a cancelled turn the prompt still has this long to settle before the cell is given up. */
 const CANCEL_GRACE_MS = 30_000
+/**
+ * How long a cell waits, before it closes its session, for the reply suggestion the host writes
+ * after a completed turn. The host starts it once the run is idle (it polls every 25 ms) and the
+ * follow-up-hint plugin abandons its fast-model call after 5 s, so a suggestion is written or given
+ * up inside this bound; the Web composer waits 5.5 s for it too. On the fake routes its cost row
+ * landed 34-40 ms after the turn's end in a Linux container and within 35 ms on macOS. Without the
+ * wait the bench closed about 20 ms after the turn, before the suggestion task had even started,
+ * so no suggestion was ever counted on Linux.
+ */
+const SUGGESTION_WAIT_MS = 5_500
 const CLIP = 2_000
 
 export const USAGE = `Usage:
@@ -449,6 +459,7 @@ async function runCellIn(ctx, cell, workspace, kept) {
       const owned = host.kernel.get(session.id)
       if (!owned) result.problems.push(`bench session ${session.id} is unavailable at shutdown`)
       else {
+        await awaitReplySuggestion(owned)
         await owned.close()
         if (!(await stream.until(() => (stream.events.at(-1)?.seq ?? 0) >= owned.lastSeq, DRAIN_MS)))
           result.problems.push(`bench session ${session.id} did not drain its final ledger watermark`)
@@ -473,6 +484,32 @@ async function runCellIn(ctx, cell, workspace, kept) {
     )
   }
   return result
+
+  /**
+   * Waits for the reply suggestion the host writes after the session's last turn, so closing the
+   * session does not cancel it. The suggestion is done once its `aux:reply-suggestions:` side-call
+   * cost row is written, whether it completed or was given up. Nothing is awaited when the preset
+   * has no fast model (the host then writes none) or the last turn did not complete. The Web reads
+   * the same suggestion through the `replies.read` query, but this embedded headless Host has no
+   * service authority, so that query refuses every caller here.
+   */
+  async function awaitReplySuggestion(owned) {
+    const fast = owned.preset?.model?.route?.fast && owned.preset?.model?.id?.fast
+    const end = [...stream.events].reverse().find((e) => e.type === 'turn/end' && mainLane(e))
+    if (!fast || result.records.at(-1)?.endReason !== 'completed' || !end) return
+    await stream.until(
+      () =>
+        state.interrupted ||
+        stream.events.some(
+          (e) =>
+            e.seq > end.seq &&
+            e.type === 'cost/ledger' &&
+            e.data?.purpose === 'side-call' &&
+            String(e.data?.effectId).startsWith('aux:reply-suggestions:'),
+        ),
+      SUGGESTION_WAIT_MS,
+    )
+  }
 
   async function runTurn(index, turn) {
     if (result.error || state.interrupted) {
