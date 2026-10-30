@@ -19,7 +19,7 @@ export const findTool = defineTool({
       re = globToRegExp(args.pattern),
       lines: string[] = [],
       found: FoundPath[] = []
-    const limit = args.limit ?? 1000
+    const limit = args.limit ?? 100
     let atLimit = false
     for await (const file of walk(ctx, root, report, { maxEntries: 50000 })) {
       if (file.kind !== 'file' || !re.test(file.rel)) continue
