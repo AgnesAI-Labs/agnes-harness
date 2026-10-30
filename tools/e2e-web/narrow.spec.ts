@@ -522,7 +522,7 @@ for (const locale of ['en', 'zh-CN'])
           await page.getByTestId('changes-mention').click()
           await expect(page.locator('#workbench-right')).toBeHidden()
           await expect(page.locator('#prompt')).toBeFocused()
-          await expect(page.locator('#prompt')).toHaveValue('@review notes.ts ')
+          await expect(page.locator('#prompt')).toHaveValue('@review notes.ts  ')
           await page.locator('#prompt').fill('')
           if ((await page.getByTestId('workbench-right-toggle').getAttribute('aria-expanded')) === 'true')
             await page
