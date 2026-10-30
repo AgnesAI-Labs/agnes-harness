@@ -59,10 +59,11 @@ describe('/export', () => {
   it('takes a path, relative to the working directory, with or without a format', async () => {
     const { app, requests } = harness(async () => {})
     await exportSlash(app, '/export out/my session.jsonl')
-    await exportSlash(app, '/export html /tmp/x.html')
+    const absolute = join(cwd, 'elsewhere', 'x.html')
+    await exportSlash(app, `/export html ${absolute}`)
     expect(requests.map((r) => [r.format, r.out])).toEqual([
       ['agnes', join(cwd, 'out/my session.jsonl')],
-      ['html', '/tmp/x.html'],
+      ['html', absolute],
     ])
   })
 
@@ -77,11 +78,12 @@ describe('/export', () => {
   )
 
   it('expands ~ to the home directory, like /cd', async () => {
-    vi.stubEnv('HOME', '/tmp/agh-home')
+    const home = join(cwd, 'home')
+    vi.stubEnv('HOME', home)
     const { app, requests } = harness(async () => {})
     await exportSlash(app, '/export ~/x.jsonl')
     vi.unstubAllEnvs()
-    expect(requests[0]?.out).toBe('/tmp/agh-home/x.jsonl')
+    expect(requests[0]?.out).toBe(join(home, 'x.jsonl'))
   })
 
   it('puts the default name inside a directory given as the path', async () => {
