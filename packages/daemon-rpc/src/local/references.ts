@@ -39,7 +39,7 @@ export async function resolvePromptReferences(
   }
   if (!refs.length) return content
   signal?.throwIfAborted()
-  const resolved = (await callReferences(session, 'resolve', refs)) as ContentBlock[]
+  const resolved = (await callReferences(session, 'resolve', refs, signal)) as ContentBlock[]
   signal?.throwIfAborted()
   return [...content, ...resolved]
 }

@@ -34,8 +34,10 @@ it('accepts only locators, refuses forged receipts and does not enqueue resolved
     await expect(resolvePromptReferences(session, content, selections)).rejects.toMatchObject({
       code: -32602,
     })
+  let cancellationSignal: AbortSignal | undefined
   const cancelling = {
-    references: async () => {
+    references: async (_operation: string, _input: unknown, signal?: AbortSignal) => {
+      cancellationSignal = signal
       controller.abort()
       return [receipt]
     },
@@ -43,6 +45,7 @@ it('accepts only locators, refuses forged receipts and does not enqueue resolved
   await expect(
     resolvePromptReferences(cancelling, content, [{ source: 'file', id: 'notes.txt' }], controller.signal),
   ).rejects.toThrow()
+  expect(cancellationSignal?.aborted).toBe(true)
 })
 
 it('cancels only the matching session reference request', async () => {
