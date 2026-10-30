@@ -616,7 +616,8 @@ it.each(['page', 'capture'] as const)(
       if (phase === 'page') pages[0]!.setViewportSize.mockRejectedValueOnce(new Error('Resize unavailable'))
       else
         cdp.send.mockImplementation(async (method) => {
-          if (method === 'Emulation.setDeviceMetricsOverride') throw new Error('Resize unavailable')
+          // The capture session follows the page's metrics and restarts its screencast at the new size.
+          if (method === 'Page.startScreencast') throw new Error('Resize unavailable')
         })
       await expect(
         selectView(

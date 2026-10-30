@@ -44,7 +44,7 @@ const metadata = {
 }
 const manifest = {
   name: '@agnes/browser',
-  version: '0.1.13',
+  version: '0.1.14',
   type: 'module',
   license: 'Apache-2.0',
   exports: './index.mjs',

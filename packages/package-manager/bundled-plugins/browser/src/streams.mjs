@@ -591,12 +591,6 @@ export async function showPage(runtime, input, context) {
           quality = 90,
         ) => {
           if (item.capture !== capture || !item.viewers.size) return
-          // The secondary CDP session needs the same CSS viewport and 2x density.
-          await cdp.send('Emulation.setDeviceMetricsOverride', {
-            ...item.viewport,
-            deviceScaleFactor: 2,
-            mobile: false,
-          })
           capture.liveFormat = format
           capture.liveQuality = quality
           capture.averageBytes = 0
