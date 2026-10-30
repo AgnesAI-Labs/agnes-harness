@@ -71,9 +71,9 @@ jobs:
         include:
           - { os: ubuntu-latest, label: ubuntu-latest, testArgs: '--maxWorkers=1 --pool=forks', testExclude: '', shard: '' }
           - { os: macos-latest, label: macos-latest, testArgs: '--maxWorkers=2', testExclude: '', shard: '' }
-          - { os: windows-latest, label: 'windows-latest shard 1/3', testArgs: '--maxWorkers=2 --shard=1/3', testExclude: 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.test.ts', shard: '1/3' }
-          - { os: windows-latest, label: 'windows-latest shard 2/3', testArgs: '--maxWorkers=2 --shard=2/3', testExclude: 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.test.ts', shard: '2/3' }
-          - { os: windows-latest, label: 'windows-latest shard 3/3', testArgs: '--maxWorkers=2 --shard=3/3', testExclude: 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.test.ts', shard: '3/3' }
+          - { os: windows-latest, label: 'windows-latest shard 1/3', testArgs: '--maxWorkers=2 --shard=1/3', testExclude: 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.e2e.test.ts', shard: '1/3' }
+          - { os: windows-latest, label: 'windows-latest shard 2/3', testArgs: '--maxWorkers=2 --shard=2/3', testExclude: 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.e2e.test.ts', shard: '2/3' }
+          - { os: windows-latest, label: 'windows-latest shard 3/3', testArgs: '--maxWorkers=2 --shard=3/3', testExclude: 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.e2e.test.ts', shard: '3/3' }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -122,7 +122,7 @@ jobs:
         run: pnpm exec vitest run packages/daemon/test/windows-startup-directories.test.ts --maxWorkers=1
       - name: Windows conversation MCP registration
         if: runner.os == 'Windows' && matrix.shard == '2/3'
-        run: pnpm exec vitest run packages/daemon/test/conversation-mcp.test.ts --maxWorkers=1
+        run: pnpm exec vitest run packages/daemon/test/conversation-mcp.e2e.test.ts --maxWorkers=1
       # Keep boot/session creation in the functional gate above. The isolated run reports wall-clock
       # time in the job summary even if another test fails; a stable performance runner can opt into
       # the 300 ms assertion. Do not restart this test after a cancelled or skipped suite.
