@@ -37,6 +37,7 @@ import {
   type StartSupervisorOptions,
   startProductionSupervisor,
 } from '../src/supervisor/supervisor.js'
+import { sourceTranspileCache } from './source-transpile-cache.js'
 
 // These workers assemble the production package graph from TypeScript source before they say
 // hello. Cold assembly exceeded 90 s in the Windows regression run; a 180 s diagnostic window
@@ -326,7 +327,7 @@ describe('production supervisor storage', () => {
       const resourceProfile = await resolveProfile(
         {
           builtin: 'local-dev',
-          user: { name: 'local-dev', dataDir: join(dir, 'data'), cacheDir: join(dir, 'cache') },
+          user: { name: 'local-dev', dataDir: join(dir, 'data'), cacheDir: sourceTranspileCache() },
         },
         { platform: createPlatform().snapshot(), agnesVersion: '0.0.0', now: new Date().toISOString() },
       )
@@ -503,7 +504,7 @@ describe('production supervisor storage', () => {
       const resourceProfile = await resolveProfile(
         {
           builtin: 'local-dev',
-          user: { name: 'local-dev', dataDir: dir, cacheDir: join(dir, 'cache') },
+          user: { name: 'local-dev', dataDir: dir, cacheDir: sourceTranspileCache() },
         },
         { platform: createPlatform().snapshot(), agnesVersion: '0.0.0', now: new Date().toISOString() },
       )
@@ -697,7 +698,7 @@ describe('production supervisor storage', () => {
         const resourceProfile = await resolveProfile(
           {
             builtin: 'local-dev',
-            user: { name: 'local-dev', dataDir: dir, cacheDir: join(dir, 'cache') },
+            user: { name: 'local-dev', dataDir: dir, cacheDir: sourceTranspileCache() },
           },
           { platform: createPlatform().snapshot(), agnesVersion: '0.0.0', now: new Date().toISOString() },
         )

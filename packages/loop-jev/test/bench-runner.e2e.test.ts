@@ -24,6 +24,7 @@ import {
   initializeHomeLocked,
 } from '@agnes/host'
 import { afterAll, describe, expect, it } from 'vitest'
+import { sourceTranspileCache } from '../../daemon/test/source-transpile-cache.js'
 
 const out = mkdtempSync(join(tmpdir(), 'agnes-jev-bench-'))
 const servers: Array<{ close(): Promise<unknown> }> = []
@@ -46,7 +47,13 @@ const suite = fileURLToPath(new URL('./fixtures/bench-mini.json', import.meta.ur
 /** The runner talks to loopback endpoints only, so no proxy set on the machine may sit in between. */
 const PROXY_VARIABLES = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
 const childEnv = (extra: Record<string, string> = {}): NodeJS.ProcessEnv => {
-  const env: NodeJS.ProcessEnv = { ...process.env, NO_PROXY: '127.0.0.1,localhost', ...extra }
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    NO_PROXY: '127.0.0.1,localhost',
+    // Each case boots a source Host in a fresh home; share only the plugin transpile cache.
+    AGH_BENCH_TRANSPILE_CACHE: sourceTranspileCache(),
+    ...extra,
+  }
   for (const key of [...PROXY_VARIABLES, 'no_proxy', 'BENCH_PYTHON']) delete env[key]
   return { ...env, ...extra }
 }

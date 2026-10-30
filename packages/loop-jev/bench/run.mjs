@@ -1103,7 +1103,18 @@ export async function main(argv) {
         args: parseArgs(['--profile', o.profile, '--cwd', root, '--standalone']),
         signal: bootAbort.signal,
       },
-      { env: { ...process.env, AGH_HOME: home }, home, cwd: root, agnesVersion, log: () => {} },
+      {
+        env: { ...process.env, AGH_HOME: home },
+        home,
+        cwd: root,
+        agnesVersion,
+        log: () => {},
+        // A test run shares the source plugins' transpile cache across its fresh homes; jiti
+        // re-transpiles any file whose source changed, and the home's own data stays isolated.
+        ...(process.env.AGH_BENCH_TRANSPILE_CACHE
+          ? { transpileCacheDir: process.env.AGH_BENCH_TRANSPILE_CACHE }
+          : {}),
+      },
     )
     const ctx = {
       o,

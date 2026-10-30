@@ -102,6 +102,11 @@ export type LocalBootDeps = BootDeps & {
   configuration?: ConfigurationService
   /** Internal ledger/ownership-bound media port composed by bootLocal. */
   requestMedia?: NonNullable<HostOptions['requestMedia']>
+  /**
+   * Where the default loader keeps transpiled plugin source, instead of the profile's cacheDir (an
+   * isolated one-shot run otherwise starts cold). Entries are checked against the current source.
+   */
+  transpileCacheDir?: string
 }
 
 /**
@@ -145,7 +150,7 @@ async function defaultPackages(
       runtimePluginSnapshots,
     }
   const extensionLoader = createLoader({
-    cacheDir: profile.cacheDir,
+    cacheDir: deps.transpileCacheDir ?? profile.cacheDir,
     hostRoot,
     agnesVersion: deps.agnesVersion,
   })
