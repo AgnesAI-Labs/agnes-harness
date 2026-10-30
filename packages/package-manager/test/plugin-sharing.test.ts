@@ -165,8 +165,9 @@ function plugin(root: string, extra: Record<string, unknown> = {}): string {
   writeFileSync(join(source, 'dist', 'index.js'), 'export const main = () => 1')
   return source
 }
+// Windows bsdtar ends each listed name with CRLF.
 const listing = (archive: string) =>
-  execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' }).split('\n').filter(Boolean)
+  execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' }).split(/\r?\n/).filter(Boolean)
 
 it('ships only npm-packlist files: package.json "files" and .gitignore are honored', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agh-lean-pack-'))
