@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { dirname, extname, relative, resolve } from 'node:path'
+import { dirname, extname, relative, resolve, sep } from 'node:path'
 import { build } from 'esbuild'
 import { assertClientExternals } from '../../../tools/web-client-externals.mjs'
 
@@ -34,11 +34,13 @@ export async function checkPackagedClientModules(root: string): Promise<void> {
       const asset = queue.shift()
       if (!asset || checked.has(asset)) continue
       const rel = relative(root, asset)
+      // Report the payload path as the manifest spells it, '/'-separated on every platform.
+      const shown = rel.split(sep).join('/')
       if (rel.startsWith('..') || resolve(root, rel) !== asset)
-        throw new Error(`Client asset escapes payload: ${rel}`)
+        throw new Error(`Client asset escapes payload: ${shown}`)
       checked.add(asset)
       const bytes = await readFile(asset).catch(() => {
-        throw new Error(`Missing client asset: ${rel}`)
+        throw new Error(`Missing client asset: ${shown}`)
       })
       const references: string[] = []
       const text = /\.(?:m?js|css|gltf)$/.test(asset) ? bytes.toString('utf8') : ''

@@ -61,6 +61,9 @@ async function boundedRead(
     await file.close()
   }
 }
+/** A repository-relative label in '/' form on every platform, like the fixed `user-global/AGENTS.md`. */
+const label = (root: string, path: string): string => relative(root, path).split(sep).join('/')
+
 /** Nearest project baseline followed by directories touched through public tool calls. */
 export async function loadContextRules(
   workspaceRoot: string,
@@ -87,7 +90,7 @@ export async function loadContextRules(
     ...[...dirs].flatMap((dir) =>
       [...config.instructionFiles, ...config.localInstructionFiles].map((name) => ({
         path: join(dir, name),
-        scope: relative(root, dir) || '.',
+        scope: label(root, dir) || '.',
         trust: 'repository' as const,
         boundary: root,
       })),
@@ -128,7 +131,7 @@ export async function loadContextRules(
         signal?.throwIfAborted()
         if (!['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? ''))
           result.skipped.push(
-            candidate.trust === 'user' ? 'user-global/AGENTS.md' : relative(root, candidate.path),
+            candidate.trust === 'user' ? 'user-global/AGENTS.md' : label(root, candidate.path),
           )
         continue
       }
@@ -138,7 +141,7 @@ export async function loadContextRules(
       if (seen.has(content.trim())) continue
       seen.add(content.trim())
       dedup.set(dirname(candidate.path), seen)
-      const path = candidate.trust === 'user' ? 'user-global/AGENTS.md' : relative(root, candidate.path)
+      const path = candidate.trust === 'user' ? 'user-global/AGENTS.md' : label(root, candidate.path)
       const text = `\n${renderRuleFile({ path, scope: candidate.scope, trust: candidate.trust, content })}`
       if (Buffer.byteLength(result.content + text) > config.maxBytes) {
         result.skipped.push(path)
