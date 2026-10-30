@@ -1,19 +1,18 @@
 /** A bounded PCM playout buffer. Starts only from a local user gesture, never in the background. */
 export class BrowserAudio {
-  private context: AudioContext | undefined
-  private next = 0
-  private sources = new Set<AudioBufferSourceNode>()
+  #context: AudioContext | undefined
+  #activated = false
+  #next = 0
+  #sources = new Set<AudioBufferSourceNode>()
   resume() {
-    const Context = globalThis.AudioContext
-    if (!Context) return
-    this.context ??= new Context()
-    void this.context.resume().catch(() => {})
+    // A click on a text-only page must not synchronously open an audio device.
+    // Some output drivers block AudioContext construction on the UI thread.
+    this.#activated = true
+    void this.#context?.resume().catch(() => {})
   }
   push(bytes: Uint8Array, sampleRate: number) {
-    const context = this.context
     if (
-      !context ||
-      context.state !== 'running' ||
+      !this.#activated ||
       !Number.isInteger(sampleRate) ||
       sampleRate < 8000 ||
       sampleRate > 192000 ||
@@ -22,9 +21,24 @@ export class BrowserAudio {
       bytes.length % 4
     )
       return
-    if (this.next > context.currentTime + 0.15) this.reset()
     const count = bytes.length / 4
     if (count / sampleRate > 0.1) return
+    if (!this.#context) {
+      const Context = globalThis.AudioContext
+      if (!Context) return
+      try {
+        this.#context = new Context()
+        void this.#context.resume().catch(() => {})
+      } catch {
+        // An unavailable device must not terminate the shared picture stream.
+        // Retry only after another explicit user gesture, not on every packet.
+        this.#activated = false
+        return
+      }
+    }
+    const context = this.#context
+    if (context.state !== 'running') return
+    if (this.#next > context.currentTime + 0.15) this.reset()
     const buffer = context.createBuffer(2, count, sampleRate)
     const values = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
     for (let channel = 0; channel < 2; channel++) {
@@ -35,25 +49,26 @@ export class BrowserAudio {
     source.buffer = buffer
     source.connect(context.destination)
     source.onended = () => {
-      this.sources.delete(source)
+      this.#sources.delete(source)
       source.disconnect()
     }
-    this.sources.add(source)
-    const when = Math.max(context.currentTime + 0.025, this.next)
+    this.#sources.add(source)
+    const when = Math.max(context.currentTime + 0.025, this.#next)
     source.start(when)
-    this.next = when + buffer.duration
+    this.#next = when + buffer.duration
   }
   reset() {
-    for (const source of this.sources) {
+    for (const source of this.#sources) {
       source.stop()
       source.disconnect()
     }
-    this.sources.clear()
-    this.next = 0
+    this.#sources.clear()
+    this.#next = 0
   }
   close() {
     this.reset()
-    void this.context?.close().catch(() => {})
-    this.context = undefined
+    this.#activated = false
+    void this.#context?.close().catch(() => {})
+    this.#context = undefined
   }
 }

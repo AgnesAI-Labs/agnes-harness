@@ -178,6 +178,7 @@ function toolSchema(schema) {
       [Kind]: 'Union',
       anyOf: schema.enum.map((value) => ({ [Kind]: 'Literal', type: typeof value, const: value })),
     }
+  if (schema.type === 'array') return { ...schema, [Kind]: 'Array', items: toolSchema(schema.items) }
   if (schema.type === 'object')
     return {
       ...schema,
@@ -204,6 +205,10 @@ export const parameters = toolSchema(
           'events',
           'click',
           'fill',
+          'hover',
+          'drag',
+          'select',
+          'upload',
           'key',
           'scroll',
           'wait',
@@ -216,6 +221,20 @@ export const parameters = toolSchema(
       pageId: text(100),
       pageEpoch: { type: 'integer', minimum: 0 },
       ref: text(100),
+      query: text(200),
+      depth: { type: 'integer', minimum: 0, maximum: 20 },
+      targetRef: text(100),
+      path: text(4096),
+      values: { type: 'array', items: { type: 'string', maxLength: 4096 }, minItems: 1, maxItems: 100 },
+      dialog: object(
+        {
+          type: { enum: ['alert', 'confirm', 'prompt', 'beforeunload'] },
+          message: { type: 'string', maxLength: 4096 },
+          response: { enum: ['accept', 'dismiss'] },
+          text: { type: 'string', maxLength: 4096 },
+        },
+        ['type', 'message', 'response'],
+      ),
       url: text(8192),
       previewRoot: text(4096),
       text: { type: 'string', maxLength: 10_000 },

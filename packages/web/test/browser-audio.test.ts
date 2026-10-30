@@ -5,7 +5,11 @@ import { BrowserAudio } from '../../package-manager/bundled-plugins/browser/src/
 it('plays PCM only after a user gesture and bounds queued sound across navigation/disconnect', () => {
   const scheduled: { at: number; stopped: boolean; samples: Float32Array[] }[] = []
   let closed = false
+  let opened = false
   class Context {
+    constructor() {
+      opened = true
+    }
     state = 'running'
     currentTime = 0
     destination = {}
@@ -46,6 +50,13 @@ it('plays PCM only after a user gesture and bounds queued sound across navigatio
     audio.push(pcm, 48000)
     expect(scheduled).toEqual([])
     audio.resume()
+    // Text-only pages must never acquire an output device on ordinary input.
+    expect(opened).toBe(false)
+    audio.push(pcm, 0)
+    audio.push(new Uint8Array(3), 48000)
+    audio.push(new Uint8Array(16388), 48000)
+    audio.push(pcm, 8000)
+    expect(opened).toBe(false)
     audio.push(pcm, 48000)
     expect(scheduled[0]!.samples[0]![0]).toBe(0.5)
     expect(scheduled[0]!.samples[1]![0]).toBe(-0.5)
@@ -62,6 +73,24 @@ it('plays PCM only after a user gesture and bounds queued sound across navigatio
     expect(closed).toBe(true)
     audio.push(pcm, 48000)
     expect(scheduled).toHaveLength(count)
+    opened = false
+    audio.resume()
+    expect(opened).toBe(false)
+    vi.stubGlobal(
+      'AudioContext',
+      class {
+        constructor() {
+          throw new Error('Output device unavailable')
+        }
+      },
+    )
+    expect(() => audio.push(pcm, 48000)).not.toThrow()
+    vi.stubGlobal('AudioContext', Context)
+    audio.push(pcm, 48000)
+    expect(opened).toBe(false)
+    audio.resume()
+    audio.push(pcm, 48000)
+    expect(opened).toBe(true)
   } finally {
     audio.close()
     vi.unstubAllGlobals()

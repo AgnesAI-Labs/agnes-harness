@@ -1,0 +1,53 @@
+name: Built-in browser acceptance
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'packages/package-manager/bundled-plugins/browser/**'
+      - 'packages/package-manager/test/browser-*.ts'
+      - 'packages/web/test/browser-*.ts*'
+      - 'tools/browser-prepare.mjs'
+      - '.github/workflows/browser.yml'
+permissions: { contents: read }
+jobs:
+  browser:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-2022, arch: x64 }
+          - { os: macos-14, arch: arm64 }
+          - { os: macos-15-intel, arch: x64 }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      AGH_BROWSER_EXPECT_ARCH: ${{ matrix.arch }}
+      AGH_BROWSER_TEST_CACHED: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version-file: .node-version, cache: pnpm }
+      - run: node tools/toolchain/run.mjs install --frozen-lockfile --ignore-scripts
+      - name: Prepare Windows native headers
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./.github/scripts/prepare-windows-native.ps1 -CacheRoot "$env:RUNNER_TEMP/agnes-node-headers"
+      - run: node tools/toolchain/run.mjs --filter @agnes/host build:native
+      - run: node tools/toolchain/run.mjs --filter @agnes/system-node build:native
+      - run: node tools/toolchain/run.mjs exec node tools/browser-prepare.mjs
+      - name: Existing behavior and new capabilities (no retries)
+        run: >-
+          node tools/toolchain/run.mjs exec vitest run
+          packages/package-manager/test/browser-runtime.test.ts
+          packages/package-manager/test/browser-files.test.ts
+          packages/package-manager/test/browser-capabilities.e2e.test.ts
+          packages/package-manager/test/browser-runtime.e2e.test.ts
+          packages/web/test/browser-screen.test.tsx
+          packages/web/test/browser-pointer.test.tsx
+          packages/web/test/browser-interaction.test.ts
+          packages/web/test/browser-client.test.ts
+          packages/web/test/browser-panel.test.tsx
+          packages/web/test/browser-panel-selection.test.tsx
+          packages/web/test/browser-audio.test.ts
+          --maxWorkers=1

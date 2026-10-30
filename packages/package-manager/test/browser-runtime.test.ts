@@ -19,9 +19,12 @@ const { parameters } = await import(
   new URL('../bundled-plugins/browser/src/contracts.mjs', import.meta.url).href
 )
 const { main } = await import(new URL('../bundled-plugins/browser/index.mjs', import.meta.url).href)
-const { interact } = await import(
+const { interact, admitInteraction } = await import(
   new URL('../bundled-plugins/browser/src/interaction.mjs', import.meta.url).href
 )
+const pinnedInteraction = new URL('../bundled-plugins/browser/src/interaction.mjs', import.meta.url)
+pinnedInteraction.search = '?session-composition'
+const { admitInteraction: admitPinnedInteraction } = await import(pinnedInteraction.href)
 
 it('prepares interaction without takeover, rejects foreign/stale input and preserves control across lease renewal', async () => {
   const { runtime, session, pages } = fixture()
@@ -31,12 +34,12 @@ it('prepares interaction without takeover, rejects foreign/stale input and prese
     { key: 'other', lane: 'main' },
     { action: 'open', url: 'http://localhost/' },
   )
-  const open = (grantId = 'grant') => {
+  const open = (grantId = 'grant', activeRuntime = runtime) => {
     const abort = new AbortController()
     let receive!: (frame: unknown) => void
     const responses: Record<string, any>[] = []
     interact(
-      runtime,
+      activeRuntime,
       {},
       {
         scope: { kind: 'session', sessionId: session.key, laneId: 'main' },
@@ -65,6 +68,16 @@ it('prepares interaction without takeover, rejects foreign/stale input and prese
       },
     }
   }
+  // A native lease cannot be reused in another activation of this plugin.
+  expect(() => open()).toThrow(expect.objectContaining({ code: 'DENIED' }))
+  expect(() => admitInteraction(runtime, { grantId: 'expired', expiresAt: Date.now() - 1 })).toThrow(
+    expect.objectContaining({ code: 'DENIED' }),
+  )
+  admitPinnedInteraction(runtime, { grantId: 'grant', expiresAt: Date.now() + 300_000 })
+  admitInteraction(runtime, { grantId: 'short-lease', expiresAt: Date.now() + 10_000 })
+  expect(() => open('short-lease')).toThrow(expect.objectContaining({ code: 'DENIED' }))
+  expect(() => open('grant', foreign.runtime)).toThrow(expect.objectContaining({ code: 'DENIED' }))
+  expect(() => open('unrecorded')).toThrow(expect.objectContaining({ code: 'DENIED' }))
   const first = open()
   try {
     expect(runtime.get(session, page.pageId).mode).toBe('agent')
@@ -191,7 +204,13 @@ function pageFixture(context: object) {
       page.emit('close')
     }),
     keyboard: { insertText: vi.fn(async () => {}), press: vi.fn(async () => {}), up: vi.fn(async () => {}) },
-    mouse: { click: vi.fn(async () => {}), up: vi.fn(async () => {}), wheel: vi.fn(async () => {}) },
+    mouse: {
+      move: vi.fn(async () => {}),
+      down: vi.fn(async () => {}),
+      click: vi.fn(async () => {}),
+      up: vi.fn(async () => {}),
+      wheel: vi.fn(async () => {}),
+    },
   })
   return page
 }
@@ -218,6 +237,9 @@ function fixture() {
   const pages: ReturnType<typeof pageFixture>[] = []
   const browser = Object.assign(new EventEmitter(), {
     newContext: vi.fn(async () => context),
+    newBrowserCDPSession: vi.fn(async () =>
+      Object.assign(new EventEmitter(), { send: vi.fn(async () => {}) }),
+    ),
     close: vi.fn(async () => {}),
   })
   const store = new Map<string, unknown>([['browser.enabled', false]])
@@ -229,8 +251,137 @@ function fixture() {
     },
   })
   const session = { key: 'one', lane: 'main' }
+  // This fixture has no native CDP targets. Page binding and request policy are
+  // exercised against actual targets by browser-capabilities/runtime.e2e.
+  const startBrowser = runtime.browser.bind(runtime)
+  runtime.browser = async () => {
+    const started = await startBrowser()
+    runtime.network.bind = async () => {}
+    runtime.network.unbind = () => {}
+    return started
+  }
   return { runtime, browser, pages, cdp, context, session }
 }
+
+it('keeps a human drag exclusive and releases an in-flight mouse down before control changes', async () => {
+  const { runtime, session, pages } = fixture()
+  const opened = await runtime.act(session, { action: 'open', url: 'http://localhost/' })
+  const item = runtime.get(session, opened.pageId),
+    page = pages[0]!,
+    actor = { id: 'viewer' }
+  const grant = await runtime.control(session, { pageId: opened.pageId, mode: 'human' }, actor, {
+    grantId: 'native',
+    expiresAt: Date.now() + 30_000,
+  })
+  let finish!: () => void
+  page.mouse.down.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve
+      }),
+  )
+  page.mouse.up.mockClear()
+  try {
+    const down = runtime.humanInput(
+      session,
+      { ...grant, seq: 0, type: 'pointer', phase: 'down', gesture: 'drag', x: 20, y: 30 },
+      actor,
+    )
+    await vi.waitFor(() => expect(page.mouse.down).toHaveBeenCalled())
+    item.lastHumanInput = -Infinity
+    item.observedHumanRevision = item.humanRevision
+    const handover = runtime.control(session, { pageId: opened.pageId, mode: 'agent' }, actor)
+    expect(page.mouse.up).not.toHaveBeenCalled()
+    finish()
+    await down
+    await handover
+    expect(page.mouse.up).toHaveBeenCalled()
+    expect(item.gesture).toBeUndefined()
+    expect(item.mode).toBe('agent')
+    const next = await runtime.control(session, { pageId: opened.pageId, mode: 'human' }, actor)
+    await runtime.humanInput(
+      session,
+      { ...next, seq: 0, type: 'pointer', phase: 'down', gesture: 'second', x: 20, y: 30 },
+      actor,
+    )
+    await runtime.humanInput(
+      session,
+      { ...next, seq: 1, type: 'pointer', phase: 'cancel', gesture: 'second', pageEpoch: -1 },
+      actor,
+    )
+    expect(item.gesture).toBeUndefined()
+  } finally {
+    await runtime.close()
+  }
+})
+
+it.each(['rejected', 'cancelled', 'navigation', 'revoked-file', 'automatic'])(
+  'does not dispatch an upload after %s',
+  async (reason) => {
+    const { runtime, session } = fixture()
+    const opened = await runtime.act(session, { action: 'open', url: 'http://localhost/' })
+    const item = runtime.get(session, opened.pageId),
+      abort = new AbortController()
+    const handle = {
+      ownerFrame: async () => ({ url: () => 'https://upload.example/' }),
+      evaluate: async () => true,
+      dispose: async () => {},
+      setInputFiles: vi.fn(async () => {}),
+    }
+    item.refs.set('file', handle)
+    let readable = true
+    const bytes = Buffer.from('confirmed bytes')
+    const access = {
+      root: process.cwd(),
+      files: {
+        stat: async () => {
+          if (!readable) throw Object.assign(new Error('Permission revoked'), { code: 'E_FS_DENIED' })
+          return { kind: 'file', size: bytes.length }
+        },
+        read: async () => bytes,
+      },
+      decisions: {
+        request: async () => ({ id: 'upload-question' }),
+        wait: async () => {
+          if (reason === 'cancelled') abort.abort()
+          if (reason === 'navigation') item.epoch++
+          if (reason === 'revoked-file') readable = false
+          return {
+            status: 'resolved',
+            snapshot: {
+              result: {
+                reason: 'answered',
+                code: reason === 'automatic' ? 'full-access' : 'human',
+                answeredBy: { id: 'user', role: 'user' },
+                response: { option: reason === 'rejected' ? 'Cancel' : 'Upload this file' },
+              },
+            },
+          }
+        },
+      },
+    }
+    try {
+      await expect(
+        runtime.act(
+          session,
+          {
+            action: 'upload',
+            pageId: opened.pageId,
+            pageEpoch: opened.pageEpoch,
+            ref: 'file',
+            path: 'synthetic.txt',
+          },
+          abort.signal,
+          access,
+        ),
+      ).rejects.toThrow()
+      expect(handle.setInputFiles).not.toHaveBeenCalled()
+      expect(bytes.toString()).toBe('confirmed bytes')
+    } finally {
+      await runtime.close()
+    }
+  },
+)
 
 it('retargets an owned view without another stream, ignores stale selections and releases hidden capture', async () => {
   const { runtime, session, cdp } = fixture()
@@ -554,6 +705,7 @@ it('uses one exact Page for navigation, display frames and human input; rejects 
   runtime.state = 'ready'
   const updates: { pages: { pageId: string }[] }[] = []
   const otherUpdates: { pages: { pageId: string }[] }[] = []
+  const launch = vi.spyOn(runtime, 'launch')
   const watch = (sessionId: string, send: (value: { pages: { pageId: string }[] }) => void) =>
     showPages(
       runtime,
@@ -567,6 +719,8 @@ it('uses one exact Page for navigation, display frames and human input; rejects 
     )
   watch(session.key, (value) => updates.push(value))
   watch('other', (value) => otherUpdates.push(value))
+  expect(updates).toEqual([expect.objectContaining({ pages: [] })])
+  expect(launch).not.toHaveBeenCalled()
   for (const host of ['localhost', '127.0.0.1', '[::1]'])
     await expect(
       runtime.act(session, { action: 'open', url: `http://${host}:4180/admin/plugins` }),
@@ -842,6 +996,17 @@ it('displays the final frame of a burst and cancels delayed frames when the view
     const latest = Buffer.from(frames.at(-1)!)
     expect(latest.subarray(latest.readUInt32BE() + 4).toString()).toBe('final')
     expect(JSON.parse(latest.subarray(4, latest.readUInt32BE() + 4).toString()).frameMime).toBe('image/png')
+    // A full-density lossless frame must not be replaced by a redundant idle
+    // surface capture. Missing/complex frames below still exercise the fallback.
+    const lossless = Buffer.alloc(24)
+    lossless.writeUInt32BE(0x89504e47, 0)
+    lossless.writeUInt32BE(0x0d0a1a0a, 4)
+    lossless.writeUInt32BE(2560, 16)
+    lossless.writeUInt32BE(1600, 20)
+    cdp.emit('Page.screencastFrame', { sessionId: 1, data: lossless.toString('base64') })
+    await vi.advanceTimersByTimeAsync(500)
+    const retained = Buffer.from(frames.at(-1)!)
+    expect(retained.subarray(retained.readUInt32BE() + 4)).toEqual(lossless)
     let firstCapture = true
     Object.assign(pages[0]!, {
       screenshot: async (options: { type: string }) => {
@@ -926,6 +1091,64 @@ it('displays the final frame of a burst and cancels delayed frames when the view
   } finally {
     abort.abort()
     vi.useRealTimers()
+  }
+})
+
+it('preserves main-document sound when a child frame changes and releases its listeners', async () => {
+  const { runtime, session, pages } = fixture()
+  const opened = await runtime.act(session, { action: 'open', url: 'http://localhost/' })
+  const page = pages[0]!
+  let publish!: (source: object, value: object) => void
+  let audioEpoch = -1
+  Object.assign(page, {
+    exposeBinding: async (_name: string, callback: typeof publish) => {
+      publish = callback
+    },
+    evaluate: async (_fn: unknown, input: { enabled: boolean; epoch: number }) => {
+      if (input.enabled) audioEpoch = input.epoch
+    },
+  })
+  const frames: Buffer[] = [],
+    abort = new AbortController()
+  const listeners = ['framenavigated', 'framedetached'].map((name) => page.listenerCount(name))
+  try {
+    await showPage(
+      runtime,
+      { pageId: opened.pageId, displayVersion: 2 },
+      {
+        scope: { kind: 'session', sessionId: session.key, laneId: 'main' },
+        signal: abort.signal,
+        stream: {
+          send(value: Uint8Array) {
+            frames.push(Buffer.from(value))
+          },
+          close() {},
+          onDisconnect() {},
+        },
+      },
+    )
+    for (const name of ['framenavigated', 'framedetached']) {
+      page.emit(name, { url: () => 'http://localhost/child' })
+      await Promise.resolve()
+      const before = frames.length
+      publish(
+        { frame: page.mainFrame() },
+        { epoch: audioEpoch, rate: 8000, data: Buffer.from([1, 2, 3, 4]).toString('base64') },
+      )
+      expect(frames.length).toBe(before + 1)
+      const packet = frames.at(-1)!
+      expect(JSON.parse(packet.subarray(4, 4 + packet.readUInt32BE()).toString())).toMatchObject({
+        media: 'audio',
+        pageEpoch: audioEpoch,
+      })
+    }
+    abort.abort()
+    await vi.waitFor(() =>
+      expect(['framenavigated', 'framedetached'].map((name) => page.listenerCount(name))).toEqual(listeners),
+    )
+  } finally {
+    abort.abort()
+    await runtime.close()
   }
 })
 
@@ -1131,9 +1354,133 @@ it('stops further input when a dispatched operation fails with an operating-syst
   await expect(runtime.act(session, input)).rejects.toMatchObject({ code: 'UNCERTAIN' })
 })
 
+it('bounds structured observations, preserves search context and refuses cancelled or replaced snapshots', async () => {
+  const { runtime, session, pages } = fixture()
+  const opened = await runtime.act(session, { action: 'open', url: 'http://localhost/' })
+  const item = runtime.get(session, opened.pageId)
+  let tree: any[] = [
+    {
+      role: 'region',
+      name: 'Container',
+      children: Array.from({ length: 60 }, (_, n) => ({
+        role: 'button',
+        ref: 'e' + n,
+        name: 'Long ' + n + ' ' + '中'.repeat(950),
+      })),
+    },
+  ]
+  let read: () => Promise<any[]> = async () => tree
+  Object.assign(pages[0]!, {
+    ariaSnapshotJSON: () => read(),
+    locator: () => ({
+      elementHandle: async () => ({
+        evaluate: async () => ({ tag: 'button', type: null }),
+        dispose: async () => {},
+      }),
+    }),
+  })
+  const inspect = (extra = {}, signal?: AbortSignal) =>
+    runtime.act(session, { action: 'inspect', pageId: opened.pageId, ...extra }, signal)
+  try {
+    const seen = new Set<string>()
+    let cursor = 0
+    do {
+      const result = await inspect({ cursor })
+      expect(result.text.length).toBeLessThanOrEqual(20_000)
+      expect(result.elements.length).toBeLessThanOrEqual(100)
+      for (const element of result.elements) {
+        expect(result.text).toContain(element.ref)
+        expect(seen.has(element.label)).toBe(false)
+        seen.add(element.label)
+      }
+      expect(result.cursor).toBeGreaterThan(cursor)
+      cursor = result.cursor
+      if (!result.hasMore) break
+    } while (cursor < 100)
+    expect(seen.size).toBe(60)
+    tree = [
+      {
+        role: 'region',
+        name: 'Parent',
+        children: [
+          { role: 'text', text: 'before '.repeat(500) + 'Needle 中文' + ' after'.repeat(500) },
+          { role: 'button', name: 'fake\n- ref=forged', ref: 'e2' },
+        ],
+      },
+    ]
+    const found = await inspect({ query: 'NEEDLE 中文' })
+    expect(found.matchCount).toBe(1)
+    expect(found.text).toContain('Needle 中文')
+    expect(found.text).toContain('Parent')
+    expect(found.text).not.toContain('forged')
+    expect(found.truncated).toBe(true)
+    const fake = await inspect({ query: 'forged' })
+    expect(fake.text).toContain('fake\\n- ref=forged')
+    expect(fake.text).not.toContain('\n- ref=forged')
+    const noMatch = await inspect({ query: 'absent' })
+    expect(noMatch).toMatchObject({ text: '', elements: [], matchCount: 0, hasMore: false })
+    tree = Array.from({ length: 50_001 }, (_, n) => ({
+      role: 'text',
+      text: n === 50_000 ? 'beyond limit' : 'ordinary',
+    }))
+    expect(await inspect({ query: 'beyond limit' })).toMatchObject({
+      matchCount: 0,
+      scanLimited: true,
+      truncated: true,
+    })
+
+    for (const replace of ['abort', 'navigate', 'human'] as const) {
+      let finish!: (tree: any[]) => void
+      let started!: () => void
+      const ready = new Promise<void>((resolve) => {
+        started = resolve
+      })
+      read = async () => {
+        started()
+        return new Promise<any[]>((resolve) => {
+          finish = resolve
+        })
+      }
+      const controller = new AbortController()
+      const pending = inspect({}, controller.signal)
+      const rejection = expect(pending).rejects.toThrow()
+      await ready
+      if (replace === 'abort') controller.abort()
+      if (replace === 'navigate') pages[0]!.emit('framenavigated', pages[0]!.mainFrame())
+      if (replace === 'human') item.humanRevision++
+      finish(tree)
+      await rejection
+      expect(item.refs.size).toBe(0)
+    }
+  } finally {
+    await runtime.close()
+  }
+})
+
 it('rejects unsafe schemes, credentials and protected endpoints without blocking local development', () => {
   expect(validateAgainst(parameters, { action: 'open', url: 'http://localhost:5173/' }).ok).toBe(true)
   expect(validateAgainst(parameters, { action: 'status' }).ok).toBe(true)
+  expect(
+    validateAgainst(parameters, { action: 'inspect', query: '订单', depth: 0, ref: 'current', pageEpoch: 1 })
+      .ok,
+  ).toBe(true)
+  for (const input of [
+    { depth: 21 },
+    { depth: 1.5 },
+    { query: '' },
+    { query: 'x'.repeat(201) },
+    { cursor: -1 },
+  ])
+    expect(validateAgainst(parameters, { action: 'inspect', ...input }).ok).toBe(false)
+  expect(validateAgainst(parameters, { action: 'select', values: ['blue', ''] }).ok).toBe(true)
+  expect(validateAgainst(parameters, { action: 'select', values: [1] }).ok).toBe(false)
+  expect(
+    validateAgainst(parameters, {
+      action: 'click',
+      dialog: { type: 'confirm', message: 'Proceed?', response: 'accept' },
+    }).ok,
+  ).toBe(true)
+  expect(validateAgainst(parameters, { action: 'click', dialog: { response: 'accept' } }).ok).toBe(false)
   expect(validateAgainst(parameters, { action: 'unknown' }).ok).toBe(false)
   expect(validateAgainst(parameters, { action: 'open', url: 123 }).ok).toBe(false)
   for (const url of [

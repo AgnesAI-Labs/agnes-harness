@@ -172,15 +172,17 @@ export async function captureAudio(runtime, item, capture) {
       await item.page.evaluate(mediaTap, { binding, enabled: false, epoch: item.epoch }).catch(() => {})
   }
   item.page.on('domcontentloaded', attach)
-  const navigate = (frame) => {
-    if (frame === item.page.mainFrame()) void attach()
-  }
+  // Frame replacement also invalidates the page's observation epoch. Keep the
+  // existing main-document audio tap current without reconnecting its sources.
+  const navigate = () => void attach()
   item.page.on('framenavigated', navigate)
+  item.page.on('framedetached', navigate)
   await attach()
   return async () => {
     stopped = true
     item.page.off('domcontentloaded', attach)
     item.page.off('framenavigated', navigate)
+    item.page.off('framedetached', navigate)
     await item.page.evaluate(mediaTap, { binding, enabled: false, epoch: item.epoch }).catch(() => {})
   }
 }

@@ -1,6 +1,7 @@
 import type { ClientContext } from '@agnes/web-client'
 
 export type BrowserPage = {
+  pointerInput?: boolean
   media?: 'audio'
   sampleRate?: number
   frameMime?: 'image/jpeg' | 'image/png'
@@ -20,73 +21,71 @@ export type BrowserState = {
   state: string
   error?: string | null | undefined
   pages: BrowserPage[]
+  pagesUnavailable?: boolean
   sessionId?: string | undefined
 }
 export class BrowserClient {
-  private pending = new Map<
-    string,
-    { service: string; input: Record<string, unknown>; operationId: string }
-  >()
-  private inFlight = new Set<string>()
-  private snapshot: BrowserState = { enabled: true, state: 'preparing', pages: [] }
-  private listeners = new Set<() => void>()
-  private stopped = false
-  private refreshing = false
-  private refreshEpoch?: number
-  private refreshAgain = false
-  private watching = false
-  private abort = new AbortController()
-  private pageWatch?: AbortController
-  private profileWatch?: AbortController
-  private profileLive = false
-  private pagesLive = false
-  private pagesVersion = 0
-  private status?: Omit<BrowserState, 'pages'>
-  private timer?: ReturnType<typeof setInterval>
+  #pending = new Map<string, { service: string; input: Record<string, unknown>; operationId: string }>()
+  #inFlight = new Set<string>()
+  #snapshot: BrowserState = { enabled: true, state: 'preparing', pages: [] }
+  #listeners = new Set<() => void>()
+  #stopped = false
+  #refreshing = false
+  #refreshEpoch?: number
+  #refreshAgain = false
+  #watching = false
+  #abort = new AbortController()
+  #pageWatch?: AbortController
+  #profileWatch?: AbortController
+  #profileLive = false
+  #pagesLive = false
+  #pagesVersion = 0
+  #status?: Omit<BrowserState, 'pages'> | undefined
+  #timer?: ReturnType<typeof setInterval>
   constructor(readonly ctx: ClientContext) {}
   subscribe = (listener: () => void) => {
-    this.listeners.add(listener)
+    this.#listeners.add(listener)
     return () => {
-      this.listeners.delete(listener)
+      this.#listeners.delete(listener)
     }
   }
-  getSnapshot = () => this.snapshot
+  getSnapshot = () => this.#snapshot
   update(snapshot: BrowserState) {
-    if (this.stopped) return
-    this.snapshot = snapshot
-    for (const fn of this.listeners) fn()
+    if (this.#stopped) return
+    this.#snapshot = snapshot
+    for (const fn of this.#listeners) fn()
   }
   start() {
-    if (this.watching || this.stopped) return
-    this.watching = true
-    this.watchPages()
+    if (this.#watching || this.#stopped) return
+    this.#watching = true
+    this.#watchPages()
     // Queries are recovery only. Healthy streams carry status and session-owned pages.
-    this.timer = setInterval(() => {
+    this.#timer = setInterval(() => {
       const selected = this.ctx.session.readiness.getSnapshot()
-      if (!this.profileLive || (selected.status === 'ready' && !this.pagesLive)) void this.refresh()
+      if (!this.#profileLive || (selected.status === 'ready' && !this.#pagesLive)) void this.refresh()
     }, 3000)
-    return () => this.stopWatching()
+    return () => this.#stopWatching()
   }
-  private stopWatching() {
-    this.watching = false
-    this.pageWatch?.abort()
-    this.profileWatch?.abort()
-    this.pagesLive = false
-    this.profileLive = false
-    this.refreshAgain = false
-    clearInterval(this.timer)
+  #stopWatching() {
+    this.#watching = false
+    this.#pageWatch?.abort()
+    this.#profileWatch?.abort()
+    this.#pagesLive = false
+    this.#profileLive = false
+    this.#refreshAgain = false
+    clearInterval(this.#timer)
   }
-  private receiveStatus(value: Record<string, unknown>) {
+  #receiveStatus(value: Record<string, unknown>) {
     if (typeof value.enabled !== 'boolean' || typeof value.state !== 'string') return
-    this.status = {
+    this.#status = {
       enabled: value.enabled,
       state: value.state,
       error: typeof value.error === 'string' ? value.error : null,
     }
-    this.profileLive = true
-    this.update({ ...this.snapshot, ...this.status })
+    this.#profileLive = true
+    this.update({ ...this.#snapshot, ...this.#status })
   }
-  private watch(
+  #watch(
     streams: ClientContext['sessionStreams'],
     name: string,
     signal: AbortSignal,
@@ -136,135 +135,137 @@ export class BrowserClient {
     )
     void connect()
   }
-  private watchPages() {
-    this.pageWatch?.abort()
-    this.profileWatch?.abort()
-    this.pagesLive = false
-    this.profileLive = false
+  #watchPages() {
+    this.#pageWatch?.abort()
+    this.#profileWatch?.abort()
+    this.#pagesLive = false
+    this.#profileLive = false
     const selected = this.ctx.session.readiness.getSnapshot()
     if (selected.status !== 'ready') {
-      this.profileWatch = new AbortController()
-      this.watch(
+      this.#profileWatch = new AbortController()
+      this.#watch(
         this.ctx.profile.streams,
         'browser.state',
-        AbortSignal.any([this.abort.signal, this.profileWatch.signal]),
-        (value) => this.receiveStatus(value),
+        AbortSignal.any([this.#abort.signal, this.#profileWatch.signal]),
+        (value) => this.#receiveStatus(value),
         () => {
-          this.profileLive = false
+          this.#profileLive = false
         },
       )
       return
     }
-    this.pageWatch = new AbortController()
-    const signal = AbortSignal.any([this.abort.signal, this.pageWatch.signal])
-    this.watch(
+    this.#pageWatch = new AbortController()
+    const signal = AbortSignal.any([this.#abort.signal, this.#pageWatch.signal])
+    this.#watch(
       this.ctx.sessionStreams,
       'browser.pages',
       signal,
       (value) => {
         if (this.ctx.session.readiness.getSnapshot().epoch !== selected.epoch) return
-        this.receiveStatus(value)
+        this.#receiveStatus(value)
         if (value.changed === true) {
-          this.pagesLive = false
+          this.#pagesLive = false
           void this.refresh()
           return
         }
         if (!Array.isArray(value.pages)) return
-        this.pagesLive = true
-        this.pagesVersion++
-        if (this.profileLive) this.update({ ...this.snapshot, error: this.status?.error })
-        this.updatePages(value.pages as BrowserPage[], selected.sessionId)
+        this.#pagesLive = true
+        this.#pagesVersion++
+        if (this.#profileLive) this.update({ ...this.#snapshot, error: this.#status?.error })
+        this.#updatePages(value.pages as BrowserPage[], selected.sessionId)
       },
       () => {
-        this.pagesLive = false
-        this.profileLive = false
+        this.#pagesLive = false
+        this.#profileLive = false
       },
     )
   }
-  private updatePages(pages: BrowserPage[], sessionId: string | undefined) {
-    this.update({ ...this.snapshot, pages, sessionId })
+  #updatePages(pages: BrowserPage[], sessionId: string | undefined) {
+    this.update({ ...this.#snapshot, pages, sessionId, pagesUnavailable: false })
   }
   async refresh() {
-    if (this.stopped) return
-    if (this.refreshing) {
-      if (this.refreshEpoch !== this.ctx.session.readiness.getSnapshot().epoch) this.refreshAgain = true
+    if (this.#stopped) return
+    if (this.#refreshing) {
+      if (this.#refreshEpoch !== this.ctx.session.readiness.getSnapshot().epoch) this.#refreshAgain = true
       return
     }
-    this.refreshing = true
+    this.#refreshing = true
     const selected = this.ctx.session.readiness.getSnapshot()
-    this.refreshEpoch = selected.epoch
-    const pagesVersion = this.pagesVersion
+    this.#refreshEpoch = selected.epoch
+    const pagesVersion = this.#pagesVersion
     try {
       let state = (
-        this.profileLive && this.status
-          ? this.status
+        this.#profileLive && this.#status
+          ? this.#status
           : await this.ctx.profile.services.query('browser.status', {})
       ) as Omit<BrowserState, 'pages'>
+      // The status query may outlive a session attachment; do not query its replacement.
+      if (this.#stopped || this.ctx.session.readiness.getSnapshot().epoch !== selected.epoch) return
       let pages: BrowserPage[] = []
-      let sessionError: string | undefined
+      let pagesUnavailable = false
       if (state.enabled && selected.status === 'ready') {
         try {
           const value = (await this.ctx.agnes.services.call('browser.pages', {})) as { pages: BrowserPage[] }
           pages = value.pages
         } catch {
-          pages = this.snapshot.sessionId === selected.sessionId ? this.snapshot.pages : []
-          sessionError =
-            'Browser pages could not be refreshed. If this conversation uses an older plugin version, migrate it or open a new conversation.'
+          pages = this.#snapshot.sessionId === selected.sessionId ? this.#snapshot.pages : []
+          // The bridge does not preserve a typed refusal here. Do not guess a plugin
+          // version mismatch or present a failed read as a successfully empty page list.
+          pagesUnavailable = true
         }
       }
       if (this.ctx.session.readiness.getSnapshot().epoch !== selected.epoch) return
-      if (this.profileLive && this.status) state = this.status
-      if (this.pagesLive && pagesVersion !== this.pagesVersion) {
-        this.update({ ...this.snapshot, ...state })
+      if (this.#profileLive && this.#status) state = this.#status
+      if (this.#pagesLive && pagesVersion !== this.#pagesVersion) {
+        this.update({ ...this.#snapshot, ...state })
         return
       }
-      this.update({ ...state, pages, sessionId: selected.sessionId, error: state.error ?? sessionError })
-      this.updatePages(pages, selected.sessionId)
+      this.update({ ...state, pages, sessionId: selected.sessionId, pagesUnavailable })
     } catch (error) {
       // A failed read does not prove that the backend feature was disabled.
       if (this.ctx.session.readiness.getSnapshot().epoch !== selected.epoch) return
-      if (this.profileLive && this.pagesLive) return
+      if (this.#profileLive && this.#pagesLive) return
       this.update({
-        ...this.snapshot,
+        ...this.#snapshot,
         sessionId: selected.sessionId,
-        pages: this.snapshot.sessionId === selected.sessionId ? this.snapshot.pages : [],
+        pages: this.#snapshot.sessionId === selected.sessionId ? this.#snapshot.pages : [],
         state: 'failed',
         error: String(error),
       })
     } finally {
-      this.refreshing = false
-      if (this.refreshAgain) {
-        this.refreshAgain = false
+      this.#refreshing = false
+      if (this.#refreshAgain) {
+        this.#refreshAgain = false
         void this.refresh()
       }
     }
   }
   pendingEffect() {
     const id = this.ctx.session.sessionId
-    return id && !this.inFlight.has(id) ? this.pending.get(id) : undefined
+    return id && !this.#inFlight.has(id) ? this.#pending.get(id) : undefined
   }
   async effect(service: string, input: Record<string, unknown>) {
     const selected = this.ctx.session.readiness.getSnapshot()
     if (selected.status !== 'ready' || !selected.sessionId) throw new Error('A ready session is required.')
-    const pending = this.pending.get(selected.sessionId)
+    const pending = this.#pending.get(selected.sessionId)
     if (pending && (pending.service !== service || JSON.stringify(pending.input) !== JSON.stringify(input)))
       throw new Error('A previous browser action has an uncertain outcome. Check it before another action.')
     const operation = pending ?? { service, input: structuredClone(input), operationId: crypto.randomUUID() }
-    this.pending.set(selected.sessionId, operation)
-    if (this.inFlight.has(selected.sessionId)) throw new Error('Browser action is still running.')
-    this.inFlight.add(selected.sessionId)
+    this.#pending.set(selected.sessionId, operation)
+    if (this.#inFlight.has(selected.sessionId)) throw new Error('Browser action is still running.')
+    this.#inFlight.add(selected.sessionId)
     try {
       const result = (await this.ctx.agnes.services.effect(service, input, {
         operationId: operation.operationId,
       })) as Record<string, unknown>
-      if (this.pending.get(selected.sessionId) === operation) this.pending.delete(selected.sessionId)
+      if (this.#pending.get(selected.sessionId) === operation) this.#pending.delete(selected.sessionId)
       if (this.ctx.session.readiness.getSnapshot().epoch !== selected.epoch)
         throw new Error('The result belongs to the previous conversation; it was not applied to this view.')
       if (result.status === 'refused')
         throw Object.assign(new Error(String(result.code)), { code: result.code })
       if (typeof result.closedPageId === 'string')
-        this.updatePages(
-          this.snapshot.pages.filter((page) => page.pageId !== result.closedPageId),
+        this.#updatePages(
+          this.#snapshot.pages.filter((page) => page.pageId !== result.closedPageId),
           selected.sessionId,
         )
       if (
@@ -274,17 +275,17 @@ export class BrowserClient {
         Number.isSafeInteger(result.controlEpoch)
       ) {
         const page = result as BrowserPage
-        const exists = this.snapshot.pages.some((item) => item.pageId === page.pageId)
-        this.updatePages(
+        const exists = this.#snapshot.pages.some((item) => item.pageId === page.pageId)
+        this.#updatePages(
           exists
-            ? this.snapshot.pages.map((item) => (item.pageId === page.pageId ? { ...item, ...page } : item))
-            : [...this.snapshot.pages, page],
+            ? this.#snapshot.pages.map((item) => (item.pageId === page.pageId ? { ...item, ...page } : item))
+            : [...this.#snapshot.pages, page],
           selected.sessionId,
         )
       }
       // A completed effect must not wait for an unrelated read. The same gated queries
       // remain the fallback when this backend does not supply page events.
-      if (!this.pagesLive && service !== 'browser.control') void this.refresh()
+      if (!this.#pagesLive && service !== 'browser.control') void this.refresh()
       return { result, operationId: operation.operationId }
     } catch (error) {
       const failure = error as { kind?: string; data?: { code?: string } }
@@ -294,23 +295,31 @@ export class BrowserClient {
         ['CAPABILITY_DENIED', 'INVALID_PARAMS', 'AUTH_INVALID', 'OVERLOADED', 'SESSION_NOT_FOUND'].includes(
           failure.data?.code ?? '',
         ) &&
-        this.pending.get(selected.sessionId) === operation
+        this.#pending.get(selected.sessionId) === operation
       )
-        this.pending.delete(selected.sessionId)
+        this.#pending.delete(selected.sessionId)
       throw error
     } finally {
-      this.inFlight.delete(selected.sessionId)
-      this.update({ ...this.snapshot })
+      this.#inFlight.delete(selected.sessionId)
+      this.update({ ...this.#snapshot })
     }
   }
   clearSession() {
-    this.update({ ...this.snapshot, pages: [], sessionId: this.ctx.session.sessionId })
-    if (this.watching) this.watchPages()
+    // The panel remounts for the new attachment. Stop before notifying React so
+    // the previous panel cannot subscribe to the next session.
+    this.#stopWatching()
+    this.#status = undefined
+    this.update({
+      enabled: this.#snapshot.enabled,
+      state: 'preparing',
+      pages: [],
+      sessionId: this.ctx.session.sessionId,
+    })
   }
   close() {
-    this.stopped = true
-    this.stopWatching()
-    this.abort.abort()
-    this.listeners.clear()
+    this.#stopped = true
+    this.#stopWatching()
+    this.#abort.abort()
+    this.#listeners.clear()
   }
 }

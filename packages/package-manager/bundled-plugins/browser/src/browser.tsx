@@ -14,6 +14,16 @@ export function apply(ctx: ClientContext) {
     return useSyncExternalStore(client.subscribe, client.getSnapshot)
   }
   function Panel() {
+    useSyncExternalStore(ctx.locale.subscribe, ctx.locale.getSnapshot)
+    const selected = useSyncExternalStore(ctx.session.readiness.subscribe, ctx.session.readiness.getSnapshot)
+    if (selected.status === 'ready') return <LoadedPanel key={selected.epoch} />
+    return (
+      <section className="agh-browser-panel">
+        <p>{t(!selected.sessionId ? 'noSession' : 'sessionUnavailable')}</p>
+      </section>
+    )
+  }
+  function LoadedPanel() {
     const state = useBrowser()
     useEffect(() => client.start(), [])
     const [selected, setSelected] = useState('')
@@ -26,13 +36,14 @@ export function apply(ctx: ClientContext) {
     const [copiedRecovery, setCopiedRecovery] = useState(false)
     const [showEvents, setShowEvents] = useState(false)
     const [actualSize, setActualSize] = useState(false)
-    const [fixedSize, setFixedSize] = useState(true)
-    // biome-ignore lint/correctness/useExhaustiveDependencies: never reuse a channel across conversations.
-    const interaction = useMemo(() => new BrowserInteraction(ctx), [state.sessionId])
+    const [fixedSize, setFixedSize] = useState(false)
+    const hasPages = state.pages.length > 0
+    // biome-ignore lint/correctness/useExhaustiveDependencies: never reuse a channel across conversations or an empty page list.
+    const interaction = useMemo(() => new BrowserInteraction(ctx), [state.sessionId, hasPages])
     useEffect(() => {
-      if (state.sessionId) void interaction.prepare().catch(() => {})
+      if (state.sessionId && hasPages) void interaction.prepare().catch(() => {})
       return () => interaction.close()
-    }, [interaction, state.sessionId])
+    }, [interaction, state.sessionId, hasPages])
     const releaseControl = useCallback(() => setControl(undefined), [])
     const [events, setEvents] = useState<{ seq: number; kind: string; detail: string }[]>([])
     const screen = useRef<BrowserScreenHandle>(null)
@@ -250,6 +261,7 @@ export function apply(ctx: ClientContext) {
           )}
         </form>
         {(error || state.error) && <p role="alert">{error || state.error}</p>}
+        {state.pagesUnavailable && <p role={page ? 'alert' : 'status'}>{t('pagesUnavailable')}</p>}
         {state.error?.includes('Browser install lock ') && (
           <section>
             <Button onClick={() => setShowRecovery((shown) => !shown)}>{t('lockHelp')}</Button>
@@ -298,7 +310,7 @@ export function apply(ctx: ClientContext) {
           </Button>
         )}
         {!page ? (
-          <p>{t(state.state === 'preparing' ? 'preparing' : 'empty')}</p>
+          !state.pagesUnavailable && <p>{t(state.state === 'preparing' ? 'preparing' : 'empty')}</p>
         ) : (
           <>
             <BrowserScreen

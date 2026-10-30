@@ -49,6 +49,7 @@ const types = {
   wasm: 'application/wasm',
   vtt: 'text/vtt',
 }
+export const uploadMime = (path) => types[extname(path).slice(1).toLowerCase()] ?? 'application/octet-stream'
 const inside = (root, target) => {
   const rel = relative(root, target)
   return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith('..' + sep))

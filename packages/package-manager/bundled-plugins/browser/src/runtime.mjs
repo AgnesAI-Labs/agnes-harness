@@ -1,28 +1,16 @@
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
+import { extraAction, receiveDialog, withDialog } from './actions.mjs'
 import { localFile, openFilePreview } from './files.mjs'
+import { observe } from './observe.mjs'
+import { pointerInput, releaseInput } from './pointer.mjs'
 import { browserUrl, failure, isBrowserRefusal } from './policy.mjs'
+import { guardRedirects } from './redirects.mjs'
+import { prepareUpload } from './upload.mjs'
 
 const MAX_PAGES = 3
 const MAX_SESSIONS = 2
 const CONTROL_MS = 5 * 60_000
-// Chromium's bundled PDF viewer is part of the reviewed browser, not a user extension.
-const PDF_VIEWER_ORIGIN = 'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai'
-const pdfFrame = (item, frame) => {
-  for (let current = frame; current; current = current.parentFrame())
-    if (item?.pdfFrames?.has(current)) return true
-  return false
-}
-const fileFrame = (frame, origin) => {
-  for (let current = frame; current; current = current.parentFrame()) {
-    const value = current.url()
-    if (value && new URL(value).origin === origin) return true
-    if (!['', 'about:blank', 'about:srcdoc'].includes(value) && !value.startsWith(PDF_VIEWER_ORIGIN + '/'))
-      return false
-  }
-  return false
-}
-
 /** One Page object serves tools, observations and all display/input subscribers. */
 export class BrowserRuntime {
   constructor({ launch, assertCurrent = () => {}, now = Date.now, protectedOrigins = [] }) {
@@ -36,6 +24,7 @@ export class BrowserRuntime {
     this.activity = 0
     this.sessions = new Map()
     this.views = new Map()
+    this.interactionAdmissions = new Map()
     this.retiredContexts = new Set()
     this.protectedOrigins = new Set()
     for (const origin of protectedOrigins) {
@@ -54,6 +43,7 @@ export class BrowserRuntime {
     return {
       enabled: this.enabled,
       state: this.enabled ? this.state : 'stopped',
+      capabilities: ['ai-snapshot', 'hover', 'drag', 'select', 'dialog', 'upload', 'pointer'],
       epoch: this.epoch,
       error: this.error ?? null,
       cleanupRequired: !!this.cleanupRequired,
@@ -89,6 +79,8 @@ export class BrowserRuntime {
       this.starting = this.launch()
         .then(async (browser) => {
           try {
+            this.guard(epoch)
+            this.network = await guardRedirects(browser, this.protectedOrigins)
             this.guard(epoch)
           } catch (error) {
             try {
@@ -150,57 +142,6 @@ export class BrowserRuntime {
           this.guard(epoch)
           if (this.sessions.get(identity.key) !== entry) throw failure('CLOSED', 'Session is closed.')
           entry.context = context
-          await context.route('**/*', async (route) => {
-            try {
-              const target = new URL(route.request().url())
-              const pdfExtension =
-                target.protocol === 'chrome-extension:' &&
-                target.protocol + '//' + target.host === PDF_VIEWER_ORIGIN
-              const pdfResources = target.protocol === 'chrome:' && target.hostname === 'resources'
-              if (pdfExtension || pdfResources) {
-                const frame = route.request().frame()
-                const item = entry.pages.get(frame.page())
-                if (
-                  !pdfFrame(item, frame) ||
-                  (pdfResources && !frame.url().startsWith(PDF_VIEWER_ORIGIN + '/'))
-                )
-                  throw failure('FILE_DENIED', 'Internal PDF viewer requires a PDF document.')
-                await route.continue()
-                return
-              }
-              const origin = target.origin
-              let frame,
-                owner,
-                trustedNavigation = false
-              try {
-                frame = route.request().frame()
-                owner = entry.pages.get(frame.page())
-              } catch {
-                /* Worker requests have no frame and cannot inherit file grants. */
-              }
-              if (owner && route.request().isNavigationRequest() && frame === owner.page.mainFrame()) {
-                const pending = owner.pendingNavigation
-                owner.pendingNavigation = undefined
-                if (pending) {
-                  const planned = pending === 'history' ? undefined : new URL(pending)
-                  if (planned) planned.hash = ''
-                  trustedNavigation = pending === 'history' || planned.href === target.href
-                }
-              }
-              for (const item of entry.pages.values()) {
-                const preview = item.filePreviews?.get(origin)
-                if (!preview) continue
-                if (owner !== item || (!trustedNavigation && !fileFrame(frame, origin)))
-                  throw failure('FILE_DENIED', 'Foreign file preview.')
-                await route.continue({ headers: { ...route.request().headers(), ...preview.headers } })
-                return
-              }
-              browserUrl(route.request().url(), this.protectedOrigins)
-              await route.continue()
-            } catch {
-              await route.abort('blockedbyclient').catch(() => {})
-            }
-          })
           await context.routeWebSocket('**/*', (socket) => {
             try {
               const url = new URL(socket.url())
@@ -260,14 +201,16 @@ export class BrowserRuntime {
       viewers: new Set(),
     }
     session.pages.set(page, item)
+    item.networkReady = this.network.bind(item)
+    void item.networkReady.catch(() => page.close().catch(() => {}))
     const event = (kind, detail) => {
       // Twenty entries must fit the service's 64 KiB result even with JSON-escaped text.
       item.events.push({ seq: ++item.cursor, kind, detail: String(detail).slice(0, 500) })
       while (item.events.length > 200) item.events.shift()
     }
     page.on('framenavigated', (frame) => {
-      if (frame !== page.mainFrame()) return
       item.epoch++
+      if (item.gesture) void releaseInput(item)
       this.clearRefs(item)
       this.notify()
     })
@@ -277,19 +220,17 @@ export class BrowserRuntime {
     page.on('pageerror', (error) => event('pageerror', error.message))
     page.on('requestfailed', (request) => event('requestfailed', new URL(request.url()).origin))
     page.on('response', (response) => {
-      if (response.request().isNavigationRequest()) {
-        item.pdfFrames ??= new Set()
-        if (/^application\/pdf(?:;|$)/i.test(response.headers()['content-type'] ?? ''))
-          item.pdfFrames.add(response.frame())
-        else item.pdfFrames.delete(response.frame())
-      }
       if (response.status() >= 400) event('http', response.status() + ' ' + new URL(response.url()).origin)
     })
     page.on('dialog', (dialog) => {
-      event('dialog', dialog.type())
-      void dialog.dismiss().catch(() => {})
+      receiveDialog(item, dialog, event)
     })
-    page.on('framedetached', (frame) => item.pdfFrames?.delete(frame))
+    page.on('framedetached', (frame) => {
+      item.epoch++
+      if (item.gesture) void releaseInput(item)
+      this.clearRefs(item)
+      this.notify()
+    })
     page.on('download', (download) => {
       item.downloaded = true
       event('download', 'This file is not rendered by the browser. Automatic downloads are disabled.')
@@ -301,6 +242,7 @@ export class BrowserRuntime {
       event('crash', 'Browser page crashed. Inspect before resuming.')
     })
     page.on('close', () => {
+      this.network?.unbind(item)
       for (const preview of item.filePreviews?.values() ?? []) preview.close()
       this.revoke(item)
       this.clearRefs(item)
@@ -356,7 +298,8 @@ export class BrowserRuntime {
         throw failure('CONTROL_CHANGED', 'Page control changed. Inspect the current page.')
       if (
         !human &&
-        ((shared && this.now() - item.lastHumanInput < 600) ||
+        (item.gesture ||
+          (shared && this.now() - item.lastHumanInput < 600) ||
           item.observedHumanRevision !== item.humanRevision)
       )
         throw failure('STALE_TARGET', 'The user is editing this page. Inspect again after their input.')
@@ -365,6 +308,8 @@ export class BrowserRuntime {
       try {
         if (!human) this.activate(item)
         item.inputVersion++
+        item.lastInputAt = this.now()
+        item.capture?.releaseAcks?.()
         if (human) {
           item.humanRevision++
           this.clearRefs(item)
@@ -435,6 +380,7 @@ export class BrowserRuntime {
   }
 
   async navigate(item, target, work) {
+    await item.networkReady
     // One exact main-frame admission; a remote page never inherits an old file root.
     item.pendingNavigation = target
     try {
@@ -518,46 +464,7 @@ export class BrowserRuntime {
       }
     }
     if (input.action === 'inspect') {
-      const pending = item.queue.then(async () => {
-        this.guard()
-        signal?.throwIfAborted()
-        const epoch = item.epoch
-        this.clearRefs(item)
-        const handles = await item.page
-          .locator('a,button,input,textarea,select,[role="button"]')
-          .elementHandles()
-        const elements = []
-        for (const handle of handles.slice(0, 100)) {
-          const ref = randomUUID()
-          const label = await handle
-            .evaluate((node) => ({
-              tag: node.tagName.toLowerCase(),
-              label:
-                node.getAttribute('aria-label') ||
-                node.getAttribute('placeholder') ||
-                node.textContent?.trim().slice(0, 120) ||
-                '',
-              type: node.getAttribute('type'),
-            }))
-            .catch(() => null)
-          if (label) {
-            item.refs.set(ref, handle)
-            elements.push({ ref, ...label })
-          } else await handle.dispose()
-        }
-        for (const handle of handles.slice(100)) await handle.dispose()
-        const text = (await item.page.locator('body').innerText()).slice(0, 20_000)
-        this.guard()
-        signal?.throwIfAborted()
-        if (epoch !== item.epoch || item.page.isClosed()) {
-          this.clearRefs(item)
-          throw failure('STALE_TARGET', 'Page changed while observing. Inspect again.')
-        }
-        item.uncertain = false
-        item.observedHumanRevision = item.humanRevision
-        this.activate(item)
-        return { ...this.describe(item), text, elements }
-      })
+      const pending = item.queue.then(() => observe(this, item, input, signal))
       item.queue = pending.catch(() => {})
       return pending
     }
@@ -576,78 +483,95 @@ export class BrowserRuntime {
     }
     if (input.pageEpoch !== item.epoch)
       throw failure('STALE_TARGET', 'Inspect the page again before interacting.')
-    await this.waitForHumanInput(item, signal)
-    const result = await this.enqueue(
-      item,
-      async () => {
-        if (input.pageEpoch !== item.epoch)
-          throw failure('STALE_TARGET', 'Inspect the page again before interacting.')
-        const handle = input.ref ? item.refs.get(input.ref) : undefined
-        if (input.action === 'fill' && !handle)
-          throw failure('STALE_TARGET', 'Use a current element ref returned by inspect.')
-        if (
-          input.action === 'click' &&
-          !handle &&
-          (!Number.isFinite(input.x) ||
-            !Number.isFinite(input.y) ||
-            input.x < 0 ||
-            input.x > item.viewport.width ||
-            input.y < 0 ||
-            input.y > item.viewport.height)
-        )
-          throw failure('STALE_TARGET', 'Use a current ref or a screenshot point within the viewport.')
-        switch (input.action) {
-          case 'click':
-            if (handle) await handle.click({ timeout: 10_000 })
-            else await item.page.mouse.click(input.x, input.y)
-            break
-          case 'fill':
-            await handle.fill(input.text, { timeout: 10_000 })
-            break
-          case 'key':
-            await item.page.keyboard.press(input.key)
-            break
-          case 'scroll':
-            await item.page.mouse.wheel(input.x ?? 0, input.y ?? 0)
-            break
-          case 'wait':
-            await item.page.getByText(input.text, { exact: true }).waitFor({ timeout: 10_000 })
-            break
-          case 'back':
-            await this.navigate(item, 'history', () =>
-              item.page.goBack({ waitUntil: 'domcontentloaded', timeout: 10_000 }),
-            )
-            break
-          case 'forward':
-            await this.navigate(item, 'history', () =>
-              item.page.goForward({ waitUntil: 'domcontentloaded', timeout: 10_000 }),
-            )
-            break
-          case 'reload':
-            await item.page.reload({ waitUntil: 'domcontentloaded', timeout: 10_000 })
-            break
-          case 'close': {
-            await item.page.close()
-            // Release the empty context even if cancellation arrives with the close event.
-            const session = this.sessions.get(identity.key)
-            if (session?.context === item.page.context() && !session.pages.size && !session.opening)
-              await this.closeSession(identity.key)
-            break
-          }
-          default:
-            throw failure('INVALID_ACTION', 'Unsupported browser action.')
-        }
-        this.clearRefs(item)
-        this.notify()
-        return this.describe(item)
-      },
-      signal,
-    )
-    if (signal?.aborted) {
-      item.uncertain = true
-      throw failure('UNCERTAIN', 'Operation may have completed. Inspect before continuing.')
+    const upload =
+      input.action === 'upload' ? await prepareUpload(this, item, input, fileAccess, signal) : undefined
+    try {
+      await this.waitForHumanInput(item, signal)
+      const result = await this.enqueue(
+        item,
+        async () => {
+          if (input.pageEpoch !== item.epoch)
+            throw failure('STALE_TARGET', 'Inspect the page again before interacting.')
+          const handle = input.ref ? item.refs.get(input.ref) : undefined
+          if ((input.ref || input.action === 'fill') && !handle)
+            throw failure('STALE_TARGET', 'Use a current element ref returned by inspect.')
+          if (
+            input.action === 'click' &&
+            !handle &&
+            (!Number.isFinite(input.x) ||
+              !Number.isFinite(input.y) ||
+              input.x < 0 ||
+              input.x > item.viewport.width ||
+              input.y < 0 ||
+              input.y > item.viewport.height)
+          )
+            throw failure('STALE_TARGET', 'Use a current ref or a screenshot point within the viewport.')
+          await withDialog(item, input.dialog, signal, async () => {
+            switch (input.action) {
+              case 'hover':
+              case 'drag':
+              case 'select':
+                await extraAction(item, input, handle)
+                break
+              case 'upload':
+                await upload.check()
+                await upload.handle.setInputFiles(upload.payload, { timeout: 10_000 })
+                break
+              case 'click':
+                if (handle) await handle.click({ timeout: 10_000 })
+                else await item.page.mouse.click(input.x, input.y)
+                break
+              case 'fill':
+                await handle.fill(input.text, { timeout: 10_000 })
+                break
+              case 'key':
+                await item.page.keyboard.press(input.key)
+                break
+              case 'scroll':
+                await item.page.mouse.wheel(input.x ?? 0, input.y ?? 0)
+                break
+              case 'wait':
+                await item.page.getByText(input.text, { exact: true }).waitFor({ timeout: 10_000 })
+                break
+              case 'back':
+                await this.navigate(item, 'history', () =>
+                  item.page.goBack({ waitUntil: 'domcontentloaded', timeout: 10_000 }),
+                )
+                break
+              case 'forward':
+                await this.navigate(item, 'history', () =>
+                  item.page.goForward({ waitUntil: 'domcontentloaded', timeout: 10_000 }),
+                )
+                break
+              case 'reload':
+                await item.page.reload({ waitUntil: 'domcontentloaded', timeout: 10_000 })
+                break
+              case 'close': {
+                await item.page.close()
+                // Release the empty context even if cancellation arrives with the close event.
+                const session = this.sessions.get(identity.key)
+                if (session?.context === item.page.context() && !session.pages.size && !session.opening)
+                  await this.closeSession(identity.key)
+                break
+              }
+              default:
+                throw failure('INVALID_ACTION', 'Unsupported browser action.')
+            }
+          })
+          this.clearRefs(item)
+          this.notify()
+          return this.describe(item)
+        },
+        signal,
+      )
+      if (signal?.aborted) {
+        item.uncertain = true
+        throw failure('UNCERTAIN', 'Operation may have completed. Inspect before continuing.')
+      }
+      return result
+    } finally {
+      upload?.clear()
     }
-    return result
   }
 
   describe(item) {
@@ -662,6 +586,7 @@ export class BrowserRuntime {
       viewportWidth: item.viewport.width,
       viewportHeight: item.viewport.height,
       agentRevision: item.agentRevision,
+      pointerInput: true,
     }
   }
 
@@ -696,6 +621,7 @@ export class BrowserRuntime {
       }
       current()
       await item.page.mouse.up().catch(() => {})
+      item.gesture = undefined
       current()
       if (input.mode === 'agent') {
         item.mode = 'agent'
@@ -738,6 +664,11 @@ export class BrowserRuntime {
     const item = this.get(identity, input.pageId)
     if (!Number.isSafeInteger(input.seq) || input.seq <= item.control.seq)
       throw failure('STALE_INPUT', 'Duplicate or out-of-order input.')
+    if (input.type === 'pointer' && input.phase === 'cancel') {
+      item.control.seq = input.seq
+      if (item.gesture !== input.gesture) return this.describe(item)
+      return releaseInput(item).then(() => this.describe(item))
+    }
     if (input.pageEpoch !== item.epoch || input.controlEpoch !== item.controlEpoch)
       throw failure('STALE_INPUT', 'Refresh the page before interacting.')
     item.control.seq = input.seq
@@ -751,6 +682,10 @@ export class BrowserRuntime {
         if (input.agentRevision !== undefined && input.agentRevision !== item.agentRevision)
           throw failure('STALE_INPUT', 'The agent changed the page. Use the current display.')
         switch (input.type) {
+          case 'hover':
+          case 'pointer':
+            await pointerInput(item, input)
+            break
           case 'click':
             if (
               !Number.isFinite(input.x) ||
@@ -804,6 +739,7 @@ export class BrowserRuntime {
           default:
             throw failure('INVALID_INPUT', 'Unsupported input.')
         }
+        this.notify()
         return this.describe(item)
       },
       signal,

@@ -43,6 +43,7 @@ vi.mock('@agnes/web-ui', async () => {
 
 it('shows one-click legacy lock guidance with the full path and copies it without deleting anything', async () => {
   let Panel: ComponentType | undefined
+  const selected = { status: 'ready', sessionId: 'one', epoch: 1 }
   const ctx = {
     locale: {
       t: (key: string) => browserCatalog['zh-CN'][key as keyof (typeof browserCatalog)['zh-CN']] ?? key,
@@ -50,7 +51,7 @@ it('shows one-click legacy lock guidance with the full path and copies it withou
       getSnapshot: () => 'zh-CN',
       register: () => () => {},
     },
-    session: { readiness: { subscribe: () => () => {} } },
+    session: { readiness: { subscribe: () => () => {}, getSnapshot: () => selected } },
     workbenchPanels: {
       register: (panel: { component: ComponentType }) => {
         Panel = panel.component
@@ -72,10 +73,14 @@ it('shows one-click legacy lock guidance with the full path and copies it withou
       (button) => button.textContent === '查看安装锁恢复步骤',
     )
     flushSync(() => help?.click())
-    expect(host.textContent).toContain('旧目录锁没有所有者身份')
+    expect(host.textContent).toContain('旧目录锁无所有者信息')
+    expect(host.textContent).toContain('先停止共用此缓存的全部安装进程')
+    expect(host.textContent).toContain('确认退出后再移开锁')
+    expect(host.textContent).toContain('禁止移除活跃锁')
+    expect(host.textContent).toContain('此按钮不修改文件')
     expect(host.textContent).toContain('/private/cache/1243-darwin-arm64.lock')
     const button = [...host.querySelectorAll('button')].find(
-      (button) => button.textContent === '复制恢复步骤和精确路径',
+      (button) => button.textContent === '复制步骤和锁路径',
     )
     if (!button) throw new Error('missing recovery action')
     button.click()

@@ -7,8 +7,8 @@ import { apply } from '../../package-manager/bundled-plugins/browser/src/browser
 
 vi.mock('@agnes/web-ui', async () => {
   const { createElement } = await import('react')
-  const button = ({ children, label, onClick }: any) =>
-    createElement('button', { onClick, 'aria-label': label }, children ?? label)
+  const button = ({ children, label, onClick, disabled }: any) =>
+    createElement('button', { onClick, disabled, 'aria-label': label }, children ?? label)
   return {
     Button: button,
     IconButton: button,
@@ -57,11 +57,14 @@ vi.mock('../../package-manager/bundled-plugins/browser/src/browser-screen.js', a
   }
 })
 
-it('keeps the user-selected tab while the model changes activity or opens another tab', async () => {
+it('automatically displays agent pages without a load button or an input connection for empty history', async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  vi.useFakeTimers()
+  let selected = { status: 'ready', sessionId: 'test', epoch: 1 }
+  const readinessListeners = new Set<() => void>()
   const callbacks = new Map<string, (frame: unknown) => void>()
   const stream = {
-    open: async (name: string) => ({
+    open: vi.fn(async (name: string) => ({
       send() {
         return 'accepted'
       },
@@ -70,8 +73,11 @@ it('keeps the user-selected tab while the model changes activity or opens anothe
       onFrame(fn: (frame: unknown) => void) {
         callbacks.set(name, fn)
       },
-    }),
+    })),
   }
+  const effect = vi.fn(async () => ({ status: 'ok' }))
+  const call = vi.fn(async () => ({ pages: [] }))
+  const query = vi.fn(async () => ({ enabled: true, state: 'ready' }))
   let Panel: ComponentType = () => null
   const ctx = {
     locale: {
@@ -87,15 +93,20 @@ it('keeps the user-selected tab while the model changes activity or opens anothe
       },
     },
     session: {
-      sessionId: 'test',
+      get sessionId() {
+        return selected.sessionId
+      },
       readiness: {
-        subscribe: () => () => {},
-        getSnapshot: () => ({ status: 'ready', sessionId: 'test', epoch: 1 }),
+        subscribe: (listener: () => void) => {
+          readinessListeners.add(listener)
+          return () => readinessListeners.delete(listener)
+        },
+        getSnapshot: () => selected,
       },
     },
     sessionStreams: stream,
-    profile: { streams: stream },
-    agnes: { services: { effect: async () => ({ status: 'ok' }), call: async () => ({ pages: [] }) } },
+    profile: { streams: stream, services: { query } },
+    agnes: { services: { effect, call } },
   } as unknown as ClientContext
   const dispose = apply(ctx)
   const container = document.createElement('div')
@@ -113,13 +124,47 @@ it('keeps the user-selected tab while the model changes activity or opens anothe
     act(async () => callbacks.get('browser.pages')?.({ enabled: true, state: 'ready', pages }))
   try {
     await act(async () => root.render(createElement(Panel)))
+    await publish([])
+    await act(async () => vi.advanceTimersByTimeAsync(60_000))
+    expect(container.textContent).not.toContain('browser.load')
+    expect(container.textContent).toContain('browser.empty')
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+    expect(stream.open.mock.calls.map(([name]) => name)).toEqual(['browser.pages'])
+    expect(effect).not.toHaveBeenCalled()
+    expect(query).not.toHaveBeenCalled()
+    call.mockRejectedValueOnce(new Error('Session pages unavailable'))
+    await act(async () => callbacks.get('browser.pages')?.({ enabled: true, state: 'ready', changed: true }))
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('browser.pagesUnavailable')
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+    expect(container.textContent).not.toContain('browser.empty')
+    expect(effect).not.toHaveBeenCalled()
+    await publish([])
+    expect(container.querySelector('[role="status"]')).toBeNull()
+    call.mockClear()
+    stream.open.mockClear()
+    await act(async () => {
+      selected = { status: 'history-only', sessionId: 'test', epoch: selected.epoch + 1 }
+      for (const listener of readinessListeners) listener()
+    })
+    expect(container.querySelector('button')).toBeNull()
+    expect(container.textContent).toContain('browser.sessionUnavailable')
+    await act(async () => vi.advanceTimersByTimeAsync(60_000))
+    expect(stream.open).not.toHaveBeenCalled()
+    expect(effect).not.toHaveBeenCalled()
+    expect(call).not.toHaveBeenCalled()
+    await act(async () => {
+      selected = { status: 'ready', sessionId: 'test', epoch: selected.epoch + 1 }
+      for (const listener of readinessListeners) listener()
+    })
+    expect(stream.open).toHaveBeenCalledWith('browser.pages', {}, expect.anything())
     await vi.waitFor(() => expect(callbacks.has('browser.pages')).toBe(true))
     await publish([page('user', 1), page('model', 2)])
-    expect(container.querySelector('[data-viewport="fixed"][data-scale="fit"]')).not.toBeNull()
-    await act(async () => container.querySelector<HTMLButtonElement>('[data-option="viewport"]')!.click())
-    expect(container.querySelector('[data-viewport="adaptive"]')).not.toBeNull()
+    expect(effect).toHaveBeenCalledWith('browser.connect', {}, expect.anything())
+    expect(container.querySelector('[data-viewport="adaptive"][data-scale="fit"]')).not.toBeNull()
     await act(async () => container.querySelector<HTMLButtonElement>('[data-option="viewport"]')!.click())
     expect(container.querySelector('[data-viewport="fixed"]')).not.toBeNull()
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-option="viewport"]')!.click())
+    expect(container.querySelector('[data-viewport="adaptive"]')).not.toBeNull()
     await act(async () => container.querySelector<HTMLButtonElement>('[data-option="scale"]')!.click())
     expect(container.querySelector('[data-scale="actual"]')).not.toBeNull()
     await act(async () => container.querySelector<HTMLButtonElement>('[data-option="viewport"]')!.click())
@@ -132,12 +177,46 @@ it('keeps the user-selected tab while the model changes activity or opens anothe
     expect(container.querySelector('[data-tab="model"]')?.getAttribute('aria-selected')).toBe('true')
     await publish([page('user', 20), page('new-test', 21)])
     expect(container.querySelector('[data-tab="user"]')?.getAttribute('aria-selected')).toBe('true')
+    for (const sessionId of ['test', 'other', 'test']) {
+      stream.open.mockClear()
+      effect.mockClear()
+      call.mockClear()
+      query.mockClear()
+      await act(async () => {
+        selected = { status: 'ready', sessionId, epoch: selected.epoch + 1 }
+        for (const listener of readinessListeners) listener()
+      })
+      await publish([])
+      await act(async () => vi.advanceTimersByTimeAsync(60_000))
+      expect(container.querySelector('[role="tablist"]')).toBeNull()
+      expect(stream.open.mock.calls.map(([name]) => name)).toEqual(['browser.pages'])
+      expect(effect).not.toHaveBeenCalled()
+      expect(call).not.toHaveBeenCalled()
+      expect(query).not.toHaveBeenCalled()
+    }
+    // Closing the final page then opening a new one can prepare a fresh input channel.
+    await publish([page('reopened', 1)])
+    expect(effect).toHaveBeenCalledWith('browser.connect', {}, expect.anything())
+    await publish([])
+    await act(async () => root.render(null))
+    stream.open.mockClear()
+    effect.mockClear()
+    call.mockClear()
+    query.mockClear()
+    await act(async () => root.render(createElement(Panel)))
+    await publish([])
+    await act(async () => vi.advanceTimersByTimeAsync(60_000))
+    expect(stream.open.mock.calls.map(([name]) => name)).toEqual(['browser.pages'])
+    expect(effect).not.toHaveBeenCalled()
+    expect(call).not.toHaveBeenCalled()
+    expect(query).not.toHaveBeenCalled()
   } finally {
     await act(async () => {
       root.unmount()
       dispose()
     })
     container.remove()
+    vi.useRealTimers()
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: false })
   }
 })
