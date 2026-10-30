@@ -44,14 +44,17 @@ export function createEditTool(record?: FileChangeRecorder, lsp?: LspSessions, l
         try {
           bytes = await ctx.fs.read(args.path)
         } catch (e) {
+          const result = await fsFailure(ctx, 'edit', args.path, e)
+          const feedback = {
+            category: 'invalid_args',
+            index: null,
+            written: false,
+            hint: 'Check the requested path and read access before retrying.',
+          }
           return {
-            ...(await fsFailure(ctx, 'edit', args.path, e)),
-            structured: {
-              category: 'invalid_args',
-              index: null,
-              written: false,
-              hint: 'Check the requested path and read access before retrying.',
-            },
+            ...result,
+            content: [...result.content, { type: 'text', text: JSON.stringify(feedback) }],
+            structured: feedback,
           }
         }
         // Decoding bytes that are not text and writing the decoded form back replaces every invalid

@@ -35,16 +35,18 @@ export function planModelToolCalls(
           { origin: 'model' },
         ),
       )
+      const feedback = refusal?.code === 'TOOL_ARGS_INVALID' ? toolArgumentFeedback(refusal.text) : undefined
       if (refusal)
         refusedCalls.push(
           s.ev('tool/result', {
             toolUseId,
             isError: true,
             code: refusal.code,
-            content: [{ type: 'text', text: refusal.text }],
-            ...(refusal.code === 'TOOL_ARGS_INVALID'
-              ? { structured: toolArgumentFeedback(refusal.text) }
-              : {}),
+            content: [
+              { type: 'text', text: refusal.text },
+              ...(feedback ? [{ type: 'text', text: JSON.stringify(feedback) }] : []),
+            ],
+            ...(feedback ? { structured: feedback } : {}),
             enforcement: s.d.runtime.enforcement(),
             authz: { decisionId: 'n/a' },
           }),

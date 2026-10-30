@@ -78,4 +78,4 @@ goal_get {} 读取会话目标、续轮与额度用量。goal_update 接受 stat
 
 已存附件在 inbox 和消息中保留 artifact 引用。Core 在接纳前核验精确的 session/lane 授权、MIME、大小和摘要；fork 只能读取父会话的可见前缀。普通 CAS 对象至少保留 24 小时，只有在持锁核验完整 ledger 与回执根、确认不可达后才可回收。原件、缩略图与派生产物引用都作为根保留；索引损坏或不完整时禁止删除。
 
-编辑失败保留原错误码，并附结构化 `category`、`index`、`written` 和 `hint`。分类为 `not_read`、`not_found`、`ambiguous`、`invalid_args`、`write_failed`；`index` 从 0 开始，文件或整批失败时为 `null`。匹配失败不会落盘，即使前面的编辑已在内存中匹配成功；写入后端失败且不能排除部分写入时，返回 `written: "unknown"`，重试前须重新读取。意外 I/O 错误仍向上传播，在错误结果文本中携带这些安全 JSON 反馈。执行前的 schema 拒绝使用 `invalid_args` 和首个失败数组项索引（或 `null`）；嵌套调用的错误文本也包含相同反馈的 JSON。精确唯一匹配和针对中间态的顺序语义保持不变。
+编辑失败保留原错误码，并附结构化 `category`、`index`、`written` 和 `hint`。相同的短 JSON 也放入 content，让标准模型请求与程序调用方都能读取。分类为 `not_read`、`not_found`、`ambiguous`、`invalid_args`、`write_failed`；`index` 从 0 开始，文件或整批失败时为 `null`。匹配失败不会落盘，即使前面的编辑已在内存中匹配成功；写入后端失败且不能排除部分写入时，返回 `written: "unknown"`，重试前须重新读取。意外 I/O 错误仍向上传播，在错误结果文本中携带这些安全 JSON 反馈。执行前的 schema 拒绝使用 `invalid_args` 和首个失败数组项索引（或 `null`）；嵌套调用的错误文本也包含相同反馈的 JSON。精确唯一匹配和针对中间态的顺序语义保持不变。

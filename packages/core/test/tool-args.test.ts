@@ -131,6 +131,9 @@ describe('tool argument boundary', () => {
     })
     expect(out.reached).toEqual([])
     expect(out.toolEffects).toEqual([])
+    const wire = JSON.stringify(out.provider.requests[1]?.messages)
+    for (const field of ['"category":"invalid_args"', '"index":1', '"written":false'])
+      expect(wire).toContain(JSON.stringify(field).slice(1, -1))
     await out.session.close()
   })
   it('identifies nested schema failures without echoing supplied values', () => {

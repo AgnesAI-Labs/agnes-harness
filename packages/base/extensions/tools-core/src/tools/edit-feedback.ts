@@ -23,7 +23,13 @@ export async function editFailure(
 ): Promise<ToolResult> {
   const result = await toolFailure(ctx, code, message)
   const feedback = { category, index, written, hint: RECOVERY_HINT[category] }
-  return { ...result, structured: feedback, details: { code, ...feedback } }
+  return {
+    ...result,
+    // Standard model requests render content; structured also serves programmatic callers.
+    content: [...result.content, { type: 'text', text: JSON.stringify(feedback) }],
+    structured: feedback,
+    details: { code, ...feedback },
+  }
 }
 
 // Diagnostics never perform I/O or mutate text. Bound both input and candidate comparisons, even

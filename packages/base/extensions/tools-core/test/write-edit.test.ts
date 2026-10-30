@@ -63,6 +63,7 @@ describe('edit feedback', () => {
     )
     expect(result.isError).toBe(true)
     expect(result.structured).toMatchObject({ category, index, written: false, hint: expect.any(String) })
+    expect(result.content).toContainEqual({ type: 'text', text: JSON.stringify(result.structured) })
     expect(ctx.mem.files.get('/work/proj/a.txt')).toEqual(before)
   })
   it.each(['E_FS_DENIED', 'EIO'])(
