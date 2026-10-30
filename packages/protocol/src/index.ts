@@ -182,6 +182,8 @@ export type {
   SessionQueuedControlInput,
   SessionReadToolDetailParams,
   SessionReadToolDetailResult,
+  SessionReferenceCancelParams,
+  SessionReferenceSearchCancelableParams,
   SessionReferenceSearchParams,
   SessionReferenceSearchResult,
   SessionRemoveQueuedParams,
