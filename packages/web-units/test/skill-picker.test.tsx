@@ -58,6 +58,13 @@ it('filters installed skills and inserts a selected explicit mention without sub
   await vi.waitFor(() => expect(host.querySelectorAll('[data-testid="skill-option"]')).toHaveLength(1))
   expect(host.querySelector('[data-testid="skill-option"]')?.textContent).toContain('review-notes')
   expect(host.querySelector('[data-testid="skill-option"]')?.textContent).not.toContain('$review-notes')
+  // The textarea keeps focus and points at the active row; the row itself is the listbox option.
+  const option = document.getElementById(input.getAttribute('aria-activedescendant') ?? '')
+  expect(option?.getAttribute('role')).toBe('option')
+  expect(option?.getAttribute('aria-selected')).toBe('true')
+  expect(option?.getAttribute('tabindex')).toBe('-1')
+  expect(option?.closest('[role="listbox"]')?.id).toBe(input.getAttribute('aria-controls'))
+  expect(option?.textContent).toContain(composerLocaleCatalog.en['composer.skill.enterKey'])
   const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
   await act(async () => input.dispatchEvent(event))
   expect(event.defaultPrevented).toBe(true)

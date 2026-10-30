@@ -217,35 +217,40 @@ export function SkillPicker({
               <p>{t('composer.skill.subtitle')}</p>
             </div>
           </div>
-          <ul id={listId} role="listbox" aria-label={t('composer.skill.label')} data-testid="skill-options">
+          <div id={listId} role="listbox" aria-label={t('composer.skill.label')} data-testid="skill-options">
             {items.map((skill, index) => (
-              <li key={skill.name} id={`${listId}-${index}`} role="option" aria-selected={active === index}>
-                <Button
-                  htmlType="button"
-                  data-testid="skill-option"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => {
-                    const input = textarea.current
-                    const token = input && tokenAt(input)
-                    if (token) {
-                      onChoose?.(skill)
-                      edit(token.start, token.end, skillText(input, token, skill.name))
-                    }
-                    setOpened(false)
-                  }}
-                >
-                  <span className="skill-option-icon" aria-hidden="true">
-                    <Icon name="sparkles" size={16} />
-                  </span>
-                  <span className="skill-option-copy">
-                    <span className="skill-option-name">{skill.name}</span>
-                    {skill.description && <small>{skill.description}</small>}
-                  </span>
-                  {active === index && <kbd className="skill-option-key">Enter</kbd>}
-                </Button>
-              </li>
+              // Each row is a real button for the pointer; the focused textarea owns the keyboard
+              // (arrows, Enter, Tab, Escape) and points at the active row through aria-activedescendant.
+              <Button
+                key={skill.name}
+                id={`${listId}-${index}`}
+                role="option"
+                aria-selected={active === index}
+                tabIndex={-1}
+                htmlType="button"
+                data-testid="skill-option"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  const input = textarea.current
+                  const token = input && tokenAt(input)
+                  if (token) {
+                    onChoose?.(skill)
+                    edit(token.start, token.end, skillText(input, token, skill.name))
+                  }
+                  setOpened(false)
+                }}
+              >
+                <span className="skill-option-icon" aria-hidden="true">
+                  <Icon name="sparkles" size={16} />
+                </span>
+                <span className="skill-option-copy">
+                  <span className="skill-option-name">{skill.name}</span>
+                  {skill.description && <small>{skill.description}</small>}
+                </span>
+                {active === index && <kbd className="skill-option-key">{t('composer.skill.enterKey')}</kbd>}
+              </Button>
             ))}
-          </ul>
+          </div>
           <p role="status" className="skill-status">
             {status === 'loading'
               ? t('composer.skill.loading')
