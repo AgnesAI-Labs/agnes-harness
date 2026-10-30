@@ -49,7 +49,7 @@ jobs:
           # The nightly suite (e2e-web-nightly.yml) runs every locale/theme at all three widths.
           - { id: narrow, args: "narrow.spec.ts --grep 'en/light$'", narrow-widths: "375,768" }
     if: inputs.suite != 'narrow-nightly'
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 15
     steps: &macos-web-steps
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -329,7 +329,7 @@ jobs:
           - { id: narrow-en-dark, args: "narrow.spec.ts --grep 'en/dark$'", gate-minutes: 20 }
           - { id: narrow-zh-CN-light, args: "narrow.spec.ts --grep 'zh-CN/light$'", gate-minutes: 20 }
           - { id: narrow-zh-CN-dark, args: "narrow.spec.ts --grep 'zh-CN/dark$'", gate-minutes: 20 }
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 30
     steps: *macos-web-steps
   e2e-web-linux-narrow-nightly:

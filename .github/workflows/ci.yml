@@ -307,7 +307,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-14, target: darwin-arm64, binary: agnes-darwin-arm64 }
+          - { os: macos-15, target: darwin-arm64, binary: agnes-darwin-arm64 }
           - { os: ubuntu-24.04, target: linux-x64, binary: agnes-linux-x64 }
           - { os: windows-2022, target: win32-x64, binary: agnes-win32-x64.exe }
     runs-on: ${{ matrix.os }}

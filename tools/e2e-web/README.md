@@ -58,7 +58,7 @@ separate from this gate.
 ## Gate and failure evidence
 
 The required GitHub status is **Web E2E gate** from `.github/workflows/e2e-web.yml`. It aggregates
-all twenty-one macOS 14 and seventeen Linux Web jobs, all six Linux fast-test shards and the separate
+all twenty-one macOS 15 and seventeen Linux Web jobs, all six Linux fast-test shards and the separate
 Linux contracts job (including `pnpm test:story`) and three migrated-heavy shards; a failed or
 cancelled dependency fails the aggregate. macOS uses nineteen explicit file/flow lists for regular
 cases, plus one candidate-review job and one narrow job. Linux uses sixteen explicit lists plus the
