@@ -87,6 +87,11 @@ jobs:
         with: { node-version-file: .node-version, cache: pnpm }
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm run doctor:toolchain
+      # The completion tests load the generated script in real bash and zsh. macOS ships zsh;
+      # the Ubuntu image does not.
+      - name: install zsh
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y zsh
       - name: prepare Windows native headers
         if: runner.os == 'Windows'
         shell: pwsh
