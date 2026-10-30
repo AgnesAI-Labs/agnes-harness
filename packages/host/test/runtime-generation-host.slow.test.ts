@@ -38,6 +38,8 @@ function required<T>(value: T | undefined): T {
   return value
 }
 
+// About 600 durable generation flushes: 4-5 s on a Linux CI runner against Vitest's 5 s default
+// there. The work is the publication under test, so the case keeps its own budget.
 it('keeps an in-flight turn on old plugin code across update, close and cold resume, and drains on deletion', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-generations-'))
   let host: Awaited<ReturnType<typeof createTestHost>>['host'] | undefined
@@ -839,7 +841,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     await host?.close()
     rmSync(root, { recursive: true, force: true })
   }
-})
+}, 30_000)
 
 it('keeps code pins while reading live Skills after refresh and cold resume', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-generation-skills-'))
