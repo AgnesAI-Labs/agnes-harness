@@ -147,6 +147,26 @@ describe('createSession', () => {
       await third.host.close()
     }
   })
+  // A workspace's case semantics are measured from the names in its root. An empty root gives no
+  // signal, so the measurement must not change once the first open has put Host's own `.agh` there:
+  // the execution record pins the policy digest, and a changed digest locks the session's history.
+  it('reopens a session that began in an empty workspace', async () => {
+    const dataDir = tmp()
+    const root = realpathSync.native(tmp('agnes-empty-ws-'))
+    const key = 'empty-workspace-session'
+    const first = await createTestHost({ dataDir, workspaceRoot: root, disableSessionTitle: true })
+    try {
+      await first.host.createSession({ key, cwd: root })
+    } finally {
+      await first.host.close()
+    }
+    const second = await createTestHost({ dataDir, workspaceRoot: root, disableSessionTitle: true })
+    try {
+      await expect(second.host.createSession({ key, cwd: root })).resolves.toMatchObject({ key })
+    } finally {
+      await second.host.close()
+    }
+  })
   // The view the session runs on must not carry the sentinel: core's resolveModel reads
   // preset.model.route[slot], and a view still saying `default` writes a request/header naming a
   // route no adapter serves.
