@@ -5,7 +5,8 @@ import { bundledExtensionManifest } from '@agnes/extension-api'
 import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it } from 'vitest'
-import factory, { TOOLS_CORE } from '../src/index.js'
+import { ShellJobs } from '../../jobs/src/registry.js'
+import factory, { createToolsCoreExtension, TOOLS_CORE } from '../src/index.js'
 
 const manifest = bundledExtensionManifest(
   JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')),
@@ -26,6 +27,32 @@ const manifest = bundledExtensionManifest(
 }
 
 describe('tools-core manifest', () => {
+  it.each([false, true])(
+    'registers the descriptions selected by the resolved preset (%s)',
+    async (enabled) => {
+      const tools = new Map<string, ToolDef>()
+      const api = {
+        registerHook: () => () => {},
+        registerTool: (tool: ToolDef) => {
+          tools.set(tool.name, tool)
+          return () => {}
+        },
+      } as unknown as ExtensionAPI
+      const plugin = createToolsCoreExtension(new ShellJobs(), undefined, {
+        tools: { logical_changes: enabled, ...(enabled ? { shell_observation_ms: 10_000 } : {}) },
+      })
+      const dispose = await extensionFactoryOf(plugin)(api)
+      try {
+        if (enabled) {
+          expect(tools.get('edit')?.description).toContain('a later edit sees earlier replacements')
+          expect(tools.get('shell')?.description).toContain('after 10000ms')
+          expect(tools.get('shell')?.description).not.toContain('after 2 minutes')
+        } else for (const tool of TOOLS_CORE) expect(tools.get(tool.name)?.description).toBe(tool.description)
+      } finally {
+        if (typeof dispose === 'function') await dispose()
+      }
+    },
+  )
   it('declares the five core tool names with no prefix', () => {
     expect(manifest.id).toBe('agnes/tools-core')
     expect(manifest.capabilities.tools.prefix).toBe('')

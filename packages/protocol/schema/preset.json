@@ -128,6 +128,16 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "logical_changes": {
+              "type": "boolean",
+              "description": "Opt in to logical-change prompt and sequential batch-edit guidance. Default false preserves existing prompt bytes."
+            },
+            "shell_observation_ms": {
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 30000,
+              "description": "Opt-in observation window for continuing foreground shell jobs. Recommended 10000; omission preserves the 120000 ms cap. Does not change timeoutToBackground=false or job lifetime."
+            },
             "max_parallel": {
               "type": "integer",
               "minimum": 1,

@@ -20,7 +20,7 @@ import type {
   SessionImpl,
   SlotOperation,
 } from './session.js'
-import { toolArgumentError } from './tool-args.js'
+import { toolArgumentError, toolArgumentFeedback } from './tool-args.js'
 import { recordToolArgumentCheck, restoreToolArgumentRecovery } from './tool-argument-recovery.js'
 import { toolCallPayload } from './tool-call.js'
 import { toolFilterRule } from './tool-filter.js'
@@ -116,9 +116,12 @@ export async function validatedCallPolicy(
   if (check.events.length) await s.d.log.append(check.events)
   const argumentError = check.error
   if (argumentError)
-    throw Object.assign(new Error(argumentError), {
-      code: 'TOOL_ARGS_INVALID',
-    })
+    throw Object.assign(
+      new Error(`${argumentError}\n${JSON.stringify(toolArgumentFeedback(argumentError))}`),
+      {
+        code: 'TOOL_ARGS_INVALID',
+      },
+    )
   return resolveValidatedToolCallPolicy(def, args as JsonValue)
 }
 

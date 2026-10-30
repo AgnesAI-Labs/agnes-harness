@@ -1,8 +1,8 @@
 import { resolve } from 'node:path'
-import { checkToolDef } from '@agnes/extension-api'
+import { checkToolDef, type HookContext, type ProcessExit, type ProcessOutput } from '@agnes/extension-api'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
-import { createJobTools } from '../../jobs/src/index.js'
+import { createJobTools, jobHooks } from '../../jobs/src/index.js'
 import { ShellJobs } from '../../jobs/src/registry.js'
 import { OUTPUT_LIMITS } from '../src/guards/output.js'
 import { createShellTool, SHELL_SENTINEL } from '../src/tools/shell.js'
@@ -12,6 +12,158 @@ const shellTool = createShellTool()
 
 const textOf = (r: { content: { type: string }[] }): string =>
   (r.content[0] as { type: 'text'; text: string }).text
+
+describe('shell observation window with a live job registry', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+  function setup(windowMs?: number) {
+    vi.useFakeTimers()
+    const ac = new AbortController()
+    const ctx = { ...fakeToolContext({ timeoutMs: 1_800_000 }), signal: ac.signal }
+    const jobs = new ShellJobs()
+    let emit: (output: ProcessOutput) => void = () => {}
+    let finish: (exit: ProcessExit) => void = () => {}
+    const close = vi.fn(async () => {
+      finish({ code: 0 })
+    })
+    ctx.sandbox.openProcess = async () => ({
+      enforcement: { level: 'none', scope: [] },
+      exited: new Promise((resolve) => {
+        finish = resolve
+      }),
+      onOutput: (listener) => {
+        emit = listener
+        return () => {}
+      },
+      write: async () => {},
+      resize: async () => {},
+      signal: async () => {},
+      close,
+    })
+    return {
+      ctx,
+      jobs,
+      ac,
+      close,
+      tool: createShellTool(jobs, windowMs),
+      emit: (output: ProcessOutput) => emit(output),
+      finish: (exit: ProcessExit) => finish(exit),
+    }
+  }
+  it.each([
+    [10_000, 10_000],
+    [30_000, 30_000],
+    [undefined, 120_000],
+  ] as const)(
+    'window=%s returns at %s with captured output, preserving the same readable service',
+    async (windowMs, expected) => {
+      const h = setup(windowMs)
+      try {
+        let returned = false
+        const pending = h.tool.execute({ command: 'serve', timeoutMs: 600_000 }, h.ctx).then((result) => {
+          returned = true
+          return result
+        })
+        await vi.advanceTimersByTimeAsync(0)
+        h.emit({ stream: 'stdout', text: 'server ready\n' })
+        h.emit({ stream: 'stderr', text: 'startup warning\n' })
+        await vi.advanceTimersByTimeAsync(expected - 1)
+        expect(returned).toBe(false)
+        await vi.advanceTimersByTimeAsync(1)
+        const result = await pending
+        expect(result.structured).toMatchObject({ status: 'running' })
+        expect(textOf(result)).toContain('server ready\n\n[stderr]\nstartup warning')
+        expect(textOf(result)).not.toContain('[exit ')
+        const id = h.jobs.list(h.ctx)[0]!.id
+        expect(result.details).toMatchObject({ jobId: id, status: 'running' })
+        h.emit({ stream: 'stdout', text: 'request handled\n' })
+        const output = createJobTools(h.jobs).find((tool) => tool.name === 'job_output')!
+        expect(textOf(await output.execute({ jobId: id }, h.ctx))).toContain('request handled')
+        const hookCtx: HookContext = { ...h.ctx, replayed: false, unattended: true }
+        const hooks = jobHooks(h.jobs)
+        const stop = { turn: 1, step: 1, proposedReason: 'completed' as const }
+        expect(await hooks.turn_stopping(stop, hookCtx)).toMatchObject({ action: 'continue' })
+        expect(await hooks.turn_stopping(stop, hookCtx)).toEqual({ action: 'stop' })
+        expect(h.jobs.list(h.ctx)[0]?.status).toBe('running')
+        expect(h.close).not.toHaveBeenCalled()
+        h.finish({ code: 0 })
+        await vi.advanceTimersByTimeAsync(0)
+        expect(await h.jobs.wait(h.ctx, id, 0)).toMatchObject({
+          status: 'completed',
+          stdout: 'server ready\nrequest handled\n',
+        })
+      } finally {
+        await h.jobs.dispose()
+      }
+    },
+  )
+  it('returns on a fast exit without spending the observation window', async () => {
+    const h = setup(10_000)
+    try {
+      const start = Date.now()
+      const pending = h.tool.execute({ command: 'fast' }, h.ctx)
+      await vi.advanceTimersByTimeAsync(0)
+      h.emit({ stream: 'stdout', text: 'done' })
+      h.finish({ code: 0 })
+      await vi.advanceTimersByTimeAsync(0)
+      const result = await pending
+      expect(result.details).toMatchObject({ status: 'completed', code: 0 })
+      expect(textOf(result)).toContain('done\n[exit 0]')
+      expect(Date.now() - start).toBe(0)
+    } finally {
+      await h.jobs.dispose()
+    }
+  })
+  it('bounds the running snapshot with explicit truncation and a retained tail', async () => {
+    const h = setup(10_000)
+    try {
+      const pending = h.tool.execute({ command: 'logs' }, h.ctx)
+      await vi.advanceTimersByTimeAsync(0)
+      h.emit({ stream: 'stdout', text: 'HEAD\n' + 'x'.repeat(100_000) + '\nTAIL' })
+      await vi.advanceTimersByTimeAsync(10_000)
+      const result = await pending
+      expect(textOf(result)).toContain('HEAD')
+      expect(textOf(result)).toContain('TAIL')
+      expect(textOf(result)).toContain('[truncated:')
+      expect(textOf(result).length).toBeLessThan(h.ctx.outputMaxBytes)
+      expect(result.content.some((block) => block.type === 'ref')).toBe(true)
+    } finally {
+      await h.jobs.dispose()
+    }
+  })
+  it('cancels an observed foreground job and keeps explicit termination deadlines', async () => {
+    const h = setup(10_000)
+    try {
+      const pending = h.tool.execute({ command: 'long' }, h.ctx)
+      await vi.advanceTimersByTimeAsync(0)
+      h.ac.abort()
+      expect((await pending).isError).toBe(true)
+      expect(h.jobs.list(h.ctx)[0]?.status).toBe('killed')
+      expect(h.close).toHaveBeenCalled()
+    } finally {
+      await h.jobs.dispose()
+    }
+    const terminating = setup(10_000)
+    try {
+      let returned = false
+      const pending = terminating.tool
+        .execute({ command: 'bounded', timeoutMs: 40_000, timeoutToBackground: false }, terminating.ctx)
+        .then((result) => {
+          returned = true
+          return result
+        })
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(returned).toBe(false)
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect((await pending).details).toMatchObject({ code: 'SHELL_TIMEOUT' })
+      expect(terminating.jobs.list(terminating.ctx)[0]?.status).toBe('killed')
+    } finally {
+      await terminating.jobs.dispose()
+    }
+  })
+})
 
 describe('shell', () => {
   it('preserves foreground execution when the Host process port is unavailable', async () => {
@@ -478,7 +630,7 @@ describe('shell near the turn deadline', () => {
     expect(waits).toEqual([35_000])
     expect(kill).not.toHaveBeenCalled()
     expect(textOf(r)).toBe(
-      'background job job-1 started (foreground wait stopped after 35000ms (requested 120000ms) to leave time in this turn: about 1m40s of the turn remains (deadline 00:18:20 UTC); the same process continues); use job_output, job_list or job_kill. Use the time left for short steps: leave the work in its best checked state and end with a short summary.',
+      'so far\nbackground job job-1 started (foreground wait stopped after 35000ms (requested 120000ms) to leave time in this turn: about 1m40s of the turn remains (deadline 00:18:20 UTC); the same process continues); use job_output, job_list or job_kill. Use the time left for short steps: leave the work in its best checked state and end with a short summary.',
     )
   })
 
@@ -514,7 +666,7 @@ describe('shell near the turn deadline', () => {
       expect(kill).not.toHaveBeenCalled()
       expect(r.details).toMatchObject({ jobId: 'job-1', status: 'running' })
       expect(textOf(r)).toBe(
-        'background job job-1 started (foreground wait stopped at 120000ms, the most one call waits (requested 600000ms); the same process continues); use job_output, job_list or job_kill',
+        'so far\nbackground job job-1 started (foreground wait stopped at 120000ms, the most one call waits (requested 600000ms); the same process continues); use job_output, job_list or job_kill',
       )
       // A command that must not outlive its timeout keeps the time it asked for.
       await tool.execute({ command: 'make check', timeoutMs: 600_000, timeoutToBackground: false }, ctx)
@@ -562,7 +714,7 @@ describe('shell near the turn deadline', () => {
     const ctx = fakeToolContext({ timeoutMs: 598_000, turnTimeLimit: limit })
     const r = await tool.execute({ command: 'serve', background: true }, ctx)
     expect(waits).toEqual([])
-    expect(textOf(r)).toBe('background job job-1 started; use job_output, job_list or job_kill')
+    expect(textOf(r)).toBe('so far\nbackground job job-1 started; use job_output, job_list or job_kill')
   })
 
   it("keeps a job_output wait inside the turn's time, and leaves the job running", async () => {

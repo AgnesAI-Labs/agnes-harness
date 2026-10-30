@@ -84,6 +84,12 @@ API 客户端可通过 `_agnes/v1/session.setModel` 传入可选的 `thinking`�
 
 使用 Agnes 中国官方网关时，若请求未覆盖额度，adapter 会明确将内置模型的目录额度 65536 作为 `max_tokens` 发送。[3.0 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-30-flash)、[2.5 Pro](https://agnes-ai.com/zh-Hans/docs/agnes-25-pro)和 [Pro Alpha](https://agnes-ai.com/zh-Hans/docs/agnes-25-pro-alpha) 的官方规格为 65536；[Pro Beta](https://agnes-ai.com/en/docs/agnes-25-pro-beta) 按 Pro 同系额度配置为 65536，尚未单独验证网关容量；[2.5 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-25-flash) 和 [2.0 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-20-flash) 的官方说明使用约数 65.5K，此处按 65536 配置。已废弃模型保留注册以兼容现有配置，其可用性取决于网关。请求中明确设置的额度仍优先。仅修改目录元数据不会设置底层 OpenAI 兼容流请求的额度。大文件仍应通过多次小型 write/edit 调用分段构建；默认额度不能保证任意大的单次调用都能完成。
 
+预设的 `completion_gate.enabled` 默认 `true`。校验通过时，若计划至少有 `completion_gate.min_items` 项（默认 3）且仍有未完成项，会追加一次复核；没有计划或计划较小则立即完成。第二次通过即使计划仍过时也会完成，并记录 `completion_gate_stale_plan` 诊断。取消、时间、额度和步数限制仍优先；设为 `completion_gate: { enabled: false }` 可关闭复核。
+
+两个独立的预设字段默认关闭：`tools.logical_changes: true` 将代码指导改为按跨编辑、跨文件的逻辑变更整体验证，允许一次回复发起独立读取、搜索与检查，并为 `edit` 启用对应的顺序批量编辑说明；省略或设为 `false` 保持原提示词和编辑工具描述。`tools.shell_observation_ms: 10000` 将可继续运行的前台 shell 观察窗口设为 10 秒（整数，1000–30000）；省略时保留 120 秒上限。10 秒让普通命令有机会完成并尽早交付长命令的反馈，30 秒上限约束单次观察而不改变工具执行预算。显式更短的 `timeoutMs` 与 turn 期限仍优先；`timeoutToBackground: false` 保留终止约定，没有 jobs 后端的执行器保留原超时行为。运行中结果始终通过现有有界首尾输出守卫带回已捕获的 stdout/stderr，必要时含截断标记与 artifact；这只提前交付 `job_output` 已能读取的内容，不改变所有权、寿命或服务存活规则。
+
+字段写在导出的预设中，包括 [bundle 提供的预设](../extend/bundles-and-profiles.zh-CN.md)，不放在 profile 顶层。无界面运行时，在 profile 的 `bundles` 选择该 bundle，设 `presets: { default: trial, allowed: [trial] }`，再运行 `AGNES_PROFILE=trial agh --preset trial -p '你的请求'`。`trial` 定义使用 `extends: standard`，每次只开启要测的字段；修改后新建会话。没有控制这些开关的环境变量。
+
 ## 任务步数限制
 
 普通任务默认不设累计执行步数上限。Core 默认值及内置 `base`、`standard`、`claw` preset 均使用 `budget.max_steps: null`，不会再因为达到 50、80 或 200 步而截停。一“步”是主模型的一轮执行，可包含多个工具调用。任务完成、用户取消、模型请求失败、单次请求超时、费用预算和循环检查仍然生效。冻结的 `minimal-rl` 评测 preset 保留其明确配置的 100 步上限。

@@ -1,5 +1,36 @@
-import { scrubFeedback } from '../guards/feedback.js'
+import type { ToolContext, ToolResult } from '@agnes/extension-api'
+import { scrubFeedback, toolFailure } from '../guards/feedback.js'
 import { cutHead } from '../guards/output.js'
+
+const RECOVERY_HINT = {
+  not_read: 'Use read on this file in this session before editing.',
+  not_found:
+    'Read the current range; later edits must target the intermediate content. Correct and resend the whole batch.',
+  ambiguous:
+    'Include distinguishing surrounding lines so oldText matches exactly once; resend the whole batch.',
+  invalid_args: 'Check the requested path, text encoding and argument schema before retrying.',
+  write_failed: 'Check write access and read the current file before retrying the batch.',
+}
+
+/** Index is zero-based; null means a file/batch-level failure, before a particular edit. */
+export async function editFailure(
+  ctx: ToolContext,
+  code: string,
+  category: 'not_read' | 'not_found' | 'ambiguous' | 'invalid_args' | 'write_failed',
+  index: number | null,
+  written: boolean | 'unknown',
+  message: string,
+): Promise<ToolResult> {
+  const result = await toolFailure(ctx, code, message)
+  const feedback = { category, index, written, hint: RECOVERY_HINT[category] }
+  return {
+    ...result,
+    // Standard model requests render content; structured also serves programmatic callers.
+    content: [...result.content, { type: 'text', text: JSON.stringify(feedback) }],
+    structured: feedback,
+    details: { code, ...feedback },
+  }
+}
 
 // Diagnostics never perform I/O or mutate text. Bound both input and candidate comparisons, even
 // for minified files or adversarial oldText. Exact replacement has its own unchanged semantics.

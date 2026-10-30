@@ -27,6 +27,7 @@ export async function runShellJob(
     sessionId?: string
   },
   ctx: ToolContext,
+  observationMs = FOREGROUND_WAIT_MAX_MS,
 ): Promise<ToolResult> {
   let id: string | undefined
   try {
@@ -48,7 +49,7 @@ export async function runShellJob(
     // A wait whose process continues also ends at a fixed bound, whatever the turn has left; one that
     // kills its process at the timeout keeps the time it asked for.
     const continues = args.timeoutToBackground !== false
-    const boundedMs = continues ? Math.min(ownWaitMs, FOREGROUND_WAIT_MAX_MS) : ownWaitMs
+    const boundedMs = continues ? Math.min(ownWaitMs, observationMs) : ownWaitMs
     const { waitMs, capped } = args.background
       ? { waitMs: ownWaitMs, capped: false }
       : deadlineWait(ctx, boundedMs, { continues })
@@ -72,12 +73,10 @@ export async function runShellJob(
       }
       return {
         structured: { jobId: id, status: 'running' },
-        content: [
-          {
-            type: 'text',
-            text: `${notes.length ? notes.join('\n') + '\n' : ''}background job ${id} started${args.background ? '' : capped ? ` (foreground wait ${deadlineYield(ctx, waitMs, ownWaitMs)}; the same process continues)` : boundedMs < ownWaitMs ? ` (foreground wait stopped at ${waitMs}ms, the most one call waits (requested ${ownWaitMs}ms); the same process continues)` : ` (foreground wait reached ${waitMs}ms; the same process continues)`}; ${hint}${capped ? `. ${DEADLINE_ADVICE}` : ''}`,
-          },
-        ],
+        ...(await guardedResult(
+          ctx,
+          `${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}${job.truncated ? '\n[capture limit reached; some output was omitted]' : ''}${job.stdout || job.stderr || job.truncated ? '\n' : ''}${notes.length ? notes.join('\n') + '\n' : ''}background job ${id} started${args.background ? '' : capped ? ` (foreground wait ${deadlineYield(ctx, waitMs, ownWaitMs)}; the same process continues)` : boundedMs < ownWaitMs ? ` (foreground wait stopped at ${waitMs}ms, the most one call waits (requested ${ownWaitMs}ms); the same process continues)` : ` (foreground wait reached ${waitMs}ms; the same process continues)`}; ${hint}${capped ? `. ${DEADLINE_ADVICE}` : ''}`,
+        )),
         details: {
           jobId: id,
           status: 'running',

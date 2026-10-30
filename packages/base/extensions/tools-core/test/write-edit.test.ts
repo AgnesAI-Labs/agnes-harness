@@ -32,6 +32,78 @@ function textOf(r: ToolResult): string {
   return first?.type === 'text' ? first.text : JSON.stringify(first)
 }
 
+describe('edit feedback', () => {
+  it('opts in to sequential batch guidance while preserving the default description', () => {
+    expect(createEditTool().description).toBe(editTool.description)
+    expect(createEditTool(undefined, undefined, false).description).toBe(editTool.description)
+    expect(createEditTool(undefined, undefined, true).description).toContain(
+      'a later edit sees earlier replacements',
+    )
+    expect(createEditTool(undefined, undefined, true).description).toContain(
+      'Put several edits to one file in one call',
+    )
+  })
+  it.each([
+    ['not_read', null, false],
+    ['not_found', 1, true],
+    ['ambiguous', 1, true],
+  ] as const)('reports %s at index %s without writing', async (category, index, observed) => {
+    const opts = { files: { 'a.txt': 'first\nduplicate\nduplicate\n' } }
+    const ctx = observed ? await observedCtxOf(opts) : ctxOf(opts)
+    const before = ctx.mem.files.get('/work/proj/a.txt')?.slice()
+    const result = await editTool.execute(
+      {
+        path: 'a.txt',
+        edits: [
+          { oldText: 'first', newText: 'changed' },
+          { oldText: category === 'ambiguous' ? 'duplicate' : 'missing', newText: 'replacement' },
+        ],
+      },
+      ctx,
+    )
+    expect(result.isError).toBe(true)
+    expect(result.structured).toMatchObject({ category, index, written: false, hint: expect.any(String) })
+    expect(result.content).toContainEqual({ type: 'text', text: JSON.stringify(result.structured) })
+    expect(ctx.mem.files.get('/work/proj/a.txt')).toEqual(before)
+  })
+  it.each(['E_FS_DENIED', 'EIO'])(
+    'reports a %s write failure without inventing write certainty',
+    async (code) => {
+      const ctx = await observedCtxOf({
+        files: { 'a.txt': 'first' },
+        writeErrors: { 'a.txt': { code, message: 'private backend details' } },
+      })
+      const pending = editTool.execute(
+        { path: 'a.txt', edits: [{ oldText: 'first', newText: 'changed' }] },
+        ctx,
+      )
+      if (code === 'EIO') {
+        await expect(pending).rejects.toThrow('EIO')
+        const error = await pending.catch((error: Error) => error)
+        expect(error).toBeInstanceOf(Error)
+        const message = (error as Error).message
+        expect(JSON.parse(message.slice(message.indexOf('{')))).toMatchObject({
+          category: 'write_failed',
+          index: null,
+          written: 'unknown',
+          hint: expect.stringContaining('read'),
+        })
+        expect(message).not.toContain('private backend details')
+        return
+      }
+      const result = await pending
+      expect(result.isError).toBe(true)
+      expect(result.structured).toMatchObject({
+        category: 'write_failed',
+        index: null,
+        written: code === 'E_FS_DENIED' ? false : 'unknown',
+        hint: expect.stringContaining('read'),
+      })
+      expect(JSON.stringify(result)).not.toContain('private backend details')
+    },
+  )
+})
+
 describe('write', () => {
   it('has a complete definition', () => {
     expect(checkToolDef(writeTool)).toEqual({ ok: true })

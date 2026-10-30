@@ -43,10 +43,15 @@ describe('preset view', () => {
       agentCallable: true,
     })
     expect(d.sandbox).toEqual({ onUnavailable: 'deny' })
-    expect(d.tools).toEqual({ timeoutMs: 120000, timeouts: {}, outputMaxBytes: DEFAULT_OUTPUT_MAX_BYTES })
+    expect(d.tools).toEqual({
+      timeoutMs: 120000,
+      timeouts: {},
+      outputMaxBytes: DEFAULT_OUTPUT_MAX_BYTES,
+      logicalChanges: false,
+    })
     expect(d.verifier).toEqual({ timeoutMs: 30000, defaultTier: 0 })
     expect(d.repair).toEqual({ timeoutMs: 10000 })
-    expect(d.completionGate).toEqual({ minItems: 3 })
+    expect(d.completionGate).toEqual({ enabled: true, minItems: 3 })
     expect(d.progressCheck).toEqual({ everySteps: 0 })
     expect(d.telemetry).toEqual({ invariants: false, timing: false })
     expect(d.recovery).toEqual({ unknownChild: 'model' })
@@ -115,7 +120,7 @@ describe('preset view', () => {
         budget: { preflight: 'count', per_request_cap: 13, on_exceed: 'deny', max_steps: 17 },
         approval: { timeout_ms: 19, on_unavailable: 'park', pending_ttl_ms: 23 },
         sandbox: { on_unavailable: 'allow' },
-        tools: { timeout_ms: 29, output_max_bytes: 9000, timeouts: { shell: 31 } },
+        tools: { timeout_ms: 29, output_max_bytes: 9000, timeouts: { shell: 31 }, logical_changes: true },
         verifier: { timeout_ms: 37, default_tier: 2 },
         repair: { timeout_ms: 41 },
         completion_gate: { min_items: 43 },
@@ -148,10 +153,10 @@ describe('preset view', () => {
       budget: { preflight: 'count', perRequestCap: 13, onExceed: 'deny', maxSteps: 17 },
       approval: { onTimeout: 'rejected', timeoutMs: 19, onUnavailable: 'park', pendingTtlMs: 23 },
       sandbox: { onUnavailable: 'allow' },
-      tools: { timeoutMs: 29, outputMaxBytes: 9000, timeouts: { shell: 31 } },
+      tools: { timeoutMs: 29, outputMaxBytes: 9000, timeouts: { shell: 31 }, logicalChanges: true },
       verifier: { timeoutMs: 37, defaultTier: 2 },
       repair: { timeoutMs: 41 },
-      completionGate: { minItems: 43 },
+      completionGate: { enabled: true, minItems: 43 },
       progressCheck: { everySteps: 7 },
       compaction: { enabled: false, reserveTokens: 47, keepRecentTokens: 53, agentCallable: false },
       telemetry: { invariants: 'strict', timing: true },
