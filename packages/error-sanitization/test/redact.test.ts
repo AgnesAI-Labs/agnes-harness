@@ -19,6 +19,8 @@ const rules: RedactRules = {
 it.each([
   ['/tmp/authoring 中文 #% project', false],
   ['C:\\synthetic\\authoring 中文 #% project', true],
+  // An 8.3 short name, as a Windows temp directory often has: pathToFileURL encodes its '~'.
+  ['C:\\SYNTHE~1\\authoring 中文 #% project', true],
   ['\\\\server\\share\\authoring 中文 #% project', true],
 ])('retains candidate-relative authoring locations for %s', (directory, windows) => {
   const separator = windows ? '\\' : '/'
