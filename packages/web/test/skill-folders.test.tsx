@@ -322,7 +322,7 @@ it('keeps the report of a retried scan when an older report arrives from a list 
     unreadableDirectoryCount: 0,
     directories: older.directories.map((entry) => ({
       ...entry,
-      state: 'complete',
+      state: 'ready',
       complete: true,
       foundCount: 3,
       skippedCount: 0,
