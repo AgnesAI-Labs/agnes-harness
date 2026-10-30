@@ -357,13 +357,43 @@ describe('every file system in the repository is in the table above', () => {
     return out
   }
 
+  // The expression each `throw` hands over: up to the end of its statement, across bracketed
+  // arguments and continued lines. A refusal is a thrown error whose message starts with the marker
+  // or whose code is the marker. Code that only names the marker near a throw (classifying a
+  // refusal it caught from the file system it was given, or describing one in another error's
+  // message) refuses nothing itself.
+  const thrown = (text: string): string[] =>
+    [...text.matchAll(/\bthrow\b/g)].map((match) => {
+      let depth = 0
+      let at = match.index + 'throw'.length
+      for (; at < text.length; at++) {
+        const char = text[at] as string
+        if ('([{'.includes(char)) depth++
+        else if (')]}'.includes(char)) {
+          if (depth === 0) break
+          depth--
+        } else if (
+          depth === 0 &&
+          (char === ';' ||
+            (char === '\n' &&
+              !/^\s*[.?:+|&,]/.test(text.slice(at + 1, at + 40)) &&
+              !/[=(,+|&?:]\s*$/.test(text.slice(match.index, at))))
+        )
+          break
+      }
+      return text.slice(match.index, at)
+    })
+  const REFUSAL = /[`'"](?:\$\{FS_DENIED\}|E_FS_DENIED)|code:\s*(?:FS_DENIED\b|['"]E_FS_DENIED)/
+
   it('finds no path-refusing file system outside it', () => {
     const fsImplementations = Object.values(IMPLEMENTATIONS).map((i) => i.file)
     const covered = new Set([...fsImplementations, ...Object.keys(AUXILIARY_PATH_GUARDS)])
     const found = sources(join(repoRoot, 'packages'))
       // A throw carrying the marker, spelled out or through the exported constant. The file that
       // defines the marker does not throw it and is not an implementation.
-      .filter((f) => /throw[\s\S]{0,120}FS_DENIED/.test(stripComments(readFileSync(f, 'utf8'))))
+      .filter((f) =>
+        thrown(stripComments(readFileSync(f, 'utf8'))).some((expression) => REFUSAL.test(expression)),
+      )
       .map((f) => relative(repoRoot, f).split(sep).join('/'))
     expect(found.length, 'the scan found nothing, so it is proving nothing').toBeGreaterThan(0)
     expect(
