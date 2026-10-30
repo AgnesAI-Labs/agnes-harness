@@ -9,7 +9,7 @@ import type {
 } from '@agnes/resource-control-store'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ResourceAdapterOptions } from '../src/service-adapters.js'
-import { installResourceServiceAdapters } from '../src/service-adapters.js'
+import { installResourceServiceAdapters, SKILL_VIEW_READS } from '../src/service-adapters.js'
 
 type FakePool = ResourceAdapterOptions['pool']
 
@@ -400,27 +400,30 @@ function fakeSkillScanReply(input: {
 }
 
 describe('installResourceServiceAdapters — Skill scan/removal over the shared session worker', () => {
-  it('rejects a runtime view from a retired worker connection or changed snapshot', async () => {
+  it('reads the runtime view again when a publish changes the snapshot during the read', async () => {
     const { snapshotPath } = snapshotFile()
     const { store, capturedAdapters } = fakeStoreWith({ snapshotPath })
-    let changed = false
-    let editSnapshot = false
+    const revisions: string[] = []
+    let publishes = 1
+    let written = 0
     const link = {
       alive: true,
       hello: Promise.resolve({}),
       close: () => undefined,
       command: async (_method: string, params: unknown) => {
-        if (editSnapshot) writeFileSync(snapshotPath, '{"changed":true}')
-        return { skills: [], snapshotRevision: (params as { snapshotRevision: string }).snapshotRevision }
+        const { snapshotRevision } = params as { snapshotRevision: string }
+        revisions.push(snapshotRevision)
+        // An approved publish rewrites the durable snapshot while the worker answers.
+        if (publishes > 0) {
+          publishes--
+          writeFileSync(snapshotPath, `{"skills":[],"mcp":[],"published":${++written}}`)
+        }
+        return { skills: [], snapshotRevision }
       },
     }
-    let acquisitions = 0
     installResourceServiceAdapters({
       store,
-      pool: {
-        acquire: vi.fn(),
-        acquireSharedWorker: async () => (++acquisitions % 2 === 0 && changed ? { ...link } : link),
-      },
+      pool: { acquire: vi.fn(), acquireSharedWorker: async () => link },
       profile: { name: 'local-dev', hash: 'a'.repeat(64) },
       refreshPackageSkills: async () => undefined,
     })
@@ -428,11 +431,71 @@ describe('installResourceServiceAdapters — Skill scan/removal over the shared 
     if (!view) throw new Error('missing runtime view adapter')
     const input = { profile: 'local-dev', skills: [], signal: new AbortController().signal }
     expect(await view(input)).toEqual([])
-    changed = true
-    await expect(view(input)).rejects.toThrow('view changed')
-    changed = false
-    editSnapshot = true
-    await expect(view(input)).rejects.toThrow('view changed')
+    // The second read is bound to the snapshot the publish wrote, not the one the first read saw.
+    expect(revisions).toHaveLength(2)
+    expect(revisions[1]).not.toBe(revisions[0])
+
+    // A snapshot that changes during every read is refused with a typed, retryable error.
+    revisions.length = 0
+    publishes = Number.POSITIVE_INFINITY
+    await expect(view(input)).rejects.toMatchObject({
+      code: -32004,
+      message: 'GENERATION_STALE',
+      data: { code: 'RESOURCE_SKILL_VIEW_CHANGING', retryable: true },
+    })
+    expect(revisions).toHaveLength(SKILL_VIEW_READS)
+  })
+  it('reads the runtime view again from the replacement worker and refuses one that keeps being replaced', async () => {
+    const { snapshotPath } = snapshotFile()
+    const { store, capturedAdapters } = fakeStoreWith({ snapshotPath })
+    const worker = () => ({
+      alive: true,
+      hello: Promise.resolve({}),
+      close: () => undefined,
+      command: async (_method: string, params: unknown) => ({
+        skills: [],
+        snapshotRevision: (params as { snapshotRevision: string }).snapshotRevision,
+      }),
+    })
+    let current = worker()
+    let replacements = 1
+    const commands: unknown[] = []
+    installResourceServiceAdapters({
+      store,
+      pool: {
+        acquire: vi.fn(),
+        acquireSharedWorker: async () => current,
+      },
+      profile: { name: 'local-dev', hash: 'a'.repeat(64) },
+      refreshPackageSkills: async () => undefined,
+    })
+    const view = capturedAdapters().skills.view
+    if (!view) throw new Error('missing runtime view adapter')
+    const replaceDuringCommands = () => {
+      const original = current.command
+      current.command = async (method: string, params: unknown) => {
+        commands.push(params)
+        const reply = await original(method, params)
+        // A plugin reload retires the shared worker while it answers.
+        if (replacements > 0) {
+          replacements--
+          current = worker()
+          replaceDuringCommands()
+        }
+        return reply
+      }
+    }
+    replaceDuringCommands()
+    const input = { profile: 'local-dev', skills: [], signal: new AbortController().signal }
+    expect(await view(input)).toEqual([])
+    expect(commands).toHaveLength(2)
+
+    commands.length = 0
+    replacements = Number.POSITIVE_INFINITY
+    await expect(view(input)).rejects.toMatchObject({
+      data: { code: 'RESOURCE_SKILL_VIEW_CHANGING', retryable: true },
+    })
+    expect(commands).toHaveLength(SKILL_VIEW_READS)
   })
   it('refresh sends resourceSkillScan with the resolved workspace root, rootKey and current snapshot revision', async () => {
     const { snapshotPath } = snapshotFile()
