@@ -340,15 +340,18 @@ test('session terminal survives UI detachment, follows agent output and honors p
   await expect(terminalInput).toBeEditable()
   await terminalInput.pressSequentially("printf 'E2E_TERMINAL_OK\\n'")
   await terminalInput.press('Enter')
+  // The output must start its own line; the echoed command never does. Readline (bash >= 5.1)
+  // leaves bracketed-paste mode with `ESC[?2004l` + CR before the command runs, so after VT
+  // stripping a line can begin at CR as well as at LF.
   await expect
     .poll(async () => stripVTControlCharacters((await session.jobsRead(human.id)).job?.stdout ?? ''))
-    .toMatch(/\nE2E_TERMINAL_OK\r?\n/)
+    .toMatch(/[\r\n]E2E_TERMINAL_OK\r?\n/)
   await expect(terminalText).toContainText('E2E_TERMINAL_OK')
   await terminalInput.pressSequentially("PS1='wb1$ '; printf '\\033[2J\\033[H'; printf 'WB1_TERMINAL_OK\\n'")
   await terminalInput.press('Enter')
   await expect
     .poll(async () => stripVTControlCharacters((await session.jobsRead(human.id)).job?.stdout ?? ''))
-    .toMatch(/\nWB1_TERMINAL_OK\r?\n/)
+    .toMatch(/[\r\n]WB1_TERMINAL_OK\r?\n/)
   await expect(terminalText).toContainText('WB1_TERMINAL_OK')
   await panel.getByTestId('terminal-new').click()
   await expect(panel.getByTestId('terminal-tab')).toHaveCount(2)
@@ -375,7 +378,7 @@ test('session terminal survives UI detachment, follows agent output and honors p
   await terminalInput.press('Enter')
   await expect
     .poll(async () => stripVTControlCharacters((await session.jobsRead(human.id)).job?.stdout ?? ''))
-    .toMatch(/\nWB1_AFTER_INTERRUPT\r?\n/)
+    .toMatch(/[\r\n]WB1_AFTER_INTERRUPT\r?\n/)
   await expect(terminalText).toContainText('WB1_AFTER_INTERRUPT')
   await translated(page)
   await accessible(page, info, 'workbench-terminal')
