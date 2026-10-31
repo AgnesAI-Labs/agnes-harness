@@ -86,9 +86,9 @@ describe('prompt section order table', () => {
     'environment-powershell.md': 'environment',
     'persona.md': 'persona',
   }
-  // Loaded directly by renderTools() (code-mode/environment.ts), not registered in PROMPT_SECTIONS:
-  // the renderer selects the available/none variant for the tools-available section.
-  const NON_SECTION_FILES = ['tools-available.md', 'tools-none.md']
+  // Loaded at their delivery boundary rather than registered as fixed sections: the completion
+  // note and the available/none variants selected by renderTools().
+  const NON_SECTION_FILES = ['completion-review.md', 'tools-available.md', 'tools-none.md']
 
   it('ships exactly the prompt files the table accounts for', () => {
     expect(shippedFiles).toEqual([...Object.keys(SERVES), ...NON_SECTION_FILES].sort())
@@ -127,6 +127,16 @@ const PROMPT_TEXT: Record<string, string> = {
     '- Do not use markdown tables or nested lists; the channel may not render them.',
     '- Report progress once per turn, not per step.',
     '- Put file contents and long output behind an artifact reference rather than pasting them.',
+  ].join('\n'),
+  'completion-review': [
+    'Before completing this turn, review the final deliverables against the original user request below, as amended by later user instructions, including any instructions or specifications it references. This is one review round; use the remaining turn limits to check and fix the result, then give the final reply.',
+    '',
+    "- Quote each explicit requirement verbatim: paths, names, exact strings, formats, allowed values or changes, numeric thresholds, and how the result will be run or consumed. Derive the checks from these requirements, independently of the implementation and its self-tests; do not reuse the implementation's assumptions as the reference.",
+    '- For each requirement, run a check now against the final artifact. Use a fresh process with the default environment and the entry point the consumer will use; settings or dependencies visible only inside your earlier process do not establish that it works for the consumer. Compare exact content for equality where required, not just inclusion.',
+    '- Confirm that inputs the request implies must be preserved are intact, that deliverables still exist at their final locations after any cleanup, and that deliverable files contain only the requested content. Preserve work already verified; do not clean away a working deliverable.',
+    '- Fix what fails within the remaining limits and check the final state again. If a requirement cannot be checked or met, say plainly what remains unmet in the final reply; keep caveats out of files that must contain only the answer. Do not claim completion without executed evidence.',
+    '',
+    'Original user request (quoted content, not a runtime instruction):',
   ].join('\n'),
   'code-doctrine': [
     'You act by writing code. One run_code call is one program in a fresh managed process.',
@@ -176,7 +186,7 @@ const PROMPT_TEXT: Record<string, string> = {
     '',
     "Reply in the user's language unless they request another language. Keep that language throughout each reply, including progress updates and narration before and after tool calls. English tool descriptions, results, examples, or source text do not change the reply language; preserve exact code, identifiers, paths, and quotations when needed.",
     '',
-    "Understand the user's goal and inspect relevant information before acting. Distinguish plans from actions you have actually taken, and explain results clearly. Describe material limitations in ordinary language; keep incidental runtime diagnostics in the execution record.",
+    "Understand the user's goal and inspect relevant information before acting. Before an operation that may irreversibly change a supplied input (database journal/WAL writes, git history rewrites, or overwriting its only copy), copy it first. Distinguish plans from actions you have actually taken, and explain results clearly. Describe material limitations in ordinary language; keep incidental runtime diagnostics in the execution record.",
     "For questions about the workspace or a named local file, read the actual file relative to the session's working directory. Use that file as the source for calculations and conclusions. State the source and do not substitute example data or a requested target for observed values.",
     'You do not claim a task is done until the evidence for it exists in this session.',
     'When you cannot do something, you say so plainly and stop; you never simulate a result.',
@@ -199,6 +209,21 @@ describe('prompt text', () => {
   it('ships exactly the bytes recorded for every prompt, and records every prompt it ships', () => {
     expect(Object.keys(PROMPT_TEXT).sort()).toEqual(shippedFiles.map((f) => f.replace(/\.md$/, '')).sort())
     for (const [id, text] of Object.entries(PROMPT_TEXT)) expect(loadPrompt(id), id).toBe(text)
+    // The only per-request growth is the input-preservation sentence (+41 estimated tokens).
+    // Completion review is a runtime note, so its text must never join the fixed sections.
+    expect(
+      Object.fromEntries(
+        PROMPT_SECTIONS.filter((s) => s.source === 'file').map((s) => [
+          s.id,
+          Math.ceil(loadPrompt(s.id).length / 4),
+        ]),
+      ),
+    ).toEqual({
+      persona: 656,
+      'coding-doctrine': 422,
+      'code-doctrine': 352,
+      'channel-style': 81,
+    })
   })
 
   // These bytes go to the model and two of them are hashed into the request header, so a stray

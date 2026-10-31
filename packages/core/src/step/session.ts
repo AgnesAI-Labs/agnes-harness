@@ -179,6 +179,7 @@ import { claimFrom, type EnqueueMsg, inboxEvent, inputMessageEvents, inputTainte
 import { discloseTools, resolveModel, runInference } from './inference.js'
 import { LoopScope, stepWithinLoopDeadline } from './loop-deadline.js'
 import { resolvedModelInput, supportsComputerUse, toolNamesForModel, toolsForModel } from './model-tools.js'
+import type { OperationCommon } from './operation-common.js'
 import { operationDecisionPort } from './operation-decisions.js'
 import { continueParked } from './parked.js'
 import { type PreviewDelta, PreviewHub, type PreviewSnapshot } from './preview.js'
@@ -212,20 +213,6 @@ import { effectiveToolPolicy } from './tool-policy.js'
 import { runToolsPhase } from './tools.js'
 import { inboxBudget, rehydratedBudget } from './turn-budget.js'
 import { attend, attendRecovered, rehydratedCallState } from './turn-restore.js'
-
-type OperationCommon = {
-  name: string
-  order?: number
-  replay: 'safe' | 'never'
-  applicable(ctx: OpContext): Promise<'applied' | 'skip' | 'not-applicable'>
-  /** Additive-slot entry point retained for existing package/host operation factories. */
-  run(ctx: OpContext): Promise<OperationEffectResult>
-  contribute?(ctx: OpContext): {
-    tools?: string[]
-    promptSections?: PromptSection[]
-    runtimeContext?: Record<string, unknown>
-  }
-}
 
 /**
  * One phase edge of a chain committed as a single append. `nextSeq` is the seq this step's first row

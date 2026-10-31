@@ -214,3 +214,22 @@ export async function stepVerifyInput(s: SessionImpl, stepStartSeq: Seq): Promis
 export async function turnVerifyInput(s: SessionImpl, triggerSeq: Seq): Promise<CoreVerifyInput> {
   return assemble(s, await scanWindow(s, triggerSeq))
 }
+
+/** Admitted mutations, including nested tools. Refused calls have no tool effect intent. */
+export async function turnHasStateChanges(s: SessionImpl, triggerSeq: Seq): Promise<boolean> {
+  const rows = await scanAll((q) => s.d.log.scan(q), {
+    fromSeq: triggerSeq,
+    toSeq: s.lastSeq,
+    type: ['tool/call', 'effect/intent'],
+    lane: s.lane,
+  })
+  const mutations = new Set(
+    rows
+      .filter((e) => e.type === 'tool/call' && !readOnlyCall(e))
+      .map((e) => (e.data as { toolUseId: string }).toolUseId),
+  )
+  return rows.some((e) => {
+    const data = e.data as { kind?: string; tool?: { toolUseId?: string } }
+    return e.type === 'effect/intent' && data.kind === 'tool' && mutations.has(data.tool?.toolUseId ?? '')
+  })
+}

@@ -1517,11 +1517,11 @@ describe('without announce', () => {
     return withoutDurations({ rows, cells })
   }
 
-  it('writes the same ledger as before the option existed', async () => {
+  it('keeps omitted, empty and false announce options byte-identical', async () => {
     const omitted = await ledger('omitted')
-    // Recorded from the implementation before tools.execute and tools.batch took a third argument.
+    // Reviewed ledger baseline, including the completion-gate diagnostic.
     expect(sha256Hex(canonicalJson(omitted as never))).toBe(
-      'd017318d877e97479929865147de03287c5e4a59ed7e288d03fe58f29ae1ffca',
+      'a30a2d9ecf0897825d41e9213d2784d5659af690d6b29231d89387d0c9f08ece',
     )
     expect(await ledger(undefined)).toEqual(omitted)
     expect(await ledger({})).toEqual(omitted)

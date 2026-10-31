@@ -461,6 +461,10 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "contract_review": {
+              "type": "boolean",
+              "default": true
+            },
             "enabled": {
               "type": "boolean"
             },

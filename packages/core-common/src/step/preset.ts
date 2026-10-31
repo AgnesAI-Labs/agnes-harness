@@ -2,6 +2,14 @@ import { APPROVAL_DEFAULTS } from '@agnes/extension-api'
 import type { ThinkingLevel } from '@agnes/protocol'
 import { type PolicyRule, readCommandRules } from '../command-table/rules.js'
 
+/** Reserve for a check and final reply. Capped time allowances are admission floors, not execution limits. */
+export const COMPLETION_REVIEW_FLOOR = {
+  steps: 3,
+  modelMs: 60_000,
+  toolMs: 30_000,
+  requests: 3,
+} as const
+
 /**
  * The knobs the step machine reads, as one already-resolved view. The preset document itself is
  * snake_case and is validated by the host; this is the camelCase reading of it with every default
@@ -65,7 +73,7 @@ export type PresetView = {
   }
   verifier: { timeoutMs: number; defaultTier: 0 | 1 | 2 }
   repair: { timeoutMs: number }
-  completionGate: { enabled?: boolean; minItems: number }
+  completionGate: { enabled?: boolean; minItems: number; contractReview?: boolean }
   /**
    * Model steps between progress checks in a limited or unattended turn (preset
    * `loop.progress_check_steps`); 0, the default, turns them off.
@@ -103,7 +111,7 @@ export function presetDefaults(): PresetView {
     tools: { timeoutMs: 120000, timeouts: {}, outputMaxBytes: 32768, logicalChanges: false },
     verifier: { timeoutMs: 30000, defaultTier: 0 },
     repair: { timeoutMs: 10000 },
-    completionGate: { enabled: true, minItems: 3 },
+    completionGate: { enabled: true, minItems: 3, contractReview: true },
     progressCheck: { everySteps: 0 },
     compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000, agentCallable: true },
     telemetry: { invariants: false, timing: false },
@@ -239,6 +247,7 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
     completionGate: {
       enabled: pick(raw, 'completion_gate.enabled', true),
       minItems: pick(raw, 'completion_gate.min_items', d.completionGate.minItems),
+      contractReview: pick(raw, 'completion_gate.contract_review', true),
     },
     progressCheck: { everySteps: pick(raw, 'loop.progress_check_steps', d.progressCheck.everySteps) },
     compaction: {

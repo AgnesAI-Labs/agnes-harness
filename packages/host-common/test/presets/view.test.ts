@@ -6,11 +6,14 @@ describe('toPresetView', () => {
   it('validates independent experiment switches and carries the completion flag into Core', () => {
     const view = toPresetView({
       name: 'trial',
-      completion_gate: { enabled: false },
+      completion_gate: { enabled: false, contract_review: false },
       tools: { logical_changes: true, shell_observation_ms: 10_000 },
     })
-    expect(view.completionGate).toEqual({ enabled: false, minItems: 3 })
+    expect(view.completionGate).toEqual({ enabled: false, minItems: 3, contractReview: false })
     expect(view.tools.logicalChanges).toBe(true)
+    expect(toPresetView({ name: 'trial' }).completionGate.contractReview).toBe(true)
+    for (const contract_review of [null, 0, 'false'])
+      expect(() => toPresetView({ name: 'trial', completion_gate: { contract_review } })).toThrow()
     expect(toPresetView({ name: 'trial' }).tools.logicalChanges).toBe(false)
     for (const shell_observation_ms of [0, 999, 30_001, 10_000.5, '10000'])
       expect(() => toPresetView({ name: 'trial', tools: { shell_observation_ms } })).toThrow()
@@ -56,7 +59,7 @@ describe('toPresetView', () => {
       tools: { timeoutMs: 120000, outputMaxBytes: 32768, timeouts: { shell: 60000 }, logicalChanges: false },
       verifier: { timeoutMs: 30000, defaultTier: 0 },
       repair: { timeoutMs: 10000 },
-      completionGate: { enabled: true, minItems: 3 },
+      completionGate: { enabled: true, minItems: 3, contractReview: true },
       progressCheck: { everySteps: 0 },
       compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000, agentCallable: true },
       telemetry: { invariants: false, timing: false },
