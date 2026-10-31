@@ -51,7 +51,9 @@ jobs:
           - { id: main-17, args: "v3-actions.spec.ts --grep-invert 'forking a recovered|v3 account dialog|v3 plugin tabs|v3 local package|v3 MCP two-step|v3 MCP method cards'" }
           - { id: main-12, args: "v3-navigation.spec.ts --grep 'permissions never flash|v3 home entries|v3 command-K|v3 archive filter|smoke en/'" }
           - { id: main-18, args: "v3-navigation.spec.ts --grep-invert 'permissions never flash|v3 home entries|v3 command-K|v3 archive filter|smoke en/'" }
-          - { id: candidate-review, args: "candidate-review.spec.ts" }
+          # The human review-to-publish case alone; the update/skill inbox case with the full-access case.
+          - { id: candidate-review, args: "candidate-review.spec.ts --grep 'refuses edited approval'" }
+          - { id: candidate-review-2, args: "candidate-review.spec.ts --grep-invert 'refuses edited approval'" }
           # Per PR: en/light at the phone and tablet widths, which carry all twelve narrow captures.
           # The nightly suite (e2e-web-nightly.yml) runs every locale/theme at all three widths.
           - { id: narrow, args: "narrow.spec.ts --grep 'en/light$'", narrow-widths: "375,768" }

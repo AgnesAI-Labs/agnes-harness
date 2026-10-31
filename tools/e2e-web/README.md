@@ -58,10 +58,10 @@ separate from this gate.
 ## Gate and failure evidence
 
 The required GitHub status is **Web E2E gate** from `.github/workflows/e2e-web.yml`. It aggregates
-all twenty-seven macOS 15 and seventeen Linux Web jobs, all six Linux fast-test shards and the separate
+all twenty-eight macOS 15 and seventeen Linux Web jobs, all six Linux fast-test shards and the separate
 Linux contracts job (including `pnpm test:story`) and three migrated-heavy shards; a failed or
 cancelled dependency fails the aggregate. macOS uses twenty-five explicit file/flow lists for regular
-cases, plus one candidate-review job and one narrow job. Linux uses sixteen explicit lists plus the
+cases, plus two candidate-review jobs and one narrow job. Linux uses sixteen explicit lists plus the
 same narrow job; Playwright's count-based `--shard` cannot
 balance cases that range from two seconds to three minutes. The lists balance observed
 hosted-runner durations, including build and quality prechecks (about two and a half minutes on
@@ -158,7 +158,10 @@ plan approval, authorized deliverable downloads, child collection, goal completi
 job output, interactive terminal input/output, schedule creation/archive and the bundled FDE
 workflow through restart. Backend assertions use CLI or SDK, never raw admin HTTP from specs.
 `candidate-review.spec.ts` retains the exact-test/hash, edited-approval refusal, publication,
-history and diff workflow formerly in `ui-flows.spec.ts`. Its CI partition remains required.
+history and diff workflow formerly in `ui-flows.spec.ts`, in two cases that each fit the 300 s
+test budget on macOS 15: the human review through publication, and the skill rejection, update
+diff and skill publication that start from that plugin published through the same admin approval.
+Each has its own required macOS job.
 Selectors use roles and stable test IDs; disclosures are checked before toggling.
 
 There is no pixel gate on any OS, and the repository stores no baseline images. `screen()` runs
