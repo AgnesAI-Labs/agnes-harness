@@ -58,16 +58,18 @@ separate from this gate.
 ## Gate and failure evidence
 
 The required GitHub status is **Web E2E gate** from `.github/workflows/e2e-web.yml`. It aggregates
-all twenty-one macOS 15 and seventeen Linux Web jobs, all six Linux fast-test shards and the separate
+all twenty-seven macOS 15 and seventeen Linux Web jobs, all six Linux fast-test shards and the separate
 Linux contracts job (including `pnpm test:story`) and three migrated-heavy shards; a failed or
-cancelled dependency fails the aggregate. macOS uses nineteen explicit file/flow lists for regular
+cancelled dependency fails the aggregate. macOS uses twenty-five explicit file/flow lists for regular
 cases, plus one candidate-review job and one narrow job. Linux uses sixteen explicit lists plus the
 same narrow job; Playwright's count-based `--shard` cannot
 balance cases that range from two seconds to three minutes. The lists balance observed
-hosted-runner durations, including build and quality prechecks (about two minutes on macOS, one
-on Linux), so each list's cases take at most about six and a half minutes: multi-minute candidate
+hosted-runner durations, including build and quality prechecks (about two and a half minutes on
+macOS 15, one on Linux). The macOS lists were rebalanced from per-case macOS 15 durations, counting
+the ten-second screenshot waits of failing cases, so each regular list's step takes at most about
+seven and a half minutes of its ten (the one narrow case alone takes about nine): multi-minute candidate
 review and narrow flows need separate budgets, first-run checks split by locale, and a spec too
-long for one job (`ui-flows`, `ui-gate`, `workbench`, `v3-actions`, `v3-navigation`) is split by
+long for one job (`runtime`, `ui-flows`, `ui-gate`, `workbench`, `v3-actions`, `v3-navigation`) is split by
 title with `--grep` lists that together select each case once. The `ui-gate` page matrix also
 checks its settings pages in two halves per locale/theme, because one pass took 130-165 s of its
 150 s deadline. Every job retains one

@@ -16,7 +16,7 @@ concurrency:
   group: web-e2e-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
-  # Explicit file/flow lists use hosted-macOS timings, including build and quality prechecks.
+  # Explicit file/flow lists use hosted-macOS 15 timings, including build and quality prechecks.
   # Isolate narrow flows and candidate review; retain every scan and the ten-minute step budget.
   # A spec too long for one job is split by title: a --grep list and its exact --grep-invert.
   e2e-web:
@@ -25,22 +25,28 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { id: main-1, args: "diagnostics.spec.ts fact-chain.spec.ts" }
+          - { id: main-1, args: "fact-chain.spec.ts" }
+          - { id: main-24, args: "diagnostics.spec.ts" }
           - { id: main-2, args: "first-run.spec.ts --grep 'first-run en|first run Demo'" }
           - { id: main-3, args: "first-run.spec.ts --grep 'first-run zh-CN'" }
           - { id: main-4, args: "memory.spec.ts" }
           - { id: main-5, args: "prompt-trace.spec.ts" }
-          - { id: main-6, args: "runtime.spec.ts" }
+          - { id: main-6, args: "runtime.spec.ts --grep 'consented role takeover|session admission keeps|bundled deliverables survive|streaming follows the bottom|fresh first run, keyless demo'" }
+          - { id: main-20, args: "runtime.spec.ts --grep-invert 'consented role takeover|session admission keeps|bundled deliverables survive|streaming follows the bottom|fresh first run, keyless demo'" }
           - { id: main-7, args: "ui-flows.spec.ts --grep 'UI first run|UI MCP stdio|UI ask, plan|UI background jobs'" }
-          - { id: main-13, args: "ui-flows.spec.ts --grep-invert 'UI first run|UI MCP stdio|UI ask, plan|UI background jobs'" }
-          - { id: main-8, args: "ui-gate.spec.ts --grep ' en/(light|dark)$'" }
+          - { id: main-13, args: "ui-flows.spec.ts --grep 'UI folder install|Playwright MCP preset|Checking a source with no plugin manifest'" }
+          - { id: main-21, args: "ui-flows.spec.ts --grep-invert 'UI first run|UI MCP stdio|UI ask, plan|UI background jobs|UI folder install|Playwright MCP preset|Checking a source with no plugin manifest'" }
+          - { id: main-8, args: "ui-gate.spec.ts --grep ' en/light$'" }
+          - { id: main-25, args: "ui-gate.spec.ts --grep ' en/dark$'" }
           - { id: main-14, args: "ui-gate.spec.ts --grep 'zh-CN/light$|live language switching'" }
           - { id: main-19, args: "ui-gate.spec.ts --grep 'zh-CN/dark$'" }
           - { id: main-9, args: "workbench.spec.ts --grep 'workspace dock|file tabs open|session terminal'" }
           - { id: main-15, args: "workbench.spec.ts --grep-invert 'workspace dock|file tabs open|session terminal'" }
           - { id: main-10, args: "human-controls.spec.ts references.spec.ts intelligent-ui.spec.ts question-surfaces.spec.ts large-upload.spec.ts credentials.spec.ts observability.spec.ts" }
-          - { id: main-11, args: "auto-review.spec.ts feedback.spec.ts plugin-purpose.spec.ts webhooks.spec.ts business-agents.spec.ts" }
-          - { id: main-16, args: "plugin-config.spec.ts v3-actions.spec.ts --grep 'plugin-config.spec|forking a recovered|v3 account dialog|v3 plugin tabs|v3 local package|v3 MCP two-step|v3 MCP method cards'" }
+          - { id: main-11, args: "auto-review.spec.ts webhooks.spec.ts business-agents.spec.ts" }
+          - { id: main-22, args: "feedback.spec.ts plugin-purpose.spec.ts" }
+          - { id: main-16, args: "v3-actions.spec.ts --grep 'forking a recovered|v3 account dialog|v3 plugin tabs|v3 local package|v3 MCP two-step|v3 MCP method cards'" }
+          - { id: main-23, args: "plugin-config.spec.ts" }
           - { id: main-17, args: "v3-actions.spec.ts --grep-invert 'forking a recovered|v3 account dialog|v3 plugin tabs|v3 local package|v3 MCP two-step|v3 MCP method cards'" }
           - { id: main-12, args: "v3-navigation.spec.ts --grep 'permissions never flash|v3 home entries|v3 command-K|v3 archive filter|smoke en/'" }
           - { id: main-18, args: "v3-navigation.spec.ts --grep-invert 'permissions never flash|v3 home entries|v3 command-K|v3 archive filter|smoke en/'" }
