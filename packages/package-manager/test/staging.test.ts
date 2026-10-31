@@ -1,9 +1,29 @@
 import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
+import { hashDirectory } from '../src/directory-digest.js'
+import {
+  createPackageManager,
+  emptyLock,
+  packageDir,
+  parseSource,
+  readLock,
+  writeLock,
+} from '../src/index.js'
 import type { PackageRecoveryEvent } from '../src/recovery-log.js'
 import {
   ABANDONED_AFTER_MS,
@@ -152,6 +172,101 @@ it('does not rewrite a sidecar belonging to an unrelated fetch destination', () 
     writeFileSync(`${target}.owner`, 'user data')
     readyStage(target)
     expect(readFileSync(`${target}.owner`, 'utf8')).toBe('user data')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+// Owner markers are replaced atomically but never flushed: power loss can leave one missing, empty or
+// one state behind, or keep the marker while losing its stage. Even beside a complete, valid package
+// tree, each of those leaves the committed install and lock as they were, the leftover is removed,
+// and the profile accepts the next install.
+it('never adopts a leftover stage whose unflushed owner marker power loss lost or rolled back', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agnes-stage-power-loss-'))
+  try {
+    const profile = join(root, 'profiles', 'local-dev'),
+      sourceDir = join(root, 'source'),
+      source = parseSource('file:./source')
+    mkdirSync(profile, { recursive: true })
+    cpSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'pkg-a'), sourceDir, { recursive: true })
+    writeLock(profile, {
+      ...emptyLock('local-dev', '0.1.0'),
+      resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
+      seams: Object.fromEntries(
+        ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((n) => [
+          n,
+          { provider: 'local' },
+        ]),
+      ),
+      policySnapshot: { capabilityCeiling: ['tools'], workspacePackages: 'require-project-trust' },
+    })
+    const m = createPackageManager({
+      dataDir: root,
+      cwd: root,
+      agnesVersion: '0.1.0',
+      references: async () => [],
+    })
+    await m.install(profile, source, { expectedIntegrity: (await m.inspect(profile, source)).integrity })
+    const installed = packageDir(root, 'local-dev', 'acme/pkg-a'),
+      stageRoot = dirname(installed),
+      load = () => readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' }),
+      lock = load(),
+      tree = hashDirectory(installed, { exclude: [] })
+    const manifest = JSON.parse(readFileSync(join(sourceDir, 'package.json'), 'utf8'))
+    writeFileSync(join(sourceDir, 'package.json'), JSON.stringify({ ...manifest, version: '2.0.0' }))
+    const markers = {
+      missing: undefined,
+      empty: '',
+      'unready fetch': JSON.stringify({ pid: deadPid(), ready: false, kind: 'fetch' }),
+      'unready copy': JSON.stringify({ pid: deadPid(), ready: false, kind: 'copy' }),
+      ready: JSON.stringify({ pid: deadPid(), ready: true, kind: 'fetch' }),
+    }
+    const old = new Date(Date.now() - ABANDONED_AFTER_MS - 60_000)
+    const age = (path: string): void => {
+      if (!path.endsWith('.owner'))
+        for (const name of readdirSync(path, { withFileTypes: true }))
+          if (name.isDirectory()) age(join(path, name.name))
+          else utimesSync(join(path, name.name), old, old)
+      utimesSync(path, old, old)
+    }
+    const leftovers = Object.entries(markers).map(([label, bytes]) => {
+      const stage = join(stageRoot, `.stage-${randomUUID()}`)
+      cpSync(sourceDir, stage, { recursive: true })
+      if (bytes !== undefined) writeFileSync(`${stage}.owner`, bytes)
+      age(stage)
+      if (bytes !== undefined) age(`${stage}.owner`)
+      return { label, stage }
+    })
+    // The marker survived but its stage directory entry did not.
+    const ownerOnly = join(stageRoot, `.stage-${randomUUID()}.owner`)
+    writeFileSync(ownerOnly, JSON.stringify({ pid: deadPid(), ready: false, kind: 'fetch' }))
+    await m.recover(profile)
+    expect(load()).toEqual(lock)
+    expect(hashDirectory(installed, { exclude: [] })).toBe(tree)
+    expect((await m.inventory(profile)).packages.map((row) => [row.id, row.entry.version])).toEqual([
+      ['acme/pkg-a', '1.0.0'],
+    ])
+    for (const { label, stage } of leftovers)
+      expect([label, existsSync(stage), existsSync(`${stage}.owner`)]).toEqual([label, false, false])
+    expect(existsSync(ownerOnly)).toBe(false)
+    expect(readdirSync(stageRoot)).toEqual(['acme__pkg-a'])
+    const reasons = readFileSync(join(profile, '.agnes-package-recovery.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line).reason)
+    expect(new Set(reasons)).toEqual(
+      new Set([
+        'staging-owner-unknown',
+        'staging-owner-unreadable',
+        'staging-outcome-unknown',
+        'staging-copy-dead',
+        'staging-ready-dead',
+        'staging-owner-only',
+      ]),
+    )
+    const next = await m.inspect(profile, source)
+    await m.update(profile, 'acme/pkg-a', source, { expectedIntegrity: next.integrity })
+    expect(load().packages['acme/pkg-a']?.version).toBe('2.0.0')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -54,6 +55,16 @@ const PROBE_TIMEOUT_MS = 60_000
 const DRAIN_MS = 1_000
 /** After a cancelled turn the prompt still has this long to settle before the cell is given up. */
 const CANCEL_GRACE_MS = 30_000
+/**
+ * How long a cell waits, before it closes its session, for the reply suggestion the host writes
+ * after a completed turn. The host starts it once the run is idle (it polls every 25 ms) and the
+ * follow-up-hint plugin abandons its fast-model call after 5 s, so a suggestion is written or given
+ * up inside this bound; the Web composer waits 5.5 s for it too. On the fake routes its cost row
+ * landed 34-40 ms after the turn's end in a Linux container and within 35 ms on macOS. Without the
+ * wait the bench closed about 20 ms after the turn, before the suggestion task had even started,
+ * so no suggestion was ever counted on Linux.
+ */
+const SUGGESTION_WAIT_MS = 5_500
 const CLIP = 2_000
 
 export const USAGE = `Usage:
@@ -368,6 +379,15 @@ const notRun = (cell, index, error, tools = []) => ({
 })
 
 /**
+ * On Linux, Host creates the `.agh` mount anchor before it confines a command, and bubblewrap leaves
+ * the mountpoints of masked paths (`.git`, `.agh/secrets`) behind as empty directories. They hold no
+ * files, so they do not make a fresh workspace non-empty; anything inside them still does.
+ */
+const SANDBOX_ANCHORS = ['.agh', '.git']
+const onlyEmptyDirectories = (path) =>
+  lstatSync(path).isDirectory() && readdirSync(path).every((name) => onlyEmptyDirectories(join(path, name)))
+
+/**
  * Runs every turn of one (scenario, lane, repetition) in a fresh session, in a fresh workspace under
  * the system temp directory. Afterwards the workspace is copied to `<out>/workspaces/<cell>` for
  * inspection and the temp one is removed.
@@ -417,7 +437,9 @@ async function runCellIn(ctx, cell, workspace, kept) {
     result.tools = listed.map((t) => t.name).sort()
     result.toolTokens = Math.ceil(Buffer.byteLength(JSON.stringify(listed)) / 3)
     const expected = generation ? ['.gitkeep'] : []
-    const present = readdirSync(workspace).sort()
+    const present = readdirSync(workspace)
+      .filter((name) => !(SANDBOX_ANCHORS.includes(name) && onlyEmptyDirectories(join(workspace, name))))
+      .sort()
     if (present.join('/') !== expected.join('/'))
       result.error = `workspace-not-empty: ${present.filter((n) => !expected.includes(n)).join(', ')}`
     for (const [index, turn] of scenario.turns.entries()) {
@@ -437,6 +459,7 @@ async function runCellIn(ctx, cell, workspace, kept) {
       const owned = host.kernel.get(session.id)
       if (!owned) result.problems.push(`bench session ${session.id} is unavailable at shutdown`)
       else {
+        await awaitReplySuggestion(owned)
         await owned.close()
         if (!(await stream.until(() => (stream.events.at(-1)?.seq ?? 0) >= owned.lastSeq, DRAIN_MS)))
           result.problems.push(`bench session ${session.id} did not drain its final ledger watermark`)
@@ -461,6 +484,32 @@ async function runCellIn(ctx, cell, workspace, kept) {
     )
   }
   return result
+
+  /**
+   * Waits for the reply suggestion the host writes after the session's last turn, so closing the
+   * session does not cancel it. The suggestion is done once its `aux:reply-suggestions:` side-call
+   * cost row is written, whether it completed or was given up. Nothing is awaited when the preset
+   * has no fast model (the host then writes none) or the last turn did not complete. The Web reads
+   * the same suggestion through the `replies.read` query, but this embedded headless Host has no
+   * service authority, so that query refuses every caller here.
+   */
+  async function awaitReplySuggestion(owned) {
+    const fast = owned.preset?.model?.route?.fast && owned.preset?.model?.id?.fast
+    const end = [...stream.events].reverse().find((e) => e.type === 'turn/end' && mainLane(e))
+    if (!fast || result.records.at(-1)?.endReason !== 'completed' || !end) return
+    await stream.until(
+      () =>
+        state.interrupted ||
+        stream.events.some(
+          (e) =>
+            e.seq > end.seq &&
+            e.type === 'cost/ledger' &&
+            e.data?.purpose === 'side-call' &&
+            String(e.data?.effectId).startsWith('aux:reply-suggestions:'),
+        ),
+      SUGGESTION_WAIT_MS,
+    )
+  }
 
   async function runTurn(index, turn) {
     if (result.error || state.interrupted) {
@@ -1054,7 +1103,18 @@ export async function main(argv) {
         args: parseArgs(['--profile', o.profile, '--cwd', root, '--standalone']),
         signal: bootAbort.signal,
       },
-      { env: { ...process.env, AGH_HOME: home }, home, cwd: root, agnesVersion, log: () => {} },
+      {
+        env: { ...process.env, AGH_HOME: home },
+        home,
+        cwd: root,
+        agnesVersion,
+        log: () => {},
+        // A test run shares the source plugins' transpile cache across its fresh homes; jiti
+        // re-transpiles any file whose source changed, and the home's own data stays isolated.
+        ...(process.env.AGH_BENCH_TRANSPILE_CACHE
+          ? { transpileCacheDir: process.env.AGH_BENCH_TRANSPILE_CACHE }
+          : {}),
+      },
     )
     const ctx = {
       o,

@@ -1,6 +1,6 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import {
@@ -155,7 +155,13 @@ it.each(['component-library', 'interaction-renderer', 'tool-result-card'])(
   'inspects the public Intelligent UI %s example without private runtime imports',
   async (name) => {
     const source = join(dirname(fileURLToPath(import.meta.url)), '../../../examples/ui', name)
-    cpSync(source, join(root, name), { recursive: true })
+    // A package ships without node_modules. The checkout's own holds pnpm links, which are junctions on
+    // Windows, and Node's cpSync descends junctions there: it copied the linked workspace packages and
+    // their dependencies, and the copy and its removal outran the test timeouts.
+    cpSync(source, join(root, name), {
+      recursive: true,
+      filter: (path) => !path.split(sep).includes('node_modules'),
+    })
     const manager = createPackageManager({
       dataDir: root,
       cwd: root,

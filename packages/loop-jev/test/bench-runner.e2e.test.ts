@@ -24,6 +24,7 @@ import {
   initializeHomeLocked,
 } from '@agnes/host'
 import { afterAll, describe, expect, it } from 'vitest'
+import { sourceTranspileCache } from '../../daemon/test/source-transpile-cache.js'
 
 const out = mkdtempSync(join(tmpdir(), 'agnes-jev-bench-'))
 const servers: Array<{ close(): Promise<unknown> }> = []
@@ -46,7 +47,13 @@ const suite = fileURLToPath(new URL('./fixtures/bench-mini.json', import.meta.ur
 /** The runner talks to loopback endpoints only, so no proxy set on the machine may sit in between. */
 const PROXY_VARIABLES = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
 const childEnv = (extra: Record<string, string> = {}): NodeJS.ProcessEnv => {
-  const env: NodeJS.ProcessEnv = { ...process.env, NO_PROXY: '127.0.0.1,localhost', ...extra }
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    NO_PROXY: '127.0.0.1,localhost',
+    // Each case boots a source Host in a fresh home; share only the plugin transpile cache.
+    AGH_BENCH_TRANSPILE_CACHE: sourceTranspileCache(),
+    ...extra,
+  }
   for (const key of [...PROXY_VARIABLES, 'no_proxy', 'BENCH_PYTHON']) delete env[key]
   return { ...env, ...extra }
 }
@@ -297,6 +304,8 @@ describe('bench runner', () => {
     expect(result.stdout.trim()).toBe('EXPECTED_PROFILE_FAILURE')
   }, 75_000)
 
+  // Six cold runner processes (node --import tsx) run one after another. The 5 s Vitest default
+  // that applies on Linux is a budget for one in-process test, not for six process starts.
   it('refuses setups whose numbers would not hold', () => {
     const plan = (extra: string[], env: Record<string, string> = {}) =>
       runSync(['--suite', suite, '--out', join(out, 'refuse'), '--fake', '--dry-run', ...extra], env)
@@ -323,7 +332,7 @@ describe('bench runner', () => {
     const noK = plan(['--reps', '2'])
     expect(noK.status, why(noK)).toBe(0)
     expect(noK.stderr).toContain('warning: no --k or --k-from given')
-  })
+  }, 60_000)
 
   it('runs both lanes end to end with the routes in the profile file, against a fake Jev and a scripted model', (ctx) => {
     // The output directory sits inside a git work tree; the sessions' workspaces must not.

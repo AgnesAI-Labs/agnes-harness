@@ -351,6 +351,33 @@ export async function guardRedirects(browser, protectedOrigins) {
     })
     return close
   }
+  // Playwright also auto-attaches every new target and resumes it once its own page session is
+  // ready, which can be before this guard's target session enables interception. A popup opened
+  // with a URL then sends its first request and every redirect hop unguarded. Interception on the
+  // browser target sees each request of every target from its first byte, so it refuses protected
+  // http(s) destinations here as well; the target sessions keep the file and PDF decisions.
+  root.on('Fetch.requestPaused', ({ requestId, request }) => {
+    let allowed = true
+    // File previews are decided per document by the target sessions below.
+    if (
+      /^https?:/i.test(request.url) &&
+      ![...owners.values()].some((item) => item.filePreviews?.has(new URL(request.url).origin))
+    )
+      try {
+        browserUrl(request.url, protectedOrigins)
+      } catch {
+        allowed = false
+      }
+    // A request cancelled by its page (a closed popup) can no longer be continued; that is not a
+    // guard failure, and a refused one is never sent either way.
+    void root
+      .send(allowed ? 'Fetch.continueRequest' : 'Fetch.failRequest', {
+        requestId,
+        ...(allowed ? {} : { errorReason: 'BlockedByClient' }),
+      })
+      .catch(() => {})
+  })
+  await root.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] })
   const close = await attach(root, true)
   browser.on('disconnected', () => {
     stopped = true

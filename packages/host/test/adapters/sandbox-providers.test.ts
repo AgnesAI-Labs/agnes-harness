@@ -453,9 +453,13 @@ describe('sandbox providers', () => {
       },
       packages: {
         '@agnes/base': {
+          // The testkit simulates an implemented OS backend on every host OS (its sandboxImplementation
+          // says 'implemented'), so the real probe is asked as for one: Linux, whose bwrap then fails.
           sandboxWorkspaceProbe: (input) =>
             sandboxWorkspaceProbe({
               ...input,
+              platform: 'linux',
+              shell: 'posix',
               probeExec: async () => ({
                 code: 127,
                 stdout: '',

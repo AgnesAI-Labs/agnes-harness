@@ -98,6 +98,10 @@ export function useAutosave<T>({
   const pending = useRef<{ value: T; previous: T | undefined } | undefined>(undefined)
   const latest = useRef({ stored, save, equal, onSaved })
   latest.current = { stored, save, equal, onSaved }
+  // What the last successful save wrote. Until `stored` renders that answer, it is the newer fact:
+  // an edit back to the old stored value in that window still has to be sent.
+  const saved = useRef<{ value: T; over: T | undefined } | undefined>(undefined)
+  if (saved.current && saved.current.over !== stored) saved.current = undefined
   const reverting = useRef(false)
   // One save per setting at a time. Settings are written as whole objects, so two saves in flight
   // could land in either order and leave an older value stored. An edit made while a save is on its
@@ -134,6 +138,7 @@ export function useAutosave<T>({
       void (resourceKey ? queueResourceWrite(resourceKey, work, writeOwner.current) : work()).then(
         () => {
           if (generation !== writeGeneration.current) return
+          saved.current = { value, over: latest.current.stored }
           if (mounted.current && undoable && previous !== undefined)
             undo?.push({
               revert: () => {
@@ -171,7 +176,8 @@ export function useAutosave<T>({
         queued.current = { value, previous: queued.current?.previous ?? previous, undoable }
         return
       }
-      const { stored: known, equal: same } = latest.current
+      const { equal: same } = latest.current
+      const known = saved.current ? saved.current.value : latest.current.stored
       if (known !== undefined && same(value, known) && !(resourceKey && resourceWritePending(resourceKey))) {
         setDraft(undefined)
         setFailed(false)

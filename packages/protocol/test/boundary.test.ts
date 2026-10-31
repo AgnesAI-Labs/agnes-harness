@@ -102,6 +102,8 @@ describe('protocol src boundary', () => {
         'resolvePluginMetadata',
         'validatePluginMetadata',
         'PLUGIN_SECRET_REF_PATTERN',
+        'fileReferenceBrowse',
+        'parentFileReferenceBrowse',
         'validateReferenceSelections',
         'ADMIN_METHODS',
         'APP_SERVER_VERSION',

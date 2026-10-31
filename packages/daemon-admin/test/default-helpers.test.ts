@@ -680,7 +680,7 @@ it('refreshes an identical bundled source after a checkout move and preserves pi
       source: before.entry.source,
       integrity: before.entry.integrity,
       version: before.entry.version,
-      provenance: { resolvedLocation: realpathSync(payload) },
+      provenance: { resolvedLocation: realpathSync.native(payload) },
       previous: before.entry.previous,
     },
   })

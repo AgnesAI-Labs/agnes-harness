@@ -229,6 +229,10 @@ it('keeps a reload that lost the profile lock pending, and Rescan retries it onc
     await reloadEntered
     await vi.advanceTimersByTimeAsync(10_200)
     await first
+    // A watcher event in this window (the Windows runner raises one) queues another refresh on the
+    // fake clock. Run it out while the lock is still held, so it loses the race too, instead of
+    // leaving the refresh chain waiting on a fake timer that useRealTimers would drop.
+    await vi.runAllTimersAsync()
     release()
     await holder
     vi.useRealTimers()

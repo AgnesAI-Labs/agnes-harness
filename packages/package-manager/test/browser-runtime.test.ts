@@ -198,7 +198,6 @@ function pageFixture(context: object) {
     isClosed: () => false,
     goto: vi.fn(async () => {}),
     context: () => context,
-    setViewportSize: vi.fn(async (_viewport: { width: number; height: number }) => {}),
     mainFrame: () => main,
     close: vi.fn(async (): Promise<void> => {
       page.emit('close')
@@ -253,6 +252,12 @@ function fixture() {
   const session = { key: 'one', lane: 'main' }
   // This fixture has no native CDP targets. Page binding and request policy are
   // exercised against actual targets by browser-capabilities/runtime.e2e.
+  // Screenshots are taken over CDP on the metrics session; browser-runtime.e2e exercises that.
+  // These page fixtures stand in with page.screenshot, in the same per-page surface queue.
+  runtime.screenshot = (
+    item: { page: { screenshot: (options: object) => Promise<Buffer> } },
+    options: object,
+  ) => runtime.surface(item, () => item.page.screenshot(options))
   const startBrowser = runtime.browser.bind(runtime)
   runtime.browser = async () => {
     const started = await startBrowser()
@@ -550,22 +555,33 @@ it('lets one view own page geometry and releases ownership without granting webs
     await expect(selectView(runtime, { ...request, sequence: 2 }, { actor, session })).resolves.toMatchObject(
       { viewportWidth: 900, viewportHeight: 600 },
     )
-    let finish!: (bytes: Buffer) => void
+    // Only the agent screenshot is held; later display captures complete at once.
+    let finish: ((bytes: Buffer) => void) | undefined
     Object.assign(pages[0]!, {
       screenshot: async () =>
-        new Promise<Buffer>((resolve) => {
-          finish = resolve
-        }),
+        finish
+          ? Buffer.from('display')
+          : new Promise<Buffer>((resolve) => {
+              finish = resolve
+            }),
     })
     const screenshot = runtime.act(session, { action: 'screenshot', pageId: opened.pageId })
     const stale = expect(screenshot).rejects.toMatchObject({ code: 'STALE_TARGET' })
-    await selectView(
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    // A screenshot restores the device metrics it started with, so the resize waits for it.
+    let resized = false
+    const resizing = selectView(
       runtime,
       { ...request, sequence: 3, viewport: { width: 1280, height: 800 } },
       { actor, session },
-    )
-    finish(Buffer.from('old-layout'))
+    ).then(() => {
+      resized = true
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(resized).toBe(false)
+    finish!(Buffer.from('old-layout'))
     await stale
+    await resizing
     const page = runtime.list(session)[0]!
     expect(page).toMatchObject({ viewportWidth: 1280, viewportHeight: 800, mode: 'agent' })
     await expect(
@@ -613,11 +629,11 @@ it.each(['page', 'capture'] as const)(
           stream,
         },
       )
-      if (phase === 'page') pages[0]!.setViewportSize.mockRejectedValueOnce(new Error('Resize unavailable'))
-      else
-        cdp.send.mockImplementation(async (method) => {
-          if (method === 'Emulation.setDeviceMetricsOverride') throw new Error('Resize unavailable')
-        })
+      // The page's metrics session applies the size; the capture then restarts its screencast at it.
+      const failing = phase === 'page' ? 'Emulation.setDeviceMetricsOverride' : 'Page.startScreencast'
+      cdp.send.mockImplementation(async (method) => {
+        if (method === failing) throw new Error('Resize unavailable')
+      })
       await expect(
         selectView(
           runtime,
@@ -1091,6 +1107,157 @@ it('displays the final frame of a burst and cancels delayed frames when the view
   } finally {
     abort.abort()
     vi.useRealTimers()
+  }
+})
+
+it('waits for the first screencast frame before a surface capture', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] })
+  const { runtime, cdp, session, pages } = fixture()
+  const abort = new AbortController()
+  try {
+    const opened = await runtime.act(session, { action: 'open', url: 'http://127.0.0.1:5173/' })
+    const screenshot = vi.fn(async () => Buffer.from('surface'))
+    Object.assign(pages[0]!, { screenshot })
+    const frames: Buffer[] = []
+    await showPage(
+      runtime,
+      { pageId: opened.pageId, displayVersion: 2 },
+      {
+        scope: { kind: 'session', sessionId: session.key, laneId: 'main' },
+        signal: abort.signal,
+        stream: {
+          send: (frame: Uint8Array) => frames.push(Buffer.from(frame)),
+          close: vi.fn(),
+          onDisconnect: vi.fn(),
+        },
+      },
+    )
+    const lossless = Buffer.alloc(64)
+    lossless.writeUInt32BE(0x89504e47, 0)
+    lossless.writeUInt32BE(0x0d0a1a0a, 4)
+    lossless.writeUInt32BE(2560, 16)
+    lossless.writeUInt32BE(1600, 20)
+    // A slow first frame is shown as it arrives; no capture competes with it.
+    await vi.advanceTimersByTimeAsync(900)
+    expect(screenshot).not.toHaveBeenCalled()
+    cdp.emit('Page.screencastFrame', { sessionId: 1, data: lossless.toString('base64') })
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(screenshot).not.toHaveBeenCalled()
+    const shown = frames.at(-1)!
+    expect(shown.subarray(shown.readUInt32BE() + 4)).toEqual(lossless)
+
+    // A screencast restarted for new geometry that delivers no frame still gets a capture.
+    const item = runtime.get(session, opened.pageId)
+    item.epoch++
+    await item.capture.resume()
+    await vi.advanceTimersByTimeAsync(990)
+    expect(screenshot).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(20)
+    expect(screenshot).toHaveBeenCalledTimes(1)
+  } finally {
+    abort.abort()
+    vi.useRealTimers()
+  }
+})
+
+it('waits for input to paint through the screencast before a surface capture', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] })
+  const { runtime, cdp, session, pages } = fixture()
+  runtime.now = () => performance.now()
+  const abort = new AbortController()
+  try {
+    const opened = await runtime.act(session, { action: 'open', url: 'http://127.0.0.1:5173/' })
+    await showPage(
+      runtime,
+      { pageId: opened.pageId, displayVersion: 2 },
+      {
+        scope: { kind: 'session', sessionId: session.key, laneId: 'main' },
+        signal: abort.signal,
+        stream: { send: vi.fn(), close: vi.fn(), onDisconnect: vi.fn() },
+      },
+    )
+    const screenshot = vi.fn(async () => Buffer.from('surface'))
+    Object.assign(pages[0]!, { screenshot })
+    const lossless = (fill: number) => {
+      const image = Buffer.alloc(64, fill)
+      image.writeUInt32BE(0x89504e47, 0)
+      image.writeUInt32BE(0x0d0a1a0a, 4)
+      image.writeUInt32BE(2560, 16)
+      image.writeUInt32BE(1600, 20)
+      cdp.emit('Page.screencastFrame', { sessionId: 1, data: image.toString('base64') })
+    }
+    const input = () => {
+      const item = runtime.get(session, opened.pageId)
+      item.inputVersion++
+      item.lastInputAt = runtime.now()
+    }
+    lossless(1)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(screenshot).not.toHaveBeenCalled()
+
+    // A paint just before input leaves its settle timer running. The input's own
+    // frame is late, so a surface capture would only delay it.
+    lossless(2)
+    await vi.advanceTimersByTimeAsync(10)
+    input()
+    await vi.advanceTimersByTimeAsync(400)
+    expect(screenshot).not.toHaveBeenCalled()
+    lossless(3)
+    await vi.advanceTimersByTimeAsync(700)
+    expect(screenshot).not.toHaveBeenCalled()
+
+    // Input that never paints still gets the capture.
+    lossless(4)
+    await vi.advanceTimersByTimeAsync(10)
+    input()
+    await vi.advanceTimersByTimeAsync(580)
+    expect(screenshot).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(30)
+    expect(screenshot).toHaveBeenCalledTimes(1)
+  } finally {
+    abort.abort()
+    vi.useRealTimers()
+  }
+})
+
+it.each([
+  { name: 'succeeds after transient surface failures', failures: 3, error: 'Unable to capture screenshot' },
+  { name: 'fails once the attempts are spent', failures: 4, error: 'Unable to capture screenshot' },
+  { name: 'fails at once on another error', failures: 1, error: 'Target closed' },
+])('retries only an unavailable surface for the agent screenshot: $name', async ({ failures, error }) => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  const { runtime, cdp, session } = fixture()
+  // The fixture stands in for CDP captures; this test drives the real one over the fake session.
+  runtime.screenshot = BrowserRuntime.prototype.screenshot
+  try {
+    const opened = await runtime.act(session, { action: 'open', url: 'http://127.0.0.1:5173/' })
+    let attempts = 0
+    cdp.send.mockImplementation(async (method: string) => {
+      if (method === 'Page.getLayoutMetrics') return { cssVisualViewport: { pageX: 0, pageY: 0, scale: 1 } }
+      if (method !== 'Page.captureScreenshot') return undefined
+      if (++attempts <= failures) throw new Error(`Protocol error (Page.captureScreenshot): ${error}`)
+      return { data: Buffer.from('pixels').toString('base64') }
+    })
+    const screenshot = runtime.act(session, { action: 'screenshot', pageId: opened.pageId })
+    const settled = screenshot.then(
+      (value: { bytes: Buffer }) => ({ value }),
+      (reason: Error & { code?: string }) => ({ reason }),
+    )
+    await vi.advanceTimersByTimeAsync(5_000)
+    const result = await settled
+    if (failures === 3) {
+      expect(attempts).toBe(4)
+      expect(Buffer.from(result.value!.bytes).toString()).toBe('pixels')
+    } else {
+      expect(attempts).toBe(failures)
+      // Engine failures keep their own message and are not turned into refusals.
+      expect(result.reason!.message).toContain(error)
+      expect(result.reason!.code).toBeUndefined()
+      expect(runtime.isRefusal(result.reason)).toBe(false)
+    }
+  } finally {
+    vi.useRealTimers()
+    await runtime.close()
   }
 })
 

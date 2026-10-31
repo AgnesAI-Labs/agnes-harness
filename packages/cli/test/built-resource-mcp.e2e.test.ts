@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { existsSync, readdirSync, readFileSync, readlinkSync } from 'node:fs'
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -10,7 +11,7 @@ import { initializeHome } from '@agnes/host'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
 import { build } from 'esbuild'
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, onTestFinished } from 'vitest'
 import { setupMcpLegacySentinel } from './built-resource-mcp-legacy.js'
 import { mcpChatProvider } from './built-resource-mcp-provider.js'
 import { ownedWindowsBuild } from './owned-build.js'
@@ -104,6 +105,54 @@ async function invoke(
     : command(nodePath, [localCli, ...args], cwd, env)
 }
 
+type ServerRecord = { pid: number; parentPid: number; stdin?: number }
+
+/**
+ * A Linux workspace-write server runs under bubblewrap in its own PID namespace, where it sees
+ * itself as pid 2 under pid 1. While the fixture runs, map its stdin inode to its host pid and
+ * to the worker above the bubblewrap processes, so records name host processes on every platform.
+ */
+function watchHostServers(server: string): {
+  host<T extends ServerRecord>(record: T): T
+  stop(): void
+} {
+  const seen = new Map<number, { pid: number; parentPid: number }>()
+  const read = (path: string) => {
+    try {
+      return readFileSync(path, 'utf8')
+    } catch {
+      return undefined
+    }
+  }
+  const parent = (pid: number) => Number(read(`/proc/${pid}/stat`)?.split(') ')[1]?.split(' ')[1])
+  const comm = (pid: number) => read(`/proc/${pid}/comm`)?.trim()
+  const scan = () => {
+    for (const entry of readdirSync('/proc').filter((name) => /^\d+$/.test(name))) {
+      const pid = Number(entry)
+      if (comm(pid) === 'bwrap' || read(`/proc/${pid}/cmdline`)?.split('\0')[1] !== server) continue
+      let inode: number | undefined
+      try {
+        inode = Number(/^(?:pipe|socket):\[(\d+)\]$/.exec(readlinkSync(`/proc/${pid}/fd/0`))?.[1])
+      } catch {
+        continue
+      }
+      if (!inode || seen.has(inode)) continue
+      let worker = parent(pid)
+      while (worker > 1 && comm(worker) === 'bwrap') worker = parent(worker)
+      if (worker > 1) seen.set(inode, { pid, parentPid: worker })
+    }
+  }
+  const timer = existsSync('/proc/self/stat') ? setInterval(scan, 25) : undefined
+  return {
+    host: (record) => {
+      if (timer) scan()
+      const mapped = record.stdin === undefined ? undefined : seen.get(record.stdin)
+      return mapped ? { ...record, ...mapped } : record
+    },
+    stop: () => clearInterval(timer),
+  }
+}
+
 function processAlive(pid: number): boolean {
   try {
     process.kill(pid, 0)
@@ -132,11 +181,13 @@ async function officialPagedServer(directory: string): Promise<string> {
         "const tools = Array.from({ length: 120 }, (_, i) => ({ name: 'tool' + String(i + 1).padStart(3, '0'), description: 'Fixture tool ' + (i + 1), inputSchema: { type: 'object', properties: { marker: { type: 'string' }, behavior: { type: 'string', enum: ['ok', 'fail', 'disconnect', 'hang'] } }, required: ['marker', 'behavior'], additionalProperties: false } }))",
         "const server = new Server({ name: 'built-cli-pager', version: '1.0.0' }, { capabilities: { tools: {} } })",
         "server.setRequestHandler(ListToolsRequestSchema, async (request) => { const start = request.params?.cursor === '100' ? 100 : 0; return { tools: tools.slice(start, start + 100), ...(start === 0 ? { nextCursor: '100' } : {}) } })",
-        `const { appendFileSync } = require('node:fs')`,
-        `appendFileSync(${JSON.stringify(join(directory, 'starts.jsonl'))}, JSON.stringify({ pid: process.pid, parentPid: process.ppid }) + '\\n')`,
+        `const { appendFileSync, fstatSync } = require('node:fs')`,
+        // The stdin inode names this process across a PID namespace; pids inside one do not.
+        'const stdin = fstatSync(0).ino',
+        `appendFileSync(${JSON.stringify(join(directory, 'starts.jsonl'))}, JSON.stringify({ pid: process.pid, parentPid: process.ppid, stdin }) + '\\n')`,
         `server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         const { marker, behavior } = request.params.arguments;
-        appendFileSync(${JSON.stringify(join(directory, 'calls.jsonl'))}, JSON.stringify({ pid: process.pid, parentPid: process.ppid, name: request.params.name, marker, behavior }) + '\\n');
+        appendFileSync(${JSON.stringify(join(directory, 'calls.jsonl'))}, JSON.stringify({ pid: process.pid, parentPid: process.ppid, stdin, name: request.params.name, marker, behavior }) + '\\n');
         if (behavior === 'disconnect') { process.exit(0); }
         if (behavior === 'hang') await new Promise((resolve) => extra.signal.addEventListener('abort', resolve, { once: true }));
         return { content: [{ type: 'text', text: (behavior === 'fail' ? 'MCP_FAILURE_' : 'MCP_RESULT_') + marker }], ...(behavior === 'fail' ? { isError: true } : {}) }
@@ -209,6 +260,8 @@ describe('built CLI managed MCP lifecycle', () => {
     initializeHome(home)
     await mkdir(workspace)
     const server = await officialPagedServer(root)
+    const servers = watchHostServers(server)
+    onTestFinished(() => servers.stop())
     const managedExecutable = windows ? join(root, 'managed-node.exe') : nodePath
     if (windows) await copyFile(nodePath, managedExecutable)
     const env = Object.fromEntries(
@@ -249,7 +302,7 @@ describe('built CLI managed MCP lifecycle', () => {
         .trim()
         .split('\n')
         .filter(Boolean)
-        .map((line) => JSON.parse(line) as { pid: number; parentPid: number })
+        .map((line) => servers.host(JSON.parse(line) as ServerRecord))
       const pids = [...new Set([...daemonPids, ...starts.flatMap((entry) => [entry.pid, entry.parentPid])])]
       for (const pid of pids) daemonPids.add(pid)
       try {
@@ -384,7 +437,7 @@ describe('built CLI managed MCP lifecycle', () => {
           .trim()
           .split('\n')
           .filter(Boolean)
-          .map((line) => JSON.parse(line))
+          .map((line) => servers.host(JSON.parse(line)))
       const chat = async (marker: string, behavior = 'ok', expected = 'VERIFIED', sessionId?: string) => {
         const session = sessionId
           ? await client.session.load(sessionId, {

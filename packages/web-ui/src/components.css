@@ -224,8 +224,8 @@
     border: 0;
     color: var(--agnes-brand-primary);
     background: transparent;
-    font-weight: var(--font-weight-semibold);
     font: inherit;
+    font-weight: var(--font-weight-semibold);
     line-height: 1.4;
     vertical-align: baseline;
   }

@@ -193,33 +193,44 @@ describe('lockfile', () => {
     })
   })
 
-  it.each(['stale empty owner', 'fresh dead owner'])('reclaims an abandoned lock: %s', async (scenario) => {
-    const lock = join(dir, '.agnes-lock.lock')
-    const deadPid = 2147483647
-    writeFileSync(lock, scenario === 'fresh dead owner' ? String(deadPid) : '')
-    if (scenario === 'stale empty owner') {
-      const old = new Date(Date.now() - 5 * 60_000)
-      utimesSync(lock, old, old)
-    }
-    const kill = process.kill.bind(process)
-    const probe = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
-      if (pid === deadPid) throw Object.assign(new Error('exited fixture owner'), { code: 'ESRCH' })
-      return kill(pid, signal)
-    })
-    vi.useFakeTimers()
-    try {
-      const attempt = withLock(dir, async () => 'ran').then(
-        (value) => ({ value }),
-        (error: unknown) => ({ error }),
+  // The owner write is not flushed, so power loss can leave it empty or zero-filled.
+  it.each(['stale empty owner', 'stale zero-filled owner', 'fresh dead owner'])(
+    'reclaims an abandoned lock: %s',
+    async (scenario) => {
+      const lock = join(dir, '.agnes-lock.lock')
+      const deadPid = 2147483647
+      writeFileSync(
+        lock,
+        scenario === 'fresh dead owner'
+          ? String(deadPid)
+          : scenario === 'stale zero-filled owner'
+            ? '\0'.repeat(5)
+            : '',
       )
-      await vi.advanceTimersByTimeAsync(11_000)
-      expect(await attempt).toEqual({ value: 'ran' })
-      expect(existsSync(lock)).toBe(false)
-    } finally {
-      vi.useRealTimers()
-      probe.mockRestore()
-    }
-  })
+      if (scenario !== 'fresh dead owner') {
+        const old = new Date(Date.now() - 5 * 60_000)
+        utimesSync(lock, old, old)
+      }
+      const kill = process.kill.bind(process)
+      const probe = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+        if (pid === deadPid) throw Object.assign(new Error('exited fixture owner'), { code: 'ESRCH' })
+        return kill(pid, signal)
+      })
+      vi.useFakeTimers()
+      try {
+        const attempt = withLock(dir, async () => 'ran').then(
+          (value) => ({ value }),
+          (error: unknown) => ({ error }),
+        )
+        await vi.advanceTimersByTimeAsync(11_000)
+        expect(await attempt).toEqual({ value: 'ran' })
+        expect(existsSync(lock)).toBe(false)
+      } finally {
+        vi.useRealTimers()
+        probe.mockRestore()
+      }
+    },
+  )
 
   it.each(['live owner', 'fresh empty owner'])('keeps a contended lock: %s', async (owner) => {
     const lock = join(dir, '.agnes-lock.lock')

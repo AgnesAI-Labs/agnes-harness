@@ -1,3 +1,5 @@
+const noop = () => undefined
+
 /** Visible admin reads: no timer, one concurrent read, one follow-up for invalidations in flight. */
 export function visibleRefresh(
   read: () => Promise<void | boolean>,
@@ -56,6 +58,8 @@ export function visibleRefresh(
       return request()
     },
     flush: () => (dirty && !deferInvalidation() ? request() : Promise.resolve()),
+    /** Settles when no read is in flight (including the follow-ups it chains); never rejects. */
+    idle: (): Promise<void> => (pending ? pending.then(noop, noop) : Promise.resolve()),
     dispose() {
       stopped = true
       dirty = false

@@ -68,7 +68,7 @@ it('returns the verified canonical file through in-root links and a linked root'
   writeFileSync(join(root, 'index.ts'), '')
   symlinkSync(join(root, 'index.ts'), join(root, 'alias.ts'))
   symlinkSync(root, join(aliases, 'root'), directoryLink)
-  expect(resolveEntry(join(aliases, 'root'), './alias.ts')).toBe(realpathSync(join(root, 'index.ts')))
+  expect(resolveEntry(join(aliases, 'root'), './alias.ts')).toBe(realpathSync.native(join(root, 'index.ts')))
 })
 
 it('resolves an ordinary entry through a linked directory root', () => {
@@ -76,16 +76,16 @@ it('resolves an ordinary entry through a linked directory root', () => {
   const aliases = scratch()
   writeFileSync(join(root, 'index.ts'), '')
   symlinkSync(root, join(aliases, 'root'), directoryLink)
-  expect(resolveEntry(join(aliases, 'root'), './index.ts')).toBe(realpathSync(join(root, 'index.ts')))
+  expect(resolveEntry(join(aliases, 'root'), './index.ts')).toBe(realpathSync.native(join(root, 'index.ts')))
 })
 
 it('allows ordinary names that begin with two dots without confusing them with traversal', () => {
   const root = scratch()
   writeFileSync(join(root, '..valid.ts'), '')
-  expect(resolveEntry(root, './..valid.ts')).toBe(realpathSync(join(root, '..valid.ts')))
+  expect(resolveEntry(root, './..valid.ts')).toBe(realpathSync.native(join(root, '..valid.ts')))
   mkdirSync(join(root, '..extension'))
   bundle(root, ['..extension'])
-  expect(readBundledExtensionDirs(root, true)).toEqual([realpathSync(join(root, '..extension'))])
+  expect(readBundledExtensionDirs(root, true)).toEqual([realpathSync.native(join(root, '..extension'))])
 })
 
 it('requires declared extension directories to exist and be directories', () => {
@@ -106,7 +106,7 @@ it('rejects escaping extension links and canonicalizes allowed directory links',
   bundle(root, ['outside'])
   expect(() => readBundledExtensionDirs(root, true)).toThrow(/E_EXT_LOAD/)
   bundle(root, ['alias'])
-  expect(readBundledExtensionDirs(root, true)).toEqual([realpathSync(join(root, 'actual'))])
+  expect(readBundledExtensionDirs(root, true)).toEqual([realpathSync.native(join(root, 'actual'))])
 })
 
 it('does not silently treat a package.json read failure as an absent declaration', () => {

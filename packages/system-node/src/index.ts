@@ -677,6 +677,21 @@ export function publishFileDurablySync(
   return true
 }
 
+/**
+ * Replaces one small record atomically for concurrent readers without flushing anything: a reader
+ * sees the previous file or the complete new one. After power loss the file may be missing, empty,
+ * or either version, so only a record whose reader treats all of those as "unknown" may use this.
+ */
+export function replaceFileAtomicSync(path: string, bytes: string, mode = 0o600): void {
+  const temporary = `${path}.${randomUUID()}.tmp`
+  try {
+    writeFileSync(temporary, bytes, { mode, flag: 'wx' })
+    replacePublishedFileSync(temporary, path, windows)
+  } finally {
+    rmSync(temporary, { force: true })
+  }
+}
+
 const durableEntries = new Set<string>()
 
 /**

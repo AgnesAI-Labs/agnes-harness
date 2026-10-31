@@ -357,7 +357,33 @@ it.skipIf(!entry)(
       ).toBe(true)
       const nextOwner = JSON.parse(await readFile(ownerFile, 'utf8'))
       expect(nextOwner.generation).not.toBe(owner.generation)
-      expect(await readFile(packageAuditFile, 'utf8')).toBe(packageAudit)
+      // The move only records each bundled default's new source location: the same bytes, version,
+      // grant and enabled state, with no reinstall or new review. The fixture package is untouched.
+      const relocatedAudit = await readFile(packageAuditFile, 'utf8')
+      expect(relocatedAudit.startsWith(packageAudit)).toBe(true)
+      const relocatedRows = relocatedAudit
+        .slice(packageAudit.length)
+        .trimEnd()
+        .split('\n')
+        .map((line) => JSON.parse(line))
+      const bundledInstalls = packageRows.filter(
+        (row) => row.operation === 'install' && row.id !== 'acme/pkg-a',
+      )
+      expect(relocatedRows.map((row) => row.id).sort()).toEqual(bundledInstalls.map((row) => row.id).sort())
+      for (const row of relocatedRows) {
+        const install = bundledInstalls.find((candidate) => candidate.id === row.id)
+        expect(row).toMatchObject({
+          operation: 'update',
+          result: 'committed',
+          source: 'file',
+          sourceHash: install.sourceHash,
+          version: install.version,
+          integrity: install.integrity,
+          old: 'enabled-desired',
+          next: 'enabled-desired',
+        })
+        expect(row.capabilityDiff.next).toBe(row.capabilityDiff.old)
+      }
       expect((await command(['-p', '--resume', id, 'Reply again after restart.'])).stdout).toContain(
         'Shared backend acceptance reply.',
       )

@@ -96,6 +96,27 @@ export class ComposerDrafts {
     }
     return options.preserve ? text : this.read()
   }
+  /**
+   * `select` for the composer: the outgoing draft's references are kept under its own key, `carry`
+   * takes them along with the text, and the result is the draft and references to show next.
+   */
+  selectWithReferences(
+    profile: string,
+    id: string | undefined,
+    current: Readonly<{ text: string; references: ComposerDraftReferences }>,
+    options: { preserve?: boolean; carry?: boolean } = {},
+  ): { text: string; references: ComposerDraftReferences } {
+    this.setReferences(current.references)
+    const text = this.select(profile, id, current.text, options)
+    if (options.carry) this.setReferences(current.references)
+    // A lone `@` only opens the reference picker; it is not meaningful draft content to carry into
+    // a later new session when the picker was dismissed before any reference was selected.
+    if (text === '@') {
+      this.clear()
+      this.setReferences(EMPTY_REFERENCES)
+    }
+    return { text: text === '@' ? '' : text, references: this.readReferences() }
+  }
   /** Replace the currently selected draft without changing which session it belongs to. */
   clear(): void {
     this.persist(this.selected, '')
@@ -108,4 +129,28 @@ export class ComposerDrafts {
       /* Private storage may be unavailable. */
     }
   }
+}
+
+/** The part of the composer a draft switch reads and restores. */
+export type DraftComposer = Readonly<{
+  getDraft(): string
+  getDraftReferences(): ComposerDraftReferences
+  setDraft(text: string): void
+  clearImageBlocks(): void
+  restoreDraftReferences(references: ComposerDraftReferences): void
+}>
+
+/** Show another session's saved draft and its inline references in the composer. */
+export function switchComposerDraft(
+  drafts: ComposerDrafts,
+  composer: DraftComposer,
+  profile: string,
+  id: string | undefined,
+  options: { preserve?: boolean; carry?: boolean } = {},
+): void {
+  const current = { text: composer.getDraft(), references: composer.getDraftReferences() }
+  const next = drafts.selectWithReferences(profile, id, current, options)
+  composer.setDraft(next.text)
+  if (!options.preserve) composer.clearImageBlocks()
+  composer.restoreDraftReferences(next.references)
 }

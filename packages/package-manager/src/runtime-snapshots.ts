@@ -483,8 +483,16 @@ function* runtimeRecoverySteps(s: RuntimeSnapshotStore): ReadSteps<void> {
 export function recoverRuntimeSnapshotStore(s: RuntimeSnapshotStore): void {
   collectRead(runtimeRecoverySteps(s))
 }
+/**
+ * A journal means a crash interrupted a snapshot publication or collection; recovery rolls it
+ * forward or back with the transaction's synchronous verification, exactly as the synchronous
+ * recovery does. Without one, recovery only drops temporaries and re-verifies the known snapshot
+ * directories: the same read the asynchronous pin readers run under the same Profile lock, so it
+ * hashes asynchronously too. Those directories change only under that lock; a worker's unlocked
+ * hard link moves a file's ctime, which the asynchronous walk retries rather than refusing at once.
+ */
 export function recoverRuntimeSnapshotStoreAsync(s: RuntimeSnapshotStore): Promise<void> {
-  return collectReadAsync(runtimeRecoverySteps(s), false)
+  return collectReadAsync(runtimeRecoverySteps(s), !present(journalPath(s)))
 }
 
 function readVerifiedState(s: RuntimeSnapshotStore) {

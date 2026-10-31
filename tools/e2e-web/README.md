@@ -58,27 +58,52 @@ separate from this gate.
 ## Gate and failure evidence
 
 The required GitHub status is **Web E2E gate** from `.github/workflows/e2e-web.yml`. It aggregates
-all seventeen macOS 14 and twelve Linux Web jobs, all six Linux fast-test shards and the separate
+all twenty-eight macOS 15 and seventeen Linux Web jobs, all six Linux fast-test shards and the separate
 Linux contracts job (including `pnpm test:story`) and three migrated-heavy shards; a failed or
-cancelled dependency fails the aggregate. macOS uses twelve explicit file/flow lists for regular
-cases, plus one candidate-review job and four single-case narrow locale/theme jobs. The lists
-balance observed hosted-runner durations, including build and quality prechecks: multi-minute
-candidate review and narrow flows need separate budgets, and first-run checks split by locale.
-Linux retains eight regular shards plus four single-case narrow jobs. Every job retains one
-worker, all checks, and the existing deadlines. The v3 specs cover full-page navigation, session
+cancelled dependency fails the aggregate. macOS uses twenty-five explicit file/flow lists for regular
+cases, plus two candidate-review jobs and one narrow job. Linux uses sixteen explicit lists plus the
+same narrow job; Playwright's count-based `--shard` cannot
+balance cases that range from two seconds to three minutes. The lists balance observed
+hosted-runner durations, including build and quality prechecks (about two and a half minutes on
+macOS 15, one on Linux). The macOS lists were rebalanced from per-case macOS 15 durations, counting
+the ten-second screenshot waits of failing cases, so each regular list's step takes at most about
+seven and a half minutes of its ten (the one narrow case alone takes about nine). Those durations
+were measured with the former pixel comparison, so steps now run somewhat shorter. Multi-minute candidate
+review and narrow flows need separate budgets, first-run checks split by locale, and a spec too
+long for one job (`runtime`, `ui-flows`, `ui-gate`, `workbench`, `v3-actions`, `v3-navigation`) is split by
+title with `--grep` lists that together select each case once. The `ui-gate` page matrix also
+checks its settings pages in two halves per locale/theme, because one pass took 130-165 s of its
+150 s deadline. Every job retains one
+worker, all checks, and the existing deadlines. There is no pixel gate on any OS: macOS and Linux
+Web jobs run the functional, accessibility and layout assertions, and their screenshots are
+evidence only. The v3 specs cover full-page navigation, session
 search and archive restoration, everyday and advanced settings, provider auto-testing, plugin and
 MCP installation, business-agent start, scheduled tasks and session-grant revocation on isolated
 Demo homes. Their page matrix checks both locales/themes and 390-pixel layouts. After adding specs or changing these lists,
 compare each platform's combined `pnpm e2e:web --list` selections with the full list: every case
-must appear exactly once. Uploads retain completed reports, screenshots and trace archives,
-excluding volatile Playwright scratch directories.
+must appear exactly once, counting the nightly narrow jobs below. Uploads retain completed reports,
+screenshots and trace archives, excluding volatile Playwright scratch directories.
+
+**Narrow screens: per PR and nightly.** One `narrow.spec.ts` case (a locale/theme at 375, 390 and
+768 pixels) takes eight to nine minutes on hosted runners, more than a gate step's ten. Each
+platform's gate therefore runs one narrow job: `narrow screens en/light` with
+`AGH_NARROW_WIDTHS=375,768`, the phone and tablet widths that carry all twelve narrow captures,
+with every functional, tap-target, axe and translation check
+of those passes. `AGH_NARROW_WIDTHS` lists the widths to run; it must include 375 and 768, and
+unset it runs all three. `.github/workflows/e2e-web-nightly.yml` (daily, and on manual dispatch)
+calls this workflow with `suite: narrow-nightly`, which runs only the full narrow matrix: all four
+locale/theme cases at all three widths, on macOS and Linux, one job per case with a 20-minute gate
+step. Those jobs reuse the platform jobs' steps through YAML anchors and upload the same evidence.
+So per platform the PR gate's lists select every case exactly once except the three narrow cases
+`en/dark`, `zh-CN/light` and `zh-CN/dark`, which only the nightly jobs select, once each.
+`narrow screens en/light` is the one case both select: per PR at 375 and 768 pixels, nightly at
+all three widths. The en-dark and zh-CN narrow passes run nightly. Run the nightly suite on a branch with `gh workflow run e2e-web-nightly.yml --ref BRANCH`.
 Maintainers must select that status in the target branch's required checks/ruleset; committing a
 workflow alone does not change GitHub branch protection. The workflow runs on pull requests,
 merge groups, integration/main pushes and manual dispatch, without path-based skips.
 Run the same gate on an unmerged branch with `gh workflow run e2e-web.yml --ref BRANCH`, then
 watch the returned run with `gh run watch RUN_ID --exit-status`. Dispatch checks that branch's
-specs and baselines. Every ready screen needs both platform PNGs captured with the pinned
-Chromium and CI fonts; dispatch does not generate or approve missing baselines.
+specs.
 
 The local command shares two workers with per-test scheduling. CI runs the platform partitions
 listed above with one worker per runner, so concurrent daemon/worker/Chromium trees do not
@@ -122,7 +147,7 @@ Reproduce any recurrence with `--repeat-each 8`; do not add retries or time tole
 Failure reports/traces remain separate from successful runs; process status and daemon audit
 are attached, and editor-style code updates are published atomically.
 
-## Maintained UI and visual gate
+## Maintained UI gate and screenshot evidence
 
 `ui-gate.spec.ts` checks first run, Agent options, the account dialog and all settings destinations, including the moved home pages
 in en/zh-CN and light/dark at 1280×900. It checks visible and accessible-name i18n keys, horizontal
@@ -133,24 +158,28 @@ plan approval, authorized deliverable downloads, child collection, goal completi
 job output, interactive terminal input/output, schedule creation/archive and the bundled FDE
 workflow through restart. Backend assertions use CLI or SDK, never raw admin HTTP from specs.
 `candidate-review.spec.ts` retains the exact-test/hash, edited-approval refusal, publication,
-history and diff workflow formerly in `ui-flows.spec.ts`. Its CI partition remains required.
+history and diff workflow formerly in `ui-flows.spec.ts`, in two cases that each fit the 300 s
+test budget on macOS 15: the human review through publication, and the skill rejection, update
+diff and skill publication that start from that plugin published through the same admin approval.
+Each has its own required macOS job.
 Selectors use roles and stable test IDs; disclosures are checked before toggling.
 
-`baselines/ready.json` declares the reviewed screens on both macOS and Linux, with no pending
-screens. The gate checks compact provider row spacing, one card per discovered package and
-selection through the shared version picker. The Discover search baseline filters to a
-single-version entry.
-Ready PNGs cover key screens in both locales and themes, including installed plugin cards,
+There is no pixel gate on any OS, and the repository stores no baseline images. `screen()` runs
+the translation, overflow and axe checks, then saves the normalized PNG to the run's output
+directory as evidence only: nothing compares it with a stored image. The gate checks compact
+provider row spacing, one card per discovered package and selection through the shared version
+picker. The Discover search screen filters to a single-version entry.
+Screenshots cover key screens in both locales and themes, including installed plugin cards,
 Skills empty state, tool rows and the agent-authored candidate review and file diff.
 The additional installed-folder card screen is en/light.
 
 `workbench.spec.ts` always checks Files, Terminal, Goal and Changes in en/zh-CN,
-light/dark and 1440/1280 widths, with the dock both open and closed: 64 ready
-screens per platform. The real session flows also assert process detachment,
+light/dark and 1440/1280 widths, with the dock both open and closed: 64
+screenshots. The real session flows also assert process detachment,
 permission/sandbox refusals, durable goal controls, read-only historical diffs,
 freshness and ledger navigation. `AGH_WORKBENCH_REPORT` optionally copies those
-same screenshots to a private report directory; it does not enable or disable
-visual assertions. File read clocks are normalized to 12:00 while their localized
+same screenshots to a private report directory; it does not change any
+assertion. File read clocks are normalized to 12:00 while their localized
 labels remain visible. Job/session IDs and exact revisions stay in collapsed
 technical details. The demo model's echoed untrusted-receipt ID and background-job
 UUID are normalized to fixed-length values only for terminal screenshots; the
@@ -162,19 +191,6 @@ mount targets and verifies both read and write refusal. On Linux, bubblewrap's
 existing fail-closed initialization cannot create a missing deny mount under a
 read-only parent; fixture provisioning does not change that backend policy.
 
-Normal gate runs use `updateSnapshots: none`: unknown names, a missing manifest or a missing
-ready image fail. Only an explicit reviewed update writes baselines:
-
-```sh
-AGH_UPDATE_VISUALS=1 pnpm e2e:web --reuse-build
-```
-
-For a capture-only review, `AGH_SKIP_PIXEL_SNAPSHOTS=1` writes the same normalized PNGs to the
-run's output directory and annotates each deferred comparison. Inspect those images before
-updating a baseline; a capture-only run is not a passing visual gate. Rerun without that flag
-and without update mode to verify the reviewed images.
-
-Review PNG changes and the manifest together with the pinned Chromium on the target platform.
 Linux provisions real bwrap filesystem/process/network namespaces. On Ubuntu CI, a dedicated
 AppArmor profile grants user namespaces only to `/usr/bin/bwrap`; global sysctls and AppArmor
 enforcement remain unchanged. Provisioning fails if the actual namespace probe fails, so job and
@@ -182,16 +198,14 @@ terminal coverage exercises confinement rather than depending on an unconfined f
 Linux uses the pinned Ubuntu 24.04 runner with Playwright-installed system libraries and
 `fonts-dejavu-core` / `fonts-dejavu-mono`. Install both font packages when reproducing the gate
 in a minimal container: without them Chromium falls back to WenQuanYi for monospace text,
-changing diagnostic IDs' layout even with identical CSS. PNGs live in
-`baselines/linux/`, separately from `baselines/darwin/`. The Linux CI job also runs
+changing diagnostic IDs' layout even with identical CSS. The Linux CI job also runs
 production/fixture typechecks, fast tests, guards and kernel identity integration.
-Each failed check remains a failed job even when later steps collect Web evidence. Tolerance is
-0.2% changed pixels with a per-pixel threshold of 0.2; do not enlarge it to hide a regression.
-Only the repository workspace text (checkout name/absolute path) and elapsed turn timing are
+Each failed check remains a failed job even when later steps collect Web evidence.
+Screenshot normalization keeps the evidence readable across runs: only the repository workspace text (checkout name/absolute path) and elapsed turn timing are
 hidden; the metadata clock is normalized to 12:00 while its model label stays visible.
 Unified Trace captures use the real Record order menu and normalize only the isolated runtime context
 path, current clock and elapsed numbers, retaining localized units, records, controls and statuses.
-The screenshot stylesheet uses the real document’s advertised CSP nonce; CSP remains enforced. Temporary fixture paths, credentials and machine-specific home data are not baselines.
+The screenshot stylesheet (`screenshot.css`) uses the real document’s advertised CSP nonce; CSP remains enforced. Temporary fixture paths, credentials and machine-specific home data stay in the run's own output.
 Screenshots temporarily use the public reduced-motion preference for JavaScript example hints,
 then restore the original preference; CSS motion is disabled by Playwright.
 Read-only first-run frames settle that same preference before cloning the production DOM.

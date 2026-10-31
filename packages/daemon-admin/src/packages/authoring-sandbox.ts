@@ -9,6 +9,7 @@ import {
   createPlatform,
   createSandboxSeam,
   prepareSandboxWorkspaceAncestor,
+  sandboxReadPaths,
 } from '@agnes/host'
 import { runIsolatedCommand } from '@agnes/package-isolation'
 
@@ -58,11 +59,20 @@ export async function authoringSandbox(
     canonicalize: (path, options) => fs.canonicalize(path, options),
   })
   const exec = createExec({ baseEnv: { PATH: process.env.PATH ?? '' } })
+  // Same read view as session commands: on Linux, `--ro-bind / /` cannot host a mount point for a
+  // protected path that does not exist yet (such as a missing ~/.ssh), so bwrap would refuse the
+  // probe. Recomputed per use, so a private tree created later is still masked.
+  const options = (cwd: string) => ({
+    ...plan.backendOptions,
+    cwd,
+    network: source?.network ?? 'deny',
+    ...(platform.os === 'linux' ? { readPaths: sandboxReadPaths(plan.backendOptions.denyPaths) } : {}),
+  })
   const backend = await detectBackend({
     level: 'L1',
     platform: platform.os,
     shell: platform.shell(),
-    options: { ...plan.backendOptions, network: source?.network ?? 'deny' },
+    options: options(plan.backendOptions.cwd),
     probeExec: exec.run,
     log: { debug() {}, info() {}, warn() {}, error() {} },
     signal,
@@ -81,10 +91,7 @@ export async function authoringSandbox(
     enforcement: backend.enforcement,
     readiness: {
       ready: async () => ({
-        confine: ({ argv, cwd }) =>
-          isolated
-            ? backend.confine(argv, { ...plan.backendOptions, cwd, network: source?.network ?? 'deny' })
-            : [...argv],
+        confine: ({ argv, cwd }) => (isolated ? backend.confine(argv, options(cwd)) : [...argv]),
       }),
     },
     binding: () => ({ policyDigest: plan.policy.digest }),

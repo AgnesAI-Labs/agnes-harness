@@ -36,7 +36,7 @@ import { bindTerminalNavigation } from './app/terminal-navigation.js'
 import { createTurnController } from './app/turn-controller.js'
 import { openApplicationHome, projectApplication, requestNewSession } from './application.js'
 import { readyRosterModules } from './client-modules/reconcile/roster.js'
-import { ComposerDrafts } from './composer-drafts.js'
+import { ComposerDrafts, switchComposerDraft } from './composer-drafts.js'
 import '@agnes/web-admin/settings/registry'
 import type {
   ConfigSnapshot,
@@ -668,8 +668,7 @@ const readOnlyController = createReadOnlyController(appSessionContext, {
 
 const composerDrafts = new ComposerDrafts(sessionStorage, location.origin)
 // Keep image submissions below the daemon's WebSocket frame cap, including their JSON-RPC envelope.
-const savedComposerDraft = composerDrafts.read()
-const savedComposerReferences = composerDrafts.readReferences()
+const savedComposerDraft = { text: composerDrafts.read(), references: composerDrafts.readReferences() }
 const notice = appNotice
 const conversation = hosts.conversation
 const goalHost = hosts.goal
@@ -740,7 +739,6 @@ const rosterSource: RosterSource = {
 const claimSlotCard: ClaimResolver = (entry, extId) =>
   entry.owner !== undefined && (moduleExtIds.get(entry.owner)?.includes(extId) ?? false)
 const references = composerReferences(prepareComposerSession, renderControls)
-const skills = composerSkills(() => selectedWorkspace?.workspaceId)
 // Reserve host entries before installed modules can register their reviewed declarations.
 const removeHomeEntries = registerBuiltinHomeEntries()
 homeEntries.subscribe(openApplicationHome)
@@ -900,9 +898,10 @@ const clientModules = await startClientModules({
   approvalContainer: hosts.approval,
   composerContainer: hosts.composer,
   composer: {
-    references, skills,
-    initialDraft: savedComposerDraft ?? '',
-    initialDraftReferences: savedComposerReferences,
+    references,
+    skills: composerSkills(() => selectedWorkspace?.workspaceId),
+    initialDraft: savedComposerDraft.text,
+    initialDraftReferences: savedComposerDraft.references,
     onAttachmentsChange: renderControls,
     prepareUploadSession: prepareAttachmentSession,
     onCancel: handleComposerCancel,
@@ -1847,19 +1846,7 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   if (cleanupError) throw cleanupError
 }
 function selectComposerDraft(id?: string, options: { preserve?: boolean; carry?: boolean } = {}): void {
-  const currentReferences = composerRuntime.getDraftReferences()
-  composerDrafts.setReferences(currentReferences)
-  const draft = composerDrafts.select(profileName, id, composerRuntime.getDraft(), options)
-  if (options.carry) composerDrafts.setReferences(currentReferences)
-  // A lone `@` only opens the reference picker; it is not meaningful draft content to carry into
-  // a later new session when the picker was dismissed before any reference was selected.
-  if (draft === '@') {
-    composerDrafts.clear()
-    composerDrafts.setReferences({ files: [], skills: [] })
-  }
-  composerRuntime.setDraft(draft === '@' ? '' : draft)
-  if (!options.preserve) composerRuntime.clearImageBlocks()
-  composerRuntime.restoreDraftReferences(composerDrafts.readReferences())
+  switchComposerDraft(composerDrafts, composerRuntime, profileName, id, options)
 }
 let modelReadGeneration = 0
 let modelAppliedGeneration = 0

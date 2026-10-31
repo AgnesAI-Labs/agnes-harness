@@ -112,6 +112,9 @@ it('exposes native tab and live status semantics for the rendered workbench', as
   const input = document.getElementById('prompt') as HTMLTextAreaElement
   trace.click()
   runtime.composer?.setDraft('keep this draft')
+  // setDraft is a React state update that commits on a later scheduler task; on a loaded runner the
+  // locale switch below can settle first. Have the draft on screen before asking the switch to keep it.
+  await vi.waitFor(() => expect(input.value).toBe('keep this draft'))
   trace.focus()
   runtime.locale.setLocale('zh-CN')
   document.documentElement.lang = 'zh-CN'

@@ -225,6 +225,34 @@ it('dismisses the menu when content scrolls away or the mouse pointer leaves', a
   key(document.activeElement!, 'Escape')
   await closed()
 })
+it('a context-menu trigger clicked and left by the mouse keeps focus where the user moved it', async () => {
+  let launched = 0
+  const host = render(
+    createElement(
+      'div',
+      null,
+      createElement(Menu, {
+        label: 'New',
+        triggerMode: 'contextMenu',
+        trigger: createElement(Button, { onClick: () => launched++ }, 'New'),
+        items: [{ id: 'shell', label: 'Shell', onSelect: () => {} }],
+      }),
+      createElement('textarea', { 'aria-label': 'Terminal input' }),
+    ),
+  )
+  const trigger = host.querySelector('button')!
+  // A plain click runs the trigger's own action; the menu never opens.
+  pointer(trigger, 'pointerdown')
+  trigger.click()
+  expect(launched).toBe(1)
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  // The mouse moves on and the user starts typing elsewhere.
+  pointer(trigger, 'pointerout')
+  const input = host.querySelector('textarea')!
+  input.focus()
+  await new Promise((done) => setTimeout(done, 250))
+  expect(document.activeElement).toBe(input)
+})
 it('explains a disabled action immediately on keyboard focus', async () => {
   const host = render(
     createElement(

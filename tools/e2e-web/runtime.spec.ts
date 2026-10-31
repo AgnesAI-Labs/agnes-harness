@@ -594,6 +594,8 @@ test('stored credential rejection offers account repair and recovers without res
     const composer = page.getByRole('textbox', { name: 'Task content', exact: true })
     await expect(composer).toBeEnabled()
     await composer.fill('Show the rejected account hint')
+    // The reopened session shows read-only until this page has attached it; Enter sends only then.
+    await expect(page.locator('#send')).toBeEnabled()
     await composer.press('Enter')
     const repair = page.getByTestId('credential-repair')
     await expect(repair).toHaveText('Fix model account')

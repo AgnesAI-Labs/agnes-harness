@@ -297,6 +297,8 @@ export class PluginAdminPage {
       nameOf: page.nameOf.bind(page),
       openOperations: page.openOperations.bind(page),
       closeConfirm: page.closeConfirm.bind(page),
+      /** Settles once no inventory read is in flight: an effect is decided on the finished inventory. */
+      inventoryIdle: () => page.#refresh.idle(),
       closeDetail: page.closeDetail.bind(page),
       closeSourceDialog: page.closeSourceDialog.bind(page),
       configureConfirm: page.configureConfirm.bind(page),

@@ -1,5 +1,5 @@
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { bundledExtensionManifest, type Disposer } from '@agnes/extension-api'
 import type { ExtensionAPI } from '@agnes/extension-api/host'
@@ -47,7 +47,8 @@ describe('framing', () => {
 })
 
 describe('servers', () => {
-  const present = (files: string[]) => async (p: string) => files.includes(p)
+  // findRoot joins markers with the platform separator; compare in that spelling.
+  const present = (files: string[]) => async (p: string) => files.some((file) => join(file) === p)
 
   it('picks the server by extension and the root by the nearest marker', async () => {
     expect(serverFor('/w/a.tsx')?.languageId).toBe('typescriptreact')
@@ -85,7 +86,7 @@ describe('binary resolution', () => {
   it('filters PATH to absolute, unique entries outside the workspace, and takes the first match', () => {
     const a = fakeInstall(['gopls'])
     const b = fakeInstall(['gopls'])
-    const path = `:rel:./x:${a.searchPath}:${a.searchPath}:${b.searchPath}`
+    const path = ['', 'rel', './x', a.searchPath, a.searchPath, b.searchPath].join(delimiter)
     expect(safeEntries(path, ['/work/proj'])).toEqual([a.searchPath, b.searchPath])
     // An entry inside the workspace root (or the cwd) is gone, for resolving and for the env alike.
     expect(safeEntries(path, [a.root])).toEqual([b.searchPath])

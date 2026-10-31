@@ -44,6 +44,10 @@ describe.skipIf(process.platform !== 'win32')('Windows batch launch', () => {
     roots.push(root)
     const bin = shim ? join(root, 'node_modules', '.bin') : root
     mkdirSync(bin, { recursive: true })
+    // The command runs in a workspace beside its PATH directory: bare names never resolve to a
+    // file inside the child's own workspace (resolveWindowsCommand).
+    const work = join(root, 'work')
+    mkdirSync(work)
     const script = join(root, 'echo.cjs')
     writeFileSync(script, 'process.stdout.write(JSON.stringify(process.argv.slice(2)))')
     writeFileSync(join(bin, 'echo.cmd'), '@echo off\r\n"%AGNES_TEST_NODE%" "%AGNES_TEST_SCRIPT%" %*\r\n')
@@ -60,7 +64,7 @@ describe.skipIf(process.platform !== 'win32')('Windows batch launch', () => {
     ]
     const result = await run(
       ['echo.cmd', ...args],
-      root,
+      work,
       {
         PATH: bin,
         AGNES_EXPAND: 'expanded',
@@ -71,6 +75,7 @@ describe.skipIf(process.platform !== 'win32')('Windows batch launch', () => {
     )
     expect(result.code, JSON.stringify(result)).toBe(0)
     expect(JSON.parse(result.stdout)).toEqual(args)
+    expect(existsSync(join(work, 'marker.txt'))).toBe(false)
     expect(existsSync(join(root, 'marker.txt'))).toBe(false)
   })
   it('runs the installed npm batch entry without bypassing its own version selection', async () => {

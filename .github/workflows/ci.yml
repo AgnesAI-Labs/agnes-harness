@@ -44,6 +44,10 @@ jobs:
       - run: pnpm run doctor:toolchain
       - run: pnpm lint
       - run: node tools/public-docs/verify.mjs
+      # Vitest's global setup refuses to collect any file until the native helpers are built for
+      # this runner (tools/native-test-setup.mjs), including the repository policy files below.
+      - run: pnpm --filter @agnes/host build:native
+      - run: pnpm --filter @agnes/system-node build:native
       # File/function ceilings and Host identity allowances are hard, compared with the protected base.
       # scope-line-count.test.ts only reports scope LOC deltas; growth is not a failure.
       - name: documentation examples and repository policy
@@ -67,9 +71,9 @@ jobs:
         include:
           - { os: ubuntu-latest, label: ubuntu-latest, testArgs: '--maxWorkers=1 --pool=forks', testExclude: '', shard: '' }
           - { os: macos-latest, label: macos-latest, testArgs: '--maxWorkers=2', testExclude: '', shard: '' }
-          - { os: windows-latest, label: 'windows-latest shard 1/3', testArgs: '--maxWorkers=2 --shard=1/3', testExclude: 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.test.ts', shard: '1/3' }
-          - { os: windows-latest, label: 'windows-latest shard 2/3', testArgs: '--maxWorkers=2 --shard=2/3', testExclude: 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.test.ts', shard: '2/3' }
-          - { os: windows-latest, label: 'windows-latest shard 3/3', testArgs: '--maxWorkers=2 --shard=3/3', testExclude: 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.test.ts', shard: '3/3' }
+          - { os: windows-latest, label: 'windows-latest shard 1/3', testArgs: '--maxWorkers=2 --shard=1/3', testExclude: 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.e2e.test.ts', shard: '1/3' }
+          - { os: windows-latest, label: 'windows-latest shard 2/3', testArgs: '--maxWorkers=2 --shard=2/3', testExclude: 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.e2e.test.ts', shard: '2/3' }
+          - { os: windows-latest, label: 'windows-latest shard 3/3', testArgs: '--maxWorkers=2 --shard=3/3', testExclude: 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.e2e.test.ts', shard: '3/3' }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -78,11 +82,49 @@ jobs:
         run: git config --global core.autocrlf false
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { fetch-depth: 0 }
+      # Hosted Windows runners keep the workspace and RUNNER_TEMP on the D: work disk, but TEMP
+      # defaults to the C: system disk. Tests put their stores, ledgers, locks and flushes under
+      # os.tmpdir(), so they share the system disk with everything else on the VM.
+      # One number per disk in the log, so a slow run can be told apart from a slow disk.
+      - name: measure flushed writes on the Windows system and work disks
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $script = @'
+          const fs = require('node:fs'), path = require('node:path')
+          for (const root of process.argv.slice(1)) {
+            const dir = fs.mkdtempSync(path.join(root, 'flush-'))
+            const started = performance.now()
+            for (let i = 0; i < 200; i++) fs.writeFileSync(path.join(dir, `f${i}`), 'x'.repeat(4096), { flush: true })
+            console.log(`${root}: ${((performance.now() - started) / 200).toFixed(2)} ms per flushed 4 KiB write`)
+            fs.rmSync(dir, { recursive: true, force: true })
+          }
+          '@
+          node -e $script -- $env:TEMP $env:RUNNER_TEMP
+      # Like the per-user Temp it replaces, the folder grants only this user, SYSTEM and
+      # Administrators, so the private homes and stores tests create under it pass validation.
+      # RUNNER_TEMP itself inherits the D: drive's broad grants.
+      - name: keep temporary files on the Windows work disk
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $temp = Join-Path $env:RUNNER_TEMP 'private-temp'
+          New-Item -ItemType Directory -Force -Path $temp | Out-Null
+          $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+          icacls $temp /inheritance:r /grant:r "*${user}:(OI)(CI)F" '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F'
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot make the temporary folder private' }
+          "TEMP=$temp" >> $env:GITHUB_ENV
+          "TMP=$temp" >> $env:GITHUB_ENV
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version-file: .node-version, cache: pnpm }
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm run doctor:toolchain
+      # The completion tests load the generated script in real bash and zsh. macOS ships zsh;
+      # the Ubuntu image does not.
+      - name: install zsh
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y zsh
       - name: prepare Windows native headers
         if: runner.os == 'Windows'
         shell: pwsh
@@ -113,7 +155,7 @@ jobs:
         run: pnpm exec vitest run packages/daemon/test/windows-startup-directories.test.ts --maxWorkers=1
       - name: Windows conversation MCP registration
         if: runner.os == 'Windows' && matrix.shard == '2/3'
-        run: pnpm exec vitest run packages/daemon/test/conversation-mcp.test.ts --maxWorkers=1
+        run: pnpm exec vitest run packages/daemon/test/conversation-mcp.e2e.test.ts --maxWorkers=1
       # Keep boot/session creation in the functional gate above. The isolated run reports wall-clock
       # time in the job summary even if another test fails; a stable performance runner can opt into
       # the 300 ms assertion. Do not restart this test after a cancelled or skipped suite.
@@ -159,16 +201,20 @@ jobs:
   # Real daemon, worker and CLI process tests, and large-ledger or timer-bound tests. Every PR runs
   # them on Linux; pushes to main, the nightly schedule and manual runs cover all three platforms.
   heavy:
-    name: heavy (${{ matrix.os }})
+    name: heavy (${{ matrix.os }} ${{ matrix.shard }}/3)
     needs: changes
     if: needs.changes.outputs.docs-only != 'true'
     strategy:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "macos-latest", "windows-latest"]') }}
+        # With the sandbox, shells, built CLI and Chromium provisioned, one Linux runner needed
+        # 45-60 minutes for the whole tier. Shards 1 and 2 are the file lists in
+        # tools/ci/heavy-shards.json, each about 20 minutes of measured Linux file time; shard 3 runs
+        # every other heavy file, so each file runs in exactly one shard.
+        shard: [1, 2, 3]
     runs-on: ${{ matrix.os }}
-    # Matches the check job. One Windows runner carries the whole heavy tier, one file at a time;
-    # its files added up to about 13 minutes there when they ran two at a time.
+    # Matches the check job. Windows runs its heavy files one at a time.
     timeout-minutes: 60
     steps:
       - name: preserve repository line endings
@@ -187,6 +233,32 @@ jobs:
         run: ./.github/scripts/prepare-windows-native.ps1 -CacheRoot "$env:RUNNER_TEMP/agnes-node-headers"
       - run: pnpm --filter @agnes/host build:native
       - run: pnpm --filter @agnes/system-node build:native
+      # Heavy tests confine real sessions, MCP children and candidate tests with bubblewrap, and
+      # drive a persistent zsh. The Ubuntu image ships neither, and its AppArmor policy blocks the
+      # unprivileged user namespaces bwrap needs; the script authorizes only /usr/bin/bwrap.
+      - name: Linux sandbox and shells
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update && sudo apt-get install -y bubblewrap zsh
+          bash tools/e2e-web/provision-linux-sandbox.sh
+      # The template scaffold tests link the preview SDK packages from their emitted declarations
+      # (docs/extend/quickstart.md, plus web-client for tool-with-panel). Only these projects
+      # are built, not the whole repository.
+      - name: build preview SDK declarations
+        run: pnpm exec tsc -b packages/plugin-runtime packages/protocol packages/resource-control-runtime packages/web-client
+      # The demo, agent-sweep and built-distribution gates start packages/cli/dist/local.
+      - run: pnpm --filter @agnes/cli build:local
+      # The multi-tab transport and agent-sweep tests launch the pinned Playwright Chromium.
+      - name: provision pinned Chromium
+        run: pnpm exec playwright install ${{ runner.os == 'Linux' && '--with-deps' || '' }} chromium
+      # Source-worker tests share jiti's transpile cache (packages/daemon/test/source-transpile-cache.ts).
+      # jiti re-transpiles any file whose source hash changed, so an older cache is safe to restore.
+      - name: Restore source transpile cache
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
+        with:
+          path: node_modules/.cache/agnes-source-transpile
+          key: source-transpile-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'pnpm-lock.yaml') }}-${{ github.sha }}-${{ matrix.shard }}
+          restore-keys: source-transpile-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'pnpm-lock.yaml') }}-
       # These tests start real processes and are the most sensitive to a loaded runner, so they
       # run with less file fan-out than the fast tier. The check job spreads Windows files over
       # three runners, but this job holds every heavy file on one; two at a time there starved each
@@ -196,24 +268,30 @@ jobs:
       - name: test heavy tier
         env:
           AGNES_TEST_EXCLUDE: ${{ runner.os == 'Windows' && 'packages/cli/test/acp-concurrency.e2e.test.ts,packages/cli/test/dbh-m06-ephemeral-leak.e2e.test.ts,packages/daemon/test/service-worker.e2e.test.ts,packages/cli/test/built-resource-mcp.e2e.test.ts' || '' }}
-        run: pnpm exec vitest run --project heavy --maxWorkers=${{ runner.os == 'macOS' && 2 || 1 }}
+        run: node tools/ci/run-heavy-shard.mjs --shard=${{ matrix.shard }}/3 --maxWorkers=${{ runner.os == 'macOS' && 2 || 1 }}
+      - name: Save source transpile cache
+        if: ${{ !cancelled() }}
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
+        with:
+          path: node_modules/.cache/agnes-source-transpile
+          key: source-transpile-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'pnpm-lock.yaml') }}-${{ github.sha }}-${{ matrix.shard }}
       # The ACP cold-start bound measures concurrent CLI processes. Run it without other Vitest
       # files competing for this runner's cores, while retaining its original assertion.
       - name: Windows ACP cold-start concurrency
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && matrix.shard == 3
         run: pnpm exec vitest run packages/cli/test/acp-concurrency.e2e.test.ts --maxWorkers=1
       # The source CLI fixture cold-loads the test Host; keep its 20-second initialization
       # deadline meaningful by running it without other Vitest files on this Windows runner.
       - name: Windows ephemeral CLI lifecycle
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && matrix.shard == 3
         run: pnpm exec vitest run packages/cli/test/dbh-m06-ephemeral-leak.e2e.test.ts --maxWorkers=1
       # These heavy files drive real worker, MCP server and built CLI processes under fixed startup and
       # shutdown deadlines; run each alone so parallel Vitest files do not starve them.
       - name: Windows service worker boundary
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && matrix.shard == 3
         run: pnpm exec vitest run packages/daemon/test/service-worker.e2e.test.ts --maxWorkers=1
       - name: Windows built CLI managed MCP lifecycle
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && matrix.shard == 3
         run: pnpm exec vitest run packages/cli/test/built-resource-mcp.e2e.test.ts --maxWorkers=1
       - name: verify working tree is clean
         run: git diff --exit-code
@@ -238,10 +316,13 @@ jobs:
       - run: pnpm run doctor:toolchain
       - run: pnpm --filter @agnes/cli build:runtime
       - run: pnpm --filter @agnes/daemon build:runtime
-      # This source-level Host test loads native seams outside the packaged extension runner.
-      - name: build source native module for assembly acceptance
+      # This source-level Host test loads native seams outside the packaged extension runner, and
+      # Vitest's global setup requires both native products (tools/native-test-setup.mjs).
+      - name: build source native modules for assembly acceptance
         if: runner.os == 'macOS'
-        run: pnpm --filter @agnes/system-node build:native
+        run: |
+          pnpm --filter @agnes/host build:native
+          pnpm --filter @agnes/system-node build:native
       - name: exercise opt-in assembly with packaged runtime
         if: runner.os == 'macOS'
         run: pnpm exec vitest run packages/host/test/assemble/enabled-packages.test.ts
@@ -259,7 +340,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-14, target: darwin-arm64, binary: agnes-darwin-arm64 }
+          - { os: macos-15, target: darwin-arm64, binary: agnes-darwin-arm64 }
           - { os: ubuntu-24.04, target: linux-x64, binary: agnes-linux-x64 }
           - { os: windows-2022, target: win32-x64, binary: agnes-win32-x64.exe }
     runs-on: ${{ matrix.os }}
@@ -273,10 +354,20 @@ jobs:
         with: { node-version-file: .node-version, cache: pnpm }
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm run doctor:toolchain
+      # The smokes run real sessions under the required L1 sandbox. The Ubuntu image ships no
+      # bubblewrap, and its AppArmor policy blocks the unprivileged user namespaces bwrap needs.
+      - name: Linux sandbox
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update && sudo apt-get install -y bubblewrap
+          bash tools/e2e-web/provision-linux-sandbox.sh
       - name: prepare Windows native headers
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./.github/scripts/prepare-windows-native.ps1 -CacheRoot "$env:RUNNER_TEMP/agnes-node-headers"
+      # The SEA smokes run under Vitest, whose global setup requires the test native helpers.
+      - run: pnpm --filter @agnes/host build:native
+      - run: pnpm --filter @agnes/system-node build:native
       - run: pnpm --filter @agnes/cli build:sea
       - name: verify Linux ABI and SHA-256 in Node, workers and SEA on Debian 11
         if: runner.os == 'Linux'

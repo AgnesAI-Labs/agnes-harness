@@ -34,7 +34,8 @@ export const lockPath = (profileDir: string): string => join(profileDir, 'agnes-
 const STALE_LOCK_MS = 30_000
 /**
  * A valid, dead owner can be reclaimed immediately: publication already includes its PID, so no
- * live acquirer is still filling it in. Keep the stale grace for malformed/legacy owner records.
+ * live acquirer is still filling it in. Keep the stale grace for malformed/legacy owner records,
+ * including the empty or zero-filled owner an unflushed write can leave after power loss.
  */
 function ownerIsDead(file: string): boolean {
   try {
@@ -158,15 +159,17 @@ export async function withLock<T>(
   const deadline = Date.now() + 10_000
   for (;;) {
     checkCancelled(opts.signal)
-    // The owner is written to a private file first and linked into place, so the lock never exists
-    // without its owner: a crash can leave only an inert temporary, never an unreclaimable empty lock.
+    // The owner is written to a private file first and linked into place, so a running process never
+    // sees the lock without its owner. The write is not flushed: the lock only matters while its
+    // holder runs, and after power loss an empty or zero-filled owner is malformed, which ownerIsDead
+    // treats as stale once STALE_LOCK_MS have passed since its mtime, so the lock is reclaimed.
     const pending = `${lockFile}.${randomUUID()}.tmp`
     try {
-      // A live holder cannot be acquired yet. Avoid creating and flushing a temporary
-      // owner file on every poll; linkSync still arbitrates the race after this hint.
+      // A live holder cannot be acquired yet. Avoid creating a temporary owner file on every
+      // poll; linkSync still arbitrates the race after this hint.
       if (existsSync(lockFile)) throw Object.assign(new Error('package lock held'), { code: 'EEXIST' })
       try {
-        writeFileSync(pending, String(process.pid), { flag: 'wx', mode: 0o600, flush: true })
+        writeFileSync(pending, String(process.pid), { flag: 'wx', mode: 0o600 })
         linkSync(pending, lockFile)
       } finally {
         removeLockArtifact(pending)

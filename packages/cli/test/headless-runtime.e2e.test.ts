@@ -63,6 +63,8 @@ vi.mock('@agnes/host', async (original) => ({
     ).host,
 }))
 
+// Transpiles plugins from source and takes the durable package lock repeatedly: 4-5 s on a Linux
+// CI runner against Vitest's 5 s default there, so the case keeps its own budget.
 it('loads zero-build loops and panels into isolated headless sessions and publishes reloaded panel assets', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agh-headless-runtime-'))
   const home = join(root, 'home')
@@ -223,4 +225,4 @@ it('loads zero-build loops and panels into isolated headless sessions and publis
     await boot?.close()
     await rm(root, { recursive: true, force: true })
   }
-})
+}, 30_000)

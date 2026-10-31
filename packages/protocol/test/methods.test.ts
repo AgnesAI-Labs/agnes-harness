@@ -340,7 +340,10 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/session.jobs.read',
         '_agnes/v1/session.jobs.control',
         '_agnes/v1/session.workspace.list',
+        '_agnes/v1/session.workspace.browse',
         '_agnes/v1/session.references.search',
+        '_agnes/v1/session.references.searchCancelable',
+        '_agnes/v1/session.references.cancel',
         '_agnes/v1/session.workspace.read',
         '_agnes/v1/session.workspace.changes',
         '_agnes/v1/session.undo.preview',
@@ -381,7 +384,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(227)
+    expect(Object.keys(METHODS)).toHaveLength(230)
     expect(METHODS['_agnes/v1/session.integrity']).toMatchObject({ kind: 'request', direction: 'c2s' })
     expect(METHODS['_agnes/v1/session.loading']).toMatchObject({ kind: 'notification', direction: 's2c' })
     expect(METHODS['_agnes/v1/session.loadingCancel']).toMatchObject({

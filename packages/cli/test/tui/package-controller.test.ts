@@ -1,3 +1,4 @@
+import { resolve, sep } from 'node:path'
 import type { NodeClient } from '@agnes/sdk'
 import { describe, expect, it } from 'vitest'
 import { PackageController } from '../../src/tui/package-controller.js'
@@ -37,10 +38,12 @@ describe('TUI package controller', () => {
     await expect(controller.install('./pkg', '/w/ws')).rejects.toThrow('stop')
     await expect(controller.install('../x.zip', '/w/ws')).rejects.toThrow('stop')
     await expect(controller.manage(['inspect', './pkg'], '/w/ws')).rejects.toThrow('stop')
+    // The resolved path in '/' form; on Windows a rooted path also takes the current drive.
+    const ref = (path: string) => `file:${resolve(path).split(sep).join('/')}`
     expect(sources).toEqual([
-      { type: 'file', ref: 'file:/w/ws/pkg' },
-      { type: 'file', ref: 'file:/w/x.zip' },
-      { type: 'file', ref: 'file:/w/ws/pkg' },
+      { type: 'file', ref: ref('/w/ws/pkg') },
+      { type: 'file', ref: ref('/w/x.zip') },
+      { type: 'file', ref: ref('/w/ws/pkg') },
     ])
   })
 

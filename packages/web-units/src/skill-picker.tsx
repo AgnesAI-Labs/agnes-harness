@@ -1,12 +1,5 @@
 import { Button, Icon } from '@agnes/web-ui'
-import {
-  type RefObject,
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from 'react'
+import { type RefObject, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { Translate } from './locales/index.js'
 
 export type ComposerSkill = Readonly<{
@@ -142,7 +135,11 @@ export function SkillPicker({
       } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault()
         event.stopPropagation()
-        setActive(current.length ? (state.current.active + (event.key === 'ArrowDown' ? 1 : current.length - 1)) % current.length : 0)
+        setActive(
+          current.length
+            ? (state.current.active + (event.key === 'ArrowDown' ? 1 : current.length - 1)) % current.length
+            : 0,
+        )
       } else if (event.key === 'Enter' || event.key === 'Tab') {
         if (event.key === 'Tab' && event.shiftKey) return
         const skill = current[state.current.active]
@@ -153,7 +150,11 @@ export function SkillPicker({
       }
     }
     const blur = (event: FocusEvent) => {
-      if (!disabledRef.current && !(event.relatedTarget as Element | null)?.closest('[data-testid="skill-picker"]')) close()
+      if (
+        !disabledRef.current &&
+        !(event.relatedTarget as Element | null)?.closest('[data-testid="skill-picker"]')
+      )
+        close()
     }
     input.addEventListener('input', open)
     input.addEventListener('click', open)
@@ -216,35 +217,40 @@ export function SkillPicker({
               <p>{t('composer.skill.subtitle')}</p>
             </div>
           </div>
-          <ul id={listId} role="listbox" aria-label={t('composer.skill.label')} data-testid="skill-options">
+          <div id={listId} role="listbox" aria-label={t('composer.skill.label')} data-testid="skill-options">
             {items.map((skill, index) => (
-              <li key={skill.name} id={`${listId}-${index}`} role="option" aria-selected={active === index}>
-                <Button
-                  htmlType="button"
-                  data-testid="skill-option"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => {
-                    const input = textarea.current
-                    const token = input && tokenAt(input)
-                    if (token) {
-                      onChoose?.(skill)
-                      edit(token.start, token.end, skillText(input, token, skill.name))
-                    }
-                    setOpened(false)
-                  }}
-                >
-                  <span className="skill-option-icon" aria-hidden="true">
-                    <Icon name="sparkles" size={16} />
-                  </span>
-                  <span className="skill-option-copy">
-                    <span className="skill-option-name">{skill.name}</span>
-                    {skill.description && <small>{skill.description}</small>}
-                  </span>
-                  {active === index && <kbd className="skill-option-key">Enter</kbd>}
-                </Button>
-              </li>
+              // Each row is a real button for the pointer; the focused textarea owns the keyboard
+              // (arrows, Enter, Tab, Escape) and points at the active row through aria-activedescendant.
+              <Button
+                key={skill.name}
+                id={`${listId}-${index}`}
+                role="option"
+                aria-selected={active === index}
+                tabIndex={-1}
+                htmlType="button"
+                data-testid="skill-option"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  const input = textarea.current
+                  const token = input && tokenAt(input)
+                  if (token) {
+                    onChoose?.(skill)
+                    edit(token.start, token.end, skillText(input, token, skill.name))
+                  }
+                  setOpened(false)
+                }}
+              >
+                <span className="skill-option-icon" aria-hidden="true">
+                  <Icon name="sparkles" size={16} />
+                </span>
+                <span className="skill-option-copy">
+                  <span className="skill-option-name">{skill.name}</span>
+                  {skill.description && <small>{skill.description}</small>}
+                </span>
+                {active === index && <kbd className="skill-option-key">{t('composer.skill.enterKey')}</kbd>}
+              </Button>
             ))}
-          </ul>
+          </div>
           <p role="status" className="skill-status">
             {status === 'loading'
               ? t('composer.skill.loading')

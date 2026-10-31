@@ -322,12 +322,17 @@ describe('abort while a hook is running', () => {
     async (which) => {
       let entered: () => void = () => undefined
       const inHook = new Promise<void>((resolve) => (entered = resolve))
-      let signal: AbortSignal | undefined
+      // run() gives each run a fresh scope, so the signal that cuts the hook is the one the session
+      // holds once the hook is entered; one read before run() opens its scope is never aborted.
+      let scope: (() => AbortSignal) | undefined
       const cut = async (): Promise<void> => {
+        const signal = scope?.()
+        if (!signal) throw new Error('hook entered before the session was opened')
         entered()
-        await new Promise<void>((resolve) =>
-          signal?.addEventListener('abort', () => resolve(), { once: true }),
-        )
+        await new Promise<void>((resolve) => {
+          if (signal.aborted) resolve()
+          else signal.addEventListener('abort', () => resolve(), { once: true })
+        })
       }
       const hooks: HookPort = {
         ...noopHooks,
@@ -348,8 +353,8 @@ describe('abort while a hook is running', () => {
       const ac = new AbortController()
       const { session, log } = await openSession({ provider: hangingProvider(), hooks })
       await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
+      scope = () => session.ac.signal
       const run = session.run({ until: 'turn-end', signal: ac.signal })
-      signal = session.ac.signal
       await inHook
       ac.abort()
       const out = await run

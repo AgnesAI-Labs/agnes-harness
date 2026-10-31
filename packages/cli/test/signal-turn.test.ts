@@ -53,12 +53,22 @@ function harness(dir: string, delayMs = 30_000) {
     exit: (c) => exits.push(c),
     signals,
   }
+  const hosts: Array<{ close(): Promise<void> }> = []
   const boot: Partial<LocalBootDeps> = {
     lock: TEST_LOCK,
-    createHostImpl: async () =>
-      (await createTestHost({ dataDir: dir, provider: slowProvider(delayMs, announceTurnStarted) })).host,
+    createHostImpl: async () => {
+      const { host } = await createTestHost({
+        dataDir: dir,
+        provider: slowProvider(delayMs, announceTurnStarted),
+      })
+      hosts.push(host)
+      return host
+    },
   }
-  return { io, boot, signals, exits, turnStarted, out: () => out, err: () => err }
+  // Host.close() hands back the shutdown already under way, so this waits for the one a forced exit
+  // left running (a real process would have ended it by exiting).
+  const shutdown = () => Promise.all(hosts.map((host) => host.close()))
+  return { io, boot, signals, exits, turnStarted, shutdown, out: () => out, err: () => err }
 }
 
 const settle = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
@@ -110,6 +120,8 @@ describe('a signal arriving during a live turn', () => {
     expect(h.exits[0]).toBe(130)
     // The embedding result settles at the forced exit too, matching a real process's exit code.
     expect(await run).toBe(130)
+    // The first signal's shutdown still holds the host's files; Windows cannot delete them until it ends.
+    await h.shutdown()
   }, 20_000)
 
   it('no signal at all leaves the ladder unused and the turn to finish on its own terms', async () => {

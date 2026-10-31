@@ -620,7 +620,10 @@ it('preserves host composer files and images across same-session reconnects duri
   const port = (runtime.ctx.get('presentation') as InstanceType<typeof PresentationService>).host.composer!
   let images: Parameters<NonNullable<typeof runtime.composer>['restoreImageBlocks']>[0] = []
   let files: Parameters<NonNullable<typeof runtime.composer>['restoreAttachmentBlocks']>[0] = []
-  let references: ReturnType<NonNullable<typeof runtime.composer>['getDraftReferences']> = { files: [], skills: [] }
+  let references: ReturnType<NonNullable<typeof runtime.composer>['getDraftReferences']> = {
+    files: [],
+    skills: [],
+  }
   const handle = {
     getDraft: () => 'retained draft',
     getDraftReferences: () => references,

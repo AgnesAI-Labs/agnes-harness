@@ -95,6 +95,27 @@ it('syncs programmatic values, disabled state and form reset without firing chan
   expect(changed).not.toHaveBeenCalled()
 })
 
+it('keeps an open menu open and current when its options load while the value stays', () => {
+  const { select, trigger } = setup()
+  trigger.click()
+  expect(document.querySelectorAll('[role="option"]')).toHaveLength(2)
+  // A late read adds a choice; the person's open menu shows it instead of closing under them.
+  const option = document.createElement('option')
+  option.value = 'b'
+  option.textContent = 'Model B'
+  select.append(option)
+  picker.sync()
+  expect(trigger.getAttribute('aria-expanded')).toBe('true')
+  expect([...document.querySelectorAll('[role="option"]')].map((row) => row.textContent)).toEqual([
+    '选择模型✓',
+    'Model A',
+    'Model B',
+  ])
+  ;(document.getElementById('choice-listbox-2') as HTMLElement).click()
+  expect(select.value).toBe('b')
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
+})
+
 it('restores the native control and label on destroy, with no duplicate trigger on remount', () => {
   const { select, trigger } = setup()
   trigger.click()

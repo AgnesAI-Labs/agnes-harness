@@ -102,13 +102,19 @@ export async function setupRoleEscalation(
             steps.set(request.sessionKey, step + 1)
             if (review.calls) {
               const calls = review.calls(request.sessionKey, step)
+              // A step without calls is the final answer; the loop refuses an empty one as FORMAT.
+              if (!calls.length)
+                return [
+                  { type: 'text_delta' as const, delta: 'Done' },
+                  { type: 'done' as const, reason: 'stop' as const },
+                ]
               return [
                 ...calls.map((call, ordinal) => ({
                   type: 'toolcall_end' as const,
                   via: 'native' as const,
                   call: { toolUseId: '', ordinal, ...call },
                 })),
-                { type: 'done' as const, reason: calls.length ? ('toolUse' as const) : ('stop' as const) },
+                { type: 'done' as const, reason: 'toolUse' as const },
               ]
             }
             if (step)

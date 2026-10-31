@@ -2,7 +2,15 @@ import { readFile } from 'node:fs/promises'
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, translated } from './quality.js'
-import { chooseWorkspace, expand, expandActivityGroups, fresh, preferences, traceSequence } from './ui.js'
+import {
+  chooseWorkspace,
+  expand,
+  expandActivityGroups,
+  fresh,
+  openMenu,
+  preferences,
+  traceSequence,
+} from './ui.js'
 
 for (const locale of ['en', 'zh-CN'])
   for (const theme of ['light', 'dark'])
@@ -34,7 +42,7 @@ for (const locale of ['en', 'zh-CN'])
       await page.getByTestId('conversation-turn').last().getByTestId('turn-process-toggle').click()
       await page.getByTestId('tool-detail-toggle').click()
       await expect(page.getByTestId('tool-detail-text')).toContainText('Synthetic delivery')
-      // ui-gate's main-screens case owns tool-row pixels; its sidebar inventory differs from this flow.
+      // ui-gate's main-screens case owns the tool-row screenshot; its sidebar inventory differs from this flow.
       await expect(page.getByTestId('tool-detail-toggle')).toHaveAttribute('aria-expanded', 'true')
       const entry = page.getByTestId('tool-fact-chain').last()
       await entry.click()
@@ -212,7 +220,7 @@ for (const locale of ['en', 'zh-CN'])
       })
       await expect(composer).toBeEnabled()
       if (!(await inline.getByTestId('ui-expand').count())) {
-        await inline.locator('header .agh-menu-anchor button').click()
+        await openMenu(page, inline.locator('header .agh-menu-anchor button'), page.getByTestId('ui-expand'))
         await page.getByTestId('ui-expand').click()
       } else await inline.getByTestId('ui-expand').click()
       const card = page.getByTestId('intelligent-ui-panel')

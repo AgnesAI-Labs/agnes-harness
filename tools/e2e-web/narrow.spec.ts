@@ -7,6 +7,7 @@ import { accessible, screen, settled, translated } from './quality.js'
 import { describingFirst, prompt, toolResult } from './sdk.js'
 import {
   advanced,
+  chooseTraceSequence,
   closeSettings,
   expand,
   preferences,
@@ -18,7 +19,22 @@ import {
 
 const phone = { width: 375, height: 812 }
 const tablet = { width: 768, height: 1024 }
-const viewports = [phone, { width: 390, height: 844 }, tablet]
+const allViewports = [phone, { width: 390, height: 844 }, tablet]
+/**
+ * AGH_NARROW_WIDTHS selects widths for the per-PR pass (`375,768`: the phone and tablet widths that
+ * carry every screenshot). Unset, every width runs; the nightly workflow runs them all.
+ */
+const viewports = (() => {
+  const selected = process.env.AGH_NARROW_WIDTHS?.trim()
+  if (!selected) return allViewports
+  const widths = selected.split(',').map((width) => Number(width.trim()))
+  const unknown = widths.filter((width) => !allViewports.some((viewport) => viewport.width === width))
+  if (unknown.length || !widths.includes(phone.width) || !widths.includes(tablet.width))
+    throw new Error(
+      `AGH_NARROW_WIDTHS must list ${allViewports.map((v) => v.width).join('/')} and include 375 and 768`,
+    )
+  return allViewports.filter((viewport) => widths.includes(viewport.width))
+})()
 const sections = [
   'model',
   'models',
@@ -157,7 +173,7 @@ for (const locale of ['en', 'zh-CN'])
       const name = (english: string, chinese: string) => (en ? english : chinese)
       let shots = 0
       const capture = async (surface: string, width: number) => {
-        if (width === 390) return // Additional behavioural coverage keeps the existing pixel matrix.
+        if (width === 390) return // Additional behavioural coverage keeps the existing screenshot set.
         expect(++shots).toBeLessThanOrEqual(12)
         const key = `narrow-${surface}-${locale}-${theme}-${width}`
         if (surface === 'settings' && width === 768)
@@ -420,8 +436,7 @@ for (const locale of ['en', 'zh-CN'])
             .getAttribute('data-trace-row-id')
           const sourceRow = page.locator(`.trace-row[data-trace-row-id="${selectedId}"]`)
           await inspector.locator('.trace-inspector-close').click()
-          await page.getByTestId('trace-toolbar-more').click()
-          await page.getByTestId('trace-timeline-sequence').click()
+          await chooseTraceSequence(page)
           await sourceRow.click()
           await expect(inspector).toBeInViewport()
           await usable(page, info, `facts-${viewport.width}`)
@@ -522,7 +537,7 @@ for (const locale of ['en', 'zh-CN'])
           await page.getByTestId('changes-mention').click()
           await expect(page.locator('#workbench-right')).toBeHidden()
           await expect(page.locator('#prompt')).toBeFocused()
-          await expect(page.locator('#prompt')).toHaveValue('@review notes.ts ')
+          await expect(page.locator('#prompt')).toHaveValue('@review notes.ts  ')
           await page.locator('#prompt').fill('')
           if ((await page.getByTestId('workbench-right-toggle').getAttribute('aria-expanded')) === 'true')
             await page
@@ -553,11 +568,14 @@ for (const locale of ['en', 'zh-CN'])
             "PS1='narrow$ '; printf '\\033[2J\\033[H'; printf 'NARROW_TERMINAL_OK\\n'",
           )
           await terminalInput.press('Enter')
+          // The output must start its own line; the echoed command never does. Readline (bash >= 5.1)
+          // leaves bracketed-paste mode with `ESC[?2004l` + CR before the command runs, so after VT
+          // stripping a line can begin at CR as well as at LF.
           await expect
             .poll(async () =>
               stripVTControlCharacters((await session.jobsRead(terminalId)).job?.stdout ?? ''),
             )
-            .toMatch(/\nNARROW_TERMINAL_OK\r?\n/)
+            .toMatch(/[\r\n]NARROW_TERMINAL_OK\r?\n/)
           await expect(terminalText).toContainText('NARROW_TERMINAL_OK')
           await usable(page, info, `terminal-running-${viewport.width}`)
           if (viewport.width === 375) await capture('workbench', viewport.width)

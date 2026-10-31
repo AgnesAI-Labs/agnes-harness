@@ -1,5 +1,5 @@
 // generated from schema by tools/gen.ts — do not edit
-import { Type, type Static } from '@sinclair/typebox'
+import { Type, type Static, type TImport, type TModule, type TProperties } from '@sinclair/typebox'
 
 export const JsonValue = Type.Recursive((This) => Type.Union([Type.Null(), Type.Boolean(), Type.Number(), Type.String(), Type.Array(This), Type.Record(Type.String(), This)]))
 export type JsonValue = Static<typeof JsonValue>
@@ -35,61 +35,63 @@ export const IntelligentUiSchema = Type.Module({
   "UiCustomComponent": Type.Object({ "id": Type.Ref('UiKey'), "kind": Type.String({ minLength: 5, maxLength: 256, pattern: "^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)+@[1-9][0-9]*$" }), "title": Type.Optional(Type.String({ minLength: 1, maxLength: 256 })), "dataKey": Type.Ref('UiKey'), "fallback": Type.String({ minLength: 1, maxLength: 4096 }), "actionIds": Type.Array(Type.Ref('UiKey'), { maxItems: 16, uniqueItems: true }) }, { additionalProperties: false }),
 })
 
-export const UiKey = IntelligentUiSchema.Import('UiKey')
+export type IntelligentUiSchemaDefinitions = typeof IntelligentUiSchema extends TModule<TProperties, infer Definitions> ? Definitions : never
+
+export const UiKey: TImport<IntelligentUiSchemaDefinitions, 'UiKey'> = IntelligentUiSchema.Import('UiKey')
 export type UiKey = Static<typeof UiKey>
-export const UiRevision = IntelligentUiSchema.Import('UiRevision')
+export const UiRevision: TImport<IntelligentUiSchemaDefinitions, 'UiRevision'> = IntelligentUiSchema.Import('UiRevision')
 export type UiRevision = Static<typeof UiRevision>
-export const UiJsonSchema = IntelligentUiSchema.Import('UiJsonSchema')
+export const UiJsonSchema: TImport<IntelligentUiSchemaDefinitions, 'UiJsonSchema'> = IntelligentUiSchema.Import('UiJsonSchema')
 export type UiJsonSchema = Static<typeof UiJsonSchema>
-export const UiPlacement = IntelligentUiSchema.Import('UiPlacement')
+export const UiPlacement: TImport<IntelligentUiSchemaDefinitions, 'UiPlacement'> = IntelligentUiSchema.Import('UiPlacement')
 export type UiPlacement = Static<typeof UiPlacement>
-export const UiColumn = IntelligentUiSchema.Import('UiColumn')
+export const UiColumn: TImport<IntelligentUiSchemaDefinitions, 'UiColumn'> = IntelligentUiSchema.Import('UiColumn')
 export type UiColumn = Static<typeof UiColumn>
-export const UiChartSeries = IntelligentUiSchema.Import('UiChartSeries')
+export const UiChartSeries: TImport<IntelligentUiSchemaDefinitions, 'UiChartSeries'> = IntelligentUiSchema.Import('UiChartSeries')
 export type UiChartSeries = Static<typeof UiChartSeries>
-export const UiArtifactFileData = IntelligentUiSchema.Import('UiArtifactFileData')
+export const UiArtifactFileData: TImport<IntelligentUiSchemaDefinitions, 'UiArtifactFileData'> = IntelligentUiSchema.Import('UiArtifactFileData')
 export type UiArtifactFileData = Static<typeof UiArtifactFileData>
-export const UiComponent = IntelligentUiSchema.Import('UiComponent')
+export const UiComponent: TImport<IntelligentUiSchemaDefinitions, 'UiComponent'> = IntelligentUiSchema.Import('UiComponent')
 export type UiComponent = Static<typeof UiComponent>
-export const UiArgument = IntelligentUiSchema.Import('UiArgument')
+export const UiArgument: TImport<IntelligentUiSchemaDefinitions, 'UiArgument'> = IntelligentUiSchema.Import('UiArgument')
 export type UiArgument = Static<typeof UiArgument>
-export const UiAction = IntelligentUiSchema.Import('UiAction')
+export const UiAction: TImport<IntelligentUiSchemaDefinitions, 'UiAction'> = IntelligentUiSchema.Import('UiAction')
 export type UiAction = Static<typeof UiAction>
-export const UiSurface = IntelligentUiSchema.Import('UiSurface')
+export const UiSurface: TImport<IntelligentUiSchemaDefinitions, 'UiSurface'> = IntelligentUiSchema.Import('UiSurface')
 export type UiSurface = Static<typeof UiSurface>
-export const UiRowContext = IntelligentUiSchema.Import('UiRowContext')
+export const UiRowContext: TImport<IntelligentUiSchemaDefinitions, 'UiRowContext'> = IntelligentUiSchema.Import('UiRowContext')
 export type UiRowContext = Static<typeof UiRowContext>
-export const UiActionParams = IntelligentUiSchema.Import('UiActionParams')
+export const UiActionParams: TImport<IntelligentUiSchemaDefinitions, 'UiActionParams'> = IntelligentUiSchema.Import('UiActionParams')
 export type UiActionParams = Static<typeof UiActionParams>
-export const UiActionStatus = IntelligentUiSchema.Import('UiActionStatus')
+export const UiActionStatus: TImport<IntelligentUiSchemaDefinitions, 'UiActionStatus'> = IntelligentUiSchema.Import('UiActionStatus')
 export type UiActionStatus = Static<typeof UiActionStatus>
-export const UiRefusal = IntelligentUiSchema.Import('UiRefusal')
+export const UiRefusal: TImport<IntelligentUiSchemaDefinitions, 'UiRefusal'> = IntelligentUiSchema.Import('UiRefusal')
 export type UiRefusal = Static<typeof UiRefusal>
-export const UiFailure = IntelligentUiSchema.Import('UiFailure')
+export const UiFailure: TImport<IntelligentUiSchemaDefinitions, 'UiFailure'> = IntelligentUiSchema.Import('UiFailure')
 export type UiFailure = Static<typeof UiFailure>
-export const UiActionReceipt = IntelligentUiSchema.Import('UiActionReceipt')
+export const UiActionReceipt: TImport<IntelligentUiSchemaDefinitions, 'UiActionReceipt'> = IntelligentUiSchema.Import('UiActionReceipt')
 export type UiActionReceipt = Static<typeof UiActionReceipt>
-export const UiArtifactStatus = IntelligentUiSchema.Import('UiArtifactStatus')
+export const UiArtifactStatus: TImport<IntelligentUiSchemaDefinitions, 'UiArtifactStatus'> = IntelligentUiSchema.Import('UiArtifactStatus')
 export type UiArtifactStatus = Static<typeof UiArtifactStatus>
-export const UiSurfaceRecord = IntelligentUiSchema.Import('UiSurfaceRecord')
+export const UiSurfaceRecord: TImport<IntelligentUiSchemaDefinitions, 'UiSurfaceRecord'> = IntelligentUiSchema.Import('UiSurfaceRecord')
 export type UiSurfaceRecord = Static<typeof UiSurfaceRecord>
-export const UiDataBinding = IntelligentUiSchema.Import('UiDataBinding')
+export const UiDataBinding: TImport<IntelligentUiSchemaDefinitions, 'UiDataBinding'> = IntelligentUiSchema.Import('UiDataBinding')
 export type UiDataBinding = Static<typeof UiDataBinding>
-export const UiSourceStatus = IntelligentUiSchema.Import('UiSourceStatus')
+export const UiSourceStatus: TImport<IntelligentUiSchemaDefinitions, 'UiSourceStatus'> = IntelligentUiSchema.Import('UiSourceStatus')
 export type UiSourceStatus = Static<typeof UiSourceStatus>
-export const UiReadParams = IntelligentUiSchema.Import('UiReadParams')
+export const UiReadParams: TImport<IntelligentUiSchemaDefinitions, 'UiReadParams'> = IntelligentUiSchema.Import('UiReadParams')
 export type UiReadParams = Static<typeof UiReadParams>
-export const UiRefreshParams = IntelligentUiSchema.Import('UiRefreshParams')
+export const UiRefreshParams: TImport<IntelligentUiSchemaDefinitions, 'UiRefreshParams'> = IntelligentUiSchema.Import('UiRefreshParams')
 export type UiRefreshParams = Static<typeof UiRefreshParams>
-export const UiReadResult = IntelligentUiSchema.Import('UiReadResult')
+export const UiReadResult: TImport<IntelligentUiSchemaDefinitions, 'UiReadResult'> = IntelligentUiSchema.Import('UiReadResult')
 export type UiReadResult = Static<typeof UiReadResult>
-export const UiRenderParams = IntelligentUiSchema.Import('UiRenderParams')
+export const UiRenderParams: TImport<IntelligentUiSchemaDefinitions, 'UiRenderParams'> = IntelligentUiSchema.Import('UiRenderParams')
 export type UiRenderParams = Static<typeof UiRenderParams>
-export const UiUpdateParams = IntelligentUiSchema.Import('UiUpdateParams')
+export const UiUpdateParams: TImport<IntelligentUiSchemaDefinitions, 'UiUpdateParams'> = IntelligentUiSchema.Import('UiUpdateParams')
 export type UiUpdateParams = Static<typeof UiUpdateParams>
-export const UiCloseParams = IntelligentUiSchema.Import('UiCloseParams')
+export const UiCloseParams: TImport<IntelligentUiSchemaDefinitions, 'UiCloseParams'> = IntelligentUiSchema.Import('UiCloseParams')
 export type UiCloseParams = Static<typeof UiCloseParams>
-export const UiCustomComponent = IntelligentUiSchema.Import('UiCustomComponent')
+export const UiCustomComponent: TImport<IntelligentUiSchemaDefinitions, 'UiCustomComponent'> = IntelligentUiSchema.Import('UiCustomComponent')
 export type UiCustomComponent = Static<typeof UiCustomComponent>
 export const Root = UiSurface
 export type Root = UiSurface

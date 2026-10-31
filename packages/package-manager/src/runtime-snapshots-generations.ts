@@ -649,7 +649,10 @@ export class RuntimeGenerationSnapshotStore {
   }
 
   #release(id: string): void {
-    removeFileDurablySync(join(this.directory(id), ADOPTERS_DIR, this.#token))
+    // Collection releases every generation it visits; only a registration this store published needs
+    // a durable removal, so an absent one costs no directory flush.
+    const file = join(this.directory(id), ADOPTERS_DIR, this.#token)
+    if (existsSync(file)) removeFileDurablySync(file)
   }
 
   async #running(holder: Holder): Promise<boolean> {

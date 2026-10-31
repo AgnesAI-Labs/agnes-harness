@@ -79,7 +79,7 @@ it('uses a stable frozen inventory, exact trust snapshot, desired-only enable, l
     initial = await m.inventory(profile)
   expect(await m.provenance(profile, id)).toMatchObject({
     sourceKind: 'local-folder',
-    resolvedLocation: realpathSync(join(root, 'source')),
+    resolvedLocation: realpathSync.native(join(root, 'source')),
     version: '1.0.0',
     treeIntegrity: initial.packages[0]?.entry.treeIntegrity,
     installedAt: '2026-09-13T00:00:00Z',
@@ -231,7 +231,7 @@ it.each([
       integrity: before.integrity,
       treeIntegrity: before.treeIntegrity,
       state: { enabled: true, trusted: before.state.trusted },
-      provenance: { resolvedLocation: realpathSync(join(checkoutB, 'source')) },
+      provenance: { resolvedLocation: realpathSync.native(join(checkoutB, 'source')) },
       previous: before.previous,
     })
     expect(await moved.runtimePinRecords(profile)).toEqual(pins)

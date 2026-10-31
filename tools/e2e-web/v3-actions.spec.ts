@@ -167,10 +167,8 @@ test('v3 local package install and enable requires consent and disable/uninstall
   await expect(row).toHaveCount(0)
 })
 
-test('v3 MCP two-step local wizard saves a stdio fixture only after consent', async ({ page, runtime }) => {
+test('v3 MCP method cards choose their method from every part of the card', async ({ page, runtime }) => {
   await open(page, runtime)
-  await fresh(page)
-  await turn(page, 'Prepare the Demo MCP wizard session')
   await homePage(page, 'plugins', 'mcp')
   await page.getByTestId('mcp-create').click()
   const dialog = page.locator('#mcp-dialog')
@@ -221,6 +219,17 @@ test('v3 MCP two-step local wizard saves a stdio fixture only after consent', as
     await homePage(page, 'plugins', 'mcp')
     await page.getByTestId('mcp-create').click()
   }
+})
+
+test('v3 MCP two-step local wizard saves a stdio fixture only after consent', async ({ page, runtime }) => {
+  await open(page, runtime)
+  await fresh(page)
+  await turn(page, 'Prepare the Demo MCP wizard session')
+  await homePage(page, 'plugins', 'mcp')
+  await page.getByTestId('mcp-create').click()
+  const dialog = page.locator('#mcp-dialog')
+  await expect(dialog).toBeVisible()
+  await expect(dialog.locator('#mcp-step')).toContainText(/1/)
   await dialog.locator('#mcp-method-local').focus()
   await page.keyboard.press('Tab')
   await expect(dialog.locator('#mcp-method-remote')).toBeFocused()

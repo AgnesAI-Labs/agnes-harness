@@ -10,8 +10,9 @@ import {
   workspaceRefresher,
 } from '../src/workspace-info.js'
 
-// realpath: git reports /private/var/... on macOS, where tmpdir() says /var/...
-const home = realpathSync(mkdtempSync(join(tmpdir(), 'agh-workspace-info-')))
+// Native realpath: git reports /private/var/... on macOS, where tmpdir() says /var/..., and the
+// long name on Windows, where tmpdir() may carry an 8.3 short name (RUNNER~1).
+const home = realpathSync.native(mkdtempSync(join(tmpdir(), 'agh-workspace-info-')))
 const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }
 const git = (cwd: string, ...args: string[]) =>
   execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', ...args], {
@@ -123,5 +124,41 @@ describe('workspace info for the composer rail', () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(seen).toEqual(['r1', 'r2'])
     expect(calls).toBe(2)
+  })
+
+  it('dispose aborts the probe in flight, waits for it to end and starts no other', async () => {
+    const seen: string[] = []
+    let calls = 0
+    let ended = false
+    const refresh = workspaceRefresher(
+      '/w',
+      (_cwd, signal) => {
+        calls++
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () =>
+            setTimeout(() => {
+              ended = true
+              reject(signal.reason)
+            }, 10),
+          )
+        })
+      },
+      (info) => seen.push(info.root),
+    )
+    refresh()
+    refresh()
+    await refresh.dispose()
+    expect(ended).toBe(true)
+    refresh()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls).toBe(1)
+    expect(seen).toEqual([])
+  })
+
+  it('the real probe ends its git child when the asker stops', async () => {
+    const stop = new AbortController()
+    const pending = readWorkspaceInfo(repo, { home, signal: stop.signal })
+    stop.abort()
+    expect(await pending).toEqual({ root: '~/agnes-harness', subpath: '' })
   })
 })

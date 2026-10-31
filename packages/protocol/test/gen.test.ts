@@ -41,9 +41,15 @@ const mini = {
 describe('generateModule', () => {
   it('emits a Type.Module with one Import per $def', () => {
     const src = generateModule(mini, 'Mini')
-    expect(src).toContain("import { Type, type Static } from '@sinclair/typebox'")
+    expect(src).toContain(
+      "import { Type, type Static, type TImport, type TModule, type TProperties } from '@sinclair/typebox'",
+    )
     expect(src).toContain('export const Mini = Type.Module({')
-    expect(src).toContain("export const Point = Mini.Import('Point')")
+    // The definition table is named once, so declaration emit does not copy it into every export.
+    expect(src).toContain(
+      'export type MiniDefinitions = typeof Mini extends TModule<TProperties, infer Definitions> ? Definitions : never',
+    )
+    expect(src).toContain("export const Point: TImport<MiniDefinitions, 'Point'> = Mini.Import('Point')")
     expect(src).toContain('export type Point = Static<typeof Point>')
     expect(src).toContain("Type.Ref('Name')")
     expect(src).toContain('additionalProperties: false')

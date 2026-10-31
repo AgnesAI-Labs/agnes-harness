@@ -17,7 +17,11 @@ export async function normalizeTraceVisual(page: Page) {
             .replace(/(Current time:).*?(?=\s+Time zone:|$)/, '$1 2026-10-19 12:00 UTC')
             .replace(/(Elapsed since the preceding turn ended:)\s+\d+ seconds/, '$1 0 seconds')
         : original
-            .replace(/\d+(?:\.\d+)? ?(ms|s|毫秒|秒)(?=\s|$|[·,)])/g, '0 $1')
+            // The unit follows the measured value (milliseconds below one second, then seconds and
+            // minutes), so a run near a boundary changes it; normalize the whole duration.
+            .replace(/(?:\d+ ?(?:min|分) ?)?\d+(?:\.\d+)? ?(?:ms|s|毫秒|秒)(?=\s|$|[·,)])/g, (duration) =>
+              /[分秒]/u.test(duration) ? '0 毫秒' : '0 ms',
+            )
             .replace(/\b\d{1,2}:\d{2}(?::\d{2})?(?: ?[AP]M)?\b/g, '12:00')
       if (text === original) continue
       node.setAttribute('data-e2e-trace-original', original)

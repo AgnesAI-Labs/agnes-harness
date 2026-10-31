@@ -5,6 +5,10 @@ on:
     branches: [main, feat/agh-plugin-core, feat/agh-e2e-gate, feat/agh-e2e-ui-gate, fix/agh-linux, fix/agh-ci-green, fix/agh-ci-green-2]
   merge_group:
   workflow_dispatch:
+  # e2e-web-nightly.yml calls this file with suite: narrow-nightly to run only the full narrow matrix.
+  workflow_call:
+    inputs:
+      suite: { type: string, default: gate }
 permissions: { contents: read }
 env:
   AGNES_NATIVE_BUILDER: glibc228
@@ -12,40 +16,62 @@ concurrency:
   group: web-e2e-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
-  # Explicit file/flow lists use hosted-macOS timings, including build and quality prechecks.
+  # Explicit file/flow lists use hosted-macOS 15 timings, including build and quality prechecks.
   # Isolate narrow flows and candidate review; retain every scan and the ten-minute step budget.
+  # Screenshots are uploaded as evidence only: there is no pixel gate on macOS or Linux.
+  # A spec too long for one job is split by title: a --grep list and its exact --grep-invert.
   e2e-web:
     name: macOS Web E2E (${{ matrix.id }})
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { id: main-1, args: "diagnostics.spec.ts fact-chain.spec.ts" }
+          - { id: main-1, args: "fact-chain.spec.ts" }
+          - { id: main-24, args: "diagnostics.spec.ts" }
           - { id: main-2, args: "first-run.spec.ts --grep 'first-run en|first run Demo'" }
           - { id: main-3, args: "first-run.spec.ts --grep 'first-run zh-CN'" }
           - { id: main-4, args: "memory.spec.ts" }
           - { id: main-5, args: "prompt-trace.spec.ts" }
-          - { id: main-6, args: "runtime.spec.ts" }
-          - { id: main-7, args: "ui-flows.spec.ts" }
-          - { id: main-8, args: "ui-gate.spec.ts" }
-          - { id: main-9, args: "workbench.spec.ts" }
+          - { id: main-6, args: "runtime.spec.ts --grep 'consented role takeover|session admission keeps|bundled deliverables survive|streaming follows the bottom|fresh first run, keyless demo'" }
+          - { id: main-20, args: "runtime.spec.ts --grep-invert 'consented role takeover|session admission keeps|bundled deliverables survive|streaming follows the bottom|fresh first run, keyless demo'" }
+          - { id: main-7, args: "ui-flows.spec.ts --grep 'UI first run|UI MCP stdio|UI ask, plan|UI background jobs'" }
+          - { id: main-13, args: "ui-flows.spec.ts --grep 'UI folder install|Playwright MCP preset|Checking a source with no plugin manifest'" }
+          - { id: main-21, args: "ui-flows.spec.ts --grep-invert 'UI first run|UI MCP stdio|UI ask, plan|UI background jobs|UI folder install|Playwright MCP preset|Checking a source with no plugin manifest'" }
+          - { id: main-8, args: "ui-gate.spec.ts --grep ' en/light$'" }
+          - { id: main-25, args: "ui-gate.spec.ts --grep ' en/dark$'" }
+          - { id: main-14, args: "ui-gate.spec.ts --grep 'zh-CN/light$|live language switching'" }
+          - { id: main-19, args: "ui-gate.spec.ts --grep 'zh-CN/dark$'" }
+          - { id: main-9, args: "workbench.spec.ts --grep 'workspace dock|file tabs open|session terminal'" }
+          - { id: main-15, args: "workbench.spec.ts --grep-invert 'workspace dock|file tabs open|session terminal'" }
           - { id: main-10, args: "human-controls.spec.ts references.spec.ts intelligent-ui.spec.ts question-surfaces.spec.ts large-upload.spec.ts credentials.spec.ts observability.spec.ts" }
-          - { id: main-11, args: "auto-review.spec.ts feedback.spec.ts plugin-config.spec.ts plugin-purpose.spec.ts webhooks.spec.ts business-agents.spec.ts v3-actions.spec.ts" }
-          - { id: main-12, args: "v3-navigation.spec.ts" }
-          - { id: candidate-review, args: "candidate-review.spec.ts" }
-          - { id: narrow-en-light, args: "narrow.spec.ts --grep 'en/light$'" }
-          - { id: narrow-en-dark, args: "narrow.spec.ts --grep 'en/dark$'" }
-          - { id: narrow-zh-CN-light, args: "narrow.spec.ts --grep 'zh-CN/light$'" }
-          - { id: narrow-zh-CN-dark, args: "narrow.spec.ts --grep 'zh-CN/dark$'" }
-    runs-on: macos-14
+          - { id: main-11, args: "auto-review.spec.ts webhooks.spec.ts business-agents.spec.ts" }
+          - { id: main-22, args: "feedback.spec.ts plugin-purpose.spec.ts" }
+          - { id: main-16, args: "v3-actions.spec.ts --grep 'forking a recovered|v3 account dialog|v3 plugin tabs|v3 local package|v3 MCP two-step|v3 MCP method cards'" }
+          - { id: main-23, args: "plugin-config.spec.ts" }
+          - { id: main-17, args: "v3-actions.spec.ts --grep-invert 'forking a recovered|v3 account dialog|v3 plugin tabs|v3 local package|v3 MCP two-step|v3 MCP method cards'" }
+          - { id: main-12, args: "v3-navigation.spec.ts --grep 'permissions never flash|v3 home entries|v3 command-K|v3 archive filter|smoke en/'" }
+          - { id: main-18, args: "v3-navigation.spec.ts --grep-invert 'permissions never flash|v3 home entries|v3 command-K|v3 archive filter|smoke en/'" }
+          # The human review-to-publish case alone; the update/skill inbox case with the full-access case.
+          - { id: candidate-review, args: "candidate-review.spec.ts --grep 'refuses edited approval'" }
+          - { id: candidate-review-2, args: "candidate-review.spec.ts --grep-invert 'refuses edited approval'" }
+          # Per PR: en/light at the phone and tablet widths, which carry all twelve narrow captures.
+          # The nightly suite (e2e-web-nightly.yml) runs every locale/theme at all three widths.
+          - { id: narrow, args: "narrow.spec.ts --grep 'en/light$'", narrow-widths: "375,768" }
+    if: inputs.suite != 'narrow-nightly'
+    runs-on: macos-15
     timeout-minutes: 15
-    steps:
+    steps: &macos-web-steps
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version-file: .node-version, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm run doctor:toolchain
+      # The gate's Vitest quality precheck needs the source native helpers; build:local builds its own.
+      - name: Native helpers
+        run: |
+          pnpm --filter @agnes/host build:native
+          pnpm --filter @agnes/system-node build:native
       - name: Restore Chromium cache
         id: browser-cache
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
@@ -57,7 +83,8 @@ jobs:
         if: steps.browser-cache.outputs.cache-hit != 'true'
         run: pnpm exec playwright install chromium
       - name: Real daemon and Web gate (zero retries)
-        timeout-minutes: 10
+        timeout-minutes: ${{ matrix.gate-minutes || 10 }}
+        env: { AGH_NARROW_WIDTHS: "${{ matrix.narrow-widths }}" }
         run: pnpm e2e:web ${{ matrix.args }} --workers=1
       - name: Upload report, screenshots, traces and process evidence
         if: always()
@@ -77,22 +104,31 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { id: main-1, args: "--grep-invert 'narrow screens' --shard=1/8" }
-          - { id: main-2, args: "--grep-invert 'narrow screens' --shard=2/8" }
-          - { id: main-3, args: "--grep-invert 'narrow screens' --shard=3/8" }
-          - { id: main-4, args: "--grep-invert 'narrow screens' --shard=4/8" }
-          - { id: main-5, args: "--grep-invert 'narrow screens' --shard=5/8" }
-          - { id: main-6, args: "--grep-invert 'narrow screens' --shard=6/8" }
-          - { id: main-7, args: "--grep-invert 'narrow screens' --shard=7/8" }
-          - { id: main-8, args: "--grep-invert 'narrow screens' --shard=8/8" }
-          - { id: narrow-en-light, args: "narrow.spec.ts --grep 'en/light$'" }
-          - { id: narrow-en-dark, args: "narrow.spec.ts --grep 'en/dark$'" }
-          - { id: narrow-zh-CN-light, args: "narrow.spec.ts --grep 'zh-CN/light$'" }
-          - { id: narrow-zh-CN-dark, args: "narrow.spec.ts --grep 'zh-CN/dark$'" }
-    # Visual baselines use this image and its explicitly provisioned font families.
+          - { id: main-1, args: "agent-sweep.spec.ts answer-tables.spec.ts auto-review.spec.ts base-conversation.spec.ts browser-layout.spec.ts browser.spec.ts business-agents.spec.ts" }
+          - { id: main-2, args: "candidate-review.spec.ts credentials.spec.ts diagnostics.spec.ts" }
+          - { id: main-3, args: "fact-chain.spec.ts feedback.spec.ts human-controls.spec.ts intelligent-ui.spec.ts large-upload.spec.ts question-surfaces.spec.ts references.spec.ts" }
+          - { id: main-4, args: "first-run.spec.ts mcp-management.spec.ts observability.spec.ts webhooks.spec.ts tool-recovery.spec.ts" }
+          - { id: main-5, args: "memory.spec.ts plugin-config.spec.ts session-create.spec.ts" }
+          - { id: main-6, args: "plugin-purpose.spec.ts prompt-trace.spec.ts session-activity.spec.ts" }
+          - { id: main-7, args: "runtime.spec.ts" }
+          - { id: main-8, args: "ui-flows.spec.ts --grep 'UI first run|UI MCP stdio|UI ask, plan|UI background jobs'" }
+          - { id: main-9, args: "ui-flows.spec.ts --grep-invert 'UI first run|UI MCP stdio|UI ask, plan|UI background jobs'" }
+          - { id: main-10, args: "ui-gate.spec.ts --grep ' en/(light|dark)$'" }
+          - { id: main-11, args: "ui-gate.spec.ts --grep 'zh-CN/light$|live language switching'" }
+          - { id: main-16, args: "ui-gate.spec.ts --grep 'zh-CN/dark$'" }
+          - { id: main-12, args: "v3-actions.spec.ts" }
+          - { id: main-13, args: "v3-navigation.spec.ts" }
+          - { id: main-14, args: "workbench.spec.ts --grep 'workspace dock|file tabs open|session terminal'" }
+          - { id: main-15, args: "workbench.spec.ts --grep-invert 'workspace dock|file tabs open|session terminal'" }
+          - { id: narrow, args: "narrow.spec.ts --grep 'en/light$'", narrow-widths: "375,768" }
+    # Explicit lists from hosted-Linux timings: count-based --shard cannot balance cases that take
+    # two seconds to three minutes. Every case appears in exactly one list (README: Gate).
+    # Functional, accessibility and layout assertions; layout still depends on this image and its
+    # explicitly provisioned font families. Neither platform has a pixel gate (README: Gate).
+    if: inputs.suite != 'narrow-nightly'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    steps:
+    steps: &linux-web-steps
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -128,7 +164,8 @@ jobs:
           node --input-type=module -e 'import { sourceHash, recordBuild } from "./tools/e2e-web/build-cache.mjs"; await recordBuild(await sourceHash())'
       - name: Real daemon and Web gate (zero retries)
         if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.chromium.outcome == 'success' }}
-        timeout-minutes: 10
+        timeout-minutes: ${{ matrix.gate-minutes || 10 }}
+        env: { AGH_NARROW_WIDTHS: "${{ matrix.narrow-widths }}" }
         run: pnpm e2e:web --reuse-build ${{ matrix.args }} --workers=1
       - name: Upload report, screenshots, traces and process evidence
         if: always()
@@ -144,10 +181,14 @@ jobs:
           retention-days: 14
   linux-contracts:
     name: Linux tests and structural guards
+    if: inputs.suite != 'narrow-nightly'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        # The guards compare allowances with the protected merge-base and the bundled-version
+        # check with origin/<base branch>; both need full history, as in ci.yml.
+        with: { fetch-depth: 0 }
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version-file: .node-version, cache: pnpm }
@@ -186,6 +227,7 @@ jobs:
         run: pnpm exec vitest run packages/host-infrastructure/test/process-identity-linux.e2e.test.ts packages/base/extensions/sandbox/test/backend-linux.e2e.test.ts packages/host-infrastructure/test/sandbox-read-paths.e2e.test.ts packages/package-manager/test/local-watcher.slow.test.ts packages/host-infrastructure/test/adapters/storage-lock.e2e.test.ts --maxWorkers=1
   linux-fast:
     name: Linux fast tests (${{ matrix.shard }}/6)
+    if: inputs.suite != 'narrow-nightly'
     strategy:
       fail-fast: false
       matrix: { shard: [1, 2, 3, 4, 5, 6] }
@@ -193,11 +235,15 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        # The guards compare allowances with the protected merge-base and the bundled-version
+        # check with origin/<base branch>; both need full history, as in ci.yml.
+        with: { fetch-depth: 0 }
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version-file: .node-version, cache: pnpm }
-      - name: Native toolchain and bubblewrap
-        run: sudo apt-get update && sudo apt-get install -y build-essential python3 bubblewrap
+      # The completion tests load the generated script in real bash and zsh; the Ubuntu image has no zsh.
+      - name: Native toolchain, bubblewrap and zsh
+        run: sudo apt-get update && sudo apt-get install -y build-essential python3 bubblewrap zsh
       - name: Provision actual Linux sandbox namespaces
         run: bash tools/e2e-web/provision-linux-sandbox.sh
       - run: pnpm install --frozen-lockfile
@@ -233,6 +279,7 @@ jobs:
           if-no-files-found: error
   linux-migrated-heavy:
     name: Linux migrated heavy tests (${{ matrix.shard }}/3)
+    if: inputs.suite != 'narrow-nightly'
     strategy:
       fail-fast: false
       matrix: { shard: [1, 2, 3] }
@@ -260,7 +307,7 @@ jobs:
   web-e2e-gate:
     name: Web E2E gate
     needs: [e2e-web, e2e-web-linux, linux-contracts, linux-fast, linux-migrated-heavy]
-    if: always()
+    if: always() && inputs.suite != 'narrow-nightly'
     runs-on: ubuntu-latest
     timeout-minutes: 1
     steps:
@@ -277,3 +324,34 @@ jobs:
           test "$CONTRACTS_RESULT" = success
           test "$FAST_RESULT" = success
           test "$MIGRATED_HEAVY_RESULT" = success
+  # The full narrow matrix: every locale/theme at all three widths. Scheduled by e2e-web-nightly.yml,
+  # never a pull-request gate. One case takes 8-9 minutes on hosted runners, so the gate step gets
+  # 20 minutes here; the steps are the platform jobs' own (YAML anchors), not a copy.
+  e2e-web-narrow-nightly:
+    name: macOS Web E2E nightly (${{ matrix.id }})
+    if: inputs.suite == 'narrow-nightly'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: narrow-en-light, args: "narrow.spec.ts --grep 'en/light$'", gate-minutes: 20 }
+          - { id: narrow-en-dark, args: "narrow.spec.ts --grep 'en/dark$'", gate-minutes: 20 }
+          - { id: narrow-zh-CN-light, args: "narrow.spec.ts --grep 'zh-CN/light$'", gate-minutes: 20 }
+          - { id: narrow-zh-CN-dark, args: "narrow.spec.ts --grep 'zh-CN/dark$'", gate-minutes: 20 }
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps: *macos-web-steps
+  e2e-web-linux-narrow-nightly:
+    name: Linux Web E2E nightly (${{ matrix.id }})
+    if: inputs.suite == 'narrow-nightly'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: narrow-en-light, args: "narrow.spec.ts --grep 'en/light$'", gate-minutes: 20 }
+          - { id: narrow-en-dark, args: "narrow.spec.ts --grep 'en/dark$'", gate-minutes: 20 }
+          - { id: narrow-zh-CN-light, args: "narrow.spec.ts --grep 'zh-CN/light$'", gate-minutes: 20 }
+          - { id: narrow-zh-CN-dark, args: "narrow.spec.ts --grep 'zh-CN/dark$'", gate-minutes: 20 }
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps: *linux-web-steps

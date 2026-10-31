@@ -153,3 +153,33 @@ it('says why an uninstall was refused, naming what still uses the plugin', async
   await vi.waitFor(() => expect(current?.state.loading).toBe(false))
   expect(notice()).toContain('session:s-archived')
 })
+
+it('submits a confirmed uninstall that lands while the inventory is being read again', async () => {
+  const { fetcher: base, calls } = backend()
+  let hold: Promise<void> | undefined
+  let release!: () => void
+  const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+    const url = String(input)
+    if (hold && (url.endsWith('/overview') || url.endsWith('/list'))) await hold
+    return base(input, init)
+  })
+  await mountPlugins(fetcher)
+  const uninstall = current?.detailActions(row).find((action) => action.label === 'Uninstall plugin')
+  await act(async () => uninstall?.onClick())
+  await vi.waitFor(() =>
+    expect((document.getElementById('plugin-confirm') as HTMLDialogElement).open).toBe(true),
+  )
+  // A background refresh (another view's change, an operation settling) starts a read just as the
+  // person confirms.
+  hold = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await act(async () => {
+    window.dispatchEvent(new Event('agnes:plugins-invalidated'))
+  })
+  await vi.waitFor(() => expect(current?.state.loading).toBe(true))
+  await act(async () => document.getElementById('plugin-confirm-action')?.click())
+  hold = undefined
+  await act(async () => release())
+  await vi.waitFor(() => expect(calls).toEqual(['remove']))
+})

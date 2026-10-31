@@ -20,6 +20,7 @@
     { "path": "../host" },
     { "path": "../host/tsconfig.testkit.json" },
     { "path": "../package-manager" },
-    { "path": "../sdk" }
+    { "path": "../sdk" },
+    { "path": "../daemon/tsconfig.test.json" }
   ]
 }

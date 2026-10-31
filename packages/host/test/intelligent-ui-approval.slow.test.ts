@@ -160,7 +160,10 @@ it('retries rejected UI input and updates revision 2 in the same turn after appr
       call('ui_render', { surface: surface(1) }),
       call('review_commit', {}),
       call('ui_update', { surfaceId: 'generic-review', expectedRevision: 1, surface: surface(2) }),
-      [{ type: 'done', reason: 'stop' }],
+      [
+        { type: 'text_delta', delta: 'Updated' },
+        { type: 'done', reason: 'stop' },
+      ],
     ],
   })
   const base = host.runtimeTargetSnapshot!()

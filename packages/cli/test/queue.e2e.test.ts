@@ -9,6 +9,9 @@ import { createConfigurationService, initializeHome } from '@agnes/host'
 import { expect, it, vi } from 'vitest'
 
 const exec = promisify(execFile)
+const buildSelection = process.env.AGNES_NATIVE_BUILDER
+  ? { AGNES_NATIVE_BUILDER: process.env.AGNES_NATIVE_BUILDER }
+  : {}
 
 // A real built `agh`, a real daemon in an isolated home and a loopback provider. The provider holds
 // the first model request open, so `agh queue` from a separate process lands while a turn is running.
@@ -62,7 +65,8 @@ it('agh queue from another process runs after the current turn ends', async () =
     await exec(
       process.execPath,
       ['--import', 'tsx', resolve('packages/cli/tools/build-local.ts'), '--output-dir', distribution],
-      { env, timeout: 90_000, maxBuffer: 16 * 1024 * 1024 },
+      // Linux distribution staging refuses host-built helpers; keep CI's portable builder selection.
+      { env: { ...env, ...buildSelection }, timeout: 90_000, maxBuffer: 16 * 1024 * 1024 },
     )
     await new Promise<void>((done, fail) => {
       provider.once('error', fail)

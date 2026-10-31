@@ -62,6 +62,8 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
       const profileDir = layout.config
       const secrets = join(layout.credentials, 'test')
       if (process.platform === 'win32') {
+        // initializeHome has already created the home folders privately; createPrivateDirectory
+        // creates exclusively, so the distributed native module only adds what is still missing.
         const distribution = dirname(binary)
         execFileSync(
           join(distribution, 'runtime', 'node.exe'),
@@ -70,7 +72,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
             `
           const api=require(${JSON.stringify(join(distribution, 'node_modules/@agnes/system-node/dist/native/agnes-system.node'))});
           const fs=require('node:fs');
-          for(const path of ${JSON.stringify([home, join(home, 'profiles'), profileDir, layout.credentials, secrets])}) api.createPrivateDirectory(path);
+          for(const path of ${JSON.stringify([home, join(home, 'profiles'), profileDir, layout.credentials, secrets])}) if(!fs.existsSync(path)) api.createPrivateDirectory(path);
           const fd=api.createPrivateFile(${JSON.stringify(join(secrets, 'wire'))});
           try {fs.writeFileSync(fd,'sea-smoke-key')}finally{fs.closeSync(fd)};
         `,

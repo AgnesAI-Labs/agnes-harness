@@ -268,6 +268,16 @@ describe('clipboard image paste', () => {
       expect(busyInput.takeKept('[Image #1]')).toEqual([{ type: 'attachment', id: 'att-1' }])
     })
 
+    // A Windows path keeps its separators before '_' and '.' names, as in D:\a\_temp\x.png.
+    it('reads a path through folders named with a leading underscore or dot', async () => {
+      mkdirSync(join(dir, '_drop', '.cache'), { recursive: true })
+      const file = image(join('_drop', '.cache', 'a.png'))
+      const { editor } = harness(withImage)
+      drop(editor, file)
+      await vi.waitFor(() => expect(editor.text).toBe('[Image #1]'))
+      expect(uploadedPaths).toEqual([file])
+    })
+
     it('attaches several paths', async () => {
       const a = image('a.png')
       const b = image('b.webp')

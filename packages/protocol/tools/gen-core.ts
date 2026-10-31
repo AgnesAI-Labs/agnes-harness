@@ -6,7 +6,8 @@ export type JsonSchemaDoc = Json & {
 }
 
 const HEADER_COMMENT = '// generated from schema by tools/gen.ts — do not edit\n'
-const IMPORT_TYPE = "import { Type, type Static } from '@sinclair/typebox'\n"
+const IMPORT_TYPE =
+  "import { Type, type Static, type TImport, type TModule, type TProperties } from '@sinclair/typebox'\n"
 const IMPORT_FORMAT_REGISTRY = "import { FormatRegistry } from '@sinclair/typebox'\n"
 
 // JSON Schema `format` → source for a runtime check function. These are pure functions written into
@@ -766,11 +767,18 @@ export function generateModule(schema: JsonSchemaDoc, moduleName: string, schema
     )
     .join('\n')
   out += `export const ${moduleName} = Type.Module({\n${entries}\n})\n\n`
+  // Name the computed definition table once and annotate each import with it. Inferred, the type of
+  // every import below carries the whole table, so declaration emit writes it once per export:
+  // agnes-v1.d.ts reached 114 MB, and every package that imports the protocol parses it.
+  const definitions = `${moduleName}Definitions`
+  if (names.includes(definitions))
+    throw new Error(`$def ${definitions} collides with the generated table type`)
+  out += `export type ${definitions} = typeof ${moduleName} extends TModule<TProperties, infer Definitions> ? Definitions : never\n\n`
   for (const n of moduleNames) {
     const imported = planned
       ? `importValidationSchema(${moduleName}, ${lit(n)})`
       : `${moduleName}.Import(${lit(n)})`
-    out += `export const ${n} = ${imported}\nexport type ${n} = Static<typeof ${n}>\n`
+    out += `export const ${n}: TImport<${definitions}, ${lit(n)}> = ${imported}\nexport type ${n} = Static<typeof ${n}>\n`
   }
   if (typeof schema.$ref === 'string') {
     out += `export const Root = ${refName(schema.$ref)}\nexport type Root = ${refName(schema.$ref)}\n`

@@ -61,7 +61,9 @@ function useMenuDismiss({ open, close, anchor, popup }: MenuDismissOptions) {
   const leave = useRef<ReturnType<typeof setTimeout>>()
   const cancelLeave = useCallback(() => clearTimeout(leave.current), [])
   const scheduleLeave = (event: { pointerType: string }) => {
-    if (event.pointerType !== 'mouse' || !fromPointer.current) return
+    // Only an open menu has anything to dismiss. A press that never opened it (a context-menu
+    // trigger's plain click) must not later move focus back to the trigger.
+    if (!open || event.pointerType !== 'mouse' || !fromPointer.current) return
     cancelLeave()
     // The popup lives in a portal, so the pointer crosses a gap before it can reach the menu.
     leave.current = setTimeout(close, 150)

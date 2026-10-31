@@ -60,7 +60,7 @@ describe('/terminal-setup guidance', () => {
   it('shows each other terminal its own configuration, ending in the ESC Return bytes', async () => {
     const alacritty = await run({ TERM: 'alacritty' })
     expect(alacritty).toContain('Detected Alacritty.')
-    expect(alacritty).toContain('alacritty/alacritty.toml')
+    expect(alacritty).toContain(join('alacritty', 'alacritty.toml'))
     expect(alacritty).toContain('chars = "\\u001b\\r"')
     expect(await run({ TERM_PROGRAM: 'iTerm.app' })).toContain('Send Hex Code')
     expect(await run({ TERM_PROGRAM: 'Apple_Terminal' })).toContain('Terminal.app')

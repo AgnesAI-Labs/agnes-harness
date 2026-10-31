@@ -21,6 +21,12 @@ const lines = (value: string) =>
     .map((line) => line.trim())
     .filter(Boolean)
 
+/** Reports from one daemon are ordered by observation time, then by its scan generation. */
+function olderReport(report: SkillScanReport, than: SkillScanReport): boolean {
+  if (report.observedAt !== than.observedAt) return report.observedAt < than.observedAt
+  return report.generation < than.generation
+}
+
 /**
  * Extra folders to scan for skills, beside the workspace and personal ones. The list is part of
  * the context configuration; saving writes that configuration back whole, with only this list changed.
@@ -47,7 +53,10 @@ export function SkillFolders({
   const scanningNow = useRef(false)
   const lifetime = useRef(0)
   useEffect(() => {
-    if (!scanningNow.current) setReport(scanReport)
+    if (scanningNow.current) return
+    // A list read that began before a rescan can report the earlier scan after the rescan has
+    // returned its own; never let it replace a newer report.
+    setReport((shown) => (shown && scanReport && olderReport(scanReport, shown) ? shown : scanReport))
   }, [scanReport])
   useEffect(
     () => () => {

@@ -31,7 +31,7 @@ test('selects workspace file chips and versioned session references and links th
   await expect(page.getByTestId('reference-option')).toHaveAttribute('aria-selected', 'true')
   await composer.press('Enter')
   await expect(page.getByTestId('composer-file-mention')).toContainText('reference.txt')
-  await expect(composer).toHaveValue('@reference.txt ')
+  await expect(composer).toHaveValue('@reference.txt  ')
   await composer.press('End')
   await composer.pressSequentially('@session needle')
   const sourceOption = page.getByTestId('reference-option').first()
@@ -40,7 +40,7 @@ test('selects workspace file chips and versioned session references and links th
   await expect(page.getByTestId('reference-draft-chips').locator('li')).toHaveCount(1)
   await writeFile(join(runtime.workspace, 'reference.txt'), 'new send-time file contents')
   // Continue typing after the chosen file chip; replacing the entire input would remove it.
-  await expect(composer).toHaveValue('@reference.txt ')
+  await expect(composer).toHaveValue('@reference.txt  ')
   await composer.press('End')
   await composer.pressSequentially('Compare these references.')
   await expect(page.getByTestId('composer-file-mention')).toContainText('reference.txt')
@@ -71,7 +71,7 @@ test('selects workspace file chips and versioned session references and links th
     trust: 'trusted',
     data: {
       content: [
-        { type: 'text', text: '@reference.txt Compare these references.' },
+        { type: 'text', text: '@reference.txt  Compare these references.' },
         {
           type: 'resource_link',
           uri: pathToFileURL(await realpath(join(runtime.workspace, 'reference.txt'))).href,

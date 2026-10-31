@@ -125,7 +125,9 @@ it('sends ⌘/Ctrl+Enter as guidance (a steer) while the agent runs', async () =
 
 it('sends a reference-only follow-up without duplicating its internal locator as message text', async () => {
   const session = runningSession()
-  submission(session, '', [{ source: 'session', id: 'agent:prior-turn', label: 'Earlier discussion' }]).submitComposer()
+  submission(session, '', [
+    { source: 'session', id: 'agent:prior-turn', label: 'Earlier discussion' },
+  ]).submitComposer()
   await vi.waitFor(() => expect(session.followUp).toHaveBeenCalledTimes(1))
   expect(session.followUp).toHaveBeenCalledWith([], {
     references: [{ source: 'session', id: 'agent:prior-turn' }],

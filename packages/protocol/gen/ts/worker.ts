@@ -1,5 +1,5 @@
 // generated from schema by tools/gen.ts — do not edit
-import { Type, type Static } from '@sinclair/typebox'
+import { Type, type Static, type TImport, type TModule, type TProperties } from '@sinclair/typebox'
 
 export const WorkerSchema = Type.Module({
   "WorkerGeneration": Type.Integer({ minimum: 1, maximum: 9007199254740991 }),
@@ -13,21 +13,23 @@ export const WorkerSchema = Type.Module({
   "RuntimeApplyFailedFrame": Type.Object({ "type": Type.Literal('runtime.apply_failed'), "workerKind": Type.Literal('session'), "workerKey": Type.Literal('@shared'), "generation": Type.Ref('WorkerGeneration'), "digest": Type.String({ pattern: "^sha256-[0-9a-f]{64}$" }), "identity": Type.Ref('RuntimeTargetIdentity'), "phase": Type.String({ minLength: 1 }), "message": Type.String({ minLength: 1 }) }, { additionalProperties: false }),
 })
 
-export const WorkerGeneration = WorkerSchema.Import('WorkerGeneration')
+export type WorkerSchemaDefinitions = typeof WorkerSchema extends TModule<TProperties, infer Definitions> ? Definitions : never
+
+export const WorkerGeneration: TImport<WorkerSchemaDefinitions, 'WorkerGeneration'> = WorkerSchema.Import('WorkerGeneration')
 export type WorkerGeneration = Static<typeof WorkerGeneration>
-export const RuntimeTargetIdentity = WorkerSchema.Import('RuntimeTargetIdentity')
+export const RuntimeTargetIdentity: TImport<WorkerSchemaDefinitions, 'RuntimeTargetIdentity'> = WorkerSchema.Import('RuntimeTargetIdentity')
 export type RuntimeTargetIdentity = Static<typeof RuntimeTargetIdentity>
-export const RuntimeTargetArtifact = WorkerSchema.Import('RuntimeTargetArtifact')
+export const RuntimeTargetArtifact: TImport<WorkerSchemaDefinitions, 'RuntimeTargetArtifact'> = WorkerSchema.Import('RuntimeTargetArtifact')
 export type RuntimeTargetArtifact = Static<typeof RuntimeTargetArtifact>
-export const RuntimeStaleFrame = WorkerSchema.Import('RuntimeStaleFrame')
+export const RuntimeStaleFrame: TImport<WorkerSchemaDefinitions, 'RuntimeStaleFrame'> = WorkerSchema.Import('RuntimeStaleFrame')
 export type RuntimeStaleFrame = Static<typeof RuntimeStaleFrame>
-export const RuntimeConvergenceRow = WorkerSchema.Import('RuntimeConvergenceRow')
+export const RuntimeConvergenceRow: TImport<WorkerSchemaDefinitions, 'RuntimeConvergenceRow'> = WorkerSchema.Import('RuntimeConvergenceRow')
 export type RuntimeConvergenceRow = Static<typeof RuntimeConvergenceRow>
-export const RuntimeConvergenceReport = WorkerSchema.Import('RuntimeConvergenceReport')
+export const RuntimeConvergenceReport: TImport<WorkerSchemaDefinitions, 'RuntimeConvergenceReport'> = WorkerSchema.Import('RuntimeConvergenceReport')
 export type RuntimeConvergenceReport = Static<typeof RuntimeConvergenceReport>
-export const RuntimeBootReadyFrame = WorkerSchema.Import('RuntimeBootReadyFrame')
+export const RuntimeBootReadyFrame: TImport<WorkerSchemaDefinitions, 'RuntimeBootReadyFrame'> = WorkerSchema.Import('RuntimeBootReadyFrame')
 export type RuntimeBootReadyFrame = Static<typeof RuntimeBootReadyFrame>
-export const RuntimeConvergedFrame = WorkerSchema.Import('RuntimeConvergedFrame')
+export const RuntimeConvergedFrame: TImport<WorkerSchemaDefinitions, 'RuntimeConvergedFrame'> = WorkerSchema.Import('RuntimeConvergedFrame')
 export type RuntimeConvergedFrame = Static<typeof RuntimeConvergedFrame>
-export const RuntimeApplyFailedFrame = WorkerSchema.Import('RuntimeApplyFailedFrame')
+export const RuntimeApplyFailedFrame: TImport<WorkerSchemaDefinitions, 'RuntimeApplyFailedFrame'> = WorkerSchema.Import('RuntimeApplyFailedFrame')
 export type RuntimeApplyFailedFrame = Static<typeof RuntimeApplyFailedFrame>

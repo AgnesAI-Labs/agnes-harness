@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, readdirSync, rmSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { publishFileDurablySync } from '@agnes/system-node'
+import { replaceFileAtomicSync } from '@agnes/system-node'
 import { PackageError } from './errors.js'
 import { readStaticJson } from './integrity.js'
 import { type RecordRecovery, recordPackageRecovery } from './recovery-log.js'
@@ -8,11 +8,13 @@ import { type RecordRecovery, recordPackageRecovery } from './recovery-log.js'
 const STAGE = /^\.stage-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
 /** `copy`: only this process writes the stage. `fetch`: an adapter or external command may. */
 export type StageKind = 'copy' | 'fetch'
-// Flushed before it replaces the old marker, so power loss cannot leave an empty or torn owner file.
+// Replaced atomically, so a live reader never sees a torn owner file, but never flushed. A marker is
+// only a cleanup hint: a stage is adopted solely through the transaction journal, which flushes the
+// tree and checks its digest, and is recovered before staging. Power loss can leave a marker
+// missing, empty or one state behind; recoverStaging treats each of those as an unknown or dead
+// owner, so the leftover is removed, never published.
 function marker(file: string, ready: boolean, kind?: StageKind): void {
-  publishFileDurablySync(file, JSON.stringify({ pid: process.pid, ready, ...(kind ? { kind } : {}) }), {
-    replace: true,
-  })
+  replaceFileAtomicSync(file, JSON.stringify({ pid: process.pid, ready, ...(kind ? { kind } : {}) }))
 }
 export function claimStage(stage: string, kind: StageKind = 'fetch'): void {
   marker(`${stage}.owner`, false, kind)

@@ -21,7 +21,11 @@ describe('shell observation window with a live job registry', () => {
   function setup(windowMs?: number) {
     vi.useFakeTimers()
     const ac = new AbortController()
-    const ctx = { ...fakeToolContext({ timeoutMs: 1_800_000 }), signal: ac.signal }
+    // The job registry resolves cwd with the host's path rules, as the registry tests do.
+    const ctx = {
+      ...fakeToolContext({ timeoutMs: 1_800_000, cwd: resolve('/work/proj') }),
+      signal: ac.signal,
+    }
     const jobs = new ShellJobs()
     let emit: (output: ProcessOutput) => void = () => {}
     let finish: (exit: ProcessExit) => void = () => {}

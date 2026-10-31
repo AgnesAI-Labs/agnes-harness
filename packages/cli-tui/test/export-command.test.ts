@@ -79,7 +79,9 @@ describe('/export', () => {
 
   it('expands ~ to the home directory, like /cd', async () => {
     const home = join(cwd, 'home')
+    // os.homedir() reads HOME on POSIX and USERPROFILE on Windows.
     vi.stubEnv('HOME', home)
+    vi.stubEnv('USERPROFILE', home)
     const { app, requests } = harness(async () => {})
     await exportSlash(app, '/export ~/x.jsonl')
     vi.unstubAllEnvs()

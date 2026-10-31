@@ -1,5 +1,5 @@
 // generated from schema by tools/gen.ts — do not edit
-import { Type, type Static } from '@sinclair/typebox'
+import { Type, type Static, type TImport, type TModule, type TProperties } from '@sinclair/typebox'
 
 export const JsonValue = Type.Recursive((This) => Type.Union([Type.Null(), Type.Boolean(), Type.Number(), Type.String(), Type.Array(This), Type.Record(Type.String(), This)]))
 export type JsonValue = Static<typeof JsonValue>
@@ -15,21 +15,23 @@ export const PresetSchema = Type.Module({
   "ThinkingLevel": Type.Union([Type.Literal('off'), Type.Literal('minimal'), Type.Literal('low'), Type.Literal('medium'), Type.Literal('high'), Type.Literal('xhigh'), Type.Literal('max')]),
 })
 
-export const CompositionPatch = PresetSchema.Import('CompositionPatch')
+export type PresetSchemaDefinitions = typeof PresetSchema extends TModule<TProperties, infer Definitions> ? Definitions : never
+
+export const CompositionPatch: TImport<PresetSchemaDefinitions, 'CompositionPatch'> = PresetSchema.Import('CompositionPatch')
 export type CompositionPatch = Static<typeof CompositionPatch>
-export const RouteTable = PresetSchema.Import('RouteTable')
+export const RouteTable: TImport<PresetSchemaDefinitions, 'RouteTable'> = PresetSchema.Import('RouteTable')
 export type RouteTable = Static<typeof RouteTable>
-export const PresetDoc = PresetSchema.Import('PresetDoc')
+export const PresetDoc: TImport<PresetSchemaDefinitions, 'PresetDoc'> = PresetSchema.Import('PresetDoc')
 export type PresetDoc = Static<typeof PresetDoc>
-export const RouteTarget = PresetSchema.Import('RouteTarget')
+export const RouteTarget: TImport<PresetSchemaDefinitions, 'RouteTarget'> = PresetSchema.Import('RouteTarget')
 export type RouteTarget = Static<typeof RouteTarget>
-export const HookEvent = PresetSchema.Import('HookEvent')
+export const HookEvent: TImport<PresetSchemaDefinitions, 'HookEvent'> = PresetSchema.Import('HookEvent')
 export type HookEvent = Static<typeof HookEvent>
-export const SystemPromptConfig = PresetSchema.Import('SystemPromptConfig')
+export const SystemPromptConfig: TImport<PresetSchemaDefinitions, 'SystemPromptConfig'> = PresetSchema.Import('SystemPromptConfig')
 export type SystemPromptConfig = Static<typeof SystemPromptConfig>
-export const PackageRef = PresetSchema.Import('PackageRef')
+export const PackageRef: TImport<PresetSchemaDefinitions, 'PackageRef'> = PresetSchema.Import('PackageRef')
 export type PackageRef = Static<typeof PackageRef>
-export const ThinkingLevel = PresetSchema.Import('ThinkingLevel')
+export const ThinkingLevel: TImport<PresetSchemaDefinitions, 'ThinkingLevel'> = PresetSchema.Import('ThinkingLevel')
 export type ThinkingLevel = Static<typeof ThinkingLevel>
 export const Root = PresetDoc
 export type Root = PresetDoc

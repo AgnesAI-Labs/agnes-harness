@@ -9,6 +9,11 @@ import { guardRedirects } from './redirects.mjs'
 import { prepareUpload } from './upload.mjs'
 
 const MAX_PAGES = 3
+/** Chromium's error when no copy of the page's surface could be made. */
+const UNAVAILABLE_SURFACE = 'Unable to capture screenshot'
+/** Agent screenshot attempts on that error, and the pause between them: at most 1.5 s of pauses. */
+const SCREENSHOT_ATTEMPTS = 4
+const SCREENSHOT_RETRY_MS = 500
 const MAX_SESSIONS = 2
 const CONTROL_MS = 5 * 60_000
 /** One Page object serves tools, observations and all display/input subscribers. */
@@ -132,9 +137,11 @@ export class BrowserRuntime {
       entry.pending = (async () => {
         const browser = await this.browser()
         this.guard(epoch)
+        // Each page's size is set only through applyViewport. A Playwright viewport would also
+        // resize the operating-system window, whose asynchronous resize on macOS can put the
+        // previous size back after the new one was applied.
         const context = await browser.newContext({
-          viewport: { width: 1280, height: 800 },
-          deviceScaleFactor: 2,
+          viewport: null,
           acceptDownloads: false,
           serviceWorkers: 'block',
         })
@@ -203,6 +210,8 @@ export class BrowserRuntime {
     session.pages.set(page, item)
     item.networkReady = this.network.bind(item)
     void item.networkReady.catch(() => page.close().catch(() => {}))
+    item.viewportReady = this.applyViewport(item, item.viewport)
+    void item.viewportReady.catch(() => page.close().catch(() => {}))
     const event = (kind, detail) => {
       // Twenty entries must fit the service's 64 KiB result even with JSON-escaped text.
       item.events.push({ seq: ++item.cursor, kind, detail: String(detail).slice(0, 500) })
@@ -379,8 +388,104 @@ export class BrowserRuntime {
     return preview.url
   }
 
+  /** The one owner of a page's CSS size and 2x density: device metrics on a page CDP session. */
+  /** The CDP session that owns the page's device metrics. */
+  metrics(item) {
+    item.metrics ??= item.page.context().newCDPSession(item.page)
+    return item.metrics
+  }
+
+  /**
+   * Captures the visible page on the session that owns its device metrics. Chromium restores the
+   * capturing session's own metrics afterwards; captured on another session (as Playwright does),
+   * that reset the screen size pages read. 'css' scale returns one pixel per CSS pixel.
+   */
+  screenshot(item, { type, quality, scale = 'device', timeout, retryUnavailable = false }) {
+    return this.surface(item, async () => {
+      const metrics = await this.metrics(item)
+      let timer,
+        timedOut = false
+      const capture = async () => {
+        // Chromium's own copy code treats a failed surface copy as transient: it retries the copy
+        // a few times at once before reporting "Unable to capture screenshot". Right after launch
+        // on a Mac without a usable GPU, Chromium is still switching to software compositing and
+        // those immediate retries can all fail. The agent screenshot retries that one error a few
+        // times, spaced out; the display capture has its own retry.
+        for (let attempt = 1; ; attempt++) {
+          let clip
+          if (scale === 'css') {
+            const { cssVisualViewport: view } = await metrics.send('Page.getLayoutMetrics')
+            clip = {
+              x: view.pageX,
+              y: view.pageY,
+              width: item.viewport.width / view.scale,
+              height: item.viewport.height / view.scale,
+              scale: view.scale / 2,
+            }
+          }
+          try {
+            const { data } = await metrics.send('Page.captureScreenshot', { format: type, quality, clip })
+            return Buffer.from(data, 'base64')
+          } catch (error) {
+            if (
+              !retryUnavailable ||
+              timedOut ||
+              attempt >= SCREENSHOT_ATTEMPTS ||
+              !String(error?.message).includes(UNAVAILABLE_SURFACE)
+            )
+              throw error
+            await new Promise((resolve) => setTimeout(resolve, SCREENSHOT_RETRY_MS))
+          }
+        }
+      }
+      try {
+        return await Promise.race([
+          capture(),
+          ...(timeout
+            ? [
+                new Promise((_resolve, reject) => {
+                  timer = setTimeout(() => {
+                    timedOut = true
+                    const error = new Error(`Screenshot timeout ${timeout}ms exceeded.`)
+                    error.name = 'TimeoutError'
+                    reject(error)
+                  }, timeout)
+                }),
+              ]
+            : []),
+        ])
+      } finally {
+        clearTimeout(timer)
+      }
+    })
+  }
+
+  /**
+   * Chromium takes a screenshot under temporary device metrics and then restores the metrics it
+   * started with, undoing a size applied in the meantime. Run captures and size changes in turn.
+   */
+  surface(item, work) {
+    const next = (item.surfaceQueue ?? Promise.resolve()).then(work)
+    item.surfaceQueue = next.catch(() => {})
+    return next
+  }
+
+  applyViewport(item, viewport) {
+    return this.surface(item, async () => {
+      await (await this.metrics(item)).send('Emulation.setDeviceMetricsOverride', {
+        width: viewport.width,
+        height: viewport.height,
+        screenWidth: viewport.width,
+        screenHeight: viewport.height,
+        deviceScaleFactor: 2,
+        mobile: false,
+      })
+    })
+  }
+
   async navigate(item, target, work) {
     await item.networkReady
+    await item.viewportReady
     // One exact main-frame admission; a remote page never inherits an old file root.
     item.pendingNavigation = target
     try {
@@ -472,7 +577,12 @@ export class BrowserRuntime {
       this.activate(item)
       const observedHumanRevision = item.humanRevision
       const pageEpoch = item.epoch
-      const bytes = await item.page.screenshot({ type: 'png', scale: 'css', timeout: 10_000 })
+      const bytes = await this.screenshot(item, {
+        type: 'png',
+        scale: 'css',
+        timeout: 10_000,
+        retryUnavailable: true,
+      })
       if (item.epoch !== pageEpoch)
         throw failure('STALE_TARGET', 'Page layout changed while taking the screenshot. Inspect again.')
       if (observedHumanRevision === item.humanRevision) item.observedHumanRevision = observedHumanRevision

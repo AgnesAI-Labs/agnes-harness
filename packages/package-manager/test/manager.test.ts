@@ -310,7 +310,7 @@ describe('PackageManager project trust', () => {
       listWorkspaceDeployments(profileDir, () =>
         readLock(profileDir, { profile: 'enterprise', agnesVersion: '0.1.0' }),
       )
-    const offer = { deployDir: realpathSync(deployDir), path: 'deploy/xinwei', manifestId: 'xinwei' }
+    const offer = { deployDir: realpathSync.native(deployDir), path: 'deploy/xinwei', manifestId: 'xinwei' }
     const shown = offered(manager)[0]?.trustHash
     expect(offered(manager)).toEqual([
       { ...offer, trustHash: expect.stringMatching(/^sha256-[a-f0-9]{64}$/), state: 'untrusted' },

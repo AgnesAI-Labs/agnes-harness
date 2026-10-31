@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TuiApp } from '../src/app.js'
 import { runSlash } from '../src/commands.js'
@@ -79,13 +79,15 @@ describe('/import', () => {
     expect(await runSlash(a, '/import my dir/s.jsonl --from codex')).toEqual({
       text: tt('import.done', 'en', { key: 'agnes:k' }),
     })
-    expect(importSession).toHaveBeenCalledWith('/work/proj/my dir/s.jsonl', 'codex')
+    expect(importSession).toHaveBeenCalledWith(resolve(cwd, 'my dir/s.jsonl'), 'codex')
     // --from may come first, as in the CLI.
     await runSlash(a, '/import --from claude my dir/t.jsonl')
-    expect(importSession).toHaveBeenLastCalledWith('/work/proj/my dir/t.jsonl', 'claude')
+    expect(importSession).toHaveBeenLastCalledWith(resolve(cwd, 'my dir/t.jsonl'), 'claude')
+    // os.homedir() reads HOME on POSIX and USERPROFILE on Windows.
     vi.stubEnv('HOME', '/tmp/agh-home')
+    vi.stubEnv('USERPROFILE', '/tmp/agh-home')
     await runSlash(a, '/import ~/s.jsonl')
-    expect(importSession).toHaveBeenLastCalledWith('/tmp/agh-home/s.jsonl', undefined)
+    expect(importSession).toHaveBeenLastCalledWith(resolve('/tmp/agh-home/s.jsonl'), undefined)
     vi.unstubAllEnvs()
     importSession.mockRejectedValueOnce(new Error('bad\x1bfile'))
     expect((await runSlash(a, '/import x.jsonl')).text).toBe(

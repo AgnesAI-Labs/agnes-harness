@@ -26,14 +26,14 @@ import {
   INITIAL_VIEW,
   pickerState,
 } from './composer/contracts.js'
-import { SkillPicker, type ComposerSkill } from './skill-picker.js'
 import { ComposerExtras } from './composer/extras.js'
 import { FileMentionLayer, mentionTokens, useFileMentions } from './composer/file-mentions.js'
-import { SkillMentionLayer, skillMentionTokens } from './composer/skill-mentions.js'
 import { useComposerHint } from './composer/hint.js'
 import type { ComposerAttachment } from './composer/image-files.js'
 import { renderComposerQueue } from './composer/queue.js'
+import { SkillMentionLayer, skillMentionTokens } from './composer/skill-mentions.js'
 import { ReferencePicker } from './reference-picker.js'
+import { type ComposerSkill, SkillPicker } from './skill-picker.js'
 
 const INPUT_ATTRIBUTES: SenderInputAttributes = {
   id: 'prompt',
@@ -194,7 +194,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   }, [example.visible])
   const mentions = useFileMentions({ prompt, draftRef, editDraft, initial: initialDraftReferences.files })
   const mentionTokensInDraft = mentionTokens(draft, mentions.mentions)
-  const [selectedSkills, setSelectedSkills] = useState<readonly ComposerSkill[]>(initialDraftReferences.skills)
+  const [selectedSkills, setSelectedSkills] = useState<readonly ComposerSkill[]>(
+    initialDraftReferences.skills,
+  )
   const selectedSkillsRef = useRef(selectedSkills)
   selectedSkillsRef.current = selectedSkills
   const skillTokensInDraft = skillMentionTokens(
@@ -291,11 +293,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         const current = currentDraft()
         const seenFiles = new Set<string>()
         return {
-          files: mentionTokens(current, mentions.snapshot()).flatMap(({ mention: { path, name, directory } }) => {
-            if (seenFiles.has(path)) return []
-            seenFiles.add(path)
-            return [{ path, name, directory }]
-          }),
+          files: mentionTokens(current, mentions.snapshot()).flatMap(
+            ({ mention: { path, name, directory } }) => {
+              if (seenFiles.has(path)) return []
+              seenFiles.add(path)
+              return [{ path, name, directory }]
+            },
+          ),
           skills: selectedSkillsRef.current.filter((skill) =>
             skillMentionTokens(current, [skill.name]).some((token) => token.name === skill.name),
           ),
@@ -712,13 +716,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           remove={mentions.remove}
           t={t}
         />
-          <SkillMentionLayer
-            prompt={prompt}
-            draft={draft}
-            tokens={skillTokensInDraft}
-            skills={selectedSkills}
-            t={t}
-          />
+        <SkillMentionLayer
+          prompt={prompt}
+          draft={draft}
+          tokens={skillTokensInDraft}
+          skills={selectedSkills}
+          t={t}
+        />
         <SettingsInput
           ref={fileInput}
           type="file"
@@ -785,8 +789,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
 export type {
   ComposerAttachmentBlock,
-  ComposerDraftReferences,
   ComposerDependencies,
+  ComposerDraftReferences,
   ComposerHandle,
   ComposerImageBlock,
   ComposerRegionOptions,
