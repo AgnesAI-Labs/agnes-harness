@@ -384,15 +384,27 @@ export class BrowserRuntime {
   }
 
   /** The one owner of a page's CSS size and 2x density: device metrics on a page CDP session. */
-  async applyViewport(item, viewport) {
-    item.metrics ??= item.page.context().newCDPSession(item.page)
-    await (await item.metrics).send('Emulation.setDeviceMetricsOverride', {
-      width: viewport.width,
-      height: viewport.height,
-      screenWidth: viewport.width,
-      screenHeight: viewport.height,
-      deviceScaleFactor: 2,
-      mobile: false,
+  /**
+   * Chromium takes a screenshot under temporary device metrics and then restores the metrics it
+   * started with, undoing a size applied in the meantime. Run captures and size changes in turn.
+   */
+  surface(item, work) {
+    const next = (item.surfaceQueue ?? Promise.resolve()).then(work)
+    item.surfaceQueue = next.catch(() => {})
+    return next
+  }
+
+  applyViewport(item, viewport) {
+    return this.surface(item, async () => {
+      item.metrics ??= item.page.context().newCDPSession(item.page)
+      await (await item.metrics).send('Emulation.setDeviceMetricsOverride', {
+        width: viewport.width,
+        height: viewport.height,
+        screenWidth: viewport.width,
+        screenHeight: viewport.height,
+        deviceScaleFactor: 2,
+        mobile: false,
+      })
     })
   }
 
@@ -490,7 +502,9 @@ export class BrowserRuntime {
       this.activate(item)
       const observedHumanRevision = item.humanRevision
       const pageEpoch = item.epoch
-      const bytes = await item.page.screenshot({ type: 'png', scale: 'css', timeout: 10_000 })
+      const bytes = await this.surface(item, () =>
+        item.page.screenshot({ type: 'png', scale: 'css', timeout: 10_000 }),
+      )
       if (item.epoch !== pageEpoch)
         throw failure('STALE_TARGET', 'Page layout changed while taking the screenshot. Inspect again.')
       if (observedHumanRevision === item.humanRevision) item.observedHumanRevision = observedHumanRevision

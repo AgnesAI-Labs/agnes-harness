@@ -549,22 +549,33 @@ it('lets one view own page geometry and releases ownership without granting webs
     await expect(selectView(runtime, { ...request, sequence: 2 }, { actor, session })).resolves.toMatchObject(
       { viewportWidth: 900, viewportHeight: 600 },
     )
-    let finish!: (bytes: Buffer) => void
+    // Only the agent screenshot is held; later display captures complete at once.
+    let finish: ((bytes: Buffer) => void) | undefined
     Object.assign(pages[0]!, {
       screenshot: async () =>
-        new Promise<Buffer>((resolve) => {
-          finish = resolve
-        }),
+        finish
+          ? Buffer.from('display')
+          : new Promise<Buffer>((resolve) => {
+              finish = resolve
+            }),
     })
     const screenshot = runtime.act(session, { action: 'screenshot', pageId: opened.pageId })
     const stale = expect(screenshot).rejects.toMatchObject({ code: 'STALE_TARGET' })
-    await selectView(
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    // A screenshot restores the device metrics it started with, so the resize waits for it.
+    let resized = false
+    const resizing = selectView(
       runtime,
       { ...request, sequence: 3, viewport: { width: 1280, height: 800 } },
       { actor, session },
-    )
-    finish(Buffer.from('old-layout'))
+    ).then(() => {
+      resized = true
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(resized).toBe(false)
+    finish!(Buffer.from('old-layout'))
     await stale
+    await resizing
     const page = runtime.list(session)[0]!
     expect(page).toMatchObject({ viewportWidth: 1280, viewportHeight: 800, mode: 'agent' })
     await expect(
