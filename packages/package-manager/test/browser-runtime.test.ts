@@ -1220,6 +1220,47 @@ it('waits for input to paint through the screencast before a surface capture', a
   }
 })
 
+it.each([
+  { name: 'succeeds after transient surface failures', failures: 3, error: 'Unable to capture screenshot' },
+  { name: 'fails once the attempts are spent', failures: 4, error: 'Unable to capture screenshot' },
+  { name: 'fails at once on another error', failures: 1, error: 'Target closed' },
+])('retries only an unavailable surface for the agent screenshot: $name', async ({ failures, error }) => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  const { runtime, cdp, session } = fixture()
+  // The fixture stands in for CDP captures; this test drives the real one over the fake session.
+  runtime.screenshot = BrowserRuntime.prototype.screenshot
+  try {
+    const opened = await runtime.act(session, { action: 'open', url: 'http://127.0.0.1:5173/' })
+    let attempts = 0
+    cdp.send.mockImplementation(async (method: string) => {
+      if (method === 'Page.getLayoutMetrics') return { cssVisualViewport: { pageX: 0, pageY: 0, scale: 1 } }
+      if (method !== 'Page.captureScreenshot') return undefined
+      if (++attempts <= failures) throw new Error(`Protocol error (Page.captureScreenshot): ${error}`)
+      return { data: Buffer.from('pixels').toString('base64') }
+    })
+    const screenshot = runtime.act(session, { action: 'screenshot', pageId: opened.pageId })
+    const settled = screenshot.then(
+      (value: { bytes: Buffer }) => ({ value }),
+      (reason: Error & { code?: string }) => ({ reason }),
+    )
+    await vi.advanceTimersByTimeAsync(5_000)
+    const result = await settled
+    if (failures === 3) {
+      expect(attempts).toBe(4)
+      expect(Buffer.from(result.value!.bytes).toString()).toBe('pixels')
+    } else {
+      expect(attempts).toBe(failures)
+      // Engine failures keep their own message and are not turned into refusals.
+      expect(result.reason!.message).toContain(error)
+      expect(result.reason!.code).toBeUndefined()
+      expect(runtime.isRefusal(result.reason)).toBe(false)
+    }
+  } finally {
+    vi.useRealTimers()
+    await runtime.close()
+  }
+})
+
 it('preserves main-document sound when a child frame changes and releases its listeners', async () => {
   const { runtime, session, pages } = fixture()
   const opened = await runtime.act(session, { action: 'open', url: 'http://localhost/' })
