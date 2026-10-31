@@ -255,7 +255,7 @@ describe('loop plugins', () => {
         const rows = await session.scan({ fromSeq: 1, limit: 200 })
         expect(JSON.stringify(rows.map((row) => row.data))).toContain('step-threw')
         if (_name === 'an invalid assistant row') {
-          expect(outcome.error?.code).toBe('E_STEP_FAILED')
+          expect(outcome.error?.code).toBe('E_ENVELOPE')
           expect(outcome.error?.message).toContain('assistant/message /data/content')
           const invariant = rows.find(
             (row) => row.type === 'x/core/invariant' && (row.data as { kind?: string }).kind === 'step-threw',

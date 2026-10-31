@@ -1,5 +1,6 @@
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { presetDefaults } from '@agnes/core-common/step/preset'
+import { CoreError } from '@agnes/core-common/types'
 import type { HostToolDispatchPort } from '@agnes/core-effects/effects/tool-dispatch'
 import type { ToolDef } from '@agnes/extension-api'
 import type { InferenceEvent, ModelRecord, Provider, RequestBody } from '@agnes/protocol'
@@ -1851,6 +1852,157 @@ describe('the request precedes what it produced (C-24)', () => {
     await session.runInference()
     expect((await log.scan({ type: 'request/header', limit: 20 })).length).toBe(1)
   })
+
+  it.each(['healthy', 'response', 'long-message', 'invalid-usage', 'renew', 'commit', 'refusal'] as const)(
+    'preserves the step error and settles inference atomically with a %s writer',
+    async (fault) => {
+      const evidence: unknown[] = []
+      const billing: unknown[] = []
+      const script = textTurn('partial private-content-canary')
+      const provider = fakeProvider([
+        fault === 'invalid-usage'
+          ? script.map((event) => (event.type === 'usage' ? { ...event, credits: -1 } : event))
+          : script,
+      ])
+      const preset = presetDefaults()
+      preset.treeBudgetCredits = 10
+      const { session, log, storage } = await openSession({
+        provider,
+        preset,
+        onRunFailure: (failure) => evidence.push(failure),
+        seams: fakeSeams({
+          billing: {
+            record: async (row) => {
+              billing.push(row)
+            },
+          },
+        }),
+      })
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
+      const original = new CoreError(
+        'E_REQUEST_FROZEN',
+        fault === 'long-message' ? 'x'.repeat(6000) : 'private-error-canary',
+      )
+      if (fault === 'response') {
+        const ev = session.ev.bind(session)
+        vi.spyOn(session, 'ev').mockImplementation((type, data, meta) => {
+          if (type === 'assistant/message') throw original
+          return ev(type, data, meta)
+        })
+      }
+      const transition = session.transition.bind(session)
+      vi.spyOn(session, 'transition').mockImplementation(async (rows, next, opts) => {
+        if (
+          fault !== 'invalid-usage' &&
+          Array.isArray(rows) &&
+          rows.some((row) => row.type === 'assistant/message')
+        ) {
+          if (fault === 'renew') {
+            vi.spyOn(storage, 'renew').mockRejectedValue(new CoreError('E_WRITER_LEASE', 'private-renew'))
+            await log.claimLease().catch(() => undefined)
+          }
+          throw original
+        }
+        return transition(rows, next, opts)
+      })
+      const committed: string[][] = []
+      const commit = storage.commit.bind(storage)
+      vi.spyOn(storage, 'commit').mockImplementation(async (key, tx) => {
+        if (tx.events.some((row) => row.type === 'turn/end') && (fault === 'commit' || fault === 'refusal'))
+          throw new CoreError(fault === 'refusal' ? 'E_CAS' : 'E_STORAGE_FAULT', 'private-commit')
+        const result = await commit(key, tx)
+        committed.push(tx.events.map((row) => row.type))
+        return result
+      })
+      const out = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(out).toMatchObject({
+        reason: 'error',
+        error:
+          fault === 'invalid-usage'
+            ? { code: 'E_ENVELOPE' }
+            : { code: original.code, message: original.message },
+      })
+      expect(provider.calls).toBe(1)
+      expect(JSON.stringify(evidence)).not.toMatch(/private-/)
+      if (
+        fault === 'healthy' ||
+        fault === 'response' ||
+        fault === 'long-message' ||
+        fault === 'invalid-usage'
+      ) {
+        expect(out.error).not.toHaveProperty('closeError')
+        const ends = await log.scan({ type: 'turn/end', limit: 10 })
+        expect(ends).toHaveLength(1)
+        expect(ends[0]?.data).toMatchObject({
+          reason: 'error',
+          error: { code: fault === 'invalid-usage' ? 'E_ENVELOPE' : original.code },
+        })
+        if (fault === 'long-message')
+          expect(
+            (ends[0]?.data as { error?: { message?: string } } | undefined)?.error?.message,
+          ).toHaveLength(4096)
+        expect(committed.at(-1)).toEqual(
+          expect.arrayContaining(['cost/ledger', 'effect/settled', 'step/end', 'turn/end']),
+        )
+        expect(session.op()).toBeNull()
+        expect(billing).toHaveLength(1)
+        const cost = (await log.scan({ type: 'cost/ledger', limit: 10 }))[0]?.data
+        const [start] = await log.scan({ type: 'turn/start', limit: 1 })
+        if (fault === 'invalid-usage') {
+          expect(cost).toMatchObject({ interrupted: true, tokens: { input: 0 } })
+          expect(cost).not.toHaveProperty('credits')
+          expect(await storage.projectTree(`${session.key}:main:${start?.seq}`)).toMatchObject({
+            unknownHeld: true,
+          })
+        } else {
+          expect(cost).toMatchObject({
+            tokens: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 },
+            credits: 1,
+          })
+          expect(billing[0]).toMatchObject({ tokens: { input: 10, output: 5 }, credits: 1 })
+          expect(await storage.projectTree(`${session.key}:main:${start?.seq}`)).toMatchObject({
+            settledMicro: 1_000_000n,
+            heldMicro: 0n,
+            unknownHeld: false,
+          })
+        }
+      } else {
+        expect(out.error?.closeError?.code).toBe(fault === 'refusal' ? 'E_CAS' : 'E_STORAGE_FAULT')
+        expect(await storage.scan(session.key, { type: 'turn/end', limit: 10 })).toHaveLength(0)
+        expect(evidence).toEqual([
+          expect.objectContaining({
+            code: original.code,
+            phase: 'inference',
+            lastSeq: log.lastSeq,
+            ...(fault === 'refusal'
+              ? {}
+              : { fault: { reason: fault, code: fault === 'renew' ? 'E_WRITER_LEASE' : 'E_STORAGE_FAULT' } }),
+          }),
+        ])
+        expect(log.faulted).toBe(fault !== 'refusal')
+        if (log.faulted)
+          await expect(
+            session.append([session.ev('x/test/no-bypass', {}, { ignorable: true })]),
+          ).rejects.toMatchObject({ code: 'E_STORAGE_FAULT' })
+      }
+      vi.mocked(storage.commit).mockRestore()
+      if (fault === 'renew') vi.mocked(storage.renew).mockRestore()
+      await log.close()
+      const reopenedProvider = fakeProvider([])
+      const reopened = await openSession({ storage, provider: reopenedProvider, writerRunId: 'reopened' })
+      await reopened.session.resume({ mode: 'close' })
+      const settledSeq = reopened.log.lastSeq
+      expect(await reopened.session.resume({ mode: 'close' })).toEqual({ state: 'idle', actions: [] })
+      expect(reopened.log.lastSeq).toBe(settledSeq)
+      expect(await reopened.log.scan({ type: 'cost/ledger', limit: 10 })).toHaveLength(1)
+      expect(await reopened.log.scan({ type: 'effect/settled', limit: 10 })).toHaveLength(1)
+      expect(await reopened.log.scan({ type: 'turn/end', limit: 10 })).toHaveLength(1)
+      expect(reopened.session.pendingEffects()).toEqual([])
+      await reopened.session.exportRlaf()
+      expect(reopenedProvider.calls).toBe(0)
+      await reopened.log.close()
+    },
+  )
 
   it('durably appends the header before invoking a provider that throws before sending', async () => {
     let headerCommitted = false

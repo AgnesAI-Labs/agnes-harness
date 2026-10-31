@@ -165,7 +165,6 @@ import {
   type AbortResult,
   abortSession,
   cancelSessionRuntimes,
-  closeTurn,
   drainClosingWork,
   finishAborted,
 } from './control.js'
@@ -185,6 +184,14 @@ import { continueParked } from './parked.js'
 import { type PreviewDelta, PreviewHub, type PreviewSnapshot } from './preview.js'
 import { type CoreOpName, invokeTool, runCoreReplacement, setModel, setPreset } from './reentry.js'
 import { type ResumeMode, type ResumeReport, resumeSession } from './resume.js'
+import {
+  abandonTurn,
+  FailureReceipts,
+  type InferenceFailureSettlement,
+  type RunError,
+  type RunFailureSink,
+  stepFailure,
+} from './run-failure.js'
 import {
   permissionOperator,
   SessionPermissionAuthority,
@@ -424,7 +431,7 @@ export type TurnEndReason =
   | 'budget'
   | 'max_steps'
   | 'interrupted'
-export type TurnOutcome = { reason: TurnEndReason; lastSeq: Seq; error?: { code: string; message: string } }
+export type TurnOutcome = { reason: TurnEndReason; lastSeq: Seq; error?: RunError }
 
 export type SessionDeps = {
   roleDelegation?: RoleDelegation
@@ -522,6 +529,7 @@ export type SessionDeps = {
   /** Host-private attestation boundary for host-computer-use dispatches. */
   hostToolDispatch?: HostToolDispatchPort
   logger: Logger
+  onRunFailure?: RunFailureSink
   timers?: Timers
   /** How long one `loopDriver.step` may stay silent, with no progress and no platform-owned wait in flight, before the turn ends as an error. Defaults to 30 minutes, and is never below the model timeout. */
   loopStepTimeoutMs?: number
@@ -641,6 +649,7 @@ export class SessionImpl {
     return this.activeOps > 0
   }
   private readonly activeWork = new Set<Promise<unknown>>()
+  private readonly effectReceipts = new FailureReceipts()
   loopScope = new LoopScope()
   private resuming: Promise<unknown> | undefined
   private running: Promise<TurnOutcome> | undefined
@@ -951,6 +960,7 @@ export class SessionImpl {
     return this.d.tracker.state
   }
 
+  readonly inferenceFailureSettlements = new Map<string, InferenceFailureSettlement>()
   readonly loopEvents: LoopEventRegistryPort
   private readonly toolRuntimes: ToolRuntimeRegistryPort
   private readonly toolPolicies: ToolPolicyRegistryPort
@@ -1348,12 +1358,13 @@ export class SessionImpl {
     extra: {
       error?: { code: string; message: string }
       lastAssistantSeq?: Seq | null
+      sideCallsDrained?: boolean
       events?: EventInput[] | ((nextSeq: Seq) => EventInput[])
     } = {},
   ): Promise<Seq> {
     const expected = this.opSeq()
     const turnNumber = this.op()?.meta.turn ?? 0
-    if (sideCallInFlight(this)) await settleSideCalls(this, expected)
+    if (!extra.sideCallsDrained && sideCallInFlight(this)) await settleSideCalls(this, expected)
     // Serialize completion with pause admission; whichever fact commits first wins.
     const seqs = await this.locked(async () => {
       if (reason === 'completed' && (await this.controls.paused()))
@@ -1934,9 +1945,13 @@ export class SessionImpl {
    * resume in progress first, and counts while it waits, so no second resume can start before it.
    */
   /** Public-port invocation ownership: close waits even when a driver forgets to await a call. */
-  trackEffectReceipt(work: Promise<void>): void {
-    this.activeWork.add(work)
-    void work.finally(() => this.activeWork.delete(work)).catch(() => undefined)
+  trackEffectReceipt(work: Promise<void>, freeze?: () => void): boolean {
+    return this.effectReceipts.track(work, this.activeWork, freeze)
+  }
+
+  /** Revoke detached producers without waiting on this run itself. */
+  drainFailureReceipts(freezeOnly = false): Promise<void> {
+    return this.effectReceipts.drain(this, freezeOnly)
   }
 
   beginLoopOperation(): () => void {
@@ -2009,6 +2024,7 @@ export class SessionImpl {
     disposeLoopContext(ctx)
     this.decisions.renewScope()
     this.loopScope = new LoopScope()
+    this.effectReceipts.reset()
     const fresh = await createLoopContext(this, true)
     this.loopContext = fresh
     this.loopDriver = await this.d.loopFactory.resume(fresh, checkpoint, this.ac.signal)
@@ -2116,7 +2132,7 @@ export class SessionImpl {
           const phase = this.op()?.phase.kind ?? null
           const error = { code: 'E_RELATION', message: `run loop made no progress at phase ${phase}` }
           await this.diag('invariant', { kind: 'run-no-progress', edges, phase })
-          if (this.op()) await this.abandon('run-no-progress', error)
+          if (this.op()) await abandonTurn(this, 'run-no-progress', error)
           return { reason: 'error', lastSeq: this.lastSeq, error }
         }
         // A cancel that arrived while no turn was open (a Stop sent right behind a Send) could only
@@ -2143,11 +2159,7 @@ export class SessionImpl {
           // it, and the diagnostic row keeps the original findable. A direct `step()` call still
           // throws, so a bug is not hidden from whoever is debugging one.
           const phase = this.op()?.phase.kind ?? null
-          const error = {
-            // Integrity refusals must remain recognizable in turn/end and client outcomes.
-            code: err instanceof CoreError && err.code === 'E_LEDGER_INTEGRITY' ? err.code : 'E_STEP_FAILED',
-            message: err instanceof Error ? err.message : String(err),
-          }
+          const error = stepFailure(err)
           // A fail-closed hook or request stage that the cancel cut off throws like a failure, but
           // the user asked for the stop. End the turn as the stop it was, with no invariant row for
           // what the cancel itself caused; if even that cannot be written, the failure path below
@@ -2163,7 +2175,7 @@ export class SessionImpl {
             }
           }
           await this.diag('invariant', { kind: 'step-threw', phase, message: error.message })
-          if (this.op()) await this.abandon('step-threw', error)
+          await abandonTurn(this, 'step-threw', error)
           return { reason: 'error', lastSeq: this.lastSeq, error }
         } finally {
           this.d.quiet?.leave(this.d.quietGroup ?? this.key)
@@ -2192,25 +2204,6 @@ export class SessionImpl {
     } finally {
       opts.signal.removeEventListener('abort', onAbort)
       await this.d.quiet?.yieldPoint('turn', this.d.quietGroup ?? this.key)
-    }
-  }
-
-  /**
-   * The last resort of the two paths that have already given up on the turn. It writes the step's
-   * close alongside the turn's, because the situations that reach it are the ones with a step still
-   * open — and it is the only place allowed to keep going after a failed close, so the failure is
-   * written down rather than dropped. A closer that fails silently is worse than none, because the
-   * caller is told the turn ended.
-   */
-  private async abandon(kind: string, error: { code: string; message: string }): Promise<void> {
-    try {
-      await closeTurn(this, 'error', { error })
-    } catch (err) {
-      await this.diag('invariant', {
-        kind: 'turn-close-failed',
-        after: kind,
-        message: err instanceof Error ? err.message : String(err),
-      })
     }
   }
 

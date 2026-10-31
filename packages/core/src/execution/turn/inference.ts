@@ -1392,14 +1392,13 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   } finally {
     sessionSignal.removeEventListener('abort', onSessionAbort)
   }
-  if (!execution.settled) {
-    try {
-      await execution.commit(execution.rows(execution.outcome, execution.outcome !== 'ok'), (cur) => cur)
-    } catch (error) {
-      // Preserve the original failure if both settlement and its fallback fail.
-      if (settlement.ok) throw error
-    }
+  if (!settlement.ok) {
+    // run() owns the terminal transaction. A separate fallback settlement here would split cost
+    // and effect from step/end + turn/end; direct step callers leave the same facts for resume.
+    execution.deferSettlement()
+    throw settlement.error
   }
-  if (!settlement.ok) throw settlement.error
+  if (!execution.settled)
+    await execution.commit(execution.rows(execution.outcome, execution.outcome !== 'ok'), (cur) => cur)
   return settlement.result
 }

@@ -128,21 +128,123 @@ describe('a turn that ends while a side call is in flight', () => {
     })
   })
 
-  it('settles the call before a failed continuation ends the turn', async () => {
-    await withSession({ script: stalled }, async (t) => {
+  it.each([
+    'continuation',
+    'step-throw',
+    'detached-inference',
+    'detached-complete',
+    'late-inference',
+  ] as const)('settles a side call before a %s ends the turn', async (failure) => {
+    const preset = presetDefaults()
+    preset.treeBudgetCredits = 10
+    await withSession({ script: stalled, preset }, async (t) => {
       const { call } = await started(t)
+      const usageReady = deferred()
+      const finishPrimary = deferred()
+      const billing = failure === 'late-inference' ? holdSideBilling(t) : undefined
       const failing = async function* (request: RequestBody): AsyncIterable<InferenceEvent> {
         yield sentFor(request)
-        yield { type: 'error', reason: 'error', code: 'AUTH', message: 'refused', retryable: false }
+        if (
+          failure === 'detached-inference' ||
+          failure === 'detached-complete' ||
+          failure === 'late-inference'
+        ) {
+          yield { type: 'text_delta', delta: 'partial' }
+          if (failure === 'detached-complete' || failure === 'late-inference') {
+            yield {
+              type: 'usage',
+              tokens: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 },
+              credits: 1,
+              creditSource: 'estimated',
+            }
+            usageReady.resolve()
+          }
+          if (failure === 'late-inference') {
+            await finishPrimary.promise
+            yield { type: 'done', reason: 'stop' }
+          } else await new Promise<void>(() => undefined)
+        } else yield { type: 'error', reason: 'error', code: 'AUTH', message: 'refused', retryable: false }
       }
       const side = t.provider.infer.bind(t.provider)
       t.provider.infer = (request, opts) =>
         request.route === 'side-route' ? side(request, opts) : failing(request)
-      await t.ctx.model.respond(signal())
-      expect(t.session.op()?.phase.kind).toBe('failure_drain')
-      await expect(t.ctx.turn.finishFailure()).resolves.toMatchObject({ reason: 'error' })
+      if (failure === 'continuation') {
+        await t.ctx.model.respond(signal())
+        expect(t.session.op()?.phase.kind).toBe('failure_drain')
+        await expect(t.ctx.turn.finishFailure()).resolves.toMatchObject({ reason: 'error' })
+      } else {
+        const sentBefore = (await t.session.scan({ type: 'request/sent', limit: 10 })).length
+        const detached =
+          failure === 'detached-inference'
+            ? settledWith(t.ctx.model.respond(signal()))
+            : failure === 'detached-complete' || failure === 'late-inference'
+              ? settledWith(
+                  (async () =>
+                    t.ctx.model.complete(
+                      await t.ctx.prepareRequest({ tools: [], messages: [] }),
+                      signal(),
+                    ))(),
+                )
+              : undefined
+        if (detached)
+          await vi.waitFor(async () =>
+            expect(await t.session.scan({ type: 'request/sent', limit: 10 })).toHaveLength(sentBefore + 1),
+          )
+        if (failure === 'detached-complete' || failure === 'late-inference') await usageReady.promise
+        vi.spyOn(t.session, 'step').mockRejectedValue(
+          Object.assign(new Error('invalid arguments'), { code: 'TOOL_ARGS_INVALID' }),
+        )
+        const running = t.session.run({ until: 'turn-end', signal: signal() })
+        if (billing) {
+          await billing.reached
+          finishPrimary.resolve()
+          await detached
+          try {
+            expect(
+              ofType(await t.rows(), 'cost/ledger').filter((row) => data(row).purpose === 'inference'),
+            ).toHaveLength(0)
+          } finally {
+            billing.release()
+            await running
+          }
+        }
+        const out = await running
+        expect(out).toMatchObject({ reason: 'error', error: { code: 'TOOL_ARGS_INVALID' } })
+        expect(out.error).not.toHaveProperty('closeError')
+        if (detached) {
+          await detached
+          const rows = await t.rows()
+          expect(ofType(rows, 'cost/ledger').filter((row) => data(row).purpose === 'inference')).toHaveLength(
+            1,
+          )
+          expect(ofType(rows, 'x/core/late-effect-receipt')).toHaveLength(0)
+          if (failure === 'detached-complete' || failure === 'late-inference') {
+            const primary = ofType(rows, 'cost/ledger').find((row) => data(row).purpose === 'inference')
+            expect(data(primary)).toMatchObject({ tokens: { input: 10, output: 5 }, credits: 1 })
+            const start = ofType(rows, 'turn/start')[0]
+            const charged = ofType(rows, 'cost/ledger').reduce(
+              (sum, row) => sum + Math.round(Number(data(row).credits ?? 0) * 1_000_000),
+              0,
+            )
+            expect(await t.storage.projectTree(`${t.session.key}:main:${start?.seq}`)).toMatchObject({
+              settledMicro: BigInt(charged),
+              heldMicro: 0n,
+            })
+          }
+        }
+      }
       expect(await call).toMatchObject(cutByTurnEnd)
       settledBeforeTurnEnd(await t.rows(), t.billing)
+      if (failure === 'late-inference') {
+        await expect(t.ctx.model.respond(signal())).rejects.toMatchObject({ code: 'E_CLOSED' })
+        vi.mocked(t.session.step).mockRestore()
+        t.provider.infer = side
+        await t.session.enqueue('next-turn', { content: [{ type: 'text', text: 'fresh turn' }], actor })
+        expect(await t.session.run({ until: 'turn-end', signal: signal() })).toMatchObject({
+          reason: 'completed',
+        })
+        expect(t.session.pendingEffects()).toEqual([])
+      }
     })
   })
 

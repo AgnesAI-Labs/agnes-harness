@@ -1,9 +1,10 @@
 import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
 import type { EffectHandle, EffectOutcome } from '@agnes/core-effects/effects/effect'
 import type { CostLedger } from '@agnes/extension-api/seams'
-import type { InferenceEvent, RequestBody, Timing } from '@agnes/protocol'
+import { type InferenceEvent, type RequestBody, type Timing, validateAgainst } from '@agnes/protocol'
+import { CostLedger as CostLedgerSchema } from '@agnes/protocol/gen/session-v1'
 import { bestEffort } from '../best-effort.js'
-import { settleTreeSpend } from '../child/runtime-budget.js'
+import { settleTreeSpend, takeTreeSpend } from '../child/runtime-budget.js'
 import type { RequestHeaderData } from '../request/derive.js'
 import { runCoreReplacement } from '../step/reentry.js'
 import type { OpContext, SessionImpl } from '../step/session.js'
@@ -125,10 +126,18 @@ export class ModelExecution {
   private dispatched = false
   private completed = false
   private accounted = false
+  private billed = false
+  private deferred = false
+  private deferredTreeSpend: ModelExecutionInput['settleTreeBudget']
+  private pendingCost: EventInput | undefined
   private recording: Promise<void> | undefined
   private readonly release: () => void
   private readonly finishReceipt: () => void
   private readonly cancelReceipt = () => {
+    if (this.s.loopScope.failed && (this.input.purpose ?? 'inference') === 'inference') {
+      this.deferSettlement()
+      return
+    }
     if (this.accounted) return
     this.controller.abort()
     this.closeProvider()
@@ -172,16 +181,18 @@ export class ModelExecution {
     this.cancellation = AbortSignal.any([input.signal, s.ac.signal])
     this.signal = AbortSignal.any([this.cancellation, this.controller.signal])
     let finish!: () => void
-    s.trackEffectReceipt(
+    const freezing = s.trackEffectReceipt(
       new Promise<void>((resolve) => {
         finish = resolve
       }),
+      (input.purpose ?? 'inference') === 'inference' ? () => this.deferSettlement() : undefined,
     )
     this.finishReceipt = finish
     this.release = s.loopScope.alive ? s.loopScope.own(this.cancelReceipt) : () => undefined
     // A public iterator can be abandoned at yield; Core's phase consumer always drives its finally.
     if (input.publicIterator) this.cancellation.addEventListener('abort', this.cancelReceipt, { once: true })
-    if ((input.publicIterator && this.cancellation.aborted) || !s.loopScope.alive) this.cancelReceipt()
+    if (freezing) this.deferSettlement()
+    else if ((input.publicIterator && this.cancellation.aborted) || !s.loopScope.alive) this.cancelReceipt()
   }
 
   async *stream(): AsyncIterable<InferenceEvent> {
@@ -403,8 +414,31 @@ export class ModelExecution {
     return [this.s.ev('cost/ledger', spend), input.effect.settle(outcome)]
   }
 
+  /** A phase failure leaves durable settlement to the terminal transaction or next open. */
+  deferSettlement(): void {
+    const [candidate] = this.pendingCost ? [this.pendingCost] : this.rows('error', true)
+    const cost = candidate && validateAgainst(CostLedgerSchema, candidate.data).ok ? candidate : undefined
+    if (this.s.state.pendingEffects.has(this.input.effect.effectId)) {
+      this.deferredTreeSpend ??= this.input.settleTreeBudget ?? takeTreeSpend(this.s)
+      this.s.inferenceFailureSettlements.set(this.input.effect.effectId, {
+        ...(cost ? { cost } : {}),
+        committed: (row, seq) => this.accountCost(row.data as CostLedger, seq),
+      })
+    }
+    this.deferred = true
+    this.controller.abort()
+    this.closeProvider()
+    if (this.accounted) return
+    this.accounted = true
+    this.cancellation.removeEventListener('abort', this.cancelReceipt)
+    this.release()
+    this.finishReceipt()
+  }
+
   /** The same atomic settlement and billing record, whether called by a phase or a generic port. */
   commit(events: EventInput[], next: Parameters<SessionImpl['transition']>[1]): Promise<void> {
+    if (this.deferred)
+      return Promise.reject(new CoreError('E_CLOSED', 'Model settlement belongs to failed turn'))
     if (this.recording)
       return this.recording.then(async () => {
         const continuation = events.filter(
@@ -442,6 +476,7 @@ export class ModelExecution {
     )
     const cost = events[index]?.data as CostLedger | undefined
     if (!cost) throw new CoreError('E_RELATION', 'Model settlement requires exactly one spend')
+    this.pendingCost = events[index]
     let costSeq: Seq | undefined
     let failed = false
     let failure: unknown
@@ -453,21 +488,30 @@ export class ModelExecution {
       if (error instanceof CoreError && typeof error.detail?.costSeq === 'number')
         costSeq = error.detail.costSeq
     }
-    const ok = await this.s.d.runtime.billingRecord({
-      ...cost,
-      sessionKey: this.s.key,
-      lane: this.s.lane,
-      turn: this.op.turn,
-      step: this.op.step,
-    })
-    if (!ok) {
-      if (this.turn) this.turn.ledgerFailed = true
-      if (this.s.loopScope.alive) await this.s.diag('seam-failed', { seam: 'billing', op: 'record' })
+    if (validateAgainst(CostLedgerSchema, cost).ok) await this.accountCost(cost, costSeq)
+    if (failed) throw failure
+  }
+
+  private async accountCost(cost: CostLedger, costSeq?: Seq): Promise<void> {
+    if (!this.billed) {
+      this.billed = true
+      const ok = await this.s.d.runtime.billingRecord({
+        ...cost,
+        sessionKey: this.s.key,
+        lane: this.s.lane,
+        turn: this.op.turn,
+        step: this.op.step,
+      })
+      if (!ok) {
+        if (this.turn) this.turn.ledgerFailed = true
+        if (this.s.loopScope.alive) await this.s.diag('seam-failed', { seam: 'billing', op: 'record' })
+      }
     }
     if (costSeq !== undefined)
-      await (this.input.settleTreeBudget
-        ? this.input.settleTreeBudget(cost.credits, costSeq)
-        : settleTreeSpend(this.s, cost.credits, costSeq))
-    if (failed) throw failure
+      await (
+        this.deferredTreeSpend ??
+        this.input.settleTreeBudget ??
+        ((credits, seq) => settleTreeSpend(this.s, credits, seq))
+      )(cost.credits, costSeq)
   }
 }

@@ -11,7 +11,7 @@ export type CliResult = {
   ticket?: string
   text?: string
   /** An `error` turn's code (never its message, which can carry provider text). */
-  error?: { code: string }
+  error?: { code: string; closeError?: { code: string } }
   /** `--output-schema`: the final reply parsed and validated. */
   structured?: unknown
 }

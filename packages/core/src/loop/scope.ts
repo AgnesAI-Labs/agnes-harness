@@ -20,6 +20,7 @@ export function sessionForLoop(session: SessionImpl): SessionImpl {
   async function append(events: EventInput[], options: AppendOptions = {}) {
     const settlements = events.filter((row) => row.type === 'effect/settled')
     const lateReceipt = async () => {
+      if (scope.failed) throw new CoreError('E_CLOSED', 'Failed loop scope is settling its turn')
       const sources = settlements.map((row) =>
         effects.get(String((row.data as { effectId: string }).effectId)),
       )

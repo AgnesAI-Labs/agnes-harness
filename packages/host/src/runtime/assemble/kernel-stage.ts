@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { dirname } from 'node:path'
 import { type ApprovalGrantsPort, type HookPort, Kernel, type SessionImpl } from '@agnes/core'
 import {
@@ -250,6 +251,11 @@ export async function createKernel(
     ...(computerUse.hostToolDispatch ? { hostToolDispatch: computerUse.hostToolDispatch } : {}),
     ...(ctx.profile.reconcile.point === 'immediate' ? {} : { quiet: quietState }),
     ...(deps.log ? { logger: correlatedLogger(deps.log) } : {}),
+    onRunFailure: ({ session, ...failure }) =>
+      deps.audit.write({
+        kind: 'session.run_failed',
+        detail: { session: `sha256-${createHash('sha256').update(session).digest('hex')}`, ...failure },
+      }),
     clock,
     agnesVersion: deps.agnesVersion ?? '0.0.0',
     hookLeaseFor: (source) =>

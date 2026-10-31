@@ -230,14 +230,18 @@ describe('runPrint in text mode', () => {
         data: {
           code: 'TURN_ERROR',
           turnEnd: { reason: 'error' },
-          error: { code: 'AUTH', message: 'status=401' },
+          error: {
+            code: 'AUTH',
+            message: 'status=401',
+            closeError: { code: 'E_STORAGE_FAULT', message: 'private-close' },
+          },
         },
       })
     })
     const o = io()
     expect(await runPrint(await booted(ep), parseArgs(['-p', 'q']), o)).toBe(1)
     expect(o.err()).toBe(
-      `Session: ${FAKE_SESSION_ID}\nagh: turn ended: error (exit 1): AUTH: The provider refused this model or its credentials. Pick another model or sign in again.\n`,
+      `Session: ${FAKE_SESSION_ID}\nagh: turn ended: error (exit 1): AUTH: The provider refused this model or its credentials. Pick another model or sign in again.; terminal close failed: E_STORAGE_FAULT\n`,
     )
   })
 
@@ -701,7 +705,11 @@ describe('runPrint in json mode', () => {
             data: {
               code: 'TURN_ERROR',
               turnEnd: { reason: 'error' },
-              error: { code: 'E_STEP_FAILED', message: 'private detail' },
+              error: {
+                code: 'E_REQUEST_FROZEN',
+                message: 'private detail',
+                closeError: { code: 'E_STORAGE_FAULT', message: 'private close detail' },
+              },
             },
           })
         })
@@ -711,7 +719,10 @@ describe('runPrint in json mode', () => {
     expect(line).toMatchObject({
       reason: 'error',
       exitCode: 1,
-      error: { code: turnEndError ? 'TRANSPORT' : 'E_STEP_FAILED' },
+      error: {
+        code: turnEndError ? 'TRANSPORT' : 'E_REQUEST_FROZEN',
+        ...(turnEndError ? {} : { closeError: { code: 'E_STORAGE_FAULT' } }),
+      },
     })
     expect(o.out()).not.toContain('private')
     expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)

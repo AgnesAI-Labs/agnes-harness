@@ -145,12 +145,20 @@ export async function drainAborted(s: SessionImpl): Promise<void> {
 export function closeTurn(
   s: SessionImpl,
   reason: TurnEndReason,
-  extra: { error?: { code: string; message: string }; events?: EventInput[] } = {},
+  extra: {
+    error?: { code: string; message: string }
+    sideCallsDrained?: boolean
+    events?: EventInput[] | ((nextSeq: Seq) => EventInput[])
+  } = {},
 ): Promise<Seq> {
   const step = s.state.openStep.get(s.lane)
-  const events = [...(extra.events ?? [])]
-  if (step) events.push(s.ev('step/end', { turn: step.turn, step: step.step }))
-  return s.endTurn(reason, { ...extra, events })
+  return s.endTurn(reason, {
+    ...extra,
+    events: (nextSeq) => [
+      ...(typeof extra.events === 'function' ? extra.events(nextSeq) : (extra.events ?? [])),
+      ...(step ? [s.ev('step/end', { turn: step.turn, step: step.step })] : []),
+    ],
+  })
 }
 
 /**

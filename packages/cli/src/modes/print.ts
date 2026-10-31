@@ -376,6 +376,9 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     const ticket = reason === 'parked' ? findParkedTicket(events) : undefined
     const turnError = (ended?.data as { error?: unknown } | null)?.error ?? thrownError
     const errorCode = reason === 'error' ? (turnError as { code?: unknown } | undefined)?.code : undefined
+    const closeCode = (turnError as { closeError?: { code?: unknown } } | undefined)?.closeError?.code
+    const safeCloseCode =
+      typeof closeCode === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(closeCode) ? closeCode : undefined
     const text = lastAssistantText(events)
     // Only a turn that completed is checked; any other ending keeps its own code and prints as before.
     const structured =
@@ -413,7 +416,9 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
           ...(ticket ? { ticket } : {}),
           // A turn can end in `error` with no turn/end row behind it; the code is what a wrapper has.
           ...(typeof errorCode === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(errorCode)
-            ? { error: { code: errorCode } }
+            ? {
+                error: { code: errorCode, ...(safeCloseCode ? { closeError: { code: safeCloseCode } } : {}) },
+              }
             : {}),
           text,
           ...(structured?.ok ? { structured: structured.value } : {}),
@@ -443,7 +448,7 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     ) {
       const cause = errorCause(turnError, io.locale)
       io.stderr.write(
-        `agh: ${signal ? `${signal}; ` : ''}turn ended: ${reason} (exit ${exitCode})${cause ? `: ${cause}` : ''}\n`,
+        `agh: ${signal ? `${signal}; ` : ''}turn ended: ${reason} (exit ${exitCode})${cause ? `: ${cause}` : ''}${safeCloseCode ? `; terminal close failed: ${safeCloseCode}` : ''}\n`,
       )
     }
     return exitCode

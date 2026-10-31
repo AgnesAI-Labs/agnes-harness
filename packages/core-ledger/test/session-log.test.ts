@@ -462,6 +462,8 @@ describe('SessionLogImpl push and fault notice', () => {
     expect(log.faulted).toBe(true)
     expect(faults).toHaveLength(1)
     expect(faults[0]).toMatchObject({ code: 'E_WRITER_LEASE' })
+    expect(log.fault).toEqual({ reason: 'renew', code: 'E_WRITER_LEASE' })
+    await expect(log.append([note()])).rejects.toMatchObject({ code: 'E_STORAGE_FAULT' })
   })
 
   it('notifies a fault once when a commit outcome is unknown, and not for a refusal', async () => {
@@ -482,6 +484,7 @@ describe('SessionLogImpl push and fault notice', () => {
     await expect(log.append([user('b')])).rejects.toThrow(/disk full/)
     await expect(log.append([user('c')])).rejects.toMatchObject({ code: 'E_STORAGE_FAULT' })
     expect(faults).toHaveLength(1)
+    expect(log.fault).toEqual({ reason: 'commit', code: 'E_STORAGE_FAULT' })
   })
 
   it('calls a listener registered after the fault once, on the next microtask', async () => {

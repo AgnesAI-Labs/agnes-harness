@@ -47,7 +47,7 @@ export default defineAgnesPlugin({
     const disposers: Disposer[] = [
       plugin.tools.register(runCode),
       plugin.hooks.register('session_start', async () => {
-        await plugin.eventLog.append('kernel', { alive: false })
+        await plugin.eventLog.append('kernel', { alive: false, reason: 'session-start' })
       }),
     ]
     return () => {

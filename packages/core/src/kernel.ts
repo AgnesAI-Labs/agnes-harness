@@ -173,6 +173,7 @@ export type KernelOptions = {
   requestMedia?: SessionDeps['requestMedia']
   /** Host-owned whole-wire image token bound used only when the provider cannot count images. */
   imageInputTokenFallback?: SessionDeps['imageInputTokenFallback']
+  onRunFailure?: SessionDeps['onRunFailure']
   logger?: Logger
   agnesVersion?: string
   leaseTtlMs?: number
@@ -726,6 +727,7 @@ export class Kernel {
           ? { imageInputTokenFallback: this.o.imageInputTokenFallback }
           : {}),
         logger,
+        ...(this.o.onRunFailure ? { onRunFailure: this.o.onRunFailure } : {}),
         invariants: this.invariants,
         segments,
         ...(this.o.timers ? { timers: this.o.timers } : {}),

@@ -575,16 +575,16 @@ export async function releaseTreeReservation(s: SessionImpl): Promise<void> {
   }
 }
 
-export async function settleTreeSpend(
+/** Transfer a primary hold to a deferred receipt before a public iterator releases its scope. */
+export function takeTreeSpend(
   s: SessionImpl,
-  credits: number | undefined,
-  originSeq: Seq,
-): Promise<void> {
+): ((credits: number | undefined, seq: Seq) => Promise<void>) | undefined {
   const storage = s.d.log.storage
-  if (!hasChildControl(storage)) return
+  if (!hasChildControl(storage)) return undefined
   const permit = lastTreePermit.get(s.loopScope)
-  if (!permit) return
-  try {
+  if (!permit) return undefined
+  lastTreePermit.delete(s.loopScope)
+  return async (credits, originSeq) => {
     await storage.settleOrigin({
       permitId: permit.permitId,
       ...(permit.writerGeneration === undefined ? {} : { writerGeneration: permit.writerGeneration }),
@@ -594,7 +594,13 @@ export async function settleTreeSpend(
       complete: credits !== undefined,
       creditSource: credits === undefined ? 'unknown' : 'estimated',
     })
-  } finally {
-    lastTreePermit.delete(s.loopScope)
   }
+}
+
+export async function settleTreeSpend(
+  s: SessionImpl,
+  credits: number | undefined,
+  originSeq: Seq,
+): Promise<void> {
+  await takeTreeSpend(s)?.(credits, originSeq)
 }
