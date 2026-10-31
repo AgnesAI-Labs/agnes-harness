@@ -1110,6 +1110,116 @@ it('displays the final frame of a burst and cancels delayed frames when the view
   }
 })
 
+it('waits for the first screencast frame before a surface capture', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] })
+  const { runtime, cdp, session, pages } = fixture()
+  const abort = new AbortController()
+  try {
+    const opened = await runtime.act(session, { action: 'open', url: 'http://127.0.0.1:5173/' })
+    const screenshot = vi.fn(async () => Buffer.from('surface'))
+    Object.assign(pages[0]!, { screenshot })
+    const frames: Buffer[] = []
+    await showPage(
+      runtime,
+      { pageId: opened.pageId, displayVersion: 2 },
+      {
+        scope: { kind: 'session', sessionId: session.key, laneId: 'main' },
+        signal: abort.signal,
+        stream: {
+          send: (frame: Uint8Array) => frames.push(Buffer.from(frame)),
+          close: vi.fn(),
+          onDisconnect: vi.fn(),
+        },
+      },
+    )
+    const lossless = Buffer.alloc(64)
+    lossless.writeUInt32BE(0x89504e47, 0)
+    lossless.writeUInt32BE(0x0d0a1a0a, 4)
+    lossless.writeUInt32BE(2560, 16)
+    lossless.writeUInt32BE(1600, 20)
+    // A slow first frame is shown as it arrives; no capture competes with it.
+    await vi.advanceTimersByTimeAsync(900)
+    expect(screenshot).not.toHaveBeenCalled()
+    cdp.emit('Page.screencastFrame', { sessionId: 1, data: lossless.toString('base64') })
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(screenshot).not.toHaveBeenCalled()
+    const shown = frames.at(-1)!
+    expect(shown.subarray(shown.readUInt32BE() + 4)).toEqual(lossless)
+
+    // A screencast restarted for new geometry that delivers no frame still gets a capture.
+    const item = runtime.get(session, opened.pageId)
+    item.epoch++
+    await item.capture.resume()
+    await vi.advanceTimersByTimeAsync(990)
+    expect(screenshot).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(20)
+    expect(screenshot).toHaveBeenCalledTimes(1)
+  } finally {
+    abort.abort()
+    vi.useRealTimers()
+  }
+})
+
+it('waits for input to paint through the screencast before a surface capture', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] })
+  const { runtime, cdp, session, pages } = fixture()
+  runtime.now = () => performance.now()
+  const abort = new AbortController()
+  try {
+    const opened = await runtime.act(session, { action: 'open', url: 'http://127.0.0.1:5173/' })
+    await showPage(
+      runtime,
+      { pageId: opened.pageId, displayVersion: 2 },
+      {
+        scope: { kind: 'session', sessionId: session.key, laneId: 'main' },
+        signal: abort.signal,
+        stream: { send: vi.fn(), close: vi.fn(), onDisconnect: vi.fn() },
+      },
+    )
+    const screenshot = vi.fn(async () => Buffer.from('surface'))
+    Object.assign(pages[0]!, { screenshot })
+    const lossless = (fill: number) => {
+      const image = Buffer.alloc(64, fill)
+      image.writeUInt32BE(0x89504e47, 0)
+      image.writeUInt32BE(0x0d0a1a0a, 4)
+      image.writeUInt32BE(2560, 16)
+      image.writeUInt32BE(1600, 20)
+      cdp.emit('Page.screencastFrame', { sessionId: 1, data: image.toString('base64') })
+    }
+    const input = () => {
+      const item = runtime.get(session, opened.pageId)
+      item.inputVersion++
+      item.lastInputAt = runtime.now()
+    }
+    lossless(1)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(screenshot).not.toHaveBeenCalled()
+
+    // A paint just before input leaves its settle timer running. The input's own
+    // frame is late, so a surface capture would only delay it.
+    lossless(2)
+    await vi.advanceTimersByTimeAsync(10)
+    input()
+    await vi.advanceTimersByTimeAsync(400)
+    expect(screenshot).not.toHaveBeenCalled()
+    lossless(3)
+    await vi.advanceTimersByTimeAsync(700)
+    expect(screenshot).not.toHaveBeenCalled()
+
+    // Input that never paints still gets the capture.
+    lossless(4)
+    await vi.advanceTimersByTimeAsync(10)
+    input()
+    await vi.advanceTimersByTimeAsync(580)
+    expect(screenshot).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(30)
+    expect(screenshot).toHaveBeenCalledTimes(1)
+  } finally {
+    abort.abort()
+    vi.useRealTimers()
+  }
+})
+
 it('preserves main-document sound when a child frame changes and releases its listeners', async () => {
   const { runtime, session, pages } = fixture()
   const opened = await runtime.act(session, { action: 'open', url: 'http://localhost/' })

@@ -69,6 +69,11 @@ function validateViewport(viewport) {
     throw failure('INVALID_INPUT', 'Invalid browser viewport.')
 }
 
+/** How long a (re)started screencast may take to deliver its first frame before a surface capture. */
+const FIRST_FRAME_MS = 1000
+/** How long input may take to paint through the screencast before a surface capture. */
+const INPUT_PAINT_MS = 600
+
 async function resizeViewport(runtime, session, item, view, viewport) {
   if (viewport === undefined) return
   validateViewport(viewport)
@@ -290,11 +295,13 @@ export async function showPage(runtime, input, context) {
         }
         let paintVersion = 0,
           snapshotting = false
-        const settle = (first = false) => {
+        const settle = (first = false, delay = undefined) => {
           clearTimeout(capture.settle)
+          capture.awaitingPaint = false
           capture.settle = setTimeout(
             async () => {
               capture.settle = undefined
+              capture.awaitingPaint = false
               if (
                 snapshotting ||
                 item.resizing ||
@@ -317,6 +324,32 @@ export async function showPage(runtime, input, context) {
                 item.modernViewers.size === item.viewers.size
               )
                 return
+              // A started screencast delivers its first frame by itself. A surface capture started
+              // before that frame only delays it and the next input's paint: on software
+              // compositing one capture took 0.4-1.2 s. Capture only if no frame comes.
+              const waited = performance.now() - (capture.awaitingFrame ?? -Infinity)
+              if (
+                capture.liveFormat === 'png' &&
+                item.modernViewers.size === item.viewers.size &&
+                waited < FIRST_FRAME_MS
+              ) {
+                settle(false, FIRST_FRAME_MS - waited)
+                return
+              }
+              // Input on the shown document likewise paints through the screencast, and a capture
+              // started first delays that paint. A new document still needs its capture at once.
+              const sinceInput = runtime.now() - (item.lastInputAt ?? -Infinity)
+              if (
+                capture.liveInputVersion !== item.inputVersion &&
+                capture.liveEpoch === item.epoch &&
+                capture.pageEpoch === item.epoch &&
+                item.modernViewers.size === item.viewers.size &&
+                sinceInput < INPUT_PAINT_MS
+              ) {
+                settle(false, INPUT_PAINT_MS - sinceInput)
+                capture.awaitingPaint = true
+                return
+              }
               const epoch = item.epoch,
                 version = paintVersion,
                 inputVersion = item.inputVersion,
@@ -382,11 +415,12 @@ export async function showPage(runtime, input, context) {
               // Allow one compositor frame to supply lossless pixels before a
               // fallback screenshot. Legacy/JPEG still gets an immediate fallback.
             },
-            first
-              ? capture.liveFormat === 'png' && item.modernViewers.size === item.viewers.size
-                ? 16
-                : 0
-              : 250,
+            delay ??
+              (first
+                ? capture.liveFormat === 'png' && item.modernViewers.size === item.viewers.size
+                  ? 16
+                  : 0
+                : 250),
           )
         }
         const publish = () => {
@@ -417,7 +451,7 @@ export async function showPage(runtime, input, context) {
             if (capture.pageEpoch !== item.epoch) {
               // History restoration can change documents without a screencast paint.
               // Capture new pixels; never relabel the old image with the new epoch.
-              if (!snapshotting && !capture.settle) settle(true)
+              if (!snapshotting && (!capture.settle || capture.awaitingPaint)) settle(true)
               return
             }
             if (!capture.bytes) return
@@ -506,7 +540,7 @@ export async function showPage(runtime, input, context) {
             return
           const bytes = Buffer.from(frame.data, 'base64')
           if (!matchesRaster(bytes, item.viewport)) {
-            if (!snapshotting && !capture.settle) settle(true)
+            if (!snapshotting && (!capture.settle || capture.awaitingPaint)) settle(true)
             return
           }
           // Keep 2x resolution while scrolling. Compress photo-heavy scenes rather
@@ -535,6 +569,7 @@ export async function showPage(runtime, input, context) {
           capture.liveBytes = bytes
           capture.liveEpoch = item.epoch
           capture.liveInputVersion = item.inputVersion
+          capture.awaitingFrame = undefined
           // Surface screenshots can briefly repaint before restoring the exact
           // prior live pixels. Coalesce that repaint pair:
           // retain the sharp image when the final pixels are unchanged. Genuine
@@ -600,6 +635,7 @@ export async function showPage(runtime, input, context) {
             maxHeight: item.viewport.height * 2,
             everyNthFrame: 1,
           })
+          capture.awaitingFrame = performance.now()
           settle(true)
         }
         capture.retune = retune
