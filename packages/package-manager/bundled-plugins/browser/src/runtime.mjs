@@ -132,9 +132,11 @@ export class BrowserRuntime {
       entry.pending = (async () => {
         const browser = await this.browser()
         this.guard(epoch)
+        // Each page's size is set only through applyViewport. A Playwright viewport would also
+        // resize the operating-system window, whose asynchronous resize on macOS can put the
+        // previous size back after the new one was applied.
         const context = await browser.newContext({
-          viewport: { width: 1280, height: 800 },
-          deviceScaleFactor: 2,
+          viewport: null,
           acceptDownloads: false,
           serviceWorkers: 'block',
         })
@@ -203,6 +205,8 @@ export class BrowserRuntime {
     session.pages.set(page, item)
     item.networkReady = this.network.bind(item)
     void item.networkReady.catch(() => page.close().catch(() => {}))
+    item.viewportReady = this.applyViewport(item, item.viewport)
+    void item.viewportReady.catch(() => page.close().catch(() => {}))
     const event = (kind, detail) => {
       // Twenty entries must fit the service's 64 KiB result even with JSON-escaped text.
       item.events.push({ seq: ++item.cursor, kind, detail: String(detail).slice(0, 500) })
@@ -379,8 +383,22 @@ export class BrowserRuntime {
     return preview.url
   }
 
+  /** The one owner of a page's CSS size and 2x density: device metrics on a page CDP session. */
+  async applyViewport(item, viewport) {
+    item.metrics ??= item.page.context().newCDPSession(item.page)
+    await (await item.metrics).send('Emulation.setDeviceMetricsOverride', {
+      width: viewport.width,
+      height: viewport.height,
+      screenWidth: viewport.width,
+      screenHeight: viewport.height,
+      deviceScaleFactor: 2,
+      mobile: false,
+    })
+  }
+
   async navigate(item, target, work) {
     await item.networkReady
+    await item.viewportReady
     // One exact main-frame admission; a remote page never inherits an old file root.
     item.pendingNavigation = target
     try {

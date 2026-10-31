@@ -92,7 +92,7 @@ async function resizeViewport(runtime, session, item, view, viewport) {
       await item.capture?.pause()
       view.signal.throwIfAborted()
       runtime.get(session, item.id)
-      await item.page.setViewportSize(viewport)
+      await runtime.applyViewport(item, viewport)
       item.viewport = { ...viewport }
       // Geometry invalidates the page epoch too. Reuse the audio tap with the
       // new epoch; accepting old packets would weaken navigation isolation.

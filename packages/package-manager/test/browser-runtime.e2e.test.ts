@@ -820,11 +820,9 @@ it.skipIf((!archive || !existsSync(archive)) && process.env.AGH_BROWSER_TEST_CAC
     let instance: { isConnected(): boolean } | undefined
     const runtime = new BrowserRuntime({
       launch: async () => {
+        // The runtime itself applies 2x device metrics to every page, independent of the
+        // machine's display scale, so the retina frames below need no context option here.
         const browser = await launcher.launch()
-        const newContext = browser.newContext.bind(browser)
-        // Exercise retina frames explicitly, independent of the machine's display scale.
-        browser.newContext = (options: Record<string, unknown>) =>
-          newContext({ ...options, deviceScaleFactor: 2 })
         instance = browser
         return browser
       },

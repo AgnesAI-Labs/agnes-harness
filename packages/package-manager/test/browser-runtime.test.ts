@@ -198,7 +198,6 @@ function pageFixture(context: object) {
     isClosed: () => false,
     goto: vi.fn(async () => {}),
     context: () => context,
-    setViewportSize: vi.fn(async (_viewport: { width: number; height: number }) => {}),
     mainFrame: () => main,
     close: vi.fn(async (): Promise<void> => {
       page.emit('close')
@@ -613,12 +612,11 @@ it.each(['page', 'capture'] as const)(
           stream,
         },
       )
-      if (phase === 'page') pages[0]!.setViewportSize.mockRejectedValueOnce(new Error('Resize unavailable'))
-      else
-        cdp.send.mockImplementation(async (method) => {
-          // The capture session follows the page's metrics and restarts its screencast at the new size.
-          if (method === 'Page.startScreencast') throw new Error('Resize unavailable')
-        })
+      // The page's metrics session applies the size; the capture then restarts its screencast at it.
+      const failing = phase === 'page' ? 'Emulation.setDeviceMetricsOverride' : 'Page.startScreencast'
+      cdp.send.mockImplementation(async (method) => {
+        if (method === failing) throw new Error('Resize unavailable')
+      })
       await expect(
         selectView(
           runtime,
