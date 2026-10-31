@@ -354,6 +354,13 @@ jobs:
         with: { node-version-file: .node-version, cache: pnpm }
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm run doctor:toolchain
+      # The smokes run real sessions under the required L1 sandbox. The Ubuntu image ships no
+      # bubblewrap, and its AppArmor policy blocks the unprivileged user namespaces bwrap needs.
+      - name: Linux sandbox
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update && sudo apt-get install -y bubblewrap
+          bash tools/e2e-web/provision-linux-sandbox.sh
       - name: prepare Windows native headers
         if: runner.os == 'Windows'
         shell: pwsh
