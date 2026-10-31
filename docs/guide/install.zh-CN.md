@@ -112,7 +112,7 @@ mise exec -- node tools/toolchain/run.mjs exec playwright install --with-deps ch
 mise exec -- node tools/toolchain/run.mjs e2e:web
 ```
 
-准备依赖时使用网络；gate 使用缓存 Chromium、全新隔离 home 和本地模拟服务。Linux 运行功能、无障碍与布局断言，不做像素比对；已评审截图基线只针对 macOS，因为 Linux 渲染只能来自 CI 镜像。详见[维护中的 gate](../../tools/e2e-web/README.md)。
+准备依赖时使用网络；gate 使用缓存 Chromium、全新隔离 home 和本地模拟服务。任何操作系统上都没有像素门禁：macOS 与 Linux 运行功能、无障碍与布局断言，截图只作为证据。详见[维护中的 gate](../../tools/e2e-web/README.md)。
 
 ## Windows 构建
 

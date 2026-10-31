@@ -21,7 +21,7 @@
 
 ## 维护中的合并门禁
 
-`pnpm e2e:web` 构建或校验可复用的本地构建，从仓库根目录启动真实 daemon/Web launcher，使用全新隔离 home 和缓存 Chromium 离线运行 SDK 与基于角色/test ID 的 UI 规格。UI 矩阵覆盖 en/zh-CN、浅色/深色及所有设置分区；变更流程通过公开 SDK/CLI 核验持久化结果。未解析翻译键、axe 违规、console error 和 pageerror 均使门禁失败。视觉比较只使用清单中已审核的基线，像素差异容忍度为 0.2%，正常运行不会自动生成缺失基线。当前 ready-screen 清单维护经审阅的 macOS 基线；Linux 运行相同的功能、无障碍与布局断言，不做像素比对，因为 Linux 渲染只能来自 CI 镜像，无法在本地评审。清单包括插件类型行间距及 Discover 分组版本选择。覆盖范围、产物路径、CI 必需状态与本地基线审核步骤见[门禁说明](../../tools/e2e-web/README.md)。
+`pnpm e2e:web` 构建或校验可复用的本地构建，从仓库根目录启动真实 daemon/Web launcher，使用全新隔离 home 和缓存 Chromium 离线运行 SDK 与基于角色/test ID 的 UI 规格。UI 矩阵覆盖 en/zh-CN、浅色/深色及所有设置分区；变更流程通过公开 SDK/CLI 核验持久化结果。未解析翻译键、axe 违规、console error 和 pageerror 均使门禁失败。任何操作系统上都没有像素门禁，也不保存基线：macOS 与 Linux 运行相同的功能、无障碍与布局断言，每个页面（包括插件类型行间距及 Discover 分组版本选择）的截图只作为证据随运行上传。覆盖范围、产物路径与 CI 必需状态见[门禁说明](../../tools/e2e-web/README.md)。
 
 ## 浏览器验收
 
@@ -68,7 +68,7 @@ AGH_WEB_URL=http://127.0.0.1:PORT AGH_CONVERSATION_FIXTURE_URL=http://127.0.0.1:
 
 ## 首次运行验收
 
-`first-run.spec.ts` 从根目录 `agnes.mjs` 启动真实 daemon 与全新私有 home；八组语言、主题、窗口尺寸完成欢迎、原有账户对话框的本地 loopback 测试与保存、默认模型选择、注册的示例页、首个任务和重载。另验证目录检查失败、非阻塞提示、诊断页首部的自检区块、刷新及关闭。`first-run-guide` 提供 `data-step`；稳定 ID 包括 `first-run-add`、`first-run-account`、`first-run-model`、`first-run-next`、`first-run-skip`、`first-run-examples`、`doctor-notice`、`doctor-panel`、`diagnostics-doctor-run`、`doctor-probe-accounts`、`doctor-check-<id>`。新增截图仍使用既有分平台截图容差和零重试门禁、未解析键检查和 WCAG A/AA 检查。
+`first-run.spec.ts` 从根目录 `agnes.mjs` 启动真实 daemon 与全新私有 home；八组语言、主题、窗口尺寸完成欢迎、原有账户对话框的本地 loopback 测试与保存、默认模型选择、注册的示例页、首个任务和重载。另验证目录检查失败、非阻塞提示、诊断页首部的自检区块、刷新及关闭。`first-run-guide` 提供 `data-step`；稳定 ID 包括 `first-run-add`、`first-run-account`、`first-run-model`、`first-run-next`、`first-run-skip`、`first-run-examples`、`doctor-notice`、`doctor-panel`、`diagnostics-doctor-run`、`doctor-probe-accounts`、`doctor-check-<id>`。新增截图只作为证据，仍使用零重试门禁、未解析键检查和 WCAG A/AA 检查。
 
 截图助手归一化会变化的磁盘空间数值和 checkout 名称，保留本地化句子、可见文件夹标签、控件与布局。
 

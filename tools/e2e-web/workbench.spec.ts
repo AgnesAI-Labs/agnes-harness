@@ -15,7 +15,7 @@ import { chooseWorkspace, fresh, openGoal, turn, workbenchTab } from './ui.js'
 async function workbenchScreen(page: Page, info: TestInfo, name: string, folder?: string) {
   for (const label of await page.locator('.workspace-name').allTextContents())
     expect(label.trim(), 'Every registered workspace identifies its folder').not.toBe('')
-  // The consolidated visual gate owns PNG comparisons; retain every behavioural assertion here.
+  // Screenshots are evidence only; a behaviour-only run skips them and keeps every assertion here.
   if (process.env.AGH_WEB_BEHAVIOUR_ONLY === '1') return
   await screen(page, info, `workbench-${name}`)
   if (folder) await copyFile(info.outputPath(`workbench-${name}.png`), join(folder, `${name}.png`))

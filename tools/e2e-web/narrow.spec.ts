@@ -22,7 +22,7 @@ const tablet = { width: 768, height: 1024 }
 const allViewports = [phone, { width: 390, height: 844 }, tablet]
 /**
  * AGH_NARROW_WIDTHS selects widths for the per-PR pass (`375,768`: the phone and tablet widths that
- * carry every pixel capture). Unset, every width runs; the nightly workflow runs them all.
+ * carry every screenshot). Unset, every width runs; the nightly workflow runs them all.
  */
 const viewports = (() => {
   const selected = process.env.AGH_NARROW_WIDTHS?.trim()
@@ -173,7 +173,7 @@ for (const locale of ['en', 'zh-CN'])
       const name = (english: string, chinese: string) => (en ? english : chinese)
       let shots = 0
       const capture = async (surface: string, width: number) => {
-        if (width === 390) return // Additional behavioural coverage keeps the existing pixel matrix.
+        if (width === 390) return // Additional behavioural coverage keeps the existing screenshot set.
         expect(++shots).toBeLessThanOrEqual(12)
         const key = `narrow-${surface}-${locale}-${theme}-${width}`
         if (surface === 'settings' && width === 768)

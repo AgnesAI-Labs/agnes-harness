@@ -47,10 +47,11 @@ One settings shell owns group navigation, layout, keyboard tabs and `?settings=<
 the repository root with a fresh home, and runs the SDK and role/test-ID UI suites offline with
 cached Chromium. The UI matrix covers every settings section in en/zh-CN and light/dark; mutation
 flows verify persisted results through public SDK/CLI. Translation keys, axe violations, console
-errors and page errors fail. Reviewed screenshot comparisons use the declared ready manifest,
-0.2% pixel tolerance and no automatic baseline blessing. The current ready-screen manifest, including
-plugin-kind rows and grouped version selection, declares reviewed macOS baselines. Linux runs the same functional, accessibility and layout assertions without a pixel gate, because Linux renders must come from the CI image and cannot be reviewed locally. See the [gate instructions](../../tools/e2e-web/README.md)
-for coverage, artifact paths, the required CI check and local baseline review.
+errors and page errors fail. There is no pixel gate on any OS and no stored baselines: each screen,
+including plugin-kind rows and grouped version selection, is captured as a screenshot that the run
+uploads as evidence only, after the same functional, accessibility and layout assertions on macOS
+and Linux. See the [gate instructions](../../tools/e2e-web/README.md)
+for coverage, artifact paths and the required CI check.
 
 ## Admin glue
 
@@ -113,7 +114,7 @@ Stable IDs: `<declaration.testId>`, `<declaration.testId>-form`, `search-edit-pr
 
 ## First-run acceptance
 
-`first-run.spec.ts` starts the real daemon through the root `agnes.mjs` launcher with a fresh private home. Eight locale/theme/viewport cases complete welcome, native account test/save against a loopback provider, default-model selection, the registered examples page, a first task and a reload. It also verifies a failed home check, non-blocking banner, registry diagnostics, refresh and dismissal. `first-run-guide` exposes `data-step`; stable IDs include `first-run-add`, `first-run-account`, `first-run-model`, `first-run-next`, `first-run-skip`, `first-run-examples`, `doctor-notice`, `doctor-panel`, `diagnostics-doctor-run`, `doctor-probe-accounts` and `doctor-check-<id>`. New screenshots retain the existing platform-specific tolerance and zero-retry baseline gate, unresolved-key scan and WCAG A/AA checks.
+`first-run.spec.ts` starts the real daemon through the root `agnes.mjs` launcher with a fresh private home. Eight locale/theme/viewport cases complete welcome, native account test/save against a loopback provider, default-model selection, the registered examples page, a first task and a reload. It also verifies a failed home check, non-blocking banner, registry diagnostics, refresh and dismissal. `first-run-guide` exposes `data-step`; stable IDs include `first-run-add`, `first-run-account`, `first-run-model`, `first-run-next`, `first-run-skip`, `first-run-examples`, `doctor-notice`, `doctor-panel`, `diagnostics-doctor-run`, `doctor-probe-accounts` and `doctor-check-<id>`. New screenshots are evidence only, with the zero-retry gate, unresolved-key scan and WCAG A/AA checks.
 
 The screenshot helper normalizes changing disk-space numbers and checkout names, retaining localized sentences, visible folder labels, controls and layout.
 

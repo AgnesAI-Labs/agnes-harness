@@ -18,6 +18,7 @@ concurrency:
 jobs:
   # Explicit file/flow lists use hosted-macOS 15 timings, including build and quality prechecks.
   # Isolate narrow flows and candidate review; retain every scan and the ten-minute step budget.
+  # Screenshots are uploaded as evidence only: there is no pixel gate on macOS or Linux.
   # A spec too long for one job is split by title: a --grep list and its exact --grep-invert.
   e2e-web:
     name: macOS Web E2E (${{ matrix.id }})
@@ -120,8 +121,8 @@ jobs:
           - { id: narrow, args: "narrow.spec.ts --grep 'en/light$'", narrow-widths: "375,768" }
     # Explicit lists from hosted-Linux timings: count-based --shard cannot balance cases that take
     # two seconds to three minutes. Every case appears in exactly one list (README: Gate).
-    # Functional, accessibility and layout assertions without a pixel gate (macOS owns it); layout
-    # still depends on this image and its explicitly provisioned font families.
+    # Functional, accessibility and layout assertions; layout still depends on this image and its
+    # explicitly provisioned font families. Neither platform has a pixel gate (README: Gate).
     if: inputs.suite != 'narrow-nightly'
     runs-on: ubuntu-24.04
     timeout-minutes: 45

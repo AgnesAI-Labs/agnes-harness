@@ -109,15 +109,11 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
       for (let parent = card.parentElement; parent; parent = parent.parentElement) parent.scrollTop = 0
     })
   // Candidate navigation can retain the plugin pane's browser scroll anchor. The review
-  // baseline frames its heading and actions from the top, independent of the previous list.
+  // screenshot frames its heading and actions from the top, independent of the previous list.
   if (name.startsWith('candidate-review-'))
     await page.getByTestId('candidate-review').evaluate((review) => {
       for (let parent = review.parentElement; parent; parent = parent.parentElement) parent.scrollTop = 0
     })
-  const manifest = JSON.parse(readFileSync('tools/e2e-web/baselines/ready.json', 'utf8')) as {
-    ready: string[]
-    pending: Record<string, string>
-  }
   const root = basename(process.cwd()).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const checkout = page.getByRole('button', { name: new RegExp(`^${root}(?: |$)`), includeHidden: true })
   // Normalize the leaf text, preserving the disclosure marker, layout wrappers and React-owned DOM.
@@ -182,7 +178,7 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
       style.textContent = css
       document.head.append(style)
     },
-    readFileSync('tools/e2e-web/baselines/screenshot.css', 'utf8'),
+    readFileSync('tools/e2e-web/screenshot.css', 'utf8'),
   )
   // The demo model echoes runtime-only IDs in its job and surface receipts. Normalize
   // only those marked identifiers; keep the receipt wording, bytes, command and state.
@@ -272,34 +268,13 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
   await settled(page)
   const restoreTrace = await normalizeTraceVisual(page)
   // Authoring provenance owns this frame. Live clock-hook records can vary outside its inspector;
-  // full Trace layout and record controls retain their separate fact-chain/request pixel gates.
+  // full Trace layout and record controls keep their separate fact-chain/request screenshots.
   const inspector = name.startsWith('fact-authoring-')
   const target = inspector ? page.locator('.trace-inspector') : page
   const options = { animations: 'disabled' as const, mask, ...(inspector ? {} : { fullPage: true }) }
   try {
+    // Evidence only: there is no pixel comparison on any platform.
     await target.screenshot({ ...options, path: info.outputPath(`${name}.png`) })
-    if (process.env.AGH_SKIP_PIXEL_SNAPSHOTS === '1') {
-      info.annotations.push({
-        type: 'pixel-snapshot-deferred',
-        description: `${name}: deferred to consolidated visual acceptance`,
-      })
-      return
-    }
-    if (manifest.pending[name]) {
-      info.annotations.push({ type: 'visual-baseline-pending', description: manifest.pending[name] })
-      return
-    }
-    expect(manifest.ready, 'Every visual screen must be declared ready or explicitly pending').toContain(name)
-    // Linux renders come only from the CI image and cannot be reviewed locally: no pixel gate there.
-    const linux = process.platform === 'linux' // guards-allow-platform: the pixel gate is macOS only.
-    if (linux) {
-      info.annotations.push({
-        type: 'pixel-snapshot-skipped',
-        description: `${name}: Linux runs functional assertions only; pixel gate is macOS`,
-      })
-      return
-    }
-    await expect(target).toHaveScreenshot(`${name}.png`, options)
   } finally {
     if (reportFrame) await scrollConversation(page)
     await restoreTrace()

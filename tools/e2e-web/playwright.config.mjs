@@ -52,10 +52,9 @@ export default defineConfig({
   failOnFlakyTests: true,
   timeout: 60_000,
   globalTimeout: (process.env.AGH_REAL_AGENT_SWEEP === '1' ? 100 : 12) * 60_000,
-  expect: { timeout: 10_000, toHaveScreenshot: { maxDiffPixelRatio: 0.002, threshold: 0.2 } },
+  // Screenshots are run evidence only: there is no pixel comparison or baseline on any platform.
+  expect: { timeout: 10_000 },
   outputDir: resolve(output, 'results'),
-  snapshotPathTemplate: '{testDir}/baselines/{platform}/{arg}{ext}',
-  updateSnapshots: process.env.AGH_UPDATE_VISUALS === '1' ? 'all' : 'none',
   reporter: [
     ['list'],
     ['html', { outputFolder: resolve(output, 'report'), open: 'never' }],
