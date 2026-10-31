@@ -358,6 +358,9 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./.github/scripts/prepare-windows-native.ps1 -CacheRoot "$env:RUNNER_TEMP/agnes-node-headers"
+      # The SEA smokes run under Vitest, whose global setup requires the test native helpers.
+      - run: pnpm --filter @agnes/host build:native
+      - run: pnpm --filter @agnes/system-node build:native
       - run: pnpm --filter @agnes/cli build:sea
       - name: verify Linux ABI and SHA-256 in Node, workers and SEA on Debian 11
         if: runner.os == 'Linux'
