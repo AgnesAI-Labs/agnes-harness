@@ -22,6 +22,19 @@ try {
     runtime.listeners.add(changed)
     launcher.prepare(runtime)
   })
+  // The first start of a freshly unpacked browser pays one-time operating-system costs (code
+  // signature and malware scans of the app, its helpers and graphics libraries): several
+  // seconds on hosted macOS runners. Pay them here, not inside the first timed test.
+  const started = performance.now()
+  const browser = await launcher.launch()
+  try {
+    const page = await browser.newPage()
+    await page.setContent('<p>Agnes</p>')
+    await page.screenshot()
+  } finally {
+    await browser.close()
+  }
+  console.info('Browser first start', JSON.stringify({ ms: Math.round(performance.now() - started) }))
 } finally {
   await launcher.cancel()
   await runtime.close()
