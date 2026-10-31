@@ -544,6 +544,19 @@ describe('ensureLocalBackend', () => {
     expect(daemon.acquireDaemonStartup).not.toHaveBeenCalled()
   })
 
+  it('reports the same readiness failure when the deadline passes during a discovery read', async () => {
+    vi.mocked(daemon.readDaemonDiscovery).mockReturnValue(new Promise(() => {}))
+    await expect(
+      ensureLocalBackend({
+        attach: { scope },
+        resources: TEST_RESOURCES,
+        spawnDaemon: vi.fn(),
+        readinessTimeoutMs: 30,
+        readinessPollMs: 3,
+      }),
+    ).rejects.toThrow('local daemon did not become ready within the readiness deadline')
+  })
+
   it('honours an abort during startup and terminates only its child', async () => {
     const child = fakeChild()
     const controller = new AbortController()
