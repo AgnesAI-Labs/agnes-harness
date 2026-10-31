@@ -333,13 +333,7 @@ export async function showPage(runtime, input, context) {
                   ...(item.modernViewers.size === item.viewers.size ? [{ type: 'png' }] : []),
                   ...[90, 65, 35, 15].map((quality) => ({ type: 'jpeg', quality })),
                 ]) {
-                  bytes = await runtime.surface(item, () =>
-                    item.page.screenshot({
-                      ...options,
-                      fullPage: false,
-                      scale: 'device',
-                    }),
-                  )
+                  bytes = await runtime.screenshot(item, { ...options, scale: 'device' })
                   mime = options.type === 'png' ? 'image/png' : 'image/jpeg'
                   if (bytes.length <= 1_000_000) break
                   if (item.capture !== capture || item.epoch !== epoch || item.inputVersion !== inputVersion)

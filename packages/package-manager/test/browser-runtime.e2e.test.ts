@@ -975,6 +975,13 @@ it.skipIf((!archive || !existsSync(archive)) && process.env.AGH_BROWSER_TEST_CAC
         Buffer.from(screenshot.bytes).readUInt32BE(16),
         Buffer.from(screenshot.bytes).readUInt32BE(20),
       ]).toEqual([1280, 800])
+      // Neither the agent screenshot above nor a display capture may change the screen size.
+      const screenSize = () =>
+        page.evaluate(() => [screen.width, screen.height, innerWidth, innerHeight, devicePixelRatio])
+      expect(await screenSize()).toEqual([1280, 800, 1280, 800, 2])
+      const display = await runtime.screenshot(item, { type: 'jpeg', quality: 90, scale: 'device' })
+      expect(await sharp(display).metadata()).toMatchObject({ format: 'jpeg', width: 2560, height: 1600 })
+      expect(await screenSize()).toEqual([1280, 800, 1280, 800, 2])
       await runtime.close()
       expect(instance?.isConnected()).toBe(false)
       await expect(

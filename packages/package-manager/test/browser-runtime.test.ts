@@ -252,6 +252,12 @@ function fixture() {
   const session = { key: 'one', lane: 'main' }
   // This fixture has no native CDP targets. Page binding and request policy are
   // exercised against actual targets by browser-capabilities/runtime.e2e.
+  // Screenshots are taken over CDP on the metrics session; browser-runtime.e2e exercises that.
+  // These page fixtures stand in with page.screenshot, in the same per-page surface queue.
+  runtime.screenshot = (
+    item: { page: { screenshot: (options: object) => Promise<Buffer> } },
+    options: object,
+  ) => runtime.surface(item, () => item.page.screenshot(options))
   const startBrowser = runtime.browser.bind(runtime)
   runtime.browser = async () => {
     const started = await startBrowser()

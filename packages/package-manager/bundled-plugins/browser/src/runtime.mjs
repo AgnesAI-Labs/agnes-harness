@@ -384,6 +384,54 @@ export class BrowserRuntime {
   }
 
   /** The one owner of a page's CSS size and 2x density: device metrics on a page CDP session. */
+  /** The CDP session that owns the page's device metrics. */
+  metrics(item) {
+    item.metrics ??= item.page.context().newCDPSession(item.page)
+    return item.metrics
+  }
+
+  /**
+   * Captures the visible page on the session that owns its device metrics. Chromium restores the
+   * capturing session's own metrics afterwards; captured on another session (as Playwright does),
+   * that reset the screen size pages read. 'css' scale returns one pixel per CSS pixel.
+   */
+  screenshot(item, { type, quality, scale = 'device', timeout }) {
+    return this.surface(item, async () => {
+      const metrics = await this.metrics(item)
+      let clip
+      if (scale === 'css') {
+        const { cssVisualViewport: view } = await metrics.send('Page.getLayoutMetrics')
+        clip = {
+          x: view.pageX,
+          y: view.pageY,
+          width: item.viewport.width / view.scale,
+          height: item.viewport.height / view.scale,
+          scale: view.scale / 2,
+        }
+      }
+      let timer
+      try {
+        const { data } = await Promise.race([
+          metrics.send('Page.captureScreenshot', { format: type, quality, clip }),
+          ...(timeout
+            ? [
+                new Promise((_resolve, reject) => {
+                  timer = setTimeout(() => {
+                    const error = new Error(`Screenshot timeout ${timeout}ms exceeded.`)
+                    error.name = 'TimeoutError'
+                    reject(error)
+                  }, timeout)
+                }),
+              ]
+            : []),
+        ])
+        return Buffer.from(data, 'base64')
+      } finally {
+        clearTimeout(timer)
+      }
+    })
+  }
+
   /**
    * Chromium takes a screenshot under temporary device metrics and then restores the metrics it
    * started with, undoing a size applied in the meantime. Run captures and size changes in turn.
@@ -396,8 +444,7 @@ export class BrowserRuntime {
 
   applyViewport(item, viewport) {
     return this.surface(item, async () => {
-      item.metrics ??= item.page.context().newCDPSession(item.page)
-      await (await item.metrics).send('Emulation.setDeviceMetricsOverride', {
+      await (await this.metrics(item)).send('Emulation.setDeviceMetricsOverride', {
         width: viewport.width,
         height: viewport.height,
         screenWidth: viewport.width,
@@ -502,9 +549,7 @@ export class BrowserRuntime {
       this.activate(item)
       const observedHumanRevision = item.humanRevision
       const pageEpoch = item.epoch
-      const bytes = await this.surface(item, () =>
-        item.page.screenshot({ type: 'png', scale: 'css', timeout: 10_000 }),
-      )
+      const bytes = await this.screenshot(item, { type: 'png', scale: 'css', timeout: 10_000 })
       if (item.epoch !== pageEpoch)
         throw failure('STALE_TARGET', 'Page layout changed while taking the screenshot. Inspect again.')
       if (observedHumanRevision === item.humanRevision) item.observedHumanRevision = observedHumanRevision
