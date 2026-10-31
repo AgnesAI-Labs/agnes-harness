@@ -98,17 +98,20 @@ describe.runIf(process.platform === 'win32')('private Windows home initializatio
           '-NoProfile',
           '-NonInteractive',
           '-Command',
+          // .NET and language operators only: a cmdlet outside the core set (ConvertFrom-Json,
+          // ConvertTo-Json) makes Windows PowerShell auto-load its module on every cold start.
           `$ErrorActionPreference = 'Stop';
-          (ConvertFrom-Json $env:AGH_TEST_ACL_PATHS) | ForEach-Object {
-            $acl = if ([IO.Directory]::Exists($_)) { [IO.Directory]::GetAccessControl($_) } else { [IO.File]::GetAccessControl($_) };
-            $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
-          } | ConvertTo-Json -Compress`,
+          foreach ($path in $env:AGH_TEST_ACL_PATHS.Split('|')) {
+            $acl = if ([IO.Directory]::Exists($path)) { [IO.Directory]::GetAccessControl($path) } else { [IO.File]::GetAccessControl($path) };
+            [Console]::Out.WriteLine($acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value)
+          }`,
         ],
-        { windowsHide: true, env: { ...process.env, AGH_TEST_ACL_PATHS: JSON.stringify(objects) } },
+        { windowsHide: true, env: { ...process.env, AGH_TEST_ACL_PATHS: objects.join('|') } },
       ).toString()
     const originalOwners = owners()
-    expect(JSON.parse(originalOwners)).toHaveLength(objects.length)
-    expect(JSON.parse(originalOwners).every((owner: string) => /^S-1-/.test(owner))).toBe(true)
+    const ownerSids = originalOwners.trim().split(/\r?\n/)
+    expect(ownerSids).toHaveLength(objects.length)
+    expect(ownerSids.every((owner) => /^S-1-/.test(owner))).toBe(true)
     expect((await initializeHomeLocked(home)).instanceId).toBe('12345678-1234-1234-1234-123456789abc')
     expect(objects.map(effectiveAcl)).toEqual(grants)
     expect(owners()).toBe(originalOwners)
