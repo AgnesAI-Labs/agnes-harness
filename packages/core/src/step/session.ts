@@ -1983,7 +1983,22 @@ export class SessionImpl {
     this.effectReceipts.reset()
     const fresh = await createLoopContext(this, true)
     this.loopContext = fresh
-    this.loopDriver = await this.d.loopFactory.resume(fresh, checkpoint, this.ac.signal)
+    const scope = this.loopScope
+    const signal = this.ac.signal
+    const driver = await this.d.loopFactory.resume(fresh, checkpoint, signal)
+    if (signal.aborted || this.closingOrClosed || !scope.alive) {
+      try {
+        await driver.cancel()
+      } finally {
+        try {
+          await driver.dispose()
+        } finally {
+          disposeLoopContext(fresh)
+        }
+      }
+      return
+    }
+    this.loopDriver = driver
   }
 
   /** Runs the configured compaction mechanism or records an unavailable-runner failure. */
