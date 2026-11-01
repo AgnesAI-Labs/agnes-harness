@@ -51,17 +51,24 @@ export function findParkedTicket(events: EventEnvelope[]): string | undefined {
  * The answer a `-p` run prints. `assistant/message.content` is a union of text and thinking blocks
  * (session-v1.json), and only the text half is the answer: printing thinking would put reasoning
  * the model was not asked to publish into a script's stdout.
+ * An incomplete review prefers a completed candidate; older streams fall back to visible text.
  */
-export function lastAssistantText(events: EventEnvelope[], skipEmpty = false): string {
+export function lastAssistantText(events: EventEnvelope[], reviewCandidate = false): string {
+  let fallback = ''
   for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i] as EventEnvelope
     if (e.type !== 'assistant/message') continue
-    const content = (e.data as { content?: Array<{ type: string; text?: string }> } | null)?.content ?? []
+    const message = e.data as { content?: Array<{ type: string; text?: string }>; stopReason?: string } | null
+    const content = message?.content ?? []
     const text = content
       .filter((b) => b.type === 'text')
       .map((b) => b.text ?? '')
       .join('')
-    if (text || !skipEmpty) return text
+    if (!reviewCandidate) return text
+    if (text) {
+      fallback ||= text
+      if (message?.stopReason === 'end_turn') return text
+    }
   }
-  return ''
+  return fallback
 }
