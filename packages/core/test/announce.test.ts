@@ -1487,27 +1487,32 @@ describe('without announce', () => {
     // Keep the reviewed ledger baseline on the same completion-gate path.
     const preset = presetDefaults()
     preset.completionGate.contractReview = true
+    const returned: ToolResult[] = []
     const f = setup(
       perTurn(async (ctx, s) => {
         if (options === 'omitted') {
-          await ctx.tools.execute({ name: 'read', args: { n: 1 } }, s)
-          await ctx.tools.batch(
+          returned.push(await ctx.tools.execute({ name: 'read', args: { n: 1 } }, s))
+          returned.push(
+            ...(await ctx.tools.batch(
+              [
+                { name: 'read', args: { n: 2 } },
+                { name: 'read', args: { n: 3 } },
+              ],
+              s,
+            )),
+          )
+          return
+        }
+        returned.push(await ctx.tools.execute({ name: 'read', args: { n: 1 } }, s, options))
+        returned.push(
+          ...(await ctx.tools.batch(
             [
               { name: 'read', args: { n: 2 } },
               { name: 'read', args: { n: 3 } },
             ],
             s,
-          )
-          return
-        }
-        await ctx.tools.execute({ name: 'read', args: { n: 1 } }, s, options)
-        await ctx.tools.batch(
-          [
-            { name: 'read', args: { n: 2 } },
-            { name: 'read', args: { n: 3 } },
-          ],
-          s,
-          options,
+            options,
+          )),
         )
       }),
       { ids: stableIds(), clock: () => 1_757_203_200_000, preset },
@@ -1516,6 +1521,9 @@ describe('without announce', () => {
     const session = await f.open('bytes')
     await enqueue(session)
     expect(await run(session)).toMatchObject({ reason: 'completed' })
+    expect(returned.map((result) => result.content)).toEqual(
+      [1, 2, 3].map((n) => [{ type: 'text', text: `read:${JSON.stringify({ n })}` }]),
+    )
     const rows = await session.scan({ fromSeq: 1, limit: 10000 })
     const cells = (await f.storage.registers(session.key)).filter((row) => row.register === 'op.state')
     return withoutDurations({ rows, cells })
@@ -1523,9 +1531,10 @@ describe('without announce', () => {
 
   it('keeps omitted, empty and false announce options byte-identical', async () => {
     const omitted = await ledger('omitted')
-    // Reviewed ledger baseline, including the completion-gate diagnostic.
+    // Reviewed ledger, including the completion-gate diagnostic. Review guards change microtask
+    // interleaving between independent batch calls; every omitted form must keep this raw ledger.
     expect(sha256Hex(canonicalJson(omitted as never))).toBe(
-      'a30a2d9ecf0897825d41e9213d2784d5659af690d6b29231d89387d0c9f08ece',
+      'f6a7a85b5e4386325bb13e70cc81e274c6244ac6e8205342891c0e3c0251c080',
     )
     expect(await ledger(undefined)).toEqual(omitted)
     expect(await ledger({})).toEqual(omitted)
