@@ -111,7 +111,7 @@ export function presetDefaults(): PresetView {
     tools: { timeoutMs: 120000, timeouts: {}, outputMaxBytes: 32768, logicalChanges: false },
     verifier: { timeoutMs: 30000, defaultTier: 0 },
     repair: { timeoutMs: 10000 },
-    completionGate: { enabled: true, minItems: 3, contractReview: true },
+    completionGate: { enabled: true, minItems: 3, contractReview: false },
     progressCheck: { everySteps: 0 },
     compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000, agentCallable: true },
     telemetry: { invariants: false, timing: false },
@@ -247,7 +247,7 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
     completionGate: {
       enabled: pick(raw, 'completion_gate.enabled', true),
       minItems: pick(raw, 'completion_gate.min_items', d.completionGate.minItems),
-      contractReview: pick(raw, 'completion_gate.contract_review', true),
+      contractReview: pick(raw, 'completion_gate.contract_review', false),
     },
     progressCheck: { everySteps: pick(raw, 'loop.progress_check_steps', d.progressCheck.everySteps) },
     compaction: {

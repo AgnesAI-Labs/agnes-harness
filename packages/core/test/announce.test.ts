@@ -92,6 +92,7 @@ function setup(
     seams?: Seams
     ids?: IdMinter
     clock?: () => number
+    preset?: ReturnType<typeof presetDefaults>
   } = {},
 ) {
   const provider = fakeProvider(o.scripts ?? [textTurn('answer')])
@@ -105,7 +106,7 @@ function setup(
     storage,
     loops,
     provider,
-    preset: presetDefaults(),
+    preset: o.preset ?? presetDefaults(),
     seams,
     contract: { contract_id: null, parser_version: '1' },
     fsOps: testFsOps(),
@@ -1483,6 +1484,9 @@ describe('without announce', () => {
     return value
   }
   async function ledger(options: Parameters<LoopContext['tools']['execute']>[2] | 'omitted') {
+    // Keep the reviewed ledger baseline on the same completion-gate path.
+    const preset = presetDefaults()
+    preset.completionGate.contractReview = true
     const f = setup(
       perTurn(async (ctx, s) => {
         if (options === 'omitted') {
@@ -1506,7 +1510,7 @@ describe('without announce', () => {
           options,
         )
       }),
-      { ids: stableIds(), clock: () => 1_757_203_200_000 },
+      { ids: stableIds(), clock: () => 1_757_203_200_000, preset },
     )
     f.k.tools.add(readTool(), { source: 'test', trust: 'builtin' })
     const session = await f.open('bytes')

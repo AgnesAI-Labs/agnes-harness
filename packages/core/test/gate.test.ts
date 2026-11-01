@@ -39,6 +39,32 @@ describe('contract completion review', () => {
   const run = (h: Awaited<ReturnType<typeof openSession>>) =>
     h.session.run({ until: 'turn-end', signal: sig() })
 
+  it('completes a mutating turn without a review by default', async () => {
+    const registry = new ToolRegistry()
+    registry.add(writeTool(), { source: 'test', trust: 'builtin' })
+    const provider = fakeProvider([toolTurn('write_note', {}), textTurn('candidate')])
+    const h = await openSession({ provider, registry, operations: [operation] })
+    try {
+      await h.session.enqueue('next-turn', input)
+      expect((await run(h)).reason).toBe('completed')
+      expect(provider.requests).toHaveLength(2)
+      expect((await h.log.scan({ type: 'tool/result', limit: 10 })).map((e) => e.data)).toEqual([
+        expect.objectContaining({ content: [{ type: 'text', text: 'written' }], isError: false }),
+      ])
+      expect(await audits(h)).toEqual([
+        { diagnostic: 'completion_gate_contract_review', status: 'skipped:disabled' },
+      ])
+      expect(await h.log.scan({ type: 'repair/decision', limit: 10 })).toEqual([])
+      expect(
+        (await h.log.scan({ type: 'user/message', limit: 20 })).filter(
+          (e) => (e.data as { kind?: string }).kind === 'runtime_context',
+        ),
+      ).toEqual([])
+    } finally {
+      await h.session.close()
+    }
+  })
+
   it.each(['none', 'read', 'write', 'shell', 'nested', 'refused', 'failed'] as const)(
     'reviews admitted mutations once, using persisted policy (%s)',
     async (mode) => {
@@ -68,6 +94,7 @@ describe('contract completion review', () => {
       const h = await openSession({
         provider,
         registry,
+        preset: { ...presetDefaults(), completionGate: { minItems: 3, contractReview: true } },
         operations: [operation],
         seams: fakeSeams({
           repair: { decide: async () => 'complete' },
@@ -113,7 +140,12 @@ describe('contract completion review', () => {
     registry.add(writeTool(), { source: 'test', trust: 'builtin' })
     const scripts = [toolTurn('write_note', {}), textTurn('candidate'), textTurn('checked')]
     const provider = fakeProvider([...scripts, ...scripts])
-    const h = await openSession({ provider, registry, operations: [operation] })
+    const h = await openSession({
+      provider,
+      registry,
+      preset: { ...presetDefaults(), completionGate: { minItems: 3, contractReview: true } },
+      operations: [operation],
+    })
     try {
       for (let turn = 1; turn <= 2; turn++) {
         await h.session.enqueue('next-turn', { ...input, maxSteps: 5, budget: 10, timeLimitMs: 200_000 })
@@ -146,6 +178,7 @@ describe('contract completion review', () => {
       const h = await openSession({
         provider,
         registry,
+        preset: { ...presetDefaults(), completionGate: { minItems: 3, contractReview: true } },
         operations: [operation],
         seams: fakeSeams({
           verifier: {
@@ -201,7 +234,7 @@ describe('contract completion review', () => {
     'prompt_unavailable',
   ] as const)('skips a review with a durable reason (%s)', async (reason) => {
     const preset = presetDefaults()
-    if (reason === 'disabled') preset.completionGate.contractReview = false
+    preset.completionGate.contractReview = reason !== 'disabled'
     const registry = new ToolRegistry()
     registry.add(writeTool(), { source: 'test', trust: 'builtin' })
     const provider = fakeProvider([toolTurn('write_note', {}), textTurn('candidate')])
@@ -272,7 +305,9 @@ describe('contract completion review', () => {
     const registry = new ToolRegistry()
     registry.add(writeTool(), { source: 'test', trust: 'builtin' })
     const provider = fakeProvider([toolTurn('write_note', {}), textTurn('candidate'), textTurn('checked')])
-    let h = await openSession({ provider, registry, operations: [operation] })
+    const preset = presetDefaults()
+    preset.completionGate.contractReview = true
+    let h = await openSession({ provider, registry, preset, operations: [operation] })
     try {
       await h.session.enqueue('next-turn', input)
       for (let i = 0; i < 30 && !(await audits(h)).length; i++) await h.session.step()
@@ -281,7 +316,7 @@ describe('contract completion review', () => {
       else {
         const storage = h.storage
         await h.session.close()
-        h = await openSession({ provider, registry, operations: [operation], storage })
+        h = await openSession({ provider, registry, preset, operations: [operation], storage })
       }
       expect((await run(h)).reason).toBe(mode === 'abort' ? 'aborted' : 'completed')
       expect(await audits(h)).toHaveLength(1)

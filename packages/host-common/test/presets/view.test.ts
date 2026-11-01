@@ -11,7 +11,11 @@ describe('toPresetView', () => {
     })
     expect(view.completionGate).toEqual({ enabled: false, minItems: 3, contractReview: false })
     expect(view.tools.logicalChanges).toBe(true)
-    expect(toPresetView({ name: 'trial' }).completionGate.contractReview).toBe(true)
+    expect(toPresetView({ name: 'trial' }).completionGate.contractReview).toBe(false)
+    expect(
+      toPresetView({ name: 'trial', completion_gate: { contract_review: true } }).completionGate
+        .contractReview,
+    ).toBe(true)
     for (const contract_review of [null, 0, 'false'])
       expect(() => toPresetView({ name: 'trial', completion_gate: { contract_review } })).toThrow()
     expect(toPresetView({ name: 'trial' }).tools.logicalChanges).toBe(false)
@@ -59,7 +63,7 @@ describe('toPresetView', () => {
       tools: { timeoutMs: 120000, outputMaxBytes: 32768, timeouts: { shell: 60000 }, logicalChanges: false },
       verifier: { timeoutMs: 30000, defaultTier: 0 },
       repair: { timeoutMs: 10000 },
-      completionGate: { enabled: true, minItems: 3, contractReview: true },
+      completionGate: { enabled: true, minItems: 3, contractReview: false },
       progressCheck: { everySteps: 0 },
       compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000, agentCallable: true },
       telemetry: { invariants: false, timing: false },
