@@ -134,6 +134,7 @@ import {
   reviewStop,
 } from '../execution/turn/review-budget.js'
 import { finishReview } from '../execution/turn/review-close.js'
+import { disposeReviewHistory, observeReviewHistory } from '../execution/turn/review-history.js'
 import { restoreToolDisclosure } from '../execution/turn/tool-disclosure.js'
 // A type-only import, erased at compile time, so it is not a runtime cycle back to the kernel.
 import type { CoreDiagName } from '../kernel.js'
@@ -800,6 +801,7 @@ export class SessionImpl {
       clock: deps.clock,
       effectId: () => deps.ids.effectId(),
     })
+    observeReviewHistory(this)
   }
 
   loopDecisionSource(): DecisionSource {
@@ -2710,6 +2712,7 @@ export class SessionImpl {
       if (draining && this.op()) await attempt(() => finishAborted(this))
       await attempt(() => this.hooks.shutdown?.())
       await attempt(() => this.d.memory?.close?.())
+      disposeReviewHistory(this)
       await attempt(() => this.d.log.close())
       await this.d.workspaceLease?.close().catch((error: unknown) => failures.push(error))
       if (failures.length === 1) throw failures[0]

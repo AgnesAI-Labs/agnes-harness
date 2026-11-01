@@ -1,3 +1,4 @@
+import type { Event } from '@agnes/core-common/types'
 import { ToolPolicyRegistry, ToolRuntimeRegistry } from '@agnes/core-effects/effects/tool-providers'
 import type { Provider } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
@@ -421,6 +422,14 @@ describe('additional completion review admission', () => {
   it('bounds competing low-level requests by the last remaining admission', async () => {
     const h = await atReview()
     const ctx = await createLoopContext(h.session)
+    const scan = h.storage.scan.bind(h.storage)
+    const reads: Event[] = []
+    h.storage.scan = async (key, query) => {
+      const rows = await scan(key, query)
+      reads.push(...rows)
+      return rows
+    }
+    h.session.preset.completionGate.contractReview = false
     try {
       for (let i = 0; i < 2; i++) await ctx.model.complete(await ctx.prepareRequest(), signal())
       const requests = await Promise.all([
@@ -431,6 +440,11 @@ describe('additional completion review admission', () => {
         requests.map((request) => ctx.model.complete(request, signal())),
       )
       expect(outcomes.some((outcome) => outcome.status === 'rejected')).toBe(true)
+      // Preparation may read surface tool arguments; admissions must reuse committed review facts.
+      expect(
+        reads.filter((row) => ['turn/start', 'effect/intent', 'x/core/completion-gate'].includes(row.type)),
+      ).toEqual([])
+      h.storage.scan = scan
       const anchor = await ran(h)
       const intents = await h.log.scan({ type: 'effect/intent', fromSeq: anchor.seq, limit: 100 })
       expect(intents.filter((row) => (row.data as { kind: string }).kind === 'inference')).toHaveLength(3)
@@ -441,6 +455,7 @@ describe('additional completion review admission', () => {
       })
       expect(h.session.pendingEffects()).toEqual([])
     } finally {
+      h.storage.scan = scan
       await h.session.close()
     }
   })

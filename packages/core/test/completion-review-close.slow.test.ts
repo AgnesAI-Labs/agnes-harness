@@ -3,13 +3,63 @@ import type { LoopContext, LoopFactory } from '@agnes/extension-api'
 import { defaultLoopFactory } from '@agnes/loop-default'
 import { describe, expect, it } from 'vitest'
 import { Kernel } from '../src/kernel.js'
+import { createLoopContext } from '../src/loop/ports.js'
 import { defaultLoops } from '../testkit/loops.js'
-import { input, preset } from './helpers/completion-review.js'
+import { atReview, input, preset, reopen, run } from './helpers/completion-review.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, testFsOps, testWorkspaceInvocation, writeTool } from './helpers/open-session.js'
 
 describe('completion review restart cleanup', () => {
+  it('discards a cold read that outlives its closed owner before reopening the same session', async () => {
+    let h = await atReview()
+    h = await reopen(h, { closeDrainMs: 1 })
+    const ctx = await createLoopContext(h.session)
+    const scan = h.storage.scan.bind(h.storage)
+    let entered: () => void = () => undefined
+    let release: () => void = () => undefined
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let held = false
+    h.storage.scan = async (key, query) => {
+      const rows = await scan(key, query)
+      if (!held && Array.isArray(query.type) && query.type.includes('x/core/completion-review-anchor')) {
+        held = true
+        entered()
+        await barrier
+      }
+      return rows
+    }
+    const pending = ctx.prepareRequest().then(
+      () => ({ code: 'unexpected-success' }),
+      (error: unknown) => error,
+    )
+    try {
+      await ready
+      const closing = h.session.close()
+      await closing
+      const closed = structuredClone(await scan(h.session.key, { fromSeq: 1, limit: 1000 }))
+      release()
+      await expect(pending).resolves.toMatchObject({ code: 'E_CLOSED' })
+      expect(await scan(h.session.key, { fromSeq: 1, limit: 1000 })).toEqual(closed)
+      expect(h.provider.requests).toHaveLength(2)
+      h.storage.scan = scan
+      h = await reopen(h)
+      await h.session.enqueue('next-turn', input)
+      expect((await run(h)).reason).toBe('completed')
+      expect(h.provider.requests).toHaveLength(3)
+    } finally {
+      release()
+      h.storage.scan = scan
+      await pending
+      await h.session.close()
+    }
+  })
+
   it.each(['closed', 'active'] as const)(
     'retains resumed driver ownership while the session is %s',
     async (mode) => {

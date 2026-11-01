@@ -1,12 +1,114 @@
+import type { Event } from '@agnes/core-common/types'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { InferenceEvent } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
+import { createLoopContext } from '../src/loop/ports.js'
 import { ToolRegistry } from '../src/registry/tools.js'
-import { atReview, input, ran, reopen, run } from './helpers/completion-review.js'
+import { atReview, input, ran, reopen, run, signal } from './helpers/completion-review.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { actor, readTool, writeTool } from './helpers/open-session.js'
 
 describe('durable additional completion review recovery', () => {
+  it.each(['main', 'secondary'])(
+    'joins cold history and hot admissions exactly once on lane %s',
+    async (lane) => {
+      let h = await atReview({ lane })
+      h.session.preset.completionGate.contractReview = false
+      h = await reopen(h, { lane })
+      const coldHead = h.session.lastSeq
+      const ctx = await createLoopContext(h.session)
+      const scan = h.storage.scan.bind(h.storage)
+      const reads: Event[] = []
+      const snapshots: Event[] = []
+      let entered: () => void = () => undefined
+      let release: () => void = () => undefined
+      const ready = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      const barrier = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      let held = false
+      h.storage.scan = async (key, query) => {
+        const rows = await scan(key, query)
+        reads.push(...rows)
+        if (!held && Array.isArray(query.type) && query.type.includes('x/core/completion-review-anchor')) {
+          held = true
+          const copy = structuredClone(rows)
+          snapshots.push(...copy)
+          entered()
+          await barrier
+          return copy
+        }
+        return rows
+      }
+      const admission = async () => {
+        const effect = h.session.effects.start({ kind: 'inference', replay: 'never', slot: 'main' })
+        await h.session.append([effect.intent, effect.settle('error')])
+      }
+      let preparing: ReturnType<typeof ctx.prepareRequest> | undefined
+      try {
+        // One committed tail precedes the cold scan; another arrives while its fixed prefix waits.
+        await admission()
+        preparing = ctx.prepareRequest()
+        void preparing.catch(() => undefined)
+        await ready
+        const other = lane === 'main' ? 'secondary' : 'main'
+        const foreign = h.session.effects.start({ kind: 'inference', replay: 'never', slot: 'main' })
+        await h.session.append([
+          h.session.ev('turn/start', { turn: 1, trigger: 'prompt' }, { lane: other }),
+          h.session.ev(
+            'x/core/completion-gate',
+            {
+              diagnostic: 'completion_gate_contract_review',
+              status: 'ran',
+              reviewBudget: null,
+            },
+            { lane: other, ignorable: true },
+          ),
+          { ...foreign.intent, lane: other },
+          { ...foreign.settle('error'), lane: other },
+          h.session.ev('turn/end', { reason: 'completed', lastAssistantSeq: null }, { lane: other }),
+        ])
+        await admission()
+        const refused = h.session.effects.start({ kind: 'inference', replay: 'never', slot: 'main' })
+        await expect(
+          h.log.append([refused.intent, refused.settle('error')], {
+            expectedRegisterSeq: { register: 'op.state', key: lane, seq: 0 },
+          }),
+        ).rejects.toMatchObject({ code: 'E_CAS' })
+        release()
+        const request = await preparing
+        expect(snapshots.some((row) => row.type === 'x/core/completion-gate')).toBe(true)
+        // Storage readers can retain mutable return values; the private prefix must be a snapshot.
+        for (const row of snapshots) if (row.type === 'x/core/completion-gate') row.data = null
+        await ctx.model.complete(request, signal())
+        await expect(ctx.prepareRequest()).rejects.toMatchObject({ code: 'COMPLETION_REVIEW_REQUEST_LIMIT' })
+        const historyReads = reads.filter((row) =>
+          ['turn/start', 'effect/intent', 'x/core/completion-gate'].includes(row.type),
+        )
+        expect(historyReads.length).toBeGreaterThan(0)
+        expect(historyReads.every((row) => row.seq <= coldHead && row.lane === lane)).toBe(true)
+        expect(new Set(historyReads.map((row) => row.seq)).size).toBe(historyReads.length)
+        h.storage.scan = scan
+        const anchor = await ran(h)
+        const intents = await h.log.scan({ type: 'effect/intent', lane, fromSeq: anchor.seq, limit: 100 })
+        expect(intents.filter((row) => (row.data as { kind: string }).kind === 'inference')).toHaveLength(3)
+        expect(h.provider.requests).toHaveLength(3)
+        expect((await run(h)).reason).toBe('blocked')
+        expect(h.session.pendingEffects()).toEqual([])
+        expect((await h.log.scan({ type: 'turn/end', lane, limit: 10 }))[0]?.data).toMatchObject({
+          error: { code: 'COMPLETION_REVIEW_REQUEST_LIMIT' },
+        })
+      } finally {
+        release()
+        h.storage.scan = scan
+        await h.session.close()
+        await preparing?.catch(() => undefined)
+      }
+    },
+  )
+
   it('refuses a recovered Host effect second dispatch through the default batch', async () => {
     let hostDispatches = 0
     const registry = new ToolRegistry()
