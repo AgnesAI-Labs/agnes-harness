@@ -14,6 +14,7 @@ import {
 } from '../src/orchestrator/auxiliary-vision-assembly.js'
 import { prepareRequestMediaFromSurface } from '../src/orchestrator/request-media-surface.js'
 import { defaultLoops } from '../testkit/loops.js'
+import { atReview, ran } from './helpers/completion-review.js'
 import { fakeProvider, sent, sentFor, usage } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, noTimers, testFsOps } from './helpers/open-session.js'
@@ -235,6 +236,28 @@ function delayedProvider(
 }
 
 describe('auxiliary vision production assembly', () => {
+  it('refuses an auxiliary fallback during completion review before quoting or dispatching it', async () => {
+    const h = await atReview()
+    const count = vi.fn(async () => ({ tokens: 32, source: 'provider' as const }))
+    Object.assign(h.session.d.provider, { count, models: () => [model()] })
+    const requests = h.provider.requests.length
+    try {
+      await expect(run(h.session, 'review-image')).rejects.toMatchObject({
+        code: 'COMPLETION_REVIEW_UNAVAILABLE',
+      })
+      expect(count).not.toHaveBeenCalled()
+      expect(h.provider.requests).toHaveLength(requests)
+      const anchor = await ran(h)
+      expect(await h.log.scan({ type: 'effect/intent', fromSeq: anchor.seq, limit: 10 })).toEqual([])
+      expect((await h.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'blocked',
+      )
+      expect(h.session.pendingEffects()).toEqual([])
+    } finally {
+      await h.session.close()
+    }
+  })
+
   it('uses the catalogue image slot, persists replay-never media cost, and never redispatches', async () => {
     const provider = fakeProvider([
       [

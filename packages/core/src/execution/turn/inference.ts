@@ -542,6 +542,16 @@ function requestLimitNotes(s: SessionImpl, t: TurnMemory, language: string | und
   return [...(turnTime ? [{ prefix: TURN_TIME_PREFIX, text: turnTime }] : []), ...(review ? [review] : [])]
 }
 
+function configuredMaxTokens(s: SessionImpl, output: DeriveOutput): DeriveOutput {
+  if (output.request.model.slot !== 'primary' || s.preset.model.maxTokens === undefined) return output
+  const { request, derivedHash } = remintRequestWithMaxTokens(
+    output.request,
+    output.media,
+    s.preset.model.maxTokens,
+  )
+  return { ...output, request, header: { ...output.header, derived_hash: derivedHash } }
+}
+
 export async function prepareInferenceRequest(
   s: SessionImpl,
   options: import('@agnes/extension-api').LoopRequestOptions = {},
@@ -761,14 +771,7 @@ async function prepareInferenceRequestBody(
     ...(tailNote ? { tailNote } : {}),
   })
   if (attachmentOmittedThrough(s)) out.header.attachmentImagesOmittedThrough = attachmentOmittedThrough(s)
-  if (slot === 'primary' && s.preset.model.maxTokens !== undefined) {
-    const { request, derivedHash } = remintRequestWithMaxTokens(
-      out.request,
-      out.media,
-      s.preset.model.maxTokens,
-    )
-    out = { ...out, request, header: { ...out.header, derived_hash: derivedHash } }
-  }
+  out = configuredMaxTokens(s, out)
   preparationSignal.throwIfAborted()
   out = await beforeLoopModelRequest(s, withLoopSampling(out, options), slot, attempt)
   prepareToolAvailability(out, {

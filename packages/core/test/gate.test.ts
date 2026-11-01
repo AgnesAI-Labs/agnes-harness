@@ -42,9 +42,14 @@ describe('contract completion review', () => {
   const run = (h: Awaited<ReturnType<typeof openSession>>) =>
     h.session.run({ until: 'turn-end', signal: sig() })
 
-  it.each(['final', 'tool', 'failed'] as const)(
-    'bounds review inference intents while preserving the third natural final (%s)',
-    async (ending) => {
+  it.each([
+    ['final', undefined],
+    ['final', 40_000],
+    ['tool', undefined],
+    ['failed', undefined],
+  ] as const)(
+    'bounds review inference intents while preserving the third natural final (%s, %s ms turn limit)',
+    async (ending, timeLimitMs) => {
       const registry = new ToolRegistry()
       registry.add(writeTool(), { source: 'test', trust: 'builtin' })
       registry.add(readTool(), { source: 'test', trust: 'builtin' })
@@ -72,9 +77,18 @@ describe('contract completion review', () => {
       const preset = presetDefaults()
       preset.completionGate.contractReview = true
       preset.model.retry = { ...preset.model.retry, maxAttempts: 5, baseDelayMs: 0 }
+      if (timeLimitMs !== undefined) {
+        preset.model.timeoutMs = 1_000
+        preset.tools.timeoutMs = 1_000
+        preset.verifier.timeoutMs = 1_000
+        preset.repair.timeoutMs = 1_000
+      }
       const h = await openSession({ provider, registry, preset, operations: [operation] })
       try {
-        await h.session.enqueue('next-turn', input)
+        await h.session.enqueue('next-turn', {
+          ...input,
+          ...(timeLimitMs === undefined ? {} : { timeLimitMs }),
+        })
         expect((await run(h)).reason).toBe(ending === 'final' ? 'completed' : 'blocked')
         expect(provider.requests).toHaveLength(5)
         const [review] = await h.log.scan({ type: 'x/core/completion-gate', limit: 10 })
@@ -82,8 +96,8 @@ describe('contract completion review', () => {
           reviewBudget: {
             version: 1,
             maxInferenceAdmissions: 3,
-            startedAt: expect.any(Number),
-            deadlineAt: expect.any(Number),
+            startedAt: h.session.d.clock(),
+            deadlineAt: h.session.d.clock() + Math.min(60_000, timeLimitMs ?? Infinity),
           },
         })
         const intents = await h.log.scan({ type: 'effect/intent', fromSeq: review!.seq, limit: 20 })

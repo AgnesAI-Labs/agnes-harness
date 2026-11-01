@@ -124,7 +124,11 @@ export async function assertReview(
   action: 'continue' | 'inference' | 'model-dispatch' | 'tool' | 'unsupported' = 'continue',
 ): Promise<void> {
   const state = await refreshReview(s)
-  if (s.ac.signal.aborted || s.op()?.control.status === 'cancel_requested') s.ac.signal.throwIfAborted()
+  if (state.kind === 'none' || state.kind === 'legacy') return
+  if (s.ac.signal.aborted || s.op()?.control.status === 'cancel_requested') {
+    if (action === 'continue') return
+    s.ac.signal.throwIfAborted()
+  }
   const stop = reviewStop(s)
   if (stop) throw stop
   if (state.kind !== 'active') return

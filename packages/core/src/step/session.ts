@@ -129,6 +129,7 @@ import {
   markReviewDispatch,
   refreshReview,
   reviewHooks,
+  reviewing,
   reviewSignal,
   reviewStop,
 } from '../execution/turn/review-budget.js'
@@ -141,7 +142,6 @@ import { SessionControls } from '../loop/controls.js'
 import { LoopEventRegistry, loopEventContext } from '../loop/events.js'
 import { drivenOutcome, isAdmissionEnding, publicOutcome, shouldStopLoop } from '../loop/outcome.js'
 import { createLoopContext, disposeLoopContext } from '../loop/ports.js'
-import { settleSideCalls, sideCallInFlight } from '../loop/side-call-receipts.js'
 import type {
   AuxiliaryVisionAssemblyInput,
   AuxiliaryVisionProductionAdmission,
@@ -224,6 +224,7 @@ import { filteredTools, NO_TOOL_FILTER, type SessionToolFilter, setToolFilter } 
 import { effectiveToolPolicy } from './tool-policy.js'
 import { runToolsPhase } from './tools.js'
 import { inboxBudget, rehydratedBudget } from './turn-budget.js'
+import { commitTurnEnd } from './turn-end.js'
 import { attend, attendRecovered, rehydratedCallState } from './turn-restore.js'
 
 /**
@@ -1317,53 +1318,9 @@ export class SessionImpl {
       events?: EventInput[] | ((nextSeq: Seq) => EventInput[])
     } = {},
   ): Promise<Seq> {
-    const expected = this.opSeq()
-    const turnNumber = this.op()?.meta.turn ?? 0
-    if (!extra.sideCallsDrained && sideCallInFlight(this)) await settleSideCalls(this, expected)
-    // Serialize completion with pause admission; whichever fact commits first wins.
-    const seqs = await this.locked(async () => {
-      if (reason === 'completed' && (await this.controls.paused()))
-        throw new CoreError('E_LANE_BUSY', 'Turn completion is paused', { reason: 'CONTROL_PAUSED' })
-      const controlEnd =
-        reason === 'aborted' || reason === 'interrupted' ? await this.controls.ending() : null
-      if (controlEnd) reason = controlEnd.reason
-      const last = extra.lastAssistantSeq ?? this.op()?.latestAssistantSeq ?? null
-      const events = extra.events
-      const end = this.ev('turn/end', {
-        reason,
-        lastAssistantSeq: last,
-        ...(extra.error ? { error: extra.error } : {}),
-      })
-      const seq = this.lastSeq + 1
-      const rows = (() => {
-        const inbox = this.latest('inbox') as Inbox | undefined
-        // A steer arriving after the final boundary remains pending for the next turn.
-        const carry =
-          reason === 'completed' && inbox?.items.some((item) => item.target === 'next-step')
-            ? [
-                inboxEvent(this.lane, this.d.actor, {
-                  items: inbox.items.map((item) =>
-                    item.target === 'next-step' ? { ...item, target: 'next-turn' as const } : item,
-                  ),
-                }),
-              ]
-            : []
-        return [
-          ...(typeof events === 'function' ? events(seq) : (events ?? [])),
-          ...carry,
-          ...(controlEnd ? [controlEnd.event] : []),
-          end,
-        ]
-      })()
-      const result = await this.d.log.append(rows, {
-        expectedRegisterSeq: { register: 'op.state', key: this.lane, seq: expected },
-        opState: { lane: this.lane, data: null },
-      })
-      this.turn = null
-      disposeReview(this)
-      return result.seqs
-    })
-    this.turnEndError = extra.error
+    const { seqs, reason: committedReason, error, turnNumber } = await commitTurnEnd(this, reason, extra)
+    reason = committedReason
+    this.turnEndError = error
     // Observer failure cannot undo a committed turn ending.
     await this.loopEvents
       .dispatch(
@@ -1789,6 +1746,7 @@ export class SessionImpl {
     // the sequence returned by the append that durably wrote effect/intent; authority itself stays
     // process-local and is consumed before either the built-in or a replacement is entered.
     await assertReview(this, 'tool')
+    if (reviewing(this) && dispatch.executionDomain !== 'workspace') await assertReview(this, 'unsupported')
     this.assertToolDispatchAvailable(dispatch.executionDomain)
     const lifecycle = childLifecycle(this)
     const runtime = await this.toolRuntime()
@@ -1965,7 +1923,7 @@ export class SessionImpl {
     const stopped = !this.ac.signal.aborted ? reviewStop(this) : undefined
     if (stopped && this.op()) {
       const outcome = await finishReview(this, stopped, true)
-      await this.restartReviewLoop()
+      await this.restartReviewLoop(op?.meta)
       return publicOutcome(outcome)
     }
     this.loopEdge++
@@ -1979,7 +1937,7 @@ export class SessionImpl {
         : undefined
       if (internal) {
         const outcome = await finishReview(this, internal, true)
-        await this.restartReviewLoop()
+        await this.restartReviewLoop(op?.meta)
         return publicOutcome(outcome)
       }
       if (error instanceof CoreError && error.detail?.reason === 'CONTROL_PAUSED')
@@ -2011,7 +1969,9 @@ export class SessionImpl {
     this.loopDriver = await this.d.loopFactory.resume(fresh, checkpoint, this.ac.signal)
   }
 
-  private async restartReviewLoop(): Promise<void> {
+  private async restartReviewLoop(target: OpStateObj['meta'] | undefined): Promise<void> {
+    const current = this.op()?.meta
+    if (current && (current.turn !== target?.turn || current.triggerSeq !== target?.triggerSeq)) return
     const ctx = this.loopContext
     if (!ctx) return
     const checkpoint = this.loopScope.alive

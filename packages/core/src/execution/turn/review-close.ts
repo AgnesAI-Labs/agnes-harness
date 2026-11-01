@@ -1,4 +1,7 @@
 import { withPhase } from '@agnes/core-common/step/op-state'
+import { CoreError, type Seq } from '@agnes/core-common/types'
+import { validateAgainst } from '@agnes/protocol'
+import { TurnEnd } from '@agnes/protocol/gen/session-v1'
 import { releaseTreeReservation } from '../../child/runtime-budget.js'
 import { sessionIdentity } from '../../loop/scope.js'
 import { closeTurn, finishAborted } from '../../step/control.js'
@@ -8,14 +11,32 @@ import { drainReviewWork, reviewStop, reviewStopEvents } from './review-budget.j
 import { notStartedResults } from './unknown-outcome.js'
 
 /** Unknown effects and decisions retain reconciliation; only a settled stop becomes blocked. */
-const closings = new WeakMap<object, { turn: number | undefined; work: Promise<StepOutcome> }>()
+type Target = { turn: number; triggerSeq: Seq; startSeq: Seq }
+const closings = new WeakMap<object, { target: Target; work: Promise<StepOutcome> }>()
+const matches = (s: SessionImpl, target: Target) =>
+  s.op()?.meta.turn === target.turn &&
+  s.op()?.meta.triggerSeq === target.triggerSeq &&
+  s.state.openTurn.get(s.lane)?.startSeq === target.startSeq
+function assertTarget(s: SessionImpl, target: Target): void {
+  if (!matches(s, target)) throw new CoreError('E_CAS', 'Completion review turn was replaced')
+}
 export function finishReview(s: SessionImpl, stop = reviewStop(s), drain = false): Promise<StepOutcome> {
   const identity = sessionIdentity(s)
   const previous = closings.get(identity)
-  const turn = s.op()?.meta.turn
-  if (previous && (previous.turn === turn || turn === undefined)) return previous.work
-  const work = finishReviewBody(s, stop, drain)
-  closings.set(identity, { turn, work })
+  const meta = s.op()?.meta
+  if (
+    previous &&
+    (!meta || (previous.target.turn === meta.turn && previous.target.triggerSeq === meta.triggerSeq))
+  )
+    return previous.work
+  const startSeq = s.state.openTurn.get(s.lane)?.startSeq
+  if (!meta || startSeq === undefined) throw new CoreError('E_RELATION', 'Completion review has no open turn')
+  const target = { turn: meta.turn, triggerSeq: meta.triggerSeq, startSeq }
+  const work = finishReviewBody(s, stop, drain, target).catch((error) => {
+    if (matches(s, target)) throw error
+    return terminalOutcome(s, target)
+  })
+  closings.set(identity, { target, work })
   return work
 }
 
@@ -23,24 +44,25 @@ async function finishReviewBody(
   s: SessionImpl,
   stop: ReturnType<typeof reviewStop>,
   drain: boolean,
+  target: Target,
 ): Promise<StepOutcome> {
-  if (s.ac.signal.aborted || s.op()?.control.status === 'cancel_requested') return finishAborted(s)
+  if (s.ac.signal.aborted || s.op()?.control.status === 'cancel_requested')
+    return finishAborted(s, () => assertTarget(s, target))
   if (!stop) throw new Error('Completion review closer requires its internal stop')
   if (drain) {
     await drainReviewWork(s)
     await s.waitForReviewReceipts()
   }
-  if (s.ac.signal.aborted || s.op()?.control.status === 'cancel_requested') return finishAborted(s)
+  assertTarget(s, target)
+  if (s.ac.signal.aborted || s.op()?.control.status === 'cancel_requested')
+    return finishAborted(s, () => assertTarget(s, target))
   if (s.pendingEffects().length) await resumeSession(s)
+  if (!s.op()) return terminalOutcome(s, target)
+  assertTarget(s, target)
   await releaseTreeReservation(s)
   const op = s.op()
-  if (!op) {
-    const [end] = await s.d.log.scan({ type: 'turn/end', lane: s.lane, order: 'desc', limit: 1 })
-    const reason =
-      (end?.data as { reason?: 'blocked' | 'parked' | 'aborted' | 'interrupted' } | undefined)?.reason ??
-      'blocked'
-    return { phase: 'terminal', reason }
-  }
+  if (!op) return terminalOutcome(s, target)
+  assertTarget(s, target)
   const calls = op.phase.kind === 'tools' ? op.phase.batch.calls : []
   const pending = calls.filter((call) => ['planned', 'approved', 'awaiting_approval'].includes(call.status))
   if (pending.length)
@@ -50,8 +72,9 @@ async function finishReviewBody(
         pending,
         (name) => `${name} was not run: additional completion review is incomplete.`,
       ),
-      (cur) =>
-        cur?.phase.kind === 'tools'
+      (cur) => {
+        assertTarget(s, target)
+        return cur?.phase.kind === 'tools'
           ? withPhase(cur, {
               ...cur.phase,
               batch: {
@@ -63,7 +86,8 @@ async function finishReviewBody(
                 ),
               },
             })
-          : cur,
+          : cur
+      },
     )
   const uncertain =
     s.pendingEffects().length > 0 ||
@@ -73,8 +97,24 @@ async function finishReviewBody(
     )
   const reason = uncertain ? 'parked' : 'blocked'
   await closeTurn(s, reason, {
-    events: reviewStopEvents(s),
+    events: () => {
+      assertTarget(s, target)
+      return reviewStopEvents(s)
+    },
     ...(uncertain ? {} : { error: { code: stop.code, message: stop.message } }),
   })
-  return { phase: 'terminal', reason }
+  return terminalOutcome(s, target)
+}
+
+async function terminalOutcome(s: SessionImpl, target: Target): Promise<StepOutcome> {
+  const [end] = await s.d.log.scan({
+    type: ['turn/start', 'turn/end'],
+    lane: s.lane,
+    fromSeq: target.startSeq + 1,
+    order: 'asc',
+    limit: 1,
+  })
+  if (end?.type !== 'turn/end' || !validateAgainst(TurnEnd, end.data).ok)
+    throw new CoreError('E_RELATION', 'Completion review closed without a terminal fact')
+  return { phase: 'terminal', reason: (end.data as TurnEnd).reason }
 }

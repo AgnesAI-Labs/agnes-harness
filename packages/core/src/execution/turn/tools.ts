@@ -1723,7 +1723,7 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
         const r = await s.runNestedTool(
           c.resolvedPolicy.isConcurrencySafe,
           (nestedLease) =>
-            approveAndExecute(
+            reviewedToolExecution(
               s,
               {
                 toolUseId: c.toolUseId,
@@ -1764,7 +1764,7 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
         return r.result
       },
     },
-    s.ac.signal,
+    reviewSignal(s),
   )
   // The marker is durable rather than held only in TurnMemory: a kill after the tool returned but
   // before this batch edge is exactly a deferred-tool resume cut, and must still know which call to poll.

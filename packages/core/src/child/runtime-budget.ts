@@ -577,7 +577,8 @@ export function clearTreePermit(s: SessionImpl): void {
 
 /** Release a reservation when the request is refused before any provider effect can start. */
 export async function releaseTreeReservation(s: SessionImpl): Promise<void> {
-  const permit = lastTreePermit.get(s.loopScope)
+  const scope = s.loopScope
+  const permit = lastTreePermit.get(scope)
   if (!permit) return
   try {
     const storage = s.d.log.storage
@@ -588,7 +589,7 @@ export async function releaseTreeReservation(s: SessionImpl): Promise<void> {
           : { permitId: permit.permitId, writerGeneration: permit.writerGeneration },
       )
   } finally {
-    lastTreePermit.delete(s.loopScope)
+    lastTreePermit.delete(scope)
   }
 }
 

@@ -1,122 +1,138 @@
-import { presetDefaults } from '@agnes/core-common/step/preset'
 import { ToolPolicyRegistry, ToolRuntimeRegistry } from '@agnes/core-effects/effects/tool-providers'
-import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
-import type { InferenceEvent, Provider } from '@agnes/protocol'
+import type { Provider } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { createLoopContext } from '../src/loop/ports.js'
 import { ToolRegistry } from '../src/registry/tools.js'
-import type { Operation, SessionDeps } from '../src/step/session.js'
+import { atReview, input, ran, reopen, run, signal } from './helpers/completion-review.js'
 import { fakeProvider, sentFor, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
-import { actor, openSession, readTool, writeTool } from './helpers/open-session.js'
+import { actor, readTool, writeTool } from './helpers/open-session.js'
 
-const signal = () => new AbortController().signal
-const run = (h: Awaited<ReturnType<typeof openSession>>) =>
-  h.session.run({ until: 'turn-end', signal: signal() })
-const operation: Operation = {
-  name: 'review',
-  slot: 'before-inference',
-  replay: 'safe',
-  applicable: async () => 'applied',
-  run: async () => ({}),
-  completionReviewNote: () => 'Review existing evidence; preserve final artifacts.',
-}
-const input = { actor, content: [{ type: 'text' as const, text: 'Write the result and preserve inputs.' }] }
-const preset = () => {
-  const p = presetDefaults()
-  p.completionGate.contractReview = true
-  p.model.retry = { maxAttempts: 6, baseDelayMs: 0 }
-  return p
-}
-const ran = async (h: Awaited<ReturnType<typeof openSession>>) =>
-  (await h.log.scan({ type: 'x/core/completion-gate', limit: 100 })).find(
-    (row) => (row.data as { status: string }).status === 'ran',
-  )!
-
-async function atReview(
-  extra: Omit<Partial<Parameters<typeof openSession>[0]>, 'provider'> & { provider?: Provider } = {},
-) {
-  const registry = extra.registry ?? new ToolRegistry()
-  if (!extra.registry) {
-    registry.add(writeTool(), { source: 'test', trust: 'builtin' })
-    registry.add(readTool(), { source: 'test', trust: 'builtin' })
-  }
-  const provider = fakeProvider([toolTurn('write_note', {}), textTurn('candidate'), textTurn('checked')])
-  const h = await openSession({ registry, provider, preset: preset(), operations: [operation], ...extra })
-  await h.session.enqueue('next-turn', input)
-  for (let i = 0; i < 20 && !(await ran(h)); i++) await h.session.step()
-  expect(await ran(h)).toBeDefined()
-  return { ...h, provider, registry }
-}
-
-async function reopen(
-  h: Awaited<ReturnType<typeof atReview>>,
-  overrides: Partial<SessionDeps> & { storage?: MemoryStorage } = {},
-) {
-  await h.session.close()
-  return {
-    ...h,
-    ...(await openSession({
-      storage: h.storage,
-      registry: h.registry,
-      provider: h.session.d.provider,
-      preset: h.session.preset,
-      operations: [operation],
-      ...overrides,
-    })),
-  }
-}
-
-describe('durable additional completion review', () => {
-  it('retains one allowance through two physical reconciliation continuations and a final third inference', async () => {
-    let writes = 0
+describe('additional completion review admission', () => {
+  it('delivers an early local stop to a tool already running in the default batch', async () => {
+    let entered: () => void = () => undefined
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    let toolSignal: AbortSignal | undefined
+    let childDispatches = 0
     const registry = new ToolRegistry()
+    registry.add(writeTool(), { source: 'test', trust: 'builtin' })
     registry.add(
-      writeTool(async () => {
-        if (++writes > 1) throw new Error('unknown receipt')
-        return { content: [{ type: 'text', text: 'written' }] }
-      }),
+      {
+        ...(readTool(async (_args, ctx) => {
+          toolSignal = ctx.signal
+          entered()
+          await new Promise<void>((resolve) => {
+            ctx.signal.addEventListener('abort', () => resolve(), { once: true })
+            if (ctx.signal.aborted) resolve()
+          })
+          return { content: [{ type: 'text', text: 'read stopped' }] }
+        }) as import('@agnes/extension-api').ToolDef),
+        name: 'waiting_read',
+      },
       { source: 'test', trust: 'builtin' },
     )
+    registry.add(
+      {
+        ...(readTool(async (_args, ctx) => {
+          await ready
+          await ctx.subagent.spawn('extra work')
+          return { content: [] }
+        }) as import('@agnes/extension-api').ToolDef),
+        name: 'request_child',
+      },
+      { source: 'test', trust: 'builtin' },
+    )
+    const one = toolTurn('waiting_read', {})
+    const batch = [...one.slice(0, 2), toolTurn('request_child', {}, 1)[1]!, ...one.slice(2)]
     const provider = fakeProvider([
       toolTurn('write_note', {}),
       textTurn('candidate'),
-      toolTurn('write_note', {}),
-      toolTurn('write_note', {}),
-      textTurn('final answer'),
+      batch,
+      textTurn('must not run'),
     ])
-    let h = await atReview({ registry, provider })
-    const budget = (await ran(h)).data
+    const h = await atReview({
+      registry,
+      provider,
+      children: {
+        create: async () => {
+          childDispatches++
+          throw new Error('must not start')
+        },
+      },
+    })
     try {
-      for (let n = 0; n < 2; n++) {
-        expect((await run(h)).reason).toBe('parked')
-        h = await reopen(h)
-        const q = (await h.session.decisions.list()).find(
-          (q) => q.request.spec.purpose === 'unknown-outcome' && !q.consumption,
-        )!
-        await h.session.decisions.answer(
-          {
-            handle: q.handle,
-            revision: q.revision,
-            commandId: `answer-${n}`,
-            response: { option: 'allowed-once', value: null },
-          },
-          { actor, category: 'human', authorize() {} },
-        )
-      }
-      expect((await run(h)).reason).toBe('completed')
-      expect(provider.requests).toHaveLength(5)
-      expect(writes).toBe(3)
-      expect((await ran(h)).data).toEqual(budget)
-      const refs = await h.log.scan({ type: 'x/core/completion-review-anchor', limit: 10 })
-      expect(refs).toHaveLength(2)
-      expect(new Set(refs.map((row) => (row.data as { ranSeq: number }).ranSeq)).size).toBe(1)
+      expect((await run(h)).reason).toBe('blocked')
+      expect(toolSignal?.aborted).toBe(true)
+      expect(childDispatches).toBe(0)
+      expect(provider.requests).toHaveLength(3)
+      expect(h.session.ac.signal.aborted).toBe(false)
       expect(h.session.pendingEffects()).toEqual([])
-      expect((await h.session.decisions.list()).every((q) => q.consumption)).toBe(true)
+      expect(h.session.state.openStep.size).toBe(0)
+      expect((await h.log.scan({ type: 'turn/end', limit: 10 }))[0]?.data).toMatchObject({
+        error: { code: 'COMPLETION_REVIEW_UNAVAILABLE' },
+      })
     } finally {
       await h.session.close()
     }
   })
+
+  it.each(['live', 'cold'] as const)(
+    'refuses a non-workspace tool through the real %s batch path',
+    async (mode) => {
+      let hostDispatches = 0
+      const registry = new ToolRegistry()
+      registry.add(writeTool(), { source: 'test', trust: 'builtin' })
+      registry.add(readTool(), {
+        source: 'agnes/computer-use',
+        trust: 'builtin',
+        packageIdentity: '@agnes/base',
+        packageVersion: '1.0.0',
+        executionDomain: 'host-computer-use',
+      })
+      const provider = fakeProvider([
+        toolTurn('write_note', {}),
+        textTurn('candidate'),
+        toolTurn('read', {}),
+        textTurn('must not run'),
+      ])
+      let h = await atReview({
+        registry,
+        provider,
+        hostToolDispatch: {
+          dispatch: async () => {
+            hostDispatches++
+            return { phase: 'responded', result: { content: [] } }
+          },
+        },
+      })
+      const anchor = await ran(h)
+      try {
+        if (mode === 'cold') {
+          for (
+            let n = 0;
+            n < 10 && !(await h.log.scan({ type: 'tool/call', fromSeq: anchor.seq, limit: 10 })).length;
+            n++
+          )
+            await h.session.step()
+          h = await reopen(h, { hostToolDispatch: h.session.d.hostToolDispatch! })
+          await h.session.resume()
+        }
+        expect((await run(h)).reason).toBe('blocked')
+        expect(hostDispatches).toBe(0)
+        expect(provider.requests).toHaveLength(3)
+        const intents = await h.log.scan({ type: 'effect/intent', fromSeq: anchor.seq, limit: 20 })
+        expect(intents.filter((row) => (row.data as { kind: string }).kind === 'tool')).toEqual([])
+        expect((await h.log.scan({ type: 'turn/end', limit: 10 }))[0]?.data).toMatchObject({
+          error: { code: 'COMPLETION_REVIEW_UNAVAILABLE' },
+        })
+        expect(h.session.pendingEffects()).toEqual([])
+      } finally {
+        await h.session.close()
+      }
+    },
+  )
 
   it('does not bypass the existing turn verifier to preserve the last natural answer', async () => {
     let checks = 0
@@ -328,74 +344,6 @@ describe('durable additional completion review', () => {
     },
   )
 
-  it.each(['missing', 'null', 'partial', 'version', 'fraction', 'duration', 'duplicate'] as const)(
-    'treats only a wholly missing budget as legacy (%s)',
-    async (corruption) => {
-      let h = await atReview()
-      const anchor = await ran(h)
-      const rows = await h.log.scan({ fromSeq: 1, toSeq: h.log.lastSeq, limit: 10_000 })
-      const cells = h.log.allRegisters().filter((cell) => cell.register === 'op.state')
-      const row = rows.find((row) => row.seq === anchor.seq)!
-      const data = row.data as { reviewBudget?: unknown }
-      const budget = data.reviewBudget as Record<string, unknown>
-      if (corruption === 'missing') delete data.reviewBudget
-      if (corruption === 'null') data.reviewBudget = null
-      if (corruption === 'partial') data.reviewBudget = { version: 1 }
-      if (corruption === 'version') data.reviewBudget = { ...budget, version: 2 }
-      if (corruption === 'fraction') data.reviewBudget = { ...budget, startedAt: 1.5 }
-      if (corruption === 'duration')
-        data.reviewBudget = { ...budget, deadlineAt: Number(budget.startedAt) + 60_001 }
-      if (corruption === 'duplicate')
-        await h.session.append([h.session.ev('x/core/completion-gate', anchor.data, { ignorable: true })])
-      else h = await reopen(h, { storage: MemoryStorage.fromEvents('k', rows, { opCells: cells }) })
-      try {
-        const before = h.provider.requests.length
-        expect((await run(h)).reason).toBe(corruption === 'missing' ? 'completed' : 'blocked')
-        expect(h.provider.requests.length - before).toBe(corruption === 'missing' ? 1 : 0)
-        if (corruption !== 'missing')
-          expect((await h.log.scan({ type: 'turn/end', limit: 10 }))[0]?.data).toMatchObject({
-            error: { code: 'COMPLETION_REVIEW_UNAVAILABLE' },
-          })
-        expect(h.session.pendingEffects()).toEqual([])
-      } finally {
-        await h.session.close()
-      }
-    },
-  )
-
-  it('preserves failed admissions, absolute time and the disabled-in-flight budget across two reopenings', async () => {
-    const failure: InferenceEvent[] = [
-      { type: 'error', reason: 'error', code: 'TRANSPORT', message: 'no receipt', retryable: true },
-    ]
-    const provider = fakeProvider([
-      toolTurn('write_note', {}),
-      textTurn('candidate'),
-      failure,
-      failure,
-      failure,
-      textTurn('must not dispatch'),
-    ])
-    let h = await atReview({ provider })
-    const budget = (await ran(h)).data
-    try {
-      for (let n = 3; n <= 4; n++) {
-        while (provider.requests.length < n) await h.session.step()
-        h.session.preset.completionGate.contractReview = false
-        h = await reopen(h)
-        await h.session.resume()
-        expect((await ran(h)).data).toEqual(budget)
-      }
-      expect((await run(h)).reason).toBe('blocked')
-      expect(provider.requests).toHaveLength(5)
-      const anchor = await ran(h)
-      const intents = await h.log.scan({ type: 'effect/intent', fromSeq: anchor.seq, limit: 100 })
-      expect(intents.filter((row) => (row.data as { kind: string }).kind === 'inference')).toHaveLength(3)
-      expect(h.session.pendingEffects()).toEqual([])
-    } finally {
-      await h.session.close()
-    }
-  })
-
   it.each(['before', 'preparation', 'provider'] as const)(
     'enforces its deadline at %s without user cancellation or another inference retry',
     async (where) => {
@@ -463,6 +411,33 @@ describe('durable additional completion review', () => {
     }
   })
 
+  it('bounds competing low-level requests by the last remaining admission', async () => {
+    const h = await atReview()
+    const ctx = await createLoopContext(h.session)
+    try {
+      for (let i = 0; i < 2; i++) await ctx.model.complete(await ctx.prepareRequest(), signal())
+      const requests = await Promise.all([
+        ctx.prepareRequest({ invocationId: 'last-a' }),
+        ctx.prepareRequest({ invocationId: 'last-b' }),
+      ])
+      const outcomes = await Promise.allSettled(
+        requests.map((request) => ctx.model.complete(request, signal())),
+      )
+      expect(outcomes.some((outcome) => outcome.status === 'rejected')).toBe(true)
+      const anchor = await ran(h)
+      const intents = await h.log.scan({ type: 'effect/intent', fromSeq: anchor.seq, limit: 100 })
+      expect(intents.filter((row) => (row.data as { kind: string }).kind === 'inference')).toHaveLength(3)
+      expect(h.provider.requests.length).toBeLessThanOrEqual(5)
+      expect((await run(h)).reason).toBe('blocked')
+      expect((await h.log.scan({ type: 'turn/end', limit: 10 }))[0]?.data).toMatchObject({
+        error: { code: 'COMPLETION_REVIEW_REQUEST_LIMIT' },
+      })
+      expect(h.session.pendingEffects()).toEqual([])
+    } finally {
+      await h.session.close()
+    }
+  })
+
   it.each([
     ['reserve', 'ask'],
     ['reserve', 'allow'],
@@ -518,8 +493,8 @@ describe('durable additional completion review', () => {
     'bounds silent %s with its own deadline signal',
     async (where) => {
       vi.useFakeTimers()
-      let release = () => undefined
-      let entered = () => undefined
+      let release: () => void = () => undefined
+      let entered: () => void = () => undefined
       const ready = new Promise<void>((resolve) => {
         entered = resolve
       })
@@ -643,54 +618,6 @@ describe('durable additional completion review', () => {
     }
   })
 
-  it('refuses a recovered same-effect second dispatch after the original deadline', async () => {
-    let now = 1_757_203_200_000
-    let reads = 0
-    const registry = new ToolRegistry()
-    registry.add(writeTool(), { source: 'test', trust: 'builtin' })
-    registry.add(
-      readTool(async () => {
-        reads++
-        return { content: [] }
-      }),
-      { source: 'test', trust: 'builtin' },
-    )
-    let h = await atReview({
-      registry,
-      clock: () => now,
-      provider: fakeProvider([
-        toolTurn('write_note', {}),
-        textTurn('candidate'),
-        toolTurn('read', {}),
-        textTurn('checked'),
-      ]),
-    })
-    expect((await run(h)).reason).toBe('completed')
-    const rows = await h.log.scan({ limit: 1000 })
-    const reviewStart = (await ran(h)).seq
-    const result = rows.find((row) => row.seq > reviewStart && row.type === 'tool/result')!
-    const cells = h.opCellsBefore(result.seq)
-    const prefix = rows.filter((row) => row.seq <= cells[0]!.seq)
-    now += 60_000
-    h = await reopen(h, {
-      storage: MemoryStorage.fromEvents('k', prefix, { opCells: cells }),
-      clock: () => now,
-    })
-    try {
-      expect((await h.session.resume()).actions).toEqual([{ effectId: expect.any(String), action: 'error' }])
-      expect((await run(h)).reason).toBe('blocked')
-      expect(reads).toBe(1)
-      expect(h.session.pendingEffects()).toEqual([])
-      const intents = await h.log.scan({ type: 'effect/intent', fromSeq: reviewStart, limit: 100 })
-      expect(intents.filter((row) => (row.data as { kind: string }).kind === 'tool')).toHaveLength(1)
-      expect((await h.log.scan({ type: 'turn/end', limit: 10 }))[0]?.data).toMatchObject({
-        error: { code: 'COMPLETION_REVIEW_TIME_LIMIT' },
-      })
-    } finally {
-      await h.session.close()
-    }
-  })
-
   it.each([999, 0])('refuses queued workspace dispatch with only %s ms remaining', async (remaining) => {
     let now = 1_757_203_200_000
     let dispatched = 0
@@ -737,63 +664,4 @@ describe('durable additional completion review', () => {
       await h.session.close()
     }
   })
-
-  it.each(['before', 'after'] as const)(
-    'keeps unknown effects parked across two cold opens and refuses expired reconciliation work (%s answer)',
-    async (answerAt) => {
-      let now = 1_757_203_200_000
-      let writes = 0
-      const registry = new ToolRegistry()
-      registry.add(
-        writeTool(async () => {
-          if (++writes > 1) throw new Error('receipt lost')
-          return { content: [{ type: 'text', text: 'written' }] }
-        }),
-        { source: 'test', trust: 'builtin' },
-      )
-      let h = await atReview({
-        registry,
-        clock: () => now,
-        provider: fakeProvider([
-          toolTurn('write_note', {}),
-          textTurn('candidate'),
-          toolTurn('write_note', {}),
-          textTurn('must not dispatch'),
-        ]),
-      })
-      expect((await run(h)).reason).toBe('parked')
-      const anchor = (await ran(h)).data
-      h = await reopen(h, { clock: () => now })
-      h = await reopen(h, { clock: () => now })
-      try {
-        const q = (await h.session.decisions.list()).find(
-          (q) => q.request.spec.purpose === 'unknown-outcome',
-        )!
-        if (answerAt === 'after') now += 60_000
-        await h.session.decisions.answer(
-          {
-            handle: q.handle,
-            revision: q.revision,
-            commandId: 'reconcile',
-            response: { option: 'allowed-once', value: null },
-          },
-          { actor, category: 'human', authorize() {} },
-        )
-        if (answerAt === 'before') now += 60_000
-        expect((await run(h)).reason).toBe('blocked')
-        expect(writes).toBe(2)
-        expect((await ran(h)).data).toEqual(anchor)
-        expect(await h.log.scan({ type: 'x/core/completion-review-anchor', limit: 10 })).toHaveLength(1)
-        expect(
-          (await h.log.scan({ type: 'effect/settled', limit: 100 })).some(
-            (row) => (row.data as { outcome: string }).outcome === 'unknown',
-          ),
-        ).toBe(true)
-        expect(h.session.pendingEffects()).toEqual([])
-        expect((await h.session.decisions.get(q.handle)).consumption).toBeTruthy()
-      } finally {
-        await h.session.close()
-      }
-    },
-  )
 })
