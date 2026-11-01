@@ -25,6 +25,9 @@ import { turnMaxSteps } from '../../step/step-cap.js'
 import { turnTimeLimit } from '../../step/time-limit.js'
 import { type CoreVerifyInput, turnHasStateChanges, turnVerifyInput } from '../../step/verify-input.js'
 import { discloseTools, estimateTokens, resolveModel } from './inference.js'
+import { assertReview, awaitReview, reviewing, reviewSignal, stopReview } from './review-budget.js'
+import { finishReview } from './review-close.js'
+import { newReviewBudget, readReviewState } from './review-state.js'
 
 // A provider is free to publish nothing for a route, same as resolveModel's own fallback; this is
 // the only value used when a real ModelRecord could not be found, never a default layered on top of
@@ -178,7 +181,7 @@ async function evaluateBudgetPreflight(s: SessionImpl): Promise<'ok' | { reason:
   }
   const { model } = resolveModel(s, 'primary')
   const tokensEstimate = contextTokens(s)
-  const projected = await s.d.runtime.billingProjected({ tokensEstimate, model })
+  const projected = await awaitReview(s, () => s.d.runtime.billingProjected({ tokensEstimate, model }))
   const prev = s.latest('budget.state') as BudgetState | undefined
   const budget: BudgetState = {
     slot: 'primary',
@@ -271,7 +274,8 @@ export async function budgetPreflight(s: SessionImpl): Promise<'ok' | { reason: 
  */
 export async function beforeStepGate(s: SessionImpl, step: number): Promise<'ok' | StepOutcome> {
   const op = s.op() as OpStateObj
-  const gate = await s.hooks.beforeStep({ turn: op.meta.turn, step, depth: 0 })
+  await assertReview(s)
+  const gate = await awaitReview(s, () => s.hooks.beforeStep({ turn: op.meta.turn, step, depth: 0 }))
   if (!gate.park && !gate.block) return 'ok'
   // A fail-closed hook that the cancel cut off reports a block, but nobody blocked the turn: the
   // user stopped it, and that is what the ledger and the client should say.
@@ -413,7 +417,10 @@ async function contractReview(
 /** The gate a turn has to pass to be allowed to finish. */
 async function builtinStopGate(s: SessionImpl, _resume: GateResume): Promise<StepOutcome> {
   const op = s.op() as OpStateObj
-  const hook = await s.hooks.turnStopping({ turn: op.meta.turn, step: op.step, proposedReason: 'completed' })
+  await assertReview(s)
+  const hook = await awaitReview(s, () =>
+    s.hooks.turnStopping({ turn: op.meta.turn, step: op.step, proposedReason: 'completed' }),
+  )
   if (hook.action === 'continue') {
     await s.transition(
       [s.ev('user/message', { content: [{ type: 'text', text: hook.note }], kind: 'runtime_context' })],
@@ -438,10 +445,8 @@ async function builtinStopGate(s: SessionImpl, _resume: GateResume): Promise<Ste
     model: { slot: 'primary', route, model },
   }
   const verifyInput = await turnVerifyInput(s, op.meta.triggerSeq)
-  const verdict: VerifierVerdict & { unavailable?: true } = await s.d.runtime.verify(
-    'turn',
-    verifyInput,
-    s.ac.signal,
+  const verdict: VerifierVerdict & { unavailable?: true } = await awaitReview(s, () =>
+    s.d.runtime.verify('turn', verifyInput, reviewSignal(s)),
   )
   if (s.ac.signal.aborted) return finishAborted(s)
   const gateRows = await scanAll((q) => s.d.log.scan(q), {
@@ -464,7 +469,11 @@ async function builtinStopGate(s: SessionImpl, _resume: GateResume): Promise<Ste
       )
       .map((e) => (e.data as { status: string }).status),
   )
-  const review = reviewStatuses.has('ran') ? undefined : await contractReview(s, op.meta.triggerSeq)
+  const priorReview = await readReviewState(s)
+  const review =
+    reviewStatuses.has('ran') || priorReview.kind !== 'none'
+      ? undefined
+      : await contractReview(s, op.meta.triggerSeq)
   if (s.ac.signal.aborted) return finishAborted(s)
   const reviewEvents: EventInput[] =
     review && !reviewStatuses.has(review.status)
@@ -489,7 +498,8 @@ async function builtinStopGate(s: SessionImpl, _resume: GateResume): Promise<Ste
   const finishCompleted = async (
     events: EventInput[] | ((seq: Seq) => EventInput[]),
   ): Promise<StepOutcome> => {
-    await runSlot(s, 'after-core', verifiedAfterCoreCtx)
+    await awaitReview(s, () => runSlot(s, 'after-core', { ...verifiedAfterCoreCtx, signal: reviewSignal(s) }))
+    await assertReview(s)
     if (s.ac.signal.aborted) return finishAborted(s)
     await s.endTurn('completed', {
       events: (seq) => [...(typeof events === 'function' ? events(seq) : events), ...reviewEvents],
@@ -497,6 +507,7 @@ async function builtinStopGate(s: SessionImpl, _resume: GateResume): Promise<Ste
     return { phase: 'terminal', reason: 'completed' }
   }
   const finishUnavailable = async (unavailable: 'verifier' | 'repair'): Promise<StepOutcome> => {
+    if (reviewing(s)) return finishReview(s, stopReview(s, 'unavailable'))
     return finishCompleted([
       signal,
       s.ev(
@@ -520,9 +531,11 @@ async function builtinStopGate(s: SessionImpl, _resume: GateResume): Promise<Ste
   if (verdict.verdict === 'pass' && !openPlan && !review?.note) {
     return finishCompleted([signal])
   }
-  const proposed = await s.d.runtime.repairDecide(
-    { turn: op.meta.turn, round: history.length + 1, history, ...(plan ? { plan } : {}) },
-    verdict,
+  const proposed = await awaitReview(s, () =>
+    s.d.runtime.repairDecide(
+      { turn: op.meta.turn, round: history.length + 1, history, ...(plan ? { plan } : {}) },
+      verdict,
+    ),
   )
   if (s.ac.signal.aborted) return finishAborted(s)
   const stalePlan = verdict.verdict === 'pass' && openPlan && history.length >= 1
@@ -583,7 +596,11 @@ async function builtinStopGate(s: SessionImpl, _resume: GateResume): Promise<Ste
       ...repairEvents(seq),
       // Only admission consumes the one-round marker: an old repair may introduce a mutation
       // after an earlier no-state-change skip. Repeated skip reasons are recorded only once.
-      ...reviewEvents,
+      ...reviewEvents.map((row) =>
+        review?.status === 'ran'
+          ? { ...row, data: { ...(row.data as object), reviewBudget: newReviewBudget(s) } }
+          : row,
+      ),
       ...extra,
       s.ev('user/message', {
         kind: 'runtime_context',
@@ -609,6 +626,7 @@ async function builtinStopGate(s: SessionImpl, _resume: GateResume): Promise<Ste
 }
 
 export async function stopGate(s: SessionImpl, resume: GateResume = 'continue'): Promise<StepOutcome> {
+  await assertReview(s)
   await s.requireVerifiedHistory()
   if (!s.d.segments?.StopGate) return builtinStopGate(s, resume)
   const op = s.op() as OpStateObj
@@ -686,6 +704,7 @@ async function claimCheckpointInbox(s: SessionImpl, inbox: Inbox | undefined) {
 }
 
 export async function checkpointRoutine(s: SessionImpl): Promise<StepOutcome> {
+  await assertReview(s)
   const op = s.op() as OpStateObj
   const ph = op.phase as CheckpointPhase
   if (!ph.skipInboxOnce) {
@@ -697,6 +716,7 @@ export async function checkpointRoutine(s: SessionImpl): Promise<StepOutcome> {
   }
   const t = s.turn
   if (t && t.compactionRequested !== false && s.preset.compaction.enabled) {
+    await assertReview(s, 'unsupported')
     const custom = t.compactionRequested
     t.compactionRequested = false
     await s.transition(
@@ -727,6 +747,7 @@ export async function checkpointRoutine(s: SessionImpl): Promise<StepOutcome> {
         ...(cache ? { cache } : {}),
       })
     ) {
+      await assertReview(s, 'unsupported')
       await s.transition(
         [],
         withPhase(op, {

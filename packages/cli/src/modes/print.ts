@@ -375,11 +375,21 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     }
     const ticket = reason === 'parked' ? findParkedTicket(events) : undefined
     const turnError = (ended?.data as { error?: unknown } | null)?.error ?? thrownError
-    const errorCode = reason === 'error' ? (turnError as { code?: unknown } | undefined)?.code : undefined
+    const reviewHelp = reason === 'blocked' ? publicErrorHelp(turnError, io.locale) : undefined
+    const reviewCode =
+      reviewHelp &&
+      [
+        'COMPLETION_REVIEW_REQUEST_LIMIT',
+        'COMPLETION_REVIEW_TIME_LIMIT',
+        'COMPLETION_REVIEW_UNAVAILABLE',
+      ].includes(reviewHelp.code)
+        ? reviewHelp.code
+        : undefined
+    const errorCode = reason === 'error' ? (turnError as { code?: unknown } | undefined)?.code : reviewCode
     const closeCode = (turnError as { closeError?: { code?: unknown } } | undefined)?.closeError?.code
     const safeCloseCode =
       typeof closeCode === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(closeCode) ? closeCode : undefined
-    const text = lastAssistantText(events)
+    const text = lastAssistantText(events, reviewCode !== undefined)
     // Only a turn that completed is checked; any other ending keeps its own code and prints as before.
     const structured =
       outputSchema && exitCode === ExitCode.OK ? checkStructured(text, outputSchema) : undefined
@@ -451,6 +461,8 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
         `agh: ${signal ? `${signal}; ` : ''}turn ended: ${reason} (exit ${exitCode})${cause ? `: ${cause}` : ''}${safeCloseCode ? `; terminal close failed: ${safeCloseCode}` : ''}\n`,
       )
     }
+    if (machine && reviewCode)
+      io.stderr.write(`agh: turn ended: ${reason} (exit ${exitCode}): ${errorCause(turnError, io.locale)}\n`)
     return exitCode
   } finally {
     offNotice()

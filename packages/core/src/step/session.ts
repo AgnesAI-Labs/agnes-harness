@@ -122,6 +122,17 @@ import { type ChildRolePort, type RoleDelegation, roleToolSnapshot } from '../ch
 import { unbindChildFactory } from '../child/sessions.js'
 import { sessionCommandFloor } from '../command-table/floor.js'
 import { runDeferred } from '../execution/turn/deferred.js'
+import {
+  assertReview,
+  CompletionReviewStop,
+  disposeReview,
+  markReviewDispatch,
+  refreshReview,
+  reviewHooks,
+  reviewSignal,
+  reviewStop,
+} from '../execution/turn/review-budget.js'
+import { finishReview } from '../execution/turn/review-close.js'
 import { restoreToolDisclosure } from '../execution/turn/tool-disclosure.js'
 // A type-only import, erased at compile time, so it is not a runtime cycle back to the kernel.
 import type { CoreDiagName } from '../kernel.js'
@@ -169,7 +180,7 @@ import {
   finishAborted,
 } from './control.js'
 import { askApprovalAnswer } from './decision-delivery.js'
-import { DecisionCommands, type DecisionSource } from './decisions.js'
+import type { DecisionCommands, DecisionSource } from './decisions.js'
 import { assertCurrentDomainDecisions } from './domain-decision.js'
 import { sysEvent } from './events.js'
 import { appendExtensionEvent, prepareExtensionEvent } from './ext-events.js'
@@ -193,6 +204,7 @@ import {
   type RunFailureSink,
   stepFailure,
 } from './run-failure.js'
+import { sessionDecisions } from './session-decisions.js'
 import {
   permissionOperator,
   SessionPermissionAuthority,
@@ -769,51 +781,7 @@ export class SessionImpl {
       },
     }
     this.d = deps
-    const session = this
-    this.decisions = new DecisionCommands({
-      get key() {
-        return session.key
-      },
-      get lane() {
-        return session.lane
-      },
-      get lastSeq() {
-        return session.lastSeq
-      },
-      get closed() {
-        return session.closingOrClosed || deps.log.isClosed
-      },
-      get cancelled() {
-        return session.op()?.control.status === 'cancel_requested' || childLifecycleRevoked(session)
-      },
-      get actor() {
-        return session.authorization.actor
-      },
-      get permissionContext() {
-        return session.permissionContext
-      },
-      get delegatedToolApprovals() {
-        return session.roleAuthority?.humanApprovals !== false
-      },
-      get refuseApprovals() {
-        return session.d.roleDelegation !== undefined
-      },
-      get delegatedFullAccess() {
-        return session.d.roleDelegation?.delegatedFullAccess === true
-      },
-      get ttlMs() {
-        return session.preset.approval.pendingTtlMs
-      },
-      ...(deps.timers ? { timers: deps.timers } : {}),
-      log: deps.log,
-      beforeAttestation: () => deps.log.fullVerified(),
-      historyVerified: () => deps.log.historyVerified,
-      readDecisions: () => session.state.registers.decisionStates,
-      clock: () => deps.clock(),
-      id: () => deps.ids.ulid(),
-      transact: (work) => session.locked(work),
-      event: (value) => session.ev('decision/state', value, { register: 'decision/state' }),
-    })
+    this.decisions = sessionDecisions(this, deps)
     this.workspaceRoot = deps.workspaceIdentity?.canonicalRoot ?? deps.cwd
     this.loopEvents = deps.loopEvents ?? new LoopEventRegistry()
     this.toolRuntimes = deps.toolRuntimes ?? new ToolRuntimeRegistry()
@@ -849,7 +817,7 @@ export class SessionImpl {
 
   /** Resolve the published hook port at the call boundary; assignment only updates legacy fallback. */
   get hooks(): HookPort {
-    return this.d.currentRuntime?.current(this.key)?.hooks ?? this.fallbackHooks
+    return reviewHooks(this, this.d.currentRuntime?.current(this.key)?.hooks ?? this.fallbackHooks)
   }
 
   set hooks(hooks: HookPort) {
@@ -1392,6 +1360,7 @@ export class SessionImpl {
         opState: { lane: this.lane, data: null },
       })
       this.turn = null
+      disposeReview(this)
       return result.seqs
     })
     this.turnEndError = extra.error
@@ -1819,10 +1788,12 @@ export class SessionImpl {
     // This method is the sole external tool-dispatch choke point. The caller can only reach it with
     // the sequence returned by the append that durably wrote effect/intent; authority itself stays
     // process-local and is consumed before either the built-in or a replacement is entered.
+    await assertReview(this, 'tool')
     this.assertToolDispatchAvailable(dispatch.executionDomain)
     const lifecycle = childLifecycle(this)
     const runtime = await this.toolRuntime()
     lifecycle.assertActive()
+    await assertReview(this, 'tool')
     this.loopScope.assertAlive()
     const binding = { ...started, owner: this.executePermitOwner, attempt: dispatch.attempt }
     const permit = this.executePermits.issue(binding)
@@ -1836,8 +1807,10 @@ export class SessionImpl {
       runtime,
       concurrencySafe: this.turn?.snapshot.byName.get(name)?.meta.isConcurrencySafe === true,
       ...(this.d.hostToolDispatch ? { hostPort: this.d.hostToolDispatch } : {}),
-      invoke: () => {
+      invoke: async () => {
+        await assertReview(this, 'tool')
         lifecycle.assertActive()
+        markReviewDispatch(this, started.effectId, dispatch.attempt)
         if (!this.d.segments?.ToolExecution) return builtin()
         return runCoreReplacement(
           this,
@@ -1941,6 +1914,10 @@ export class SessionImpl {
     return this.effectReceipts.drain(this, freezeOnly)
   }
 
+  waitForReviewReceipts(): Promise<void> {
+    return this.effectReceipts.waitForReview(this)
+  }
+
   beginLoopOperation(): () => void {
     this.loopScope.assertAlive()
     if (this.closing) throw new CoreError('E_CLOSED', 'session closed')
@@ -1984,10 +1961,27 @@ export class SessionImpl {
     if (op?.control.status === 'cancel_requested') return publicOutcome(await finishAborted(this))
     if (await this.controls.boundary()) return { outcome: 'parked', phase: 'paused', reason: 'parked' }
     if (op && !this.turn) await this.rehydrateTurn(op)
+    await refreshReview(this)
+    const stopped = !this.ac.signal.aborted ? reviewStop(this) : undefined
+    if (stopped && this.op()) {
+      const outcome = await finishReview(this, stopped, true)
+      await this.restartReviewLoop()
+      return publicOutcome(outcome)
+    }
     this.loopEdge++
     try {
       return drivenOutcome(await stepWithinLoopDeadline(this, this.loopDriver), this.op()?.phase.kind)
     } catch (error) {
+      const internal = !this.ac.signal.aborted
+        ? error instanceof CompletionReviewStop
+          ? error
+          : reviewStop(this)
+        : undefined
+      if (internal) {
+        const outcome = await finishReview(this, internal, true)
+        await this.restartReviewLoop()
+        return publicOutcome(outcome)
+      }
       if (error instanceof CoreError && error.detail?.reason === 'CONTROL_PAUSED')
         return { outcome: 'parked', phase: 'paused', reason: 'parked' }
       throw error
@@ -2010,6 +2004,21 @@ export class SessionImpl {
     this.ac = new AbortController()
     disposeLoopContext(ctx)
     this.decisions.renewScope()
+    this.loopScope = new LoopScope()
+    this.effectReceipts.reset()
+    const fresh = await createLoopContext(this, true)
+    this.loopContext = fresh
+    this.loopDriver = await this.d.loopFactory.resume(fresh, checkpoint, this.ac.signal)
+  }
+
+  private async restartReviewLoop(): Promise<void> {
+    const ctx = this.loopContext
+    if (!ctx) return
+    const checkpoint = this.loopScope.alive
+      ? (ctx.checkpoints.read() ?? this.loopDriver.checkpoint())
+      : this.loopDriver.checkpoint()
+    await this.loopDriver.dispose()
+    disposeLoopContext(ctx)
     this.loopScope = new LoopScope()
     this.effectReceipts.reset()
     const fresh = await createLoopContext(this, true)
@@ -2200,9 +2209,10 @@ export class SessionImpl {
    * the loop past a cancellation.
    */
   sleep(ms: number): Promise<void> {
+    const signal = reviewSignal(this)
     const timers = this.d.timers ?? DEFAULT_TIMERS
     return new Promise<void>((res) => {
-      if (this.ac.signal.aborted) {
+      if (signal.aborted) {
         res()
         return
       }
@@ -2211,9 +2221,9 @@ export class SessionImpl {
         timers.clearTimeout(handle)
         res()
       }
-      this.ac.signal.addEventListener('abort', onAbort, { once: true })
+      signal.addEventListener('abort', onAbort, { once: true })
       handle = timers.setTimeout(() => {
-        this.ac.signal.removeEventListener('abort', onAbort)
+        signal.removeEventListener('abort', onAbort)
         res()
       }, ms)
     })
@@ -2689,6 +2699,7 @@ export class SessionImpl {
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise
     this.closing = true
+    disposeReview(this)
     revokeChildLifecycle(this)
     this.d.log.cancelHistoryVerification()
     const revocation = this.preparePermissionRevocation()

@@ -35,9 +35,72 @@ describe('contract completion review', () => {
   const request = 'Write only OK to result.txt'
   const input = { actor, content: [{ type: 'text' as const, text: request }] }
   const audits = async (h: Awaited<ReturnType<typeof openSession>>) =>
-    (await h.log.scan({ type: 'x/core/completion-gate', limit: 10 })).map((e) => e.data)
+    (await h.log.scan({ type: 'x/core/completion-gate', limit: 10 })).map((e) => {
+      const data = e.data as { diagnostic: string; status: string }
+      return { diagnostic: data.diagnostic, status: data.status }
+    })
   const run = (h: Awaited<ReturnType<typeof openSession>>) =>
     h.session.run({ until: 'turn-end', signal: sig() })
+
+  it.each(['final', 'tool', 'failed'] as const)(
+    'bounds review inference intents while preserving the third natural final (%s)',
+    async (ending) => {
+      const registry = new ToolRegistry()
+      registry.add(writeTool(), { source: 'test', trust: 'builtin' })
+      registry.add(readTool(), { source: 'test', trust: 'builtin' })
+      const failure = [
+        {
+          type: 'error' as const,
+          reason: 'error' as const,
+          code: 'TRANSPORT' as const,
+          message: 'lost',
+          retryable: true,
+        },
+      ]
+      const provider = fakeProvider([
+        toolTurn('write_note', {}),
+        textTurn('candidate'),
+        ...(ending === 'failed'
+          ? [failure, failure, failure, textTurn('must not be sent')]
+          : [
+              toolTurn('read', {}),
+              toolTurn('read', {}),
+              ending === 'final' ? textTurn('checked') : toolTurn('read', {}),
+              textTurn('must not be sent'),
+            ]),
+      ])
+      const preset = presetDefaults()
+      preset.completionGate.contractReview = true
+      preset.model.retry = { ...preset.model.retry, maxAttempts: 5, baseDelayMs: 0 }
+      const h = await openSession({ provider, registry, preset, operations: [operation] })
+      try {
+        await h.session.enqueue('next-turn', input)
+        expect((await run(h)).reason).toBe(ending === 'final' ? 'completed' : 'blocked')
+        expect(provider.requests).toHaveLength(5)
+        const [review] = await h.log.scan({ type: 'x/core/completion-gate', limit: 10 })
+        expect(review?.data).toMatchObject({
+          reviewBudget: {
+            version: 1,
+            maxInferenceAdmissions: 3,
+            startedAt: expect.any(Number),
+            deadlineAt: expect.any(Number),
+          },
+        })
+        const intents = await h.log.scan({ type: 'effect/intent', fromSeq: review!.seq, limit: 20 })
+        expect(intents.filter((row) => (row.data as { kind?: string }).kind === 'inference')).toHaveLength(3)
+        expect(intents.filter((row) => (row.data as { kind?: string }).kind === 'tool')).toHaveLength(
+          ending === 'failed' ? 0 : 2,
+        )
+        expect(h.session.pendingEffects()).toEqual([])
+        expect(h.session.state.openStep.size).toBe(0)
+        const [end] = await h.log.scan({ type: 'turn/end', limit: 10 })
+        if (ending !== 'final')
+          expect(end?.data).toMatchObject({ error: { code: 'COMPLETION_REVIEW_REQUEST_LIMIT' } })
+      } finally {
+        await h.session.close()
+      }
+    },
+  )
 
   it('completes a mutating turn without a review by default', async () => {
     const registry = new ToolRegistry()

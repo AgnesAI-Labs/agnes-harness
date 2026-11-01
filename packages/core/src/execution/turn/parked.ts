@@ -13,6 +13,7 @@ import {
 import { domainDecisionEvents, domainDecisionSource } from '../../step/domain-decision.js'
 import type { SessionImpl } from '../../step/session.js'
 import { nestedOutcomeNote, nestedParentName } from './nested-note.js'
+import { reviewContinuationEvents } from './review-state.js'
 import { TOOL_DECISION_OWNER, toolDecisionSource } from './tool-decision.js'
 
 export async function approvalContinuation(
@@ -248,6 +249,7 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
         trigger: 'approval-resume',
         continues: { turn: call.turn, step: call.step, toolUseId: toolUseId, requestId },
       }),
+      ...(await reviewContinuationEvents(s, call.turn)),
       s.ev('step/start', { turn, step: 1 }),
     ]
     if (!allowed)
@@ -323,6 +325,7 @@ async function reopenAfterReconciliation(s: SessionImpl, snapshot: DecisionSnaps
   const happened =
     snapshot.result?.reason === 'answered' && snapshot.result.response.option.startsWith('allow')
   const turn = s.lastTurnNumber() + 1
+  const reviewAnchor = await reviewContinuationEvents(s, call.turn)
   await s.transition(
     () => [
       s.ev('turn/start', {
@@ -330,6 +333,7 @@ async function reopenAfterReconciliation(s: SessionImpl, snapshot: DecisionSnaps
         trigger: 'approval-resume',
         continues: { turn: call.turn, step: call.step, toolUseId, requestId: snapshot.handle.id },
       }),
+      ...reviewAnchor,
       ...domainDecisionEvents(s, snapshot, domainDecisionSource(s, 'unknown-outcome', toolUseId)),
       s.ev('user/message', {
         content: [

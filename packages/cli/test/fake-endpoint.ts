@@ -188,6 +188,8 @@ export function scriptedEndpoint(
     toolCall?: { toolUseId: string; name: string; durationMs?: number; outcome?: 'ok' | 'error' | 'aborted' }
     /** The `error` a failed turn's turn/end row carries. */
     turnEndError?: { code: string; message: string }
+    /** A review may end after an assistant message containing only tool calls. */
+    trailingEmptyAssistant?: boolean
     /** What the handshake advertises under `agentCapabilities._meta['ai.agnes.harness']`; none by default, like an older daemon. */
     harnessCapabilities?: {
       hardTurnBudget?: boolean
@@ -295,6 +297,12 @@ export function scriptedEndpoint(
           ev('assistant/message', { content: [{ type: 'text', text: reply }], stopReason: 'end_turn' }),
           meta('responseBoundary'),
         )
+        if (opts.trailingEmptyAssistant)
+          ep.pushEvent(
+            FAKE_SESSION_ID,
+            ev('assistant/message', { content: [], stopReason: 'tool_use' }),
+            meta('event'),
+          )
         if (opts.parkedTicket !== undefined)
           ep.pushEvent(
             FAKE_SESSION_ID,

@@ -52,15 +52,16 @@ export function findParkedTicket(events: EventEnvelope[]): string | undefined {
  * (session-v1.json), and only the text half is the answer: printing thinking would put reasoning
  * the model was not asked to publish into a script's stdout.
  */
-export function lastAssistantText(events: EventEnvelope[]): string {
+export function lastAssistantText(events: EventEnvelope[], skipEmpty = false): string {
   for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i] as EventEnvelope
     if (e.type !== 'assistant/message') continue
     const content = (e.data as { content?: Array<{ type: string; text?: string }> } | null)?.content ?? []
-    return content
+    const text = content
       .filter((b) => b.type === 'text')
       .map((b) => b.text ?? '')
       .join('')
+    if (text || !skipEmpty) return text
   }
   return ''
 }

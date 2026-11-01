@@ -8,6 +8,7 @@ import { toProviderRequest } from '../../request/to-provider.js'
 import { applyBeforeRequestPatches } from '../../request/transforms.js'
 import type { SessionImpl } from '../../step/session.js'
 import { estimateTokens, resolveModel } from './inference.js'
+import { assertReview, reviewStop } from './review-budget.js'
 
 type ModelResponseFact = {
   slot: 'fast' | 'verifier'
@@ -98,6 +99,8 @@ export async function decideToolPolicy(
       signal,
       {
         async reserve(limit) {
+          signal.throwIfAborted()
+          await assertReview(s, 'unsupported')
           if (replay) return true
           const count =
             counters.get(sessionIdentity(s)) ??
@@ -110,6 +113,8 @@ export async function decideToolPolicy(
           return true
         },
         async model(request, reviewSignal, onUsage) {
+          signal.throwIfAborted()
+          await assertReview(s, 'unsupported')
           const recorded = replay
           replay = undefined
           if (
@@ -238,6 +243,9 @@ export async function decideToolPolicy(
         },
       },
     )
+  signal.throwIfAborted()
+  const stopped = reviewStop(s)
+  if (stopped && !s.ac.signal.aborted) throw stopped
   if (permission.review) {
     await s.requireVerifiedHistory()
     validateReview(permission)

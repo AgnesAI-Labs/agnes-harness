@@ -5,6 +5,7 @@ import { isPending, normalizeApproval } from '@agnes/core-effects/effects/approv
 import { type NestedToolLease, NestedToolSchedulingError } from '@agnes/core-effects/effects/scheduler'
 import type { ToolResult } from '@agnes/extension-api'
 import { type JsonValue, minimumContextBudget, type ThinkingLevel } from '@agnes/protocol'
+import { assertReview, awaitReview, reviewStop } from '../execution/turn/review-budget.js'
 import { modelCapabilityUnavailable } from '../execution/turn/tool-availability.js'
 import { type ResolvedToolPolicyEnvelope, resolveValidatedToolCallPolicy } from '../registry/tool-policy.js'
 import { assertThinking } from '../request/derive.js'
@@ -46,6 +47,7 @@ export async function invokeTool(
   args: unknown,
   o: InvokeOptions,
 ): Promise<ToolResult> {
+  await assertReview(s, 'tool')
   if (o.depth > s.preset.depthLimit)
     throw new CoreError('E_DEPTH_EXCEEDED', `depth ${o.depth} exceeds ${s.preset.depthLimit}`)
   const op = s.op()
@@ -201,6 +203,8 @@ export async function runPlannedTool(
     park = outcome.park
     parked = outcome.parkedToolUseId ?? toolUseId
   } catch (error) {
+    const stopped = reviewStop(s)
+    if (stopped && !s.ac.signal.aborted) throw stopped
     if (!(error instanceof NestedToolSchedulingError)) throw error
     const cancelled = error.reason === 'aborted'
     return refuse(
@@ -258,11 +262,13 @@ export async function runSlot(
   for (const o of sortedOps(s.d.operations, slot)) {
     try {
       const admitted = { ...ctx, decisions: operationDecisionPort(s, o.name) }
-      if ((await o.applicable(admitted)) !== 'applied') continue
-      const out = await o.run(admitted)
+      if ((await awaitReview(s, () => o.applicable(admitted))) !== 'applied') continue
+      const out = await awaitReview(s, () => o.run(admitted))
       if (out.effects?.length)
         await s.d.log.append(out.effects.map((e) => ({ ...e, lane: s.lane })) as EventInput[])
     } catch (err) {
+      const stopped = reviewStop(s)
+      if (stopped && !s.ac.signal.aborted) throw stopped
       await s.diag('operation-failed', {
         name: o.name,
         slot,

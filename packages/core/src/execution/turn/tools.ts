@@ -54,6 +54,20 @@ import { approvalContinuation } from './parked.js'
 import { decideToolPolicy } from './policy-review.js'
 import { honouredPrefixes, prefixActivation, prefixCommand } from './prefix-approval.js'
 import { preflightDeclaredPaths, touchesAghConfig } from './preflight-paths.js'
+import {
+  assertReview,
+  awaitReview,
+  CompletionReviewStop,
+  reviewDispatchStarted,
+  reviewing,
+  reviewSignal,
+  reviewStop,
+  reviewStopEvents,
+  reviewTimeout,
+  stopReview,
+} from './review-budget.js'
+import { finishReview } from './review-close.js'
+import { reviewToolContext } from './review-tool-context.js'
 import { terminalDecisionRefusal } from './terminal-decision-refusal.js'
 import { modelCapabilityUnavailable, toolAvailability } from './tool-availability.js'
 import { toolCallLimits } from './tool-call-limits.js'
@@ -64,6 +78,7 @@ import {
   toolDecisionSource,
 } from './tool-decision.js'
 import { discloseTool } from './tool-disclosure.js'
+import { toolInvoker } from './tool-invocation.js'
 import {
   notStartedResults,
   reconciledMessage,
@@ -109,16 +124,6 @@ export type CallOutcome = {
 }
 
 const errorResult = (text: string): ToolResult => ({ content: [{ type: 'text', text }], isError: true })
-const unavailableFs = (): Promise<never> =>
-  Promise.reject(
-    new CoreError('E_WORKSPACE_CLOSED', 'filesystem is unavailable outside a workspace invocation'),
-  )
-const NO_WORKSPACE_FS: FsOps = Object.freeze({
-  read: unavailableFs,
-  write: unavailableFs,
-  list: unavailableFs,
-  stat: unavailableFs,
-})
 /** The harness itself, named as the canceller when a call is cut short by its own deadline. */
 const timeoutActor = (a: Actor): Actor => ({
   id: 'timeout',
@@ -342,11 +347,43 @@ export async function refuse(
   return result
 }
 
-export async function approveAndExecute(
-  s: SessionImpl,
-  call: PlannedCall,
-  o: ExecOpts,
-): Promise<CallOutcome> {
+async function reviewedToolExecution(s: SessionImpl, call: PlannedCall, o: ExecOpts): Promise<CallOutcome> {
+  try {
+    await assertReview(s, 'tool')
+    if (reviewing(s) && call.executionDomain !== 'workspace') await assertReview(s, 'unsupported')
+    return await approveAndExecute(s, call, {
+      ...o,
+      signal: AbortSignal.any([o.signal ?? s.ac.signal, reviewSignal(s)]),
+    })
+  } catch (error) {
+    const stopped = error instanceof CompletionReviewStop ? error : reviewStop(s)
+    if (!stopped || s.ac.signal.aborted) throw error
+    const pending = o.resumeDispatch && s.state.pendingEffects.get(o.resumeDispatch.effectId)
+    if (pending)
+      return {
+        result: await settleSyntheticDispatch(
+          s,
+          call,
+          {
+            effectId: pending.effectId,
+            settle: (outcome) =>
+              s.ev('effect/settled', { effectId: pending.effectId, outcome, durationMs: 0 }),
+          },
+          2,
+          'not_sent',
+          'n/a',
+          { code: stopped.code, message: stopped.message, outcome: 'error' },
+          o,
+        ),
+      }
+    // A preparation refusal has no effect. In-flight effects are settled by the owning body.
+    if ([...s.state.pendingEffects.values()].some((effect) => effect.tool?.toolUseId === call.toolUseId))
+      throw error
+    return { result: await refuse(s, call.toolUseId, stopped.code, stopped.message) }
+  }
+}
+
+async function approveAndExecute(s: SessionImpl, call: PlannedCall, o: ExecOpts): Promise<CallOutcome> {
   const op = s.op() as OpStateObj
   const t = s.turn
   if (!t) return { result: errorResult('no open turn') }
@@ -424,29 +461,33 @@ export async function approveAndExecute(
     // Read from the fold, not from the counter: the counter's copy is a transaction behind the row
     // that taints, so the first call after an untrusted result would be judged against a clean turn.
     const taint = op.taint || s.laneTaint()
-    const gate = await dispatchLoopEvent(
-      s,
-      'before_tool_call',
-      {
-        toolUseId: call.toolUseId,
-        name: call.name,
-        args: call.args as JsonValue,
-        meta,
-        actor: s.d.actor,
-        taint,
-        resolvedPolicy: policy,
-        executionDomain: call.executionDomain,
-        definitionFingerprint: call.definitionFingerprint,
-        policyHash: call.policyHash,
-      },
-      o.signal ?? s.ac.signal,
+    const gate = await awaitReview(s, () =>
+      dispatchLoopEvent(
+        s,
+        'before_tool_call',
+        {
+          toolUseId: call.toolUseId,
+          name: call.name,
+          args: call.args as JsonValue,
+          meta,
+          actor: s.d.actor,
+          taint,
+          resolvedPolicy: policy,
+          executionDomain: call.executionDomain,
+          definitionFingerprint: call.definitionFingerprint,
+          policyHash: call.policyHash,
+        },
+        o.signal ?? s.ac.signal,
+      ),
     )
     // A hook denial is not an approval question: nobody is asked, because the answer is already no.
     if (!gate.allow) return { result: await refuse(s, call.toolUseId, 'HOOK_DENIED', gate.reason) }
     const risk = policy.requiresApproval
     const originalCall = s.state.toolCalls.get(call.toolUseId)
     const stepId = originalCall ? `${originalCall.turn}/${originalCall.step}` : `${op.meta.turn}/${op.step}`
-    const decision = await s.d.runtime.authorize(s.d.actor, 'execute', { kind: 'skill', id: call.name })
+    const decision = await awaitReview(s, () =>
+      s.d.runtime.authorize(s.d.actor, 'execute', { kind: 'skill', id: call.name }),
+    )
     decisionId = decision.decisionId
     if (decision.effect === 'deny')
       return { result: await refuse(s, call.toolUseId, 'AUTHZ_DENIED', decision.reason, decisionId) }
@@ -487,28 +528,30 @@ export async function approveAndExecute(
         version: selectedPolicy.version,
       }),
     )
-    const permission = await decideToolPolicy(
-      s,
-      structuredClone({
-        sessionKey: s.key,
-        workspaceRoot: s.workspaceRoot,
-        cwd: s.d.cwd,
-        actor: s.d.actor,
-        call: {
-          id: call.toolUseId,
-          name: call.name,
-          args: call.args as JsonValue,
-          description: def.description,
-          parameters: def.parameters as JsonValue,
-          definitionFingerprint: call.definitionFingerprint,
-        },
-        policy,
-        category: meta.isOpenWorld ? 'external' : policy.isReadOnly ? 'read' : 'write',
-        tainted: taint,
-        fullAccess: s.yolo || automaticPermissionDecision(s.permissionContext) !== undefined,
-        approvalMode,
-      }),
-      o.signal ?? s.ac.signal,
+    const permission = await awaitReview(s, () =>
+      decideToolPolicy(
+        s,
+        structuredClone({
+          sessionKey: s.key,
+          workspaceRoot: s.workspaceRoot,
+          cwd: s.d.cwd,
+          actor: s.d.actor,
+          call: {
+            id: call.toolUseId,
+            name: call.name,
+            args: call.args as JsonValue,
+            description: def.description,
+            parameters: def.parameters as JsonValue,
+            definitionFingerprint: call.definitionFingerprint,
+          },
+          policy,
+          category: meta.isOpenWorld ? 'external' : policy.isReadOnly ? 'read' : 'write',
+          tainted: taint,
+          fullAccess: s.yolo || automaticPermissionDecision(s.permissionContext) !== undefined,
+          approvalMode,
+        }),
+        o.signal ?? s.ac.signal,
+      ),
     )
     if (
       !permission ||
@@ -841,6 +884,7 @@ export async function approveAndExecute(
         recheckGrant()
         continue
       }
+      await assertReview(s, 'unsupported')
       let requestId = s.d.ids.requestId()
       const options = [
         'allowed-once' as const,
@@ -1144,8 +1188,13 @@ export async function approveAndExecute(
       })
     // The intent's own seq: the only one a dispatch permit may be bound to.
     const [, startedSeqs] = await s.transitionChain(chain, {
-      beforeCommit: () => recheckPermission?.(),
+      beforeCommit: async () => {
+        await assertReview(s, 'tool')
+        await awaitReview(s, async () => recheckPermission?.())
+      },
       commitCheck: () => {
+        const stopped = reviewStop(s)
+        if (stopped) throw stopped
         s.decisions.consumptionEvents(approvalRefs, toolDecisionSource(s, call, true), started.effectId)
       },
     })
@@ -1161,7 +1210,7 @@ export async function approveAndExecute(
     initialAttempt = 1
     firstDispatchCommitted = call.executionDomain === 'workspace'
   }
-  const timeoutMs = s.preset.tools.timeouts[call.name] ?? s.preset.tools.timeoutMs
+  const timeoutMs = reviewTimeout(s, s.preset.tools.timeouts[call.name] ?? s.preset.tools.timeoutMs)
   // The tool is told a limit a grace short of the one enforced below, so a tool that honours it can
   // return its own result (partial output, the cause) before the kernel cuts the call off.
   const softTimeoutMs = timeoutMs - Math.min(2000, Math.floor(timeoutMs / 10))
@@ -1185,127 +1234,16 @@ export async function approveAndExecute(
         onAttachmentRead: markAttachmentRead,
       })
     }
-    const computerUseAllowed = s.computerUseAllowed()
-    const context = (fsOps: FsOps, workspace?: ToolContextDeps['workspace']) =>
-      buildToolContext(
-        {
-          sessionKey: s.key,
-          lane: s.lane,
-          turn: op.meta.turn,
-          step: op.step,
-          depth: o.depth,
-          generationDepth: s.generationDepth,
-          actor: s.d.actor,
-          decisions: s.decisions.port({
-            owner: def.source.source,
-            sourcePackage: def.packageIdentity ?? def.source.packageIdentity ?? def.source.source,
-            packageVersion: def.packageVersion ?? def.source.packageVersion ?? 'unversioned',
-            operationId: call.toolUseId,
-            alive: () => ac.signal.throwIfAborted(),
-          }),
-          ...(approvalProof ? { approval: approvalProof } : {}),
-          cwd: s.d.cwd,
-          workspaceRoot: s.workspaceRoot,
-          fullAccess: s.yolo || automaticPermissionDecision(s.permissionContext) !== undefined,
-          runtime: s.d.runtime,
-          preset: s.preset,
-          children: s.d.children,
-          fsOps,
-          ...(s.d.memory && workspace
-            ? {
-                memory: {
-                  session: s.d.memory,
-                  approve: (proposal: import('@agnes/extension-api').MemoryProposal) =>
-                    approveMemoryFile(s, proposal, { name: call.name, meta: def.meta }, op.step, ac.signal),
-                },
-              }
-            : {}),
-          ...(workspace ? { workspace } : {}),
-          netFetch: s.d.netFetch,
-          ...(s.d.publicFetch ? { publicFetch: s.d.publicFetch } : {}),
-          log: s.d.logger,
-          invoke: invokeNested,
-          discloseTool: (name, signal) => discloseTool(s, name, signal),
-          toolAvailability: (name) => toolAvailability(s, name),
-          listTools: () =>
-            t.snapshot.defs.filter((definition) => modelVisibleTool(definition, computerUseAllowed)),
-          appendPlan: (items) =>
-            s.d.log
-              .append([s.ev('plan.items', { items }, { register: 'plan.items' })])
-              .then((r) => r.firstSeq),
-          requestCompaction: (i) => {
-            t.compactionRequested = i ?? null
-          },
-          ...(s.d.requestMedia ? { readImages: (input) => readSessionImages(s, input, ac.signal) } : {}),
-          imageInputPolicy: async () => imageInputPolicy(s),
-          imageInput: (input) => imageInput(s, input, ac.signal),
-          readAttachment: (input) => {
-            markAttachmentRead()
-            return readSessionAttachment(s, input, ac.signal)
-          },
-          progress: () => undefined,
-          registerArtifact: async (artifact) => {
-            await s.d.log.append([
-              s.ev(
-                'x/core/artifact.registered',
-                { artifact },
-                {
-                  ignorable: true,
-                  sourceEventSeqs: [call.argsSeq],
-                },
-              ),
-            ])
-          },
-          artifactJobEvent: (job) =>
-            s.d.log
-              .append([
-                s.ev('artifact/job', job, { register: 'artifact/job', sourceEventSeqs: [call.argsSeq] }),
-              ])
-              .then(() => undefined),
-          // What the writer lease actually has left, not a constant: a tool budgeting its own work
-          // against a number the kernel invented plans against a deadline that is not the real one.
-          lease: { remainingMs: () => s.d.log.leaseRemainingMs() },
-        },
-        {
-          toolUseId: call.toolUseId,
-          name: call.name,
-          signal: ac.signal,
-          ...toolCallLimits(s, t, softTimeoutMs),
-        },
-      )
-    const invoke = (ctx: ReturnType<typeof context>, attempt: ExecuteAttempt) =>
-      s.executeTool(
-        call.name,
-        call.args,
-        ctx,
-        { effectId: effect.effectId, startSeq },
-        () => def.execute(call.args as never, ctx),
-        { executionDomain: call.executionDomain, attempt },
-      )
-    const invokeAttempt = (attempt: ExecuteAttempt): Promise<HostDispatchObservation> => {
-      const workspaceInvocation = s.d.workspaceInvocation
-      if (workspaceInvocation) {
-        const handler = async (
-          view: import('@agnes/core-effects/workspace/runtime').WorkspaceInvocationView,
-        ) => {
-          const confined = await view.ready(ac.signal)
-          const ctx = context(view.fs(), {
-            sandbox: view.hookSandbox(),
-            confine: (argv) => confined.confine(argv),
-            checkpoint: view.checkpointContext(),
-          })
-          return invoke(ctx, attempt)
-        }
-        return s.d.workspacePublication
-          ? s.d.workspacePublication.workspace(() => ({ port: workspaceInvocation, handler }))
-          : workspaceInvocation.run(handler)
-      }
-      if (call.executionDomain === 'workspace')
-        return Promise.reject(
-          new CoreError('E_WORKSPACE_CLOSED', 'workspace tool execution needs an invocation port'),
-        )
-      return invoke(context(NO_WORKSPACE_FS), attempt)
-    }
+    const invokeAttempt = toolInvoker(s, call, {
+      effect,
+      startSeq,
+      o,
+      signal: ac.signal,
+      softTimeoutMs,
+      ...(approvalProof ? { approvalProof } : {}),
+      invokeNested,
+      markAttachmentRead,
+    })
     // Every synthesized failure of this call goes through here, so each commits its `[nested result]` note.
     const settleFailed = (at: ExecuteAttempt, phase: 'not_sent' | 'may_have_sent', input: SyntheticFailure) =>
       settleSyntheticDispatch(s, call, effect, at, phase, decisionId, input, o)
@@ -1316,6 +1254,15 @@ export async function approveAndExecute(
     // The call itself, which `withTimeout` stops waiting for the moment a cancel lands.
     let dispatched: Promise<HostDispatchObservation> | undefined
     while (true) {
+      const stoppedBeforeDispatch = reviewStop(s)
+      if (stoppedBeforeDispatch && !s.ac.signal.aborted)
+        return {
+          result: await settleFailed(attempt, 'not_sent', {
+            code: stoppedBeforeDispatch.code,
+            message: stoppedBeforeDispatch.message,
+            outcome: 'error',
+          }),
+        }
       if (ac.signal.aborted) {
         return {
           result: await settleFailed(attempt, 'not_sent', {
@@ -1348,6 +1295,15 @@ export async function approveAndExecute(
           waited()
         }
       } catch (error) {
+        const stopped = !s.ac.signal.aborted ? reviewStop(s) : undefined
+        if (stopped && !reviewDispatchStarted(s, effect.effectId, attempt))
+          return {
+            result: await settleFailed(attempt, 'not_sent', {
+              code: stopped.code,
+              message: stopped.message,
+              outcome: 'error',
+            }),
+          }
         timedOut = error instanceof Error && error.message.startsWith('timeout:')
         cancelled = !timedOut && ac.signal.aborted
         observation = { phase: 'may_have_sent', error }
@@ -1395,6 +1351,15 @@ export async function approveAndExecute(
             outcome: 'error',
           }),
         }
+      const stoppedBeforeRetry = reviewStop(s)
+      if (stoppedBeforeRetry && !s.ac.signal.aborted)
+        return {
+          result: await settleFailed(attempt, 'not_sent', {
+            code: stoppedBeforeRetry.code,
+            message: stoppedBeforeRetry.message,
+            outcome: 'error',
+          }),
+        }
       if (parent.aborted)
         return {
           result: await settleFailed(attempt, 'not_sent', {
@@ -1413,6 +1378,15 @@ export async function approveAndExecute(
         }),
       )
     }
+    const stoppedBeforeReceipt = !s.ac.signal.aborted ? reviewStop(s) : undefined
+    if (stoppedBeforeReceipt && !reviewDispatchStarted(s, effect.effectId, attempt))
+      return {
+        result: await settleFailed(attempt, 'not_sent', {
+          code: stoppedBeforeReceipt.code,
+          message: stoppedBeforeReceipt.message,
+          outcome: 'error',
+        }),
+      }
     if (call.executionDomain === 'host-computer-use')
       await s.transition([], (cur) =>
         updateCall(cur, call.toolUseId, {
@@ -1464,9 +1438,14 @@ export async function approveAndExecute(
       }
       if (timedOut || cancelled) {
         const result = await settleFailed(attempt, 'may_have_sent', {
-          code: 'CANCELLED',
-          message: timedOut ? `timeout: ${call.name}` : `aborted: ${call.name}`,
-          outcome: 'aborted',
+          code: !s.ac.signal.aborted && reviewStop(s) ? reviewStop(s)!.code : 'CANCELLED',
+          message:
+            !s.ac.signal.aborted && reviewStop(s)
+              ? reviewStop(s)!.message
+              : timedOut
+                ? `timeout: ${call.name}`
+                : `aborted: ${call.name}`,
+          outcome: !s.ac.signal.aborted && reviewStop(s) ? 'error' : 'aborted',
           partial: true,
           cancelledBy: timedOut ? timeoutActor(s.d.actor) : s.d.actor,
         })
@@ -1496,7 +1475,10 @@ export async function approveAndExecute(
         enforcement: s.d.runtime.enforcement(),
       },
       ac.signal,
-    )
+    ).catch((error): { result?: ToolResult } => {
+      if (!s.ac.signal.aborted && reviewStop(s)) return {}
+      throw error
+    })
     const finalResult = hooked?.result ?? result
     const marker = deferredMarker(finalResult)
     const knownJob = marker.present && marker.jobId ? s.latest('artifact/job', marker.jobId) : undefined
@@ -1858,6 +1840,7 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
     await s.endTurn('parked', {
       events: [
         ...unrecordedParkEvents(s, parks),
+        ...reviewStopEvents(s),
         ...deferredClosers,
         ...notStarted,
         s.ev('step/end', { turn: cur.meta.turn, step: cur.step }),
@@ -1869,6 +1852,7 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
   // reached the ledger, and the signal can be pulled without it — so the close is taken here,
   // through the same closer `step()` uses, rather than left to a prologue that may never fire.
   if (s.ac.signal.aborted) return finishAborted(s)
+  if (reviewStop(s)) throw reviewStop(s)
   const cur = s.op() as OpStateObj
   const terminate = cur.phase.kind === 'tools' && cur.phase.batch.calls.some((c) => c.terminate)
   if (deferredJobs.length > 0) {
@@ -1908,3 +1892,5 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
   )
   return { phase: 'checkpoint' }
 }
+
+export { reviewedToolExecution as approveAndExecute }

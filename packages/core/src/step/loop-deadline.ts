@@ -2,6 +2,7 @@ import { CoreError } from '@agnes/core-common/types'
 import { armTimeout } from '@agnes/core-effects/effects/wrap'
 import type { LoopDriver, LoopStepOutcome } from '@agnes/extension-api'
 import { bestEffort } from '../best-effort.js'
+import { CompletionReviewStop, reviewSignal } from '../execution/turn/review-budget.js'
 import type { SessionImpl } from './session.js'
 
 const DEFAULT_LOOP_STEP_IDLE_MS = 30 * 60_000
@@ -107,12 +108,12 @@ export function stepWithinLoopDeadline(s: SessionImpl, driver: LoopDriver): Prom
     idleMs: loopStepIdleMs(s),
     progress: () => s.lastSeq + s.loopScope.progress,
     waiting: () => s.decisions.waiting > 0 || s.loopScope.waiting,
-    signal: s.ac.signal,
+    signal: reviewSignal(s),
     cancel: () => {
       s.decisions.revokeScope()
       s.loopScope.revoke()
     },
-    run: () => driver.step(s.ac.signal),
+    run: () => driver.step(reviewSignal(s)),
     expire: () => {
       s.decisions.revokeScope()
       s.ac.abort()
@@ -172,6 +173,10 @@ export async function withLoopDeadline<T>(input: {
     }
     onAbort = () => {
       disarm?.()
+      if (input.signal?.reason instanceof CompletionReviewStop) {
+        reject(input.signal.reason)
+        return
+      }
       disarm = armTimeout(() => {
         input.cancel?.()
         reject(new CoreError('E_CLOSED', 'Loop step did not settle after cancellation'))

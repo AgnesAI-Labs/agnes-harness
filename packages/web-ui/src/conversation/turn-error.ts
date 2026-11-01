@@ -21,6 +21,9 @@ export type TurnErrorKind =
   | 'budget'
   | 'steps'
   | 'interrupted'
+  | 'review-requests'
+  | 'review-time'
+  | 'review-unavailable'
   | 'unknown'
 
 export type TurnErrorAction = 'retry' | 'account' | 'model'
@@ -50,6 +53,9 @@ const NONE: readonly TurnErrorAction[] = []
 
 /** Exact matches only: a code is either known here or handled by the reason fallback below. */
 const BY_CODE: Readonly<Record<string, ClassRule>> = {
+  COMPLETION_REVIEW_REQUEST_LIMIT: { kind: 'review-requests', actions: NONE },
+  COMPLETION_REVIEW_TIME_LIMIT: { kind: 'review-time', actions: NONE },
+  COMPLETION_REVIEW_UNAVAILABLE: { kind: 'review-unavailable', actions: NONE },
   AUTH: { kind: 'auth', actions: ACCOUNT },
   PROVIDER_UNCONFIGURED: { kind: 'auth', actions: ACCOUNT },
   QUOTA: { kind: 'quota', actions: ACCOUNT },

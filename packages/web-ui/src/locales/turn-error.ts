@@ -1,11 +1,17 @@
 import type { LocaleCatalog } from './index.js'
 
 /**
- * Failed-turn error text: one fixed message for each of 14 failure kinds plus action, detail and process labels.
+ * Failed-turn error text: one fixed message for each failure kind plus action, detail and process labels.
  * Hosts and standalone consumers share these keys, kept in a separate table from the conversation catalog.
  */
 export const turnErrorLocaleCatalog = {
   en: {
+    'turn.error.class.review-requests':
+      'Additional completion review reached its request limit and is incomplete. Inspect the existing answer and artifacts; send a new explicit request if more work is needed.',
+    'turn.error.class.review-time':
+      'Additional completion review reached its time limit and is incomplete. Inspect the existing answer and artifacts; send a new explicit request if more work is needed.',
+    'turn.error.class.review-unavailable':
+      'Additional completion review could not safely continue and is incomplete. Inspect the existing answer and artifacts; send a new explicit request if more work is needed.',
     'turn.error.class.auth':
       'Model account authentication is unavailable. Check its credential configuration and access.',
     'turn.error.class.quota': 'The model account has no quota left.',
@@ -38,6 +44,12 @@ export const turnErrorLocaleCatalog = {
     'turn.error.processLabel': 'Process log',
   },
   'zh-CN': {
+    'turn.error.class.review-requests':
+      '附加核对因达到请求次数上限而未完成。请自行检查已有回答和产物；如需继续工作，请发起新的明确请求。',
+    'turn.error.class.review-time':
+      '附加核对因达到时间上限而未完成。请自行检查已有回答和产物；如需继续工作，请发起新的明确请求。',
+    'turn.error.class.review-unavailable':
+      '附加核对无法安全继续，尚未完成。请自行检查已有回答和产物；如需继续工作，请发起新的明确请求。',
     'turn.error.class.auth': '模型账户认证未通过，请检查凭据配置与访问权限。',
     'turn.error.class.quota': '模型账户的额度已用完。',
     'turn.error.class.rate': '模型服务正在限流，稍后再试。',

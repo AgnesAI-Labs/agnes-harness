@@ -1,5 +1,15 @@
 import { attachmentOmittedThrough, attachmentSurface } from '../../request/attachment-surface.js'
 import { estimateTokens } from '../model-tokens.js'
+import {
+  admitReviewInference,
+  assertReview,
+  awaitReview,
+  CompletionReviewStop,
+  reviewRequestNote,
+  reviewSignal,
+  reviewStop,
+  reviewTimeout,
+} from './review-budget.js'
 
 export { estimateTokens } from '../model-tokens.js'
 
@@ -198,14 +208,15 @@ async function fallbackImageInputTokens(
   imageCount: number,
   estimate: number,
 ): Promise<number | null> {
+  const signal = reviewSignal(s)
   const fallback = s.d.imageInputTokenFallback
   if (!fallback) return null
   try {
     const bound = await withTimeout(
-      Promise.resolve(fallback({ wire, ...(media ? { media } : {}), imageCount, signal: s.ac.signal })),
-      5000,
+      Promise.resolve(fallback({ wire, ...(media ? { media } : {}), imageCount, signal })),
+      reviewTimeout(s, 5000),
       'imageInputTokenFallback',
-      s.ac.signal,
+      signal,
     )
     return bound &&
       bound.imageCount === imageCount &&
@@ -215,6 +226,7 @@ async function fallbackImageInputTokens(
       ? bound.tokens
       : null
   } catch (error) {
+    if (signal.reason instanceof CompletionReviewStop && !s.ac.signal.aborted) throw signal.reason
     await s.diag('budget-recount', {
       failed: true,
       estimate,
@@ -326,6 +338,7 @@ export async function assembleRequestPrefix(
   const deferred = deferredToolsSection(ctx.snapshot.defs)
   if (deferred) contribs.push({ op: 'core:deferred-tools', promptSections: [deferred] })
   const memory = await s.d.memory?.snapshot(ctx.state?.meta.turn ?? 0)
+  ctx.signal.throwIfAborted()
   if (memory) {
     if (!(await s.d.log.scan({ type: 'x/core/memory-private', limit: 1 })).length)
       await s.d.log.append([s.ev('x/core/memory-private', { files: 1 }, { ignorable: true })])
@@ -371,6 +384,7 @@ export async function assembleRequestPrefix(
   for (const conflict of merged.conflicts) await s.diag('contribute-conflict', conflict)
   if (t.preload === undefined) t.preload = (await preloadRuntimeSection(s, triggerSeq)) ?? null
   const preloaded = t.preload
+  ctx.signal.throwIfAborted()
   const permitted = new Set(ctx.disclosed)
   merged.tools = merged.tools.filter((name) => permitted.has(name))
   // Cache ordinary context hooks for identical assembly inputs; opted-in contributors refresh. Current-prompt
@@ -522,13 +536,28 @@ export async function surfaceToolCalls(s: SessionImpl): Promise<NonNullable<Deri
   return out
 }
 
+function requestLimitNotes(s: SessionImpl, t: TurnMemory, language: string | undefined) {
+  const turnTime = turnTimeNote(s, t, language)
+  const review = reviewRequestNote(s)
+  return [...(turnTime ? [{ prefix: TURN_TIME_PREFIX, text: turnTime }] : []), ...(review ? [review] : [])]
+}
+
 export async function prepareInferenceRequest(
+  s: SessionImpl,
+  options: import('@agnes/extension-api').LoopRequestOptions = {},
+): Promise<DeriveOutput | StepOutcome> {
+  await assertReview(s, 'inference')
+  return awaitReview(s, () => prepareInferenceRequestBody(s, options))
+}
+
+async function prepareInferenceRequestBody(
   s: SessionImpl,
   options: import('@agnes/extension-api').LoopRequestOptions = {},
 ): Promise<DeriveOutput | StepOutcome> {
   const op = s.op()
   const t = s.turn
   if (!op || !t) throw new CoreError('E_RELATION', 'Request preparation requires an accepted input')
+  const preparationSignal = reviewSignal(s)
   const tailNote = loopTailNote(options)
   await restoreToolDisclosure(s)
   await restoreToolArgumentRecovery(s)
@@ -557,7 +586,7 @@ export async function prepareInferenceRequest(
     preset: s.preset,
     state: op,
     snapshot: toolsForModel(t.snapshot, computerUseAllowed),
-    signal: s.ac.signal,
+    signal: reviewSignal(s),
     disclosed: coreTools,
     model: {
       slot,
@@ -604,7 +633,7 @@ export async function prepareInferenceRequest(
           mediaLimits: mediaRuntime.mediaLimits,
           sessionKey: s.key,
           lane: s.lane,
-          signal: s.ac.signal,
+          signal: reviewSignal(s),
         })
         verifyAuxiliaryVisionPreflightMedia(durablePreflight, requestMedia, preflightBinding)
       } else if (persistedMedia) {
@@ -617,7 +646,7 @@ export async function prepareInferenceRequest(
           mediaLimits: mediaRuntime.mediaLimits,
           sessionKey: s.key,
           lane: s.lane,
-          signal: s.ac.signal,
+          signal: reviewSignal(s),
         })
       } else {
         mediaLedger = surface.filter((node) => node.kind === 'tool_result').map((node) => node.event)
@@ -641,7 +670,7 @@ export async function prepareInferenceRequest(
             surfaceLimits: mediaRuntime.surfaceLimits,
             mediaLimits: mediaRuntime.mediaLimits,
             lane: s.lane,
-            signal: s.ac.signal,
+            signal: reviewSignal(s),
             mainModelInput: modelInput,
             auxiliaryVisionAvailable: auxiliaryVisionAvailableForSession(
               s,
@@ -659,6 +688,8 @@ export async function prepareInferenceRequest(
       return { phase: 'terminal', reason: 'aborted' }
     }
     if (requestMedia.header.route === 'auxiliary-vision') {
+      preparationSignal.throwIfAborted()
+      await assertReview(s, 'unsupported')
       const auxiliary = mediaRuntime.auxiliaryVision
       if (!auxiliary) throw new CoreError('E_ENVELOPE', 'auxiliary request media lacks a fitted Core caller')
       const preflight =
@@ -686,7 +717,7 @@ export async function prepareInferenceRequest(
   await s.ensureEnvelopeEpochs()
   // Measured now, as late as assembly allows, so the figure is as fresh as the request.
   const language = await turnLanguage(s, t, op.meta.triggerSeq)
-  const turnTime = turnTimeNote(s, t, language)
+  const requestNotes = requestLimitNotes(s, t, language)
   const progressCheck = await progressCheckNote(s, t, op, language)
   let out = deriveRequest({
     ...(memoryRevision === undefined ? {} : { memoryRevision }),
@@ -726,7 +757,7 @@ export async function prepareInferenceRequest(
     ],
     ...(requestMedia ? { media: requestMedia, mediaSessionKey: s.key } : {}),
     ...(auxiliaryVision ? { auxiliaryVision } : {}),
-    ...(turnTime ? { requestNotes: [{ prefix: TURN_TIME_PREFIX, text: turnTime }] } : {}),
+    ...(requestNotes.length ? { requestNotes } : {}),
     ...(tailNote ? { tailNote } : {}),
   })
   if (attachmentOmittedThrough(s)) out.header.attachmentImagesOmittedThrough = attachmentOmittedThrough(s)
@@ -738,6 +769,7 @@ export async function prepareInferenceRequest(
     )
     out = { ...out, request, header: { ...out.header, derived_hash: derivedHash } }
   }
+  preparationSignal.throwIfAborted()
   out = await beforeLoopModelRequest(s, withLoopSampling(out, options), slot, attempt)
   prepareToolAvailability(out, {
     imageInput: computerUseAllowed,
@@ -748,6 +780,15 @@ export async function prepareInferenceRequest(
 
 /** Shared request admission, including image bounds, tree reservations and overage disposition. */
 export async function admitInferenceRequest(
+  s: SessionImpl,
+  initial: DeriveOutput,
+  projectPreparedWire = false,
+): ReturnType<typeof admitInferenceRequestBody> {
+  await assertReview(s, 'inference')
+  return releaseTreeReservationOnError(s, () => admitInferenceRequestBody(s, initial, projectPreparedWire))
+}
+
+async function admitInferenceRequestBody(
   s: SessionImpl,
   initial: DeriveOutput,
   projectPreparedWire = false,
@@ -778,7 +819,9 @@ export async function admitInferenceRequest(
   // its complete prepared wire so a tiny inbox prompt cannot authorize a large private request.
   const cap = s.turnBudgetCap()
   if (projectPreparedWire && cap !== null) {
-    const projected = await s.d.runtime.billingProjected({ tokensEstimate: estimate, model: target.model })
+    const projected = await awaitReview(s, () =>
+      s.d.runtime.billingProjected({ tokensEstimate: estimate, model: target.model }),
+    )
     if (projected.credits > cap) {
       if (s.turn?.hardBudgetCap !== undefined || s.preset.budget.onExceed === 'deny') {
         await s.endTurn('budget')
@@ -824,10 +867,12 @@ export async function admitInferenceRequest(
       await s.endTurn('budget')
       return { phase: 'terminal', reason: 'budget' }
     }
-    const projected = await s.d.runtime.billingProjected({
-      tokensEstimate: inputTokens,
-      model: target.model,
-    })
+    const projected = await awaitReview(s, () =>
+      s.d.runtime.billingProjected({
+        tokensEstimate: inputTokens,
+        model: target.model,
+      }),
+    )
     const tree = await reserveTreeBudget(s, projected.credits, target, inputTokens)
     if (tree !== 'ok') return { phase: 'terminal', reason: tree.reason }
     const bound = treePermitOf(s)
@@ -911,6 +956,7 @@ export async function admitInferenceRequest(
 }
 
 export async function runInference(s: SessionImpl): Promise<StepOutcome> {
+  await assertReview(s, 'inference')
   const op = s.op()
   const t = s.turn
   if (!op || !t) return { phase: 'idle' }
@@ -956,7 +1002,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     preset: s.preset,
     state: op,
     snapshot: toolsForModel(t.snapshot, s.computerUseAllowed(target)),
-    signal: s.ac.signal,
+    signal: reviewSignal(s),
     disclosed: out.request.tools.map((tool) => tool.name),
     model: { slot, ...target },
   }
@@ -1009,7 +1055,8 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     ]
     const headerIndex = headerEvent ? pre.indexOf(headerEvent) : -1
     const intentIndex = pre.indexOf(effect.intent)
-    const transitionSeqs = await s.transition(
+    const transitionSeqs = await admitReviewInference(
+      s,
       pre,
       withPhase(
         op,
@@ -1034,7 +1081,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     return { effect, header, effectIntentSeq, headerSeq: t.lastHeaderSeq }
   })
 
-  const sessionSignal = s.ac.signal
+  const sessionSignal = reviewSignal(s)
   const execution = new ModelExecution(s, {
     wire,
     header,
@@ -1391,6 +1438,18 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     settlement = { ok: false, error }
   } finally {
     sessionSignal.removeEventListener('abort', onSessionAbort)
+  }
+  if (!settlement.ok && !s.ac.signal.aborted && reviewStop(s)) {
+    const stopped = reviewStop(s)!
+    await execution.commit(
+      [...execution.rows('error', true), s.ev('step/end', { turn: op.meta.turn, step })],
+      withPhase(s.op() ?? op, {
+        kind: 'failure_drain',
+        error: { code: stopped.code, message: stopped.message },
+        provenance: { kind: 'inference' },
+      }),
+    )
+    return { phase: 'failure_drain' }
   }
   if (!settlement.ok) {
     // run() owns the terminal transaction. A separate fallback settlement here would split cost

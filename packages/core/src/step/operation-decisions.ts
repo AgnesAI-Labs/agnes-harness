@@ -1,6 +1,7 @@
 import { canonicalJson } from '@agnes/core-common/request/hash'
 import { CoreError } from '@agnes/core-common/types'
 import type { DecisionReviewPort, DecisionSpec } from '@agnes/extension-api'
+import { assertReview } from '../execution/turn/review-budget.js'
 import { hookedAsk } from './approval-ask.js'
 import { deliverDecision } from './decision-delivery.js'
 import { domainDecisionEvents } from './domain-decision.js'
@@ -20,7 +21,19 @@ export function operationDecisionPort(s: SessionImpl, owner: string): DecisionRe
   const port = s.decisions.port(source)
   return Object.freeze({
     ...port,
+    request: async (spec: DecisionSpec) => {
+      await assertReview(s, 'unsupported')
+      return port.request(spec)
+    },
+    wait: async (
+      handle: import('@agnes/extension-api').DecisionHandle,
+      options?: { readonly signal?: AbortSignal },
+    ) => {
+      await assertReview(s, 'unsupported')
+      return port.wait(handle, options)
+    },
     async review(spec: DecisionSpec, options?: { readonly signal?: AbortSignal }) {
+      await assertReview(s, 'unsupported')
       const signal = AbortSignal.any([s.ac.signal, ...(options?.signal ? [options.signal] : [])])
       if (!spec.options.every((option) => ['allowed-once', 'allowed-session', 'rejected'].includes(option)))
         throw new CoreError('E_ENVELOPE', 'Operation reviews require one-shot approval choices')

@@ -41,6 +41,37 @@ function io(o: { stderrTTY?: boolean; stdoutTTY?: boolean; stdin?: string } = {}
 }
 
 describe('runPrint in text mode', () => {
+  it.each([
+    'COMPLETION_REVIEW_REQUEST_LIMIT',
+    'COMPLETION_REVIEW_TIME_LIMIT',
+    'COMPLETION_REVIEW_UNAVAILABLE',
+  ])('retains the candidate and safe blocked reason in every print format (%s)', async (code) => {
+    for (const mode of ['text', 'json', 'stream-json'])
+      for (const locale of ['en', 'zh-CN']) {
+        const o = { ...io(), locale }
+        const ep = scriptedEndpoint({
+          reason: 'blocked',
+          reply: 'candidate result',
+          trailingEmptyAssistant: true,
+          turnEndError: { code, message: 'private implementation detail' },
+        })
+        expect(await runPrint(await booted(ep), parseArgs(['-p', 'q', '--mode', mode]), o)).toBe(4)
+        if (mode === 'text') expect(o.out()).toBe('candidate result\n')
+        else {
+          const line = JSON.parse(o.out().trim().split('\n').at(-1)!)
+          expect(line).toMatchObject({
+            reason: 'blocked',
+            exitCode: 4,
+            error: { code },
+            text: 'candidate result',
+          })
+          expect(line.error).toEqual({ code })
+        }
+        expect(o.err()).toContain(code)
+        expect(o.err()).toContain(locale === 'en' ? 'Additional completion review' : '附加核对')
+        expect(o.err()).not.toContain('private')
+      }
+  })
   it('prints the last assistant text and identifies the session on stderr', async () => {
     const o = io()
     const code = await runPrint(

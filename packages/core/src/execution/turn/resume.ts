@@ -1,5 +1,5 @@
 import { type OpStateObj, type ToolCallState, withPhase } from '@agnes/core-common/step/op-state'
-import type { EventInput, Seq } from '@agnes/core-common/types'
+import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
 import { isNestedCall } from '@agnes/core-ledger'
 import { scanAll, scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { EffectNode } from '@agnes/core-ledger/reduce/state'
@@ -16,6 +16,7 @@ import type { SessionImpl } from '../../step/session.js'
 import { classifyToolRecovery, type ToolRecoveryDecision } from '../../step/tool-recovery.js'
 import { interruptedRequestNote } from './inference-failure.js'
 import { failureNotes, recoveryNotes } from './nested-note.js'
+import { assertReview, CompletionReviewStop, refreshReview, reviewStopEvents } from './review-budget.js'
 import { unknownOutcomeRows } from './unknown-outcome.js'
 
 export type ResumeMode = 'continue' | 'close'
@@ -117,7 +118,7 @@ function nestedCallGraph(o: OpStateObj, rootEffectId: string): ToolCallState[] {
 async function askUnknownOutcome(s: SessionImpl, toolUseId: string, name: string): Promise<void> {
   const reconciliation = await unknownOutcomeRows(s, toolUseId, name)
   if (reconciliation.park) {
-    await closeTurn(s, 'parked', { events: reconciliation.rows })
+    await closeTurn(s, 'parked', { events: [...reconciliation.rows, ...reviewStopEvents(s)] })
     return
   }
   // Answered while recovery waited (or before the crash): the answer is consumed here and the
@@ -263,18 +264,69 @@ async function interruptedInferenceCost(
  * mid-inference unresumable: the next `step()` threw, and the turn was repaired away instead of
  * continued.
  */
+// Read afresh at each use rather than once at the top, the way `closeTurn` reads it: a branch that
+// has already closed the step must not be followed by one that writes a second close for it.
+function recoveryStepEnd(s: SessionImpl): EventInput[] {
+  const open = s.state.openStep.get(s.lane)
+  return open ? [s.ev('step/end', { turn: open.turn, step: open.step })] : []
+}
+
+async function refuseRecoveredInference(
+  s: SessionImpl,
+  root: EffectNode,
+  cur: OpStateObj,
+  cost: EventInput,
+): Promise<boolean> {
+  try {
+    await assertReview(s, 'inference')
+  } catch (error) {
+    if (!(error instanceof CompletionReviewStop)) throw error
+    await s.transition(
+      [cost, s.ev('effect/settled', { effectId: root.effectId, outcome: 'error' }), ...recoveryStepEnd(s)],
+      withPhase(cur, {
+        kind: 'failure_drain',
+        error: { code: error.code, message: error.message },
+        provenance: { kind: 'inference', seq: root.intentSeq },
+      }),
+    )
+    return true
+  }
+  return false
+}
+
+async function refuseRecoveredTool(
+  s: SessionImpl,
+  root: EffectNode,
+  cur: OpStateObj,
+  undispatchedNestedEvents: EventInput[],
+  nestedCallIds: ReadonlySet<string>,
+): Promise<boolean> {
+  if (!root.tool) throw new CoreError('E_RELATION', 'tool recovery lacks its call')
+  try {
+    await assertReview(s, 'tool')
+  } catch (error) {
+    if (!(error instanceof CompletionReviewStop)) throw error
+    await s.transition(
+      [
+        ...undispatchedNestedEvents,
+        syntheticResult(s, root.tool.toolUseId, error.code, error.message, root.argsSeq ?? root.intentSeq),
+        s.ev('effect/settled', { effectId: root.effectId, outcome: 'error' }),
+      ],
+      setCallsCompleted(setCallCompleted(cur, root.tool.toolUseId), nestedCallIds),
+    )
+    return true
+  }
+
+  return false
+}
+
 export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {}): Promise<ResumeReport> {
   if (o.mode === 'close') return closeInterrupted(s)
   const op = s.op()
   if (!op) return { state: 'idle', actions: [] }
   await s.rehydrateTurn(op)
+  await refreshReview(s)
   const actions: ResumeReport['actions'] = []
-  // Read afresh at each use rather than once at the top, the way `closeTurn` reads it: a branch that
-  // has already closed the step must not be followed by one that writes a second close for it.
-  const stepEnd = (): EventInput[] => {
-    const open = s.state.openStep.get(s.lane)
-    return open ? [s.ev('step/end', { turn: open.turn, step: open.step })] : []
-  }
   for (const root of s.pendingEffects()) {
     const cur = s.op()
     if (!cur) break
@@ -282,7 +334,11 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
       const { cost, output } = await interruptedInferenceCost(s, root)
       if (cur.control.status === 'cancel_requested') {
         await s.transition(
-          [cost, s.ev('effect/settled', { effectId: root.effectId, outcome: 'aborted' }), ...stepEnd()],
+          [
+            cost,
+            s.ev('effect/settled', { effectId: root.effectId, outcome: 'aborted' }),
+            ...recoveryStepEnd(s),
+          ],
           withPhase(cur, {
             kind: 'failure_drain',
             error: { code: 'ABORTED', message: 'cancelled before the process died' },
@@ -290,6 +346,10 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
           }),
         )
         actions.push({ effectId: root.effectId, action: 'aborted' })
+        continue
+      }
+      if (await refuseRecoveredInference(s, root, cur, cost)) {
+        actions.push({ effectId: root.effectId, action: 'error' })
         continue
       }
       // A phase that is not an inference holding a pending inference effect is a broken counter.
@@ -308,7 +368,7 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
             cost,
             s.ev('effect/settled', { effectId: root.effectId, outcome: 'error' }),
             ...(output > 0 ? [interruptedRequestNote(s, 'INTERRUPTED')] : []),
-            ...stepEnd(),
+            ...recoveryStepEnd(s),
           ],
           withPhase(cur, { kind: 'inference', gen: { status: 'ready', attempt: attempt + 1 } }),
         )
@@ -316,7 +376,7 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
         continue
       }
       await s.transition(
-        [cost, s.ev('effect/settled', { effectId: root.effectId, outcome: 'error' }), ...stepEnd()],
+        [cost, s.ev('effect/settled', { effectId: root.effectId, outcome: 'error' }), ...recoveryStepEnd(s)],
         withPhase(cur, {
           kind: 'failure_drain',
           error: { code: 'INTERRUPTED', message: 'inference interrupted; retries exhausted' },
@@ -493,6 +553,10 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
         continue
       }
       if (decision === 'retry-same-effect') {
+        if (await refuseRecoveredTool(s, root, cur, undispatchedNestedEvents, nestedCallIds)) {
+          actions.push({ effectId: root.effectId, action: 'error' })
+          continue
+        }
         // Keep the original effect open. Attempt two is a continuation of the same durable intent,
         // not a fresh effect that would reset the retry budget after another crash.
         await s.transition(

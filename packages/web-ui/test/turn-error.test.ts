@@ -47,6 +47,9 @@ describe('turn error classification', () => {
     ['HOOK_BLOCKED', 'internal', []],
     ['CODE_RUNTIME_UNAVAILABLE', 'internal', ['retry']],
     ['INTERRUPTED', 'interrupted', ['retry']],
+    ['COMPLETION_REVIEW_REQUEST_LIMIT', 'review-requests', []],
+    ['COMPLETION_REVIEW_TIME_LIMIT', 'review-time', []],
+    ['COMPLETION_REVIEW_UNAVAILABLE', 'review-unavailable', []],
   ] as const)('reads %s as %s with %j', (code, kind, actions) => {
     const view = turnErrorView(failure(code))
     expect(view.kind).toBe(kind)
@@ -72,6 +75,7 @@ describe('turn error classification', () => {
     expect(turnErrorView(failure('E_RUNTIME')).kind).toBe('unknown')
     expect(turnErrorView(failure('E_RUNTIME')).actions).toEqual(['retry'])
     expect(turnErrorView(failure('AUTH_TIMEOUT')).kind).toBe('unknown')
+    expect(turnErrorView(failure('COMPLETION_REVIEW_PRIVATE')).kind).toBe('unknown')
   })
 
   it('drops the code display when the turn ended without an error object', () => {

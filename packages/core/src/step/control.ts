@@ -4,6 +4,7 @@ import { settlesWithin } from '@agnes/core-effects/effects/wrap'
 import type { Actor } from '@agnes/protocol'
 import { persistChildLifecycleStop, revokeChildLifecycle } from '../child/lifecycle.js'
 import { refusalNotes } from '../execution/turn/nested-note.js'
+import { isReviewCode } from '../execution/turn/review-budget.js'
 import { deferredEffectId } from './deferred.js'
 import type { SessionImpl, StepOutcome, TurnEndReason } from './session.js'
 
@@ -172,7 +173,8 @@ export async function finishAborted(s: SessionImpl): Promise<StepOutcome> {
   await drainAborted(s)
   const op = s.op()
   if (!op) return { phase: 'terminal', reason: 'aborted' }
-  const error = op.phase.kind === 'failure_drain' ? op.phase.error : undefined
+  const error =
+    op.phase.kind === 'failure_drain' && !isReviewCode(op.phase.error.code) ? op.phase.error : undefined
   const reason = (await s.controls.ending())?.reason ?? 'aborted'
   await closeTurn(s, reason, error ? { error } : {})
   return { phase: 'terminal', reason }

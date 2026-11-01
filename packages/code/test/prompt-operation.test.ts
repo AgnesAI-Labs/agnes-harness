@@ -89,8 +89,11 @@ describe('the prompt operation', () => {
         const messages = JSON.stringify(provider.requests[2]?.messages)
         for (const text of [
           'Quote each explicit requirement verbatim',
-          'run a check now',
-          'fresh process with the default environment',
+          'Reuse executed checks',
+          'With sufficient applicable evidence, reply directly',
+          'smallest targeted check',
+          'Reserve the last inference admission',
+          'A fix verified only on a copy',
           'independently of the implementation',
           'Do not delete or reset artifacts currently in use or already validated deliverables',
           'use a separate copy or isolated workspace',
@@ -100,6 +103,8 @@ describe('the prompt operation', () => {
           'deliverable files contain only the requested content',
         ])
           expect(messages).toContain(text)
+        expect(messages).not.toContain('run a check now')
+        expect(messages).not.toContain('fresh process with the default environment')
         const notes = await h.log.scan({ type: 'user/message', limit: 20 })
         const review = notes.find(
           (e) =>

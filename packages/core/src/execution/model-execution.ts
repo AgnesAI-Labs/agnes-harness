@@ -9,6 +9,7 @@ import type { RequestHeaderData } from '../request/derive.js'
 import { runCoreReplacement } from '../step/reentry.js'
 import type { OpContext, SessionImpl } from '../step/session.js'
 import { estimateTokens } from './model-tokens.js'
+import { assertReview, reviewSignal, reviewStop, reviewTimeout } from './turn/review-budget.js'
 import { recordToolAvailability } from './turn/tool-availability.js'
 
 type Usage = Extract<InferenceEvent, { type: 'usage' }>
@@ -178,7 +179,7 @@ export class ModelExecution {
   ) {
     this.turn = input.memory
     this.op = { turn: input.turnId, step: input.step }
-    this.cancellation = AbortSignal.any([input.signal, s.ac.signal])
+    this.cancellation = AbortSignal.any([input.signal, reviewSignal(s)])
     this.signal = AbortSignal.any([this.cancellation, this.controller.signal])
     let finish!: () => void
     const freezing = s.trackEffectReceipt(
@@ -203,7 +204,17 @@ export class ModelExecution {
     let done = false
     try {
       s.loopScope.assertAlive()
+      await assertReview(s, 'model-dispatch')
       this.signal.throwIfAborted()
+      const left = reviewTimeout(s, Number.MAX_SAFE_INTEGER)
+      if (left < Number.MAX_SAFE_INTEGER)
+        input.wire = {
+          ...input.wire,
+          timeoutMs: {
+            firstToken: Math.min(input.wire.timeoutMs?.firstToken ?? s.preset.model.timeoutMs, left),
+            total: Math.min(input.wire.timeoutMs?.total ?? s.preset.model.timeoutMs, left),
+          },
+        }
       const options = {
         signal: this.signal,
         toolNames: input.wire.tools.map((tool) => tool.name),
@@ -243,6 +254,8 @@ export class ModelExecution {
       // its response arrives, so from here on the request may have left even with no event seen.
       this.dispatched = !this.signal.aborted
       for (;;) {
+        const stopped = !s.ac.signal.aborted ? reviewStop(s) : undefined
+        if (stopped) throw stopped
         const active = iterator
         const next = await interruptible(
           Promise.resolve().then(() => active.next()),
@@ -327,7 +340,9 @@ export class ModelExecution {
         yield this.error
       }
     } catch (error) {
-      if (!this.error || this.cancellation.aborted)
+      const internal = !s.ac.signal.aborted ? reviewStop(s) : undefined
+      if (internal) throw internal
+      else if (!this.error || this.cancellation.aborted)
         this.error = {
           type: 'error',
           reason: this.cancellation.aborted ? 'aborted' : 'error',
@@ -351,6 +366,7 @@ export class ModelExecution {
   }
 
   get outcome(): EffectOutcome {
+    if (!this.s.ac.signal.aborted && reviewStop(this.s)) return 'error'
     const outcome =
       this.cancellation.aborted || this.error?.reason === 'aborted'
         ? 'aborted'
@@ -377,7 +393,7 @@ export class ModelExecution {
   rows(outcome: EffectOutcome, interrupted: boolean): EventInput[] {
     const { usage, error, timing, input } = this
     if (this.cancellation.aborted) {
-      if (!input.outcomeFromCaller) outcome = 'aborted'
+      if (!input.outcomeFromCaller && (this.s.ac.signal.aborted || !reviewStop(this.s))) outcome = 'aborted'
       interrupted = true
     }
     const response = usage?.response ?? error?.response

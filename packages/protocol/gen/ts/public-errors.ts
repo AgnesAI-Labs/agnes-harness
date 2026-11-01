@@ -1,5 +1,35 @@
 // generated from schema/app-server.json by tools/gen.ts — do not edit
 const PUBLIC_ERROR_COPY = {
+  "completionReviewRequests": {
+    "en": {
+      "reason": "Additional completion review is incomplete because its request limit was reached.",
+      "action": "Inspect the existing answer and artifacts yourself. Send a new explicit request if more work is needed."
+    },
+    "zh-CN": {
+      "reason": "附加核对因达到请求次数上限而未完成。",
+      "action": "请自行检查已有回答和产物；如需继续工作，请发起新的明确请求。"
+    }
+  },
+  "completionReviewTime": {
+    "en": {
+      "reason": "Additional completion review is incomplete because its time limit was reached.",
+      "action": "Inspect the existing answer and artifacts yourself. Send a new explicit request if more work is needed."
+    },
+    "zh-CN": {
+      "reason": "附加核对因达到时间上限而未完成。",
+      "action": "请自行检查已有回答和产物；如需继续工作，请发起新的明确请求。"
+    }
+  },
+  "completionReviewUnavailable": {
+    "en": {
+      "reason": "Additional completion review could not safely continue and is incomplete.",
+      "action": "Inspect the existing answer and artifacts yourself. Send a new explicit request if more work is needed."
+    },
+    "zh-CN": {
+      "reason": "附加核对无法安全继续，尚未完成。",
+      "action": "请自行检查已有回答和产物；如需继续工作，请发起新的明确请求。"
+    }
+  },
   "nativeGlibc": {
     "en": {
       "reason": "The system-node native addon failed to load: a required GLIBC version is unavailable.",
@@ -492,6 +522,9 @@ const PUBLIC_ERROR_COPY = {
   }
 } as const
 export const PUBLIC_ERROR_CONTRACT = {
+  "COMPLETION_REVIEW_REQUEST_LIMIT": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["completionReviewRequests"], reasons: {  } },
+  "COMPLETION_REVIEW_TIME_LIMIT": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["completionReviewTime"], reasons: {  } },
+  "COMPLETION_REVIEW_UNAVAILABLE": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["completionReviewUnavailable"], reasons: {  } },
   "CONFIG_AUTH_BUSY": { rpc: "AUTH_INVALID", messageKey: "appServer.errors.auth", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["auth"], reasons: {  } },
   "CONFIG_AUTH_CANCELLED": { rpc: "AUTH_INVALID", messageKey: "appServer.errors.auth", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["auth"], reasons: {  } },
   "CONFIG_AUTH_EXPIRED": { rpc: "AUTH_INVALID", messageKey: "appServer.errors.auth", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["auth"], reasons: {  } },
