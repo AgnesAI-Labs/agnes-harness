@@ -58,9 +58,9 @@ separate from this gate.
 ## Gate and failure evidence
 
 The required GitHub status is **Web E2E gate** from `.github/workflows/e2e-web.yml`. It aggregates
-all twenty-eight macOS 15 and seventeen Linux Web jobs, all six Linux fast-test shards and the separate
+all thirty-one macOS 15 and seventeen Linux Web jobs, all six Linux fast-test shards and the separate
 Linux contracts job (including `pnpm test:story`) and three migrated-heavy shards; a failed or
-cancelled dependency fails the aggregate. macOS uses twenty-five explicit file/flow lists for regular
+cancelled dependency fails the aggregate. macOS uses twenty-eight explicit file/flow lists for regular
 cases, plus two candidate-review jobs and one narrow job. Linux uses sixteen explicit lists plus the
 same narrow job; Playwright's count-based `--shard` cannot
 balance cases that range from two seconds to three minutes. The lists balance observed
@@ -81,7 +81,13 @@ search and archive restoration, everyday and advanced settings, provider auto-te
 MCP installation, business-agent start, scheduled tasks and session-grant revocation on isolated
 Demo homes. Their page matrix checks both locales/themes and 390-pixel layouts. After adding specs or changing these lists,
 compare each platform's combined `pnpm e2e:web --list` selections with the full list: every case
-must appear exactly once, counting the nightly narrow jobs below. Uploads retain completed reports,
+must appear exactly once, counting the nightly narrow jobs below. Both platforms list the same
+cases. A few skip by design where they cannot apply: the `runtime.spec.ts` Linux L1 case needs a
+real bubblewrap namespace and skips off Linux, and the live `browser.spec.ts` and
+`browser-layout.spec.ts` cases skip on both platforms unless `AGH_BROWSER_TEST_ARCHIVE` names the
+reviewed native browser archive. The three macOS lists added for the agent sweep, answer tables,
+base conversation, MCP management, browser, session activity/creation and tool recovery specs were
+sized from their Linux durations times the measured macOS 15 / Linux ratio (about 1.3). Uploads retain completed reports,
 screenshots and trace archives, excluding volatile Playwright scratch directories.
 
 **Narrow screens: per PR and nightly.** One `narrow.spec.ts` case (a locale/theme at 375, 390 and

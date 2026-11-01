@@ -51,6 +51,11 @@ jobs:
           - { id: main-17, args: "v3-actions.spec.ts --grep-invert 'forking a recovered|v3 account dialog|v3 plugin tabs|v3 local package|v3 MCP two-step|v3 MCP method cards'" }
           - { id: main-12, args: "v3-navigation.spec.ts --grep 'permissions never flash|v3 home entries|v3 command-K|v3 archive filter|smoke en/'" }
           - { id: main-18, args: "v3-navigation.spec.ts --grep-invert 'permissions never flash|v3 home entries|v3 command-K|v3 archive filter|smoke en/'" }
+          # Sized from Linux per-case durations times the measured macOS 15 / Linux ratio (about 1.3).
+          # --grep applies to every file in a list, so the first agent-sweep list also names answer tables.
+          - { id: main-26, args: "agent-sweep.spec.ts answer-tables.spec.ts --grep 'operations#desk|data-report#|finance-reconcile#|builtin:general|knowledge-qa#|Answer tables'" }
+          - { id: main-27, args: "agent-sweep.spec.ts base-conversation.spec.ts mcp-management.spec.ts browser.spec.ts browser-layout.spec.ts --grep-invert 'operations#desk|data-report#|finance-reconcile#|builtin:general|knowledge-qa#'" }
+          - { id: main-28, args: "session-activity.spec.ts session-create.spec.ts tool-recovery.spec.ts" }
           # The human review-to-publish case alone; the update/skill inbox case with the full-access case.
           - { id: candidate-review, args: "candidate-review.spec.ts --grep 'refuses edited approval'" }
           - { id: candidate-review-2, args: "candidate-review.spec.ts --grep-invert 'refuses edited approval'" }
