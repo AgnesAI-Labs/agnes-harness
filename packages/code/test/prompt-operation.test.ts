@@ -58,7 +58,8 @@ describe('the prompt operation', () => {
       const registry = new ToolRegistry()
       registry.add(shellTool(), { source: 'test', trust: 'builtin' })
       const provider = fakeProvider([toolTurn('shell', {}), textTurn('candidate'), textTurn('checked')])
-      const h = await openSession({ provider, registry, operations: [createPromptOperation(deps)] })
+      const preset = readPreset({ completion_gate: { contract_review: true } }, 'trial')
+      const h = await openSession({ provider, registry, preset, operations: [createPromptOperation(deps)] })
       try {
         const request = 'Write exactly "OK" into output.txt and preserve input.txt.'
         const reference = {
