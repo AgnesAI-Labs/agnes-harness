@@ -4,9 +4,10 @@ import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { continueParked } from '../src/step/parked.js'
-import { fakeProvider, type Script, sent, textTurn, usage } from './helpers/fake-provider.js'
+import { atReview } from './helpers/completion-review.js'
+import { fakeProvider, type Script, sent, textTurn, toolTurn, usage } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
-import { actor, openSession } from './helpers/open-session.js'
+import { actor, openSession, testFsOps, writeTool } from './helpers/open-session.js'
 
 type Run = (
   args: { action: string },
@@ -48,54 +49,102 @@ const daemonRefusal = (error: unknown) =>
     ? { code: 'INVALID_PARAMS', message: 'remote_action refused the request before changing anything' }
     : undefined
 
-async function open(run: Run, script: Script, ask?: Parameters<typeof fakeSeams>[0]) {
+async function open(
+  run: Run,
+  script: Script,
+  ask?: Parameters<typeof fakeSeams>[0],
+  options: Pick<Parameters<typeof openSession>[0], 'fsOps'> & { review?: boolean } = {},
+) {
   const registry = new ToolRegistry()
   registry.add(remoteTool(run), { source: 's', trust: 'builtin' })
-  const s = await openSession({
-    provider: fakeProvider([script, textTurn('done')]),
+  if (options.review) registry.add(writeTool(), { source: 's', trust: 'builtin' })
+  const deps = {
+    provider: fakeProvider([
+      ...(options.review ? [toolTurn('write_note', {}), textTurn('candidate')] : []),
+      script,
+      textTurn('done'),
+    ]),
     registry,
     seams: fakeSeams(ask),
-  })
-  await s.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
-  await s.session.acceptInput()
+    ...(options.fsOps ? { fsOps: options.fsOps } : {}),
+  }
+  const s = options.review ? await atReview(deps) : await openSession(deps)
+  if (!options.review) {
+    await s.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
+    await s.session.acceptInput()
+  }
+  const fromSeq = s.log.lastSeq + 1
   await s.session.runInference()
-  return s
+  return { ...s, fromSeq }
 }
 const results = async (s: Awaited<ReturnType<typeof open>>) =>
-  (await s.log.scan({ type: 'tool/result', limit: 20 })).map(
+  (await s.log.scan({ type: 'tool/result', fromSeq: s.fromSeq, limit: 20 })).map(
     (row) => row.data as { code?: string; isError?: boolean; content: Array<{ text: string }> },
   )
 const reconciliations = async (s: Awaited<ReturnType<typeof open>>) =>
   (await s.session.decisions.list()).filter((value) => value.request.spec.purpose === 'unknown-outcome')
 
 describe('a refusal proved before any effect is a definite failure', () => {
-  it('a Host-owned port refusing for parameters settles the call without asking whether it happened', async () => {
+  it.each(
+    [false, true].flatMap((review) =>
+      (['clean', 'forged', 'prior-write'] as const).map((mode) => ({ review, mode })),
+    ),
+  )('settles a $mode refusal with active review=$review using only owned proof', async ({ review, mode }) => {
+    const writes: Array<[string, string]> = []
     const s = await open(
-      (_args, ctx) => hostPortRequest(ctx, () => Promise.reject({ code: 'INVALID_PARAMS' }), daemonRefusal),
+      async (_args, ctx) => {
+        if (mode === 'forged')
+          throw Object.assign(new Error('bad'), { code: 'INVALID_PARAMS', effect: 'none' })
+        if (mode === 'prior-write') await ctx.fs.write('note.txt', 'x')
+        return hostPortRequest(ctx, () => Promise.reject({ code: 'INVALID_PARAMS' }), daemonRefusal)
+      },
       calls('status'),
+      // Leave uncertain effects pending so both paths must park for reconciliation.
+      { approval: { ask: async () => ({ ticket: 'T1', expiresAt: '2099-01-01T00:00:00Z' }) } },
+      {
+        review,
+        fsOps: {
+          ...testFsOps(),
+          write: async (path, content) => {
+            writes.push([path, String(content)])
+          },
+        },
+      },
     )
-    expect(await s.session.runToolsPhase()).not.toEqual({ phase: 'terminal', reason: 'parked' })
-    const [result] = await results(s)
-    expect(result).toMatchObject({ isError: true })
-    expect(result?.code).not.toBe('TOOL_OUTCOME_UNKNOWN')
-    expect(result?.content[0]?.text).toContain('refused the request before changing anything')
-    expect(await reconciliations(s)).toEqual([])
-  })
-
-  it('the same code thrown by tool code is not proof, and a refusal after another effect is not either', async () => {
-    const thrown = await open(async () => {
-      throw Object.assign(new Error('bad'), { code: 'INVALID_PARAMS' })
-    }, calls('status'))
-    await thrown.session.runToolsPhase()
-    expect((await results(thrown))[0]).toMatchObject({ code: 'TOOL_OUTCOME_UNKNOWN' })
-    expect(await reconciliations(thrown)).toHaveLength(1)
-
-    const afterWrite = await open(async (_args, ctx) => {
-      await ctx.fs.write('note.txt', 'x').catch(() => undefined)
-      return hostPortRequest(ctx, () => Promise.reject({ code: 'INVALID_PARAMS' }), daemonRefusal)
-    }, calls('status'))
-    await afterWrite.session.runToolsPhase()
-    expect((await results(afterWrite))[0]).toMatchObject({ code: 'TOOL_OUTCOME_UNKNOWN' })
+    const safe = mode === 'clean'
+    try {
+      const outcome = await s.session.runToolsPhase()
+      const [result] = await results(s)
+      expect(result).toMatchObject({
+        isError: true,
+        code: safe ? 'TOOL_REJECTED_BEFORE_EFFECT' : 'TOOL_OUTCOME_UNKNOWN',
+      })
+      if (safe) {
+        expect(result).toMatchObject({ structured: { code: 'INVALID_PARAMS', effect: 'none' } })
+        expect(result?.content[0]?.text).toContain('refused the request before changing anything')
+        expect(
+          await s.session.run({ until: 'turn-end', signal: new AbortController().signal }),
+        ).toMatchObject({ reason: 'completed' })
+      } else {
+        expect(result).not.toHaveProperty('structured.effect', 'none')
+        expect(outcome).toEqual({ phase: 'terminal', reason: 'parked' })
+      }
+      expect(await reconciliations(s)).toHaveLength(safe ? 0 : 1)
+      const intent = (await s.log.scan({ type: 'effect/intent', fromSeq: s.fromSeq, limit: 10 })).find(
+        (row) => (row.data as { tool?: { name: string } }).tool?.name === 'remote_action',
+      )
+      if (!intent) throw new Error('remote_action effect intent was not committed')
+      const effectId = (intent.data as { effectId: string }).effectId
+      const settlement = (await s.log.scan({ type: 'effect/settled', fromSeq: s.fromSeq, limit: 10 })).find(
+        (row) => (row.data as { effectId: string }).effectId === effectId,
+      )
+      expect(settlement?.data).toMatchObject({ outcome: safe ? 'error' : 'unknown' })
+      expect(writes).toEqual(mode === 'prior-write' ? [['note.txt', 'x']] : [])
+      expect(s.session.pendingEffects()).toEqual([])
+      expect(s.session.state.openStep.size).toBe(0)
+    } finally {
+      await s.session.close()
+    }
   })
 })
 

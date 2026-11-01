@@ -196,7 +196,7 @@ describe('additional completion review admission', () => {
     }
   })
 
-  it.each(['spawn', 'fork', 'resume', 'job', 'compaction', 'decision'] as const)(
+  it.each(['spawn', 'fork', 'resume', 'message', 'job', 'compaction', 'decision', 'decision-wait'] as const)(
     'refuses unsupported Core capability %s before its external dispatch',
     async (capability) => {
       let dispatched = 0
@@ -207,6 +207,7 @@ describe('additional completion review admission', () => {
           if (capability === 'spawn') await ctx.subagent.spawn('extra work', { resident: true })
           if (capability === 'fork') await ctx.subagent.fork('extra work')
           if (capability === 'resume') await ctx.subagent.resume('existing-idle-child')
+          if (capability === 'message') await ctx.subagent.sendMessage?.('existing-idle-child', 'extra work')
           if (capability === 'job')
             await ctx.artifacts.submitJob({ idempotencyKey: 'extra', payload: { prompt: 'extra work' } })
           if (capability === 'compaction') ctx.requestCompaction('extra model work')
@@ -219,6 +220,8 @@ describe('additional completion review admission', () => {
               options: ['allowed-once', 'rejected'],
               responseSchema: { type: 'null' },
             })
+          if (capability === 'decision-wait')
+            await ctx.decisions.wait({ id: 'existing-decision', sessionId: ctx.session.key })
           return { content: [] }
         }),
         { source: 'test', trust: 'builtin' },
@@ -233,6 +236,10 @@ describe('additional completion review admission', () => {
           resume: async () => {
             dispatched++
             throw new Error('must not run existing child')
+          },
+          sendMessage: async () => {
+            dispatched++
+            throw new Error('must not message existing child')
           },
         },
         seams: fakeSeams({
