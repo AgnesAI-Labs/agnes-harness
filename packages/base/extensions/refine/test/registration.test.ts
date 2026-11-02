@@ -3,7 +3,6 @@ import type { Context } from '@agnes/plugin-runtime'
 import { describe, expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import refineDefault, { createRefineExtension, type RefinementSwitch } from '../src/index.js'
-import { createInspectTool } from '../src/inspect-tool.js'
 import {
   connectedToolPort,
   type RefinementOutcome,
@@ -205,9 +204,9 @@ describe('the tools backed by the host runs', () => {
     expect(text(off)).toBe('REFINEMENT_OFF: refinement is off for this profile')
   })
 
-  it('the unregistered harness_inspect would answer a typed not-implemented error', async () => {
-    const result = await createInspectTool(connectedToolPort(fakeRuns().connect(undefined))).execute(
-      { op: 'search', query: 'tests' } as never,
+  it("the host port's inspect answers a typed not-implemented error", async () => {
+    const result = await connectedToolPort(fakeRuns().connect(undefined)).inspect(
+      { op: 'search', query: 'tests' },
       fakeToolContext(),
     )
     expect(result.isError).toBe(true)
@@ -236,13 +235,12 @@ describe('tools forward to an injected port', () => {
     expect(p.refine).toHaveBeenLastCalledWith({ target: 'session' }, ctx)
   })
 
-  it('harness_inspect hands its query to the port unchanged', async () => {
+  it('no harness_inspect tool exists to reach the port, even when the port could answer one', async () => {
     const p = port()
-    expect(applyPlugin(createRefineExtension({ settings: settings(true), port: p })).tools).toHaveLength(2)
-    const ctx = fakeToolContext()
-    const args = { op: 'list', kind: 'skill', cursor: 'c1' }
-    expect(await createInspectTool(p).execute(args as never, ctx)).toBe(ok)
-    expect(p.inspect).toHaveBeenCalledWith(args, ctx)
+    const registered = applyPlugin(createRefineExtension({ settings: settings(true), port: p }))
+    expect(registered.tools.map((tool) => tool.name)).toEqual(['harness_propose', 'harness_refine'])
+    for (const tool of registered.tools) await tool.execute({ focus: 'x' } as never, fakeToolContext())
+    expect(p.inspect).not.toHaveBeenCalled()
   })
 
   it('a workspace target is refused as a later-release feature and never reaches the port', async () => {

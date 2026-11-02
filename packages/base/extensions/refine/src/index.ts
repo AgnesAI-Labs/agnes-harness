@@ -48,7 +48,7 @@ export function createRefineExtension(deps: RefineExtensionDeps = {}) {
       // With nothing to run them, the tools would only ever fail: none are registered.
       const port = deps.port ?? (deps.runs ? connectedToolPort(deps.runs(REFINEMENT_PLANNER)) : undefined)
       if (!port) return
-      // harness_inspect is not registered until it can read entries: a tool that only answers
+      // There is no harness_inspect tool until entries can be read: a tool that only answered
       // REFINEMENT_NOT_IMPLEMENTED would be a dead end the model is invited into.
       const disposers: Disposer[] = [
         ctx.tools.register(createProposeTool(port)),

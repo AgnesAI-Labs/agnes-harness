@@ -21,7 +21,7 @@
 | `cli.remote-and-extra-modes` | CLI 远程传输与额外模式 | partial | 本地 print/TUI 与 ACP 可用；显式 `--connect` 使用共享 daemon。其余管理命令仍遵循文档规定的本地或拒绝执行范围。 | 按模式补充实现 | `packages/cli/src/bin.ts` |
 | `sdk.optional-build-capabilities` | SDK 可选传输与认证构造 | wired | 入口未包含可选传输或认证实现时，`Unsupported` 是预期的类型化边界。 | 已完成；保留缺失能力时拒绝执行的行为 | `packages/sdk/src/errors.ts` |
 | `sandbox.bwrap-runtime-selection` | Bubblewrap 选择 | wired | 编译器叶子实现有意不作为默认 seam 直接使用，由运行时后端选择器探测并选择。 | 已完成；保留间接接入方式 | `packages/base/extensions/sandbox/src/backends/bwrap.ts` |
-| `refinement.inspect` | 读取已保存的任务经验（`harness_inspect`） | stub | 默认关闭。在设置中开启任务经验改进后，`harness_propose` 与 `harness_refine` 可用；`harness_inspect` 不会提供给模型（其处理函数返回 `REFINEMENT_NOT_IMPLEMENTED`），模型看到的内容也不会提到它。在它能检索和读取条目之前，提案只能新增条目。 | 需要检索和读取已保存条目 | `packages/base/extensions/refine/src/port.ts` |
+| `refinement.inspect` | 读取已保存的任务经验（`harness_inspect`） | stub | 默认关闭。在设置中开启任务经验改进后，`harness_propose` 与 `harness_refine` 可用；`harness_inspect` 不会提供给模型（宿主端口的处理函数返回 `REFINEMENT_NOT_IMPLEMENTED`），模型看到的内容也不会提到它。在它能检索和读取条目之前，提案只能新增条目。 | 需要检索和读取已保存条目 | `packages/base/extensions/refine/src/port.ts` |
 
 ## 会话命令传输
 

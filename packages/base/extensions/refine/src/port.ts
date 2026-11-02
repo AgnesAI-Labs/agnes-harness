@@ -30,7 +30,8 @@ export type InspectRequest = {
 }
 
 /**
- * Where the three refinement tools hand their validated input. The extension owns only the tool
+ * Where the refinement tools hand their validated input (`inspect` has no tool yet and answers
+ * REFINEMENT_NOT_IMPLEMENTED). The extension owns only the tool
  * surface; whoever supplies this port owns identity, state and effects. Each call gets the calling
  * tool's context so the port can tell which session asked.
  */
