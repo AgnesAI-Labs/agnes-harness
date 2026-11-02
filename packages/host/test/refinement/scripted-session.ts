@@ -121,19 +121,22 @@ async function captureSession(opts: ScriptedSessionOptions): Promise<CapturedReq
         plan: async (payload) => compactPlan(payload),
         onCompact: async () => undefined,
       })
+      const finish = async () => {
+        const result = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+        if (result.reason !== 'completed') throw new Error(`scripted turn ended with ${result.reason}`)
+      }
       const turn = async (prompt: string) => {
         await session.enqueue('next-turn', {
           content: [{ type: 'text', text: prompt }],
           actor: session.d.actor,
           kind: 'prompt',
         })
-        const result = await session.run({ until: 'turn-end', signal: new AbortController().signal })
-        if (result.reason !== 'completed') throw new Error(`scripted turn ended with ${result.reason}`)
+        await finish()
       }
       await turn('Read missing.txt.')
       await turn('Read probe.txt.')
       await session.requestCompaction({ actor: session.d.actor, admissionId: 'refinement-baseline-compact' })
-      await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      await finish()
       await turn('Thanks, that is all.')
     } finally {
       await host.close()
@@ -145,15 +148,22 @@ async function captureSession(opts: ScriptedSessionOptions): Promise<CapturedReq
 }
 
 /**
- * Drops the one `harness_propose` row from the deferred-tool listing and nothing else. The listing
- * line is `<name> — <first sentence of the description>\n` (core/src/request/deferred-tools.ts).
+ * The one deferred-tool row the normalizer drops, as it appears inside the JSON request body (a
+ * newline there is the two characters `\n`). The row is `<name> — <first sentence of the
+ * description>\n` (core/src/request/deferred-tools.ts).
+ */
+export const PROPOSE_ROW =
+  'harness_propose — Propose a change to prompts, memory, skills or subagent specs.\\n'
+
+const DEFERRED_SECTION = /<available_deferred_tools>[\s\S]*?<\/available_deferred_tools>/gu
+
+/**
+ * Drops the exact `harness_propose` row from the deferred-tool listing and nothing else. A request
+ * without that row (once refinement is off and the tool is not registered) comes back unchanged.
  */
 export function normalizeForBaseline(raw: string): string {
-  return raw.replace(HARNESS_PROPOSE_LINE, '')
+  return raw.replace(DEFERRED_SECTION, (section) => section.replace(PROPOSE_ROW, ''))
 }
-
-// Inside the JSON body the newline is the two characters `\n`.
-const HARNESS_PROPOSE_LINE = /harness_propose — [^\n]*?\\n/u
 
 export const WORKSPACE_HASH_PLACEHOLDER = '<workspace-hash>'
 
@@ -168,10 +178,14 @@ export function maskVolatile(
   raws: readonly string[],
   paths: { dataDir: string; workspace: string },
 ): string[] {
+  // A path inside the JSON body is escaped (a Windows backslash becomes two), so mask both forms.
   // The workspace may sit under the data directory, so mask the longer path first.
+  const escaped = (path: string) => JSON.stringify(path).slice(1, -1)
   const ordered = [
     [paths.workspace, WORKSPACE_PLACEHOLDER],
+    [escaped(paths.workspace), WORKSPACE_PLACEHOLDER],
     [paths.dataDir, DATA_DIR_PLACEHOLDER],
+    [escaped(paths.dataDir), DATA_DIR_PLACEHOLDER],
   ] as const
   const callIds = new Map<string, number>()
   return raws.map((raw) =>

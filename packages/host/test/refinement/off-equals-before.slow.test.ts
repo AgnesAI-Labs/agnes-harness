@@ -3,20 +3,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { maskVolatile, normalizeForBaseline, runScriptedSession } from './scripted-session.js'
+import { maskVolatile, normalizeForBaseline, PROPOSE_ROW, runScriptedSession } from './scripted-session.js'
 
 const baselineFile = fileURLToPath(new URL('../fixtures/refinement/off-baseline.json', import.meta.url))
 const apis = ['anthropic-messages', 'openai-completions'] as const
 
 type Baseline = Record<(typeof apis)[number], string[]>
 
-/** The one deferred-tool row the normalizer drops (a newline inside the JSON body is the two characters `\n`). */
-const PROPOSE_ROW = 'harness_propose — Propose a change to prompts, memory, skills or subagent specs.\\n'
-
-/** Runs the session once per api; `masked` is the first request before the normalizer ran. */
-async function record(): Promise<{ baseline: Baseline; masked: Record<(typeof apis)[number], string> }> {
+/** Runs the session once per api and returns the masked, normalized requests. */
+async function record(): Promise<Baseline> {
   const baseline = {} as Baseline
-  const masked = {} as Record<(typeof apis)[number], string>
   for (const api of apis) {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-refinement-baseline-')))
     try {
@@ -29,13 +25,12 @@ async function record(): Promise<{ baseline: Baseline; masked: Record<(typeof ap
         requests.map((request) => request.raw),
         { dataDir, workspace },
       )
-      masked[api] = volatileFree[0] ?? ''
       baseline[api] = volatileFree.map(normalizeForBaseline)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
   }
-  return { baseline, masked }
+  return baseline
 }
 
 /** The request bodies are one long line each, so name the first differing byte instead of dumping both. */
@@ -48,7 +43,7 @@ function firstDifference(expected: string, actual: string): string {
 
 describe('refinement off', () => {
   it('RSI off sends the same bytes as before', async () => {
-    const { baseline: actual, masked } = await record()
+    const actual = await record()
     if (process.env.AGH_RECORD_REFINEMENT_BASELINE === '1') {
       writeFileSync(baselineFile, `${JSON.stringify(actual, null, 2)}\n`)
       return
@@ -61,10 +56,33 @@ describe('refinement off', () => {
         if (request !== expected)
           throw new Error(`${api} request ${index}: ${firstDifference(expected, request)}`)
       }
-      // The normalizer is not vacuous and removes that one row and nothing else.
-      expect(masked[api].split(PROPOSE_ROW), api).toHaveLength(2)
-      expect(masked[api].replace(PROPOSE_ROW, ''), api).toBe(actual[api][0])
       expect(baseline[api].join('')).not.toContain('harness_propose')
     }
+  })
+
+  // The gate above must stay green when the product stops listing harness_propose, so the normalizer
+  // is proven on synthetic text instead of on the live request.
+  it('the normalizer drops only the exact harness_propose row inside the deferred-tool section', () => {
+    const section = (rows: string) =>
+      `{"text":"intro\\n<available_deferred_tools>\\n${rows}</available_deferred_tools>"}`
+    const before = 'goal_get — Read the goal.\\n'
+    const after = 'job_kill — Stop a job.\\n'
+    expect(normalizeForBaseline(section(`${before}${PROPOSE_ROW}${after}`))).toBe(
+      section(`${before}${after}`),
+    )
+    // already absent: unchanged
+    expect(normalizeForBaseline(section(`${before}${after}`))).toBe(section(`${before}${after}`))
+    // a similar row, or the row outside the section, is not touched
+    const similar = 'harness_propose — Another description.\\n'
+    expect(normalizeForBaseline(section(`${similar}${after}`))).toBe(section(`${similar}${after}`))
+    const outside = `{"text":"${PROPOSE_ROW}"}`
+    expect(normalizeForBaseline(outside)).toBe(outside)
+  })
+
+  it('masks directories in their raw and JSON-escaped forms', () => {
+    const paths = { dataDir: 'C:\\tmp\\agnes\\data', workspace: 'C:\\tmp\\agnes\\data\\ws' }
+    const raw = JSON.stringify({ a: paths.workspace, b: paths.dataDir, c: `${paths.workspace}\\x` })
+    const [masked] = maskVolatile([raw], paths)
+    expect(masked).toBe('{"a":"<workspace>","b":"<data-dir>","c":"<workspace>\\\\x"}')
   })
 })
