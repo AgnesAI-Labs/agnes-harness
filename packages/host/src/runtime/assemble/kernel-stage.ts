@@ -30,6 +30,7 @@ import type { AssemblyContext } from './context.js'
 import type { PresetCatalog } from './presets.js'
 import type { ProcessServices } from './process-services.js'
 import type { ProviderStage } from './provider-stage.js'
+import type { RefinementHost } from './refinement.js'
 import type { RuntimeTargetHost } from './runtime-target.js'
 import type { SeamSet } from './seam-set.js'
 import type { SkillState } from './skills.js'
@@ -133,6 +134,7 @@ export async function createKernel(
     seamSet: SeamSet
     discoveredResources: WeakMap<SessionImpl, readonly ResourceEntry[]>
     extensionLeases: ExtensionLeases
+    refinement: RefinementHost
   }>,
 ) {
   const { deps, rollback, clock, activationBarrier } = ctx
@@ -179,6 +181,7 @@ export async function createKernel(
     )
   const kernel = Kernel.create({
     ...(deps.childRoles ? { childRoles: deps.childRoles } : {}),
+    ...input.refinement.kernelOptions,
     ...(systemPromptProvider
       ? {
           systemPrompt: {
@@ -319,5 +322,6 @@ export async function createKernel(
   })
   ctx.live.kernel.set(kernel)
   rollback.push('kernel', () => kernel.close())
+  input.refinement.bindKernel(kernel)
   return { kernel, extensionSessions, compositionLease, systemPromptProvider, memory }
 }

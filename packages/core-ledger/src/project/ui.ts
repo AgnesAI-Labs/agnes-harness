@@ -33,7 +33,7 @@ import {
 import { SlotFillView as SlotFillSchema } from '@agnes/protocol/gen/agnes-v1'
 import { contextAnchorOf } from '../reduce/anchor.js'
 import { reduce } from '../reduce/reducer.js'
-import { initialState, type LedgerState } from '../reduce/state.js'
+import { initialState, type LedgerState, MAINTENANCE_LANE } from '../reduce/state.js'
 import {
   type ApprovalNode,
   approvalFactsOf,
@@ -58,6 +58,7 @@ import { fillInlineNodes, fillInlinePage } from './ui-inline-slots.js'
 import { fillLiveSlots } from './ui-live-slots.js'
 import { noticeNode } from './ui-notices.js'
 import { applyToolResultEvent } from './ui-tool-results.js'
+import { addLaneShare, laneShares, type UsageTotals } from './usage.js'
 
 /** Generation belongs to the daemon's writer ownership, not to a core ledger projection. */
 export type CoreUITimeline = Omit<UITimeline, 'generation'>
@@ -252,6 +253,7 @@ export class UIProjectionCell {
   private op: OpState | undefined = undefined
 
   private readonly usageTotals = emptyTotals()
+  private readonly laneUsage = new Map<string, UsageTotals>()
   private readonly seenCostEffects = new Set<string>()
   private usageCredits = 0
   private hasCredits = false
@@ -365,6 +367,7 @@ export class UIProjectionCell {
       ...(Object.keys(cacheHealthView(this.cacheHealth)).length > 0
         ? { cache: cacheHealthView(this.cacheHealth) }
         : {}),
+      ...laneShares(this.laneUsage, this.lane),
     }
   }
 
@@ -587,6 +590,7 @@ export class UIProjectionCell {
         this.contextTokensValue = 0
       }
       Object.assign(this.usageTotals, emptyTotals())
+      this.laneUsage.clear()
       this.seenCostEffects.clear()
       this.usageCredits = 0
       this.hasCredits = false
@@ -600,8 +604,10 @@ export class UIProjectionCell {
       this.allSubscription = true
       return
     }
-    if ((event.lane ?? 'main') !== this.lane) return
-    const anchor = contextAnchorOf(event)
+    const lane = event.lane ?? 'main'
+    // Background maintenance spends for the session too; it is counted, never part of the context.
+    if (lane !== this.lane && !(lane === MAINTENANCE_LANE && event.type === 'cost/ledger')) return
+    const anchor = lane === this.lane ? contextAnchorOf(event) : undefined
     if (anchor) {
       this.contextBase = { seq: anchor.seq, total: anchor.total }
       this.contextTokensValue = anchor.total
@@ -610,8 +616,10 @@ export class UIProjectionCell {
       const row = event.data as CostLedger
       if (this.seenCostEffects.has(row.effectId)) return
       this.seenCostEffects.add(row.effectId)
+      const boundary = this.state.session?.parent?.boundarySeq
+      if (!row.adjustment || boundary === undefined || row.adjustment.of > boundary)
+        addLaneShare(this.laneUsage, lane, row)
       if (row.adjustment) {
-        const boundary = this.state.session?.parent?.boundarySeq
         if (boundary !== undefined && row.adjustment.of <= boundary) return
         if (this.hasCredits) this.usageCredits += row.adjustment.delta
         if (this.hasBilling && row.adjustment.usdMicrosDelta !== undefined)

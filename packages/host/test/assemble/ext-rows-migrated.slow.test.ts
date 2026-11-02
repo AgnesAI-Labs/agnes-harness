@@ -36,7 +36,7 @@ const refinementOn = (): string => {
   setRefinement(dataDir, true)
   return dataDir
 }
-const REFINE_ON = ['tool:harness_propose', 'tool:harness_refine', 'tool:harness_inspect']
+const REFINE_ON = ['tool:harness_propose', 'tool:harness_refine']
 const say = (text: string): InferenceEvent[] => [{ type: 'text_delta', delta: text }]
 
 /** Every builtin id that a default test host supplies through its own ext: row, with its registrations. */

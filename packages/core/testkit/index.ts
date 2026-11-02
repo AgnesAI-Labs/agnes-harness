@@ -5,6 +5,8 @@
 export { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 export { type EncodedLedgerState, encodeLedgerState } from '@agnes/core-ledger/testkit/encode-ledger-state'
 export { deferredResultProvenance } from '../src/execution/turn/deferred.js'
+// Test-only: production code applies a refinement through the session's refinement facade.
+export { applyRefine } from '../src/refine/apply.js'
 export {
   type FakeProvider,
   fakeProvider,

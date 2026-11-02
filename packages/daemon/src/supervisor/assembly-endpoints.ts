@@ -28,7 +28,7 @@ import { registerFactChain } from '@agnes/daemon-rpc/local/methods/fact-chain'
 import { registerFeedback } from '@agnes/daemon-rpc/local/methods/feedback'
 import { registerProfileServices } from '@agnes/daemon-rpc/local/methods/profile-services'
 import { registerPromptTrace } from '@agnes/daemon-rpc/local/methods/prompt-trace'
-import { registerRefinement } from '@agnes/daemon-rpc/local/methods/refinement'
+import { registerRefinement, registerSessionRefine } from '@agnes/daemon-rpc/local/methods/refinement'
 import * as sessionPrefs from '@agnes/daemon-rpc/local/methods/session-preferences'
 import { registerSessionSelection } from '@agnes/daemon-rpc/local/methods/session-selection'
 import { registerVoice } from '@agnes/daemon-rpc/local/methods/session-voice'
@@ -313,6 +313,7 @@ function registerSessionEndpoints(
     log: console,
   })
   registerRefinement(ep, { settings: new RefinementSettingsStore(o.config.dataDir, o.profile.name) })
+  registerSessionRefine(ep, cx, requireSessionOwner(cx))
   registerDoctor(ep, {
     home: o.config.home ?? dirname(dirname(o.profileDir)),
     profile: o.profile.name,

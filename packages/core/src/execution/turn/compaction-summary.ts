@@ -202,7 +202,6 @@ export async function primaryPrefix(s: SessionImpl): Promise<Prefix> {
     ...(memoryRevision === undefined ? {} : { memoryRevision }),
     kind: 'turn',
     merged,
-    harnessEntries: [...s.state.registers.harnessEntries.values()].map((entry) => entry.value),
     surface: [],
     disclosed,
     model: {
@@ -252,7 +251,6 @@ export async function summaryRequest(
       canRead: false,
     },
     merged: { tools: [], sections: [], runtimeContext: {}, conflicts: [] },
-    harnessEntries: [],
     surface: segment.nodes,
     disclosed: [],
     toolCalls: calls,

@@ -2,10 +2,16 @@
 // verbatim as the reference the equivalence tests compare the product reducer against. Do not change
 // it along with the product code; change it only when the ledger format itself changes, so it keeps
 // describing the fold the product must still produce. (Changed once for that reason: the program
-// counter left the ledger rows and the fold.)
+// counter left the ledger rows and the fold; and once more when background refinement runs began to
+// be folded from their Core rows.)
 
 import { CoreError, type Event, type Seq } from '@agnes/core-common/types'
 import { isRegisterTombstone, registerKey } from '@agnes/core-ledger/log/storage'
+import {
+  foldRefinementRun,
+  REFINEMENT_RUN_EVENT,
+  type RefinementRunRecord,
+} from '@agnes/core-ledger/reduce/refinement-run'
 import type {
   ArtifactJob,
   BudgetState,
@@ -43,6 +49,7 @@ export type LedgerState = {
   taint: Map<string, boolean>
   toolCalls: Map<string, { seq: Seq; name: string; turn: number; step: number; lane: string }>
   creditsUsed: number
+  refinementRuns: Map<string, RefinementRunRecord>
   // The most recent non-interrupted `cost/ledger` entry's token total, with the seq it landed at,
   // and that same entry's cache-read/input breakdown. `contextTokens` starts counting surface nodes
   // after this seq instead of from the top of the ledger, so a long session's preflight cost stays
@@ -75,6 +82,7 @@ function cloneMaps(s: LedgerState): LedgerState {
     resumedRequests: new Set(s.resumedRequests),
     taint: new Map(s.taint),
     toolCalls: new Map(s.toolCalls),
+    refinementRuns: new Map(s.refinementRuns),
   }
 }
 
@@ -176,6 +184,7 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
         s.resumedRequests.clear()
         s.taint.clear()
         s.toolCalls.clear()
+        s.refinementRuns.clear()
         s.creditsUsed = 0
       }
       s.session = start
@@ -279,6 +288,11 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
     case 'effect/settled':
       s.pendingEffects.delete(lifecycleId(d, 'effectId', e.type, e.seq))
       break
+    case REFINEMENT_RUN_EVENT: {
+      const run = foldRefinementRun(s.refinementRuns.get(String(d?.runId)), e)
+      if (run) s.refinementRuns.set(run.runId, run)
+      break
+    }
     case 'tool/call': {
       const step = s.openStep.get(lane)
       const turn = s.openTurn.get(lane)
@@ -359,6 +373,7 @@ export function initialState(): LedgerState {
     taint: new Map(),
     toolCalls: new Map(),
     creditsUsed: 0,
+    refinementRuns: new Map(),
     lastLedgerTokens: null,
   }
 }

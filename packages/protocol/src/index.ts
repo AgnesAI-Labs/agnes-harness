@@ -190,6 +190,8 @@ export type {
   SessionReferenceSearchCancelableParams,
   SessionReferenceSearchParams,
   SessionReferenceSearchResult,
+  SessionRefineParams,
+  SessionRefineResult,
   SessionRemoveQueuedParams,
   SessionRenameParams,
   SessionRevealWorkspaceParams,

@@ -225,7 +225,6 @@ function derive(
   return deriveRequest({
     kind: 'turn',
     merged: { tools: ['computer_use'], sections: [], runtimeContext: {}, conflicts: [] },
-    harnessEntries: [],
     surface: selectedSurface,
     disclosed: [tool],
     model: { slot: 'primary', route: 'default', model: 'vision-model' },
@@ -577,7 +576,6 @@ describe('request media derive and provider wire', () => {
       deriveRequest({
         kind: 'summary',
         merged: { tools: [], sections: [], runtimeContext: {}, conflicts: [] },
-        harnessEntries: [],
         surface: fixture().surface,
         disclosed: [],
         model: { slot: 'compaction', route: 'default', model: 'm' },

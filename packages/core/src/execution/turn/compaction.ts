@@ -6,6 +6,7 @@ import type { SurfaceNode } from '@agnes/core-ledger/project/surface'
 import type { CompactionInput, CompactionModelPort, CompactionOutput } from '@agnes/extension-api'
 import { childReceiptNarrative } from '../../child/receipts.js'
 import { HookBlockedError } from '../../hooks/block.js'
+import { onCompactionCommitted, replaceMode } from '../../refinement/triggers.js'
 import { sanitize, wrapUntrusted } from '../../request/derive.js'
 import { quoteBudget } from '../../step/calibrate.js'
 import { elideSpan } from '../../step/compaction-elide.js'
@@ -185,6 +186,7 @@ async function commitReplace(
       message: error instanceof Error ? error.message : String(error),
     })
   }
+  onCompactionCommitted(s, { replaceSeq: compactPayload.replaceSeq, mode: replaceMode(events) })
   return { phase: 'checkpoint' }
 }
 

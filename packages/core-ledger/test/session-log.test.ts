@@ -600,6 +600,36 @@ describe('SessionLogImpl renews its lease during turns and on writes', () => {
     expect(armed()).toHaveLength(0)
   })
 
+  it('renewal continues while a hold is active and stops after release', async () => {
+    const storage = fresh()
+    let renewals = 0
+    const counted = Object.assign(Object.create(storage) as MemoryStorage, {
+      renew: async (k: string, r: string) => {
+        renewals++
+        await storage.renew(k, r)
+      },
+    })
+    const { log, t, armed } = await openAt(counted)
+    const release = log.holdRenewal()
+    expect(armed()).toHaveLength(1)
+    t.flush()
+    t.flush()
+    expect(renewals).toBe(2)
+    // A turn opening and closing meanwhile does not stop a renewal the hold still needs.
+    await log.append([note()], op(1))
+    await log.append([note()], op(null))
+    expect(armed()).toHaveLength(1)
+    // Two holds: the timer runs until the last one is released, and a release counts once.
+    const second = log.holdRenewal()
+    release()
+    release()
+    expect(armed()).toHaveLength(1)
+    second()
+    expect(armed()).toHaveLength(0)
+    t.flush()
+    expect(renewals).toBe(2)
+  })
+
   it('renews at once when it opens on a turn left open', async () => {
     const storage = fresh()
     const first = await openAt(storage)

@@ -119,8 +119,12 @@ export function readBenchEvents(dir: string): Map<string, LedgerEvent[]> {
  * A stable key for "the same error": the code if there is one, else a masked first line of text. Shell
  * results start with a stream label (`[stderr]`, `[stdout]`) that says nothing about the error, so
  * labels are skipped: otherwise every failing shell call would look like the same error.
+ *
+ * The same rule lives in `packages/core/src/refinement/normalize-error.ts` (Core cannot be imported
+ * from here); change both together.
  */
 const STREAM_LABEL = /^\[(?:stderr|stdout)\]$/i
+const PYTHON_TRACEBACK = /^traceback \(most recent call last\):?$/i
 
 export function normalizeToolError(result: { code?: string; content?: unknown[] }): string {
   if (result.code) return result.code
@@ -131,8 +135,11 @@ export function normalizeToolError(result: { code?: string; content?: unknown[] 
       break
     }
   }
-  const firstLine = text.split('\n').find((line) => line.trim() && !STREAM_LABEL.test(line.trim())) ?? ''
-  return firstLine
+  const lines = text.split('\n').filter((line) => line.trim() && !STREAM_LABEL.test(line.trim()))
+  // A Python traceback starts with the same header whatever went wrong; its last line names the exception.
+  const first = lines[0] ?? ''
+  const key = PYTHON_TRACEBACK.test(first.trim()) ? (lines.at(-1) ?? '') : first
+  return key
     .trim()
     .toLowerCase()
     .replace(/(?<![\w.])(?:\/|[a-z]:\\)[^\s'"`<>()]+/g, '<path>')

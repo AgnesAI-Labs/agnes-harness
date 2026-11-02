@@ -511,7 +511,7 @@ describe('reducer', () => {
     ]
     const was = tables(s1)
     const now = tables(s2)
-    expect(was).toHaveLength(14)
+    expect(was).toHaveLength(15)
     expect(now.map(([n]) => n)).toEqual(was.map(([n]) => n))
     for (const [i, [name, table]] of was.entries()) {
       if (name === 'openStep' || name === 'lastStep') expect(now[i]?.[1], name).not.toBe(table)

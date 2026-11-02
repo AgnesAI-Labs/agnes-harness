@@ -15,3 +15,10 @@ export function bestEffort(log: Pick<Logger, 'debug'> | undefined, label: string
     return undefined
   }
 }
+
+/** Settles once `work` settles, whichever way, and never rejects: for chaining work after it. */
+export const quietly = (work: Promise<unknown>): Promise<undefined> =>
+  work.then(
+    () => undefined,
+    () => undefined,
+  )

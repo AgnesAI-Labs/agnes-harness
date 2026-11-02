@@ -16,6 +16,8 @@ export type UsageProjectionInput = {
   events: Iterable<Event>
   upto: Seq
   lane: string
+  /** Further lanes whose spend counts toward the session, such as background maintenance. */
+  lanes?: readonly string[]
   route: string
   model: Pick<ModelRecord, 'id' | 'contextWindow'> & Partial<Pick<ModelRecord, 'maxTokens'>>
   thinking: ThinkingLevel
@@ -52,11 +54,54 @@ const emptyTotals = (): UsageView['totals'] => ({
   reasoning: 0,
 })
 
+/** One lane's share of the session's spend: its tokens, and its credits when any row named them. */
+export type UsageTotals = UsageView['totals'] & { credits?: number }
+
+/** Adds one first-seen cost row to its lane's share; an adjustment moves only the credits. */
+export function addLaneShare(
+  byLane: Map<string, UsageTotals>,
+  lane: string,
+  row: Pick<CostLedger, 'tokens' | 'credits' | 'adjustment'>,
+): void {
+  const share: UsageTotals = byLane.get(lane) ?? emptyTotals()
+  byLane.set(lane, share)
+  if (row.adjustment) {
+    if (share.credits !== undefined) share.credits += row.adjustment.delta
+    return
+  }
+  if (row.credits !== undefined) share.credits = (share.credits ?? 0) + row.credits
+  share.input += row.tokens.input
+  share.output += row.tokens.output
+  share.cacheRead += row.tokens.cacheRead
+  share.cacheWrite += row.tokens.cacheWrite
+  share.reasoning += row.tokens.reasoning ?? 0
+}
+
+/** The per-lane breakdown of a view, given only once a lane other than `lane` has spent anything. */
+export function laneShares(
+  byLane: ReadonlyMap<string, UsageTotals>,
+  lane: string,
+): Pick<UsageView, 'byLane'> {
+  if (![...byLane.keys()].some((other) => other !== lane)) return {}
+  return {
+    byLane: Object.fromEntries(
+      [...byLane].map(([name, share]) => [
+        name,
+        share.credits === undefined ? { ...share } : { ...share, credits: Math.max(0, share.credits) },
+      ]),
+    ),
+  }
+}
+
 /**
  * Projects one bounded lane without consulting a provider or mutable session state. Credits and
  * dollars remain separate dimensions: only an explicit billing record can create a dollar total.
+ * The spend of `lanes` counts toward the totals too, and once one of them has spent anything the
+ * view breaks the totals down by lane; the context, the model and the cache stay the main lane's.
  */
 export function projectUsage(input: UsageProjectionInput): UsageView {
+  const counted = new Set([input.lane, ...(input.lanes ?? [])])
+  const byLane = new Map<string, UsageTotals>()
   const totals = emptyTotals()
   const seen = new Set<string>()
   let usdMicros = 0
@@ -78,6 +123,7 @@ export function projectUsage(input: UsageProjectionInput): UsageView {
     if (event.type === 'session/start' && (event.data as { parent?: { boundarySeq?: Seq } } | null)?.parent) {
       forkBoundary = (event.data as { parent: { boundarySeq: Seq } }).parent.boundarySeq
       Object.assign(totals, emptyTotals())
+      byLane.clear()
       seen.clear()
       usdMicros = 0
       credits = 0
@@ -91,11 +137,14 @@ export function projectUsage(input: UsageProjectionInput): UsageView {
       allSubscription = true
       continue
     }
-    if ((event.lane ?? 'main') !== input.lane) continue
+    const lane = event.lane ?? 'main'
+    if (!counted.has(lane)) continue
     if (event.type !== 'cost/ledger') continue
     const row = event.data as CostLedger
     if (seen.has(row.effectId)) continue
     seen.add(row.effectId)
+    if (!row.adjustment || forkBoundary === undefined || row.adjustment.of > forkBoundary)
+      addLaneShare(byLane, lane, row)
     if (row.adjustment) {
       if (forkBoundary !== undefined && row.adjustment.of <= forkBoundary) continue
       if (hasCredits) credits += row.adjustment.delta
@@ -158,5 +207,6 @@ export function projectUsage(input: UsageProjectionInput): UsageView {
       ...(input.model.maxTokens ? { maxTokens: input.model.maxTokens } : {}),
     },
     ...(Object.keys(cacheHealthView(cacheHealth)).length > 0 ? { cache: cacheHealthView(cacheHealth) } : {}),
+    ...laneShares(byLane, input.lane),
   }
 }

@@ -164,6 +164,7 @@ export type MethodName =
   | '_agnes/v1/session.deliverables'
   | '_agnes/v1/session.fork'
   | '_agnes/v1/session.btw'
+  | '_agnes/v1/session.refine'
   | '_agnes/v1/session.voice.transcribe'
   | '_agnes/v1/session.voice.speak'
   | '_agnes/v1/voice.status'
@@ -437,6 +438,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     result: A.SessionIdParams,
   },
   '_agnes/v1/session.btw': clientRequest(A.SessionBtwParams, A.SessionBtwResult),
+  '_agnes/v1/session.refine': clientRequest(A.SessionRefineParams, A.SessionRefineResult),
   '_agnes/v1/session.voice.transcribe': clientRequest(
     A.SessionVoiceTranscribeParams,
     A.SessionVoiceTranscribeResult,

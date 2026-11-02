@@ -50,7 +50,6 @@ const make = () =>
   deriveRequest({
     kind: 'turn',
     merged: { tools: [], sections: [], runtimeContext: {}, conflicts: [] },
-    harnessEntries: [],
     surface: [],
     disclosed: [],
     model: { slot: 'primary', route: 'local', model: 'm' },

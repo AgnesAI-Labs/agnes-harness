@@ -3,7 +3,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { maskVolatile, normalizeForBaseline, PROPOSE_ROW, runScriptedSession } from './scripted-session.js'
+import {
+  firstDifference,
+  maskVolatile,
+  normalizeForBaseline,
+  PROPOSE_ROW,
+  runScriptedSession,
+} from './scripted-session.js'
 
 const baselineFile = fileURLToPath(new URL('../fixtures/refinement/off-baseline.json', import.meta.url))
 const apis = ['anthropic-messages', 'openai-completions'] as const
@@ -31,14 +37,6 @@ async function record(): Promise<Baseline> {
     }
   }
   return baseline
-}
-
-/** The request bodies are one long line each, so name the first differing byte instead of dumping both. */
-function firstDifference(expected: string, actual: string): string {
-  let at = 0
-  while (at < expected.length && at < actual.length && expected[at] === actual[at]) at++
-  const around = (text: string) => JSON.stringify(text.slice(Math.max(0, at - 80), at + 80))
-  return `first difference at byte ${at}\n  baseline: ${around(expected)}\n  actual:   ${around(actual)}`
 }
 
 // The request bytes are produced by cross-platform code and are pinned on Linux and macOS. A Windows

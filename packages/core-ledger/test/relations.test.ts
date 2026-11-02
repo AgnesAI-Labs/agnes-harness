@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { checkRelations } from '../src/log/relations.js'
 import { SurfaceCache } from '../src/project/surface.js'
 import { foldEvents } from '../src/reduce/reducer.js'
+import { effectTree, MAINTENANCE_LANE } from '../src/reduce/state.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 let seq = 0
@@ -511,5 +512,60 @@ describe('assistant/output rows', () => {
   it('accepts a cut before a start that is still waiting to commit', () => {
     // The abort callback admits the cut against committed state while the start is still queued.
     expect(() => checkRelations([output('interrupted')], received())).not.toThrow()
+  })
+})
+
+describe('the maintenance lane', () => {
+  const intent = (lane: string, kind = 'side-call') =>
+    ev('effect/intent', { effectId: `e-${lane}`, kind, replay: 'never' }, { lane })
+  const settled = (lane: string) => ev('effect/settled', { effectId: `e-${lane}`, outcome: 'ok' }, { lane })
+
+  it('refinement lane effects are valid with no open turn', () => {
+    seq = 0
+    // Idle: no lane holds a turn or a program counter.
+    expect(() =>
+      checkRelations(
+        [intent(MAINTENANCE_LANE), settled(MAINTENANCE_LANE)],
+        foldEvents([]),
+        undefined,
+        new Set(),
+      ),
+    ).not.toThrow()
+    // Beside a user turn on main: the refinement lane never needs a turn or a counter of its own.
+    seq = 0
+    const open = foldEvents([ev('turn/start', { turn: 1, trigger: 'prompt' }), opstate()])
+    expect(() =>
+      checkRelations([intent(MAINTENANCE_LANE), settled(MAINTENANCE_LANE)], open, undefined, main),
+    ).not.toThrow()
+  })
+
+  it('a main-lane effect outside a turn is still rejected', () => {
+    seq = 0
+    expect(() => checkRelations([intent('main')], foldEvents([]))).toThrow(
+      'E_RELATION: effect/intent outside an open turn',
+    )
+    expect(() => checkRelations([settled('side')], foldEvents([]))).toThrow(
+      'E_RELATION: effect/settled outside an open turn',
+    )
+    // Only effect rows are exempt on the refinement lane; turn-shaped rows still need a turn.
+    expect(() =>
+      checkRelations([ev('step/start', { turn: 1, step: 1 }, { lane: MAINTENANCE_LANE })], foldEvents([])),
+    ).toThrow('E_RELATION: step/start outside an open turn')
+  })
+
+  it('pendingEffects of main ignores refinement intents', () => {
+    seq = 0
+    const state = foldEvents([
+      ev('turn/start', { turn: 1, trigger: 'prompt' }),
+      opstate(),
+      intent('main', 'tool'),
+      intent(MAINTENANCE_LANE),
+    ])
+    expect(effectTree(state, 'main').map((node) => node.effectId)).toEqual(['e-main'])
+    expect(effectTree(state, MAINTENANCE_LANE).map((node) => node.effectId)).toEqual([
+      `e-${MAINTENANCE_LANE}`,
+    ])
+    // Without a lane the tree is the whole ledger's, as it always was.
+    expect(effectTree(state)).toHaveLength(2)
   })
 })

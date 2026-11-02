@@ -235,6 +235,8 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     )
     const headerSeq = seqs[pre.length - 2]!
     const intentSeq = seqs[pre.length - 1]!
+    // The note this request sent renders under this nonce on later turns; the epoch map must know it.
+    s.recordEnvelopeHeader(headerSeq, output.header.envelopeNonce)
     if (memory) {
       memory.lastHeader = output.header
       memory.lastHeaderSeq = headerSeq

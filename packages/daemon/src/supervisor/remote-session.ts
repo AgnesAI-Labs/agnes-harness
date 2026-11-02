@@ -177,6 +177,14 @@ export class RemoteSession {
     }
   }
 
+  /** `session.refine` on the worker that holds the real session: it only queues, so it returns at once. */
+  async refine(focus: string | undefined): Promise<import('@agnes/protocol').SessionRefineResult> {
+    return (await this.link.command(
+      'refine',
+      focus === undefined ? {} : { focus },
+    )) as import('@agnes/protocol').SessionRefineResult
+  }
+
   /** One voice call on the worker that holds the real session; the daemon's abort reaches it by run id. */
   async voice(
     method: 'voice.transcribe' | 'voice.speak',

@@ -365,4 +365,17 @@ describe('normalizeToolError', () => {
     )
     expect(err('[stderr]')).toBe('')
   })
+
+  it('keys a Python traceback by its exception line, not by the shared header', () => {
+    const err = (text: string) => normalizeToolError({ content: [{ type: 'text', text }] })
+    const trace = (file: string, line: number, exception: string) =>
+      `[stderr]\nTraceback (most recent call last):\n  File "${file}", line ${line}, in <module>\n    run()\n${exception}\n`
+    expect(err(trace('/srv/a/job.py', 12, 'ValueError: bad value 7'))).toBe('valueerror: bad value #')
+    expect(err(trace('/srv/a/job.py', 12, 'ValueError: bad value 7'))).toBe(
+      err(trace('/opt/x/other.py', 301, 'ValueError: bad value 9')),
+    )
+    expect(err(trace('/srv/a/job.py', 12, 'ValueError: bad value 7'))).not.toBe(
+      err(trace('/srv/a/job.py', 12, "KeyError: 'name'")),
+    )
+  })
 })

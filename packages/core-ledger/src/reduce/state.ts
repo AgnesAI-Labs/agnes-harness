@@ -1,9 +1,30 @@
 import type { Seq } from '@agnes/core-common/types'
 import type { DecisionSnapshot, SessionStart } from '@agnes/protocol'
 import { ChunkedMap } from './chunked-map.js'
+import type { RefinementRunRecord } from './refinement-run.js'
 import type { ArtifactJob, BudgetState, EffectIntent, HarnessEntry, Inbox, PlanItems } from './shapes.js'
 
+export type {
+  RefinementEntryKind,
+  RefinementEntryRef,
+  RefinementEvidenceRef,
+  RefinementPlan,
+  RefinementPlanEdit,
+  RefinementReadSet,
+  RefinementRunRecord,
+  RefinementRunState,
+  RefinementTrigger,
+  RefinementTriggerKind,
+} from './refinement-run.js'
+export { canMoveRun, REFINEMENT_RUN_EVENT, TERMINAL_RUN_STATES } from './refinement-run.js'
+
 export type RegisterCell<T> = { seq: Seq; value: T }
+
+/**
+ * The lane background maintenance calls record their effects on. It never holds a turn or a
+ * program counter: its effects are valid outside a turn and stay out of every turn's own view.
+ */
+export const MAINTENANCE_LANE = 'refinement'
 
 export type EffectNode = {
   effectId: string
@@ -55,6 +76,8 @@ export type LedgerState = {
   taint: ReadonlyMap<string, boolean>
   toolCalls: ChunkedMap<string, { seq: Seq; name: string; turn: number; step: number; lane: string }>
   creditsUsed: number
+  /** Background refinement runs by run id, folded from Core's `x/core/refinement-run` rows. */
+  refinementRuns: ReadonlyMap<string, RefinementRunRecord>
   // The most recent non-interrupted `cost/ledger` entry's token total, with the seq it landed at,
   // and that same entry's cache-read/input breakdown. `contextTokens` starts counting surface nodes
   // after this seq instead of from the top of the ledger, so a long session's preflight cost stays
@@ -84,6 +107,7 @@ export function initialState(): LedgerState {
     taint: new Map(),
     toolCalls: ChunkedMap.empty(),
     creditsUsed: 0,
+    refinementRuns: new Map(),
     lastLedgerTokens: null,
   }
 }
@@ -91,11 +115,13 @@ export function initialState(): LedgerState {
 /**
  * Builds the tree of effects still in flight. A root is a node whose parent is not itself pending —
  * either it never had one, or the parent has already settled — so a settled parent does not hide the
- * children still running under it.
+ * children still running under it. Given a lane, only that lane's effects are in the tree, so a turn
+ * never waits on, settles or reports an effect another lane is running.
  */
-export function effectTree(state: LedgerState): EffectTree {
+export function effectTree(state: LedgerState, lane?: string): EffectTree {
   const nodes = new Map<string, EffectNode>()
-  for (const p of state.pendingEffects.values()) nodes.set(p.effectId, { ...p, children: [] })
+  for (const p of state.pendingEffects.values())
+    if (lane === undefined || p.lane === lane) nodes.set(p.effectId, { ...p, children: [] })
   const roots: EffectNode[] = []
   for (const n of nodes.values()) {
     const parent = n.parentEffectId === undefined ? undefined : nodes.get(n.parentEffectId)

@@ -18,8 +18,7 @@
             "prefix": "",
             "names": [
               "harness_propose",
-              "harness_refine",
-              "harness_inspect"
+              "harness_refine"
             ]
           },
           "hooks": [],

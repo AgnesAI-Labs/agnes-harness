@@ -255,8 +255,29 @@ export {
   executeAuxiliaryVision,
 } from './orchestrator/auxiliary-vision-executor.js'
 export { REQUEST_MEDIA_ARTIFACT_RECLAIMED } from './orchestrator/request-media-surface.js'
-export type { RefineLimits } from './refine/apply.js'
-export { applyRefine, rollbackRefine } from './refine/apply.js'
+export type { ApplyLimits } from './refine/apply.js'
+// Applying a refinement is the facade's job alone, between turns under the session lock.
+export { rollbackRefine } from './refine/apply.js'
+export {
+  type DirectProposal,
+  type RefinementDeps,
+  type RefinementFacade,
+  type RefinementOutcome,
+  type RefinementRefusal,
+  type RefinementSettingsView,
+  refinementFacade,
+} from './refinement/facade.js'
+export type { RefinementCandidate, RefinementTriggerSink } from './refinement/triggers.js'
+export type {
+  PlannerEntry,
+  PlannerGuidance,
+  PlannerOutput,
+  PlannerParseContext,
+  PlannerPrompt,
+  PlannerSnapshot,
+  RefinementPlanner,
+  RefinementTrigger,
+} from './refinement/types.js'
 export { HookRegistry, type HookSnapshot } from './registry/hooks.js'
 export { type RegisteredResource, ResourceRegistry } from './registry/resources.js'
 export { type RuntimeSlotFill, SlotRegistry } from './registry/slots.js'
@@ -272,7 +293,7 @@ export type {
 } from './registry/tools.js'
 export { ToolRegistry } from './registry/tools.js'
 export type { Conflict, Contribution, Merged, PromptSection } from './request/contribute.js'
-export { harnessSections, mergeContributions } from './request/contribute.js'
+export { mergeContributions } from './request/contribute.js'
 export type { ContractRef, DeriveInput, DeriveOutput, RequestHeaderData } from './request/derive.js'
 export { deriveRequest, headerEquals, sanitize, wrapUntrusted } from './request/derive.js'
 export type { EnvelopeCache } from './request/envelope-cache.js'

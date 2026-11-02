@@ -671,6 +671,8 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SessionForkParams: AgnesGen.SessionForkParams,
   SessionBtwParams: AgnesGen.SessionBtwParams,
   SessionBtwResult: AgnesGen.SessionBtwResult,
+  SessionRefineParams: AgnesGen.SessionRefineParams,
+  SessionRefineResult: AgnesGen.SessionRefineResult,
   RefinementSettings: AgnesGen.RefinementSettings,
   RefinementSettingsSnapshot: AgnesGen.RefinementSettingsSnapshot,
   RefinementSettingsSaveParams: AgnesGen.RefinementSettingsSaveParams,
@@ -2034,6 +2036,9 @@ const SESSION_SAMPLES: Record<string, Sample> = {
       { ...harnessRefineOk, trigger: 'nightly' }, // enum
       { ...harnessRefineOk, edits: [{ op: 'add', kind: 'skill', id: 'x' }] }, // the edit vocabulary is upsert/delete
       { ...harnessRefineOk, baseline: [{ key: 'skill x' }] }, // the baseline entry is missing version
+      { ...harnessRefineOk, rejectedEdits: [{ index: 1 }] }, // a skipped edit must say why
+      { ...harnessRefineOk, outcome: 'partial' }, // apply is atomic: there is no partial outcome
+      { ...harnessRefineOk, rejectedEdits: [{ index: -1, reason: 'stale-edit' }] }, // indices are non-negative
     ],
     note: 'edits match RefineProposal.edits so the base implementation writes what the seam already hands it',
   },
@@ -4172,6 +4177,25 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { text: 'a', model: 'm', credits: -1 }, // boundary: one below minimum:0
     ],
     note: 'side answer: text, the model that wrote it and the optional credits it cost',
+  },
+  SessionRefineParams: {
+    valid: { sessionId: 's', focus: 'flaky tests' },
+    invalid: [
+      { focus: 'x' }, // missing required sessionId
+      { sessionId: 's', focus: '' }, // boundary: one below minLength:1
+      { sessionId: 's', focus: rep(513) }, // boundary: one above maxLength:512
+      { sessionId: 's', target: 'workspace' }, // additionalProperties:false
+    ],
+    note: 'manual refinement request: sessionId and an optional focus',
+  },
+  SessionRefineResult: {
+    valid: { runId: '01J6ZM2Q3R4S5T6V7W8X9Y0Z01' },
+    invalid: [
+      {}, // missing required runId
+      { runId: '' }, // boundary: one below minLength:1
+      { runId: 'r', state: 'queued' }, // additionalProperties:false
+    ],
+    note: 'manual refinement request result: the queued run',
   },
   RefinementSettings: {
     valid: REFINEMENT_SETTINGS,
@@ -9281,6 +9305,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
   '_agnes/v1/daemon.notice': { fileId: AGNES_ID, params: 'DaemonNotice' },
   '_agnes/v1/session.fork': { fileId: AGNES_ID, params: 'SessionForkParams', result: 'SessionIdParams' },
   '_agnes/v1/session.btw': { fileId: AGNES_ID, params: 'SessionBtwParams', result: 'SessionBtwResult' },
+  '_agnes/v1/session.refine': {
+    fileId: AGNES_ID,
+    params: 'SessionRefineParams',
+    result: 'SessionRefineResult',
+  },
   '_agnes/v1/session.voice.transcribe': {
     fileId: AGNES_ID,
     params: 'SessionVoiceTranscribeParams',
@@ -10215,6 +10244,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/daemon.notice': AGNES_SAMPLES.DaemonNotice as Sample,
   '_agnes/v1/session.fork': AGNES_SAMPLES.SessionForkParams as Sample,
   '_agnes/v1/session.btw': AGNES_SAMPLES.SessionBtwParams as Sample,
+  '_agnes/v1/session.refine': AGNES_SAMPLES.SessionRefineParams as Sample,
   '_agnes/v1/session.voice.transcribe': AGNES_SAMPLES.SessionVoiceTranscribeParams as Sample,
   '_agnes/v1/session.voice.speak': AGNES_SAMPLES.SessionVoiceSpeakParams as Sample,
   '_agnes/v1/voice.status': AGNES_SAMPLES.ConfigEmptyParams as Sample,
@@ -10921,6 +10951,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/session.deliverables': AGNES_SAMPLES.SessionDeliverablesResult as Sample,
   '_agnes/v1/session.fork': AGNES_SAMPLES.SessionIdParams as Sample,
   '_agnes/v1/session.btw': AGNES_SAMPLES.SessionBtwResult as Sample,
+  '_agnes/v1/session.refine': AGNES_SAMPLES.SessionRefineResult as Sample,
   '_agnes/v1/session.voice.transcribe': AGNES_SAMPLES.SessionVoiceTranscribeResult as Sample,
   '_agnes/v1/session.voice.speak': AGNES_SAMPLES.SessionVoiceSpeakResult as Sample,
   '_agnes/v1/voice.status': AGNES_SAMPLES.VoiceStatusResult as Sample,

@@ -148,7 +148,6 @@ async function ask(
     let derived = deriveRequest({
       kind: 'summary',
       merged: { tools: [], sections: [], runtimeContext: {}, conflicts: [] },
-      harnessEntries: [],
       surface,
       disclosed: [],
       toolCalls,
