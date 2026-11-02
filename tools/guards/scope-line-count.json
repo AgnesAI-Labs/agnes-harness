@@ -57,7 +57,7 @@
   "packages/base/extensions/sandbox": 744,
   "packages/base/extensions/budget": 135,
   "packages/base/extensions/loop-hygiene": 71,
-  "packages/base/extensions/refine": 397,
+  "packages/base/extensions/refine": 131,
   "packages/cli/src": 7997,
   "packages/cli/src/commands/package": 230,
   "packages/cli/src/tui/package-admin": 1,

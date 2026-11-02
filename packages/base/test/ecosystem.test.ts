@@ -7,6 +7,7 @@ import {
   mountEcosystem,
   readSubagentLimits,
 } from '../src/ecosystem.js'
+import * as baseModule from '../src/index.js'
 import type { SeamInitContext } from '../src/seam-init.js'
 
 describe('subagent ecosystem policy', () => {
@@ -105,5 +106,11 @@ describe('mountEcosystem', () => {
     expect(seen.get('agnes/refine')).toBeDefined()
     expect('childControl' in (seen.get('agnes/refine') as object)).toBe(false)
     expect(seen.get('agnes/refine')?.secrets).toBe(init.secrets)
+  })
+})
+
+describe('package module', () => {
+  it('contributes no operations: the automatic refine operation is gone', () => {
+    expect('operations' in baseModule).toBe(false)
   })
 })

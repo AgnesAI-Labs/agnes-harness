@@ -535,6 +535,7 @@
               "minimum": 1
             },
             "auto_refine": {
+              "description": "Deprecated and ignored: still accepted so an existing preset keeps loading, but it enables nothing.",
               "type": "object",
               "additionalProperties": false,
               "properties": {

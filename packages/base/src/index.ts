@@ -1,9 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { loopKind } from '@agnes/extension-api'
 import { parse } from 'yaml'
-import { refineOperation } from '../extensions/refine/src/operation.js'
-import { RefineQueue } from '../extensions/refine/src/queue.js'
-import type { SeamInitContext } from './seam-init.js'
 
 /** Replaced with the reviewed package asset by the CLI SEA build. */
 declare const AGNES_BASE_PRESET_TEXT: string | undefined
@@ -94,7 +91,6 @@ export {
   sessionEgressAuthority,
   transitionConsent,
 } from '../extensions/privacy/src/index.js'
-export { createRefineHarness } from '../extensions/refine/src/seam.js'
 export { sandboxImplementation } from '../extensions/sandbox/src/backend-runtime.js'
 export {
   type ProbedSandboxWorkspace,
@@ -227,16 +223,6 @@ export type {
   TableHandle,
 } from './seam-init.js'
 export { BASE_SEAM_PROVIDERS, seamProvidersPlugin } from './seam-providers.js'
-export { RefineQueue }
-
-/** Host operation factories consume the same durable queue as the fitted harness and tool. */
-export const operations = {
-  refine: (deps: Pick<SeamInitContext, 'adapters' | 'profile'>) =>
-    refineOperation({
-      queue: new RefineQueue(deps.adapters.storage.namespace('refine_queue')),
-      preset: deps.profile.preset,
-    }),
-} as const
 
 /**
  * The preset documents this package delivers, by name. `base` is the root every shipped recipe

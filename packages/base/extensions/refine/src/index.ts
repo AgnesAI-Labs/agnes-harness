@@ -2,6 +2,7 @@ import type { HarnessSeam } from '@agnes/core'
 import type { Disposer } from '@agnes/extension-api'
 import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { createProposeTool } from './propose-tool.js'
+import { createRefineHarness } from './seam.js'
 
 /** Production factory: the tool and compact trigger share the assembly's durable session log. */
 export function createRefineExtension(seam: Pick<HarnessSeam, 'propose'>) {
@@ -21,10 +22,4 @@ export function createRefineExtension(seam: Pick<HarnessSeam, 'propose'>) {
   })
 }
 
-// Host replaces this default through the package ecosystem factory. Keeping a non-accepting
-// fallback means a loader that ignores that trusted assembly path cannot claim it queued work.
-export default createRefineExtension({
-  async propose() {
-    return 'rejected'
-  },
-})
+export default createRefineExtension(createRefineHarness())

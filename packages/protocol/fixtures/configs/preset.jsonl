@@ -133,6 +133,7 @@
 {"id":"preset-consumer-timing","kind":"valid","target":"config","name":"preset","payload":{"name":"custom","model":{"timeout_ms":1,"retry":{"base_delay_ms":0}},"deferred":{"poll_ms":1}}}
 {"id":"preset-strict-invariants","kind":"valid","target":"config","name":"preset","payload":{"name":"custom","telemetry":{"invariants":"strict"}}}
 {"id":"preset-human-recovery","kind":"valid","target":"config","name":"preset","payload":{"name":"custom","recovery":{"unknown_child":"human"}}}
+{"id":"preset-legacy-auto-refine-ignored","kind":"valid","target":"config","name":"preset","payload":{"name":"custom","harness":{"auto_refine":{"enabled":true,"gate":"verifier","global_needs_human":true,"cooldown_turns":5}}}}
 {"id":"preset-model.timeout_ms-negative","kind":"invalid","target":"config","name":"preset","payload":{"name":"custom","model":{"timeout_ms":-1}},"expect":{"errorCode":-32602}}
 {"id":"preset-model.timeout_ms-fraction","kind":"invalid","target":"config","name":"preset","payload":{"name":"custom","model":{"timeout_ms":1.5}},"expect":{"errorCode":-32602}}
 {"id":"preset-model.timeout_ms-wrong-type","kind":"invalid","target":"config","name":"preset","payload":{"name":"custom","model":{"timeout_ms":"1"}},"expect":{"errorCode":-32602}}

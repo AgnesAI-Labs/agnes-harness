@@ -5,7 +5,6 @@ import { ScriptedProvider } from '@agnes/ai/testkit'
 import {
   ecosystem as BASE_ECOSYSTEM,
   isolatedEcosystem as BASE_ISOLATED_ECOSYSTEM,
-  operations as BASE_OPERATIONS,
   buildCompactionPlan,
   defaultLoopPlugin,
 } from '@agnes/base'
@@ -318,7 +317,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
       degraded: false,
       confine: ({ argv }) => argv,
     }),
-    operations: BASE_OPERATIONS,
+    operations: {},
     presets: {
       base:
         o.treeBudgetCredits === undefined
