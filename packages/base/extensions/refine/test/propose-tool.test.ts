@@ -1,8 +1,6 @@
 import { Value } from '@sinclair/typebox/value'
 import { describe, expect, it, vi } from 'vitest'
-// The plan's own sample imports this from '../../../src/testkit/tool-context.js', which does not
-// exist: the real testkit lives at packages/base/testkit/ (a sibling of src/, not inside it). Three
-// '../' from this test dir lands on packages/base/, so the real path is '../../../testkit/...'.
+// The base testkit lives at packages/base/testkit/, a sibling of src/.
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { createProposeTool, ProposeParams } from '../src/propose-tool.js'
 
@@ -47,10 +45,9 @@ describe('harness_propose tool', () => {
     const def = createProposeTool(port)
     const ctx = fakeToolContext()
     const res = await def.execute(proposal as never, ctx)
-    // HarnessEntry.source (core/src/reduce/shapes.ts:53) is required but neither the plan's Step 1
-    // test sample nor its Step 7 Entry schema account for it (see propose-tool.ts's doc comment for
-    // the design call this stamping implements). `scope` and `baseline` are likewise real-required
-    // fields the input schema leaves optional/absent, defaulted here rather than in the schema.
+    // HarnessEntry.source is required but not tool input: execute() stamps it (see propose-tool.ts's
+    // doc comment). `scope` and `baseline` are likewise required on the real types but optional in
+    // the input schema, defaulted here rather than in the schema.
     expect(port.propose).toHaveBeenCalledWith(
       {
         proposalId: 'p1',

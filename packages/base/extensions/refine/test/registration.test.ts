@@ -78,16 +78,19 @@ describe('refine extension registration', () => {
     expect(registered.tools).toEqual([])
   })
 
-  it('reads the switch each time it is applied, so a new generation sees a change', () => {
-    let enabled = false
-    const plugin = createRefineExtension({
-      settings: { current: () => ({ settings: { enabled, mode: 'auto' }, revision: String(enabled) }) },
-    })
-    expect(applyPlugin(plugin).tools).toEqual([])
-    enabled = true
+  it('takes the switch from the view it is handed: a view pinned per assembly keeps every remount alike', () => {
+    // The host hands over the value it read once when it assembled the container, so a later save
+    // (here: `stored` flipping) must not change what a remount registers.
+    let stored = true
+    const read = () => ({ settings: { enabled: stored, mode: 'manual' as const }, revision: String(stored) })
+    const atAssembly = read()
+    const plugin = createRefineExtension({ settings: { current: () => atAssembly } })
     expect(applyPlugin(plugin).tools).toHaveLength(3)
-    enabled = false
-    expect(applyPlugin(plugin).tools).toEqual([])
+    stored = false
+    expect(applyPlugin(plugin).tools).toHaveLength(3)
+    // A new assembly reads again and sees the change.
+    const next = read()
+    expect(applyPlugin(createRefineExtension({ settings: { current: () => next } })).tools).toEqual([])
   })
 
   it('mode does not stand in for the switch: auto with enabled false registers nothing', () => {

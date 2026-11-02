@@ -42,11 +42,14 @@ export function createEcosystemContexts(
           updateWorkspace: storage.updateWorkspace.bind(storage),
         })
       : undefined
-  // Read-only view of the profile's refinement switch, the same file the settings RPC writes. Each
-  // read goes to disk, so a factory applied later (a new generation) sees the current value.
-  const refinementSettings = new RefinementSettingsStore(ctx.dataDir, ctx.profile.name)
+  // The profile's refinement switch (the file the settings RPC writes), read once per container
+  // assembly and fixed for the container's life: a factory runs again on every row load, and a
+  // value read then would let a running session gain or lose tools mid-conversation. A new process,
+  // worker or generation assembles again and reads it fresh. This view decides tool registration
+  // only; anything that needs the live settings must read the store itself.
+  const refinementAtAssembly = new RefinementSettingsStore(ctx.dataDir, ctx.profile.name).current()
   const refinementView: SeamInitContext['refinementSettings'] = Object.freeze({
-    current: () => refinementSettings.current(),
+    current: () => refinementAtAssembly,
   })
   const hookCommands =
     adapters.platform.os === 'win32'

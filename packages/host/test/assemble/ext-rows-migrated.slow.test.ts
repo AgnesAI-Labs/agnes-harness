@@ -25,11 +25,15 @@ const packageDirs = {
 
 const NOT_MIGRATED: string[] = []
 
+/** Saves the default profile's refinement switch through the same store the settings RPC uses. */
+const setRefinement = (dataDir: string, enabled: boolean): void => {
+  const store = new RefinementSettingsStore(dataDir, 'local-dev')
+  store.save({ enabled, mode: 'manual' }, store.read().revision)
+}
 /** A data directory whose default profile has refinement switched on, so agnes/refine registers its tools. */
 const refinementOn = (): string => {
   const dataDir = scratch()
-  const store = new RefinementSettingsStore(dataDir, 'local-dev')
-  store.save({ enabled: true, mode: 'manual' }, store.read().revision)
+  setRefinement(dataDir, true)
   return dataDir
 }
 const REFINE_ON = ['tool:harness_propose', 'tool:harness_refine', 'tool:harness_inspect']
@@ -403,6 +407,33 @@ describe('a third party replaces a migrated builtin and gives way', () => {
       expect(h.host.kernel.registrations(id), id).toEqual(registrations)
     await h.host.close()
   })
+
+  // A running container keeps the tool set it was assembled with: a toggle saved later must not
+  // reach it when the refine row is mounted again (here: handed to a plugin row and back), or a
+  // running session would see its deferred-tool list change.
+  for (const [from, to] of [
+    [false, true],
+    [true, false],
+  ] as const)
+    it(`keeps the refine tool set fixed when the switch goes ${from ? 'on' : 'off'} -> ${to ? 'on' : 'off'} and the row remounts`, async () => {
+      const dataDir = scratch()
+      if (from) setRefinement(dataDir, true)
+      const row = 'ext:agnes/refine'
+      const h = await pluginHost(pluginSource(`ctx.tools.register(tool('harness_propose'))`, 'plugin', row), {
+        dataDir,
+      })
+      const assembled = from ? REFINE_ON : []
+      expect(h.host.kernel.registrations('agnes/refine')).toEqual(assembled)
+      setRefinement(dataDir, to)
+      for (const disabled of [false, true]) {
+        const report = await h.host.applyRuntimeTarget(targetOf([pluginRow(row, 'plugin', disabled)]))
+        await settle()
+        expect(report.ok).toBe(true)
+      }
+      expect(listed(h, 'agnes/refine')?.loaded).toBe(true)
+      expect(h.host.kernel.registrations('agnes/refine')).toEqual(assembled)
+      await h.host.close()
+    })
 
   it('keeps refine single-instance when unrelated rows come and go around it', async () => {
     const h = await pluginHost(

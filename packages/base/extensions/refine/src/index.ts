@@ -7,7 +7,7 @@ import { createRefineTool } from './refine-tool.js'
 
 export type { InspectRequest, RefinementToolPort, RefineRequest } from './port.js'
 
-/** The profile's refinement master switch, read when the extension is applied. */
+/** The profile's refinement master switch, as the host read it for this container. */
 export type RefinementSwitch = {
   current(): { settings: { enabled: boolean; mode: 'manual' | 'auto' } }
 }
@@ -20,9 +20,10 @@ export type RefineExtensionDeps = {
 }
 
 /**
- * The refinement tools, registered only while the profile switch is on. The switch is read each
- * time the extension is applied, so a change reaches the next assembly and leaves the tool set of
- * an already-assembled generation alone.
+ * The refinement tools, registered only while the profile switch is on. The host hands over the
+ * value it read when it assembled the container, so every apply in that container (including a row
+ * remount) registers the same set and a running session's tools never change; a new assembly reads
+ * the switch again.
  */
 export function createRefineExtension(deps: RefineExtensionDeps = {}) {
   return defineAgnesPlugin({

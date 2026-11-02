@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ecosystem as baseEcosystem } from '@agnes/base'
 import { RefinementSettingsStore } from '@agnes/host-infrastructure/refinement-settings'
 import { afterAll, describe, expect, it } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'
@@ -38,12 +39,26 @@ function enable(dataDir: string): void {
 }
 
 async function refinementTools(dataDir: string) {
+  let seenPreset: Record<string, unknown> | undefined
   const { host } = await createTestHost({
     dataDir,
     packageDirs: { '@agnes/base': baseDir },
     presets: { standard: LEGACY_PRESET as never },
+    packages: {
+      '@agnes/base': {
+        ecosystem: {
+          ...baseEcosystem,
+          'agnes/refine': (context) => {
+            seenPreset = context.profile.preset
+            return baseEcosystem['agnes/refine'](context)
+          },
+        },
+      },
+    },
   })
   try {
+    // Guard against a vacuous pass: the refine factory really saw the legacy key, enabled.
+    expect(seenPreset?.harness).toMatchObject({ auto_refine: { enabled: true }, queue_max: 5 })
     const tools = [...host.kernel.tools.snapshot(0).byName.values()]
       .filter((tool) => tool.source.source === 'agnes/refine')
       .map((tool) => ({ name: tool.name, deferLoading: tool.meta.deferLoading }))
