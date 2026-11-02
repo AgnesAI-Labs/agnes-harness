@@ -15,7 +15,6 @@ import { forkChecks } from '@agnes/core-ledger/log/fork-seed'
 import type { ChildAgentListing, ChildAgentResult, ChildAgentStatus } from '@agnes/extension-api'
 import type { Actor } from '@agnes/protocol'
 import { bestEffort } from '../best-effort.js'
-import { assertReview } from '../execution/turn/review-budget.js'
 import type { Kernel } from '../kernel.js'
 import type { SessionImpl } from '../step/session.js'
 import { childInputActor } from '../step/turn-restore.js'
@@ -90,7 +89,6 @@ export class KernelChildren implements ChildrenFactory {
 
   async createWithKind(kind: ChildKind, opts: CreateOpts): Promise<ChildHandle> {
     const parent = this.parent()
-    await assertReview(parent, 'unsupported')
     const lifecycle = childLifecycle(parent)
     lifecycle.assertActive()
     if (parent.turn?.hardBudgetCap !== undefined)
@@ -512,11 +510,6 @@ export class KernelChildren implements ChildrenFactory {
   }
 
   async resume(childKey: string): Promise<ChildHandle> {
-    await assertReview(this.parent(), 'unsupported')
-    return this.resumeExisting(childKey)
-  }
-
-  private async resumeExisting(childKey: string): Promise<ChildHandle> {
     const parent = this.parent()
     const store = requireChildControl(parent.d.log.storage)
     const record = await store.lookupByKey(childKey)
@@ -547,7 +540,7 @@ export class KernelChildren implements ChildrenFactory {
       this.parent(),
       this.kernel.o.childRoles,
       (key) => this.handles.has(key),
-      (key) => this.resumeExisting(key),
+      (key) => this.resume(key),
     )
   }
 
@@ -1164,7 +1157,6 @@ export class KernelChildren implements ChildrenFactory {
   }
 
   async sendMessage(childKey: string, text: string, signal: AbortSignal): Promise<{ messageId: string }> {
-    await assertReview(this.parent(), 'unsupported')
     signal.throwIfAborted()
     if (!text) throw new CoreError('E_ENVELOPE', 'message must not be empty')
     const resident = this.residents.get(childKey)

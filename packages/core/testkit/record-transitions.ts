@@ -5,7 +5,6 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { OpStateObj } from '@agnes/core-common/step/op-state'
-import { presetDefaults } from '@agnes/core-common/step/preset'
 import type { Event, IdMinter } from '@agnes/core-common/types'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { SessionLogImpl } from '@agnes/core-ledger/log/session-log'
@@ -420,10 +419,7 @@ export async function recordTransitions(name: string, storage: StorageAdapter): 
     }
   }
   const open: Open = async (over) => {
-    // The frozen recordings include diagnostics from the opt-in contract review path.
-    const preset = presetDefaults()
-    preset.completionGate.contractReview = true
-    const h = await openSession({ preset, ...over, storage: tapped as never, ids: stableIds() })
+    const h = await openSession({ ...over, storage: tapped as never, ids: stableIds() })
     h.log.observeCommitted('*', (events: Event[]) => {
       commits.push(entry(h.log, events, h.ui))
     })

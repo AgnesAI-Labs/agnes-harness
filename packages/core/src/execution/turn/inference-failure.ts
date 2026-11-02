@@ -3,7 +3,6 @@ import type { EventInput } from '@agnes/core-common/types'
 import type { InferenceEvent } from '@agnes/protocol'
 import type { SessionImpl, StepOutcome } from '../../step/session.js'
 import type { ModelExecution } from '../model-execution.js'
-import { reviewStop } from './review-budget.js'
 
 /** Retry feedback contains no discarded model text or executable tool calls. */
 export function interruptedRequestNote(s: SessionImpl, code: string): EventInput {
@@ -28,18 +27,6 @@ export async function settleInferenceFailure(
   stepEnd: EventInput,
   partial: boolean,
 ): Promise<StepOutcome> {
-  const internal = !s.ac.signal.aborted ? reviewStop(s) : undefined
-  if (internal) {
-    await execution.commit(
-      [...execution.rows('error', true), stepEnd],
-      withPhase(cur, {
-        kind: 'failure_drain',
-        error: { code: internal.code, message: internal.message },
-        provenance: { kind: 'inference' },
-      }),
-    )
-    return { phase: 'failure_drain' }
-  }
   // Observe category, mode 'parallel': HookDispatch already contains a failing handler internally
   // (it reports and moves on rather than rejecting), so this cannot itself throw into the retry/
   // drain/compaction decisions that follow. `attempt` is the same retry counter those decisions

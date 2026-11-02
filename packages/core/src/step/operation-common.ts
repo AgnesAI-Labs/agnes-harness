@@ -3,8 +3,6 @@ import type { OpContext, OperationEffectResult } from './session.js'
 
 export type OperationCommon = {
   name: string
-  /** Package-owned completion guidance, rendered only when Core admits the review round. */
-  completionReviewNote?: () => string
   order?: number
   replay: 'safe' | 'never'
   applicable(ctx: OpContext): Promise<'applied' | 'skip' | 'not-applicable'>

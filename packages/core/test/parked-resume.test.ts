@@ -13,6 +13,7 @@ async function setup(
   scripts: Script[] = [toolTurn('shell', { command: 'echo ok' }), textTurn('finished')],
   policy: 'notify' | 'refuse' = 'notify',
   taintOnly = false,
+  legacyReview = false,
 ) {
   let now = 1_757_203_200_000,
     asks = 0,
@@ -53,6 +54,19 @@ async function setup(
     origin: 'system',
     content: [{ type: 'text', text: 'go' }],
   })
+  if (legacyReview) {
+    await h.session.acceptInput()
+    await h.session.append([
+      h.session.ev(
+        'x/core/completion-gate',
+        {
+          diagnostic: 'completion_gate_contract_review',
+          status: 'ran',
+        },
+        { ignorable: true },
+      ),
+    ])
+  }
   expect((await h.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
     policy === 'refuse' ? 'completed' : 'parked',
   )
@@ -75,6 +89,41 @@ const run = (h: Awaited<ReturnType<typeof openSession>>) =>
   h.session.run({ until: 'turn-end', signal: new AbortController().signal })
 
 describe('single-tool parked continuation', () => {
+  it.each([false, true])(
+    'restores parked approval across unrelated completion (retired review=%s)',
+    async (legacyReview) => {
+      const h = await setup(undefined, 'notify', false, legacyReview)
+      try {
+        await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'unrelated' }] })
+        expect((await run(h)).reason).toBe('completed')
+        expect(h.executions()).toBe(0)
+        const checkRestore = async (refused: boolean) => {
+          const rows = await h.log.scan({ limit: 1000 })
+          const storage = MemoryStorage.fromEvents('k', rows, {
+            opCells: h.log.allRegisters().filter((row) => row.register === 'op.state'),
+          })
+          const provider = fakeProvider([textTurn('never called by open')])
+          if (refused) {
+            await expect(openSession({ storage, provider })).rejects.toMatchObject({ code: 'E_UNSUPPORTED' })
+            expect(await storage.scan('k', { limit: 1000 })).toEqual(rows)
+          } else {
+            const restored = await openSession({ storage, provider })
+            await restored.session.close()
+          }
+          expect(provider.calls).toBe(0)
+        }
+        await checkRestore(legacyReview)
+        await answerToolDecision(h.session, 1, 'allowed-once', approver)
+        expect(await continueParked(h.session)).toBe('opened')
+        await checkRestore(legacyReview)
+        expect((await run(h)).reason).toBe('completed')
+        await checkRestore(false)
+      } finally {
+        await h.session.close()
+      }
+    },
+  )
+
   it('sends queued input ahead of a parked turn without approving or executing its tool', async () => {
     const h = await setup()
     try {
@@ -177,19 +226,42 @@ describe('single-tool parked continuation', () => {
       await h.session.close()
     }
   })
-  it('continues an expired unanswered request without executing the tool', async () => {
-    const h = await setup()
-    h.advance(86400000)
-    await h.storage.renew(h.session.key, h.session.writerRunId)
-    expect((await h.session.decisions.list())[0]?.result?.reason).toBe('expired')
-    expect((await run(h)).reason).toBe('completed')
-    expect(h.executions()).toBe(0)
-    expect(JSON.stringify(h.provider.requests[1]?.messages)).toContain('approval unavailable')
-    expect((await h.session.decisions.list())[0]?.result).toMatchObject({
-      reason: 'expired',
-      code: 'deadline',
-    })
-  })
+  it.each(
+    [false, true].flatMap((legacyReview) => [false, true].map((answered) => ({ legacyReview, answered }))),
+  )(
+    'continues an expired/invalidated request and restores its completed lineage: %j',
+    async ({ legacyReview, answered }) => {
+      const h = await setup(undefined, 'notify', false, legacyReview)
+      if (answered) await answerToolDecision(h.session, 1, 'allowed-once', approver)
+      h.advance(86400000)
+      await h.storage.renew(h.session.key, h.session.writerRunId)
+      const expired = (await h.session.decisions.list())[0]
+      expect(expired?.result?.reason).toBe(answered ? 'answered' : 'expired')
+      if (answered) expect(expired?.invalidation).toMatchObject({ code: 'deadline' })
+      expect((await run(h)).reason).toBe('completed')
+      expect(h.executions()).toBe(0)
+      if (!answered)
+        expect(JSON.stringify(h.provider.requests[1]?.messages)).toContain('approval unavailable')
+      expect((await h.log.scan({ type: 'tool/result', toSeq: h.log.lastSeq }))[0]?.data).toMatchObject({
+        code: 'APPROVAL_REJECTED',
+        isError: true,
+      })
+      expect((await h.session.decisions.list())[0]?.result).toMatchObject(
+        answered ? { reason: 'answered' } : { reason: 'expired', code: 'deadline' },
+      )
+      expect((await h.session.decisions.list())[0]?.consumption).toBeNull()
+      await h.session.close()
+      const provider = fakeProvider([textTurn('fresh task')])
+      const restored = await openSession({ storage: h.storage, provider, clock: h.clock })
+      try {
+        expect(provider.calls).toBe(0)
+        await restored.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'new work' }] })
+        expect((await run(restored)).reason).toBe('completed')
+      } finally {
+        await restored.session.close()
+      }
+    },
+  )
   it('blocks a continuation whose persisted tool policy hash no longer matches its policy', async () => {
     const h = await setup()
     const rows = structuredClone(await h.log.scan({ fromSeq: 1, toSeq: h.log.lastSeq, limit: 10_000 }))

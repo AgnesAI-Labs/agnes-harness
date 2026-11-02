@@ -1,6 +1,5 @@
 import { CoreError } from '@agnes/core-common/types'
 import type { LoopSideCallPort } from '@agnes/extension-api'
-import { assertReview } from '../execution/turn/review-budget.js'
 import { createSideCallEffectPort } from '../orchestrator/side-call-effect-port.js'
 import { executeSideCall } from '../orchestrator/side-call-executor.js'
 import type { SessionImpl } from '../step/session.js'
@@ -19,7 +18,6 @@ export function createSideCallPort(s: SessionImpl): LoopSideCallPort {
   const effects = createSideCallEffectPort(s)
   return {
     async prepare(options) {
-      await assertReview(s, 'unsupported')
       const done = s.beginLoopOperation()
       try {
         return await requests.prepare(options)

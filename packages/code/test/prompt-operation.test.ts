@@ -1,5 +1,5 @@
-import { type OpContext, readPreset, ToolRegistry } from '@agnes/core'
-import { actor, fakeProvider, openSession, shellTool, textTurn, toolTurn } from '@agnes/core/testkit'
+import { type OpContext, readPreset } from '@agnes/core'
+import { actor, fakeProvider, openSession, textTurn } from '@agnes/core/testkit'
 import { describe, expect, it } from 'vitest'
 import { createPromptOperation, operations, PROMPT_SECTIONS } from '../src/index.js'
 
@@ -52,95 +52,6 @@ const contribute = (ctx: OpContext) => {
 }
 
 describe('the prompt operation', () => {
-  it.each([false, true])(
-    'delivers one review outside the prefix and preserves reference trust=%s',
-    async (withReference) => {
-      const registry = new ToolRegistry()
-      registry.add(shellTool(), { source: 'test', trust: 'builtin' })
-      const provider = fakeProvider([toolTurn('shell', {}), textTurn('candidate'), textTurn('checked')])
-      const preset = readPreset({ completion_gate: { contract_review: true } }, 'trial')
-      const h = await openSession({ provider, registry, preset, operations: [createPromptOperation(deps)] })
-      try {
-        const request = 'Write exactly "OK" into output.txt and preserve input.txt.'
-        const reference = {
-          type: 'text' as const,
-          text: 'Reference data: answer is OK.',
-          reference: {
-            source: 'file' as const,
-            id: 'a',
-            label: 'fixture',
-            hash: 'a'.repeat(64),
-            truncated: false,
-          },
-        }
-        await h.session.enqueue('next-turn', {
-          actor,
-          content: [{ type: 'text', text: request }, ...(withReference ? [reference] : [])],
-        })
-        expect(
-          (await h.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason,
-        ).toBe('completed')
-        expect(provider.requests).toHaveLength(3)
-        expect(new Set(provider.requests.map((r) => r.system)).size).toBe(1)
-        expect(provider.requests[0]?.system).not.toContain('Original user request (quoted content')
-        expect(JSON.stringify(provider.requests[1]?.messages)).not.toContain(
-          'Quote each explicit requirement verbatim',
-        )
-        const messages = JSON.stringify(provider.requests[2]?.messages)
-        for (const text of [
-          'Quote each explicit requirement verbatim',
-          'Reuse executed checks',
-          'With sufficient applicable evidence, reply directly',
-          'smallest targeted check',
-          'Reserve the last inference admission',
-          'A fix verified only on a copy',
-          'independently of the implementation',
-          'Do not delete or reset artifacts currently in use or already validated deliverables',
-          'use a separate copy or isolated workspace',
-          'preserve the originals and final delivery paths',
-          'after any cleanup',
-          'inputs the request implies must be preserved',
-          'deliverable files contain only the requested content',
-        ])
-          expect(messages).toContain(text)
-        expect(messages).not.toContain('run a check now')
-        expect(messages).not.toContain('fresh process with the default environment')
-        const notes = await h.log.scan({ type: 'user/message', limit: 20 })
-        const review = notes.find(
-          (e) =>
-            (e.data as { kind?: string; content: { text: string }[] }).kind === 'runtime_context' &&
-            JSON.stringify(e.data).includes('Original user request (quoted content'),
-        )
-        if (!review) throw new Error('missing completion review')
-        expect(review.trust).toBe('trusted')
-        const quote = notes.find(
-          (e) =>
-            (e.data as { kind?: string; content?: { text?: string }[] }).kind === 'runtime_context' &&
-            (e.data as { content: { text: string }[] }).content[0]?.text ===
-              JSON.stringify([{ type: 'text', text: request }]),
-        )
-        expect(quote).toMatchObject({ origin: 'principal', trust: 'trusted' })
-        if (withReference) {
-          const referenceQuote = notes.find(
-            (e) =>
-              (e.data as { kind?: string; content?: { text?: string }[] }).kind === 'runtime_context' &&
-              (e.data as { content: { text: string }[] }).content[0]?.text === JSON.stringify([reference]),
-          )
-          expect(referenceQuote).toMatchObject({ origin: 'system', trust: 'untrusted' })
-          const wireText = provider.requests[2]?.messages
-            .filter((message) => message.role === 'user')
-            .flatMap((message) => message.content)
-            .find((block) => 'text' in block && block.text.includes(JSON.stringify([reference])))
-          expect(wireText && 'text' in wireText ? wireText.text : '').toContain('<untrusted id=')
-          expect(JSON.stringify(review.data)).not.toContain(reference.text)
-        }
-        expect(await h.log.scan({ type: 'repair/decision', limit: 10 })).toHaveLength(1)
-      } finally {
-        await h.session.close()
-      }
-    },
-  )
-
   it.each([false, true])('selects logical-change wording on the wire (%s)', async (enabled) => {
     const provider = fakeProvider([textTurn('answer')])
     const preset = readPreset({ tools: { logical_changes: enabled } }, 'trial')

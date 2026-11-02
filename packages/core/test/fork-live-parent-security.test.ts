@@ -111,6 +111,64 @@ const script = () =>
   ])
 
 describe('what creating a delegated child still detects', () => {
+  it.each([false, true])(
+    'retired review is scoped to the fork owner (child review=%s)',
+    async (ownReview) => {
+      const storage = new MemoryStorage({ clock: () => CLOCK })
+      const { k, parent } = await parentReady(storage, script())
+      let reopened: Kernel | undefined
+      try {
+        await parent.append([
+          parent.ev(
+            'x/core/completion-gate',
+            {
+              diagnostic: 'completion_gate_contract_review',
+              status: 'ran',
+            },
+            { ignorable: true },
+          ),
+        ])
+        const child = await k.session('isolated-fork', {
+          ...sessionOpts,
+          writerRunId: 'fork-writer',
+          parent: { key: parent.key, boundarySeq: parent.lastSeq },
+        })
+        expect(child.d.log.parent?.key).toBe(parent.key)
+        await child.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'child work' }] })
+        await child.acceptInput()
+        if (ownReview)
+          await child.append([
+            child.ev(
+              'x/core/completion-gate',
+              {
+                diagnostic: 'completion_gate_contract_review',
+                status: 'ran',
+              },
+              { ignorable: true },
+            ),
+          ])
+        await k.close()
+        const provider = script()
+        reopened = kernel(storage, provider)
+        if (ownReview) {
+          await expect(
+            reopened.session('isolated-fork', { ...sessionOpts, writerRunId: 'reopened' }),
+          ).rejects.toMatchObject({ code: 'E_UNSUPPORTED' })
+        } else {
+          const restored = await reopened.session('isolated-fork', {
+            ...sessionOpts,
+            writerRunId: 'reopened',
+          })
+          expect(restored.op()).not.toBeNull()
+        }
+        expect(provider.calls).toBe(0)
+      } finally {
+        await reopened?.close()
+        await k.close()
+      }
+    },
+  )
+
   it('a rewritten parent row between the fork point and the boundary: no child rows, attempt cancelled', async () => {
     const storage = new MemoryStorage({ clock: () => CLOCK })
     const { k, parent, c } = await parentReady(storage, script(), true)

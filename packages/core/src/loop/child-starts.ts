@@ -8,7 +8,6 @@ import type {
   LoopChildrenPort,
   LoopChildStartStatus,
 } from '@agnes/extension-api'
-import { assertReview } from '../execution/turn/review-budget.js'
 import type { SessionImpl } from '../step/session.js'
 
 const EVENT = 'x/core/loop-child-start'
@@ -43,7 +42,6 @@ export function loopChildStarts(s: SessionImpl, children: ChildAgentSessionServi
     await s.d.log.append([s.ev(EVENT, row, { ignorable: true })])
   }
   async function adopt(id: string, signal: AbortSignal) {
-    await assertReview(s, 'unsupported')
     const row = await read(id)
     if (!row) throw new CoreError('E_RELATION', 'Child start invocation is missing')
     const cached = handles.get(id)
@@ -87,7 +85,6 @@ export function loopChildStarts(s: SessionImpl, children: ChildAgentSessionServi
   return {
     ...children,
     async start(task, options = {}) {
-      await assertReview(s, 'unsupported')
       const id = options.invocationId ?? s.d.ids.effectId()
       return owned(id, async () => {
         const { signal: supplied, ...saved } = options

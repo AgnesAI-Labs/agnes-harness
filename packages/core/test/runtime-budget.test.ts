@@ -4,7 +4,6 @@ import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import {
-  fitsRemainingTreeBudget,
   reconcileTreeReservationHandle,
   releaseTreeReservation,
   releaseTreeReservationHandle,
@@ -163,7 +162,6 @@ describe('explicit tree budget reservation handles', () => {
     await expect(releaseTreeReservationHandle(session, settled.handle)).rejects.toThrow(
       'requires reconciliation',
     )
-    expect(await fitsRemainingTreeBudget(session, 0.001)).toBe(false)
     await kernel.close()
   })
 
@@ -184,10 +182,6 @@ describe('explicit tree budget reservation handles', () => {
       return
     expect(concurrent.handle).toBe(first.handle)
     expect(sequential.handle).toBe(first.handle)
-    expect((await storage.projectTree('s:main:0'))?.heldMicro).toBe(2_000_000n)
-    // Optional completion work must fit after all live holds, without changing the reservation.
-    expect(await fitsRemainingTreeBudget(session, 8)).toBe(true)
-    expect(await fitsRemainingTreeBudget(session, 8.000001)).toBe(false)
     expect((await storage.projectTree('s:main:0'))?.heldMicro).toBe(2_000_000n)
     await expect(reserveTreeBudgetHandle(session, 3, target, identity, 10)).rejects.toThrow(
       'reused with a different quote',

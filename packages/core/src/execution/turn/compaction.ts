@@ -22,7 +22,6 @@ import {
   nearlyFull,
 } from './gate.js'
 import { estimateTokens, resolveModel, surfaceToolCalls } from './inference.js'
-import { assertReview } from './review-budget.js'
 
 export { CompactionRunner } from '../../step/compaction-runner.js'
 export type { BeforeCompactPayload, CompactionPlan, CompactPayload } from './compaction-summary.js'
@@ -327,16 +326,8 @@ function engineModel(
   }
 }
 
-function beginCompactionTurn(compaction: CompactionRunner, turn: number): void {
-  if (compaction.transientTurn !== turn) {
-    compaction.transientTurn = turn
-    compaction.transientFailures = 0
-  }
-}
-
 /** Executes one compaction attempt and writes at most one replace. */
 export async function runCompaction(s: SessionImpl, signal = s.ac.signal): Promise<StepOutcome> {
-  await assertReview(s, 'unsupported')
   signal = AbortSignal.any([signal, s.ac.signal])
   const op = s.op()
   if (op?.phase.kind !== 'compaction') return { phase: 'checkpoint' }
@@ -344,7 +335,10 @@ export async function runCompaction(s: SessionImpl, signal = s.ac.signal): Promi
     return leaveWithoutEffect(s, op, 'compaction runner unavailable')
 
   const phase = op.phase
-  beginCompactionTurn(s.compaction, op.meta.turn)
+  if (s.compaction.transientTurn !== op.meta.turn) {
+    s.compaction.transientTurn = op.meta.turn
+    s.compaction.transientFailures = 0
+  }
   const surface = s.surface()
   const tokensBefore = contextTokens(s)
   const primary = resolveModel(s, 'primary')

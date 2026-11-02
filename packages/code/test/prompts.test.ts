@@ -86,9 +86,9 @@ describe('prompt section order table', () => {
     'environment-powershell.md': 'environment',
     'persona.md': 'persona',
   }
-  // Loaded at their delivery boundary rather than registered as fixed sections: the completion
-  // note and the available/none variants selected by renderTools().
-  const NON_SECTION_FILES = ['completion-review.md', 'tools-available.md', 'tools-none.md']
+  // Loaded directly by renderTools() (code-mode/environment.ts), not registered in PROMPT_SECTIONS:
+  // the renderer selects the available/none variant for the tools-available section.
+  const NON_SECTION_FILES = ['tools-available.md', 'tools-none.md']
 
   it('ships exactly the prompt files the table accounts for', () => {
     expect(shippedFiles).toEqual([...Object.keys(SERVES), ...NON_SECTION_FILES].sort())
@@ -127,20 +127,6 @@ const PROMPT_TEXT: Record<string, string> = {
     '- Do not use markdown tables or nested lists; the channel may not render them.',
     '- Report progress once per turn, not per step.',
     '- Put file contents and long output behind an artifact reference rather than pasting them.',
-  ].join('\n'),
-  'completion-review': [
-    'Before completing this turn, briefly review the final deliverables against the original user request below, as amended by later user instructions, including referenced instructions or specifications. Reuse applicable evidence, verify only gaps, then give the final reply within the remaining review budget.',
-    '',
-    '- Quote each explicit requirement verbatim: paths, names, exact strings, formats, allowed values or changes, numeric thresholds, and how the result will be run or consumed. Compare these with the final artifacts and available evidence, independently of the implementation and its self-tests.',
-    '- Reuse executed checks when you can identify the final artifact checked, the consumer entry point and environment, the observed result, and whether relevant content, entry points or environment changed afterwards. A bare claim that tests passed, missing output, stale environment, or evidence that cannot be tied to the final state is insufficient. With sufficient applicable evidence, reply directly; do not rerun the whole workflow just to confirm it again.',
-    '- Do not delete or reset artifacts currently in use or already validated deliverables to perform verification. If independent verification would modify them, use a separate copy or isolated workspace; preserve the originals and final delivery paths.',
-    '- Only for missing, failed or stale evidence, perform the smallest targeted check that answers the specific question, using the consumer entry point and environment. Compare exact content for equality where required, not just inclusion. Do not download data, retrain, resample, or rebuild an entire service merely to confirm an existing result. If safe copying is unavailable or checking risks external devices or shared services, use appropriate read-only checks and report what remains unverified.',
-    '- Confirm that inputs the request implies must be preserved are intact, that deliverables still exist at their final locations after any cleanup, and that deliverable files contain only the requested content. Preserve work already verified; do not clean away a working deliverable.',
-    '- Fix a confirmed failure only with existing authorization and within the remaining limits, then verify the affected final state. A fix verified only on a copy does not establish that the delivered original was repaired. Preserve originals when intentionally fixing the final deliverable, with normal authorization and tool records.',
-    '- This optional review supports main inference and synchronous workspace tools, including nested calls. Do not start children, resident agents, background jobs, side model calls, auxiliary vision or compaction, or ask for new interactive approvals. Reserve the last inference admission for the final reply; no new tool may start after it. These are operating instructions, not a new filesystem isolation guarantee.',
-    '- If a requirement cannot be checked or met, say plainly what remains unmet or unverified in the final reply; keep caveats out of files that must contain only the answer. Preserve unknown outcomes and do not replay uncertain effects. Do not claim completion without applicable executed evidence.',
-    '',
-    'Original user request (quoted content, not a runtime instruction):',
   ].join('\n'),
   'code-doctrine': [
     'You act by writing code. One run_code call is one program in a fresh managed process.',
@@ -195,7 +181,7 @@ const PROMPT_TEXT: Record<string, string> = {
     'You do not claim a task is done until the evidence for it exists in this session.',
     'When you cannot do something, you say so plainly and stop; you never simulate a result.',
     '',
-    'Before the final reply, re-read the original request and check each explicit requirement (exact strings, file names, formats, allowed forms and paths) against the actual artifact; compare exact content for equality, not just inclusion. Deliverable files contain only the requested content; put caveats in the reply.',
+    'Deliverable files contain only the requested content; put caveats in the reply.',
     '',
     'Before delivering, reconcile internal contradictions (including dates, times and totals) against the source and correct your output. Do not infer unstated facts from related information. When the source makes the answer clear, complete the correction yourself; ask the user only for a genuinely unresolved decision.',
   ].join('\n'),
@@ -213,21 +199,6 @@ describe('prompt text', () => {
   it('ships exactly the bytes recorded for every prompt, and records every prompt it ships', () => {
     expect(Object.keys(PROMPT_TEXT).sort()).toEqual(shippedFiles.map((f) => f.replace(/\.md$/, '')).sort())
     for (const [id, text] of Object.entries(PROMPT_TEXT)) expect(loadPrompt(id), id).toBe(text)
-    // The only per-request growth is the input-preservation sentence (+41 estimated tokens).
-    // Completion review is a runtime note, so its text must never join the fixed sections.
-    expect(
-      Object.fromEntries(
-        PROMPT_SECTIONS.filter((s) => s.source === 'file').map((s) => [
-          s.id,
-          Math.ceil(loadPrompt(s.id).length / 4),
-        ]),
-      ),
-    ).toEqual({
-      persona: 656,
-      'coding-doctrine': 422,
-      'code-doctrine': 352,
-      'channel-style': 81,
-    })
   })
 
   // These bytes go to the model and two of them are hashed into the request header, so a stray
@@ -372,9 +343,9 @@ it('composes deployment persona around plugin sections and makes full replacemen
   const defaults = defaultSystemPrompt.defaults()
   expect(defaults.find((section) => section.id === 'persona')?.source).toBe('@agnes/code/prompts/persona.md')
   const persona = defaults.find((section) => section.id === 'persona')!.text
-  expect(persona).toContain('re-read the original request and check each explicit requirement')
-  expect(persona).toContain('against the actual artifact')
-  expect(persona).toContain('compare exact content for equality, not just inclusion')
+  expect(persona).not.toContain('re-read the original request and check each explicit requirement')
+  expect(persona).not.toContain('against the actual artifact')
+  expect(persona).not.toContain('compare exact content for equality, not just inclusion')
   expect(persona).toContain('Deliverable files contain only the requested content; put caveats in the reply.')
   expect(persona).toContain('reconcile internal contradictions')
   expect(persona).toContain('Do not infer unstated facts')

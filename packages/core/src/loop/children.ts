@@ -9,7 +9,6 @@ import type {
   ChildAgentToolFilter,
 } from '@agnes/extension-api'
 import { narrowChildToolFilter } from '../child/tool-filter.js'
-import { assertReview, awaitReview } from '../execution/turn/review-budget.js'
 import type { LoopScope } from '../step/loop-deadline.js'
 import type { SessionImpl } from '../step/session.js'
 import { NO_TOOL_FILTER } from '../step/tool-filter.js'
@@ -45,7 +44,6 @@ export class LoopChildren {
     this.port = Object.freeze({
       start: (task, options = {}) =>
         this.owned(async (scope) => {
-          await assertReview(s, 'unsupported')
           const budget = await remainingBudget(s)
           scope.assertAlive()
           this.lifetime.signal.throwIfAborted()
@@ -66,7 +64,6 @@ export class LoopChildren {
         }),
       adoptStart: (task, options) =>
         this.owned(async () => {
-          await assertReview(s, 'unsupported')
           this.bind()
           if (!this.required().adoptStart) throw new CoreError('E_UNSUPPORTED', 'Child provider cannot adopt')
           const handle = await this.required().adoptStart!(task, {
@@ -77,14 +74,13 @@ export class LoopChildren {
         }),
       list: () => this.owned(async () => (this.bound ? this.bound.list() : [])),
       sendMessage: (id, text, signal) =>
-        this.owned(async () => {
-          await assertReview(s, 'unsupported')
-          return this.required().sendMessage(
+        this.owned(() =>
+          this.required().sendMessage(
             id,
             text,
             signal ? AbortSignal.any([s.ac.signal, signal]) : s.ac.signal,
-          )
-        }),
+          ),
+        ),
       interrupt: (id) => this.owned(() => this.required().interrupt(id)),
       result: (id) => this.owned(() => this.awaited(() => this.required().result(id))),
       events: (id) => this.awaitedEvents(this.required().events(id)),
@@ -140,8 +136,7 @@ export class LoopChildren {
   private async awaited<T>(work: () => Promise<T>): Promise<T> {
     const waited = this.s.loopScope.beginWait()
     try {
-      await assertReview(this.s)
-      return await awaitReview(this.s, work)
+      return await work()
     } finally {
       waited()
     }

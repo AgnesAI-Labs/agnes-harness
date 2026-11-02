@@ -8,7 +8,6 @@ import { toProviderRequest } from '../../request/to-provider.js'
 import { applyBeforeRequestPatches } from '../../request/transforms.js'
 import type { SessionImpl } from '../../step/session.js'
 import { estimateTokens, resolveModel } from './inference.js'
-import { assertReview, reviewStop } from './review-budget.js'
 
 type ModelResponseFact = {
   slot: 'fast' | 'verifier'
@@ -99,8 +98,6 @@ export async function decideToolPolicy(
       signal,
       {
         async reserve(limit) {
-          signal.throwIfAborted()
-          await assertReview(s, 'unsupported')
           if (replay) return true
           const count =
             counters.get(sessionIdentity(s)) ??
@@ -113,8 +110,6 @@ export async function decideToolPolicy(
           return true
         },
         async model(request, reviewSignal, onUsage) {
-          signal.throwIfAborted()
-          await assertReview(s, 'unsupported')
           const recorded = replay
           replay = undefined
           if (
@@ -243,43 +238,30 @@ export async function decideToolPolicy(
         },
       },
     )
-  signal.throwIfAborted()
-  const stopped = reviewStop(s)
-  if (stopped && !s.ac.signal.aborted) throw stopped
-  if (permission.review)
-    await recordPolicyReview(s, input, permission, s.toolPolicy(settings?.policy).id, modelResponse)
+  if (permission.review) {
+    await s.requireVerifiedHistory()
+    validateReview(permission)
+    await s.transition(
+      [
+        s.ev(
+          'x/approval/review',
+          {
+            toolUseId: input.call.id,
+            name: input.call.name,
+            policy: s.toolPolicy(settings?.policy).id,
+            policyHash: sha256Hex(canonicalJson(input.policy)),
+            argsHash: sha256Hex(canonicalJson(input.call.args)),
+            ...(modelResponse ? { modelResponse } : {}),
+            effect: permission.effect,
+            ...(permission.allowedBy ? { allowedBy: permission.allowedBy } : {}),
+            reason: permission.reason,
+            review: permission.review,
+          },
+          { ignorable: true, sourceEventSeqs: [s.state.toolCalls.get(input.call.id)!.seq] },
+        ),
+      ],
+      s.op()!,
+    )
+  }
   return permission
-}
-
-/** Persist a validated review with the call and policy it actually decided. */
-async function recordPolicyReview(
-  s: SessionImpl,
-  input: ToolPolicyInput,
-  permission: ToolPolicyDecision,
-  policy: string,
-  modelResponse: ModelResponseFact | undefined,
-): Promise<void> {
-  await s.requireVerifiedHistory()
-  validateReview(permission)
-  await s.transition(
-    [
-      s.ev(
-        'x/approval/review',
-        {
-          toolUseId: input.call.id,
-          name: input.call.name,
-          policy,
-          policyHash: sha256Hex(canonicalJson(input.policy)),
-          argsHash: sha256Hex(canonicalJson(input.call.args)),
-          ...(modelResponse ? { modelResponse } : {}),
-          effect: permission.effect,
-          ...(permission.allowedBy ? { allowedBy: permission.allowedBy } : {}),
-          reason: permission.reason,
-          review: permission.review,
-        },
-        { ignorable: true, sourceEventSeqs: [s.state.toolCalls.get(input.call.id)!.seq] },
-      ),
-    ],
-    s.op()!,
-  )
 }

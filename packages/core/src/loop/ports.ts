@@ -18,15 +18,6 @@ import type { ContentBlock, InferenceEvent, RequestBody } from '@agnes/protocol'
 import { releaseTreeReservation } from '../child/runtime-budget.js'
 import { ModelExecution } from '../execution/model-execution.js'
 import { approvalContinuation, continueParked } from '../execution/turn/parked.js'
-import {
-  admitReviewInference,
-  assertReview,
-  isReviewCode,
-  refreshReview,
-  reviewSignal,
-  reviewStop,
-  reviewWork,
-} from '../execution/turn/review-budget.js'
 import { approveAndExecute } from '../execution/turn/tools.js'
 import { unrecordedParkEvents } from '../execution/turn/unknown-outcome.js'
 import { hasCompleteToolPolicyEnvelope } from '../registry/tool-policy.js'
@@ -176,8 +167,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       const binding = prepared.get(request)
       if (!binding || binding.turnId !== requireOp().meta.turn)
         throw new CoreError('E_REQUEST_FROZEN', 'Model request must be prepared by this turn')
-      await assertReview(s, 'inference')
-      signal = AbortSignal.any([signal, reviewSignal(s)])
+      signal = AbortSignal.any([signal, s.ac.signal])
       signal.throwIfAborted()
       const cached = await invocations.status(binding.invocationId)
       if (cached.status !== 'not-sent') {
@@ -234,8 +224,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     ]
     const op = requireOp()
     const memory = s.turn
-    const seqs = await admitReviewInference(
-      s,
+    const seqs = await s.transition(
       pre,
       withPhase(op, {
         kind: 'inference',
@@ -388,28 +377,16 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     const releaseEffect = await s.controls.beginEffect()
     const done = s.beginLoopOperation()
     try {
-      await refreshReview(s)
       signal.throwIfAborted()
-      return await reviewWork(s, fn)
+      return await fn()
     } finally {
       done()
       releaseEffect()
     }
   }
   const children = s.loopChildrenPort()
-  const decisions = s.decisions.port(decisionSource)
   const ctx: LoopContext = {
-    decisions: {
-      ...decisions,
-      request: async (spec) => {
-        await assertReview(s, 'unsupported')
-        return decisions.request(spec)
-      },
-      wait: async (handle, options) => {
-        await assertReview(s, 'unsupported')
-        return decisions.wait(handle, options)
-      },
-    },
+    decisions: s.decisions.port(decisionSource),
     session: Object.freeze({ key: s.key, lane: s.lane, workspaceRoot: s.workspaceRoot }),
     sessionKey: s.key,
     lane: s.lane,
@@ -461,25 +438,13 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         signal.throwIfAborted()
         return publicOutcome(await checkpointRoutine(s))
       },
-      finishCancelled: async () => {
-        const internal = !s.ac.signal.aborted ? reviewStop(s) : undefined
-        if (internal) throw internal
-        return publicOutcome(await finishAborted(s))
-      },
+      finishCancelled: async () => publicOutcome(await finishAborted(s)),
       async finishFailure() {
         const op = requireOp()
         if (op.phase.kind !== 'failure_drain')
           throw new CoreError('E_RELATION', 'No failed continuation to finish')
-        const reason =
-          s.ac.signal.aborted || op.phase.error.code === 'ABORTED'
-            ? 'aborted'
-            : isReviewCode(op.phase.error.code)
-              ? 'blocked'
-              : 'error'
-        await s.endTurn(
-          reason,
-          reason === 'aborted' && isReviewCode(op.phase.error.code) ? {} : { error: op.phase.error },
-        )
+        const reason = s.ac.signal.aborted || op.phase.error.code === 'ABORTED' ? 'aborted' : 'error'
+        await s.endTurn(reason, { error: op.phase.error })
         return { outcome: 'turn-ended', phase: 'terminal', reason }
       },
     },
@@ -647,8 +612,6 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         await s.locked(() => appendExtensionEvent(s, event, { loopTrigger: true }))
       },
       async finish(reason, error) {
-        const internal = !s.ac.signal.aborted ? reviewStop(s) : undefined
-        if (internal && reason !== 'parked') throw internal
         // A side call settles inside its turn; ending the turn first would leave it unsettled.
         if (sideCallInFlight(s))
           throw new CoreError('E_RELATION', 'A side call is still in flight', {
@@ -727,7 +690,6 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         } finally {
           waited()
         }
-        await assertReview(s)
         signal.throwIfAborted()
       },
       async poll(signal) {

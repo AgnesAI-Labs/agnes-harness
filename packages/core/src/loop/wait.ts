@@ -1,7 +1,6 @@
 import { CoreError } from '@agnes/core-common/types'
 import type { Inbox } from '@agnes/core-ledger/reduce/shapes'
 import type { LoopContext } from '@agnes/extension-api'
-import { assertReview, reviewSignal, reviewStop } from '../execution/turn/review-budget.js'
 import type { SessionImpl } from '../step/session.js'
 
 const WAKE = 'x/core/loop-wake'
@@ -74,32 +73,19 @@ export async function loopWait(
     async park(signal) {
       const done = s.beginLoopOperation()
       try {
-        await assertReview(s)
-        signal = AbortSignal.any([signal, reviewSignal(s)])
+        signal = AbortSignal.any([signal, s.ac.signal])
         for (;;) {
-          if (signal.aborted) {
-            const stopped = reviewStop(s)
-            if (stopped && !s.ac.signal.aborted) throw stopped
-            return
-          }
+          if (signal.aborted) return
           check()
           const consumedWake = await s.locked(async () => {
-            if (signal.aborted) {
-              const stopped = reviewStop(s)
-              if (stopped && !s.ac.signal.aborted) throw stopped
-              return false
-            }
+            if (signal.aborted) return false
             if (latest <= consumed) return false
             const wakeSeq = latest
             await s.d.log.append([s.ev(CONSUMED, { wakeSeq }, { ignorable: true })])
             consumed = wakeSeq
             return true
           })
-          if (signal.aborted) {
-            const stopped = reviewStop(s)
-            if (stopped && !s.ac.signal.aborted) throw stopped
-            return
-          }
+          if (signal.aborted) return
           if (consumedWake || ((s.latest('inbox') as Inbox | undefined)?.items.length ?? 0) > 0) return
           const waited = s.loopScope.beginWait()
           await new Promise<void>((resolve) => {
@@ -121,11 +107,7 @@ export async function loopWait(
               finish()
           })
           // Approval/job notifications wake a scheduler too, without inventing durable wake tokens.
-          if (signal.aborted || disposed) {
-            const stopped = reviewStop(s)
-            if (stopped && !s.ac.signal.aborted) throw stopped
-            return
-          }
+          if (signal.aborted || disposed) return
           check()
           if (latest <= consumed) return
         }

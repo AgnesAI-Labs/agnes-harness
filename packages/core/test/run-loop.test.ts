@@ -683,6 +683,40 @@ describe('run loop', () => {
     expect(steered.session.op()?.phase).toMatchObject({ kind: 'failure_drain' })
     await steered.session.enqueue('next-step', { content: [{ type: 'text', text: 'try again' }], actor })
     expect((await steered.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
+    // The ordinary low-level failure port must honor cancellation arriving after failure selection.
+    let cancelAtClaim: (() => Promise<unknown>) | undefined
+    const cancelled = await openSession({
+      provider: fakeProvider(fatal),
+      loopFactory: {
+        ...defaultLoopFactory,
+        create: (ctx) =>
+          defaultLoopFactory.create({
+            ...ctx,
+            input: {
+              ...ctx.input,
+              claim: async (target) => {
+                const claimed = await ctx.input.claim(target)
+                if (ctx.turn.continuation() === 'failure') await cancelAtClaim?.()
+                return claimed
+              },
+            },
+          }),
+      },
+    })
+    try {
+      await cancelled.session.enqueue('next-turn', { content: [{ type: 'text', text: 'do' }], actor })
+      await cancelled.session.step()
+      await cancelled.session.step()
+      await cancelled.session.step()
+      expect(cancelled.session.op()?.phase).toMatchObject({ kind: 'failure_drain' })
+      cancelAtClaim = () => cancelled.session.abort(actor)
+      expect((await cancelled.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('aborted')
+      expect((await cancelled.log.scan({ type: 'turn/end', limit: 5 })).at(-1)?.data).toMatchObject({
+        reason: 'aborted',
+      })
+    } finally {
+      await cancelled.session.close()
+    }
   })
 })
 

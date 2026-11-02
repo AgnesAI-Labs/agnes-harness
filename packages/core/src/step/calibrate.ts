@@ -5,13 +5,6 @@ import { withTimeout } from '@agnes/core-effects/effects/wrap'
 import type { BudgetState } from '@agnes/core-ledger/reduce/shapes'
 import { type CountResult, type RequestBody, validateAgainst } from '@agnes/protocol'
 import { CountResult as CountResultSchema } from '@agnes/protocol/gen/model'
-import {
-  assertReview,
-  awaitReview,
-  reviewSignal,
-  reviewStop,
-  reviewTimeout,
-} from '../execution/turn/review-budget.js'
 import { hookedAsk } from './approval-ask.js'
 import { domainDecisionEvents, requestDomainDecision } from './domain-decision.js'
 import type { SessionImpl, TurnEndReason } from './session.js'
@@ -41,14 +34,12 @@ export async function attemptProviderCount(
   let raw: unknown
   try {
     raw = await withTimeout(
-      s.d.provider.count(wire, { signal: reviewSignal(s) }),
-      reviewTimeout(s, COUNT_TIMEOUT_MS),
+      s.d.provider.count(wire, { signal: s.ac.signal }),
+      COUNT_TIMEOUT_MS,
       'provider.count',
-      reviewSignal(s),
+      s.ac.signal,
     )
   } catch (err) {
-    const stopped = reviewStop(s)
-    if (stopped && !s.ac.signal.aborted) throw stopped
     await s.diag('budget-recount', {
       failed: true,
       estimate,
@@ -132,9 +123,7 @@ export async function countCalibration(
   const projected =
     cap === null
       ? undefined
-      : await awaitReview(s, () =>
-          s.d.runtime.billingProjected({ tokensEstimate: resolved.tokens, model: wire.model }),
-        )
+      : await s.d.runtime.billingProjected({ tokensEstimate: resolved.tokens, model: wire.model })
   if (cap !== null && projected && projected.credits > cap)
     return {
       event,
@@ -162,7 +151,6 @@ export async function quoteBudget(
   summary: string,
   extra: { events?: EventInput[] } = {},
 ): Promise<'ok' | { reason: TurnEndReason }> {
-  await assertReview(s, 'unsupported')
   const op = s.op() as OpStateObj
   const events = extra.events ?? []
   const requestId = s.d.ids.requestId()

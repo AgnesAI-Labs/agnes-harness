@@ -47,7 +47,6 @@ File references use `path:line` and were checked against commit `a6bf884c2`. A l
 
 The session ledger is the only authority for what happened in a session. Models propose; the ledger records. Core folds the ledger into state; no module keeps a competing record of an outcome.
 
-Core's private completion-review history index retains committed event snapshots for one session owner and lane, excluding inherited parent history. It subscribes before that owner can append, recovers missing ranges from the ledger, and joins queued commits in sequence after any cold scan. The existing reader still validates provenance and continuation anchors and counts durable inference intents; changing the preset cannot erase an active budget. Closing the owner releases the subscription and index, and reopening reconstructs them from ledger facts.
 
 | State | Authority (location, format) | Mutation port | Readers | Copies (kind) | Disagreement rule | Recovery |
 | --- | --- | --- | --- | --- | --- | --- |

@@ -4,7 +4,6 @@ import { CoreError, type Event, type EventInput, type Seq } from '@agnes/core-co
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { SideCallStatus } from '@agnes/extension-api'
 import { AI_ERROR_CODES, type AiErrorCode } from '@agnes/protocol'
-import { assertReview } from '../execution/turn/review-budget.js'
 import { sessionIdentity } from '../loop/scope.js'
 import type { SessionImpl } from '../step/session.js'
 import type {
@@ -440,7 +439,6 @@ function mediaTerminalEvents(
 export function createMediaEffectPort(session: SessionImpl): AuxiliaryVisionEffectPort {
   return Object.freeze({
     async begin(value: AuxiliaryVisionEffectBinding) {
-      await assertReview(session, 'unsupported')
       const binding = snapshotBinding('media', value)
       if (binding.sessionKey !== session.key || binding.lane !== session.lane)
         invalid('auxiliary effect does not belong to this session lane')
@@ -705,7 +703,6 @@ export function createSideCallEffectPort(session: SessionImpl): SideCallEffectPo
 
   return Object.freeze({
     async begin(value: SideCallEffectBinding, auditValue: SideCallEffectAudit) {
-      await assertReview(session, 'unsupported')
       const binding = snapshotBinding('side-call', value)
       const audit = snapshotAudit(auditValue)
       if (!belongs(session, binding)) fail('side-call effect does not belong to this session lane')

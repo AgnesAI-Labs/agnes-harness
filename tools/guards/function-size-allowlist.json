@@ -2,6 +2,7 @@
   "packages/core/src/execution/turn/compaction.ts#<module>/FunctionDeclaration:runCompaction": 375,
   "packages/core/src/execution/turn/inference.ts#<module>/FunctionDeclaration:runInference": 520,
   "packages/core/src/execution/turn/parked.ts#<module>/FunctionDeclaration:continueParked": 240,
+  "packages/core/src/execution/turn/policy-review.ts#<module>/FunctionDeclaration:decideToolPolicy": 220,
   "packages/core/src/execution/turn/resume.ts#<module>/FunctionDeclaration:resumeSession": 270,
   "packages/core/src/execution/turn/tools.ts#<module>/FunctionDeclaration:approveAndExecute": 1260,
   "packages/core/src/execution/turn/tools.ts#<module>/FunctionDeclaration:runToolsPhase": 229,

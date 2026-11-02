@@ -12,7 +12,6 @@ import {
   type TreeReservationHandle,
 } from '../child/runtime-budget.js'
 import { ModelExecution } from '../execution/model-execution.js'
-import { assertReview } from '../execution/turn/review-budget.js'
 import type { SessionImpl } from '../step/session.js'
 import type {
   SideCallEffectAudit,
@@ -246,7 +245,6 @@ export async function executeSideCall(
   plan: SideCallPlan,
   signal: AbortSignal,
 ): Promise<SideCallResult> {
-  await assertReview(s, 'unsupported')
   const { prepared, binding, audit } = plan
   const { invocationId, estimate } = prepared
   const projected = estimate.projectedCredits

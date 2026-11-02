@@ -14,7 +14,6 @@ import {
   InferenceEvent as InferenceEventSchema,
   ModelRecord as ModelRecordSchema,
 } from '@agnes/protocol/gen/model'
-import { assertReview } from '../execution/turn/review-budget.js'
 import type { SessionImpl } from '../step/session.js'
 import {
   type AuxiliaryVisionImageLimits,
@@ -433,7 +432,6 @@ function providerDriver(provider: Provider, parserVersion: string): AuxiliaryVis
 export async function runAuxiliaryVisionAssembly(
   input: AuxiliaryVisionAssemblyInput,
 ): Promise<AuxiliaryVisionOutcome> {
-  await assertReview(input.session, 'unsupported')
   if (input.signal !== input.session.ac.signal || !(input.signal instanceof AbortSignal))
     throw new TypeError('auxiliary vision must use the owning session cancellation signal')
   if (!hasProductionAdmission(input.productionAdmission)) return fallback(input, 'admission_closed')

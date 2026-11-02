@@ -1,4 +1,5 @@
-import { presetDefaults } from '@agnes/core-common/step/preset'
+import { presetDefaults, readPreset } from '@agnes/core-common/step/preset'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
@@ -9,403 +10,11 @@ import {
   contextTokens,
   nearlyFull,
 } from '../src/step/gate.js'
-import type { Operation } from '../src/step/session.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
-import {
-  actor,
-  immediateTimers,
-  openSession,
-  readTool,
-  shellTool,
-  writeTool,
-} from './helpers/open-session.js'
+import { actor, openSession, writeTool } from './helpers/open-session.js'
 
 const sig = () => new AbortController().signal
-
-describe('contract completion review', () => {
-  const operation: Operation = {
-    name: 'test:review',
-    slot: 'before-inference',
-    replay: 'safe',
-    applicable: async () => 'applied',
-    run: async () => ({}),
-    completionReviewNote: () => 'Check the final output against the original request below',
-  }
-  const request = 'Write only OK to result.txt'
-  const input = { actor, content: [{ type: 'text' as const, text: request }] }
-  const audits = async (h: Awaited<ReturnType<typeof openSession>>) =>
-    (await h.log.scan({ type: 'x/core/completion-gate', limit: 10 })).map((e) => {
-      const data = e.data as { diagnostic: string; status: string }
-      return { diagnostic: data.diagnostic, status: data.status }
-    })
-  const run = (h: Awaited<ReturnType<typeof openSession>>) =>
-    h.session.run({ until: 'turn-end', signal: sig() })
-
-  it.each([
-    ['final', undefined],
-    ['final', 40_000],
-    ['tool', undefined],
-    ['failed', undefined],
-  ] as const)(
-    'bounds review inference intents while preserving the third natural final (%s, %s ms turn limit)',
-    async (ending, timeLimitMs) => {
-      const registry = new ToolRegistry()
-      registry.add(writeTool(), { source: 'test', trust: 'builtin' })
-      registry.add(readTool(), { source: 'test', trust: 'builtin' })
-      const failure = [
-        {
-          type: 'error' as const,
-          reason: 'error' as const,
-          code: 'TRANSPORT' as const,
-          message: 'lost',
-          retryable: true,
-        },
-      ]
-      const provider = fakeProvider([
-        toolTurn('write_note', {}),
-        textTurn('candidate'),
-        ...(ending === 'failed'
-          ? [failure, failure, failure, textTurn('must not be sent')]
-          : [
-              toolTurn('read', {}),
-              toolTurn('read', {}),
-              ending === 'final' ? textTurn('checked') : toolTurn('read', {}),
-              textTurn('must not be sent'),
-            ]),
-      ])
-      const preset = presetDefaults()
-      preset.completionGate.contractReview = true
-      preset.model.retry = { ...preset.model.retry, maxAttempts: 5, baseDelayMs: 0 }
-      if (timeLimitMs !== undefined) {
-        preset.model.timeoutMs = 1_000
-        preset.tools.timeoutMs = 1_000
-        preset.verifier.timeoutMs = 1_000
-        preset.repair.timeoutMs = 1_000
-      }
-      const h = await openSession({ provider, registry, preset, operations: [operation] })
-      try {
-        await h.session.enqueue('next-turn', {
-          ...input,
-          ...(timeLimitMs === undefined ? {} : { timeLimitMs }),
-        })
-        expect((await run(h)).reason).toBe(ending === 'final' ? 'completed' : 'blocked')
-        expect(provider.requests).toHaveLength(5)
-        const [review] = await h.log.scan({ type: 'x/core/completion-gate', limit: 10 })
-        expect(review?.data).toMatchObject({
-          reviewBudget: {
-            version: 1,
-            maxInferenceAdmissions: 3,
-            startedAt: h.session.d.clock(),
-            deadlineAt: h.session.d.clock() + Math.min(60_000, timeLimitMs ?? Infinity),
-          },
-        })
-        const intents = await h.log.scan({ type: 'effect/intent', fromSeq: review!.seq, limit: 20 })
-        expect(intents.filter((row) => (row.data as { kind?: string }).kind === 'inference')).toHaveLength(3)
-        expect(intents.filter((row) => (row.data as { kind?: string }).kind === 'tool')).toHaveLength(
-          ending === 'failed' ? 0 : 2,
-        )
-        expect(h.session.pendingEffects()).toEqual([])
-        expect(h.session.state.openStep.size).toBe(0)
-        const [end] = await h.log.scan({ type: 'turn/end', limit: 10 })
-        if (ending !== 'final')
-          expect(end?.data).toMatchObject({ error: { code: 'COMPLETION_REVIEW_REQUEST_LIMIT' } })
-      } finally {
-        await h.session.close()
-      }
-    },
-  )
-
-  it('completes a mutating turn without a review by default', async () => {
-    const registry = new ToolRegistry()
-    registry.add(writeTool(), { source: 'test', trust: 'builtin' })
-    const provider = fakeProvider([toolTurn('write_note', {}), textTurn('candidate')])
-    const h = await openSession({ provider, registry, operations: [operation] })
-    try {
-      await h.session.enqueue('next-turn', input)
-      expect((await run(h)).reason).toBe('completed')
-      expect(provider.requests).toHaveLength(2)
-      expect((await h.log.scan({ type: 'tool/result', limit: 10 })).map((e) => e.data)).toEqual([
-        expect.objectContaining({ content: [{ type: 'text', text: 'written' }], isError: false }),
-      ])
-      expect(await audits(h)).toEqual([
-        { diagnostic: 'completion_gate_contract_review', status: 'skipped:disabled' },
-      ])
-      expect(await h.log.scan({ type: 'repair/decision', limit: 10 })).toEqual([])
-      expect(
-        (await h.log.scan({ type: 'user/message', limit: 20 })).filter(
-          (e) => (e.data as { kind?: string }).kind === 'runtime_context',
-        ),
-      ).toEqual([])
-    } finally {
-      await h.session.close()
-    }
-  })
-
-  it.each(['none', 'read', 'write', 'shell', 'nested', 'refused', 'failed'] as const)(
-    'reviews admitted mutations once, using persisted policy (%s)',
-    async (mode) => {
-      const registry = new ToolRegistry()
-      registry.add(
-        readTool(async (_args, ctx) => {
-          if (mode === 'nested') await ctx.tools.invoke('write_note', {})
-          return { content: [{ type: 'text', text: 'read' }] }
-        }),
-        { source: 'test', trust: 'builtin' },
-      )
-      registry.add(
-        writeTool(async () => {
-          if (mode === 'failed') throw new Error('partial write failed')
-          return { content: [{ type: 'text', text: 'written' }] }
-        }),
-        { source: 'test', trust: 'builtin' },
-      )
-      registry.add(shellTool(), { source: 'test', trust: 'builtin' })
-      const mutates = ['write', 'shell', 'nested', 'failed'].includes(mode)
-      const tool = mode === 'read' || mode === 'nested' ? 'read' : mode === 'shell' ? 'shell' : 'write_note'
-      const provider = fakeProvider([
-        ...(mode === 'none' ? [] : [toolTurn(tool, {})]),
-        textTurn('candidate'),
-        textTurn('checked'),
-      ])
-      const h = await openSession({
-        provider,
-        registry,
-        preset: { ...presetDefaults(), completionGate: { minItems: 3, contractReview: true } },
-        operations: [operation],
-        seams: fakeSeams({
-          repair: { decide: async () => 'complete' },
-          ...(mode === 'refused'
-            ? {
-                principals: {
-                  authorize: async () => ({ decisionId: 'deny', effect: 'deny' as const, reason: 'test' }),
-                },
-              }
-            : {}),
-        }),
-      })
-      try {
-        await h.session.enqueue('next-turn', input)
-        expect((await run(h)).reason).toBe('completed')
-        expect(provider.requests).toHaveLength((mode === 'none' ? 1 : 2) + Number(mutates))
-        expect(await audits(h)).toEqual([
-          {
-            diagnostic: 'completion_gate_contract_review',
-            status: mutates ? 'ran' : 'skipped:no_state_change',
-          },
-        ])
-        const notes = await h.log.scan({ type: 'user/message', limit: 20 })
-        expect(
-          notes.filter(
-            (e) =>
-              (e.data as { kind?: string }).kind === 'runtime_context' &&
-              JSON.stringify(e.data).includes('Check the final output'),
-          ),
-        ).toHaveLength(Number(mutates))
-        if (mutates) {
-          expect(JSON.stringify(provider.requests.at(-1)?.messages)).toContain(request)
-          expect(await h.log.scan({ type: 'repair/decision', limit: 10 })).toHaveLength(1)
-        }
-      } finally {
-        await h.session.close()
-      }
-    },
-  )
-
-  it('admits a check at the budget floors and reviews again only on a new mutating turn', async () => {
-    const registry = new ToolRegistry()
-    registry.add(writeTool(), { source: 'test', trust: 'builtin' })
-    const scripts = [toolTurn('write_note', {}), textTurn('candidate'), textTurn('checked')]
-    const provider = fakeProvider([...scripts, ...scripts])
-    const h = await openSession({
-      provider,
-      registry,
-      preset: { ...presetDefaults(), completionGate: { minItems: 3, contractReview: true } },
-      operations: [operation],
-    })
-    try {
-      for (let turn = 1; turn <= 2; turn++) {
-        await h.session.enqueue('next-turn', { ...input, maxSteps: 5, budget: 10, timeLimitMs: 200_000 })
-        expect((await run(h)).reason).toBe('completed')
-        expect(provider.requests).toHaveLength(turn * 3)
-        expect(await audits(h)).toEqual(
-          Array.from({ length: turn }, () => ({
-            diagnostic: 'completion_gate_contract_review',
-            status: 'ran',
-          })),
-        )
-      }
-    } finally {
-      await h.session.close()
-    }
-  })
-
-  it.each([false, true])(
-    'shares the plan/repair round when mutation comes after a failure=%s',
-    async (later) => {
-      const registry = new ToolRegistry()
-      registry.add(writeTool(), { source: 'test', trust: 'builtin' })
-      const provider = fakeProvider([
-        ...(later ? [textTurn('draft')] : []),
-        toolTurn('write_note', {}),
-        textTurn('candidate'),
-        textTurn('checked'),
-      ])
-      let turnChecks = 0
-      const h = await openSession({
-        provider,
-        registry,
-        preset: { ...presetDefaults(), completionGate: { minItems: 3, contractReview: true } },
-        operations: [operation],
-        seams: fakeSeams({
-          verifier: {
-            verify: async (scope) =>
-              scope === 'turn' && ++turnChecks === 1 && later
-                ? { verdict: 'fail', reasons: ['schema_invalid'] }
-                : { verdict: 'pass', reasons: [] },
-          },
-        }),
-      })
-      try {
-        await h.session.enqueue('next-turn', input)
-        await h.session.acceptInput()
-        await h.session.append([
-          h.session.ev(
-            'plan.items',
-            {
-              items: Array.from({ length: 3 }, (_, id) => ({
-                id: String(id),
-                text: 'requirement',
-                status: 'todo',
-              })),
-            },
-            { register: 'plan.items' },
-          ),
-        ])
-        expect((await run(h)).reason).toBe('completed')
-        expect(provider.requests).toHaveLength(later ? 4 : 3)
-        expect(await audits(h)).toEqual([
-          ...(later
-            ? [{ diagnostic: 'completion_gate_contract_review', status: 'skipped:no_state_change' }]
-            : []),
-          { diagnostic: 'completion_gate_contract_review', status: 'ran' },
-        ])
-        const repairs = await h.log.scan({ type: 'repair/decision', limit: 10 })
-        expect(repairs.map((e) => (e.data as { decision: string }).decision)).toEqual(
-          later ? ['repair', 'repair', 'complete'] : ['repair', 'complete'],
-        )
-      } finally {
-        await h.session.close()
-      }
-    },
-  )
-
-  it.each([
-    'deadline',
-    'steps',
-    'steps-plan',
-    'credits',
-    'quote_timeout',
-    'child',
-    'disabled',
-    'prompt_unavailable',
-  ] as const)('skips a review with a durable reason (%s)', async (reason) => {
-    const preset = presetDefaults()
-    preset.completionGate.contractReview = reason !== 'disabled'
-    const registry = new ToolRegistry()
-    registry.add(writeTool(), { source: 'test', trust: 'builtin' })
-    const provider = fakeProvider([toolTurn('write_note', {}), textTurn('candidate')])
-    const h = await openSession({
-      provider,
-      registry,
-      preset,
-      seams: fakeSeams({
-        billing: {
-          projected: async () =>
-            reason === 'quote_timeout' && provider.calls === 2
-              ? new Promise<never>(() => undefined)
-              : { credits: 1, creditSource: 'estimated' as const },
-        },
-      }),
-      ...(reason === 'quote_timeout' ? { timers: immediateTimers } : {}),
-      operations: reason === 'prompt_unavailable' ? [] : [operation],
-      ...(reason === 'child'
-        ? {
-            delegation: {
-              kind: 'spawn' as const,
-              creationId: 'child',
-              rootTaskId: 'parent',
-              generationDepth: 1,
-            },
-          }
-        : {}),
-    })
-    try {
-      await h.session.enqueue('next-turn', {
-        ...input,
-        ...(reason === 'deadline' ? { timeLimitMs: 1_000 } : {}),
-        ...(reason === 'steps' ? { maxSteps: 3 } : {}),
-        ...(reason === 'steps-plan' ? { maxSteps: 2 } : {}),
-        ...(reason === 'credits' ? { budget: 4 } : {}),
-        ...(reason === 'quote_timeout' ? { budget: 10 } : {}),
-      })
-      if (reason === 'steps-plan') {
-        await h.session.acceptInput()
-        await h.session.append([
-          h.session.ev(
-            'plan.items',
-            {
-              items: Array.from({ length: 3 }, (_, id) => ({
-                id: String(id),
-                text: 'requirement',
-                status: 'todo',
-              })),
-            },
-            { register: 'plan.items' },
-          ),
-        ])
-      }
-      expect((await run(h)).reason).toBe(reason === 'steps-plan' ? 'max_steps' : 'completed')
-      expect(provider.requests).toHaveLength(2)
-      expect(await audits(h)).toEqual([
-        {
-          diagnostic: 'completion_gate_contract_review',
-          status: `skipped:${reason === 'steps-plan' ? 'steps' : reason === 'quote_timeout' ? 'credits' : reason}`,
-        },
-      ])
-    } finally {
-      await h.session.close()
-    }
-  })
-
-  it.each(['abort', 'reopen'] as const)('retains one review across %s', async (mode) => {
-    const registry = new ToolRegistry()
-    registry.add(writeTool(), { source: 'test', trust: 'builtin' })
-    const provider = fakeProvider([toolTurn('write_note', {}), textTurn('candidate'), textTurn('checked')])
-    const preset = presetDefaults()
-    preset.completionGate.contractReview = true
-    let h = await openSession({ provider, registry, preset, operations: [operation] })
-    try {
-      await h.session.enqueue('next-turn', input)
-      for (let i = 0; i < 30 && !(await audits(h)).length; i++) await h.session.step()
-      expect((await audits(h))[0]).toMatchObject({ status: 'ran' })
-      if (mode === 'abort') await h.session.abort()
-      else {
-        const storage = h.storage
-        await h.session.close()
-        h = await openSession({ provider, registry, preset, operations: [operation], storage })
-      }
-      expect((await run(h)).reason).toBe(mode === 'abort' ? 'aborted' : 'completed')
-      expect(await audits(h)).toHaveLength(1)
-      expect(provider.requests).toHaveLength(mode === 'abort' ? 2 : 3)
-      const ends = await h.log.scan({ type: 'turn/end', limit: 10 })
-      expect(ends).toHaveLength(1)
-      expect(ends[0]?.data).toMatchObject({ reason: mode === 'abort' ? 'aborted' : 'completed' })
-    } finally {
-      await h.session.close()
-    }
-  })
-})
 
 /** A model record as a real registry publishes it; only `route`/`id`/`contextWindow` matter here. */
 const modelRecord = (route: string, id: string, contextWindow: number): ModelRecord => ({
@@ -422,6 +31,140 @@ const modelRecord = (route: string, id: string, contextWindow: number): ModelRec
   toolCallFormats: ['native'],
   thinkingReplay: 'native',
   contract_id: null,
+})
+
+describe('retired contract review', () => {
+  it.each(
+    ['main', 'secondary'].flatMap((lane) =>
+      [
+        { status: 'ran', trusted: true, ending: 'open', refused: true },
+        { status: 'ran', trusted: true, ending: 'parked', refused: true },
+        { status: 'ran', trusted: true, ending: 'parked-then-unrelated', refused: true },
+        { status: 'ran', trusted: true, ending: 'completed', refused: false },
+        { status: 'ran', trusted: true, ending: 'next-turn', refused: false },
+        { status: 'ran', trusted: false, ending: 'open', refused: false },
+        { status: 'skipped:disabled', trusted: true, ending: 'open', refused: false },
+      ].map((row) => ({ ...row, lane })),
+    ),
+  )('restores historical review records safely: %j', async ({ status, trusted, ending, refused, lane }) => {
+    const h = await openSession({ provider: fakeProvider([textTurn('done')]), lane })
+    try {
+      await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'work' }] })
+      await h.session.step()
+      await h.log.append([
+        h.session.ev(
+          'x/core/completion-gate',
+          {
+            diagnostic: 'completion_gate_contract_review',
+            status,
+          },
+          {
+            ignorable: true,
+            ...(trusted ? {} : { origin: 'principal' as const, trust: 'untrusted' as const }),
+          },
+        ),
+      ])
+      if (ending === 'parked' || ending === 'parked-then-unrelated') await h.session.endTurn('parked')
+      if (ending === 'parked-then-unrelated') {
+        await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'unrelated' }] })
+        expect((await h.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
+      }
+      if (ending === 'completed' || ending === 'next-turn') {
+        expect((await h.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
+      }
+      if (ending === 'next-turn') {
+        await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'new work' }] })
+        await h.session.step()
+      }
+      const otherLane = lane === 'main' ? 'secondary' : 'main'
+      await h.session.append([
+        h.session.ev('turn/start', { turn: 1, trigger: 'prompt' }, { lane: otherLane }),
+        h.session.ev('turn/end', { reason: 'completed', lastAssistantSeq: null }, { lane: otherLane }),
+      ])
+      const rows = await h.log.scan({ limit: 1000 })
+      const storage = MemoryStorage.fromEvents('k', rows, {
+        opCells: h.log.allRegisters().filter((row) => row.register === 'op.state'),
+      })
+      const provider = fakeProvider([textTurn('must not run during open')])
+      if (refused) {
+        await expect(openSession({ storage, provider, lane })).rejects.toMatchObject({
+          code: 'E_UNSUPPORTED',
+        })
+        expect(await storage.scan('k', { limit: 1000 })).toEqual(rows)
+      } else {
+        const reopened = await openSession({ storage, provider, lane })
+        await reopened.session.close()
+      }
+      expect(provider.calls).toBe(0)
+    } finally {
+      await h.session.close()
+    }
+  })
+  it.each([false, true])(
+    'finishes a mutating task without an extra review (legacy flag %s)',
+    async (enabled) => {
+      const registry = new ToolRegistry()
+      registry.add(writeTool(), { source: 'test', trust: 'builtin' })
+      const provider = fakeProvider([toolTurn('write_note', {}), textTurn('done')])
+      const preset = readPreset({ completion_gate: { contract_review: enabled } }, 'legacy')
+      const h = await openSession({ provider, registry, preset })
+      try {
+        await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'Write a note.' }] })
+        expect((await h.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
+        expect(provider.calls).toBe(2)
+        expect(await h.log.scan({ type: 'x/core/completion-gate', limit: 20 })).toEqual([])
+      } finally {
+        await h.session.close()
+      }
+    },
+  )
+})
+
+describe('ordinary plan completion gate', () => {
+  it.each([
+    { enabled: true, minItems: 3, count: 3, repair: true },
+    { enabled: false, minItems: 3, count: 3, repair: false },
+    { enabled: true, minItems: 4, count: 3, repair: false },
+  ])('preserves the configured plan gate: %j', async ({ enabled, minItems, count, repair }) => {
+    const provider = fakeProvider([textTurn('draft'), textTurn('done')])
+    const h = await openSession({
+      provider,
+      preset: { ...presetDefaults(), completionGate: { enabled, minItems } },
+    })
+    try {
+      await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'work' }] })
+      await h.session.acceptInput()
+      await h.session.append([
+        h.session.ev(
+          'plan.items',
+          {
+            items: Array.from({ length: count }, (_, id) => ({
+              id: String(id),
+              text: 'requirement',
+              status: 'todo',
+            })),
+          },
+          { register: 'plan.items' },
+        ),
+      ])
+      expect((await h.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
+      expect(provider.calls).toBe(repair ? 2 : 1)
+      expect(
+        (await h.log.scan({ type: 'repair/decision', limit: 10 })).map(
+          (row) => (row.data as { decision: string }).decision,
+        ),
+      ).toEqual(repair ? ['repair', 'complete'] : [])
+      const recovery = await h.log.scan({ type: 'x/core/verifier-recovery', limit: 10 })
+      expect(
+        recovery.some(
+          (row) => (row.data as { diagnostic?: string }).diagnostic === 'completion_gate_stale_plan',
+        ),
+      ).toBe(repair)
+      expect(await h.log.scan({ type: 'x/core/completion-gate', limit: 10 })).toEqual([])
+    } finally {
+      await h.session.close()
+    }
+  })
 })
 
 describe('contextTokens', () => {

@@ -122,19 +122,6 @@ import { type ChildRolePort, type RoleDelegation, roleToolSnapshot } from '../ch
 import { unbindChildFactory } from '../child/sessions.js'
 import { sessionCommandFloor } from '../command-table/floor.js'
 import { runDeferred } from '../execution/turn/deferred.js'
-import {
-  assertReview,
-  CompletionReviewStop,
-  disposeReview,
-  markReviewDispatch,
-  refreshReview,
-  reviewHooks,
-  reviewing,
-  reviewSignal,
-  reviewStop,
-} from '../execution/turn/review-budget.js'
-import { finishReview } from '../execution/turn/review-close.js'
-import { disposeReviewHistory, observeReviewHistory } from '../execution/turn/review-history.js'
 import { restoreToolDisclosure } from '../execution/turn/tool-disclosure.js'
 // A type-only import, erased at compile time, so it is not a runtime cycle back to the kernel.
 import type { CoreDiagName } from '../kernel.js'
@@ -143,6 +130,7 @@ import { SessionControls } from '../loop/controls.js'
 import { LoopEventRegistry, loopEventContext } from '../loop/events.js'
 import { drivenOutcome, isAdmissionEnding, publicOutcome, shouldStopLoop } from '../loop/outcome.js'
 import { createLoopContext, disposeLoopContext } from '../loop/ports.js'
+import { settleSideCalls, sideCallInFlight } from '../loop/side-call-receipts.js'
 import type {
   AuxiliaryVisionAssemblyInput,
   AuxiliaryVisionProductionAdmission,
@@ -181,7 +169,7 @@ import {
   finishAborted,
 } from './control.js'
 import { askApprovalAnswer } from './decision-delivery.js'
-import type { DecisionCommands, DecisionSource } from './decisions.js'
+import { DecisionCommands, type DecisionSource } from './decisions.js'
 import { assertCurrentDomainDecisions } from './domain-decision.js'
 import { sysEvent } from './events.js'
 import { appendExtensionEvent, prepareExtensionEvent } from './ext-events.js'
@@ -197,6 +185,7 @@ import { continueParked } from './parked.js'
 import { type PreviewDelta, PreviewHub, type PreviewSnapshot } from './preview.js'
 import { type CoreOpName, invokeTool, runCoreReplacement, setModel, setPreset } from './reentry.js'
 import { type ResumeMode, type ResumeReport, resumeSession } from './resume.js'
+import { assertRetiredReviewSettled } from './retired-review.js'
 import {
   abandonTurn,
   FailureReceipts,
@@ -205,7 +194,6 @@ import {
   type RunFailureSink,
   stepFailure,
 } from './run-failure.js'
-import { sessionDecisions } from './session-decisions.js'
 import {
   permissionOperator,
   SessionPermissionAuthority,
@@ -225,7 +213,6 @@ import { filteredTools, NO_TOOL_FILTER, type SessionToolFilter, setToolFilter } 
 import { effectiveToolPolicy } from './tool-policy.js'
 import { runToolsPhase } from './tools.js'
 import { inboxBudget, rehydratedBudget } from './turn-budget.js'
-import { commitTurnEnd } from './turn-end.js'
 import { attend, attendRecovered, rehydratedCallState } from './turn-restore.js'
 
 /**
@@ -783,7 +770,51 @@ export class SessionImpl {
       },
     }
     this.d = deps
-    this.decisions = sessionDecisions(this, deps)
+    const session = this
+    this.decisions = new DecisionCommands({
+      get key() {
+        return session.key
+      },
+      get lane() {
+        return session.lane
+      },
+      get lastSeq() {
+        return session.lastSeq
+      },
+      get closed() {
+        return session.closingOrClosed || deps.log.isClosed
+      },
+      get cancelled() {
+        return session.op()?.control.status === 'cancel_requested' || childLifecycleRevoked(session)
+      },
+      get actor() {
+        return session.authorization.actor
+      },
+      get permissionContext() {
+        return session.permissionContext
+      },
+      get delegatedToolApprovals() {
+        return session.roleAuthority?.humanApprovals !== false
+      },
+      get refuseApprovals() {
+        return session.d.roleDelegation !== undefined
+      },
+      get delegatedFullAccess() {
+        return session.d.roleDelegation?.delegatedFullAccess === true
+      },
+      get ttlMs() {
+        return session.preset.approval.pendingTtlMs
+      },
+      ...(deps.timers ? { timers: deps.timers } : {}),
+      log: deps.log,
+      beforeAttestation: () => deps.log.fullVerified(),
+      historyVerified: () => deps.log.historyVerified,
+      readDecisions: () => session.state.registers.decisionStates,
+      clock: () => deps.clock(),
+      id: () => deps.ids.ulid(),
+      transact: (work) => session.locked(work),
+      event: (value) => session.ev('decision/state', value, { register: 'decision/state' }),
+    })
     this.workspaceRoot = deps.workspaceIdentity?.canonicalRoot ?? deps.cwd
     this.loopEvents = deps.loopEvents ?? new LoopEventRegistry()
     this.toolRuntimes = deps.toolRuntimes ?? new ToolRuntimeRegistry()
@@ -801,7 +832,6 @@ export class SessionImpl {
       clock: deps.clock,
       effectId: () => deps.ids.effectId(),
     })
-    observeReviewHistory(this)
   }
 
   loopDecisionSource(): DecisionSource {
@@ -820,7 +850,7 @@ export class SessionImpl {
 
   /** Resolve the published hook port at the call boundary; assignment only updates legacy fallback. */
   get hooks(): HookPort {
-    return reviewHooks(this, this.d.currentRuntime?.current(this.key)?.hooks ?? this.fallbackHooks)
+    return this.d.currentRuntime?.current(this.key)?.hooks ?? this.fallbackHooks
   }
 
   set hooks(hooks: HookPort) {
@@ -969,6 +999,7 @@ export class SessionImpl {
     if (this.loopDriver) return
     const done = this.beginLoopOperation()
     try {
+      if (resumed) await assertRetiredReviewSettled(this)
       this.toolPolicy()
       await this.toolRuntime()
       const factory = this.d.loopFactory
@@ -1320,9 +1351,52 @@ export class SessionImpl {
       events?: EventInput[] | ((nextSeq: Seq) => EventInput[])
     } = {},
   ): Promise<Seq> {
-    const { seqs, reason: committedReason, error, turnNumber } = await commitTurnEnd(this, reason, extra)
-    reason = committedReason
-    this.turnEndError = error
+    const expected = this.opSeq()
+    const turnNumber = this.op()?.meta.turn ?? 0
+    if (!extra.sideCallsDrained && sideCallInFlight(this)) await settleSideCalls(this, expected)
+    // Serialize completion with pause admission; whichever fact commits first wins.
+    const seqs = await this.locked(async () => {
+      if (reason === 'completed' && (await this.controls.paused()))
+        throw new CoreError('E_LANE_BUSY', 'Turn completion is paused', { reason: 'CONTROL_PAUSED' })
+      const controlEnd =
+        reason === 'aborted' || reason === 'interrupted' ? await this.controls.ending() : null
+      if (controlEnd) reason = controlEnd.reason
+      const last = extra.lastAssistantSeq ?? this.op()?.latestAssistantSeq ?? null
+      const events = extra.events
+      const end = this.ev('turn/end', {
+        reason,
+        lastAssistantSeq: last,
+        ...(extra.error ? { error: extra.error } : {}),
+      })
+      const seq = this.lastSeq + 1
+      const rows = (() => {
+        const inbox = this.latest('inbox') as Inbox | undefined
+        // A steer arriving after the final boundary remains pending for the next turn.
+        const carry =
+          reason === 'completed' && inbox?.items.some((item) => item.target === 'next-step')
+            ? [
+                inboxEvent(this.lane, this.d.actor, {
+                  items: inbox.items.map((item) =>
+                    item.target === 'next-step' ? { ...item, target: 'next-turn' as const } : item,
+                  ),
+                }),
+              ]
+            : []
+        return [
+          ...(typeof events === 'function' ? events(seq) : (events ?? [])),
+          ...carry,
+          ...(controlEnd ? [controlEnd.event] : []),
+          end,
+        ]
+      })()
+      const result = await this.d.log.append(rows, {
+        expectedRegisterSeq: { register: 'op.state', key: this.lane, seq: expected },
+        opState: { lane: this.lane, data: null },
+      })
+      this.turn = null
+      return result.seqs
+    })
+    this.turnEndError = extra.error
     // Observer failure cannot undo a committed turn ending.
     await this.loopEvents
       .dispatch(
@@ -1747,13 +1821,10 @@ export class SessionImpl {
     // This method is the sole external tool-dispatch choke point. The caller can only reach it with
     // the sequence returned by the append that durably wrote effect/intent; authority itself stays
     // process-local and is consumed before either the built-in or a replacement is entered.
-    await assertReview(this, 'tool')
-    if (reviewing(this) && dispatch.executionDomain !== 'workspace') await assertReview(this, 'unsupported')
     this.assertToolDispatchAvailable(dispatch.executionDomain)
     const lifecycle = childLifecycle(this)
     const runtime = await this.toolRuntime()
     lifecycle.assertActive()
-    await assertReview(this, 'tool')
     this.loopScope.assertAlive()
     const binding = { ...started, owner: this.executePermitOwner, attempt: dispatch.attempt }
     const permit = this.executePermits.issue(binding)
@@ -1767,10 +1838,8 @@ export class SessionImpl {
       runtime,
       concurrencySafe: this.turn?.snapshot.byName.get(name)?.meta.isConcurrencySafe === true,
       ...(this.d.hostToolDispatch ? { hostPort: this.d.hostToolDispatch } : {}),
-      invoke: async () => {
-        await assertReview(this, 'tool')
+      invoke: () => {
         lifecycle.assertActive()
-        markReviewDispatch(this, started.effectId, dispatch.attempt)
         if (!this.d.segments?.ToolExecution) return builtin()
         return runCoreReplacement(
           this,
@@ -1874,10 +1943,6 @@ export class SessionImpl {
     return this.effectReceipts.drain(this, freezeOnly)
   }
 
-  waitForReviewReceipts(): Promise<void> {
-    return this.effectReceipts.waitForReview(this)
-  }
-
   beginLoopOperation(): () => void {
     this.loopScope.assertAlive()
     if (this.closing) throw new CoreError('E_CLOSED', 'session closed')
@@ -1921,27 +1986,10 @@ export class SessionImpl {
     if (op?.control.status === 'cancel_requested') return publicOutcome(await finishAborted(this))
     if (await this.controls.boundary()) return { outcome: 'parked', phase: 'paused', reason: 'parked' }
     if (op && !this.turn) await this.rehydrateTurn(op)
-    await refreshReview(this)
-    const stopped = !this.ac.signal.aborted ? reviewStop(this) : undefined
-    if (stopped && this.op()) {
-      const outcome = await finishReview(this, stopped, true)
-      await this.restartReviewLoop(op?.meta)
-      return publicOutcome(outcome)
-    }
     this.loopEdge++
     try {
       return drivenOutcome(await stepWithinLoopDeadline(this, this.loopDriver), this.op()?.phase.kind)
     } catch (error) {
-      const internal = !this.ac.signal.aborted
-        ? error instanceof CompletionReviewStop
-          ? error
-          : reviewStop(this)
-        : undefined
-      if (internal) {
-        const outcome = await finishReview(this, internal, true)
-        await this.restartReviewLoop(op?.meta)
-        return publicOutcome(outcome)
-      }
       if (error instanceof CoreError && error.detail?.reason === 'CONTROL_PAUSED')
         return { outcome: 'parked', phase: 'paused', reason: 'parked' }
       throw error
@@ -1969,38 +2017,6 @@ export class SessionImpl {
     const fresh = await createLoopContext(this, true)
     this.loopContext = fresh
     this.loopDriver = await this.d.loopFactory.resume(fresh, checkpoint, this.ac.signal)
-  }
-
-  private async restartReviewLoop(target: OpStateObj['meta'] | undefined): Promise<void> {
-    const current = this.op()?.meta
-    if (current && (current.turn !== target?.turn || current.triggerSeq !== target?.triggerSeq)) return
-    const ctx = this.loopContext
-    if (!ctx) return
-    const checkpoint = this.loopScope.alive
-      ? (ctx.checkpoints.read() ?? this.loopDriver.checkpoint())
-      : this.loopDriver.checkpoint()
-    await this.loopDriver.dispose()
-    disposeLoopContext(ctx)
-    this.loopScope = new LoopScope()
-    this.effectReceipts.reset()
-    const fresh = await createLoopContext(this, true)
-    this.loopContext = fresh
-    const scope = this.loopScope
-    const signal = this.ac.signal
-    const driver = await this.d.loopFactory.resume(fresh, checkpoint, signal)
-    if (signal.aborted || this.closingOrClosed || !scope.alive) {
-      try {
-        await driver.cancel()
-      } finally {
-        try {
-          await driver.dispose()
-        } finally {
-          disposeLoopContext(fresh)
-        }
-      }
-      return
-    }
-    this.loopDriver = driver
   }
 
   /** Runs the configured compaction mechanism or records an unavailable-runner failure. */
@@ -2186,10 +2202,9 @@ export class SessionImpl {
    * the loop past a cancellation.
    */
   sleep(ms: number): Promise<void> {
-    const signal = reviewSignal(this)
     const timers = this.d.timers ?? DEFAULT_TIMERS
     return new Promise<void>((res) => {
-      if (signal.aborted) {
+      if (this.ac.signal.aborted) {
         res()
         return
       }
@@ -2198,9 +2213,9 @@ export class SessionImpl {
         timers.clearTimeout(handle)
         res()
       }
-      signal.addEventListener('abort', onAbort, { once: true })
+      this.ac.signal.addEventListener('abort', onAbort, { once: true })
       handle = timers.setTimeout(() => {
-        signal.removeEventListener('abort', onAbort)
+        this.ac.signal.removeEventListener('abort', onAbort)
         res()
       }, ms)
     })
@@ -2676,7 +2691,6 @@ export class SessionImpl {
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise
     this.closing = true
-    disposeReview(this)
     revokeChildLifecycle(this)
     this.d.log.cancelHistoryVerification()
     const revocation = this.preparePermissionRevocation()
@@ -2712,7 +2726,6 @@ export class SessionImpl {
       if (draining && this.op()) await attempt(() => finishAborted(this))
       await attempt(() => this.hooks.shutdown?.())
       await attempt(() => this.d.memory?.close?.())
-      disposeReviewHistory(this)
       await attempt(() => this.d.log.close())
       await this.d.workspaceLease?.close().catch((error: unknown) => failures.push(error))
       if (failures.length === 1) throw failures[0]

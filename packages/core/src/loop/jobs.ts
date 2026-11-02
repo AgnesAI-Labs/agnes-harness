@@ -4,7 +4,6 @@ import { withTimeout } from '@agnes/core-effects/effects/wrap'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { LoopContext, LoopJobStatus, ToolResult } from '@agnes/extension-api'
 import { deferredResultProvenance } from '../execution/turn/deferred.js'
-import { assertReview, reviewSignal, reviewTimeout } from '../execution/turn/review-budget.js'
 import { deferredEffectId } from '../step/deferred.js'
 import type { SessionImpl } from '../step/session.js'
 import type { LoopInvocations } from './invocations.js'
@@ -57,8 +56,7 @@ export function loopJobs(s: SessionImpl, invocations: LoopInvocations): LoopCont
       }
       active.add(id)
       try {
-        await assertReview(s)
-        signal = AbortSignal.any([signal, reviewSignal(s)])
+        signal = AbortSignal.any([signal, s.ac.signal])
         for (;;) {
           signal.throwIfAborted()
           const pending = await binding(id)
@@ -66,7 +64,7 @@ export function loopJobs(s: SessionImpl, invocations: LoopInvocations): LoopCont
           if (saved) return structuredClone((saved.data as unknown as LoopJobStatus).result!)
           const job = await withTimeout(
             s.d.runtime.artifactsPoll(pending.jobId),
-            reviewTimeout(s, 5000),
+            5000,
             'loop job poll',
             signal,
             s.d.timers,

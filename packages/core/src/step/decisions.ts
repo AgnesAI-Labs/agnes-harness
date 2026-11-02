@@ -3,6 +3,7 @@ import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import type { Seq } from '@agnes/core-common/types'
 import { CoreError, type EventInput } from '@agnes/core-common/types'
 import { decisionSubjectDigest } from '@agnes/core-ledger'
+import type { SessionLogImpl } from '@agnes/core-ledger/log/session-log'
 import type {
   DecisionHandle,
   DecisionPort,
@@ -26,15 +27,46 @@ import {
   DecisionSpec as SpecSchema,
 } from '@agnes/protocol/gen/session-v1'
 import { ROLE_APPROVAL_REFUSAL } from '../child/roles.js'
-import {
-  automaticAnswer,
-  type DecisionAuthority,
-  type DecisionSource,
-  delegatedDecisionRefused,
-  humanDecisionActorAllowed,
-} from './decision-authority.js'
+import { automaticAnswer, delegatedDecisionRefused, humanDecisionActorAllowed } from './decision-authority.js'
 
-export type { DecisionAuthority, DecisionSource } from './decision-authority.js'
+/** Minimal authority needed by the decision commands; the session supplies the writer gate. */
+export interface DecisionAuthority {
+  readonly refuseApprovals?: boolean
+  /** The role's application declared that core tool gates follow the live parent's full access. */
+  readonly delegatedFullAccess?: boolean
+  readonly delegatedToolApprovals?: boolean
+  readonly key: string
+  /** A profile journal uses decision commands without creating a session or granting session access. */
+  readonly profileId?: string
+  readonly lane: string
+  readonly lastSeq: Seq
+  readonly closed: boolean
+  readonly cancelled: boolean
+  readonly actor: Actor
+  readonly permissionContext?: import('@agnes/protocol').PermissionContext | undefined
+  readonly ttlMs: number
+  readonly timers?: { setTimeout(fn: () => void, ms: number): unknown; clearTimeout(handle: unknown): void }
+  readonly log: Pick<
+    SessionLogImpl,
+    'append' | 'observeCommitted' | 'claimLease' | 'leaseRemainingMs' | 'faulted'
+  >
+  beforeAttestation?(): Promise<void>
+  historyVerified?(): boolean
+  readDecisions(): ReadonlyMap<string, { value: DecisionSnapshot; seq: Seq }>
+  clock(): number
+  id(): string
+  transact<T>(work: () => Promise<T>): Promise<T>
+  event(value: DecisionSnapshot): EventInput
+}
+
+export interface DecisionSource {
+  readonly permission?: true
+  readonly owner: string
+  readonly operationId: string
+  readonly sourcePackage: string
+  readonly packageVersion: string
+  alive(): void
+}
 /** Supplied only by the authenticated backend ingress, never by an author or answer body. */
 export interface DecisionAnswerContext {
   readonly actor: Actor
@@ -46,7 +78,6 @@ function fail(message: string): never {
     reason: message.toLowerCase().replaceAll('_', '-'),
   })
 }
-
 const detached = <T>(value: T): T => structuredClone(value)
 
 /** Shares the session's writer gate with phase transitions, stop and checkpoints. */
@@ -369,7 +400,6 @@ export class DecisionCommands {
         await this.automatic(await this.expire(existing.value, source), source)
         return detached(existing.value.handle)
       }
-      await this.s.admitReviewDecision?.(spec, source, false)
       const now = this.s.clock()
       const handle: DecisionHandle =
         this.s.profileId === undefined
@@ -746,18 +776,12 @@ export class DecisionCommands {
       })
     })
   }
-  private async admitReviewWait(handle: DecisionHandle, source: DecisionSource): Promise<void> {
-    const initial = this.read(handle, source)
-    if (!initial.result && !initial.invalidation)
-      await this.s.admitReviewDecision?.(initial.request.spec, source, true)
-  }
   private async wait(
     handle: DecisionHandle,
     source: DecisionSource,
     signal?: AbortSignal,
   ): Promise<DecisionWaitResult> {
     this.live(source)
-    await this.admitReviewWait(handle, source)
     let wake: () => void = () => undefined
     let timer: unknown
     let ended = signal?.aborted === true

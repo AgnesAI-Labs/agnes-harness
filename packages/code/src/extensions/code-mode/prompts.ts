@@ -85,7 +85,6 @@ export function createPromptOperation(deps: PromptDeps): Operation {
   const sdk = createSdkRenderer({})
   return {
     name: 'code:prompts',
-    completionReviewNote: () => loadPrompt('completion-review'),
     slot: 'before-inference',
     order: 10,
     replay: 'safe',

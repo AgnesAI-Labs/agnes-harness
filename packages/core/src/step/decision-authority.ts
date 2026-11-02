@@ -1,50 +1,7 @@
-import type { EventInput, Seq } from '@agnes/core-common/types'
-import type { SessionLogImpl } from '@agnes/core-ledger/log/session-log'
-import type { DecisionSnapshot, DecisionSpec } from '@agnes/extension-api'
-import type { Actor } from '@agnes/protocol'
+import type { DecisionSpec } from '@agnes/extension-api'
 import { automaticPermissionDecision, isPermissionPurpose, validateActor } from '@agnes/protocol'
-import type { DecisionAnswerContext } from './decisions.js'
+import type { DecisionAnswerContext, DecisionAuthority, DecisionSource } from './decisions.js'
 
-/** Minimal authority needed by the decision commands; the session supplies the writer gate. */
-export interface DecisionAuthority {
-  readonly refuseApprovals?: boolean
-  /** The role's application declared that core tool gates follow the live parent's full access. */
-  readonly delegatedFullAccess?: boolean
-  readonly delegatedToolApprovals?: boolean
-  readonly key: string
-  /** A profile journal uses decision commands without creating a session or granting session access. */
-  readonly profileId?: string
-  readonly lane: string
-  readonly lastSeq: Seq
-  readonly closed: boolean
-  readonly cancelled: boolean
-  readonly actor: Actor
-  readonly permissionContext?: import('@agnes/protocol').PermissionContext | undefined
-  readonly ttlMs: number
-  readonly timers?: { setTimeout(fn: () => void, ms: number): unknown; clearTimeout(handle: unknown): void }
-  readonly log: Pick<
-    SessionLogImpl,
-    'append' | 'observeCommitted' | 'claimLease' | 'leaseRemainingMs' | 'faulted'
-  >
-  beforeAttestation?(): Promise<void>
-  /** Session-private optional-work admission; profile journals do not install it. */
-  admitReviewDecision?(spec: DecisionSpec, source: DecisionSource, wait: boolean): Promise<void>
-  historyVerified?(): boolean
-  readDecisions(): ReadonlyMap<string, { value: DecisionSnapshot; seq: Seq }>
-  clock(): number
-  id(): string
-  transact<T>(work: () => Promise<T>): Promise<T>
-  event(value: DecisionSnapshot): EventInput
-}
-
-export interface DecisionSource {
-  readonly permission?: true
-  readonly owner: string
-  readonly operationId: string
-  readonly sourcePackage: string
-  readonly packageVersion: string
-  alive(): void
-}
 /** Core's own tool gate: the only request a declaring role answers automatically under full access. */
 export function coreToolPermission(
   permission: boolean,

@@ -79,23 +79,6 @@ export async function treeBudgetApplies(s: SessionImpl): Promise<boolean> {
   )
 }
 
-const turnRootTaskId = (s: SessionImpl): string =>
-  `${s.key}:${s.lane}:${s.state.openTurn.get(s.lane)?.startSeq ?? 0}`
-
-/** Read-only admission for optional work; never acquire or release another request's reservation. */
-export async function fitsRemainingTreeBudget(s: SessionImpl, credits: number): Promise<boolean> {
-  if (!(await treeBudgetApplies(s))) return true
-  const storage = s.d.log.storage
-  if (!hasChildControl(storage)) return false
-  const child = await storage.lookupByKey(s.key)
-  const usage = await storage.projectTree(child?.rootTaskId ?? turnRootTaskId(s))
-  return (
-    !!usage &&
-    !usage.unknownHeld &&
-    chargeToMicrocredits(credits) <= usage.capMicro - usage.settledMicro - usage.heldMicro
-  )
-}
-
 async function reserveTreeBudgetPermit(
   s: SessionImpl,
   projectedCredits: number,
@@ -138,7 +121,7 @@ async function reserveTreeBudgetPermit(
   let scopeIds = rec?.ancestorScopeIds
   let rootTaskId = rec?.rootTaskId
   if (!rec && treeCredits !== null) {
-    rootTaskId = turnRootTaskId(s)
+    rootTaskId = `${s.key}:${s.lane}:${s.state.openTurn.get(s.lane)?.startSeq ?? 0}`
     const root = await storage.ensureRootScope(rootTaskId, capToMicrocredits(treeCredits))
     scopeIds = [root.scopeId]
   }
@@ -577,8 +560,7 @@ export function clearTreePermit(s: SessionImpl): void {
 
 /** Release a reservation when the request is refused before any provider effect can start. */
 export async function releaseTreeReservation(s: SessionImpl): Promise<void> {
-  const scope = s.loopScope
-  const permit = lastTreePermit.get(scope)
+  const permit = lastTreePermit.get(s.loopScope)
   if (!permit) return
   try {
     const storage = s.d.log.storage
@@ -589,7 +571,7 @@ export async function releaseTreeReservation(s: SessionImpl): Promise<void> {
           : { permitId: permit.permitId, writerGeneration: permit.writerGeneration },
       )
   } finally {
-    lastTreePermit.delete(scope)
+    lastTreePermit.delete(s.loopScope)
   }
 }
 

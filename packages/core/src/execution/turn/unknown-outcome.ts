@@ -1,6 +1,5 @@
 import type { OpStateObj } from '@agnes/core-common/step/op-state'
 import type { EventInput } from '@agnes/core-common/types'
-import { APPROVAL_RESPONSE_SCHEMA } from '@agnes/core-effects/effects/approval-answer'
 import { hookedAsk } from '../../step/approval-ask.js'
 import {
   domainDecisionEvents,
@@ -8,7 +7,6 @@ import {
   requestDomainDecision,
 } from '../../step/domain-decision.js'
 import type { SessionImpl } from '../../step/session.js'
-import { reviewing } from './review-budget.js'
 
 /**
  * What a reconciliation produced. `rows` commit with the unknown result and its settlement. `park`
@@ -54,27 +52,6 @@ export async function unknownOutcomeRows(
     risk: 'unknown' as const,
     bindingHash: '',
     deadline: new Date(s.d.clock() + s.preset.approval.timeoutMs).toISOString(),
-  }
-  // Reconciliation records an already-uncertain effect. It may outlive the optional review,
-  // but never holds that review open waiting for a person or authorizes replay.
-  if (reviewing(s)) {
-    const source = domainDecisionSource(s, 'unknown-outcome', toolUseId)
-    const handle = await s.decisions.port(source).request({
-      key: toolUseId,
-      purpose: 'unknown-outcome',
-      subject: { toolUseId, name, turn: op.meta.turn, step: op.step, risk: asked.risk },
-      prompt: asked.summary,
-      options: ['allowed-once', 'allowed-session', 'rejected'],
-      responseSchema: APPROVAL_RESPONSE_SCHEMA,
-    })
-    const snapshot = await s.decisions.get(handle, source)
-    const marker = s.ev('x/core/unknown-outcome', { handle, toolUseId }, { ignorable: true })
-    if (snapshot.result?.reason === 'answered' && !snapshot.invalidation)
-      return {
-        rows: [marker, ...domainDecisionEvents(s, snapshot, source)],
-        answer: snapshot.result.response.option.startsWith('allowed') ? 'happened' : 'not-happened',
-      }
-    return { rows: [marker], park: marker }
   }
   // The payload describes "any request for human approval": this ask has no tool call behind it,
   // so `tool` names the approval's own kind and `argv` carries nothing.

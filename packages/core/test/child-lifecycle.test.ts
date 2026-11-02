@@ -4,7 +4,6 @@ import { CoreError } from '@agnes/core-common/types'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
-import { childBackend } from '../src/child/sessions.js'
 import { Kernel } from '../src/kernel.js'
 import type { SessionImpl } from '../src/step/session.js'
 import { defaultLoops } from '../testkit/loops.js'
@@ -91,60 +90,6 @@ async function invalidatesProjection(
 }
 
 describe('Kernel child lifecycle (generation, fan-out, budget)', () => {
-  it('refuses review work on a cached idle child while retaining observation and explicit human control', async () => {
-    const provider = Object.assign(fakeProvider([textTurn('first result'), textTurn('human follow-up')]), {
-      models: () => [catalogue()],
-    })
-    const k = kernel({ provider })
-    const parent = await k.session('parent', sessionOpts)
-    try {
-      const child = await parent.d.children.create({
-        parent: parent.key,
-        cwd: '/w',
-        input: 'first',
-        resident: true,
-        start: false,
-      })
-      await child.run('first')
-      expect((await child.status()).idle).toBe(true)
-      await parent.enqueue('next-turn', {
-        actor,
-        content: [{ type: 'text', text: 'review the existing work' }],
-      })
-      await parent.acceptInput()
-      const startedAt = parent.d.clock()
-      await parent.append([
-        parent.ev(
-          'x/core/completion-gate',
-          {
-            diagnostic: 'completion_gate_contract_review',
-            status: 'ran',
-            reviewBudget: {
-              version: 1,
-              maxInferenceAdmissions: 3,
-              startedAt,
-              deadlineAt: startedAt + 60_000,
-            },
-          },
-          { ignorable: true },
-        ),
-      ])
-      const before = provider.requests.length
-      await expect(parent.d.children.resume!(child.key)).rejects.toMatchObject({
-        code: 'COMPLETION_REVIEW_UNAVAILABLE',
-      })
-      expect(provider.requests).toHaveLength(before)
-      expect((await child.status()).idle).toBe(true)
-      expect(parent.d.children.get?.(child.key)?.key).toBe(child.key)
-      const backend = childBackend(parent.key)
-      if (!backend) throw new Error('missing child control backend')
-      await backend.humanControl(child.key, 'continue', actor, 'explicit-follow-up', 'next')
-      await vi.waitFor(() => expect(provider.requests).toHaveLength(before + 1))
-      expect((await child.status()).state).not.toBe('cancelled')
-    } finally {
-      await k.close()
-    }
-  })
   it('refuses a child when generationLimit is 0 and does not start a model', async () => {
     const provider = fakeProvider([textTurn('should not run')])
     const k = kernel({

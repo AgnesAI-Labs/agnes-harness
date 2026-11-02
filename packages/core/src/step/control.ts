@@ -4,7 +4,6 @@ import { settlesWithin } from '@agnes/core-effects/effects/wrap'
 import type { Actor } from '@agnes/protocol'
 import { persistChildLifecycleStop, revokeChildLifecycle } from '../child/lifecycle.js'
 import { refusalNotes } from '../execution/turn/nested-note.js'
-import { isReviewCode } from '../execution/turn/review-budget.js'
 import { deferredEffectId } from './deferred.js'
 import type { SessionImpl, StepOutcome, TurnEndReason } from './session.js'
 
@@ -73,15 +72,7 @@ export function cancelSessionRuntimes(s: SessionImpl, cancel: readonly (() => un
  * left alone: their side effect may already have landed, and inventing a result for one would tell
  * the model something happened that did not.
  */
-export async function drainAborted(s: SessionImpl, assertCurrent?: () => void): Promise<void> {
-  assertCurrent?.()
-  const guarded = (events: EventInput[]) =>
-    assertCurrent
-      ? () => {
-          assertCurrent()
-          return events
-        }
-      : events
+export async function drainAborted(s: SessionImpl): Promise<void> {
   const op = s.op()
   if (op?.phase.kind === 'deferred') {
     const events: EventInput[] = []
@@ -110,7 +101,7 @@ export async function drainAborted(s: SessionImpl, assertCurrent?: () => void): 
         ),
       )
     }
-    if (events.length > 0) await s.transition(guarded(events), op)
+    if (events.length > 0) await s.transition(events, op)
     return
   }
   if (op?.phase.kind !== 'tools') return
@@ -143,7 +134,7 @@ export async function drainAborted(s: SessionImpl, assertCurrent?: () => void): 
     unstarted.has(c.toolUseId) ? { ...c, status: 'completed' as const } : c,
   )
   if (events.length)
-    await s.transition(guarded(events), withPhase(op, { ...op.phase, batch: { ...op.phase.batch, calls } }))
+    await s.transition(events, withPhase(op, { ...op.phase, batch: { ...op.phase.batch, calls } }))
 }
 
 /**
@@ -177,24 +168,12 @@ export function closeTurn(
  * A drained failure carries its error forward, so a turn cut off mid-inference still says on the
  * ledger what stopped it.
  */
-export async function finishAborted(s: SessionImpl, assertCurrent?: () => void): Promise<StepOutcome> {
-  await drainAborted(s, assertCurrent)
-  assertCurrent?.()
+export async function finishAborted(s: SessionImpl): Promise<StepOutcome> {
+  await drainAborted(s)
   const op = s.op()
   if (!op) return { phase: 'terminal', reason: 'aborted' }
-  const error =
-    op.phase.kind === 'failure_drain' && !isReviewCode(op.phase.error.code) ? op.phase.error : undefined
+  const error = op.phase.kind === 'failure_drain' ? op.phase.error : undefined
   const reason = (await s.controls.ending())?.reason ?? 'aborted'
-  await closeTurn(s, reason, {
-    ...(error ? { error } : {}),
-    ...(assertCurrent
-      ? {
-          events: () => {
-            assertCurrent()
-            return []
-          },
-        }
-      : {}),
-  })
+  await closeTurn(s, reason, error ? { error } : {})
   return { phase: 'terminal', reason }
 }

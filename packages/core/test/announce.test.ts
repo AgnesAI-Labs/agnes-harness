@@ -92,7 +92,6 @@ function setup(
     seams?: Seams
     ids?: IdMinter
     clock?: () => number
-    preset?: ReturnType<typeof presetDefaults>
   } = {},
 ) {
   const provider = fakeProvider(o.scripts ?? [textTurn('answer')])
@@ -106,7 +105,7 @@ function setup(
     storage,
     loops,
     provider,
-    preset: o.preset ?? presetDefaults(),
+    preset: presetDefaults(),
     seams,
     contract: { contract_id: null, parser_version: '1' },
     fsOps: testFsOps(),
@@ -1484,9 +1483,6 @@ describe('without announce', () => {
     return value
   }
   async function ledger(options: Parameters<LoopContext['tools']['execute']>[2] | 'omitted') {
-    // Keep the reviewed ledger baseline on the same completion-gate path.
-    const preset = presetDefaults()
-    preset.completionGate.contractReview = true
     const returned: ToolResult[] = []
     const f = setup(
       perTurn(async (ctx, s) => {
@@ -1515,7 +1511,7 @@ describe('without announce', () => {
           )),
         )
       }),
-      { ids: stableIds(), clock: () => 1_757_203_200_000, preset },
+      { ids: stableIds(), clock: () => 1_757_203_200_000 },
     )
     f.k.tools.add(readTool(), { source: 'test', trust: 'builtin' })
     const session = await f.open('bytes')
@@ -1531,10 +1527,10 @@ describe('without announce', () => {
 
   it('keeps omitted, empty and false announce options byte-identical', async () => {
     const omitted = await ledger('omitted')
-    // Reviewed ledger, including the completion-gate diagnostic. Review guards change microtask
-    // interleaving between independent batch calls; every omitted form must keep this raw ledger.
+    // Pre-review ledger: removing the opt-in review also removes its diagnostic row.
+    // Keep full byte equivalence across all omitted forms and input-ordered results.
     expect(sha256Hex(canonicalJson(omitted as never))).toBe(
-      'f6a7a85b5e4386325bb13e70cc81e274c6244ac6e8205342891c0e3c0251c080',
+      'd017318d877e97479929865147de03287c5e4a59ed7e288d03fe58f29ae1ffca',
     )
     expect(await ledger(undefined)).toEqual(omitted)
     expect(await ledger({})).toEqual(omitted)

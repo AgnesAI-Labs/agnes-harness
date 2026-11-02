@@ -51,7 +51,10 @@ describe('preset view', () => {
     })
     expect(d.verifier).toEqual({ timeoutMs: 30000, defaultTier: 0 })
     expect(d.repair).toEqual({ timeoutMs: 10000 })
-    expect(d.completionGate).toEqual({ enabled: true, minItems: 3, contractReview: false })
+    expect(d.completionGate).toEqual({ enabled: true, minItems: 3 })
+    expect(readPreset({ completion_gate: { contract_review: true } }, 'legacy').completionGate).toEqual(
+      d.completionGate,
+    )
     expect(d.progressCheck).toEqual({ everySteps: 0 })
     expect(d.telemetry).toEqual({ invariants: false, timing: false })
     expect(d.recovery).toEqual({ unknownChild: 'model' })
@@ -123,7 +126,7 @@ describe('preset view', () => {
         tools: { timeout_ms: 29, output_max_bytes: 9000, timeouts: { shell: 31 }, logical_changes: true },
         verifier: { timeout_ms: 37, default_tier: 2 },
         repair: { timeout_ms: 41 },
-        completion_gate: { min_items: 43, contract_review: true },
+        completion_gate: { min_items: 43 },
         loop: { progress_check_steps: 7 },
         compaction: {
           enabled: false,
@@ -156,7 +159,7 @@ describe('preset view', () => {
       tools: { timeoutMs: 29, outputMaxBytes: 9000, timeouts: { shell: 31 }, logicalChanges: true },
       verifier: { timeoutMs: 37, defaultTier: 2 },
       repair: { timeoutMs: 41 },
-      completionGate: { enabled: true, minItems: 43, contractReview: true },
+      completionGate: { enabled: true, minItems: 43 },
       progressCheck: { everySteps: 7 },
       compaction: { enabled: false, reserveTokens: 47, keepRecentTokens: 53, agentCallable: false },
       telemetry: { invariants: 'strict', timing: true },

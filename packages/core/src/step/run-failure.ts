@@ -91,9 +91,6 @@ export class FailureReceipts {
       .catch(() => undefined)
     return freeze !== undefined && this.frozen
   }
-  async waitForReview(s: SessionImpl): Promise<void> {
-    await drainClosingWork(s, this.pending)
-  }
   async drain(s: SessionImpl, freezeOnly: boolean): Promise<void> {
     this.frozen = true
     for (const freeze of [...this.freezing]) freeze()

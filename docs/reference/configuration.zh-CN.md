@@ -84,17 +84,9 @@ API 客户端可通过 `_agnes/v1/session.setModel` 传入可选的 `thinking`�
 
 使用 Agnes 中国官方网关时，若请求未覆盖额度，adapter 会明确将内置模型的目录额度 65536 作为 `max_tokens` 发送。[3.0 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-30-flash)、[2.5 Pro](https://agnes-ai.com/zh-Hans/docs/agnes-25-pro)和 [Pro Alpha](https://agnes-ai.com/zh-Hans/docs/agnes-25-pro-alpha) 的官方规格为 65536；[Pro Beta](https://agnes-ai.com/en/docs/agnes-25-pro-beta) 按 Pro 同系额度配置为 65536，尚未单独验证网关容量；[2.5 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-25-flash) 和 [2.0 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-20-flash) 的官方说明使用约数 65.5K，此处按 65536 配置。已废弃模型保留注册以兼容现有配置，其可用性取决于网关。请求中明确设置的额度仍优先。仅修改目录元数据不会设置底层 OpenAI 兼容流请求的额度。大文件仍应通过多次小型 write/edit 调用分段构建；默认额度不能保证任意大的单次调用都能完成。
 
-预设的 `completion_gate.contract_review` 默认 `false`，通过 `completion_gate: { contract_review: true }` 显式开启。根 turn 已准入会改变状态的工具调用后，会在完成前追加一次核对，不依赖计划。Core 使用调用时记录的策略（含嵌套调用）；没有副作用意图的拒绝调用不触发。code 提示要求模型对照原始需求与最终产物，复用能说明适用于当前内容、使用者入口和环境的已执行证据；只有缺失、失败或过时的证据才做最小定向核验。会修改状态的核验须使用独立副本或隔离工作区，保留原输入、正在使用或已验证的产物及最终交付路径。这些证据复用与保全规则属于模型指导，不构成自动产物验真或文件系统强制隔离。引用的原请求保留原有信任标签。
+额外完成核对已移除。旧 `completion_gate.contract_review` 配置键仅为兼容保留，值为 true 也不再生效；不会注入额外核对轮或启用专属预算、能力限制。历史核对错误码与结果仍可查看。升级前，含核对记录且仍未结束或待协调的旧会话须用原运行时收尾；新运行时拒绝恢复这类会话，避免静默丢失原限制。新工作请另开会话。
 
-附加核对由 Core 强制限制为最多 **3 次主推理准入、60 秒**，并取原 turn 截止时间的较小值。失败或未获回执的推理意图也计额；提供方 HTTP 重试仍受原单调用策略和剩余 timeout 控制，不作为新的 Core 准入计数。最后一次推理在截止前通过原有完成门时可以正常给最终答复，此后不准入新工具或第四次推理。默认与低层推理共用该预算，审批/未知结果续行及恢复也沿用原额度；中途关闭开关不会删除已启动预算。旧核对记录完全没有预算对象时，不再次触发核对，仍沿用原 turn 限制。
-
-首版支持主推理和普通同步 workspace 工具及嵌套调用。核对期间 Core 拒绝新 child、resident、后台 job、side-call、辅助视觉、压缩和 approval-guardian 模型工作。只使用现有授权，不新发普通交互审批等待；核对前已有后台工作保持原状。限制覆盖 Core 已知能力入口，不隔离任意可信插件 JavaScript 或 shell 内部启动的进程。
-
-只有已安全结算的核对停止才以 `blocked` 结束，公共错误分别为 `COMPLETION_REVIEW_REQUEST_LIMIT`、`COMPLETION_REVIEW_TIME_LIMIT`、`COMPLETION_REVIEW_UNAVAILABLE`。CLI 保留 exit 4 并显示本地化指导；匹配版本的 Web 显示“附加核对未完成”，不提供重试动作。已有回答和产物引用仍可查看：请自行检查，需要更多工作时发起新的明确请求。未知副作用仍保留 parked 协调，不算成功，也不自动重放；用户取消/中断保留原语义。旧 reader 可忽略内部预算/锚点记录，但旧 runtime 不执行这些限制，旧客户端可能仅显示通用错误。诊断继续记录 `completion_gate_contract_review`，状态为 `ran` 或 `skipped:<reason>`。
-
-取消、时间、额度和步数限制仍优先。内部 `COMPLETION_REVIEW_FLOOR` 预留三个模型步数；若有整轮累计或共享任务树额度上限，扣除已花费和预留额度后还需容纳含复核文本的三次估算请求；单次请求额度则需容纳一次估算请求。时间余量下限为模型超时与 60 秒中较小值的两倍，加上最大工具超时（含按工具名称的覆盖值）与 30 秒中较小值，再加校验超时与修复超时的两倍（默认共 200 秒）。可选复核的额度估算受修复超时和取消信号约束；无法取得估算时跳过复核。这些是保守准入下限，不保证一定能在剩余额度内完成。子会话、时间或步数或额度不足会跳过契约复核并记录原因；缺少包提供的指导或原始请求也会跳过。重新打开会话仍保留本轮的一次性决定。
-
-独立的计划完成门 `completion_gate.enabled` 默认 `true`。校验通过时，若计划至少有 `completion_gate.min_items` 项（默认 3）且仍有未完成项，会追加一次复核。未触发契约复核时，没有计划或计划较小则立即完成。第二次通过即使计划仍过时也会完成，并记录 `completion_gate_stale_plan` 诊断。设为 `completion_gate: { enabled: false }` 只关闭计划完成门；两个开关都设为 `false` 才会关闭两种复核。
+原计划完成门仍由 `completion_gate.enabled` 与 `completion_gate.min_items` 控制；普通验证、修复、取消与副作用协调保持。
 
 两个独立的预设字段默认关闭：`tools.logical_changes: true` 将代码指导改为按跨编辑、跨文件的逻辑变更整体验证，允许一次回复发起独立读取、搜索与检查，并为 `edit` 启用对应的顺序批量编辑说明；省略或设为 `false` 保持原提示词和编辑工具描述。`tools.shell_observation_ms: 10000` 将可继续运行的前台 shell 观察窗口设为 10 秒（整数，1000–30000）；省略时保留 120 秒上限。10 秒让普通命令有机会完成并尽早交付长命令的反馈，30 秒上限约束单次观察而不改变工具执行预算。显式更短的 `timeoutMs` 与 turn 期限仍优先；`timeoutToBackground: false` 保留终止约定，没有 jobs 后端的执行器保留原超时行为。运行中结果始终通过现有有界首尾输出守卫带回已捕获的 stdout/stderr，必要时含截断标记与 artifact；这只提前交付 `job_output` 已能读取的内容，不改变所有权、寿命或服务存活规则。
 
