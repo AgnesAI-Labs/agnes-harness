@@ -681,6 +681,13 @@ export function agnesVersion(): string {
 declare const AGNES_VERSION: string | undefined
 
 export async function runExecutable(): Promise<void> {
+  // A reader that exits early (`agh ... | head`) closes the pipe; the next write fails with EPIPE
+  // as an unhandled 'error' event. That is a normal end of a one-shot command, not a crash: drop
+  // it and let main finish its cleanup. Any other stream error keeps its original fatal behavior.
+  const ignoreClosedPipe = (error: NodeJS.ErrnoException): void => {
+    if (error.code !== 'EPIPE') throw error
+  }
+  for (const stream of [process.stdout, process.stderr]) stream.on('error', ignoreClosedPipe)
   const code = await main(process.argv.slice(2), {
     env: process.env,
     stdin: process.stdin,
