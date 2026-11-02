@@ -1,0 +1,46 @@
+{
+  "id": "args-01-config-flag",
+  "category": "command-args",
+  "description": "A local formatter that refuses to run without an explicit --config argument.",
+  "trap": {
+    "signatures": ["--config <file> is required"],
+    "reproduce": "./fmt in/a.txt",
+    "note": "fmt needs --config fmt.cfg on every call; the config is never discovered automatically."
+  },
+  "sessions": [
+    {
+      "prompts": [
+        {
+          "text": "Format in/a.txt with the project's fmt tool and save the result as out/a.txt.",
+          "checks": [
+            {
+              "command": "cat out/a.txt",
+              "contains": "[note] HELLO WORLD"
+            }
+          ],
+          "solution": ["mkdir -p out", "./fmt --config fmt.cfg in/a.txt > out/a.txt"]
+        },
+        {
+          "text": "Format in/b.txt with the project's fmt tool and save the result as out/b.txt.",
+          "checks": [
+            {
+              "command": "cat out/b.txt",
+              "contains": "[note] SECOND FILE"
+            }
+          ],
+          "solution": ["mkdir -p out", "./fmt --config fmt.cfg in/b.txt > out/b.txt"]
+        },
+        {
+          "text": "Format in/c.txt with the project's fmt tool and save the result as out/c.txt.",
+          "checks": [
+            {
+              "command": "cat out/c.txt",
+              "contains": "[note] THIRD ONE"
+            }
+          ],
+          "solution": ["mkdir -p out", "./fmt --config fmt.cfg in/c.txt > out/c.txt"]
+        }
+      ]
+    }
+  ]
+}

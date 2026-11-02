@@ -1,0 +1,64 @@
+{
+  "id": "conv-01-license-header",
+  "category": "convention",
+  "description": "Every Python file under src/ must carry a fixed copyright line as its first line, enforced by scripts/check.sh inside make test.",
+  "trap": {
+    "signatures": ["missing license header"],
+    "reproduce": "printf 'def f():\\n    return 1\\n' > src/textkit/extra.py && bash scripts/check.sh",
+    "note": "New files under src/ (including empty __init__.py files) must start with the exact Orbit Works copyright line; make test runs scripts/check.sh first and rejects files without it."
+  },
+  "sessions": [
+    {
+      "prompts": [
+        {
+          "text": "Add a function `slugify(text)` in a new module src/textkit/slug.py. It lowercases the text, replaces every run of non-alphanumeric characters with a single hyphen, and strips hyphens from both ends. Run the project's tests when you are done.",
+          "checks": [
+            {
+              "command": "PYTHONPATH=src python3 -c \"from textkit.slug import slugify; print(slugify('  Hello, World!! 2026 '))\"",
+              "contains": "hello-world-2026"
+            },
+            {
+              "command": "test -f src/textkit/slug.py && bash scripts/check.sh",
+              "contains": "license headers ok"
+            }
+          ],
+          "solution": [
+            "printf '%s\\n' '# Copyright 2026 Orbit Works. All rights reserved. [OW-INT]' > src/textkit/slug.py && cat >> src/textkit/slug.py <<'EOF'\nimport re\n\n\ndef slugify(text):\n    return re.sub(r\"[^a-z0-9]+\", \"-\", text.lower()).strip(\"-\")\nEOF"
+          ]
+        },
+        {
+          "text": "Add a function `count_words(text)` in a new module src/textkit/wordcount.py. It returns a dict mapping each lowercased whitespace-separated word to how many times it occurs. Run the project's tests when you are done.",
+          "checks": [
+            {
+              "command": "PYTHONPATH=src python3 -c \"from textkit.wordcount import count_words; print(sorted(count_words('a B b').items()))\"",
+              "contains": "[('a', 1), ('b', 2)]"
+            },
+            {
+              "command": "test -f src/textkit/wordcount.py && bash scripts/check.sh",
+              "contains": "license headers ok"
+            }
+          ],
+          "solution": [
+            "printf '%s\\n' '# Copyright 2026 Orbit Works. All rights reserved. [OW-INT]' > src/textkit/wordcount.py && cat >> src/textkit/wordcount.py <<'EOF'\ndef count_words(text):\n    counts = {}\n    for word in text.lower().split():\n        counts[word] = counts.get(word, 0) + 1\n    return counts\nEOF"
+          ]
+        },
+        {
+          "text": "Add a function `rot13(text)` in a new module src/textkit/rot.py that applies the ROT13 substitution to letters and leaves everything else unchanged. Run the project's tests when you are done.",
+          "checks": [
+            {
+              "command": "PYTHONPATH=src python3 -c \"from textkit.rot import rot13; print(rot13('Hello, World'))\"",
+              "contains": "Uryyb, Jbeyq"
+            },
+            {
+              "command": "test -f src/textkit/rot.py && bash scripts/check.sh",
+              "contains": "license headers ok"
+            }
+          ],
+          "solution": [
+            "printf '%s\\n' '# Copyright 2026 Orbit Works. All rights reserved. [OW-INT]' > src/textkit/rot.py && cat >> src/textkit/rot.py <<'EOF'\nimport codecs\n\n\ndef rot13(text):\n    return codecs.encode(text, \"rot13\")\nEOF"
+          ]
+        }
+      ]
+    }
+  ]
+}

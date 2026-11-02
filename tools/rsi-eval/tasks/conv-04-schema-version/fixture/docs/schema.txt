@@ -1,0 +1,3 @@
+schema notes
+current schema version: 2
+see migrations/ for the table definitions

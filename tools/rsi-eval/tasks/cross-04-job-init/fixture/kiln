@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -eu
+cmd="${1:-}"
+name="${2:-}"
+if [ -z "$cmd" ] || [ -z "$name" ]; then
+  echo "usage: kiln <init|run> <name>" >&2
+  exit 2
+fi
+case "$cmd" in
+  init)
+    mkdir -p "jobs/$name"
+    [ -f "jobs/$name/job.cfg" ] || printf 'command=true\n' > "jobs/$name/job.cfg"
+    echo ok > "jobs/$name/.ready"
+    echo "initialised job $name (edit jobs/$name/job.cfg)"
+    ;;
+  run)
+    if [ ! -f "jobs/$name/.ready" ]; then
+      echo "error: job '$name' is not initialised (run: ./kiln init $name)" >&2
+      exit 1
+    fi
+    command=$(sed -n 's/^command=//p' "jobs/$name/job.cfg")
+    mkdir -p results
+    bash -c "$command" > "results/$name.out" 2>&1
+    echo "ran $name"
+    ;;
+  *)
+    echo "error: unknown command $cmd" >&2
+    exit 2
+    ;;
+esac

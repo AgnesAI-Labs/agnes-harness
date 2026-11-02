@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+import sys
+
+JOBS = {
+    'sum': lambda args: sum(float(a) for a in args),
+    'max': lambda args: max(float(a) for a in args),
+    'join': lambda args: ','.join(args),
+}
+
+
+def fail(message):
+    print(f'error: {message}', file=sys.stderr)
+    sys.exit(2)
+
+
+def show(value):
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+argv = sys.argv[1:]
+if argv == ['list']:
+    print('\n'.join(sorted(JOBS)))
+    sys.exit(0)
+if len(argv) < 2 or argv[0] != 'run':
+    fail('usage: ./jobs run <job> [-- <job arguments>]')
+job = argv[1]
+if job not in JOBS:
+    fail(f'unknown job {job}')
+rest = argv[2:]
+if rest and rest[0] != '--':
+    fail(f"unexpected arguments: {' '.join(rest)}; pass job arguments after --, e.g. ./jobs run {job} -- {' '.join(rest)}")
+print(show(JOBS[job](rest[1:])))

@@ -1,0 +1,9 @@
+# Changelog
+
+## Unreleased
+
+## 0.2.0
+- add(lower): lowercase text read from stdin
+
+## 0.1.0
+- add(upper): uppercase text read from stdin

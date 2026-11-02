@@ -1,0 +1,46 @@
+{
+  "id": "dir-03-service-cwd",
+  "category": "directory",
+  "description": "A reporting script that reads its config from the current directory.",
+  "trap": {
+    "signatures": ["config\\.ini not found in the current directory"],
+    "reproduce": "python3 service/run.py inventory",
+    "note": "run.py opens ./config.ini, so it only works when started from inside service/."
+  },
+  "sessions": [
+    {
+      "prompts": [
+        {
+          "text": "Generate the `inventory` report with the service's run.py and save its output as reports/inventory.txt at the repository root.",
+          "checks": [
+            {
+              "command": "cat reports/inventory.txt",
+              "contains": "widgets: 12"
+            }
+          ],
+          "solution": ["mkdir -p reports", "(cd service && python3 run.py inventory) > reports/inventory.txt"]
+        },
+        {
+          "text": "Generate the `orders` report with the service's run.py and save its output as reports/orders.txt at the repository root.",
+          "checks": [
+            {
+              "command": "cat reports/orders.txt",
+              "contains": "closed: 41"
+            }
+          ],
+          "solution": ["mkdir -p reports", "(cd service && python3 run.py orders) > reports/orders.txt"]
+        },
+        {
+          "text": "Generate the `users` report with the service's run.py and save its output as reports/users.txt at the repository root.",
+          "checks": [
+            {
+              "command": "cat reports/users.txt",
+              "contains": "banned: 2"
+            }
+          ],
+          "solution": ["mkdir -p reports", "(cd service && python3 run.py users) > reports/users.txt"]
+        }
+      ]
+    }
+  ]
+}

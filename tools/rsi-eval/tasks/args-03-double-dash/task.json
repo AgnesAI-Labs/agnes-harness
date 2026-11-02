@@ -1,0 +1,46 @@
+{
+  "id": "args-03-double-dash",
+  "category": "command-args",
+  "description": "A job runner that only forwards job arguments placed after a double dash.",
+  "trap": {
+    "signatures": ["pass job arguments after --"],
+    "reproduce": "./jobs run sum 4 9 2",
+    "note": "Arguments for a job go after --, e.g. ./jobs run sum -- 4 9 2."
+  },
+  "sessions": [
+    {
+      "prompts": [
+        {
+          "text": "Run the `sum` job of the project's jobs tool with the numbers 4, 9 and 2 and save its output as results/sum.txt.",
+          "checks": [
+            {
+              "command": "cat results/sum.txt",
+              "contains": "15"
+            }
+          ],
+          "solution": ["mkdir -p results", "./jobs run sum -- 4 9 2 > results/sum.txt"]
+        },
+        {
+          "text": "Run the `max` job of the project's jobs tool with the numbers 8, 3 and 11 and save its output as results/max.txt.",
+          "checks": [
+            {
+              "command": "cat results/max.txt",
+              "contains": "11"
+            }
+          ],
+          "solution": ["mkdir -p results", "./jobs run max -- 8 3 11 > results/max.txt"]
+        },
+        {
+          "text": "Run the `join` job of the project's jobs tool with the words red, green and blue and save its output as results/join.txt.",
+          "checks": [
+            {
+              "command": "cat results/join.txt",
+              "contains": "red,green,blue"
+            }
+          ],
+          "solution": ["mkdir -p results", "./jobs run join -- red green blue > results/join.txt"]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "id": "args-04-confirm-flag",
+  "category": "command-args",
+  "description": "A destructive CLI that refuses to run non-interactively without an explicit --yes.",
+  "trap": {
+    "signatures": ["pass --yes"],
+    "reproduce": "./cachectl purge eu",
+    "note": "purge asks for confirmation on a terminal and fails everywhere else unless --yes is given."
+  },
+  "sessions": [
+    {
+      "prompts": [
+        {
+          "text": "Purge the `eu` region of the cache with the project's cachectl tool.",
+          "checks": [
+            {
+              "command": "test -e cache/eu.dat && echo eu-present || echo eu-gone",
+              "contains": "eu-gone"
+            },
+            {
+              "command": "cat cache/purge.txt",
+              "contains": "purged eu"
+            }
+          ],
+          "solution": ["./cachectl purge eu --yes"]
+        },
+        {
+          "text": "Purge the `us` region of the cache with the project's cachectl tool.",
+          "checks": [
+            {
+              "command": "test -e cache/us.dat && echo us-present || echo us-gone",
+              "contains": "us-gone"
+            },
+            {
+              "command": "cat cache/purge.txt",
+              "contains": "purged us"
+            }
+          ],
+          "solution": ["./cachectl purge us --yes"]
+        },
+        {
+          "text": "Purge the `ap` region of the cache with the project's cachectl tool.",
+          "checks": [
+            {
+              "command": "test -e cache/ap.dat && echo ap-present || echo ap-gone",
+              "contains": "ap-gone"
+            },
+            {
+              "command": "cat cache/purge.txt",
+              "contains": "purged ap"
+            }
+          ],
+          "solution": ["./cachectl purge ap --yes"]
+        }
+      ]
+    }
+  ]
+}
