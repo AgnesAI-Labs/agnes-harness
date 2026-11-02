@@ -125,7 +125,12 @@ describe('loadSuite', () => {
   })
 })
 
-describe('selfCheckTask', () => {
+// The task commands are bash, make and python3 scripts: they are written for the Linux container the
+// tasks run in, and the self-check runs them on the host, so it needs a POSIX host. The format checks
+// in `loadSuite` above run everywhere.
+const posixDescribe = describe.skipIf(process.platform === 'win32')
+
+posixDescribe('selfCheckTask', () => {
   const taskDirFor = (task: EvalTask, files: Record<string, string> = {}): string => {
     const root = writeSuite([{ dir: task.id, json: task }])
     for (const [name, content] of Object.entries(files)) {
@@ -239,9 +244,8 @@ describe('selfCheckTask', () => {
   })
 })
 
-describe('bundled tasks', () => {
+posixDescribe('bundled tasks', () => {
   it('every bundled task passes self-check', async () => {
-    // The suite is still growing: relax the size floor for now (see loadSuite).
     const tasks = loadSuite(defaultTasksDir)
     const outcomes = await Promise.all(
       tasks.map((task) => selfCheckTask(task, join(defaultTasksDir, task.id))),
