@@ -23,6 +23,3 @@ subagent: { max_depth: 2, max_fan_out: 4 }
 # There is no operator to prompt, so an extension asking for input is declined rather than left
 # hanging until the turn's deadline.
 ext_ui: { unattended: decline }
-# Self-refinement is on, and a change that would apply globally still waits for a human: an
-# unattended run may improve its own next turn, not the deployment everyone else shares.
-harness: { auto_refine: { enabled: true, global_needs_human: true } }

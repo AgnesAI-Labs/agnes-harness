@@ -254,6 +254,7 @@ describe('protocol src boundary', () => {
         'sessionArtifactRoots',
         'CURRENT_V',
         'DEFAULT_JSON_DATA_MAX_BYTES',
+        'DEFAULT_REFINEMENT_SETTINGS',
         'DEFAULT_VOICE_SETTINGS',
         'DSH_WEB_CLIENT_SLOT_CATALOG_VERSION',
         'inspectJsonData',

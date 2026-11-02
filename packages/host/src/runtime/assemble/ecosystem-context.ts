@@ -2,6 +2,7 @@ import { hasChildControl, type SeamImplementations } from '@agnes/core'
 import type { PackageModule, SeamInitContext } from '@agnes/host-extensions/assemble/packages'
 import { bindSkillRuntimeToWorkspace } from '@agnes/host-extensions/resources/skill-preload'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
+import { RefinementSettingsStore } from '@agnes/host-infrastructure/refinement-settings'
 import type { ComputerUseHost } from '../computer-use/index.js'
 import type { AssemblyContext } from './context.js'
 import type { PackageSet } from './packages.js'
@@ -41,6 +42,15 @@ export function createEcosystemContexts(
           updateWorkspace: storage.updateWorkspace.bind(storage),
         })
       : undefined
+  // The profile's refinement switch (the file the settings RPC writes), read once per container
+  // assembly and fixed for the container's life: a factory runs again on every row load, and a
+  // value read then would let a running session gain or lose tools mid-conversation. A new process,
+  // worker or generation assembles again and reads it fresh. This view decides tool registration
+  // only; anything that needs the live settings must read the store itself.
+  const refinementAtAssembly = new RefinementSettingsStore(ctx.dataDir, ctx.profile.name).current()
+  const refinementView: SeamInitContext['refinementSettings'] = Object.freeze({
+    current: () => refinementAtAssembly,
+  })
   const hookCommands =
     adapters.platform.os === 'win32'
       ? trustedHookCommands(ctx.profile.commandHooks, workspaceRoot, adapters.platform.fs())
@@ -65,6 +75,7 @@ export function createEcosystemContexts(
       ...(grant.trustedHookCommands && hookCommands ? { trustedHookCommands: hookCommands } : {}),
       ...(liveResources?.includes('skills') && skills ? { skillResources: skills } : {}),
       ...(grant.skillDiscovery ? { skillDiscovery: skillState.discovery } : {}),
+      ...(grant.refinementSettings ? { refinementSettings: refinementView } : {}),
       ...(grant.privacyTrajectory && privacyTrajectory.current
         ? { privacyTrajectory: privacyTrajectory.current }
         : {}),

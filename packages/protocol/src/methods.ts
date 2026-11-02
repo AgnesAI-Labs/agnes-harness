@@ -169,6 +169,8 @@ export type MethodName =
   | '_agnes/v1/voice.status'
   | '_agnes/v1/voice.settings.get'
   | '_agnes/v1/voice.settings.save'
+  | '_agnes/v1/refinement.get'
+  | '_agnes/v1/refinement.save'
   | '_agnes/v1/session.rename'
   | '_agnes/v1/session.archive'
   | '_agnes/v1/session.pin'
@@ -443,6 +445,8 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   '_agnes/v1/voice.status': clientRequest(A.ConfigEmptyParams, A.VoiceStatusResult),
   '_agnes/v1/voice.settings.get': clientRequest(A.ConfigEmptyParams, A.VoiceSettingsSnapshot),
   '_agnes/v1/voice.settings.save': clientRequest(A.VoiceSettingsSaveParams, A.VoiceSettingsSnapshot),
+  '_agnes/v1/refinement.get': clientRequest(A.ConfigEmptyParams, A.RefinementSettingsSnapshot),
+  '_agnes/v1/refinement.save': clientRequest(A.RefinementSettingsSaveParams, A.RefinementSettingsSaveResult),
   '_agnes/v1/session.rename': clientRequest(A.SessionRenameParams, A.SessionPreferences),
   '_agnes/v1/session.archive': clientRequest(A.SessionArchiveParams, A.SessionPreferences),
   '_agnes/v1/session.pin': clientRequest(A.SessionPinParams, A.SessionPreferences),

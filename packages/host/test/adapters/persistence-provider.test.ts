@@ -2,7 +2,6 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { createRefineHarness, RefineQueue } from '@agnes/base'
 import {
   CoreError,
   defaultIds,
@@ -434,7 +433,7 @@ describe('persistence provider', () => {
   })
 })
 
-it('runs the default accounting, refine and MCP domains on metadata without SQL', async () => {
+it('runs the default accounting and MCP domains on metadata without SQL', async () => {
   const { persistenceProvider } = await import(
     new URL('../../../../examples/persistence/src/index.ts', import.meta.url).href
   )
@@ -493,17 +492,6 @@ it('runs the default accounting, refine and MCP domains on metadata without SQL'
       credits: 5,
       creditSource: 'estimated',
     })
-    const harness = createRefineHarness(new RefineQueue(init.adapters.storage.namespace('refine_queue')), 20)
-    expect(
-      await harness.propose({
-        proposalId: 'proposal',
-        trigger: 'auto',
-        edits: [{ op: 'delete', kind: 'memory', id: 'old' }],
-        baseline: [],
-        rationale: 'test',
-        evidenceSeqs: [],
-      }),
-    ).toBe('queued')
     const hub = mcpCatalogHubFor(init)
     hub.upsert('server', [{ name: 'lookup', description: '查找订单', schema: '{}' }])
     expect(hub.search('查找', 10)).toEqual([{ name: 'lookup', score: 1 }])
@@ -518,9 +506,6 @@ it('runs the default accounting, refine and MCP domains on metadata without SQL'
   try {
     const values = reopened.metadata.namespace('@agnes/base', 'usage_ledger').entries()
     expect(values).toHaveLength(1)
-    expect(reopened.metadata.namespace('@agnes/base', 'refine_queue').get('row:proposal')).toMatchObject({
-      status: 'queued',
-    })
   } finally {
     await reopened.close()
   }

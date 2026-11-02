@@ -82,13 +82,7 @@
           "subagent": 10
         },
         "max_chars_per_entry": 2000,
-        "queue_max": 20,
-        "auto_refine": {
-          "enabled": true,
-          "gate": "verifier",
-          "global_needs_human": true,
-          "cooldown_turns": 5
-        }
+        "queue_max": 20
       },
       "telemetry": {
         "consent": "DISABLED",
@@ -227,13 +221,7 @@
           "subagent": 10
         },
         "max_chars_per_entry": 2000,
-        "queue_max": 20,
-        "auto_refine": {
-          "enabled": true,
-          "gate": "verifier",
-          "global_needs_human": true,
-          "cooldown_turns": 5
-        }
+        "queue_max": 20
       },
       "telemetry": {
         "consent": "DISABLED",
@@ -405,13 +393,7 @@
           "subagent": 10
         },
         "max_chars_per_entry": 2000,
-        "queue_max": 20,
-        "auto_refine": {
-          "enabled": true,
-          "gate": "verifier",
-          "global_needs_human": true,
-          "cooldown_turns": 5
-        }
+        "queue_max": 20
       },
       "telemetry": {
         "consent": "DISABLED",
@@ -461,7 +443,7 @@
     }
   },
   "minimal-rl": {
-    "hash": "sha256-1d42e12410ddbe571bb9ceb400380b6b29d61062beb955835baab9cea0986655",
+    "hash": "sha256-ea14c1c908b155e26d8b30e455e5c2b926b2958c5251d2dd82fbd2764995efa8",
     "doc": {
       "name": "minimal-rl",
       "surfaces": ["cli", "acp"],
@@ -516,11 +498,6 @@
       },
       "completion_gate": {
         "enabled": false
-      },
-      "harness": {
-        "auto_refine": {
-          "enabled": false
-        }
       },
       "telemetry": {
         "consent": "DISABLED"
@@ -612,13 +589,7 @@
           "subagent": 10
         },
         "max_chars_per_entry": 2000,
-        "queue_max": 20,
-        "auto_refine": {
-          "enabled": true,
-          "gate": "verifier",
-          "global_needs_human": true,
-          "cooldown_turns": 5
-        }
+        "queue_max": 20
       },
       "telemetry": {
         "consent": "DISABLED",
@@ -795,13 +766,7 @@
           "subagent": 10
         },
         "max_chars_per_entry": 2000,
-        "queue_max": 20,
-        "auto_refine": {
-          "enabled": true,
-          "gate": "verifier",
-          "global_needs_human": true,
-          "cooldown_turns": 5
-        }
+        "queue_max": 20
       },
       "telemetry": {
         "consent": "DISABLED",
@@ -982,13 +947,7 @@
           "subagent": 10
         },
         "max_chars_per_entry": 2000,
-        "queue_max": 20,
-        "auto_refine": {
-          "enabled": true,
-          "gate": "verifier",
-          "global_needs_human": true,
-          "cooldown_turns": 5
-        }
+        "queue_max": 20
       },
       "telemetry": {
         "consent": "DISABLED",
@@ -1160,13 +1119,7 @@
           "subagent": 10
         },
         "max_chars_per_entry": 2000,
-        "queue_max": 20,
-        "auto_refine": {
-          "enabled": true,
-          "gate": "verifier",
-          "global_needs_human": true,
-          "cooldown_turns": 5
-        }
+        "queue_max": 20
       },
       "telemetry": {
         "consent": "DISABLED",

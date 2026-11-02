@@ -1,8 +1,6 @@
 import { Value } from '@sinclair/typebox/value'
 import { describe, expect, it, vi } from 'vitest'
-// The plan's own sample imports this from '../../../src/testkit/tool-context.js', which does not
-// exist: the real testkit lives at packages/base/testkit/ (a sibling of src/, not inside it). Three
-// '../' from this test dir lands on packages/base/, so the real path is '../../../testkit/...'.
+// The base testkit lives at packages/base/testkit/, a sibling of src/.
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { createProposeTool, ProposeParams } from '../src/propose-tool.js'
 
@@ -10,18 +8,19 @@ const proposal = {
   proposalId: 'p1',
   trigger: 'manual' as const,
   rationale: 'r',
-  // Required on the real RefineProposal (core/src/effects/seams.ts:145) and read by Task 19's
-  // gateT0 as `evidenceSeqs.length` - the plan's own Step 7 schema omitted this field entirely
-  // (see propose-tool.ts's doc comment), which would have let `args as never` smuggle `undefined`
-  // through and crash gateT0 the first time a real proposal reached it.
+  // Required on the real RefineProposal and in the input schema: an ungrounded proposal is refused
+  // before it reaches the port (see propose-tool.ts's doc comment on evidenceSeqs).
   evidenceSeqs: [3],
   edits: [{ op: 'upsert' as const, entry: { kind: 'memory' as const, id: 'm1', title: 't', content: 'c' } }],
 }
 
+/** Whatever the port answers is the tool's result; the tool adds no verdict text of its own. */
+const accepted = { content: [{ type: 'text' as const, text: 'accepted' }] }
+
 describe('harness_propose tool', () => {
   it('declares meta that keeps it out of the destructive path', () => {
-    const seam = { propose: vi.fn(async () => 'queued' as const) }
-    const def = createProposeTool(seam)
+    const port = { propose: vi.fn(async () => accepted) }
+    const def = createProposeTool(port)
     expect(def.name).toBe('harness_propose')
     expect(def.meta.requiresApproval).toBeUndefined()
     expect(def.meta).toMatchObject({
@@ -34,49 +33,62 @@ describe('harness_propose tool', () => {
   })
 
   it('is deferred rather than eagerly disclosed (regression pin, see propose-tool.ts deferLoading comment)', () => {
-    // core's discloseTools (core/src/step/inference.ts:50) treats `deferLoading !== true` as eager
-    // and shows the tool in every request's system prompt. The plan's own Step 7 sample left this
-    // `undefined` (= eager), which broke two host replay fixtures that hardcode an exact tool count
-    // the moment harness_propose became a real, listed extension - see this task's report.
-    const seam = { propose: vi.fn(async () => 'queued' as const) }
-    expect(createProposeTool(seam).meta.deferLoading).toBe(true)
+    // core's discloseTools (core/src/execution/turn/inference.ts) treats `deferLoading !== true` as
+    // eager and shows the tool in every request's system prompt; eager registration also changes the
+    // tool count the host replay fixtures pin.
+    const port = { propose: vi.fn(async () => accepted) }
+    expect(createProposeTool(port).meta.deferLoading).toBe(true)
   })
 
-  it('forwards the proposal to the seam, stamping source and defaulting scope/baseline', async () => {
-    const seam = { propose: vi.fn(async () => 'queued' as const) }
-    const def = createProposeTool(seam)
-    const res = await def.execute(proposal as never, fakeToolContext())
-    // HarnessEntry.source (core/src/reduce/shapes.ts:53) is required but neither the plan's Step 1
-    // test sample nor its Step 7 Entry schema account for it (see propose-tool.ts's doc comment for
-    // the design call this stamping implements). `scope` and `baseline` are likewise real-required
-    // fields the input schema leaves optional/absent, defaulted here rather than in the schema.
-    expect(seam.propose).toHaveBeenCalledWith({
-      proposalId: 'p1',
-      trigger: 'manual',
-      rationale: 'r',
-      evidenceSeqs: [3],
-      baseline: [],
-      edits: [
-        {
-          op: 'upsert',
-          entry: {
-            kind: 'memory',
-            id: 'm1',
-            title: 't',
-            content: 'c',
-            scope: 'local',
-            source: 'harness_propose',
+  it('forwards the proposal to the port, stamping source and defaulting scope/baseline', async () => {
+    const port = { propose: vi.fn(async () => accepted) }
+    const def = createProposeTool(port)
+    const ctx = fakeToolContext()
+    const res = await def.execute(proposal as never, ctx)
+    // HarnessEntry.source is required but not tool input: execute() stamps it (see propose-tool.ts's
+    // doc comment). `scope` and `baseline` are likewise required on the real types but optional in
+    // the input schema, defaulted here rather than in the schema.
+    expect(port.propose).toHaveBeenCalledWith(
+      {
+        proposalId: 'p1',
+        trigger: 'manual',
+        rationale: 'r',
+        evidenceSeqs: [3],
+        baseline: [],
+        edits: [
+          {
+            op: 'upsert',
+            entry: {
+              kind: 'memory',
+              id: 'm1',
+              title: 't',
+              content: 'c',
+              scope: 'local',
+              source: 'harness_propose',
+            },
           },
-        },
-      ],
-    })
-    expect(res.isError).toBe(false)
-    expect(JSON.stringify(res.content)).toContain('queued')
+        ],
+      },
+      ctx,
+    )
+    expect(res).toBe(accepted)
+  })
+
+  it('an explicit session target is the default and is not passed on as part of the proposal', async () => {
+    const propose = vi.fn(async (_proposal: unknown, _ctx: unknown) => accepted)
+    await createProposeTool({ propose }).execute(
+      { ...proposal, target: 'session' } as never,
+      fakeToolContext(),
+    )
+    expect(propose.mock.calls[0]?.[0]).not.toHaveProperty('target')
+    expect(Value.Check(ProposeParams, { ...proposal, target: 'session' })).toBe(true)
+    expect(Value.Check(ProposeParams, { ...proposal, target: 'workspace' })).toBe(true)
+    expect(Value.Check(ProposeParams, { ...proposal, target: 'global' })).toBe(false)
   })
 
   it('preserves an explicitly stated scope and baseline instead of overriding them', async () => {
-    const seam = { propose: vi.fn(async () => 'queued' as const) }
-    const def = createProposeTool(seam)
+    const port = { propose: vi.fn(async () => accepted) }
+    const def = createProposeTool(port)
     const withScope = {
       ...proposal,
       baseline: [{ key: 'memory/m1', version: 2 }],
@@ -88,29 +100,28 @@ describe('harness_propose tool', () => {
       ],
     }
     await def.execute(withScope as never, fakeToolContext())
-    expect(seam.propose).toHaveBeenCalledWith(
+    expect(port.propose).toHaveBeenCalledWith(
       expect.objectContaining({
         baseline: [{ key: 'memory/m1', version: 2 }],
         edits: [
           { op: 'upsert', entry: expect.objectContaining({ scope: 'global', source: 'harness_propose' }) },
         ],
       }),
+      expect.anything(),
     )
   })
 
-  it('a rejected proposal is a normal result, not a throw', async () => {
-    const seam = { propose: vi.fn(async () => 'rejected' as const) }
-    const res = await createProposeTool(seam).execute(proposal as never, fakeToolContext())
-    expect(res.isError).toBe(true)
-    expect(JSON.stringify(res.content)).toContain('rejected')
+  it("passes the port's refusal through as a normal result, not a throw", async () => {
+    const refused = { content: [{ type: 'text' as const, text: 'refused' }], isError: true }
+    const port = { propose: vi.fn(async () => refused) }
+    const res = await createProposeTool(port).execute(proposal as never, fakeToolContext())
+    expect(res).toBe(refused)
   })
 
   it('the delete-edit schema branch uses the real HarnessEdit op literal "delete", not "remove"', () => {
-    // Regression pin: the plan's own Step 7 schema sample used `op: Type.Literal('remove')` here,
-    // inconsistent with its own Step 3 seam.ts sample, which imports the real HarnessEdit type
-    // (core/src/reduce/shapes.ts:129-131, spelled 'delete'). Checked against the schema itself
-    // rather than only through execute(), so a future edit that reintroduces 'remove' fails here
-    // even if some caller happens to route around execute().
+    // Regression pin: the real HarnessEdit (core/src/reduce/shapes.ts) spells the delete variant
+    // 'delete'. Checked against the schema itself rather than only through execute(), so a future
+    // edit that reintroduces 'remove' fails here even if some caller routes around execute().
     const del = {
       proposalId: 'p2',
       trigger: 'manual',

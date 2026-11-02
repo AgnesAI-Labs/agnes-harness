@@ -29,8 +29,6 @@ import planModeExtension from '../extensions/plan-mode/src/index.js'
 import pluginCreatorExtension from '../extensions/plugin-creator/src/index.js'
 import { createPrivacyExtension, sessionEgressAuthority } from '../extensions/privacy/src/index.js'
 import { createRefineExtension } from '../extensions/refine/src/index.js'
-import { RefineQueue } from '../extensions/refine/src/queue.js'
-import { createRefineHarness } from '../extensions/refine/src/seam.js'
 import { createScheduleExtension } from '../extensions/schedule/src/index.js'
 import { createSessionQueryExtension } from '../extensions/session-query/src/index.js'
 import { skillsExtension } from '../extensions/skills/src/runtime.js'
@@ -111,13 +109,7 @@ export function createEcosystemExtensions(init: SeamInitContext): {
         ...(deps.sandbox === undefined ? {} : { sandbox: deps.sandbox }),
         ...(deps.http === undefined ? {} : { http: deps.http }),
       }),
-    refine: () => {
-      const queue = new RefineQueue(init.adapters.storage.namespace('refine_queue'))
-      const rawMax = (init.profile.preset.harness as { queue_max?: unknown } | undefined)?.queue_max ?? 20
-      if (!Number.isSafeInteger(rawMax) || (rawMax as number) < 0)
-        throw new Error('harness.queue_max must be a non-negative safe integer')
-      return createRefineExtension(createRefineHarness(queue, rawMax as number))
-    },
+    refine: () => createRefineExtension(init.refinementSettings ? { settings: init.refinementSettings } : {}),
     subagent: () => defineSubagentExtension(init),
     skills: () => skillsExtension(init),
   }

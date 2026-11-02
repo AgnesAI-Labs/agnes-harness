@@ -1,3 +1,4 @@
+import { presets as basePresets } from '@agnes/base'
 import { describe, expect, it } from 'vitest'
 import { loadAllPresets, loadPreset, PRESET_NAMES, PROMPT_SECTIONS, presets } from '../src/index.js'
 import { parsePreset } from '../src/presets/load.js'
@@ -442,8 +443,8 @@ describe('claw', () => {
     expect(doc.surfaces).not.toContain('acp')
   })
 
-  it('lets an unattended run refine its own next turn but not the deployment', () => {
-    expect(doc.harness).toEqual({ auto_refine: { enabled: true, global_needs_human: true } })
+  it('declares no harness block', () => {
+    expect(doc.harness).toBeUndefined()
   })
 })
 
@@ -481,5 +482,15 @@ describe('every registered recipe', () => {
         .command_policy
       for (const rule of rules ?? []) expect(rule.tool, `${name}: ${rule.tool}`).not.toMatch(/shell/)
     }
+  })
+  it('carries no auto_refine key: nothing reads it any more', () => {
+    const docs: Array<[string, Record<string, unknown>]> = [
+      ['base', basePresets.base as Record<string, unknown>],
+      ...PRESET_NAMES.map((n): [string, Record<string, unknown>] => [n, loadPreset(n)]),
+    ]
+    for (const [name, doc] of docs)
+      expect((doc.harness as Record<string, unknown> | undefined) ?? {}, name).not.toHaveProperty(
+        'auto_refine',
+      )
   })
 })
