@@ -5,6 +5,7 @@ import { fakeModel } from '@agnes/ai/testkit'
 import { operations as codeOperations } from '@agnes/code'
 import { CompactionRunner } from '@agnes/core'
 import type { HookPayloadMap } from '@agnes/extension-api'
+import { createPlatform, type PlatformBackend } from '@agnes/host-infrastructure/adapters/platform'
 import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
 import { vi } from 'vitest'
 import {
@@ -23,6 +24,30 @@ export type ScriptedSessionOptions = {
   /** Session working directory. Must already exist; its path is replaced by a placeholder in the baseline. */
   workspace: string
   api: Extract<WireApi, 'anthropic-messages' | 'openai-completions'>
+}
+
+/**
+ * The platform the session reports. The system prompt states `Platform: <os>-<arch>` and the shell
+ * dialect, and on a PowerShell host it carries a whole extra PowerShell section, so a request would
+ * differ per operating system. This backend reports the same facts everywhere (Linux, x64, posix, every
+ * capability at full strength, as the test host's own platform does) and borrows only the real
+ * filesystem semantics, so the baseline recorded on one OS holds on every OS.
+ */
+function pinnedPlatform(): PlatformBackend {
+  const real = createPlatform()
+  return {
+    os: real.os,
+    matches: () => true,
+    shell: () => 'posix',
+    fs: () => real.fs(),
+    terminal: () => ({ color: false }),
+    async probe() {},
+    recordSandboxBackend() {},
+    sandboxProbed: () => true,
+    killTree() {},
+    capability: () => ({ level: 'full', scope: [] }),
+    snapshot: () => ({ os: 'linux', arch: 'x64', capabilities: {} }),
+  }
 }
 
 /** The clock the session sees; the time note in each request is derived from it. */
@@ -69,6 +94,8 @@ export async function runScriptedSession(opts: ScriptedSessionOptions): Promise<
   // Nothing in a request may depend on the machine or the moment: the context home is the data
   // directory (so no developer settings leak in), the time zone is pinned and the clock is frozen.
   vi.stubEnv('AGH_HOME', dataDir)
+  vi.stubEnv('HOME', dataDir)
+  vi.stubEnv('USERPROFILE', dataDir)
   writeFileSync(join(dataDir, 'context.json'), `${JSON.stringify({ timeZone: 'UTC' })}\n`)
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(FIXED_NOW)
@@ -101,6 +128,7 @@ async function captureSession(opts: ScriptedSessionOptions): Promise<CapturedReq
     const { host } = await createTestHost({
       dataDir,
       workspaceRoot: workspace,
+      platform: pinnedPlatform(),
       packageDirs: { '@agnes/base': baseDir },
       packages: { '@agnes/code': { operations: codeOperations } },
       disableSessionTitle: true,

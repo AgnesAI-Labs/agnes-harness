@@ -14,7 +14,7 @@ type Baseline = Record<(typeof apis)[number], string[]>
 async function record(): Promise<Baseline> {
   const baseline = {} as Baseline
   for (const api of apis) {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-refinement-baseline-')))
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-refinement-baseline-')))
     try {
       const dataDir = join(root, 'data')
       const workspace = join(root, 'workspace')
@@ -57,6 +57,8 @@ describe('refinement off', () => {
           throw new Error(`${api} request ${index}: ${firstDifference(expected, request)}`)
       }
       expect(baseline[api].join('')).not.toContain('harness_propose')
+      // The platform is pinned, so the recorded sentence is the same on every operating system.
+      expect(baseline[api][0]).toContain('Platform: linux-x64. Shell dialect for any shell tool: posix.')
     }
   })
 
