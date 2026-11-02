@@ -121,7 +121,7 @@ describe('abort during the tools phase', () => {
     expect(cancelSeq).toBeGreaterThan(-1)
 
     // The terminal rows the next reader needs: the step closes, then the turn.
-    expect(t.slice(-2)).toEqual(['step/end', 'turn/end'])
+    expect(t.slice(-3)).toEqual(['step/end', 'x/core/turn-wait', 'turn/end'])
     expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'aborted' })
     expect(session.op()).toBeNull()
   })
@@ -391,7 +391,7 @@ describe('the run loop bounds', () => {
     const out = await session.run({ until: 'turn-end', signal: new AbortController().signal })
     expect(out.reason).toBe('error')
     const t = await types(log as never)
-    expect(t.slice(-2)).toEqual(['step/end', 'turn/end'])
+    expect(t.slice(-3)).toEqual(['step/end', 'x/core/turn-wait', 'turn/end'])
     expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'error' })
     expect(session.op()).toBeNull()
   })
@@ -413,7 +413,7 @@ describe('the run loop bounds', () => {
     expect(out.reason).toBe('error')
     expect(out.error?.message).toContain('boom')
     const t = await types(log as never)
-    expect(t.slice(-2)).toEqual(['step/end', 'turn/end'])
+    expect(t.slice(-3)).toEqual(['step/end', 'x/core/turn-wait', 'turn/end'])
     expect(session.op()).toBeNull()
   })
 })

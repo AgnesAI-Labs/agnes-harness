@@ -67,6 +67,12 @@ describe('row width does not grow with the batch', () => {
       for (const row of commit.events as Array<{ type: string; data: unknown }>) {
         // The prompt text differs between the scenarios, not the batch.
         if (row.type === 'inbox' || row.type === 'user/message') continue
+        // Composition has a fixed shape but token counts gain digits as history grows.
+        // Keep bounding the diagnostic; the operation-state rows still require identical widths.
+        if (row.type === 'x/core/context-breakdown') {
+          expect(JSON.stringify(row.data).length).toBeLessThan(512)
+          continue
+        }
         widths.set(row.type, Math.max(widths.get(row.type) ?? 0, JSON.stringify(row.data).length))
       }
     return widths

@@ -1527,10 +1527,10 @@ describe('without announce', () => {
 
   it('keeps omitted, empty and false announce options byte-identical', async () => {
     const omitted = await ledger('omitted')
-    // Pre-review ledger: removing the opt-in review also removes its diagnostic row.
+    // Ledger includes request composition and the atomic turn wait summary.
     // Keep full byte equivalence across all omitted forms and input-ordered results.
     expect(sha256Hex(canonicalJson(omitted as never))).toBe(
-      'd017318d877e97479929865147de03287c5e4a59ed7e288d03fe58f29ae1ffca',
+      '416868be3b0f1bedc305e5644eff3a999f97a82d968d95541489c84138cbbca9',
     )
     expect(await ledger(undefined)).toEqual(omitted)
     expect(await ledger({})).toEqual(omitted)

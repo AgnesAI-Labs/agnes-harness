@@ -147,3 +147,27 @@ Web 的文件和图片使用同一原件回执。历史图片按需加载经授�
 步骤抛异常时，Core 保留既有合同中定义的原错误码与消息，在一个终态事务中结算未完成的推理并关闭 step 和 turn。仍在当前进程中的推理保留已知用量与计费；进程丢失后的未结算消耗按最后持久化的输出数量估算。未知工具副作用仍标为 unknown，此关闭路径不会重放工具。如果终态持久化也失败，调用方同时收到原错误和 `closeError`；CLI JSON 结果仅暴露两者的错误码，不包含异常文本。账本消息遵循既有的 4096 字符上限，调用方保留完整原消息。
 
 续租或提交失败导致 writer 封存后，封存继续生效。Host 在账本之外的既有 `audit/host.jsonl` 记录 `session.run_failed`：SHA-256 会话标识、错误码、阶段、最后提交序号、writer 故障阶段与错误码、终态关闭错误码，不包含提示、回复、异常消息或堆栈。这些记录仅用于诊断，不作为恢复指令。目前重开仍遵循既有的中断 turn 恢复策略；按此前已报告的失败自动关闭，需要先定义持久恢复标记合同。打开或导出不会发起模型请求。code-mode 的 `kernel` 事件若为 `alive:false, reason:'session-start'`，表示无状态会话初始化，不表示进程死亡。
+
+## 离线请求成本诊断
+
+在源码目录中读取单个会话的 JSONL 账本，无须启动 daemon 或调用模型：
+
+```sh
+node tools/inspect-request-composition.mjs ledger.jsonl
+```
+
+每次主模型请求在现有 `x/core/context-breakdown` 中增加 `turn`、`step` 和 `composition`。
+表格列出系统提示词及工具 schema、对话（包括 assistant 的工具调用参数）、本轮上次请求边界后
+产生的工具结果、更早的工具结果、回放 thinking、运行时备注和 JSON 结构开销的估算 token。
+备注包括已持久化的 runtime-context 消息及仅本次请求使用的备注。图片数据计入所属消息分类；
+这是序列化输入的估算，不是供应商的图片 token 或实际账单。沿用现有 Unicode 估算器，针对最终
+provider 请求的 `system`、`messages`、`tools` JSON 计算，跨分类保留舍入余量，使各项之和等于
+`total`。同时记录携带的工具结果数量、最大单项结果的 UTF-8 序列化 content 字节数及工具名。
+新增诊断字段不复制消息内容、路径或参数；原有 section 摘要保持可用。
+
+`x/core/turn-wait` 与 `turn/end` 在同一事务提交。`WAIT` 行依次包含 lane、turn、类别、工具名
+（模型为 null）、毫秒数、调用次数和缺少计时的次数。模型时间优先使用
+`cost/ledger.timing.providerCallMs`，其次 `durationMs`，最后 `effect/settled.durationMs`；
+工具时间按工具名汇总已结束 effect 的时长。重试、失败尝试及 side call 均计数，未结束尝试记为
+缺少计时，不冒充零耗时。并发时长可能重叠，汇总值不是回合墙钟时间。汇总仅覆盖本轮本 lane，
+包括重启恢复前的账本记录。没有这些可选诊断的旧账本不输出数据行。

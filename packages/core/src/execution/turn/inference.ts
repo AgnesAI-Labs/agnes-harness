@@ -1,5 +1,6 @@
 import { attachmentOmittedThrough, attachmentSurface } from '../../request/attachment-surface.js'
 import { estimateTokens } from '../model-tokens.js'
+import { recordRequestComposition } from '../request-composition.js'
 
 export { estimateTokens } from '../model-tokens.js'
 
@@ -39,12 +40,7 @@ import {
   restoreRequestMediaFromLedger,
 } from '../../orchestrator/request-media-surface.js'
 import { prepareAuxiliaryVisionDerivedText } from '../../request/auxiliary-vision-derived-text.js'
-import type {
-  ContextBreakdownDiag,
-  ContextSectionSummary,
-  Contribution,
-  Merged,
-} from '../../request/contribute.js'
+import type { Contribution, Merged } from '../../request/contribute.js'
 import { mergeContributions } from '../../request/contribute.js'
 import { deferredToolsSection } from '../../request/deferred-tools.js'
 import {
@@ -968,21 +964,6 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     model: out.request.model,
     ...(out.request.samplingParams ? { samplingParams: out.request.samplingParams } : {}),
   }
-  // Cheap and unconditional: section text never leaves process memory (to-provider.ts flattens it
-  // away before the wire body exists), so this is the only point that can ever record what the
-  // request's system prefix was actually made of. Written every turn, not deduplicated against the
-  // previous one -- a `/context` reader always wants the latest snapshot, and the event itself is a
-  // few hundred bytes at most (order/source/token count only, no text).
-  await s.diag('context-breakdown', {
-    sections: out.request.sections.map(
-      (section): ContextSectionSummary => ({
-        id: section.id,
-        order: section.order,
-        source: section.source,
-        tokens: estimateTokens(section.text),
-      }),
-    ),
-  } satisfies ContextBreakdownDiag)
   // Converted here rather than at the call to `infer`, because the recount below has to be given the
   // body that will actually be sent: counting the derived shape would bill against a request the
   // provider never sees. Tools, system, and messages are all on that wire; omitting any of them
@@ -992,6 +973,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   out = admitted.output
   const wire = admitted.wire
   const cal = admitted.calibration
+  await releaseTreeReservationOnError(s, () => recordRequestComposition(s, out, wire, step))
   const offered = new Set(wire.tools.map((tool) => tool.name))
   const { effect, header, effectIntentSeq, headerSeq } = await releaseTreeReservationOnError(s, async () => {
     const effect = s.effects.start({ kind: 'inference', replay: 'never', slot })

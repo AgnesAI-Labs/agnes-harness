@@ -1449,6 +1449,13 @@ it.each(['responded', 'may-have-sent', 'different-request'] as const)(
         expect.objectContaining({ invocationId: 'stable-model', status: 'may-have-sent' }),
         expect.objectContaining({ invocationId: 'stable-model', status: 'responded' }),
       ])
+      const breakdowns = rows.filter((row) => row.type === 'x/core/context-breakdown')
+      expect(breakdowns).toHaveLength(1)
+      expect(breakdowns[0]?.data).toMatchObject({
+        turn: 1,
+        step: 1,
+        composition: { toolResultCount: 0, largestToolResult: null },
+      })
       expect(rows.filter((row) => row.type === 'x/core/loop-effect')).toHaveLength(1)
       expect(rows.filter((row) => row.type === 'effect/intent')).toHaveLength(1)
       expect(rows.filter((row) => row.type === 'effect/settled')).toHaveLength(1)

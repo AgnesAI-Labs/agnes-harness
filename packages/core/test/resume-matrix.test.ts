@@ -605,6 +605,7 @@ describe('resume matrix (core Task 39)', () => {
       'tool/result',
       'x/core/resume-closed',
       'step/end',
+      'x/core/turn-wait',
       'turn/end',
     ])
     expect(tail.find((row) => row.type === 'tool/result')?.data).toMatchObject({
@@ -612,6 +613,10 @@ describe('resume matrix (core Task 39)', () => {
     })
     expect(tail.find((row) => row.type === 'effect/settled')?.data).toMatchObject({
       outcome: 'unknown',
+    })
+    expect(tail.find((row) => row.type === 'x/core/turn-wait')?.data).toMatchObject({
+      model: { count: 1, missing: 0 },
+      tools: [{ tool: 'export_job', count: 1, ms: 0, missing: 0 }],
     })
     expect(session.op()).toBeNull()
   })

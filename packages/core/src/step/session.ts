@@ -123,6 +123,7 @@ import { unbindChildFactory } from '../child/sessions.js'
 import { sessionCommandFloor } from '../command-table/floor.js'
 import { runDeferred } from '../execution/turn/deferred.js'
 import { restoreToolDisclosure } from '../execution/turn/tool-disclosure.js'
+import { turnWaitEvent } from '../execution/turn-wait.js'
 // A type-only import, erased at compile time, so it is not a runtime cycle back to the kernel.
 import type { CoreDiagName } from '../kernel.js'
 import { LoopChildren } from '../loop/children.js'
@@ -1389,6 +1390,7 @@ export class SessionImpl {
           end,
         ]
       })()
+      rows.splice(rows.length - 1, 0, await turnWaitEvent(this, rows))
       const result = await this.d.log.append(rows, {
         expectedRegisterSeq: { register: 'op.state', key: this.lane, seq: expected },
         opState: { lane: this.lane, data: null },
