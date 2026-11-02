@@ -1,0 +1,325 @@
+// Aggregate report over evaluation runs. Output holds only aggregate numbers and structure fields:
+// no message bodies, tool output, prompt text or absolute paths.
+//
+// Usage: pnpm exec tsx tools/rsi-eval/report.ts --run-dir <out> --config <run-config.json> [--suite <dir>]
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { runMetrics, toRunRecord, type UsageSummary } from './metrics.js'
+import { type Diff, pairedTaskBootstrap } from './stats.js'
+import type { RunConfig, RunOutcome, RunRecord, Setting, UsageRow } from './types.js'
+
+export type ReportOptions = { resamples?: number; seed?: number }
+
+type DiffJson = {
+  estimate: number | null
+  ci95: [number | null, number | null]
+  tasks: number
+  excludedRuns: number
+}
+
+const finite = (value: number): number | null => (Number.isFinite(value) ? value : null)
+const diffJson = (diff: Diff): DiffJson => ({
+  estimate: finite(diff.estimate),
+  ci95: [finite(diff.ci95[0]), finite(diff.ci95[1])],
+  tasks: diff.tasks,
+  excludedRuns: diff.excludedRuns,
+})
+
+const mean = (values: number[]): number | null =>
+  values.length === 0 ? null : values.reduce((sum, v) => sum + v, 0) / values.length
+
+const groupBy = <T>(items: T[], key: (item: T) => string): Map<string, T[]> => {
+  const groups = new Map<string, T[]>()
+  for (const item of items) {
+    const list = groups.get(key(item)) ?? []
+    list.push(item)
+    groups.set(key(item), list)
+  }
+  return groups
+}
+
+const bySetting = (records: RunRecord[], setting: Setting): RunRecord[] =>
+  records.filter((r) => r.setting === setting)
+
+const DIRECTIONS = {
+  repeatErrorDrop:
+    'off minus on, in recurrence rate (share of prompts after the first trap hit that hit it again). Positive means refinement lowers repeat errors.',
+  crossSessionReuse:
+    'on minus off, in the share of cross-session runs whose second session never hit the trap. Positive means refinement helps the second session. Only cross-session tasks.',
+  costOverhead:
+    '(on minus off) divided by off, per task then averaged. Positive means refinement costs more; 0.25 is 25 percent more.',
+} as const
+
+const CRITERION_1_RULE = 'repeat-error difference (off minus on) is above 0 and its 95% interval excludes 0'
+
+const overheadDiff = (
+  records: RunRecord[],
+  pick: (r: RunRecord) => number,
+  options: ReportOptions,
+): { diff: Diff; skippedTasks: number; pooled: number | null } => {
+  let skippedTasks = 0
+  const perTask: { taskId: string; on: number[]; off: number[] }[] = []
+  for (const [taskId, runs] of groupBy(records, (r) => r.taskId)) {
+    const on = mean(bySetting(runs, 'on').map(pick))
+    const off = mean(bySetting(runs, 'off').map(pick))
+    if (on === null || off === null || off <= 0) {
+      skippedTasks++
+      continue
+    }
+    perTask.push({ taskId, on: [(on - off) / off], off: [0] })
+  }
+  const onAll = mean(bySetting(records, 'on').map(pick))
+  const offAll = mean(bySetting(records, 'off').map(pick))
+  const pooled = onAll === null || offAll === null || offAll <= 0 ? null : (onAll - offAll) / offAll
+  return { diff: pairedTaskBootstrap(perTask, options.resamples, options.seed), skippedTasks, pooled }
+}
+
+const sumRefine = (records: RunRecord[]) => ({
+  auto: records.reduce((sum, r) => sum + r.refine.auto, 0),
+  user: records.reduce((sum, r) => sum + r.refine.user, 0),
+  self: records.reduce((sum, r) => sum + r.refine.self, 0),
+  appliedEdits: records.reduce((sum, r) => sum + r.refine.appliedEdits, 0),
+})
+
+const exitDistribution = (records: RunRecord[]) => ({
+  ok: records.filter((r) => r.exit === 'ok').length,
+  error: records.filter((r) => r.exit === 'error').length,
+  timeout: records.filter((r) => r.exit === 'timeout').length,
+})
+
+const settingSummary = (records: RunRecord[]) => ({
+  runs: records.length,
+  completion: mean(records.map((r) => runMetrics(r).completion)),
+  refine: sumRefine(records),
+  harnessLookups: records.reduce((sum, r) => sum + r.harnessLookups, 0),
+  compactions: records.reduce((sum, r) => sum + r.compactions, 0),
+  usage: {
+    requests: records.reduce((sum, r) => sum + r.usage.requests, 0),
+    unknownRequests: records.reduce((sum, r) => sum + r.usage.unknown, 0),
+    tokens: records.reduce((sum, r) => sum + r.usage.tokens, 0),
+    costUsd: records.reduce((sum, r) => sum + r.usage.costUsd, 0),
+  },
+  exit: exitDistribution(records),
+})
+
+const systemReport = (records: RunRecord[], options: ReportOptions) => {
+  const on = bySetting(records, 'on')
+  const off = bySetting(records, 'off')
+  const recurrence = (runs: RunRecord[]): (number | null)[] => runs.map((r) => runMetrics(r).recurrence)
+
+  const perTask = (select: (runs: RunRecord[]) => (number | null)[], from: RunRecord[]) =>
+    [...groupBy(from, (r) => r.taskId)].map(([taskId, runs]) => ({
+      taskId,
+      on: select(bySetting(runs, 'on')),
+      off: select(bySetting(runs, 'off')),
+    }))
+
+  // Metric 1: the diff is off minus on, so the arrays are swapped.
+  const drop = pairedTaskBootstrap(
+    perTask(recurrence, records).map((t) => ({ taskId: t.taskId, on: t.off, off: t.on })),
+    options.resamples,
+    options.seed,
+  )
+
+  // Metric 2: cross-session tasks only, avoided = 1 and not avoided = 0.
+  const avoidedOf = (runs: RunRecord[]): (number | null)[] =>
+    runs.map((r) => {
+      const avoided = runMetrics(r).crossSessionAvoided
+      return avoided === null ? null : avoided ? 1 : 0
+    })
+  const cross = records.filter((r) => r.category === 'cross-session')
+  const reuse = pairedTaskBootstrap(perTask(avoidedOf, cross), options.resamples, options.seed)
+  const definedMean = (values: (number | null)[]): number | null =>
+    mean(values.filter((v): v is number => v !== null))
+
+  const tokens = overheadDiff(records, (r) => r.usage.tokens, options)
+  const cost = overheadDiff(records, (r) => r.usage.costUsd, options)
+
+  const lower = drop.ci95[0]
+  const criterion1 = drop.tasks > 0 && drop.estimate > 0 && lower > 0
+
+  return {
+    runs: { on: on.length, off: off.length },
+    tasks: new Set(records.map((r) => r.taskId)).size,
+    repeatErrorDrop: {
+      direction: DIRECTIONS.repeatErrorDrop,
+      recurrenceOn: definedMean(recurrence(on)),
+      recurrenceOff: definedMean(recurrence(off)),
+      difference: diffJson(drop),
+    },
+    crossSessionReuse: {
+      direction: DIRECTIONS.crossSessionReuse,
+      avoidedOn: definedMean(avoidedOf(bySetting(cross, 'on'))),
+      avoidedOff: definedMean(avoidedOf(bySetting(cross, 'off'))),
+      difference: diffJson(reuse),
+    },
+    costOverhead: {
+      direction: DIRECTIONS.costOverhead,
+      tokens: { relative: diffJson(tokens.diff), pooled: tokens.pooled, skippedTasks: tokens.skippedTasks },
+      costUsd: { relative: diffJson(cost.diff), pooled: cost.pooled, skippedTasks: cost.skippedTasks },
+    },
+    criterion1: {
+      rule: CRITERION_1_RULE,
+      metric: 'repeatErrorDrop',
+      pass: criterion1,
+      evaluable: drop.tasks > 0,
+    },
+    settings: { on: settingSummary(on), off: settingSummary(off) },
+  }
+}
+
+type SystemReport = ReturnType<typeof systemReport>
+
+const fmt = (value: number | null, digits = 3): string => (value === null ? 'n/a' : value.toFixed(digits))
+const fmtDiff = (d: DiffJson): string =>
+  `${fmt(d.estimate)} (95% CI ${fmt(d.ci95[0])} to ${fmt(d.ci95[1])}; ${d.tasks} tasks; ${d.excludedRuns} runs excluded for an undefined value)`
+
+const systemMarkdown = (name: string, r: SystemReport): string[] => {
+  const verdict = !r.criterion1.evaluable
+    ? 'NOT EVALUABLE (no paired tasks)'
+    : r.criterion1.pass
+      ? 'PASS'
+      : 'FAIL'
+  const lines = [
+    `## ${name}`,
+    '',
+    `${r.tasks} tasks; runs: ${r.runs.on} on, ${r.runs.off} off.`,
+    '',
+    '### 1. Repeat-error drop',
+    '',
+    `Direction: ${r.repeatErrorDrop.direction}`,
+    '',
+    `- Recurrence on: ${fmt(r.repeatErrorDrop.recurrenceOn)}; off: ${fmt(r.repeatErrorDrop.recurrenceOff)}`,
+    `- Difference (off minus on): ${fmtDiff(r.repeatErrorDrop.difference)}`,
+    '',
+    '### 2. Cross-session reuse',
+    '',
+    `Direction: ${r.crossSessionReuse.direction}`,
+    '',
+    `- Avoided on: ${fmt(r.crossSessionReuse.avoidedOn)}; off: ${fmt(r.crossSessionReuse.avoidedOff)}`,
+    `- Difference (on minus off): ${fmtDiff(r.crossSessionReuse.difference)}`,
+    '',
+    '### 3. Cost overhead',
+    '',
+    `Direction: ${r.costOverhead.direction}`,
+    '',
+    `- Tokens, mean per-task overhead: ${fmtDiff(r.costOverhead.tokens.relative)}; pooled ${fmt(r.costOverhead.tokens.pooled)}; ${r.costOverhead.tokens.skippedTasks} tasks skipped (no off baseline)`,
+    `- Cost, mean per-task overhead: ${fmtDiff(r.costOverhead.costUsd.relative)}; pooled ${fmt(r.costOverhead.costUsd.pooled)}; ${r.costOverhead.costUsd.skippedTasks} tasks skipped (no off baseline)`,
+    '',
+    '### Pass criterion (1)',
+    '',
+    `Rule: ${r.criterion1.rule}.`,
+    '',
+    `Verdict: ${verdict}`,
+    '',
+    '### Run structure',
+    '',
+    '| | on | off |',
+    '| --- | --- | --- |',
+  ]
+  const rows: [string, (s: SystemReport['settings']['on']) => string][] = [
+    ['runs', (s) => String(s.runs)],
+    ['completion (checks passed / prompts)', (s) => fmt(s.completion)],
+    ['refine runs, auto', (s) => String(s.refine.auto)],
+    ['refine runs, user', (s) => String(s.refine.user)],
+    ['refine runs, self', (s) => String(s.refine.self)],
+    ['applied edits', (s) => String(s.refine.appliedEdits)],
+    ['harness lookups', (s) => String(s.harnessLookups)],
+    ['compactions', (s) => String(s.compactions)],
+    ['model requests', (s) => String(s.usage.requests)],
+    ['requests with unknown usage', (s) => String(s.usage.unknownRequests)],
+    ['tokens', (s) => String(s.usage.tokens)],
+    ['cost (USD)', (s) => s.usage.costUsd.toFixed(4)],
+    ['exit ok / error / timeout', (s) => `${s.exit.ok} / ${s.exit.error} / ${s.exit.timeout}`],
+  ]
+  for (const [label, get] of rows) lines.push(`| ${label} | ${get(r.settings.on)} | ${get(r.settings.off)} |`)
+  lines.push('')
+  if (r.settings.on.usage.unknownRequests + r.settings.off.usage.unknownRequests > 0) {
+    lines.push(
+      'Requests with unknown usage are counted, not priced; token and cost totals are lower bounds.',
+      '',
+    )
+  }
+  return lines
+}
+
+export const buildReport = (
+  records: RunRecord[],
+  options: ReportOptions = {},
+): { json: object; markdown: string } => {
+  const systems: Record<string, SystemReport> = {}
+  for (const [system, runs] of groupBy(records, (r) => r.system))
+    systems[system] = systemReport(runs, options)
+  const json = { directions: DIRECTIONS, criterion1Rule: CRITERION_1_RULE, systems }
+  const markdown = [
+    '# Evaluation report',
+    '',
+    'Aggregate numbers only. Each metric states its own direction; they are not all "on minus off".',
+    '',
+    ...Object.entries(systems).flatMap(([name, report]) => systemMarkdown(name, report)),
+  ].join('\n')
+  return { json, markdown: `${markdown}\n` }
+}
+
+// ---- CLI ----
+
+const flag = (name: string): string | undefined => {
+  const index = process.argv.indexOf(name)
+  return index < 0 ? undefined : process.argv[index + 1]
+}
+
+const readUsageRows = (file: string): UsageRow[] =>
+  existsSync(file)
+    ? readFileSync(file, 'utf8')
+        .split('\n')
+        .filter((line) => line.trim() !== '')
+        .map((line) => JSON.parse(line) as UsageRow)
+    : []
+
+const main = async (): Promise<void> => {
+  const runDirArg = flag('--run-dir')
+  const configArg = flag('--config')
+  if (!runDirArg || !configArg)
+    throw new Error('usage: report.ts --run-dir <out> --config <run-config.json> [--suite <dir>]')
+  const runDir = resolve(runDirArg)
+  const config = JSON.parse(readFileSync(resolve(configArg), 'utf8')) as RunConfig
+
+  const { summarizeUsage } = await import('./usage-proxy.js')
+  const { loadSuite, defaultTasksDir } = await import('./suite.js')
+  // The report only looks tasks up by id; suite completeness is the runner's concern, so the floor is 1.
+  const suiteDir = flag('--suite')
+  const tasks = new Map(
+    loadSuite(suiteDir ? resolve(suiteDir) : defaultTasksDir, { minTasks: 1 }).map((t) => [t.id, t]),
+  )
+  const usage = summarizeUsage(readUsageRows(join(runDir, 'usage.jsonl')), config.prices) as Map<
+    string,
+    UsageSummary
+  >
+
+  const records: RunRecord[] = []
+  for (const entry of readdirSync(runDir, { withFileTypes: true })) {
+    const file = join(runDir, entry.name, 'outcome.json')
+    if (!entry.isDirectory() || !existsSync(file)) continue
+    const outcome = JSON.parse(readFileSync(file, 'utf8')) as RunOutcome
+    const task = tasks.get(outcome.runId.replace(/\.(on|off)\.r\d+$/, ''))
+    if (!task) throw new Error(`run ${outcome.runId} has no matching task in the suite`)
+    const readFile = (path: string): string => {
+      const candidates = [resolve(runDir, path), resolve(runDir, outcome.runId, path)]
+      return readFileSync(candidates.find((p) => existsSync(p)) ?? (candidates[0] as string), 'utf8')
+    }
+    records.push(toRunRecord(task, outcome, usage, { readFile }))
+  }
+
+  const report = buildReport(records)
+  writeFileSync(join(runDir, 'report.json'), `${JSON.stringify(report.json, null, 2)}\n`)
+  writeFileSync(join(runDir, 'report.md'), report.markdown)
+  console.log(`wrote report.json and report.md for ${records.length} runs`)
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exitCode = 1
+  })
+}

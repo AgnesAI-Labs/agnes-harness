@@ -1,0 +1,10 @@
+{"type":"session","version":3,"id":"sess-c","timestamp":"2026-11-02T00:00:00.000Z"}
+{"type":"message","id":"c1","parentId":null,"timestamp":"2026-11-02T00:00:01.000Z","message":{"role":"user","content":"Add function alpha and run the tests","timestamp":1}}
+{"type":"tool_started","id":"c2","parentId":"c1","timestamp":"2026-11-02T00:00:02.000Z","toolCallId":"t1","toolName":"python_repl","args":{"code":"x = harness.get('build-dir')"}}
+{"type":"message","id":"c3","parentId":"c2","timestamp":"2026-11-02T00:00:03.000Z","message":{"role":"toolResult","toolCallId":"t1","toolName":"python_repl","content":[{"type":"text","text":"all tests passed"}],"details":{"stdout":"all tests passed"},"isError":false,"timestamp":2}}
+{"type":"message","id":"c4","parentId":"c3","timestamp":"2026-11-02T00:00:04.000Z","message":{"role":"user","content":"Add function beta and run the tests","timestamp":3}}
+{"type":"message","id":"c5","parentId":"c4","timestamp":"2026-11-02T00:00:05.000Z","message":{"role":"toolResult","toolCallId":"t2","toolName":"python_repl","content":[{"type":"text","text":"Traceback"}],"details":{"error":{"ename":"ValueError","evalue":"unrelated failure","traceback":[]}},"isError":true,"timestamp":4}}
+{"type":"message","id":"c6","parentId":"c5","timestamp":"2026-11-02T00:00:06.000Z","message":{"role":"user","content":"Add function gamma and run the tests","timestamp":5}}
+{"type":"message","id":"c7","parentId":"c6","timestamp":"2026-11-02T00:00:07.000Z","message":{"role":"user","content":"/refine","timestamp":6}}
+{"type":"custom","id":"c8","parentId":"c7","timestamp":"2026-11-02T00:00:08.000Z","customType":"prime-agent.refinement","data":{"id":"r9","summary":"s","appliedEdits":[{"id":"e9","applied":true}]}}
+{"type":"custom_message","id":"c9","parentId":"c8","timestamp":"2026-11-02T00:00:09.000Z","customType":"refinement_notice","content":"[self-refinement]","display":false,"details":{"refinementId":"r9","source":"self","edits":[]}}
