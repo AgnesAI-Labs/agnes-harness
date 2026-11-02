@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import { EXT_ROW_EXTENSION_IDS, MIGRATED_EXTENSION_IDS } from '@agnes/host-extensions/assemble/ext-rows'
 import { OBSERVE_HOOK_EVENTS } from '@agnes/host-extensions/ext-host/row-extension-api'
+import { RefinementSettingsStore } from '@agnes/host-infrastructure/refinement-settings'
 import { createPluginRow } from '@agnes/plugin-runtime/host'
 import type { InferenceEvent } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
@@ -23,6 +24,15 @@ const packageDirs = {
 }
 
 const NOT_MIGRATED: string[] = []
+
+/** A data directory whose default profile has refinement switched on, so agnes/refine registers its tools. */
+const refinementOn = (): string => {
+  const dataDir = scratch()
+  const store = new RefinementSettingsStore(dataDir, 'local-dev')
+  store.save({ enabled: true, mode: 'manual' }, store.read().revision)
+  return dataDir
+}
+const REFINE_ON = ['tool:harness_propose', 'tool:harness_refine', 'tool:harness_inspect']
 const say = (text: string): InferenceEvent[] => [{ type: 'text_delta', delta: text }]
 
 /** Every builtin id that a default test host supplies through its own ext: row, with its registrations. */
@@ -31,7 +41,8 @@ const SUPPLIED: Record<string, string[]> = {
   'agnes/tools-search': ['tool:grep', 'tool:find', 'tool:ls'],
   'agnes/tools-web': ['tool:web_fetch', 'tool:web_search'],
   'agnes/compaction': ['tool:compact'],
-  'agnes/refine': ['tool:harness_propose', 'hook:compact'],
+  // Refinement is off by default: the extension loads and registers nothing.
+  'agnes/refine': [],
   'agnes/subagent': [
     'tool:subagent_fork',
     'tool:subagent_spawn',
@@ -198,7 +209,7 @@ describe('the builtin extensions that moved to the shared row host', () => {
     await h.host.close()
   })
 
-  it('keeps the relative order of compact hooks: refine runs before hooks-runner, also after a rebuild', async () => {
+  it('keeps the relative order of compact hooks: computer-use runs before hooks-runner, also after a rebuild', async () => {
     const h = await pluginHost(
       pluginSource(`ctx.tools.register(tool('unrelated_tool'))`, 'plugin', 'ext:acme/x'),
     )
@@ -207,10 +218,10 @@ describe('the builtin extensions that moved to the shared row host', () => {
         .snapshot()
         .entries('compact')
         .map((entry) => entry.meta.source)
-    expect(order()).toEqual(['agnes/refine', 'agnes/computer-use', 'agnes/hooks-runner'])
+    expect(order()).toEqual(['agnes/computer-use', 'agnes/hooks-runner'])
     await h.host.applyRuntimeTarget(targetOf([pluginRow('ext:acme/x')]))
     await settle()
-    expect(order()).toEqual(['agnes/refine', 'agnes/computer-use', 'agnes/hooks-runner'])
+    expect(order()).toEqual(['agnes/computer-use', 'agnes/hooks-runner'])
     await h.host.close()
   })
 
@@ -255,7 +266,10 @@ describe('a third party replaces a migrated builtin and gives way', () => {
     it(`swaps ${id} for a plugin row and back`, async () => {
       const row = `ext:${id}`
       const body = tools.map((n) => `ctx.tools.register(tool('${n}'))`).join('\n')
-      const h = await pluginHost(pluginSource(body, 'plugin', row))
+      const h = await pluginHost(
+        pluginSource(body, 'plugin', row),
+        id === 'agnes/refine' ? { dataDir: refinementOn() } : {},
+      )
       const before = h.host.kernel.tools.resolve(tools[0] as string)?.source.source
       expect(before).toBe(id)
       const report = await h.host.applyRuntimeTarget(targetOf([pluginRow(row)]))
@@ -393,12 +407,14 @@ describe('a third party replaces a migrated builtin and gives way', () => {
   it('keeps refine single-instance when unrelated rows come and go around it', async () => {
     const h = await pluginHost(
       pluginSource(`ctx.tools.register(tool('unrelated_tool'))`, 'plugin', 'ext:acme/x'),
+      { dataDir: refinementOn() },
     )
+    expect(h.host.kernel.registrations('agnes/refine')).toEqual(REFINE_ON)
     for (const disabled of [false, true, false]) {
       const report = await h.host.applyRuntimeTarget(targetOf([pluginRow('ext:acme/x', 'plugin', disabled)]))
       await settle()
       expect(report.ok).toBe(true)
-      expect(h.host.kernel.registrations('agnes/refine')).toEqual(SUPPLIED['agnes/refine'])
+      expect(h.host.kernel.registrations('agnes/refine')).toEqual(REFINE_ON)
     }
     expect(auditKinds(h, 'extension.failed')).toEqual([])
     // Every row was remounted by those target changes; handing over to a successor is a clean unload.

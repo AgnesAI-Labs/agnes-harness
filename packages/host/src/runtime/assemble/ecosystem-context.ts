@@ -2,6 +2,7 @@ import { hasChildControl, type SeamImplementations } from '@agnes/core'
 import type { PackageModule, SeamInitContext } from '@agnes/host-extensions/assemble/packages'
 import { bindSkillRuntimeToWorkspace } from '@agnes/host-extensions/resources/skill-preload'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
+import { RefinementSettingsStore } from '@agnes/host-infrastructure/refinement-settings'
 import type { ComputerUseHost } from '../computer-use/index.js'
 import type { AssemblyContext } from './context.js'
 import type { PackageSet } from './packages.js'
@@ -41,6 +42,12 @@ export function createEcosystemContexts(
           updateWorkspace: storage.updateWorkspace.bind(storage),
         })
       : undefined
+  // Read-only view of the profile's refinement switch, the same file the settings RPC writes. Each
+  // read goes to disk, so a factory applied later (a new generation) sees the current value.
+  const refinementSettings = new RefinementSettingsStore(ctx.dataDir, ctx.profile.name)
+  const refinementView: SeamInitContext['refinementSettings'] = Object.freeze({
+    current: () => refinementSettings.current(),
+  })
   const hookCommands =
     adapters.platform.os === 'win32'
       ? trustedHookCommands(ctx.profile.commandHooks, workspaceRoot, adapters.platform.fs())
@@ -65,6 +72,7 @@ export function createEcosystemContexts(
       ...(grant.trustedHookCommands && hookCommands ? { trustedHookCommands: hookCommands } : {}),
       ...(liveResources?.includes('skills') && skills ? { skillResources: skills } : {}),
       ...(grant.skillDiscovery ? { skillDiscovery: skillState.discovery } : {}),
+      ...(grant.refinementSettings ? { refinementSettings: refinementView } : {}),
       ...(grant.privacyTrajectory && privacyTrajectory.current
         ? { privacyTrajectory: privacyTrajectory.current }
         : {}),

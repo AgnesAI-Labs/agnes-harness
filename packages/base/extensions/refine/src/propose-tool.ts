@@ -1,6 +1,7 @@
-import type { HarnessEntry, HarnessSeam, RefineProposal } from '@agnes/core'
+import type { HarnessEntry, RefineProposal } from '@agnes/core'
 import { defineTool } from '@agnes/plugin-runtime'
 import { type Static, Type } from '@sinclair/typebox'
+import { type RefinementToolPort, workspaceTargetUnavailable } from './port.js'
 
 // Every entry this tool proposes is stamped with this fixed provenance. `source` is a required
 // HarnessEntry field stamped here by execute(), not accepted as tool input.
@@ -12,14 +13,16 @@ import { type Static, Type } from '@sinclair/typebox'
 // instead (see ProposeParams below).
 const PROPOSAL_SOURCE = 'harness_propose'
 
+export const EntryKind = Type.Union([
+  Type.Literal('prompt'),
+  Type.Literal('memory'),
+  Type.Literal('skill'),
+  Type.Literal('subagent'),
+])
+
 const Entry = Type.Object(
   {
-    kind: Type.Union([
-      Type.Literal('prompt'),
-      Type.Literal('memory'),
-      Type.Literal('skill'),
-      Type.Literal('subagent'),
-    ]),
+    kind: EntryKind,
     id: Type.String({ maxLength: 128 }),
     title: Type.String({ maxLength: 256 }),
     content: Type.String({ maxLength: 8192 }),
@@ -27,6 +30,9 @@ const Entry = Type.Object(
   },
   { additionalProperties: false },
 )
+
+/** Where a refinement lands: this session (the default) or the workspace. */
+export const Target = Type.Union([Type.Literal('session'), Type.Literal('workspace')])
 
 export const ProposeParams = Type.Object(
   {
@@ -39,9 +45,9 @@ export const ProposeParams = Type.Object(
     ]),
     rationale: Type.String({ maxLength: 2048 }),
     rollbackOf: Type.Optional(Type.Integer({ minimum: 1 })),
-    // RefineProposal.evidenceSeqs (seams.ts:145) is required, and gateT0 rejects an empty
-    // one as `no_evidence`. Required and non-empty here, rather than defaulted: an ungrounded self-modification
-    // proposal is exactly what evidence-citing exists to prevent, so there is no safe default.
+    // RefineProposal.evidenceSeqs is required. Required and non-empty here, rather than defaulted: an
+    // ungrounded self-modification proposal is exactly what evidence-citing exists to prevent, so
+    // there is no safe default.
     evidenceSeqs: Type.Array(Type.Integer({ minimum: 1 }), { minItems: 1, maxItems: 50 }),
     // Also required on RefineProposal, but - unlike evidenceSeqs - an add-only proposal has no
     // existing entry version to cite, so an absent baseline is a legitimate "asserts no version
@@ -55,28 +61,30 @@ export const ProposeParams = Type.Object(
     edits: Type.Array(
       Type.Union([
         Type.Object({ op: Type.Literal('upsert'), entry: Entry }, { additionalProperties: false }),
-        // REAL HarnessEdit (core/src/reduce/shapes.ts:129-131) spells the delete variant `op:
-        // 'delete'`. The plan's own Step 7 sample used `op: Type.Literal('remove')` here - an
-        // internal inconsistency in the plan's own text, since its Step 3 seam.ts sample correctly
-        // imports the real HarnessEdit type and would already expect 'delete'. Corrected to the
-        // real value; see test/propose-tool.test.ts for the schema-level regression pin.
+        // The real HarnessEdit (core/src/reduce/shapes.ts) spells the delete variant `op: 'delete'`;
+        // see test/propose-tool.test.ts for the schema-level regression pin.
         Type.Object(
-          { op: Type.Literal('delete'), kind: Entry.properties.kind, id: Type.String({ maxLength: 128 }) },
+          { op: Type.Literal('delete'), kind: EntryKind, id: Type.String({ maxLength: 128 }) },
           { additionalProperties: false },
         ),
       ]),
       { minItems: 1, maxItems: 20 },
     ),
+    target: Type.Optional(Target),
   },
   { additionalProperties: false },
 )
 
 type ProposeArgs = Static<typeof ProposeParams>
 
+/** A proposal for this session, as the refinement port receives it. */
+export type SessionProposal = RefineProposal
+
 /** Fills the required RefineProposal/HarnessEntry fields the input schema deliberately leaves out
  * or optional - see the doc comments on PROPOSAL_SOURCE and ProposeParams above for why each one
- * is a stamped default rather than caller input. */
-function toRealProposal(args: ProposeArgs): RefineProposal {
+ * is a stamped default rather than caller input. The target routes the call; it is not part of
+ * the proposal. */
+function toRealProposal(args: ProposeArgs): SessionProposal {
   return {
     proposalId: args.proposalId,
     trigger: args.trigger,
@@ -96,11 +104,11 @@ function toRealProposal(args: ProposeArgs): RefineProposal {
 }
 
 // 拍板 Q2（2026-09-08）：模型面入口是普通工具，不给 ToolContext 加 harness 成员。
-export function createProposeTool(seam: Pick<HarnessSeam, 'propose'>) {
+export function createProposeTool(port: Pick<RefinementToolPort, 'propose'>) {
   return defineTool({
     name: 'harness_propose',
     description:
-      'Propose a change to prompts, memory, skills or subagent specs. Proposals are queued and reviewed; there is no direct write path.',
+      "Submit a structured change to this session's prompts, memory, Skills or child-agent definitions, citing the event seqs that justify it. The change is checked and, if accepted, takes effect from a later turn; there is no direct write path.",
     parameters: ProposeParams,
     meta: {
       isReadOnly: false,
@@ -108,34 +116,15 @@ export function createProposeTool(seam: Pick<HarnessSeam, 'propose'>) {
       isConcurrencySafe: false,
       isOpenWorld: false,
       replay: 'idempotent',
-
-      // THIRD self-discovered correction (see task report): the plan's own Step 7 sample wrote
-      // `deferLoading: undefined` here, which core's discloseTools (core/src/step/inference.ts:50,
-      // `d.meta.deferLoading !== true`) treats as eager - shown in every request's system prompt by
-      // default, the same as read/write/edit/shell/etc. Measured against the real replay corpus
-      // (packages/host/test/replay.test.ts, fixtures 0001-read-note and
-      // 0100-killed-mid-inference-resumes both hardcode the exact eager-tool count):
-      // registering harness_propose as eager changed that count and broke both. `true` here is both
-      // the fix and a defensible standalone call - a self-modification tool should not be advertised
-      // alongside every ordinary coding tool; a caller that specifically needs it can still reach it
-      // through the deferred-tools listing (registry/tools.ts's `list({ deferred: true })`).
+      // Deferred, never eager: core's discloseTools (core/src/execution/turn/inference.ts) treats
+      // `deferLoading !== true` as eager and lists the tool in every request's system prompt, which
+      // also changes the eager-tool count the host replay fixtures pin. A self-modification tool is
+      // not advertised beside every ordinary coding tool; it is reachable through the deferred list.
       deferLoading: true,
     },
-    async execute(args) {
-      const verdict = await seam.propose(toRealProposal(args))
-      return {
-        content: [
-          {
-            type: 'text',
-            text:
-              verdict === 'queued'
-                ? 'proposal queued for review'
-                : 'proposal rejected (queue full or unknown kind)',
-          },
-        ],
-        structured: { verdict },
-        isError: verdict === 'rejected',
-      }
+    async execute(args, ctx) {
+      if (args.target === 'workspace') return workspaceTargetUnavailable()
+      return port.propose(toRealProposal(args), ctx)
     },
   })
 }

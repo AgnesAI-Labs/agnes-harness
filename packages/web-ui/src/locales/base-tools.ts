@@ -70,7 +70,9 @@ const titles: Record<string, readonly [string, string]> = {
   plugin_install_local: ['Install local plugin', '安装本地插件'],
   plugin_candidate_write: ['Write candidate files', '写入候选文件'],
   plugin_candidate_read: ['Read candidate files', '读取候选文件'],
-  harness_propose: ['Propose improvement', '提议改进'],
+  harness_propose: ['Propose experience change', '提交经验修改'],
+  harness_refine: ['Review task experience', '总结任务经验'],
+  harness_inspect: ['Read task experience', '查看任务经验'],
   computer_use: ['Use computer', '操作电脑'],
 }
 

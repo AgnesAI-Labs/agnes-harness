@@ -531,6 +531,7 @@
               "minimum": 1
             },
             "queue_max": {
+              "description": "Deprecated and ignored: still accepted so an existing preset keeps loading; nothing reads it.",
               "type": "integer",
               "minimum": 1
             },
