@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -39,40 +39,45 @@ function task(category: EvalTask['category'], sessions: string[][]): EvalTask {
   }
 }
 
-const STUB = `#!/bin/sh
-printf '%s\\n' "$@" >> "$STUB_LOG"
-echo '---' >> "$STUB_LOG"
-if [ "$1" = kill ]; then exit 0; fi
-work=''
-agent=''
-prev=''
-isprime=0
-last=''
-for a in "$@"; do
-  if [ "$prev" = -v ]; then
-    case "$a" in
-      *:/work*) work="\${a%%:/work*}" ;;
-      *:/agent*) agent="\${a%%:/agent*}" ;;
-    esac
-  fi
-  if [ "$a" = prime-agent ]; then isprime=1; fi
-  prev="$a"
-  last="$a"
-done
-if [ "$isprime" = 1 ]; then
-  if [ -n "$STUB_SLEEP" ]; then exec sleep "$STUB_SLEEP"; fi
-  mkdir -p "$agent/sessions/cwd"
-  echo '{"type":"session"}' > "$agent/sessions/cwd/s$$.jsonl"
-  echo '{"type":"agent_end"}'
-  exit "\${STUB_EXIT:-0}"
-fi
-cd "$work" && exec sh -c "$last"
+// A docker stand-in written in Node so it runs the same on every OS (a shell script named `docker`
+// on PATH cannot run on Windows). Mount paths may contain a drive-letter colon, so split on the last
+// `:/work` / `:/agent`.
+const STUB = String.raw`
+const { appendFileSync, mkdirSync, writeFileSync } = require('node:fs')
+const { join } = require('node:path')
+const { spawnSync } = require('node:child_process')
+const args = process.argv.slice(2)
+appendFileSync(process.env.STUB_LOG, args.join('\n') + '\n---\n')
+if (args[0] === 'kill') process.exit(0)
+let work = ''
+let agent = ''
+let isPrime = false
+args.forEach((a, i) => {
+  if (args[i - 1] === '-v') {
+    if (a.includes(':/work')) work = a.slice(0, a.lastIndexOf(':/work'))
+    else if (a.includes(':/agent')) agent = a.slice(0, a.lastIndexOf(':/agent'))
+  }
+  if (a === 'prime-agent') isPrime = true
+})
+if (isPrime) {
+  if (process.env.STUB_SLEEP) {
+    setTimeout(() => process.exit(0), Number(process.env.STUB_SLEEP) * 1000)
+  } else {
+    mkdirSync(join(agent, 'sessions', 'cwd'), { recursive: true })
+    writeFileSync(join(agent, 'sessions', 'cwd', 's' + process.pid + '.jsonl'), '{"type":"session"}\n')
+    process.stdout.write('{"type":"agent_end"}\n')
+    process.exitCode = Number(process.env.STUB_EXIT || 0)
+  }
+} else {
+  const result = spawnSync(args[args.length - 1], { shell: true, cwd: work, stdio: 'inherit' })
+  process.exitCode = result.status === null ? 1 : result.status
+}
 `
 
 describe('run-prime', () => {
   let dir: string
   let log: string
-  let savedPath: string | undefined
+  let docker: string[]
   const saved: Record<string, string | undefined> = {}
 
   function setEnv(name: string, value: string | undefined) {
@@ -83,14 +88,11 @@ describe('run-prime', () => {
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'rsi-prime-'))
-    const bin = join(dir, 'bin')
-    mkdirSync(bin)
-    writeFileSync(join(bin, 'docker'), STUB)
-    chmodSync(join(bin, 'docker'), 0o755)
+    const stubPath = join(dir, 'docker-stub.cjs')
+    writeFileSync(stubPath, STUB)
+    docker = [process.execPath, stubPath]
     log = join(dir, 'docker.log')
     writeFileSync(log, '')
-    savedPath = process.env.PATH
-    process.env.PATH = `${bin}:${savedPath ?? ''}`
     setEnv('STUB_LOG', log)
     setEnv(KEY_ENV, KEY_VALUE)
     setEnv('STUB_EXIT', undefined)
@@ -98,12 +100,11 @@ describe('run-prime', () => {
   })
 
   afterEach(() => {
-    process.env.PATH = savedPath
     for (const [name, value] of Object.entries(saved)) {
       if (value === undefined) delete process.env[name]
       else process.env[name] = value
     }
-    rmSync(dir, { recursive: true, force: true })
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   })
 
   function fixture(): string {
@@ -193,6 +194,7 @@ describe('run-prime', () => {
     const out = join(dir, 'out')
     const outcome = await runOne(task('directory', [['a', 'b', 'c']]), 'on', 1, cfg, out, {
       fixtureDir: fixture(),
+      dockerCommand: docker,
     })
     expect(outcome.runId).toBe('t1.on.r1')
     expect(outcome.sessions).toHaveLength(1)
@@ -212,6 +214,7 @@ describe('run-prime', () => {
     setEnv('STUB_EXIT', '1')
     const outcome = await runOne(task('cross-session', [['a'], ['b']]), 'off', 1, cfg, join(dir, 'out'), {
       fixtureDir: fixture(),
+      dockerCommand: docker,
     })
     expect(outcome.sessions).toHaveLength(1)
     const runs = invocations().filter((args) => args.includes('prime-agent'))
@@ -222,7 +225,11 @@ describe('run-prime', () => {
     const t = task('cross-session', [['a'], ['b']])
     at(at(t.sessions, 1).prompts).checks = [{ command: 'echo nothing', contains: 'MISSING' }]
     const out = join(dir, 'out')
-    const outcome = await runOne(t, 'off', 1, cfg, out, { fixtureDir: fixture(), image: 'img:test' })
+    const outcome = await runOne(t, 'off', 1, cfg, out, {
+      fixtureDir: fixture(),
+      image: 'img:test',
+      dockerCommand: docker,
+    })
     expect(outcome.sessions.map((s) => s.exitCode)).toEqual([0, 0])
     expect(outcome.sessions[0]?.sessionFiles).toHaveLength(1)
     expect(outcome.sessions[1]?.sessionFiles).toHaveLength(1)
@@ -246,7 +253,11 @@ describe('run-prime', () => {
 
   it('passes the key by variable name only and mounts work and agent dirs', async () => {
     const out = join(dir, 'out')
-    await runOne(task('directory', [['a']]), 'on', 1, cfg, out, { fixtureDir: fixture(), image: 'img:test' })
+    await runOne(task('directory', [['a']]), 'on', 1, cfg, out, {
+      fixtureDir: fixture(),
+      image: 'img:test',
+      dockerCommand: docker,
+    })
     expect(readFileSync(log, 'utf8')).not.toContain(KEY_VALUE)
     const run = invocations().find((args) => args.includes('prime-agent'))
     expect(run).toBeDefined()
@@ -275,7 +286,7 @@ describe('run-prime', () => {
       1,
       { ...cfg, sessionTimeoutMs: 300 },
       join(dir, 'out'),
-      { fixtureDir: fixture() },
+      { fixtureDir: fixture(), dockerCommand: docker },
     )
     expect(Date.now() - started).toBeLessThan(4000)
     expect(outcome.sessions[0]?.timedOut).toBe(true)
@@ -289,7 +300,10 @@ describe('run-prime', () => {
     const existing = { runId: 't1.off.r3', sessions: [], checks: [{ session: 0, prompt: 0, passed: true }] }
     mkdirSync(join(out, 't1.off.r3'), { recursive: true })
     writeFileSync(join(out, 't1.off.r3', 'outcome.json'), JSON.stringify(existing))
-    const outcome = await runOne(task('directory', [['a']]), 'off', 3, cfg, out, { fixtureDir: fixture() })
+    const outcome = await runOne(task('directory', [['a']]), 'off', 3, cfg, out, {
+      fixtureDir: fixture(),
+      dockerCommand: docker,
+    })
     expect(outcome).toEqual(existing)
     expect(readFileSync(log, 'utf8')).toBe('')
   })

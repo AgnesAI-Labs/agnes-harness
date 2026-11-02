@@ -34,6 +34,8 @@ export type RunOptions = {
   fixtureDir?: string
   /** Docker image to run. */
   image?: string
+  /** Replaces the docker executable: first element is the program, the rest are leading args. Defaults to `['docker']`. */
+  dockerCommand?: string[]
 }
 
 export const runId = (taskId: string, setting: Setting, rep: number): string => `${taskId}.${setting}.r${rep}`
@@ -91,18 +93,21 @@ export function primeArgv(task: EvalTask, sessionIndex: number, setting: Setting
 
 type DockerResult = { code: number | null; timedOut: boolean }
 
-/** Runs `docker <args>` with output sent to files; kills the named container on timeout. */
+/** Runs `<docker command> <args>` with output sent to files; kills the named container on timeout. */
 function runDocker(
   args: string[],
   stdoutFile: string,
   stderrFile: string | null,
   timeoutMs: number,
   name: string,
+  docker: string[],
 ) {
+  const [exe, ...lead] = docker
+  if (!exe) throw new Error('dockerCommand must have at least one element')
   return new Promise<DockerResult>((resolveRun, reject) => {
     const outFd = openSync(stdoutFile, 'w')
     const errFd = stderrFile ? openSync(stderrFile, 'w') : outFd
-    const child = spawn('docker', args, { stdio: ['ignore', outFd, errFd] })
+    const child = spawn(exe, [...lead, ...args], { stdio: ['ignore', outFd, errFd] })
     let timedOut = false
     let settled = false
     const finish = (fn: () => void) => {
@@ -116,7 +121,7 @@ function runDocker(
     const timer = setTimeout(() => {
       timedOut = true
       // Stop the container first, then make sure the client process is gone as well.
-      const killer = spawn('docker', ['kill', name], { stdio: 'ignore' })
+      const killer = spawn(exe, [...lead, 'kill', name], { stdio: 'ignore' })
       killer.on('error', () => child.kill('SIGKILL'))
       killer.on('exit', () => child.kill('SIGKILL'))
     }, timeoutMs)
@@ -160,6 +165,7 @@ export async function runOne(
   if (existsSync(outcomeFile)) return JSON.parse(readFileSync(outcomeFile, 'utf8')) as RunOutcome
 
   const image = opts.image ?? DEFAULT_IMAGE
+  const docker = opts.dockerCommand ?? ['docker']
   const fixtureDir = opts.fixtureDir ?? join(defaultTasksDir, task.id, 'fixture')
   const agentDir = join(runDir, 'agent')
   const workDir = join(runDir, 'work')
@@ -206,6 +212,7 @@ export async function runOne(
       join(runDir, `session${i + 1}.stderr.log`),
       cfg.sessionTimeoutMs,
       name,
+      docker,
     )
 
     // Session transcripts are written into the shared agent dir; take the ones this session added.
@@ -255,6 +262,7 @@ export async function runOne(
           null,
           CHECK_TIMEOUT_MS,
           name,
+          docker,
         )
         // Same rule as the task self-check: the command exits 0 and its output contains the marker.
         if (result.timedOut || result.code !== 0 || !readFileSync(outFile, 'utf8').includes(check.contains)) {
@@ -329,6 +337,9 @@ async function main(argv: string[]): Promise<void> {
     tasks = tasks.filter((t) => wanted.includes(t.id))
   }
 
+  // RSI_EVAL_DOCKER: path of a docker-compatible executable to use instead of `docker` on PATH.
+  const dockerCommand = process.env.RSI_EVAL_DOCKER ? [process.env.RSI_EVAL_DOCKER] : undefined
+
   const out = resolve(values.out)
   mkdirSync(out, { recursive: true })
   const proxy = await startUsageProxy({
@@ -345,6 +356,7 @@ async function main(argv: string[]): Promise<void> {
           const outcome = await runOne(task, setting, rep, cfg, out, {
             image: values.image,
             fixtureDir: join(tasksDir, task.id, 'fixture'),
+            ...(dockerCommand ? { dockerCommand } : {}),
           })
           const exits = outcome.sessions.map((s) => (s.timedOut ? 'timeout' : String(s.exitCode))).join(',')
           const passed = outcome.checks.filter((c) => c.passed).length
