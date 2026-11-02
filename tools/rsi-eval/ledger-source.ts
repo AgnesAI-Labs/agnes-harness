@@ -115,7 +115,13 @@ export function readBenchEvents(dir: string): Map<string, LedgerEvent[]> {
   return bySession
 }
 
-/** A stable key for "the same error": the code if there is one, else a masked first line of text. */
+/**
+ * A stable key for "the same error": the code if there is one, else a masked first line of text. Shell
+ * results start with a stream label (`[stderr]`, `[stdout]`) that says nothing about the error, so
+ * labels are skipped: otherwise every failing shell call would look like the same error.
+ */
+const STREAM_LABEL = /^\[(?:stderr|stdout)\]$/i
+
 export function normalizeToolError(result: { code?: string; content?: unknown[] }): string {
   if (result.code) return result.code
   let text = ''
@@ -125,7 +131,7 @@ export function normalizeToolError(result: { code?: string; content?: unknown[] 
       break
     }
   }
-  const firstLine = text.split('\n').find((line) => line.trim()) ?? ''
+  const firstLine = text.split('\n').find((line) => line.trim() && !STREAM_LABEL.test(line.trim())) ?? ''
   return firstLine
     .trim()
     .toLowerCase()

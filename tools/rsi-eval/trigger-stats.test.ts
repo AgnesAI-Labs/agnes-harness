@@ -354,4 +354,15 @@ describe('normalizeToolError', () => {
     expect(normalizeToolError({ content: [{ type: 'text', text: `x${'y'.repeat(300)}` }] })).toHaveLength(120)
     expect(normalizeToolError({ content: [] })).toBe('')
   })
+
+  it('skips a shell stream label so different shell errors stay different', () => {
+    const err = (text: string) => normalizeToolError({ content: [{ type: 'text', text }] })
+    expect(err('\n[stderr]\ncat: /srv/a.txt: No such file or directory\n')).toBe(
+      err('[stderr]\ncat: /srv/b.txt: No such file or directory'),
+    )
+    expect(err('\n[stderr]\ncat: /srv/a.txt: No such file or directory\n')).not.toBe(
+      err('\n[stderr]\nTraceback (most recent call last):\n'),
+    )
+    expect(err('[stderr]')).toBe('')
+  })
 })
