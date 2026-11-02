@@ -295,6 +295,15 @@ export class Client {
       config: import('@agnes/protocol').AutoReviewConfig,
     ): Promise<import('@agnes/protocol').AutoReviewConfig> => this.call('_agnes/v1/autoReview.save', config),
   }
+  /** The profile's refinement switch (off by default), saved against the revision last read. */
+  readonly refinement = {
+    get: (): Promise<import('@agnes/protocol').RefinementSettingsSnapshot> =>
+      this.call('_agnes/v1/refinement.get', {}),
+    save: (
+      input: import('@agnes/protocol').RefinementSettingsSaveParams,
+    ): Promise<import('@agnes/protocol').RefinementSettingsSaveResult> =>
+      this.call('_agnes/v1/refinement.save', input),
+  }
   readonly systemPrompt = {
     get: (
       input: import('@agnes/protocol').SystemPromptGetParams = {},

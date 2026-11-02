@@ -176,6 +176,8 @@ export interface AppServerMethods {
   "_agnes/v1/voice.status": { params: Static<typeof import("./agnes-v1.js").ConfigEmptyParams>; result: Static<typeof import("./agnes-v1.js").VoiceStatusResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/voice.settings.get": { params: Static<typeof import("./agnes-v1.js").ConfigEmptyParams>; result: Static<typeof import("./agnes-v1.js").VoiceSettingsSnapshot>; direction: "c2s"; kind: "request" }
   "_agnes/v1/voice.settings.save": { params: Static<typeof import("./agnes-v1.js").VoiceSettingsSaveParams>; result: Static<typeof import("./agnes-v1.js").VoiceSettingsSnapshot>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/refinement.get": { params: Static<typeof import("./agnes-v1.js").ConfigEmptyParams>; result: Static<typeof import("./agnes-v1.js").RefinementSettingsSnapshot>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/refinement.save": { params: Static<typeof import("./agnes-v1.js").RefinementSettingsSaveParams>; result: Static<typeof import("./agnes-v1.js").RefinementSettingsSaveResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.rename": { params: Static<typeof import("./agnes-v1.js").SessionRenameParams>; result: Static<typeof import("./agnes-v1.js").SessionPreferences>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.archive": { params: Static<typeof import("./agnes-v1.js").SessionArchiveParams>; result: Static<typeof import("./agnes-v1.js").SessionPreferences>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.pin": { params: Static<typeof import("./agnes-v1.js").SessionPinParams>; result: Static<typeof import("./agnes-v1.js").SessionPreferences>; direction: "c2s"; kind: "request" }

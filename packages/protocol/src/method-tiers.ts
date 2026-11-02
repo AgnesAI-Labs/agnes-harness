@@ -186,6 +186,8 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/voice.status': 'client',
   '_agnes/v1/voice.settings.get': 'admin',
   '_agnes/v1/voice.settings.save': 'admin',
+  '_agnes/v1/refinement.get': 'admin',
+  '_agnes/v1/refinement.save': 'admin',
   '_agnes/v1/session.rename': 'client',
   '_agnes/v1/session.archive': 'client',
   '_agnes/v1/session.pin': 'client',

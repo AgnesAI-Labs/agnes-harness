@@ -437,6 +437,11 @@ export {
   type SessionDefaultsConfigurationService,
 } from '@agnes/host-infrastructure/configuration'
 export { type DoctorOptions, type DoctorProbe, runDoctor } from '@agnes/host-infrastructure/doctor'
+export {
+  type RefinementSettingsPort,
+  RefinementSettingsStore,
+  refinementSettingsRevision,
+} from '@agnes/host-infrastructure/refinement-settings'
 export { RequestTraceStore } from '@agnes/host-infrastructure/request-traces'
 export { sandboxReadPaths } from '@agnes/host-infrastructure/sandbox-read-paths'
 export * from '@agnes/host-infrastructure/sandbox-readiness-manager'

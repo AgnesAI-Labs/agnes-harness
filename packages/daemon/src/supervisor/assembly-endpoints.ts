@@ -28,12 +28,19 @@ import { registerFactChain } from '@agnes/daemon-rpc/local/methods/fact-chain'
 import { registerFeedback } from '@agnes/daemon-rpc/local/methods/feedback'
 import { registerProfileServices } from '@agnes/daemon-rpc/local/methods/profile-services'
 import { registerPromptTrace } from '@agnes/daemon-rpc/local/methods/prompt-trace'
+import { registerRefinement } from '@agnes/daemon-rpc/local/methods/refinement'
 import * as sessionPrefs from '@agnes/daemon-rpc/local/methods/session-preferences'
 import { registerSessionSelection } from '@agnes/daemon-rpc/local/methods/session-selection'
 import { registerVoice } from '@agnes/daemon-rpc/local/methods/session-voice'
 import { registerSurfaces } from '@agnes/daemon-rpc/local/methods/surfaces'
 import { registerWorkspaces } from '@agnes/daemon-rpc/local/methods/workspaces'
-import { RequestTraceStore, readFactChainBinding, type ScanRead, VoiceSettingsStore } from '@agnes/host'
+import {
+  RefinementSettingsStore,
+  RequestTraceStore,
+  readFactChainBinding,
+  type ScanRead,
+  VoiceSettingsStore,
+} from '@agnes/host'
 import { telemetrySnapshot } from '@agnes/observability'
 import { rpcError } from '@agnes/protocol'
 import type { DispatchState } from './assembly-client-dispatch.js'
@@ -305,6 +312,7 @@ function registerSessionEndpoints(
     settings: new VoiceSettingsStore(o.config.dataDir, o.profile.name),
     log: console,
   })
+  registerRefinement(ep, { settings: new RefinementSettingsStore(o.config.dataDir, o.profile.name) })
   registerDoctor(ep, {
     home: o.config.home ?? dirname(dirname(o.profileDir)),
     profile: o.profile.name,

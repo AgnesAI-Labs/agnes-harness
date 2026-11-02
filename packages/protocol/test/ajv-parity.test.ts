@@ -127,6 +127,8 @@ const VOICE_SETTINGS = {
   reading: { enabled: true, voice: '', speed: 1, autoRead: false },
   conversation: { pauseSeconds: 1.2 },
 }
+/** Valid refinement settings: on, automatic (not the default, so a default change cannot hide a regression). */
+const REFINEMENT_SETTINGS = { enabled: true, mode: 'auto' }
 /** Deep copy for fixture baselines whose nested fields need changing — fixture objects are shared
  * across several negative cases and must not be mutated in place. */
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T
@@ -669,6 +671,10 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SessionForkParams: AgnesGen.SessionForkParams,
   SessionBtwParams: AgnesGen.SessionBtwParams,
   SessionBtwResult: AgnesGen.SessionBtwResult,
+  RefinementSettings: AgnesGen.RefinementSettings,
+  RefinementSettingsSnapshot: AgnesGen.RefinementSettingsSnapshot,
+  RefinementSettingsSaveParams: AgnesGen.RefinementSettingsSaveParams,
+  RefinementSettingsSaveResult: AgnesGen.RefinementSettingsSaveResult,
   VoiceSettings: AgnesGen.VoiceSettings,
   VoiceSettingsSnapshot: AgnesGen.VoiceSettingsSnapshot,
   VoiceSettingsSaveParams: AgnesGen.VoiceSettingsSaveParams,
@@ -4166,6 +4172,44 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { text: 'a', model: 'm', credits: -1 }, // boundary: one below minimum:0
     ],
     note: 'side answer: text, the model that wrote it and the optional credits it cost',
+  },
+  RefinementSettings: {
+    valid: REFINEMENT_SETTINGS,
+    invalid: [
+      { enabled: true }, // missing required mode
+      { mode: 'auto' }, // missing required enabled
+      { ...REFINEMENT_SETTINGS, enabled: 'yes' }, // wrong type
+      { ...REFINEMENT_SETTINGS, mode: 'always' }, // outside the closed enum
+      { ...REFINEMENT_SETTINGS, extra: true }, // additionalProperties:false
+    ],
+    note: 'refinement settings: the on/off switch and whether planning is manual or automatic',
+  },
+  RefinementSettingsSnapshot: {
+    valid: { revision: rep64, settings: REFINEMENT_SETTINGS },
+    invalid: [
+      { settings: REFINEMENT_SETTINGS }, // missing required revision
+      { revision: 'A'.repeat(64), settings: REFINEMENT_SETTINGS }, // pattern: lowercase hex only
+      { revision: 'a'.repeat(63), settings: REFINEMENT_SETTINGS }, // pattern: one short of 64
+    ],
+    note: 'refinement settings snapshot: sha256-hex revision plus the settings',
+  },
+  RefinementSettingsSaveParams: {
+    valid: { expectedRevision: rep64, settings: REFINEMENT_SETTINGS },
+    invalid: [
+      { settings: REFINEMENT_SETTINGS }, // missing required expectedRevision
+      { expectedRevision: rep64 }, // missing required settings
+      { expectedRevision: 'g'.repeat(64), settings: REFINEMENT_SETTINGS }, // pattern: not hex
+    ],
+    note: 'refinement settings save: compare-and-swap on the revision of the snapshot the editor read',
+  },
+  RefinementSettingsSaveResult: {
+    valid: { revision: rep64 },
+    invalid: [
+      {}, // missing required revision
+      { revision: 'a'.repeat(63) }, // pattern: one short of 64
+      { revision: rep64, extra: true }, // additionalProperties:false
+    ],
+    note: 'refinement settings save result: the new revision',
   },
   VoiceSettings: {
     valid: VOICE_SETTINGS,
@@ -9248,6 +9292,16 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     result: 'SessionVoiceSpeakResult',
   },
   '_agnes/v1/voice.status': { fileId: AGNES_ID, params: 'ConfigEmptyParams', result: 'VoiceStatusResult' },
+  '_agnes/v1/refinement.get': {
+    fileId: AGNES_ID,
+    params: 'ConfigEmptyParams',
+    result: 'RefinementSettingsSnapshot',
+  },
+  '_agnes/v1/refinement.save': {
+    fileId: AGNES_ID,
+    params: 'RefinementSettingsSaveParams',
+    result: 'RefinementSettingsSaveResult',
+  },
   '_agnes/v1/voice.settings.get': {
     fileId: AGNES_ID,
     params: 'ConfigEmptyParams',
@@ -10164,6 +10218,8 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/session.voice.transcribe': AGNES_SAMPLES.SessionVoiceTranscribeParams as Sample,
   '_agnes/v1/session.voice.speak': AGNES_SAMPLES.SessionVoiceSpeakParams as Sample,
   '_agnes/v1/voice.status': AGNES_SAMPLES.ConfigEmptyParams as Sample,
+  '_agnes/v1/refinement.get': AGNES_SAMPLES.ConfigEmptyParams as Sample,
+  '_agnes/v1/refinement.save': AGNES_SAMPLES.RefinementSettingsSaveParams as Sample,
   '_agnes/v1/voice.settings.get': AGNES_SAMPLES.ConfigEmptyParams as Sample,
   '_agnes/v1/voice.settings.save': AGNES_SAMPLES.VoiceSettingsSaveParams as Sample,
   '_agnes/v1/session.rename': {
@@ -10868,6 +10924,8 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/session.voice.transcribe': AGNES_SAMPLES.SessionVoiceTranscribeResult as Sample,
   '_agnes/v1/session.voice.speak': AGNES_SAMPLES.SessionVoiceSpeakResult as Sample,
   '_agnes/v1/voice.status': AGNES_SAMPLES.VoiceStatusResult as Sample,
+  '_agnes/v1/refinement.get': AGNES_SAMPLES.RefinementSettingsSnapshot as Sample,
+  '_agnes/v1/refinement.save': AGNES_SAMPLES.RefinementSettingsSaveResult as Sample,
   '_agnes/v1/voice.settings.get': AGNES_SAMPLES.VoiceSettingsSnapshot as Sample,
   '_agnes/v1/voice.settings.save': AGNES_SAMPLES.VoiceSettingsSnapshot as Sample,
   '_agnes/v1/session.list': AGNES_SAMPLES.PageSessionMeta as Sample,
