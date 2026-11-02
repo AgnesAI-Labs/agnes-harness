@@ -5441,6 +5441,41 @@
         "expectedRevision": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }
     },
+    "RefinementSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "mode"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "mode": { "enum": ["manual", "auto"] }
+      }
+    },
+    "RefinementSettingsSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "settings"],
+      "properties": {
+        "revision": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "settings": { "$ref": "#/$defs/RefinementSettings" }
+      }
+    },
+    "RefinementSettingsSaveParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["settings", "expectedRevision"],
+      "properties": {
+        "settings": { "$ref": "#/$defs/RefinementSettings" },
+        "expectedRevision": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "RefinementSettingsSaveResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision"],
+      "properties": {
+        "revision": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
     "VoiceFeatureState": {
       "type": "string",
       "enum": ["available", "unconfigured", "no-model", "credential-missing", "ambiguous"]

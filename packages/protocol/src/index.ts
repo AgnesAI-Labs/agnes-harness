@@ -130,6 +130,10 @@ export type {
   PluginRuntimeStatusResult,
   PluginStreamsEndpointParams,
   PluginStreamsEndpointResult,
+  RefinementSettings,
+  RefinementSettingsSaveParams,
+  RefinementSettingsSaveResult,
+  RefinementSettingsSnapshot,
   SeqResult,
   SessionActivity,
   SessionActivityParams,
@@ -750,6 +754,7 @@ export {
   type ReferenceSelection,
   validateReferenceSelections,
 } from './references.js'
+export * from './refinement.js'
 export * from './resource-control.js'
 export * from './runtime-admin.js'
 export * from './runtime-target-artifact.js'
