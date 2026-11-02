@@ -31,7 +31,9 @@ export type ScriptedSessionOptions = {
  * dialect, and on a PowerShell host it carries a whole extra PowerShell section, so a request would
  * differ per operating system. This backend reports the same facts everywhere (Linux, x64, posix, every
  * capability at full strength, as the test host's own platform does) and borrows only the real
- * filesystem semantics, so the baseline recorded on one OS holds on every OS.
+ * filesystem semantics, so the baseline recorded on one OS holds on Linux and macOS. A Windows host
+ * still adds its own PowerShell description while assembling, so the gate is skipped there (see
+ * off-equals-before.slow.test.ts).
  */
 function pinnedPlatform(): PlatformBackend {
   const real = createPlatform()
