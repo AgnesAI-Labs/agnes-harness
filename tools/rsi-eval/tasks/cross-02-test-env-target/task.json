@@ -1,0 +1,128 @@
+{
+  "id": "cross-02-test-env-target",
+  "category": "cross-session",
+  "description": "A small Python library whose unit tests only run through the Makefile test target.",
+  "trap": {
+    "signatures": ["TEXTKIT_CACHE is not set"],
+    "reproduce": "python3 -m unittest discover",
+    "note": "textkit refuses to be imported under unittest unless TEXTKIT_CACHE is set; make test sets it to a scratch file."
+  },
+  "sessions": [
+    {
+      "prompts": [
+        {
+          "text": "Add a function `slugify` to textkit.py that lowercases the text and replaces spaces with hyphens (`slugify('Hello World')` returns `hello-world`), with a unit test in tests/test_slugify.py, and make sure the tests pass.",
+          "checks": [
+            {
+              "command": "python3 -c \"import textkit; print(textkit.slugify('Hello World'))\"",
+              "contains": "hello-world"
+            },
+            {
+              "command": "make test",
+              "contains": "test_slugify"
+            }
+          ],
+          "solution": [
+            "cat >> textkit.py <<'EOF'\n\n\ndef slugify(text):\n    return text.lower().replace(' ', '-')\nEOF",
+            "cat > tests/test_slugify.py <<'EOF'\nimport unittest\n\nimport textkit\n\n\nclass SlugifyTests(unittest.TestCase):\n    def test_slugify(self):\n        self.assertEqual(str(textkit.slugify('Hello World')), 'hello-world')\nEOF",
+            "make test"
+          ]
+        },
+        {
+          "text": "Add a function `truncate` to textkit.py that cuts the text to at most n characters and appends `...` when it was cut (`truncate('abcdefgh', 5)` returns `abcde...`, shorter text is returned unchanged), with a unit test in tests/test_truncate.py, and make sure the tests pass.",
+          "checks": [
+            {
+              "command": "python3 -c \"import textkit; print(textkit.truncate('abcdefgh', 5))\"",
+              "contains": "abcde..."
+            },
+            {
+              "command": "make test",
+              "contains": "test_truncate"
+            }
+          ],
+          "solution": [
+            "cat >> textkit.py <<'EOF'\n\n\ndef truncate(text, n):\n    return text if len(text) <= n else text[:n] + '...'\nEOF",
+            "cat > tests/test_truncate.py <<'EOF'\nimport unittest\n\nimport textkit\n\n\nclass TruncateTests(unittest.TestCase):\n    def test_truncate(self):\n        self.assertEqual(str(textkit.truncate('abcdefgh', 5)), 'abcde...')\nEOF",
+            "make test"
+          ]
+        },
+        {
+          "text": "Add a function `count_words` to textkit.py that returns how many whitespace-separated words the text has (`count_words('a b  c')` returns 3), with a unit test in tests/test_count_words.py, and make sure the tests pass.",
+          "checks": [
+            {
+              "command": "python3 -c \"import textkit; print(textkit.count_words('a b  c'))\"",
+              "contains": "3"
+            },
+            {
+              "command": "make test",
+              "contains": "test_count_words"
+            }
+          ],
+          "solution": [
+            "cat >> textkit.py <<'EOF'\n\n\ndef count_words(text):\n    return len(text.split())\nEOF",
+            "cat > tests/test_count_words.py <<'EOF'\nimport unittest\n\nimport textkit\n\n\nclass CountWordsTests(unittest.TestCase):\n    def test_count_words(self):\n        self.assertEqual(str(textkit.count_words('a b  c')), '3')\nEOF",
+            "make test"
+          ]
+        }
+      ]
+    },
+    {
+      "prompts": [
+        {
+          "text": "Add a function `reverse_words` to textkit.py that reverses the order of the words (`reverse_words('a b c')` returns `c b a`), with a unit test in tests/test_reverse_words.py, and make sure the tests pass.",
+          "checks": [
+            {
+              "command": "python3 -c \"import textkit; print(textkit.reverse_words('a b c'))\"",
+              "contains": "c b a"
+            },
+            {
+              "command": "make test",
+              "contains": "test_reverse_words"
+            }
+          ],
+          "solution": [
+            "cat >> textkit.py <<'EOF'\n\n\ndef reverse_words(text):\n    return ' '.join(reversed(text.split()))\nEOF",
+            "cat > tests/test_reverse_words.py <<'EOF'\nimport unittest\n\nimport textkit\n\n\nclass ReverseWordsTests(unittest.TestCase):\n    def test_reverse_words(self):\n        self.assertEqual(str(textkit.reverse_words('a b c')), 'c b a')\nEOF",
+            "make test"
+          ]
+        },
+        {
+          "text": "Add a function `is_palindrome` to textkit.py that tells whether the text reads the same backwards, ignoring case (`is_palindrome('Level')` returns True), with a unit test in tests/test_is_palindrome.py, and make sure the tests pass.",
+          "checks": [
+            {
+              "command": "python3 -c \"import textkit; print(textkit.is_palindrome('Level'))\"",
+              "contains": "True"
+            },
+            {
+              "command": "make test",
+              "contains": "test_is_palindrome"
+            }
+          ],
+          "solution": [
+            "cat >> textkit.py <<'EOF'\n\n\ndef is_palindrome(text):\n    t = text.lower()\n    return t == t[::-1]\nEOF",
+            "cat > tests/test_is_palindrome.py <<'EOF'\nimport unittest\n\nimport textkit\n\n\nclass IsPalindromeTests(unittest.TestCase):\n    def test_is_palindrome(self):\n        self.assertEqual(str(textkit.is_palindrome('Level')), 'True')\nEOF",
+            "make test"
+          ]
+        },
+        {
+          "text": "Add a function `initials` to textkit.py that returns the upper-case first letters of the words (`initials('Ada Lovelace')` returns `AL`), with a unit test in tests/test_initials.py, and make sure the tests pass.",
+          "checks": [
+            {
+              "command": "python3 -c \"import textkit; print(textkit.initials('Ada Lovelace'))\"",
+              "contains": "AL"
+            },
+            {
+              "command": "make test",
+              "contains": "test_initials"
+            }
+          ],
+          "solution": [
+            "cat >> textkit.py <<'EOF'\n\n\ndef initials(text):\n    return ''.join(w[0].upper() for w in text.split())\nEOF",
+            "cat > tests/test_initials.py <<'EOF'\nimport unittest\n\nimport textkit\n\n\nclass InitialsTests(unittest.TestCase):\n    def test_initials(self):\n        self.assertEqual(str(textkit.initials('Ada Lovelace')), 'AL')\nEOF",
+            "make test"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "id": "conv-03-import-order",
+  "category": "convention",
+  "description": "Python imports in pkg/ must list project imports first, a blank line, then stdlib imports, each group sorted; scripts/lint.py enforces it inside make test.",
+  "trap": {
+    "signatures": ["import order:"],
+    "reproduce": "printf 'import json\\nfrom pkg import fmt\\n\\n\\ndef f():\\n    return json.dumps(fmt.title(\"a\"))\\n' > pkg/extra.py && python3 scripts/lint.py",
+    "note": "The project orders imports unlike isort/PEP 8: project (pkg) imports first, blank line, then stdlib imports, each group sorted alphabetically; make test runs scripts/lint.py first."
+  },
+  "sessions": [
+    {
+      "prompts": [
+        {
+          "text": "Add a function `report(rows)` in a new module pkg/report.py. `rows` is a list of dicts with keys `name` and `score`. It returns a JSON string (keys sorted) of the same list, with every name passed through the project's `fmt.title` helper. Run the project's tests when you are done.",
+          "checks": [
+            {
+              "command": "python3 -c \"from pkg.report import report; print(report([{'name':'ada lovelace','score':3}]))\"",
+              "contains": "{\"name\": \"Ada Lovelace\", \"score\": 3}"
+            },
+            {
+              "command": "test -f pkg/report.py && python3 scripts/lint.py",
+              "contains": "lint ok"
+            }
+          ],
+          "solution": [
+            "cat > pkg/report.py <<'EOF'\nfrom pkg import fmt\n\nimport json\n\n\ndef report(rows):\n    return json.dumps([{\"name\": fmt.title(r[\"name\"]), \"score\": r[\"score\"]} for r in rows], sort_keys=True)\nEOF"
+          ]
+        },
+        {
+          "text": "Add a function `stamp(label, ts)` in a new module pkg/stamp.py. It returns the label passed through the project's `fmt.title` helper, then ` @ `, then the UTC time for unix timestamp `ts` in ISO 8601 format. Run the project's tests when you are done.",
+          "checks": [
+            {
+              "command": "python3 -c \"from pkg.stamp import stamp; print(stamp('build done', 0))\"",
+              "contains": "Build Done @ 1970-01-01T00:00:00+00:00"
+            },
+            {
+              "command": "test -f pkg/stamp.py && python3 scripts/lint.py",
+              "contains": "lint ok"
+            }
+          ],
+          "solution": [
+            "cat > pkg/stamp.py <<'EOF'\nfrom pkg import fmt\n\nfrom datetime import datetime, timezone\n\n\ndef stamp(label, ts):\n    return f\"{fmt.title(label)} @ {datetime.fromtimestamp(ts, timezone.utc).isoformat()}\"\nEOF"
+          ]
+        },
+        {
+          "text": "Add a function `to_csv(rows)` in a new module pkg/csvout.py. `rows` is a list of dicts with keys `name` and `score`. It returns CSV text with a header line `name,score`, then one line per row (names passed through the project's `fmt.title` helper), using `\\n` line endings. Run the project's tests when you are done.",
+          "checks": [
+            {
+              "command": "python3 -c \"from pkg.csvout import to_csv; print(to_csv([{'name':'ada lovelace','score':3}]))\"",
+              "contains": "name,score\nAda Lovelace,3"
+            },
+            {
+              "command": "test -f pkg/csvout.py && python3 scripts/lint.py",
+              "contains": "lint ok"
+            }
+          ],
+          "solution": [
+            "cat > pkg/csvout.py <<'EOF'\nfrom pkg import fmt\n\nimport csv\nimport io\n\n\ndef to_csv(rows):\n    out = io.StringIO()\n    writer = csv.writer(out, lineterminator=\"\\n\")\n    writer.writerow([\"name\", \"score\"])\n    for r in rows:\n        writer.writerow([fmt.title(r[\"name\"]), r[\"score\"]])\n    return out.getvalue()\nEOF"
+          ]
+        }
+      ]
+    }
+  ]
+}

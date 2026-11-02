@@ -1,0 +1,104 @@
+{
+  "id": "cross-01-build-subdir",
+  "category": "cross-session",
+  "description": "A part packer whose build script only works from inside the studio/ directory.",
+  "trap": {
+    "signatures": ["must be run from inside the studio/ directory"],
+    "reproduce": "printf 'teeth=12\\n' > parts/gear.txt && ./studio/build.sh gear",
+    "note": "studio/build.sh uses ../parts, so it must be run with studio/ as the working directory; from the project root it refuses."
+  },
+  "sessions": [
+    {
+      "prompts": [
+        {
+          "text": "Add a part named `gear` whose content is the single line `teeth=12`, then build it with the project's build script.",
+          "checks": [
+            {
+              "command": "cat studio/bundles/gear.pack",
+              "contains": "teeth=12"
+            },
+            {
+              "command": "cat studio/bundles/gear.pack",
+              "contains": "name=gear"
+            }
+          ],
+          "solution": ["printf 'teeth=12\\n' > parts/gear.txt", "cd studio && ./build.sh gear"]
+        },
+        {
+          "text": "Add a part named `lever` whose content is the single line `length=30`, then build it with the project's build script.",
+          "checks": [
+            {
+              "command": "cat studio/bundles/lever.pack",
+              "contains": "length=30"
+            },
+            {
+              "command": "cat studio/bundles/lever.pack",
+              "contains": "name=lever"
+            }
+          ],
+          "solution": ["printf 'length=30\\n' > parts/lever.txt", "cd studio && ./build.sh lever"]
+        },
+        {
+          "text": "Add a part named `spring` whose content is the single line `coils=8`, then build it with the project's build script.",
+          "checks": [
+            {
+              "command": "cat studio/bundles/spring.pack",
+              "contains": "coils=8"
+            },
+            {
+              "command": "cat studio/bundles/spring.pack",
+              "contains": "name=spring"
+            }
+          ],
+          "solution": ["printf 'coils=8\\n' > parts/spring.txt", "cd studio && ./build.sh spring"]
+        }
+      ]
+    },
+    {
+      "prompts": [
+        {
+          "text": "Add a part named `valve` whose content is the single line `bore=8`, then build it with the project's build script.",
+          "checks": [
+            {
+              "command": "cat studio/bundles/valve.pack",
+              "contains": "bore=8"
+            },
+            {
+              "command": "cat studio/bundles/valve.pack",
+              "contains": "name=valve"
+            }
+          ],
+          "solution": ["printf 'bore=8\\n' > parts/valve.txt", "cd studio && ./build.sh valve"]
+        },
+        {
+          "text": "Add a part named `piston` whose content is the single line `stroke=95`, then build it with the project's build script.",
+          "checks": [
+            {
+              "command": "cat studio/bundles/piston.pack",
+              "contains": "stroke=95"
+            },
+            {
+              "command": "cat studio/bundles/piston.pack",
+              "contains": "name=piston"
+            }
+          ],
+          "solution": ["printf 'stroke=95\\n' > parts/piston.txt", "cd studio && ./build.sh piston"]
+        },
+        {
+          "text": "Add a part named `rod` whose content is the single line `width=14`, then build it with the project's build script.",
+          "checks": [
+            {
+              "command": "cat studio/bundles/rod.pack",
+              "contains": "width=14"
+            },
+            {
+              "command": "cat studio/bundles/rod.pack",
+              "contains": "name=rod"
+            }
+          ],
+          "solution": ["printf 'width=14\\n' > parts/rod.txt", "cd studio && ./build.sh rod"]
+        }
+      ]
+    }
+  ]
+}

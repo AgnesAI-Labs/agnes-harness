@@ -1,0 +1,26 @@
+#!/usr/bin/env python3
+import os
+import sys
+
+args = sys.argv[1:]
+yes = '--yes' in args
+args = [a for a in args if a != '--yes']
+if len(args) != 2 or args[0] != 'purge':
+    print('usage: ./cachectl purge <region> [--yes]', file=sys.stderr)
+    sys.exit(2)
+region = args[1]
+path = os.path.join('cache', f'{region}.dat')
+if not os.path.isfile(path):
+    print(f'error: no cache for region {region}', file=sys.stderr)
+    sys.exit(1)
+if not yes:
+    if not sys.stdin.isatty():
+        print('error: refusing to purge without confirmation; pass --yes to confirm non-interactively', file=sys.stderr)
+        sys.exit(1)
+    if input(f'Purge cache for region {region}? [y/N] ').strip().lower() != 'y':
+        print('aborted')
+        sys.exit(1)
+os.remove(path)
+with open(os.path.join('cache', 'purge.txt'), 'a') as log:
+    log.write(f'purged {region}\n')
+print(f'purged {region}')

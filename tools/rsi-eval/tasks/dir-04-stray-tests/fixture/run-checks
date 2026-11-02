@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -eu
+
+stray=$(find . \( -name 'test_*.py' -o -name '*_test.py' \) -not -path './checks/*' | head -n 1)
+if [ -n "$stray" ]; then
+  echo "error: stray test file $stray: unit tests must live in checks/ and be named check_*.py" >&2
+  exit 1
+fi
+
+PYTHONPATH=lib python3 -m unittest discover -v -s checks -p 'check_*.py'

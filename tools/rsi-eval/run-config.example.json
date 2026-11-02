@@ -1,0 +1,10 @@
+{
+  "provider": "eval",
+  "api": "anthropic-messages",
+  "upstream": "https://api.example.com",
+  "model": "model-id",
+  "keyEnv": "RSI_EVAL_API_KEY",
+  "prices": { "input": 3, "output": 15, "cacheRead": 0.3, "cacheWrite": 3.75 },
+  "proxyPort": 4555,
+  "sessionTimeoutMs": 1800000
+}

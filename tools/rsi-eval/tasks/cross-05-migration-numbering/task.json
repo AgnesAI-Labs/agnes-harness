@@ -1,0 +1,98 @@
+{
+  "id": "cross-05-migration-numbering",
+  "category": "cross-session",
+  "description": "A schema migration tool that only accepts consecutively numbered NNNN_name.sql files.",
+  "trap": {
+    "signatures": ["numbered consecutively"],
+    "reproduce": "printf 'create table users (id integer primary key, name text);\\n' > migrations/add_users.sql && ./migrate",
+    "note": "Files in migrations/ must be named NNNN_name.sql and numbered with no gaps starting at 0001; the next free number is highest+1."
+  },
+  "sessions": [
+    {
+      "prompts": [
+        {
+          "text": "Add a table `users` with the columns `id`, `name` to the app database (`id` is an integer primary key; `name` is text). Apply it with the project's migration tool.",
+          "checks": [
+            {
+              "command": "python3 -c \"import sqlite3; c = sqlite3.connect('app.db'); print(','.join(r[1] for r in c.execute('pragma table_info(users)')))\"",
+              "contains": "id,name"
+            }
+          ],
+          "solution": [
+            "printf 'create table users (id integer primary key, name text);\\n' > migrations/0003_users.sql",
+            "./migrate"
+          ]
+        },
+        {
+          "text": "Add a table `posts` with the columns `id`, `title` to the app database (`id` is an integer primary key; `title` is text). Apply it with the project's migration tool.",
+          "checks": [
+            {
+              "command": "python3 -c \"import sqlite3; c = sqlite3.connect('app.db'); print(','.join(r[1] for r in c.execute('pragma table_info(posts)')))\"",
+              "contains": "id,title"
+            }
+          ],
+          "solution": [
+            "printf 'create table posts (id integer primary key, title text);\\n' > migrations/0003_posts.sql",
+            "./migrate"
+          ]
+        },
+        {
+          "text": "Add a table `tags` with the columns `id`, `label` to the app database (`id` is an integer primary key; `label` is text). Apply it with the project's migration tool.",
+          "checks": [
+            {
+              "command": "python3 -c \"import sqlite3; c = sqlite3.connect('app.db'); print(','.join(r[1] for r in c.execute('pragma table_info(tags)')))\"",
+              "contains": "id,label"
+            }
+          ],
+          "solution": [
+            "printf 'create table tags (id integer primary key, label text);\\n' > migrations/0003_tags.sql",
+            "./migrate"
+          ]
+        }
+      ]
+    },
+    {
+      "prompts": [
+        {
+          "text": "Add a table `comments` with the columns `id`, `body` to the app database (`id` is an integer primary key; `body` is text). Apply it with the project's migration tool.",
+          "checks": [
+            {
+              "command": "python3 -c \"import sqlite3; c = sqlite3.connect('app.db'); print(','.join(r[1] for r in c.execute('pragma table_info(comments)')))\"",
+              "contains": "id,body"
+            }
+          ],
+          "solution": [
+            "printf 'create table comments (id integer primary key, body text);\\n' > migrations/0003_comments.sql",
+            "./migrate"
+          ]
+        },
+        {
+          "text": "Add a table `likes` with the columns `id`, `user_id` to the app database (`id` is an integer primary key; `user_id` is integer). Apply it with the project's migration tool.",
+          "checks": [
+            {
+              "command": "python3 -c \"import sqlite3; c = sqlite3.connect('app.db'); print(','.join(r[1] for r in c.execute('pragma table_info(likes)')))\"",
+              "contains": "id,user_id"
+            }
+          ],
+          "solution": [
+            "printf 'create table likes (id integer primary key, user_id integer);\\n' > migrations/0003_likes.sql",
+            "./migrate"
+          ]
+        },
+        {
+          "text": "Add a table `follows` with the columns `id`, `follower` to the app database (`id` is an integer primary key; `follower` is integer). Apply it with the project's migration tool.",
+          "checks": [
+            {
+              "command": "python3 -c \"import sqlite3; c = sqlite3.connect('app.db'); print(','.join(r[1] for r in c.execute('pragma table_info(follows)')))\"",
+              "contains": "id,follower"
+            }
+          ],
+          "solution": [
+            "printf 'create table follows (id integer primary key, follower integer);\\n' > migrations/0003_follows.sql",
+            "./migrate"
+          ]
+        }
+      ]
+    }
+  ]
+}
