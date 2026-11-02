@@ -61,6 +61,7 @@ export type PresetView = {
     timeoutMs: number
     timeouts: Record<string, number>
     outputMaxBytes: number
+    collapseRepeatedOutput: boolean
     logicalChanges?: boolean
   }
   verifier: { timeoutMs: number; defaultTier: 0 | 1 | 2 }
@@ -100,7 +101,13 @@ export function presetDefaults(): PresetView {
     // be the path by which a destructive call proceeds.
     approval: { ...APPROVAL_DEFAULTS },
     sandbox: { onUnavailable: 'deny' },
-    tools: { timeoutMs: 120000, timeouts: {}, outputMaxBytes: 32768, logicalChanges: false },
+    tools: {
+      timeoutMs: 120000,
+      timeouts: {},
+      outputMaxBytes: 32768,
+      collapseRepeatedOutput: false,
+      logicalChanges: false,
+    },
     verifier: { timeoutMs: 30000, defaultTier: 0 },
     repair: { timeoutMs: 10000 },
     completionGate: { enabled: true, minItems: 3 },
@@ -229,6 +236,7 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
       timeoutMs: pick(raw, 'tools.timeout_ms', d.tools.timeoutMs),
       timeouts: pick(raw, 'tools.timeouts', d.tools.timeouts),
       outputMaxBytes: pick(raw, 'tools.output_max_bytes', d.tools.outputMaxBytes),
+      collapseRepeatedOutput: pick(raw, 'tools.collapse_repeated_output', d.tools.collapseRepeatedOutput),
       logicalChanges: pick(raw, 'tools.logical_changes', false),
     },
     verifier: {

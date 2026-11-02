@@ -180,6 +180,7 @@ export function buildToolContext(
     timeoutMs: number
     defaultTimeoutMs?: number
     outputMaxBytes: number
+    collapseRepeatedOutput?: boolean
     turnTimeLimit?: { timeLimitMs: number; deadlineAt: number }
   },
 ): ToolContext {
@@ -530,6 +531,7 @@ export function buildToolContext(
     timeoutMs: call.timeoutMs,
     ...(call.defaultTimeoutMs === undefined ? {} : { defaultTimeoutMs: call.defaultTimeoutMs }),
     outputMaxBytes: call.outputMaxBytes,
+    collapseRepeatedOutput: call.collapseRepeatedOutput ?? false,
     ...(call.turnTimeLimit ? { turnTimeLimit: { ...call.turnTimeLimit } } : {}),
     lease: {
       expiresAt: new Date(Date.now() + d.lease.remainingMs()).toISOString(),

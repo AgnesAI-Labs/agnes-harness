@@ -47,6 +47,7 @@ describe('preset view', () => {
       timeoutMs: 120000,
       timeouts: {},
       outputMaxBytes: DEFAULT_OUTPUT_MAX_BYTES,
+      collapseRepeatedOutput: false,
       logicalChanges: false,
     })
     expect(d.verifier).toEqual({ timeoutMs: 30000, defaultTier: 0 })
@@ -123,7 +124,13 @@ describe('preset view', () => {
         budget: { preflight: 'count', per_request_cap: 13, on_exceed: 'deny', max_steps: 17 },
         approval: { timeout_ms: 19, on_unavailable: 'park', pending_ttl_ms: 23 },
         sandbox: { on_unavailable: 'allow' },
-        tools: { timeout_ms: 29, output_max_bytes: 9000, timeouts: { shell: 31 }, logical_changes: true },
+        tools: {
+          timeout_ms: 29,
+          output_max_bytes: 9000,
+          timeouts: { shell: 31 },
+          collapse_repeated_output: true,
+          logical_changes: true,
+        },
         verifier: { timeout_ms: 37, default_tier: 2 },
         repair: { timeout_ms: 41 },
         completion_gate: { min_items: 43 },
@@ -156,7 +163,13 @@ describe('preset view', () => {
       budget: { preflight: 'count', perRequestCap: 13, onExceed: 'deny', maxSteps: 17 },
       approval: { onTimeout: 'rejected', timeoutMs: 19, onUnavailable: 'park', pendingTtlMs: 23 },
       sandbox: { onUnavailable: 'allow' },
-      tools: { timeoutMs: 29, outputMaxBytes: 9000, timeouts: { shell: 31 }, logicalChanges: true },
+      tools: {
+        timeoutMs: 29,
+        outputMaxBytes: 9000,
+        timeouts: { shell: 31 },
+        collapseRepeatedOutput: true,
+        logicalChanges: true,
+      },
       verifier: { timeoutMs: 37, defaultTier: 2 },
       repair: { timeoutMs: 41 },
       completionGate: { enabled: true, minItems: 43 },

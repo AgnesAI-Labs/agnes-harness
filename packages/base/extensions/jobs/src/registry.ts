@@ -3,6 +3,7 @@ import { resolve as resolvePath } from 'node:path'
 import type { ProcessOutput, SandboxProcess, SessionChildJobs, ToolContext } from '@agnes/extension-api'
 import { SHELL_SENTINEL, SHELL_STDIN_SENTINEL } from '@agnes/extension-api'
 import { legacyProcess } from './legacy-process.js'
+import { OutputCursors, type OutputPosition, outputPosition } from './output-cursor.js'
 import { PersistentShell, type PersistentShellName, type ShellName, shellArgv } from './persistent-shell.js'
 
 export interface ShellJobView {
@@ -34,6 +35,7 @@ interface Job {
   /** Last output, input or read; an idle persistent shell or terminal is closed from it. */
   activeAt: number
   capturedBytes: number
+  position: OutputPosition
   cleanupPending?: boolean
   done: Promise<ShellJobView>
   /** Settles when the command itself has ended, even while processes it backgrounded still run. */
@@ -63,6 +65,7 @@ const copy = (job: Job) => ({ ...job.view })
 
 /** One owner-scoped registry for every executable kind. Handles live until session/provider shutdown. */
 export class ShellJobs {
+  private readonly cursors = new OutputCursors()
   private readonly sessions = new Map<string, Map<string, Job>>()
   private readonly processes = new Map<string, SandboxProcess>()
   private readonly shells = new Map<string, PersistentShell>()
@@ -100,6 +103,7 @@ export class ShellJobs {
       stop,
       activeAt: Date.now(),
       capturedBytes: 0,
+      position: outputPosition(),
       done: new Promise((r) => {
         resolve = r
       }),
@@ -151,7 +155,10 @@ export class ShellJobs {
     if (end < bytes.length) while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end--
     job.capturedBytes += end
     job.view[chunk.stream] += bytes.subarray(0, end).toString('utf8')
-    if (end < bytes.length) job.view.truncated = true
+    if (end < bytes.length) {
+      job.view.truncated = true
+      job.position.lost += bytes.length - end
+    }
   }
   /**
    * A child agent republishes its newest message: `text` replaces the previous one instead of growing
@@ -167,9 +174,11 @@ export class ShellJobs {
     job.childText = text
     job.view.stdout += chunk
     if (job.view.stdout.length <= CHILD_OUTPUT_LIMIT) return
+    const before = Buffer.byteLength(job.view.stdout)
     const tail = job.view.stdout.slice(-CHILD_OUTPUT_LIMIT)
     // Never begin the retained tail with half of a surrogate pair.
     job.view.stdout = /^[\uDC00-\uDFFF]/.test(tail) ? tail.slice(1) : tail
+    job.position.stdoutStart += before - Buffer.byteLength(job.view.stdout)
     job.view.truncated = true
   }
   private watchIdle(): void {
@@ -490,6 +499,14 @@ export class ShellJobs {
         if (child.status === 'cancelled') job.view.status = 'killed'
         job.finish(child.status === 'completed' ? 0 : -1)
       }
+    }
+  }
+  output(ctx: JobOwner, id: string, cursor?: string) {
+    const job = this.get(ctx, id)
+    job.activeAt = Date.now()
+    return {
+      ...copy(job),
+      ...this.cursors.read(owner(ctx), id, job.position, job.view.stdout, job.view.stderr, cursor),
     }
   }
   async wait(

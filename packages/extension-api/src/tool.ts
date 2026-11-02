@@ -437,6 +437,8 @@ export interface ToolContext {
   readonly defaultTimeoutMs?: number
   /** Bytes of one result's text the model sees before the output guard cuts it (preset `tools.output_max_bytes`). */
   readonly outputMaxBytes: number
+  /** Collapse repeated command output before truncation; omitted means false. */
+  readonly collapseRepeatedOutput?: boolean
   /**
    * The wall-clock limit of the turn this call runs in, present only when the turn's prompt set one
    * (`agh -p --timeout`, SDK `prompt({ timeLimitMs })`): the limit's length and its deadline in epoch

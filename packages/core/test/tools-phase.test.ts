@@ -909,16 +909,22 @@ describe('tools phase', () => {
     })
   })
 
-  it('hands each tool the output limit the preset resolved', async () => {
+  it('hands each tool the output settings the preset resolved', async () => {
     let seen = 0
+    let collapse: boolean | undefined
     const tool = readTool(async (_args, ctx) => {
       seen = ctx.outputMaxBytes
+      collapse = ctx.collapseRepeatedOutput
       return { content: [{ type: 'text' as const, text: 'ok' }] }
     })
     const s = await atTools([toolTurn('read', {})], withTool(tool))
-    s.session.preset = { ...s.session.preset, tools: { ...s.session.preset.tools, outputMaxBytes: 9000 } }
+    s.session.preset = {
+      ...s.session.preset,
+      tools: { ...s.session.preset.tools, outputMaxBytes: 9000, collapseRepeatedOutput: true },
+    }
     await s.session.runToolsPhase()
     expect(seen).toBe(9000)
+    expect(collapse).toBe(true)
   })
 
   it('a per-tool timeout overrides the default', async () => {

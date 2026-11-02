@@ -7,7 +7,7 @@ describe('toPresetView', () => {
     const view = toPresetView({
       name: 'trial',
       completion_gate: { enabled: false },
-      tools: { logical_changes: true, shell_observation_ms: 10_000 },
+      tools: { collapse_repeated_output: true, logical_changes: true, shell_observation_ms: 10_000 },
     })
     expect(view.completionGate).toEqual({ enabled: false, minItems: 3 })
     expect(view.tools.logicalChanges).toBe(true)
@@ -53,7 +53,13 @@ describe('toPresetView', () => {
       budget: { preflight: 'count', perRequestCap: 4000, onExceed: 'quote', maxSteps },
       approval: { onTimeout: 'rejected', timeoutMs: 1000, onUnavailable: 'park', pendingTtlMs: 5000 },
       sandbox: { onUnavailable: 'deny' },
-      tools: { timeoutMs: 120000, outputMaxBytes: 32768, timeouts: { shell: 60000 }, logicalChanges: false },
+      tools: {
+        timeoutMs: 120000,
+        outputMaxBytes: 32768,
+        timeouts: { shell: 60000 },
+        collapseRepeatedOutput: false,
+        logicalChanges: false,
+      },
       verifier: { timeoutMs: 30000, defaultTier: 0 },
       repair: { timeoutMs: 10000 },
       completionGate: { enabled: true, minItems: 3 },

@@ -2,6 +2,12 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## Unreleased
+
+### Added
+
+- `ToolContext.collapseRepeatedOutput?: boolean` carries preset `tools.collapse_repeated_output` (default false). Shell and job output guards may collapse adjacent repeats before byte truncation while preserving an artifact of the original. Other tool output remains unchanged.
+
 ## 5.0.0
 
 ### Added

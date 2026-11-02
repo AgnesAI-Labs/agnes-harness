@@ -216,6 +216,7 @@ describe('tool types', () => {
       | 'signal'
       | 'timeoutMs'
       | 'defaultTimeoutMs'
+      | 'collapseRepeatedOutput'
       | 'outputMaxBytes'
       | 'turnTimeLimit'
       | 'lease'

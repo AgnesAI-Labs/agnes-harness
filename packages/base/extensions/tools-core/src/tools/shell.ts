@@ -3,7 +3,7 @@ import { defineTool } from '@agnes/plugin-runtime'
 import { type ShellJobs, standaloneShellJobs } from '../../../jobs/src/registry.js'
 import { runShellJob } from '../../../jobs/src/shell.js'
 import { failureCode, toolFailure } from '../guards/feedback.js'
-import { guardedResult } from '../guards/output.js'
+import { guardedCommandResult } from '../guards/output.js'
 import {
   DEADLINE_ADVICE,
   deadlineStop,
@@ -111,7 +111,7 @@ export function createShellTool(jobs?: ShellJobs, observationMs?: number) {
             `[${deadlineStop(ctx, timeoutMs)}. The command and the processes in its process group were killed; the output above is what was captured, and the command may have taken partial effect. ${DEADLINE_ADVICE}]`,
           )
           return {
-            ...(await guardedResult(ctx, parts.join('\n'))),
+            ...(await guardedCommandResult(ctx, parts.join('\n'))),
             isError: true,
             details: { code: 'SHELL_TURN_DEADLINE' },
           }
@@ -121,7 +121,7 @@ export function createShellTool(jobs?: ShellJobs, observationMs?: number) {
           `[timed out after ${timeoutMs}ms${requested !== undefined && requested > timeoutMs ? ` (requested ${requested}ms, capped)` : ''}: the command and the processes in its process group were killed; the output above is what was captured, and the command may have taken partial effect. Check the current state before retrying, and split the work into shorter steps or ask for a longer timeoutMs (capped by the deployment).]`,
         )
         return {
-          ...(await guardedResult(ctx, parts.join('\n'))),
+          ...(await guardedCommandResult(ctx, parts.join('\n'))),
           isError: true,
           details: { code: 'SHELL_TIMEOUT' },
         }
@@ -131,7 +131,7 @@ export function createShellTool(jobs?: ShellJobs, observationMs?: number) {
           'Command failed; inspect the output and current state, correct the command/arguments, then retry.',
         )
       parts.push(`[exit ${r.code}]${r.truncated ? ' [output truncated by sandbox]' : ''}`)
-      const out = await guardedResult(ctx, parts.join('\n'))
+      const out = await guardedCommandResult(ctx, parts.join('\n'))
       // Strictly zero, not "not positive": a process killed by a signal is reported with a negative
       // code, and `> 0` would call that a success.
       return r.code === 0 ? out : { ...out, isError: true, details: { code: 'SHELL_EXIT', exitCode: r.code } }

@@ -103,6 +103,51 @@ describe('shell observation window with a live job registry', () => {
       }
     },
   )
+  it('collapses shell and incremental job output only when enabled, with capture gaps', async () => {
+    const h = setup(10_000)
+    h.ctx.collapseRepeatedOutput = true
+    try {
+      const pending = h.tool.execute({ command: 'logs' }, h.ctx)
+      await vi.advanceTimersByTimeAsync(0)
+      h.emit({ stream: 'stdout', text: 'compiling source file\n'.repeat(100) })
+      await vi.advanceTimersByTimeAsync(10_000)
+      const shell = await pending
+      expect(textOf(shell)).toContain('… repeated')
+      const id = h.jobs.list(h.ctx)[0]!.id
+      const output = createJobTools(h.jobs)[1]!
+      const initial = await output.execute({ jobId: id }, h.ctx)
+      expect(textOf(initial)).toContain('… repeated')
+      const cursor = (initial.structured as { cursor: string }).cursor
+      h.emit({ stream: 'stdout', text: '中😀' })
+      h.emit({ stream: 'stderr', text: 'new error' })
+      const delta = await output.execute({ jobId: id, cursor }, h.ctx)
+      expect(textOf(delta)).toBe('中😀\n[stderr]\nnew error\n[running; exit pending]')
+      expect(
+        (
+          await output.execute(
+            { jobId: id, cursor },
+            { ...h.ctx, session: { ...h.ctx.session, lane: 'other' } },
+          )
+        ).isError,
+      ).toBe(true)
+      h.emit({ stream: 'stdout', text: '中'.repeat(1_400_000) })
+      const gap = await output.execute(
+        { jobId: id, cursor: (delta.structured as { cursor: string }).cursor },
+        h.ctx,
+      )
+      expect(gap.structured).toMatchObject({ gap: true })
+      expect(textOf(gap)).toContain('output gap')
+      expect(textOf(gap)).not.toContain('�')
+      const next = await output.execute(
+        { jobId: id, cursor: (gap.structured as { cursor: string }).cursor },
+        h.ctx,
+      )
+      expect(textOf(next)).not.toContain('中')
+      expect(next.structured).toMatchObject({ gap: false })
+    } finally {
+      await h.jobs.dispose()
+    }
+  })
   it('returns on a fast exit without spending the observation window', async () => {
     const h = setup(10_000)
     try {

@@ -4,6 +4,7 @@ import {
   type ToolContext,
   type ToolResult,
 } from '@agnes/extension-api'
+import { collapseRepeatedLines } from './repeated-output.js'
 
 // The bound on how much a tool result may put into the model's context. Whatever a tool produces
 // passes through here: over either limit, the whole text goes to the artifact store and the result
@@ -151,20 +152,48 @@ function reason(bytes: number, lines: number, limits: OutputLimits): string {
   return over.length === 2 ? `${over.join(' and ')} limits` : `${over[0]} limit`
 }
 
+const collapseNotice = (ref: ArtifactRef) =>
+  `[repeated output collapsed; full output stored at ${spillLocator(ref)}. To read it, call read with that full path, ?size= included]\n`
+
 export async function guardOutput(
   ctx: ToolContext,
   text: string,
-  opts: { mime?: string } = {},
+  opts: { mime?: string; collapse?: boolean } = {},
 ): Promise<GuardedOutput> {
+  const original = text
+  let collapseRef: ArtifactRef | undefined
+  if (opts.collapse && ctx.collapseRepeatedOutput) {
+    const collapsed = collapseRepeatedLines(text)
+    const locatorSize = byteLength(
+      collapseNotice({ sha256: '0'.repeat(64), size: byteLength(text), mime: 'text/plain' }),
+    )
+    // A recovery locator can outweigh a short run. Never pay more context to announce a saving.
+    if (byteLength(collapsed) + locatorSize < byteLength(text)) {
+      try {
+        collapseRef = await ctx.artifacts.put(encoder.encode(original), { mime: opts.mime ?? 'text/plain' })
+        text = collapsed
+      } catch {
+        // Collapse is optional and must be recoverable. Fall back to the existing guard on failure.
+      }
+    }
+  }
   const limits = outputLimits(ctx.outputMaxBytes)
   const lines = text.split('\n').length
   const bytes = byteLength(text)
-  if (bytes <= limits.maxBytes && lines <= limits.maxLines) return { text, truncated: false }
+  const viewBytes = bytes + (collapseRef ? byteLength(collapseNotice(collapseRef)) : 0)
+  if (viewBytes <= limits.maxBytes && lines <= limits.maxLines) {
+    if (!collapseRef) return { text, truncated: false }
+    return {
+      text: collapseNotice(collapseRef) + text,
+      ref: collapseRef,
+      truncated: false,
+    }
+  }
   const mime = opts.mime ?? 'text/plain'
   let ref: ArtifactRef | undefined
   let stored: string
   try {
-    ref = await ctx.artifacts.put(new TextEncoder().encode(text), { mime })
+    ref = collapseRef ?? (await ctx.artifacts.put(new TextEncoder().encode(original), { mime }))
     stored = `full output stored at ${spillLocator(ref)}. To read the rest, call read with that full path, ?size= included, and an offset/limit, or grep that full path to search it`
   } catch (e) {
     // Truncate anyway. Handing back the untruncated text because the store is unavailable would
@@ -177,7 +206,7 @@ export async function guardOutput(
   // that is over the line limit but shorter than head+tail would come back with its middle
   // duplicated — longer than what it replaced.
   const tail = cutTail(text, Math.max(limits.headBytes, bytes - limits.tailBytes))
-  const note = `\n[truncated: ${bytes} bytes, ${lines} lines; over the ${reason(bytes, lines, limits)}; ${stored}]\n`
+  const note = `\n[truncated: ${bytes} bytes, ${lines} lines; over the ${reason(viewBytes, lines, limits)}; ${stored}]\n`
   // Decoding keeps the length in code units, a lone surrogate included, so these are offsets into `text`.
   const kept = { head: head.length, tail: tail.length }
   return ref === undefined
@@ -302,6 +331,13 @@ export async function guardOutputSet(
 // with no way to reach the rest.
 export async function guardedResult(ctx: ToolContext, text: string): Promise<ToolResult> {
   const g = await guardOutput(ctx, text)
+  const block = { type: 'text' as const, text: g.text }
+  return { content: g.ref ? [block, refBlock(g.ref)] : [block] }
+}
+
+/** Command-only opt-in; file reads and search results remain literal. */
+export async function guardedCommandResult(ctx: ToolContext, text: string): Promise<ToolResult> {
+  const g = await guardOutput(ctx, text, { collapse: true })
   const block = { type: 'text' as const, text: g.text }
   return { content: g.ref ? [block, refBlock(g.ref)] : [block] }
 }
