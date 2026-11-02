@@ -168,3 +168,30 @@ Transient model request failures, including a timeout or a dropped stream after 
 If a step throws, Core preserves its declared error code and message and closes the outstanding inference, step and turn in one terminal transaction. Live inference retains observed usage and billing; after process loss, unsettled spend is estimated from the last durable output count. Unknown tool side effects remain unknown and are never replayed by this close. If terminal persistence also fails, callers receive the original error plus `closeError`; CLI JSON results expose both codes without exception text. Ledger messages follow the existing 4096-character limit; callers retain the full original message.
 
 A writer sealed by a renewal or commit failure stays sealed. Host records `session.run_failed` in the existing `audit/host.jsonl`, outside the ledger: a SHA-256 session identifier, error code, phase, last committed sequence, fault stage/code and terminal-close code. No prompt, response, error message or stack is included. These records are diagnostic evidence, not recovery commands. Reopening currently follows the existing interrupted-turn recovery policy; automatically closing with a previously reported failure requires a durable recovery-marker contract. Opening or exporting does not start a model request. The code-mode `kernel` event with `alive:false, reason:'session-start'` marks stateless session initialization, not a process death.
+
+## Offline request cost diagnostics
+
+From a source checkout, inspect one session's JSONL ledger without starting the daemon or calling a model:
+
+```sh
+node tools/inspect-request-composition.mjs ledger.jsonl
+```
+
+Each primary request extends `x/core/context-breakdown` with `turn`, `step` and `composition`.
+The table shows estimated input tokens for the system/tool-schema prefix, conversation (including
+assistant tool-call arguments), tool results new since the preceding request boundary in this turn,
+earlier tool results, replayed thinking, runtime notes, and JSON framing. Notes include persisted
+runtime-context messages and request-only notes. Image payloads remain in their message category;
+these are serialized-input estimates, not provider image-token counts or billed usage. The existing
+Unicode-aware estimator counts the final provider `system`, `messages`, and `tools` JSON; rounding
+is carried across categories so their sum equals `total`. Tool-result counts and the largest result's
+UTF-8 serialized content size and tool name are included. No message content, paths or arguments
+are copied into these new diagnostic fields. Existing section summaries remain available.
+
+`x/core/turn-wait` is committed beside `turn/end`. `WAIT` rows contain lane, turn, kind, tool name
+(null for models), milliseconds, invocation count, and missing-timing count. Model time prefers
+`cost/ledger.timing.providerCallMs`, then `durationMs`, then `effect/settled.durationMs`; tool time
+uses settled effect durations grouped by tool name. Retries, failed attempts and side calls count;
+unsettled attempts are counted as missing rather than assigned zero time. Concurrent durations
+can overlap, so their sum is not turn wall time. Summaries use only that turn and lane, including
+records recovered after restart. Old ledgers lacking these optional diagnostics produce no data rows.

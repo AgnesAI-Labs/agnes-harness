@@ -616,8 +616,8 @@ describe('tools phase', () => {
       }),
     )
     expect(await s.session.runToolsPhase()).toEqual({ phase: 'terminal', reason: 'parked' })
-    const tail = (await s.log.scan({ fromSeq: s.log.lastSeq - 2, limit: 3 })).map((e) => e.type)
-    expect(tail).toEqual(['x/core/decision-delivery', 'step/end', 'turn/end'])
+    const tail = (await s.log.scan({ fromSeq: s.log.lastSeq - 3, limit: 4 })).map((e) => e.type)
+    expect(tail).toEqual(['x/core/decision-delivery', 'step/end', 'x/core/turn-wait', 'turn/end'])
     expect(s.session.op()).toBeNull()
     expect((await s.session.decisions.list())[0]?.result).toBeNull()
     expect((await s.log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'parked' })
@@ -1289,8 +1289,14 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
     )
     expect(await s.session.runToolsPhase()).toEqual({ phase: 'terminal', reason: 'parked' })
     expect(s.session.op()).toBeNull()
-    const tail = (await s.log.scan({ fromSeq: s.log.lastSeq - 3, limit: 4 })).map((e) => e.type)
-    expect(tail).toEqual(['x/core/decision-delivery', 'x/core/decision-delivery', 'step/end', 'turn/end'])
+    const tail = (await s.log.scan({ fromSeq: s.log.lastSeq - 4, limit: 5 })).map((e) => e.type)
+    expect(tail).toEqual([
+      'x/core/decision-delivery',
+      'x/core/decision-delivery',
+      'step/end',
+      'x/core/turn-wait',
+      'turn/end',
+    ])
     expect((await s.log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'parked' })
     // Exactly one step/end and one turn/end: the batch is closed once, not once per member.
     expect(await s.log.scan({ type: 'step/end', limit: 10 })).toHaveLength(1)

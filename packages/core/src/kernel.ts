@@ -98,6 +98,7 @@ export const CORE_DIAG_NAMES = [
   'registers-rebuilt',
   'contribute-conflict',
   'context-breakdown',
+  'turn-wait',
   'request-media-window',
   'tool-source-pending',
   'memory-external-change',

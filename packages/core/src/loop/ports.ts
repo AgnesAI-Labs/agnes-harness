@@ -17,6 +17,7 @@ import type {
 import type { ContentBlock, InferenceEvent, RequestBody } from '@agnes/protocol'
 import { releaseTreeReservation } from '../child/runtime-budget.js'
 import { ModelExecution } from '../execution/model-execution.js'
+import { recordRequestComposition } from '../execution/request-composition.js'
 import { approvalContinuation, continueParked } from '../execution/turn/parked.js'
 import { approveAndExecute } from '../execution/turn/tools.js'
 import { unrecordedParkEvents } from '../execution/turn/unknown-outcome.js'
@@ -215,6 +216,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     signal: AbortSignal,
     invocationId: string,
   ): AsyncIterable<InferenceEvent> {
+    await recordRequestComposition(s, output, request, requireOp().step)
     const effect = s.effects.start({ kind: 'inference', replay: 'never', slot: request.slot })
     const pre = [
       s.ev('x/core/loop-effect', { invocationId, effectId: effect.effectId }, { ignorable: true }),
