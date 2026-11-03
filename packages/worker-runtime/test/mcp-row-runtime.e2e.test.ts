@@ -167,6 +167,57 @@ async function testHost(): Promise<Host> {
 const tool = (host: Host, name: string) => host.kernel.tools.resolve(name)
 
 describe('createMcpRowRuntime against a real Host', () => {
+  it('shares one catalog read across sequential Host mounts in one apply, then reads fresh on a new apply', async () => {
+    const hosts = await Promise.all([testHost(), testHost(), testHost()])
+    let connects = 0
+    let reads = 0
+    const opener: McpServerOpener = {
+      async connect(definition) {
+        connects++
+        return {
+          id: definition.serverId,
+          async listTools() {
+            reads++
+            return [{ name: 'ping', description: 'ping', inputSchema: { type: 'object' } }]
+          },
+          callTool: async () => ({ content: [] }),
+          close: async () => {},
+          onClose: () => () => {},
+          onToolsChanged: () => () => {},
+        }
+      },
+    }
+    // Real Host registries with the composition facade's prepare/broadcast behavior.
+    const first = hosts[0]
+    if (!first) throw new Error('missing Host')
+    const host = {
+      extensionRows: {
+        current: () => first.extensionRows.current(),
+        prepare: (input: Parameters<Host['extensionRows']['prepare']>[0]) => {
+          const prepared = hosts.map((item) => item.extensionRows.prepare(input))
+          if (!prepared[0]) throw new Error('missing prepared row')
+          return prepared[0]
+        },
+        async apply(rows: Parameters<Host['extensionRows']['apply']>[0]) {
+          let report: Awaited<ReturnType<Host['extensionRows']['apply']>> | undefined
+          for (const item of hosts) {
+            report = await item.extensionRows.apply(rows)
+            await vi.waitFor(() => expect(tool(item, `${ALPHA_PREFIX}ping`)).toBeDefined())
+          }
+          if (!report) throw new Error('missing Host report')
+          return report
+        },
+      },
+    }
+    const runtime = createMcpRowRuntime({ host: host as never, opener })
+    await runtime.apply([entry('alpha')])
+    expect(connects).toBe(1)
+    expect(reads).toBe(1)
+    // A fresh revision must fetch a new catalog, rather than reuse the prior apply result.
+    await runtime.apply([entry('alpha', 'r2')])
+    expect(reads).toBe(2)
+  })
+
   it('mounts one row per server and registers each server’s tools, keeping the builtin rows', async () => {
     const host = await testHost()
     const builtin = host.extensionRows.current().map((row) => row.id)
