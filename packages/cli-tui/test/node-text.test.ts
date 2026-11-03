@@ -63,4 +63,19 @@ it('save rows render initiator, outcome and reason without text', () => {
   expect(save({ reason: 'conflict' })).toMatch(/nothing was overwritten/)
   expect(save({ reason: 'unavailable' })).toMatch(/not available right now/)
   expect(save({ reason: 'a-later-reason' })).toContain('Reason: a-later-reason.')
+  // A promotion to user memory: what it reaches, where to withdraw it, and whether this workspace reads it.
+  const user = { initiator: 'auto', target: 'user-memory' }
+  expect(save({ ...user, state: 'saved', userMemoryRead: true })).toMatch(
+    /^Task experience: saved to user memory \(all workspaces\) \(asked by: automatic.*withdraw it in the Web memory settings/,
+  )
+  expect(save({ ...user, state: 'saved', userMemoryRead: true })).not.toMatch(/does not read user memory/)
+  expect(save({ ...user, state: 'saved', userMemoryRead: false })).toMatch(
+    /This workspace does not read user memory/,
+  )
+  expect(save({ ...user, reason: 'user-memory-budget' })).toMatch(
+    /not saved to user memory.*Reason: user memory has no room for it/,
+  )
+  expect(save({ ...user, reason: 'model-cannot-write-user' })).toMatch(
+    /the model can never write user memory/,
+  )
 })

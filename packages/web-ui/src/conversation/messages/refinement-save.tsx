@@ -18,7 +18,11 @@ const REASONS = new Set([
   'unavailable',
   'conflict',
   'approval-expired',
+  'user-memory-budget',
+  'model-cannot-write-user',
 ])
+/** The outcomes a promotion to user memory can have; any other is said as for the workspace. */
+const USER_STATES = new Set(['saved', 'refused', 'unknown'])
 
 /**
  * How a "save to workspace" asked from a review line ended: the receipt the host wrote (its outcome and,
@@ -42,21 +46,34 @@ const reasonText = (reason: string, t: Translate): string =>
   })
 
 /**
- * One save of task experience into the workspace, in words: how it ended, who asked for it, and why it
- * was refused. A save waiting for approval says where to answer it; one that ended unknown says its
- * paragraph stays hidden until a person repairs or removes it. Never the entry's text or the file.
+ * One save of task experience into the workspace or user memory, in words: how it ended, who asked for
+ * it, and why it was refused. A save waiting for approval says where to answer it; one that ended unknown
+ * says its paragraph stays hidden until a person repairs or removes it; a promotion to user memory says
+ * it reaches every workspace that reads user memory, where to withdraw it, and when this workspace does
+ * not read it. Never the entry's text or the file.
  */
 export function saveText(
-  save: Pick<RefinementSave, 'state' | 'initiator'> & { reason?: string | undefined },
+  save: Pick<RefinementSave, 'state' | 'initiator'> & {
+    reason?: string | undefined
+    target?: RefinementSave['target'] | undefined
+    userMemoryRead?: boolean | undefined
+  },
   t: Translate,
 ): string {
+  const user = save.target === 'user-memory' && USER_STATES.has(save.state)
   return [
-    t(`timeline.refinementSave.state.${save.state}`),
+    user
+      ? t(`timeline.refinementSave.user.state.${save.state}`)
+      : t(`timeline.refinementSave.state.${save.state}`),
     save.initiator
       ? t('timeline.refinementSave.by', { who: t(`timeline.refinementSave.initiator.${save.initiator}`) })
       : '',
     save.state === 'awaiting-approval' ? t('timeline.refinementSave.awaiting') : '',
     save.state === 'unknown' ? t('timeline.refinementSave.unknownHint') : '',
+    user && save.state === 'saved' ? t('timeline.refinementSave.user.withdraw') : '',
+    user && save.state === 'saved' && save.userMemoryRead === false
+      ? t('timeline.refinementSave.user.notRead')
+      : '',
     save.reason ? reasonText(save.reason, t) : '',
   ]
     .filter(Boolean)

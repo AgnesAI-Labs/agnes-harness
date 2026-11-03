@@ -208,7 +208,7 @@ function RefinementFields(props: {
         </SettingsItem>
       </SettingsBlock>
       <SettingsBlock label={t('refinement.group.allows')} data-testid="refinement-permissions">
-        {(['install', 'skill', 'memory'] as const).map((name) => (
+        {(['install', 'skill', 'memory', 'user'] as const).map((name) => (
           <SettingsItem
             key={name}
             data-testid={`refinement-allows-${name}`}

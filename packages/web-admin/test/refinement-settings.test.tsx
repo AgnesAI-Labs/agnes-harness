@@ -231,6 +231,19 @@ it('every grant is in force: none says it comes in a later release', async () =>
   expect(field(host, 'refinement-allows-skill').textContent).toMatch(/uninstall|roll/i)
 })
 
+it('the settings panel states that user-level lessons are written automatically', async () => {
+  const host = await mount(fakeApi())
+  const user = field(host, 'refinement-allows-user').textContent ?? ''
+  expect(user).toContain('user memory')
+  expect(user).toMatch(/written automatically/)
+  expect(user).toMatch(/withdraw/i)
+  expect(user).toMatch(/only in workspaces that turn it on/)
+  expect(user).not.toMatch(/later release/i)
+  document.documentElement.lang = 'zh-CN'
+  const zh = (await mount(fakeApi())).textContent ?? ''
+  expect(zh).toContain('自动写入用户记忆')
+})
+
 const NOTICE_KEY = 'agnes.refinement.workspace-notice'
 const storage = () => globalThis.localStorage
 
@@ -243,6 +256,8 @@ it('shows a profile that already had refinement on a one-time notice until it is
     expect(notice.textContent).toContain('workspace skills')
     expect(notice.textContent).not.toMatch(/later release/)
     expect(notice.textContent).toMatch(/without asking again/)
+    // Lessons that hold everywhere now also go to user memory, automatically.
+    expect(notice.textContent).toMatch(/user memory, automatically/)
     expect(notice.textContent).toContain('Learn from finished work')
     const dismiss = notice.querySelector<HTMLButtonElement>('button')
     if (!dismiss) throw new Error('missing dismiss')
@@ -286,6 +301,7 @@ it('shows the notice in Chinese', async () => {
   document.documentElement.lang = 'zh-CN'
   const host = await mount(fakeApi({ enabled: true, mode: 'auto' }))
   expect(field(host, 'refinement-workspace-notice').textContent).toContain('工作区记忆')
+  expect(field(host, 'refinement-workspace-notice').textContent).toContain('自动写入用户记忆')
 })
 
 it('registers the section under General', () => {

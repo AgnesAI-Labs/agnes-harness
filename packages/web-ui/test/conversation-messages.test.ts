@@ -344,6 +344,45 @@ describe('W3b projected message DOM', () => {
     expect(lines.join(' ')).not.toContain('timeline.refinement')
   })
 
+  it('a user-level receipt shows its target, reason and a withdraw action', async () => {
+    const save = (id: string, extra: Partial<Extract<UINode, { kind: 'refinement-save' }>>): UINode => ({
+      kind: 'refinement-save',
+      id,
+      seq: 10,
+      state: 'saved',
+      initiator: 'auto',
+      target: 'user-memory',
+      ...extra,
+    })
+    const nodes = [
+      save('a', { userMemoryRead: true }),
+      save('b', { userMemoryRead: false }),
+      save('c', { state: 'refused', reason: 'user-memory-budget' }),
+      save('d', { state: 'refused', reason: 'model-cannot-write-user', initiator: 'model' }),
+    ]
+    await act(async () => root.render(createElement(ConversationMessages, { t, nodes })))
+    const lines = [...host.querySelectorAll('[data-testid="refinement-save-notice"]')].map(
+      (line) => line.textContent ?? '',
+    )
+    expect(lines[0]).toBe(
+      [
+        t('timeline.refinementSave.user.state.saved'),
+        t('timeline.refinementSave.by', { who: t('timeline.refinementSave.initiator.auto') }),
+        t('timeline.refinementSave.user.withdraw'),
+      ].join(' '),
+    )
+    // Saved, though this workspace does not read user memory: the line says so.
+    expect(lines[1]).toContain(t('timeline.refinementSave.user.notRead'))
+    expect(lines[0]).not.toContain(t('timeline.refinementSave.user.notRead'))
+    expect(lines[2]).toContain(t('timeline.refinementSave.user.state.refused'))
+    expect(lines[2]).toContain(
+      t('timeline.refinement.reason', { reason: t('timeline.refinementSave.reason.user-memory-budget') }),
+    )
+    expect(lines[3]).toContain(t('timeline.refinementSave.reason.model-cannot-write-user'))
+    expect(lines.join(' ')).not.toContain('timeline.refinement')
+    expect(t('timeline.refinementSave.user.withdraw')).toContain('撤回')
+  })
+
   it('offers to save each saved memory entry of an applied review to the workspace', async () => {
     const node: UINode = {
       kind: 'refinement-run',
