@@ -802,6 +802,7 @@ describe('rendered sidebar region', () => {
         'home-entry-plugins',
         'home-entry-agents',
         'home-entry-automation',
+        'home-entry-mhs',
         'home-entry-primary.board',
         'home-entry-example.board',
       ])

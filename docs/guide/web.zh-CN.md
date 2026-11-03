@@ -29,6 +29,10 @@ Surface 挂载表通过持久本地连接接收生命周期失效通知和重连
 
 ## 启动与连接
 
+侧栏的 **MHS** 入口打开三页宣传内容：带双语机械臂演示的产品概览、设备能力流程和联系销售。联系表单会在已配置的邮件客户端中生成草稿，请在那里核对并手动发送；Harness 不会发送或保存咨询内容。中文模式收件人为 `support@agnes-ai.cn`，英文模式为 `support@agnes-ai.com`。
+
+演示视频与封面通过 HTTPS 加载：中文模式使用 `cos-agent-default.agnes-ai.cn`，英文模式使用 `cos-agent-default.agnes-ai.com`。这些素材需要联网访问，不随 Harness 安装包分发。主 Web 页仅为图片和媒体放行这两个来源；脚本和 API 连接沿用既有策略。
+
 ```sh
 node agnes.mjs serve
 ```
