@@ -4194,7 +4194,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { sessionId: 's', focus: '' }, // boundary: one below minLength:1
       { sessionId: 's', focus: rep(513) }, // boundary: one above maxLength:512
       { sessionId: 's', target: 'workspace' }, // additionalProperties:false
-      { sessionId: 's', saveTo: 'user' }, // only the workspace is a save target
+      { sessionId: 's', saveTo: 'global' }, // outside the closed set of save targets
     ],
     note: 'manual refinement request: sessionId, an optional focus and an optional workspace save',
   },
@@ -4217,6 +4217,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { sessionId: 's', kind: 'memory', id: '' }, // boundary: one below minLength:1
       { sessionId: 's', kind: 'memory', id: rep(129) }, // boundary: one above maxLength:128
       { sessionId: 's', kind: 'memory', id: 'x', initiator: 'auto' }, // additionalProperties:false
+      { sessionId: 's', kind: 'memory', id: 'x', target: 'workspace' }, // only user memory is a named target
     ],
     note: "the owner's save of one entry to the workspace: sessionId, the entry kind and id",
   },

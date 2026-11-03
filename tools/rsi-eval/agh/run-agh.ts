@@ -56,7 +56,7 @@
 // to; commands the agent runs get a fixed small environment without it.
 //
 // Cost: every prompt is a full agent turn on the main model; with refinement on, each prompt adds
-// one review (input up to about 8,192 tokens, output up to 1,024, at most 65,536 tokens per
+// one review (input up to about 24,000 tokens, output up to 4,096, at most 524,288 tokens per
 // session) plus the experience notes in later requests; the host also names each session with one
 // short call. The total grows with tasks x prompts x reps x 2 settings.
 

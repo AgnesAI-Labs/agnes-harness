@@ -47,22 +47,20 @@ A **manual** review is one you ask for:
 With **Manual and automatic**, a review can also start by itself:
 
 - after a compaction that replaced the history with a model summary (not after the fallback that cuts history without a summary);
-- when the same tool fails with the same error three times in one turn. Numbers, paths and long hex strings are ignored when errors are compared. Refusals do not count: a rejected approval, a permission, credential or budget error, a pause or a cancel;
-- when the model asks for one with the `harness_refine` tool.
+- when the same tool fails with the same error twice in one session (offered once for that tool and error). Numbers, paths and long hex strings are ignored when errors are compared. Refusals do not count: a rejected approval, a permission, credential or budget error, a pause or a cancel;
+- when the model asks for one with the `harness_refine` tool. This works in manual mode too, since the model chose to call it; the tool is always listed while task experience is on.
 
-Automatic reviews have limits. Manual reviews are not counted against them; they only wait for a review that is already running.
+Automatic reviews have limits. Manual reviews are not counted against them; they only wait for a review that is already running. The model's own requests are held only to a cap of 40 reviews a session (one that found nothing does not count), with no cooldown or other limit; the limits below are for the compaction and repeated-failure reviews.
 
 | Limit | Value |
 | --- | --- |
-| Completed turns since the last automatic review started | at least 5 (the first one needs none) |
-| Automatic reviews per hour | at most 4 |
 | Wait after any review ends | 120 s |
-| Automatic reviews per session | at most 10 |
-| Tokens for all reviews of a session, input and output | 65,536 (manual reviews included) |
+| Automatic reviews per session | at most 40 (a review that found nothing does not count) |
+| Tokens for all reviews of a session, input and output | 524,288 (manual reviews and the model's requests included) |
 
 One review runs per session at a time. A newer request replaces one that is still waiting, but an automatic one never replaces a waiting manual one. A review plans in the background, so you can keep working. Its result is applied only between two turns: if a turn is running, it waits for the end of that turn.
 
-A review reads this session's requests, tool calls and results, and compaction summaries. It uses the session's current main model and gives it up to 60 seconds (90 seconds for a manual review).
+A review reads the session's last 5 turns: your requests, the model's replies, tool calls and results, and compaction summaries (up to about 24,000 tokens, and it may answer with up to 4,096). The model's own words are marked as untrusted, like tool output. It uses the session's current main model and gives it up to 60 seconds (90 seconds for a manual review).
 
 ## What a review saves
 
@@ -77,14 +75,14 @@ An **entry** has a kind, an id, a title and a text. There are four kinds:
 
 A skill or subagent entry is text the model can read and follow. It does not install a skill or start a subagent; saving a skill entry to the workspace does install it (see [Saved skills](#saved-skills)).
 
-A review changes at most 5 entries, each at most 2,000 characters, and it is applied whole or not at all. If an entry changed after the review read it, nothing from that review is saved. Each kind keeps at most 200 entries; a review that would go past that is not applied.
+A review changes at most 5 entries, each at most 2,000 characters. An edit that breaks a rule is left out and the others are kept: a sixth edit is ignored, a longer text is cut, and an edit is dropped when it cites evidence the review was not shown, rewrites an entry it only saw as a reference, changed after the review read it, or is bound to a skill or role that cannot be used now. The review is refused only when nothing valid is left. Each kind keeps at most 200 entries; a review that would go past that is not applied.
 
 ### Session and task entries
 
 Every entry has a level:
 
 - A **session** entry lasts until the session ends, or until it is changed, deleted or withdrawn. A lesson the review marks as a session lesson gets this level as long as it cites evidence from the session; it is never turned into a task entry. Lessons proposed directly by the model with `harness_propose` are session entries too.
-- A **task** entry belongs to the current goal (see [Persistent goals](sessions.md#persistent-goals)). It expires when the goal is completed, cleared, or replaced by a new goal. Pausing, resuming or editing the goal keeps it. Without a goal, task lessons are not saved. While the goal cannot be read, its task entries are held back and come back when it can.
+- A **task** entry is for a lesson that names this task and stops mattering when it ends; the review uses it only then, and session level is the default. A task entry belongs to the current goal (see [Persistent goals](sessions.md#persistent-goals)). It expires when the goal is completed, cleared, or replaced by a new goal. Pausing, resuming or editing the goal keeps it. Without a goal, task lessons are not saved. While the goal cannot be read, its task entries are held back and come back when it can.
 
 The model is told when a task entry expires.
 
@@ -200,7 +198,7 @@ When the switch is on, the guidance text is added even before the session has an
 
 With the switch on, the model has three tools:
 
-- `harness_refine` asks for a review (automatic mode only; it counts as an automatic review). With `target: 'workspace'` or `'user'` its result is also saved to the workspace or to user memory.
+- `harness_refine` asks for a review (works in manual mode too; with `target` it needs automatic mode). With `target: 'workspace'` or `'user'` its result is also saved to the workspace or to user memory.
 - `harness_propose` saves a change directly, without a review call. It can create an entry, or change or delete one it has read in full; `target` works as for `harness_refine`.
 - `harness_inspect` reads the saved entries, as above.
 
@@ -217,7 +215,7 @@ The TUI shows the same lines as text but has no withdraw action. A client can ca
 
 ## Cost
 
-- Each review is a model call billed to your account, from a token budget of its own: 65,536 tokens for all reviews of a session. It never draws on a turn's budget.
+- Each review is a model call billed to your account, from a token budget of its own: 524,288 tokens for all reviews of a session. It never draws on a turn's budget.
 - A model priced at zero (a free or local model) has a known price: reviews run on it, automatic ones included, cost nothing and are bounded by the token budget alone.
 - A model with no known price runs no automatic review. A review you ask for runs on it only once you agree to the unknown cost with `/refine --unpriced`; the token budget still bounds it, and its cost shows as unknown.
 - In the TUI, the footer, `/status` and the `/usage` figures leave review spend out, and `/usage` lists it on its own **RSI cost** line (a free model shows a zero cost, a model with no known price shows "price unknown").
@@ -235,8 +233,8 @@ Nothing is saved to the workspace or to user memory while it is off, and request
 - Prime Agent keeps session entries and global entries for every session (`/refine --global`). AGH keeps entries in the session and saves them to the current workspace only: memory and prompt entries as paragraphs of the workspace memory, skill entries as workspace skills, each with a 30-day review date, on your request (`/refine --workspace`, per entry) or the model's, and automatically when a review applies a lesson in **Manual and automatic** mode.
 - Prime Agent's global library is written on your request (`/refine --global`) or by the model. AGH writes a lesson to user memory (read in every workspace that turns it on) on your request (`/refine --user`, or **Save … to user memory**), on the model's (`target: 'user'`), or automatically when a review applies a lesson from your own words that holds in every workspace; it always stays within about 512 bytes and has a 30-day review date.
 - Prime Agent's self-written skills can be Python functions run in its own kernel. AGH's saved skills are instructions only; the agent writes and runs any script itself, under its usual permissions.
-- Prime Agent applies a review edit by edit. AGH applies the whole review or nothing.
-- Prime Agent starts automatic reviews only after a compaction, with a 20-minute cooldown. AGH also starts them after repeated failures and on the model's request, within the limits above.
+- Prime Agent applies a review edit by edit, and so does AGH: an edit that breaks a rule is left out and the others are applied.
+- Prime Agent starts automatic reviews only after a compaction, with a 20-minute cooldown. AGH also starts them after repeated failures and on the model's request, within the limits above (the model's own requests have only a high cap).
 - AGH delivers entries as untrusted data, and the feature is off until you turn on the switch of your profile.
 
 ## Known limits

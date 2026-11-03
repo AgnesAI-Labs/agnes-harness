@@ -6,16 +6,7 @@ import type { RefinementWorkspacePort, WorkspaceSaveRequest } from '../src/refin
 import { saveToWorkspace } from '../src/refinement/workspace.js'
 import { experienceNotes } from '../src/request/experience.js'
 import { textTurn, toolTurn } from './helpers/fake-provider.js'
-import {
-  type Answer,
-  ids,
-  open,
-  output,
-  QUOTE,
-  REQUEST,
-  type Seen,
-  upsert,
-} from './helpers/refinement-session.js'
+import { type Answer, open, output, QUOTE, REQUEST, upsert } from './helpers/refinement-session.js'
 import { ofType } from './helpers/side-call-session.js'
 
 const NAME = 'read-b'
@@ -61,17 +52,6 @@ function host(answer: (request: WorkspaceSaveRequest) => Partial<SaveReceipt> = 
 const pair = () => [toolTurn('read', { path: 'b' }), toolTurn('read', { path: 'b' }), textTurn('ok')]
 const grant = () =>
   output({ edits: [upsert(NAME, { kind: 'skill', quote: QUOTE, title: 'Read b' })], evidenceIds: ['e1'] })
-const byTools = (seen: Seen) =>
-  output({
-    confirmations: [{ entryId: `skill/${NAME}`, evidenceIds: ids(seen, (e) => e.kind === 'tool') }],
-    evidenceIds: ids(seen, (e) => e.kind === 'tool'),
-  })
-const byQuote = () =>
-  output({
-    confirmations: [{ entryId: `skill/${NAME}`, evidenceIds: ['e1'], quote: 'read b again' }],
-    evidenceIds: ['e1'],
-  })
-
 /** A session-level skill entry, confirmed by `answers`, in auto mode. */
 async function confirmable(answers: Answer[], workspace: RefinementWorkspacePort) {
   const t = await open({

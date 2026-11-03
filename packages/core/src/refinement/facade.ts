@@ -19,6 +19,7 @@ import { isReference, unavailableReferences } from './references.js'
 import { queueRefinementRun, recoverRefinementRuns, refinementRunRow } from './run.js'
 import {
   applyProposed,
+  needsAutoMode,
   plannerOf,
   pump,
   type RefinementSettingsView,
@@ -164,9 +165,10 @@ async function request(s: SessionImpl, trigger: RefinementTrigger): Promise<Refi
   if (refused) return refused
   const settings = settingsOf(s) as RefinementSettingsView
   const automatic = trigger.kind !== 'manual'
-  // Everything but the user's own request is automatic: it follows the mode and the limits. The model
-  // asking for the result to be saved to the workspace is no exception.
-  if (automatic && settings.mode !== 'auto') return { refused: 'manual-mode' }
+  // Everything but the user's own request is automatic and follows the limits; the machine's triggers and
+  // the model saving to the workspace or user memory also follow the mode. The model asking for a review
+  // chose to call it: it works in manual mode too, under its own looser limits.
+  if (needsAutoMode(trigger) && settings.mode !== 'auto') return { refused: 'manual-mode' }
   const unsaved = saveRefusal(s, trigger.saveTo, trigger.kind === 'manual' || trigger.kind === 'model')
   if (unsaved) return unsaved
   if (!plannerOf(s)) return { refused: 'unavailable' }
@@ -174,7 +176,10 @@ async function request(s: SessionImpl, trigger: RefinementTrigger): Promise<Refi
   if (automatic) {
     // While a plan runs, an automatic trigger waits only if nothing but that plan's cooldown would
     // stop it then; any other limit cannot clear before the next start.
-    const why = await automaticRefusal(s, s.d.refinement?.target, busy ? { cooldown: false } : {})
+    const why = await automaticRefusal(s, s.d.refinement?.target, {
+      ...(busy ? { cooldown: false as const } : {}),
+      ...(trigger.kind === 'model' ? { kind: 'model' as const } : {}),
+    })
     if (why) return { refused: why.refused }
   } else if (trigger.allowUnpriced !== true && !plannerPriced(s, s.d.refinement?.target))
     // The user's own request on a model with no known price runs only once the user agreed to that.

@@ -71,11 +71,14 @@ const byTools = (seen: Seen) =>
     evidenceIds: ids(seen, (e) => e.kind === 'tool'),
   })
 /** Confirms `read-b` with a quote of the later request. */
-const byQuote = () =>
-  output({
-    confirmations: [{ entryId: 'memory/read-b', evidenceIds: ['e1'], quote: 'read b again' }],
-    evidenceIds: ['e1'],
+const byQuote = (seen: Seen) => {
+  // The turns before the newest are shown too: the newest request is the last of the user's own.
+  const newest = ids(seen, (e) => e.kind === 'user').slice(-1)
+  return output({
+    confirmations: [{ entryId: 'memory/read-b', evidenceIds: newest, quote: 'read b again' }],
+    evidenceIds: newest,
   })
+}
 
 /** A session-level entry `read-b`, granted by a quote, then a turn with a failed-then-successful read. */
 async function confirmable(o: {

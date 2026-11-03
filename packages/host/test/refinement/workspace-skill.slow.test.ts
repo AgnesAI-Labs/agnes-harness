@@ -84,14 +84,6 @@ const grant: Answer = (seen) =>
     ],
     evidenceIds: [requestId(seen, QUOTE)],
   })
-const confirmBy =
-  (quote: string): Answer =>
-  (seen) =>
-    output({
-      confirmations: [{ entryId: `skill/${NAME}`, evidenceIds: [requestId(seen, quote)], quote }],
-      evidenceIds: [requestId(seen, quote)],
-    })
-
 /** One workspace: resource control over its skill folders, the installer, and the host's save path. */
 function workspace() {
   const s = skillWorkspace(dirs)
@@ -212,22 +204,13 @@ async function listed(w: Workspace) {
 }
 
 describe('saved skills end to end', () => {
-  it('learned, confirmed twice, installed without a turn, on in the next session, then taken back by the user', async () => {
+  it('learned, installed on its first apply without a turn, on in the next session, then taken back by the user', async () => {
     const w = workspace()
-    const first = await session(w, [
-      grant,
-      confirmBy('read b again please'),
-      confirmBy('read b a third time'),
-    ])
+    const first = await session(w, [grant])
     expect(await first.say(`first task: ${QUOTE}`)).toMatchObject({ reason: 'completed' })
-    expect(await first.refine()).toMatchObject({ state: 'applied' })
-    expect(await first.say('read b again please')).toMatchObject({ reason: 'completed' })
-    expect(await first.refine()).toMatchObject({ state: 'applied' })
-    expect(first.receipts()).toEqual([])
-    expect(await first.say('read b a third time')).toMatchObject({ reason: 'completed' })
     const turnsBefore = first.turns()
     expect(await first.refine()).toMatchObject({ state: 'applied' })
-    // The second confirmation installs the skill: no turn, no approval.
+    // The first apply installs the skill: no turn, no approval.
     await vi.waitFor(() => expect(first.receipts()).toHaveLength(1))
     const [receipt] = first.receipts()
     expect(receipt).toMatchObject({

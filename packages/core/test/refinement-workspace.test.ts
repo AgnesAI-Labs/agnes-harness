@@ -46,6 +46,8 @@ function workspace(refs: WorkspaceReference[]) {
   return { port, renewed, listed, refs }
 }
 
+/** The newest request of the user's own in what the planner was shown: turns before it are shown too. */
+const newest = (seen: Seen) => ids(seen, (e) => e.kind === 'user').slice(-1)
 const confirmBy = (evidenceIds: string[], quote?: string, entryId = REF) =>
   output({
     confirmations: [{ entryId, evidenceIds, ...(quote === undefined ? {} : { quote }) }],
@@ -169,7 +171,7 @@ describe('confirming a workspace entry', () => {
         () => confirmBy(['e1'], QUOTE),
         () => confirmBy(['e1'], QUOTE),
         // New evidence, a newer request quoted, counts again.
-        () => confirmBy(['e1'], 'read file b once more'),
+        (seen) => confirmBy(newest(seen), 'read file b once more'),
       ],
     })
     expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
@@ -300,7 +302,7 @@ describe('confirming a workspace entry', () => {
         // and the pair that confirmed it are both spent for the saved copy.
         () => confirmBy(['e1'], QUOTE),
         (seen) => confirmBy(tools(seen)),
-        () => confirmBy(['e1'], 'read file b once more'),
+        (seen) => confirmBy(newest(seen), 'read file b once more'),
       ],
     })
     expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
@@ -325,9 +327,9 @@ describe('confirming a workspace entry', () => {
       w.refs.splice(0, 1, paragraph({ version: 'v2' }))
       return confirmBy(['e1'], QUOTE)
     }
-    const gone: Answer = () => {
+    const gone: Answer = (seen) => {
       w.refs.splice(0, 1)
-      return confirmBy(['e1'], 'read file b once more')
+      return confirmBy(newest(seen), 'read file b once more')
     }
     const t = await open({ workspaceRefs: w.port, answers: [changed, gone] })
     expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })

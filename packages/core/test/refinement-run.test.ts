@@ -16,7 +16,7 @@ import {
   recoverRefinementRuns,
   settleRefinementRun,
 } from '../src/refinement/run.js'
-import type { RefinementPlanner } from '../src/refinement/types.js'
+import { PLANNER_INPUT_TOKENS, type RefinementPlanner } from '../src/refinement/types.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import type { SessionImpl } from '../src/step/session.js'
 import { fakeProvider, sentFor, textTurn, toolTurn } from './helpers/fake-provider.js'
@@ -209,7 +209,7 @@ async function finished(o: Parameters<typeof session>[0] = {}) {
 }
 
 describe('the evidence snapshot', () => {
-  it('the evidence snapshot only contains settled facts of the triggering task', async () => {
+  it('the evidence snapshot reads the latest turns and only their settled facts', async () => {
     const third = gate()
     const t = await session({ third: third.wait })
     expect(await t.say('first task')).toMatchObject({ reason: 'completed' })
@@ -227,23 +227,34 @@ describe('the evidence snapshot', () => {
     const results = ofType(all, 'tool/result')
     expect(mid.taskEnded).toBe(false)
     expect(mid.taskScope).toMatchObject({ kind: 'turn', turn: 2 })
-    expect(mid.items.map(({ id, kind, lane, seq }) => ({ id, kind, lane, seq }))).toEqual([
-      { id: 'e1', kind: 'user', lane: 'main', seq: secondUser?.seq },
-      { id: 'e2', kind: 'tool', lane: 'main', seq: results[0]?.seq },
-      { id: 'e3', kind: 'tool', lane: 'main', seq: results[1]?.seq },
+    // The turn before it is read too (its request and the model's reply); the third call has no result yet.
+    expect(mid.items.map(({ kind, lane }) => [kind, lane])).toEqual([
+      ['user', 'main'],
+      ['assistant', 'main'],
+      ['user', 'main'],
+      ['tool', 'main'],
+      ['tool', 'main'],
     ])
-    expect(mid.items[0]?.text).toBe('second task: please read the right file')
-    expect(mid.items.some((item) => item.text.includes('first task'))).toBe(false)
+    const at = mid.items.length - 3
+    expect(mid.items.slice(at).map(({ id, seq }) => ({ id, seq }))).toEqual([
+      { id: `e${at + 1}`, seq: secondUser?.seq },
+      { id: `e${at + 2}`, seq: results[0]?.seq },
+      { id: `e${at + 3}`, seq: results[1]?.seq },
+    ])
+    expect(mid.items[at]?.text).toBe('second task: please read the right file')
+    expect(mid.items[0]).toMatchObject({ kind: 'user', seq: firstUser?.seq, text: 'first task' })
     expect(firstUser?.seq).toBeLessThan(mid.taskScope.startSeq)
+    // The model's own words are only what it said: untrusted.
+    expect(mid.items[1]).toMatchObject({ kind: 'assistant', trust: 'untrusted' })
     // Tool output is data whatever wrote it; a builtin tool does not make file contents trusted.
-    expect(mid.items[1]).toMatchObject({
+    expect(mid.items[3]).toMatchObject({
       tool: 'read',
       isError: true,
       trust: 'untrusted',
       text: 'ENOENT: no such file a',
     })
-    expect(mid.items[1]?.args).toContain('"a"')
-    expect(mid.items[2]).toMatchObject({ tool: 'read', isError: false })
+    expect(mid.items[3]?.args).toContain('"a"')
+    expect(mid.items[4]).toMatchObject({ tool: 'read', isError: false })
     expect(mid.readSet).toEqual({ settingsRevision: 'r1', entries: [] })
     expect(mid.evidenceHash).toMatch(/^[0-9a-f]{64}$/)
 
@@ -256,7 +267,15 @@ describe('the evidence snapshot', () => {
       { settingsRevision: 'r1' },
     )
     expect(after.taskEnded).toBe(true)
-    expect(after.items.map((item) => item.kind)).toEqual(['user', 'tool', 'tool', 'tool'])
+    expect(after.items.map((item) => item.kind)).toEqual([
+      'user',
+      'assistant',
+      'user',
+      'tool',
+      'tool',
+      'tool',
+      'assistant',
+    ])
     expect(after.evidenceHash).not.toBe(mid.evidenceHash)
     // An idle manual request learns from the last ended task.
     const idle = await freezeEvidence(
@@ -270,7 +289,7 @@ describe('the evidence snapshot', () => {
     await t.session.close()
   })
 
-  it('keeps user requests, settled results and compaction summaries, and nothing else', () => {
+  it("keeps user requests, the model's replies, settled results and compaction summaries, and nothing else", () => {
     let seq = 0
     const row = (type: string, d: unknown, extra: Partial<Event> = {}) =>
       ({ seq: ++seq, type, data: d, lane: 'main', origin: 'system', trust: 'trusted', ...extra }) as Event
@@ -316,17 +335,19 @@ describe('the evidence snapshot', () => {
     ])
     expect(items.map(({ kind, seq: at, text }) => ({ kind, seq: at, text }))).toEqual([
       { kind: 'user', seq: 1, text: 'do it\n[image]' },
+      // The model's own words are evidence of what it said, untrusted.
+      { kind: 'assistant', seq: 3, text: 'thinking aloud' },
       { kind: 'tool', seq: 6, text: '[stderr] boom' },
       { kind: 'summary', seq: 7, text: 'Summary: built it' },
     ])
-    expect(items[1]).toMatchObject({
+    expect(items[2]).toMatchObject({
       tool: 'shell',
       code: 'EXIT',
       isError: true,
       trust: 'untrusted',
       args: '{"cmd":"make"}',
     })
-    expect(items.map((item) => item.id)).toEqual(['e1', 'e2', 'e3'])
+    expect(items.map((item) => item.id)).toEqual(['e1', 'e2', 'e3', 'e4'])
   })
 })
 
@@ -740,9 +761,12 @@ describe('what evidence never carries', () => {
     )
     expect(snapshot.items.map((item) => [item.kind, item.trust])).toEqual([
       ['user', 'trusted'],
+      ['assistant', 'untrusted'],
+      ['user', 'trusted'],
       ['tool', 'untrusted'],
       ['tool', 'untrusted'],
       ['tool', 'untrusted'],
+      ['assistant', 'untrusted'],
     ])
     await t.session.close()
   })
@@ -750,7 +774,8 @@ describe('what evidence never carries', () => {
 
 describe('one bounded refinement plan', () => {
   it('a valid plan is proposed with every evidence id fixed to its row', async () => {
-    const t = await finished({ plan: lesson(['e1', 'e2', 'e3']) })
+    // e1 and e2 are the first turn's request and reply; e3 is the second request, e4 and e5 its first reads.
+    const t = await finished({ plan: lesson(['e3', 'e4', 'e5']) })
     const runId = await queueRefinementRun(t.session, { kind: 'manual', seq: t.session.lastSeq })
     const run = await planRefinementRun(t.session, runId, deps(t.session), signal())
 
@@ -766,14 +791,14 @@ describe('one bounded refinement plan', () => {
       }),
     ])
     expect(run?.plan?.evidenceSeqs).toEqual([secondUser?.seq, results[0]?.seq, results[1]?.seq])
-    expect(run?.evidence?.[0]).toEqual({ id: 'e1', lane: 'main', seq: secondUser?.seq, kind: 'user' })
+    expect(run?.evidence?.[2]).toEqual({ id: 'e3', lane: 'main', seq: secondUser?.seq, kind: 'user' })
     expect(runRows(all, runId).map((row) => data(row).state)).toEqual(['queued', 'planning', 'proposed'])
     expect(runRows(all, runId).every((row) => row.lane === MAINTENANCE_LANE && row.origin === 'system')).toBe(
       true,
     )
     // One call, at the bounded output and the manual deadline, under its own attempt id.
     expect(t.planned).toHaveLength(1)
-    expect(t.planned[0]).toMatchObject({ sampling: { maxTokens: 1024 }, timeoutMs: { total: 90_000 } })
+    expect(t.planned[0]).toMatchObject({ sampling: { maxTokens: 4096 }, timeoutMs: { total: 90_000 } })
     expect(data(ofType(all, 'x/core/maintenance-intent')[0])).toMatchObject({ runId: `${runId}.1` })
     // Proposing writes nothing to the entries; applying is a separate step.
     expect(ofType(all, 'harness/entry')).toEqual([])
@@ -837,15 +862,26 @@ describe('one bounded refinement plan', () => {
       id: `lesson-${i}`,
       title: 't',
       content: 'c',
-      applicability: 'task',
+      applicability: 'session',
       evidenceIds: ['e1'],
     }))
+    // Past the bounds Core keeps what is within them: the first five edits, content cut to 2,000 characters.
+    const many = await finished({ plan: JSON.stringify({ ...JSON.parse(NOOP), edits: five }) })
+    const manyRun = await queueRefinementRun(many.session, { kind: 'manual', seq: many.session.lastSeq })
+    const kept = await planRefinementRun(many.session, manyRun, deps(many.session), signal())
+    expect(kept?.state).toBe('proposed')
+    expect(kept?.plan?.edits.map((e) => e.id)).toEqual([0, 1, 2, 3, 4].map((i) => `lesson-${i}`))
+    await many.session.close()
+    const long = await finished({
+      plan: lesson(['e1'], {
+        edits: [{ ...JSON.parse(lesson(['e1'])).edits[0], content: 'x'.repeat(2001) }],
+      }),
+    })
+    const longRun = await queueRefinementRun(long.session, { kind: 'manual', seq: long.session.lastSeq })
+    const cut = await planRefinementRun(long.session, longRun, deps(long.session), signal())
+    expect(cut?.plan?.edits[0]).toMatchObject({ content: 'x'.repeat(2000) })
+    await long.session.close()
     const cases: [string, string][] = [
-      [JSON.stringify({ ...JSON.parse(NOOP), edits: five }), 'too-many-edits'],
-      [
-        lesson(['e1'], { edits: [{ ...JSON.parse(lesson(['e1'])).edits[0], content: 'x'.repeat(2001) }] }),
-        'edit-too-long: 0',
-      ],
       [lesson(['e1'], { actor: 'user' }), 'invalid-shape: output'],
       // Every id list is short and names each fact once.
       [lesson(['e1', 'e2', 'e1']), 'duplicate-evidence: e1'],
@@ -949,7 +985,9 @@ describe('one bounded refinement plan', () => {
       buildPrompt: (snapshot, entries, guidance) => ({
         ...testPlanner().buildPrompt(snapshot, entries, guidance),
         // The planner claims a small count; Core counts for itself.
-        messages: [{ role: 'user', content: [{ type: 'text', text: 'x'.repeat(4 * 8192 + 4) }] }],
+        messages: [
+          { role: 'user', content: [{ type: 'text', text: 'x'.repeat(4 * PLANNER_INPUT_TOKENS + 4) }] },
+        ],
         inputTokens: 10,
       }),
     })
@@ -964,48 +1002,54 @@ describe('one bounded refinement plan', () => {
     await t.session.close()
   })
 
-  it('a plan whose read set changed while it was planned is rejected as a whole', async () => {
-    const held = gate()
-    const t = await finished({ plan: lesson(['e1', 'e2']), planGate: held.wait })
-    const runId = await queueRefinementRun(t.session, { kind: 'manual', seq: t.session.lastSeq })
-    const planning = planRefinementRun(t.session, runId, deps(t.session), signal())
-    await vi.waitFor(() => expect(t.planned).toHaveLength(1))
-    const readSet = t.session.state.refinementRuns.get(runId)?.readSet
-    expect(readSet && readSetCurrent(t.session, readSet)).toBe(true)
-    // An entry is saved meanwhile (a direct proposal applied between turns, say).
-    await t.session.locked(() =>
-      applyRefine(
-        t.session,
+  it('an entry that changed while its plan was made loses its edit; the others stay, and nothing left is refused', async () => {
+    const saved = (id: string) => ({
+      proposalId: `direct-${id}`,
+      runId: `direct-${id}`,
+      trigger: 'manual' as const,
+      edits: [
         {
-          proposalId: 'direct',
-          runId: 'direct',
-          trigger: 'manual',
-          edits: [
-            {
-              op: 'upsert',
-              entry: {
-                kind: 'memory',
-                id: 'other',
-                title: 't',
-                content: 'c',
-                scope: 'local',
-                version: 1,
-                source: 'refine',
-              },
-            },
-          ],
-          baseline: [],
-          rationale: 'r',
-          evidenceSeqs: [1],
+          op: 'upsert' as const,
+          entry: {
+            kind: 'memory' as const,
+            id,
+            title: 't',
+            content: 'c',
+            scope: 'local' as const,
+            version: 1,
+            source: 'refine',
+          },
         },
-        { maxEdits: 5, maxChars: 2000, safetyCap: 200 },
-      ),
-    )
-    expect(readSet && readSetCurrent(t.session, readSet)).toBe(false)
-    held.open()
-    expect(await planning).toMatchObject({ state: 'rejected', reason: 'read-set-changed' })
-    expect(t.session.state.refinementRuns.get(runId)).not.toHaveProperty('plan')
-    await t.session.close()
+      ],
+      baseline: [],
+      rationale: 'r',
+      evidenceSeqs: [1],
+    })
+    const limits = { maxEdits: 5, maxChars: 2000, safetyCap: 200 }
+    for (const [meanwhile, state] of [
+      ['other', 'proposed'],
+      ['read-b', 'rejected'],
+    ] as const) {
+      const held = gate()
+      const t = await finished({ plan: lesson(['e1', 'e2']), planGate: held.wait })
+      const runId = await queueRefinementRun(t.session, { kind: 'manual', seq: t.session.lastSeq })
+      const planning = planRefinementRun(t.session, runId, deps(t.session), signal())
+      await vi.waitFor(() => expect(t.planned).toHaveLength(1))
+      const readSet = t.session.state.refinementRuns.get(runId)?.readSet
+      expect(readSet && readSetCurrent(t.session, readSet)).toBe(true)
+      // An entry is saved meanwhile (a direct proposal applied between turns, say).
+      await t.session.locked(() => applyRefine(t.session, saved(meanwhile), limits))
+      expect(readSet && readSetCurrent(t.session, readSet)).toBe(false)
+      held.open()
+      const run = await planning
+      expect(run?.state).toBe(state)
+      // An entry the plan does not touch changes nothing for it; the one it writes was saved meanwhile.
+      if (state === 'rejected') {
+        expect(run).toMatchObject({ reason: 'read-set-changed' })
+        expect(t.session.state.refinementRuns.get(runId)).not.toHaveProperty('plan')
+      } else expect(run?.plan?.edits.map((e) => e.id)).toEqual(['read-b'])
+      await t.session.close()
+    }
   })
 
   it('a result that arrives after refinement was turned off is dropped', async () => {
@@ -1177,12 +1221,19 @@ describe('what a plan may change', () => {
     const run = await planRefinementRun(t.session, runId, deps(t.session), signal())
     expect(run?.fullEntries?.map((e) => e.id).sort()).toEqual(relevant.map((e) => e.id))
     expect(run?.shownEntries?.map((e) => e.id)).toContain('zeta')
-    // One rewrite of a reference entry rejects the whole plan, the valid new entry with it.
-    expect(run).toMatchObject({
+    // The rewrite of a reference entry is dropped alone; the valid new entry stays.
+    expect(run).toMatchObject({ state: 'proposed' })
+    expect(run?.plan?.edits.map((e) => e.id)).toEqual(['read-b'])
+    // With nothing else, a rewrite of a reference entry leaves nothing valid and the plan is refused.
+    const only = await finished({ plan: lesson(['e1'], { edits: [rewrite('zeta')] }) })
+    await seed(only.session, [...relevant, unrelated])
+    const onlyRun = await queueRefinementRun(only.session, { kind: 'manual', seq: only.session.lastSeq })
+    expect(await planRefinementRun(only.session, onlyRun, deps(only.session), signal())).toMatchObject({
       state: 'rejected',
       reason: 'invalid-output',
       detail: 'not-shown-in-full: memory/zeta',
     })
+    await only.session.close()
     expect(ofType(await rows(t.log), 'harness/refine').map((row) => data(row).runId)).toEqual(['seed'])
     expect(contentOf(t.session, 'read-b')).toBeUndefined()
 

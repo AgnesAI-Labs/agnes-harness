@@ -101,7 +101,7 @@ export function toolError(code: string, message: string): ToolResult {
   return { content: [{ type: 'text', text: `${code}: ${message}` }], structured: { code }, isError: true }
 }
 
-const LIMITS = new Set(['cooldown', 'turns', 'hourly', 'session-limit', 'unpriced'])
+const LIMITS = new Set(['cooldown', 'session-limit', 'unpriced'])
 
 /**
  * Why the host would not take a request to save to the workspace or user memory, in words the model can

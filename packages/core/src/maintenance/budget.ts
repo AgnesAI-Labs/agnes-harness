@@ -13,7 +13,7 @@ import {
 import type { SessionImpl } from '../step/session.js'
 
 /** The input and output tokens all of a session's maintenance calls may spend together. */
-export const MAINTENANCE_BUDGET_TOKENS = 65_536
+export const MAINTENANCE_BUDGET_TOKENS = 524_288
 
 /** The budget root every maintenance call of a session is held against, apart from any turn's. */
 export const maintenanceRoot = (s: SessionImpl): string => `rsi:${s.key}`

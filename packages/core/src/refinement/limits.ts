@@ -10,26 +10,39 @@ import { knownPrice } from '../maintenance/budget.js'
 import type { SessionImpl } from '../step/session.js'
 
 /**
- * How often automatic refinement may plan. Manual requests are counted apart and only wait for the
- * plan in flight. The token budget is the maintenance root `rsi:<sessionKey>`, held by every call.
+ * How often automatic refinement may plan: not within the cooldown of the last plan, and a number of
+ * them a session. Manual requests are counted apart and only wait for the
+ * plan in flight, and so are the model's own requests (`MODEL_LIMITS`). A review that found nothing to
+ * keep does not count toward `perSession`. The token budget is the maintenance root
+ * `rsi:<sessionKey>`, held by every call.
  */
 export const AUTOMATIC_LIMITS = Object.freeze({
-  /** Completed turns between the starts of two automatic plans. */
-  turnsBetween: 5,
-  perHour: 4,
-  hourMs: 3_600_000,
   /** After any plan ends, whether it changed something, found nothing or failed. */
   cooldownMs: 120_000,
-  perSession: 10,
+  perSession: 40,
 })
+
+/**
+ * The model asking for a review (`harness_refine`) has no turn spacing, cooldown or hourly limit, as
+ * the model chose to call it; only this many reviews a session, one that found nothing not counted.
+ */
+export const MODEL_LIMITS = Object.freeze({ perSession: 40 })
 
 /** What one edit of a plan, and one plan, may hold, and how many counted entries a kind may keep. */
 export const APPLY_LIMITS = Object.freeze({ maxEdits: 5, maxChars: 2000, safetyCap: 200 })
 
-export type LimitRefusal = 'cooldown' | 'turns' | 'hourly' | 'session-limit' | 'unpriced'
+export type LimitRefusal = 'cooldown' | 'session-limit' | 'unpriced'
 
 /** One run as its rows tell it: whether it was automatic, and when it started and ended planning. */
-type Planned = { automatic: boolean; startedAt: number; startedSeq: number; endedAt?: number }
+type Planned = {
+  automatic: boolean
+  model: boolean
+  /** The review ended with nothing to keep. */
+  empty: boolean
+  startedAt: number
+  startedSeq: number
+  endedAt?: number
+}
 
 /**
  * Every run that reached planning, read back from the run rows themselves, so the counts and the
@@ -50,24 +63,22 @@ async function plannedRuns(s: SessionImpl, except?: string): Promise<Planned[]> 
     const at = Date.parse(row.ts)
     const seen = runs.get(run.runId)
     if (!seen && d.state === 'planning')
-      runs.set(run.runId, { automatic: run.trigger.kind !== 'manual', startedAt: at, startedSeq: row.seq })
+      runs.set(run.runId, {
+        automatic: run.trigger.kind !== 'manual',
+        model: run.trigger.kind === 'model',
+        empty: false,
+        startedAt: at,
+        startedSeq: row.seq,
+      })
     else if (seen && TERMINAL_RUN_STATES.has(d.state as RefinementRunState)) seen.endedAt = at
   }
+  for (const [runId, planned] of runs) planned.empty = s.state.refinementRuns.get(runId)?.state === 'no-op'
   return [...runs.values()]
 }
 
-async function completedTurnsAfter(s: SessionImpl, seq: number): Promise<number> {
-  const ends = await scanAll((q) => s.scan(q), {
-    type: 'turn/end',
-    lane: s.lane,
-    fromSeq: seq + 1,
-    toSeq: s.lastSeq,
-  })
-  return ends.filter((row) => (row.data as { reason?: unknown } | null)?.reason === 'completed').length
-}
-
 /**
- * Whether an automatic plan may start now, and if only time stands in the way, when it may. The
+ * Whether an automatic plan may start now, and if only time stands in the way, when it may. The model's
+ * own request (`kind: 'model'`) is held to the price and to `MODEL_LIMITS` only. The
  * planner model must have a known price; zero is one (a free or local model, bounded by the token
  * budget alone). A model with no known price only runs for the user's own request, once they agree.
  *
@@ -79,28 +90,22 @@ async function completedTurnsAfter(s: SessionImpl, seq: number): Promise<number>
 export async function automaticRefusal(
   s: SessionImpl,
   target: { route: string; model: string } | undefined,
-  o: { run?: string; cooldown?: false } = {},
+  o: { run?: string; cooldown?: false; kind?: 'model' } = {},
 ): Promise<{ refused: LimitRefusal; retryAt?: number } | undefined> {
   if (!priced(s, target ?? resolveModel(s, 'primary'))) return { refused: 'unpriced' }
   const now = s.d.clock()
   const planned = await plannedRuns(s, o.run)
-  const automatic = planned.filter((run) => run.automatic)
-  if (automatic.length >= AUTOMATIC_LIMITS.perSession) return { refused: 'session-limit' }
-  const inHour = automatic.filter((run) => run.startedAt > now - AUTOMATIC_LIMITS.hourMs)
-  if (inHour.length >= AUTOMATIC_LIMITS.perHour)
-    return {
-      refused: 'hourly',
-      retryAt: Math.min(...inHour.map((run) => run.startedAt)) + AUTOMATIC_LIMITS.hourMs,
-    }
+  if (o.kind === 'model')
+    return planned.filter((run) => run.model && !run.empty).length >= MODEL_LIMITS.perSession
+      ? { refused: 'session-limit' }
+      : undefined
+  // The machine's triggers (a compaction, a repeated failure) are counted apart from the model's.
+  const automatic = planned.filter((run) => run.automatic && !run.model)
+  if (automatic.filter((run) => !run.empty).length >= AUTOMATIC_LIMITS.perSession)
+    return { refused: 'session-limit' }
   const ended = Math.max(-Infinity, ...planned.map((run) => run.endedAt ?? run.startedAt))
   if (o.cooldown !== false && now < ended + AUTOMATIC_LIMITS.cooldownMs)
     return { refused: 'cooldown', retryAt: ended + AUTOMATIC_LIMITS.cooldownMs }
-  const last = automatic.reduce<Planned | undefined>(
-    (a, b) => (a && a.startedSeq > b.startedSeq ? a : b),
-    undefined,
-  )
-  if (last && (await completedTurnsAfter(s, last.startedSeq)) < AUTOMATIC_LIMITS.turnsBetween)
-    return { refused: 'turns' }
   return undefined
 }
 

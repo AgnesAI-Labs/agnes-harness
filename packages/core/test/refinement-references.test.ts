@@ -194,7 +194,7 @@ describe('references to approved skills and subagents', () => {
     })
     await planned.s.close()
 
-    // Apply: usable when proposed, disabled before the apply; the whole proposal is rejected.
+    // Apply: usable when proposed, disabled before the apply; the edit bound to it is dropped.
     const t = await open()
     expect(await t.say('first task')).toMatchObject({ reason: 'completed' })
     let release!: () => void
@@ -204,20 +204,17 @@ describe('references to approved skills and subagents', () => {
     await t.s.enqueue('next-turn', { content: [{ type: 'text', text: 'second task' }], actor })
     const second = t.s.run({ until: 'turn-end', signal: new AbortController().signal })
     await vi.waitFor(() => expect(t.calls.turns).toBe(2))
-    const held = runId(await t.facade.propose(propose(await t.lastUserSeq(), [skillEdit(), roleEdit()])))
+    const held = runId(await t.facade.propose(propose(await t.lastUserSeq(), [skillEdit()])))
     expect(t.state(held)?.state).toBe('proposed')
     t.world.skills.set(SKILL, { revision: 'rev1', usable: false })
     release()
     expect(await second).toMatchObject({ reason: 'completed' })
+    // The only edit is the unusable one: nothing is left and the proposal is rejected.
     expect(t.state(held)).toMatchObject({
       state: 'rejected',
       reason: 'reference-unavailable',
-      detail: 'rejected:evidence',
+      detail: 'skill/notes',
     })
-    const refine = ofType(await t.rows(), 'harness/refine')
-    expect(refine.map((row) => [data(row).outcome, data(row).reason])).toEqual([
-      ['rejected:evidence', 'reference-unavailable'],
-    ])
     expect(ofType(await t.rows(), 'harness/entry')).toHaveLength(0)
 
     // Delivery: applied while usable, then disabled; the line says so and carries no instructions.
@@ -234,6 +231,27 @@ describe('references to approved skills and subagents', () => {
     expect(disabled).toMatch(/\[skill\/notes v1\] Release notes: unavailable/)
     expect(disabled).not.toContain(SKILL_TEXT)
     expect(disabled).toContain(ROLE_TEXT)
+    await t.s.close()
+  })
+
+  it('with another edit beside it, only the edit bound to an unusable resource is dropped', async () => {
+    const t = await open()
+    expect(await t.say('first task')).toMatchObject({ reason: 'completed' })
+    let release!: () => void
+    t.holds[1] = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    await t.s.enqueue('next-turn', { content: [{ type: 'text', text: 'second task' }], actor })
+    const second = t.s.run({ until: 'turn-end', signal: new AbortController().signal })
+    await vi.waitFor(() => expect(t.calls.turns).toBe(2))
+    const held = runId(await t.facade.propose(propose(await t.lastUserSeq(), [skillEdit(), roleEdit()])))
+    expect(t.state(held)?.state).toBe('proposed')
+    t.world.skills.set(SKILL, { revision: 'rev1', usable: false })
+    release()
+    expect(await second).toMatchObject({ reason: 'completed' })
+    expect(t.state(held)?.state).toBe('applied')
+    const written = ofType(await t.rows(), 'harness/entry').map((row) => data(row).id)
+    expect(written).toEqual(['logs'])
     await t.s.close()
   })
 

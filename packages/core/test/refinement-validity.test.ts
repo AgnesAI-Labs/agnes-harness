@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { applyRefine, entryKey } from '../src/refine/apply.js'
 import { counted, metaRow } from '../src/refinement/confirmations.js'
 import { refinementFacade } from '../src/refinement/facade.js'
-import { redactEvidence } from '../src/refinement/redact.js'
 import { tryApply } from '../src/refinement/scheduler.js'
 import { contentHash, entryValidity, targetOf } from '../src/refinement/validity.js'
 import { textTurn, toolTurn } from './helpers/fake-provider.js'
@@ -192,11 +191,13 @@ describe('confirmations', () => {
   it('the evidence that granted the level never confirms it; a user confirmation counts once', async () => {
     const t = await confirmable([
       // A quote of the newer request confirms the entry.
-      () =>
-        output({
-          confirmations: [{ entryId: 'memory/read-b', evidenceIds: ['e1'], quote: 'read b again' }],
-          evidenceIds: ['e1'],
-        }),
+      (seen) => {
+        const newest = ids(seen, (e) => e.kind === 'user').slice(-1)
+        return output({
+          confirmations: [{ entryId: 'memory/read-b', evidenceIds: newest, quote: 'read b again' }],
+          evidenceIds: newest,
+        })
+      },
     ])
     expect(await t.refine()).toMatchObject({ state: 'applied' })
     // `read b again` is 12 characters of the newer request, so it counts once.

@@ -339,7 +339,7 @@ describe('repeated-failure trigger', () => {
     }
   })
 
-  it('three identical normalized failures in one task trigger once', async () => {
+  it('two identical normalized failures in one session trigger once', async () => {
     const { offered, port } = sink()
     const { turn, log } = await failing(
       [
@@ -355,14 +355,14 @@ describe('repeated-failure trigger', () => {
     const results = (await log.scan({ type: 'tool/result', limit: 50 })).map((r) => r.seq)
     expect(offered).toHaveLength(1)
     expect(offered[0]?.kind).toBe('repeated-failure')
-    // Anchored to the step that settled the third failing result, before the fourth call's result.
-    expect(offered[0]?.seq).toBeGreaterThan(results[2] as number)
-    expect(offered[0]?.seq).toBeLessThan(results[3] as number)
+    // Anchored to the step that settled the second failing result, before the third call's result.
+    expect(offered[0]?.seq).toBeGreaterThan(results[1] as number)
+    expect(offered[0]?.seq).toBeLessThan(results[2] as number)
   })
 
-  it('two failures do not trigger', async () => {
+  it('one failure does not trigger', async () => {
     const { offered, port } = sink()
-    const { turn } = await failing(['boom 1', 'boom 2'], {
+    const { turn } = await failing(['boom 1', 'done'], {
       refinementEnabled: enabled,
       refinementTriggers: port,
     })
@@ -443,9 +443,8 @@ describe('which failures count', () => {
     const { offered, port } = sink()
     const s = fakeSession(port)
     onToolSettled(s, 'fetch', failure('timeout after 3s', { code: 'TIMEOUT' }))
-    onToolSettled(s, 'fetch', failure('no response after 9s', { code: 'TIMEOUT' }))
     expect(offered).toEqual([])
-    onToolSettled(s, 'fetch', failure('slow', { code: 'TIMEOUT' }))
+    onToolSettled(s, 'fetch', failure('no response after 9s', { code: 'TIMEOUT' }))
     expect(offered).toHaveLength(1)
   })
 
@@ -454,9 +453,9 @@ describe('which failures count', () => {
     const s = fakeSession(port)
     onToolSettled(s, 'a', failure('boom'))
     onToolSettled(s, 'b', failure('boom'))
-    onToolSettled(s, 'a', failure('boom'))
-    onToolSettled(s, 'b', failure('boom'))
     expect(offered).toEqual([])
+    onToolSettled(s, 'a', failure('boom'))
+    expect(offered).toEqual([{ kind: 'repeated-failure', seq: 42, focus: 'a' }])
   })
 
   it('successes are not counted and do not reset', () => {
@@ -465,18 +464,24 @@ describe('which failures count', () => {
     onToolSettled(s, 'a', failure('boom'))
     onToolSettled(s, 'a', text('fine'))
     onToolSettled(s, 'a', failure('boom'))
-    onToolSettled(s, 'a', failure('boom'))
     expect(offered).toEqual([{ kind: 'repeated-failure', seq: 42, focus: 'a' }])
   })
 
-  it('a new turn starts a new task', () => {
+  it('the tally is per session: later turns add to it, and another session starts its own', () => {
     const { offered, port } = sink()
-    const turns = [{}, {}, {}]
-    for (const turn of turns) onToolSettled(fakeSession(port, turn), 'a', failure('boom'))
+    const first = fakeSession(port, {})
+    onToolSettled(first, 'a', failure('boom'))
     expect(offered).toEqual([])
-    // The same turn object keeps its tally across later calls, even with a different session object.
-    const same = {}
-    for (let i = 0; i < 3; i++) onToolSettled(fakeSession(port, same), 'a', failure('boom'))
+    // A later turn of the same session counts on from the first.
+    ;(first as { turn: object }).turn = {}
+    onToolSettled(first, 'a', failure('boom'))
+    expect(offered).toHaveLength(1)
+    // Offered once, then not again for the same tool and error.
+    onToolSettled(first, 'a', failure('boom'))
+    expect(offered).toHaveLength(1)
+    // A different session has a tally of its own.
+    const other = fakeSession(port, {})
+    onToolSettled(other, 'a', failure('boom'))
     expect(offered).toHaveLength(1)
   })
 

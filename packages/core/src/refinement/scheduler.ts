@@ -1,13 +1,19 @@
 import { CoreError, type Seq } from '@agnes/core-common/types'
 import type { HarnessEdit, HarnessEntry, Inbox } from '@agnes/core-ledger/reduce/shapes'
-import type { RefinementPlan, RefinementPlanEdit, RefinementRunRecord } from '@agnes/core-ledger/reduce/state'
+import type {
+  RefinementPlan,
+  RefinementPlanEdit,
+  RefinementRunRecord,
+  RefinementTrigger,
+} from '@agnes/core-ledger/reduce/state'
 import { createMaintenancePort } from '../maintenance/port.js'
 import { type ApplyProposal, applyRefine, entryKey } from '../refine/apply.js'
 import type { SessionImpl } from '../step/session.js'
 import { applyMetaRows } from './confirmations.js'
-import { readSetCurrent } from './evidence.js'
+import { changedEntries, readSetCurrent } from './evidence.js'
 import { handOffApplied } from './handoff.js'
 import { APPLY_LIMITS, automaticRefusal } from './limits.js'
+import { asksForAnything, withoutEntries } from './plan-restrict.js'
 import { type RefinementReferences, unavailableReferences } from './references.js'
 import { planRefinementRun, type RefinementRunDeps, type RunFacts, refinementRunRow } from './run.js'
 import { readTaskScope, sameTask, type TaskScope } from './task-scope.js'
@@ -140,6 +146,13 @@ export function pump(s: SessionImpl): void {
     })
 }
 
+/**
+ * Whether a trigger waits for automatic mode. The machine's triggers do, and so does the model saving to
+ * the workspace or user memory; the model asking for a review does not, as it chose to call it.
+ */
+export const needsAutoMode = (trigger: Pick<RefinementTrigger, 'kind' | 'saveTo'>): boolean =>
+  trigger.kind !== 'manual' && !(trigger.kind === 'model' && trigger.saveTo === undefined)
+
 /** Ends a queued run without planning it, if it is still queued. */
 function endQueued(s: SessionImpl, runId: string, state: 'cancelled' | 'rejected', facts: RunFacts) {
   return s.locked(async () => {
@@ -160,14 +173,17 @@ async function start(s: SessionImpl, run: RefinementRunRecord): Promise<boolean>
     return true
   }
   const automatic = run.trigger.kind !== 'manual'
-  if (automatic && settings.mode !== 'auto') {
+  if (needsAutoMode(run.trigger) && settings.mode !== 'auto') {
     await endQueued(s, run.runId, 'rejected', { reason: 'manual-mode' })
     return true
   }
   // A manual request queued after the queue was read is left for the next start, as everywhere else.
   await supersedeQueued(s, run.runId, automatic)
   if (automatic) {
-    const why = await automaticRefusal(s, deps.target, { run: run.runId })
+    const why = await automaticRefusal(s, deps.target, {
+      run: run.runId,
+      ...(run.trigger.kind === 'model' ? { kind: 'model' as const } : {}),
+    })
     if (why?.refused === 'cooldown') {
       wake(s, why.retryAt ?? s.d.clock())
       return false
@@ -304,34 +320,53 @@ function applyLocked(s: SessionImpl, runId: string): Promise<ApplyAttempt> {
       await s.append([refinementRunRow(s, runId, 'cancelled', { reason: 'settings-changed' })])
       return 'rejected'
     }
+    // An entry that moved since the planner saw it loses its edits; the others are still applied.
+    let plan = run.plan
     if (run.readSet && !readSetCurrent(s, run.readSet)) {
-      await s.append([refinementRunRow(s, runId, 'rejected', { reason: 'read-set-changed' })])
-      return 'rejected'
+      plan = withoutEntries(plan, changedEntries(s, run.readSet))
+      if (!asksForAnything(plan)) {
+        await s.append([refinementRunRow(s, runId, 'rejected', { reason: 'read-set-changed' })])
+        return 'rejected'
+      }
     }
     const { scope, readable } = await readTaskScope(s)
     // Whether a task-level lesson still has its goal, or an entry the plan reused unread is still not
     // in force, cannot be told now: the run waits, and is looked at again after the next turn.
     if (
       !readable &&
-      (run.plan.edits.some((e) => e.op === 'upsert' && e.applicability === 'task' && !isExpired(e)) ||
-        (run.plan.lapsed?.length ?? 0) > 0)
+      (plan.edits.some((e) => e.op === 'upsert' && e.applicability === 'task' && !isExpired(e)) ||
+        (plan.lapsed?.length ?? 0) > 0)
     )
       return 'task-unreadable'
     // An entry the plan replaced unread because its task had ended is in force again (its goal came
     // back): the plan was made against a table that no longer holds.
-    if (run.plan.lapsed?.length) {
+    if (plan.lapsed?.length) {
       const expired = new Set(entryValidity(s.state, scope, readable).expired.map((v) => entryKey(v.entry)))
-      if (run.plan.lapsed.some((ref) => !expired.has(entryKey(ref)))) {
+      if (plan.lapsed.some((ref) => !expired.has(entryKey(ref)))) {
         await s.append([refinementRunRow(s, runId, 'rejected', { reason: 'read-set-changed' })])
         return 'rejected'
       }
     }
-    const applied = writable(run.plan, scope)
+    // A skill or role an entry is bound to that cannot be used now drops that edit; the rest is applied.
+    const unusable = new Set(await unavailableReferences(s, writable(plan, scope)))
+    if (unusable.size) {
+      plan = withoutEntries(plan, unusable)
+      if (!asksForAnything(plan)) {
+        await s.append([
+          refinementRunRow(s, runId, 'rejected', {
+            reason: 'reference-unavailable',
+            detail: [...unusable].join(' '),
+          }),
+        ])
+        return 'rejected'
+      }
+    }
+    const applied = writable(plan, scope)
     // Every lesson on the plan belonged to a goal that has ended since, and nothing else would change.
     if (
-      run.plan.edits.length > 0 &&
+      plan.edits.length > 0 &&
       applied.length === 0 &&
-      !run.plan.confirmations.some((c) => c.confirmedBy) &&
+      !plan.confirmations.some((c) => c.confirmedBy) &&
       !renewsWorkspace(run.plan)
     ) {
       await s.append([refinementRunRow(s, runId, 'rejected', { reason: 'expired', detail: 'task-ended' })])
@@ -342,22 +377,19 @@ function applyLocked(s: SessionImpl, runId: string): Promise<ApplyAttempt> {
         ? refinementRunRow(s, runId, 'applied', {})
         : refinementRunRow(s, runId, 'rejected', { reason: o.reason ?? 'apply', detail: o.outcome })
     // Validity and confirmations are written after the entry rows, in the same transaction.
-    const meta = applyMetaRows(s, run.plan, applied)
+    const meta = applyMetaRows(s, plan, applied)
     // Only entries in force weigh on the safety cap: not an expired task lesson, not one handed off.
     const validity = entryValidity(s.state, scope, readable)
     const inForce = new Set([...validity.valid, ...validity.held].map((view) => entryKey(view.entry)))
-    // A skill or role an entry is bound to that cannot be used now rejects the whole proposal.
-    const unusable = new Set(await unavailableReferences(s, applied))
     const limits = {
       ...APPLY_LIMITS,
-      isUnavailable: (entry: HarnessEntry) => unusable.has(`${entry.kind}/${entry.id}`),
       isCounted: (entry: HarnessEntry) =>
         s.state.registers.harnessEntries.get(entryKey(entry))?.value !== entry ||
         inForce.has(entryKey(entry)),
     }
     let result: Awaited<ReturnType<typeof applyRefine>>
     try {
-      result = await applyRefine(s, proposalOf({ ...run, plan: run.plan }, applied), limits, {
+      result = await applyRefine(s, proposalOf({ ...run, plan }, applied), limits, {
         expectedRegisterSeq: { register: 'op.state', key: s.lane, seq: s.opSeq() },
         with: (o) => [ended(o), ...(o.outcome === 'applied' ? meta : [])],
       })

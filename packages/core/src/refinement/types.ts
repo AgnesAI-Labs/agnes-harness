@@ -19,8 +19,8 @@ export type {
 } from '@agnes/core-ledger/reduce/state'
 
 /** The planner input target in estimated tokens, the output cap, and the deadlines. */
-export const PLANNER_INPUT_TOKENS = 8192
-export const PLANNER_OUTPUT_TOKENS = 1024
+export const PLANNER_INPUT_TOKENS = 24_000
+export const PLANNER_OUTPUT_TOKENS = 4096
 export const PLANNER_DEADLINE_MS = { automatic: 60_000, manual: 90_000 } as const
 /** At most this many edits in a plan, each at most this many characters of content. */
 export const MAX_PLAN_EDITS = 5
@@ -34,7 +34,7 @@ export type EvidenceItem = {
   lane: string
   seq: number
   /** `external` is content from outside (a page, a referenced file) recorded as an untrusted user row. */
-  kind: 'user' | 'external' | 'tool' | 'summary'
+  kind: 'user' | 'external' | 'tool' | 'summary' | 'assistant'
   trust: 'trusted' | 'untrusted'
   text: string
   tool?: string
@@ -77,8 +77,10 @@ export type PlannerGuidance = {
   counts: Record<RefinementEntryKind, number>
   /** Entries saved to this workspace, which a plan may only confirm; absent when there are none. */
   workspace?: readonly PlannerWorkspaceRef[]
-  /** The run's result is saved to the workspace, or (the user's own request) to user memory. */
+  /** The run's result is saved to the workspace, or to user memory. */
   saveTo?: 'workspace' | 'user'
+  /** The host can save lessons beyond the session: it has a workspace save path. */
+  savesToWorkspace?: boolean
 }
 export type PlannerPrompt = {
   system: string

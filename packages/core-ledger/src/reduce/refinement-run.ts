@@ -50,7 +50,7 @@ export type RefinementEvidenceRef = {
   id: string
   lane: string
   seq: Seq
-  kind: 'user' | 'external' | 'tool' | 'summary'
+  kind: 'user' | 'external' | 'tool' | 'summary' | 'assistant'
 }
 
 export type RefinementPlanEdit =

@@ -356,7 +356,7 @@ describe('scheduling plans', () => {
     await t.session.close()
   })
 
-  it('cooldown and hourly limits survive a restart', async () => {
+  it("the cooldown survives a restart, and nothing else spaces the machine's triggers", async () => {
     const storage = new MemoryStorage()
     let now = T0
     const clock = () => now
@@ -368,34 +368,42 @@ describe('scheduling plans', () => {
       t = await open({ storage, clock, writerRunId })
       await t.session.resume()
     }
-    const turns = async (n: number) => {
-      for (let i = 0; i < n; i++)
-        expect(await t.say(`task ${now} ${i}`)).toMatchObject({ reason: 'completed' })
-    }
-    await turns(1)
+    expect(await t.say('first task')).toMatchObject({ reason: 'completed' })
     const first = runId(await automatic())
     await vi.waitFor(() => expect(t.state(first)).toBe('no-op'))
     expect(await automatic()).toEqual({ refused: 'cooldown' })
     await reopen('r2')
     expect(await automatic()).toEqual({ refused: 'cooldown' })
-    now += 121_000
-    // Past the cooldown, the next automatic plan still waits for five completed turns.
-    expect(await automatic()).toEqual({ refused: 'turns' })
-    for (let plan = 2; plan <= 4; plan++) {
-      await turns(5)
+    // Past the cooldown the next one starts at once: no turns have to pass, and there is no hourly cap.
+    for (let plan = 2; plan <= 6; plan++) {
+      now += 121_000
       const id = runId(await automatic())
       await vi.waitFor(() => expect(t.state(id)).toBe('no-op'))
-      now += 121_000
     }
-    await turns(5)
-    expect(await automatic()).toEqual({ refused: 'hourly' })
-    await reopen('r3')
-    expect(await automatic()).toEqual({ refused: 'hourly' })
-    now += 3_600_000
-    const later = runId(await automatic())
-    await vi.waitFor(() => expect(t.state(later)).toBe('no-op'))
     // Manual requests are counted apart: they ignore the automatic limits.
     expect(runId(await t.facade.request({ kind: 'manual', seq: t.session.lastSeq }))).toBeTruthy()
+    await t.session.close()
+  })
+
+  it('the model asking for a review has no cooldown, in either mode', async () => {
+    const t = await open({ sw: { enabled: true, mode: 'manual', revision: 'r1' } })
+    expect(await t.say('first task')).toMatchObject({ reason: 'completed' })
+    // Six requests back to back, with no turn between them: each is accepted and planned.
+    for (let i = 0; i < 6; i++) {
+      const id = runId(
+        await t.facade.request({ kind: 'model', seq: await t.lastUserSeq(), focus: `ask ${i}` }),
+      )
+      await vi.waitFor(() => expect(t.state(id)).toBe('no-op'))
+    }
+    // The machine's trigger is still held to the mode and its limits.
+    expect(await t.facade.request({ kind: 'repeated-failure', seq: await t.lastUserSeq() })).toEqual({
+      refused: 'manual-mode',
+    })
+    t.sw.mode = 'auto'
+    expect(await t.facade.request({ kind: 'repeated-failure', seq: await t.lastUserSeq() })).toEqual({
+      refused: 'cooldown',
+    })
+    expect(runId(await t.facade.request({ kind: 'model', seq: await t.lastUserSeq() }))).toBeTruthy()
     await t.session.close()
   })
 
@@ -491,15 +499,13 @@ describe('scheduling plans', () => {
     const t = await open({ plans: [{ text: NOOP, gate: first.wait }, { text: NOOP }, { text: NOOP }] })
     expect(await t.say('first task')).toMatchObject({ reason: 'completed' })
     const seq = await t.lastUserSeq()
-    // An automatic plan is in flight: another automatic trigger would be refused for the turns rule
-    // when it came to start, so it is refused now and the user's queued request stays.
+    // An automatic plan is in flight: another automatic trigger waits behind it (only its cooldown is in
+    // the way), and it never displaces the user's queued request.
     const a = runId(await t.facade.request({ kind: 'compaction', seq }))
     await vi.waitFor(() => expect(t.planned).toHaveLength(1))
     const m = runId(await t.facade.request({ kind: 'manual', seq, focus: 'mine' }))
-    expect(await t.facade.request({ kind: 'repeated-failure', seq, focus: 'read' })).toEqual({
-      refused: 'turns',
-    })
-    expect(t.state(m)).toBe('queued')
+    const r = runId(await t.facade.request({ kind: 'repeated-failure', seq, focus: 'read' }))
+    expect([t.state(m), t.state(r)]).toEqual(['queued', 'queued'])
     first.open()
     await vi.waitFor(() => expect(t.state(m)).toBe('no-op'))
     expect(t.state(a)).toBe('no-op')
@@ -586,7 +592,10 @@ describe('scheduling plans', () => {
     expect(await t.say('first task')).toMatchObject({ reason: 'completed' })
     const seq = await t.lastUserSeq()
     expect(await t.facade.request({ kind: 'compaction', seq })).toEqual({ refused: 'manual-mode' })
-    expect(await t.facade.request({ kind: 'model', seq })).toEqual({ refused: 'manual-mode' })
+    // The model asking for a review works in manual mode too; saving beyond the session needs automatic.
+    expect(await t.facade.request({ kind: 'model', seq, saveTo: 'workspace' })).toEqual({
+      refused: 'manual-mode',
+    })
     t.sw.mode = 'auto'
     // No planner target given: the session's primary model has no price, so nothing bounds the spend.
     const { target: _target, ...untargeted } = deps(t.sw)
