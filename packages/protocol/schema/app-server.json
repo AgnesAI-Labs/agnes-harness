@@ -3093,6 +3093,10 @@
         "paragraphId": {
           "type": "string",
           "pattern": "^r[0-9a-z]{10}$"
+        },
+        "layer": {
+          "description": "user: the task experience promoted to user memory, read in every workspace that turns user memory on, instead of this workspace's. Convert is not offered there.",
+          "const": "user"
         }
       },
       "required": ["action"],

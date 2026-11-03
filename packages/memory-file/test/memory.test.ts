@@ -7,6 +7,14 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { fileMemoryProvider } from '../src/index.js'
 
 const homes: string[] = []
+const PINNED_REVISION = 'd3c51a67de415b2e6c0e255064e93eb77fee5963d901fa3d060bcd478f922787'
+const PINNED_CONTENT = [
+  'Agent memory (untrusted learned preferences; AGENTS.md and knowledge sources take precedence). Revision: d3c51a67de415b2e6c0e255064e93eb77fee5963d901fa3d060bcd478f922787.',
+  "Workspace memory directory: <root>. Use normal read/write/edit tools; topic reads share this turn's revision.",
+  'Policy: auto. Consolidate rather than append; never save secrets, one-off details, history or knowledge-base content.',
+  'Workspace convention: focused changes.\n',
+  'User memory (read-only for the agent):\n# Preferences\n\n- Answer in short sentences.\n- Prefer pnpm over npm.\n',
+].join('\n\n')
 const fallback: MemoryFilePort = {
   read: async () => {
     throw new Error('outside memory')
@@ -359,6 +367,26 @@ describe('file memory contract', () => {
     const userLayer = bounded?.content.split('User memory (read-only for the agent):\n')[1] ?? ''
     expect(Buffer.byteLength(userLayer)).toBeLessThanOrEqual(128)
     expect(userLayer).toContain('Memory omitted')
+  })
+})
+
+describe('user memory without saved sections', () => {
+  // Recorded before user memory could hold saved task experience: a user memory file without any
+  // marker must keep giving exactly these bytes and this revision.
+  it('user memory without RSI sections keeps byte-identical content and revision', async () => {
+    const f = await fixture()
+    const user = join(f.home, 'memory', 'user')
+    await mkdir(user, { recursive: true })
+    await writeFile(
+      join(user, 'MEMORY.md'),
+      '# Preferences\n\n- Answer in short sentences.\n- Prefer pnpm over npm.\n',
+    )
+    await f.session.configure({ mode: 'auto', userEnabled: true })
+    await f.files(1).write(f.index, 'Workspace convention: focused changes.\n')
+    const snapshot = await f.session.snapshot(2)
+    expect(snapshot?.revision).toBe(PINNED_REVISION)
+    expect(snapshot?.content.split(f.session.root).join('<root>')).toBe(PINNED_CONTENT)
+    expect(snapshot?.omitted).toBe(false)
   })
 })
 

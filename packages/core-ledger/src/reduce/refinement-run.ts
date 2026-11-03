@@ -76,6 +76,11 @@ export type RefinementPlanEdit =
       usedEvidence?: string[]
       /** A skill or subagent bound to an approved resource: `<resourceId>@<revision>`, or an agent reference. */
       reference?: string
+      /**
+       * The lesson may be promoted to user memory, read in every workspace. Absent means its workspace
+       * only. The planner suggests it; Core keeps it only where the structure allows.
+       */
+      reach?: 'user'
     }
   | { op: 'delete'; kind: RefinementEntryKind; id: string; evidenceSeqs: Seq[] }
 /**

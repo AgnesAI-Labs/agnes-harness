@@ -169,9 +169,9 @@ export async function open(
     await s.enqueue('next-turn', { content: [{ type: 'text', text }], actor })
     return s.run({ until: 'turn-end', signal: new AbortController().signal })
   }
-  /** Plans and applies one manual request for the work so far, and returns how the run ended. */
-  const refine = async () => {
-    const outcome = await facade.request({ kind: 'manual', seq: s.lastSeq })
+  /** Plans and applies one request (manual unless told) for the work so far, and returns how the run ended. */
+  const refine = async (trigger: { kind?: 'manual' | 'model'; saveTo?: 'workspace' } = {}) => {
+    const outcome = await facade.request({ kind: 'manual', ...trigger, seq: s.lastSeq })
     const runId = (outcome as { runId?: string }).runId as string
     expect(runId, JSON.stringify(outcome)).toBeTruthy()
     await vi.waitFor(() =>

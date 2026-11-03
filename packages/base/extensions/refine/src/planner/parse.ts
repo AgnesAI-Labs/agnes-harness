@@ -17,6 +17,8 @@ export type PlannerEdit =
       quote?: string
       /** Skill and subagent only: the approved resource the entry is bound to; the host checks it. */
       reference?: string
+      /** A suggestion that the lesson holds in every workspace; Core decides. */
+      reach?: 'workspace' | 'user'
     }
   | { op: 'delete'; kind: EntryKind; id: string; evidenceIds: string[] }
 export type PlannerConfirmation = { entryId: string; evidenceIds: string[]; quote?: string }
@@ -87,6 +89,7 @@ function edit(raw: unknown, at: number): PlannerEdit {
     'evidenceIds',
     'quote',
     'reference',
+    'reach',
   ]
   const bindable = kind === 'skill' || kind === 'subagent'
   if (
@@ -97,9 +100,12 @@ function edit(raw: unknown, at: number): PlannerEdit {
     (raw.applicability !== 'task' && raw.applicability !== 'session') ||
     !ids(raw.evidenceIds, 1) ||
     (raw.quote !== undefined && !str(raw.quote, 2000, 1)) ||
+    (raw.reach !== undefined && raw.reach !== 'workspace' && raw.reach !== 'user') ||
     (raw.reference !== undefined && (!bindable || !str(raw.reference, MAX_REFERENCE, 1)))
   )
     return reject(where)
+  // Only a prompt or memory lesson can reach user memory.
+  if (raw.reach === 'user' && kind !== 'prompt' && kind !== 'memory') return reject(`reach-kind: ${at}`)
   if (raw.content.length === 0 || raw.content.length > MAX_EDIT_CHARS) return reject(`edit-too-long: ${at}`)
   return {
     op: 'upsert',
@@ -111,6 +117,7 @@ function edit(raw: unknown, at: number): PlannerEdit {
     evidenceIds: raw.evidenceIds,
     ...(raw.quote === undefined ? {} : { quote: raw.quote as string }),
     ...(raw.reference === undefined ? {} : { reference: raw.reference as string }),
+    ...(raw.reach === undefined ? {} : { reach: raw.reach as 'workspace' | 'user' }),
   }
 }
 

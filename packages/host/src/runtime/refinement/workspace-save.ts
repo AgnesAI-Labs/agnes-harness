@@ -28,7 +28,7 @@ import {
   writeFresh,
 } from './workspace-commit.js'
 
-type Step = SaveReceipt['steps'][number]['step']
+export type Step = SaveReceipt['steps'][number]['step']
 const STEPS: readonly Step[] = ['switch', 'revocation', 'confirmations', 'rules', 'memory-mode', 'capacity']
 
 /** A paragraph proposal waiting for the user, with what is needed to commit it once approved. */
@@ -87,7 +87,7 @@ export type WorkspaceSave = RefinementWorkspacePort & {
   settled: NonNullable<RefinementWorkspacePort['settled']>
 }
 
-const steps = (verdicts: Partial<Record<Step, 'pass' | 'fail' | 'skip'>>): SaveReceipt['steps'] =>
+export const steps = (verdicts: Partial<Record<Step, 'pass' | 'fail' | 'skip'>>): SaveReceipt['steps'] =>
   STEPS.map((step) => ({ step, verdict: verdicts[step] ?? 'skip' }))
 
 const paragraphId = (): string => {
@@ -526,7 +526,7 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
 }
 
 /** The receipt every outcome of `request` starts from. Its source hash is the shared normalised hash. */
-function receiptBase(request: WorkspaceSaveRequest, at: number): SaveReceipt {
+export function receiptBase(request: WorkspaceSaveRequest, at: number): SaveReceipt {
   const source: SaveSource = {
     sessionKey: request.session.key,
     kind: request.entry.kind,
@@ -547,7 +547,7 @@ function receiptBase(request: WorkspaceSaveRequest, at: number): SaveReceipt {
 }
 
 /** Records a refusal for `reason`, the steps up to it judged as given and the rest skipped. */
-function refuse(
+export function refuse(
   registry: RefinementRegistry,
   base: SaveReceipt,
   reason: SaveRefusal,
@@ -569,7 +569,7 @@ function refuse(
  * - else a new id.
  * `busy` while another process may still be saving this entry.
  */
-function placement(
+export function placement(
   snapshot: RegistrySnapshot,
   source: SaveSource,
   text: string,

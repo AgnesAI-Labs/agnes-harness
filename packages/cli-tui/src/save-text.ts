@@ -32,13 +32,41 @@ const REASON: Record<string, string> = {
     'saving is not available right now (the workspace records or the approval list could not be reached)',
   conflict: 'a person edited the paragraph or the file changed meanwhile; nothing was overwritten',
   'approval-expired': 'the approval request was not answered within 7 days',
+  'user-memory-budget':
+    'user memory has no room for it (about 512 bytes, your own text first); nothing was changed or trimmed',
+  'model-cannot-write-user': 'the model can never write user memory',
 }
 
-/** One save of task experience to the workspace: outcome, who asked, why it was refused. Never its text. */
+/** A promotion to user memory: what it reaches, and how it ended. */
+const USER_STATE: Partial<Record<SaveNode['state'], string>> = {
+  saved: 'saved to user memory (all workspaces)',
+  refused: 'not saved to user memory',
+  unknown: 'unknown result',
+}
+
+/**
+ * One save of task experience to the workspace or user memory: outcome, who asked, why it was refused,
+ * and for user memory where to withdraw it. Never its text.
+ */
 export function saveText(node: SaveNode): string {
   const reason = node.reason === undefined ? undefined : (REASON[node.reason] ?? node.reason)
+  const user = node.target === 'user-memory' ? USER_STATE[node.state] : undefined
+  const by = node.initiator ? ` (asked by: ${INITIATOR[node.initiator]})` : ''
+  if (user)
+    return [
+      `Task experience: ${user}${by}.`,
+      node.state === 'saved'
+        ? 'Every workspace that reads user memory sees it; withdraw it in the Web memory settings (Memory files), and it is not saved again.'
+        : '',
+      node.state === 'saved' && node.userMemoryRead === false
+        ? 'This workspace does not read user memory, so it does not see it here.'
+        : '',
+      reason ? `Reason: ${reason}.` : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
   return [
-    `Save to workspace: ${STATE[node.state]}${node.initiator ? ` (asked by: ${INITIATOR[node.initiator]})` : ''}.`,
+    `Save to workspace: ${STATE[node.state]}${by}.`,
     node.state === 'awaiting-approval'
       ? 'Answer it under Needs attention; the request is open for 7 days.'
       : '',

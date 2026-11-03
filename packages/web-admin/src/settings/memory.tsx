@@ -264,6 +264,18 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
               }}
             />
           )}
+          {file && cwd && (
+            <SavedParagraphsBlock
+              key={`${cwd}:user`}
+              cwd={cwd}
+              canSave={canSave}
+              locale={locale}
+              t={t}
+              layer="user"
+              readsUser={inspection.settings.mode !== 'off' && inspection.settings.userEnabled}
+              onFileChanged={() => undefined}
+            />
+          )}
           <SettingsBlock data-testid="memory-usage">
             <SettingsItem label={t('used')}>
               <span className="agnes-settings-value" data-testid="memory-size">

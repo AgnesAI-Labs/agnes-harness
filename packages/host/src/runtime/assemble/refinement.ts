@@ -1,3 +1,4 @@
+import { dirname } from 'node:path'
 import {
   type Kernel,
   type ProjectionRegistry,
@@ -21,6 +22,7 @@ import { savedParagraphs } from '../refinement/saved-paragraphs.js'
 import { createSkillDraftStore } from '../refinement/skill-drafts.js'
 import { savedSkillFolderGone } from '../refinement/skill-folders.js'
 import { type RefinementSaveTransport, skillSender } from '../refinement/skill-sender.js'
+import { userMemory } from '../refinement/user-memory.js'
 import { workspaceMemory } from '../refinement/workspace-memory.js'
 import { createWorkspaceRefs } from '../refinement/workspace-refs.js'
 import { createWorkspaceSave } from '../refinement/workspace-save.js'
@@ -81,6 +83,8 @@ export function createRefinementHost(
     skills?: () => SkillRuntimeDiscovery | undefined
     /** Where saved skills are installed: the process that holds resource control. Absent: none are. */
     refinementSave?: RefinementSaveTransport
+    /** The installation home memory is opened with; absent, the standard layout's (`<home>/data`). */
+    home?: string
   } = {},
 ) {
   const store = new RefinementSettingsStore(dataDir, profile)
@@ -155,14 +159,36 @@ export function createRefinementHost(
     ...(skills ? { skills } : {}),
     clock,
   })
+  // Lessons that hold in every workspace are promoted to user memory; every save goes through `user.saves`.
+  const user = userMemory({
+    home: sources.home ?? dirname(dataDir),
+    clock,
+    settings,
+    saves,
+    registry: memory.registry,
+    memory: memory.openWorkspaceMemory,
+    workspaceParagraphs: savedParagraphs({ registry: memory.registry, clock }),
+    viewChanged: (key, change) =>
+      void kernel?.sessions
+        .get(key)
+        ?.diag('refinement-prefix-change', { reason: 'user-memory', ...change })
+        .catch(() => undefined),
+  })
+  const routed = user.saves
   const workspace = {
     ...memory,
-    saves,
-    /** A person's management of saved paragraphs on the memory page: list, renew, withdraw, convert. */
-    paragraphs: savedParagraphs({ registry: memory.registry, clock }),
+    saves: routed,
+    userValidity: user.userValidity,
+    userRegistry: user.userRegistry,
+    /**
+     * A person's management of saved paragraphs on the memory page: list, renew, withdraw, convert; with
+     * `layer: 'user'`, of the sections promoted to user memory (no convert).
+     */
+    paragraphs: user.paragraphs,
     /** A session's memory has just been opened: settle interrupted saves and reconcile, in the background. */
     opened<T extends MemorySession | undefined>(workspaceRoot: string, opened: T): T {
       void saves.resume(workspaceRoot)
+      void user.resume(workspaceRoot)
       return memory.opened(workspaceRoot, opened)
     },
   }
@@ -186,7 +212,7 @@ export function createRefinementHost(
     settings,
     planner: () => planner,
     taskScope,
-    workspace: saves,
+    workspace: routed,
     workspaceRefs,
     references,
   }

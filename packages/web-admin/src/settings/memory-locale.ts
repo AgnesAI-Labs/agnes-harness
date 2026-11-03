@@ -48,6 +48,12 @@ export const memoryCatalog: LocaleCatalog = {
     'saved.renew': 'Renew',
     'saved.convert': 'Make ordinary',
     'saved.withdraw': 'Withdraw',
+    'saved.user.title': 'Task experience in user memory',
+    'saved.user.help':
+      'Lessons confirmed twice that hold in every workspace, written to user memory automatically. Every workspace that reads user memory sees them, after your own text. Each has a 30-day review date; past it the agent no longer sees it until it is renewed. Withdrawing one removes it and stops the same content being written again.',
+    'saved.user.read': 'This workspace reads user memory.',
+    'saved.user.unread':
+      'This workspace does not read user memory (memory off, or user memory not turned on here); other workspaces that read it do.',
   },
   'zh-CN': {
     title: '记忆',
@@ -93,5 +99,11 @@ export const memoryCatalog: LocaleCatalog = {
     'saved.renew': '续期',
     'saved.convert': '转为普通记忆',
     'saved.withdraw': '撤回',
+    'saved.user.title': '用户记忆中的任务经验',
+    'saved.user.help':
+      '被证实 2 次、适用于所有工作区的经验，会自动写入用户记忆。所有读取用户记忆的工作区都会看到它们，排在你自己写的内容之后。每条有 30 天的复核日期，过期后智能体看不到，直到续期。撤回后会删除它，并且相同内容不会再被写入。',
+    'saved.user.read': '本工作区读取用户记忆。',
+    'saved.user.unread':
+      '本工作区不读取用户记忆（记忆已关闭，或这里没有开启用户记忆）；读取它的其他工作区会看到。',
   },
 }

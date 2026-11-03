@@ -1,3 +1,4 @@
+import { dirname } from 'node:path'
 import { hasChildControl, type SeamImplementations } from '@agnes/core'
 import type { PackageModule, SeamInitContext } from '@agnes/host-extensions/assemble/packages'
 import { bindSkillRuntimeToWorkspace } from '@agnes/host-extensions/resources/skill-preload'
@@ -48,6 +49,8 @@ export function createEcosystemContexts(
   // worker or generation assembles again and reads it fresh. This view decides tool registration
   // only; what Core reads is live as well (see createRefinementHost).
   const refinement = createRefinementHost(ctx.dataDir, ctx.profile.name, ctx.clock, {
+    // The home memory is opened with (kernel-stage): user memory and its registry live there.
+    home: dirname(dirname(deps.profileDir)),
     skills: () => skillState.discovery,
     ...(deps.refinementSave ? { refinementSave: deps.refinementSave } : {}),
   })

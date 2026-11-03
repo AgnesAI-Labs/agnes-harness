@@ -12,9 +12,9 @@
 
 默认存储上限：索引 16 KiB / 200 行，主题 32 KiB，工作区合计 256 KiB。独立的注入预算是工作区 2,048 tokens、可选用户层 512 tokens，含贡献头部。provider 用 UTF-8 字节数作为保守 token 上界，每层独立遵守上界，不借用另一层的剩余额度。省略标记说明请求中缺少部分内容，磁盘文件不会被静默截断。超限写入返回 `MEMORY_CONSOLIDATION_REQUIRED`，原文件不变。应合并重复或失效偏好，避免无限追加。
 
-可选用户偏好由人创建 `$AGH_HOME/memory/user/MEMORY.md`，通过 [SDK](../reference/api.zh-CN.md) 管理方法开启 `userEnabled`。用户层只读，使用相同索引存储上限和独立注入预算。Agent 不能修改用户文件或读取其他工作区记忆。
+可选用户偏好由人创建 `$AGH_HOME/memory/user/MEMORY.md`，通过 [SDK](../reference/api.zh-CN.md) 管理方法开启 `userEnabled`。用户层只读，使用相同索引存储上限和独立注入预算。Agent 不能修改用户文件或读取其他工作区记忆。开启[任务经验](refinement.zh-CN.md#保存到用户记忆)后，适用于所有工作区的经验可以自动加入用户记忆，与下文段落一样带标记行；智能体看到的内容中你自己写的文字总是在前，放不下的经验不会写入。
 
-SDK 方法 `_agnes/v1/admin.memory` 接收 `cwd`、可选 settings 补丁，或人工编辑的 `file`、`content`、`baseHash`，或用于管理已保存任务经验段落的 `saved`（`{ action: 'list' | 'renew' | 'withdraw' | 'convert', paragraphId? }`，见下文）。可配置 `indexMaxBytes`、`indexMaxLines`、`topicMaxBytes`、`totalMaxBytes`、`tokenBudget`、`userTokenBudget`、`userEnabled`。选择 `_agnes/v1/admin.context` 返回的可用工作区。设置和编辑需要本机 owner 管理权限，插件工具不能自行开启访问。
+SDK 方法 `_agnes/v1/admin.memory` 接收 `cwd`、可选 settings 补丁，或人工编辑的 `file`、`content`、`baseHash`，或用于管理已保存任务经验段落的 `saved`（`{ action: 'list' | 'renew' | 'withdraw' | 'convert', paragraphId?, layer? }`，见下文；`layer: 'user'` 管理用户记忆中的经验，没有 `convert`）。可配置 `indexMaxBytes`、`indexMaxLines`、`topicMaxBytes`、`totalMaxBytes`、`tokenBudget`、`userTokenBudget`、`userEnabled`。选择 `_agnes/v1/admin.context` 返回的可用工作区。设置和编辑需要本机 owner 管理权限，插件工具不能自行开启访问。
 
 ## 已保存的任务经验
 
@@ -45,6 +45,8 @@ id 是 `r` 加十个小写字母或数字。智能体的视图和工作区的记
 - **转为普通记忆**：去掉两行标记，文字作为普通记忆保留，不再有复核日期。
 
 与编辑器一样，这些操作在任何记忆模式下都可用，任务经验关闭时也可用。在编辑器里连同标记一起删除已保存段落，同样算作收回；只删掉两行标记则把它变成普通记忆。两者都会在工作区下次打开会话时记录。
+
+**用户记忆中。** 同一页面还显示**用户记忆中的任务经验**：写入用户记忆、在每个开启了用户记忆的工作区都会被读取的经验，带复核日期，并说明本工作区是否读取用户记忆。**续期**和**撤回**同上；没有**转为普通记忆**（想保留文字请自己手写）。在用户记忆文件里手动删除某条经验，或去掉、损坏它的标记行，都算作收回。
 
 **人的修改。** 保存不会替换被人原地修改过的段落：新版本的自动保存或模型保存会被拒绝，你的文字保留。只改空白或大小写算作未改动。
 

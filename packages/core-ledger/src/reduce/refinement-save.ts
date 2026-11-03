@@ -37,6 +37,8 @@ export type SaveRefusal =
   | 'unavailable'
   | 'conflict'
   | 'approval-expired'
+  | 'user-memory-budget'
+  | 'model-cannot-write-user'
 
 /** The fixed steps every save is judged by, in this order. */
 export type SaveStep = 'switch' | 'revocation' | 'confirmations' | 'rules' | 'memory-mode' | 'capacity'
@@ -53,6 +55,13 @@ export type SaveReceipt = {
   target?:
     | { kind: 'memory-paragraph'; paragraphId: string; fileHash: string }
     | { kind: 'skill'; name: string; resourceId: string; revision: string }
+  /**
+   * `user`: a promotion to user memory, read in every workspace; its paragraph target is a section of
+   * the user memory file. Absent: the session's workspace.
+   */
+  layer?: 'user'
+  /** For a promotion to user memory: whether the workspace it came from reads user memory itself. */
+  userMemoryRead?: boolean
   at: number
 }
 
@@ -81,6 +90,8 @@ export const SAVE_REFUSALS: readonly SaveRefusal[] = [
   'unavailable',
   'conflict',
   'approval-expired',
+  'user-memory-budget',
+  'model-cannot-write-user',
 ]
 
 // The checks rebuild a receipt from its known fields only, so nothing else (an entry's title or text,
@@ -102,6 +113,8 @@ const RECEIPT_FIELDS = new Set([
   'reason',
   'steps',
   'target',
+  'layer',
+  'userMemoryRead',
   'at',
 ])
 const obj = (value: unknown): Raw | undefined =>
@@ -167,6 +180,8 @@ export function checkedReceipt(value: unknown): SaveReceipt | undefined {
   const target = checkedTarget(raw.target)
   const at = typeof raw.at === 'number' && Number.isFinite(raw.at) ? raw.at : undefined
   if (!receiptId || !commandId || !initiator || !source || !outcome || at === undefined) return undefined
+  if (raw.layer !== undefined && raw.layer !== 'user') return undefined
+  if (raw.userMemoryRead !== undefined && typeof raw.userMemoryRead !== 'boolean') return undefined
   if (target === undefined || (raw.reason !== undefined && reason === undefined)) return undefined
   if (!Array.isArray(raw.steps)) return undefined
   const steps: SaveReceipt['steps'] = []
@@ -185,6 +200,8 @@ export function checkedReceipt(value: unknown): SaveReceipt | undefined {
     ...(reason === undefined ? {} : { reason }),
     steps,
     ...(target === null ? {} : { target }),
+    ...(raw.layer === 'user' ? { layer: 'user' as const } : {}),
+    ...(typeof raw.userMemoryRead === 'boolean' ? { userMemoryRead: raw.userMemoryRead } : {}),
     at,
   }
 }

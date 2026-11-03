@@ -175,6 +175,37 @@ describe('the save receipt timeline node', () => {
       expect(text).not.toContain(hidden)
   })
 
+  it('a promotion to user memory names user memory and whether this workspace reads it', async () => {
+    const cell = new UIProjectionCell('k', 'main')
+    const user = (over: Partial<SaveReceipt>) =>
+      receipt({ initiator: 'auto', layer: 'user', userMemoryRead: false, ...over })
+    cell.apply([
+      row(1, { version: 1, ...user({ receiptId: 'u-1' }) }),
+      row(2, { version: 1, ...user({ receiptId: 'u-2', outcome: 'refused', reason: 'user-memory-budget' }) }),
+    ])
+    const timeline = await cell.view()
+    const nodes = timeline.nodes.filter((node) => node.kind === 'refinement-save')
+    expect(nodes).toEqual([
+      expect.objectContaining({ state: 'saved', target: 'user-memory', userMemoryRead: false }),
+      expect.objectContaining({ state: 'refused', reason: 'user-memory-budget', target: 'user-memory' }),
+    ])
+    expect(
+      validateAgainst(UITimeline, {
+        sessionId: 'k',
+        upto: 2,
+        generation: 1,
+        opState: null,
+        pendingInputs: [],
+        nodes: timeline.nodes,
+        turns: [],
+      }).ok,
+    ).toBe(true)
+    // Only Core's values: a receipt with another layer is not one a save writes.
+    expect(checkedReceipt({ ...receipt(), layer: 'everywhere' })).toBeUndefined()
+    expect(checkedReceipt({ ...receipt(), userMemoryRead: 'yes' })).toBeUndefined()
+    expect(checkedReceipt(user({}))).toEqual(user({}))
+  })
+
   it('a reason this build does not know is left off the line', async () => {
     const cell = new UIProjectionCell('k', 'main')
     cell.apply([

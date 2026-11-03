@@ -65,6 +65,16 @@ export const refinementLocaleCatalog: LocaleCatalog = {
     'timeline.refinementSave.reason.conflict':
       'a person edited the paragraph or the file changed meanwhile; nothing was overwritten',
     'timeline.refinementSave.reason.approval-expired': 'the approval request was not answered within 7 days',
+    'timeline.refinementSave.reason.user-memory-budget':
+      'user memory has no room for it (about 512 bytes, your own text first); nothing was changed or trimmed',
+    'timeline.refinementSave.reason.model-cannot-write-user': 'the model can never write user memory',
+    'timeline.refinementSave.user.state.saved': 'Saved to user memory (all workspaces).',
+    'timeline.refinementSave.user.state.refused': 'Not saved to user memory.',
+    'timeline.refinementSave.user.state.unknown': 'Saving to user memory ended with an unknown result.',
+    'timeline.refinementSave.user.withdraw':
+      'Every workspace that reads user memory sees it. Withdraw it in the memory settings (Memory files, task experience in user memory); it is then not saved again.',
+    'timeline.refinementSave.user.notRead':
+      'This workspace does not read user memory, so it does not see it here.',
     'timeline.refinementSave.entry': 'Save {name} to workspace',
     'timeline.refinementSave.refused': 'Not saved: {reason}.',
     'timeline.refinementSave.notFound': 'the entry is no longer in this session',
@@ -126,6 +136,15 @@ export const refinementLocaleCatalog: LocaleCatalog = {
     'timeline.refinementSave.reason.unavailable': '现在无法保存（工作区记录或审批列表不可用）',
     'timeline.refinementSave.reason.conflict': '段落被人改过或文件在此期间变了；没有覆盖任何内容',
     'timeline.refinementSave.reason.approval-expired': '审批请求 7 天内没有答复',
+    'timeline.refinementSave.reason.user-memory-budget':
+      '用户记忆放不下它（约 512 字节，你自己写的内容优先）；没有改动或截断任何内容',
+    'timeline.refinementSave.reason.model-cannot-write-user': '模型永远不能写入用户记忆',
+    'timeline.refinementSave.user.state.saved': '已保存到用户记忆（所有工作区）。',
+    'timeline.refinementSave.user.state.refused': '未保存到用户记忆。',
+    'timeline.refinementSave.user.state.unknown': '保存到用户记忆的结果未知。',
+    'timeline.refinementSave.user.withdraw':
+      '所有读取用户记忆的工作区都会看到它。可在记忆设置（记忆文件，用户记忆中的任务经验）撤回；撤回后不会再自动保存。',
+    'timeline.refinementSave.user.notRead': '本工作区不读取用户记忆，所以在这里看不到它。',
     'timeline.refinementSave.entry': '把 {name} 保存到工作区',
     'timeline.refinementSave.refused': '未保存：{reason}。',
     'timeline.refinementSave.notFound': '这个条目已不在本会话里',

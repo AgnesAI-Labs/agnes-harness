@@ -43,10 +43,13 @@ afterEach(() => {
   vi.unstubAllGlobals()
   document.body.replaceChildren()
   saved = []
+  userSaved = []
 })
 
 type Saved = { id: string; text: string; validity: string; reviewAfter?: number; initiator?: string }
 let saved: Saved[] = []
+/** Task experience promoted to user memory. */
+let userSaved: Saved[] = []
 
 function server(fail: (body: Record<string, unknown>) => boolean = () => false) {
   const memory: Record<string, unknown>[] = []
@@ -70,20 +73,23 @@ function server(fail: (body: Record<string, unknown>) => boolean = () => false) 
               content: typeof body.content === 'string' ? body.content : '- prefers tables',
             }
           : undefined
-      const asked = body.saved as { action: string; paragraphId?: string } | undefined
+      const asked = body.saved as { action: string; paragraphId?: string; layer?: 'user' } | undefined
+      let list = asked?.layer === 'user' ? userSaved : saved
       if (asked?.action === 'withdraw' || asked?.action === 'convert')
-        saved = saved.filter((entry) => entry.id !== asked.paragraphId)
+        list = list.filter((entry) => entry.id !== asked.paragraphId)
       if (asked?.action === 'renew')
-        saved = saved.map((entry) =>
+        list = list.map((entry) =>
           entry.id === asked.paragraphId
             ? { ...entry, validity: 'valid', reviewAfter: Date.UTC(2026, 11, 4) }
             : entry,
         )
+      if (asked?.layer === 'user') userSaved = list
+      else saved = list
       return Response.json({
         workspaces: [{ path: '/work/WorkLLM', available: true }],
         inspection: inspection(mode),
         ...(file ? { file } : {}),
-        ...(asked ? { saved: { paragraphs: saved } } : {}),
+        ...(asked ? { saved: { paragraphs: list } } : {}),
       })
     }),
   )
@@ -140,12 +146,15 @@ it('opens the memory files subpage with MEMORY.md, saves with the version it rea
     const drill = host.querySelector<HTMLButtonElement>('[data-testid="memory-open"]')
     expect(drill?.textContent).toContain('1')
     await act(async () => drill?.click())
-    // The file, then the saved task experience paragraphs beside it (none here: no section is shown).
-    expect(memory.slice(-2)).toEqual([
+    // The file, then the saved task experience paragraphs beside it, the workspace's and those in user
+    // memory (none here: no section is shown).
+    expect(memory.slice(-3)).toEqual([
       { cwd: '/work/WorkLLM', file: 'MEMORY.md' },
       { cwd: '/work/WorkLLM', saved: { action: 'list' } },
+      { cwd: '/work/WorkLLM', saved: { action: 'list', layer: 'user' } },
     ])
     expect(host.querySelector('[data-testid="memory-saved"]')).toBeNull()
+    expect(host.querySelector('[data-testid="memory-user-saved"]')).toBeNull()
     const editor = host.querySelector<HTMLTextAreaElement>('[data-testid="memory-content"]')
     expect(editor?.value).toBe('- prefers tables')
     const save = host.querySelector<HTMLButtonElement>('[data-testid="memory-save"]')
@@ -407,6 +416,65 @@ it('lists saved task experience with review dates and renews, withdraws or conve
       saved: { action: 'convert', paragraphId: 'rc000000001' },
     })
     expect(rows().map((row) => row.querySelector('[translate="no"]')?.textContent)).toEqual(['Short answers'])
+  } finally {
+    await unmount()
+  }
+})
+
+it('user-layer RSI sections show validity and can be renewed or withdrawn', async () => {
+  userSaved = [
+    {
+      id: 'rd000000001',
+      text: 'Answer style\nAnswer in short sentences.',
+      validity: 'expired',
+      reviewAfter: Date.UTC(2026, 9, 1),
+      initiator: 'auto',
+    },
+    {
+      id: 're000000001',
+      text: 'Package manager\nPrefer pnpm.',
+      validity: 'valid',
+      reviewAfter: Date.UTC(2026, 11, 1),
+      initiator: 'auto',
+    },
+  ]
+  const memory = server()
+  const { host, unmount } = await render()
+  try {
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="memory-open"]')?.click())
+    await act(async () => {})
+    expect(memory).toContainEqual({ cwd: '/work/WorkLLM', saved: { action: 'list', layer: 'user' } })
+    const section = host.querySelector<HTMLElement>('[data-testid="memory-user-saved"]')
+    expect(section?.textContent).toContain('user memory')
+    expect(section?.textContent).toMatch(/every workspace/i)
+    // Memory is off in this workspace: it does not read user memory, and the page says so.
+    expect(section?.textContent).toMatch(/this workspace does not read user memory/i)
+    const rows = () => [...host.querySelectorAll<HTMLElement>('[data-testid="memory-user-saved-paragraph"]')]
+    expect(rows().map((row) => row.querySelector('[translate="no"]')?.textContent)).toEqual([
+      'Answer style',
+      'Package manager',
+    ])
+    expect(rows()[0]?.textContent).toMatch(/past its review date/i)
+    // User memory has no "make ordinary": a person keeps text there by writing it by hand.
+    expect(section?.querySelector('[data-testid="memory-saved-convert"]')).toBeNull()
+    await act(async () =>
+      rows()[0]?.querySelector<HTMLButtonElement>('[data-testid="memory-saved-renew"]')?.click(),
+    )
+    expect(memory.at(-1)).toEqual({
+      cwd: '/work/WorkLLM',
+      saved: { action: 'renew', paragraphId: 'rd000000001', layer: 'user' },
+    })
+    expect(rows()[0]?.textContent).toMatch(/agent sees it/i)
+    await act(async () =>
+      rows()[1]?.querySelector<HTMLButtonElement>('[data-testid="memory-saved-withdraw"]')?.click(),
+    )
+    expect(memory.at(-1)).toEqual({
+      cwd: '/work/WorkLLM',
+      saved: { action: 'withdraw', paragraphId: 're000000001', layer: 'user' },
+    })
+    expect(rows()).toHaveLength(1)
+    // The workspace's own block is not shown when it holds nothing.
+    expect(host.querySelector('[data-testid="memory-saved"]')).toBeNull()
   } finally {
     await unmount()
   }

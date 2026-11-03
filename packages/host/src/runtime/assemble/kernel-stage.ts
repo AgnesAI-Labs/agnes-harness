@@ -99,8 +99,9 @@ async function selectCoreProviders(
 
 /**
  * Pin memory to the selected provider while keeping its settings live per workspace. Every open gets the
- * workspace's validity view for saved task experience, with refinement on or off (a provider that does
- * not know the field ignores it); the same opener serves background work on workspace memory.
+ * workspace's validity view for saved task experience, and the one for sections of user memory, with
+ * refinement on or off (a provider that does not know the fields ignores them); the same opener serves
+ * background work on workspace and user memory.
  */
 function sessionMemory(ctx: AssemblyContext, pluginTree: HostPluginTreeBase, refinement: RefinementHost) {
   const { providerSelections, deps } = ctx
@@ -116,6 +117,7 @@ function sessionMemory(ctx: AssemblyContext, pluginTree: HostPluginTreeBase, ref
       workspaceRoot,
       sessionKey,
       validity: refinement.workspace.validity(workspaceRoot, sessionKey),
+      userValidity: refinement.workspace.userValidity(sessionKey),
     })
   }
   refinement.workspace.bindMemory(open)

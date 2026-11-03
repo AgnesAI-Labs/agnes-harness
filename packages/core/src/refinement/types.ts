@@ -110,6 +110,8 @@ export type PlannerOutputEdit =
       quote?: string
       /** Skill and subagent only: the approved resource the entry is bound to. */
       reference?: string
+      /** The planner's suggestion that the lesson holds in every workspace; Core decides. */
+      reach?: 'workspace' | 'user'
     }
   | { op: 'delete'; kind: RefinementEntryKind; id: string; evidenceIds: string[] }
 export type PlannerOutput = {
