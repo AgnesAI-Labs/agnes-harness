@@ -178,11 +178,27 @@ export class RemoteSession {
   }
 
   /** `session.refine` on the worker that holds the real session: it only queues, so it returns at once. */
-  async refine(focus: string | undefined): Promise<import('@agnes/protocol').SessionRefineResult> {
-    return (await this.link.command(
-      'refine',
-      focus === undefined ? {} : { focus },
-    )) as import('@agnes/protocol').SessionRefineResult
+  async refine(
+    focus: string | undefined,
+    saveTo?: 'workspace',
+    allowUnpriced?: true,
+  ): Promise<import('@agnes/protocol').SessionRefineResult> {
+    return (await this.link.command('refine', {
+      ...(focus === undefined ? {} : { focus }),
+      ...(saveTo === undefined ? {} : { saveTo }),
+      ...(allowUnpriced === true ? { allowUnpriced } : {}),
+    })) as import('@agnes/protocol').SessionRefineResult
+  }
+
+  /** `session.refine.save` on the worker that holds the real session: one entry, no model call. */
+  async refineSave(
+    kind: import('@agnes/protocol').SessionRefineSaveParams['kind'],
+    id: string,
+  ): Promise<import('@agnes/protocol').SessionRefineSaveResult> {
+    return (await this.link.command('refineSave', {
+      kind,
+      id,
+    })) as import('@agnes/protocol').SessionRefineSaveResult
   }
 
   /** `session.refine.rollback` on the worker that holds the real session. */

@@ -20,6 +20,7 @@ export type {
   RefinementRuns,
   RefinementToolPort,
   RefineRequest,
+  RefineTarget,
   SessionProposal,
 } from './port.js'
 

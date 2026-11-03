@@ -12,6 +12,7 @@ import { AssistantMessage } from './assistant-message.js'
 import { type ApprovalNode, type ConversationMessagesProps, fallbackT } from './context.js'
 import { markdownState } from './markdown-state.js'
 import { RefinementRunNote } from './refinement-run.js'
+import { RefinementSaveNote } from './refinement-save.js'
 import { ConversationToolCard, toolOutcome } from './tool-card.js'
 import { UserMessage } from './user-message.js'
 
@@ -158,7 +159,16 @@ export function nativeContent(
         </div>
       )
     case 'refinement-run':
-      return <RefinementRunNote node={node} t={t} withdraw={props.withdrawRefinement} />
+      return (
+        <RefinementRunNote
+          node={node}
+          t={t}
+          withdraw={props.withdrawRefinement}
+          save={props.saveRefinementEntry}
+        />
+      )
+    case 'refinement-save':
+      return <RefinementSaveNote node={node} t={t} />
     case 'workspace-undo':
       return (
         <div className="node-body" role="status" data-testid="workspace-undo-notice">

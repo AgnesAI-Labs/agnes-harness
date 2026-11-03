@@ -148,7 +148,7 @@ To test a loop that calls `ctx.sideCall`, pass `driveLoop(factory, { sideCall })
 
 ## Provider conformance against Host
 
-For specialist provider contracts, `@agnes/extension-api/testkit` exports `loopConformance`, `modelAdapterConformance`, `compactionConformance`, `toolRuntimeConformance`, `toolPolicyConformance`, `persistenceConformance`, `sandboxConformance` and `childAgentConformance`. `runProviderConformance(kind, options)` is their common runner.
+For specialist provider contracts, `@agnes/extension-api/testkit` exports `loopConformance`, `modelAdapterConformance`, `compactionConformance`, `toolRuntimeConformance`, `toolPolicyConformance`, `persistenceConformance`, `sandboxConformance` and `childAgentConformance`. `runProviderConformance(kind, options)` is their common runner. A memory provider that offers `MemorySession.paragraphs` checks that port with `memoryParagraphConformance(open)`.
 
 Capture `ctx.providers` inside an isolated ordinary Host plugin. Pass that port, the owner package name, a fresh provider declaration and `open(provider)`. The probe uses the Host's public service/session path and returns `start(signal)`, `close()` and, for loop/persistence, `coldResume()`. Each started operation returns `{ ready, result }`: `ready` settles once the controlled operation reaches the provider, and `result` settles after it drains. If the native API returns a cancelled outcome instead of rejecting with AbortError, supply `isCancelledResult(result)` to validate that outcome. The suite refuses unload that returns before the admitted operation settles.
 

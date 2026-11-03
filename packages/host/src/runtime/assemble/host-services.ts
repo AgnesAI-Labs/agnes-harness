@@ -7,7 +7,10 @@ import { createConfigurationService } from '@agnes/host-infrastructure/configura
 import type { AssemblyContext } from './context.js'
 import type { ExtensionHost } from './extension-host.js'
 import type { ProcessServices } from './process-services.js'
+import type { RefinementHost } from './refinement.js'
 import { authorizeServiceProcess } from './service-process-policy.js'
+
+const LOCAL_OWNER = Object.freeze({ kind: 'local' })
 
 /** The extension service call surface and the session configuration service the Host exposes. */
 export function createHostServices(
@@ -18,6 +21,7 @@ export function createHostServices(
     host: ExtensionHost
     seams: SeamImplementations
     publishProfileCurrent: () => void
+    refinement: RefinementHost
   }>,
 ) {
   const { deps } = ctx
@@ -74,6 +78,7 @@ export function createHostServices(
     ...(deps.decisionsChanged ? { decisionsChanged: deps.decisionsChanged } : {}),
     wakes: proc.profileWakes,
     profileId: ctx.profile.name,
+    hostOwners: input.refinement.decisionOwners,
     registry: services,
     activations: proc.profileActivations,
     storage: adapters.storage,
@@ -87,6 +92,9 @@ export function createHostServices(
     audit: (detail) => deps.audit.write({ kind: 'extension.profile-call', detail }),
   })
   ctx.rollback.push('profile-services', () => profileServices.close())
+  // Saves of task experience under ask are asked of the local owner, who lists and answers profile
+  // decisions through the same credential.
+  input.refinement.bindDecisions(() => profileServices.hostDecisions(LOCAL_OWNER))
   const sessionConfiguration = createConfigurationService({
     home: deps.homeDir ?? dirname(dirname(deps.profileDir)),
     profile: ctx.profile.name,

@@ -150,10 +150,20 @@ export type SeamInitContext = {
   provideTaskScope?: (source: TaskScopeSource) => () => void
 }
 
-/** A session's managed refinement as the refinement tools reach it. */
+/**
+ * A session's managed refinement as the refinement tools reach it. `saveTo: 'workspace'` asks for what
+ * is applied to be saved to the session's workspace too, always as the model's save.
+ */
 export type RefinementRunsPort = Readonly<{
-  propose(session: { key: string; lane: string }, proposal: DirectProposal): Promise<RefinementOutcome>
-  request(session: { key: string; lane: string }, request: { focus?: string }): Promise<RefinementOutcome>
+  propose(
+    session: { key: string; lane: string },
+    proposal: DirectProposal,
+    options?: { saveTo?: 'workspace' },
+  ): Promise<RefinementOutcome>
+  request(
+    session: { key: string; lane: string },
+    request: { focus?: string; saveTo?: 'workspace' },
+  ): Promise<RefinementOutcome>
   /** Reads that session's own entries in force; nothing is written. */
   inspect(session: { key: string; lane: string }, request: InspectRequest): Promise<InspectOutcome>
 }>

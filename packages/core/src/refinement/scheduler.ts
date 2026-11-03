@@ -6,11 +6,14 @@ import { type ApplyProposal, applyRefine, entryKey } from '../refine/apply.js'
 import type { SessionImpl } from '../step/session.js'
 import { applyMetaRows } from './confirmations.js'
 import { readSetCurrent } from './evidence.js'
+import { handOffApplied } from './handoff.js'
 import { APPLY_LIMITS, automaticRefusal } from './limits.js'
 import { planRefinementRun, type RefinementRunDeps, type RunFacts, refinementRunRow } from './run.js'
 import { readTaskScope, sameTask, type TaskScope } from './task-scope.js'
 import type { RefinementPlanner } from './types.js'
 import { entryValidity, isExpired } from './validity.js'
+import type { RefinementWorkspacePort } from './workspace.js'
+import { type RefinementWorkspaceRefs, renewConfirmed, renewsWorkspace } from './workspace-refs.js'
 
 /** The refinement switch as Core reads it: on or off, how automatic triggers are treated, and its revision. */
 export type RefinementSettingsView = { enabled: boolean; mode: 'manual' | 'auto'; revision: string }
@@ -34,6 +37,13 @@ export type RefinementDeps = {
     key: string
     lane: string
   }): TaskScope | null | undefined | Promise<TaskScope | null | undefined>
+  /** The host's save-to-workspace path; absent where the host offers none. */
+  workspace?: RefinementWorkspacePort
+  /**
+   * The entries saved to this session's workspace that a plan may confirm, and their renewal once a
+   * plan that confirms one is applied. Absent means none: the planner input is as before.
+   */
+  workspaceRefs?: RefinementWorkspaceRefs
 }
 
 /** Why an apply attempt left the run as it was, or what it did. */
@@ -169,6 +179,8 @@ async function start(s: SessionImpl, run: RefinementRunRecord): Promise<boolean>
       return { enabled: view !== undefined, revision: view?.revision ?? '' }
     },
     ...(deps.target ? { target: deps.target } : {}),
+    // Only the user's own request carries the agreement to an unknown price, recorded when it was queued.
+    ...(run.trigger.kind === 'manual' && run.trigger.allowUnpriced === true ? { allowUnpriced: true } : {}),
   }
   const done = await planRefinementRun(s, run.runId, runDeps, new AbortController().signal)
   if (done?.state === 'proposed') await tryApply(s, done.runId)
@@ -249,7 +261,18 @@ function proposalOf(
  * refinement is off. A plan made under another settings revision is cancelled and one made against
  * entries that have moved since is rejected: neither can hold again.
  */
-export function tryApply(s: SessionImpl, runId: string): Promise<ApplyAttempt> {
+export async function tryApply(s: SessionImpl, runId: string): Promise<ApplyAttempt> {
+  const attempt = await applyLocked(s, runId)
+  if (attempt === 'applied') {
+    // Entries saved to the workspace that the plan confirmed are renewed once it has committed, and
+    // what the run owes the workspace (its result, if it asked; entries now confirmed enough) is saved.
+    await renewConfirmed(s, runId)
+    await handOffApplied(s, runId)
+  }
+  return attempt
+}
+
+function applyLocked(s: SessionImpl, runId: string): Promise<ApplyAttempt> {
   return s.locked(async (): Promise<ApplyAttempt> => {
     const run = s.state.refinementRuns.get(runId)
     if (run?.state !== 'proposed' || !run.plan) return 'not-proposed'
@@ -291,7 +314,8 @@ export function tryApply(s: SessionImpl, runId: string): Promise<ApplyAttempt> {
     if (
       run.plan.edits.length > 0 &&
       applied.length === 0 &&
-      !run.plan.confirmations.some((c) => c.confirmedBy)
+      !run.plan.confirmations.some((c) => c.confirmedBy) &&
+      !renewsWorkspace(run.plan)
     ) {
       await s.append([refinementRunRow(s, runId, 'rejected', { reason: 'expired', detail: 'task-ended' })])
       return 'rejected'

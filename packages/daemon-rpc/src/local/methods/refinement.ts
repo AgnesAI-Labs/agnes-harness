@@ -4,6 +4,7 @@ import {
   type RefinementSettingsStore,
   requestRefinement,
   rollbackRefinement,
+  saveEntryToWorkspace,
 } from '@agnes/host'
 import {
   type RefinementSettingsSaveParams,
@@ -14,6 +15,8 @@ import {
   type SessionRefineResult,
   type SessionRefineRollbackParams,
   type SessionRefineRollbackResult,
+  type SessionRefineSaveParams,
+  type SessionRefineSaveResult,
 } from '@agnes/protocol'
 
 const errorCode = (error: unknown): string | undefined => (error as { code?: string } | null)?.code
@@ -54,13 +57,26 @@ export function registerRefinement(
 
 /** A worker-hosted session is a wire proxy; it asks the worker that holds the real session. */
 type RemoteRefine = {
-  refine?: (focus: string | undefined) => Promise<SessionRefineResult>
+  refine?: (
+    focus: string | undefined,
+    saveTo: 'workspace' | undefined,
+    allowUnpriced: true | undefined,
+  ) => Promise<SessionRefineResult>
   refineRollback?: (appliedSeq: number) => Promise<SessionRefineRollbackResult>
+  refineSave?: (kind: SessionRefineSaveParams['kind'], id: string) => Promise<SessionRefineSaveResult>
+}
+
+/** Only the owner on this machine: a local connection with a local credential. */
+function localOwnerOnly(method: string, c: CallContext): void {
+  if (c.conn.authKind !== 'local' || c.conn.credentialKind !== 'local')
+    throw rpcError('CAPABILITY_DENIED', { method, reason: 'local owner only' })
 }
 
 /**
- * The owner's manual refinement request (queues a background plan and returns the run at once), and
- * the owner's withdrawal of an applied refinement.
+ * The owner's manual refinement request (queues a background plan and returns the run at once), the
+ * owner's withdrawal of an applied refinement, and the owner's save of an entry to the workspace.
+ * Saving to the workspace (`/refine --workspace`, the per-entry save) speaks for the user, which may
+ * override what the user took back before, so it is taken only from the owner on this machine.
  */
 export function registerSessionRefine(
   ep: LocalEndpoint,
@@ -69,11 +85,15 @@ export function registerSessionRefine(
 ): void {
   ep.register('_agnes/v1/session.refine', async (params, c): Promise<SessionRefineResult> => {
     const p = params as SessionRefineParams
+    // Saving as the user and agreeing to an unknown price both speak for the owner on this machine.
+    if (p.saveTo !== undefined || p.allowUnpriced !== undefined) localOwnerOnly('session.refine', c)
     requireOwner('session.refine', p.sessionId, c)
     const entry = cx.registry.get(p.sessionId)
     if (!entry) throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
     const remote = entry.session as unknown as RemoteRefine
-    return remote.refine ? remote.refine(p.focus) : requestRefinement(entry.session, p.focus)
+    return remote.refine
+      ? remote.refine(p.focus, p.saveTo, p.allowUnpriced)
+      : requestRefinement(entry.session, p.focus, p.saveTo, p.allowUnpriced)
   })
   // Withdrawing an applied refinement changes what the session's model is told, so only the owner on
   // this machine may: a local connection with a local credential, like the refinement settings.
@@ -81,8 +101,7 @@ export function registerSessionRefine(
     '_agnes/v1/session.refine.rollback',
     async (params, c): Promise<SessionRefineRollbackResult> => {
       const p = params as SessionRefineRollbackParams
-      if (c.conn.authKind !== 'local' || c.conn.credentialKind !== 'local')
-        throw rpcError('CAPABILITY_DENIED', { method: 'session.refine.rollback', reason: 'local owner only' })
+      localOwnerOnly('session.refine.rollback', c)
       requireOwner('session.refine.rollback', p.sessionId, c)
       const entry = cx.registry.get(p.sessionId)
       if (!entry) throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
@@ -92,4 +111,15 @@ export function registerSessionRefine(
         : rollbackRefinement(entry.session, p.appliedSeq)
     },
   )
+  ep.register('_agnes/v1/session.refine.save', async (params, c): Promise<SessionRefineSaveResult> => {
+    const p = params as SessionRefineSaveParams
+    localOwnerOnly('session.refine.save', c)
+    requireOwner('session.refine.save', p.sessionId, c)
+    const entry = cx.registry.get(p.sessionId)
+    if (!entry) throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
+    const remote = entry.session as unknown as RemoteRefine
+    return remote.refineSave
+      ? remote.refineSave(p.kind, p.id)
+      : saveEntryToWorkspace(entry.session, { kind: p.kind, id: p.id })
+  })
 }

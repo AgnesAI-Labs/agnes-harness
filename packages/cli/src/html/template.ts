@@ -103,6 +103,10 @@ function renderNode(node: UINode): string {
         removed.length > 0 ? ` · removed ${escapeHtml(removed.join(', '))}` : ''
       }${node.withdrawn ? ' · withdrawn' : ''}</section>`
     }
+    case 'refinement-save':
+      return `<section class="node minor">Save to workspace · ${escapeHtml(node.state)}${
+        node.reason ? ` · ${escapeHtml(node.reason)}` : ''
+      }</section>`
     case 'contribute-conflict':
       return `<section class="node minor">Contribute conflict · ${escapeHtml(node.key)}: ${escapeHtml(node.ops.join(', '))}</section>`
   }

@@ -3,11 +3,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fakeModel } from '@agnes/ai/testkit'
+import { defaultLoopPlugin, memoryPlugin } from '@agnes/base'
 import { operations as codeOperations } from '@agnes/code'
 import { CompactionRunner, refinementFacade } from '@agnes/core'
 import type { HookPayloadMap } from '@agnes/extension-api'
+import { normalizedContentHash, RefinementRegistry } from '@agnes/host-infrastructure/refinement-registry'
+import { RefinementSettingsStore } from '@agnes/host-infrastructure/refinement-settings'
+import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   type CapturedRequest,
   createTestHost,
@@ -37,6 +41,38 @@ async function turn(session: Session, prompt: string) {
   await expect(
     session.run({ until: 'turn-end', signal: new AbortController().signal }),
   ).resolves.toMatchObject({ reason: 'completed' })
+}
+
+const memoryPlugins = [
+  { export: 'defaultLoopPlugin', id: 'loop:agnes.default', inject: ['loops'], entry: defaultLoopPlugin },
+  { export: 'memoryPlugin', id: 'memory:file', inject: ['providers'], entry: memoryPlugin },
+].map(({ entry, ...declaration }) => ({
+  declaration: {
+    ...declaration,
+    apiRange: '^5.0.0',
+    default: true,
+    provide: [],
+    runtime: 'in-process' as const,
+  },
+  entry: normalizePluginExport(entry),
+}))
+
+/** The system prompt bytes of a wire request, whatever field the API keeps them in. */
+const systemOf = (request: CapturedRequest): string => {
+  const body = request.body as { system?: unknown; instructions?: unknown; messages?: { role?: string }[] }
+  const leading = (body.messages ?? []).filter(
+    (message) => message.role === 'system' || message.role === 'developer',
+  )
+  return JSON.stringify([body.system ?? null, body.instructions ?? null, leading])
+}
+/** The latest memory note of a wire request (each turn carries its own; earlier ones stay as history). */
+const memoryNote = (request: CapturedRequest): string => {
+  const from = request.raw.lastIndexOf('memory:index')
+  return from < 0 ? '' : request.raw.slice(from, request.raw.indexOf('"', from))
+}
+/** Seeds the registry of a workspace with one saved paragraph; set once the data directory exists. */
+let seed: (root: string) => void = () => {
+  throw new Error('seed before use')
 }
 
 /** How many task-experience notes one wire request carries. */
@@ -93,7 +129,15 @@ function compactPlan(payload: HookPayloadMap['before_compact']) {
 
 async function fixture(
   api: WireApi,
-  run: (session: Session, requests: CapturedRequest[], restart: () => Promise<Session>) => Promise<void>,
+  run: (
+    session: Session,
+    requests: CapturedRequest[],
+    restart: () => Promise<Session>,
+    host: Awaited<ReturnType<typeof createTestHost>>['host'],
+  ) => Promise<void>,
+  before?: (dataDir: string) => Promise<void> | void,
+  /** Assemble the default loop and the bundled file memory as the only base plugins. */
+  withMemory = false,
 ) {
   const dataDir = mkdtempSync(join(tmpdir(), 'agnes-wire-refinement-'))
   const credentials = join(dataDir, 'credentials')
@@ -112,7 +156,10 @@ async function fixture(
     const hostOptions = {
       dataDir,
       packageDirs: { '@agnes/base': baseDir },
-      packages: { '@agnes/code': { operations: codeOperations } },
+      packages: {
+        '@agnes/code': { operations: codeOperations },
+        ...(withMemory ? { '@agnes/base': { plugins: memoryPlugins } } : {}),
+      },
       disableSessionTitle: true,
       profileInputs: {
         user: {
@@ -125,6 +172,7 @@ async function fixture(
         },
       },
     }
+    await before?.(dataDir)
     let current = await createTestHost(hostOptions)
     const key = 'wire-refinement'
     // Closes the Host and opens the same session in a new one: a cold process with no memo.
@@ -135,7 +183,7 @@ async function fixture(
     }
     try {
       const session = await current.host.createSession({ cwd: dataDir, key })
-      await run(session, capture.requests, restart)
+      await run(session, capture.requests, restart, current.host)
     } finally {
       await current.host.close()
     }
@@ -232,4 +280,84 @@ describe('refinement experience on the provider wire', () => {
       expect(rebuilds).toHaveLength(2)
     })
   })
+
+  it.each(apis)(
+    '%s a saved paragraph past its review date leaves only the memory note, and is recorded as a prefix change',
+    async (api) => {
+      const T0 = Date.UTC(2026, 10, 4, 9)
+      const DAY = 86_400_000
+      const LESSON = 'Saved lesson: run pnpm build before the tests.'
+      const ID = 'ra000000001'
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(T0)
+      try {
+        await fixture(
+          api,
+          async (session, requests, _restart, host) => {
+            const root = session.workspaceRoot
+            const admin = host.memory(root, 'admin')
+            if (!admin) throw new Error('no memory provider assembled')
+            await admin.configure({ mode: 'auto' })
+            seed(root)
+            const stored = await admin.readFile('MEMORY.md')
+            await admin.editFile(
+              'MEMORY.md',
+              `Human preference line.\n\n<!-- refinement:${ID} -->\n${LESSON}\n<!-- /refinement:${ID} -->\n`,
+              stored.hash,
+            )
+            const probe = host.memory(root, 'probe')
+            const before = (await probe?.snapshot(1))?.revision
+            await turn(session, 'First question')
+            vi.setSystemTime(T0 + 2 * DAY)
+            const after = (await host.memory(root, 'probe-later')?.snapshot(1))?.revision
+            await turn(session, 'Second question')
+            expect(requests).toHaveLength(2)
+            const [first, second] = requests
+            if (!first || !second) throw new Error('missing loopback request')
+            // The paragraph reaches the model while it is in force, and is left out once its date passed.
+            expect(memoryNote(first)).toContain(LESSON)
+            expect(memoryNote(second)).not.toContain(LESSON)
+            expect(memoryNote(second)).toContain('Human preference line.')
+            // The first turn's note stays in the history as it was sent.
+            expect(second.raw.split(LESSON)).toHaveLength(2)
+            // Only the memory note changes: the system prompt keeps its bytes, the memory revision moves.
+            expect(systemOf(second)).toBe(systemOf(first))
+            expect(after).not.toBe(before)
+            const changes = (
+              await session.d.log.scan({ type: 'x/core/refinement-prefix-change', limit: 10 })
+            ).map((row) => row.data as { reason?: string })
+            // The experience snapshot of the first request, then the saved paragraph leaving the note.
+            expect(changes.map((data) => data.reason)).toEqual(['experience-snapshot', 'workspace-memory'])
+            expect(changes[1]).toEqual({ reason: 'workspace-memory', inForce: 0, expired: 1 })
+          },
+          (dataDir) => {
+            const settings = new RefinementSettingsStore(dataDir, 'wire-refinement')
+            settings.save({ enabled: true, mode: 'manual' }, settings.read().revision)
+            seed = (root) => {
+              const registry = new RefinementRegistry(dataDir, root, Date.now)
+              registry.update((draft) => {
+                draft.paragraphs.push({
+                  id: ID,
+                  source: {
+                    sessionKey: 'earlier',
+                    kind: 'memory',
+                    entryId: 'build',
+                    contentHash: normalizedContentHash(LESSON),
+                    initiator: 'auto',
+                  },
+                  contentHash: normalizedContentHash(LESSON),
+                  reviewAfter: T0 + DAY,
+                  state: 'active',
+                  fileHash: 'f',
+                })
+              }, registry.read().revision)
+            }
+          },
+          true,
+        )
+      } finally {
+        vi.useRealTimers()
+      }
+    },
+  )
 })

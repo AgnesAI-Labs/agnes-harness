@@ -63,6 +63,7 @@ import {
 import { traceCatalog } from '@agnes/web-units/trace-locale'
 import { LoopPicker } from '../loop-picker.js'
 import { businessAgentSuggestions } from '../pages/business-agents.js'
+import { saveRefinementEntry } from '../refine-save.js'
 import { withdrawRefinement } from '../refine-withdraw.js'
 import type {
   ApprovalRegionMount,
@@ -553,6 +554,8 @@ export async function startClientModules(options: {
           ...(options.claim ? { claim: options.claim } : {}),
           onWithdrawRefinement: (sessionId, appliedSeq) =>
             withdrawRefinement(options.agnes, sessionId, appliedSeq),
+          onSaveRefinementEntry: (sessionId, kind, id) =>
+            saveRefinementEntry(options.agnes, sessionId, kind, id),
           session,
           locale,
           resources,

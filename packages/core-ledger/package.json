@@ -31,6 +31,7 @@
     "./reduce/reducer": "./src/reduce/reducer.ts",
     "./reduce/refinement-entry-meta": "./src/reduce/refinement-entry-meta.ts",
     "./reduce/refinement-run": "./src/reduce/refinement-run.ts",
+    "./reduce/refinement-save": "./src/reduce/refinement-save.ts",
     "./reduce/shapes": "./src/reduce/shapes.ts",
     "./reduce/state": "./src/reduce/state.ts",
     "./reduce/tracker": "./src/reduce/tracker.ts",

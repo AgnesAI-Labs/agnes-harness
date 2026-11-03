@@ -2963,6 +2963,12 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4096
+        },
+        "maintenance": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Run id of a background write made outside any turn; turn then names the turn the evidence came from."
         }
       },
       "required": ["sessionKey", "turn"],
@@ -3069,9 +3075,56 @@
         "baseHash": {
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
+        },
+        "saved": {
+          "$ref": "#/$defs/SavedParagraphRequest"
         }
       },
       "required": ["cwd"],
+      "additionalProperties": false
+    },
+    "SavedParagraphRequest": {
+      "description": "A person's management of saved task experience paragraphs in the workspace memory index: list them, renew one's review date, withdraw one (cut from the file and recorded so the same content is not saved back automatically or by the model) or convert one to ordinary memory (markers taken off, text kept). Every action except list names the paragraph.",
+      "type": "object",
+      "properties": {
+        "action": {
+          "enum": ["list", "renew", "withdraw", "convert"]
+        },
+        "paragraphId": {
+          "type": "string",
+          "pattern": "^r[0-9a-z]{10}$"
+        }
+      },
+      "required": ["action"],
+      "additionalProperties": false
+    },
+    "SavedParagraph": {
+      "description": "One saved task experience paragraph: its text, whether the agent sees it (valid), it is past its review date (expired) or nothing vouches for it (unknown), and, when recorded, its review date (epoch milliseconds), who saved it and the kind of entry it came from.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^r[0-9a-z]{10}$"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 1048576
+        },
+        "validity": {
+          "enum": ["valid", "expired", "unknown"]
+        },
+        "reviewAfter": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "initiator": {
+          "enum": ["auto", "user", "model"]
+        },
+        "kind": {
+          "enum": ["prompt", "memory", "skill", "subagent"]
+        }
+      },
+      "required": ["id", "text", "validity"],
       "additionalProperties": false
     },
     "AdminMemoryResult": {
@@ -3101,6 +3154,20 @@
         },
         "file": {
           "$ref": "#/$defs/MemoryFile"
+        },
+        "saved": {
+          "type": "object",
+          "properties": {
+            "paragraphs": {
+              "type": "array",
+              "maxItems": 4096,
+              "items": {
+                "$ref": "#/$defs/SavedParagraph"
+              }
+            }
+          },
+          "required": ["paragraphs"],
+          "additionalProperties": false
         }
       },
       "required": ["workspaces", "inspection"],

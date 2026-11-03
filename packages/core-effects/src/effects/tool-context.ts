@@ -568,6 +568,12 @@ export function buildToolContext(
       list: (path) => files.list(path),
       stat: (path) => files.stat(path),
       ...(files.revision ? { revision: (path: string) => files.revision!(path) } : {}),
+      ...(files.replaceExact
+        ? {
+            replaceExact: (path: string, oldText: string, newText: string) =>
+              effects.write(() => files.replaceExact!(path, oldText, newText)),
+          }
+        : {}),
       checkpointOf: (path) => checkpoints.get(path),
     },
     net: effects.guard(context.net),

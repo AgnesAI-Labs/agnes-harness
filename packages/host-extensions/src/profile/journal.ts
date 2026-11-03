@@ -141,14 +141,15 @@ export class ProfileJournal {
     this.tail = pending.catch(() => undefined)
     return pending
   }
-  decisions(actor: Actor): DecisionCommands {
+  /** `ttlMs`: how long a decision requested through these commands stays open (one day unless given). */
+  decisions(actor: Actor, ttlMs = 86400000): DecisionCommands {
     const journal = this
     return new DecisionCommands({
       key: profileDecisionJournalKey(this.profileId),
       profileId: this.profileId,
       lane: 'main',
       actor,
-      ttlMs: 86400000,
+      ttlMs,
       get lastSeq() {
         return journal.log.lastSeq
       },

@@ -6,7 +6,7 @@ import {
   TERMINAL_RUN_STATES,
 } from '@agnes/core-ledger/reduce/state'
 import { resolveModel } from '../execution/turn/inference.js'
-import { maintenanceCapCredits } from '../maintenance/budget.js'
+import { knownPrice } from '../maintenance/budget.js'
 import type { SessionImpl } from '../step/session.js'
 
 /**
@@ -68,7 +68,8 @@ async function completedTurnsAfter(s: SessionImpl, seq: number): Promise<number>
 
 /**
  * Whether an automatic plan may start now, and if only time stands in the way, when it may. The
- * planner model must have a price: a free or unpriced model has nothing to bound its spend.
+ * planner model must have a known price; zero is one (a free or local model, bounded by the token
+ * budget alone). A model with no known price only runs for the user's own request, once they agree.
  *
  * `run` is the run about to start: its own earlier attempts (a plan a restart or a close cut short)
  * do not count against it, so it continues rather than being refused by itself. `cooldown: false`
@@ -103,10 +104,14 @@ export async function automaticRefusal(
   return undefined
 }
 
+/** Whether the planner model, the target or else the session's primary, has a known price. */
+export function plannerPriced(s: SessionImpl, target: { route: string; model: string } | undefined): boolean {
+  return priced(s, target ?? resolveModel(s, 'primary'))
+}
+
 function priced(s: SessionImpl, target: { route: string; model: string }): boolean {
   try {
-    const record = s.d.provider.models().find((m) => m.route === target.route && m.id === target.model)
-    return record !== undefined && maintenanceCapCredits(record) !== undefined
+    return knownPrice(s.d.provider.models().find((m) => m.route === target.route && m.id === target.model))
   } catch {
     return false
   }

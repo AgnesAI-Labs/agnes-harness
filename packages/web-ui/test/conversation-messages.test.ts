@@ -298,6 +298,108 @@ describe('W3b projected message DOM', () => {
     )
   })
 
+  it('save rows render initiator, outcome and reason without text', async () => {
+    const save = (id: string, extra: Partial<Extract<UINode, { kind: 'refinement-save' }>>): UINode => ({
+      kind: 'refinement-save',
+      id,
+      seq: 10,
+      state: 'refused',
+      ...extra,
+    })
+    const nodes = [
+      save('a', { state: 'saved', initiator: 'auto', target: 'workspace-memory' }),
+      save('b', { reason: 'memory-full', initiator: 'auto', target: 'workspace-memory' }),
+      save('c', { state: 'awaiting-approval', initiator: 'model', target: 'workspace-memory' }),
+      save('d', { state: 'unknown', initiator: 'model', target: 'workspace-memory' }),
+      save('e', { reason: 'approval-expired', initiator: 'model' }),
+      save('f', { reason: 'user-revoked', initiator: 'model' }),
+      save('g', { reason: 'conflict', initiator: 'auto' }),
+      save('h', { reason: 'unavailable' }),
+      save('i', { reason: 'some-later-reason' as never }),
+    ]
+    await act(async () => root.render(createElement(ConversationMessages, { t, nodes })))
+    const lines = [...host.querySelectorAll('[data-testid="refinement-save-notice"]')].map(
+      (line) => line.textContent ?? '',
+    )
+    expect(lines).toHaveLength(9)
+    const reason = (key: string) =>
+      t('timeline.refinement.reason', { reason: t(`timeline.refinementSave.reason.${key}`) })
+    expect(lines[0]).toBe(
+      [
+        t('timeline.refinementSave.state.saved'),
+        t('timeline.refinementSave.by', { who: t('timeline.refinementSave.initiator.auto') }),
+      ].join(' '),
+    )
+    // Memory full: nothing is merged; the person frees space.
+    expect(lines[1]).toContain(reason('memory-full'))
+    expect(t('timeline.refinementSave.reason.memory-full')).toContain('腾出空间')
+    expect(lines[2]).toContain(t('timeline.refinementSave.awaiting'))
+    // A settled unknown: the paragraph stays hidden until a person repairs or removes it.
+    expect(lines[3]).toContain(t('timeline.refinementSave.unknownHint'))
+    expect(lines[4]).toContain(reason('approval-expired'))
+    expect(lines[5]).toContain(reason('user-revoked'))
+    expect(lines[6]).toContain(reason('conflict'))
+    expect(lines[7]).toContain(reason('unavailable'))
+    expect(lines[8]).toContain(t('timeline.refinement.reason', { reason: 'some-later-reason' }))
+    expect(lines.join(' ')).not.toContain('timeline.refinement')
+  })
+
+  it('offers to save each saved memory entry of an applied review to the workspace', async () => {
+    const node: UINode = {
+      kind: 'refinement-run',
+      id: 'r',
+      seq: 4,
+      runId: 'run-r',
+      state: 'applied',
+      trigger: 'manual',
+      edits: [
+        { op: 'upsert', kind: 'memory', id: 'build' },
+        { op: 'upsert', kind: 'prompt', id: 'style' },
+        { op: 'upsert', kind: 'skill', id: 'deploy' },
+        { op: 'delete', kind: 'memory', id: 'old' },
+      ],
+      appliedSeq: 4,
+    }
+    await act(async () => root.render(createElement(ConversationMessages, { t, nodes: [node] })))
+    expect(host.querySelector('[data-testid="refinement-save-entry"]')).toBeNull()
+    const saveEntry = vi.fn(async (_kind: string, id: string) => {
+      if (id === 'build') return { kind: 'receipt' as const, state: 'saved' as const }
+      if (id === 'style')
+        return { kind: 'receipt' as const, state: 'refused' as const, reason: 'memory-full' }
+      throw new Error('connection lost')
+    })
+    await act(async () =>
+      root.render(createElement(ConversationMessages, { t, nodes: [node], saveRefinementEntry: saveEntry })),
+    )
+    const buttons = [...host.querySelectorAll<HTMLButtonElement>('[data-testid="refinement-save-entry"]')]
+    // Only memory and prompt entries a review kept are offered; skills arrive later.
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      t('timeline.refinementSave.entry', { name: 'memory/build' }),
+      t('timeline.refinementSave.entry', { name: 'prompt/style' }),
+    ])
+    for (const button of buttons) await act(async () => button.click())
+    expect(saveEntry.mock.calls).toEqual([
+      ['memory', 'build'],
+      ['prompt', 'style'],
+    ])
+    const results = [...host.querySelectorAll('[data-testid="refinement-save-result"]')].map(
+      (line) => line.textContent ?? '',
+    )
+    expect(results[0]).toContain(t('timeline.refinementSave.state.saved'))
+    expect(results[1]).toContain(t('timeline.refinementSave.reason.memory-full'))
+    // A withdrawn review offers nothing to save.
+    await act(async () =>
+      root.render(
+        createElement(ConversationMessages, {
+          t,
+          nodes: [{ ...node, withdrawn: true }],
+          saveRefinementEntry: saveEntry,
+        }),
+      ),
+    )
+    expect(host.querySelector('[data-testid="refinement-save-entry"]')).toBeNull()
+  })
+
   it('keeps side-call cost rows out of the transcript, even with no turn', async () => {
     // A failed voice call on a new chat writes only its side-call cost row; the session usage counts it.
     const voice = {

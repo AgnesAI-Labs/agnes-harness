@@ -24,6 +24,10 @@ export type {
   RefinementWithdraw,
   RefinementWithdrawOutcome,
 } from './conversation/messages/refinement-run.js'
+export type {
+  RefinementSaveEntry,
+  RefinementSaveOutcome,
+} from './conversation/messages/refinement-save.js'
 export {
   type ConversationMarkdownState,
   ConversationMessages,

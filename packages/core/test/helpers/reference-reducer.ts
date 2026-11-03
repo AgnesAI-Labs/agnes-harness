@@ -3,8 +3,8 @@
 // it along with the product code; change it only when the ledger format itself changes, so it keeps
 // describing the fold the product must still produce. (Changed once for that reason: the program
 // counter left the ledger rows and the fold; once more when background refinement runs began to
-// be folded from their Core rows; once more for refinement entries' metadata rows; and once more for
-// the removal those rows can record.)
+// be folded from their Core rows; once more for refinement entries' metadata rows; once more for
+// the removal those rows can record; and once more for the receipts of saves into the workspace.)
 
 import { CoreError, type Event, type Seq } from '@agnes/core-common/types'
 import { isRegisterTombstone, registerKey } from '@agnes/core-ledger/log/storage'
@@ -20,6 +20,11 @@ import {
   REFINEMENT_RUN_EVENT,
   type RefinementRunRecord,
 } from '@agnes/core-ledger/reduce/refinement-run'
+import {
+  foldRefinementSave,
+  REFINEMENT_SAVE_EVENT,
+  type RefinementSaveRecord,
+} from '@agnes/core-ledger/reduce/refinement-save'
 import type {
   ArtifactJob,
   BudgetState,
@@ -60,6 +65,7 @@ export type LedgerState = {
   refinementRuns: Map<string, RefinementRunRecord>
   refinementEntryMeta: Map<string, RefinementEntryMeta>
   refinementTombstones: Map<string, RefinementEntryTombstone>
+  refinementSaves: Map<string, RefinementSaveRecord>
   // The most recent non-interrupted `cost/ledger` entry's token total, with the seq it landed at,
   // and that same entry's cache-read/input breakdown. `contextTokens` starts counting surface nodes
   // after this seq instead of from the top of the ledger, so a long session's preflight cost stays
@@ -95,6 +101,7 @@ function cloneMaps(s: LedgerState): LedgerState {
     refinementRuns: new Map(s.refinementRuns),
     refinementEntryMeta: new Map(s.refinementEntryMeta),
     refinementTombstones: new Map(s.refinementTombstones),
+    refinementSaves: new Map(s.refinementSaves),
   }
 }
 
@@ -197,6 +204,7 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
         s.taint.clear()
         s.toolCalls.clear()
         s.refinementRuns.clear()
+        s.refinementSaves.clear()
         s.creditsUsed = 0
       }
       s.session = start
@@ -313,6 +321,11 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
       if (tombstone) s.refinementTombstones.set(key, tombstone)
       break
     }
+    case REFINEMENT_SAVE_EVENT: {
+      const saved = foldRefinementSave(e)
+      if (saved) s.refinementSaves.set(saved.receiptId, saved)
+      break
+    }
     case 'tool/call': {
       const step = s.openStep.get(lane)
       const turn = s.openTurn.get(lane)
@@ -396,6 +409,7 @@ export function initialState(): LedgerState {
     refinementRuns: new Map(),
     refinementEntryMeta: new Map(),
     refinementTombstones: new Map(),
+    refinementSaves: new Map(),
     lastLedgerTokens: null,
   }
 }

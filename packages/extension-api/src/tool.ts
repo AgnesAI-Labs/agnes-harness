@@ -338,6 +338,11 @@ export interface ToolContext {
     revision?(path: string): Promise<string | undefined>
     /** Id of the checkpoint taken before this call's latest write to `path`, when the host keeps one. */
     checkpointOf?(path: string): string | undefined
+    /**
+     * Replace the one exact occurrence of oldText in the stored file; keep every other byte. Offered
+     * for managed memory files and may refuse any other path.
+     */
+    replaceExact?(path: string, oldText: string, newText: string): Promise<void>
   }
   readonly net: {
     fetch(url: string, init?: FetchInit): Promise<Response>

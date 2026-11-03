@@ -11,8 +11,9 @@ import {
 } from '../refine/apply.js'
 import { isChildSession } from '../step/child-session.js'
 import type { SessionImpl } from '../step/session.js'
+import { resumeHandOffs } from './handoff.js'
 import { type InspectAnswer, type InspectRequest, inspectEntries, readInFull } from './inspect.js'
-import { APPLY_LIMITS, automaticRefusal, type LimitRefusal } from './limits.js'
+import { APPLY_LIMITS, automaticRefusal, type LimitRefusal, plannerPriced } from './limits.js'
 import { redactEvidence } from './redact.js'
 import { queueRefinementRun, recoverRefinementRuns, refinementRunRow } from './run.js'
 import {
@@ -26,6 +27,7 @@ import {
   tryApply,
 } from './scheduler.js'
 import { lapsedKeys, validEntries } from './validity.js'
+import { recordSettledSaves } from './workspace.js'
 
 export type { InspectAnswer, InspectEntry, InspectRequest, InspectSummary } from './inspect.js'
 export type { RefinementDeps, RefinementSettingsView } from './scheduler.js'
@@ -55,6 +57,12 @@ export type RollbackResult =
       refused: RollbackProblem | 'changed-since' | 'child-session' | 'closing'
       changed?: { kind: HarnessEntry['kind']; id: string }[]
     }
+/**
+ * How a direct proposal is to be kept: `saveTo: 'workspace'` saves what it writes to the session's
+ * workspace too, once it is applied, as the model's save.
+ */
+export type ProposeOptions = { saveTo?: 'workspace' }
+
 /** What a read of this session's entries found, or why it could not be answered. */
 export type InspectOutcome = InspectAnswer | { refused: RefinementRefusal; detail?: string }
 
@@ -79,10 +87,17 @@ export type DirectProposal = {
  * result is applied only between two turns.
  */
 export type RefinementFacade = Readonly<{
-  /** Queues a plan for this trigger; manual triggers only wait for a plan already running. */
+  /**
+   * Queues a plan for this trigger; manual triggers only wait for a plan already running. A trigger
+   * with `saveTo: 'workspace'` also saves the applied result to the workspace: as the user's save for
+   * a manual trigger, as the model's for the model's.
+   */
   request(trigger: RefinementTrigger): Promise<RefinementOutcome>
-  /** Records a direct proposal and applies it once the session is between turns. */
-  propose(proposal: DirectProposal): Promise<RefinementOutcome>
+  /**
+   * Records a direct proposal and applies it once the session is between turns; with
+   * `saveTo: 'workspace'` what it writes is then saved to the workspace as the model's save.
+   */
+  propose(proposal: DirectProposal, options?: ProposeOptions): Promise<RefinementOutcome>
   /**
    * Reads this session's entries in force; never another session's, and it writes nothing. An entry
    * whose goal has ended, or whose goal cannot be read now, is not shown.
@@ -115,13 +130,30 @@ function refusal(s: SessionImpl): { refused: RefinementRefusal } | undefined {
   return undefined
 }
 
+/**
+ * Why a request to save to the workspace cannot even be taken: the target is not one there is, or the
+ * host offers no save path here (an embedded host without one), so planning for it would be wasted.
+ */
+function saveRefusal(
+  s: SessionImpl,
+  saveTo: unknown,
+): { refused: 'unavailable'; detail: string } | undefined {
+  if (saveTo === undefined) return undefined
+  if (saveTo !== 'workspace' || !s.d.refinement?.workspace)
+    return { refused: 'unavailable', detail: 'workspace' }
+  return undefined
+}
+
 async function request(s: SessionImpl, trigger: RefinementTrigger): Promise<RefinementOutcome> {
   const refused = refusal(s)
   if (refused) return refused
   const settings = settingsOf(s) as RefinementSettingsView
   const automatic = trigger.kind !== 'manual'
-  // Everything but the user's own request is automatic: it follows the mode and the limits.
+  // Everything but the user's own request is automatic: it follows the mode and the limits. The model
+  // asking for the result to be saved to the workspace is no exception.
   if (automatic && settings.mode !== 'auto') return { refused: 'manual-mode' }
+  const unsaved = saveRefusal(s, trigger.saveTo)
+  if (unsaved) return unsaved
   if (!plannerOf(s)) return { refused: 'unavailable' }
   const busy = slotOf(s).planning !== undefined
   if (automatic) {
@@ -129,7 +161,9 @@ async function request(s: SessionImpl, trigger: RefinementTrigger): Promise<Refi
     // stop it then; any other limit cannot clear before the next start.
     const why = await automaticRefusal(s, s.d.refinement?.target, busy ? { cooldown: false } : {})
     if (why) return { refused: why.refused }
-  }
+  } else if (trigger.allowUnpriced !== true && !plannerPriced(s, s.d.refinement?.target))
+    // The user's own request on a model with no known price runs only once the user agreed to that.
+    return { refused: 'unpriced' }
   let runId: string
   try {
     runId = await queueRefinementRun(s, trigger, settings.revision)
@@ -223,16 +257,28 @@ function directPlan(
   }
 }
 
-async function propose(s: SessionImpl, p: DirectProposal): Promise<RefinementOutcome> {
+async function propose(
+  s: SessionImpl,
+  p: DirectProposal,
+  options: ProposeOptions = {},
+): Promise<RefinementOutcome> {
   const refused = refusal(s)
   if (refused) return refused
+  // The model saving to the workspace follows the mode, as its other automatic requests do.
+  if (options.saveTo !== undefined && settingsOf(s)?.mode !== 'auto') return { refused: 'manual-mode' }
+  const unsaved = saveRefusal(s, options.saveTo)
+  if (unsaved) return unsaved
   const plan = directPlan(s, p, lapsedKeys(await validEntries(s)))
   if ('refused' in plan) return plan
   const runId = s.d.ids.ulid()
   const written = await s.locked(async () => {
     const settings = settingsOf(s)
     if (!settings) return false
-    const trigger: RefinementTrigger = { kind: 'model', seq: s.lastSeq }
+    const trigger: RefinementTrigger = {
+      kind: 'model',
+      seq: s.lastSeq,
+      ...(options.saveTo === 'workspace' ? { saveTo: 'workspace' as const } : {}),
+    }
     await s.append([
       refinementRunRow(s, runId, 'proposed', { trigger, settingsRevision: settings.revision, plan }),
     ])
@@ -281,6 +327,7 @@ export async function refinementAfterTurn(s: SessionImpl): Promise<void> {
 export async function recoverRefinement(s: SessionImpl, mode?: string): Promise<void> {
   await recoverMaintenance(s)
   if (!settingsOf(s)) return
+  await recordSettledSaves(s)
   try {
     const planner = plannerOf(s)
     if (planner)
@@ -292,6 +339,9 @@ export async function recoverRefinement(s: SessionImpl, mode?: string): Promise<
       // A plan the last process left proposed is applied now if the session is between turns, so
       // the first turn after the reopen reads it; with a turn still open it waits for that turn's end.
       await applyProposed(s)
+      // What applied runs still owe the workspace (cut off by a crash, or a host out of reach), in
+      // the background: the reopen never waits for the host.
+      void resumeHandOffs(s)
       pump(s)
     }
   } catch (error) {
@@ -303,7 +353,7 @@ export async function recoverRefinement(s: SessionImpl, mode?: string): Promise<
 export function refinementFacade(s: SessionImpl): RefinementFacade {
   return Object.freeze({
     request: (trigger: RefinementTrigger) => request(s, trigger),
-    propose: (proposal: DirectProposal) => propose(s, proposal),
+    propose: (proposal: DirectProposal, options?: ProposeOptions) => propose(s, proposal, options),
     inspect: (request: InspectRequest) => inspect(s, request),
     rollback: (refineSeq: Seq) => rollback(s, refineSeq),
     afterTurn: () => refinementAfterTurn(s),

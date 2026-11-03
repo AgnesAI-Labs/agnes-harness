@@ -32,6 +32,8 @@ export type ParseContext = {
   evidenceIds: readonly string[]
   fullEntries: readonly EntryRef[]
   shownEntries: readonly EntryRef[]
+  /** Entries saved to the workspace the prompt showed; they may only be confirmed. */
+  workspaceRefs?: readonly string[]
 }
 
 const KINDS = new Set<string>(['prompt', 'memory', 'skill', 'subagent'])
@@ -60,6 +62,9 @@ function unfence(text: string): string {
 
 function edit(raw: unknown, at: number): PlannerEdit {
   const where = `invalid-shape: edits[${at}]`
+  // An entry saved to the workspace is only ever confirmed, never rewritten or deleted.
+  if (isObj(raw) && (raw.kind === 'workspace-memory' || raw.kind === 'workspace-skill'))
+    return reject(`confirm-only: ${raw.kind}/${String(raw.id)}`)
   if (!isObj(raw) || !str(raw.kind, 16) || !KINDS.has(raw.kind) || !str(raw.id, 128) || !ID.test(raw.id))
     return reject(where)
   const kind = raw.kind as EntryKind
@@ -128,7 +133,7 @@ function checkAgainst(out: PlannerOutput, context: ParseContext): void {
   }
   const ref = (e: EntryRef) => `${e.kind}/${e.id}`
   const full = new Set(context.fullEntries.map(ref))
-  const shown = new Set(context.shownEntries.map(ref))
+  const shown = new Set([...context.shownEntries.map(ref), ...(context.workspaceRefs ?? [])])
   const touched = new Set<string>()
   for (const e of out.edits) {
     const key = ref(e)

@@ -213,6 +213,8 @@ export interface Host {
   /** Read-only descriptions from the currently assembled adapter registry. */
   modelAdapterCatalog: Assembled['modelAdapterCatalog']
   memory: Assembled['memory']
+  /** A person's management of saved task experience paragraphs, on the memory session the editor uses. */
+  readonly savedParagraphs: Assembled['savedParagraphs']
   readonly providers: Assembled['providers']
   /** The implementation each seam kind was bound to in this container. */
   seamBindings: Assembled['seamBindings']
@@ -433,6 +435,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
     },
     modelAdapterCatalog: () => a.modelAdapterCatalog(),
     memory: (workspaceRoot, sessionKey) => a.memory(workspaceRoot, sessionKey),
+    savedParagraphs: a.savedParagraphs,
     providers: Object.freeze({ catalog: () => a.providers.catalog() }),
     seamBindings: () => a.seamBindings(),
     runtimes: a.runtimes,

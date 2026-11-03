@@ -2,6 +2,39 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.2.0
+
+### Added
+
+All additions are optional. A memory provider, memory file port or tool filesystem that implements
+none of them compiles and behaves as before; `^5.0.0` ranges admit 5.2.0.
+
+- `MemoryValidityView` (with `MemoryParagraphValidity`): an optional, read-only and synchronous
+  `validity` input to `MemoryProvider.open`. It answers `valid`, `expired` or `unknown` for a managed
+  paragraph id and carries a `revision()` that changes whenever an answer may change. A provider that
+  does not read it ignores it. A provider that keeps managed paragraphs folds the left-out set and
+  `revision()` into its snapshot revision only while the file holds managed paragraphs, and leaves
+  every managed paragraph out when no view is given.
+- `MemorySession.paragraphs?(source, signal)` returning a `MemoryParagraphPort` (with
+  `MemoryParagraph`, `MemoryParagraphList` and `MemoryParagraphChange`) for managed paragraphs outside
+  any turn, always against the current stored file. `list()` returns `{ hash, paragraphs }`.
+  `propose(changes, baseHash?)` takes one change or an array and returns one proposal for all of them,
+  refusing the whole call when any member cannot apply, and refusing with `MEMORY_CONFLICT` when the
+  given `baseHash` is stale. `commit` writes it in one compare-and-swap on `proposal.baseHash` and
+  keeps the workspace memory mode (off refuses; ask needs the caller's approval of the exact
+  proposal). A refusal writes nothing. A session that has the method states that it keeps managed
+  paragraphs; the Host does not save them to a provider without it.
+- `MemoryFilePort.replaceExact?(path, oldText, newText)` and the same optional
+  `ToolContext.fs.replaceExact?`: replace the one exact occurrence of `oldText` in the stored file and
+  keep every other byte, through the same review, approval and compare-and-swap path as `write`.
+  Core offers it to tools only when the memory provider's file port has it and counts it as a write;
+  it may refuse paths outside the managed memory files.
+- Testkit `memoryParagraphConformance(open)` (with `MemoryParagraphFixture`) checks a paragraph port
+  against a fresh store: the listed hash, a single change without a base, a batch in one commit,
+  stale base and stale proposal refusals, and a batch with a bad member writing nothing.
+- Protocol `MemorySource` gains an optional `maintenance` run id (1-128 characters) for a background
+  write made outside any turn; `turn` stays required and then names the turn the evidence came from.
+
 ## 5.1.0
 
 ### Added

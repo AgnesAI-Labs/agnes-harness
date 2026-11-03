@@ -1,5 +1,7 @@
 import { hasDurableReservations } from '@agnes/core-child-control/child/store'
 import type { Seq } from '@agnes/core-common/types'
+import { scanAll } from '@agnes/core-ledger/log/scan-pages'
+import { MAINTENANCE_LANE } from '@agnes/core-ledger/reduce/state'
 import type { ModelRecord } from '@agnes/protocol'
 import {
   reconcileTreeReservationHandle,
@@ -20,10 +22,20 @@ export const maintenanceRoot = (s: SessionImpl): string => `rsi:${s.key}`
 export const maintenanceBudgetAvailable = (s: SessionImpl): boolean => hasDurableReservations(s.d.log.storage)
 
 /**
+ * Whether a model has a known price: input and output rates that are finite and not negative. Zero is a
+ * known price (a free or local model); a rate that is missing, not a number or negative is not a price.
+ */
+export function knownPrice(record: Pick<ModelRecord, 'cost'> | undefined): boolean {
+  const cost = record?.cost
+  return cost !== undefined && [cost.input, cost.output].every((p) => Number.isFinite(p) && p >= 0)
+}
+
+/**
  * Credits per token at the cheapest rate a call is billed at, from catalogue prices in credits per
  * million tokens: input and output, the two kinds every call spends. Undefined for a model with no
- * usable price; one priced at zero for either kind has no rate that bounds its tokens, so it counts
- * as unpriced. Cache reads are left out: a one-shot planner request does not read a cache.
+ * usable price, and for one priced at zero for either kind: no credit cap can bound its tokens, so its
+ * calls are bounded by the token count alone. Cache reads are left out: a one-shot planner request does
+ * not read a cache.
  */
 function cheapestRate(cost: ModelRecord['cost']): number | undefined {
   const { input, output } = cost
@@ -54,11 +66,28 @@ export type MaintenanceHold =
   | { status: 'unbudgeted' }
   | { status: 'refused'; reason: 'budget' | 'unpriced' | 'unavailable' }
 
+/** The input and output tokens the session's maintenance calls have recorded spending so far. */
+async function spentTokens(s: SessionImpl): Promise<number> {
+  const rows = await scanAll((q) => s.scan(q), {
+    type: 'cost/ledger',
+    lane: MAINTENANCE_LANE,
+    toSeq: s.lastSeq,
+  })
+  return rows.reduce((sum, row) => {
+    const tokens = (row.data as { tokens?: { input?: unknown; output?: unknown } } | null)?.tokens
+    const count = (value: unknown) =>
+      typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0
+    return sum + count(tokens?.input) + count(tokens?.output)
+  }, 0)
+}
+
 /**
  * Holds the call's conservative cost against the maintenance root. A priced model is always held,
- * whatever the session's own tree budget, so maintenance never draws on a turn's reservation. An
- * unpriced model is refused unless the caller already has the user's consent to an unknown price;
- * that call is recorded but not held.
+ * whatever the session's own tree budget, so maintenance never draws on a turn's reservation. A model
+ * priced at zero (or too cheaply for the root to hold) is not held: its calls cost nothing in credits
+ * and are bounded by the token budget alone, counted from the calls already recorded. A model with no
+ * known price is refused unless the caller already has the user's consent to an unknown price; that
+ * call is recorded, not held, and bounded the same way.
  */
 export async function holdMaintenance(
   s: SessionImpl,
@@ -74,8 +103,13 @@ export async function holdMaintenance(
   },
 ): Promise<MaintenanceHold> {
   const rootCredits = maintenanceCapCredits(input.record, input.budgetTokens)
-  if (rootCredits === undefined || input.projectedCredits === undefined)
-    return input.allowUnpriced ? { status: 'unbudgeted' } : { status: 'refused', reason: 'unpriced' }
+  if (rootCredits === undefined || input.projectedCredits === undefined) {
+    if (!knownPrice(input.record) && !input.allowUnpriced) return { status: 'refused', reason: 'unpriced' }
+    const spent = await spentTokens(s)
+    return spent + input.inputTokens + input.maxOutputTokens > input.budgetTokens
+      ? { status: 'refused', reason: 'budget' }
+      : { status: 'unbudgeted' }
+  }
   if (!maintenanceBudgetAvailable(s)) return { status: 'refused', reason: 'unavailable' }
   const reserved = await reserveTreeBudgetHandle(
     s,

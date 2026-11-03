@@ -42,7 +42,11 @@ const inspection = (mode: 'off' | 'ask' | 'auto') => ({
 afterEach(() => {
   vi.unstubAllGlobals()
   document.body.replaceChildren()
+  saved = []
 })
+
+type Saved = { id: string; text: string; validity: string; reviewAfter?: number; initiator?: string }
+let saved: Saved[] = []
 
 function server(fail: (body: Record<string, unknown>) => boolean = () => false) {
   const memory: Record<string, unknown>[] = []
@@ -66,10 +70,20 @@ function server(fail: (body: Record<string, unknown>) => boolean = () => false) 
               content: typeof body.content === 'string' ? body.content : '- prefers tables',
             }
           : undefined
+      const asked = body.saved as { action: string; paragraphId?: string } | undefined
+      if (asked?.action === 'withdraw' || asked?.action === 'convert')
+        saved = saved.filter((entry) => entry.id !== asked.paragraphId)
+      if (asked?.action === 'renew')
+        saved = saved.map((entry) =>
+          entry.id === asked.paragraphId
+            ? { ...entry, validity: 'valid', reviewAfter: Date.UTC(2026, 11, 4) }
+            : entry,
+        )
       return Response.json({
         workspaces: [{ path: '/work/WorkLLM', available: true }],
         inspection: inspection(mode),
         ...(file ? { file } : {}),
+        ...(asked ? { saved: { paragraphs: saved } } : {}),
       })
     }),
   )
@@ -126,7 +140,12 @@ it('opens the memory files subpage with MEMORY.md, saves with the version it rea
     const drill = host.querySelector<HTMLButtonElement>('[data-testid="memory-open"]')
     expect(drill?.textContent).toContain('1')
     await act(async () => drill?.click())
-    expect(memory.at(-1)).toEqual({ cwd: '/work/WorkLLM', file: 'MEMORY.md' })
+    // The file, then the saved task experience paragraphs beside it (none here: no section is shown).
+    expect(memory.slice(-2)).toEqual([
+      { cwd: '/work/WorkLLM', file: 'MEMORY.md' },
+      { cwd: '/work/WorkLLM', saved: { action: 'list' } },
+    ])
+    expect(host.querySelector('[data-testid="memory-saved"]')).toBeNull()
     const editor = host.querySelector<HTMLTextAreaElement>('[data-testid="memory-content"]')
     expect(editor?.value).toBe('- prefers tables')
     const save = host.querySelector<HTMLButtonElement>('[data-testid="memory-save"]')
@@ -320,5 +339,75 @@ it('re-reads memory written while settings were closed and keeps an unsaved draf
     expect(editor()?.value).toBe('Draft')
   } finally {
     await act(async () => root.unmount())
+  }
+})
+
+it('lists saved task experience with review dates and renews, withdraws or converts a paragraph', async () => {
+  saved = [
+    {
+      id: 'ra000000001',
+      text: 'Lint first\nRun pnpm lint before committing.',
+      validity: 'valid',
+      reviewAfter: Date.UTC(2026, 11, 1),
+      initiator: 'auto',
+    },
+    {
+      id: 'rb000000001',
+      text: 'Short answers\nKeep answers short.',
+      validity: 'expired',
+      reviewAfter: Date.UTC(2026, 9, 1),
+      initiator: 'model',
+    },
+    { id: 'rc000000001', text: 'Unconfirmed\nA save whose result is not known.', validity: 'unknown' },
+  ]
+  const memory = server()
+  const { host, unmount } = await render()
+  try {
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="memory-open"]')?.click())
+    await act(async () => {})
+    expect(memory).toContainEqual({ cwd: '/work/WorkLLM', saved: { action: 'list' } })
+    const section = host.querySelector<HTMLElement>('[data-testid="memory-saved"]')
+    expect(section?.textContent).toContain('30-day review')
+    // Memory full: nothing is merged automatically; the person frees space.
+    expect(section?.textContent).toMatch(/full.*nothing is merged.*free space/i)
+    const rows = () => [...host.querySelectorAll<HTMLElement>('[data-testid="memory-saved-paragraph"]')]
+    expect(rows().map((row) => row.querySelector('[translate="no"]')?.textContent)).toEqual([
+      'Lint first',
+      'Short answers',
+      'Unconfirmed',
+    ])
+    expect(rows()[0]?.textContent).toMatch(/agent sees it.*review by/i)
+    expect(rows()[0]?.textContent).toContain('2026')
+    expect(rows()[1]?.textContent).toMatch(/past its review date/i)
+    expect(rows()[2]?.textContent).toMatch(/does not see it until you/i)
+    // No review date to renew for a paragraph nothing vouches for.
+    expect(rows()[2]?.querySelector('[data-testid="memory-saved-renew"]')).toBeNull()
+    await act(async () =>
+      rows()[1]?.querySelector<HTMLButtonElement>('[data-testid="memory-saved-renew"]')?.click(),
+    )
+    expect(memory.at(-1)).toEqual({
+      cwd: '/work/WorkLLM',
+      saved: { action: 'renew', paragraphId: 'rb000000001' },
+    })
+    expect(rows()[1]?.textContent).toMatch(/agent sees it/i)
+    // Withdrawing changes MEMORY.md: the open, unedited file is read again.
+    await act(async () =>
+      rows()[0]?.querySelector<HTMLButtonElement>('[data-testid="memory-saved-withdraw"]')?.click(),
+    )
+    expect(memory.slice(-2)).toEqual([
+      { cwd: '/work/WorkLLM', saved: { action: 'withdraw', paragraphId: 'ra000000001' } },
+      { cwd: '/work/WorkLLM', file: 'MEMORY.md' },
+    ])
+    expect(rows()).toHaveLength(2)
+    await act(async () =>
+      rows()[1]?.querySelector<HTMLButtonElement>('[data-testid="memory-saved-convert"]')?.click(),
+    )
+    expect(memory.at(-2)).toEqual({
+      cwd: '/work/WorkLLM',
+      saved: { action: 'convert', paragraphId: 'rc000000001' },
+    })
+    expect(rows().map((row) => row.querySelector('[translate="no"]')?.textContent)).toEqual(['Short answers'])
+  } finally {
+    await unmount()
   }
 })
