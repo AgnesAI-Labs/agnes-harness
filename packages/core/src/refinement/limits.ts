@@ -10,7 +10,8 @@ import { knownPrice } from '../maintenance/budget.js'
 import type { SessionImpl } from '../step/session.js'
 
 /**
- * How often automatic refinement may plan: not within the cooldown of the last plan, and a number of
+ * How often automatic refinement may plan: not within the cooldown of the last plan (the model's own
+ * reviews apart), and a number of
  * them a session. Manual requests are counted apart and only wait for the
  * plan in flight, and so are the model's own requests (`MODEL_LIMITS`). A review that found nothing to
  * keep does not count toward `perSession`. The token budget is the maintenance root
@@ -103,7 +104,12 @@ export async function automaticRefusal(
   const automatic = planned.filter((run) => run.automatic && !run.model)
   if (automatic.filter((run) => !run.empty).length >= AUTOMATIC_LIMITS.perSession)
     return { refused: 'session-limit' }
-  const ended = Math.max(-Infinity, ...planned.map((run) => run.endedAt ?? run.startedAt))
+  // The cooldown follows the last plan that was not the model's own: its frequent reviews must not keep
+  // the machine's triggers (a compaction, a repeated failure) from ever starting.
+  const ended = Math.max(
+    -Infinity,
+    ...planned.filter((run) => !run.model).map((run) => run.endedAt ?? run.startedAt),
+  )
   if (o.cooldown !== false && now < ended + AUTOMATIC_LIMITS.cooldownMs)
     return { refused: 'cooldown', retryAt: ended + AUTOMATIC_LIMITS.cooldownMs }
   return undefined

@@ -1,17 +1,17 @@
 import { sha256Hex } from '@agnes/core-common/request/hash'
-import {
-  PROMOTION_CONFIRMATIONS,
-  type SaveInitiator,
-  timesSeen,
-} from '@agnes/core-ledger/reduce/refinement-save'
+import type { SaveInitiator } from '@agnes/core-ledger/reduce/refinement-save'
 import type { HarnessEntry } from '@agnes/core-ledger/reduce/shapes'
-import type { RefinementRunRecord, RefinementTriggerKind } from '@agnes/core-ledger/reduce/state'
+import type {
+  RefinementPlanEdit,
+  RefinementRunRecord,
+  RefinementTriggerKind,
+} from '@agnes/core-ledger/reduce/state'
 import { entryKey } from '../refine/apply.js'
 import { isChildSession } from '../step/child-session.js'
 import type { SessionImpl } from '../step/session.js'
-import { namesWorkspace } from './reach.js'
+import { modelUserReach, namesWorkspace } from './reach.js'
 import { settingsOf } from './scheduler.js'
-import { boundMeta } from './validity.js'
+import { boundMeta, hasGroundedEvidence, readFacts } from './validity.js'
 import { saveToWorkspace, type WorkspaceSaveInput } from './workspace.js'
 
 /**
@@ -36,9 +36,15 @@ const autoCommandId = (s: SessionImpl, ref: { kind: string; id: string }, conten
 const runCommandId = (runId: string, ref: { kind: string; id: string }): string =>
   `${runId}:${sha256Hex(`${ref.kind}/${ref.id}`).slice(0, 32)}`
 
-/** The upserts of an applied run whose entry still holds what that run wrote. */
-function written(s: SessionImpl, run: Applied) {
-  return run.plan.edits.filter((edit) => {
+type Upsert = Extract<RefinementPlanEdit, { op: 'upsert' }>
+
+/**
+ * The upserts of an applied run whose entry still holds what that run wrote. The plan is the one as it
+ * was applied (an applied row carries it whenever the apply dropped an edit or a confirmation), so what
+ * the apply dropped is never offered.
+ */
+function written(s: SessionImpl, run: Applied): Upsert[] {
+  return run.plan.edits.filter((edit): edit is Upsert => {
     if (edit.op !== 'upsert') return false
     const entry = s.state.registers.harnessEntries.get(entryKey(edit))?.value as HarnessEntry | undefined
     return entry?.source === `refinement:${run.runId}`
@@ -51,10 +57,11 @@ const recordedIds = (s: SessionImpl): Set<string> =>
 
 /**
  * The entries this run touched (wrote, or confirmed) that now qualify for an automatic save: in auto
- * mode, held for the session, not handed off, seen to hold at least `PROMOTION_CONFIRMATIONS` times at
- * their current content version (the review that wrote it counts as the first), and not yet offered at
- * that version (a receipt row of this session names the offer). An offer is keyed by the content version, so each version is offered once, to user
- * memory when the entry may reach every workspace (`toUser`), else to the workspace.
+ * mode, held for the session, not handed off, and not yet offered at their current content version (a
+ * receipt row of this session names the offer). The review that wrote an entry is the first time it was
+ * seen to hold, so an entry a review wrote or confirmed is offered at once. An offer is keyed by the
+ * content version, so each version is offered once, to user memory when the entry may reach every
+ * workspace (`toUser`), else to the workspace.
  */
 function automatic(s: SessionImpl, run: Applied, recorded: ReadonlySet<string>): WorkspaceSaveInput[] {
   if (settingsOf(s)?.mode !== 'auto') return []
@@ -71,7 +78,6 @@ function automatic(s: SessionImpl, run: Applied, recorded: ReadonlySet<string>):
   for (const [key, ref] of touched) {
     const meta = boundMeta(s.state, key)
     if (meta?.applicability !== 'session' || meta.handedOff === true) continue
-    if (timesSeen(meta.confirmations.count) < PROMOTION_CONFIRMATIONS) continue
     const commandId = autoCommandId(s, ref, meta.contentHash)
     if (!recorded.has(commandId))
       offers.push({
@@ -98,26 +104,45 @@ function toUser(s: SessionImpl, key: string, reach: 'user' | undefined): boolean
 
 /**
  * The saves an applied run owes: every entry it wrote, when its trigger asked for the result to be
- * saved to the workspace or, by a person's own request, to user memory (a task-level one too: the host's
- * rules refuse it, so the refusal is on record), and the
- * automatic offers of the entries it confirmed. Each has a fixed command id, so asking again after a
- * crash is answered with the first receipt.
+ * saved to the workspace or to user memory, and the automatic offers of the entries it confirmed. A
+ * person's own request for user memory goes there for every entry it wrote (a task-level one too: the
+ * host's rules refuse it, so the refusal is on record). The model's goes there only for an entry that
+ * `modelUserReach` lets reach user memory (the same structure and evidence rules as an automatic
+ * promotion); any other goes to the workspace as the model's save. Each has a fixed command id, so asking
+ * again after a crash is answered with the first receipt.
  */
-function owed(s: SessionImpl, run: Applied, recorded: ReadonlySet<string>): WorkspaceSaveInput[] {
+async function owed(
+  s: SessionImpl,
+  run: Applied,
+  recorded: ReadonlySet<string>,
+): Promise<WorkspaceSaveInput[]> {
   const initiator = run.trigger.saveTo === undefined ? undefined : INITIATOR[run.trigger.kind]
-  // A request for user memory (a person's, or the model's): every entry goes to the host as a
-  // user-memory save, which sends text that names its workspace back to that workspace.
-  const target = run.trigger.saveTo === 'user' ? ('user' as const) : undefined
+  const toUserMemory = run.trigger.saveTo === 'user'
+  const edits = initiator ? written(s, run) : []
+  // What the model's edits cite, as the level and reach checks read it.
+  const facts =
+    toUserMemory && initiator === 'model'
+      ? await readFacts(
+          s,
+          edits.flatMap((edit) => edit.evidenceSeqs),
+        )
+      : undefined
   const saves: WorkspaceSaveInput[] = []
   const asked = new Set<string>()
   if (initiator)
-    for (const edit of written(s, run)) {
+    for (const edit of edits) {
       const commandId = runCommandId(run.runId, edit)
       asked.add(entryKey(edit))
+      // A request for user memory goes to the host as a user-memory save, which sends text that names
+      // its workspace back to that workspace.
+      const user =
+        toUserMemory &&
+        (facts === undefined ||
+          modelUserReach(edit, hasGroundedEvidence(facts, edit.evidenceSeqs)) === 'user')
       if (!recorded.has(commandId))
         saves.push({
           initiator,
-          ...(target ? { target } : {}),
+          ...(user ? { target: 'user' as const } : {}),
           kind: edit.kind,
           id: edit.id,
           commandId,
@@ -139,7 +164,7 @@ export async function handOffApplied(s: SessionImpl, runId: string): Promise<voi
   if (!handsOff(s)) return
   const run = s.state.refinementRuns.get(runId)
   if (run?.state !== 'applied' || !run.plan) return
-  await handOver(s, owed(s, { ...run, plan: run.plan }, recordedIds(s)))
+  await handOver(s, await owed(s, { ...run, plan: run.plan }, recordedIds(s)))
 }
 
 const handsOff = (s: SessionImpl): boolean =>
@@ -168,15 +193,18 @@ export function resumeHandOffs(s: SessionImpl): Promise<void> {
   const revision = settingsOf(s)?.revision
   if (revision === undefined || !handsOff(s)) return Promise.resolve()
   const recorded = recordedIds(s)
-  const saves: WorkspaceSaveInput[] = []
   const applied = [...s.state.refinementRuns.values()]
     .filter((run) => run.state === 'applied' && run.settingsRevision === revision && run.plan)
     .sort((a, b) => a.seq - b.seq)
-  for (const run of applied) {
-    if (saves.length >= RESUME_LIMIT) break
-    saves.push(...owed(s, run as Applied, recorded))
+  const offer = async () => {
+    const saves: WorkspaceSaveInput[] = []
+    for (const run of applied) {
+      if (saves.length >= RESUME_LIMIT) break
+      saves.push(...(await owed(s, run as Applied, recorded)))
+    }
+    await handOver(s, saves.slice(0, RESUME_LIMIT))
   }
-  return handOver(s, saves.slice(0, RESUME_LIMIT)).catch((error) =>
+  return offer().catch((error) =>
     s.d.logger.warn('refinement workspace hand-off failed', { message: String(error) }),
   )
 }

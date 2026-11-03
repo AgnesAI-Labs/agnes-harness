@@ -84,5 +84,7 @@ it('save rows render initiator, outcome and reason without text', () => {
     /^Task experience: saved to user memory at your request \(all workspaces\)\. .*withdraw it in the Web memory settings.*does not read user memory/,
   )
   expect(save({ ...asked, state: 'saved' })).not.toMatch(/asked by/)
-  expect(save({ ...asked, reason: 'user-revoked' })).toMatch(/withdrew this from user memory before/)
+  expect(save({ ...asked, reason: 'user-revoked' })).toMatch(
+    /this was withdrawn before; it is not saved again/,
+  )
 })

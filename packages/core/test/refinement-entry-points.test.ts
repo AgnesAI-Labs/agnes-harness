@@ -1,7 +1,10 @@
 import { REFINEMENT_SAVE_EVENT, type SaveReceipt } from '@agnes/core-ledger/reduce/refinement-save'
 import type { RefinementRunRecord } from '@agnes/core-ledger/reduce/state'
 import { describe, expect, it, vi } from 'vitest'
+import { entryKey } from '../src/refine/apply.js'
 import { refinementFacade } from '../src/refinement/facade.js'
+import { refinementRunRow } from '../src/refinement/run.js'
+import { tryApply } from '../src/refinement/scheduler.js'
 import type { RefinementWorkspacePort, WorkspaceSaveRequest } from '../src/refinement/workspace.js'
 import { textTurn, toolTurn } from './helpers/fake-provider.js'
 import {
@@ -154,6 +157,71 @@ describe('automatic saves of confirmed entries', () => {
     await t.session.close()
   })
 
+  it('an entry or a confirmation the apply dropped is never offered', async () => {
+    const h = host()
+    const t = await open({ workspace: h.workspace, answers: [] })
+    expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
+    const request = ofType(await t.rows(), 'user/message')[0]?.seq ?? 0
+    // A session entry no review wrote, so nothing offers it yet.
+    const kept = await refinementFacade(t.session).propose({
+      rationale: 'The user said which file to read.',
+      evidenceSeqs: [request],
+      edits: [{ op: 'upsert', kind: 'memory', id: 'read-b', title: 'Read b', content: 'Read b.' }],
+    })
+    await ended(t, (kept as { runId: string }).runId)
+    const entry = t.session.state.registers.harnessEntries.get(entryKey({ kind: 'memory', id: 'read-b' }))
+    // A proposed plan that confirms it and writes another entry, planned when `read-b` was a different
+    // cell: the apply drops the confirmation and the hand-off must not offer `read-b` for it.
+    const runId = 'confirm-and-write'
+    await t.session.append([
+      refinementRunRow(t.session, runId, 'proposed', {
+        trigger: { kind: 'compaction', seq: request },
+        settingsRevision: 'r1',
+        readSet: {
+          settingsRevision: 'r1',
+          entries: [{ kind: 'memory', id: 'read-b', seq: (entry?.seq ?? 1) - 1, version: 1 }],
+        },
+        plan: {
+          summary: 's',
+          rationale: 'r',
+          expectedOutcome: '',
+          edits: [
+            {
+              op: 'upsert',
+              kind: 'memory',
+              id: 'other',
+              title: 'Other',
+              content: 'Other.',
+              applicability: 'session',
+              evidenceSeqs: [request],
+              usedEvidence: [],
+            },
+          ],
+          confirmations: [
+            {
+              kind: 'memory',
+              id: 'read-b',
+              evidenceSeqs: [request],
+              confirmedBy: { identity: 'tool:99', seq: request },
+            },
+          ],
+          evidenceSeqs: [request],
+          baseline: [],
+        },
+      }),
+    ])
+    expect(await tryApply(t.session, runId)).toBe('applied')
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    const applied = t.session.state.refinementRuns.get(runId)
+    // The row that ends the run carries the plan as applied.
+    expect(applied?.plan?.confirmations).toEqual([])
+    expect(applied?.plan?.edits.map((e) => e.op === 'upsert' && e.id)).toEqual(['other'])
+    expect(t.entries().sort()).toEqual(['other', 'read-b'])
+    // Neither is offered: `other` has no review behind it and the confirmation of `read-b` was dropped.
+    expect(h.asked).toHaveLength(0)
+    await t.session.close()
+  })
+
   it('manual mode never offers auto saves', async () => {
     const h = host()
     const t = await confirmable({ answers: [byTools, byQuote], workspace: h.workspace, mode: 'manual' })
@@ -265,9 +333,10 @@ describe('saving the result of a run to the workspace', () => {
     await vi.waitFor(() => expect(h.asked).toHaveLength(1))
     expect(h.asked[0]).toMatchObject({ initiator: 'model', target: 'user', entry: { id: 'read-b' } })
     // A direct proposal is the same: applied to the session, then saved to user memory as the model's.
+    const request = ofType(await t.rows(), 'user/message')[0]?.seq ?? 0
     const proposal = {
       rationale: 'The user said which file to read.',
-      evidenceSeqs: [1],
+      evidenceSeqs: [request],
       edits: [
         { op: 'upsert' as const, kind: 'memory' as const, id: 'read-c', title: 'Read c', content: 'Read c.' },
       ],
@@ -290,6 +359,45 @@ describe('saving the result of a run to the workspace', () => {
     })
     expect(m.session.lastSeq).toBe(before)
     await m.session.close()
+  })
+
+  it('the model reaches user memory only with a request of the user or a settled result behind the lesson', async () => {
+    const h = host()
+    const t = await open({
+      workspace: h.workspace,
+      scripts: [toolTurn('read', { path: 'b' }), textTurn('ok')],
+      reads: [true],
+      answers: [],
+    })
+    expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
+    const all = await t.rows()
+    const user = ofType(all, 'user/message')[0]?.seq ?? 0
+    const result = ofType(all, 'tool/result')[0]?.seq ?? 0
+    const reply = ofType(all, 'assistant/message').at(-1)?.seq ?? 0
+    const propose = async (id: string, evidenceSeqs: number[]) => {
+      const out = await refinementFacade(t.session).propose(
+        {
+          rationale: 'A lesson.',
+          evidenceSeqs,
+          edits: [{ op: 'upsert', kind: 'memory', id, title: id, content: `Lesson ${id}.` }],
+        },
+        { saveTo: 'user' },
+      )
+      await ended(t, (out as { runId: string }).runId)
+    }
+    // Its own words alone back nothing that every workspace would read: the workspace gets the model's save.
+    await propose('own-words', [reply])
+    await vi.waitFor(() => expect(h.asked).toHaveLength(1))
+    expect(h.asked[0]).toMatchObject({ initiator: 'model', entry: { id: 'own-words' } })
+    expect(h.asked[0]).not.toHaveProperty('target')
+    await propose('from-result', [result])
+    await propose('from-request', [reply, user])
+    await vi.waitFor(() => expect(h.asked).toHaveLength(3))
+    expect(h.asked.slice(1).map((r) => [r.entry.id, r.initiator, r.target])).toEqual([
+      ['from-result', 'model', 'user'],
+      ['from-request', 'model', 'user'],
+    ])
+    await t.session.close()
   })
 
   it('a trigger with no one behind it can never ask for user memory', async () => {

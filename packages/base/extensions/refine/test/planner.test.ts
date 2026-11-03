@@ -4,7 +4,6 @@ import { type ParseContext, parsePlannerOutput } from '../src/planner/parse.js'
 import {
   buildPlannerPrompt,
   estimateTokens,
-  PLANNER_INPUT_TOKENS,
   type PlannerEntry,
   type PlannerEvidence,
   type PlannerGuidance,
@@ -31,7 +30,9 @@ const guidance: PlannerGuidance = {
   taskEnded: false,
   activeGoal: false,
   counts: { prompt: 0, memory: 0, skill: 0, subagent: 0 },
+  inputTokens: 24_000,
 }
+const PLANNER_INPUT_TOKENS = guidance.inputTokens
 
 const context: ParseContext = {
   evidenceIds: ['e1', 'e2'],
@@ -149,6 +150,41 @@ describe('the planner output parser', () => {
     ).toMatchObject({
       edits: [{ applicability: 'session' }],
     })
+    // A value that is neither level is not guessed as session: that edit is dropped, the others stay.
+    const other = { ...one, id: 'other' }
+    for (const applicability of ['sessoin', '', null, 3, ['session']]) {
+      const out = parsePlannerOutput(plan({ edits: [{ ...one, applicability }, other] }), {
+        ...context,
+        fullEntries: [],
+        shownEntries: [],
+      }) as { edits: { id: string }[] }
+      expect(out.edits.map((e) => e.id)).toEqual(['other'])
+      expect(
+        parsePlannerOutput(plan({ edits: [{ ...one, applicability }] }), { ...context, fullEntries: [] }),
+      ).toEqual({ error: 'invalid-shape: edits[0]' })
+    }
+  })
+
+  it('cuts a long content by units without splitting a surrogate pair', () => {
+    const one = JSON.parse(plan()).edits[0]
+    const context2 = { ...context, fullEntries: [], shownEntries: [] }
+    // The emoji's two units straddle the bound: it goes whole.
+    const straddling = `${'a'.repeat(1999)}\u{1F600}tail`
+    const out = parsePlannerOutput(plan({ edits: [{ ...one, content: straddling }] }), context2) as {
+      edits: { content: string }[]
+    }
+    expect(out.edits[0]?.content).toBe('a'.repeat(1999))
+    // One that fits whole is kept whole.
+    const fits = `${'a'.repeat(1998)}\u{1F600}`
+    const kept = parsePlannerOutput(plan({ edits: [{ ...one, content: fits }] }), context2) as {
+      edits: { content: string }[]
+    }
+    expect(kept.edits[0]?.content).toBe(fits)
+    // Summary and rationale are cut the same way.
+    const text = parsePlannerOutput(plan({ summary: `${'b'.repeat(999)}\u{1F600}` }), context2) as {
+      summary: string
+    }
+    expect(text.summary).toBe('b'.repeat(999))
   })
 
   it('drops an edit with a repeated evidence id or an entry named twice, and refuses a plan with nothing left', () => {

@@ -7,6 +7,7 @@ import type { RoleDelegation } from '../src/child/roles.js'
 import { Kernel } from '../src/kernel.js'
 import { normalizeToolError } from '../src/refinement/normalize-error.js'
 import {
+  MAX_FAILURE_TALLIES,
   onCompactionCommitted,
   onToolSettled,
   type RefinementCandidate,
@@ -483,6 +484,18 @@ describe('which failures count', () => {
     const other = fakeSession(port, {})
     onToolSettled(other, 'a', failure('boom'))
     expect(offered).toHaveLength(1)
+  })
+
+  it('the tally keeps a bounded number of pairs and forgets the oldest first', () => {
+    const { offered, port } = sink()
+    const s = fakeSession(port)
+    onToolSettled(s, 'first', failure('boom'))
+    for (let i = 0; i < MAX_FAILURE_TALLIES; i++) onToolSettled(s, `other-${i}`, failure('boom'))
+    // The oldest pair was forgotten, so its next failure counts as the first again.
+    onToolSettled(s, 'first', failure('boom'))
+    expect(offered).toEqual([])
+    onToolSettled(s, 'first', failure('boom'))
+    expect(offered).toEqual([{ kind: 'repeated-failure', seq: 42, focus: 'first' }])
   })
 
   it('does nothing outside a turn', () => {

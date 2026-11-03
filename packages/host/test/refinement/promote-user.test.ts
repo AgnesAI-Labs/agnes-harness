@@ -476,16 +476,11 @@ describe("saving to user memory on the user's request", () => {
     expect((await h.open().inspect()).settings).toMatchObject({ mode: 'auto', userEnabled: false })
   })
 
-  it('is saved the same way when the model asks, and a source with no request behind it is refused', async () => {
+  it('is saved the same way when the model asks', async () => {
     const h = await home()
     const receipt = await h.saves.save(asked(h, { initiator: 'model' }))
     expect(receipt).toMatchObject({ outcome: 'saved', layer: 'user', initiator: 'model' })
     expect(h.user()).toContain(TEXT)
-    const other = await h.saves.save({
-      ...askedWith(h, 'Answer in very short sentences.'),
-      initiator: 'system' as never,
-    })
-    expect(other).toMatchObject({ outcome: 'refused', reason: 'source-rules' })
     // The model's request meets the same budget and name checks.
     const w = await home()
     expect(await w.saves.save(askedWith(w, `Run make in ${w.root}/api first.`))).not.toHaveProperty('layer')

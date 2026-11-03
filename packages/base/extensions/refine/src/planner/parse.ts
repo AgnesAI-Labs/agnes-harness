@@ -51,7 +51,16 @@ const str = (v: unknown, max: number, min = 0): v is string =>
   typeof v === 'string' && v.length >= min && v.length <= max
 const ids = (v: unknown, min: number): v is string[] =>
   Array.isArray(v) && v.length >= min && v.length <= MAX_IDS && v.every((id) => str(id, 64, 1))
-const clip = (v: unknown, max: number): string => (typeof v === 'string' ? v.slice(0, max) : '')
+/**
+ * At most `max` UTF-16 units of `text` (the unit every bound here is checked in), never cut inside a
+ * surrogate pair: a character that would be split is dropped whole.
+ */
+function cut(text: string, max: number): string {
+  if (text.length <= max) return text
+  const end = text.charCodeAt(max - 1)
+  return text.slice(0, end >= 0xd800 && end <= 0xdbff ? max - 1 : max)
+}
+const clip = (v: unknown, max: number): string => (typeof v === 'string' ? cut(v, max) : '')
 
 class Rejected extends Error {}
 const reject = (why: string): never => {
@@ -88,7 +97,9 @@ function edit(raw: unknown, at: number): PlannerEdit {
     (raw.reference !== undefined && (!bindable || !str(raw.reference, MAX_REFERENCE, 1)))
   )
     return reject(where)
-  // Session is the default; only an explicit "task" asks for the current task alone.
+  // Session is the default when the planner states nothing; a value that is neither level is not guessed.
+  if (raw.applicability !== undefined && raw.applicability !== 'task' && raw.applicability !== 'session')
+    return reject(where)
   const applicability = raw.applicability === 'task' ? 'task' : 'session'
   // A longer text is cut, not refused. Only a prompt or memory lesson can reach user memory; any other
   // reach is ignored.
@@ -102,7 +113,7 @@ function edit(raw: unknown, at: number): PlannerEdit {
     kind,
     id: raw.id,
     title: raw.title,
-    content: raw.content.slice(0, MAX_EDIT_CHARS),
+    content: cut(raw.content, MAX_EDIT_CHARS),
     applicability,
     evidenceIds: raw.evidenceIds,
     ...(raw.reference === undefined ? {} : { reference: raw.reference as string }),

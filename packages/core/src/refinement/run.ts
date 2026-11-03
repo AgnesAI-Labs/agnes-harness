@@ -276,6 +276,7 @@ export async function planRefinementRun(
           taskEnded: snapshot.taskEnded,
           activeGoal: scope !== null,
           counts,
+          inputTokens: PLANNER_INPUT_TOKENS,
           ...(workspace.length ? { workspace: plannerWorkspace(workspace) } : {}),
           ...(run.trigger.saveTo === undefined ? {} : { saveTo: run.trigger.saveTo }),
           ...(s.d.refinement?.workspace ? { savesToWorkspace: true } : {}),
@@ -448,6 +449,13 @@ const UPSERT_KEYS = [
   'reference',
   'reach',
 ]
+
+/** At most `max` UTF-16 units of `text`, never cut inside a surrogate pair. */
+function cutAtUnit(text: string, max: number): string {
+  if (text.length <= max) return text
+  const end = text.charCodeAt(max - 1)
+  return text.slice(0, end >= 0xd800 && end <= 0xdbff ? max - 1 : max)
+}
 
 class Invalid extends Error {}
 const invalid = (why: string): never => {
@@ -639,7 +647,7 @@ function checkedEdit(
   const evidenceSeqs = seqs(raw.evidenceIds)
   if (evidenceSeqs.length === 0) return invalid(where)
   // A longer content is cut, not refused.
-  const content = masked(raw.content.slice(0, MAX_EDIT_CHARS), MAX_EDIT_CHARS, `edit-too-long: ${at}`)
+  const content = masked(cutAtUnit(raw.content, MAX_EDIT_CHARS), MAX_EDIT_CHARS, `edit-too-long: ${at}`)
   return {
     op: 'upsert',
     kind,

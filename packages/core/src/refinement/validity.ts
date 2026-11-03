@@ -19,8 +19,10 @@ import { readTaskScope, sameTask, type TaskScope } from './task-scope.js'
  * of the session (`session`). The host cannot tell whether evidence really supports a lesson, only
  * what shape it has, so the level is the one the plan asked for:
  *
- * - session level is granted to every edit that asked for it. The plan has already been checked to
- *   cite evidence items that exist in the snapshot, and an edit is never downgraded to task level;
+ * - session level is granted to every edit that asked for it and cites at least one request of the
+ *   user's own or one settled tool result (`hasGroundedEvidence`): page or file text recorded as an
+ *   untrusted row, the model's own words and summaries alone never back it, and such an edit is task
+ *   level. The plan has already been checked to cite evidence items that exist in the snapshot;
  * - task level needs a goal: with none, the lesson is recorded on the plan as expired and never
  *   applied.
  *
@@ -32,7 +34,7 @@ import { readTaskScope, sameTask, type TaskScope } from './task-scope.js'
 /** The shortest quote that can grant session level. */
 export const MIN_QUOTE_CHARS = 12
 
-/** One cited row as the level check reads it. */
+/** One cited row as the level and reach checks read it. */
 export type EvidenceFact =
   | { kind: 'user'; seq: Seq; text: string }
   | { kind: 'tool'; seq: Seq; tool: string; target?: string; isError: boolean }
@@ -97,6 +99,13 @@ export async function readFacts(s: SessionImpl, seqs: Iterable<Seq>): Promise<Ma
   }
   return facts
 }
+
+/**
+ * Whether any of `seqs` is a row the facts hold: a request of the user's own or a settled tool result.
+ * Page or file text (`external`), the model's own words and summaries are not facts.
+ */
+export const hasGroundedEvidence = (facts: ReadonlyMap<Seq, EvidenceFact>, seqs: readonly Seq[]): boolean =>
+  seqs.some((seq) => facts.has(seq))
 
 /** The user request among `seqs` (newer than `after`) that holds `quote` verbatim, if any. */
 export function quotedRequest(
@@ -195,7 +204,7 @@ export async function grantLevels(
 
 function granted(edit: Upsert, facts: ReadonlyMap<Seq, EvidenceFact>, scope: TaskScope | null): Upsert {
   const { applicability: asked, expired: _e, taskScope: _t, usedEvidence: _u, ...rest } = edit
-  if (asked === 'session') {
+  if (asked === 'session' && hasGroundedEvidence(facts, edit.evidenceSeqs)) {
     // The requests of the user's own that the edit cites are recorded: they back a lesson that holds in
     // every workspace (`reach`), and they never count as a later confirmation of it.
     const requests = edit.evidenceSeqs.filter((seq) => facts.get(seq)?.kind === 'user')

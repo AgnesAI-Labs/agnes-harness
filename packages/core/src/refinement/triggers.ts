@@ -77,6 +77,9 @@ export function onCompactionCommitted(
   })
 }
 
+/** The most tool and error pairs a session's tally keeps; past it the oldest pair is forgotten. */
+export const MAX_FAILURE_TALLIES = 256
+
 /** Per session: how often each tool and error was seen, and which were offered. */
 const tallies = new WeakMap<SessionImpl, Map<string, { count: number; offered: boolean }>>()
 
@@ -110,6 +113,10 @@ function countFailure(
   tallies.set(s, seen)
   const id = `${name}\u0000${key}`
   const tally = seen.get(id) ?? { count: 0, offered: false }
+  if (!seen.has(id) && seen.size >= MAX_FAILURE_TALLIES) {
+    const oldest = seen.keys().next()
+    if (!oldest.done) seen.delete(oldest.value)
+  }
   seen.set(id, tally)
   tally.count++
   if (tally.count < REPEAT_THRESHOLD || tally.offered) return

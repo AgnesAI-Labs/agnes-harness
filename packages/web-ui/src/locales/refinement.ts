@@ -73,8 +73,7 @@ export const refinementLocaleCatalog: LocaleCatalog = {
     'timeline.refinementSave.user.state.savedByRequest':
       'Saved to user memory at your request (all workspaces).',
     'timeline.refinementSave.user.state.refused': 'Not saved to user memory.',
-    'timeline.refinementSave.user.revoked':
-      'you withdrew this from user memory before; it is not saved there again',
+    'timeline.refinementSave.user.revoked': 'this was withdrawn before; it is not saved again',
     'timeline.refinementSave.user.state.unknown': 'Saving to user memory ended with an unknown result.',
     'timeline.refinementSave.user.withdraw':
       'Every workspace that reads user memory sees it. Withdraw it in the memory settings (Memory files, task experience in user memory); it is then not saved again.',
@@ -148,7 +147,7 @@ export const refinementLocaleCatalog: LocaleCatalog = {
     'timeline.refinementSave.user.state.saved': '已保存到用户记忆（所有工作区）。',
     'timeline.refinementSave.user.state.savedByRequest': '已按你的要求保存到用户记忆（所有工作区）。',
     'timeline.refinementSave.user.state.refused': '未保存到用户记忆。',
-    'timeline.refinementSave.user.revoked': '你之前从用户记忆撤回过它；不会再保存到那里',
+    'timeline.refinementSave.user.revoked': '它之前被撤回过；不会再保存',
     'timeline.refinementSave.user.state.unknown': '保存到用户记忆的结果未知。',
     'timeline.refinementSave.user.withdraw':
       '所有读取用户记忆的工作区都会看到它。可在记忆设置（记忆文件，用户记忆中的任务经验）撤回；撤回后不会再自动保存。',

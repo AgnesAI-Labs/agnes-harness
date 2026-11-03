@@ -1,5 +1,3 @@
-/** The input the planner may be given, in estimated tokens: system prompt and messages together. */
-export const PLANNER_INPUT_TOKENS = 24_000
 /** Existing entries of one kind the planner sees at most, in full or as references. */
 export const ENTRIES_PER_KIND = 40
 /** Entries of one kind given in full, the only ones a plan may rewrite. */
@@ -44,6 +42,11 @@ export type PlannerGuidance = {
   taskEnded: boolean
   activeGoal: boolean
   counts: Record<EntryKind, number>
+  /**
+   * The input the planner may be given, in estimated tokens (system prompt and messages together): the
+   * host's budget, which it checks the prompt against. The prompt is cut to fit it.
+   */
+  inputTokens: number
   /** Entries saved to this workspace; a plan may only confirm them. */
   workspace?: readonly PlannerWorkspaceRef[]
   /** The run's result is saved to the workspace, or to user memory. */
@@ -234,7 +237,7 @@ export function buildPlannerPrompt(
   // workspace section).
   const fixed = estimateTokens(system) + estimateTokens(head) + (workspace.length ? 128 : 96)
   let total = fixed + tokensOf(full) + tokensOf(reference) + tokensOf(workspace) + tokensOf(evidence)
-  const over = () => total > PLANNER_INPUT_TOKENS
+  const over = () => total > guidance.inputTokens
   // References go first, the session's and then the workspace's: they can only be confirmed.
   for (const list of [reference, workspace] as Piece<unknown>[][])
     while (over() && list.length) {

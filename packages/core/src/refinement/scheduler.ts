@@ -372,9 +372,11 @@ function applyLocked(s: SessionImpl, runId: string): Promise<ApplyAttempt> {
       await s.append([refinementRunRow(s, runId, 'rejected', { reason: 'expired', detail: 'task-ended' })])
       return 'rejected'
     }
+    // An apply that dropped edits or confirmations records the plan as it was applied, so what the hand-off
+    // looks at later is that plan and never an entry or a confirmation the apply left out.
     const ended = (o: { outcome: string; reason?: string }) =>
       o.outcome === 'applied'
-        ? refinementRunRow(s, runId, 'applied', {})
+        ? refinementRunRow(s, runId, 'applied', plan === run.plan ? {} : { plan })
         : refinementRunRow(s, runId, 'rejected', { reason: o.reason ?? 'apply', detail: o.outcome })
     // Validity and confirmations are written after the entry rows, in the same transaction.
     const meta = applyMetaRows(s, plan, applied)

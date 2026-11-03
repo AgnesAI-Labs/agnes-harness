@@ -400,6 +400,10 @@ describe('scheduling plans', () => {
       refused: 'manual-mode',
     })
     t.sw.mode = 'auto'
+    // The model's own reviews start no cooldown for the machine's triggers: the first one starts at once,
+    // and only its own plan then holds the next one back.
+    const machine = runId(await t.facade.request({ kind: 'repeated-failure', seq: await t.lastUserSeq() }))
+    await vi.waitFor(() => expect(t.state(machine)).toBe('no-op'))
     expect(await t.facade.request({ kind: 'repeated-failure', seq: await t.lastUserSeq() })).toEqual({
       refused: 'cooldown',
     })

@@ -100,9 +100,10 @@ export async function reconcileUser(
  * judged in the same fixed order as a workspace save:
  * 1. switch: refinement is on, at the revision the request was made under (nothing is read or written
  *    otherwise);
- * 2. revocation: content a user took back from user memory, or from this workspace, is refused, a
+ * 2. revocation: content that was withdrawn from user memory, or from this workspace, is refused, a
  *    request of a person or the model included;
- * 3. confirmations: `PROMOTION_CONFIRMATIONS` for the automatic promotion; a request skips the count;
+ * 3. confirmations: the automatic promotion carries at least `PROMOTION_CONFIRMATIONS` (the host does not
+ *    take Core's count for granted); a request skips the count;
  * 4. source and safety rules, as for the workspace; text that names its workspace (`namesWorkspace`)
  *    is not promoted but handed back (`workspace`) to be saved to its workspace instead;
  * 5. the provider must keep managed sections of user memory (`unsupported-provider`); whether this
@@ -174,10 +175,6 @@ export function createUserSave(deps: UserSaveDeps): UserSave {
         receipt.outcome !== 'unknown',
     )
     if (repeated) return repeated
-    // 1 (cont.). Only a source with a request behind it writes user memory: the automatic promotion, a
-    // person's own request or the model's.
-    if (request.initiator !== 'auto' && request.initiator !== 'user' && request.initiator !== 'model')
-      return refused('source-rules', 'rules')
     // 2. Revocation: taken back from user memory, or from this workspace.
     const local = deps.workspaceRegistry(request.session.workspaceRoot)
     if (registry.revoked(base.source) || local.revoked(base.source))

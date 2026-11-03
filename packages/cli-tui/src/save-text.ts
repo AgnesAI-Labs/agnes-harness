@@ -53,7 +53,7 @@ export function saveText(node: SaveNode): string {
     node.reason === undefined
       ? undefined
       : node.reason === 'user-revoked' && node.target === 'user-memory'
-        ? 'you withdrew this from user memory before; it is not saved there again'
+        ? 'this was withdrawn before; it is not saved again'
         : (REASON[node.reason] ?? node.reason)
   const toUser = node.target === 'user-memory'
   // Saved because a person asked for it: the line says so instead of naming who asked.
