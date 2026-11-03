@@ -3,7 +3,9 @@ import type { RefineProposal } from '@agnes/core-effects/effects/seams'
 import { scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { AppendOptions } from '@agnes/core-ledger/log/session-log'
 import { isRegisterTombstone } from '@agnes/core-ledger/log/storage'
+import { foldEntryMeta } from '@agnes/core-ledger/reduce/refinement-entry-meta'
 import type { HarnessEdit, HarnessEntry, HarnessRefine } from '@agnes/core-ledger/reduce/shapes'
+import { type LedgerState, REFINEMENT_ENTRY_META_EVENT } from '@agnes/core-ledger/reduce/state'
 import type { SessionImpl } from '../step/session.js'
 
 /**
@@ -55,6 +57,30 @@ const SEP = String.fromCharCode(0)
 export const entryKey = (e: { kind: HarnessEntry['kind']; id: string }): string => `${e.kind}${SEP}${e.id}`
 
 /**
+ * The token that changes with every write of an entry: the seq of the row that set its cell, or,
+ * while it is gone, the seq of the row that recorded its removal; 0 for an id never written. A delete
+ * and a re-create therefore never read as the entry that was there before, even at the same version.
+ */
+export function mutationToken(state: LedgerState, key: string): Seq {
+  return state.registers.harnessEntries.get(key)?.seq ?? state.refinementTombstones.get(key)?.seq ?? 0
+}
+
+/** The version the next write of an entry builds on: its own, or the one it had when it was removed. */
+export function lastVersion(state: LedgerState, key: string): number {
+  const cell = state.registers.harnessEntries.get(key)
+  if (cell) return typeof cell.value?.version === 'number' ? cell.value.version : 0
+  return state.refinementTombstones.get(key)?.version ?? 0
+}
+
+/** The row an apply writes right after an entry's tombstone: what the entry leaves behind. */
+const tombstoneRow = (s: SessionImpl, e: { kind: HarnessEntry['kind']; id: string }, version: number) =>
+  s.ev(
+    REFINEMENT_ENTRY_META_EVENT,
+    { version: 1, kind: e.kind, id: e.id, removed: true, entryVersion: version },
+    { ignorable: true },
+  )
+
+/**
  * Applies one refinement proposal as a single ledger transaction, and at most once per `runId`.
  *
  * The caller must hold the session writer lock: this reads the register table and then appends,
@@ -64,7 +90,8 @@ export const entryKey = (e: { kind: HarnessEntry['kind']; id: string }): string 
  * Checks, in order, each recorded as one `harness/refine` row when it fails:
  * 1. a `runId` already on the log returns that row's outcome and seq without writing;
  * 2. the whole proposal is rejected for too many edits, two edits on one key, a baseline entry no
- *    edit touches that has moved (`rejected:conflict`, reason `stale-baseline`), an unknown evidence seq
+ *    edit touches that has moved (`rejected:conflict`, reason `stale-baseline`; moved means another
+ *    version or, when the baseline names one, another mutation token), an unknown evidence seq
  *    (`rejected:evidence`), an oversized entry (`rejected:limit`) or a contract prefix
  *    (`rejected:prefix`);
  * 3. an edit whose own baseline version has moved rejects the whole proposal as
@@ -74,7 +101,9 @@ export const entryKey = (e: { kind: HarnessEntry['kind']; id: string }): string 
  *    with reason `capacity`; nothing is deleted to make room.
  *
  * Apply is atomic: on success the transaction is the control row followed by one `harness/entry`
- * row per edit (an `upsert` bumping `version`, a `delete` writing the tombstone form).
+ * row per edit (an `upsert` bumping `version`, a `delete` writing the tombstone form followed by the
+ * metadata row that records the removal). An entry written again after a delete continues from the
+ * version it was removed at, so it never reads as the removed one.
  *
  * `runId` is required: it is the idempotency key, and a caller that forgot it would silently lose
  * at-most-once. A missing or empty one throws before anything is read or written.
@@ -115,7 +144,7 @@ export async function applyRefine(
       ...(extra.reason !== undefined ? { reason: extra.reason } : {}),
       runId: p.runId,
       edits: p.edits,
-      baseline: p.baseline,
+      baseline: p.baseline.map(({ key, version }) => ({ key, version })),
       ...(extra.rejectedEdits !== undefined ? { rejectedEdits: extra.rejectedEdits } : {}),
       rationale: p.rationale,
       evidenceSeqs: p.evidenceSeqs,
@@ -142,10 +171,12 @@ export async function applyRefine(
 
   // A baseline entry that no edit touches is something the proposal relied on without changing; if
   // it moved, the whole plan was made against a table that no longer exists.
-  const baselineVersion = new Map(p.baseline.map((b) => [b.key, b.version]))
+  const moved = (b: ApplyProposal['baseline'][number]) =>
+    (entries.get(b.key)?.value.version ?? 0) !== b.version ||
+    (b.seq !== undefined && mutationToken(s.state, b.key) !== b.seq)
+  const baselineOf = new Map(p.baseline.map((b) => [b.key, b]))
   for (const b of p.baseline)
-    if (!touched.has(b.key) && (entries.get(b.key)?.value.version ?? 0) !== b.version)
-      return reject('rejected:conflict', 'stale-baseline')
+    if (!touched.has(b.key) && moved(b)) return reject('rejected:conflict', 'stale-baseline')
 
   // Every cited seq must be a real row already on this log: an exact lookup, not a type check,
   // because the proposal is citing *why* it exists, not what kind of row that is.
@@ -166,9 +197,8 @@ export async function applyRefine(
   // diagnosis.
   const rejectedEdits: { index: number; reason: string }[] = []
   p.edits.forEach((e, index) => {
-    const want = baselineVersion.get(editKey(e))
-    if (want !== undefined && (entries.get(editKey(e))?.value.version ?? 0) !== want)
-      rejectedEdits.push({ index, reason: 'stale-edit' })
+    const want = baselineOf.get(editKey(e))
+    if (want !== undefined && moved(want)) rejectedEdits.push({ index, reason: 'stale-edit' })
   })
   if (rejectedEdits.length > 0) return reject('rejected:conflict', 'stale-edit', { rejectedEdits })
 
@@ -193,17 +223,12 @@ export async function applyRefine(
   const events: EventInput[] = [buildRefineEvent('applied')]
   for (const e of p.edits) {
     if (e.op === 'upsert') {
-      const cur = entries.get(entryKey(e.entry))?.value
-      events.push(
-        s.ev(
-          'harness/entry',
-          { ...e.entry, version: (cur?.version ?? 0) + 1 },
-          { register: 'harness/entry' },
-        ),
-      )
+      const version = lastVersion(s.state, entryKey(e.entry)) + 1
+      events.push(s.ev('harness/entry', { ...e.entry, version }, { register: 'harness/entry' }))
     } else {
       events.push(
         s.ev('harness/entry', { kind: e.kind, id: e.id, tombstone: true }, { register: 'harness/entry' }),
+        tombstoneRow(s, e, lastVersion(s.state, entryKey(e))),
       )
     }
   }
@@ -230,50 +255,76 @@ async function findRun(
   return undefined
 }
 
+/** How a rollback ended: written, or refused because a later change touched what it would undo. */
+export type RollbackOutcome =
+  | { outcome: 'applied'; seq: Seq }
+  | {
+      outcome: 'rejected:conflict'
+      reason: 'changed-since'
+      changed: { kind: HarnessEntry['kind']; id: string }[]
+    }
+
+/** What a rollback refuses to undo: a row that is not an applied refine, or a rollback itself. */
+export type RollbackProblem = 'not-found' | 'not-applied' | 'is-rollback' | 'rejected'
+
+/** Why `rollbackRefine` cannot start, or undefined when the row at `refineSeq` can be rolled back. */
+export async function rollbackProblem(s: SessionImpl, refineSeq: Seq): Promise<RollbackProblem | undefined> {
+  if (!Number.isSafeInteger(refineSeq) || refineSeq < 1 || refineSeq > s.lastSeq) return 'not-found'
+  const row = (await s.d.log.scan({ fromSeq: refineSeq, toSeq: refineSeq }))[0]
+  if (row?.type !== 'harness/refine') return 'not-found'
+  const d = row.data as HarnessRefine
+  if (d.outcome !== 'applied') return 'not-applied'
+  if (d.trigger === 'rollback') return 'is-rollback'
+  const prior = await findRun(s, `rollback:${refineSeq}`)
+  return prior && prior.outcome !== 'applied' ? 'rejected' : undefined
+}
+
 /**
  * Undoes an earlier *applied* refine by expressing the opposite edits as a brand-new
  * `harness/refine{trigger:'rollback'}` — never by deleting or rewriting the row being undone, which
  * would erase the very history a rollback is supposed to be accountable against.
  *
+ * A rollback undoes only what that refine left: every entry it wrote must still be exactly as it
+ * wrote it (the cell set by its own row, or, for a delete, still gone since that delete). If anything
+ * changed one of them since, nothing is written and the result is `rejected:conflict` with reason
+ * `changed-since`: undoing it now would overwrite a later change, and a person has to decide.
+ *
  * For each original edit, the key's value immediately before `refineSeq` is read back off the
  * `harness/entry` event stream (a tombstone there counts as "did not exist"). If a value is found
- * the inverse edit restores it; otherwise the inverse edit deletes the key, which is the correct
- * undo of an edit that created it (and a harmless no-op undo of a delete that had nothing to delete
- * in the first place). `applyRefine` recomputes `version` from the *current* cell either way, so the
- * stale `version` field carried on a restored entry is never read.
+ * the inverse edit restores it, together with the validity metadata that was bound to it (so a
+ * restored task-level entry stays bound to its task); otherwise the inverse edit deletes the key,
+ * which is the correct undo of an edit that created it. `applyRefine` recomputes `version` from the
+ * current cell (or the removed one) either way, so the stale `version` on a restored entry is never
+ * read. The caller holds the session writer lock.
  */
-export async function rollbackRefine(s: SessionImpl, refineSeq: Seq): Promise<{ seq: Seq }> {
-  const row = (await s.d.log.scan({ fromSeq: refineSeq, toSeq: refineSeq }))[0]
-  if (row?.type !== 'harness/refine') throw new Error(`no harness/refine event at seq ${refineSeq}`)
+export async function rollbackRefine(s: SessionImpl, refineSeq: Seq): Promise<RollbackOutcome> {
+  const problem = await rollbackProblem(s, refineSeq)
+  if (problem === 'not-found') throw new Error(`no harness/refine event at seq ${refineSeq}`)
+  if (problem === 'not-applied' || problem === 'is-rollback')
+    throw new Error(`cannot roll back refine at seq ${refineSeq}: ${problem}`)
+  if (problem === 'rejected') throw new Error(`rollback of refine at seq ${refineSeq} was itself rejected`)
+  const row = (await s.d.log.scan({ fromSeq: refineSeq, toSeq: refineSeq }))[0] as Event
   const d = row.data as HarnessRefine
-  if (d.outcome !== 'applied')
-    throw new Error(`cannot roll back refine at seq ${refineSeq}: outcome was ${d.outcome}, not applied`)
 
   // A repeated rollback of the same refine is the run already recorded: same seq, nothing written
   // (not even the diagnostic below).
   const prior = await findRun(s, `rollback:${refineSeq}`)
-  if (prior) {
-    if (prior.outcome !== 'applied')
-      throw new Error(`rollback of refine at seq ${refineSeq} was itself rejected: ${prior.outcome}`)
-    return { seq: prior.seq }
-  }
+  if (prior) return { outcome: 'applied', seq: prior.seq }
+
+  const keyOf = (e: HarnessEdit) => entryKey(e.op === 'upsert' ? e.entry : e)
+  const changed = await changedSince(s, refineSeq, d.edits)
+  if (changed.length > 0) return { outcome: 'rejected:conflict', reason: 'changed-since', changed }
 
   // One newest-first read covers every edit: the range (before refineSeq) and order are the same
   // for all of them, and it stops as soon as each edited key has its latest earlier row.
-  // `refineSeq === 1` cannot happen (a harness/refine row is never the first event on a session),
-  // but the guard keeps `toSeq: 0` — an inverted range — from ever reaching scan.
-  const wanted = new Set(d.edits.map((e) => entryKey(e.op === 'upsert' ? e.entry : e)))
+  const wanted = new Set(d.edits.map(keyOf))
   const latest = new Map<string, Event>()
-  const history =
-    refineSeq > 1
-      ? scanPages((q) => s.d.log.scan(q), {
-          fromSeq: 1,
-          toSeq: refineSeq - 1,
-          type: 'harness/entry',
-          order: 'desc',
-        })
-      : []
-  for await (const page of history) {
+  for await (const page of scanPages((q) => s.d.log.scan(q), {
+    fromSeq: 1,
+    toSeq: refineSeq - 1,
+    type: 'harness/entry',
+    order: 'desc',
+  })) {
     for (const h of page) {
       if (h.data === null) continue
       const k = entryKey(h.data as { kind: HarnessEntry['kind']; id: string })
@@ -281,20 +332,28 @@ export async function rollbackRefine(s: SessionImpl, refineSeq: Seq): Promise<{ 
     }
     if (latest.size === wanted.size) break
   }
-  const prevValue = (k: string): HarnessEntry | undefined => {
+  const prevRow = (k: string): Event | undefined => {
     const hit = latest.get(k)
-    return hit && !isRegisterTombstone('harness/entry', hit.data) ? (hit.data as HarnessEntry) : undefined
+    return hit && !isRegisterTombstone('harness/entry', hit.data) ? hit : undefined
   }
 
   const inverse: HarnessEdit[] = d.edits.map((e) => {
     const target = e.op === 'upsert' ? e.entry : e
-    const prev = prevValue(entryKey(target))
-    return prev ? { op: 'upsert', entry: prev } : { op: 'delete', kind: target.kind, id: target.id }
+    const prev = prevRow(entryKey(target))
+    return prev
+      ? { op: 'upsert', entry: prev.data as HarnessEntry }
+      : { op: 'delete', kind: target.kind, id: target.id }
   })
+  // Checked above: every key is as the refine left it, so the baseline is the state it left.
   const baseline = inverse.map((e) => {
-    const k = e.op === 'upsert' ? entryKey(e.entry) : entryKey(e)
-    return { key: k, version: s.state.registers.harnessEntries.get(k)?.value.version ?? 0 }
+    const k = keyOf(e)
+    return {
+      key: k,
+      version: s.state.registers.harnessEntries.get(k)?.value.version ?? 0,
+      seq: mutationToken(s.state, k),
+    }
   })
+  const meta = await restoredMeta(s, refineSeq, inverse, prevRow)
 
   // A rollback undoes what an already-validated refine did, so it is not re-run past the caller's
   // current caps: those could have tightened since, and a rollback that a tightened cap can reject
@@ -317,9 +376,93 @@ export async function rollbackRefine(s: SessionImpl, refineSeq: Seq): Promise<{ 
       rollbackOf: refineSeq,
     },
     noLimits,
+    { with: (o) => (o.outcome === 'applied' ? meta : []) },
   )
   if (r.outcome !== 'applied')
     throw new Error(`rollback of refine at seq ${refineSeq} was itself rejected: ${r.outcome}`)
   await s.diag('refine-rollback', { rollbackOf: refineSeq, refineSeq: r.seq })
-  return { seq: r.seq }
+  return { outcome: 'applied', seq: r.seq }
+}
+
+/**
+ * The entries a refine wrote that have changed since: an upsert whose cell was set by a later row, a
+ * delete whose entry exists again (or was written and removed again). The refine's own rows are the
+ * first `harness/entry` rows after its control row, in edit order: one transaction wrote them all.
+ */
+async function changedSince(
+  s: SessionImpl,
+  refineSeq: Seq,
+  edits: readonly HarnessEdit[],
+): Promise<{ kind: HarnessEntry['kind']; id: string }[]> {
+  const written: Event[] = []
+  for await (const page of scanPages((q) => s.d.log.scan(q), {
+    fromSeq: refineSeq + 1,
+    toSeq: s.lastSeq,
+    type: 'harness/entry',
+  })) {
+    written.push(...page.slice(0, edits.length - written.length))
+    if (written.length >= edits.length) break
+  }
+  const changed: { kind: HarnessEntry['kind']; id: string }[] = []
+  edits.forEach((e, i) => {
+    const target = e.op === 'upsert' ? e.entry : e
+    const k = entryKey(target)
+    const own = written[i]
+    const ownKey = own?.data ? entryKey(own.data as { kind: HarnessEntry['kind']; id: string }) : undefined
+    const cell = s.state.registers.harnessEntries.get(k)
+    const gone = s.state.refinementTombstones.get(k)
+    const intact =
+      own !== undefined &&
+      ownKey === k &&
+      (e.op === 'upsert'
+        ? cell?.seq === own.seq
+        : // The removal row follows the tombstone in the same transaction; a later removal is another one.
+          cell === undefined && (gone === undefined || gone.seq === own.seq + 1))
+    if (!intact) changed.push({ kind: target.kind, id: target.id })
+  })
+  return changed
+}
+
+/**
+ * The metadata rows a rollback writes after its entry rows: for each entry it restores, the validity
+ * metadata that was bound to the restored version when the refine replaced it (the newest metadata
+ * row for that key between the restored row and the refine). An entry that had none is restored
+ * without, as it was.
+ */
+async function restoredMeta(
+  s: SessionImpl,
+  refineSeq: Seq,
+  inverse: readonly HarnessEdit[],
+  prevRow: (k: string) => Event | undefined,
+): Promise<EventInput[]> {
+  const restored = inverse.flatMap((e) => {
+    if (e.op !== 'upsert') return []
+    const prev = prevRow(entryKey(e.entry))
+    return prev ? [{ key: entryKey(e.entry), prev }] : []
+  })
+  if (restored.length === 0) return []
+  const from = Math.min(...restored.map((r) => r.prev.seq))
+  const found = new Map<string, Record<string, unknown>>()
+  for await (const page of scanPages((q) => s.d.log.scan(q), {
+    fromSeq: from,
+    toSeq: refineSeq - 1,
+    type: REFINEMENT_ENTRY_META_EVENT,
+    order: 'desc',
+  })) {
+    for (const row of page) {
+      const d = row.data as { kind?: unknown; id?: unknown } | null
+      const key = `${String(d?.kind ?? '')}${SEP}${String(d?.id ?? '')}`
+      const hit = restored.find((r) => r.key === key)
+      if (!hit || found.has(key) || row.seq < hit.prev.seq) continue
+      // Read as the reducer folded it then: bound to the restored row, every field checked.
+      const meta = foldEntryMeta({ seq: hit.prev.seq, value: hit.prev.data }, row)
+      if (!meta) continue
+      const { entrySeq: _entry, seq: _seq, ...fields } = meta
+      found.set(key, fields)
+    }
+    if (found.size === restored.length) break
+  }
+  return [...found.values()].map((fields) =>
+    s.ev(REFINEMENT_ENTRY_META_EVENT, { version: 1, ...fields }, { ignorable: true }),
+  )
 }

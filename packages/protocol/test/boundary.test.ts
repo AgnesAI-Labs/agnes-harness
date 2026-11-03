@@ -99,6 +99,8 @@ describe('protocol src boundary', () => {
         'readWorkbenchEvidence',
         'compilePluginConfig',
         'redactPluginConfig',
+        'lessonNotePlaceholder',
+        'TASK_EXPERIENCE_NOTE_PREFIX',
         'resolvePluginMetadata',
         'validatePluginMetadata',
         'PLUGIN_SECRET_REF_PATTERN',

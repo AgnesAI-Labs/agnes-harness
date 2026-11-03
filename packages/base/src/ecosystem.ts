@@ -9,7 +9,7 @@ import { createComputerUseExtension } from '../extensions/computer-use/src/index
 import contextRulesExtension from '../extensions/context-rules/src/index.js'
 import deliverablesExtension from '../extensions/deliverables/src/index.js'
 import { createFollowUpHintExtension } from '../extensions/follow-up-hint/src/index.js'
-import goalExtension from '../extensions/goal/src/index.js'
+import { createGoalExtension } from '../extensions/goal/src/index.js'
 import { createHeadsUpExtension } from '../extensions/heads-up/src/index.js'
 import {
   type CcHookMap,
@@ -187,7 +187,8 @@ const bundled = {
   'agnes/heads-up': (init: SeamInitContext): BundledPlugin => createHeadsUpExtension(init.sessionTasks),
   'agnes/time-context': (): BundledPlugin => timeContextExtension,
 
-  'agnes/goal': (): BundledPlugin => goalExtension,
+  'agnes/goal': (init: SeamInitContext): BundledPlugin =>
+    createGoalExtension(init.provideTaskScope ? { provideTaskScope: init.provideTaskScope } : {}),
   'agnes/interaction': (): BundledPlugin => interactionExtension,
   'agnes/deliverables': (): BundledPlugin => deliverablesExtension,
   'agnes/plugin-creator': (): BundledPlugin => pluginCreatorExtension,

@@ -54,22 +54,25 @@ const emptyTotals = (): UsageView['totals'] => ({
   reasoning: 0,
 })
 
-/** One lane's share of the session's spend: its tokens, and its credits when any row named them. */
-export type UsageTotals = UsageView['totals'] & { credits?: number }
+/** One lane's share of the session's spend: its tokens, and its credits and dollars when any row named them. */
+export type UsageTotals = UsageView['totals'] & { credits?: number; usdMicros?: number }
 
 /** Adds one first-seen cost row to its lane's share; an adjustment moves only the credits. */
 export function addLaneShare(
   byLane: Map<string, UsageTotals>,
   lane: string,
-  row: Pick<CostLedger, 'tokens' | 'credits' | 'adjustment'>,
+  row: Pick<CostLedger, 'tokens' | 'credits' | 'adjustment' | 'billing'>,
 ): void {
   const share: UsageTotals = byLane.get(lane) ?? emptyTotals()
   byLane.set(lane, share)
   if (row.adjustment) {
     if (share.credits !== undefined) share.credits += row.adjustment.delta
+    if (share.usdMicros !== undefined && row.adjustment.usdMicrosDelta !== undefined)
+      share.usdMicros += row.adjustment.usdMicrosDelta
     return
   }
   if (row.credits !== undefined) share.credits = (share.credits ?? 0) + row.credits
+  if (row.billing) share.usdMicros = (share.usdMicros ?? 0) + row.billing.usdMicros
   share.input += row.tokens.input
   share.output += row.tokens.output
   share.cacheRead += row.tokens.cacheRead
@@ -87,7 +90,11 @@ export function laneShares(
     byLane: Object.fromEntries(
       [...byLane].map(([name, share]) => [
         name,
-        share.credits === undefined ? { ...share } : { ...share, credits: Math.max(0, share.credits) },
+        {
+          ...share,
+          ...(share.credits === undefined ? {} : { credits: Math.max(0, share.credits) }),
+          ...(share.usdMicros === undefined ? {} : { usdMicros: Math.max(0, share.usdMicros) }),
+        },
       ]),
     ),
   }

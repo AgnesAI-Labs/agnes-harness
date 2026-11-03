@@ -335,6 +335,9 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         const slot = ui.slots?.find((fill) => fill.extId === 'agnes/goal')
         return slot ? (slot.payload as import('@agnes/protocol/gen/slots').StatusLinePayload).goal : undefined
       }
+      // Core reads the same goal as the session's task, through the scope the goal plugin offers.
+      const scope = () => session.d.refinement?.taskScope?.({ key: session.key, lane: session.lane })
+      expect(await scope()).toBeNull()
       await prompt('/goal create --max-rounds 1 Deliver')
       await run()
       expect(await goal()).toMatchObject({
@@ -342,6 +345,8 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         rounds: 1,
         reason: 'Maximum automatic rounds reached',
       })
+      const blocked = await goal()
+      expect(await scope()).toEqual({ id: blocked?.id, revision: blocked?.revision, phase: 'blocked' })
       expect(provider.calls).toHaveLength(2)
       const turns = await session.scan({ type: 'turn/end', toSeq: session.lastSeq })
       expect(turns.filter((row) => (row.data as { reason: string }).reason === 'completed')).toHaveLength(2)
@@ -356,6 +361,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       expect(provider.calls).toHaveLength(5)
       await prompt('/goal pause')
       expect(await goal()).toMatchObject({ phase: 'paused' })
+      expect(await scope()).toMatchObject({ id: blocked?.id, phase: 'paused' })
       await prompt('/goal edit --max-rounds 2 Deliver a patch')
       expect(await goal()).toMatchObject({ phase: 'paused', objective: 'Deliver a patch', maxRounds: 2 })
       expect(provider.calls).toHaveLength(5)

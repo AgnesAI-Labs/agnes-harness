@@ -18,12 +18,14 @@ import { sessionIdentity } from '../loop/scope.js'
 import { MAINTENANCE_RESULT, type MaintenanceResult, maintenanceEffectId } from '../maintenance/execute.js'
 import { maintenanceInFlight } from '../maintenance/in-flight.js'
 import type { MaintenancePort } from '../maintenance/port.js'
+import { entryKey } from '../refine/apply.js'
 import type { EffectiveEntry } from '../request/experience.js'
 import { rankEntries } from '../request/rank-entries.js'
 import { sysEvent } from '../step/events.js'
 import type { SessionImpl } from '../step/session.js'
 import { freezeEvidence, readSetCurrent } from './evidence.js'
 import { redactEvidence } from './redact.js'
+import { readTaskScope } from './task-scope.js'
 import {
   type EvidenceSnapshot,
   MAX_EDIT_CHARS,
@@ -36,6 +38,7 @@ import {
   type PlannerPrompt,
   type RefinementPlanner,
 } from './types.js'
+import { type EntryView, entryValidity, grantLevels, lapsedKeys, validEntries } from './validity.js'
 
 /** The Core row each step of a refinement run is recorded as, on the maintenance lane. */
 export const REFINEMENT_RUN = REFINEMENT_RUN_EVENT
@@ -59,11 +62,6 @@ const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
 const MAX_FOCUS = 512
 /** Evidence ids one edit or confirmation may cite; a plan's own list may hold four times as many. */
 const MAX_CITED_IDS = 20
-/**
- * Core has no goal of its own; until a goal source is wired, there is never an active one, so a
- * task-level lesson expires before it could be applied.
- */
-const ACTIVE_GOAL: boolean = false
 
 /** One step of a run, as the row that records it on the maintenance lane. */
 export const refinementRunRow = (
@@ -138,11 +136,14 @@ export async function queueRefinementRun(
 
 const refOf = (e: { kind: string; id: string }) => `${e.kind}/${e.id}`
 
-/** The saved entries the planner is offered: per kind, the most relevant to the evidence first. */
-function plannerEntries(s: SessionImpl, snapshot: EvidenceSnapshot) {
+/**
+ * The saved entries in force the planner is offered: per kind, the most relevant to the evidence
+ * first. A task-level entry whose goal has ended is not offered.
+ */
+function plannerEntries(snapshot: EvidenceSnapshot, valid: readonly EntryView[]) {
   const usable: EffectiveEntry[] = []
-  for (const cell of s.state.registers.harnessEntries.values()) {
-    const e = cell.value as Partial<HarnessEntry> | null
+  for (const cell of valid) {
+    const e = cell.entry as Partial<HarnessEntry> | null
     if (e && KINDS.includes(e.kind as HarnessEntry['kind']) && typeof e.id === 'string')
       usable.push({ entry: e as HarnessEntry, seq: cell.seq })
   }
@@ -189,7 +190,21 @@ function promptProblem(
   for (const list of [p.fullEntries, p.referenceEntries])
     if (!Array.isArray(list) || !list.every((e) => keys.has(refOf(e)))) return 'invalid-prompt'
   if (p.evidenceIds.length === 0) return 'no-evidence'
+  if (!fullTextShown(p.fullEntries, entries, texts.join('\n'))) return 'full-entry-cut'
   return undefined
+}
+
+/**
+ * Whether every entry the prompt offers as rewritable carries its whole content, as written or as a
+ * JSON string. An entry is replaced whole, so a rewrite from a cut copy would drop the tail the
+ * planner never saw; Core does not take the plugin's word for it.
+ */
+function fullTextShown(full: readonly RefinementEntryRef[], entries: PlannerEntry[], text: string): boolean {
+  const byKey = new Map(entries.map((e) => [refOf(e), e.content]))
+  return full.every((e) => {
+    const content = byKey.get(refOf(e)) ?? ''
+    return text.includes(content) || text.includes(JSON.stringify(content).slice(1, -1))
+  })
 }
 
 const ref = (e: RefinementEntryRef): RefinementEntryRef => ({ kind: e.kind, id: e.id })
@@ -225,7 +240,8 @@ export async function planRefinementRun(
     }
     if (snapshot.items.length === 0)
       return await move(s, runId, 'rejected', { ...frozen, reason: 'no-evidence' }, queued)
-    const { entries, counts } = plannerEntries(s, snapshot)
+    const { scope, readable } = await readTaskScope(s)
+    const { entries, counts } = plannerEntries(snapshot, entryValidity(s.state, scope, readable).valid)
     let prompt: PlannerPrompt
     try {
       prompt = deps.planner.buildPrompt(
@@ -238,7 +254,7 @@ export async function planRefinementRun(
           trigger: run.trigger.kind,
           ...(run.trigger.focus === undefined ? {} : { focus: run.trigger.focus }),
           taskEnded: snapshot.taskEnded,
-          activeGoal: ACTIVE_GOAL,
+          activeGoal: scope !== null,
           counts,
         },
       )
@@ -316,7 +332,12 @@ export function settleRefinementRun(
   return s.locked(async () => {
     const run = s.state.refinementRuns.get(runId)
     if (run?.state !== 'planning' || run.attempt !== attempt) return run
-    const [state, facts] = verdict(s, run, result, deps)
+    // An entry that exists but is not in force (its goal ended) is not shown to the planner, so its id
+    // may be written afresh, against its current version.
+    let [state, facts] = verdict(s, run, result, deps, lapsedKeys(await validEntries(s)))
+    // A plan that holds is given its levels: each lesson as the evidence it cites allows, bound to the
+    // current goal or recorded as expired without one.
+    if (state === 'proposed' && facts.plan) [state, facts] = await grantLevels(s, facts.plan)
     await s.append([refinementRunRow(s, runId, state, facts)])
     return s.state.refinementRuns.get(runId)
   })
@@ -327,6 +348,7 @@ function verdict(
   run: RefinementRunRecord,
   result: Result,
   deps: Pick<RefinementRunDeps, 'planner' | 'settings'>,
+  lapsed: ReadonlySet<string>,
 ): Verdict {
   if (result.outcome === 'unknown') return ['unknown', { reason: result.reason ?? 'unknown' }]
   // A call that never left can be planned again, as a new attempt, once the session reopens.
@@ -353,17 +375,11 @@ function verdict(
   const error = (parsed as { error?: unknown } | null)?.error
   if (typeof error === 'string')
     return ['rejected', { reason: 'invalid-output', detail: error.slice(0, 200) }]
-  const plan = checkedPlan(parsed, run)
+  const plan = checkedPlan(parsed, run, lapsed)
   if ('error' in plan) return ['rejected', { reason: 'invalid-output', detail: plan.error }]
   if (plan.edits.length === 0 && plan.confirmations.length === 0) return ['no-op', {}]
-  // Expired edits stay on the plan as its record; with nothing else to apply, the run is a no-op.
-  if (plan.confirmations.length === 0 && plan.edits.every(isExpired))
-    return ['no-op', { plan, reason: 'expired', detail: 'task-level-without-goal' }]
   return ['proposed', { plan }]
 }
-
-/** An edit kept on the plan only as a record: it is never applied. */
-export const isExpired = (edit: RefinementPlanEdit): boolean => edit.op === 'upsert' && edit.expired === true
 
 type Obj = Record<string, unknown>
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -390,9 +406,14 @@ const masked = (text: string, max: number, why: string, min = 0): string => {
 /**
  * Core's own check of a parsed plan, whatever the plugin accepted: the shape, at most 5 edits of at
  * most 2,000 characters, only evidence ids the prompt showed (each replaced by its fixed seq), only
- * entries shown in full rewritten, no entry deleted, one edit and one confirmation per entry.
+ * entries shown in full rewritten or deleted, one edit and one confirmation per entry. A deleted
+ * entry the model was given is withdrawn by a control notice ahead of the next request's other notes.
  */
-function checkedPlan(out: unknown, run: RefinementRunRecord): RefinementPlan | { error: string } {
+function checkedPlan(
+  out: unknown,
+  run: RefinementRunRecord,
+  lapsed: ReadonlySet<string>,
+): RefinementPlan | { error: string } {
   const seqOf = new Map((run.evidence ?? []).map((e) => [e.id, e.seq]))
   const seqs = (ids: unknown, max = MAX_CITED_IDS): Seq[] => {
     if (!Array.isArray(ids) || ids.length > max) return invalid('invalid-shape: evidenceIds')
@@ -410,7 +431,11 @@ function checkedPlan(out: unknown, run: RefinementRunRecord): RefinementPlan | {
     const from = quote === undefined ? [] : cited.filter((seq) => userSeqs.has(seq))
     return from.length ? { quote: quote as string, quoteSeqs: from } : {}
   }
-  const existing = new Map((run.readSet?.entries ?? []).map((e) => [refOf(e), e.version]))
+  const existing = new Map(
+    (run.readSet?.entries ?? [])
+      .filter((e) => !e.removed)
+      .map((e) => [refOf(e), { version: e.version, seq: e.seq }]),
+  )
   const full = new Set((run.fullEntries ?? []).map(refOf))
   const shown = new Set((run.shownEntries ?? []).map(refOf))
   try {
@@ -428,20 +453,21 @@ function checkedPlan(out: unknown, run: RefinementRunRecord): RefinementPlan | {
     if (out.edits.length > MAX_PLAN_EDITS) return invalid('too-many-edits')
     const touched = new Set<string>()
     const baseline: RefinementPlan['baseline'] = []
+    const reused: RefinementPlan['baseline'] = []
     const edits = out.edits.map((raw, at): RefinementPlanEdit => {
       const edit = checkedEdit(raw, at, seqs, quoted)
-      // With no active goal a task-level lesson has already expired: recorded, never applied.
-      if (edit.op === 'upsert' && edit.applicability === 'task' && !ACTIVE_GOAL) edit.expired = true
       const key = refOf(edit)
-      // A withdrawn entry is not yet announced to a model that already holds it, so it would keep
-      // following it until the next snapshot: for now a plan may only replace an entry.
-      if (edit.op === 'delete') invalid(`delete-unsupported: ${key}`)
       if (touched.has(key)) invalid(`duplicate-entry: ${key}`)
       touched.add(key)
-      const version = existing.get(key)
-      if (version === undefined && edit.op === 'delete') invalid(`unknown-entry: ${key}`)
-      if (version !== undefined && !full.has(key)) invalid(`not-shown-in-full: ${key}`)
-      if (version !== undefined) baseline.push({ kind: edit.kind, id: edit.id, version })
+      const saved = existing.get(key)
+      if (saved === undefined && edit.op === 'delete') invalid(`unknown-entry: ${key}`)
+      // An entry no longer in force (its task ended) does not hold its id: an upsert may reuse it
+      // unread. Only one shown in full may be deleted.
+      const reuse =
+        saved !== undefined && edit.op === 'upsert' && !full.has(key) && lapsed.has(entryKey(edit))
+      if (saved !== undefined && !full.has(key) && !reuse) invalid(`not-shown-in-full: ${key}`)
+      if (saved !== undefined) baseline.push({ kind: edit.kind, id: edit.id, ...saved })
+      if (reuse) reused.push({ kind: edit.kind, id: edit.id, version: saved.version })
       return edit
     })
     const confirmed = new Set<string>()
@@ -474,6 +500,7 @@ function checkedPlan(out: unknown, run: RefinementRunRecord): RefinementPlan | {
       confirmations,
       evidenceSeqs: seqs(out.evidenceIds, 4 * MAX_CITED_IDS),
       baseline,
+      ...(reused.length ? { lapsed: reused.map(ref) } : {}),
     }
   } catch (error) {
     if (error instanceof Invalid) return { error: error.message }

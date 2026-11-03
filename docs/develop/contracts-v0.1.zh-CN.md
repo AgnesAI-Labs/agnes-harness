@@ -4,13 +4,13 @@
 
 [插件架构](architecture-plugins.zh-CN.md) · [作者指南](../extend/README.zh-CN.md) · [版本规则](../maintainers/versioning.zh-CN.md)
 
-本文维护产品 v0.1 的作者合同清单，Extension API 为 **5.0.0**。源码、schema 与包出口共同定义当前行为；请固定源码版本。本文不代表已发行或完整部署验收，发行结果应引用对应版本的 CI 与验收记录。
+本文维护产品 v0.1 的作者合同清单，Extension API 为 **5.1.0**。源码、schema 与包出口共同定义当前行为；请固定源码版本。本文不代表已发行或完整部署验收，发行结果应引用对应版本的 CI 与验收记录。
 
 ## 稳定性与兼容政策
 
 **stable** 表示已建立、拟在 v0.1 中给予兼容保护的作者合同；**experimental** 表示仍演进的合同，使用时必须对齐源码、示例与 testkit 版本。两种标签都不代表生产就绪、平台支持、任意插件隔离或 npm 可用。候选政策在维护者接受产品冻结时生效；已有预览版本仍遵循[预览版本政策](../maintainers/versioning.zh-CN.md)。
 
-已接受的 stable 合同在公开包中遵循 semver：不兼容签名、删除、缩小可接受输入或改变可观察保证须升主版本；兼容新增升次版本；兼容修复升补丁版本。产品 `v0.1` 发布 extension API `5.0.0`。experimental 修改也必须给出变更与迁移说明，即使预览版本号暂不变。仓库的已发布包 semver 规则也适用于 experimental 出口，本候选不新增已发布包例外。已发布的 stable 接口不能靠改标 experimental 来绕过主版本规则。
+已接受的 stable 合同在公开包中遵循 semver：不兼容签名、删除、缩小可接受输入或改变可观察保证须升主版本；兼容新增升次版本；兼容修复升补丁版本。产品 `v0.1` 发布 extension API `5.1.0`。experimental 修改也必须给出变更与迁移说明，即使预览版本号暂不变。仓库的已发布包 semver 规则也适用于 experimental 出口，本候选不新增已发布包例外。已发布的 stable 接口不能靠改标 experimental 来绕过主版本规则。
 
 弃用说明必须在 API changelog 与双语指南中写明旧名称、替代方案、兼容窗口和迁移办法。此规则只保护公开发布后已接受的 stable 别名：至少保留至后续一个次版本发行，且只能在主版本中删除。尚未发布的预览构建不承诺永久保留现有别名；退役格式明确拒绝并提示使用新的空 home，不做转换或沿用旧字节的信任摘要。安全原因的例外须明确发行说明与恢复步骤。本文不为 `defineKind` 输入 `restartRequired`（改用 `scope`；重启要求由它推导）指定删除日期。本轮保留 generation 别名、ACP `session/load`、without/fresh 执行闸门、旧 home 布局检测与 Windows 安全回退。插件 checkpoint 和数据迁移需要各自的兼容决定；升级包或迁移 generation 不会自动迁移 schema。
 
@@ -40,6 +40,7 @@ Windows 任务 Shell 复用 Host 已选定的 PowerShell。实验性 `SHELL_STDI
 | 工具上下文可选 `runtime`/`codeRuntime`、流式 `sandbox.openProcess`、子代理后续消息、`net.fetchPublic` | experimental | 各功能独立的可用性与生命周期；声明不等于已装配后端 |
 | [扩展构造](../../packages/extension-api/src/extension.ts)、[插件 context facet](../../packages/extension-api/src/plugin-context.ts)、[清单校验](../../packages/extension-api/src/manifest.ts) | stable | `PluginContextFacets`（`ctx.tools`/`hooks`/`projections`/`services`/`slots`/`resources`/`eventLog`/`providers`/`self`）是唯一的作者面；`ExtensionAPI` 是内置包的这些 facet 所运行在其上的 Host 后端 |
 | [Hooks](../../packages/extension-api/src/hooks.ts)、[slots](../../packages/extension-api/src/slots.ts)、生成的 hook/slot/theme 表、[JSON payload 校验](../../packages/extension-api/src/json-payload.ts) | stable | 类型化 payload/return、白名单与大小校验；生成表为权威；浏览器组件 slot 是独立版本目录 |
+| [任务范围](../../packages/extension-api/src/task-scope.ts) | experimental | `TaskScopeReader.current()` 是会话当前任务的只读同步视图（`{ id, revision, phase }` 或 `null`）；拥有任务的插件以 `TaskScopeSource`（自己的一个投影加该状态的读取函数）提供，Host 只把提供权授予内置 goal 插件。5.1.0 新增 |
 | [服务](../../packages/extension-api/src/services.ts)、[投影](../../packages/extension-api/src/projections.ts) | stable | Schema 校验调用、Host 身份绑定、owner 读取与显式 unavailable；查询服务不能获得效果权限，效果服务的进程访问须经过已装配授权路径 |
 | [公共类型](../../packages/extension-api/src/common.ts)、[资源](../../packages/extension-api/src/resources.ts)、[工作区 hook 快照](../../packages/extension-api/src/workspace-hooks.ts) | stable | Session/lease/logger/platform/enforcement 事实、资源种类与不可变调用配置；事实不是授权 |
 | [Extension 错误](../../packages/extension-api/src/errors.ts)、[版本](../../packages/extension-api/src/version.ts)、[范围 helper](../../packages/extension-api/src/api-range.ts) | stable | 闭合 `EXTENSION_ERROR_CODES`、`ExtensionError`/guard、版本常量与支持的范围语法；不是 provider 或基础设施失败的统一包装 |

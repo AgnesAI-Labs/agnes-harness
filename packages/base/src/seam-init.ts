@@ -13,6 +13,7 @@ import type {
   Logger,
   PersistenceMetadataNamespace,
   SessionRef,
+  TaskScopeSource,
 } from '@agnes/extension-api'
 import type { ComputerUseBackendProvider } from '../extensions/computer-use/src/backend.js'
 import type { ComputerUseToolOptions } from '../extensions/computer-use/src/tool.js'
@@ -229,6 +230,11 @@ export type SeamInitContext = {
   refinementSettings?: RefinementSettingsView
   /** Connects the refinement tools to the host's managed refinement; supplied only to agnes/refine. */
   refinementRuns?: ConnectRefinement
+  /**
+   * Offers the session's current task to the host as a projection and its reader; supplied only to
+   * agnes/goal. Returns what withdraws the offer.
+   */
+  provideTaskScope?: (source: TaskScopeSource) => () => void
 }
 
 /** A read of the profile's refinement settings: the switch and the trigger mode. */

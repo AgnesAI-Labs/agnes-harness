@@ -244,6 +244,32 @@ describe('projectUsage', () => {
     )
   })
 
+  it('gives the refinement lane its own dollars so a client can set them apart', () => {
+    const events = [
+      row(1, cost('inference-1', { input: 10, output: 2 }, { credits: 1, billing: gatewayBilling(3_000) })),
+      row(
+        2,
+        cost('rsi-1', { input: 100, output: 20 }, { purpose: 'side-call', billing: gatewayBilling(40_000) }),
+        'refinement',
+      ),
+      row(
+        3,
+        cost(
+          'rsi-1-adjust',
+          { input: 0, output: 0 },
+          { adjustment: { of: 2, delta: 0, usdMicrosDelta: -5_000, reason: 'settle' } },
+        ),
+        'refinement',
+      ),
+    ]
+    const view = projectUsage({ ...input(events), lanes: ['refinement'] })
+    expect(view.cost?.usdMicros).toBe(38_000)
+    // The generated type of the per-lane record is `{}`, so it is read through a cast.
+    const lanes = view.byLane as Record<string, { usdMicros?: number }>
+    expect(lanes.main).toMatchObject({ usdMicros: 3_000 })
+    expect(lanes.refinement).toMatchObject({ usdMicros: 35_000 })
+  })
+
   it('reports cumulative cache hit rate alongside totals', () => {
     const events = [
       row(1, cost('e1', { input: 500, output: 10, cacheRead: 9000, cacheWrite: 0 })),

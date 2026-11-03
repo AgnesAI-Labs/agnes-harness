@@ -3,6 +3,8 @@ import type {
   CompactionPlan,
   DirectProposal,
   Enforcement,
+  InspectOutcome,
+  InspectRequest,
   Operation,
   RefinementOutcome,
   RefinementPlanner,
@@ -20,6 +22,7 @@ import type {
   Logger,
   PersistenceProvider,
   SandboxProvider,
+  TaskScopeSource,
 } from '@agnes/extension-api'
 import type { ExtensionAPI, ExtensionFactory } from '@agnes/extension-api/host'
 import type { PrivacyTrajectoryCapability } from '@agnes/host-artifacts/trajectory-contract'
@@ -140,12 +143,19 @@ export type SeamInitContext = {
    * hands over its planner and gets each session's runs, found by session key and lane.
    */
   refinementRuns?: (planner: RefinementPlanner) => RefinementRunsPort
+  /**
+   * Offers the session's current task to the host as one of the plugin's projections and a reader of
+   * its state; supplied only to the plugin that owns tasks. Returns what withdraws the offer.
+   */
+  provideTaskScope?: (source: TaskScopeSource) => () => void
 }
 
 /** A session's managed refinement as the refinement tools reach it. */
 export type RefinementRunsPort = Readonly<{
   propose(session: { key: string; lane: string }, proposal: DirectProposal): Promise<RefinementOutcome>
   request(session: { key: string; lane: string }, request: { focus?: string }): Promise<RefinementOutcome>
+  /** Reads that session's own entries in force; nothing is written. */
+  inspect(session: { key: string; lane: string }, request: InspectRequest): Promise<InspectOutcome>
 }>
 export type SeamFactory<S = unknown> = (ctx: SeamInitContext) => Promise<S>
 

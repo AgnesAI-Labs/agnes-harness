@@ -1,5 +1,10 @@
 import type { CallContext, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
-import { type HostSession, type RefinementSettingsStore, requestRefinement } from '@agnes/host'
+import {
+  type HostSession,
+  type RefinementSettingsStore,
+  requestRefinement,
+  rollbackRefinement,
+} from '@agnes/host'
 import {
   type RefinementSettingsSaveParams,
   type RefinementSettingsSaveResult,
@@ -7,6 +12,8 @@ import {
   rpcError,
   type SessionRefineParams,
   type SessionRefineResult,
+  type SessionRefineRollbackParams,
+  type SessionRefineRollbackResult,
 } from '@agnes/protocol'
 
 const errorCode = (error: unknown): string | undefined => (error as { code?: string } | null)?.code
@@ -46,9 +53,15 @@ export function registerRefinement(
 }
 
 /** A worker-hosted session is a wire proxy; it asks the worker that holds the real session. */
-type RemoteRefine = { refine?: (focus: string | undefined) => Promise<SessionRefineResult> }
+type RemoteRefine = {
+  refine?: (focus: string | undefined) => Promise<SessionRefineResult>
+  refineRollback?: (appliedSeq: number) => Promise<SessionRefineRollbackResult>
+}
 
-/** The owner's manual refinement request: queues a background plan and returns the run at once. */
+/**
+ * The owner's manual refinement request (queues a background plan and returns the run at once), and
+ * the owner's withdrawal of an applied refinement.
+ */
 export function registerSessionRefine(
   ep: LocalEndpoint,
   cx: { registry: { get(sessionId: string): { session: HostSession } | undefined } },
@@ -62,4 +75,21 @@ export function registerSessionRefine(
     const remote = entry.session as unknown as RemoteRefine
     return remote.refine ? remote.refine(p.focus) : requestRefinement(entry.session, p.focus)
   })
+  // Withdrawing an applied refinement changes what the session's model is told, so only the owner on
+  // this machine may: a local connection with a local credential, like the refinement settings.
+  ep.register(
+    '_agnes/v1/session.refine.rollback',
+    async (params, c): Promise<SessionRefineRollbackResult> => {
+      const p = params as SessionRefineRollbackParams
+      if (c.conn.authKind !== 'local' || c.conn.credentialKind !== 'local')
+        throw rpcError('CAPABILITY_DENIED', { method: 'session.refine.rollback', reason: 'local owner only' })
+      requireOwner('session.refine.rollback', p.sessionId, c)
+      const entry = cx.registry.get(p.sessionId)
+      if (!entry) throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
+      const remote = entry.session as unknown as RemoteRefine
+      return remote.refineRollback
+        ? remote.refineRollback(p.appliedSeq)
+        : rollbackRefinement(entry.session, p.appliedSeq)
+    },
+  )
 }

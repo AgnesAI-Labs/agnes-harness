@@ -103,3 +103,76 @@ describe('createDefaultCompactionEngine', () => {
     expect(output).toMatchObject({ kind: 'plan' })
   })
 })
+
+describe('prepareCompaction and delivered experience notes', () => {
+  const note = (seq: number, header: string, body: string) =>
+    node(seq, 'user', 300, {
+      kind: 'runtime_context',
+      content: [
+        { type: 'text', text: header },
+        { type: 'text', text: body },
+      ],
+    })
+  const lesson = 'Always run the formatter first, quoted lesson text'
+  const long = node(3, 'tool_result', 6000, { content: longText })
+  const tail = node(4, 'user', 100, { content: 'next' })
+
+  it('writes a placeholder for a task-experience note, never its text', () => {
+    const prepared = prepareCompaction(
+      input(
+        [
+          note(1, '[task-experience]\nTask experience update, format 1.', `- [memory/a v1] A: ${lesson}`),
+          long,
+          tail,
+        ],
+        100,
+      ),
+    )
+    expect(prepared).toMatchObject({ kind: 'replacement', mode: 'elision' })
+    if (prepared?.kind !== 'replacement') return
+    expect(prepared.text).not.toContain(lesson)
+    expect(prepared.text).not.toContain('Task experience update')
+    expect(prepared.text).toContain('[task experience note omitted]')
+  })
+
+  it('keeps every nested-result note as written, whatever tool it names', () => {
+    const rejected =
+      '[nested result]\nThe user rejected the nested call harness_propose inside run_code; it did not run. Do not retry it without asking.'
+    const ran =
+      '[nested result]\nThe nested call harness_inspect inside run_code ran after approval (status: ok). Do not run it again. Preview:'
+    const prepared = prepareCompaction(
+      input([note(1, rejected, 'preview'), note(2, ran, 'preview text'), long, tail], 100),
+    )
+    if (prepared?.kind !== 'replacement') throw new Error('expected a replacement')
+    expect(prepared.text).toContain(rejected)
+    expect(prepared.text).toContain(ran)
+    expect(prepared.text).not.toContain('omitted]')
+  })
+
+  it('does not start an elision for a range whose only large node is a task-experience note', () => {
+    const big = note(1, '[task-experience]\nTask experience snapshot, format 1.', 'entry '.repeat(5000))
+    expect(prepareCompaction(input([big, node(2, 'user', 100, { content: 'hi' }), tail], 100))).toBeNull()
+  })
+
+  it('leaves the input without such notes exactly as it was', () => {
+    const plain = [
+      node(1, 'user', 100, { content: 'hello' }),
+      node(2, 'user', 100, {
+        kind: 'runtime_context',
+        content: [{ type: 'text', text: '[hook context]\nCurrent time' }],
+      }),
+      node(3, 'user', 100, {
+        content: [{ type: 'text', text: 'a [nested result]\nThe nested call read inside x. Preview:' }],
+      }),
+      node(5, 'tool_result', 6000, { content: longText }),
+      tail,
+    ]
+    const prepared = prepareCompaction(input(plain, 100))
+    if (prepared?.kind !== 'replacement') throw new Error('expected a replacement')
+    expect(prepared.text).toContain('hello')
+    expect(prepared.text).toContain('[hook context]\nCurrent time')
+    expect(prepared.text).toContain('The nested call read inside x. Preview:')
+    // A nested note about another tool is the harness's own words and stays as they were.
+    expect(prepared.text).not.toContain('omitted]')
+  })
+})

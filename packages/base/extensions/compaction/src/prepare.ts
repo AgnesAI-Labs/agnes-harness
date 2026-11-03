@@ -1,4 +1,5 @@
 import type { CompactionInput, CompactionOutput, SurfaceNode } from '@agnes/extension-api'
+import { lessonNotePlaceholder } from '@agnes/protocol'
 import { chooseCut } from './cut.js'
 
 /** Engine-level prune and image offload. Triggers stay in Core. */
@@ -158,7 +159,13 @@ export function prepareCompaction(
   }
   const parts: string[] = []
   for (const node of prefix) {
-    const rendered = renderValue(node.data, config, offloaded, node.kind === 'tool_result')
+    // A delivered lesson note is not history to keep: an elision that quoted it would freeze its
+    // entries, which the next snapshot delivers afresh. It stands as one short line.
+    const note = node.kind === 'user' ? lessonNotePlaceholder(node.data) : undefined
+    const rendered =
+      note === undefined
+        ? renderValue(node.data, config, offloaded, node.kind === 'tool_result')
+        : { text: note, shortened: false }
     if (rendered.text) parts.push(rendered.text)
     shortened = shortened || rendered.shortened
   }

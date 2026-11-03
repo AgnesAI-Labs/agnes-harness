@@ -9,7 +9,7 @@ import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import type { EventEnvelope } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import goalExtension from '../src/index.js'
+import goalExtension, { createGoalExtension, goalTaskScope } from '../src/index.js'
 import { CONTINUE_PREFIX, type GoalState, goalProjection } from '../src/state.js'
 
 function goalRef(state: GoalState) {
@@ -209,4 +209,46 @@ it('blocks exhausted budgets and unavailable continuation through the public hoo
   state = input(state, '/goal resume')
   await hooks.session_start({ reason: 'fork', preset: 'test', cwd: '/fixture', parent: 'parent' }, ctx)
   expect(state.goal?.phase).toBe('paused')
+})
+
+it('offers the goal as the task scope: id, revision and phase, or none', async () => {
+  let state = goalProjection.init()
+  expect(goalTaskScope.projection).toBe(goalProjection.name)
+  expect(goalTaskScope.reader(state).current()).toBeNull()
+  state = input(state, '/goal Ship it')
+  const created = goalTaskScope.reader(state).current()
+  expect(created).toEqual({ id: state.goal?.id, revision: 1, phase: 'active' })
+  state = input(state, '/goal pause')
+  expect(goalTaskScope.reader(state).current()).toEqual({ id: created?.id, revision: 2, phase: 'paused' })
+  state = input(state, '/goal complete')
+  expect(goalTaskScope.reader(state).current()).toMatchObject({ id: created?.id, phase: 'complete' })
+  expect(goalTaskScope.reader(input(state, '/goal clear')).current()).toBeNull()
+
+  // The offer is made when the plugin is applied, only where the host grants it, and withdrawn on dispose.
+  const noop = () => () => undefined
+  const api = {
+    ctx: { signal: new AbortController().signal },
+    registerProjection: noop,
+    registerTool: noop,
+    registerSlot: noop,
+    registerHook: noop,
+    events: { append: async () => 0 },
+  } as unknown as ExtensionAPI
+  const offers: unknown[] = []
+  let withdrawn = 0
+  const dispose = await extensionFactoryOf(
+    createGoalExtension({
+      provideTaskScope: (source) => {
+        offers.push(source)
+        return () => {
+          withdrawn++
+        }
+      },
+    }),
+  )(api)
+  expect(offers).toEqual([goalTaskScope])
+  await (dispose as (() => unknown) | undefined)?.()
+  expect(withdrawn).toBe(1)
+  await extensionFactoryOf(goalExtension)(api)
+  expect(offers).toHaveLength(1)
 })

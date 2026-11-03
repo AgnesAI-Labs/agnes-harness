@@ -14,3 +14,35 @@ it('renders original file and image reference metadata in terminal history witho
   expect(text).toContain('[file: report.pdf (application/pdf, 200 B)]')
   expect(text).not.toContain('base64')
 })
+
+it('renders an experience review by state, reason and changed entry names', () => {
+  expect(
+    nodeText({
+      kind: 'refinement-run',
+      id: 'r',
+      seq: 2,
+      runId: 'run-1',
+      state: 'applied',
+      trigger: 'manual',
+      edits: [
+        { op: 'upsert', kind: 'memory', id: 'build' },
+        { op: 'delete', kind: 'skill', id: 'old' },
+      ],
+      appliedSeq: 4,
+      withdrawn: true,
+    }),
+  ).toBe(
+    'Experience review (manual) saved changes. Saved: memory/build. Removed: skill/old. Withdrawn since.',
+  )
+  expect(
+    nodeText({
+      kind: 'refinement-run',
+      id: 'r2',
+      seq: 6,
+      runId: 'run-2',
+      state: 'rejected',
+      trigger: 'model',
+      reason: 'no-evidence',
+    }),
+  ).toBe('Experience review (model) was not applied. Reason: no-evidence.')
+})

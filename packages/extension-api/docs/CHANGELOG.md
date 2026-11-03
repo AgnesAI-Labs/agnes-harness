@@ -2,11 +2,18 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
-## Unreleased
+## 5.1.0
 
 ### Added
 
 - `ToolContext.collapseRepeatedOutput?: boolean` carries preset `tools.collapse_repeated_output` (default false). Shell and job output guards may collapse adjacent repeats before byte truncation while preserving an artifact of the original. Other tool output remains unchanged.
+- `TaskScopeReader` (with `TaskScope`, `TaskScopePhase` and `TaskScopeSource`): a read-only,
+  synchronous view of a session's current task, `{ id, revision, phase }` or `null`. The plugin that
+  owns tasks offers it as one of its projections plus a reader of that projection's state; the Host
+  grants this to the bundled goal plugin only. The Host uses it to bind task-level refinement entries
+  to the current goal and to let them lapse when the goal is completed, cleared or replaced. A new
+  revision of the same goal (paused, resumed, edited) is the same task. No existing contract changes;
+  `^5.0.0` ranges admit 5.1.0.
 
 ## 5.0.0
 

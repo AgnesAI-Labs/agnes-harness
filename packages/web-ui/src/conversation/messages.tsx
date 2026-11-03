@@ -55,6 +55,7 @@ export function ConversationMessages(props: ConversationMessagesProps) {
       ...(props.renderCost ? { renderCost: props.renderCost } : {}),
       ...(props.renderSlot ? { renderSlot: props.renderSlot } : {}),
       ...(props.renderNode ? { renderNode: props.renderNode } : {}),
+      ...(props.withdrawRefinement ? { withdrawRefinement: props.withdrawRefinement } : {}),
     }),
     [
       props.t,
@@ -69,6 +70,7 @@ export function ConversationMessages(props: ConversationMessagesProps) {
       props.renderCost,
       props.renderSlot,
       props.renderNode,
+      props.withdrawRefinement,
     ],
   )
   const taskViews = new Map<string, SubtaskView>()

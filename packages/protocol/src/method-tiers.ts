@@ -182,6 +182,7 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/session.fork': 'client',
   '_agnes/v1/session.btw': 'client',
   '_agnes/v1/session.refine': 'client',
+  '_agnes/v1/session.refine.rollback': 'client',
   '_agnes/v1/session.voice.transcribe': 'client',
   '_agnes/v1/session.voice.speak': 'client',
   '_agnes/v1/voice.status': 'client',
