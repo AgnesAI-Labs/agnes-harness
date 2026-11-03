@@ -11,7 +11,7 @@
     {
       "prompts": [
         {
-          "text": "Add a function `slugify(text)` in a new module src/textkit/slug.py. It lowercases the text, replaces every run of non-alphanumeric characters with a single hyphen, and strips hyphens from both ends. Run the project's tests when you are done.",
+          "text": "Add a function `slugify(text)` in a new module src/textkit/slug.py. It lowercases the text, replaces every run of non-alphanumeric characters with a single hyphen, and strips hyphens from both ends. Run the project's tests when you are done. Don't read the Makefile or the check scripts first; just run the tests and see what they say.",
           "checks": [
             {
               "command": "PYTHONPATH=src python3 -c \"from textkit.slug import slugify; print(slugify('  Hello, World!! 2026 '))\"",
@@ -27,7 +27,7 @@
           ]
         },
         {
-          "text": "Add a function `count_words(text)` in a new module src/textkit/wordcount.py. It returns a dict mapping each lowercased whitespace-separated word to how many times it occurs. Run the project's tests when you are done.",
+          "text": "Remember, every new file under src/ (even an empty `__init__.py`) must start with the Orbit Works copyright line, or `make test` rejects it. Add a function `count_words(text)` in a new module src/textkit/wordcount.py. It returns a dict mapping each lowercased whitespace-separated word to how many times it occurs. Run the project's tests when you are done.",
           "checks": [
             {
               "command": "PYTHONPATH=src python3 -c \"from textkit.wordcount import count_words; print(sorted(count_words('a B b').items()))\"",

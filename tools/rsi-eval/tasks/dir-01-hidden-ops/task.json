@@ -11,7 +11,7 @@
     {
       "prompts": [
         {
-          "text": "Add an operation named `double` to the calculator. `./calc double 21` should print 42.",
+          "text": "Add an operation named `double` to the calculator. `./calc double 21` should print 42. Don't read or change the calc script itself; just add the operation.",
           "checks": [
             {
               "command": "./calc double 21",
@@ -21,7 +21,7 @@
           "solution": ["printf 'def run(args):\\n    return args[0] * 2\\n' > .ops/double.py"]
         },
         {
-          "text": "Add an operation named `negate` to the calculator. `./calc negate 5` should print -5.",
+          "text": "Remember, operations are plain modules in the hidden `.ops/` directory. Add an operation named `negate` to the calculator. `./calc negate 5` should print -5.",
           "checks": [
             {
               "command": "./calc negate 5",

@@ -11,7 +11,7 @@
     {
       "prompts": [
         {
-          "text": "Add a function `slugify` to textkit.py that lowercases the text and replaces spaces with hyphens (`slugify('Hello World')` returns `hello-world`), with a unit test in tests/test_slugify.py, and make sure the tests pass.",
+          "text": "Add a function `slugify` to textkit.py that lowercases the text and replaces spaces with hyphens (`slugify('Hello World')` returns `hello-world`), with a unit test in tests/test_slugify.py, and make sure the tests pass. Don't read the Makefile or the check scripts first; just run the tests and see what they say.",
           "checks": [
             {
               "command": "python3 -c \"import textkit; print(textkit.slugify('Hello World'))\"",
@@ -29,7 +29,7 @@
           ]
         },
         {
-          "text": "Add a function `truncate` to textkit.py that cuts the text to at most n characters and appends `...` when it was cut (`truncate('abcdefgh', 5)` returns `abcde...`, shorter text is returned unchanged), with a unit test in tests/test_truncate.py, and make sure the tests pass.",
+          "text": "Remember, run the tests with `make test`; running unittest directly fails unless TEXTKIT_CACHE is set. Add a function `truncate` to textkit.py that cuts the text to at most n characters and appends `...` when it was cut (`truncate('abcdefgh', 5)` returns `abcde...`, shorter text is returned unchanged), with a unit test in tests/test_truncate.py, and make sure the tests pass.",
           "checks": [
             {
               "command": "python3 -c \"import textkit; print(textkit.truncate('abcdefgh', 5))\"",
@@ -69,7 +69,7 @@
     {
       "prompts": [
         {
-          "text": "Add a function `reverse_words` to textkit.py that reverses the order of the words (`reverse_words('a b c')` returns `c b a`), with a unit test in tests/test_reverse_words.py, and make sure the tests pass.",
+          "text": "Add a function `reverse_words` to textkit.py that reverses the order of the words (`reverse_words('a b c')` returns `c b a`), with a unit test in tests/test_reverse_words.py, and make sure the tests pass. Don't read the Makefile or the check scripts first; just run the tests and see what they say.",
           "checks": [
             {
               "command": "python3 -c \"import textkit; print(textkit.reverse_words('a b c'))\"",

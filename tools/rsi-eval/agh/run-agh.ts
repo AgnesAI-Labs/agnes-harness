@@ -10,7 +10,7 @@
 //   pnpm --filter @agnes/system-node build:native
 //   export RSI_EVAL_API_KEY=...            # the variable named by keyEnv in the run config
 //   pnpm exec tsx tools/rsi-eval/agh/run-agh.ts --config <run-config.json> --out <dir> \
-//     [--tasks a,b] [--reps 5] [--settings on,off] [--tasks-dir <dir>]
+//     [--tasks a,b] [--reps 3] [--settings on,off] [--tasks-dir <dir>]
 //   pnpm exec tsx tools/rsi-eval/report.ts --run-dir <dir> --config <run-config.json>
 //
 // The run config is the one the Prime runner takes (run-config.example.json): the same route, model,
@@ -39,6 +39,12 @@
 // save to user memory, so where Prime ends the first session of a cross-workspace task with
 // `/refine --global`, nothing extra is sent and the outcome is marked `alignment: 'auto-only'`.
 // Off: no switch file at all, which is the default.
+//
+// No goal: the sessions are unattended and are given no goal. The goal extension has no quiet
+// way to set one: `/goal create` starts automatic rounds of its own on the main model (up to
+// --max-rounds, racing the next prompt and changing what a run costs), and a task-level lesson
+// without a goal expires. So the tasks put a plain user correction in the second prompt of the
+// first session; a lesson can quote it, which a session-level lesson needs.
 //
 // The key: read only from the environment variable named by keyEnv, never written to a file or
 // printed. It is handed to the host in this process's environment as the secret the route refers
@@ -172,7 +178,7 @@ export type AghArgs = {
 }
 
 export const USAGE =
-  'usage: run-agh.ts --config <run-config.json> --out <dir> [--tasks a,b] [--reps 5] [--settings on,off] [--tasks-dir <dir>]'
+  'usage: run-agh.ts --config <run-config.json> --out <dir> [--tasks a,b] [--reps 3] [--settings on,off] [--tasks-dir <dir>]'
 
 export function parseAghArgs(argv: string[]): AghArgs {
   const { values } = parseArgs({
@@ -181,7 +187,7 @@ export function parseAghArgs(argv: string[]): AghArgs {
       config: { type: 'string' },
       out: { type: 'string' },
       tasks: { type: 'string' },
-      reps: { type: 'string', default: '5' },
+      reps: { type: 'string', default: '3' },
       settings: { type: 'string', default: 'on,off' },
       'tasks-dir': { type: 'string', default: defaultTasksDir },
     },

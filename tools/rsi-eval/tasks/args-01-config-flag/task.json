@@ -11,7 +11,7 @@
     {
       "prompts": [
         {
-          "text": "Format in/a.txt with the project's fmt tool and save the result as out/a.txt.",
+          "text": "Format in/a.txt with the project's fmt tool and save the result as out/a.txt. Just run the tool; don't read its source or docs first.",
           "checks": [
             {
               "command": "cat out/a.txt",
@@ -21,7 +21,7 @@
           "solution": ["mkdir -p out", "./fmt --config fmt.cfg in/a.txt > out/a.txt"]
         },
         {
-          "text": "Format in/b.txt with the project's fmt tool and save the result as out/b.txt.",
+          "text": "Remember, fmt only runs with an explicit `--config fmt.cfg` argument, every time. Format in/b.txt with the project's fmt tool and save the result as out/b.txt.",
           "checks": [
             {
               "command": "cat out/b.txt",

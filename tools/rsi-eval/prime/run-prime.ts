@@ -324,7 +324,7 @@ async function main(argv: string[]): Promise<void> {
       config: { type: 'string' },
       out: { type: 'string' },
       tasks: { type: 'string' },
-      reps: { type: 'string', default: '5' },
+      reps: { type: 'string', default: '3' },
       settings: { type: 'string', default: 'on,off' },
       image: { type: 'string', default: DEFAULT_IMAGE },
       'tasks-dir': { type: 'string', default: defaultTasksDir },
@@ -332,7 +332,7 @@ async function main(argv: string[]): Promise<void> {
   })
   if (!values.config || !values.out) {
     throw new Error(
-      'usage: run-prime.ts --config <run-config.json> --out <dir> [--tasks a,b] [--reps 5] [--settings on,off] [--image <tag>]',
+      'usage: run-prime.ts --config <run-config.json> --out <dir> [--tasks a,b] [--reps 3] [--settings on,off] [--image <tag>]',
     )
   }
   const cfg = readConfig(values.config)

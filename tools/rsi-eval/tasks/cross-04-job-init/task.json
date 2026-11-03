@@ -11,7 +11,7 @@
     {
       "prompts": [
         {
-          "text": "Set up a job named `backup` whose command is `echo backup done`, and run it once so `results/backup.out` has its output.",
+          "text": "Set up a job named `backup` whose command is `echo backup done`, and run it once so `results/backup.out` has its output. Just run the tool; don't read its source or docs first.",
           "checks": [
             {
               "command": "cat results/backup.out",
@@ -25,7 +25,7 @@
           ]
         },
         {
-          "text": "Set up a job named `cleanup` whose command is `echo temp cleared`, and run it once so `results/cleanup.out` has its output.",
+          "text": "Remember, a job has to be created with `./kiln init <name>` before it can run; a hand-made job.cfg is rejected. Set up a job named `cleanup` whose command is `echo temp cleared`, and run it once so `results/cleanup.out` has its output.",
           "checks": [
             {
               "command": "cat results/cleanup.out",
@@ -57,7 +57,7 @@
     {
       "prompts": [
         {
-          "text": "Set up a job named `sync` whose command is `echo sync finished`, and run it once so `results/sync.out` has its output.",
+          "text": "Set up a job named `sync` whose command is `echo sync finished`, and run it once so `results/sync.out` has its output. Just run the tool; don't read its source or docs first.",
           "checks": [
             {
               "command": "cat results/sync.out",
