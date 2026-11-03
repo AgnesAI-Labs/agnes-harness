@@ -2,8 +2,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { type HostModule, prepareHome } from './launch.js'
-import { aghProfile, PROFILE } from './run-agh.js'
+import { type HostModule, loadMemoryModule, prepareHome, prepareMemory } from './launch.js'
+import { aghProfile, EVAL_MEMORY, PROFILE } from './run-agh.js'
 
 const cfg = {
   provider: 'eval',
@@ -61,6 +61,37 @@ describe('prepareHome', () => {
       readFileSync(join(dir, 'on', 'home', 'profiles', PROFILE, 'profile.yaml'), 'utf8'),
     )
     expect(profile).toEqual(aghProfile(cfg, 'on.r1'))
+  })
+
+  it('saves the same memory settings for every workspace, where the memory provider reads them', async () => {
+    const memory = await loadMemoryModule()
+    const workspaces = [join(dir, 'ws-a'), join(dir, 'ws-b')]
+    for (const ws of workspaces) mkdirSync(ws)
+    const settingsOf = async (home: string) =>
+      Promise.all(
+        workspaces.map(async (workspaceRoot) => {
+          const session = memory.openMemory({ home, workspaceRoot, sessionKey: 'read' })
+          return (await session.inspect()).settings
+        }),
+      )
+    for (const name of ['on', 'off']) {
+      const run = input(name, name === 'on')
+      await prepareHome(run, await host())
+      // Before: the defaults, memory off and no user memory.
+      expect((await settingsOf(run.home)).map((s) => [s.mode, s.userEnabled])).toEqual([
+        ['off', false],
+        ['off', false],
+      ])
+      await prepareMemory({ home: run.home, workspaces, memory: EVAL_MEMORY }, memory)
+      for (const settings of await settingsOf(run.home)) expect(settings).toMatchObject(EVAL_MEMORY)
+    }
+    // Nothing reached the user's home.
+    const elsewhere = memory.openMemory({
+      home: process.env.AGH_HOME as string,
+      workspaceRoot: workspaces[0] as string,
+      sessionKey: 'read',
+    })
+    expect((await elsewhere.inspect()).settings.mode).toBe('off')
   })
 
   it('refuses a home that already exists', async () => {

@@ -1,9 +1,18 @@
 import { spawn } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, parse } from 'node:path'
+import { dirname, join, parse, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { defaultTasksDir, loadSuite } from './suite.js'
+import { defaultTasksDir, loadSuite, sessionFixture, taskFixtures } from './suite.js'
 import type { EvalTask } from './types.js'
 
 export type SelfCheckResult = { ok: boolean; problems: string[] }
@@ -73,10 +82,22 @@ export const runCommand = (
 export const checkPasses = (result: CommandResult, contains: string): boolean =>
   !result.timedOut && result.code === 0 && result.output.includes(contains)
 
+const DOC_FILE = /(^readme|\.md$|\.txt$)/i
+
+/** Documentation files under `root` (README*, *.md, *.txt), as paths relative to it. */
+const docFiles = (root: string, dir = root): string[] =>
+  readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) return docFiles(root, path)
+    return entry.isFile() && DOC_FILE.test(entry.name) ? [relative(root, path)] : []
+  })
+
 /**
- * Proves a task is well formed without any model: the trap reproduces, every prompt's checks fail
- * on the untouched fixture, and each prompt's solution alone makes its checks pass. Everything runs
- * in throwaway copies of the fixture outside any git repository; the real fixture is never touched.
+ * Proves a task is well formed without any model: the trap reproduces (in every fixture the task
+ * uses), every prompt's checks fail on its session's untouched fixture, and each prompt's solution
+ * alone makes its checks pass. For a cross-workspace task the second fixture's documentation must
+ * not match a trap signature: the lesson has to come from the first workspace. Everything runs in
+ * throwaway copies of the fixtures outside any git repository; the real fixtures are never touched.
  */
 export const selfCheckTask = async (
   task: EvalTask,
@@ -85,7 +106,8 @@ export const selfCheckTask = async (
 ): Promise<SelfCheckResult> => {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const problems: string[] = []
-  const fixture = join(taskDir, 'fixture')
+  const fixtures = taskFixtures(task)
+  const signatures = task.trap.signatures.map((signature) => new RegExp(signature))
   const root = mkdtempSync(join(realpathSync(tmpdir()), 'rsi-self-check-'))
   try {
     if (insideGitRepo(root)) {
@@ -94,25 +116,39 @@ export const selfCheckTask = async (
     const home = join(root, 'home')
     mkdirSync(home)
     let copies = 0
-    const freshCopy = (): string => {
+    const freshCopy = (fixture: string): string => {
       const work = join(root, `work-${copies++}`)
-      cpSync(fixture, work, { recursive: true })
+      cpSync(join(taskDir, fixture), work, { recursive: true })
       return work
     }
 
-    const reproduced = await runCommand(task.trap.reproduce, freshCopy(), home, timeoutMs)
-    if (reproduced.timedOut) {
-      problems.push(`trap.reproduce timed out after ${timeoutMs} ms`)
-    } else if (!task.trap.signatures.some((signature) => new RegExp(signature).test(reproduced.output))) {
-      problems.push(
-        `trap.reproduce output matches none of the signatures: ${reproduced.output.trim().slice(0, 200)}`,
-      )
+    for (const fixture of fixtures) {
+      // A single-fixture task keeps its messages as they were.
+      const where = fixtures.length > 1 ? `${fixture}: ` : ''
+      const reproduced = await runCommand(task.trap.reproduce, freshCopy(fixture), home, timeoutMs)
+      if (reproduced.timedOut) {
+        problems.push(`${where}trap.reproduce timed out after ${timeoutMs} ms`)
+      } else if (!signatures.some((signature) => signature.test(reproduced.output))) {
+        problems.push(
+          `${where}trap.reproduce output matches none of the signatures: ${reproduced.output.trim().slice(0, 200)}`,
+        )
+      }
+    }
+
+    if (task.category === 'cross-workspace') {
+      for (const fixture of fixtures.slice(1)) {
+        for (const doc of docFiles(join(taskDir, fixture))) {
+          const text = readFileSync(join(taskDir, fixture, doc), 'utf8')
+          if (signatures.some((signature) => signature.test(text)))
+            problems.push(`${fixture}: ${doc} mentions the trap; the second workspace must hold no clue`)
+        }
+      }
     }
 
     for (const [sessionIndex, session] of task.sessions.entries()) {
       for (const [promptIndex, prompt] of session.prompts.entries()) {
         const label = `session ${sessionIndex} prompt ${promptIndex}`
-        const work = freshCopy()
+        const work = freshCopy(sessionFixture(session))
         const runChecks = (): Promise<CommandResult[]> =>
           Promise.all(prompt.checks.map((check) => runCommand(check.command, work, home, timeoutMs)))
 

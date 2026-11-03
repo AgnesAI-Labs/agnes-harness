@@ -1,0 +1,96 @@
+{
+  "id": "xws-01-profile-env",
+  "category": "cross-workspace",
+  "description": "The team's shared acme tool, used by two unrelated projects, refuses to run unless ACME_PROFILE is set.",
+  "trap": {
+    "signatures": ["ACME_PROFILE is not set"],
+    "reproduce": "bin/acme status",
+    "note": "The shared bin/acme tool only runs with ACME_PROFILE=dev in the environment (for example ACME_PROFILE=dev bin/acme build about), in every project that has it."
+  },
+  "sessions": [
+    {
+      "prompts": [
+        {
+          "text": "Add a page `about` whose text is `We make kites.` and build it with the team's acme tool.",
+          "checks": [
+            {
+              "command": "cat site/about.html",
+              "contains": "We make kites."
+            }
+          ],
+          "solution": [
+            "printf 'We make kites.\\n' > pages/about.txt",
+            "ACME_PROFILE=dev bin/acme build about"
+          ]
+        },
+        {
+          "text": "Add a page `contact` whose text is `Write to hello@kites.test.` and build it with the team's acme tool.",
+          "checks": [
+            {
+              "command": "cat site/contact.html",
+              "contains": "Write to hello@kites.test."
+            }
+          ],
+          "solution": [
+            "printf 'Write to hello@kites.test.\\n' > pages/contact.txt",
+            "ACME_PROFILE=dev bin/acme build contact"
+          ]
+        },
+        {
+          "text": "Add a page `faq` whose text is `Kites fly best in steady wind.` and build it with the team's acme tool.",
+          "checks": [
+            {
+              "command": "cat site/faq.html",
+              "contains": "Kites fly best in steady wind."
+            }
+          ],
+          "solution": [
+            "printf 'Kites fly best in steady wind.\\n' > pages/faq.txt",
+            "ACME_PROFILE=dev bin/acme build faq"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "fixture-b",
+      "prompts": [
+        {
+          "text": "Add a job `greet` that prints `hello from greet`, and run it with the team's acme tool so its output is saved.",
+          "checks": [
+            {
+              "command": "cat out/greet.txt",
+              "contains": "hello from greet"
+            }
+          ],
+          "solution": [
+            "printf 'echo hello from greet\\n' > jobs/greet.sh",
+            "ACME_PROFILE=dev bin/acme run greet"
+          ]
+        },
+        {
+          "text": "Add a job `tally` that prints `42 rows`, and run it with the team's acme tool so its output is saved.",
+          "checks": [
+            {
+              "command": "cat out/tally.txt",
+              "contains": "42 rows"
+            }
+          ],
+          "solution": ["printf 'echo 42 rows\\n' > jobs/tally.sh", "ACME_PROFILE=dev bin/acme run tally"]
+        },
+        {
+          "text": "Add a job `stamp` that prints `batch complete`, and run it with the team's acme tool so its output is saved.",
+          "checks": [
+            {
+              "command": "cat out/stamp.txt",
+              "contains": "batch complete"
+            }
+          ],
+          "solution": [
+            "printf 'echo batch complete\\n' > jobs/stamp.sh",
+            "ACME_PROFILE=dev bin/acme run stamp"
+          ]
+        }
+      ]
+    }
+  ]
+}

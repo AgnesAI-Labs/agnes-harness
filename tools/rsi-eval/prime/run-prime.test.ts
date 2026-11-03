@@ -155,6 +155,53 @@ describe('run-prime', () => {
     expect(primeArgv(t, 0, 'off', cfg).slice(10)).toEqual(['a', 'b'])
   })
 
+  const crossWorkspace = (sessions: string[][]): EvalTask => {
+    const t = task('cross-workspace', sessions)
+    t.sessions[1] = { ...at(t.sessions, 1), fixture: 'fixture-b' }
+    return t
+  }
+
+  it('prime argv ends cross-workspace session 1 with /refine --global', () => {
+    const t = crossWorkspace([
+      ['a', 'b'],
+      ['c', 'd'],
+    ])
+    expect(primeArgv(t, 0, 'on', cfg).slice(10)).toEqual(['a', '/refine', 'b', '/refine --global'])
+    expect(primeArgv(t, 1, 'on', cfg).slice(10)).toEqual(['c', '/refine', 'd', '/refine'])
+    expect(primeArgv(t, 0, 'off', cfg).slice(10)).toEqual(['a', 'b'])
+    // Each session starts in its own workspace's mount point.
+    expect(primeArgv(t, 0, 'on', cfg).slice(3, 5)).toEqual(['--cwd', '/work'])
+    expect(primeArgv(t, 1, 'on', cfg).slice(3, 5)).toEqual(['--cwd', '/work-b'])
+  })
+
+  it('mounts each workspace for its own session and checks each session in its workspace', async () => {
+    const out = join(dir, 'out')
+    const fx = fixture()
+    mkdirSync(join(dir, 'fixture-b'))
+    writeFileSync(join(dir, 'fixture-b', 'README.md'), 'second project')
+    const t = crossWorkspace([['a'], ['b']])
+    at(at(t.sessions, 1).prompts).checks = [{ command: 'cat README.md', contains: 'second project' }]
+    const outcome = await runOne(t, 'on', 1, cfg, out, { fixtureDir: fx, dockerCommand: docker })
+    const runDir = join(out, 't1.on.r1')
+    const runs = invocations().filter((args) => args.includes('prime-agent'))
+    const mounts = runs.map((args) => args.flatMap((a, i) => (args[i - 1] === '-v' ? [a] : [])))
+    expect(mounts).toEqual([
+      [`${join(runDir, 'work')}:/work`, `${join(runDir, 'agent')}:/agent`],
+      [`${join(runDir, 'work-b')}:/work-b`, `${join(runDir, 'agent')}:/agent`],
+    ])
+    const checkMounts = invocations()
+      .filter((args) => !args.includes('prime-agent'))
+      .map((args) => args[args.indexOf('-v') + 1])
+    expect(checkMounts).toEqual([`${join(runDir, 'work')}:/work`, `${join(runDir, 'work-b')}:/work`])
+    expect(outcome.checks).toEqual([
+      { session: 0, prompt: 0, passed: true },
+      { session: 1, prompt: 0, passed: true },
+    ])
+    expect(readFileSync(join(runDir, 'work', 'README.md'), 'utf8')).toBe('hello')
+    // Prime's own save is sent, so the run is not marked.
+    expect(outcome).not.toHaveProperty('alignment')
+  })
+
   it('writes settings with refinement switched by setting and one pinned model', () => {
     const on = primeSettings('on', cfg)
     const off = primeSettings('off', cfg)

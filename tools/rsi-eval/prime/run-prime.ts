@@ -1,7 +1,10 @@
 // Runs eval tasks through Prime Agent inside Docker, unattended, with refinement on or off.
 //
 // Prime has no sandbox, so it only ever runs in a container. Each run gets a fresh agent
-// directory (settings.json, models.json) and a throwaway copy of the task fixture. Model
+// directory (settings.json, models.json) and a throwaway copy of every fixture its sessions use:
+// <run>/work for the default fixture, mounted at /work, and <run>/work-b for fixture-b, mounted at
+// /work-b. Sessions that use the same fixture share its copy; every session of a run shares the
+// agent directory, so what `/refine --global` saves reaches the next workspace. Model
 // traffic goes through the local usage proxy at /run/<runId>/. The API key is never written
 // anywhere: the container receives it by variable name (`docker run -e NAME`) and models.json
 // refers to that same name, which Prime resolves from its own environment.
@@ -23,6 +26,7 @@ import {
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
+import { DEFAULT_FIXTURE, fixtureOf, taskFixtures, workspaceName } from '../suite.js'
 import type { EvalTask, RunConfig, RunOutcome, Setting } from '../types.js'
 
 export const DEFAULT_IMAGE = 'rsi-eval-prime:9cf0d47'
@@ -30,7 +34,10 @@ const CHECK_TIMEOUT_MS = 120_000
 const defaultTasksDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'tasks')
 
 export type RunOptions = {
-  /** Directory copied into the workspace. Defaults to `<tasksDir>/<task.id>/fixture`. */
+  /**
+   * Directory copied into the workspace. Defaults to `<tasksDir>/<task.id>/fixture`; another fixture
+   * a session names is its sibling.
+   */
   fixtureDir?: string
   /** Docker image to run. */
   image?: string
@@ -66,6 +73,13 @@ export function primeModels(cfg: RunConfig, id: string): object {
   }
 }
 
+/** Where a session's workspace is mounted in its container: /work, or /work-b for fixture-b. */
+export const mountPoint = (task: EvalTask, sessionIndex: number): string =>
+  `/${workspaceName(fixtureOf(task, sessionIndex))}`
+
+/** The tasks whose first session ends with a save that outlives the workspace. */
+const CARRIES_OVER: ReadonlySet<EvalTask['category']> = new Set(['cross-session', 'cross-workspace'])
+
 export function primeArgv(task: EvalTask, sessionIndex: number, setting: Setting, cfg: RunConfig): string[] {
   const prompts = (task.sessions[sessionIndex]?.prompts ?? []).map((p) => p.text)
   const messages: string[] = []
@@ -73,7 +87,7 @@ export function primeArgv(task: EvalTask, sessionIndex: number, setting: Setting
     messages.push(text)
     if (setting === 'on') messages.push('/refine')
   }
-  if (setting === 'on' && task.category === 'cross-session' && sessionIndex === 0) {
+  if (setting === 'on' && CARRIES_OVER.has(task.category) && sessionIndex === 0) {
     messages[messages.length - 1] = '/refine --global'
   }
   return [
@@ -81,7 +95,7 @@ export function primeArgv(task: EvalTask, sessionIndex: number, setting: Setting
     '--mode',
     'json',
     '--cwd',
-    '/work',
+    mountPoint(task, sessionIndex),
     '--provider',
     cfg.provider,
     '--model',
@@ -168,7 +182,8 @@ export async function runOne(
   const docker = opts.dockerCommand ?? ['docker']
   const fixtureDir = opts.fixtureDir ?? join(defaultTasksDir, task.id, 'fixture')
   const agentDir = join(runDir, 'agent')
-  const workDir = join(runDir, 'work')
+  const workDirOf = (sessionIndex: number): string =>
+    join(runDir, workspaceName(fixtureOf(task, sessionIndex)))
   const sessionsOut = join(runDir, 'sessions')
   const checksOut = join(runDir, 'checks')
 
@@ -177,8 +192,13 @@ export async function runOne(
   for (const dir of [agentDir, sessionsOut, checksOut]) mkdirSync(dir, { recursive: true })
   writeFileSync(join(agentDir, 'settings.json'), `${JSON.stringify(primeSettings(setting, cfg), null, 2)}\n`)
   writeFileSync(join(agentDir, 'models.json'), `${JSON.stringify(primeModels(cfg, id), null, 2)}\n`)
-  cpSync(fixtureDir, workDir, { recursive: true })
-  openPermissions(workDir)
+  for (const fixture of taskFixtures(task)) {
+    const workDir = join(runDir, workspaceName(fixture))
+    cpSync(fixture === DEFAULT_FIXTURE ? fixtureDir : join(dirname(fixtureDir), fixture), workDir, {
+      recursive: true,
+    })
+    openPermissions(workDir)
+  }
   openPermissions(agentDir)
 
   const sessions: RunOutcome['sessions'] = []
@@ -194,7 +214,7 @@ export async function runOne(
       '--add-host',
       'host.docker.internal:host-gateway',
       '-v',
-      `${workDir}:/work`,
+      `${workDirOf(i)}:${mountPoint(task, i)}`,
       '-v',
       `${agentDir}:/agent`,
       '-e',
@@ -250,7 +270,7 @@ export async function runOne(
             '--network',
             'none',
             '-v',
-            `${workDir}:/work`,
+            `${workDirOf(s)}:/work`,
             '-w',
             '/work',
             image,

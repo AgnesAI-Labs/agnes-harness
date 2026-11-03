@@ -21,15 +21,24 @@
 // outside any git repository. The task commands and checks need bash, python3 and make on PATH.
 //
 // What one run is: a task, a setting and a repetition. Each run gets a home of its own under
-// <out>/<runId>/home (its data dir, sessions.db and the refinement switch live there, never in your
-// AGH_HOME) and a throwaway copy of the task fixture outside any git repository, copied to
-// <out>/<runId>/work at the end. The host is embedded in this process. Model traffic goes through the
-// usage proxy at /run/<runId>/ like the Prime runs, so report.ts prices both the same way.
+// <out>/<runId>/home (its data dir, sessions.db, memory and the refinement switch live there, never
+// in your AGH_HOME) and a throwaway workspace outside any git repository for every fixture its
+// sessions use, copied to <out>/<runId>/work (and work-b for fixture-b) at the end. Sessions that use
+// the same fixture share its workspace, so the second session of a cross-session task is in the same
+// project; the second session of a cross-workspace task is in another one, under the same home. The
+// host is embedded in this process. Model traffic goes through the usage proxy at /run/<runId>/ like
+// the Prime runs, so report.ts prices both the same way.
+//
+// Memory, in both settings alike: every workspace's memory is on in automatic mode and reads the
+// user memory (EVAL_MEMORY), so on and off differ only in refinement.
 //
 // On: the switch on, mode "manual and automatic", and after every prompt one manual review (the
 // request `/refine` makes), waited for before the next prompt, as the Prime runs send `/refine`
-// after every prompt. Every approval is given, as Prime runs without asking. AGH keeps entries per session, so the second session of a
-// cross-session task starts empty. Off: no switch file at all, which is the default.
+// after every prompt. Every approval is given, as Prime runs without asking. AGH keeps entries per
+// session, so the second session of a cross-session task starts empty. AGH has no user-initiated
+// save to user memory, so where Prime ends the first session of a cross-workspace task with
+// `/refine --global`, nothing extra is sent and the outcome is marked `alignment: 'auto-only'`.
+// Off: no switch file at all, which is the default.
 //
 // The key: read only from the environment variable named by keyEnv, never written to a file or
 // printed. It is handed to the host in this process's environment as the secret the route refers
@@ -55,6 +64,7 @@ import { dirname, join, parse, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import { readConfig, runId } from '../prime/run-prime.js'
+import { DEFAULT_FIXTURE, fixtureOf, taskFixtures, workspaceName } from '../suite.js'
 import type { EvalTask, RunConfig, RunOutcome, Setting } from '../types.js'
 
 const defaultTasksDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'tasks')
@@ -75,6 +85,10 @@ const ROUTE = /^[a-z0-9][a-z0-9-]{0,63}$/
 /** The refinement switch of a run, as the settings panel would save it; absent means never saved (off). */
 export type RefinementSwitch = { enabled: true; mode: 'auto' }
 
+/** The memory settings every workspace of a run gets, in both settings alike. */
+export type EvalMemory = { mode: 'auto'; userEnabled: true }
+export const EVAL_MEMORY: EvalMemory = Object.freeze({ mode: 'auto', userEnabled: true })
+
 export type LaunchInput = {
   /** A directory that does not exist yet; the launcher makes it the run's home. */
   home: string
@@ -82,8 +96,12 @@ export type LaunchInput = {
   /** Written as the profile file: the one route, pointing at the usage proxy. */
   profileDocument: object
   refinement: RefinementSwitch | undefined
-  /** The workspace sessions run in. */
+  /** The workspace the host starts in: the first session's. */
   workspace: string
+  /** Every workspace the run's sessions use, once each, the first session's first. */
+  workspaces: string[]
+  /** Saved as the memory settings of every workspace in `workspaces`. */
+  memory: EvalMemory
   model: { route: string; model: string }
   /** The environment the host gets: AGH_HOME is the run's home. */
   env: Record<string, string | undefined>
@@ -113,7 +131,8 @@ export interface AghSession {
 }
 
 export interface AghHost {
-  openSession(sessionKey: string): Promise<AghSession>
+  /** Opens a session in `workspace`, one of the launch input's `workspaces`. */
+  openSession(sessionKey: string, workspace: string): Promise<AghSession>
   close(): Promise<void>
   /** Every row of a session's ledger, read after `close`. */
   ledger(sessionKey: string): LedgerRow[]
@@ -130,7 +149,10 @@ export type CheckRun = (
 
 export type AghRunOptions = {
   launch: Launch
-  /** Directory copied into the workspace. Defaults to `<tasksDir>/<task.id>/fixture`. */
+  /**
+   * Directory copied into the workspace. Defaults to `<tasksDir>/<task.id>/fixture`; another fixture
+   * a session names is its sibling.
+   */
   fixtureDir?: string
   /** Where throwaway workspaces are made; must be outside any git repository. Defaults to the temp dir. */
   workBase?: string
@@ -307,15 +329,26 @@ export async function runOne(
   const sessionsOut = join(runDir, 'sessions')
   mkdirSync(sessionsOut, { recursive: true })
   const home = join(runDir, 'home')
-  const work = mkdtempSync(join(workBase, 'rsi-agh-'))
+  // One throwaway workspace per fixture; sessions that use the same fixture share it.
+  const works = new Map<string, string>()
+  const workOf = (sessionIndex: number): string => works.get(fixtureOf(task, sessionIndex)) as string
   try {
-    cpSync(fixtureDir, work, { recursive: true })
+    for (const fixture of taskFixtures(task)) {
+      const work = mkdtempSync(join(workBase, 'rsi-agh-'))
+      works.set(fixture, work)
+      cpSync(fixture === DEFAULT_FIXTURE ? fixtureDir : join(dirname(fixtureDir), fixture), work, {
+        recursive: true,
+      })
+    }
+    const workspaces = [...works.values()]
     const host = await opts.launch({
       home,
       profile: PROFILE,
       profileDocument: aghProfile(cfg, id),
       refinement: refinementSwitch(setting),
-      workspace: work,
+      workspace: workOf(0),
+      workspaces,
+      memory: EVAL_MEMORY,
       model: { route: cfg.provider, model: cfg.model },
       env: { ...process.env, AGH_HOME: home },
     })
@@ -326,7 +359,15 @@ export async function runOne(
         const key = `rsi-eval-${id}-s${i + 1}`
         keys.push(key)
         const stdoutFile = join(runDir, `session${i + 1}.turns.jsonl`)
-        const result = await runSession(host, key, task.sessions[i]?.prompts ?? [], setting, cfg, stdoutFile)
+        const result = await runSession(
+          host,
+          key,
+          workOf(i),
+          task.sessions[i]?.prompts ?? [],
+          setting,
+          cfg,
+          stdoutFile,
+        )
         sessions.push({ ...result, stdoutFile, sessionFiles: [] })
         // A failed or timed-out session ends the run: later sessions would build on missing work.
         if (result.timedOut || result.exitCode !== 0) break
@@ -353,23 +394,32 @@ export async function runOne(
       for (const [p, taskPrompt] of (task.sessions[s]?.prompts ?? []).entries()) {
         let passed = true
         for (const check of taskPrompt.checks) {
-          if (!(await runCheck(check, work, checkHome, CHECK_TIMEOUT_MS))) passed = false
+          if (!(await runCheck(check, workOf(s), checkHome, CHECK_TIMEOUT_MS))) passed = false
         }
         checks.push({ session: s, prompt: p, passed })
       }
     }
-    const outcome: RunOutcome = { runId: id, system: 'agh', sessions, checks }
+    const outcome: RunOutcome = {
+      runId: id,
+      system: 'agh',
+      sessions,
+      checks,
+      ...(setting === 'on' && task.category === 'cross-workspace' ? { alignment: 'auto-only' as const } : {}),
+    }
     writeFileSync(outcomeFile, `${JSON.stringify(outcome, null, 2)}\n`)
     return outcome
   } finally {
-    cpSync(work, join(runDir, 'work'), { recursive: true })
-    rmSync(work, { recursive: true, force: true })
+    for (const [fixture, work] of works) {
+      cpSync(work, join(runDir, workspaceName(fixture)), { recursive: true })
+      rmSync(work, { recursive: true, force: true })
+    }
   }
 }
 
 async function runSession(
   host: AghHost,
   key: string,
+  workspace: string,
   prompts: EvalTask['sessions'][number]['prompts'],
   setting: Setting,
   cfg: RunConfig,
@@ -378,7 +428,7 @@ async function runSession(
   const deadline = Date.now() + cfg.sessionTimeoutMs
   const log = (entry: SessionLog) => writeFileSync(logFile, `${JSON.stringify(entry)}\n`, { flag: 'a' })
   writeFileSync(logFile, '')
-  const session = await host.openSession(key)
+  const session = await host.openSession(key, workspace)
   let exitCode: number | null = 0
   let timedOut = false
   try {

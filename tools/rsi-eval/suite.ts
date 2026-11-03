@@ -5,7 +5,38 @@ import type { Category, EvalTask } from './types.js'
 
 export const defaultTasksDir = join(dirname(fileURLToPath(import.meta.url)), 'tasks')
 
-const categories: readonly Category[] = ['directory', 'command-args', 'convention', 'cross-session']
+const categories: readonly Category[] = [
+  'directory',
+  'command-args',
+  'convention',
+  'cross-session',
+  'cross-workspace',
+]
+
+/** The fixture a session's workspace is copied from when it names none. */
+export const DEFAULT_FIXTURE = 'fixture'
+const FIXTURE_NAME = /^fixture(-[a-z0-9]+)?$/
+/** A cross-workspace lesson has to fit the user memory, which holds about 512 bytes in all. */
+const MAX_CROSS_WORKSPACE_NOTE = 256
+
+/** The fixture directory, next to task.json, that a session's workspace is copied from. */
+export const sessionFixture = (session: EvalTask['sessions'][number]): string =>
+  session.fixture ?? DEFAULT_FIXTURE
+
+/** The fixture of the task's session at `sessionIndex`. */
+export const fixtureOf = (task: EvalTask, sessionIndex: number): string => {
+  const session = task.sessions[sessionIndex]
+  return session ? sessionFixture(session) : DEFAULT_FIXTURE
+}
+
+/** Every fixture a task's sessions use, once each, in the order the sessions first use them. */
+export const taskFixtures = (task: EvalTask): string[] => [...new Set(task.sessions.map(sessionFixture))]
+
+/**
+ * The name a runner gives the workspace made from `fixture`: `work` for the default fixture (as
+ * before there were several), `work-b` for `fixture-b`. It is also the directory a run keeps.
+ */
+export const workspaceName = (fixture: string): string => `work${fixture.slice(DEFAULT_FIXTURE.length)}`
 
 const DEFAULT_MIN_TASKS = 20
 const MIN_PER_CATEGORY = 5
@@ -23,10 +54,15 @@ export type LoadSuiteOptions = {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-const expectRecord = (value: unknown, where: string, keys: readonly string[]): Record<string, unknown> => {
+const expectRecord = (
+  value: unknown,
+  where: string,
+  keys: readonly string[],
+  optional: readonly string[] = [],
+): Record<string, unknown> => {
   if (!isRecord(value)) throw new Error(`${where}: expected an object`)
   for (const key of Object.keys(value)) {
-    if (!keys.includes(key)) throw new Error(`${where}: unknown key "${key}"`)
+    if (!keys.includes(key) && !optional.includes(key)) throw new Error(`${where}: unknown key "${key}"`)
   }
   for (const key of keys) {
     if (!(key in value)) throw new Error(`${where}: missing key "${key}"`)
@@ -72,7 +108,11 @@ const parseTask = (raw: unknown, dirName: string): EvalTask => {
 
   const sessions = expectArray(task.sessions, `${where}.sessions`).map((entry, sessionIndex) => {
     const sessionWhere = `${where}.sessions[${sessionIndex}]`
-    const session = expectRecord(entry, sessionWhere, ['prompts'])
+    const session = expectRecord(entry, sessionWhere, ['prompts'], ['fixture'])
+    const fixture =
+      'fixture' in session ? expectString(session.fixture, `${sessionWhere}.fixture`) : undefined
+    if (fixture !== undefined && !FIXTURE_NAME.test(fixture))
+      throw new Error(`${sessionWhere}: fixture "${fixture}" must match ${FIXTURE_NAME.source}`)
     const prompts = expectArray(session.prompts, `${sessionWhere}.prompts`).map(
       (promptEntry, promptIndex) => {
         const promptWhere = `${sessionWhere}.prompts[${promptIndex}]`
@@ -98,20 +138,35 @@ const parseTask = (raw: unknown, dirName: string): EvalTask => {
         `${sessionWhere}: needs at least ${MIN_PROMPTS_PER_SESSION} prompts, got ${prompts.length}`,
       )
     }
-    return { prompts }
+    return fixture === undefined ? { prompts } : { prompts, fixture }
   })
 
-  const expectedSessions = category === 'cross-session' ? 2 : 1
+  const expectedSessions = category === 'cross-session' || category === 'cross-workspace' ? 2 : 1
   if (sessions.length !== expectedSessions) {
     throw new Error(
       `${where}: ${category} tasks need exactly ${expectedSessions} session${expectedSessions === 1 ? '' : 's'}, got ${sessions.length}`,
     )
   }
 
+  const fixtures = sessions.map(sessionFixture)
+  if (category === 'cross-workspace') {
+    if (fixtures[1] === fixtures[0])
+      throw new Error(`${where}: the second session must name a fixture other than "${fixtures[0]}"`)
+    if (trap.note.length > MAX_CROSS_WORKSPACE_NOTE)
+      throw new Error(
+        `${where}.trap.note: a cross-workspace lesson must be at most ${MAX_CROSS_WORKSPACE_NOTE} characters, got ${trap.note.length}`,
+      )
+  } else if (fixtures.some((fixture) => fixture !== DEFAULT_FIXTURE)) {
+    throw new Error(`${where}: only cross-workspace tasks name another fixture than "${DEFAULT_FIXTURE}"`)
+  }
+
   return { id, category: category as Category, description, trap, sessions }
 }
 
-/** Loads every `<dir>/<id>/task.json` (with a sibling `fixture/`) and validates the whole suite. */
+/**
+ * Loads every `<dir>/<id>/task.json` (with a sibling `fixture/`, and any other fixture its sessions
+ * name) and validates the whole suite.
+ */
 export const loadSuite = (dir: string, opts: LoadSuiteOptions = {}): EvalTask[] => {
   const minTasks = opts.minTasks ?? DEFAULT_MIN_TASKS
   const minPerCategory = minTasks < DEFAULT_MIN_TASKS ? 0 : MIN_PER_CATEGORY
@@ -128,9 +183,11 @@ export const loadSuite = (dir: string, opts: LoadSuiteOptions = {}): EvalTask[] 
     if (seen.has(task.id)) throw new Error(`task ${dirName}: duplicate id "${task.id}"`)
     seen.add(task.id)
     if (task.id !== dirName) throw new Error(`task ${dirName}: id "${task.id}" does not match directory name`)
-    const fixture = join(dir, dirName, 'fixture')
-    if (!existsSync(fixture) || !statSync(fixture).isDirectory())
-      throw new Error(`task ${dirName}: missing fixture/ directory`)
+    for (const name of new Set([DEFAULT_FIXTURE, ...taskFixtures(task)])) {
+      const fixture = join(dir, dirName, name)
+      if (!existsSync(fixture) || !statSync(fixture).isDirectory())
+        throw new Error(`task ${dirName}: missing ${name}/ directory`)
+    }
     tasks.push(task)
   }
 

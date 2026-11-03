@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -26,13 +26,18 @@ const sampleTask = (id: string, overrides: Partial<EvalTask> = {}): EvalTask => 
   ...overrides,
 })
 
-// Writes `tasks` as <root>/<dir>/task.json plus an empty fixture/, and returns the root.
+// Writes `tasks` as <root>/<dir>/task.json plus a fixture/ (and every other fixture a session
+// names) holding a README, and returns the root.
 const writeSuite = (tasks: { dir: string; json: unknown }[]): string => {
   const root = mkdtempSync(join(tmpdir(), 'rsi-suite-test-'))
   roots.push(root)
   for (const { dir, json } of tasks) {
-    mkdirSync(join(root, dir, 'fixture'), { recursive: true })
-    writeFileSync(join(root, dir, 'fixture', 'README'), 'fixture\n')
+    const sessions = (json as { sessions?: { fixture?: unknown }[] }).sessions ?? []
+    const named = sessions.map((s) => s?.fixture).filter((f): f is string => typeof f === 'string')
+    for (const fixture of new Set(['fixture', ...named])) {
+      mkdirSync(join(root, dir, fixture), { recursive: true })
+      writeFileSync(join(root, dir, fixture, 'README'), 'fixture\n')
+    }
     writeFileSync(join(root, dir, 'task.json'), JSON.stringify(json, null, 2))
   }
   return root
@@ -103,6 +108,62 @@ describe('loadSuite', () => {
     expect(loadSuite(goodCross, relaxed)).toHaveLength(1)
   })
 
+  it('suite requires 2 sessions with distinct fixtures for cross-workspace', () => {
+    const prompts = [prompt(1), prompt(2), prompt(3)]
+    const xws = (sessions: EvalTask['sessions']) => sampleTask('a', { category: 'cross-workspace', sessions })
+
+    const good = writeSuite([{ dir: 'a', json: xws([{ prompts }, { prompts, fixture: 'fixture-b' }]) }])
+    expect(loadSuite(good, relaxed)[0]?.sessions.map((s) => s.fixture)).toEqual([undefined, 'fixture-b'])
+
+    const oneSession = writeSuite([{ dir: 'a', json: xws([{ prompts }]) }])
+    expect(() => loadSuite(oneSession, relaxed)).toThrow(/exactly 2 sessions/)
+
+    const sameFixture = writeSuite([{ dir: 'a', json: xws([{ prompts }, { prompts }]) }])
+    expect(() => loadSuite(sameFixture, relaxed)).toThrow(/second session must name a fixture other than/)
+
+    const sameNamed = writeSuite([
+      {
+        dir: 'a',
+        json: xws([
+          { prompts, fixture: 'fixture-b' },
+          { prompts, fixture: 'fixture-b' },
+        ]),
+      },
+    ])
+    expect(() => loadSuite(sameNamed, relaxed)).toThrow(/second session must name a fixture other than/)
+
+    const badName = writeSuite([{ dir: 'a', json: xws([{ prompts }, { prompts, fixture: '../x' }]) }])
+    expect(() => loadSuite(badName, relaxed)).toThrow(/fixture "\.\.\/x"/)
+
+    const missingDir = writeSuite([{ dir: 'a', json: xws([{ prompts }, { prompts, fixture: 'fixture-b' }]) }])
+    rmSync(join(missingDir, 'a', 'fixture-b'), { recursive: true })
+    expect(() => loadSuite(missingDir, relaxed)).toThrow(/missing fixture-b\/ directory/)
+
+    // Only cross-workspace tasks move a session to another workspace.
+    const crossSession = writeSuite([
+      {
+        dir: 'a',
+        json: sampleTask('a', {
+          category: 'cross-session',
+          sessions: [{ prompts }, { prompts, fixture: 'fixture-b' }],
+        }),
+      },
+    ])
+    expect(() => loadSuite(crossSession, relaxed)).toThrow(/only cross-workspace tasks name another fixture/)
+
+    // What has to be learned must fit the small user memory.
+    const longNote = writeSuite([
+      {
+        dir: 'a',
+        json: {
+          ...xws([{ prompts }, { prompts, fixture: 'fixture-b' }]),
+          trap: { signatures: ['boom'], reproduce: 'echo boom', note: 'x'.repeat(300) },
+        },
+      },
+    ])
+    expect(() => loadSuite(longNote, relaxed)).toThrow(/trap.note.*at most 256/)
+  })
+
   it('requires a fixture directory', () => {
     const root = writeSuite([{ dir: 'a', json: sampleTask('a') }])
     rmSync(join(root, 'a', 'fixture'), { recursive: true })
@@ -131,14 +192,81 @@ describe('loadSuite', () => {
 const posixDescribe = describe.skipIf(process.platform === 'win32')
 
 posixDescribe('selfCheckTask', () => {
+  // `files` paths are relative to the task directory when they start with a fixture name, else to fixture/.
   const taskDirFor = (task: EvalTask, files: Record<string, string> = {}): string => {
     const root = writeSuite([{ dir: task.id, json: task }])
     for (const [name, content] of Object.entries(files)) {
-      mkdirSync(dirname(join(root, task.id, 'fixture', name)), { recursive: true })
-      writeFileSync(join(root, task.id, 'fixture', name), content)
+      const path = /^fixture(-[a-z0-9]+)?\//.test(name)
+        ? join(root, task.id, name)
+        : join(root, task.id, 'fixture', name)
+      mkdirSync(dirname(path), { recursive: true })
+      writeFileSync(path, content)
     }
     return join(root, task.id)
   }
+
+  const crossWorkspace = (id: string, overrides: Partial<EvalTask> = {}): EvalTask =>
+    sampleTask(id, {
+      category: 'cross-workspace',
+      // The trap is in each project's own tool; each session checks its own project's README.
+      trap: { signatures: ['tool says no'], reproduce: './tool.sh', note: 'n' },
+      sessions: [
+        {
+          prompts: [1, 2, 3].map((n) => ({
+            text: `a${n}`,
+            checks: [{ command: 'cat README', contains: `alpha-${n}` }],
+            solution: [`echo alpha-${n} >> README`],
+          })),
+        },
+        {
+          fixture: 'fixture-b',
+          prompts: [1, 2, 3].map((n) => ({
+            text: `b${n}`,
+            checks: [{ command: 'cat README', contains: `beta-${n}` }],
+            solution: ['grep -q project-b README', `echo beta-${n} >> README`],
+          })),
+        },
+      ],
+      ...overrides,
+    })
+  const tool = '#!/usr/bin/env bash\necho "tool says no" >&2\nexit 1\n'
+  const executable = (taskDir: string) => {
+    for (const f of ['fixture', 'fixture-b']) chmodSync(join(taskDir, f, 'tool.sh'), 0o755)
+    return taskDir
+  }
+
+  it('reproduces a cross-workspace trap in both fixtures and runs each session from its own', async () => {
+    const task = crossWorkspace('xws')
+    const taskDir = executable(
+      taskDirFor(task, {
+        'tool.sh': tool,
+        'fixture-b/tool.sh': tool,
+        'fixture-b/README': 'project-b\n',
+      }),
+    )
+    expect(await selfCheckTask(task, taskDir)).toEqual({ ok: true, problems: [] })
+
+    // The trap has to bite in the second project too.
+    writeFileSync(join(taskDir, 'fixture-b', 'tool.sh'), '#!/usr/bin/env bash\necho fine\n')
+    const result = await selfCheckTask(task, taskDir)
+    expect(result.problems.join('\n')).toMatch(/fixture-b: trap.reproduce output matches none/)
+  })
+
+  it('flags a second fixture whose documentation gives the trap away', async () => {
+    const task = crossWorkspace('xws-clue')
+    const taskDir = executable(
+      taskDirFor(task, {
+        'tool.sh': tool,
+        'fixture-b/tool.sh': tool,
+        'fixture-b/README': 'project-b\n',
+        'fixture-b/docs/NOTES.md': 'If the tool says no, ask nicely.\n',
+      }),
+    )
+    const result = await selfCheckTask(task, taskDir)
+    expect(result.problems).toEqual([
+      'fixture-b: docs/NOTES.md mentions the trap; the second workspace must hold no clue',
+    ])
+  })
 
   it('passes a sound task', async () => {
     const task = sampleTask('sound')

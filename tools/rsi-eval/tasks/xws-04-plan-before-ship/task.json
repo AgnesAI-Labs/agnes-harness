@@ -1,0 +1,81 @@
+{
+  "id": "xws-04-plan-before-ship",
+  "category": "cross-workspace",
+  "description": "The team's shared ship tool, used by two unrelated projects, refuses to deploy a target that was not planned first.",
+  "trap": {
+    "signatures": ["no reviewed plan for"],
+    "reproduce": "bin/ship $(ls targets | head -n 1)",
+    "note": "The shared bin/ship tool deploys a target only after bin/ship --plan <target> in the same project; run the plan, then bin/ship <target>, every time."
+  },
+  "sessions": [
+    {
+      "prompts": [
+        {
+          "text": "Deploy the `web` target with the team's ship tool.",
+          "checks": [
+            {
+              "command": "cat deployed/web.txt",
+              "contains": "deployed web"
+            }
+          ],
+          "solution": ["bin/ship --plan web", "bin/ship web"]
+        },
+        {
+          "text": "Deploy the `docs` target with the team's ship tool.",
+          "checks": [
+            {
+              "command": "cat deployed/docs.txt",
+              "contains": "deployed docs"
+            }
+          ],
+          "solution": ["bin/ship --plan docs", "bin/ship docs"]
+        },
+        {
+          "text": "Deploy the `assets` target with the team's ship tool.",
+          "checks": [
+            {
+              "command": "cat deployed/assets.txt",
+              "contains": "deployed assets"
+            }
+          ],
+          "solution": ["bin/ship --plan assets", "bin/ship assets"]
+        }
+      ]
+    },
+    {
+      "fixture": "fixture-b",
+      "prompts": [
+        {
+          "text": "Deploy the `push` target with the team's ship tool.",
+          "checks": [
+            {
+              "command": "cat deployed/push.txt",
+              "contains": "deployed push"
+            }
+          ],
+          "solution": ["bin/ship --plan push", "bin/ship push"]
+        },
+        {
+          "text": "Deploy the `auth` target with the team's ship tool.",
+          "checks": [
+            {
+              "command": "cat deployed/auth.txt",
+              "contains": "deployed auth"
+            }
+          ],
+          "solution": ["bin/ship --plan auth", "bin/ship auth"]
+        },
+        {
+          "text": "Deploy the `media` target with the team's ship tool.",
+          "checks": [
+            {
+              "command": "cat deployed/media.txt",
+              "contains": "deployed media"
+            }
+          ],
+          "solution": ["bin/ship --plan media", "bin/ship media"]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "id": "xws-03-day-first-dates",
+  "category": "cross-workspace",
+  "description": "The team's shared cal tool, used by two unrelated projects, only takes dates written day first as DD.MM.YYYY.",
+  "trap": {
+    "signatures": ["date must be DD\\.MM\\.YYYY"],
+    "reproduce": "bin/cal add probe 2026-03-14",
+    "note": "The shared bin/cal tool only takes dates as DD.MM.YYYY, day first (14.03.2026), never ISO dates, in every project that has it."
+  },
+  "sessions": [
+    {
+      "prompts": [
+        {
+          "text": "Book the meeting room `aurora` for March 14, 2026 with the team's cal tool.",
+          "checks": [
+            {
+              "command": "cat calendar/aurora.txt",
+              "contains": "aurora 14.03.2026"
+            }
+          ],
+          "solution": ["bin/cal add aurora 14.03.2026"]
+        },
+        {
+          "text": "Book the meeting room `boreal` for April 2, 2026 with the team's cal tool.",
+          "checks": [
+            {
+              "command": "cat calendar/boreal.txt",
+              "contains": "boreal 02.04.2026"
+            }
+          ],
+          "solution": ["bin/cal add boreal 02.04.2026"]
+        },
+        {
+          "text": "Book the meeting room `cirrus` for November 30, 2026 with the team's cal tool.",
+          "checks": [
+            {
+              "command": "cat calendar/cirrus.txt",
+              "contains": "cirrus 30.11.2026"
+            }
+          ],
+          "solution": ["bin/cal add cirrus 30.11.2026"]
+        }
+      ]
+    },
+    {
+      "fixture": "fixture-b",
+      "prompts": [
+        {
+          "text": "Record with the team's cal tool that invoice `inv-7` is due on May 9, 2026.",
+          "checks": [
+            {
+              "command": "cat calendar/inv-7.txt",
+              "contains": "inv-7 09.05.2026"
+            }
+          ],
+          "solution": ["bin/cal add inv-7 09.05.2026"]
+        },
+        {
+          "text": "Record with the team's cal tool that invoice `inv-8` is due on June 21, 2026.",
+          "checks": [
+            {
+              "command": "cat calendar/inv-8.txt",
+              "contains": "inv-8 21.06.2026"
+            }
+          ],
+          "solution": ["bin/cal add inv-8 21.06.2026"]
+        },
+        {
+          "text": "Record with the team's cal tool that invoice `inv-9` is due on January 3, 2027.",
+          "checks": [
+            {
+              "command": "cat calendar/inv-9.txt",
+              "contains": "inv-9 03.01.2027"
+            }
+          ],
+          "solution": ["bin/cal add inv-9 03.01.2027"]
+        }
+      ]
+    }
+  ]
+}

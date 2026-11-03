@@ -4,7 +4,8 @@
 // refinement switch is a file in the data dir that the host reads once, when it assembles. A fresh
 // home per run gives the same isolation and lets the switch be written before the host starts.
 //
-// Only `prepareHome` is unit-tested; the rest boots a real host and is exercised by a real run.
+// Only `prepareHome` and `prepareMemory` are unit-tested; the rest boots a real host and is
+// exercised by a real run.
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -18,7 +19,8 @@ import {
   TERMINAL_REVIEW_STATES,
 } from './run-agh.js'
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'packages', 'cli')
+const PACKAGES = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'packages')
+const CLI = join(PACKAGES, 'cli')
 const POLL_MS = 250
 
 type SettingsSnapshot = { settings: { enabled: boolean; mode: string }; revision: string }
@@ -82,6 +84,41 @@ type Booted = {
   close(): Promise<void>
 }
 
+/** The parts of the file memory provider (`packages/memory-file`) this file uses. */
+type MemoryInspection = { settings: { mode: string; userEnabled: boolean } }
+export type MemoryModule = {
+  openMemory(input: { home: string; workspaceRoot: string; sessionKey: string }): {
+    /** Saves the settings and returns the inspection that follows. */
+    configure(settings: object): Promise<MemoryInspection>
+    inspect(): Promise<MemoryInspection>
+    close?(): Promise<void> | void
+  }
+}
+
+/** The official file memory provider, from its source like the CLI boot code below. */
+export const loadMemoryModule = async (): Promise<MemoryModule> =>
+  (await import(pathToFileURL(join(PACKAGES, 'memory-file', 'src', 'index.ts')).href)) as MemoryModule
+
+/**
+ * Saves the run's memory settings for every workspace in the run's home, the way the memory
+ * settings panel saves them, before the host starts: the same for on and off runs.
+ */
+export async function prepareMemory(
+  input: Pick<LaunchInput, 'home' | 'workspaces' | 'memory'>,
+  memory: MemoryModule,
+): Promise<void> {
+  for (const workspaceRoot of input.workspaces) {
+    const session = memory.openMemory({ home: input.home, workspaceRoot, sessionKey: 'rsi-eval-setup' })
+    try {
+      const { settings } = await session.configure(input.memory)
+      if (settings.mode !== input.memory.mode || settings.userEnabled !== input.memory.userEnabled)
+        throw new Error(`the memory settings of ${workspaceRoot} did not save`)
+    } finally {
+      await session.close?.()
+    }
+  }
+}
+
 const refusal = (error: unknown): string | undefined => {
   const data = (error as { data?: { code?: unknown; reason?: unknown } } | null)?.data
   return data?.code === 'SEMANTIC_REJECTED' && typeof data.reason === 'string' ? data.reason : undefined
@@ -120,6 +157,7 @@ export function readLedger(dataDir: string, sessionKey: string): LedgerRow[] {
 export async function launchHost(input: LaunchInput): Promise<AghHost> {
   const host = (await import('@agnes/host')) as unknown as HostModule
   const data = await prepareHome(input, host)
+  await prepareMemory(input, await loadMemoryModule())
   const { bootLocal } = (await import(pathToFileURL(join(CLI, 'src', 'boot', 'local.ts')).href)) as {
     bootLocal(args: unknown, deps: object): Promise<Booted>
   }
@@ -157,11 +195,13 @@ export async function launchHost(input: LaunchInput): Promise<AghHost> {
     restore()
     throw new Error(`the run host does not use the run's data dir ${data}`)
   }
-  await booted.client.workspace.add(input.workspace)
+  for (const workspace of input.workspaces) await booted.client.workspace.add(workspace)
   const ids = new Map<string, string>()
 
-  const openSession = async (sessionKey: string): Promise<AghSession> => {
-    const session = await booted.client.createSession({ cwd: input.workspace, sessionKey })
+  const openSession = async (sessionKey: string, workspace: string): Promise<AghSession> => {
+    if (!input.workspaces.includes(workspace))
+      throw new Error(`${workspace} is not one of the run's workspaces`)
+    const session = await booted.client.createSession({ cwd: workspace, sessionKey })
     ids.set(sessionKey, session.id)
     await session.setModel({ slot: 'primary', route: input.model.route, model: input.model.model })
     // Nobody attends an eval run: every approval is given, as the Prime runs execute without asking.
