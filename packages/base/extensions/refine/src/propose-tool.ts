@@ -10,10 +10,14 @@ export const EntryKind = Type.Union([
 ])
 
 /**
- * Where a refinement lands: this session (the default) or, as well, the session's workspace. Saving to
- * the workspace is always the model's own save: it states no one else, and the host decides the rest.
+ * Where a refinement lands: this session (the default) or, as well, the session's workspace or user memory
+ * (read in every workspace). Saving is always the model's own save: it states no one else, and the host
+ * decides the rest.
  */
-export const Target = Type.Union([Type.Literal('session'), Type.Literal('workspace')])
+export const Target = Type.Union([Type.Literal('session'), Type.Literal('workspace'), Type.Literal('user')], {
+  description:
+    '"session" (default) keeps it in this session; "workspace" also saves it to this workspace; "user" also saves it to user memory, read in every workspace, so only a lesson that holds in every project and names no project, path or repository. Both saving targets need automatic refinement.',
+})
 
 // The model states what to change and why, citing the events that justify it. It never states who
 // asked, the scope, an entry version or the trigger: the host stamps those, and a rollback is a
@@ -86,7 +90,8 @@ export function createProposeTool(port: Pick<RefinementToolPort, 'propose'>) {
       deferLoading: true,
     },
     async execute(args, ctx) {
-      if (args.target === 'workspace') return port.propose(toProposal(args), ctx, 'workspace')
+      if (args.target === 'workspace' || args.target === 'user')
+        return port.propose(toProposal(args), ctx, args.target)
       return port.propose(toProposal(args), ctx)
     },
   })

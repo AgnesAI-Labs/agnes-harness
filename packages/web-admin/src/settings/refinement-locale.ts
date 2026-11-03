@@ -26,7 +26,7 @@ export const refinementSettingsCatalog: LocaleCatalog = {
       'Lessons confirmed twice, your own saves (/refine --workspace, or Save to workspace on a review) and the model’s saves go into workspace memory, each with a review date 30 days on. The workspace memory setting (off, ask or auto) still decides what is written; under ask each save waits in Needs attention. When workspace memory is full nothing is merged: the save stops and you free space.',
     'refinement.allows.user': 'Write lessons that hold everywhere to user memory',
     'refinement.allows.user.hint':
-      'A lesson confirmed twice that holds in every workspace (a preference you stated yourself, naming no project or path) is written automatically to user memory, without asking. User memory is read only in workspaces that turn it on. It holds about 512 bytes and your own text comes first: a lesson that does not fit is not written, and nothing is trimmed. The model can never write it. Withdraw a lesson in the memory settings (Memory files) and it is not written again.',
+      'A lesson confirmed twice that holds in every workspace (a preference you stated yourself, naming no project or path) is written automatically to user memory, without asking. User memory is read only in workspaces that turn it on. It holds about 512 bytes and your own text comes first: a lesson that does not fit is not written, and nothing is trimmed. You can also save one yourself with /refine --user, and the model may when refinement is automatic. Withdraw a lesson in the memory settings (Memory files) and it is not written again.',
     'refinement.allows.undo': 'Nothing is brought back',
     'refinement.allows.undo.hint':
       'None of these restores something you uninstalled, rolled back or deleted.',
@@ -65,7 +65,7 @@ export const refinementSettingsCatalog: LocaleCatalog = {
       '被证实 2 次的经验、你自己的保存（/refine --workspace 或复盘记录上的“保存到工作区”）以及模型的保存，会写进工作区记忆，每段带一个 30 天后的复核日期。写不写仍由工作区记忆设置（关闭 / 询问 / 自动）决定；询问模式下每次保存都在“待处理”里等你确认。工作区记忆写满时不会自动合并：保存会停止，需要你腾出空间。',
     'refinement.allows.user': '把处处适用的经验写入用户记忆',
     'refinement.allows.user.hint':
-      '被证实 2 次、适用于所有工作区的经验（你自己说过的偏好，不提具体项目或路径）会自动写入用户记忆，不再询问。用户记忆只在开启了它的工作区里被读取。它大约只有 512 字节，你自己写的内容优先：放不下的经验不会写入，也不会截断任何内容。模型永远不能写入它。在记忆设置（记忆文件）中撤回某条经验后，它不会再被写入。',
+      '被证实 2 次、适用于所有工作区的经验（你自己说过的偏好，不提具体项目或路径）会自动写入用户记忆，不再询问。用户记忆只在开启了它的工作区里被读取。它大约只有 512 字节，你自己写的内容优先：放不下的经验不会写入，也不会截断任何内容。你也可以用 /refine --user 自己保存，自动模式下模型也可以。在记忆设置（记忆文件）中撤回某条经验后，它不会再被写入。',
     'refinement.allows.undo': '不会恢复已删除的内容',
     'refinement.allows.undo.hint': '以上几条都不会恢复你已卸载、回滚或删除的内容。',
     'refinement.group.notes': '需要知道',

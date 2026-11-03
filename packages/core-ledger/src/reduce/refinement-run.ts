@@ -17,14 +17,15 @@ export type RefinementRunState =
 export type RefinementTriggerKind = 'manual' | 'model' | 'compaction' | 'repeated-failure'
 /**
  * What asked for a run: who, at which seq, and an optional focus. `saveTo: 'workspace'` asks for the
- * run's applied result to be saved to the session's workspace as well. `allowUnpriced` (the user's own
- * request only) records that the user agreed to plan on a model with no known price.
+ * run's applied result to be saved to the session's workspace as well; `saveTo: 'user'` (the user's own
+ * request or the model's) saves it to user memory instead. `allowUnpriced` (the user's own request only) records
+ * that the user agreed to plan on a model with no known price.
  */
 export type RefinementTrigger = {
   kind: RefinementTriggerKind
   seq: Seq
   focus?: string
-  saveTo?: 'workspace'
+  saveTo?: 'workspace' | 'user'
   allowUnpriced?: true
 }
 
@@ -201,13 +202,15 @@ function triggerOf(raw: unknown): RefinementTrigger | undefined {
   if (!t || typeof t !== 'object' || !KINDS.has(String(t.kind))) return undefined
   if (!Number.isSafeInteger(t.seq) || (t.seq as number) < 0) return undefined
   if (t.focus !== undefined && typeof t.focus !== 'string') return undefined
-  if (t.saveTo !== undefined && t.saveTo !== 'workspace') return undefined
+  if (t.saveTo !== undefined && t.saveTo !== 'workspace' && t.saveTo !== 'user') return undefined
+  // Only a person's own request or the model's may target user memory: no other trigger has anyone behind it.
+  if (t.saveTo === 'user' && t.kind !== 'manual' && t.kind !== 'model') return undefined
   if (t.allowUnpriced !== undefined && (t.allowUnpriced !== true || t.kind !== 'manual')) return undefined
   return {
     kind: t.kind as RefinementTriggerKind,
     seq: t.seq as Seq,
     ...(t.focus === undefined ? {} : { focus: t.focus as string }),
-    ...(t.saveTo === undefined ? {} : { saveTo: 'workspace' as const }),
+    ...(t.saveTo === undefined ? {} : { saveTo: t.saveTo as 'workspace' | 'user' }),
     ...(t.allowUnpriced === true ? { allowUnpriced: true as const } : {}),
   }
 }

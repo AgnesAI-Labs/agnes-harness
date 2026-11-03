@@ -4,7 +4,9 @@ import { saveRefinementEntry } from '../src/refine-save.js'
 const rejected = (reason: string) =>
   Object.assign(new Error('rejected'), { code: -32010, data: { code: 'SEMANTIC_REJECTED', reason } })
 
-function client(refineSave: (sessionId: string, kind: string, id: string) => Promise<unknown>) {
+function client(
+  refineSave: (sessionId: string, kind: string, id: string, target?: 'user') => Promise<unknown>,
+) {
   return { session: { refineSave: vi.fn(refineSave) } }
 }
 
@@ -23,6 +25,27 @@ describe('saving one kept entry to the workspace from the timeline', () => {
     await expect(saveRefinementEntry(saved, 's', 'prompt', 'style')).resolves.toEqual({
       kind: 'receipt',
       state: 'saved',
+    })
+  })
+
+  it('asks for user memory with target user and reports where the save went', async () => {
+    const c = client(async () => ({
+      receipt: { outcome: 'saved', layer: 'user', initiator: 'user', userMemoryRead: false },
+    }))
+    await expect(saveRefinementEntry(c, 's', 'memory', 'style', 'user')).resolves.toEqual({
+      kind: 'receipt',
+      state: 'saved',
+      target: 'user-memory',
+      userMemoryRead: false,
+      initiator: 'user',
+    })
+    expect(c.session.refineSave).toHaveBeenCalledWith('s', 'memory', 'style', 'user')
+    // A save that fell back to the workspace carries no user memory layer.
+    const fell = client(async () => ({ receipt: { outcome: 'saved', initiator: 'user' } }))
+    await expect(saveRefinementEntry(fell, 's', 'memory', 'style', 'user')).resolves.toEqual({
+      kind: 'receipt',
+      state: 'saved',
+      initiator: 'user',
     })
   })
 

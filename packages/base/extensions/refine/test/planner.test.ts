@@ -556,4 +556,12 @@ describe('entries saved to the workspace', () => {
     expect(saving.messages[0]?.content[0]?.text).toContain(line)
     expect(buildPlannerPrompt(snapshot, [], guidance).messages[0]?.content[0]?.text).not.toContain(line)
   })
+
+  it('a run saved to user memory carries the fixed user memory line and not the workspace one', () => {
+    const snapshot = { items: [evidence('e1', 'x')], omitted: 0 }
+    const text = buildPlannerPrompt(snapshot, [], { ...guidance, saveTo: 'user' }).messages[0]?.content[0]
+      ?.text
+    expect(text).toContain('The result will be saved to user memory, which every workspace reads')
+    expect(text).not.toContain('saved to the workspace')
+  })
 })

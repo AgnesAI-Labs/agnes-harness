@@ -30,19 +30,36 @@ const USER_STATES = new Set(['saved', 'refused', 'unknown'])
  * or a failure to ask at all.
  */
 export type RefinementSaveOutcome =
-  | { kind: 'receipt'; state: RefinementSave['state']; reason?: string }
+  | {
+      kind: 'receipt'
+      state: RefinementSave['state']
+      reason?: string
+      /** `user-memory` when the receipt is for a save to user memory (the workspace otherwise). */
+      target?: 'user-memory'
+      userMemoryRead?: boolean
+      initiator?: RefinementSave['initiator']
+    }
   | { kind: 'refused'; reason: string }
   | { kind: 'failed'; message: string }
 
-/** Saves one entry of this session to its workspace, as the user's own save; the host makes the request. */
+/**
+ * Saves one entry of this session to its workspace, or with `target: 'user'` to user memory, as the user's
+ * own save; the host makes the request.
+ */
 export type RefinementSaveEntry = (
   kind: 'memory' | 'prompt' | 'skill',
   id: string,
+  target?: 'user',
 ) => Promise<RefinementSaveOutcome>
 
-const reasonText = (reason: string, t: Translate): string =>
+const reasonText = (reason: string, t: Translate, user = false): string =>
   t('timeline.refinement.reason', {
-    reason: REASONS.has(reason) ? t(`timeline.refinementSave.reason.${reason}`) : reason,
+    reason:
+      user && reason === 'user-revoked'
+        ? t('timeline.refinementSave.user.revoked')
+        : REASONS.has(reason)
+          ? t(`timeline.refinementSave.reason.${reason}`)
+          : reason,
   })
 
 /**
@@ -53,7 +70,8 @@ const reasonText = (reason: string, t: Translate): string =>
  * not read it. Never the entry's text or the file.
  */
 export function saveText(
-  save: Pick<RefinementSave, 'state' | 'initiator'> & {
+  save: Pick<RefinementSave, 'state'> & {
+    initiator?: RefinementSave['initiator'] | undefined
     reason?: string | undefined
     target?: RefinementSave['target'] | undefined
     userMemoryRead?: boolean | undefined
@@ -63,9 +81,13 @@ export function saveText(
   const user = save.target === 'user-memory' && USER_STATES.has(save.state)
   return [
     user
-      ? t(`timeline.refinementSave.user.state.${save.state}`)
+      ? t(
+          save.state === 'saved' && save.initiator === 'user'
+            ? 'timeline.refinementSave.user.state.savedByRequest'
+            : `timeline.refinementSave.user.state.${save.state}`,
+        )
       : t(`timeline.refinementSave.state.${save.state}`),
-    save.initiator
+    save.initiator && !(user && save.state === 'saved' && save.initiator === 'user')
       ? t('timeline.refinementSave.by', { who: t(`timeline.refinementSave.initiator.${save.initiator}`) })
       : '',
     save.state === 'awaiting-approval' ? t('timeline.refinementSave.awaiting') : '',
@@ -74,7 +96,7 @@ export function saveText(
     user && save.state === 'saved' && save.userMemoryRead === false
       ? t('timeline.refinementSave.user.notRead')
       : '',
-    save.reason ? reasonText(save.reason, t) : '',
+    save.reason ? reasonText(save.reason, t, user) : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -84,7 +106,16 @@ export function saveText(
 export function saveOutcomeText(outcome: RefinementSaveOutcome, t: Translate): string {
   switch (outcome.kind) {
     case 'receipt':
-      return saveText({ state: outcome.state, reason: outcome.reason }, t)
+      return saveText(
+        {
+          state: outcome.state,
+          initiator: outcome.initiator,
+          reason: outcome.reason,
+          target: outcome.target,
+          userMemoryRead: outcome.userMemoryRead,
+        },
+        t,
+      )
     case 'refused':
       return t('timeline.refinementSave.refused', {
         reason: REASONS.has(outcome.reason)

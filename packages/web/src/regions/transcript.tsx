@@ -32,6 +32,7 @@ export function mountTranscriptRegion(
       sessionId: string,
       kind: 'memory' | 'prompt' | 'skill',
       id: string,
+      target?: 'user',
     ) => Promise<import('@agnes/web-ui/conversation').RefinementSaveOutcome>
     session?: SessionService
     locale?: LocaleService

@@ -77,8 +77,8 @@ export type PlannerGuidance = {
   counts: Record<RefinementEntryKind, number>
   /** Entries saved to this workspace, which a plan may only confirm; absent when there are none. */
   workspace?: readonly PlannerWorkspaceRef[]
-  /** The run's result is saved to the workspace. */
-  saveTo?: 'workspace'
+  /** The run's result is saved to the workspace, or (the user's own request) to user memory. */
+  saveTo?: 'workspace' | 'user'
 }
 export type PlannerPrompt = {
   system: string

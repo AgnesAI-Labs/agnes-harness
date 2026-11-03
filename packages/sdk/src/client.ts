@@ -583,14 +583,15 @@ export class Client {
     /**
      * Asks for a background refinement review of the session's latest task; returns the queued run.
      * `saveTo: 'workspace'` (`/refine --workspace`, local owner only) also saves the applied result to
-     * the session's workspace. `allowUnpriced: true` (`/refine --unpriced`, local owner only) is the
+     * the session's workspace; `saveTo: 'user'` (`/refine --user`) saves it to user memory instead, without
+     * waiting for two confirmations. `allowUnpriced: true` (`/refine --unpriced`, local owner only) is the
      * owner's agreement to plan on a model with no known price; without it such a request is refused
      * `unpriced`.
      */
     refine: (
       sessionId: string,
       focus?: string,
-      options: { saveTo?: 'workspace'; allowUnpriced?: true } = {},
+      options: { saveTo?: 'workspace' | 'user'; allowUnpriced?: true } = {},
     ): Promise<import('@agnes/protocol').SessionRefineResult> =>
       this.call('_agnes/v1/session.refine', {
         sessionId,
@@ -599,16 +600,17 @@ export class Client {
         ...(options.allowUnpriced === true ? { allowUnpriced: true } : {}),
       }),
     /**
-     * Saves one refinement entry of the session to its workspace without calling a model (local owner
-     * only). The receipt says how it ended; a refusal (refinement off, taken back before by the user
+     * Saves one refinement entry of the session to its workspace (or with `target: 'user'`, to user
+     * memory) without calling a model (local owner only). The receipt says how it ended; a refusal (refinement off, taken back before by the user
      * is overridden here, memory off, ...) is a receipt too.
      */
     refineSave: (
       sessionId: string,
       kind: import('@agnes/protocol').SessionRefineSaveParams['kind'],
       id: string,
+      target?: 'user',
     ): Promise<import('@agnes/protocol').SessionRefineSaveResult> =>
-      this.call('_agnes/v1/session.refine.save', { sessionId, kind, id }),
+      this.call('_agnes/v1/session.refine.save', { sessionId, kind, id, ...(target ? { target } : {}) }),
     /**
      * Withdraws an applied refinement of the session (`appliedSeq`, as the timeline shows it). Refused
      * (`SEMANTIC_REJECTED`) with reason `changed-since` when a later change touched one of its entries.

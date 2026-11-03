@@ -38,6 +38,7 @@ export interface TimelineNodeHostProps {
     sessionId: string,
     kind: 'memory' | 'prompt' | 'skill',
     id: string,
+    target?: 'user',
   ) => Promise<import('@agnes/web-ui/conversation').RefinementSaveOutcome>
   markdownRenderer?: 'legacy' | 'xmarkdown'
   voice?: VoicePort

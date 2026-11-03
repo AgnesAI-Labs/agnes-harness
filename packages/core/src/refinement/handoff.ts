@@ -88,12 +88,16 @@ function toUser(s: SessionImpl, key: string, reach: 'user' | undefined): boolean
 
 /**
  * The saves an applied run owes: every entry it wrote, when its trigger asked for the result to be
- * saved (a task-level one too: the host's rules refuse it, so the refusal is on record), and the
+ * saved to the workspace or, by a person's own request, to user memory (a task-level one too: the host's
+ * rules refuse it, so the refusal is on record), and the
  * automatic offers of the entries it confirmed. Each has a fixed command id, so asking again after a
  * crash is answered with the first receipt.
  */
 function owed(s: SessionImpl, run: Applied, recorded: ReadonlySet<string>): WorkspaceSaveInput[] {
-  const initiator = run.trigger.saveTo === 'workspace' ? INITIATOR[run.trigger.kind] : undefined
+  const initiator = run.trigger.saveTo === undefined ? undefined : INITIATOR[run.trigger.kind]
+  // A request for user memory (a person's, or the model's): every entry goes to the host as a
+  // user-memory save, which sends text that names its workspace back to that workspace.
+  const target = run.trigger.saveTo === 'user' ? ('user' as const) : undefined
   const saves: WorkspaceSaveInput[] = []
   const asked = new Set<string>()
   if (initiator)
@@ -101,7 +105,14 @@ function owed(s: SessionImpl, run: Applied, recorded: ReadonlySet<string>): Work
       const commandId = runCommandId(run.runId, edit)
       asked.add(entryKey(edit))
       if (!recorded.has(commandId))
-        saves.push({ initiator, kind: edit.kind, id: edit.id, commandId, runId: run.runId })
+        saves.push({
+          initiator,
+          ...(target ? { target } : {}),
+          kind: edit.kind,
+          id: edit.id,
+          commandId,
+          runId: run.runId,
+        })
     }
   // An entry the run already saves on the user's or the model's request is not offered again.
   for (const offer of automatic(s, run, recorded)) if (!asked.has(entryKey(offer))) saves.push(offer)

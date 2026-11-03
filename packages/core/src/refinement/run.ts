@@ -133,7 +133,9 @@ export async function queueRefinementRun(
     trigger.seq < 0 ||
     (trigger.focus !== undefined &&
       (typeof trigger.focus !== 'string' || trigger.focus.length > MAX_FOCUS)) ||
-    (trigger.saveTo !== undefined && trigger.saveTo !== 'workspace') ||
+    (trigger.saveTo !== undefined && trigger.saveTo !== 'workspace' && trigger.saveTo !== 'user') ||
+    // User memory is asked for only by a person or by the model; no other trigger has anyone behind it.
+    (trigger.saveTo === 'user' && trigger.kind !== 'manual' && trigger.kind !== 'model') ||
     (trigger.allowUnpriced !== undefined && (trigger.allowUnpriced !== true || trigger.kind !== 'manual'))
   )
     throw new CoreError('E_ENVELOPE', 'refinement trigger is invalid')
@@ -274,7 +276,7 @@ export async function planRefinementRun(
           activeGoal: scope !== null,
           counts,
           ...(workspace.length ? { workspace: plannerWorkspace(workspace) } : {}),
-          ...(run.trigger.saveTo === 'workspace' ? { saveTo: 'workspace' as const } : {}),
+          ...(run.trigger.saveTo === undefined ? {} : { saveTo: run.trigger.saveTo }),
         },
       )
     } catch {

@@ -76,6 +76,13 @@ it('save rows render initiator, outcome and reason without text', () => {
     /not saved to user memory.*Reason: user memory has no room for it/,
   )
   expect(save({ ...user, reason: 'model-cannot-write-user' })).toMatch(
-    /the model can never write user memory/,
+    /an earlier version did not let the model write user memory/,
   )
+  // At a person's request: the line says so, with the same notes.
+  const asked = { initiator: 'user', target: 'user-memory' }
+  expect(save({ ...asked, state: 'saved', userMemoryRead: false })).toMatch(
+    /^Task experience: saved to user memory at your request \(all workspaces\)\. .*withdraw it in the Web memory settings.*does not read user memory/,
+  )
+  expect(save({ ...asked, state: 'saved' })).not.toMatch(/asked by/)
+  expect(save({ ...asked, reason: 'user-revoked' })).toMatch(/withdrew this from user memory before/)
 })

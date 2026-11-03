@@ -46,7 +46,7 @@ export function checkedReach(
 ): RefinementReach {
   if (edit.reach !== 'user') return 'workspace'
   if (edit.kind !== 'prompt' && edit.kind !== 'memory') return 'workspace'
-  if (trigger.kind === 'model' || trigger.saveTo !== undefined) return 'workspace'
+  if (trigger.kind === 'model' || trigger.saveTo === 'workspace') return 'workspace'
   if (edit.applicability !== 'session') return 'workspace'
   if (!(edit.usedEvidence ?? []).some((identity) => identity.startsWith('user:'))) return 'workspace'
   if (namesWorkspace(`${edit.title}\n${edit.content}`, workspace.root)) return 'workspace'

@@ -151,18 +151,19 @@ export type SeamInitContext = {
 }
 
 /**
- * A session's managed refinement as the refinement tools reach it. `saveTo: 'workspace'` asks for what
- * is applied to be saved to the session's workspace too, always as the model's save.
+ * A session's managed refinement as the refinement tools reach it. `saveTo` asks for what is applied
+ * to be saved to the session's workspace (`'workspace'`) or to user memory (`'user'`) too, always as the
+ * model's save.
  */
 export type RefinementRunsPort = Readonly<{
   propose(
     session: { key: string; lane: string },
     proposal: DirectProposal,
-    options?: { saveTo?: 'workspace' },
+    options?: { saveTo?: 'workspace' | 'user' },
   ): Promise<RefinementOutcome>
   request(
     session: { key: string; lane: string },
-    request: { focus?: string; saveTo?: 'workspace' },
+    request: { focus?: string; saveTo?: 'workspace' | 'user' },
   ): Promise<RefinementOutcome>
   /** Reads that session's own entries in force; nothing is written. */
   inspect(session: { key: string; lane: string }, request: InspectRequest): Promise<InspectOutcome>

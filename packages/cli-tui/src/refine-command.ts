@@ -6,13 +6,18 @@ import { tt } from './locale-extended.js'
 const MAX_FOCUS = 512
 
 /** The leading flags of `/refine`, in any order, and the focus after them. */
-export function refineArgs(args: string): { workspace: boolean; unpriced: boolean; focus: string } {
+export function refineArgs(args: string): {
+  workspace: boolean
+  user: boolean
+  unpriced: boolean
+  focus: string
+} {
   let rest = args
-  const seen = { workspace: false, unpriced: false }
+  const seen = { workspace: false, user: false, unpriced: false }
   for (;;) {
-    const flag = /^--(workspace|unpriced)(?:\s+|$)/u.exec(rest)
+    const flag = /^--(workspace|user|unpriced)(?:\s+|$)/u.exec(rest)
     if (!flag) break
-    seen[flag[1] as 'workspace' | 'unpriced'] = true
+    seen[flag[1] as 'workspace' | 'user' | 'unpriced'] = true
     rest = rest.slice(flag[0].length)
   }
   return { ...seen, focus: rest }
@@ -32,28 +37,34 @@ const refusal = (error: unknown): { code?: unknown; reason?: unknown } | undefin
 }
 
 /**
- * `/refine [--workspace] [--unpriced] [focus]`: asks the daemon for one background experience review
- * of this session; with `--workspace` the review's result is also saved to the workspace, as your own
- * save; `--unpriced` is your agreement to plan on a model with no known price. What the daemon refuses
+ * `/refine [--workspace|--user] [--unpriced] [focus]`: asks the daemon for one background experience
+ * review of this session; with `--workspace` the review's result is also saved to the workspace, with
+ * `--user` to user memory (read in every workspace) instead, as your own save; `--unpriced` is your agreement to plan on a model with no known price. What the daemon refuses
  * is explained here: the switch being off (or not yet active in this process) and a model with no known
  * price get their own hints, other refusals name their reason.
  */
 export async function refineSlash(app: TuiApp, line: string): Promise<SlashResult> {
   const { locale, session } = app
-  const { workspace, unpriced, focus: rest } = refineArgs(line.trim().replace(/^\S+\s*/u, ''))
+  const { workspace, user, unpriced, focus: rest } = refineArgs(line.trim().replace(/^\S+\s*/u, ''))
   // Counted in UTF-16 units, as the daemon counts it.
   if (rest.length > MAX_FOCUS) return { text: tt('refine.tooLong', locale) }
+  if (workspace && user) return { text: tt('refine.both', locale) }
   try {
     const focus = rest === '' ? undefined : rest
     const options = {
       ...(workspace ? { saveTo: 'workspace' as const } : {}),
+      ...(user ? { saveTo: 'user' as const } : {}),
       ...(unpriced ? { allowUnpriced: true as const } : {}),
     }
     const { runId } =
-      workspace || unpriced
+      workspace || user || unpriced
         ? await session.client.session.refine(session.id, focus, options)
         : await session.client.session.refine(session.id, focus)
-    return { text: tt(workspace ? 'refine.workspace' : 'refine.queued', locale, { id: runId }) }
+    return {
+      text: tt(workspace ? 'refine.workspace' : user ? 'refine.user' : 'refine.queued', locale, {
+        id: runId,
+      }),
+    }
   } catch (error) {
     const data = refusal(error)
     if ((error as { code?: unknown }).code === -32601) return { text: tt('refine.unsupported', locale) }

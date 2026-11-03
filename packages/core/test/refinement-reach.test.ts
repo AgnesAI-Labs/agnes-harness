@@ -69,6 +69,8 @@ describe('the reach a lesson may keep', () => {
       expect(checkedReach(lesson, trigger, { root: ROOT })).toBe('user')
     expect(checkedReach(lesson, { kind: 'model' }, { root: ROOT })).toBe('workspace')
     expect(checkedReach(lesson, { kind: 'manual', saveTo: 'workspace' }, { root: ROOT })).toBe('workspace')
+    // A run saved to user memory on the user's request keeps the reach, as any session lesson does.
+    expect(checkedReach(lesson, { kind: 'manual', saveTo: 'user' }, { root: ROOT })).toBe('user')
     expect(checkedReach({ ...lesson, kind: 'skill' as never }, { kind: 'manual' }, { root: ROOT })).toBe(
       'workspace',
     )

@@ -60,9 +60,9 @@ export type RollbackResult =
     }
 /**
  * How a direct proposal is to be kept: `saveTo: 'workspace'` saves what it writes to the session's
- * workspace too, once it is applied, as the model's save.
+ * workspace too, once it is applied, as the model's save; `saveTo: 'user'` saves it to user memory.
  */
-export type ProposeOptions = { saveTo?: 'workspace' }
+export type ProposeOptions = { saveTo?: 'workspace' | 'user' }
 
 /** What a read of this session's entries found, or why it could not be answered. */
 export type InspectOutcome = InspectAnswer | { refused: RefinementRefusal; detail?: string }
@@ -99,12 +99,14 @@ export type RefinementFacade = Readonly<{
   /**
    * Queues a plan for this trigger; manual triggers only wait for a plan already running. A trigger
    * with `saveTo: 'workspace'` also saves the applied result to the workspace: as the user's save for
-   * a manual trigger, as the model's for the model's.
+   * a manual trigger, as the model's for the model's. `saveTo: 'user'` saves it to user memory the same
+   * way, with no confirmation count; only a manual or a model trigger may ask for it.
    */
   request(trigger: RefinementTrigger): Promise<RefinementOutcome>
   /**
    * Records a direct proposal and applies it once the session is between turns; with
-   * `saveTo: 'workspace'` what it writes is then saved to the workspace as the model's save.
+   * `saveTo: 'workspace'` or `'user'` what it writes is then saved to the workspace or to user memory as
+   * the model's save.
    */
   propose(proposal: DirectProposal, options?: ProposeOptions): Promise<RefinementOutcome>
   /**
@@ -140,16 +142,20 @@ function refusal(s: SessionImpl): { refused: RefinementRefusal } | undefined {
 }
 
 /**
- * Why a request to save to the workspace cannot even be taken: the target is not one there is, or the
- * host offers no save path here (an embedded host without one), so planning for it would be wasted.
+ * Why a request to save its result cannot even be taken: the target is not one there is, or the host
+ * offers no save path here (an embedded host without one), so planning for it would be wasted. User
+ * memory is a target only for a person's own request (`manual`) or the model's (`model`): any other
+ * trigger asking for it is `invalid`.
  */
 function saveRefusal(
   s: SessionImpl,
   saveTo: unknown,
-): { refused: 'unavailable'; detail: string } | undefined {
+  asker: boolean,
+): { refused: 'unavailable' | 'invalid'; detail: string } | undefined {
   if (saveTo === undefined) return undefined
-  if (saveTo !== 'workspace' || !s.d.refinement?.workspace)
-    return { refused: 'unavailable', detail: 'workspace' }
+  if (saveTo === 'user' && !asker) return { refused: 'invalid', detail: 'saveTo' }
+  if ((saveTo !== 'workspace' && saveTo !== 'user') || !s.d.refinement?.workspace)
+    return { refused: 'unavailable', detail: saveTo === 'user' ? 'user' : 'workspace' }
   return undefined
 }
 
@@ -161,7 +167,7 @@ async function request(s: SessionImpl, trigger: RefinementTrigger): Promise<Refi
   // Everything but the user's own request is automatic: it follows the mode and the limits. The model
   // asking for the result to be saved to the workspace is no exception.
   if (automatic && settings.mode !== 'auto') return { refused: 'manual-mode' }
-  const unsaved = saveRefusal(s, trigger.saveTo)
+  const unsaved = saveRefusal(s, trigger.saveTo, trigger.kind === 'manual' || trigger.kind === 'model')
   if (unsaved) return unsaved
   if (!plannerOf(s)) return { refused: 'unavailable' }
   const busy = slotOf(s).planning !== undefined
@@ -278,7 +284,7 @@ async function propose(
   if (refused) return refused
   // The model saving to the workspace follows the mode, as its other automatic requests do.
   if (options.saveTo !== undefined && settingsOf(s)?.mode !== 'auto') return { refused: 'manual-mode' }
-  const unsaved = saveRefusal(s, options.saveTo)
+  const unsaved = saveRefusal(s, options.saveTo, true)
   if (unsaved) return unsaved
   const plan = directPlan(s, p, lapsedKeys(await validEntries(s)))
   if ('refused' in plan) return plan
@@ -291,7 +297,7 @@ async function propose(
     const trigger: RefinementTrigger = {
       kind: 'model',
       seq: s.lastSeq,
-      ...(options.saveTo === 'workspace' ? { saveTo: 'workspace' as const } : {}),
+      ...(options.saveTo === undefined ? {} : { saveTo: options.saveTo }),
     }
     await s.append([
       refinementRunRow(s, runId, 'proposed', { trigger, settingsRevision: settings.revision, plan }),

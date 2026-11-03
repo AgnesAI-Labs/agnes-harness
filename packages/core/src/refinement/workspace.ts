@@ -33,8 +33,8 @@ export type { SaveInitiator, SaveReceipt } from '@agnes/core-ledger/reduce/refin
 export type WorkspaceSaveRequest = {
   initiator: SaveInitiator
   /**
-   * `user`: promote the entry to user memory, read in every workspace, instead of the session's
-   * workspace. Only an automatic save may ask for it; the host refuses any other.
+   * `user`: save the entry to user memory, read in every workspace, instead of the session's
+   * workspace. Only an automatic save, the user's own request or the model's may ask for it.
    */
   target?: 'user'
   commandId: string
@@ -77,7 +77,7 @@ export type WorkspaceSaveOutcome = { receipt: SaveReceipt } | { refused: 'unavai
 /** What an entry point says about the save it wants. */
 export type WorkspaceSaveInput = {
   initiator: SaveInitiator
-  /** Promote to user memory instead of the workspace (automatic saves only). */
+  /** Save to user memory instead of the workspace (automatic saves, the user's request and the model's). */
   target?: 'user'
   kind: HarnessEntry['kind']
   id: string

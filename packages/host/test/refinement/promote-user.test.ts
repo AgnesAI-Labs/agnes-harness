@@ -317,19 +317,6 @@ describe('promoting a confirmed lesson to user memory', () => {
     expect(h.user()).toBe(edited)
   })
 
-  it('the model can never initiate a user-level save', async () => {
-    const h = await home()
-    expect(await h.saves.save(request(h, { initiator: 'model' }))).toMatchObject({
-      outcome: 'refused',
-      reason: 'model-cannot-write-user',
-    })
-    expect(await h.saves.save(request(h, { initiator: 'user' }))).toMatchObject({
-      outcome: 'refused',
-      reason: 'source-rules',
-    })
-    expect(h.user()).toBe(HAND)
-  })
-
   it('the receipt says when the current workspace does not read user memory', async () => {
     for (const settings of [
       { mode: 'off', userEnabled: true },
@@ -351,6 +338,158 @@ describe('promoting a confirmed lesson to user memory', () => {
     expect(receipt).toMatchObject({ outcome: 'refused', reason: 'unsupported-provider' })
     expect(verdicts(receipt)[4]).toBe('memory-mode:fail')
     expect(h.user()).toBe(HAND)
+  })
+})
+
+describe("saving to user memory on the user's request", () => {
+  /** A person's own request: no confirmations, and no reach the planner suggested. */
+  const asked = (h: Home, over: Partial<WorkspaceSaveRequest> = {}) =>
+    request(h, { initiator: 'user', confirmations: 0, commandId: `run-1:${++commands}`, ...over })
+  const askedWith = (h: Home, content: string) => asked(h, { entry: { ...request(h).entry, content } })
+
+  it("skips the confirmation count and writes one section, as the user's", async () => {
+    const h = await home({ mode: 'ask' })
+    const receipt = await h.saves.save(asked(h))
+    expect(receipt).toMatchObject({
+      outcome: 'saved',
+      layer: 'user',
+      initiator: 'user',
+      userMemoryRead: true,
+    })
+    expect(verdicts(receipt)).toEqual([
+      'switch:pass',
+      'revocation:pass',
+      'confirmations:skip',
+      'rules:pass',
+      'memory-mode:pass',
+      'capacity:pass',
+    ])
+    const id = sectionId(receipt)
+    expect(h.user()).toBe(`${HAND}\n${marked(id, TEXT)}`)
+    expect(h.users().read().paragraphs).toEqual([
+      expect.objectContaining({ id, state: 'active', reviewAfter: T0 + REVIEW_AFTER_MS }),
+    ])
+    expect(await h.workspaceFile()).toBe('')
+    // Listed on the memory page, where it can be withdrawn.
+    expect((await h.manage({ action: 'list', layer: 'user' })).paragraphs).toEqual([
+      expect.objectContaining({ id, validity: 'valid', initiator: 'user' }),
+    ])
+    expect(await h.saves.save({ ...asked(h), commandId: receipt.commandId })).toEqual(receipt)
+  })
+
+  it('is refused past the user memory budget and trims nothing', async () => {
+    const h = await home()
+    const hand = `${'- A preference the person wrote by hand.\n'.repeat(11)}`
+    writeFileSync(h.userFile, hand)
+    const receipt = await h.saves.save(asked(h))
+    expect(receipt).toMatchObject({ outcome: 'refused', reason: 'user-memory-budget', layer: 'user' })
+    expect(h.user()).toBe(hand)
+    expect(h.users().read().paragraphs).toEqual([])
+  })
+
+  it('keeps content that names the workspace in the workspace and says so in the receipt', async () => {
+    const h = await home()
+    for (const content of [`Run make in ${h.root}/api first.`, 'In shop, run make first.']) {
+      const receipt = await h.saves.save(askedWith(h, content))
+      expect(receipt).toMatchObject({ outcome: 'saved', initiator: 'user' })
+      expect(receipt).not.toHaveProperty('layer')
+      expect(await h.workspaceFile()).toContain(content)
+    }
+    expect(h.user()).toBe(HAND)
+  })
+
+  it('applies the secret and source rules like the automatic promotion', async () => {
+    const h = await home()
+    const secret = await h.saves.save(askedWith(h, 'Use api_key=synthetic-sensitive-key here.'))
+    expect(secret).toMatchObject({ outcome: 'refused', reason: 'source-rules', layer: 'user' })
+    const task = await h.saves.save(asked(h, { entry: { ...request(h).entry, applicability: 'task' } }))
+    expect(task).toMatchObject({ outcome: 'refused', reason: 'source-rules' })
+    const skill = await h.saves.save(asked(h, { entry: { ...request(h).entry, kind: 'skill' } }))
+    expect(skill).toMatchObject({ outcome: 'refused', reason: 'source-rules' })
+    const child = await h.saves.save(asked(h, { session: { ...request(h).session, child: true } }))
+    expect(child).toMatchObject({ outcome: 'refused', reason: 'child-session' })
+    expect(h.user()).toBe(HAND)
+  })
+
+  it('is refused while refinement is off, and when it goes off before the write', async () => {
+    const h = await home()
+    h.switchState.enabled = false
+    expect(await h.saves.save(asked(h))).toMatchObject({ outcome: 'refused', reason: 'refinement-off' })
+    h.switchState.enabled = true
+    h.switchState.revision = 'r2'
+    expect(verdicts(await h.saves.save(asked(h)))[0]).toBe('switch:fail')
+    h.switchState.revision = 'r1'
+    h.setWrap((session) => ({
+      ...session,
+      userParagraphs: (source, signal) => {
+        const port = session.userParagraphs?.(source, signal)
+        if (!port) throw new Error('no port')
+        return {
+          ...port,
+          propose: async (changes, base) => {
+            const proposal = await port.propose(changes, base)
+            h.switchState.enabled = false
+            return proposal
+          },
+        }
+      },
+    }))
+    expect(await h.saves.save(asked(h))).toMatchObject({ outcome: 'refused', reason: 'refinement-off' })
+    expect(h.user()).toBe(HAND)
+    expect(h.users().read().paragraphs).toEqual([])
+  })
+
+  it('is blocked by a withdrawal from user memory or from this workspace', async () => {
+    const h = await home()
+    const saved = await h.saves.save(asked(h))
+    await h.manage({ action: 'withdraw', paragraphId: sectionId(saved), layer: 'user' })
+    expect(await h.saves.save(asked(h))).toMatchObject({ outcome: 'refused', reason: 'user-revoked' })
+    expect(h.user()).toBe(HAND)
+    const w = await home()
+    w.local().update((draft) => {
+      draft.revocations.push({
+        sessionKey: 'earlier',
+        kind: 'memory',
+        entryId: 'other',
+        contentHash: normalizedContentHash(BODY),
+        action: 'memory-withdrawn',
+        at: T0,
+      })
+    }, w.local().read().revision)
+    expect(await w.saves.save(asked(w))).toMatchObject({ outcome: 'refused', reason: 'user-revoked' })
+    expect(w.user()).toBe(HAND)
+  })
+
+  it('records that this workspace does not read user memory and changes no setting', async () => {
+    const h = await home({ mode: 'auto', userEnabled: false })
+    const receipt = await h.saves.save(asked(h))
+    expect(receipt).toMatchObject({
+      outcome: 'saved',
+      layer: 'user',
+      initiator: 'user',
+      userMemoryRead: false,
+    })
+    expect((await h.open().inspect()).settings).toMatchObject({ mode: 'auto', userEnabled: false })
+  })
+
+  it('is saved the same way when the model asks, and a source with no request behind it is refused', async () => {
+    const h = await home()
+    const receipt = await h.saves.save(asked(h, { initiator: 'model' }))
+    expect(receipt).toMatchObject({ outcome: 'saved', layer: 'user', initiator: 'model' })
+    expect(h.user()).toContain(TEXT)
+    const other = await h.saves.save({
+      ...askedWith(h, 'Answer in very short sentences.'),
+      initiator: 'system' as never,
+    })
+    expect(other).toMatchObject({ outcome: 'refused', reason: 'source-rules' })
+    // The model's request meets the same budget and name checks.
+    const w = await home()
+    expect(await w.saves.save(askedWith(w, `Run make in ${w.root}/api first.`))).not.toHaveProperty('layer')
+    writeFileSync(w.userFile, `${'- A preference the person wrote by hand.\n'.repeat(11)}`)
+    expect(await w.saves.save(asked(w, { initiator: 'model' }))).toMatchObject({
+      outcome: 'refused',
+      reason: 'user-memory-budget',
+    })
   })
 })
 

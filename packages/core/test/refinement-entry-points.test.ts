@@ -191,6 +191,136 @@ describe('saving the result of a run to the workspace', () => {
     await t.session.close()
   })
 
+  it('/refine saveTo user offers each applied entry to user memory as the user, in either mode', async () => {
+    for (const mode of ['manual', 'auto'] as const) {
+      const h = host()
+      let guidance: Seen['guidance']
+      const t = await open({
+        workspace: h.workspace,
+        sw: sw({ mode }),
+        answers: [
+          (seen) => {
+            guidance = seen.guidance
+            return output({
+              edits: [upsert('kept', { quote: QUOTE }), upsert('for-task', { applicability: 'task' })],
+              evidenceIds: ['e1'],
+            })
+          },
+        ],
+      })
+      t.goal.current = activeGoal
+      expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
+      const outcome = await refinementFacade(t.session).request({
+        kind: 'manual',
+        seq: t.session.lastSeq,
+        saveTo: 'user',
+      })
+      const run = await ended(t, (outcome as { runId: string }).runId)
+      expect(run).toMatchObject({ state: 'applied', trigger: { kind: 'manual', saveTo: 'user' } })
+      expect(guidance?.saveTo).toBe('user')
+      await vi.waitFor(() => expect(h.asked).toHaveLength(2))
+      // The user's own request: no confirmation count, and the host judges every entry.
+      expect(h.asked.map((r) => [r.initiator, r.target, r.entry.id, r.runId])).toEqual([
+        ['user', 'user', 'kept', run.runId],
+        ['user', 'user', 'for-task', run.runId],
+      ])
+      await t.session.close()
+    }
+  })
+
+  it('the model asking for user memory is saved as the model, in auto mode only', async () => {
+    const h = host()
+    let guidance: Seen['guidance']
+    const t = await open({
+      workspace: h.workspace,
+      answers: [
+        (seen) => {
+          guidance = seen.guidance
+          return grant()
+        },
+      ],
+    })
+    expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
+    const outcome = await refinementFacade(t.session).request({
+      kind: 'model',
+      seq: t.session.lastSeq,
+      saveTo: 'user',
+    })
+    const run = await ended(t, (outcome as { runId: string }).runId)
+    expect(run).toMatchObject({ state: 'applied', trigger: { kind: 'model', saveTo: 'user' } })
+    expect(guidance).toMatchObject({ trigger: 'model', saveTo: 'user' })
+    await vi.waitFor(() => expect(h.asked).toHaveLength(1))
+    expect(h.asked[0]).toMatchObject({ initiator: 'model', target: 'user', entry: { id: 'read-b' } })
+    // A direct proposal is the same: applied to the session, then saved to user memory as the model's.
+    const proposal = {
+      rationale: 'The user said which file to read.',
+      evidenceSeqs: [1],
+      edits: [
+        { op: 'upsert' as const, kind: 'memory' as const, id: 'read-c', title: 'Read c', content: 'Read c.' },
+      ],
+    }
+    const proposed = await refinementFacade(t.session).propose(proposal, { saveTo: 'user' })
+    await ended(t, (proposed as { runId: string }).runId)
+    await vi.waitFor(() => expect(h.asked).toHaveLength(2))
+    expect(h.asked[1]).toMatchObject({ initiator: 'model', target: 'user', entry: { id: 'read-c' } })
+    await t.session.close()
+
+    // In manual mode the model is refused, as for the workspace, and nothing is written.
+    const m = await open({ workspace: h.workspace, sw: sw({ mode: 'manual' }), answers: [grant] })
+    expect(await m.say(REQUEST)).toMatchObject({ reason: 'completed' })
+    const before = m.session.lastSeq
+    expect(await refinementFacade(m.session).request({ kind: 'model', seq: before, saveTo: 'user' })).toEqual(
+      { refused: 'manual-mode' },
+    )
+    expect(await refinementFacade(m.session).propose(proposal, { saveTo: 'user' })).toEqual({
+      refused: 'manual-mode',
+    })
+    expect(m.session.lastSeq).toBe(before)
+    await m.session.close()
+  })
+
+  it('a trigger with no one behind it can never ask for user memory', async () => {
+    const h = host()
+    const t = await open({ workspace: h.workspace, answers: [grant] })
+    expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
+    const before = t.session.lastSeq
+    for (const kind of ['compaction', 'repeated-failure'] as const)
+      expect(await refinementFacade(t.session).request({ kind, seq: before, saveTo: 'user' })).toEqual({
+        refused: 'invalid',
+        detail: 'saveTo',
+      })
+    expect(t.session.lastSeq).toBe(before)
+    expect(h.asked).toHaveLength(0)
+    await t.session.close()
+  })
+
+  it('a request for user memory without a host save path is refused before anything is queued', async () => {
+    const u = await open()
+    expect(await u.say(REQUEST)).toMatchObject({ reason: 'completed' })
+    const at = u.session.lastSeq
+    expect(await refinementFacade(u.session).request({ kind: 'manual', seq: at, saveTo: 'user' })).toEqual({
+      refused: 'unavailable',
+      detail: 'user',
+    })
+    expect(u.session.lastSeq).toBe(at)
+    await u.session.close()
+  })
+
+  it('with refinement off a request for user memory is refused and writes nothing', async () => {
+    const switchState = sw()
+    const h = host()
+    const off = await open({ workspace: h.workspace, sw: switchState, answers: [grant] })
+    expect(await off.say(REQUEST)).toMatchObject({ reason: 'completed' })
+    switchState.enabled = false
+    const before = off.session.lastSeq
+    expect(
+      await refinementFacade(off.session).request({ kind: 'manual', seq: before, saveTo: 'user' }),
+    ).toEqual({ refused: 'refinement-off' })
+    expect(off.session.lastSeq).toBe(before)
+    expect(h.asked).toHaveLength(0)
+    await off.session.close()
+  })
+
   it('a run without saveTo saves nothing and tells the planner nothing about the workspace', async () => {
     const h = host()
     let guidance: Seen['guidance']

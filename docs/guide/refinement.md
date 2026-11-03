@@ -41,7 +41,8 @@ A **manual** review is one you ask for:
 
 - `/refine [focus]` in the TUI or the Web message box. The optional focus (at most 512 characters) tells the review what to look at. The reply says the review is queued; the result shows in the conversation.
 - `/refine --workspace [focus]` queues the same review, and what it keeps is also saved to the workspace as your own save (see below).
-- `/refine --unpriced [focus]` (it combines with `--workspace`) runs a review on a model with no known price. Without it, `/refine` on such a model is refused and says so; see [Cost](#cost).
+- `/refine --user [focus]` queues the same review, and what it keeps is also saved to user memory as your own save, without waiting for a second confirmation (see [Save to user memory](#save-to-user-memory)). Use either `--workspace` or `--user`, not both.
+- `/refine --unpriced [focus]` (it combines with `--workspace` or `--user`) runs a review on a model with no known price. Without it, `/refine` on such a model is refused and says so; see [Cost](#cost).
 
 With **Manual and automatic**, a review can also start by itself:
 
@@ -99,8 +100,9 @@ There are four ways in, and all go through the same checks:
 | --- | --- | --- |
 | Automatic: an entry a later review confirmed for the second time | automatic | **Manual and automatic** mode; two separate confirmations of the same version of the entry |
 | `/refine --workspace [focus]` in the TUI or the Web message box | you | The review's applied result; each entry it wrote is saved |
-| **Save … to workspace** on an applied review line in the Web conversation | you | Nothing else; no model is called |
-| The model, with `target: 'workspace'` on `harness_propose` or `harness_refine` | the model | **Manual and automatic** mode; evidence from this session |
+| `/refine --user [focus]` in the TUI or the Web message box | you | The review's applied result; each memory or prompt entry it wrote is saved to user memory |
+| **Save … to workspace** or **Save … to user memory** on an applied review line in the Web conversation | you | Nothing else; no model is called |
+| The model, with `target: 'workspace'` or `target: 'user'` on `harness_propose` or `harness_refine` | the model | **Manual and automatic** mode; evidence from this session |
 
 Only **session** entries of the **memory**, **prompt** and **skill** kinds are saved. Task entries stay in their session, and subagent entries are not saved to the workspace. A forked or child session saves nothing. An entry must rest on what happened in this session; a model save without evidence from the session is refused.
 
@@ -170,7 +172,9 @@ Some lessons hold in every workspace: a preference you stated yourself, such as 
 - It passes the same checks as a save to the workspace (session level, evidence from this session, no secret-like text), and you have not taken the same content back, from user memory or from this workspace.
 - It fits: user memory holds about **512 bytes** (the agent is shown at most `userTokenBudget`, 512 by default, counted as UTF-8 bytes). Your own text comes first; the lesson is written only if your text, the lessons already in force and the new one fit together. Otherwise it is not written (`user-memory-budget`) and nothing is trimmed, merged or removed.
 
-The model can never write user memory: its tools have no such target, a review it starts never reaches every workspace, and a request from it to write user memory is refused (`model-cannot-write-user`).
+**Saving it yourself.** `/refine --user [focus]` (TUI or Web message box) and **Save … to user memory** on a review line in the Web conversation save a lesson to user memory as your own save. They skip the second confirmation and the suggestion from the review; the other checks above still apply: the text must name no workspace (if it does, it is saved to the workspace instead, and the line says so), it must fit the user memory budget, pass the same checks as a save to the workspace, and not be something you took back from user memory or from this workspace (a withdrawn lesson is not saved again, even by you). Only **memory** and **prompt** entries can go to user memory. The line in the conversation says it was saved to user memory at your request, and whether this workspace reads user memory.
+
+**The model.** The model can ask for it too, with `target: 'user'` on `harness_refine` or `harness_propose`, only in **Manual and automatic** mode (as for `target: 'workspace'`). It is saved as the model's save, with the same checks and without waiting for a second confirmation. It should use this only for lasting facts or preferences that apply in every workspace of yours.
 
 **Who reads it.** User memory reaches the agent only in workspaces whose memory is on and that turn user memory on (`userEnabled`). A lesson is still written when the workspace it came from does not read user memory: other workspaces that do will see it. The save line says so. Task experience never turns these settings on for you.
 
@@ -196,8 +200,8 @@ When the switch is on, the guidance text is added even before the session has an
 
 With the switch on, the model has three tools:
 
-- `harness_refine` asks for a review (automatic mode only; it counts as an automatic review).
-- `harness_propose` saves a change directly, without a review call. It can create an entry, or change or delete one it has read in full.
+- `harness_refine` asks for a review (automatic mode only; it counts as an automatic review). With `target: 'workspace'` or `'user'` its result is also saved to the workspace or to user memory.
+- `harness_propose` saves a change directly, without a review call. It can create an entry, or change or delete one it has read in full; `target` works as for `harness_refine`.
 - `harness_inspect` reads the saved entries, as above.
 
 ## Withdraw a review
@@ -229,7 +233,7 @@ Nothing is saved to the workspace or to user memory while it is off, and request
 ## Compared with Prime Agent
 
 - Prime Agent keeps session entries and global entries for every session (`/refine --global`). AGH keeps entries in the session and saves them to the current workspace only: memory and prompt entries as paragraphs of the workspace memory, skill entries as workspace skills, each with a 30-day review date, after two confirmations, on your request (`/refine --workspace`, per entry) or the model's. Unlike Prime Agent, AGH has an automatic path, and it needs two confirmations.
-- Prime Agent's global library is written on your request. AGH writes a lesson to user memory (read in every workspace that turns it on) only automatically, after two confirmations, from your own words, within about 512 bytes and with a 30-day review date; the model cannot write it, and there is no command to write it yourself.
+- Prime Agent's global library is written on your request (`/refine --global`) or by the model. AGH writes a lesson to user memory (read in every workspace that turns it on) on your request (`/refine --user`, or **Save … to user memory**), on the model's (`target: 'user'`), or automatically after two confirmations from your own words; it always stays within about 512 bytes and has a 30-day review date.
 - Prime Agent's self-written skills can be Python functions run in its own kernel. AGH's saved skills are instructions only; the agent writes and runs any script itself, under its usual permissions.
 - Prime Agent applies a review edit by edit. AGH applies the whole review or nothing.
 - Prime Agent starts automatic reviews only after a compaction, with a 20-minute cooldown. AGH also starts them after repeated failures and on the model's request, within the limits above.

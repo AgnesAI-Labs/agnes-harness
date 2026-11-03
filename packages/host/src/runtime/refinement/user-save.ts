@@ -94,13 +94,15 @@ export async function reconcileUser(
 }
 
 /**
- * Promotion of a confirmed lesson to user memory: the riskiest save there is, since nobody reviews it
- * and every workspace may read it. It is only ever automatic, and judged in the same fixed order as a
- * workspace save:
+ * A save to user memory: the riskiest save there is, since nobody reviews it and every workspace may
+ * read it. It is the automatic promotion of a confirmed lesson, a person's own request
+ * (`/refine --user`) or the model's (`harness_refine` or `harness_propose` with target user), and
+ * judged in the same fixed order as a workspace save:
  * 1. switch: refinement is on, at the revision the request was made under (nothing is read or written
- *    otherwise); only an automatic save may promote (`model-cannot-write-user` for the model);
- * 2. revocation: content a user took back from user memory, or from this workspace, is refused;
- * 3. confirmations: `PROMOTION_CONFIRMATIONS`;
+ *    otherwise);
+ * 2. revocation: content a user took back from user memory, or from this workspace, is refused, a
+ *    request of a person or the model included;
+ * 3. confirmations: `PROMOTION_CONFIRMATIONS` for the automatic promotion; a request skips the count;
  * 4. source and safety rules, as for the workspace; text that names its workspace (`namesWorkspace`)
  *    is not promoted but handed back (`workspace`) to be saved to its workspace instead;
  * 5. the provider must keep managed sections of user memory (`unsupported-provider`); whether this
@@ -172,17 +174,20 @@ export function createUserSave(deps: UserSaveDeps): UserSave {
         receipt.outcome !== 'unknown',
     )
     if (repeated) return repeated
-    // 1 (cont.). Nobody but the automatic promotion ever writes user memory.
-    if (request.initiator !== 'auto')
-      return refused(request.initiator === 'model' ? 'model-cannot-write-user' : 'source-rules', 'rules')
+    // 1 (cont.). Only a source with a request behind it writes user memory: the automatic promotion, a
+    // person's own request or the model's.
+    if (request.initiator !== 'auto' && request.initiator !== 'user' && request.initiator !== 'model')
+      return refused('source-rules', 'rules')
     // 2. Revocation: taken back from user memory, or from this workspace.
     const local = deps.workspaceRegistry(request.session.workspaceRoot)
     if (registry.revoked(base.source) || local.revoked(base.source))
       return refused('user-revoked', 'revocation')
     verdicts.revocation = 'pass'
-    // 3. Confirmations.
-    if (!(request.confirmations >= PROMOTION_CONFIRMATIONS)) return refused('unconfirmed', 'confirmations')
-    verdicts.confirmations = 'pass'
+    // 3. Confirmations: only the automatic promotion needs them; a request skips the count.
+    if (request.initiator === 'auto') {
+      if (!(request.confirmations >= PROMOTION_CONFIRMATIONS)) return refused('unconfirmed', 'confirmations')
+      verdicts.confirmations = 'pass'
+    }
     // 4. Source and safety rules; text naming its workspace stays in that workspace.
     const problem = sourceRuleProblem(request)
     if (problem) return refused(problem, 'rules')

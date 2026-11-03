@@ -235,7 +235,8 @@ export function createRefinementHost(
     propose: async (at, proposal, options) => {
       const session = sessionOf(at.key, at.lane)
       if (!session) return { refused: 'unavailable' as const }
-      const saveTo = options?.saveTo === 'workspace' ? { saveTo: 'workspace' as const } : {}
+      const saveTo =
+        options?.saveTo === 'workspace' || options?.saveTo === 'user' ? { saveTo: options.saveTo } : {}
       return refinementFacade(session).propose(proposal, saveTo)
     },
     // The model asks about the work so far: the trigger falls at the last committed row.
@@ -243,7 +244,8 @@ export function createRefinementHost(
       const session = sessionOf(at.key, at.lane)
       if (!session) return { refused: 'unavailable' as const }
       const focus = request.focus === undefined ? {} : { focus: request.focus }
-      const saveTo = request.saveTo === 'workspace' ? { saveTo: 'workspace' as const } : {}
+      const saveTo =
+        request.saveTo === 'workspace' || request.saveTo === 'user' ? { saveTo: request.saveTo } : {}
       return refinementFacade(session).request({ kind: 'model', seq: session.lastSeq, ...focus, ...saveTo })
     },
     // Read-only, and only ever the session the tool ran in: Core reads that session's own entries.

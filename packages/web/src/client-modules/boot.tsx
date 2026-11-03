@@ -558,8 +558,8 @@ export async function startClientModules(options: {
           ...(options.claim ? { claim: options.claim } : {}),
           onWithdrawRefinement: (sessionId, appliedSeq) =>
             withdrawRefinement(options.agnes, sessionId, appliedSeq),
-          onSaveRefinementEntry: (sessionId, kind, id) =>
-            saveRefinementEntry(options.agnes, sessionId, kind, id),
+          onSaveRefinementEntry: (sessionId, kind, id, target) =>
+            saveRefinementEntry(options.agnes, sessionId, kind, id, target),
           session,
           locale,
           resources,
