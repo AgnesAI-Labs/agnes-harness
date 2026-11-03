@@ -1,5 +1,9 @@
 import { sha256Hex } from '@agnes/core-common/request/hash'
-import { PROMOTION_CONFIRMATIONS, type SaveInitiator } from '@agnes/core-ledger/reduce/refinement-save'
+import {
+  PROMOTION_CONFIRMATIONS,
+  type SaveInitiator,
+  timesSeen,
+} from '@agnes/core-ledger/reduce/refinement-save'
 import type { HarnessEntry } from '@agnes/core-ledger/reduce/shapes'
 import type { RefinementRunRecord, RefinementTriggerKind } from '@agnes/core-ledger/reduce/state'
 import { entryKey } from '../refine/apply.js'
@@ -47,21 +51,27 @@ const recordedIds = (s: SessionImpl): Set<string> =>
 
 /**
  * The entries this run touched (wrote, or confirmed) that now qualify for an automatic save: in auto
- * mode, held for the session, not handed off, confirmed at least `PROMOTION_CONFIRMATIONS` times at
- * their current content version, and not yet offered at that version (a receipt row of this session
- * names the offer). An offer is keyed by the content version, so each version is offered once, to user
+ * mode, held for the session, not handed off, seen to hold at least `PROMOTION_CONFIRMATIONS` times at
+ * their current content version (the review that wrote it counts as the first), and not yet offered at
+ * that version (a receipt row of this session names the offer). An offer is keyed by the content version, so each version is offered once, to user
  * memory when the entry may reach every workspace (`toUser`), else to the workspace.
  */
 function automatic(s: SessionImpl, run: Applied, recorded: ReadonlySet<string>): WorkspaceSaveInput[] {
   if (settingsOf(s)?.mode !== 'auto') return []
   const touched = new Map<string, { kind: HarnessEntry['kind']; id: string }>()
-  for (const ref of [...written(s, run), ...run.plan.confirmations.filter((c) => c.confirmedBy)])
+  // What a planner wrote is seen to hold by that review; a direct proposal has no review behind it, so it
+  // is offered only once a later review confirms it.
+  const planned = run.evidenceHash !== undefined
+  for (const ref of [
+    ...(planned ? written(s, run) : []),
+    ...run.plan.confirmations.filter((c) => c.confirmedBy),
+  ])
     touched.set(entryKey(ref), { kind: ref.kind, id: ref.id })
   const offers: WorkspaceSaveInput[] = []
   for (const [key, ref] of touched) {
     const meta = boundMeta(s.state, key)
     if (meta?.applicability !== 'session' || meta.handedOff === true) continue
-    if (meta.confirmations.count < PROMOTION_CONFIRMATIONS) continue
+    if (timesSeen(meta.confirmations.count) < PROMOTION_CONFIRMATIONS) continue
     const commandId = autoCommandId(s, ref, meta.contentHash)
     if (!recorded.has(commandId))
       offers.push({

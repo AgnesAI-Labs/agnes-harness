@@ -198,46 +198,26 @@ function host() {
   return { asked, workspace }
 }
 
-const pair = () => [toolTurn('read', { path: 'b' }), toolTurn('read', { path: 'b' }), textTurn('ok')]
-const byTools: Answer = (seen) =>
-  output({
-    confirmations: [{ entryId: 'memory/short', evidenceIds: ids(seen, (e) => e.kind === 'tool') }],
-    evidenceIds: ids(seen, (e) => e.kind === 'tool'),
-  })
-const byQuote: Answer = () =>
-  output({
-    confirmations: [{ entryId: 'memory/short', evidenceIds: ['e1'], quote: 'read b again' }],
-    evidenceIds: ['e1'],
-  })
-
 describe('the automatic offer of a lesson that may reach every workspace', () => {
-  async function confirmedTwice(first: Answer, trigger: { kind?: 'manual' | 'model' } = {}) {
+  async function appliedOnce(first: Answer, trigger: { kind?: 'manual' | 'model' } = {}) {
     const h = host()
-    const t = await open({
-      scripts: [textTurn('ok'), ...pair(), ...pair()],
-      reads: [false, true, false, true],
-      answers: [first, byTools, byQuote],
-      workspace: h.workspace,
-    })
+    const t = await open({ answers: [first], workspace: h.workspace })
     expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
     expect(await t.refine(trigger)).toMatchObject({ state: 'applied' })
-    expect(await t.say('read b again')).toMatchObject({ reason: 'completed' })
-    expect(await t.refine()).toMatchObject({ state: 'applied' })
-    expect(await t.refine()).toMatchObject({ state: 'applied' })
     await vi.waitFor(() => expect(h.asked).toHaveLength(1))
     return { t, asked: h.asked }
   }
 
-  it('goes to user memory as an automatic save after two confirmations', async () => {
-    const { t, asked } = await confirmedTwice(() => userLesson())
-    expect(asked[0]).toMatchObject({ initiator: 'auto', target: 'user', confirmations: 2 })
+  it('goes to user memory as an automatic save at its first apply', async () => {
+    const { t, asked } = await appliedOnce(() => userLesson())
+    expect(asked[0]).toMatchObject({ initiator: 'auto', target: 'user', confirmations: 1 })
     expect(asked[0]?.commandId).toMatch(/^auto:[0-9a-f]{48}$/u)
     await t.session.close()
   })
 
   it('the model can never reach user memory, directly or through a planner hint', async () => {
     // The model's own review asks for reach user: the lesson is still offered to the workspace only.
-    const { t, asked } = await confirmedTwice(() => userLesson(), { kind: 'model' })
+    const { t, asked } = await appliedOnce(() => userLesson(), { kind: 'model' })
     expect(asked[0]).toMatchObject({ initiator: 'auto' })
     expect(asked[0]).not.toHaveProperty('target')
     expect(t.meta('short')).not.toHaveProperty('reach')

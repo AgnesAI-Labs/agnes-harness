@@ -162,9 +162,9 @@ describe('promoting a confirmed lesson to user memory', () => {
     expect(await h.saves.save({ ...request(h), commandId: receipt.commandId })).toEqual(receipt)
   })
 
-  it('one confirmation is not enough', async () => {
+  it('a lesson that was never seen to hold is not promoted, one seen once is', async () => {
     const h = await home()
-    const receipt = await h.saves.save(request(h, { confirmations: 1 }))
+    const receipt = await h.saves.save(request(h, { confirmations: 0 }))
     expect(receipt).toMatchObject({ outcome: 'refused', reason: 'unconfirmed', layer: 'user' })
     expect(verdicts(receipt)).toEqual([
       'switch:pass',
@@ -175,6 +175,10 @@ describe('promoting a confirmed lesson to user memory', () => {
       'capacity:skip',
     ])
     expect(h.user()).toBe(HAND)
+    expect(await h.saves.save(request(h, { confirmations: 1 }))).toMatchObject({
+      outcome: 'saved',
+      layer: 'user',
+    })
   })
 
   it('content naming a workspace falls back to workspace level', async () => {

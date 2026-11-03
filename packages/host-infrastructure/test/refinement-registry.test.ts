@@ -107,7 +107,7 @@ const make = (root = '/work/a', dir = tempDir(), clock = clockAt()) => ({
 describe('RefinementRegistry', () => {
   it('exposes the three default constants', () => {
     expect(REVIEW_AFTER_MS).toBe(30 * DAY)
-    expect(PROMOTION_CONFIRMATIONS).toBe(2)
+    expect(PROMOTION_CONFIRMATIONS).toBe(1)
     expect(APPROVAL_TTL_MS).toBe(7 * DAY)
   })
 

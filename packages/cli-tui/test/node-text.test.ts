@@ -51,7 +51,7 @@ it('save rows render initiator, outcome and reason without text', () => {
   const save = (extra: object) =>
     nodeText({ kind: 'refinement-save', id: 's', seq: 3, state: 'refused', ...extra } as never)
   expect(save({ state: 'saved', initiator: 'auto', target: 'workspace-memory' })).toBe(
-    'Save to workspace: saved to workspace memory (asked by: automatic, after two confirmations).',
+    'Save to workspace: saved to workspace memory (asked by: automatic).',
   )
   expect(save({ reason: 'memory-full', initiator: 'model' })).toMatch(
     /not saved \(asked by: the model\)\. Reason: workspace memory is full.*free space/,

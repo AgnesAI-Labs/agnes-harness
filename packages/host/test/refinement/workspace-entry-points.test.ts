@@ -337,21 +337,14 @@ describe('the entry points against the real save path', () => {
     const t = await setup({
       answers: [
         grant,
-        confirmBy(() => 'memory/read-b', 'read b again please'),
-        confirmBy(() => 'memory/read-b', 'read b a third time'),
-        // The confirmation that made the entry count twice, cited again for the saved paragraph.
-        confirmBy(ref, 'read b a third time'),
+        // The request that led to the automatic save, cited again for the saved paragraph.
+        confirmBy(ref, QUOTE),
         confirmBy(ref, 'and read b once more today'),
       ],
     })
     expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
     expect(await t.refine()).toMatchObject({ state: 'applied' })
-    expect(await t.say('read b again please')).toMatchObject({ reason: 'completed' })
-    expect(await t.refine()).toMatchObject({ state: 'applied' })
-    expect(t.receipts()).toEqual([])
-    expect(await t.say('read b a third time')).toMatchObject({ reason: 'completed' })
-    expect(await t.refine()).toMatchObject({ state: 'applied' })
-    // The second confirmation saved it automatically.
+    // A lesson a review wrote is seen to hold once: the first apply saved it automatically.
     await vi.waitFor(() => expect(t.receipts()).toHaveLength(1))
     const [receipt] = t.receipts()
     expect(receipt).toMatchObject({ outcome: 'saved', initiator: 'auto' })
@@ -468,6 +461,8 @@ describe('the entry points against the real save path', () => {
 
   it('a model save of an entry with no evidence of this session is refused by the rules', async () => {
     const t = await setup({ answers: [grant] })
+    // Manual mode: the review's lesson is not saved by itself, so only the model's save is judged here.
+    t.switchState.mode = 'manual'
     expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
     expect(await t.refine()).toMatchObject({ state: 'applied' })
     // The model cannot make an entry count as confirmed, nor cite evidence from outside the session.
@@ -485,6 +480,7 @@ describe('the entry points against the real save path', () => {
 
   it('with refinement off every entry point refuses and writes nothing', async () => {
     const t = await setup({ answers: [grant] })
+    t.switchState.mode = 'manual'
     expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
     expect(await t.refine()).toMatchObject({ state: 'applied' })
     t.switchState.enabled = false

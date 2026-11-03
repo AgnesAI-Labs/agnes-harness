@@ -647,7 +647,7 @@ describe('what evidence never carries', () => {
     ])
   })
 
-  it("only the user's own requests can back a quote", async () => {
+  it("only the user's own requests are recorded as backing a session lesson", async () => {
     const t = await finished({ plan: NOOP })
     const request = ofType(await rows(t.log), 'user/message')[1]?.seq ?? 0
     const ref = (id: string, kind: string, seq: number) => ({ id, lane: 'main', seq, kind })
@@ -696,11 +696,12 @@ describe('what evidence never carries', () => {
     )
     expect(run?.state).toBe('proposed')
     const [external, user] = run?.plan?.edits ?? []
+    // A quote is no longer stored or needed: both edits asked for session level and have it.
     expect(external).not.toHaveProperty('quote')
-    expect(external).not.toHaveProperty('quoteSeqs')
-    expect(user).toMatchObject({ quote, quoteSeqs: [request], applicability: 'session' })
-    // The same words cited only from external content grant nothing: with no goal, that lesson expired.
-    expect(external).toMatchObject({ applicability: 'task', downgraded: true, expired: true })
+    expect(user).not.toHaveProperty('quote')
+    expect(external).toMatchObject({ applicability: 'session', usedEvidence: [] })
+    expect(external).not.toHaveProperty('expired')
+    expect(user).toMatchObject({ applicability: 'session', usedEvidence: [`user:${request}`] })
     await t.session.close()
   })
 
@@ -931,10 +932,9 @@ describe('one bounded refinement plan', () => {
     const t = await finished({ plan: echoed })
     const runId = await queueRefinementRun(t.session, { kind: 'manual', seq: t.session.lastSeq })
     const run = await planRefinementRun(t.session, runId, deps(t.session), signal())
-    // The echoed quote is not in the request, so the lesson is not granted session level; with no
-    // goal it is kept on the plan as expired. The plan is stored all the same, masked.
-    expect(run).toMatchObject({ state: 'no-op', reason: 'expired' })
-    expect(run?.plan?.edits[0]).toMatchObject({ quote: expect.stringContaining('[REDACTED') })
+    // The echoed quote is ignored and never stored; the plan is stored masked.
+    expect(run?.state).toBe('proposed')
+    expect(run?.plan?.edits[0]).not.toHaveProperty('quote')
     const stored = JSON.stringify(ofType(await rows(t.log), REFINEMENT_RUN).map(data))
     expect(stored).not.toContain(SK)
     expect(stored).not.toContain(API)

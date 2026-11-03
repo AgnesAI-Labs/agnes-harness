@@ -106,9 +106,9 @@ async function userUninstall(s: ReturnType<typeof setup>, name = NAME) {
 }
 
 describe('installing confirmed skills into the workspace', () => {
-  it('an entry confirmed twice is installed, trusted and enabled without a turn or an approval', async () => {
+  it('an entry seen to hold is installed, trusted and enabled without a turn or an approval', async () => {
     const s = setup()
-    expect(await s.save.save(s.request({ confirmations: 1 }))).toMatchObject({ reason: 'unconfirmed' })
+    expect(await s.save.save(s.request({ confirmations: 0 }))).toMatchObject({ reason: 'unconfirmed' })
     expect(s.ops('install')).toEqual([])
     const receipt = await s.save.save(s.request())
     const record = s.record()

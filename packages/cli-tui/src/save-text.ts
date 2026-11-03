@@ -11,7 +11,7 @@ const STATE: Record<SaveNode['state'], string> = {
 }
 
 const INITIATOR: Record<NonNullable<SaveNode['initiator']>, string> = {
-  auto: 'automatic, after two confirmations',
+  auto: 'automatic',
   user: 'you',
   model: 'the model',
 }
@@ -19,7 +19,7 @@ const INITIATOR: Record<NonNullable<SaveNode['initiator']>, string> = {
 const REASON: Record<string, string> = {
   'refinement-off': 'task experience is off',
   'user-revoked': 'you removed or withdrew this before; only your own save brings it back',
-  unconfirmed: 'it has not been confirmed twice yet',
+  unconfirmed: 'it has not been seen to hold yet',
   'source-rules': "only session-level entries backed by this session's own evidence are saved",
   'static-check': 'it did not pass the content checks (for example, it looks like a secret)',
   'memory-off': 'workspace memory is off',

@@ -107,7 +107,6 @@ export type PlannerOutputEdit =
       content: string
       applicability: 'task' | 'session'
       evidenceIds: string[]
-      quote?: string
       /** Skill and subagent only: the approved resource the entry is bound to. */
       reference?: string
       /** The planner's suggestion that the lesson holds in every workspace; Core decides. */

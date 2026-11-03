@@ -17,14 +17,12 @@ import { readTaskScope, sameTask, type TaskScope } from './task-scope.js'
  *
  * A lesson is valid either for the task it was learned in (`task`: the current goal) or for the rest
  * of the session (`session`). The host cannot tell whether evidence really supports a lesson, only
- * what shape the evidence has, so the level is granted on shape alone:
+ * what shape it has, so the level is the one the plan asked for:
  *
- * - session level needs a quote of at least `MIN_QUOTE_CHARS` characters that appears verbatim in a
- *   request of the user's own that the plan cites, as the planner was shown it (redacted and
- *   clipped), and that no other entry already stands on; or a failed and then successful settled
- *   result of the same tool on the same target (the same command name or the same path argument);
- * - anything else is task level, and task level needs a goal: with none, the lesson is recorded on
- *   the plan as expired and never applied.
+ * - session level is granted to every edit that asked for it. The plan has already been checked to
+ *   cite evidence items that exist in the snapshot, and an edit is never downgraded to task level;
+ * - task level needs a goal: with none, the lesson is recorded on the plan as expired and never
+ *   applied.
  *
  * A task-level entry expires, as derived state with nothing written, when its goal is completed,
  * cleared or replaced. A session-level entry does not expire; it ends only when it is changed,
@@ -100,44 +98,6 @@ export async function readFacts(s: SessionImpl, seqs: Iterable<Seq>): Promise<Ma
   return facts
 }
 
-/**
- * One quoted part of a request: the request's seq and the character range of the quote (surrounding
- * whitespace trimmed) in the text the planner was shown. A part backs at most one entry, and parts
- * that overlap count as the same part.
- */
-export type Fragment = { seq: Seq; start: number; end: number }
-export const fragmentId = (f: Fragment): string => `quote:${f.seq}:${f.start}-${f.end}`
-const FRAGMENT = /^quote:(\d+):(\d+)-(\d+)$/u
-const fragmentOf = (id: string): Fragment | undefined => {
-  const m = FRAGMENT.exec(id)
-  return m ? { seq: Number(m[1]), start: Number(m[2]), end: Number(m[3]) } : undefined
-}
-const overlaps = (a: Fragment, b: Fragment) => a.seq === b.seq && a.start < b.end && b.start < a.end
-
-/**
- * Where `quote` stands verbatim in one of the cited requests, avoiding parts `taken` by other entries:
- * the first occurrence that overlaps none of them. Undefined when the quote is too short, is in no
- * cited request, or every occurrence overlaps a part another entry stands on.
- */
-export function quotedFragment(
-  facts: ReadonlyMap<Seq, EvidenceFact>,
-  quote: string | undefined,
-  seqs: readonly Seq[] | undefined,
-  taken: readonly Fragment[],
-): Fragment | undefined {
-  const q = quote?.trim()
-  if (q === undefined || chars(q) < MIN_QUOTE_CHARS) return undefined
-  for (const seq of seqs ?? []) {
-    const fact = facts.get(seq)
-    if (fact?.kind !== 'user') continue
-    for (let at = fact.text.indexOf(q); at >= 0; at = fact.text.indexOf(q, at + 1)) {
-      const part = { seq, start: at, end: at + q.length }
-      if (!taken.some((t) => overlaps(t, part))) return part
-    }
-  }
-  return undefined
-}
-
 /** The user request among `seqs` (newer than `after`) that holds `quote` verbatim, if any. */
 export function quotedRequest(
   facts: ReadonlyMap<Seq, EvidenceFact>,
@@ -182,9 +142,9 @@ export type Confirmation = { identity: string; seq: Seq }
 
 /**
  * What makes a plan's confirmation of an entry count: evidence newer than the row that set the
- * entry, of the same shape a session-level grant needs (a verbatim quote of a cited request, whose
- * identity is the request's seq, or a failed-then-successful pair, whose identity is the success's
- * seq). Undefined when the cited evidence has neither.
+ * entry, of one of two shapes: a verbatim quote of a cited request of the user's own (at least
+ * `MIN_QUOTE_CHARS` characters; its identity is the request's seq), or a failed-then-successful pair
+ * (its identity is the success's seq). Undefined when the cited evidence has neither.
  */
 export function confirmationOf(
   facts: ReadonlyMap<Seq, EvidenceFact>,
@@ -198,23 +158,11 @@ export function confirmationOf(
   return undefined
 }
 
-/** The quoted parts entries already stand on, each with the entry it belongs to. */
-function fragmentsInUse(state: LedgerState): (Fragment & { key: string })[] {
-  const used: (Fragment & { key: string })[] = []
-  for (const [key, meta] of state.refinementEntryMeta)
-    if (boundMeta(state, key))
-      for (const id of meta.confirmations.usedEvidence) {
-        const part = fragmentOf(id)
-        if (part) used.push({ ...part, key })
-      }
-  return used
-}
-
 type Upsert = Extract<RefinementPlanEdit, { op: 'upsert' }>
 
 /**
- * Grants each upsert of a settled plan its level, binds task-level edits to the current goal (or
- * marks them expired when there is none), and finds what makes each confirmation count. Returns the
+ * Grants each upsert of a settled plan the level it asked for, binds task-level edits to the current
+ * goal (or marks them expired when there is none), and finds what makes each confirmation count. Returns the
  * plan as it is proposed, or a no-op when nothing on it can be applied.
  */
 export async function grantLevels(
@@ -228,8 +176,7 @@ export async function grantLevels(
   const facts = await readFacts(s, cited)
   // A goal that cannot be read binds nothing: a task-level lesson then has no task to belong to.
   const { scope } = await readTaskScope(s)
-  const taken = fragmentsInUse(s.state)
-  const edits = plan.edits.map((edit) => (edit.op === 'upsert' ? granted(edit, facts, scope, taken) : edit))
+  const edits = plan.edits.map((edit) => (edit.op === 'upsert' ? granted(edit, facts, scope) : edit))
   const confirmations = plan.confirmations.map((c) => {
     const key = entryKey(c)
     const entrySeq = s.state.registers.harnessEntries.get(key)?.seq ?? Number.MAX_SAFE_INTEGER
@@ -246,34 +193,17 @@ export async function grantLevels(
   return ['proposed', { plan: next }]
 }
 
-function granted(
-  edit: Upsert,
-  facts: ReadonlyMap<Seq, EvidenceFact>,
-  scope: TaskScope | null,
-  taken: (Fragment & { key: string })[],
-): Upsert {
-  const { applicability: asked, expired: _e, taskScope: _t, downgraded: _d, usedEvidence: _u, ...rest } = edit
-  const key = entryKey(edit)
+function granted(edit: Upsert, facts: ReadonlyMap<Seq, EvidenceFact>, scope: TaskScope | null): Upsert {
+  const { applicability: asked, expired: _e, taskScope: _t, usedEvidence: _u, ...rest } = edit
   if (asked === 'session') {
-    const others = taken.filter((part) => part.key !== key)
-    const part = quotedFragment(facts, edit.quote, edit.quoteSeqs, others)
-    if (part) {
-      taken.push({ ...part, key })
-      return { ...rest, applicability: 'session', usedEvidence: [`user:${part.seq}`, fragmentId(part)] }
-    }
-    const recovered = recoveredResult(facts, edit.evidenceSeqs)
-    if (recovered !== undefined)
-      return { ...rest, applicability: 'session', usedEvidence: [`tool:${recovered}`] }
+    // The requests of the user's own that the edit cites are recorded: they back a lesson that holds in
+    // every workspace (`reach`), and they never count as a later confirmation of it.
+    const requests = edit.evidenceSeqs.filter((seq) => facts.get(seq)?.kind === 'user')
+    return { ...rest, applicability: 'session', usedEvidence: requests.map((seq) => `user:${seq}`) }
   }
-  const downgraded = asked === 'session' ? { downgraded: true as const } : {}
   // No goal, no task: the lesson would expire with a task it never had.
-  if (!scope) return { ...rest, applicability: 'task', ...downgraded, expired: true }
-  return {
-    ...rest,
-    applicability: 'task',
-    ...downgraded,
-    taskScope: { id: scope.id, revision: scope.revision },
-  }
+  if (!scope) return { ...rest, applicability: 'task', expired: true }
+  return { ...rest, applicability: 'task', taskScope: { id: scope.id, revision: scope.revision } }
 }
 
 /** An edit kept on the plan only as a record: it is never applied. */

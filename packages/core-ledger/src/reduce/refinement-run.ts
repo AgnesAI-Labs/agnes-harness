@@ -43,7 +43,8 @@ export type RefinementReadSet = {
 }
 /**
  * One evidence id the planner saw, fixed to the ledger row it stands for, with what kind of fact it
- * is: only `user` (the user's own, trusted request) can back a quoted lesson.
+ * is: only `user` (the user's own, trusted request) can back a quoted confirmation or a lesson that
+ * reaches every workspace.
  */
 export type RefinementEvidenceRef = {
   id: string
@@ -61,9 +62,6 @@ export type RefinementPlanEdit =
       content: string
       applicability: 'task' | 'session'
       evidenceSeqs: Seq[]
-      /** Kept only when the edit cites a request of the user's own; `quoteSeqs` are those requests. */
-      quote?: string
-      quoteSeqs?: Seq[]
       /**
        * A task-level lesson planned with no goal to bind it to: it would have expired with the goal it
        * never had, so it stays on the plan as a record and is never applied.
@@ -71,9 +69,7 @@ export type RefinementPlanEdit =
       expired?: true
       /** The goal a task-level lesson is bound to; it expires when that goal is completed or replaced. */
       taskScope?: { id: string; revision: number }
-      /** Asked for at session level but without the evidence that grants it, so kept at task level. */
-      downgraded?: true
-      /** The evidence identities that granted session level; they never count as confirmations. */
+      /** The user's own requests a session-level edit cites (`user:<seq>`); they never count as confirmations. */
       usedEvidence?: string[]
       /** A skill or subagent bound to an approved resource: `<resourceId>@<revision>`, or an agent reference. */
       reference?: string

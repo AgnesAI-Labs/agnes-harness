@@ -432,6 +432,7 @@ const UPSERT_KEYS = [
   'content',
   'applicability',
   'evidenceIds',
+  // Accepted but ignored: earlier planners quoted the request to back a session lesson.
   'quote',
   'reference',
   'reach',
@@ -472,8 +473,8 @@ function checkedPlan(
       return seqOf.get(id as string) ?? invalid(`unknown-evidence: ${String(id)}`)
     })
   }
-  // Only the user's own requests can back a quote; a quote with no such citation is dropped, so it
-  // can never grant a lesson more than it would get without one.
+  // Only the user's own requests can back the quote of a confirmation; a quote with no such citation is
+  // dropped, so it can never make a confirmation count that would not count without one.
   const userSeqs = new Set((run.evidence ?? []).filter((e) => e.kind === 'user').map((e) => e.seq))
   const quoted: Quoted = (quote, cited) => {
     const from = quote === undefined ? [] : cited.filter((seq) => userSeqs.has(seq))
@@ -507,7 +508,7 @@ function checkedPlan(
       // An entry saved to the workspace is only ever confirmed, never rewritten or deleted.
       if (isObj(raw) && isWorkspaceKind(raw.kind))
         invalid(`confirm-only: ${String(raw.kind)}/${String(raw.id)}`)
-      const edit = checkedEdit(raw, at, seqs, quoted)
+      const edit = checkedEdit(raw, at, seqs)
       const key = refOf(edit)
       if (touched.has(key)) invalid(`duplicate-entry: ${key}`)
       touched.add(key)
@@ -568,7 +569,6 @@ function checkedEdit(
   raw: unknown,
   at: number,
   seqs: (ids: unknown, max?: number) => Seq[],
-  quoted: Quoted,
 ): RefinementPlanEdit {
   const where = `invalid-shape: edits[${at}]`
   if (
@@ -610,7 +610,6 @@ function checkedEdit(
     content: content.length > 0 ? content : invalid(where),
     applicability: raw.applicability,
     evidenceSeqs,
-    ...quoted(raw.quote === undefined ? undefined : masked(raw.quote, 2000, where, 1), evidenceSeqs),
     ...(raw.reference === undefined ? {} : { reference: raw.reference }),
     ...(raw.reach === 'user' ? { reach: 'user' as const } : {}),
   }

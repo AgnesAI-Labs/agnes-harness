@@ -107,11 +107,11 @@ const v1Doc = skillDoc(NAME, JSON.stringify(TITLE), V1)
 const v2Doc = skillDoc(NAME, JSON.stringify(TITLE), V2)
 
 describe('updating a skill refinement installed', () => {
-  it('only an unmodified RSI skill is updated, after two confirmations', async () => {
+  it('only an unmodified RSI skill is updated, once the new content was seen to hold', async () => {
     const s = await setup()
     expect(s.skillText()).toBe(v1Doc)
-    // An automatic save needs two confirmations of the new content first.
-    expect(await s.save.save(s.request({ confirmations: 1 }))).toMatchObject({
+    // An automatic save needs the new content seen to hold first.
+    expect(await s.save.save(s.request({ confirmations: 0 }))).toMatchObject({
       outcome: 'refused',
       reason: 'unconfirmed',
     })

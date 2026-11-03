@@ -34,8 +34,8 @@ type Upsert = Extract<RefinementPlan['edits'][number], { op: 'upsert' }>
  * - the planner asked for it, on a prompt or memory entry;
  * - the run is a maintenance plan the model did not start (never a `model` trigger: neither the model's
  *   review nor its direct proposal), and no one asked for its result to go to the workspace;
- * - the entry holds for the session on a verbatim quote of the user's own request: evidence from tool
- *   output alone never backs it;
+ * - the entry holds for the session and cites a request of the user's own: evidence from tool output
+ *   alone never backs it;
  * - its title and content name no workspace (`namesWorkspace`).
  * Anything else stays at workspace reach.
  */

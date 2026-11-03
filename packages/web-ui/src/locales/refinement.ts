@@ -39,7 +39,7 @@ export const refinementLocaleCatalog: LocaleCatalog = {
     'timeline.refinementSave.state.refused': 'Not saved to the workspace.',
     'timeline.refinementSave.state.unknown': 'Saving to the workspace ended with an unknown result.',
     'timeline.refinementSave.by': 'Asked by: {who}.',
-    'timeline.refinementSave.initiator.auto': 'automatic, after two confirmations',
+    'timeline.refinementSave.initiator.auto': 'automatic',
     'timeline.refinementSave.initiator.user': 'you',
     'timeline.refinementSave.initiator.model': 'the model',
     'timeline.refinementSave.awaiting': 'Answer it under Needs attention; the request is open for 7 days.',
@@ -48,7 +48,7 @@ export const refinementLocaleCatalog: LocaleCatalog = {
     'timeline.refinementSave.reason.refinement-off': 'task experience is off',
     'timeline.refinementSave.reason.user-revoked':
       'you removed or withdrew this before; only your own save brings it back',
-    'timeline.refinementSave.reason.unconfirmed': 'it has not been confirmed twice yet',
+    'timeline.refinementSave.reason.unconfirmed': 'it has not been seen to hold yet',
     'timeline.refinementSave.reason.source-rules':
       'only session-level entries backed by this session’s own evidence are saved',
     'timeline.refinementSave.reason.static-check':
@@ -122,7 +122,7 @@ export const refinementLocaleCatalog: LocaleCatalog = {
     'timeline.refinementSave.state.refused': '未保存到工作区。',
     'timeline.refinementSave.state.unknown': '保存到工作区的结果未知。',
     'timeline.refinementSave.by': '发起方：{who}。',
-    'timeline.refinementSave.initiator.auto': '自动（已证实 2 次）',
+    'timeline.refinementSave.initiator.auto': '自动',
     'timeline.refinementSave.initiator.user': '你',
     'timeline.refinementSave.initiator.model': '模型',
     'timeline.refinementSave.awaiting': '请在“待处理”中答复；请求 7 天内有效。',
@@ -130,7 +130,7 @@ export const refinementLocaleCatalog: LocaleCatalog = {
       '如果它的段落已经写入，在你于记忆设置（记忆文件）中修复或删除之前，智能体看不到它。',
     'timeline.refinementSave.reason.refinement-off': '任务经验已关闭',
     'timeline.refinementSave.reason.user-revoked': '你之前删除或撤回过它；只有你自己保存才会恢复',
-    'timeline.refinementSave.reason.unconfirmed': '它还没有被证实 2 次',
+    'timeline.refinementSave.reason.unconfirmed': '它还没有被确认有效',
     'timeline.refinementSave.reason.source-rules': '只保存有本会话证据支持的会话级条目',
     'timeline.refinementSave.reason.static-check': '没有通过内容检查（例如看起来像密钥）',
     'timeline.refinementSave.reason.memory-off': '工作区记忆已关闭',

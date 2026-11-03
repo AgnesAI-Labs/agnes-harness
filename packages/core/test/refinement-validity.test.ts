@@ -7,7 +7,7 @@ import { counted, metaRow } from '../src/refinement/confirmations.js'
 import { refinementFacade } from '../src/refinement/facade.js'
 import { redactEvidence } from '../src/refinement/redact.js'
 import { tryApply } from '../src/refinement/scheduler.js'
-import { contentHash, entryValidity, MIN_QUOTE_CHARS, targetOf } from '../src/refinement/validity.js'
+import { contentHash, entryValidity, targetOf } from '../src/refinement/validity.js'
 import { textTurn, toolTurn } from './helpers/fake-provider.js'
 import { actor } from './helpers/open-session.js'
 import {
@@ -25,35 +25,33 @@ import {
 import { data, ofType } from './helpers/side-call-session.js'
 
 describe('validity levels', () => {
-  it('no goal means no task-level grant', async () => {
+  it('no goal means no task-level grant, and a session-level edit is not downgraded for it', async () => {
     const plan: Answer = () =>
       output({
-        edits: [upsert('asked-task', { applicability: 'task' }), upsert('unbacked-session')],
+        edits: [upsert('asked-task', { applicability: 'task' }), upsert('asked-session')],
         evidenceIds: ['e1'],
       })
     const t = await open({ answers: [plan, plan] })
     expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
-    const none = await t.refine()
-    // Neither edit can hold: one asked for the task level, the other cited nothing that grants the
-    // session level, and with no goal there is no task to bind either to.
-    expect(none).toMatchObject({ state: 'no-op', reason: 'expired' })
-    expect(none?.plan?.edits).toEqual([
+    const first = await t.refine()
+    // The task-level edit has no goal to bind to and stays a record; the session-level one is granted.
+    expect(first).toMatchObject({ state: 'applied' })
+    expect(first?.plan?.edits).toEqual([
       expect.objectContaining({ id: 'asked-task', applicability: 'task', expired: true }),
-      expect.objectContaining({
-        id: 'unbacked-session',
-        applicability: 'task',
-        downgraded: true,
-        expired: true,
-      }),
+      expect.objectContaining({ id: 'asked-session', applicability: 'session' }),
     ])
-    expect(ofType(await t.rows(), 'harness/entry')).toEqual([])
+    expect(first?.plan?.edits[1]).not.toHaveProperty('downgraded')
+    expect(t.entries()).toEqual(['asked-session'])
 
-    // With a goal, the same plan binds both to it.
+    // With a goal, the task-level edit binds to it; the session-level one still holds for the session.
     t.goal.current = activeGoal
     expect(await t.say('second task')).toMatchObject({ reason: 'completed' })
     expect(await t.refine()).toMatchObject({ state: 'applied' })
-    for (const id of ['asked-task', 'unbacked-session'])
-      expect(t.meta(id)).toMatchObject({ applicability: 'task', taskScope: { id: 'goal-1', revision: 1 } })
+    expect(t.meta('asked-task')).toMatchObject({
+      applicability: 'task',
+      taskScope: { id: 'goal-1', revision: 1 },
+    })
+    expect(t.meta('asked-session')).toMatchObject({ applicability: 'session' })
     await t.session.close()
   })
 
@@ -70,24 +68,20 @@ describe('validity levels', () => {
     await t.session.close()
   })
 
-  it('a 12-character verbatim quote grants session level once per quote', async () => {
-    const short = QUOTE.slice(0, MIN_QUOTE_CHARS - 1)
-    expect([...short].length).toBe(11)
+  it('an edit asked at session level gets session level, whatever it quotes', async () => {
     const t = await open({
       answers: [
         () =>
           output({
             edits: [
               upsert('quoted', { quote: QUOTE }),
-              // The same fragment again: it already backs `quoted`.
-              upsert('same-quote', { quote: QUOTE }),
-              upsert('too-short', { quote: short }),
-              upsert('not-verbatim', { quote: QUOTE.toUpperCase() }),
+              upsert('unquoted'),
+              // A short or altered quote used to cost the level; it no longer matters.
+              upsert('short-quote', { quote: QUOTE.slice(0, 5) }),
+              upsert('altered-quote', { quote: QUOTE.toUpperCase() }),
             ],
             evidenceIds: ['e1'],
           }),
-        // A later plan cannot stand a new entry on a fragment an entry already stands on.
-        () => output({ edits: [upsert('later', { quote: QUOTE })], evidenceIds: ['e1'] }),
       ],
     })
     expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
@@ -95,82 +89,49 @@ describe('validity levels', () => {
     const run = await t.refine()
     expect(run?.state).toBe('applied')
     expect(
-      run?.plan?.edits.map((e) => [e.id, e.op === 'upsert' ? e.applicability : '', 'expired' in e]),
+      run?.plan?.edits.map((e) => [
+        e.id,
+        e.op === 'upsert' ? e.applicability : '',
+        'expired' in e,
+        'downgraded' in e,
+      ]),
     ).toEqual([
-      ['quoted', 'session', false],
-      ['same-quote', 'task', true],
-      ['too-short', 'task', true],
-      ['not-verbatim', 'task', true],
+      ['quoted', 'session', false, false],
+      ['unquoted', 'session', false, false],
+      ['short-quote', 'session', false, false],
+      ['altered-quote', 'session', false, false],
     ])
-    expect(t.entries()).toEqual(['quoted'])
-    // The request that granted the level is spent: it can never confirm this content version.
-    expect(t.meta('quoted')).toMatchObject({
+    expect(t.entries()).toEqual(['quoted', 'unquoted', 'short-quote', 'altered-quote'])
+    // The request it cites is spent: it can never confirm this content version.
+    expect(t.meta('unquoted')).toMatchObject({
       applicability: 'session',
-      confirmations: { count: 0, usedEvidence: expect.arrayContaining([`user:${request.seq}`]) },
+      confirmations: { count: 0, usedEvidence: [`user:${request.seq}`] },
     })
-    expect(t.meta('quoted')).not.toHaveProperty('taskScope')
-
-    // The same quote, cited for a new entry by the next plan of the same task, grants nothing.
-    expect(await t.refine()).toMatchObject({ state: 'no-op', reason: 'expired' })
-    expect(t.entries()).toEqual(['quoted'])
+    expect(t.meta('unquoted')).not.toHaveProperty('taskScope')
     await t.session.close()
   })
 
-  it('the quote is checked against the redacted request the planner was shown', async () => {
-    const leaked = 'sk-proj4Ab9Zq81LmNopQrStUvWx'
-    const said = `deploy with token ${leaked} on the staging host`
-    const shown = redactEvidence(said)
-    expect(shown).not.toContain(leaked)
-    const masked = shown.slice(shown.indexOf('deploy'), shown.indexOf(' on the'))
-    const t = await open({
-      answers: [
-        (seen) => {
-          // What the planner saw is the masked text, and quoting it verbatim grants the level.
-          expect(seen.evidence[0]?.text).toContain(masked)
-          return output({ edits: [upsert('masked', { quote: masked })], evidenceIds: ['e1'] })
-        },
-      ],
-    })
-    expect(await t.say(said)).toMatchObject({ reason: 'completed' })
-    expect(await t.refine()).toMatchObject({ state: 'applied' })
-    expect(t.meta('masked')).toMatchObject({ applicability: 'session' })
-    await t.session.close()
-  })
-
-  it('a fail-then-success pair grants session level', async () => {
+  it('an edit citing tool results only gets session level too, and records no request of the user', async () => {
     const turn = [
       toolTurn('read', { path: 'docs/a.txt' }),
-      toolTurn('read', { path: 'docs/a.txt/' }),
-      textTurn('ok'),
-    ]
-    const other = [
       toolTurn('read', { path: 'a.txt' }),
-      toolTurn('read', { path: 'docs/a.txt' }),
       textTurn('ok'),
     ]
     const t = await open({
-      scripts: [...turn, ...other],
-      reads: [false, true, false, true],
+      scripts: turn,
+      reads: [false, true],
       answers: [
         (seen) =>
-          output({ edits: [upsert('recovered', { evidenceIds: ids(seen, (e) => e.kind === 'tool') })] }),
-        // A failure and a success on different paths are not a pair.
-        (seen) =>
-          output({ edits: [upsert('unpaired', { evidenceIds: ids(seen, (e) => e.kind === 'tool') })] }),
+          output({ edits: [upsert('from-tools', { evidenceIds: ids(seen, (e) => e.kind === 'tool') })] }),
       ],
     })
     expect(await t.say('read the notes')).toMatchObject({ reason: 'completed' })
-    const success = ofType(await t.rows(), 'tool/result').filter(
-      (row) => data(row).isError !== true,
-    )[0] as Event
     expect(await t.refine()).toMatchObject({ state: 'applied' })
-    expect(t.meta('recovered')).toMatchObject({
+    expect(t.meta('from-tools')).toMatchObject({
       applicability: 'session',
-      confirmations: { count: 0, usedEvidence: [`tool:${success.seq}`] },
+      confirmations: { count: 0, usedEvidence: [] },
     })
-    expect(await t.say('read the notes again')).toMatchObject({ reason: 'completed' })
-    expect(await t.refine()).toMatchObject({ state: 'no-op', reason: 'expired' })
-    expect(t.entries()).toEqual(['recovered'])
+    expect(t.entries()).toEqual(['from-tools'])
     await t.session.close()
   })
 
@@ -211,11 +172,7 @@ describe('confirmations', () => {
     expect(await t.refine()).toMatchObject({ state: 'applied' })
     expect(t.meta('read-b')?.confirmations).toEqual({
       count: 1,
-      usedEvidence: [
-        expect.stringMatching(/^user:/u),
-        expect.stringMatching(/^quote:/u),
-        `tool:${success.seq}`,
-      ],
+      usedEvidence: [expect.stringMatching(/^user:/u), `tool:${success.seq}`],
     })
     expect(t.meta('read-b')?.lastConfirmedSeq).toBe(success.seq)
     // The second run cites the very same pair: it is the same evidence, so nothing more is counted
@@ -570,37 +527,6 @@ describe('reusing, overlapping and unreadable', () => {
     })
     expect(await direct('read-b', 'Read c.')).toHaveProperty('runId')
     expect(cell('read-b')?.value).toMatchObject({ version: 2, content: 'Read c.' })
-    await t.session.close()
-  })
-
-  it('overlapping quotes of one request back one entry; separate parts back one each', async () => {
-    const said = 'first task: read file b, not a; then run the build twice'
-    const t = await open({
-      answers: [
-        () =>
-          output({
-            edits: [
-              upsert('first', { quote: 'read file b, not a' }),
-              // A shifted, an overlapping and a padded quote of the same words.
-              upsert('shifted', { quote: ': read file b, not' }),
-              upsert('overlapping', { quote: 'not a; then run' }),
-              upsert('padded', { quote: 'read file b, not a ' }),
-              // Another part of the same request.
-              upsert('separate', { quote: 'run the build twice' }),
-            ],
-            evidenceIds: ['e1'],
-          }),
-      ],
-    })
-    expect(await t.say(said)).toMatchObject({ reason: 'completed' })
-    const run = await t.refine()
-    expect(run?.plan?.edits.map((e) => [e.id, e.op === 'upsert' ? e.applicability : ''])).toEqual([
-      ['first', 'session'],
-      ['shifted', 'task'],
-      ['overlapping', 'task'],
-      ['padded', 'task'],
-      ['separate', 'session'],
-    ])
     await t.session.close()
   })
 

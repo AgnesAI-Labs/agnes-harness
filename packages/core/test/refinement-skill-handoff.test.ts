@@ -98,15 +98,13 @@ const catalogChanges = async (t: Awaited<ReturnType<typeof open>>) =>
   )
 
 describe('skills installed into the workspace hand off their session entries', () => {
-  it('a skill confirmed twice is installed and its entry hands off once', async () => {
+  it('a skill a review wrote is installed at its first apply and its entry hands off once', async () => {
     const h = host()
-    const t = await confirmable([byTools, byQuote], h.workspace)
-    expect(await t.refine()).toMatchObject({ state: 'applied' })
-    expect(await t.refine()).toMatchObject({ state: 'applied' })
+    const t = await confirmable([], h.workspace)
     await vi.waitFor(() => expect(h.asked).toHaveLength(1))
     expect(h.asked[0]).toMatchObject({
       initiator: 'auto',
-      confirmations: 2,
+      confirmations: 1,
       entry: { kind: 'skill', id: NAME },
     })
     await vi.waitFor(() => expect(skillMeta(t)?.handedOff).toBe(true))
@@ -131,6 +129,7 @@ describe('skills installed into the workspace hand off their session entries', (
       scripts: [textTurn('ok'), textTurn('ok'), textTurn('ok'), textTurn('ok')],
       answers: [grant],
       workspace: h.workspace,
+      sw: { enabled: true, mode: 'manual', revision: 'r1' },
     })
     expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
     expect(await t.refine()).toMatchObject({ state: 'applied' })
@@ -167,7 +166,11 @@ describe('skills installed into the workspace hand off their session entries', (
         return h.workspace.save(request)
       },
     }
-    const t = await open({ answers: [grant], workspace })
+    const t = await open({
+      answers: [grant],
+      workspace,
+      sw: { enabled: true, mode: 'manual', revision: 'r1' },
+    })
     expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
     expect(await t.refine()).toMatchObject({ state: 'applied' })
     await saveToWorkspace(t.session, { initiator: 'model', kind: 'skill', id: NAME })

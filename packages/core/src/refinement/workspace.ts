@@ -3,6 +3,7 @@ import {
   REFINEMENT_SAVE_EVENT,
   type SaveInitiator,
   type SaveReceipt,
+  timesSeen,
 } from '@agnes/core-ledger/reduce/refinement-save'
 import type { HarnessEntry } from '@agnes/core-ledger/reduce/shapes'
 import { MAINTENANCE_LANE } from '@agnes/core-ledger/reduce/state'
@@ -155,7 +156,7 @@ export function workspaceSaveRequest(
     },
     evidenceSeqs: [...(input.evidenceSeqs ?? plannedEvidence(s, entry))],
     ...(lastTurn === undefined ? {} : { evidenceTurn: lastTurn }),
-    confirmations: current?.confirmations.count ?? 0,
+    confirmations: timesSeen(current?.confirmations.count ?? 0),
     ...(input.runId === undefined ? {} : { runId: input.runId }),
   }
 }

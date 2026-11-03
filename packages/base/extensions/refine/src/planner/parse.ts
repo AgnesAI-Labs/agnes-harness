@@ -14,7 +14,6 @@ export type PlannerEdit =
       content: string
       applicability: 'task' | 'session'
       evidenceIds: string[]
-      quote?: string
       /** Skill and subagent only: the approved resource the entry is bound to; the host checks it. */
       reference?: string
       /** A suggestion that the lesson holds in every workspace; Core decides. */
@@ -87,6 +86,7 @@ function edit(raw: unknown, at: number): PlannerEdit {
     'content',
     'applicability',
     'evidenceIds',
+    // Accepted but not passed on: earlier prompts asked for a quote to back a session lesson.
     'quote',
     'reference',
     'reach',
@@ -115,7 +115,6 @@ function edit(raw: unknown, at: number): PlannerEdit {
     content: raw.content,
     applicability: raw.applicability,
     evidenceIds: raw.evidenceIds,
-    ...(raw.quote === undefined ? {} : { quote: raw.quote as string }),
     ...(raw.reference === undefined ? {} : { reference: raw.reference as string }),
     ...(raw.reach === undefined ? {} : { reach: raw.reach as 'workspace' | 'user' }),
   }
