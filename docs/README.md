@@ -57,6 +57,7 @@ node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"
 | [Default context](guide/context.md) | Inspect live repository rules, time context and custom Skill roots |
 | [Feedback and reviewed growth](guide/feedback.md) | Rate messages and draft Skills for human review |
 | [Learned memory](guide/memory.md) | Control learned file preferences, approvals and privacy |
+| [Task experience (RSI)](guide/refinement.md) | Let a background review keep lessons for the rest of a session, withdraw them, and see what it costs |
 | [Official default tools](reference/default-tools.md) | Search, ask questions, present files, manage background jobs, and edit observed files |
 | [Web workbench](guide/web.md) | Create tasks, inspect history, and manage models and extensions |
 | [Built-in browser](guide/browser.md) | Share a web page with AGH, test local projects and take control |

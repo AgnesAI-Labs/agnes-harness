@@ -51,6 +51,7 @@ node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"
 | [默认上下文](guide/context.zh-CN.md) | 查看实时仓库规则、时间上下文与自定义 Skill 目录 |
 | [反馈与人工评审成长](guide/feedback.zh-CN.md) | 评价消息并起草待人工评审的 Skill |
 | [学习记忆](guide/memory.zh-CN.md) | 管理文件偏好、审批与隐私 |
+| [任务经验（RSI）](guide/refinement.zh-CN.md) | 让后台复盘为会话之后的轮次留下经验，撤回经验，查看费用 |
 | [官方默认工具](reference/default-tools.zh-CN.md) | 搜索、问答、交付文件、管理后台任务及修改已读取文件 |
 | [Web 工作台](guide/web.zh-CN.md) | 创建任务、查看历史、管理模型与扩展 |
 | [内置浏览器](guide/browser.zh-CN.md) | 与 AGH 共用网页、测试本地项目和人工接管 |
