@@ -23,6 +23,7 @@ import type {
   PersistenceProvider,
   SandboxProvider,
   TaskScopeSource,
+  WorkflowRunSource,
 } from '@agnes/extension-api'
 import type { ExtensionAPI, ExtensionFactory } from '@agnes/extension-api/host'
 import type { PrivacyTrajectoryCapability } from '@agnes/host-artifacts/trajectory-contract'
@@ -148,6 +149,12 @@ export type SeamInitContext = {
    * its state; supplied only to the plugin that owns tasks. Returns what withdraws the offer.
    */
   provideTaskScope?: (source: TaskScopeSource) => () => void
+  /**
+   * Offers the session's workflow runs to the host as one of the plugin's projections and a reader of
+   * its state, so a finished run can be kept as a skill; supplied only to the plugin that runs
+   * workflows. Returns what withdraws the offer.
+   */
+  provideWorkflowRuns?: (source: WorkflowRunSource) => () => void
 }
 
 /**

@@ -71,7 +71,14 @@ export type RefinementSkillInstalled = {
  * A skill the review switched off stays off through an update or a rollback; `enable: true` turns it
  * back on. A skill that is on stays on either way.
  */
-export type RefinementSkillReplaceOptions = { enable?: boolean }
+export type RefinementSkillReplaceOptions = {
+  enable?: boolean
+  /**
+   * Update only: the entry the file now holds, which replaces the registry source of the skill (its
+   * hash and whether it was made from a workflow run). Without it the skill keeps the source it had.
+   */
+  source?: SaveSource
+}
 
 export type RefinementSkillInstaller = Readonly<{
   install(draft: SkillDraft, ctx: RefinementSkillInstallContext): Promise<RefinementSkillInstalled>
@@ -109,6 +116,19 @@ export type RefinementSkillInstallers = ((workspaceRoot: string) => RefinementSk
 const LIVE: readonly RegistrySkill['state'][] = ['active', 'review-disabled']
 const WORKSPACE_ID = /^[a-f0-9]{64}$/
 const RECEIPT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
+
+/** Whether `value` is a registry source of a saved skill: the entry it came from, who asked, what it holds. */
+function validSource(value: unknown): value is SaveSource {
+  const source = value as Partial<SaveSource> | undefined
+  return (
+    source?.kind === 'skill' &&
+    [source.sessionKey, source.entryId, source.contentHash].every(
+      (text) => typeof text === 'string' && text.length > 0 && text.length <= 4096,
+    ) &&
+    ['auto', 'user', 'model'].includes(String(source.initiator)) &&
+    (source.fromWorkflow === undefined || source.fromWorkflow === true)
+  )
+}
 
 /** How a refusal of the installer reads in a save receipt. */
 export function refinementSkillRefusal(error: unknown): SaveRefusal {
@@ -443,7 +463,7 @@ export function createRefinementSkillInstallers(deps: RefinementSkillDeps): Refi
           name: entry.name,
           resourceId,
           revision: entry.toRevision,
-          source: entry.kind === 'install' || !record ? (entry.source as SaveSource) : record.source,
+          source: entry.source !== undefined || !record ? (entry.source as SaveSource) : record.source,
           reviewAfter: clock() + REVIEW_AFTER_MS,
           state: enabled ? 'active' : 'review-disabled',
           archive: archive.prune(entry.name, ordered, [entry.toRevision]),
@@ -501,6 +521,7 @@ export function createRefinementSkillInstallers(deps: RefinementSkillDeps): Refi
         name,
         fromRevision: record.revision,
         toRevision: next.candidate.revision,
+        ...(options?.source === undefined ? {} : { source: options.source }),
         phase: 'prepared',
         at: clock(),
       }
@@ -513,15 +534,7 @@ export function createRefinementSkillInstallers(deps: RefinementSkillDeps): Refi
         if (ctx.workspaceRoot !== workspaceRoot) throw installError('SKILL_INSTALL_INVALID')
         if (typeof ctx.receiptId !== 'string' || !RECEIPT_ID.test(ctx.receiptId))
           throw installError('SKILL_INSTALL_INVALID')
-        const source = ctx.source as Partial<SaveSource> | undefined
-        if (
-          source?.kind !== 'skill' ||
-          ![source.sessionKey, source.entryId, source.contentHash].every(
-            (value) => typeof value === 'string' && value.length > 0 && value.length <= 4096,
-          ) ||
-          !['auto', 'user', 'model'].includes(String(source.initiator))
-        )
-          throw installError('SKILL_INSTALL_INVALID')
+        if (!validSource(ctx.source)) throw installError('SKILL_INSTALL_INVALID')
         shapeOf(draft)
         return serial(draft.name, async () => {
           const id = archive.journal.idFor(`install\0${ctx.receiptId}`)
@@ -585,6 +598,8 @@ export function createRefinementSkillInstallers(deps: RefinementSkillDeps): Refi
       },
       async update(name, draft, expected, options) {
         shapeOf(draft)
+        if (options?.source !== undefined && !validSource(options.source))
+          throw installError('SKILL_INSTALL_INVALID')
         if (draft.name !== name) throw installError('SKILL_NAME_MISMATCH')
         return serial(name, async () => {
           await pendingFor(name)

@@ -73,6 +73,8 @@ export type RefinementPlanEdit =
       usedEvidence?: string[]
       /** A skill or subagent bound to an approved resource: `<resourceId>@<revision>`, or an agent reference. */
       reference?: string
+      /** A skill generated from a finished `workflow` run of this session (its `runId`); the host writes its definition. */
+      workflowRun?: string
       /**
        * The lesson may be promoted to user memory, read in every workspace. Absent means its workspace
        * only. The planner suggests it; Core keeps it only where the structure allows.

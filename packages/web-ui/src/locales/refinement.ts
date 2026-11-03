@@ -20,6 +20,7 @@ export const refinementLocaleCatalog: LocaleCatalog = {
     'timeline.refinement.reason': 'Reason: {reason}.',
     'timeline.refinement.saved': 'Saved: {names}.',
     'timeline.refinement.removed': 'Removed: {names}.',
+    'timeline.refinement.workflow': 'Based on a finished workflow run: {names}.',
     'timeline.refinement.withdrawn': 'Withdrawn since.',
     'timeline.refinement.withdraw': 'Withdraw',
     'timeline.refinement.withdraw.done': 'Withdrawn: the entries are back as they were before this review.',
@@ -69,6 +70,14 @@ export const refinementLocaleCatalog: LocaleCatalog = {
       'user memory has no room for it (about 512 bytes, your own text first); nothing was changed or trimmed',
     'timeline.refinementSave.reason.model-cannot-write-user':
       'an earlier version did not let the model write user memory',
+    'timeline.refinementSave.reason.workflow-run-unavailable':
+      'the workflow run it names is not in this session, so no skill was made from it',
+    'timeline.refinementSave.reason.workflow-run-not-completed':
+      'the workflow run it names did not finish with every member completed, so no skill was made from it',
+    'timeline.refinementSave.reason.workflow-definition-too-large':
+      'the workflow definition does not fit in one skill file; nothing was cut',
+    'timeline.refinementSave.reason.workflow-already-saved':
+      'a skill with this workflow definition is already saved',
     'timeline.refinementSave.user.state.saved': 'Saved to user memory (all workspaces).',
     'timeline.refinementSave.user.state.savedByRequest':
       'Saved to user memory at your request (all workspaces).',
@@ -102,6 +111,7 @@ export const refinementLocaleCatalog: LocaleCatalog = {
     'timeline.refinement.reason': '原因：{reason}。',
     'timeline.refinement.saved': '已保存：{names}。',
     'timeline.refinement.removed': '已移除：{names}。',
+    'timeline.refinement.workflow': '依据一次跑完的工作流：{names}。',
     'timeline.refinement.withdrawn': '之后已撤回。',
     'timeline.refinement.withdraw': '撤回',
     'timeline.refinement.withdraw.done': '已撤回：条目已恢复到这次复盘之前。',
@@ -144,6 +154,13 @@ export const refinementLocaleCatalog: LocaleCatalog = {
     'timeline.refinementSave.reason.user-memory-budget':
       '用户记忆放不下它（约 512 字节，你自己写的内容优先）；没有改动或截断任何内容',
     'timeline.refinementSave.reason.model-cannot-write-user': '早先的版本不允许模型写入用户记忆',
+    'timeline.refinementSave.reason.workflow-run-unavailable':
+      '它指的工作流运行不在本会话里，没有据此生成技能',
+    'timeline.refinementSave.reason.workflow-run-not-completed':
+      '它指的工作流运行没有全部完成（有成员没做完），没有据此生成技能',
+    'timeline.refinementSave.reason.workflow-definition-too-large':
+      '工作流定义太大，放不进一个技能文件；没有截断任何内容',
+    'timeline.refinementSave.reason.workflow-already-saved': '已经保存过带有同一份工作流定义的技能',
     'timeline.refinementSave.user.state.saved': '已保存到用户记忆（所有工作区）。',
     'timeline.refinementSave.user.state.savedByRequest': '已按你的要求保存到用户记忆（所有工作区）。',
     'timeline.refinementSave.user.state.refused': '未保存到用户记忆。',

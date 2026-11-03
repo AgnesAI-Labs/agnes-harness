@@ -35,6 +35,12 @@ const REASON: Record<string, string> = {
   'user-memory-budget':
     'user memory has no room for it (about 512 bytes, your own text first); nothing was changed or trimmed',
   'model-cannot-write-user': 'an earlier version did not let the model write user memory',
+  'workflow-run-unavailable':
+    'the workflow run it names is not in this session, so no skill was made from it',
+  'workflow-run-not-completed':
+    'the workflow run it names did not finish with every member completed, so no skill was made from it',
+  'workflow-definition-too-large': 'the workflow definition does not fit in one skill file; nothing was cut',
+  'workflow-already-saved': 'a skill with this workflow definition is already saved',
 }
 
 /** A promotion to user memory: what it reaches, and how it ended. */

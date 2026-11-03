@@ -1,5 +1,12 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import type { RefinementSettingsView, RefinementWorkspacePort, WorkspaceSaveRequest } from '@agnes/core'
+import {
+  type RefinementSettingsView,
+  type RefinementWorkflowRuns,
+  type RefinementWorkspacePort,
+  WORKFLOW_RUN_LOOKUP_MS,
+  type WorkflowRunView,
+  type WorkspaceSaveRequest,
+} from '@agnes/core'
 import type { MemoryParagraphPort, MemoryProposal, MemorySession, MemorySource } from '@agnes/extension-api'
 import {
   APPROVAL_TTL_MS,
@@ -16,6 +23,7 @@ import {
 import { paragraphPortOf, reconcileWorkspace } from './reconcile.js'
 import { paragraphText, sourceRuleProblem } from './save-rules.js'
 import { reconcileSkillDeletions, saveSkillChange, type WorkspaceSkills } from './skill-update.js'
+import { normalizedWorkflowHash, workflowTextProblem } from './workflow-runs.js'
 import {
   code,
   commitParagraph,
@@ -66,6 +74,8 @@ export type WorkspaceSaveDeps = {
   approvals?: RefinementApprovals
   /** The skill installer and the drafts kept for a person. Absent: a skill save is refused `unavailable`. */
   skills?: WorkspaceSkills
+  /** The finished `workflow` runs of a session. Absent: a skill that names one is refused `workflow-run-unavailable`. */
+  workflowRuns?: RefinementWorkflowRuns
   clock: () => number
 }
 
@@ -160,9 +170,15 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
     return serial(root, () =>
       withMemory(root, async (memory) => {
         const registry = deps.registry(root)
+        // The run is read once however often the judgement is repeated, and only when it is needed.
+        let read: ReturnType<typeof readRun> | undefined
+        const run = () => {
+          read ??= readRun(request)
+          return read
+        }
         for (let attempt = 0; ; attempt++) {
           try {
-            return await judge({ request, base, registry, memory })
+            return await judge({ request, base, registry, memory, run })
           } catch (error) {
             const failure = code(error)
             if (failure === 'REGISTRY_REVISION_CONFLICT' && attempt === 0) continue
@@ -175,14 +191,47 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
     )
   }
 
+  /**
+   * The finished run a skill request names, read for the requesting session: undefined when it names
+   * none, or the host cannot read runs. A read that throws, or takes longer than Core's lookup bound,
+   * is `not-found`.
+   */
+  async function readRun(
+    request: WorkspaceSaveRequest,
+  ): Promise<WorkflowRunView | 'not-found' | 'not-completed' | undefined> {
+    const runId = request.entry.kind === 'skill' ? request.entry.workflowRun : undefined
+    if (runId === undefined || !deps.workflowRuns) return undefined
+    const port = deps.workflowRuns
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<'not-found'>((resolve) => {
+      timer = setTimeout(() => resolve('not-found'), WORKFLOW_RUN_LOOKUP_MS)
+      ;(timer as { unref?: () => void }).unref?.()
+    })
+    try {
+      return await Promise.race([
+        Promise.resolve().then(() =>
+          port.read({ key: request.session.key, lane: request.session.lane }, runId),
+        ),
+        late,
+      ])
+    } catch {
+      return 'not-found'
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
   /** Steps 2 to 6 for one request, against the registry as it is now. */
   async function judge(input: {
     request: WorkspaceSaveRequest
     base: SaveReceipt
     registry: RefinementRegistry
     memory: MemorySession | undefined
+    /** The finished run the request names; read at most once for the whole save. */
+    run(): Promise<WorkflowRunView | 'not-found' | 'not-completed' | undefined>
   }): Promise<SaveReceipt> {
-    const { request, base, registry, memory } = input
+    const { request, registry, memory } = input
+    let base: SaveReceipt = input.base
     if (memory) await reconcileWorkspace(registry, memory, deps.clock).catch(() => [])
     await resumeSaves(registry, memory, deps.clock, inFlight).catch(() => undefined)
     const verdicts: Partial<Record<Step, 'pass' | 'fail' | 'skip'>> = { switch: 'pass' }
@@ -209,6 +258,15 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
         receipt.reason !== 'approval-expired',
     )
     if (repeated) return repeated
+    // A skill generated from a finished workflow run is recognised by the hash of its definition, not
+    // of the planner's words, in every step that compares content (revocation, an earlier save). The
+    // run is read after a repeated command was answered from its receipt.
+    const run = await input.run()
+    if (typeof run === 'object')
+      base = {
+        ...base,
+        source: { ...base.source, contentHash: normalizedWorkflowHash(run), fromWorkflow: true },
+      }
     const skillName = request.entry.kind === 'skill' ? request.entry.id : undefined
     // A saved skill whose folder a person deleted was taken back like one removed on the skills page.
     if (skillName && deps.skills) {
@@ -234,6 +292,14 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
     // 4. Source and safety rules.
     const problem = sourceRuleProblem(request)
     if (problem) return refused(problem, 'rules')
+    // A workflow run the session does not hold, or that did not finish, writes nothing; neither does a
+    // definition whose names or tasks the source rules would not take as text.
+    if (request.entry.kind === 'skill' && request.entry.workflowRun !== undefined) {
+      if (run === undefined || run === 'not-found') return refused('workflow-run-unavailable', 'rules')
+      if (run === 'not-completed') return refused('workflow-run-not-completed', 'rules')
+      const unsafe = workflowTextProblem(run)
+      if (unsafe) return refused(unsafe, 'rules')
+    }
     verdicts.rules = 'pass'
     if (request.entry.kind === 'subagent')
       return refuse(registry, base, 'subagent-review-unavailable', verdicts)
@@ -247,6 +313,7 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
             registry,
             skills: deps.skills,
             clock: deps.clock,
+            ...(typeof run === 'object' ? { workflow: run } : {}),
           })
         : undefined
       if (!decided) return refuse(registry, base, 'unavailable', verdicts)

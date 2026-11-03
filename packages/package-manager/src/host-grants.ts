@@ -10,6 +10,7 @@ export type HostCapabilityGrant = Readonly<{
   privacyTrajectory?: true
   refinementSettings?: true
   taskScope?: true
+  workflowRuns?: true
   computerUse?: true
   privateArtifactStore?: true
   contextBlocking?: true
@@ -43,6 +44,7 @@ export const HOST_CAPABILITY_GRANTS: readonly HostGrantDeclaration[] = freezeDat
       'agnes/computer-use': { computerUse: true },
       'agnes/refine': { refinementSettings: true },
       'agnes/goal': { taskScope: true },
+      'agnes/workflow': { workflowRuns: true },
     },
     seams: { artifacts: { privateArtifactStore: true } },
   },

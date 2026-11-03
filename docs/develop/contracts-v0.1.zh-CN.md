@@ -4,13 +4,13 @@
 
 [插件架构](architecture-plugins.zh-CN.md) · [作者指南](../extend/README.zh-CN.md) · [版本规则](../maintainers/versioning.zh-CN.md)
 
-本文维护产品 v0.1 的作者合同清单，Extension API 为 **5.3.0**。源码、schema 与包出口共同定义当前行为；请固定源码版本。本文不代表已发行或完整部署验收，发行结果应引用对应版本的 CI 与验收记录。
+本文维护产品 v0.1 的作者合同清单，Extension API 为 **5.4.0**。源码、schema 与包出口共同定义当前行为；请固定源码版本。本文不代表已发行或完整部署验收，发行结果应引用对应版本的 CI 与验收记录。
 
 ## 稳定性与兼容政策
 
 **stable** 表示已建立、拟在 v0.1 中给予兼容保护的作者合同；**experimental** 表示仍演进的合同，使用时必须对齐源码、示例与 testkit 版本。两种标签都不代表生产就绪、平台支持、任意插件隔离或 npm 可用。候选政策在维护者接受产品冻结时生效；已有预览版本仍遵循[预览版本政策](../maintainers/versioning.zh-CN.md)。
 
-已接受的 stable 合同在公开包中遵循 semver：不兼容签名、删除、缩小可接受输入或改变可观察保证须升主版本；兼容新增升次版本；兼容修复升补丁版本。产品 `v0.1` 发布 extension API `5.3.0`。experimental 修改也必须给出变更与迁移说明，即使预览版本号暂不变。仓库的已发布包 semver 规则也适用于 experimental 出口，本候选不新增已发布包例外。已发布的 stable 接口不能靠改标 experimental 来绕过主版本规则。
+已接受的 stable 合同在公开包中遵循 semver：不兼容签名、删除、缩小可接受输入或改变可观察保证须升主版本；兼容新增升次版本；兼容修复升补丁版本。产品 `v0.1` 发布 extension API `5.4.0`。experimental 修改也必须给出变更与迁移说明，即使预览版本号暂不变。仓库的已发布包 semver 规则也适用于 experimental 出口，本候选不新增已发布包例外。已发布的 stable 接口不能靠改标 experimental 来绕过主版本规则。
 
 弃用说明必须在 API changelog 与双语指南中写明旧名称、替代方案、兼容窗口和迁移办法。此规则只保护公开发布后已接受的 stable 别名：至少保留至后续一个次版本发行，且只能在主版本中删除。尚未发布的预览构建不承诺永久保留现有别名；退役格式明确拒绝并提示使用新的空 home，不做转换或沿用旧字节的信任摘要。安全原因的例外须明确发行说明与恢复步骤。本文不为 `defineKind` 输入 `restartRequired`（改用 `scope`；重启要求由它推导）指定删除日期。本轮保留 generation 别名、ACP `session/load`、without/fresh 执行闸门、旧 home 布局检测与 Windows 安全回退。插件 checkpoint 和数据迁移需要各自的兼容决定；升级包或迁移 generation 不会自动迁移 schema。
 
@@ -43,6 +43,7 @@ Windows 任务 Shell 复用 Host 已选定的 PowerShell。实验性 `SHELL_STDI
 | [任务范围](../../packages/extension-api/src/task-scope.ts) | experimental | `TaskScopeReader.current()` 是会话当前任务的只读同步视图（`{ id, revision, phase }` 或 `null`）；拥有任务的插件以 `TaskScopeSource`（自己的一个投影加该状态的读取函数）提供，Host 只把提供权授予内置 goal 插件。5.1.0 新增 |
 | [记忆有效期视图、段落端口与精确替换](../../packages/extension-api/src/memory.ts) | experimental | `MemoryProvider.open` 的可选 `validity` 输入（只读、同步、不抛错；按受管段落 id 回答 `valid`/`expired`/`unknown`）；可选的 `MemorySession.paragraphs?`（读当前存储文件；`list` 给出文件 hash；`propose` 接受一条或一组修改及可选的 base hash，全部生效或全部不生效；`commit` 是一次 CAS；仍按工作区记忆模式；有这个方法即表示支持；testkit 的 `memoryParagraphConformance` 检查它）；记忆文件端口上可选的 `replaceExact?`，端口有它时才交给 `ToolContext.fs`。不实现它们的 provider 行为不变。5.2.0 新增 |
 | [用户记忆中的受管段落](../../packages/extension-api/src/memory.ts) | experimental | `MemoryProvider.open` 的可选 `userValidity` 输入（同 `validity`，用于用户记忆中的受管段落：智能体先看到人写的用户记忆，之后只看到仍有效的段落）；可选的 `MemorySession.userParagraphs?`（与段落端口同形，作用于用户记忆索引；不受工作区记忆模式影响；人写内容、有效段落与新写入段落合计超出用户记忆预算时 `propose` 以 `MEMORY_USER_BUDGET` 拒绝，从不截断；凭据形状内容与工作区记忆一样被拒绝；有这个方法即表示支持）。没有它们的 provider 行为不变，也不会收到用户级晋升。5.3.0 新增 |
+| [工作流运行来源](../../packages/extension-api/src/workflow-run.ts) | experimental | `WorkflowRunSource` 是运行工作流的插件的一个投影及其状态读取器；`WorkflowRunReader.finished(runId)` 给出该会话中一次所有成员都已完成的运行的 `WorkflowRunDefinition`（运行名、阶段、成员名称与任务，不含成员的回答），或 `'not-completed'`，或 `undefined`。Host 只把提供来源的授权给内置的工作流插件。`isWorkflowRunId` / `MAX_WORKFLOW_RUN_ID` 是运行 id 格式的唯一规则。5.4.0 新增 |
 | [服务](../../packages/extension-api/src/services.ts)、[投影](../../packages/extension-api/src/projections.ts) | stable | Schema 校验调用、Host 身份绑定、owner 读取与显式 unavailable；查询服务不能获得效果权限，效果服务的进程访问须经过已装配授权路径 |
 | [公共类型](../../packages/extension-api/src/common.ts)、[资源](../../packages/extension-api/src/resources.ts)、[工作区 hook 快照](../../packages/extension-api/src/workspace-hooks.ts) | stable | Session/lease/logger/platform/enforcement 事实、资源种类与不可变调用配置；事实不是授权 |
 | [Extension 错误](../../packages/extension-api/src/errors.ts)、[版本](../../packages/extension-api/src/version.ts)、[范围 helper](../../packages/extension-api/src/api-range.ts) | stable | 闭合 `EXTENSION_ERROR_CODES`、`ExtensionError`/guard、版本常量与支持的范围语法；不是 provider 或基础设施失败的统一包装 |

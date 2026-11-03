@@ -3635,7 +3635,11 @@
                 "properties": {
                   "op": { "enum": ["upsert", "delete"] },
                   "kind": { "enum": ["prompt", "memory", "skill", "subagent"] },
-                  "id": { "type": "string", "maxLength": 128 }
+                  "id": { "type": "string", "maxLength": 128 },
+                  "workflow": {
+                    "description": "A skill generated from a finished `workflow` run of this session.",
+                    "const": true
+                  }
                 }
               }
             },
@@ -3669,7 +3673,11 @@
                 "conflict",
                 "approval-expired",
                 "user-memory-budget",
-                "model-cannot-write-user"
+                "model-cannot-write-user",
+                "workflow-run-unavailable",
+                "workflow-run-not-completed",
+                "workflow-definition-too-large",
+                "workflow-already-saved"
               ]
             },
             "initiator": {
@@ -5572,12 +5580,16 @@
             "entryId": { "type": "string", "minLength": 1, "maxLength": 4096 },
             "contentHash": { "type": "string", "minLength": 1, "maxLength": 4096 },
             "runId": { "type": "string", "minLength": 1, "maxLength": 4096 },
-            "initiator": { "enum": ["auto", "user", "model"] }
+            "initiator": { "enum": ["auto", "user", "model"] },
+            "fromWorkflow": {
+              "description": "A skill generated from a finished `workflow` run; its `contentHash` is then the hash of the run's normalised definition.",
+              "const": true
+            }
           }
         },
         "outcome": { "enum": ["saved", "installed", "awaiting-approval", "refused", "unknown"] },
         "reason": {
-          "description": "Why a save was refused. Known values: refinement-off, user-revoked, unconfirmed, source-rules, static-check, memory-off, memory-full, unsupported-provider, subagent-review-unavailable, child-session, unavailable, conflict, approval-expired, user-memory-budget. Open: a later release may add reasons, so treat an unknown one as a refusal.",
+          "description": "Why a save was refused. Known values: refinement-off, user-revoked, unconfirmed, source-rules, static-check, memory-off, memory-full, unsupported-provider, subagent-review-unavailable, child-session, unavailable, conflict, approval-expired, user-memory-budget, model-cannot-write-user, workflow-run-unavailable, workflow-run-not-completed, workflow-definition-too-large, workflow-already-saved. Open: a later release may add reasons, so treat an unknown one as a refusal.",
           "type": "string",
           "minLength": 1,
           "maxLength": 64
@@ -5769,6 +5781,10 @@
         "state": { "enum": ["active", "review-disabled"] },
         "reviewAfter": { "type": "integer", "minimum": 0 },
         "initiator": { "enum": ["auto", "user", "model"] },
+        "workflow": {
+          "description": "The skill was generated from a finished `workflow` run and carries its definition.",
+          "const": true
+        },
         "previous": {
           "type": "array",
           "maxItems": 16,

@@ -85,6 +85,9 @@ export function createEcosystemContexts(
       ...(grant.taskScope
         ? { provideTaskScope: (source) => refinement.provideTaskScope(extensionId, source) }
         : {}),
+      ...(grant.workflowRuns
+        ? { provideWorkflowRuns: (source) => refinement.provideWorkflowRuns(extensionId, source) }
+        : {}),
       ...(grant.privacyTrajectory && privacyTrajectory.current
         ? { privacyTrajectory: privacyTrajectory.current }
         : {}),

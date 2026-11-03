@@ -164,7 +164,10 @@ export function skillWorkspace(dirs: string[]) {
           String(params.name),
           params.draft as SkillDraft,
           { revision: String(params.expectedRevision) },
-          params.enable === undefined ? {} : { enable: params.enable === true },
+          {
+            ...(params.enable === undefined ? {} : { enable: params.enable === true }),
+            ...(params.source === undefined ? {} : { source: params.source as never }),
+          },
         )
         return { ok: true, ...result }
       }

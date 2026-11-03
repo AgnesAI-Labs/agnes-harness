@@ -46,9 +46,13 @@ function changes(node: RefinementRun, t: Translate): string {
     (node.edits ?? []).filter((edit) => edit.op === op).map((edit) => `${edit.kind}/${edit.id}`)
   const saved = named('upsert')
   const removed = named('delete')
+  const workflow = (node.edits ?? [])
+    .filter((edit) => edit.workflow === true)
+    .map((edit) => `${edit.kind}/${edit.id}`)
   return [
     saved.length > 0 ? t('timeline.refinement.saved', { names: saved.join(', ') }) : '',
     removed.length > 0 ? t('timeline.refinement.removed', { names: removed.join(', ') }) : '',
+    workflow.length > 0 ? t('timeline.refinement.workflow', { names: workflow.join(', ') }) : '',
   ]
     .filter(Boolean)
     .join(' ')

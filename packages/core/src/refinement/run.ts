@@ -13,6 +13,7 @@ import {
   type RefinementTrigger,
   type RefinementWorkspaceConfirmation,
 } from '@agnes/core-ledger/reduce/state'
+import { isWorkflowRunId } from '@agnes/extension-api'
 import { estimateTokens } from '../execution/model-tokens.js'
 import { resolveModel } from '../execution/turn/inference.js'
 import { sessionIdentity } from '../loop/scope.js'
@@ -25,10 +26,10 @@ import { rankEntries } from '../request/rank-entries.js'
 import { sysEvent } from '../step/events.js'
 import type { SessionImpl } from '../step/session.js'
 import { changedEntries, freezeEvidence } from './evidence.js'
-import { asksForAnything, withoutEntries } from './plan-restrict.js'
+import { asksForAnything, droppedEdits, withoutEntries } from './plan-restrict.js'
 import { grantReach } from './reach.js'
 import { redactEvidence } from './redact.js'
-import { isReference, unavailableReferences } from './references.js'
+import { isReference } from './references.js'
 import { readTaskScope } from './task-scope.js'
 import {
   type EvidenceSnapshot,
@@ -365,12 +366,13 @@ export function settleRefinementRun(
     let [state, facts] = verdict(s, run, result, deps, lapsedKeys(await validEntries(s)))
     // A skill or role an edit is bound to that cannot be used now: that edit is dropped, the others stay;
     // the plan is refused only when nothing else is left.
-    const unusable =
-      state === 'proposed' && facts.plan ? await unavailableReferences(s, facts.plan.edits) : []
-    if (unusable.length && facts.plan) {
-      const plan = withoutEntries(facts.plan, new Set(unusable))
+    // The same goes for a skill edit that names a workflow run this session does not hold, or that did
+    // not finish.
+    const dropped = state === 'proposed' && facts.plan ? await droppedEdits(s, facts.plan.edits) : undefined
+    if (dropped?.keys.size && facts.plan) {
+      const plan = withoutEntries(facts.plan, dropped.keys)
       if (asksForAnything(plan)) facts = { ...facts, plan }
-      else [state, facts] = ['rejected', { reason: 'reference-unavailable', detail: unusable.join(' ') }]
+      else [state, facts] = ['rejected', { reason: dropped.reason, detail: [...dropped.keys].join(' ') }]
     }
     // A plan that holds is given its levels: each lesson as the evidence it cites allows, bound to the
     // current goal or recorded as expired without one.
@@ -447,6 +449,7 @@ const UPSERT_KEYS = [
   // Accepted but ignored: earlier planners quoted the request to back a session lesson.
   'quote',
   'reference',
+  'workflowRun',
   'reach',
 ]
 
@@ -638,7 +641,11 @@ function checkedEdit(
     (raw.applicability !== 'task' && raw.applicability !== 'session') ||
     (raw.quote !== undefined && !str(raw.quote, 2000, 1)) ||
     (raw.reach !== undefined && raw.reach !== 'workspace' && raw.reach !== 'user') ||
-    (raw.reference !== undefined && !isReference(kind, raw.reference))
+    (raw.reference !== undefined && !isReference(kind, raw.reference)) ||
+    // A workflow run turns a skill into a definition the host writes; a skill bound to an approved
+    // resource is only a pointer to it, so the two never go together.
+    (raw.workflowRun !== undefined &&
+      (kind !== 'skill' || raw.reference !== undefined || !isWorkflowRunId(raw.workflowRun)))
   )
     return invalid(where)
   // Only a prompt or memory lesson can be promoted to user memory.
@@ -657,6 +664,7 @@ function checkedEdit(
     applicability: raw.applicability,
     evidenceSeqs,
     ...(raw.reference === undefined ? {} : { reference: raw.reference }),
+    ...(raw.workflowRun === undefined ? {} : { workflowRun: raw.workflowRun as string }),
     ...(raw.reach === 'user' ? { reach: 'user' as const } : {}),
   }
 }

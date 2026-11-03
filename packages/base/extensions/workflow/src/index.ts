@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import type { ToolContext } from '@agnes/extension-api'
+import type { ToolContext, WorkflowRunSource } from '@agnes/extension-api'
 import { type Context, defineAgnesPlugin, defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import { renderInteractionSurface, tableSurface } from '../../../src/interaction-surfaces.js'
 import { WORKFLOW_RECEIPT_RULE, workflowReceipts } from './receipts.js'
+import { workflowRunSource } from './source.js'
 import { type Run, type State, workflowProjection } from './state.js'
 
 const member = Type.Object(
@@ -83,7 +84,7 @@ async function renderRun(ctx: ToolContext, run: Run) {
   )
 }
 
-export default defineAgnesPlugin({
+const workflowPlugin = defineAgnesPlugin({
   inject: ['tools', 'hooks', 'projections', 'eventLog'],
   apply(plugin: Context) {
     const disposers = [plugin.projections.register(workflowProjection)]
@@ -311,3 +312,30 @@ export default defineAgnesPlugin({
     }
   },
 })
+
+export default workflowPlugin
+
+export type WorkflowExtensionDeps = {
+  /**
+   * Offers the workflow runs of a session to the Host as the `runs` projection and its reader, so a
+   * finished run can be kept as a skill; granted to this plugin only. Returns what withdraws the offer.
+   */
+  provideWorkflowRuns?: (source: WorkflowRunSource) => () => void
+}
+
+/** The workflow plugin, with its run records offered to the Host when the Host grants it. */
+export function createWorkflowExtension(deps: WorkflowExtensionDeps = {}) {
+  const offer = deps.provideWorkflowRuns
+  if (!offer) return workflowPlugin
+  return defineAgnesPlugin({
+    inject: ['tools', 'hooks', 'projections', 'eventLog'],
+    apply(plugin: Context) {
+      const stop = workflowPlugin.apply(plugin)
+      const withdraw = offer(workflowRunSource)
+      return () => {
+        withdraw()
+        if (typeof stop === 'function') stop()
+      }
+    },
+  })
+}

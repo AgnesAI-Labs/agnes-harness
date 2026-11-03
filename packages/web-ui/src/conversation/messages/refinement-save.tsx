@@ -20,6 +20,10 @@ const REASONS = new Set([
   'approval-expired',
   'user-memory-budget',
   'model-cannot-write-user',
+  'workflow-run-unavailable',
+  'workflow-run-not-completed',
+  'workflow-definition-too-large',
+  'workflow-already-saved',
 ])
 /** The outcomes a promotion to user memory can have; any other is said as for the workspace. */
 const USER_STATES = new Set(['saved', 'refused', 'unknown'])

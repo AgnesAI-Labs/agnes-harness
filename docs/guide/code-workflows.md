@@ -37,6 +37,8 @@ return await tools.workflow({
 })
 ```
 
+A staged `workflow` that finished with every member completed can be kept as a workspace skill by a task experience review, so the next similar task reuses the same stages; see [Workflows saved as skills](refinement.md#workflows-saved-as-skills). The `workflow` tool itself does not change, and `workflow` does not merge the members' worktrees: members that write the same file overwrite each other.
+
 A cell requires approval under the ordinary approval policy. Nested tools also
 pass through validation, approval, budget and depth checks. Up to four bridge
 calls may run concurrently; a cell accepts at most 256 calls. Cells respect the
