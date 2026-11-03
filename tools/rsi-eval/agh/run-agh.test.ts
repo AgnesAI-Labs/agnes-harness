@@ -61,7 +61,7 @@ type Call =
   | { op: 'launch'; input: LaunchInput }
   | { op: 'open'; key: string; workspace: string }
   | { op: 'prompt'; key: string; text: string }
-  | { op: 'review'; key: string }
+  | { op: 'review'; key: string; saveTo?: 'workspace' }
   | { op: 'settled'; key: string; runId: string; ms: number }
   | { op: 'close-session'; key: string }
   | { op: 'close-host' }
@@ -94,8 +94,8 @@ function stubLaunch(calls: Call[], script: Script = {}) {
             if (end !== 'hang') return Promise.resolve(end)
             return new Promise((resolve) => signal.addEventListener('abort', () => resolve('cancelled')))
           },
-          review: async () => {
-            calls.push({ op: 'review', key })
+          review: async (saveTo) => {
+            calls.push({ op: 'review', key, ...(saveTo ? { saveTo } : {}) })
             return script.review ?? { runId: `run-${++reviews}` }
           },
           settled: async (runId, ms) => {
@@ -311,6 +311,46 @@ describe('run-agh', () => {
     expect((await run(t, 'off', [])).alignment).toBeUndefined()
     const cross = task('cross-session', [['a'], ['b']])
     expect((await run(cross, 'on', [], {}, 2)).alignment).toBeUndefined()
+  })
+
+  it('ends the first session of an on workflow run with the save to the workspace, in place of the last review', async () => {
+    const t = task('workflow', [
+      ['a', 'b', 'c'],
+      ['d', 'e', 'f'],
+    ])
+    const on: Call[] = []
+    const outcome = await run(t, 'on', on)
+    const reviews = on.flatMap((c) => (c.op === 'review' ? [c] : []))
+    expect(reviews.map((c) => `${c.key.slice(-2)}:${c.saveTo ?? '-'}`)).toEqual([
+      's1:-',
+      's1:-',
+      's1:workspace',
+      's2:-',
+      's2:-',
+      's2:-',
+    ])
+    // The save is sent, so the run is not marked auto-only.
+    expect(outcome.alignment).toBeUndefined()
+    const off: Call[] = []
+    await run(t, 'off', off)
+    expect(off.some((c) => c.op === 'review')).toBe(false)
+  })
+
+  it('records why the host refused the workspace save, and only that refusal', async () => {
+    const t = task('workflow', [
+      ['a', 'b', 'c'],
+      ['d', 'e', 'f'],
+    ])
+    const refused = await run(t, 'on', [], { review: { refused: 'unpriced' } })
+    expect(refused.saveRefused).toBe('unpriced')
+    expect(refused.sessions).toHaveLength(2)
+    expect(Object.keys(refused.sessions[0] ?? {}).sort()).toEqual([
+      'exitCode',
+      'sessionFiles',
+      'stdoutFile',
+      'timedOut',
+    ])
+    expect((await run(t, 'on', [], {}, 2)).saveRefused).toBeUndefined()
   })
 
   it('asks for one review after each prompt and waits for it when on, and none when off', async () => {

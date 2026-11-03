@@ -77,6 +77,9 @@ export function primeModels(cfg: RunConfig, id: string): object {
 export const mountPoint = (task: EvalTask, sessionIndex: number): string =>
   `/${workspaceName(fixtureOf(task, sessionIndex))}`
 
+/** Workflow tasks need the `workflow` tool, which Prime does not have; they run on AGH only. */
+export const primeTasks = (tasks: EvalTask[]): EvalTask[] => tasks.filter((t) => t.category !== 'workflow')
+
 /** The tasks whose first session ends with a save that outlives the workspace. */
 const CARRIES_OVER: ReadonlySet<EvalTask['category']> = new Set(['cross-session', 'cross-workspace'])
 
@@ -349,9 +352,13 @@ async function main(argv: string[]): Promise<void> {
     import('../usage-proxy.js'),
   ])
   const tasksDir = resolve(values['tasks-dir'] as string)
-  let tasks = loadSuite(tasksDir)
+  const suite = loadSuite(tasksDir)
+  let tasks = primeTasks(suite)
   if (values.tasks) {
     const wanted = values.tasks.split(',').map((s) => s.trim())
+    const workflow = wanted.filter((id) => suite.some((t) => t.id === id && t.category === 'workflow'))
+    if (workflow.length > 0)
+      throw new Error(`these tasks need the workflow tool, which Prime does not have: ${workflow.join(', ')}`)
     const missing = wanted.filter((id) => !tasks.some((t) => t.id === id))
     if (missing.length > 0) throw new Error(`unknown task ids: ${missing.join(', ')}`)
     tasks = tasks.filter((t) => wanted.includes(t.id))

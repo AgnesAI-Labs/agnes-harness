@@ -98,6 +98,11 @@ const docFiles = (root: string, dir = root): string[] =>
  * alone makes its checks pass. For a cross-workspace task the second fixture's documentation must
  * not match a trap signature: the lesson has to come from the first workspace. Everything runs in
  * throwaway copies of the fixtures outside any git repository; the real fixtures are never touched.
+ *
+ * The runners check every prompt only after all sessions ended, in the workspace the sessions share.
+ * So a last step makes a fresh copy of each fixture, runs the solutions of every prompt that uses it in
+ * order, and requires every one of those prompts' checks to pass in that final state: a later prompt
+ * or session must not undo what an earlier check looks for.
  */
 export const selfCheckTask = async (
   task: EvalTask,
@@ -182,6 +187,43 @@ export const selfCheckTask = async (
           else if (!checkPasses(result, prompt.checks[index]?.contains ?? '')) {
             problems.push(
               `${label} check ${index} still fails after the solution: ${result.output.trim().slice(0, 200)}`,
+            )
+          }
+        }
+      }
+    }
+
+    for (const fixture of fixtures) {
+      const prompts = task.sessions.flatMap((session, sessionIndex) =>
+        sessionFixture(session) === fixture
+          ? session.prompts.map((prompt, promptIndex) => ({
+              prompt,
+              label: `session ${sessionIndex} prompt ${promptIndex}`,
+            }))
+          : [],
+      )
+      if (prompts.length < 2) continue
+      const work = freshCopy(fixture)
+      let solved = true
+      for (const { prompt } of prompts) {
+        for (const command of prompt.solution) {
+          const result = await runCommand(command, work, home, timeoutMs)
+          if (result.timedOut || result.code !== 0) solved = false
+        }
+      }
+      // A solution that fails on its own is reported above; here only the final state matters.
+      if (!solved) {
+        problems.push(
+          `${fixture}: running every prompt's solution in order failed, so the final state could not be checked`,
+        )
+        continue
+      }
+      for (const { prompt, label } of prompts) {
+        for (const [index, check] of prompt.checks.entries()) {
+          const result = await runCommand(check.command, work, home, timeoutMs)
+          if (!checkPasses(result, check.contains)) {
+            problems.push(
+              `${label} check ${index} fails in the final state, after every prompt's solution ran: ${result.output.trim().slice(0, 200)}`,
             )
           }
         }

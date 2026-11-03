@@ -11,6 +11,7 @@ const categories: readonly Category[] = [
   'convention',
   'cross-session',
   'cross-workspace',
+  'workflow',
 ]
 
 /** The fixture a session's workspace is copied from when it names none. */
@@ -141,7 +142,8 @@ const parseTask = (raw: unknown, dirName: string): EvalTask => {
     return fixture === undefined ? { prompts } : { prompts, fixture }
   })
 
-  const expectedSessions = category === 'cross-session' || category === 'cross-workspace' ? 2 : 1
+  const expectedSessions =
+    category === 'cross-session' || category === 'cross-workspace' || category === 'workflow' ? 2 : 1
   if (sessions.length !== expectedSessions) {
     throw new Error(
       `${where}: ${category} tasks need exactly ${expectedSessions} session${expectedSessions === 1 ? '' : 's'}, got ${sessions.length}`,

@@ -2,7 +2,8 @@
 // are zero-based throughout: session 0 is the first session, so "session 2" in the design is index 1.
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import type { EvalTask, PromptWindow, RunOutcome, RunRecord, Setting } from './types.js'
+import type { EvalTask, PromptWindow, RunOutcome, RunRecord, Setting, WorkflowReuse } from './types.js'
+import { parseAghWorkflowCalls, savedDefinitions } from './workflow-reuse.js'
 
 export type { PromptWindow, RunRecord } from './types.js'
 
@@ -305,6 +306,8 @@ export type ToRunRecordOptions = {
   readFile?: (path: string) => string
   /** Session file paths are resolved against this directory when given. */
   baseDir?: string
+  /** The `SKILL.md` texts the workspace holds after the first session; none when absent. Workflow tasks only. */
+  readSavedSkills?: () => string[]
 }
 
 export const toRunRecord = (
@@ -346,6 +349,11 @@ export const toRunRecord = (
     exit = 'error'
   }
 
+  const workflowReuse =
+    task.category === 'workflow' && (options.system ?? 'prime') === 'agh'
+      ? workflowReuseOf(task, outcome, (file) => read(locate(file)), options.readSavedSkills)
+      : undefined
+
   const summary = usage.get(outcome.runId)
   const tokens = summary
     ? summary.tokens.input + summary.tokens.output + summary.tokens.cacheRead + summary.tokens.cacheWrite
@@ -368,6 +376,34 @@ export const toRunRecord = (
       costUsd: summary?.costUsd ?? 0,
     },
     ...(outcome.alignment ? { alignment: outcome.alignment } : {}),
+    ...(workflowReuse ? { workflowReuse } : {}),
+  }
+}
+
+/**
+ * What the first session of a workflow task left and the second one did with it: whether the first
+ * completed a `workflow` run, whether its workspace holds a skill with a workflow definition, and how
+ * many of the second session's `workflow` calls ran one of the saved definitions.
+ */
+const workflowReuseOf = (
+  task: EvalTask,
+  outcome: RunOutcome,
+  read: (file: string) => string,
+  readSavedSkills: (() => string[]) | undefined,
+): WorkflowReuse => {
+  const calls = (sessionIndex: number) =>
+    parseAghWorkflowCalls(
+      (outcome.sessions[sessionIndex]?.sessionFiles ?? []).map((file) => read(file)).join('\n'),
+    )
+  const first = task.sessions.length > 0 ? calls(0) : { calls: [], completed: [] }
+  const second = task.sessions.length > 1 ? calls(1) : { calls: [], completed: [] }
+  const saved = new Set(savedDefinitions(readSavedSkills?.() ?? []))
+  return {
+    firstCompleted: first.completed.length > 0,
+    saved: saved.size > 0,
+    ...(outcome.saveRefused === undefined ? {} : { saveRefused: outcome.saveRefused }),
+    calls: second.calls.length,
+    matching: second.calls.filter((definition) => saved.has(definition)).length,
   }
 }
 
@@ -385,6 +421,39 @@ export type Metrics = {
    */
   crossWorkspaceAvoided: boolean | null
   completion: number
+}
+
+/**
+ * The reuse of one workflow run, or null for a run of any other task. `excluded`: the first session
+ * never completed a `workflow` run, so there was nothing to reuse. `nothingSaved`: it did, but no saved
+ * skill carries a workflow definition. `saveRefused`: the same, but the host refused the workspace save. `reused`: at least one `workflow` call of the second session ran
+ * a saved definition.
+ */
+export type WorkflowReuseMetric =
+  | { excluded: true }
+  | {
+      excluded: false
+      /** No saved skill carries a definition, and the host did not refuse the save. */
+      nothingSaved: boolean
+      /** The host refused the workspace save (this is the reason); no saved skill carries a definition. */
+      saveRefused: string | undefined
+      calls: number
+      matching: number
+      reused: boolean
+    }
+
+export const workflowReuseMetric = (record: RunRecord): WorkflowReuseMetric | null => {
+  const w = record.workflowReuse
+  if (!w) return null
+  if (!w.firstCompleted) return { excluded: true }
+  return {
+    excluded: false,
+    nothingSaved: !w.saved && w.saveRefused === undefined,
+    saveRefused: w.saved ? undefined : w.saveRefused,
+    calls: w.calls,
+    matching: w.matching,
+    reused: w.matching > 0,
+  }
 }
 
 export const runMetrics = (record: RunRecord): Metrics => {

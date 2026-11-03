@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { EvalTask, RunConfig } from '../types.js'
-import { primeArgv, primeModels, primeSettings, runId, runOne } from './run-prime.js'
+import { primeArgv, primeModels, primeSettings, primeTasks, runId, runOne } from './run-prime.js'
 
 const KEY_ENV = 'RSI_TEST_API_KEY'
 const KEY_VALUE = 'sk-test-secret-value-123'
@@ -353,5 +353,17 @@ describe('run-prime', () => {
     })
     expect(outcome).toEqual(existing)
     expect(readFileSync(log, 'utf8')).toBe('')
+  })
+
+  it('leaves out workflow tasks: Prime has no workflow tool', () => {
+    const task = (id: string, category: EvalTask['category']): EvalTask => ({
+      id,
+      category,
+      description: 'd',
+      trap: { signatures: ['x'], reproduce: 'true', note: 'n' },
+      sessions: [{ prompts: [prompt('a'), prompt('b'), prompt('c')] }],
+    })
+    const all = [task('a', 'directory'), task('wf-a', 'workflow'), task('b', 'cross-session')]
+    expect(primeTasks(all).map((t) => t.id)).toEqual(['a', 'b'])
   })
 })
