@@ -23,11 +23,12 @@ export type RefinementEntryRef = { kind: RefinementEntryKind; id: string }
 /**
  * What a plan was built on and what must still hold when it is applied: every saved entry, by the
  * seq of the row that last wrote its cell (a delete and a re-create give a new seq, so "gone" and
- * "back again" both differ), and the settings revision.
+ * "back again" both differ), every removed one (`removed`, by the seq that recorded its removal, so
+ * "written and removed again" differs too), and the settings revision.
  */
 export type RefinementReadSet = {
   settingsRevision: string
-  entries: (RefinementEntryRef & { seq: Seq; version: number })[]
+  entries: (RefinementEntryRef & { seq: Seq; version: number; removed?: true })[]
 }
 /**
  * One evidence id the planner saw, fixed to the ledger row it stands for, with what kind of fact it
@@ -53,10 +54,16 @@ export type RefinementPlanEdit =
       quote?: string
       quoteSeqs?: Seq[]
       /**
-       * A task-level lesson planned with no active goal: it would have expired with the goal it never
-       * had, so it stays on the plan as a record and is never applied.
+       * A task-level lesson planned with no goal to bind it to: it would have expired with the goal it
+       * never had, so it stays on the plan as a record and is never applied.
        */
       expired?: true
+      /** The goal a task-level lesson is bound to; it expires when that goal is completed or replaced. */
+      taskScope?: { id: string; revision: number }
+      /** Asked for at session level but without the evidence that grants it, so kept at task level. */
+      downgraded?: true
+      /** The evidence identities that granted session level; they never count as confirmations. */
+      usedEvidence?: string[]
     }
   | { op: 'delete'; kind: RefinementEntryKind; id: string; evidenceSeqs: Seq[] }
 /** A validated plan, with every evidence id already replaced by its fixed seq. */
@@ -65,10 +72,25 @@ export type RefinementPlan = {
   rationale: string
   expectedOutcome: string
   edits: RefinementPlanEdit[]
-  confirmations: (RefinementEntryRef & { evidenceSeqs: Seq[]; quote?: string; quoteSeqs?: Seq[] })[]
+  confirmations: (RefinementEntryRef & {
+    evidenceSeqs: Seq[]
+    quote?: string
+    quoteSeqs?: Seq[]
+    /** The evidence that makes this a confirmation, checked when the plan settled; absent, it counts nothing. */
+    confirmedBy?: { identity: string; seq: Seq }
+  })[]
   evidenceSeqs: Seq[]
-  /** The version each touched existing entry had when it was shown in full. */
-  baseline: (RefinementEntryRef & { version: number })[]
+  /**
+   * The version each touched entry had when it was shown in full, and its mutation token then (`seq`:
+   * the row that set its cell, or recorded its removal; 0 for an id never written). Rows written
+   * before the token was recorded carry the version alone.
+   */
+  baseline: (RefinementEntryRef & { version: number; seq?: Seq })[]
+  /**
+   * Entries an upsert replaces without a read because they were no longer in force (their task had
+   * ended). The apply refuses the plan if any of them is in force again.
+   */
+  lapsed?: RefinementEntryRef[]
 }
 
 /** A run as its rows fold: the latest state and every fact recorded on the way. */

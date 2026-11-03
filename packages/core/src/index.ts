@@ -260,13 +260,18 @@ export type { ApplyLimits } from './refine/apply.js'
 export { rollbackRefine } from './refine/apply.js'
 export {
   type DirectProposal,
+  type InspectAnswer,
+  type InspectOutcome,
+  type InspectRequest,
   type RefinementDeps,
   type RefinementFacade,
   type RefinementOutcome,
   type RefinementRefusal,
   type RefinementSettingsView,
+  type RollbackResult,
   refinementFacade,
 } from './refinement/facade.js'
+export type { TaskScope } from './refinement/task-scope.js'
 export type { RefinementCandidate, RefinementTriggerSink } from './refinement/triggers.js'
 export type {
   PlannerEntry,

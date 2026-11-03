@@ -76,6 +76,9 @@ export function createEcosystemContexts(
       ...(grant.refinementSettings
         ? { refinementSettings: refinementView, refinementRuns: (planner) => refinement.connect(planner) }
         : {}),
+      ...(grant.taskScope
+        ? { provideTaskScope: (source) => refinement.provideTaskScope(extensionId, source) }
+        : {}),
       ...(grant.privacyTrajectory && privacyTrajectory.current
         ? { privacyTrajectory: privacyTrajectory.current }
         : {}),

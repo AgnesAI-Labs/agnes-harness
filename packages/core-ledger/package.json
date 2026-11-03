@@ -29,6 +29,7 @@
     "./project/usage": "./src/project/usage.ts",
     "./reduce/chunked-map": "./src/reduce/chunked-map.ts",
     "./reduce/reducer": "./src/reduce/reducer.ts",
+    "./reduce/refinement-entry-meta": "./src/reduce/refinement-entry-meta.ts",
     "./reduce/refinement-run": "./src/reduce/refinement-run.ts",
     "./reduce/shapes": "./src/reduce/shapes.ts",
     "./reduce/state": "./src/reduce/state.ts",

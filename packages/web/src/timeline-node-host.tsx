@@ -30,6 +30,10 @@ export interface TimelineNodeHostProps {
   resources?: ClientResourceService
   onFork?: (turn: UITurn) => Promise<void>
   turnErrorActions?: import('@agnes/web-ui/conversation').TurnErrorActions
+  onWithdrawRefinement?: (
+    sessionId: string,
+    appliedSeq: number,
+  ) => Promise<import('@agnes/web-ui/conversation').RefinementWithdrawOutcome>
   markdownRenderer?: 'legacy' | 'xmarkdown'
   voice?: VoicePort
 }
@@ -45,6 +49,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
     resources,
     onFork,
     turnErrorActions,
+    onWithdrawRefinement,
     markdownRenderer,
     voice,
   },
@@ -223,6 +228,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
           {...(projection.turns ? { turns: projection.turns } : {})}
           {...(onFork ? { onFork } : {})}
           {...(turnErrorActions ? { turnErrorActions } : {})}
+          {...(onWithdrawRefinement ? { onWithdrawRefinement } : {})}
           {...(claim ? { claim } : {})}
           {...(session ? { session } : {})}
           {...(locale ? { locale } : {})}

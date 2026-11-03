@@ -39,6 +39,7 @@ export type SessionMethod =
   | 'feedback.draft'
   | 'btw'
   | 'refine'
+  | 'refineRollback'
   | 'voice.transcribe'
   | 'voice.speak'
   | 'ui.action'

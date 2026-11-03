@@ -23,6 +23,8 @@ import { approveAndExecute } from '../execution/turn/tools.js'
 import { unrecordedParkEvents } from '../execution/turn/unknown-outcome.js'
 import { hasCompleteToolPolicyEnvelope } from '../registry/tool-policy.js'
 import type { DeriveOutput } from '../request/derive.js'
+import { type ExperienceStamp, experienceStamp } from '../request/experience.js'
+import { loopRequestStale } from '../request/experience-dispatch.js'
 import { toProviderRequest } from '../request/to-provider.js'
 import { runCompaction } from '../step/compaction.js'
 import { finishAborted } from '../step/control.js'
@@ -132,7 +134,10 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       })
     }
   }
-  const prepared = new WeakMap<LoopRequest, { output: DeriveOutput; turnId: number; invocationId: string }>()
+  const prepared = new WeakMap<
+    LoopRequest,
+    { output: DeriveOutput; turnId: number; invocationId: string; stamp?: ExperienceStamp }
+  >()
   const invocations = new LoopInvocations(s, () => checkpoint)
   const resumingTools = new Set<string>()
   async function prepareRequest(options: LoopRequestOptions = {}): Promise<LoopRequest> {
@@ -142,6 +147,8 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       const op = requireOp()
       if (!s.turn) await s.rehydrateTurn(op)
       await announced.answerStranded()
+      // Taken before deriving: a change meanwhile refuses the request rather than letting it pass.
+      const stamp = options.messages ? undefined : experienceStamp(s)
       const output = await prepareInferenceRequest(s, options)
       if ('phase' in output)
         throw new CoreError('E_BUDGET', 'Request preparation stopped the turn', { reason: output.reason })
@@ -152,6 +159,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         output,
         turnId: op.meta.turn,
         invocationId: options.invocationId ?? s.d.ids.effectId(),
+        ...(stamp ? { stamp } : {}),
       })
       return request
     } finally {
@@ -178,6 +186,9 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         for (const event of result) yield event
         return
       }
+      // Prepared before task experience changed (an entry withdrawn, the switch off): never sent.
+      if (await loopRequestStale(s, binding.stamp, binding.output.notes))
+        throw new CoreError('E_REQUEST_FROZEN', 'Task experience changed; prepare the request again')
       await ensureStep(true, false)
       const admitted = await admitInferenceRequest(s, binding.output, true)
       if ('phase' in admitted)

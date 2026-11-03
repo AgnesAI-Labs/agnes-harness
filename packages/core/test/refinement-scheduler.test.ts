@@ -47,6 +47,9 @@ const NOOP = JSON.stringify({
   confirmations: [],
   evidenceIds: [],
 })
+/** A verbatim part of the request the lesson cites (`e1`), which grants it session level. */
+const QUOTE = 'read file b, not a'
+const REQUEST = `first task: ${QUOTE}`
 const LESSON = JSON.stringify({
   summary: 'Read b.',
   rationale: 'The first read failed.',
@@ -60,6 +63,7 @@ const LESSON = JSON.stringify({
       content: ENTRY,
       applicability: 'session',
       evidenceIds: ['e1'],
+      quote: QUOTE,
     },
   ],
   confirmations: [],
@@ -314,7 +318,7 @@ describe('task-level lessons', () => {
       evidenceIds: ['e1'],
     })
     const t = await open({ plans: [{ text: JSON.stringify(plan) }] })
-    expect(await t.say('first task')).toMatchObject({ reason: 'completed' })
+    expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
     const id = runId(await t.facade.request({ kind: 'manual', seq: t.session.lastSeq }))
     await vi.waitFor(() => expect(t.state(id)).toBe('applied'))
     const run = t.session.state.refinementRuns.get(id)
@@ -422,7 +426,7 @@ describe('scheduling plans', () => {
   it('turning refinement off mid-plan drops the late result', async () => {
     const answer = gate()
     const t = await open({ plans: [{ text: LESSON, gate: answer.wait }] })
-    expect(await t.say('first task')).toMatchObject({ reason: 'completed' })
+    expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
     const id = runId(await t.facade.request({ kind: 'manual', seq: t.session.lastSeq }))
     await vi.waitFor(() => expect(t.planned).toHaveLength(1))
     t.sw.enabled = false
@@ -619,15 +623,18 @@ describe('scheduling plans', () => {
 })
 
 describe('direct proposals', () => {
-  it('create only new entries; changing a saved one needs a read first', async () => {
+  it('create new entries; changing or deleting a saved one needs a read first', async () => {
     const t = await parked()
     await t.facade.afterTurn()
     expect(t.state(t.id)).toBe('applied')
     const seq = await t.lastUserSeq()
     expect(await t.facade.propose(proposal(seq))).toEqual({ refused: 'read-first', detail: 'memory/read-b' })
     expect(
+      await t.facade.propose({ ...proposal(seq), edits: [{ op: 'delete', kind: 'memory', id: 'read-b' }] }),
+    ).toEqual({ refused: 'read-first', detail: 'memory/read-b' })
+    expect(
       await t.facade.propose({ ...proposal(seq), edits: [{ op: 'delete', kind: 'memory', id: 'other' }] }),
-    ).toEqual({ refused: 'read-first', detail: 'memory/other' })
+    ).toEqual({ refused: 'not-found', detail: 'memory/other' })
     const tooMany = Array.from({ length: 6 }, (_, i) => ({ ...edit, id: `e${i}` }))
     expect(await t.facade.propose({ ...proposal(seq), edits: tooMany })).toMatchObject({ refused: 'invalid' })
     const long = [{ ...edit, id: 'long', content: 'x'.repeat(2001) }]

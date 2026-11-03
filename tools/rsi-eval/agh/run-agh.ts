@@ -1,0 +1,492 @@
+// Runs the eval tasks through AGH, unattended, with task experience (refinement) on and off.
+//
+// COST WARNING: this calls a real model and spends money on the account behind the key. Run it
+// only after the owner has approved the spend. See "Cost" below for what drives it.
+//
+// Usage, from the repository root (build once first, as for the loop bench):
+//
+//   pnpm install --frozen-lockfile
+//   pnpm --filter @agnes/host build:native
+//   pnpm --filter @agnes/system-node build:native
+//   export RSI_EVAL_API_KEY=...            # the variable named by keyEnv in the run config
+//   pnpm exec tsx tools/rsi-eval/agh/run-agh.ts --config <run-config.json> --out <dir> \
+//     [--tasks a,b] [--reps 5] [--settings on,off] [--tasks-dir <dir>]
+//   pnpm exec tsx tools/rsi-eval/report.ts --run-dir <dir> --config <run-config.json>
+//
+// The run config is the one the Prime runner takes (run-config.example.json): the same route, model,
+// prices, proxy port and session timeout, so the two systems are measured the same way. `provider`
+// becomes the AGH route name (lower case letters, digits and dashes) and `api` must be an API AGH
+// speaks (for example anthropic-messages or openai-completions). The run config has no context
+// window, so the model is declared with 200,000 tokens of context and 8,192 of output. Keep --out
+// outside any git repository. The task commands and checks need bash, python3 and make on PATH.
+//
+// What one run is: a task, a setting and a repetition. Each run gets a home of its own under
+// <out>/<runId>/home (its data dir, sessions.db and the refinement switch live there, never in your
+// AGH_HOME) and a throwaway copy of the task fixture outside any git repository, copied to
+// <out>/<runId>/work at the end. The host is embedded in this process. Model traffic goes through the
+// usage proxy at /run/<runId>/ like the Prime runs, so report.ts prices both the same way.
+//
+// On: the switch on, mode "manual and automatic", and after every prompt one manual review (the
+// request `/refine` makes), waited for before the next prompt, as the Prime runs send `/refine`
+// after every prompt. Every approval is given, as Prime runs without asking. AGH keeps entries per session, so the second session of a
+// cross-session task starts empty. Off: no switch file at all, which is the default.
+//
+// The key: read only from the environment variable named by keyEnv, never written to a file or
+// printed. It is handed to the host in this process's environment as the secret the route refers
+// to; commands the agent runs get a fixed small environment without it.
+//
+// Cost: every prompt is a full agent turn on the main model; with refinement on, each prompt adds
+// one review (input up to about 8,192 tokens, output up to 1,024, at most 65,536 tokens per
+// session) plus the experience notes in later requests; the host also names each session with one
+// short call. The total grows with tasks x prompts x reps x 2 settings.
+
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, parse, relative, resolve } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { parseArgs } from 'node:util'
+import { readConfig, runId } from '../prime/run-prime.js'
+import type { EvalTask, RunConfig, RunOutcome, Setting } from '../types.js'
+
+const defaultTasksDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'tasks')
+
+/** The profile every run's home uses. */
+export const PROFILE = 'local-dev'
+/** The secret the route names; the host resolves it from `SECRET_ENV` in this process. */
+export const SECRET_REF = 'secret://rsi-eval/key'
+/** How the host's environment secrets read `SECRET_REF`: AGNES_SECRET_<NS>_<NAME>, upper case. */
+export const SECRET_ENV = 'AGNES_SECRET_RSI_EVAL_KEY'
+/** Longest wait for one manual review to finish: the manual planner deadline (90 s) and some room. */
+export const REFINE_WAIT_MS = 180_000
+const CHECK_TIMEOUT_MS = 120_000
+const ROUTE = /^[a-z0-9][a-z0-9-]{0,63}$/
+
+// ------------------------------------------------------------------ what the runner needs of a host
+
+/** The refinement switch of a run, as the settings panel would save it; absent means never saved (off). */
+export type RefinementSwitch = { enabled: true; mode: 'auto' }
+
+export type LaunchInput = {
+  /** A directory that does not exist yet; the launcher makes it the run's home. */
+  home: string
+  profile: string
+  /** Written as the profile file: the one route, pointing at the usage proxy. */
+  profileDocument: object
+  refinement: RefinementSwitch | undefined
+  /** The workspace sessions run in. */
+  workspace: string
+  model: { route: string; model: string }
+  /** The environment the host gets: AGH_HOME is the run's home. */
+  env: Record<string, string | undefined>
+}
+
+/** One event of a session's ledger, every lane, as it is written to the run's session file. */
+export type LedgerRow = {
+  seq: number
+  ts: string
+  type: string
+  lane: string | null
+  origin: string | null
+  data: unknown
+}
+
+export type ReviewAnswer = { runId: string } | { refused: string }
+
+export interface AghSession {
+  readonly key: string
+  /** One turn; resolves with how it ended (`completed`, `failed`, ...). */
+  prompt(text: string, signal: AbortSignal): Promise<string>
+  /** Asks for one manual review of this session. */
+  review(): Promise<ReviewAnswer>
+  /** The review's final state, or undefined when it has none within `ms`. */
+  settled(runId: string, ms: number): Promise<string | undefined>
+  close(): Promise<void>
+}
+
+export interface AghHost {
+  openSession(sessionKey: string): Promise<AghSession>
+  close(): Promise<void>
+  /** Every row of a session's ledger, read after `close`. */
+  ledger(sessionKey: string): LedgerRow[]
+}
+
+export type Launch = (input: LaunchInput) => Promise<AghHost>
+/** Runs one check in the workspace: true when it passes. */
+export type CheckRun = (
+  check: { command: string; contains: string },
+  cwd: string,
+  home: string,
+  timeoutMs: number,
+) => Promise<boolean>
+
+export type AghRunOptions = {
+  launch: Launch
+  /** Directory copied into the workspace. Defaults to `<tasksDir>/<task.id>/fixture`. */
+  fixtureDir?: string
+  /** Where throwaway workspaces are made; must be outside any git repository. Defaults to the temp dir. */
+  workBase?: string
+  /** Runs one check; defaults to bash with a small fixed environment, as the task self-check does. */
+  runCheck?: CheckRun
+}
+
+// ------------------------------------------------------------------ pure parts
+
+export type AghArgs = {
+  config: string
+  out: string
+  tasks?: string[]
+  reps: number
+  settings: Setting[]
+  tasksDir: string
+}
+
+export const USAGE =
+  'usage: run-agh.ts --config <run-config.json> --out <dir> [--tasks a,b] [--reps 5] [--settings on,off] [--tasks-dir <dir>]'
+
+export function parseAghArgs(argv: string[]): AghArgs {
+  const { values } = parseArgs({
+    args: argv,
+    options: {
+      config: { type: 'string' },
+      out: { type: 'string' },
+      tasks: { type: 'string' },
+      reps: { type: 'string', default: '5' },
+      settings: { type: 'string', default: 'on,off' },
+      'tasks-dir': { type: 'string', default: defaultTasksDir },
+    },
+  })
+  if (!values.config || !values.out) throw new Error(USAGE)
+  const reps = Number(values.reps)
+  if (!Number.isInteger(reps) || reps < 1) throw new Error('--reps must be a positive integer')
+  const settings = (values.settings as string).split(',').map((s) => s.trim())
+  for (const s of settings) if (s !== 'on' && s !== 'off') throw new Error(`unknown setting "${s}"`)
+  return {
+    config: values.config,
+    out: values.out,
+    ...(values.tasks ? { tasks: values.tasks.split(',').map((s) => s.trim()) } : {}),
+    reps,
+    settings: settings as Setting[],
+    tasksDir: values['tasks-dir'] as string,
+  }
+}
+
+/** The key from the variable the run config names; a clear error, without any value, when it is missing. */
+export function requireKey(cfg: RunConfig, env: Record<string, string | undefined>): string {
+  const key = env[cfg.keyEnv]
+  if (key === undefined || key.trim() === '')
+    throw new Error(
+      `environment variable ${cfg.keyEnv} (run-config keyEnv) is not set in this shell; it must hold the model key`,
+    )
+  return key
+}
+
+/** The run config's route name must be a valid AGH route name. */
+export function checkRoute(cfg: RunConfig): void {
+  if (!ROUTE.test(cfg.provider))
+    throw new Error(
+      `run-config: "provider" (${cfg.provider}) must match ${ROUTE.source} to name an AGH route`,
+    )
+}
+
+/** The model record AGH needs; context and output sizes are fixed defaults (the run config has none). */
+function modelRecord(cfg: RunConfig, baseUrl: string): object {
+  return {
+    id: cfg.model,
+    name: cfg.model,
+    api: cfg.api,
+    route: cfg.provider,
+    baseUrl,
+    reasoning: false,
+    input: ['text'],
+    cost: { ...cfg.prices },
+    contextWindow: 200_000,
+    maxTokens: 8_192,
+    toolCallFormats: ['native'],
+    thinkingReplay: 'native',
+    contract_id: null,
+  }
+}
+
+/**
+ * The profile file of one run: one route, at the usage proxy's run path, whose key is the secret
+ * `SECRET_REF` read from the environment. It names the secret; it never holds the key.
+ */
+export function aghProfile(cfg: RunConfig, id: string): object {
+  const baseUrl = `http://127.0.0.1:${cfg.proxyPort}/run/${id}/`
+  return {
+    name: PROFILE,
+    adapters: { secrets: { kind: 'env' } },
+    provider: {
+      package: '@agnes/ai',
+      routes: [
+        {
+          route: cfg.provider,
+          api: cfg.api,
+          baseUrl,
+          credentialRef: SECRET_REF,
+          models: [modelRecord(cfg, baseUrl)],
+        },
+      ],
+    },
+  }
+}
+
+export const refinementSwitch = (setting: Setting): RefinementSwitch | undefined =>
+  setting === 'on' ? { enabled: true, mode: 'auto' } : undefined
+
+/** The nearest directory above `path` (or `path` itself) that holds `.git`, if any. */
+export function gitAncestor(path: string): string | undefined {
+  let current = resolve(path)
+  for (;;) {
+    if (existsSync(join(current, '.git'))) return current
+    const parent = dirname(current)
+    if (parent === current || current === parse(current).root) return undefined
+    current = parent
+  }
+}
+
+// ------------------------------------------------------------------ one run
+
+type SessionLog = {
+  prompt: number
+  reason?: string
+  error?: string
+  review?: ReviewAnswer & { state?: string }
+}
+
+/** The states a review ends in. */
+export const TERMINAL_REVIEW_STATES: ReadonlySet<string> = new Set([
+  'applied',
+  'no-op',
+  'rejected',
+  'superseded',
+  'cancelled',
+  'unknown',
+])
+/** Refusals that mean the switch did not reach the host: the "on" run would silently be an "off" run. */
+const NOT_ACTIVE = new Set(['refinement-off', 'unavailable'])
+
+/** Same rule as the task self-check: the command exits 0 and its output contains the marker. */
+const defaultCheck: CheckRun = async (check, cwd, home, timeoutMs) => {
+  const { checkPasses, runCommand } = await import('../self-check.js')
+  return checkPasses(await runCommand(check.command, cwd, home, timeoutMs), check.contains)
+}
+
+export async function runOne(
+  task: EvalTask,
+  setting: Setting,
+  rep: number,
+  cfg: RunConfig,
+  outDir: string,
+  opts: AghRunOptions,
+): Promise<RunOutcome> {
+  const id = runId(task.id, setting, rep)
+  const runDir = resolve(outDir, id)
+  const outcomeFile = join(runDir, 'outcome.json')
+  if (existsSync(outcomeFile)) return JSON.parse(readFileSync(outcomeFile, 'utf8')) as RunOutcome
+
+  const fixtureDir = opts.fixtureDir ?? join(defaultTasksDir, task.id, 'fixture')
+  const workBase = realpathSync(opts.workBase ?? tmpdir())
+  const repo = gitAncestor(workBase)
+  if (repo)
+    throw new Error(
+      `the temp directory ${workBase} is inside the git work tree ${repo}; point TMPDIR at a directory outside any repository`,
+    )
+
+  // A directory without an outcome is a partial run: start it over, with a new home.
+  rmSync(runDir, { recursive: true, force: true })
+  const sessionsOut = join(runDir, 'sessions')
+  mkdirSync(sessionsOut, { recursive: true })
+  const home = join(runDir, 'home')
+  const work = mkdtempSync(join(workBase, 'rsi-agh-'))
+  try {
+    cpSync(fixtureDir, work, { recursive: true })
+    const host = await opts.launch({
+      home,
+      profile: PROFILE,
+      profileDocument: aghProfile(cfg, id),
+      refinement: refinementSwitch(setting),
+      workspace: work,
+      model: { route: cfg.provider, model: cfg.model },
+      env: { ...process.env, AGH_HOME: home },
+    })
+    const sessions: RunOutcome['sessions'] = []
+    const keys: string[] = []
+    try {
+      for (let i = 0; i < task.sessions.length; i++) {
+        const key = `rsi-eval-${id}-s${i + 1}`
+        keys.push(key)
+        const stdoutFile = join(runDir, `session${i + 1}.turns.jsonl`)
+        const result = await runSession(host, key, task.sessions[i]?.prompts ?? [], setting, cfg, stdoutFile)
+        sessions.push({ ...result, stdoutFile, sessionFiles: [] })
+        // A failed or timed-out session ends the run: later sessions would build on missing work.
+        if (result.timedOut || result.exitCode !== 0) break
+      }
+    } finally {
+      await host.close()
+    }
+    for (const [i, key] of keys.entries()) {
+      const file = join(sessionsOut, `s${i + 1}.events.jsonl`)
+      const rows = host.ledger(key)
+      writeFileSync(file, rows.map((row) => JSON.stringify(row)).join('\n') + (rows.length ? '\n' : ''))
+      const session = sessions[i]
+      if (session) session.sessionFiles = [file]
+    }
+
+    // Checks run after every session, in the workspace, only for sessions that ended cleanly; prompts of
+    // a session that failed part-way are left without a result instead of being counted as passed.
+    const runCheck = opts.runCheck ?? defaultCheck
+    const checkHome = join(runDir, 'check-home')
+    mkdirSync(checkHome, { recursive: true })
+    const checks: RunOutcome['checks'] = []
+    for (const [s, session] of sessions.entries()) {
+      if (session.timedOut || session.exitCode !== 0) continue
+      for (const [p, taskPrompt] of (task.sessions[s]?.prompts ?? []).entries()) {
+        let passed = true
+        for (const check of taskPrompt.checks) {
+          if (!(await runCheck(check, work, checkHome, CHECK_TIMEOUT_MS))) passed = false
+        }
+        checks.push({ session: s, prompt: p, passed })
+      }
+    }
+    const outcome: RunOutcome = { runId: id, system: 'agh', sessions, checks }
+    writeFileSync(outcomeFile, `${JSON.stringify(outcome, null, 2)}\n`)
+    return outcome
+  } finally {
+    cpSync(work, join(runDir, 'work'), { recursive: true })
+    rmSync(work, { recursive: true, force: true })
+  }
+}
+
+async function runSession(
+  host: AghHost,
+  key: string,
+  prompts: EvalTask['sessions'][number]['prompts'],
+  setting: Setting,
+  cfg: RunConfig,
+  logFile: string,
+): Promise<{ exitCode: number | null; timedOut: boolean }> {
+  const deadline = Date.now() + cfg.sessionTimeoutMs
+  const log = (entry: SessionLog) => writeFileSync(logFile, `${JSON.stringify(entry)}\n`, { flag: 'a' })
+  writeFileSync(logFile, '')
+  const session = await host.openSession(key)
+  let exitCode: number | null = 0
+  let timedOut = false
+  try {
+    for (const [index, prompt] of prompts.entries()) {
+      const left = deadline - Date.now()
+      if (left <= 0) {
+        timedOut = true
+        break
+      }
+      const abort = new AbortController()
+      const timer = setTimeout(() => abort.abort(), left)
+      let reason: string | undefined
+      try {
+        reason = await session.prompt(prompt.text, abort.signal)
+      } catch (error) {
+        log({ prompt: index, error: error instanceof Error ? error.message : String(error) })
+      } finally {
+        clearTimeout(timer)
+      }
+      if (abort.signal.aborted) {
+        timedOut = true
+        log({ prompt: index, reason: 'timeout' })
+        break
+      }
+      if (reason !== 'completed') {
+        if (reason !== undefined) log({ prompt: index, reason })
+        exitCode = 1
+        break
+      }
+      if (setting !== 'on') {
+        log({ prompt: index, reason })
+        continue
+      }
+      const review = await session.review()
+      if ('refused' in review && NOT_ACTIVE.has(review.refused))
+        throw new Error(
+          `refinement is not active in the run host (${review.refused}); the "on" run would measure nothing`,
+        )
+      const state =
+        'runId' in review
+          ? await session.settled(review.runId, Math.min(REFINE_WAIT_MS, Math.max(0, deadline - Date.now())))
+          : undefined
+      log({ prompt: index, reason, review: { ...review, ...(state ? { state } : {}) } })
+    }
+  } finally {
+    await session.close()
+  }
+  return { exitCode: timedOut ? null : exitCode, timedOut }
+}
+
+// ------------------------------------------------------------------ CLI
+
+async function main(argv: string[]): Promise<void> {
+  const args = parseAghArgs(argv)
+  const cfg = readConfig(args.config)
+  checkRoute(cfg)
+  const key = requireKey(cfg, process.env)
+
+  const [{ loadSuite }, { startUsageProxy }, { launchHost }] = await Promise.all([
+    import('../suite.js'),
+    import('../usage-proxy.js'),
+    import('./launch.js'),
+  ])
+  const tasksDir = resolve(args.tasksDir)
+  let tasks = loadSuite(tasksDir)
+  if (args.tasks) {
+    const wanted = args.tasks
+    const missing = wanted.filter((id) => !tasks.some((t) => t.id === id))
+    if (missing.length > 0) throw new Error(`unknown task ids: ${missing.join(', ')}`)
+    tasks = tasks.filter((t) => wanted.includes(t.id))
+  }
+
+  const out = resolve(args.out)
+  mkdirSync(out, { recursive: true })
+  const proxy = await startUsageProxy({
+    upstream: cfg.upstream,
+    port: cfg.proxyPort,
+    logFile: join(out, 'usage.jsonl'),
+  })
+  // The host resolves the route's secret from this process's environment; it is never written down.
+  process.env[SECRET_ENV] = key
+  try {
+    for (let rep = 1; rep <= args.reps; rep++) {
+      for (const task of tasks) {
+        for (const setting of args.settings) {
+          const id = runId(task.id, setting, rep)
+          const fresh = !existsSync(join(out, id, 'outcome.json'))
+          const outcome = await runOne(task, setting, rep, cfg, out, {
+            launch: launchHost,
+            fixtureDir: join(tasksDir, task.id, 'fixture'),
+          })
+          const exits = outcome.sessions.map((s) => (s.timedOut ? 'timeout' : String(s.exitCode))).join(',')
+          const passed = outcome.checks.filter((c) => c.passed).length
+          console.error(
+            `${fresh ? 'ran' : 'skipped'} ${id} exit=[${exits}] checks=${passed}/${outcome.checks.length} (${relative(process.cwd(), join(out, id))})`,
+          )
+        }
+      }
+    }
+  } finally {
+    delete process.env[SECRET_ENV]
+    await proxy.close()
+  }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  main(process.argv.slice(2)).catch((error) => {
+    console.error(error instanceof Error ? error.message : error)
+    process.exit(1)
+  })
+}

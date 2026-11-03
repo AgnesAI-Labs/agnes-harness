@@ -192,6 +192,8 @@ export type {
   SessionReferenceSearchResult,
   SessionRefineParams,
   SessionRefineResult,
+  SessionRefineRollbackParams,
+  SessionRefineRollbackResult,
   SessionRemoveQueuedParams,
   SessionRenameParams,
   SessionRevealWorkspaceParams,

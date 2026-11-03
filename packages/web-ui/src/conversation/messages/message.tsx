@@ -11,6 +11,7 @@ import { approvalStatus } from './approval-labels.js'
 import { AssistantMessage } from './assistant-message.js'
 import { type ApprovalNode, type ConversationMessagesProps, fallbackT } from './context.js'
 import { markdownState } from './markdown-state.js'
+import { RefinementRunNote } from './refinement-run.js'
 import { ConversationToolCard, toolOutcome } from './tool-card.js'
 import { UserMessage } from './user-message.js'
 
@@ -156,6 +157,8 @@ export function nativeContent(
           {t('timeline.memoryExternalChange', { names: node.paths.join(t('timeline.conflictOpsJoiner')) })}
         </div>
       )
+    case 'refinement-run':
+      return <RefinementRunNote node={node} t={t} withdraw={props.withdrawRefinement} />
     case 'workspace-undo':
       return (
         <div className="node-body" role="status" data-testid="workspace-undo-notice">

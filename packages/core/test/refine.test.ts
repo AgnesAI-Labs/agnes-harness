@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyRefine, rollbackRefine } from '../src/refine/apply.js'
+import { applyRefine, mutationToken, rollbackRefine } from '../src/refine/apply.js'
 import { fakeProvider } from './helpers/fake-provider.js'
 import { openSession } from './helpers/open-session.js'
 
@@ -433,5 +433,155 @@ describe('applyRefine with a run id', () => {
         })
       ).outcome,
     ).toBe('rejected:limit')
+  })
+})
+
+const META = 'x/core/refinement-entry-meta'
+const meta = (session: { ev: (...a: never[]) => unknown }, id: string, over: Record<string, unknown> = {}) =>
+  (session.ev as (type: string, data: unknown, o: unknown) => never)(
+    META,
+    {
+      version: 1,
+      kind: 'memory',
+      id,
+      contentHash: 'h',
+      applicability: 'session',
+      confirmations: { count: 0, usedEvidence: [] },
+      ...over,
+    },
+    { ignorable: true },
+  )
+
+describe('safe rollback', () => {
+  it('rollback refuses when a later edit changed the entry', async () => {
+    const { session, log } = await openSession({ provider: fakeProvider([]) })
+    await applyRefine(session, proposal([{ op: 'upsert', entry: entry('m1', 'v1') }]), limits)
+    const r2 = await applyRefine(
+      session,
+      proposal([{ op: 'upsert', entry: entry('m1', 'v2') }], [{ key: key('memory', 'm1'), version: 1 }]),
+      limits,
+    )
+    // A later edit, by someone else, after the refine being undone.
+    await applyRefine(
+      session,
+      proposal([{ op: 'upsert', entry: entry('m1', 'v3') }], [{ key: key('memory', 'm1'), version: 2 }]),
+      limits,
+    )
+    const rows = (await log.scan({ limit: 1000 })).length
+    expect(await rollbackRefine(session, r2.seq)).toEqual({
+      outcome: 'rejected:conflict',
+      reason: 'changed-since',
+      changed: [{ kind: 'memory', id: 'm1' }],
+    })
+    // Nothing is overwritten and nothing is written: a person has to decide.
+    expect(session.latest('harness/entry', key('memory', 'm1'))).toMatchObject({ content: 'v3', version: 3 })
+    expect((await log.scan({ limit: 1000 })).length).toBe(rows)
+
+    // A delete undone after the entry was written again is the same conflict.
+    const del = await applyRefine(
+      session,
+      proposal([{ op: 'delete', kind: 'memory', id: 'm1' }], [{ key: key('memory', 'm1'), version: 3 }]),
+      limits,
+    )
+    await applyRefine(session, proposal([{ op: 'upsert', entry: entry('m1', 'again') }]), limits)
+    expect(await rollbackRefine(session, del.seq)).toMatchObject({ outcome: 'rejected:conflict' })
+    // And so is one whose entry was written and removed again since: it is not the same removal.
+    const gone = await applyRefine(
+      session,
+      proposal([{ op: 'delete', kind: 'memory', id: 'm1' }], [{ key: key('memory', 'm1'), version: 4 }]),
+      limits,
+    )
+    expect(gone.outcome).toBe('applied')
+    expect(await rollbackRefine(session, del.seq)).toMatchObject({ outcome: 'rejected:conflict' })
+    // The newest removal is intact and can be undone.
+    expect(await rollbackRefine(session, gone.seq)).toMatchObject({ outcome: 'applied' })
+    expect(session.latest('harness/entry', key('memory', 'm1'))).toMatchObject({ content: 'again' })
+  })
+
+  it('delete then recreate never reads as the old version', async () => {
+    const { session } = await openSession({ provider: fakeProvider([]) })
+    await applyRefine(session, proposal([{ op: 'upsert', entry: entry('m1', 'old') }]), limits)
+    const first = session.state.registers.harnessEntries.get(key('memory', 'm1'))?.seq as number
+    await applyRefine(
+      session,
+      proposal([{ op: 'delete', kind: 'memory', id: 'm1' }], [{ key: key('memory', 'm1'), version: 1 }]),
+      limits,
+    )
+    // The removal is recorded with the version it had, under its own token.
+    const tombstone = session.state.refinementTombstones.get(key('memory', 'm1'))
+    expect(tombstone).toMatchObject({ kind: 'memory', id: 'm1', version: 1 })
+    expect(mutationToken(session.state, key('memory', 'm1'))).toBe(tombstone?.seq)
+    // A proposal made while the id had never been written (version 0, token 0) no longer holds.
+    expect(
+      (
+        await applyRefine(
+          session,
+          proposal([{ op: 'upsert', entry: entry('m1', 'stale') }], [
+            { key: key('memory', 'm1'), version: 0, seq: 0 },
+          ] as never),
+          limits,
+        )
+      ).outcome,
+    ).toBe('rejected:conflict')
+    await applyRefine(session, proposal([{ op: 'upsert', entry: entry('m1', 'new') }]), limits)
+    // Written again, it continues from the removed version: never v1 again, never the old row.
+    const cell = session.state.registers.harnessEntries.get(key('memory', 'm1'))
+    expect(cell?.value).toMatchObject({ content: 'new', version: 2 })
+    expect(cell?.seq).not.toBe(first)
+    // A baseline taken from the old entry, by version and token, is a conflict.
+    expect(
+      (
+        await applyRefine(
+          session,
+          proposal([{ op: 'upsert', entry: entry('m1', 'x') }], [
+            { key: key('memory', 'm1'), version: 1, seq: first },
+          ] as never),
+          limits,
+        )
+      ).outcome,
+    ).toBe('rejected:conflict')
+    // Even at the same version a token from before the removal does not hold.
+    expect(
+      (
+        await applyRefine(
+          session,
+          proposal([{ op: 'upsert', entry: entry('m1', 'x') }], [
+            { key: key('memory', 'm1'), version: 2, seq: first },
+          ] as never),
+          limits,
+        )
+      ).outcome,
+    ).toBe('rejected:conflict')
+  })
+
+  it('a rollback restores the validity metadata of the version it brings back', async () => {
+    const { session } = await openSession({ provider: fakeProvider([]) })
+    const task = { applicability: 'task', taskScope: { id: 'goal-1', revision: 1 } }
+    await applyRefine(session, proposal([{ op: 'upsert', entry: entry('m1', 'v1') }]), limits, {
+      with: () => [meta(session as never, 'm1', task)],
+    })
+    const r2 = await applyRefine(
+      session,
+      proposal([{ op: 'upsert', entry: entry('m1', 'v2') }], [{ key: key('memory', 'm1'), version: 1 }]),
+      limits,
+      { with: () => [meta(session as never, 'm1')] },
+    )
+    expect(session.state.refinementEntryMeta.get(key('memory', 'm1'))).toMatchObject({
+      applicability: 'session',
+    })
+    const back = await rollbackRefine(session, r2.seq)
+    expect(back.outcome).toBe('applied')
+    const cell = session.state.registers.harnessEntries.get(key('memory', 'm1'))
+    expect(cell?.value).toMatchObject({ content: 'v1', version: 3 })
+    // Bound to the restored row, as task level for its goal: it is not a legacy session entry.
+    expect(session.state.refinementEntryMeta.get(key('memory', 'm1'))).toMatchObject({
+      ...task,
+      entrySeq: cell?.seq,
+    })
+    // Undoing the creation removes the entry and records the removal.
+    const created = await applyRefine(session, proposal([{ op: 'upsert', entry: entry('m2', 'x') }]), limits)
+    expect(await rollbackRefine(session, created.seq)).toMatchObject({ outcome: 'applied' })
+    expect(session.state.registers.harnessEntries.has(key('memory', 'm2'))).toBe(false)
+    expect(session.state.refinementTombstones.get(key('memory', 'm2'))).toMatchObject({ version: 1 })
   })
 })

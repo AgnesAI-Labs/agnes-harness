@@ -187,6 +187,117 @@ describe('W3b projected message DOM', () => {
     ])
   })
 
+  it('shows each experience review with its state, reason and changed entries, never their text', async () => {
+    const store = createConversationProjectionStore({
+      sessionId: 'session',
+      nodes: [
+        {
+          kind: 'refinement-run',
+          id: 'r1',
+          seq: 3,
+          runId: 'run-1',
+          state: 'applied',
+          trigger: 'manual',
+          edits: [
+            { op: 'upsert', kind: 'memory', id: 'build' },
+            { op: 'delete', kind: 'skill', id: 'old' },
+          ],
+          appliedSeq: 5,
+          withdrawn: true,
+        },
+        {
+          kind: 'refinement-run',
+          id: 'r2',
+          seq: 6,
+          runId: 'run-2',
+          state: 'rejected',
+          trigger: 'model',
+          reason: 'no-evidence',
+        },
+      ],
+    })
+    await mount(store)
+    const notes = [...host.querySelectorAll('[data-testid="refinement-run-notice"]')]
+    expect(notes.map((note) => note.getAttribute('data-state'))).toEqual(['applied', 'rejected'])
+    expect(notes[0]?.textContent).toBe(
+      [
+        t('timeline.refinement.state.applied', { trigger: t('timeline.refinement.trigger.manual') }),
+        t('timeline.refinement.saved', { names: 'memory/build' }),
+        t('timeline.refinement.removed', { names: 'skill/old' }),
+        t('timeline.refinement.withdrawn'),
+      ].join(' '),
+    )
+    expect(notes[1]?.textContent).toBe(
+      [
+        t('timeline.refinement.state.rejected', { trigger: t('timeline.refinement.trigger.model') }),
+        t('timeline.refinement.reason', { reason: 'no-evidence' }),
+      ].join(' '),
+    )
+    expect(notes[1]?.textContent).not.toContain('timeline.refinement')
+  })
+
+  it('offers to withdraw an applied review and says how the withdrawal ended', async () => {
+    const applied = (id: string, appliedSeq: number, withdrawn?: boolean): UINode => ({
+      kind: 'refinement-run',
+      id,
+      seq: appliedSeq,
+      runId: `run-${id}`,
+      state: 'applied',
+      trigger: 'manual',
+      edits: [{ op: 'upsert', kind: 'memory', id: 'build' }],
+      appliedSeq,
+      ...(withdrawn ? { withdrawn } : {}),
+    })
+    const withdraw = vi.fn(async (appliedSeq: number) => {
+      if (appliedSeq === 5) return { kind: 'withdrawn' as const }
+      if (appliedSeq === 7) return { kind: 'changed-since' as const, changed: ['memory/build'] }
+      throw new Error('connection lost')
+    })
+    const nodes = [applied('a', 5), applied('b', 7), applied('c', 9), applied('d', 11, true)]
+    await act(async () =>
+      root.render(createElement(ConversationMessages, { t, nodes, withdrawRefinement: withdraw })),
+    )
+    const buttons = () => [...host.querySelectorAll<HTMLButtonElement>('[data-testid="refinement-withdraw"]')]
+    // A review withdrawn since offers nothing more.
+    expect(buttons()).toHaveLength(3)
+    expect(buttons()[0]?.textContent).toBe(t('timeline.refinement.withdraw'))
+    for (const button of buttons()) await act(async () => button.click())
+    expect(withdraw.mock.calls.map(([seq]) => seq)).toEqual([5, 7, 9])
+    const results = [...host.querySelectorAll('[data-testid="refinement-withdraw-result"]')].map(
+      (n) => n.textContent,
+    )
+    expect(results).toEqual([
+      t('timeline.refinement.withdraw.done'),
+      t('timeline.refinement.withdraw.changedNames', { names: 'memory/build' }),
+      t('timeline.refinement.withdraw.failed', { message: 'connection lost' }),
+    ])
+    expect(results.join(' ')).not.toContain('timeline.refinement')
+  })
+
+  it('names a refusal in words and offers no withdrawal without a host', async () => {
+    const node: UINode = {
+      kind: 'refinement-run',
+      id: 'r',
+      seq: 4,
+      runId: 'run-r',
+      state: 'applied',
+      trigger: 'model',
+      appliedSeq: 4,
+    }
+    await act(async () => root.render(createElement(ConversationMessages, { t, nodes: [node] })))
+    expect(host.querySelector('[data-testid="refinement-withdraw"]')).toBeNull()
+    const withdraw = vi.fn(async () => ({ kind: 'refused' as const, reason: 'closing' }))
+    await act(async () =>
+      root.render(createElement(ConversationMessages, { t, nodes: [node], withdrawRefinement: withdraw })),
+    )
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="refinement-withdraw"]')?.click(),
+    )
+    expect(host.querySelector('[data-testid="refinement-withdraw-result"]')?.textContent).toBe(
+      t('timeline.refinement.withdraw.refused', { reason: t('timeline.refinement.withdraw.reason.closing') }),
+    )
+  })
+
   it('keeps side-call cost rows out of the transcript, even with no turn', async () => {
     // A failed voice call on a new chat writes only its side-call cost row; the session usage counts it.
     const voice = {

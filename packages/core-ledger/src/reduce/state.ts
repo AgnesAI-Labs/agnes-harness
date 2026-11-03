@@ -1,9 +1,16 @@
 import type { Seq } from '@agnes/core-common/types'
 import type { DecisionSnapshot, SessionStart } from '@agnes/protocol'
 import { ChunkedMap } from './chunked-map.js'
+import type { RefinementEntryMeta, RefinementEntryTombstone } from './refinement-entry-meta.js'
 import type { RefinementRunRecord } from './refinement-run.js'
 import type { ArtifactJob, BudgetState, EffectIntent, HarnessEntry, Inbox, PlanItems } from './shapes.js'
 
+export type {
+  RefinementApplicability,
+  RefinementEntryMeta,
+  RefinementEntryTombstone,
+} from './refinement-entry-meta.js'
+export { REFINEMENT_ENTRY_META_EVENT } from './refinement-entry-meta.js'
 export type {
   RefinementEntryKind,
   RefinementEntryRef,
@@ -78,6 +85,17 @@ export type LedgerState = {
   creditsUsed: number
   /** Background refinement runs by run id, folded from Core's `x/core/refinement-run` rows. */
   refinementRuns: ReadonlyMap<string, RefinementRunRecord>
+  /**
+   * Refinement entries' validity and confirmations, folded from Core's `x/core/refinement-entry-meta`
+   * rows and keyed like the `harness/entry` cells they describe. A fork keeps them, as it keeps the
+   * entries.
+   */
+  refinementEntryMeta: ReadonlyMap<string, RefinementEntryMeta>
+  /**
+   * What removed refinement entries left behind (their last version and the removal's seq), keyed
+   * like the cells they were. A fork keeps them too.
+   */
+  refinementTombstones: ReadonlyMap<string, RefinementEntryTombstone>
   // The most recent non-interrupted `cost/ledger` entry's token total, with the seq it landed at,
   // and that same entry's cache-read/input breakdown. `contextTokens` starts counting surface nodes
   // after this seq instead of from the top of the ledger, so a long session's preflight cost stays
@@ -108,6 +126,8 @@ export function initialState(): LedgerState {
     toolCalls: ChunkedMap.empty(),
     creditsUsed: 0,
     refinementRuns: new Map(),
+    refinementEntryMeta: new Map(),
+    refinementTombstones: new Map(),
     lastLedgerTokens: null,
   }
 }

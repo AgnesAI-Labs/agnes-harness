@@ -1,3 +1,4 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { HarnessEntry } from '@agnes/core-ledger/reduce/shapes'
 import type { HookPayloadMap } from '@agnes/extension-api'
@@ -10,18 +11,25 @@ import {
 import type { RequestBody } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { withCommandFloor } from '../src/command-table/floor.js'
+import { compactionTriggerTokens } from '../src/execution/turn/gate.js'
 import { createLoopContext } from '../src/loop/ports.js'
 import { applyRefine } from '../src/refine/apply.js'
+import { refinementFacade } from '../src/refinement/facade.js'
 import { RESERVED_NOTE_PREFIXES } from '../src/request/derive.js'
 import {
+  CONTROL_FORMAT_LINE,
   type EffectiveEntry,
   EXPERIENCE_BUDGETS,
+  EXPERIENCE_OFF_NOTICE,
   EXPERIENCE_PREFIX,
   EXPERIENCE_RESET_NOTICE,
+  experienceNotes,
+  isControlNote,
   renderExperience,
   withExperienceDiag,
 } from '../src/request/experience.js'
 import { REFINEMENT_GUIDANCE, SNAPSHOT_FORMAT_LINE } from '../src/request/experience-guidance.js'
+import { experienceForRequest } from '../src/request/experience-room.js'
 import { rankEntries } from '../src/request/rank-entries.js'
 import { CompactionRunner } from '../src/step/compaction.js'
 import { estimateTokens } from '../src/step/inference.js'
@@ -48,8 +56,8 @@ async function apply(session: Opened['session'], entries: HarnessEntry[]) {
   const r = await applyRefine(
     session,
     {
-      proposalId: `p-${entries.map((e) => e.id).join('-')}`,
-      runId: `p-${entries.map((e) => e.id).join('-')}`,
+      proposalId: `p-${entries.map((e) => e.id).join('-')}`.slice(0, 120),
+      runId: `p-${entries.map((e) => e.id).join('-')}`.slice(0, 120),
       trigger: 'manual',
       edits: entries.map((value) => ({ op: 'upsert', entry: value })),
       baseline: [],
@@ -151,8 +159,8 @@ describe('refinement experience delivery', () => {
     expect(REFINEMENT_GUIDANCE).not.toMatch(/\d{4}-\d{2}-\d{2}|[0-9a-f]{16}/)
     expect(REFINEMENT_GUIDANCE).toContain('harness_refine')
     expect(REFINEMENT_GUIDANCE).toContain("target:'workspace'")
-    // Nothing points the model at a tool it is not offered: entries cannot be read back yet.
-    expect(REFINEMENT_GUIDANCE).not.toContain('harness_inspect')
+    // The entries a snapshot leaves out or cuts to metadata are read back with harness_inspect.
+    expect(REFINEMENT_GUIDANCE).toContain('harness_inspect')
     expect(estimateTokens(REFINEMENT_GUIDANCE)).toBeLessThanOrEqual(200)
     const a = renderExperience({ entries: [] }, { recentText: 'x', budgets: EXPERIENCE_BUDGETS })
     const b = renderExperience({ entries: [] }, { recentText: 'y', budgets: EXPERIENCE_BUDGETS })
@@ -262,7 +270,7 @@ describe('refinement experience delivery', () => {
     }
     expect(`${out.body}${out.data}`).not.toContain('s-deploy')
     expect(`${out.body}${out.data}`).not.toContain('s-docs')
-    expect(out.body).toContain('2 more skill entries')
+    expect(out.body).toContain('2 more skill entries are saved; use harness_inspect to list them.')
     expect(`${out.body}${out.data}`).not.toContain('SECRET-TAIL')
     for (const line of out.data.split('\n').filter((l) => l.startsWith('- [skill/')))
       expect(line.length).toBeLessThanOrEqual(260)
@@ -289,8 +297,9 @@ describe('refinement experience delivery', () => {
     expect(out.data).not.toContain('[memory/m-c v1]')
     expect(out.data).toContain('keep answers short')
     expect(out.omitted).toBe(2)
-    expect(out.body).toContain('2 entries were left out')
-    expect(out.body).not.toContain('harness_inspect')
+    expect(out.body).toContain(
+      '2 entries were left out to fit the context budget; use harness_inspect to read them.',
+    )
     expect(
       estimateTokens(`${out.body}\n${out.data}`) - estimateTokens(REFINEMENT_GUIDANCE),
     ).toBeLessThanOrEqual(EXPERIENCE_BUDGETS.body + EXPERIENCE_BUDGETS.metadata + 32)
@@ -627,6 +636,138 @@ describe('refinement entries are untrusted content', () => {
     expect(new Set(await headerNonces(log)).size).toBe(2)
   })
 
+  it('a loop request prepared before a withdrawal is refused, and prepared again carries it', async () => {
+    const codec = loopCheckpointCodec(1, () => null)
+    const idle = () => ({
+      checkpoint: () => codec.encode(null),
+      cancel() {},
+      dispose() {},
+      step: async () => ({ outcome: 'idle' as const, phase: 'idle' }),
+    })
+    const loopFactory: LoopFactory = {
+      id: 'test.experience',
+      version: '1.0.0',
+      capabilities: ['model'],
+      codec,
+      create: idle,
+      resume: idle,
+    }
+    const provider = fakeProvider([textTurn('ok')])
+    const { session, log } = await openSession({ provider, loopFactory, refinementEnabled: () => true })
+    await apply(session, [entry('memory', 'm1', 'Build', 'run pnpm build before tests')])
+    const r1 = (await log.scan({ type: 'harness/refine', limit: 5 })).at(-1)?.seq as number
+    const ctx = await createLoopContext(session)
+    const finish = async () => {
+      await ctx.events.assistant(
+        { content: [{ type: 'text', text: 'ok' }], stopReason: 'end_turn' },
+        codec.encode(null),
+      )
+      await ctx.events.finish('completed')
+    }
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'first' }], actor })
+    expect(await session.acceptInput()).toBe(true)
+    await ctx.model.complete(await ctx.prepareRequest({}), signal())
+    await finish()
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'second' }], actor })
+    expect(await session.acceptInput()).toBe(true)
+    const stale = await ctx.prepareRequest({})
+    expect((await refinementFacade(session).rollback(r1)) as object).toHaveProperty('seq')
+    await expect(ctx.model.complete(stale, signal())).rejects.toMatchObject({ code: 'E_REQUEST_FROZEN' })
+    expect(provider.requests).toHaveLength(1)
+    await ctx.model.complete(await ctx.prepareRequest({}), signal())
+    expect(experienceIn(provider.requests[1]).join('\n')).toContain('[memory/m1 v1] withdrawn')
+  })
+
+  it('a loop request is judged by its own derivation, and only when it could carry experience', async () => {
+    const codec = loopCheckpointCodec(1, () => null)
+    const idle = () => ({
+      checkpoint: () => codec.encode(null),
+      cancel() {},
+      dispose() {},
+      step: async () => ({ outcome: 'idle' as const, phase: 'idle' }),
+    })
+    const loopFactory: LoopFactory = {
+      id: 'test.experience',
+      version: '1.0.0',
+      capabilities: ['model'],
+      codec,
+      create: idle,
+      resume: idle,
+    }
+    const on = true
+    const provider = fakeProvider([textTurn('ok')])
+    const { session } = await openSession({ provider, loopFactory, refinementEnabled: () => on })
+    const ctx = await createLoopContext(session)
+    const begin = async (text: string) => {
+      await session.enqueue('next-turn', { content: [{ type: 'text', text }], actor })
+      expect(await session.acceptInput()).toBe(true)
+    }
+    const finish = async () => {
+      await ctx.events.assistant(
+        { content: [{ type: 'text', text: 'ok' }], stopReason: 'end_turn' },
+        codec.encode(null),
+      )
+      await ctx.events.finish('completed')
+    }
+    await begin('first')
+    await ctx.model.complete(await ctx.prepareRequest({}), signal())
+    await finish()
+    // A request built from the loop's own messages carries no task experience: an apply after the
+    // last surface request does not refuse it, now or ever.
+    await apply(session, [entry('memory', 'm1', 'Build', 'run pnpm build before tests')])
+    await begin('second')
+    const own = {
+      tools: [],
+      messages: [{ role: 'user' as const, content: [{ type: 'text' as const, text: 'hi' }] }],
+    }
+    await ctx.model.complete(await ctx.prepareRequest(own), signal())
+    // Not even when the change lands between preparing and sending it.
+    const mine = await ctx.prepareRequest(own)
+    await apply(session, [entry('memory', 'm3', 'Docs', 'the guide lives in docs/guide')])
+    await ctx.model.complete(mine, signal())
+    await finish()
+    // A surface request prepared before an apply is refused; prepared again it goes out with the entry.
+    await begin('third')
+    const stale = await ctx.prepareRequest({})
+    await apply(session, [entry('memory', 'm2', 'Lint', 'biome check is the lint step')])
+    await expect(ctx.model.complete(stale, signal())).rejects.toMatchObject({ code: 'E_REQUEST_FROZEN' })
+    // A later derivation does not make the earlier request pass: each is judged by its own.
+    await ctx.prepareRequest({})
+    await expect(ctx.model.complete(stale, signal())).rejects.toMatchObject({ code: 'E_REQUEST_FROZEN' })
+    await ctx.model.complete(await ctx.prepareRequest({}), signal())
+    expect(JSON.stringify(provider.requests.at(-1))).toContain('biome check is the lint step')
+    await finish()
+    expect(on).toBe(true)
+  })
+
+  it('a loop request in a session that was never given experience is not refused by a change', async () => {
+    const codec = loopCheckpointCodec(1, () => null)
+    const idle = () => ({
+      checkpoint: () => codec.encode(null),
+      cancel() {},
+      dispose() {},
+      step: async () => ({ outcome: 'idle' as const, phase: 'idle' }),
+    })
+    const loopFactory: LoopFactory = {
+      id: 'test.experience',
+      version: '1.0.0',
+      capabilities: ['model'],
+      codec,
+      create: idle,
+      resume: idle,
+    }
+    const provider = fakeProvider([textTurn('ok')])
+    const { session } = await openSession({ provider, loopFactory, refinementEnabled: () => false })
+    const ctx = await createLoopContext(session)
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'first' }], actor })
+    expect(await session.acceptInput()).toBe(true)
+    const prepared = await ctx.prepareRequest({})
+    // Written while refinement is off: nothing was or will be delivered, so the request still holds.
+    await apply(session, [entry('memory', 'm1', 'Build', 'run pnpm build before tests')])
+    await ctx.model.complete(prepared, signal())
+    expect(provider.requests).toHaveLength(1)
+  })
+
   it('the snapshot rebuilt after compaction is untrusted and delivered once', async () => {
     const provider = fakeProvider([textTurn('ok')])
     const { session, log } = await openSession({ provider, refinementEnabled: () => true })
@@ -684,5 +825,301 @@ describe('rankEntries', () => {
     const first = rankEntries(entries, '请先构建项目')
     expect(first.map((r) => r.entry.id)).toEqual(['x', 'y'])
     expect(rankEntries(entries, '请先构建项目')).toEqual(first)
+  })
+})
+
+/** Removes entries the way a planned delete does: one apply whose rows are the tombstones. */
+let removals = 0
+async function remove(session: Opened['session'], ids: string[], kind: HarnessEntry['kind'] = 'memory') {
+  const r = await applyRefine(
+    session,
+    {
+      proposalId: `rm-${++removals}`,
+      runId: `rm-${removals}`,
+      trigger: 'manual',
+      edits: ids.map((id) => ({ op: 'delete' as const, kind, id })),
+      baseline: [],
+      rationale: 'fixture',
+      evidenceSeqs: [1],
+    },
+    limits,
+  )
+  expect(r.outcome).toBe('applied')
+}
+
+/** The context window the test sessions run under: no model record, so the default capacity. */
+const WINDOW = 128_000
+/**
+ * Leaves `room` tokens below the compaction line for the next request's task-experience notes, once
+ * the user message `text` is on the surface: the reserve takes up the rest.
+ */
+function leaveRoom(session: Opened['session'], text: string, room: number, compaction = false) {
+  const used = compactionTriggerTokens(session) + estimateTokens(text)
+  session.preset = {
+    ...session.preset,
+    compaction: { ...session.preset.compaction, enabled: compaction, reserveTokens: WINDOW - used - room },
+  }
+}
+const roomy = (session: Opened['session']) => {
+  session.preset = { ...session.preset, compaction: { ...session.preset.compaction, reserveTokens: 16384 } }
+}
+const controls = (notes: string[]) =>
+  notes.filter((n) => n.startsWith(`${EXPERIENCE_PREFIX}${CONTROL_FORMAT_LINE}`))
+
+describe('control notices', () => {
+  it('an entry the model was given and that is deleted is withdrawn before any new body, once', async () => {
+    const provider = fakeProvider([textTurn('ok')])
+    const { session, log } = await openSession({ provider, refinementEnabled: () => true })
+    await apply(session, [entry('memory', 'm1', 'Build', 'run pnpm build before tests')])
+    await turn(session, 'first')
+    await remove(session, ['m1'])
+    await apply(session, [entry('memory', 'm2', 'Lint', 'biome check is the lint step')])
+    await turn(session, 'second')
+    const sent = experienceIn(provider.requests[1]).slice(1)
+    expect(sent).toHaveLength(2)
+    expect(sent[0]).toBe(
+      `${EXPERIENCE_PREFIX}${CONTROL_FORMAT_LINE}\n- [memory/m1 v1] withdrawn: it was removed; do not follow it any longer.`,
+    )
+    expect(sent[1]).toContain('biome check is the lint step')
+    await turn(session, 'third')
+    expect(controls(await committed(log))).toHaveLength(1)
+  })
+
+  it('under a tight budget control notices go first', async () => {
+    const provider = fakeProvider([textTurn('ok')])
+    const { session, log } = await openSession({ provider, refinementEnabled: () => true })
+    await apply(session, [entry('memory', 'm1', 'Build', 'run pnpm build before tests')])
+    await turn(session, 'first')
+    await remove(session, ['m1'])
+    await apply(session, [
+      entry('memory', 'm2', 'Facts', `${'the build cache lives in .cache '.repeat(60)}end`),
+    ])
+    // Room for the withdrawal (about 25 tokens) but not the update with the new entry (about 450).
+    leaveRoom(session, 'second', 80)
+    await turn(session, 'second')
+    const second = experienceIn(provider.requests[1]).slice(1)
+    expect(second).toEqual([
+      `${EXPERIENCE_PREFIX}${CONTROL_FORMAT_LINE}\n- [memory/m1 v1] withdrawn: it was removed; do not follow it any longer.`,
+    ])
+    // The entry was put off, not lost: with room again it goes out, and the withdrawal is not repeated.
+    roomy(session)
+    await turn(session, 'third')
+    const third = experienceIn(provider.requests[2]).slice(2)
+    expect(third).toHaveLength(1)
+    expect(third[0]).toContain('[memory/m2 v1]')
+    expect(controls(await committed(log))).toHaveLength(1)
+
+    // Directly: a list that does not fit falls back to the reset notice before the request is refused.
+    await apply(
+      session,
+      Array.from({ length: 3 }, (_, i) => entry('memory', `x${i}`, `X${i}`, 'short')),
+    )
+    await turn(session, 'fourth')
+    await remove(session, ['x0', 'x1', 'x2'])
+    const notes = await experienceNotes(session, session.surface())
+    const list = notes.filter(isControlNote)
+    expect(list[0]?.text).toContain('[memory/x2 v1] withdrawn')
+    const reset = { ...list[0], text: `${CONTROL_FORMAT_LINE}\n${EXPERIENCE_RESET_NOTICE}` }
+    leaveRoom(session, '', estimateTokens(`${EXPERIENCE_PREFIX}${reset.text}\n`) + 1)
+    expect(await experienceForRequest(session, session.surface(), false)).toEqual([reset])
+  })
+
+  it('a reset template replaces an oversized invalidation list', async () => {
+    const provider = fakeProvider([textTurn('ok')])
+    const { session, log } = await openSession({ provider, refinementEnabled: () => true })
+    const ids = Array.from({ length: 30 }, (_, i) => `e${i}`)
+    await apply(
+      session,
+      ids.map((id) => entry('memory', id, id, `Fact about ${id}.`)),
+    )
+    await turn(session, 'first')
+    // Twenty-five withdrawals do not fit the 256-token control budget.
+    await remove(session, ids.slice(0, 25))
+    await turn(session, 'second')
+    const sent = experienceIn(provider.requests[1]).slice(1)
+    expect(sent[0]).toBe(`${EXPERIENCE_PREFIX}${CONTROL_FORMAT_LINE}\n${EXPERIENCE_RESET_NOTICE}`)
+    // The reset voids every earlier note, so the five still in force are given again after it.
+    for (const id of ids.slice(25)) expect(sent[1]).toContain(`[memory/${id} v1]`)
+    for (const id of ids.slice(0, 25)) expect(sent.join('\n')).not.toContain(`[memory/${id} v1]`)
+    await turn(session, 'third')
+    expect(controls(await committed(log))).toHaveLength(1)
+    expect(experienceIn(provider.requests[2])).toHaveLength(3)
+  })
+
+  it('pending control notices survive a restart and are delivered once', async () => {
+    const provider = fakeProvider([textTurn('ok')])
+    let opened = await openSession({ provider, refinementEnabled: () => true })
+    await apply(opened.session, [entry('prompt', 'p1', 'Tone', 'answer briefly')])
+    await turn(opened.session, 'first')
+    // Deleted while no request follows, then the process goes away: nothing remembers the notice.
+    await remove(opened.session, ['p1'], 'prompt')
+    await opened.session.close()
+    opened = await openSession({
+      provider,
+      refinementEnabled: () => true,
+      storage: opened.storage,
+      writerRunId: 'r2',
+    })
+    await turn(opened.session, 'second')
+    await turn(opened.session, 'third')
+    const notes = controls(await committed(opened.log))
+    expect(notes).toEqual([
+      `${EXPERIENCE_PREFIX}${CONTROL_FORMAT_LINE}\n- [prompt/p1 v1] withdrawn: it was removed; do not follow it any longer.`,
+    ])
+    // Sent with the second request and carried, unchanged, by the third.
+    expect(experienceIn(provider.requests[1])).toContain(notes[0])
+    expect(experienceIn(provider.requests[2])).toEqual(experienceIn(provider.requests[1]))
+  })
+
+  it('switching refinement off sends one switched-off notice; switching on again starts a new snapshot', async () => {
+    const provider = fakeProvider([textTurn('ok')])
+    let on = true
+    const { session, log } = await openSession({ provider, refinementEnabled: () => on })
+    await apply(session, [entry('memory', 'm1', 'Build', 'run pnpm build before tests')])
+    await turn(session, 'first')
+    on = false
+    await turn(session, 'second')
+    await turn(session, 'third')
+    const off = `${EXPERIENCE_PREFIX}${CONTROL_FORMAT_LINE}\n${EXPERIENCE_OFF_NOTICE}`
+    expect(experienceIn(provider.requests[1]).slice(1)).toEqual([off])
+    expect(experienceIn(provider.requests[2])).toEqual(experienceIn(provider.requests[1]))
+    on = true
+    await turn(session, 'fourth')
+    const back = experienceIn(provider.requests[3]).slice(2)
+    expect(back).toHaveLength(1)
+    expect(back[0]?.startsWith(`${EXPERIENCE_PREFIX}${REFINEMENT_GUIDANCE}`)).toBe(true)
+    expect(back[0]).toContain('run pnpm build before tests')
+    expect(controls(await committed(log))).toEqual([off])
+    // A session that never had task experience stays as it was: nothing is sent while off.
+    const plain = fakeProvider([textTurn('ok')])
+    const other = await openSession({ provider: plain, refinementEnabled: () => false })
+    await turn(other.session, 'first')
+    expect(experienceIn(plain.requests[0])).toEqual([])
+    expect(await committed(other.log)).toEqual([])
+  })
+
+  it('a request prepared before refinement was switched off is not sent; it is prepared again', async () => {
+    let on = true
+    let counts = 0
+    const base = fakeProvider([textTurn('ok')])
+    const provider = {
+      ...base,
+      requests: base.requests,
+      // The recount runs after the request was derived and before it is sent.
+      count: async (request: RequestBody) => {
+        if (++counts === 2) on = false
+        return { tokens: 10, source: 'provider' as const, boundHash: request.derivedHash }
+      },
+    }
+    const preset = {
+      ...presetDefaults(),
+      budget: { ...presetDefaults().budget, preflight: 'count' as const },
+    }
+    const { session, log } = await openSession({ provider, preset, refinementEnabled: () => on })
+    await apply(session, [entry('memory', 'm1', 'Build', 'run pnpm build before tests')])
+    await turn(session, 'first')
+    await apply(session, [entry('memory', 'm2', 'Lint', 'biome check is the lint step')])
+    await turn(session, 'second')
+    expect(counts).toBe(3)
+    // Counted once with the update and switched off then: the update was never sent or written.
+    expect(JSON.stringify(base.requests[1])).not.toContain('biome check is the lint step')
+    expect(experienceIn(base.requests[1]).slice(1)).toEqual([
+      `${EXPERIENCE_PREFIX}${CONTROL_FORMAT_LINE}\n${EXPERIENCE_OFF_NOTICE}`,
+    ])
+    expect((await committed(log)).join('\n')).not.toContain('biome check is the lint step')
+  })
+
+  it('a withdrawal with no room ends the turn with the reason, and goes out once there is room', async () => {
+    const provider = fakeProvider([textTurn('ok')])
+    const { session, log } = await openSession({ provider, refinementEnabled: () => true })
+    await apply(session, [entry('memory', 'm1', 'Build', 'run pnpm build before tests')])
+    await turn(session, 'first')
+    await remove(session, ['m1'])
+    leaveRoom(session, 'second', 3)
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'second' }], actor })
+    expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('budget')
+    expect(provider.requests).toHaveLength(1)
+    const end = (await log.scan({ type: 'turn/end', limit: 10 })).at(-1)
+    expect(JSON.stringify(end?.data)).toContain('EXPERIENCE_CONTROL_NO_ROOM')
+    expect(controls(await committed(log))).toEqual([])
+    roomy(session)
+    await turn(session, 'third')
+    expect(controls(await committed(log))).toHaveLength(1)
+    expect(experienceIn(provider.requests[1]).join('\n')).toContain('[memory/m1 v1] withdrawn')
+  })
+
+  it('with compaction on, a withdrawal with no room compacts first and offers no refinement trigger', async () => {
+    const provider = fakeProvider([textTurn('ok')])
+    const offers: unknown[] = []
+    const { session, log } = await openSession({
+      provider,
+      refinementEnabled: () => true,
+      refinementTriggers: { offer: (candidate) => offers.push(candidate) },
+    })
+    await apply(session, [entry('memory', 'm1', 'Build', 'run pnpm build before tests')])
+    await turn(session, 'first')
+    await remove(session, ['m1'])
+    session.compaction = new CompactionRunner({
+      plan: async (payload) => compactAllButLast(payload),
+      onCompact: async () => undefined,
+    })
+    leaveRoom(session, 'second', 3, true)
+    await turn(session, 'second')
+    expect(await log.scan({ type: 'x/core/compaction-begin', limit: 5 })).toHaveLength(1)
+    // The compaction masked what the model had been given: nothing is left to withdraw, and the
+    // request went out with a fresh snapshot.
+    expect(controls(await committed(log))).toEqual([])
+    expect(experienceIn(provider.requests.at(-1))).toEqual([`${EXPERIENCE_PREFIX}${REFINEMENT_GUIDANCE}`])
+    expect(offers).toEqual([])
+  })
+})
+
+describe('a change between preparing a request and sending it', () => {
+  /** Runs `between` once, while the next request is being dispatched: after it was prepared and admitted. */
+  function inTheGap(session: Opened['session'], between: () => Promise<unknown>) {
+    const scan = session.scan.bind(session)
+    let armed = true
+    session.scan = (async (q: Parameters<typeof scan>[0]) => {
+      const types = (q as { type?: unknown }).type
+      if (armed && Array.isArray(types) && types.includes('x/core/context-breakdown')) {
+        armed = false
+        await between()
+      }
+      return scan(q)
+    }) as typeof session.scan
+  }
+
+  it('a withdrawal committed after the request was prepared reaches that same request', async () => {
+    const provider = fakeProvider([textTurn('ok')])
+    const { session, log } = await openSession({ provider, refinementEnabled: () => true })
+    await apply(session, [entry('memory', 'm1', 'Build', 'run pnpm build before tests')])
+    const r1 = (await log.scan({ type: 'harness/refine', limit: 5 })).at(-1)?.seq as number
+    await turn(session, 'first')
+    await apply(session, [entry('memory', 'm2', 'Lint', 'biome check is the lint step')])
+    inTheGap(session, () => refinementFacade(session).rollback(r1))
+    await turn(session, 'second')
+    const sent = experienceIn(provider.requests[1]).slice(1)
+    expect(sent[0]).toBe(
+      `${EXPERIENCE_PREFIX}${CONTROL_FORMAT_LINE}\n- [memory/m1 v1] withdrawn: it was removed; do not follow it any longer.`,
+    )
+    expect(sent[1]).toContain('biome check is the lint step')
+    expect(controls(await committed(log))).toHaveLength(1)
+  })
+
+  it('a switch-off after the request was prepared reaches that same request', async () => {
+    const provider = fakeProvider([textTurn('ok')])
+    let on = true
+    const { session, log } = await openSession({ provider, refinementEnabled: () => on })
+    await apply(session, [entry('memory', 'm1', 'Build', 'run pnpm build before tests')])
+    await turn(session, 'first')
+    await apply(session, [entry('memory', 'm2', 'Lint', 'biome check is the lint step')])
+    inTheGap(session, async () => {
+      on = false
+    })
+    await turn(session, 'second')
+    expect(experienceIn(provider.requests[1]).slice(1)).toEqual([
+      `${EXPERIENCE_PREFIX}${CONTROL_FORMAT_LINE}\n${EXPERIENCE_OFF_NOTICE}`,
+    ])
+    expect((await committed(log)).join('\n')).not.toContain('biome check is the lint step')
   })
 })

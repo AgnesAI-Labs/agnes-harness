@@ -123,15 +123,6 @@
           "marker": "Agnes account sign-in is not available in this build yet"
         }
       ]
-    },
-    {
-      "id": "refinement.inspect",
-      "evidence": [
-        {
-          "path": "packages/base/extensions/refine/src/port.ts",
-          "marker": "harness_inspect is not implemented yet"
-        }
-      ]
     }
   ]
 }

@@ -13,6 +13,8 @@ export type EncodedLedgerState = Omit<
   | 'taint'
   | 'toolCalls'
   | 'refinementRuns'
+  | 'refinementEntryMeta'
+  | 'refinementTombstones'
 > & {
   registers: {
     [K in keyof LedgerState['registers']]: Array<
@@ -31,6 +33,12 @@ export type EncodedLedgerState = Omit<
   toolCalls: Array<[string, LedgerState['toolCalls'] extends ReadonlyMap<string, infer V> ? V : never]>
   refinementRuns: Array<
     [string, LedgerState['refinementRuns'] extends ReadonlyMap<string, infer V> ? V : never]
+  >
+  refinementEntryMeta: Array<
+    [string, LedgerState['refinementEntryMeta'] extends ReadonlyMap<string, infer V> ? V : never]
+  >
+  refinementTombstones: Array<
+    [string, LedgerState['refinementTombstones'] extends ReadonlyMap<string, infer V> ? V : never]
   >
 }
 
@@ -55,5 +63,7 @@ export function encodeLedgerState(state: LedgerState): EncodedLedgerState {
     taint: [...state.taint],
     toolCalls: [...state.toolCalls],
     refinementRuns: [...state.refinementRuns],
+    refinementEntryMeta: [...state.refinementEntryMeta],
+    refinementTombstones: [...state.refinementTombstones],
   }
 }

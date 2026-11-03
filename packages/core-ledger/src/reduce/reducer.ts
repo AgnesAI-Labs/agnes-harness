@@ -4,6 +4,7 @@ import { isRegisterTombstone, registerKey } from '../log/storage.js'
 import { contextAnchorOf } from './anchor.js'
 import { ChunkedMap } from './chunked-map.js'
 import { reduceDecision } from './decision.js'
+import { foldEntryMeta, foldEntryTombstone, REFINEMENT_ENTRY_META_EVENT } from './refinement-entry-meta.js'
 import { foldRefinementRun, REFINEMENT_RUN_EVENT } from './refinement-run.js'
 import type {
   ArtifactJob,
@@ -24,6 +25,8 @@ type Tables =
   | 'pendingEffects'
   | 'taint'
   | 'refinementRuns'
+  | 'refinementEntryMeta'
+  | 'refinementTombstones'
 type Registers = LedgerState['registers']
 type Writable<T> = T extends ReadonlyMap<infer K, infer V> ? Map<K, V> : never
 
@@ -176,8 +179,9 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
     case 'session/start': {
       const start = d as unknown as SessionStart
       if (start.parent) {
-        // A fork starts these over; lastTurn, planItems, artifactJobs, harnessEntries and the last
-        // ledger tokens carry across from the parent, except for a fresh spawned conversation.
+        // A fork starts these over; lastTurn, planItems, artifactJobs, harnessEntries with their
+        // refinement metadata and the last ledger tokens carry across from the parent, except for a
+        // fresh spawned conversation.
         reset('registers.decisionStates')
         reset('registers.budgetState')
         reset('registers.inbox')
@@ -330,6 +334,15 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
       const runId = typeof d?.runId === 'string' ? d.runId : undefined
       const run = runId === undefined ? undefined : foldRefinementRun(s.refinementRuns.get(runId), e)
       if (run) table('refinementRuns').set(run.runId, run)
+      break
+    }
+    case REFINEMENT_ENTRY_META_EVENT: {
+      const key = `${String(d?.kind ?? '')}\u0000${String(d?.id ?? '')}`
+      const cell = s.registers.harnessEntries.get(key)
+      const meta = foldEntryMeta(cell, e)
+      if (meta) table('refinementEntryMeta').set(key, meta)
+      const tombstone = foldEntryTombstone(cell, e)
+      if (tombstone) table('refinementTombstones').set(key, tombstone)
       break
     }
     case 'tool/call': {

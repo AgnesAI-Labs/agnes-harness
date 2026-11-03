@@ -40,6 +40,19 @@ export function supportsComputerUse(input: ModelInput): boolean {
   return input.includes('text') && input.includes('image')
 }
 
+/**
+ * The selected model's record, its input kinds (text only when the record is missing, duplicated or
+ * malformed, so image use fails closed) and whether it may drive Computer Use.
+ */
+export function requestModelInput(
+  provider: Pick<Provider, 'models'>,
+  target: { route: string; model: string },
+) {
+  const inlineImageModel = resolvedModelRecord(provider, target)
+  const modelInput: ModelInput = inlineImageModel?.input ?? ['text']
+  return { inlineImageModel, modelInput, computerUseAllowed: supportsComputerUse(modelInput) }
+}
+
 export function modelAllowsTool(
   tool: { meta: Pick<ToolDef['meta'], 'requiresImageInput'> },
   computerUseAllowed: boolean,

@@ -23,6 +23,7 @@ import { PlanModeRequestError, submitPlanCommand } from '@agnes/web-conversation
 import { canSubmitComposer } from '@agnes/web-conversation/presentation'
 import type { AppSessionContext } from '../app.js'
 import { showCommandFeedback } from './command-feedback.js'
+import { isRefineCommand, runRefineCommand } from './refine-command.js'
 
 export function createSubmissionController(
   context: Pick<
@@ -217,6 +218,16 @@ export function createSubmissionController(
         if (route === 'steer' && context.current) void context.current.steer(input).catch(context.showError)
         return
       }
+    }
+    if (
+      !selectedReferences.length &&
+      context.composerRuntime.getAttachmentBlocks().length === 0 &&
+      isRefineCommand(input)
+    ) {
+      context.composerRuntime.setDraft('')
+      sessionStorage.removeItem(context.composerDraftKey)
+      void runRefineCommand(context, input)
+      return
     }
     if (!selectedReferences.length && isPlanCommand(input)) {
       const cwd = context.selectedWorkspace?.path

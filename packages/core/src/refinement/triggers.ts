@@ -1,5 +1,6 @@
 import type { EventInput } from '@agnes/core-common/types'
 import type { ToolResult } from '@agnes/extension-api'
+import { compactedForControl } from '../request/experience-room.js'
 import { isChildSession } from '../step/child-session.js'
 import type { SessionImpl, TurnMemory } from '../step/session.js'
 import { normalizeToolError } from './normalize-error.js'
@@ -63,7 +64,8 @@ export function onCompactionCommitted(
   s: SessionImpl,
   payload: { replaceSeq: number; mode: 'summary' | 'elided' },
 ): void {
-  if (payload.mode !== 'summary') return
+  // A compaction made only to fit a control notice is not a lesson boundary: no trigger.
+  if (compactedForControl(s) || payload.mode !== 'summary') return
   guarded(() => {
     const sink = live(s)
     if (sink)

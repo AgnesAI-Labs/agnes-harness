@@ -2,9 +2,16 @@ import { CoreError, type Seq } from '@agnes/core-common/types'
 import type { HarnessEntry } from '@agnes/core-ledger/reduce/shapes'
 import type { RefinementPlan, RefinementTrigger } from '@agnes/core-ledger/reduce/state'
 import { recoverMaintenance } from '../maintenance/recovery.js'
-import { entryKey } from '../refine/apply.js'
+import {
+  entryKey,
+  mutationToken,
+  type RollbackProblem,
+  rollbackProblem,
+  rollbackRefine,
+} from '../refine/apply.js'
 import { isChildSession } from '../step/child-session.js'
 import type { SessionImpl } from '../step/session.js'
+import { type InspectAnswer, type InspectRequest, inspectEntries, readInFull } from './inspect.js'
 import { APPLY_LIMITS, automaticRefusal, type LimitRefusal } from './limits.js'
 import { redactEvidence } from './redact.js'
 import { queueRefinementRun, recoverRefinementRuns, refinementRunRow } from './run.js'
@@ -18,7 +25,9 @@ import {
   supersedeQueued,
   tryApply,
 } from './scheduler.js'
+import { lapsedKeys, validEntries } from './validity.js'
 
+export type { InspectAnswer, InspectEntry, InspectRequest, InspectSummary } from './inspect.js'
 export type { RefinementDeps, RefinementSettingsView } from './scheduler.js'
 
 export type RefinementRefusal =
@@ -29,14 +38,31 @@ export type RefinementRefusal =
   | 'closing'
   | 'invalid'
   | 'read-first'
+  | 'not-found'
   | LimitRefusal
 
 /** A run that was accepted (queued, or proposed for a direct proposal), or why nothing was written. */
 export type RefinementOutcome = { runId: string } | { refused: RefinementRefusal; detail?: string }
+/**
+ * A withdrawal that was written (the seq of its `harness/refine` row; a repeat returns the first), or
+ * why nothing was: the seq is not an applied refinement of this session (`not-found`, `not-applied`,
+ * `is-rollback`, `rejected`), a later change touched an entry it would undo (`changed-since`, with
+ * those entries: a person has to decide), or the session cannot take it (`child-session`, `closing`).
+ */
+export type RollbackResult =
+  | { seq: Seq }
+  | {
+      refused: RollbackProblem | 'changed-since' | 'child-session' | 'closing'
+      changed?: { kind: HarnessEntry['kind']; id: string }[]
+    }
+/** What a read of this session's entries found, or why it could not be answered. */
+export type InspectOutcome = InspectAnswer | { refused: RefinementRefusal; detail?: string }
 
 /**
- * A change the model proposes directly, without a planning call. Until entries can be read with a
- * snapshot to change against, it may only create entries that do not exist yet.
+ * A change the model proposes directly, without a planning call. It may create an entry that does not
+ * exist yet, replace or delete one this session has read in full (with `inspect` op `get`) at its
+ * current version, or reuse the id of one no longer in force (its goal ended). A deleted entry the
+ * model was given is withdrawn by a control notice in the next request.
  */
 export type DirectProposal = {
   rationale: string
@@ -57,6 +83,18 @@ export type RefinementFacade = Readonly<{
   request(trigger: RefinementTrigger): Promise<RefinementOutcome>
   /** Records a direct proposal and applies it once the session is between turns. */
   propose(proposal: DirectProposal): Promise<RefinementOutcome>
+  /**
+   * Reads this session's entries in force; never another session's, and it writes nothing. An entry
+   * whose goal has ended, or whose goal cannot be read now, is not shown.
+   */
+  inspect(request: InspectRequest): Promise<InspectOutcome>
+  /**
+   * The owner's withdrawal of one applied refinement (`refineSeq`, its `harness/refine` row): undone
+   * as a new refinement, only if every entry it wrote is still as it left it. It works while
+   * refinement is off, and at any time: a request prepared before it is prepared again, and the next
+   * one withdraws what the model was given before any new entry.
+   */
+  rollback(refineSeq: Seq): Promise<RollbackResult>
   /** Called when a turn has ended: applies what is proposed, then starts the next queued plan. */
   afterTurn(): Promise<void>
   /** Called when a plan finished while the session may be idle: applies it if nothing is in the way. */
@@ -114,6 +152,7 @@ function invalid(detail: string): { refused: 'invalid'; detail: string } {
 function directPlan(
   s: SessionImpl,
   p: DirectProposal,
+  lapsed: ReadonlySet<string>,
 ): RefinementPlan | { refused: RefinementRefusal; detail?: string } {
   // The text is stored and re-sent with every later request, so a credential in it is masked first,
   // and the masked text is what must fit.
@@ -129,15 +168,33 @@ function directPlan(
   const evidenceSeqs = [...new Set(seqs)]
   const touched = new Set<string>()
   const edits: RefinementPlan['edits'] = []
+  const baseline: RefinementPlan['baseline'] = []
+  const reused: RefinementPlan['baseline'] = []
   for (const [at, edit] of p.edits.entries()) {
     if (!KINDS.has(edit?.kind) || typeof edit.id !== 'string' || !ID.test(edit.id))
       return invalid(`edits[${at}]`)
+    if (edit.op !== 'upsert' && edit.op !== 'delete') return invalid(`edits[${at}].op`)
     const key = entryKey(edit)
     if (touched.has(key)) return invalid(`edits[${at}]: duplicate`)
     touched.add(key)
-    // Changing or removing a saved entry needs a read of it to change against; none exists yet.
-    if (edit.op !== 'upsert' || s.state.registers.harnessEntries.has(key))
+    // A saved entry changes, or goes, only from a full read of its current cell in this session; the
+    // apply checks that version and mutation token again, so a change made since the proposal is a
+    // conflict. An entry no longer in force (its goal ended) does not hold its id: it is replaced
+    // without a read. A cell without a numeric version (legacy or damaged) cannot have been read: it
+    // is never overwritten as if new.
+    const cell = s.state.registers.harnessEntries.get(key)
+    const saved = (cell?.value as { version?: unknown } | null | undefined)?.version
+    const reuse = !!cell && edit.op === 'upsert' && lapsed.has(key)
+    if (cell && (typeof saved !== 'number' || (!reuse && !readInFull(s, key, saved, cell.seq))))
       return { refused: 'read-first', detail: `${edit.kind}/${edit.id}` }
+    if (!cell && edit.op === 'delete') return { refused: 'not-found', detail: `${edit.kind}/${edit.id}` }
+    const version = typeof saved === 'number' ? saved : 0
+    baseline.push({ kind: edit.kind, id: edit.id, version, seq: mutationToken(s.state, key) })
+    if (reuse) reused.push({ kind: edit.kind, id: edit.id, version })
+    if (edit.op === 'delete') {
+      edits.push({ op: 'delete', kind: edit.kind, id: edit.id, evidenceSeqs })
+      continue
+    }
     const title = typeof edit.title === 'string' ? redactEvidence(edit.title) : undefined
     const content = typeof edit.content === 'string' ? redactEvidence(edit.content) : undefined
     if (title === undefined || title.length === 0 || title.length > 256) return invalid(`edits[${at}].title`)
@@ -160,15 +217,16 @@ function directPlan(
     edits,
     confirmations: [],
     evidenceSeqs,
-    // Each entry must still not exist when the proposal is applied.
-    baseline: edits.map((edit) => ({ kind: edit.kind, id: edit.id, version: 0 })),
+    // Each entry must still be as it was read: absent, read in full, or the lapsed version it replaces.
+    baseline,
+    ...(reused.length ? { lapsed: reused.map(({ kind, id }) => ({ kind, id })) } : {}),
   }
 }
 
 async function propose(s: SessionImpl, p: DirectProposal): Promise<RefinementOutcome> {
   const refused = refusal(s)
   if (refused) return refused
-  const plan = directPlan(s, p)
+  const plan = directPlan(s, p, lapsedKeys(await validEntries(s)))
   if ('refused' in plan) return plan
   const runId = s.d.ids.ulid()
   const written = await s.locked(async () => {
@@ -183,6 +241,24 @@ async function propose(s: SessionImpl, p: DirectProposal): Promise<RefinementOut
   if (!written) return { refused: 'refinement-off' }
   await tryApply(s, runId)
   return { runId }
+}
+
+async function inspect(s: SessionImpl, request: InspectRequest): Promise<InspectOutcome> {
+  const refused = refusal(s)
+  if (refused) return refused
+  const out = inspectEntries(s, (await validEntries(s)).valid, request)
+  return 'problem' in out ? { refused: out.problem, detail: out.detail } : out
+}
+
+async function rollback(s: SessionImpl, refineSeq: Seq): Promise<RollbackResult> {
+  if (isChildSession(s)) return { refused: 'child-session' }
+  if (s.closingOrClosed) return { refused: 'closing' }
+  return s.locked(async (): Promise<RollbackResult> => {
+    const problem = await rollbackProblem(s, refineSeq)
+    if (problem) return { refused: problem }
+    const out = await rollbackRefine(s, refineSeq)
+    return out.outcome === 'applied' ? { seq: out.seq } : { refused: out.reason, changed: out.changed }
+  })
 }
 
 /** Applies what is proposed now that a turn has ended, then starts the next plan. Never throws. */
@@ -228,6 +304,8 @@ export function refinementFacade(s: SessionImpl): RefinementFacade {
   return Object.freeze({
     request: (trigger: RefinementTrigger) => request(s, trigger),
     propose: (proposal: DirectProposal) => propose(s, proposal),
+    inspect: (request: InspectRequest) => inspect(s, request),
+    rollback: (refineSeq: Seq) => rollback(s, refineSeq),
     afterTurn: () => refinementAfterTurn(s),
     onIdlePlanFinished: async (runId: string) => {
       if (!settingsOf(s)) return

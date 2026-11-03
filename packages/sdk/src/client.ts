@@ -578,6 +578,15 @@ export class Client {
     /** Asks for a background refinement review of the session's latest task; returns the queued run. */
     refine: (sessionId: string, focus?: string): Promise<import('@agnes/protocol').SessionRefineResult> =>
       this.call('_agnes/v1/session.refine', { sessionId, ...(focus === undefined ? {} : { focus }) }),
+    /**
+     * Withdraws an applied refinement of the session (`appliedSeq`, as the timeline shows it). Refused
+     * (`SEMANTIC_REJECTED`) with reason `changed-since` when a later change touched one of its entries.
+     */
+    refineRollback: (
+      sessionId: string,
+      appliedSeq: number,
+    ): Promise<import('@agnes/protocol').SessionRefineRollbackResult> =>
+      this.call('_agnes/v1/session.refine.rollback', { sessionId, appliedSeq }),
     /** `additionalDirectories` are added to the parent's own for the child; the parent is unchanged. */
     fork: async (
       id: string,

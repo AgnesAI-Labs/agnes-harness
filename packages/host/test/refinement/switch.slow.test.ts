@@ -8,8 +8,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'
 
 const baseDir = fileURLToPath(new URL('../../../base/', import.meta.url))
-// harness_inspect is not offered until it can read entries: a tool that only fails is not registered.
-const REFINEMENT_TOOLS = ['harness_propose', 'harness_refine']
+const REFINEMENT_TOOLS = ['harness_inspect', 'harness_propose', 'harness_refine']
 const PROFILE = 'local-dev'
 
 const dirs: string[] = []
@@ -79,12 +78,12 @@ describe('the refinement switch at host assembly', () => {
     expect(loaded.find((entry) => entry.id === 'agnes/refine')?.loaded).toBe(true)
   })
 
-  it('only the settings file turns the tools on, both deferred', async () => {
+  it('only the settings file turns the tools on, all three deferred', async () => {
     const dataDir = scratch()
     enable(dataDir)
     const { tools, registrations } = await refinementTools(dataDir)
     expect(tools).toEqual(REFINEMENT_TOOLS.map((name) => ({ name, deferLoading: true })))
-    expect(registrations).toEqual(['tool:harness_propose', 'tool:harness_refine'])
+    expect(registrations).toEqual(['tool:harness_propose', 'tool:harness_refine', 'tool:harness_inspect'])
   })
 
   it('a settings file for another profile does not turn the tools on', async () => {

@@ -1,5 +1,6 @@
 import type { Disposer } from '@agnes/extension-api'
 import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
+import { createInspectTool } from './inspect-tool.js'
 import {
   type ConnectRefinement,
   connectedToolPort,
@@ -11,7 +12,10 @@ import { createRefineTool } from './refine-tool.js'
 
 export type {
   ConnectRefinement,
+  InspectAnswer,
+  InspectOutcome,
   InspectRequest,
+  InspectSummary,
   RefinementOutcome,
   RefinementRuns,
   RefinementToolPort,
@@ -48,11 +52,10 @@ export function createRefineExtension(deps: RefineExtensionDeps = {}) {
       // With nothing to run them, the tools would only ever fail: none are registered.
       const port = deps.port ?? (deps.runs ? connectedToolPort(deps.runs(REFINEMENT_PLANNER)) : undefined)
       if (!port) return
-      // There is no harness_inspect tool until entries can be read: a tool that only answered
-      // REFINEMENT_NOT_IMPLEMENTED would be a dead end the model is invited into.
       const disposers: Disposer[] = [
         ctx.tools.register(createProposeTool(port)),
         ctx.tools.register(createRefineTool(port)),
+        ctx.tools.register(createInspectTool(port)),
       ]
       return () => {
         for (let index = disposers.length - 1; index >= 0; index -= 1) disposers[index]?.()

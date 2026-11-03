@@ -308,7 +308,7 @@ const main = async (): Promise<void> => {
       const candidates = [resolve(runDir, path), resolve(runDir, outcome.runId, path)]
       return readFileSync(candidates.find((p) => existsSync(p)) ?? (candidates[0] as string), 'utf8')
     }
-    records.push(toRunRecord(task, outcome, usage, { readFile }))
+    records.push(toRunRecord(task, outcome, usage, { readFile, system: outcome.system ?? 'prime' }))
   }
 
   const report = buildReport(records)

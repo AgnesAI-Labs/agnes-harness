@@ -3601,6 +3601,49 @@
           }
         },
         {
+          "description": "One background refinement run: its latest state, what asked for it, why it ended and which saved entries it changed. Entry text is never part of it.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "seq", "runId", "state", "trigger"],
+          "properties": {
+            "kind": { "const": "refinement-run" },
+            "id": { "type": "string" },
+            "seq": { "type": "integer" },
+            "runId": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "state": {
+              "enum": [
+                "queued",
+                "planning",
+                "proposed",
+                "applied",
+                "no-op",
+                "rejected",
+                "superseded",
+                "cancelled",
+                "unknown"
+              ]
+            },
+            "trigger": { "enum": ["manual", "model", "compaction", "repeated-failure"] },
+            "reason": { "type": "string", "maxLength": 64 },
+            "edits": {
+              "type": "array",
+              "maxItems": 50,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["op", "kind", "id"],
+                "properties": {
+                  "op": { "enum": ["upsert", "delete"] },
+                  "kind": { "enum": ["prompt", "memory", "skill", "subagent"] },
+                  "id": { "type": "string", "maxLength": 128 }
+                }
+              }
+            },
+            "appliedSeq": { "type": "integer", "minimum": 1 },
+            "withdrawn": { "type": "boolean" }
+          }
+        },
+        {
           "description": "Memory files that changed outside the memory provider, for example through an unconfined shell under full access, since it last wrote or acknowledged them. The turn still injected them.",
           "type": "object",
           "additionalProperties": false,
@@ -4338,7 +4381,7 @@
           }
         },
         "byLane": {
-          "description": "Spend per lane, present once a lane other than the conversation's own has spent anything (background refinement calls); the totals and credits above already include every lane.",
+          "description": "Spend per lane, present once a lane other than the conversation's own has spent anything (background refinement calls); the totals, cost and credits above already include every lane.",
           "type": "object",
           "additionalProperties": {
             "type": "object",
@@ -4350,7 +4393,8 @@
               "cacheRead": { "type": "integer", "minimum": 0 },
               "cacheWrite": { "type": "integer", "minimum": 0 },
               "reasoning": { "type": "integer", "minimum": 0 },
-              "credits": { "type": "number", "minimum": 0 }
+              "credits": { "type": "number", "minimum": 0 },
+              "usdMicros": { "type": "integer", "minimum": 0 }
             }
           }
         },
@@ -5405,6 +5449,31 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 128
+        }
+      }
+    },
+    "SessionRefineRollbackParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "appliedSeq"],
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "appliedSeq": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "SessionRefineRollbackResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq"],
+      "properties": {
+        "seq": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     },

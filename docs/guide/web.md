@@ -138,6 +138,8 @@ On narrow screens, select timeline events from the record list. The chart remain
 
 For [voice input, voice conversation and read-aloud](voice.md), add a Voice side-model account in Models, then use **Settings → General → Voice**. Speech uses that account’s provider; the conversation still uses its selected chat model.
 
+[Task experience](refinement.md) is off by default; turn it on in **Settings → General → Task experience** and restart. Then `/refine [focus]` in the message box asks for a background review of the session, and each review gets a line in the conversation with a **Withdraw** action once it is applied.
+
 ## Everyday management
 
 The sidebar's **View options** menu groups sessions by workspace or shows one flat list, and filters them to hide archived sessions, show all conversations, or show archived sessions only. Choose **Archived only** under **Filter sessions** to show archived sessions by themselves. These filters show idle and completed sessions alongside running ones; they do not indicate that a task is executing.

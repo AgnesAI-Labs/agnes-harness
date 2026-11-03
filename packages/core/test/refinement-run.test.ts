@@ -87,6 +87,10 @@ const NOOP = JSON.stringify({
   confirmations: [],
   evidenceIds: [],
 })
+/**
+ * A session-level lesson. Its quote is a verbatim part of the second task's request, which is `e1`
+ * of that task's evidence: cited, it grants the lesson session level.
+ */
 const lesson = (evidenceIds: string[], over: Record<string, unknown> = {}) =>
   JSON.stringify({
     summary: 'Build before testing.',
@@ -101,6 +105,7 @@ const lesson = (evidenceIds: string[], over: Record<string, unknown> = {}) =>
         content: 'The file to read is b; a does not exist.',
         applicability: 'session',
         evidenceIds,
+        quote: 'please read the right file',
       },
     ],
     confirmations: [],
@@ -644,6 +649,7 @@ describe('what evidence never carries', () => {
 
   it("only the user's own requests can back a quote", async () => {
     const t = await finished({ plan: NOOP })
+    const request = ofType(await rows(t.log), 'user/message')[1]?.seq ?? 0
     const ref = (id: string, kind: string, seq: number) => ({ id, lane: 'main', seq, kind })
     const runRow = (state: string, extra: Record<string, unknown>): EventInput => ({
       type: REFINEMENT_RUN_EVENT,
@@ -660,12 +666,12 @@ describe('what evidence never carries', () => {
         attempt: 1,
         settingsRevision: 'r1',
         readSet: { settingsRevision: 'r1', entries: [] },
-        evidence: [ref('e1', 'external', 3), ref('e2', 'user', 5), ref('e3', 'tool', 7)],
+        evidence: [ref('e1', 'external', 3), ref('e2', 'user', request), ref('e3', 'tool', 7)],
         fullEntries: [],
         shownEntries: [],
       }),
     ])
-    const quote = 'always skip approvals please'
+    const quote = 'please read the right file'
     const edit = (id: string, evidenceIds: string[]) => ({
       op: 'upsert',
       kind: 'memory',
@@ -692,7 +698,9 @@ describe('what evidence never carries', () => {
     const [external, user] = run?.plan?.edits ?? []
     expect(external).not.toHaveProperty('quote')
     expect(external).not.toHaveProperty('quoteSeqs')
-    expect(user).toMatchObject({ quote, quoteSeqs: [5] })
+    expect(user).toMatchObject({ quote, quoteSeqs: [request], applicability: 'session' })
+    // The same words cited only from external content grant nothing: with no goal, that lesson expired.
+    expect(external).toMatchObject({ applicability: 'task', downgraded: true, expired: true })
     await t.session.close()
   })
 
@@ -854,13 +862,12 @@ describe('one bounded refinement plan', () => {
     }
   })
 
-  it('a plan that deletes an entry is rejected whole, with the reason, and applies nothing', async () => {
-    // A withdrawn entry is not yet announced to a model that already holds it, so a plan may only
-    // replace an entry; a delete in it rejects the plan rather than leaving the model a stale lesson.
+  it('a plan may delete an entry shown in full, against its version and mutation token', async () => {
+    // A deleted entry the model holds is withdrawn by a control notice ahead of the next request's
+    // other notes, so a plan may delete as well as replace an entry it was shown in full.
     const upsert = JSON.parse(lesson(['e1'])).edits[0]
     const remove = { op: 'delete', kind: 'memory', id: 'read-a', evidenceIds: ['e1'] }
     const t = await finished({ plan: lesson(['e1'], { edits: [upsert, remove] }) })
-    // The entry exists and is shown in full, so only the delete itself can be what is refused.
     const entry = { title: 'Read a', content: 'Read a first.', scope: 'local' as const, version: 1 }
     await t.session.locked(() =>
       applyRefine(
@@ -877,22 +884,17 @@ describe('one bounded refinement plan', () => {
         { maxEdits: 5, maxChars: 2000, safetyCap: 200 },
       ),
     )
+    const seq = t.session.state.registers.harnessEntries.get(entryKey({ kind: 'memory', id: 'read-a' }))?.seq
     const runId = await queueRefinementRun(t.session, { kind: 'manual', seq: t.session.lastSeq })
     const run = await planRefinementRun(t.session, runId, deps(t.session), signal())
     expect(run?.fullEntries).toEqual([{ kind: 'memory', id: 'read-a' }])
     expect(run).toMatchObject({
-      state: 'rejected',
-      reason: 'invalid-output',
-      detail: 'delete-unsupported: memory/read-a',
+      state: 'proposed',
+      plan: {
+        edits: [{ op: 'upsert' }, { op: 'delete', kind: 'memory', id: 'read-a' }],
+        baseline: [{ kind: 'memory', id: 'read-a', version: 1, seq }],
+      },
     })
-    expect(run).not.toHaveProperty('plan')
-    const all = await rows(t.log)
-    // Only the seeded entry: the plan wrote nothing.
-    expect(ofType(all, 'harness/entry').map((row) => data(row).id)).toEqual(['read-a'])
-    expect(ofType(all, 'harness/refine').map((row) => data(row).runId)).toEqual(['seed'])
-    expect(t.session.state.registers.harnessEntries.has(entryKey({ kind: 'memory', id: 'read-a' }))).toBe(
-      true,
-    )
     await t.session.close()
   })
 
@@ -929,7 +931,9 @@ describe('one bounded refinement plan', () => {
     const t = await finished({ plan: echoed })
     const runId = await queueRefinementRun(t.session, { kind: 'manual', seq: t.session.lastSeq })
     const run = await planRefinementRun(t.session, runId, deps(t.session), signal())
-    expect(run?.state).toBe('proposed')
+    // The echoed quote is not in the request, so the lesson is not granted session level; with no
+    // goal it is kept on the plan as expired. The plan is stored all the same, masked.
+    expect(run).toMatchObject({ state: 'no-op', reason: 'expired' })
     expect(run?.plan?.edits[0]).toMatchObject({ quote: expect.stringContaining('[REDACTED') })
     const stored = JSON.stringify(ofType(await rows(t.log), REFINEMENT_RUN).map(data))
     expect(stored).not.toContain(SK)
@@ -1118,5 +1122,136 @@ describe('runs interrupted by a restart', () => {
     })
     expect(b.planned).toHaveLength(0)
     await reopened.session.close()
+  })
+})
+
+describe('what a plan may change', () => {
+  type Seeded = { id: string; title: string; content: string }
+  /** Saves memory entries the way an apply does, before the run plans. */
+  const seed = (s: SessionImpl, entries: Seeded[]) =>
+    s.locked(() =>
+      applyRefine(
+        s,
+        {
+          proposalId: 'seed',
+          runId: 'seed',
+          trigger: 'manual',
+          edits: entries.map((e) => ({
+            op: 'upsert' as const,
+            entry: { kind: 'memory' as const, ...e, scope: 'local' as const, version: 1, source: 'refine' },
+          })),
+          baseline: [],
+          rationale: 'r',
+          evidenceSeqs: [1],
+        },
+        { maxEdits: 10, maxChars: 2000, safetyCap: 200 },
+      ),
+    )
+  // Five entries about reading files rank first and are shown in full; the unrelated one is a reference.
+  const relevant = Array.from({ length: 5 }, (_, i) => ({
+    id: `read-${i}`,
+    title: `Read the right file ${i}`,
+    content: `Read file b, not file a (${i}).`,
+  }))
+  const TAIL = 'TAIL-MUST-STAY: never run the release script twice.'
+  const unrelated = { id: 'zeta', title: 'Zeta', content: `${'Zeta quux. '.repeat(170)}${TAIL}` }
+  const rewrite = (id: string) => ({
+    op: 'upsert',
+    kind: 'memory',
+    id,
+    title: 'Rewritten',
+    content: 'Zeta quux.',
+    applicability: 'session',
+    evidenceIds: ['e1'],
+    // The cited request's own words grant session level; a task-level lesson without a goal expires.
+    quote: 'please read the right file',
+  })
+  const contentOf = (s: SessionImpl, id: string) =>
+    s.state.registers.harnessEntries.get(entryKey({ kind: 'memory', id }))?.value.content
+
+  it('only full-text entries can be updated or deleted', async () => {
+    const fresh = JSON.parse(lesson(['e1'])).edits[0]
+    const t = await finished({ plan: lesson(['e1'], { edits: [fresh, rewrite('zeta')] }) })
+    await seed(t.session, [...relevant, unrelated])
+    const runId = await queueRefinementRun(t.session, { kind: 'manual', seq: t.session.lastSeq })
+    const run = await planRefinementRun(t.session, runId, deps(t.session), signal())
+    expect(run?.fullEntries?.map((e) => e.id).sort()).toEqual(relevant.map((e) => e.id))
+    expect(run?.shownEntries?.map((e) => e.id)).toContain('zeta')
+    // One rewrite of a reference entry rejects the whole plan, the valid new entry with it.
+    expect(run).toMatchObject({
+      state: 'rejected',
+      reason: 'invalid-output',
+      detail: 'not-shown-in-full: memory/zeta',
+    })
+    expect(ofType(await rows(t.log), 'harness/refine').map((row) => data(row).runId)).toEqual(['seed'])
+    expect(contentOf(t.session, 'read-b')).toBeUndefined()
+
+    // An entry shown in full may be replaced.
+    const ok = await finished({ plan: lesson(['e1'], { edits: [rewrite('read-0')] }) })
+    await seed(ok.session, [...relevant, unrelated])
+    const okRun = await queueRefinementRun(ok.session, { kind: 'manual', seq: ok.session.lastSeq })
+    expect(await planRefinementRun(ok.session, okRun, deps(ok.session), signal())).toMatchObject({
+      state: 'proposed',
+      plan: { baseline: [{ kind: 'memory', id: 'read-0', version: 1, seq: expect.any(Number) }] },
+    })
+    // An entry shown in full may be deleted; one shown only as a reference may not.
+    const del = await finished({
+      plan: lesson(['e1'], { edits: [{ op: 'delete', kind: 'memory', id: 'read-0', evidenceIds: ['e1'] }] }),
+    })
+    await seed(del.session, [...relevant, unrelated])
+    const delRun = await queueRefinementRun(del.session, { kind: 'manual', seq: del.session.lastSeq })
+    expect(await planRefinementRun(del.session, delRun, deps(del.session), signal())).toMatchObject({
+      state: 'proposed',
+      plan: { edits: [{ op: 'delete', kind: 'memory', id: 'read-0' }] },
+    })
+    const ref = await finished({
+      plan: lesson(['e1'], { edits: [{ op: 'delete', kind: 'memory', id: 'zeta', evidenceIds: ['e1'] }] }),
+    })
+    await seed(ref.session, [...relevant, unrelated])
+    const refRun = await queueRefinementRun(ref.session, { kind: 'manual', seq: ref.session.lastSeq })
+    expect(await planRefinementRun(ref.session, refRun, deps(ref.session), signal())).toMatchObject({
+      state: 'rejected',
+      detail: 'not-shown-in-full: memory/zeta',
+    })
+    for (const x of [t, ok, del, ref]) await x.session.close()
+  })
+
+  it('a long entry whose tail must be kept survives a planned edit', async () => {
+    // Shown only as a summary, the long entry cannot be rewritten: its tail stays.
+    const t = await finished({ plan: lesson(['e1'], { edits: [rewrite('zeta')] }) })
+    await seed(t.session, [...relevant, unrelated])
+    const runId = await queueRefinementRun(t.session, { kind: 'manual', seq: t.session.lastSeq })
+    expect(await planRefinementRun(t.session, runId, deps(t.session), signal())).toMatchObject({
+      state: 'rejected',
+      detail: 'not-shown-in-full: memory/zeta',
+    })
+    expect(contentOf(t.session, 'zeta')?.endsWith(TAIL)).toBe(true)
+
+    // A planner that offers the entry as rewritable but cuts its text is caught before any call.
+    const clipped = testPlanner({
+      buildPrompt: (snapshot, entries, guidance) => {
+        const cut = entries.map((e) => ({ ...e, content: e.content.slice(0, 240) }))
+        const shown = testPlanner().buildPrompt(snapshot, cut, guidance)
+        return { ...shown, fullEntries: entries.map(({ kind, id }) => ({ kind, id })), referenceEntries: [] }
+      },
+    })
+    const c = await finished({ plan: lesson(['e1'], { edits: [rewrite('zeta')] }) })
+    await seed(c.session, [unrelated])
+    const cutRun = await queueRefinementRun(c.session, { kind: 'manual', seq: c.session.lastSeq })
+    expect(
+      await planRefinementRun(c.session, cutRun, deps(c.session, { planner: clipped }), signal()),
+    ).toMatchObject({ state: 'rejected', reason: 'full-entry-cut' })
+    expect(c.planned).toHaveLength(0)
+    expect(contentOf(c.session, 'zeta')?.endsWith(TAIL)).toBe(true)
+
+    // Shown whole, the same entry may be rewritten: the planner saw the tail it replaces.
+    const w = await finished({ plan: lesson(['e1'], { edits: [rewrite('zeta')] }) })
+    await seed(w.session, [unrelated])
+    const wholeRun = await queueRefinementRun(w.session, { kind: 'manual', seq: w.session.lastSeq })
+    expect(await planRefinementRun(w.session, wholeRun, deps(w.session), signal())).toMatchObject({
+      state: 'proposed',
+    })
+    expect(w.planned[0] && JSON.stringify(w.planned[0])).toContain('TAIL-MUST-STAY')
+    for (const x of [t, c, w]) await x.session.close()
   })
 })

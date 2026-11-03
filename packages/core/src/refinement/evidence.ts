@@ -100,8 +100,9 @@ export function evidenceItemsOf(rows: readonly Event[]): EvidenceItem[] {
 }
 
 /**
- * Every saved entry with the seq of the row that last wrote its cell. A delete removes the cell and
- * a re-create writes a new seq, so an entry that is gone, or gone and back, never matches.
+ * Every saved entry with the seq of the row that last wrote its cell, and every removed one with the
+ * seq of the row that recorded its removal. A delete removes the cell and a re-create writes a new
+ * seq, so an entry that is gone, gone and back, or back and gone again never matches.
  */
 export function readSetOf(s: SessionImpl, settingsRevision: string): RefinementReadSet {
   const entries: RefinementReadSet['entries'] = []
@@ -115,6 +116,9 @@ export function readSetOf(s: SessionImpl, settingsRevision: string): RefinementR
       version: typeof e.version === 'number' ? e.version : 0,
     })
   }
+  for (const [key, gone] of s.state.refinementTombstones)
+    if (!s.state.registers.harnessEntries.has(key))
+      entries.push({ kind: gone.kind, id: gone.id, seq: gone.seq, version: gone.version, removed: true })
   entries.sort((a, b) => compare(a.kind, b.kind) || compare(a.id, b.id))
   return { settingsRevision, entries }
 }

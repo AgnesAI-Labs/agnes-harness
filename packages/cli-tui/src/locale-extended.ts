@@ -47,8 +47,6 @@ export const EXTENDED_KEYS = [
   'commands.attachSummary',
   'commands.export',
   'commands.exportSummary',
-  'commands.refine',
-  'commands.refineSummary',
   'commands.packages',
   'commands.packagesSummary',
   'commands.install',
@@ -311,8 +309,6 @@ const BASE: Record<Locale, Record<BaseKey, string>> = {
     'commands.export':
       'Write the session to a file: agnes, html, sharegpt or claude-code (redacted), here or at a path',
     'commands.exportSummary': 'Export this session',
-    'commands.refine': 'Show refine proposals (not yet projected onto the timeline)',
-    'commands.refineSummary': 'Show refine proposals',
     'commands.packages': 'Show installed plugins with their expected/actual status',
     'commands.packagesSummary': 'List installed plugins',
     'commands.install': 'Preview, confirm or cancel a plugin installation',
@@ -560,8 +556,6 @@ const BASE: Record<Locale, Record<BaseKey, string>> = {
     'commands.export':
       '把当前会话写入文件：agnes、html、sharegpt 或 claude-code（已脱敏），默认在当前目录或指定路径',
     'commands.exportSummary': '导出当前会话',
-    'commands.refine': '查看精炼提案（尚未投影到时间线）',
-    'commands.refineSummary': '查看精炼提案',
     'commands.packages': '查看已安装插件及其期望/实际状态',
     'commands.packagesSummary': '列出已装插件',
     'commands.install': '预览、确认或取消插件安装',

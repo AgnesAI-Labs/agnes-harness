@@ -179,7 +179,7 @@ describe('refinement experience on the provider wire', () => {
       expect(first.raw.split(ENTRY_TEXT)).toHaveLength(2)
       expect(first.raw).toMatch(ENVELOPED_ENTRY)
       expect(first.raw).toContain('[skill/release v1]')
-      // A skill is listed by its metadata line; its body is not sent.
+      // A skill is listed by its metadata line; its body stays behind harness_inspect.
       expect(first.raw).toContain('Draft release notes from the merged pull requests.')
       expect(first.raw).not.toContain('SKILL-BODY-ONLY')
     })

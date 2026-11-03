@@ -47,6 +47,9 @@ type Session = Awaited<ReturnType<Awaited<ReturnType<typeof createTestHost>>['ho
 type Row = { seq: number; type: string; lane?: string; data: Record<string, unknown> }
 /** One model reply, or a function that decides it when the request arrives (and may wait). */
 type Step = WireReply | (() => WireReply | Promise<WireReply>)
+/** A verbatim part of the user's request that grants the lesson session level. */
+const QUOTE = 'tell me what it says'
+
 type Evidence = { id: string; kind: string; tool?: string; args?: string; isError?: boolean; text: string }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -94,14 +97,19 @@ const NOTHING_TO_KEEP: WireReply = {
   }),
 }
 
-/** The planner's answer: one session entry citing the failed read and the read that fixed it. */
+/**
+ * The planner's answer: one session entry citing the failed read, the read that fixed it and the
+ * user's request, quoted verbatim so the entry is granted session level (the two reads name
+ * different paths, so they are not a failed-then-successful pair on one target).
+ */
 function lessonFrom(body: unknown): WireReply {
   const evidence = evidenceOf(body)
   const failed = evidence.find((e) => e.tool === 'read' && e.isError === true)
   const fixed = evidence.find((e) => e.tool === 'read' && e.isError === false && e.text.includes(NOTES))
-  // Without both, nothing is proposed and the test that expects an entry fails on the run's states.
-  if (!failed || !fixed) return NOTHING_TO_KEEP
-  const cited = [failed.id, fixed.id]
+  const asked = evidence.find((e) => e.kind === 'user' && e.text.includes(QUOTE))
+  // Without all three, nothing is proposed and the test that expects an entry fails on the run's states.
+  if (!failed || !fixed || !asked) return NOTHING_TO_KEEP
+  const cited = [asked.id, failed.id, fixed.id]
   return {
     text: JSON.stringify({
       summary: 'Read the notes from docs/notes.txt.',
@@ -116,6 +124,7 @@ function lessonFrom(body: unknown): WireReply {
           content: ENTRY,
           applicability: 'session',
           evidenceIds: cited,
+          quote: QUOTE,
         },
       ],
       confirmations: [],
@@ -491,14 +500,19 @@ async function loop(api: Api, dataDir: string): Promise<void> {
       const refines = await scan(t.session, 'harness/refine')
       expect(refines).toHaveLength(1)
       expect(refines[0]?.seq).toBeGreaterThan(firstEnd ?? Number.POSITIVE_INFINITY)
-      // The evidence the plan cites is the failed read and the read that fixed it.
+      // The evidence the plan cites is the user's request (quoted, which grants the session level),
+      // the failed read and the read that fixed it.
+      const request = (await scan(t.session, 'user/message')).find((row) =>
+        JSON.stringify(row.data.content).includes(QUOTE),
+      )
       const results = await scan(t.session, 'tool/result')
       const failed = results.find((row) => row.data.isError === true)
       const fixed = results.find(
         (row) => row.data.isError !== true && JSON.stringify(row.data.content).includes(NOTES),
       )
       const plan = rows[2]?.data.plan as { edits: { evidenceSeqs: number[] }[] }
-      expect(plan.edits[0]?.evidenceSeqs).toEqual([failed?.seq, fixed?.seq])
+      expect(plan.edits[0]?.evidenceSeqs).toEqual([request?.seq, failed?.seq, fixed?.seq])
+      expect(plan.edits[0]).toMatchObject({ applicability: 'session', quote: QUOTE })
       // One background call on the maintenance lane.
       const intents = await scan(t.session, 'x/core/maintenance-intent')
       expect(intents.map((row) => row.lane)).toEqual(['refinement'])

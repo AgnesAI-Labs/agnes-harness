@@ -20,6 +20,10 @@ export {
   processStepLabel,
   processStepSummary,
 } from './conversation/messages/process-step.js'
+export type {
+  RefinementWithdraw,
+  RefinementWithdrawOutcome,
+} from './conversation/messages/refinement-run.js'
 export {
   type ConversationMarkdownState,
   ConversationMessages,

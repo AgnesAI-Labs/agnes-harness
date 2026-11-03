@@ -185,6 +185,13 @@ export class RemoteSession {
     )) as import('@agnes/protocol').SessionRefineResult
   }
 
+  /** `session.refine.rollback` on the worker that holds the real session. */
+  async refineRollback(appliedSeq: number): Promise<import('@agnes/protocol').SessionRefineRollbackResult> {
+    return (await this.link.command('refineRollback', {
+      appliedSeq,
+    })) as import('@agnes/protocol').SessionRefineRollbackResult
+  }
+
   /** One voice call on the worker that holds the real session; the daemon's abort reaches it by run id. */
   async voice(
     method: 'voice.transcribe' | 'voice.speak',
