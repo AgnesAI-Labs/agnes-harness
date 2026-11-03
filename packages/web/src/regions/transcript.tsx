@@ -30,7 +30,7 @@ export function mountTranscriptRegion(
     ) => Promise<import('@agnes/web-ui/conversation').RefinementWithdrawOutcome>
     onSaveRefinementEntry?: (
       sessionId: string,
-      kind: 'memory' | 'prompt',
+      kind: 'memory' | 'prompt' | 'skill',
       id: string,
     ) => Promise<import('@agnes/web-ui/conversation').RefinementSaveOutcome>
     session?: SessionService

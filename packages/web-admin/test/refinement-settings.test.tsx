@@ -95,12 +95,12 @@ it('the settings panel saves with revision and shows the permission text', async
   expect(field(host, 'refinement-enabled').getAttribute('aria-checked')).toBe('false')
   expect((field(host, 'refinement-mode') as HTMLSelectElement).value).toBe('manual')
   expect(api.save).not.toHaveBeenCalled()
-  // What turning it on allows, one by one; the two skill grants still arrive in a later release.
+  // What turning it on allows, one by one; every grant is in force.
   const permissions = field(host, 'refinement-permissions').textContent ?? ''
   expect(permissions).toContain('Install proven skills in the workspace')
   expect(permissions).toContain('Let the model save skills in the workspace')
   expect(permissions).toContain('Let the model save memory in the workspace')
-  expect(permissions.match(/later release/g)).toHaveLength(2)
+  expect(permissions).not.toMatch(/later release/)
   expect(field(host, 'refinement-allows-undo').textContent).toContain('Nothing is brought back')
   // The expectations the user should have, said plainly.
   expect(host.textContent).toContain('Turning it on reaches the tools the next time the host starts')
@@ -214,19 +214,21 @@ it('shows the section in Chinese', async () => {
   expect(text).toContain('开启要等宿主下次启动才会让工具出现')
   expect(text).toContain('关闭则立即生效')
   expect(text).toContain('可能出现更多命令审批')
-  expect(field(host, 'refinement-permissions').textContent?.match(/后续版本/g)).toHaveLength(2)
-  expect(field(host, 'refinement-allows-memory').textContent).not.toContain('后续版本')
+  expect(field(host, 'refinement-permissions').textContent).not.toContain('后续版本')
+  expect(field(host, 'refinement-allows-install').textContent).toContain('纯指令')
 })
 
-it('the settings panel no longer says the memory grant is unavailable', async () => {
+it('every grant is in force: none says it comes in a later release', async () => {
   const host = await mount(fakeApi())
   const memory = field(host, 'refinement-allows-memory').textContent ?? ''
   expect(memory).toContain('Let the model save memory in the workspace')
-  expect(memory).not.toMatch(/not available|later release/i)
-  for (const name of ['install', 'skill'])
-    expect(field(host, `refinement-allows-${name}`).textContent).toMatch(/later release/)
-  // Script skills are not part of the product: the install grant speaks of instructions only.
-  expect(field(host, 'refinement-allows-install').textContent).not.toMatch(/script/i)
+  for (const name of ['install', 'skill', 'memory'])
+    expect(field(host, `refinement-allows-${name}`).textContent).not.toMatch(/not available|later release/i)
+  const install = field(host, 'refinement-allows-install').textContent ?? ''
+  // Saved skills are instructions only: a script is written by the agent itself, under its permissions.
+  expect(install).toMatch(/instructions only/i)
+  expect(install).toMatch(/30 days/)
+  expect(field(host, 'refinement-allows-skill').textContent).toMatch(/uninstall|roll/i)
 })
 
 const NOTICE_KEY = 'agnes.refinement.workspace-notice'
@@ -238,6 +240,8 @@ it('shows a profile that already had refinement on a one-time notice until it is
     const host = await mount(fakeApi({ enabled: true, mode: 'auto' }))
     const notice = field(host, 'refinement-workspace-notice')
     expect(notice.textContent).toContain('workspace memory')
+    expect(notice.textContent).toContain('workspace skills')
+    expect(notice.textContent).not.toMatch(/later release/)
     expect(notice.textContent).toMatch(/without asking again/)
     expect(notice.textContent).toContain('Learn from finished work')
     const dismiss = notice.querySelector<HTMLButtonElement>('button')
@@ -293,4 +297,18 @@ it('registers the section under General', () => {
   })
   dispose()
   expect(settingsSections.get('refinement')).toBeUndefined()
+})
+
+it('shows the saved skills of the workspace when the connection reaches them', async () => {
+  const plain = await mount(fakeApi())
+  expect(query(plain, 'refinement-saved-skills')).toBeNull()
+  const host = await mount({
+    ...fakeApi(),
+    savedSkills: {
+      workspaces: async () => [{ path: '/w', available: true }],
+      skills: async () => ({ skills: [], drafts: [] }),
+    },
+  })
+  await act(async () => {})
+  expect(field(host, 'refinement-saved-skills').textContent).toContain('Saved skills')
 })

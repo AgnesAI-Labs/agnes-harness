@@ -28,6 +28,8 @@ export type InspectEntry = {
   title: string
   content: string
   truncated: boolean
+  /** Bound to an approved skill or role that cannot be used now; the text is still returned. */
+  unavailable?: true
 }
 export type InspectAnswer =
   | { op: 'search'; entries: InspectSummary[]; matched: number }

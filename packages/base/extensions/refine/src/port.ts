@@ -12,7 +12,7 @@ export type SessionProposal = {
   rationale: string
   evidenceSeqs: number[]
   edits: (
-    | { op: 'upsert'; kind: EntryKind; id: string; title: string; content: string }
+    | { op: 'upsert'; kind: EntryKind; id: string; title: string; content: string; reference?: string }
     | { op: 'delete'; kind: EntryKind; id: string }
   )[]
 }
@@ -50,6 +50,8 @@ export type InspectAnswer =
         title: string
         content: string
         truncated: boolean
+        /** Bound to an approved skill or role that cannot be used in this session now. */
+        unavailable?: boolean
       }
     }
 export type InspectOutcome = InspectAnswer | { refused: string; detail?: string }
@@ -183,6 +185,9 @@ function inspected(answer: InspectAnswer): ToolResult {
     const e = answer.entry
     text = [
       `[${e.kind}/${e.id} v${e.version}] ${ENTRIES_ARE_DATA}`,
+      ...(e.unavailable
+        ? ['The approved resource this entry names cannot be used in this session now; do not try to use it.']
+        : []),
       `Title: ${e.title}`,
       e.content,
       ...(e.truncated

@@ -15,6 +15,7 @@ import {
 } from '@agnes/host-infrastructure/refinement-registry'
 import { paragraphPortOf, reconcileWorkspace } from './reconcile.js'
 import { paragraphText, sourceRuleProblem } from './save-rules.js'
+import { reconcileSkillDeletions, saveSkillChange, type WorkspaceSkills } from './skill-update.js'
 import {
   code,
   commitParagraph,
@@ -63,6 +64,8 @@ export type WorkspaceSaveDeps = {
   memory(workspaceRoot: string): MemorySession | undefined
   /** Absent: a save under ask is refused `unavailable`. */
   approvals?: RefinementApprovals
+  /** The skill installer and the drafts kept for a person. Absent: a skill save is refused `unavailable`. */
+  skills?: WorkspaceSkills
   clock: () => number
 }
 
@@ -103,8 +106,11 @@ const paragraphId = (): string => {
  * 5. memory mode: off refuses, ask waits for approval, auto writes (a provider without the paragraph
  *    port refuses `unsupported-provider`);
  * 6. capacity: a full memory refuses `memory-full`.
- * A memory or prompt entry becomes one managed paragraph (title, line break, content); a skill is not
- * saved yet (`unavailable`) and a subagent never is (`subagent-review-unavailable`).
+ * A memory or prompt entry becomes one managed paragraph (title, line break, content). A skill entry
+ * becomes a workspace skill: installed when its name is free, updated when refinement installed it and
+ * nobody changed it since; a change to a skill a person wrote or changed is only kept as a draft for
+ * them (`conflict`). A saved skill whose folder a person deleted counts as taken back by the user. A
+ * subagent is never saved (`subagent-review-unavailable`).
  *
  * Saves of one workspace run one at a time in this process. Each first reconciles the registry with the
  * memory file and settles what an earlier crash left. A receipt is kept in the registry for every
@@ -190,7 +196,7 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
         reason: 'unavailable',
         steps: steps({ ...verdicts, revocation: 'fail' }),
       }
-    const snapshot = registry.read()
+    let snapshot = registry.read()
     // A repeat is the same command from the same session for the same entry: another session's receipt
     // under the same command id is never the answer.
     const repeated = snapshot.receipts.find(
@@ -204,6 +210,12 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
     )
     if (repeated) return repeated
     const skillName = request.entry.kind === 'skill' ? request.entry.id : undefined
+    // A saved skill whose folder a person deleted was taken back like one removed on the skills page.
+    if (skillName && deps.skills) {
+      const root = request.session.workspaceRoot
+      if (reconcileSkillDeletions(registry, snapshot, root, deps.skills, deps.clock()))
+        snapshot = registry.read()
+    }
     const revoked = registry.revoked(base.source, skillName)
     if (revoked && request.initiator !== 'user') return refused('user-revoked', 'revocation')
     verdicts.revocation = 'pass'
@@ -225,7 +237,39 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
     verdicts.rules = 'pass'
     if (request.entry.kind === 'subagent')
       return refuse(registry, base, 'subagent-review-unavailable', verdicts)
-    if (request.entry.kind === 'skill') return refuse(registry, base, 'unavailable', verdicts)
+    if (request.entry.kind === 'skill') {
+      const decided = deps.skills
+        ? await saveSkillChange({
+            request,
+            receiptId: base.receiptId,
+            source: base.source,
+            snapshot,
+            registry,
+            skills: deps.skills,
+            clock: deps.clock,
+          })
+        : undefined
+      if (!decided) return refuse(registry, base, 'unavailable', verdicts)
+      if ('refused' in decided) return refused(decided.refused, decided.step)
+      const receipt: SaveReceipt = {
+        ...base,
+        outcome: decided.outcome,
+        steps: steps({ ...verdicts, capacity: 'pass' }),
+        target: decided.target,
+      }
+      writeFresh(registry, (draft) => {
+        override?.(draft)
+        putReceipt(draft, receipt)
+        // The skill now holds this entry's content: a later revocation names this source.
+        const target = decided.target
+        const record = draft.skills.find(
+          (skill) =>
+            skill.name === target.name && skill.revision === target.revision && skill.state !== 'uninstalled',
+        )
+        if (record) record.source = { ...base.source }
+      })
+      return receipt
+    }
     // 5. Memory mode, through the provider's paragraph port: one port for the whole request.
     const source: MemorySource = {
       sessionKey: request.session.key,

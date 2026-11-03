@@ -303,6 +303,11 @@ export class Client {
       input: import('@agnes/protocol').RefinementSettingsSaveParams,
     ): Promise<import('@agnes/protocol').RefinementSettingsSaveResult> =>
       this.call('_agnes/v1/refinement.save', input),
+    /** The skills refinement saved in a workspace and the drafts kept for a person; uninstall or roll one back. */
+    skills: (
+      input: import('@agnes/protocol').RefinementSkillsParams,
+    ): Promise<import('@agnes/protocol').RefinementSkillsResult> =>
+      this.call('_agnes/v1/refinement.skills', input),
   }
   readonly systemPrompt = {
     get: (

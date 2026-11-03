@@ -100,6 +100,18 @@ describe('harness_propose tool', () => {
     )
   })
 
+  it('an upsert may name an approved resource, and gains no other field with it', () => {
+    const [edit] = proposal.edits
+    const bound = { ...edit, kind: 'subagent', reference: '@fixture/roles#reader' }
+    expect(Value.Check(ProposeParams, { ...proposal, edits: [bound] })).toBe(true)
+    expect(Value.Check(ProposeParams, { ...proposal, edits: [{ ...bound, reference: '' }] })).toBe(false)
+    expect(
+      Value.Check(ProposeParams, { ...proposal, edits: [{ ...bound, reference: 'x'.repeat(513) }] }),
+    ).toBe(false)
+    for (const extra of [{ delegatedFullAccess: true }, { tools: ['bash'] }, { model: 'm' }, { budget: 1 }])
+      expect(Value.Check(ProposeParams, { ...proposal, edits: [{ ...bound, ...extra }] })).toBe(false)
+  })
+
   it("passes the port's refusal through as a normal result, not a throw", async () => {
     const refused = { content: [{ type: 'text' as const, text: 'refused' }], isError: true }
     const port = { propose: vi.fn(async () => refused) }

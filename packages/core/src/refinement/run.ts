@@ -26,6 +26,7 @@ import { sysEvent } from '../step/events.js'
 import type { SessionImpl } from '../step/session.js'
 import { freezeEvidence, readSetCurrent } from './evidence.js'
 import { redactEvidence } from './redact.js'
+import { isReference, unavailableReferences } from './references.js'
 import { readTaskScope } from './task-scope.js'
 import {
   type EvidenceSnapshot,
@@ -356,6 +357,11 @@ export function settleRefinementRun(
     // An entry that exists but is not in force (its goal ended) is not shown to the planner, so its id
     // may be written afresh, against its current version.
     let [state, facts] = verdict(s, run, result, deps, lapsedKeys(await validEntries(s)))
+    // A skill or role an edit is bound to that cannot be used now: the edit, and so the plan, is refused.
+    const unusable =
+      state === 'proposed' && facts.plan ? await unavailableReferences(s, facts.plan.edits) : []
+    if (unusable.length)
+      [state, facts] = ['rejected', { reason: 'reference-unavailable', detail: unusable.join(' ') }]
     // A plan that holds is given its levels: each lesson as the evidence it cites allows, bound to the
     // current goal or recorded as expired without one.
     if (state === 'proposed' && facts.plan)
@@ -411,7 +417,17 @@ const str = (v: unknown, max: number, min = 0): v is string =>
   typeof v === 'string' && v.length >= min && v.length <= max
 const only = (o: Obj, keys: readonly string[]) => Object.keys(o).every((k) => keys.includes(k))
 const OUTPUT_KEYS = ['summary', 'rationale', 'expectedOutcome', 'edits', 'confirmations', 'evidenceIds']
-const UPSERT_KEYS = ['op', 'kind', 'id', 'title', 'content', 'applicability', 'evidenceIds', 'quote']
+const UPSERT_KEYS = [
+  'op',
+  'kind',
+  'id',
+  'title',
+  'content',
+  'applicability',
+  'evidenceIds',
+  'quote',
+  'reference',
+]
 
 class Invalid extends Error {}
 const invalid = (why: string): never => {
@@ -567,7 +583,8 @@ function checkedEdit(
     !str(raw.title, 256, 1) ||
     typeof raw.content !== 'string' ||
     (raw.applicability !== 'task' && raw.applicability !== 'session') ||
-    (raw.quote !== undefined && !str(raw.quote, 2000, 1))
+    (raw.quote !== undefined && !str(raw.quote, 2000, 1)) ||
+    (raw.reference !== undefined && !isReference(kind, raw.reference))
   )
     return invalid(where)
   if (raw.content.length === 0 || raw.content.length > MAX_EDIT_CHARS) return invalid(`edit-too-long: ${at}`)
@@ -583,6 +600,7 @@ function checkedEdit(
     applicability: raw.applicability,
     evidenceSeqs,
     ...quoted(raw.quote === undefined ? undefined : masked(raw.quote, 2000, where, 1), evidenceSeqs),
+    ...(raw.reference === undefined ? {} : { reference: raw.reference }),
   }
 }
 

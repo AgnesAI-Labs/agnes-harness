@@ -15,6 +15,7 @@ import { resumeHandOffs } from './handoff.js'
 import { type InspectAnswer, type InspectRequest, inspectEntries, readInFull } from './inspect.js'
 import { APPLY_LIMITS, automaticRefusal, type LimitRefusal, plannerPriced } from './limits.js'
 import { redactEvidence } from './redact.js'
+import { isReference, unavailableReferences } from './references.js'
 import { queueRefinementRun, recoverRefinementRuns, refinementRunRow } from './run.js'
 import {
   applyProposed,
@@ -76,7 +77,15 @@ export type DirectProposal = {
   rationale: string
   evidenceSeqs: readonly Seq[]
   edits: readonly (
-    | { op: 'upsert'; kind: HarnessEntry['kind']; id: string; title: string; content: string }
+    | {
+        op: 'upsert'
+        kind: HarnessEntry['kind']
+        id: string
+        title: string
+        content: string
+        /** Skill and subagent only: the approved resource the entry is bound to. */
+        reference?: string
+      }
     | { op: 'delete'; kind: HarnessEntry['kind']; id: string }
   )[]
 }
@@ -234,6 +243,8 @@ function directPlan(
     if (title === undefined || title.length === 0 || title.length > 256) return invalid(`edits[${at}].title`)
     if (content === undefined || content.length === 0 || content.length > APPLY_LIMITS.maxChars)
       return invalid(`edits[${at}].content`)
+    if (edit.reference !== undefined && !isReference(edit.kind, edit.reference))
+      return invalid(`edits[${at}].reference`)
     edits.push({
       op: 'upsert',
       kind: edit.kind,
@@ -242,6 +253,7 @@ function directPlan(
       content,
       applicability: 'session',
       evidenceSeqs,
+      ...(edit.reference === undefined ? {} : { reference: edit.reference }),
     })
   }
   return {
@@ -270,6 +282,8 @@ async function propose(
   if (unsaved) return unsaved
   const plan = directPlan(s, p, lapsedKeys(await validEntries(s)))
   if ('refused' in plan) return plan
+  const [unusable] = await unavailableReferences(s, plan.edits)
+  if (unusable) return invalid(`reference-unavailable: ${unusable}`)
   const runId = s.d.ids.ulid()
   const written = await s.locked(async () => {
     const settings = settingsOf(s)
@@ -292,8 +306,17 @@ async function propose(
 async function inspect(s: SessionImpl, request: InspectRequest): Promise<InspectOutcome> {
   const refused = refusal(s)
   if (refused) return refused
-  const out = inspectEntries(s, (await validEntries(s)).valid, request)
-  return 'problem' in out ? { refused: out.problem, detail: out.detail } : out
+  const { valid } = await validEntries(s)
+  const out = inspectEntries(s, valid, request)
+  if ('problem' in out) return { refused: out.problem, detail: out.detail }
+  if (out.op !== 'get') return out
+  // A full read keeps the text (a later change builds on it), and says when its resource is unusable now.
+  const { kind, id } = out.entry
+  const bound = valid.find((v) => v.entry.kind === kind && v.entry.id === id)?.entry.reference
+  const unusable =
+    bound !== undefined &&
+    (await unavailableReferences(s, [{ op: 'upsert', kind, id, reference: bound }])).length > 0
+  return unusable ? { ...out, entry: { ...out.entry, unavailable: true } } : out
 }
 
 async function rollback(s: SessionImpl, refineSeq: Seq): Promise<RollbackResult> {

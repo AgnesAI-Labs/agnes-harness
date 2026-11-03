@@ -8,6 +8,7 @@ export type WorkerHostSkillResources = Readonly<{
   mcpManage?: NonNullable<HostOptions['mcpManage']>
   pluginManage?: NonNullable<HostOptions['pluginManage']>
   skillInstall?: NonNullable<HostOptions['skillInstall']>
+  refinementSave?: NonNullable<HostOptions['refinementSave']>
   /** The same bounded, session-scoped artifact reader used by the executable-owned Host path. */
   requestMedia: NonNullable<HostOptions['requestMedia']>
   skillResources?: NonNullable<HostOptions['skillResources']>

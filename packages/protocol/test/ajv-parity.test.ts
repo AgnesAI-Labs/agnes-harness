@@ -682,6 +682,10 @@ const AGNES_DEFS: Record<string, TSchema> = {
   RefinementSettingsSnapshot: AgnesGen.RefinementSettingsSnapshot,
   RefinementSettingsSaveParams: AgnesGen.RefinementSettingsSaveParams,
   RefinementSettingsSaveResult: AgnesGen.RefinementSettingsSaveResult,
+  RefinementSkillsParams: AgnesGen.RefinementSkillsParams,
+  RefinementSavedSkill: AgnesGen.RefinementSavedSkill,
+  RefinementSkillDraft: AgnesGen.RefinementSkillDraft,
+  RefinementSkillsResult: AgnesGen.RefinementSkillsResult,
   VoiceSettings: AgnesGen.VoiceSettings,
   VoiceSettingsSnapshot: AgnesGen.VoiceSettingsSnapshot,
   VoiceSettingsSaveParams: AgnesGen.VoiceSettingsSaveParams,
@@ -4385,6 +4389,75 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { revision: rep64, extra: true }, // additionalProperties:false
     ],
     note: 'refinement settings save result: the new revision',
+  },
+  RefinementSkillsParams: {
+    valid: { cwd: '/w', action: 'rollback', name: 'lint-fixer', toRevision: rep64 },
+    invalid: [
+      {}, // missing required cwd
+      { cwd: '' }, // boundary: one below minLength:1
+      { cwd: '/w', action: 'install' }, // outside the closed enum
+      { cwd: '/w', name: 'Lint' }, // pattern: upper case is not a saved skill name
+      { cwd: '/w', toRevision: 'a'.repeat(63) }, // pattern: one short of 64
+      { cwd: '/w', workspaceId: rep64 }, // additionalProperties:false
+    ],
+    note: "the owner's list, uninstall or rollback of the skills refinement saved in a workspace",
+  },
+  RefinementSavedSkill: {
+    valid: {
+      name: 'lint-fixer',
+      resourceId: 'skill/workspace/workspace-agnes/x',
+      revision: rep64,
+      state: 'review-disabled',
+      reviewAfter: 1,
+      initiator: 'auto',
+      previous: [rep64],
+    },
+    invalid: [
+      {
+        name: 'lint-fixer',
+        resourceId: 'r',
+        revision: rep64,
+        state: 'active',
+        reviewAfter: 1,
+        initiator: 'auto',
+      }, // missing required previous
+      {
+        name: 'lint-fixer',
+        resourceId: 'r',
+        revision: rep64,
+        state: 'uninstalled',
+        reviewAfter: 1,
+        initiator: 'auto',
+        previous: [],
+      }, // outside the closed enum
+      {
+        name: 'lint-fixer',
+        resourceId: 'r',
+        revision: rep64,
+        state: 'active',
+        reviewAfter: -1,
+        initiator: 'auto',
+        previous: [],
+      }, // boundary: one below minimum:0
+    ],
+    note: 'a skill refinement installed: its state, review date, who asked and the revisions it can go back to',
+  },
+  RefinementSkillDraft: {
+    valid: { id: rep64, name: 'lint-fixer', reason: 'changed-since', diff: '--- a\n+++ b\n', at: 1 },
+    invalid: [
+      { name: 'lint-fixer', reason: 'changed-since', diff: '', at: 1 }, // missing required id
+      { id: rep64, name: 'lint-fixer', reason: '', diff: '', at: 1 }, // boundary: one below minLength:1
+      { id: rep64, name: 'lint-fixer', reason: 'x', diff: '', at: 1, proposed: 'y' }, // additionalProperties:false
+    ],
+    note: 'a change kept for a person: the skill, why, and a whole-file diff',
+  },
+  RefinementSkillsResult: {
+    valid: { skills: [], drafts: [] },
+    invalid: [
+      { skills: [] }, // missing required drafts
+      { skills: [], drafts: [], more: true }, // additionalProperties:false
+    ],
+    note: 'the saved skills of a workspace and the drafts kept for a person',
   },
   VoiceSettings: {
     valid: VOICE_SETTINGS,
@@ -9510,6 +9583,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'RefinementSettingsSaveParams',
     result: 'RefinementSettingsSaveResult',
   },
+  '_agnes/v1/refinement.skills': {
+    fileId: AGNES_ID,
+    params: 'RefinementSkillsParams',
+    result: 'RefinementSkillsResult',
+  },
   '_agnes/v1/voice.settings.get': {
     fileId: AGNES_ID,
     params: 'ConfigEmptyParams',
@@ -10431,6 +10509,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/voice.status': AGNES_SAMPLES.ConfigEmptyParams as Sample,
   '_agnes/v1/refinement.get': AGNES_SAMPLES.ConfigEmptyParams as Sample,
   '_agnes/v1/refinement.save': AGNES_SAMPLES.RefinementSettingsSaveParams as Sample,
+  '_agnes/v1/refinement.skills': AGNES_SAMPLES.RefinementSkillsParams as Sample,
   '_agnes/v1/voice.settings.get': AGNES_SAMPLES.ConfigEmptyParams as Sample,
   '_agnes/v1/voice.settings.save': AGNES_SAMPLES.VoiceSettingsSaveParams as Sample,
   '_agnes/v1/session.rename': {
@@ -11140,6 +11219,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/voice.status': AGNES_SAMPLES.VoiceStatusResult as Sample,
   '_agnes/v1/refinement.get': AGNES_SAMPLES.RefinementSettingsSnapshot as Sample,
   '_agnes/v1/refinement.save': AGNES_SAMPLES.RefinementSettingsSaveResult as Sample,
+  '_agnes/v1/refinement.skills': AGNES_SAMPLES.RefinementSkillsResult as Sample,
   '_agnes/v1/voice.settings.get': AGNES_SAMPLES.VoiceSettingsSnapshot as Sample,
   '_agnes/v1/voice.settings.save': AGNES_SAMPLES.VoiceSettingsSnapshot as Sample,
   '_agnes/v1/session.list': AGNES_SAMPLES.PageSessionMeta as Sample,

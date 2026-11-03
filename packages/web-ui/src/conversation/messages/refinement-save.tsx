@@ -31,7 +31,10 @@ export type RefinementSaveOutcome =
   | { kind: 'failed'; message: string }
 
 /** Saves one entry of this session to its workspace, as the user's own save; the host makes the request. */
-export type RefinementSaveEntry = (kind: 'memory' | 'prompt', id: string) => Promise<RefinementSaveOutcome>
+export type RefinementSaveEntry = (
+  kind: 'memory' | 'prompt' | 'skill',
+  id: string,
+) => Promise<RefinementSaveOutcome>
 
 const reasonText = (reason: string, t: Translate): string =>
   t('timeline.refinement.reason', {

@@ -10,6 +10,8 @@ import {
   type RefinementSettingsSaveParams,
   type RefinementSettingsSaveResult,
   type RefinementSettingsSnapshot,
+  type RefinementSkillsParams,
+  type RefinementSkillsResult,
   rpcError,
   type SessionRefineParams,
   type SessionRefineResult,
@@ -24,7 +26,13 @@ const errorCode = (error: unknown): string | undefined => (error as { code?: str
 /** The refinement switch of the daemon's profile: local callers only, saved by compare-and-swap. */
 export function registerRefinement(
   ep: LocalEndpoint,
-  deps: { settings: Pick<RefinementSettingsStore, 'read' | 'save'> },
+  deps: {
+    settings: Pick<RefinementSettingsStore, 'read' | 'save'>
+    /** Told, after the save, when a save turned refinement on; it cannot fail the save. */
+    switchedOn?: () => void
+    /** The skills refinement saved in a workspace, for the owner; absent where none are saved. */
+    skills?: (params: RefinementSkillsParams, actor: string) => Promise<RefinementSkillsResult>
+  },
 ): void {
   // The same guard as `config.*` and `voice.settings.*`: settings are local profile configuration.
   const local = (c: Parameters<Parameters<LocalEndpoint['register']>[1]>[1]) => {
@@ -48,10 +56,29 @@ export function registerRefinement(
     local(c)
     return stored(() => deps.settings.read())
   })
+  // The owner's saved skills: listed, uninstalled or rolled back, on this machine only.
+  ep.register('_agnes/v1/refinement.skills', async (params, c): Promise<RefinementSkillsResult> => {
+    local(c)
+    if (!deps.skills) throw rpcError('SEMANTIC_REJECTED', { reason: 'SKILL_UNAVAILABLE' })
+    return deps.skills(params as RefinementSkillsParams, c.conn.principalId)
+  })
   ep.register('_agnes/v1/refinement.save', async (params, c): Promise<RefinementSettingsSaveResult> => {
     local(c)
     const p = params as RefinementSettingsSaveParams
-    return stored(() => deps.settings.save(p.settings, p.expectedRevision))
+    let wasOn = false
+    try {
+      wasOn = deps.settings.read().settings.enabled === true
+    } catch {
+      // unreadable counts as off
+    }
+    const saved = stored(() => deps.settings.save(p.settings, p.expectedRevision))
+    if (p.settings.enabled === true && !wasOn)
+      try {
+        deps.switchedOn?.()
+      } catch {
+        // advisory: the setting is saved either way
+      }
+    return saved
   })
 }
 

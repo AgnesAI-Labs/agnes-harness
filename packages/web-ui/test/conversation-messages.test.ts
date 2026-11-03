@@ -372,21 +372,24 @@ describe('W3b projected message DOM', () => {
       root.render(createElement(ConversationMessages, { t, nodes: [node], saveRefinementEntry: saveEntry })),
     )
     const buttons = [...host.querySelectorAll<HTMLButtonElement>('[data-testid="refinement-save-entry"]')]
-    // Only memory and prompt entries a review kept are offered; skills arrive later.
+    // Every memory, prompt and skill entry a review kept is offered; a removal is not.
     expect(buttons.map((button) => button.textContent)).toEqual([
       t('timeline.refinementSave.entry', { name: 'memory/build' }),
       t('timeline.refinementSave.entry', { name: 'prompt/style' }),
+      t('timeline.refinementSave.entry', { name: 'skill/deploy' }),
     ])
     for (const button of buttons) await act(async () => button.click())
     expect(saveEntry.mock.calls).toEqual([
       ['memory', 'build'],
       ['prompt', 'style'],
+      ['skill', 'deploy'],
     ])
     const results = [...host.querySelectorAll('[data-testid="refinement-save-result"]')].map(
       (line) => line.textContent ?? '',
     )
     expect(results[0]).toContain(t('timeline.refinementSave.state.saved'))
     expect(results[1]).toContain(t('timeline.refinementSave.reason.memory-full'))
+    expect(results[2]).toContain('connection lost')
     // A withdrawn review offers nothing to save.
     await act(async () =>
       root.render(

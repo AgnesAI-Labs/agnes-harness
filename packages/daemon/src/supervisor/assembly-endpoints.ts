@@ -312,7 +312,11 @@ function registerSessionEndpoints(
     settings: new VoiceSettingsStore(o.config.dataDir, o.profile.name),
     log: console,
   })
-  registerRefinement(ep, { settings: new RefinementSettingsStore(o.config.dataDir, o.profile.name) })
+  registerRefinement(ep, {
+    settings: new RefinementSettingsStore(o.config.dataDir, o.profile.name),
+    switchedOn: () => state.savedSkills.switchedOn(),
+    skills: (params, actor) => state.savedSkills.manage(params, actor),
+  })
   registerSessionRefine(ep, cx, requireSessionOwner(cx))
   registerDoctor(ep, {
     home: o.config.home ?? dirname(dirname(o.profileDir)),
@@ -596,9 +600,10 @@ function registerAdminEndpoints(
       },
     },
   )
+  // The skills pages' calls: passed through, and a user's change to a saved skill is recorded.
   registerResourceControl(
     ep,
-    resourceControl.service,
+    state.savedSkills.endpoint,
     transport === 'unix'
       ? (resourceControl.unixAuthority ?? localResourceAuthority())
       : (resourceControl.webAuthority ?? denyResourceAuthority),

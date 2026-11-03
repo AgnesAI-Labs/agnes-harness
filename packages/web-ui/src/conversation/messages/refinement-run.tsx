@@ -58,7 +58,7 @@ function changes(node: RefinementRun, t: Translate): string {
  * One background experience review as a line in the conversation: what asked for it, how it stands
  * or ended and why, which saved entries it changed, and whether that was withdrawn since. An applied
  * run not yet withdrawn offers to withdraw it when the host can, and says how that ended; it also
- * offers to save each memory or prompt entry it kept to the workspace, as the user's own save.
+ * offers to save each memory, prompt or skill entry it kept to the workspace, as the user's own save.
  */
 export function RefinementRunNote({
   node,
@@ -125,8 +125,9 @@ export function RefinementRunNote({
         !node.withdrawn &&
         (node.edits ?? [])
           .filter(
-            (edit): edit is typeof edit & { kind: 'memory' | 'prompt' } =>
-              edit.op === 'upsert' && (edit.kind === 'memory' || edit.kind === 'prompt'),
+            (edit): edit is typeof edit & { kind: 'memory' | 'prompt' | 'skill' } =>
+              edit.op === 'upsert' &&
+              (edit.kind === 'memory' || edit.kind === 'prompt' || edit.kind === 'skill'),
           )
           .map((edit) => (
             <SaveEntry key={`${edit.kind}/${edit.id}`} kind={edit.kind} id={edit.id} save={save} t={t} />
@@ -137,7 +138,7 @@ export function RefinementRunNote({
 
 /** One kept entry's "save to workspace" action and how it ended. */
 function SaveEntry(props: {
-  kind: 'memory' | 'prompt'
+  kind: 'memory' | 'prompt' | 'skill'
   id: string
   save: RefinementSaveEntry
   t: Translate

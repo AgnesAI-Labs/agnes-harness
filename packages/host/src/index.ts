@@ -346,6 +346,16 @@ export type {
   PluginManageInvocation,
 } from '@agnes/host-extensions/resources/plugin-manage-port'
 export {
+  createRefinementSkillInstallers,
+  type RefinementSkillDeps,
+  type RefinementSkillInstallContext,
+  type RefinementSkillInstalled,
+  type RefinementSkillInstaller,
+  type RefinementSkillInstallers,
+  type RefinementSkillReplaceOptions,
+  refinementSkillRefusal,
+} from '@agnes/host-extensions/resources/refinement-skill-install'
+export {
   createSkillInstaller,
   type SkillInstallAuthority,
 } from '@agnes/host-extensions/resources/skill-install'
@@ -437,6 +447,7 @@ export {
   type SessionDefaultsConfigurationService,
 } from '@agnes/host-infrastructure/configuration'
 export { type DoctorOptions, type DoctorProbe, runDoctor } from '@agnes/host-infrastructure/doctor'
+export { REVIEW_AFTER_MS, RefinementRegistry } from '@agnes/host-infrastructure/refinement-registry'
 export {
   type RefinementSettingsPort,
   RefinementSettingsStore,
@@ -557,6 +568,16 @@ export {
   readConfigurationProfileInputs,
 } from './runtime/profile/inputs.js'
 export * from './runtime/profile/session-capabilities.js'
+export { createSkillDraftStore } from './runtime/refinement/skill-drafts.js'
+export {
+  recordSkillRevocation,
+  renewSkillForUser,
+  reviewSkills,
+  rollbackSkillForUser,
+  type SkillReviewInstaller,
+  type UserSkillRevocation,
+  uninstallSkillForUser,
+} from './runtime/refinement/skill-review.js'
 export { readFactChainBinding } from './runtime/sessions/fact-chain-binding.js'
 export {
   type CreateSessionOptions,

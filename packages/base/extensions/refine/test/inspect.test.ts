@@ -133,6 +133,33 @@ describe('the harness_inspect tool', () => {
     await session.close()
   })
 
+  it('a full read of an entry whose resource is unusable now says so and keeps the text', async () => {
+    const entry = {
+      kind: 'skill' as const,
+      id: 'notes',
+      version: 1,
+      title: 'Notes',
+      content: 'KEEP-7a',
+      truncated: false,
+    }
+    const runs = (unavailable: boolean): RefinementRuns => ({
+      propose: async () => ({ refused: 'unused' }),
+      request: async () => ({ refused: 'unused' }),
+      inspect: async () => ({ op: 'get', entry: unavailable ? { ...entry, unavailable: true } : entry }),
+    })
+    const read = async (unavailable: boolean) =>
+      text(
+        await createInspectTool(connectedToolPort(runs(unavailable))).execute(
+          { op: 'get', id: 'skill/notes' } as never,
+          fakeToolContext(),
+        ),
+      )
+    const marked = await read(true)
+    expect(marked).toContain('cannot be used in this session now')
+    expect(marked).toContain('KEEP-7a')
+    expect(await read(false)).not.toContain('cannot be used')
+  })
+
   it('inspect never returns another session’s entries', async () => {
     const a = await open({ key: 'a' })
     const b = await open({ key: 'b' })
