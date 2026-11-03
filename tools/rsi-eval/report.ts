@@ -5,9 +5,11 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { runMetrics, toRunRecord, type UsageSummary } from './metrics.js'
+import { runMetrics, toRunRecord, type UsageSummary, workflowReuseMetric } from './metrics.js'
 import { type Diff, pairedTaskBootstrap } from './stats.js'
+import { fixtureOf, workspaceName } from './suite.js'
 import type { EvalTask, RunConfig, RunOutcome, RunRecord, Setting, UsageRow } from './types.js'
+import { readSkillTexts } from './workflow-reuse.js'
 
 export type ReportOptions = { resamples?: number; seed?: number }
 
@@ -60,6 +62,8 @@ const DIRECTIONS = {
     'on minus off, in the share of cross-session runs whose first session hit the trap and whose second session never did. Positive means refinement helps the second session. Only cross-session tasks; runs whose first session never hit the trap are excluded.',
   crossWorkspaceReuse:
     'on minus off, in the share of cross-workspace runs whose first session hit the trap and whose second session, in another workspace, never did. Positive means what refinement learned in one workspace helps in another. Only cross-workspace tasks; runs whose first session never hit the trap are excluded.',
+  workflowReuse:
+    "Share of the second session's `workflow` calls (a new session in the same workspace) whose definition, normalised, equals one the first session saved as a skill in that workspace. Per setting, not a difference. Only workflow tasks; runs whose first session never completed a `workflow` run are excluded, runs where the workspace holds no skill with a workflow definition count as nothing saved, or as save refused when the host refused the workspace save.",
   costOverhead:
     '(on minus off) divided by off, per task then averaged. Positive means refinement costs more; 0.25 is 25 percent more.',
 } as const
@@ -116,6 +120,30 @@ const settingSummary = (records: RunRecord[]) => ({
   exit: exitDistribution(records),
 })
 
+/** Reuse of saved workflow definitions in one setting's workflow runs. */
+const workflowReuseSummary = (runs: RunRecord[]) => {
+  const metrics = runs.map((r) => ({ taskId: r.taskId, metric: workflowReuseMetric(r) }))
+  const counted = metrics.flatMap(({ metric }) => (metric && !metric.excluded ? [metric] : []))
+  const calls = counted.reduce((sum, m) => sum + m.calls, 0)
+  const matching = counted.reduce((sum, m) => sum + m.matching, 0)
+  const reusedRuns = counted.filter((m) => m.reused).length
+  const perTask = [...groupBy(metrics, (m) => m.taskId).values()].map((list) =>
+    list.map(({ metric }) => (metric === null || metric.excluded ? null : metric.reused ? 1 : 0)),
+  )
+  return {
+    runs: metrics.length,
+    excluded: exclusionOf(perTask),
+    nothingSaved: counted.filter((m) => m.nothingSaved).length,
+    saveRefused: counted.filter((m) => m.saveRefused !== undefined).length,
+    withoutCall: counted.filter((m) => m.calls === 0).length,
+    calls,
+    matchingCalls: matching,
+    reuseRate: calls === 0 ? null : matching / calls,
+    reusedRuns,
+    runRate: counted.length === 0 ? null : reusedRuns / counted.length,
+  }
+}
+
 const systemReport = (records: RunRecord[], options: ReportOptions) => {
   const on = bySetting(records, 'on')
   const off = bySetting(records, 'off')
@@ -128,9 +156,16 @@ const systemReport = (records: RunRecord[], options: ReportOptions) => {
       off: select(bySetting(runs, 'off')),
     }))
 
-  // Metric 1: the diff is off minus on, so the arrays are swapped.
+  // Metric 1: the diff is off minus on, so the arrays are swapped. Workflow tasks are left out: their
+  // trap failures happen in member sessions, whose ledgers are not recorded, so a trap hit is not
+  // defined for them. They are counted below, not dropped silently.
+  const trapRecords = records.filter((r) => r.category !== 'workflow')
+  const leftOut = {
+    on: bySetting(records, 'on').length - bySetting(trapRecords, 'on').length,
+    off: bySetting(records, 'off').length - bySetting(trapRecords, 'off').length,
+  }
   const drop = pairedTaskBootstrap(
-    perTask(recurrence, records).map((t) => ({ taskId: t.taskId, on: t.off, off: t.on })),
+    perTask(recurrence, trapRecords).map((t) => ({ taskId: t.taskId, on: t.off, off: t.on })),
     options.resamples,
     options.seed,
   )
@@ -162,6 +197,8 @@ const systemReport = (records: RunRecord[], options: ReportOptions) => {
     off: exclusionOf([...groupBy(bySetting(from, 'off'), (r) => r.taskId).values()].map(select)),
   })
 
+  const workflowRuns = records.filter((r) => r.workflowReuse !== undefined)
+
   const lower = drop.ci95[0]
   const criterion1 = drop.tasks > 0 && drop.estimate > 0 && lower > 0
 
@@ -170,10 +207,11 @@ const systemReport = (records: RunRecord[], options: ReportOptions) => {
     tasks: new Set(records.map((r) => r.taskId)).size,
     repeatErrorDrop: {
       direction: DIRECTIONS.repeatErrorDrop,
-      recurrenceOn: definedMean(recurrence(on)),
-      recurrenceOff: definedMean(recurrence(off)),
+      recurrenceOn: definedMean(recurrence(bySetting(trapRecords, 'on'))),
+      recurrenceOff: definedMean(recurrence(bySetting(trapRecords, 'off'))),
       difference: diffJson(drop),
-      excluded: exclusion(recurrence, records),
+      excluded: exclusion(recurrence, trapRecords),
+      ...(leftOut.on + leftOut.off === 0 ? {} : { workflowRunsLeftOut: leftOut }),
     },
     crossSessionReuse: {
       direction: DIRECTIONS.crossSessionReuse,
@@ -190,6 +228,15 @@ const systemReport = (records: RunRecord[], options: ReportOptions) => {
       excluded: exclusion(avoidedElsewhereOf, elsewhere),
       autoOnlyRuns: elsewhere.filter((r) => r.setting === 'on' && r.alignment === 'auto-only').length,
     },
+    ...(workflowRuns.length === 0
+      ? {}
+      : {
+          workflowReuse: {
+            direction: DIRECTIONS.workflowReuse,
+            on: workflowReuseSummary(bySetting(workflowRuns, 'on')),
+            off: workflowReuseSummary(bySetting(workflowRuns, 'off')),
+          },
+        }),
     costOverhead: {
       direction: DIRECTIONS.costOverhead,
       tokens: { relative: diffJson(tokens.diff), pooled: tokens.pooled, skippedTasks: tokens.skippedTasks },
@@ -214,6 +261,22 @@ const fmtDiff = (d: DiffJson): string =>
 const fmtExcluded = (e: { on: Exclusion; off: Exclusion }): string =>
   `Excluded for an undefined value (no real first failure to repeat or avoid): on ${e.on.runs} of ${e.on.of} runs, ${e.on.tasks} tasks left without a value; off ${e.off.runs} of ${e.off.of} runs, ${e.off.tasks} tasks left without a value.`
 
+const workflowReuseMarkdown = (w: NonNullable<SystemReport['workflowReuse']>): string[] => {
+  const side = (name: string, s: typeof w.on): string[] => [
+    `- ${name}: reuse rate ${fmt(s.reuseRate)} (${s.matchingCalls} of ${s.calls} second-session workflow calls); runs that reused at least once ${fmt(s.runRate)} (${s.reusedRuns} of ${s.runs - s.excluded.runs} counted runs); nothing saved in ${s.nothingSaved} runs; save refused by the host in ${s.saveRefused} runs; no workflow call in the second session in ${s.withoutCall} runs.`,
+    `- ${name}, excluded because the first session never completed a workflow run: ${s.excluded.runs} of ${s.excluded.of} runs, ${s.excluded.tasks} tasks left without a value.`,
+  ]
+  return [
+    '### 2c. Workflow reuse',
+    '',
+    `Direction: ${w.direction}`,
+    '',
+    ...side('On', w.on),
+    ...side('Off', w.off),
+    '',
+  ]
+}
+
 const systemMarkdown = (name: string, r: SystemReport): string[] => {
   const verdict = !r.criterion1.evaluable
     ? 'NOT EVALUABLE (no paired tasks)'
@@ -232,6 +295,11 @@ const systemMarkdown = (name: string, r: SystemReport): string[] => {
     `- Recurrence on: ${fmt(r.repeatErrorDrop.recurrenceOn)}; off: ${fmt(r.repeatErrorDrop.recurrenceOff)}`,
     `- Difference (off minus on): ${fmtDiff(r.repeatErrorDrop.difference)}`,
     `- ${fmtExcluded(r.repeatErrorDrop.excluded)}`,
+    ...(r.repeatErrorDrop.workflowRunsLeftOut
+      ? [
+          `- Workflow runs left out of this metric: on ${r.repeatErrorDrop.workflowRunsLeftOut.on}, off ${r.repeatErrorDrop.workflowRunsLeftOut.off}. Their members run in child sessions whose commands are not recorded, so a trap hit is not defined for them; the pass criterion below does not include them.`,
+        ]
+      : []),
     '',
     '### 2. Cross-session reuse',
     '',
@@ -254,6 +322,7 @@ const systemMarkdown = (name: string, r: SystemReport): string[] => {
         ]
       : []),
     '',
+    ...(r.workflowReuse ? workflowReuseMarkdown(r.workflowReuse) : []),
     '### 3. Cost overhead',
     '',
     `Direction: ${r.costOverhead.direction}`,
@@ -343,7 +412,14 @@ export const readRunRecords = (
       ]
       return readFileSync(candidates.find((p) => existsSync(p)) ?? (candidates[0] as string), 'utf8')
     }
-    records.push(toRunRecord(task, outcome, usage, { readFile, system: outcome.system ?? 'prime' }))
+    const savedSkills = join(runDir, entry.name, workspaceName(fixtureOf(task, 0)), '.agh', 'skills')
+    records.push(
+      toRunRecord(task, outcome, usage, {
+        readFile,
+        system: outcome.system ?? 'prime',
+        readSavedSkills: () => readSkillTexts(savedSkills),
+      }),
+    )
   }
   return records
 }

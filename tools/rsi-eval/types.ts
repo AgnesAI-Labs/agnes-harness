@@ -1,6 +1,12 @@
 // Shared types for the offline RSI evaluation tools. Pure types: no runtime code.
 
-export type Category = 'directory' | 'command-args' | 'convention' | 'cross-session' | 'cross-workspace'
+export type Category =
+  | 'directory'
+  | 'command-args'
+  | 'convention'
+  | 'cross-session'
+  | 'cross-workspace'
+  | 'workflow'
 
 export type Setting = 'on' | 'off'
 
@@ -45,6 +51,8 @@ export type RunOutcome = {
   checks: { session: number; prompt: number; passed: boolean }[]
   /** Set by a runner that could not send the save its counterpart sends at the end of session 1. */
   alignment?: Alignment
+  /** Workflow tasks: why the host refused the workspace save sent at the end of session 1. */
+  saveRefused?: string
 }
 
 /**
@@ -75,6 +83,23 @@ export type PromptWindow = {
   checksPassed: boolean | null
 }
 
+/**
+ * Workflow tasks only: what session 1 left behind and what session 2, a new session in the same workspace, did with it. A run whose first
+ * session never completed a `workflow` run has nothing to reuse and is left out of the rate.
+ */
+export type WorkflowReuse = {
+  /** The first session completed at least one `workflow` run. */
+  firstCompleted: boolean
+  /** The workspace holds a skill that carries a workflow definition. */
+  saved: boolean
+  /** The host refused the workspace save at the end of the first session, for this reason. */
+  saveRefused?: string
+  /** `workflow` calls that started a run in the second session. */
+  calls: number
+  /** Of those, calls whose definition equals a saved one. */
+  matching: number
+}
+
 export type RunRecord = {
   system: 'prime' | 'agh'
   taskId: string
@@ -88,4 +113,5 @@ export type RunRecord = {
   compactions: number
   usage: { requests: number; unknown: number; tokens: number; costUsd: number }
   alignment?: Alignment
+  workflowReuse?: WorkflowReuse
 }

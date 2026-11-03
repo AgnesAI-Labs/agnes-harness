@@ -1,0 +1,94 @@
+{
+  "id": "wf-03-ticket-flag",
+  "category": "workflow",
+  "description": "The team's migration tool refuses to apply a request unless its ticket is passed on the command line.",
+  "trap": {
+    "signatures": ["--ticket is required"],
+    "reproduce": "printf 'x\\n' > SUMMARY.md; bin/migrate apply",
+    "note": "bin/migrate apply needs --ticket=<value>, where the value is the ticket: line of the queued request file; pass it every time you apply a migration request."
+  },
+  "sessions": [
+    {
+      "prompts": [
+        {
+          "text": "Migration requests wait in `queue/`. Process the oldest one as a staged workflow, using the `workflow` tool: first, in parallel, one member per area (`schema/`, `data/`, `app/`) reads that area's `NOTES.txt` and notes what the request needs from it; then one member writes the migration summary to `SUMMARY.md`; then one member applies it with the team's `bin/migrate apply`. Just run the tool; don't read its source or docs first.",
+          "checks": [
+            {
+              "command": "cat done/m-301.txt",
+              "contains": "applied m-301"
+            }
+          ],
+          "solution": [
+            "for i in 1 2 3 4; do [ -f done/m-301.txt ] || { printf 'Migration summary for the queued request.\\n' > SUMMARY.md; bin/migrate apply --ticket=$(sed -n 's/^ticket: //p' $(ls queue/*.req | sort | head -n 1)); }; done"
+          ]
+        },
+        {
+          "text": "Remember, pass the request file's `ticket:` value as `--ticket=<value>` when you run `bin/migrate apply`. Process the next migration request the same way, as a workflow with the same steps.",
+          "checks": [
+            {
+              "command": "cat done/m-302.txt",
+              "contains": "applied m-302"
+            }
+          ],
+          "solution": [
+            "for i in 1 2 3 4; do [ -f done/m-302.txt ] || { printf 'Migration summary for the queued request.\\n' > SUMMARY.md; bin/migrate apply --ticket=$(sed -n 's/^ticket: //p' $(ls queue/*.req | sort | head -n 1)); }; done"
+          ]
+        },
+        {
+          "text": "How many requests are still queued? Write `queued: <n>` to `STATE-1.txt`.",
+          "checks": [
+            {
+              "command": "cat STATE-1.txt",
+              "contains": "queued: 2"
+            }
+          ],
+          "solution": [
+            "for i in 1 2 3 4; do [ -f done/m-302.txt ] || { printf 'Migration summary for the queued request.\\n' > SUMMARY.md; bin/migrate apply --ticket=$(sed -n 's/^ticket: //p' $(ls queue/*.req | sort | head -n 1)); }; done",
+            "printf 'queued: %s\\n' \"$(ls queue | wc -l | tr -d ' ')\" > STATE-1.txt"
+          ]
+        }
+      ]
+    },
+    {
+      "prompts": [
+        {
+          "text": "More migration requests wait in `queue/`. Process the oldest one as a staged workflow, using the `workflow` tool: first, in parallel, one member per area (`schema/`, `data/`, `app/`) reads that area's `NOTES.txt` and notes what the request needs from it; then one member writes the migration summary to `SUMMARY.md`; then one member applies it with the team's `bin/migrate apply`. Just run the tool; don't read its source or docs first.",
+          "checks": [
+            {
+              "command": "cat done/m-801.txt",
+              "contains": "applied m-801"
+            }
+          ],
+          "solution": [
+            "for i in 1 2 3 4; do [ -f done/m-801.txt ] || { printf 'Migration summary for the queued request.\\n' > SUMMARY.md; bin/migrate apply --ticket=$(sed -n 's/^ticket: //p' $(ls queue/*.req | sort | head -n 1)); }; done"
+          ]
+        },
+        {
+          "text": "Process the next migration request the same way, as a workflow with the same steps.",
+          "checks": [
+            {
+              "command": "cat done/m-802.txt",
+              "contains": "applied m-802"
+            }
+          ],
+          "solution": [
+            "for i in 1 2 3 4; do [ -f done/m-802.txt ] || { printf 'Migration summary for the queued request.\\n' > SUMMARY.md; bin/migrate apply --ticket=$(sed -n 's/^ticket: //p' $(ls queue/*.req | sort | head -n 1)); }; done"
+          ]
+        },
+        {
+          "text": "How many requests are still queued? Write `queued: <n>` to `STATE-2.txt`.",
+          "checks": [
+            {
+              "command": "cat STATE-2.txt",
+              "contains": "queued: 0"
+            }
+          ],
+          "solution": [
+            "for i in 1 2 3 4; do [ -f done/m-802.txt ] || { printf 'Migration summary for the queued request.\\n' > SUMMARY.md; bin/migrate apply --ticket=$(sed -n 's/^ticket: //p' $(ls queue/*.req | sort | head -n 1)); }; done",
+            "printf 'queued: %s\\n' \"$(ls queue | wc -l | tr -d ' ')\" > STATE-2.txt"
+          ]
+        }
+      ]
+    }
+  ]
+}

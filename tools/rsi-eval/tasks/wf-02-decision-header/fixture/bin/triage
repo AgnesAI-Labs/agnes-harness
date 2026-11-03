@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# triage: the team's tool for triage requests, shared by every project. usage: bin/triage apply
+set -eu
+if [ "${1:-}" != apply ]; then
+  echo "usage: bin/triage apply" >&2
+  exit 2
+fi
+shift
+req=$(ls queue/*.req 2>/dev/null | sort | head -n 1 || true)
+if [ -z "$req" ]; then
+  echo "error: nothing queued" >&2
+  exit 1
+fi
+if [ ! -s SUMMARY.md ]; then
+  echo "error: SUMMARY.md is missing or empty; summarise the findings first" >&2
+  exit 1
+fi
+first=$(head -n 1 SUMMARY.md)
+case "$first" in
+  "Decision: accept"|"Decision: reject") ;;
+  *) echo "error: SUMMARY.md must start with a line 'Decision: accept' or 'Decision: reject'" >&2; exit 1 ;;
+esac
+item=$(basename "$req" .req)
+mkdir -p done
+{ echo "applied $item"; cat SUMMARY.md; } > "done/$item.txt"
+rm "$req" SUMMARY.md
+echo "applied $item"

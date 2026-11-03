@@ -1,0 +1,2 @@
+migration: drop contacts.fax
+ticket: CRM-93

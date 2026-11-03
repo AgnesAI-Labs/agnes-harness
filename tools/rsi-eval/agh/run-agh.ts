@@ -38,6 +38,10 @@
 // session, so the second session of a cross-session task starts empty. AGH has no user-initiated
 // save to user memory, so where Prime ends the first session of a cross-workspace task with
 // `/refine --global`, nothing extra is sent and the outcome is marked `alignment: 'auto-only'`.
+// A workflow task is different: its first session ends with the user's save to the workspace
+// (`/refine --workspace`), in place of the last review, so the skill it saves can be read from that
+// workspace afterwards. Both of its sessions use that one workspace, so the second session is a new
+// session where the saved skill is.
 // Off: no switch file at all, which is the default.
 //
 // No goal: the sessions are unattended and are given no goal. The goal extension has no quiet
@@ -129,8 +133,11 @@ export interface AghSession {
   readonly key: string
   /** One turn; resolves with how it ended (`completed`, `failed`, ...). */
   prompt(text: string, signal: AbortSignal): Promise<string>
-  /** Asks for one manual review of this session. */
-  review(): Promise<ReviewAnswer>
+  /**
+   * Asks for one manual review of this session; with `saveTo: 'workspace'` the result is also saved to
+   * the workspace as the user's own save (what `/refine --workspace` does).
+   */
+  review(saveTo?: 'workspace'): Promise<ReviewAnswer>
   /** The review's final state, or undefined when it has none within `ms`. */
   settled(runId: string, ms: number): Promise<string | undefined>
   close(): Promise<void>
@@ -359,6 +366,7 @@ export async function runOne(
       env: { ...process.env, AGH_HOME: home },
     })
     const sessions: RunOutcome['sessions'] = []
+    let saveRefused: string | undefined
     const keys: string[] = []
     try {
       for (let i = 0; i < task.sessions.length; i++) {
@@ -373,8 +381,11 @@ export async function runOne(
           setting,
           cfg,
           stdoutFile,
+          task.category === 'workflow' && i === 0,
         )
-        sessions.push({ ...result, stdoutFile, sessionFiles: [] })
+        const { saveRefused: refused, ...ended } = result
+        if (refused !== undefined) saveRefused = refused
+        sessions.push({ ...ended, stdoutFile, sessionFiles: [] })
         // A failed or timed-out session ends the run: later sessions would build on missing work.
         if (result.timedOut || result.exitCode !== 0) break
       }
@@ -411,6 +422,7 @@ export async function runOne(
       sessions,
       checks,
       ...(setting === 'on' && task.category === 'cross-workspace' ? { alignment: 'auto-only' as const } : {}),
+      ...(saveRefused === undefined ? {} : { saveRefused }),
     }
     writeFileSync(outcomeFile, `${JSON.stringify(outcome, null, 2)}\n`)
     return outcome
@@ -430,13 +442,15 @@ async function runSession(
   setting: Setting,
   cfg: RunConfig,
   logFile: string,
-): Promise<{ exitCode: number | null; timedOut: boolean }> {
+  saveAtEnd = false,
+): Promise<{ exitCode: number | null; timedOut: boolean; saveRefused?: string }> {
   const deadline = Date.now() + cfg.sessionTimeoutMs
   const log = (entry: SessionLog) => writeFileSync(logFile, `${JSON.stringify(entry)}\n`, { flag: 'a' })
   writeFileSync(logFile, '')
   const session = await host.openSession(key, workspace)
   let exitCode: number | null = 0
   let timedOut = false
+  let saveRefused: string | undefined
   try {
     for (const [index, prompt] of prompts.entries()) {
       const left = deadline - Date.now()
@@ -468,11 +482,13 @@ async function runSession(
         log({ prompt: index, reason })
         continue
       }
-      const review = await session.review()
+      const saves = saveAtEnd && index === prompts.length - 1
+      const review = await session.review(saves ? 'workspace' : undefined)
       if ('refused' in review && NOT_ACTIVE.has(review.refused))
         throw new Error(
           `refinement is not active in the run host (${review.refused}); the "on" run would measure nothing`,
         )
+      if (saves && 'refused' in review) saveRefused = review.refused
       const state =
         'runId' in review
           ? await session.settled(review.runId, Math.min(REFINE_WAIT_MS, Math.max(0, deadline - Date.now())))
@@ -482,7 +498,11 @@ async function runSession(
   } finally {
     await session.close()
   }
-  return { exitCode: timedOut ? null : exitCode, timedOut }
+  return {
+    exitCode: timedOut ? null : exitCode,
+    timedOut,
+    ...(saveRefused === undefined ? {} : { saveRefused }),
+  }
 }
 
 // ------------------------------------------------------------------ CLI

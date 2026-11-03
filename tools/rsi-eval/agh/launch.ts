@@ -35,7 +35,7 @@ export type HostModule = {
   cacheDir(home: string): string
   RefinementSettingsStore: new (dataDir: string, profile: string) => SettingsStore
   /** The manual review request behind `session.refine`; the embedded host does not serve that RPC. */
-  requestRefinement(session: never, focus?: string): Promise<{ runId: string }>
+  requestRefinement(session: never, focus?: string, saveTo?: 'workspace'): Promise<{ runId: string }>
 }
 
 /**
@@ -210,11 +210,11 @@ export async function launchHost(input: LaunchInput): Promise<AghHost> {
     return {
       key: sessionKey,
       prompt: async (text, signal) => (await session.prompt(text, { signal, unattended: true })).reason,
-      review: async (): Promise<ReviewAnswer> => {
+      review: async (saveTo): Promise<ReviewAnswer> => {
         try {
           const owned = embedded.kernel.get(session.id)
           if (!owned) return { refused: 'unavailable' }
-          return await host.requestRefinement(owned as never)
+          return await host.requestRefinement(owned as never, undefined, saveTo)
         } catch (error) {
           const reason = refusal(error)
           if (reason === undefined) throw error

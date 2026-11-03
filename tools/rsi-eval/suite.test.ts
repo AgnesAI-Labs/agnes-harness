@@ -252,6 +252,36 @@ posixDescribe('selfCheckTask', () => {
     expect(result.problems.join('\n')).toMatch(/fixture-b: trap.reproduce output matches none/)
   })
 
+  it('requires every prompt check to hold in the final state, after all the solutions ran', async () => {
+    const write = (word: string) => ({
+      text: `write ${word}`,
+      checks: [{ command: 'cat out.txt', contains: word }],
+      solution: [`echo ${word} > out.txt`],
+    })
+    const overwritten = sampleTask('overwritten', {
+      trap: { signatures: ['boom'], reproduce: 'echo boom', note: 'n' },
+      sessions: [{ prompts: [write('one'), write('two'), prompt(3)] }],
+    })
+    const result = await selfCheckTask(overwritten, taskDirFor(overwritten))
+    expect(result.ok).toBe(false)
+    expect(result.problems.join('\n')).toMatch(/session 0 prompt 0 check 0 fails in the final state/)
+    expect(result.problems).toHaveLength(1)
+
+    const kept = sampleTask('kept', {
+      trap: { signatures: ['boom'], reproduce: 'echo boom', note: 'n' },
+      sessions: [
+        {
+          prompts: [1, 2, 3].map((n) => ({
+            text: `append ${n}`,
+            checks: [{ command: 'cat out.txt', contains: `word-${n}` }],
+            solution: [`echo word-${n} >> out.txt`],
+          })),
+        },
+      ],
+    })
+    expect(await selfCheckTask(kept, taskDirFor(kept))).toEqual({ ok: true, problems: [] })
+  })
+
   it('flags a second fixture whose documentation gives the trap away', async () => {
     const task = crossWorkspace('xws-clue')
     const taskDir = executable(

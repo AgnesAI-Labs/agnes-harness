@@ -1,0 +1,3 @@
+the order page reads shipped_at when present
+the reports job filters by customer_id
+no code writes to shipped_at yet
