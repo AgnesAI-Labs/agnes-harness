@@ -71,6 +71,8 @@ export type ChildrenFactory = {
   collected?(childKey: string, completionId: string, resultSeq: Seq): Promise<void>
   /** Backend recovery on an explicit owning-session run; not a model operation. */
   recover?(): Promise<void>
+  /** Release owned child instances when the parent session closes. */
+  dispose?(): Promise<void>
   resume?(childKey: string): Promise<ChildHandle>
   cancel?(childKey: string): Promise<void>
   list?(): Promise<readonly ChildAgentListing[]>

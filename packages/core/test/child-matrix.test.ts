@@ -12,6 +12,7 @@ import { KernelChildren } from '../src/child/factory.js'
 import { Kernel } from '../src/kernel.js'
 import { mintFrom } from '../src/request/mint.js'
 import { toProviderRequest } from '../src/request/to-provider.js'
+import { noopHooks } from '../src/step/session.js'
 import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, sent, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
@@ -464,24 +465,66 @@ describe('old backend capability', () => {
 })
 
 describe('parent close reasons and late approval', () => {
-  it('keeps spawn after turn completion and persists cancellation after explicit parent close', async () => {
-    const storage = new MemoryStorage()
-    const k = kernel({ storage })
-    const parent = await k.session('parent', sessionOpts)
-    const child = await parent.d.children.createWithKind?.('spawn', {
-      parent: parent.key,
-      cwd: '/w',
-      input: 'async',
-    })
-    if (!child) throw new Error('expected spawn handle')
-    await parent.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
-    await parent.run({ until: 'turn-end', signal: new AbortController().signal })
-    expect((await storage.lookupByKey(child.key))?.state).toBe('ready')
-    await parent.close()
-    expect((await storage.lookupByKey(child.key))?.state).toBe('cancelled')
-    await k.close()
-    expect((await storage.lookupByKey(child.key))?.state).toBe('cancelled')
-  })
+  it.each([
+    { state: 'ready', cleanupFails: false },
+    { state: 'idle', cleanupFails: false },
+    { state: 'closed', cleanupFails: false },
+    { state: 'idle', cleanupFails: true },
+  ] as const)(
+    'keeps spawn after turn completion and releases $state children on parent close (cleanupFails=$cleanupFails)',
+    async ({ state, cleanupFails }) => {
+      const storage = new MemoryStorage()
+      const k = kernel({
+        storage,
+        ...(cleanupFails
+          ? {
+              hooksFactory: (session) => ({
+                ...noopHooks,
+                shutdown: async () => {
+                  if (session.key !== 'parent') throw new Error('child cleanup failed')
+                },
+              }),
+            }
+          : {}),
+      })
+      const parent = await k.session('parent', sessionOpts)
+      const child = await parent.d.children.createWithKind?.('spawn', {
+        parent: parent.key,
+        cwd: '/w',
+        input: 'async',
+        resident: true,
+      })
+      if (!child) throw new Error('expected spawn handle')
+      await parent.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
+      await parent.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect((await storage.lookupByKey(child.key))?.state).toBe('ready')
+      if (state !== 'ready') await child.run('async')
+      const childSession = k.get(child.key)
+      if (!childSession) throw new Error('expected resident child session')
+      if (state === 'closed') await child.close()
+      try {
+        expect((await storage.lookupByKey(child.key))?.state).toBe(state === 'closed' ? 'idle' : state)
+        if (cleanupFails) await expect(parent.close()).rejects.toThrow('Child instance cleanup failed')
+        else await parent.close()
+        expect((await storage.lookupByKey(child.key))?.state).toBe('cancelled')
+        expect(k.sessions.has(child.key)).toBe(false)
+        expect(parent.d.children.get?.(child.key)).toBeUndefined()
+        expect(childSession.closingOrClosed).toBe(true)
+        expect(childSession.d.log.isClosed).toBe(true)
+        expect(await parent.d.children.list?.()).toEqual([
+          expect.objectContaining({ id: child.key, status: 'cancelled', continuable: false }),
+        ])
+        if (state !== 'ready')
+          expect(await parent.d.children.inspect?.(child.key)).toMatchObject({ text: 'child' })
+        await storage.open(child.key, { writerRunId: 'after-parent-close', ttlMs: 1000 })
+        await storage.release(child.key, 'after-parent-close')
+      } finally {
+        if (cleanupFails) await expect(k.close()).rejects.toThrow('Child instance cleanup failed')
+        else await k.close()
+      }
+      expect((await storage.lookupByKey(child.key))?.state).toBe('cancelled')
+    },
+  )
 
   it('does not execute a tool when approval arrives after cancel', async () => {
     let allow: ((verdict: 'allowed-once') => void) | undefined

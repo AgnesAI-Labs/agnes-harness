@@ -83,7 +83,12 @@ async function invalidatesProjection(
       expect(notice).toMatchObject({ origin: 'system', trust: 'trusted', ignorable: true })
       expect((notice as { data: unknown }).data).toEqual({})
     }
-    for (const session of sessions) expect((await session.projectUI()).yolo).toBe(enabled)
+    for (const session of sessions) {
+      if (session.closingOrClosed) {
+        expect(session.yolo).toBe(false)
+        await expect(session.projectUI()).rejects.toMatchObject({ code: 'E_CLOSED' })
+      } else expect((await session.projectUI()).yolo).toBe(enabled)
+    }
   } finally {
     for (const release of releases) release()
   }

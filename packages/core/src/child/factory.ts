@@ -21,7 +21,9 @@ import { childInputActor } from '../step/turn-restore.js'
 import { recordChildResultCollected } from './collected-result.js'
 import { deliverChildCompletion } from './completion-notice.js'
 import { childControlMetrics } from './control-metrics.js'
-import { cancelOpenAttempt, reportFailedCreation } from './creation.js'
+import { cancelOpenAttempt, generationDepthOf, reportFailedCreation, rootTaskIdOf } from './creation.js'
+import { applyHumanChildControl } from './human-control.js'
+import { bindIdleChild, noteChildIdle, withChildAdmission } from './idle-retirement.js'
 import { bindChildLifecycle, childLifecycle } from './lifecycle.js'
 import { childModels, resolveChildModel } from './model-scope.js'
 import { openDelegatedSession } from './open-session.js'
@@ -60,6 +62,7 @@ export class KernelChildren implements ChildrenFactory {
   private readonly residentTasks = new Map<string, Promise<unknown>>()
   private readonly cleanups = new Map<string, Promise<void>>()
   private readonly opening = new Map<string, Promise<ChildHandle>>()
+  private disposal: Promise<void> | undefined
   /** Each attached handle's run without Host admission, for callers already inside one. */
   private readonly direct = new WeakMap<ChildHandle, ChildHandle['run']>()
   private boundKey: string | undefined
@@ -87,7 +90,11 @@ export class KernelChildren implements ChildrenFactory {
     return this.createWithKind(opts.role === undefined ? 'fork' : 'spawn', opts)
   }
 
-  async createWithKind(kind: ChildKind, opts: CreateOpts): Promise<ChildHandle> {
+  createWithKind(kind: ChildKind, opts: CreateOpts): Promise<ChildHandle> {
+    return withChildAdmission(this.parent(), () => this.createAdmitted(kind, opts))
+  }
+
+  private async createAdmitted(kind: ChildKind, opts: CreateOpts): Promise<ChildHandle> {
     const parent = this.parent()
     const lifecycle = childLifecycle(parent)
     lifecycle.assertActive()
@@ -531,7 +538,10 @@ export class KernelChildren implements ChildrenFactory {
     return resumeRoleChild(parent, record, this.kernel.o.childRoles, {
       open: (opts) => this.open(record.kind, parent, record, opts),
       session: () => this.session(childKey)!,
-      continued: () => this.continued.add(childKey),
+      continued: () => {
+        this.continued.add(childKey)
+        noteChildIdle(this.session(childKey)!, true)
+      },
     })
   }
 
@@ -555,6 +565,32 @@ export class KernelChildren implements ChildrenFactory {
     await Promise.allSettled([this.residentTasks.get(childKey), this.runningTasks.get(childKey)])
     await this.cleanups.get(childKey)
     this.finishChild(childKey, { status: 'cancelled', text: '' })
+  }
+
+  dispose(): Promise<void> {
+    this.disposal ??= (async () => {
+      // Parent revocation fences new openings; an admitted attempt still owns its rollback.
+      await Promise.allSettled([...this.opening.values()])
+      const keys = new Set([...this.handles.keys(), ...this.childSessions.keys(), ...this.residents.keys()])
+      const results = await Promise.allSettled([...keys].map((key) => this.cancel(key)))
+      // A failed or concurrent cancellation must not leave an idle instance retaining its writer.
+      const remaining = new Map([
+        ...this.childSessions,
+        ...[...this.residents].map(([key, { child }]) => [key, child] as const),
+      ])
+      results.push(
+        ...(await Promise.allSettled([...remaining].map(([key, child]) => this.dropLocalChild(key, child)))),
+      )
+      await Promise.allSettled([...this.runningTasks.values(), ...this.residentTasks.values()])
+      results.push(...(await Promise.allSettled([...this.cleanups.values()])))
+      const failures = results.filter((result) => result.status === 'rejected')
+      if (failures.length)
+        throw new AggregateError(
+          failures.map((result) => result.reason),
+          'Child instance cleanup failed',
+        )
+    })()
+    return this.disposal
   }
 
   inspect = async (childKey: string): Promise<ChildStatus | null> => {
@@ -693,8 +729,8 @@ export class KernelChildren implements ChildrenFactory {
       if (ended) return
       ended = true
       const live = await store.lookupByKey(record.childKey)
-      if (live) {
-        const locked = live.state === 'cancelled' || live.state === 'cancelling'
+      if (live && !isTerminalChildState(live.state)) {
+        const locked = live.state === 'cancelling'
         await store.casState(
           record.childKey,
           live.stateRevision,
@@ -731,24 +767,28 @@ export class KernelChildren implements ChildrenFactory {
       key: record.childKey,
       ...(child.d.roleDelegation ? { role: child.d.roleDelegation.role } : {}),
       run: async (input) => {
-        lifecycle.assertActive()
-        const durable = await store.lookupByKey(record.childKey)
-        if (durable && (isTerminalChildState(durable.state) || durable.state === 'cancelling'))
-          throw new CoreError('E_UNSUPPORTED', `child ${record.childKey} is ${durable.state}`)
-        if (state !== 'ready') throw new CoreError('E_LANE_BUSY', `child ${record.childKey} already started`)
-        const continuation = opts.resident === true && this.continued.has(record.childKey)
-        if (!continuation && input !== undefined && sha256Hex(input) !== record.inputHash)
-          throw new CoreError('E_CHILD_CONFLICT', 'run input does not match persisted create input')
-        const live = await store.lookupByKey(record.childKey)
-        if (
-          live &&
-          live.state !== 'running' &&
-          !(await store.casState(record.childKey, live.stateRevision, 'running', {
-            maxFanOut: parent.preset.maxFanOut,
-          }))
-        )
-          throw new CoreError('E_UNSUPPORTED', `child ${record.childKey} cannot start from ${live.state}`)
-        state = 'running'
+        await withChildAdmission(child, async () => {
+          lifecycle.assertActive()
+          const durable = await store.lookupByKey(record.childKey)
+          if (durable && (isTerminalChildState(durable.state) || durable.state === 'cancelling'))
+            throw new CoreError('E_UNSUPPORTED', `child ${record.childKey} is ${durable.state}`)
+          if (state !== 'ready')
+            throw new CoreError('E_LANE_BUSY', `child ${record.childKey} already started`)
+          const continuation = opts.resident === true && this.continued.has(record.childKey)
+          if (!continuation && input !== undefined && sha256Hex(input) !== record.inputHash)
+            throw new CoreError('E_CHILD_CONFLICT', 'run input does not match persisted create input')
+          const live = await store.lookupByKey(record.childKey)
+          if (
+            live &&
+            live.state !== 'running' &&
+            !(await store.casState(record.childKey, live.stateRevision, 'running', {
+              maxFanOut: parent.preset.maxFanOut,
+            }))
+          )
+            throw new CoreError('E_UNSUPPORTED', `child ${record.childKey} cannot start from ${live.state}`)
+          state = 'running'
+          noteChildIdle(child, false)
+        })
         const turnAbort = new AbortController()
         this.turnSignals.set(record.childKey, turnAbort)
         let residentHold = false
@@ -817,6 +857,7 @@ export class KernelChildren implements ChildrenFactory {
                 result.reason === 'completed' ? (queued ? 'ready' : 'idle') : 'interrupted',
               )
             const status: ChildAgentStatus = result.reason === 'completed' ? 'idle' : 'interrupted'
+            noteChildIdle(child, status === 'idle')
             this.noteTurn(record.childKey, text, status)
             if (status === 'idle')
               await deliverChildCompletion(parent, record, 'completed', {
@@ -924,6 +965,20 @@ export class KernelChildren implements ChildrenFactory {
         run,
       })
     }
+    bindIdleChild({
+      kernel: this.kernel,
+      parent,
+      child,
+      idle: () => opts.resident === true && state === 'ready' && this.continued.has(child.key),
+      busy: () =>
+        this.runningTasks.has(child.key) || this.residentTasks.has(child.key) || this.opening.has(child.key),
+      retire: async () => {
+        state = 'done'
+        this.finishChild(child.key, { status: 'completed', text: cachedText })
+        await emitEnd('completed')
+        await this.dropLocalChild(child.key, child)
+      },
+    })
     if (kind === 'spawn' || opts.resident) handle.run = (input) => this.detached(() => run(input))
     await parent.hooks
       .subagentStart?.({ childKey: record.childKey, kind, budget: opts.budget ?? null })
@@ -999,6 +1054,7 @@ export class KernelChildren implements ChildrenFactory {
       })
     } else {
       this.continued.add(record.childKey)
+      noteChildIdle(resident.child, true)
     }
     return { id: record.childKey }
   }
@@ -1060,60 +1116,34 @@ export class KernelChildren implements ChildrenFactory {
   }
 
   /** Parent-owned Web controls use the same pinned session controls as top-level turns. */
-  async humanControl(
+  humanControl(
     childKey: string,
     action: 'stop' | 'continue',
     actor: Actor,
     admissionId: string,
     text?: string,
   ): Promise<number> {
-    const parent = this.parent()
-    const record = await requireChildControl(parent.d.log.storage).lookupByKey(childKey)
-    if (!record || !this.owns(record, parent.key))
-      throw new CoreError('E_CHILD_NOT_FOUND', 'Child is not owned by this parent')
     const child = this.session(childKey)
-    if (!child)
-      throw new CoreError('E_UNSUPPORTED', 'Child has no live control endpoint', { control: action })
-    if (action === 'stop') {
-      await child.controls.require('interrupt', actor)
-      if (!child.op())
-        throw new CoreError('E_RELATION', 'Child has no running turn', { reason: 'CONTROL_NOT_RUNNING' })
-      if (this.humanStopped.has(childKey))
-        throw new CoreError('E_RELATION', 'Child stop already requested', { reason: 'CONTROL_NOT_RUNNING' })
-      this.humanStopped.add(childKey)
-      const ready = this.turnSignals.has(childKey)
-        ? new Promise<void>((resolve) => this.stopReady.set(childKey, resolve))
-        : Promise.resolve()
-      try {
-        const seq = await child.controls.apply('cancel', actor, admissionId)
-        await ready
-        return seq
-      } catch (error) {
-        this.humanStopped.delete(childKey)
-        this.continueWaiters.get(childKey)?.()
-        throw error
-      } finally {
-        this.stopReady.delete(childKey)
-      }
-    }
-    await child.controls.require('steer', actor)
-    if (!text?.trim()) throw new CoreError('E_ENVELOPE', 'Continue requires a message')
-    const waiter = this.continueWaiters.get(childKey)
-    if (!waiter && !this.residents.has(childKey))
-      throw new CoreError('E_UNSUPPORTED', 'Child is not continuable', { control: 'continue' })
-    await this.admitContinuation(childKey)
-    const seq = await child.enqueue(child.op() ? 'next-step' : 'next-turn', {
-      content: [{ type: 'text', text }],
-      kind: 'steer',
-      actor,
-      // Internal message/control IDs need the same stable digest shape as RPC admissions.
-      admissionId: /^[0-9a-f]{64}$/.test(admissionId) ? admissionId : sha256Hex(admissionId),
-    })
-    await child.d.log.append([child.controls.fact('child-continue', 'applied', actor, { admissionId })])
-    this.humanStopped.delete(childKey)
-    if (waiter) waiter()
-    else this.pump(childKey)
-    return seq
+    if (!child) return this.missingContinuable(childKey)
+    return withChildAdmission(child, () =>
+      applyHumanChildControl(
+        {
+          parent: this.parent(),
+          child,
+          stopped: this.humanStopped,
+          signals: this.turnSignals,
+          stopReady: this.stopReady,
+          waiters: this.continueWaiters,
+          resident: this.residents.has(childKey),
+          admit: () => this.admitContinuation(childKey),
+          pump: () => this.pump(childKey),
+        },
+        action,
+        actor,
+        admissionId,
+        text,
+      ),
+    )
   }
 
   async humanControlState(
@@ -1149,6 +1179,8 @@ export class KernelChildren implements ChildrenFactory {
     const record = await store.lookupByKey(childKey)
     if (!record || !this.owns(record, parent.key))
       throw new CoreError('E_CHILD_NOT_FOUND', 'Child is not owned by this parent')
+    if (isTerminalChildState(record.state) || record.state === 'cancelling')
+      throw new CoreError('E_UNSUPPORTED', 'Child admission has terminated')
     if (record.state !== 'idle' && record.state !== 'interrupted') return
     if (
       !(await store.casState(childKey, record.stateRevision, 'ready', { maxFanOut: parent.preset.maxFanOut }))
@@ -1213,16 +1245,4 @@ function controlNotRunning(error: unknown): boolean {
     error.code === 'E_RELATION' &&
     error.detail?.reason === 'CONTROL_NOT_RUNNING'
   )
-}
-
-function generationDepthOf(session: SessionImpl): number {
-  const start = session.state.session as { delegation?: { generationDepth?: number } } | null
-  return start?.delegation?.generationDepth ?? 0
-}
-
-function rootTaskIdOf(session: SessionImpl): string {
-  const start = session.state.session as { delegation?: { rootTaskId?: string } } | null
-  if (start?.delegation?.rootTaskId) return start.delegation.rootTaskId
-  const turn = session.state.openTurn.get(session.lane)
-  return `${session.key}:${session.lane}:${turn?.startSeq ?? 0}`
 }
