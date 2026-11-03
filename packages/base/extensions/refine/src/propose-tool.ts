@@ -33,6 +33,15 @@ export const ProposeParams = Type.Object(
             id: Type.String({ minLength: 1, maxLength: 128 }),
             title: Type.String({ minLength: 1, maxLength: 256 }),
             content: Type.String({ minLength: 1, maxLength: 2000 }),
+            // Skill and subagent only, checked by the host: never a grant of tools, models or access.
+            reference: Type.Optional(
+              Type.String({
+                minLength: 1,
+                maxLength: 512,
+                description:
+                  'Skill or subagent only: the approved resource this entry uses, as "<resourceId>@<revision>" of an enabled, trusted Skill or the role ref subagent_spawn takes.',
+              }),
+            ),
           },
           { additionalProperties: false },
         ),

@@ -5,9 +5,14 @@ import {
   REVIEW_AFTER_MS,
   RefinementRegistry,
   type RegistryParagraph,
+  type RegistrySkill,
 } from '@agnes/host-infrastructure/refinement-registry'
+import { workspaceSkillText } from './skill-drafts.js'
 
 const MEMORY_REF = 'workspace-memory/'
+const SKILL_REF = 'workspace-skill/'
+/** The longest title or summary of a saved skill shown to the planner: its catalogue line's limit. */
+const SKILL_LINE_MAX = 200
 /** Saved paragraphs listed for one plan at most; Core shows the planner no more than this either. */
 const MAX_LISTED = 40
 
@@ -45,6 +50,47 @@ async function storedParagraphs(memory: MemorySession | undefined, sessionKey: s
   }
 }
 
+/**
+ * The saved skills in force at `now`: active (switched on) and before their review date. An uninstalled
+ * skill is never here. Revocations bar saves, not this list: after the user rolls a skill back, the
+ * version kept is still a skill a plan may confirm and renew.
+ */
+function skillsInForce(registry: RefinementRegistry, now: number): RegistrySkill[] {
+  return registry.read().skills.filter((k) => k.state === 'active' && now < k.reviewAfter)
+}
+
+const clipLine = (text: string) => {
+  const line = text.replace(/\s+/g, ' ').trim()
+  return line.length <= SKILL_LINE_MAX ? line : line.slice(0, SKILL_LINE_MAX)
+}
+
+/**
+ * A saved skill's title and summary, from its `SKILL.md` as it is installed now: the front matter's
+ * description and the first line of the instructions, each at most `SKILL_LINE_MAX` characters.
+ */
+function skillLines(text: string): { title: string; summary: string } | undefined {
+  const match = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/u.exec(text)
+  if (!match) return undefined
+  const raw = /^description:[ \t]*(.*)$/mu.exec(match[1] ?? '')?.[1]?.trim()
+  if (!raw) return undefined
+  let description = raw
+  if (raw.startsWith('"'))
+    try {
+      description = String(JSON.parse(raw))
+    } catch {
+      return undefined
+    }
+  const title = clipLine(description)
+  const first = (match[2] ?? '').split('\n').find((line) => line.trim()) ?? ''
+  return title ? { title, summary: clipLine(first) || title } : undefined
+}
+
+/** A saved skill's installed `SKILL.md`, read without following links; undefined when it cannot be. */
+const installedText = (workspaceRoot: string, name: string): string | undefined => {
+  const found = workspaceSkillText(workspaceRoot, name)
+  return typeof found?.text === 'string' ? found.text : undefined
+}
+
 /** A saved paragraph's text, written as its title line and then its content. */
 function titled(text: string): { title: string; summary: string } {
   const [first = '', ...rest] = text.trim().split('\n')
@@ -61,7 +107,10 @@ function titled(text: string): { title: string; summary: string } {
  * that is removed, converted, revoked, past its review date, edited since it was listed, gone from the
  * file, or while the registry cannot be read; and nothing when the registry was written between its
  * checks and the renewal (compare-and-swap on the registry revision, under the registry's lock).
- * Entries are read only when a plan is made, so with refinement off nothing here runs.
+ * Skills refinement installed in the workspace are listed and renewed the same way (`workspace-skill/
+ * <name>`): switched on and before their review date, at the hash of their `SKILL.md` as it is
+ * installed now, titled by its description. Entries are read only when a plan is made, so with
+ * refinement off nothing here runs.
  */
 export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspaceRefs {
   const registryOf = (workspaceRoot: string) =>
@@ -70,10 +119,12 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
     async list(at) {
       const where = deps.session(at)
       if (!where) return []
-      const live = inForce(registryOf(where.workspaceRoot), deps.clock())
-      if (live.length === 0) return []
+      const registry = registryOf(where.workspaceRoot)
+      const skills = listSkills(registry, where.workspaceRoot, deps.clock())
+      const live = inForce(registry, deps.clock())
+      if (live.length === 0) return skills
       const stored = await storedParagraphs(where.memory, at.key)
-      if (!stored) return []
+      if (!stored) return skills
       const out: WorkspaceReference[] = []
       for (const p of live) {
         const text = stored.get(p.id)
@@ -87,10 +138,12 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
         })
         if (out.length >= MAX_LISTED) break
       }
-      return out
+      return [...out, ...skills]
     },
     async renew(at, ref, version) {
       const where = deps.session(at)
+      if (where && ref.startsWith(SKILL_REF))
+        return renewSkill(registryOf(where.workspaceRoot), where.workspaceRoot, ref, version, deps.clock)
       if (!where || !ref.startsWith(MEMORY_REF)) return false
       const id = ref.slice(MEMORY_REF.length)
       const registry = registryOf(where.workspaceRoot)
@@ -116,4 +169,52 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
       }
     },
   })
+}
+
+/** The saved skills in force, each at the hash of its installed `SKILL.md`; none past `MAX_LISTED`. */
+function listSkills(registry: RefinementRegistry, workspaceRoot: string, now: number): WorkspaceReference[] {
+  const out: WorkspaceReference[] = []
+  for (const skill of skillsInForce(registry, now)) {
+    const text = installedText(workspaceRoot, skill.name)
+    const lines = text === undefined ? undefined : skillLines(text)
+    if (text === undefined || !lines) continue
+    const { sessionKey, kind, entryId } = skill.source
+    out.push({
+      ref: `${SKILL_REF}${skill.name}`,
+      ...lines,
+      version: normalizedContentHash(text),
+      source: { sessionKey, kind, entryId },
+    })
+    if (out.length >= MAX_LISTED) break
+  }
+  return out
+}
+
+/**
+ * A new review period for a saved skill a plan confirmed: only while it is switched on, before its
+ * review date (a rollback by the user does not stop it), and its `SKILL.md` still hashes to the version the planner saw; written on
+ * the registry snapshot the checks were made on. The skill itself is never touched.
+ */
+function renewSkill(
+  registry: RefinementRegistry,
+  workspaceRoot: string,
+  ref: string,
+  version: string,
+  clock: () => number,
+): boolean {
+  const name = ref.slice(SKILL_REF.length)
+  const snap = registry.read()
+  const found = snap.skills.find((k) => k.name === name && k.state === 'active' && clock() < k.reviewAfter)
+  if (!found) return false
+  const text = installedText(workspaceRoot, name)
+  if (text === undefined || normalizedContentHash(text) !== version) return false
+  try {
+    registry.update((draft) => {
+      const skill = draft.skills.find((k) => k.name === name && k.state === 'active') as RegistrySkill
+      skill.reviewAfter = clock() + REVIEW_AFTER_MS
+    }, snap.revision)
+    return true
+  } catch {
+    return false
+  }
 }

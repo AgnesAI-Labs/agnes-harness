@@ -11,12 +11,16 @@ import {
   type TaskScope,
 } from '@agnes/core'
 import type { MemorySession, TaskScopeSource } from '@agnes/extension-api'
-import type { SeamInitContext } from '@agnes/host-extensions/assemble/packages'
+import type { SeamInitContext, SkillRuntimeDiscovery } from '@agnes/host-extensions/assemble/packages'
 import type { HostDecisionOwner } from '@agnes/host-extensions/profile/runtime'
 import { RefinementSettingsStore } from '@agnes/host-infrastructure/refinement-settings'
 import type { JsonValue, RefinementSettingsSnapshot } from '@agnes/protocol'
 import { createRefinementApprovals, REFINEMENT_DECISION_OWNER } from '../refinement/approvals.js'
+import { createRefinementReferences } from '../refinement/references.js'
 import { savedParagraphs } from '../refinement/saved-paragraphs.js'
+import { createSkillDraftStore } from '../refinement/skill-drafts.js'
+import { savedSkillFolderGone } from '../refinement/skill-folders.js'
+import { type RefinementSaveTransport, skillSender } from '../refinement/skill-sender.js'
 import { workspaceMemory } from '../refinement/workspace-memory.js'
 import { createWorkspaceRefs } from '../refinement/workspace-refs.js'
 import { createWorkspaceSave } from '../refinement/workspace-save.js'
@@ -69,7 +73,16 @@ const OFF: RefinementSettingsSnapshot = { settings: { enabled: false, mode: 'man
  * assembly, when the tools are registered too. Every read is cheap and never throws; a failed read
  * is off.
  */
-export function createRefinementHost(dataDir: string, profile: string, clock: () => number = Date.now) {
+export function createRefinementHost(
+  dataDir: string,
+  profile: string,
+  clock: () => number = Date.now,
+  sources: {
+    skills?: () => SkillRuntimeDiscovery | undefined
+    /** Where saved skills are installed: the process that holds resource control. Absent: none are. */
+    refinementSave?: RefinementSaveTransport
+  } = {},
+) {
   const store = new RefinementSettingsStore(dataDir, profile)
   const read = (): RefinementSettingsSnapshot => {
     try {
@@ -125,12 +138,21 @@ export function createRefinementHost(dataDir: string, profile: string, clock: ()
     commit: (input) => saves.commitApproved(input),
     clock,
   })
-  // The one save-to-workspace path: memory and prompt entries become managed workspace memory paragraphs.
+  // Skill entries become workspace skills through the installer where resource control lives.
+  const transport = sources.refinementSave
+  const skills = transport && {
+    request: skillSender(transport, { enabled: () => settings().enabled }),
+    drafts: createSkillDraftStore(dataDir),
+    gone: (root: string, name: string) => savedSkillFolderGone(dataDir, root, name),
+  }
+  // The one save-to-workspace path: memory and prompt entries become managed workspace memory
+  // paragraphs, skill entries workspace skills.
   const saves = createWorkspaceSave({
     registry: memory.registry,
     settings,
     memory: memory.openWorkspaceMemory,
     approvals,
+    ...(skills ? { skills } : {}),
     clock,
   })
   const workspace = {
@@ -158,12 +180,15 @@ export function createRefinementHost(dataDir: string, profile: string, clock: ()
     },
     clock,
   })
+  // Skills and roles a skill or subagent entry is bound to, as the session can use them now.
+  const references = createRefinementReferences({ session: sessionOf, skills: () => sources.skills?.() })
   const refinement: RefinementDeps = {
     settings,
     planner: () => planner,
     taskScope,
     workspace: saves,
     workspaceRefs,
+    references,
   }
   // Automatic candidates are wanted only in auto mode; Core drops child sessions before asking.
   const triggers: RefinementTriggerSink = {

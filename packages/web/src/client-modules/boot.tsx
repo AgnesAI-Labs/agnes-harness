@@ -214,6 +214,10 @@ export async function startClientModules(options: {
     registerRefinementSettingsSection({
       read: () => options.agnes.refinement.get(),
       save: (settings, expectedRevision) => options.agnes.refinement.save({ settings, expectedRevision }),
+      savedSkills: {
+        workspaces: async () => (await options.agnes.workspace.list()).items,
+        skills: (input) => options.agnes.refinement.skills(input),
+      },
     }),
   )
   const storedLocale = readLocalePreference(safeThemeStorage())

@@ -17,12 +17,15 @@ import {
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { REFINEMENT_SETTINGS_NAMESPACE, refinementSettingsCatalog } from './refinement-locale.js'
+import { type SavedSkillsApi, SavedSkillsBlock } from './refinement-skills.js'
 import { failureCode } from './side-models/model.js'
 
 /** The daemon's refinement switch: read it with its revision, save it against that revision. */
 export type RefinementSettingsApi = {
   read(): Promise<RefinementSettingsSnapshot>
   save(settings: RefinementSettings, expectedRevision: string): Promise<RefinementSettingsSaveResult>
+  /** The skills task experience saved in a workspace; absent where the connection cannot reach them. */
+  savedSkills?: SavedSkillsApi
 }
 
 const sameSettings = (a: RefinementSettings, b: RefinementSettings) =>
@@ -44,9 +47,6 @@ const dismissNotice = (): void => {
     // Without browser storage the notice only stays closed for this visit.
   }
 }
-/** The skill grants arrive with workspace skills; the memory grant is in force. */
-const LATER = new Set(['install', 'skill'])
-
 /**
  * The experience-refinement section: the master switch (off by default), how reviews start, what
  * turning it on allows and what to expect. Every change saves itself against the revision last read;
@@ -118,6 +118,7 @@ export function RefinementSettingsPanel({ api }: { api: RefinementSettingsApi })
           setConflict(true)
         }}
       />
+      {api.savedSkills && <SavedSkillsBlock api={api.savedSkills} />}
     </div>
   )
 }
@@ -212,11 +213,7 @@ function RefinementFields(props: {
             key={name}
             data-testid={`refinement-allows-${name}`}
             label={t(`refinement.allows.${name}`)}
-            description={
-              LATER.has(name)
-                ? `${t(`refinement.allows.${name}.hint`)} ${t('refinement.later')}`
-                : t(`refinement.allows.${name}.hint`)
-            }
+            description={t(`refinement.allows.${name}.hint`)}
           />
         ))}
         <SettingsItem

@@ -141,6 +141,27 @@ describe('the planner output parser', () => {
     })
   })
 
+  it('a skill or subagent edit may name the approved resource it uses, and nothing else may', () => {
+    const one = JSON.parse(plan()).edits[0]
+    const skill = { ...one, kind: 'skill', id: 'notes', reference: 'skill:workspace-agnes:notes@rev1' }
+    expect(parsePlannerOutput(plan({ edits: [skill] }), context)).toMatchObject({
+      edits: [{ kind: 'skill', reference: 'skill:workspace-agnes:notes@rev1' }],
+    })
+    const role = { ...one, kind: 'subagent', id: 'reader', reference: '@fixture/roles#reader' }
+    expect(parsePlannerOutput(plan({ edits: [role] }), context)).toMatchObject({
+      edits: [{ kind: 'subagent', reference: '@fixture/roles#reader' }],
+    })
+    for (const bad of [
+      { ...one, reference: 'skill:x@rev1' },
+      { ...skill, reference: '' },
+      { ...skill, reference: 'x'.repeat(513) },
+      { ...role, delegatedFullAccess: true },
+    ])
+      expect(parsePlannerOutput(plan({ edits: [bad] }), context)).toEqual({
+        error: 'invalid-shape: edits[0]',
+      })
+  })
+
   it('only entries shown in full can be rewritten or deleted', () => {
     const del = (id: string) => ({ op: 'delete', kind: 'memory', id, evidenceIds: ['e1'] })
     expect(parsePlannerOutput(plan({ edits: [del('build')] }), context)).not.toHaveProperty('error')

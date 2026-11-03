@@ -40,6 +40,8 @@
     "./resources/mcp-manage-port": "./src/resources/mcp-manage-port.ts",
     "./resources/mcp": "./src/resources/mcp.ts",
     "./resources/plugin-manage-port": "./src/resources/plugin-manage-port.ts",
+    "./resources/refinement-skill-archive": "./src/resources/refinement-skill-archive.ts",
+    "./resources/refinement-skill-install": "./src/resources/refinement-skill-install.ts",
     "./resources/skill-install-files": "./src/resources/skill-install-files.ts",
     "./resources/skill-install-port": "./src/resources/skill-install-port.ts",
     "./resources/skill-install": "./src/resources/skill-install.ts",

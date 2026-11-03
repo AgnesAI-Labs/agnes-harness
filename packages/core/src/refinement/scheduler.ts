@@ -8,6 +8,7 @@ import { applyMetaRows } from './confirmations.js'
 import { readSetCurrent } from './evidence.js'
 import { handOffApplied } from './handoff.js'
 import { APPLY_LIMITS, automaticRefusal } from './limits.js'
+import { type RefinementReferences, unavailableReferences } from './references.js'
 import { planRefinementRun, type RefinementRunDeps, type RunFacts, refinementRunRow } from './run.js'
 import { readTaskScope, sameTask, type TaskScope } from './task-scope.js'
 import type { RefinementPlanner } from './types.js'
@@ -44,6 +45,12 @@ export type RefinementDeps = {
    * plan that confirms one is applied. Absent means none: the planner input is as before.
    */
   workspaceRefs?: RefinementWorkspaceRefs
+  /**
+   * Whether the approved skill or role a skill or subagent entry is bound to may be used by a session
+   * now; checked when a plan settles, when it is applied and when the entry is delivered. Absent: no
+   * reference can be checked, so every one is unavailable.
+   */
+  references?: RefinementReferences
 }
 
 /** Why an apply attempt left the run as it was, or what it did. */
@@ -232,9 +239,19 @@ function proposalOf(
     if (edit.op === 'delete') return { op: 'delete', kind: edit.kind, id: edit.id }
     const { kind, id, title, content } = edit
     const version = (baseline.get(entryKey(edit)) ?? 0) + 1
+    const bound = edit.reference === undefined ? {} : { reference: edit.reference }
     return {
       op: 'upsert',
-      entry: { kind, id, title, content, scope: 'local', version, source: `refinement:${run.runId}` },
+      entry: {
+        kind,
+        id,
+        title,
+        content,
+        scope: 'local',
+        version,
+        source: `refinement:${run.runId}`,
+        ...bound,
+      },
     }
   })
   const cited = new Set<Seq>([...plan.evidenceSeqs, ...applied.flatMap((edit) => edit.evidenceSeqs)])
@@ -329,8 +346,11 @@ function applyLocked(s: SessionImpl, runId: string): Promise<ApplyAttempt> {
     // Only entries in force weigh on the safety cap: not an expired task lesson, not one handed off.
     const validity = entryValidity(s.state, scope, readable)
     const inForce = new Set([...validity.valid, ...validity.held].map((view) => entryKey(view.entry)))
+    // A skill or role an entry is bound to that cannot be used now rejects the whole proposal.
+    const unusable = new Set(await unavailableReferences(s, applied))
     const limits = {
       ...APPLY_LIMITS,
+      isUnavailable: (entry: HarnessEntry) => unusable.has(`${entry.kind}/${entry.id}`),
       isCounted: (entry: HarnessEntry) =>
         s.state.registers.harnessEntries.get(entryKey(entry))?.value !== entry ||
         inForce.has(entryKey(entry)),

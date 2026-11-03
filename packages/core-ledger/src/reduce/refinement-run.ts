@@ -74,6 +74,8 @@ export type RefinementPlanEdit =
       downgraded?: true
       /** The evidence identities that granted session level; they never count as confirmations. */
       usedEvidence?: string[]
+      /** A skill or subagent bound to an approved resource: `<resourceId>@<revision>`, or an agent reference. */
+      reference?: string
     }
   | { op: 'delete'; kind: RefinementEntryKind; id: string; evidenceSeqs: Seq[] }
 /**

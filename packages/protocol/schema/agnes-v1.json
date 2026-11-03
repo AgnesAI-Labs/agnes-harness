@@ -5727,6 +5727,67 @@
         "revision": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }
     },
+    "RefinementSkillsParams": {
+      "description": "The skills refinement saved into one workspace, and the owner's uninstall or rollback of one of them. `cwd` names an available workspace. `list` (the default) changes nothing; `uninstall` and `rollback` name the skill; `rollback` goes to `toRevision`, by default the revision before the current one. Uninstalling or rolling back is recorded so automatic and model saves never bring that skill back.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cwd"],
+      "properties": {
+        "cwd": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "action": { "enum": ["list", "uninstall", "rollback"] },
+        "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$" },
+        "toRevision": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "RefinementSavedSkill": {
+      "description": "A skill refinement installed in the workspace: `active` (on), `review-disabled` (switched off by the 30-day review: awaiting review; switching it on again renews it). `previous` are the earlier revisions it can be rolled back to, newest last. `initiator` is who asked for the save it holds now.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "resourceId", "revision", "state", "reviewAfter", "initiator", "previous"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$" },
+        "resourceId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "revision": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "state": { "enum": ["active", "review-disabled"] },
+        "reviewAfter": { "type": "integer", "minimum": 0 },
+        "initiator": { "enum": ["auto", "user", "model"] },
+        "previous": {
+          "type": "array",
+          "maxItems": 16,
+          "items": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        }
+      }
+    },
+    "RefinementSkillDraft": {
+      "description": "A change refinement wanted to make to a skill a person wrote or changed, kept for the person and never written: `human-written` or `changed-since`. `diff` is a whole-file diff of the skill's SKILL.md; it holds planner text, so a client shows it as plain text only.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "reason", "diff", "at"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$" },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "diff": { "type": "string", "maxLength": 1048576 },
+        "at": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "RefinementSkillsResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["skills", "drafts"],
+      "properties": {
+        "skills": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": { "$ref": "#/$defs/RefinementSavedSkill" }
+        },
+        "drafts": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/RefinementSkillDraft" }
+        }
+      }
+    },
     "VoiceFeatureState": {
       "type": "string",
       "enum": ["available", "unconfigured", "no-model", "credential-missing", "ambiguous"]

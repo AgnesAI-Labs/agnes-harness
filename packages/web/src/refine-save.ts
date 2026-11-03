@@ -12,7 +12,7 @@ const OUTCOMES = new Set<string>(['saved', 'installed', 'awaiting-approval', 're
 export async function saveRefinementEntry(
   client: SaveClient,
   sessionId: string,
-  kind: 'memory' | 'prompt',
+  kind: 'memory' | 'prompt' | 'skill',
   id: string,
 ): Promise<RefinementSaveOutcome> {
   try {

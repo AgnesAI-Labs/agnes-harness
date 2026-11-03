@@ -73,6 +73,10 @@ export type Revocation = {
   contentHash: string
   skillName?: string
   action: 'memory-deleted' | 'memory-withdrawn' | 'skill-uninstalled' | 'skill-rolled-back'
+  /** For a skill: the revision the user took back (the one removed, or the one a rollback replaced). */
+  revision?: string
+  /** Who took it back: the principal of the request. */
+  actor?: string
   at: number
 }
 /** The records of one workspace, as a caller reads and edits them. */
@@ -86,8 +90,9 @@ export type RegistrySnapshot = RegistryRecords & { revision: string }
 
 /**
  * Whether `record` bars a save of `source` (and, for a skill, `skillName`): any version of the same
- * source entry in the same session; a skill of the same name, compared ASCII case-insensitively; or a
- * deleted or withdrawn memory paragraph with the same content hash. `revoked` answers with it, and a
+ * source entry in the same session; a skill of the same name, compared ASCII case-insensitively; a
+ * deleted or withdrawn memory paragraph with the same content hash; or, for a skill, an uninstalled
+ * or rolled-back skill saved from the same content (so a renamed copy is barred too). `revoked` answers with it, and a
  * user's override clears exactly the records it matches.
  */
 export function revocationMatches(
@@ -102,10 +107,13 @@ export function revocationMatches(
   const name = skillName?.toLowerCase()
   const sameSkill =
     name !== undefined && record.skillName !== undefined && record.skillName.toLowerCase() === name
-  const sameContent =
+  const memoryContent =
     (source.kind === 'prompt' || source.kind === 'memory') &&
-    (record.action === 'memory-deleted' || record.action === 'memory-withdrawn') &&
-    record.contentHash === source.contentHash
+    (record.action === 'memory-deleted' || record.action === 'memory-withdrawn')
+  const skillContent =
+    source.kind === 'skill' &&
+    (record.action === 'skill-uninstalled' || record.action === 'skill-rolled-back')
+  const sameContent = (memoryContent || skillContent) && record.contentHash === source.contentHash
   return lineage || sameSkill || sameContent
 }
 
@@ -196,9 +204,16 @@ const cleanRevocation = (value: unknown): Revocation | undefined => {
     'skill-uninstalled',
     'skill-rolled-back',
   ] as const)
+  const revision = raw.revision === undefined ? undefined : text(raw.revision)
+  const actor = raw.actor === undefined ? undefined : text(raw.actor)
   const at = time(raw.at)
   if (!every(sessionKey, kind, entryId, contentHash, action, at)) return undefined
   if (raw.skillName !== undefined && skillName === undefined) return undefined
+  if (
+    (raw.revision !== undefined && revision === undefined) ||
+    (raw.actor !== undefined && actor === undefined)
+  )
+    return undefined
   return {
     sessionKey: sessionKey as string,
     kind: kind as SaveKind,
@@ -206,6 +221,8 @@ const cleanRevocation = (value: unknown): Revocation | undefined => {
     contentHash: contentHash as string,
     ...(skillName === undefined ? {} : { skillName }),
     action: action as Revocation['action'],
+    ...(revision === undefined ? {} : { revision }),
+    ...(actor === undefined ? {} : { actor }),
     at: at as number,
   }
 }
@@ -244,6 +261,7 @@ const cleanRecords = (value: Raw): RegistryRecords | undefined => {
 }
 
 const UUID = /^[0-9a-f-]{36}$/
+const WORKSPACE_ID = /^[a-f0-9]{64}$/
 const emptyRecords = (): RegistryRecords => ({ paragraphs: [], skills: [], revocations: [], receipts: [] })
 
 export type RegistryOptions = {
@@ -276,7 +294,8 @@ const exists = (error: unknown): boolean => (error as { code?: string } | null)?
  * rename, so a reader never sees half a write.
  *
  * The file is `<dataDir>/refinement/workspaces/<sha256(workspaceRoot)>.json`; `workspaceRoot` is the same
- * string the memory provider is opened with.
+ * string the memory provider is opened with. A caller that knows only that hash (the workspace id resource
+ * control gives a workspace skill) passes `{ workspaceId }` instead.
  */
 export class RefinementRegistry {
   private readonly dir: string
@@ -284,10 +303,17 @@ export class RefinementRegistry {
   private readonly clock: () => number
   private readonly lockStaleMs: number
   private readonly lockWaitMs: number
-  constructor(dataDir: string, workspaceRoot: string, clock: () => number, options: RegistryOptions = {}) {
+  constructor(
+    dataDir: string,
+    workspace: string | { workspaceId: string },
+    clock: () => number,
+    options: RegistryOptions = {},
+  ) {
+    const id = typeof workspace === 'string' ? sha256(workspace) : workspace.workspaceId
+    if (!WORKSPACE_ID.test(id)) throw failure('REGISTRY_WORKSPACE_INVALID')
     this.clock = clock
     this.dir = join(dataDir, 'refinement', 'workspaces')
-    this.file = join(this.dir, `${sha256(workspaceRoot)}.json`)
+    this.file = join(this.dir, `${id}.json`)
     this.lockStaleMs = options.lockStaleMs ?? LOCK_STALE_MS
     this.lockWaitMs = options.lockWaitMs ?? LOCK_WAIT_MS
   }

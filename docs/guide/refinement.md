@@ -26,13 +26,13 @@ Open **Settings → General → Task experience** in the Web workbench.
 
 The settings panel lists what turning it on allows:
 
-1. Install proven skills in the workspace: a skill that was confirmed twice and is plain instructions would be installed without the usual install confirmation. **Not available yet**; skills arrive in a later release, and until then nothing is installed or saved as a skill.
-2. Let the model save skills in the workspace without waiting for a second confirmation, if it cites evidence from the session and passes the static checks. **Not available yet**, like item 1.
-3. Let the model save memory in the workspace. This one is in force: lessons confirmed twice, your own saves and the model's saves go into the workspace memory. The workspace memory setting (off, ask or auto) still decides what is written.
+1. Install proven skills in the workspace: a skill entry confirmed twice is installed in the workspace, trusted and switched on, without the usual install confirmation. See [Saved skills](#saved-skills).
+2. Let the model save skills in the workspace without waiting for a second confirmation, if it cites evidence from the session and passes the static checks.
+3. Let the model save memory in the workspace: lessons confirmed twice, your own saves and the model's saves go into the workspace memory. The workspace memory setting (off, ask or auto) still decides what is written.
 
 None of them brings back something you uninstalled, rolled back or deleted.
 
-If task experience was already on before this release, the panel shows a one-time notice that saving to the workspace memory now takes effect without asking again here, and that turning off **Learn from finished work** stops it. Dismissing the notice is remembered by that browser only; nothing is saved to your profile.
+If task experience was already on before this release, the panel shows a one-time notice that saving to the workspace memory and as workspace skills now takes effect without asking again here, and that turning off **Learn from finished work** stops it. Dismissing the notice is remembered by that browser only; nothing is saved to your profile.
 
 ## Manual and automatic reviews
 
@@ -73,7 +73,7 @@ An **entry** has a kind, an id, a title and a text. There are four kinds:
 | Skill | Steps worth repeating, written as instructions |
 | Subagent | How to hand a repeated kind of work to a subagent |
 
-A skill or subagent entry is text the model can read and follow. It does not install a skill or start a subagent.
+A skill or subagent entry is text the model can read and follow. It does not install a skill or start a subagent; saving a skill entry to the workspace does install it (see [Saved skills](#saved-skills)).
 
 A review changes at most 5 entries, each at most 2,000 characters, and it is applied whole or not at all. If an entry changed after the review read it, nothing from that review is saved. Each kind keeps at most 200 entries; a review that would go past that is not applied.
 
@@ -88,7 +88,7 @@ The model is told when a task entry expires.
 
 ## Save to the workspace
 
-Entries live in their session. Saving one to the workspace writes it into the workspace memory index (`MEMORY.md`, see [Learned memory](memory.md#saved-task-experience)) as one **saved paragraph**: its title, a line break and its text. Every session of the workspace then reads it with the rest of the workspace memory.
+Entries live in their session. Saving a memory or prompt entry to the workspace writes it into the workspace memory index (`MEMORY.md`, see [Learned memory](memory.md#saved-task-experience)) as one **saved paragraph**: its title, a line break and its text. Every session of the workspace then reads it with the rest of the workspace memory. Saving a skill entry installs it as a workspace skill (see [Saved skills](#saved-skills)).
 
 ### Who saves what
 
@@ -101,7 +101,7 @@ There are four ways in, and all go through the same checks:
 | **Save … to workspace** on an applied review line in the Web conversation | you | Nothing else; no model is called |
 | The model, with `target: 'workspace'` on `harness_propose` or `harness_refine` | the model | **Manual and automatic** mode; evidence from this session |
 
-Only **session** entries of the **memory** and **prompt** kinds are saved. Task entries stay in their session, skill entries arrive in a later release, and subagent entries are not saved to the workspace. A forked or child session saves nothing. An entry must rest on what happened in this session; a model save without evidence from the session is refused.
+Only **session** entries of the **memory**, **prompt** and **skill** kinds are saved. Task entries stay in their session, and subagent entries are not saved to the workspace. A forked or child session saves nothing. An entry must rest on what happened in this session; a model save without evidence from the session is refused.
 
 Each save is judged in a fixed order, and the first check that fails ends it:
 
@@ -109,8 +109,8 @@ Each save is judged in a fixed order, and the first check that fails ends it:
 2. You have not taken the content back (see below); only your own save gets past this.
 3. An automatic save has two confirmations.
 4. The entry passes the source and safety rules (session level, evidence, length, no secret-like text).
-5. The workspace memory mode: **off** refuses; **ask** puts the save in the decision list; **auto** writes it.
-6. There is room in the workspace memory.
+5. For memory and prompt entries, the workspace memory mode: **off** refuses; **ask** puts the save in the decision list; **auto** writes it. A skill entry passes the skill checks instead (below).
+6. There is room in the workspace memory, or the skill is installed.
 
 ### Approvals
 
@@ -132,6 +132,7 @@ Every saved paragraph has a **review date 30 days** after it was saved. From tha
 What you take back wins over automatic and model saves:
 
 - Deleting a saved paragraph from the file (the next session open records it), **Withdraw** on the memory page, or rejecting an approval records that you took it back. After that, automatic and model saves of the same entry, or of the same content under another entry id, are refused (`user-revoked`). Content that differs only in spacing or letter case counts as the same.
+- For a saved skill, uninstalling it, rolling it back or deleting its folder does the same, and also bars any skill entry of the same name.
 - Your own save (`/refine --workspace` or the per-entry button) saves it again and clears the record.
 
 ### Paragraphs a person edited
@@ -143,6 +144,20 @@ A save never replaces a paragraph a person edited in place: an automatic or mode
 Every save gets a line in the conversation: who asked for it (automatic, you, or the model), how it ended (saved, waiting for your approval, not saved, unknown result) and, when refused, why: for example memory full, approval expired, taken back by you (`user-revoked`), edited by a person or the file changed (`conflict`), or not available right now (`unavailable`). The line never shows the entry's text or where it was written. The TUI shows the same as text.
 
 A save cut off by a crash is settled the next time the workspace is used. If the file changed in between so that it cannot tell what happened, the result is **unknown**: the paragraph, if it was written, stays hidden from the agent until you make it ordinary memory or withdraw it on the memory page.
+
+## Saved skills
+
+A skill entry saved to the workspace becomes a workspace skill. It is installed by the host in the background, without a turn and without an install confirmation: turning task experience on is the permission (item 1 and 2 above). It goes through the same order of checks as any save, then:
+
+- **What the skill holds.** One `SKILL.md`: the entry id is the skill's name (lower case letters, digits, `.`, `_`, `-`), the entry title its description (at most 200 characters) and the entry text its instructions. Saved skills are **instructions only**: no scripts, no executable or binary files. When a script would help, the skill tells the agent to write it with its own file tools, under its usual permissions and approvals. An entry bound to a skill you already approved is a pointer to that skill and is never installed as a skill of its own.
+- **Where it goes.** Only the workspace's own skill folder (`.agh/skills/<name>`), never your user skills. It is installed trusted and switched on. A name already used by a skill a person wrote (in the workspace, or a user skill) is never taken: the change is kept as a draft instead.
+- **Hand-off.** Once installed, the session entry hands off to the skill: it is no longer given to the model as an entry and no longer counts toward the 200-entry limit, and the model is told once to use the workspace skill instead. The entry stays in the session's record. The next session finds the skill in its skill catalogue like any other.
+- **30-day review.** Every saved skill has a review date 30 days on. A later review that confirms the skill with new evidence renews it. A skill not confirmed again is switched off (not removed) when a session opens after that date, or when you turn task experience on; it then shows as **awaiting review**. Switching it back on, on the Skills page, renews it for another 30 days. Switching off by the review is not taking it back.
+- **Updates.** A new version of a skill entry (confirmed twice, or saved by you or the model) updates a saved skill **of the same name**, from any session, only while nobody changed the skill since it was saved. Up to five earlier versions are kept, and you can roll back to the previous one. A skill switched off by the review stays off through an update.
+- **A person's skill is never overwritten.** When the skill was written by a person, or a person changed a saved skill (even between the decision and the write), the change is kept as a **draft** for you and the save is refused as `conflict`. Drafts are listed under **Saved skills** in the task experience settings, as plain text with a whole-file diff; copy what you want by hand. A workspace keeps at most 20 drafts.
+- **Taking it back.** **Uninstall** or **Roll back to the previous version** under **Saved skills** in the task experience settings, removing the skill on the Skills page, or deleting its folder, records that you took it back. A deleted folder is noticed the next time a skill is saved in that workspace; until then **Saved skills** still shows the skill as on. After that, automatic and model saves of the same entry, of any skill entry with the same name, or of the same content under another name, are refused (`user-revoked`). Only your own save (`/refine --workspace`, or **Save … to workspace** on a review line) installs it again, and clears the record.
+
+Installing, updating, switching off or removing a saved skill changes the skill catalogue, and with it the system prompt of the next request. This is expected and recorded as a refinement prefix change (`skill-catalog`).
 
 ## How entries reach the model
 
@@ -188,11 +203,12 @@ The TUI shows the same lines as text but has no withdraw action. A client can ca
 
 Turning the switch off stops new reviews, stops applying results that are waiting, and stops sending entries, at once. The model gets one note that task experience is switched off. The three tools stay listed until AGH restarts, but answer that it is off. Saved entries stay in the session's record and are sent again once it is on and active. If it was on when AGH started, turning it back on works at once; otherwise restart. Withdrawing still works while it is off.
 
-Nothing is saved to the workspace while it is off, and requests waiting for approval are withdrawn. Paragraphs saved earlier stay in the workspace memory and keep their review dates. You can still renew, withdraw or convert them on the memory page.
+Nothing is saved to the workspace while it is off, and requests waiting for approval are withdrawn. Paragraphs saved earlier stay in the workspace memory and keep their review dates. You can still renew, withdraw or convert them on the memory page. Saved skills stay installed; no skill is installed, updated or reviewed while it is off, and you can still uninstall or roll one back.
 
 ## Compared with Prime Agent
 
-- Prime Agent keeps session entries and global entries for every session (`/refine --global`). AGH keeps entries in the session and saves memory and prompt entries to the workspace memory as paragraphs with a 30-day review date, after two confirmations, on your request (`/refine --workspace`, per entry) or the model's.
+- Prime Agent keeps session entries and global entries for every session (`/refine --global`). AGH keeps entries in the session and saves them to the current workspace only: memory and prompt entries as paragraphs of the workspace memory, skill entries as workspace skills, each with a 30-day review date, after two confirmations, on your request (`/refine --workspace`, per entry) or the model's. Unlike Prime Agent, AGH has an automatic path, and it needs two confirmations.
+- Prime Agent's self-written skills can be Python functions run in its own kernel. AGH's saved skills are instructions only; the agent writes and runs any script itself, under its usual permissions.
 - Prime Agent applies a review edit by edit. AGH applies the whole review or nothing.
 - Prime Agent starts automatic reviews only after a compaction, with a 20-minute cooldown. AGH also starts them after repeated failures and on the model's request, within the limits above.
 - AGH delivers entries as untrusted data, and the feature is off until you turn on the switch of your profile.
@@ -201,7 +217,10 @@ Nothing is saved to the workspace while it is off, and requests waiting for appr
 
 - Forks are child sessions. A fork, a rewind and a subagent get no reviews and no entry notes, and cannot withdraw.
 - Entries are kept per session. A new session starts with no entries; what was saved to the workspace reaches it through the workspace memory.
-- Saving to the workspace covers memory and prompt entries only. Skills arrive in a later release.
+- A saved skill is updated by name: a skill entry of the same name from any session updates it (after two confirmations when automatic).
+- An entry bound to an approved skill or role, once delivered, keeps its line in the entry note until the next snapshot (a new session or a compaction), even if the skill is switched off meanwhile; `skill_read` and `subagent_spawn` check again when the model calls them.
+- Saved skills are written to the workspace's `.agh/skills` folder through the same publishing step as other skill installs. While a skill is being published, a process that can rewrite `.agh` could swap the folder; `.agh` is a configuration path, and the agent's own writes there need your approval.
+- Drafts and earlier versions of saved skills are kept in the profile's data directory, not in the workspace.
 - The checks on a save are about structure: the source, the length, secret-like text, the size of memory. They do not judge whether a lesson is right. Review what is saved on the memory page.
 - On a platform without a system sandbox (for example Windows, or a container without bubblewrap under full access), the agent's shell can read and change the memory files directly, including paragraphs it is not shown. A shell that takes the two marker lines off a paragraph turns it into ordinary memory at the next session open. See [Learned memory](memory.md#approval-and-privacy).
 - A terminal started with `--standalone` runs its own embedded host, which does not serve `/refine`: it answers that the command is not supported. Automatic reviews still run there.
@@ -211,4 +230,4 @@ Nothing is saved to the workspace while it is off, and requests waiting for appr
 
 ## Diagnostics and exports
 
-Diagnostics bundles, diagnostic event exports and session exports contain the conversation as it was written, including the entry notes the model received and the text of the experience tools. Review them before you share them. The save lines and the workspace's save records hold no entry text, but the conversation around them does.
+Diagnostics bundles, diagnostic event exports and session exports contain the conversation as it was written, including the entry notes the model received and the text of the experience tools. Review them before you share them. The save lines and the workspace's save records hold no entry text, but the conversation around them does. A saved skill's text is in its `SKILL.md` in the workspace, like any other skill.

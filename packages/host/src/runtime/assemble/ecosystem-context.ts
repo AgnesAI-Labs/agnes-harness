@@ -47,7 +47,10 @@ export function createEcosystemContexts(
   // value read then would let a running session gain or lose tools mid-conversation. A new process,
   // worker or generation assembles again and reads it fresh. This view decides tool registration
   // only; what Core reads is live as well (see createRefinementHost).
-  const refinement = createRefinementHost(ctx.dataDir, ctx.profile.name, ctx.clock)
+  const refinement = createRefinementHost(ctx.dataDir, ctx.profile.name, ctx.clock, {
+    skills: () => skillState.discovery,
+    ...(deps.refinementSave ? { refinementSave: deps.refinementSave } : {}),
+  })
   const refinementView: SeamInitContext['refinementSettings'] = refinement.view
   const hookCommands =
     adapters.platform.os === 'win32'

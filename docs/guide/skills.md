@@ -18,6 +18,12 @@ Instruction-only drafts (`SKILL.md` plus optional `.md`, `.txt`, `.json`, `.yaml
 
 Scripts, package manifests and other file types keep the plugin candidate → author tests → human publication path. Installation does not execute those scripts or grant them execution permission. Existing local-source imports retain their separate source-read approval. An invalid or conflicting draft is refused without overwriting files; denial, cancellation, expired ownership or a changed lease cannot authorize installation. The private receipt retains the authoring session, plugin snapshot, content digest and resource revision. Update an already installed Skill Helper to receive this flow; installed helper packages are not automatically upgraded.
 
+## Skills saved by task experience
+
+With [task experience](refinement.md) on, a skill the agent learned in a session can be saved into the workspace as a skill: automatically after two confirmations, by you (`/refine --workspace`, or **Save … to workspace** on a review line), or by the model. AGH installs it in the workspace's `.agh/skills` folder, trusted and switched on, without the install confirmation above and without a turn. Such skills are **instructions only**: one `SKILL.md`, no scripts or executable files. When a script would help, the skill tells the agent to write it with its own file tools, under its usual permissions.
+
+They appear in the skill list like any other workspace skill. **Settings → General → Task experience → Saved skills** lists them as on or **awaiting review** (switched off by the 30-day review; switching it back on in the skill list renews it for 30 days), with who saved them, **Uninstall** and **Roll back to the previous version**, and the drafts kept for you when a save would have changed a skill you wrote or changed. A skill you wrote or changed is never overwritten. Removing a saved skill here or under Settings, rolling it back, or deleting its folder is remembered: automatic and model saves never bring it back. See [Saved skills](refinement.md#saved-skills) for the rules and limits, and [Diagnostics and exports](refinement.md#diagnostics-and-exports) for what exports contain.
+
 <a id="创建一个工作区-skill"></a>
 
 ## Create a workspace Skill
@@ -108,7 +114,7 @@ Use Disable for a temporary change. **Permanent deletion removes the entire sele
 3. Save the operation ID, wait for `succeeded`, and inspect the list, directory, and remaining candidates. A receipt only acknowledges acceptance; an operation can fail after partially deleting files.
 4. `SKILL_REMOVAL_PENDING` means the item is blocked from re-enabling. Preserve the state, address causes such as file locks, then explicitly retry deletion. Failure does not mean files were restored. Once accepted, deletion cannot be canceled; restarting is not undo.
 
-The backend does not accept arbitrary caller-supplied deletion paths. It derives the target from the registered source and resourceId, then verifies workspace identity, revision, and directory/file identity. Stale scans, symbolic links/junctions, hard links, or path replacement are rejected. A failed preflight does not write a deletion marker. Failure during execution retains identity progress and deletion markers for a constrained retry. Progress contains no file contents and is not a backup. Markers survive restarts, and refresh does not revive the same deleted resourceId. There is currently no API to restore a deleted Skill.
+The backend does not accept arbitrary caller-supplied deletion paths. It derives the target from the registered source and resourceId, then verifies workspace identity, revision, and directory/file identity. Stale scans, symbolic links/junctions, hard links, or path replacement are rejected. A failed preflight does not write a deletion marker. Failure during execution retains identity progress and deletion markers for a constrained retry. Progress contains no file contents and is not a backup. Markers survive restarts, and refresh does not revive the same deleted resourceId. There is currently no API to restore a deleted Skill. A skill saved by task experience keeps its earlier versions in the profile's data directory and can be rolled back under **Settings → General → Task experience → Saved skills**; that does not restore a deleted one.
 
 <a id="api权限与-cli-边界"></a>
 

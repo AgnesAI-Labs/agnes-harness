@@ -4,7 +4,7 @@ import { Scheduler } from '@agnes/daemon-foundation/jobs/scheduler'
 import { JobsService } from '@agnes/daemon-foundation/jobs/service'
 import { type ReclaimRecord, type ResumeReport, reclaimExpired } from '@agnes/daemon-foundation/lease/reclaim'
 import { sessionSelectionProvider } from '@agnes/daemon-rpc/local/methods/session-selection'
-import { sessionsDbPath } from '@agnes/host'
+import { agnesHome, RefinementSettingsStore, sessionsDbPath } from '@agnes/host'
 import type { DispatchState } from './assembly-client-dispatch.js'
 import type { AssemblyLifetime } from './assembly-lifetime.js'
 import type { AssemblyBase } from './assembly-options.js'
@@ -16,6 +16,7 @@ import { startChildMaintenance } from './child-maintenance.js'
 import { configurationApplication } from './configuration.js'
 import { readModelSelectionCatalog, sharedSessionCatalog } from './model-adapter-lookup.js'
 import { createSupervisorProfileServices } from './profile-services.js'
+import { createSavedSkills, type SavedSkills } from './refinement-saved-skills.js'
 import { type ScheduleCatalog, scheduledTasks } from './schedule-sessions.js'
 import { keepSharedWorker } from './shared-keeper.js'
 import { startSkillWatcher } from './skill-watcher.js'
@@ -150,7 +151,21 @@ export async function openSessionServices(
       : undefined
   const selectedJobs = o.ports?.jobs ?? jobs
 
-  workerRequests.initialize(createWorkerRequests({ ...state, profilePorts, schedules }, lifetime.phase()))
+  // Saved skills: shared installers, the 30-day review when a session opens, the user's revocations.
+  const refinementSettings = new RefinementSettingsStore(o.config.dataDir, o.profile.name)
+  const savedSkills = createSavedSkills({
+    dataDir: o.config.dataDir,
+    profile: o.profile.name,
+    agnesHome: agnesHome(process.env),
+    service: resourceControl.service,
+    catalog: workspaceCatalog,
+    enabled: () => refinementSettings.current().settings.enabled,
+    ...(o.workspaceRoot ? { defaultWorkspaceRoot: o.workspaceRoot } : {}),
+  })
+  lifetime.own({ stop: () => savedSkills.close(), drain: () => savedSkills.idle(), dispose: () => undefined })
+  workerRequests.initialize(
+    createWorkerRequests({ ...state, profilePorts, schedules, savedSkills }, lifetime.phase()),
+  )
   // The listener is live before restart recovery can acquire a resource-only worker.
   if (localResourceStore) await resourceControl.service.recover()
   if (localResourceStore) {
@@ -191,6 +206,7 @@ export async function openSessionServices(
     schedules,
     profilePorts,
     boundWakes,
+    savedSkills,
     scheduler,
     jobs,
     selectedJobs,
@@ -204,6 +220,7 @@ export type SessionsState = Awaited<ReturnType<typeof openSessionServices>>
 export type WorkerRequestServices = {
   profilePorts: ReturnType<typeof createSupervisorProfileServices>
   schedules: ReturnType<typeof scheduledTasks> | undefined
+  savedSkills: SavedSkills
 }
 
 async function openReclaimer(

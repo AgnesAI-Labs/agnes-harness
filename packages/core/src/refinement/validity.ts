@@ -313,6 +313,14 @@ export function entryValidity(state: LedgerState, scope: TaskScope | null, reada
   return out
 }
 
+/** The `kind/id` of every entry handed off to the workspace: kept, but no longer the session's to give. */
+export function handedOffRefs(state: LedgerState): Set<string> {
+  const refs = new Set<string>()
+  for (const [key, cell] of state.registers.harnessEntries)
+    if (boundMeta(state, key)?.handedOff) refs.add(`${cell.value.kind}/${cell.value.id}`)
+  return refs
+}
+
 /** The entries of this session by validity now, read with the current task. */
 export async function validEntries(s: SessionImpl): Promise<Validity> {
   const { scope, readable } = await readTaskScope(s)

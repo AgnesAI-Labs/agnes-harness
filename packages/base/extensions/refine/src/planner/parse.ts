@@ -15,6 +15,8 @@ export type PlannerEdit =
       applicability: 'task' | 'session'
       evidenceIds: string[]
       quote?: string
+      /** Skill and subagent only: the approved resource the entry is bound to; the host checks it. */
+      reference?: string
     }
   | { op: 'delete'; kind: EntryKind; id: string; evidenceIds: string[] }
 export type PlannerConfirmation = { entryId: string; evidenceIds: string[]; quote?: string }
@@ -39,6 +41,8 @@ export type ParseContext = {
 const KINDS = new Set<string>(['prompt', 'memory', 'skill', 'subagent'])
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
 const MAX_IDS = 20
+/** The longest reference to an approved skill or role. */
+const MAX_REFERENCE = 512
 
 type Obj = Record<string, unknown>
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -73,7 +77,18 @@ function edit(raw: unknown, at: number): PlannerEdit {
       return reject(where)
     return { op: 'delete', kind, id: raw.id, evidenceIds: raw.evidenceIds }
   }
-  const allowed = ['op', 'kind', 'id', 'title', 'content', 'applicability', 'evidenceIds', 'quote']
+  const allowed = [
+    'op',
+    'kind',
+    'id',
+    'title',
+    'content',
+    'applicability',
+    'evidenceIds',
+    'quote',
+    'reference',
+  ]
+  const bindable = kind === 'skill' || kind === 'subagent'
   if (
     raw.op !== 'upsert' ||
     !keysWithin(raw, allowed) ||
@@ -81,7 +96,8 @@ function edit(raw: unknown, at: number): PlannerEdit {
     typeof raw.content !== 'string' ||
     (raw.applicability !== 'task' && raw.applicability !== 'session') ||
     !ids(raw.evidenceIds, 1) ||
-    (raw.quote !== undefined && !str(raw.quote, 2000, 1))
+    (raw.quote !== undefined && !str(raw.quote, 2000, 1)) ||
+    (raw.reference !== undefined && (!bindable || !str(raw.reference, MAX_REFERENCE, 1)))
   )
     return reject(where)
   if (raw.content.length === 0 || raw.content.length > MAX_EDIT_CHARS) return reject(`edit-too-long: ${at}`)
@@ -94,6 +110,7 @@ function edit(raw: unknown, at: number): PlannerEdit {
     applicability: raw.applicability,
     evidenceIds: raw.evidenceIds,
     ...(raw.quote === undefined ? {} : { quote: raw.quote as string }),
+    ...(raw.reference === undefined ? {} : { reference: raw.reference as string }),
   }
 }
 

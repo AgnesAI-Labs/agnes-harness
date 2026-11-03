@@ -108,6 +108,8 @@ export type PlannerOutputEdit =
       applicability: 'task' | 'session'
       evidenceIds: string[]
       quote?: string
+      /** Skill and subagent only: the approved resource the entry is bound to. */
+      reference?: string
     }
   | { op: 'delete'; kind: RefinementEntryKind; id: string; evidenceIds: string[] }
 export type PlannerOutput = {

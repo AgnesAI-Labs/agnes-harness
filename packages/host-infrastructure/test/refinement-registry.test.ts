@@ -229,7 +229,7 @@ describe('RefinementRegistry', () => {
     expect(ran).toBe(false)
   })
 
-  it('revoked matches the same lineage, the same skill name and the same paragraph content', () => {
+  it('revoked matches the same lineage, the same skill name and the same paragraph or skill content', () => {
     const { registry } = make()
     registry.update((draft) => {
       draft.revocations.push(
@@ -270,9 +270,14 @@ describe('RefinementRegistry', () => {
     expect(
       registry.revoked({ sessionKey: 's2', kind: 'memory', entryId: 'e-lineage', contentHash: 'h-new' }),
     ).toBeUndefined()
-    // a skill name alone does not match a memory revocation, and content alone does not match a skill
+    // a renamed skill entry with the content of an uninstalled skill is barred too
     expect(
       registry.revoked({ sessionKey: 's9', kind: 'skill', entryId: 'x', contentHash: 'h-skill' }),
+    ).toMatchObject({ entryId: 'e-skill', action: 'skill-uninstalled' })
+    // ... but a memory entry with that content is not, and a skill name alone does not match a memory
+    // revocation
+    expect(
+      registry.revoked({ sessionKey: 's9', kind: 'memory', entryId: 'x', contentHash: 'h-skill' }),
     ).toBeUndefined()
     expect(
       registry.revoked({ sessionKey: 's9', kind: 'skill', entryId: 'x', contentHash: 'y' }, 'other-name'),
@@ -366,6 +371,42 @@ describe('RefinementRegistry', () => {
     expect(b.read().paragraphs.map((p) => p.id)).toEqual(['pb'])
     // a different spelling of the same folder is a different workspace key
     expect(new RefinementRegistry(dir, '/work/a/', clockAt()).read().paragraphs).toEqual([])
+  })
+
+  it('a registry opened by workspace id is the one opened by its root', () => {
+    const dir = tempDir()
+    const byRoot = new RefinementRegistry(dir, '/work/a', clockAt())
+    byRoot.update((draft) => {
+      draft.skills.push(skill())
+    }, byRoot.read().revision)
+    const byId = new RefinementRegistry(dir, { workspaceId: sha256('/work/a') }, clockAt())
+    expect(byId.read()).toEqual(byRoot.read())
+    for (const workspaceId of ['', '../x', 'A'.repeat(64), sha256('x').slice(1)])
+      expect(() => new RefinementRegistry(dir, { workspaceId }, clockAt())).toThrowError(
+        expect.objectContaining({ code: 'REGISTRY_WORKSPACE_INVALID' }),
+      )
+  })
+
+  it('a skill revocation keeps the revision taken back and who took it; a malformed one is refused', () => {
+    const { registry, dir } = make()
+    const record = revocation({
+      kind: 'skill',
+      skillName: 'deploy-notes',
+      action: 'skill-uninstalled',
+      revision: 'rev-2',
+      actor: 'local-owner',
+    })
+    registry.update((draft) => {
+      draft.revocations.push(record)
+    }, registry.read().revision)
+    expect(new RefinementRegistry(dir, '/work/a', clockAt()).read().revocations).toEqual([record])
+    const revision = registry.read().revision
+    for (const bad of [{ revision: '' }, { actor: 7 }, { revision: 'x'.repeat(5000) }])
+      expect(() =>
+        registry.update((draft) => {
+          draft.revocations.push({ ...record, ...bad } as Revocation)
+        }, revision),
+      ).toThrowError(expect.objectContaining({ code: 'REGISTRY_INVALID' }))
   })
 
   it('persists across instances and hands out copies', () => {

@@ -238,7 +238,7 @@ type WebConversationMessagesProps = {
   /** Saves one entry a review kept to a session's workspace; the adapter binds the session shown. */
   onSaveRefinementEntry?: (
     sessionId: string,
-    kind: 'memory' | 'prompt',
+    kind: 'memory' | 'prompt' | 'skill',
     id: string,
   ) => Promise<import('@agnes/web-ui/conversation').RefinementSaveOutcome>
   /** Compatibility selector; both values now use the same React-owned Markdown. */

@@ -273,6 +273,11 @@ export {
   refinementFacade,
 } from './refinement/facade.js'
 export { redactEvidence } from './refinement/redact.js'
+export type {
+  ReferencedSkill,
+  ReferenceSession,
+  RefinementReferences,
+} from './refinement/references.js'
 export type { TaskScope } from './refinement/task-scope.js'
 export type { RefinementCandidate, RefinementTriggerSink } from './refinement/triggers.js'
 export type {

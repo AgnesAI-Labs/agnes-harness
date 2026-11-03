@@ -11,6 +11,7 @@ import { isChildSession } from '../step/child-session.js'
 import { sysEvent } from '../step/events.js'
 import type { SessionImpl } from '../step/session.js'
 import { settingsOf } from './scheduler.js'
+import { skillInstalledRows } from './skill-handoff.js'
 import { contentHash } from './validity.js'
 
 export type { SaveInitiator, SaveReceipt } from '@agnes/core-ledger/reduce/refinement-save'
@@ -42,6 +43,8 @@ export type WorkspaceSaveRequest = {
     title: string
     content: string
     applicability: 'task' | 'session'
+    /** The approved skill or role a skill or subagent entry is bound to, when it is. */
+    reference?: string
   }
   evidenceSeqs: Seq[]
   evidenceTurn?: number
@@ -140,6 +143,7 @@ export function workspaceSaveRequest(
       title: entry.title,
       content: entry.content,
       applicability: current?.applicability ?? 'task',
+      ...(typeof entry.reference === 'string' ? { reference: entry.reference } : {}),
     },
     evidenceSeqs: [...(input.evidenceSeqs ?? plannedEvidence(s, entry))],
     ...(lastTurn === undefined ? {} : { evidenceTurn: lastTurn }),
@@ -150,7 +154,7 @@ export function workspaceSaveRequest(
 
 /**
  * Saves one of this session's entries into its workspace through the host's save path, and records
- * the receipt in the session ledger. Every entry point calls this one function; the host alone judges
+ * the receipt in the session ledger (a skill installed hands its entry off, `skillInstalledRows`). Every entry point calls this one function; the host alone judges
  * the request. Nothing is written while refinement is off, and the call never waits for the host
  * while holding the session.
  */
@@ -171,7 +175,9 @@ export async function saveToWorkspace(
   }
   if (receipt.reason !== 'refinement-off' && !s.closingOrClosed) {
     try {
-      await s.locked(() => s.append([refinementSaveRow(s, receipt)]))
+      await s.locked(() =>
+        s.append([refinementSaveRow(s, receipt), ...skillInstalledRows(s, request, receipt)]),
+      )
     } catch (error) {
       // The host has already acted on the save; its own registry keeps the receipt.
       s.d.logger.warn('refinement save receipt was not recorded', { message: String(error) })

@@ -286,6 +286,7 @@
 - `_agnes/v1/voice.settings.save`
 - `_agnes/v1/refinement.get`
 - `_agnes/v1/refinement.save`
+- `_agnes/v1/refinement.skills`
 
 ### 配置
 
