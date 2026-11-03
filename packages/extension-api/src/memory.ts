@@ -125,16 +125,37 @@ export interface MemorySession {
    * and honours the validity view; the Host does not save managed paragraphs to a provider without it.
    */
   paragraphs?(source: MemorySource, signal: AbortSignal): MemoryParagraphPort
+  /**
+   * Optional since 5.3.0. Managed sections of user memory, the memory every workspace may read: the same
+   * port shape as `paragraphs`, over the user memory index instead of the workspace's. Its presence is the
+   * provider's statement that it keeps managed sections in user memory and honours `userValidity`; the
+   * Host saves nothing to user memory through a provider without it.
+   *
+   * - It works whatever the workspace's memory mode: the agent never writes user memory, and the Host
+   *   decides on its own when a section may be written.
+   * - `propose` refuses `MEMORY_USER_BUDGET` when the hand-written text, the sections in force and the
+   *   sections being put would not fit the user memory budget the agent is shown, or the index would pass
+   *   its size or line cap. It never trims, merges or removes anything to make room. Credential-like
+   *   content is refused as in workspace memory (`MEMORY_SECRET_LIKE_CONTENT`).
+   * - Hand-written text and marker lines are never changed: only whole sections are put or removed.
+   */
+  userParagraphs?(source: MemorySource, signal: AbortSignal): MemoryParagraphPort
 }
 
 export interface MemoryProvider extends ProviderIdentity {
-  /** `validity` is optional since 5.2.0; a provider that does not read it keeps its behaviour. */
+  /**
+   * `validity` is optional since 5.2.0 and `userValidity` since 5.3.0; a provider that does not read them
+   * keeps its behaviour. `userValidity` answers for managed sections of user memory as `validity` does for
+   * the workspace's: the agent is shown the hand-written user memory first and only the sections in force
+   * after it; without the view every managed section of user memory is left out.
+   */
   open(
     input: Readonly<{
       home: string
       workspaceRoot: string
       sessionKey: string
       validity?: MemoryValidityView
+      userValidity?: MemoryValidityView
     }>,
   ): MemorySession
 }

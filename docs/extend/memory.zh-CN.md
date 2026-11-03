@@ -33,7 +33,12 @@ Extension API 5.2.0 新增三个可选成员。不实现它们的 provider 照�
 - `MemorySession.paragraphs?(source, signal)` 返回 `MemoryParagraphPort`，它读当前存储文件而不是某个 turn 的快照。`list()` 返回 `{ hash, paragraphs }`，hash 指明所读的文件。`propose(changes, baseHash?)` 接受一条或一组修改（`{ op: 'put', id, text }` 插入或原位替换，`{ op: 'remove', id }` 删除），返回同时应用全部修改的一个提案；任一成员无法应用（例如删除文件里没有的 id，或同一 id 出现两次）时整次拒绝；给了 `baseHash` 而存储文件此后已变时，以 `MEMORY_CONFLICT` 拒绝。`commit(proposal, admission?)` 以 `proposal.baseHash` 做一次 CAS 写入整个提案（过时则 `MEMORY_CONFLICT`），并仍按工作区记忆模式：off 拒绝；ask 由调用方事先取得对该确切提案的批准。被拒绝时什么都不写。有这个方法即表示支持；`@agnes/extension-api/testkit` 的 `memoryParagraphConformance` 在新的存储上检查这些规则。后台写入把 `source.maintenance` 设为运行 id，`source.turn` 设为证据所在的 turn。
 - 记忆文件端口上的 `replaceExact?(path, oldText, newText)` 在存储文件里替换 `oldText` 唯一的一处精确匹配，其余字节原样保留，包括智能体视图略去的内容。它与 `write` 走同一条审阅、审批与 CAS 链路。只有所选 provider 的文件端口有它时，Core 才把它作为 `ToolContext.fs.replaceExact` 交给工具，并按写入计；对受管记忆文件以外的路径可以拒绝。
 
-## 必须保持的行为
+## 可选的用户记忆段落（5.3.0）
+
+Extension API 5.3.0 为用户记忆（每个工作区都可能读取的记忆）新增两个可选成员。没有它们的 provider 行为不变，Host 也不会通过它把任务经验晋升到用户记忆。
+
+- `open` 可能收到 `userValidity`：用于用户记忆中受管段落的 `MemoryValidityView`，规则与 `validity` 相同。支持它的 provider 先向智能体展示人写的用户记忆，之后只展示仍有效的段落，因此用户记忆预算总是先截掉保存的文字，而不是人写的内容。没有标记的用户记忆文件按原样展示，revision 也不变。
+- `MemorySession.userParagraphs?(source, signal)` 返回作用于用户记忆索引的 `MemoryParagraphPort`。它不受工作区记忆模式影响：智能体仍然不能写用户记忆，何时可以写入由 Host 自己判定。人写内容、有效段落与新写入段落合计超出智能体看到的用户记忆预算，或索引会超过大小或行数上限时，`propose` 以 `MEMORY_USER_BUDGET` 拒绝；它从不为腾出空间而截断、合并或删除任何内容。凭据形状的内容与工作区记忆一样以 `MEMORY_SECRET_LIKE_CONTENT` 拒绝。人写内容与标记行从不改动。`memoryParagraphConformance` 可以像检查 `paragraphs` 一样检查它。
 
 - Agent 默认关闭。询问模式在写入前审批精确文件候选，绑定 `baseHash`、`newHash`、完整 diff、会话/轮次；full-access 自动允许并记录每项精确提案，其他预设的宽泛授权不能代替该审批。拒绝、取消、冲突的候选不能注入。
 - 同轮请求保持索引与主题修订。主题正文按需进入模型上下文；人工修改下轮可见。关闭在下次请求生效，即使该轮之前已生成快照。

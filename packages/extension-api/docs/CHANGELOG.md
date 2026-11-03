@@ -2,6 +2,28 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.3.0
+
+### Added
+
+All additions are optional. A memory provider that implements none of them compiles and behaves as
+before, and simply receives no task experience promoted to user memory; `^5.0.0` ranges admit 5.3.0.
+
+- An optional `userValidity` input to `MemoryProvider.open`, a `MemoryValidityView` for managed
+  sections of user memory. A provider that keeps them shows the agent the hand-written user memory
+  first and only the sections in force after it, and folds the left-out set and `revision()` into its
+  snapshot revision only while the user memory file holds managed sections; without the view every
+  managed section of user memory is left out. A user memory file without markers is delivered as
+  before.
+- `MemorySession.userParagraphs?(source, signal)` returning a `MemoryParagraphPort` over the user
+  memory index, the memory every workspace may read. It works whatever the workspace's memory mode.
+  `propose` refuses `MEMORY_USER_BUDGET` when the hand-written text, the sections in force and the
+  sections being put would not fit the user memory budget the agent is shown (or the index would pass
+  its size or line cap), and never trims, merges or removes anything to make room; credential-like
+  content is refused with `MEMORY_SECRET_LIKE_CONTENT` as in workspace memory. Hand-written text and
+  marker lines are never changed. A session that has the method states that it keeps managed sections
+  of user memory; the Host promotes nothing to user memory through a provider without it.
+
 ## 5.2.0
 
 ### Added

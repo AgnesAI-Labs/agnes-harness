@@ -27,6 +27,7 @@ import {
 } from './paragraphs.js'
 import { canonical, inside, name, roots } from './paths.js'
 import { MemoryStore } from './store.js'
+import { renderUserLayer, userParagraphPort } from './user-layer.js'
 
 /**
  * `files` is the stored text; `agent` is what the agent may see this turn, with the index's expired
@@ -44,6 +45,7 @@ export function openMemory(input: {
   workspaceRoot: string
   sessionKey: string
   validity?: MemoryValidityView
+  userValidity?: MemoryValidityView
 }): MemorySession {
   const paths = roots(input.home, input.workspaceRoot)
   const store = new MemoryStore(paths.protectedRoot, paths.root)
@@ -65,19 +67,22 @@ export function openMemory(input: {
         : entry,
     )
     const userIndex = config.userEnabled ? user.read('MEMORY.md') : file('MEMORY.md', '')
+    const userValid = passes(userIndex, config)
+    const userView = renderUserLayer(userValid ? userIndex.content : '', input.userValidity)
     // Without markers the hash input is exactly what it was before managed paragraphs existed.
     const revision = hash(
       JSON.stringify([
         files.map(({ path, hash }) => [path, hash]),
         userIndex.hash,
         ...(indexView.managed ? [indexView.omittedIds, viewRevision(input.validity)] : []),
+        ...(userView.managed ? [{ user: [userView.omittedIds, viewRevision(input.userValidity)] }] : []),
       ]),
     )
     const workspaceContent = indexValid
       ? indexView.content
       : '[Memory omitted: consolidate the index or remove secret-like content.]'
-    const userContent = passes(userIndex, config)
-      ? userIndex.content
+    const userContent = userValid
+      ? userView.text
       : '[User memory omitted: consolidate the index or remove secret-like content.]'
     const total = config.tokenBudget + (config.userEnabled ? config.userTokenBudget : 0)
     const workspace = fit(workspaceContent, config.tokenBudget)
@@ -235,6 +240,9 @@ export function openMemory(input: {
     },
     paragraphs(source, signal) {
       return paragraphPort(store, paths.root, input.validity, source, signal)
+    },
+    userParagraphs(source, signal) {
+      return userParagraphPort(user, store, input.userValidity, source, signal)
     },
     async editFile(path, content, baseHash) {
       return store.commit(
