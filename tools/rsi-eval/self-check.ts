@@ -12,7 +12,7 @@ export type SelfCheckOptions = { timeoutMs?: number }
 const DEFAULT_TIMEOUT_MS = 20_000
 const MAX_OUTPUT_BYTES = 1_000_000
 
-type CommandResult = { code: number | null; output: string; timedOut: boolean }
+export type CommandResult = { code: number | null; output: string; timedOut: boolean }
 
 const insideGitRepo = (path: string): boolean => {
   let current = path
@@ -26,7 +26,12 @@ const insideGitRepo = (path: string): boolean => {
 
 // Runs `bash -c command` with a fixed minimal environment and no stdin. The whole process group is
 // killed on timeout so background children cannot outlive the command.
-const runCommand = (command: string, cwd: string, home: string, timeoutMs: number): Promise<CommandResult> =>
+export const runCommand = (
+  command: string,
+  cwd: string,
+  home: string,
+  timeoutMs: number,
+): Promise<CommandResult> =>
   new Promise((resolve) => {
     const child = spawn('bash', ['-c', command], {
       cwd,
@@ -65,7 +70,7 @@ const runCommand = (command: string, cwd: string, home: string, timeoutMs: numbe
   })
 
 // A check passes when the command exits 0 and its output (stdout and stderr) contains the text.
-const checkPasses = (result: CommandResult, contains: string): boolean =>
+export const checkPasses = (result: CommandResult, contains: string): boolean =>
   !result.timedOut && result.code === 0 && result.output.includes(contains)
 
 /**
