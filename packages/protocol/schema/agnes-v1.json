@@ -3644,7 +3644,7 @@
           }
         },
         {
-          "description": "One save of task experience into the workspace: how it ended and, when refused, why. Entry text, the target file and the content are never part of it.",
+          "description": "One save of task experience into the workspace or user memory: how it ended and, when refused, why. Entry text, the target file and the content are never part of it.",
           "type": "object",
           "additionalProperties": false,
           "required": ["kind", "id", "seq", "state"],
@@ -3667,7 +3667,9 @@
                 "child-session",
                 "unavailable",
                 "conflict",
-                "approval-expired"
+                "approval-expired",
+                "user-memory-budget",
+                "model-cannot-write-user"
               ]
             },
             "initiator": {
@@ -3675,8 +3677,12 @@
               "enum": ["auto", "user", "model"]
             },
             "target": {
-              "description": "Where the save goes: workspace memory, a workspace skill, or a workspace agent. Never a path.",
-              "enum": ["workspace-memory", "workspace-skill", "workspace-agent"]
+              "description": "Where the save goes: workspace memory, a workspace skill, a workspace agent, or user memory (read in every workspace that turns it on). Never a path.",
+              "enum": ["workspace-memory", "workspace-skill", "workspace-agent", "user-memory"]
+            },
+            "userMemoryRead": {
+              "description": "For a save to user memory: whether the workspace it came from reads user memory itself.",
+              "type": "boolean"
             }
           }
         },

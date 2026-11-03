@@ -11,6 +11,8 @@ import { paragraphPortOf } from './reconcile.js'
 export type SavedParagraphRequest = Readonly<{
   action: 'list' | 'renew' | 'withdraw' | 'convert'
   paragraphId?: string
+  /** `user`: the task experience promoted to user memory instead of the workspace's (no `convert`). */
+  layer?: 'user'
 }>
 
 /** One saved paragraph as a person manages it: its text, whether the agent sees it, and its review date. */

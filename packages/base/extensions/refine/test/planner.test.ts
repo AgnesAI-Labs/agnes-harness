@@ -186,6 +186,49 @@ describe('the planner output parser', () => {
   })
 })
 
+describe('the reach hint', () => {
+  const edit = (over: Record<string, unknown>) => ({
+    op: 'upsert',
+    kind: 'memory',
+    id: 'short',
+    title: 'Answers',
+    content: 'Answer in short sentences.',
+    applicability: 'session',
+    evidenceIds: ['e1'],
+    ...over,
+  })
+  it('a prompt or memory edit may suggest reach user or workspace; nothing else is read', () => {
+    for (const reach of ['user', 'workspace'] as const)
+      expect(parsePlannerOutput(plan({ edits: [edit({ reach })] }), context)).toMatchObject({
+        edits: [{ reach }],
+      })
+    expect(parsePlannerOutput(plan({ edits: [edit({})] }), context)).toMatchObject({
+      edits: [expect.not.objectContaining({ reach: expect.anything() })],
+    })
+    expect(parsePlannerOutput(plan({ edits: [edit({ reach: 'global' })] }), context)).toEqual({
+      error: 'invalid-shape: edits[0]',
+    })
+  })
+
+  it('reach user on a skill or subagent rejects the plan', () => {
+    for (const kind of ['skill', 'subagent'])
+      expect(parsePlannerOutput(plan({ edits: [edit({ kind, reach: 'user' })] }), context)).toEqual({
+        error: 'reach-kind: 0',
+      })
+    // At workspace reach a skill is as before.
+    expect(
+      parsePlannerOutput(plan({ edits: [edit({ kind: 'skill', reach: 'workspace' })] }), context),
+    ).not.toHaveProperty('error')
+  })
+
+  it('the planner is told reach user is a suggestion for preferences that hold in every workspace', () => {
+    const prompt = buildPlannerPrompt({ items: [evidence('e1', 'hi')], omitted: 0 }, [], guidance)
+    expect(prompt.system).toContain('"reach"?: "workspace"|"user"')
+    expect(prompt.system).toContain('naming no project, path or repository')
+    expect(prompt.system).toContain('it never grants anything')
+  })
+})
+
 describe('the planner prompt', () => {
   it('a long entry whose tail must be kept survives a planned edit', () => {
     const TAIL = 'TAIL-MUST-STAY: "never" run the release script twice.'

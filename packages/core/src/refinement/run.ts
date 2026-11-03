@@ -25,6 +25,7 @@ import { rankEntries } from '../request/rank-entries.js'
 import { sysEvent } from '../step/events.js'
 import type { SessionImpl } from '../step/session.js'
 import { freezeEvidence, readSetCurrent } from './evidence.js'
+import { grantReach } from './reach.js'
 import { redactEvidence } from './redact.js'
 import { isReference, unavailableReferences } from './references.js'
 import { readTaskScope } from './task-scope.js'
@@ -364,8 +365,12 @@ export function settleRefinementRun(
       [state, facts] = ['rejected', { reason: 'reference-unavailable', detail: unusable.join(' ') }]
     // A plan that holds is given its levels: each lesson as the evidence it cites allows, bound to the
     // current goal or recorded as expired without one.
-    if (state === 'proposed' && facts.plan)
-      [state, facts] = await grantWorkspace(s, run, await grantLevels(s, facts.plan))
+    if (state === 'proposed' && facts.plan) {
+      const [levelled, granted] = await grantLevels(s, facts.plan)
+      // A lesson keeps a reach beyond its workspace only where its structure allows (reach.ts).
+      const plan = grantReach(granted.plan, run.trigger, { root: s.workspaceRoot })
+      ;[state, facts] = await grantWorkspace(s, run, [levelled, { ...granted, plan }])
+    }
     await s.append([refinementRunRow(s, runId, state, facts)])
     return s.state.refinementRuns.get(runId)
   })
@@ -427,6 +432,7 @@ const UPSERT_KEYS = [
   'evidenceIds',
   'quote',
   'reference',
+  'reach',
 ]
 
 class Invalid extends Error {}
@@ -584,9 +590,12 @@ function checkedEdit(
     typeof raw.content !== 'string' ||
     (raw.applicability !== 'task' && raw.applicability !== 'session') ||
     (raw.quote !== undefined && !str(raw.quote, 2000, 1)) ||
+    (raw.reach !== undefined && raw.reach !== 'workspace' && raw.reach !== 'user') ||
     (raw.reference !== undefined && !isReference(kind, raw.reference))
   )
     return invalid(where)
+  // Only a prompt or memory lesson can be promoted to user memory.
+  if (raw.reach === 'user' && kind !== 'prompt' && kind !== 'memory') return invalid(`reach-kind: ${at}`)
   if (raw.content.length === 0 || raw.content.length > MAX_EDIT_CHARS) return invalid(`edit-too-long: ${at}`)
   const evidenceSeqs = seqs(raw.evidenceIds)
   if (evidenceSeqs.length === 0) return invalid(where)
@@ -601,6 +610,7 @@ function checkedEdit(
     evidenceSeqs,
     ...quoted(raw.quote === undefined ? undefined : masked(raw.quote, 2000, where, 1), evidenceSeqs),
     ...(raw.reference === undefined ? {} : { reference: raw.reference }),
+    ...(raw.reach === 'user' ? { reach: 'user' as const } : {}),
   }
 }
 

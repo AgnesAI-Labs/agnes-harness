@@ -262,6 +262,8 @@ const cleanRecords = (value: Raw): RegistryRecords | undefined => {
 
 const UUID = /^[0-9a-f-]{36}$/
 const WORKSPACE_ID = /^[a-f0-9]{64}$/
+/** Not a path: the key `RefinementRegistry.user` opens the user memory registry under. */
+const USER_LAYER = '\u0000user'
 const emptyRecords = (): RegistryRecords => ({ paragraphs: [], skills: [], revocations: [], receipts: [] })
 
 export type RegistryOptions = {
@@ -309,13 +311,25 @@ export class RefinementRegistry {
     clock: () => number,
     options: RegistryOptions = {},
   ) {
-    const id = typeof workspace === 'string' ? sha256(workspace) : workspace.workspaceId
-    if (!WORKSPACE_ID.test(id)) throw failure('REGISTRY_WORKSPACE_INVALID')
+    const user = workspace === USER_LAYER
+    const id = user ? '' : typeof workspace === 'string' ? sha256(workspace) : workspace.workspaceId
+    if (!user && !WORKSPACE_ID.test(id)) throw failure('REGISTRY_WORKSPACE_INVALID')
     this.clock = clock
-    this.dir = join(dataDir, 'refinement', 'workspaces')
-    this.file = join(this.dir, `${id}.json`)
+    // For the user layer the first argument is the installation home.
+    this.dir = user ? join(dataDir, 'memory', 'user') : join(dataDir, 'refinement', 'workspaces')
+    this.file = join(this.dir, user ? 'refinement.json' : `${id}.json`)
     this.lockStaleMs = options.lockStaleMs ?? LOCK_STALE_MS
     this.lockWaitMs = options.lockWaitMs ?? LOCK_WAIT_MS
+  }
+
+  /**
+   * The registry of what refinement saved into user memory: one per installation home, next to the user
+   * memory file it describes (`<home>/memory/user/refinement.json`), so every profile of the home reads the
+   * same records whatever its data directory, and the records go wherever that file goes. Same format and
+   * lock as a workspace's; `home` is the one the memory provider is opened with.
+   */
+  static user(home: string, clock: () => number, options: RegistryOptions = {}): RefinementRegistry {
+    return new RefinementRegistry(home, USER_LAYER, clock, options)
   }
 
   /** A copy of the records and the revision to hand back to `update`. */

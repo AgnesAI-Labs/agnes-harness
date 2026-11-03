@@ -32,6 +32,11 @@ export type { SaveInitiator, SaveReceipt } from '@agnes/core-ledger/reduce/refin
  */
 export type WorkspaceSaveRequest = {
   initiator: SaveInitiator
+  /**
+   * `user`: promote the entry to user memory, read in every workspace, instead of the session's
+   * workspace. Only an automatic save may ask for it; the host refuses any other.
+   */
+  target?: 'user'
   commandId: string
   session: { key: string; lane: string; workspaceRoot: string; lastSeq: Seq; child: boolean }
   settingsRevision: string
@@ -72,6 +77,8 @@ export type WorkspaceSaveOutcome = { receipt: SaveReceipt } | { refused: 'unavai
 /** What an entry point says about the save it wants. */
 export type WorkspaceSaveInput = {
   initiator: SaveInitiator
+  /** Promote to user memory instead of the workspace (automatic saves only). */
+  target?: 'user'
   kind: HarnessEntry['kind']
   id: string
   /** The caller's idempotency key; a fresh one is made when absent. */
@@ -126,6 +133,7 @@ export function workspaceSaveRequest(
   const lastTurn = s.state.lastTurn.get(s.lane)
   return {
     initiator: input.initiator,
+    ...(input.target === 'user' ? { target: 'user' as const } : {}),
     commandId: input.commandId ?? s.d.ids.ulid(),
     session: {
       key: s.key,

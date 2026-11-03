@@ -44,6 +44,7 @@ const NOT_WRITTEN: Readonly<Record<string, SaveRefusal>> = {
   MEMORY_PARAGRAPH_ANOMALY: 'conflict',
   MEMORY_DISABLED: 'memory-off',
   MEMORY_CONSOLIDATION_REQUIRED: 'memory-full',
+  MEMORY_USER_BUDGET: 'user-memory-budget',
   MEMORY_SECRET_LIKE_CONTENT: 'source-rules',
   MEMORY_MARKER_CHANGED: 'source-rules',
   MEMORY_PARAGRAPH_INVALID: 'source-rules',
@@ -110,8 +111,11 @@ export type ParagraphCommit = {
   registry: RefinementRegistry
   memory: MemorySession
   port: MemoryParagraphPort
-  /** The memory mode the proposal must still be under when it lands. */
-  mode: 'ask' | 'auto'
+  /**
+   * The memory mode the proposal must still be under when it lands. Absent for user memory, which no
+   * workspace's memory mode governs.
+   */
+  mode?: 'ask' | 'auto'
   paragraph: { id: string; text: string }
   /** The receipt this commit settles; its outcome and target are filled in here. */
   receipt: SaveReceipt
@@ -248,6 +252,7 @@ function admissionFor(input: ParagraphCommit, revision: string): MemoryEffectAdm
       if (input.registry.read().revision !== revision) throw fault('REFINEMENT_REGISTRY_CHANGED')
     },
     async verify() {
+      if (input.mode === undefined) return
       const mode = (await input.memory.inspect()).settings.mode
       if (mode !== input.mode) throw fault('REFINEMENT_MEMORY_MODE_CHANGED')
     },
@@ -278,16 +283,14 @@ export async function resumeSaves(
   memory: MemorySession | undefined,
   clock: () => number,
   inFlight: ReadonlySet<string>,
+  /** The port the saves were written through: the workspace's paragraphs unless told otherwise. */
+  portOf: typeof paragraphPortOf = paragraphPortOf,
 ): Promise<void> {
   const pending = registry
     .read()
     .receipts.filter((receipt) => pendingIntent(receipt) && !inFlight.has(paragraphOf(receipt)))
   if (!pending.length || !memory) return
-  const port = paragraphPortOf(
-    memory,
-    { sessionKey: WORKSPACE_MEMORY_KEY, turn: 0 },
-    new AbortController().signal,
-  )
+  const port = portOf(memory, { sessionKey: WORKSPACE_MEMORY_KEY, turn: 0 }, new AbortController().signal)
   if (!port) return
   let listed: Awaited<ReturnType<MemoryParagraphPort['list']>>
   try {

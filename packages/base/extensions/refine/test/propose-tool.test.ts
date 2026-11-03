@@ -73,6 +73,10 @@ describe('harness_propose tool', () => {
       ).toBe(false)
     expect(Value.Check(RefineParams, { target: 'workspace', initiator: 'user' })).toBe(false)
     expect(Value.Check(RefineParams, { target: 'user' })).toBe(false)
+    // User memory is never a target the model can name, in either tool.
+    expect(Value.Check(ProposeParams, { ...proposal, target: 'user' })).toBe(false)
+    const [edit] = proposal.edits
+    expect(Value.Check(ProposeParams, { ...proposal, edits: [{ ...edit, reach: 'user' }] })).toBe(false)
   })
 
   it('the model states no trigger, scope, version, baseline or rollback, and stays within the limits', () => {

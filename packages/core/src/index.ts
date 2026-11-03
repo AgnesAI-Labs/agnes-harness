@@ -272,6 +272,7 @@ export {
   type RollbackResult,
   refinementFacade,
 } from './refinement/facade.js'
+export { namesWorkspace, type RefinementReach } from './refinement/reach.js'
 export { redactEvidence } from './refinement/redact.js'
 export type {
   ReferencedSkill,

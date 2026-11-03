@@ -132,6 +132,7 @@ exports[`keeps the public runtime export surface stable 1`] = `
   "mergeContributions",
   "mergeToolFilter",
   "modelAllowsTool",
+  "namesWorkspace",
   "newOpState",
   "noCompaction",
   "noopHooks",

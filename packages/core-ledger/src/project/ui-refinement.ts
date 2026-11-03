@@ -73,7 +73,10 @@ export class RefinementProjection {
     return []
   }
 
-  /** A save's node: who asked, how it ended and why, and the kind of target; nothing about what was saved or where. */
+  /**
+   * A save's node: who asked, how it ended and why, and the kind of target (user memory for a promotion,
+   * with whether this workspace reads it); nothing about what was saved or where.
+   */
   private save(event: Event, state: LedgerState): RefinementSaveNode[] {
     const receiptId = (event.data as { receiptId?: unknown } | null)?.receiptId
     const saved = typeof receiptId === 'string' ? state.refinementSaves.get(receiptId) : undefined
@@ -91,7 +94,12 @@ export class RefinementProjection {
           ? {}
           : { reason: saved.reason }),
         initiator: saved.initiator,
-        target: TARGETS[saved.target?.kind === 'skill' ? 'skill' : saved.source.kind],
+        ...(saved.layer === 'user'
+          ? {
+              target: 'user-memory' as const,
+              ...(saved.userMemoryRead === undefined ? {} : { userMemoryRead: saved.userMemoryRead }),
+            }
+          : { target: TARGETS[saved.target?.kind === 'skill' ? 'skill' : saved.source.kind] }),
       },
     ]
   }

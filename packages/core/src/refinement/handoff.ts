@@ -5,6 +5,7 @@ import type { RefinementRunRecord, RefinementTriggerKind } from '@agnes/core-led
 import { entryKey } from '../refine/apply.js'
 import { isChildSession } from '../step/child-session.js'
 import type { SessionImpl } from '../step/session.js'
+import { namesWorkspace } from './reach.js'
 import { settingsOf } from './scheduler.js'
 import { boundMeta } from './validity.js'
 import { saveToWorkspace, type WorkspaceSaveInput } from './workspace.js'
@@ -48,7 +49,8 @@ const recordedIds = (s: SessionImpl): Set<string> =>
  * The entries this run touched (wrote, or confirmed) that now qualify for an automatic save: in auto
  * mode, held for the session, not handed off, confirmed at least `PROMOTION_CONFIRMATIONS` times at
  * their current content version, and not yet offered at that version (a receipt row of this session
- * names the offer). An offer is keyed by the content version, so each version is offered once.
+ * names the offer). An offer is keyed by the content version, so each version is offered once, to user
+ * memory when the entry may reach every workspace (`toUser`), else to the workspace.
  */
 function automatic(s: SessionImpl, run: Applied, recorded: ReadonlySet<string>): WorkspaceSaveInput[] {
   if (settingsOf(s)?.mode !== 'auto') return []
@@ -61,9 +63,27 @@ function automatic(s: SessionImpl, run: Applied, recorded: ReadonlySet<string>):
     if (meta?.applicability !== 'session' || meta.handedOff === true) continue
     if (meta.confirmations.count < PROMOTION_CONFIRMATIONS) continue
     const commandId = autoCommandId(s, ref, meta.contentHash)
-    if (!recorded.has(commandId)) offers.push({ initiator: 'auto', ...ref, commandId, runId: run.runId })
+    if (!recorded.has(commandId))
+      offers.push({
+        initiator: 'auto',
+        ...ref,
+        commandId,
+        runId: run.runId,
+        ...(toUser(s, key, meta.reach) ? { target: 'user' as const } : {}),
+      })
   }
   return offers
+}
+
+/**
+ * Whether an automatic offer goes to user memory: the plan kept `reach: 'user'` on the entry, and its
+ * text still names no workspace (checked again now, as the host checks it once more on promotion).
+ */
+function toUser(s: SessionImpl, key: string, reach: 'user' | undefined): boolean {
+  if (reach !== 'user') return false
+  const entry = s.state.registers.harnessEntries.get(key)?.value as HarnessEntry | undefined
+  if (typeof entry?.title !== 'string' || typeof entry.content !== 'string') return false
+  return !namesWorkspace(`${entry.title}\n${entry.content}`, s.workspaceRoot)
 }
 
 /**
