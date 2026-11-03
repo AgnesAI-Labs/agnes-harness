@@ -1,11 +1,14 @@
+import { createHash } from 'node:crypto'
 import { closeSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fakeModel } from '@agnes/ai/testkit'
+import { defaultLoopPlugin, memoryPlugin } from '@agnes/base'
 import { operations as codeOperations } from '@agnes/code'
 import { CompactionRunner } from '@agnes/core'
 import type { HookPayloadMap } from '@agnes/extension-api'
 import { createPlatform, type PlatformBackend } from '@agnes/host-infrastructure/adapters/platform'
+import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
 import { vi } from 'vitest'
 import {
@@ -24,6 +27,11 @@ export type ScriptedSessionOptions = {
   /** Session working directory. Must already exist; its path is replaced by a placeholder in the baseline. */
   workspace: string
   api: Extract<WireApi, 'anthropic-messages' | 'openai-completions'>
+  /**
+   * Hand-written user memory. When given, the session's workspace memory is on (`auto`) and reads user
+   * memory (`userEnabled`), so every request carries a memory note with this text.
+   */
+  userMemory?: string
 }
 
 /**
@@ -95,7 +103,7 @@ function compactPlan(payload: HookPayloadMap['before_compact']) {
  * between turn 2 and turn 3) against a loopback wire server and returns every request the host sent.
  */
 export async function runScriptedSession(opts: ScriptedSessionOptions): Promise<CapturedRequest[]> {
-  const { dataDir, workspace, api } = opts
+  const { dataDir } = opts
   // Nothing in a request may depend on the machine or the moment: the context home is the data
   // directory (so no developer settings leak in), the time zone is pinned and the clock is frozen.
   vi.stubEnv('AGH_HOME', dataDir)
@@ -105,16 +113,48 @@ export async function runScriptedSession(opts: ScriptedSessionOptions): Promise<
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(FIXED_NOW)
   try {
-    return await captureSession({ dataDir, workspace, api })
+    return await captureSession(opts)
   } finally {
     vi.useRealTimers()
     vi.unstubAllEnvs()
   }
 }
 
+/** The base plugins with the bundled file memory added: the test host otherwise assembles no memory. */
+const withMemory = [
+  { export: 'defaultLoopPlugin', id: 'loop:agnes.default', inject: ['loops'], entry: defaultLoopPlugin },
+  { export: 'memoryPlugin', id: 'memory:file', inject: ['providers'], entry: memoryPlugin },
+].map(({ entry, ...declaration }) => ({
+  declaration: {
+    ...declaration,
+    apiRange: '^5.0.0',
+    default: true,
+    provide: [],
+    runtime: 'in-process' as const,
+  },
+  entry: normalizePluginExport(entry),
+}))
+
+/**
+ * Writes hand-written user memory and turns the workspace's memory on with user memory read, as a person
+ * would in the memory settings. The data directory is the session's home.
+ */
+function writeUserMemory(dataDir: string, workspace: string, text: string): void {
+  const memory = join(dataDir, 'memory')
+  const user = join(memory, 'user')
+  const ws = join(memory, 'workspaces', createHash('sha256').update(workspace).digest('hex'))
+  mkdirSync(user, { recursive: true, mode: 0o700 })
+  mkdirSync(ws, { recursive: true, mode: 0o700 })
+  writeFileSync(join(user, 'MEMORY.md'), text, { mode: 0o600 })
+  writeFileSync(join(ws, 'settings.json'), JSON.stringify({ mode: 'auto', userEnabled: true }), {
+    mode: 0o600,
+  })
+}
+
 async function captureSession(opts: ScriptedSessionOptions): Promise<CapturedRequest[]> {
   const { dataDir, workspace, api } = opts
   mkdirSync(workspace, { recursive: true })
+  if (opts.userMemory !== undefined) writeUserMemory(dataDir, workspace, opts.userMemory)
   writeFileSync(join(workspace, 'probe.txt'), 'hello from the scripted session\n')
   const credentials = join(dataDir, 'credentials')
   createPrivateDirectorySync(credentials)
@@ -135,7 +175,10 @@ async function captureSession(opts: ScriptedSessionOptions): Promise<CapturedReq
       workspaceRoot: workspace,
       platform: pinnedPlatform(),
       packageDirs: { '@agnes/base': baseDir },
-      packages: { '@agnes/code': { operations: codeOperations } },
+      packages: {
+        '@agnes/code': { operations: codeOperations },
+        ...(opts.userMemory === undefined ? {} : { '@agnes/base': { plugins: withMemory } }),
+      },
       disableSessionTitle: true,
       profileInputs: {
         user: {
@@ -199,11 +242,12 @@ export function normalizeForBaseline(raw: string): string {
 }
 
 export const WORKSPACE_HASH_PLACEHOLDER = '<workspace-hash>'
+export const WORKSPACE_MEMORY_PLACEHOLDER = '<workspace-memory-hash>'
 
 /**
  * Replaces everything that depends on where the caller put the directories or on a random draw by
  * fixed placeholders, so the fixture carries no machine path and is the same on every run: both
- * paths, the session key (its last segment is a hash of the canonical workspace path) and the tool
+ * paths, the workspace memory folder (named by the hash of the workspace path), the session key (its last segment is a hash of the canonical workspace path) and the tool
  * call ids (`t<n>-<32 hex>`), numbered in order of first appearance across the whole session so a
  * call and its result still share one id.
  */
@@ -215,6 +259,8 @@ export function maskVolatile(
   // The workspace may sit under the data directory, so mask the longer path first.
   const escaped = (path: string) => JSON.stringify(path).slice(1, -1)
   const ordered = [
+    // The workspace's memory folder is named by the hash of its path.
+    [createHash('sha256').update(paths.workspace).digest('hex'), WORKSPACE_MEMORY_PLACEHOLDER],
     [paths.workspace, WORKSPACE_PLACEHOLDER],
     [escaped(paths.workspace), WORKSPACE_PLACEHOLDER],
     [paths.dataDir, DATA_DIR_PLACEHOLDER],
