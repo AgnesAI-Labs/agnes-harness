@@ -83,6 +83,7 @@ export function SavedSkillsBlock({ api }: { api: SavedSkillsApi }) {
     [
       t(`skills.${skill.state}`, { date: date.format(skill.reviewAfter) }),
       t('skills.by', { who: t(`skills.initiator.${skill.initiator}`) }),
+      ...(skill.workflow === true ? [t('skills.workflow')] : []),
     ].join(' ')
   const available = workspaces.filter((workspace) => workspace.available)
   return (

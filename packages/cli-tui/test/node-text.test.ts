@@ -47,6 +47,45 @@ it('renders an experience review by state, reason and changed entry names', () =
   ).toBe('Experience review (model) was not applied. Reason: no-evidence.')
 })
 
+it('names the skills a review made from a finished workflow run', () => {
+  expect(
+    nodeText({
+      kind: 'refinement-run',
+      id: 'r',
+      seq: 2,
+      runId: 'run-1',
+      state: 'applied',
+      trigger: 'manual',
+      edits: [
+        { op: 'upsert', kind: 'skill', id: 'ship-flow', workflow: true },
+        { op: 'upsert', kind: 'skill', id: 'plain' },
+      ],
+      appliedSeq: 4,
+    }),
+  ).toBe(
+    'Experience review (manual) saved changes. Saved: skill/ship-flow, skill/plain. Made from a finished workflow run: skill/ship-flow.',
+  )
+})
+
+it('says in words why a workflow run was not made into a skill', () => {
+  for (const reason of [
+    'workflow-run-unavailable',
+    'workflow-run-not-completed',
+    'workflow-definition-too-large',
+    'workflow-already-saved',
+  ])
+    expect(
+      nodeText({
+        kind: 'refinement-save',
+        id: 's',
+        seq: 3,
+        state: 'refused',
+        reason,
+        target: 'workspace-skill',
+      } as never),
+    ).toMatch(/Reason: (the workflow|a skill with this workflow)/u)
+})
+
 it('save rows render initiator, outcome and reason without text', () => {
   const save = (extra: object) =>
     nodeText({ kind: 'refinement-save', id: 's', seq: 3, state: 'refused', ...extra } as never)

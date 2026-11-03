@@ -162,6 +162,13 @@ describe('refinement experience delivery', () => {
     expect(REFINEMENT_GUIDANCE).toContain("target:'user'")
     // The entries a snapshot leaves out or cuts to metadata are read back with harness_inspect.
     expect(REFINEMENT_GUIDANCE).toContain('harness_inspect')
+    // One sentence, merged into the harness_refine line: a finished staged workflow run can become a skill.
+    expect(
+      REFINEMENT_GUIDANCE.split('\n').filter((line) => line.startsWith('Call harness_refine')),
+    ).toHaveLength(1)
+    expect(REFINEMENT_GUIDANCE).toContain(
+      'a repeated procedure should become a skill (a finished staged `workflow` run that will recur can be saved as one), a repeated delegation role a subagent,',
+    )
     expect(estimateTokens(REFINEMENT_GUIDANCE)).toBeLessThanOrEqual(270)
     const a = renderExperience({ entries: [] }, { recentText: 'x', budgets: EXPERIENCE_BUDGETS })
     const b = renderExperience({ entries: [] }, { recentText: 'y', budgets: EXPERIENCE_BUDGETS })

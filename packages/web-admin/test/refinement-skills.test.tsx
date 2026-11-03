@@ -101,6 +101,19 @@ it('lists the saved skills of the first available workspace, with their state an
   expect(rollbacks.map((button) => button.disabled)).toEqual([false, true])
 })
 
+it('marks a saved skill made from a finished workflow run, and no other', async () => {
+  const base = listed()
+  const [first, second] = base.skills as [
+    RefinementSkillsResult['skills'][number],
+    RefinementSkillsResult['skills'][number],
+  ]
+  const { api } = fakeApi({ ...base, skills: [{ ...first, workflow: true }, second] })
+  const host = await mount(api)
+  const rows = all(host, 'refinement-saved-skill')
+  expect(rows[0]?.textContent).toContain('Made from a finished workflow run')
+  expect(rows[1]?.textContent).not.toContain('workflow')
+})
+
 it('uninstalls or rolls back a saved skill for the owner and shows the list it answers with', async () => {
   const { api, skills } = fakeApi()
   const host = await mount(api)

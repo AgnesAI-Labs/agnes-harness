@@ -298,6 +298,53 @@ describe('W3b projected message DOM', () => {
     )
   })
 
+  it('says which skills a review made from a finished workflow run, and why a run was not kept', async () => {
+    const reasons = [
+      'workflow-run-unavailable',
+      'workflow-run-not-completed',
+      'workflow-definition-too-large',
+      'workflow-already-saved',
+    ] as const
+    const nodes: UINode[] = [
+      {
+        kind: 'refinement-run',
+        id: 'r1',
+        seq: 3,
+        runId: 'run-1',
+        state: 'applied',
+        trigger: 'manual',
+        edits: [
+          { op: 'upsert', kind: 'skill', id: 'ship-flow', workflow: true },
+          { op: 'upsert', kind: 'skill', id: 'plain' },
+        ],
+        appliedSeq: 5,
+      },
+      ...reasons.map(
+        (reason, at): UINode => ({
+          kind: 'refinement-save',
+          id: `s${at}`,
+          seq: 10 + at,
+          state: 'refused',
+          reason,
+          initiator: 'auto',
+          target: 'workspace-skill',
+        }),
+      ),
+    ]
+    await act(async () => root.render(createElement(ConversationMessages, { t, nodes })))
+    expect(host.querySelector('[data-testid="refinement-run-notice"]')?.textContent).toContain(
+      t('timeline.refinement.workflow', { names: 'skill/ship-flow' }),
+    )
+    const lines = [...host.querySelectorAll('[data-testid="refinement-save-notice"]')].map(
+      (line) => line.textContent ?? '',
+    )
+    for (const [at, reason] of reasons.entries())
+      expect(lines[at]).toContain(
+        t('timeline.refinement.reason', { reason: t(`timeline.refinementSave.reason.${reason}`) }),
+      )
+    expect(lines.join(' ')).not.toContain('timeline.refinement')
+  })
+
   it('save rows render initiator, outcome and reason without text', async () => {
     const save = (id: string, extra: Partial<Extract<UINode, { kind: 'refinement-save' }>>): UINode => ({
       kind: 'refinement-save',

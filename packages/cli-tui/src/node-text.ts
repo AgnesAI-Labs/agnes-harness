@@ -77,11 +77,15 @@ function refinementRunText(node: Extract<UINode, { kind: 'refinement-run' }>): s
     (node.edits ?? []).filter((edit) => edit.op === op).map((edit) => `${edit.kind}/${edit.id}`)
   const saved = names('upsert')
   const removed = names('delete')
+  const workflow = (node.edits ?? [])
+    .filter((edit) => edit.workflow === true)
+    .map((edit) => `${edit.kind}/${edit.id}`)
   return [
     `Experience review (${node.trigger}) ${RUN_STATE[node.state]}.`,
     node.reason ? `Reason: ${node.reason}.` : '',
     saved.length > 0 ? `Saved: ${saved.join(', ')}.` : '',
     removed.length > 0 ? `Removed: ${removed.join(', ')}.` : '',
+    workflow.length > 0 ? `Made from a finished workflow run: ${workflow.join(', ')}.` : '',
     node.withdrawn ? 'Withdrawn since.' : '',
   ]
     .filter(Boolean)
