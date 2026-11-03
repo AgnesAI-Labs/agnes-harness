@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# cal: the team's date book, shared by every project. usage: bin/cal add <name> <date>
+set -eu
+cmd="${1:-}"
+name="${2:-}"
+date="${3:-}"
+if [ "$cmd" != add ] || [ -z "$name" ] || [ -z "$date" ]; then
+  echo "usage: bin/cal add <name> <date>" >&2
+  exit 2
+fi
+if ! [[ "$date" =~ ^[0-3][0-9]\.[01][0-9]\.[0-9]{4}$ ]]; then
+  echo "error: date must be DD.MM.YYYY, day first (got $date)" >&2
+  exit 1
+fi
+mkdir -p calendar
+echo "$name $date" > "calendar/$name.txt"
+echo "added $name on $date"

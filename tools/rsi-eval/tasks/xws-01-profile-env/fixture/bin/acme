@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# acme: the team's build and job tool, shared by every project.
+set -eu
+if [ -z "${ACME_PROFILE:-}" ]; then
+  echo "error: ACME_PROFILE is not set (local runs use ACME_PROFILE=dev)" >&2
+  exit 1
+fi
+cmd="${1:-}"
+name="${2:-}"
+case "$cmd" in
+  status)
+    echo "acme ok (profile $ACME_PROFILE)"
+    ;;
+  build)
+    [ -f "pages/$name.txt" ] || { echo "error: no page pages/$name.txt" >&2; exit 1; }
+    mkdir -p site
+    { echo "<html><body><p>"; cat "pages/$name.txt"; echo "</p></body></html>"; } > "site/$name.html"
+    echo "built site/$name.html"
+    ;;
+  run)
+    [ -f "jobs/$name.sh" ] || { echo "error: no job jobs/$name.sh" >&2; exit 1; }
+    mkdir -p out
+    bash "jobs/$name.sh" > "out/$name.txt"
+    echo "ran $name"
+    ;;
+  *)
+    echo "usage: acme <status|build <page>|run <job>>" >&2
+    exit 2
+    ;;
+esac

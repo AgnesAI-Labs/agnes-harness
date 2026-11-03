@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+"""csvload: the team's table loader, shared by every project. usage: tools/csvload <file.csv> <table>"""
+import os
+import sys
+
+if len(sys.argv) != 3:
+    sys.exit("usage: tools/csvload <file.csv> <table>")
+path, table = sys.argv[1], sys.argv[2]
+lines = [line.rstrip("\r\n") for line in open(path, encoding="utf-8") if line.strip()]
+if not lines:
+    sys.exit(f"error: {path} is empty")
+for number, line in enumerate(lines, 1):
+    if ";" not in line:
+        found = "," if "," in line else "nothing"
+        sys.exit(f"error: line {number}: expected ';' as the field separator (found {found})")
+rows = [line.split(";") for line in lines[1:]]
+os.makedirs("tables", exist_ok=True)
+with open(os.path.join("tables", table + ".txt"), "w", encoding="utf-8") as out:
+    for row in rows:
+        out.write("=".join(cell.strip() for cell in row) + "\n")
+print(f"loaded {len(rows)} rows into {table}")

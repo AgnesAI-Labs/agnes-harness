@@ -1,6 +1,6 @@
 // Shared types for the offline RSI evaluation tools. Pure types: no runtime code.
 
-export type Category = 'directory' | 'command-args' | 'convention' | 'cross-session'
+export type Category = 'directory' | 'command-args' | 'convention' | 'cross-session' | 'cross-workspace'
 
 export type Setting = 'on' | 'off'
 
@@ -17,7 +17,12 @@ export type EvalTask = {
   category: Category
   description: string
   trap: { signatures: string[]; reproduce: string; note: string }
-  sessions: { prompts: EvalPrompt[] }[]
+  /**
+   * `fixture` names the directory, next to task.json, that the session's workspace is copied from;
+   * absent means `fixture`. Sessions naming the same fixture share one workspace. Only
+   * cross-workspace tasks name another one, for their second session.
+   */
+  sessions: { prompts: EvalPrompt[]; fixture?: string }[]
 }
 
 export type RunConfig = {
@@ -38,7 +43,16 @@ export type RunOutcome = {
   system?: RunRecord['system']
   sessions: { exitCode: number | null; timedOut: boolean; stdoutFile: string; sessionFiles: string[] }[]
   checks: { session: number; prompt: number; passed: boolean }[]
+  /** Set by a runner that could not send the save its counterpart sends at the end of session 1. */
+  alignment?: Alignment
 }
+
+/**
+ * `auto-only`: the run had no user-initiated user-level save at the end of the first session of a
+ * cross-workspace task (Prime sends `/refine --global` there), so anything carried to the second
+ * workspace came from automatic promotion alone.
+ */
+export type Alignment = 'auto-only'
 
 export type UsageRow = {
   ts: string
@@ -72,4 +86,5 @@ export type RunRecord = {
   harnessLookups: number
   compactions: number
   usage: { requests: number; unknown: number; tokens: number; costUsd: number }
+  alignment?: Alignment
 }
