@@ -148,6 +148,37 @@ export type SeamInitContext = {
    * its state; supplied only to the plugin that owns tasks. Returns what withdraws the offer.
    */
   provideTaskScope?: (source: TaskScopeSource) => () => void
+  /**
+   * Offers the session's workflow runs to the host as one of the plugin's projections and a reader of
+   * its state, so a finished run can be kept as a skill; supplied only to the plugin that runs
+   * workflows. Returns what withdraws the offer.
+   */
+  provideWorkflowRuns?: (source: WorkflowRunSource) => () => void
+}
+
+/** A finished workflow run's definition: names and tasks in order, nothing the members answered. */
+export type WorkflowRunDefinition = Readonly<{
+  runId: string
+  name: string
+  stages: readonly Readonly<{
+    name: string
+    members: readonly Readonly<{ name: string; task: string }>[]
+  }>[]
+}>
+
+/**
+ * A read-only view of one session's workflow runs: `finished` gives the definition of a run that
+ * completed with every member completed, `'not-completed'` for a run that did not finish that way, and
+ * `undefined` when the session has no such run.
+ */
+export interface WorkflowRunReader {
+  finished(runId: string): WorkflowRunDefinition | 'not-completed' | undefined
+}
+
+/** One of the workflow plugin's projections and the reader of its state; the host folds it per session. */
+export interface WorkflowRunSource {
+  readonly projection: string
+  reader(state: unknown): WorkflowRunReader
 }
 
 /**

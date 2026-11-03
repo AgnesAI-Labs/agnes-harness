@@ -51,6 +51,8 @@ export type WorkspaceSaveRequest = {
     applicability: 'task' | 'session'
     /** The approved skill or role a skill or subagent entry is bound to, when it is. */
     reference?: string
+    /** For a skill generated from a finished `workflow` run: the run's id. The host writes the definition. */
+    workflowRun?: string
   }
   evidenceSeqs: Seq[]
   evidenceTurn?: number
@@ -153,6 +155,7 @@ export function workspaceSaveRequest(
       content: entry.content,
       applicability: current?.applicability ?? 'task',
       ...(typeof entry.reference === 'string' ? { reference: entry.reference } : {}),
+      ...(typeof entry.workflowRun === 'string' ? { workflowRun: entry.workflowRun } : {}),
     },
     evidenceSeqs: [...(input.evidenceSeqs ?? plannedEvidence(s, entry))],
     ...(lastTurn === undefined ? {} : { evidenceTurn: lastTurn }),

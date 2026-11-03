@@ -122,6 +122,41 @@ describe('refinement runs in the timeline', () => {
     for (const secret of [BODY, 'Build rules', 'the build setup']) expect(text).not.toContain(secret)
   })
 
+  it('a skill made from a finished workflow run is marked, without the run id or any text', async () => {
+    const skill = {
+      op: 'upsert',
+      entry: {
+        kind: 'skill',
+        id: 'ship-flow',
+        title: 'Ship in stages',
+        content: BODY,
+        scope: 'local',
+        version: 1,
+        source: 'refine',
+        workflowRun: 'run-secret-id',
+      },
+    }
+    const plain = { ...skill, entry: { ...skill.entry, id: 'plain', workflowRun: undefined } }
+    const nodes = await nodesOf([
+      run(1, { runId: 'r1', state: 'queued', trigger }),
+      run(2, { runId: 'r1', state: 'proposed', plan }),
+      refine(3, { edits: [skill, plain, { op: 'delete', kind: 'skill', id: 'old' }] }),
+      run(4, { runId: 'r1', state: 'applied' }),
+    ])
+    const found = nodes.find((node) => node.kind === 'refinement-run')
+    expect(found).toMatchObject({
+      edits: [
+        { op: 'upsert', kind: 'skill', id: 'ship-flow', workflow: true },
+        { op: 'upsert', kind: 'skill', id: 'plain' },
+        { op: 'delete', kind: 'skill', id: 'old' },
+      ],
+    })
+    const edits = (found as { edits: Record<string, unknown>[] }).edits
+    expect(edits[1]).not.toHaveProperty('workflow')
+    expect(edits[2]).not.toHaveProperty('workflow')
+    expect(JSON.stringify(nodes)).not.toContain('run-secret-id')
+  })
+
   it('a run moves in place and the row order does not matter', async () => {
     const early = await nodesOf([
       run(1, { runId: 'r1', state: 'queued', trigger }),

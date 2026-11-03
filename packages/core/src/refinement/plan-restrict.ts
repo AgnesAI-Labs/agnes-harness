@@ -1,4 +1,7 @@
 import type { RefinementPlan } from '@agnes/core-ledger/reduce/state'
+import type { SessionImpl } from '../step/session.js'
+import { unavailableReferences } from './references.js'
+import { unavailableWorkflowRuns } from './workflow-runs.js'
 
 /** Whether a plan still asks for anything: an edit, or a confirmation of a session or workspace entry. */
 export const asksForAnything = (plan: RefinementPlan): boolean =>
@@ -23,4 +26,19 @@ export function withoutEntries(plan: RefinementPlan, gone: ReadonlySet<string>):
     confirmations: plan.confirmations.filter(kept),
     ...(lapsed?.length ? { lapsed } : {}),
   }
+}
+
+/**
+ * The edits (`kind/id`) that cannot be written now because the skill or role they are bound to cannot
+ * be used, or the workflow run they name is gone or did not finish, with the reason a plan left with
+ * none of its other edits is refused for: the reference's when one is unusable, else the first run's.
+ */
+export async function droppedEdits(
+  s: SessionImpl,
+  edits: RefinementPlan['edits'],
+): Promise<{ keys: Set<string>; reason: string }> {
+  const references = await unavailableReferences(s, edits)
+  const runs = await unavailableWorkflowRuns(s, edits)
+  const reason = references.length > 0 ? 'reference-unavailable' : (runs[0]?.reason ?? '')
+  return { keys: new Set([...references, ...runs.map((run) => run.key)]), reason }
 }

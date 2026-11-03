@@ -27,6 +27,11 @@ export type SaveSource = {
   contentHash: string
   runId?: string
   initiator: SaveInitiator
+  /**
+   * A skill generated from a finished `workflow` run: its `contentHash` is then the hash of the run's
+   * normalised definition, so the same definition is recognised under any name.
+   */
+  fromWorkflow?: true
 }
 
 /** Why a save was refused. */
@@ -46,6 +51,10 @@ export type SaveRefusal =
   | 'approval-expired'
   | 'user-memory-budget'
   | 'model-cannot-write-user'
+  | 'workflow-run-unavailable'
+  | 'workflow-run-not-completed'
+  | 'workflow-definition-too-large'
+  | 'workflow-already-saved'
 
 /** The fixed steps every save is judged by, in this order. */
 export type SaveStep = 'switch' | 'revocation' | 'confirmations' | 'rules' | 'memory-mode' | 'capacity'
@@ -99,6 +108,10 @@ export const SAVE_REFUSALS: readonly SaveRefusal[] = [
   'approval-expired',
   'user-memory-budget',
   'model-cannot-write-user',
+  'workflow-run-unavailable',
+  'workflow-run-not-completed',
+  'workflow-definition-too-large',
+  'workflow-already-saved',
 ]
 
 // The checks rebuild a receipt from its known fields only, so nothing else (an entry's title or text,
@@ -143,7 +156,15 @@ export function checkedSource(value: unknown): SaveSource | undefined {
   const runId = raw.runId === undefined ? undefined : text(raw.runId)
   if (!sessionKey || !kind || !entryId || !contentHash || !initiator) return undefined
   if (raw.runId !== undefined && runId === undefined) return undefined
-  return { sessionKey, kind, entryId, contentHash, ...(runId === undefined ? {} : { runId }), initiator }
+  return {
+    sessionKey,
+    kind,
+    entryId,
+    contentHash,
+    ...(runId === undefined ? {} : { runId }),
+    initiator,
+    ...(raw.fromWorkflow === true ? { fromWorkflow: true as const } : {}),
+  }
 }
 
 function checkedTarget(value: unknown): SaveReceipt['target'] | null | undefined {

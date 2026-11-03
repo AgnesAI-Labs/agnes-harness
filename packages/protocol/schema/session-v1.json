@@ -1965,6 +1965,12 @@
           "type": "string",
           "maxLength": 1024
         },
+        "workflowRun": {
+          "description": "A skill generated from a finished `workflow` run of this session: the run's id.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
         "arguments": {
           "$ref": "#/$defs/JsonValue"
         }

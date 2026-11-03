@@ -14,6 +14,7 @@ import {
   skillDraftOf,
   workspaceSkillText,
 } from './skill-drafts.js'
+import { normalizedWorkflowHash, type WorkflowRunView, workflowSkillDraft } from './workflow-runs.js'
 
 /**
  * How the save path reaches the skill installer, which runs where resource control lives. `request`
@@ -72,6 +73,12 @@ const liveRecord = (snapshot: Pick<RegistrySnapshot, 'skills'>, name: string) =>
  *   refuses the name) keeps the change as a draft for them.
  * A skill entry bound to an approved skill (`reference`) is a pointer to that skill, never a skill of
  * its own: `static-check`.
+ * A skill entry generated from a finished workflow run (`workflow`) is written from that run's
+ * definition, never from the planner's text. A skill that already holds the same normalised definition
+ * is not written again (`workflow-already-saved`): another skill's, or this one while its file is still
+ * exactly what would be written; a file a person has changed is not that, so the change goes the way
+ * of any change to a person's skill (a draft). A definition that does not fit one skill file is
+ * refused whole (`workflow-definition-too-large`).
  */
 export async function saveSkillChange(input: {
   request: WorkspaceSaveRequest
@@ -81,13 +88,29 @@ export async function saveSkillChange(input: {
   registry: RefinementRegistry
   skills: WorkspaceSkills
   clock: () => number
+  /** The finished run the entry names, as the host read it. */
+  workflow?: WorkflowRunView
 }): Promise<SkillSaveDecision | undefined> {
   const { request, registry, skills } = input
   if (request.entry.reference !== undefined) return { refused: 'static-check', step: 'rules' }
-  const draft = skillDraftOf(request.entry)
+  const draft = input.workflow
+    ? workflowSkillDraft(input.workflow, request.entry)
+    : skillDraftOf(request.entry)
   if (!draft) return { refused: 'static-check', step: 'rules' }
+  if ('refused' in draft) return { refused: draft.refused, step: 'rules' }
   const root = request.session.workspaceRoot
   const proposed = draft.files[0]?.content as string
+  if (input.workflow) {
+    const hash = normalizedWorkflowHash(input.workflow)
+    const same = input.snapshot.skills.find(
+      (skill) =>
+        LIVE.includes(skill.state) &&
+        skill.source.fromWorkflow === true &&
+        skill.source.contentHash === hash &&
+        (skill.name.toLowerCase() !== draft.name || workspaceSkillText(root, draft.name)?.text === proposed),
+    )
+    if (same) return { refused: 'workflow-already-saved', step: 'capacity' }
+  }
   const keepDraft = (reason: SkillDraftReason): SkillSaveDecision => {
     const found = workspaceSkillText(root, draft.name)
     try {

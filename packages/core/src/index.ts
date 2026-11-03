@@ -297,6 +297,7 @@ export type {
   RefinementPlanner,
   RefinementTrigger,
 } from './refinement/types.js'
+export type { RefinementWorkflowRuns, WorkflowRunView } from './refinement/workflow-runs.js'
 export {
   type RefinementWorkspacePort,
   type SaveReceipt,

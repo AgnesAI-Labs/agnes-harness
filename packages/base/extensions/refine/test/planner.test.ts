@@ -225,6 +225,46 @@ describe('the planner output parser', () => {
       })
   })
 
+  it('a skill edit may name a workflow run of the session, and no other edit may', () => {
+    const one = JSON.parse(plan()).edits[0]
+    const skill = {
+      ...one,
+      kind: 'skill',
+      id: 'release-flow',
+      workflowRun: '0b9a1c3e-5d7f-4a21-9c33-1f2e3d4c5b6a',
+    }
+    expect(parsePlannerOutput(plan({ edits: [skill] }), context)).toMatchObject({
+      edits: [{ kind: 'skill', workflowRun: '0b9a1c3e-5d7f-4a21-9c33-1f2e3d4c5b6a' }],
+    })
+    // Another kind, an empty or long id, an id with spaces, or a run beside a bound resource: that edit
+    // is dropped alone.
+    for (const bad of [
+      { ...one, workflowRun: 'run-1' },
+      { ...skill, kind: 'subagent', id: 'reader' },
+      { ...skill, workflowRun: '' },
+      { ...skill, workflowRun: 'x'.repeat(129) },
+      { ...skill, workflowRun: 'two words' },
+      { ...skill, workflowRun: 7 },
+      { ...skill, reference: 'skill:workspace-agnes:notes@rev1' },
+    ])
+      expect(parsePlannerOutput(plan({ edits: [bad] }), context)).toEqual({
+        error: 'invalid-shape: edits[0]',
+      })
+    const kept = parsePlannerOutput(plan({ edits: [{ ...skill, workflowRun: '' }, one] }), context) as {
+      edits: { id: string }[]
+    }
+    expect(kept.edits.map((e) => e.id)).toEqual(['build-first'])
+    expect(
+      parsePlannerOutput(plan({ edits: [{ ...skill, workflowRun: 'x'.repeat(128) }] }), context),
+    ).not.toHaveProperty('error')
+  })
+
+  it('the planner prompt says a skill may name a finished workflow run and that the host writes the definition', () => {
+    const prompt = buildPlannerPrompt({ items: [evidence('e1', 'start')], omitted: 0 }, [], guidance)
+    expect(prompt.system).toContain('workflowRun')
+    expect(prompt.system).toMatch(/Never write the stages or tasks/u)
+  })
+
   it('only entries shown in full can be rewritten or deleted', () => {
     const del = (id: string) => ({ op: 'delete', kind: 'memory', id, evidenceIds: ['e1'] })
     expect(parsePlannerOutput(plan({ edits: [del('build')] }), context)).not.toHaveProperty('error')

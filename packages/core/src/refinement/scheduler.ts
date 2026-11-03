@@ -13,12 +13,13 @@ import { applyMetaRows } from './confirmations.js'
 import { changedEntries, readSetCurrent } from './evidence.js'
 import { handOffApplied } from './handoff.js'
 import { APPLY_LIMITS, automaticRefusal } from './limits.js'
-import { asksForAnything, withoutEntries } from './plan-restrict.js'
-import { type RefinementReferences, unavailableReferences } from './references.js'
+import { asksForAnything, droppedEdits, withoutEntries } from './plan-restrict.js'
+import type { RefinementReferences } from './references.js'
 import { planRefinementRun, type RefinementRunDeps, type RunFacts, refinementRunRow } from './run.js'
 import { readTaskScope, sameTask, type TaskScope } from './task-scope.js'
 import type { RefinementPlanner } from './types.js'
 import { entryValidity, isExpired } from './validity.js'
+import type { RefinementWorkflowRuns } from './workflow-runs.js'
 import type { RefinementWorkspacePort } from './workspace.js'
 import { type RefinementWorkspaceRefs, renewConfirmed, renewsWorkspace } from './workspace-refs.js'
 
@@ -57,6 +58,12 @@ export type RefinementDeps = {
    * reference can be checked, so every one is unavailable.
    */
   references?: RefinementReferences
+  /**
+   * Whether a finished `workflow` run of a session may become a skill; checked when a plan settles and
+   * when it is applied, and read again by the host when the skill is saved. Absent: no run can be
+   * checked, so every skill edit that names one is dropped.
+   */
+  workflowRuns?: RefinementWorkflowRuns
 }
 
 /** Why an apply attempt left the run as it was, or what it did. */
@@ -255,7 +262,10 @@ function proposalOf(
     if (edit.op === 'delete') return { op: 'delete', kind: edit.kind, id: edit.id }
     const { kind, id, title, content } = edit
     const version = (baseline.get(entryKey(edit)) ?? 0) + 1
-    const bound = edit.reference === undefined ? {} : { reference: edit.reference }
+    const bound = {
+      ...(edit.reference === undefined ? {} : { reference: edit.reference }),
+      ...(edit.workflowRun === undefined ? {} : { workflowRun: edit.workflowRun }),
+    }
     return {
       op: 'upsert',
       entry: {
@@ -347,15 +357,17 @@ function applyLocked(s: SessionImpl, runId: string): Promise<ApplyAttempt> {
         return 'rejected'
       }
     }
-    // A skill or role an entry is bound to that cannot be used now drops that edit; the rest is applied.
-    const unusable = new Set(await unavailableReferences(s, writable(plan, scope)))
-    if (unusable.size) {
-      plan = withoutEntries(plan, unusable)
+    // A skill or role an entry is bound to that cannot be used now, or a workflow run that is gone or
+    // unfinished, drops that edit; the rest is applied.
+    const usable = writable(plan, scope)
+    const dropped = await droppedEdits(s, usable)
+    if (dropped.keys.size) {
+      plan = withoutEntries(plan, dropped.keys)
       if (!asksForAnything(plan)) {
         await s.append([
           refinementRunRow(s, runId, 'rejected', {
-            reason: 'reference-unavailable',
-            detail: [...unusable].join(' '),
+            reason: dropped.reason,
+            detail: [...dropped.keys].join(' '),
           }),
         ])
         return 'rejected'

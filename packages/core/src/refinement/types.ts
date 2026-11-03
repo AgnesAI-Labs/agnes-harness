@@ -117,6 +117,8 @@ export type PlannerOutputEdit =
       evidenceIds: string[]
       /** Skill and subagent only: the approved resource the entry is bound to. */
       reference?: string
+      /** Skill only: the `runId` of a finished `workflow` run of this session; the host writes the definition. */
+      workflowRun?: string
       /** The planner's suggestion that the lesson holds in every workspace; Core decides. */
       reach?: 'workspace' | 'user'
     }

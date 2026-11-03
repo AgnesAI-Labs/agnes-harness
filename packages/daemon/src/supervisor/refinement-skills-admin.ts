@@ -47,6 +47,7 @@ export function createRefinementSkillsAdmin(options: {
             state: skill.state as RefinementSavedSkill['state'],
             reviewAfter: skill.reviewAfter,
             initiator: skill.source.initiator ?? 'auto',
+            ...(skill.source.fromWorkflow === true ? { workflow: true as const } : {}),
             previous: skill.archive.filter((revision) => revision !== skill.revision).slice(-PREVIOUS_LISTED),
           }))
     let kept: RefinementSkillsResult['drafts'] = []

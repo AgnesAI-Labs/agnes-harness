@@ -2,7 +2,8 @@ import type { HookContext, HookHandler, ToolContext, ToolDef } from '@agnes/exte
 import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { expect, it } from 'vitest'
-import extension from '../src/index.js'
+import extension, { createWorkflowExtension } from '../src/index.js'
+import { finishedRun, workflowRunSource } from '../src/source.js'
 import { workflowProjection } from '../src/state.js'
 
 async function fixture(terminal: 'completed' | 'idle' = 'completed') {
@@ -219,4 +220,66 @@ it('refuses unavailable persistence before spawning, and cancels accepted childr
   await f.tools.get('workflow')!.execute({ name: 'report', stages }, f.ctx)
   expect(f.cancelled.sort()).toEqual(['child-1', 'child-2'])
   expect(Object.values(f.persisted().runs)[0]?.status).toBe('cancelled')
+})
+
+it('offers its run records to the Host and reads a run as finished only when every member completed', async () => {
+  const f = await fixture()
+  const out = await f.tools.get('workflow')!.execute({ name: 'report', stages }, f.ctx)
+  expect(out.isError).toBe(false)
+  const run = Object.values(f.persisted().runs)[0]!
+  const state = f.persisted()
+  const reader = workflowRunSource.reader(state)
+  // Names and tasks of the stages, and none of what the members answered or where they ran.
+  expect(reader.finished(run.id)).toEqual({
+    runId: run.id,
+    name: 'report',
+    stages: stages.map((s) => ({
+      name: s.name,
+      members: s.members.map((m) => ({ name: m.name, task: m.task })),
+    })),
+  })
+  expect(JSON.stringify(reader.finished(run.id))).not.toContain('answer')
+  expect(reader.finished('missing')).toBeUndefined()
+  expect(reader.finished('__proto__')).toBeUndefined()
+  // A run that has not finished, or has any member that is not completed, is not finished.
+  for (const status of ['running', 'failed', 'cancelled', 'interrupted'])
+    expect(finishedRun(run.id, { ...run, status })).toBe('not-completed')
+  for (const status of ['pending', 'starting', 'running', 'failed', 'cancelled', 'interrupted']) {
+    const broken = structuredClone(run)
+    broken.stages[1]!.members[0]!.status = status
+    expect(finishedRun(run.id, broken), status).toBe('not-completed')
+  }
+  expect(finishedRun(run.id, { ...run, stages: [] })).toBe('not-completed')
+  // A record that is not shaped like this run is not a run.
+  expect(finishedRun(run.id, null)).toBeUndefined()
+  expect(finishedRun(run.id, { ...run, id: 'other' })).toBeUndefined()
+  expect(finishedRun(run.id, { ...run, stages: [{ name: 's', members: [{ name: 1 }] }] })).toBeUndefined()
+  expect(workflowRunSource.projection).toBe('runs')
+  expect(workflowRunSource.reader(null).finished(run.id)).toBeUndefined()
+})
+
+it('offers the source when the Host grants it, and withdraws it when the plugin is disposed', async () => {
+  const offered: unknown[] = []
+  let withdrawn = 0
+  const plugin = createWorkflowExtension({
+    provideWorkflowRuns: (source) => {
+      offered.push(source)
+      return () => {
+        withdrawn++
+      }
+    },
+  })
+  const api = {
+    registerProjection: () => () => {},
+    registerTool: () => () => {},
+    registerSlot: () => () => {},
+    registerHook: () => () => {},
+    events: { append: async () => 1 },
+  } as unknown as ExtensionAPI
+  const dispose = await extensionFactoryOf(plugin)(api)
+  expect(offered).toEqual([workflowRunSource])
+  await dispose?.()
+  expect(withdrawn).toBe(1)
+  // Without the grant nothing is offered, and the plugin is the one it always was.
+  expect(createWorkflowExtension()).toBe(extension)
 })

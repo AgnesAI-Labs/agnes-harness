@@ -16,6 +16,8 @@ export type PlannerEdit =
       evidenceIds: string[]
       /** Skill and subagent only: the approved resource the entry is bound to; the host checks it. */
       reference?: string
+      /** Skill only: the `runId` of a finished `workflow` run of this session; the host writes the definition. */
+      workflowRun?: string
       /** A suggestion that the lesson holds in every workspace; Core decides. */
       reach?: 'workspace' | 'user'
     }
@@ -44,6 +46,10 @@ const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
 const MAX_IDS = 20
 /** The longest reference to an approved skill or role. */
 const MAX_REFERENCE = 512
+/** The longest `runId` of a workflow run: the workflow tool's own bound. */
+const MAX_WORKFLOW_RUN = 128
+// A run id is an identifier, never text: no whitespace or control characters.
+const PLAIN = /^[^\s\p{Cc}]+$/u
 
 type Obj = Record<string, unknown>
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -94,7 +100,14 @@ function edit(raw: unknown, at: number): PlannerEdit {
     typeof raw.content !== 'string' ||
     raw.content.length === 0 ||
     !ids(raw.evidenceIds, 1) ||
-    (raw.reference !== undefined && (!bindable || !str(raw.reference, MAX_REFERENCE, 1)))
+    (raw.reference !== undefined && (!bindable || !str(raw.reference, MAX_REFERENCE, 1))) ||
+    // A workflow run belongs to a skill the host writes; a skill bound to an approved resource is only a
+    // pointer to it, so the two never go together.
+    (raw.workflowRun !== undefined &&
+      (kind !== 'skill' ||
+        raw.reference !== undefined ||
+        !str(raw.workflowRun, MAX_WORKFLOW_RUN, 1) ||
+        !PLAIN.test(raw.workflowRun)))
   )
     return reject(where)
   // Session is the default when the planner states nothing; a value that is neither level is not guessed.
@@ -117,6 +130,7 @@ function edit(raw: unknown, at: number): PlannerEdit {
     applicability,
     evidenceIds: raw.evidenceIds,
     ...(raw.reference === undefined ? {} : { reference: raw.reference as string }),
+    ...(raw.workflowRun === undefined ? {} : { workflowRun: raw.workflowRun as string }),
     ...(reach === undefined ? {} : { reach }),
   }
 }

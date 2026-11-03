@@ -92,7 +92,7 @@ export const PLANNER_SYSTEM = [
   'Create or update the smallest relevant component: repeated delegation roles -> subagent, repeated procedures -> skill, durable facts and preferences -> memory, narrow behavioural policies -> prompt.',
   'Answer with exactly one JSON object and nothing else:',
   '{"summary": string, "rationale": string, "expectedOutcome": string,',
-  ' "edits": [{"op": "upsert", "kind": "prompt"|"memory"|"skill"|"subagent", "id": string, "title": string, "content": string, "applicability": "session"|"task", "evidenceIds": [string], "reference"?: string}',
+  ' "edits": [{"op": "upsert", "kind": "prompt"|"memory"|"skill"|"subagent", "id": string, "title": string, "content": string, "applicability": "session"|"task", "evidenceIds": [string], "reference"?: string, "workflowRun"?: string}',
   '   | {"op": "delete", "kind": ..., "id": string, "evidenceIds": [string]}],',
   ' "evidenceIds": [string]}',
   'Rules:',
@@ -104,6 +104,7 @@ export const PLANNER_SYSTEM = [
   '- If an existing entry led to a failure in the evidence, replace it with corrected content, or delete it when no corrected form holds. Merge duplicates instead of adding near copies.',
   '- applicability "session" (the default) keeps the lesson for the rest of the session. Use "task" only for a lesson that names this task and stops mattering once it ends.',
   '- A skill or subagent edit may bind to an approved resource the evidence shows in use: "reference" is "<resourceId>@<revision>" of a skill read, or the role ref of a subagent_spawn call. A resource that cannot be used now drops that edit.',
+  '- When the evidence shows a staged `workflow` run that finished with every member completed and the same kind of task will probably come again, propose a skill with a name, a title and a short "when to use it" as content, and set "workflowRun" to that run\'s runId (the "runId" or "id" in the workflow result). Never write the stages or tasks yourself: the host writes the definition from the run, and drops the edit when the run is not from this session or did not finish.',
   '- When nothing is worth keeping, answer with "edits": [].',
 ].join('\n')
 

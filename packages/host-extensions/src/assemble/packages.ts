@@ -60,6 +60,7 @@ import type {
   SeamInitContext,
   SeamProfileView,
   SkillRuntimeDiscovery,
+  WorkflowRunSource,
 } from '../contracts/package.js'
 import { RUNTIME_LANGUAGES } from '../contracts/package.js'
 import { PluginImportError } from '../ext-host/loader.js'
@@ -83,6 +84,9 @@ export type {
   SeamProfileView,
   SessionTasks,
   SkillRuntimeDiscovery,
+  WorkflowRunDefinition,
+  WorkflowRunReader,
+  WorkflowRunSource,
 } from '../contracts/package.js'
 export { RUNTIME_LANGUAGES } from '../contracts/package.js'
 /** Resolve the executable entry and static admission before any selected source is imported. */

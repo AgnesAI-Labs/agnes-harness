@@ -20,6 +20,7 @@ import type { ComputerUseToolOptions } from '../extensions/computer-use/src/tool
 import type { EgressGate } from '../extensions/privacy/src/index.js'
 import type { ConnectRefinement } from '../extensions/refine/src/port.js'
 import type { SkillRuntimeDiscovery, SkillRuntimeInput } from '../extensions/skills/src/runtime.js'
+import type { WorkflowRunSource } from '../extensions/workflow/src/source.js'
 
 /**
  * What a seam implementation in this package is handed at assembly. base cannot import the host,
@@ -235,6 +236,11 @@ export type SeamInitContext = {
    * agnes/goal. Returns what withdraws the offer.
    */
   provideTaskScope?: (source: TaskScopeSource) => () => void
+  /**
+   * Offers the session's workflow runs to the host as a projection and its reader; supplied only to
+   * agnes/workflow. Returns what withdraws the offer.
+   */
+  provideWorkflowRuns?: (source: WorkflowRunSource) => () => void
 }
 
 /** A read of the profile's refinement settings: the switch and the trigger mode. */

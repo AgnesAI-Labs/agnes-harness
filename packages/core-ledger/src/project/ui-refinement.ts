@@ -8,6 +8,7 @@ import { clipUtf16 as clip } from './clip.js'
 export type RefinementRunNode = Extract<UINode, { kind: 'refinement-run' }>
 export type RefinementSaveNode = Extract<UINode, { kind: 'refinement-save' }>
 type NodeEdit = NonNullable<RefinementRunNode['edits']>[number]
+type Obj = Record<string, unknown>
 
 const MAX_EDITS = 50
 /** The kind of workspace target a save goes to, by the kind of entry saved. */
@@ -34,7 +35,15 @@ function editsOf(data: unknown): NodeEdit[] {
     if ((edit.op !== 'upsert' && edit.op !== 'delete') || typeof kind !== 'string' || !KINDS.has(kind))
       continue
     if (typeof id !== 'string' || id.length === 0) continue
-    edits.push({ op: edit.op, kind: kind as NodeEdit['kind'], id: clip(id, 128) })
+    // A skill generated from a finished workflow run says so; the run's id is not part of the timeline.
+    const workflow =
+      edit.op === 'upsert' && kind === 'skill' && typeof (named as Obj)?.workflowRun === 'string'
+    edits.push({
+      op: edit.op,
+      kind: kind as NodeEdit['kind'],
+      id: clip(id, 128),
+      ...(workflow ? { workflow: true as const } : {}),
+    })
     if (edits.length === MAX_EDITS) break
   }
   return edits
