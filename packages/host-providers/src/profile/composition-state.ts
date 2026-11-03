@@ -1,5 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { checkResolvedComposition, type ResolvedComposition } from '@agnes/host-common/profile/composition'
@@ -189,15 +198,19 @@ export async function createLiveCompositionWriter(profileDir: string) {
   const root = join(profileDir, '.composition-live'),
     file = join(root, randomUUID() + '.json')
   mkdirSync(root, { recursive: true, mode: 0o700 })
+  let published: string | undefined
   return {
     write(sessions: readonly LiveCompositionSession[]) {
+      const content = JSON.stringify({ pid: process.pid, startId: identity.startId, sessions })
+      if (content === published && existsSync(file)) return
       const temporary = file + '.tmp'
       try {
-        writeFileSync(temporary, JSON.stringify({ pid: process.pid, startId: identity.startId, sessions }), {
+        writeFileSync(temporary, content, {
           mode: 0o600,
           flush: true,
         })
         renameSync(temporary, file)
+        published = content
       } finally {
         rmSync(temporary, { force: true })
       }

@@ -1,13 +1,28 @@
 import { spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resolveComposition } from '@agnes/host-common/profile/composition'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import { defaultProcessIdentity } from '@agnes/host-infrastructure/adapters/process-identity-default'
 import { afterEach, describe, expect, it } from 'vitest'
-import { CompositionSessionStore, reapDeadLiveCompositions } from '../src/profile/composition-state.js'
+import {
+  CompositionSessionStore,
+  createLiveCompositionWriter,
+  type LiveCompositionSession,
+  reapDeadLiveCompositions,
+} from '../src/profile/composition-state.js'
 
 const homes: string[] = []
 afterEach(() => {
@@ -186,5 +201,93 @@ describe('dead worker live-composition status', () => {
     await reapDeadLiveCompositions(profile)
     expect([dead, recycled, torn].map(existsSync)).toEqual([false, false, false])
     expect(existsSync(live)).toBe(true)
+  })
+})
+
+describe('live-composition status publication', () => {
+  const session = (): LiveCompositionSession => ({
+    sessionKey: 'live-session',
+    compositionHash: 'composition',
+    preset: 'default',
+    bundles: [],
+    providers: {},
+  })
+  const statusFile = (profile: string) => {
+    const root = join(profile, '.composition-live')
+    const name = readdirSync(root).find((name) => name.endsWith('.json'))
+    if (!name) throw new Error('Live composition status was not published')
+    return join(root, name)
+  }
+
+  it('keeps an unchanged published status without replacing or touching its file', async () => {
+    const profile = home(),
+      writer = await createLiveCompositionWriter(profile)
+    try {
+      writer.write([])
+      const file = statusFile(profile)
+      age(file, HOUR)
+      const before = statSync(file, { bigint: true })
+      writer.write([])
+      writer.write([])
+      const after = statSync(file, { bigint: true })
+      expect(after.ino).toBe(before.ino)
+      expect(after.mtimeNs).toBe(before.mtimeNs)
+    } finally {
+      writer.close()
+    }
+  })
+
+  it('publishes mutations to a previously written array and clears closed sessions', async () => {
+    const profile = home(),
+      writer = await createLiveCompositionWriter(profile)
+    try {
+      const entry = { ...session(), bundles: [] as string[] },
+        sessions = [entry]
+      writer.write(sessions)
+      const file = statusFile(profile)
+      entry.bundles.push('added-bundle')
+      writer.write(sessions)
+      expect(JSON.parse(readFileSync(file, 'utf8')).sessions[0].bundles).toEqual(['added-bundle'])
+      sessions.length = 0
+      writer.write(sessions)
+      expect(JSON.parse(readFileSync(file, 'utf8')).sessions).toEqual([])
+    } finally {
+      writer.close()
+    }
+    expect(readdirSync(join(profile, '.composition-live'))).toEqual([])
+  })
+
+  it('retries a failed publication instead of remembering it as published', async () => {
+    const profile = home(),
+      writer = await createLiveCompositionWriter(profile)
+    try {
+      writer.write([])
+      const file = statusFile(profile),
+        previous = readFileSync(file)
+      rmSync(file)
+      mkdirSync(file)
+      expect(() => writer.write([session()])).toThrow()
+      expect(existsSync(`${file}.tmp`)).toBe(false)
+      rmSync(file, { recursive: true })
+      writeFileSync(file, previous, { mode: 0o600 })
+      writer.write([session()])
+      expect(JSON.parse(readFileSync(file, 'utf8')).sessions[0].sessionKey).toBe('live-session')
+    } finally {
+      writer.close()
+    }
+  })
+
+  it('republishes unchanged status when its file has been removed', async () => {
+    const profile = home(),
+      writer = await createLiveCompositionWriter(profile)
+    try {
+      writer.write([])
+      const file = statusFile(profile)
+      rmSync(file)
+      writer.write([])
+      expect(JSON.parse(readFileSync(file, 'utf8')).sessions).toEqual([])
+    } finally {
+      writer.close()
+    }
   })
 })

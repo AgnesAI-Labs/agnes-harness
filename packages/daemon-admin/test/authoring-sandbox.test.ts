@@ -27,6 +27,12 @@ vi.mock('@agnes/host', async (original) => {
     createPlatform: vi.fn(),
     createFs: () => ({ canonicalize: async (path: string) => resolve(path) }),
     createExec: () => ({ run: vi.fn() }),
+    // Keep the simulated Linux read view inside this test's filesystem, not the host's '/'.
+    sandboxReadPaths: (denyPaths: readonly string[]) => {
+      const root = roots[0]
+      if (!root) throw new Error('Sandbox read fixture was not initialized')
+      return host.sandboxReadPaths(denyPaths, root)
+    },
     prepareSandboxWorkspaceAncestor: async (root: string) => {
       mkdirSync(join(root, AGH_DIR), { recursive: true })
     },
@@ -43,6 +49,7 @@ afterEach(() => {
 const setup = (os: 'darwin' | 'linux' | 'win32') => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-author-policy-')))
   roots.push(root)
+  for (const name of ['public', 'private', '.git']) mkdirSync(join(root, name))
   vi.mocked(createPlatform).mockReturnValue({
     os,
     fs: () => ({ caseSensitive: true }),
@@ -104,7 +111,17 @@ it.runIf(posixHost).each(['darwin', 'linux'] as const)(
       if (os === 'darwin') {
         expect(args.join(' ')).toContain(`(${network} network*)`)
         expect(args.join(' ')).toContain(`(deny file-read* file-write* (subpath "${home}"))`)
-      } else expect(args.includes('--unshare-net')).toBe(network === 'deny')
+      } else {
+        expect(args.includes('--unshare-net')).toBe(network === 'deny')
+        const probe = vi.mocked(detectBackend).mock.calls.at(-1)?.[0]
+        const readPaths = probe?.options.readPaths
+        expect(readPaths).toContain(join(root, 'public'))
+        expect(readPaths?.every((path) => path.startsWith(`${root}${sep}`))).toBe(true)
+        expect(readPaths?.some((path) => path === home || path.startsWith(`${home}${sep}`))).toBe(false)
+        expect(
+          readPaths?.some((path) => path === protectedPath || path.startsWith(`${protectedPath}${sep}`)),
+        ).toBe(false)
+      }
     }
   },
 )
@@ -113,8 +130,7 @@ it('reports Windows as unisolated and refuses missing POSIX isolation or a remot
   vi.mocked(detectBackend).mockResolvedValue(NONE_BACKEND)
   const result = await authoringSandbox({ home: join(root, 'private') }, root, new AbortController().signal)
   expect(result.isolated).toBe(false)
-  // The Linux read view walks the host's real '/' and is only simulated on a POSIX host: on Windows
-  // that is the current drive's root, whose system folders refuse even a realpath.
+  // The Linux simulation uses POSIX fixture paths; Windows paths cannot be expressed by bwrap.
   for (const os of posixHost ? (['darwin', 'linux'] as const) : (['darwin'] as const)) {
     setup(os)
     await expect(
