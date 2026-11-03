@@ -1,5 +1,13 @@
 import type { UiExtensionContext } from '@agnes/web-client'
-import { Button, Icon, type LocaleCatalog, SettingsInput, SettingsSelect, useUiText } from '@agnes/web-ui'
+import {
+  Button,
+  Icon,
+  IconButton,
+  type LocaleCatalog,
+  SettingsInput,
+  SettingsSelect,
+  useUiText,
+} from '@agnes/web-ui'
 import { type FormEvent, useEffect, useRef, useState } from 'react'
 
 const MHS_NAMESPACE = '@agnes/web/mhs'
@@ -150,7 +158,7 @@ export function MhsPage({ context }: { context: UiExtensionContext }) {
   const { t, locale } = useUiText(MHS_NAMESPACE, mhsCatalog)
   const [slide, setSlide] = useState(0)
   const [draftOpened, setDraftOpened] = useState(false)
-  const [callingCode, setCallingCode] = useState<string>()
+  const [callingCode, setCallingCode] = useState(() => (locale === 'zh-CN' ? '+86' : '+1'))
   const [requestType, setRequestType] = useState('')
   const video = useRef<HTMLVideoElement>(null)
   const panel = useRef<HTMLDivElement>(null)
@@ -196,14 +204,16 @@ export function MhsPage({ context }: { context: UiExtensionContext }) {
       aria-label={context.t('home.entry.mhs')}
     >
       <nav className="mhs-topnav" aria-label={t('pages')}>
-        <Button appearance="ghost" htmlType="button" className="mhs-wordmark" onClick={() => go(0)}>
-          <Icon name="route" /> {t('brand')}
-          <span>{t('byline')}</span>
+        <Button appearance="ghost" htmlType="button" onClick={() => go(0)}>
+          <span className="mhs-wordmark">
+            <Icon name="route" /> {t('brand')}
+            <span>{t('byline')}</span>
+          </span>
         </Button>
         <div className="mhs-deck-links">
           {labels.map((label, index) => (
             <Button
-              appearance="ghost"
+              appearance={index === 2 ? 'primary' : slide === index ? 'secondary' : 'ghost'}
               key={label}
               htmlType="button"
               className={index === 2 ? 'mhs-sales-link' : ''}
@@ -218,16 +228,14 @@ export function MhsPage({ context }: { context: UiExtensionContext }) {
       </nav>
       <div className="mhs-deck-stage">
         {slide > 0 && (
-          <Button
-            appearance="ghost"
+          <IconButton
+            appearance="secondary"
+            name="arrow-left"
+            label={t('previous')}
             className="mhs-page-arrow mhs-page-arrow-left"
             htmlType="button"
-            aria-label={t('previous')}
-            title={t('previous')}
             onClick={() => go(slide - 1)}
-          >
-            <Icon name="arrow-left" />
-          </Button>
+          />
         )}
         <div ref={panel} className="mhs-deck-viewport">
           <div className={`mhs-deck-panel mhs-deck-panel-${slide}`}>
@@ -245,20 +253,10 @@ export function MhsPage({ context }: { context: UiExtensionContext }) {
                 </h1>
                 <p className="mhs-lead">{t('lead')}</p>
                 <div className="mhs-actions">
-                  <Button
-                    appearance="ghost"
-                    className="mhs-button mhs-button-primary"
-                    htmlType="button"
-                    onClick={() => go(2)}
-                  >
+                  <Button appearance="primary" htmlType="button" onClick={() => go(2)}>
                     {t('contact')} <Icon name="arrow-right" />
                   </Button>
-                  <Button
-                    appearance="ghost"
-                    className="mhs-button mhs-button-quiet"
-                    htmlType="button"
-                    onClick={() => go(1)}
-                  >
+                  <Button appearance="secondary" htmlType="button" onClick={() => go(1)}>
                     {t('workflow')} <Icon name="arrow-right" />
                   </Button>
                 </div>
@@ -377,7 +375,7 @@ export function MhsPage({ context }: { context: UiExtensionContext }) {
                         name="callingCode"
                         aria-label={t('callingCode')}
                         autoComplete="tel-country-code"
-                        value={callingCode ?? (locale === 'zh-CN' ? '+86' : '+1')}
+                        value={callingCode}
                         onChange={(event) => setCallingCode(event.target.value)}
                       >
                         {callingCodes.map(([code, en, zh]) => (
@@ -386,10 +384,6 @@ export function MhsPage({ context }: { context: UiExtensionContext }) {
                           </option>
                         ))}
                       </SettingsSelect>
-                      <span aria-hidden="true">
-                        {callingCode ?? (locale === 'zh-CN' ? '+86' : '+1')}
-                        <Icon name="arrow-down" />
-                      </span>
                     </div>
                     <SettingsInput
                       id="mhs-phone"
@@ -440,7 +434,7 @@ export function MhsPage({ context }: { context: UiExtensionContext }) {
                     maxLength={500}
                   />
                 </label>
-                <Button appearance="ghost" htmlType="submit" className="mhs-button mhs-button-primary">
+                <Button appearance="primary" htmlType="submit">
                   {t('prepare')} <Icon name="arrow-right" />
                 </Button>
                 {draftOpened && (
@@ -453,16 +447,14 @@ export function MhsPage({ context }: { context: UiExtensionContext }) {
           </div>
         </div>
         {slide < 2 && (
-          <Button
-            appearance="ghost"
+          <IconButton
+            appearance="secondary"
+            name="arrow-right"
+            label={t('next')}
             className="mhs-page-arrow mhs-page-arrow-right"
             htmlType="button"
-            aria-label={t('next')}
-            title={t('next')}
             onClick={() => go(slide + 1)}
-          >
-            <Icon name="arrow-right" />
-          </Button>
+          />
         )}
       </div>
       <footer className="mhs-pagination">

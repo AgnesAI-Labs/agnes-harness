@@ -26,32 +26,6 @@
     top: 50%;
     transform: translateY(-50%);
     z-index: 5;
-    display: grid;
-    place-items: center;
-    width: 2.65rem;
-    height: 2.65rem;
-    padding: 0;
-    border: 1px solid color-mix(in srgb, var(--agnes-line-primary) 55%, transparent);
-    border-radius: 50%;
-    background: linear-gradient(
-      145deg,
-      color-mix(in srgb, var(--agnes-bg-surface) 65%, transparent),
-      color-mix(in srgb, var(--agnes-bg-surface) 22%, transparent)
-    );
-    -webkit-backdrop-filter: blur(16px) saturate(150%);
-    backdrop-filter: blur(16px) saturate(150%);
-    box-shadow:
-      inset 0 1px 0 color-mix(in srgb, var(--agnes-bg-surface) 85%, transparent),
-      0 3px 12px color-mix(in srgb, var(--agnes-text-primary) 6%, transparent);
-    color: var(--agnes-text-primary);
-    opacity: 1;
-    cursor: pointer;
-    transition:
-      opacity 0.2s,
-      background 0.2s,
-      box-shadow 0.2s,
-      color 0.2s,
-      transform 0.25s;
   }
   .mhs-page-arrow-left {
     left: 0.15rem;
@@ -59,81 +33,10 @@
   .mhs-page-arrow-right {
     right: 0.15rem;
   }
-  .mhs-page-arrow .icon {
-    width: 1.3rem;
-    height: 1.3rem;
-    transition: transform 0.25s ease;
-  }
-  .mhs-page-arrow:hover:not(:disabled),
-  .mhs-page-arrow:focus-visible {
-    opacity: 1;
-    color: var(--agnes-brand-primary);
-    background: var(--agnes-brand-emphasis-soft);
-    border-color: var(--agnes-brand-primary);
-    transform: translateY(-50%) scale(1.06);
-    box-shadow:
-      0 0 0 5px color-mix(in srgb, var(--agnes-brand-primary) 8%, transparent),
-      0 6px 22px color-mix(in srgb, var(--agnes-brand-primary) 18%, transparent);
-  }
-  .mhs-page-arrow-left:hover:not(:disabled) .icon,
-  .mhs-page-arrow-left:focus-visible .icon {
-    transform: translateX(-3px);
-  }
-  .mhs-page-arrow-right:hover:not(:disabled) .icon,
-  .mhs-page-arrow-right:focus-visible .icon {
-    transform: translateX(3px);
-  }
-  .mhs-page-arrow:active:not(:disabled) {
-    transform: translateY(-50%) scale(0.98);
-  }
-  .mhs-page-arrow:disabled {
-    opacity: 0.3;
-    cursor: default;
-  }
-  @media (hover: none) {
-    .mhs-page-arrow:not(:disabled) {
-      opacity: 1;
-    }
-  }
   @media (max-width: 760px) {
     .mhs-deck-stage {
       padding-inline: 2.75rem;
     }
-    .mhs-page-arrow {
-      width: 2.5rem;
-      height: 2.5rem;
-    }
-  }
-  .mhs-deck .mhs-wordmark {
-    border: 0;
-    padding: 0;
-    background: transparent;
-    color: var(--agnes-text-primary);
-    cursor: pointer;
-    font-family: inherit;
-  }
-  .mhs-deck .mhs-deck-links button {
-    background: transparent;
-    color: var(--agnes-text-secondary);
-    border-radius: 0.6rem;
-    font-size: 0.8rem;
-  }
-  .mhs-deck-links button[aria-current="page"] {
-    color: var(--agnes-brand-primary);
-    background: var(--agnes-brand-emphasis-soft);
-  }
-  .mhs-deck .mhs-deck-links .mhs-sales-link,
-  .mhs-hero .mhs-button-primary {
-    background: var(--agnes-text-primary);
-    color: var(--agnes-text-inverse);
-    border-color: var(--agnes-text-primary);
-    border-radius: 2rem;
-    box-shadow: none;
-  }
-  .mhs-deck .mhs-deck-links .mhs-sales-link:hover,
-  .mhs-hero .mhs-button-primary:hover {
-    background: color-mix(in srgb, var(--agnes-text-primary) 88%, var(--agnes-bg-surface));
-    border-color: color-mix(in srgb, var(--agnes-text-primary) 88%, var(--agnes-bg-surface));
   }
   .mhs-deck-viewport {
     min-height: 0;
@@ -206,27 +109,6 @@
     gap: 1rem;
     padding: 1rem 0.25rem 0;
   }
-  .mhs-pagination button {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    min-height: 2.5rem;
-    padding: 0.5rem 0.8rem;
-    border: 1px solid var(--agnes-line-primary);
-    border-radius: 0.6rem;
-    background: var(--agnes-bg-surface);
-    color: var(--agnes-text-primary);
-    font: inherit;
-    font-size: 0.8rem;
-    cursor: pointer;
-  }
-  .mhs-pagination button:disabled {
-    opacity: 0.35;
-    cursor: default;
-  }
-  .mhs-pagination .icon {
-    width: 0.9rem;
-  }
   .mhs-pagination > div {
     display: flex;
     align-items: center;
@@ -255,23 +137,10 @@
     color: color-mix(in srgb, var(--agnes-text-inverse) 88%, transparent);
     font-size: 0.75rem;
   }
-  .mhs-inquiry :is(input, textarea, select) {
+  .mhs-inquiry :is(input, select) {
     min-width: 0;
     box-sizing: border-box;
     width: 100%;
-    padding: 0.7rem;
-    border: 1px solid color-mix(in srgb, var(--agnes-text-inverse) 19%, transparent);
-    border-radius: 0.5rem;
-    color: var(--agnes-text-inverse);
-    background: color-mix(in srgb, var(--agnes-text-primary) 32%, transparent);
-    font: inherit;
-  }
-  .mhs-inquiry :is(input, textarea, select):focus {
-    outline: 2px solid color-mix(in srgb, var(--agnes-brand-primary) 45%, var(--agnes-text-inverse));
-    outline-offset: 2px;
-  }
-  .mhs-inquiry textarea {
-    resize: vertical;
   }
   .mhs-phone-field {
     display: grid;
@@ -286,34 +155,6 @@
   .mhs-code-picker {
     position: relative;
     min-width: 0;
-  }
-  .mhs-inquiry .mhs-code-picker select {
-    color: transparent;
-    appearance: none;
-    cursor: pointer;
-  }
-  .mhs-code-picker > span {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 0.7rem;
-    color: var(--agnes-text-inverse);
-    pointer-events: none;
-    font-size: 0.8rem;
-  }
-  .mhs-code-picker .icon {
-    width: 0.75rem;
-    height: 0.75rem;
-  }
-  .mhs-inquiry select option {
-    background: var(--agnes-text-primary);
-    color: var(--agnes-text-inverse);
-  }
-  .mhs-inquiry input::placeholder {
-    color: color-mix(in srgb, var(--agnes-text-inverse) 75%, transparent);
-    opacity: 0.75;
   }
   .mhs-direct-email {
     display: inline-flex;
@@ -355,9 +196,6 @@
     .mhs-deck .mhs-deck-links {
       gap: 0.2rem;
     }
-    .mhs-deck-links button {
-      padding: 0.5rem;
-    }
     .mhs-deck .mhs-wordmark span {
       display: none;
     }
@@ -366,6 +204,13 @@
     }
   }
   .mhs-page {
+    --agnes-button-primary-bg: var(--agnes-text-primary);
+    --agnes-button-primary-bg-hover: color-mix(
+      in srgb,
+      var(--agnes-text-primary) 88%,
+      var(--agnes-bg-surface)
+    );
+    --agnes-button-primary-content: var(--agnes-text-inverse);
     max-width: 76rem;
     margin: 0 auto;
     padding: clamp(1rem, 3vw, 2.5rem);
@@ -406,21 +251,6 @@
     align-items: center;
     gap: 1.5rem;
     font-size: 0.8rem;
-  }
-  .mhs-topnav button {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    border: 0;
-    border-radius: 2rem;
-    padding: 0.65rem 1rem;
-    background: var(--agnes-text-primary);
-    color: var(--agnes-bg-surface);
-    cursor: pointer;
-    font: inherit;
-  }
-  .mhs-topnav button .icon {
-    width: 0.9rem;
   }
   .mhs-page section {
     scroll-margin-top: 2rem;
@@ -486,41 +316,6 @@
     flex-wrap: wrap;
     gap: 0.75rem;
     margin-top: 2rem;
-  }
-  .mhs-button {
-    min-height: 2.75rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0 1rem;
-    border: 1px solid transparent;
-    border-radius: 0.7rem;
-    cursor: pointer;
-    font: inherit;
-    font-size: 0.9rem;
-    font-weight: 650;
-    text-decoration: none;
-    transition:
-      transform 160ms ease,
-      box-shadow 160ms ease;
-  }
-  .mhs-button:hover {
-    transform: translateY(-1px);
-  }
-  .mhs-button-primary {
-    color: var(--agnes-button-primary-content);
-    background: var(--agnes-brand-primary);
-    box-shadow: 0 0.6rem 1.8rem color-mix(in srgb, var(--agnes-brand-primary) 26%, transparent);
-  }
-  .mhs-button-quiet {
-    border-color: var(--agnes-line-primary);
-    color: var(--agnes-text-primary);
-    background: color-mix(in srgb, var(--agnes-bg-surface) 76%, transparent);
-  }
-  .mhs-button .icon {
-    width: 1rem;
-    height: 1rem;
   }
   .mhs-proof {
     display: flex;
@@ -749,6 +544,13 @@
     line-height: 1.55;
   }
   .mhs-contact {
+    --agnes-button-primary-bg: var(--agnes-brand-primary);
+    --agnes-button-primary-bg-hover: var(--agnes-text-emphasis);
+    --agnes-input-surface: var(--agnes-bg-surface);
+    --agnes-input-content-strong: var(--agnes-text-primary);
+    --agnes-input-placeholder: var(--agnes-text-tertiary);
+    --agnes-input-border: var(--agnes-line-emphasis);
+    --agnes-input-border-focus: var(--agnes-brand-focus-ring);
     display: grid;
     grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
     align-items: center;

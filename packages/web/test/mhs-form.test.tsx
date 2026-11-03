@@ -49,6 +49,35 @@ it.each(['en', 'zh-CN'])('collects a localized sales inquiry in %s', async (loca
     expect(form.querySelector<HTMLInputElement>('[name="otherDetails"]')?.required).toBe(true)
     await act(async () => fireEvent.change(type, { target: { value: 'tech' } }))
     expect(form.querySelector('[name="otherDetails"]')).toBeNull()
+    const name = form.querySelector<HTMLInputElement>('[name="name"]')!
+    const phone = form.querySelector<HTMLInputElement>('[name="phone"]')!
+    const github = form.querySelector<HTMLInputElement>('[name="github"]')!
+    await act(async () => {
+      fireEvent.input(name, { target: { value: 'Example organization' } })
+      fireEvent.input(phone, { target: { value: '2025550123' } })
+      fireEvent.input(github, { target: { value: 'https://github.com/example/project' } })
+      fireEvent.change(type, { target: { value: 'other' } })
+    })
+    await act(async () => {
+      fireEvent.input(form.querySelector('[name="otherDetails"]')!, {
+        target: { value: 'Device integration' },
+      })
+      document.documentElement.lang = locale === 'zh-CN' ? 'en' : 'zh-CN'
+      window.dispatchEvent(new Event('agnes:locale-changed'))
+    })
+    expect(code.value).toBe(locale === 'zh-CN' ? '+86' : '+1')
+    expect(name.value).toBe('Example organization')
+    expect(phone.value).toBe('2025550123')
+    expect(github.value).toBe('https://github.com/example/project')
+    expect(type.value).toBe('other')
+    expect(form.querySelector<HTMLInputElement>('[name="otherDetails"]')?.value).toBe('Device integration')
+    await act(async () => {
+      fireEvent.change(code, { target: { value: '+44' } })
+      document.documentElement.lang = locale
+      window.dispatchEvent(new Event('agnes:locale-changed'))
+    })
+    expect(code.value).toBe('+44')
+    expect(phone.value).toBe('2025550123')
   } finally {
     await act(async () => root.unmount())
     source.dispose()
