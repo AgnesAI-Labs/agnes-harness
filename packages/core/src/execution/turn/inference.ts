@@ -55,7 +55,9 @@ import {
   SKILL_LOADED_PREFIX,
   TURN_TIME_PREFIX,
 } from '../../request/derive.js'
-import { experienceNotes, messageText, withExperienceDiag } from '../../request/experience.js'
+import { experienceChanged, messageText, withExperienceDiag } from '../../request/experience.js'
+import { experienceCommitCheck } from '../../request/experience-dispatch.js'
+import { experienceForRequest } from '../../request/experience-room.js'
 import { inlineImageMediaSurface } from '../../request/inline-images.js'
 import { promptLanguage, withNoteLanguage } from '../../request/note-language.js'
 import { toProviderRequest } from '../../request/to-provider.js'
@@ -67,8 +69,7 @@ import {
 } from '../../step/calibrate.js'
 import {
   modelVisibleTool,
-  resolvedModelRecord,
-  supportsComputerUse,
+  requestModelInput,
   toolNamesForModel,
   toolsForModel,
 } from '../../step/model-tools.js'
@@ -510,9 +511,12 @@ export async function surfaceToolCalls(s: SessionImpl): Promise<NonNullable<Deri
   return out
 }
 
+/** The options of the primary turn's own request, told apart from a loop's by identity. */
+const PRIMARY: import('@agnes/extension-api').LoopRequestOptions = Object.freeze({})
+
 export async function prepareInferenceRequest(
   s: SessionImpl,
-  options: import('@agnes/extension-api').LoopRequestOptions = {},
+  options: import('@agnes/extension-api').LoopRequestOptions = PRIMARY,
 ): Promise<DeriveOutput | StepOutcome> {
   const op = s.op()
   const t = s.turn
@@ -527,10 +531,8 @@ export async function prepareInferenceRequest(
   // Computer Use depends on the primary model seeing each returned screenshot itself. An
   // auxiliary image model cannot safely steer the primary model's next pointer/keyboard action,
   // so withhold the tool unless this exact primary model advertises native image input. Unknown,
-  // duplicate, or malformed catalogue entries resolve to text-only above and therefore fail closed.
-  const inlineImageModel = resolvedModelRecord(s.d.provider, target)
-  const modelInput = inlineImageModel?.input ?? (['text'] as const)
-  const computerUseAllowed = supportsComputerUse(modelInput)
+  // duplicate, or malformed catalogue entries resolve to text-only and therefore fail closed.
+  const { inlineImageModel, modelInput, computerUseAllowed } = requestModelInput(s.d.provider, target)
   // Freeze the selected model's contract before asynchronous contribution hooks can run.
   const contract = Object.freeze({ ...(s.d.contractForModel?.(target) ?? s.d.contract) })
   const coreTools = toolNamesForModel(
@@ -676,6 +678,10 @@ export async function prepareInferenceRequest(
   const language = await turnLanguage(s, t, op.meta.triggerSeq)
   const turnTime = turnTimeNote(s, t, language)
   const progressCheck = await progressCheckNote(s, t, op, language)
+  // A loop that brings its own message list (`options.messages`) gets no task experience: that list
+  // is not the surface, so the frozen-snapshot check could never see a note it had sent.
+  const experience = options.messages ? [] : await experienceForRequest(s, surface, options === PRIMARY)
+  if (!Array.isArray(experience)) return experience
   let out = deriveRequest({
     ...(memoryRevision === undefined ? {} : { memoryRevision }),
     ...(s.d.systemPrompt ? { systemPrompt: s.d.systemPrompt } : {}),
@@ -710,9 +716,7 @@ export async function prepareInferenceRequest(
             },
           ]
         : []),
-      // A loop that brings its own message list (`options.messages`) gets no task experience: that
-      // list is not the surface, so the frozen-snapshot check could never see a note it had sent.
-      ...(options.messages ? [] : await experienceNotes(s, surface)),
+      ...experience,
     ],
     ...(requestMedia ? { media: requestMedia, mediaSessionKey: s.key } : {}),
     ...(auxiliaryVision ? { auxiliaryVision } : {}),
@@ -968,6 +972,12 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   out = admitted.output
   const wire = admitted.wire
   const cal = admitted.calibration
+  // Prepared before task experience changed (an entry withdrawn, the switch turned off): not sent.
+  // A fast path; the dispatch commit checks again under the lock (`experienceCommitCheck`).
+  if (experienceChanged(s)) {
+    await releaseTreeReservation(s)
+    return { phase: 'inference' }
+  }
   await releaseTreeReservationOnError(s, () => recordRequestComposition(s, out, wire, step))
   const offered = new Set(wire.tools.map((tool) => tool.name))
   const { effect, header, effectIntentSeq, headerSeq } = await releaseTreeReservationOnError(s, async () => {
@@ -996,6 +1006,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
         },
         { step },
       ),
+      experienceCommitCheck(s),
     )
     // Update the in-memory dedup key only after the atomic transition committed the header. A retry
     // that derives the same request reuses that durable header; each actual dispatch still gets its

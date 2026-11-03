@@ -8,6 +8,7 @@ import { tt } from './locale-extended.js'
 import { probeLanguageServers } from './lsp-probe.js'
 import { accountLabels, modelLabel } from './model-label.js'
 import { waitingIn } from './queue-commands.js'
+import { withoutRefinement } from './refinement-usage.js'
 import { oneLine } from './session-commands.js'
 import { displayWidth } from './terminal.js'
 
@@ -25,7 +26,7 @@ async function statusSlash(app: TuiApp): Promise<SlashResult> {
   ])
   const timeline = opening.status === 'fulfilled' ? opening.value.timeline : undefined
   const mine = choices.status === 'fulfilled' ? choices.value.find((c) => c.sessionId === s.id) : undefined
-  const usage = timeline?.usage
+  const usage = timeline?.usage && withoutRefinement(timeline.usage)
   const cost = usage?.cost
     ? formatUsdMicros(usage.cost.usdMicros)
     : usage?.credits

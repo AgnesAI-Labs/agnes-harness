@@ -280,7 +280,7 @@ export async function runOne(
 
 // ------------------------------------------------------------------ CLI
 
-function readConfig(file: string): RunConfig {
+export function readConfig(file: string): RunConfig {
   const raw = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
   const strings = ['provider', 'api', 'upstream', 'model', 'keyEnv'] as const
   for (const key of strings) {

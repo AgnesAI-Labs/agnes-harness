@@ -673,6 +673,8 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SessionBtwResult: AgnesGen.SessionBtwResult,
   SessionRefineParams: AgnesGen.SessionRefineParams,
   SessionRefineResult: AgnesGen.SessionRefineResult,
+  SessionRefineRollbackParams: AgnesGen.SessionRefineRollbackParams,
+  SessionRefineRollbackResult: AgnesGen.SessionRefineRollbackResult,
   RefinementSettings: AgnesGen.RefinementSettings,
   RefinementSettingsSnapshot: AgnesGen.RefinementSettingsSnapshot,
   RefinementSettingsSaveParams: AgnesGen.RefinementSettingsSaveParams,
@@ -4196,6 +4198,26 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { runId: 'r', state: 'queued' }, // additionalProperties:false
     ],
     note: 'manual refinement request result: the queued run',
+  },
+  SessionRefineRollbackParams: {
+    valid: { sessionId: 's', appliedSeq: 42 },
+    invalid: [
+      { appliedSeq: 42 }, // missing required sessionId
+      { sessionId: 's' }, // missing required appliedSeq
+      { sessionId: 's', appliedSeq: 0 }, // boundary: one below minimum:1
+      { sessionId: 's', appliedSeq: 1.5 }, // not an integer
+      { sessionId: 's', appliedSeq: 42, runId: 'r' }, // additionalProperties:false
+    ],
+    note: 'withdrawal of an applied refinement: sessionId and the applied seq',
+  },
+  SessionRefineRollbackResult: {
+    valid: { seq: 57 },
+    invalid: [
+      {}, // missing required seq
+      { seq: 0 }, // boundary: one below minimum:1
+      { seq: 57, outcome: 'applied' }, // additionalProperties:false
+    ],
+    note: 'withdrawal result: the row that records it',
   },
   RefinementSettings: {
     valid: REFINEMENT_SETTINGS,
@@ -9310,6 +9332,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'SessionRefineParams',
     result: 'SessionRefineResult',
   },
+  '_agnes/v1/session.refine.rollback': {
+    fileId: AGNES_ID,
+    params: 'SessionRefineRollbackParams',
+    result: 'SessionRefineRollbackResult',
+  },
   '_agnes/v1/session.voice.transcribe': {
     fileId: AGNES_ID,
     params: 'SessionVoiceTranscribeParams',
@@ -10245,6 +10272,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/session.fork': AGNES_SAMPLES.SessionForkParams as Sample,
   '_agnes/v1/session.btw': AGNES_SAMPLES.SessionBtwParams as Sample,
   '_agnes/v1/session.refine': AGNES_SAMPLES.SessionRefineParams as Sample,
+  '_agnes/v1/session.refine.rollback': AGNES_SAMPLES.SessionRefineRollbackParams as Sample,
   '_agnes/v1/session.voice.transcribe': AGNES_SAMPLES.SessionVoiceTranscribeParams as Sample,
   '_agnes/v1/session.voice.speak': AGNES_SAMPLES.SessionVoiceSpeakParams as Sample,
   '_agnes/v1/voice.status': AGNES_SAMPLES.ConfigEmptyParams as Sample,
@@ -10952,6 +10980,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/session.fork': AGNES_SAMPLES.SessionIdParams as Sample,
   '_agnes/v1/session.btw': AGNES_SAMPLES.SessionBtwResult as Sample,
   '_agnes/v1/session.refine': AGNES_SAMPLES.SessionRefineResult as Sample,
+  '_agnes/v1/session.refine.rollback': AGNES_SAMPLES.SessionRefineRollbackResult as Sample,
   '_agnes/v1/session.voice.transcribe': AGNES_SAMPLES.SessionVoiceTranscribeResult as Sample,
   '_agnes/v1/session.voice.speak': AGNES_SAMPLES.SessionVoiceSpeakResult as Sample,
   '_agnes/v1/voice.status': AGNES_SAMPLES.VoiceStatusResult as Sample,

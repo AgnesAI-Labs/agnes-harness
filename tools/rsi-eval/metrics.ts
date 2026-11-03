@@ -130,6 +130,86 @@ export const parsePrimeSession = (jsonl: string, task: EvalTask, sessionIndex: n
   return { windows, refine, harnessLookups, compactions }
 }
 
+const REFINEMENT_RUN = 'x/core/refinement-run'
+const TRIGGER_SOURCE: Record<string, Source> = {
+  manual: 'user',
+  model: 'self',
+  compaction: 'auto',
+  'repeated-failure': 'auto',
+}
+const isMainLane = (lane: unknown): boolean =>
+  lane === null || lane === undefined || lane === '' || lane === 'main'
+
+/**
+ * The same counts from an AGH session file: one ledger row per line (`{seq, type, lane, origin, data}`,
+ * every lane), as the AGH runner writes it. A prompt window opens at the user's own message with the
+ * prompt's text (notes the host adds are not the user's); tool results are read for the trap. A review
+ * counts once it reached planning (or opened with a plan, for a direct proposal), by what started it:
+ * manual is `user`, the model's request is `self`, compaction and repeated failures are `auto`.
+ * Applied edits are those of applied `harness/refine` rows that are not withdrawals.
+ */
+export const parseAghSession = (jsonl: string, task: EvalTask, sessionIndex: number): ParsedSession => {
+  const prompts = task.sessions[sessionIndex]?.prompts ?? []
+  const signatures = task.trap.signatures.map((signature) => new RegExp(signature))
+  const windows = prompts.map((_, prompt) => ({ session: sessionIndex, prompt, ran: false, trapHit: false }))
+  let current = -1
+  let lastOpened = -1
+  let harnessLookups = 0
+  let compactions = 0
+  const runs = new Map<string, { source?: Source; planned: boolean }>()
+  const refine = { auto: 0, user: 0, self: 0, appliedEdits: 0 }
+
+  for (const line of jsonl.split('\n')) {
+    if (line.trim() === '') continue
+    let row: unknown
+    try {
+      row = JSON.parse(line)
+    } catch {
+      continue
+    }
+    if (!isObject(row) || typeof row.type !== 'string') continue
+    const data = isObject(row.data) ? row.data : {}
+    if (row.type === REFINEMENT_RUN) {
+      if (row.origin !== undefined && row.origin !== null && row.origin !== 'system') continue
+      if (typeof data.runId !== 'string') continue
+      const run = runs.get(data.runId) ?? { planned: false }
+      const trigger = isObject(data.trigger) ? data.trigger : undefined
+      if (trigger && typeof trigger.kind === 'string') run.source = TRIGGER_SOURCE[trigger.kind] ?? 'user'
+      if (data.state === 'planning' || data.state === 'proposed') run.planned = true
+      runs.set(data.runId, run)
+      continue
+    }
+    if (row.type === 'harness/refine') {
+      if (data.outcome === 'applied' && data.rollbackOf === undefined && Array.isArray(data.edits))
+        refine.appliedEdits += data.edits.length
+      continue
+    }
+    if (!isMainLane(row.lane)) continue
+    if (row.type === 'user/message') {
+      if (data.kind === 'runtime_context' || row.origin === 'system') continue
+      const text = contentText(data.content).trim()
+      const next = prompts.findIndex((p, k) => k > lastOpened && p.text.trim() === text)
+      const window = windows[next]
+      if (window) {
+        window.ran = true
+        current = next
+        lastOpened = next
+      }
+    } else if (row.type === 'tool/result') {
+      const window = windows[current]
+      const text = contentText(data.content)
+      if (window && !window.trapHit && signatures.some((signature) => signature.test(text)))
+        window.trapHit = true
+    } else if (row.type === 'tool/call') {
+      if (data.name === 'harness_inspect') harnessLookups++
+    } else if (row.type === 'x/core/compaction-end') {
+      compactions++
+    }
+  }
+  for (const run of runs.values()) if (run.planned) refine[run.source ?? 'user']++
+  return { windows, refine, harnessLookups, compactions }
+}
+
 const RUN_ID = /^.+\.(on|off)\.r(\d+)$/
 
 export type ToRunRecordOptions = {
@@ -159,7 +239,8 @@ export const toRunRecord = (
   let compactions = 0
   task.sessions.forEach((_, sessionIndex) => {
     const files = outcome.sessions[sessionIndex]?.sessionFiles ?? []
-    const parsed = parsePrimeSession(files.map((file) => read(locate(file))).join('\n'), task, sessionIndex)
+    const parse = (options.system ?? 'prime') === 'agh' ? parseAghSession : parsePrimeSession
+    const parsed = parse(files.map((file) => read(locate(file))).join('\n'), task, sessionIndex)
     for (const window of parsed.windows) {
       const check = outcome.checks.find((c) => c.session === window.session && c.prompt === window.prompt)
       windows.push({ ...window, checksPassed: window.ran && check ? check.passed : null })

@@ -1,5 +1,6 @@
 import type { UsageView } from '@agnes/protocol'
 import { type ExtendedKey, tt } from './locale-extended.js'
+import { withoutRefinement } from './refinement-usage.js'
 import { displayWidth } from './terminal.js'
 import type { ThemedAnsi } from './theme.js'
 
@@ -145,7 +146,7 @@ function styledContext(usage: UsageView, ansi: ThemedAnsi, locale: string): stri
  * and the `~` / `+` / `(partial)` marks carry the meaning; colour only emphasises it.
  */
 export function formatUsageLine(
-  usage: UsageView,
+  total: UsageView,
   requestedWidth: number,
   ansi: ThemedAnsi,
   showModel = true,
@@ -154,6 +155,9 @@ export function formatUsageLine(
   locale = 'en',
 ): string {
   if (!Number.isFinite(requestedWidth)) throw new Error('usage footer width must be finite')
+  // Background refinement is the user's own spend on the side, not the conversation's: it has its own
+  // line in the usage report, so the footer does not count it.
+  const usage = withoutRefinement(total)
   const width = Math.max(1, Math.trunc(requestedWidth))
   const context = showContext ? styledContext(usage, ansi, locale) : ''
   const model = sanitizeLabel(usage.model.id)

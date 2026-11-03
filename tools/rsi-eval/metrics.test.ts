@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { parsePrimeSession, runMetrics, toRunRecord } from './metrics.js'
+import { parseAghSession, parsePrimeSession, runMetrics, toRunRecord } from './metrics.js'
 import { buildReport } from './report.js'
 import type { EvalTask, PromptWindow, RunOutcome, RunRecord } from './types.js'
 
@@ -126,6 +126,121 @@ describe('parsePrimeSession', () => {
     ].join('\n')
     const parsed = parsePrimeSession(jsonl, task, 0)
     expect(parsed.windows.map((w) => w.ran)).toEqual([true, false, false])
+  })
+})
+
+// One AGH ledger row per line, as the AGH runner writes a session file.
+const row = (seq: number, type: string, data: object, over: { lane?: string | null; origin?: string } = {}) =>
+  JSON.stringify({
+    seq,
+    ts: '2026-11-03T00:00:00Z',
+    type,
+    lane: over.lane ?? 'main',
+    origin: over.origin ?? 'user',
+    data,
+  })
+const userText = (text: string) => ({ content: [{ type: 'text', text }] })
+const toolText = (text: string, isError = false) => ({ content: [{ type: 'text', text }], isError })
+const runRow = (seq: number, runId: string, state: string, extra: object = {}) =>
+  row(
+    seq,
+    'x/core/refinement-run',
+    { version: 1, runId, state, ...extra },
+    { lane: 'refinement', origin: 'system' },
+  )
+
+const aghSession = [
+  row(1, 'session/start', {}, { origin: 'system' }),
+  row(2, 'user/message', userText('Add function alpha and run the tests')),
+  row(
+    3,
+    'user/message',
+    { kind: 'runtime_context', content: [{ type: 'text', text: 'Add function beta and run the tests' }] },
+    { origin: 'system' },
+  ),
+  row(4, 'tool/call', { name: 'shell', toolUseId: 't1' }),
+  row(5, 'tool/result', toolText('[stderr]\nerror: tests must be run from build/', true)),
+  runRow(6, 'r1', 'queued', { trigger: { kind: 'manual', seq: 5 } }),
+  runRow(7, 'r1', 'planning'),
+  runRow(8, 'r1', 'applied'),
+  row(
+    9,
+    'harness/refine',
+    { outcome: 'applied', runId: 'r1', edits: [{ op: 'upsert' }, { op: 'upsert' }] },
+    { origin: 'system' },
+  ),
+  row(10, 'user/message', userText('Add function beta and run the tests')),
+  row(11, 'tool/call', { name: 'harness_inspect', toolUseId: 't2' }),
+  row(12, 'tool/result', toolText('ok, ran from build/: 3 passed')),
+  runRow(13, 'r2', 'queued', { trigger: { kind: 'repeated-failure', seq: 12 } }),
+  runRow(14, 'r2', 'planning'),
+  runRow(15, 'r2', 'no-op'),
+  runRow(16, 'r3', 'queued', { trigger: { kind: 'compaction', seq: 12 } }),
+  runRow(17, 'r3', 'superseded'),
+  runRow(18, 'r4', 'proposed', { trigger: { kind: 'model', seq: 12 } }),
+  row(
+    19,
+    'harness/refine',
+    { outcome: 'applied', rollbackOf: 9, edits: [{ op: 'upsert' }] },
+    { origin: 'system' },
+  ),
+  row(20, 'harness/refine', { outcome: 'rejected', edits: [{ op: 'upsert' }] }, { origin: 'system' }),
+  row(21, 'x/core/compaction-end', {}, { origin: 'system' }),
+  row(22, 'tool/result', toolText('tests must be run from build/'), { lane: 'child' }),
+  'not json',
+  '',
+].join('\n')
+
+describe('parseAghSession', () => {
+  it("opens windows at the user's own prompts and reads the trap from main-lane tool results", () => {
+    const parsed = parseAghSession(aghSession, task, 0)
+    expect(parsed.windows).toEqual([
+      { session: 0, prompt: 0, ran: true, trapHit: true },
+      { session: 0, prompt: 1, ran: true, trapHit: false },
+      { session: 0, prompt: 2, ran: false, trapHit: false },
+    ])
+    expect(parsed.harnessLookups).toBe(1)
+    expect(parsed.compactions).toBe(1)
+  })
+
+  it('counts reviews that reached planning by what started them, and edits of applied reviews only', () => {
+    // r1 manual -> user, r2 repeated failure -> auto, r3 never planned, r4 a direct proposal -> self.
+    // Edits: r1's two; the withdrawal and the rejected review add none.
+    expect(parseAghSession(aghSession, task, 0).refine).toEqual({
+      auto: 1,
+      user: 1,
+      self: 1,
+      appliedEdits: 2,
+    })
+  })
+
+  it('ignores review rows that the system did not write', () => {
+    const forged = [
+      row(
+        1,
+        'x/core/refinement-run',
+        { version: 1, runId: 'f', state: 'queued', trigger: { kind: 'manual', seq: 1 } },
+        { lane: 'refinement' },
+      ),
+      row(2, 'x/core/refinement-run', { version: 1, runId: 'f', state: 'planning' }, { lane: 'refinement' }),
+    ].join('\n')
+    expect(parseAghSession(forged, task, 0).refine).toEqual({ auto: 0, user: 0, self: 0, appliedEdits: 0 })
+  })
+
+  it('is used for an outcome the AGH runner wrote', () => {
+    const outcome: RunOutcome = {
+      runId: 'dir-demo.on.r1',
+      system: 'agh',
+      sessions: [{ exitCode: 0, timedOut: false, stdoutFile: 's.out', sessionFiles: ['s1.events.jsonl'] }],
+      checks: [{ session: 0, prompt: 0, passed: true }],
+    }
+    const rec = toRunRecord(task, outcome, new Map(), { system: 'agh', readFile: () => aghSession })
+    expect(rec).toMatchObject({
+      system: 'agh',
+      exit: 'ok',
+      refine: { auto: 1, user: 1, self: 1, appliedEdits: 2 },
+    })
+    expect(rec.windows[0]).toEqual({ session: 0, prompt: 0, ran: true, trapHit: true, checksPassed: true })
   })
 })
 

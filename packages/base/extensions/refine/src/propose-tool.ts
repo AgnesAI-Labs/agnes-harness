@@ -59,7 +59,7 @@ export function createProposeTool(port: Pick<RefinementToolPort, 'propose'>) {
   return defineTool({
     name: 'harness_propose',
     description:
-      "Submit a structured change to this session's prompts, memory, Skills or child-agent definitions (at most 5 new entries of at most 2,000 characters each), citing the event seqs that justify it. The change is checked and, if accepted, takes effect from a later turn; there is no direct write path.",
+      "Submit a structured change to this session's prompts, memory, Skills or child-agent definitions (at most 5 entries of at most 2,000 characters each), citing the event seqs that justify it. A new id adds an entry; to replace or delete a saved entry, first read it in full with harness_inspect (op 'get'). The change is checked and, if accepted, takes effect from a later turn (a deleted entry is withdrawn there); there is no direct write path.",
     parameters: ProposeParams,
     meta: {
       isReadOnly: false,

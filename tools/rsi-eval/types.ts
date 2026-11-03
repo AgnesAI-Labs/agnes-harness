@@ -34,6 +34,8 @@ export type RunConfig = {
 
 export type RunOutcome = {
   runId: string
+  /** Which runner wrote it, so its session files are read the right way; absent means Prime. */
+  system?: RunRecord['system']
   sessions: { exitCode: number | null; timedOut: boolean; stdoutFile: string; sessionFiles: string[] }[]
   checks: { session: number; prompt: number; passed: boolean }[]
 }

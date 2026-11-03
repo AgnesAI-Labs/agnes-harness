@@ -51,6 +51,11 @@ export interface ConversationMessagesProps {
   renderSlot?: (node: Extract<UINode, { kind: 'slot' }>) => ReactNode
   /** The upper Web layer owns DSH registration, claims, and fallback visibility. */
   renderNode?: (node: UINode, native: ReactNode) => ReactNode
+  /**
+   * Withdraws an applied experience review of this session. Without it the review line offers no
+   * withdrawal.
+   */
+  withdrawRefinement?: import('./refinement-run.js').RefinementWithdraw | undefined
   /** Host-owned interactive cards and deliverables can stay outside collapsed process history. */
   keepNodeVisible?: (node: UINode) => boolean
 }

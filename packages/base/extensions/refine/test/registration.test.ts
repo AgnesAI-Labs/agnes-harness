@@ -3,12 +3,7 @@ import type { Context } from '@agnes/plugin-runtime'
 import { describe, expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import refineDefault, { createRefineExtension, type RefinementSwitch } from '../src/index.js'
-import {
-  connectedToolPort,
-  type RefinementOutcome,
-  type RefinementRuns,
-  type RefinementToolPort,
-} from '../src/port.js'
+import type { RefinementOutcome, RefinementRuns, RefinementToolPort } from '../src/port.js'
 
 type Registered = { tools: ToolDef[]; hooks: string[]; dispose(): void }
 
@@ -67,6 +62,10 @@ function fakeRuns(answer: RefinementOutcome = { runId: 'run-1' }) {
       calls.push(['request', ...args])
       return answer
     },
+    inspect: async (...args) => {
+      calls.push(['inspect', ...args])
+      return 'runId' in answer ? { op: 'search', entries: [], matched: 0 } : answer
+    },
   }
   return {
     calls,
@@ -96,12 +95,15 @@ describe('refine extension registration', () => {
     expect(applyPlugin(createRefineExtension({ settings: settings(true) })).tools).toEqual([])
   })
 
-  it('registers harness_propose and harness_refine as deferred tools when on, and not harness_inspect', () => {
+  it('registers harness_propose, harness_refine and harness_inspect as deferred tools when on', () => {
     const registered = applyPlugin(
       createRefineExtension({ settings: settings(true), runs: fakeRuns().connect }),
     )
-    // harness_inspect cannot read entries yet; a tool that only fails is not offered to the model.
-    expect(registered.tools.map((tool) => tool.name)).toEqual(['harness_propose', 'harness_refine'])
+    expect(registered.tools.map((tool) => tool.name)).toEqual([
+      'harness_propose',
+      'harness_refine',
+      'harness_inspect',
+    ])
     for (const tool of registered.tools) expect(tool.meta.deferLoading, tool.name).toBe(true)
     expect(registered.hooks).toEqual([])
     registered.dispose()
@@ -116,9 +118,9 @@ describe('refine extension registration', () => {
     const atAssembly = read()
     const runs = fakeRuns().connect
     const plugin = createRefineExtension({ settings: { current: () => atAssembly }, runs })
-    expect(applyPlugin(plugin).tools).toHaveLength(2)
+    expect(applyPlugin(plugin).tools).toHaveLength(3)
     stored = false
-    expect(applyPlugin(plugin).tools).toHaveLength(2)
+    expect(applyPlugin(plugin).tools).toHaveLength(3)
     // A new assembly reads again and sees the change.
     const next = read()
     expect(applyPlugin(createRefineExtension({ settings: { current: () => next }, runs })).tools).toEqual([])
@@ -193,6 +195,7 @@ describe('the tools backed by the host runs', () => {
       for (const [name, args] of [
         ['harness_propose', proposal],
         ['harness_refine', { focus: 'tests' }],
+        ['harness_inspect', { op: 'list', kind: 'memory' }],
       ] as const) {
         const result = await byName(registered, name).execute(args as never, fakeToolContext())
         expect(result.isError, `${name} ${refused}`).toBe(true)
@@ -204,14 +207,31 @@ describe('the tools backed by the host runs', () => {
     expect(text(off)).toBe('REFINEMENT_OFF: refinement is off for this profile')
   })
 
-  it("the host port's inspect answers a typed not-implemented error", async () => {
-    const result = await connectedToolPort(fakeRuns().connect(undefined)).inspect(
-      { op: 'search', query: 'tests' },
-      fakeToolContext(),
+  it('harness_inspect asks the runs of the session the tool ran in', async () => {
+    const { runs, registered } = on()
+    const ctx = fakeToolContext()
+    const result = await byName(registered, 'harness_inspect').execute(
+      { op: 'search', query: 'x' } as never,
+      ctx,
     )
-    expect(result.isError).toBe(true)
-    expect(result.structured).toEqual({ code: 'REFINEMENT_NOT_IMPLEMENTED' })
-    expect(text(result)).toBe('REFINEMENT_NOT_IMPLEMENTED: harness_inspect is not implemented yet')
+    expect(text(result)).toBe('No entry in this session matches.')
+    expect(runs.calls).toEqual([
+      ['inspect', { key: ctx.session.key, lane: ctx.session.lane }, { op: 'search', query: 'x' }],
+    ])
+  })
+
+  it('an inspect refusal names what was wrong with the request', async () => {
+    const missing = await byName(
+      on({ refused: 'not-found', detail: 'memory/x' }).registered,
+      'harness_inspect',
+    ).execute({ op: 'get', id: 'memory/x' } as never, fakeToolContext())
+    expect(missing.structured).toEqual({ code: 'REFINEMENT_NOT_FOUND' })
+    expect(text(missing)).toBe('REFINEMENT_NOT_FOUND: no entry memory/x in this session')
+    const invalid = await byName(
+      on({ refused: 'invalid', detail: 'kind' }).registered,
+      'harness_inspect',
+    ).execute({ op: 'list' } as never, fakeToolContext())
+    expect(text(invalid)).toBe('REFINEMENT_INVALID: the request is not valid (kind)')
   })
 })
 
@@ -235,12 +255,13 @@ describe('tools forward to an injected port', () => {
     expect(p.refine).toHaveBeenLastCalledWith({ target: 'session' }, ctx)
   })
 
-  it('no harness_inspect tool exists to reach the port, even when the port could answer one', async () => {
+  it('harness_inspect hands its query to the port unchanged', async () => {
     const p = port()
     const registered = applyPlugin(createRefineExtension({ settings: settings(true), port: p }))
-    expect(registered.tools.map((tool) => tool.name)).toEqual(['harness_propose', 'harness_refine'])
-    for (const tool of registered.tools) await tool.execute({ focus: 'x' } as never, fakeToolContext())
-    expect(p.inspect).not.toHaveBeenCalled()
+    const ctx = fakeToolContext()
+    const args = { op: 'list', kind: 'skill', cursor: 'c1' }
+    expect(await byName(registered, 'harness_inspect').execute(args as never, ctx)).toBe(ok)
+    expect(p.inspect).toHaveBeenCalledWith(args, ctx)
   })
 
   it('a workspace target is refused as a later-release feature and never reaches the port', async () => {

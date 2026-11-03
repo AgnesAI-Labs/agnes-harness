@@ -37,6 +37,8 @@ export function nodeText(node: UINode): string {
       return `${node.sources.join(', ')} still connecting; this turn runs without it`
     case 'memory-external-change':
       return `Memory ${node.paths.join(', ')} changed outside the memory provider and was loaded as is; review it with /memory`
+    case 'refinement-run':
+      return refinementRunText(node)
     case 'workspace-undo':
       return node.conflicts > 0
         ? `Undo of turn ${node.turn} refused: ${node.conflicts} file(s) changed since the turn`
@@ -52,4 +54,33 @@ export function nodeText(node: UINode): string {
       // rendering of their own any more than a slot node does.
       return ''
   }
+}
+
+const RUN_STATE: Record<Extract<UINode, { kind: 'refinement-run' }>['state'], string> = {
+  queued: 'waiting to start',
+  planning: 'reviewing the session',
+  proposed: 'has a proposal, applied between turns',
+  applied: 'saved changes',
+  'no-op': 'found nothing to save',
+  rejected: 'was not applied',
+  superseded: 'was replaced by a newer request',
+  cancelled: 'was cancelled',
+  unknown: 'ended with an unknown result',
+}
+
+/** One refinement run: what asked for it, how it stands, and which entries it changed (names only). */
+function refinementRunText(node: Extract<UINode, { kind: 'refinement-run' }>): string {
+  const names = (op: 'upsert' | 'delete') =>
+    (node.edits ?? []).filter((edit) => edit.op === op).map((edit) => `${edit.kind}/${edit.id}`)
+  const saved = names('upsert')
+  const removed = names('delete')
+  return [
+    `Experience review (${node.trigger}) ${RUN_STATE[node.state]}.`,
+    node.reason ? `Reason: ${node.reason}.` : '',
+    saved.length > 0 ? `Saved: ${saved.join(', ')}.` : '',
+    removed.length > 0 ? `Removed: ${removed.join(', ')}.` : '',
+    node.withdrawn ? 'Withdrawn since.' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
 }

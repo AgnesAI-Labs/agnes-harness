@@ -166,6 +166,54 @@ describe('the planner output parser', () => {
 })
 
 describe('the planner prompt', () => {
+  it('a long entry whose tail must be kept survives a planned edit', () => {
+    const TAIL = 'TAIL-MUST-STAY: "never" run the release script twice.'
+    const long = `${'Release carefully.\n'.repeat(100)}${TAIL}`
+    const items = [evidence('e1', 'release the package')]
+    const others = Array.from({ length: 5 }, (_, i) => entry('memory', `m${i}`, `Memory ${i}.`))
+    const textOf = (p: ReturnType<typeof buildPlannerPrompt>) =>
+      p.messages.flatMap((m) => m.content.map((c) => c.text)).join('\n')
+    const contextOf = (p: ReturnType<typeof buildPlannerPrompt>): ParseContext => ({
+      evidenceIds: p.evidenceIds,
+      fullEntries: p.fullEntries,
+      shownEntries: [...p.fullEntries, ...p.referenceEntries],
+    })
+    const rewrite = plan({
+      edits: [
+        {
+          op: 'upsert',
+          kind: 'memory',
+          id: 'release',
+          title: 'Release',
+          content: 'Release carefully.',
+          applicability: 'session',
+          evidenceIds: ['e1'],
+        },
+      ],
+      evidenceIds: ['e1'],
+    })
+    // Among the most relevant, it is shown whole, tail included, and may be rewritten.
+    const whole = buildPlannerPrompt(
+      { items, omitted: 0 },
+      [entry('memory', 'release', long), ...others],
+      guidance,
+    )
+    expect(whole.fullEntries).toContainEqual({ kind: 'memory', id: 'release' })
+    expect(textOf(whole)).toContain(JSON.stringify(long).slice(1, -1))
+    expect(parsePlannerOutput(rewrite, contextOf(whole))).not.toHaveProperty('error')
+    // Past the first five it is a 240-character reference: the tail is not shown and no rewrite holds.
+    const summary = buildPlannerPrompt(
+      { items, omitted: 0 },
+      [...others, entry('memory', 'release', long)],
+      guidance,
+    )
+    expect(summary.referenceEntries).toEqual([{ kind: 'memory', id: 'release' }])
+    expect(textOf(summary)).not.toContain('TAIL-MUST-STAY')
+    expect(parsePlannerOutput(rewrite, contextOf(summary))).toEqual({
+      error: 'not-shown-in-full: memory/release',
+    })
+  })
+
   it('names every evidence id and entry, and fits the input target', () => {
     const prompt = buildPlannerPrompt(
       {
@@ -190,17 +238,20 @@ describe('the planner prompt', () => {
     expect(prompt.inputTokens).toBeLessThanOrEqual(PLANNER_INPUT_TOKENS)
   })
 
-  it('asks the planner to replace a failing entry, never to delete one', () => {
-    // Core refuses a plan that deletes an entry (a withdrawal is not announced to the model yet), so
-    // the prompt neither offers the delete form nor asks for it.
+  it('asks the planner to replace or delete a failing entry it was shown in full', () => {
+    // A deleted entry the model holds is withdrawn by a control notice before the next request's
+    // other notes, so the prompt offers the delete form for entries shown in full.
     const prompt = buildPlannerPrompt(
       { items: [evidence('e1', 'x')], omitted: 0 },
       [entry('memory', 'build', 'Run pnpm build first.')],
       guidance,
     )
     const text = [prompt.system, ...prompt.messages.flatMap((m) => m.content.map((c) => c.text))].join('\n')
-    expect(text).not.toMatch(/delete/iu)
-    expect(text).toContain('replace it')
+    expect(text).toContain('{"op": "delete"')
+    expect(text).toContain('replace it with corrected content, or delete it')
+    expect(text).toContain(
+      'Only entries shown in full may be rewritten (upsert with the same kind and id) or deleted.',
+    )
   })
 
   it('tells the planner when the task has ended and when there is no goal', () => {

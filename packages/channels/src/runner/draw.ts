@@ -187,11 +187,12 @@ export function whatToDraw(
       }
     case 'context-sections':
     case 'contribute-conflict':
+    case 'refinement-run':
     case 'context':
-      // Advisory diagnostic rows for /context, and harness-internal notices (hook notes, per-request
-      // fact snapshots) riding the user/message channel -- neither is a message meant for a chat
-      // surface's human audience, so this gets the same treatment as 'user'/'compaction' above: no
-      // channel message for this node.
+      // Advisory diagnostic rows for /context, a background experience review's progress, and
+      // harness-internal notices (hook notes, per-request fact snapshots) riding the user/message
+      // channel -- none is a message meant for a chat surface's human audience, so this gets the
+      // same treatment as 'user'/'compaction' above: no channel message for this node.
       return null
   }
 }

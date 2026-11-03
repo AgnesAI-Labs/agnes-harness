@@ -9,6 +9,7 @@ export type HostCapabilityGrant = Readonly<{
   skillDiscovery?: true
   privacyTrajectory?: true
   refinementSettings?: true
+  taskScope?: true
   computerUse?: true
   privateArtifactStore?: true
   contextBlocking?: true
@@ -41,6 +42,7 @@ export const HOST_CAPABILITY_GRANTS: readonly HostGrantDeclaration[] = freezeDat
       'agnes/privacy': { privacyTrajectory: true, governanceHooks: true },
       'agnes/computer-use': { computerUse: true },
       'agnes/refine': { refinementSettings: true },
+      'agnes/goal': { taskScope: true },
     },
     seams: { artifacts: { privateArtifactStore: true } },
   },

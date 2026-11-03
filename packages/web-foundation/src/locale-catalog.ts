@@ -4,6 +4,7 @@ import { composerLocaleCatalog } from './locales/composer.js'
 import { goalLocaleCatalog } from './locales/goal.js'
 import { homeLocaleCatalog } from './locales/home.js'
 import { indexShellLocaleCatalog } from './locales/index-shell.js'
+import { refineLocaleCatalog } from './locales/refine.js'
 import { sessionLocaleCatalog } from './locales/session.js'
 import { settingsLocaleCatalog } from './locales/settings.js'
 import { timelineLocaleCatalog } from './locales/timeline.js'
@@ -19,6 +20,7 @@ const WEB_DICTS = [
   homeLocaleCatalog,
   composerLocaleCatalog,
   indexShellLocaleCatalog,
+  refineLocaleCatalog,
   sessionLocaleCatalog,
   settingsLocaleCatalog,
   timelineLocaleCatalog,

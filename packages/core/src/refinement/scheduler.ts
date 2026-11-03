@@ -1,19 +1,16 @@
 import { CoreError, type Seq } from '@agnes/core-common/types'
-import type { HarnessEdit, Inbox } from '@agnes/core-ledger/reduce/shapes'
-import type { RefinementRunRecord } from '@agnes/core-ledger/reduce/state'
+import type { HarnessEdit, HarnessEntry, Inbox } from '@agnes/core-ledger/reduce/shapes'
+import type { RefinementPlan, RefinementPlanEdit, RefinementRunRecord } from '@agnes/core-ledger/reduce/state'
 import { createMaintenancePort } from '../maintenance/port.js'
 import { type ApplyProposal, applyRefine, entryKey } from '../refine/apply.js'
 import type { SessionImpl } from '../step/session.js'
+import { applyMetaRows } from './confirmations.js'
 import { readSetCurrent } from './evidence.js'
 import { APPLY_LIMITS, automaticRefusal } from './limits.js'
-import {
-  isExpired,
-  planRefinementRun,
-  type RefinementRunDeps,
-  type RunFacts,
-  refinementRunRow,
-} from './run.js'
+import { planRefinementRun, type RefinementRunDeps, type RunFacts, refinementRunRow } from './run.js'
+import { readTaskScope, sameTask, type TaskScope } from './task-scope.js'
 import type { RefinementPlanner } from './types.js'
+import { entryValidity, isExpired } from './validity.js'
 
 /** The refinement switch as Core reads it: on or off, how automatic triggers are treated, and its revision. */
 export type RefinementSettingsView = { enabled: boolean; mode: 'manual' | 'auto'; revision: string }
@@ -28,6 +25,15 @@ export type RefinementDeps = {
   planner(): RefinementPlanner | undefined
   /** The planner model; absent means the session's current primary model, frozen for each run. */
   target?: { route: string; model: string }
+  /**
+   * The session's current task, read through the task-scope reader the goal plugin provides; null
+   * when it has no goal, undefined (or a throw) when it cannot be read now. Absent means no task
+   * source: no lesson is ever bound to a task.
+   */
+  taskScope?(session: {
+    key: string
+    lane: string
+  }): TaskScope | null | undefined | Promise<TaskScope | null | undefined>
 }
 
 /** Why an apply attempt left the run as it was, or what it did. */
@@ -40,6 +46,7 @@ export type ApplyAttempt =
   | 'turn-open'
   | 'inbox'
   | 'paused'
+  | 'task-unreadable'
 
 /** The switch as it is now; undefined (off) when the session has no refinement or the read fails. */
 export function settingsOf(s: SessionImpl): RefinementSettingsView | undefined {
@@ -191,14 +198,24 @@ const TRIGGER = {
   'repeated-failure': 'auto',
 } as const
 
+/**
+ * The edits of a plan that can still be written: not those recorded as expired, and not a task-level
+ * lesson whose goal has ended since the plan was made.
+ */
+const writable = (plan: RefinementPlan, scope: TaskScope | null) =>
+  plan.edits.filter(
+    (edit) =>
+      !isExpired(edit) &&
+      !(edit.op === 'upsert' && edit.applicability === 'task' && !sameTask(edit.taskScope, scope)),
+  )
+
 /** The proposed plan as the apply step takes it, keyed by the run so a second apply is a replay. */
 function proposalOf(
   run: RefinementRunRecord & { plan: NonNullable<RefinementRunRecord['plan']> },
+  applied: readonly RefinementPlanEdit[],
 ): ApplyProposal {
   const { plan } = run
   const baseline = new Map(plan.baseline.map((b) => [entryKey(b), b.version]))
-  // An expired edit is on the plan only as a record; it is never applied.
-  const applied = plan.edits.filter((edit) => !isExpired(edit))
   const edits = applied.map((edit): HarnessEdit => {
     if (edit.op === 'delete') return { op: 'delete', kind: edit.kind, id: edit.id }
     const { kind, id, title, content } = edit
@@ -215,7 +232,11 @@ function proposalOf(
     trigger: TRIGGER[run.trigger.kind],
     rationale: plan.rationale || plan.summary,
     evidenceSeqs: [...cited].sort((a, b) => a - b),
-    baseline: plan.baseline.map((b) => ({ key: entryKey(b), version: b.version })),
+    baseline: plan.baseline.map((b) => ({
+      key: entryKey(b),
+      version: b.version,
+      ...(b.seq === undefined ? {} : { seq: b.seq }),
+    })),
     edits,
   }
 }
@@ -247,15 +268,54 @@ export function tryApply(s: SessionImpl, runId: string): Promise<ApplyAttempt> {
       await s.append([refinementRunRow(s, runId, 'rejected', { reason: 'read-set-changed' })])
       return 'rejected'
     }
+    const { scope, readable } = await readTaskScope(s)
+    // Whether a task-level lesson still has its goal, or an entry the plan reused unread is still not
+    // in force, cannot be told now: the run waits, and is looked at again after the next turn.
+    if (
+      !readable &&
+      (run.plan.edits.some((e) => e.op === 'upsert' && e.applicability === 'task' && !isExpired(e)) ||
+        (run.plan.lapsed?.length ?? 0) > 0)
+    )
+      return 'task-unreadable'
+    // An entry the plan replaced unread because its task had ended is in force again (its goal came
+    // back): the plan was made against a table that no longer holds.
+    if (run.plan.lapsed?.length) {
+      const expired = new Set(entryValidity(s.state, scope, readable).expired.map((v) => entryKey(v.entry)))
+      if (run.plan.lapsed.some((ref) => !expired.has(entryKey(ref)))) {
+        await s.append([refinementRunRow(s, runId, 'rejected', { reason: 'read-set-changed' })])
+        return 'rejected'
+      }
+    }
+    const applied = writable(run.plan, scope)
+    // Every lesson on the plan belonged to a goal that has ended since, and nothing else would change.
+    if (
+      run.plan.edits.length > 0 &&
+      applied.length === 0 &&
+      !run.plan.confirmations.some((c) => c.confirmedBy)
+    ) {
+      await s.append([refinementRunRow(s, runId, 'rejected', { reason: 'expired', detail: 'task-ended' })])
+      return 'rejected'
+    }
     const ended = (o: { outcome: string; reason?: string }) =>
       o.outcome === 'applied'
         ? refinementRunRow(s, runId, 'applied', {})
         : refinementRunRow(s, runId, 'rejected', { reason: o.reason ?? 'apply', detail: o.outcome })
+    // Validity and confirmations are written after the entry rows, in the same transaction.
+    const meta = applyMetaRows(s, run.plan, applied)
+    // Only entries in force weigh on the safety cap: not an expired task lesson, not one handed off.
+    const validity = entryValidity(s.state, scope, readable)
+    const inForce = new Set([...validity.valid, ...validity.held].map((view) => entryKey(view.entry)))
+    const limits = {
+      ...APPLY_LIMITS,
+      isCounted: (entry: HarnessEntry) =>
+        s.state.registers.harnessEntries.get(entryKey(entry))?.value !== entry ||
+        inForce.has(entryKey(entry)),
+    }
     let result: Awaited<ReturnType<typeof applyRefine>>
     try {
-      result = await applyRefine(s, proposalOf({ ...run, plan: run.plan }), APPLY_LIMITS, {
+      result = await applyRefine(s, proposalOf({ ...run, plan: run.plan }, applied), limits, {
         expectedRegisterSeq: { register: 'op.state', key: s.lane, seq: s.opSeq() },
-        with: (o) => [ended(o)],
+        with: (o) => [ended(o), ...(o.outcome === 'applied' ? meta : [])],
       })
     } catch (error) {
       // Another writer opened a turn on this lane: the apply waits for its end.
@@ -268,13 +328,16 @@ export function tryApply(s: SessionImpl, runId: string): Promise<ApplyAttempt> {
   })
 }
 
-/** Applies every proposed run, oldest first, while nothing stands in the way. */
+/**
+ * Applies every proposed run, oldest first, while nothing stands in the way. A run that waits only for
+ * its task to be readable again is passed over: the runs after it do not depend on it.
+ */
 export async function applyProposed(s: SessionImpl): Promise<void> {
   const proposed = [...s.state.refinementRuns.values()]
     .filter((run) => run.state === 'proposed')
     .sort((a, b) => a.queuedSeq - b.queuedSeq)
   for (const run of proposed) {
     const attempt = await tryApply(s, run.runId)
-    if (attempt !== 'applied' && attempt !== 'rejected' && attempt !== 'not-proposed') return
+    if (!['applied', 'rejected', 'not-proposed', 'task-unreadable'].includes(attempt)) return
   }
 }

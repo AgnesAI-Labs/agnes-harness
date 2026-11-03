@@ -44,7 +44,7 @@ async function unstartedApp(
   ],
   composerSelectionPath?: string,
   themePreferencePath?: string,
-  appOptions: { cwd?: string; remote?: boolean } = {},
+  appOptions: { cwd?: string; remote?: boolean; locale?: 'en' | 'zh-CN' } = {},
 ) {
   const ep = scriptedEndpoint()
     .on('_agnes/v1/session.budget', () => ({
@@ -2042,19 +2042,69 @@ describe('runSlash', () => {
     }
   })
 
-  // Honesty note: `harness/refine` is a raw ledger event type with no projected UINode kind, so
-  // this reports the gap directly rather than silently returning "no proposals" forever by
-  // filtering a UINode kind that can never match.
-  it('/refine reports the real gap instead of a silently-always-empty search', async () => {
-    const { app, ep, client } = await unstartedApp()
-    try {
-      const before = ep.calls.length
-      const r = await runSlash(app, '/refine')
-      expect(r.text).toMatch(/not projected/)
-      expect(ep.calls.length).toBe(before)
-    } finally {
-      await client.close()
+  describe('/refine', () => {
+    const refusing = (reason: string) => () => {
+      throw rpcError('SEMANTIC_REJECTED', { reason })
     }
+
+    it('is refused with one hint when refinement is off or not yet active', async () => {
+      const { app, ep, client } = await unstartedApp()
+      const english = await unstartedApp(undefined, undefined, undefined, { locale: 'en' })
+      try {
+        ep.on('_agnes/v1/session.refine', refusing('refinement-off'))
+        const r = await runSlash(app, '/refine')
+        expect(r.text).toContain('RSI')
+        expect(r.text).toContain('设置')
+        expect(r.text).toContain('重启')
+        expect(ep.calls.some((call) => call.method === '_agnes/v1/session.refine')).toBe(true)
+        for (const reason of ['refinement-off', 'unavailable']) {
+          english.ep.on('_agnes/v1/session.refine', refusing(reason))
+          const en = await runSlash(english.app, '/refine the build')
+          expect(en.text).toBe(
+            'Experience refinement (RSI) is not active. Turn it on in settings; if you just did, restart to apply it.',
+          )
+        }
+      } finally {
+        await client.close()
+        await english.client.close()
+      }
+    })
+
+    it('queues a review with the focus and reports the run', async () => {
+      const { app, ep, client } = await unstartedApp(undefined, undefined, undefined, { locale: 'en' })
+      try {
+        ep.on('_agnes/v1/session.refine', () => ({ runId: 'run-7' }))
+        const r = await runSlash(app, '/refine  the build setup ')
+        expect(r.text).toContain('run-7')
+        const call = ep.calls.find((c) => c.method === '_agnes/v1/session.refine')
+        expect(call?.params).toEqual({ sessionId: app.session.id, focus: 'the build setup' })
+        await runSlash(app, '/refine')
+        const bare = ep.calls.filter((c) => c.method === '_agnes/v1/session.refine').at(-1)
+        expect(bare?.params).toEqual({ sessionId: app.session.id })
+      } finally {
+        await client.close()
+      }
+    })
+
+    it('names other refusals and leaves the workspace form unavailable without a call', async () => {
+      const { app, ep, client } = await unstartedApp(undefined, undefined, undefined, { locale: 'en' })
+      try {
+        ep.on('_agnes/v1/session.refine', refusing('child-session'))
+        expect((await runSlash(app, '/refine')).text).toMatch(/forked or child session/)
+        ep.on('_agnes/v1/session.refine', refusing('some-new-reason'))
+        expect((await runSlash(app, '/refine')).text).toContain('some-new-reason')
+        const before = ep.calls.length
+        expect((await runSlash(app, '/refine --workspace the build')).text).toMatch(
+          /workspace.*not available/,
+        )
+        expect((await runSlash(app, `/refine ${'x'.repeat(513)}`)).text).toMatch(/512/)
+        // 300 emoji are 600 UTF-16 units, which the daemon counts: refused here, with the right reason.
+        expect((await runSlash(app, `/refine ${'😀'.repeat(300)}`)).text).toMatch(/512/)
+        expect(ep.calls.length).toBe(before)
+      } finally {
+        await client.close()
+      }
+    })
   })
 })
 

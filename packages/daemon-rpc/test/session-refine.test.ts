@@ -3,15 +3,20 @@ import { rpcError } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 
 const request = vi.hoisted(() => vi.fn())
+const rollback = vi.hoisted(() => vi.fn())
 vi.mock('@agnes/host', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@agnes/host')>()),
   requestRefinement: request,
+  rollbackRefinement: rollback,
 }))
 const { registerSessionRefine } = await import('../src/local/methods/refinement.js')
 
-function setup(sessions: Record<string, object>) {
-  let handler!: (params: unknown, c: CallContext) => Promise<unknown>
-  const ep = { register: (_name: string, fn: typeof handler) => (handler = fn) }
+type Handler = (params: unknown, c: CallContext) => Promise<unknown>
+const LOCAL = { authKind: 'local', credentialKind: 'local' }
+
+function setup(sessions: Record<string, object>, method = '_agnes/v1/session.refine') {
+  const handlers = new Map<string, Handler>()
+  const ep = { register: (name: string, fn: Handler) => handlers.set(name, fn) }
   const owner = vi.fn((_m: string, id: string) => {
     if (id === 'foreign') throw rpcError('CAPABILITY_DENIED', {})
   })
@@ -20,7 +25,8 @@ function setup(sessions: Record<string, object>) {
     { registry: { get: (id) => (sessions[id] ? ({ session: sessions[id] } as never) : undefined) } },
     owner,
   )
-  const call = (params: unknown) => handler(params, { signal: new AbortController().signal } as CallContext)
+  const call = (params: unknown, conn: object = LOCAL) =>
+    (handlers.get(method) as Handler)(params, { signal: new AbortController().signal, conn } as CallContext)
   return { call, owner }
 }
 
@@ -44,5 +50,38 @@ describe('_agnes/v1/session.refine', () => {
     expect(request).toHaveBeenCalledWith(local, 'tests')
     await expect(call({ sessionId: 'remote' })).resolves.toEqual({ runId: 'from-worker' })
     expect(remote.refine).toHaveBeenCalledWith(undefined)
+  })
+})
+
+describe('_agnes/v1/session.refine.rollback', () => {
+  const method = '_agnes/v1/session.refine.rollback'
+  it('is for the owner on a local connection only, and an unknown session is not found', async () => {
+    const { call, owner } = setup({ foreign: {}, local: {} }, method)
+    for (const conn of [
+      { authKind: 'token', credentialKind: 'local' },
+      { authKind: 'local', credentialKind: 'token' },
+    ])
+      await expect(call({ sessionId: 'local', appliedSeq: 5 }, conn)).rejects.toMatchObject({
+        data: { code: 'CAPABILITY_DENIED' },
+      })
+    await expect(call({ sessionId: 'foreign', appliedSeq: 5 })).rejects.toMatchObject({
+      data: { code: 'CAPABILITY_DENIED' },
+    })
+    await expect(call({ sessionId: 'gone', appliedSeq: 5 })).rejects.toMatchObject({
+      data: { code: 'SESSION_NOT_FOUND' },
+    })
+    expect(owner).toHaveBeenCalledWith('session.refine.rollback', 'gone', expect.anything())
+    expect(rollback).not.toHaveBeenCalled()
+  })
+
+  it('withdraws on the session this process holds, or asks the worker that holds it', async () => {
+    const local = {}
+    const remote = { refineRollback: vi.fn(async () => ({ seq: 70 })) }
+    const { call } = setup({ local, remote }, method)
+    rollback.mockResolvedValueOnce({ seq: 60 })
+    await expect(call({ sessionId: 'local', appliedSeq: 5 })).resolves.toEqual({ seq: 60 })
+    expect(rollback).toHaveBeenCalledWith(local, 5)
+    await expect(call({ sessionId: 'remote', appliedSeq: 9 })).resolves.toEqual({ seq: 70 })
+    expect(remote.refineRollback).toHaveBeenCalledWith(9)
   })
 })

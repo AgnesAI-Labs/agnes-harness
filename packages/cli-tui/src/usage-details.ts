@@ -1,6 +1,7 @@
 import type { UINode, UsageView } from '@agnes/protocol'
 import { formatCredits, formatTokenCount, formatUsdMicros } from './format-usage.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
+import { refinementShare, withoutRefinement } from './refinement-usage.js'
 
 const CACHE_INVALIDATION_CAUSE_KEYS = {
   compaction: 'usage.cacheCause.compaction',
@@ -35,8 +36,22 @@ export function formatCallUsage(node: Extract<UINode, { kind: 'cost' }>): string
     .join('\n')
 }
 
-export function formatUsageReport(usage?: UsageView, locale = 'en'): string {
-  if (!usage) return tt('usage.none', locale)
+/** The refinement lane's own line: what background experience review cost, in whatever it was priced. */
+function refinementRow(total: UsageView, locale: string): string[] {
+  const share = refinementShare(total)
+  if (!share) return []
+  const parts = [
+    ...(share.usdMicros === undefined ? [] : [formatUsdMicros(share.usdMicros)]),
+    ...(share.credits === undefined ? [] : [`${formatCredits(share.credits)} credits`]),
+    tt('usage.rows.rsiTokens', locale, { input: share.input, output: share.output }),
+  ]
+  return [tt('usage.rows.rsi', locale, { value: parts.join(' · ') })]
+}
+
+export function formatUsageReport(total?: UsageView, locale = 'en'): string {
+  if (!total) return tt('usage.none', locale)
+  // The figures are the conversation's own; background refinement is reported on its own line.
+  const usage = withoutRefinement(total)
   const totals = usage.totals
   const reasoning =
     usage.reasoningComplete === true
@@ -73,6 +88,7 @@ export function formatUsageReport(usage?: UsageView, locale = 'en'): string {
     tt('usage.rows.reasoning', locale, { value: reasoning }),
     tt('usage.rows.cost', locale, { value: cost }),
     tt('usage.rows.credits', locale, { value: credits }),
+    ...refinementRow(total, locale),
     tt('usage.rows.contextEstimate', locale, {
       tokens: usage.context.tokens,
       window: usage.context.window,

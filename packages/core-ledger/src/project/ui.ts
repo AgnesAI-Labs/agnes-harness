@@ -57,6 +57,7 @@ import { TurnProjection, turnsForNodes } from './turns.js'
 import { fillInlineNodes, fillInlinePage } from './ui-inline-slots.js'
 import { fillLiveSlots } from './ui-live-slots.js'
 import { noticeNode } from './ui-notices.js'
+import { placeNode, RefinementProjection } from './ui-refinement.js'
 import { applyToolResultEvent } from './ui-tool-results.js'
 import { addLaneShare, laneShares, type UsageTotals } from './usage.js'
 
@@ -234,6 +235,7 @@ export class UIProjectionCell {
   private state: LedgerState = initialState()
   private readonly nodes: UINode[] = []
   private readonly nodeIndexes = new Map<string, number>()
+  private readonly refinement = new RefinementProjection()
   private readonly tools = new Map<string, ToolNode>()
   private readonly approvals = new Map<string, ApprovalNode>()
   private readonly plans = new Map<string, string>()
@@ -574,6 +576,8 @@ export class UIProjectionCell {
         ? this.turnsProjection.apply(event)
         : { changed: new Set<string>(), owner: undefined }
     const changed = this.applyNode(event)
+    for (const node of this.refinement.apply(event, nextState, this.lane))
+      changed.add(placeNode(this.nodes, this.nodeIndexes, node))
     for (const id of this.turnsProjection.associate(event, changed, turnUpdate.owner))
       turnUpdate.changed.add(id)
     this.state = nextState

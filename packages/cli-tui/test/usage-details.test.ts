@@ -1,5 +1,6 @@
 import type { UINode, UsageView } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
+import { withoutRefinement } from '../src/refinement-usage.js'
 import { formatCallUsage, formatContextBreakdown, formatUsageReport } from '../src/usage-details.js'
 
 const baseUsage: UsageView = {
@@ -106,5 +107,95 @@ describe('formatContextBreakdown', () => {
     const text = formatContextBreakdown(nodes, 'zh-CN')
     expect(text).toContain('发现 1 处贡献冲突')
     expect(text).toContain('tools:sdk: code-mode, skills')
+  })
+})
+
+describe('formatUsageReport RSI cost line', () => {
+  const lane = (usdMicros?: number, credits?: number) => ({
+    input: 10_000,
+    output: 200,
+    cacheRead: 0,
+    cacheWrite: 0,
+    reasoning: 0,
+    ...(usdMicros === undefined ? {} : { usdMicros }),
+    ...(credits === undefined ? {} : { credits }),
+  })
+  const withRefinement: UsageView = {
+    ...baseUsage,
+    totals: { input: 10_100, output: 220, cacheRead: 90, cacheWrite: 0, reasoning: 0 },
+    cost: { usdMicros: 52_000, source: 'gateway', subscription: false },
+    credits: { amount: 5.5, source: 'gateway', complete: true },
+    byLane: {
+      main: {
+        input: 100,
+        output: 20,
+        cacheRead: 90,
+        cacheWrite: 0,
+        reasoning: 0,
+        usdMicros: 12_000,
+        credits: 1.5,
+      },
+      refinement: lane(40_000, 4),
+    } as NonNullable<UsageView['byLane']>,
+  }
+
+  it('shows the refinement spend on its own line and keeps it out of the session figures', () => {
+    const text = formatUsageReport(withRefinement, 'en')
+    expect(text).toContain('RSI cost')
+    expect(text).toContain('$0.040 · 4 credits · input 10000 · output 200')
+    expect(text).toContain('Input tokens (excl. cache): 100 · Output tokens (incl. reasoning): 20')
+    expect(text).toContain('Cumulative USD cost: $0.012')
+    expect(text).toContain('Cumulative credits: 1.5 credits')
+    const zh = formatUsageReport(withRefinement, 'zh-CN')
+    expect(zh).toContain('RSI 费用')
+    expect(zh).toContain('输入 Token（不含缓存）：100')
+  })
+
+  it('has no RSI line while refinement has spent nothing, and does not invent a main cost', () => {
+    expect(formatUsageReport(baseUsage, 'en')).not.toContain('RSI')
+    const onlyRefinement: UsageView = {
+      ...baseUsage,
+      totals: { input: 10_000, output: 200, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+      cost: { usdMicros: 40_000, source: 'gateway', subscription: false },
+      byLane: { refinement: lane(40_000) } as NonNullable<UsageView['byLane']>,
+    }
+    const text = formatUsageReport(onlyRefinement, 'en')
+    expect(text).toContain('RSI cost')
+    expect(text).toContain('Cumulative USD cost: not provided')
+  })
+})
+
+describe('withoutRefinement', () => {
+  const usage: UsageView = {
+    ...baseUsage,
+    totals: { input: 10_100, output: 220, cacheRead: 90, cacheWrite: 0, reasoning: 0 },
+    cost: { usdMicros: 52_000, source: 'estimated', subscription: false },
+    billingComplete: false,
+    byLane: {
+      main: { input: 100, output: 20, cacheRead: 90, cacheWrite: 0, reasoning: 0, usdMicros: 12_000 },
+      refinement: {
+        input: 10_000,
+        output: 200,
+        cacheRead: 0,
+        cacheWrite: 0,
+        reasoning: 0,
+        usdMicros: 40_000,
+      },
+    } as NonNullable<UsageView['byLane']>,
+  }
+
+  it('takes the lane out of the figures and out of the breakdown, so a second pass changes nothing', () => {
+    const own = withoutRefinement(usage)
+    expect(own.totals).toMatchObject({ input: 100, output: 20 })
+    expect(own.cost?.usdMicros).toBe(12_000)
+    expect(Object.keys(own.byLane ?? {})).toEqual(['main'])
+    expect(withoutRefinement(own)).toBe(own)
+    expect(usage.byLane).toHaveProperty('refinement')
+  })
+
+  it("keeps the view's quality flags as given: the lanes carry none of their own", () => {
+    const own = withoutRefinement(usage)
+    expect(own.billingComplete).toBe(false)
+    expect(own.cost?.source).toBe('estimated')
   })
 })

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Kernel, RefinementPlanner } from '@agnes/core'
-import { refinementFacade } from '@agnes/core'
+import { ProjectionRegistry, refinementFacade } from '@agnes/core'
 import { actor, fakeProvider, openSession, sent, textTurn, usage } from '@agnes/core/testkit'
 import { RefinementSettingsStore } from '@agnes/host-infrastructure/refinement-settings'
 import type { ModelRecord, Provider } from '@agnes/protocol'
@@ -94,6 +94,120 @@ describe('the host side of refinement', () => {
       }),
     ).not.toThrow()
     await session.close()
+  })
+
+  it("Core reads the session's task through the projection the task plugin offers", async () => {
+    const dataDir = scratch()
+    save(dataDir, { enabled: true, mode: 'auto' })
+    const bridge = createRefinementHost(dataDir, PROFILE)
+    const projections = new ProjectionRegistry()
+    // A stand-in task projection: the last request names the goal, `fail` breaks the fold.
+    projections.register({
+      key: 'agnes/goal/goal',
+      stateVersion: 1,
+      init: () => ({ goal: null as string | null }),
+      apply: (state, event) => {
+        if (event.type !== 'user/message') return state
+        const text = JSON.stringify(event.data)
+        if (text.includes('fail')) throw new Error('broken')
+        const goal = /goal (\w+)/u.exec(text)?.[1]
+        return goal ? { goal } : state
+      },
+    })
+    const { session } = await openSession({
+      provider: fakeProvider([textTurn('done')]),
+      refinement: bridge.kernelOptions.refinement,
+    })
+    bridge.bindKernel({ sessions: new Map([[session.key, session]]), projections } as unknown as Kernel)
+    const say = async (text: string) => {
+      await session.enqueue('next-turn', { content: [{ type: 'text', text }], actor })
+      await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    }
+    const read = () => bridge.kernelOptions.refinement.taskScope?.({ key: session.key, lane: session.lane })
+    await say('goal first')
+    // Nothing offered yet (the plugin is off or reloading): the task cannot be read.
+    expect(await read()).toBeUndefined()
+    const withdraw = bridge.provideTaskScope('agnes/goal', {
+      projection: 'goal',
+      reader: (state) => ({
+        current: () => {
+          const goal = (state as { goal: string | null }).goal
+          return goal ? { id: goal, revision: 1, phase: 'active' as const } : null
+        },
+      }),
+    })
+    expect(await read()).toEqual({ id: 'first', revision: 1, phase: 'active' })
+    // Folded on from where the registry left off: a later row is seen.
+    await say('goal second')
+    expect(await read()).toEqual({ id: 'second', revision: 1, phase: 'active' })
+    expect(
+      await bridge.kernelOptions.refinement.taskScope?.({ key: 'nobody', lane: session.lane }),
+    ).toBeUndefined()
+    // A projection that cannot be folded cannot be read, and the failure is recorded once.
+    await say('fail')
+    expect(await read()).toBeUndefined()
+    expect(await read()).toBeUndefined()
+    const diags = await session.scan({ type: 'x/core/projection-failed', toSeq: session.lastSeq })
+    expect(diags.map((row) => row.data)).toEqual([{ key: 'agnes/goal/goal', asOfSeq: expect.any(Number) }])
+    withdraw()
+    expect(await read()).toBeUndefined()
+    await session.close()
+  })
+})
+
+describe('inspect through the host', () => {
+  it('inspect never returns another session’s entries', async () => {
+    const dataDir = scratch()
+    save(dataDir, { enabled: true, mode: 'manual' })
+    const bridge = createRefinementHost(dataDir, PROFILE)
+    const runs = bridge.connect(planner)
+    const opened = async (key: string) =>
+      (
+        await openSession({
+          provider: fakeProvider([textTurn('done')]),
+          key,
+          refinement: bridge.kernelOptions.refinement,
+          refinementEnabled: bridge.kernelOptions.refinementEnabled,
+        })
+      ).session
+    const a = await opened('a')
+    const b = await opened('b')
+    bridge.bindKernel({
+      sessions: new Map([
+        [a.key, a],
+        [b.key, b],
+      ]),
+    } as unknown as Kernel)
+    await a.enqueue('next-turn', { content: [{ type: 'text', text: 'task' }], actor })
+    await a.run({ until: 'turn-end', signal: new AbortController().signal })
+    const proposal = {
+      rationale: 'r',
+      evidenceSeqs: [1],
+      edits: [
+        { op: 'upsert' as const, kind: 'memory' as const, id: 'm', title: 'A only', content: 'a fact' },
+      ],
+    }
+    expect(await runs.propose({ key: a.key, lane: a.lane }, proposal)).toHaveProperty('runId')
+    const get = { op: 'get' as const, id: 'memory/m' }
+    expect(await runs.inspect({ key: a.key, lane: a.lane }, get)).toMatchObject({
+      op: 'get',
+      entry: { kind: 'memory', id: 'm', content: 'a fact' },
+    })
+    // The same request from the other session reads only that session, which holds nothing.
+    expect(await runs.inspect({ key: b.key, lane: b.lane }, get)).toEqual({
+      refused: 'not-found',
+      detail: 'memory/m',
+    })
+    expect(await runs.inspect({ key: b.key, lane: b.lane }, { op: 'search', query: 'fact' })).toEqual({
+      op: 'search',
+      entries: [],
+      matched: 0,
+    })
+    // A session that is not open here, or another lane, is no session at all.
+    expect(await runs.inspect({ key: 'nobody', lane: a.lane }, get)).toEqual({ refused: 'unavailable' })
+    expect(await runs.inspect({ key: a.key, lane: 'other' }, get)).toEqual({ refused: 'unavailable' })
+    await a.close()
+    await b.close()
   })
 })
 

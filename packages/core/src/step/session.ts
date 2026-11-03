@@ -1266,7 +1266,7 @@ export class SessionImpl {
   transition(
     events: EventInput[] | ((nextSeq: Seq) => EventInput[]),
     next: OpStateObj | null | ((cur: OpStateObj | null, nextSeq: Seq) => OpStateObj | null),
-    opts: { refineCaller?: boolean } = {},
+    opts: { refineCaller?: boolean; commitCheck?: () => void } = {},
   ): Promise<Seq[]> {
     const expected = this.opSeq()
     const step: ChainStep = {
