@@ -172,7 +172,7 @@ describe('run-agh', () => {
     expect(parseAghArgs(['--config', 'c.json', '--out', 'o'])).toMatchObject({
       config: 'c.json',
       out: 'o',
-      reps: 5,
+      reps: 3,
       settings: ['on', 'off'],
     })
     expect(

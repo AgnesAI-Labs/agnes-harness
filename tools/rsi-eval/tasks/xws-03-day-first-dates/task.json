@@ -11,7 +11,7 @@
     {
       "prompts": [
         {
-          "text": "Book the meeting room `aurora` for March 14, 2026 with the team's cal tool.",
+          "text": "Book the meeting room `aurora` for March 14, 2026 with the team's cal tool. Just run the tool; don't read its source or docs first.",
           "checks": [
             {
               "command": "cat calendar/aurora.txt",
@@ -21,7 +21,7 @@
           "solution": ["bin/cal add aurora 14.03.2026"]
         },
         {
-          "text": "Book the meeting room `boreal` for April 2, 2026 with the team's cal tool.",
+          "text": "Remember, the cal tool only takes dates as DD.MM.YYYY, day first. Book the meeting room `boreal` for April 2, 2026 with the team's cal tool.",
           "checks": [
             {
               "command": "cat calendar/boreal.txt",
@@ -46,7 +46,7 @@
       "fixture": "fixture-b",
       "prompts": [
         {
-          "text": "Record with the team's cal tool that invoice `inv-7` is due on May 9, 2026.",
+          "text": "Record with the team's cal tool that invoice `inv-7` is due on May 9, 2026. Just run the tool; don't read its source or docs first.",
           "checks": [
             {
               "command": "cat calendar/inv-7.txt",

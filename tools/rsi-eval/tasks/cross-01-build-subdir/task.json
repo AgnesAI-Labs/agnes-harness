@@ -11,7 +11,7 @@
     {
       "prompts": [
         {
-          "text": "Add a part named `gear` whose content is the single line `teeth=12`, then build it with the project's build script.",
+          "text": "Add a part named `gear` whose content is the single line `teeth=12`, then build it with the project's build script. Just run the tool; don't read its source or docs first.",
           "checks": [
             {
               "command": "cat studio/bundles/gear.pack",
@@ -25,7 +25,7 @@
           "solution": ["printf 'teeth=12\\n' > parts/gear.txt", "cd studio && ./build.sh gear"]
         },
         {
-          "text": "Add a part named `lever` whose content is the single line `length=30`, then build it with the project's build script.",
+          "text": "Remember, studio/build.sh has to be run from inside the studio/ directory. Add a part named `lever` whose content is the single line `length=30`, then build it with the project's build script.",
           "checks": [
             {
               "command": "cat studio/bundles/lever.pack",
@@ -57,7 +57,7 @@
     {
       "prompts": [
         {
-          "text": "Add a part named `valve` whose content is the single line `bore=8`, then build it with the project's build script.",
+          "text": "Add a part named `valve` whose content is the single line `bore=8`, then build it with the project's build script. Just run the tool; don't read its source or docs first.",
           "checks": [
             {
               "command": "cat studio/bundles/valve.pack",

@@ -3,11 +3,11 @@
 //
 // Usage: pnpm exec tsx tools/rsi-eval/report.ts --run-dir <out> --config <run-config.json> [--suite <dir>]
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { runMetrics, toRunRecord, type UsageSummary } from './metrics.js'
 import { type Diff, pairedTaskBootstrap } from './stats.js'
-import type { RunConfig, RunOutcome, RunRecord, Setting, UsageRow } from './types.js'
+import type { EvalTask, RunConfig, RunOutcome, RunRecord, Setting, UsageRow } from './types.js'
 
 export type ReportOptions = { resamples?: number; seed?: number }
 
@@ -39,6 +39,17 @@ const groupBy = <T>(items: T[], key: (item: T) => string): Map<string, T[]> => {
   return groups
 }
 
+/**
+ * How many runs have no value for a metric (the trap never failed in a session that could repeat it) and
+ * how many tasks are left without any value, per arm. Those runs and tasks do not enter the difference.
+ */
+export type Exclusion = { runs: number; tasks: number; of: number }
+const exclusionOf = (perTask: (number | null)[][]): Exclusion => ({
+  runs: perTask.reduce((sum, values) => sum + values.filter((v) => v === null).length, 0),
+  tasks: perTask.filter((values) => values.every((v) => v === null)).length,
+  of: perTask.reduce((sum, values) => sum + values.length, 0),
+})
+
 const bySetting = (records: RunRecord[], setting: Setting): RunRecord[] =>
   records.filter((r) => r.setting === setting)
 
@@ -46,7 +57,7 @@ const DIRECTIONS = {
   repeatErrorDrop:
     'off minus on, in recurrence rate (share of prompts after the first trap hit that hit it again). Positive means refinement lowers repeat errors.',
   crossSessionReuse:
-    'on minus off, in the share of cross-session runs whose second session never hit the trap. Positive means refinement helps the second session. Only cross-session tasks.',
+    'on minus off, in the share of cross-session runs whose first session hit the trap and whose second session never did. Positive means refinement helps the second session. Only cross-session tasks; runs whose first session never hit the trap are excluded.',
   crossWorkspaceReuse:
     'on minus off, in the share of cross-workspace runs whose first session hit the trap and whose second session, in another workspace, never did. Positive means what refinement learned in one workspace helps in another. Only cross-workspace tasks; runs whose first session never hit the trap are excluded.',
   costOverhead:
@@ -146,6 +157,11 @@ const systemReport = (records: RunRecord[], options: ReportOptions) => {
   const tokens = overheadDiff(records, (r) => r.usage.tokens, options)
   const cost = overheadDiff(records, (r) => r.usage.costUsd, options)
 
+  const exclusion = (select: (runs: RunRecord[]) => (number | null)[], from: RunRecord[]) => ({
+    on: exclusionOf([...groupBy(bySetting(from, 'on'), (r) => r.taskId).values()].map(select)),
+    off: exclusionOf([...groupBy(bySetting(from, 'off'), (r) => r.taskId).values()].map(select)),
+  })
+
   const lower = drop.ci95[0]
   const criterion1 = drop.tasks > 0 && drop.estimate > 0 && lower > 0
 
@@ -157,18 +173,21 @@ const systemReport = (records: RunRecord[], options: ReportOptions) => {
       recurrenceOn: definedMean(recurrence(on)),
       recurrenceOff: definedMean(recurrence(off)),
       difference: diffJson(drop),
+      excluded: exclusion(recurrence, records),
     },
     crossSessionReuse: {
       direction: DIRECTIONS.crossSessionReuse,
       avoidedOn: definedMean(avoidedOf(bySetting(cross, 'on'))),
       avoidedOff: definedMean(avoidedOf(bySetting(cross, 'off'))),
       difference: diffJson(reuse),
+      excluded: exclusion(avoidedOf, cross),
     },
     crossWorkspaceReuse: {
       direction: DIRECTIONS.crossWorkspaceReuse,
       avoidedOn: definedMean(avoidedElsewhereOf(bySetting(elsewhere, 'on'))),
       avoidedOff: definedMean(avoidedElsewhereOf(bySetting(elsewhere, 'off'))),
       difference: diffJson(reuseElsewhere),
+      excluded: exclusion(avoidedElsewhereOf, elsewhere),
       autoOnlyRuns: elsewhere.filter((r) => r.setting === 'on' && r.alignment === 'auto-only').length,
     },
     costOverhead: {
@@ -192,6 +211,9 @@ const fmt = (value: number | null, digits = 3): string => (value === null ? 'n/a
 const fmtDiff = (d: DiffJson): string =>
   `${fmt(d.estimate)} (95% CI ${fmt(d.ci95[0])} to ${fmt(d.ci95[1])}; ${d.tasks} tasks; ${d.excludedRuns} runs excluded for an undefined value)`
 
+const fmtExcluded = (e: { on: Exclusion; off: Exclusion }): string =>
+  `Excluded for an undefined value (no real first failure to repeat or avoid): on ${e.on.runs} of ${e.on.of} runs, ${e.on.tasks} tasks left without a value; off ${e.off.runs} of ${e.off.of} runs, ${e.off.tasks} tasks left without a value.`
+
 const systemMarkdown = (name: string, r: SystemReport): string[] => {
   const verdict = !r.criterion1.evaluable
     ? 'NOT EVALUABLE (no paired tasks)'
@@ -209,6 +231,7 @@ const systemMarkdown = (name: string, r: SystemReport): string[] => {
     '',
     `- Recurrence on: ${fmt(r.repeatErrorDrop.recurrenceOn)}; off: ${fmt(r.repeatErrorDrop.recurrenceOff)}`,
     `- Difference (off minus on): ${fmtDiff(r.repeatErrorDrop.difference)}`,
+    `- ${fmtExcluded(r.repeatErrorDrop.excluded)}`,
     '',
     '### 2. Cross-session reuse',
     '',
@@ -216,6 +239,7 @@ const systemMarkdown = (name: string, r: SystemReport): string[] => {
     '',
     `- Avoided on: ${fmt(r.crossSessionReuse.avoidedOn)}; off: ${fmt(r.crossSessionReuse.avoidedOff)}`,
     `- Difference (on minus off): ${fmtDiff(r.crossSessionReuse.difference)}`,
+    `- ${fmtExcluded(r.crossSessionReuse.excluded)}`,
     '',
     '### 2b. Cross-workspace reuse',
     '',
@@ -223,6 +247,7 @@ const systemMarkdown = (name: string, r: SystemReport): string[] => {
     '',
     `- Avoided on: ${fmt(r.crossWorkspaceReuse.avoidedOn)}; off: ${fmt(r.crossWorkspaceReuse.avoidedOff)}`,
     `- Difference (on minus off): ${fmtDiff(r.crossWorkspaceReuse.difference)}`,
+    `- ${fmtExcluded(r.crossWorkspaceReuse.excluded)}`,
     ...(r.crossWorkspaceReuse.autoOnlyRuns > 0
       ? [
           `- Alignment: ${r.crossWorkspaceReuse.autoOnlyRuns} on runs are auto-only: no user-initiated user-level save was sent at the end of the first session (Prime sends /refine --global there), so only automatic promotion could carry anything to the second workspace. This difference is not trigger-aligned with Prime's.`,
@@ -286,9 +311,41 @@ export const buildReport = (
     '',
     'Aggregate numbers only. Each metric states its own direction; they are not all "on minus off".',
     '',
+    "A trap hit is a command run that failed with the task's signature (on stderr, or in the output of a run that exited non-zero). Reading the tool's source or docs never counts.",
+    '',
     ...Object.entries(systems).flatMap(([name, report]) => systemMarkdown(name, report)),
   ].join('\n')
   return { json, markdown: `${markdown}\n` }
+}
+
+/**
+ * Every run folder of `runDir` that has an outcome, as a record with the current metric rules. Reads
+ * only: nothing is written to the folder. A session file path in an outcome that no longer exists (the
+ * folder was moved) is looked up by file name under the run's own `sessions` folder.
+ */
+export const readRunRecords = (
+  runDir: string,
+  tasks: Map<string, EvalTask>,
+  usage: Map<string, UsageSummary> = new Map(),
+): RunRecord[] => {
+  const records: RunRecord[] = []
+  for (const entry of readdirSync(runDir, { withFileTypes: true })) {
+    const file = join(runDir, entry.name, 'outcome.json')
+    if (!entry.isDirectory() || !existsSync(file)) continue
+    const outcome = JSON.parse(readFileSync(file, 'utf8')) as RunOutcome
+    const task = tasks.get(outcome.runId.replace(/\.(on|off)\.r\d+$/, ''))
+    if (!task) throw new Error(`run ${outcome.runId} has no matching task in the suite`)
+    const readFile = (path: string): string => {
+      const candidates = [
+        resolve(runDir, path),
+        resolve(runDir, outcome.runId, path),
+        resolve(runDir, outcome.runId, 'sessions', basename(path)),
+      ]
+      return readFileSync(candidates.find((p) => existsSync(p)) ?? (candidates[0] as string), 'utf8')
+    }
+    records.push(toRunRecord(task, outcome, usage, { readFile, system: outcome.system ?? 'prime' }))
+  }
+  return records
 }
 
 // ---- CLI ----
@@ -326,19 +383,7 @@ const main = async (): Promise<void> => {
     UsageSummary
   >
 
-  const records: RunRecord[] = []
-  for (const entry of readdirSync(runDir, { withFileTypes: true })) {
-    const file = join(runDir, entry.name, 'outcome.json')
-    if (!entry.isDirectory() || !existsSync(file)) continue
-    const outcome = JSON.parse(readFileSync(file, 'utf8')) as RunOutcome
-    const task = tasks.get(outcome.runId.replace(/\.(on|off)\.r\d+$/, ''))
-    if (!task) throw new Error(`run ${outcome.runId} has no matching task in the suite`)
-    const readFile = (path: string): string => {
-      const candidates = [resolve(runDir, path), resolve(runDir, outcome.runId, path)]
-      return readFileSync(candidates.find((p) => existsSync(p)) ?? (candidates[0] as string), 'utf8')
-    }
-    records.push(toRunRecord(task, outcome, usage, { readFile, system: outcome.system ?? 'prime' }))
-  }
+  const records = readRunRecords(runDir, tasks, usage)
 
   const report = buildReport(records)
   writeFileSync(join(runDir, 'report.json'), `${JSON.stringify(report.json, null, 2)}\n`)

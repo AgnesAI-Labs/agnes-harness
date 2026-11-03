@@ -11,7 +11,7 @@
     {
       "prompts": [
         {
-          "text": "Add a page `about` whose text is `We make kites.` and build it with the team's acme tool.",
+          "text": "Add a page `about` whose text is `We make kites.` and build it with the team's acme tool. Just run the tool; don't read its source or docs first.",
           "checks": [
             {
               "command": "cat site/about.html",
@@ -24,7 +24,7 @@
           ]
         },
         {
-          "text": "Add a page `contact` whose text is `Write to hello@kites.test.` and build it with the team's acme tool.",
+          "text": "Remember, the team's acme tool only runs with `ACME_PROFILE=dev` in the environment. Add a page `contact` whose text is `Write to hello@kites.test.` and build it with the team's acme tool.",
           "checks": [
             {
               "command": "cat site/contact.html",
@@ -55,7 +55,7 @@
       "fixture": "fixture-b",
       "prompts": [
         {
-          "text": "Add a job `greet` that prints `hello from greet`, and run it with the team's acme tool so its output is saved.",
+          "text": "Add a job `greet` that prints `hello from greet`, and run it with the team's acme tool so its output is saved. Just run the tool; don't read its source or docs first.",
           "checks": [
             {
               "command": "cat out/greet.txt",
