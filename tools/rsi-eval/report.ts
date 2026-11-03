@@ -47,6 +47,8 @@ const DIRECTIONS = {
     'off minus on, in recurrence rate (share of prompts after the first trap hit that hit it again). Positive means refinement lowers repeat errors.',
   crossSessionReuse:
     'on minus off, in the share of cross-session runs whose second session never hit the trap. Positive means refinement helps the second session. Only cross-session tasks.',
+  crossWorkspaceReuse:
+    'on minus off, in the share of cross-workspace runs whose first session hit the trap and whose second session, in another workspace, never did. Positive means what refinement learned in one workspace helps in another. Only cross-workspace tasks; runs whose first session never hit the trap are excluded.',
   costOverhead:
     '(on minus off) divided by off, per task then averaged. Positive means refinement costs more; 0.25 is 25 percent more.',
 } as const
@@ -123,13 +125,21 @@ const systemReport = (records: RunRecord[], options: ReportOptions) => {
   )
 
   // Metric 2: cross-session tasks only, avoided = 1 and not avoided = 0.
+  const binary = (avoided: boolean | null): number | null => (avoided === null ? null : avoided ? 1 : 0)
   const avoidedOf = (runs: RunRecord[]): (number | null)[] =>
-    runs.map((r) => {
-      const avoided = runMetrics(r).crossSessionAvoided
-      return avoided === null ? null : avoided ? 1 : 0
-    })
+    runs.map((r) => binary(runMetrics(r).crossSessionAvoided))
   const cross = records.filter((r) => r.category === 'cross-session')
   const reuse = pairedTaskBootstrap(perTask(avoidedOf, cross), options.resamples, options.seed)
+
+  // Metric 2, cross-workspace: reported on its own, never pooled with cross-session.
+  const avoidedElsewhereOf = (runs: RunRecord[]): (number | null)[] =>
+    runs.map((r) => binary(runMetrics(r).crossWorkspaceAvoided))
+  const elsewhere = records.filter((r) => r.category === 'cross-workspace')
+  const reuseElsewhere = pairedTaskBootstrap(
+    perTask(avoidedElsewhereOf, elsewhere),
+    options.resamples,
+    options.seed,
+  )
   const definedMean = (values: (number | null)[]): number | null =>
     mean(values.filter((v): v is number => v !== null))
 
@@ -153,6 +163,13 @@ const systemReport = (records: RunRecord[], options: ReportOptions) => {
       avoidedOn: definedMean(avoidedOf(bySetting(cross, 'on'))),
       avoidedOff: definedMean(avoidedOf(bySetting(cross, 'off'))),
       difference: diffJson(reuse),
+    },
+    crossWorkspaceReuse: {
+      direction: DIRECTIONS.crossWorkspaceReuse,
+      avoidedOn: definedMean(avoidedElsewhereOf(bySetting(elsewhere, 'on'))),
+      avoidedOff: definedMean(avoidedElsewhereOf(bySetting(elsewhere, 'off'))),
+      difference: diffJson(reuseElsewhere),
+      autoOnlyRuns: elsewhere.filter((r) => r.setting === 'on' && r.alignment === 'auto-only').length,
     },
     costOverhead: {
       direction: DIRECTIONS.costOverhead,
@@ -199,6 +216,18 @@ const systemMarkdown = (name: string, r: SystemReport): string[] => {
     '',
     `- Avoided on: ${fmt(r.crossSessionReuse.avoidedOn)}; off: ${fmt(r.crossSessionReuse.avoidedOff)}`,
     `- Difference (on minus off): ${fmtDiff(r.crossSessionReuse.difference)}`,
+    '',
+    '### 2b. Cross-workspace reuse',
+    '',
+    `Direction: ${r.crossWorkspaceReuse.direction}`,
+    '',
+    `- Avoided on: ${fmt(r.crossWorkspaceReuse.avoidedOn)}; off: ${fmt(r.crossWorkspaceReuse.avoidedOff)}`,
+    `- Difference (on minus off): ${fmtDiff(r.crossWorkspaceReuse.difference)}`,
+    ...(r.crossWorkspaceReuse.autoOnlyRuns > 0
+      ? [
+          `- Alignment: ${r.crossWorkspaceReuse.autoOnlyRuns} on runs are auto-only: no user-initiated user-level save was sent at the end of the first session (Prime sends /refine --global there), so only automatic promotion could carry anything to the second workspace. This difference is not trigger-aligned with Prime's.`,
+        ]
+      : []),
     '',
     '### 3. Cost overhead',
     '',

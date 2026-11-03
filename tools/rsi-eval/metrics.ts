@@ -280,10 +280,21 @@ export const toRunRecord = (
       tokens,
       costUsd: summary?.costUsd ?? 0,
     },
+    ...(outcome.alignment ? { alignment: outcome.alignment } : {}),
   }
 }
 
-export type Metrics = { recurrence: number | null; crossSessionAvoided: boolean | null; completion: number }
+export type Metrics = {
+  recurrence: number | null
+  crossSessionAvoided: boolean | null
+  /**
+   * Cross-workspace tasks only: the first session hit the trap (there was something to learn) and the
+   * second session, in another workspace, ran and never hit it. Undefined when the first session never
+   * hit the trap.
+   */
+  crossWorkspaceAvoided: boolean | null
+  completion: number
+}
 
 export const runMetrics = (record: RunRecord): Metrics => {
   const sessions = new Map<number, PromptWindow[]>()
@@ -303,13 +314,15 @@ export const runMetrics = (record: RunRecord): Metrics => {
   }
   const recurrence = rates.length === 0 ? null : rates.reduce((sum, r) => sum + r, 0) / rates.length
 
-  let crossSessionAvoided: boolean | null = null
-  if (record.category === 'cross-session') {
+  const secondClean = (): boolean => {
     const ran = (sessions.get(1) ?? []).filter((w) => w.ran)
-    crossSessionAvoided = ran.length > 0 && ran.every((w) => !w.trapHit)
+    return ran.length > 0 && ran.every((w) => !w.trapHit)
   }
+  const crossSessionAvoided = record.category === 'cross-session' ? secondClean() : null
+  const learned = (sessions.get(0) ?? []).some((w) => w.ran && w.trapHit)
+  const crossWorkspaceAvoided = record.category === 'cross-workspace' && learned ? secondClean() : null
 
   const passed = record.windows.filter((w) => w.ran && w.checksPassed === true).length
   const completion = record.windows.length === 0 ? 0 : passed / record.windows.length
-  return { recurrence, crossSessionAvoided, completion }
+  return { recurrence, crossSessionAvoided, crossWorkspaceAvoided, completion }
 }

@@ -281,6 +281,20 @@ describe('runMetrics', () => {
     ).toBe(false)
     expect(avoided(s1)).toBe(false)
     expect(avoided([...s1, win(1, 0), win(1, 1), win(1, 2)], 'directory')).toBeNull()
+    expect(avoided([...s1, win(1, 0), win(1, 1), win(1, 2)], 'cross-workspace')).toBeNull()
+  })
+
+  it('crossWorkspaceAvoided needs a first-session hit to learn from, then a clean second session', () => {
+    const avoided = (windows: PromptWindow[], category: RunRecord['category'] = 'cross-workspace') =>
+      runMetrics(record({ category, windows })).crossWorkspaceAvoided
+    const s1 = [win(0, 0, { trapHit: true }), win(0, 1), win(0, 2)]
+    const clean = [win(1, 0), win(1, 1), win(1, 2)]
+    expect(avoided([...s1, ...clean])).toBe(true)
+    expect(avoided([...s1, win(1, 0, { trapHit: true }), win(1, 1), win(1, 2)])).toBe(false)
+    expect(avoided([...s1, win(1, 0, { ran: false }), win(1, 1, { ran: false })])).toBe(false)
+    // Nothing was learned in the first workspace: the run says nothing about reuse.
+    expect(avoided([win(0, 0), win(0, 1), win(0, 2), ...clean])).toBeNull()
+    expect(avoided([...s1, ...clean], 'cross-session')).toBeNull()
   })
 })
 
@@ -329,6 +343,14 @@ describe('toRunRecord', () => {
     // no check result for a prompt that ran -> unknown, not passed
     expect(rec.windows[1]?.checksPassed).toBeNull()
     expect(rec.windows[4]).toMatchObject({ session: 1, prompt: 1, ran: false, checksPassed: null })
+  })
+
+  it('carries the alignment a runner wrote', () => {
+    const read = { readFile: (p: string) => files[p] as string }
+    expect(toRunRecord(crossTask, outcome({ alignment: 'auto-only' }), usage, read).alignment).toBe(
+      'auto-only',
+    )
+    expect(toRunRecord(crossTask, outcome(), usage, read)).not.toHaveProperty('alignment')
   })
 
   it('maps timeouts and clean exits', () => {
@@ -447,5 +469,55 @@ describe('buildReport', () => {
     expect(prime.crossSessionReuse.difference.tasks).toBe(1)
     expect(prime.settings.on.usage.unknownRequests).toBe(2)
     expect(markdown).toContain('unknown usage')
+  })
+
+  it('report lists cross-workspace separately and marks auto-only alignment', () => {
+    const reuse = (
+      taskId: string,
+      category: RunRecord['category'],
+      setting: RunRecord['setting'],
+      avoided: boolean,
+      over: Partial<RunRecord> = {},
+    ) =>
+      record({
+        taskId,
+        category,
+        setting,
+        windows: [
+          win(0, 0, { trapHit: true }),
+          win(0, 1),
+          win(1, 0, { trapHit: !avoided }),
+          win(1, 1, { trapHit: !avoided }),
+        ],
+        ...over,
+      })
+    const records = [
+      reuse('c1', 'cross-session', 'on', false),
+      reuse('c1', 'cross-session', 'off', false),
+      reuse('w1', 'cross-workspace', 'on', true),
+      reuse('w1', 'cross-workspace', 'off', false),
+      reuse('w2', 'cross-workspace', 'on', true),
+      reuse('w2', 'cross-workspace', 'off', true),
+    ]
+    const prime = primeOf(buildReport(records, { resamples: 200 }).json)
+    expect(prime.crossSessionReuse.difference).toMatchObject({ estimate: 0, tasks: 1 })
+    expect(prime.crossWorkspaceReuse).toMatchObject({
+      avoidedOn: 1,
+      avoidedOff: 0.5,
+      difference: { estimate: 0.5, tasks: 2 },
+      autoOnlyRuns: 0,
+    })
+    const plain = buildReport(records, { resamples: 200 }).markdown
+    expect(plain).toContain('Cross-workspace reuse')
+    expect(plain).not.toContain('auto-only')
+
+    const agh = records.map((r) =>
+      r.category === 'cross-workspace' && r.setting === 'on'
+        ? { ...r, system: 'agh' as const, alignment: 'auto-only' as const }
+        : { ...r, system: 'agh' as const },
+    )
+    const { json, markdown } = buildReport(agh, { resamples: 200 })
+    expect(JSON.parse(JSON.stringify(json)).systems.agh.crossWorkspaceReuse.autoOnlyRuns).toBe(2)
+    expect(markdown).toMatch(/2 on runs are auto-only/)
   })
 })
