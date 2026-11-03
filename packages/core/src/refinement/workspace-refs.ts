@@ -19,7 +19,7 @@ import { boundMeta, type Confirmation, confirmationOf, type EvidenceFact, readFa
  * A memory paragraph or a skill that refinement saved to the workspace outlives the session it came
  * from; it stays in force until its review date. A later plan in any session of the workspace is shown
  * such entries as references it may only confirm: it can never rewrite or delete them. A confirmation
- * follows the same structural rules as one of a session entry: a verbatim quote of a cited request of
+ * follows the same structural rules as a confirmation of a session entry: a verbatim quote of a cited request of
  * the user's own (checked against the masked text the planner was shown), or a failed and then
  * successful result of the same tool on the same target, each counted once per entry (whatever its
  * content version) by the identity of the original evidence. Evidence the entry was saved on never counts again, and a tool

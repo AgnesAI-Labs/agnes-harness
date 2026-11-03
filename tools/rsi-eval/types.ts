@@ -49,7 +49,10 @@ export type RunOutcome = {
   system?: RunRecord['system']
   sessions: { exitCode: number | null; timedOut: boolean; stdoutFile: string; sessionFiles: string[] }[]
   checks: { session: number; prompt: number; passed: boolean }[]
-  /** Set by a runner that could not send the save its counterpart sends at the end of session 1. */
+  /**
+   * Set by a runner that could not send the save its counterpart sends at the end of session 1. The AGH
+   * runner now sends one (`/refine --user`), so only results recorded before that carry it.
+   */
   alignment?: Alignment
   /** Workflow tasks: why the host refused the workspace save sent at the end of session 1. */
   saveRefused?: string
@@ -58,7 +61,8 @@ export type RunOutcome = {
 /**
  * `auto-only`: the run had no user-initiated user-level save at the end of the first session of a
  * cross-workspace task (Prime sends `/refine --global` there), so anything carried to the second
- * workspace came from automatic promotion alone.
+ * workspace came from automatic promotion alone. Kept to read results recorded before the AGH runner
+ * sent `/refine --user` there.
  */
 export type Alignment = 'auto-only'
 

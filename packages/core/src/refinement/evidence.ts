@@ -7,9 +7,11 @@ import type { SessionImpl } from '../step/session.js'
 import { redactArgs, redactClipped } from './redact.js'
 import type { EvidenceItem, EvidenceSnapshot, EvidenceTaskScope, RefinementTrigger } from './types.js'
 
-/** Facts one snapshot keeps at most; past it the oldest go, but never the task's first request. */
-export const MAX_EVIDENCE_ITEMS = 120
-const MAX_CHARS = { user: 4000, tool: 2000, summary: 4000, args: 500 } as const
+/** Facts one snapshot keeps at most; past it the oldest go, but never the triggering task's own request. */
+export const MAX_EVIDENCE_ITEMS = 240
+/** How many of the session's latest turns a review reads: the triggering turn and those before it. */
+export const EVIDENCE_TURNS = 5
+const MAX_CHARS = { user: 4000, tool: 2000, summary: 4000, assistant: 2000, args: 500 } as const
 /** Ended turns an idle request looks back through for one with a user request in it. */
 const LOOKBACK_TURNS = 20
 
@@ -32,6 +34,17 @@ function textOf(content: unknown): string {
     .join('\n')
 }
 
+/** Only the words of a content array: a reply that holds nothing but thinking or calls has none. */
+function wordsOf(content: unknown): string {
+  if (!Array.isArray(content)) return ''
+  return content
+    .map((block: { type?: unknown; text?: unknown } | null) =>
+      block?.type === 'text' && typeof block.text === 'string' ? block.text : '',
+    )
+    .filter((text) => text.length > 0)
+    .join('\n')
+}
+
 function argsOf(args: unknown): string {
   try {
     // Strings are redacted one by one before they are serialised, then the whole once more, so a
@@ -42,15 +55,23 @@ function argsOf(args: unknown): string {
   }
 }
 
-const isRequest = (row: Event) =>
-  row.type === 'user/message' && (row.data as { kind?: unknown } | null)?.kind !== 'runtime_context'
+/**
+ * A user row that is a request or external content, not a note Core wrote: not the runtime notes it adds,
+ * and not the notices it synthesizes (a child's completion carries the `system` payload it was made from).
+ */
+const isRequest = (row: Event) => {
+  if (row.type !== 'user/message') return false
+  const d = row.data as { kind?: unknown; system?: unknown } | null
+  return d?.kind !== 'runtime_context' && d?.system === undefined
+}
 
 /**
  * The settled facts in `rows`, in ledger order, numbered `e1`, `e2`, ...: user requests (not the
- * runtime notes Core adds), tool results with the call they answer, and compaction summaries. A
- * call with no result yet is not a fact, and neither is the model's own running text. Every text is
- * redacted of credentials and harness framing. Tool output and summaries are untrusted data whatever
- * wrote the row: a builtin tool reading a file does not make the file's words trusted.
+ * runtime notes Core adds), tool results with the call they answer, the model's own replies and
+ * compaction summaries. A call with no result yet is not a fact. Every text is redacted of credentials
+ * and harness framing. Tool output and summaries are untrusted data whatever
+ * wrote the row: a builtin tool reading a file does not make the file's words trusted, and the model's
+ * own words are only what it said, never what the user asked.
  */
 export function evidenceItemsOf(rows: readonly Event[]): EvidenceItem[] {
   const calls = new Map<string, { name: string; args: unknown }>()
@@ -84,17 +105,13 @@ export function evidenceItemsOf(rows: readonly Event[]): EvidenceItem[] {
         ...(typeof d.code === 'string' ? { code: d.code } : {}),
         text: shown(textOf(d.content), MAX_CHARS.tool),
       })
-    } else if (
-      row.type === 'assistant/message' &&
-      typeof row.surfaceOp === 'object' &&
-      row.surfaceOp.op === 'replace'
-    )
-      items.push({
-        ...at,
-        kind: 'summary',
-        trust: 'untrusted',
-        text: shown(textOf(d.content), MAX_CHARS.summary),
-      })
+    } else if (row.type === 'assistant/message') {
+      const replaces = typeof row.surfaceOp === 'object' && row.surfaceOp.op === 'replace'
+      // A reply with no words of its own (thinking only, or calls only) is not something the model said.
+      const text = shown(wordsOf(d.content), replaces ? MAX_CHARS.summary : MAX_CHARS.assistant)
+      if (text.trim().length === 0) continue
+      items.push({ ...at, kind: replaces ? 'summary' : 'assistant', trust: 'untrusted', text })
+    }
   }
   return items.map((item, index) => ({ id: `e${index + 1}`, ...item }))
 }
@@ -134,6 +151,20 @@ export function readSetCurrent(
 ): boolean {
   if (settingsRevision !== undefined && settingsRevision !== readSet.settingsRevision) return false
   return canonicalJson(readSetOf(s, readSet.settingsRevision).entries) === canonicalJson(readSet.entries)
+}
+
+/**
+ * The `kind/id` of every entry whose state differs from what a run was planned on: written, removed,
+ * added or brought back since. A plan keeps the edits on the others.
+ */
+export function changedEntries(s: SessionImpl, readSet: RefinementReadSet): Set<string> {
+  const key = (e: RefinementReadSet['entries'][number]) => `${e.kind}/${e.id}`
+  const was = new Map(readSet.entries.map((e) => [key(e), canonicalJson(e)]))
+  const now = new Map(readSetOf(s, readSet.settingsRevision).entries.map((e) => [key(e), canonicalJson(e)]))
+  const changed = new Set<string>()
+  for (const [k, v] of was) if (now.get(k) !== v) changed.add(k)
+  for (const [k, v] of now) if (was.get(k) !== v) changed.add(k)
+  return changed
 }
 
 type Task = { turn: number; fromSeq: Seq; startSeq: Seq; endSeq?: Seq }
@@ -201,12 +232,42 @@ async function taskOf(s: SessionImpl, trigger: RefinementTrigger) {
   return undefined
 }
 
-/** Keeps the task's first request and the newest facts, within the snapshot bound. */
-function bounded(items: EvidenceItem[]): { kept: EvidenceItem[]; omitted: number } {
+/**
+ * The rows of the turns before `task`, up to `EVIDENCE_TURNS - 1` of them, oldest first: a pattern that
+ * repeats over several turns is only visible with more than the turn that triggered the review. Two
+ * reads: the ends of the turns before it, then every row between the end that precedes the oldest of
+ * them and the end of the newest.
+ */
+async function earlierRows(s: SessionImpl, task: Task): Promise<Event[]> {
+  const ends = await s.scan({
+    type: 'turn/end',
+    lane: s.lane,
+    toSeq: task.fromSeq - 1,
+    order: 'desc',
+    limit: EVIDENCE_TURNS,
+  })
+  const newest = ends[0]
+  if (!newest) return []
+  // A full set of ends leaves the oldest as the floor: its turn is the one before the turns read.
+  const floor = ends.length >= EVIDENCE_TURNS ? (ends[EVIDENCE_TURNS - 1] as Event).seq : 0
+  return scanAll((q) => s.scan(q), {
+    type: EVIDENCE_TYPES,
+    lane: s.lane,
+    fromSeq: floor + 1,
+    toSeq: newest.seq,
+  })
+}
+
+/**
+ * Keeps the newest facts within the snapshot bound, and, past it, the request of the triggering task
+ * (the first user request from `taskFrom` on) in place of the oldest fact: that request is what the
+ * review is about, however much came after it.
+ */
+export function bounded(items: EvidenceItem[], taskFrom: Seq = 0): { kept: EvidenceItem[]; omitted: number } {
   if (items.length <= MAX_EVIDENCE_ITEMS) return { kept: items, omitted: 0 }
-  const first = items.find((item) => item.kind === 'user')
-  const tail = items.slice(items.length - (MAX_EVIDENCE_ITEMS - (first ? 1 : 0)))
-  const kept = first && !tail.includes(first) ? [first, ...tail] : tail
+  const request = items.find((item) => item.kind === 'user' && item.seq >= taskFrom)
+  const tail = items.slice(items.length - (MAX_EVIDENCE_ITEMS - (request ? 1 : 0)))
+  const kept = request && !tail.includes(request) ? [request, ...tail] : tail
   return { kept, omitted: items.length - kept.length }
 }
 
@@ -222,6 +283,7 @@ export async function freezeEvidence(
   opts: { settingsRevision: string },
 ): Promise<EvidenceSnapshot> {
   const found = await taskOf(s, trigger)
+  const rows = found ? [...(await earlierRows(s, found.task)), ...found.rows] : []
   // Read after the last await, so the entries the planner is then shown are the ones it records.
   const readSet = readSetOf(s, opts.settingsRevision)
   const turn = found?.task
@@ -231,7 +293,7 @@ export async function freezeEvidence(
     startSeq: turn?.fromSeq ?? 0,
     ...(turn?.endSeq === undefined ? {} : { endSeq: turn.endSeq }),
   }
-  const { kept, omitted } = bounded(found ? evidenceItemsOf(found.rows) : [])
+  const { kept, omitted } = bounded(evidenceItemsOf(rows), found?.task.fromSeq)
   const items = kept.map((item, index) => ({ ...item, id: `e${index + 1}` }))
   return {
     trigger,

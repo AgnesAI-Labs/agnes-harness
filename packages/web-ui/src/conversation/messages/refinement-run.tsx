@@ -58,7 +58,8 @@ function changes(node: RefinementRun, t: Translate): string {
  * One background experience review as a line in the conversation: what asked for it, how it stands
  * or ended and why, which saved entries it changed, and whether that was withdrawn since. An applied
  * run not yet withdrawn offers to withdraw it when the host can, and says how that ended; it also
- * offers to save each memory, prompt or skill entry it kept to the workspace, as the user's own save.
+ * offers to save each memory, prompt or skill entry it kept to the workspace, and each memory or prompt
+ * entry to user memory, as the user's own save.
  */
 export function RefinementRunNote({
   node,
@@ -146,11 +147,11 @@ function SaveEntry(props: {
   const { kind, id, save, t } = props
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<string>()
-  const onSave = async () => {
+  const onSave = async (target?: 'user') => {
     if (busy) return
     setBusy(true)
     try {
-      setResult(saveOutcomeText(await save(kind, id), t))
+      setResult(saveOutcomeText(await (target ? save(kind, id, target) : save(kind, id)), t))
     } catch (error) {
       setResult(
         saveOutcomeText(
@@ -174,6 +175,18 @@ function SaveEntry(props: {
       >
         {t('timeline.refinementSave.entry', { name: `${kind}/${id}` })}
       </Button>
+      {kind !== 'skill' && (
+        <Button
+          htmlType="button"
+          appearance="ghost"
+          size="small"
+          loading={busy}
+          data-testid="refinement-save-entry-user"
+          onClick={() => void onSave('user')}
+        >
+          {t('timeline.refinementSave.entryUser', { name: `${kind}/${id}` })}
+        </Button>
+      )}
       {result && (
         <div className="node-body" role="status" data-testid="refinement-save-result">
           {result}

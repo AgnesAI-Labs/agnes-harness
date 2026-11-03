@@ -61,7 +61,7 @@ type Call =
   | { op: 'launch'; input: LaunchInput }
   | { op: 'open'; key: string; workspace: string }
   | { op: 'prompt'; key: string; text: string }
-  | { op: 'review'; key: string; saveTo?: 'workspace' }
+  | { op: 'review'; key: string; saveTo?: 'workspace' | 'user' }
   | { op: 'settled'; key: string; runId: string; ms: number }
   | { op: 'close-session'; key: string }
   | { op: 'close-host' }
@@ -298,7 +298,7 @@ describe('run-agh', () => {
     expect(EVAL_MEMORY).toEqual({ mode: 'auto', userEnabled: true })
   })
 
-  it('marks an on cross-workspace run auto-only and sends nothing extra at the end of session 1', async () => {
+  it('ends session 1 of an on cross-workspace task with the user save, as Prime ends it with --global', async () => {
     const t = task('cross-workspace', [
       ['a', 'b', 'c'],
       ['d', 'e', 'f'],
@@ -306,11 +306,28 @@ describe('run-agh', () => {
     mkdirSync(join(dir, 'fixture-b'))
     t.sessions[1] = { ...(t.sessions[1] as EvalTask['sessions'][number]), fixture: 'fixture-b' }
     const on: Call[] = []
-    expect((await run(t, 'on', on)).alignment).toBe('auto-only')
-    expect(on.filter((c) => c.op === 'review')).toHaveLength(6)
-    expect((await run(t, 'off', [])).alignment).toBeUndefined()
-    const cross = task('cross-session', [['a'], ['b']])
-    expect((await run(cross, 'on', [], {}, 2)).alignment).toBeUndefined()
+    expect(await run(t, 'on', on)).not.toHaveProperty('alignment')
+    // One review after every prompt as before; only the last of the first session saves to user memory.
+    expect(on.filter((c) => c.op === 'review').map((c) => ('saveTo' in c ? c.saveTo : undefined))).toEqual([
+      undefined,
+      undefined,
+      'user',
+      undefined,
+      undefined,
+      undefined,
+    ])
+    const off: Call[] = []
+    expect(await run(t, 'off', off)).not.toHaveProperty('alignment')
+    expect(off.filter((c) => c.op === 'review')).toHaveLength(0)
+    // Tasks that are not cross-workspace never save to user memory.
+    for (const category of ['cross-session', 'directory'] as const) {
+      const calls: Call[] = []
+      await run(task(category, [['a'], ['b']]), 'on', calls, {}, category === 'cross-session' ? 2 : 1)
+      expect(
+        calls.some((c) => c.op === 'review' && c.saveTo === 'user'),
+        category,
+      ).toBe(false)
+    }
   })
 
   it('ends the first session of an on workflow run with the save to the workspace, in place of the last review', async () => {

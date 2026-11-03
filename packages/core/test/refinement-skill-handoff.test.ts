@@ -6,16 +6,7 @@ import type { RefinementWorkspacePort, WorkspaceSaveRequest } from '../src/refin
 import { saveToWorkspace } from '../src/refinement/workspace.js'
 import { experienceNotes } from '../src/request/experience.js'
 import { textTurn, toolTurn } from './helpers/fake-provider.js'
-import {
-  type Answer,
-  ids,
-  open,
-  output,
-  QUOTE,
-  REQUEST,
-  type Seen,
-  upsert,
-} from './helpers/refinement-session.js'
+import { type Answer, open, output, QUOTE, REQUEST, upsert } from './helpers/refinement-session.js'
 import { ofType } from './helpers/side-call-session.js'
 
 const NAME = 'read-b'
@@ -61,17 +52,6 @@ function host(answer: (request: WorkspaceSaveRequest) => Partial<SaveReceipt> = 
 const pair = () => [toolTurn('read', { path: 'b' }), toolTurn('read', { path: 'b' }), textTurn('ok')]
 const grant = () =>
   output({ edits: [upsert(NAME, { kind: 'skill', quote: QUOTE, title: 'Read b' })], evidenceIds: ['e1'] })
-const byTools = (seen: Seen) =>
-  output({
-    confirmations: [{ entryId: `skill/${NAME}`, evidenceIds: ids(seen, (e) => e.kind === 'tool') }],
-    evidenceIds: ids(seen, (e) => e.kind === 'tool'),
-  })
-const byQuote = () =>
-  output({
-    confirmations: [{ entryId: `skill/${NAME}`, evidenceIds: ['e1'], quote: 'read b again' }],
-    evidenceIds: ['e1'],
-  })
-
 /** A session-level skill entry, confirmed by `answers`, in auto mode. */
 async function confirmable(answers: Answer[], workspace: RefinementWorkspacePort) {
   const t = await open({
@@ -98,15 +78,13 @@ const catalogChanges = async (t: Awaited<ReturnType<typeof open>>) =>
   )
 
 describe('skills installed into the workspace hand off their session entries', () => {
-  it('a skill confirmed twice is installed and its entry hands off once', async () => {
+  it('a skill a review wrote is installed at its first apply and its entry hands off once', async () => {
     const h = host()
-    const t = await confirmable([byTools, byQuote], h.workspace)
-    expect(await t.refine()).toMatchObject({ state: 'applied' })
-    expect(await t.refine()).toMatchObject({ state: 'applied' })
+    const t = await confirmable([], h.workspace)
     await vi.waitFor(() => expect(h.asked).toHaveLength(1))
     expect(h.asked[0]).toMatchObject({
       initiator: 'auto',
-      confirmations: 2,
+      confirmations: 1,
       entry: { kind: 'skill', id: NAME },
     })
     await vi.waitFor(() => expect(skillMeta(t)?.handedOff).toBe(true))
@@ -131,6 +109,7 @@ describe('skills installed into the workspace hand off their session entries', (
       scripts: [textTurn('ok'), textTurn('ok'), textTurn('ok'), textTurn('ok')],
       answers: [grant],
       workspace: h.workspace,
+      sw: { enabled: true, mode: 'manual', revision: 'r1' },
     })
     expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
     expect(await t.refine()).toMatchObject({ state: 'applied' })
@@ -167,7 +146,11 @@ describe('skills installed into the workspace hand off their session entries', (
         return h.workspace.save(request)
       },
     }
-    const t = await open({ answers: [grant], workspace })
+    const t = await open({
+      answers: [grant],
+      workspace,
+      sw: { enabled: true, mode: 'manual', revision: 'r1' },
+    })
     expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
     expect(await t.refine()).toMatchObject({ state: 'applied' })
     await saveToWorkspace(t.session, { initiator: 'model', kind: 'skill', id: NAME })

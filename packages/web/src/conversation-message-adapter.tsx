@@ -240,6 +240,7 @@ type WebConversationMessagesProps = {
     sessionId: string,
     kind: 'memory' | 'prompt' | 'skill',
     id: string,
+    target?: 'user',
   ) => Promise<import('@agnes/web-ui/conversation').RefinementSaveOutcome>
   /** Compatibility selector; both values now use the same React-owned Markdown. */
   markdownRenderer?: 'legacy' | 'xmarkdown'
@@ -347,7 +348,7 @@ function ScopedConversationMessages({
   const saveRefinementEntry = useMemo<RefinementSaveEntry | undefined>(
     () =>
       onSaveRefinementEntry && sessionScope
-        ? (kind, id) => onSaveRefinementEntry(sessionScope, kind, id)
+        ? (kind, id, target) => onSaveRefinementEntry(sessionScope, kind, id, target)
         : undefined,
     [onSaveRefinementEntry, sessionScope],
   )

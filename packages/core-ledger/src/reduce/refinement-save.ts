@@ -4,8 +4,15 @@ import type { RefinementEntryKind } from './refinement-run.js'
 /** The Core row that records one save of task experience into the workspace: its receipt, never text. */
 export const REFINEMENT_SAVE_EVENT = 'x/core/refinement-save'
 
-/** How many separate confirmations an automatic save needs. */
-export const PROMOTION_CONFIRMATIONS = 2
+/**
+ * How many times a lesson must have been seen to hold before an automatic save. The review that wrote
+ * it is the first, so one is met by the first apply: a session-level lesson that passes the remaining
+ * checks is saved at once. Later confirmations count on top (`timesSeen`).
+ */
+export const PROMOTION_CONFIRMATIONS = 1
+
+/** Times a lesson has been seen to hold: the review that wrote it, and each confirmation after it. */
+export const timesSeen = (confirmationCount: number): number => confirmationCount + 1
 
 /** Who asked to save refined task experience into the workspace. */
 export type SaveInitiator = 'auto' | 'user' | 'model'

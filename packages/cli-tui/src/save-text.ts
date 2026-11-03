@@ -11,7 +11,7 @@ const STATE: Record<SaveNode['state'], string> = {
 }
 
 const INITIATOR: Record<NonNullable<SaveNode['initiator']>, string> = {
-  auto: 'automatic, after two confirmations',
+  auto: 'automatic',
   user: 'you',
   model: 'the model',
 }
@@ -19,7 +19,7 @@ const INITIATOR: Record<NonNullable<SaveNode['initiator']>, string> = {
 const REASON: Record<string, string> = {
   'refinement-off': 'task experience is off',
   'user-revoked': 'you removed or withdrew this before; only your own save brings it back',
-  unconfirmed: 'it has not been confirmed twice yet',
+  unconfirmed: 'it has not been seen to hold yet',
   'source-rules': "only session-level entries backed by this session's own evidence are saved",
   'static-check': 'it did not pass the content checks (for example, it looks like a secret)',
   'memory-off': 'workspace memory is off',
@@ -34,7 +34,7 @@ const REASON: Record<string, string> = {
   'approval-expired': 'the approval request was not answered within 7 days',
   'user-memory-budget':
     'user memory has no room for it (about 512 bytes, your own text first); nothing was changed or trimmed',
-  'model-cannot-write-user': 'the model can never write user memory',
+  'model-cannot-write-user': 'an earlier version did not let the model write user memory',
 }
 
 /** A promotion to user memory: what it reaches, and how it ended. */
@@ -49,9 +49,21 @@ const USER_STATE: Partial<Record<SaveNode['state'], string>> = {
  * and for user memory where to withdraw it. Never its text.
  */
 export function saveText(node: SaveNode): string {
-  const reason = node.reason === undefined ? undefined : (REASON[node.reason] ?? node.reason)
-  const user = node.target === 'user-memory' ? USER_STATE[node.state] : undefined
-  const by = node.initiator ? ` (asked by: ${INITIATOR[node.initiator]})` : ''
+  const reason =
+    node.reason === undefined
+      ? undefined
+      : node.reason === 'user-revoked' && node.target === 'user-memory'
+        ? 'this was withdrawn before; it is not saved again'
+        : (REASON[node.reason] ?? node.reason)
+  const toUser = node.target === 'user-memory'
+  // Saved because a person asked for it: the line says so instead of naming who asked.
+  const atRequest = toUser && node.state === 'saved' && node.initiator === 'user'
+  const user = toUser
+    ? atRequest
+      ? 'saved to user memory at your request (all workspaces)'
+      : USER_STATE[node.state]
+    : undefined
+  const by = node.initiator && !atRequest ? ` (asked by: ${INITIATOR[node.initiator]})` : ''
   if (user)
     return [
       `Task experience: ${user}${by}.`,

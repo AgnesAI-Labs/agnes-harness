@@ -180,7 +180,7 @@ export class RemoteSession {
   /** `session.refine` on the worker that holds the real session: it only queues, so it returns at once. */
   async refine(
     focus: string | undefined,
-    saveTo?: 'workspace',
+    saveTo?: 'workspace' | 'user',
     allowUnpriced?: true,
   ): Promise<import('@agnes/protocol').SessionRefineResult> {
     return (await this.link.command('refine', {
@@ -194,10 +194,12 @@ export class RemoteSession {
   async refineSave(
     kind: import('@agnes/protocol').SessionRefineSaveParams['kind'],
     id: string,
+    target?: 'user',
   ): Promise<import('@agnes/protocol').SessionRefineSaveResult> {
     return (await this.link.command('refineSave', {
       kind,
       id,
+      ...(target === undefined ? {} : { target }),
     })) as import('@agnes/protocol').SessionRefineSaveResult
   }
 

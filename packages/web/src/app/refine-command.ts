@@ -11,9 +11,10 @@ export function isRefineCommand(input: string): boolean {
 }
 
 /**
- * `/refine [--workspace] [--unpriced] [focus]`: asks the daemon for one background experience review
- * of the open conversation and says how it went in the notice line; with `--workspace` the review's
- * result is also saved to the workspace, as the user's own save; `--unpriced` is the user's agreement to
+ * `/refine [--workspace|--user] [--unpriced] [focus]`: asks the daemon for one background experience
+ * review of the open conversation and says how it went in the notice line; with `--workspace` the
+ * review's result is also saved to the workspace, with `--user` to user memory instead, as the user's
+ * own save; `--unpriced` is the user's agreement to
  * plan on a model with no known price. A refusal because the switch is off (or not yet active in this
  * process), or because the model has no known price, gets its own hint.
  */
@@ -23,28 +24,30 @@ export async function runRefineCommand(context: RefineContext, input: string): P
     context.notice.setKind('')
   }
   let focus = input.replace(/^\/refine\s*/u, '').trim()
-  const flags = { workspace: false, unpriced: false }
-  for (let flag = /^--(workspace|unpriced)(?:\s+|$)/u.exec(focus); flag; ) {
-    flags[flag[1] as 'workspace' | 'unpriced'] = true
+  const flags = { workspace: false, user: false, unpriced: false }
+  for (let flag = /^--(workspace|user|unpriced)(?:\s+|$)/u.exec(focus); flag; ) {
+    flags[flag[1] as 'workspace' | 'user' | 'unpriced'] = true
     focus = focus.slice(flag[0].length)
-    flag = /^--(workspace|unpriced)(?:\s+|$)/u.exec(focus)
+    flag = /^--(workspace|user|unpriced)(?:\s+|$)/u.exec(focus)
   }
-  const { workspace, unpriced } = flags
+  const { workspace, user, unpriced } = flags
   // Counted in UTF-16 units, as the daemon counts it.
   if (focus.length > MAX_FOCUS) return say('app.refine.tooLong')
+  if (workspace && user) return say('app.refine.both')
   const session = context.current
   if (!session) return say('app.refine.noSession')
   try {
     const asked = focus === '' ? undefined : focus
     const options = {
       ...(workspace ? { saveTo: 'workspace' as const } : {}),
+      ...(user ? { saveTo: 'user' as const } : {}),
       ...(unpriced ? { allowUnpriced: true as const } : {}),
     }
     const { runId } =
-      workspace || unpriced
+      workspace || user || unpriced
         ? await context.client.session.refine(session.id, asked, options)
         : await context.client.session.refine(session.id, asked)
-    say(workspace ? 'app.refine.workspace' : 'app.refine.queued', { id: runId })
+    say(workspace ? 'app.refine.workspace' : user ? 'app.refine.user' : 'app.refine.queued', { id: runId })
   } catch (error) {
     const data = (error as { data?: { code?: unknown; reason?: unknown } } | null)?.data
     if ((error as { code?: unknown } | null)?.code === -32601) return say('app.refine.unsupported')

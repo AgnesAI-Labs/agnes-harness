@@ -86,11 +86,15 @@ export function registerRefinement(
 type RemoteRefine = {
   refine?: (
     focus: string | undefined,
-    saveTo: 'workspace' | undefined,
+    saveTo: 'workspace' | 'user' | undefined,
     allowUnpriced: true | undefined,
   ) => Promise<SessionRefineResult>
   refineRollback?: (appliedSeq: number) => Promise<SessionRefineRollbackResult>
-  refineSave?: (kind: SessionRefineSaveParams['kind'], id: string) => Promise<SessionRefineSaveResult>
+  refineSave?: (
+    kind: SessionRefineSaveParams['kind'],
+    id: string,
+    target: 'user' | undefined,
+  ) => Promise<SessionRefineSaveResult>
 }
 
 /** Only the owner on this machine: a local connection with a local credential. */
@@ -146,7 +150,7 @@ export function registerSessionRefine(
     if (!entry) throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
     const remote = entry.session as unknown as RemoteRefine
     return remote.refineSave
-      ? remote.refineSave(p.kind, p.id)
-      : saveEntryToWorkspace(entry.session, { kind: p.kind, id: p.id })
+      ? remote.refineSave(p.kind, p.id, p.target)
+      : saveEntryToWorkspace(entry.session, { kind: p.kind, id: p.id }, p.target)
   })
 }

@@ -35,9 +35,10 @@
 // On: the switch on, mode "manual and automatic", and after every prompt one manual review (the
 // request `/refine` makes), waited for before the next prompt, as the Prime runs send `/refine`
 // after every prompt. Every approval is given, as Prime runs without asking. AGH keeps entries per
-// session, so the second session of a cross-session task starts empty. AGH has no user-initiated
-// save to user memory, so where Prime ends the first session of a cross-workspace task with
-// `/refine --global`, nothing extra is sent and the outcome is marked `alignment: 'auto-only'`.
+// session, so the second session of a cross-session task starts empty. Where Prime ends the first
+// session of a cross-workspace task with `/refine --global` (in place of its last `/refine`), this
+// runner makes its last review of that session the user's own save to user memory (`/refine --user`),
+// so what is carried to the second workspace is the same kind of save.
 // A workflow task is different: its first session ends with the user's save to the workspace
 // (`/refine --workspace`), in place of the last review, so the skill it saves can be read from that
 // workspace afterwards. Both of its sessions use that one workspace, so the second session is a new
@@ -55,7 +56,7 @@
 // to; commands the agent runs get a fixed small environment without it.
 //
 // Cost: every prompt is a full agent turn on the main model; with refinement on, each prompt adds
-// one review (input up to about 8,192 tokens, output up to 1,024, at most 65,536 tokens per
+// one review (input up to about 24,000 tokens, output up to 4,096, at most 524,288 tokens per
 // session) plus the experience notes in later requests; the host also names each session with one
 // short call. The total grows with tasks x prompts x reps x 2 settings.
 
@@ -134,10 +135,10 @@ export interface AghSession {
   /** One turn; resolves with how it ended (`completed`, `failed`, ...). */
   prompt(text: string, signal: AbortSignal): Promise<string>
   /**
-   * Asks for one manual review of this session; with `saveTo: 'workspace'` the result is also saved to
-   * the workspace as the user's own save (what `/refine --workspace` does).
+   * Asks for one manual review of this session; with `saveTo` the result is also saved as the user's own
+   * save, to the workspace (`/refine --workspace`) or to user memory (`/refine --user`).
    */
-  review(saveTo?: 'workspace'): Promise<ReviewAnswer>
+  review(saveTo?: 'workspace' | 'user'): Promise<ReviewAnswer>
   /** The review's final state, or undefined when it has none within `ms`. */
   settled(runId: string, ms: number): Promise<string | undefined>
   close(): Promise<void>
@@ -381,7 +382,9 @@ export async function runOne(
           setting,
           cfg,
           stdoutFile,
-          task.category === 'workflow' && i === 0,
+          // The first session ends with the user's own save: to the workspace for a workflow task, to
+          // user memory for a cross-workspace task.
+          i === 0 ? endSaveFor(task.category) : undefined,
         )
         const { saveRefused: refused, ...ended } = result
         if (refused !== undefined) saveRefused = refused
@@ -421,7 +424,6 @@ export async function runOne(
       system: 'agh',
       sessions,
       checks,
-      ...(setting === 'on' && task.category === 'cross-workspace' ? { alignment: 'auto-only' as const } : {}),
       ...(saveRefused === undefined ? {} : { saveRefused }),
     }
     writeFileSync(outcomeFile, `${JSON.stringify(outcome, null, 2)}\n`)
@@ -434,6 +436,13 @@ export async function runOne(
   }
 }
 
+/** Where the first session of a task of this category ends with the user's own save, if it does. */
+function endSaveFor(category: EvalTask['category']): 'workspace' | 'user' | undefined {
+  if (category === 'workflow') return 'workspace'
+  if (category === 'cross-workspace') return 'user'
+  return undefined
+}
+
 async function runSession(
   host: AghHost,
   key: string,
@@ -442,7 +451,7 @@ async function runSession(
   setting: Setting,
   cfg: RunConfig,
   logFile: string,
-  saveAtEnd = false,
+  endSave?: 'workspace' | 'user',
 ): Promise<{ exitCode: number | null; timedOut: boolean; saveRefused?: string }> {
   const deadline = Date.now() + cfg.sessionTimeoutMs
   const log = (entry: SessionLog) => writeFileSync(logFile, `${JSON.stringify(entry)}\n`, { flag: 'a' })
@@ -482,13 +491,13 @@ async function runSession(
         log({ prompt: index, reason })
         continue
       }
-      const saves = saveAtEnd && index === prompts.length - 1
-      const review = await session.review(saves ? 'workspace' : undefined)
+      const saveTo = index === prompts.length - 1 ? endSave : undefined
+      const review = await session.review(saveTo)
       if ('refused' in review && NOT_ACTIVE.has(review.refused))
         throw new Error(
           `refinement is not active in the run host (${review.refused}); the "on" run would measure nothing`,
         )
-      if (saves && 'refused' in review) saveRefused = review.refused
+      if (saveTo && 'refused' in review) saveRefused = review.refused
       const state =
         'runId' in review
           ? await session.settled(review.runId, Math.min(REFINE_WAIT_MS, Math.max(0, deadline - Date.now())))

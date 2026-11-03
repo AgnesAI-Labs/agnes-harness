@@ -5482,8 +5482,8 @@
           "maxLength": 512
         },
         "saveTo": {
-          "description": "`workspace` (`/refine --workspace`): the applied result is also saved to the session's workspace as the user's save. Local owner only.",
-          "const": "workspace"
+          "description": "`workspace` (`/refine --workspace`): the applied result is also saved to the session's workspace as the user's save. `user` (`/refine --user`): it is saved to user memory instead, without waiting for two confirmations. Local owner only.",
+          "enum": ["workspace", "user"]
         },
         "allowUnpriced": {
           "description": "The owner agrees to plan on a model with no known price (`/refine --unpriced`); the cost is then unknown. Without it such a request is refused `unpriced`. A model priced at zero is a known price and needs no agreement. Local owner only.",
@@ -5529,7 +5529,7 @@
       }
     },
     "SessionRefineSaveParams": {
-      "description": "The owner's save of one refinement entry of the session into its workspace. No model is called. Local owner only.",
+      "description": "The owner's save of one refinement entry of the session into its workspace, or into user memory. No model is called. Local owner only.",
       "type": "object",
       "additionalProperties": false,
       "required": ["sessionId", "kind", "id"],
@@ -5538,7 +5538,11 @@
           "type": "string"
         },
         "kind": { "enum": ["prompt", "memory", "skill", "subagent"] },
-        "id": { "type": "string", "minLength": 1, "maxLength": 128 }
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "target": {
+          "description": "`user`: save the entry to user memory instead of the workspace, as the user's own save (a prompt or memory entry only).",
+          "const": "user"
+        }
       }
     },
     "SessionRefineSaveResult": {
@@ -5573,7 +5577,7 @@
         },
         "outcome": { "enum": ["saved", "installed", "awaiting-approval", "refused", "unknown"] },
         "reason": {
-          "description": "Why a save was refused. Known values: refinement-off, user-revoked, unconfirmed, source-rules, static-check, memory-off, memory-full, unsupported-provider, subagent-review-unavailable, child-session, unavailable, conflict, approval-expired. Open: a later release may add reasons, so treat an unknown one as a refusal.",
+          "description": "Why a save was refused. Known values: refinement-off, user-revoked, unconfirmed, source-rules, static-check, memory-off, memory-full, unsupported-provider, subagent-review-unavailable, child-session, unavailable, conflict, approval-expired, user-memory-budget. Open: a later release may add reasons, so treat an unknown one as a refusal.",
           "type": "string",
           "minLength": 1,
           "maxLength": 64
@@ -5617,6 +5621,14 @@
               }
             }
           ]
+        },
+        "layer": {
+          "description": "`user`: the save went to user memory (read in every workspace) rather than the workspace.",
+          "const": "user"
+        },
+        "userMemoryRead": {
+          "description": "With `layer` `user`: whether the workspace the entry came from reads user memory itself.",
+          "type": "boolean"
         },
         "at": { "type": "number" }
       }

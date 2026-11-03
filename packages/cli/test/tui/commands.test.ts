@@ -2136,6 +2136,47 @@ describe('runSlash', () => {
       }
     })
 
+    it('/refine --user queues a review saved to user memory', async () => {
+      const { app, ep, client } = await unstartedApp(undefined, undefined, undefined, { locale: 'en' })
+      const chinese = await unstartedApp()
+      try {
+        ep.on('_agnes/v1/session.refine', () => ({ runId: 'run-11' }))
+        const sent = () => ep.calls.filter((c) => c.method === '_agnes/v1/session.refine')
+        const r = await runSlash(app, '/refine --user  my style ')
+        expect(r.text).toContain('run-11')
+        expect(r.text).toMatch(/saved to user memory/i)
+        expect(sent().at(-1)?.params).toEqual({
+          sessionId: app.session.id,
+          focus: 'my style',
+          saveTo: 'user',
+        })
+        await runSlash(app, '/refine --user')
+        expect(sent().at(-1)?.params).toEqual({ sessionId: app.session.id, saveTo: 'user' })
+        await runSlash(app, '/refine --unpriced --user notes')
+        expect(sent().at(-1)?.params).toEqual({
+          sessionId: app.session.id,
+          focus: 'notes',
+          saveTo: 'user',
+          allowUnpriced: true,
+        })
+        // A word that only starts like the flag is focus text; both targets together are not taken.
+        await runSlash(app, '/refine --users')
+        expect(sent().at(-1)?.params).toEqual({ sessionId: app.session.id, focus: '--users' })
+        const before = sent().length
+        expect((await runSlash(app, '/refine --user --workspace')).text).toMatch(
+          /either --workspace or --user/,
+        )
+        expect(sent()).toHaveLength(before)
+        chinese.ep.on('_agnes/v1/session.refine', () => ({ runId: 'run-12' }))
+        expect((await runSlash(chinese.app, '/refine --user')).text).toContain('用户记忆')
+        chinese.ep.on('_agnes/v1/session.refine', refusing('refinement-off'))
+        expect((await runSlash(chinese.app, '/refine --user')).text).toContain('重启')
+      } finally {
+        await client.close()
+        await chinese.client.close()
+      }
+    })
+
     it('/refine --workspace queues a saving review', async () => {
       const { app, ep, client } = await unstartedApp(undefined, undefined, undefined, { locale: 'en' })
       const chinese = await unstartedApp()

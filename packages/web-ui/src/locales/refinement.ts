@@ -39,7 +39,7 @@ export const refinementLocaleCatalog: LocaleCatalog = {
     'timeline.refinementSave.state.refused': 'Not saved to the workspace.',
     'timeline.refinementSave.state.unknown': 'Saving to the workspace ended with an unknown result.',
     'timeline.refinementSave.by': 'Asked by: {who}.',
-    'timeline.refinementSave.initiator.auto': 'automatic, after two confirmations',
+    'timeline.refinementSave.initiator.auto': 'automatic',
     'timeline.refinementSave.initiator.user': 'you',
     'timeline.refinementSave.initiator.model': 'the model',
     'timeline.refinementSave.awaiting': 'Answer it under Needs attention; the request is open for 7 days.',
@@ -48,7 +48,7 @@ export const refinementLocaleCatalog: LocaleCatalog = {
     'timeline.refinementSave.reason.refinement-off': 'task experience is off',
     'timeline.refinementSave.reason.user-revoked':
       'you removed or withdrew this before; only your own save brings it back',
-    'timeline.refinementSave.reason.unconfirmed': 'it has not been confirmed twice yet',
+    'timeline.refinementSave.reason.unconfirmed': 'it has not been seen to hold yet',
     'timeline.refinementSave.reason.source-rules':
       'only session-level entries backed by this session’s own evidence are saved',
     'timeline.refinementSave.reason.static-check':
@@ -67,15 +67,20 @@ export const refinementLocaleCatalog: LocaleCatalog = {
     'timeline.refinementSave.reason.approval-expired': 'the approval request was not answered within 7 days',
     'timeline.refinementSave.reason.user-memory-budget':
       'user memory has no room for it (about 512 bytes, your own text first); nothing was changed or trimmed',
-    'timeline.refinementSave.reason.model-cannot-write-user': 'the model can never write user memory',
+    'timeline.refinementSave.reason.model-cannot-write-user':
+      'an earlier version did not let the model write user memory',
     'timeline.refinementSave.user.state.saved': 'Saved to user memory (all workspaces).',
+    'timeline.refinementSave.user.state.savedByRequest':
+      'Saved to user memory at your request (all workspaces).',
     'timeline.refinementSave.user.state.refused': 'Not saved to user memory.',
+    'timeline.refinementSave.user.revoked': 'this was withdrawn before; it is not saved again',
     'timeline.refinementSave.user.state.unknown': 'Saving to user memory ended with an unknown result.',
     'timeline.refinementSave.user.withdraw':
       'Every workspace that reads user memory sees it. Withdraw it in the memory settings (Memory files, task experience in user memory); it is then not saved again.',
     'timeline.refinementSave.user.notRead':
       'This workspace does not read user memory, so it does not see it here.',
     'timeline.refinementSave.entry': 'Save {name} to workspace',
+    'timeline.refinementSave.entryUser': 'Save {name} to user memory',
     'timeline.refinementSave.refused': 'Not saved: {reason}.',
     'timeline.refinementSave.notFound': 'the entry is no longer in this session',
     'timeline.refinementSave.failed': 'Could not save: {message}',
@@ -116,7 +121,7 @@ export const refinementLocaleCatalog: LocaleCatalog = {
     'timeline.refinementSave.state.refused': '未保存到工作区。',
     'timeline.refinementSave.state.unknown': '保存到工作区的结果未知。',
     'timeline.refinementSave.by': '发起方：{who}。',
-    'timeline.refinementSave.initiator.auto': '自动（已证实 2 次）',
+    'timeline.refinementSave.initiator.auto': '自动',
     'timeline.refinementSave.initiator.user': '你',
     'timeline.refinementSave.initiator.model': '模型',
     'timeline.refinementSave.awaiting': '请在“待处理”中答复；请求 7 天内有效。',
@@ -124,7 +129,7 @@ export const refinementLocaleCatalog: LocaleCatalog = {
       '如果它的段落已经写入，在你于记忆设置（记忆文件）中修复或删除之前，智能体看不到它。',
     'timeline.refinementSave.reason.refinement-off': '任务经验已关闭',
     'timeline.refinementSave.reason.user-revoked': '你之前删除或撤回过它；只有你自己保存才会恢复',
-    'timeline.refinementSave.reason.unconfirmed': '它还没有被证实 2 次',
+    'timeline.refinementSave.reason.unconfirmed': '它还没有被确认有效',
     'timeline.refinementSave.reason.source-rules': '只保存有本会话证据支持的会话级条目',
     'timeline.refinementSave.reason.static-check': '没有通过内容检查（例如看起来像密钥）',
     'timeline.refinementSave.reason.memory-off': '工作区记忆已关闭',
@@ -138,14 +143,17 @@ export const refinementLocaleCatalog: LocaleCatalog = {
     'timeline.refinementSave.reason.approval-expired': '审批请求 7 天内没有答复',
     'timeline.refinementSave.reason.user-memory-budget':
       '用户记忆放不下它（约 512 字节，你自己写的内容优先）；没有改动或截断任何内容',
-    'timeline.refinementSave.reason.model-cannot-write-user': '模型永远不能写入用户记忆',
+    'timeline.refinementSave.reason.model-cannot-write-user': '早先的版本不允许模型写入用户记忆',
     'timeline.refinementSave.user.state.saved': '已保存到用户记忆（所有工作区）。',
+    'timeline.refinementSave.user.state.savedByRequest': '已按你的要求保存到用户记忆（所有工作区）。',
     'timeline.refinementSave.user.state.refused': '未保存到用户记忆。',
+    'timeline.refinementSave.user.revoked': '它之前被撤回过；不会再保存',
     'timeline.refinementSave.user.state.unknown': '保存到用户记忆的结果未知。',
     'timeline.refinementSave.user.withdraw':
       '所有读取用户记忆的工作区都会看到它。可在记忆设置（记忆文件，用户记忆中的任务经验）撤回；撤回后不会再自动保存。',
     'timeline.refinementSave.user.notRead': '本工作区不读取用户记忆，所以在这里看不到它。',
     'timeline.refinementSave.entry': '把 {name} 保存到工作区',
+    'timeline.refinementSave.entryUser': '把 {name} 保存到用户记忆',
     'timeline.refinementSave.refused': '未保存：{reason}。',
     'timeline.refinementSave.notFound': '这个条目已不在本会话里',
     'timeline.refinementSave.failed': '无法保存：{message}',

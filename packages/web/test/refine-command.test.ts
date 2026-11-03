@@ -101,6 +101,26 @@ describe('the composer /refine command', () => {
     expect(chinese.lines[0]).toContain('/refine --unpriced')
   })
 
+  it('/refine --user queues a review saved to user memory', async () => {
+    const { context, lines, refine } = setup(async () => ({ runId: 'run-7' }))
+    await runRefineCommand(context, '/refine --user  my style ')
+    expect(refine).toHaveBeenLastCalledWith('session-1', 'my style', { saveTo: 'user' })
+    expect(lines[0]).toContain('run-7')
+    expect(lines[0]).toMatch(/saved to user memory/i)
+    await runRefineCommand(context, '/refine --unpriced --user')
+    expect(refine).toHaveBeenLastCalledWith('session-1', undefined, { saveTo: 'user', allowUnpriced: true })
+    // A word that only starts like the flag is focus text; both targets together are not taken.
+    await runRefineCommand(context, '/refine --users')
+    expect(refine).toHaveBeenLastCalledWith('session-1', '--users')
+    const calls = refine.mock.calls.length
+    await runRefineCommand(context, '/refine --user --workspace')
+    expect(lines.at(-1)).toMatch(/either --workspace or --user/)
+    expect(refine).toHaveBeenCalledTimes(calls)
+    const chinese = setup(async () => ({ runId: 'run-8' }), true, zh)
+    await runRefineCommand(chinese.context, '/refine --user')
+    expect(chinese.lines[0]).toContain('用户记忆')
+  })
+
   it('/refine --workspace queues a saving review', async () => {
     const { context, lines, refine } = setup(async () => ({ runId: 'run-4' }))
     await runRefineCommand(context, '/refine --workspace  the build ')

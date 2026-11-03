@@ -359,6 +359,8 @@ describe('W3b projected message DOM', () => {
       save('b', { userMemoryRead: false }),
       save('c', { state: 'refused', reason: 'user-memory-budget' }),
       save('d', { state: 'refused', reason: 'model-cannot-write-user', initiator: 'model' }),
+      save('e', { initiator: 'user', userMemoryRead: false }),
+      save('f', { state: 'refused', reason: 'user-revoked', initiator: 'user' }),
     ]
     await act(async () => root.render(createElement(ConversationMessages, { t, nodes })))
     const lines = [...host.querySelectorAll('[data-testid="refinement-save-notice"]')].map(
@@ -379,6 +381,15 @@ describe('W3b projected message DOM', () => {
       t('timeline.refinement.reason', { reason: t('timeline.refinementSave.reason.user-memory-budget') }),
     )
     expect(lines[3]).toContain(t('timeline.refinementSave.reason.model-cannot-write-user'))
+    // At the user's request: the line says so instead of naming who asked, and keeps the notes.
+    expect(lines[4]).toBe(
+      [
+        t('timeline.refinementSave.user.state.savedByRequest'),
+        t('timeline.refinementSave.user.withdraw'),
+        t('timeline.refinementSave.user.notRead'),
+      ].join(' '),
+    )
+    expect(lines[5]).toContain(t('timeline.refinementSave.user.revoked'))
     expect(lines.join(' ')).not.toContain('timeline.refinement')
     expect(t('timeline.refinementSave.user.withdraw')).toContain('撤回')
   })
@@ -423,6 +434,17 @@ describe('W3b projected message DOM', () => {
       ['prompt', 'style'],
       ['skill', 'deploy'],
     ])
+    // A memory or prompt entry can also go to user memory; a skill cannot.
+    const userButtons = [
+      ...host.querySelectorAll<HTMLButtonElement>('[data-testid="refinement-save-entry-user"]'),
+    ]
+    expect(userButtons.map((button) => button.textContent)).toEqual([
+      t('timeline.refinementSave.entryUser', { name: 'memory/build' }),
+      t('timeline.refinementSave.entryUser', { name: 'prompt/style' }),
+    ])
+    saveEntry.mockClear()
+    await act(async () => userButtons[0]?.click())
+    expect(saveEntry.mock.calls).toEqual([['memory', 'build', 'user']])
     const results = [...host.querySelectorAll('[data-testid="refinement-save-result"]')].map(
       (line) => line.textContent ?? '',
     )

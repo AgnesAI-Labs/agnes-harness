@@ -17,14 +17,15 @@ export type RefinementRunState =
 export type RefinementTriggerKind = 'manual' | 'model' | 'compaction' | 'repeated-failure'
 /**
  * What asked for a run: who, at which seq, and an optional focus. `saveTo: 'workspace'` asks for the
- * run's applied result to be saved to the session's workspace as well. `allowUnpriced` (the user's own
- * request only) records that the user agreed to plan on a model with no known price.
+ * run's applied result to be saved to the session's workspace as well; `saveTo: 'user'` (the user's own
+ * request or the model's) saves it to user memory instead. `allowUnpriced` (the user's own request only) records
+ * that the user agreed to plan on a model with no known price.
  */
 export type RefinementTrigger = {
   kind: RefinementTriggerKind
   seq: Seq
   focus?: string
-  saveTo?: 'workspace'
+  saveTo?: 'workspace' | 'user'
   allowUnpriced?: true
 }
 
@@ -42,13 +43,14 @@ export type RefinementReadSet = {
 }
 /**
  * One evidence id the planner saw, fixed to the ledger row it stands for, with what kind of fact it
- * is: only `user` (the user's own, trusted request) can back a quoted lesson.
+ * is: only `user` (the user's own, trusted request) can back a quoted confirmation or a lesson that
+ * reaches every workspace.
  */
 export type RefinementEvidenceRef = {
   id: string
   lane: string
   seq: Seq
-  kind: 'user' | 'external' | 'tool' | 'summary'
+  kind: 'user' | 'external' | 'tool' | 'summary' | 'assistant'
 }
 
 export type RefinementPlanEdit =
@@ -60,9 +62,6 @@ export type RefinementPlanEdit =
       content: string
       applicability: 'task' | 'session'
       evidenceSeqs: Seq[]
-      /** Kept only when the edit cites a request of the user's own; `quoteSeqs` are those requests. */
-      quote?: string
-      quoteSeqs?: Seq[]
       /**
        * A task-level lesson planned with no goal to bind it to: it would have expired with the goal it
        * never had, so it stays on the plan as a record and is never applied.
@@ -70,9 +69,7 @@ export type RefinementPlanEdit =
       expired?: true
       /** The goal a task-level lesson is bound to; it expires when that goal is completed or replaced. */
       taskScope?: { id: string; revision: number }
-      /** Asked for at session level but without the evidence that grants it, so kept at task level. */
-      downgraded?: true
-      /** The evidence identities that granted session level; they never count as confirmations. */
+      /** The user's own requests a session-level edit cites (`user:<seq>`); they never count as confirmations. */
       usedEvidence?: string[]
       /** A skill or subagent bound to an approved resource: `<resourceId>@<revision>`, or an agent reference. */
       reference?: string
@@ -201,13 +198,15 @@ function triggerOf(raw: unknown): RefinementTrigger | undefined {
   if (!t || typeof t !== 'object' || !KINDS.has(String(t.kind))) return undefined
   if (!Number.isSafeInteger(t.seq) || (t.seq as number) < 0) return undefined
   if (t.focus !== undefined && typeof t.focus !== 'string') return undefined
-  if (t.saveTo !== undefined && t.saveTo !== 'workspace') return undefined
+  if (t.saveTo !== undefined && t.saveTo !== 'workspace' && t.saveTo !== 'user') return undefined
+  // Only a person's own request or the model's may target user memory: no other trigger has anyone behind it.
+  if (t.saveTo === 'user' && t.kind !== 'manual' && t.kind !== 'model') return undefined
   if (t.allowUnpriced !== undefined && (t.allowUnpriced !== true || t.kind !== 'manual')) return undefined
   return {
     kind: t.kind as RefinementTriggerKind,
     seq: t.seq as Seq,
     ...(t.focus === undefined ? {} : { focus: t.focus as string }),
-    ...(t.saveTo === undefined ? {} : { saveTo: 'workspace' as const }),
+    ...(t.saveTo === undefined ? {} : { saveTo: t.saveTo as 'workspace' | 'user' }),
     ...(t.allowUnpriced === true ? { allowUnpriced: true as const } : {}),
   }
 }

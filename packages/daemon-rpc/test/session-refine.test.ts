@@ -85,6 +85,24 @@ describe('_agnes/v1/session.refine', () => {
     expect(remote.refine).toHaveBeenLastCalledWith(undefined, 'workspace', undefined)
   })
 
+  it('/refine --user saves as the user too, so it is the owner on a local connection only', async () => {
+    const local = {}
+    const remote = { refine: vi.fn(async () => ({ runId: 'from-worker' })) }
+    const { call } = setup({ local, remote })
+    request.mockClear()
+    await expect(
+      call({ sessionId: 'local', saveTo: 'user' }, { authKind: 'token', credentialKind: 'local' }),
+    ).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
+    expect(request).not.toHaveBeenCalled()
+    request.mockResolvedValueOnce({ runId: 'saved' })
+    await expect(call({ sessionId: 'local', focus: 'style', saveTo: 'user' })).resolves.toEqual({
+      runId: 'saved',
+    })
+    expect(request).toHaveBeenLastCalledWith(local, 'style', 'user', undefined)
+    await call({ sessionId: 'remote', saveTo: 'user' })
+    expect(remote.refine).toHaveBeenLastCalledWith(undefined, 'user', undefined)
+  })
+
   it('agreeing to an unknown price is taken only from the owner on a local connection', async () => {
     const local = {}
     const remote = { refine: vi.fn(async () => ({ runId: 'from-worker' })) }
@@ -132,9 +150,26 @@ describe('_agnes/v1/session.refine.save', () => {
     const { call } = setup({ local, remote }, method)
     save.mockResolvedValueOnce({ receipt })
     await expect(call({ sessionId: 'local', kind: 'memory', id: 'm' })).resolves.toEqual({ receipt })
-    expect(save).toHaveBeenCalledWith(local, { kind: 'memory', id: 'm' })
+    expect(save).toHaveBeenCalledWith(local, { kind: 'memory', id: 'm' }, undefined)
     await expect(call({ sessionId: 'remote', kind: 'prompt', id: 'p' })).resolves.toEqual({ receipt })
-    expect(remote.refineSave).toHaveBeenCalledWith('prompt', 'p')
+    expect(remote.refineSave).toHaveBeenCalledWith('prompt', 'p', undefined)
+  })
+
+  it('saves to user memory when asked with target user, here or on the worker', async () => {
+    const local = {}
+    const remote = { refineSave: vi.fn(async () => ({ receipt })) }
+    const { call } = setup({ local, remote }, method)
+    save.mockResolvedValueOnce({ receipt })
+    await call({ sessionId: 'local', kind: 'memory', id: 'm', target: 'user' })
+    expect(save).toHaveBeenLastCalledWith(local, { kind: 'memory', id: 'm' }, 'user')
+    await call({ sessionId: 'remote', kind: 'prompt', id: 'p', target: 'user' })
+    expect(remote.refineSave).toHaveBeenLastCalledWith('prompt', 'p', 'user')
+    await expect(
+      call(
+        { sessionId: 'local', kind: 'memory', id: 'm', target: 'user' },
+        { authKind: 'token', credentialKind: 'local' },
+      ),
+    ).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
   })
 })
 

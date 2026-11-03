@@ -14,7 +14,6 @@ export type PlannerEdit =
       content: string
       applicability: 'task' | 'session'
       evidenceIds: string[]
-      quote?: string
       /** Skill and subagent only: the approved resource the entry is bound to; the host checks it. */
       reference?: string
       /** A suggestion that the lesson holds in every workspace; Core decides. */
@@ -50,9 +49,18 @@ type Obj = Record<string, unknown>
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
 const str = (v: unknown, max: number, min = 0): v is string =>
   typeof v === 'string' && v.length >= min && v.length <= max
-const keysWithin = (o: Obj, allowed: readonly string[]) => Object.keys(o).every((k) => allowed.includes(k))
 const ids = (v: unknown, min: number): v is string[] =>
   Array.isArray(v) && v.length >= min && v.length <= MAX_IDS && v.every((id) => str(id, 64, 1))
+/**
+ * At most `max` UTF-16 units of `text` (the unit every bound here is checked in), never cut inside a
+ * surrogate pair: a character that would be split is dropped whole.
+ */
+function cut(text: string, max: number): string {
+  if (text.length <= max) return text
+  const end = text.charCodeAt(max - 1)
+  return text.slice(0, end >= 0xd800 && end <= 0xdbff ? max - 1 : max)
+}
+const clip = (v: unknown, max: number): string => (typeof v === 'string' ? cut(v, max) : '')
 
 class Rejected extends Error {}
 const reject = (why: string): never => {
@@ -66,6 +74,7 @@ function unfence(text: string): string {
   return fenced ? (fenced[1] as string) : trimmed
 }
 
+/** One edit as stated, or a rejection that drops this edit alone. Fields it may not set are ignored. */
 function edit(raw: unknown, at: number): PlannerEdit {
   const where = `invalid-shape: edits[${at}]`
   // An entry saved to the workspace is only ever confirmed, never rewritten or deleted.
@@ -75,56 +84,46 @@ function edit(raw: unknown, at: number): PlannerEdit {
     return reject(where)
   const kind = raw.kind as EntryKind
   if (raw.op === 'delete') {
-    if (!keysWithin(raw, ['op', 'kind', 'id', 'evidenceIds']) || !ids(raw.evidenceIds, 1))
-      return reject(where)
+    if (!ids(raw.evidenceIds, 1)) return reject(where)
     return { op: 'delete', kind, id: raw.id, evidenceIds: raw.evidenceIds }
   }
-  const allowed = [
-    'op',
-    'kind',
-    'id',
-    'title',
-    'content',
-    'applicability',
-    'evidenceIds',
-    'quote',
-    'reference',
-    'reach',
-  ]
   const bindable = kind === 'skill' || kind === 'subagent'
   if (
     raw.op !== 'upsert' ||
-    !keysWithin(raw, allowed) ||
     !str(raw.title, 256, 1) ||
     typeof raw.content !== 'string' ||
-    (raw.applicability !== 'task' && raw.applicability !== 'session') ||
+    raw.content.length === 0 ||
     !ids(raw.evidenceIds, 1) ||
-    (raw.quote !== undefined && !str(raw.quote, 2000, 1)) ||
-    (raw.reach !== undefined && raw.reach !== 'workspace' && raw.reach !== 'user') ||
     (raw.reference !== undefined && (!bindable || !str(raw.reference, MAX_REFERENCE, 1)))
   )
     return reject(where)
-  // Only a prompt or memory lesson can reach user memory.
-  if (raw.reach === 'user' && kind !== 'prompt' && kind !== 'memory') return reject(`reach-kind: ${at}`)
-  if (raw.content.length === 0 || raw.content.length > MAX_EDIT_CHARS) return reject(`edit-too-long: ${at}`)
+  // Session is the default when the planner states nothing; a value that is neither level is not guessed.
+  if (raw.applicability !== undefined && raw.applicability !== 'task' && raw.applicability !== 'session')
+    return reject(where)
+  const applicability = raw.applicability === 'task' ? 'task' : 'session'
+  // A longer text is cut, not refused. Only a prompt or memory lesson can reach user memory; any other
+  // reach is ignored.
+  const reach =
+    (raw.reach === 'workspace' || raw.reach === 'user') &&
+    !(raw.reach === 'user' && kind !== 'prompt' && kind !== 'memory')
+      ? raw.reach
+      : undefined
   return {
     op: 'upsert',
     kind,
     id: raw.id,
     title: raw.title,
-    content: raw.content,
-    applicability: raw.applicability,
+    content: cut(raw.content, MAX_EDIT_CHARS),
+    applicability,
     evidenceIds: raw.evidenceIds,
-    ...(raw.quote === undefined ? {} : { quote: raw.quote as string }),
     ...(raw.reference === undefined ? {} : { reference: raw.reference as string }),
-    ...(raw.reach === undefined ? {} : { reach: raw.reach as 'workspace' | 'user' }),
+    ...(reach === undefined ? {} : { reach }),
   }
 }
 
 function confirmation(raw: unknown, at: number): PlannerConfirmation {
   if (
     !isObj(raw) ||
-    !keysWithin(raw, ['entryId', 'evidenceIds', 'quote']) ||
     !str(raw.entryId, 160, 3) ||
     !ids(raw.evidenceIds, 1) ||
     (raw.quote !== undefined && !str(raw.quote, 2000, 1))
@@ -137,47 +136,21 @@ function confirmation(raw: unknown, at: number): PlannerConfirmation {
   }
 }
 
-/** Every rule that needs the prompt: known evidence, entries shown, one edit or confirmation per entry. */
-function checkAgainst(out: PlannerOutput, context: ParseContext): void {
-  const known = new Set(context.evidenceIds)
-  const cited = [
-    ...out.evidenceIds,
-    ...out.edits.flatMap((e) => e.evidenceIds),
-    ...out.confirmations.flatMap((c) => c.evidenceIds),
-  ]
-  const unknown = cited.find((id) => !known.has(id))
-  if (unknown !== undefined) reject(`unknown-evidence: ${unknown}`)
-  for (const list of [
-    out.evidenceIds,
-    ...out.edits.map((e) => e.evidenceIds),
-    ...out.confirmations.map((c) => c.evidenceIds),
-  ]) {
-    const twice = list.find((id, at) => list.indexOf(id) !== at)
-    if (twice !== undefined) reject(`duplicate-evidence: ${twice}`)
-  }
-  const ref = (e: EntryRef) => `${e.kind}/${e.id}`
-  const full = new Set(context.fullEntries.map(ref))
-  const shown = new Set([...context.shownEntries.map(ref), ...(context.workspaceRefs ?? [])])
-  const touched = new Set<string>()
-  for (const e of out.edits) {
-    const key = ref(e)
-    if (touched.has(key)) reject(`duplicate-entry: ${key}`)
-    touched.add(key)
-    // A rewrite from a summary would drop what the planner never saw, so only full entries change.
-    if (!full.has(key) && (e.op === 'delete' || shown.has(key))) reject(`not-shown-in-full: ${key}`)
-  }
-  const confirmed = new Set<string>()
-  for (const c of out.confirmations) {
-    if (!shown.has(c.entryId)) reject(`unknown-entry: ${c.entryId}`)
-    if (confirmed.has(c.entryId)) reject(`duplicate-confirmation: ${c.entryId}`)
-    confirmed.add(c.entryId)
-  }
+/** The evidence ids a list cites twice, or that the prompt never showed. */
+function badEvidence(list: readonly string[], known: ReadonlySet<string>): string | undefined {
+  const unknown = list.find((id) => !known.has(id))
+  if (unknown !== undefined) return `unknown-evidence: ${unknown}`
+  const twice = list.find((id, at) => list.indexOf(id) !== at)
+  return twice === undefined ? undefined : `duplicate-evidence: ${twice}`
 }
 
 /**
- * Reads the planner's one answer. Anything wrong (not JSON, a field the planner may not set, more
- * than 5 edits, an edit over 2,000 characters, an unknown evidence id, a rewrite of an entry not
- * shown in full) rejects the whole plan with a reason. There is no second attempt to repair it.
+ * Reads the planner's one answer, edit by edit. Text that is not JSON, or JSON that is not an object,
+ * rejects the plan. Anything else wrong is dropped where it is and the rest is kept: an edit past the
+ * fifth is ignored, a longer content is cut, a field the planner may not set is ignored, and an edit or
+ * confirmation that cites an unknown or repeated evidence id, rewrites an entry not shown in full, names
+ * an entry twice or has a bad shape is left out alone. The plan is rejected only when it asked for
+ * something and nothing valid is left. There is no second attempt to repair it.
  */
 export function parsePlannerOutput(text: string, context: ParseContext): PlannerOutput | { error: string } {
   let raw: unknown
@@ -186,35 +159,60 @@ export function parsePlannerOutput(text: string, context: ParseContext): Planner
   } catch {
     return { error: 'invalid-json' }
   }
-  try {
-    const allowed = ['summary', 'rationale', 'expectedOutcome', 'edits', 'confirmations', 'evidenceIds']
-    if (
-      !isObj(raw) ||
-      !keysWithin(raw, allowed) ||
-      !str(raw.summary, 1000) ||
-      !str(raw.rationale, 4000) ||
-      !str(raw.expectedOutcome, 1000) ||
-      !Array.isArray(raw.edits) ||
-      !Array.isArray(raw.confirmations) ||
-      raw.confirmations.length > 4 * 40 ||
-      !Array.isArray(raw.evidenceIds) ||
-      raw.evidenceIds.length > 4 * MAX_IDS ||
-      !raw.evidenceIds.every((id) => str(id, 64, 1))
-    )
-      return reject('invalid-shape: output')
-    if (raw.edits.length > MAX_PLAN_EDITS) return reject('too-many-edits')
-    const out: PlannerOutput = {
-      summary: raw.summary,
-      rationale: raw.rationale,
-      expectedOutcome: raw.expectedOutcome,
-      edits: raw.edits.map(edit),
-      confirmations: raw.confirmations.map(confirmation),
-      evidenceIds: raw.evidenceIds as string[],
+  if (!isObj(raw)) return { error: 'invalid-shape: output' }
+  const known = new Set(context.evidenceIds)
+  const ref = (e: EntryRef) => `${e.kind}/${e.id}`
+  const full = new Set(context.fullEntries.map(ref))
+  const shown = new Set([...context.shownEntries.map(ref), ...(context.workspaceRefs ?? [])])
+  const asked = (Array.isArray(raw.edits) ? raw.edits : []).slice(0, MAX_PLAN_EDITS)
+  const confirmable = (Array.isArray(raw.confirmations) ? raw.confirmations : []).slice(0, 4 * 40)
+  const dropped: string[] = []
+  const edits: PlannerEdit[] = []
+  const touched = new Set<string>()
+  for (const [at, item] of asked.entries()) {
+    try {
+      const e = edit(item, at)
+      const bad = badEvidence(e.evidenceIds, known)
+      if (bad) reject(bad)
+      const key = ref(e)
+      if (touched.has(key)) reject(`duplicate-entry: ${key}`)
+      // A rewrite from a summary would drop what the planner never saw, so only full entries change.
+      if (!full.has(key) && (e.op === 'delete' || shown.has(key))) reject(`not-shown-in-full: ${key}`)
+      touched.add(key)
+      edits.push(e)
+    } catch (error) {
+      if (!(error instanceof Rejected)) throw error
+      dropped.push(error.message)
     }
-    checkAgainst(out, context)
-    return out
-  } catch (error) {
-    if (error instanceof Rejected) return { error: error.message }
-    throw error
+  }
+  const confirmations: PlannerConfirmation[] = []
+  const confirmed = new Set<string>()
+  for (const [at, item] of confirmable.entries()) {
+    try {
+      const c = confirmation(item, at)
+      const bad = badEvidence(c.evidenceIds, known)
+      if (bad) reject(bad)
+      if (!shown.has(c.entryId)) reject(`unknown-entry: ${c.entryId}`)
+      if (confirmed.has(c.entryId)) reject(`duplicate-confirmation: ${c.entryId}`)
+      confirmed.add(c.entryId)
+      confirmations.push(c)
+    } catch (error) {
+      if (!(error instanceof Rejected)) throw error
+      dropped.push(error.message)
+    }
+  }
+  if (edits.length === 0 && confirmations.length === 0 && dropped.length > 0)
+    return { error: dropped[0] as string }
+  const cited = Array.isArray(raw.evidenceIds) ? raw.evidenceIds : []
+  return {
+    summary: clip(raw.summary, 1000),
+    rationale: clip(raw.rationale, 4000),
+    expectedOutcome: clip(raw.expectedOutcome, 1000),
+    edits,
+    confirmations,
+    evidenceIds: [...new Set(cited.filter((id): id is string => str(id, 64, 1) && known.has(id)))].slice(
+      0,
+      4 * MAX_IDS,
+    ),
   }
 }

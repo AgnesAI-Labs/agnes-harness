@@ -50,6 +50,8 @@ function port(answer: (request: WorkspaceSaveRequest) => SaveReceipt = (r) => re
 async function withEntry(o: Parameters<typeof open>[0] = {}) {
   const t = await open({
     answers: [() => output({ edits: [upsert('build', { quote: QUOTE })], evidenceIds: ['e1'] })],
+    // Manual mode: only the saves these tests ask for are made; a review's lesson is not auto-saved.
+    sw: { enabled: true, mode: 'manual', revision: 'r1' },
     ...o,
   })
   expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
@@ -83,7 +85,8 @@ describe('saving a session entry into the workspace', () => {
         contentHash: contentHash(`${BODY} (build)`),
         applicability: 'session',
       },
-      confirmations: 0,
+      // The review that wrote the entry is the first time it was seen to hold.
+      confirmations: 1,
     })
     expect(request.evidenceSeqs.length).toBeGreaterThan(0)
     for (const seq of request.evidenceSeqs) {

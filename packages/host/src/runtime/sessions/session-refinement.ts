@@ -14,7 +14,8 @@ type EntryKind = 'prompt' | 'memory' | 'skill' | 'subagent'
  * The user's own request for a refinement review of a session this process holds. It queues a plan
  * from the session's latest task and returns at once; a request the session cannot take is
  * refused with the reason and writes nothing. With `saveTo: 'workspace'` (`/refine --workspace`) the
- * applied result is also saved to the session's workspace, as the user's save. Callers reach this
+ * applied result is also saved to the session's workspace, as the user's save; with `saveTo: 'user'`
+ * (`/refine --user`) it is saved to user memory instead, as the user's save, with no confirmation count. Callers reach this
  * only on the owner's request: the save it leads to may override a revocation. On a planning model with
  * no known price the request is refused `unpriced` unless the owner agreed to the unknown price
  * (`allowUnpriced`); a model priced at zero is a known price.
@@ -22,7 +23,7 @@ type EntryKind = 'prompt' | 'memory' | 'skill' | 'subagent'
 export async function requestRefinement(
   session: HostSession,
   focus?: string,
-  saveTo?: 'workspace',
+  saveTo?: 'workspace' | 'user',
   allowUnpriced?: boolean,
 ): Promise<SessionRefineResult> {
   const outcome = await refinementFacade(session).request({
@@ -67,13 +68,21 @@ export async function rollbackRefinement(
  * save path as the user's save, judged in its fixed order, and the receipt comes back whatever the
  * verdict (a refusal, `refinement-off` included, is a receipt). An entry that is not there, or a host
  * without a save path, is refused with the reason and writes nothing. Callers reach this only on the
- * owner's request: the save may override a revocation.
+ * owner's request: the save may override a revocation. With `target: 'user'` the entry goes to user memory
+ * instead, as the user's save: it skips the confirmation count and meets the same checks as the automatic
+ * promotion, and a revocation still blocks it.
  */
 export async function saveEntryToWorkspace(
   session: HostSession,
   entry: { kind: EntryKind; id: string },
+  target?: 'user',
 ): Promise<SessionRefineSaveResult> {
-  const outcome = await saveToWorkspace(session, { initiator: 'user', kind: entry.kind, id: entry.id })
+  const outcome = await saveToWorkspace(session, {
+    initiator: 'user',
+    ...(target === 'user' ? { target } : {}),
+    kind: entry.kind,
+    id: entry.id,
+  })
   if ('refused' in outcome) throw rpcError('SEMANTIC_REJECTED', { reason: outcome.refused })
   return { receipt: outcome.receipt }
 }
@@ -88,13 +97,17 @@ export function refinementCommand(
     return requestRefinement(
       session,
       typeof p.focus === 'string' ? p.focus : undefined,
-      p.saveTo === 'workspace' ? 'workspace' : undefined,
+      p.saveTo === 'workspace' || p.saveTo === 'user' ? p.saveTo : undefined,
       p.allowUnpriced === true,
     )
   if (method === 'refineSave') {
     if (!ENTRY_KINDS.has(String(p.kind)) || typeof p.id !== 'string')
       return Promise.reject(new TypeError('invalid refineSave command'))
-    return saveEntryToWorkspace(session, { kind: p.kind as EntryKind, id: p.id })
+    return saveEntryToWorkspace(
+      session,
+      { kind: p.kind as EntryKind, id: p.id },
+      p.target === 'user' ? 'user' : undefined,
+    )
   }
   if (!Number.isSafeInteger(p.appliedSeq)) throw new TypeError('invalid refineRollback command')
   return rollbackRefinement(session, p.appliedSeq as number)

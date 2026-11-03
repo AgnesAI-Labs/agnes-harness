@@ -95,7 +95,7 @@ describe('refine extension registration', () => {
     expect(applyPlugin(createRefineExtension({ settings: settings(true) })).tools).toEqual([])
   })
 
-  it('registers harness_propose, harness_refine and harness_inspect as deferred tools when on', () => {
+  it('registers harness_propose, harness_refine and harness_inspect when on, harness_refine always loaded', () => {
     const registered = applyPlugin(
       createRefineExtension({ settings: settings(true), runs: fakeRuns().connect }),
     )
@@ -104,7 +104,9 @@ describe('refine extension registration', () => {
       'harness_refine',
       'harness_inspect',
     ])
-    for (const tool of registered.tools) expect(tool.meta.deferLoading, tool.name).toBe(true)
+    // The model's own request for a review is always loaded, so it can be called when the guidance says to.
+    for (const tool of registered.tools)
+      expect(tool.meta.deferLoading, tool.name).toBe(tool.name !== 'harness_refine')
     expect(registered.hooks).toEqual([])
     registered.dispose()
     expect(registered.tools).toEqual([])

@@ -1,7 +1,10 @@
 import { REFINEMENT_SAVE_EVENT, type SaveReceipt } from '@agnes/core-ledger/reduce/refinement-save'
 import type { RefinementRunRecord } from '@agnes/core-ledger/reduce/state'
 import { describe, expect, it, vi } from 'vitest'
+import { entryKey } from '../src/refine/apply.js'
 import { refinementFacade } from '../src/refinement/facade.js'
+import { refinementRunRow } from '../src/refinement/run.js'
+import { tryApply } from '../src/refinement/scheduler.js'
 import type { RefinementWorkspacePort, WorkspaceSaveRequest } from '../src/refinement/workspace.js'
 import { textTurn, toolTurn } from './helpers/fake-provider.js'
 import {
@@ -71,11 +74,14 @@ const byTools = (seen: Seen) =>
     evidenceIds: ids(seen, (e) => e.kind === 'tool'),
   })
 /** Confirms `read-b` with a quote of the later request. */
-const byQuote = () =>
-  output({
-    confirmations: [{ entryId: 'memory/read-b', evidenceIds: ['e1'], quote: 'read b again' }],
-    evidenceIds: ['e1'],
+const byQuote = (seen: Seen) => {
+  // The turns before the newest are shown too: the newest request is the last of the user's own.
+  const newest = ids(seen, (e) => e.kind === 'user').slice(-1)
+  return output({
+    confirmations: [{ entryId: 'memory/read-b', evidenceIds: newest, quote: 'read b again' }],
+    evidenceIds: newest,
   })
+}
 
 /** A session-level entry `read-b`, granted by a quote, then a turn with a failed-then-successful read. */
 async function confirmable(o: {
@@ -99,30 +105,25 @@ async function confirmable(o: {
 const saveRows = async (t: Awaited<ReturnType<typeof open>>) => ofType(await t.rows(), REFINEMENT_SAVE_EVENT)
 
 describe('automatic saves of confirmed entries', () => {
-  it('the second confirmation of a session entry offers one auto save and never a second', async () => {
+  it('a session entry a review wrote is offered once as an automatic save, at its first apply', async () => {
     const h = host()
     const t = await confirmable({ answers: [byTools, byQuote, byTools], workspace: h.workspace })
-    // One confirmation: nothing is offered.
-    expect(await t.refine()).toMatchObject({ state: 'applied' })
-    expect(t.meta('read-b')?.confirmations.count).toBe(1)
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    expect(h.asked).toHaveLength(0)
-    // The second confirmation offers the entry once, as an automatic save.
-    expect(await t.refine()).toMatchObject({ state: 'applied' })
-    expect(t.meta('read-b')?.confirmations.count).toBe(2)
     await vi.waitFor(() => expect(h.asked).toHaveLength(1))
+    expect(t.meta('read-b')?.confirmations.count).toBe(0)
     // A short, fixed-length id, scoped to this session and the content version; never the entry key.
     expect(h.asked[0]?.commandId).toMatch(/^auto:[0-9a-f]{48}$/u)
+    // The review that wrote it is the first time it was seen to hold.
     expect(h.asked[0]).toMatchObject({
       initiator: 'auto',
-      confirmations: 2,
+      confirmations: 1,
       entry: { kind: 'memory', id: 'read-b', applicability: 'session' },
     })
     expect(await saveRows(t)).toHaveLength(1)
-    // A third confirmation of the same content version offers nothing more.
-    expect(await t.say('read b once more')).toMatchObject({ reason: 'completed' })
+    // Later confirmations of the same content version offer nothing more.
     expect(await t.refine()).toMatchObject({ state: 'applied' })
-    expect(t.meta('read-b')?.confirmations.count).toBe(3)
+    expect(t.meta('read-b')?.confirmations.count).toBe(1)
+    expect(await t.refine()).toMatchObject({ state: 'applied' })
+    expect(t.meta('read-b')?.confirmations.count).toBe(2)
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(h.asked).toHaveLength(1)
     await t.session.close()
@@ -131,13 +132,93 @@ describe('automatic saves of confirmed entries', () => {
   it('a refused offer is not repeated for the same content version', async () => {
     const h = host(() => ({ outcome: 'refused', reason: 'memory-off', steps: [] }))
     const t = await confirmable({ answers: [byTools, byQuote, byTools], workspace: h.workspace })
-    expect(await t.refine()).toMatchObject({ state: 'applied' })
-    expect(await t.refine()).toMatchObject({ state: 'applied' })
     await vi.waitFor(() => expect(h.asked).toHaveLength(1))
-    expect(await t.say('read b once more')).toMatchObject({ reason: 'completed' })
     expect(await t.refine()).toMatchObject({ state: 'applied' })
+    expect(await t.refine()).toMatchObject({ state: 'applied' })
+    expect(await t.say('read b once more')).toMatchObject({ reason: 'completed' })
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(h.asked).toHaveLength(1)
+    await t.session.close()
+  })
+
+  it('a direct proposal has no review behind it and is offered only once a review confirms it', async () => {
+    const h = host()
+    const t = await open({ workspace: h.workspace, answers: [] })
+    expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
+    const outcome = await refinementFacade(t.session).propose({
+      rationale: 'The user said which file to read.',
+      evidenceSeqs: [1],
+      edits: [{ op: 'upsert', kind: 'memory', id: 'read-b', title: 'Read b', content: 'Read b.' }],
+    })
+    await ended(t, (outcome as { runId: string }).runId)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(t.entries()).toEqual(['read-b'])
+    expect(h.asked).toHaveLength(0)
+    await t.session.close()
+  })
+
+  it('an entry or a confirmation the apply dropped is never offered', async () => {
+    const h = host()
+    const t = await open({ workspace: h.workspace, answers: [] })
+    expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
+    const request = ofType(await t.rows(), 'user/message')[0]?.seq ?? 0
+    // A session entry no review wrote, so nothing offers it yet.
+    const kept = await refinementFacade(t.session).propose({
+      rationale: 'The user said which file to read.',
+      evidenceSeqs: [request],
+      edits: [{ op: 'upsert', kind: 'memory', id: 'read-b', title: 'Read b', content: 'Read b.' }],
+    })
+    await ended(t, (kept as { runId: string }).runId)
+    const entry = t.session.state.registers.harnessEntries.get(entryKey({ kind: 'memory', id: 'read-b' }))
+    // A proposed plan that confirms it and writes another entry, planned when `read-b` was a different
+    // cell: the apply drops the confirmation and the hand-off must not offer `read-b` for it.
+    const runId = 'confirm-and-write'
+    await t.session.append([
+      refinementRunRow(t.session, runId, 'proposed', {
+        trigger: { kind: 'compaction', seq: request },
+        settingsRevision: 'r1',
+        readSet: {
+          settingsRevision: 'r1',
+          entries: [{ kind: 'memory', id: 'read-b', seq: (entry?.seq ?? 1) - 1, version: 1 }],
+        },
+        plan: {
+          summary: 's',
+          rationale: 'r',
+          expectedOutcome: '',
+          edits: [
+            {
+              op: 'upsert',
+              kind: 'memory',
+              id: 'other',
+              title: 'Other',
+              content: 'Other.',
+              applicability: 'session',
+              evidenceSeqs: [request],
+              usedEvidence: [],
+            },
+          ],
+          confirmations: [
+            {
+              kind: 'memory',
+              id: 'read-b',
+              evidenceSeqs: [request],
+              confirmedBy: { identity: 'tool:99', seq: request },
+            },
+          ],
+          evidenceSeqs: [request],
+          baseline: [],
+        },
+      }),
+    ])
+    expect(await tryApply(t.session, runId)).toBe('applied')
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    const applied = t.session.state.refinementRuns.get(runId)
+    // The row that ends the run carries the plan as applied.
+    expect(applied?.plan?.confirmations).toEqual([])
+    expect(applied?.plan?.edits.map((e) => e.op === 'upsert' && e.id)).toEqual(['other'])
+    expect(t.entries().sort()).toEqual(['other', 'read-b'])
+    // Neither is offered: `other` has no review behind it and the confirmation of `read-b` was dropped.
+    expect(h.asked).toHaveLength(0)
     await t.session.close()
   })
 
@@ -191,11 +272,182 @@ describe('saving the result of a run to the workspace', () => {
     await t.session.close()
   })
 
-  it('a run without saveTo saves nothing and tells the planner nothing about the workspace', async () => {
+  it('/refine saveTo user offers each applied entry to user memory as the user, in either mode', async () => {
+    for (const mode of ['manual', 'auto'] as const) {
+      const h = host()
+      let guidance: Seen['guidance']
+      const t = await open({
+        workspace: h.workspace,
+        sw: sw({ mode }),
+        answers: [
+          (seen) => {
+            guidance = seen.guidance
+            return output({
+              edits: [upsert('kept', { quote: QUOTE }), upsert('for-task', { applicability: 'task' })],
+              evidenceIds: ['e1'],
+            })
+          },
+        ],
+      })
+      t.goal.current = activeGoal
+      expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
+      const outcome = await refinementFacade(t.session).request({
+        kind: 'manual',
+        seq: t.session.lastSeq,
+        saveTo: 'user',
+      })
+      const run = await ended(t, (outcome as { runId: string }).runId)
+      expect(run).toMatchObject({ state: 'applied', trigger: { kind: 'manual', saveTo: 'user' } })
+      expect(guidance?.saveTo).toBe('user')
+      await vi.waitFor(() => expect(h.asked).toHaveLength(2))
+      // The user's own request: no confirmation count, and the host judges every entry.
+      expect(h.asked.map((r) => [r.initiator, r.target, r.entry.id, r.runId])).toEqual([
+        ['user', 'user', 'kept', run.runId],
+        ['user', 'user', 'for-task', run.runId],
+      ])
+      await t.session.close()
+    }
+  })
+
+  it('the model asking for user memory is saved as the model, in auto mode only', async () => {
     const h = host()
     let guidance: Seen['guidance']
     const t = await open({
       workspace: h.workspace,
+      answers: [
+        (seen) => {
+          guidance = seen.guidance
+          return grant()
+        },
+      ],
+    })
+    expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
+    const outcome = await refinementFacade(t.session).request({
+      kind: 'model',
+      seq: t.session.lastSeq,
+      saveTo: 'user',
+    })
+    const run = await ended(t, (outcome as { runId: string }).runId)
+    expect(run).toMatchObject({ state: 'applied', trigger: { kind: 'model', saveTo: 'user' } })
+    expect(guidance).toMatchObject({ trigger: 'model', saveTo: 'user' })
+    await vi.waitFor(() => expect(h.asked).toHaveLength(1))
+    expect(h.asked[0]).toMatchObject({ initiator: 'model', target: 'user', entry: { id: 'read-b' } })
+    // A direct proposal is the same: applied to the session, then saved to user memory as the model's.
+    const request = ofType(await t.rows(), 'user/message')[0]?.seq ?? 0
+    const proposal = {
+      rationale: 'The user said which file to read.',
+      evidenceSeqs: [request],
+      edits: [
+        { op: 'upsert' as const, kind: 'memory' as const, id: 'read-c', title: 'Read c', content: 'Read c.' },
+      ],
+    }
+    const proposed = await refinementFacade(t.session).propose(proposal, { saveTo: 'user' })
+    await ended(t, (proposed as { runId: string }).runId)
+    await vi.waitFor(() => expect(h.asked).toHaveLength(2))
+    expect(h.asked[1]).toMatchObject({ initiator: 'model', target: 'user', entry: { id: 'read-c' } })
+    await t.session.close()
+
+    // In manual mode the model is refused, as for the workspace, and nothing is written.
+    const m = await open({ workspace: h.workspace, sw: sw({ mode: 'manual' }), answers: [grant] })
+    expect(await m.say(REQUEST)).toMatchObject({ reason: 'completed' })
+    const before = m.session.lastSeq
+    expect(await refinementFacade(m.session).request({ kind: 'model', seq: before, saveTo: 'user' })).toEqual(
+      { refused: 'manual-mode' },
+    )
+    expect(await refinementFacade(m.session).propose(proposal, { saveTo: 'user' })).toEqual({
+      refused: 'manual-mode',
+    })
+    expect(m.session.lastSeq).toBe(before)
+    await m.session.close()
+  })
+
+  it('the model reaches user memory only with a request of the user or a settled result behind the lesson', async () => {
+    const h = host()
+    const t = await open({
+      workspace: h.workspace,
+      scripts: [toolTurn('read', { path: 'b' }), textTurn('ok')],
+      reads: [true],
+      answers: [],
+    })
+    expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
+    const all = await t.rows()
+    const user = ofType(all, 'user/message')[0]?.seq ?? 0
+    const result = ofType(all, 'tool/result')[0]?.seq ?? 0
+    const reply = ofType(all, 'assistant/message').at(-1)?.seq ?? 0
+    const propose = async (id: string, evidenceSeqs: number[]) => {
+      const out = await refinementFacade(t.session).propose(
+        {
+          rationale: 'A lesson.',
+          evidenceSeqs,
+          edits: [{ op: 'upsert', kind: 'memory', id, title: id, content: `Lesson ${id}.` }],
+        },
+        { saveTo: 'user' },
+      )
+      await ended(t, (out as { runId: string }).runId)
+    }
+    // Its own words alone back nothing that every workspace would read: the workspace gets the model's save.
+    await propose('own-words', [reply])
+    await vi.waitFor(() => expect(h.asked).toHaveLength(1))
+    expect(h.asked[0]).toMatchObject({ initiator: 'model', entry: { id: 'own-words' } })
+    expect(h.asked[0]).not.toHaveProperty('target')
+    await propose('from-result', [result])
+    await propose('from-request', [reply, user])
+    await vi.waitFor(() => expect(h.asked).toHaveLength(3))
+    expect(h.asked.slice(1).map((r) => [r.entry.id, r.initiator, r.target])).toEqual([
+      ['from-result', 'model', 'user'],
+      ['from-request', 'model', 'user'],
+    ])
+    await t.session.close()
+  })
+
+  it('a trigger with no one behind it can never ask for user memory', async () => {
+    const h = host()
+    const t = await open({ workspace: h.workspace, answers: [grant] })
+    expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
+    const before = t.session.lastSeq
+    for (const kind of ['compaction', 'repeated-failure'] as const)
+      expect(await refinementFacade(t.session).request({ kind, seq: before, saveTo: 'user' })).toEqual({
+        refused: 'invalid',
+        detail: 'saveTo',
+      })
+    expect(t.session.lastSeq).toBe(before)
+    expect(h.asked).toHaveLength(0)
+    await t.session.close()
+  })
+
+  it('a request for user memory without a host save path is refused before anything is queued', async () => {
+    const u = await open()
+    expect(await u.say(REQUEST)).toMatchObject({ reason: 'completed' })
+    const at = u.session.lastSeq
+    expect(await refinementFacade(u.session).request({ kind: 'manual', seq: at, saveTo: 'user' })).toEqual({
+      refused: 'unavailable',
+      detail: 'user',
+    })
+    expect(u.session.lastSeq).toBe(at)
+    await u.session.close()
+  })
+
+  it('with refinement off a request for user memory is refused and writes nothing', async () => {
+    const switchState = sw()
+    const h = host()
+    const off = await open({ workspace: h.workspace, sw: switchState, answers: [grant] })
+    expect(await off.say(REQUEST)).toMatchObject({ reason: 'completed' })
+    switchState.enabled = false
+    const before = off.session.lastSeq
+    expect(
+      await refinementFacade(off.session).request({ kind: 'manual', seq: before, saveTo: 'user' }),
+    ).toEqual({ refused: 'refinement-off' })
+    expect(off.session.lastSeq).toBe(before)
+    expect(h.asked).toHaveLength(0)
+    await off.session.close()
+  })
+
+  it('in manual mode a run without saveTo saves nothing and tells the planner nothing about the workspace', async () => {
+    const h = host()
+    let guidance: Seen['guidance']
+    const t = await open({
+      workspace: h.workspace,
+      sw: sw({ mode: 'manual' }),
       answers: [
         (seen) => {
           guidance = seen.guidance

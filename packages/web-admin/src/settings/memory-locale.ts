@@ -42,7 +42,7 @@ export const memoryCatalog: LocaleCatalog = {
     'saved.unknown':
       'Not confirmed: the agent does not see it until you make it ordinary memory or withdraw it.',
     'saved.by': 'Saved by: {who}.',
-    'saved.initiator.auto': 'automatic, after two confirmations',
+    'saved.initiator.auto': 'automatic',
     'saved.initiator.user': 'you',
     'saved.initiator.model': 'the model',
     'saved.renew': 'Renew',
@@ -50,7 +50,7 @@ export const memoryCatalog: LocaleCatalog = {
     'saved.withdraw': 'Withdraw',
     'saved.user.title': 'Task experience in user memory',
     'saved.user.help':
-      'Lessons confirmed twice that hold in every workspace, written to user memory automatically. Every workspace that reads user memory sees them, after your own text. Each has a 30-day review date; past it the agent no longer sees it until it is renewed. Withdrawing one removes it and stops the same content being written again.',
+      'Lessons that hold in every workspace, written to user memory automatically. Every workspace that reads user memory sees them, after your own text. Each has a 30-day review date; past it the agent no longer sees it until it is renewed. Withdrawing one removes it and stops the same content being written again.',
     'saved.user.read': 'This workspace reads user memory.',
     'saved.user.unread':
       'This workspace does not read user memory (memory off, or user memory not turned on here); other workspaces that read it do.',
@@ -93,7 +93,7 @@ export const memoryCatalog: LocaleCatalog = {
     'saved.expired': '已过复核日期（{date}）：智能体不再看到它。续期后恢复。',
     'saved.unknown': '未确认：在你把它转为普通记忆或撤回之前，智能体看不到它。',
     'saved.by': '保存方：{who}。',
-    'saved.initiator.auto': '自动（已证实 2 次）',
+    'saved.initiator.auto': '自动',
     'saved.initiator.user': '你',
     'saved.initiator.model': '模型',
     'saved.renew': '续期',
@@ -101,7 +101,7 @@ export const memoryCatalog: LocaleCatalog = {
     'saved.withdraw': '撤回',
     'saved.user.title': '用户记忆中的任务经验',
     'saved.user.help':
-      '被证实 2 次、适用于所有工作区的经验，会自动写入用户记忆。所有读取用户记忆的工作区都会看到它们，排在你自己写的内容之后。每条有 30 天的复核日期，过期后智能体看不到，直到续期。撤回后会删除它，并且相同内容不会再被写入。',
+      '适用于所有工作区的经验，会自动写入用户记忆。所有读取用户记忆的工作区都会看到它们，排在你自己写的内容之后。每条有 30 天的复核日期，过期后智能体看不到，直到续期。撤回后会删除它，并且相同内容不会再被写入。',
     'saved.user.read': '本工作区读取用户记忆。',
     'saved.user.unread':
       '本工作区不读取用户记忆（记忆已关闭，或这里没有开启用户记忆）；读取它的其他工作区会看到。',

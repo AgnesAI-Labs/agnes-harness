@@ -188,10 +188,10 @@ describe('the save-to-workspace decision order', () => {
     ).toEqual(['auto', 'user', 'model'])
   })
 
-  it('auto needs two confirmations, user and model do not', async () => {
+  it('auto needs the lesson seen to hold once, user and model do not', async () => {
     const ws = await workspace({ mode: 'off' })
     const save = ws.service()
-    expect(await save.save(request(ws, { initiator: 'auto', confirmations: 1 }))).toMatchObject({
+    expect(await save.save(request(ws, { initiator: 'auto', confirmations: 0 }))).toMatchObject({
       outcome: 'refused',
       reason: 'unconfirmed',
     })
@@ -199,7 +199,7 @@ describe('the save-to-workspace decision order', () => {
       expect(await save.save(request(ws, { initiator, confirmations: 0 }))).toMatchObject({
         reason: 'memory-off',
       })
-    expect(await save.save(request(ws, { initiator: 'auto', confirmations: 2 }))).toMatchObject({
+    expect(await save.save(request(ws, { initiator: 'auto', confirmations: 1 }))).toMatchObject({
       reason: 'memory-off',
     })
   })

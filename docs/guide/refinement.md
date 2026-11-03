@@ -26,10 +26,10 @@ Open **Settings → General → Task experience** in the Web workbench.
 
 The settings panel lists what turning it on allows:
 
-1. Install proven skills in the workspace: a skill entry confirmed twice is installed in the workspace, trusted and switched on, without the usual install confirmation. See [Saved skills](#saved-skills).
+1. Install proven skills in the workspace: a skill entry a review wrote is installed in the workspace as soon as it passes the checks, trusted and switched on, without the usual install confirmation. See [Saved skills](#saved-skills).
 2. Let the model save skills in the workspace without waiting for a second confirmation, if it cites evidence from the session and passes the static checks.
-3. Let the model save memory in the workspace: lessons confirmed twice, your own saves and the model's saves go into the workspace memory. The workspace memory setting (off, ask or auto) still decides what is written.
-4. Write lessons that hold everywhere to user memory: a lesson confirmed twice that holds in every workspace is written to user memory **automatically, without asking** (see [Save to user memory](#save-to-user-memory)).
+3. Let the model save memory in the workspace: lessons a review wrote, your own saves and the model's saves go into the workspace memory. The workspace memory setting (off, ask or auto) still decides what is written.
+4. Write lessons that hold everywhere to user memory: a lesson that holds in every workspace is written to user memory **automatically, without asking** (see [Save to user memory](#save-to-user-memory)).
 
 None of them brings back something you uninstalled, rolled back or deleted.
 
@@ -41,27 +41,26 @@ A **manual** review is one you ask for:
 
 - `/refine [focus]` in the TUI or the Web message box. The optional focus (at most 512 characters) tells the review what to look at. The reply says the review is queued; the result shows in the conversation.
 - `/refine --workspace [focus]` queues the same review, and what it keeps is also saved to the workspace as your own save (see below).
-- `/refine --unpriced [focus]` (it combines with `--workspace`) runs a review on a model with no known price. Without it, `/refine` on such a model is refused and says so; see [Cost](#cost).
+- `/refine --user [focus]` queues the same review, and what it keeps is also saved to user memory as your own save, without waiting for a second confirmation (see [Save to user memory](#save-to-user-memory)). Use either `--workspace` or `--user`, not both.
+- `/refine --unpriced [focus]` (it combines with `--workspace` or `--user`) runs a review on a model with no known price. Without it, `/refine` on such a model is refused and says so; see [Cost](#cost).
 
 With **Manual and automatic**, a review can also start by itself:
 
 - after a compaction that replaced the history with a model summary (not after the fallback that cuts history without a summary);
-- when the same tool fails with the same error three times in one turn. Numbers, paths and long hex strings are ignored when errors are compared. Refusals do not count: a rejected approval, a permission, credential or budget error, a pause or a cancel;
-- when the model asks for one with the `harness_refine` tool.
+- when the same tool fails with the same error twice in one session (offered once for that tool and error). Numbers, paths and long hex strings are ignored when errors are compared. Refusals do not count: a rejected approval, a permission, credential or budget error, a pause or a cancel;
+- when the model asks for one with the `harness_refine` tool. This works in manual mode too, since the model chose to call it; the tool is always listed while task experience is on.
 
-Automatic reviews have limits. Manual reviews are not counted against them; they only wait for a review that is already running.
+Automatic reviews have limits. Manual reviews are not counted against them; they only wait for a review that is already running. The model's own requests are held only to a cap of 40 reviews a session (one that found nothing does not count), with no cooldown or other limit; the limits below are for the compaction and repeated-failure reviews.
 
 | Limit | Value |
 | --- | --- |
-| Completed turns since the last automatic review started | at least 5 (the first one needs none) |
-| Automatic reviews per hour | at most 4 |
 | Wait after any review ends | 120 s |
-| Automatic reviews per session | at most 10 |
-| Tokens for all reviews of a session, input and output | 65,536 (manual reviews included) |
+| Automatic reviews per session | at most 40 (a review that found nothing does not count) |
+| Tokens for all reviews of a session, input and output | 524,288 (manual reviews and the model's requests included) |
 
 One review runs per session at a time. A newer request replaces one that is still waiting, but an automatic one never replaces a waiting manual one. A review plans in the background, so you can keep working. Its result is applied only between two turns: if a turn is running, it waits for the end of that turn.
 
-A review reads this session's requests, tool calls and results, and compaction summaries. It uses the session's current main model and gives it up to 60 seconds (90 seconds for a manual review).
+A review reads the session's last 5 turns: your requests, the model's replies, tool calls and results, and compaction summaries (up to about 24,000 tokens, and it may answer with up to 4,096). The model's own words are marked as untrusted, like tool output. It uses the session's current main model and gives it up to 60 seconds (90 seconds for a manual review).
 
 ## What a review saves
 
@@ -76,14 +75,14 @@ An **entry** has a kind, an id, a title and a text. There are four kinds:
 
 A skill or subagent entry is text the model can read and follow. It does not install a skill or start a subagent; saving a skill entry to the workspace does install it (see [Saved skills](#saved-skills)).
 
-A review changes at most 5 entries, each at most 2,000 characters, and it is applied whole or not at all. If an entry changed after the review read it, nothing from that review is saved. Each kind keeps at most 200 entries; a review that would go past that is not applied.
+A review changes at most 5 entries, each at most 2,000 characters. An edit that breaks a rule is left out and the others are kept: a sixth edit is ignored, a longer text is cut, and an edit is dropped when it cites evidence the review was not shown, rewrites an entry it only saw as a reference, changed after the review read it, or is bound to a skill or role that cannot be used now. The review is refused only when nothing valid is left. Each kind keeps at most 200 entries; a review that would go past that is not applied.
 
 ### Session and task entries
 
 Every entry has a level:
 
-- A **session** entry lasts until the session ends, or until it is changed, deleted or withdrawn. To get this level, a lesson must quote at least 12 characters of your own request word for word, or rest on a failure followed by a success of the same tool on the same target. Lessons proposed directly by the model with `harness_propose` are session entries too.
-- A **task** entry belongs to the current goal (see [Persistent goals](sessions.md#persistent-goals)). It expires when the goal is completed, cleared, or replaced by a new goal. Pausing, resuming or editing the goal keeps it. Without a goal, task lessons are not saved. While the goal cannot be read, its task entries are held back and come back when it can.
+- A **session** entry lasts until the session ends, or until it is changed, deleted or withdrawn. A lesson the review marks as a session lesson gets this level as long as it cites at least one request of your own or one finished tool result from the session; it needs no quoted words. A lesson that cites only page or file text, the model's own words or a summary is kept as a task entry instead. Lessons proposed directly by the model with `harness_propose` are session entries too.
+- A **task** entry is for a lesson that names this task and stops mattering when it ends; the review uses it only then, and session level is the default. A task entry belongs to the current goal (see [Persistent goals](sessions.md#persistent-goals)). It expires when the goal is completed, cleared, or replaced by a new goal. Pausing, resuming or editing the goal keeps it. Without a goal, task lessons are not saved. While the goal cannot be read, its task entries are held back and come back when it can.
 
 The model is told when a task entry expires.
 
@@ -97,10 +96,11 @@ There are four ways in, and all go through the same checks:
 
 | Way | Who it counts as | Needs |
 | --- | --- | --- |
-| Automatic: an entry a later review confirmed for the second time | automatic | **Manual and automatic** mode; two separate confirmations of the same version of the entry |
+| Automatic: an entry a review wrote or confirmed | automatic | **Manual and automatic** mode; it is saved the first time the review applies it, once per version of the entry |
 | `/refine --workspace [focus]` in the TUI or the Web message box | you | The review's applied result; each entry it wrote is saved |
-| **Save … to workspace** on an applied review line in the Web conversation | you | Nothing else; no model is called |
-| The model, with `target: 'workspace'` on `harness_propose` or `harness_refine` | the model | **Manual and automatic** mode; evidence from this session |
+| `/refine --user [focus]` in the TUI or the Web message box | you | The review's applied result; each memory or prompt entry it wrote is saved to user memory |
+| **Save … to workspace** or **Save … to user memory** on an applied review line in the Web conversation | you | Nothing else; no model is called |
+| The model, with `target: 'workspace'` or `target: 'user'` on `harness_propose` or `harness_refine` | the model | **Manual and automatic** mode; evidence from this session |
 
 Only **session** entries of the **memory**, **prompt** and **skill** kinds are saved. Task entries stay in their session, and subagent entries are not saved to the workspace. A forked or child session saves nothing. An entry must rest on what happened in this session; a model save without evidence from the session is refused.
 
@@ -108,7 +108,7 @@ Each save is judged in a fixed order, and the first check that fails ends it:
 
 1. Task experience is on.
 2. You have not taken the content back (see below); only your own save gets past this.
-3. An automatic save has two confirmations.
+3. An automatic save is of an entry a review has applied (a lesson proposed directly by the model waits for a later review to confirm it).
 4. The entry passes the source and safety rules (session level, evidence, length, no secret-like text).
 5. For memory and prompt entries, the workspace memory mode: **off** refuses; **ask** puts the save in the decision list; **auto** writes it. A skill entry passes the skill checks instead (below).
 6. There is room in the workspace memory, or the skill is installed.
@@ -154,7 +154,7 @@ A skill entry saved to the workspace becomes a workspace skill. It is installed 
 - **Where it goes.** Only the workspace's own skill folder (`.agh/skills/<name>`), never your user skills. It is installed trusted and switched on. A name already used by a skill a person wrote (in the workspace, or a user skill) is never taken: the change is kept as a draft instead.
 - **Hand-off.** Once installed, the session entry hands off to the skill: it is no longer given to the model as an entry and no longer counts toward the 200-entry limit, and the model is told once to use the workspace skill instead. The entry stays in the session's record. The next session finds the skill in its skill catalogue like any other.
 - **30-day review.** Every saved skill has a review date 30 days on. A later review that confirms the skill with new evidence renews it. A skill not confirmed again is switched off (not removed) when a session opens after that date, or when you turn task experience on; it then shows as **awaiting review**. Switching it back on, on the Skills page, renews it for another 30 days. Switching off by the review is not taking it back.
-- **Updates.** A new version of a skill entry (confirmed twice, or saved by you or the model) updates a saved skill **of the same name**, from any session, only while nobody changed the skill since it was saved. Up to five earlier versions are kept, and you can roll back to the previous one. A skill switched off by the review stays off through an update.
+- **Updates.** A new version of a skill entry (written by a review, or saved by you or the model) updates a saved skill **of the same name**, from any session, only while nobody changed the skill since it was saved. Up to five earlier versions are kept, and you can roll back to the previous one. A skill switched off by the review stays off through an update.
 - **A person's skill is never overwritten.** When the skill was written by a person, or a person changed a saved skill (even between the decision and the write), the change is kept as a **draft** for you and the save is refused as `conflict`. Drafts are listed under **Saved skills** in the task experience settings, as plain text with a whole-file diff; copy what you want by hand. A workspace keeps at most 20 drafts.
 - **Taking it back.** **Uninstall** or **Roll back to the previous version** under **Saved skills** in the task experience settings, removing the skill on the Skills page, or deleting its folder, records that you took it back. A deleted folder is noticed the next time a skill is saved in that workspace; until then **Saved skills** still shows the skill as on. After that, automatic and model saves of the same entry, of any skill entry with the same name, or of the same content under another name, are refused (`user-revoked`). Only your own save (`/refine --workspace`, or **Save … to workspace** on a review line) installs it again, and clears the record.
 
@@ -164,13 +164,15 @@ Installing, updating, switching off or removing a saved skill changes the skill 
 
 Some lessons hold in every workspace: a preference you stated yourself, such as "answer in short sentences". Such a lesson can go to **user memory** (`$AGH_HOME/memory/user/MEMORY.md`), which every workspace may read, instead of one workspace's memory. This happens **automatically, without asking**, like an assistant's own memory, once all of these hold:
 
-- A review suggested it for every workspace. The review model only suggests this (`"reach": "user"`); AGH keeps the suggestion only for a **memory** or **prompt** entry held for the session on a **verbatim quote of your own request**, from a review the model did not start (yours, after a compaction or after repeated failures), and not one you asked to save to the workspace. Evidence from tool output alone never makes a lesson reach every workspace.
+- A review suggested it for every workspace. The review model only suggests this (`"reach": "user"`); AGH keeps the suggestion only for a **memory** or **prompt** entry held for the session and citing a **request of your own**, from a review the model did not start (yours, after a compaction or after repeated failures), and not one you asked to save to the workspace. Evidence from tool output alone never makes a lesson reach every workspace.
 - Its text names no workspace: no absolute path (`/a/b`, `~/…`, `C:\…`), and neither the workspace's path nor its folder name. A lesson that does is saved to its workspace instead, as an automatic save. This check is about structure only; it does not judge what the lesson means.
-- It was confirmed **twice**, in **Manual and automatic** mode.
+- The review that wrote it applied it, in **Manual and automatic** mode. It does not wait for a second confirmation.
 - It passes the same checks as a save to the workspace (session level, evidence from this session, no secret-like text), and you have not taken the same content back, from user memory or from this workspace.
 - It fits: user memory holds about **512 bytes** (the agent is shown at most `userTokenBudget`, 512 by default, counted as UTF-8 bytes). Your own text comes first; the lesson is written only if your text, the lessons already in force and the new one fit together. Otherwise it is not written (`user-memory-budget`) and nothing is trimmed, merged or removed.
 
-The model can never write user memory: its tools have no such target, a review it starts never reaches every workspace, and a request from it to write user memory is refused (`model-cannot-write-user`).
+**Saving it yourself.** `/refine --user [focus]` (TUI or Web message box) and **Save … to user memory** on a review line in the Web conversation save a lesson to user memory as your own save. They skip the second confirmation and the suggestion from the review; the other checks above still apply: the text must name no workspace (if it does, it is saved to the workspace instead, and the line says so), it must fit the user memory budget, pass the same checks as a save to the workspace, and not be something you took back from user memory or from this workspace (a withdrawn lesson is not saved again, even by you). Only **memory** and **prompt** entries can go to user memory. The line in the conversation says it was saved to user memory at your request, and whether this workspace reads user memory.
+
+**The model.** The model can ask for it too, with `target: 'user'` on `harness_refine` or `harness_propose`, only in **Manual and automatic** mode (as for `target: 'workspace'`). It is saved as the model's save, with the same checks and without waiting for a second confirmation. A **memory** or **prompt** lesson held for the session goes to user memory only if it cites at least one request of your own or one finished tool result; otherwise it is saved to the workspace at most. It should use this only for lasting facts or preferences that apply in every workspace of yours.
 
 **Who reads it.** User memory reaches the agent only in workspaces whose memory is on and that turn user memory on (`userEnabled`). A lesson is still written when the workspace it came from does not read user memory: other workspaces that do will see it. The save line says so. Task experience never turns these settings on for you.
 
@@ -196,8 +198,8 @@ When the switch is on, the guidance text is added even before the session has an
 
 With the switch on, the model has three tools:
 
-- `harness_refine` asks for a review (automatic mode only; it counts as an automatic review).
-- `harness_propose` saves a change directly, without a review call. It can create an entry, or change or delete one it has read in full.
+- `harness_refine` asks for a review (works in manual mode too; with `target` it needs automatic mode). With `target: 'workspace'` or `'user'` its result is also saved to the workspace or to user memory.
+- `harness_propose` saves a change directly, without a review call. It can create an entry, or change or delete one it has read in full; `target` works as for `harness_refine`.
 - `harness_inspect` reads the saved entries, as above.
 
 ## Withdraw a review
@@ -213,7 +215,7 @@ The TUI shows the same lines as text but has no withdraw action. A client can ca
 
 ## Cost
 
-- Each review is a model call billed to your account, from a token budget of its own: 65,536 tokens for all reviews of a session. It never draws on a turn's budget.
+- Each review is a model call billed to your account, from a token budget of its own: 524,288 tokens for all reviews of a session. It never draws on a turn's budget.
 - A model priced at zero (a free or local model) has a known price: reviews run on it, automatic ones included, cost nothing and are bounded by the token budget alone.
 - A model with no known price runs no automatic review. A review you ask for runs on it only once you agree to the unknown cost with `/refine --unpriced`; the token budget still bounds it, and its cost shows as unknown.
 - In the TUI, the footer, `/status` and the `/usage` figures leave review spend out, and `/usage` lists it on its own **RSI cost** line (a free model shows a zero cost, a model with no known price shows "price unknown").
@@ -228,22 +230,23 @@ Nothing is saved to the workspace or to user memory while it is off, and request
 
 ## Compared with Prime Agent
 
-- Prime Agent keeps session entries and global entries for every session (`/refine --global`). AGH keeps entries in the session and saves them to the current workspace only: memory and prompt entries as paragraphs of the workspace memory, skill entries as workspace skills, each with a 30-day review date, after two confirmations, on your request (`/refine --workspace`, per entry) or the model's. Unlike Prime Agent, AGH has an automatic path, and it needs two confirmations.
-- Prime Agent's global library is written on your request. AGH writes a lesson to user memory (read in every workspace that turns it on) only automatically, after two confirmations, from your own words, within about 512 bytes and with a 30-day review date; the model cannot write it, and there is no command to write it yourself.
+- Prime Agent keeps session entries and global entries for every session (`/refine --global`). AGH keeps entries in the session and saves them to the current workspace only: memory and prompt entries as paragraphs of the workspace memory, skill entries as workspace skills, each with a 30-day review date, on your request (`/refine --workspace`, per entry) or the model's, and automatically when a review applies a lesson in **Manual and automatic** mode.
+- Prime Agent's global library is written on your request (`/refine --global`) or by the model. AGH writes a lesson to user memory (read in every workspace that turns it on) on your request (`/refine --user`, or **Save … to user memory**), on the model's (`target: 'user'`), or automatically when a review applies a lesson from your own words that holds in every workspace; it always stays within about 512 bytes and has a 30-day review date.
 - Prime Agent's self-written skills can be Python functions run in its own kernel. AGH's saved skills are instructions only; the agent writes and runs any script itself, under its usual permissions.
-- Prime Agent applies a review edit by edit. AGH applies the whole review or nothing.
-- Prime Agent starts automatic reviews only after a compaction, with a 20-minute cooldown. AGH also starts them after repeated failures and on the model's request, within the limits above.
+- Prime Agent applies a review edit by edit, and so does AGH: an edit that breaks a rule is left out and the others are applied.
+- Prime Agent starts automatic reviews only after a compaction, with a 20-minute cooldown. AGH also starts them after repeated failures and on the model's request, within the limits above (the model's own requests have only a high cap).
 - AGH delivers entries as untrusted data, and the feature is off until you turn on the switch of your profile.
 
 ## Known limits
 
 - Forks are child sessions. A fork, a rewind and a subagent get no reviews and no entry notes, and cannot withdraw.
 - Entries are kept per session. A new session starts with no entries; what was saved to the workspace reaches it through the workspace memory.
-- A saved skill is updated by name: a skill entry of the same name from any session updates it (after two confirmations when automatic).
+- A saved skill is updated by name: a skill entry of the same name from any session updates it (automatically, when a review applies it).
 - An entry bound to an approved skill or role, once delivered, keeps its line in the entry note until the next snapshot (a new session or a compaction), even if the skill is switched off meanwhile; `skill_read` and `subagent_spawn` check again when the model calls them.
 - Saved skills are written to the workspace's `.agh/skills` folder through the same publishing step as other skill installs. While a skill is being published, a process that can rewrite `.agh` could swap the folder; `.agh` is a configuration path, and the agent's own writes there need your approval.
 - Drafts and earlier versions of saved skills are kept in the profile's data directory, not in the workspace.
-- Whether a lesson holds in every workspace, and whether it names a workspace, is checked by structure only (your quoted words; no path, workspace path or folder name). It does not judge what the lesson means. Review what reaches user memory on the memory page.
+- Whether a lesson holds in every workspace, and whether it names a workspace, is checked by structure only: it is a memory or prompt lesson held for the session, it cites a request of your own (for the automatic promotion; a finished tool result is enough for the model's own request), and its text has no path, workspace path or folder name. Page or file text and the model's own words alone never back a lesson. It does not judge what the lesson means. Review what reaches user memory on the memory page.
+- Tool output and page or file text can influence what is saved: a review reads them as evidence, and a lesson can echo what they say, even though they are marked as untrusted data and credentials are masked. Nothing is saved without a section you can see and take back: withdraw a lesson on the memory page (a paragraph in the workspace memory or a section in user memory), and the same content is not saved again.
 - A lesson in user memory past its review date stays in the file, hidden from the agent, until you withdraw or delete it; nothing removes it for you. Its records sit next to the file (`$AGH_HOME/memory/user/refinement.json`), shared by every profile of the installation.
 - The checks on a save are about structure: the source, the length, secret-like text, the size of memory. They do not judge whether a lesson is right. Review what is saved on the memory page.
 - On a platform without a system sandbox (for example Windows, or a container without bubblewrap under full access), the agent's shell can read and change the memory files directly, including paragraphs it is not shown. A shell that takes the two marker lines off a paragraph turns it into ordinary memory at the next session open. See [Learned memory](memory.md#approval-and-privacy).
