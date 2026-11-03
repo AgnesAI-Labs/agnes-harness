@@ -5,6 +5,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { AGH_DIR } from '../../packages/protocol/src/constants.js'
 import { runMetrics, toRunRecord, type UsageSummary, workflowReuseMetric } from './metrics.js'
 import { type Diff, pairedTaskBootstrap } from './stats.js'
 import { fixtureOf, workspaceName } from './suite.js'
@@ -412,7 +413,7 @@ export const readRunRecords = (
       ]
       return readFileSync(candidates.find((p) => existsSync(p)) ?? (candidates[0] as string), 'utf8')
     }
-    const savedSkills = join(runDir, entry.name, workspaceName(fixtureOf(task, 0)), '.agh', 'skills')
+    const savedSkills = join(runDir, entry.name, workspaceName(fixtureOf(task, 0)), AGH_DIR, 'skills')
     records.push(
       toRunRecord(task, outcome, usage, {
         readFile,
