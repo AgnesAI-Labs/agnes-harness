@@ -31,8 +31,27 @@ it.each(['en', 'zh-CN'])('collects a localized sales inquiry in %s', async (loca
       `${mediaOrigin}/mhs/robot-arm-${language}.mp4`,
     )
     const form = host.querySelector('form')!
-    const code = form.querySelector<HTMLSelectElement>('[name="callingCode"]')!
+    const code = form.querySelector<HTMLInputElement>('[name="callingCode"]')!
+    const picker = form.querySelector<HTMLElement>('.mhs-code-picker')!
+    const chooseCallingCode = async (value: string) => {
+      await act(async () => fireEvent.mouseDown(picker.querySelector('input[role="combobox"]')!))
+      const option = [...document.querySelectorAll<HTMLElement>('.ant-select-item-option')].find((entry) =>
+        entry.textContent?.startsWith(`${value} `),
+      )
+      expect(option).toBeDefined()
+      await act(async () => fireEvent.click(option!))
+    }
     expect(code.value).toBe(locale === 'zh-CN' ? '+86' : '+1')
+    expect(picker.querySelector('.ant-select-content')?.textContent?.trim()).toBe(code.value)
+    await act(async () => fireEvent.mouseDown(picker.querySelector('input[role="combobox"]')!))
+    expect(document.querySelector('[role="listbox"]')?.textContent).toContain(
+      locale === 'zh-CN' ? '+86 中国' : '+86 China',
+    )
+    const selectedOption = [...document.querySelectorAll<HTMLElement>('.ant-select-item-option')].find(
+      (entry) => entry.textContent?.startsWith(`${code.value} `),
+    )!
+    await act(async () => fireEvent.click(selectedOption))
+    expect(picker.querySelector('.ant-select-content')?.textContent?.trim()).toBe(code.value)
     expect(form.querySelector<HTMLInputElement>('[name="name"]')?.required).toBe(true)
     expect(form.querySelector<HTMLInputElement>('[name="phone"]')?.required).toBe(true)
     expect(form.querySelector('[name="company"], [name="message"]')).toBeNull()
@@ -66,17 +85,20 @@ it.each(['en', 'zh-CN'])('collects a localized sales inquiry in %s', async (loca
       window.dispatchEvent(new Event('agnes:locale-changed'))
     })
     expect(code.value).toBe(locale === 'zh-CN' ? '+86' : '+1')
+    expect(picker.querySelector('.ant-select-content')?.textContent?.trim()).toBe(code.value)
     expect(name.value).toBe('Example organization')
     expect(phone.value).toBe('2025550123')
     expect(github.value).toBe('https://github.com/example/project')
     expect(type.value).toBe('other')
     expect(form.querySelector<HTMLInputElement>('[name="otherDetails"]')?.value).toBe('Device integration')
+    await chooseCallingCode('+44')
     await act(async () => {
-      fireEvent.change(code, { target: { value: '+44' } })
       document.documentElement.lang = locale
       window.dispatchEvent(new Event('agnes:locale-changed'))
     })
     expect(code.value).toBe('+44')
+    expect(picker.querySelector('.ant-select-content')?.textContent?.trim()).toBe('+44')
+    expect(new FormData(form).get('callingCode')).toBe('+44')
     expect(phone.value).toBe('2025550123')
   } finally {
     await act(async () => root.unmount())

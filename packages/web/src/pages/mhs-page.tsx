@@ -4,6 +4,7 @@ import {
   Icon,
   IconButton,
   type LocaleCatalog,
+  Select,
   SettingsInput,
   SettingsSelect,
   useUiText,
@@ -371,19 +372,19 @@ export function MhsPage({ context }: { context: UiExtensionContext }) {
                   <label htmlFor="mhs-phone">{t('phone')} *</label>
                   <div className="mhs-phone-inputs">
                     <div className="mhs-code-picker">
-                      <SettingsSelect
-                        name="callingCode"
+                      <Select<string>
                         aria-label={t('callingCode')}
-                        autoComplete="tel-country-code"
                         value={callingCode}
-                        onChange={(event) => setCallingCode(event.target.value)}
-                      >
-                        {callingCodes.map(([code, en, zh]) => (
-                          <option key={code} value={code}>
-                            {code} {locale === 'zh-CN' ? zh : en}
-                          </option>
-                        ))}
-                      </SettingsSelect>
+                        onChange={setCallingCode}
+                        optionLabelProp="value"
+                        popupMatchSelectWidth={false}
+                        virtual={false}
+                        options={callingCodes.map(([code, en, zh]) => ({
+                          value: code,
+                          label: `${code} ${locale === 'zh-CN' ? zh : en}`,
+                        }))}
+                      />
+                      <SettingsInput type="hidden" name="callingCode" value={callingCode} readOnly />
                     </div>
                     <SettingsInput
                       id="mhs-phone"
