@@ -70,6 +70,7 @@ export type PromptWindow = {
   session: number
   prompt: number
   ran: boolean
+  /** A command run in this window failed with the task's trap signature; reading a file that holds it does not count. */
   trapHit: boolean
   checksPassed: boolean | null
 }
