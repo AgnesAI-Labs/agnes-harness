@@ -33,6 +33,10 @@ The gallery promotes showcase applications. Missing flagship packages produce no
 
 ## Start and connect
 
+The **MHS** sidebar entry opens a three-page presentation: product overview with a localized robotic-arm demo, device capability workflow, and sales contact. The contact form prepares an email in your configured mail application; review and send it there. Harness does not send or store the inquiry. The recipient is `support@agnes-ai.cn` in Simplified Chinese and `support@agnes-ai.com` in English.
+
+The demo video and cover load over HTTPS from `cos-agent-default.agnes-ai.cn` in Simplified Chinese and `cos-agent-default.agnes-ai.com` in English. They require network access and are not bundled with Harness. The main Web page permits these two origins only for images and media; scripts and API connections retain their existing policy.
+
 ```sh
 node agnes.mjs serve
 ```
