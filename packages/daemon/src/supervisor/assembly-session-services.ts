@@ -4,7 +4,7 @@ import { Scheduler } from '@agnes/daemon-foundation/jobs/scheduler'
 import { JobsService } from '@agnes/daemon-foundation/jobs/service'
 import { type ReclaimRecord, type ResumeReport, reclaimExpired } from '@agnes/daemon-foundation/lease/reclaim'
 import { sessionSelectionProvider } from '@agnes/daemon-rpc/local/methods/session-selection'
-import { agnesHome, RefinementSettingsStore, sessionsDbPath } from '@agnes/host'
+import { agnesHome, RefinementSettingsStore } from '@agnes/host'
 import type { DispatchState } from './assembly-client-dispatch.js'
 import type { AssemblyLifetime } from './assembly-lifetime.js'
 import type { AssemblyBase } from './assembly-options.js'
@@ -12,7 +12,6 @@ import type { RuntimeState } from './assembly-runtime.js'
 import type { StoresState } from './assembly-stores.js'
 import { createWorkerRequests } from './assembly-worker-requests.js'
 import type { WorkersState } from './assembly-workers.js'
-import { startChildMaintenance } from './child-maintenance.js'
 import { configurationApplication } from './configuration.js'
 import { readModelSelectionCatalog, sharedSessionCatalog } from './model-adapter-lookup.js'
 import { createSupervisorProfileServices } from './profile-services.js'
@@ -195,8 +194,6 @@ export async function openSessionServices(
   lifetime.own({ stop: () => keeper.close(), dispose: () => undefined })
 
   const { reclaimNow } = await openReclaimer(state, scheduler, lifetime)
-  const childMaintenance = startChildMaintenance({ dbPath: sessionsDbPath(o.config.dataDir) })
-  lifetime.own({ stop: () => childMaintenance.stop(), dispose: () => undefined })
 
   return {
     profileApplication,
@@ -212,7 +209,6 @@ export async function openSessionServices(
     selectedJobs,
     keeper,
     reclaimNow,
-    childMaintenance,
   }
 }
 

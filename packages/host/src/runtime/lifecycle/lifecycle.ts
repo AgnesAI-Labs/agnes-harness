@@ -85,6 +85,7 @@ export async function closeHost(
     timeoutMs: number
     audit: AuditSink
     pendingOpenings?: readonly Promise<void>[]
+    backgroundDrains?: readonly Promise<void>[]
     beforeRollback?: () => Promise<void>
   },
 ): Promise<void> {
@@ -111,7 +112,11 @@ export async function closeHost(
       }),
     )
   })()
-  const drain = Promise.all([sessionDrain, reconciliationDrain]).then(() => undefined)
+  let backgroundFailed = false
+  const backgroundDrain = Promise.allSettled(opts.backgroundDrains ?? []).then((results) => {
+    backgroundFailed = results.some((result) => result.status === 'rejected')
+  })
+  const drain = Promise.all([sessionDrain, reconciliationDrain, backgroundDrain]).then(() => undefined)
   let timer: ReturnType<typeof setTimeout> | undefined
   const deadline = new Promise<'timeout'>((res) => {
     timer = setTimeout(() => res('timeout'), opts.timeoutMs)
@@ -122,6 +127,7 @@ export async function closeHost(
     const failed: string[] = []
     let error: string | undefined
     if (reconciliationFailed) failed.push('ordinary-reconciliation')
+    if (backgroundFailed) failed.push('background-drain')
     if (opts.beforeRollback)
       try {
         await opts.beforeRollback()

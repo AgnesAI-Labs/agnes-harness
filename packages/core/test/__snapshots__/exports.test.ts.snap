@@ -161,6 +161,7 @@ exports[`keeps the public runtime export surface stable 1`] = `
   "resetChildAgentAllowlists",
   "resolveValidatedToolCallPolicy",
   "resourceCeilings",
+  "retireIdleChildren",
   "revokeSessionGrant",
   "roleAuthority",
   "rolePermissionContext",

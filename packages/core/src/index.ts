@@ -210,6 +210,11 @@ export {
 export { DEFAULT_LOOP } from '@agnes/extension-api'
 export type { Provider } from '@agnes/protocol'
 export { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
+export {
+  type IdleChildRetirementOptions,
+  type IdleChildRetirementResult,
+  retireIdleChildren,
+} from './child/idle-retirement.js'
 export { bindChildAgentSession } from './child/loop-port.js'
 export { type ChildModelScope, setChildModelScope } from './child/model-scope.js'
 export type { InProcessChildBackend, ResidentStart, ResidentTurn } from './child/provider.js'
