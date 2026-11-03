@@ -23,6 +23,7 @@ import type {
   PersistenceProvider,
   SandboxProvider,
   TaskScopeSource,
+  WorkflowRunSource,
 } from '@agnes/extension-api'
 import type { ExtensionAPI, ExtensionFactory } from '@agnes/extension-api/host'
 import type { PrivacyTrajectoryCapability } from '@agnes/host-artifacts/trajectory-contract'
@@ -154,31 +155,6 @@ export type SeamInitContext = {
    * workflows. Returns what withdraws the offer.
    */
   provideWorkflowRuns?: (source: WorkflowRunSource) => () => void
-}
-
-/** A finished workflow run's definition: names and tasks in order, nothing the members answered. */
-export type WorkflowRunDefinition = Readonly<{
-  runId: string
-  name: string
-  stages: readonly Readonly<{
-    name: string
-    members: readonly Readonly<{ name: string; task: string }>[]
-  }>[]
-}>
-
-/**
- * A read-only view of one session's workflow runs: `finished` gives the definition of a run that
- * completed with every member completed, `'not-completed'` for a run that did not finish that way, and
- * `undefined` when the session has no such run.
- */
-export interface WorkflowRunReader {
-  finished(runId: string): WorkflowRunDefinition | 'not-completed' | undefined
-}
-
-/** One of the workflow plugin's projections and the reader of its state; the host folds it per session. */
-export interface WorkflowRunSource {
-  readonly projection: string
-  reader(state: unknown): WorkflowRunReader
 }
 
 /**

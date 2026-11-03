@@ -1,9 +1,9 @@
+import { createHash } from 'node:crypto'
 import type { RefinementWorkflowRuns, WorkflowRunView } from '@agnes/core'
 import { redactEvidence } from '@agnes/core'
 import type { WorkflowRunSource } from '@agnes/host-extensions/assemble/packages'
 import type { SkillDraft } from '@agnes/host-extensions/resources/refinement-skill-install'
 import type { SaveRefusal } from '@agnes/host-infrastructure/refinement-registry'
-import { normalizedContentHash } from '@agnes/host-infrastructure/refinement-registry'
 import { SECRET_LIKE } from './save-rules.js'
 import { skillDraftOf } from './skill-drafts.js'
 
@@ -37,7 +37,7 @@ export function createWorkflowRuns(o: {
       if (!offered) return 'not-found'
       const found = offered.source.reader(offered.state).finished(runId)
       if (found === undefined) return 'not-found'
-      return found === 'not-completed' ? found : structuredClone(found as WorkflowRunView)
+      return found === 'not-completed' ? found : structuredClone(found)
     },
   }
 }
@@ -52,20 +52,23 @@ const definitionOf = (view: WorkflowRunView) => ({
 })
 
 /**
- * The hash that recognises a definition again: the normalised hash of the stages (names and tasks, in
- * order), so the same stages count as one definition whatever the run was called and however the text
- * is spaced or cased.
+ * The hash that recognises a definition again: the hash of the stages (names and tasks, in order) with
+ * the whitespace of each text trimmed and collapsed, so the same stages count as one definition whatever
+ * the run was called and however the text is spaced. Letter case is kept: it can matter in a task (a
+ * path, a branch name).
  */
 export const normalizedWorkflowHash = (view: WorkflowRunView): string => {
   const plain = (text: string) => text.trim().replace(/\s+/gu, ' ')
-  return normalizedContentHash(
-    JSON.stringify(
-      view.stages.map((stage) => [
-        plain(stage.name),
-        stage.members.map((member) => [plain(member.name), plain(member.task)]),
-      ]),
-    ),
-  )
+  return createHash('sha256')
+    .update(
+      JSON.stringify(
+        view.stages.map((stage) => [
+          plain(stage.name),
+          stage.members.map((member) => [plain(member.name), plain(member.task)]),
+        ]),
+      ),
+    )
+    .digest('hex')
 }
 
 /** The planner's text with every fenced block taken out: a definition is never taken from it. */

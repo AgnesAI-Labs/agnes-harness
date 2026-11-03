@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import type { ToolContext } from '@agnes/extension-api'
+import type { ToolContext, WorkflowRunSource } from '@agnes/extension-api'
 import { type Context, defineAgnesPlugin, defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import { renderInteractionSurface, tableSurface } from '../../../src/interaction-surfaces.js'
 import { WORKFLOW_RECEIPT_RULE, workflowReceipts } from './receipts.js'
-import { type WorkflowRunSource, workflowRunSource } from './source.js'
+import { workflowRunSource } from './source.js'
 import { type Run, type State, workflowProjection } from './state.js'
 
 const member = Type.Object(

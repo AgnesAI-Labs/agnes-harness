@@ -63,7 +63,7 @@ it('names the skills a review made from a finished workflow run', () => {
       appliedSeq: 4,
     }),
   ).toBe(
-    'Experience review (manual) saved changes. Saved: skill/ship-flow, skill/plain. Made from a finished workflow run: skill/ship-flow.',
+    'Experience review (manual) saved changes. Saved: skill/ship-flow, skill/plain. Based on a finished workflow run: skill/ship-flow.',
   )
 })
 

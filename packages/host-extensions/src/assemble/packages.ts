@@ -60,13 +60,13 @@ import type {
   SeamInitContext,
   SeamProfileView,
   SkillRuntimeDiscovery,
-  WorkflowRunSource,
 } from '../contracts/package.js'
 import { RUNTIME_LANGUAGES } from '../contracts/package.js'
 import { PluginImportError } from '../ext-host/loader.js'
 import { resolveEntry } from '../ext-host/manifest.js'
 import type { SkillRuntimeInput } from '../resources/skills.js'
 
+export type { WorkflowRunDefinition, WorkflowRunReader, WorkflowRunSource } from '@agnes/extension-api'
 export type {
   BuildCompactionPlan,
   IsolatedEcosystemFactory,
@@ -84,9 +84,6 @@ export type {
   SeamProfileView,
   SessionTasks,
   SkillRuntimeDiscovery,
-  WorkflowRunDefinition,
-  WorkflowRunReader,
-  WorkflowRunSource,
 } from '../contracts/package.js'
 export { RUNTIME_LANGUAGES } from '../contracts/package.js'
 /** Resolve the executable entry and static admission before any selected source is imported. */

@@ -2,6 +2,19 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.4.0
+
+### Added
+
+All additions are optional; `^5.0.0` ranges admit 5.4.0 and no existing contract changes.
+
+- `WorkflowRunSource`, `WorkflowRunReader` and `WorkflowRunDefinition`: the plugin that runs workflows
+  offers its `runs` projection and a reader of that projection's state, so the Host can read the
+  definition (names and tasks, in order; nothing the members answered) of a finished run of one session
+  and keep it as a skill. The Host grants this to the bundled workflow plugin only.
+- `isWorkflowRunId` and `MAX_WORKFLOW_RUN_ID`: the one rule for whether a string is well formed as the id
+  of a workflow run (1 to 128 characters, no whitespace or control characters).
+
 ## 5.3.0
 
 ### Added

@@ -298,6 +298,7 @@ export type {
   RefinementTrigger,
 } from './refinement/types.js'
 export type { RefinementWorkflowRuns, WorkflowRunView } from './refinement/workflow-runs.js'
+export { WORKFLOW_RUN_LOOKUP_MS } from './refinement/workflow-runs.js'
 export {
   type RefinementWorkspacePort,
   type SaveReceipt,

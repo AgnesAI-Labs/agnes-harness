@@ -75,6 +75,7 @@ export * from './tool-references.js'
 export * from './tool-runtime.js'
 export * from './version.js'
 export * from './webhook-trigger.js'
+export * from './workflow-run.js'
 export * from './workspace-hooks.js'
 
 export * from './workspace-state.js'

@@ -54,6 +54,7 @@ exports[`keeps the public runtime export surface stable 1`] = `
   "ToolRegistryView",
   "ToolRuntimeRegistry",
   "VERIFIED_HEAD_ALGORITHM",
+  "WORKFLOW_RUN_LOOKUP_MS",
   "WORKSPACE_HOOK_SANDBOX",
   "WORKSPACE_SECRET_DIRS",
   "applyBeforeRequestPatches",

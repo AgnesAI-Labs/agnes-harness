@@ -37,8 +37,15 @@ export async function droppedEdits(
   s: SessionImpl,
   edits: RefinementPlan['edits'],
 ): Promise<{ keys: Set<string>; reason: string }> {
-  const references = await unavailableReferences(s, edits)
-  const runs = await unavailableWorkflowRuns(s, edits)
+  // The two checks ask different ports and neither needs the other; each is skipped when no edit needs it.
+  const [references, runs] = await Promise.all([
+    edits.some((edit) => edit.op === 'upsert' && edit.reference !== undefined)
+      ? unavailableReferences(s, edits)
+      : [],
+    edits.some((edit) => edit.op === 'upsert' && edit.workflowRun !== undefined)
+      ? unavailableWorkflowRuns(s, edits)
+      : [],
+  ])
   const reason = references.length > 0 ? 'reference-unavailable' : (runs[0]?.reason ?? '')
   return { keys: new Set([...references, ...runs.map((run) => run.key)]), reason }
 }

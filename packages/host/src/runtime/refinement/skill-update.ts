@@ -150,6 +150,8 @@ export async function saveSkillChange(input: {
       name: draft.name,
       draft,
       expectedRevision: record.revision,
+      // The file now holds this entry: the record's source (hash, workflow marker) follows it.
+      source: input.source,
     })) ?? {}) as Reply
   } catch {
     return { refused: 'unavailable', step: 'capacity' }

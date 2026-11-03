@@ -97,7 +97,7 @@ function parse(input: Raw): Run {
     }
     case 'update': {
       if (
-        !only(input, ['op', 'name', 'draft', 'expectedRevision', 'enable']) ||
+        !only(input, ['op', 'name', 'draft', 'expectedRevision', 'enable', 'source']) ||
         !text(input.name) ||
         typeof input.expectedRevision !== 'string' ||
         !REVISION.test(input.expectedRevision)
@@ -105,7 +105,10 @@ function parse(input: Raw): Run {
         throw rpcError('INVALID_PARAMS')
       const { name, expectedRevision } = input
       const draft = draftOf(input.draft)
-      const options = enableOf(input.enable)
+      const options = {
+        ...enableOf(input.enable),
+        ...(input.source === undefined ? {} : { source: structuredClone(input.source) as never }),
+      }
       return (installer) => installer.update(name, draft, { revision: expectedRevision }, options)
     }
     case 'rollback':

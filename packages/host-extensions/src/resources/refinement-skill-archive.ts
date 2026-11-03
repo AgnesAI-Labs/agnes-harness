@@ -52,7 +52,10 @@ export type SkillJournal = {
   fromRevision?: string
   /** Install only: the receipt the caller will retry with. */
   receiptId?: string
-  /** Install only: the registry source, kept so a resumed install records the same one. */
+  /**
+   * The registry source to record, kept so a resumed operation records the same one. A replacement
+   * without one keeps the source the skill had.
+   */
   source?: unknown
   phase: 'prepared' | 'removed' | 'published'
   /** Whether the skill ends enabled; missing means enabled. */

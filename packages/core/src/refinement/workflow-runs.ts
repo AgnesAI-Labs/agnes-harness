@@ -1,8 +1,7 @@
 import type { HarnessEntry } from '@agnes/core-ledger/reduce/shapes'
+import type { WorkflowRunDefinition } from '@agnes/extension-api'
 import type { SessionImpl } from '../step/session.js'
 
-/** The longest `runId` a skill edit may carry; the workflow tool's own bound. */
-export const MAX_WORKFLOW_RUN_ID = 128
 /** How long one host read of a run record may take before the run counts as unavailable. */
 export const WORKFLOW_RUN_LOOKUP_MS = 5_000
 
@@ -10,11 +9,7 @@ export const WORKFLOW_RUN_LOOKUP_MS = 5_000
  * A finished workflow run as the host reads it from the session's own record: the definition the run
  * was started with (names and tasks, in order), nothing the members answered.
  */
-export type WorkflowRunView = {
-  runId: string
-  name: string
-  stages: { name: string; members: { name: string; task: string }[] }[]
-}
+export type WorkflowRunView = WorkflowRunDefinition
 
 /**
  * How the host answers which `workflow` runs of a session may become a skill: `read` gives the run's
@@ -31,13 +26,6 @@ export type RefinementWorkflowRuns = {
 
 /** Why an edit that names a workflow run is dropped. */
 export type WorkflowRunProblem = 'workflow-run-unavailable' | 'workflow-run-not-completed'
-
-// No whitespace or control characters: a run id is an identifier, never text.
-const PLAIN = /^[^\s\p{Cc}]+$/u
-
-/** Whether `value` is well formed as the id of a workflow run. */
-export const isWorkflowRunId = (value: unknown): value is string =>
-  typeof value === 'string' && value.length >= 1 && value.length <= MAX_WORKFLOW_RUN_ID && PLAIN.test(value)
 
 type Bound = { op: string; kind: HarnessEntry['kind']; id: string; workflowRun?: string }
 

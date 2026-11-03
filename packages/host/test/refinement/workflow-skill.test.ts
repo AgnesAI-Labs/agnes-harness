@@ -2,7 +2,7 @@ import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { RefinementWorkflowRuns, WorkflowRunView, WorkspaceSaveRequest } from '@agnes/core'
 import type { WorkflowRunDefinition, WorkflowRunSource } from '@agnes/host-extensions/assemble/packages'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSkillDraftStore } from '../../src/runtime/refinement/skill-drafts.js'
 import {
   createWorkflowRuns,
@@ -37,7 +37,7 @@ const VIEW: WorkflowRunView = {
 }
 /** Sets the task of the first member of one stage. */
 function setTask(view: WorkflowRunView, stage: number, task: string) {
-  const target = view.stages[stage]?.members[0]
+  const target = view.stages[stage]?.members[0] as { task: string } | undefined
   if (!target) throw new Error('no such member')
   target.task = task
 }
@@ -139,12 +139,15 @@ describe('the generated skill body', () => {
     expect(body.split('\n').filter((line) => line.startsWith('```'))).toEqual(['```json', '```'])
   })
 
-  it('the hash ignores the run name, spacing and letter case, and sees order and text', () => {
+  it('the hash ignores the run name and spacing, and sees order, text and letter case', () => {
     const base = normalizedWorkflowHash(VIEW)
     expect(normalizedWorkflowHash({ ...VIEW, name: 'another name', runId: 'x' })).toBe(base)
     const spaced = structuredClone(VIEW)
-    setTask(spaced, 0, '  READ the docs and\nlist the API calls. ')
+    setTask(spaced, 0, '  Read the docs   and\nlist the API calls. ')
     expect(normalizedWorkflowHash(spaced)).toBe(base)
+    const recased = structuredClone(VIEW)
+    setTask(recased, 0, 'Read the docs and list the api calls.')
+    expect(normalizedWorkflowHash(recased)).not.toBe(base)
     const reordered = { ...VIEW, stages: [...VIEW.stages].reverse() }
     expect(normalizedWorkflowHash(reordered)).not.toBe(base)
     const changed = structuredClone(VIEW)
@@ -182,17 +185,19 @@ const ENTRY: WorkspaceSaveRequest['entry'] = {
 }
 let commands = 0
 
-function setup() {
+function setup(lookup?: RefinementWorkflowRuns['read']) {
   const s = skillWorkspace(dirs)
   const now = { value: Date.UTC(2026, 10, 4) }
   const clock = () => now.value
   const runs = new Map<string, WorkflowRunView | 'not-found' | 'not-completed'>([[RUN, VIEW]])
   const asked: string[] = []
   const workflowRuns: RefinementWorkflowRuns = {
-    read: async (at, id) => {
-      asked.push(`${at.key}/${at.lane}/${id}`)
-      return runs.get(id) ?? 'not-found'
-    },
+    read:
+      lookup ??
+      (async (at, id) => {
+        asked.push(`${at.key}/${at.lane}/${id}`)
+        return runs.get(id) ?? 'not-found'
+      }),
   }
   const drafts = createSkillDraftStore(s.dataDir)
   const save = createWorkspaceSave({
@@ -335,9 +340,9 @@ describe('saving a finished run as a skill', () => {
     const before = s.text()
     const again = await s.save.save(s.request())
     expect(again).toMatchObject({ outcome: 'refused', reason: 'workflow-already-saved' })
-    // Another name, another session, another run of the same stages (re-spaced, re-cased).
+    // Another name, another session, another run of the same stages (re-spaced).
     const respaced = structuredClone(VIEW)
-    setTask(respaced, 0, 'read the DOCS and list\nthe api calls.')
+    setTask(respaced, 0, 'Read the docs   and list\nthe API calls.')
     s.runs.set('run-2', { ...respaced, runId: 'run-2', name: 'another name' })
     const other = await s.save.save(
       s.request({
@@ -391,6 +396,94 @@ describe('saving a finished run as a skill', () => {
     const receipt = await s.save.save(s.request(s.entry({ workflowRun: 'run-3' })))
     expect(receipt).toMatchObject({ outcome: 'installed' })
     expect(JSON.stringify(definitionOf(s.text()))).toContain('migration guide')
+  })
+
+  it('a run that is never answered counts as unavailable after the lookup bound, and writes nothing', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      let asking: (() => void) | undefined
+      const asked = new Promise<void>((resolve) => {
+        asking = resolve
+      })
+      const s = setup(() => {
+        asking?.()
+        return new Promise(() => undefined)
+      })
+      const pending = s.save.save(s.request())
+      await asked
+      await vi.advanceTimersByTimeAsync(5_001)
+      expect(await pending).toMatchObject({ outcome: 'refused', reason: 'workflow-run-unavailable' })
+      expect(s.requests).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a repeated command is answered from its receipt without reading the run again', async () => {
+    const s = setup()
+    const request = s.request()
+    const first = await s.save.save(request)
+    expect(first).toMatchObject({ outcome: 'installed' })
+    expect(s.asked).toHaveLength(1)
+    expect(await s.save.save(request)).toEqual(first)
+    expect(s.asked).toHaveLength(1)
+  })
+
+  it('an update refreshes what the record says the file holds: the hash that recognises it, and the workflow marker', async () => {
+    const s = setup()
+    expect(await s.save.save(s.request())).toMatchObject({ outcome: 'installed' })
+    const changed = structuredClone(VIEW)
+    setTask(changed, 1, 'Write the migration guide.')
+    s.runs.set('run-3', { ...changed, runId: 'run-3' })
+    expect(await s.save.save(s.request(s.entry({ workflowRun: 'run-3' })))).toMatchObject({
+      outcome: 'installed',
+    })
+    expect(s.live()[0]?.source).toMatchObject({
+      fromWorkflow: true,
+      contentHash: normalizedWorkflowHash(changed),
+    })
+    // The old definition is held by no skill now: another name may keep it. The new one is held.
+    expect(await s.save.save(s.request(s.entry({ id: 'old-flow' })))).toMatchObject({ outcome: 'installed' })
+    s.runs.set('run-4', { ...changed, runId: 'run-4' })
+    expect(await s.save.save(s.request(s.entry({ id: 'third-name', workflowRun: 'run-4' })))).toMatchObject({
+      outcome: 'refused',
+      reason: 'workflow-already-saved',
+    })
+  })
+
+  it('a plain-text update of a workflow skill no longer says the file came from a run', async () => {
+    const s = setup()
+    expect(await s.save.save(s.request())).toMatchObject({ outcome: 'installed' })
+    const { workflowRun: _run, ...text } = ENTRY
+    const plain = await s.save.save(
+      s.request({ entry: { ...text, content: 'Use when a change has two parts.' } }),
+    )
+    expect(plain).toMatchObject({ outcome: 'installed' })
+    const [record] = s.live()
+    expect(record?.source.fromWorkflow).toBeUndefined()
+    expect(record?.source.contentHash).not.toBe(normalizedWorkflowHash(VIEW))
+  })
+
+  it('the installer records the source it is given with an update, in the same step as the file', async () => {
+    const s = setup()
+    expect(await s.save.save(s.request())).toMatchObject({ outcome: 'installed' })
+    const record = s.live()[0]
+    if (!record) throw new Error('no record')
+    const doc = s.text().replace('Use when', 'Use only when')
+    const draft = { name: NAME, class: 'instructions' as const, files: [{ path: 'SKILL.md', content: doc }] }
+    const source = { ...record.source, contentHash: 'f'.repeat(64) }
+    delete (source as { fromWorkflow?: true }).fromWorkflow
+    await s.installer.update(NAME, draft, { revision: record.revision }, { source })
+    expect(s.live()[0]?.source).toEqual(source)
+    // Without one the skill keeps the source it had.
+    const kept = s.live()[0]
+    if (!kept) throw new Error('no record')
+    await s.installer.update(
+      NAME,
+      { ...draft, files: [{ path: 'SKILL.md', content: doc.replace('Use only', 'Use just') }] },
+      { revision: kept.revision },
+    )
+    expect(s.live()[0]?.source).toEqual(source)
   })
 
   it('a definition the user took back is not brought back by an automatic or model save, under any name', async () => {

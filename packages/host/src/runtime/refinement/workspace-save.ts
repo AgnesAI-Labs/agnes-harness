@@ -1,10 +1,11 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import type {
-  RefinementSettingsView,
-  RefinementWorkflowRuns,
-  RefinementWorkspacePort,
-  WorkflowRunView,
-  WorkspaceSaveRequest,
+import {
+  type RefinementSettingsView,
+  type RefinementWorkflowRuns,
+  type RefinementWorkspacePort,
+  WORKFLOW_RUN_LOOKUP_MS,
+  type WorkflowRunView,
+  type WorkspaceSaveRequest,
 } from '@agnes/core'
 import type { MemoryParagraphPort, MemoryProposal, MemorySession, MemorySource } from '@agnes/extension-api'
 import {
@@ -169,9 +170,15 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
     return serial(root, () =>
       withMemory(root, async (memory) => {
         const registry = deps.registry(root)
+        // The run is read once however often the judgement is repeated, and only when it is needed.
+        let read: ReturnType<typeof readRun> | undefined
+        const run = () => {
+          read ??= readRun(request)
+          return read
+        }
         for (let attempt = 0; ; attempt++) {
           try {
-            return await judge({ request, base, registry, memory })
+            return await judge({ request, base, registry, memory, run })
           } catch (error) {
             const failure = code(error)
             if (failure === 'REGISTRY_REVISION_CONFLICT' && attempt === 0) continue
@@ -186,17 +193,31 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
 
   /**
    * The finished run a skill request names, read for the requesting session: undefined when it names
-   * none, or the host cannot read runs.
+   * none, or the host cannot read runs. A read that throws, or takes longer than Core's lookup bound,
+   * is `not-found`.
    */
   async function readRun(
     request: WorkspaceSaveRequest,
   ): Promise<WorkflowRunView | 'not-found' | 'not-completed' | undefined> {
     const runId = request.entry.kind === 'skill' ? request.entry.workflowRun : undefined
     if (runId === undefined || !deps.workflowRuns) return undefined
+    const port = deps.workflowRuns
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<'not-found'>((resolve) => {
+      timer = setTimeout(() => resolve('not-found'), WORKFLOW_RUN_LOOKUP_MS)
+      ;(timer as { unref?: () => void }).unref?.()
+    })
     try {
-      return await deps.workflowRuns.read({ key: request.session.key, lane: request.session.lane }, runId)
+      return await Promise.race([
+        Promise.resolve().then(() =>
+          port.read({ key: request.session.key, lane: request.session.lane }, runId),
+        ),
+        late,
+      ])
     } catch {
       return 'not-found'
+    } finally {
+      clearTimeout(timer)
     }
   }
 
@@ -206,18 +227,11 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
     base: SaveReceipt
     registry: RefinementRegistry
     memory: MemorySession | undefined
+    /** The finished run the request names; read at most once for the whole save. */
+    run(): Promise<WorkflowRunView | 'not-found' | 'not-completed' | undefined>
   }): Promise<SaveReceipt> {
     const { request, registry, memory } = input
-    // A skill generated from a finished workflow run is recognised by the hash of its definition, not
-    // of the planner's words, in every step that compares content (revocation, an earlier save).
-    const run = await readRun(request)
-    const base: SaveReceipt =
-      typeof run === 'object'
-        ? {
-            ...input.base,
-            source: { ...input.base.source, contentHash: normalizedWorkflowHash(run), fromWorkflow: true },
-          }
-        : input.base
+    let base: SaveReceipt = input.base
     if (memory) await reconcileWorkspace(registry, memory, deps.clock).catch(() => [])
     await resumeSaves(registry, memory, deps.clock, inFlight).catch(() => undefined)
     const verdicts: Partial<Record<Step, 'pass' | 'fail' | 'skip'>> = { switch: 'pass' }
@@ -244,6 +258,15 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
         receipt.reason !== 'approval-expired',
     )
     if (repeated) return repeated
+    // A skill generated from a finished workflow run is recognised by the hash of its definition, not
+    // of the planner's words, in every step that compares content (revocation, an earlier save). The
+    // run is read after a repeated command was answered from its receipt.
+    const run = await input.run()
+    if (typeof run === 'object')
+      base = {
+        ...base,
+        source: { ...base.source, contentHash: normalizedWorkflowHash(run), fromWorkflow: true },
+      }
     const skillName = request.entry.kind === 'skill' ? request.entry.id : undefined
     // A saved skill whose folder a person deleted was taken back like one removed on the skills page.
     if (skillName && deps.skills) {

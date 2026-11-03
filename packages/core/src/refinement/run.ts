@@ -13,6 +13,7 @@ import {
   type RefinementTrigger,
   type RefinementWorkspaceConfirmation,
 } from '@agnes/core-ledger/reduce/state'
+import { isWorkflowRunId } from '@agnes/extension-api'
 import { estimateTokens } from '../execution/model-tokens.js'
 import { resolveModel } from '../execution/turn/inference.js'
 import { sessionIdentity } from '../loop/scope.js'
@@ -43,7 +44,6 @@ import {
   type RefinementPlanner,
 } from './types.js'
 import { type EntryView, entryValidity, grantLevels, lapsedKeys, validEntries } from './validity.js'
-import { isWorkflowRunId } from './workflow-runs.js'
 import {
   grantWorkspace,
   isWorkspaceKind,

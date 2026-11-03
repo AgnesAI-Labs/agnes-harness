@@ -85,7 +85,7 @@ function refinementRunText(node: Extract<UINode, { kind: 'refinement-run' }>): s
     node.reason ? `Reason: ${node.reason}.` : '',
     saved.length > 0 ? `Saved: ${saved.join(', ')}.` : '',
     removed.length > 0 ? `Removed: ${removed.join(', ')}.` : '',
-    workflow.length > 0 ? `Made from a finished workflow run: ${workflow.join(', ')}.` : '',
+    workflow.length > 0 ? `Based on a finished workflow run: ${workflow.join(', ')}.` : '',
     node.withdrawn ? 'Withdrawn since.' : '',
   ]
     .filter(Boolean)

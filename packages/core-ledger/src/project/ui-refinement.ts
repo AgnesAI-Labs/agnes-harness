@@ -8,7 +8,8 @@ import { clipUtf16 as clip } from './clip.js'
 export type RefinementRunNode = Extract<UINode, { kind: 'refinement-run' }>
 export type RefinementSaveNode = Extract<UINode, { kind: 'refinement-save' }>
 type NodeEdit = NonNullable<RefinementRunNode['edits']>[number]
-type Obj = Record<string, unknown>
+/** What names an edit: its kind and id, and for a skill made from a workflow run, the run. */
+type Named = { kind?: unknown; id?: unknown; workflowRun?: unknown }
 
 const MAX_EDITS = 50
 /** The kind of workspace target a save goes to, by the kind of entry saved. */
@@ -28,16 +29,15 @@ function editsOf(data: unknown): NodeEdit[] {
   if (!Array.isArray(raw)) return []
   const edits: NodeEdit[] = []
   for (const item of raw) {
-    const edit = (item as { op?: unknown; entry?: unknown; kind?: unknown; id?: unknown } | null) ?? {}
-    const named = edit.op === 'upsert' ? (edit.entry as { kind?: unknown; id?: unknown } | null) : edit
+    const edit = (item as ({ op?: unknown; entry?: unknown } & Named) | null) ?? {}
+    const named = edit.op === 'upsert' ? (edit.entry as Named | null) : edit
     const kind = named?.kind
     const id = named?.id
     if ((edit.op !== 'upsert' && edit.op !== 'delete') || typeof kind !== 'string' || !KINDS.has(kind))
       continue
     if (typeof id !== 'string' || id.length === 0) continue
-    // A skill generated from a finished workflow run says so; the run's id is not part of the timeline.
-    const workflow =
-      edit.op === 'upsert' && kind === 'skill' && typeof (named as Obj)?.workflowRun === 'string'
+    // An edit based on a finished workflow run says so; the run's id is not part of the timeline.
+    const workflow = edit.op === 'upsert' && kind === 'skill' && typeof named?.workflowRun === 'string'
     edits.push({
       op: edit.op,
       kind: kind as NodeEdit['kind'],

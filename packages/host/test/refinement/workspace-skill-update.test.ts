@@ -147,6 +147,8 @@ describe('updating a skill refinement installed', () => {
           name: NAME,
           draft: { name: NAME, class: 'instructions', files: [{ path: 'SKILL.md', content: v2Doc }] },
           expectedRevision: s.v1Revision,
+          // The record's source follows the file: it is the entry this update wrote.
+          source: receipt.source,
         },
       },
     ])

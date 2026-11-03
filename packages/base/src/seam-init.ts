@@ -14,13 +14,13 @@ import type {
   PersistenceMetadataNamespace,
   SessionRef,
   TaskScopeSource,
+  WorkflowRunSource,
 } from '@agnes/extension-api'
 import type { ComputerUseBackendProvider } from '../extensions/computer-use/src/backend.js'
 import type { ComputerUseToolOptions } from '../extensions/computer-use/src/tool.js'
 import type { EgressGate } from '../extensions/privacy/src/index.js'
 import type { ConnectRefinement } from '../extensions/refine/src/port.js'
 import type { SkillRuntimeDiscovery, SkillRuntimeInput } from '../extensions/skills/src/runtime.js'
-import type { WorkflowRunSource } from '../extensions/workflow/src/source.js'
 
 /**
  * What a seam implementation in this package is handed at assembly. base cannot import the host,

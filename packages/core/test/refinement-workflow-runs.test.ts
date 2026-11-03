@@ -2,6 +2,7 @@ import type { HarnessEntry } from '@agnes/core-ledger/reduce/shapes'
 import type { InferenceEvent, Provider, RequestBody } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { refinementFacade } from '../src/refinement/facade.js'
+import { droppedEdits } from '../src/refinement/plan-restrict.js'
 import type { RefinementDeps } from '../src/refinement/scheduler.js'
 import type { RefinementPlanner } from '../src/refinement/types.js'
 import type { RefinementWorkflowRuns, WorkflowRunView } from '../src/refinement/workflow-runs.js'
@@ -106,6 +107,7 @@ async function open(o: {
   plans: string[]
   runs?: Record<string, Answer> | false
   read?: () => Promise<Answer>
+  references?: RefinementDeps['references']
 }) {
   const asked: string[] = []
   const runs: Record<string, Answer> = o.runs === false ? {} : { [DONE]: VIEW, ...o.runs }
@@ -121,6 +123,7 @@ async function open(o: {
     planner: () => planner,
     target,
     ...(o.runs === false ? {} : { workflowRuns }),
+    ...(o.references ? { references: o.references } : {}),
   }
   const opened = await openSession({
     provider: provider(o.plans),
@@ -244,5 +247,43 @@ describe('a skill edit that names a workflow run', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('checks references and runs side by side, and only the ones the edits ask for', async () => {
+    const started: string[] = []
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const t = await open({
+      plans: [],
+      read: async () => {
+        started.push('run')
+        await gate
+        return VIEW
+      },
+      references: {
+        skills: async () => {
+          started.push('reference')
+          await gate
+          return [{ resourceId: 'r', revision: 'rev', usable: true }]
+        },
+        agents: async () => [],
+      },
+    })
+    const withBoth = [
+      { op: 'upsert' as const, kind: 'skill' as const, id: 'a', workflowRun: DONE },
+      { op: 'upsert' as const, kind: 'skill' as const, id: 'b', reference: 'r@rev' },
+    ]
+    const pending = droppedEdits(t.s, withBoth as never)
+    // Neither lookup waits for the other to finish.
+    await vi.waitFor(() => expect(started.sort()).toEqual(['reference', 'run']))
+    release?.()
+    expect((await pending).keys.size).toBe(0)
+
+    started.length = 0
+    expect((await droppedEdits(t.s, [lesson as never])).keys.size).toBe(0)
+    expect(started).toEqual([])
+    await t.s.close()
   })
 })
