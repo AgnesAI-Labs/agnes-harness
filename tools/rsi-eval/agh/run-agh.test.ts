@@ -19,6 +19,7 @@ import {
   aghProfile,
   type CheckRun,
   checkRoute,
+  EVAL_MEMORY,
   type LaunchInput,
   type LedgerRow,
   parseAghArgs,
@@ -58,7 +59,7 @@ const task = (category: EvalTask['category'], sessions: string[][]): EvalTask =>
 
 type Call =
   | { op: 'launch'; input: LaunchInput }
-  | { op: 'open'; key: string }
+  | { op: 'open'; key: string; workspace: string }
   | { op: 'prompt'; key: string; text: string }
   | { op: 'review'; key: string }
   | { op: 'settled'; key: string; runId: string; ms: number }
@@ -82,8 +83,8 @@ function stubLaunch(calls: Call[], script: Script = {}) {
     let reviews = 0
     const opened: string[] = []
     return {
-      openSession: async (key): Promise<AghSession> => {
-        calls.push({ op: 'open', key })
+      openSession: async (key, workspace): Promise<AghSession> => {
+        calls.push({ op: 'open', key, workspace })
         opened.push(key)
         return {
           key,
@@ -250,6 +251,66 @@ describe('run-agh', () => {
     // Throwaway workspaces are gone; each run keeps its copy.
     expect(readdirSync(work)).toEqual([])
     expect(readFileSync(join(out, 't1.on.r1', 'work', 'README.md'), 'utf8')).toBe('hello')
+  })
+
+  it('agh runner gives each session its own workspace under one home', async () => {
+    mkdirSync(join(dir, 'fixture-b'))
+    writeFileSync(join(dir, 'fixture-b', 'README.md'), 'second project')
+    const t: EvalTask = {
+      ...task('cross-workspace', [
+        ['a', 'b', 'c'],
+        ['d', 'e', 'f'],
+      ]),
+    }
+    t.sessions[1] = { ...(t.sessions[1] as EvalTask['sessions'][number]), fixture: 'fixture-b' }
+    const calls: Call[] = []
+    const outcome = await run(t, 'on', calls)
+    const launches = calls.flatMap((c) => (c.op === 'launch' ? [c.input] : []))
+    expect(launches).toHaveLength(1)
+    const [first, second] = launches[0]?.workspaces ?? []
+    expect(launches[0]?.workspace).toBe(first)
+    expect(first).not.toBe(second)
+    expect(calls.flatMap((c) => (c.op === 'open' ? [c.workspace] : []))).toEqual([first, second])
+    // Each session's checks run in its own workspace.
+    expect(checked.map((c) => c.cwd)).toEqual([first, first, first, second, second, second])
+    // The run keeps both copies, and the throwaway ones are gone.
+    expect(readFileSync(join(out, 't1.on.r1', 'work', 'README.md'), 'utf8')).toBe('hello')
+    expect(readFileSync(join(out, 't1.on.r1', 'work-b', 'README.md'), 'utf8')).toBe('second project')
+    expect(readdirSync(work)).toEqual([])
+    expect(outcome.sessions.map((s) => s.exitCode)).toEqual([0, 0])
+
+    // A cross-session task keeps one workspace: its second session is the same project.
+    const same: Call[] = []
+    await run(task('cross-session', [['a'], ['b']]), 'on', same, {}, 2)
+    const opened = same.flatMap((c) => (c.op === 'open' ? [c.workspace] : []))
+    expect(opened).toHaveLength(2)
+    expect(opened[0]).toBe(opened[1])
+    expect(same.flatMap((c) => (c.op === 'launch' ? c.input.workspaces : []))).toEqual([opened[0]])
+  })
+
+  it('both settings write identical memory settings with userEnabled', async () => {
+    const t = task('directory', [['a', 'b', 'c']])
+    const calls: Call[] = []
+    await run(t, 'on', calls)
+    await run(t, 'off', calls)
+    const memory = calls.flatMap((c) => (c.op === 'launch' ? [c.input.memory] : []))
+    expect(memory).toEqual([EVAL_MEMORY, EVAL_MEMORY])
+    expect(EVAL_MEMORY).toEqual({ mode: 'auto', userEnabled: true })
+  })
+
+  it('marks an on cross-workspace run auto-only and sends nothing extra at the end of session 1', async () => {
+    const t = task('cross-workspace', [
+      ['a', 'b', 'c'],
+      ['d', 'e', 'f'],
+    ])
+    mkdirSync(join(dir, 'fixture-b'))
+    t.sessions[1] = { ...(t.sessions[1] as EvalTask['sessions'][number]), fixture: 'fixture-b' }
+    const on: Call[] = []
+    expect((await run(t, 'on', on)).alignment).toBe('auto-only')
+    expect(on.filter((c) => c.op === 'review')).toHaveLength(6)
+    expect((await run(t, 'off', [])).alignment).toBeUndefined()
+    const cross = task('cross-session', [['a'], ['b']])
+    expect((await run(cross, 'on', [], {}, 2)).alignment).toBeUndefined()
   })
 
   it('asks for one review after each prompt and waits for it when on, and none when off', async () => {
